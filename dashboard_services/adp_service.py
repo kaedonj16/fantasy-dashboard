@@ -178,6 +178,70 @@ def fetch_fc_startup_adp(is_sf: bool) -> dict:
     return result
 
 
+def fetch_fc_redraft_adp(is_sf: bool) -> dict:
+    """
+    Fetch REDRAFT market ADP from FantasyCalc (isDynasty=false) for all players.
+
+    Returns sleeper_id -> {adp_rank, pos_rank, position, avg_pick} where avg_pick
+    is the redraft overall rank (1 = consensus #1 redraft pick). Cached per league
+    type per day. Empty dict on any failure (callers fall back).
+    """
+    import json as _json
+    from datetime import date
+    from utils.paths import DATA_DIR
+
+    key = f"fc_redraft_adp_{'sf' if is_sf else '1qb'}_{date.today().isoformat()}.json"
+    cache_path = DATA_DIR / key
+    if cache_path.exists():
+        try:
+            with open(cache_path) as _f:
+                return _json.load(_f)
+        except Exception:
+            logger.warning("adp_service: corrupt redraft ADP cache at %s, rebuilding", cache_path)
+
+    num_qbs = 2 if is_sf else 1
+    url = f"https://fantasycalc.com/api/values/current?numQbs={num_qbs}&ppr=1&isDynasty=false"
+    try:
+        import requests as _req
+        resp = _req.get(url, timeout=15, headers={"User-Agent": "fantasy-dashboard/1.0"})
+        resp.raise_for_status()
+        if not resp.text.strip():
+            logger.info("adp_service: FantasyCalc redraft returned empty body (sf=%s)", is_sf)
+            return {}
+        fc_data = resp.json()
+    except Exception as _exc:
+        logger.warning("adp_service: FantasyCalc redraft fetch failed (sf=%s): %s", is_sf, _exc)
+        return {}
+
+    if not fc_data:
+        return {}
+
+    sorted_entries = sorted(
+        [e for e in fc_data if isinstance(e, dict) and e.get("overallRank")],
+        key=lambda e: e["overallRank"],
+    )
+    result: dict = {}
+    pos_counters: dict = {}
+    for rank, entry in enumerate(sorted_entries, start=1):
+        p = entry.get("player") or {}
+        sid = str(p.get("sleeperId") or "")
+        if not sid or sid == "None":
+            continue
+        pos = str(p.get("position") or "").upper()
+        pos_counters[pos] = pos_counters.get(pos, 0) + 1
+        result[sid] = {
+            "adp_rank":  rank,
+            "avg_pick":  float(entry["overallRank"]),
+            "pos_rank":  pos_counters[pos],
+            "position":  pos,
+        }
+    try:
+        _atomic_json_write(cache_path, result)
+    except Exception:
+        logger.warning("adp_service: failed to write redraft ADP cache to %s", cache_path, exc_info=True)
+    return result
+
+
 def fetch_fc_rookie_adp(is_sf: bool, season: int) -> dict:
     """
     Fetch dynasty rookie ADP from FantasyCalc and return a map of

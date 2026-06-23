@@ -134,6 +134,7 @@ _DRAFT_ROOM_HTML = r"""
           <option value="60">Instant</option>
         </select>
         <button class="dr-btn dr-btn-ghost" id="drSimToggle" style="display:none;">Pause</button>
+        <button class="dr-btn dr-btn-ghost" id="drShare">Share</button>
         <button class="dr-btn dr-btn-ghost" id="drUndo">Undo</button>
         <button class="dr-btn dr-btn-ghost" id="drEdit">Edit Setup</button>
         <button class="dr-btn dr-btn-ghost dr-btn-danger" id="drReset">Reset</button>
@@ -148,6 +149,7 @@ _DRAFT_ROOM_HTML = r"""
         <div class="dr-side-tabs" id="drSideTabs">
           <button class="dr-stab active" data-stab="best">Best</button>
           <button class="dr-stab" data-stab="rec">Recs</button>
+          <button class="dr-stab" data-stab="queue">Queue</button>
           <button class="dr-stab" data-stab="needs">Team</button>
           <button class="dr-stab" data-stab="runs">Runs</button>
           <button class="dr-stab" data-stab="steals">Steals</button>
@@ -166,6 +168,8 @@ _DRAFT_ROOM_HTML = r"""
             <button class="dr-pos" data-pos="RB">RB</button>
             <button class="dr-pos" data-pos="WR">WR</button>
             <button class="dr-pos" data-pos="TE">TE</button>
+            <button class="dr-pos dr-pos-kdef" data-pos="K" style="display:none;">K</button>
+            <button class="dr-pos dr-pos-kdef" data-pos="DEF" style="display:none;">DEF</button>
           </div>
         </div>
         <div class="dr-ba-list" id="drBaList">
@@ -326,6 +330,12 @@ _DRAFT_ROOM_HTML = r"""
   .dr-prev-stat-l { font-size: 9px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin-top: 2px; }
   .dr-prev-draft { width: 100%; }
   .dr-prev-note { font-size: 12px; color: var(--text-muted); text-align: center; padding: 6px 0; }
+  /* queue star */
+  .dr-star { background: none; border: none; cursor: pointer; font-size: 15px; line-height: 1; flex-shrink: 0;
+    color: var(--text-muted); padding: 2px 2px 0; }
+  .dr-star.on { color: #f59e0b; }
+  .dr-side-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .dr-stab { white-space: nowrap; }
   .dr-side-title { font-size: 14px; font-weight: 800; color: var(--text); }
   .dr-side-controls { display: flex; gap: 6px; }
   .dr-side-controls input { flex: 1; min-width: 0; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; }
@@ -349,6 +359,20 @@ _DRAFT_ROOM_HTML = r"""
     .dr-cols { grid-template-columns: 1fr; }
     .dr-side { position: static; max-height: none; order: -1; }
     .dr-statusbar { top: 0; }
+  }
+  @media (max-width: 640px) {
+    .dr-wrap { padding: 8px 8px 32px; }
+    .dr-setup-card { padding: 16px; }
+    .dr-statusbar { padding: 8px; gap: 6px; }
+    .dr-status-left { gap: 6px; }
+    .dr-onclock { width: 100%; }
+    .dr-stab { flex: 0 0 auto; padding: 9px 12px; }
+    .dr-side { max-height: 60vh; }            /* keep the board reachable below */
+    .dr-ba-list { max-height: 52vh; }
+    .dr-board-wrap { padding: 4px; }
+    .dr-cta, .dr-setup-cta { flex-direction: column; align-items: stretch; }
+    .dr-setup-cta .dr-btn { width: 100%; }
+    .dr-prev-stats { grid-template-columns: repeat(2, 1fr); }
   }
 </style>
 
@@ -440,7 +464,8 @@ _DRAFT_ROOM_HTML = r"""
       slot:   Math.min(teams, Math.max(1, parseInt(document.getElementById('drSlot').value, 10) || 1)),
       order:  document.getElementById('drOrder').value,
       picks:  {},
-      current: 1
+      current: 1,
+      queue:  []
     };
   }
 
@@ -472,15 +497,19 @@ _DRAFT_ROOM_HTML = r"""
     return state.sf ? (p.sf_value || p.value || 0) : (p.value || 0);
   }
   function adpOf(p){
-    // Rookie drafts use rookie-specific ADP; redraft derives a rank from redraft
-    // value (no market feed); startup uses the consensus (FantasyCalc) ADP.
+    // Rookie -> rookie ADP; redraft -> FantasyCalc redraft market ADP (fall back
+    // to a value-derived rank if absent); startup -> consensus (FantasyCalc) ADP.
     if (state.type === 'rookie') return state.sf ? p.sf_rookie_avg_pick : p.rookie_avg_pick;
-    if (state.type === 'redraft') return (p._radp != null ? p._radp : null);
+    if (state.type === 'redraft'){
+      var ra = state.sf ? p.sf_redraft_avg_pick : p.redraft_avg_pick;
+      return (ra != null) ? ra : (p._radp != null ? p._radp : null);
+    }
     return state.sf ? p.sf_avg_pick : p.avg_pick;
   }
 
   function loadPlayers(){
-    fetch('/api/league-players', { cache: 'no-store' })
+    var url = '/api/league-players' + (state.type === 'redraft' ? '?kdef=1' : '');
+    fetch(url, { cache: 'no-store' })
       .then(function(r){ return r.json(); })
       .then(function(resp){
         var raw = Array.isArray(resp) ? resp : (resp.players || []);
@@ -489,8 +518,8 @@ _DRAFT_ROOM_HTML = r"""
           if (!p || p.id == null) return false;
           var pos = String(p.position || '').toUpperCase();
           if (pos === 'PICK') return false;
-          if (state.type === 'rookie' && !p.is_rookie) return false;
-          if (state.type === 'redraft') return redraftVal(p) > 0;  // must have a redraft value
+          if (state.type === 'rookie') return !!p.is_rookie;
+          if (state.type === 'redraft') return redraftVal(p) > 0 || pos === 'K' || pos === 'DEF';
           return ['QB','RB','WR','TE'].indexOf(pos) >= 0 || p.is_rookie;
         });
         // Derive a stable redraft ADP rank (1 = top redraft value).
@@ -518,7 +547,7 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
-  function render(){ renderStatus(); renderBoard(); renderSide(); justPick = null; save(); }
+  function render(){ if (state && !state.queue) state.queue = []; renderStatus(); renderBoard(); renderSide(); justPick = null; save(); }
 
   // ── Simulation (mock draft) ─────────────────────────────────────────────────
   function simAdp(p){
@@ -526,7 +555,7 @@ _DRAFT_ROOM_HTML = r"""
     return (a != null) ? a : (10000 - (valOf(p) / 100));  // ADP-less players sort after, by value
   }
   function teamCounts(slot){
-    var c = { QB:0, RB:0, WR:0, TE:0 };
+    var c = { QB:0, RB:0, WR:0, TE:0, K:0, DEF:0 };
     Object.keys(state.picks).forEach(function(k){
       if (slotOnClock(parseInt(k,10), state.teams, state.order) === slot){
         var pos = (state.picks[k].position||'').toUpperCase(); if (c[pos] != null) c[pos]++;
@@ -606,9 +635,13 @@ _DRAFT_ROOM_HTML = r"""
     });
     return out;
   }
-  function posTargets(){ return state.sf ? { QB:3, RB:5, WR:6, TE:2 } : { QB:2, RB:6, WR:7, TE:2 }; }
+  function posTargets(){
+    var t = state.sf ? { QB:3, RB:5, WR:6, TE:2 } : { QB:2, RB:6, WR:7, TE:2 };
+    if (state.type === 'redraft'){ t.K = 1; t.DEF = 1; }
+    return t;
+  }
   function myPosCounts(){
-    var c = { QB:0, RB:0, WR:0, TE:0 };
+    var c = { QB:0, RB:0, WR:0, TE:0, K:0, DEF:0 };
     myPicksList().forEach(function(p){ var pos = (p.position||'').toUpperCase(); if (c[pos] != null) c[pos]++; });
     return c;
   }
@@ -679,9 +712,20 @@ _DRAFT_ROOM_HTML = r"""
     return '<span class="dr-tier' + cliff + '">T' + t + '</span>';
   }
 
+  // ── Queue / targets ─────────────────────────────────────────────────────────
+  function isQueued(id){ return !!(state.queue && state.queue.indexOf(String(id)) >= 0); }
+  function toggleQueue(id){
+    id = String(id);
+    if (!state.queue) state.queue = [];
+    var i = state.queue.indexOf(id);
+    if (i >= 0) state.queue.splice(i, 1); else state.queue.push(id);
+    save(); renderSide();
+  }
+
   function playerRowHtml(p, extra){
     var adp = adpOf(p);
     return '<div class="dr-ba-row" data-id="' + esc(String(p.id)) + '">'
+      + '<button class="dr-star' + (isQueued(p.id) ? ' on' : '') + '" data-star="' + esc(String(p.id)) + '" title="Queue" aria-label="Queue">' + (isQueued(p.id) ? '★' : '☆') + '</button>'
       + '<img class="dr-ba-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
       + '<div class="dr-ba-body"><div class="dr-ba-name">' + esc(p.name) + tierBadge(p) + '</div>'
       + '<div class="dr-ba-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span> ' + esc(p.team || '') + '</div></div>'
@@ -690,11 +734,23 @@ _DRAFT_ROOM_HTML = r"""
       + '</div></div>';
   }
 
+  function renderQueue(){
+    var q = (state.queue || []).map(function(id){ return playersById[String(id)]; })
+      .filter(function(p){ return p && !drafted[String(p.id)]; });
+    if (!q.length){ listInto('<div class="dr-empty-note">Your queue is empty. Tap the ☆ on any player to add a target.</div>'); return; }
+    var html = ''; q.forEach(function(p){ html += playerRowHtml(p); });
+    listInto(html);
+  }
+
   function renderSide(){
     _ptc = posTierCounts();
+    var kdef = (state.type === 'redraft');
+    var kbtns = document.querySelectorAll('.dr-pos-kdef');
+    for (var i = 0; i < kbtns.length; i++){ kbtns[i].style.display = kdef ? '' : 'none'; }
     var bc = document.getElementById('drBestControls');
     if (bc) bc.style.display = (sideTab === 'best') ? '' : 'none';
     if (sideTab === 'rec')    return renderRec();
+    if (sideTab === 'queue')  return renderQueue();
     if (sideTab === 'needs')  return renderNeeds();
     if (sideTab === 'runs')   return renderRuns();
     if (sideTab === 'steals') return renderSteals();
@@ -733,9 +789,11 @@ _DRAFT_ROOM_HTML = r"""
 
   // ── My Team (roster slots) ──────────────────────────────────────────────────
   function lineupSlots(){
-    return state.sf
+    var base = state.sf
       ? ['QB','SF','RB','RB','WR','WR','TE','FLEX']
       : ['QB','RB','RB','WR','WR','WR','TE','FLEX'];
+    if (state.type === 'redraft') base = base.concat(['K','DEF']);
+    return base;
   }
   function slotEligible(slot, pos){
     pos = (pos || '').toUpperCase();
@@ -905,7 +963,7 @@ _DRAFT_ROOM_HTML = r"""
         state = {
           type: 'startup', teams: teams, rounds: rounds, sf: !!cfg.isSuperflex,
           slot: slot, order: d.order || 'snake', picks: {}, current: 1,
-          mode: 'live', sourceDraftId: draftId, slotNames: d.slot_names || {}
+          mode: 'live', sourceDraftId: draftId, slotNames: d.slot_names || {}, queue: []
         };
         applyLivePicks(d.picks || []);
         showMain();
@@ -1090,6 +1148,55 @@ _DRAFT_ROOM_HTML = r"""
     showSetup();
   }
 
+  // ── Share a draft image ─────────────────────────────────────────────────────
+  function shareDraft(){
+    if (!state || !state.slot){ alert('Pick a draft slot to build and share your team.'); return; }
+    var mine = myPicksList().slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
+    var used = {}, rows = [];
+    lineupSlots().forEach(function(slot){
+      var pick = null;
+      for (var i = 0; i < mine.length; i++){ if (!used[i] && slotEligible(slot, mine[i].position)){ pick = mine[i]; used[i] = true; break; } }
+      rows.push({ slot: slot, p: pick });
+    });
+    for (var i = 0; i < mine.length; i++){ if (!used[i]) rows.push({ slot: 'BN', p: mine[i] }); }
+
+    var W = 720, pad = 30, lineH = 40;
+    var H = pad * 2 + 118 + rows.length * lineH;
+    var c = document.createElement('canvas'); c.width = W; c.height = H;
+    var ctx = c.getContext('2d');
+    ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#38bdf8'; ctx.font = 'bold 30px system-ui,Arial';
+    ctx.fillText('My ' + (state.type.charAt(0).toUpperCase() + state.type.slice(1)) + ' Draft', pad, pad + 30);
+    ctx.fillStyle = '#94a3b8'; ctx.font = '14px system-ui,Arial';
+    ctx.fillText((state.sf ? 'Superflex' : '1QB') + ' · ' + state.teams + ' teams · BR Fantasy', pad, pad + 54);
+    var g = gradeTeam();
+    if (g){ ctx.fillStyle = '#22c55e'; ctx.font = 'bold 16px system-ui,Arial';
+      ctx.fillText('Grade ' + gradeLetter(g.score) + ' · ' + gradePace(g.score), pad, pad + 84); }
+    var y = pad + 118;
+    var POSC = { QB:'#f59e0b', RB:'#22c55e', WR:'#3b82f6', TE:'#8b5cf6', K:'#94a3b8', DEF:'#64748b', FLEX:'#14b8a6', SF:'#a78bfa', BN:'#64748b' };
+    rows.forEach(function(r){
+      ctx.fillStyle = POSC[r.slot] || '#94a3b8'; ctx.font = 'bold 12px system-ui,Arial';
+      ctx.fillText(r.slot, pad, y + 14);
+      ctx.fillStyle = r.p ? '#e5e7eb' : '#64748b'; ctx.font = r.p ? 'bold 16px system-ui,Arial' : 'italic 15px system-ui,Arial';
+      ctx.fillText(r.p ? r.p.name : 'open', pad + 64, y + 14);
+      if (r.p){ ctx.fillStyle = '#94a3b8'; ctx.font = '13px system-ui,Arial';
+        ctx.textAlign = 'right'; ctx.fillText((r.p.position || '') + '  ' + (r.p.team || ''), W - pad, y + 14); ctx.textAlign = 'left'; }
+      y += lineH;
+    });
+    c.toBlob(function(blob){
+      if (!blob) return;
+      try {
+        var file = new File([blob], 'br-draft.png', { type: 'image/png' });
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })){
+          navigator.share({ files: [file], title: 'My BR Fantasy Draft' }).catch(function(){});
+          return;
+        }
+      } catch (e) {}
+      var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'br-draft.png'; a.click();
+      setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+    }, 'image/png');
+  }
+
   // ── Player preview / draft confirm ──────────────────────────────────────────
   function statBox(label, val){
     return '<div class="dr-prev-stat"><div class="dr-prev-stat-v">' + val + '</div><div class="dr-prev-stat-l">' + label + '</div></div>';
@@ -1154,9 +1261,12 @@ _DRAFT_ROOM_HTML = r"""
   document.getElementById('drBaSort').addEventListener('change', renderBA);
   document.getElementById('drSearch').addEventListener('input', renderBA);
   document.getElementById('drBaList').addEventListener('click', function(e){
+    var star = e.target.closest('[data-star]');
+    if (star){ e.stopPropagation(); toggleQueue(star.getAttribute('data-star')); return; }
     var row = e.target.closest('.dr-ba-row');
     if (row) openPreview(row.getAttribute('data-id'));   // preview first, draft from there
   });
+  document.getElementById('drShare').addEventListener('click', shareDraft);
   document.getElementById('drPreview').addEventListener('click', function(e){
     if (e.target === this || e.target.closest('#drPrevClose')){ closePreview(); return; }
     var d = e.target.closest('.dr-prev-draft');

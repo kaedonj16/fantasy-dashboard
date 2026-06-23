@@ -19000,6 +19000,7 @@ def api_league_players():
             fetch_league_adp_from_db as _fl_adp,
             fetch_fc_startup_adp as _fc_adp,
             fetch_fc_rookie_adp as _fc_rookie_adp,
+            fetch_fc_redraft_adp as _fc_redraft_adp,
         )
         _adp_season = int((get_nfl_state() or {}).get("season") or datetime.now().year)
 
@@ -19030,6 +19031,8 @@ def api_league_players():
 
         _adp_1qb, _adp_sf = _startup_adp(False), _startup_adp(True)
         _radp_1qb, _radp_sf = _rookie_adp(False), _rookie_adp(True)
+        _dr_1qb = _norm_adp(_fc_redraft_adp(False))   # redraft market ADP (FantasyCalc)
+        _dr_sf = _norm_adp(_fc_redraft_adp(True))
         for _p in model_value_table:
             _pid = str(_p.get("id") or "")
             if _pid in _adp_1qb:
@@ -19040,8 +19043,34 @@ def api_league_players():
                 _p["rookie_avg_pick"] = _radp_1qb[_pid]
             if _pid in _radp_sf:
                 _p["sf_rookie_avg_pick"] = _radp_sf[_pid]
+            if _pid in _dr_1qb:
+                _p["redraft_avg_pick"] = _dr_1qb[_pid]
+            if _pid in _dr_sf:
+                _p["sf_redraft_avg_pick"] = _dr_sf[_pid]
     except Exception as _e_adp:
         logger.info("[api/league-players] ADP attach skipped: %s", _e_adp)
+
+    # Optionally append K/DEF (draftable in redraft) when ?kdef=1. Kept out of the
+    # default response so dynasty rankings stay skill-position only.
+    if request.args.get("kdef"):
+        try:
+            from utils.utils import load_players_index as _lpi
+            _seen = {str(p.get("id")) for p in model_value_table if isinstance(p, dict)}
+            _kdef = []
+            for _pid, _info in (_lpi() or {}).items():
+                _pos = str((_info or {}).get("pos") or "").upper()
+                if _pos in ("K", "DEF", "DST") and str(_pid) not in _seen:
+                    _kdef.append({
+                        "id": str(_pid),
+                        "name": (_info.get("name") or str(_pid)),
+                        "position": "DEF" if _pos in ("DEF", "DST") else "K",
+                        "team": (_info.get("team") or _info.get("nfl") or ""),
+                        "value": 0, "sf_value": 0,
+                    })
+            _kdef.sort(key=lambda x: x["name"])
+            model_value_table.extend(_kdef)
+        except Exception as _e_kdef:
+            logger.info("[api/league-players] K/DEF append skipped: %s", _e_kdef)
 
     return jsonify(_sanitize_for_json({
         "players": model_value_table,
