@@ -1210,22 +1210,22 @@ _DRAFT_ROOM_HTML = r"""
     var left = tierRemaining(p);
     // QB overfill: most important warning in 1QB formats.
     if (!state.sf && pos === 'QB' && (counts['QB'] || 0) >= 1){
-      return 'Starting QB already filled — this pick could be a skill player';
+      return 'Starting QB already filled, this pick could be a skill player';
     }
     // Tier cliff: urgent positional scarcity.
     if (isTierCliff(p) && tier != null){
-      if (left <= 1) return 'Last ' + pos + ' in Tier ' + tier + ' — grab now';
+      if (left <= 1) return 'Last ' + pos + ' in Tier ' + tier + '. Grab now';
       return 'Only ' + left + ' ' + pos + 's left in Tier ' + tier;
     }
     // Relative steal: fell significantly relative to their own ADP tier.
-    if (relGap != null && relGap >= 1.0) return 'Elite steal — ' + fell + ' picks past ADP';
-    if (relGap != null && relGap >= 0.5) return 'Steal — fell ' + fell + ' picks past ADP';
+    if (relGap != null && relGap >= 1.0) return 'Elite steal: ' + fell + ' picks past ADP';
+    if (relGap != null && relGap >= 0.5) return 'Steal: fell ' + fell + ' picks past ADP';
     // Roster need after early picks.
     if (need > 0 && state.current > 4){
       if (tier != null && tier <= 2) return 'Tier ' + tier + ' ' + pos + ' fills a need';
       return 'Fills ' + pos + ' need (' + need + ' more to target)';
     }
-    if (fell != null && fell >= 3) return 'Good value — ' + fell + ' past ADP';
+    if (fell != null && fell >= 3) return 'Good value: ' + fell + ' past ADP';
     if (tier != null && tier <= 2) return 'Elite tier (T' + tier + ') talent';
     return 'Best available';
   }
