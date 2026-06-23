@@ -159,7 +159,7 @@ _DRAFT_ROOM_HTML = r"""
       <div class="dr-board-wrap">
         <div class="dr-board" id="drBoard"></div>
       </div>
-      <aside class="dr-side">
+      <aside class="dr-side" id="drSide">
         <div class="otc-main-tabs dr-side-tabs" id="drSideTabs">
           <button class="otc-main-tab is-active" data-stab="best">Players</button>
           <button class="otc-main-tab" data-stab="rec">Recs</button>
@@ -465,18 +465,25 @@ _DRAFT_ROOM_HTML = r"""
   .dr-step-btn:hover { border-color:var(--accent,#38bdf8); color:var(--accent,#38bdf8); }
   .dr-step-val { font-size:14px; font-weight:800; color:var(--text); min-width:18px; text-align:center; }
   /* ── Draft capital (setup) ── */
-  .dr-cap-chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
-  .dr-cap-chip { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:700;
-    padding:5px 6px 5px 10px; border-radius:999px; background:rgba(56,189,248,.12); color:var(--text);
-    border:1px solid rgba(56,189,248,.35); }
-  .dr-cap-traded { background:rgba(245,158,11,.12); border-color:rgba(245,158,11,.4); }
-  .dr-cap-x { border:none; background:rgba(127,127,127,.2); color:var(--text); width:16px; height:16px;
-    border-radius:999px; font-size:13px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; }
+  .dr-cap-chips { display:flex; flex-wrap:wrap; gap:7px; padding:12px; background:var(--bg);
+    border:1px solid var(--border); border-radius:10px; margin-bottom:10px; min-height:52px; align-items:center; }
+  .dr-cap-chip { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700;
+    padding:6px 7px 6px 4px; border-radius:8px; background:rgba(56,189,248,.1); color:var(--text);
+    border:1px solid rgba(56,189,248,.3); }
+  .dr-cap-chip-rd { font-size:9px; font-weight:900; text-transform:uppercase; letter-spacing:.05em;
+    padding:3px 7px; border-radius:5px; background:rgba(56,189,248,.22); color:var(--accent,#38bdf8); flex-shrink:0; }
+  .dr-cap-traded { background:rgba(245,158,11,.1); border-color:rgba(245,158,11,.35); }
+  .dr-cap-traded .dr-cap-chip-rd { background:rgba(245,158,11,.22); color:#f59e0b; }
+  .dr-cap-x { border:none; background:rgba(127,127,127,.18); color:var(--text-muted); width:18px; height:18px;
+    border-radius:5px; font-size:14px; line-height:1; cursor:pointer; display:flex; align-items:center;
+    justify-content:center; padding:0; flex-shrink:0; margin-left:2px; }
   .dr-cap-x:hover { background:#ef4444; color:#fff; }
   .dr-cap-empty { font-size:12px; color:var(--text-muted); font-style:italic; }
-  .dr-cap-add { display:flex; gap:8px; align-items:center; }
-  .dr-cap-add select { padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:13px; }
-  .dr-cap-add .dr-btn { padding:8px 14px; }
+  .dr-cap-add { display:flex; gap:8px; align-items:center; background:var(--bg);
+    border:1px solid var(--border); border-radius:10px; padding:10px 12px; }
+  .dr-cap-add select { padding:7px 9px; border-radius:7px; border:1px solid var(--border);
+    background:var(--card); color:var(--text); font-size:13px; flex:1; min-width:0; }
+  .dr-cap-add .dr-btn { padding:7px 14px; flex-shrink:0; }
   /* ── Team tab PS badge ── */
   .dr-rslot-ps { font-size:11px; font-weight:800; flex-shrink:0; margin-right:2px; }
 </style>
@@ -700,7 +707,8 @@ _DRAFT_ROOM_HTML = r"""
       var r = Math.ceil(pn / c.teams), sl = slotOnClock(pn, c.teams, c.order);
       var home = (sl === c.slot);
       return '<span class="dr-cap-chip' + (home ? '' : ' dr-cap-traded') + '">'
-        + 'R' + r + ' &middot; #' + pn
+        + '<span class="dr-cap-chip-rd">' + (home ? 'R' + r : 'R' + r + ' TRADE') + '</span>'
+        + ' #' + pn
         + '<button type="button" class="dr-cap-x" data-rm="' + pn + '" aria-label="Remove">&times;</button></span>';
     }).join('');
     // Add-a-pick control: round + slot selectors.
@@ -1387,22 +1395,44 @@ _DRAFT_ROOM_HTML = r"""
         if (!d || d.error){ alert('Could not load that draft.'); return; }
         var teams = parseInt(d.teams || 0, 10) || (cfg.numTeams || 12);
         var rounds = parseInt(d.rounds || 0, 10) || 15;
+        var order = d.order || 'snake';
         var slot = 0;
         if (cfg.viewerUserId && d.draft_order && d.draft_order[cfg.viewerUserId]) {
           slot = parseInt(d.draft_order[cfg.viewerUserId], 10) || 0;
         }
+        var isComplete = String(d.status) === 'complete';
+        // Build ownership from actual picks (who picked what), falling back to slot for future picks.
+        var owned = {};
+        var madePickNos = {};
+        (d.picks || []).forEach(function(p){
+          if (p.pick_no == null) return;
+          madePickNos[p.pick_no] = true;
+          if (cfg.viewerUserId && p.picked_by === cfg.viewerUserId) owned[p.pick_no] = true;
+        });
+        if (slot && !isComplete){
+          for (var pn2 = 1; pn2 <= teams * rounds; pn2++){
+            if (!madePickNos[pn2] && slotOnClock(pn2, teams, order) === slot) owned[pn2] = true;
+          }
+        }
         state = {
           type: 'startup', teams: teams, rounds: rounds, sf: !!cfg.isSuperflex,
-          slot: slot, order: d.order || 'snake', picks: {}, current: 1,
-          mode: 'live', sourceDraftId: draftId, slotNames: d.slot_names || {}, queue: []
+          slot: slot, order: order, picks: {}, current: 1,
+          owned: Object.keys(owned).length ? owned : null,
+          mode: 'live', isComplete: isComplete, sourceDraftId: draftId,
+          slotNames: d.slot_names || {}, queue: []
         };
         applyLivePicks(d.picks || []);
         showMain();
-        document.getElementById('drLiveBadge').style.display = '';
         document.getElementById('drUndo').style.display = 'none';
+        if (isComplete){
+          document.getElementById('drSide').style.display = 'none';
+          document.getElementById('drLiveBadge').style.display = 'none';
+        } else {
+          document.getElementById('drSide').style.display = '';
+          document.getElementById('drLiveBadge').style.display = '';
+          startPolling();
+        }
         loadPlayers();
-        startPolling();
-        if (String(d.status) === 'complete') stopPolling();
       })
       .catch(function(){ alert('Could not connect to the live draft.'); });
   }
@@ -1413,7 +1443,14 @@ _DRAFT_ROOM_HTML = r"""
       fetch('/api/draft/live?platform=' + encodeURIComponent(cfg.platform) + '&draft_id=' + encodeURIComponent(state.sourceDraftId))
         .then(function(r){ return r.json(); })
         .then(function(d){
-          if (d && d.picks){ applyLivePicks(d.picks); render(); if (String(d.status) === 'complete') stopPolling(); }
+          if (d && d.picks){
+            applyLivePicks(d.picks); render();
+            if (String(d.status) === 'complete'){
+              stopPolling(); state.isComplete = true; save();
+              document.getElementById('drSide').style.display = 'none';
+              document.getElementById('drLiveBadge').style.display = 'none';
+            }
+          }
         })
         .catch(function(){});
     }, 5000);
@@ -1904,14 +1941,19 @@ _DRAFT_ROOM_HTML = r"""
     if (saved && saved.teams && saved.picks){
       state = saved;
       if (!state.roster) state.roster = defaultRoster();
-      if (!state.owned) state.owned = defaultOwned();
+      if (state.mode !== 'live' && !state.owned) state.owned = defaultOwned();
       if (state.mode === 'live'){
-        document.getElementById('drLiveBadge').style.display = '';
         document.getElementById('drUndo').style.display = 'none';
+        if (state.isComplete){
+          document.getElementById('drSide').style.display = 'none';
+          document.getElementById('drLiveBadge').style.display = 'none';
+        } else {
+          document.getElementById('drLiveBadge').style.display = '';
+        }
       }
       showMain();
       loadPlayers();
-      if (state.mode === 'live' && state.sourceDraftId) startPolling();
+      if (state.mode === 'live' && state.sourceDraftId && !state.isComplete) startPolling();
     }
   }
 
