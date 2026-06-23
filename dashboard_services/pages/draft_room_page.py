@@ -713,14 +713,34 @@ _DRAFT_ROOM_HTML = r"""
     var s = 0.48*valueNorm + 0.18*need + 0.10*adpVal + 0.14*tierNorm + 0.05*mom + 0.05*youth;
     return Math.round(s * 100);
   }
+  // How many players remain in this player's (position|tier) bucket.
+  function tierRemaining(p){
+    var t = tierOf(p); if (t == null) return null;
+    return _ptc[(p.position || '').toUpperCase() + '|' + t] || 0;
+  }
   function pickReason(p, counts){
     var pos = (p.position || '').toUpperCase();
     var t = posTargets()[pos];
     var need = t ? Math.max(0, t - (counts[pos] || 0)) : 0;
     var adp = adpOf(p);
-    if (adp != null && (state.current - adp) >= 8) return 'Value vs ADP';
-    if (isTierCliff(p)) return pos + ' tier cliff';
-    if (need > 0) return 'Fills ' + pos + ' need';
+    var fell = (adp != null) ? Math.round(state.current - adp) : null;
+    var tier = tierOf(p);
+    var left = tierRemaining(p);
+    // Tier cliff: the most urgent signal — name the tier and how many remain.
+    if (isTierCliff(p) && tier != null){
+      if (left <= 1) return 'Last ' + pos + ' in Tier ' + tier + ' — grab now';
+      return 'Only ' + left + ' ' + pos + 's left in Tier ' + tier;
+    }
+    // Big steal: fell well past ADP.
+    if (fell != null && fell >= 8) return 'Steal — fell ' + fell + ' picks past ADP';
+    // Roster need, with a touch of context.
+    if (need > 0){
+      if (tier != null && tier <= 2) return 'Tier ' + tier + ' ' + pos + ' fills a need';
+      return 'Fills ' + pos + ' need (' + need + ' more to target)';
+    }
+    // Falls a little past ADP without being a full cliff.
+    if (fell != null && fell >= 3) return 'Good value — ' + fell + ' past ADP';
+    if (tier != null && tier <= 2) return 'Elite tier (T' + tier + ') talent';
     return 'Best available';
   }
 
