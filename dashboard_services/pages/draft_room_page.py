@@ -2559,7 +2559,7 @@ _DRAFT_ROOM_HTML = r"""
       + '<div class="dr-prev-top">'
       + '<img class="dr-prev-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
       + '<div class="dr-prev-id"><div class="dr-prev-name">' + esc(p.name) + (t ? (' <span class="dr-tier' + (isTierCliff(p) ? ' dr-tier-cliff' : '') + '">T' + t + '</span>') : '') + '</div>'
-      + '<div class="dr-prev-meta"><span class="dr-posbadge" style="background:' + pc + '">' + esc(p.position) + '</span> ' + esc(p.team || '') + (posRank ? (' &middot; ' + esc(posRank)) : '') + agePart + (p.bye_week ? (' &middot; Bye Wk ' + p.bye_week) : '') + '</div>'
+      + '<div class="dr-prev-meta"><span class="dr-posbadge" style="background:' + pc + '">' + esc(p.position) + '</span> ' + esc(p.team || '') + (posRank ? (' &middot; ' + esc(posRank)) : '') + agePart + '</div>'
       + '</div></div>'
       // Pick Score hero
       + '<div class="dr-prev-score-hero" style="border-color:' + sc + ';background:' + sc + '1a;">'
