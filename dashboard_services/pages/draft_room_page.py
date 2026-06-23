@@ -310,7 +310,7 @@ _DRAFT_ROOM_HTML = r"""
     border: 1px solid var(--border); border-radius: 8px; padding: 5px 6px 0; min-height: 50px;
     background: var(--bg); display: flex; align-items: flex-end; gap: 6px; position: relative; overflow: hidden;
   }
-  .dr-cell-body { padding-bottom: 6px; }
+  .dr-cell-body { padding: 5px; }
   .dr-cell-empty { opacity: .45; }
   .dr-cell-filled { background: linear-gradient(180deg, rgba(56,189,248,.05), var(--bg)); }
   .dr-cell-current { box-shadow: inset 0 0 0 2px var(--accent,#38bdf8); animation: drPulse 1.6s ease-in-out infinite; }
