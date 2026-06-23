@@ -177,7 +177,6 @@ _DRAFT_ROOM_HTML = r"""
           <button class="otc-main-tab" data-stab="rec">Recs</button>
           <button class="otc-main-tab" data-stab="queue">Queue</button>
           <button class="otc-main-tab" data-stab="needs">Team</button>
-          <button class="otc-main-tab" data-stab="league">League</button>
         </div>
         <div class="dr-side-head" id="drBestControls">
           <div class="dr-side-controls">
@@ -216,6 +215,8 @@ _DRAFT_ROOM_HTML = r"""
   <div class="dr-cmp-overlay" id="drCompare" style="display:none;">
     <div class="dr-cmp-card" id="drCompareCard"></div>
   </div>
+  <!-- Team needs tooltip (board cell hover) -->
+  <div id="drTeamTip" style="display:none;position:fixed;z-index:300;pointer-events:none;"></div>
 
   <!-- End-of-draft summary -->
   <div class="dr-summary-overlay" id="drSummary" style="display:none;">
@@ -332,9 +333,19 @@ _DRAFT_ROOM_HTML = r"""
   .dr-colhead-you { color: var(--accent,#38bdf8); }
   .dr-side { border: 1px solid var(--border); border-radius: 10px; background: var(--card); display: flex; flex-direction: column;
     position: sticky; top: 120px; align-self: start; max-height: calc(100vh - 134px); z-index: 20; overflow: hidden; }
-  /* Reuse the trade-calculator pill tabs (otc-main-tabs), fit to the panel + scroll */
-  .dr-side-tabs.otc-main-tabs { width: auto; margin: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .dr-side-tabs .otc-main-tab { padding: 7px 12px; flex: 0 0 auto; }
+  /* Reuse the trade-calculator pill tabs (otc-main-tabs), evenly spread across panel */
+  .dr-side-tabs.otc-main-tabs { width: auto; margin: 8px; }
+  .dr-side-tabs .otc-main-tab { flex: 1; text-align: center; padding: 7px 4px; font-size: 12px; }
+  /* Team needs hover tooltip */
+  .dr-team-tip { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; box-shadow: 0 8px 28px rgba(0,0,0,.28); min-width: 160px; }
+  .dr-team-tip-name { font-size: 12px; font-weight: 800; color: var(--text); margin-bottom: 7px; }
+  .dr-team-tip-pos-row { display: flex; gap: 5px; flex-wrap: wrap; }
+  .dr-team-tip-pos { display: flex; flex-direction: column; align-items: center; padding: 4px 7px;
+    border-radius: 7px; border: 1px solid transparent; }
+  .dr-team-tip-pos-lbl { font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+  .dr-team-tip-pos-cnt { font-size: 13px; font-weight: 900; line-height: 1.3; }
+  .dr-team-tip-next { font-size: 10px; color: var(--text-muted); margin-top: 7px; }
   .dr-side-head { padding: 10px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
   /* command-center panels (team / runs) */
   .dr-panel { padding: 12px; overflow-y: auto; }
@@ -362,8 +373,8 @@ _DRAFT_ROOM_HTML = r"""
   .dr-prev-score-reason { font-size: 12px; font-weight: 600; color: var(--text-muted); margin-top: 6px; }
   .dr-empty-note { padding: 22px 14px; font-size: 12px; color: var(--text-muted); text-align: center; }
   /* tiers */
-  .dr-tier { font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 999px; margin-left: 6px;
-    background: rgba(127,127,127,.18); color: var(--text-muted); vertical-align: middle; }
+  .dr-tier { font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 999px;
+    background: rgba(127,127,127,.18); color: var(--text-muted); flex-shrink: 0; }
   .dr-tier-cliff { background: rgba(239,68,68,.16); color: #ef4444; }
   /* pick score */
   .dr-ba-reason { font-size: 10px; color: var(--text-muted); margin-top: 3px; font-weight: 600; }
@@ -513,7 +524,7 @@ _DRAFT_ROOM_HTML = r"""
     .dr-opts-panel .dr-btn { width: 100%; text-align: left; padding: 9px 14px; border-radius: 8px; font-size: 13px; }
     .dr-opts-panel .dr-sim-speed { width: 100%; margin: 2px 0; padding: 6px 8px; border-radius: 8px;
       border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 13px; }
-    .dr-side-tabs .otc-main-tab { padding: 7px 10px; font-size: 12px; }
+    .dr-side-tabs .otc-main-tab { font-size: 11px; padding: 6px 2px; }
     .dr-board-wrap { padding: 4px; max-width: calc(100vw - 16px); overflow-x: auto; }
     .dr-cta, .dr-setup-cta { flex-direction: column; align-items: stretch; }
     .dr-setup-cta .dr-btn { width: 100%; }
@@ -1679,12 +1690,15 @@ _DRAFT_ROOM_HTML = r"""
     var byeFlag = '';
     var bc = byeConflict(p);
     if (bc >= 2) byeFlag = '<span class="dr-bye-flag">Bye ' + p.bye_week + ' clash</span>';
+    // Projected (or actual) PPG for meta line
+    var ppgNum = p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null);
+    var ppgPart = ppgNum != null ? ' · ' + ppgNum.toFixed(1) : '';
     // Compare button state
     var onCmp = compareIds.indexOf(String(p.id)) >= 0;
     return '<div class="dr-ba-row' + availClass + '" data-id="' + esc(String(p.id)) + '">'
       + '<img class="dr-ba-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
-      + '<div class="dr-ba-body"><div class="dr-ba-name">' + esc(p.name) + tierBadge(p) + '</div>'
-      + '<div class="dr-ba-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span>' + esc(p.team || '') + byeFlag + '</div>'
+      + '<div class="dr-ba-body"><div class="dr-ba-name">' + esc(p.name) + '</div>'
+      + '<div class="dr-ba-meta">' + tierBadge(p) + '<span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span>' + esc(p.team || '') + ppgPart + byeFlag + '</div>'
       + reasonLine + waitLine + availLine + '</div>'
       + '<div class="dr-ba-right-col">'
       + '<div class="dr-ba-metrics">'
@@ -1717,10 +1731,9 @@ _DRAFT_ROOM_HTML = r"""
     var bc = document.getElementById('drBestControls');
     if (bc) bc.style.display = (sideTab === 'best') ? '' : 'none';
     renderBestChips();
-    if (sideTab === 'rec')      return renderRec();
-    if (sideTab === 'queue')    return renderQueue();
-    if (sideTab === 'needs')    return renderNeeds();
-    if (sideTab === 'league')   return renderLeague();
+    if (sideTab === 'rec')   return renderRec();
+    if (sideTab === 'queue') return renderQueue();
+    if (sideTab === 'needs') return renderNeeds();
     return renderBA();
   }
 
@@ -2721,6 +2734,72 @@ _DRAFT_ROOM_HTML = r"""
       if (state.mode === 'live' && state.sourceDraftId && !state.isComplete) startPolling();
     }
   }
+
+  // ── Board hover: team needs tooltip ─────────────────────────────────────────
+  function buildTeamTip(slot){
+    var teams = state.teams || 12;
+    var positions = state.type === 'redraft' ? ['QB','RB','WR','TE','K','DEF'] : ['QB','RB','WR','TE'];
+    var targets = posTargets();
+    var counts = {}; positions.forEach(function(p){ counts[p] = 0; });
+    Object.keys(state.picks).forEach(function(k){
+      var pn = parseInt(k, 10);
+      var pick = state.picks[pn]; if (!pick) return;
+      if (slotOnClock(pn, teams, state.order) !== slot) return;
+      var pos = (pick.position || '').toUpperCase();
+      if (counts[pos] != null) counts[pos]++;
+    });
+    var isMe = (slot === (state.slot || -1));
+    var total = teams * state.rounds;
+    var nextPick = null;
+    for (var pn = state.current; pn <= total; pn++){
+      if (slotOnClock(pn, teams, state.order) === slot && !state.picks[pn]){ nextPick = pn; break; }
+    }
+    var html = '<div class="dr-team-tip"><div class="dr-team-tip-name">'
+      + (isMe ? 'You (Team ' + slot + ')' : 'Team ' + slot) + '</div>'
+      + '<div class="dr-team-tip-pos-row">';
+    positions.forEach(function(pos){
+      var t = targets[pos] || 0; if (!t) return;
+      var have = counts[pos] || 0;
+      var filled = have >= t;
+      var col = filled ? '#22c55e' : (have > 0 ? '#f59e0b' : '#ef4444');
+      html += '<div class="dr-team-tip-pos" style="border-color:' + col + '44;background:' + col + '18;">'
+        + '<span class="dr-team-tip-pos-lbl" style="color:' + col + '">' + pos + '</span>'
+        + '<span class="dr-team-tip-pos-cnt" style="color:' + col + '">' + have + '/' + t + '</span>'
+        + '</div>';
+    });
+    html += '</div>';
+    if (nextPick) html += '<div class="dr-team-tip-next">Next pick: #' + nextPick + '</div>';
+    html += '</div>';
+    return html;
+  }
+  (function initBoardTip(){
+    var board = document.getElementById('drBoard');
+    var tip = document.getElementById('drTeamTip');
+    if (!board || !tip) return;
+    var _tipSlot = null;
+    board.addEventListener('mouseover', function(e){
+      if (window.matchMedia('(max-width: 900px)').matches) return;
+      var cell = e.target.closest('[data-pn]');
+      if (!cell){ tip.style.display = 'none'; _tipSlot = null; return; }
+      var pn = parseInt(cell.getAttribute('data-pn'), 10);
+      var slot = slotOnClock(pn, state.teams || 12, state.order);
+      if (slot === _tipSlot) return; // same team, no rebuild
+      _tipSlot = slot;
+      tip.innerHTML = buildTeamTip(slot);
+      tip.style.display = '';
+    });
+    board.addEventListener('mousemove', function(e){
+      if (tip.style.display === 'none') return;
+      var x = e.clientX + 16, y = e.clientY + 16;
+      if (x + 200 > window.innerWidth) x = e.clientX - 200;
+      if (y + 180 > window.innerHeight) y = e.clientY - 180;
+      tip.style.left = x + 'px';
+      tip.style.top = y + 'px';
+    });
+    board.addEventListener('mouseleave', function(){
+      tip.style.display = 'none'; _tipSlot = null;
+    });
+  })();
 
   // ── Mobile bottom-sheet drag behavior ───────────────────────────────────────
   // Below 900px the side panel is a draggable sheet with three snap points:
