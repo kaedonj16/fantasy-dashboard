@@ -147,7 +147,7 @@ _DRAFT_ROOM_HTML = r"""
         <div class="dr-side-tabs" id="drSideTabs">
           <button class="dr-stab active" data-stab="best">Best</button>
           <button class="dr-stab" data-stab="rec">Recs</button>
-          <button class="dr-stab" data-stab="needs">Needs</button>
+          <button class="dr-stab" data-stab="needs">Team</button>
           <button class="dr-stab" data-stab="runs">Runs</button>
           <button class="dr-stab" data-stab="steals">Steals</button>
         </div>
@@ -266,14 +266,19 @@ _DRAFT_ROOM_HTML = r"""
     border-bottom: 2px solid transparent; color: var(--text-muted); cursor: pointer; }
   .dr-stab.active { color: var(--accent,#38bdf8); border-bottom-color: var(--accent,#38bdf8); }
   .dr-side-head { padding: 10px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
-  /* command-center panels (needs / runs) */
+  /* command-center panels (team / runs) */
   .dr-panel { padding: 12px; overflow-y: auto; }
-  .dr-need-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-  .dr-need-pos { width: 30px; font-size: 11px; font-weight: 800; color: #fff; border-radius: 4px; padding: 2px 0; text-align: center; }
-  .dr-need-bar { flex: 1; height: 8px; border-radius: 999px; background: rgba(127,127,127,.18); overflow: hidden; }
-  .dr-need-fill { height: 100%; border-radius: 999px; }
-  .dr-need-txt { font-size: 11px; color: var(--text-muted); white-space: nowrap; min-width: 64px; text-align: right; }
-  .dr-need-tag { font-size: 10px; font-weight: 800; color: #ef4444; }
+  .dr-roster { padding: 10px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+  .dr-roster-div { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin: 8px 0 2px; }
+  .dr-rslot { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); min-height: 42px; overflow: hidden; }
+  .dr-rslot-open { opacity: .65; border-style: dashed; }
+  .dr-rslot-pos { width: 36px; flex-shrink: 0; text-align: center; font-size: 10px; font-weight: 800; color: #fff; border-radius: 4px; padding: 3px 0; }
+  .dr-rslot-hs { width: 30px; height: 30px; border-radius: 6px 6px 0 0; object-fit: cover; object-position: top center; align-self: flex-end; background: transparent; flex-shrink: 0; }
+  .dr-rslot-body { flex: 1; min-width: 0; line-height: 1.2; }
+  .dr-rslot-name { font-size: 12px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dr-rslot-meta { font-size: 10px; color: var(--text-muted); }
+  .dr-rslot-val { font-size: 12px; font-weight: 800; color: var(--text); flex-shrink: 0; }
+  .dr-rslot-empty { font-size: 12px; color: var(--text-muted); font-style: italic; }
   .dr-run-line { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
   .dr-run-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
   .dr-run-chip { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: rgba(127,127,127,.14); color: var(--text); }
@@ -591,20 +596,53 @@ _DRAFT_ROOM_HTML = r"""
     listInto(html);
   }
 
-  function renderNeeds(){
-    if (!state.slot){ listInto('<div class="dr-empty-note">Set your pick slot to track your roster needs.</div>'); return; }
-    var counts = myPosCounts(), targets = posTargets();
-    var html = '<div class="dr-panel">';
-    ['QB','RB','WR','TE'].forEach(function(pos){
-      var have = counts[pos] || 0, t = targets[pos] || 0;
-      var pct = t ? Math.min(100, Math.round(have / t * 100)) : 0;
-      var need = Math.max(0, t - have);
-      html += '<div class="dr-need-row">'
-        + '<span class="dr-need-pos" style="background:' + posColor(pos) + '">' + pos + '</span>'
-        + '<div class="dr-need-bar"><div class="dr-need-fill" style="width:' + pct + '%;background:' + posColor(pos) + '"></div></div>'
-        + '<span class="dr-need-txt">' + have + ' / ' + t + (need > 0 ? (' <span class="dr-need-tag">+' + need + '</span>') : '') + '</span>'
+  // ── My Team (roster slots) ──────────────────────────────────────────────────
+  function lineupSlots(){
+    return state.sf
+      ? ['QB','SF','RB','RB','WR','WR','TE','FLEX']
+      : ['QB','RB','RB','WR','WR','WR','TE','FLEX'];
+  }
+  function slotEligible(slot, pos){
+    pos = (pos || '').toUpperCase();
+    if (slot === 'FLEX') return pos === 'RB' || pos === 'WR' || pos === 'TE';
+    if (slot === 'SF')   return pos === 'QB' || pos === 'RB' || pos === 'WR' || pos === 'TE';
+    return slot === pos;
+  }
+  function slotColor(slot){
+    if (slot === 'FLEX') return '#14b8a6';
+    if (slot === 'SF')   return '#a78bfa';
+    if (slot === 'BN')   return '#64748b';
+    return posColor(slot);
+  }
+  function slotRow(slot, p){
+    if (p){
+      return '<div class="dr-rslot">'
+        + '<span class="dr-rslot-pos" style="background:' + slotColor(slot) + '">' + slot + '</span>'
+        + '<img class="dr-rslot-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
+        + '<div class="dr-rslot-body"><div class="dr-rslot-name">' + esc(p.name) + '</div>'
+        + '<div class="dr-rslot-meta">' + esc(p.position) + ' &middot; ' + esc(p.team || '') + '</div></div>'
+        + '<div class="dr-rslot-val">' + (p.val != null ? Math.round(p.val) : '') + '</div>'
         + '</div>';
+    }
+    return '<div class="dr-rslot dr-rslot-open">'
+      + '<span class="dr-rslot-pos" style="background:' + slotColor(slot) + '">' + slot + '</span>'
+      + '<span class="dr-rslot-empty">open</span></div>';
+  }
+  function renderNeeds(){
+    if (!state.slot){ listInto('<div class="dr-empty-note">Set your pick slot to see your team build.</div>'); return; }
+    var mine = myPicksList().slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
+    var used = {};
+    var html = '<div class="dr-roster">';
+    lineupSlots().forEach(function(slot){
+      var pick = null;
+      for (var i = 0; i < mine.length; i++){ if (!used[i] && slotEligible(slot, mine[i].position)){ pick = mine[i]; used[i] = true; break; } }
+      html += slotRow(slot, pick);
     });
+    var bench = [];
+    for (var i = 0; i < mine.length; i++){ if (!used[i]) bench.push(mine[i]); }
+    html += '<div class="dr-roster-div">Bench</div>';
+    if (bench.length){ bench.forEach(function(p){ html += slotRow('BN', p); }); }
+    else { html += slotRow('BN', null); }
     html += '</div>';
     listInto(html);
   }
