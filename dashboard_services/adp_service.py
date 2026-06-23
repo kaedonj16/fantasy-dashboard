@@ -178,6 +178,70 @@ def fetch_fc_startup_adp(is_sf: bool) -> dict:
     return result
 
 
+def fetch_sleeper_adp(season: int) -> dict:
+    """Per-player ADP from Sleeper's own projections API (api.sleeper.com).
+
+    Sleeper's season projection objects carry ADP fields (adp_ppr, adp_2qb,
+    adp_dynasty_ppr, adp_dynasty_2qb, adp_dynasty_half_ppr, adp_rookie, ...).
+    Returns sleeper_id -> {field: value}. Cached daily; {} on any failure so the
+    caller can fall back. Server-reachable (unlike FantasyCalc/DraftSharks).
+    """
+    import json as _json
+    from datetime import date
+    from utils.paths import DATA_DIR
+
+    cache_path = DATA_DIR / f"sleeper_adp_{season}_{date.today().isoformat()}.json"
+    if cache_path.exists():
+        try:
+            with open(cache_path) as _f:
+                return _json.load(_f)
+        except Exception:
+            logger.warning("adp_service: corrupt Sleeper ADP cache at %s, rebuilding", cache_path)
+
+    url = (
+        f"https://api.sleeper.com/projections/nfl/{season}"
+        "?season_type=regular&order_by=adp_ppr"
+        "&position[]=QB&position[]=RB&position[]=WR&position[]=TE&position[]=K&position[]=DEF"
+    )
+    try:
+        import requests as _req
+        resp = _req.get(url, timeout=20, headers={"User-Agent": "fantasy-dashboard/1.0"})
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as _exc:
+        logger.warning("adp_service: Sleeper ADP fetch failed (season=%s): %s", season, _exc)
+        return {}
+
+    _KEYS = (
+        "adp_std", "adp_ppr", "adp_half_ppr", "adp_2qb",
+        "adp_dynasty_std", "adp_dynasty_ppr", "adp_dynasty_half_ppr", "adp_dynasty_2qb",
+        "adp_rookie", "adp_dynasty_rookie",
+    )
+    out: dict = {}
+    for _item in (data or []):
+        if not isinstance(_item, dict):
+            continue
+        _pid = str(_item.get("player_id") or "")
+        _st = _item.get("stats") or {}
+        if not _pid or not isinstance(_st, dict):
+            continue
+        _row = {}
+        for _k in _KEYS:
+            _v = _st.get(_k)
+            if _v is not None:
+                try:
+                    _row[_k] = float(_v)
+                except (TypeError, ValueError):
+                    pass
+        if _row:
+            out[_pid] = _row
+    try:
+        _atomic_json_write(cache_path, out)
+    except Exception:
+        logger.warning("adp_service: failed to write Sleeper ADP cache to %s", cache_path, exc_info=True)
+    return out
+
+
 def fetch_fc_redraft_adp(is_sf: bool) -> dict:
     """
     Fetch REDRAFT market ADP from FantasyCalc (isDynasty=false) for all players.

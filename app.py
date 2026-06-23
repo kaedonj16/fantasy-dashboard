@@ -18992,13 +18992,15 @@ def api_league_players():
             ]
 
     # Attach ADP so the rankings/draft room can sort & simulate by ADP.
-    # FantasyCalc blocks the server IP, so FC ADP is fetched client-side in the
-    # draft room (see loadFcAdp). Server-side we use DraftCrawl league ADP; the
-    # browser overrides with FantasyCalc when available. adp_sources reports the
-    # server feed; the draft room flips it to FantasyCalc once the browser fetch lands.
+    # Primary: Sleeper's own ADP from its projections API (api.sleeper.com),
+    # server-reachable with no bot/CORS issues. Fallback: ADP aggregated from
+    # real Sleeper drafts (our crawler). adp_sources reports which feed was used.
     _adp_sources = {"startup": "none", "rookie": "none", "redraft": "none"}
     try:
-        from dashboard_services.adp_service import fetch_league_adp_from_db as _fl_adp
+        from dashboard_services.adp_service import (
+            fetch_league_adp_from_db as _fl_adp,
+            fetch_sleeper_adp as _sleeper_adp,
+        )
         _adp_season = int((get_nfl_state() or {}).get("season") or datetime.now().year)
 
         def _norm_adp(_m: dict) -> dict:
@@ -19014,31 +19016,52 @@ def api_league_players():
                     out[str(_k)] = float(_ap)
             return out
 
-        def _crawl_adp(is_sf: bool, draft_type: str, key: str, min_s: int) -> dict:
-            # ADP aggregated from real Sleeper drafts (our crawler) - reachable
-            # server-side with no bot/CORS issues, unlike FantasyCalc/DraftSharks.
-            _m = _fl_adp(is_sf, _adp_season, draft_type, min_samples=min_s) or {}
-            if _m:
-                _adp_sources[key] = "Sleeper"
-            return _norm_adp(_m)
+        def _crawl_adp(is_sf: bool, draft_type: str, min_s: int) -> dict:
+            return _norm_adp(_fl_adp(is_sf, _adp_season, draft_type, min_samples=min_s) or {})
 
-        _adp_1qb, _adp_sf = _crawl_adp(False, "startup", "startup", 10), _crawl_adp(True, "startup", "startup", 10)
-        _radp_1qb, _radp_sf = _crawl_adp(False, "rookie", "rookie", 5), _crawl_adp(True, "rookie", "rookie", 5)
-        _dr_1qb, _dr_sf = {}, {}    # no server-side redraft feed; browser FantasyCalc fills it
+        # DraftCrawl maps (fallback)
+        _c_su1, _c_susf = _crawl_adp(False, "startup", 10), _crawl_adp(True, "startup", 10)
+        _c_rk1, _c_rksf = _crawl_adp(False, "rookie", 5), _crawl_adp(True, "rookie", 5)
+
+        # Sleeper projections ADP (primary). Pick the first present field per mode.
+        _sa = _sleeper_adp(_adp_season) or {}
+
+        def _sa_pick(_pid, *keys):
+            _r = _sa.get(_pid) or {}
+            for _k in keys:
+                if _r.get(_k) is not None:
+                    return _r[_k]
+            return None
+
+        _used = {"startup": False, "rookie": False, "redraft": False}
+
+        def _attach(_p, field, sleeper_val, crawl_map, _pid, mode):
+            if sleeper_val is not None:
+                _p[field] = sleeper_val
+                _used[mode] = True
+            elif _pid in crawl_map:
+                _p[field] = crawl_map[_pid]
+
         for _p in model_value_table:
             _pid = str(_p.get("id") or "")
-            if _pid in _adp_1qb:
-                _p["avg_pick"] = _adp_1qb[_pid]
-            if _pid in _adp_sf:
-                _p["sf_avg_pick"] = _adp_sf[_pid]
-            if _pid in _radp_1qb:
-                _p["rookie_avg_pick"] = _radp_1qb[_pid]
-            if _pid in _radp_sf:
-                _p["sf_rookie_avg_pick"] = _radp_sf[_pid]
-            if _pid in _dr_1qb:
-                _p["redraft_avg_pick"] = _dr_1qb[_pid]
-            if _pid in _dr_sf:
-                _p["sf_redraft_avg_pick"] = _dr_sf[_pid]
+            _attach(_p, "avg_pick", _sa_pick(_pid, "adp_dynasty_ppr", "adp_dynasty_half_ppr", "adp_dynasty_std"), _c_su1, _pid, "startup")
+            _attach(_p, "sf_avg_pick", _sa_pick(_pid, "adp_dynasty_2qb", "adp_dynasty_ppr"), _c_susf, _pid, "startup")
+            _attach(_p, "rookie_avg_pick", _sa_pick(_pid, "adp_dynasty_rookie", "adp_rookie"), _c_rk1, _pid, "rookie")
+            _attach(_p, "sf_rookie_avg_pick", _sa_pick(_pid, "adp_dynasty_rookie", "adp_rookie"), _c_rksf, _pid, "rookie")
+            _r1 = _sa_pick(_pid, "adp_ppr", "adp_half_ppr", "adp_std")
+            if _r1 is not None:
+                _p["redraft_avg_pick"] = _r1; _used["redraft"] = True
+            _rsf = _sa_pick(_pid, "adp_2qb", "adp_ppr")
+            if _rsf is not None:
+                _p["sf_redraft_avg_pick"] = _rsf; _used["redraft"] = True
+
+        for _mode in ("startup", "rookie", "redraft"):
+            if _used[_mode]:
+                _adp_sources[_mode] = "Sleeper"
+            elif _mode == "startup" and (_c_su1 or _c_susf):
+                _adp_sources[_mode] = "Community"
+            elif _mode == "rookie" and (_c_rk1 or _c_rksf):
+                _adp_sources[_mode] = "Community"
     except Exception as _e_adp:
         logger.info("[api/league-players] ADP attach skipped: %s", _e_adp)
 
