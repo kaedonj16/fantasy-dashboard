@@ -170,6 +170,7 @@ _DRAFT_ROOM_HTML = r"""
             <button class="dr-pos dr-pos-kdef" data-pos="K" style="display:none;">K</button>
             <button class="dr-pos dr-pos-kdef" data-pos="DEF" style="display:none;">DEF</button>
           </div>
+          <div class="dr-adp-src" id="drAdpSrc"></div>
         </div>
         <div class="dr-ba-list" id="drBaList">
           <div class="dr-loading"><div class="loading-spinner" style="width:22px;height:22px;"></div><span>Loading players…</span></div>
@@ -348,6 +349,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-pos-filters { display: flex; gap: 4px; flex-wrap: wrap; }
   .dr-pos { font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg); color: var(--text-muted); cursor: pointer; }
   .dr-pos.active { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: #fff; }
+  .dr-adp-src { font-size: 10px; color: var(--text-muted); }
   .dr-ba-list { overflow-y: auto; flex: 1; }
   .dr-ba-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--border); cursor: pointer; }
   .dr-ba-row:hover { background: rgba(56,189,248,.08); }
@@ -404,6 +406,7 @@ _DRAFT_ROOM_HTML = r"""
   var simPaused = false;
   var sideTab = 'best';    // best | rec | needs | runs | steals
   var tierThresholds = {}; // {leagueType:{size:[...]}} from /api/league-players
+  var adpSources = {};     // {startup|rookie|redraft: 'FantasyCalc'|'DraftCrawl'|'none'}
   var _boardSig = null;    // board structure signature (rebuild only when it changes)
 
   // ── Pick-order helper (snake / linear / 3rr) ───────────────────────────────
@@ -519,6 +522,7 @@ _DRAFT_ROOM_HTML = r"""
       .then(function(resp){
         var raw = Array.isArray(resp) ? resp : (resp.players || []);
         tierThresholds = (!Array.isArray(resp) && resp.tier_thresholds) ? resp.tier_thresholds : {};
+        adpSources = (!Array.isArray(resp) && resp.adp_sources) ? resp.adp_sources : {};
         players = raw.filter(function(p){
           if (!p || p.id == null) return false;
           var pos = String(p.position || '').toUpperCase();
@@ -690,7 +694,9 @@ _DRAFT_ROOM_HTML = r"""
     var t = posTargets()[pos];
     var need = t ? clamp01(Math.max(0, t - (counts[pos] || 0)) / t) : 0;
     var adp = adpOf(p);
-    var adpVal = (adp != null) ? clamp01((adp - state.current) / 24 + 0.5) : 0.5;  // >0.5 = falling past ADP
+    // Steal vs reach: positive when a player is still available PAST his ADP
+    // (current pick later than ADP); negative when you'd be reaching for him.
+    var adpVal = (adp != null) ? clamp01((state.current - adp) / 24 + 0.5) : 0.5;
     var tier = tierOf(p);
     var tierNorm = tier ? (10 - Math.min(tier, 9)) / 9 : valueNorm;
     if (isTierCliff(p)) tierNorm = clamp01(tierNorm + 0.15);                         // urgency bump
@@ -705,7 +711,7 @@ _DRAFT_ROOM_HTML = r"""
     var t = posTargets()[pos];
     var need = t ? Math.max(0, t - (counts[pos] || 0)) : 0;
     var adp = adpOf(p);
-    if (adp != null && (adp - state.current) >= 8) return 'Value vs ADP';
+    if (adp != null && (state.current - adp) >= 8) return 'Value vs ADP';
     if (isTierCliff(p)) return pos + ' tier cliff';
     if (need > 0) return 'Fills ' + pos + ' need';
     return 'Best available';
@@ -1070,6 +1076,8 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   function renderBA(){
+    var srcEl = document.getElementById('drAdpSrc');
+    if (srcEl){ srcEl.textContent = 'ADP source: ' + (adpSources[state.type] || 'unavailable'); }
     var sortBy = document.getElementById('drBaSort').value;
     var q = (document.getElementById('drSearch').value || '').trim().toLowerCase();
     var pool = availablePool().filter(function(p){
