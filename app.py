@@ -18992,16 +18992,13 @@ def api_league_players():
             ]
 
     # Attach ADP so the rankings/draft room can sort & simulate by ADP.
-    # Priority: FantasyCalc consensus (primary) -> DraftCrawl league ADP (fallback).
-    # adp_sources reports which feed actually supplied each ADP set (for the UI).
+    # FantasyCalc blocks the server IP, so FC ADP is fetched client-side in the
+    # draft room (see loadFcAdp). Server-side we use DraftCrawl league ADP; the
+    # browser overrides with FantasyCalc when available. adp_sources reports the
+    # server feed; the draft room flips it to FantasyCalc once the browser fetch lands.
     _adp_sources = {"startup": "none", "rookie": "none", "redraft": "none"}
     try:
-        from dashboard_services.adp_service import (
-            fetch_league_adp_from_db as _fl_adp,
-            fetch_fc_startup_adp as _fc_adp,
-            fetch_fc_rookie_adp as _fc_rookie_adp,
-            fetch_fc_redraft_adp as _fc_redraft_adp,
-        )
+        from dashboard_services.adp_service import fetch_league_adp_from_db as _fl_adp
         _adp_season = int((get_nfl_state() or {}).get("season") or datetime.now().year)
 
         def _norm_adp(_m: dict) -> dict:
@@ -19017,33 +19014,15 @@ def api_league_players():
                     out[str(_k)] = float(_ap)
             return out
 
-        def _startup_adp(is_sf: bool) -> dict:
-            _m = _fc_adp(is_sf) or {}                                   # FantasyCalc primary
+        def _crawl_adp(is_sf: bool, draft_type: str, key: str, min_s: int) -> dict:
+            _m = _fl_adp(is_sf, _adp_season, draft_type, min_samples=min_s) or {}
             if _m:
-                _adp_sources["startup"] = "FantasyCalc"
-            else:
-                _m = _fl_adp(is_sf, _adp_season, "startup", min_samples=10) or {}  # DraftCrawl fallback
-                if _m:
-                    _adp_sources["startup"] = "DraftCrawl"
+                _adp_sources[key] = "DraftCrawl"
             return _norm_adp(_m)
 
-        def _rookie_adp(is_sf: bool) -> dict:
-            _m = _fc_rookie_adp(is_sf, _adp_season) or {}              # FantasyCalc primary
-            if _m:
-                _adp_sources["rookie"] = "FantasyCalc"
-            else:
-                _m = _fl_adp(is_sf, _adp_season, "rookie", min_samples=5) or {}    # DraftCrawl fallback
-                if _m:
-                    _adp_sources["rookie"] = "DraftCrawl"
-            return _norm_adp(_m)
-
-        _adp_1qb, _adp_sf = _startup_adp(False), _startup_adp(True)
-        _radp_1qb, _radp_sf = _rookie_adp(False), _rookie_adp(True)
-        _dr_raw_1qb = _fc_redraft_adp(False)                            # redraft market ADP (FantasyCalc)
-        if _dr_raw_1qb:
-            _adp_sources["redraft"] = "FantasyCalc"
-        _dr_1qb = _norm_adp(_dr_raw_1qb)
-        _dr_sf = _norm_adp(_fc_redraft_adp(True))
+        _adp_1qb, _adp_sf = _crawl_adp(False, "startup", "startup", 10), _crawl_adp(True, "startup", "startup", 10)
+        _radp_1qb, _radp_sf = _crawl_adp(False, "rookie", "rookie", 5), _crawl_adp(True, "rookie", "rookie", 5)
+        _dr_1qb, _dr_sf = {}, {}    # no server-side redraft feed; browser FantasyCalc fills it
         for _p in model_value_table:
             _pid = str(_p.get("id") or "")
             if _pid in _adp_1qb:
