@@ -98,7 +98,7 @@ _DRAFT_ROOM_HTML = r"""
             </select>
           </div>
           <div class="dr-field"><span>Rounds</span>
-            <input id="drRounds" type="number" min="1" max="40" value="15">
+            <input id="drRounds" type="number" min="1" max="40" value="25">
           </div>
           <div class="dr-field"><span>Your Pick</span>
             <select id="drSlot"></select>
