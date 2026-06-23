@@ -816,6 +816,25 @@ _DRAFT_ROOM_HTML = r"""
       .map(Number).sort(function(a, b){ return a - b; });
   }
   function hasOwned(){ return ownedPicks().length > 0; }
+  // ── Column (seat) ownership ─────────────────────────────────────────────────
+  // A board column maps to a draft seat. Ownership is per-pick (trades can give
+  // you picks in any seat's column), so "is this column mine?" must be derived
+  // from actual pick ownership, never from the original home slot.
+  function picksInColumn(slot){
+    var out = [];
+    var total = (state.teams || 0) * (state.rounds || 0);
+    for (var pn = 1; pn <= total; pn++){
+      if (slotOnClock(pn, state.teams, state.order) === slot) out.push(pn);
+    }
+    return out;
+  }
+  function ownsAnyInColumn(slot){
+    return picksInColumn(slot).some(function(pn){ return isMyPick(pn); });
+  }
+  function ownsAllInColumn(slot){
+    var pcs = picksInColumn(slot);
+    return pcs.length > 0 && pcs.every(function(pn){ return isMyPick(pn); });
+  }
   // The next owned pick strictly after the current selection (for wait/value-now signals).
   function nextOwnedAfterCurrent(){
     var ups = upcomingOwnedPicks();
@@ -1436,6 +1455,9 @@ _DRAFT_ROOM_HTML = r"""
   // ── Balance alert ───────────────────────────────────────────────────────────
   // Fires late in drafts when a critical position is severely underfilled.
   function balanceAlert(){
+    // Rookie drafts: managers often own only a few scattered picks, so a
+    // "picks remaining" balance banner is noise. Skip it entirely.
+    if (state.type === 'rookie') return '';
     if (!hasOwned()) return '';
     var remaining = upcomingOwnedPicks().length;
     if (remaining <= 0 || remaining > 8) return '';
@@ -1765,98 +1787,6 @@ _DRAFT_ROOM_HTML = r"""
     if (sideTab === 'needs') return renderNeeds();
     return renderBA();
   }
-
-  // ── League needs tracker ────────────────────────────────────────────────────
-  // Reads actual state.picks to build each team's current roster, then surfaces
-  // their positional gaps. Works identically for mock and live drafts since both
-  // write into state.picks using the same pick-number keys.
-  function renderLeague(){
-    var teams = state.teams || 12;
-    var targets = posTargets();
-    var positions = ['QB','RB','WR','TE'];
-
-    // Map each pick to its team slot and bucket the drafted players.
-    var teamPicks = {};
-    for (var i = 1; i <= teams; i++) teamPicks[i] = [];
-    Object.keys(state.picks).forEach(function(k){
-      var pn = parseInt(k, 10);
-      var p = state.picks[pn]; if (!p) return;
-      var slot = slotOnClock(pn, teams, state.order);
-      if (teamPicks[slot]) teamPicks[slot].push(p);
-    });
-
-    // Find each team's next upcoming unfilled pick.
-    var nextPicks = {};
-    var total = teams * state.rounds;
-    for (var pn = state.current; pn <= total; pn++){
-      var sl = slotOnClock(pn, teams, state.order);
-      if (!nextPicks[sl] && !state.picks[pn]) nextPicks[sl] = pn;
-    }
-
-    function posCounts(picks){
-      var c = { QB:0, RB:0, WR:0, TE:0, K:0, DEF:0 };
-      picks.forEach(function(p){ var pos = (p.position||'').toUpperCase(); if (c[pos] != null) c[pos]++; });
-      return c;
-    }
-    function topNeed(counts){
-      var best = null, bestGap = -1;
-      positions.forEach(function(pos){
-        var gap = Math.max(0, (targets[pos] || 0) - (counts[pos] || 0));
-        if (gap > bestGap){ bestGap = gap; best = gap > 0 ? pos : null; }
-      });
-      return best;
-    }
-
-    // User slot first, then remaining in order.
-    var slots = [];
-    for (var i = 1; i <= teams; i++) slots.push(i);
-    if (state.slot){
-      slots.sort(function(a, b){
-        if (a === state.slot) return -1;
-        if (b === state.slot) return 1;
-        return a - b;
-      });
-    }
-
-    var onClockSlot = slotOnClock(state.current, teams, state.order);
-    var html = '<div class="dr-lg-wrap">';
-    slots.forEach(function(slot){
-      var picks = teamPicks[slot] || [];
-      var counts = posCounts(picks);
-      var nextPick = nextPicks[slot];
-      var isMe = (slot === (state.slot || -1));
-      var isOnClock = (slot === onClockSlot);
-      var need = topNeed(counts);
-      var rowCls = 'dr-lg-row' + (isMe ? ' dr-lg-mine' : '') + (isOnClock && !isMe ? ' dr-lg-onclock' : '');
-      var nextLabel = nextPick
-        ? '<span class="dr-lg-next' + (isMe ? ' dr-lg-next-you' : '') + '">'
-          + (isOnClock ? 'On clock: ' : 'Next: ') + '#' + nextPick + '</span>'
-        : '<span class="dr-lg-next" style="color:#22c55e;">Done</span>';
-      html += '<div class="' + rowCls + '">'
-        + '<div class="dr-lg-header">'
-        + '<span class="dr-lg-team">' + (isMe ? 'You (Team ' + slot + ')' : (isOnClock ? '<b>Team ' + slot + '</b>' : 'Team ' + slot)) + '</span>'
-        + nextLabel + '</div>'
-        + '<div class="dr-lg-pos-row">';
-      positions.forEach(function(pos){
-        var t = targets[pos] || 0;
-        var have = counts[pos] || 0;
-        var filled = have >= t;
-        var col = filled ? '#22c55e' : (have > 0 ? '#f59e0b' : '#ef4444');
-        html += '<div class="dr-lg-pos" style="border-color:' + col + '44;background:' + col + '18;">'
-          + '<span class="dr-lg-pos-label" style="color:' + col + '">' + pos + '</span>'
-          + '<span class="dr-lg-pos-count">' + have + '/' + t + '</span>'
-          + '</div>';
-      });
-      html += '</div>';
-      if (need && !isMe){
-        html += '<div class="dr-lg-need">Likely targeting: <b style="color:' + posColor(need) + '">' + need + '</b></div>';
-      }
-      html += '</div>';
-    });
-    html += '</div>';
-    listInto(html);
-  }
-
 
   // Positional-run alert banner (folded into Recs): fires when 3+ of the last 5
   // picks share a position. Returns '' when there's no active run.
@@ -2250,9 +2180,11 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   // ── Board rendering (incremental) ───────────────────────────────────────────
+  // Seat label only. "You" identity is decided by pick ownership at the call
+  // site (ownsAllInColumn / isMyPick), not by the original home slot.
   function teamName(slot){
     if (state.slotNames && state.slotNames[slot]) return state.slotNames[slot];
-    return (slot === state.slot) ? 'You' : ('Team ' + slot);
+    return 'Team ' + slot;
   }
   function cellClass(pn){
     var slot = slotOnClock(pn, state.teams, state.order);
@@ -2287,8 +2219,13 @@ _DRAFT_ROOM_HTML = r"""
     board.style.gridTemplateColumns = '30px repeat(' + teams + ', minmax(108px, 1fr))';
     var html = '<div class="dr-colhead"></div>';
     for (var s = 1; s <= teams; s++){
-      var you = (s === state.slot) ? ' dr-colhead-you' : '';
-      html += '<div class="dr-colhead' + you + '" data-slot="' + s + '" style="cursor:default;">' + esc(teamName(s)) + (s === state.slot ? ' ★' : '') + '</div>';
+      // Highlight columns by actual ownership: full column you own = "You",
+      // a column where you only hold traded-in pick(s) keeps its seat name but
+      // still gets the star + accent so you can spot your picks.
+      var ownsAny = ownsAnyInColumn(s);
+      var you = ownsAny ? ' dr-colhead-you' : '';
+      var label = ownsAllInColumn(s) ? 'You' : teamName(s);
+      html += '<div class="dr-colhead' + you + '" data-slot="' + s + '" style="cursor:default;">' + esc(label) + (ownsAny ? ' ★' : '') + '</div>';
     }
     for (var rnd = 1; rnd <= rounds; rnd++){
       html += '<div class="dr-colhead">R' + rnd + '</div>';
@@ -2376,7 +2313,7 @@ _DRAFT_ROOM_HTML = r"""
 
   // ── Summary overlay ─────────────────────────────────────────────────────────
   function openSummary(){
-    if (!state || !state.slot) return;
+    if (!state || !hasOwned()) return;
     var g = gradeTeam();
     var mine = myPicksList().slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
     var used = {};
@@ -2835,7 +2772,7 @@ _DRAFT_ROOM_HTML = r"""
       var pos = (pick.position || '').toUpperCase();
       if (counts[pos] != null) counts[pos]++;
     });
-    var isMe = (slot === (state.slot || -1));
+    var isMe = ownsAllInColumn(slot);
     var total = teams * state.rounds;
     var nextPick = null;
     for (var pn = state.current; pn <= total; pn++){
