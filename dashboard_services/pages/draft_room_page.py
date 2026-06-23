@@ -927,27 +927,46 @@ _DRAFT_ROOM_HTML = r"""
     });
     return c;
   }
+  // Spread of a player's real draft slot around their ADP. Tight at the very top
+  // of the board (consensus picks barely move) and widens deeper, where ADP is
+  // noisier. Drives how far a player realistically slides from their ADP.
+  function simSigma(a){ return Math.max(0.5, Math.min(10, 0.35 + 0.085 * a)); }
   function simPick(){
     var pool = availablePool();
     if (!pool.length) return null;
-    // CPU picks follow ADP but are need-aware: needed positions get pulled a bit
-    // earlier and already-filled positions pushed later, so rosters stay realistic.
-    var slot = slotOnClock(state.current, state.teams, state.order);
+    // Model each available player's draft slot as a draw from Normal(ADP, sigma)
+    // and weight them by how likely they are to be taken at THIS exact pick. An
+    // ADP 1.1 player has a tight curve so he goes ~1 nearly every time, while an
+    // ADP 2.8 player (wider curve, already past pick 1) splits across 2, 3 and 4.
+    var pn = state.current;
+    var slot = slotOnClock(pn, state.teams, state.order);
     var counts = teamCounts(slot), targets = posTargets();
+    var cands = [];
     pool.forEach(function(p){
+      var a = simAdp(p);
+      var sigma = simSigma(a);
+      var z = (pn - a) / sigma;
+      var w = Math.exp(-0.5 * z * z);              // peak when the pick reaches the ADP
+      // Need-awareness: nudge for roster fit without overriding ADP.
       var pos = (p.position||'').toUpperCase();
       var t = targets[pos] || 0, have = counts[pos] || 0;
       var need = t ? Math.max(0, t - have) / t : 0;
       var over = (t && have >= t) ? (have - t + 1) : 0;
-      // Keep adjustments small so elite players don't slip far past their ADP.
-      p._eff = simAdp(p) * (1 - 0.08 * need) * (1 + 0.22 * over);
+      w *= (1 + 0.25 * need) / (1 + 0.5 * over);
+      // ADP-less players (a huge sentinel) get a tiny value-based floor so they
+      // can still fill in late rounds once the ranked board is exhausted.
+      if (a >= 9000) w = Math.max(w, 1e-9 * valOf(p));
+      cands.push({ p: p, w: w });
     });
-    pool.sort(function(a, b){ return a._eff - b._eff; });
-    // Tighter window (3) keeps picks near ADP while still allowing light variance.
-    var win = Math.min(pool.length, 3);
-    var idx = Math.floor(win * (1 - Math.sqrt(1 - Math.random())));
-    if (idx >= win) idx = win - 1;
-    return pool[idx];
+    // Restrict to the realistic field, then sample proportionally to weight so
+    // the favorite usually wins but upsets happen at the documented rate.
+    cands.sort(function(x, y){ return y.w - x.w; });
+    var top = cands.slice(0, Math.min(cands.length, 8));
+    var sum = 0; top.forEach(function(c){ sum += c.w; });
+    if (sum <= 0) return top[0].p;
+    var roll = Math.random() * sum;
+    for (var i = 0; i < top.length; i++){ roll -= top[i].w; if (roll <= 0) return top[i].p; }
+    return top[0].p;
   }
   function scheduleSim(){
     if (!sim || simPaused || !simStarted) return;
