@@ -19034,6 +19034,7 @@ def api_league_players():
             return None
 
         _used = {"startup": False, "rookie": False, "redraft": False}
+        _rookie_from_crawl = False
 
         def _attach(_p, field, sleeper_val, crawl_map, _pid, mode):
             if sleeper_val is not None:
@@ -19046,8 +19047,17 @@ def api_league_players():
             _pid = str(_p.get("id") or "")
             _attach(_p, "avg_pick", _sa_pick(_pid, "adp_dynasty_ppr", "adp_dynasty_half_ppr", "adp_dynasty_std"), _c_su1, _pid, "startup")
             _attach(_p, "sf_avg_pick", _sa_pick(_pid, "adp_dynasty_2qb", "adp_dynasty_ppr"), _c_susf, _pid, "startup")
-            _attach(_p, "rookie_avg_pick", _sa_pick(_pid, "adp_dynasty_rookie", "adp_rookie"), _c_rk1, _pid, "rookie")
-            _attach(_p, "sf_rookie_avg_pick", _sa_pick(_pid, "adp_dynasty_rookie", "adp_rookie"), _c_rksf, _pid, "rookie")
+            # Rookie ADP: prefer our draft-crawl data (reflects real league picks),
+            # fall back to Sleeper community ADP when crawl has no sample.
+            _rk_sa = _sa_pick(_pid, "adp_dynasty_rookie", "adp_rookie")
+            if _pid in _c_rk1:
+                _p["rookie_avg_pick"] = _c_rk1[_pid]; _used["rookie"] = True; _rookie_from_crawl = True
+            elif _rk_sa is not None:
+                _p["rookie_avg_pick"] = _rk_sa; _used["rookie"] = True
+            if _pid in _c_rksf:
+                _p["sf_rookie_avg_pick"] = _c_rksf[_pid]; _used["rookie"] = True; _rookie_from_crawl = True
+            elif _rk_sa is not None:
+                _p["sf_rookie_avg_pick"] = _rk_sa; _used["rookie"] = True
             _r1 = _sa_pick(_pid, "adp_ppr", "adp_half_ppr", "adp_std")
             if _r1 is not None:
                 _p["redraft_avg_pick"] = _r1; _used["redraft"] = True
@@ -19056,12 +19066,14 @@ def api_league_players():
                 _p["sf_redraft_avg_pick"] = _rsf; _used["redraft"] = True
 
         for _mode in ("startup", "rookie", "redraft"):
-            if _used[_mode]:
+            if _mode == "rookie" and _rookie_from_crawl:
+                _adp_sources[_mode] = "DraftCrawl"
+            elif _used[_mode]:
                 _adp_sources[_mode] = "Sleeper"
             elif _mode == "startup" and (_c_su1 or _c_susf):
                 _adp_sources[_mode] = "Community"
             elif _mode == "rookie" and (_c_rk1 or _c_rksf):
-                _adp_sources[_mode] = "Community"
+                _adp_sources[_mode] = "DraftCrawl"
     except Exception as _e_adp:
         logger.info("[api/league-players] ADP attach skipped: %s", _e_adp)
 
