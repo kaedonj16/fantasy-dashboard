@@ -333,6 +333,11 @@ _DRAFT_ROOM_HTML = r"""
   .dr-tier-cliff { background: rgba(239,68,68,.16); color: #ef4444; }
   /* pick score */
   .dr-ba-reason { font-size: 10px; color: var(--text-muted); margin-top: 3px; font-weight: 600; }
+  .dr-ba-wait { font-size: 9.5px; color: #22c55e; margin-top: 2px; font-weight: 700; }
+  .dr-prev-wait { display: flex; align-items: center; gap: 10px; border: 1px solid; border-radius: 9px;
+    padding: 9px 12px; margin-bottom: 12px; }
+  .dr-prev-wait-p { font-size: 18px; font-weight: 900; flex-shrink: 0; }
+  .dr-prev-wait-t { font-size: 12px; font-weight: 600; color: var(--text); line-height: 1.35; }
   /* draft grade */
   .dr-pill-grade { background: rgba(34,197,94,.16); color: #22c55e; }
   .dr-grade-card { display: flex; align-items: center; gap: 12px; padding: 12px; margin: 10px 10px 4px;
@@ -567,6 +572,12 @@ _DRAFT_ROOM_HTML = r"""
       .map(Number).sort(function(a, b){ return a - b; });
   }
   function hasOwned(){ return ownedPicks().length > 0; }
+  // The next owned pick strictly after the current selection (for wait/value-now signals).
+  function nextOwnedAfterCurrent(){
+    var ups = upcomingOwnedPicks();
+    for (var i = 0; i < ups.length; i++){ if (ups[i] > state.current) return ups[i]; }
+    return null;
+  }
   // Upcoming owned picks that have not been made yet (current pick included).
   function upcomingOwnedPicks(){
     return ownedPicks().filter(function(pn){ return pn >= state.current && !state.picks[pn]; });
@@ -1119,6 +1130,9 @@ _DRAFT_ROOM_HTML = r"""
     var ps = pickScoreFor(p);
     var sub = (opts.sub != null) ? opts.sub : (adp != null ? 'ADP ' + Number(adp).toFixed(1) : '');
     var reasonLine = opts.reason ? '<div class="dr-ba-reason">' + esc(opts.reason) + '</div>' : '';
+    var waitLine = opts.wait
+      ? '<div class="dr-ba-wait">&#8987; Can wait: ' + opts.wait.prob + '% there at #' + opts.wait.pn + '</div>'
+      : '';
     var psChip = (ps != null)
       ? '<div class="dr-ba-pschip" style="color:' + psColor(ps) + ';background:' + psColor(ps) + '1a;">' + ps + '<small>PS</small></div>'
       : '';
@@ -1127,7 +1141,7 @@ _DRAFT_ROOM_HTML = r"""
       + '<img class="dr-ba-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
       + '<div class="dr-ba-body"><div class="dr-ba-name">' + esc(p.name) + tierBadge(p) + '</div>'
       + '<div class="dr-ba-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span>' + esc(p.team || '') + '</div>'
-      + reasonLine + '</div>'
+      + reasonLine + waitLine + '</div>'
       + '<div class="dr-ba-right"><div class="dr-ba-val">' + Math.round(valOf(p)) + '</div><div class="dr-ba-sub">' + sub + '</div></div>'
       + psChip
       + '<button class="dr-ba-draft" data-draft="' + esc(String(p.id)) + '" title="Draft now">Draft</button>'
@@ -1182,9 +1196,17 @@ _DRAFT_ROOM_HTML = r"""
     pool.forEach(function(p){ p._ps = pickScore(p, maxVal, counts); });
     pool.sort(function(a, b){ return b._ps - a._ps; });
     var html = runBanner();
+    // Assistant looks across your whole draft capital: a player you can likely
+    // get at a later owned pick is flagged so you can spend this pick elsewhere.
+    var nextPick = nextOwnedAfterCurrent();
     for (var i = 0; i < Math.min(pool.length, 50); i++){
       var p = pool[i];
-      html += playerRowHtml(p, { reason: pickReason(p, counts) });
+      var opts = { reason: pickReason(p, counts) };
+      if (nextPick){
+        var wp = availProb(p, nextPick);
+        if (wp != null && wp >= 55) opts.wait = { pn: nextPick, prob: wp };
+      }
+      html += playerRowHtml(p, opts);
     }
     listInto(html);
   }
@@ -1824,6 +1846,19 @@ _DRAFT_ROOM_HTML = r"""
       + (p.bye_week ? statBox('Bye', 'Wk ' + p.bye_week)
                     : (p.age != null ? statBox('Age', Number(p.age).toFixed(1)) : statBox('Pos Rank', posRank || '–')))
       + '</div>';
+    // Opportunity cost across your draft capital: can this player wait?
+    var nextPick = nextOwnedAfterCurrent();
+    if (nextPick){
+      var wp = availProb(p, nextPick);
+      if (wp != null){
+        var waitCol = availColor(wp);
+        var msg = wp >= 55 ? ('Likely still available at your next pick (#' + nextPick + ')')
+                           : ('Unlikely to last until your next pick (#' + nextPick + ')');
+        h += '<div class="dr-prev-wait" style="border-color:' + waitCol + ';background:' + waitCol + '14;">'
+          + '<span class="dr-prev-wait-p" style="color:' + waitCol + '">' + wp + '%</span>'
+          + '<span class="dr-prev-wait-t">' + msg + '</span></div>';
+      }
+    }
     if (state.mode === 'live'){
       h += '<div class="dr-prev-note">Live draft. Picks come from the platform.</div>';
     } else if (isYourTurn() || !sim){
