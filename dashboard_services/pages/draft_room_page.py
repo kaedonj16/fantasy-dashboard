@@ -588,6 +588,8 @@ _DRAFT_ROOM_HTML = r"""
   function showMain(){
     _boardSig = null;   // always force a full board rebuild when entering the draft view
     document.getElementById('drSetup').style.display = 'none';
+    document.getElementById('drBoard').innerHTML = '';
+    document.getElementById('drBaList').innerHTML = '<div class="dr-loading">Loading players…</div>';
     document.getElementById('drMain').style.display = '';
   }
   function showSetup(){
