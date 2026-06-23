@@ -64,43 +64,43 @@ _DRAFT_ROOM_HTML = r"""
       <div class="dr-setup-section">
         <div class="dr-setup-section-label">Format</div>
         <div class="dr-setup-grid">
-          <label class="dr-field"><span>Draft Type</span>
+          <div class="dr-field"><span>Draft Type</span>
             <select id="drType">
               <option value="startup">Startup (Dynasty)</option>
               <option value="rookie">Rookie (Dynasty)</option>
               <option value="redraft">Redraft</option>
             </select>
-          </label>
-          <label class="dr-field"><span>Scoring</span>
+          </div>
+          <div class="dr-field"><span>Scoring</span>
             <select id="drSf">
               <option value="0">1QB</option>
               <option value="1">Superflex</option>
             </select>
-          </label>
-          <label class="dr-field"><span>Pick Order</span>
+          </div>
+          <div class="dr-field"><span>Pick Order</span>
             <select id="drOrder">
               <option value="snake">Snake</option>
               <option value="linear">Linear</option>
               <option value="3rr">3rd Round Reversal</option>
             </select>
-          </label>
+          </div>
         </div>
       </div>
 
       <div class="dr-setup-section">
         <div class="dr-setup-section-label">League</div>
         <div class="dr-setup-grid">
-          <label class="dr-field"><span>Teams</span>
+          <div class="dr-field"><span>Teams</span>
             <select id="drTeams">
               <option>8</option><option>10</option><option selected>12</option><option>14</option>
             </select>
-          </label>
-          <label class="dr-field"><span>Rounds</span>
+          </div>
+          <div class="dr-field"><span>Rounds</span>
             <input id="drRounds" type="number" min="1" max="40" value="15">
-          </label>
-          <label class="dr-field"><span>Your Pick</span>
+          </div>
+          <div class="dr-field"><span>Your Pick</span>
             <select id="drSlot"></select>
-          </label>
+          </div>
         </div>
       </div>
 
