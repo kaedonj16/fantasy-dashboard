@@ -163,7 +163,6 @@ _DRAFT_ROOM_HTML = r"""
         <div class="otc-main-tabs dr-side-tabs" id="drSideTabs">
           <button class="otc-main-tab is-active" data-stab="best">Players</button>
           <button class="otc-main-tab" data-stab="rec">Recs</button>
-          <button class="otc-main-tab" data-stab="future">Future</button>
           <button class="otc-main-tab" data-stab="queue">Queue</button>
           <button class="otc-main-tab" data-stab="needs">Team</button>
         </div>
@@ -394,35 +393,21 @@ _DRAFT_ROOM_HTML = r"""
   .dr-ba-pschip { flex-shrink: 0; width: 34px; text-align: center; border-radius: 7px; padding: 4px 0;
     font-size: 13px; font-weight: 800; line-height: 1; }
   .dr-ba-pschip small { display: block; font-size: 7.5px; font-weight: 700; letter-spacing: .06em; opacity: .8; margin-top: 2px; }
-  .dr-ba-draft { padding: 6px 13px; border-radius: 8px; border: 1px solid var(--accent,#122d4b);
-    background: transparent; color: var(--accent,#122d4b); font-size: 11.5px; font-weight: 800;
-    cursor: pointer; flex-shrink: 0; transition: background .12s, color .12s; white-space: nowrap; }
+  .dr-ba-right-col { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
+  .dr-ba-draft { padding: 5px 12px; border-radius: 7px; border: 1px solid var(--accent,#122d4b);
+    background: transparent; color: var(--accent,#122d4b); font-size: 11px; font-weight: 800;
+    cursor: pointer; white-space: nowrap; transition: background .12s, color .12s; }
   .dr-ba-row:hover .dr-ba-draft, .dr-ba-draft:hover { background: var(--accent,#122d4b); color: #fff; }
-  /* ── Future picks panel ── */
-  .dr-fp-intro { font-size: 11px; color: var(--text-muted); padding: 10px 12px 6px; line-height: 1.5; }
-  .dr-fp-card { margin: 8px 10px 12px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--card); }
-  .dr-fp-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: rgba(56,189,248,.06); border-bottom: 1px solid var(--border); }
-  .dr-fp-pick { font-size: 14px; font-weight: 800; color: var(--text); }
-  .dr-fp-rd { font-size: 10px; font-weight: 700; color: var(--text-muted); background: rgba(127,127,127,.14); padding: 2px 7px; border-radius: 999px; }
-  .dr-fp-when { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--text-muted); }
-  .dr-fp-when.dr-fp-now { color: var(--accent,#38bdf8); }
-  .dr-fp-insights { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1px; background: var(--border); }
-  .dr-fp-ins { background: var(--card); padding: 7px 9px; min-width: 0; }
-  .dr-fp-ins-l { font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
-  .dr-fp-ins-v { font-size: 11.5px; font-weight: 700; color: var(--text); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .dr-fp-ins-p { font-size: 9.5px; font-weight: 800; margin-top: 1px; }
-  .dr-fp-scarce { font-size: 10.5px; font-weight: 700; color: #f59e0b; padding: 6px 12px; background: rgba(245,158,11,.08); border-top: 1px solid var(--border); }
-  .dr-fp-list { padding: 2px 0; }
-  .dr-fp-row { display: flex; align-items: center; gap: 9px; padding: 6px 12px; cursor: pointer; transition: background .12s; }
-  .dr-fp-row:hover { background: rgba(56,189,248,.06); }
-  .dr-fp-prob { flex-shrink: 0; width: 40px; text-align: center; font-size: 11px; font-weight: 800; padding: 3px 0; border-radius: 6px; }
-  .dr-fp-name { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
-  .dr-fp-pos { font-size: 9px; font-weight: 800; }
-  .dr-fp-vor { flex-shrink: 0; font-size: 11px; font-weight: 700; color: var(--text-muted); min-width: 34px; text-align: right; }
-  .dr-fp-val { flex-shrink: 0; font-size: 12.5px; font-weight: 800; color: var(--text); min-width: 38px; text-align: right; }
-  .dr-fp-empty { font-size: 11px; color: var(--text-muted); font-style: italic; padding: 10px 12px; }
-  .dr-fp-gone { font-size: 10.5px; color: var(--text-muted); padding: 7px 12px; border-top: 1px solid var(--border); line-height: 1.4; }
-  .dr-fp-gone-lbl { font-weight: 800; color: #ef4444; }
+  /* ── Player availability indicators (Players tab) ── */
+  .dr-ba-row.dr-avail-hi { box-shadow: inset 3px 0 0 #22c55e; }
+  .dr-ba-row.dr-avail-md { box-shadow: inset 3px 0 0 #f59e0b; }
+  .dr-ba-avail { font-size: 9.5px; font-weight: 700; margin-top: 2px; }
+  /* ── Preview modal availability track ── */
+  .dr-prev-avail-track { margin-bottom: 12px; }
+  .dr-prev-avail-label { font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+  .dr-prev-avail-picks { display: flex; flex-wrap: wrap; gap: 6px; }
+  .dr-prev-avail-pick { display: inline-flex; align-items: baseline; gap: 4px; padding: 5px 10px; border-radius: 8px; }
+  .dr-prev-avail-pn { font-size: 10px; font-weight: 600; color: var(--text-muted); }
   .dr-loading { display: flex; align-items: center; gap: 10px; padding: 24px; color: var(--text-muted); font-size: 13px; justify-content: center; }
   @media (max-width: 900px) {
     .dr-cols { grid-template-columns: 1fr; }
@@ -1123,7 +1108,7 @@ _DRAFT_ROOM_HTML = r"""
     save(); renderSide();
   }
 
-  // opts: { reason: text shown under the meta line, sub: overrides the ADP sub-line }
+  // opts: { reason, sub, wait, availAt: {pn, prob} }
   function playerRowHtml(p, opts){
     opts = opts || {};
     var adp = adpOf(p);
@@ -1136,15 +1121,26 @@ _DRAFT_ROOM_HTML = r"""
     var psChip = (ps != null)
       ? '<div class="dr-ba-pschip" style="color:' + psColor(ps) + ';background:' + psColor(ps) + '1a;">' + ps + '<small>PS</small></div>'
       : '';
-    return '<div class="dr-ba-row" data-id="' + esc(String(p.id)) + '">'
+    var availClass = '';
+    var availLine = '';
+    if (opts.availAt){
+      var ap = opts.availAt.prob;
+      var ac = availColor(ap);
+      availClass = ap >= 65 ? ' dr-avail-hi' : ' dr-avail-md';
+      availLine = '<div class="dr-ba-avail" style="color:' + ac + '">'
+        + (ap >= 65 ? '&#10003; ' : '&#8226; ') + ap + '% at #' + opts.availAt.pn + '</div>';
+    }
+    return '<div class="dr-ba-row' + availClass + '" data-id="' + esc(String(p.id)) + '">'
       + '<button class="dr-star' + (isQueued(p.id) ? ' on' : '') + '" data-star="' + esc(String(p.id)) + '" title="Queue" aria-label="Queue">' + (isQueued(p.id) ? '★' : '☆') + '</button>'
       + '<img class="dr-ba-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
       + '<div class="dr-ba-body"><div class="dr-ba-name">' + esc(p.name) + tierBadge(p) + '</div>'
       + '<div class="dr-ba-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span>' + esc(p.team || '') + '</div>'
-      + reasonLine + waitLine + '</div>'
+      + reasonLine + waitLine + availLine + '</div>'
+      + '<div class="dr-ba-right-col">'
       + '<div class="dr-ba-right"><div class="dr-ba-val">' + Math.round(valOf(p)) + '</div><div class="dr-ba-sub">' + sub + '</div></div>'
       + psChip
       + '<button class="dr-ba-draft" data-draft="' + esc(String(p.id)) + '" title="Draft now">Draft</button>'
+      + '</div>'
       + '</div>';
   }
 
@@ -1165,7 +1161,6 @@ _DRAFT_ROOM_HTML = r"""
     var bc = document.getElementById('drBestControls');
     if (bc) bc.style.display = (sideTab === 'best') ? '' : 'none';
     if (sideTab === 'rec')      return renderRec();
-    if (sideTab === 'future')   return renderFuture();
     if (sideTab === 'queue')    return renderQueue();
     if (sideTab === 'needs')    return renderNeeds();
     return renderBA();
@@ -1209,80 +1204,6 @@ _DRAFT_ROOM_HTML = r"""
       html += playerRowHtml(p, opts);
     }
     listInto(html);
-  }
-
-  // ── Future picks (availability projections) ─────────────────────────────────
-  function renderFuture(){
-    if (!hasOwned()){ listInto('<div class="dr-empty-note">Claim a draft slot to project your upcoming picks.</div>'); return; }
-    var total = state.teams * state.rounds;
-    var upcoming = upcomingOwnedPicks();
-    if (state.current > total || !upcoming.length){ listInto('<div class="dr-empty-note">No upcoming picks to project.</div>'); return; }
-    var pool = availablePool();
-    var html = '<div class="dr-fp-intro">Players projected available at your upcoming picks, with the chance each is still on the board.</div>';
-    for (var i = 0; i < upcoming.length && i < 4; i++){
-      html += futurePickCard(upcoming[i], pool);
-    }
-    listInto(html);
-  }
-  function futurePickCard(pn, pool){
-    var r = Math.ceil(pn / state.teams);
-    var away = pn - state.current;
-    var isNow = (pn === state.current);
-    var scored = pool.map(function(p){
-      return { p: p, prob: availProb(p, pn), val: valOf(p), vor: vorOf(p), adp: adpOf(p) };
-    });
-    var avail = scored.filter(function(s){ return s.prob != null && s.prob >= 35; })
-      .sort(function(a, b){ return b.val - a.val; });
-    var gone = scored.filter(function(s){ return s.prob != null && s.prob < 35; })
-      .sort(function(a, b){ return b.val - a.val; }).slice(0, 4);
-    var bestAvail = avail[0];
-    var bestVor = avail.slice().sort(function(a, b){ return (b.vor == null ? -1e9 : b.vor) - (a.vor == null ? -1e9 : a.vor); })[0];
-    var bestValue = avail.slice().sort(function(a, b){ return (b.adp - pn) - (a.adp - pn); })[0];
-
-    var when = isNow ? '<span class="dr-fp-when dr-fp-now">On the clock</span>'
-                     : '<span class="dr-fp-when">' + away + ' pick' + (away === 1 ? '' : 's') + ' away</span>';
-    var h = '<div class="dr-fp-card">'
-      + '<div class="dr-fp-head"><span class="dr-fp-pick">Pick #' + pn + '</span>'
-      + '<span class="dr-fp-rd">R' + r + '</span>' + when + '</div>';
-
-    h += '<div class="dr-fp-insights">';
-    if (bestAvail) h += fpInsight('Best available', bestAvail.p.name, bestAvail.prob);
-    if (bestVor && bestVor.vor != null) h += fpInsight('Highest VOR', bestVor.p.name + ' (+' + bestVor.vor + ')', bestVor.prob);
-    if (bestValue && bestValue.adp != null && (bestValue.adp - pn) > 0) h += fpInsight('Best value', bestValue.p.name, bestValue.prob);
-    h += '</div>';
-
-    var scarce = [];
-    ['QB','RB','WR','TE'].forEach(function(pos){
-      var rem = posTopRemaining(pos);
-      if (rem > 0 && rem <= 3) scarce.push(pos + ' (' + rem + ' elite left)');
-    });
-    if (scarce.length) h += '<div class="dr-fp-scarce">&#9888; Scarce now: ' + esc(scarce.join(', ')) + '</div>';
-
-    h += '<div class="dr-fp-list">';
-    if (avail.length){ avail.slice(0, 6).forEach(function(s){ h += fpRow(s); }); }
-    else h += '<div class="dr-fp-empty">Hard to project this far out.</div>';
-    h += '</div>';
-
-    if (gone.length){
-      h += '<div class="dr-fp-gone"><span class="dr-fp-gone-lbl">Likely gone:</span> '
-        + esc(gone.map(function(s){ return s.p.name; }).join(', ')) + '</div>';
-    }
-    return h + '</div>';
-  }
-  function fpInsight(label, val, prob){
-    return '<div class="dr-fp-ins"><div class="dr-fp-ins-l">' + esc(label) + '</div>'
-      + '<div class="dr-fp-ins-v">' + esc(val) + '</div>'
-      + (prob != null ? '<div class="dr-fp-ins-p" style="color:' + availColor(prob) + '">' + prob + '% there</div>' : '')
-      + '</div>';
-  }
-  function fpRow(s){
-    var p = s.p;
-    return '<div class="dr-fp-row" data-id="' + esc(String(p.id)) + '">'
-      + '<span class="dr-fp-prob" style="color:' + availColor(s.prob) + ';background:' + availColor(s.prob) + '1a;">' + s.prob + '%</span>'
-      + '<div class="dr-fp-name">' + esc(p.name) + '<span class="dr-fp-pos" style="color:' + posColor(p.position) + '">' + esc(p.position) + '</span></div>'
-      + '<span class="dr-fp-vor" title="Value over replacement">' + (s.vor != null ? (s.vor >= 0 ? '+' + s.vor : s.vor) : '') + '</span>'
-      + '<span class="dr-fp-val">' + Math.round(s.val) + '</span>'
-      + '</div>';
   }
 
   // ── My Team (roster slots) ──────────────────────────────────────────────────
@@ -1628,13 +1549,18 @@ _DRAFT_ROOM_HTML = r"""
       return valOf(b) - valOf(a);
     });
     if (!pool.length){ listInto('<div class="dr-empty-note">No players match.</div>'); return; }
+    var nextPick = hasOwned() ? nextOwnedAfterCurrent() : null;
     var html = '';
     for (var i = 0; i < Math.min(pool.length, 200); i++){
       var p = pool[i];
-      var opts = null;
+      var opts = {};
       if (sortBy === 'steals'){
         var d = steal(p);
-        if (d > 0) opts = { sub: '+' + Math.round(d) + ' vs ADP' };
+        if (d > 0) opts.sub = '+' + Math.round(d) + ' vs ADP';
+      }
+      if (nextPick){
+        var prob = availProb(p, nextPick);
+        if (prob != null && prob >= 40) opts.availAt = { pn: nextPick, prob: prob };
       }
       html += playerRowHtml(p, opts);
     }
@@ -1816,19 +1742,23 @@ _DRAFT_ROOM_HTML = r"""
     var adp = adpOf(p), t = tierOf(p), ps = pickScoreFor(p);
     var posRank = state.sf ? (p.sf_pos_rank_label || '') : (p.pos_rank_label || '');
     var adpGap = (adp != null) ? (state.current - adp) : null;
-    var vsAdp = adpGap != null ? (adpGap >= 0 ? ('+' + Math.round(adpGap)) : String(Math.round(adpGap))) : '–';
+    var vsAdp = adpGap != null ? (adpGap >= 0 ? ('+' + Math.round(adpGap)) : String(Math.round(adpGap))) : '-';
     var vor = vorOf(p);
-    var vorStr = (vor != null) ? (vor >= 0 ? '+' + vor : String(vor)) : '–';
+    var vorStr = (vor != null) ? (vor >= 0 ? '+' + vor : String(vor)) : '-';
     var pos = (p.position || '').toUpperCase();
     var scarce = posTopRemaining(pos);
     var sc = psColor(ps);
+    var pc = posColor(p.position);
     var c = document.getElementById('drPreviewCard');
+    // Position-colored top accent
+    c.style.boxShadow = '0 16px 50px rgba(0,0,0,.3), inset 0 3px 0 ' + pc;
+    var agePart = (p.age != null) ? (' &middot; Age ' + Number(p.age).toFixed(0)) : '';
     var h = '<button class="dr-prev-close" id="drPrevClose" aria-label="Close">&times;</button>'
       // Player identity row
       + '<div class="dr-prev-top">'
       + '<img class="dr-prev-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
       + '<div class="dr-prev-id"><div class="dr-prev-name">' + esc(p.name) + (t ? (' <span class="dr-tier' + (isTierCliff(p) ? ' dr-tier-cliff' : '') + '">T' + t + '</span>') : '') + '</div>'
-      + '<div class="dr-prev-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span> ' + esc(p.team || '') + (posRank ? (' &middot; ' + esc(posRank)) : '') + (p.bye_week ? (' &middot; Bye ' + p.bye_week) : '') + '</div>'
+      + '<div class="dr-prev-meta"><span class="dr-posbadge" style="background:' + pc + '">' + esc(p.position) + '</span> ' + esc(p.team || '') + (posRank ? (' &middot; ' + esc(posRank)) : '') + agePart + (p.bye_week ? (' &middot; Bye Wk ' + p.bye_week) : '') + '</div>'
       + '</div></div>'
       // Pick Score hero
       + '<div class="dr-prev-score-hero" style="border-color:' + sc + ';background:' + sc + '1a;">'
@@ -1840,23 +1770,28 @@ _DRAFT_ROOM_HTML = r"""
       + '<div class="dr-prev-stats">'
       + statBox('Value', Math.round(valOf(p)))
       + statBox('VOR', vorStr)
-      + statBox('ADP', adp != null ? Number(adp).toFixed(1) : '–')
+      + statBox('ADP', adp != null ? Number(adp).toFixed(1) : '-')
       + statBox('vs ADP', vsAdp)
       + statBox(pos + ' T1-2 left', scarce)
-      + (p.bye_week ? statBox('Bye', 'Wk ' + p.bye_week)
-                    : (p.age != null ? statBox('Age', Number(p.age).toFixed(1)) : statBox('Pos Rank', posRank || '–')))
+      + (p.bye_week ? statBox('Bye Wk', p.bye_week) : (p.age != null ? statBox('Age', Number(p.age).toFixed(1)) : statBox('Pos Rank', posRank || '-')))
       + '</div>';
-    // Opportunity cost across your draft capital: can this player wait?
-    var nextPick = nextOwnedAfterCurrent();
-    if (nextPick){
-      var wp = availProb(p, nextPick);
-      if (wp != null){
-        var waitCol = availColor(wp);
-        var msg = wp >= 55 ? ('Likely still available at your next pick (#' + nextPick + ')')
-                           : ('Unlikely to last until your next pick (#' + nextPick + ')');
-        h += '<div class="dr-prev-wait" style="border-color:' + waitCol + ';background:' + waitCol + '14;">'
-          + '<span class="dr-prev-wait-p" style="color:' + waitCol + '">' + wp + '%</span>'
-          + '<span class="dr-prev-wait-t">' + msg + '</span></div>';
+    // Survival probability at each upcoming owned pick (up to 4)
+    var upPicks = upcomingOwnedPicks().filter(function(pn){ return pn > state.current; }).slice(0, 4);
+    if (upPicks.length){
+      var pickChips = upPicks.map(function(pn){
+        var prob = availProb(p, pn);
+        if (prob == null) return null;
+        var col = availColor(prob);
+        return '<div class="dr-prev-avail-pick" style="background:' + col + '14;border:1px solid ' + col + '44;">'
+          + '<span style="color:' + col + ';font-size:14px;font-weight:900;">' + prob + '%</span>'
+          + '<span class="dr-prev-avail-pn">at #' + pn + '</span>'
+          + '</div>';
+      }).filter(Boolean).join('');
+      if (pickChips){
+        h += '<div class="dr-prev-avail-track">'
+          + '<div class="dr-prev-avail-label">Survival at your picks</div>'
+          + '<div class="dr-prev-avail-picks">' + pickChips + '</div>'
+          + '</div>';
       }
     }
     if (state.mode === 'live'){
@@ -1912,7 +1847,7 @@ _DRAFT_ROOM_HTML = r"""
     if (star){ e.stopPropagation(); toggleQueue(star.getAttribute('data-star')); return; }
     var draft = e.target.closest('[data-draft]');
     if (draft){ e.stopPropagation(); draftPlayer(draft.getAttribute('data-draft')); return; }
-    var row = e.target.closest('.dr-ba-row') || e.target.closest('.dr-fp-row');
+    var row = e.target.closest('.dr-ba-row');
     if (row) openPreview(row.getAttribute('data-id'));
   });
   document.getElementById('drSummaryBtn').addEventListener('click', openSummary);
