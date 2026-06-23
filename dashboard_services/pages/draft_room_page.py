@@ -383,7 +383,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-ba-list { overflow-y: auto; flex: 1; }
   .dr-ba-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px 8px 10px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .12s; }
   .dr-ba-row:hover { background: rgba(56,189,248,.06); }
-  .dr-ba-hs { width: 40px; height: 40px; border-radius: 9px 9px 0 0; object-fit: cover; object-position: top center;
+  .dr-ba-hs { width: 60px; height: 60px; border-radius: 10px 10px 0 0; object-fit: cover; object-position: top center;
     flex-shrink: 0; background: transparent; align-self: flex-end; }
   .dr-ba-body { min-width: 0; flex: 1; line-height: 1.3; }
   .dr-ba-name { font-size: 13.5px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1149,48 +1149,98 @@ _DRAFT_ROOM_HTML = r"""
   function availColor(pct){ return pct >= 65 ? '#22c55e' : pct >= 40 ? '#f59e0b' : '#ef4444'; }
 
   // ── Pick Score (composite) ──────────────────────────────────────────────────
-  // Fuses talent (value), value-vs-ADP, positional need, tier strength + cliff,
-  // momentum and youth into one 0-100 number per available player.
+  // Fuses VOR, raw value, ADP value, tier, quality-adjusted need, position-peak
+  // age, momentum, and opportunity cost into one 0-100 score per player.
+  // Weights branch by draft type so rookie/redraft/startup each prioritize correctly.
   function clamp01(x){ return x < 0 ? 0 : (x > 1 ? 1 : x); }
   function pickScore(p, maxVal, counts){
     var pos = (p.position || '').toUpperCase();
     var valueNorm = maxVal > 0 ? clamp01(valOf(p) / maxVal) : 0;
 
-    // ADP component: normalized relative to the player's own ADP so a 2-pick
-    // fall from ADP 1.6 is proportionally as significant as a 10-pick fall from
-    // ADP 20. relGap of +0.5 (fell half their ADP) → full steal; -0.3 → clear reach.
+    // #1: VOR separates above-replacement talent; negative VOR (below replacement) = 0.
+    var vor = vorOf(p);
+    var vorNorm = (vor != null) ? clamp01(vor / Math.max(maxVal, 1)) : valueNorm * 0.8;
+
+    // ADP component with #4 elite-ADP floor.
+    // relGap is proportional so a 2-pick fall from ADP 2 = a 10-pick fall from ADP 20.
     var adp = adpOf(p);
     var adpVal;
     if (adp != null) {
       var gap = state.current - adp;
       var relGap = gap / Math.max(adp, 1.5);
-      if (relGap >= 0.5)       adpVal = 1.0;                              // clear steal
-      else if (relGap >= 0)    adpVal = 0.5 + relGap;                     // slight steal: 0.5 → 1.0
-      else if (relGap >= -0.3) adpVal = 0.5 + relGap;                     // slight reach: 0.5 → 0.2
-      else                     adpVal = Math.max(0, 0.2 + relGap * 0.25); // bigger reach
+      if (relGap >= 0.5)       adpVal = 1.0;
+      else if (relGap >= 0)    adpVal = 0.5 + relGap;
+      else if (relGap >= -0.3) adpVal = 0.5 + relGap;
+      else                     adpVal = Math.max(0, 0.2 + relGap * 0.25);
+      // #4: Top-8 ADP players earn a floor so taking them near their ADP still scores well.
+      if (adp <= 8) adpVal = Math.max(adpVal, clamp01(0.5 + (8 - adp) / 16));
     } else { adpVal = 0.5; }
 
     var tier = tierOf(p);
     var tierScore = tier ? clamp01((10 - Math.min(tier, 9)) / 9) : valueNorm;
     if (isTierCliff(p)) tierScore = clamp01(tierScore + 0.15);
 
-    // Need ramps in from pick 13; early picks reward pure talent-first approach.
+    // #3: Quality-adjusted need: count of already-owned players at this position that
+    // are above replacement level. Two below-replacement RBs still leaves a real need.
     var t = posTargets()[pos];
     var needRaw = t ? clamp01(Math.max(0, t - (counts[pos] || 0)) / t) : 0;
+    var myQualAtPos = 0;
+    myPicksList().forEach(function(mp){
+      if ((mp.position || '').toUpperCase() === pos){
+        var full = playersById[String(mp.id)];
+        var v = full ? vorOf(full) : null;
+        if (v == null || v > 0) myQualAtPos++;
+      }
+    });
+    var qualNeedRaw = t ? clamp01(Math.max(0, t - myQualAtPos) / t) : 0;
+    needRaw = Math.max(needRaw, qualNeedRaw);
     var needRamp = clamp01((state.current - 1) / 12);
     var need = (1 - needRamp) * 0.5 + needRamp * needRaw;
 
+    // #2: Position-adjusted age peaks. RB declines earliest, QB latest.
     var age = (p.age != null) ? Number(p.age) : null;
-    var youth = (age != null && ['RB','WR','TE','QB'].indexOf(pos) >= 0) ? clamp01((30 - age) / 12) : 0.5;
+    var youth = 0.5;
+    if (age != null && ['RB','WR','TE','QB'].indexOf(pos) >= 0){
+      var agePeaks = { RB: 24, WR: 27, TE: 27, QB: 29 };
+      var peak = agePeaks[pos] || 27;
+      youth = clamp01((peak - age + 4) / 8);
+    }
     var mom = clamp01((p.rank_change_7d || 0) / 20 + 0.5);
 
-    // Weights sum slightly above 1.0 so elite picks with great minor factors can
-    // reach 100; output is clamped. ADP is the dominant real-time signal.
-    var s = 0.40*valueNorm + 0.35*adpVal + 0.15*tierScore + 0.10*need + 0.03*youth + 0.03*mom;
+    // #5: Draft-type context weights. Weights sum to ~1.05 so elite picks can reach 100.
+    var w;
+    if (state.type === 'rookie'){
+      // Rookie: upside and youth dominate; current value matters less than trajectory.
+      w = { vor: 0.06, value: 0.22, adp: 0.30, tier: 0.12, need: 0.05, youth: 0.24, mom: 0.06 };
+    } else if (state.type === 'redraft'){
+      // Redraft: production now; ignore youth entirely; VOR and ADP are primary signals.
+      w = { vor: 0.12, value: 0.36, adp: 0.35, tier: 0.10, need: 0.08, youth: 0.00, mom: 0.04 };
+    } else {
+      // Startup dynasty: balanced blend of talent, value, and future potential.
+      w = { vor: 0.08, value: 0.32, adp: 0.33, tier: 0.13, need: 0.10, youth: 0.06, mom: 0.03 };
+    }
+    var s = w.vor*vorNorm + w.value*valueNorm + w.adp*adpVal + w.tier*tierScore + w.need*need + w.youth*youth + w.mom*mom;
 
-    // QB overfill penalty: in 1QB formats a second QB drains a roster spot that
-    // should go to a skill player. Score is slashed to reflect the opportunity cost.
+    // #6: Opportunity cost via survival to next owned pick.
+    // Low survival = urgency bonus; high survival = slight penalty (can wait).
+    var nextOwned = nextOwnedAfterCurrent();
+    if (nextOwned){
+      var survProb = availProb(p, nextOwned);
+      if (survProb != null) s += 0.05 - survProb / 100 * 0.08;
+    }
+
+    // QB overfill: in 1QB a second QB consumes a spot better used for a skill player.
     if (!state.sf && pos === 'QB' && (counts['QB'] || 0) >= 1) s *= 0.25;
+
+    // #7: Redraft handcuff boost. If user owns the starter at this position+team,
+    // the backup has significant insurance value worth a meaningful PS bump.
+    if (state.type === 'redraft' && pos === 'RB'){
+      var myRBTeams = {};
+      myPicksList().forEach(function(mp){
+        if ((mp.position || '').toUpperCase() === 'RB' && mp.team) myRBTeams[mp.team] = true;
+      });
+      if (p.team && myRBTeams[p.team]) s = Math.min(1, s + 0.15);
+    }
 
     return Math.round(clamp01(s) * 100);
   }
@@ -1280,7 +1330,7 @@ _DRAFT_ROOM_HTML = r"""
       + '</div>'
       + '<div class="dr-ba-actions">'
       + '<button class="dr-star' + (isQueued(p.id) ? ' on' : '') + '" data-star="' + esc(String(p.id)) + '" title="Queue" aria-label="Queue">' + (isQueued(p.id) ? '★' : '☆') + '</button>'
-      + '<button class="dr-ba-draft" data-draft="' + esc(String(p.id)) + '" title="Draft now">Draft</button>'
+      + (isYourTurn() || !sim ? '<button class="dr-ba-draft" data-draft="' + esc(String(p.id)) + '" title="Draft now">Draft</button>' : '')
       + '</div>'
       + '</div>'
       + '</div>';
