@@ -49,8 +49,8 @@ _DRAFT_ROOM_HTML = r"""
 <div class="dr-wrap">
   <div class="dr-hero">
     <h1 class="dr-title">Draft Room</h1>
-    <p class="dr-sub">Build your board, draft manually, and see the best available in real time.
-      Live draft sync is coming soon.</p>
+    <p class="dr-sub">Mock against ADP-driven CPU teams, draft manually, or sync a live Sleeper draft &mdash;
+      with best-available, recommendations, tiers, and your live draft grade.</p>
   </div>
 
   <!-- Setup -->
@@ -146,13 +146,13 @@ _DRAFT_ROOM_HTML = r"""
         <div class="dr-board" id="drBoard"></div>
       </div>
       <aside class="dr-side">
-        <div class="dr-side-tabs" id="drSideTabs">
-          <button class="dr-stab active" data-stab="best">Best</button>
-          <button class="dr-stab" data-stab="rec">Recs</button>
-          <button class="dr-stab" data-stab="queue">Queue</button>
-          <button class="dr-stab" data-stab="needs">Team</button>
-          <button class="dr-stab" data-stab="runs">Runs</button>
-          <button class="dr-stab" data-stab="steals">Steals</button>
+        <div class="otc-main-tabs dr-side-tabs" id="drSideTabs">
+          <button class="otc-main-tab is-active" data-stab="best">Best</button>
+          <button class="otc-main-tab" data-stab="rec">Recs</button>
+          <button class="otc-main-tab" data-stab="queue">Queue</button>
+          <button class="otc-main-tab" data-stab="needs">Team</button>
+          <button class="otc-main-tab" data-stab="runs">Runs</button>
+          <button class="otc-main-tab" data-stab="steals">Steals</button>
         </div>
         <div class="dr-side-head" id="drBestControls">
           <div class="dr-side-controls">
@@ -271,10 +271,9 @@ _DRAFT_ROOM_HTML = r"""
   .dr-colhead-you { color: var(--accent,#38bdf8); }
   .dr-side { border: 1px solid var(--border); border-radius: 10px; background: var(--card); display: flex; flex-direction: column;
     position: sticky; top: 120px; align-self: start; max-height: calc(100vh - 134px); z-index: 20; overflow: hidden; }
-  .dr-side-tabs { display: flex; border-bottom: 1px solid var(--border); }
-  .dr-stab { flex: 1; padding: 9px 4px; font-size: 12px; font-weight: 700; background: transparent; border: none;
-    border-bottom: 2px solid transparent; color: var(--text-muted); cursor: pointer; }
-  .dr-stab.active { color: var(--accent,#38bdf8); border-bottom-color: var(--accent,#38bdf8); }
+  /* Reuse the trade-calculator pill tabs (otc-main-tabs), fit to the panel + scroll */
+  .dr-side-tabs.otc-main-tabs { width: auto; margin: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .dr-side-tabs .otc-main-tab { padding: 7px 12px; flex: 0 0 auto; }
   .dr-side-head { padding: 10px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
   /* command-center panels (team / runs) */
   .dr-panel { padding: 12px; overflow-y: auto; }
@@ -334,8 +333,6 @@ _DRAFT_ROOM_HTML = r"""
   .dr-star { background: none; border: none; cursor: pointer; font-size: 15px; line-height: 1; flex-shrink: 0;
     color: var(--text-muted); padding: 2px 2px 0; }
   .dr-star.on { color: #f59e0b; }
-  .dr-side-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .dr-stab { white-space: nowrap; }
   .dr-side-title { font-size: 14px; font-weight: 800; color: var(--text); }
   .dr-side-controls { display: flex; gap: 6px; }
   .dr-side-controls input { flex: 1; min-width: 0; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; }
@@ -366,7 +363,7 @@ _DRAFT_ROOM_HTML = r"""
     .dr-statusbar { padding: 8px; gap: 6px; }
     .dr-status-left { gap: 6px; }
     .dr-onclock { width: 100%; }
-    .dr-stab { flex: 0 0 auto; padding: 9px 12px; }
+    .dr-side-tabs .otc-main-tab { padding: 8px 12px; }
     .dr-side { max-height: 60vh; }            /* keep the board reachable below */
     .dr-ba-list { max-height: 52vh; }
     .dr-board-wrap { padding: 4px; }
@@ -1246,9 +1243,9 @@ _DRAFT_ROOM_HTML = r"""
     simSpeed = parseInt(this.value, 10) || 700;
   });
   document.getElementById('drSideTabs').addEventListener('click', function(e){
-    var b = e.target.closest('.dr-stab'); if (!b) return;
+    var b = e.target.closest('.otc-main-tab'); if (!b) return;
     sideTab = b.getAttribute('data-stab');
-    this.querySelectorAll('.dr-stab').forEach(function(x){ x.classList.toggle('active', x === b); });
+    this.querySelectorAll('.otc-main-tab').forEach(function(x){ x.classList.toggle('is-active', x === b); });
     renderSide();
   });
   document.getElementById('drConnect').addEventListener('click', detectLive);
