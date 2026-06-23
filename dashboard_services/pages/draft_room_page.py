@@ -418,11 +418,12 @@ _DRAFT_ROOM_HTML = r"""
   .dr-sum-footer .dr-btn { flex:1; text-align:center; }
   /* ── Roster slots (setup page) ── */
   .dr-setup-roster { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:8px; }
-  .dr-srow { display:flex; align-items:center; justify-content:space-between; gap:8px; background:var(--card-bg,#1e293b); border:1px solid var(--border); border-radius:8px; padding:8px 10px; }
-  .dr-srow-label { font-size:12px; font-weight:700; color:var(--text); }
-  .dr-stepper { display:flex; align-items:center; gap:6px; }
-  .dr-step-btn { width:24px; height:24px; border-radius:5px; border:1px solid var(--border);
-    background:var(--bg); color:var(--text); font-size:15px; font-weight:700; cursor:pointer;
+  .dr-srow { display:flex; align-items:center; justify-content:space-between; gap:8px;
+    background:var(--bg); border:1px solid var(--border); border-radius:9px; padding:8px 11px; min-height:40px; }
+  .dr-srow-label { font-size:13px; font-weight:700; color:var(--text); }
+  .dr-stepper { display:flex; align-items:center; gap:8px; }
+  .dr-step-btn { width:26px; height:26px; border-radius:6px; border:1px solid var(--border);
+    background:var(--card); color:var(--text); font-size:16px; font-weight:700; cursor:pointer; line-height:1;
     display:flex; align-items:center; justify-content:center; padding:0; flex-shrink:0; }
   .dr-step-btn:hover { border-color:var(--accent,#38bdf8); color:var(--accent,#38bdf8); }
   .dr-step-val { font-size:14px; font-weight:800; color:var(--text); min-width:18px; text-align:center; }
