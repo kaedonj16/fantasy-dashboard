@@ -147,12 +147,10 @@ _DRAFT_ROOM_HTML = r"""
       </div>
       <aside class="dr-side">
         <div class="otc-main-tabs dr-side-tabs" id="drSideTabs">
-          <button class="otc-main-tab is-active" data-stab="best">Best</button>
+          <button class="otc-main-tab is-active" data-stab="best">Players</button>
           <button class="otc-main-tab" data-stab="rec">Recs</button>
           <button class="otc-main-tab" data-stab="queue">Queue</button>
           <button class="otc-main-tab" data-stab="needs">Team</button>
-          <button class="otc-main-tab" data-stab="runs">Runs</button>
-          <button class="otc-main-tab" data-stab="steals">Steals</button>
         </div>
         <div class="dr-side-head" id="drBestControls">
           <div class="dr-side-controls">
@@ -160,6 +158,7 @@ _DRAFT_ROOM_HTML = r"""
             <select id="drBaSort">
               <option value="value">Value</option>
               <option value="adp">ADP</option>
+              <option value="steals">Steals</option>
             </select>
           </div>
           <div class="dr-pos-filters" id="drPosFilters">
@@ -294,6 +293,9 @@ _DRAFT_ROOM_HTML = r"""
   .dr-run-hot { background: rgba(239,68,68,.16); color: #ef4444; }
   .dr-ba-delta { font-size: 10px; font-weight: 800; color: #22c55e; }
   .dr-ba-ps { font-size: 10px; font-weight: 800; color: var(--accent,#38bdf8); }
+  .dr-run-banner { margin: 10px 10px 4px; padding: 8px 10px; border-radius: 8px; font-size: 12px;
+    background: rgba(239,68,68,.12); color: #ef4444; border: 1px solid rgba(239,68,68,.3); }
+  .dr-run-banner b { color: #ef4444; }
   .dr-prev-grade { margin-left: auto; text-align: center; }
   .dr-prev-grade-v { font-size: 26px; font-weight: 900; color: var(--accent,#38bdf8); line-height: 1; }
   .dr-prev-grade-l { font-size: 9px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin-top: 2px; }
@@ -755,9 +757,22 @@ _DRAFT_ROOM_HTML = r"""
     if (sideTab === 'rec')    return renderRec();
     if (sideTab === 'queue')  return renderQueue();
     if (sideTab === 'needs')  return renderNeeds();
-    if (sideTab === 'runs')   return renderRuns();
-    if (sideTab === 'steals') return renderSteals();
     return renderBA();
+  }
+
+  // Positional-run alert banner (folded into Recs): fires when 3+ of the last 5
+  // picks share a position. Returns '' when there's no active run.
+  function runBanner(){
+    var last5 = { QB:0, RB:0, WR:0, TE:0, K:0, DEF:0 }, n = 0;
+    for (var pn = state.current - 1; pn >= 1 && n < 5; pn--){
+      var p = state.picks[pn]; if (!p) continue;
+      var pos = (p.position||'').toUpperCase(); if (last5[pos] != null) last5[pos]++; n++;
+    }
+    var hot = '';
+    ['RB','WR','QB','TE'].forEach(function(pos){ if (!hot && last5[pos] >= 3) hot = pos; });
+    if (!hot) return '';
+    return '<div class="dr-run-banner">&#128293; <b>' + hot + ' run</b> &mdash; ' + last5[hot]
+      + ' of the last 5 picks. Weigh your ' + hot + ' need before the tier dries up.</div>';
   }
 
   function renderRec(){
@@ -768,24 +783,11 @@ _DRAFT_ROOM_HTML = r"""
     var maxVal = 0; pool.forEach(function(p){ var v = valOf(p); if (v > maxVal) maxVal = v; });
     pool.forEach(function(p){ p._ps = pickScore(p, maxVal, counts); });
     pool.sort(function(a, b){ return b._ps - a._ps; });
-    var html = '';
+    var html = runBanner();
     for (var i = 0; i < Math.min(pool.length, 50); i++){
       var p = pool[i];
       var extra = '<div class="dr-ba-score">' + p._ps + '</div><div class="dr-ba-reason">' + esc(pickReason(p, counts)) + '</div>';
       html += playerRowHtml(p, extra);
-    }
-    listInto(html);
-  }
-
-  function renderSteals(){
-    var pool = availablePool().filter(function(p){ return adpOf(p) != null; });
-    pool.forEach(function(p){ p._steal = state.current - adpOf(p); });   // available past ADP = value
-    pool = pool.filter(function(p){ return p._steal > 0; });
-    pool.sort(function(a, b){ return b._steal - a._steal; });
-    if (!pool.length){ listInto('<div class="dr-empty-note">No value-vs-ADP steals yet. Players still available past their ADP show up here.</div>'); return; }
-    var html = ''; for (var i = 0; i < Math.min(pool.length, 50); i++){
-      var p = pool[i];
-      html += playerRowHtml(p, '<div class="dr-ba-delta">+' + Math.round(p._steal) + ' vs ADP</div>');
     }
     listInto(html);
   }
@@ -889,29 +891,6 @@ _DRAFT_ROOM_HTML = r"""
     html += '<div class="dr-roster-div">Bench</div>';
     if (bench.length){ bench.forEach(function(p){ html += slotRow('BN', p); }); }
     else { html += slotRow('BN', null); }
-    html += '</div>';
-    listInto(html);
-  }
-
-  function renderRuns(){
-    var recent = [];
-    for (var pn = state.current - 1; pn >= 1 && recent.length < 8; pn--){ if (state.picks[pn]) recent.push(state.picks[pn]); }
-    var counts = { QB:0, RB:0, WR:0, TE:0 }, last5 = { QB:0, RB:0, WR:0, TE:0 };
-    recent.forEach(function(p, i){ var pos = (p.position||'').toUpperCase(); if (counts[pos] != null){ counts[pos]++; if (i < 5) last5[pos]++; } });
-    var html = '<div class="dr-panel">';
-    if (!recent.length){
-      html += '<div class="dr-empty-note">No picks yet. Positional runs appear as the draft unfolds.</div>';
-    } else {
-      html += '<div class="dr-run-line">Last ' + recent.length + ' picks by position</div><div class="dr-run-chips">';
-      ['QB','RB','WR','TE'].forEach(function(pos){
-        var hot = last5[pos] >= 3;
-        html += '<span class="dr-run-chip' + (hot ? ' dr-run-hot' : '') + '">' + pos + ' ' + counts[pos] + (hot ? ' &#128293;' : '') + '</span>';
-      });
-      html += '</div>';
-      ['QB','RB','WR','TE'].forEach(function(pos){
-        if (last5[pos] >= 3) html += '<div class="dr-run-line"><b style="color:#ef4444">' + pos + ' run</b> &mdash; ' + last5[pos] + ' of the last 5 picks. Weigh your ' + pos + ' need before the tier dries up.</div>';
-      });
-    }
     html += '</div>';
     listInto(html);
   }
@@ -1098,11 +1077,13 @@ _DRAFT_ROOM_HTML = r"""
       if (q && String(p.name||'').toLowerCase().indexOf(q) < 0) return false;
       return true;
     });
+    function steal(p){ var a = adpOf(p); return (a != null) ? (state.current - a) : -99999; }
     pool.sort(function(a, b){
       if (sortBy === 'adp'){
         var aa = adpOf(a), ba = adpOf(b);
         return (aa != null ? aa : 99999) - (ba != null ? ba : 99999);
       }
+      if (sortBy === 'steals'){ return steal(b) - steal(a); }   // biggest fallers vs ADP first
       return valOf(b) - valOf(a);
     });
     if (!pool.length){ listInto('<div class="dr-empty-note">No players match.</div>'); return; }
@@ -1112,9 +1093,17 @@ _DRAFT_ROOM_HTML = r"""
     for (var i = 0; i < Math.min(pool.length, 200); i++){
       var p = pool[i];
       var adp = adpOf(p);
-      var extra = '<div class="dr-ba-adp">' + (adp != null ? ('ADP ' + Number(adp).toFixed(1)) : '') + '</div>'
-        + '<div class="dr-ba-ps">PS ' + pickScore(p, maxVal, counts) + '</div>';
-      html += playerRowHtml(p, extra);
+      var right;
+      if (sortBy === 'steals'){
+        var d = steal(p);
+        right = (d > 0 ? ('<div class="dr-ba-delta">+' + Math.round(d) + ' vs ADP</div>')
+                       : ('<div class="dr-ba-adp">' + (adp != null ? ('ADP ' + Number(adp).toFixed(1)) : '') + '</div>'))
+          + '<div class="dr-ba-ps">PS ' + pickScore(p, maxVal, counts) + '</div>';
+      } else {
+        right = '<div class="dr-ba-adp">' + (adp != null ? ('ADP ' + Number(adp).toFixed(1)) : '') + '</div>'
+          + '<div class="dr-ba-ps">PS ' + pickScore(p, maxVal, counts) + '</div>';
+      }
+      html += playerRowHtml(p, right);
     }
     listInto(html);
   }
