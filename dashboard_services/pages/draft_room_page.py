@@ -222,6 +222,22 @@ _DRAFT_ROOM_HTML = r"""
     <div class="dr-summary-card" id="drSummaryCard"></div>
   </div>
 
+  <!-- Share preview -->
+  <div class="dr-shareview-overlay" id="drShareView" style="display:none;">
+    <div class="dr-shareview-card">
+      <button class="dr-prev-close" id="drShareViewClose" aria-label="Close">&times;</button>
+      <div class="dr-shareview-tabs" id="drShareViewTabs">
+        <button class="dr-shareview-tab is-active" data-sv="dark">Dark</button>
+        <button class="dr-shareview-tab" data-sv="light">Light</button>
+      </div>
+      <img class="dr-shareview-img" id="drShareViewImg" alt="Draft preview">
+      <div class="dr-shareview-footer">
+        <button class="dr-btn dr-btn-primary" id="drShareViewShare">Share</button>
+        <button class="dr-btn" id="drShareViewDl">Download</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Custom modal (replaces browser confirm/alert) -->
   <div id="drModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.52);align-items:center;justify-content:center;padding:20px;">
     <div class="dr-modal-box">
@@ -583,6 +599,19 @@ _DRAFT_ROOM_HTML = r"""
   .dr-sum-ps { font-size:14px; font-weight:800; flex-shrink:0; }
   .dr-sum-footer { display:flex; gap:8px; margin-top:16px; }
   .dr-sum-footer .dr-btn { flex:1; text-align:center; }
+  /* Share preview overlay */
+  .dr-shareview-overlay { position:fixed; inset:0; z-index:1002; background:rgba(0,0,0,.6);
+    display:flex; align-items:center; justify-content:center; padding:16px; }
+  .dr-shareview-card { position:relative; background:var(--card); border:1px solid var(--border);
+    border-radius:16px; padding:20px; max-width:520px; width:100%;
+    box-shadow:0 24px 60px rgba(0,0,0,.4); display:flex; flex-direction:column; gap:14px; }
+  .dr-shareview-tabs { display:flex; gap:6px; }
+  .dr-shareview-tab { padding:6px 16px; border-radius:8px; border:1px solid var(--border);
+    background:var(--bg); color:var(--text-muted); font-size:13px; font-weight:600; cursor:pointer; }
+  .dr-shareview-tab.is-active { background:var(--accent,#38bdf8); border-color:var(--accent,#38bdf8); color:#fff; }
+  .dr-shareview-img { width:100%; border-radius:10px; border:1px solid var(--border); display:block; }
+  .dr-shareview-footer { display:flex; gap:10px; }
+  .dr-shareview-footer .dr-btn { flex:1; text-align:center; }
   /* Custom modal */
   .dr-modal-box { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:24px 28px;
     max-width:380px; width:100%; box-shadow:0 24px 60px rgba(0,0,0,.45); }
@@ -2577,8 +2606,10 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   // ── Share a draft image ─────────────────────────────────────────────────────
-  function shareDraft(){
-    if (!state || !hasOwned()){ drAlert('Pick a draft slot to build and share your team.'); return; }
+  var _shareDataUrls = { dark: null, light: null };
+  var _shareTheme = 'dark';
+
+  function _buildShareCanvas(dark){
     var mine = myPicksList().slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
     var used = {}, rows = [];
     lineupSlots().forEach(function(slot){
@@ -2587,47 +2618,105 @@ _DRAFT_ROOM_HTML = r"""
       rows.push({ slot: slot, p: pick });
     });
     for (var i = 0; i < mine.length; i++){ if (!used[i]) rows.push({ slot: 'BN', p: mine[i] }); }
-
-    var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    var clr = isDark
-      ? { bg: '#0f172a', accent: '#38bdf8', sub: '#94a3b8', player: '#e5e7eb', empty: '#475569', good: '#22c55e', div: '#1e293b' }
-      : { bg: '#f8fafc', accent: '#2563eb', sub: '#64748b', player: '#0f172a', empty: '#94a3b8', good: '#16a34a', div: '#e2e8f0' };
-    var W = 720, pad = 30, lineH = 40;
-    var H = pad * 2 + 118 + rows.length * lineH;
+    var clr = dark
+      ? { bg: '#0f172a', header: '#1e293b', accent: '#38bdf8', sub: '#94a3b8', player: '#e5e7eb', empty: '#475569', good: '#22c55e', div: '#1e293b' }
+      : { bg: '#ffffff', header: '#f1f5f9', accent: '#2563eb', sub: '#64748b', player: '#0f172a', empty: '#94a3b8', good: '#16a34a', div: '#e2e8f0' };
+    var POSC = { QB:'#f59e0b', RB:'#22c55e', WR:'#3b82f6', TE:'#8b5cf6', K:'#94a3b8', DEF:'#64748b', FLEX:'#14b8a6', SF:'#a78bfa', BN:'#64748b' };
+    var W = 720, pad = 30, lineH = 44, headerH = 130;
+    var H = headerH + rows.length * lineH + pad;
     var c = document.createElement('canvas'); c.width = W; c.height = H;
     var ctx = c.getContext('2d');
+    // Background
     ctx.fillStyle = clr.bg; ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = clr.accent; ctx.font = 'bold 30px system-ui,Arial';
-    ctx.fillText('My ' + (state.type.charAt(0).toUpperCase() + state.type.slice(1)) + ' Draft', pad, pad + 30);
-    ctx.fillStyle = clr.sub; ctx.font = '14px system-ui,Arial';
-    ctx.fillText((state.sf ? 'Superflex' : '1QB') + ' · ' + state.teams + ' teams · BR Fantasy', pad, pad + 54);
+    // Header band
+    ctx.fillStyle = clr.header; ctx.fillRect(0, 0, W, headerH - 10);
+    // Title
+    ctx.fillStyle = clr.accent; ctx.font = 'bold 28px system-ui,Arial,sans-serif';
+    ctx.fillText('My ' + (state.type.charAt(0).toUpperCase() + state.type.slice(1)) + ' Draft', pad, pad + 28);
+    // Subtitle
+    ctx.fillStyle = clr.sub; ctx.font = '14px system-ui,Arial,sans-serif';
+    ctx.fillText((state.sf ? 'Superflex' : '1QB') + ' \xb7 ' + state.teams + ' teams \xb7 BR Fantasy', pad, pad + 52);
+    // Grade
     var g = gradeTeam();
-    if (g){ ctx.fillStyle = clr.good; ctx.font = 'bold 16px system-ui,Arial';
-      ctx.fillText('Grade ' + gradeLetter(g.score) + ' · ' + gradePace(g.score), pad, pad + 84); }
-    var y = pad + 118;
-    var POSC = { QB:'#f59e0b', RB:'#22c55e', WR:'#3b82f6', TE:'#8b5cf6', K:'#94a3b8', DEF:'#64748b', FLEX:'#14b8a6', SF:'#a78bfa', BN:'#64748b' };
+    if (g){
+      var gl = gradeLetter(g.score);
+      var gp = gradePace(g.score);
+      ctx.fillStyle = clr.good; ctx.font = 'bold 15px system-ui,Arial,sans-serif';
+      ctx.fillText('Grade ' + gl + '  \xb7  ' + gp, pad, pad + 76);
+    }
+    // Divider below header
+    ctx.fillStyle = dark ? '#334155' : '#cbd5e1'; ctx.fillRect(0, headerH - 10, W, 1);
+    // Rows
+    var y = headerH;
     rows.forEach(function(r){
-      ctx.fillStyle = POSC[r.slot] || clr.sub; ctx.font = 'bold 12px system-ui,Arial';
-      ctx.fillText(r.slot, pad, y + 14);
-      ctx.fillStyle = r.p ? clr.player : clr.empty; ctx.font = r.p ? 'bold 16px system-ui,Arial' : 'italic 15px system-ui,Arial';
-      ctx.fillText(r.p ? r.p.name : 'open', pad + 64, y + 14);
-      if (r.p){ ctx.fillStyle = clr.sub; ctx.font = '13px system-ui,Arial';
-        ctx.textAlign = 'right'; ctx.fillText((r.p.position || '') + '  ' + (r.p.team || ''), W - pad, y + 14); ctx.textAlign = 'left'; }
-      ctx.fillStyle = clr.div; ctx.fillRect(pad, y + lineH - 1, W - pad * 2, 1);
+      // Row background alternating subtle
+      ctx.fillStyle = dark ? 'rgba(255,255,255,.02)' : 'rgba(0,0,0,.018)';
+      ctx.fillRect(0, y, W, lineH);
+      // Position badge
+      var posClr = POSC[r.slot] || clr.sub;
+      ctx.fillStyle = posClr;
+      ctx.beginPath();
+      var bx = pad, by = y + (lineH - 22) / 2, bw = 38, bh = 22, br = 5;
+      ctx.moveTo(bx + br, by); ctx.lineTo(bx + bw - br, by);
+      ctx.arcTo(bx + bw, by, bx + bw, by + br, br);
+      ctx.lineTo(bx + bw, by + bh - br);
+      ctx.arcTo(bx + bw, by + bh, bx + bw - br, by + bh, br);
+      ctx.lineTo(bx + br, by + bh);
+      ctx.arcTo(bx, by + bh, bx, by + bh - br, br);
+      ctx.lineTo(bx, by + br);
+      ctx.arcTo(bx, by, bx + br, by, br);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 11px system-ui,Arial,sans-serif';
+      ctx.textAlign = 'center'; ctx.fillText(r.slot, bx + bw / 2, by + 15); ctx.textAlign = 'left';
+      // Player name
+      ctx.fillStyle = r.p ? clr.player : clr.empty;
+      ctx.font = r.p ? 'bold 15px system-ui,Arial,sans-serif' : 'italic 14px system-ui,Arial,sans-serif';
+      ctx.fillText(r.p ? r.p.name : 'open', pad + 52, y + lineH / 2 + 6);
+      // Position + team (right-aligned)
+      if (r.p){
+        ctx.fillStyle = clr.sub; ctx.font = '13px system-ui,Arial,sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText((r.p.position || '') + (r.p.team ? '  ' + r.p.team : ''), W - pad, y + lineH / 2 + 6);
+        ctx.textAlign = 'left';
+      }
+      // Row divider
+      ctx.fillStyle = dark ? '#1e293b' : '#e2e8f0'; ctx.fillRect(pad, y + lineH - 1, W - pad * 2, 1);
       y += lineH;
     });
-    c.toBlob(function(blob){
-      if (!blob) return;
+    return c;
+  }
+
+  function shareDraft(){
+    if (!state || !hasOwned()){ drAlert('Pick a draft slot to build and share your team.'); return; }
+    // Build both themes
+    _shareDataUrls.dark  = _buildShareCanvas(true).toDataURL('image/png');
+    _shareDataUrls.light = _buildShareCanvas(false).toDataURL('image/png');
+    // Default to current UI theme
+    _shareTheme = (document.documentElement.getAttribute('data-theme') === 'dark') ? 'dark' : 'light';
+    var tabs = document.querySelectorAll('#drShareViewTabs .dr-shareview-tab');
+    tabs.forEach(function(b){ b.classList.toggle('is-active', b.getAttribute('data-sv') === _shareTheme); });
+    document.getElementById('drShareViewImg').src = _shareDataUrls[_shareTheme];
+    document.getElementById('drShareView').style.display = 'flex';
+  }
+
+  function _doShareOrDownload(download){
+    var url = _shareDataUrls[_shareTheme];
+    if (!url) return;
+    if (!download){
+      // Try native share first
       try {
+        var bstr = atob(url.split(',')[1]);
+        var arr = new Uint8Array(bstr.length);
+        for (var i = 0; i < bstr.length; i++) arr[i] = bstr.charCodeAt(i);
+        var blob = new Blob([arr], { type: 'image/png' });
         var file = new File([blob], 'br-draft.png', { type: 'image/png' });
         if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })){
           navigator.share({ files: [file], title: 'My BR Fantasy Draft' }).catch(function(){});
           return;
         }
-      } catch (e) {}
-      var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'br-draft.png'; a.click();
-      setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
-    }, 'image/png');
+      } catch(e){}
+    }
+    var a = document.createElement('a'); a.href = url; a.download = 'br-draft.png'; a.click();
   }
 
   // ── Player preview / draft confirm ──────────────────────────────────────────
@@ -2824,6 +2913,16 @@ _DRAFT_ROOM_HTML = r"""
   document.getElementById('drShare').addEventListener('click', shareDraft);
   document.getElementById('drCompleteSummaryBtn').addEventListener('click', openSummary);
   document.getElementById('drCompleteShareBtn').addEventListener('click', shareDraft);
+  document.getElementById('drShareViewClose').addEventListener('click', function(){ document.getElementById('drShareView').style.display = 'none'; });
+  document.getElementById('drShareView').addEventListener('click', function(e){ if (e.target === this) this.style.display = 'none'; });
+  document.getElementById('drShareViewTabs').addEventListener('click', function(e){
+    var b = e.target.closest('.dr-shareview-tab'); if (!b) return;
+    _shareTheme = b.getAttribute('data-sv');
+    this.querySelectorAll('.dr-shareview-tab').forEach(function(x){ x.classList.toggle('is-active', x === b); });
+    document.getElementById('drShareViewImg').src = _shareDataUrls[_shareTheme];
+  });
+  document.getElementById('drShareViewShare').addEventListener('click', function(){ _doShareOrDownload(false); });
+  document.getElementById('drShareViewDl').addEventListener('click', function(){ _doShareOrDownload(true); });
   document.getElementById('drPreview').addEventListener('click', function(e){
     if (e.target === this || e.target.closest('#drPrevClose')){ closePreview(); return; }
     var d = e.target.closest('.dr-prev-draft');
