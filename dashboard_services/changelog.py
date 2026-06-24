@@ -6,8 +6,8 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-06-24",
-        "tag": "update",
-        "text": "Draft Room overhaul: smarter grading now scores Value, Starters, and Construction as separate components for startup and redraft drafts, with rookie grades tied directly to pick quality. Team archetype (Zero RB, Hero RB, Robust RB, TE Premium, and more) now appears in your post-draft summary. Pick location (e.g. 1.04) shows in the share card. Upcoming live drafts no longer show the On the Clock indicator or queue tab before the draft starts.",
+        "tag": "new",
+        "text": "Draft Room: A full draft assistant with real-time pick tracking, best-available rankings, pick scoring, and post-draft grades. Run a mock for any format or connect directly to your live Sleeper draft. Supports rookie, startup, and redraft leagues with format-specific grading, team archetype detection, and a shareable draft summary card.",
         "link": "/draft"
     },
     {

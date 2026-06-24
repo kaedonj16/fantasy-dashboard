@@ -1654,7 +1654,7 @@ _DRAFT_ROOM_HTML = r"""
         + statRow('Age', age, oage, false, function(x){ return x != null ? x.toFixed(0) : '-'; })
         + '</div></div>';
     }
-    var draftBtns = ((isYourTurn() || !sim) && !(state && state.mode === 'live' && !state.isDrafting))
+    var draftBtns = ((isYourTurn() || !sim) && !(state && state.mode === 'live' && !state.isDrafting) && (!sim || simStarted))
       ? '<button class="dr-btn dr-btn-primary" data-cmp-draft="' + esc(String(p1.id)) + '">Draft ' + esc(p1.name.split(' ').pop()) + '</button>'
         + '<button class="dr-btn dr-btn-primary" data-cmp-draft="' + esc(String(p2.id)) + '">Draft ' + esc(p2.name.split(' ').pop()) + '</button>'
       : '';
@@ -1867,7 +1867,7 @@ _DRAFT_ROOM_HTML = r"""
       + '<div class="dr-ba-actions">'
       + '<button class="dr-cmp-btn' + (onCmp ? ' on' : '') + '" data-cmp="' + esc(String(p.id)) + '" title="Compare">vs</button>'
       + '<button class="dr-star' + (isQueued(p.id) ? ' on' : '') + '" data-star="' + esc(String(p.id)) + '" title="Queue" aria-label="Queue">' + (isQueued(p.id) ? '★' : '☆') + '</button>'
-      + ((isYourTurn() || !sim) && !(state && state.mode === 'live' && !state.isDrafting) ? '<button class="dr-ba-draft" data-draft="' + esc(String(p.id)) + '" title="Draft now">Draft</button>' : '')
+      + ((isYourTurn() || !sim) && !(state && state.mode === 'live' && !state.isDrafting) && (!sim || simStarted) ? '<button class="dr-ba-draft" data-draft="' + esc(String(p.id)) + '" title="Draft now">Draft</button>' : '')
       + '</div>'
       + '</div>'
       + '</div>';
@@ -2091,14 +2091,15 @@ _DRAFT_ROOM_HTML = r"""
     // Dynasty/format value ratio (the "future" signal; also the fallback when PPG is sparse).
     var myValAvg = starterArr.length ? starterArr.reduce(function(a, x){ return a + (x.val || 0); }, 0) / starterArr.length : 0;
     var leagueValAvg = avgTopN(players.map(function(q){ return valOf(q); }), nStart);
-    var valueRatio = leagueValAvg > 0 ? myValAvg / leagueValAvg : 1;
+    var valueRatio = leagueValAvg > 0 ? myValAvg / leagueValAvg : null;
     var strengthRatio;
     if (state.type === 'redraft'){
       // Now only: projected PPG, value as a fallback when PPG data is missing.
-      strengthRatio = (ppgRatio != null) ? ppgRatio : valueRatio;
+      strengthRatio = ppgRatio != null ? ppgRatio : (valueRatio != null ? valueRatio : 0.80);
     } else {
       // Startup: now + future. PPG-led with dynasty value adding the long-term lens.
-      strengthRatio = (ppgRatio != null) ? (0.6 * ppgRatio + 0.4 * valueRatio) : valueRatio;
+      if (ppgRatio != null && valueRatio != null) strengthRatio = 0.6 * ppgRatio + 0.4 * valueRatio;
+      else strengthRatio = ppgRatio != null ? ppgRatio : (valueRatio != null ? valueRatio : 0.80);
     }
     // Map ratio: 0.80 (weak) → 0 pts, 1.20 (elite) → full; ~1.0 is league-average.
     var starterPts = Math.round(clamp01((strengthRatio - 0.80) / 0.40) * 35);
@@ -2216,23 +2217,24 @@ _DRAFT_ROOM_HTML = r"""
     if (projPlayers.length >= 2){
       var myProjTotal = 0;
       projPlayers.forEach(function(p){ myProjTotal += _pPpg(p); });
-      // League average: distribute top players' ppg across all teams
+      var myAvg = myProjTotal / projPlayers.length;
+      // Compare per-player avg to avoid partial-roster vs full-team distortion
       var allProj = [];
       players.forEach(function(p){ var v = _pPpg(p); if (v != null) allProj.push(v); });
       allProj.sort(function(a, b){ return b - a; });
       var numTeams = state.teams || 12, numRds = state.rounds || 15;
       var topSlice = allProj.slice(0, numTeams * numRds);
-      var leagueAvg = topSlice.length ? topSlice.reduce(function(a, b){ return a + b; }, 0) / numTeams : 0;
-      var projPct = leagueAvg > 0 ? Math.round(myProjTotal / leagueAvg * 100) : 0;
+      var leagueAvgPerPlayer = topSlice.length ? topSlice.reduce(function(a, b){ return a + b; }, 0) / topSlice.length : 0;
+      var projPct = leagueAvgPerPlayer > 0 ? Math.round(myAvg / leagueAvgPerPlayer * 100) : 0;
       var projColor = projPct >= 108 ? '#22c55e' : projPct >= 92 ? '#f59e0b' : '#ef4444';
       html += '<div class="dr-proj-card">'
         + '<div class="dr-proj-title">Roster Projection</div>'
         + '<div class="dr-proj-stats">'
-        + '<div class="dr-proj-stat"><div class="dr-proj-val">' + myProjTotal.toFixed(1) + '</div><div class="dr-proj-lbl">My Proj PPG</div></div>'
-        + (leagueAvg > 0 ? '<div class="dr-proj-stat"><div class="dr-proj-val">' + leagueAvg.toFixed(1) + '</div><div class="dr-proj-lbl">Avg Team</div></div>' : '')
-        + (leagueAvg > 0 ? '<div class="dr-proj-stat"><div class="dr-proj-val" style="color:' + projColor + '">' + projPct + '%</div><div class="dr-proj-lbl">vs League</div></div>' : '')
+        + '<div class="dr-proj-stat"><div class="dr-proj-val">' + myAvg.toFixed(1) + '</div><div class="dr-proj-lbl">My Avg PPG</div></div>'
+        + (leagueAvgPerPlayer > 0 ? '<div class="dr-proj-stat"><div class="dr-proj-val">' + leagueAvgPerPlayer.toFixed(1) + '</div><div class="dr-proj-lbl">Avg Player</div></div>' : '')
+        + (leagueAvgPerPlayer > 0 ? '<div class="dr-proj-stat"><div class="dr-proj-val" style="color:' + projColor + '">' + projPct + '%</div><div class="dr-proj-lbl">vs League</div></div>' : '')
         + '</div>'
-        + (leagueAvg > 0 ? '<div class="dr-proj-bar-wrap"><div class="dr-proj-bar-bg"><div class="dr-proj-bar-fill" style="width:' + Math.min(100, projPct) + '%;background:' + projColor + '"></div></div>'
+        + (leagueAvgPerPlayer > 0 ? '<div class="dr-proj-bar-wrap"><div class="dr-proj-bar-bg"><div class="dr-proj-bar-fill" style="width:' + Math.min(100, projPct) + '%;background:' + projColor + '"></div></div>'
           + '<div class="dr-proj-bar-lbl">' + projPlayers.length + ' of ' + mine.length + ' picks have projection data</div></div>' : '')
         + '</div>';
     }
@@ -2249,7 +2251,9 @@ _DRAFT_ROOM_HTML = r"""
       state.picks[p.pick_no] = { id: p.player_id, name: p.name, position: p.position, team: p.team, val: valLookup(p.player_id) };
       if (p.player_id) drafted[String(p.player_id)] = true;
     });
-    state.current = (picks.length || 0) + 1;
+    var _tot = (state.teams || 12) * (state.rounds || 15), _next = _tot + 1;
+    for (var _pn = 1; _pn <= _tot; _pn++){ if (!state.picks[_pn]){ _next = _pn; break; } }
+    state.current = _next;
     _boardSig = null;   // force a full board rebuild on the next render
   }
   function detectLive(){
@@ -2327,6 +2331,7 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   function connectLive(draftId){
+    stopPolling(); stopPickTimer();
     fetch('/api/draft/live?platform=' + encodeURIComponent(cfg.platform) + '&draft_id=' + encodeURIComponent(draftId))
       .then(function(r){ return r.json(); })
       .then(function(d){
@@ -2375,6 +2380,7 @@ _DRAFT_ROOM_HTML = r"""
         .then(function(d){
           if (!d || !d.picks) return;
           var prevCurrent = state.current;
+          var prevDrafting = state.isDrafting;
           // Refresh ownership on every poll - trades can happen during the draft.
           state.owned = buildOwnedFromResponse(d, state.teams, state.rounds, state.order, state.slot);
           applyLivePicks(d.picks); render();
@@ -2383,7 +2389,7 @@ _DRAFT_ROOM_HTML = r"""
           document.getElementById('drLiveBadge').style.display = isDrafting ? '' : 'none';
           document.getElementById('drUpcomingBadge').style.display = (!isDrafting && String(d.status) !== 'complete') ? '' : 'none';
           _setUpcomingMode(!isDrafting && String(d.status) !== 'complete');
-          if (isDrafting && state.current !== prevCurrent) startPickTimer();
+          if (isDrafting && (!prevDrafting || state.current !== prevCurrent)) startPickTimer();
           if (String(d.status) === 'complete'){
             stopPolling(); stopPickTimer(); state.isComplete = true; save();
             showCompleteSidebar();
@@ -2440,11 +2446,8 @@ _DRAFT_ROOM_HTML = r"""
 
 
   function userNextPick(){
-    var total = state.teams * state.rounds;
-    for (var pn = state.current; pn <= total; pn++){
-      if (isMyPick(pn)) return pn;
-    }
-    return null;
+    var ups = upcomingOwnedPicks();
+    return ups.length ? ups[0] : null;
   }
 
   function renderStatus(){
@@ -2756,11 +2759,13 @@ _DRAFT_ROOM_HTML = r"""
   }
   function undo(){
     if (state.current <= 1 || state.mode === 'live') return;
+    var wasDone = state.current > state.teams * state.rounds;
     state.current--;
     var p = state.picks[state.current];
     if (p) { delete drafted[String(p.id)]; delete state.picks[state.current]; }
     paintCell(state.current);
     refreshCurrent();
+    if (wasDone && !sim){ sim = true; simStarted = true; _summaryShown = false; syncSimControls(); }
     render();
   }
   function resetDraft(){
