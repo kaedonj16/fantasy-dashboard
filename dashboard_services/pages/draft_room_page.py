@@ -1794,15 +1794,81 @@ _DRAFT_ROOM_HTML = r"""
     var p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
     return z >= 0 ? 1 - p : p;
   }
+  // Learned draft tendencies from the picks already made. Lets the survival odds
+  // adapt to how THIS draft is actually going - a room that reaches pulls every
+  // player's expected slot earlier; a room that lets players slide pushes it
+  // later; a noisy room widens the spread; and a position going on a run is less
+  // likely to last. In a CPU mock the picks track ADP, so the bias is ~0 and this
+  // stays neutral; in a live draft it adapts to real humans.
+  var _draftModelCache = null;
+  function draftModelInvalidate(){ _draftModelCache = null; }
+  function observedDraftModel(){
+    if (_draftModelCache) return _draftModelCache;
+    var residuals = [];        // pick# - ADP for each completed pick (>0 = slid, <0 = reach)
+    var made = [];             // {pn, pos} sorted by pn, for positional-run detection
+    Object.keys(state.picks).forEach(function(k){
+      var pn = parseInt(k, 10);
+      var pk = state.picks[k]; if (!pk) return;
+      made.push({ pn: pn, pos: (pk.position || '').toUpperCase() });
+      var full = playersById[String(pk.id)];
+      var a = full ? adpOf(full) : null;
+      if (a != null) residuals.push(pn - a);
+    });
+    made.sort(function(x, y){ return x.pn - y.pn; });
+    var n = residuals.length;
+    var model = { n: n, bias: 0, std: null, run: {} };
+    if (n >= 1){
+      var sum = 0; residuals.forEach(function(r){ sum += r; });
+      var mean = sum / n;
+      model.bias = Math.max(-10, Math.min(10, mean));   // clamp so a few wild picks can't dominate
+      if (n >= 2){
+        var v = 0; residuals.forEach(function(r){ v += (r - mean) * (r - mean); });
+        model.std = Math.sqrt(v / (n - 1));
+      }
+    }
+    // Positional run: compare each position's rate in the last round to its rate
+    // across the whole draft, so naturally-popular positions (WR) aren't flagged
+    // unless they're going FASTER than their own established pace.
+    var teams = state.teams || 12;
+    var totalMade = made.length;
+    if (totalMade >= teams){
+      var win = made.slice(-teams);
+      var overall = {}, recent = {};
+      made.forEach(function(m){ overall[m.pos] = (overall[m.pos] || 0) + 1; });
+      win.forEach(function(m){ recent[m.pos] = (recent[m.pos] || 0) + 1; });
+      Object.keys(recent).forEach(function(pos){
+        var expected = (overall[pos] / totalMade) * teams;
+        var excess = recent[pos] - expected;
+        model.run[pos] = excess > 0 ? Math.min(0.25, (excess / teams) * 1.5) : 0;
+      });
+    }
+    _draftModelCache = model;
+    return model;
+  }
   function availProb(p, pn){
     var a = adpOf(p);
     if (a == null) return null;
-    // Use the SAME spread the CPU sim draws from (simSigma) so the survival odds
-    // shown here actually reflect how the simulation drafts, rather than a second,
-    // looser variance model that disagreed with on-board behavior.
+    // Baseline: model the slot as Normal(ADP, simSigma) - the same spread the CPU
+    // sim draws from, so mock odds match on-board behavior.
     var sigma = simSigma(a);
-    var z = (pn - a) / sigma;
-    return Math.round((1 - _normCdf(z)) * 100);
+    var center = a;
+    var m = observedDraftModel();
+    // Once a meaningful chunk of the board has gone, fold in how this specific
+    // draft is behaving. Confidence ramps from 8 picks to full by ~28.
+    if (m.n >= 8){
+      var conf = Math.min(1, (m.n - 8) / 20);
+      center = a + m.bias * conf;                       // reach pulls earlier, slide pushes later
+      if (m.std != null){
+        var obs = Math.max(simSigma(a) * 0.6, Math.min(m.std, 18));
+        sigma = sigma * (1 - conf) + obs * conf;        // blend toward observed unpredictability
+      }
+    }
+    var z = (pn - center) / sigma;
+    var prob = 1 - _normCdf(z);
+    // A position going on a run is less likely to make it back to you.
+    var runPen = m.run[(p.position || '').toUpperCase()] || 0;
+    if (runPen > 0) prob *= (1 - runPen);
+    return Math.round(prob * 100);
   }
   function availColor(pct){ return pct >= 65 ? '#22c55e' : pct >= 40 ? '#f59e0b' : '#ef4444'; }
 
@@ -2254,6 +2320,7 @@ _DRAFT_ROOM_HTML = r"""
     _repl = computeReplacement(players);
     _ppgScale = computePpgScale(players);
     psCtxInvalidate();
+    draftModelInvalidate();   // re-learn reach/slide/run tendencies from the latest board
     var kdef = wantsKDef();
     var kbtns = document.querySelectorAll('.dr-pos-kdef');
     for (var i = 0; i < kbtns.length; i++){ kbtns[i].style.display = kdef ? '' : 'none'; }
@@ -3032,7 +3099,7 @@ _DRAFT_ROOM_HTML = r"""
     { term: 'Tier', def: 'Players grouped by talent gaps (Tier 1 = elite). A tier “cliff” means only a couple of players remain before a real drop-off at that position.' },
     { term: 'Steals (sort)', def: 'Orders the board by who has fallen the furthest past their ADP - the biggest available bargains.' },
     { term: 'PPG', def: 'Points per game - projected for the upcoming season, or last season’s actual when that’s shown.' },
-    { term: 'Survival %', def: 'The chance a player is still available at your next pick, using the same variance the mock’s CPUs draft with.' },
+    { term: 'Survival %', def: 'The chance a player is still on the board at your next pick. Starts from consensus ADP, then adapts to how your draft is actually going - if the room is reaching, letting players slide, drafting unpredictably, or running on a position, the odds shift to match (kicks in after the first several picks).' },
     { term: 'Grade · Value', def: 'How strong your picks are by pick score, weighted toward the earlier rounds where it matters most.' },
     { term: 'Grade · Starters', def: 'How good your projected starting lineup is versus a league-average team.' },
     { term: 'Grade · Construction', def: 'How well you’ve filled your starting slots and balanced your positions.' }
