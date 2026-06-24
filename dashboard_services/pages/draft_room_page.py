@@ -2763,10 +2763,12 @@ _DRAFT_ROOM_HTML = r"""
       .then(function(r){ return r.json(); })
       .then(function(resp){
         if (resp.unsupported){ box.innerHTML = '<div class="dr-live-head">Live sync currently supports Sleeper leagues.</div>'; return; }
-        // Only surface drafts that are still relevant - live now or upcoming.
-        // Completed drafts are review-only and belong in Draft History, not here.
-        var ds = (resp.drafts || []).filter(function(d){ return String(d.status) !== 'complete'; });
-        if (!ds.length){ box.innerHTML = '<div class="dr-live-head">No upcoming or live drafts for this league.</div>'; return; }
+        var all = resp.drafts || [];
+        if (!all.length){ box.innerHTML = '<div class="dr-live-head">No drafts found for this league yet.</div>'; return; }
+        // Prefer live/upcoming drafts; only if there are none do we fall back to
+        // showing completed ones (so connect never dead-ends with "no drafts").
+        var active = all.filter(function(d){ return String(d.status) !== 'complete'; });
+        var ds = active.length ? active : all;
         // Soonest first: live, then by scheduled start time.
         ds.sort(function(a, b){
           var ar = a.status === 'drafting' ? 0 : 1, br = b.status === 'drafting' ? 0 : 1;
@@ -2993,8 +2995,17 @@ _DRAFT_ROOM_HTML = r"""
     pollOnce();
   }
   function schedulePoll(){
-    _pollNextAt = Date.now() + POLL_MS;
-    pollTimer = setTimeout(pollOnce, POLL_MS);
+    var ms = POLL_MS;
+    // Poll faster as a scheduled start approaches (or just passed) so a connected
+    // pre-draft flips to live within a couple seconds of the draft actually
+    // starting, instead of waiting out the normal cadence.
+    if (state && state.mode === 'live' && state.isDrafting === false && !state.isComplete && state.startTime){
+      var toStart = state.startTime - Date.now();
+      if (toStart <= 120000 && toStart > -1200000) ms = 1500;  // 2 min before -> 20 min overdue
+      else if (toStart <= 600000 && toStart > 0) ms = 3000;    // within 10 min of start
+    }
+    _pollNextAt = Date.now() + ms;
+    pollTimer = setTimeout(pollOnce, ms);
     updatePollStatus();
   }
   // One poll. Chained via setTimeout (never setInterval) so a slow response can't
