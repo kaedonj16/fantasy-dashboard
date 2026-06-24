@@ -1333,6 +1333,7 @@ _DRAFT_ROOM_HTML = r"""
     var sp = document.getElementById('drSimSpeed');
     simSpeed = parseInt(sp.value, 10) || 700;
     syncSimControls();
+    _setUpcomingMode(false);
     save();
     showMain();
     loadPlayers();
@@ -1364,6 +1365,7 @@ _DRAFT_ROOM_HTML = r"""
       document.getElementById('drUpcomingBadge').style.display = 'none';
       document.getElementById('drSide').style.display = '';
       syncSimControls();
+      _setUpcomingMode(false);
       save();
       showMain();
       loadPlayers();
@@ -2404,11 +2406,12 @@ _DRAFT_ROOM_HTML = r"""
     // Hide Queue tab and draft buttons when draft hasn't started yet.
     var qTab = document.querySelector('#drSideTabs [data-stab="queue"]');
     if (qTab) qTab.style.display = upcoming ? 'none' : '';
-    if (upcoming && sideTab === 'queue'){
-      sideTab = 'best';
-      var bestTab = document.querySelector('#drSideTabs [data-stab="best"]');
-      if (bestTab){ bestTab.classList.add('is-active'); }
-      if (qTab) qTab.classList.remove('is-active');
+    if (upcoming){
+      if (sideTab === 'queue') sideTab = 'best';
+      // Sync active class for all tabs so the hidden queue never stays highlighted.
+      document.querySelectorAll('#drSideTabs .otc-main-tab').forEach(function(t){
+        t.classList.toggle('is-active', t.getAttribute('data-stab') === sideTab);
+      });
     }
   }
 
