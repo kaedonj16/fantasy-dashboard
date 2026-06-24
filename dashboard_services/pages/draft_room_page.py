@@ -2069,21 +2069,32 @@ _DRAFT_ROOM_HTML = r"""
     var wAvgPs = wTot > 0 ? wSum / wTot : avgPs;
     var valuePts = wAvgPs != null ? Math.round(clamp01(wAvgPs / 100) * 35) : 17;
 
-    // 2) Starting-lineup strength vs a league-average team (value + PPG blend).
+    // 2) Starting-lineup strength vs a league-average team. Projected PPG leads.
+    //    Redraft is now-focused -> pure projected PPG. Startup is now + future ->
+    //    PPG (production now) blended with dynasty value (long-term upside/longevity).
     var starterArr = picks.filter(function(x){ return starterIds[String(x.id)]; });
     var nStart = (state.teams || 12) * slots.length;
     function avgTopN(arr, n){ var s = arr.slice().sort(function(a, b){ return b - a; }).slice(0, n); return s.length ? s.reduce(function(a, b){ return a + b; }, 0) / s.length : 0; }
-    var myValAvg = starterArr.length ? starterArr.reduce(function(a, x){ return a + (x.val || 0); }, 0) / starterArr.length : 0;
-    var leagueValAvg = avgTopN(players.map(function(q){ return valOf(q); }), nStart);
-    var strengthRatio = leagueValAvg > 0 ? myValAvg / leagueValAvg : 1;
-    // Blend in projected-PPG strength when enough starters have PPG data.
+    // Projected-PPG ratio (the "now" production signal) - primary driver.
+    var ppgRatio = null;
     var myPpgs = starterArr.map(function(x){ return x.ppg; }).filter(function(v){ return v != null; });
     if (myPpgs.length >= Math.max(2, Math.floor(starterArr.length * 0.5))){
       var myPpgAvg = myPpgs.reduce(function(a, b){ return a + b; }, 0) / myPpgs.length;
       var poolPpgs = []; players.forEach(function(q){ var v = ppgOf(q); if (v != null) poolPpgs.push(v); });
       var leaguePpgAvg = avgTopN(poolPpgs, nStart);
-      var ppgRatio = leaguePpgAvg > 0 ? myPpgAvg / leaguePpgAvg : strengthRatio;
-      strengthRatio = 0.5 * strengthRatio + 0.5 * ppgRatio;
+      if (leaguePpgAvg > 0) ppgRatio = myPpgAvg / leaguePpgAvg;
+    }
+    // Dynasty/format value ratio (the "future" signal; also the fallback when PPG is sparse).
+    var myValAvg = starterArr.length ? starterArr.reduce(function(a, x){ return a + (x.val || 0); }, 0) / starterArr.length : 0;
+    var leagueValAvg = avgTopN(players.map(function(q){ return valOf(q); }), nStart);
+    var valueRatio = leagueValAvg > 0 ? myValAvg / leagueValAvg : 1;
+    var strengthRatio;
+    if (state.type === 'redraft'){
+      // Now only: projected PPG, value as a fallback when PPG data is missing.
+      strengthRatio = (ppgRatio != null) ? ppgRatio : valueRatio;
+    } else {
+      // Startup: now + future. PPG-led with dynasty value adding the long-term lens.
+      strengthRatio = (ppgRatio != null) ? (0.6 * ppgRatio + 0.4 * valueRatio) : valueRatio;
     }
     // Map ratio: 0.80 (weak) → 0 pts, 1.20 (elite) → full; ~1.0 is league-average.
     var starterPts = Math.round(clamp01((strengthRatio - 0.80) / 0.40) * 35);
