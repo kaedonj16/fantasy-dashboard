@@ -1972,6 +1972,18 @@ _DRAFT_ROOM_HTML = r"""
     var pk = found - (rd - 1) * state.teams;
     return 'Pick ' + rd + '.' + (pk < 10 ? '0' + pk : String(pk));
   }
+  // Short "1.04" form (no "Pick " prefix) for compact contexts like the share card.
+  function pickNoShort(p){
+    if (!p || !p.id || !state) return '';
+    var found = 0;
+    Object.keys(state.picks).forEach(function(k){
+      if (state.picks[k] && state.picks[k].id === p.id) found = parseInt(k, 10);
+    });
+    if (!found) return '';
+    var rd = Math.ceil(found / state.teams);
+    var pk = found - (rd - 1) * state.teams;
+    return rd + '.' + (pk < 10 ? '0' + pk : String(pk));
+  }
   function slotRow(slot, p){
     if (p){
       var psBadge = (p.ps != null) ? '<span class="dr-rslot-ps" style="color:' + psColor(p.ps) + '">' + p.ps + '</span>' : '';
@@ -2030,20 +2042,23 @@ _DRAFT_ROOM_HTML = r"""
     var tierTarget = mine.length <= 1 ? 1 : mine.length <= 5 ? 2 : 3;
     var tierRaw = clamp01(tierTop / tierTarget);
 
-    var valuePts, balancePts, tierPts;
+    var valuePts, balancePts, tierPts, total;
     if (state.type === 'rookie'){
-      // Rookie: BPA-heavy. Use avg pick score as the value signal (already 0-100).
-      // Balance barely matters vs an existing roster. Value 55 / Tier 30 / Balance 15.
-      valuePts   = avgPs != null ? Math.round(clamp01(avgPs / 100) * 55) : 28;
-      balancePts = Math.round(((1 - balanceRamp) * 0.9 + balanceRamp * (bsum / 4)) * 15);
-      tierPts    = Math.round(tierRaw * 30);
+      // Rookie drafts are about talent/value, not roster construction. The grade
+      // is the average pick score (already a 0-100 talent+value signal), so two
+      // elite picks (e.g. 95 + 92) land an A+ regardless of positional balance.
+      valuePts   = avgPs != null ? Math.round(clamp01(avgPs / 100) * 100) : 50;
+      balancePts = 0;
+      tierPts    = 0;
+      total      = valuePts;
     } else {
-      // Startup/redraft: use avg pick score for value (already encodes steal/reach + talent).
-      valuePts   = avgPs != null ? Math.round(clamp01(avgPs / 100) * 40) : 20;
-      balancePts = Math.round(((1 - balanceRamp) * 0.85 + balanceRamp * (bsum / 4)) * 35);
+      // Startup/redraft: roster construction matters alongside value/ADP wins.
+      // Value 45 / Balance 30 / Tiers 25.
+      valuePts   = avgPs != null ? Math.round(clamp01(avgPs / 100) * 45) : 22;
+      balancePts = Math.round(((1 - balanceRamp) * 0.85 + balanceRamp * (bsum / 4)) * 30);
       tierPts    = Math.round(tierRaw * 25);
+      total      = valuePts + balancePts + tierPts;
     }
-    var total = valuePts + balancePts + tierPts;
     return { score: total, value: valuePts, balance: balancePts, tier: tierPts, count: mine.length, avgPs: avgPs ? Math.round(avgPs) : null };
   }
   function gradeLetter(s){
@@ -2052,20 +2067,21 @@ _DRAFT_ROOM_HTML = r"""
     if (s>=60) return 'C+'; if (s>=55) return 'C'; if (s>=50) return 'C-';
     if (s>=40) return 'D';  return 'F';
   }
-  function gradePace(s){ return s>=75 ? 'Ahead of pace' : (s>=48 ? 'On pace' : 'Behind pace'); }
   function gradeBar(label, val, max){
     var pct = max ? Math.round(val / max * 100) : 0;
     return '<div class="dr-gbar-row"><span class="dr-gbar-lbl">' + label + '</span>'
       + '<div class="dr-gbar"><div class="dr-gbar-fill" style="width:' + pct + '%"></div></div></div>';
   }
-  // Per-component max points (rookie drafts weight value/tier over balance).
+  // Per-component max points. Rookie grade is value-only (avg pick score);
+  // startup/redraft weights value/ADP wins alongside roster construction.
   function gradeMax(){
-    return (state.type === 'rookie') ? { value:55, balance:15, tier:30 }
-                                     : { value:40, balance:35, tier:25 };
+    return (state.type === 'rookie') ? { value:100, balance:0, tier:0 }
+                                     : { value:45, balance:30, tier:25 };
   }
   function gradeBars(g){
     var m = gradeMax();
-    return gradeBar('Value', g.value, m.value) + gradeBar('Balance', g.balance, m.balance) + gradeBar('Tiers', g.tier, m.tier);
+    if (state.type === 'rookie') return gradeBar('Pick Value', g.value, m.value);
+    return gradeBar('Value', g.value, m.value) + gradeBar('Roster', g.balance, m.balance) + gradeBar('Tiers', g.tier, m.tier);
   }
 
   function renderNeeds(){
@@ -2075,8 +2091,9 @@ _DRAFT_ROOM_HTML = r"""
     var html = '';
     var g = gradeTeam();
     if (g){
+      var gSub = (state.type === 'rookie' && g.avgPs != null) ? ('Avg pick score ' + g.avgPs) : '';
       html += '<div class="dr-grade-card"><div class="dr-grade-letter">' + gradeLetter(g.score) + '</div>'
-        + '<div class="dr-grade-meta"><div class="dr-grade-pace">' + gradePace(g.score) + '</div>'
+        + '<div class="dr-grade-meta">' + (gSub ? '<div class="dr-grade-pace">' + gSub + '</div>' : '')
         + gradeBars(g)
         + '</div></div>';
     }
@@ -2339,7 +2356,9 @@ _DRAFT_ROOM_HTML = r"""
     var ocWrap = document.getElementById('drOnClockWrap');
     var ocLabel = ocWrap ? ocWrap.querySelector('.dr-onclock-label') : null;
     var mineNow = false;
+    var upcoming = state.mode === 'live' && !state.isDrafting && !done;
     if (done) { oc.textContent = 'Draft complete'; if (ocLabel) ocLabel.style.display = 'none'; }
+    else if (upcoming) { oc.textContent = 'Draft hasn\'t started'; if (ocLabel) ocLabel.style.display = 'none'; }
     else if (sim && !simStarted) { oc.textContent = 'Ready to draft'; if (ocLabel){ ocLabel.style.display = ''; ocLabel.textContent = 'Claim picks, then Start'; } }
     else {
       var slot = slotOnClock(state.current, state.teams, state.order);
@@ -2527,8 +2546,10 @@ _DRAFT_ROOM_HTML = r"""
         + '</div>' + psStr + '</div>';
     }
 
+    var gradeSub = g ? ((state.type === 'rookie' && g.avgPs != null) ? ('Avg pick score ' + g.avgPs) : '') : '';
     var gradeHtml = g
-      ? '<div class="dr-sum-grade">' + gradeLetter(g.score) + '</div><div class="dr-sum-pace">' + gradePace(g.score) + '</div>'
+      ? '<div class="dr-sum-grade">' + gradeLetter(g.score) + '</div>'
+        + (gradeSub ? '<div class="dr-sum-pace">' + gradeSub + '</div>' : '')
         + gradeBars(g)
       : '';
 
@@ -2694,9 +2715,9 @@ _DRAFT_ROOM_HTML = r"""
     var g = gradeTeam();
     if (g){
       var gl = gradeLetter(g.score);
-      var gp = gradePace(g.score);
+      var gp = (state.type === 'rookie' && g.avgPs != null) ? ('Avg pick score ' + g.avgPs) : null;
       ctx.fillStyle = clr.win; ctx.font = 'bold 15px system-ui,Arial,sans-serif';
-      ctx.fillText('Grade ' + gl + '  \xb7  ' + gp, pad, pad + 76);
+      ctx.fillText('Grade ' + gl + (gp ? ('  \xb7  ' + gp) : ''), pad, pad + 76);
     }
     // Divider below header
     ctx.fillStyle = clr.border; ctx.fillRect(0, headerH - 10, W, 1);
@@ -2721,10 +2742,18 @@ _DRAFT_ROOM_HTML = r"""
       ctx.closePath(); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.font = 'bold 11px system-ui,Arial,sans-serif';
       ctx.textAlign = 'center'; ctx.fillText(r.slot, bx + bw / 2, by + 15); ctx.textAlign = 'left';
+      // Pick location badge (e.g. 1.04), just right of the position badge
+      var pickShort = r.p ? pickNoShort(r.p) : '';
+      var nameX = pad + 52;
+      if (pickShort){
+        ctx.fillStyle = clr.accent; ctx.font = 'bold 12px system-ui,Arial,sans-serif';
+        ctx.fillText(pickShort, nameX, y + lineH / 2 + 6);
+        nameX += ctx.measureText(pickShort).width + 12;
+      }
       // Player name
       ctx.fillStyle = r.p ? clr.text : clr.empty;
       ctx.font = r.p ? 'bold 15px system-ui,Arial,sans-serif' : 'italic 14px system-ui,Arial,sans-serif';
-      ctx.fillText(r.p ? r.p.name : 'open', pad + 52, y + lineH / 2 + 6);
+      ctx.fillText(r.p ? r.p.name : 'open', nameX, y + lineH / 2 + 6);
       // Position + team (right-aligned)
       if (r.p){
         ctx.fillStyle = clr.sub; ctx.font = '13px system-ui,Arial,sans-serif';
