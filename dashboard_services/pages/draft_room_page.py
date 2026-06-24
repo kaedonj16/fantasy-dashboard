@@ -1248,7 +1248,12 @@ _DRAFT_ROOM_HTML = r"""
   // Spread of a player's real draft slot around their ADP. Tight at the very top
   // of the board (consensus picks barely move) and widens deeper, where ADP is
   // noisier. Drives how far a player realistically slides from their ADP.
-  function simSigma(a){ return Math.max(0.5, Math.min(10, 0.35 + 0.085 * a)); }
+  // Rookie ADP is more consensus-driven (smaller pool, real drafts tightly
+  // follow ADP), so we use a tighter spread than startup/redraft.
+  function simSigma(a){
+    var mult = state.type === 'rookie' ? 0.05 : 0.085;
+    return Math.max(0.5, Math.min(10, 0.35 + mult * a));
+  }
   function simPick(){
     var pool = availablePool();
     if (!pool.length) return null;
@@ -1256,6 +1261,8 @@ _DRAFT_ROOM_HTML = r"""
     // and weight them by how likely they are to be taken at THIS exact pick. An
     // ADP 1.1 player has a tight curve so he goes ~1 nearly every time, while an
     // ADP 2.8 player (wider curve, already past pick 1) splits across 2, 3 and 4.
+    // After a player slides PAST their ADP, the weight uses inverse-linear decay
+    // instead of Gaussian so it never bottoms out - urgency grows, not vanishes.
     var pn = state.current;
     var slot = slotOnClock(pn, state.teams, state.order);
     var counts = teamCounts(slot), targets = posTargets();
@@ -1263,8 +1270,17 @@ _DRAFT_ROOM_HTML = r"""
     pool.forEach(function(p){
       var a = simAdp(p);
       var sigma = simSigma(a);
-      var z = (pn - a) / sigma;
-      var w = Math.exp(-0.5 * z * z);              // peak when the pick reaches the ADP
+      var diff = pn - a;
+      var w;
+      if (diff <= 0) {
+        var z = diff / sigma;
+        w = Math.exp(-0.5 * z * z);               // peak when the pick reaches the ADP
+      } else {
+        // Past ADP: inverse-linear urgency - never zeroes out so slides stay bounded.
+        // Rookie pool is tight so urgency is slightly stronger there.
+        var c = state.type === 'rookie' ? 0.12 : 0.15;
+        w = 1.0 / (1.0 + c * diff);
+      }
       // Need-awareness: nudge for roster fit without overriding ADP.
       var pos = (p.position||'').toUpperCase();
       var t = targets[pos] || 0, have = counts[pos] || 0;
@@ -2704,7 +2720,8 @@ _DRAFT_ROOM_HTML = r"""
     var sumT12 = 0, sumPsTotal = 0, sumPsCount = 0;
     mine.forEach(function(p){
       var _ppgv = p.ppg != null ? Number(p.ppg) : (p.proj_ppg != null ? Number(p.proj_ppg) : null); if (_ppgv != null){ sumProjTotal += _ppgv; sumProjCount++; }
-      var t = tierOf(p); if (t != null && t <= 2) sumT12++;
+      var _fp = playersById[String(p.id)] || p;  // full player has prospect_score/tier
+      var t = tierOf(_fp); if (t != null && t <= 2) sumT12++;
       var ps = p.ps; if (ps != null){ sumPsTotal += ps; sumPsCount++; }
     });
     var statsHtml = '';
