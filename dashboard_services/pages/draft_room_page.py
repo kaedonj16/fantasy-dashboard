@@ -200,6 +200,7 @@ _DRAFT_ROOM_HTML = r"""
               <option value="ps">Pick Score</option>
             </select>
             <input id="drSearch" type="search" placeholder="Search…" autocomplete="off">
+            <button class="dr-help-btn" id="drHelpBtn" type="button" aria-label="What do these terms mean?" title="What do these terms mean?">?</button>
           </div>
           <div class="dr-pos-filters" id="drPosFilters">
             <button class="dr-pos active" data-pos="ALL">All</button>
@@ -239,6 +240,15 @@ _DRAFT_ROOM_HTML = r"""
   <!-- End-of-draft summary -->
   <div class="dr-summary-overlay" id="drSummary" style="display:none;">
     <div class="dr-summary-card" id="drSummaryCard"></div>
+  </div>
+
+  <!-- Glossary / term explainer -->
+  <div class="dr-gloss-overlay" id="drGloss" style="display:none;">
+    <div class="dr-gloss-card">
+      <button class="dr-gloss-close" id="drGlossClose" aria-label="Close">&times;</button>
+      <div class="dr-gloss-title">What the numbers mean</div>
+      <div id="drGlossBody"></div>
+    </div>
   </div>
 
   <!-- Share preview -->
@@ -451,6 +461,31 @@ _DRAFT_ROOM_HTML = r"""
   .dr-gbar-lbl { font-size: 10px; color: var(--text-muted); width: 76px; flex-shrink: 0; }
   .dr-gbar { flex: 1; height: 6px; border-radius: 999px; background: rgba(127,127,127,.18); overflow: hidden; }
   .dr-gbar-fill { height: 100%; border-radius: 999px; background: var(--accent,#38bdf8); }
+  /* inline info-icon tooltip (ⓘ) */
+  .dr-info { display:inline-flex; align-items:center; justify-content:center; width:13px; height:13px; border-radius:50%;
+    border:1px solid var(--border); color:var(--text-muted); font-size:9px; font-weight:800; font-style:normal;
+    cursor:help; margin-left:4px; position:relative; vertical-align:middle; line-height:1; flex-shrink:0; }
+  .dr-info:hover, .dr-info:focus { border-color:var(--accent,#38bdf8); color:var(--accent,#38bdf8); outline:none; }
+  .dr-info::after { content: attr(data-tip); position:absolute; top:calc(100% + 6px); left:50%; transform:translateX(-50%);
+    width:max-content; max-width:210px; background:var(--card); color:var(--text); border:1px solid var(--border);
+    border-radius:8px; padding:7px 9px; font-size:11px; font-weight:500; font-style:normal; line-height:1.4; text-align:left;
+    box-shadow:0 8px 24px rgba(0,0,0,.28); opacity:0; pointer-events:none; transition:opacity .12s; z-index:600; white-space:normal; }
+  .dr-info:hover::after, .dr-info:focus::after { opacity:1; }
+  /* glossary popover */
+  .dr-help-btn { width:26px; height:26px; border-radius:7px; border:1px solid var(--border); background:var(--bg);
+    color:var(--text-muted); font-size:13px; font-weight:800; cursor:pointer; flex-shrink:0; line-height:1; }
+  .dr-help-btn:hover { border-color:var(--accent,#38bdf8); color:var(--accent,#38bdf8); }
+  .dr-gloss-overlay { position:fixed; inset:0; z-index:9998; background:rgba(0,0,0,.52); display:flex;
+    align-items:center; justify-content:center; padding:18px; }
+  .dr-gloss-card { background:var(--card); border:1px solid var(--border); border-radius:14px; width:100%; max-width:440px;
+    max-height:82vh; overflow-y:auto; padding:18px 18px 22px; position:relative; box-shadow:0 24px 70px rgba(0,0,0,.4); }
+  .dr-gloss-title { font-size:16px; font-weight:800; color:var(--text); margin:0 0 12px; padding-right:28px; }
+  .dr-gloss-close { position:absolute; top:12px; right:12px; width:28px; height:28px; border-radius:8px; border:1px solid var(--border);
+    background:var(--bg); color:var(--text-muted); font-size:18px; cursor:pointer; line-height:1; }
+  .dr-gloss-item { padding:9px 0; border-top:1px solid var(--border); }
+  .dr-gloss-item:first-of-type { border-top:none; }
+  .dr-gloss-term { font-size:12.5px; font-weight:800; color:var(--text); margin-bottom:2px; }
+  .dr-gloss-def { font-size:12px; font-weight:500; color:var(--text-muted); line-height:1.45; }
   /* player preview */
   .dr-preview-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,.45);
     display: flex; align-items: flex-start; justify-content: center; padding: 16px; overflow-y: auto; }
@@ -2510,9 +2545,9 @@ _DRAFT_ROOM_HTML = r"""
     if (s>=60) return 'C+'; if (s>=55) return 'C'; if (s>=50) return 'C-';
     if (s>=40) return 'D';  return 'F';
   }
-  function gradeBar(label, val, max){
+  function gradeBar(label, val, max, tip){
     var pct = max ? Math.round(val / max * 100) : 0;
-    return '<div class="dr-gbar-row"><span class="dr-gbar-lbl">' + label + '</span>'
+    return '<div class="dr-gbar-row"><span class="dr-gbar-lbl">' + label + (tip ? infoIcon(tip) : '') + '</span>'
       + '<div class="dr-gbar"><div class="dr-gbar-fill" style="width:' + pct + '%"></div></div></div>';
   }
   // Per-component max points. Rookie grade is value-only (avg pick score);
@@ -2523,9 +2558,11 @@ _DRAFT_ROOM_HTML = r"""
   }
   function gradeBars(g){
     var m = gradeMax();
-    if (state.type === 'rookie') return gradeBar('Pick Value', g.value, m.value);
+    if (state.type === 'rookie') return gradeBar('Pick Value', g.value, m.value, 'How strong your picks are by pick score, weighted toward the earlier rounds.');
     // g.tier holds the starting-lineup strength component.
-    return gradeBar('Value', g.value, m.value) + gradeBar('Starters', g.tier, m.tier) + gradeBar('Construction', g.balance, m.balance);
+    return gradeBar('Value', g.value, m.value, 'How strong your picks are by pick score, weighted toward the earlier rounds.')
+      + gradeBar('Starters', g.tier, m.tier, 'How good your projected starting lineup is versus a league-average team.')
+      + gradeBar('Construction', g.balance, m.balance, 'How well you’ve filled your starting slots and balanced positions.');
   }
 
   function renderNeeds(){
@@ -2970,6 +3007,36 @@ _DRAFT_ROOM_HTML = r"""
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){
     return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
 
+  // ── Glossary / inline term explainers ───────────────────────────────────────
+  // Single source of truth so the inline ⓘ tooltips and the help popover agree.
+  var _GLOSSARY = [
+    { term: 'Pick Score (PS)', def: 'A 0-100 grade of how good this pick is at this exact slot. Blends the player’s value, how far they fell vs ADP, positional tier, your roster needs, age, and projected points. Late-round scores are re-scaled so a strong slider isn’t buried. Kickers and defenses aren’t scored.' },
+    { term: 'Value', def: 'The player’s trade value as an asset on a 0-999 scale - dynasty value for startup/rookie drafts, redraft value for redraft.' },
+    { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a freely-available starter at their position. VORP uses real fantasy points; VOR uses dynasty value. It updates as the board thins.' },
+    { term: 'ADP', def: 'Average Draft Position - the typical overall pick a player goes at in real drafts. If it’s below your current pick, they’ve fallen and may be a value.' },
+    { term: 'Tier', def: 'Players grouped by talent gaps (Tier 1 = elite). A tier “cliff” means only a couple of players remain before a real drop-off at that position.' },
+    { term: 'Steals (sort)', def: 'Orders the board by who has fallen the furthest past their ADP - the biggest available bargains.' },
+    { term: 'PPG', def: 'Points per game - projected for the upcoming season, or last season’s actual when that’s shown.' },
+    { term: 'Survival %', def: 'The chance a player is still available at your next pick, using the same variance the mock’s CPUs draft with.' },
+    { term: 'Grade · Value', def: 'How strong your picks are by pick score, weighted toward the earlier rounds where it matters most.' },
+    { term: 'Grade · Starters', def: 'How good your projected starting lineup is versus a league-average team.' },
+    { term: 'Grade · Construction', def: 'How well you’ve filled your starting slots and balanced your positions.' }
+  ];
+  // Inline info icon: data-tip drives a CSS hover/focus bubble. tabindex makes it
+  // tap- and keyboard-accessible.
+  function infoIcon(tip){
+    return '<span class="dr-info" tabindex="0" role="button" aria-label="' + esc(tip) + '" data-tip="' + esc(tip) + '">i</span>';
+  }
+  function openGlossary(){
+    var body = _GLOSSARY.map(function(g){
+      return '<div class="dr-gloss-item"><div class="dr-gloss-term">' + esc(g.term) + '</div>'
+        + '<div class="dr-gloss-def">' + esc(g.def) + '</div></div>';
+    }).join('');
+    document.getElementById('drGlossBody').innerHTML = body;
+    document.getElementById('drGloss').style.display = 'flex';
+  }
+  function closeGlossary(){ document.getElementById('drGloss').style.display = 'none'; }
+
   // ── Summary overlay ─────────────────────────────────────────────────────────
   function openSummary(){
     if (!state || !hasOwned()) return;
@@ -3283,9 +3350,9 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   // ── Player preview / draft confirm ──────────────────────────────────────────
-  function statBox(label, val, sub){
+  function statBox(label, val, sub, tip){
     return '<div class="dr-prev-stat"><div class="dr-prev-stat-v">' + val + '</div>'
-      + '<div class="dr-prev-stat-l">' + label + '</div>'
+      + '<div class="dr-prev-stat-l">' + label + (tip ? infoIcon(tip) : '') + '</div>'
       + (sub ? '<div class="dr-prev-stat-sub">' + sub + '</div>' : '')
       + '</div>';
   }
@@ -3334,17 +3401,17 @@ _DRAFT_ROOM_HTML = r"""
       // Pick Score hero
       + '<div class="dr-prev-score-hero" style="border-color:' + sc + ';background:' + sc + '1a;">'
       + '<div class="dr-prev-score-num" style="color:' + sc + '">' + (ps != null ? ps : '&ndash;') + '</div>'
-      + '<div class="dr-prev-score-lbl">Pick Score</div>'
+      + '<div class="dr-prev-score-lbl">Pick Score' + infoIcon('A 0-100 grade of this pick at this slot: value, fall vs ADP, tier, your needs, age, and projected points. Higher is better.') + '</div>'
       + '<div class="dr-prev-score-reason">' + esc(ps != null ? pickReason(p, myPosCounts()) : 'Streamer / last-round pick') + '</div>'
       + '</div>'
       // Stats grid
       + '<div class="dr-prev-stats">'
-      + statBox('Value', Math.round(valOf(p)))
-      + statBox(vorpLbl, vorStr)
-      + statBox('ADP', adp != null ? Number(adp).toFixed(1) : '-')
-      + statBox('vs ADP', vsAdp)
-      + (ppg != null ? statBox(ppgLbl, ppg.toFixed(1), ppgSub) : statBox('Pos Rank', posRank || '-'))
-      + statBox(pos + ' T1-2 left', scarce)
+      + statBox('Value', Math.round(valOf(p)), null, 'Trade value as an asset on a 0-999 scale (dynasty value, or redraft value in redraft).')
+      + statBox(vorpLbl, vorStr, null, 'Value Over Replacement: how much better than a freely-available starter at this position. ' + (vorpLbl === 'VORP' ? 'Based on real fantasy points.' : 'Based on dynasty value.'))
+      + statBox('ADP', adp != null ? Number(adp).toFixed(1) : '-', null, 'Average Draft Position - the typical overall pick this player goes at in real drafts.')
+      + statBox('vs ADP', vsAdp, null, 'How far this player has fallen past their ADP at the current pick. Positive = a value.')
+      + (ppg != null ? statBox(ppgLbl, ppg.toFixed(1), ppgSub, 'Points per game' + (ppgLbl === 'Proj PPG' ? ', projected for the upcoming season.' : ', last season actual.')) : statBox('Pos Rank', posRank || '-'))
+      + statBox(pos + ' T1-2 left', scarce, null, 'How many Tier 1-2 (elite) players remain available at this position - a scarcity signal.')
       + '</div>';
     // Survival probability at the user's next upcoming pick
     var nextOwnedPick = nextOwnedAfterCurrent();
@@ -3475,6 +3542,9 @@ _DRAFT_ROOM_HTML = r"""
   document.getElementById('drSummary').addEventListener('click', function(e){
     if (e.target === this) closeSummary();
   });
+  document.getElementById('drHelpBtn').addEventListener('click', openGlossary);
+  document.getElementById('drGlossClose').addEventListener('click', closeGlossary);
+  document.getElementById('drGloss').addEventListener('click', function(e){ if (e.target === this) closeGlossary(); });
   document.getElementById('drShare').addEventListener('click', shareDraft);
   document.getElementById('drCompleteSummaryBtn').addEventListener('click', openSummary);
   document.getElementById('drCompleteShareBtn').addEventListener('click', shareDraft);
