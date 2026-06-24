@@ -2932,9 +2932,7 @@ _DRAFT_ROOM_HTML = r"""
       return;
     }
     el.classList.remove('is-syncing');
-    var nextIn = Math.max(0, Math.ceil((_pollNextAt - Date.now()) / 1000));
-    el.innerHTML = '<span class="dr-poll-dot"></span>Updated ' + (_fmtAgo(_pollLastAt) || '&mdash;')
-      + (nextIn > 0 ? ' &middot; next in ' + nextIn + 's' : '');
+    el.innerHTML = '<span class="dr-poll-dot"></span>' + (_fmtAgo(_pollLastAt) || '&mdash;');
   }
   // In-page draft banner. Two states: a countdown when a connected draft is within
   // 15 min of its scheduled start, and a "live now" bar while it's drafting. Both
@@ -3001,8 +2999,8 @@ _DRAFT_ROOM_HTML = r"""
     // starting, instead of waiting out the normal cadence.
     if (state && state.mode === 'live' && state.isDrafting === false && !state.isComplete && state.startTime){
       var toStart = state.startTime - Date.now();
-      if (toStart <= 120000 && toStart > -1200000) ms = 1500;  // 2 min before -> 20 min overdue
-      else if (toStart <= 600000 && toStart > 0) ms = 3000;    // within 10 min of start
+      if (toStart <= 60000 && toStart > -900000) ms = 5000;    // 1 min before -> 15 min after
+      else if (toStart <= 300000 && toStart > 0) ms = 30000;   // within 5 min of start
     }
     _pollNextAt = Date.now() + ms;
     pollTimer = setTimeout(pollOnce, ms);
@@ -3067,16 +3065,7 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   function _setUpcomingMode(upcoming){
-    // Hide Queue tab and draft buttons when draft hasn't started yet.
-    var qTab = document.querySelector('#drSideTabs [data-stab="queue"]');
-    if (qTab) qTab.style.display = upcoming ? 'none' : '';
-    if (upcoming){
-      if (sideTab === 'queue') sideTab = 'best';
-      // Sync active class for all tabs so the hidden queue never stays highlighted.
-      document.querySelectorAll('#drSideTabs .otc-main-tab').forEach(function(t){
-        t.classList.toggle('is-active', t.getAttribute('data-stab') === sideTab);
-      });
-    }
+    // Queue tab stays visible in pre-draft so users can build their target list.
   }
 
   // ── Pick countdown timer ────────────────────────────────────────────────────
