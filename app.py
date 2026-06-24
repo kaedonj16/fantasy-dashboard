@@ -2119,18 +2119,21 @@ _DRAFT_IMMINENT_BANNER_HTML = r"""
     render();
   }
   function refresh(){
+    // When a draft is imminent/live, poll harder so a pushed-back start time
+    // (e.g. moved back 15 min or an hour) is reflected within ~30s.
+    var throttle = cur ? 25000 : 60000;
     try {
       var c = JSON.parse(sessionStorage.getItem('drgbCache') || 'null');
-      if (c && (Date.now() - c.ts) < 60000){ apply(c.drafts); return; }   // throttle across page navigations
+      if (c && (Date.now() - c.ts) < throttle){ apply(c.drafts); return; }   // throttle across page navigations
     } catch(e){}
-    fetch(CFG.detectUrl).then(function(r){ return r.json(); }).then(function(resp){
+    fetch(CFG.detectUrl, { cache: 'no-store' }).then(function(r){ return r.json(); }).then(function(resp){
       var drafts = (resp && resp.drafts) || [];
       try { sessionStorage.setItem('drgbCache', JSON.stringify({ ts: Date.now(), drafts: drafts })); } catch(e){}
       apply(drafts);
     }).catch(function(){});
   }
   setInterval(tick, 1000);
-  setInterval(refresh, 90000);
+  setInterval(refresh, 30000);   // re-detect every 30s; the throttle above keeps far-out checks cheap
   refresh();
 })();
 </script>
@@ -5539,10 +5542,10 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
           </div>
 
           <div class="os-hero-stats">
-            <div class="os-stat-card">
+            <div class="os-stat-card" id="osDraftCdCard" data-draft-ts="{draft_ts_ms or 0}" data-detect-url="/api/draft/detect?platform={platform}&league_id={ctx.get('league_id','')}&season={season}">
               <div class="os-stat-label">Draft countdown</div>
-              <div class="os-stat-value">{countdown_text}</div>
-              <div class="os-stat-sub">{draft_text}</div>
+              <div class="os-stat-value" id="osDraftCdVal">{countdown_text}</div>
+              <div class="os-stat-sub" id="osDraftCdSub">{draft_text}</div>
             </div>
             <div class="os-stat-card">
               <div class="os-stat-label">League leader</div>
@@ -5556,10 +5559,62 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             </div>
           </div>
 
-          <div class="os-hero-footer">
+          <div class="os-hero-footer" id="osDraftSubtext">
             {draft_subtext}
           </div>
         </section>
+        <script>
+        (function(){{
+          var card = document.getElementById('osDraftCdCard');
+          if (!card) return;
+          var draftTs = parseInt(card.getAttribute('data-draft-ts') || '0', 10);
+          var detectUrl = card.getAttribute('data-detect-url');
+          var valEl = document.getElementById('osDraftCdVal');
+          var subEl = document.getElementById('osDraftCdSub');
+          var subtextEl = document.getElementById('osDraftSubtext');
+          function fmtDays(ms){{
+            var d = Math.floor(ms / 86400000);
+            var h = Math.floor((ms % 86400000) / 3600000);
+            var m = Math.floor((ms % 3600000) / 60000);
+            if (d > 1) return d + ' days';
+            if (d === 1) return '1 day ' + h + 'h';
+            if (h > 0) return h + 'h ' + m + 'm';
+            if (m > 0) return m + 'm';
+            return 'Starting now';
+          }}
+          function tick(){{
+            if (!draftTs) return;
+            var remaining = draftTs - Date.now();
+            if (remaining > 0 && valEl) valEl.textContent = fmtDays(remaining);
+          }}
+          function applyDrafts(drafts){{
+            if (!Array.isArray(drafts) || !drafts.length) return;
+            var best = null;
+            drafts.forEach(function(d){{
+              var st = parseInt(d.start_time || 0, 10);
+              if (st > 0 && (!best || st < best.st)) best = {{ id: d.draft_id, st: st }};
+            }});
+            if (!best) return;
+            if (best.st !== draftTs){{
+              draftTs = best.st;
+              tick();
+              var dt = new Date(draftTs);
+              if (subEl) subEl.textContent = dt.toLocaleString('en-US', {{ month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit', timeZoneName:'short' }});
+              if (subtextEl) subtextEl.textContent = 'Countdown to your next league draft.';
+            }}
+          }}
+          function refresh(){{
+            if (!detectUrl) return;
+            fetch(detectUrl, {{ cache: 'no-store' }}).then(function(r){{ return r.json(); }}).then(function(resp){{
+              applyDrafts((resp && resp.drafts) || []);
+            }}).catch(function(){{}});
+          }}
+          tick();
+          setInterval(tick, 60000);
+          setInterval(refresh, 30000);
+          refresh();
+        }})();
+        </script>
 
         {gm_card_html}
         {front_office_card_html}
@@ -13223,6 +13278,7 @@ def api_draft_live():
             "name": nm or (meta.get("player_name") or "Unknown"),
             "position": (meta.get("position") or "").upper(),
             "team": meta.get("team") or "",
+            "picked_at": p.get("picked_at"),   # ms epoch when Sleeper recorded the pick
         })
 
     rounds_val = int(settings.get("rounds") or 15)

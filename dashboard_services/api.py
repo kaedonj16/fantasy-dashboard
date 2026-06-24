@@ -335,8 +335,11 @@ def get_traded_picks(league_id: str) -> List[dict]:
     return fetch_json(f"/league/{league_id}/traded_picks")
 
 
-@ttl_cache(ttl=300)
+@ttl_cache(ttl=30)
 def get_drafts(league_id: str) -> List[dict]:
+    """League draft list (status + scheduled start_time). Short TTL so the
+    imminent-draft banner catches reschedules (start pushed back 15 min / 1 hr)
+    within ~30s instead of waiting out a long cache."""
     return fetch_json(f"/league/{league_id}/drafts")
 
 
