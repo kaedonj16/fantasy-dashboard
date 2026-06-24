@@ -649,6 +649,14 @@ _DRAFT_ROOM_HTML = r"""
     display:flex; align-items:center; justify-content:center; padding:0; flex-shrink:0; }
   .dr-step-btn:hover { border-color:var(--accent,#38bdf8); color:var(--accent,#38bdf8); }
   .dr-step-val { font-size:14px; font-weight:800; color:var(--text); min-width:18px; text-align:center; }
+  .dr-step-val-ro { font-size:14px; font-weight:800; color:var(--text-muted); min-width:18px; text-align:center; }
+  .dr-roster-src { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .dr-roster-src-tag { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.04em;
+    padding:2px 8px; border-radius:999px; background:rgba(56,189,248,.14); color:var(--accent,#38bdf8); }
+  .dr-roster-src-custom { background:rgba(168,85,247,.14); color:#a855f7; }
+  .dr-roster-src-btn { font-size:11px; font-weight:700; color:var(--text-muted); background:none; border:1px solid var(--border);
+    border-radius:6px; padding:2px 9px; cursor:pointer; line-height:1.6; }
+  .dr-roster-src-btn:hover { color:var(--accent,#38bdf8); border-color:var(--accent,#38bdf8); }
   /* ── Draft capital (setup) ── */
   .dr-cap-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
   .dr-cap-count { font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; }
@@ -834,6 +842,7 @@ _DRAFT_ROOM_HTML = r"""
   var simStarted = false;  // CPU picks only run once the user hits Start Draft
   var sideTab = 'best';    // best | rec | needs | runs
   var _setupRoster = null; // roster config built on setup page
+  var _rosterMode  = 'auto'; // 'auto' = use league/defaults locked; 'custom' = editable steppers
   var _setupOwned = null;  // claimed picks (pickNumber -> true) built on setup page
   var _setupOwnedSig = ''; // staleness signature for _setupOwned
   var _capAddRound = null; // round whose inline slot picker is open (or null)
@@ -1006,17 +1015,41 @@ _DRAFT_ROOM_HTML = r"""
              K:rd?1:0, DEF:rd?1:0, BN:rd?5:7 };
   }
 
+  // Helper: reconcile a raw roster map for the chosen QB format and return a
+  // fresh copy (does not mutate the input).
+  function _reconcileRoster(r, sf, rd){
+    var out = {};
+    ['QB','SF','RB','WR','TE','FLEX','K','DEF','BN'].forEach(function(k){ out[k] = r[k] || 0; });
+    if (sf){ if (!out.SF) out.SF = 1; if (!out.FLEX) out.FLEX = 1; }
+    else   { out.SF = 0; }
+    if (!rd){ out.K = 0; out.DEF = 0; }
+    return out;
+  }
+
   function renderSetupRoster(){
     var sf = document.getElementById('drSf').value === '1';
     var rd = document.getElementById('drType').value === 'redraft';
-    if (!_setupRoster || _setupRoster._sf !== sf || _setupRoster._rd !== rd){
-      var base = defaultRoster(sf, rd);
-      base._sf = sf; base._rd = rd;
-      _setupRoster = base;
+    var leagueRaw = rosterFromLeague();   // null when no league connected
+    var hasLeague = !!leagueRaw;
+
+    // In auto mode always re-seed from league (or built-in defaults) so the
+    // roster reflects format changes (SF toggle, type change).
+    if (_rosterMode === 'auto' || !_setupRoster){
+      var seed = hasLeague ? _reconcileRoster(leagueRaw, sf, rd) : defaultRoster(sf, rd);
+      seed._sf = sf; seed._rd = rd;
+      _setupRoster = seed;
+    } else if (_setupRoster._sf !== sf || _setupRoster._rd !== rd){
+      // Format changed while in custom mode: reconcile the existing custom config.
+      var rec = _reconcileRoster(_setupRoster, sf, rd);
+      rec._sf = sf; rec._rd = rd;
+      _setupRoster = rec;
     }
+
+    var locked = hasLeague && _rosterMode === 'auto';
+
     var rows = [
       { key:'QB',   label:'QB' },
-      { key:'SF',   label:'SF',   hide: !sf },
+      { key:'SF',   label:'Superflex', hide: !sf },
       { key:'RB',   label:'RB' },
       { key:'WR',   label:'WR' },
       { key:'TE',   label:'TE' },
@@ -1025,20 +1058,55 @@ _DRAFT_ROOM_HTML = r"""
       { key:'DEF',  label:'DEF' },
       { key:'BN',   label:'Bench' }
     ];
-    var html = '<div class="dr-setup-roster">';
+
+    // Source badge + mode-toggle button at the top.
+    var srcHtml = '';
+    if (hasLeague){
+      if (locked){
+        srcHtml = '<div class="dr-roster-src">'
+          + '<span class="dr-roster-src-tag">League settings</span>'
+          + '<button type="button" class="dr-roster-src-btn" id="drRosterCustomize">Customize</button>'
+          + '</div>';
+      } else {
+        srcHtml = '<div class="dr-roster-src">'
+          + '<span class="dr-roster-src-tag dr-roster-src-custom">Custom</span>'
+          + '<button type="button" class="dr-roster-src-btn" id="drRosterReset">Reset to league</button>'
+          + '</div>';
+      }
+    }
+
+    var html = '<div class="dr-setup-roster">' + srcHtml;
     rows.forEach(function(r){
       if (r.hide) return;
       var val = _setupRoster[r.key] || 0;
-      html += '<div class="dr-srow">'
-        + '<span class="dr-srow-label">' + r.label + '</span>'
-        + '<div class="dr-stepper">'
-        + '<button type="button" class="dr-step-btn" data-key="' + r.key + '" data-d="-1">&#8722;</button>'
-        + '<span class="dr-step-val">' + val + '</span>'
-        + '<button type="button" class="dr-step-btn" data-key="' + r.key + '" data-d="1">+</button>'
-        + '</div></div>';
+      if (locked){
+        // Read-only: just show the value, no steppers.
+        html += '<div class="dr-srow">'
+          + '<span class="dr-srow-label">' + r.label + '</span>'
+          + '<span class="dr-step-val dr-step-val-ro">' + val + '</span>'
+          + '</div>';
+      } else {
+        html += '<div class="dr-srow">'
+          + '<span class="dr-srow-label">' + r.label + '</span>'
+          + '<div class="dr-stepper">'
+          + '<button type="button" class="dr-step-btn" data-key="' + r.key + '" data-d="-1">&#8722;</button>'
+          + '<span class="dr-step-val">' + val + '</span>'
+          + '<button type="button" class="dr-step-btn" data-key="' + r.key + '" data-d="1">+</button>'
+          + '</div></div>';
+      }
     });
     html += '</div>';
     document.getElementById('drRosterSection').innerHTML = html;
+
+    // Wire the mode-toggle buttons (rendered into innerHTML so must re-attach).
+    var cb = document.getElementById('drRosterCustomize');
+    if (cb) cb.addEventListener('click', function(){
+      _rosterMode = 'custom'; renderSetupRoster();
+    });
+    var rb = document.getElementById('drRosterReset');
+    if (rb) rb.addEventListener('click', function(){
+      _rosterMode = 'auto'; _setupRoster = null; renderSetupRoster();
+    });
   }
 
   // ── Setup: draft capital (claimed picks) ────────────────────────────────────
@@ -3311,8 +3379,8 @@ _DRAFT_ROOM_HTML = r"""
   applyCfgDefaults();
   renderSetupRoster();
   renderSetupCapital();
-  document.getElementById('drSf').addEventListener('change', function(){ _setupRoster = null; renderSetupRoster(); });
-  document.getElementById('drType').addEventListener('change', function(){ _setupRoster = null; renderSetupRoster(); });
+  document.getElementById('drSf').addEventListener('change', function(){ _rosterMode = 'auto'; _setupRoster = null; renderSetupRoster(); });
+  document.getElementById('drType').addEventListener('change', function(){ _rosterMode = 'auto'; _setupRoster = null; renderSetupRoster(); });
   // Any control that changes the pick map resets claimed picks to the slot default.
   ['drTeams','drRounds','drOrder','drSlot'].forEach(function(idn){
     document.getElementById(idn).addEventListener('change', renderSetupCapital);
