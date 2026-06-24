@@ -884,6 +884,27 @@ _DRAFT_ROOM_HTML = r"""
   var POS_COLOR = { QB:'#f59e0b', RB:'#22c55e', WR:'#3b82f6', TE:'#8b5cf6', K:'#94a3b8', DEF:'#64748b' };
   var posColor = function(p){ return POS_COLOR[(p||'').toUpperCase()] || '#94a3b8'; };
   var hsUrl = function(id){ return 'https://sleepercdn.com/content/nfl/players/' + id + '.jpg'; };
+  // DEF players: prefer locally cached logo (after running download_team_logos.py),
+  // fall back to ESPN CDN which the browser fetches directly.
+  var playerImgUrl = function(p){
+    var pos = String(p.position || '').toUpperCase();
+    if (pos === 'DEF' && p.team){
+      var t = p.team.toUpperCase();
+      // Check local first; if the file doesn't exist the browser's onerror swaps to ESPN CDN.
+      return '/static/images/team_logos/' + t + '.png';
+    }
+    return hsUrl(p.id);
+  };
+  // Inline onerror for DEF logo <img> tags: try ESPN CDN, then hide.
+  var _defImgErr = function(img){
+    var t = img.getAttribute('data-team');
+    if (t && !img._espnFallback){
+      img._espnFallback = true;
+      img.src = 'https://a.espncdn.com/i/teamlogos/nfl/500/' + t.toLowerCase() + '.png';
+    } else {
+      img.style.visibility = 'hidden';
+    }
+  };
 
   var sessKey = 'dr_' + location.pathname;
   var state = null;        // { type, teams, rounds, sf, slot, order, picks:{}, current }
@@ -902,7 +923,7 @@ _DRAFT_ROOM_HTML = r"""
   var _pollNextAt = 0;     // ms timestamp the next poll is scheduled for
   var _liveSig = null;     // signature of the last applied live state (skip no-op renders)
   var POLL_MS = 4000;      // base cadence (just above the 3s picks cache TTL)
-  var POLL_FULL_EVERY = 15;// every N polls, do a full refresh to catch trades/slot names
+  var POLL_FULL_EVERY = 60;// every N light polls, do a full refresh to catch trades/slot names
   var sim = false;         // mock-draft simulation active
   var simTimer = null;
   var simSpeed = 700;      // ms between CPU picks
@@ -1299,6 +1320,19 @@ _DRAFT_ROOM_HTML = r"""
     var s = (state && state.scoring) || {};
     return { ppr: s.ppr != null ? s.ppr : 1.0, tep: s.tep != null ? s.tep : 0 };
   }
+  // Convert a Sleeper roster_positions array to the {QB:1, RB:2, ...} map used by state.roster.
+  function _parseRosterPositions(arr){
+    if (!Array.isArray(arr) || !arr.length) return null;
+    var map = {};
+    arr.forEach(function(pos){
+      pos = String(pos || '').toUpperCase();
+      // Normalize Sleeper's SUPER_FLEX to SF and FLEX stays FLEX.
+      if (pos === 'SUPER_FLEX' || pos === 'SFLEX') pos = 'SF';
+      if (!pos || pos === 'DB' || pos === 'LB') return; // skip IDP positions
+      map[pos] = (map[pos] || 0) + 1;
+    });
+    return Object.keys(map).length ? map : null;
+  }
   // K/DEF enter the pool only when the roster actually carries those slots
   // (always true for redraft; opt-in for startup via the setup steppers).
   function wantsKDef(){
@@ -1324,9 +1358,18 @@ _DRAFT_ROOM_HTML = r"""
     _boardSig = null;   // always force a full board rebuild when entering the draft view
     document.getElementById('drSetup').style.display = 'none';
     var hero = document.getElementById('drHero'); if (hero) hero.style.display = 'none';
-    // Practice Mock only makes sense while synced to a real (live/upcoming) draft.
+    var isLive = !!(state && state.mode === 'live');
+    // Practice Mock and Edit Setup are irrelevant when watching a live draft.
     var pm = document.getElementById('drPractice');
-    if (pm) pm.style.display = (state && state.mode === 'live') ? '' : 'none';
+    if (pm) pm.style.display = isLive ? 'none' : '';
+    var ed = document.getElementById('drEdit');
+    if (ed) ed.style.display = isLive ? 'none' : '';
+    // Reset becomes "Exit Board" in live mode (no danger color - it's just navigation).
+    var rst = document.getElementById('drReset');
+    if (rst){
+      rst.textContent = isLive ? 'Exit Board' : 'Reset';
+      rst.className = isLive ? 'dr-btn dr-btn-ghost' : 'dr-btn dr-btn-ghost dr-btn-danger';
+    }
     document.getElementById('drBoard').innerHTML = '';
     document.getElementById('drBaList').innerHTML = '<div class="dr-loading">Loading players…</div>';
     document.getElementById('drMain').style.display = '';
@@ -1945,7 +1988,7 @@ _DRAFT_ROOM_HTML = r"""
       var sub = adp != null ? 'ADP ' + Number(adp).toFixed(1) : 'Val ' + Math.round(valOf(p));
       var lastName = p.name.split(' ').slice(1).join(' ') || p.name;
       bchipsInner += '<div class="dr-bchip" data-bchip="' + esc(String(p.id)) + '">'
-        + '<img class="dr-bchip-img" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
+        + '<img class="dr-bchip-img" src="' + playerImgUrl(p) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
         + '<div class="dr-bchip-body">'
         + '<div class="dr-bchip-name"><span class="dr-posbadge" style="background:' + posColor(pos) + ';font-size:8px;">' + pos + '</span> ' + esc(lastName) + '</div>'
         + '<div class="dr-bchip-adp">' + sub + '</div>'
@@ -2051,7 +2094,7 @@ _DRAFT_ROOM_HTML = r"""
       }
       var sc = ps != null ? psColor(ps) : 'var(--text-muted)';
       return '<div class="dr-cmp-player">'
-        + '<div class="dr-cmp-top"><img class="dr-cmp-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
+        + '<div class="dr-cmp-top"><img class="dr-cmp-hs" src="' + playerImgUrl(p) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
         + '<div><div class="dr-cmp-name"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span> ' + esc(p.name) + '</div>'
         + '<div class="dr-cmp-meta">' + esc(p.team || '') + (p.age ? ' &middot; Age ' + Number(p.age).toFixed(0) : '') + '</div>'
         + '</div></div>'
@@ -2312,8 +2355,11 @@ _DRAFT_ROOM_HTML = r"""
     var ppgPart = ppgNum != null ? ' · ' + ppgNum.toFixed(1) + ' PPG' : '';
     // Compare button state
     var onCmp = compareIds.indexOf(String(p.id)) >= 0;
+    var _isDef = String(p.position || '').toUpperCase() === 'DEF';
     return '<div class="dr-ba-row' + availClass + '" data-id="' + esc(String(p.id)) + '">'
-      + '<img class="dr-ba-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
+      + '<img class="dr-ba-hs" src="' + playerImgUrl(p) + '" alt=""'
+      + (_isDef ? ' data-team="' + esc(p.team || '') + '" onerror="_defImgErr(this)"' : ' onerror="this.style.visibility=\'hidden\'"')
+      + '>'
       + '<div class="dr-ba-body"><div class="dr-ba-name">' + esc(p.name) + '</div>'
       + '<div class="dr-ba-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span>' + esc(p.team || '') + tierBadge(p) + ppgPart + byeFlag + '</div>'
       + reasonLine + waitLine + availLine + '</div>'
@@ -2468,9 +2514,12 @@ _DRAFT_ROOM_HTML = r"""
     if (p){
       var psBadge = (p.ps != null) ? '<span class="dr-rslot-ps" style="color:' + psColor(p.ps) + '">' + p.ps + '</span>' : '';
       var pickLbl = pickNoStr(p);
+      var _isDefSlot = String(p.position || '').toUpperCase() === 'DEF';
       return '<div class="dr-rslot">'
         + '<span class="dr-rslot-pos" style="background:' + slotColor(slot) + '">' + slot + '</span>'
-        + '<img class="dr-rslot-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
+        + '<img class="dr-rslot-hs" src="' + playerImgUrl(p) + '" alt=""'
+        + (_isDefSlot ? ' data-team="' + esc(p.team || '') + '" onerror="_defImgErr(this)"' : ' onerror="this.style.visibility=\'hidden\'"')
+        + '>'
         + '<div class="dr-rslot-body"><div class="dr-rslot-name">' + esc(p.name) + '</div>'
         + '<div class="dr-rslot-meta">' + esc(p.position) + ' &middot; ' + esc(p.team || '') + (pickLbl ? ' &middot; <span style="color:var(--accent)">' + pickLbl + '</span>' : '') + '</div></div>'
         + psBadge
@@ -2677,7 +2726,6 @@ _DRAFT_ROOM_HTML = r"""
   function renderNeeds(){
     if (!hasOwned()){ listInto('<div class="dr-empty-note">Set your pick slot to see your team build.</div>'); return; }
     var mine = myPicksList().slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
-    var used = {};
     var html = '';
     var g = gradeTeam();
     if (g){
@@ -2689,13 +2737,33 @@ _DRAFT_ROOM_HTML = r"""
         + '</div></div>';
     }
     html += '<div class="dr-roster">';
-    lineupSlots().forEach(function(slot){
-      var pick = null;
-      for (var i = 0; i < mine.length; i++){ if (!used[i] && slotEligible(slot, mine[i].position)){ pick = mine[i]; used[i] = true; break; } }
-      html += slotRow(slot, pick);
+    var slots = lineupSlots();
+    var assigned = new Array(slots.length).fill(null);
+    var usedIdx = new Array(mine.length).fill(false);
+    // Pass 1: strict position matches (QB→QB, RB→RB, WR→WR, TE→TE, K→K, DEF→DEF)
+    slots.forEach(function(slot, si){
+      if (slot === 'FLEX' || slot === 'SF' || slot === 'BN') return;
+      for (var i = 0; i < mine.length; i++){
+        if (!usedIdx[i] && String(mine[i].position || '').toUpperCase() === slot){ assigned[si] = mine[i]; usedIdx[i] = true; break; }
+      }
     });
+    // Pass 2: FLEX slots (RB/WR/TE overflow)
+    slots.forEach(function(slot, si){
+      if (slot !== 'FLEX') return;
+      for (var i = 0; i < mine.length; i++){
+        if (!usedIdx[i] && slotEligible('FLEX', mine[i].position)){ assigned[si] = mine[i]; usedIdx[i] = true; break; }
+      }
+    });
+    // Pass 3: SF slots (QB that didn't fill a QB slot, or any FLEX-eligible overflow)
+    slots.forEach(function(slot, si){
+      if (slot !== 'SF') return;
+      for (var i = 0; i < mine.length; i++){
+        if (!usedIdx[i] && slotEligible('SF', mine[i].position)){ assigned[si] = mine[i]; usedIdx[i] = true; break; }
+      }
+    });
+    slots.forEach(function(slot, si){ html += slotRow(slot, assigned[si]); });
     var bench = [];
-    for (var i = 0; i < mine.length; i++){ if (!used[i]) bench.push(mine[i]); }
+    for (var i = 0; i < mine.length; i++){ if (!usedIdx[i]) bench.push(mine[i]); }
     html += '<div class="dr-roster-div">Bench</div>';
     if (bench.length){ bench.forEach(function(p){ html += slotRow('BN', p); }); }
     else { html += slotRow('BN', null); }
@@ -2898,7 +2966,8 @@ _DRAFT_ROOM_HTML = r"""
           mode: 'live', isComplete: isComplete, isDrafting: isDrafting, sourceDraftId: draftId,
           pickTimer: parseInt(d.pick_timer) || 0,
           startTime: parseInt(d.start_time) || 0,
-          slotNames: d.slot_names || {}, queue: []
+          slotNames: d.slot_names || {}, queue: [],
+          roster: _parseRosterPositions(d.roster_positions)
         };
         applyLivePicks(d.picks || []);
         // Seed the poll signature so the first poll doesn't redundantly rebuild.
@@ -2914,6 +2983,7 @@ _DRAFT_ROOM_HTML = r"""
           document.getElementById('drSide').style.display = '';
           _setUpcomingMode(!isDrafting);
           startPolling();
+          _liveSig = liveSig(d);  // re-seed after startPolling resets it so first auto-poll skips a redundant rebuild
           if (isDrafting) startPickTimer();
         }
         loadPlayers();
@@ -3176,7 +3246,7 @@ _DRAFT_ROOM_HTML = r"""
     if (isMyPick(pn) && !pl) h += '<span class="dr-cell-mineflag">YOU</span>';
     if (pl){
       if (pl.val != null) h += '<span class="dr-cell-val">' + Math.round(pl.val) + '</span>';
-      h += '<img class="dr-hs" src="' + hsUrl(pl.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">';
+      h += '<img class="dr-hs" src="' + playerImgUrl(pl) + '" alt="" onerror="this.style.visibility=\'hidden\'">';
       h += '<div class="dr-cell-body"><div class="dr-cell-name">' + esc(pl.name) + '</div>'
         + '<div class="dr-cell-meta"><span class="dr-posbadge" style="background:' + posColor(pl.position) + '">' + esc(pl.position) + '</span> ' + esc(pl.team || '') + '</div></div>';
     }
@@ -3341,7 +3411,7 @@ _DRAFT_ROOM_HTML = r"""
       var psStr = (p.ps != null) ? '<span class="dr-sum-ps" style="color:' + psColor(p.ps) + '">' + p.ps + '</span>' : '';
       return '<div class="dr-sum-row">'
         + '<span class="dr-sum-slot-badge" style="background:' + slotColor(slot) + '">' + slot + '</span>'
-        + '<img class="dr-sum-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
+        + '<img class="dr-sum-hs" src="' + playerImgUrl(p) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
         + '<div class="dr-sum-body"><div class="dr-sum-name">' + esc(p.name) + '</div>'
         + '<div class="dr-sum-meta">' + esc(p.position) + (p.team ? ' \xb7 ' + esc(p.team) : '') + (pickStr ? ' \xb7 ' + pickStr : '') + '</div>'
         + (p.reason ? '<div class="dr-sum-reason">' + esc(p.reason) + '</div>' : '')
@@ -3480,11 +3550,14 @@ _DRAFT_ROOM_HTML = r"""
     render();
   }
   function resetDraft(){
-    drConfirm('Reset the draft board?', 'Reset', function(){
+    var isLive = !!(state && state.mode === 'live');
+    function doReset(){
+      stopPolling(); stopPickTimer();
       try { sessionStorage.removeItem(sessKey); } catch(e){}
       state = null;
       showSetup();
-    });
+    }
+    if (isLive){ doReset(); } else { drConfirm('Reset the draft board?', 'Reset', doReset); }
   }
 
   // ── Share a draft image ─────────────────────────────────────────────────────
@@ -3674,7 +3747,7 @@ _DRAFT_ROOM_HTML = r"""
     var h = '<button class="dr-prev-close" id="drPrevClose" aria-label="Close">&times;</button>'
       // Player identity row
       + '<div class="dr-prev-top">'
-      + '<img class="dr-prev-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
+      + '<img class="dr-prev-hs" src="' + playerImgUrl(p) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
       + '<div class="dr-prev-id"><div class="dr-prev-name">' + esc(p.name) + (t ? (' <span class="dr-tier' + (isTierCliff(p) ? ' dr-tier-cliff' : '') + '">T' + t + '</span>') : '') + '</div>'
       + '<div class="dr-prev-meta"><span class="dr-posbadge" style="background:' + pc + '">' + esc(p.position) + '</span> ' + esc(p.team || '') + (posRank ? (' &middot; ' + esc(posRank)) : '') + agePart + '</div>'
       + '</div></div>'
