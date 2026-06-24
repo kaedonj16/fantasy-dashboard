@@ -1211,7 +1211,9 @@ _DRAFT_ROOM_HTML = r"""
     if (state && !state.queue) state.queue = [];
     renderStatus(); renderBoard(); renderSide(); justPick = null; save();
     var _tot = state.teams * state.rounds;
-    if (state.current > _tot && !_summaryShown && hasOwned() && !sim){
+    // Draft is over once current passes the last pick - open the summary regardless
+    // of sim state (when the user makes the final pick, sim is still true here).
+    if (state.current > _tot && !_summaryShown && hasOwned()){
       _summaryShown = true;
       setTimeout(openSummary, 500);
     }
@@ -1286,7 +1288,8 @@ _DRAFT_ROOM_HTML = r"""
     if (state.current > total){ endSim(); render(); return; }
     if (isMyPick(state.current)){ render(); return; } // your turn
     var p = simPick();
-    if (p) { commitPick(p); render(); }
+    if (!p){ endSim(); render(); return; } // pool exhausted - stop, don't spin forever
+    commitPick(p); render();
     scheduleSim();
   }
   function endSim(){
