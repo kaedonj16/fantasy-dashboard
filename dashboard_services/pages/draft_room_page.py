@@ -1615,9 +1615,9 @@ _DRAFT_ROOM_HTML = r"""
       var ps = pickScoreFor(p), ops = pickScoreFor(other);
       var v = valOf(p), ov = valOf(other);
       var t = tierOf(p), ot = tierOf(other);
-      var ppg = p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null);
-      var oppg = other.proj_ppg != null ? Number(other.proj_ppg) : (other.ppg != null ? Number(other.ppg) : null);
-      var ppgRowLbl = (p.proj_ppg != null || other.proj_ppg != null) ? 'Proj PPG' : 'PPG';
+      var ppg = p.ppg != null ? Number(p.ppg) : (p.proj_ppg != null ? Number(p.proj_ppg) : null);
+      var oppg = other.ppg != null ? Number(other.ppg) : (other.proj_ppg != null ? Number(other.proj_ppg) : null);
+      var ppgRowLbl = (p.ppg != null || other.ppg != null) ? 'PPG' : 'Proj PPG';
       var age = p.age != null ? Number(p.age) : null;
       var oage = other.age != null ? Number(other.age) : null;
       function statRow(lbl, val, oval, higherBetter, fmtFn){
@@ -1645,7 +1645,7 @@ _DRAFT_ROOM_HTML = r"""
         + statRow('Age', age, oage, false, function(x){ return x != null ? x.toFixed(0) : '-'; })
         + '</div></div>';
     }
-    var draftBtns = (isYourTurn() || !sim)
+    var draftBtns = ((isYourTurn() || !sim) && !(state && state.mode === 'live' && !state.isDrafting))
       ? '<button class="dr-btn dr-btn-primary" data-cmp-draft="' + esc(String(p1.id)) + '">Draft ' + esc(p1.name.split(' ').pop()) + '</button>'
         + '<button class="dr-btn dr-btn-primary" data-cmp-draft="' + esc(String(p2.id)) + '">Draft ' + esc(p2.name.split(' ').pop()) + '</button>'
       : '';
@@ -1840,7 +1840,7 @@ _DRAFT_ROOM_HTML = r"""
     var bc = byeConflict(p);
     if (bc >= 2) byeFlag = '<span class="dr-bye-flag">Bye ' + p.bye_week + ' clash</span>';
     // Projected (or actual) PPG for meta line
-    var ppgNum = p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null);
+    var ppgNum = p.ppg != null ? Number(p.ppg) : (p.proj_ppg != null ? Number(p.proj_ppg) : null);
     var ppgPart = ppgNum != null ? ' · ' + ppgNum.toFixed(1) + ' PPG' : '';
     // Compare button state
     var onCmp = compareIds.indexOf(String(p.id)) >= 0;
@@ -1857,7 +1857,7 @@ _DRAFT_ROOM_HTML = r"""
       + '<div class="dr-ba-actions">'
       + '<button class="dr-cmp-btn' + (onCmp ? ' on' : '') + '" data-cmp="' + esc(String(p.id)) + '" title="Compare">vs</button>'
       + '<button class="dr-star' + (isQueued(p.id) ? ' on' : '') + '" data-star="' + esc(String(p.id)) + '" title="Queue" aria-label="Queue">' + (isQueued(p.id) ? '★' : '☆') + '</button>'
-      + (isYourTurn() || !sim ? '<button class="dr-ba-draft" data-draft="' + esc(String(p.id)) + '" title="Draft now">Draft</button>' : '')
+      + ((isYourTurn() || !sim) && !(state && state.mode === 'live' && !state.isDrafting) ? '<button class="dr-ba-draft" data-draft="' + esc(String(p.id)) + '" title="Draft now">Draft</button>' : '')
       + '</div>'
       + '</div>'
       + '</div>';
@@ -1961,14 +1961,26 @@ _DRAFT_ROOM_HTML = r"""
     if (slot === 'BN')   return '#64748b';
     return posColor(slot);
   }
+  function pickNoStr(p){
+    if (!p || !p.id || !state) return '';
+    var found = 0;
+    Object.keys(state.picks).forEach(function(k){
+      if (state.picks[k] && state.picks[k].id === p.id) found = parseInt(k, 10);
+    });
+    if (!found) return '';
+    var rd = Math.ceil(found / state.teams);
+    var pk = found - (rd - 1) * state.teams;
+    return 'Pick ' + rd + '.' + (pk < 10 ? '0' + pk : String(pk));
+  }
   function slotRow(slot, p){
     if (p){
       var psBadge = (p.ps != null) ? '<span class="dr-rslot-ps" style="color:' + psColor(p.ps) + '">' + p.ps + '</span>' : '';
+      var pickLbl = pickNoStr(p);
       return '<div class="dr-rslot">'
         + '<span class="dr-rslot-pos" style="background:' + slotColor(slot) + '">' + slot + '</span>'
         + '<img class="dr-rslot-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
         + '<div class="dr-rslot-body"><div class="dr-rslot-name">' + esc(p.name) + '</div>'
-        + '<div class="dr-rslot-meta">' + esc(p.position) + ' &middot; ' + esc(p.team || '') + '</div></div>'
+        + '<div class="dr-rslot-meta">' + esc(p.position) + ' &middot; ' + esc(p.team || '') + (pickLbl ? ' &middot; <span style="color:var(--accent)">' + pickLbl + '</span>' : '') + '</div></div>'
         + psBadge
         + '<div class="dr-rslot-val">' + (p.val != null ? Math.round(p.val) : '') + '</div>'
         + '</div>';
@@ -1986,22 +1998,32 @@ _DRAFT_ROOM_HTML = r"""
       if (isMyPick(pn)) mine.push({ pn: pn, p: state.picks[k] });
     });
     if (!mine.length) return null;
-    var deltas = [], counts = { QB:0, RB:0, WR:0, TE:0 }, tierTop = 0;
+    mine.sort(function(a, b){ return a.pn - b.pn; }); // process in pick order for need context
+    var counts = { QB:0, RB:0, WR:0, TE:0 }, tierTop = 0;
+    var psTotal = 0, psCount = 0;
+    // Pre-compute maxVal for pickScore (matches what pickScore callers do)
+    var _gmaxVal = 0; players.forEach(function(q){ var v = valOf(q); if (v > _gmaxVal) _gmaxVal = v; });
+    var countsSoFar = { QB: 0, RB: 0, WR: 0, TE: 0 };
     mine.forEach(function(m){
       var pos = (m.p.position || '').toUpperCase();
-      if (counts[pos] != null) counts[pos]++;
-      var full = playersById[String(m.p.id)];
-      if (full){
-        var adp = adpOf(full);
-        if (adp != null) {
-          var gap = m.pn - adp;
-          // ±2 neutral zone — matches sim tolerance; only excess past ±2 counts
-          deltas.push(gap > 2 ? gap - 2 : gap < -2 ? gap + 2 : 0);
+      // Per-pick score: stored for mock picks; computed at historical pick# for live picks
+      var ps = m.p.ps;
+      if (ps == null && players.length > 0 && _gmaxVal > 0){
+        var full = playersById[String(m.p.id)];
+        if (full){
+          var _saved = state.current;
+          state.current = m.pn;
+          ps = pickScore(full, _gmaxVal, countsSoFar);
+          state.current = _saved;
         }
-        var t = tierOf(full); if (t && t <= 2) tierTop++;
       }
+      if (ps != null){ psTotal += ps; psCount++; }
+      if (countsSoFar[pos] != null) countsSoFar[pos]++;
+      if (counts[pos] != null) counts[pos]++;
+      var full2 = playersById[String(m.p.id)];
+      if (full2){ var t = tierOf(full2); if (t && t <= 2) tierTop++; }
     });
-    var avgDelta = deltas.length ? deltas.reduce(function(a,b){ return a+b; }, 0) / deltas.length : 0;
+    var avgPs = psCount > 0 ? psTotal / psCount : null;
     var targets = posTargets(), bsum = 0;
     ['QB','RB','WR','TE'].forEach(function(pos){ var t = targets[pos] || 0; bsum += t ? Math.min(counts[pos] || 0, t) / t : 0; });
     var balanceRamp = Math.min(1, mine.length / 8);
@@ -2010,23 +2032,19 @@ _DRAFT_ROOM_HTML = r"""
 
     var valuePts, balancePts, tierPts;
     if (state.type === 'rookie'){
-      // Rookie drafts are pure best-player-available: you're adding to an existing
-      // roster, so positional balance barely matters. Reward hitting value and
-      // landing elite-tier rookies. Value 55 / Tier 30 / Balance 15.
-      valuePts   = Math.round(clamp01((avgDelta + 10) / 20) * 55);
+      // Rookie: BPA-heavy. Use avg pick score as the value signal (already 0-100).
+      // Balance barely matters vs an existing roster. Value 55 / Tier 30 / Balance 15.
+      valuePts   = avgPs != null ? Math.round(clamp01(avgPs / 100) * 55) : 28;
       balancePts = Math.round(((1 - balanceRamp) * 0.9 + balanceRamp * (bsum / 4)) * 15);
       tierPts    = Math.round(tierRaw * 30);
     } else {
-      // Value: 0 effective delta (at ADP ±2) = 50% of 40; +8 steal = 100%; -8 reach = 0%
-      valuePts = Math.round(clamp01((avgDelta + 10) / 20) * 40);
-      // Balance: ramp from a neutral floor (0.85) so 1-2 picks don't score near-zero
+      // Startup/redraft: use avg pick score for value (already encodes steal/reach + talent).
+      valuePts   = avgPs != null ? Math.round(clamp01(avgPs / 100) * 40) : 20;
       balancePts = Math.round(((1 - balanceRamp) * 0.85 + balanceRamp * (bsum / 4)) * 35);
-      // Tier: normalize by what's realistically achievable — at most ~3 elite picks
-      // in any draft. 1 T1 pick at pick 1 = full tier credit, not 6/25.
-      tierPts = Math.round(tierRaw * 25);
+      tierPts    = Math.round(tierRaw * 25);
     }
     var total = valuePts + balancePts + tierPts;
-    return { score: total, value: valuePts, balance: balancePts, tier: tierPts, count: mine.length };
+    return { score: total, value: valuePts, balance: balancePts, tier: tierPts, count: mine.length, avgPs: avgPs ? Math.round(avgPs) : null };
   }
   function gradeLetter(s){
     if (s>=90) return 'A+'; if (s>=85) return 'A'; if (s>=80) return 'A-';
@@ -2074,14 +2092,15 @@ _DRAFT_ROOM_HTML = r"""
     if (bench.length){ bench.forEach(function(p){ html += slotRow('BN', p); }); }
     else { html += slotRow('BN', null); }
     html += '</div>';
-    // Roster projection: sum proj_ppg for all my drafted players
-    var projPlayers = mine.filter(function(p){ return p.proj_ppg != null; });
+    // Roster projection: use Sleeper ppg (preferred) or proj_ppg fallback
+    function _pPpg(p){ return p.ppg != null ? Number(p.ppg) : (p.proj_ppg != null ? Number(p.proj_ppg) : null); }
+    var projPlayers = mine.filter(function(p){ return _pPpg(p) != null; });
     if (projPlayers.length >= 2){
       var myProjTotal = 0;
-      projPlayers.forEach(function(p){ myProjTotal += Number(p.proj_ppg); });
-      // League average: distribute top players' proj_ppg across all teams
+      projPlayers.forEach(function(p){ myProjTotal += _pPpg(p); });
+      // League average: distribute top players' ppg across all teams
       var allProj = [];
-      players.forEach(function(p){ if (p.proj_ppg != null) allProj.push(Number(p.proj_ppg)); });
+      players.forEach(function(p){ var v = _pPpg(p); if (v != null) allProj.push(v); });
       allProj.sort(function(a, b){ return b - a; });
       var numTeams = state.teams || 12, numRds = state.rounds || 15;
       var topSlice = allProj.slice(0, numTeams * numRds);
@@ -2208,7 +2227,7 @@ _DRAFT_ROOM_HTML = r"""
           type: draftType, teams: teams, rounds: rounds, sf: !!cfg.isSuperflex,
           slot: slot, order: order, picks: {}, current: 1,
           owned: buildOwnedFromResponse(d, teams, rounds, order, slot),
-          mode: 'live', isComplete: isComplete, sourceDraftId: draftId,
+          mode: 'live', isComplete: isComplete, isDrafting: isDrafting, sourceDraftId: draftId,
           pickTimer: parseInt(d.pick_timer) || 0,
           slotNames: d.slot_names || {}, queue: []
         };
@@ -2221,6 +2240,7 @@ _DRAFT_ROOM_HTML = r"""
           showCompleteSidebar();
         } else {
           document.getElementById('drSide').style.display = '';
+          _setUpcomingMode(!isDrafting);
           startPolling();
           if (isDrafting) startPickTimer();
         }
@@ -2241,8 +2261,10 @@ _DRAFT_ROOM_HTML = r"""
           state.owned = buildOwnedFromResponse(d, state.teams, state.rounds, state.order, state.slot);
           applyLivePicks(d.picks); render();
           var isDrafting = String(d.status) === 'drafting';
+          state.isDrafting = isDrafting;
           document.getElementById('drLiveBadge').style.display = isDrafting ? '' : 'none';
           document.getElementById('drUpcomingBadge').style.display = (!isDrafting && String(d.status) !== 'complete') ? '' : 'none';
+          _setUpcomingMode(!isDrafting && String(d.status) !== 'complete');
           if (isDrafting && state.current !== prevCurrent) startPickTimer();
           if (String(d.status) === 'complete'){
             stopPolling(); stopPickTimer(); state.isComplete = true; save();
@@ -2253,6 +2275,18 @@ _DRAFT_ROOM_HTML = r"""
     }, 5000);
   }
   function stopPolling(){ if (pollTimer){ clearInterval(pollTimer); pollTimer = null; } }
+
+  function _setUpcomingMode(upcoming){
+    // Hide Queue tab and draft buttons when draft hasn't started yet.
+    var qTab = document.querySelector('#drSideTabs [data-stab="queue"]');
+    if (qTab) qTab.style.display = upcoming ? 'none' : '';
+    if (upcoming && sideTab === 'queue'){
+      sideTab = 'best';
+      var bestTab = document.querySelector('#drSideTabs [data-stab="best"]');
+      if (bestTab){ bestTab.classList.add('is-active'); }
+      if (qTab) qTab.classList.remove('is-active');
+    }
+  }
 
   // ── Pick countdown timer ────────────────────────────────────────────────────
   // Counts down from state.pickTimer seconds. Clock starts fresh whenever the
@@ -2502,7 +2536,7 @@ _DRAFT_ROOM_HTML = r"""
     var sumProjTotal = 0, sumProjCount = 0;
     var sumT12 = 0, sumPsTotal = 0, sumPsCount = 0;
     mine.forEach(function(p){
-      if (p.proj_ppg != null){ sumProjTotal += Number(p.proj_ppg); sumProjCount++; }
+      var _ppgv = p.ppg != null ? Number(p.ppg) : (p.proj_ppg != null ? Number(p.proj_ppg) : null); if (_ppgv != null){ sumProjTotal += _ppgv; sumProjCount++; }
       var t = tierOf(p); if (t != null && t <= 2) sumT12++;
       var ps = p.ps; if (ps != null){ sumPsTotal += ps; sumPsCount++; }
     });
@@ -2771,9 +2805,9 @@ _DRAFT_ROOM_HTML = r"""
     var scarce = posTopRemaining(pos);
     // Prefer forward-looking projected PPG; fall back to last season actual
     var ppg = null, ppgLbl = 'PPG', ppgSub = '';
-    if (p.proj_ppg != null){ ppg = Number(p.proj_ppg); ppgLbl = 'Proj PPG'; ppgSub = 'projected'; }
-    else if (p.ppg != null){ ppg = Number(p.ppg); ppgLbl = 'PPG';
+    if (p.ppg != null){ ppg = Number(p.ppg); ppgLbl = 'PPG';
       ppgSub = p.ppg_rank != null ? (pos + p.ppg_rank) : (p.ppg_season ? String(p.ppg_season) : ''); }
+    else if (p.proj_ppg != null){ ppg = Number(p.proj_ppg); ppgLbl = 'Proj PPG'; ppgSub = 'projected'; }
     var sc = psColor(ps);
     var pc = posColor(p.position);
     var c = document.getElementById('drPreviewCard');
@@ -2817,7 +2851,9 @@ _DRAFT_ROOM_HTML = r"""
       }
     }
     h += '<div class="dr-prev-btns">';
-    if (state.mode === 'live'){
+    if (state.mode === 'live' && !state.isDrafting){
+      h += '<div class="dr-prev-note">Draft hasn\'t started yet. Picks will come from the platform once it begins.</div>';
+    } else if (state.mode === 'live'){
       h += '<div class="dr-prev-note">Live draft. Picks come from the platform.</div>';
     } else if (isYourTurn() || !sim){
       h += '<button class="dr-btn dr-btn-primary dr-btn-lg dr-prev-draft" data-id="' + esc(String(p.id)) + '">Draft ' + esc(p.name) + '</button>';
