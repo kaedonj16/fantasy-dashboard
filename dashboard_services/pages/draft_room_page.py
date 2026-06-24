@@ -163,7 +163,7 @@ _DRAFT_ROOM_HTML = r"""
         <span class="dr-sr-gap"></span>
         <button class="dr-btn dr-btn-primary" id="drSimStart" style="display:none;">&#9654;&nbsp; Start Draft</button>
         <button class="dr-btn dr-btn-ghost" id="drSimToggle" style="display:none;">Pause</button>
-        <button class="dr-btn dr-btn-ghost dr-opts-trigger" id="drOptsBtn" aria-label="Options">&#9881;</button>
+        <button class="dr-btn dr-btn-ghost dr-opts-trigger" id="drOptsBtn" aria-label="Options"><i class="fa-solid fa-gear"></i></button>
         <div class="dr-opts-panel" id="drOptsPanel">
           <select class="dr-sim-speed" id="drSimSpeed" style="display:none;" title="Simulation speed">
             <option value="1400">Slow</option>
@@ -2763,13 +2763,31 @@ _DRAFT_ROOM_HTML = r"""
       .then(function(r){ return r.json(); })
       .then(function(resp){
         if (resp.unsupported){ box.innerHTML = '<div class="dr-live-head">Live sync currently supports Sleeper leagues.</div>'; return; }
-        var ds = resp.drafts || [];
-        if (!ds.length){ box.innerHTML = '<div class="dr-live-head">No drafts found for this league yet.</div>'; return; }
-        var html = '<div class="dr-live-head">Detected drafts. Pick one to connect</div>';
+        // Only surface drafts that are still relevant - live now or upcoming.
+        // Completed drafts are review-only and belong in Draft History, not here.
+        var ds = (resp.drafts || []).filter(function(d){ return String(d.status) !== 'complete'; });
+        if (!ds.length){ box.innerHTML = '<div class="dr-live-head">No upcoming or live drafts for this league.</div>'; return; }
+        // Soonest first: live, then by scheduled start time.
+        ds.sort(function(a, b){
+          var ar = a.status === 'drafting' ? 0 : 1, br = b.status === 'drafting' ? 0 : 1;
+          if (ar !== br) return ar - br;
+          return (Number(a.start_time) || 9e15) - (Number(b.start_time) || 9e15);
+        });
+        var html = '<div class="dr-live-head">' + (ds.length > 1 ? 'Pick a draft to connect' : 'Your draft') + '</div>';
         ds.forEach(function(d){
+          var when = '';
+          if (d.start_time){
+            try {
+              var dt = new Date(Number(d.start_time));
+              var today = new Date();
+              var sameDay = dt.toDateString() === today.toDateString();
+              var t = dt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+              when = ' · ' + (sameDay ? t : (dt.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + t));
+            } catch(e){}
+          }
           html += '<button class="dr-live-item" data-id="' + esc(d.draft_id) + '">'
             + '<span class="dr-live-status dr-ls-' + esc(d.status || '') + '">' + esc(liveStatusLabel(d.status)) + '</span>'
-            + esc((d.type || 'snake') + ' · ' + (d.teams || '?') + ' teams · ' + (d.rounds || '?') + ' rounds') + '</button>';
+            + esc((d.type || 'snake') + ' · ' + (d.teams || '?') + ' teams · ' + (d.rounds || '?') + ' rounds' + when) + '</button>';
         });
         box.innerHTML = html;
       })
@@ -2828,10 +2846,26 @@ _DRAFT_ROOM_HTML = r"""
 
   function connectLive(draftId){
     stopPolling(); stopPickTimer();
-    fetch('/api/draft/live?platform=' + encodeURIComponent(cfg.platform) + '&draft_id=' + encodeURIComponent(draftId))
-      .then(function(r){ return r.json(); })
+    fetch('/api/draft/live?platform=' + encodeURIComponent(cfg.platform) + '&draft_id=' + encodeURIComponent(draftId), { cache: 'no-store' })
+      .then(function(r){
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
       .then(function(d){
         if (!d || d.error){ drAlert('Could not load that draft.'); return; }
+        try { _connectLiveApply(d, draftId); }
+        catch(err){
+          if (window.console) console.error('[draft] connect processing error', err);
+          drAlert('Connected, but failed to load the draft board. Refresh to retry.');
+        }
+      })
+      .catch(function(err){
+        if (window.console) console.error('[draft] connect fetch error', err);
+        drAlert('Could not connect to the live draft.');
+      });
+  }
+  function _connectLiveApply(d, draftId){
+    {
         var teams = parseInt(d.teams || 0, 10) || (cfg.numTeams || 12);
         var rounds = parseInt(d.rounds || 0, 10) || 15;
         var order = d.order || 'snake';
@@ -2868,8 +2902,7 @@ _DRAFT_ROOM_HTML = r"""
           if (isDrafting) startPickTimer();
         }
         loadPlayers();
-      })
-      .catch(function(){ drAlert('Could not connect to the live draft.'); });
+    }
   }
   // Signature of the live state so a poll that brought nothing new skips the
   // (expensive) board rebuild entirely.
@@ -3730,9 +3763,11 @@ _DRAFT_ROOM_HTML = r"""
     var optsBtn = document.getElementById('drOptsBtn');
     var optsPanel = document.getElementById('drOptsPanel');
     if (!optsBtn || !optsPanel) return;
+    var _optsToggledAt = 0;
     optsBtn.addEventListener('click', function(e){
       e.stopPropagation();
       optsPanel.classList.toggle('is-open');
+      _optsToggledAt = Date.now();
     });
     optsPanel.addEventListener('click', function(e){
       e.stopPropagation(); // keep open for select interaction
@@ -3740,7 +3775,13 @@ _DRAFT_ROOM_HTML = r"""
         optsPanel.classList.remove('is-open');
       }
     });
-    document.addEventListener('click', function(){
+    // Outside-click close. Guards against the mobile "ghost click" that fires a
+    // synthesized click ~300ms after the tap that opened it (which was closing it
+    // instantly), and ignores taps on the trigger/panel themselves.
+    document.addEventListener('click', function(e){
+      if (!optsPanel.classList.contains('is-open')) return;
+      if (Date.now() - _optsToggledAt < 350) return;
+      if (optsBtn.contains(e.target) || optsPanel.contains(e.target)) return;
       optsPanel.classList.remove('is-open');
     });
   })();
@@ -4057,9 +4098,11 @@ _DRAFT_ROOM_HTML = r"""
     applyMode();
   })();
 
-  // Open a specific league draft from history (?live=<draft_id>), else resume
-  // the in-progress session draft.
-  var urlLive = new URLSearchParams(location.search).get('live');
+  // Open a specific league draft directly: ?connect=<id> (from the site-wide
+  // "Join Draft Room" banner) or ?live=<id> (from Draft History). Otherwise
+  // resume the in-progress session draft.
+  var _qs = new URLSearchParams(location.search);
+  var urlLive = _qs.get('connect') || _qs.get('live');
   if (urlLive){
     connectLive(urlLive);
   } else {
