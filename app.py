@@ -13063,6 +13063,7 @@ def api_draft_live():
             "pick_no": p.get("pick_no"),
             "round": p.get("round"),
             "draft_slot": p.get("draft_slot"),
+            "picked_by": p.get("picked_by"),   # user_id of who made the pick (for ownership)
             "player_id": str(p.get("player_id") or ""),
             "name": nm or (meta.get("player_name") or "Unknown"),
             "position": (meta.get("position") or "").upper(),
