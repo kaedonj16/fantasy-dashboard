@@ -1495,8 +1495,6 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     _tab_param = request.args.get("tab", "")
     if active == "trade" and _tab_param == "suggestions":
         active = "trade-suggestions"
-    elif active == "prospects" and _tab_param == "draft":
-        active = "prospects-draft"
 
     nfl_state = get_nfl_state() or {}
     offseason_mode = ((nfl_state.get("season_type") or "").lower() == "off") and (

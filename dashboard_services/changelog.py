@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-06-24",
+        "tag": "update",
+        "text": "Draft Room overhaul: smarter grading now scores Value, Starters, and Construction as separate components for startup and redraft drafts, with rookie grades tied directly to pick quality. Team archetype (Zero RB, Hero RB, Robust RB, TE Premium, and more) now appears in your post-draft summary. Pick location (e.g. 1.04) shows in the share card. Upcoming live drafts no longer show the On the Clock indicator or queue tab before the draft starts.",
+        "link": "/draft"
+    },
+    {
         "date": "2026-06-18",
         "tag": "update",
         "text": "Player & Compare modals: metric bars now scale by positional rank, so bar length reflects how a player stacks up at their position (Total TDs, WOPR, Air Yards Share, Targets/G, Touches/G and more no longer render misleadingly). Game logs now load in the Compare view, and graphs reopen instantly thanks to client-side caching.",
