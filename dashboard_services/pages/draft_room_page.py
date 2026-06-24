@@ -28,6 +28,8 @@ def build_draft_room_body(
     is_superflex: bool = False,
     roster_positions: Optional[list] = None,
     viewer_user_id: Optional[str] = None,
+    num_rounds_rookie: Optional[int] = None,
+    num_rounds_startup: Optional[int] = None,
 ) -> str:
     cfg = {
         "leagueId": league_id or "",
@@ -38,6 +40,8 @@ def build_draft_room_body(
         "isSuperflex": bool(is_superflex),
         "rosterPositions": list(roster_positions) if roster_positions else None,
         "viewerUserId": str(viewer_user_id) if viewer_user_id else "",
+        "numRoundsRookie":  int(num_rounds_rookie)  if num_rounds_rookie  else None,
+        "numRoundsStartup": int(num_rounds_startup) if num_rounds_startup else None,
     }
     cfg_json = json.dumps(cfg)
     return (
@@ -180,6 +184,7 @@ _DRAFT_ROOM_HTML = r"""
               <option value="value">Value</option>
               <option value="adp" selected>ADP</option>
               <option value="steals">Steals</option>
+              <option value="ps">Pick Score</option>
             </select>
           </div>
           <div class="dr-pos-filters" id="drPosFilters">
@@ -925,6 +930,11 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   // ── Setup ────────────────────────────────────────────────────────────────
+  function _defaultRounds(typeVal){
+    if (typeVal === 'rookie')  return String(cfg.numRoundsRookie  || 3);
+    if (typeVal === 'startup') return String(cfg.numRoundsStartup || 15);
+    return '15';
+  }
   function applyCfgDefaults(){
     if (cfg.numTeams) {
       var t = document.getElementById('drTeams');
@@ -932,6 +942,8 @@ _DRAFT_ROOM_HTML = r"""
       for (var i=0;i<t.options.length;i++){ if (t.options[i].value === want || t.options[i].text === want){ t.selectedIndex = i; break; } }
     }
     if (cfg.isSuperflex) document.getElementById('drSf').value = '1';
+    var typeVal = document.getElementById('drType').value;
+    document.getElementById('drRounds').value = _defaultRounds(typeVal);
     fillSlotOptions(parseInt(document.getElementById('drTeams').value, 10));
   }
 
@@ -939,7 +951,7 @@ _DRAFT_ROOM_HTML = r"""
     fillSlotOptions(parseInt(this.value, 10));
   });
   document.getElementById('drType').addEventListener('change', function(){
-    document.getElementById('drRounds').value = (this.value === 'rookie') ? '4' : '15';
+    document.getElementById('drRounds').value = _defaultRounds(this.value);
     renderSetupCapital();   // rounds changed: refresh the claimed-pick list
   });
 
@@ -971,7 +983,7 @@ _DRAFT_ROOM_HTML = r"""
       if (!rd){ lg.K = 0; lg.DEF = 0; }
       return lg;
     }
-    return { QB:1, SF:sf?1:0, RB:2, WR:3, TE:1, FLEX:sf?0:1,
+    return { QB:1, SF:sf?1:0, RB:2, WR:3, TE:1, FLEX:1,
              K:rd?1:0, DEF:rd?1:0, BN:rd?5:7 };
   }
 
@@ -989,7 +1001,7 @@ _DRAFT_ROOM_HTML = r"""
       { key:'RB',   label:'RB' },
       { key:'WR',   label:'WR' },
       { key:'TE',   label:'TE' },
-      { key:'FLEX', label:'FLEX', hide: sf },
+      { key:'FLEX', label:'FLEX' },
       { key:'K',    label:'K',    hide: !rd },
       { key:'DEF',  label:'DEF',  hide: !rd },
       { key:'BN',   label:'Bench' }
@@ -1320,6 +1332,7 @@ _DRAFT_ROOM_HTML = r"""
     if (state) state.simStarted = true;
     save();
     syncSimControls();
+    renderSide();
     scheduleSim();
   }
   function startMock(){
@@ -1404,8 +1417,25 @@ _DRAFT_ROOM_HTML = r"""
   function listInto(html){ document.getElementById('drBaList').innerHTML = html; }
 
   // ── Tiers + cliffs ──────────────────────────────────────────────────────────
+  // Mirrors assign_tier() in value_translation.py: maps a 0-100 prospect grade
+  // to its rookie-class tier (1 = elite). Fallback when prospect_tier is absent.
+  function prospectTier(score){
+    if (score >= 85) return 1;
+    if (score >= 72) return 2;
+    if (score >= 60) return 3;
+    if (score >= 44) return 4;
+    if (score >= 33) return 5;
+    return 6;
+  }
   function tierOf(p){
     if (state.type === 'redraft') return null;   // tiers are keyed to dynasty value
+    // Rookie drafts: use the prospect grade's tier from the prospects page
+    // (keyed to the rookie class), not all-player dynasty value tiers.
+    if (state.type === 'rookie'){
+      if (p && p.prospect_tier != null) return Number(p.prospect_tier);
+      if (p && p.prospect_score != null) return prospectTier(Number(p.prospect_score));
+      return null;
+    }
     var lt = state.sf ? 'sf' : '1qb';
     var sz = String(state.teams);
     var tbl = (tierThresholds[lt] || {})[sz] || (tierThresholds['1qb'] || {})['10'] || [];
@@ -2585,12 +2615,18 @@ _DRAFT_ROOM_HTML = r"""
       return true;
     });
     function steal(p){ var a = adpOf(p); return (a != null) ? (state.current - a) : -99999; }
+    if (sortBy === 'ps'){
+      var _pcounts = myPosCounts();
+      var _pmaxV = 0; pool.forEach(function(p){ var v = valOf(p); if (v > _pmaxV) _pmaxV = v; });
+      pool.forEach(function(p){ p._ps = pickScore(p, _pmaxV, _pcounts); });
+    }
     pool.sort(function(a, b){
       if (sortBy === 'adp'){
         var aa = adpOf(a), ba = adpOf(b);
         return (aa != null ? aa : 99999) - (ba != null ? ba : 99999);
       }
-      if (sortBy === 'steals'){ return steal(b) - steal(a); }   // biggest fallers vs ADP first
+      if (sortBy === 'steals'){ return steal(b) - steal(a); }
+      if (sortBy === 'ps'){ return (b._ps || 0) - (a._ps || 0); }
       return valOf(b) - valOf(a);
     });
     if (!pool.length){ listInto('<div class="dr-empty-note">No players match.</div>'); return; }
@@ -2602,6 +2638,9 @@ _DRAFT_ROOM_HTML = r"""
       if (sortBy === 'steals'){
         var d = steal(p);
         if (d > 0) opts.sub = '+' + Math.round(d) + ' vs ADP';
+      }
+      if (sortBy === 'ps' && p._ps != null){
+        opts.sub = 'PS ' + p._ps;
       }
       if (nextPick){
         var prob = availProb(p, nextPick);
