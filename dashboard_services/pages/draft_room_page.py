@@ -1160,8 +1160,11 @@ _DRAFT_ROOM_HTML = r"""
 
   // ── Data ─────────────────────────────────────────────────────────────────
   function redraftVal(p){
-    return (state.sf ? (p.redraft_value_sf != null ? p.redraft_value_sf : p.redraft_value_1qb)
-                     : p.redraft_value_1qb) || 0;
+    // FantasyCalc stores redraft values on their 0-10000 scale; divide by 10
+    // to normalize to the site's 0-999.9 range (a few elite picks float above).
+    var raw = (state.sf ? (p.redraft_value_sf != null ? p.redraft_value_sf : p.redraft_value_1qb)
+                        : p.redraft_value_1qb) || 0;
+    return raw / 10;
   }
   function valOf(p){
     if (state.type === 'redraft') return redraftVal(p);
@@ -1893,7 +1896,7 @@ _DRAFT_ROOM_HTML = r"""
       + reasonLine + waitLine + availLine + '</div>'
       + '<div class="dr-ba-right-col">'
       + '<div class="dr-ba-metrics">'
-      + '<div class="dr-ba-right"><div class="dr-ba-val">' + (state.type === 'redraft' && p._radp != null ? 'R' + p._radp : Math.round(valOf(p))) + '</div><div class="dr-ba-sub">' + sub + '</div></div>'
+      + '<div class="dr-ba-right"><div class="dr-ba-val">' + Math.round(valOf(p)) + '</div><div class="dr-ba-sub">' + sub + '</div></div>'
       + psChip
       + '</div>'
       + '<div class="dr-ba-actions">'
