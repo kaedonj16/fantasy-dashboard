@@ -140,6 +140,7 @@ _DRAFT_ROOM_HTML = r"""
 
   <!-- Board + side -->
   <div class="dr-main" id="drMain" style="display:none;">
+    <div class="dr-start-banner" id="drStartBanner" style="display:none;"></div>
     <div class="dr-statusbar">
       <div class="dr-status-info">
         <div class="dr-onclock" id="drOnClockWrap">
@@ -343,6 +344,13 @@ _DRAFT_ROOM_HTML = r"""
   .dr-pick-timer.urgent { color: #fff; background: #ef4444; animation: drPulse 1s ease-in-out infinite; }
   .dr-progress { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
   .dr-save { font-size: 11px; color: #22c55e; }
+  .dr-start-banner { display: flex; align-items: center; gap: 13px; margin: 0 0 12px; padding: 12px 16px; border-radius: 12px;
+    background: linear-gradient(90deg, rgba(56,189,248,.18), rgba(56,189,248,.05)); border: 1px solid var(--accent,#38bdf8); }
+  .dr-start-banner .dr-start-ic { font-size: 22px; flex-shrink: 0; animation: drPulse 1.6s ease-in-out infinite; }
+  .dr-start-banner .dr-start-txt { display: flex; flex-direction: column; line-height: 1.35; min-width: 0; }
+  .dr-start-banner .dr-start-txt b { font-size: 15px; font-weight: 800; color: var(--text); }
+  .dr-start-banner .dr-start-txt span { font-size: 12px; color: var(--text-muted); }
+  .dr-start-cd { font-variant-numeric: tabular-nums; }
   .dr-poll-status { font-size: 11px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
   .dr-poll-status .dr-poll-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; flex-shrink: 0; }
   .dr-poll-status.is-syncing .dr-poll-dot { background: var(--accent,#38bdf8); animation: drPulse 1s ease-in-out infinite; }
@@ -2834,12 +2842,14 @@ _DRAFT_ROOM_HTML = r"""
           owned: buildOwnedFromResponse(d, teams, rounds, order, slot),
           mode: 'live', isComplete: isComplete, isDrafting: isDrafting, sourceDraftId: draftId,
           pickTimer: parseInt(d.pick_timer) || 0,
+          startTime: parseInt(d.start_time) || 0,
           slotNames: d.slot_names || {}, queue: []
         };
         applyLivePicks(d.picks || []);
         // Seed the poll signature so the first poll doesn't redundantly rebuild.
         _liveSig = liveSig(d); _pollLastAt = Date.now();
         showMain();
+        updateStartBanner();
         document.getElementById('drUndo').style.display = 'none';
         document.getElementById('drLiveBadge').style.display = isDrafting ? '' : 'none';
         document.getElementById('drUpcomingBadge').style.display = (!isDrafting && !isComplete) ? '' : 'none';
@@ -2885,10 +2895,29 @@ _DRAFT_ROOM_HTML = r"""
     el.innerHTML = '<span class="dr-poll-dot"></span>Updated ' + (_fmtAgo(_pollLastAt) || '&mdash;')
       + (nextIn > 0 ? ' &middot; next in ' + nextIn + 's' : '');
   }
+  // "Draft starts in MM:SS" banner: shows once a connected, not-yet-started draft
+  // is within 15 minutes of its scheduled Sleeper start_time.
+  var _START_WINDOW_MS = 15 * 60 * 1000;
+  function updateStartBanner(){
+    var el = document.getElementById('drStartBanner');
+    if (!el) return;
+    var st = (state && state.startTime) ? state.startTime : 0;
+    var upcoming = state && state.mode === 'live' && !state.isComplete && state.isDrafting === false;
+    if (!st || !upcoming){ el.style.display = 'none'; return; }
+    var ms = st - Date.now();
+    if (ms <= 0 || ms > _START_WINDOW_MS){ el.style.display = 'none'; return; }
+    var total = Math.floor(ms / 1000);
+    var hh = Math.floor(total / 3600), mm = Math.floor((total % 3600) / 60), ss = total % 60;
+    var cd = (hh > 0 ? hh + ':' + (mm < 10 ? '0' : '') : '') + mm + ':' + (ss < 10 ? '0' : '') + ss;
+    el.style.display = '';
+    el.innerHTML = '<span class="dr-start-ic">&#128276;</span>'
+      + '<div class="dr-start-txt"><b>Your draft starts in <span class="dr-start-cd">' + cd + '</span></b>'
+      + '<span>Head to your draft room and get your board ready.</span></div>';
+  }
   function startPolling(){
     stopPolling();
     _pollCount = 0; _liveSig = null;
-    pollTickTimer = setInterval(updatePollStatus, 1000);   // keep the countdown live between polls
+    pollTickTimer = setInterval(function(){ updatePollStatus(); updateStartBanner(); }, 1000);
     pollOnce();
   }
   function schedulePoll(){
@@ -2914,6 +2943,7 @@ _DRAFT_ROOM_HTML = r"""
       .then(function(d){
         clearTimeout(to); _pollInFlight = false;
         if (!d || !d.picks){ _pollLastAt = Date.now(); return; }
+        if (d.start_time != null) state.startTime = parseInt(d.start_time) || 0;
         var sig = liveSig(d);
         if (sig !== _liveSig){
           _liveSig = sig;
@@ -2950,6 +2980,7 @@ _DRAFT_ROOM_HTML = r"""
     if (pollTickTimer){ clearInterval(pollTickTimer); pollTickTimer = null; }
     _pollInFlight = false;
     var el = document.getElementById('drPollStatus'); if (el) el.style.display = 'none';
+    var sb = document.getElementById('drStartBanner'); if (sb) sb.style.display = 'none';
   }
 
   function _setUpcomingMode(upcoming){

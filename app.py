@@ -13117,6 +13117,7 @@ def api_draft_live():
             "type": draft.get("type"),
             "draft_type": draft_type,
             "pick_timer": pick_timer,
+            "start_time": draft.get("start_time"),   # scheduled start (epoch ms), pre-draft countdown
             "teams": settings.get("teams"),
             "rounds": settings.get("rounds"),
             "order": _order_from_sleeper(draft),
@@ -13168,6 +13169,7 @@ def api_draft_live():
         "type": draft.get("type"),
         "draft_type": draft_type,
         "pick_timer": pick_timer,
+        "start_time": draft.get("start_time"),   # scheduled start (epoch ms), pre-draft countdown
         "teams": settings.get("teams"),
         "rounds": settings.get("rounds"),
         "order": _order_from_sleeper(draft),
