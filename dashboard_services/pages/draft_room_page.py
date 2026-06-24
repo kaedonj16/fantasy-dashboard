@@ -1648,6 +1648,55 @@ _DRAFT_ROOM_HTML = r"""
     return Math.round(valOf(p) - _repl[pos]);
   }
 
+  // ── PPG normalization (production) ──────────────────────────────────────────
+  // A VOR-style scale for fantasy points so current/projected production matters
+  // in the pick score. Replacement-level PPG maps to ~0, elite (top-of-position)
+  // PPG maps to ~1, putting QB/RB/WR/TE on a common 0-1 axis despite very
+  // different raw point levels (a 22-PPG QB and a 13-PPG TE can both be "elite").
+  var _ppgScale = {};   // refreshed each render: { POS: { repl, elite } }
+  function computePpgScale(){
+    var rs = (state && state.roster) || defaultRoster();
+    var teams = state.teams || 12;
+    var flex = rs.FLEX || 0, sf = rs.SF || 0;
+    var starters = {
+      QB: (rs.QB || 0) + sf * 0.5,
+      RB: (rs.RB || 0) + flex * 0.5,
+      WR: (rs.WR || 0) + flex * 0.5,
+      TE: (rs.TE || 0),
+      K:  (rs.K || 0),
+      DEF:(rs.DEF || 0)
+    };
+    var byPos = { QB: [], RB: [], WR: [], TE: [], K: [], DEF: [] };
+    players.forEach(function(p){
+      var pos = (p.position || '').toUpperCase();
+      var v = ppgOf(p);
+      if (byPos[pos] && v != null) byPos[pos].push(v);
+    });
+    var out = {};
+    Object.keys(byPos).forEach(function(pos){
+      var arr = byPos[pos]; if (!arr.length) return;
+      arr.sort(function(a, b){ return b - a; });
+      // Elite anchor: mean of the top few (robust against a single outlier).
+      var topN = Math.max(1, Math.min(3, arr.length));
+      var eliteSum = 0; for (var i = 0; i < topN; i++) eliteSum += arr[i];
+      var elite = eliteSum / topN;
+      // Replacement anchor: PPG at the last startable slot leaguewide.
+      var idx = Math.round(teams * (starters[pos] || 1)) - 1;
+      if (idx < 0) idx = 0; if (idx >= arr.length) idx = arr.length - 1;
+      out[pos] = { repl: arr[idx], elite: elite };
+    });
+    return out;
+  }
+  function ppgNormOf(p){
+    var pos = (p.position || '').toUpperCase();
+    var v = ppgOf(p);
+    var sc = _ppgScale[pos];
+    if (v == null || !sc) return null;
+    var span = sc.elite - sc.repl;
+    if (span <= 0) return clamp01(v / Math.max(sc.elite, 1));
+    return clamp01((v - sc.repl) / span);
+  }
+
   // ── Availability probability ────────────────────────────────────────────────
   // Model a player's actual draft slot as Normal(ADP, sigma); the chance they
   // survive to overall pick `pn` is P(slot >= pn) = 1 - CDF((pn - ADP)/sigma).
@@ -1915,20 +1964,28 @@ _DRAFT_ROOM_HTML = r"""
     }
     var mom = clamp01((p.rank_change_7d || 0) / 20 + 0.5);
 
+    // Production: current (Sleeper PPG) or projected PPG, normalized within the
+    // position. Missing PPG falls back to valueNorm so the player isn't penalized
+    // for absent data - value already correlates with production.
+    var ppgN = ppgNormOf(p);
+    if (ppgN == null) ppgN = valueNorm;
+
     // #5: Draft-type context weights. Weights sum to ~1.05 so elite picks can reach 100.
     var w;
     if (state.type === 'rookie'){
-      // Rookie: upside and youth dominate; current value matters less than trajectory.
-      w = { vor: 0.06, value: 0.22, adp: 0.30, tier: 0.12, need: 0.05, youth: 0.24, mom: 0.06 };
+      // Rookie: upside and youth dominate; production is mostly projection (noisy),
+      // so PPG carries only a light weight.
+      w = { vor: 0.06, value: 0.18, adp: 0.29, tier: 0.12, need: 0.05, youth: 0.24, mom: 0.06, ppg: 0.05 };
     } else if (state.type === 'redraft'){
-      // Redraft: production now; ignore youth entirely; VOR and ADP are primary signals.
-      w = { vor: 0.12, value: 0.36, adp: 0.35, tier: 0.10, need: 0.08, youth: 0.00, mom: 0.04 };
+      // Redraft: production now is the whole game - PPG is a primary signal
+      // alongside VOR and ADP; youth is ignored entirely.
+      w = { vor: 0.10, value: 0.24, adp: 0.33, tier: 0.08, need: 0.07, youth: 0.00, mom: 0.03, ppg: 0.18 };
     } else {
       // Startup dynasty: balanced blend of talent, value, and future potential.
-      // Youth carries a bit more weight than redraft since it values the future too.
-      w = { vor: 0.08, value: 0.30, adp: 0.31, tier: 0.13, need: 0.10, youth: 0.10, mom: 0.03 };
+      // PPG adds a current-production lens on top of long-term dynasty value.
+      w = { vor: 0.07, value: 0.24, adp: 0.30, tier: 0.12, need: 0.09, youth: 0.10, mom: 0.03, ppg: 0.10 };
     }
-    var s = w.vor*vorNorm + w.value*valueNorm + w.adp*adpVal + w.tier*tierScore + w.need*need + w.youth*youth + w.mom*mom;
+    var s = w.vor*vorNorm + w.value*valueNorm + w.adp*adpVal + w.tier*tierScore + w.need*need + w.youth*youth + w.mom*mom + w.ppg*ppgN;
 
     // #6: Opportunity cost via survival to next owned pick.
     // Low survival = urgency bonus; high survival = slight penalty (can wait).
@@ -1938,8 +1995,20 @@ _DRAFT_ROOM_HTML = r"""
       if (survProb != null) s += 0.05 - survProb / 100 * 0.08;
     }
 
-    // QB overfill: in 1QB a second QB consumes a spot better used for a skill player.
-    if (!state.sf && pos === 'QB' && (counts['QB'] || 0) >= 1) s *= 0.25;
+    // QB overfill (1QB only): a second QB carries real opportunity cost only in
+    // the early rounds, when startable skill players are still on the board.
+    // By the late rounds a backup QB is a normal roster-building pick, so the
+    // penalty tapers to nothing. A 3rd+ QB stays a bit more discounted.
+    if (!state.sf && pos === 'QB' && (counts['QB'] || 0) >= 1){
+      var _qbRound = Math.ceil(state.current / (state.teams || 12));
+      var _qbPen;
+      if (_qbRound <= 3)      _qbPen = 0.30;   // early: heavy - wasting a premium pick
+      else if (_qbRound <= 6) _qbPen = 0.60;   // mid: moderate cost
+      else if (_qbRound <= 9) _qbPen = 0.85;   // later: minor
+      else                    _qbPen = 1.0;    // late: no penalty - backup/streamer
+      if ((counts['QB'] || 0) >= 2) _qbPen *= 0.7;   // 3rd+ QB: still discouraged
+      s *= _qbPen;
+    }
 
     // #7: Redraft handcuff boost. If user owns the starter at this position+team,
     // the backup has significant insurance value worth a meaningful PS bump.
@@ -1987,8 +2056,10 @@ _DRAFT_ROOM_HTML = r"""
     var relGap = (adp != null) ? ((state.current - adp) / Math.max(adp, 1.5)) : null;
     var tier = tierOf(p);
     var left = tierRemaining(p);
-    // QB overfill: most important warning in 1QB formats.
-    if (!state.sf && pos === 'QB' && (counts['QB'] || 0) >= 1){
+    // QB overfill: only a warning early, when a skill player is the better use of
+    // the pick. Late rounds: a backup QB is fine, so fall through to a normal reason.
+    if (!state.sf && pos === 'QB' && (counts['QB'] || 0) >= 1
+        && Math.ceil(state.current / (state.teams || 12)) <= 6){
       return 'Starting QB already filled, this pick could be a skill player';
     }
     // Tier cliff: urgent positional scarcity.
@@ -2086,6 +2157,7 @@ _DRAFT_ROOM_HTML = r"""
   function renderSide(){
     _ptc = posTierCounts();
     _repl = computeReplacement();
+    _ppgScale = computePpgScale();
     var kdef = wantsKDef();
     var kbtns = document.querySelectorAll('.dr-pos-kdef');
     for (var i = 0; i < kbtns.length; i++){ kbtns[i].style.display = kdef ? '' : 'none'; }
