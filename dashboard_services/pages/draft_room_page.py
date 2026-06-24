@@ -3758,31 +3758,36 @@ _DRAFT_ROOM_HTML = r"""
   document.getElementById('drReset').addEventListener('click', resetDraft);
   document.getElementById('drEdit').addEventListener('click', showSetup);
   document.getElementById('drPractice').addEventListener('click', startPracticeMock);
-  // Mobile options menu toggle
+  // Mobile options menu toggle. The outside-close listener is attached only WHILE
+  // the panel is open, and only after a short delay - so the very tap that opened
+  // it (and any iOS "ghost click" fired ~300ms later) can't immediately close it.
+  // This is what made the gear "open then close instantly" on mobile.
   (function(){
     var optsBtn = document.getElementById('drOptsBtn');
     var optsPanel = document.getElementById('drOptsPanel');
     if (!optsBtn || !optsPanel) return;
-    var _optsToggledAt = 0;
-    optsBtn.addEventListener('click', function(e){
-      e.stopPropagation();
-      optsPanel.classList.toggle('is-open');
-      _optsToggledAt = Date.now();
-    });
-    optsPanel.addEventListener('click', function(e){
-      e.stopPropagation(); // keep open for select interaction
-      if (e.target.classList.contains('dr-btn') || e.target.closest('.dr-btn')) {
-        optsPanel.classList.remove('is-open');
-      }
-    });
-    // Outside-click close. Guards against the mobile "ghost click" that fires a
-    // synthesized click ~300ms after the tap that opened it (which was closing it
-    // instantly), and ignores taps on the trigger/panel themselves.
-    document.addEventListener('click', function(e){
-      if (!optsPanel.classList.contains('is-open')) return;
-      if (Date.now() - _optsToggledAt < 350) return;
+    function onOutside(e){
       if (optsBtn.contains(e.target) || optsPanel.contains(e.target)) return;
+      closeOpts();
+    }
+    function closeOpts(){
       optsPanel.classList.remove('is-open');
+      document.removeEventListener('click', onOutside, true);
+    }
+    function openOpts(){
+      optsPanel.classList.add('is-open');
+      document.removeEventListener('click', onOutside, true);
+      setTimeout(function(){ document.addEventListener('click', onOutside, true); }, 400);
+    }
+    optsBtn.addEventListener('click', function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      if (optsPanel.classList.contains('is-open')) closeOpts(); else openOpts();
+    });
+    // Tapping an action button inside the panel closes it; other taps (e.g. the
+    // speed/variance selects) keep it open.
+    optsPanel.addEventListener('click', function(e){
+      if (e.target.closest('.dr-btn')) closeOpts();
     });
   })();
   document.getElementById('drBaSort').addEventListener('change', renderBA);
