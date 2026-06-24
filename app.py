@@ -27461,6 +27461,39 @@ def robots_txt():
     return app.response_class(txt, mimetype="text/plain")
 
 
+@app.route("/sitemap.xml")
+def sitemap_xml():
+    host = request.host_url.rstrip("/")
+    urls = [
+        ("/",                           "weekly",  "1.0"),
+        ("/players",                    "weekly",  "0.9"),
+        ("/metrics",                    "weekly",  "0.9"),
+        ("/draft",                      "weekly",  "0.9"),
+        ("/draft/history",              "monthly", "0.7"),
+        ("/prospects",                  "weekly",  "0.8"),
+        ("/trade",                      "weekly",  "0.9"),
+        ("/trade-database",             "weekly",  "0.7"),
+        ("/top-movers",                 "daily",   "0.8"),
+        ("/breakouts",                  "weekly",  "0.8"),
+        ("/dynasty-trade-value-chart",  "weekly",  "0.9"),
+        ("/rankings/dynasty",           "weekly",  "0.8"),
+        ("/rankings/dynasty-qb",        "weekly",  "0.7"),
+        ("/rankings/dynasty-rb",        "weekly",  "0.7"),
+        ("/rankings/dynasty-wr",        "weekly",  "0.7"),
+        ("/rankings/dynasty-te",        "weekly",  "0.7"),
+    ]
+    lines = ['<?xml version="1.0" encoding="UTF-8"?>',
+             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    for path, freq, priority in urls:
+        lines.append(
+            f"  <url><loc>{host}{path}</loc>"
+            f"<changefreq>{freq}</changefreq>"
+            f"<priority>{priority}</priority></url>"
+        )
+    lines.append("</urlset>")
+    return app.response_class("\n".join(lines), mimetype="application/xml")
+
+
 # ── Dynasty Trade Value Chart ─────────────────────────────────────────────────
 
 @app.route("/dynasty-trade-value-chart")
