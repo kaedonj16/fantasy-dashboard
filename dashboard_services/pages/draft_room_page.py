@@ -1324,9 +1324,18 @@ _DRAFT_ROOM_HTML = r"""
     _boardSig = null;   // always force a full board rebuild when entering the draft view
     document.getElementById('drSetup').style.display = 'none';
     var hero = document.getElementById('drHero'); if (hero) hero.style.display = 'none';
-    // Practice Mock only makes sense while synced to a real (live/upcoming) draft.
+    var isLive = !!(state && state.mode === 'live');
+    // Practice Mock and Edit Setup are irrelevant when watching a live draft.
     var pm = document.getElementById('drPractice');
-    if (pm) pm.style.display = (state && state.mode === 'live') ? '' : 'none';
+    if (pm) pm.style.display = isLive ? 'none' : '';
+    var ed = document.getElementById('drEdit');
+    if (ed) ed.style.display = isLive ? 'none' : '';
+    // Reset becomes "Exit Board" in live mode (no danger color - it's just navigation).
+    var rst = document.getElementById('drReset');
+    if (rst){
+      rst.textContent = isLive ? 'Exit Board' : 'Reset';
+      rst.className = isLive ? 'dr-btn dr-btn-ghost' : 'dr-btn dr-btn-ghost dr-btn-danger';
+    }
     document.getElementById('drBoard').innerHTML = '';
     document.getElementById('drBaList').innerHTML = '<div class="dr-loading">Loading players…</div>';
     document.getElementById('drMain').style.display = '';
@@ -3480,11 +3489,14 @@ _DRAFT_ROOM_HTML = r"""
     render();
   }
   function resetDraft(){
-    drConfirm('Reset the draft board?', 'Reset', function(){
+    var isLive = !!(state && state.mode === 'live');
+    function doReset(){
+      stopPolling(); stopPickTimer();
       try { sessionStorage.removeItem(sessKey); } catch(e){}
       state = null;
       showSetup();
-    });
+    }
+    if (isLive){ doReset(); } else { drConfirm('Reset the draft board?', 'Reset', doReset); }
   }
 
   // ── Share a draft image ─────────────────────────────────────────────────────
