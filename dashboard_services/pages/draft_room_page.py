@@ -2609,6 +2609,28 @@ _DRAFT_ROOM_HTML = r"""
   var _shareDataUrls = { dark: null, light: null };
   var _shareTheme = 'dark';
 
+  function _readThemeVars(dark){
+    var root = document.documentElement;
+    var cur = root.getAttribute('data-theme');
+    var want = dark ? 'dark' : null;
+    if (want !== cur){ want ? root.setAttribute('data-theme', want) : root.removeAttribute('data-theme'); }
+    var cs = getComputedStyle(root);
+    function g(v){ return cs.getPropertyValue(v).trim(); }
+    var vars = {
+      bg:     g('--card'),
+      header: g('--card-soft'),
+      accent: g('--accent'),
+      text:   g('--text'),
+      sub:    g('--text-muted'),
+      empty:  g('--text-subtle'),
+      border: g('--border'),
+      win:    g('--win'),
+      info:   g('--info'),
+    };
+    if (want !== cur){ cur ? root.setAttribute('data-theme', cur) : root.removeAttribute('data-theme'); }
+    return vars;
+  }
+
   function _buildShareCanvas(dark){
     var mine = myPicksList().slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
     var used = {}, rows = [];
@@ -2618,9 +2640,7 @@ _DRAFT_ROOM_HTML = r"""
       rows.push({ slot: slot, p: pick });
     });
     for (var i = 0; i < mine.length; i++){ if (!used[i]) rows.push({ slot: 'BN', p: mine[i] }); }
-    var clr = dark
-      ? { bg: '#0f172a', header: '#1e293b', accent: '#38bdf8', sub: '#94a3b8', player: '#e5e7eb', empty: '#475569', good: '#22c55e', div: '#1e293b' }
-      : { bg: '#ffffff', header: '#f1f5f9', accent: '#2563eb', sub: '#64748b', player: '#0f172a', empty: '#94a3b8', good: '#16a34a', div: '#e2e8f0' };
+    var clr = _readThemeVars(dark);
     var POSC = { QB:'#f59e0b', RB:'#22c55e', WR:'#3b82f6', TE:'#8b5cf6', K:'#94a3b8', DEF:'#64748b', FLEX:'#14b8a6', SF:'#a78bfa', BN:'#64748b' };
     var W = 720, pad = 30, lineH = 44, headerH = 130;
     var H = headerH + rows.length * lineH + pad;
@@ -2641,18 +2661,17 @@ _DRAFT_ROOM_HTML = r"""
     if (g){
       var gl = gradeLetter(g.score);
       var gp = gradePace(g.score);
-      ctx.fillStyle = clr.good; ctx.font = 'bold 15px system-ui,Arial,sans-serif';
+      ctx.fillStyle = clr.win; ctx.font = 'bold 15px system-ui,Arial,sans-serif';
       ctx.fillText('Grade ' + gl + '  \xb7  ' + gp, pad, pad + 76);
     }
     // Divider below header
-    ctx.fillStyle = dark ? '#334155' : '#cbd5e1'; ctx.fillRect(0, headerH - 10, W, 1);
+    ctx.fillStyle = clr.border; ctx.fillRect(0, headerH - 10, W, 1);
     // Rows
     var y = headerH;
-    rows.forEach(function(r){
-      // Row background alternating subtle
-      ctx.fillStyle = dark ? 'rgba(255,255,255,.02)' : 'rgba(0,0,0,.018)';
-      ctx.fillRect(0, y, W, lineH);
-      // Position badge
+    rows.forEach(function(r, ri){
+      // Alternating row tint using card-soft
+      if (ri % 2 === 0){ ctx.fillStyle = clr.header; ctx.fillRect(0, y, W, lineH); }
+      // Position badge (rounded rect)
       var posClr = POSC[r.slot] || clr.sub;
       ctx.fillStyle = posClr;
       ctx.beginPath();
@@ -2669,7 +2688,7 @@ _DRAFT_ROOM_HTML = r"""
       ctx.fillStyle = '#fff'; ctx.font = 'bold 11px system-ui,Arial,sans-serif';
       ctx.textAlign = 'center'; ctx.fillText(r.slot, bx + bw / 2, by + 15); ctx.textAlign = 'left';
       // Player name
-      ctx.fillStyle = r.p ? clr.player : clr.empty;
+      ctx.fillStyle = r.p ? clr.text : clr.empty;
       ctx.font = r.p ? 'bold 15px system-ui,Arial,sans-serif' : 'italic 14px system-ui,Arial,sans-serif';
       ctx.fillText(r.p ? r.p.name : 'open', pad + 52, y + lineH / 2 + 6);
       // Position + team (right-aligned)
@@ -2680,7 +2699,7 @@ _DRAFT_ROOM_HTML = r"""
         ctx.textAlign = 'left';
       }
       // Row divider
-      ctx.fillStyle = dark ? '#1e293b' : '#e2e8f0'; ctx.fillRect(pad, y + lineH - 1, W - pad * 2, 1);
+      ctx.fillStyle = clr.border; ctx.fillRect(pad, y + lineH - 1, W - pad * 2, 1);
       y += lineH;
     });
     return c;
