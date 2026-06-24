@@ -3104,6 +3104,7 @@ _DRAFT_ROOM_HTML = r"""
         clearTimeout(to); _pollInFlight = false;
         if (!d || !d.picks){ _pollLastAt = Date.now(); return; }
         if (d.start_time != null) state.startTime = parseInt(d.start_time) || 0;
+        if (d.pick_timer != null) state.pickTimer = parseInt(d.pick_timer) || 0;
         var sig = liveSig(d);
         if (sig !== _liveSig){
           _liveSig = sig;
