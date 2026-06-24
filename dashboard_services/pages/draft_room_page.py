@@ -339,6 +339,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-pill-you { background: rgba(34,197,94,.16); color: #22c55e; }
   .dr-pill-live { background: rgba(239,68,68,.16); color: #ef4444; animation: drPulse 1.6s ease-in-out infinite; }
   .dr-pill-upcoming { background: rgba(245,158,11,.16); color: #f59e0b; }
+  .dr-pill-paused   { background: rgba(148,163,184,.16); color: #94a3b8; }
   .dr-pick-timer { font-size: 14px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums;
     min-width: 40px; padding: 2px 8px; border-radius: 7px; background: rgba(127,127,127,.1); text-align: center; }
   .dr-pick-timer.urgent { color: #fff; background: #ef4444; animation: drPulse 1s ease-in-out infinite; }
@@ -2750,7 +2751,19 @@ _DRAFT_ROOM_HTML = r"""
     if (s === 'drafting') return 'Live';
     if (s === 'pre_draft') return 'Pre-Draft';
     if (s === 'complete') return 'Complete';
+    if (s === 'paused') return 'Paused';
     return s.replace(/_/g, ' ');
+  }
+  // Update the secondary status badge (Upcoming / Paused / etc.) based on current draft status.
+  function _setStatusBadge(isDrafting, isComplete, rawStatus){
+    var el = document.getElementById('drUpcomingBadge');
+    if (!el) return;
+    if (isDrafting || isComplete){ el.style.display = 'none'; return; }
+    var isPre = rawStatus === 'pre_draft';
+    var isPaused = rawStatus === 'paused';
+    el.className = 'dr-pill ' + (isPaused ? 'dr-pill-paused' : 'dr-pill-upcoming');
+    el.textContent = isPaused ? 'Paused' : (isPre ? 'Pre-Draft' : liveStatusLabel(rawStatus));
+    el.style.display = '';
   }
   function detectLive(){
     if (cfg.isGuest || !cfg.leagueId){
@@ -2894,7 +2907,7 @@ _DRAFT_ROOM_HTML = r"""
         updateDraftBanner();
         document.getElementById('drUndo').style.display = 'none';
         document.getElementById('drLiveBadge').style.display = isDrafting ? '' : 'none';
-        document.getElementById('drUpcomingBadge').style.display = (!isDrafting && !isComplete) ? '' : 'none';
+        _setStatusBadge(isDrafting, isComplete, String(d.status));
         if (isComplete){
           showCompleteSidebar();
         } else {
@@ -3030,7 +3043,7 @@ _DRAFT_ROOM_HTML = r"""
           var isDrafting = String(d.status) === 'drafting';
           state.isDrafting = isDrafting;
           document.getElementById('drLiveBadge').style.display = isDrafting ? '' : 'none';
-          document.getElementById('drUpcomingBadge').style.display = (!isDrafting && String(d.status) !== 'complete') ? '' : 'none';
+          _setStatusBadge(isDrafting, String(d.status) === 'complete', String(d.status));
           _setUpcomingMode(!isDrafting && String(d.status) !== 'complete');
           if (isDrafting && (!prevDrafting || state.current !== prevCurrent)) startPickTimer();
           if (String(d.status) === 'complete'){
