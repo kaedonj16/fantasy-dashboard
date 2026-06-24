@@ -2146,7 +2146,7 @@ _DRAFT_ROOM_HTML = r"""
     picks.forEach(function(x){
       if (!starterIds[String(x.id)] || x.ps == null) return;
       var _round = Math.max(1, Math.ceil((x.pn || 1) / _nTeams));
-      var _w = 1.0 / Math.sqrt(_round);
+      var _w = _round <= 5 ? 1.0 : 1.0 / Math.sqrt(_round - 4);
       _wSum += x.ps * _w; _wTot += _w;
     });
     var starterAvgPs = _wTot > 0 ? _wSum / _wTot : avgPs;
