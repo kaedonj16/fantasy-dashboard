@@ -140,6 +140,7 @@ _DRAFT_ROOM_HTML = r"""
 
   <!-- Board + side -->
   <div class="dr-main" id="drMain" style="display:none;">
+    <div class="dr-start-banner" id="drStartBanner" style="display:none;"></div>
     <div class="dr-statusbar">
       <div class="dr-status-info">
         <div class="dr-onclock" id="drOnClockWrap">
@@ -153,6 +154,7 @@ _DRAFT_ROOM_HTML = r"""
           <span class="dr-pill dr-pill-upcoming" id="drUpcomingBadge" style="display:none;">Upcoming</span>
           <span class="dr-progress" id="drProgress"></span>
           <span class="dr-save" id="drSave"></span>
+          <span class="dr-poll-status" id="drPollStatus" style="display:none;"></span>
         </div>
       </div>
       <div class="dr-status-right">
@@ -342,6 +344,22 @@ _DRAFT_ROOM_HTML = r"""
   .dr-pick-timer.urgent { color: #fff; background: #ef4444; animation: drPulse 1s ease-in-out infinite; }
   .dr-progress { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
   .dr-save { font-size: 11px; color: #22c55e; }
+  .dr-start-banner { display: flex; align-items: center; gap: 13px; margin: 0 0 12px; padding: 12px 16px; border-radius: 12px;
+    background: linear-gradient(90deg, rgba(56,189,248,.18), rgba(56,189,248,.05)); border: 1px solid var(--accent,#38bdf8); }
+  .dr-start-banner.is-live { background: linear-gradient(90deg, rgba(34,197,94,.18), rgba(34,197,94,.05)); border-color: #22c55e; }
+  .dr-banner-ic { font-size: 22px; flex-shrink: 0; display: inline-flex; align-items: center; }
+  .dr-banner-ic-live { animation: drPulse 1.4s ease-in-out infinite; }
+  .dr-banner-txt { display: flex; flex-direction: column; line-height: 1.35; min-width: 0; flex: 1; }
+  .dr-banner-txt b { font-size: 15px; font-weight: 800; color: var(--text); }
+  .dr-banner-txt span { font-size: 12px; color: var(--text-muted); }
+  .dr-start-cd { font-variant-numeric: tabular-nums; }
+  .dr-banner-join { flex-shrink: 0; margin-left: auto; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+    background: var(--accent,#38bdf8); color: #fff; font-weight: 700; font-size: 13px; text-decoration: none; padding: 8px 14px; border-radius: 8px; }
+  .dr-start-banner.is-live .dr-banner-join { background: #22c55e; }
+  .dr-banner-join i { font-size: 11px; }
+  .dr-poll-status { font-size: 11px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .dr-poll-status .dr-poll-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; flex-shrink: 0; }
+  .dr-poll-status.is-syncing .dr-poll-dot { background: var(--accent,#38bdf8); animation: drPulse 1s ease-in-out infinite; }
   /* Bottom-sheet drag handle (mobile only) */
   .dr-sheet-handle { display: none; }
   .dr-live-list { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
@@ -875,7 +893,15 @@ _DRAFT_ROOM_HTML = r"""
   var playersById = {};    // id -> player (value lookup for live picks)
   var lastLivePicks = null;// last picks payload from the live feed
   var saveTimer = null;    // debounce for DB autosave
-  var pollTimer = null;    // live-draft poll interval
+  var pollTimer = null;    // live-draft poll: next setTimeout handle
+  var pollTickTimer = null;// 1s ticker that refreshes the freshness indicator
+  var _pollInFlight = false;
+  var _pollCount = 0;      // polls since connect (drives periodic full refresh)
+  var _pollLastAt = 0;     // ms timestamp of the last successful poll
+  var _pollNextAt = 0;     // ms timestamp the next poll is scheduled for
+  var _liveSig = null;     // signature of the last applied live state (skip no-op renders)
+  var POLL_MS = 4000;      // base cadence (just above the 3s picks cache TTL)
+  var POLL_FULL_EVERY = 15;// every N polls, do a full refresh to catch trades/slot names
   var sim = false;         // mock-draft simulation active
   var simTimer = null;
   var simSpeed = 700;      // ms between CPU picks
@@ -1794,15 +1820,81 @@ _DRAFT_ROOM_HTML = r"""
     var p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
     return z >= 0 ? 1 - p : p;
   }
+  // Learned draft tendencies from the picks already made. Lets the survival odds
+  // adapt to how THIS draft is actually going - a room that reaches pulls every
+  // player's expected slot earlier; a room that lets players slide pushes it
+  // later; a noisy room widens the spread; and a position going on a run is less
+  // likely to last. In a CPU mock the picks track ADP, so the bias is ~0 and this
+  // stays neutral; in a live draft it adapts to real humans.
+  var _draftModelCache = null;
+  function draftModelInvalidate(){ _draftModelCache = null; }
+  function observedDraftModel(){
+    if (_draftModelCache) return _draftModelCache;
+    var residuals = [];        // pick# - ADP for each completed pick (>0 = slid, <0 = reach)
+    var made = [];             // {pn, pos} sorted by pn, for positional-run detection
+    Object.keys(state.picks).forEach(function(k){
+      var pn = parseInt(k, 10);
+      var pk = state.picks[k]; if (!pk) return;
+      made.push({ pn: pn, pos: (pk.position || '').toUpperCase() });
+      var full = playersById[String(pk.id)];
+      var a = full ? adpOf(full) : null;
+      if (a != null) residuals.push(pn - a);
+    });
+    made.sort(function(x, y){ return x.pn - y.pn; });
+    var n = residuals.length;
+    var model = { n: n, bias: 0, std: null, run: {} };
+    if (n >= 1){
+      var sum = 0; residuals.forEach(function(r){ sum += r; });
+      var mean = sum / n;
+      model.bias = Math.max(-10, Math.min(10, mean));   // clamp so a few wild picks can't dominate
+      if (n >= 2){
+        var v = 0; residuals.forEach(function(r){ v += (r - mean) * (r - mean); });
+        model.std = Math.sqrt(v / (n - 1));
+      }
+    }
+    // Positional run: compare each position's rate in the last round to its rate
+    // across the whole draft, so naturally-popular positions (WR) aren't flagged
+    // unless they're going FASTER than their own established pace.
+    var teams = state.teams || 12;
+    var totalMade = made.length;
+    if (totalMade >= teams){
+      var win = made.slice(-teams);
+      var overall = {}, recent = {};
+      made.forEach(function(m){ overall[m.pos] = (overall[m.pos] || 0) + 1; });
+      win.forEach(function(m){ recent[m.pos] = (recent[m.pos] || 0) + 1; });
+      Object.keys(recent).forEach(function(pos){
+        var expected = (overall[pos] / totalMade) * teams;
+        var excess = recent[pos] - expected;
+        model.run[pos] = excess > 0 ? Math.min(0.25, (excess / teams) * 1.5) : 0;
+      });
+    }
+    _draftModelCache = model;
+    return model;
+  }
   function availProb(p, pn){
     var a = adpOf(p);
     if (a == null) return null;
-    // Use the SAME spread the CPU sim draws from (simSigma) so the survival odds
-    // shown here actually reflect how the simulation drafts, rather than a second,
-    // looser variance model that disagreed with on-board behavior.
+    // Baseline: model the slot as Normal(ADP, simSigma) - the same spread the CPU
+    // sim draws from, so mock odds match on-board behavior.
     var sigma = simSigma(a);
-    var z = (pn - a) / sigma;
-    return Math.round((1 - _normCdf(z)) * 100);
+    var center = a;
+    var m = observedDraftModel();
+    // Once a meaningful chunk of the board has gone, fold in how this specific
+    // draft is behaving. Confidence ramps from 8 picks to full by ~28.
+    if (m.n >= 8){
+      var conf = Math.min(1, (m.n - 8) / 20);
+      center = a + m.bias * conf;                       // reach pulls earlier, slide pushes later
+      if (m.std != null){
+        var obs = Math.max(simSigma(a) * 0.6, Math.min(m.std, 18));
+        sigma = sigma * (1 - conf) + obs * conf;        // blend toward observed unpredictability
+      }
+    }
+    var z = (pn - center) / sigma;
+    var prob = 1 - _normCdf(z);
+    // A position going on a run is less likely to make it back to you.
+    var runPen = m.run[(p.position || '').toUpperCase()] || 0;
+    if (runPen > 0) prob *= (1 - runPen);
+    return Math.round(prob * 100);
   }
   function availColor(pct){ return pct >= 65 ? '#22c55e' : pct >= 40 ? '#f59e0b' : '#ef4444'; }
 
@@ -2254,6 +2346,7 @@ _DRAFT_ROOM_HTML = r"""
     _repl = computeReplacement(players);
     _ppgScale = computePpgScale(players);
     psCtxInvalidate();
+    draftModelInvalidate();   // re-learn reach/slide/run tendencies from the latest board
     var kdef = wantsKDef();
     var kbtns = document.querySelectorAll('.dr-pos-kdef');
     for (var i = 0; i < kbtns.length; i++){ kbtns[i].style.display = kdef ? '' : 'none'; }
@@ -2651,6 +2744,14 @@ _DRAFT_ROOM_HTML = r"""
     state.current = _next;
     _boardSig = null;   // force a full board rebuild on the next render
   }
+  // Friendly label for a Sleeper draft status (raw values are snake_case).
+  function liveStatusLabel(s){
+    s = String(s || '');
+    if (s === 'drafting') return 'Live';
+    if (s === 'pre_draft') return 'Pre Draft';
+    if (s === 'complete') return 'Complete';
+    return s.replace(/_/g, ' ');
+  }
   function detectLive(){
     if (cfg.isGuest || !cfg.leagueId){
       drAlert('Live draft sync requires opening the Draft Room from your league.');
@@ -2667,7 +2768,7 @@ _DRAFT_ROOM_HTML = r"""
         var html = '<div class="dr-live-head">Detected drafts. Pick one to connect</div>';
         ds.forEach(function(d){
           html += '<button class="dr-live-item" data-id="' + esc(d.draft_id) + '">'
-            + '<span class="dr-live-status dr-ls-' + esc(d.status || '') + '">' + esc(d.status || '') + '</span>'
+            + '<span class="dr-live-status dr-ls-' + esc(d.status || '') + '">' + esc(liveStatusLabel(d.status)) + '</span>'
             + esc((d.type || 'snake') + ' · ' + (d.teams || '?') + ' teams · ' + (d.rounds || '?') + ' rounds') + '</button>';
         });
         box.innerHTML = html;
@@ -2747,10 +2848,14 @@ _DRAFT_ROOM_HTML = r"""
           owned: buildOwnedFromResponse(d, teams, rounds, order, slot),
           mode: 'live', isComplete: isComplete, isDrafting: isDrafting, sourceDraftId: draftId,
           pickTimer: parseInt(d.pick_timer) || 0,
+          startTime: parseInt(d.start_time) || 0,
           slotNames: d.slot_names || {}, queue: []
         };
         applyLivePicks(d.picks || []);
+        // Seed the poll signature so the first poll doesn't redundantly rebuild.
+        _liveSig = liveSig(d); _pollLastAt = Date.now();
         showMain();
+        updateDraftBanner();
         document.getElementById('drUndo').style.display = 'none';
         document.getElementById('drLiveBadge').style.display = isDrafting ? '' : 'none';
         document.getElementById('drUpcomingBadge').style.display = (!isDrafting && !isComplete) ? '' : 'none';
@@ -2766,18 +2871,127 @@ _DRAFT_ROOM_HTML = r"""
       })
       .catch(function(){ drAlert('Could not connect to the live draft.'); });
   }
+  // Signature of the live state so a poll that brought nothing new skips the
+  // (expensive) board rebuild entirely.
+  function liveSig(d){
+    var ps = d.picks || [];
+    var last = ps.length ? ps[ps.length - 1] : null;
+    return String(d.status || '') + '|' + ps.length + '|' + (last && last.pick_no != null ? last.pick_no : 0);
+  }
+  function _fmtAgo(ms){
+    if (!ms) return '';
+    var s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+    if (s < 2) return 'just now';
+    if (s < 60) return s + 's ago';
+    return Math.floor(s / 60) + 'm ago';
+  }
+  // Freshness indicator: "Updated 3s ago · next in 1s", or "Syncing…" in flight.
+  function updatePollStatus(){
+    var el = document.getElementById('drPollStatus');
+    if (!el) return;
+    if (!state || state.mode !== 'live' || state.isComplete){ el.style.display = 'none'; return; }
+    el.style.display = '';
+    if (_pollInFlight){
+      el.classList.add('is-syncing');
+      el.innerHTML = '<span class="dr-poll-dot"></span>Syncing&hellip;';
+      return;
+    }
+    el.classList.remove('is-syncing');
+    var nextIn = Math.max(0, Math.ceil((_pollNextAt - Date.now()) / 1000));
+    el.innerHTML = '<span class="dr-poll-dot"></span>Updated ' + (_fmtAgo(_pollLastAt) || '&mdash;')
+      + (nextIn > 0 ? ' &middot; next in ' + nextIn + 's' : '');
+  }
+  // In-page draft banner. Two states: a countdown when a connected draft is within
+  // 15 min of its scheduled start, and a "live now" bar while it's drafting. Both
+  // carry an "Open in Sleeper" button (you're already in the BR draft room).
+  var _START_WINDOW_MS = 15 * 60 * 1000;
+  function _fmtCountdown(ms){
+    var t = Math.max(0, Math.floor(ms / 1000));
+    var h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+    return (h > 0 ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (s < 10 ? '0' : '') + s;
+  }
+  function sleeperDraftUrl(){
+    if (cfg.platform === 'sleeper' && state && state.sourceDraftId)
+      return 'https://sleeper.com/draft/nfl/' + encodeURIComponent(state.sourceDraftId);
+    return null;
+  }
+  function updateDraftBanner(){
+    var el = document.getElementById('drStartBanner');
+    if (!el) return;
+    // Determine which banner (if any) applies.
+    var mode = 'none';
+    if (state && state.mode === 'live' && !state.isComplete){
+      if (state.isDrafting) mode = 'live';
+      else {
+        var st = state.startTime || 0, ms0 = st ? st - Date.now() : 0;
+        if (st && ms0 > 0 && ms0 <= _START_WINDOW_MS) mode = 'upcoming';
+      }
+    }
+    if (mode === 'none'){ el.style.display = 'none'; el.removeAttribute('data-bk'); return; }
+    var onClock = mode === 'live' && isMyPick(state.current);
+    var shellKey = mode + (onClock ? ':otc' : '');
+    if (el.getAttribute('data-bk') !== shellKey){
+      el.setAttribute('data-bk', shellKey);
+      var url = sleeperDraftUrl();
+      var joinBtn = url ? '<a class="dr-banner-join" href="' + url + '" target="_blank" rel="noopener">Open in Sleeper <i class="fa-solid fa-arrow-right-long"></i></a>' : '';
+      if (mode === 'live'){
+        el.className = 'dr-start-banner is-live';
+        el.innerHTML = '<span class="dr-banner-ic dr-banner-ic-live"><i class="fa-solid fa-bolt"></i></span>'
+          + '<div class="dr-banner-txt"><b>Your draft is live' + (onClock ? ' &ndash; you&rsquo;re on the clock' : '') + '</b>'
+          + '<span>Make your picks in Sleeper &middot; this board updates as they come in.</span></div>' + joinBtn;
+      } else {
+        el.className = 'dr-start-banner';
+        el.innerHTML = '<span class="dr-banner-ic"><i class="fa-solid fa-calendar-days"></i></span>'
+          + '<div class="dr-banner-txt"><b>Your draft starts in <span class="dr-start-cd"></span></b>'
+          + '<span>Get your board ready - the pick board goes live automatically.</span></div>' + joinBtn;
+      }
+    }
+    el.style.display = '';
+    // Per-tick: refresh only the countdown number (don't clobber the button).
+    if (mode === 'upcoming'){
+      var cdEl = el.querySelector('.dr-start-cd');
+      if (cdEl) cdEl.textContent = _fmtCountdown(state.startTime - Date.now());
+    }
+  }
   function startPolling(){
     stopPolling();
-    pollTimer = setInterval(function(){
-      if (!state || state.mode !== 'live') { stopPolling(); return; }
-      fetch('/api/draft/live?platform=' + encodeURIComponent(cfg.platform) + '&draft_id=' + encodeURIComponent(state.sourceDraftId))
-        .then(function(r){ return r.json(); })
-        .then(function(d){
-          if (!d || !d.picks) return;
-          var prevCurrent = state.current;
-          var prevDrafting = state.isDrafting;
-          // Refresh ownership on every poll - trades can happen during the draft.
-          state.owned = buildOwnedFromResponse(d, state.teams, state.rounds, state.order, state.slot);
+    _pollCount = 0; _liveSig = null;
+    pollTickTimer = setInterval(function(){ updatePollStatus(); updateDraftBanner(); }, 1000);
+    pollOnce();
+  }
+  function schedulePoll(){
+    _pollNextAt = Date.now() + POLL_MS;
+    pollTimer = setTimeout(pollOnce, POLL_MS);
+    updatePollStatus();
+  }
+  // One poll. Chained via setTimeout (never setInterval) so a slow response can't
+  // stack overlapping requests. Most polls are "light" (status + picks only); a
+  // periodic full poll refreshes slot names and trade-based ownership.
+  function pollOnce(){
+    if (!state || state.mode !== 'live'){ stopPolling(); return; }
+    _pollCount++;
+    var full = (_pollCount === 1) || (_pollCount % POLL_FULL_EVERY === 0);
+    var url = '/api/draft/live?platform=' + encodeURIComponent(cfg.platform)
+            + '&draft_id=' + encodeURIComponent(state.sourceDraftId)
+            + (full ? '' : '&light=1');
+    _pollInFlight = true; updatePollStatus();
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var to = setTimeout(function(){ if (ctrl) ctrl.abort(); }, 8000);  // don't let a hung request stall the cadence
+    fetch(url, ctrl ? { signal: ctrl.signal, cache: 'no-store' } : { cache: 'no-store' })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        clearTimeout(to); _pollInFlight = false;
+        if (!d || !d.picks){ _pollLastAt = Date.now(); return; }
+        if (d.start_time != null) state.startTime = parseInt(d.start_time) || 0;
+        var sig = liveSig(d);
+        if (sig !== _liveSig){
+          _liveSig = sig;
+          var prevCurrent = state.current, prevDrafting = state.isDrafting;
+          if (full){
+            // Only the full payload carries trades + roster map for ownership.
+            state.owned = buildOwnedFromResponse(d, state.teams, state.rounds, state.order, state.slot);
+            if (d.slot_names) state.slotNames = d.slot_names;
+          }
           applyLivePicks(d.picks); render();
           var isDrafting = String(d.status) === 'drafting';
           state.isDrafting = isDrafting;
@@ -2788,12 +3002,25 @@ _DRAFT_ROOM_HTML = r"""
           if (String(d.status) === 'complete'){
             stopPolling(); stopPickTimer(); state.isComplete = true; save();
             showCompleteSidebar();
+            return;
           }
-        })
-        .catch(function(){});
-    }, 5000);
+        }
+        _pollLastAt = Date.now();
+      })
+      .catch(function(){ clearTimeout(to); _pollInFlight = false; })
+      .then(function(){
+        // Schedule the next poll once this one settles (success or failure),
+        // unless polling was torn down (e.g. draft completed).
+        if (pollTickTimer && state && state.mode === 'live' && !state.isComplete) schedulePoll();
+      });
   }
-  function stopPolling(){ if (pollTimer){ clearInterval(pollTimer); pollTimer = null; } }
+  function stopPolling(){
+    if (pollTimer){ clearTimeout(pollTimer); pollTimer = null; }
+    if (pollTickTimer){ clearInterval(pollTickTimer); pollTickTimer = null; }
+    _pollInFlight = false;
+    var el = document.getElementById('drPollStatus'); if (el) el.style.display = 'none';
+    var sb = document.getElementById('drStartBanner'); if (sb) sb.style.display = 'none';
+  }
 
   function _setUpcomingMode(upcoming){
     // Hide Queue tab and draft buttons when draft hasn't started yet.
@@ -3032,7 +3259,7 @@ _DRAFT_ROOM_HTML = r"""
     { term: 'Tier', def: 'Players grouped by talent gaps (Tier 1 = elite). A tier “cliff” means only a couple of players remain before a real drop-off at that position.' },
     { term: 'Steals (sort)', def: 'Orders the board by who has fallen the furthest past their ADP - the biggest available bargains.' },
     { term: 'PPG', def: 'Points per game - projected for the upcoming season, or last season’s actual when that’s shown.' },
-    { term: 'Survival %', def: 'The chance a player is still available at your next pick, using the same variance the mock’s CPUs draft with.' },
+    { term: 'Survival %', def: 'The chance a player is still on the board at your next pick. Starts from consensus ADP, then adapts to how your draft is actually going - if the room is reaching, letting players slide, drafting unpredictably, or running on a position, the odds shift to match (kicks in after the first several picks).' },
     { term: 'Grade · Value', def: 'How strong your picks are by pick score, weighted toward the earlier rounds where it matters most.' },
     { term: 'Grade · Starters', def: 'How good your projected starting lineup is versus a league-average team.' },
     { term: 'Grade · Construction', def: 'How well you’ve filled your starting slots and balanced your positions.' }
