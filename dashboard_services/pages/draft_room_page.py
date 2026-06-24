@@ -569,8 +569,6 @@ _DRAFT_ROOM_HTML = r"""
   .dr-sum-reason { font-size:10px; color:var(--text-muted); font-style:italic; }
   .dr-sum-empty { font-size:11px; color:var(--text-muted); font-style:italic; }
   .dr-sum-ps { font-size:14px; font-weight:800; flex-shrink:0; }
-  .dr-sum-pgrade { font-size:13px; font-weight:900; flex-shrink:0; padding:3px 8px; border-radius:7px;
-    border:1px solid transparent; min-width:30px; text-align:center; }
   .dr-sum-footer { display:flex; gap:8px; margin-top:16px; }
   .dr-sum-footer .dr-btn { flex:1; text-align:center; }
   /* ── Roster slots (setup page) ── */
@@ -1981,63 +1979,6 @@ _DRAFT_ROOM_HTML = r"""
     return gradeBar('Value', g.value, m.value) + gradeBar('Balance', g.balance, m.balance) + gradeBar('Tiers', g.tier, m.tier);
   }
 
-  // ── Per-pick ADP grading (matches the Teams page draft panel) ───────────────
-  // Each pick is graded on value vs ADP (Steal/Reach) with a best-available
-  // bonus, then the team grade is the average of the per-pick letters.
-  var GRADE_VAL = { 'A+':5, 'A':4, 'B':3, 'C':2, 'D':1, 'F':0 };
-  function gradeColor(letter){
-    if (letter === 'A+' || letter === 'A') return '#22c55e';
-    if (letter === 'B') return '#38bdf8';
-    if (letter === 'C') return '#f59e0b';
-    return '#ef4444';
-  }
-  // Walk the board in pick order, grading each of the viewer's picks against the
-  // ADP value it returned and whether better players were left on the board.
-  function rookiePickGrades(){
-    var teams = state.teams || 12;
-    var bigReach = -(teams * 1.1);
-    var board = players.filter(function(p){ return adpOf(p) != null; })
-      .slice().sort(function(a, b){ return adpOf(a) - adpOf(b); });
-    var made = Object.keys(state.picks).map(Number).sort(function(a, b){ return a - b; });
-    var taken = {}, byId = {}, letters = [];
-    made.forEach(function(pn){
-      var pick = state.picks[pn]; if (!pick) return;
-      var full = playersById[String(pick.id)];
-      var adp = full ? adpOf(full) : null;
-      if (isMyPick(pn) && adp != null){
-        var bestAvail = null;
-        for (var i = 0; i < board.length; i++){
-          var b = board[i];
-          if (!taken[String(b.id)] && String(b.id) !== String(pick.id)){ bestAvail = b; break; }
-        }
-        var diff = pn - adp;   // + = value (slipped past ADP), - = reach
-        var score = diff >= 4 ? 4 : diff >= 2 ? 3 : diff >= -3 ? 2 : diff >= bigReach ? 1 : 0;
-        var bestAdp = bestAvail ? adpOf(bestAvail) : null;
-        var isBpa = (bestAdp == null) || (adp <= bestAdp);
-        var bpaGap = (bestAdp != null && adp > bestAdp) ? (adp - bestAdp) : 0;
-        if (isBpa) score += (diff < -3 ? 1 : 2);
-        else if (bpaGap >= 5) score = Math.max(score - 1, 0);
-        if (diff >= -3) score = Math.max(score, 1);   // tiny reach floors at D
-        var letter = ({ 5:'A+', 4:'A', 3:'B', 2:'C', 1:'D', 0:'F' })[Math.min(score, 5)] || 'F';
-        byId[String(pick.id)] = { letter: letter, diff: diff };
-        letters.push(letter);
-      }
-      taken[String(pick.id)] = true;
-    });
-    var overall = null;
-    if (letters.length){
-      var avg = letters.reduce(function(a, l){ return a + (GRADE_VAL[l] != null ? GRADE_VAL[l] : 2); }, 0) / letters.length;
-      overall = avg >= 4.5 ? 'A+' : avg >= 3.5 ? 'A' : avg >= 2.5 ? 'B' : avg >= 1.5 ? 'C' : avg >= 0.5 ? 'D' : 'F';
-    }
-    return { byId: byId, overall: overall, count: letters.length };
-  }
-  // Headline letter for the status pill / summary, unified across draft types.
-  function overallGradeLetter(){
-    if (state.type === 'rookie'){ return rookiePickGrades().overall; }
-    var g = gradeTeam();
-    return g ? gradeLetter(g.score) : null;
-  }
-
   function renderNeeds(){
     if (!hasOwned()){ listInto('<div class="dr-empty-note">Set your pick slot to see your team build.</div>'); return; }
     var mine = myPicksList().slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
@@ -2313,8 +2254,8 @@ _DRAFT_ROOM_HTML = r"""
     else { nextPill.style.display = 'none'; }
     document.getElementById('drProgress').textContent = Math.min(state.current - 1, total) + ' / ' + total + ' picks';
     var gp = document.getElementById('drGradePill');
-    var gLetter = overallGradeLetter();
-    if (gLetter){ gp.style.display = ''; gp.textContent = 'Grade ' + gLetter; } else { gp.style.display = 'none'; }
+    var g = gradeTeam();
+    if (g){ gp.style.display = ''; gp.textContent = 'Grade ' + gradeLetter(g.score); } else { gp.style.display = 'none'; }
     document.getElementById('drSummaryBtn').style.display = done ? '' : 'none';
   }
 
@@ -2466,49 +2407,24 @@ _DRAFT_ROOM_HTML = r"""
     var bench = [];
     for (var i = 0; i < mine.length; i++){ if (!used[i]) bench.push(mine[i]); }
 
-    // Rookie drafts grade each pick vs ADP (Steal/Reach) like the Teams page.
-    var isRookie = state.type === 'rookie';
-    var rpg = isRookie ? rookiePickGrades() : null;
-
     function sumRow(slot, p){
       if (!p) return '<div class="dr-sum-row"><span class="dr-sum-slot-badge" style="background:' + slotColor(slot) + '">' + slot + '</span>'
         + '<span class="dr-sum-empty">open</span></div>';
       var roundPicked = Object.keys(state.picks).filter(function(k){ return state.picks[k] && state.picks[k].id === p.id; }).map(function(k){ return Math.ceil(parseInt(k,10)/state.teams); })[0] || '';
-      // Rookie: show per-pick letter grade (with Steal/Reach vs ADP); else pick score.
-      var rightStr = '';
-      if (rpg && rpg.byId[String(p.id)]){
-        var gr = rpg.byId[String(p.id)];
-        var col = gradeColor(gr.letter);
-        rightStr = '<span class="dr-sum-pgrade" style="color:' + col + ';border-color:' + col + '55;background:' + col + '18;">' + gr.letter + '</span>';
-      } else if (p.ps != null){
-        rightStr = '<span class="dr-sum-ps" style="color:' + psColor(p.ps) + '">' + p.ps + '</span>';
-      }
-      var adpNote = '';
-      if (rpg && rpg.byId[String(p.id)]){
-        var d = rpg.byId[String(p.id)].diff;
-        adpNote = d >= 2 ? ' \xb7 Steal (+' + Math.round(d) + ')' : d <= -2 ? ' \xb7 Reach (' + Math.round(d) + ')' : ' \xb7 On ADP';
-      }
+      var psStr = (p.ps != null) ? '<span class="dr-sum-ps" style="color:' + psColor(p.ps) + '">' + p.ps + '</span>' : '';
       return '<div class="dr-sum-row">'
         + '<span class="dr-sum-slot-badge" style="background:' + slotColor(slot) + '">' + slot + '</span>'
         + '<img class="dr-sum-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
         + '<div class="dr-sum-body"><div class="dr-sum-name">' + esc(p.name) + '</div>'
-        + '<div class="dr-sum-meta">' + esc(p.position) + (p.team ? ' \xb7 ' + esc(p.team) : '') + (roundPicked ? ' \xb7 Rd ' + roundPicked : '') + adpNote + '</div>'
+        + '<div class="dr-sum-meta">' + esc(p.position) + (p.team ? ' \xb7 ' + esc(p.team) : '') + (roundPicked ? ' \xb7 Rd ' + roundPicked : '') + '</div>'
         + (p.reason ? '<div class="dr-sum-reason">' + esc(p.reason) + '</div>' : '')
-        + '</div>' + rightStr + '</div>';
+        + '</div>' + psStr + '</div>';
     }
 
-    var gradeHtml;
-    if (isRookie){
-      gradeHtml = rpg && rpg.overall
-        ? '<div class="dr-sum-grade" style="color:' + gradeColor(rpg.overall) + '">' + rpg.overall + '</div>'
-          + '<div class="dr-sum-pace">' + rpg.count + ' pick' + (rpg.count === 1 ? '' : 's') + ' graded vs ADP</div>'
-        : '';
-    } else {
-      gradeHtml = g
-        ? '<div class="dr-sum-grade">' + gradeLetter(g.score) + '</div><div class="dr-sum-pace">' + gradePace(g.score) + '</div>'
-          + gradeBars(g)
-        : '';
-    }
+    var gradeHtml = g
+      ? '<div class="dr-sum-grade">' + gradeLetter(g.score) + '</div><div class="dr-sum-pace">' + gradePace(g.score) + '</div>'
+        + gradeBars(g)
+      : '';
 
     // Report card stats: proj PPG, tier captures, avg pick score
     var sumProjTotal = 0, sumProjCount = 0;
@@ -2609,11 +2525,9 @@ _DRAFT_ROOM_HTML = r"""
     ctx.fillText('My ' + (state.type.charAt(0).toUpperCase() + state.type.slice(1)) + ' Draft', pad, pad + 30);
     ctx.fillStyle = '#94a3b8'; ctx.font = '14px system-ui,Arial';
     ctx.fillText((state.sf ? 'Superflex' : '1QB') + ' · ' + state.teams + ' teams · BR Fantasy', pad, pad + 54);
-    var shareLetter = overallGradeLetter();
-    if (shareLetter){ ctx.fillStyle = '#22c55e'; ctx.font = 'bold 16px system-ui,Arial';
-      var g2 = gradeTeam();
-      var paceTxt = (state.type !== 'rookie' && g2) ? ' · ' + gradePace(g2.score) : '';
-      ctx.fillText('Grade ' + shareLetter + paceTxt, pad, pad + 84); }
+    var g = gradeTeam();
+    if (g){ ctx.fillStyle = '#22c55e'; ctx.font = 'bold 16px system-ui,Arial';
+      ctx.fillText('Grade ' + gradeLetter(g.score) + ' · ' + gradePace(g.score), pad, pad + 84); }
     var y = pad + 118;
     var POSC = { QB:'#f59e0b', RB:'#22c55e', WR:'#3b82f6', TE:'#8b5cf6', K:'#94a3b8', DEF:'#64748b', FLEX:'#14b8a6', SF:'#a78bfa', BN:'#64748b' };
     rows.forEach(function(r){
