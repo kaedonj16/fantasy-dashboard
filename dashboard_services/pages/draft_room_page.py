@@ -1165,7 +1165,9 @@ _DRAFT_ROOM_HTML = r"""
   }
   function valOf(p){
     if (state.type === 'redraft') return redraftVal(p);
-    return state.sf ? (p.sf_value || p.value || 0) : (p.value || 0);
+    // p.val is the stripped pick-object field (stored by commitPick/applyLivePicks);
+    // p.value is the full player-object field from /api/league-players.
+    return state.sf ? (p.sf_value || p.value || p.val || 0) : (p.value || p.val || 0);
   }
   function adpOf(p){
     // Sleeper community ADP (server-side, aggregated from real Sleeper drafts).
@@ -1453,7 +1455,11 @@ _DRAFT_ROOM_HTML = r"""
     }
     var lt = state.sf ? 'sf' : '1qb';
     var sz = String(state.teams);
-    var tbl = (tierThresholds[lt] || {})[sz] || (tierThresholds['1qb'] || {})['10'] || [];
+    var tbl = (tierThresholds[lt] || {})[sz]
+           || (tierThresholds[lt] || {})['12']
+           || (tierThresholds['1qb'] || {})['12']
+           || (tierThresholds['1qb'] || {})['10']
+           || [];
     if (!tbl.length) return null;
     var v = valOf(p);
     for (var i = 0; i < tbl.length; i++){ if (v >= tbl[i]) return i + 1; }
@@ -2117,11 +2123,12 @@ _DRAFT_ROOM_HTML = r"""
     });
     var coverage = slots.length ? filled / slots.length : 0;
 
-    // 1) Starter-weighted value: starters weigh 1.0, bench 0.5.
-    var wSum = 0, wTot = 0;
-    picks.forEach(function(x){ if (x.ps == null) return; var w = starterIds[String(x.id)] ? 1.0 : 0.5; wSum += x.ps * w; wTot += w; });
-    var wAvgPs = wTot > 0 ? wSum / wTot : avgPs;
-    var valuePts = wAvgPs != null ? Math.round(clamp01(wAvgPs / 100) * 35) : 17;
+    // 1) Starter quality: average pick score of starting-lineup slots only.
+    // Using all picks (even weighted) unfairly penalizes deep startup drafts where
+    // late bench picks have inherently low PS. Only starters reflect real team quality.
+    var starterPsVals = picks.filter(function(x){ return starterIds[String(x.id)] && x.ps != null; }).map(function(x){ return x.ps; });
+    var starterAvgPs = starterPsVals.length ? starterPsVals.reduce(function(a, b){ return a + b; }, 0) / starterPsVals.length : avgPs;
+    var valuePts = starterAvgPs != null ? Math.round(clamp01(starterAvgPs / 100) * 35) : 17;
 
     // 2) Starting-lineup strength vs a league-average team. Projected PPG leads.
     //    Redraft is now-focused -> pure projected PPG. Startup is now + future ->
@@ -2710,21 +2717,33 @@ _DRAFT_ROOM_HTML = r"""
         + gradeBars(g)
       : '';
 
-    // Report card stats: proj PPG, tier captures, avg pick score
+    // Report card stats: proj PPG, tier captures, pick score
     var sumProjTotal = 0, sumProjCount = 0;
-    var sumT12 = 0, sumPsTotal = 0, sumPsCount = 0;
+    var sumT12 = 0, sumAllPsTotal = 0, sumAllPsCount = 0, sumStarterPsTotal = 0, sumStarterPsCount = 0;
+    // Build a set of starter IDs from the already-computed starters array.
+    var _sumStarterSet = {};
+    starters.forEach(function(s){ if (s.p) _sumStarterSet[String(s.p.id)] = true; });
     mine.forEach(function(p){
       var _ppgv = p.ppg != null ? Number(p.ppg) : (p.proj_ppg != null ? Number(p.proj_ppg) : null); if (_ppgv != null){ sumProjTotal += _ppgv; sumProjCount++; }
-      var _fp = playersById[String(p.id)] || p;  // full player has prospect_score/tier
+      var _fp = playersById[String(p.id)] || p;
       var t = tierOf(_fp); if (t != null && t <= 2) sumT12++;
-      var ps = p.ps; if (ps != null){ sumPsTotal += ps; sumPsCount++; }
+      var ps = p.ps;
+      if (ps != null){ sumAllPsTotal += ps; sumAllPsCount++; }
+      if (_sumStarterSet[String(p.id)] && ps != null){ sumStarterPsTotal += ps; sumStarterPsCount++; }
     });
     var statsHtml = '';
     if (mine.length){
       statsHtml = '<div class="dr-sum-stats">';
       if (sumProjCount >= 2) statsHtml += '<div class="dr-sum-stat"><div class="dr-sum-stat-v">' + sumProjTotal.toFixed(1) + '</div><div class="dr-sum-stat-l">Proj PPG</div></div>';
       if (state.type !== 'redraft') statsHtml += '<div class="dr-sum-stat"><div class="dr-sum-stat-v">' + sumT12 + '</div><div class="dr-sum-stat-l">T1-2 Picks</div></div>';
-      if (sumPsCount >= 2) statsHtml += '<div class="dr-sum-stat"><div class="dr-sum-stat-v">' + Math.round(sumPsTotal / sumPsCount) + '</div><div class="dr-sum-stat-l">Avg Pick Score</div></div>';
+      // Rookie: avg of all picks (every pick matters equally in a short draft).
+      // Startup/redraft: starter PS only - bench picks in long drafts have inherently
+      // low PS and drag down the avg even when your starters are elite.
+      if (state.type === 'rookie'){
+        if (sumAllPsCount >= 1) statsHtml += '<div class="dr-sum-stat"><div class="dr-sum-stat-v">' + Math.round(sumAllPsTotal / sumAllPsCount) + '</div><div class="dr-sum-stat-l">Avg Pick Score</div></div>';
+      } else {
+        if (sumStarterPsCount >= 2) statsHtml += '<div class="dr-sum-stat"><div class="dr-sum-stat-v">' + Math.round(sumStarterPsTotal / sumStarterPsCount) + '</div><div class="dr-sum-stat-l">Starter PS</div></div>';
+      }
       statsHtml += '</div>';
     }
 
