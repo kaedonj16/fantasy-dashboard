@@ -571,6 +571,7 @@ _DRAFT_ROOM_HTML = r"""
   /* ── Player availability indicators (Players tab) ── */
   .dr-ba-row.dr-avail-hi { box-shadow: inset 3px 0 0 #22c55e; }
   .dr-ba-row.dr-avail-md { box-shadow: inset 3px 0 0 #f59e0b; }
+  .dr-ba-row.dr-avail-lo { box-shadow: inset 3px 0 0 #ef4444; }
   .dr-ba-avail { font-size: 9.5px; font-weight: 700; margin-top: 2px; }
   /* ── Preview modal availability track ── */
   .dr-prev-avail-track { margin-bottom: 12px; }
@@ -2343,7 +2344,7 @@ _DRAFT_ROOM_HTML = r"""
     if (opts.availAt){
       var ap = opts.availAt.prob;
       var ac = availColor(ap);
-      availClass = ap >= 65 ? ' dr-avail-hi' : ' dr-avail-md';
+      availClass = ap >= 65 ? ' dr-avail-hi' : (ap >= 40 ? ' dr-avail-md' : ' dr-avail-lo');
       availLine = '<div class="dr-ba-avail" style="color:' + ac + '">'
         + (ap >= 65 ? '&#10003; ' : '&#8226; ') + ap + '% at #' + opts.availAt.pn + '</div>';
     }
@@ -2968,6 +2969,7 @@ _DRAFT_ROOM_HTML = r"""
           slot: slot, order: order, picks: {}, current: 1,
           owned: buildOwnedFromResponse(d, teams, rounds, order, slot),
           mode: 'live', isComplete: isComplete, isDrafting: isDrafting, sourceDraftId: draftId,
+          status: String(d.status || ''),
           pickTimer: parseInt(d.pick_timer) || 0,
           startTime: parseInt(d.start_time) || 0,
           slotNames: d.slot_names || {}, queue: [],
@@ -3129,6 +3131,7 @@ _DRAFT_ROOM_HTML = r"""
           applyLivePicks(d.picks); render();
           var isDrafting = String(d.status) === 'drafting';
           state.isDrafting = isDrafting;
+          state.status = String(d.status || '');
           document.getElementById('drLiveBadge').style.display = isDrafting ? '' : 'none';
           _setStatusBadge(isDrafting, String(d.status) === 'complete', String(d.status));
           _setUpcomingMode(!isDrafting && String(d.status) !== 'complete');
@@ -3208,9 +3211,11 @@ _DRAFT_ROOM_HTML = r"""
     var ocWrap = document.getElementById('drOnClockWrap');
     var ocLabel = ocWrap ? ocWrap.querySelector('.dr-onclock-label') : null;
     var mineNow = false;
-    var upcoming = state.mode === 'live' && !state.isDrafting && !done;
+    // A paused draft HAS started - show who's on the clock (the "Paused" badge
+    // already conveys the paused state). Only a true pre_draft is "not started".
+    var notStarted = state.mode === 'live' && !state.isDrafting && state.status !== 'paused' && !done;
     if (done) { oc.textContent = 'Draft complete'; if (ocLabel) ocLabel.style.display = 'none'; }
-    else if (upcoming) { oc.textContent = 'Draft hasn\'t started'; if (ocLabel) ocLabel.style.display = 'none'; }
+    else if (notStarted) { oc.textContent = 'Draft hasn\'t started'; if (ocLabel) ocLabel.style.display = 'none'; }
     else if (sim && !simStarted) { oc.textContent = 'Ready to draft'; if (ocLabel){ ocLabel.style.display = ''; ocLabel.textContent = 'Claim picks, then Start'; } }
     else {
       var slot = slotOnClock(state.current, state.teams, state.order);
@@ -3357,7 +3362,9 @@ _DRAFT_ROOM_HTML = r"""
       var opts = {};
       if (nextPick){
         var prob = availProb(p, nextPick);
-        if (prob != null && prob >= 40) opts.availAt = { pn: nextPick, prob: prob };
+        // Show the survival % for every player so elite names that likely go
+        // before your pick still display their (low) odds, not a blank.
+        if (prob != null) opts.availAt = { pn: nextPick, prob: prob };
       }
       html += playerRowHtml(p, opts);
     }
