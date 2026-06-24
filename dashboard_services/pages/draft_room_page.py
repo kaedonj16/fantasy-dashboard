@@ -411,7 +411,7 @@ _DRAFT_ROOM_HTML = r"""
     display: flex; align-items: center; justify-content: center; }
   .dr-corner { z-index: 4; }
   .dr-side { border: 1px solid var(--border); border-radius: 10px; background: var(--card); display: flex; flex-direction: column;
-    position: sticky; top: 158px; align-self: start; max-height: calc(100vh - 134px); z-index: 20; overflow: hidden; }
+    position: sticky; top: 158px; align-self: start; max-height: calc(100vh - 166px); z-index: 20; overflow: hidden; }
   /* Reuse the trade-calculator pill tabs (otc-main-tabs), evenly spread across panel */
   .dr-side-tabs.otc-main-tabs { width: auto; margin: 8px; }
   .dr-side-tabs .otc-main-tab { flex: 1; display: flex; align-items: center; justify-content: center;
@@ -1469,6 +1469,11 @@ _DRAFT_ROOM_HTML = r"""
   // ── Simulation (mock draft) ─────────────────────────────────────────────────
   function simAdp(p){
     var a = adpOf(p);
+    // In SF, if sf_avg_pick is missing for a QB but standard avg_pick exists, use
+    // a deflated version (QBs are ~30% more valuable in SF so their pick comes earlier).
+    if (a == null && state.sf && (p.position || '').toUpperCase() === 'QB' && p.avg_pick != null){
+      a = Math.max(1, p.avg_pick * 0.70);
+    }
     if (a != null) return a;
     var pos = (p.position || '').toUpperCase();
     // K/DEF have no ADP: synthesize one in the last ~1.5 rounds so CPUs draft them
@@ -1530,7 +1535,13 @@ _DRAFT_ROOM_HTML = r"""
       var t = targets[pos] || 0, have = counts[pos] || 0;
       var need = t ? Math.max(0, t - have) / t : 0;
       var over = (t && have >= t) ? (have - t + 1) : 0;
-      w *= (1 + 0.25 * need) / (1 + 0.5 * over);
+      // In SF leagues QBs are a full roster slot more valuable. Use a stronger need
+      // factor (0.65 vs 0.25) so CPU teams actually pursue their 2nd QB early instead
+      // of deferring until the pool is thin. Also apply an emergency multiplier when
+      // a CPU team is approaching mid-draft with no QB at all in SF.
+      var needFactor = (pos === 'QB' && state.sf) ? 0.65 : 0.25;
+      if (pos === 'QB' && state.sf && have === 0 && pn > state.teams * 2) needFactor = 1.5;
+      w *= (1 + needFactor * need) / (1 + 0.5 * over);
       // ADP-less players (a huge sentinel) get a tiny value-based floor so they
       // can still fill in late rounds once the ranked board is exhausted.
       if (a >= 9000) w = Math.max(w, 1e-9 * valOf(p));
@@ -3109,6 +3120,9 @@ _DRAFT_ROOM_HTML = r"""
       .then(function(r){ return r.json(); })
       .then(function(d){
         clearTimeout(to); _pollInFlight = false;
+        // Guard: if mode changed while this fetch was in-flight (e.g. user started
+        // a Practice Mock), discard the response so it can't re-show the LIVE badge.
+        if (!state || state.mode !== 'live'){ return; }
         if (!d || !d.picks){ _pollLastAt = Date.now(); return; }
         if (d.start_time != null) state.startTime = parseInt(d.start_time) || 0;
         if (d.pick_timer != null) state.pickTimer = parseInt(d.pick_timer) || 0;
