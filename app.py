@@ -12981,11 +12981,26 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
             season = int(ctx.get("season") or season or datetime.now().year)
         except Exception as _e:
             logger.info("[draft-room] league ctx load failed: %s", _e)
+    num_rounds_rookie = None
+    num_rounds_startup = None
+    if league_id and roster_positions:
+        try:
+            _ls = get_league_ctx_from_cache(platform, league_id, season).get("league_settings") or {}
+            _rr = int(_ls.get("draft_rounds") or 0)
+            if _rr:
+                num_rounds_rookie = _rr
+            _draftable = [p for p in roster_positions if str(p).upper() not in ("TAXI", "IR")]
+            if _draftable:
+                num_rounds_startup = len(_draftable)
+        except Exception:
+            pass
     body = build_draft_room_body(
         league_id, season, platform,
         is_guest=is_guest, num_teams=num_teams, is_superflex=is_sf,
         roster_positions=roster_positions,
         viewer_user_id=session.get("viewer_user_id"),
+        num_rounds_rookie=num_rounds_rookie,
+        num_rounds_startup=num_rounds_startup,
     )
     return render_page(
         "Draft Room | BR Fantasy", league_id, "draft", body, platform, season,

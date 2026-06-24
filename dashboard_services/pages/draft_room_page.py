@@ -28,6 +28,8 @@ def build_draft_room_body(
     is_superflex: bool = False,
     roster_positions: Optional[list] = None,
     viewer_user_id: Optional[str] = None,
+    num_rounds_rookie: Optional[int] = None,
+    num_rounds_startup: Optional[int] = None,
 ) -> str:
     cfg = {
         "leagueId": league_id or "",
@@ -38,6 +40,8 @@ def build_draft_room_body(
         "isSuperflex": bool(is_superflex),
         "rosterPositions": list(roster_positions) if roster_positions else None,
         "viewerUserId": str(viewer_user_id) if viewer_user_id else "",
+        "numRoundsRookie":  int(num_rounds_rookie)  if num_rounds_rookie  else None,
+        "numRoundsStartup": int(num_rounds_startup) if num_rounds_startup else None,
     }
     cfg_json = json.dumps(cfg)
     return (
@@ -925,6 +929,11 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   // ── Setup ────────────────────────────────────────────────────────────────
+  function _defaultRounds(typeVal){
+    if (typeVal === 'rookie')  return String(cfg.numRoundsRookie  || 3);
+    if (typeVal === 'startup') return String(cfg.numRoundsStartup || 15);
+    return '15';
+  }
   function applyCfgDefaults(){
     if (cfg.numTeams) {
       var t = document.getElementById('drTeams');
@@ -932,6 +941,8 @@ _DRAFT_ROOM_HTML = r"""
       for (var i=0;i<t.options.length;i++){ if (t.options[i].value === want || t.options[i].text === want){ t.selectedIndex = i; break; } }
     }
     if (cfg.isSuperflex) document.getElementById('drSf').value = '1';
+    var typeVal = document.getElementById('drType').value;
+    document.getElementById('drRounds').value = _defaultRounds(typeVal);
     fillSlotOptions(parseInt(document.getElementById('drTeams').value, 10));
   }
 
@@ -939,7 +950,7 @@ _DRAFT_ROOM_HTML = r"""
     fillSlotOptions(parseInt(this.value, 10));
   });
   document.getElementById('drType').addEventListener('change', function(){
-    document.getElementById('drRounds').value = (this.value === 'rookie') ? '4' : '15';
+    document.getElementById('drRounds').value = _defaultRounds(this.value);
     renderSetupCapital();   // rounds changed: refresh the claimed-pick list
   });
 
@@ -971,7 +982,7 @@ _DRAFT_ROOM_HTML = r"""
       if (!rd){ lg.K = 0; lg.DEF = 0; }
       return lg;
     }
-    return { QB:1, SF:sf?1:0, RB:2, WR:3, TE:1, FLEX:sf?0:1,
+    return { QB:1, SF:sf?1:0, RB:2, WR:3, TE:1, FLEX:1,
              K:rd?1:0, DEF:rd?1:0, BN:rd?5:7 };
   }
 
@@ -989,7 +1000,7 @@ _DRAFT_ROOM_HTML = r"""
       { key:'RB',   label:'RB' },
       { key:'WR',   label:'WR' },
       { key:'TE',   label:'TE' },
-      { key:'FLEX', label:'FLEX', hide: sf },
+      { key:'FLEX', label:'FLEX' },
       { key:'K',    label:'K',    hide: !rd },
       { key:'DEF',  label:'DEF',  hide: !rd },
       { key:'BN',   label:'Bench' }
@@ -1320,6 +1331,7 @@ _DRAFT_ROOM_HTML = r"""
     if (state) state.simStarted = true;
     save();
     syncSimControls();
+    renderSide();
     scheduleSim();
   }
   function startMock(){
