@@ -13072,6 +13072,8 @@ def api_draft_live():
     # Map draft slot -> team/owner display name (so the board shows real names).
     slot_names = {}
     draft_order = draft.get("draft_order") or {}     # {user_id: slot}
+    traded_picks_out = []
+    user_roster_map = {}  # user_id -> roster_id (for traded-pick ownership resolution)
     try:
         _lid = draft.get("league_id")
         _season = int(draft.get("season") or season or datetime.now().year)
@@ -13083,8 +13085,28 @@ def api_draft_live():
                 _name = ((_u.get("metadata") or {}).get("team_name")
                          or _u.get("display_name") or ("Team " + str(_slot)))
                 slot_names[str(_slot)] = _name
+        if _lid:
+            # Traded picks - filter to this draft's season so the frontend can
+            # resolve future pick ownership correctly (trades change who owns what).
+            _all_traded = get_traded_picks(platform, _lid, _season) or []
+            _season_str = str(_season)
+            traded_picks_out = [
+                {"season": tp.get("season"), "round": tp.get("round"),
+                 "slot": tp.get("slot"), "owner_id": tp.get("owner_id"),
+                 "previous_owner_id": tp.get("previous_owner_id")}
+                for tp in _all_traded
+                if str(tp.get("season") or "") == _season_str
+            ]
+            # Build user_id -> roster_id map so the frontend can identify the
+            # viewer's roster_id and match it against traded_picks.owner_id.
+            _rosters = get_rosters(platform, _lid, _season) or []
+            for _r in _rosters:
+                _uid = str(_r.get("owner_id") or "")
+                _rid = _r.get("roster_id")
+                if _uid and _rid is not None:
+                    user_roster_map[_uid] = _rid
     except Exception as _e_sn:
-        logger.info("[draft-live] slot names skipped: %s", _e_sn)
+        logger.info("[draft-live] slot names / traded picks skipped: %s", _e_sn)
 
     rounds_val = int(settings.get("rounds") or 15)
     # Derive high-level draft type from round count: Sleeper rookie drafts are
@@ -13102,6 +13124,8 @@ def api_draft_live():
         "draft_order": draft_order,
         "slot_names": slot_names,
         "picks": picks,
+        "traded_picks": traded_picks_out,
+        "user_roster_map": user_roster_map,
     })
 
 

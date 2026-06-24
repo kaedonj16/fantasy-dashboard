@@ -2026,6 +2026,39 @@ _DRAFT_ROOM_HTML = r"""
       })
       .catch(function(){ box.innerHTML = '<div class="dr-live-head">Could not detect drafts.</div>'; });
   }
+  // Build the owned-pick map from a /api/draft/live response.
+  // Completed picks: trust picked_by (user_id). Future picks: apply traded_picks
+  // (roster_id-based) to override the default home-slot ownership.
+  function buildOwnedFromResponse(d, teams, rounds, order, slot){
+    var owned = {};
+    var madePickNos = {};
+    (d.picks || []).forEach(function(p){
+      if (p.pick_no == null) return;
+      madePickNos[p.pick_no] = true;
+      if (cfg.viewerUserId && p.picked_by === cfg.viewerUserId) owned[p.pick_no] = true;
+    });
+    if (String(d.status) !== 'complete'){
+      var tradedMap = {};
+      (d.traded_picks || []).forEach(function(tp){
+        if (tp.slot != null && tp.round != null) tradedMap[tp.slot + ':' + tp.round] = tp.owner_id;
+      });
+      var viewerRosterId = null;
+      if (cfg.viewerUserId && d.user_roster_map) viewerRosterId = d.user_roster_map[cfg.viewerUserId] || null;
+      for (var pn2 = 1; pn2 <= teams * rounds; pn2++){
+        if (madePickNos[pn2]) continue;
+        var pn2Slot = slotOnClock(pn2, teams, order);
+        var pn2Round = Math.ceil(pn2 / teams);
+        var tk = pn2Slot + ':' + pn2Round;
+        if (tradedMap.hasOwnProperty(tk)){
+          if (viewerRosterId !== null && tradedMap[tk] === viewerRosterId) owned[pn2] = true;
+        } else {
+          if (slot && pn2Slot === slot) owned[pn2] = true;
+        }
+      }
+    }
+    return Object.keys(owned).length ? owned : null;
+  }
+
   function connectLive(draftId){
     fetch('/api/draft/live?platform=' + encodeURIComponent(cfg.platform) + '&draft_id=' + encodeURIComponent(draftId))
       .then(function(r){ return r.json(); })
@@ -2040,25 +2073,11 @@ _DRAFT_ROOM_HTML = r"""
         }
         var isComplete = String(d.status) === 'complete';
         var isDrafting = String(d.status) === 'drafting';
-        // draft_type from backend (rookie vs startup) — fall back to round-count heuristic
         var draftType = d.draft_type || (parseInt(d.rounds) <= 5 ? 'rookie' : 'startup');
-        // Build ownership from actual picks (who picked what), falling back to slot for future picks.
-        var owned = {};
-        var madePickNos = {};
-        (d.picks || []).forEach(function(p){
-          if (p.pick_no == null) return;
-          madePickNos[p.pick_no] = true;
-          if (cfg.viewerUserId && p.picked_by === cfg.viewerUserId) owned[p.pick_no] = true;
-        });
-        if (slot && !isComplete){
-          for (var pn2 = 1; pn2 <= teams * rounds; pn2++){
-            if (!madePickNos[pn2] && slotOnClock(pn2, teams, order) === slot) owned[pn2] = true;
-          }
-        }
         state = {
           type: draftType, teams: teams, rounds: rounds, sf: !!cfg.isSuperflex,
           slot: slot, order: order, picks: {}, current: 1,
-          owned: Object.keys(owned).length ? owned : null,
+          owned: buildOwnedFromResponse(d, teams, rounds, order, slot),
           mode: 'live', isComplete: isComplete, sourceDraftId: draftId,
           pickTimer: parseInt(d.pick_timer) || 0,
           slotNames: d.slot_names || {}, queue: []
@@ -2088,6 +2107,8 @@ _DRAFT_ROOM_HTML = r"""
         .then(function(d){
           if (!d || !d.picks) return;
           var prevCurrent = state.current;
+          // Refresh ownership on every poll - trades can happen during the draft.
+          state.owned = buildOwnedFromResponse(d, state.teams, state.rounds, state.order, state.slot);
           applyLivePicks(d.picks); render();
           var isDrafting = String(d.status) === 'drafting';
           document.getElementById('drLiveBadge').style.display = isDrafting ? '' : 'none';
