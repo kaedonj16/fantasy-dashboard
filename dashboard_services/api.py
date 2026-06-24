@@ -340,15 +340,16 @@ def get_drafts(league_id: str) -> List[dict]:
     return fetch_json(f"/league/{league_id}/drafts")
 
 
-@ttl_cache(ttl=20)
+@ttl_cache(ttl=8)
 def get_draft(draft_id: str) -> dict:
     """Sleeper draft metadata (status, type, settings incl. reversal_round, draft_order)."""
     return fetch_json(f"/draft/{draft_id}") or {}
 
 
-@ttl_cache(ttl=10)
+@ttl_cache(ttl=3)
 def get_draft_picks(draft_id: str) -> List[dict]:
-    """Live/completed picks for a Sleeper draft (short TTL for live polling)."""
+    """Live/completed picks for a Sleeper draft. Short TTL (< the board's poll
+    interval) so new picks surface promptly instead of being served stale."""
     return fetch_json(f"/draft/{draft_id}/picks") or []
 
 

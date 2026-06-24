@@ -153,6 +153,7 @@ _DRAFT_ROOM_HTML = r"""
           <span class="dr-pill dr-pill-upcoming" id="drUpcomingBadge" style="display:none;">Upcoming</span>
           <span class="dr-progress" id="drProgress"></span>
           <span class="dr-save" id="drSave"></span>
+          <span class="dr-poll-status" id="drPollStatus" style="display:none;"></span>
         </div>
       </div>
       <div class="dr-status-right">
@@ -342,6 +343,9 @@ _DRAFT_ROOM_HTML = r"""
   .dr-pick-timer.urgent { color: #fff; background: #ef4444; animation: drPulse 1s ease-in-out infinite; }
   .dr-progress { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
   .dr-save { font-size: 11px; color: #22c55e; }
+  .dr-poll-status { font-size: 11px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .dr-poll-status .dr-poll-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; flex-shrink: 0; }
+  .dr-poll-status.is-syncing .dr-poll-dot { background: var(--accent,#38bdf8); animation: drPulse 1s ease-in-out infinite; }
   /* Bottom-sheet drag handle (mobile only) */
   .dr-sheet-handle { display: none; }
   .dr-live-list { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
@@ -875,7 +879,15 @@ _DRAFT_ROOM_HTML = r"""
   var playersById = {};    // id -> player (value lookup for live picks)
   var lastLivePicks = null;// last picks payload from the live feed
   var saveTimer = null;    // debounce for DB autosave
-  var pollTimer = null;    // live-draft poll interval
+  var pollTimer = null;    // live-draft poll: next setTimeout handle
+  var pollTickTimer = null;// 1s ticker that refreshes the freshness indicator
+  var _pollInFlight = false;
+  var _pollCount = 0;      // polls since connect (drives periodic full refresh)
+  var _pollLastAt = 0;     // ms timestamp of the last successful poll
+  var _pollNextAt = 0;     // ms timestamp the next poll is scheduled for
+  var _liveSig = null;     // signature of the last applied live state (skip no-op renders)
+  var POLL_MS = 4000;      // base cadence (just above the 3s picks cache TTL)
+  var POLL_FULL_EVERY = 15;// every N polls, do a full refresh to catch trades/slot names
   var sim = false;         // mock-draft simulation active
   var simTimer = null;
   var simSpeed = 700;      // ms between CPU picks
@@ -2718,6 +2730,14 @@ _DRAFT_ROOM_HTML = r"""
     state.current = _next;
     _boardSig = null;   // force a full board rebuild on the next render
   }
+  // Friendly label for a Sleeper draft status (raw values are snake_case).
+  function liveStatusLabel(s){
+    s = String(s || '');
+    if (s === 'drafting') return 'Live';
+    if (s === 'pre_draft') return 'Pre Draft';
+    if (s === 'complete') return 'Complete';
+    return s.replace(/_/g, ' ');
+  }
   function detectLive(){
     if (cfg.isGuest || !cfg.leagueId){
       drAlert('Live draft sync requires opening the Draft Room from your league.');
@@ -2734,7 +2754,7 @@ _DRAFT_ROOM_HTML = r"""
         var html = '<div class="dr-live-head">Detected drafts. Pick one to connect</div>';
         ds.forEach(function(d){
           html += '<button class="dr-live-item" data-id="' + esc(d.draft_id) + '">'
-            + '<span class="dr-live-status dr-ls-' + esc(d.status || '') + '">' + esc(d.status || '') + '</span>'
+            + '<span class="dr-live-status dr-ls-' + esc(d.status || '') + '">' + esc(liveStatusLabel(d.status)) + '</span>'
             + esc((d.type || 'snake') + ' · ' + (d.teams || '?') + ' teams · ' + (d.rounds || '?') + ' rounds') + '</button>';
         });
         box.innerHTML = html;
@@ -2817,6 +2837,8 @@ _DRAFT_ROOM_HTML = r"""
           slotNames: d.slot_names || {}, queue: []
         };
         applyLivePicks(d.picks || []);
+        // Seed the poll signature so the first poll doesn't redundantly rebuild.
+        _liveSig = liveSig(d); _pollLastAt = Date.now();
         showMain();
         document.getElementById('drUndo').style.display = 'none';
         document.getElementById('drLiveBadge').style.display = isDrafting ? '' : 'none';
@@ -2833,18 +2855,74 @@ _DRAFT_ROOM_HTML = r"""
       })
       .catch(function(){ drAlert('Could not connect to the live draft.'); });
   }
+  // Signature of the live state so a poll that brought nothing new skips the
+  // (expensive) board rebuild entirely.
+  function liveSig(d){
+    var ps = d.picks || [];
+    var last = ps.length ? ps[ps.length - 1] : null;
+    return String(d.status || '') + '|' + ps.length + '|' + (last && last.pick_no != null ? last.pick_no : 0);
+  }
+  function _fmtAgo(ms){
+    if (!ms) return '';
+    var s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+    if (s < 2) return 'just now';
+    if (s < 60) return s + 's ago';
+    return Math.floor(s / 60) + 'm ago';
+  }
+  // Freshness indicator: "Updated 3s ago · next in 1s", or "Syncing…" in flight.
+  function updatePollStatus(){
+    var el = document.getElementById('drPollStatus');
+    if (!el) return;
+    if (!state || state.mode !== 'live' || state.isComplete){ el.style.display = 'none'; return; }
+    el.style.display = '';
+    if (_pollInFlight){
+      el.classList.add('is-syncing');
+      el.innerHTML = '<span class="dr-poll-dot"></span>Syncing&hellip;';
+      return;
+    }
+    el.classList.remove('is-syncing');
+    var nextIn = Math.max(0, Math.ceil((_pollNextAt - Date.now()) / 1000));
+    el.innerHTML = '<span class="dr-poll-dot"></span>Updated ' + (_fmtAgo(_pollLastAt) || '&mdash;')
+      + (nextIn > 0 ? ' &middot; next in ' + nextIn + 's' : '');
+  }
   function startPolling(){
     stopPolling();
-    pollTimer = setInterval(function(){
-      if (!state || state.mode !== 'live') { stopPolling(); return; }
-      fetch('/api/draft/live?platform=' + encodeURIComponent(cfg.platform) + '&draft_id=' + encodeURIComponent(state.sourceDraftId))
-        .then(function(r){ return r.json(); })
-        .then(function(d){
-          if (!d || !d.picks) return;
-          var prevCurrent = state.current;
-          var prevDrafting = state.isDrafting;
-          // Refresh ownership on every poll - trades can happen during the draft.
-          state.owned = buildOwnedFromResponse(d, state.teams, state.rounds, state.order, state.slot);
+    _pollCount = 0; _liveSig = null;
+    pollTickTimer = setInterval(updatePollStatus, 1000);   // keep the countdown live between polls
+    pollOnce();
+  }
+  function schedulePoll(){
+    _pollNextAt = Date.now() + POLL_MS;
+    pollTimer = setTimeout(pollOnce, POLL_MS);
+    updatePollStatus();
+  }
+  // One poll. Chained via setTimeout (never setInterval) so a slow response can't
+  // stack overlapping requests. Most polls are "light" (status + picks only); a
+  // periodic full poll refreshes slot names and trade-based ownership.
+  function pollOnce(){
+    if (!state || state.mode !== 'live'){ stopPolling(); return; }
+    _pollCount++;
+    var full = (_pollCount === 1) || (_pollCount % POLL_FULL_EVERY === 0);
+    var url = '/api/draft/live?platform=' + encodeURIComponent(cfg.platform)
+            + '&draft_id=' + encodeURIComponent(state.sourceDraftId)
+            + (full ? '' : '&light=1');
+    _pollInFlight = true; updatePollStatus();
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var to = setTimeout(function(){ if (ctrl) ctrl.abort(); }, 8000);  // don't let a hung request stall the cadence
+    fetch(url, ctrl ? { signal: ctrl.signal, cache: 'no-store' } : { cache: 'no-store' })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        clearTimeout(to); _pollInFlight = false;
+        if (!d || !d.picks){ _pollLastAt = Date.now(); return; }
+        var sig = liveSig(d);
+        if (sig !== _liveSig){
+          _liveSig = sig;
+          var prevCurrent = state.current, prevDrafting = state.isDrafting;
+          if (full){
+            // Only the full payload carries trades + roster map for ownership.
+            state.owned = buildOwnedFromResponse(d, state.teams, state.rounds, state.order, state.slot);
+            if (d.slot_names) state.slotNames = d.slot_names;
+          }
           applyLivePicks(d.picks); render();
           var isDrafting = String(d.status) === 'drafting';
           state.isDrafting = isDrafting;
@@ -2855,12 +2933,24 @@ _DRAFT_ROOM_HTML = r"""
           if (String(d.status) === 'complete'){
             stopPolling(); stopPickTimer(); state.isComplete = true; save();
             showCompleteSidebar();
+            return;
           }
-        })
-        .catch(function(){});
-    }, 5000);
+        }
+        _pollLastAt = Date.now();
+      })
+      .catch(function(){ clearTimeout(to); _pollInFlight = false; })
+      .then(function(){
+        // Schedule the next poll once this one settles (success or failure),
+        // unless polling was torn down (e.g. draft completed).
+        if (pollTickTimer && state && state.mode === 'live' && !state.isComplete) schedulePoll();
+      });
   }
-  function stopPolling(){ if (pollTimer){ clearInterval(pollTimer); pollTimer = null; } }
+  function stopPolling(){
+    if (pollTimer){ clearTimeout(pollTimer); pollTimer = null; }
+    if (pollTickTimer){ clearInterval(pollTickTimer); pollTickTimer = null; }
+    _pollInFlight = false;
+    var el = document.getElementById('drPollStatus'); if (el) el.style.display = 'none';
+  }
 
   function _setUpcomingMode(upcoming){
     // Hide Queue tab and draft buttons when draft hasn't started yet.

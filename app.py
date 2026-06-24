@@ -13100,6 +13100,30 @@ def api_draft_live():
             "team": meta.get("team") or "",
         })
 
+    rounds_val = int(settings.get("rounds") or 15)
+    # Derive high-level draft type from round count: Sleeper rookie drafts are
+    # always short (1-5 rounds); anything longer is a startup/dynasty draft.
+    draft_type = "rookie" if 0 < rounds_val <= 5 else "startup"
+    pick_timer = int(settings.get("pick_timer") or 0)
+
+    # Light poll: the board hits this every few seconds and only needs the things
+    # that actually change - status + picks. Skip the 3 extra league API calls
+    # (users, traded picks, rosters) that drive slot names / future-pick ownership;
+    # those barely change and the board fetches them on connect + a periodic full
+    # refresh. This keeps the hot poll path to ~2 upstream calls.
+    if request.args.get("light"):
+        return jsonify({
+            "status": draft.get("status"),
+            "type": draft.get("type"),
+            "draft_type": draft_type,
+            "pick_timer": pick_timer,
+            "teams": settings.get("teams"),
+            "rounds": settings.get("rounds"),
+            "order": _order_from_sleeper(draft),
+            "draft_order": draft.get("draft_order") or {},
+            "picks": picks,
+        })
+
     # Map draft slot -> team/owner display name (so the board shows real names).
     slot_names = {}
     draft_order = draft.get("draft_order") or {}     # {user_id: slot}
@@ -13139,11 +13163,6 @@ def api_draft_live():
     except Exception as _e_sn:
         logger.info("[draft-live] slot names / traded picks skipped: %s", _e_sn)
 
-    rounds_val = int(settings.get("rounds") or 15)
-    # Derive high-level draft type from round count: Sleeper rookie drafts are
-    # always short (1-5 rounds); anything longer is a startup/dynasty draft.
-    draft_type = "rookie" if 0 < rounds_val <= 5 else "startup"
-    pick_timer = int(settings.get("pick_timer") or 0)
     return jsonify({
         "status": draft.get("status"),
         "type": draft.get("type"),
