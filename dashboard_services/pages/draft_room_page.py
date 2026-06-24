@@ -3022,7 +3022,7 @@ _DRAFT_HISTORY_HTML = r"""
       var title = typeLabel + ' Draft'
         + ' · ' + (d.teams || '?') + ' teams · ' + (d.rounds || '?') + ' rounds';
       html += '<div class="dr-hist-card">'
-        + '<div class="dr-hist-body"><div class="dr-hist-title">' + statusTag(d.status) + esc(title) + '</div>'
+        + '<div class="dr-hist-body"><div class="dr-hist-title">' + esc(title) + statusTag(d.status) + '</div>'
         + '<div class="dr-hist-meta">' + esc((d.order || 'snake')) + ' order' + (d.season ? (' · ' + esc(String(d.season))) : '') + '</div></div>'
         + '<div class="dr-hist-actions">'
         + '<a class="dr-btn dr-btn-primary" href="' + esc(cfg.base) + '?live=' + encodeURIComponent(d.draft_id) + '">Open board</a>'
