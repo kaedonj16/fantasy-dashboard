@@ -13278,6 +13278,7 @@ def api_draft_live():
             "name": nm or (meta.get("player_name") or "Unknown"),
             "position": (meta.get("position") or "").upper(),
             "team": meta.get("team") or "",
+            "picked_at": p.get("picked_at"),   # ms epoch when Sleeper recorded the pick
         })
 
     rounds_val = int(settings.get("rounds") or 15)

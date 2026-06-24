@@ -922,6 +922,7 @@ _DRAFT_ROOM_HTML = r"""
   var _pollLastAt = 0;     // ms timestamp of the last successful poll
   var _pollNextAt = 0;     // ms timestamp the next poll is scheduled for
   var _liveSig = null;     // signature of the last applied live state (skip no-op renders)
+  var _pickLagMsg = null;  // diagnostic: "pick +Xs late" shown briefly after each new pick
   var POLL_MS = 4000;      // base cadence (just above the 3s picks cache TTL)
   var POLL_FULL_EVERY = 60;// every N light polls, do a full refresh to catch trades/slot names
   var sim = false;         // mock-draft simulation active
@@ -2803,11 +2804,14 @@ _DRAFT_ROOM_HTML = r"""
   function applyLivePicks(picks){
     lastLivePicks = picks;
     state.picks = {}; drafted = {};
+    var latestPickedAt = 0;
     picks.forEach(function(p){
       if (p.pick_no == null) return;
       state.picks[p.pick_no] = { id: p.player_id, name: p.name, position: p.position, team: p.team, val: valLookup(p.player_id) };
       if (p.player_id) drafted[String(p.player_id)] = true;
+      if (p.picked_at && p.picked_at > latestPickedAt) latestPickedAt = p.picked_at;
     });
+    state.lastPickedAt = latestPickedAt || state.lastPickedAt || 0;
     var _tot = (state.teams || 12) * (state.rounds || 15), _next = _tot + 1;
     for (var _pn = 1; _pn <= _tot; _pn++){ if (!state.picks[_pn]){ _next = _pn; break; } }
     state.current = _next;
@@ -3015,7 +3019,8 @@ _DRAFT_ROOM_HTML = r"""
       return;
     }
     el.classList.remove('is-syncing');
-    el.innerHTML = '<span class="dr-poll-dot"></span>' + (_fmtAgo(_pollLastAt) || '&mdash;');
+    var lagSuffix = _pickLagMsg ? (' <span style="color:#f59e0b">' + _pickLagMsg + '</span>') : '';
+    el.innerHTML = '<span class="dr-poll-dot"></span>' + (_fmtAgo(_pollLastAt) || '&mdash;') + lagSuffix;
   }
   // In-page draft banner. Two states: a countdown when a connected draft is within
   // 15 min of its scheduled start, and a "live now" bar while it's drafting. Both
@@ -3109,6 +3114,13 @@ _DRAFT_ROOM_HTML = r"""
         if (sig !== _liveSig){
           _liveSig = sig;
           var prevCurrent = state.current, prevDrafting = state.isDrafting;
+          // Diagnostic: measure Sleeper REST lag (picked_at to detection time).
+          var _newPickedAt = 0;
+          (d.picks || []).forEach(function(pk){ if (pk.picked_at && pk.picked_at > _newPickedAt) _newPickedAt = pk.picked_at; });
+          if (_newPickedAt){
+            var lagS = Math.round((Date.now() - _newPickedAt) / 1000);
+            if (lagS > 0){ _pickLagMsg = 'pick +' + lagS + 's'; setTimeout(function(){ _pickLagMsg = null; }, 10000); }
+          }
           if (full){
             // Only the full payload carries trades + roster map for ownership.
             state.owned = buildOwnedFromResponse(d, state.teams, state.rounds, state.order, state.slot);
