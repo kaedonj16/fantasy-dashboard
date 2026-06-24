@@ -3215,6 +3215,7 @@ _DRAFT_ROOM_HTML = r"""
         var done = state.current > state.teams * state.rounds;
         if (!done){ sim = true; simStarted = !!state.simStarted; simPaused = false; }
         syncSimControls();
+        _setUpcomingMode(false);
       }
       showMain();
       loadPlayers();
