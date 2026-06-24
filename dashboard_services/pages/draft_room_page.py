@@ -1273,7 +1273,7 @@ _DRAFT_ROOM_HTML = r"""
       } else {
         // Past ADP: urgency grows so players don't slide indefinitely.
         // Hard cap: once a player is maxSlide picks overdue they dominate the pick.
-        var maxSlide = Math.max(6, Math.round(sigma * 2));
+        var maxSlide = Math.max(1, Math.round(sigma * 2));
         if (diff >= maxSlide) {
           w = 5.0;                                 // overdue - near-certain next pick
         } else {
@@ -1721,6 +1721,9 @@ _DRAFT_ROOM_HTML = r"""
   function clamp01(x){ return x < 0 ? 0 : (x > 1 ? 1 : x); }
   function pickScore(p, maxVal, counts){
     var pos = (p.position || '').toUpperCase();
+    // Free agents have no current team and no real draft value for any format.
+    var teamVal = (p.team || '').trim().toUpperCase();
+    if (!teamVal || teamVal === 'FA') return 2;
     var adp = adpOf(p);
 
     // Blend DB dynasty value with ADP-implied quality so market consensus
