@@ -19247,18 +19247,38 @@ def api_league_players():
     if request.args.get("kdef"):
         try:
             from utils.utils import load_players_index as _lpi
+            # Reuse the FantasyPros projections cache (keyed by id) so kickers carry
+            # a projected PPG and can be ranked by quality. Defenses aren't projected
+            # by FP, so they fall back to a flat score on the client.
+            _kdef_proj = {}
+            try:
+                _kp = read_json_cached(
+                    os.path.join("cache", f"fp_projections_{date.today().year}_ppr.json")
+                ) or {}
+                _kdef_proj = _kp
+            except Exception:
+                _kdef_proj = {}
             _seen = {str(p.get("id")) for p in model_value_table if isinstance(p, dict)}
             _kdef = []
             for _pid, _info in (_lpi() or {}).items():
                 _pos = str((_info or {}).get("pos") or "").upper()
                 if _pos in ("K", "DEF", "DST") and str(_pid) not in _seen:
-                    _kdef.append({
+                    _row = {
                         "id": str(_pid),
                         "name": (_info.get("name") or str(_pid)),
                         "position": "DEF" if _pos in ("DEF", "DST") else "K",
                         "team": (_info.get("team") or _info.get("nfl") or ""),
                         "value": 0, "sf_value": 0,
-                    })
+                    }
+                    _pe = _kdef_proj.get(str(_pid))
+                    if _pe:
+                        try:
+                            _ppj = float(_pe.get("ppg") or 0)
+                            if _ppj > 0:
+                                _row["proj_ppg"] = round(_ppj, 1)
+                        except (TypeError, ValueError):
+                            pass
+                    _kdef.append(_row)
             _kdef.sort(key=lambda x: x["name"])
             model_value_table.extend(_kdef)
         except Exception as _e_kdef:
@@ -22027,9 +22047,9 @@ def _fetch_league_adp_from_db(
 # draft room (survival/opportunity-cost, tier-cliff boost, redraft handcuff) are
 # omitted because they have no meaning in post-draft retrospective grading.
 _PS_WEIGHTS = {
-    "rookie":  {"vor": 0.06, "value": 0.22, "adp": 0.30, "tier": 0.12, "need": 0.05, "youth": 0.24, "mom": 0.06},
-    "redraft": {"vor": 0.12, "value": 0.36, "adp": 0.35, "tier": 0.10, "need": 0.08, "youth": 0.00, "mom": 0.04},
-    "startup": {"vor": 0.08, "value": 0.30, "adp": 0.31, "tier": 0.13, "need": 0.10, "youth": 0.10, "mom": 0.03},
+    "rookie":  {"vor": 0.06, "value": 0.18, "adp": 0.29, "tier": 0.12, "need": 0.05, "youth": 0.24, "mom": 0.06, "ppg": 0.05},
+    "redraft": {"vor": 0.10, "value": 0.24, "adp": 0.33, "tier": 0.08, "need": 0.07, "youth": 0.00, "mom": 0.03, "ppg": 0.18},
+    "startup": {"vor": 0.07, "value": 0.24, "adp": 0.30, "tier": 0.12, "need": 0.09, "youth": 0.10, "mom": 0.03, "ppg": 0.10},
 }
 _PS_AGE_PEAKS = {"RB": 24, "WR": 27, "TE": 27, "QB": 29}
 
@@ -22050,7 +22070,8 @@ def _ps_tier_of(value: float, thresholds: list):
 
 def _compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
                         avg_pick, pick_no, max_val, draft_type, is_sf,
-                        need_raw, qb_count, total_picks=None, num_teams=None) -> int:
+                        need_raw, qb_count, total_picks=None, num_teams=None,
+                        ppg_norm=None) -> int:
     pos = (pos or "").upper()
     # DB-sourced numbers arrive as decimal.Decimal; coerce to float so they mix
     # with the float weights below (Decimal * float raises TypeError).
@@ -22101,9 +22122,14 @@ def _compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
 
     mom = _ps_clamp01((rank_change_7d or 0) / 20 + 0.5)
 
+    # Production: position-normalized PPG. Missing data falls back to value_norm
+    # so a player isn't penalized for absent projections (mirrors the Draft Room).
+    ppg_n = ppg_norm if ppg_norm is not None else value_norm
+
     w = _PS_WEIGHTS.get(draft_type, _PS_WEIGHTS["startup"])
     s = (w["vor"] * vor_norm + w["value"] * value_norm + w["adp"] * adp_val
-         + w["tier"] * tier_score + w["need"] * need + w["youth"] * youth + w["mom"] * mom)
+         + w["tier"] * tier_score + w["need"] * need + w["youth"] * youth
+         + w["mom"] * mom + w.get("ppg", 0.0) * ppg_n)
 
     # QB overfill (1QB only): a second QB only carries real opportunity cost in
     # the early rounds. By the late rounds a backup QB is a normal pick, so the
@@ -22122,6 +22148,13 @@ def _compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
         if qb_count >= 2:
             _pen *= 0.7
         s *= _pen
+
+    # Depth normalization: re-anchor the 0-100 scale to what's achievable at this
+    # pick slot so late-round picks aren't unfairly buried (mirrors the Draft Room).
+    if total_picks and total_picks > 1 and pick_no:
+        _depth = min(0.98, (float(pick_no) - 1) / float(total_picks))
+        _par = max(0.40, 1.0 - _depth * 0.44)
+        s = s / _par
 
     return int(round(_ps_clamp01(s) * 100))
 
@@ -22331,6 +22364,8 @@ def api_draft_grades():
         # gracefully: pick_score stays None and the UI keeps the letter grade.
         val_by_id: dict[str, dict] = {}
         mom_by_id: dict[str, float] = {}
+        ppg_by_id: dict[str, float] = {}
+        ppg_scale_by_pos: dict[str, dict] = {}
         tier_thresholds: list = []
         repl_by_pos: dict[str, float] = {}
         ps_targets: dict[str, float] = {}
@@ -22419,6 +22454,38 @@ def api_draft_grades():
                 _idx = max(0, min(_idx, len(_arr) - 1))
                 repl_by_pos[_pp] = _arr[_idx]
             ps_pool_sorted.sort(key=lambda x: x[0], reverse=True)
+
+            # Projected PPG by player (FantasyPros cache, keyed by id) + a
+            # position-relative scale (replacement -> 0, elite -> 1) so the pick
+            # score's production term matches the Draft Room's ppgNormOf.
+            try:
+                _fp_ppg = read_json_cached(
+                    os.path.join("cache", f"fp_projections_{season}_ppr.json")
+                ) or {}
+                for _pid, _e in _fp_ppg.items():
+                    try:
+                        _pv = float((_e or {}).get("ppg") or 0)
+                        if _pv > 0:
+                            ppg_by_id[str(_pid)] = _pv
+                    except (TypeError, ValueError):
+                        pass
+            except Exception:
+                pass
+            _ppg_by_pos: dict[str, list] = {"QB": [], "RB": [], "WR": [], "TE": []}
+            for _pid, _d in val_by_id.items():
+                _pp = _d.get("position")
+                _pv = ppg_by_id.get(_pid)
+                if _pp in _ppg_by_pos and _pv is not None:
+                    _ppg_by_pos[_pp].append(_pv)
+            for _pp, _arr in _ppg_by_pos.items():
+                if not _arr:
+                    continue
+                _arr.sort(reverse=True)
+                _topn = max(1, min(3, len(_arr)))
+                _elite = sum(_arr[:_topn]) / _topn
+                _idx = int(round(_num_teams * _starters.get(_pp, 1))) - 1
+                _idx = max(0, min(_idx, len(_arr) - 1))
+                ppg_scale_by_pos[_pp] = {"repl": _arr[_idx], "elite": _elite}
             ps_targets = (
                 {"QB": 2.7, "RB": 4.45, "WR": 5.8, "TE": 2.05} if is_sf
                 else {"QB": 1.7, "RB": 5.45, "WR": 5.8, "TE": 2.05}
@@ -22603,6 +22670,14 @@ def api_draft_grades():
                     _tgt = ps_targets.get(pos, 0)
                     _have = ps_team_counts[rid].get(pos, 0)
                     _need_raw = _ps_clamp01(max(0, _tgt - _have) / _tgt) if _tgt else 0.0
+                    # Production term: position-normalized projected PPG.
+                    _ppg_n = None
+                    _psc = ppg_scale_by_pos.get(pos)
+                    _pv = ppg_by_id.get(player_id)
+                    if _psc and _pv is not None:
+                        _span = _psc["elite"] - _psc["repl"]
+                        _ppg_n = (_ps_clamp01((_pv - _psc["repl"]) / _span)
+                                  if _span > 0 else _ps_clamp01(_pv / max(_psc["elite"], 1)))
                     pick_score = _compute_pick_score(
                         pos=pos, value=_val, vor=_vor, tier=_tier,
                         age=_d.get("age"), rank_change_7d=mom_by_id.get(player_id),
@@ -22610,7 +22685,7 @@ def api_draft_grades():
                         draft_type=_draft_type, is_sf=is_sf, need_raw=_need_raw,
                         qb_count=ps_team_counts[rid].get("QB", 0),
                         total_picks=_num_teams * _draft_rounds,
-                        num_teams=_num_teams,
+                        num_teams=_num_teams, ppg_norm=_ppg_n,
                     )
 
             picks_by_roster[rid].append({

@@ -1031,6 +1031,7 @@ _DRAFT_ROOM_HTML = r"""
   function renderSetupRoster(){
     var sf = document.getElementById('drSf').value === '1';
     var rd = document.getElementById('drType').value === 'redraft';
+    var rk = document.getElementById('drType').value === 'rookie';
     var leagueRaw = rosterFromLeague();   // null when no league connected
     var hasLeague = !!leagueRaw;
 
@@ -1056,8 +1057,8 @@ _DRAFT_ROOM_HTML = r"""
       { key:'WR',   label:'WR' },
       { key:'TE',   label:'TE' },
       { key:'FLEX', label:'FLEX' },
-      { key:'K',    label:'K' },
-      { key:'DEF',  label:'DEF' },
+      { key:'K',    label:'K',    hide: rk },
+      { key:'DEF',  label:'DEF',  hide: rk },
       { key:'BN',   label:'Bench' }
     ];
 
@@ -1355,7 +1356,17 @@ _DRAFT_ROOM_HTML = r"""
   // ── Simulation (mock draft) ─────────────────────────────────────────────────
   function simAdp(p){
     var a = adpOf(p);
-    return (a != null) ? a : (10000 - (valOf(p) / 100));  // ADP-less players sort after, by value
+    if (a != null) return a;
+    var pos = (p.position || '').toUpperCase();
+    // K/DEF have no ADP: synthesize one in the last ~1.5 rounds so CPUs draft them
+    // late, best (by projected PPG) first, instead of dumping them all at the end.
+    if (pos === 'K' || pos === 'DEF'){
+      var tot = (state.teams || 12) * (state.rounds || 16);
+      var sc = _ppgScale[pos], v = ppgOf(p);
+      var n = (sc && v != null && sc.elite > sc.repl) ? clamp01((v - sc.repl) / (sc.elite - sc.repl)) : 0.4;
+      return tot - Math.round(n * (state.teams || 12) * 1.5);
+    }
+    return 10000 - (valOf(p) / 100);  // other ADP-less players sort after, by value
   }
   function teamCounts(slot){
     var c = { QB:0, RB:0, WR:0, TE:0, K:0, DEF:0 };
@@ -1575,6 +1586,8 @@ _DRAFT_ROOM_HTML = r"""
     return 6;
   }
   function tierOf(p){
+    var _tp = (p && p.position || '').toUpperCase();
+    if (_tp === 'K' || _tp === 'DEF') return null;   // K/DEF aren't tiered
     if (state.type === 'redraft') return null;   // tiers are keyed to dynasty value
     // Rookie drafts: use the prospect grade's tier from the prospects page
     // (keyed to the rookie class), not all-player dynasty value tiers.
@@ -1596,9 +1609,10 @@ _DRAFT_ROOM_HTML = r"""
     return tbl.length + 1;
   }
   // Count of still-available players per (position|tier) — drives cliff alerts.
-  function posTierCounts(){
+  function posTierCounts(pool){
+    pool = pool || availablePool();
     var m = {};
-    availablePool().forEach(function(p){
+    pool.forEach(function(p){
       var t = tierOf(p); if (t == null) return;
       var k = (p.position || '').toUpperCase() + '|' + t;
       m[k] = (m[k] || 0) + 1;
@@ -1621,7 +1635,11 @@ _DRAFT_ROOM_HTML = r"""
   // Replacement level = value of the last startable player at a position across
   // the league (teams x starters-per-team). VOR(p) = value(p) - replacement.
   var _repl = {};   // refreshed each render
-  function computeReplacement(){
+  // pool defaults to the still-available players so replacement level tracks
+  // draft progress: as starters come off the board the baseline reflects what is
+  // actually still gettable, instead of a frozen preseason snapshot.
+  function computeReplacement(pool){
+    pool = pool || availablePool();
     var rs = (state && state.roster) || defaultRoster();
     var teams = state.teams || 12;
     var flex = rs.FLEX || 0, sf = rs.SF || 0;
@@ -1632,7 +1650,7 @@ _DRAFT_ROOM_HTML = r"""
       TE: (rs.TE || 0)
     };
     var byPos = { QB: [], RB: [], WR: [], TE: [] };
-    players.forEach(function(p){
+    pool.forEach(function(p){
       var pos = (p.position || '').toUpperCase();
       if (byPos[pos]) byPos[pos].push(valOf(p));
     });
@@ -1658,7 +1676,8 @@ _DRAFT_ROOM_HTML = r"""
   // PPG maps to ~1, putting QB/RB/WR/TE on a common 0-1 axis despite very
   // different raw point levels (a 22-PPG QB and a 13-PPG TE can both be "elite").
   var _ppgScale = {};   // refreshed each render: { POS: { repl, elite } }
-  function computePpgScale(){
+  function computePpgScale(pool){
+    pool = pool || availablePool();
     var rs = (state && state.roster) || defaultRoster();
     var teams = state.teams || 12;
     var flex = rs.FLEX || 0, sf = rs.SF || 0;
@@ -1671,7 +1690,7 @@ _DRAFT_ROOM_HTML = r"""
       DEF:(rs.DEF || 0)
     };
     var byPos = { QB: [], RB: [], WR: [], TE: [], K: [], DEF: [] };
-    players.forEach(function(p){
+    pool.forEach(function(p){
       var pos = (p.position || '').toUpperCase();
       var v = ppgOf(p);
       if (byPos[pos] && v != null) byPos[pos].push(v);
@@ -1701,6 +1720,27 @@ _DRAFT_ROOM_HTML = r"""
     return clamp01((v - sc.repl) / span);
   }
 
+  // Per-render pickScore context: posTargets() and my above-replacement counts by
+  // position are identical for every player scored in a pass, so compute them once
+  // instead of re-running posTargets() + a full myPicksList() scan inside pickScore
+  // for every player in the pool (was O(pool x myPicks) per render). Invalidated at
+  // the top of each renderSide; rebuilt lazily on first use.
+  var _psCtxCache = null;
+  function psCtxInvalidate(){ _psCtxCache = null; }
+  function psCtx(){
+    if (_psCtxCache) return _psCtxCache;
+    var targets = posTargets();
+    var qualByPos = {};
+    myPicksList().forEach(function(mp){
+      var pos = (mp.position || '').toUpperCase();
+      var full = playersById[String(mp.id)];
+      var v = full ? vorOf(full) : null;
+      if (v == null || v > 0) qualByPos[pos] = (qualByPos[pos] || 0) + 1;
+    });
+    _psCtxCache = { targets: targets, qualByPos: qualByPos };
+    return _psCtxCache;
+  }
+
   // ── Availability probability ────────────────────────────────────────────────
   // Model a player's actual draft slot as Normal(ADP, sigma); the chance they
   // survive to overall pick `pn` is P(slot >= pn) = 1 - CDF((pn - ADP)/sigma).
@@ -1713,7 +1753,10 @@ _DRAFT_ROOM_HTML = r"""
   function availProb(p, pn){
     var a = adpOf(p);
     if (a == null) return null;
-    var sigma = Math.max(4, Math.min(16, 0.16 * a + 4));  // spread widens later in drafts
+    // Use the SAME spread the CPU sim draws from (simSigma) so the survival odds
+    // shown here actually reflect how the simulation drafts, rather than a second,
+    // looser variance model that disagreed with on-board behavior.
+    var sigma = simSigma(a);
     var z = (pn - a) / sigma;
     return Math.round((1 - _normCdf(z)) * 100);
   }
@@ -1869,13 +1912,13 @@ _DRAFT_ROOM_HTML = r"""
           + '<span class="dr-cmp-stat-lbl">' + lbl + '</span>'
           + '<span class="dr-cmp-stat-val">' + vStr + '</span></div>';
       }
-      var sc = psColor(ps);
+      var sc = ps != null ? psColor(ps) : 'var(--text-muted)';
       return '<div class="dr-cmp-player">'
         + '<div class="dr-cmp-top"><img class="dr-cmp-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
         + '<div><div class="dr-cmp-name"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span> ' + esc(p.name) + '</div>'
         + '<div class="dr-cmp-meta">' + esc(p.team || '') + (p.age ? ' &middot; Age ' + Number(p.age).toFixed(0) : '') + '</div>'
         + '</div></div>'
-        + '<div class="dr-cmp-ps" style="color:' + sc + '">' + ps + '</div>'
+        + '<div class="dr-cmp-ps" style="color:' + sc + '">' + (ps != null ? ps : '&ndash;') + '</div>'
         + '<div class="dr-cmp-ps-lbl">Pick Score</div>'
         + '<div class="dr-cmp-stats">'
         + statRow('Value', v, ov, true, function(x){ return x != null ? Math.round(x) : '-'; })
@@ -1909,6 +1952,11 @@ _DRAFT_ROOM_HTML = r"""
     // Free agents have no current team and no real draft value for any format.
     var teamVal = (p.team || '').trim().toUpperCase();
     if (!teamVal || teamVal === 'FA') return 2;
+    // K/DEF aren't graded - they're streamed/last-round picks with no meaningful
+    // pick score. Return null so no PS chip renders and they're excluded from
+    // grade math; they still appear in the pool (ranked by projected PPG) and the
+    // sim drafts them late via their synthesized ADP.
+    if (pos === 'K' || pos === 'DEF') return null;
     var adp = adpOf(p);
 
     // Blend DB dynasty value with ADP-implied quality so market consensus
@@ -1943,16 +1991,12 @@ _DRAFT_ROOM_HTML = r"""
 
     // #3: Quality-adjusted need: count of already-owned players at this position that
     // are above replacement level. Two below-replacement RBs still leaves a real need.
-    var t = posTargets()[pos];
+    // posTargets() and the per-position above-replacement counts are shared across
+    // the whole scoring pass, so read them from the memoized render context.
+    var _ctx = psCtx();
+    var t = _ctx.targets[pos];
     var needRaw = t ? clamp01(Math.max(0, t - (counts[pos] || 0)) / t) : 0;
-    var myQualAtPos = 0;
-    myPicksList().forEach(function(mp){
-      if ((mp.position || '').toUpperCase() === pos){
-        var full = playersById[String(mp.id)];
-        var v = full ? vorOf(full) : null;
-        if (v == null || v > 0) myQualAtPos++;
-      }
-    });
+    var myQualAtPos = _ctx.qualByPos[pos] || 0;
     var qualNeedRaw = t ? clamp01(Math.max(0, t - myQualAtPos) / t) : 0;
     needRaw = Math.max(needRaw, qualNeedRaw);
     var needRamp = clamp01((state.current - 1) / 12);
@@ -2053,7 +2097,7 @@ _DRAFT_ROOM_HTML = r"""
   }
   function pickReason(p, counts){
     var pos = (p.position || '').toUpperCase();
-    var t = posTargets()[pos];
+    var t = psCtx().targets[pos];
     var need = t ? Math.max(0, t - (counts[pos] || 0)) : 0;
     var adp = adpOf(p);
     var fell = (adp != null) ? Math.round(state.current - adp) : null;
@@ -2159,9 +2203,13 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   function renderSide(){
-    _ptc = posTierCounts();
-    _repl = computeReplacement();
-    _ppgScale = computePpgScale();
+    // Compute the available pool once and share it across all per-render scales,
+    // then invalidate the pickScore context so it rebuilds against fresh repl/ppg.
+    var _renderPool = availablePool();
+    _ptc = posTierCounts(_renderPool);
+    _repl = computeReplacement(_renderPool);
+    _ppgScale = computePpgScale(_renderPool);
+    psCtxInvalidate();
     var kdef = wantsKDef();
     var kbtns = document.querySelectorAll('.dr-pos-kdef');
     for (var i = 0; i < kbtns.length; i++){ kbtns[i].style.display = kdef ? '' : 'none'; }
@@ -2884,6 +2932,11 @@ _DRAFT_ROOM_HTML = r"""
       pool.forEach(function(p){ p._ps = pickScore(p, _pmaxV, _pcounts); });
     }
     pool.sort(function(a, b){
+      // K/DEF have no value/ADP/PS - order them among themselves by projected PPG
+      // so the best kicker/defense still surfaces first regardless of sort mode.
+      var aKd = (String(a.position||'').toUpperCase() === 'K' || String(a.position||'').toUpperCase() === 'DEF');
+      var bKd = (String(b.position||'').toUpperCase() === 'K' || String(b.position||'').toUpperCase() === 'DEF');
+      if (aKd && bKd) return (ppgOf(b) || 0) - (ppgOf(a) || 0);
       if (sortBy === 'adp'){
         var aa = adpOf(a), ba = adpOf(b);
         return (aa != null ? aa : 99999) - (ba != null ? ba : 99999);
@@ -3265,7 +3318,7 @@ _DRAFT_ROOM_HTML = r"""
     if (p.ppg != null){ ppg = Number(p.ppg); ppgLbl = 'PPG';
       ppgSub = p.ppg_rank != null ? (pos + p.ppg_rank) : (p.ppg_season ? String(p.ppg_season) : ''); }
     else if (p.proj_ppg != null){ ppg = Number(p.proj_ppg); ppgLbl = 'Proj PPG'; ppgSub = 'projected'; }
-    var sc = psColor(ps);
+    var sc = ps != null ? psColor(ps) : 'var(--text-muted)';
     var pc = posColor(p.position);
     var c = document.getElementById('drPreviewCard');
     // Position-colored top accent
@@ -3280,9 +3333,9 @@ _DRAFT_ROOM_HTML = r"""
       + '</div></div>'
       // Pick Score hero
       + '<div class="dr-prev-score-hero" style="border-color:' + sc + ';background:' + sc + '1a;">'
-      + '<div class="dr-prev-score-num" style="color:' + sc + '">' + ps + '</div>'
+      + '<div class="dr-prev-score-num" style="color:' + sc + '">' + (ps != null ? ps : '&ndash;') + '</div>'
       + '<div class="dr-prev-score-lbl">Pick Score</div>'
-      + '<div class="dr-prev-score-reason">' + esc(pickReason(p, myPosCounts())) + '</div>'
+      + '<div class="dr-prev-score-reason">' + esc(ps != null ? pickReason(p, myPosCounts()) : 'Streamer / last-round pick') + '</div>'
       + '</div>'
       // Stats grid
       + '<div class="dr-prev-stats">'
