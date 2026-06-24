@@ -1160,11 +1160,8 @@ _DRAFT_ROOM_HTML = r"""
 
   // ── Data ─────────────────────────────────────────────────────────────────
   function redraftVal(p){
-    // FantasyCalc stores redraft values on their 0-10000 scale; divide by 10
-    // to normalize to the site's 0-999.9 range (a few elite picks float above).
-    var raw = (state.sf ? (p.redraft_value_sf != null ? p.redraft_value_sf : p.redraft_value_1qb)
-                        : p.redraft_value_1qb) || 0;
-    return raw / 10;
+    return (state.sf ? (p.redraft_value_sf != null ? p.redraft_value_sf : p.redraft_value_1qb)
+                     : p.redraft_value_1qb) || 0;
   }
   function valOf(p){
     if (state.type === 'redraft') return redraftVal(p);

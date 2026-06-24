@@ -15,10 +15,11 @@ from data_building.save_player_values import save_daily_values_to_db
 
 def _load_fc_redraft_values() -> dict[str, tuple[float | None, float | None]]:
     """
-    Build a sleeper_id → (redraft_value_1qb, redraft_value_sf) map from the
+    Build a sleeper_id -> (redraft_value_1qb, redraft_value_sf) map from the
     latest FantasyCalc CSV.  FC only exposes one redraft value per API call
     (1QB by default), so redraft_value_sf is populated from a separate scrape
     when available; otherwise we reuse the 1QB value as a placeholder.
+    Returns raw FC values (0-10000 scale); normalization is applied separately.
     """
     try:
         from data_building.external_data.external_values_scraper import load_fantasycalc_api_values
@@ -37,6 +38,40 @@ def _load_fc_redraft_values() -> dict[str, tuple[float | None, float | None]]:
     except Exception as e:
         print(f"[update_player_values] Could not load FC redraft values: {e}")
         return {}
+
+
+def _normalize_redraft_values(
+    fc_redraft: dict[str, tuple[float | None, float | None]],
+    pos_map: dict[str, str],
+) -> dict[str, tuple[float | None, float | None]]:
+    """
+    Normalize raw FantasyCalc redraft values (0-10000 scale) to the site's
+    0-999.9 scale using the same top-5 anchor logic as dynasty values:
+    scale the board so the mean of the top-5 non-QB players = 999.9.
+
+    Only the 1QB value is scaled here; the SF value is recomputed per-player
+    from the normalized 1QB value using the dynasty SF/1QB ratio, so it
+    inherits the same scale automatically.
+    """
+    _ANCHOR_N = 5
+    _NON_QB = {"RB", "WR", "TE"}
+
+    top5 = sorted(
+        [v for pid, (v, _) in fc_redraft.items()
+         if v is not None and pos_map.get(pid, "").upper() in _NON_QB],
+        reverse=True,
+    )[:_ANCHOR_N]
+
+    if not top5:
+        return fc_redraft
+
+    scale = 999.9 / (sum(top5) / len(top5))
+    print(f"[update_player_values] Redraft anchor: top-5 avg={sum(top5)/len(top5):.1f}, scale={scale:.5f}")
+
+    return {
+        pid: (round(v1 * scale, 2) if v1 is not None else None, sf_raw)
+        for pid, (v1, sf_raw) in fc_redraft.items()
+    }
 
 
 def _load_historical_ranks(target_date: date) -> Dict[str, Dict[str, int]]:
@@ -166,8 +201,11 @@ def update_player_values_with_rankings() -> int:
     # Load historical ranks from 7 days ago for movement indicators
     hist_ranks = _load_historical_ranks(date.today() - timedelta(days=7))
 
-    # Load FC redraft values (sleeper_id → (1qb, sf))
+    # Load FC redraft values and normalize to the site's 0-999.9 scale
+    # using the same top-5 non-QB anchor normalization as dynasty values.
     fc_redraft = _load_fc_redraft_values()
+    _pos_map = {str(row["id"]): str(row.get("position") or "") for _, row in df.iterrows()}
+    fc_redraft = _normalize_redraft_values(fc_redraft, _pos_map)
 
     # Convert back to list of dicts
     updated_players = []
