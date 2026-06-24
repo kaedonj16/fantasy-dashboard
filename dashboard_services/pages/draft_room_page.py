@@ -1825,6 +1825,18 @@ _DRAFT_ROOM_HTML = r"""
       if (p.team && myRBTeams[p.team]) s = Math.min(1, s + 0.15);
     }
 
+    // Depth normalization: re-anchor the 0-100 scale relative to what is
+    // achievable at this pick slot. The pool shrinks as the draft progresses
+    // so the best available player at pick 228/240 should score ~70-75, not 42.
+    // par is 1.0 at pick 1 and falls to ~0.32 at the last pick, so dividing
+    // by it rescales late-pick scores upward without affecting early picks.
+    var _tot = (state.teams || 12) * (state.rounds || 16);
+    if (_tot > 1){
+      var _depth = Math.min(0.98, (state.current - 1) / _tot);
+      var _par   = Math.max(0.30, 1.0 - _depth * 0.72);
+      s = s / _par;
+    }
+
     return Math.round(clamp01(s) * 100);
   }
   // How many players remain in this player's (position|tier) bucket.
@@ -2097,7 +2109,7 @@ _DRAFT_ROOM_HTML = r"""
       }
       if (countsSoFar[pos] != null) countsSoFar[pos]++;
       if (counts[pos] != null) counts[pos]++;
-      picks.push({ id: m.p.id, pos: pos, ps: ps,
+      picks.push({ id: m.p.id, pos: pos, ps: ps, pn: m.pn,
         val: full ? valOf(full) : (m.p.val || 0), ppg: full ? ppgOf(full) : null });
     });
     var psVals = picks.map(function(x){ return x.ps; }).filter(function(v){ return v != null; });
@@ -2123,11 +2135,21 @@ _DRAFT_ROOM_HTML = r"""
     });
     var coverage = slots.length ? filled / slots.length : 0;
 
-    // 1) Starter quality: average pick score of starting-lineup slots only.
-    // Using all picks (even weighted) unfairly penalizes deep startup drafts where
-    // late bench picks have inherently low PS. Only starters reflect real team quality.
-    var starterPsVals = picks.filter(function(x){ return starterIds[String(x.id)] && x.ps != null; }).map(function(x){ return x.ps; });
-    var starterAvgPs = starterPsVals.length ? starterPsVals.reduce(function(a, b){ return a + b; }, 0) / starterPsVals.length : avgPs;
+    // 1) Starter quality: round-weighted average PS of starting-lineup picks only.
+    // Bench picks are excluded so deep startup drafts aren't penalized for filler.
+    // Picks are weighted by 1/sqrt(round) so a round-1 starter counts ~4.5x more
+    // than a round-20 starter - reflecting that early picks are harder to get right
+    // and define the team. PS itself is already depth-normalized by pickScore, so
+    // this weight purely captures the roster-impact premium of early picks.
+    var _nTeams = state.teams || 12;
+    var _wSum = 0, _wTot = 0;
+    picks.forEach(function(x){
+      if (!starterIds[String(x.id)] || x.ps == null) return;
+      var _round = Math.max(1, Math.ceil((x.pn || 1) / _nTeams));
+      var _w = 1.0 / Math.sqrt(_round);
+      _wSum += x.ps * _w; _wTot += _w;
+    });
+    var starterAvgPs = _wTot > 0 ? _wSum / _wTot : avgPs;
     var valuePts = starterAvgPs != null ? Math.round(clamp01(starterAvgPs / 100) * 35) : 17;
 
     // 2) Starting-lineup strength vs a league-average team. Projected PPG leads.
