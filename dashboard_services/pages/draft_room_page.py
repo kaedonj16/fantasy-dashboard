@@ -346,11 +346,17 @@ _DRAFT_ROOM_HTML = r"""
   .dr-save { font-size: 11px; color: #22c55e; }
   .dr-start-banner { display: flex; align-items: center; gap: 13px; margin: 0 0 12px; padding: 12px 16px; border-radius: 12px;
     background: linear-gradient(90deg, rgba(56,189,248,.18), rgba(56,189,248,.05)); border: 1px solid var(--accent,#38bdf8); }
-  .dr-start-banner .dr-start-ic { font-size: 22px; flex-shrink: 0; animation: drPulse 1.6s ease-in-out infinite; }
-  .dr-start-banner .dr-start-txt { display: flex; flex-direction: column; line-height: 1.35; min-width: 0; }
-  .dr-start-banner .dr-start-txt b { font-size: 15px; font-weight: 800; color: var(--text); }
-  .dr-start-banner .dr-start-txt span { font-size: 12px; color: var(--text-muted); }
+  .dr-start-banner.is-live { background: linear-gradient(90deg, rgba(34,197,94,.18), rgba(34,197,94,.05)); border-color: #22c55e; }
+  .dr-banner-ic { font-size: 22px; flex-shrink: 0; display: inline-flex; align-items: center; }
+  .dr-banner-ic-live { animation: drPulse 1.4s ease-in-out infinite; }
+  .dr-banner-txt { display: flex; flex-direction: column; line-height: 1.35; min-width: 0; flex: 1; }
+  .dr-banner-txt b { font-size: 15px; font-weight: 800; color: var(--text); }
+  .dr-banner-txt span { font-size: 12px; color: var(--text-muted); }
   .dr-start-cd { font-variant-numeric: tabular-nums; }
+  .dr-banner-join { flex-shrink: 0; margin-left: auto; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+    background: var(--accent,#38bdf8); color: #fff; font-weight: 700; font-size: 13px; text-decoration: none; padding: 8px 14px; border-radius: 8px; }
+  .dr-start-banner.is-live .dr-banner-join { background: #22c55e; }
+  .dr-banner-join i { font-size: 11px; }
   .dr-poll-status { font-size: 11px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
   .dr-poll-status .dr-poll-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; flex-shrink: 0; }
   .dr-poll-status.is-syncing .dr-poll-dot { background: var(--accent,#38bdf8); animation: drPulse 1s ease-in-out infinite; }
@@ -2849,7 +2855,7 @@ _DRAFT_ROOM_HTML = r"""
         // Seed the poll signature so the first poll doesn't redundantly rebuild.
         _liveSig = liveSig(d); _pollLastAt = Date.now();
         showMain();
-        updateStartBanner();
+        updateDraftBanner();
         document.getElementById('drUndo').style.display = 'none';
         document.getElementById('drLiveBadge').style.display = isDrafting ? '' : 'none';
         document.getElementById('drUpcomingBadge').style.display = (!isDrafting && !isComplete) ? '' : 'none';
@@ -2895,29 +2901,62 @@ _DRAFT_ROOM_HTML = r"""
     el.innerHTML = '<span class="dr-poll-dot"></span>Updated ' + (_fmtAgo(_pollLastAt) || '&mdash;')
       + (nextIn > 0 ? ' &middot; next in ' + nextIn + 's' : '');
   }
-  // "Draft starts in MM:SS" banner: shows once a connected, not-yet-started draft
-  // is within 15 minutes of its scheduled Sleeper start_time.
+  // In-page draft banner. Two states: a countdown when a connected draft is within
+  // 15 min of its scheduled start, and a "live now" bar while it's drafting. Both
+  // carry an "Open in Sleeper" button (you're already in the BR draft room).
   var _START_WINDOW_MS = 15 * 60 * 1000;
-  function updateStartBanner(){
+  function _fmtCountdown(ms){
+    var t = Math.max(0, Math.floor(ms / 1000));
+    var h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+    return (h > 0 ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (s < 10 ? '0' : '') + s;
+  }
+  function sleeperDraftUrl(){
+    if (cfg.platform === 'sleeper' && state && state.sourceDraftId)
+      return 'https://sleeper.com/draft/nfl/' + encodeURIComponent(state.sourceDraftId);
+    return null;
+  }
+  function updateDraftBanner(){
     var el = document.getElementById('drStartBanner');
     if (!el) return;
-    var st = (state && state.startTime) ? state.startTime : 0;
-    var upcoming = state && state.mode === 'live' && !state.isComplete && state.isDrafting === false;
-    if (!st || !upcoming){ el.style.display = 'none'; return; }
-    var ms = st - Date.now();
-    if (ms <= 0 || ms > _START_WINDOW_MS){ el.style.display = 'none'; return; }
-    var total = Math.floor(ms / 1000);
-    var hh = Math.floor(total / 3600), mm = Math.floor((total % 3600) / 60), ss = total % 60;
-    var cd = (hh > 0 ? hh + ':' + (mm < 10 ? '0' : '') : '') + mm + ':' + (ss < 10 ? '0' : '') + ss;
+    // Determine which banner (if any) applies.
+    var mode = 'none';
+    if (state && state.mode === 'live' && !state.isComplete){
+      if (state.isDrafting) mode = 'live';
+      else {
+        var st = state.startTime || 0, ms0 = st ? st - Date.now() : 0;
+        if (st && ms0 > 0 && ms0 <= _START_WINDOW_MS) mode = 'upcoming';
+      }
+    }
+    if (mode === 'none'){ el.style.display = 'none'; el.removeAttribute('data-bk'); return; }
+    var onClock = mode === 'live' && isMyPick(state.current);
+    var shellKey = mode + (onClock ? ':otc' : '');
+    if (el.getAttribute('data-bk') !== shellKey){
+      el.setAttribute('data-bk', shellKey);
+      var url = sleeperDraftUrl();
+      var joinBtn = url ? '<a class="dr-banner-join" href="' + url + '" target="_blank" rel="noopener">Open in Sleeper <i class="fa-solid fa-arrow-right-long"></i></a>' : '';
+      if (mode === 'live'){
+        el.className = 'dr-start-banner is-live';
+        el.innerHTML = '<span class="dr-banner-ic dr-banner-ic-live"><i class="fa-solid fa-bolt"></i></span>'
+          + '<div class="dr-banner-txt"><b>Your draft is live' + (onClock ? ' &ndash; you&rsquo;re on the clock' : '') + '</b>'
+          + '<span>Make your picks in Sleeper &middot; this board updates as they come in.</span></div>' + joinBtn;
+      } else {
+        el.className = 'dr-start-banner';
+        el.innerHTML = '<span class="dr-banner-ic"><i class="fa-solid fa-calendar-days"></i></span>'
+          + '<div class="dr-banner-txt"><b>Your draft starts in <span class="dr-start-cd"></span></b>'
+          + '<span>Get your board ready - the pick board goes live automatically.</span></div>' + joinBtn;
+      }
+    }
     el.style.display = '';
-    el.innerHTML = '<span class="dr-start-ic">&#128276;</span>'
-      + '<div class="dr-start-txt"><b>Your draft starts in <span class="dr-start-cd">' + cd + '</span></b>'
-      + '<span>Head to your draft room and get your board ready.</span></div>';
+    // Per-tick: refresh only the countdown number (don't clobber the button).
+    if (mode === 'upcoming'){
+      var cdEl = el.querySelector('.dr-start-cd');
+      if (cdEl) cdEl.textContent = _fmtCountdown(state.startTime - Date.now());
+    }
   }
   function startPolling(){
     stopPolling();
     _pollCount = 0; _liveSig = null;
-    pollTickTimer = setInterval(function(){ updatePollStatus(); updateStartBanner(); }, 1000);
+    pollTickTimer = setInterval(function(){ updatePollStatus(); updateDraftBanner(); }, 1000);
     pollOnce();
   }
   function schedulePoll(){

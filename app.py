@@ -2037,6 +2037,127 @@ def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
 </script>"""
 
 
+_DRAFT_IMMINENT_BANNER_HTML = r"""
+<div id="drImminentBanner" class="drgb" style="display:none;"></div>
+<style>
+.drgb { margin: 10px 14px 0; border-radius: 12px; border: 1px solid var(--accent,#38bdf8); overflow: hidden;
+  background: linear-gradient(90deg, rgba(56,189,248,.18), rgba(56,189,248,.05)); }
+.drgb.is-live { border-color: #22c55e; background: linear-gradient(90deg, rgba(34,197,94,.18), rgba(34,197,94,.05)); }
+.drgb-inner { display: flex; align-items: center; gap: 12px; padding: 11px 16px; }
+.drgb-ic { font-size: 20px; flex-shrink: 0; display: inline-flex; align-items: center; }
+.drgb-ic-live { animation: drgbPulse 1.4s ease-in-out infinite; }
+@keyframes drgbPulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+.drgb-txt { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; flex: 1; }
+.drgb-txt b { font-size: 14px; font-weight: 800; color: var(--text); }
+.drgb-txt span { font-size: 12px; color: var(--text-muted); }
+.drgb-cd { font-variant-numeric: tabular-nums; }
+.drgb-join { flex-shrink: 0; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+  background: var(--accent,#38bdf8); color: #fff; font-weight: 700; font-size: 13px; text-decoration: none; padding: 8px 14px; border-radius: 8px; }
+.drgb.is-live .drgb-join { background: #22c55e; }
+.drgb-join i { font-size: 11px; }
+.drgb-x { flex-shrink: 0; background: none; border: none; color: var(--text-muted); font-size: 19px; line-height: 1; cursor: pointer; padding: 0 2px; }
+</style>
+<script>
+(function(){
+  var CFG = __DR_BANNER_CFG__;
+  var el = document.getElementById('drImminentBanner');
+  if (!el || !CFG.leagueId) return;
+  // Don't duplicate the in-page banner on the Draft Room itself.
+  if (/(^|\/)draft$/.test(location.pathname.replace(/\/+$/, ''))) return;
+  var WINDOW_MS = 15 * 60 * 1000;
+  var cur = null;
+  function dkey(id, st){ return 'drgb:' + id + ':' + st; }
+  function fmtCd(ms){
+    var t = Math.max(0, Math.floor(ms / 1000));
+    var h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+    return (h > 0 ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (s < 10 ? '0' : '') + s;
+  }
+  function pick(drafts){
+    var live = null, soon = null;
+    (drafts || []).forEach(function(d){
+      if (d.status === 'drafting'){ if (!live) live = d; }
+      else if (d.status === 'pre_draft' && d.start_time){
+        var ms = Number(d.start_time) - Date.now();
+        if (ms > 0 && ms <= WINDOW_MS && (!soon || Number(d.start_time) < Number(soon.start_time))) soon = d;
+      }
+    });
+    return live || soon;
+  }
+  function render(){
+    if (!cur){ el.style.display = 'none'; return; }
+    if (localStorage.getItem(dkey(cur.id, cur.state))){ el.style.display = 'none'; return; }
+    var isLive = cur.state === 'live';
+    el.className = 'drgb' + (isLive ? ' is-live' : '');
+    var icon = isLive ? '<i class="fa-solid fa-bolt"></i>' : '<i class="fa-solid fa-calendar-days"></i>';
+    var title = isLive ? 'Your draft is live now'
+                       : 'Your draft starts in <span class="drgb-cd">' + fmtCd(cur.start - Date.now()) + '</span>';
+    var sub = isLive ? 'Jump into the Draft Room for live picks, best-available, and grades.'
+                     : 'Open the Draft Room and get your board ready.';
+    el.innerHTML = '<div class="drgb-inner">'
+      + '<span class="drgb-ic' + (isLive ? ' drgb-ic-live' : '') + '">' + icon + '</span>'
+      + '<div class="drgb-txt"><b>' + title + '</b><span>' + sub + '</span></div>'
+      + '<a class="drgb-join" href="' + CFG.draftUrl + '">Join Draft Room <i class="fa-solid fa-arrow-right-long"></i></a>'
+      + '<button class="drgb-x" aria-label="Dismiss">&times;</button>'
+      + '</div>';
+    el.style.display = '';
+    el.querySelector('.drgb-x').addEventListener('click', function(){
+      localStorage.setItem(dkey(cur.id, cur.state), '1');
+      el.style.display = 'none';
+    });
+  }
+  function tick(){
+    if (!cur || cur.state !== 'soon') return;
+    var ms = cur.start - Date.now();
+    if (ms <= 0){ refresh(); return; }   // crossed start time: re-detect for the live state
+    var cd = el.querySelector('.drgb-cd');
+    if (cd) cd.textContent = fmtCd(ms);
+  }
+  function apply(drafts){
+    var d = pick(drafts);
+    if (!d){ cur = null; el.style.display = 'none'; return; }
+    cur = { id: d.draft_id, state: (d.status === 'drafting' ? 'live' : 'soon'), start: Number(d.start_time || 0) };
+    render();
+  }
+  function refresh(){
+    try {
+      var c = JSON.parse(sessionStorage.getItem('drgbCache') || 'null');
+      if (c && (Date.now() - c.ts) < 60000){ apply(c.drafts); return; }   // throttle across page navigations
+    } catch(e){}
+    fetch(CFG.detectUrl).then(function(r){ return r.json(); }).then(function(resp){
+      var drafts = (resp && resp.drafts) || [];
+      try { sessionStorage.setItem('drgbCache', JSON.stringify({ ts: Date.now(), drafts: drafts })); } catch(e){}
+      apply(drafts);
+    }).catch(function(){});
+  }
+  setInterval(tick, 1000);
+  setInterval(refresh, 90000);
+  refresh();
+})();
+</script>
+"""
+
+
+def _draft_imminent_banner(league_id: str, platform: str, season: int, active: str) -> str:
+    """Site-wide, dismissible banner shown on every page (except the Draft Room
+    itself) when the user's Sleeper league has a draft that is live or starting
+    within 15 minutes. Detection + countdown run client-side so page loads stay
+    fast; dismissal persists per draft + state in localStorage."""
+    if active == "draft":
+        return ""
+    if not (league_id and platform and season):
+        return ""
+    if str(platform).lower() != "sleeper":
+        return ""
+    cfg = json.dumps({
+        "platform": platform,
+        "leagueId": league_id,
+        "season": int(season),
+        "draftUrl": f"/{platform}/{season}/{league_id}/draft",
+        "detectUrl": f"/api/draft/detect?platform={platform}&league_id={league_id}&season={int(season)}",
+    })
+    return _DRAFT_IMMINENT_BANNER_HTML.replace("__DR_BANNER_CFG__", cfg)
+
+
 def _discord_banner() -> str:
     """Dismissible weekly Discord invite banner shown every Sunday."""
     import datetime as _dt
@@ -2266,6 +2387,9 @@ def render_page(
     banner_html = _discord_banner()
     if session.get("viewer_username"):
         banner_html += _recap_ready_banner(league_id or "", platform or "", season or 0)
+        banner_html += _draft_imminent_banner(
+            _nav_lid or "", _nav_platform or "", _nav_season or 0, active,
+        )
 
     wrapped_body = f"<div class='page-shell' data-page='{active}'>{body_html}</div>"
 
@@ -13061,6 +13185,7 @@ def api_draft_detect():
                 "type": d.get("type"),
                 "draft_type": draft_type,
                 "season": d.get("season"),
+                "start_time": d.get("start_time"),   # scheduled start (epoch ms) for the imminent-draft banner
                 "teams": settings.get("teams"),
                 "rounds": settings.get("rounds"),
                 "order": _order_from_sleeper(d),
