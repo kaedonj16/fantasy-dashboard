@@ -2147,10 +2147,9 @@ _DRAFT_ROOM_HTML = r"""
       if (!starterIds[String(x.id)] || x.ps == null) return;
       var _round = Math.max(1, Math.ceil((x.pn || 1) / _nTeams));
       // W(r) = 1/r^0.75 — power law backed by Chase Stuart's 31-year NFL AV
-      // regression (k=0.67) with a slight upward adjustment (k=0.75) for
-      // fantasy where late-round picks have near-zero VORP impact on the
-      // graded season. Round 1 = 1.0; Round 2 ≈ 0.38; Round 10 ≈ 0.09.
-      var _w = 1.0 / Math.pow(_round, 0.75);
+      // regression (k=0.67) with a slight upward adjustment for fantasy
+      // where early picks matter most. k=0.60: R1=1.0, R2=0.66, R5=0.35.
+      var _w = 1.0 / Math.pow(_round, 0.60);
       _wSum += x.ps * _w; _wTot += _w;
     });
     var starterAvgPs = _wTot > 0 ? _wSum / _wTot : avgPs;
