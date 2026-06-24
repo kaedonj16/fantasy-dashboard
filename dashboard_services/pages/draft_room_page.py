@@ -1404,8 +1404,25 @@ _DRAFT_ROOM_HTML = r"""
   function listInto(html){ document.getElementById('drBaList').innerHTML = html; }
 
   // ── Tiers + cliffs ──────────────────────────────────────────────────────────
+  // Mirrors assign_tier() in value_translation.py: maps a 0-100 prospect grade
+  // to its rookie-class tier (1 = elite). Fallback when prospect_tier is absent.
+  function prospectTier(score){
+    if (score >= 85) return 1;
+    if (score >= 72) return 2;
+    if (score >= 60) return 3;
+    if (score >= 44) return 4;
+    if (score >= 33) return 5;
+    return 6;
+  }
   function tierOf(p){
     if (state.type === 'redraft') return null;   // tiers are keyed to dynasty value
+    // Rookie drafts: use the prospect grade's tier from the prospects page
+    // (keyed to the rookie class), not all-player dynasty value tiers.
+    if (state.type === 'rookie'){
+      if (p && p.prospect_tier != null) return Number(p.prospect_tier);
+      if (p && p.prospect_score != null) return prospectTier(Number(p.prospect_score));
+      return null;
+    }
     var lt = state.sf ? 'sf' : '1qb';
     var sz = String(state.teams);
     var tbl = (tierThresholds[lt] || {})[sz] || (tierThresholds['1qb'] || {})['10'] || [];

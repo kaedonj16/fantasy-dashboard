@@ -18941,6 +18941,11 @@ def api_league_players():
                 "search_name": norm,
                 "is_rookie": True,
                 "rank_change_7d": r.get("rank_change_7d"),
+                # Rookie-class prospect grade (0-100) and its derived tier, straight
+                # from the prospects page model. Used by the Draft Room for rookie
+                # drafts so tiers reflect the rookie pool, not all-player dynasty value.
+                "prospect_score": (float(r["prospect_score"]) if r.get("prospect_score") is not None else None),
+                "prospect_tier":  (int(r["tier"]) if r.get("tier") is not None else None),
             }
 
             if norm and norm in name_to_idx:
@@ -18949,6 +18954,8 @@ def api_league_players():
                 # when present - only fill in gaps with pipeline values.
                 existing = model_value_table[name_to_idx[norm]]
                 existing["is_rookie"] = True
+                existing["prospect_score"] = rookie_entry["prospect_score"]
+                existing["prospect_tier"]  = rookie_entry["prospect_tier"]
                 if _team and _team != "FA":
                     existing["team"] = _team
                 if not float(existing.get("value") or 0):
@@ -22329,6 +22336,9 @@ def api_draft_grades():
                             "value": _v, "sf_value": _vsf,
                             "age": _r.get("age") if _r.get("age") is not None else _ex.get("age"),
                             "position": str(_r.get("position") or _ex.get("position") or "").upper(),
+                            # Rookie-class tier from the prospect grade (prospects page),
+                            # so rookie-draft pick scores tier off the rookie pool.
+                            "prospect_tier": (int(_r["tier"]) if _r.get("tier") is not None else None),
                         }
                 except Exception as _e_rk:
                     logger.info("[draft-grades] rookie value overlay skipped: %s", _e_rk)
@@ -22552,9 +22562,15 @@ def api_draft_grades():
                     _val = _eff_val(player_id, _d)
                     _repl = repl_by_pos.get(pos)
                     _vor = round(_val - _repl) if _repl is not None and pos in repl_by_pos else None
-                    # Dynasty tiers don't apply to redraft (value scale differs).
-                    _tier = None if _draft_type == "redraft" else (
-                        _ps_tier_of(_val, tier_thresholds) if pos in CORE_POS else None)
+                    # Tier source by draft type: rookie drafts use the prospect-grade
+                    # tier (rookie pool); startup uses dynasty-value tiers; redraft has
+                    # no tier (value scale differs).
+                    if _draft_type == "redraft":
+                        _tier = None
+                    elif _draft_type == "rookie":
+                        _tier = _d.get("prospect_tier")
+                    else:
+                        _tier = _ps_tier_of(_val, tier_thresholds) if pos in CORE_POS else None
                     _tgt = ps_targets.get(pos, 0)
                     _have = ps_team_counts[rid].get(pos, 0)
                     _need_raw = _ps_clamp01(max(0, _tgt - _have) / _tgt) if _tgt else 0.0
