@@ -3117,12 +3117,17 @@ _DRAFT_ROOM_HTML = r"""
           _liveSig = sig;
           var prevCurrent = state.current, prevDrafting = state.isDrafting;
           // Diagnostic: measure Sleeper REST lag (picked_at to detection time).
+          // picked_at is epoch ms from Sleeper; if missing we show "no ts" so we
+          // know whether the field is being returned at all.
           var _newPickedAt = 0;
           (d.picks || []).forEach(function(pk){ if (pk.picked_at && pk.picked_at > _newPickedAt) _newPickedAt = pk.picked_at; });
           if (_newPickedAt){
             var lagS = Math.round((Date.now() - _newPickedAt) / 1000);
-            if (lagS > 0){ _pickLagMsg = 'pick +' + lagS + 's'; setTimeout(function(){ _pickLagMsg = null; }, 10000); }
+            _pickLagMsg = 'pick +' + Math.max(0, lagS) + 's';
+          } else {
+            _pickLagMsg = 'pick (no ts)';
           }
+          setTimeout(function(){ _pickLagMsg = null; }, 15000);
           if (full){
             // Only the full payload carries trades + roster map for ownership.
             state.owned = buildOwnedFromResponse(d, state.teams, state.rounds, state.order, state.slot);
