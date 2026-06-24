@@ -49,20 +49,14 @@ def build_draft_room_body(
 # Plain (non-f) string — safe to contain { } freely.
 _DRAFT_ROOM_HTML = r"""
 <div class="dr-wrap">
-  <div class="dr-hero">
+  <div class="dr-hero" id="drHero">
     <h1 class="dr-title">Draft Room</h1>
-    <p class="dr-sub">Mock against ADP-driven CPU teams, draft manually, or sync a live Sleeper draft,
-      with best-available, recommendations, tiers, and your live draft grade.</p>
+    <p class="dr-sub">Mock against CPU teams, draft manually, or sync a live Sleeper draft. Best-available, tiers, and a live draft grade.</p>
   </div>
 
   <!-- Setup -->
   <div class="dr-setup" id="drSetup">
     <div class="dr-setup-card">
-      <div class="dr-setup-header">
-        <h2 class="dr-setup-title">Set up your draft</h2>
-        <p class="dr-setup-desc">Run a mock against ADP-driven CPU teams, draft manually, or connect a live Sleeper draft.</p>
-      </div>
-
       <div class="dr-setup-section">
         <div class="dr-setup-section-label">Format</div>
         <div class="dr-setup-grid">
@@ -158,6 +152,7 @@ _DRAFT_ROOM_HTML = r"""
             <option value="60">Instant</option>
           </select>
           <button class="dr-btn dr-btn-ghost" id="drSummaryBtn" style="display:none;">Summary</button>
+          <button class="dr-btn dr-btn-ghost" id="drPractice" style="display:none;">Practice Mock</button>
           <button class="dr-btn dr-btn-ghost" id="drShare">Share</button>
           <button class="dr-btn dr-btn-ghost" id="drUndo">Undo</button>
           <button class="dr-btn dr-btn-ghost" id="drEdit">Edit Setup</button>
@@ -226,15 +221,13 @@ _DRAFT_ROOM_HTML = r"""
 
 <style>
   .dr-wrap { max-width: 1640px; margin: 0 auto; padding: 10px 12px 40px; }
-  .dr-hero { margin-bottom: 12px; }
-  .dr-title { font-size: clamp(20px,4vw,28px); font-weight: 800; color: var(--text); margin: 0 0 4px; }
-  .dr-sub { font-size: 14px; color: var(--text-muted); margin: 0; }
+  .dr-hero { margin: 4px 0 16px; text-align: center; }
+  .dr-title { font-size: clamp(22px,4vw,30px); font-weight: 800; color: var(--text); margin: 0 0 6px; }
+  .dr-sub { font-size: 14px; color: var(--text-muted); margin: 0 auto; max-width: 560px; line-height: 1.5; }
   /* ── Setup (redesigned) ── */
-  .dr-setup { display: flex; justify-content: center; padding: 8px 0; }
+  .dr-setup { display: flex; justify-content: center; padding: 0 0 8px; }
   .dr-setup-card { width: 100%; max-width: 720px; background: var(--card); border: 1px solid var(--border);
-    border-radius: 16px; padding: 24px 24px 22px; box-shadow: 0 8px 30px rgba(0,0,0,.10); }
-  .dr-setup-header { margin-bottom: 18px; }
-  .dr-setup-title { font-size: 20px; font-weight: 800; color: var(--text); margin: 0 0 4px; }
+    border-radius: 16px; padding: 22px 24px; box-shadow: 0 8px 30px rgba(0,0,0,.10); }
   .dr-setup-desc { font-size: 13px; color: var(--text-muted); margin: 0; line-height: 1.5; }
   .dr-setup-section { padding: 14px 0; border-top: 1px solid var(--border); }
   .dr-setup-section:first-of-type { border-top: none; padding-top: 0; }
@@ -351,6 +344,18 @@ _DRAFT_ROOM_HTML = r"""
   .dr-team-tip-pos-lbl { font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
   .dr-team-tip-pos-cnt { font-size: 13px; font-weight: 900; line-height: 1.3; }
   .dr-team-tip-next { font-size: 10px; color: var(--text-muted); margin-top: 7px; }
+  .dr-team-tip-stats { display: flex; gap: 6px; margin-bottom: 7px; }
+  .dr-team-tip-stat { flex: 1; text-align: center; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 7px; padding: 5px 6px; }
+  .dr-team-tip-stat-v { font-size: 14px; font-weight: 900; color: var(--text); line-height: 1; }
+  .dr-team-tip-stat-l { font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+    color: var(--text-muted); margin-top: 3px; }
+  .dr-team-tip-picks { display: flex; flex-direction: column; gap: 3px; max-height: 150px; overflow-y: auto; }
+  .dr-team-tip-pick { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text); }
+  .dr-team-tip-pick-pos { font-size: 8px; font-weight: 800; padding: 1px 4px; border-radius: 4px; flex-shrink: 0; }
+  .dr-team-tip-pick-nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dr-team-tip-pick-tier { font-size: 9px; font-weight: 700; color: var(--accent,#38bdf8); margin-left: auto; flex-shrink: 0; }
+  .dr-team-tip-empty { font-size: 11px; color: var(--text-muted); font-style: italic; }
   .dr-side-head { padding: 10px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
   /* command-center panels (team / runs) */
   .dr-panel { padding: 12px; overflow-y: auto; }
@@ -564,6 +569,8 @@ _DRAFT_ROOM_HTML = r"""
   .dr-sum-reason { font-size:10px; color:var(--text-muted); font-style:italic; }
   .dr-sum-empty { font-size:11px; color:var(--text-muted); font-style:italic; }
   .dr-sum-ps { font-size:14px; font-weight:800; flex-shrink:0; }
+  .dr-sum-pgrade { font-size:13px; font-weight:900; flex-shrink:0; padding:3px 8px; border-radius:7px;
+    border:1px solid transparent; min-width:30px; text-align:center; }
   .dr-sum-footer { display:flex; gap:8px; margin-top:16px; }
   .dr-sum-footer .dr-btn { flex:1; text-align:center; }
   /* ── Roster slots (setup page) ── */
@@ -1070,6 +1077,10 @@ _DRAFT_ROOM_HTML = r"""
   function showMain(){
     _boardSig = null;   // always force a full board rebuild when entering the draft view
     document.getElementById('drSetup').style.display = 'none';
+    var hero = document.getElementById('drHero'); if (hero) hero.style.display = 'none';
+    // Practice Mock only makes sense while synced to a real (live/upcoming) draft.
+    var pm = document.getElementById('drPractice');
+    if (pm) pm.style.display = (state && state.mode === 'live') ? '' : 'none';
     document.getElementById('drBoard').innerHTML = '';
     document.getElementById('drBaList').innerHTML = '<div class="dr-loading">Loading players…</div>';
     document.getElementById('drMain').style.display = '';
@@ -1078,6 +1089,7 @@ _DRAFT_ROOM_HTML = r"""
     endSim();
     document.getElementById('drMain').style.display = 'none';
     document.getElementById('drSetup').style.display = '';
+    var hero = document.getElementById('drHero'); if (hero) hero.style.display = '';
     renderSetupRoster();
     renderSetupCapital();
   }
@@ -1265,6 +1277,37 @@ _DRAFT_ROOM_HTML = r"""
     sim = true; simPaused = false; simStarted = false;
     var sp = document.getElementById('drSimSpeed');
     simSpeed = parseInt(sp.value, 10) || 700;
+    syncSimControls();
+    save();
+    showMain();
+    loadPlayers();
+  }
+  // Spin up a CPU mock that mirrors the synced live/upcoming draft's settings
+  // (teams, rounds, scoring, order, type, and your owned picks) so you can
+  // rehearse the exact same draft against ADP-driven bots.
+  function startPracticeMock(){
+    if (!state) return;
+    if (!confirm('Start a practice mock using these draft settings? Your live sync will stop until you reconnect.')) return;
+    stopPolling(); stopPickTimer();
+    var prev = state;
+    var ownedCopy = {};
+    if (prev.owned){ Object.keys(prev.owned).forEach(function(k){ if (prev.owned[k]) ownedCopy[k] = true; }); }
+    state = {
+      type: prev.type, teams: prev.teams, rounds: prev.rounds, sf: !!prev.sf,
+      slot: prev.slot, order: prev.order,
+      roster: prev.roster || defaultRoster(!!prev.sf, prev.type === 'redraft'),
+      picks: {}, current: 1, queue: [],
+      owned: Object.keys(ownedCopy).length ? ownedCopy : defaultOwned(),
+      mode: 'mock', simStarted: false
+    };
+    _summaryShown = false;
+    drafted = {};
+    sim = true; simPaused = false; simStarted = false;
+    var sp = document.getElementById('drSimSpeed');
+    simSpeed = parseInt(sp.value, 10) || 700;
+    document.getElementById('drLiveBadge').style.display = 'none';
+    document.getElementById('drUpcomingBadge').style.display = 'none';
+    document.getElementById('drSide').style.display = '';
     syncSimControls();
     save();
     showMain();
@@ -1938,6 +1981,63 @@ _DRAFT_ROOM_HTML = r"""
     return gradeBar('Value', g.value, m.value) + gradeBar('Balance', g.balance, m.balance) + gradeBar('Tiers', g.tier, m.tier);
   }
 
+  // ── Per-pick ADP grading (matches the Teams page draft panel) ───────────────
+  // Each pick is graded on value vs ADP (Steal/Reach) with a best-available
+  // bonus, then the team grade is the average of the per-pick letters.
+  var GRADE_VAL = { 'A+':5, 'A':4, 'B':3, 'C':2, 'D':1, 'F':0 };
+  function gradeColor(letter){
+    if (letter === 'A+' || letter === 'A') return '#22c55e';
+    if (letter === 'B') return '#38bdf8';
+    if (letter === 'C') return '#f59e0b';
+    return '#ef4444';
+  }
+  // Walk the board in pick order, grading each of the viewer's picks against the
+  // ADP value it returned and whether better players were left on the board.
+  function rookiePickGrades(){
+    var teams = state.teams || 12;
+    var bigReach = -(teams * 1.1);
+    var board = players.filter(function(p){ return adpOf(p) != null; })
+      .slice().sort(function(a, b){ return adpOf(a) - adpOf(b); });
+    var made = Object.keys(state.picks).map(Number).sort(function(a, b){ return a - b; });
+    var taken = {}, byId = {}, letters = [];
+    made.forEach(function(pn){
+      var pick = state.picks[pn]; if (!pick) return;
+      var full = playersById[String(pick.id)];
+      var adp = full ? adpOf(full) : null;
+      if (isMyPick(pn) && adp != null){
+        var bestAvail = null;
+        for (var i = 0; i < board.length; i++){
+          var b = board[i];
+          if (!taken[String(b.id)] && String(b.id) !== String(pick.id)){ bestAvail = b; break; }
+        }
+        var diff = pn - adp;   // + = value (slipped past ADP), - = reach
+        var score = diff >= 4 ? 4 : diff >= 2 ? 3 : diff >= -3 ? 2 : diff >= bigReach ? 1 : 0;
+        var bestAdp = bestAvail ? adpOf(bestAvail) : null;
+        var isBpa = (bestAdp == null) || (adp <= bestAdp);
+        var bpaGap = (bestAdp != null && adp > bestAdp) ? (adp - bestAdp) : 0;
+        if (isBpa) score += (diff < -3 ? 1 : 2);
+        else if (bpaGap >= 5) score = Math.max(score - 1, 0);
+        if (diff >= -3) score = Math.max(score, 1);   // tiny reach floors at D
+        var letter = ({ 5:'A+', 4:'A', 3:'B', 2:'C', 1:'D', 0:'F' })[Math.min(score, 5)] || 'F';
+        byId[String(pick.id)] = { letter: letter, diff: diff };
+        letters.push(letter);
+      }
+      taken[String(pick.id)] = true;
+    });
+    var overall = null;
+    if (letters.length){
+      var avg = letters.reduce(function(a, l){ return a + (GRADE_VAL[l] != null ? GRADE_VAL[l] : 2); }, 0) / letters.length;
+      overall = avg >= 4.5 ? 'A+' : avg >= 3.5 ? 'A' : avg >= 2.5 ? 'B' : avg >= 1.5 ? 'C' : avg >= 0.5 ? 'D' : 'F';
+    }
+    return { byId: byId, overall: overall, count: letters.length };
+  }
+  // Headline letter for the status pill / summary, unified across draft types.
+  function overallGradeLetter(){
+    if (state.type === 'rookie'){ return rookiePickGrades().overall; }
+    var g = gradeTeam();
+    return g ? gradeLetter(g.score) : null;
+  }
+
   function renderNeeds(){
     if (!hasOwned()){ listInto('<div class="dr-empty-note">Set your pick slot to see your team build.</div>'); return; }
     var mine = myPicksList().slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
@@ -2213,8 +2313,8 @@ _DRAFT_ROOM_HTML = r"""
     else { nextPill.style.display = 'none'; }
     document.getElementById('drProgress').textContent = Math.min(state.current - 1, total) + ' / ' + total + ' picks';
     var gp = document.getElementById('drGradePill');
-    var g = gradeTeam();
-    if (g){ gp.style.display = ''; gp.textContent = 'Grade ' + gradeLetter(g.score); } else { gp.style.display = 'none'; }
+    var gLetter = overallGradeLetter();
+    if (gLetter){ gp.style.display = ''; gp.textContent = 'Grade ' + gLetter; } else { gp.style.display = 'none'; }
     document.getElementById('drSummaryBtn').style.display = done ? '' : 'none';
   }
 
@@ -2366,24 +2466,49 @@ _DRAFT_ROOM_HTML = r"""
     var bench = [];
     for (var i = 0; i < mine.length; i++){ if (!used[i]) bench.push(mine[i]); }
 
+    // Rookie drafts grade each pick vs ADP (Steal/Reach) like the Teams page.
+    var isRookie = state.type === 'rookie';
+    var rpg = isRookie ? rookiePickGrades() : null;
+
     function sumRow(slot, p){
       if (!p) return '<div class="dr-sum-row"><span class="dr-sum-slot-badge" style="background:' + slotColor(slot) + '">' + slot + '</span>'
         + '<span class="dr-sum-empty">open</span></div>';
       var roundPicked = Object.keys(state.picks).filter(function(k){ return state.picks[k] && state.picks[k].id === p.id; }).map(function(k){ return Math.ceil(parseInt(k,10)/state.teams); })[0] || '';
-      var psStr = (p.ps != null) ? '<span class="dr-sum-ps" style="color:' + psColor(p.ps) + '">' + p.ps + '</span>' : '';
+      // Rookie: show per-pick letter grade (with Steal/Reach vs ADP); else pick score.
+      var rightStr = '';
+      if (rpg && rpg.byId[String(p.id)]){
+        var gr = rpg.byId[String(p.id)];
+        var col = gradeColor(gr.letter);
+        rightStr = '<span class="dr-sum-pgrade" style="color:' + col + ';border-color:' + col + '55;background:' + col + '18;">' + gr.letter + '</span>';
+      } else if (p.ps != null){
+        rightStr = '<span class="dr-sum-ps" style="color:' + psColor(p.ps) + '">' + p.ps + '</span>';
+      }
+      var adpNote = '';
+      if (rpg && rpg.byId[String(p.id)]){
+        var d = rpg.byId[String(p.id)].diff;
+        adpNote = d >= 2 ? ' \xb7 Steal (+' + Math.round(d) + ')' : d <= -2 ? ' \xb7 Reach (' + Math.round(d) + ')' : ' \xb7 On ADP';
+      }
       return '<div class="dr-sum-row">'
         + '<span class="dr-sum-slot-badge" style="background:' + slotColor(slot) + '">' + slot + '</span>'
         + '<img class="dr-sum-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
         + '<div class="dr-sum-body"><div class="dr-sum-name">' + esc(p.name) + '</div>'
-        + '<div class="dr-sum-meta">' + esc(p.position) + (p.team ? ' \xb7 ' + esc(p.team) : '') + (roundPicked ? ' \xb7 Rd ' + roundPicked : '') + '</div>'
+        + '<div class="dr-sum-meta">' + esc(p.position) + (p.team ? ' \xb7 ' + esc(p.team) : '') + (roundPicked ? ' \xb7 Rd ' + roundPicked : '') + adpNote + '</div>'
         + (p.reason ? '<div class="dr-sum-reason">' + esc(p.reason) + '</div>' : '')
-        + '</div>' + psStr + '</div>';
+        + '</div>' + rightStr + '</div>';
     }
 
-    var gradeHtml = g
-      ? '<div class="dr-sum-grade">' + gradeLetter(g.score) + '</div><div class="dr-sum-pace">' + gradePace(g.score) + '</div>'
-        + gradeBars(g)
-      : '';
+    var gradeHtml;
+    if (isRookie){
+      gradeHtml = rpg && rpg.overall
+        ? '<div class="dr-sum-grade" style="color:' + gradeColor(rpg.overall) + '">' + rpg.overall + '</div>'
+          + '<div class="dr-sum-pace">' + rpg.count + ' pick' + (rpg.count === 1 ? '' : 's') + ' graded vs ADP</div>'
+        : '';
+    } else {
+      gradeHtml = g
+        ? '<div class="dr-sum-grade">' + gradeLetter(g.score) + '</div><div class="dr-sum-pace">' + gradePace(g.score) + '</div>'
+          + gradeBars(g)
+        : '';
+    }
 
     // Report card stats: proj PPG, tier captures, avg pick score
     var sumProjTotal = 0, sumProjCount = 0;
@@ -2484,9 +2609,11 @@ _DRAFT_ROOM_HTML = r"""
     ctx.fillText('My ' + (state.type.charAt(0).toUpperCase() + state.type.slice(1)) + ' Draft', pad, pad + 30);
     ctx.fillStyle = '#94a3b8'; ctx.font = '14px system-ui,Arial';
     ctx.fillText((state.sf ? 'Superflex' : '1QB') + ' · ' + state.teams + ' teams · BR Fantasy', pad, pad + 54);
-    var g = gradeTeam();
-    if (g){ ctx.fillStyle = '#22c55e'; ctx.font = 'bold 16px system-ui,Arial';
-      ctx.fillText('Grade ' + gradeLetter(g.score) + ' · ' + gradePace(g.score), pad, pad + 84); }
+    var shareLetter = overallGradeLetter();
+    if (shareLetter){ ctx.fillStyle = '#22c55e'; ctx.font = 'bold 16px system-ui,Arial';
+      var g2 = gradeTeam();
+      var paceTxt = (state.type !== 'rookie' && g2) ? ' · ' + gradePace(g2.score) : '';
+      ctx.fillText('Grade ' + shareLetter + paceTxt, pad, pad + 84); }
     var y = pad + 118;
     var POSC = { QB:'#f59e0b', RB:'#22c55e', WR:'#3b82f6', TE:'#8b5cf6', K:'#94a3b8', DEF:'#64748b', FLEX:'#14b8a6', SF:'#a78bfa', BN:'#64748b' };
     rows.forEach(function(r){
@@ -2643,6 +2770,7 @@ _DRAFT_ROOM_HTML = r"""
   document.getElementById('drUndo').addEventListener('click', undo);
   document.getElementById('drReset').addEventListener('click', resetDraft);
   document.getElementById('drEdit').addEventListener('click', showSetup);
+  document.getElementById('drPractice').addEventListener('click', startPracticeMock);
   // Mobile options menu toggle
   (function(){
     var optsBtn = document.getElementById('drOptsBtn');
@@ -2801,24 +2929,62 @@ _DRAFT_ROOM_HTML = r"""
   // ── Board hover: team needs tooltip ─────────────────────────────────────────
   function buildTeamTip(slot){
     var teams = state.teams || 12;
-    var positions = state.type === 'redraft' ? ['QB','RB','WR','TE','K','DEF'] : ['QB','RB','WR','TE'];
-    var targets = posTargets();
-    var counts = {}; positions.forEach(function(p){ counts[p] = 0; });
-    Object.keys(state.picks).forEach(function(k){
-      var pn = parseInt(k, 10);
-      var pick = state.picks[pn]; if (!pick) return;
-      if (slotOnClock(pn, teams, state.order) !== slot) return;
-      var pos = (pick.position || '').toUpperCase();
-      if (counts[pos] != null) counts[pos]++;
-    });
     var isMe = ownsAllInColumn(slot);
     var total = teams * state.rounds;
+    var nameLabel = isMe ? 'You (Team ' + slot + ')' : teamName(slot);
     var nextPick = null;
     for (var pn = state.current; pn <= total; pn++){
       if (slotOnClock(pn, teams, state.order) === slot && !state.picks[pn]){ nextPick = pn; break; }
     }
-    var html = '<div class="dr-team-tip"><div class="dr-team-tip-name">'
-      + (isMe ? 'You (Team ' + slot + ')' : 'Team ' + slot) + '</div>'
+    var nextHtml = nextPick ? '<div class="dr-team-tip-next">Next pick: #' + nextPick + '</div>' : '';
+
+    // Collect this seat's selections (in pick order) once, shared by both layouts.
+    var seatPicks = [];
+    Object.keys(state.picks).map(Number).sort(function(a, b){ return a - b; }).forEach(function(pn){
+      var pick = state.picks[pn]; if (!pick) return;
+      if (slotOnClock(pn, teams, state.order) !== slot) return;
+      seatPicks.push(pick);
+    });
+
+    // ── Rookie drafts: roster needs are noise (you're adding to a full team).
+    // Show what they actually drafted plus how many elite (T1-2) rookies landed.
+    if (state.type === 'rookie'){
+      var elite = 0;
+      seatPicks.forEach(function(p){ var t = tierOf(playersById[String(p.id)] || p); if (t != null && t <= 2) elite++; });
+      var statsHtml = '<div class="dr-team-tip-stats">'
+        + '<div class="dr-team-tip-stat"><div class="dr-team-tip-stat-v">' + seatPicks.length + '</div><div class="dr-team-tip-stat-l">Picks</div></div>'
+        + '<div class="dr-team-tip-stat"><div class="dr-team-tip-stat-v">' + elite + '</div><div class="dr-team-tip-stat-l">Elite T1-2</div></div>'
+        + '</div>';
+      var picksHtml;
+      if (seatPicks.length){
+        picksHtml = '<div class="dr-team-tip-picks">';
+        seatPicks.forEach(function(p){
+          var pos = (p.position || '').toUpperCase();
+          var col = posColor(pos);
+          var tier = tierOf(playersById[String(p.id)] || p);
+          picksHtml += '<div class="dr-team-tip-pick">'
+            + '<span class="dr-team-tip-pick-pos" style="background:' + col + '22;color:' + col + '">' + esc(pos) + '</span>'
+            + '<span class="dr-team-tip-pick-nm">' + esc(p.name) + '</span>'
+            + (tier != null ? '<span class="dr-team-tip-pick-tier">T' + tier + '</span>' : '')
+            + '</div>';
+        });
+        picksHtml += '</div>';
+      } else {
+        picksHtml = '<div class="dr-team-tip-empty">No picks yet.</div>';
+      }
+      return '<div class="dr-team-tip"><div class="dr-team-tip-name">' + esc(nameLabel) + '</div>'
+        + statsHtml + picksHtml + nextHtml + '</div>';
+    }
+
+    // ── Startup / redraft: positional needs vs targets.
+    var positions = state.type === 'redraft' ? ['QB','RB','WR','TE','K','DEF'] : ['QB','RB','WR','TE'];
+    var targets = posTargets();
+    var counts = {}; positions.forEach(function(p){ counts[p] = 0; });
+    seatPicks.forEach(function(pick){
+      var pos = (pick.position || '').toUpperCase();
+      if (counts[pos] != null) counts[pos]++;
+    });
+    var html = '<div class="dr-team-tip"><div class="dr-team-tip-name">' + esc(nameLabel) + '</div>'
       + '<div class="dr-team-tip-pos-row">';
     positions.forEach(function(pos){
       var t = targets[pos] || 0; if (!t) return;
@@ -2830,9 +2996,7 @@ _DRAFT_ROOM_HTML = r"""
         + '<span class="dr-team-tip-pos-cnt" style="color:' + col + '">' + have + '/' + t + '</span>'
         + '</div>';
     });
-    html += '</div>';
-    if (nextPick) html += '<div class="dr-team-tip-next">Next pick: #' + nextPick + '</div>';
-    html += '</div>';
+    html += '</div>' + nextHtml + '</div>';
     return html;
   }
   (function initBoardTip(){
