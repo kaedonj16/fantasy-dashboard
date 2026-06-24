@@ -22009,7 +22009,7 @@ def _fetch_league_adp_from_db(
 _PS_WEIGHTS = {
     "rookie":  {"vor": 0.06, "value": 0.22, "adp": 0.30, "tier": 0.12, "need": 0.05, "youth": 0.24, "mom": 0.06},
     "redraft": {"vor": 0.12, "value": 0.36, "adp": 0.35, "tier": 0.10, "need": 0.08, "youth": 0.00, "mom": 0.04},
-    "startup": {"vor": 0.08, "value": 0.32, "adp": 0.33, "tier": 0.13, "need": 0.10, "youth": 0.06, "mom": 0.03},
+    "startup": {"vor": 0.08, "value": 0.30, "adp": 0.31, "tier": 0.13, "need": 0.10, "youth": 0.10, "mom": 0.03},
 }
 _PS_AGE_PEAKS = {"RB": 24, "WR": 27, "TE": 27, "QB": 29}
 

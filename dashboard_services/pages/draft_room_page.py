@@ -1740,7 +1740,8 @@ _DRAFT_ROOM_HTML = r"""
       w = { vor: 0.12, value: 0.36, adp: 0.35, tier: 0.10, need: 0.08, youth: 0.00, mom: 0.04 };
     } else {
       // Startup dynasty: balanced blend of talent, value, and future potential.
-      w = { vor: 0.08, value: 0.32, adp: 0.33, tier: 0.13, need: 0.10, youth: 0.06, mom: 0.03 };
+      // Youth carries a bit more weight than redraft since it values the future too.
+      w = { vor: 0.08, value: 0.30, adp: 0.31, tier: 0.13, need: 0.10, youth: 0.10, mom: 0.03 };
     }
     var s = w.vor*vorNorm + w.value*valueNorm + w.adp*adpVal + w.tier*tierScore + w.need*need + w.youth*youth + w.mom*mom;
 
