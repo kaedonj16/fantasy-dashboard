@@ -1495,8 +1495,6 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     _tab_param = request.args.get("tab", "")
     if active == "trade" and _tab_param == "suggestions":
         active = "trade-suggestions"
-    elif active == "prospects" and _tab_param == "draft":
-        active = "prospects-draft"
 
     nfl_state = get_nfl_state() or {}
     offseason_mode = ((nfl_state.get("season_type") or "").lower() == "off") and (
@@ -1591,8 +1589,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 ("Advanced Metrics", "/metrics", "advanced-metrics"),
                 ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "/breakouts", "breakouts"),
                 ("Prospects",       "/prospects",   "prospects"),
-                ("Draft Assistant", "/prospects?tab=draft", "prospects-draft"),
             ], ["players", "prospects", "breakouts", "top-movers"], "playersNavDropdown"),
+            simple_dropdown("Draft", [
+                ("Draft Room",    "/draft",         "draft"),
+                ("Draft History", "/draft/history", "draft-history"),
+            ], ["draft", "draft-history"], "draftNavDropdown"),
         ]
 
         player_search_html = (
@@ -1739,10 +1740,13 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Advanced Metrics", "page_advanced_metrics", "advanced-metrics", False),
         ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
-        ("Draft Assistant", "page_prospects", "prospects-draft", False, "?tab=draft"),
         ("Waivers & Start/Sit", "page_waivers",  "waivers",   False),
         ("Schedule Assistant",  "page_schedule",  "schedule",  False),
     ], ["players", "prospects", "breakouts", "waivers", "schedule", "top-movers"], "playersNavDropdown"))
+    nav_pills.append(nav_pill_dropdown("Draft", [
+        ("Draft Room",    "page_draft_room",    "draft",         False),
+        ("Draft History", "page_draft_history", "draft-history", False),
+    ], ["draft", "draft-history"], "draftNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",   "page_awards",   "awards",   False),
         ("Graphs",   "page_graphs",   "graphs",   False),
@@ -8628,10 +8632,20 @@ def build_teams_body(ctx: dict) -> str:
 
             var chevronSvg = '<svg class="draft-acc-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>';
 
+            // Pick-score color thresholds match psColor() in the Draft Room.
+            function psColor(ps) {{ return ps >= 90 ? '#22c55e' : ps >= 75 ? '#38bdf8' : ps >= 60 ? '#f59e0b' : '#ef4444'; }}
+            // Numeric pick-score chip, falling back to the letter grade when a
+            // pick has no score (e.g. no value data for that player).
+            function gradeChip(p) {{
+              if (p.pick_score != null) {{
+                var c = psColor(p.pick_score);
+                return '<span class="analytics-pick-grade analytics-pick-ps" style="color:' + c + ';border-color:' + c + '66;">' + p.pick_score + '</span>';
+              }}
+              return '<span class="analytics-pick-grade dg-' + p.grade.replace('+', 'plus') + '">' + p.grade + '</span>';
+            }}
+
             // ── Shared pick row renderer ─────────────────────────────────────
             function renderPickRow(p, showTeamName) {{
-              var pgcls = 'dg-' + p.grade.replace('+', 'plus');
-
               var adpLine = '';
               if (p.avg_pick != null) {{
                 var diff = p.adp_diff;
@@ -8642,7 +8656,8 @@ def build_teams_body(ctx: dict) -> str:
                     : '<span class="adp-neutral">on ADP</span>';
                 var posTag = p.pos_rank != null ? ' · ' + p.position + p.pos_rank : '';
                 var waitTag = p.could_wait ? ' <span class="adp-wait">Reach</span>' : '';
-                var adpStr = isStartup ? ('#' + Math.round(p.avg_pick)) : p.avg_pick.toFixed(2);
+                var rankAdp = isStartup || data.draft_type === 'redraft';
+                var adpStr = rankAdp ? ('#' + Math.round(p.avg_pick)) : p.avg_pick.toFixed(2);
                 adpLine = '<div class="analytics-pick-adp-line">ADP ' + adpStr + posTag + ' ' + diffHtml + waitTag + '</div>';
               }}
 
@@ -8671,7 +8686,7 @@ def build_teams_body(ctx: dict) -> str:
 
               return '<div class="analytics-pick-row">' +
                 '<span class="analytics-pick-num">#' + p.pick_no + '</span>' +
-                '<span class="analytics-pick-grade ' + pgcls + '">' + p.grade + '</span>' +
+                gradeChip(p) +
                 '<div class="analytics-pick-info">' +
                   '<div class="analytics-pick-name">' + p.name +
                     ' <span class="analytics-pick-pos pos-' + (p.position || '').toLowerCase() + '">' + (p.position || '') + '</span>' +
@@ -8687,12 +8702,18 @@ def build_teams_body(ctx: dict) -> str:
             function buildByTeamHtml() {{
               var html = '<div class="draft-accordion">';
               teams.forEach(function(t, idx) {{
-                var gcls = 'dg-' + t.grade.replace('+', 'plus');
+                var teamChip;
+                if (t.avg_pick_score != null) {{
+                  var tc = psColor(t.avg_pick_score);
+                  teamChip = '<span class="draft-acc-grade analytics-pick-ps" style="color:' + tc + ';border-color:' + tc + '66;">' + t.avg_pick_score + '</span>';
+                }} else {{
+                  teamChip = '<span class="draft-acc-grade dg-' + t.grade.replace('+', 'plus') + '">' + t.grade + '</span>';
+                }}
                 html += '<div class="draft-acc-item' + (idx === 0 ? ' open' : '') + '">' +
                   '<button class="draft-acc-header" type="button">' +
                     '<span class="draft-acc-name">' + t.team_name + '</span>' +
                     '<div class="draft-acc-right">' +
-                      '<span class="draft-acc-grade ' + gcls + '">' + t.grade + '</span>' +
+                      teamChip +
                       chevronSvg +
                     '</div>' +
                   '</button>' +
@@ -11259,6 +11280,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
                 style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
                        background:var(--card-bg);color:var(--text);font-size:12px;cursor:pointer;outline:none;min-height:34px;min-width:120px;">
                 <option value="value">Value</option>
+                <option value="adp">ADP</option>
                 <option value="age">Age</option>
                 <option value="pos_rank">Pos Rank</option>
                 <option value="ppg">PPG</option>
@@ -11919,6 +11941,16 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       }
 
       // Map sort key → { header label, cell value function }
+      // ADP (startup): use the SF or 1QB value depending on league type, matching
+      // the prospects page. Null ADP renders as a dash and sorts to the end.
+      function prGetAdp(p) {
+        return prLeagueType === 'sf' ? p.sf_avg_pick : p.avg_pick;
+      }
+      function prFormatAdp(p) {
+        const v = prGetAdp(p);
+        return (v != null) ? Number(v).toFixed(1) : '–';
+      }
+
       const PR_SORT_META = {
         rank:      { label: 'Value',    cell: p => prFormatValue(prGetValue(p)) },
         value:     { label: 'Value',    cell: p => prFormatValue(prGetValue(p)) },
@@ -11928,6 +11960,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           : (p.pos_rank_label || p.position) },
         ppg:       { label: 'PPG',       cell: p => p.ppg != null ? p.ppg.toFixed(1) : '–' },
         total_pts: { label: 'Total Pts', cell: p => p.total_pts != null ? p.total_pts.toFixed(1) : '–' },
+        adp:       { label: 'ADP',       cell: p => prFormatAdp(p) },
       };
 
       // Sort and filter players, then render rows into the main table
@@ -11938,7 +11971,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         // On mobile (≤768px) the Age column is hidden, so switch the sort column
         // to show whatever is being sorted. On desktop all columns are visible.
         const isMobile = window.innerWidth <= 768;
-        const _alwaysShowSort = sortBy === 'ppg' || sortBy === 'total_pts';
+        const _alwaysShowSort = sortBy === 'ppg' || sortBy === 'total_pts' || sortBy === 'adp';
         const sortMeta = (isMobile || _alwaysShowSort) ? (PR_SORT_META[sortBy] || PR_SORT_META.rank) : PR_SORT_META.rank;
         const sortHeaderEl = document.getElementById('prSortHeader');
         if (sortHeaderEl) sortHeaderEl.textContent = sortMeta.label;
@@ -12005,6 +12038,9 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           players.sort((a, b) => {
             if (sortBy === 'value') {
               return prGetValue(b) - prGetValue(a);
+            } else if (sortBy === 'adp') {
+              const aA = prGetAdp(a); const bA = prGetAdp(b);
+              return (aA != null ? aA : 99999) - (bA != null ? bA : 99999);
             } else if (sortBy === 'age') {
               return (a.age != null ? a.age : 99) - (b.age != null ? b.age : 99);
             } else if (sortBy === 'pos_rank') {
@@ -12366,6 +12402,8 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
               sf_value_14:      Number(p.sf_value_14 || p.sf_value || p.value || 0),
               redraft_value_1qb: p.redraft_value_1qb != null ? Number(p.redraft_value_1qb) : null,
               redraft_value_sf:  p.redraft_value_sf  != null ? Number(p.redraft_value_sf)  : null,
+              avg_pick:          p.avg_pick    != null ? Number(p.avg_pick)    : null,
+              sf_avg_pick:       p.sf_avg_pick != null ? Number(p.sf_avg_pick) : null,
               pos_rank_label:   p.pos_rank_label    || '',
               sf_pos_rank_label:p.sf_pos_rank_label || '',
               pos_rank:         Number(p.pos_rank    || 9999),
@@ -12427,6 +12465,11 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 @app.route("/<platform>/<int:season>/<league_id>/prospects")
 def page_prospects(platform: str, season: int, league_id: str):
     """Rookie prospect rankings page - active class auto-detected."""
+    # Draft Assistant moved to its own standalone page; redirect the legacy tab.
+    if request.args.get("tab") == "draft":
+        if platform and season and league_id:
+            return redirect(f"/{platform}/{season}/{league_id}/draft")
+        return redirect("/draft")
     from dashboard_services.pages.rookies_page import build_prospects_body
     from dashboard_services.admin_auth import is_admin
     body_html = build_prospects_body(is_admin=is_admin())
@@ -12916,6 +12959,190 @@ def page_prospects_guest():
     return page_prospects(platform="sleeper", season=current_season, league_id=None)
 
 
+@app.route("/draft")
+@app.route("/<platform>/<int:season>/<league_id>/draft")
+def page_draft_room(platform: str = None, season: int = None, league_id: str = None):
+    """Standalone Draft Room / draft board."""
+    from dashboard_services.pages.draft_room_page import build_draft_room_body
+    is_guest = not league_id
+    num_teams = None
+    is_sf = False
+    roster_positions = None
+    if league_id:
+        try:
+            ctx = get_league_ctx_from_cache(platform, league_id, season)
+            num_teams = ctx.get("total_rosters") or None
+            _rp = ctx.get("roster_positions") or []
+            if hasattr(_rp, "tolist"):
+                _rp = _rp.tolist()
+            roster_positions = [str(s) for s in _rp] if _rp else None
+            is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp)
+            league_id = ctx.get("league_id") or league_id
+            season = int(ctx.get("season") or season or datetime.now().year)
+        except Exception as _e:
+            logger.info("[draft-room] league ctx load failed: %s", _e)
+    body = build_draft_room_body(
+        league_id, season, platform,
+        is_guest=is_guest, num_teams=num_teams, is_superflex=is_sf,
+        roster_positions=roster_positions,
+        viewer_user_id=session.get("viewer_user_id"),
+    )
+    return render_page(
+        "Draft Room | BR Fantasy", league_id, "draft", body, platform, season,
+        description=(
+            "Fantasy football draft assistant and draft board with best-available, "
+            "ADP, and snake / linear / third-round-reversal support for Sleeper, ESPN, and Yahoo."
+        ),
+    )
+
+
+@app.route("/draft/history")
+@app.route("/<platform>/<int:season>/<league_id>/draft/history")
+def page_draft_history(platform: str = None, season: int = None, league_id: str = None):
+    """Draft history: the league's real drafts (from Sleeper), openable to review."""
+    from dashboard_services.pages.draft_room_page import build_draft_history_body
+    body = build_draft_history_body(league_id, season, platform)
+    return render_page(
+        "Draft History | BR Fantasy", league_id, "draft", body, platform, season,
+        description="Review your league's past and live fantasy football drafts pick-by-pick.",
+    )
+
+
+# ── Live draft sync (P5, Sleeper) ────────────────────────────────────────────
+def _order_from_sleeper(draft: dict) -> str:
+    """Map a Sleeper draft's type + reversal_round to our order_format."""
+    dtype = str((draft or {}).get("type") or "snake").lower()
+    if dtype == "linear":
+        return "linear"
+    rev = ((draft or {}).get("settings") or {}).get("reversal_round")
+    try:
+        if int(rev or 0) == 3:
+            return "3rr"
+    except (TypeError, ValueError):
+        pass
+    return "snake"
+
+
+@app.route("/api/draft/detect")
+def api_draft_detect():
+    """List drafts for a league so the user can connect a live draft (Sleeper)."""
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    league_id = (request.args.get("league_id") or "").strip()
+    season = int(request.args.get("season") or datetime.now().year)
+    if not league_id:
+        return jsonify({"drafts": [], "error": "league_required"})
+    if platform != "sleeper":
+        return jsonify({"drafts": [], "unsupported": True})
+    out = []
+    try:
+        drafts = get_drafts(platform, league_id, season) or []
+        for d in drafts:
+            settings = d.get("settings") or {}
+            rounds_val = int(settings.get("rounds") or 15)
+            draft_type = "rookie" if 0 < rounds_val <= 5 else "startup"
+            out.append({
+                "draft_id": str(d.get("draft_id") or ""),
+                "status": d.get("status"),
+                "type": d.get("type"),
+                "draft_type": draft_type,
+                "season": d.get("season"),
+                "teams": settings.get("teams"),
+                "rounds": settings.get("rounds"),
+                "order": _order_from_sleeper(d),
+            })
+    except Exception as exc:
+        logger.warning("[draft-detect] error: %s", exc)
+    return jsonify({"drafts": out})
+
+
+@app.route("/api/draft/live")
+def api_draft_live():
+    """Current state + picks for a Sleeper draft (polled by the live board)."""
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    draft_id = (request.args.get("draft_id") or "").strip()
+    if not draft_id or platform != "sleeper":
+        return jsonify({"error": "unsupported"}), 400
+    try:
+        from dashboard_services.api import get_draft as _gd, get_draft_picks as _gdp
+        draft = _gd(draft_id) or {}
+        picks_raw = _gdp(draft_id) or []
+    except Exception as exc:
+        logger.warning("[draft-live] error: %s", exc)
+        return jsonify({"error": "fetch_failed"}), 502
+    settings = draft.get("settings") or {}
+    picks = []
+    for p in picks_raw:
+        meta = p.get("metadata") or {}
+        nm = (str(meta.get("first_name") or "") + " " + str(meta.get("last_name") or "")).strip()
+        picks.append({
+            "pick_no": p.get("pick_no"),
+            "round": p.get("round"),
+            "draft_slot": p.get("draft_slot"),
+            "picked_by": p.get("picked_by"),   # user_id of who made the pick (for ownership)
+            "player_id": str(p.get("player_id") or ""),
+            "name": nm or (meta.get("player_name") or "Unknown"),
+            "position": (meta.get("position") or "").upper(),
+            "team": meta.get("team") or "",
+        })
+
+    # Map draft slot -> team/owner display name (so the board shows real names).
+    slot_names = {}
+    draft_order = draft.get("draft_order") or {}     # {user_id: slot}
+    traded_picks_out = []
+    user_roster_map = {}  # user_id -> roster_id (for traded-pick ownership resolution)
+    try:
+        _lid = draft.get("league_id")
+        _season = int(draft.get("season") or datetime.now().year)
+        if _lid and draft_order:
+            _users = get_users(platform, _lid, _season) or []
+            _by_uid = {str(u.get("user_id")): u for u in _users}
+            for _uid, _slot in draft_order.items():
+                _u = _by_uid.get(str(_uid)) or {}
+                _name = ((_u.get("metadata") or {}).get("team_name")
+                         or _u.get("display_name") or ("Team " + str(_slot)))
+                slot_names[str(_slot)] = _name
+        if _lid:
+            # Traded picks - filter to this draft's season so the frontend can
+            # resolve future pick ownership correctly (trades change who owns what).
+            _all_traded = get_traded_picks(platform, _lid, _season) or []
+            _season_str = str(_season)
+            traded_picks_out = [
+                {"season": tp.get("season"), "round": tp.get("round"),
+                 "roster_id": tp.get("roster_id"),   # original owner's roster_id
+                 "owner_id": tp.get("owner_id")}      # current owner's roster_id
+                for tp in _all_traded
+                if str(tp.get("season") or "") == _season_str
+            ]
+            # Build user_id -> roster_id map so the frontend can identify the
+            # viewer's roster_id and match it against traded_picks.owner_id.
+            _rosters = get_rosters(platform, _lid, _season) or []
+            for _r in _rosters:
+                _uid = str(_r.get("owner_id") or "")
+                _rid = _r.get("roster_id")
+                if _uid and _rid is not None:
+                    user_roster_map[_uid] = _rid
+    except Exception as _e_sn:
+        logger.info("[draft-live] slot names / traded picks skipped: %s", _e_sn)
+
+    rounds_val = int(settings.get("rounds") or 15)
+    # Derive high-level draft type from round count: Sleeper rookie drafts are
+    # always short (1-5 rounds); anything longer is a startup/dynasty draft.
+    draft_type = "rookie" if 0 < rounds_val <= 5 else "startup"
+    pick_timer = int(settings.get("pick_timer") or 0)
+    return jsonify({
+        "status": draft.get("status"),
+        "type": draft.get("type"),
+        "draft_type": draft_type,
+        "pick_timer": pick_timer,
+        "teams": settings.get("teams"),
+        "rounds": settings.get("rounds"),
+        "order": _order_from_sleeper(draft),
+        "draft_order": draft_order,
+        "slot_names": slot_names,
+        "picks": picks,
+        "traded_picks": traded_picks_out,
+        "user_roster_map": user_roster_map,
+    })
 
 
 _TEAMS_BUILDING: set = set()
@@ -14431,6 +14658,49 @@ _SCHED_TEAM_ALIAS = {"WSH": "WAS", "JAC": "JAX", "LA": "LAR", "OAK": "LV",
 def _norm_sched_team(t):
     t = (t or "").upper().strip()
     return _SCHED_TEAM_ALIAS.get(t, t)
+
+
+_TEAM_BYE_CACHE: dict = {}   # season -> {team: bye_week}
+
+def _team_bye_map(season: int) -> dict:
+    """Derive each team's bye week from the loaded weekly schedules.
+
+    Returns {} when no schedule data is available for the season, so callers
+    never show a fabricated bye. A team's bye is the single regular-season week
+    (5-14) in which it has no scheduled game. Cached per season per process.
+    """
+    season = int(season)
+    if season in _TEAM_BYE_CACHE:
+        return _TEAM_BYE_CACHE[season]
+    played: dict = {}
+    teams_seen = set()
+    any_games = False
+    for w in range(1, 19):
+        try:
+            games = load_week_schedule(season, w) or []
+        except Exception:
+            games = []
+        if not games:
+            continue
+        any_games = True
+        for g in games:
+            for side in ("home", "away"):
+                t = _norm_sched_team(g.get(side))
+                if t:
+                    played.setdefault(t, set()).add(w)
+                    teams_seen.add(t)
+    byes: dict = {}
+    if any_games:
+        for t in teams_seen:
+            weeks = played.get(t, set())
+            missing = [w for w in range(5, 15) if w not in weeks]
+            if len(missing) == 1:        # exactly one bye in the normal window
+                byes[t] = missing[0]
+        # Only trust the result if it covers most of the league.
+        if len(byes) < 20:
+            byes = {}
+    _TEAM_BYE_CACHE[season] = byes
+    return byes
 
 
 def _sched_rank_color(rank, total):
@@ -18808,6 +19078,37 @@ def api_league_players():
     except Exception as _e_lp:
         logger.info(f"[api/league-players] PPG enrichment skipped: {_e_lp}")
 
+    # Enrich with projected season PPG from FantasyPros projections cache
+    try:
+        _proj_year = date.today().year
+        _fp_proj_path = os.path.join("cache", f"fp_projections_{_proj_year}_ppr.json")
+        _fp_proj_data = read_json_cached(_fp_proj_path)
+        if _fp_proj_data:
+            for _player in model_value_table:
+                _pid = str(_player.get("id") or "")
+                _fp_e = _fp_proj_data.get(_pid)
+                if _fp_e:
+                    _pj = float(_fp_e.get("ppg") or 0)
+                    if _pj > 0:
+                        _player["proj_ppg"] = round(_pj, 1)
+                        _sp = float(_fp_e.get("season_pts") or 0)
+                        if _sp > 0:
+                            _player["proj_pts"] = round(_sp, 1)
+    except Exception as _e_fp:
+        logger.info(f"[api/league-players] Projected PPG enrichment skipped: {_e_fp}")
+
+    # Enrich with real PPR-based VORP from advanced metrics (last completed season)
+    try:
+        from data_building.advanced_metrics import get_value_leaderboard as _get_vorp_lb
+        _vorp_rows = _get_vorp_lb("vorp", limit=5000, num_teams=12) or []
+        _vorp_map = {str(r.get("player_id") or ""): float(r.get("value") or 0) for r in _vorp_rows}
+        for _player in model_value_table:
+            _pid = str(_player.get("id") or "")
+            if _pid in _vorp_map:
+                _player["vorp"] = round(_vorp_map[_pid], 1)
+    except Exception as _e_vorp:
+        logger.info(f"[api/league-players] VORP enrichment skipped: {_e_vorp}")
+
     # Compute tier thresholds for every league-type × size combination so the
     # frontend can display each player's tier badge without a second API call.
     _tier_thresholds_all = {}
@@ -18819,9 +19120,132 @@ def api_league_players():
                 compute_tier_thresholds(model_value_table, _lt, _sz)
             ]
 
+    # Attach ADP so the rankings/draft room can sort & simulate by ADP.
+    # Primary: Sleeper's own ADP from its projections API (api.sleeper.com),
+    # server-reachable with no bot/CORS issues. Fallback: ADP aggregated from
+    # real Sleeper drafts (our crawler). adp_sources reports which feed was used.
+    _adp_sources = {"startup": "none", "rookie": "none", "redraft": "none"}
+    try:
+        from dashboard_services.adp_service import (
+            fetch_league_adp_from_db as _fl_adp,
+            fetch_sleeper_adp as _sleeper_adp,
+        )
+        _adp_season = int((get_nfl_state() or {}).get("season") or datetime.now().year)
+
+        def _norm_adp(_m: dict) -> dict:
+            out = {}
+            for _k, _v in (_m or {}).items():
+                if isinstance(_v, dict):
+                    _ap = _v.get("avg_pick")
+                    if _ap is None:
+                        _ap = _v.get("adp_rank")
+                else:
+                    _ap = _v
+                if _ap is not None:
+                    out[str(_k)] = float(_ap)
+            return out
+
+        def _crawl_adp(is_sf: bool, draft_type: str, min_s: int) -> dict:
+            return _norm_adp(_fl_adp(is_sf, _adp_season, draft_type, min_samples=min_s) or {})
+
+        # DraftCrawl maps (fallback)
+        _c_su1, _c_susf = _crawl_adp(False, "startup", 10), _crawl_adp(True, "startup", 10)
+        _c_rk1, _c_rksf = _crawl_adp(False, "rookie", 5), _crawl_adp(True, "rookie", 5)
+
+        # Sleeper projections ADP (primary). Pick the first present field per mode.
+        _sa = _sleeper_adp(_adp_season) or {}
+
+        def _sa_pick(_pid, *keys):
+            _r = _sa.get(_pid) or {}
+            for _k in keys:
+                if _r.get(_k) is not None:
+                    return _r[_k]
+            return None
+
+        _used = {"startup": False, "rookie": False, "redraft": False}
+        _rookie_from_crawl = False
+
+        def _attach(_p, field, sleeper_val, crawl_map, _pid, mode):
+            if sleeper_val is not None:
+                _p[field] = sleeper_val
+                _used[mode] = True
+            elif _pid in crawl_map:
+                _p[field] = crawl_map[_pid]
+
+        for _p in model_value_table:
+            _pid = str(_p.get("id") or "")
+            _attach(_p, "avg_pick", _sa_pick(_pid, "adp_dynasty_ppr", "adp_dynasty_half_ppr", "adp_dynasty_std"), _c_su1, _pid, "startup")
+            _attach(_p, "sf_avg_pick", _sa_pick(_pid, "adp_dynasty_2qb", "adp_dynasty_ppr"), _c_susf, _pid, "startup")
+            # Rookie ADP: prefer our draft-crawl data (reflects real league picks),
+            # fall back to Sleeper community ADP when crawl has no sample.
+            _rk_sa = _sa_pick(_pid, "adp_dynasty_rookie", "adp_rookie")
+            if _pid in _c_rk1:
+                _p["rookie_avg_pick"] = _c_rk1[_pid]; _used["rookie"] = True; _rookie_from_crawl = True
+            elif _rk_sa is not None:
+                _p["rookie_avg_pick"] = _rk_sa; _used["rookie"] = True
+            if _pid in _c_rksf:
+                _p["sf_rookie_avg_pick"] = _c_rksf[_pid]; _used["rookie"] = True; _rookie_from_crawl = True
+            elif _rk_sa is not None:
+                _p["sf_rookie_avg_pick"] = _rk_sa; _used["rookie"] = True
+            _r1 = _sa_pick(_pid, "adp_ppr", "adp_half_ppr", "adp_std")
+            if _r1 is not None:
+                _p["redraft_avg_pick"] = _r1; _used["redraft"] = True
+            _rsf = _sa_pick(_pid, "adp_2qb", "adp_ppr")
+            if _rsf is not None:
+                _p["sf_redraft_avg_pick"] = _rsf; _used["redraft"] = True
+
+        for _mode in ("startup", "rookie", "redraft"):
+            if _mode == "rookie" and _rookie_from_crawl:
+                _adp_sources[_mode] = "DraftCrawl"
+            elif _used[_mode]:
+                _adp_sources[_mode] = "Sleeper"
+            elif _mode == "startup" and (_c_su1 or _c_susf):
+                _adp_sources[_mode] = "Community"
+            elif _mode == "rookie" and (_c_rk1 or _c_rksf):
+                _adp_sources[_mode] = "DraftCrawl"
+    except Exception as _e_adp:
+        logger.info("[api/league-players] ADP attach skipped: %s", _e_adp)
+
+    # Attach NFL bye week per player (by team) when real schedule data exists.
+    # No fabricated byes: if the season schedule is not loaded this is a no-op.
+    try:
+        _season_for_bye = int((get_nfl_state() or {}).get("season") or datetime.now().year)
+        _byes = _team_bye_map(_season_for_bye)
+        if _byes:
+            for _p in model_value_table:
+                _tm = str(_p.get("team") or "").upper().strip()
+                _bw = _byes.get(_norm_sched_team(_tm))
+                if _bw:
+                    _p["bye_week"] = _bw
+    except Exception as _e_bye:
+        logger.info("[api/league-players] bye attach skipped: %s", _e_bye)
+
+    # Optionally append K/DEF (draftable in redraft) when ?kdef=1. Kept out of the
+    # default response so dynasty rankings stay skill-position only.
+    if request.args.get("kdef"):
+        try:
+            from utils.utils import load_players_index as _lpi
+            _seen = {str(p.get("id")) for p in model_value_table if isinstance(p, dict)}
+            _kdef = []
+            for _pid, _info in (_lpi() or {}).items():
+                _pos = str((_info or {}).get("pos") or "").upper()
+                if _pos in ("K", "DEF", "DST") and str(_pid) not in _seen:
+                    _kdef.append({
+                        "id": str(_pid),
+                        "name": (_info.get("name") or str(_pid)),
+                        "position": "DEF" if _pos in ("DEF", "DST") else "K",
+                        "team": (_info.get("team") or _info.get("nfl") or ""),
+                        "value": 0, "sf_value": 0,
+                    })
+            _kdef.sort(key=lambda x: x["name"])
+            model_value_table.extend(_kdef)
+        except Exception as _e_kdef:
+            logger.info("[api/league-players] K/DEF append skipped: %s", _e_kdef)
+
     return jsonify(_sanitize_for_json({
         "players": model_value_table,
         "tier_thresholds": _tier_thresholds_all,
+        "adp_sources": _adp_sources,
     }))
 
 
@@ -21573,6 +21997,99 @@ def _fetch_league_adp_from_db(
     return _fetch_league_adp_from_db_impl(is_sf, season, draft_type, min_samples)
 
 
+# ── Draft pick scoring (mirrors pickScore() in draft_room_page.py) ──────────────
+# A 0-100 score blending value, VOR, ADP value, tier, roster need, youth and
+# momentum, with draft-type-specific weights. Rookie drafts weight talent/value/
+# youth heavily and roster construction (need) almost not at all; redraft ignores
+# youth; startup is a balanced blend. The real-time-only adjustments from the
+# draft room (survival/opportunity-cost, tier-cliff boost, redraft handcuff) are
+# omitted because they have no meaning in post-draft retrospective grading.
+_PS_WEIGHTS = {
+    "rookie":  {"vor": 0.06, "value": 0.22, "adp": 0.30, "tier": 0.12, "need": 0.05, "youth": 0.24, "mom": 0.06},
+    "redraft": {"vor": 0.12, "value": 0.36, "adp": 0.35, "tier": 0.10, "need": 0.08, "youth": 0.00, "mom": 0.04},
+    "startup": {"vor": 0.08, "value": 0.30, "adp": 0.31, "tier": 0.13, "need": 0.10, "youth": 0.10, "mom": 0.03},
+}
+_PS_AGE_PEAKS = {"RB": 24, "WR": 27, "TE": 27, "QB": 29}
+
+
+def _ps_clamp01(x: float) -> float:
+    return 0.0 if x < 0 else 1.0 if x > 1 else x
+
+
+def _ps_tier_of(value: float, thresholds: list):
+    """Tier number for a dynasty value given gap-significance thresholds (1 = elite)."""
+    if not thresholds:
+        return None
+    for i, thr in enumerate(thresholds):
+        if value >= thr:
+            return i + 1
+    return len(thresholds) + 1
+
+
+def _compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
+                        avg_pick, pick_no, max_val, draft_type, is_sf,
+                        need_raw, qb_count, total_picks=None) -> int:
+    pos = (pos or "").upper()
+    # DB-sourced numbers arrive as decimal.Decimal; coerce to float so they mix
+    # with the float weights below (Decimal * float raises TypeError).
+    value = float(value) if value is not None else 0.0
+    vor = float(vor) if vor is not None else None
+    age = float(age) if age is not None else None
+    rank_change_7d = float(rank_change_7d) if rank_change_7d is not None else None
+    avg_pick = float(avg_pick) if avg_pick is not None else None
+    max_val = float(max_val) if max_val is not None else 0.0
+    need_raw = float(need_raw) if need_raw is not None else 0.0
+    total_picks = float(total_picks) if total_picks is not None else 0.0
+    db_value_norm = _ps_clamp01(value / max_val) if max_val and max_val > 0 else 0.0
+    # Blend DB dynasty value with ADP-implied quality so market consensus
+    # prevents DB value gaps (especially new rookies) from dragging the score
+    # unfairly low when ADP says the player is a legitimate round-2/3 pick.
+    if avg_pick is not None and total_picks > 0:
+        adp_qual_norm = _ps_clamp01(1.0 - avg_pick / total_picks)
+        value_norm = db_value_norm * 0.35 + adp_qual_norm * 0.65
+    else:
+        value_norm = db_value_norm
+    vor_norm = _ps_clamp01(vor / max(max_val, 1)) if vor is not None else value_norm * 0.8
+
+    # ADP component: proportional gap so a 2-pick fall from ADP 2 == a 10-pick
+    # fall from ADP 20, with an elite-ADP floor for top-8 players.
+    if avg_pick is not None:
+        gap = pick_no - avg_pick
+        rel = gap / max(avg_pick, 1.5)
+        if rel >= 0.5:
+            adp_val = 1.0
+        elif rel >= -0.3:
+            adp_val = 0.5 + rel
+        else:
+            adp_val = max(0.0, 0.2 + rel * 0.25)
+        if avg_pick <= 8:
+            adp_val = max(adp_val, _ps_clamp01(0.5 + (8 - avg_pick) / 16))
+    else:
+        adp_val = 0.5
+
+    tier_score = _ps_clamp01((10 - min(tier, 9)) / 9) if tier else value_norm
+
+    need_ramp = _ps_clamp01((pick_no - 1) / 12.0)
+    need = (1 - need_ramp) * 0.5 + need_ramp * need_raw
+
+    youth = 0.5
+    if age is not None and pos in ("RB", "WR", "TE", "QB"):
+        peak = _PS_AGE_PEAKS.get(pos, 27)
+        youth = _ps_clamp01((peak - age + 4) / 8)
+
+    mom = _ps_clamp01((rank_change_7d or 0) / 20 + 0.5)
+
+    w = _PS_WEIGHTS.get(draft_type, _PS_WEIGHTS["startup"])
+    s = (w["vor"] * vor_norm + w["value"] * value_norm + w["adp"] * adp_val
+         + w["tier"] * tier_score + w["need"] * need + w["youth"] * youth + w["mom"] * mom)
+
+    # QB overfill: in 1QB a second QB wastes a spot better used on a skill player.
+    if not is_sf and pos == "QB" and qb_count >= 1:
+        s *= 0.25
+
+    return int(round(_ps_clamp01(s) * 100))
+
+
 @app.route("/api/draft-grades")
 def api_draft_grades():
     """
@@ -21620,7 +22137,7 @@ def api_draft_grades():
 
         players_index = load_players_index() or {}
 
-        # ── Draft type: startup (≥10 rounds) or rookie (1-5 rounds) ─────────
+        # ── Draft type: startup (≥10 rounds), rookie (1-5), or redraft ──────
         _draft_rounds = int((latest_draft.get("settings") or {}).get("rounds") or 0)
         if _draft_rounds >= 10:
             _draft_type = "startup"
@@ -21628,6 +22145,37 @@ def api_draft_grades():
             _draft_type = "rookie"
         else:
             _draft_type = "rookie"  # safe default
+
+        # Redraft leagues (Sleeper settings.type == 0) run a full draft every
+        # year, so a long draft there is a redraft - NOT a dynasty startup.
+        # Grade those on redraft values + a redraft-value ADP rank instead.
+        redraft_val_by_id: dict[str, float] = {}
+        if _draft_type == "startup" and platform == "sleeper":
+            try:
+                _lg = get_league(platform, league_id, season) or {}
+                _lt_num = (_lg.get("settings") or {}).get("type")
+                if _lt_num is not None and int(_lt_num) == 0:
+                    _draft_type = "redraft"
+            except Exception as _e_lt:
+                logger.info("[draft-grades] league type check skipped: %s", _e_lt)
+        if _draft_type == "redraft":
+            try:
+                from dashboard_services.db import get_conn as _gc_rd
+                _rdcol = "redraft_value_sf" if is_sf else "redraft_value_1qb"
+                with _gc_rd() as _rc:
+                    for _r in _rc.execute(
+                        f"SELECT player_id, {_rdcol} AS rv FROM player_values "
+                        f"WHERE {_rdcol} IS NOT NULL"
+                    ).fetchall():
+                        try:
+                            redraft_val_by_id[str(_r["player_id"])] = float(_r["rv"] or 0)
+                        except (TypeError, ValueError):
+                            pass
+            except Exception as _e_rd:
+                logger.info("[draft-grades] redraft values skipped: %s", _e_rd)
+            # If we couldn't load redraft values, fall back to startup grading.
+            if not redraft_val_by_id:
+                _draft_type = "startup"
 
         # ── Rosters & users (needed for num_teams before ADP lookup) ─────────
         rosters = get_rosters(platform, league_id, season) or []
@@ -21646,7 +22194,17 @@ def api_draft_grades():
         # Startup drafts use FantasyCalc dynasty rankings as the ADP source
         # (avg_pick = FC overallRank, so Josh Allen ≈ 1).  Rookie drafts keep
         # the league-crawled data (Sleeper pick numbers within the rookie pool).
-        if _draft_type == "startup":
+        if _draft_type == "redraft":
+            # No redraft ADP feed exists, so derive ADP from redraft-value rank
+            # (best redraft value = ADP 1), mirroring the Draft Room fallback.
+            adp_info = {}
+            for _rank, (_pid, _v) in enumerate(
+                sorted(redraft_val_by_id.items(), key=lambda kv: kv[1], reverse=True), start=1
+            ):
+                _pos = str((players_index.get(_pid) or {}).get("pos", "")).upper()
+                adp_info[_pid] = {"avg_pick": _rank, "position": _pos}
+            adp_source = "redraft-value"
+        elif _draft_type == "startup":
             adp_info = _fetch_fc_startup_adp(is_sf)
             if adp_info:
                 adp_source = "fantasycalc"
@@ -21730,6 +22288,115 @@ def api_draft_grades():
             key=lambda sid: adp_info[sid]["avg_pick"]
         )
         taken: set[str] = set()
+
+        # ── Pick-score inputs (mirror the Draft Room's pickScore) ──────────────
+        # Build value / age / momentum / tier / replacement lookups so each pick
+        # gets the same 0-100 score the Draft Room shows. Failures degrade
+        # gracefully: pick_score stays None and the UI keeps the letter grade.
+        val_by_id: dict[str, dict] = {}
+        mom_by_id: dict[str, float] = {}
+        tier_thresholds: list = []
+        repl_by_pos: dict[str, float] = {}
+        ps_targets: dict[str, float] = {}
+        ps_pool_sorted: list = []
+        ps_ready = False
+        try:
+            mvt = get_model_value_table_cached() or []
+            for _p in mvt:
+                _pid = str(_p.get("id") or "")
+                if not _pid:
+                    continue
+                val_by_id[_pid] = {
+                    "value": float(_p.get("value") or 0),
+                    "sf_value": float(_p.get("sf_value") or _p.get("value") or 0),
+                    "age": _p.get("age"),
+                    "position": str(_p.get("position") or "").upper(),
+                }
+            # Rookie drafts: overlay rookie-board values/ages so prospects score.
+            if _draft_type == "rookie":
+                try:
+                    from data_building.rookie_pipeline.pipeline import (
+                        get_rookie_rankings_from_db, get_active_rookie_class,
+                    )
+                    for _r in (get_rookie_rankings_from_db(get_active_rookie_class()) or []):
+                        _sid = str(_r.get("sleeper_id") or "")
+                        if not _sid:
+                            continue
+                        _ex = val_by_id.get(_sid) or {}
+                        _v = float(_r.get("rookie_value") or _ex.get("value") or 0)
+                        _vsf = float(_r.get("rookie_sf_value") or _r.get("rookie_value") or _ex.get("sf_value") or 0)
+                        val_by_id[_sid] = {
+                            "value": _v, "sf_value": _vsf,
+                            "age": _r.get("age") if _r.get("age") is not None else _ex.get("age"),
+                            "position": str(_r.get("position") or _ex.get("position") or "").upper(),
+                        }
+                except Exception as _e_rk:
+                    logger.info("[draft-grades] rookie value overlay skipped: %s", _e_rk)
+            # Momentum (7-day overall rank change) from the player_values table.
+            try:
+                from dashboard_services.db import get_conn as _gc_ps
+                with _gc_ps() as _rc:
+                    for _r in _rc.execute(
+                        "SELECT player_id, rank_change_7d FROM player_values "
+                        "WHERE rank_change_7d IS NOT NULL"
+                    ).fetchall():
+                        mom_by_id[str(_r["player_id"])] = _r["rank_change_7d"]
+            except Exception:
+                pass
+            # Tier thresholds for this league type & size.
+            tier_thresholds = compute_tier_thresholds(mvt, "sf" if is_sf else "1qb", _num_teams) or []
+            # VOR replacement levels + need targets from the Draft Room's default
+            # roster shape (1QB/2RB/3WR/1TE/1FLEX, SF adds a SUPER_FLEX, 7 bench).
+            _vkey = "sf_value" if is_sf else "value"
+
+            def _eff_val(_pid, _d):
+                # Redraft drafts score on redraft values; dynasty drafts on the
+                # SF/1QB dynasty value.
+                if _draft_type == "redraft":
+                    return float(redraft_val_by_id.get(_pid, 0) or 0)
+                return float(_d.get(_vkey) or 0)
+
+            _starters = (
+                {"QB": 1.5, "RB": 2.0, "WR": 3.0, "TE": 1.0} if is_sf
+                else {"QB": 1.0, "RB": 2.5, "WR": 3.5, "TE": 1.0}
+            )
+            _by_pos: dict[str, list] = {"QB": [], "RB": [], "WR": [], "TE": []}
+            # Eligible scoring pool: rookies for rookie drafts, else all skill players.
+            for _pid, _d in val_by_id.items():
+                _pp = _d.get("position")
+                if _pp not in _by_pos:
+                    continue
+                if _draft_type == "rookie" and eligible_sids and _pid not in eligible_sids:
+                    continue
+                _ev = _eff_val(_pid, _d)
+                _by_pos[_pp].append(_ev)
+                ps_pool_sorted.append((_ev, _pid))
+            for _pp, _arr in _by_pos.items():
+                _arr.sort(reverse=True)
+                if not _arr:
+                    repl_by_pos[_pp] = 0
+                    continue
+                _idx = int(round(_num_teams * _starters.get(_pp, 1))) - 1
+                _idx = max(0, min(_idx, len(_arr) - 1))
+                repl_by_pos[_pp] = _arr[_idx]
+            ps_pool_sorted.sort(key=lambda x: x[0], reverse=True)
+            ps_targets = (
+                {"QB": 2.7, "RB": 4.45, "WR": 5.8, "TE": 2.05} if is_sf
+                else {"QB": 1.7, "RB": 5.45, "WR": 5.8, "TE": 2.05}
+            )
+            ps_ready = True
+        except Exception as _e_ps:
+            logger.info("[draft-grades] pick-score inputs skipped: %s", _e_ps)
+
+        # Per-team running count of this draft's picks by position (drives need).
+        ps_team_counts: dict = _defaultdict(lambda: {"QB": 0, "RB": 0, "WR": 0, "TE": 0})
+
+        def _ps_max_val() -> float:
+            """Top dynasty value still on the board (mirrors availablePool max)."""
+            for _v, _sid in ps_pool_sorted:
+                if _sid not in taken:
+                    return _v
+            return 0.0
 
         # ── Calculate positional rankings based on avg_pick ───────────────────────
         pos_rankings: dict[str, dict[str, int]] = {}
@@ -21877,6 +22544,29 @@ def api_draft_grades():
 
             grade = pick_grade(adp_diff, need, bpa_gap, is_bpa, pos, is_sf, qb_count, name, _num_teams)
 
+            # ── 0-100 pick score (mirrors the Draft Room) ─────────────────────
+            pick_score = None
+            if ps_ready:
+                _d = val_by_id.get(player_id)
+                if _d is not None:
+                    _val = _eff_val(player_id, _d)
+                    _repl = repl_by_pos.get(pos)
+                    _vor = round(_val - _repl) if _repl is not None and pos in repl_by_pos else None
+                    # Dynasty tiers don't apply to redraft (value scale differs).
+                    _tier = None if _draft_type == "redraft" else (
+                        _ps_tier_of(_val, tier_thresholds) if pos in CORE_POS else None)
+                    _tgt = ps_targets.get(pos, 0)
+                    _have = ps_team_counts[rid].get(pos, 0)
+                    _need_raw = _ps_clamp01(max(0, _tgt - _have) / _tgt) if _tgt else 0.0
+                    pick_score = _compute_pick_score(
+                        pos=pos, value=_val, vor=_vor, tier=_tier,
+                        age=_d.get("age"), rank_change_7d=mom_by_id.get(player_id),
+                        avg_pick=avg_pick, pick_no=pick_no, max_val=_ps_max_val(),
+                        draft_type=_draft_type, is_sf=is_sf, need_raw=_need_raw,
+                        qb_count=ps_team_counts[rid].get("QB", 0),
+                        total_picks=_num_teams * _draft_rounds,
+                    )
+
             picks_by_roster[rid].append({
                 "pick_no":          pick_no,
                 "round":            (pick_no - 1) // max(num_teams, 1) + 1,
@@ -21891,6 +22581,7 @@ def api_draft_grades():
                 "bpa":              avail_better[:2],   # top 2 available better options
                 "could_wait":       could_wait,
                 "grade":            grade,
+                "pick_score":       pick_score,
             })
 
             # Mark this player as taken on the board
@@ -21899,6 +22590,7 @@ def api_draft_grades():
             if pos in CORE_POS:
                 roster_pos_counts.setdefault(rid, {pos: 0 for pos in CORE_POS})
                 roster_pos_counts[rid][pos] = roster_pos_counts[rid].get(pos, 0) + 1
+                ps_team_counts[rid][pos] = ps_team_counts[rid].get(pos, 0) + 1
 
         # ── Assemble results ─────────────────────────────────────────────────
         results = []
@@ -21914,15 +22606,24 @@ def api_draft_grades():
                     pick["pos_rank"] = pos_rankings[pick["position"]][pick["player_id"]]
             
             tgrade = team_grade([p["grade"] for p in team_picks if p["grade"] != "N/A"])
+            _ps_vals = [p["pick_score"] for p in team_picks if p.get("pick_score") is not None]
+            avg_pick_score = int(round(sum(_ps_vals) / len(_ps_vals))) if _ps_vals else None
             results.append({
-                "roster_id":  rid,
-                "team_name":  roster_map.get(rid, f"Roster {rid}"),
-                "grade":      tgrade,
-                "picks":      team_picks,
+                "roster_id":      rid,
+                "team_name":      roster_map.get(rid, f"Roster {rid}"),
+                "grade":          tgrade,
+                "avg_pick_score": avg_pick_score,
+                "picks":          team_picks,
             })
 
+        # Rank teams by average pick score when available, else fall back to the
+        # letter grade so ordering matches whatever the UI surfaces.
         grade_order = {"A+": 5, "A": 4, "B": 3, "C": 2, "D": 1, "F": 0, "N/A": 2}
-        results.sort(key=lambda x: grade_order.get(x["grade"], 2), reverse=True)
+        results.sort(
+            key=lambda x: (x.get("avg_pick_score") if x.get("avg_pick_score") is not None
+                           else grade_order.get(x["grade"], 2) * 18),
+            reverse=True,
+        )
 
         all_picks_flat = [p for t in results for p in t["picks"]]
         total_rounds = max((p["round"] for p in all_picks_flat), default=_draft_rounds or 1)

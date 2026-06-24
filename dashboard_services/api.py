@@ -340,6 +340,18 @@ def get_drafts(league_id: str) -> List[dict]:
     return fetch_json(f"/league/{league_id}/drafts")
 
 
+@ttl_cache(ttl=20)
+def get_draft(draft_id: str) -> dict:
+    """Sleeper draft metadata (status, type, settings incl. reversal_round, draft_order)."""
+    return fetch_json(f"/draft/{draft_id}") or {}
+
+
+@ttl_cache(ttl=10)
+def get_draft_picks(draft_id: str) -> List[dict]:
+    """Live/completed picks for a Sleeper draft (short TTL for live polling)."""
+    return fetch_json(f"/draft/{draft_id}/picks") or []
+
+
 @ttl_cache(ttl=300)
 def get_nfl_games_for_week_raw(week: int, season: int, season_type: str = "reg") -> list[dict]:
     if _tank01_breaker.is_open():

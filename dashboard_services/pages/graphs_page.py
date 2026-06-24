@@ -3,7 +3,6 @@ from typing import Dict
 
 import numpy as np
 import plotly.graph_objs as go
-from plotly.offline import plot as plotly_plot
 
 from utils.utils import z_better_outward
 
@@ -174,10 +173,13 @@ def build_graphs_body(ctx: dict) -> str:
     opts_a_html = "".join(opts_a)
     opts_b_html = "".join(opts_b)
 
-    # ---------- Convert figs to divs ----------
-    div_pfpa = plotly_plot(figs["pf_pa"], include_plotlyjs=False, output_type="div")
-    div_line = plotly_plot(figs["scores_line"], include_plotlyjs=False, output_type="div")
-    div_box = plotly_plot(figs["scores_box"], include_plotlyjs=False, output_type="div")
+    # ---------- Convert figs to JS-safe JSON for deferred rendering ----------
+    def _fig_json(fig):
+        return fig.to_json().replace("</", "<\\/")
+
+    pfpa_json = _fig_json(figs["pf_pa"])
+    line_json  = _fig_json(figs["scores_line"])
+    box_json   = _fig_json(figs["scores_box"])
 
     # ---------- Sidebar: top teams + metrics + unified legend ----------
     top_rows = []
@@ -282,7 +284,7 @@ def build_graphs_body(ctx: dict) -> str:
 
     function renderRadar(teamA, teamB) {{
       const el = document.getElementById('radar-cmp');
-      if (!el || !window.Plotly) return;
+      if (!el) return;
 
       const layout = {{
         title: 'Radar Comparison (select two teams)',
@@ -293,12 +295,15 @@ def build_graphs_body(ctx: dict) -> str:
 
       const data = makeRadarData(teamA, teamB);
 
-      if (!el._plotted) {{
-        Plotly.newPlot(el, data, layout);
-        el._plotted = true;
-      }} else {{
-        Plotly.react(el, data, layout);
-      }}
+      (window.ensurePlotly ? window.ensurePlotly() : Promise.resolve(window.Plotly)).then(function(P) {{
+        if (!P) return;
+        if (!el._plotted) {{
+          P.newPlot(el, data, layout);
+          el._plotted = true;
+        }} else {{
+          P.react(el, data, layout);
+        }}
+      }});
     }}
 
     document.addEventListener('DOMContentLoaded', () => {{
@@ -314,6 +319,23 @@ def build_graphs_body(ctx: dict) -> str:
     </script>
     """
 
+    # ---------- Deferred chart rendering (Plotly loaded on demand) ----------
+    js_charts = (
+        '<script>(function(){'
+        'var _FIGS={'
+        '"chart-pfpa":' + pfpa_json + ','
+        '"chart-line":'  + line_json + ','
+        '"chart-box":'   + box_json  +
+        '};'
+        'var _CFG={responsive:true,displayModeBar:false};'
+        '(window.ensurePlotly?window.ensurePlotly():Promise.resolve(window.Plotly)).then(function(P){'
+        'if(!P)return;'
+        'Object.keys(_FIGS).forEach(function(id){'
+        'var f=_FIGS[id];var el=document.getElementById(id);'
+        'if(el)P.newPlot(el,f.data,f.layout,_CFG);'
+        '});});})();</script>'
+    )
+
     # ---------- Main layout ----------
     main_html = f"""
       <div class="page-layout" data-page="graphs">
@@ -325,7 +347,7 @@ def build_graphs_body(ctx: dict) -> str:
                 <h2>PF vs PA Scatter</h2>
               </div>
               <div class="card-body graph-body">
-                {div_pfpa}
+                <div id="chart-pfpa" style="width:100%;min-height:350px;"></div>
               </div>
             </div>
 
@@ -334,7 +356,7 @@ def build_graphs_body(ctx: dict) -> str:
                 <h2>Weekly Scores by Team</h2>
               </div>
               <div class="card-body graph-body">
-                {div_line}
+                <div id="chart-line" style="width:100%;min-height:350px;"></div>
               </div>
             </div>
 
@@ -343,7 +365,7 @@ def build_graphs_body(ctx: dict) -> str:
                 <h2>Score Distribution</h2>
               </div>
               <div class="card-body graph-body">
-                {div_box}
+                <div id="chart-box" style="width:100%;min-height:350px;"></div>
               </div>
             </div>
 
@@ -377,6 +399,7 @@ def build_graphs_body(ctx: dict) -> str:
           {sidebar_html}
         </aside>
       </div>
+      {js_charts}
       {js_radar}
     """
 
@@ -484,9 +507,12 @@ def build_career_graphs_body(career_ctx: dict) -> str:
         showlegend=False,
     )
 
-    div_scatter  = plotly_plot(figs["pf_pa"],     include_plotlyjs=False, output_type="div", config={"displayModeBar": False})
-    div_season   = plotly_plot(figs["season_pf"], include_plotlyjs=False, output_type="div", config={"displayModeBar": False})
-    div_box      = plotly_plot(figs["box"],        include_plotlyjs=False, output_type="div", config={"displayModeBar": False})
+    def _fig_json(fig):
+        return fig.to_json().replace("</", "<\\/")
+
+    scatter_json = _fig_json(figs["pf_pa"])
+    season_json  = _fig_json(figs["season_pf"])
+    box_c_json   = _fig_json(figs["box"])
 
     # ── Sidebar: career standings table ───────────────────────────────────
     ts_sorted = team_stats.sort_values("PF", ascending=False).reset_index(drop=True)
@@ -524,26 +550,41 @@ def build_career_graphs_body(career_ctx: dict) -> str:
           </div>
         </div>"""
 
+    js_career = (
+        '<script>(function(){'
+        'var _FIGS={'
+        '"chart-scatter":' + scatter_json + ','
+        '"chart-season":'  + season_json  + ','
+        '"chart-box-c":'   + box_c_json   +
+        '};'
+        'var _CFG={responsive:true,displayModeBar:false};'
+        '(window.ensurePlotly?window.ensurePlotly():Promise.resolve(window.Plotly)).then(function(P){'
+        'if(!P)return;'
+        'Object.keys(_FIGS).forEach(function(id){'
+        'var f=_FIGS[id];var el=document.getElementById(id);'
+        'if(el)P.newPlot(el,f.data,f.layout,_CFG);'
+        '});});})();</script>'
+    )
     return f"""
       <div class="page-layout" data-page="graphs">
         <main class="page-main">
           <div class="graphs-page">
             <div class="card">
               <div class="card-header-row"><h2>Career PF vs PA</h2></div>
-              <div class="card-body graph-body">{div_scatter}</div>
+              <div class="card-body graph-body"><div id="chart-scatter" style="width:100%;min-height:350px;"></div></div>
             </div>
             <div class="card">
               <div class="card-header-row"><h2>Points Per Season by Team</h2></div>
-              <div class="card-body graph-body">{div_season}</div>
+              <div class="card-body graph-body"><div id="chart-season" style="width:100%;min-height:350px;"></div></div>
             </div>
             <div class="card">
               <div class="card-header-row"><h2>Career Score Distribution</h2></div>
-              <div class="card-body graph-body">{div_box}</div>
+              <div class="card-body graph-body"><div id="chart-box-c" style="width:100%;min-height:350px;"></div></div>
             </div>
           </div>
         </main>
         <aside class="page-sidebar">{sidebar_html}</aside>
-      </div>"""
+      </div>{js_career}"""
 
 
 COLOR_CYCLE = [
