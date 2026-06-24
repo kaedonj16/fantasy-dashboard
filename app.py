@@ -22050,7 +22050,7 @@ def _ps_tier_of(value: float, thresholds: list):
 
 def _compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
                         avg_pick, pick_no, max_val, draft_type, is_sf,
-                        need_raw, qb_count, total_picks=None) -> int:
+                        need_raw, qb_count, total_picks=None, num_teams=None) -> int:
     pos = (pos or "").upper()
     # DB-sourced numbers arrive as decimal.Decimal; coerce to float so they mix
     # with the float weights below (Decimal * float raises TypeError).
@@ -22105,9 +22105,23 @@ def _compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
     s = (w["vor"] * vor_norm + w["value"] * value_norm + w["adp"] * adp_val
          + w["tier"] * tier_score + w["need"] * need + w["youth"] * youth + w["mom"] * mom)
 
-    # QB overfill: in 1QB a second QB wastes a spot better used on a skill player.
+    # QB overfill (1QB only): a second QB only carries real opportunity cost in
+    # the early rounds. By the late rounds a backup QB is a normal pick, so the
+    # penalty tapers out (mirrors the Draft Room).
     if not is_sf and pos == "QB" and qb_count >= 1:
-        s *= 0.25
+        _teams = int(num_teams) if num_teams else 12
+        _round = (int(pick_no) - 1) // max(_teams, 1) + 1 if pick_no else 1
+        if _round <= 3:
+            _pen = 0.30
+        elif _round <= 6:
+            _pen = 0.60
+        elif _round <= 9:
+            _pen = 0.85
+        else:
+            _pen = 1.0
+        if qb_count >= 2:
+            _pen *= 0.7
+        s *= _pen
 
     return int(round(_ps_clamp01(s) * 100))
 
@@ -22596,6 +22610,7 @@ def api_draft_grades():
                         draft_type=_draft_type, is_sf=is_sf, need_raw=_need_raw,
                         qb_count=ps_team_counts[rid].get("QB", 0),
                         total_picks=_num_teams * _draft_rounds,
+                        num_teams=_num_teams,
                     )
 
             picks_by_roster[rid].append({
