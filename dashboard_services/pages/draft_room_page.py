@@ -2953,31 +2953,19 @@ _DRAFT_ROOM_HTML = r"""
     if (!el) return;
     // Determine which banner (if any) applies.
     var mode = 'none';
-    if (state && state.mode === 'live' && !state.isComplete){
-      if (state.isDrafting) mode = 'live';
-      else {
-        var st = state.startTime || 0, ms0 = st ? st - Date.now() : 0;
-        if (st && ms0 > 0 && ms0 <= _START_WINDOW_MS) mode = 'upcoming';
-      }
+    if (state && state.mode === 'live' && !state.isComplete && !state.isDrafting){
+      var st = state.startTime || 0, ms0 = st ? st - Date.now() : 0;
+      if (st && ms0 > 0 && ms0 <= _START_WINDOW_MS) mode = 'upcoming';
     }
     if (mode === 'none'){ el.style.display = 'none'; el.removeAttribute('data-bk'); return; }
-    var onClock = mode === 'live' && isMyPick(state.current);
-    var shellKey = mode + (onClock ? ':otc' : '');
-    if (el.getAttribute('data-bk') !== shellKey){
-      el.setAttribute('data-bk', shellKey);
+    if (el.getAttribute('data-bk') !== mode){
+      el.setAttribute('data-bk', mode);
       var url = sleeperDraftUrl();
       var joinBtn = url ? '<a class="dr-banner-join" href="' + url + '" target="_blank" rel="noopener">Open in Sleeper <i class="fa-solid fa-arrow-right-long"></i></a>' : '';
-      if (mode === 'live'){
-        el.className = 'dr-start-banner is-live';
-        el.innerHTML = '<span class="dr-banner-ic dr-banner-ic-live"><i class="fa-solid fa-bolt"></i></span>'
-          + '<div class="dr-banner-txt"><b>Your draft is live' + (onClock ? ' &ndash; you&rsquo;re on the clock' : '') + '</b>'
-          + '<span>Make your picks in Sleeper &middot; this board updates as they come in.</span></div>' + joinBtn;
-      } else {
-        el.className = 'dr-start-banner';
-        el.innerHTML = '<span class="dr-banner-ic"><i class="fa-solid fa-calendar-days"></i></span>'
-          + '<div class="dr-banner-txt"><b>Your draft starts in <span class="dr-start-cd"></span></b>'
-          + '<span>Get your board ready - the pick board goes live automatically.</span></div>' + joinBtn;
-      }
+      el.className = 'dr-start-banner';
+      el.innerHTML = '<span class="dr-banner-ic"><i class="fa-solid fa-calendar-days"></i></span>'
+        + '<div class="dr-banner-txt"><b>Your draft starts in <span class="dr-start-cd"></span></b>'
+        + '<span>Get your board ready - the pick board goes live automatically.</span></div>' + joinBtn;
     }
     el.style.display = '';
     // Per-tick: refresh only the countdown number (don't clobber the button).
@@ -2997,10 +2985,14 @@ _DRAFT_ROOM_HTML = r"""
     // Poll faster as a scheduled start approaches (or just passed) so a connected
     // pre-draft flips to live within a couple seconds of the draft actually
     // starting, instead of waiting out the normal cadence.
-    if (state && state.mode === 'live' && state.isDrafting === false && !state.isComplete && state.startTime){
-      var toStart = state.startTime - Date.now();
-      if (toStart <= 60000 && toStart > -900000) ms = 5000;    // 1 min before -> 15 min after
-      else if (toStart <= 300000 && toStart > 0) ms = 30000;   // within 5 min of start
+    if (state && state.mode === 'live' && !state.isComplete){
+      if (state.isDrafting){
+        ms = 2000;  // active draft: poll every 2s so picks surface quickly
+      } else if (state.startTime){
+        var toStart = state.startTime - Date.now();
+        if (toStart <= 60000 && toStart > -900000) ms = 5000;    // 1 min before -> 15 min after
+        else if (toStart <= 300000 && toStart > 0) ms = 30000;   // within 5 min of start
+      }
     }
     _pollNextAt = Date.now() + ms;
     pollTimer = setTimeout(pollOnce, ms);
