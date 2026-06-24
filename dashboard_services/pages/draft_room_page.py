@@ -2008,6 +2008,8 @@ _DRAFT_ROOM_HTML = r"""
       + '<span class="dr-rslot-empty">open</span></div>';
   }
   // ── Draft grade / roster strength ───────────────────────────────────────────
+  // Sleeper actual PPG preferred, FantasyPros projection as fallback (site-wide).
+  function ppgOf(p){ return (p && p.ppg != null) ? Number(p.ppg) : ((p && p.proj_ppg != null) ? Number(p.proj_ppg) : null); }
   function gradeTeam(){
     if (!hasOwned()) return null;
     var mine = [];
@@ -2017,55 +2019,85 @@ _DRAFT_ROOM_HTML = r"""
     });
     if (!mine.length) return null;
     mine.sort(function(a, b){ return a.pn - b.pn; }); // process in pick order for need context
-    var counts = { QB:0, RB:0, WR:0, TE:0 }, tierTop = 0;
-    var psTotal = 0, psCount = 0;
+    var counts = { QB:0, RB:0, WR:0, TE:0 };
     // Pre-compute maxVal for pickScore (matches what pickScore callers do)
     var _gmaxVal = 0; players.forEach(function(q){ var v = valOf(q); if (v > _gmaxVal) _gmaxVal = v; });
     var countsSoFar = { QB: 0, RB: 0, WR: 0, TE: 0 };
+    var picks = []; // { id, pos, ps, val, ppg }
     mine.forEach(function(m){
       var pos = (m.p.position || '').toUpperCase();
       // Per-pick score: stored for mock picks; computed at historical pick# for live picks
       var ps = m.p.ps;
-      if (ps == null && players.length > 0 && _gmaxVal > 0){
-        var full = playersById[String(m.p.id)];
-        if (full){
-          var _saved = state.current;
-          state.current = m.pn;
-          ps = pickScore(full, _gmaxVal, countsSoFar);
-          state.current = _saved;
-        }
+      var full = playersById[String(m.p.id)];
+      if (ps == null && players.length > 0 && _gmaxVal > 0 && full){
+        var _saved = state.current;
+        state.current = m.pn;
+        ps = pickScore(full, _gmaxVal, countsSoFar);
+        state.current = _saved;
       }
-      if (ps != null){ psTotal += ps; psCount++; }
       if (countsSoFar[pos] != null) countsSoFar[pos]++;
       if (counts[pos] != null) counts[pos]++;
-      var full2 = playersById[String(m.p.id)];
-      if (full2){ var t = tierOf(full2); if (t && t <= 2) tierTop++; }
+      picks.push({ id: m.p.id, pos: pos, ps: ps,
+        val: full ? valOf(full) : (m.p.val || 0), ppg: full ? ppgOf(full) : null });
     });
-    var avgPs = psCount > 0 ? psTotal / psCount : null;
-    var targets = posTargets(), bsum = 0;
-    ['QB','RB','WR','TE'].forEach(function(pos){ var t = targets[pos] || 0; bsum += t ? Math.min(counts[pos] || 0, t) / t : 0; });
-    var balanceRamp = Math.min(1, mine.length / 8);
-    var tierTarget = mine.length <= 1 ? 1 : mine.length <= 5 ? 2 : 3;
-    var tierRaw = clamp01(tierTop / tierTarget);
+    var psVals = picks.map(function(x){ return x.ps; }).filter(function(v){ return v != null; });
+    var avgPs = psVals.length ? psVals.reduce(function(a, b){ return a + b; }, 0) / psVals.length : null;
 
-    var valuePts, balancePts, tierPts, total;
     if (state.type === 'rookie'){
       // Rookie drafts are about talent/value, not roster construction. The grade
       // is the average pick score (already a 0-100 talent+value signal), so two
       // elite picks (e.g. 95 + 92) land an A+ regardless of positional balance.
-      valuePts   = avgPs != null ? Math.round(clamp01(avgPs / 100) * 100) : 50;
-      balancePts = 0;
-      tierPts    = 0;
-      total      = valuePts;
-    } else {
-      // Startup/redraft: roster construction matters alongside value/ADP wins.
-      // Value 45 / Balance 30 / Tiers 25.
-      valuePts   = avgPs != null ? Math.round(clamp01(avgPs / 100) * 45) : 22;
-      balancePts = Math.round(((1 - balanceRamp) * 0.85 + balanceRamp * (bsum / 4)) * 30);
-      tierPts    = Math.round(tierRaw * 25);
-      total      = valuePts + balancePts + tierPts;
+      var rv = avgPs != null ? Math.round(clamp01(avgPs / 100) * 100) : 50;
+      return { score: rv, value: rv, balance: 0, tier: 0, count: mine.length, avgPs: avgPs ? Math.round(avgPs) : null };
     }
-    return { score: total, value: valuePts, balance: balancePts, tier: tierPts, count: mine.length, avgPs: avgPs ? Math.round(avgPs) : null };
+
+    // ── Startup / redraft: Value 35 / Starters 35 / Construction 30 ──
+    // Build the best starting lineup (value desc) to mark starters + slot coverage.
+    var slots = lineupSlots();
+    var byVal = picks.slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
+    var usedL = {}, starterIds = {}, filled = 0;
+    slots.forEach(function(slot){
+      for (var i = 0; i < byVal.length; i++){
+        if (!usedL[i] && slotEligible(slot, byVal[i].pos)){ usedL[i] = true; starterIds[String(byVal[i].id)] = true; filled++; break; }
+      }
+    });
+    var coverage = slots.length ? filled / slots.length : 0;
+
+    // 1) Starter-weighted value: starters weigh 1.0, bench 0.5.
+    var wSum = 0, wTot = 0;
+    picks.forEach(function(x){ if (x.ps == null) return; var w = starterIds[String(x.id)] ? 1.0 : 0.5; wSum += x.ps * w; wTot += w; });
+    var wAvgPs = wTot > 0 ? wSum / wTot : avgPs;
+    var valuePts = wAvgPs != null ? Math.round(clamp01(wAvgPs / 100) * 35) : 17;
+
+    // 2) Starting-lineup strength vs a league-average team (value + PPG blend).
+    var starterArr = picks.filter(function(x){ return starterIds[String(x.id)]; });
+    var nStart = (state.teams || 12) * slots.length;
+    function avgTopN(arr, n){ var s = arr.slice().sort(function(a, b){ return b - a; }).slice(0, n); return s.length ? s.reduce(function(a, b){ return a + b; }, 0) / s.length : 0; }
+    var myValAvg = starterArr.length ? starterArr.reduce(function(a, x){ return a + (x.val || 0); }, 0) / starterArr.length : 0;
+    var leagueValAvg = avgTopN(players.map(function(q){ return valOf(q); }), nStart);
+    var strengthRatio = leagueValAvg > 0 ? myValAvg / leagueValAvg : 1;
+    // Blend in projected-PPG strength when enough starters have PPG data.
+    var myPpgs = starterArr.map(function(x){ return x.ppg; }).filter(function(v){ return v != null; });
+    if (myPpgs.length >= Math.max(2, Math.floor(starterArr.length * 0.5))){
+      var myPpgAvg = myPpgs.reduce(function(a, b){ return a + b; }, 0) / myPpgs.length;
+      var poolPpgs = []; players.forEach(function(q){ var v = ppgOf(q); if (v != null) poolPpgs.push(v); });
+      var leaguePpgAvg = avgTopN(poolPpgs, nStart);
+      var ppgRatio = leaguePpgAvg > 0 ? myPpgAvg / leaguePpgAvg : strengthRatio;
+      strengthRatio = 0.5 * strengthRatio + 0.5 * ppgRatio;
+    }
+    // Map ratio: 0.80 (weak) → 0 pts, 1.20 (elite) → full; ~1.0 is league-average.
+    var starterPts = Math.round(clamp01((strengthRatio - 0.80) / 0.40) * 35);
+
+    // 3) Construction: starter-slot coverage (filling your lineup) + positional balance.
+    var targets = posTargets(), bsum = 0;
+    ['QB','RB','WR','TE'].forEach(function(pos){ var t = targets[pos] || 0; bsum += t ? Math.min(counts[pos] || 0, t) / t : 0; });
+    var constructionRaw = clamp01(0.6 * coverage + 0.4 * (bsum / 4));
+    var ramp = Math.min(1, mine.length / 8); // lenient early before the roster can be full
+    var balancePts = Math.round(((1 - ramp) * 0.85 + ramp * constructionRaw) * 30);
+
+    var total = valuePts + starterPts + balancePts;
+    return { score: total, value: valuePts, balance: balancePts, tier: starterPts, count: mine.length,
+      avgPs: avgPs ? Math.round(avgPs) : null, strength: Math.round(strengthRatio * 100) };
   }
   // Classify a startup/redraft build into a recognizable draft archetype based on
   // positional emphasis, weighting the early picks where strategy is actually set.
@@ -2125,15 +2157,16 @@ _DRAFT_ROOM_HTML = r"""
       + '<div class="dr-gbar"><div class="dr-gbar-fill" style="width:' + pct + '%"></div></div></div>';
   }
   // Per-component max points. Rookie grade is value-only (avg pick score);
-  // startup/redraft weights value/ADP wins alongside roster construction.
+  // startup/redraft weights pick value, starting-lineup strength, and construction.
   function gradeMax(){
     return (state.type === 'rookie') ? { value:100, balance:0, tier:0 }
-                                     : { value:45, balance:30, tier:25 };
+                                     : { value:35, balance:30, tier:35 };
   }
   function gradeBars(g){
     var m = gradeMax();
     if (state.type === 'rookie') return gradeBar('Pick Value', g.value, m.value);
-    return gradeBar('Value', g.value, m.value) + gradeBar('Construction', g.balance, m.balance) + gradeBar('Tiers', g.tier, m.tier);
+    // g.tier holds the starting-lineup strength component.
+    return gradeBar('Value', g.value, m.value) + gradeBar('Starters', g.tier, m.tier) + gradeBar('Construction', g.balance, m.balance);
   }
 
   function renderNeeds(){
