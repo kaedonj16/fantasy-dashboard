@@ -1248,12 +1248,7 @@ _DRAFT_ROOM_HTML = r"""
   // Spread of a player's real draft slot around their ADP. Tight at the very top
   // of the board (consensus picks barely move) and widens deeper, where ADP is
   // noisier. Drives how far a player realistically slides from their ADP.
-  // Rookie ADP is more consensus-driven (smaller pool, real drafts tightly
-  // follow ADP), so we use a tighter spread than startup/redraft.
-  function simSigma(a){
-    var mult = state.type === 'rookie' ? 0.05 : 0.085;
-    return Math.max(0.5, Math.min(10, 0.35 + mult * a));
-  }
+  function simSigma(a){ return Math.max(0.5, Math.min(10, 0.35 + 0.055 * a)); }
   function simPick(){
     var pool = availablePool();
     if (!pool.length) return null;
@@ -1277,9 +1272,7 @@ _DRAFT_ROOM_HTML = r"""
         w = Math.exp(-0.5 * z * z);               // peak when the pick reaches the ADP
       } else {
         // Past ADP: inverse-linear urgency - never zeroes out so slides stay bounded.
-        // Rookie pool is tight so urgency is slightly stronger there.
-        var c = state.type === 'rookie' ? 0.12 : 0.15;
-        w = 1.0 / (1.0 + c * diff);
+        w = 1.0 / (1.0 + 0.12 * diff);
       }
       // Need-awareness: nudge for roster fit without overriding ADP.
       var pos = (p.position||'').toUpperCase();
