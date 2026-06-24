@@ -317,7 +317,7 @@ _DRAFT_ROOM_HTML = r"""
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
     padding: 10px 14px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 12px;
     background: var(--card);
-    position: sticky; top: 56px; z-index: 30;
+    position: sticky; top: 89px; z-index: 30;
   }
   .dr-status-info { display: flex; align-items: center; gap: 14px; min-width: 0; flex: 1; }
   .dr-status-pills { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
@@ -339,6 +339,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-pill-you { background: rgba(34,197,94,.16); color: #22c55e; }
   .dr-pill-live { background: rgba(239,68,68,.16); color: #ef4444; animation: drPulse 1.6s ease-in-out infinite; }
   .dr-pill-upcoming { background: rgba(245,158,11,.16); color: #f59e0b; }
+  .dr-pill-paused   { background: rgba(148,163,184,.16); color: #94a3b8; }
   .dr-pick-timer { font-size: 14px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums;
     min-width: 40px; padding: 2px 8px; border-radius: 7px; background: rgba(127,127,127,.1); text-align: center; }
   .dr-pick-timer.urgent { color: #fff; background: #ef4444; animation: drPulse 1s ease-in-out infinite; }
@@ -410,7 +411,7 @@ _DRAFT_ROOM_HTML = r"""
     display: flex; align-items: center; justify-content: center; }
   .dr-corner { z-index: 4; }
   .dr-side { border: 1px solid var(--border); border-radius: 10px; background: var(--card); display: flex; flex-direction: column;
-    position: sticky; top: 120px; align-self: start; max-height: calc(100vh - 134px); z-index: 20; overflow: hidden; }
+    position: sticky; top: 158px; align-self: start; max-height: calc(100vh - 134px); z-index: 20; overflow: hidden; }
   /* Reuse the trade-calculator pill tabs (otc-main-tabs), evenly spread across panel */
   .dr-side-tabs.otc-main-tabs { width: auto; margin: 8px; }
   .dr-side-tabs .otc-main-tab { flex: 1; display: flex; align-items: center; justify-content: center;
@@ -2750,7 +2751,19 @@ _DRAFT_ROOM_HTML = r"""
     if (s === 'drafting') return 'Live';
     if (s === 'pre_draft') return 'Pre-Draft';
     if (s === 'complete') return 'Complete';
+    if (s === 'paused') return 'Paused';
     return s.replace(/_/g, ' ');
+  }
+  // Update the secondary status badge (Upcoming / Paused / etc.) based on current draft status.
+  function _setStatusBadge(isDrafting, isComplete, rawStatus){
+    var el = document.getElementById('drUpcomingBadge');
+    if (!el) return;
+    if (isDrafting || isComplete){ el.style.display = 'none'; return; }
+    var isPre = rawStatus === 'pre_draft';
+    var isPaused = rawStatus === 'paused';
+    el.className = 'dr-pill ' + (isPaused ? 'dr-pill-paused' : 'dr-pill-upcoming');
+    el.textContent = isPaused ? 'Paused' : (isPre ? 'Pre-Draft' : liveStatusLabel(rawStatus));
+    el.style.display = '';
   }
   function detectLive(){
     if (cfg.isGuest || !cfg.leagueId){
@@ -2894,7 +2907,7 @@ _DRAFT_ROOM_HTML = r"""
         updateDraftBanner();
         document.getElementById('drUndo').style.display = 'none';
         document.getElementById('drLiveBadge').style.display = isDrafting ? '' : 'none';
-        document.getElementById('drUpcomingBadge').style.display = (!isDrafting && !isComplete) ? '' : 'none';
+        _setStatusBadge(isDrafting, isComplete, String(d.status));
         if (isComplete){
           showCompleteSidebar();
         } else {
@@ -2932,9 +2945,7 @@ _DRAFT_ROOM_HTML = r"""
       return;
     }
     el.classList.remove('is-syncing');
-    var nextIn = Math.max(0, Math.ceil((_pollNextAt - Date.now()) / 1000));
-    el.innerHTML = '<span class="dr-poll-dot"></span>Updated ' + (_fmtAgo(_pollLastAt) || '&mdash;')
-      + (nextIn > 0 ? ' &middot; next in ' + nextIn + 's' : '');
+    el.innerHTML = '<span class="dr-poll-dot"></span>' + (_fmtAgo(_pollLastAt) || '&mdash;');
   }
   // In-page draft banner. Two states: a countdown when a connected draft is within
   // 15 min of its scheduled start, and a "live now" bar while it's drafting. Both
@@ -2955,31 +2966,19 @@ _DRAFT_ROOM_HTML = r"""
     if (!el) return;
     // Determine which banner (if any) applies.
     var mode = 'none';
-    if (state && state.mode === 'live' && !state.isComplete){
-      if (state.isDrafting) mode = 'live';
-      else {
-        var st = state.startTime || 0, ms0 = st ? st - Date.now() : 0;
-        if (st && ms0 > 0 && ms0 <= _START_WINDOW_MS) mode = 'upcoming';
-      }
+    if (state && state.mode === 'live' && !state.isComplete && !state.isDrafting){
+      var st = state.startTime || 0, ms0 = st ? st - Date.now() : 0;
+      if (st && ms0 > 0 && ms0 <= _START_WINDOW_MS) mode = 'upcoming';
     }
     if (mode === 'none'){ el.style.display = 'none'; el.removeAttribute('data-bk'); return; }
-    var onClock = mode === 'live' && isMyPick(state.current);
-    var shellKey = mode + (onClock ? ':otc' : '');
-    if (el.getAttribute('data-bk') !== shellKey){
-      el.setAttribute('data-bk', shellKey);
+    if (el.getAttribute('data-bk') !== mode){
+      el.setAttribute('data-bk', mode);
       var url = sleeperDraftUrl();
       var joinBtn = url ? '<a class="dr-banner-join" href="' + url + '" target="_blank" rel="noopener">Open in Sleeper <i class="fa-solid fa-arrow-right-long"></i></a>' : '';
-      if (mode === 'live'){
-        el.className = 'dr-start-banner is-live';
-        el.innerHTML = '<span class="dr-banner-ic dr-banner-ic-live"><i class="fa-solid fa-bolt"></i></span>'
-          + '<div class="dr-banner-txt"><b>Your draft is live' + (onClock ? ' &ndash; you&rsquo;re on the clock' : '') + '</b>'
-          + '<span>Make your picks in Sleeper &middot; this board updates as they come in.</span></div>' + joinBtn;
-      } else {
-        el.className = 'dr-start-banner';
-        el.innerHTML = '<span class="dr-banner-ic"><i class="fa-solid fa-calendar-days"></i></span>'
-          + '<div class="dr-banner-txt"><b>Your draft starts in <span class="dr-start-cd"></span></b>'
-          + '<span>Get your board ready - the pick board goes live automatically.</span></div>' + joinBtn;
-      }
+      el.className = 'dr-start-banner';
+      el.innerHTML = '<span class="dr-banner-ic"><i class="fa-solid fa-calendar-days"></i></span>'
+        + '<div class="dr-banner-txt"><b>Your draft starts in <span class="dr-start-cd"></span></b>'
+        + '<span>Get your board ready - the pick board goes live automatically.</span></div>' + joinBtn;
     }
     el.style.display = '';
     // Per-tick: refresh only the countdown number (don't clobber the button).
@@ -2999,10 +2998,14 @@ _DRAFT_ROOM_HTML = r"""
     // Poll faster as a scheduled start approaches (or just passed) so a connected
     // pre-draft flips to live within a couple seconds of the draft actually
     // starting, instead of waiting out the normal cadence.
-    if (state && state.mode === 'live' && state.isDrafting === false && !state.isComplete && state.startTime){
-      var toStart = state.startTime - Date.now();
-      if (toStart <= 120000 && toStart > -1200000) ms = 1500;  // 2 min before -> 20 min overdue
-      else if (toStart <= 600000 && toStart > 0) ms = 3000;    // within 10 min of start
+    if (state && state.mode === 'live' && !state.isComplete){
+      if (state.isDrafting){
+        ms = 2000;  // active draft: poll every 2s so picks surface quickly
+      } else if (state.startTime){
+        var toStart = state.startTime - Date.now();
+        if (toStart <= 60000 && toStart > -900000) ms = 5000;    // 1 min before -> 15 min after
+        else if (toStart <= 300000 && toStart > 0) ms = 30000;   // within 5 min of start
+      }
     }
     _pollNextAt = Date.now() + ms;
     pollTimer = setTimeout(pollOnce, ms);
@@ -3040,7 +3043,7 @@ _DRAFT_ROOM_HTML = r"""
           var isDrafting = String(d.status) === 'drafting';
           state.isDrafting = isDrafting;
           document.getElementById('drLiveBadge').style.display = isDrafting ? '' : 'none';
-          document.getElementById('drUpcomingBadge').style.display = (!isDrafting && String(d.status) !== 'complete') ? '' : 'none';
+          _setStatusBadge(isDrafting, String(d.status) === 'complete', String(d.status));
           _setUpcomingMode(!isDrafting && String(d.status) !== 'complete');
           if (isDrafting && (!prevDrafting || state.current !== prevCurrent)) startPickTimer();
           if (String(d.status) === 'complete'){
@@ -3067,16 +3070,7 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   function _setUpcomingMode(upcoming){
-    // Hide Queue tab and draft buttons when draft hasn't started yet.
-    var qTab = document.querySelector('#drSideTabs [data-stab="queue"]');
-    if (qTab) qTab.style.display = upcoming ? 'none' : '';
-    if (upcoming){
-      if (sideTab === 'queue') sideTab = 'best';
-      // Sync active class for all tabs so the hidden queue never stays highlighted.
-      document.querySelectorAll('#drSideTabs .otc-main-tab').forEach(function(t){
-        t.classList.toggle('is-active', t.getAttribute('data-stab') === sideTab);
-      });
-    }
+    // Queue tab stays visible in pre-draft so users can build their target list.
   }
 
   // ── Pick countdown timer ────────────────────────────────────────────────────

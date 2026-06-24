@@ -346,10 +346,9 @@ def get_draft(draft_id: str) -> dict:
     return fetch_json(f"/draft/{draft_id}") or {}
 
 
-@ttl_cache(ttl=3)
+@ttl_cache(ttl=1)
 def get_draft_picks(draft_id: str) -> List[dict]:
-    """Live/completed picks for a Sleeper draft. Short TTL (< the board's poll
-    interval) so new picks surface promptly instead of being served stale."""
+    """Live/completed picks for a Sleeper draft. 1s TTL so every 2s poll sees fresh data."""
     return fetch_json(f"/draft/{draft_id}/picks") or []
 
 
