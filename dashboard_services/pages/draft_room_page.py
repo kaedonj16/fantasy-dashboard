@@ -179,13 +179,13 @@ _DRAFT_ROOM_HTML = r"""
         </div>
         <div class="dr-side-head" id="drBestControls">
           <div class="dr-side-controls">
-            <input id="drSearch" type="search" placeholder="Search…" autocomplete="off">
             <select id="drBaSort">
               <option value="value">Value</option>
               <option value="adp" selected>ADP</option>
               <option value="steals">Steals</option>
               <option value="ps">Pick Score</option>
             </select>
+            <input id="drSearch" type="search" placeholder="Search…" autocomplete="off">
           </div>
           <div class="dr-pos-filters" id="drPosFilters">
             <button class="dr-pos active" data-pos="ALL">All</button>
@@ -434,7 +434,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-grade-meta { flex: 1; min-width: 0; }
   .dr-grade-pace { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
   .dr-gbar-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
-  .dr-gbar-lbl { font-size: 10px; color: var(--text-muted); width: 50px; flex-shrink: 0; }
+  .dr-gbar-lbl { font-size: 10px; color: var(--text-muted); width: 76px; flex-shrink: 0; }
   .dr-gbar { flex: 1; height: 6px; border-radius: 999px; background: rgba(127,127,127,.18); overflow: hidden; }
   .dr-gbar-fill { height: 100%; border-radius: 999px; background: var(--accent,#38bdf8); }
   /* player preview */
@@ -467,7 +467,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-side-title { font-size: 14px; font-weight: 800; color: var(--text); }
   .dr-side-controls { display: flex; gap: 6px; }
   .dr-side-controls input { flex: 1; min-width: 0; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; }
-  .dr-side-controls select { padding: 7px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; }
+  .dr-side-controls select { padding: 7px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; flex-shrink: 0; max-width: 110px; }
   .dr-pos-filters { display: flex; gap: 4px; flex-wrap: wrap; }
   .dr-pos { font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg); color: var(--text-muted); cursor: pointer; }
   .dr-pos.active { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: #fff; }
@@ -1165,7 +1165,9 @@ _DRAFT_ROOM_HTML = r"""
   }
   function valOf(p){
     if (state.type === 'redraft') return redraftVal(p);
-    return state.sf ? (p.sf_value || p.value || 0) : (p.value || 0);
+    // p.val is the stripped pick-object field (stored by commitPick/applyLivePicks);
+    // p.value is the full player-object field from /api/league-players.
+    return state.sf ? (p.sf_value || p.value || p.val || 0) : (p.value || p.val || 0);
   }
   function adpOf(p){
     // Sleeper community ADP (server-side, aggregated from real Sleeper drafts).
@@ -1248,7 +1250,7 @@ _DRAFT_ROOM_HTML = r"""
   // Spread of a player's real draft slot around their ADP. Tight at the very top
   // of the board (consensus picks barely move) and widens deeper, where ADP is
   // noisier. Drives how far a player realistically slides from their ADP.
-  function simSigma(a){ return Math.max(0.5, Math.min(10, 0.35 + 0.085 * a)); }
+  function simSigma(a){ return Math.max(0.5, Math.min(10, 0.35 + 0.055 * a)); }
   function simPick(){
     var pool = availablePool();
     if (!pool.length) return null;
@@ -1256,6 +1258,8 @@ _DRAFT_ROOM_HTML = r"""
     // and weight them by how likely they are to be taken at THIS exact pick. An
     // ADP 1.1 player has a tight curve so he goes ~1 nearly every time, while an
     // ADP 2.8 player (wider curve, already past pick 1) splits across 2, 3 and 4.
+    // After a player slides PAST their ADP, the weight uses inverse-linear decay
+    // instead of Gaussian so it never bottoms out - urgency grows, not vanishes.
     var pn = state.current;
     var slot = slotOnClock(pn, state.teams, state.order);
     var counts = teamCounts(slot), targets = posTargets();
@@ -1263,8 +1267,21 @@ _DRAFT_ROOM_HTML = r"""
     pool.forEach(function(p){
       var a = simAdp(p);
       var sigma = simSigma(a);
-      var z = (pn - a) / sigma;
-      var w = Math.exp(-0.5 * z * z);              // peak when the pick reaches the ADP
+      var diff = pn - a;
+      var w;
+      if (diff <= 0) {
+        var z = diff / sigma;
+        w = Math.exp(-0.5 * z * z);               // peak when the pick reaches the ADP
+      } else {
+        // Past ADP: urgency grows so players don't slide indefinitely.
+        // Hard cap: once a player is maxSlide picks overdue they dominate the pick.
+        var maxSlide = Math.max(1, Math.round(sigma * 2));
+        if (diff >= maxSlide) {
+          w = 5.0;                                 // overdue - near-certain next pick
+        } else {
+          w = 1.0 / (1.0 + 0.12 * diff);          // inverse-linear ramp up to cap
+        }
+      }
       // Need-awareness: nudge for roster fit without overriding ADP.
       var pos = (p.position||'').toUpperCase();
       var t = targets[pos] || 0, have = counts[pos] || 0;
@@ -1438,7 +1455,11 @@ _DRAFT_ROOM_HTML = r"""
     }
     var lt = state.sf ? 'sf' : '1qb';
     var sz = String(state.teams);
-    var tbl = (tierThresholds[lt] || {})[sz] || (tierThresholds['1qb'] || {})['10'] || [];
+    var tbl = (tierThresholds[lt] || {})[sz]
+           || (tierThresholds[lt] || {})['12']
+           || (tierThresholds['1qb'] || {})['12']
+           || (tierThresholds['1qb'] || {})['10']
+           || [];
     if (!tbl.length) return null;
     var v = valOf(p);
     for (var i = 0; i < tbl.length; i++){ if (v >= tbl[i]) return i + 1; }
@@ -1706,6 +1727,9 @@ _DRAFT_ROOM_HTML = r"""
   function clamp01(x){ return x < 0 ? 0 : (x > 1 ? 1 : x); }
   function pickScore(p, maxVal, counts){
     var pos = (p.position || '').toUpperCase();
+    // Free agents have no current team and no real draft value for any format.
+    var teamVal = (p.team || '').trim().toUpperCase();
+    if (!teamVal || teamVal === 'FA') return 2;
     var adp = adpOf(p);
 
     // Blend DB dynasty value with ADP-implied quality so market consensus
@@ -1801,6 +1825,18 @@ _DRAFT_ROOM_HTML = r"""
       if (p.team && myRBTeams[p.team]) s = Math.min(1, s + 0.15);
     }
 
+    // Depth normalization: re-anchor the 0-100 scale relative to what is
+    // achievable at this pick slot. The pool shrinks as the draft progresses
+    // so the best available player at pick 228/240 should score ~70-75, not 42.
+    // par is 1.0 at pick 1 and falls to ~0.32 at the last pick, so dividing
+    // by it rescales late-pick scores upward without affecting early picks.
+    var _tot = (state.teams || 12) * (state.rounds || 16);
+    if (_tot > 1){
+      var _depth = Math.min(0.98, (state.current - 1) / _tot);
+      var _par   = Math.max(0.30, 1.0 - _depth * 0.72);
+      s = s / _par;
+    }
+
     return Math.round(clamp01(s) * 100);
   }
   // How many players remain in this player's (position|tier) bucket.
@@ -1860,7 +1896,7 @@ _DRAFT_ROOM_HTML = r"""
     opts = opts || {};
     var adp = adpOf(p);
     var ps = pickScoreFor(p);
-    var sub = (opts.sub != null) ? opts.sub : (adp != null ? 'ADP ' + Number(adp).toFixed(1) : '');
+    var sub = adp != null ? 'ADP ' + Number(adp).toFixed(1) : '';
     var reasonLine = opts.reason ? '<div class="dr-ba-reason">' + esc(opts.reason) + '</div>' : '';
     var waitLine = opts.wait
       ? '<div class="dr-ba-wait">&#8987; Can wait: ' + opts.wait.prob + '% there at #' + opts.wait.pn + '</div>'
@@ -2073,7 +2109,7 @@ _DRAFT_ROOM_HTML = r"""
       }
       if (countsSoFar[pos] != null) countsSoFar[pos]++;
       if (counts[pos] != null) counts[pos]++;
-      picks.push({ id: m.p.id, pos: pos, ps: ps,
+      picks.push({ id: m.p.id, pos: pos, ps: ps, pn: m.pn,
         val: full ? valOf(full) : (m.p.val || 0), ppg: full ? ppgOf(full) : null });
     });
     var psVals = picks.map(function(x){ return x.ps; }).filter(function(v){ return v != null; });
@@ -2099,11 +2135,25 @@ _DRAFT_ROOM_HTML = r"""
     });
     var coverage = slots.length ? filled / slots.length : 0;
 
-    // 1) Starter-weighted value: starters weigh 1.0, bench 0.5.
-    var wSum = 0, wTot = 0;
-    picks.forEach(function(x){ if (x.ps == null) return; var w = starterIds[String(x.id)] ? 1.0 : 0.5; wSum += x.ps * w; wTot += w; });
-    var wAvgPs = wTot > 0 ? wSum / wTot : avgPs;
-    var valuePts = wAvgPs != null ? Math.round(clamp01(wAvgPs / 100) * 35) : 17;
+    // 1) Starter quality: round-weighted average PS of starting-lineup picks only.
+    // Bench picks are excluded so deep startup drafts aren't penalized for filler.
+    // Picks are weighted by 1/sqrt(round) so a round-1 starter counts ~4.5x more
+    // than a round-20 starter - reflecting that early picks are harder to get right
+    // and define the team. PS itself is already depth-normalized by pickScore, so
+    // this weight purely captures the roster-impact premium of early picks.
+    var _nTeams = state.teams || 12;
+    var _wSum = 0, _wTot = 0;
+    picks.forEach(function(x){
+      if (!starterIds[String(x.id)] || x.ps == null) return;
+      var _round = Math.max(1, Math.ceil((x.pn || 1) / _nTeams));
+      // W(r) = 1/r^0.75 — power law backed by Chase Stuart's 31-year NFL AV
+      // regression (k=0.67) with a slight upward adjustment for fantasy
+      // where early picks matter most. k=0.60: R1=1.0, R2=0.66, R5=0.35.
+      var _w = 1.0 / Math.pow(_round, 0.60);
+      _wSum += x.ps * _w; _wTot += _w;
+    });
+    var starterAvgPs = _wTot > 0 ? _wSum / _wTot : avgPs;
+    var valuePts = starterAvgPs != null ? Math.round(clamp01(starterAvgPs / 100) * 35) : 17;
 
     // 2) Starting-lineup strength vs a league-average team. Projected PPG leads.
     //    Redraft is now-focused -> pure projected PPG. Startup is now + future ->
@@ -2635,13 +2685,6 @@ _DRAFT_ROOM_HTML = r"""
     for (var i = 0; i < Math.min(pool.length, 200); i++){
       var p = pool[i];
       var opts = {};
-      if (sortBy === 'steals'){
-        var d = steal(p);
-        if (d > 0) opts.sub = '+' + Math.round(d) + ' vs ADP';
-      }
-      if (sortBy === 'ps' && p._ps != null){
-        opts.sub = 'PS ' + p._ps;
-      }
       if (nextPick){
         var prob = availProb(p, nextPick);
         if (prob != null && prob >= 40) opts.availAt = { pn: nextPick, prob: prob };
@@ -2699,20 +2742,33 @@ _DRAFT_ROOM_HTML = r"""
         + gradeBars(g)
       : '';
 
-    // Report card stats: proj PPG, tier captures, avg pick score
+    // Report card stats: proj PPG, tier captures, pick score
     var sumProjTotal = 0, sumProjCount = 0;
-    var sumT12 = 0, sumPsTotal = 0, sumPsCount = 0;
+    var sumT12 = 0, sumAllPsTotal = 0, sumAllPsCount = 0, sumStarterPsTotal = 0, sumStarterPsCount = 0;
+    // Build a set of starter IDs from the already-computed starters array.
+    var _sumStarterSet = {};
+    starters.forEach(function(s){ if (s.p) _sumStarterSet[String(s.p.id)] = true; });
     mine.forEach(function(p){
       var _ppgv = p.ppg != null ? Number(p.ppg) : (p.proj_ppg != null ? Number(p.proj_ppg) : null); if (_ppgv != null){ sumProjTotal += _ppgv; sumProjCount++; }
-      var t = tierOf(p); if (t != null && t <= 2) sumT12++;
-      var ps = p.ps; if (ps != null){ sumPsTotal += ps; sumPsCount++; }
+      var _fp = playersById[String(p.id)] || p;
+      var t = tierOf(_fp); if (t != null && t <= 2) sumT12++;
+      var ps = p.ps;
+      if (ps != null){ sumAllPsTotal += ps; sumAllPsCount++; }
+      if (_sumStarterSet[String(p.id)] && ps != null){ sumStarterPsTotal += ps; sumStarterPsCount++; }
     });
     var statsHtml = '';
     if (mine.length){
       statsHtml = '<div class="dr-sum-stats">';
       if (sumProjCount >= 2) statsHtml += '<div class="dr-sum-stat"><div class="dr-sum-stat-v">' + sumProjTotal.toFixed(1) + '</div><div class="dr-sum-stat-l">Proj PPG</div></div>';
       if (state.type !== 'redraft') statsHtml += '<div class="dr-sum-stat"><div class="dr-sum-stat-v">' + sumT12 + '</div><div class="dr-sum-stat-l">T1-2 Picks</div></div>';
-      if (sumPsCount >= 2) statsHtml += '<div class="dr-sum-stat"><div class="dr-sum-stat-v">' + Math.round(sumPsTotal / sumPsCount) + '</div><div class="dr-sum-stat-l">Avg Pick Score</div></div>';
+      // Rookie: avg of all picks (every pick matters equally in a short draft).
+      // Startup/redraft: starter PS only - bench picks in long drafts have inherently
+      // low PS and drag down the avg even when your starters are elite.
+      if (state.type === 'rookie'){
+        if (sumAllPsCount >= 1) statsHtml += '<div class="dr-sum-stat"><div class="dr-sum-stat-v">' + Math.round(sumAllPsTotal / sumAllPsCount) + '</div><div class="dr-sum-stat-l">Avg Pick Score</div></div>';
+      } else {
+        if (sumStarterPsCount >= 2) statsHtml += '<div class="dr-sum-stat"><div class="dr-sum-stat-v">' + Math.round(sumStarterPsTotal / sumStarterPsCount) + '</div><div class="dr-sum-stat-l">Starter PS</div></div>';
+      }
       statsHtml += '</div>';
     }
 
