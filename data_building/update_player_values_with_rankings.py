@@ -42,31 +42,49 @@ def _load_fc_redraft_values() -> dict[str, tuple[float | None, float | None]]:
 
 def _normalize_redraft_values(
     fc_redraft: dict[str, tuple[float | None, float | None]],
-    pos_map: dict[str, str],
+    df: "pd.DataFrame",
 ) -> dict[str, tuple[float | None, float | None]]:
     """
     Normalize raw FantasyCalc redraft values (0-10000 scale) to the site's
-    0-999.9 scale using the same top-5 anchor logic as dynasty values:
-    scale the board so the mean of the top-5 non-QB players = 999.9.
+    0-999.9 scale using the same top-5 anchor logic as dynasty values.
+
+    The anchor players are chosen by the site's dynasty value rank (top-5
+    non-QB skill positions), not by raw FC redraft rank. Using FC redraft rank
+    would inflate the anchor whenever rookies or other players have artificially
+    high FC redraft values, pushing the established elite below 999.9.
 
     Only the 1QB value is scaled here; the SF value is recomputed per-player
-    from the normalized 1QB value using the dynasty SF/1QB ratio, so it
-    inherits the same scale automatically.
+    from the normalized 1QB value using the dynasty SF/1QB ratio.
     """
     _ANCHOR_N = 5
     _NON_QB = {"RB", "WR", "TE"}
 
-    top5 = sorted(
-        [v for pid, (v, _) in fc_redraft.items()
-         if v is not None and pos_map.get(pid, "").upper() in _NON_QB],
-        reverse=True,
-    )[:_ANCHOR_N]
+    # Rank players by dynasty value and pick the top-N non-QB as the anchor.
+    # These are the known-elite players whose redraft values should sit near
+    # 999.9, regardless of what FC assigns to unproven prospects.
+    anchor_ids = (
+        df[df["position"].str.upper().isin(_NON_QB)]
+        .nlargest(_ANCHOR_N, "value")["id"]
+        .astype(str)
+        .tolist()
+    )
 
-    if not top5:
+    anchor_vals = [
+        fc_redraft[pid][0]
+        for pid in anchor_ids
+        if pid in fc_redraft and fc_redraft[pid][0] is not None
+    ]
+
+    if not anchor_vals:
+        print("[update_player_values] Redraft anchor: no anchor players found, skipping normalization")
         return fc_redraft
 
-    scale = 999.9 / (sum(top5) / len(top5))
-    print(f"[update_player_values] Redraft anchor: top-5 avg={sum(top5)/len(top5):.1f}, scale={scale:.5f}")
+    avg = sum(anchor_vals) / len(anchor_vals)
+    scale = 999.9 / avg
+    print(
+        f"[update_player_values] Redraft anchor: {len(anchor_vals)} dynasty-top players, "
+        f"avg FC redraft={avg:.1f}, scale={scale:.5f}"
+    )
 
     return {
         pid: (round(v1 * scale, 2) if v1 is not None else None, sf_raw)
@@ -201,11 +219,11 @@ def update_player_values_with_rankings() -> int:
     # Load historical ranks from 7 days ago for movement indicators
     hist_ranks = _load_historical_ranks(date.today() - timedelta(days=7))
 
-    # Load FC redraft values and normalize to the site's 0-999.9 scale
-    # using the same top-5 non-QB anchor normalization as dynasty values.
+    # Load FC redraft values and normalize to the site's 0-999.9 scale.
+    # Anchor players are selected by dynasty rank so established elites
+    # sit near 999.9 regardless of inflated FC values for unproven rookies.
     fc_redraft = _load_fc_redraft_values()
-    _pos_map = {str(row["id"]): str(row.get("position") or "") for _, row in df.iterrows()}
-    fc_redraft = _normalize_redraft_values(fc_redraft, _pos_map)
+    fc_redraft = _normalize_redraft_values(fc_redraft, df)
 
     # Convert back to list of dicts
     updated_players = []
