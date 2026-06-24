@@ -440,11 +440,15 @@ def get_nfl_scores_for_date(game_date: str) -> dict:
         return data.get("body") or {}
     except requests.exceptions.HTTPError as e:
         _tank01_breaker.record_failure()
-        if e.response.status_code == 429:
+        _status = getattr(e.response, "status_code", None)
+        if _status == 429:
             logger.warning("[Tank01] Rate limited - getNFLScoresOnly %s", game_date)
             return {}
-        logger.error("[Tank01] HTTP %s - getNFLScoresOnly %s", e.response.status_code, game_date)
-        raise
+        # Scores are non-critical page furniture; a 403/4xx/5xx from the
+        # upstream provider must not bubble up and 500 the whole dashboard.
+        # Log and degrade gracefully to an empty scoreboard.
+        logger.error("[Tank01] HTTP %s - getNFLScoresOnly %s", _status, game_date)
+        return {}
     except requests.exceptions.RequestException as e:
         logger.error("[Tank01] Request error - getNFLScoresOnly %s: %s", game_date, e)
         _tank01_breaker.record_failure()

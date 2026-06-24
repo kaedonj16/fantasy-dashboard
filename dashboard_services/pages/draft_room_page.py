@@ -71,7 +71,7 @@ _DRAFT_ROOM_HTML = r"""
               <option value="redraft">Redraft</option>
             </select>
           </div>
-          <div class="dr-field"><span>Scoring</span>
+          <div class="dr-field"><span>QB Format</span>
             <select id="drSf">
               <option value="0">1QB</option>
               <option value="1">Superflex</option>
@@ -82,6 +82,20 @@ _DRAFT_ROOM_HTML = r"""
               <option value="snake">Snake</option>
               <option value="linear">Linear</option>
               <option value="3rr">3rd Round Reversal</option>
+            </select>
+          </div>
+          <div class="dr-field"><span>PPR</span>
+            <select id="drPpr">
+              <option value="1" selected>Full PPR</option>
+              <option value="0.5">Half PPR</option>
+              <option value="0">Standard</option>
+            </select>
+          </div>
+          <div class="dr-field"><span>TE Premium</span>
+            <select id="drTep">
+              <option value="0" selected>None</option>
+              <option value="0.5">+0.5 PPR</option>
+              <option value="1">+1.0 PPR</option>
             </select>
           </div>
         </div>
@@ -635,6 +649,14 @@ _DRAFT_ROOM_HTML = r"""
     display:flex; align-items:center; justify-content:center; padding:0; flex-shrink:0; }
   .dr-step-btn:hover { border-color:var(--accent,#38bdf8); color:var(--accent,#38bdf8); }
   .dr-step-val { font-size:14px; font-weight:800; color:var(--text); min-width:18px; text-align:center; }
+  .dr-step-val-ro { font-size:14px; font-weight:800; color:var(--text-muted); min-width:18px; text-align:center; }
+  .dr-roster-src { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .dr-roster-src-tag { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.04em;
+    padding:2px 8px; border-radius:999px; background:rgba(56,189,248,.14); color:var(--accent,#38bdf8); }
+  .dr-roster-src-custom { background:rgba(168,85,247,.14); color:#a855f7; }
+  .dr-roster-src-btn { font-size:11px; font-weight:700; color:var(--text-muted); background:none; border:1px solid var(--border);
+    border-radius:6px; padding:2px 9px; cursor:pointer; line-height:1.6; }
+  .dr-roster-src-btn:hover { color:var(--accent,#38bdf8); border-color:var(--accent,#38bdf8); }
   /* ── Draft capital (setup) ── */
   .dr-cap-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
   .dr-cap-count { font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; }
@@ -820,6 +842,7 @@ _DRAFT_ROOM_HTML = r"""
   var simStarted = false;  // CPU picks only run once the user hits Start Draft
   var sideTab = 'best';    // best | rec | needs | runs
   var _setupRoster = null; // roster config built on setup page
+  var _rosterMode  = 'auto'; // 'auto' = use league/defaults locked; 'custom' = editable steppers
   var _setupOwned = null;  // claimed picks (pickNumber -> true) built on setup page
   var _setupOwnedSig = ''; // staleness signature for _setupOwned
   var _capAddRound = null; // round whose inline slot picker is open (or null)
@@ -981,45 +1004,109 @@ _DRAFT_ROOM_HTML = r"""
     if (lg){
       // Keep K/DEF only for redraft; dynasty/rookie boards skip them.
       if (!rd){ lg.K = 0; lg.DEF = 0; }
+      // Reconcile with the chosen QB format: a Superflex draft always carries an
+      // SF slot and a regular FLEX (superflex is generally just one extra spot),
+      // and a 1QB draft drops the SF slot. The league shape only seeds defaults.
+      if (sf){ if (!lg.SF) lg.SF = 1; if (!lg.FLEX) lg.FLEX = 1; }
+      else   { lg.SF = 0; }
       return lg;
     }
     return { QB:1, SF:sf?1:0, RB:2, WR:3, TE:1, FLEX:1,
              K:rd?1:0, DEF:rd?1:0, BN:rd?5:7 };
   }
 
+  // Helper: reconcile a raw roster map for the chosen QB format and return a
+  // fresh copy (does not mutate the input).
+  function _reconcileRoster(r, sf, rd){
+    var out = {};
+    ['QB','SF','RB','WR','TE','FLEX','K','DEF','BN'].forEach(function(k){ out[k] = r[k] || 0; });
+    if (sf){ if (!out.SF) out.SF = 1; if (!out.FLEX) out.FLEX = 1; }
+    else   { out.SF = 0; }
+    if (!rd){ out.K = 0; out.DEF = 0; }
+    return out;
+  }
+
   function renderSetupRoster(){
     var sf = document.getElementById('drSf').value === '1';
     var rd = document.getElementById('drType').value === 'redraft';
-    if (!_setupRoster || _setupRoster._sf !== sf || _setupRoster._rd !== rd){
-      var base = defaultRoster(sf, rd);
-      base._sf = sf; base._rd = rd;
-      _setupRoster = base;
+    var leagueRaw = rosterFromLeague();   // null when no league connected
+    var hasLeague = !!leagueRaw;
+
+    // In auto mode always re-seed from league (or built-in defaults) so the
+    // roster reflects format changes (SF toggle, type change).
+    if (_rosterMode === 'auto' || !_setupRoster){
+      var seed = hasLeague ? _reconcileRoster(leagueRaw, sf, rd) : defaultRoster(sf, rd);
+      seed._sf = sf; seed._rd = rd;
+      _setupRoster = seed;
+    } else if (_setupRoster._sf !== sf || _setupRoster._rd !== rd){
+      // Format changed while in custom mode: reconcile the existing custom config.
+      var rec = _reconcileRoster(_setupRoster, sf, rd);
+      rec._sf = sf; rec._rd = rd;
+      _setupRoster = rec;
     }
+
+    var locked = hasLeague && _rosterMode === 'auto';
+
     var rows = [
       { key:'QB',   label:'QB' },
-      { key:'SF',   label:'SF',   hide: !sf },
+      { key:'SF',   label:'Superflex', hide: !sf },
       { key:'RB',   label:'RB' },
       { key:'WR',   label:'WR' },
       { key:'TE',   label:'TE' },
       { key:'FLEX', label:'FLEX' },
-      { key:'K',    label:'K',    hide: !rd },
-      { key:'DEF',  label:'DEF',  hide: !rd },
+      { key:'K',    label:'K' },
+      { key:'DEF',  label:'DEF' },
       { key:'BN',   label:'Bench' }
     ];
-    var html = '<div class="dr-setup-roster">';
+
+    // Source badge + mode-toggle button at the top.
+    var srcHtml = '';
+    if (hasLeague){
+      if (locked){
+        srcHtml = '<div class="dr-roster-src">'
+          + '<span class="dr-roster-src-tag">League settings</span>'
+          + '<button type="button" class="dr-roster-src-btn" id="drRosterCustomize">Customize</button>'
+          + '</div>';
+      } else {
+        srcHtml = '<div class="dr-roster-src">'
+          + '<span class="dr-roster-src-tag dr-roster-src-custom">Custom</span>'
+          + '<button type="button" class="dr-roster-src-btn" id="drRosterReset">Reset to league</button>'
+          + '</div>';
+      }
+    }
+
+    var html = '<div class="dr-setup-roster">' + srcHtml;
     rows.forEach(function(r){
       if (r.hide) return;
       var val = _setupRoster[r.key] || 0;
-      html += '<div class="dr-srow">'
-        + '<span class="dr-srow-label">' + r.label + '</span>'
-        + '<div class="dr-stepper">'
-        + '<button type="button" class="dr-step-btn" data-key="' + r.key + '" data-d="-1">&#8722;</button>'
-        + '<span class="dr-step-val">' + val + '</span>'
-        + '<button type="button" class="dr-step-btn" data-key="' + r.key + '" data-d="1">+</button>'
-        + '</div></div>';
+      if (locked){
+        // Read-only: just show the value, no steppers.
+        html += '<div class="dr-srow">'
+          + '<span class="dr-srow-label">' + r.label + '</span>'
+          + '<span class="dr-step-val dr-step-val-ro">' + val + '</span>'
+          + '</div>';
+      } else {
+        html += '<div class="dr-srow">'
+          + '<span class="dr-srow-label">' + r.label + '</span>'
+          + '<div class="dr-stepper">'
+          + '<button type="button" class="dr-step-btn" data-key="' + r.key + '" data-d="-1">&#8722;</button>'
+          + '<span class="dr-step-val">' + val + '</span>'
+          + '<button type="button" class="dr-step-btn" data-key="' + r.key + '" data-d="1">+</button>'
+          + '</div></div>';
+      }
     });
     html += '</div>';
     document.getElementById('drRosterSection').innerHTML = html;
+
+    // Wire the mode-toggle buttons (rendered into innerHTML so must re-attach).
+    var cb = document.getElementById('drRosterCustomize');
+    if (cb) cb.addEventListener('click', function(){
+      _rosterMode = 'custom'; renderSetupRoster();
+    });
+    var rb = document.getElementById('drRosterReset');
+    if (rb) rb.addEventListener('click', function(){
+      _rosterMode = 'auto'; _setupRoster = null; renderSetupRoster();
+    });
   }
 
   // ── Setup: draft capital (claimed picks) ────────────────────────────────────
@@ -1122,10 +1209,32 @@ _DRAFT_ROOM_HTML = r"""
       slot:   Math.min(teams, Math.max(1, parseInt(document.getElementById('drSlot').value, 10) || 1)),
       order:  document.getElementById('drOrder').value,
       roster: _setupRoster || defaultRoster(sf, rd),
+      scoring: readScoring(),
       picks:  {},
       current: 1,
       queue:  []
     };
+  }
+  // Scoring settings from setup (PPR weight + TE premium). These shift the
+  // recommended roster build rather than recomputing raw player values.
+  function readScoring(){
+    var pprEl = document.getElementById('drPpr');
+    var tepEl = document.getElementById('drTep');
+    var ppr = pprEl ? parseFloat(pprEl.value) : 1.0;
+    var tep = tepEl ? parseFloat(tepEl.value) : 0;
+    return { ppr: isNaN(ppr) ? 1.0 : ppr, tep: isNaN(tep) ? 0 : tep };
+  }
+  function scoringCfg(){
+    var s = (state && state.scoring) || {};
+    return { ppr: s.ppr != null ? s.ppr : 1.0, tep: s.tep != null ? s.tep : 0 };
+  }
+  // K/DEF enter the pool only when the roster actually carries those slots
+  // (always true for redraft; opt-in for startup via the setup steppers).
+  function wantsKDef(){
+    if (!state) return false;
+    if (state.type === 'redraft') return true;
+    var rs = state.roster || {};
+    return (rs.K || 0) > 0 || (rs.DEF || 0) > 0;
   }
 
   function startDraft(){
@@ -1154,6 +1263,11 @@ _DRAFT_ROOM_HTML = r"""
     document.getElementById('drMain').style.display = 'none';
     document.getElementById('drSetup').style.display = '';
     var hero = document.getElementById('drHero'); if (hero) hero.style.display = '';
+    // Reflect the active draft's scoring in the setup controls when editing.
+    if (state && state.scoring){
+      var pprEl = document.getElementById('drPpr'); if (pprEl) pprEl.value = String(state.scoring.ppr != null ? state.scoring.ppr : 1);
+      var tepEl = document.getElementById('drTep'); if (tepEl) tepEl.value = String(state.scoring.tep != null ? state.scoring.tep : 0);
+    }
     renderSetupRoster();
     renderSetupCapital();
   }
@@ -1181,7 +1295,7 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   function loadPlayers(){
-    var url = '/api/league-players' + (state.type === 'redraft' ? '?kdef=1' : '');
+    var url = '/api/league-players' + (wantsKDef() ? '?kdef=1' : '');
     fetch(url, { cache: 'no-store' })
       .then(function(r){ return r.json(); })
       .then(function(resp){
@@ -1193,7 +1307,8 @@ _DRAFT_ROOM_HTML = r"""
           var pos = String(p.position || '').toUpperCase();
           if (pos === 'PICK') return false;
           if (state.type === 'rookie') return !!p.is_rookie;
-          if (state.type === 'redraft') return redraftVal(p) > 0 || pos === 'K' || pos === 'DEF';
+          if (pos === 'K' || pos === 'DEF') return wantsKDef();
+          if (state.type === 'redraft') return redraftVal(p) > 0;
           return ['QB','RB','WR','TE'].indexOf(pos) >= 0 || p.is_rookie;
         });
         // Derive a stable redraft ADP rank (1 = top redraft value).
@@ -1382,6 +1497,7 @@ _DRAFT_ROOM_HTML = r"""
         type: prev.type, teams: prev.teams, rounds: prev.rounds, sf: !!prev.sf,
         slot: prev.slot, order: prev.order,
         roster: prev.roster || defaultRoster(!!prev.sf, prev.type === 'redraft'),
+        scoring: prev.scoring || scoringCfg(),
         picks: {}, current: 1, queue: [],
         owned: Object.keys(ownedCopy).length ? ownedCopy : defaultOwned(),
         mode: 'mock', simStarted: false
@@ -1416,12 +1532,22 @@ _DRAFT_ROOM_HTML = r"""
   function posTargets(){
     var rs = (state && state.roster) || defaultRoster();
     var flex = rs.FLEX||0, sf = rs.SF||0, bn = rs.BN||0;
+    // Targets are depth SUGGESTIONS, not hard needs. A deep startup bench (drafts
+    // run 20+ rounds) shouldn't imply you "need" 8 RBs or 10 WRs, so the bench
+    // contribution is capped and each position is held to a realistic ceiling.
+    var benchEff = Math.min(bn, 7);
     var t = {
-      QB: (rs.QB||0) + sf        + Math.round(bn * 0.10),
-      RB: (rs.RB||0) + flex      + Math.round(bn * 0.35),
-      WR: (rs.WR||0)             + Math.round(bn * 0.40),
-      TE: (rs.TE||0)             + Math.round(bn * 0.15)
+      QB: (rs.QB||0) + sf        + Math.round(benchEff * 0.10),
+      RB: (rs.RB||0) + flex      + Math.round(benchEff * 0.35),
+      WR: (rs.WR||0)             + Math.round(benchEff * 0.40),
+      TE: (rs.TE||0)             + Math.round(benchEff * 0.15)
     };
+    // TE Premium scoring nudges the build toward a second startable TE.
+    var tep = scoringCfg().tep;
+    if (tep > 0) t.TE += 1;
+    // Sane ceilings so the assistant never frames an absurd amount of depth as a need.
+    var cap = { QB: sf ? 3 : 2, RB: 6, WR: 6, TE: tep > 0 ? 3 : 2 };
+    Object.keys(cap).forEach(function(k){ if (t[k] > cap[k]) t[k] = cap[k]; });
     if (rs.K)   t.K   = rs.K;
     if (rs.DEF) t.DEF = rs.DEF;
     return t;
@@ -1825,6 +1951,13 @@ _DRAFT_ROOM_HTML = r"""
       if (p.team && myRBTeams[p.team]) s = Math.min(1, s + 0.15);
     }
 
+    // Scoring-format adjustments: shift recommendations toward the build the
+    // league's scoring actually rewards, without recomputing raw player values.
+    var _sc = scoringCfg();
+    if (_sc.tep > 0 && pos === 'TE') s *= (1 + 0.12 * _sc.tep);   // TE premium lifts TEs
+    if (pos === 'WR' || pos === 'TE'){ if (_sc.ppr >= 1) s *= 1.02; }  // full PPR favors receivers
+    else if (pos === 'RB' && _sc.ppr <= 0) s *= 1.03;                  // standard favors RBs
+
     // Depth normalization: re-anchor the 0-100 scale relative to what is
     // achievable at this pick slot. The pool shrinks as the draft progresses
     // so the best available player at pick 228/240 should score ~70-75, not 42.
@@ -1952,7 +2085,7 @@ _DRAFT_ROOM_HTML = r"""
   function renderSide(){
     _ptc = posTierCounts();
     _repl = computeReplacement();
-    var kdef = (state.type === 'redraft');
+    var kdef = wantsKDef();
     var kbtns = document.querySelectorAll('.dr-pos-kdef');
     for (var i = 0; i < kbtns.length; i++){ kbtns[i].style.display = kdef ? '' : 'none'; }
     var bc = document.getElementById('drBestControls');
@@ -2125,7 +2258,10 @@ _DRAFT_ROOM_HTML = r"""
 
     // ── Startup / redraft: Value 35 / Starters 35 / Construction 30 ──
     // Build the best starting lineup (value desc) to mark starters + slot coverage.
-    var slots = lineupSlots();
+    // K/DEF are excluded from grading: kicker/defense quality is near-random and
+    // shouldn't move a draft grade, so they don't count toward starter PS,
+    // strength, or construction coverage.
+    var slots = lineupSlots().filter(function(s){ return s !== 'K' && s !== 'DEF'; });
     var byVal = picks.slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
     var usedL = {}, starterIds = {}, filled = 0;
     slots.forEach(function(slot){
@@ -3243,8 +3379,8 @@ _DRAFT_ROOM_HTML = r"""
   applyCfgDefaults();
   renderSetupRoster();
   renderSetupCapital();
-  document.getElementById('drSf').addEventListener('change', function(){ _setupRoster = null; renderSetupRoster(); });
-  document.getElementById('drType').addEventListener('change', function(){ _setupRoster = null; renderSetupRoster(); });
+  document.getElementById('drSf').addEventListener('change', function(){ _rosterMode = 'auto'; _setupRoster = null; renderSetupRoster(); });
+  document.getElementById('drType').addEventListener('change', function(){ _rosterMode = 'auto'; _setupRoster = null; renderSetupRoster(); });
   // Any control that changes the pick map resets claimed picks to the slot default.
   ['drTeams','drRounds','drOrder','drSlot'].forEach(function(idn){
     document.getElementById(idn).addEventListener('change', renderSetupCapital);
