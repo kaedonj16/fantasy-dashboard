@@ -783,6 +783,12 @@ _DRAFT_ROOM_HTML = r"""
     padding: 8px 4px; border: 1px solid var(--border); }
   .dr-sum-stat-v { font-size: 17px; font-weight: 900; color: var(--text); line-height: 1; }
   .dr-sum-stat-l { font-size: 9px; color: var(--text-muted); margin-top: 2px; }
+  /* ── Team archetype label ── */
+  .dr-sum-arch { display: flex; align-items: center; justify-content: center; gap: 8px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; margin: 10px 0 6px; }
+  .dr-sum-arch-tag { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--text-muted); background: var(--card-soft, rgba(127,127,127,.12)); padding: 3px 7px; border-radius: 999px; white-space: nowrap; }
+  .dr-sum-arch-label { font-size: 16px; font-weight: 900; color: var(--accent); line-height: 1.1; }
 </style>
 
 <script>
@@ -2061,6 +2067,52 @@ _DRAFT_ROOM_HTML = r"""
     }
     return { score: total, value: valuePts, balance: balancePts, tier: tierPts, count: mine.length, avgPs: avgPs ? Math.round(avgPs) : null };
   }
+  // Classify a startup/redraft build into a recognizable draft archetype based on
+  // positional emphasis, weighting the early picks where strategy is actually set.
+  function teamArchetype(){
+    if (!state || state.type === 'rookie') return null;
+    var mine = [];
+    Object.keys(state.picks).forEach(function(k){
+      var pn = parseInt(k, 10);
+      if (isMyPick(pn)) mine.push({ pn: pn, p: state.picks[k] });
+    });
+    if (mine.length < 3) return null;
+    mine.sort(function(a, b){ return a.pn - b.pn; });
+
+    var counts = { QB:0, RB:0, WR:0, TE:0 };
+    var firstIdx = { QB:-1, RB:-1, WR:-1, TE:-1 };
+    mine.forEach(function(m, i){
+      var pos = (m.p.position || '').toUpperCase();
+      if (counts[pos] != null){ counts[pos]++; if (firstIdx[pos] < 0) firstIdx[pos] = i; }
+    });
+    // "Early" = first 5 picks (or all, if fewer) - that's where build identity lives.
+    var earlyN = Math.min(5, mine.length);
+    var early = { QB:0, RB:0, WR:0, TE:0 };
+    for (var i = 0; i < earlyN; i++){
+      var pos = (mine[i].p.position || '').toUpperCase();
+      if (early[pos] != null) early[pos]++;
+    }
+
+    var label;
+    if (state.sf && early.QB >= 2){
+      label = 'Konami Code';
+    } else if (firstIdx.TE >= 0 && firstIdx.TE <= 1){
+      label = 'TE Premium';
+    } else if (early.RB === 0 && early.WR >= 3){
+      label = 'Zero RB';
+    } else if (early.RB === 1 && firstIdx.RB <= 1 && early.WR >= 2){
+      label = 'Hero RB';
+    } else if (early.RB >= 3){
+      label = 'Robust RB';
+    } else if (early.WR >= 4 || (counts.WR - counts.RB >= 3)){
+      label = 'WR Factory';
+    } else if (early.RB - early.WR >= 2){
+      label = 'Ground & Pound';
+    } else {
+      label = 'Balanced Build';
+    }
+    return { label: label };
+  }
   function gradeLetter(s){
     if (s>=90) return 'A+'; if (s>=85) return 'A'; if (s>=80) return 'A-';
     if (s>=75) return 'B+'; if (s>=70) return 'B'; if (s>=65) return 'B-';
@@ -2092,6 +2144,7 @@ _DRAFT_ROOM_HTML = r"""
     var g = gradeTeam();
     if (g){
       var gSub = (state.type === 'rookie' && g.avgPs != null) ? ('Avg pick score ' + g.avgPs) : '';
+      if (!gSub){ var _ga = teamArchetype(); if (_ga) gSub = _ga.label; }
       html += '<div class="dr-grade-card"><div class="dr-grade-letter">' + gradeLetter(g.score) + '</div>'
         + '<div class="dr-grade-meta">' + (gSub ? '<div class="dr-grade-pace">' + gSub + '</div>' : '')
         + gradeBars(g)
@@ -2570,9 +2623,19 @@ _DRAFT_ROOM_HTML = r"""
       statsHtml += '</div>';
     }
 
+    // Team archetype (startup/redraft only) - identifies the build strategy.
+    var arch = teamArchetype();
+    var archHtml = arch
+      ? '<div class="dr-sum-arch">'
+        + '<span class="dr-sum-arch-tag">Team Archetype</span>'
+        + '<span class="dr-sum-arch-label">' + esc(arch.label) + '</span>'
+        + '</div>'
+      : '';
+
     var html = '<button class="dr-prev-close" id="drSumClose" aria-label="Close">&times;</button>'
       + '<div class="dr-sum-header"><div class="dr-sum-title">Draft Report Card</div>' + gradeHtml + '</div>'
       + statsHtml
+      + archHtml
       + '<div class="dr-sum-section">Starters</div>';
     starters.forEach(function(s){ html += sumRow(s.slot, s.p); });
     html += '<div class="dr-sum-section">Bench</div>';
@@ -2716,6 +2779,7 @@ _DRAFT_ROOM_HTML = r"""
     if (g){
       var gl = gradeLetter(g.score);
       var gp = (state.type === 'rookie' && g.avgPs != null) ? ('Avg pick score ' + g.avgPs) : null;
+      if (!gp){ var _sa = teamArchetype(); if (_sa) gp = _sa.label; }
       ctx.fillStyle = clr.win; ctx.font = 'bold 15px system-ui,Arial,sans-serif';
       ctx.fillText('Grade ' + gl + (gp ? ('  \xb7  ' + gp) : ''), pad, pad + 76);
     }
