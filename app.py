@@ -13236,6 +13236,7 @@ def api_draft_live():
     # (users, traded picks, rosters) that drive slot names / future-pick ownership;
     # those barely change and the board fetches them on connect + a periodic full
     # refresh. This keeps the hot poll path to ~2 upstream calls.
+    roster_positions = settings.get("roster_positions") or []
     if request.args.get("light"):
         return jsonify({
             "status": draft.get("status"),
@@ -13247,6 +13248,7 @@ def api_draft_live():
             "rounds": settings.get("rounds"),
             "order": _order_from_sleeper(draft),
             "draft_order": draft.get("draft_order") or {},
+            "roster_positions": roster_positions,
             "picks": picks,
         })
 
@@ -13300,6 +13302,7 @@ def api_draft_live():
         "order": _order_from_sleeper(draft),
         "draft_order": draft_order,
         "slot_names": slot_names,
+        "roster_positions": roster_positions,
         "picks": picks,
         "traded_picks": traded_picks_out,
         "user_roster_map": user_roster_map,

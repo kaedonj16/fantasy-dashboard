@@ -1299,6 +1299,19 @@ _DRAFT_ROOM_HTML = r"""
     var s = (state && state.scoring) || {};
     return { ppr: s.ppr != null ? s.ppr : 1.0, tep: s.tep != null ? s.tep : 0 };
   }
+  // Convert a Sleeper roster_positions array to the {QB:1, RB:2, ...} map used by state.roster.
+  function _parseRosterPositions(arr){
+    if (!Array.isArray(arr) || !arr.length) return null;
+    var map = {};
+    arr.forEach(function(pos){
+      pos = String(pos || '').toUpperCase();
+      // Normalize Sleeper's SUPER_FLEX to SF and FLEX stays FLEX.
+      if (pos === 'SUPER_FLEX' || pos === 'SFLEX') pos = 'SF';
+      if (!pos || pos === 'DB' || pos === 'LB') return; // skip IDP positions
+      map[pos] = (map[pos] || 0) + 1;
+    });
+    return Object.keys(map).length ? map : null;
+  }
   // K/DEF enter the pool only when the roster actually carries those slots
   // (always true for redraft; opt-in for startup via the setup steppers).
   function wantsKDef(){
@@ -2686,7 +2699,6 @@ _DRAFT_ROOM_HTML = r"""
   function renderNeeds(){
     if (!hasOwned()){ listInto('<div class="dr-empty-note">Set your pick slot to see your team build.</div>'); return; }
     var mine = myPicksList().slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
-    var used = {};
     var html = '';
     var g = gradeTeam();
     if (g){
@@ -2698,13 +2710,33 @@ _DRAFT_ROOM_HTML = r"""
         + '</div></div>';
     }
     html += '<div class="dr-roster">';
-    lineupSlots().forEach(function(slot){
-      var pick = null;
-      for (var i = 0; i < mine.length; i++){ if (!used[i] && slotEligible(slot, mine[i].position)){ pick = mine[i]; used[i] = true; break; } }
-      html += slotRow(slot, pick);
+    var slots = lineupSlots();
+    var assigned = new Array(slots.length).fill(null);
+    var usedIdx = new Array(mine.length).fill(false);
+    // Pass 1: strict position matches (QB→QB, RB→RB, WR→WR, TE→TE, K→K, DEF→DEF)
+    slots.forEach(function(slot, si){
+      if (slot === 'FLEX' || slot === 'SF' || slot === 'BN') return;
+      for (var i = 0; i < mine.length; i++){
+        if (!usedIdx[i] && String(mine[i].position || '').toUpperCase() === slot){ assigned[si] = mine[i]; usedIdx[i] = true; break; }
+      }
     });
+    // Pass 2: FLEX slots (RB/WR/TE overflow)
+    slots.forEach(function(slot, si){
+      if (slot !== 'FLEX') return;
+      for (var i = 0; i < mine.length; i++){
+        if (!usedIdx[i] && slotEligible('FLEX', mine[i].position)){ assigned[si] = mine[i]; usedIdx[i] = true; break; }
+      }
+    });
+    // Pass 3: SF slots (QB that didn't fill a QB slot, or any FLEX-eligible overflow)
+    slots.forEach(function(slot, si){
+      if (slot !== 'SF') return;
+      for (var i = 0; i < mine.length; i++){
+        if (!usedIdx[i] && slotEligible('SF', mine[i].position)){ assigned[si] = mine[i]; usedIdx[i] = true; break; }
+      }
+    });
+    slots.forEach(function(slot, si){ html += slotRow(slot, assigned[si]); });
     var bench = [];
-    for (var i = 0; i < mine.length; i++){ if (!used[i]) bench.push(mine[i]); }
+    for (var i = 0; i < mine.length; i++){ if (!usedIdx[i]) bench.push(mine[i]); }
     html += '<div class="dr-roster-div">Bench</div>';
     if (bench.length){ bench.forEach(function(p){ html += slotRow('BN', p); }); }
     else { html += slotRow('BN', null); }
@@ -2907,7 +2939,8 @@ _DRAFT_ROOM_HTML = r"""
           mode: 'live', isComplete: isComplete, isDrafting: isDrafting, sourceDraftId: draftId,
           pickTimer: parseInt(d.pick_timer) || 0,
           startTime: parseInt(d.start_time) || 0,
-          slotNames: d.slot_names || {}, queue: []
+          slotNames: d.slot_names || {}, queue: [],
+          roster: _parseRosterPositions(d.roster_positions)
         };
         applyLivePicks(d.picks || []);
         // Seed the poll signature so the first poll doesn't redundantly rebuild.
