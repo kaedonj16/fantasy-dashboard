@@ -2748,7 +2748,7 @@ _DRAFT_ROOM_HTML = r"""
   function liveStatusLabel(s){
     s = String(s || '');
     if (s === 'drafting') return 'Live';
-    if (s === 'pre_draft') return 'Pre Draft';
+    if (s === 'pre_draft') return 'Pre-Draft';
     if (s === 'complete') return 'Complete';
     return s.replace(/_/g, ' ');
   }
