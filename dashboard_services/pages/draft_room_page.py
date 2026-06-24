@@ -71,7 +71,7 @@ _DRAFT_ROOM_HTML = r"""
               <option value="redraft">Redraft</option>
             </select>
           </div>
-          <div class="dr-field"><span>Scoring</span>
+          <div class="dr-field"><span>QB Format</span>
             <select id="drSf">
               <option value="0">1QB</option>
               <option value="1">Superflex</option>
@@ -82,6 +82,20 @@ _DRAFT_ROOM_HTML = r"""
               <option value="snake">Snake</option>
               <option value="linear">Linear</option>
               <option value="3rr">3rd Round Reversal</option>
+            </select>
+          </div>
+          <div class="dr-field"><span>PPR</span>
+            <select id="drPpr">
+              <option value="1" selected>Full PPR</option>
+              <option value="0.5">Half PPR</option>
+              <option value="0">Standard</option>
+            </select>
+          </div>
+          <div class="dr-field"><span>TE Premium</span>
+            <select id="drTep">
+              <option value="0" selected>None</option>
+              <option value="0.5">+0.5 PPR</option>
+              <option value="1">+1.0 PPR</option>
             </select>
           </div>
         </div>
@@ -981,6 +995,11 @@ _DRAFT_ROOM_HTML = r"""
     if (lg){
       // Keep K/DEF only for redraft; dynasty/rookie boards skip them.
       if (!rd){ lg.K = 0; lg.DEF = 0; }
+      // Reconcile with the chosen QB format: a Superflex draft always carries an
+      // SF slot and a regular FLEX (superflex is generally just one extra spot),
+      // and a 1QB draft drops the SF slot. The league shape only seeds defaults.
+      if (sf){ if (!lg.SF) lg.SF = 1; if (!lg.FLEX) lg.FLEX = 1; }
+      else   { lg.SF = 0; }
       return lg;
     }
     return { QB:1, SF:sf?1:0, RB:2, WR:3, TE:1, FLEX:1,
@@ -1002,8 +1021,8 @@ _DRAFT_ROOM_HTML = r"""
       { key:'WR',   label:'WR' },
       { key:'TE',   label:'TE' },
       { key:'FLEX', label:'FLEX' },
-      { key:'K',    label:'K',    hide: !rd },
-      { key:'DEF',  label:'DEF',  hide: !rd },
+      { key:'K',    label:'K' },
+      { key:'DEF',  label:'DEF' },
       { key:'BN',   label:'Bench' }
     ];
     var html = '<div class="dr-setup-roster">';
@@ -1122,10 +1141,32 @@ _DRAFT_ROOM_HTML = r"""
       slot:   Math.min(teams, Math.max(1, parseInt(document.getElementById('drSlot').value, 10) || 1)),
       order:  document.getElementById('drOrder').value,
       roster: _setupRoster || defaultRoster(sf, rd),
+      scoring: readScoring(),
       picks:  {},
       current: 1,
       queue:  []
     };
+  }
+  // Scoring settings from setup (PPR weight + TE premium). These shift the
+  // recommended roster build rather than recomputing raw player values.
+  function readScoring(){
+    var pprEl = document.getElementById('drPpr');
+    var tepEl = document.getElementById('drTep');
+    var ppr = pprEl ? parseFloat(pprEl.value) : 1.0;
+    var tep = tepEl ? parseFloat(tepEl.value) : 0;
+    return { ppr: isNaN(ppr) ? 1.0 : ppr, tep: isNaN(tep) ? 0 : tep };
+  }
+  function scoringCfg(){
+    var s = (state && state.scoring) || {};
+    return { ppr: s.ppr != null ? s.ppr : 1.0, tep: s.tep != null ? s.tep : 0 };
+  }
+  // K/DEF enter the pool only when the roster actually carries those slots
+  // (always true for redraft; opt-in for startup via the setup steppers).
+  function wantsKDef(){
+    if (!state) return false;
+    if (state.type === 'redraft') return true;
+    var rs = state.roster || {};
+    return (rs.K || 0) > 0 || (rs.DEF || 0) > 0;
   }
 
   function startDraft(){
@@ -1154,6 +1195,11 @@ _DRAFT_ROOM_HTML = r"""
     document.getElementById('drMain').style.display = 'none';
     document.getElementById('drSetup').style.display = '';
     var hero = document.getElementById('drHero'); if (hero) hero.style.display = '';
+    // Reflect the active draft's scoring in the setup controls when editing.
+    if (state && state.scoring){
+      var pprEl = document.getElementById('drPpr'); if (pprEl) pprEl.value = String(state.scoring.ppr != null ? state.scoring.ppr : 1);
+      var tepEl = document.getElementById('drTep'); if (tepEl) tepEl.value = String(state.scoring.tep != null ? state.scoring.tep : 0);
+    }
     renderSetupRoster();
     renderSetupCapital();
   }
@@ -1181,7 +1227,7 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   function loadPlayers(){
-    var url = '/api/league-players' + (state.type === 'redraft' ? '?kdef=1' : '');
+    var url = '/api/league-players' + (wantsKDef() ? '?kdef=1' : '');
     fetch(url, { cache: 'no-store' })
       .then(function(r){ return r.json(); })
       .then(function(resp){
@@ -1193,7 +1239,8 @@ _DRAFT_ROOM_HTML = r"""
           var pos = String(p.position || '').toUpperCase();
           if (pos === 'PICK') return false;
           if (state.type === 'rookie') return !!p.is_rookie;
-          if (state.type === 'redraft') return redraftVal(p) > 0 || pos === 'K' || pos === 'DEF';
+          if (pos === 'K' || pos === 'DEF') return wantsKDef();
+          if (state.type === 'redraft') return redraftVal(p) > 0;
           return ['QB','RB','WR','TE'].indexOf(pos) >= 0 || p.is_rookie;
         });
         // Derive a stable redraft ADP rank (1 = top redraft value).
@@ -1382,6 +1429,7 @@ _DRAFT_ROOM_HTML = r"""
         type: prev.type, teams: prev.teams, rounds: prev.rounds, sf: !!prev.sf,
         slot: prev.slot, order: prev.order,
         roster: prev.roster || defaultRoster(!!prev.sf, prev.type === 'redraft'),
+        scoring: prev.scoring || scoringCfg(),
         picks: {}, current: 1, queue: [],
         owned: Object.keys(ownedCopy).length ? ownedCopy : defaultOwned(),
         mode: 'mock', simStarted: false
@@ -1416,12 +1464,22 @@ _DRAFT_ROOM_HTML = r"""
   function posTargets(){
     var rs = (state && state.roster) || defaultRoster();
     var flex = rs.FLEX||0, sf = rs.SF||0, bn = rs.BN||0;
+    // Targets are depth SUGGESTIONS, not hard needs. A deep startup bench (drafts
+    // run 20+ rounds) shouldn't imply you "need" 8 RBs or 10 WRs, so the bench
+    // contribution is capped and each position is held to a realistic ceiling.
+    var benchEff = Math.min(bn, 7);
     var t = {
-      QB: (rs.QB||0) + sf        + Math.round(bn * 0.10),
-      RB: (rs.RB||0) + flex      + Math.round(bn * 0.35),
-      WR: (rs.WR||0)             + Math.round(bn * 0.40),
-      TE: (rs.TE||0)             + Math.round(bn * 0.15)
+      QB: (rs.QB||0) + sf        + Math.round(benchEff * 0.10),
+      RB: (rs.RB||0) + flex      + Math.round(benchEff * 0.35),
+      WR: (rs.WR||0)             + Math.round(benchEff * 0.40),
+      TE: (rs.TE||0)             + Math.round(benchEff * 0.15)
     };
+    // TE Premium scoring nudges the build toward a second startable TE.
+    var tep = scoringCfg().tep;
+    if (tep > 0) t.TE += 1;
+    // Sane ceilings so the assistant never frames an absurd amount of depth as a need.
+    var cap = { QB: sf ? 3 : 2, RB: 6, WR: 6, TE: tep > 0 ? 3 : 2 };
+    Object.keys(cap).forEach(function(k){ if (t[k] > cap[k]) t[k] = cap[k]; });
     if (rs.K)   t.K   = rs.K;
     if (rs.DEF) t.DEF = rs.DEF;
     return t;
@@ -1825,6 +1883,13 @@ _DRAFT_ROOM_HTML = r"""
       if (p.team && myRBTeams[p.team]) s = Math.min(1, s + 0.15);
     }
 
+    // Scoring-format adjustments: shift recommendations toward the build the
+    // league's scoring actually rewards, without recomputing raw player values.
+    var _sc = scoringCfg();
+    if (_sc.tep > 0 && pos === 'TE') s *= (1 + 0.12 * _sc.tep);   // TE premium lifts TEs
+    if (pos === 'WR' || pos === 'TE'){ if (_sc.ppr >= 1) s *= 1.02; }  // full PPR favors receivers
+    else if (pos === 'RB' && _sc.ppr <= 0) s *= 1.03;                  // standard favors RBs
+
     // Depth normalization: re-anchor the 0-100 scale relative to what is
     // achievable at this pick slot. The pool shrinks as the draft progresses
     // so the best available player at pick 228/240 should score ~70-75, not 42.
@@ -1952,7 +2017,7 @@ _DRAFT_ROOM_HTML = r"""
   function renderSide(){
     _ptc = posTierCounts();
     _repl = computeReplacement();
-    var kdef = (state.type === 'redraft');
+    var kdef = wantsKDef();
     var kbtns = document.querySelectorAll('.dr-pos-kdef');
     for (var i = 0; i < kbtns.length; i++){ kbtns[i].style.display = kdef ? '' : 'none'; }
     var bc = document.getElementById('drBestControls');
@@ -2125,7 +2190,10 @@ _DRAFT_ROOM_HTML = r"""
 
     // ── Startup / redraft: Value 35 / Starters 35 / Construction 30 ──
     // Build the best starting lineup (value desc) to mark starters + slot coverage.
-    var slots = lineupSlots();
+    // K/DEF are excluded from grading: kicker/defense quality is near-random and
+    // shouldn't move a draft grade, so they don't count toward starter PS,
+    // strength, or construction coverage.
+    var slots = lineupSlots().filter(function(s){ return s !== 'K' && s !== 'DEF'; });
     var byVal = picks.slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
     var usedL = {}, starterIds = {}, filled = 0;
     slots.forEach(function(slot){
