@@ -317,7 +317,7 @@ _DRAFT_ROOM_HTML = r"""
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
     padding: 10px 14px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 12px;
     background: var(--card);
-    position: sticky; top: 56px; z-index: 30;
+    position: sticky; top: 89px; z-index: 30;
   }
   .dr-status-info { display: flex; align-items: center; gap: 14px; min-width: 0; flex: 1; }
   .dr-status-pills { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
@@ -410,7 +410,7 @@ _DRAFT_ROOM_HTML = r"""
     display: flex; align-items: center; justify-content: center; }
   .dr-corner { z-index: 4; }
   .dr-side { border: 1px solid var(--border); border-radius: 10px; background: var(--card); display: flex; flex-direction: column;
-    position: sticky; top: 120px; align-self: start; max-height: calc(100vh - 134px); z-index: 20; overflow: hidden; }
+    position: sticky; top: 158px; align-self: start; max-height: calc(100vh - 134px); z-index: 20; overflow: hidden; }
   /* Reuse the trade-calculator pill tabs (otc-main-tabs), evenly spread across panel */
   .dr-side-tabs.otc-main-tabs { width: auto; margin: 8px; }
   .dr-side-tabs .otc-main-tab { flex: 1; display: flex; align-items: center; justify-content: center;
