@@ -2066,7 +2066,7 @@ _DRAFT_ROOM_HTML = r"""
         + statRow('Age', age, oage, false, function(x){ return x != null ? x.toFixed(0) : '-'; })
         + '</div></div>';
     }
-    var draftBtns = ((isYourTurn() || !sim) && !(state && state.mode === 'live' && !state.isDrafting) && (!sim || simStarted))
+    var draftBtns = (state && state.mode !== 'live' && (isYourTurn() || !sim) && (!sim || simStarted))
       ? '<button class="dr-btn dr-btn-primary" data-cmp-draft="' + esc(String(p1.id)) + '">Draft ' + esc(p1.name.split(' ').pop()) + '</button>'
         + '<button class="dr-btn dr-btn-primary" data-cmp-draft="' + esc(String(p2.id)) + '">Draft ' + esc(p2.name.split(' ').pop()) + '</button>'
       : '';
@@ -2325,7 +2325,7 @@ _DRAFT_ROOM_HTML = r"""
       + '<div class="dr-ba-actions">'
       + '<button class="dr-cmp-btn' + (onCmp ? ' on' : '') + '" data-cmp="' + esc(String(p.id)) + '" title="Compare">vs</button>'
       + '<button class="dr-star' + (isQueued(p.id) ? ' on' : '') + '" data-star="' + esc(String(p.id)) + '" title="Queue" aria-label="Queue">' + (isQueued(p.id) ? '★' : '☆') + '</button>'
-      + ((isYourTurn() || !sim) && !(state && state.mode === 'live' && !state.isDrafting) && (!sim || simStarted) ? '<button class="dr-ba-draft" data-draft="' + esc(String(p.id)) + '" title="Draft now">Draft</button>' : '')
+      + (state && state.mode !== 'live' && (isYourTurn() || !sim) && (!sim || simStarted) ? '<button class="dr-ba-draft" data-draft="' + esc(String(p.id)) + '" title="Draft now">Draft</button>' : '')
       + '</div>'
       + '</div>'
       + '</div>';
