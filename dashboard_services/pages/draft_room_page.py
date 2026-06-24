@@ -197,6 +197,10 @@ _DRAFT_ROOM_HTML = r"""
         <div class="dr-ba-list" id="drBaList">
           <div class="dr-loading"><div class="loading-spinner" style="width:22px;height:22px;"></div><span>Loading players…</span></div>
         </div>
+        <div id="drCompleteBar" style="display:none;">
+          <button class="dr-btn dr-btn-primary" id="drCompleteSummaryBtn" style="width:100%;">Draft Summary</button>
+          <button class="dr-btn" id="drCompleteShareBtn" style="width:100%;">Share</button>
+        </div>
       </aside>
     </div>
   </div>
@@ -216,6 +220,14 @@ _DRAFT_ROOM_HTML = r"""
   <!-- End-of-draft summary -->
   <div class="dr-summary-overlay" id="drSummary" style="display:none;">
     <div class="dr-summary-card" id="drSummaryCard"></div>
+  </div>
+
+  <!-- Custom modal (replaces browser confirm/alert) -->
+  <div id="drModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.52);align-items:center;justify-content:center;padding:20px;">
+    <div class="dr-modal-box">
+      <div class="dr-modal-msg" id="drModalMsg"></div>
+      <div class="dr-modal-btns" id="drModalBtns"></div>
+    </div>
   </div>
 </div>
 
@@ -571,6 +583,13 @@ _DRAFT_ROOM_HTML = r"""
   .dr-sum-ps { font-size:14px; font-weight:800; flex-shrink:0; }
   .dr-sum-footer { display:flex; gap:8px; margin-top:16px; }
   .dr-sum-footer .dr-btn { flex:1; text-align:center; }
+  /* Custom modal */
+  .dr-modal-box { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:24px 28px;
+    max-width:380px; width:100%; box-shadow:0 24px 60px rgba(0,0,0,.45); }
+  .dr-modal-msg { font-size:15px; color:var(--text); line-height:1.55; margin-bottom:20px; }
+  .dr-modal-btns { display:flex; gap:10px; justify-content:flex-end; }
+  /* Complete-draft sidebar footer */
+  #drCompleteBar { padding:10px; border-top:1px solid var(--border); display:flex; flex-direction:column; gap:7px; flex-shrink:0; }
   /* ── Roster slots (setup page) ── */
   .dr-setup-roster { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:8px; }
   .dr-srow { display:flex; align-items:center; justify-content:space-between; gap:8px;
@@ -1285,31 +1304,32 @@ _DRAFT_ROOM_HTML = r"""
   // rehearse the exact same draft against ADP-driven bots.
   function startPracticeMock(){
     if (!state) return;
-    if (!confirm('Start a practice mock using these draft settings? Your live sync will stop until you reconnect.')) return;
-    stopPolling(); stopPickTimer();
-    var prev = state;
-    var ownedCopy = {};
-    if (prev.owned){ Object.keys(prev.owned).forEach(function(k){ if (prev.owned[k]) ownedCopy[k] = true; }); }
-    state = {
-      type: prev.type, teams: prev.teams, rounds: prev.rounds, sf: !!prev.sf,
-      slot: prev.slot, order: prev.order,
-      roster: prev.roster || defaultRoster(!!prev.sf, prev.type === 'redraft'),
-      picks: {}, current: 1, queue: [],
-      owned: Object.keys(ownedCopy).length ? ownedCopy : defaultOwned(),
-      mode: 'mock', simStarted: false
-    };
-    _summaryShown = false;
-    drafted = {};
-    sim = true; simPaused = false; simStarted = false;
-    var sp = document.getElementById('drSimSpeed');
-    simSpeed = parseInt(sp.value, 10) || 700;
-    document.getElementById('drLiveBadge').style.display = 'none';
-    document.getElementById('drUpcomingBadge').style.display = 'none';
-    document.getElementById('drSide').style.display = '';
-    syncSimControls();
-    save();
-    showMain();
-    loadPlayers();
+    drConfirm('Start a practice mock using these draft settings? Your live sync will stop until you reconnect.', 'Start Mock', function(){
+      stopPolling(); stopPickTimer();
+      var prev = state;
+      var ownedCopy = {};
+      if (prev.owned){ Object.keys(prev.owned).forEach(function(k){ if (prev.owned[k]) ownedCopy[k] = true; }); }
+      state = {
+        type: prev.type, teams: prev.teams, rounds: prev.rounds, sf: !!prev.sf,
+        slot: prev.slot, order: prev.order,
+        roster: prev.roster || defaultRoster(!!prev.sf, prev.type === 'redraft'),
+        picks: {}, current: 1, queue: [],
+        owned: Object.keys(ownedCopy).length ? ownedCopy : defaultOwned(),
+        mode: 'mock', simStarted: false
+      };
+      _summaryShown = false;
+      drafted = {};
+      sim = true; simPaused = false; simStarted = false;
+      var sp = document.getElementById('drSimSpeed');
+      simSpeed = parseInt(sp.value, 10) || 700;
+      document.getElementById('drLiveBadge').style.display = 'none';
+      document.getElementById('drUpcomingBadge').style.display = 'none';
+      document.getElementById('drSide').style.display = '';
+      syncSimControls();
+      save();
+      showMain();
+      loadPlayers();
+    });
   }
 
   // ── Command-center panels ───────────────────────────────────────────────────
@@ -1616,7 +1636,15 @@ _DRAFT_ROOM_HTML = r"""
   function clamp01(x){ return x < 0 ? 0 : (x > 1 ? 1 : x); }
   function pickScore(p, maxVal, counts){
     var pos = (p.position || '').toUpperCase();
-    var valueNorm = maxVal > 0 ? clamp01(valOf(p) / maxVal) : 0;
+    var adp = adpOf(p);
+
+    // Blend DB dynasty value with ADP-implied quality so market consensus
+    // prevents DB value gaps (especially new rookies) from dragging the score
+    // unfairly low when the ADP says the player is a legitimate round-2/3 pick.
+    var dbValueNorm = maxVal > 0 ? clamp01(valOf(p) / maxVal) : 0;
+    var totalPicks = (state.teams || 12) * (state.rounds || 16);
+    var adpQualNorm = (adp != null && totalPicks > 0) ? clamp01(1 - adp / totalPicks) : null;
+    var valueNorm = (adpQualNorm != null) ? (dbValueNorm * 0.35 + adpQualNorm * 0.65) : dbValueNorm;
 
     // #1: VOR separates above-replacement talent; negative VOR (below replacement) = 0.
     var vor = vorOf(p);
@@ -1624,7 +1652,6 @@ _DRAFT_ROOM_HTML = r"""
 
     // ADP component with #4 elite-ADP floor.
     // relGap is proportional so a 2-pick fall from ADP 2 = a 10-pick fall from ADP 20.
-    var adp = adpOf(p);
     var adpVal;
     if (adp != null) {
       var gap = state.current - adp;
@@ -1827,6 +1854,21 @@ _DRAFT_ROOM_HTML = r"""
     if (sideTab === 'queue') return renderQueue();
     if (sideTab === 'needs') return renderNeeds();
     return renderBA();
+  }
+
+  function showCompleteSidebar(){
+    var side = document.getElementById('drSide');
+    side.style.display = '';
+    // Show only the Team tab for a finished draft - players/recs/queue are irrelevant.
+    var tabs = document.querySelectorAll('#drSideTabs .otc-main-tab');
+    tabs.forEach(function(b){
+      var stab = b.getAttribute('data-stab');
+      if (stab === 'needs'){ b.classList.add('is-active'); b.style.display = ''; }
+      else { b.classList.remove('is-active'); b.style.display = 'none'; }
+    });
+    sideTab = 'needs';
+    document.getElementById('drCompleteBar').style.display = '';
+    renderSide();
   }
 
   // Positional-run alert banner (folded into Recs): fires when 3+ of the last 5
@@ -2046,7 +2088,7 @@ _DRAFT_ROOM_HTML = r"""
   }
   function detectLive(){
     if (cfg.isGuest || !cfg.leagueId){
-      alert('Live draft sync requires opening the Draft Room from your league.');
+      drAlert('Live draft sync requires opening the Draft Room from your league.');
       return;
     }
     var box = document.getElementById('drLiveList');
@@ -2122,7 +2164,7 @@ _DRAFT_ROOM_HTML = r"""
     fetch('/api/draft/live?platform=' + encodeURIComponent(cfg.platform) + '&draft_id=' + encodeURIComponent(draftId))
       .then(function(r){ return r.json(); })
       .then(function(d){
-        if (!d || d.error){ alert('Could not load that draft.'); return; }
+        if (!d || d.error){ drAlert('Could not load that draft.'); return; }
         var teams = parseInt(d.teams || 0, 10) || (cfg.numTeams || 12);
         var rounds = parseInt(d.rounds || 0, 10) || 15;
         var order = d.order || 'snake';
@@ -2147,7 +2189,7 @@ _DRAFT_ROOM_HTML = r"""
         document.getElementById('drLiveBadge').style.display = isDrafting ? '' : 'none';
         document.getElementById('drUpcomingBadge').style.display = (!isDrafting && !isComplete) ? '' : 'none';
         if (isComplete){
-          document.getElementById('drSide').style.display = 'none';
+          showCompleteSidebar();
         } else {
           document.getElementById('drSide').style.display = '';
           startPolling();
@@ -2155,7 +2197,7 @@ _DRAFT_ROOM_HTML = r"""
         }
         loadPlayers();
       })
-      .catch(function(){ alert('Could not connect to the live draft.'); });
+      .catch(function(){ drAlert('Could not connect to the live draft.'); });
   }
   function startPolling(){
     stopPolling();
@@ -2175,7 +2217,7 @@ _DRAFT_ROOM_HTML = r"""
           if (isDrafting && state.current !== prevCurrent) startPickTimer();
           if (String(d.status) === 'complete'){
             stopPolling(); stopPickTimer(); state.isComplete = true; save();
-            document.getElementById('drSide').style.display = 'none';
+            showCompleteSidebar();
           }
         })
         .catch(function(){});
@@ -2410,13 +2452,14 @@ _DRAFT_ROOM_HTML = r"""
     function sumRow(slot, p){
       if (!p) return '<div class="dr-sum-row"><span class="dr-sum-slot-badge" style="background:' + slotColor(slot) + '">' + slot + '</span>'
         + '<span class="dr-sum-empty">open</span></div>';
-      var roundPicked = Object.keys(state.picks).filter(function(k){ return state.picks[k] && state.picks[k].id === p.id; }).map(function(k){ return Math.ceil(parseInt(k,10)/state.teams); })[0] || '';
+      var _pn = (Object.keys(state.picks).filter(function(k){ return state.picks[k] && state.picks[k].id === p.id; }).map(function(k){ return parseInt(k,10); })[0]) || 0;
+      var pickStr = _pn ? (function(){ var _rd = Math.ceil(_pn/state.teams); var _pp = _pn - (_rd-1)*state.teams; return 'Pick ' + _rd + '.' + (_pp < 10 ? '0'+_pp : String(_pp)); })() : '';
       var psStr = (p.ps != null) ? '<span class="dr-sum-ps" style="color:' + psColor(p.ps) + '">' + p.ps + '</span>' : '';
       return '<div class="dr-sum-row">'
         + '<span class="dr-sum-slot-badge" style="background:' + slotColor(slot) + '">' + slot + '</span>'
         + '<img class="dr-sum-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
         + '<div class="dr-sum-body"><div class="dr-sum-name">' + esc(p.name) + '</div>'
-        + '<div class="dr-sum-meta">' + esc(p.position) + (p.team ? ' \xb7 ' + esc(p.team) : '') + (roundPicked ? ' \xb7 Rd ' + roundPicked : '') + '</div>'
+        + '<div class="dr-sum-meta">' + esc(p.position) + (p.team ? ' \xb7 ' + esc(p.team) : '') + (pickStr ? ' \xb7 ' + pickStr : '') + '</div>'
         + (p.reason ? '<div class="dr-sum-reason">' + esc(p.reason) + '</div>' : '')
         + '</div>' + psStr + '</div>';
     }
@@ -2465,6 +2508,34 @@ _DRAFT_ROOM_HTML = r"""
   }
   function closeSummary(){ document.getElementById('drSummary').style.display = 'none'; }
 
+  // ── Custom modal (replaces native confirm/alert) ─────────────────────────────
+  function drAlert(msg, cb){
+    var m = document.getElementById('drModal');
+    document.getElementById('drModalMsg').textContent = msg;
+    var btns = document.getElementById('drModalBtns');
+    btns.innerHTML = '';
+    var ok = document.createElement('button');
+    ok.className = 'dr-btn dr-btn-primary'; ok.textContent = 'OK';
+    ok.addEventListener('click', function(){ m.style.display = 'none'; if (cb) cb(); });
+    btns.appendChild(ok);
+    m.style.display = 'flex';
+  }
+  function drConfirm(msg, okLabel, cb){
+    if (typeof okLabel === 'function'){ cb = okLabel; okLabel = 'Confirm'; }
+    var m = document.getElementById('drModal');
+    document.getElementById('drModalMsg').textContent = msg;
+    var btns = document.getElementById('drModalBtns');
+    btns.innerHTML = '';
+    var cancel = document.createElement('button');
+    cancel.className = 'dr-btn'; cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', function(){ m.style.display = 'none'; });
+    var ok = document.createElement('button');
+    ok.className = 'dr-btn dr-btn-primary'; ok.textContent = okLabel;
+    ok.addEventListener('click', function(){ m.style.display = 'none'; cb(); });
+    btns.appendChild(cancel); btns.appendChild(ok);
+    m.style.display = 'flex';
+  }
+
   // ── Actions ──────────────────────────────────────────────────────────────
   function commitPick(p){
     var pn = state.current;
@@ -2498,15 +2569,16 @@ _DRAFT_ROOM_HTML = r"""
     render();
   }
   function resetDraft(){
-    if (!confirm('Reset the draft board?')) return;
-    try { sessionStorage.removeItem(sessKey); } catch(e){}
-    state = null;
-    showSetup();
+    drConfirm('Reset the draft board?', 'Reset', function(){
+      try { sessionStorage.removeItem(sessKey); } catch(e){}
+      state = null;
+      showSetup();
+    });
   }
 
   // ── Share a draft image ─────────────────────────────────────────────────────
   function shareDraft(){
-    if (!state || !hasOwned()){ alert('Pick a draft slot to build and share your team.'); return; }
+    if (!state || !hasOwned()){ drAlert('Pick a draft slot to build and share your team.'); return; }
     var mine = myPicksList().slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
     var used = {}, rows = [];
     lineupSlots().forEach(function(slot){
@@ -2516,27 +2588,32 @@ _DRAFT_ROOM_HTML = r"""
     });
     for (var i = 0; i < mine.length; i++){ if (!used[i]) rows.push({ slot: 'BN', p: mine[i] }); }
 
+    var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    var clr = isDark
+      ? { bg: '#0f172a', accent: '#38bdf8', sub: '#94a3b8', player: '#e5e7eb', empty: '#475569', good: '#22c55e', div: '#1e293b' }
+      : { bg: '#f8fafc', accent: '#2563eb', sub: '#64748b', player: '#0f172a', empty: '#94a3b8', good: '#16a34a', div: '#e2e8f0' };
     var W = 720, pad = 30, lineH = 40;
     var H = pad * 2 + 118 + rows.length * lineH;
     var c = document.createElement('canvas'); c.width = W; c.height = H;
     var ctx = c.getContext('2d');
-    ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = '#38bdf8'; ctx.font = 'bold 30px system-ui,Arial';
+    ctx.fillStyle = clr.bg; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = clr.accent; ctx.font = 'bold 30px system-ui,Arial';
     ctx.fillText('My ' + (state.type.charAt(0).toUpperCase() + state.type.slice(1)) + ' Draft', pad, pad + 30);
-    ctx.fillStyle = '#94a3b8'; ctx.font = '14px system-ui,Arial';
+    ctx.fillStyle = clr.sub; ctx.font = '14px system-ui,Arial';
     ctx.fillText((state.sf ? 'Superflex' : '1QB') + ' · ' + state.teams + ' teams · BR Fantasy', pad, pad + 54);
     var g = gradeTeam();
-    if (g){ ctx.fillStyle = '#22c55e'; ctx.font = 'bold 16px system-ui,Arial';
+    if (g){ ctx.fillStyle = clr.good; ctx.font = 'bold 16px system-ui,Arial';
       ctx.fillText('Grade ' + gradeLetter(g.score) + ' · ' + gradePace(g.score), pad, pad + 84); }
     var y = pad + 118;
     var POSC = { QB:'#f59e0b', RB:'#22c55e', WR:'#3b82f6', TE:'#8b5cf6', K:'#94a3b8', DEF:'#64748b', FLEX:'#14b8a6', SF:'#a78bfa', BN:'#64748b' };
     rows.forEach(function(r){
-      ctx.fillStyle = POSC[r.slot] || '#94a3b8'; ctx.font = 'bold 12px system-ui,Arial';
+      ctx.fillStyle = POSC[r.slot] || clr.sub; ctx.font = 'bold 12px system-ui,Arial';
       ctx.fillText(r.slot, pad, y + 14);
-      ctx.fillStyle = r.p ? '#e5e7eb' : '#64748b'; ctx.font = r.p ? 'bold 16px system-ui,Arial' : 'italic 15px system-ui,Arial';
+      ctx.fillStyle = r.p ? clr.player : clr.empty; ctx.font = r.p ? 'bold 16px system-ui,Arial' : 'italic 15px system-ui,Arial';
       ctx.fillText(r.p ? r.p.name : 'open', pad + 64, y + 14);
-      if (r.p){ ctx.fillStyle = '#94a3b8'; ctx.font = '13px system-ui,Arial';
+      if (r.p){ ctx.fillStyle = clr.sub; ctx.font = '13px system-ui,Arial';
         ctx.textAlign = 'right'; ctx.fillText((r.p.position || '') + '  ' + (r.p.team || ''), W - pad, y + 14); ctx.textAlign = 'left'; }
+      ctx.fillStyle = clr.div; ctx.fillRect(pad, y + lineH - 1, W - pad * 2, 1);
       y += lineH;
     });
     c.toBlob(function(blob){
@@ -2745,6 +2822,8 @@ _DRAFT_ROOM_HTML = r"""
     if (e.target === this) closeSummary();
   });
   document.getElementById('drShare').addEventListener('click', shareDraft);
+  document.getElementById('drCompleteSummaryBtn').addEventListener('click', openSummary);
+  document.getElementById('drCompleteShareBtn').addEventListener('click', shareDraft);
   document.getElementById('drPreview').addEventListener('click', function(e){
     if (e.target === this || e.target.closest('#drPrevClose')){ closePreview(); return; }
     var d = e.target.closest('.dr-prev-draft');
@@ -2819,7 +2898,7 @@ _DRAFT_ROOM_HTML = r"""
       if (state.mode === 'live'){
         document.getElementById('drUndo').style.display = 'none';
         if (state.isComplete){
-          document.getElementById('drSide').style.display = 'none';
+          showCompleteSidebar();
           document.getElementById('drLiveBadge').style.display = 'none';
           document.getElementById('drUpcomingBadge').style.display = 'none';
         } else {

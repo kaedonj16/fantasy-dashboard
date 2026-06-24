@@ -22030,7 +22030,7 @@ def _ps_tier_of(value: float, thresholds: list):
 
 def _compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
                         avg_pick, pick_no, max_val, draft_type, is_sf,
-                        need_raw, qb_count) -> int:
+                        need_raw, qb_count, total_picks=None) -> int:
     pos = (pos or "").upper()
     # DB-sourced numbers arrive as decimal.Decimal; coerce to float so they mix
     # with the float weights below (Decimal * float raises TypeError).
@@ -22041,7 +22041,16 @@ def _compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
     avg_pick = float(avg_pick) if avg_pick is not None else None
     max_val = float(max_val) if max_val is not None else 0.0
     need_raw = float(need_raw) if need_raw is not None else 0.0
-    value_norm = _ps_clamp01(value / max_val) if max_val and max_val > 0 else 0.0
+    total_picks = float(total_picks) if total_picks is not None else 0.0
+    db_value_norm = _ps_clamp01(value / max_val) if max_val and max_val > 0 else 0.0
+    # Blend DB dynasty value with ADP-implied quality so market consensus
+    # prevents DB value gaps (especially new rookies) from dragging the score
+    # unfairly low when ADP says the player is a legitimate round-2/3 pick.
+    if avg_pick is not None and total_picks > 0:
+        adp_qual_norm = _ps_clamp01(1.0 - avg_pick / total_picks)
+        value_norm = db_value_norm * 0.35 + adp_qual_norm * 0.65
+    else:
+        value_norm = db_value_norm
     vor_norm = _ps_clamp01(vor / max(max_val, 1)) if vor is not None else value_norm * 0.8
 
     # ADP component: proportional gap so a 2-pick fall from ADP 2 == a 10-pick
@@ -22557,6 +22566,7 @@ def api_draft_grades():
                         avg_pick=avg_pick, pick_no=pick_no, max_val=_ps_max_val(),
                         draft_type=_draft_type, is_sf=is_sf, need_raw=_need_raw,
                         qb_count=ps_team_counts[rid].get("QB", 0),
+                        total_picks=_num_teams * _draft_rounds,
                     )
 
             picks_by_roster[rid].append({
