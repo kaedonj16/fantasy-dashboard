@@ -184,6 +184,7 @@ _DRAFT_ROOM_HTML = r"""
               <option value="value">Value</option>
               <option value="adp" selected>ADP</option>
               <option value="steals">Steals</option>
+              <option value="ps">Pick Score</option>
             </select>
           </div>
           <div class="dr-pos-filters" id="drPosFilters">
@@ -1892,7 +1893,7 @@ _DRAFT_ROOM_HTML = r"""
       + reasonLine + waitLine + availLine + '</div>'
       + '<div class="dr-ba-right-col">'
       + '<div class="dr-ba-metrics">'
-      + '<div class="dr-ba-right"><div class="dr-ba-val">' + Math.round(valOf(p)) + '</div><div class="dr-ba-sub">' + sub + '</div></div>'
+      + '<div class="dr-ba-right"><div class="dr-ba-val">' + (state.type === 'redraft' && p._radp != null ? 'R' + p._radp : Math.round(valOf(p))) + '</div><div class="dr-ba-sub">' + sub + '</div></div>'
       + psChip
       + '</div>'
       + '<div class="dr-ba-actions">'
@@ -2614,12 +2615,18 @@ _DRAFT_ROOM_HTML = r"""
       return true;
     });
     function steal(p){ var a = adpOf(p); return (a != null) ? (state.current - a) : -99999; }
+    if (sortBy === 'ps'){
+      var _pcounts = myPosCounts();
+      var _pmaxV = 0; pool.forEach(function(p){ var v = valOf(p); if (v > _pmaxV) _pmaxV = v; });
+      pool.forEach(function(p){ p._ps = pickScore(p, _pmaxV, _pcounts); });
+    }
     pool.sort(function(a, b){
       if (sortBy === 'adp'){
         var aa = adpOf(a), ba = adpOf(b);
         return (aa != null ? aa : 99999) - (ba != null ? ba : 99999);
       }
-      if (sortBy === 'steals'){ return steal(b) - steal(a); }   // biggest fallers vs ADP first
+      if (sortBy === 'steals'){ return steal(b) - steal(a); }
+      if (sortBy === 'ps'){ return (b._ps || 0) - (a._ps || 0); }
       return valOf(b) - valOf(a);
     });
     if (!pool.length){ listInto('<div class="dr-empty-note">No players match.</div>'); return; }
@@ -2631,6 +2638,9 @@ _DRAFT_ROOM_HTML = r"""
       if (sortBy === 'steals'){
         var d = steal(p);
         if (d > 0) opts.sub = '+' + Math.round(d) + ' vs ADP';
+      }
+      if (sortBy === 'ps' && p._ps != null){
+        opts.sub = 'PS ' + p._ps;
       }
       if (nextPick){
         var prob = availProb(p, nextPick);
