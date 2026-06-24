@@ -179,13 +179,13 @@ _DRAFT_ROOM_HTML = r"""
         </div>
         <div class="dr-side-head" id="drBestControls">
           <div class="dr-side-controls">
-            <input id="drSearch" type="search" placeholder="Search…" autocomplete="off">
             <select id="drBaSort">
               <option value="value">Value</option>
               <option value="adp" selected>ADP</option>
               <option value="steals">Steals</option>
               <option value="ps">Pick Score</option>
             </select>
+            <input id="drSearch" type="search" placeholder="Search…" autocomplete="off">
           </div>
           <div class="dr-pos-filters" id="drPosFilters">
             <button class="dr-pos active" data-pos="ALL">All</button>
@@ -434,7 +434,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-grade-meta { flex: 1; min-width: 0; }
   .dr-grade-pace { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
   .dr-gbar-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
-  .dr-gbar-lbl { font-size: 10px; color: var(--text-muted); width: 50px; flex-shrink: 0; }
+  .dr-gbar-lbl { font-size: 10px; color: var(--text-muted); width: 76px; flex-shrink: 0; }
   .dr-gbar { flex: 1; height: 6px; border-radius: 999px; background: rgba(127,127,127,.18); overflow: hidden; }
   .dr-gbar-fill { height: 100%; border-radius: 999px; background: var(--accent,#38bdf8); }
   /* player preview */
@@ -467,7 +467,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-side-title { font-size: 14px; font-weight: 800; color: var(--text); }
   .dr-side-controls { display: flex; gap: 6px; }
   .dr-side-controls input { flex: 1; min-width: 0; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; }
-  .dr-side-controls select { padding: 7px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; }
+  .dr-side-controls select { padding: 7px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; flex-shrink: 0; max-width: 110px; }
   .dr-pos-filters { display: flex; gap: 4px; flex-wrap: wrap; }
   .dr-pos { font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg); color: var(--text-muted); cursor: pointer; }
   .dr-pos.active { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: #fff; }
