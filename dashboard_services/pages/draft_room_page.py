@@ -1271,8 +1271,14 @@ _DRAFT_ROOM_HTML = r"""
         var z = diff / sigma;
         w = Math.exp(-0.5 * z * z);               // peak when the pick reaches the ADP
       } else {
-        // Past ADP: inverse-linear urgency - never zeroes out so slides stay bounded.
-        w = 1.0 / (1.0 + 0.12 * diff);
+        // Past ADP: urgency grows so players don't slide indefinitely.
+        // Hard cap: once a player is maxSlide picks overdue they dominate the pick.
+        var maxSlide = Math.max(6, Math.round(sigma * 2));
+        if (diff >= maxSlide) {
+          w = 5.0;                                 // overdue - near-certain next pick
+        } else {
+          w = 1.0 / (1.0 + 0.12 * diff);          // inverse-linear ramp up to cap
+        }
       }
       // Need-awareness: nudge for roster fit without overriding ADP.
       var pos = (p.position||'').toUpperCase();
@@ -2647,9 +2653,6 @@ _DRAFT_ROOM_HTML = r"""
       if (sortBy === 'steals'){
         var d = steal(p);
         if (d > 0) opts.sub = '+' + Math.round(d) + ' vs ADP';
-      }
-      if (sortBy === 'ps' && p._ps != null){
-        opts.sub = 'PS ' + p._ps;
       }
       if (nextPick){
         var prob = availProb(p, nextPick);
