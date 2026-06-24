@@ -1878,7 +1878,7 @@ _DRAFT_ROOM_HTML = r"""
     opts = opts || {};
     var adp = adpOf(p);
     var ps = pickScoreFor(p);
-    var sub = (opts.sub != null) ? opts.sub : (adp != null ? 'ADP ' + Number(adp).toFixed(1) : '');
+    var sub = adp != null ? 'ADP ' + Number(adp).toFixed(1) : '';
     var reasonLine = opts.reason ? '<div class="dr-ba-reason">' + esc(opts.reason) + '</div>' : '';
     var waitLine = opts.wait
       ? '<div class="dr-ba-wait">&#8987; Can wait: ' + opts.wait.prob + '% there at #' + opts.wait.pn + '</div>'
@@ -2653,10 +2653,6 @@ _DRAFT_ROOM_HTML = r"""
     for (var i = 0; i < Math.min(pool.length, 200); i++){
       var p = pool[i];
       var opts = {};
-      if (sortBy === 'steals'){
-        var d = steal(p);
-        if (d > 0) opts.sub = '+' + Math.round(d) + ' vs ADP';
-      }
       if (nextPick){
         var prob = availProb(p, nextPick);
         if (prob != null && prob >= 40) opts.availAt = { pn: nextPick, prob: prob };
