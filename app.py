@@ -2096,7 +2096,7 @@ _DRAFT_IMMINENT_BANNER_HTML = r"""
     el.innerHTML = '<div class="drgb-inner">'
       + '<span class="drgb-ic' + (isLive ? ' drgb-ic-live' : '') + '">' + icon + '</span>'
       + '<div class="drgb-txt"><b>' + title + '</b><span>' + sub + '</span></div>'
-      + '<a class="drgb-join" href="' + CFG.draftUrl + '">Join Draft Room <i class="fa-solid fa-arrow-right-long"></i></a>'
+      + '<a class="drgb-join" href="' + CFG.draftUrl + '?connect=' + encodeURIComponent(cur.id) + '">Join Draft Room <i class="fa-solid fa-arrow-right-long"></i></a>'
       + '<button class="drgb-x" aria-label="Dismiss">&times;</button>'
       + '</div>';
     el.style.display = '';
