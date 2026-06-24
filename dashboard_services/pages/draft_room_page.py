@@ -2081,7 +2081,7 @@ _DRAFT_ROOM_HTML = r"""
   function gradeBars(g){
     var m = gradeMax();
     if (state.type === 'rookie') return gradeBar('Pick Value', g.value, m.value);
-    return gradeBar('Value', g.value, m.value) + gradeBar('Roster', g.balance, m.balance) + gradeBar('Tiers', g.tier, m.tier);
+    return gradeBar('Value', g.value, m.value) + gradeBar('Construction', g.balance, m.balance) + gradeBar('Tiers', g.tier, m.tier);
   }
 
   function renderNeeds(){
