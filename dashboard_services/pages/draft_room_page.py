@@ -385,6 +385,12 @@ _DRAFT_ROOM_HTML = r"""
   .dr-posbadge { font-size: 9px; font-weight: 700; color: #fff; border-radius: 3px; padding: 1px 4px; }
   .dr-colhead { font-size: 11px; font-weight: 700; color: var(--text-muted); text-align: center; padding: 2px 0; white-space: nowrap; }
   .dr-colhead-you { color: var(--accent,#38bdf8); }
+  /* Round-label column sticks to the left so "R11" stays visible while you
+     scroll the board horizontally through team columns. */
+  .dr-rowhead { position: sticky; left: 0; z-index: 2; background: var(--card);
+    box-shadow: 2px 0 4px -2px rgba(0,0,0,.25);
+    display: flex; align-items: center; justify-content: center; }
+  .dr-corner { z-index: 4; }
   .dr-side { border: 1px solid var(--border); border-radius: 10px; background: var(--card); display: flex; flex-direction: column;
     position: sticky; top: 120px; align-self: start; max-height: calc(100vh - 134px); z-index: 20; overflow: hidden; }
   /* Reuse the trade-calculator pill tabs (otc-main-tabs), evenly spread across panel */
@@ -1670,11 +1676,12 @@ _DRAFT_ROOM_HTML = r"""
   // Replacement level = value of the last startable player at a position across
   // the league (teams x starters-per-team). VOR(p) = value(p) - replacement.
   var _repl = {};   // refreshed each render
-  // pool defaults to the still-available players so replacement level tracks
-  // draft progress: as starters come off the board the baseline reflects what is
-  // actually still gettable, instead of a frozen preseason snapshot.
+  // Replacement level is computed from the TOTAL player pool (not just what's
+  // still available) so it stays a fixed, preseason-style baseline. Using only
+  // available players would make the baseline drop as starters get drafted,
+  // handing late-round leftovers an inflated VOR.
   function computeReplacement(pool){
-    pool = pool || availablePool();
+    pool = pool || players;
     var rs = (state && state.roster) || defaultRoster();
     var teams = state.teams || 12;
     var flex = rs.FLEX || 0, sf = rs.SF || 0;
@@ -1711,8 +1718,10 @@ _DRAFT_ROOM_HTML = r"""
   // PPG maps to ~1, putting QB/RB/WR/TE on a common 0-1 axis despite very
   // different raw point levels (a 22-PPG QB and a 13-PPG TE can both be "elite").
   var _ppgScale = {};   // refreshed each render: { POS: { repl, elite } }
+  // Same rationale as computeReplacement: anchor the PPG scale to the total pool
+  // so late-round leftovers don't read as elite once the board thins.
   function computePpgScale(pool){
-    pool = pool || availablePool();
+    pool = pool || players;
     var rs = (state && state.roster) || defaultRoster();
     var teams = state.teams || 12;
     var flex = rs.FLEX || 0, sf = rs.SF || 0;
@@ -2238,12 +2247,12 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   function renderSide(){
-    // Compute the available pool once and share it across all per-render scales,
-    // then invalidate the pickScore context so it rebuilds against fresh repl/ppg.
-    var _renderPool = availablePool();
-    _ptc = posTierCounts(_renderPool);
-    _repl = computeReplacement(_renderPool);
-    _ppgScale = computePpgScale(_renderPool);
+    // Tier counts reflect who's still available (drives cliffs); VOR/PPG scales
+    // use the total pool so the baseline stays fixed. Invalidate the pickScore
+    // context so it rebuilds against fresh repl/ppg.
+    _ptc = posTierCounts(availablePool());
+    _repl = computeReplacement(players);
+    _ppgScale = computePpgScale(players);
     psCtxInvalidate();
     var kdef = wantsKDef();
     var kbtns = document.querySelectorAll('.dr-pos-kdef');
@@ -2303,7 +2312,13 @@ _DRAFT_ROOM_HTML = r"""
       var opts = { reason: pickReason(p, counts) };
       if (nextPick){
         var wp = availProb(p, nextPick);
-        if (wp != null && wp >= 55) opts.wait = { pn: nextPick, prob: wp };
+        if (wp != null){
+          // Always surface the odds this player is still there at your next pick.
+          // A strong likelihood gets the explicit "can wait" nudge; otherwise just
+          // show the survival % (avoids printing the same number twice).
+          if (wp >= 55) opts.wait = { pn: nextPick, prob: wp };
+          else opts.availAt = { pn: nextPick, prob: wp };
+        }
       }
       html += playerRowHtml(p, opts);
     }
@@ -2906,7 +2921,7 @@ _DRAFT_ROOM_HTML = r"""
     var board = document.getElementById('drBoard');
     var teams = state.teams, rounds = state.rounds;
     board.style.gridTemplateColumns = '30px repeat(' + teams + ', minmax(108px, 1fr))';
-    var html = '<div class="dr-colhead"></div>';
+    var html = '<div class="dr-colhead dr-rowhead dr-corner"></div>';
     for (var s = 1; s <= teams; s++){
       // Highlight columns by actual ownership: full column you own = "You",
       // a column where you only hold traded-in pick(s) keeps its seat name but
@@ -2917,7 +2932,7 @@ _DRAFT_ROOM_HTML = r"""
       html += '<div class="dr-colhead' + you + '" data-slot="' + s + '" style="cursor:default;">' + esc(label) + (ownsAny ? ' ★' : '') + '</div>';
     }
     for (var rnd = 1; rnd <= rounds; rnd++){
-      html += '<div class="dr-colhead">R' + rnd + '</div>';
+      html += '<div class="dr-colhead dr-rowhead">R' + rnd + '</div>';
       for (var slot = 1; slot <= teams; slot++){
         var pn = pickNum(rnd, slot, teams, state.order);
         html += '<div class="' + cellClass(pn) + '" id="dc' + pn + '" data-pn="' + pn + '">' + cellInner(pn) + '</div>';
@@ -3012,7 +3027,7 @@ _DRAFT_ROOM_HTML = r"""
   var _GLOSSARY = [
     { term: 'Pick Score (PS)', def: 'A 0-100 grade of how good this pick is at this exact slot. Blends the player’s value, how far they fell vs ADP, positional tier, your roster needs, age, and projected points. Late-round scores are re-scaled so a strong slider isn’t buried. Kickers and defenses aren’t scored.' },
     { term: 'Value', def: 'The player’s trade value as an asset on a 0-999 scale - dynasty value for startup/rookie drafts, redraft value for redraft.' },
-    { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a freely-available starter at their position. VORP uses real fantasy points; VOR uses dynasty value. It updates as the board thins.' },
+    { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a replacement-level starter at their position (a fixed, preseason-style baseline). VORP uses real fantasy points; VOR uses dynasty value.' },
     { term: 'ADP', def: 'Average Draft Position - the typical overall pick a player goes at in real drafts. If it’s below your current pick, they’ve fallen and may be a value.' },
     { term: 'Tier', def: 'Players grouped by talent gaps (Tier 1 = elite). A tier “cliff” means only a couple of players remain before a real drop-off at that position.' },
     { term: 'Steals (sort)', def: 'Orders the board by who has fallen the furthest past their ADP - the biggest available bargains.' },
