@@ -16343,6 +16343,21 @@ tr.team-clickable {
   margin-top: 2px;
 }
 
+/* Numeric pick-score chip (aligns the draft tab with the Draft Room). Color is
+   applied inline from the score; the border/background give it a pill look. */
+.analytics-pick-ps {
+  border: 1px solid transparent;
+  background: transparent;
+  font-weight: 800;
+  font-size: 12px;
+  min-width: 26px;
+  text-align: center;
+}
+.draft-acc-grade.analytics-pick-ps {
+  font-size: 15px;
+  background: transparent;
+}
+
 .analytics-pick-info {
   flex: 1;
   overflow: hidden;

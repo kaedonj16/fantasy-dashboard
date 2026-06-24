@@ -8634,10 +8634,20 @@ def build_teams_body(ctx: dict) -> str:
 
             var chevronSvg = '<svg class="draft-acc-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>';
 
+            // Pick-score color thresholds match psColor() in the Draft Room.
+            function psColor(ps) {{ return ps >= 90 ? '#22c55e' : ps >= 75 ? '#38bdf8' : ps >= 60 ? '#f59e0b' : '#ef4444'; }}
+            // Numeric pick-score chip, falling back to the letter grade when a
+            // pick has no score (e.g. no value data for that player).
+            function gradeChip(p) {{
+              if (p.pick_score != null) {{
+                var c = psColor(p.pick_score);
+                return '<span class="analytics-pick-grade analytics-pick-ps" style="color:' + c + ';border-color:' + c + '66;">' + p.pick_score + '</span>';
+              }}
+              return '<span class="analytics-pick-grade dg-' + p.grade.replace('+', 'plus') + '">' + p.grade + '</span>';
+            }}
+
             // ── Shared pick row renderer ─────────────────────────────────────
             function renderPickRow(p, showTeamName) {{
-              var pgcls = 'dg-' + p.grade.replace('+', 'plus');
-
               var adpLine = '';
               if (p.avg_pick != null) {{
                 var diff = p.adp_diff;
@@ -8677,7 +8687,7 @@ def build_teams_body(ctx: dict) -> str:
 
               return '<div class="analytics-pick-row">' +
                 '<span class="analytics-pick-num">#' + p.pick_no + '</span>' +
-                '<span class="analytics-pick-grade ' + pgcls + '">' + p.grade + '</span>' +
+                gradeChip(p) +
                 '<div class="analytics-pick-info">' +
                   '<div class="analytics-pick-name">' + p.name +
                     ' <span class="analytics-pick-pos pos-' + (p.position || '').toLowerCase() + '">' + (p.position || '') + '</span>' +
@@ -8693,12 +8703,18 @@ def build_teams_body(ctx: dict) -> str:
             function buildByTeamHtml() {{
               var html = '<div class="draft-accordion">';
               teams.forEach(function(t, idx) {{
-                var gcls = 'dg-' + t.grade.replace('+', 'plus');
+                var teamChip;
+                if (t.avg_pick_score != null) {{
+                  var tc = psColor(t.avg_pick_score);
+                  teamChip = '<span class="draft-acc-grade analytics-pick-ps" style="color:' + tc + ';border-color:' + tc + '66;">' + t.avg_pick_score + '</span>';
+                }} else {{
+                  teamChip = '<span class="draft-acc-grade dg-' + t.grade.replace('+', 'plus') + '">' + t.grade + '</span>';
+                }}
                 html += '<div class="draft-acc-item' + (idx === 0 ? ' open' : '') + '">' +
                   '<button class="draft-acc-header" type="button">' +
                     '<span class="draft-acc-name">' + t.team_name + '</span>' +
                     '<div class="draft-acc-right">' +
-                      '<span class="draft-acc-grade ' + gcls + '">' + t.grade + '</span>' +
+                      teamChip +
                       chevronSvg +
                     '</div>' +
                   '</button>' +
@@ -21982,6 +21998,81 @@ def _fetch_league_adp_from_db(
     return _fetch_league_adp_from_db_impl(is_sf, season, draft_type, min_samples)
 
 
+# ── Draft pick scoring (mirrors pickScore() in draft_room_page.py) ──────────────
+# A 0-100 score blending value, VOR, ADP value, tier, roster need, youth and
+# momentum, with draft-type-specific weights. Rookie drafts weight talent/value/
+# youth heavily and roster construction (need) almost not at all; redraft ignores
+# youth; startup is a balanced blend. The real-time-only adjustments from the
+# draft room (survival/opportunity-cost, tier-cliff boost, redraft handcuff) are
+# omitted because they have no meaning in post-draft retrospective grading.
+_PS_WEIGHTS = {
+    "rookie":  {"vor": 0.06, "value": 0.22, "adp": 0.30, "tier": 0.12, "need": 0.05, "youth": 0.24, "mom": 0.06},
+    "redraft": {"vor": 0.12, "value": 0.36, "adp": 0.35, "tier": 0.10, "need": 0.08, "youth": 0.00, "mom": 0.04},
+    "startup": {"vor": 0.08, "value": 0.32, "adp": 0.33, "tier": 0.13, "need": 0.10, "youth": 0.06, "mom": 0.03},
+}
+_PS_AGE_PEAKS = {"RB": 24, "WR": 27, "TE": 27, "QB": 29}
+
+
+def _ps_clamp01(x: float) -> float:
+    return 0.0 if x < 0 else 1.0 if x > 1 else x
+
+
+def _ps_tier_of(value: float, thresholds: list):
+    """Tier number for a dynasty value given gap-significance thresholds (1 = elite)."""
+    if not thresholds:
+        return None
+    for i, thr in enumerate(thresholds):
+        if value >= thr:
+            return i + 1
+    return len(thresholds) + 1
+
+
+def _compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
+                        avg_pick, pick_no, max_val, draft_type, is_sf,
+                        need_raw, qb_count) -> int:
+    pos = (pos or "").upper()
+    value_norm = _ps_clamp01(value / max_val) if max_val and max_val > 0 else 0.0
+    vor_norm = _ps_clamp01(vor / max(max_val, 1)) if vor is not None else value_norm * 0.8
+
+    # ADP component: proportional gap so a 2-pick fall from ADP 2 == a 10-pick
+    # fall from ADP 20, with an elite-ADP floor for top-8 players.
+    if avg_pick is not None:
+        gap = pick_no - avg_pick
+        rel = gap / max(avg_pick, 1.5)
+        if rel >= 0.5:
+            adp_val = 1.0
+        elif rel >= -0.3:
+            adp_val = 0.5 + rel
+        else:
+            adp_val = max(0.0, 0.2 + rel * 0.25)
+        if avg_pick <= 8:
+            adp_val = max(adp_val, _ps_clamp01(0.5 + (8 - avg_pick) / 16))
+    else:
+        adp_val = 0.5
+
+    tier_score = _ps_clamp01((10 - min(tier, 9)) / 9) if tier else value_norm
+
+    need_ramp = _ps_clamp01((pick_no - 1) / 12.0)
+    need = (1 - need_ramp) * 0.5 + need_ramp * need_raw
+
+    youth = 0.5
+    if age is not None and pos in ("RB", "WR", "TE", "QB"):
+        peak = _PS_AGE_PEAKS.get(pos, 27)
+        youth = _ps_clamp01((peak - age + 4) / 8)
+
+    mom = _ps_clamp01((rank_change_7d or 0) / 20 + 0.5)
+
+    w = _PS_WEIGHTS.get(draft_type, _PS_WEIGHTS["startup"])
+    s = (w["vor"] * vor_norm + w["value"] * value_norm + w["adp"] * adp_val
+         + w["tier"] * tier_score + w["need"] * need + w["youth"] * youth + w["mom"] * mom)
+
+    # QB overfill: in 1QB a second QB wastes a spot better used on a skill player.
+    if not is_sf and pos == "QB" and qb_count >= 1:
+        s *= 0.25
+
+    return int(round(_ps_clamp01(s) * 100))
+
+
 @app.route("/api/draft-grades")
 def api_draft_grades():
     """
@@ -22140,6 +22231,106 @@ def api_draft_grades():
         )
         taken: set[str] = set()
 
+        # ── Pick-score inputs (mirror the Draft Room's pickScore) ──────────────
+        # Build value / age / momentum / tier / replacement lookups so each pick
+        # gets the same 0-100 score the Draft Room shows. Failures degrade
+        # gracefully: pick_score stays None and the UI keeps the letter grade.
+        val_by_id: dict[str, dict] = {}
+        mom_by_id: dict[str, float] = {}
+        tier_thresholds: list = []
+        repl_by_pos: dict[str, float] = {}
+        ps_targets: dict[str, float] = {}
+        ps_pool_sorted: list = []
+        ps_ready = False
+        try:
+            mvt = get_model_value_table_cached() or []
+            for _p in mvt:
+                _pid = str(_p.get("id") or "")
+                if not _pid:
+                    continue
+                val_by_id[_pid] = {
+                    "value": float(_p.get("value") or 0),
+                    "sf_value": float(_p.get("sf_value") or _p.get("value") or 0),
+                    "age": _p.get("age"),
+                    "position": str(_p.get("position") or "").upper(),
+                }
+            # Rookie drafts: overlay rookie-board values/ages so prospects score.
+            if _draft_type == "rookie":
+                try:
+                    from data_building.rookie_pipeline.pipeline import (
+                        get_rookie_rankings_from_db, get_active_rookie_class,
+                    )
+                    for _r in (get_rookie_rankings_from_db(get_active_rookie_class()) or []):
+                        _sid = str(_r.get("sleeper_id") or "")
+                        if not _sid:
+                            continue
+                        _ex = val_by_id.get(_sid) or {}
+                        _v = float(_r.get("rookie_value") or _ex.get("value") or 0)
+                        _vsf = float(_r.get("rookie_sf_value") or _r.get("rookie_value") or _ex.get("sf_value") or 0)
+                        val_by_id[_sid] = {
+                            "value": _v, "sf_value": _vsf,
+                            "age": _r.get("age") if _r.get("age") is not None else _ex.get("age"),
+                            "position": str(_r.get("position") or _ex.get("position") or "").upper(),
+                        }
+                except Exception as _e_rk:
+                    logger.info("[draft-grades] rookie value overlay skipped: %s", _e_rk)
+            # Momentum (7-day overall rank change) from the player_values table.
+            try:
+                from dashboard_services.db import get_conn as _gc_ps
+                with _gc_ps() as _rc:
+                    for _r in _rc.execute(
+                        "SELECT player_id, rank_change_7d FROM player_values "
+                        "WHERE rank_change_7d IS NOT NULL"
+                    ).fetchall():
+                        mom_by_id[str(_r["player_id"])] = _r["rank_change_7d"]
+            except Exception:
+                pass
+            # Tier thresholds for this league type & size.
+            tier_thresholds = compute_tier_thresholds(mvt, "sf" if is_sf else "1qb", _num_teams) or []
+            # VOR replacement levels + need targets from the Draft Room's default
+            # roster shape (1QB/2RB/3WR/1TE/1FLEX, SF adds a SUPER_FLEX, 7 bench).
+            _vkey = "sf_value" if is_sf else "value"
+            _starters = (
+                {"QB": 1.5, "RB": 2.0, "WR": 3.0, "TE": 1.0} if is_sf
+                else {"QB": 1.0, "RB": 2.5, "WR": 3.5, "TE": 1.0}
+            )
+            _by_pos: dict[str, list] = {"QB": [], "RB": [], "WR": [], "TE": []}
+            # Eligible scoring pool: rookies for rookie drafts, else all skill players.
+            for _pid, _d in val_by_id.items():
+                _pp = _d.get("position")
+                if _pp not in _by_pos:
+                    continue
+                if _draft_type == "rookie" and eligible_sids and _pid not in eligible_sids:
+                    continue
+                _by_pos[_pp].append(_d.get(_vkey) or 0)
+                ps_pool_sorted.append((_d.get(_vkey) or 0, _pid))
+            for _pp, _arr in _by_pos.items():
+                _arr.sort(reverse=True)
+                if not _arr:
+                    repl_by_pos[_pp] = 0
+                    continue
+                _idx = int(round(_num_teams * _starters.get(_pp, 1))) - 1
+                _idx = max(0, min(_idx, len(_arr) - 1))
+                repl_by_pos[_pp] = _arr[_idx]
+            ps_pool_sorted.sort(key=lambda x: x[0], reverse=True)
+            ps_targets = (
+                {"QB": 2.7, "RB": 4.45, "WR": 5.8, "TE": 2.05} if is_sf
+                else {"QB": 1.7, "RB": 5.45, "WR": 5.8, "TE": 2.05}
+            )
+            ps_ready = True
+        except Exception as _e_ps:
+            logger.info("[draft-grades] pick-score inputs skipped: %s", _e_ps)
+
+        # Per-team running count of this draft's picks by position (drives need).
+        ps_team_counts: dict = _defaultdict(lambda: {"QB": 0, "RB": 0, "WR": 0, "TE": 0})
+
+        def _ps_max_val() -> float:
+            """Top dynasty value still on the board (mirrors availablePool max)."""
+            for _v, _sid in ps_pool_sorted:
+                if _sid not in taken:
+                    return _v
+            return 0.0
+
         # ── Calculate positional rankings based on avg_pick ───────────────────────
         pos_rankings: dict[str, dict[str, int]] = {}
         for pos in CORE_POS:
@@ -22286,6 +22477,27 @@ def api_draft_grades():
 
             grade = pick_grade(adp_diff, need, bpa_gap, is_bpa, pos, is_sf, qb_count, name, _num_teams)
 
+            # ── 0-100 pick score (mirrors the Draft Room) ─────────────────────
+            pick_score = None
+            if ps_ready:
+                _d = val_by_id.get(player_id)
+                if _d is not None:
+                    _vkey2 = "sf_value" if is_sf else "value"
+                    _val = _d.get(_vkey2) or 0
+                    _repl = repl_by_pos.get(pos)
+                    _vor = round(_val - _repl) if _repl is not None and pos in repl_by_pos else None
+                    _tier = _ps_tier_of(_val, tier_thresholds) if pos in CORE_POS else None
+                    _tgt = ps_targets.get(pos, 0)
+                    _have = ps_team_counts[rid].get(pos, 0)
+                    _need_raw = _ps_clamp01(max(0, _tgt - _have) / _tgt) if _tgt else 0.0
+                    pick_score = _compute_pick_score(
+                        pos=pos, value=_val, vor=_vor, tier=_tier,
+                        age=_d.get("age"), rank_change_7d=mom_by_id.get(player_id),
+                        avg_pick=avg_pick, pick_no=pick_no, max_val=_ps_max_val(),
+                        draft_type=_draft_type, is_sf=is_sf, need_raw=_need_raw,
+                        qb_count=ps_team_counts[rid].get("QB", 0),
+                    )
+
             picks_by_roster[rid].append({
                 "pick_no":          pick_no,
                 "round":            (pick_no - 1) // max(num_teams, 1) + 1,
@@ -22300,6 +22512,7 @@ def api_draft_grades():
                 "bpa":              avail_better[:2],   # top 2 available better options
                 "could_wait":       could_wait,
                 "grade":            grade,
+                "pick_score":       pick_score,
             })
 
             # Mark this player as taken on the board
@@ -22308,6 +22521,7 @@ def api_draft_grades():
             if pos in CORE_POS:
                 roster_pos_counts.setdefault(rid, {pos: 0 for pos in CORE_POS})
                 roster_pos_counts[rid][pos] = roster_pos_counts[rid].get(pos, 0) + 1
+                ps_team_counts[rid][pos] = ps_team_counts[rid].get(pos, 0) + 1
 
         # ── Assemble results ─────────────────────────────────────────────────
         results = []
@@ -22323,15 +22537,24 @@ def api_draft_grades():
                     pick["pos_rank"] = pos_rankings[pick["position"]][pick["player_id"]]
             
             tgrade = team_grade([p["grade"] for p in team_picks if p["grade"] != "N/A"])
+            _ps_vals = [p["pick_score"] for p in team_picks if p.get("pick_score") is not None]
+            avg_pick_score = int(round(sum(_ps_vals) / len(_ps_vals))) if _ps_vals else None
             results.append({
-                "roster_id":  rid,
-                "team_name":  roster_map.get(rid, f"Roster {rid}"),
-                "grade":      tgrade,
-                "picks":      team_picks,
+                "roster_id":      rid,
+                "team_name":      roster_map.get(rid, f"Roster {rid}"),
+                "grade":          tgrade,
+                "avg_pick_score": avg_pick_score,
+                "picks":          team_picks,
             })
 
+        # Rank teams by average pick score when available, else fall back to the
+        # letter grade so ordering matches whatever the UI surfaces.
         grade_order = {"A+": 5, "A": 4, "B": 3, "C": 2, "D": 1, "F": 0, "N/A": 2}
-        results.sort(key=lambda x: grade_order.get(x["grade"], 2), reverse=True)
+        results.sort(
+            key=lambda x: (x.get("avg_pick_score") if x.get("avg_pick_score") is not None
+                           else grade_order.get(x["grade"], 2) * 18),
+            reverse=True,
+        )
 
         all_picks_flat = [p for t in results for p in t["picks"]]
         total_rounds = max((p["round"] for p in all_picks_flat), default=_draft_rounds or 1)
