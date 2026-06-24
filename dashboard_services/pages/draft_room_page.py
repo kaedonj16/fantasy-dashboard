@@ -1960,13 +1960,14 @@ _DRAFT_ROOM_HTML = r"""
 
     // Depth normalization: re-anchor the 0-100 scale relative to what is
     // achievable at this pick slot. The pool shrinks as the draft progresses
-    // so the best available player at pick 228/240 should score ~70-75, not 42.
-    // par is 1.0 at pick 1 and falls to ~0.32 at the last pick, so dividing
-    // by it rescales late-pick scores upward without affecting early picks.
+    // so a strong late-round slider isn't unfairly buried in the 40s. The boost
+    // is intentionally gentle: par falls from 1.0 (pick 1) to ~0.57 (last pick),
+    // so the best available in the mid-late rounds lands ~70-80, not a clamped
+    // 100. A steeper curve over-boosted round 15 picks to 100.
     var _tot = (state.teams || 12) * (state.rounds || 16);
     if (_tot > 1){
       var _depth = Math.min(0.98, (state.current - 1) / _tot);
-      var _par   = Math.max(0.30, 1.0 - _depth * 0.72);
+      var _par   = Math.max(0.40, 1.0 - _depth * 0.44);
       s = s / _par;
     }
 
