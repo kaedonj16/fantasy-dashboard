@@ -8658,7 +8658,8 @@ def build_teams_body(ctx: dict) -> str:
                     : '<span class="adp-neutral">on ADP</span>';
                 var posTag = p.pos_rank != null ? ' · ' + p.position + p.pos_rank : '';
                 var waitTag = p.could_wait ? ' <span class="adp-wait">Reach</span>' : '';
-                var adpStr = isStartup ? ('#' + Math.round(p.avg_pick)) : p.avg_pick.toFixed(2);
+                var rankAdp = isStartup || data.draft_type === 'redraft';
+                var adpStr = rankAdp ? ('#' + Math.round(p.avg_pick)) : p.avg_pick.toFixed(2);
                 adpLine = '<div class="analytics-pick-adp-line">ADP ' + adpStr + posTag + ' ' + diffHtml + waitTag + '</div>';
               }}
 
@@ -22031,6 +22032,15 @@ def _compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
                         avg_pick, pick_no, max_val, draft_type, is_sf,
                         need_raw, qb_count) -> int:
     pos = (pos or "").upper()
+    # DB-sourced numbers arrive as decimal.Decimal; coerce to float so they mix
+    # with the float weights below (Decimal * float raises TypeError).
+    value = float(value) if value is not None else 0.0
+    vor = float(vor) if vor is not None else None
+    age = float(age) if age is not None else None
+    rank_change_7d = float(rank_change_7d) if rank_change_7d is not None else None
+    avg_pick = float(avg_pick) if avg_pick is not None else None
+    max_val = float(max_val) if max_val is not None else 0.0
+    need_raw = float(need_raw) if need_raw is not None else 0.0
     value_norm = _ps_clamp01(value / max_val) if max_val and max_val > 0 else 0.0
     vor_norm = _ps_clamp01(vor / max(max_val, 1)) if vor is not None else value_norm * 0.8
 
@@ -22120,7 +22130,7 @@ def api_draft_grades():
 
         players_index = load_players_index() or {}
 
-        # ── Draft type: startup (≥10 rounds) or rookie (1-5 rounds) ─────────
+        # ── Draft type: startup (≥10 rounds), rookie (1-5), or redraft ──────
         _draft_rounds = int((latest_draft.get("settings") or {}).get("rounds") or 0)
         if _draft_rounds >= 10:
             _draft_type = "startup"
@@ -22128,6 +22138,37 @@ def api_draft_grades():
             _draft_type = "rookie"
         else:
             _draft_type = "rookie"  # safe default
+
+        # Redraft leagues (Sleeper settings.type == 0) run a full draft every
+        # year, so a long draft there is a redraft - NOT a dynasty startup.
+        # Grade those on redraft values + a redraft-value ADP rank instead.
+        redraft_val_by_id: dict[str, float] = {}
+        if _draft_type == "startup" and platform == "sleeper":
+            try:
+                _lg = get_league(platform, league_id, season) or {}
+                _lt_num = (_lg.get("settings") or {}).get("type")
+                if _lt_num is not None and int(_lt_num) == 0:
+                    _draft_type = "redraft"
+            except Exception as _e_lt:
+                logger.info("[draft-grades] league type check skipped: %s", _e_lt)
+        if _draft_type == "redraft":
+            try:
+                from dashboard_services.db import get_conn as _gc_rd
+                _rdcol = "redraft_value_sf" if is_sf else "redraft_value_1qb"
+                with _gc_rd() as _rc:
+                    for _r in _rc.execute(
+                        f"SELECT player_id, {_rdcol} AS rv FROM player_values "
+                        f"WHERE {_rdcol} IS NOT NULL"
+                    ).fetchall():
+                        try:
+                            redraft_val_by_id[str(_r["player_id"])] = float(_r["rv"] or 0)
+                        except (TypeError, ValueError):
+                            pass
+            except Exception as _e_rd:
+                logger.info("[draft-grades] redraft values skipped: %s", _e_rd)
+            # If we couldn't load redraft values, fall back to startup grading.
+            if not redraft_val_by_id:
+                _draft_type = "startup"
 
         # ── Rosters & users (needed for num_teams before ADP lookup) ─────────
         rosters = get_rosters(platform, league_id, season) or []
@@ -22146,7 +22187,17 @@ def api_draft_grades():
         # Startup drafts use FantasyCalc dynasty rankings as the ADP source
         # (avg_pick = FC overallRank, so Josh Allen ≈ 1).  Rookie drafts keep
         # the league-crawled data (Sleeper pick numbers within the rookie pool).
-        if _draft_type == "startup":
+        if _draft_type == "redraft":
+            # No redraft ADP feed exists, so derive ADP from redraft-value rank
+            # (best redraft value = ADP 1), mirroring the Draft Room fallback.
+            adp_info = {}
+            for _rank, (_pid, _v) in enumerate(
+                sorted(redraft_val_by_id.items(), key=lambda kv: kv[1], reverse=True), start=1
+            ):
+                _pos = str((players_index.get(_pid) or {}).get("pos", "")).upper()
+                adp_info[_pid] = {"avg_pick": _rank, "position": _pos}
+            adp_source = "redraft-value"
+        elif _draft_type == "startup":
             adp_info = _fetch_fc_startup_adp(is_sf)
             if adp_info:
                 adp_source = "fantasycalc"
@@ -22290,6 +22341,14 @@ def api_draft_grades():
             # VOR replacement levels + need targets from the Draft Room's default
             # roster shape (1QB/2RB/3WR/1TE/1FLEX, SF adds a SUPER_FLEX, 7 bench).
             _vkey = "sf_value" if is_sf else "value"
+
+            def _eff_val(_pid, _d):
+                # Redraft drafts score on redraft values; dynasty drafts on the
+                # SF/1QB dynasty value.
+                if _draft_type == "redraft":
+                    return float(redraft_val_by_id.get(_pid, 0) or 0)
+                return float(_d.get(_vkey) or 0)
+
             _starters = (
                 {"QB": 1.5, "RB": 2.0, "WR": 3.0, "TE": 1.0} if is_sf
                 else {"QB": 1.0, "RB": 2.5, "WR": 3.5, "TE": 1.0}
@@ -22302,8 +22361,9 @@ def api_draft_grades():
                     continue
                 if _draft_type == "rookie" and eligible_sids and _pid not in eligible_sids:
                     continue
-                _by_pos[_pp].append(_d.get(_vkey) or 0)
-                ps_pool_sorted.append((_d.get(_vkey) or 0, _pid))
+                _ev = _eff_val(_pid, _d)
+                _by_pos[_pp].append(_ev)
+                ps_pool_sorted.append((_ev, _pid))
             for _pp, _arr in _by_pos.items():
                 _arr.sort(reverse=True)
                 if not _arr:
@@ -22482,11 +22542,12 @@ def api_draft_grades():
             if ps_ready:
                 _d = val_by_id.get(player_id)
                 if _d is not None:
-                    _vkey2 = "sf_value" if is_sf else "value"
-                    _val = _d.get(_vkey2) or 0
+                    _val = _eff_val(player_id, _d)
                     _repl = repl_by_pos.get(pos)
                     _vor = round(_val - _repl) if _repl is not None and pos in repl_by_pos else None
-                    _tier = _ps_tier_of(_val, tier_thresholds) if pos in CORE_POS else None
+                    # Dynasty tiers don't apply to redraft (value scale differs).
+                    _tier = None if _draft_type == "redraft" else (
+                        _ps_tier_of(_val, tier_thresholds) if pos in CORE_POS else None)
                     _tgt = ps_targets.get(pos, 0)
                     _have = ps_team_counts[rid].get(pos, 0)
                     _need_raw = _ps_clamp01(max(0, _tgt - _have) / _tgt) if _tgt else 0.0
