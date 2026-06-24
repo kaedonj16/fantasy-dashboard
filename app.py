@@ -13092,7 +13092,7 @@ def api_draft_live():
     user_roster_map = {}  # user_id -> roster_id (for traded-pick ownership resolution)
     try:
         _lid = draft.get("league_id")
-        _season = int(draft.get("season") or season or datetime.now().year)
+        _season = int(draft.get("season") or datetime.now().year)
         if _lid and draft_order:
             _users = get_users(platform, _lid, _season) or []
             _by_uid = {str(u.get("user_id")): u for u in _users}
