@@ -1002,8 +1002,9 @@ _DRAFT_ROOM_HTML = r"""
     // Prefer the connected league's actual roster shape when available.
     var lg = rosterFromLeague();
     if (lg){
-      // Keep K/DEF only for redraft; dynasty/rookie boards skip them.
-      if (!rd){ lg.K = 0; lg.DEF = 0; }
+      // Respect the league's K/DEF roster spots in every format - some dynasty
+      // and startup leagues do roster a kicker/defense. Only the no-league
+      // fallback below assumes a skill-position-only board.
       // Reconcile with the chosen QB format: a Superflex draft always carries an
       // SF slot and a regular FLEX (superflex is generally just one extra spot),
       // and a 1QB draft drops the SF slot. The league shape only seeds defaults.
@@ -1022,7 +1023,8 @@ _DRAFT_ROOM_HTML = r"""
     ['QB','SF','RB','WR','TE','FLEX','K','DEF','BN'].forEach(function(k){ out[k] = r[k] || 0; });
     if (sf){ if (!out.SF) out.SF = 1; if (!out.FLEX) out.FLEX = 1; }
     else   { out.SF = 0; }
-    if (!rd){ out.K = 0; out.DEF = 0; }
+    // K/DEF are kept as-is across formats: if the league (or the user) rosters
+    // them, they stay draftable regardless of dynasty/startup/redraft.
     return out;
   }
 
@@ -1232,7 +1234,9 @@ _DRAFT_ROOM_HTML = r"""
   // (always true for redraft; opt-in for startup via the setup steppers).
   function wantsKDef(){
     if (!state) return false;
+    if (state.type === 'rookie') return false;   // rookie pools have no K/DEF
     if (state.type === 'redraft') return true;
+    // Startup/dynasty: show K/DEF whenever the roster (league or custom) has a slot.
     var rs = state.roster || {};
     return (rs.K || 0) > 0 || (rs.DEF || 0) > 0;
   }
