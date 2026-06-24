@@ -2119,18 +2119,21 @@ _DRAFT_IMMINENT_BANNER_HTML = r"""
     render();
   }
   function refresh(){
+    // When a draft is imminent/live, poll harder so a pushed-back start time
+    // (e.g. moved back 15 min or an hour) is reflected within ~30s.
+    var throttle = cur ? 25000 : 60000;
     try {
       var c = JSON.parse(sessionStorage.getItem('drgbCache') || 'null');
-      if (c && (Date.now() - c.ts) < 60000){ apply(c.drafts); return; }   // throttle across page navigations
+      if (c && (Date.now() - c.ts) < throttle){ apply(c.drafts); return; }   // throttle across page navigations
     } catch(e){}
-    fetch(CFG.detectUrl).then(function(r){ return r.json(); }).then(function(resp){
+    fetch(CFG.detectUrl, { cache: 'no-store' }).then(function(r){ return r.json(); }).then(function(resp){
       var drafts = (resp && resp.drafts) || [];
       try { sessionStorage.setItem('drgbCache', JSON.stringify({ ts: Date.now(), drafts: drafts })); } catch(e){}
       apply(drafts);
     }).catch(function(){});
   }
   setInterval(tick, 1000);
-  setInterval(refresh, 90000);
+  setInterval(refresh, 30000);   // re-detect every 30s; the throttle above keeps far-out checks cheap
   refresh();
 })();
 </script>

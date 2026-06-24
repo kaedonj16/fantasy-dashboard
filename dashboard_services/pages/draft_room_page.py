@@ -3072,9 +3072,13 @@ _DRAFT_ROOM_HTML = r"""
       if (state.isDrafting){
         ms = 2000;  // active draft: poll every 2s so picks surface quickly
       } else if (state.startTime){
+        // Clean gradient: poll harder as the scheduled start nears so the board
+        // flips to live promptly, but keep checking often enough far out that a
+        // pushed-back start time (moved back 15 min / 1 hr) is caught within ~15s.
         var toStart = state.startTime - Date.now();
         if (toStart <= 60000 && toStart > -900000) ms = 5000;    // 1 min before -> 15 min after
-        else if (toStart <= 300000 && toStart > 0) ms = 30000;   // within 5 min of start
+        else if (toStart <= 300000) ms = 10000;                  // 1-5 min out
+        else ms = 15000;                                         // far out: catch reschedules
       }
     }
     _pollNextAt = Date.now() + ms;
