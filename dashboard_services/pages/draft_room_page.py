@@ -2787,7 +2787,7 @@ _DRAFT_ROOM_HTML = r"""
           }
           html += '<button class="dr-live-item" data-id="' + esc(d.draft_id) + '">'
             + '<span class="dr-live-status dr-ls-' + esc(d.status || '') + '">' + esc(liveStatusLabel(d.status)) + '</span>'
-            + esc((d.type || 'snake') + ' · ' + (d.teams || '?') + ' teams · ' + (d.rounds || '?') + ' rounds' + when) + '</button>';
+            + esc((d.teams || '?') + ' teams · ' + (d.rounds || '?') + ' rounds' + when) + '</button>';
         });
         box.innerHTML = html;
       })
