@@ -13093,8 +13093,8 @@ def api_draft_live():
             _season_str = str(_season)
             traded_picks_out = [
                 {"season": tp.get("season"), "round": tp.get("round"),
-                 "slot": tp.get("slot"), "owner_id": tp.get("owner_id"),
-                 "previous_owner_id": tp.get("previous_owner_id")}
+                 "roster_id": tp.get("roster_id"),   # original owner's roster_id
+                 "owner_id": tp.get("owner_id")}      # current owner's roster_id
                 for tp in _all_traded
                 if str(tp.get("season") or "") == _season_str
             ]

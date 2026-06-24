@@ -2038,20 +2038,38 @@ _DRAFT_ROOM_HTML = r"""
       if (cfg.viewerUserId && p.picked_by === cfg.viewerUserId) owned[p.pick_no] = true;
     });
     if (String(d.status) !== 'complete'){
-      var tradedMap = {};
+      // Sleeper traded_picks uses roster_id (original owner) not a slot field.
+      // Build slot -> roster_id via draft_order (uid->slot) + user_roster_map (uid->roster_id).
+      var slotToRosterId = {};
+      if (d.draft_order && d.user_roster_map){
+        Object.keys(d.draft_order).forEach(function(uid){
+          var sl = d.draft_order[uid];
+          var rid = d.user_roster_map[uid];
+          if (sl != null && rid != null) slotToRosterId[sl] = rid;
+        });
+      }
+      // tradedPickMap: "originalRosterId:round" -> currentOwnerRosterId
+      var tradedPickMap = {};
       (d.traded_picks || []).forEach(function(tp){
-        if (tp.slot != null && tp.round != null) tradedMap[tp.slot + ':' + tp.round] = tp.owner_id;
+        if (tp.roster_id != null && tp.round != null) tradedPickMap[tp.roster_id + ':' + tp.round] = tp.owner_id;
       });
-      var viewerRosterId = null;
-      if (cfg.viewerUserId && d.user_roster_map) viewerRosterId = d.user_roster_map[cfg.viewerUserId] || null;
+      var viewerRosterId = (cfg.viewerUserId && d.user_roster_map) ? (d.user_roster_map[cfg.viewerUserId] || null) : null;
       for (var pn2 = 1; pn2 <= teams * rounds; pn2++){
         if (madePickNos[pn2]) continue;
         var pn2Slot = slotOnClock(pn2, teams, order);
         var pn2Round = Math.ceil(pn2 / teams);
-        var tk = pn2Slot + ':' + pn2Round;
-        if (tradedMap.hasOwnProperty(tk)){
-          if (viewerRosterId !== null && tradedMap[tk] === viewerRosterId) owned[pn2] = true;
+        var origRid = slotToRosterId[pn2Slot];
+        if (origRid != null){
+          var tk = origRid + ':' + pn2Round;
+          if (tradedPickMap.hasOwnProperty(tk)){
+            // Pick has been traded - viewer owns it only if they are the current owner.
+            if (viewerRosterId !== null && tradedPickMap[tk] === viewerRosterId) owned[pn2] = true;
+          } else {
+            // Not traded - original roster still owns it.
+            if (viewerRosterId !== null && origRid === viewerRosterId) owned[pn2] = true;
+          }
         } else {
+          // slot->roster mapping unavailable - fall back to home slot.
           if (slot && pn2Slot === slot) owned[pn2] = true;
         }
       }
