@@ -1671,6 +1671,23 @@ _DRAFT_ROOM_HTML = r"""
     var _sfSlots = state.sf ? ((_rs.SF != null ? _rs.SF : 1)) : 0;
     var _stSlots = { QB: (_rs.QB||0) + _sfSlots, RB: (_rs.RB||0) + (_rs.FLEX||0), WR: _rs.WR||0, TE: _rs.TE||0, K: _rs.K||0, DEF: _rs.DEF||0 };
     var _remainRds = state.rounds - Math.floor((pn - 1) / state.teams);
+    // Backup-QB timing (1QB): a 2nd QB only becomes a need a handful of rounds
+    // AFTER this team drafted its starter - so a manager who grabbed an elite QB
+    // early waits longer for the backup than one who landed the starter late.
+    // Find the round this team took its first QB, then gate backup need on a
+    // per-team gap (5-9 rounds, varied so backups don't all land the same round),
+    // with a late-draft fallback so a QB2 still gets rostered by the end.
+    var _curRound = Math.ceil(pn / state.teams);
+    var _qb1Pick = null;
+    Object.keys(state.picks).forEach(function(k){
+      var _kp = parseInt(k, 10);
+      if (slotOnClock(_kp, state.teams, state.order) !== slot) return;
+      if ((state.picks[k].position || '').toUpperCase() === 'QB' && (_qb1Pick == null || _kp < _qb1Pick)) _qb1Pick = _kp;
+    });
+    var _qb1Round = _qb1Pick ? Math.ceil(_qb1Pick / state.teams) : null;
+    var _qbGap = 5 + Math.round(_rand01(slot + ':qbgap') * 4);
+    var _backupQBWanted = _qb1Round != null &&
+      ((_curRound - _qb1Round) >= _qbGap || _curRound >= (state.rounds || 20) * 0.8);
     var cands = [];
     var bestPv = 0;   // highest pick score available (the "best player on the board")
     var posQualLeft = {};  // count of remaining startable-quality players per position
@@ -1710,6 +1727,9 @@ _DRAFT_ROOM_HTML = r"""
       var pos = (p.position||'').toUpperCase();
       var t = targets[pos] || 0, have = counts[pos] || 0;
       var need = t ? Math.max(0, t - have) / t : 0;
+      // 1QB: a backup QB carries no need pull until enough rounds have passed
+      // since this team drafted its starter (see _backupQBWanted above).
+      if (pos === 'QB' && !state.sf && have >= 1 && !_backupQBWanted) need = 0;
       var over = (t && have >= t) ? (have - t + 1) : 0;
       // Overcrowding penalty: exponential once past depth target (3.5x per excess pick).
       // over=1 -> weight/4.5; over=2 -> weight/13; over=3 -> weight/43.
@@ -1984,12 +2004,9 @@ _DRAFT_ROOM_HTML = r"""
     var tep = scoringCfg().tep;
     if (tep > 0) t.TE += 1;
     // Sane ceilings so the assistant never frames an absurd amount of depth as a need.
-    // In 1QB a backup QB has little value, so hold the QB target at 1 (a 2nd QB is
-    // not a "need") until the final stretch of the draft, when rostering a backup
-    // becomes reasonable. SF always wants 2 (starter + superflex) with room for a 3rd.
-    var _rnd = (state && state.current && state.teams) ? Math.ceil(state.current / state.teams) : 1;
-    var _lateQB = !!(state && state.rounds && _rnd >= state.rounds * 0.7);
-    var cap = { QB: sf ? 3 : (_lateQB ? 2 : 1), RB: 6, WR: 6, TE: tep > 0 ? 3 : 2 };
+    // (1QB backup-QB timing is handled per-team in the sim, relative to when each
+    // team drafted its starter - see simPick - not by a blanket round cap here.)
+    var cap = { QB: sf ? 3 : 2, RB: 6, WR: 6, TE: tep > 0 ? 3 : 2 };
     Object.keys(cap).forEach(function(k){ if (t[k] > cap[k]) t[k] = cap[k]; });
     if (rs.K)   t.K   = rs.K;
     if (rs.DEF) t.DEF = rs.DEF;
