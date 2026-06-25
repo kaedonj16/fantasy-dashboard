@@ -1573,6 +1573,22 @@ _DRAFT_ROOM_HTML = r"""
   // of the board (consensus picks barely move) and widens deeper, where ADP is
   // noisier. Drives how far a player realistically slides from their ADP.
   function simSigma(a){ return Math.max(0.5, Math.min(10, 0.35 + 0.055 * a)); }
+  // Each CPU team gets a persistent draft personality that scales how hard it
+  // leans into roster need/scarcity vs pure best-available value, so they don't
+  // all reach the same way. Assigned once per draft and saved with state, so a
+  // team behaves consistently within a draft but the mix differs between drafts.
+  //   ~0.2 = value-first (best player available)   ~0.85 = balanced   ~1.5 = need-first
+  function _simPersona(slot){
+    if (!state.simPersonas) state.simPersonas = {};
+    if (state.simPersonas[slot] == null){
+      var r = Math.random(), f;
+      if (r < 0.30)      f = 0.15 + Math.random() * 0.30;   // ~30% BPA / value-first
+      else if (r < 0.75) f = 0.60 + Math.random() * 0.50;   // ~45% balanced
+      else               f = 1.15 + Math.random() * 0.65;   // ~25% need / roster-builder
+      state.simPersonas[slot] = Math.round(f * 100) / 100;
+    }
+    return state.simPersonas[slot];
+  }
   // Build a CPU team's scoring context (its own above-replacement counts, its own
   // picks, and its own next pick) so pickScore judges need for THAT team, not the
   // viewer's. Mirrors psCtx()/nextOwnedAfterCurrent() but scoped to one draft slot.
@@ -1606,6 +1622,9 @@ _DRAFT_ROOM_HTML = r"""
     var pn = state.current;
     var slot = slotOnClock(pn, state.teams, state.order);
     var counts = teamCounts(slot), targets = posTargets();
+    // This CPU's draft personality scales how hard it leans into need/scarcity vs
+    // pure best-available value, so teams don't all reach the same way.
+    var persona = _simPersona(slot);
     // Score every candidate from THIS CPU team's perspective (its own roster,
     // depth, and next pick) so need is judged for the right team, not the viewer.
     var cpuCtx = _cpuCtx(slot);
@@ -1668,23 +1687,25 @@ _DRAFT_ROOM_HTML = r"""
       // targets a 2nd QB; the zero-QB SF case stays urgent once the early rounds pass.
       var needFactor = (pos === 'QB' && state.sf) ? 0.65 : 0.25;
       if (pos === 'QB' && state.sf && have === 0 && pn > state.teams * 2) needFactor = 1.5;
-      var needBoost = 1 + needFactor * need;
+      // All discretionary need/scarcity pulls scale by this team's personality:
+      // a value-first (BPA) team barely reaches, a roster-builder reaches hard.
+      var needBoost = 1 + persona * needFactor * need;
       // Value-aware starter need: a player who fills an OPEN starting slot and is
-      // close in pick score to the best player on the board should be strongly
-      // preferred - drafting like a smart manager (e.g. a 2nd QB in Superflex when
-      // a near-best one is available). Quadratic in closeness so only genuinely
-      // good values trigger the strong pull; a mediocre fit gets only a mild bump.
+      // close in pick score to the best player on the board should be preferred -
+      // drafting like a smart manager (e.g. a 2nd QB in Superflex when a near-best
+      // one is available). Quadratic in closeness so only genuinely good values
+      // trigger the strong pull; a mediocre fit gets only a mild bump.
       var starterNeed = sSlots > 0 ? clamp01((sSlots - have) / sSlots) : 0;
       if (starterNeed > 0 && pv != null && bestPv > 0){
         var closeness = clamp01(pv / bestPv);
-        needBoost += 3.0 * starterNeed * closeness * closeness;
+        needBoost += persona * 3.0 * starterNeed * closeness * closeness;
         // Scarcity: if the startable pool at this needed position is drying up,
         // grab one now rather than chase a falling-ADP player elsewhere - exactly
         // how a manager reaches when "there aren't many good QBs/RBs left." Urgency
         // ramps as the remaining quality count drops below roughly one-per-team.
         var qualLeft = posQualLeft[pos] || 0;
         var scarce = clamp01((state.teams - qualLeft) / state.teams);
-        needBoost += 2.0 * starterNeed * scarce;
+        needBoost += persona * 2.0 * starterNeed * scarce;
       }
       w *= needBoost / overFactor;
       // K/DEF: in the final 3 rounds, teams MUST fill these slots or they go empty.
