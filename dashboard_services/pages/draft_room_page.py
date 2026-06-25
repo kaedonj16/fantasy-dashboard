@@ -1661,9 +1661,40 @@ _DRAFT_ROOM_HTML = r"""
   function autoPick(){
     var pool = availablePool();
     if (!pool.length) return null;
+    // Roster-need guard: K/DEF have no pickScore (null -> 0), so they'd never be
+    // auto-drafted and your team would finish without a kicker/defense while every
+    // CPU team fills theirs. Mirror the CPU's late-round behavior: when you still
+    // have unfilled required K/DEF slots and your remaining picks are running out,
+    // grab the best available one first so the slot doesn't go empty.
+    var _kd = _autoKDefNeed(pool);
+    if (_kd) return _kd;
     var scored = pool.map(function(p){ return { p: p, s: pickScoreFor(p) || 0 }; });
     scored.sort(function(a, b){ return b.s - a.s; });
     return scored[0].p;
+  }
+  // Returns the best available K/DEF to draft now if an unfilled required slot
+  // would otherwise go empty given the picks you have left; else null.
+  function _autoKDefNeed(pool){
+    var rs = (state && state.roster) || {};
+    var needK   = Math.max(0, (rs.K   || 0) - (myPosCounts().K   || 0));
+    var needDef = Math.max(0, (rs.DEF || 0) - (myPosCounts().DEF || 0));
+    if (needK + needDef <= 0) return null;
+    // How many of your own picks remain (this one included)?
+    var remaining = ownedPicks().filter(function(pn){ return pn >= state.current && !state.picks[pn]; }).length;
+    if (remaining <= 0) return null;
+    // Take K/DEF when you can't afford to wait (picks left <= slots still to fill)
+    // or you're in the final stretch where the CPU is filling these too.
+    var _remainRds = state.rounds - Math.floor((state.current - 1) / state.teams);
+    var mustFill = remaining <= (needK + needDef) || _remainRds <= 3;
+    if (!mustFill) return null;
+    // Prefer whichever position you still need; rank by projected PPG (lineupScore).
+    var want = {};
+    if (needK > 0)   want.K = true;
+    if (needDef > 0) want.DEF = true;
+    var cands = pool.filter(function(p){ return want[(p.position || '').toUpperCase()]; });
+    if (!cands.length) return null;
+    cands.sort(function(a, b){ return lineupScore(b) - lineupScore(a); });
+    return cands[0];
   }
   function _doAutoPick(){
     var ap = autoPick();
