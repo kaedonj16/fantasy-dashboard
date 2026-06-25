@@ -7,7 +7,9 @@ services:
     # Playwright/Chromium excluded from web-service build while diagnosing
     # performance issues — og_render.py degrades gracefully to the static logo.
     # Re-add `&& python -m playwright install chromium` once confirmed stable.
-    buildCommand: pip install -r requirements.txt
+    # --no-cache-dir: never reuse pip's wheel cache. Render persists that cache
+    # across builds, and a corrupt cached scipy wheel was failing the hash check.
+    buildCommand: pip install --no-cache-dir -r requirements.txt
     startCommand: python startup.py
     envVars:
       - key: PYTHON_VERSION
@@ -80,7 +82,7 @@ services:
     runtime: python
     schedule: 0 8 * * *
     plan: starter
-    buildCommand: pip install -r requirements.txt && python -m playwright install chromium
+    buildCommand: pip install --no-cache-dir -r requirements.txt && python -m playwright install chromium
     startCommand: python cron_daily.py
     envVars:
       - key: PYTHON_VERSION
@@ -145,7 +147,7 @@ services:
     # instead of only crawling new leagues once at discovery time.
     schedule: 0 */4 * * *
     plan: starter
-    buildCommand: pip install -r requirements.txt && python -m playwright install chromium
+    buildCommand: pip install --no-cache-dir -r requirements.txt && python -m playwright install chromium
     startCommand: python scripts/refresh_trade_intel.py --discover-target 500 --batch-size 2000 --workers 4 --crawl-mode both --recrawl-days 2 --analytics
     envVars:
       - key: PYTHON_VERSION
@@ -166,7 +168,7 @@ services:
     # Runs before the 8am daily-job so freshly discovered leagues are available sooner.
     schedule: 0 6 * * *
     plan: starter
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install --no-cache-dir -r requirements.txt
     startCommand: python scripts/discover_leagues.py --target 2000
     envVars:
       - key: PYTHON_VERSION
