@@ -3736,10 +3736,52 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   // ── Board rendering (incremental) ───────────────────────────────────────────
+  // Pool of fantasy team names so CPU opponents in a mock have some character
+  // instead of "Team 7". Connected/live leagues supply their own names via
+  // slot_names and never use these. Kept apostrophe-free for clean embedding.
+  var _CPU_TEAM_NAMES = [
+    'The Audibles', 'Gridiron Gang', 'End Zone Elite', 'Hail Mary Heroes',
+    'Blitz Brigade', 'Pigskin Pirates', 'Fourth and Long', 'Red Zone Rebels',
+    'Touchdown Titans', 'Field Goal Frenzy', 'Purple People Eaters', 'Victory Formation',
+    'The Hurry Up', 'Pocket Presence', 'Play Action Heroes', 'The Pick Six',
+    'Goal Line Stand', 'Two Minute Drill', 'The Blind Side', 'Shotgun Formation',
+    'Cover Two Crew', 'The Zone Read', 'Screen Pass Squad', 'Nickel Defense',
+    'The Flea Flickers', 'Wildcat Offense', 'Backfield Bandits', 'The Gunslingers',
+    'Moss Boss', 'The Brady Bunch', 'The Replacements', 'Comeback Kids',
+    'Sack Religious', 'Captain Checkdown', 'Cooked Lamb', 'Order of the Pick'
+  ];
+  // Assign a stable, unique random name to every non-user slot once per mock.
+  // Seeded by the draft seed so each mock differs but stays consistent within it.
+  function _ensureSlotNames(){
+    if (state.mode === 'live') return;           // real leagues supply names
+    if (!state.slotNames) state.slotNames = {};
+    var teams = state.teams || 12, filled = 0;
+    for (var s = 1; s <= teams; s++){ if (state.slotNames[s]) filled++; }
+    if (filled >= teams) return;                 // already assigned
+    // Deterministic Fisher-Yates shuffle of the pool using the draft seed.
+    var pool = _CPU_TEAM_NAMES.slice();
+    for (var i = pool.length - 1; i > 0; i--){
+      var j = Math.floor(_rand01('teamname:' + i) * (i + 1));
+      var tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
+    }
+    var k = 0;
+    for (var s2 = 1; s2 <= teams; s2++){
+      if (state.slotNames[s2]) continue;
+      var base = pool[k % pool.length];
+      // If teams exceed the pool, suffix a number so names stay unique.
+      state.slotNames[s2] = k >= pool.length ? base + ' ' + (Math.floor(k / pool.length) + 1) : base;
+      k++;
+    }
+    save();
+  }
   // Seat label only. "You" identity is decided by pick ownership at the call
   // site (ownsAllInColumn / isMyPick), not by the original home slot.
   function teamName(slot){
     if (state.slotNames && state.slotNames[slot]) return state.slotNames[slot];
+    if (state.mode !== 'live'){
+      _ensureSlotNames();
+      if (state.slotNames && state.slotNames[slot]) return state.slotNames[slot];
+    }
     return 'Team ' + slot;
   }
   function cellClass(pn){
