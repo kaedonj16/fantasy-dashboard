@@ -1721,7 +1721,13 @@ _DRAFT_ROOM_HTML = r"""
         // Penalty fades from strong in rounds 1-6, gone by round 12+
         var _rnd = Math.ceil(pn / state.teams);
         var earlyMult = Math.max(0, 1 - _rnd / 12);
-        overFactor *= (1 + 3.5 * earlyMult * (have - sSlots + 1));
+        // A backup to a thin starter slot (the lone QB/TE in 1QB) is far less
+        // valuable than extra depth at a multi-starter position - you only ever
+        // start one. Penalize stacking a single-slot position much harder so a
+        // CPU never spends an early pick on a 2nd QB while real starting needs
+        // remain; depth positions (2-3 starters) keep a milder penalty.
+        var slotScarcityMult = sSlots <= 1 ? 3.0 : (sSlots === 2 ? 1.5 : 1.0);
+        overFactor *= (1 + 3.5 * slotScarcityMult * earlyMult * (have - sSlots + 1));
       }
       // Depth nudge (base need-awareness): SF QB gets a stronger factor so the CPU
       // targets a 2nd QB; the zero-QB SF case stays urgent once the early rounds pass.
