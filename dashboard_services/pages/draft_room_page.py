@@ -1961,6 +1961,11 @@ _DRAFT_ROOM_HTML = r"""
       var prev = state;
       var ownedCopy = {};
       if (prev.owned){ Object.keys(prev.owned).forEach(function(k){ if (prev.owned[k]) ownedCopy[k] = true; }); }
+      // Carry the connected league's real team names into the mock so the draft
+      // summary maps each seat to its actual owner instead of a random CPU name.
+      // (Shallow-copied so the mock never mutates the live league's name map.)
+      var nameCopy = {};
+      if (prev.slotNames){ Object.keys(prev.slotNames).forEach(function(k){ nameCopy[k] = prev.slotNames[k]; }); }
       _resetTransient();
       state = {
         type: prev.type, teams: prev.teams, rounds: prev.rounds, sf: !!prev.sf,
@@ -1969,6 +1974,7 @@ _DRAFT_ROOM_HTML = r"""
         scoring: prev.scoring || scoringCfg(),
         picks: {}, current: 1, queue: [],
         owned: Object.keys(ownedCopy).length ? ownedCopy : defaultOwned(),
+        slotNames: nameCopy,
         mode: 'mock', simStarted: false
       };
       sim = true; simPaused = false; simStarted = false;
