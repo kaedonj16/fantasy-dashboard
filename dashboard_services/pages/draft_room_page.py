@@ -399,6 +399,10 @@ _DRAFT_ROOM_HTML = r"""
   .dr-cell-mineflag { position: absolute; top: 2px; right: 5px; font-size: 8px; font-weight: 800;
     letter-spacing: .04em; color: var(--accent,#38bdf8); }
   .dr-cell-claimed .dr-cell-mineflag { color: #f59e0b; }
+  /* Traded pick: who the pick was dealt to (shown on another team's seat). */
+  .dr-cell-owner { position: absolute; top: 2px; left: 50%; transform: translateX(-50%);
+    max-width: 64%; font-size: 8px; font-weight: 800; letter-spacing: .02em; color: #f59e0b;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
   .dr-cell-just { animation: drPop .35s ease; }
   @keyframes drPop { 0% { transform: scale(.92); opacity: .3; } 100% { transform: scale(1); opacity: 1; } }
   .dr-cell-val { position: absolute; top: 2px; right: 5px; font-size: 9px; font-weight: 800; color: var(--accent,#38bdf8); }
@@ -1966,6 +1970,10 @@ _DRAFT_ROOM_HTML = r"""
       // (Shallow-copied so the mock never mutates the live league's name map.)
       var nameCopy = {};
       if (prev.slotNames){ Object.keys(prev.slotNames).forEach(function(k){ nameCopy[k] = prev.slotNames[k]; }); }
+      // Carry the per-pick owner map so a mock of a connected draft credits traded
+      // picks to the team that traded for them, exactly like the live board.
+      var ownerCopy = {};
+      if (prev.pickOwners){ Object.keys(prev.pickOwners).forEach(function(k){ ownerCopy[k] = prev.pickOwners[k]; }); }
       _resetTransient();
       state = {
         type: prev.type, teams: prev.teams, rounds: prev.rounds, sf: !!prev.sf,
@@ -1975,6 +1983,7 @@ _DRAFT_ROOM_HTML = r"""
         picks: {}, current: 1, queue: [],
         owned: Object.keys(ownedCopy).length ? ownedCopy : defaultOwned(),
         slotNames: nameCopy,
+        pickOwners: Object.keys(ownerCopy).length ? ownerCopy : null,
         mode: 'mock', simStarted: false
       };
       sim = true; simPaused = false; simStarted = false;
@@ -3105,7 +3114,9 @@ _DRAFT_ROOM_HTML = r"""
       if (!state.picks[k]) return;
       var entry = { pn: pn, p: state.picks[k] };
       if (isMyPick(pn)){ mine.push(entry); return; }
-      var slot = slotOnClock(pn, teams, state.order);
+      // Credit the pick to the team that actually owns it (traded picks map to
+      // their new owner), falling back to the board seat when no map is available.
+      var slot = (state.pickOwners && state.pickOwners[pn] != null) ? state.pickOwners[pn] : slotOnClock(pn, teams, state.order);
       if (!bySlot[slot]) bySlot[slot] = [];
       bySlot[slot].push(entry);
     });
@@ -3473,6 +3484,46 @@ _DRAFT_ROOM_HTML = r"""
     }
     return Object.keys(owned).length ? owned : null;
   }
+  // Build pickNo -> owning board slot for EVERY team, so the draft summary credits
+  // a traded pick to the team that actually owns it, not the seat it sits in.
+  // Completed picks use roster_id; remaining picks apply traded_picks (original
+  // roster + round -> current owner_id) over the home-slot owner, mapping roster
+  // ids back to board slots via draft_order + user_roster_map. Returns null when
+  // the league provides no roster mapping, so callers fall back to home seats.
+  function buildPickOwnersFromResponse(d, teams, rounds, order){
+    var slotToRosterId = {}, rosterToSlot = {};
+    if (d.draft_order && d.user_roster_map){
+      Object.keys(d.draft_order).forEach(function(uid){
+        var sl = d.draft_order[uid], rid = d.user_roster_map[uid];
+        if (sl != null && rid != null){ slotToRosterId[sl] = rid; rosterToSlot[rid] = parseInt(sl, 10); }
+      });
+    }
+    if (!Object.keys(rosterToSlot).length) return null;
+    var owners = {};
+    (d.picks || []).forEach(function(p){
+      if (p.pick_no == null) return;
+      if (p.roster_id != null && rosterToSlot[p.roster_id] != null) owners[p.pick_no] = rosterToSlot[p.roster_id];
+    });
+    var tradedPickMap = {};
+    (d.traded_picks || []).forEach(function(tp){
+      if (tp.roster_id != null && tp.round != null) tradedPickMap[tp.roster_id + ':' + tp.round] = tp.owner_id;
+    });
+    var tot = teams * rounds;
+    for (var pn = 1; pn <= tot; pn++){
+      if (owners[pn] != null) continue;
+      var sl = slotOnClock(pn, teams, order);
+      var rnd = Math.ceil(pn / teams);
+      var origRid = slotToRosterId[sl];
+      if (origRid != null){
+        var tk = origRid + ':' + rnd;
+        var ownRid = tradedPickMap.hasOwnProperty(tk) ? tradedPickMap[tk] : origRid;
+        owners[pn] = (rosterToSlot[ownRid] != null) ? rosterToSlot[ownRid] : sl;
+      } else {
+        owners[pn] = sl;
+      }
+    }
+    return owners;
+  }
 
   function connectLive(draftId){
     stopPolling(); stopPickTimer();
@@ -3515,6 +3566,7 @@ _DRAFT_ROOM_HTML = r"""
           pickTimer: parseInt(d.pick_timer) || 0,
           startTime: parseInt(d.start_time) || 0,
           slotNames: d.slot_names || {}, queue: [],
+          pickOwners: buildPickOwnersFromResponse(d, teams, rounds, order),
           roster: _parseRosterPositions(d.roster_positions)
         };
         applyLivePicks(d.picks || []);
@@ -3676,6 +3728,7 @@ _DRAFT_ROOM_HTML = r"""
           if (full){
             // Only the full payload carries trades + roster map for ownership.
             state.owned = buildOwnedFromResponse(d, state.teams, state.rounds, state.order, state.slot);
+            state.pickOwners = buildPickOwnersFromResponse(d, state.teams, state.rounds, state.order) || state.pickOwners;
             if (d.slot_names) state.slotNames = d.slot_names;
           }
           applyLivePicks(d.picks); render();
@@ -3858,10 +3911,23 @@ _DRAFT_ROOM_HTML = r"""
   function canClaim(pn){
     return state.mode !== 'live' && pn >= state.current && !state.picks[pn];
   }
+  // Label for a pick that has been traded to another team (shown on the seat the
+  // pick originally belonged to). Empty for untraded picks and the viewer's own
+  // picks (those use the YOU flag / accent styling instead).
+  function tradedOwnerLabel(pn){
+    if (!state.pickOwners) return '';
+    var owner = state.pickOwners[pn];
+    if (owner == null) return '';
+    if (owner === slotOnClock(pn, state.teams, state.order)) return '';  // not traded
+    if (isMyPick(pn)) return '';
+    return teamName(owner);
+  }
   function cellInner(pn){
     var pl = state.picks[pn];
     var h = '<span class="dr-cell-num">' + pn + '</span>';
     if (isMyPick(pn) && !pl) h += '<span class="dr-cell-mineflag">YOU</span>';
+    var _own = tradedOwnerLabel(pn);
+    if (_own) h += '<span class="dr-cell-owner">&rarr; ' + esc(_own) + '</span>';
     if (pl){
       if (pl.val != null) h += '<span class="dr-cell-val">' + Math.round(pl.val) + '</span>';
       h += '<img class="dr-hs" src="' + playerImgUrl(pl) + '" alt="" onerror="this.style.visibility=\'hidden\'">';
