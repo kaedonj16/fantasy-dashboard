@@ -1617,6 +1617,7 @@ _DRAFT_ROOM_HTML = r"""
     var _remainRds = state.rounds - Math.floor((pn - 1) / state.teams);
     var cands = [];
     var bestPv = 0;   // highest pick score available (the "best player on the board")
+    var posQualLeft = {};  // count of remaining startable-quality players per position
     pool.forEach(function(p){
       var a = simAdp(p);
       var sigma = simSigma(a);
@@ -1639,6 +1640,10 @@ _DRAFT_ROOM_HTML = r"""
       // K/DEF, which have no pick score and are handled by the late-round boost.
       var pv = pickScore(p, _maxVal, counts, cpuCtx);
       if (pv != null && pv > bestPv) bestPv = pv;
+      // Track how many genuinely startable players remain at each position so the
+      // CPU can sense a thinning position (a run on QBs/RBs) and act before the
+      // cupboard is bare. 55 is a "startable" pick-score floor.
+      if (pv != null && pv >= 55){ var _pp = (p.position||'').toUpperCase(); posQualLeft[_pp] = (posQualLeft[_pp] || 0) + 1; }
       cands.push({ p: p, w: w, a: a, pv: pv });
     });
     cands.forEach(function(c){
@@ -1673,6 +1678,13 @@ _DRAFT_ROOM_HTML = r"""
       if (starterNeed > 0 && pv != null && bestPv > 0){
         var closeness = clamp01(pv / bestPv);
         needBoost += 3.0 * starterNeed * closeness * closeness;
+        // Scarcity: if the startable pool at this needed position is drying up,
+        // grab one now rather than chase a falling-ADP player elsewhere - exactly
+        // how a manager reaches when "there aren't many good QBs/RBs left." Urgency
+        // ramps as the remaining quality count drops below roughly one-per-team.
+        var qualLeft = posQualLeft[pos] || 0;
+        var scarce = clamp01((state.teams - qualLeft) / state.teams);
+        needBoost += 2.0 * starterNeed * scarce;
       }
       w *= needBoost / overFactor;
       // K/DEF: in the final 3 rounds, teams MUST fill these slots or they go empty.
