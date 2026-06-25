@@ -1573,6 +1573,27 @@ _DRAFT_ROOM_HTML = r"""
   // of the board (consensus picks barely move) and widens deeper, where ADP is
   // noisier. Drives how far a player realistically slides from their ADP.
   function simSigma(a){ return Math.max(0.5, Math.min(10, 0.35 + 0.055 * a)); }
+  // Build a CPU team's scoring context (its own above-replacement counts, its own
+  // picks, and its own next pick) so pickScore judges need for THAT team, not the
+  // viewer's. Mirrors psCtx()/nextOwnedAfterCurrent() but scoped to one draft slot.
+  function _cpuCtx(slot){
+    var qualByPos = {}, picksList = [];
+    Object.keys(state.picks).forEach(function(k){
+      var pn = parseInt(k, 10);
+      if (slotOnClock(pn, state.teams, state.order) !== slot) return;
+      var mp = state.picks[k];
+      picksList.push(mp);
+      var pos = (mp.position || '').toUpperCase();
+      var full = playersById[String(mp.id)];
+      var v = full ? vorOf(full) : null;
+      if (v == null || v > 0) qualByPos[pos] = (qualByPos[pos] || 0) + 1;
+    });
+    var nextOwned = null, tot = state.teams * state.rounds;
+    for (var pn2 = state.current + 1; pn2 <= tot; pn2++){
+      if (slotOnClock(pn2, state.teams, state.order) === slot){ nextOwned = pn2; break; }
+    }
+    return { qualByPos: qualByPos, picksList: picksList, nextOwned: nextOwned };
+  }
   function simPick(){
     var pool = availablePool();
     if (!pool.length) return null;
@@ -1585,7 +1606,17 @@ _DRAFT_ROOM_HTML = r"""
     var pn = state.current;
     var slot = slotOnClock(pn, state.teams, state.order);
     var counts = teamCounts(slot), targets = posTargets();
+    // Score every candidate from THIS CPU team's perspective (its own roster,
+    // depth, and next pick) so need is judged for the right team, not the viewer.
+    var cpuCtx = _cpuCtx(slot);
+    var _maxVal = 0; pool.forEach(function(q){ var v = valOf(q); if (v > _maxVal) _maxVal = v; });
+    // Starter-slot map: actual lineup spots only (no bench).
+    var _rs = (state && state.roster) || defaultRoster();
+    var _sfSlots = state.sf ? ((_rs.SF != null ? _rs.SF : 1)) : 0;
+    var _stSlots = { QB: (_rs.QB||0) + _sfSlots, RB: (_rs.RB||0) + (_rs.FLEX||0), WR: _rs.WR||0, TE: _rs.TE||0, K: _rs.K||0, DEF: _rs.DEF||0 };
+    var _remainRds = state.rounds - Math.floor((pn - 1) / state.teams);
     var cands = [];
+    var bestPv = 0;   // highest pick score available (the "best player on the board")
     pool.forEach(function(p){
       var a = simAdp(p);
       var sigma = simSigma(a);
@@ -1604,7 +1635,14 @@ _DRAFT_ROOM_HTML = r"""
           w = 1.0 / (1.0 + 0.12 * diff);          // inverse-linear ramp up to cap
         }
       }
-      // Need-awareness: nudge for roster fit without overriding ADP.
+      // CPU-perspective pick score (same value+need model the app shows). Null for
+      // K/DEF, which have no pick score and are handled by the late-round boost.
+      var pv = pickScore(p, _maxVal, counts, cpuCtx);
+      if (pv != null && pv > bestPv) bestPv = pv;
+      cands.push({ p: p, w: w, a: a, pv: pv });
+    });
+    cands.forEach(function(c){
+      var p = c.p, w = c.w, a = c.a, pv = c.pv;
       var pos = (p.position||'').toUpperCase();
       var t = targets[pos] || 0, have = counts[pos] || 0;
       var need = t ? Math.max(0, t - have) / t : 0;
@@ -1614,10 +1652,6 @@ _DRAFT_ROOM_HTML = r"""
       var overFactor = over > 0 ? Math.pow(3.5, over) : 1;
       // Early-round starter-slot penalty: prevent CPU from stacking single-slot
       // positions (TE in 1TE no-TEP, QB in 1QB) before filling other positional needs.
-      // Starter slots = actual lineup spots only (no bench allocation).
-      var _rs = (state && state.roster) || defaultRoster();
-      var _sfSlots = state.sf ? ((_rs.SF != null ? _rs.SF : 1)) : 0;
-      var _stSlots = { QB: (_rs.QB||0) + _sfSlots, RB: (_rs.RB||0) + (_rs.FLEX||0), WR: _rs.WR||0, TE: _rs.TE||0, K: _rs.K||0, DEF: _rs.DEF||0 };
       var sSlots = _stSlots[pos] || 0;
       if (sSlots > 0 && have >= sSlots) {
         // Penalty fades from strong in rounds 1-6, gone by round 12+
@@ -1625,14 +1659,25 @@ _DRAFT_ROOM_HTML = r"""
         var earlyMult = Math.max(0, 1 - _rnd / 12);
         overFactor *= (1 + 3.5 * earlyMult * (have - sSlots + 1));
       }
-      // SF QB: stronger need factor so CPU actually targets a 2nd QB early.
+      // Depth nudge (base need-awareness): SF QB gets a stronger factor so the CPU
+      // targets a 2nd QB; the zero-QB SF case stays urgent once the early rounds pass.
       var needFactor = (pos === 'QB' && state.sf) ? 0.65 : 0.25;
       if (pos === 'QB' && state.sf && have === 0 && pn > state.teams * 2) needFactor = 1.5;
-      w *= (1 + needFactor * need) / overFactor;
+      var needBoost = 1 + needFactor * need;
+      // Value-aware starter need: a player who fills an OPEN starting slot and is
+      // close in pick score to the best player on the board should be strongly
+      // preferred - drafting like a smart manager (e.g. a 2nd QB in Superflex when
+      // a near-best one is available). Quadratic in closeness so only genuinely
+      // good values trigger the strong pull; a mediocre fit gets only a mild bump.
+      var starterNeed = sSlots > 0 ? clamp01((sSlots - have) / sSlots) : 0;
+      if (starterNeed > 0 && pv != null && bestPv > 0){
+        var closeness = clamp01(pv / bestPv);
+        needBoost += 3.0 * starterNeed * closeness * closeness;
+      }
+      w *= needBoost / overFactor;
       // K/DEF: in the final 3 rounds, teams MUST fill these slots or they go empty.
       // Boost weight strongly so K/DEF crack the top-8 candidate sample and actually
       // get drafted, rather than losing out to late-sliding skill players every pick.
-      var _remainRds = state.rounds - Math.floor((pn - 1) / state.teams);
       if ((pos === 'K' || pos === 'DEF') && (t > 0) && (have < t) && _remainRds <= 3){
         w *= 8;
       }
@@ -1645,7 +1690,7 @@ _DRAFT_ROOM_HTML = r"""
       // ADP-less players (a huge sentinel) get a tiny value-based floor so they
       // can still fill in late rounds once the ranked board is exhausted.
       if (a >= 9000) w = Math.max(w, 1e-9 * valOf(p));
-      cands.push({ p: p, w: w });
+      c.w = w;
     });
     // Restrict to the realistic field, then sample proportionally to weight so
     // the favorite usually wins but upsets happen at the documented rate.
@@ -2305,7 +2350,11 @@ _DRAFT_ROOM_HTML = r"""
   // age, momentum, and opportunity cost into one 0-100 score per player.
   // Weights branch by draft type so rookie/redraft/startup each prioritize correctly.
   function clamp01(x){ return x < 0 ? 0 : (x > 1 ? 1 : x); }
-  function pickScore(p, maxVal, counts){
+  // opts (optional) overrides the "my team" context so the same scoring can be
+  // run from a CPU team's perspective during simulation: { qualByPos, nextOwned,
+  // picksList }. When omitted, pickScore scores for the viewer's own team exactly
+  // as before.
+  function pickScore(p, maxVal, counts, opts){
     var pos = (p.position || '').toUpperCase();
     // Free agents have no current team and no real draft value for any format.
     var teamVal = (p.team || '').trim().toUpperCase();
@@ -2352,9 +2401,10 @@ _DRAFT_ROOM_HTML = r"""
     // posTargets() and the per-position above-replacement counts are shared across
     // the whole scoring pass, so read them from the memoized render context.
     var _ctx = psCtx();
+    var _qualByPos = (opts && opts.qualByPos) || _ctx.qualByPos;
     var t = _ctx.targets[pos];
     var needRaw = t ? clamp01(Math.max(0, t - (counts[pos] || 0)) / t) : 0;
-    var myQualAtPos = _ctx.qualByPos[pos] || 0;
+    var myQualAtPos = _qualByPos[pos] || 0;
     var qualNeedRaw = t ? clamp01(Math.max(0, t - myQualAtPos) / t) : 0;
     needRaw = Math.max(needRaw, qualNeedRaw);
     var needRamp = clamp01((state.current - 1) / 12);
@@ -2395,7 +2445,7 @@ _DRAFT_ROOM_HTML = r"""
 
     // #6: Opportunity cost via survival to next owned pick.
     // Low survival = urgency bonus; high survival = slight penalty (can wait).
-    var nextOwned = nextOwnedAfterCurrent();
+    var nextOwned = (opts && opts.nextOwned !== undefined) ? opts.nextOwned : nextOwnedAfterCurrent();
     if (nextOwned){
       var survProb = availProb(p, nextOwned);
       if (survProb != null) s += 0.05 - survProb / 100 * 0.08;
@@ -2420,7 +2470,7 @@ _DRAFT_ROOM_HTML = r"""
     // the backup has significant insurance value worth a meaningful PS bump.
     if (state.type === 'redraft' && pos === 'RB'){
       var myRBTeams = {};
-      myPicksList().forEach(function(mp){
+      ((opts && opts.picksList) || myPicksList()).forEach(function(mp){
         if ((mp.position || '').toUpperCase() === 'RB' && mp.team) myRBTeams[mp.team] = true;
       });
       if (p.team && myRBTeams[p.team]) s = Math.min(1, s + 0.15);
