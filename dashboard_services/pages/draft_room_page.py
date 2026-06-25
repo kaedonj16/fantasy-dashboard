@@ -1636,6 +1636,12 @@ _DRAFT_ROOM_HTML = r"""
       if ((pos === 'K' || pos === 'DEF') && (t > 0) && (have < t) && _remainRds <= 3){
         w *= 8;
       }
+      // Every CPU team must draft at least one QB. When a team has none and time is
+      // running out, strongly boost any available QB so it cracks the top-8 sample
+      // even if its ADP sentinel is large (all named QBs already taken).
+      if (pos === 'QB' && have === 0 && t > 0 && _remainRds <= Math.ceil(state.rounds * 0.4)){
+        w = Math.max(w * 6, 1e-6);
+      }
       // ADP-less players (a huge sentinel) get a tiny value-based floor so they
       // can still fill in late rounds once the ranked board is exhausted.
       if (a >= 9000) w = Math.max(w, 1e-9 * valOf(p));
@@ -4309,8 +4315,9 @@ _DRAFT_ROOM_HTML = r"""
     var d = parseInt(step.getAttribute('data-d'), 10);
     if (!_setupRoster) _setupRoster = defaultRoster();
     _setupRoster[key] = Math.max(0, (_setupRoster[key] || 0) + d);
+    _rosterMode = 'custom';
     // Keep rounds = starters + bench in sync for every slot change.
-    // Bench change → update rounds. Starter change → update rounds (bench stays).
+    // Bench change -> update rounds. Starter change -> update rounds (bench stays).
     var _newRounds = Math.max(1, Math.min(40, _totalStarterSlots(_setupRoster) + (_setupRoster.BN || 0)));
     document.getElementById('drRounds').value = _newRounds;
     renderSetupCapital();
