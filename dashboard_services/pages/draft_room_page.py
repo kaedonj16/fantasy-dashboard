@@ -159,7 +159,7 @@ _DRAFT_ROOM_HTML = r"""
       </div>
       <div class="dr-status-right">
         <span class="dr-pill dr-pill-you" id="drNextPill" style="display:none;"></span>
-        <span class="dr-pill dr-pill-grade" id="drGradePill" style="display:none;"></span>
+        <span class="dr-pill dr-pill-grade" id="drGradePill" style="display:none;cursor:pointer;" title="View the league report card - every team's draft grade"></span>
         <span class="dr-sr-gap"></span>
         <button class="dr-btn dr-btn-primary" id="drSimStart" style="display:none;">&#9654;&nbsp; Start Draft</button>
         <button class="dr-btn dr-btn-ghost" id="drSimToggle" style="display:none;">Pause</button>
@@ -3418,7 +3418,11 @@ _DRAFT_ROOM_HTML = r"""
     var gp = document.getElementById('drGradePill');
     var g = gradeTeam();
     if (g){ gp.style.display = ''; gp.textContent = 'Grade ' + gradeLetter(g.score); } else { gp.style.display = 'none'; }
-    document.getElementById('drSummaryBtn').style.display = done ? '' : 'none';
+    // The report card grades every team in the league, so make it reachable any
+    // time there are picks on the board - not just when the draft is finished -
+    // so you can compare other teams' grades mid-draft.
+    var _anyPicks = !!(state && state.picks && Object.keys(state.picks).some(function(k){ return !!state.picks[k]; }));
+    document.getElementById('drSummaryBtn').style.display = _anyPicks ? '' : 'none';
   }
 
   // ── Board rendering (incremental) ───────────────────────────────────────────
@@ -4176,6 +4180,8 @@ _DRAFT_ROOM_HTML = r"""
     if (d){ var id = d.getAttribute('data-cmp-draft'); closeCompare(); draftPlayer(id); }
   });
   document.getElementById('drSummaryBtn').addEventListener('click', openSummary);
+  // The status-bar grade pill doubles as a shortcut into the league report card.
+  (function(){ var gp = document.getElementById('drGradePill'); if (gp) gp.addEventListener('click', openSummary); })();
   document.getElementById('drSummary').addEventListener('click', function(e){
     if (e.target === this) closeSummary();
   });
