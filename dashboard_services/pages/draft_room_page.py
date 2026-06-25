@@ -2847,16 +2847,6 @@ _DRAFT_ROOM_HTML = r"""
       out.push({ slot: s, name: isMe ? 'You' : teamName(s), isMe: isMe, grade: g, picks: picks });
     }
     out.sort(function(a, b){ return b.grade.score - a.grade.score; });
-    // Amplify spread so letter grades vary meaningfully across teams.
-    // Draft grades are relative - a B+ means you drafted well vs this league.
-    // Raw scores cluster (all teams draft from the same pool), so we stretch
-    // deviations from the mean by ~1.7x to ensure distinct letter grades.
-    if (out.length >= 3){
-      var _gMean = out.reduce(function(s,t){ return s + t.grade.score; }, 0) / out.length;
-      out.forEach(function(t){
-        t.grade.score = Math.round(Math.max(35, Math.min(97, _gMean + (t.grade.score - _gMean) * 1.7)));
-      });
-    }
     return out;
   }
   // Classify a startup/redraft build into a recognizable draft archetype based on
@@ -3619,8 +3609,13 @@ _DRAFT_ROOM_HTML = r"""
     if (!pool.length){ listInto('<div class="dr-empty-note">No players match.</div>'); return; }
     var nextPick = hasOwned() ? nextOwnedAfterCurrent() : null;
     var html = balanceAlert();
-    for (var i = 0; i < Math.min(pool.length, 200); i++){
-      var p = pool[i];
+    // K/DEF have no startup ADP so they sort to the very end and fall past the
+    // 200-player cap. Separate them out so they always render after skill players.
+    var _isKD = function(p){ var pos = String(p.position||'').toUpperCase(); return pos === 'K' || pos === 'DEF'; };
+    var mainPool = (posFilter === 'ALL' && wantsKDef()) ? pool.filter(function(p){ return !_isKD(p); }) : pool;
+    var kdPool  = (posFilter === 'ALL' && wantsKDef()) ? pool.filter(_isKD) : [];
+    for (var i = 0; i < Math.min(mainPool.length, 200); i++){
+      var p = mainPool[i];
       var opts = {};
       if (nextPick){
         var prob = availProb(p, nextPick);
@@ -3630,6 +3625,7 @@ _DRAFT_ROOM_HTML = r"""
       }
       html += playerRowHtml(p, opts);
     }
+    kdPool.forEach(function(p){ html += playerRowHtml(p, {}); });
     listInto(html);
   }
 
