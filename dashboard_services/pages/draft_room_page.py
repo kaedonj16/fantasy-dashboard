@@ -1756,6 +1756,14 @@ _DRAFT_ROOM_HTML = r"""
       // Gentle per-team positional lean (skill positions only).
       var biasMult = _bias[pos] || 1;
       w *= needBoost * biasMult / overFactor;
+      // Hard guard: a backup to a single-starter slot (a 2nd QB in 1QB, a 2nd TE
+      // in 1TE) has little marginal value, so the CPU must never REACH for one -
+      // only take it if its real ADP has fallen to this pick or later. This stops
+      // the classic bad-CPU move of grabbing a 2nd QB a round ahead of ADP while
+      // a starter already sits on the roster.
+      if (sSlots > 0 && sSlots <= 1 && have >= sSlots && a < 9000 && pn < a){
+        w = 0;
+      }
       // K/DEF: in the final 3 rounds, teams MUST fill these slots or they go empty.
       // Boost weight strongly so K/DEF crack the top-8 candidate sample and actually
       // get drafted, rather than losing out to late-sliding skill players every pick.
@@ -1976,7 +1984,12 @@ _DRAFT_ROOM_HTML = r"""
     var tep = scoringCfg().tep;
     if (tep > 0) t.TE += 1;
     // Sane ceilings so the assistant never frames an absurd amount of depth as a need.
-    var cap = { QB: sf ? 3 : 2, RB: 6, WR: 6, TE: tep > 0 ? 3 : 2 };
+    // In 1QB a backup QB has little value, so hold the QB target at 1 (a 2nd QB is
+    // not a "need") until the final stretch of the draft, when rostering a backup
+    // becomes reasonable. SF always wants 2 (starter + superflex) with room for a 3rd.
+    var _rnd = (state && state.current && state.teams) ? Math.ceil(state.current / state.teams) : 1;
+    var _lateQB = !!(state && state.rounds && _rnd >= state.rounds * 0.7);
+    var cap = { QB: sf ? 3 : (_lateQB ? 2 : 1), RB: 6, WR: 6, TE: tep > 0 ? 3 : 2 };
     Object.keys(cap).forEach(function(k){ if (t[k] > cap[k]) t[k] = cap[k]; });
     if (rs.K)   t.K   = rs.K;
     if (rs.DEF) t.DEF = rs.DEF;
