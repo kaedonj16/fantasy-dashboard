@@ -1685,7 +1685,12 @@ _DRAFT_ROOM_HTML = r"""
       if ((state.picks[k].position || '').toUpperCase() === 'QB' && (_qb1Pick == null || _kp < _qb1Pick)) _qb1Pick = _kp;
     });
     var _qb1Round = _qb1Pick ? Math.ceil(_qb1Pick / state.teams) : null;
-    var _qbGap = 5 + Math.round(_rand01(slot + ':qbgap') * 4);
+    // Earlier starter => longer wait for the backup. An elite QB taken early is a
+    // positional edge you can ride for many rounds, so its backup comes much later;
+    // a QB taken late is replaceable, so a backup follows sooner. The gap shrinks
+    // ~0.5 rounds per round QB1 was delayed (e.g. QB1 in round 1 -> ~9-11 round
+    // gap; round 7 -> ~6-8; round 12 -> ~3-5), plus a little per-team jitter.
+    var _qbGap = Math.max(3, Math.round(9.5 - (_qb1Round || 1) * 0.5)) + Math.round(_rand01(slot + ':qbgap') * 2);
     var _backupQBWanted = _qb1Round != null &&
       ((_curRound - _qb1Round) >= _qbGap || _curRound >= (state.rounds || 20) * 0.8);
     var cands = [];
