@@ -163,6 +163,7 @@ _DRAFT_ROOM_HTML = r"""
         <span class="dr-sr-gap"></span>
         <button class="dr-btn dr-btn-primary" id="drSimStart" style="display:none;">&#9654;&nbsp; Start Draft</button>
         <button class="dr-btn dr-btn-ghost" id="drSimToggle" style="display:none;">Pause</button>
+        <button class="dr-btn dr-btn-ghost" id="drAutoBtn" style="display:none;" title="Auto-draft best available on your picks">Auto Draft</button>
         <button class="dr-btn dr-btn-ghost dr-opts-trigger" id="drOptsBtn" aria-label="Options"><i class="fa-solid fa-gear"></i></button>
         <div class="dr-opts-panel" id="drOptsPanel">
           <select class="dr-sim-speed" id="drSimSpeed" style="display:none;" title="Simulation speed">
@@ -974,6 +975,7 @@ _DRAFT_ROOM_HTML = r"""
   var simSpeed = 700;      // ms between CPU picks
   var simPaused = false;
   var simStarted = false;  // CPU picks only run once the user hits Start Draft
+  var simAutoDraft = false; // when true, auto-commit best pick on my turn
   var sideTab = 'best';    // best | rec | needs | runs
   var _setupRoster = null; // roster config built on setup page
   var _rosterMode  = 'auto'; // 'auto' = use league/defaults locked; 'custom' = editable steppers
@@ -1578,13 +1580,26 @@ _DRAFT_ROOM_HTML = r"""
       var t = targets[pos] || 0, have = counts[pos] || 0;
       var need = t ? Math.max(0, t - have) / t : 0;
       var over = (t && have >= t) ? (have - t + 1) : 0;
-      // In SF leagues QBs are a full roster slot more valuable. Use a stronger need
-      // factor (0.65 vs 0.25) so CPU teams actually pursue their 2nd QB early instead
-      // of deferring until the pool is thin. Also apply an emergency multiplier when
-      // a CPU team is approaching mid-draft with no QB at all in SF.
+      // Overcrowding penalty: exponential once past depth target (3.5x per excess pick).
+      // over=1 -> weight/4.5; over=2 -> weight/13; over=3 -> weight/43.
+      var overFactor = over > 0 ? Math.pow(3.5, over) : 1;
+      // Early-round starter-slot penalty: prevent CPU from stacking single-slot
+      // positions (TE in 1TE no-TEP, QB in 1QB) before filling other positional needs.
+      // Starter slots = actual lineup spots only (no bench allocation).
+      var _rs = (state && state.roster) || defaultRoster();
+      var _sfSlots = state.sf ? ((_rs.SF != null ? _rs.SF : 1)) : 0;
+      var _stSlots = { QB: (_rs.QB||0) + _sfSlots, RB: (_rs.RB||0) + (_rs.FLEX||0), WR: _rs.WR||0, TE: _rs.TE||0, K: _rs.K||0, DEF: _rs.DEF||0 };
+      var sSlots = _stSlots[pos] || 0;
+      if (sSlots > 0 && have >= sSlots) {
+        // Penalty fades from strong in rounds 1-6, gone by round 12+
+        var _rnd = Math.ceil(pn / state.teams);
+        var earlyMult = Math.max(0, 1 - _rnd / 12);
+        overFactor *= (1 + 3.5 * earlyMult * (have - sSlots + 1));
+      }
+      // SF QB: stronger need factor so CPU actually targets a 2nd QB early.
       var needFactor = (pos === 'QB' && state.sf) ? 0.65 : 0.25;
       if (pos === 'QB' && state.sf && have === 0 && pn > state.teams * 2) needFactor = 1.5;
-      w *= (1 + needFactor * need) / (1 + 0.5 * over);
+      w *= (1 + needFactor * need) / overFactor;
       // ADP-less players (a huge sentinel) get a tiny value-based floor so they
       // can still fill in late rounds once the ranked board is exhausted.
       if (a >= 9000) w = Math.max(w, 1e-9 * valOf(p));
@@ -1600,11 +1615,26 @@ _DRAFT_ROOM_HTML = r"""
     for (var i = 0; i < top.length; i++){ roll -= top[i].w; if (roll <= 0) return top[i].p; }
     return top[0].p;
   }
+  // Pick the highest-scored available player for my roster (used by auto-draft).
+  function autoPick(){
+    var pool = availablePool();
+    if (!pool.length) return null;
+    var scored = pool.map(function(p){ return { p: p, s: pickScoreFor(p) || 0 }; });
+    scored.sort(function(a, b){ return b.s - a.s; });
+    return scored[0].p;
+  }
+  function _doAutoPick(){
+    var ap = autoPick();
+    if (ap){ commitPick(ap); render(); scheduleSim(); }
+  }
   function scheduleSim(){
     if (!sim || simPaused || !simStarted) return;
     var total = state.teams * state.rounds;
     if (state.current > total){ endSim(); return; }
-    if (isMyPick(state.current)) return; // wait for the user
+    if (isMyPick(state.current)){
+      if (simAutoDraft){ clearTimeout(simTimer); simTimer = setTimeout(_doAutoPick, simSpeed); }
+      return;
+    }
     clearTimeout(simTimer);
     simTimer = setTimeout(simStep, simSpeed);
   }
@@ -1612,7 +1642,10 @@ _DRAFT_ROOM_HTML = r"""
     if (!sim || simPaused || !simStarted) return;
     var total = state.teams * state.rounds;
     if (state.current > total){ endSim(); render(); return; }
-    if (isMyPick(state.current)){ render(); return; } // your turn
+    if (isMyPick(state.current)){
+      if (simAutoDraft){ clearTimeout(simTimer); simTimer = setTimeout(_doAutoPick, simSpeed); return; }
+      render(); return; // your turn - wait for manual pick
+    }
     var p = simPick();
     if (!p){ endSim(); render(); return; } // pool exhausted - stop, don't spin forever
     commitPick(p); render();
@@ -1632,12 +1665,18 @@ _DRAFT_ROOM_HTML = r"""
     var start = document.getElementById('drSimStart');
     var tg = document.getElementById('drSimToggle');
     var sp = document.getElementById('drSimSpeed');
-    var ready = sim && !simStarted;        // pre-draft: claim picks / look around
-    var running = sim && simStarted;       // CPU picks rolling
+    var ab = document.getElementById('drAutoBtn');
+    var ready = sim && !simStarted;
+    var running = sim && simStarted;
     start.style.display = ready ? '' : 'none';
     tg.style.display = running ? '' : 'none';
     sp.style.display = (ready || running) ? '' : 'none';
     if (running){ tg.textContent = simPaused ? 'Resume' : 'Pause'; }
+    if (ab){
+      ab.style.display = running ? '' : 'none';
+      ab.textContent = simAutoDraft ? 'Manual' : 'Auto Draft';
+      ab.className = 'dr-btn ' + (simAutoDraft ? 'dr-btn-primary' : 'dr-btn-ghost');
+    }
   }
   // User hit Start Draft: kick off the CPU picks.
   function beginSim(){
@@ -4025,6 +4064,14 @@ _DRAFT_ROOM_HTML = r"""
   document.getElementById('drStartSim').addEventListener('click', startMock);
   document.getElementById('drSimStart').addEventListener('click', beginSim);
   document.getElementById('drSimToggle').addEventListener('click', toggleSim);
+  document.getElementById('drAutoBtn').addEventListener('click', function(){
+    simAutoDraft = !simAutoDraft;
+    syncSimControls();
+    // If it's currently my pick and auto-draft just turned on, kick it off
+    if (simAutoDraft && sim && simStarted && !simPaused && isMyPick(state.current)){
+      clearTimeout(simTimer); simTimer = setTimeout(_doAutoPick, simSpeed);
+    }
+  });
   document.getElementById('drSimSpeed').addEventListener('change', function(){
     simSpeed = parseInt(this.value, 10) || 700;
   });
