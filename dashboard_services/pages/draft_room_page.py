@@ -1589,6 +1589,41 @@ _DRAFT_ROOM_HTML = r"""
     }
     return state.simPersonas[slot];
   }
+  // Per-draft random seed so each mock plays out differently while staying stable
+  // within a single draft (saved with state, regenerated on a fresh mock).
+  function _simSeed(){ if (state.simSeed == null) state.simSeed = Math.floor(Math.random() * 2147483647); return state.simSeed; }
+  // Deterministic [0,1) hash from the draft seed + an arbitrary key, so the same
+  // key gives the same value all draft long but differs between drafts.
+  function _rand01(key){
+    var h = _simSeed() | 0, s = String(key);
+    for (var i = 0; i < s.length; i++){ h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0; }
+    h ^= h >>> 13; h = Math.imul(h, 0x5bd1e995); h ^= h >>> 15;
+    return ((h >>> 0) % 1000000) / 1000000;
+  }
+  // Per-draft ADP shift: nudges each player's effective ADP a little so the board
+  // order isn't identical every draft (some players rise, some slide). Bounded and
+  // scaled by ADP so elite picks barely move and deeper players vary more. Roughly
+  // Gaussian (sum of three uniforms) and never applied to ADP-less sentinels.
+  function _adpNoise(p, adp){
+    if (adp == null || adp >= 9000) return 0;
+    var id = p.id;
+    var g = (_rand01(id + ':a') + _rand01(id + ':b') + _rand01(id + ':c') - 1.5) * 2;  // ~N(0,1)
+    var sd = Math.max(0.5, Math.min((state.teams || 12) * 1.0, 0.12 * adp));
+    return g * sd;
+  }
+  // Per-team positional lean: each CPU team slightly favors some positions over
+  // others (0.85-1.15x), giving teams distinct character without overriding value.
+  function _simBias(slot){
+    if (!state.simBias) state.simBias = {};
+    if (!state.simBias[slot]){
+      var b = {};
+      ['QB','RB','WR','TE'].forEach(function(pos){
+        b[pos] = Math.round((0.85 + _rand01(slot + ':bias:' + pos) * 0.30) * 100) / 100;
+      });
+      state.simBias[slot] = b;
+    }
+    return state.simBias[slot];
+  }
   // Build a CPU team's scoring context (its own above-replacement counts, its own
   // picks, and its own next pick) so pickScore judges need for THAT team, not the
   // viewer's. Mirrors psCtx()/nextOwnedAfterCurrent() but scoped to one draft slot.
@@ -1623,8 +1658,10 @@ _DRAFT_ROOM_HTML = r"""
     var slot = slotOnClock(pn, state.teams, state.order);
     var counts = teamCounts(slot), targets = posTargets();
     // This CPU's draft personality scales how hard it leans into need/scarcity vs
-    // pure best-available value, so teams don't all reach the same way.
+    // pure best-available value, so teams don't all reach the same way; its bias
+    // gives it slight positional preferences.
     var persona = _simPersona(slot);
+    var _bias = _simBias(slot);
     // Score every candidate from THIS CPU team's perspective (its own roster,
     // depth, and next pick) so need is judged for the right team, not the viewer.
     var cpuCtx = _cpuCtx(slot);
@@ -1639,8 +1676,11 @@ _DRAFT_ROOM_HTML = r"""
     var posQualLeft = {};  // count of remaining startable-quality players per position
     pool.forEach(function(p){
       var a = simAdp(p);
-      var sigma = simSigma(a);
-      var diff = pn - a;
+      // Per-draft effective ADP so the board plays out differently each mock.
+      var aEff = a + _adpNoise(p, a);
+      if (aEff < 0.5) aEff = 0.5;
+      var sigma = simSigma(aEff);
+      var diff = pn - aEff;
       var w;
       if (diff <= 0) {
         var z = diff / sigma;
@@ -1707,7 +1747,9 @@ _DRAFT_ROOM_HTML = r"""
         var scarce = clamp01((state.teams - qualLeft) / state.teams);
         needBoost += persona * 2.0 * starterNeed * scarce;
       }
-      w *= needBoost / overFactor;
+      // Gentle per-team positional lean (skill positions only).
+      var biasMult = _bias[pos] || 1;
+      w *= needBoost * biasMult / overFactor;
       // K/DEF: in the final 3 rounds, teams MUST fill these slots or they go empty.
       // Boost weight strongly so K/DEF crack the top-8 candidate sample and actually
       // get drafted, rather than losing out to late-sliding skill players every pick.
