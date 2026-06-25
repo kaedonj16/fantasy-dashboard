@@ -3863,10 +3863,13 @@ _DRAFT_ROOM_HTML = r"""
   document.getElementById('drReset').addEventListener('click', resetDraft);
   document.getElementById('drEdit').addEventListener('click', showSetup);
   document.getElementById('drPractice').addEventListener('click', startPracticeMock);
-  // Mobile options menu toggle. The outside-close listener is attached only WHILE
-  // the panel is open, and only after a short delay - so the very tap that opened
-  // it (and any iOS "ghost click" fired ~300ms later) can't immediately close it.
-  // This is what made the gear "open then close instantly" on mobile.
+  // Mobile options menu toggle. The outside-close listener keys off pointerdown
+  // (which fires once per gesture, before any synthetic "ghost click") instead of
+  // a timed click listener. It is attached during the opening click - which runs
+  // AFTER the opening tap's own pointerdown - so the gesture that opened the panel
+  // can never be the one that closes it. This is what made the gear "open then
+  // close instantly" on mobile, especially when the main thread was busy
+  // rendering the board and the ghost click landed after the old 400ms window.
   (function(){
     var optsBtn = document.getElementById('drOptsBtn');
     var optsPanel = document.getElementById('drOptsPanel');
@@ -3877,12 +3880,17 @@ _DRAFT_ROOM_HTML = r"""
     }
     function closeOpts(){
       optsPanel.classList.remove('is-open');
+      document.removeEventListener('pointerdown', onOutside, true);
       document.removeEventListener('click', onOutside, true);
     }
     function openOpts(){
       optsPanel.classList.add('is-open');
+      document.removeEventListener('pointerdown', onOutside, true);
       document.removeEventListener('click', onOutside, true);
-      setTimeout(function(){ document.addEventListener('click', onOutside, true); }, 400);
+      // Prefer pointerdown (one event per gesture, no ghost clicks). Fall back to
+      // click on the rare engine without PointerEvent support.
+      if (window.PointerEvent) document.addEventListener('pointerdown', onOutside, true);
+      else setTimeout(function(){ document.addEventListener('click', onOutside, true); }, 400);
     }
     optsBtn.addEventListener('click', function(e){
       e.preventDefault();
