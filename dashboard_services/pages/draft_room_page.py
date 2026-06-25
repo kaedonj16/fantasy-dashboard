@@ -1249,6 +1249,12 @@ _DRAFT_ROOM_HTML = r"""
     });
   }
 
+  // Sum of all non-bench roster slots - used to keep rounds and bench in sync.
+  function _totalStarterSlots(rs){
+    rs = rs || _setupRoster || defaultRoster();
+    return (rs.QB||0) + (rs.SF||0) + (rs.RB||0) + (rs.WR||0) + (rs.TE||0) + (rs.FLEX||0) + (rs.K||0) + (rs.DEF||0);
+  }
+
   // ── Setup: draft capital (claimed picks) ────────────────────────────────────
   function setupCtl(){
     return {
@@ -4263,6 +4269,15 @@ _DRAFT_ROOM_HTML = r"""
   ['drTeams','drRounds','drOrder','drSlot'].forEach(function(idn){
     document.getElementById(idn).addEventListener('change', renderSetupCapital);
   });
+  // Rounds <-> bench two-way sync: rounds = starters + bench.
+  document.getElementById('drRounds').addEventListener('change', function(){
+    var rounds = Math.max(1, Math.min(40, parseInt(this.value, 10) || 15));
+    this.value = rounds;
+    if (!_setupRoster) _setupRoster = defaultRoster();
+    _rosterMode = 'custom';
+    _setupRoster.BN = Math.max(0, rounds - _totalStarterSlots(_setupRoster));
+    renderSetupRoster();
+  });
   document.getElementById('drRosterSection').addEventListener('click', function(e){
     var step = e.target.closest('.dr-step-btn');
     if (!step) return;
@@ -4271,6 +4286,12 @@ _DRAFT_ROOM_HTML = r"""
     var d = parseInt(step.getAttribute('data-d'), 10);
     if (!_setupRoster) _setupRoster = defaultRoster();
     _setupRoster[key] = Math.max(0, (_setupRoster[key] || 0) + d);
+    // Bench change: keep rounds = starters + bench in sync.
+    if (key === 'BN'){
+      var _newRounds = Math.max(1, Math.min(40, _totalStarterSlots(_setupRoster) + (_setupRoster.BN || 0)));
+      document.getElementById('drRounds').value = _newRounds;
+      renderSetupCapital();
+    }
     renderSetupRoster();
   });
   document.getElementById('drCapitalSection').addEventListener('click', function(e){
