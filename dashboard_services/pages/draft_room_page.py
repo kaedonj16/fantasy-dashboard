@@ -1391,16 +1391,21 @@ _DRAFT_ROOM_HTML = r"""
     var s = (state && state.scoring) || {};
     return { ppr: s.ppr != null ? s.ppr : 1.0, tep: s.tep != null ? s.tep : 0 };
   }
-  // Convert a Sleeper roster_positions array to the {QB:1, RB:2, ...} map used by state.roster.
+  // Convert a Sleeper-style roster_positions array to the {QB:1, RB:2, ...} map
+  // used by state.roster. Uses the same normalization as rosterFromLeague so the
+  // live/connected path recognizes K/DEF (incl. DST) and FLEX variants identically.
   function _parseRosterPositions(arr){
     if (!Array.isArray(arr) || !arr.length) return null;
+    var nmap = {
+      QB:'QB', RB:'RB', WR:'WR', TE:'TE',
+      FLEX:'FLEX', WRRB_FLEX:'FLEX', REC_FLEX:'FLEX', WRRBTE_FLEX:'FLEX',
+      SUPER_FLEX:'SF', SFLEX:'SF',
+      K:'K', DEF:'DEF', DST:'DEF', BN:'BN'
+    };
     var map = {};
     arr.forEach(function(pos){
-      pos = String(pos || '').toUpperCase();
-      // Normalize Sleeper's SUPER_FLEX to SF and FLEX stays FLEX.
-      if (pos === 'SUPER_FLEX' || pos === 'SFLEX') pos = 'SF';
-      if (!pos || pos === 'DB' || pos === 'LB') return; // skip IDP positions
-      map[pos] = (map[pos] || 0) + 1;
+      var key = nmap[String(pos || '').toUpperCase()];
+      if (key) map[key] = (map[key] || 0) + 1;   // IDP/TAXI/IR positions are ignored
     });
     return Object.keys(map).length ? map : null;
   }
@@ -2974,10 +2979,7 @@ _DRAFT_ROOM_HTML = r"""
     // Highest-projected legal lineup (projection-first, value fallback), so the
     // strongest scorer fills each slot - a high-proj QB takes SF over a weaker flex.
     var _olN = optimalLineup(mine, lineupSlots());
-    _olN.starters.forEach(function(s){
-      if (!s.p && (s.slot === 'K' || s.slot === 'DEF')) return;
-      html += slotRow(s.slot, s.p);
-    });
+    _olN.starters.forEach(function(s){ html += slotRow(s.slot, s.p); });
     var bench = _olN.bench;
     html += '<div class="dr-roster-div">Bench</div>';
     if (bench.length){ bench.forEach(function(p){ html += slotRow('BN', p); }); }
@@ -3790,12 +3792,7 @@ _DRAFT_ROOM_HTML = r"""
     var starterBenchHtml = '';
     if (hasSlot){
       starterBenchHtml = '<div class="dr-sum-section">Starters</div>';
-      starters.forEach(function(s){
-        // Skip unfilled K/DEF slots - they're absent from many player pools and
-        // showing them as empty misleads the user about their draft quality.
-        if (!s.p && (s.slot === 'K' || s.slot === 'DEF')) return;
-        starterBenchHtml += sumRow(s.slot, s.p);
-      });
+      starters.forEach(function(s){ starterBenchHtml += sumRow(s.slot, s.p); });
       starterBenchHtml += '<div class="dr-sum-section">Bench</div>';
       if (bench.length){ bench.forEach(function(p){ starterBenchHtml += sumRow('BN', p); }); }
       else { starterBenchHtml += sumRow('BN', null); }
