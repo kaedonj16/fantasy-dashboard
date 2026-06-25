@@ -5761,6 +5761,54 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
                 changed = True
                 break
 
+    # Force-split any tier that's too large after gap-selection + merge.
+    # When values decay smoothly across a wide rank range (e.g., ranks 6-85),
+    # no single gap stands out globally so all boundaries cluster in the tail,
+    # leaving one enormous middle tier. This step finds the biggest local gap
+    # inside any over-limit tier and adds it as a boundary, ensuring no tier
+    # swallows an unreasonable number of players.
+    MAX_TIER_SIZE = max(16, league_size + 6)
+    MIN_SPLIT     = 4       # each side of a forced split must have >= this many
+    _BOUND_CAP    = num_tiers + 5
+
+    for _ in range(_BOUND_CAP):
+        if len(thresholds) >= _BOUND_CAP:
+            break
+        segs = [(thresholds[0], None)]
+        for j in range(len(thresholds) - 1):
+            segs.append((thresholds[j + 1], thresholds[j]))
+        segs.append((0.0, thresholds[-1]))
+
+        best_cnt, best_lo, best_hi = 0, None, None
+        for lo, hi in segs:
+            if hi is None:
+                cnt = sum(1 for v in vals if v >= lo)
+            else:
+                cnt = sum(1 for v in vals if lo <= v < hi)
+            if cnt > best_cnt:
+                best_cnt, best_lo, best_hi = cnt, lo, hi
+
+        if best_cnt <= MAX_TIER_SIZE:
+            break
+
+        if best_hi is None:
+            seg_v = sorted([v for v in vals if v >= best_lo], reverse=True)
+        else:
+            seg_v = sorted([v for v in vals if best_lo <= v < best_hi], reverse=True)
+
+        best_split, best_gap = None, -1
+        for j in range(len(seg_v) - 1):
+            if j + 1 < MIN_SPLIT or len(seg_v) - j - 1 < MIN_SPLIT:
+                continue
+            g = seg_v[j] - seg_v[j + 1]
+            if g > best_gap:
+                best_gap = g
+                best_split = round((seg_v[j] + seg_v[j + 1]) / 2.0, 1)
+
+        if best_split is None or best_split in thresholds:
+            break
+        thresholds = sorted(thresholds + [best_split], reverse=True)
+
     return thresholds if thresholds else _FALLBACK_THRESHOLDS
 
 def _asset_tier(value: float, thresholds: list = None) -> int:
