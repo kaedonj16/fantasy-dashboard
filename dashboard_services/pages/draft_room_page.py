@@ -61,8 +61,10 @@ _DRAFT_ROOM_HTML = r"""
   <!-- Setup -->
   <div class="dr-setup" id="drSetup">
     <div class="dr-setup-card">
-      <div class="dr-setup-section">
-        <div class="dr-setup-section-label">Format</div>
+
+      <div class="dr-step">
+        <div class="dr-step-num">Step 1</div>
+        <div class="dr-step-title">Format</div>
         <div class="dr-setup-grid">
           <div class="dr-field"><span>Draft Type</span>
             <select id="drType">
@@ -101,16 +103,23 @@ _DRAFT_ROOM_HTML = r"""
         </div>
       </div>
 
-      <div class="dr-setup-section">
-        <div class="dr-setup-section-label">League</div>
+      <div class="dr-step">
+        <div class="dr-step-num">Step 2</div>
+        <div class="dr-step-title">Roster Slots</div>
+        <div id="drRosterSection"></div>
+      </div>
+
+      <div class="dr-step">
+        <div class="dr-step-num">Step 3</div>
+        <div class="dr-step-title">League</div>
         <div class="dr-setup-grid">
           <div class="dr-field"><span>Teams</span>
             <select id="drTeams">
               <option>8</option><option>10</option><option selected>12</option><option>14</option>
             </select>
           </div>
-          <div class="dr-field"><span>Rounds</span>
-            <input id="drRounds" type="number" min="1" max="40" value="25">
+          <div class="dr-field" id="drRoundsField" style="display:none;"><span>Rounds</span>
+            <input id="drRounds" type="number" min="1" max="40" value="3">
           </div>
           <div class="dr-field"><span>Your Pick</span>
             <select id="drSlot"></select>
@@ -118,14 +127,10 @@ _DRAFT_ROOM_HTML = r"""
         </div>
       </div>
 
-      <div class="dr-setup-section">
-        <div class="dr-setup-section-label">Roster Slots</div>
-        <div id="drRosterSection"></div>
-      </div>
-
-      <div class="dr-setup-section">
-        <div class="dr-setup-section-label">Your Draft Capital</div>
-        <div class="dr-setup-desc" style="margin-bottom:8px;">Defaults to your slot's picks. Tap + on a round to add a traded-in pick, or click a pick to remove one you traded away.</div>
+      <div class="dr-step">
+        <div class="dr-step-num">Step 4</div>
+        <div class="dr-step-title">Draft Capital</div>
+        <p class="dr-setup-desc" style="margin-bottom:8px;">Defaults to your slot's picks. Tap + on a round to add a traded-in pick, or click a pick to remove one you traded away.</p>
         <div id="drCapitalSection"></div>
       </div>
 
@@ -290,10 +295,10 @@ _DRAFT_ROOM_HTML = r"""
   .dr-setup-card { width: 100%; max-width: 720px; background: var(--card); border: 1px solid var(--border);
     border-radius: 16px; padding: 22px 24px; box-shadow: 0 8px 30px rgba(0,0,0,.10); }
   .dr-setup-desc { font-size: 13px; color: var(--text-muted); margin: 0; line-height: 1.5; }
-  .dr-setup-section { padding: 14px 0; border-top: 1px solid var(--border); }
-  .dr-setup-section:first-of-type { border-top: none; padding-top: 0; }
-  .dr-setup-section-label { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
-    color: var(--text-muted); margin-bottom: 10px; }
+  .dr-step { padding: 22px 0; border-top: 1px solid var(--border); }
+  .dr-step:first-child { border-top: none; padding-top: 0; }
+  .dr-step-num { font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .12em; color: var(--accent,#38bdf8); margin-bottom: 4px; }
+  .dr-step-title { font-size: 22px; font-weight: 900; color: var(--text); margin-bottom: 16px; line-height: 1.1; }
   .dr-setup-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(150px,1fr)); gap: 12px; }
   .dr-field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 700; color: var(--text-muted); }
   .dr-field select, .dr-field input {
@@ -1103,18 +1108,19 @@ _DRAFT_ROOM_HTML = r"""
     }
     if (cfg.isSuperflex) document.getElementById('drSf').value = '1';
     var typeVal = document.getElementById('drType').value;
-    document.getElementById('drRounds').value = _defaultRounds(typeVal);
+    var isRookie = typeVal === 'rookie';
+    var rf = document.getElementById('drRoundsField');
+    if (rf) rf.style.display = isRookie ? '' : 'none';
+    if (isRookie) {
+      document.getElementById('drRounds').value = String(cfg.numRoundsRookie || 3);
+    }
+    // For non-rookie: rounds will be synced from roster after renderSetupRoster() runs.
     fillSlotOptions(parseInt(document.getElementById('drTeams').value, 10));
   }
 
   document.getElementById('drTeams').addEventListener('change', function(){
     fillSlotOptions(parseInt(this.value, 10));
   });
-  document.getElementById('drType').addEventListener('change', function(){
-    document.getElementById('drRounds').value = _defaultRounds(this.value);
-    renderSetupCapital();   // rounds changed: refresh the claimed-pick list
-  });
-
   // Map a Sleeper-style roster_positions list into our slot counts.
   function rosterFromLeague(){
     var rp = cfg.rosterPositions;
@@ -1149,8 +1155,9 @@ _DRAFT_ROOM_HTML = r"""
       else   { lg.SF = 0; }
       return lg;
     }
-    return { QB:1, SF:sf?1:0, RB:2, WR:3, TE:1, FLEX:1,
-             K:rd?1:0, DEF:rd?1:0, BN:rd?5:7 };
+    var starters = 1 + (sf?1:0) + 2 + 3 + 1 + 1 + (rd?1:0) + (rd?1:0);
+    var bench = rd ? 6 : Math.max(0, 25 - starters);
+    return { QB:1, SF:sf?1:0, RB:2, WR:3, TE:1, FLEX:1, K:rd?1:0, DEF:rd?1:0, BN:bench };
   }
 
   // Helper: reconcile a raw roster map for the chosen QB format and return a
@@ -1238,6 +1245,10 @@ _DRAFT_ROOM_HTML = r"""
     html += '</div>';
     document.getElementById('drRosterSection').innerHTML = html;
 
+    // Keep drRounds in sync with roster for non-rookie drafts.
+    var _typeEl = document.getElementById('drType');
+    if (_typeEl && _typeEl.value !== 'rookie') _syncRoundsFromRoster();
+
     // Wire the mode-toggle buttons (rendered into innerHTML so must re-attach).
     var cb = document.getElementById('drRosterCustomize');
     if (cb) cb.addEventListener('click', function(){
@@ -1253,6 +1264,12 @@ _DRAFT_ROOM_HTML = r"""
   function _totalStarterSlots(rs){
     rs = rs || _setupRoster || defaultRoster();
     return (rs.QB||0) + (rs.SF||0) + (rs.RB||0) + (rs.WR||0) + (rs.TE||0) + (rs.FLEX||0) + (rs.K||0) + (rs.DEF||0);
+  }
+  // Sync the hidden drRounds field from the current roster (starters + bench).
+  function _syncRoundsFromRoster(){
+    if (!_setupRoster) return;
+    var r = _totalStarterSlots(_setupRoster) + (_setupRoster.BN || 0);
+    document.getElementById('drRounds').value = Math.max(1, Math.min(40, r));
   }
 
   // ── Setup: draft capital (claimed picks) ────────────────────────────────────
@@ -4264,7 +4281,16 @@ _DRAFT_ROOM_HTML = r"""
   renderSetupRoster();
   renderSetupCapital();
   document.getElementById('drSf').addEventListener('change', function(){ _rosterMode = 'auto'; _setupRoster = null; renderSetupRoster(); });
-  document.getElementById('drType').addEventListener('change', function(){ _rosterMode = 'auto'; _setupRoster = null; renderSetupRoster(); });
+  document.getElementById('drType').addEventListener('change', function(){
+    // Reset roster to defaults for the new type, then re-render.
+    _rosterMode = 'auto'; _setupRoster = null; renderSetupRoster();
+    // Show/hide rookie rounds field; for non-rookie, rounds auto-sync from roster.
+    var isRookie = this.value === 'rookie';
+    var rf = document.getElementById('drRoundsField');
+    if (rf) rf.style.display = isRookie ? '' : 'none';
+    if (isRookie) document.getElementById('drRounds').value = String(cfg.numRoundsRookie || 3);
+    renderSetupCapital();   // refresh claimed-pick list after rounds change
+  });
   // Any control that changes the pick map resets claimed picks to the slot default.
   ['drTeams','drRounds','drOrder','drSlot'].forEach(function(idn){
     document.getElementById(idn).addEventListener('change', renderSetupCapital);
