@@ -683,7 +683,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-shareview-overlay { position:fixed; inset:0; z-index:1002; background:rgba(0,0,0,.6);
     display:flex; align-items:center; justify-content:center; padding:16px; }
   .dr-shareview-card { position:relative; background:var(--card); border:1px solid var(--border);
-    border-radius:16px; padding:20px; max-width:520px; width:100%;
+    border-radius:16px; padding:20px; max-width:520px; width:100%; max-height:calc(100vh - 32px); overflow-y:auto;
     box-shadow:0 24px 60px rgba(0,0,0,.4); display:flex; flex-direction:column; gap:14px; }
   .dr-shareview-tabs { display:flex; gap:6px; }
   .dr-shareview-tab { padding:6px 16px; border-radius:8px; border:1px solid var(--border);
@@ -877,6 +877,23 @@ _DRAFT_ROOM_HTML = r"""
   .dr-sum-arch-tag { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em;
     color: var(--text-muted); background: var(--card-soft, rgba(127,127,127,.12)); padding: 3px 7px; border-radius: 999px; white-space: nowrap; }
   .dr-sum-arch-label { font-size: 16px; font-weight: 900; color: var(--accent); line-height: 1.1; }
+  .dr-sum-arch { flex-wrap: wrap; }
+  /* Competitive window chips */
+  .dr-sum-win { font-size: 12px; font-weight: 800; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+  .dr-win-winnow { background: rgba(34,197,94,.16); color: #22c55e; }
+  .dr-win-balanced { background: rgba(245,158,11,.16); color: #f59e0b; }
+  .dr-win-future { background: rgba(56,189,248,.16); color: #38bdf8; }
+  /* League grades list */
+  .dr-sum-league { display: flex; flex-direction: column; gap: 4px; }
+  .dr-sum-lrow { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px;
+    background: var(--bg); border: 1px solid var(--border); }
+  .dr-sum-lrow.is-me { border-color: var(--accent,#38bdf8); background: rgba(56,189,248,.08); }
+  .dr-sum-lrank { font-size: 11px; font-weight: 800; color: var(--text-muted); width: 18px; flex-shrink: 0; text-align: center; }
+  .dr-sum-lname { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dr-sum-lrow.is-me .dr-sum-lname { color: var(--accent,#38bdf8); }
+  .dr-sum-lwin { font-size: 9.5px; font-weight: 800; padding: 2px 7px; border-radius: 999px; white-space: nowrap; flex-shrink: 0; }
+  .dr-sum-lgrade { font-size: 18px; font-weight: 900; flex-shrink: 0; width: 36px; text-align: right; }
 </style>
 
 <script>
@@ -2555,6 +2572,30 @@ _DRAFT_ROOM_HTML = r"""
     });
     if (!mine.length) return null;
     mine.sort(function(a, b){ return a.pn - b.pn; }); // process in pick order for need context
+    return gradePicks(mine);
+  }
+  // Competitive window from a starter set: young core => Future (ascending),
+  // veteran core => Win-Now (compete before decline), in between => Balanced.
+  // Value-weighted so your best players define the window more than depth. Only
+  // meaningful for dynasty/startup (redraft is always "now").
+  function _competitiveWindow(starterArr){
+    if (state.type === 'redraft') return null;
+    var wSum = 0, aSum = 0;
+    starterArr.forEach(function(x){
+      var full = playersById[String(x.id)];
+      var age = (full && full.age != null) ? Number(full.age) : null;
+      if (age == null) return;
+      var w = Math.max(1, x.val || 1);
+      aSum += age * w; wSum += w;
+    });
+    if (wSum <= 0) return null;
+    var avgAge = aSum / wSum;
+    var label = avgAge <= 24.5 ? 'Future' : (avgAge >= 26.5 ? 'Win-Now' : 'Balanced');
+    return { label: label, avgAge: avgAge };
+  }
+  // Grade any team's picks. `mine` = sorted [{pn, p}] for one team.
+  function gradePicks(mine){
+    if (!mine || !mine.length) return null;
     var counts = { QB:0, RB:0, WR:0, TE:0 };
     // Pre-compute maxVal for pickScore (matches what pickScore callers do)
     var _gmaxVal = 0; players.forEach(function(q){ var v = valOf(q); if (v > _gmaxVal) _gmaxVal = v; });
@@ -2584,7 +2625,7 @@ _DRAFT_ROOM_HTML = r"""
       // is the average pick score (already a 0-100 talent+value signal), so two
       // elite picks (e.g. 95 + 92) land an A+ regardless of positional balance.
       var rv = avgPs != null ? Math.round(clamp01(avgPs / 100) * 100) : 50;
-      return { score: rv, value: rv, balance: 0, tier: 0, count: mine.length, avgPs: avgPs ? Math.round(avgPs) : null };
+      return { score: rv, value: rv, balance: 0, tier: 0, count: mine.length, avgPs: avgPs ? Math.round(avgPs) : null, window: null };
     }
 
     // ── Startup / redraft: Value 35 / Starters 35 / Construction 30 ──
@@ -2662,7 +2703,33 @@ _DRAFT_ROOM_HTML = r"""
 
     var total = valuePts + starterPts + balancePts;
     return { score: total, value: valuePts, balance: balancePts, tier: starterPts, count: mine.length,
-      avgPs: avgPs ? Math.round(avgPs) : null, strength: Math.round(strengthRatio * 100) };
+      avgPs: avgPs ? Math.round(avgPs) : null, strength: Math.round(strengthRatio * 100),
+      window: _competitiveWindow(starterArr) };
+  }
+  // Grade every team in the draft (one per draft slot), sorted best-first.
+  function gradeAllTeams(){
+    if (!state) return [];
+    var teams = state.teams || 12;
+    var bySlot = {};
+    Object.keys(state.picks).forEach(function(k){
+      var pn = parseInt(k, 10);
+      if (!state.picks[k]) return;
+      var slot = slotOnClock(pn, teams, state.order);
+      if (!bySlot[slot]) bySlot[slot] = [];
+      bySlot[slot].push({ pn: pn, p: state.picks[k] });
+    });
+    var out = [];
+    for (var s = 1; s <= teams; s++){
+      var picks = bySlot[s];
+      if (!picks || !picks.length) continue;
+      picks.sort(function(a, b){ return a.pn - b.pn; });
+      var g = gradePicks(picks);
+      if (!g) continue;
+      var isMe = picks.some(function(m){ return isMyPick(m.pn); });
+      out.push({ slot: s, name: isMe ? 'You' : teamName(s), isMe: isMe, grade: g });
+    }
+    out.sort(function(a, b){ return b.grade.score - a.grade.score; });
+    return out;
   }
   // Classify a startup/redraft build into a recognizable draft archetype based on
   // positional emphasis, weighting the early picks where strategy is actually set.
@@ -3495,12 +3562,36 @@ _DRAFT_ROOM_HTML = r"""
 
     // Team archetype (startup/redraft only) - identifies the build strategy.
     var arch = teamArchetype();
-    var archHtml = arch
+    var winChip = (g && g.window)
+      ? '<span class="dr-sum-arch-tag">Competitive Window</span>'
+        + '<span class="dr-sum-win dr-win-' + g.window.label.toLowerCase().replace('-','') + '">'
+        + esc(g.window.label) + ' \xb7 avg age ' + g.window.avgAge.toFixed(1) + '</span>'
+      : '';
+    var archHtml = (arch || winChip)
       ? '<div class="dr-sum-arch">'
-        + '<span class="dr-sum-arch-tag">Team Archetype</span>'
-        + '<span class="dr-sum-arch-label">' + esc(arch.label) + '</span>'
+        + (arch ? '<span class="dr-sum-arch-tag">Team Archetype</span>'
+                + '<span class="dr-sum-arch-label">' + esc(arch.label) + '</span>' : '')
+        + winChip
         + '</div>'
       : '';
+
+    // All teams' grades + competitive windows (live/mock with a full board).
+    var allTeams = gradeAllTeams();
+    var leagueHtml = '';
+    if (allTeams.length >= 2){
+      leagueHtml = '<div class="dr-sum-section">League Grades</div><div class="dr-sum-league">';
+      allTeams.forEach(function(t, i){
+        var w = t.grade.window;
+        var winTag = w ? '<span class="dr-sum-lwin dr-win-' + w.label.toLowerCase().replace('-','') + '">' + esc(w.label) + '</span>' : '';
+        leagueHtml += '<div class="dr-sum-lrow' + (t.isMe ? ' is-me' : '') + '">'
+          + '<span class="dr-sum-lrank">' + (i + 1) + '</span>'
+          + '<span class="dr-sum-lname">' + esc(t.name) + '</span>'
+          + winTag
+          + '<span class="dr-sum-lgrade" style="color:' + psColor(t.grade.score) + '">' + gradeLetter(t.grade.score) + '</span>'
+          + '</div>';
+      });
+      leagueHtml += '</div>';
+    }
 
     var html = '<button class="dr-prev-close" id="drSumClose" aria-label="Close">&times;</button>'
       + '<div class="dr-sum-header"><div class="dr-sum-title">Draft Report Card</div>' + gradeHtml + '</div>'
@@ -3511,6 +3602,7 @@ _DRAFT_ROOM_HTML = r"""
     html += '<div class="dr-sum-section">Bench</div>';
     if (bench.length){ bench.forEach(function(p){ html += sumRow('BN', p); }); }
     else { html += sumRow('BN', null); }
+    html += leagueHtml;
     html += '<div class="dr-sum-footer">'
       + '<button class="dr-btn dr-btn-primary" id="drSumShare">Share</button>'
       + '<button class="dr-btn" id="drSumCloseBtn">Close</button>'
