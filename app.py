@@ -19447,14 +19447,13 @@ def api_league_players():
     except Exception as _e_bye:
         logger.info("[api/league-players] bye attach skipped: %s", _e_bye)
 
-    # Optionally append K/DEF (draftable in redraft) when ?kdef=1. Kept out of the
-    # default response so dynasty rankings stay skill-position only.
+    # Optionally append K/DEF (draftable in redraft/startup with K/DEF slots) when ?kdef=1.
+    # Kept out of the default response so dynasty rankings stay skill-position only.
     if request.args.get("kdef"):
         try:
-            from utils.utils import load_players_index as _lpi
+            from utils.utils import load_players_index as _lpi, NFL_TEAMS as _nfl_teams
             # Reuse the FantasyPros projections cache (keyed by id) so kickers carry
-            # a projected PPG and can be ranked by quality. Defenses aren't projected
-            # by FP, so they fall back to a flat score on the client.
+            # a projected PPG and can be ranked by quality.
             _kdef_proj = {}
             try:
                 _kp = read_json_cached(
@@ -19465,13 +19464,14 @@ def api_league_players():
                 _kdef_proj = {}
             _seen = {str(p.get("id")) for p in model_value_table if isinstance(p, dict)}
             _kdef = []
+            # Kickers: players_index stores them as pos="PK" (Tank01 convention), not "K".
             for _pid, _info in (_lpi() or {}).items():
                 _pos = str((_info or {}).get("pos") or "").upper()
-                if _pos in ("K", "DEF", "DST") and str(_pid) not in _seen:
+                if _pos in ("K", "PK") and str(_pid) not in _seen:
                     _row = {
                         "id": str(_pid),
                         "name": (_info.get("name") or str(_pid)),
-                        "position": "DEF" if _pos in ("DEF", "DST") else "K",
+                        "position": "K",
                         "team": (_info.get("team") or _info.get("nfl") or ""),
                         "value": 0, "sf_value": 0,
                     }
@@ -19484,6 +19484,17 @@ def api_league_players():
                         except (TypeError, ValueError):
                             pass
                     _kdef.append(_row)
+            # Team defenses: not in players_index at all. Generate one entry per NFL
+            # team. Sleeper identifies DST players by the team abbreviation as the ID.
+            for _team in _nfl_teams:
+                if _team not in _seen:
+                    _kdef.append({
+                        "id": _team,
+                        "name": _team + " D/ST",
+                        "position": "DEF",
+                        "team": _team,
+                        "value": 0, "sf_value": 0,
+                    })
             _kdef.sort(key=lambda x: x["name"])
             model_value_table.extend(_kdef)
         except Exception as _e_kdef:
