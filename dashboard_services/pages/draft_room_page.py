@@ -1406,9 +1406,10 @@ _DRAFT_ROOM_HTML = r"""
     document.getElementById('drSetup').style.display = 'none';
     var hero = document.getElementById('drHero'); if (hero) hero.style.display = 'none';
     var isLive = !!(state && state.mode === 'live');
-    // Practice Mock and Edit Setup are irrelevant when watching a live draft.
+    // Practice Mock is only relevant when connected to an upcoming league draft.
+    // Edit Setup is hidden during live drafts (settings are locked to the real draft).
     var pm = document.getElementById('drPractice');
-    if (pm) pm.style.display = isLive ? 'none' : '';
+    if (pm) pm.style.display = isLive ? '' : 'none';
     var ed = document.getElementById('drEdit');
     if (ed) ed.style.display = isLive ? 'none' : '';
     // Reset becomes "Exit Board" in live mode (no danger color - it's just navigation).
