@@ -1721,7 +1721,13 @@ _DRAFT_ROOM_HTML = r"""
         // Penalty fades from strong in rounds 1-6, gone by round 12+
         var _rnd = Math.ceil(pn / state.teams);
         var earlyMult = Math.max(0, 1 - _rnd / 12);
-        overFactor *= (1 + 3.5 * earlyMult * (have - sSlots + 1));
+        // A backup to a thin starter slot (the lone QB/TE in 1QB) is far less
+        // valuable than extra depth at a multi-starter position - you only ever
+        // start one. Penalize stacking a single-slot position much harder so a
+        // CPU never spends an early pick on a 2nd QB while real starting needs
+        // remain; depth positions (2-3 starters) keep a milder penalty.
+        var slotScarcityMult = sSlots <= 1 ? 3.0 : (sSlots === 2 ? 1.5 : 1.0);
+        overFactor *= (1 + 3.5 * slotScarcityMult * earlyMult * (have - sSlots + 1));
       }
       // Depth nudge (base need-awareness): SF QB gets a stronger factor so the CPU
       // targets a 2nd QB; the zero-QB SF case stays urgent once the early rounds pass.
@@ -2377,9 +2383,9 @@ _DRAFT_ROOM_HTML = r"""
       var ps = pickScoreFor(p), ops = pickScoreFor(other);
       var v = valOf(p), ov = valOf(other);
       var t = tierOf(p), ot = tierOf(other);
-      var ppg = p.ppg != null ? Number(p.ppg) : (p.proj_ppg != null ? Number(p.proj_ppg) : null);
-      var oppg = other.ppg != null ? Number(other.ppg) : (other.proj_ppg != null ? Number(other.proj_ppg) : null);
-      var ppgRowLbl = (p.ppg != null || other.ppg != null) ? 'PPG' : 'Proj PPG';
+      var ppg = p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null);
+      var oppg = other.proj_ppg != null ? Number(other.proj_ppg) : (other.ppg != null ? Number(other.ppg) : null);
+      var ppgRowLbl = (p.proj_ppg != null || other.proj_ppg != null) ? 'Proj PPG' : 'PPG';
       var age = p.age != null ? Number(p.age) : null;
       var oage = other.age != null ? Number(other.age) : null;
       function statRow(lbl, val, oval, higherBetter, fmtFn){
@@ -2653,9 +2659,9 @@ _DRAFT_ROOM_HTML = r"""
     var byeFlag = '';
     var bc = byeConflict(p);
     if (bc >= 2) byeFlag = '<span class="dr-bye-flag">Bye ' + p.bye_week + ' clash</span>';
-    // Projected (or actual) PPG for meta line
-    var ppgNum = p.ppg != null ? Number(p.ppg) : (p.proj_ppg != null ? Number(p.proj_ppg) : null);
-    var ppgPart = ppgNum != null ? ' · ' + ppgNum.toFixed(1) + ' PPG' : '';
+    // Projected PPG for meta line (proj_ppg = upcoming season, ppg = last season fallback)
+    var ppgNum = p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null);
+    var ppgPart = ppgNum != null ? ' · ' + ppgNum.toFixed(1) + ' Proj PPG' : '';
     // Compare button state
     var onCmp = compareIds.indexOf(String(p.id)) >= 0;
     var _isDef = String(p.position || '').toUpperCase() === 'DEF';
@@ -2879,8 +2885,8 @@ _DRAFT_ROOM_HTML = r"""
       + '<span class="dr-rslot-empty">open</span></div>';
   }
   // ── Draft grade / roster strength ───────────────────────────────────────────
-  // Sleeper actual PPG preferred, FantasyPros projection as fallback (site-wide).
-  function ppgOf(p){ return (p && p.ppg != null) ? Number(p.ppg) : ((p && p.proj_ppg != null) ? Number(p.proj_ppg) : null); }
+  // Projected PPG (upcoming season) preferred; last-season actual as fallback.
+  function ppgOf(p){ return (p && p.proj_ppg != null) ? Number(p.proj_ppg) : ((p && p.ppg != null) ? Number(p.ppg) : null); }
   function gradeTeam(){
     if (!hasOwned()) return null;
     // Pull "your" grade from the full field so the relative-to-league curve matches
