@@ -485,7 +485,8 @@ _DRAFT_ROOM_HTML = r"""
   .dr-gbar-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
   .dr-gbar-lbl { font-size: 10px; color: var(--text-muted); width: 76px; flex-shrink: 0; }
   .dr-gbar { flex: 1; height: 6px; border-radius: 999px; background: rgba(127,127,127,.18); overflow: hidden; }
-  .dr-gbar-fill { height: 100%; border-radius: 999px; background: var(--accent,#38bdf8); }
+  .dr-gbar-fill { height: 100%; border-radius: 999px; }
+  .dr-gbar-pct { font-size: 10px; font-weight: 800; width: 26px; text-align: right; flex-shrink: 0; }
   /* inline info-icon tooltip (ⓘ) */
   .dr-info { display:inline-flex; align-items:center; justify-content:center; width:13px; height:13px; border-radius:50%;
     border:1px solid var(--border); color:var(--text-muted); font-size:9px; font-weight:800; font-style:normal;
@@ -655,17 +656,43 @@ _DRAFT_ROOM_HTML = r"""
     .dr-prev-stats { grid-template-columns: repeat(2, 1fr); }
   }
   /* Summary overlay */
-  .dr-summary-overlay { position:fixed; inset:0; z-index:1001; background:rgba(0,0,0,.55);
-    display:flex; align-items:flex-start; justify-content:center; padding:16px; overflow-y:auto; }
-  .dr-summary-card { position:relative; width:100%; max-width:480px; margin:auto; background:var(--card);
-    border:1px solid var(--border); border-radius:16px; padding:20px 18px;
-    box-shadow:0 16px 60px rgba(0,0,0,.35); }
-  .dr-sum-header { text-align:center; margin-bottom:12px; }
-  .dr-sum-title { font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); }
-  .dr-sum-grade { font-size:52px; font-weight:900; line-height:1; margin:6px 0 4px; }
-  .dr-sum-pace { font-size:12px; color:var(--text-muted); }
-  .dr-sum-section { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.06em;
-    color:var(--text-muted); margin:12px 0 4px; padding-top:4px; }
+  .dr-summary-overlay { position:fixed; inset:0; z-index:1001; background:rgba(0,0,0,.6);
+    display:flex; align-items:flex-start; justify-content:center; padding:20px 16px; overflow-y:auto; }
+  .dr-summary-card { position:relative; width:100%; max-width:500px; margin:auto; background:var(--card);
+    border:1px solid var(--border); border-radius:20px; overflow:hidden;
+    box-shadow:0 24px 80px rgba(0,0,0,.5); }
+  /* Grade ring + bars header */
+  .dr-sum-header { padding:20px 20px 0; }
+  .dr-sum-title { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.1em;
+    color:var(--text-muted); text-align:center; margin-bottom:14px; }
+  .dr-sum-grade-wrap { display:flex; align-items:center; gap:18px; padding-bottom:16px; }
+  .dr-sum-grade-ring { width:76px; height:76px; border-radius:50%; border:3px solid;
+    display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .dr-sum-grade { font-size:30px; font-weight:900; line-height:1; }
+  .dr-sum-grade-bars { flex:1; display:flex; flex-direction:column; gap:5px; }
+  /* Stats strip */
+  .dr-sum-stats { display:flex; border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
+  .dr-sum-stat { flex:1; text-align:center; padding:13px 4px; }
+  .dr-sum-stat:not(:last-child) { border-right:1px solid var(--border); }
+  .dr-sum-stat-v { font-size:20px; font-weight:900; color:var(--text); line-height:1; }
+  .dr-sum-stat-l { font-size:9px; color:var(--text-muted); margin-top:3px; text-transform:uppercase; letter-spacing:.04em; }
+  /* Archetype / window strip */
+  .dr-sum-arch { display:flex; align-items:center; justify-content:center; gap:14px; flex-wrap:wrap;
+    padding:11px 16px; border-bottom:1px solid var(--border); }
+  .dr-sum-arch-item { display:flex; flex-direction:column; align-items:center; gap:4px; }
+  .dr-sum-arch-tag { font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); }
+  .dr-sum-arch-label { font-size:14px; font-weight:900; color:var(--accent); line-height:1.1; }
+  .dr-sum-arch-div { width:1px; height:32px; background:var(--border); flex-shrink:0; }
+  /* Competitive window chips */
+  .dr-sum-win { font-size:12px; font-weight:800; padding:4px 10px; border-radius:999px; white-space:nowrap; }
+  .dr-win-winnow { background:rgba(34,197,94,.16); color:#22c55e; }
+  .dr-win-balanced { background:rgba(245,158,11,.16); color:#f59e0b; }
+  .dr-win-future { background:rgba(56,189,248,.16); color:#38bdf8; }
+  /* Body wrapper + section labels */
+  .dr-sum-body-wrap { padding:0 16px 4px; }
+  .dr-sum-section { font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.08em;
+    color:var(--text-muted); margin:14px 0 6px; }
+  /* Player rows */
   .dr-sum-row { display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--border); }
   .dr-sum-slot-badge { font-size:9px; font-weight:800; color:#fff; border-radius:4px; padding:3px 0;
     width:34px; flex-shrink:0; text-align:center; }
@@ -677,7 +704,8 @@ _DRAFT_ROOM_HTML = r"""
   .dr-sum-reason { font-size:10px; color:var(--text-muted); font-style:italic; }
   .dr-sum-empty { font-size:11px; color:var(--text-muted); font-style:italic; }
   .dr-sum-ps { font-size:14px; font-weight:800; flex-shrink:0; }
-  .dr-sum-footer { display:flex; gap:8px; margin-top:16px; }
+  /* Footer */
+  .dr-sum-footer { display:flex; gap:8px; padding:14px 16px 16px; }
   .dr-sum-footer .dr-btn { flex:1; text-align:center; }
   /* Share preview overlay */
   .dr-shareview-overlay { position:fixed; inset:0; z-index:1002; background:rgba(0,0,0,.6);
@@ -865,35 +893,33 @@ _DRAFT_ROOM_HTML = r"""
   .dr-proj-bar-bg { height: 5px; border-radius: 3px; background: rgba(127,127,127,.15); overflow: hidden; }
   .dr-proj-bar-fill { height: 100%; border-radius: 3px; background: var(--accent,#38bdf8); }
   .dr-proj-bar-lbl { font-size: 9px; color: var(--text-muted); margin-top: 3px; }
-  /* ── Summary report card stats row ── */
-  .dr-sum-stats { display: flex; gap: 8px; margin: 10px 0 6px; }
-  .dr-sum-stat { flex: 1; text-align: center; background: var(--bg); border-radius: 8px;
-    padding: 8px 4px; border: 1px solid var(--border); }
-  .dr-sum-stat-v { font-size: 17px; font-weight: 900; color: var(--text); line-height: 1; }
-  .dr-sum-stat-l { font-size: 9px; color: var(--text-muted); margin-top: 2px; }
-  /* ── Team archetype label ── */
-  .dr-sum-arch { display: flex; align-items: center; justify-content: center; gap: 8px;
-    background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; margin: 10px 0 6px; }
-  .dr-sum-arch-tag { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em;
-    color: var(--text-muted); background: var(--card-soft, rgba(127,127,127,.12)); padding: 3px 7px; border-radius: 999px; white-space: nowrap; }
-  .dr-sum-arch-label { font-size: 16px; font-weight: 900; color: var(--accent); line-height: 1.1; }
-  .dr-sum-arch { flex-wrap: wrap; }
-  /* Competitive window chips */
-  .dr-sum-win { font-size: 12px; font-weight: 800; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
-  .dr-win-winnow { background: rgba(34,197,94,.16); color: #22c55e; }
-  .dr-win-balanced { background: rgba(245,158,11,.16); color: #f59e0b; }
-  .dr-win-future { background: rgba(56,189,248,.16); color: #38bdf8; }
   /* League grades list */
-  .dr-sum-league { display: flex; flex-direction: column; gap: 4px; }
-  .dr-sum-lrow { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px;
-    background: var(--bg); border: 1px solid var(--border); }
+  .dr-sum-league { display: flex; flex-direction: column; gap: 3px; }
+  .dr-sum-lrow { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px;
+    background: var(--bg); border: 1px solid var(--border); cursor: pointer; transition: background .12s; }
+  .dr-sum-lrow:hover { background: rgba(127,127,127,.08); }
   .dr-sum-lrow.is-me { border-color: var(--accent,#38bdf8); background: rgba(56,189,248,.08); }
-  .dr-sum-lrank { font-size: 11px; font-weight: 800; color: var(--text-muted); width: 18px; flex-shrink: 0; text-align: center; }
+  .dr-sum-lrank { width: 20px; flex-shrink: 0; font-size: 12px; font-weight: 900; color: var(--text-muted); text-align: center; }
+  .dr-sum-lrank.gold { color: #f59e0b; }
+  .dr-sum-lrank.silver { color: #94a3b8; }
+  .dr-sum-lrank.bronze { color: #cd7c2f; }
   .dr-sum-lname { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; color: var(--text);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dr-sum-lrow.is-me .dr-sum-lname { color: var(--accent,#38bdf8); }
   .dr-sum-lwin { font-size: 9.5px; font-weight: 800; padding: 2px 7px; border-radius: 999px; white-space: nowrap; flex-shrink: 0; }
-  .dr-sum-lgrade { font-size: 18px; font-weight: 900; flex-shrink: 0; width: 36px; text-align: right; }
+  .dr-sum-lgrade { font-size: 18px; font-weight: 900; flex-shrink: 0; width: 32px; text-align: right; }
+  .dr-sum-lchev { font-size: 9px; color: var(--text-muted); flex-shrink: 0; transition: transform .2s; }
+  .dr-sum-lrow.is-open .dr-sum-lchev { transform: rotate(180deg); }
+  /* Expandable team starter detail */
+  .dr-sum-ldtl { display: none; padding: 4px 6px 8px 38px; }
+  .dr-sum-ldtl.is-open { display: block; }
+  .dr-sum-ldtl-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
+  .dr-sum-ldtl-slot { font-size: 8px; font-weight: 800; color: #fff; border-radius: 3px; padding: 2px 0;
+    width: 28px; flex-shrink: 0; text-align: center; }
+  .dr-sum-ldtl-name { flex: 1; font-size: 11px; font-weight: 600; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dr-sum-ldtl-pick { font-size: 9px; color: var(--text-muted); flex-shrink: 0; }
+  .dr-sum-ldtl-ps { font-size: 11px; font-weight: 800; flex-shrink: 0; }
 </style>
 
 <script>
@@ -2726,7 +2752,7 @@ _DRAFT_ROOM_HTML = r"""
       var g = gradePicks(picks);
       if (!g) continue;
       var isMe = picks.some(function(m){ return isMyPick(m.pn); });
-      out.push({ slot: s, name: isMe ? 'You' : teamName(s), isMe: isMe, grade: g });
+      out.push({ slot: s, name: isMe ? 'You' : teamName(s), isMe: isMe, grade: g, picks: picks });
     }
     out.sort(function(a, b){ return b.grade.score - a.grade.score; });
     return out;
@@ -2785,8 +2811,11 @@ _DRAFT_ROOM_HTML = r"""
   }
   function gradeBar(label, val, max, tip){
     var pct = max ? Math.round(val / max * 100) : 0;
+    var col = pct >= 80 ? '#22c55e' : pct >= 60 ? '#38bdf8' : pct >= 40 ? '#f59e0b' : '#ef4444';
     return '<div class="dr-gbar-row"><span class="dr-gbar-lbl">' + label + (tip ? infoIcon(tip) : '') + '</span>'
-      + '<div class="dr-gbar"><div class="dr-gbar-fill" style="width:' + pct + '%"></div></div></div>';
+      + '<div class="dr-gbar"><div class="dr-gbar-fill" style="width:' + pct + '%;background:' + col + '"></div></div>'
+      + '<span class="dr-gbar-pct" style="color:' + col + '">' + pct + '</span>'
+      + '</div>';
   }
   // Per-component max points. Rookie grade is value-only (avg pick score);
   // startup/redraft weights pick value, starting-lineup strength, and construction.
@@ -3494,23 +3523,81 @@ _DRAFT_ROOM_HTML = r"""
 
   // ── Summary overlay ─────────────────────────────────────────────────────────
   function openSummary(){
-    if (!state || !hasOwned()) return;
-    var g = gradeTeam();
-    var mine = myPicksList().slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
-    var used = {};
-    var slots = lineupSlots();
-    var starters = [];
-    slots.forEach(function(slot){
-      var pick = null;
-      for (var i = 0; i < mine.length; i++){ if (!used[i] && slotEligible(slot, mine[i].position)){ pick = mine[i]; used[i] = true; break; } }
-      starters.push({ slot: slot, p: pick });
-    });
-    var bench = [];
-    for (var i = 0; i < mine.length; i++){ if (!used[i]) bench.push(mine[i]); }
+    var hasSlot = hasOwned();
+    var hasPicks = state && Object.keys(state.picks || {}).some(function(k){ return !!state.picks[k]; });
+    if (!state || (!hasSlot && !hasPicks)) return;
 
+    var g = hasSlot ? gradeTeam() : null;
+    var gradeCol = g ? (g.score >= 75 ? '#22c55e' : g.score >= 60 ? '#38bdf8' : g.score >= 45 ? '#f59e0b' : '#ef4444') : null;
+
+    // Build starters / bench for my team
+    var mine = [], starters = [], bench = [];
+    if (hasSlot){
+      mine = myPicksList().slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
+      var _used = {}, _lslots = lineupSlots();
+      _lslots.forEach(function(slot){
+        var pick = null;
+        for (var i = 0; i < mine.length; i++){ if (!_used[i] && slotEligible(slot, mine[i].position)){ pick = mine[i]; _used[i] = true; break; } }
+        starters.push({ slot: slot, p: pick });
+      });
+      for (var _bi = 0; _bi < mine.length; _bi++){ if (!_used[_bi]) bench.push(mine[_bi]); }
+    }
+
+    // Grade ring + component bars
+    var gradeHtml = g
+      ? ('<div class="dr-sum-grade-wrap">'
+         + '<div class="dr-sum-grade-ring" style="border-color:' + gradeCol + ';color:' + gradeCol + '">'
+         + '<span class="dr-sum-grade">' + gradeLetter(g.score) + '</span></div>'
+         + '<div class="dr-sum-grade-bars">' + gradeBars(g) + '</div>'
+         + '</div>')
+      : '';
+
+    // Stats strip
+    var statsHtml = '';
+    if (hasSlot && mine.length){
+      var sumProjTotal = 0, sumProjCount = 0, sumT12 = 0;
+      var sumAllPsTotal = 0, sumAllPsCount = 0, sumStarterPsTotal = 0, sumStarterPsCount = 0;
+      var _ssSet = {};
+      starters.forEach(function(s){ if (s.p) _ssSet[String(s.p.id)] = true; });
+      mine.forEach(function(p){
+        var _ppgv = p.ppg != null ? Number(p.ppg) : (p.proj_ppg != null ? Number(p.proj_ppg) : null);
+        if (_ppgv != null){ sumProjTotal += _ppgv; sumProjCount++; }
+        var _fp = playersById[String(p.id)] || p;
+        var _t = tierOf(_fp); if (_t != null && _t <= 2) sumT12++;
+        if (p.ps != null){ sumAllPsTotal += p.ps; sumAllPsCount++; }
+        if (_ssSet[String(p.id)] && p.ps != null){ sumStarterPsTotal += p.ps; sumStarterPsCount++; }
+      });
+      var _sits = [];
+      if (sumProjCount >= 2) _sits.push({ v: sumProjTotal.toFixed(1), l: 'Proj PPG' });
+      if (state.type !== 'redraft') _sits.push({ v: sumT12, l: 'T1-2 Picks' });
+      if (state.type === 'rookie'){
+        if (sumAllPsCount >= 1) _sits.push({ v: Math.round(sumAllPsTotal / sumAllPsCount), l: 'Avg PS' });
+      } else {
+        if (sumStarterPsCount >= 2) _sits.push({ v: Math.round(sumStarterPsTotal / sumStarterPsCount), l: 'Starter PS' });
+      }
+      if (_sits.length){
+        statsHtml = '<div class="dr-sum-stats">';
+        _sits.forEach(function(s){ statsHtml += '<div class="dr-sum-stat"><div class="dr-sum-stat-v">' + s.v + '</div><div class="dr-sum-stat-l">' + s.l + '</div></div>'; });
+        statsHtml += '</div>';
+      }
+    }
+
+    // Archetype + competitive window strip
+    var archHtml = '';
+    if (hasSlot){
+      var _arch = teamArchetype(), _win = g && g.window;
+      if (_arch || _win){
+        archHtml = '<div class="dr-sum-arch">';
+        if (_arch) archHtml += '<div class="dr-sum-arch-item"><div class="dr-sum-arch-tag">Archetype</div><div class="dr-sum-arch-label">' + esc(_arch.label) + '</div></div>';
+        if (_arch && _win) archHtml += '<div class="dr-sum-arch-div"></div>';
+        if (_win) archHtml += '<div class="dr-sum-arch-item"><div class="dr-sum-arch-tag">Window</div><span class="dr-sum-win dr-win-' + _win.label.toLowerCase().replace('-','') + '">' + esc(_win.label) + ' \xb7 ' + _win.avgAge.toFixed(1) + '</span></div>';
+        archHtml += '</div>';
+      }
+    }
+
+    // Player row builder
     function sumRow(slot, p){
-      if (!p) return '<div class="dr-sum-row"><span class="dr-sum-slot-badge" style="background:' + slotColor(slot) + '">' + slot + '</span>'
-        + '<span class="dr-sum-empty">open</span></div>';
+      if (!p) return '<div class="dr-sum-row"><span class="dr-sum-slot-badge" style="background:' + slotColor(slot) + '">' + slot + '</span><span class="dr-sum-empty">open</span></div>';
       var _pn = (Object.keys(state.picks).filter(function(k){ return state.picks[k] && state.picks[k].id === p.id; }).map(function(k){ return parseInt(k,10); })[0]) || 0;
       var pickStr = _pn ? (function(){ var _rd = Math.ceil(_pn/state.teams); var _pp = _pn - (_rd-1)*state.teams; return 'Pick ' + _rd + '.' + (_pp < 10 ? '0'+_pp : String(_pp)); })() : '';
       var psStr = (p.ps != null) ? '<span class="dr-sum-ps" style="color:' + psColor(p.ps) + '">' + p.ps + '</span>' : '';
@@ -3523,88 +3610,45 @@ _DRAFT_ROOM_HTML = r"""
         + '</div>' + psStr + '</div>';
     }
 
-    var gradeSub = g ? ((state.type === 'rookie' && g.avgPs != null) ? ('Avg pick score ' + g.avgPs) : '') : '';
-    var gradeHtml = g
-      ? '<div class="dr-sum-grade">' + gradeLetter(g.score) + '</div>'
-        + (gradeSub ? '<div class="dr-sum-pace">' + gradeSub + '</div>' : '')
-        + gradeBars(g)
-      : '';
-
-    // Report card stats: proj PPG, tier captures, pick score
-    var sumProjTotal = 0, sumProjCount = 0;
-    var sumT12 = 0, sumAllPsTotal = 0, sumAllPsCount = 0, sumStarterPsTotal = 0, sumStarterPsCount = 0;
-    // Build a set of starter IDs from the already-computed starters array.
-    var _sumStarterSet = {};
-    starters.forEach(function(s){ if (s.p) _sumStarterSet[String(s.p.id)] = true; });
-    mine.forEach(function(p){
-      var _ppgv = p.ppg != null ? Number(p.ppg) : (p.proj_ppg != null ? Number(p.proj_ppg) : null); if (_ppgv != null){ sumProjTotal += _ppgv; sumProjCount++; }
-      var _fp = playersById[String(p.id)] || p;
-      var t = tierOf(_fp); if (t != null && t <= 2) sumT12++;
-      var ps = p.ps;
-      if (ps != null){ sumAllPsTotal += ps; sumAllPsCount++; }
-      if (_sumStarterSet[String(p.id)] && ps != null){ sumStarterPsTotal += ps; sumStarterPsCount++; }
-    });
-    var statsHtml = '';
-    if (mine.length){
-      statsHtml = '<div class="dr-sum-stats">';
-      if (sumProjCount >= 2) statsHtml += '<div class="dr-sum-stat"><div class="dr-sum-stat-v">' + sumProjTotal.toFixed(1) + '</div><div class="dr-sum-stat-l">Proj PPG</div></div>';
-      if (state.type !== 'redraft') statsHtml += '<div class="dr-sum-stat"><div class="dr-sum-stat-v">' + sumT12 + '</div><div class="dr-sum-stat-l">T1-2 Picks</div></div>';
-      // Rookie: avg of all picks (every pick matters equally in a short draft).
-      // Startup/redraft: starter PS only - bench picks in long drafts have inherently
-      // low PS and drag down the avg even when your starters are elite.
-      if (state.type === 'rookie'){
-        if (sumAllPsCount >= 1) statsHtml += '<div class="dr-sum-stat"><div class="dr-sum-stat-v">' + Math.round(sumAllPsTotal / sumAllPsCount) + '</div><div class="dr-sum-stat-l">Avg Pick Score</div></div>';
-      } else {
-        if (sumStarterPsCount >= 2) statsHtml += '<div class="dr-sum-stat"><div class="dr-sum-stat-v">' + Math.round(sumStarterPsTotal / sumStarterPsCount) + '</div><div class="dr-sum-stat-l">Starter PS</div></div>';
-      }
-      statsHtml += '</div>';
+    // Starters + bench HTML
+    var starterBenchHtml = '';
+    if (hasSlot){
+      starterBenchHtml = '<div class="dr-sum-section">Starters</div>';
+      starters.forEach(function(s){ starterBenchHtml += sumRow(s.slot, s.p); });
+      starterBenchHtml += '<div class="dr-sum-section">Bench</div>';
+      if (bench.length){ bench.forEach(function(p){ starterBenchHtml += sumRow('BN', p); }); }
+      else { starterBenchHtml += sumRow('BN', null); }
     }
 
-    // Team archetype (startup/redraft only) - identifies the build strategy.
-    var arch = teamArchetype();
-    var winChip = (g && g.window)
-      ? '<span class="dr-sum-arch-tag">Competitive Window</span>'
-        + '<span class="dr-sum-win dr-win-' + g.window.label.toLowerCase().replace('-','') + '">'
-        + esc(g.window.label) + ' \xb7 avg age ' + g.window.avgAge.toFixed(1) + '</span>'
-      : '';
-    var archHtml = (arch || winChip)
-      ? '<div class="dr-sum-arch">'
-        + (arch ? '<span class="dr-sum-arch-tag">Team Archetype</span>'
-                + '<span class="dr-sum-arch-label">' + esc(arch.label) + '</span>' : '')
-        + winChip
-        + '</div>'
-      : '';
-
-    // All teams' grades + competitive windows (live/mock with a full board).
+    // League grades with expandable starter rows
     var allTeams = gradeAllTeams();
     var leagueHtml = '';
     if (allTeams.length >= 2){
+      var _rc = ['gold','silver','bronze'];
       leagueHtml = '<div class="dr-sum-section">League Grades</div><div class="dr-sum-league">';
       allTeams.forEach(function(t, i){
         var w = t.grade.window;
         var winTag = w ? '<span class="dr-sum-lwin dr-win-' + w.label.toLowerCase().replace('-','') + '">' + esc(w.label) + '</span>' : '';
-        leagueHtml += '<div class="dr-sum-lrow' + (t.isMe ? ' is-me' : '') + '">'
-          + '<span class="dr-sum-lrank">' + (i + 1) + '</span>'
+        var tCol = t.grade.score >= 75 ? '#22c55e' : t.grade.score >= 60 ? '#38bdf8' : t.grade.score >= 45 ? '#f59e0b' : '#ef4444';
+        var rCls = i < 3 ? (' ' + _rc[i]) : '';
+        leagueHtml += '<div class="dr-sum-lrow' + (t.isMe ? ' is-me' : '') + '" data-lslot="' + t.slot + '">'
+          + '<span class="dr-sum-lrank' + rCls + '">' + (i + 1) + '</span>'
           + '<span class="dr-sum-lname">' + esc(t.name) + '</span>'
           + winTag
-          + '<span class="dr-sum-lgrade" style="color:' + psColor(t.grade.score) + '">' + gradeLetter(t.grade.score) + '</span>'
-          + '</div>';
+          + '<span class="dr-sum-lgrade" style="color:' + tCol + '">' + gradeLetter(t.grade.score) + '</span>'
+          + '<span class="dr-sum-lchev">&#9660;</span>'
+          + '</div>'
+          + '<div class="dr-sum-ldtl" id="drSumLdtl' + t.slot + '"></div>';
       });
       leagueHtml += '</div>';
     }
 
     var html = '<button class="dr-prev-close" id="drSumClose" aria-label="Close">&times;</button>'
-      + '<div class="dr-sum-header"><div class="dr-sum-title">Draft Report Card</div>' + gradeHtml + '</div>'
-      + statsHtml
-      + archHtml
-      + '<div class="dr-sum-section">Starters</div>';
-    starters.forEach(function(s){ html += sumRow(s.slot, s.p); });
-    html += '<div class="dr-sum-section">Bench</div>';
-    if (bench.length){ bench.forEach(function(p){ html += sumRow('BN', p); }); }
-    else { html += sumRow('BN', null); }
-    html += leagueHtml;
-    html += '<div class="dr-sum-footer">'
-      + '<button class="dr-btn dr-btn-primary" id="drSumShare">Share</button>'
+      + '<div class="dr-sum-header"><div class="dr-sum-title">' + (hasSlot ? 'Draft Report Card' : 'League Report Card') + '</div>' + gradeHtml + '</div>'
+      + statsHtml + archHtml
+      + '<div class="dr-sum-body-wrap">' + starterBenchHtml + leagueHtml + '</div>'
+      + '<div class="dr-sum-footer">'
+      + (hasSlot ? '<button class="dr-btn dr-btn-primary" id="drSumShare">Share</button>' : '')
       + '<button class="dr-btn" id="drSumCloseBtn">Close</button>'
       + '</div>';
 
@@ -3613,7 +3657,43 @@ _DRAFT_ROOM_HTML = r"""
     document.getElementById('drSummary').style.display = '';
     document.getElementById('drSumClose').addEventListener('click', closeSummary);
     document.getElementById('drSumCloseBtn').addEventListener('click', closeSummary);
-    document.getElementById('drSumShare').addEventListener('click', function(){ closeSummary(); shareDraft(); });
+    var _shareBtn = document.getElementById('drSumShare');
+    if (_shareBtn) _shareBtn.addEventListener('click', function(){ closeSummary(); shareDraft(); });
+
+    // Expand/collapse league grade rows to show team starters
+    card.querySelectorAll('[data-lslot]').forEach(function(row){
+      row.addEventListener('click', function(){
+        var slot = parseInt(row.getAttribute('data-lslot'), 10);
+        var dtl = document.getElementById('drSumLdtl' + slot);
+        if (!dtl) return;
+        var isOpen = row.classList.toggle('is-open');
+        dtl.classList.toggle('is-open', isOpen);
+        if (isOpen && !dtl.innerHTML){
+          var team = allTeams.filter(function(t){ return t.slot === slot; })[0];
+          if (!team || !team.picks) return;
+          var _sp = team.picks.slice().map(function(x){ return x.p; }).filter(Boolean);
+          _sp.sort(function(a,b){ return (b.val||0)-(a.val||0); });
+          var _lsl = lineupSlots(), _usd = {}, _tst = [];
+          _lsl.forEach(function(s){
+            for (var i = 0; i < _sp.length; i++){
+              if (!_usd[i] && slotEligible(s, _sp[i].position)){ _tst.push({ slot: s, p: _sp[i] }); _usd[i] = true; break; }
+            }
+          });
+          var dtlHtml = '';
+          _tst.forEach(function(x){
+            var _pnx = (team.picks.filter(function(pk){ return pk.p && pk.p.id === x.p.id; })[0] || {}).pn || 0;
+            var pickRx = _pnx ? (function(){ var rd = Math.ceil(_pnx/state.teams); var pp = _pnx-(rd-1)*state.teams; return rd + '.' + (pp<10?'0'+pp:pp); })() : '';
+            var psRx = x.p.ps != null ? '<span class="dr-sum-ldtl-ps" style="color:' + psColor(x.p.ps) + '">' + x.p.ps + '</span>' : '';
+            dtlHtml += '<div class="dr-sum-ldtl-row">'
+              + '<span class="dr-sum-ldtl-slot" style="background:' + slotColor(x.slot) + '">' + x.slot + '</span>'
+              + '<span class="dr-sum-ldtl-name">' + esc(x.p.name) + '</span>'
+              + (pickRx ? '<span class="dr-sum-ldtl-pick">' + pickRx + '</span>' : '')
+              + psRx + '</div>';
+          });
+          dtl.innerHTML = dtlHtml || '<span style="font-size:10px;color:var(--text-muted);padding:4px 0;display:block">No starters found</span>';
+        }
+      });
+    });
   }
   function closeSummary(){ document.getElementById('drSummary').style.display = 'none'; }
 
