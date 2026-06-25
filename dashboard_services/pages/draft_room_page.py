@@ -2847,6 +2847,16 @@ _DRAFT_ROOM_HTML = r"""
       out.push({ slot: s, name: isMe ? 'You' : teamName(s), isMe: isMe, grade: g, picks: picks });
     }
     out.sort(function(a, b){ return b.grade.score - a.grade.score; });
+    // Amplify spread so letter grades vary meaningfully across teams.
+    // Draft grades are relative - a B+ means you drafted well vs this league.
+    // Raw scores cluster (all teams draft from the same pool), so we stretch
+    // deviations from the mean by ~1.7x to ensure distinct letter grades.
+    if (out.length >= 3){
+      var _gMean = out.reduce(function(s,t){ return s + t.grade.score; }, 0) / out.length;
+      out.forEach(function(t){
+        t.grade.score = Math.round(Math.max(35, Math.min(97, _gMean + (t.grade.score - _gMean) * 1.7)));
+      });
+    }
     return out;
   }
   // Classify a startup/redraft build into a recognizable draft archetype based on
@@ -2932,8 +2942,11 @@ _DRAFT_ROOM_HTML = r"""
     if (g){
       var gSub = (state.type === 'rookie' && g.avgPs != null) ? ('Avg pick score ' + g.avgPs) : '';
       if (!gSub){ var _ga = teamArchetype(); if (_ga) gSub = _ga.label; }
+      var _gwn = g.window;
+      var gAgeSub = _gwn ? (esc(_gwn.label) + ' \xb7 Avg age ' + _gwn.avgAge.toFixed(1)) : '';
       html += '<div class="dr-grade-card"><div class="dr-grade-letter">' + gradeLetter(g.score) + '</div>'
         + '<div class="dr-grade-meta">' + (gSub ? '<div class="dr-grade-pace">' + gSub + '</div>' : '')
+        + (gAgeSub ? '<div class="dr-grade-pace" style="font-size:11px;color:var(--text-muted)">' + gAgeSub + '</div>' : '')
         + gradeBars(g)
         + '</div></div>';
     }
@@ -2941,7 +2954,10 @@ _DRAFT_ROOM_HTML = r"""
     // Highest-projected legal lineup (projection-first, value fallback), so the
     // strongest scorer fills each slot - a high-proj QB takes SF over a weaker flex.
     var _olN = optimalLineup(mine, lineupSlots());
-    _olN.starters.forEach(function(s){ html += slotRow(s.slot, s.p); });
+    _olN.starters.forEach(function(s){
+      if (!s.p && (s.slot === 'K' || s.slot === 'DEF')) return;
+      html += slotRow(s.slot, s.p);
+    });
     var bench = _olN.bench;
     html += '<div class="dr-roster-div">Bench</div>';
     if (bench.length){ bench.forEach(function(p){ html += slotRow('BN', p); }); }
@@ -3719,11 +3735,13 @@ _DRAFT_ROOM_HTML = r"""
     if (hasSlot){
       var _arch = teamArchetype(), _win = g && g.window;
       if (_arch || _win){
-        archHtml = '<div class="dr-sum-arch">';
-        if (_arch) archHtml += '<div class="dr-sum-arch-item"><div class="dr-sum-arch-tag">Archetype</div><div class="dr-sum-arch-label">' + esc(_arch.label) + '</div></div>';
-        if (_arch && _win) archHtml += '<div class="dr-sum-arch-div"></div>';
-        if (_win) archHtml += '<div class="dr-sum-arch-item"><div class="dr-sum-arch-tag">Window</div><span class="dr-sum-win dr-win-' + _win.label.toLowerCase().replace('-','') + '">' + esc(_win.label) + ' \xb7 ' + _win.avgAge.toFixed(1) + '</span></div>';
-        archHtml += '</div>';
+        var _aSections = [];
+        if (_arch) _aSections.push('<div class="dr-sum-arch-item"><div class="dr-sum-arch-tag">Archetype</div><div class="dr-sum-arch-label">' + esc(_arch.label) + '</div></div>');
+        if (_win){
+          _aSections.push('<div class="dr-sum-arch-item"><div class="dr-sum-arch-tag">Window</div><span class="dr-sum-win dr-win-' + _win.label.toLowerCase().replace('-','') + '">' + esc(_win.label) + '</span></div>');
+          _aSections.push('<div class="dr-sum-arch-item"><div class="dr-sum-arch-tag">Avg Age</div><div class="dr-sum-arch-label" style="color:var(--text)">' + _win.avgAge.toFixed(1) + '</div></div>');
+        }
+        archHtml = '<div class="dr-sum-arch">' + _aSections.join('<div class="dr-sum-arch-div"></div>') + '</div>';
       }
     }
 
@@ -3746,7 +3764,12 @@ _DRAFT_ROOM_HTML = r"""
     var starterBenchHtml = '';
     if (hasSlot){
       starterBenchHtml = '<div class="dr-sum-section">Starters</div>';
-      starters.forEach(function(s){ starterBenchHtml += sumRow(s.slot, s.p); });
+      starters.forEach(function(s){
+        // Skip unfilled K/DEF slots - they're absent from many player pools and
+        // showing them as empty misleads the user about their draft quality.
+        if (!s.p && (s.slot === 'K' || s.slot === 'DEF')) return;
+        starterBenchHtml += sumRow(s.slot, s.p);
+      });
       starterBenchHtml += '<div class="dr-sum-section">Bench</div>';
       if (bench.length){ bench.forEach(function(p){ starterBenchHtml += sumRow('BN', p); }); }
       else { starterBenchHtml += sumRow('BN', null); }
