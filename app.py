@@ -5674,17 +5674,18 @@ def _market_scale(fmt: str = "1qb") -> float:
 def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: int = 10,
                              num_tiers: int = _NUM_TIERS, t1_size: int = None) -> list:
     """
-    Value-spaced tier boundaries with natural gap snapping - always num_tiers tiers.
+    Rank-based geometric tier boundaries with natural gap snapping.
 
-    T1: top _T1_SIZE players (5 for 1QB, 6 for SF) - fixed elite tier.
-    T2-T9: boundaries placed at equal value intervals stepping down from the T1
-    boundary toward 0. Each boundary is snapped to the nearest local gap within
-    30% of the step size so boundaries land on natural value breaks when they exist.
+    T1: top _T1_SIZE players (5 for 1QB, 6 for SF).
+    T2: the next (league_size - 1) players, ensuring T2 is at least as wide as
+        one full team's complement so there are never 3 tier breaks in the top
+        ~league_size*2 players.
+    T3-T8: each tier is ~22% larger than the previous (geometric progression).
+    T9: low-value catch-all for everything below T8.
 
-    Equal value intervals cause more players to fall in each successive tier
-    because the dynasty distribution is denser at lower values, giving the
-    naturally widening tier structure. T9 is the low-value catch-all that
-    starts at roughly T1_boundary / (num_tiers - 1).
+    Each rank target is snapped up to snap_ranks positions toward the nearest
+    natural gap so boundaries land at real value drops when possible.
+    Always produces exactly num_tiers tiers.
 
     t1_size: override the number of players pinned to T1.
     """
@@ -5714,33 +5715,45 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
     if len(vals) <= _T1_SIZE:
         return _FALLBACK_THRESHOLDS
 
-    # T1 boundary: pinned between rank _T1_SIZE and _T1_SIZE+1
-    t1_bnd = (vals[_T1_SIZE - 1] + vals[_T1_SIZE]) / 2.0
+    # T2 must cover at least (league_size - 1) players so there is no third tier
+    # break within the top ~(2 * league_size) range.
+    t2_size = max(league_size - 1, _T1_SIZE + 2)
+    ratio   = 1.22   # each subsequent tier grows by 22%
+    snap_ranks = max(3, _T1_SIZE // 2)
 
-    # Equal value steps from t1_bnd toward 0
-    step = t1_bnd / (num_tiers - 1)
-    snap_half = step * 0.30   # snap to largest gap within 30% of step
+    # Build tier sizes: T1, T2, T3, ..., T8 (T9 is the catch-all)
+    tier_sizes = [_T1_SIZE, t2_size]
+    for _ in range(num_tiers - 3):
+        tier_sizes.append(max(tier_sizes[-1] + 1, round(tier_sizes[-1] * ratio)))
 
-    thresholds = [round(t1_bnd, 1)]
-    used_positions = {_T1_SIZE - 1}
+    # Cumulative rank targets: index of the LAST player in each tier (0-based in vals)
+    rank_targets = []
+    cum = 0
+    for sz in tier_sizes:
+        cum += sz
+        rank_targets.append(cum - 1)
 
-    for k in range(1, num_tiers - 1):
-        target = t1_bnd - k * step
-        best_j, best_g = None, -1
-        for j in range(_T1_SIZE, len(vals) - 1):
-            if j in used_positions:
+    # Place each threshold between rank_target[k] and rank_target[k]+1,
+    # snapping to the biggest gap within snap_ranks of the target rank.
+    thresholds = []
+    used = set()
+    for rt in rank_targets:
+        if rt >= len(vals) - 1:
+            break
+        # Only snap FORWARD from the rank target (never backward) so a tier
+        # is never made smaller than its target size by a backward snap.
+        hi = min(len(vals) - 2, rt + snap_ranks)
+        best_j = rt
+        best_g = vals[rt] - vals[rt + 1]
+        for j in range(rt, hi + 1):
+            if j in used:
                 continue
-            mid = (vals[j] + vals[j + 1]) / 2.0
-            if abs(mid - target) <= snap_half:
-                g = vals[j] - vals[j + 1]
-                if g > best_g:
-                    best_g = g
-                    best_j = j
-        if best_j is not None:
-            used_positions.add(best_j)
-            thresholds.append(round((vals[best_j] + vals[best_j + 1]) / 2.0, 1))
-        else:
-            thresholds.append(round(max(1.0, target), 1))
+            g = vals[j] - vals[j + 1]
+            if g > best_g:
+                best_g = g
+                best_j = j
+        used.add(best_j)
+        thresholds.append(round((vals[best_j] + vals[best_j + 1]) / 2.0, 1))
 
     thresholds = sorted(set(thresholds), reverse=True)
     return thresholds if len(thresholds) >= 2 else _FALLBACK_THRESHOLDS

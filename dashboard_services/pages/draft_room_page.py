@@ -2377,9 +2377,9 @@ _DRAFT_ROOM_HTML = r"""
       var ps = pickScoreFor(p), ops = pickScoreFor(other);
       var v = valOf(p), ov = valOf(other);
       var t = tierOf(p), ot = tierOf(other);
-      var ppg = p.ppg != null ? Number(p.ppg) : (p.proj_ppg != null ? Number(p.proj_ppg) : null);
-      var oppg = other.ppg != null ? Number(other.ppg) : (other.proj_ppg != null ? Number(other.proj_ppg) : null);
-      var ppgRowLbl = (p.ppg != null || other.ppg != null) ? 'PPG' : 'Proj PPG';
+      var ppg = p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null);
+      var oppg = other.proj_ppg != null ? Number(other.proj_ppg) : (other.ppg != null ? Number(other.ppg) : null);
+      var ppgRowLbl = (p.proj_ppg != null || other.proj_ppg != null) ? 'Proj PPG' : 'PPG';
       var age = p.age != null ? Number(p.age) : null;
       var oage = other.age != null ? Number(other.age) : null;
       function statRow(lbl, val, oval, higherBetter, fmtFn){
@@ -2653,9 +2653,9 @@ _DRAFT_ROOM_HTML = r"""
     var byeFlag = '';
     var bc = byeConflict(p);
     if (bc >= 2) byeFlag = '<span class="dr-bye-flag">Bye ' + p.bye_week + ' clash</span>';
-    // Projected (or actual) PPG for meta line
-    var ppgNum = p.ppg != null ? Number(p.ppg) : (p.proj_ppg != null ? Number(p.proj_ppg) : null);
-    var ppgPart = ppgNum != null ? ' · ' + ppgNum.toFixed(1) + ' PPG' : '';
+    // Projected PPG for meta line (proj_ppg = upcoming season, ppg = last season fallback)
+    var ppgNum = p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null);
+    var ppgPart = ppgNum != null ? ' · ' + ppgNum.toFixed(1) + ' Proj PPG' : '';
     // Compare button state
     var onCmp = compareIds.indexOf(String(p.id)) >= 0;
     var _isDef = String(p.position || '').toUpperCase() === 'DEF';
@@ -2879,8 +2879,8 @@ _DRAFT_ROOM_HTML = r"""
       + '<span class="dr-rslot-empty">open</span></div>';
   }
   // ── Draft grade / roster strength ───────────────────────────────────────────
-  // Sleeper actual PPG preferred, FantasyPros projection as fallback (site-wide).
-  function ppgOf(p){ return (p && p.ppg != null) ? Number(p.ppg) : ((p && p.proj_ppg != null) ? Number(p.proj_ppg) : null); }
+  // Projected PPG (upcoming season) preferred; last-season actual as fallback.
+  function ppgOf(p){ return (p && p.proj_ppg != null) ? Number(p.proj_ppg) : ((p && p.ppg != null) ? Number(p.ppg) : null); }
   function gradeTeam(){
     if (!hasOwned()) return null;
     // Pull "your" grade from the full field so the relative-to-league curve matches
