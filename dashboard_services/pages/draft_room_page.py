@@ -1671,28 +1671,30 @@ _DRAFT_ROOM_HTML = r"""
     var _sfSlots = state.sf ? ((_rs.SF != null ? _rs.SF : 1)) : 0;
     var _stSlots = { QB: (_rs.QB||0) + _sfSlots, RB: (_rs.RB||0) + (_rs.FLEX||0), WR: _rs.WR||0, TE: _rs.TE||0, K: _rs.K||0, DEF: _rs.DEF||0 };
     var _remainRds = state.rounds - Math.floor((pn - 1) / state.teams);
-    // Backup-QB timing (1QB): a 2nd QB only becomes a need a handful of rounds
-    // AFTER this team drafted its starter - so a manager who grabbed an elite QB
-    // early waits longer for the backup than one who landed the starter late.
-    // Find the round this team took its first QB, then gate backup need on a
-    // per-team gap (5-9 rounds, varied so backups don't all land the same round),
-    // with a late-draft fallback so a QB2 still gets rostered by the end.
+    // Backup-QB timing: a QB beyond the starting slots (a 2nd QB in 1QB, a 3rd QB
+    // in SF where two QBs start) only becomes a need a handful of rounds AFTER the
+    // team completed its starting QB room - so a manager who locked up their QBs
+    // early waits longer for the backup than one who finished the room late. Anchor
+    // on the pick that filled the LAST starting QB slot; gate on a per-team gap with
+    // a late-draft fallback so the backup still gets rostered by the end.
     var _curRound = Math.ceil(pn / state.teams);
-    var _qb1Pick = null;
+    var _qbStarters = _stSlots.QB || 1;   // 1 in 1QB, 2 in SF
+    var _qbPicks = [];
     Object.keys(state.picks).forEach(function(k){
       var _kp = parseInt(k, 10);
       if (slotOnClock(_kp, state.teams, state.order) !== slot) return;
-      if ((state.picks[k].position || '').toUpperCase() === 'QB' && (_qb1Pick == null || _kp < _qb1Pick)) _qb1Pick = _kp;
+      if ((state.picks[k].position || '').toUpperCase() === 'QB') _qbPicks.push(_kp);
     });
-    var _qb1Round = _qb1Pick ? Math.ceil(_qb1Pick / state.teams) : null;
-    // Earlier starter => longer wait for the backup. An elite QB taken early is a
-    // positional edge you can ride for many rounds, so its backup comes much later;
-    // a QB taken late is replaceable, so a backup follows sooner. The gap shrinks
-    // ~0.5 rounds per round QB1 was delayed (e.g. QB1 in round 1 -> ~9-11 round
+    _qbPicks.sort(function(x, y){ return x - y; });
+    // Pick that filled the last starting-QB slot (QB1 in 1QB, QB2 in SF).
+    var _qbFullPick = _qbPicks.length >= _qbStarters ? _qbPicks[_qbStarters - 1] : null;
+    var _qbFullRound = _qbFullPick ? Math.ceil(_qbFullPick / state.teams) : null;
+    // Earlier the QB room was completed => longer wait for the backup. The gap
+    // shrinks ~0.5 rounds per round of delay (room full in round 1 -> ~9-11 round
     // gap; round 7 -> ~6-8; round 12 -> ~3-5), plus a little per-team jitter.
-    var _qbGap = Math.max(3, Math.round(9.5 - (_qb1Round || 1) * 0.5)) + Math.round(_rand01(slot + ':qbgap') * 2);
-    var _backupQBWanted = _qb1Round != null &&
-      ((_curRound - _qb1Round) >= _qbGap || _curRound >= (state.rounds || 20) * 0.8);
+    var _qbGap = Math.max(3, Math.round(9.5 - (_qbFullRound || 1) * 0.5)) + Math.round(_rand01(slot + ':qbgap') * 2);
+    var _backupQBWanted = _qbFullRound != null &&
+      ((_curRound - _qbFullRound) >= _qbGap || _curRound >= (state.rounds || 20) * 0.8);
     var cands = [];
     var bestPv = 0;   // highest pick score available (the "best player on the board")
     var posQualLeft = {};  // count of remaining startable-quality players per position
@@ -1732,9 +1734,9 @@ _DRAFT_ROOM_HTML = r"""
       var pos = (p.position||'').toUpperCase();
       var t = targets[pos] || 0, have = counts[pos] || 0;
       var need = t ? Math.max(0, t - have) / t : 0;
-      // 1QB: a backup QB carries no need pull until enough rounds have passed
-      // since this team drafted its starter (see _backupQBWanted above).
-      if (pos === 'QB' && !state.sf && have >= 1 && !_backupQBWanted) need = 0;
+      // A QB beyond the starting slots (2nd in 1QB, 3rd in SF) carries no need
+      // pull until enough rounds after the QB room was completed (_backupQBWanted).
+      if (pos === 'QB' && have >= _qbStarters && !_backupQBWanted) need = 0;
       var over = (t && have >= t) ? (have - t + 1) : 0;
       // Overcrowding penalty: exponential once past depth target (3.5x per excess pick).
       // over=1 -> weight/4.5; over=2 -> weight/13; over=3 -> weight/43.
@@ -1781,14 +1783,16 @@ _DRAFT_ROOM_HTML = r"""
       // Gentle per-team positional lean (skill positions only).
       var biasMult = _bias[pos] || 1;
       w *= needBoost * biasMult / overFactor;
-      // Hard guard: a backup to a single-starter slot (a 2nd QB in 1QB, a 2nd TE
-      // in 1TE) has little marginal value, so the CPU must never REACH for one -
-      // only take it if its real ADP has fallen to this pick or later. This stops
-      // the classic bad-CPU move of grabbing a 2nd QB a round ahead of ADP while
-      // a starter already sits on the roster.
-      if (sSlots > 0 && sSlots <= 1 && have >= sSlots && a < 9000 && pn < a){
-        w = 0;
-      }
+      // Hard guard: a backup at a starter-filled slot has little marginal value,
+      // so the CPU must never REACH for one - only take it if its real ADP has
+      // fallen to this pick or later. Covers a 2nd QB in 1QB, a 3rd QB in SF (both
+      // starting QBs already in hand), and a 2nd TE in 1TE. Stops the classic
+      // bad-CPU move of grabbing a backup a round ahead of ADP.
+      var _backupReach = a < 9000 && pn < a && (
+        (pos === 'QB' && have >= _qbStarters) ||
+        (pos === 'TE' && sSlots > 0 && sSlots <= 1 && have >= sSlots)
+      );
+      if (_backupReach) w = 0;
       // K/DEF: in the final 3 rounds, teams MUST fill these slots or they go empty.
       // Boost weight strongly so K/DEF crack the top-8 candidate sample and actually
       // get drafted, rather than losing out to late-sliding skill players every pick.
