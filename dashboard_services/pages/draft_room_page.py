@@ -4286,12 +4286,11 @@ _DRAFT_ROOM_HTML = r"""
     var d = parseInt(step.getAttribute('data-d'), 10);
     if (!_setupRoster) _setupRoster = defaultRoster();
     _setupRoster[key] = Math.max(0, (_setupRoster[key] || 0) + d);
-    // Bench change: keep rounds = starters + bench in sync.
-    if (key === 'BN'){
-      var _newRounds = Math.max(1, Math.min(40, _totalStarterSlots(_setupRoster) + (_setupRoster.BN || 0)));
-      document.getElementById('drRounds').value = _newRounds;
-      renderSetupCapital();
-    }
+    // Keep rounds = starters + bench in sync for every slot change.
+    // Bench change → update rounds. Starter change → update rounds (bench stays).
+    var _newRounds = Math.max(1, Math.min(40, _totalStarterSlots(_setupRoster) + (_setupRoster.BN || 0)));
+    document.getElementById('drRounds').value = _newRounds;
+    renderSetupCapital();
     renderSetupRoster();
   });
   document.getElementById('drCapitalSection').addEventListener('click', function(e){
