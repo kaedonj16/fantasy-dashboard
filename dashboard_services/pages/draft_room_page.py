@@ -1346,10 +1346,9 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   function startDraft(){
+    _resetTransient();
     state = readSetup();
     state.owned = _setupOwned || defaultOwned();
-    _summaryShown = false;
-    drafted = {};
     save();
     showMain();
     loadPlayers();
@@ -1567,6 +1566,18 @@ _DRAFT_ROOM_HTML = r"""
     sim = false; clearTimeout(simTimer);
     syncSimControls();
   }
+  function _resetTransient(){
+    endSim();
+    simPaused = false; simStarted = false; simAutoDraft = false;
+    players = []; drafted = {};
+    posFilter = 'ALL';
+    justPick = null;
+    _liveSig = null; _pickLagMsg = null;
+    _pollCount = 0; _pollLastAt = 0; _pollNextAt = 0;
+    _boardSig = null;
+    _summaryShown = false;
+    lastLivePicks = null;
+  }
   function toggleSim(){
     simPaused = !simPaused;
     document.getElementById('drSimToggle').textContent = simPaused ? 'Resume' : 'Pause';
@@ -1595,12 +1606,11 @@ _DRAFT_ROOM_HTML = r"""
     scheduleSim();
   }
   function startMock(){
+    _resetTransient();
     state = readSetup();
     state.owned = _setupOwned || defaultOwned();
     state.mode = 'mock';
     state.simStarted = false;
-    _summaryShown = false;
-    drafted = {};
     sim = true; simPaused = false; simStarted = false;
     var sp = document.getElementById('drSimSpeed');
     simSpeed = parseInt(sp.value, 10) || 700;
@@ -1620,6 +1630,7 @@ _DRAFT_ROOM_HTML = r"""
       var prev = state;
       var ownedCopy = {};
       if (prev.owned){ Object.keys(prev.owned).forEach(function(k){ if (prev.owned[k]) ownedCopy[k] = true; }); }
+      _resetTransient();
       state = {
         type: prev.type, teams: prev.teams, rounds: prev.rounds, sf: !!prev.sf,
         slot: prev.slot, order: prev.order,
@@ -1629,8 +1640,6 @@ _DRAFT_ROOM_HTML = r"""
         owned: Object.keys(ownedCopy).length ? ownedCopy : defaultOwned(),
         mode: 'mock', simStarted: false
       };
-      _summaryShown = false;
-      drafted = {};
       sim = true; simPaused = false; simStarted = false;
       var sp = document.getElementById('drSimSpeed');
       simSpeed = parseInt(sp.value, 10) || 700;
@@ -3570,6 +3579,7 @@ _DRAFT_ROOM_HTML = r"""
     var isLive = !!(state && state.mode === 'live');
     function doReset(){
       stopPolling(); stopPickTimer();
+      _resetTransient();
       try { sessionStorage.removeItem(sessKey); } catch(e){}
       state = null;
       showSetup();
