@@ -159,7 +159,7 @@ _DRAFT_ROOM_HTML = r"""
       </div>
       <div class="dr-status-right">
         <span class="dr-pill dr-pill-you" id="drNextPill" style="display:none;"></span>
-        <span class="dr-pill dr-pill-grade" id="drGradePill" style="display:none;cursor:pointer;" title="View the league report card - every team's draft grade"></span>
+        <span class="dr-pill dr-pill-grade" id="drGradePill" style="display:none;cursor:pointer;" title="View your draft report card"></span>
         <span class="dr-sr-gap"></span>
         <button class="dr-btn dr-btn-primary" id="drSimStart" style="display:none;">&#9654;&nbsp; Start Draft</button>
         <button class="dr-btn dr-btn-ghost" id="drSimToggle" style="display:none;">Pause</button>
@@ -193,6 +193,7 @@ _DRAFT_ROOM_HTML = r"""
           <button class="otc-main-tab" data-stab="rec">Recs</button>
           <button class="otc-main-tab" data-stab="queue">Queue</button>
           <button class="otc-main-tab" data-stab="needs">Team</button>
+          <button class="otc-main-tab" data-stab="league">League</button>
         </div>
         <div class="dr-side-head" id="drBestControls">
           <div class="dr-side-controls">
@@ -2503,9 +2504,10 @@ _DRAFT_ROOM_HTML = r"""
     for (var i = 0; i < kbtns.length; i++){ kbtns[i].style.display = kdef ? '' : 'none'; }
     var bc = document.getElementById('drBestControls');
     if (bc) bc.style.display = (sideTab === 'best') ? '' : 'none';
-    if (sideTab === 'rec')   return renderRec();
-    if (sideTab === 'queue') return renderQueue();
-    if (sideTab === 'needs') return renderNeeds();
+    if (sideTab === 'rec')    return renderRec();
+    if (sideTab === 'queue')  return renderQueue();
+    if (sideTab === 'needs')  return renderNeeds();
+    if (sideTab === 'league') return renderLeague();
     return renderBA();
   }
 
@@ -2517,6 +2519,7 @@ _DRAFT_ROOM_HTML = r"""
     tabs.forEach(function(b){
       var stab = b.getAttribute('data-stab');
       if (stab === 'needs'){ b.classList.add('is-active'); b.style.display = ''; }
+      else if (stab === 'league'){ b.classList.remove('is-active'); b.style.display = ''; }
       else { b.classList.remove('is-active'); b.style.display = 'none'; }
     });
     sideTab = 'needs';
@@ -2971,6 +2974,63 @@ _DRAFT_ROOM_HTML = r"""
         + '</div>';
     }
     listInto(html);
+  }
+
+  function renderLeague(){
+    var allTeams = gradeAllTeams();
+    if (!allTeams.length){
+      listInto('<div class="dr-empty-note">No picks yet - grades will appear as teams draft.</div>');
+      return;
+    }
+    if (allTeams.length < 2){
+      listInto('<div class="dr-empty-note">Grades appear once at least 2 teams have drafted.</div>');
+      return;
+    }
+    var _rc = ['gold','silver','bronze'];
+    var html = '<div class="dr-sum-league">';
+    allTeams.forEach(function(t, i){
+      var w = t.grade.window;
+      var winTag = w ? '<span class="dr-sum-lwin dr-win-' + w.label.toLowerCase().replace('-','') + '">' + esc(w.label) + '</span>' : '';
+      var tCol = t.grade.score >= 75 ? '#22c55e' : t.grade.score >= 60 ? '#38bdf8' : t.grade.score >= 45 ? '#f59e0b' : '#ef4444';
+      var rCls = i < 3 ? (' ' + _rc[i]) : '';
+      html += '<div class="dr-sum-lrow' + (t.isMe ? ' is-me' : '') + '" data-legslot="' + t.slot + '">'
+        + '<span class="dr-sum-lrank' + rCls + '">' + (i + 1) + '</span>'
+        + '<span class="dr-sum-lname">' + esc(t.name) + '</span>'
+        + winTag
+        + '<span class="dr-sum-lgrade" style="color:' + tCol + '">' + gradeLetter(t.grade.score) + '</span>'
+        + '<span class="dr-sum-lchev">&#9660;</span>'
+        + '</div>'
+        + '<div class="dr-sum-ldtl" id="drLegLdtl' + t.slot + '"></div>';
+    });
+    html += '</div>';
+    listInto(html);
+    document.querySelectorAll('#drBaList [data-legslot]').forEach(function(row){
+      row.addEventListener('click', function(){
+        var slot = parseInt(row.getAttribute('data-legslot'), 10);
+        var dtl = document.getElementById('drLegLdtl' + slot);
+        if (!dtl) return;
+        var isOpen = row.classList.toggle('is-open');
+        dtl.classList.toggle('is-open', isOpen);
+        if (isOpen && !dtl.innerHTML){
+          var team = allTeams.filter(function(t){ return t.slot === slot; })[0];
+          if (!team || !team.picks) return;
+          var _sp = team.picks.slice().map(function(x){ return x.p; }).filter(Boolean);
+          var _tst = optimalLineup(_sp).starters.filter(function(x){ return x.p; });
+          var dtlHtml = '';
+          _tst.forEach(function(x){
+            var _pnx = (team.picks.filter(function(pk){ return pk.p && pk.p.id === x.p.id; })[0] || {}).pn || 0;
+            var pickRx = _pnx ? (function(){ var rd = Math.ceil(_pnx/state.teams); var pp = _pnx-(rd-1)*state.teams; return rd + '.' + (pp<10?'0'+pp:pp); })() : '';
+            var psRx = x.p.ps != null ? '<span class="dr-sum-ldtl-ps" style="color:' + psColor(x.p.ps) + '">' + x.p.ps + '</span>' : '';
+            dtlHtml += '<div class="dr-sum-ldtl-row">'
+              + '<span class="dr-sum-ldtl-slot" style="background:' + slotColor(x.slot) + '">' + x.slot + '</span>'
+              + '<span class="dr-sum-ldtl-name">' + esc(x.p.name) + '</span>'
+              + (pickRx ? '<span class="dr-sum-ldtl-pick">' + pickRx + '</span>' : '')
+              + psRx + '</div>';
+          });
+          dtl.innerHTML = dtlHtml || '<span style="font-size:10px;color:var(--text-muted);padding:4px 0;display:block">No starters found</span>';
+        }
+      });
+    });
   }
 
   // ── Live draft (P5, Sleeper) ────────────────────────────────────────────────
@@ -3691,33 +3751,10 @@ _DRAFT_ROOM_HTML = r"""
       else { starterBenchHtml += sumRow('BN', null); }
     }
 
-    // League grades with expandable starter rows
-    var allTeams = gradeAllTeams();
-    var leagueHtml = '';
-    if (allTeams.length >= 2){
-      var _rc = ['gold','silver','bronze'];
-      leagueHtml = '<div class="dr-sum-section">League Grades</div><div class="dr-sum-league">';
-      allTeams.forEach(function(t, i){
-        var w = t.grade.window;
-        var winTag = w ? '<span class="dr-sum-lwin dr-win-' + w.label.toLowerCase().replace('-','') + '">' + esc(w.label) + '</span>' : '';
-        var tCol = t.grade.score >= 75 ? '#22c55e' : t.grade.score >= 60 ? '#38bdf8' : t.grade.score >= 45 ? '#f59e0b' : '#ef4444';
-        var rCls = i < 3 ? (' ' + _rc[i]) : '';
-        leagueHtml += '<div class="dr-sum-lrow' + (t.isMe ? ' is-me' : '') + '" data-lslot="' + t.slot + '">'
-          + '<span class="dr-sum-lrank' + rCls + '">' + (i + 1) + '</span>'
-          + '<span class="dr-sum-lname">' + esc(t.name) + '</span>'
-          + winTag
-          + '<span class="dr-sum-lgrade" style="color:' + tCol + '">' + gradeLetter(t.grade.score) + '</span>'
-          + '<span class="dr-sum-lchev">&#9660;</span>'
-          + '</div>'
-          + '<div class="dr-sum-ldtl" id="drSumLdtl' + t.slot + '"></div>';
-      });
-      leagueHtml += '</div>';
-    }
-
     var html = '<button class="dr-prev-close" id="drSumClose" aria-label="Close">&times;</button>'
-      + '<div class="dr-sum-header"><div class="dr-sum-title">' + (hasSlot ? 'Draft Report Card' : 'League Report Card') + '</div>' + gradeHtml + '</div>'
+      + '<div class="dr-sum-header"><div class="dr-sum-title">Draft Report Card</div>' + gradeHtml + '</div>'
       + statsHtml + archHtml
-      + '<div class="dr-sum-body-wrap">' + starterBenchHtml + leagueHtml + '</div>'
+      + '<div class="dr-sum-body-wrap">' + starterBenchHtml + '</div>'
       + '<div class="dr-sum-footer">'
       + (hasSlot ? '<button class="dr-btn dr-btn-primary" id="drSumShare">Share</button>' : '')
       + '<button class="dr-btn" id="drSumCloseBtn">Close</button>'
@@ -3730,35 +3767,6 @@ _DRAFT_ROOM_HTML = r"""
     document.getElementById('drSumCloseBtn').addEventListener('click', closeSummary);
     var _shareBtn = document.getElementById('drSumShare');
     if (_shareBtn) _shareBtn.addEventListener('click', function(){ closeSummary(); shareDraft(); });
-
-    // Expand/collapse league grade rows to show team starters
-    card.querySelectorAll('[data-lslot]').forEach(function(row){
-      row.addEventListener('click', function(){
-        var slot = parseInt(row.getAttribute('data-lslot'), 10);
-        var dtl = document.getElementById('drSumLdtl' + slot);
-        if (!dtl) return;
-        var isOpen = row.classList.toggle('is-open');
-        dtl.classList.toggle('is-open', isOpen);
-        if (isOpen && !dtl.innerHTML){
-          var team = allTeams.filter(function(t){ return t.slot === slot; })[0];
-          if (!team || !team.picks) return;
-          var _sp = team.picks.slice().map(function(x){ return x.p; }).filter(Boolean);
-          var _tst = optimalLineup(_sp).starters.filter(function(x){ return x.p; });
-          var dtlHtml = '';
-          _tst.forEach(function(x){
-            var _pnx = (team.picks.filter(function(pk){ return pk.p && pk.p.id === x.p.id; })[0] || {}).pn || 0;
-            var pickRx = _pnx ? (function(){ var rd = Math.ceil(_pnx/state.teams); var pp = _pnx-(rd-1)*state.teams; return rd + '.' + (pp<10?'0'+pp:pp); })() : '';
-            var psRx = x.p.ps != null ? '<span class="dr-sum-ldtl-ps" style="color:' + psColor(x.p.ps) + '">' + x.p.ps + '</span>' : '';
-            dtlHtml += '<div class="dr-sum-ldtl-row">'
-              + '<span class="dr-sum-ldtl-slot" style="background:' + slotColor(x.slot) + '">' + x.slot + '</span>'
-              + '<span class="dr-sum-ldtl-name">' + esc(x.p.name) + '</span>'
-              + (pickRx ? '<span class="dr-sum-ldtl-pick">' + pickRx + '</span>' : '')
-              + psRx + '</div>';
-          });
-          dtl.innerHTML = dtlHtml || '<span style="font-size:10px;color:var(--text-muted);padding:4px 0;display:block">No starters found</span>';
-        }
-      });
-    });
   }
   function closeSummary(){ document.getElementById('drSummary').style.display = 'none'; }
 
