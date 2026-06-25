@@ -2585,6 +2585,49 @@ _DRAFT_ROOM_HTML = r"""
     if (slot === 'SF')   return pos === 'QB' || pos === 'RB' || pos === 'WR' || pos === 'TE';
     return slot === pos;
   }
+  // Score used to rank players for the optimal starting lineup: projected points
+  // (Sleeper PPG, else FantasyPros projection). When a player has no projection
+  // (e.g. some rookies) fall back to dynasty/redraft value scaled into a ppg-like
+  // range so they still slot in a sensible order instead of always benching.
+  function lineupScore(p){
+    if (!p) return -Infinity;
+    var ppg = ppgOf(p);
+    if (ppg == null){ var full = playersById[String(p.id)]; if (full) ppg = ppgOf(full); }
+    if (ppg != null) return Number(ppg);
+    var v = (p.val != null) ? Number(p.val) : null;
+    if (v == null){ var f2 = playersById[String(p.id)]; if (f2) v = valOf(f2); }
+    return (v || 0) / 1000;
+  }
+  // Build the highest-projected legal starting lineup. Slot eligibility is laminar
+  // (a dedicated slot's position ⊂ FLEX ⊂ SF), so filling the most restrictive
+  // slots first - each with the best remaining eligible player by lineupScore -
+  // yields the optimal total points. This is why a late high-projection QB will
+  // claim the SF slot and push the lower scorer it displaces back to the bench.
+  // Returns starters in roster-slot order (null p for unfilled slots) + bench.
+  function optimalLineup(playerList, slots){
+    slots = slots || lineupSlots();
+    function posOf(p){ return String((p && (p.position || p.pos)) || '').toUpperCase(); }
+    var flex = { SF: 3, FLEX: 2 };  // higher = more flexible, filled later
+    var order = slots.map(function(s, i){ return { slot: s, i: i }; });
+    order.sort(function(a, b){ return (flex[a.slot] || 1) - (flex[b.slot] || 1) || a.i - b.i; });
+    var used = {}, assign = {};
+    order.forEach(function(o){
+      var best = -1, bestScore = -Infinity;
+      for (var j = 0; j < playerList.length; j++){
+        if (used[j] || !slotEligible(o.slot, posOf(playerList[j]))) continue;
+        var sc = lineupScore(playerList[j]);
+        if (sc > bestScore){ bestScore = sc; best = j; }
+      }
+      if (best >= 0){ used[best] = true; assign[o.i] = playerList[best]; }
+    });
+    var starters = slots.map(function(s, i){ return { slot: s, p: assign[i] || null }; });
+    var bench = [];
+    for (var k = 0; k < playerList.length; k++){ if (!used[k]) bench.push(playerList[k]); }
+    bench.sort(function(a, b){ return lineupScore(b) - lineupScore(a); });
+    var starterIds = {};
+    starters.forEach(function(s){ if (s.p) starterIds[String(s.p.id)] = true; });
+    return { starters: starters, bench: bench, starterIds: starterIds };
+  }
   function slotColor(slot){
     if (slot === 'FLEX') return '#14b8a6';
     if (slot === 'SF')   return '#a78bfa';
@@ -2708,13 +2751,10 @@ _DRAFT_ROOM_HTML = r"""
     // shouldn't move a draft grade, so they don't count toward starter PS,
     // strength, or construction coverage.
     var slots = lineupSlots().filter(function(s){ return s !== 'K' && s !== 'DEF'; });
-    var byVal = picks.slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
-    var usedL = {}, starterIds = {}, filled = 0;
-    slots.forEach(function(slot){
-      for (var i = 0; i < byVal.length; i++){
-        if (!usedL[i] && slotEligible(slot, byVal[i].pos)){ usedL[i] = true; starterIds[String(byVal[i].id)] = true; filled++; break; }
-      }
-    });
+    var _gstart = optimalLineup(picks, slots);
+    var starterIds = _gstart.starterIds;
+    var filled = 0;
+    for (var _fi = 0; _fi < slots.length; _fi++){ if (_gstart.starters[_fi].p) filled++; }
     var coverage = slots.length ? filled / slots.length : 0;
 
     // 1) Starter quality: round-weighted average PS of starting-lineup picks only.
@@ -2894,33 +2934,11 @@ _DRAFT_ROOM_HTML = r"""
         + '</div></div>';
     }
     html += '<div class="dr-roster">';
-    var slots = lineupSlots();
-    var assigned = new Array(slots.length).fill(null);
-    var usedIdx = new Array(mine.length).fill(false);
-    // Pass 1: strict position matches (QB→QB, RB→RB, WR→WR, TE→TE, K→K, DEF→DEF)
-    slots.forEach(function(slot, si){
-      if (slot === 'FLEX' || slot === 'SF' || slot === 'BN') return;
-      for (var i = 0; i < mine.length; i++){
-        if (!usedIdx[i] && String(mine[i].position || '').toUpperCase() === slot){ assigned[si] = mine[i]; usedIdx[i] = true; break; }
-      }
-    });
-    // Pass 2: FLEX slots (RB/WR/TE overflow)
-    slots.forEach(function(slot, si){
-      if (slot !== 'FLEX') return;
-      for (var i = 0; i < mine.length; i++){
-        if (!usedIdx[i] && slotEligible('FLEX', mine[i].position)){ assigned[si] = mine[i]; usedIdx[i] = true; break; }
-      }
-    });
-    // Pass 3: SF slots (QB that didn't fill a QB slot, or any FLEX-eligible overflow)
-    slots.forEach(function(slot, si){
-      if (slot !== 'SF') return;
-      for (var i = 0; i < mine.length; i++){
-        if (!usedIdx[i] && slotEligible('SF', mine[i].position)){ assigned[si] = mine[i]; usedIdx[i] = true; break; }
-      }
-    });
-    slots.forEach(function(slot, si){ html += slotRow(slot, assigned[si]); });
-    var bench = [];
-    for (var i = 0; i < mine.length; i++){ if (!usedIdx[i]) bench.push(mine[i]); }
+    // Highest-projected legal lineup (projection-first, value fallback), so the
+    // strongest scorer fills each slot - a high-proj QB takes SF over a weaker flex.
+    var _olN = optimalLineup(mine, lineupSlots());
+    _olN.starters.forEach(function(s){ html += slotRow(s.slot, s.p); });
+    var bench = _olN.bench;
     html += '<div class="dr-roster-div">Bench</div>';
     if (bench.length){ bench.forEach(function(p){ html += slotRow('BN', p); }); }
     else { html += slotRow('BN', null); }
@@ -3586,14 +3604,10 @@ _DRAFT_ROOM_HTML = r"""
     // Build starters / bench for my team
     var mine = [], starters = [], bench = [];
     if (hasSlot){
-      mine = myPicksList().slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
-      var _used = {}, _lslots = lineupSlots();
-      _lslots.forEach(function(slot){
-        var pick = null;
-        for (var i = 0; i < mine.length; i++){ if (!_used[i] && slotEligible(slot, mine[i].position)){ pick = mine[i]; _used[i] = true; break; } }
-        starters.push({ slot: slot, p: pick });
-      });
-      for (var _bi = 0; _bi < mine.length; _bi++){ if (!_used[_bi]) bench.push(mine[_bi]); }
+      mine = myPicksList().slice();
+      var _olS = optimalLineup(mine);
+      starters = _olS.starters;
+      bench = _olS.bench;
     }
 
     // Grade ring + component bars
@@ -3725,13 +3739,7 @@ _DRAFT_ROOM_HTML = r"""
           var team = allTeams.filter(function(t){ return t.slot === slot; })[0];
           if (!team || !team.picks) return;
           var _sp = team.picks.slice().map(function(x){ return x.p; }).filter(Boolean);
-          _sp.sort(function(a,b){ return (b.val||0)-(a.val||0); });
-          var _lsl = lineupSlots(), _usd = {}, _tst = [];
-          _lsl.forEach(function(s){
-            for (var i = 0; i < _sp.length; i++){
-              if (!_usd[i] && slotEligible(s, _sp[i].position)){ _tst.push({ slot: s, p: _sp[i] }); _usd[i] = true; break; }
-            }
-          });
+          var _tst = optimalLineup(_sp).starters.filter(function(x){ return x.p; });
           var dtlHtml = '';
           _tst.forEach(function(x){
             var _pnx = (team.picks.filter(function(pk){ return pk.p && pk.p.id === x.p.id; })[0] || {}).pn || 0;
@@ -3851,14 +3859,11 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   function _buildShareCanvas(dark){
-    var mine = myPicksList().slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
-    var used = {}, rows = [];
-    lineupSlots().forEach(function(slot){
-      var pick = null;
-      for (var i = 0; i < mine.length; i++){ if (!used[i] && slotEligible(slot, mine[i].position)){ pick = mine[i]; used[i] = true; break; } }
-      rows.push({ slot: slot, p: pick });
-    });
-    for (var i = 0; i < mine.length; i++){ if (!used[i]) rows.push({ slot: 'BN', p: mine[i] }); }
+    var mine = myPicksList().slice();
+    var _olShare = optimalLineup(mine);
+    var rows = [];
+    _olShare.starters.forEach(function(s){ rows.push({ slot: s.slot, p: s.p }); });
+    _olShare.bench.forEach(function(p){ rows.push({ slot: 'BN', p: p }); });
     var clr = _readThemeVars(dark);
     var POSC = { QB:'#f59e0b', RB:'#22c55e', WR:'#3b82f6', TE:'#8b5cf6', K:'#94a3b8', DEF:'#64748b', FLEX:'#14b8a6', SF:'#a78bfa', BN:'#64748b' };
     var W = 720, pad = 30, lineH = 44, headerH = 130;
