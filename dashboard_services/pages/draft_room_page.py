@@ -400,8 +400,8 @@ _DRAFT_ROOM_HTML = r"""
     letter-spacing: .04em; color: var(--accent,#38bdf8); }
   .dr-cell-claimed .dr-cell-mineflag { color: #f59e0b; }
   /* Traded pick: who the pick was dealt to (shown on another team's seat). */
-  .dr-cell-owner { position: absolute; top: 2px; left: 50%; transform: translateX(-50%);
-    max-width: 64%; font-size: 8px; font-weight: 800; letter-spacing: .02em; color: #f59e0b;
+  .dr-cell-owner { position: absolute; top: 2px; right: 5px; font-size: 8px; font-weight: 800;
+    letter-spacing: .04em; color: #f59e0b;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
   .dr-cell-just { animation: drPop .35s ease; }
   @keyframes drPop { 0% { transform: scale(.92); opacity: .3; } 100% { transform: scale(1); opacity: 1; } }
@@ -3927,7 +3927,7 @@ _DRAFT_ROOM_HTML = r"""
     var h = '<span class="dr-cell-num">' + pn + '</span>';
     if (isMyPick(pn) && !pl) h += '<span class="dr-cell-mineflag">YOU</span>';
     var _own = tradedOwnerLabel(pn);
-    if (_own) h += '<span class="dr-cell-owner">&rarr; ' + esc(_own) + '</span>';
+    if (_own) h += '<span class="dr-cell-owner">' + esc(_own) + '</span>';
     if (pl){
       if (pl.val != null) h += '<span class="dr-cell-val">' + Math.round(pl.val) + '</span>';
       h += '<img class="dr-hs" src="' + playerImgUrl(pl) + '" alt="" onerror="this.style.visibility=\'hidden\'">';
