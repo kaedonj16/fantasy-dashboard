@@ -5674,14 +5674,19 @@ def _market_scale(fmt: str = "1qb") -> float:
 def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: int = 10,
                              num_tiers: int = _NUM_TIERS, t1_size: int = None) -> list:
     """
-    Natural gap-significance tier boundaries.
+    Value-spaced tier boundaries with natural gap snapping - always num_tiers tiers.
 
-    Each gap is scored by how large it is relative to nearby gaps (local significance).
-    The top (num_tiers-1) gaps become tier boundaries. Minimum 5 players per tier;
-    tiers smaller than that are merged into the tier below. T9 is the large catch-all.
+    T1: top _T1_SIZE players (5 for 1QB, 6 for SF) - fixed elite tier.
+    T2-T9: boundaries placed at equal value intervals stepping down from the T1
+    boundary toward 0. Each boundary is snapped to the nearest local gap within
+    30% of the step size so boundaries land on natural value breaks when they exist.
 
-    t1_size: override the number of players pinned to T1 (defaults to MIN_TIER=5 for
-             1QB, 6 for SF so QBs get their own elite tier with room for the top arms).
+    Equal value intervals cause more players to fall in each successive tier
+    because the dynasty distribution is denser at lower values, giving the
+    naturally widening tier structure. T9 is the low-value catch-all that
+    starts at roughly T1_boundary / (num_tiers - 1).
+
+    t1_size: override the number of players pinned to T1.
     """
     if league_type == "sf":
         primary = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
@@ -5704,112 +5709,41 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
     if len(vals) < num_tiers * 3:
         return _FALLBACK_THRESHOLDS
 
-    MIN_TIER = 5   # minimum players per tier
-    window   = 12
-    # T1 size: 1QB defaults to 5, SF defaults to 6 (room for elite QBs + top skills)
-    _T1_SIZE = t1_size if t1_size is not None else (6 if league_type == "sf" else MIN_TIER)
+    _T1_SIZE = t1_size if t1_size is not None else (6 if league_type == "sf" else 5)
 
-    # Score each gap by local significance (gap vs median of nearby gaps)
-    scored = []
-    for i in range(len(vals) - 1):
-        gap = vals[i] - vals[i + 1]
-        lo  = max(0, i - window)
-        hi  = min(len(vals) - 1, i + window)
-        nbrs = [vals[j] - vals[j + 1] for j in range(lo, hi) if j != i]
-        local_med = sorted(nbrs)[len(nbrs) // 2] if nbrs else 1.0
-        scored.append((gap / max(local_med, 0.5), i, (vals[i] + vals[i + 1]) / 2.0))
-
-    # T1 is always the top _T1_SIZE players (fixed elite tier)
-    scored.sort(key=lambda x: x[0], reverse=True)
-    if len(vals) > _T1_SIZE:
-        _t1_mid = round((vals[_T1_SIZE - 1] + vals[_T1_SIZE]) / 2.0, 1)
-        chosen_pos = [_T1_SIZE - 1]
-        boundaries = [_t1_mid]
-    else:
-        chosen_pos = []
-        boundaries = []
-
-    # Find remaining boundaries naturally from T2 onward
-    for _sig, pos, midpoint in scored:
-        if len(boundaries) >= num_tiers - 1:
-            break
-        if pos < MIN_TIER - 1 or pos > len(vals) - 1 - (MIN_TIER - 1):
-            continue
-        if any(abs(pos - p) < MIN_TIER - 1 for p in chosen_pos):
-            continue
-        chosen_pos.append(pos)
-        boundaries.append(round(midpoint, 1))
-
-    if not boundaries:
+    if len(vals) <= _T1_SIZE:
         return _FALLBACK_THRESHOLDS
 
-    thresholds = sorted(boundaries, reverse=True)
+    # T1 boundary: pinned between rank _T1_SIZE and _T1_SIZE+1
+    t1_bnd = (vals[_T1_SIZE - 1] + vals[_T1_SIZE]) / 2.0
 
-    # Merge any tier smaller than MIN_TIER into the tier below it
-    changed = True
-    while changed:
-        changed = False
-        if thresholds and sum(1 for v in vals if v >= thresholds[0]) < MIN_TIER:
-            thresholds = thresholds[1:]
-            changed = True
-            continue
-        for i in range(len(thresholds) - 1):
-            lo_b = thresholds[i + 1]
-            hi_b = thresholds[i]
-            if sum(1 for v in vals if lo_b <= v < hi_b) < MIN_TIER:
-                thresholds = thresholds[:i + 1] + thresholds[i + 2:]
-                changed = True
-                break
+    # Equal value steps from t1_bnd toward 0
+    step = t1_bnd / (num_tiers - 1)
+    snap_half = step * 0.30   # snap to largest gap within 30% of step
 
-    # Force-split any tier that's too large after gap-selection + merge.
-    # When values decay smoothly across a wide rank range (e.g., ranks 6-85),
-    # no single gap stands out globally so all boundaries cluster in the tail,
-    # leaving one enormous middle tier. This step finds the biggest local gap
-    # inside any over-limit tier and adds it as a boundary, ensuring no tier
-    # swallows an unreasonable number of players.
-    MAX_TIER_SIZE = max(16, league_size + 6)
-    MIN_SPLIT     = 4       # each side of a forced split must have >= this many
-    _BOUND_CAP    = num_tiers + 5
+    thresholds = [round(t1_bnd, 1)]
+    used_positions = {_T1_SIZE - 1}
 
-    for _ in range(_BOUND_CAP):
-        if len(thresholds) >= _BOUND_CAP:
-            break
-        segs = [(thresholds[0], None)]
-        for j in range(len(thresholds) - 1):
-            segs.append((thresholds[j + 1], thresholds[j]))
-        segs.append((0.0, thresholds[-1]))
-
-        best_cnt, best_lo, best_hi = 0, None, None
-        for lo, hi in segs:
-            if hi is None:
-                cnt = sum(1 for v in vals if v >= lo)
-            else:
-                cnt = sum(1 for v in vals if lo <= v < hi)
-            if cnt > best_cnt:
-                best_cnt, best_lo, best_hi = cnt, lo, hi
-
-        if best_cnt <= MAX_TIER_SIZE:
-            break
-
-        if best_hi is None:
-            seg_v = sorted([v for v in vals if v >= best_lo], reverse=True)
-        else:
-            seg_v = sorted([v for v in vals if best_lo <= v < best_hi], reverse=True)
-
-        best_split, best_gap = None, -1
-        for j in range(len(seg_v) - 1):
-            if j + 1 < MIN_SPLIT or len(seg_v) - j - 1 < MIN_SPLIT:
+    for k in range(1, num_tiers - 1):
+        target = t1_bnd - k * step
+        best_j, best_g = None, -1
+        for j in range(_T1_SIZE, len(vals) - 1):
+            if j in used_positions:
                 continue
-            g = seg_v[j] - seg_v[j + 1]
-            if g > best_gap:
-                best_gap = g
-                best_split = round((seg_v[j] + seg_v[j + 1]) / 2.0, 1)
+            mid = (vals[j] + vals[j + 1]) / 2.0
+            if abs(mid - target) <= snap_half:
+                g = vals[j] - vals[j + 1]
+                if g > best_g:
+                    best_g = g
+                    best_j = j
+        if best_j is not None:
+            used_positions.add(best_j)
+            thresholds.append(round((vals[best_j] + vals[best_j + 1]) / 2.0, 1))
+        else:
+            thresholds.append(round(max(1.0, target), 1))
 
-        if best_split is None or best_split in thresholds:
-            break
-        thresholds = sorted(thresholds + [best_split], reverse=True)
-
-    return thresholds if thresholds else _FALLBACK_THRESHOLDS
+    thresholds = sorted(set(thresholds), reverse=True)
+    return thresholds if len(thresholds) >= 2 else _FALLBACK_THRESHOLDS
 
 def _asset_tier(value: float, thresholds: list = None) -> int:
     t = thresholds if thresholds is not None else _FALLBACK_THRESHOLDS
