@@ -2758,6 +2758,11 @@ _DRAFT_ROOM_HTML = r"""
   function ppgOf(p){ return (p && p.ppg != null) ? Number(p.ppg) : ((p && p.proj_ppg != null) ? Number(p.proj_ppg) : null); }
   function gradeTeam(){
     if (!hasOwned()) return null;
+    // Pull "your" grade from the full field so the relative-to-league curve matches
+    // what the League tab shows. Before there are enough teams on the board to curve
+    // against, gradeAllTeams returns the raw (uncurved) grades, which is also correct.
+    var field = gradeAllTeams();
+    for (var i = 0; i < field.length; i++){ if (field[i].isMe) return field[i].grade; }
     var mine = [];
     Object.keys(state.picks).forEach(function(k){
       var pn = parseInt(k, 10);
@@ -2884,10 +2889,23 @@ _DRAFT_ROOM_HTML = r"""
     // Map ratio: 0.80 (weak) → 0 pts, 1.20 (elite) → full; ~1.0 is league-average.
     var starterPts = Math.round(clamp01((strengthRatio - 0.80) / 0.40) * 35);
 
-    // 3) Construction: starter-slot coverage (filling your lineup) + positional balance.
-    var targets = posTargets(), bsum = 0;
-    ['QB','RB','WR','TE'].forEach(function(pos){ var t = targets[pos] || 0; bsum += t ? Math.min(counts[pos] || 0, t) / t : 0; });
-    var constructionRaw = clamp01(0.6 * coverage + 0.4 * (bsum / 4));
+    // 3) Construction: how well you built a usable roster. Three real signals so
+    //    this component doesn't saturate at full marks for every completed team:
+    //    coverage (did you fill your starting lineup), balance (sensible depth at
+    //    each position), and efficiency (did you avoid over-stacking one spot while
+    //    leaving holes). Efficiency is what separates two complete rosters: a team
+    //    that burned late picks on a 4th RB grades below one that spread its capital
+    //    across genuine needs.
+    var targets = posTargets(), bsum = 0, usefulPicks = 0, gradedPicks = 0;
+    ['QB','RB','WR','TE'].forEach(function(pos){
+      var t = targets[pos] || 0;
+      bsum += t ? Math.min(counts[pos] || 0, t) / t : 0;
+      var cap = t + 1;                          // target depth + one bench stash
+      usefulPicks += Math.min(counts[pos] || 0, cap);
+      gradedPicks += counts[pos] || 0;
+    });
+    var efficiency = gradedPicks > 0 ? usefulPicks / gradedPicks : 1;
+    var constructionRaw = clamp01(0.45 * coverage + 0.30 * (bsum / 4) + 0.25 * efficiency);
     var ramp = Math.min(1, mine.length / 8); // lenient early before the roster can be full
     var balancePts = Math.round(((1 - ramp) * 0.85 + ramp * constructionRaw) * 30);
 
@@ -2918,8 +2936,33 @@ _DRAFT_ROOM_HTML = r"""
       var isMe = picks.some(function(m){ return isMyPick(m.pn); });
       out.push({ slot: s, name: isMe ? 'You' : teamName(s), isMe: isMe, grade: g, picks: picks });
     }
+    _applyFieldCurve(out);
     out.sort(function(a, b){ return b.grade.score - a.grade.score; });
     return out;
+  }
+  // Curve grades relative to the actual field so real differences between teams span
+  // a meaningful range instead of all clustering in one letter band. This does NOT
+  // fabricate gaps: each team's adjustment is proportional to how far its real
+  // composite score sits from the field mean, normalized by the field's own spread.
+  // A genuinely even field (low variance) stays tight; a field with real separation
+  // spreads out. The raw score is preserved on grade.rawScore.
+  function _applyFieldCurve(out){
+    if (!state || state.type === 'rookie') return;  // rookie grades are absolute talent, not comparative
+    if (!out || out.length < 3) return;             // need a real field to curve against
+    var scores = out.map(function(t){ return t.grade.score; });
+    var mean = scores.reduce(function(a, b){ return a + b; }, 0) / scores.length;
+    var variance = scores.reduce(function(a, b){ return a + (b - mean) * (b - mean); }, 0) / scores.length;
+    var std = Math.sqrt(variance);
+    // Floor the spread so a near-identical field isn't blown apart (no fabrication)
+    // while still giving a readable range when teams genuinely differ.
+    var effStd = Math.max(std, 8);
+    var ANCHOR = 74;   // the field-average team lands at a solid B
+    var PTS = 11;      // grade points per standard deviation of real separation
+    out.forEach(function(t){
+      t.grade.rawScore = t.grade.score;
+      var z = (t.grade.score - mean) / effStd;
+      t.grade.score = Math.round(Math.max(0, Math.min(100, ANCHOR + z * PTS)));
+    });
   }
   // Classify a startup/redraft build into a recognizable draft archetype based on
   // positional emphasis, weighting the early picks where strategy is actually set.
