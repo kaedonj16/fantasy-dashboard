@@ -1522,13 +1522,13 @@ _DRAFT_ROOM_HTML = r"""
     }
     if (a != null) return a;
     var pos = (p.position || '').toUpperCase();
-    // K/DEF have no ADP: synthesize one in the last ~1.5 rounds so CPUs draft them
+    // K/DEF have no ADP: synthesize one in the last ~3 rounds so CPUs draft them
     // late, best (by projected PPG) first, instead of dumping them all at the end.
     if (pos === 'K' || pos === 'DEF'){
       var tot = (state.teams || 12) * (state.rounds || 16);
       var sc = _ppgScale[pos], v = ppgOf(p);
       var n = (sc && v != null && sc.elite > sc.repl) ? clamp01((v - sc.repl) / (sc.elite - sc.repl)) : 0.4;
-      return tot - Math.round(n * (state.teams || 12) * 1.5);
+      return tot - Math.round(n * (state.teams || 12) * 2.0);
     }
     return 10000 - (valOf(p) / 100);  // other ADP-less players sort after, by value
   }
@@ -1601,6 +1601,13 @@ _DRAFT_ROOM_HTML = r"""
       var needFactor = (pos === 'QB' && state.sf) ? 0.65 : 0.25;
       if (pos === 'QB' && state.sf && have === 0 && pn > state.teams * 2) needFactor = 1.5;
       w *= (1 + needFactor * need) / overFactor;
+      // K/DEF: in the final 3 rounds, teams MUST fill these slots or they go empty.
+      // Boost weight strongly so K/DEF crack the top-8 candidate sample and actually
+      // get drafted, rather than losing out to late-sliding skill players every pick.
+      var _remainRds = state.rounds - Math.floor((pn - 1) / state.teams);
+      if ((pos === 'K' || pos === 'DEF') && (t > 0) && (have < t) && _remainRds <= 3){
+        w *= 8;
+      }
       // ADP-less players (a huge sentinel) get a tiny value-based floor so they
       // can still fill in late rounds once the ranked board is exhausted.
       if (a >= 9000) w = Math.max(w, 1e-9 * valOf(p));
