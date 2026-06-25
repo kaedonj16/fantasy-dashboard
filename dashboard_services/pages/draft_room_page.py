@@ -4108,45 +4108,31 @@ _DRAFT_ROOM_HTML = r"""
   document.getElementById('drReset').addEventListener('click', resetDraft);
   document.getElementById('drEdit').addEventListener('click', showSetup);
   document.getElementById('drPractice').addEventListener('click', startPracticeMock);
-  // Mobile options menu toggle. The outside-close listener keys off pointerdown
-  // (which fires once per gesture, before any synthetic "ghost click") instead of
-  // a timed click listener. It is attached during the opening click - which runs
-  // AFTER the opening tap's own pointerdown - so the gesture that opened the panel
-  // can never be the one that closes it. This is what made the gear "open then
-  // close instantly" on mobile, especially when the main thread was busy
-  // rendering the board and the ghost click landed after the old 400ms window.
+  // Mobile options menu toggle. Uses the SAME proven pattern as the app's other
+  // dropdowns (custom selects, toolbar settings): a single persistent bubble-phase
+  // document listener closes the menu, and the toggle/panel call stopPropagation so
+  // the opening tap never reaches that listener. One click per tap + stopPropagation
+  // means the gesture that opens the menu can't also close it - on desktop or mobile.
   (function(){
     var optsBtn = document.getElementById('drOptsBtn');
     var optsPanel = document.getElementById('drOptsPanel');
     if (!optsBtn || !optsPanel) return;
-    function onOutside(e){
-      if (optsBtn.contains(e.target) || optsPanel.contains(e.target)) return;
-      closeOpts();
-    }
-    function closeOpts(){
-      optsPanel.classList.remove('is-open');
-      document.removeEventListener('pointerdown', onOutside, true);
-      document.removeEventListener('click', onOutside, true);
-    }
-    function openOpts(){
-      optsPanel.classList.add('is-open');
-      document.removeEventListener('pointerdown', onOutside, true);
-      document.removeEventListener('click', onOutside, true);
-      // Prefer pointerdown (one event per gesture, no ghost clicks). Fall back to
-      // click on the rare engine without PointerEvent support.
-      if (window.PointerEvent) document.addEventListener('pointerdown', onOutside, true);
-      else setTimeout(function(){ document.addEventListener('click', onOutside, true); }, 400);
-    }
+    function closeOpts(){ optsPanel.classList.remove('is-open'); }
     optsBtn.addEventListener('click', function(e){
       e.preventDefault();
       e.stopPropagation();
-      if (optsPanel.classList.contains('is-open')) closeOpts(); else openOpts();
+      optsPanel.classList.toggle('is-open');
     });
-    // Tapping an action button inside the panel closes it; other taps (e.g. the
-    // speed/variance selects) keep it open.
+    // Keep the menu open while interacting inside it (e.g. the speed select); an
+    // action button (.dr-btn) closes it. stopPropagation stops the outside-close
+    // handler from firing for in-panel taps.
     optsPanel.addEventListener('click', function(e){
+      e.stopPropagation();
       if (e.target.closest('.dr-btn')) closeOpts();
     });
+    // Any tap outside the menu closes it - same global outside-click behavior the
+    // rest of the app's dropdowns rely on.
+    document.addEventListener('click', closeOpts);
   })();
   document.getElementById('drBaSort').addEventListener('change', renderBA);
   document.getElementById('drSearch').addEventListener('input', renderBA);
