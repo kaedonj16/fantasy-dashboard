@@ -3084,27 +3084,41 @@ _DRAFT_ROOM_HTML = r"""
       avgPs: avgPs ? Math.round(avgPs) : null, strength: Math.round(strengthRatio * 100),
       window: _competitiveWindow(starterArr) };
   }
-  // Grade every team in the draft (one per draft slot), sorted best-first.
+  // Grade every team in the draft, sorted best-first. Picks are attributed by
+  // OWNERSHIP, not by the board column they sit in: every pick the user owns (a
+  // 1.01 traded in, a pick in another seat, etc.) belongs to the single "You"
+  // team, and each seat shows only the picks it still owns. Otherwise a user who
+  // owns picks across two seats would show up as "You" twice.
   function gradeAllTeams(){
     if (!state) return [];
     var teams = state.teams || 12;
-    var bySlot = {};
+    var mine = [];        // every pick the user owns, regardless of seat
+    var bySlot = {};      // remaining picks grouped by the seat that owns them
     Object.keys(state.picks).forEach(function(k){
       var pn = parseInt(k, 10);
       if (!state.picks[k]) return;
+      var entry = { pn: pn, p: state.picks[k] };
+      if (isMyPick(pn)){ mine.push(entry); return; }
       var slot = slotOnClock(pn, teams, state.order);
       if (!bySlot[slot]) bySlot[slot] = [];
-      bySlot[slot].push({ pn: pn, p: state.picks[k] });
+      bySlot[slot].push(entry);
     });
     var out = [];
+    // The user's team: all owned picks consolidated into one entry. Slot 0 is a
+    // sentinel that never collides with the real seats (1..teams), so the League
+    // tab's per-row detail lookup stays unambiguous.
+    if (mine.length){
+      mine.sort(function(a, b){ return a.pn - b.pn; });
+      var gm = gradePicks(mine);
+      if (gm) out.push({ slot: 0, name: 'You', isMe: true, grade: gm, picks: mine });
+    }
     for (var s = 1; s <= teams; s++){
       var picks = bySlot[s];
       if (!picks || !picks.length) continue;
       picks.sort(function(a, b){ return a.pn - b.pn; });
       var g = gradePicks(picks);
       if (!g) continue;
-      var isMe = picks.some(function(m){ return isMyPick(m.pn); });
-      out.push({ slot: s, name: isMe ? 'You' : teamName(s), isMe: isMe, grade: g, picks: picks });
+      out.push({ slot: s, name: teamName(s), isMe: false, grade: g, picks: picks });
     }
     _applyFieldCurve(out);
     out.sort(function(a, b){ return b.grade.score - a.grade.score; });
@@ -4473,22 +4487,32 @@ _DRAFT_ROOM_HTML = r"""
     var optsBtn = document.getElementById('drOptsBtn');
     var optsPanel = document.getElementById('drOptsPanel');
     if (!optsBtn || !optsPanel) return;
+    var openedAt = 0;
     function closeOpts(){ optsPanel.classList.remove('is-open'); }
+    function openOpts(){ optsPanel.classList.add('is-open'); openedAt = Date.now(); }
     optsBtn.addEventListener('click', function(e){
       e.preventDefault();
       e.stopPropagation();
-      optsPanel.classList.toggle('is-open');
+      if (optsPanel.classList.contains('is-open')) closeOpts();
+      else openOpts();
     });
     // Keep the menu open while interacting inside it (e.g. the speed select); an
-    // action button (.dr-btn) closes it. stopPropagation stops the outside-close
-    // handler from firing for in-panel taps.
+    // action button (.dr-btn) closes it.
     optsPanel.addEventListener('click', function(e){
       e.stopPropagation();
       if (e.target.closest('.dr-btn')) closeOpts();
     });
-    // Any tap outside the menu closes it - same global outside-click behavior the
-    // rest of the app's dropdowns rely on.
-    document.addEventListener('click', closeOpts);
+    // Outside tap closes the menu. The guard makes this robust on PWAs/touch
+    // devices, where a single tap can dispatch a duplicate or "ghost" click:
+    //   1. ignore events within 400ms of opening (the same gesture that opened it)
+    //   2. ignore taps inside the button or panel (those are handled above)
+    // Relying on stopPropagation alone let a stray second click insta-close it.
+    document.addEventListener('click', function(e){
+      if (!optsPanel.classList.contains('is-open')) return;
+      if (Date.now() - openedAt < 400) return;
+      if (optsBtn.contains(e.target) || optsPanel.contains(e.target)) return;
+      closeOpts();
+    });
   })();
   document.getElementById('drBaSort').addEventListener('change', renderBA);
   document.getElementById('drSearch').addEventListener('input', renderBA);
