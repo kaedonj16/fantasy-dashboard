@@ -2976,6 +2976,95 @@ _DRAFT_ROOM_HTML = r"""
     var label = avgAge <= 24.5 ? 'Future' : (avgAge >= 26.5 ? 'Win-Now' : 'Balanced');
     return { label: label, avgAge: avgAge };
   }
+  // ── Rookie per-pick letter grades (ported from the Teams-page draft tab) ──
+  // Each pick is graded A+..F from three signals measured against the live board:
+  // ADP value (pick number vs the player's rookie ADP), whether a better player by
+  // ADP was still available (BPA), and positional need. The whole-draft map is built
+  // once per render and cached so gradePicks can just look up its team's picks.
+  var _NEED_THRESHOLD = { QB: 2, RB: 4, WR: 5, TE: 2 };  // mirrors app.py NEED_THRESHOLD
+  var _rkGradeCache = null, _rkGradeKey = null;
+  function _rookiePickGrade(adpDiff, need, bpaGap, isBpa, pos, sf, qbCount, teams){
+    if (adpDiff == null) return 'N/A';
+    var bigReach = -(teams * 1.1);   // a reach of > ~1 round → F
+    var score;
+    if (adpDiff >= 4)            score = 4;   // clear value
+    else if (adpDiff >= 2)       score = 3;   // good value
+    else if (adpDiff >= -3)      score = 2;   // on ADP
+    else if (adpDiff >= bigReach) score = 1;  // reach within 1 round → D
+    else                         score = 0;   // > 1 round early → F
+    if (isBpa) score += (adpDiff < -3 ? 1 : 2);             // best available on the board
+    else if (bpaGap != null && bpaGap >= 5) score = Math.max(score - 1, 0);
+    if (need) score += 1;
+    else {
+      if (pos === 'QB' && !sf && qbCount >= 2) score = Math.max(score - 2, 0);
+      else if (pos === 'QB' && !sf && qbCount >= 1) score = Math.max(score - 1, 0);
+    }
+    if (adpDiff >= -3) score = Math.max(score, 1);          // tiny reach → at least D
+    if (need && adpDiff >= -4) score = Math.max(score, 2);  // need pick → at least C
+    return ({ 5:'A+', 4:'A', 3:'B', 2:'C', 1:'D', 0:'F' })[Math.min(score, 5)] || 'F';
+  }
+  // Map a 0-5 team average back to a 0-100 score that lands in the matching
+  // gradeLetter band (A+/A/B/C/D/F) while staying monotonic so the League tab sorts.
+  function _rookieAvg5ToScore(a){
+    if (a >= 4.5) return 90 + (a - 4.5) / 0.5 * 10;   // 90..100  A+
+    if (a >= 3.5) return 85 + (a - 3.5) * 4;          // 85..89   A
+    if (a >= 2.5) return 70 + (a - 2.5) * 4;          // 70..74   B
+    if (a >= 1.5) return 55 + (a - 1.5) * 4;          // 55..59   C
+    if (a >= 0.5) return 40 + (a - 0.5) * 9;          // 40..49   D
+    return Math.max(0, a / 0.5 * 39);                 //  0..39   F
+  }
+  function _rookiePickLetters(){
+    var key = Object.keys(state.picks).length + ':' + (state.current || 0);
+    if (_rkGradeCache && _rkGradeKey === key) return _rkGradeCache;
+    var teams = state.teams || 12, sf = !!state.sf;
+    // ADP for every drafted player (keyed by id) and a sorted list of pool ADPs
+    // (pool players are never taken, so they stay "available" the whole draft).
+    var adpById = {};
+    Object.keys(state.picks).forEach(function(k){
+      var pp = state.picks[k]; if (!pp) return;
+      var full = playersById[String(pp.id)];
+      var a = full ? adpOf(full) : null;
+      if (a != null) adpById[String(pp.id)] = a;
+    });
+    var drafted = [];   // {id, adp} for drafted players with ADP
+    Object.keys(adpById).forEach(function(id){ drafted.push({ id: id, adp: adpById[id] }); });
+    var poolAdps = [];
+    players.forEach(function(q){ var a = adpOf(q); if (a != null) poolAdps.push(a); });
+    poolAdps.sort(function(x, y){ return x - y; });
+    var poolMin = poolAdps.length ? poolAdps[0] : null;
+    var pickNos = Object.keys(state.picks).map(function(k){ return parseInt(k, 10); })
+      .filter(function(n){ return !!state.picks[n]; }).sort(function(a, b){ return a - b; });
+    var taken = {}, posCounts = {}, letters = {};
+    pickNos.forEach(function(pn){
+      var pp = state.picks[pn];
+      var pid = String(pp.id);
+      var pos = (pp.position || '').toUpperCase();
+      var slot = isMyPick(pn) ? 0 : ((state.pickOwners && state.pickOwners[pn] != null)
+        ? state.pickOwners[pn] : slotOnClock(pn, teams, state.order));
+      if (!posCounts[slot]) posCounts[slot] = { QB:0, RB:0, WR:0, TE:0 };
+      var thisAdp = adpById[pid];
+      var need = (_NEED_THRESHOLD[pos] != null) && (posCounts[slot][pos] < _NEED_THRESHOLD[pos]);
+      var qbCount = posCounts[slot].QB;
+      var adpDiff = (thisAdp != null) ? (pn - thisAdp) : null;
+      // Best available by ADP still on the board (drafted-but-not-yet-taken + pool).
+      var bestBetter = null;
+      if (thisAdp != null){
+        for (var i = 0; i < drafted.length; i++){
+          var d = drafted[i];
+          if (taken[d.id] || d.id === pid) continue;
+          if (d.adp < thisAdp && (bestBetter == null || d.adp < bestBetter)) bestBetter = d.adp;
+        }
+        if (poolMin != null && poolMin < thisAdp && (bestBetter == null || poolMin < bestBetter)) bestBetter = poolMin;
+      }
+      var isBpa = (thisAdp != null) && (bestBetter == null);
+      var bpaGap = (bestBetter != null && thisAdp != null) ? (thisAdp - bestBetter) : 0;
+      letters[pn] = _rookiePickGrade(adpDiff, need, bpaGap, isBpa, pos, sf, qbCount, teams);
+      taken[pid] = true;
+      if (posCounts[slot][pos] != null) posCounts[slot][pos]++;
+    });
+    _rkGradeCache = letters; _rkGradeKey = key;
+    return letters;
+  }
   // Grade any team's picks. `mine` = sorted [{pn, p}] for one team.
   function gradePicks(mine){
     if (!mine || !mine.length) return null;
@@ -3004,41 +3093,20 @@ _DRAFT_ROOM_HTML = r"""
     var avgPs = psVals.length ? psVals.reduce(function(a, b){ return a + b; }, 0) / psVals.length : null;
 
     if (state.type === 'rookie'){
-      // ── Rookie draft grade: value over expected draft capital ──
-      // Averaging per-pick scores never worked here: every team drafts decent
-      // rookies, so the scores barely differ and grades collapse into one band.
-      // Instead, measure how well a team converted ITS draft capital into value.
-      //
-      // Build the consensus value board for the whole draft (every player taken,
-      // plus the remaining pool, ranked by dynasty value). The player a team
-      // "should" land at pick N is the Nth-most-valuable player, so a team's
-      // EXPECTED haul is the sum of board values at its own pick slots. Compare
-      // that to the value it ACTUALLY drafted: beating the board - catching
-      // fallers, taking value while others reach for ADP - grades up; reaching
-      // grades down. Capital is handled automatically: each team is judged against
-      // what its own slots were worth, so picking late is never a penalty. The
-      // field curve (in _applyFieldCurve) turns the efficiency ratio into letters.
-      var board = [];
-      Object.keys(state.picks).forEach(function(k){
-        var pp = state.picks[k]; if (!pp) return;
-        var fv = playersById[String(pp.id)];
-        var vv = fv ? valOf(fv) : (pp.val || 0);
-        if (vv > 0) board.push(vv);
-      });
-      players.forEach(function(q){ var v = valOf(q); if (v > 0) board.push(v); });
-      board.sort(function(a, b){ return b - a; });
-      var expSum = 0, accSum = 0;
-      picks.forEach(function(x){
-        var idx = Math.min(Math.max(board.length - 1, 0), Math.max(0, (x.pn || 1) - 1));
-        expSum += board.length ? board[idx] : 0;
-        accSum += (x.val || 0);
-      });
-      var eff = expSum > 0 ? accSum / expSum : 1.0;
-      // Absolute fallback used only when there's no field to curve (solo/tiny field).
-      // Matches the absolute anchor in _applyFieldCurve: 1.0 -> B, big reach -> D/F.
-      var rv = Math.round(Math.max(0, Math.min(100, 73 + (eff - 1.0) * 200)));
+      // Rookie grade = the Teams-page draft-tab system: each pick gets a letter
+      // (A+..F) from ADP value + best-player-available + positional need, computed
+      // against the live board state, then the team grade is the average of those
+      // letters. _rookiePickLetters() builds the whole-draft map once; here we just
+      // average this team's picks and map the 0-5 average to a score that reproduces
+      // the same letter via gradeLetter (and preserves ordering for the League tab).
+      var _lmap = _rookiePickLetters();
+      var _GV = { 'A+':5, 'A':4, 'B':3, 'C':2, 'D':1, 'F':0 };
+      var _ls = [];
+      picks.forEach(function(x){ var L = _lmap[x.pn]; if (L && L !== 'N/A') _ls.push(_GV[L]); });
+      var _avg5 = _ls.length ? _ls.reduce(function(a, b){ return a + b; }, 0) / _ls.length : null;
+      var rv = _avg5 != null ? Math.round(_rookieAvg5ToScore(_avg5)) : 50;
       return { score: rv, value: rv, balance: 0, tier: 0, count: mine.length,
-        avgPs: avgPs ? Math.round(avgPs) : null, eff: eff, window: null };
+        avgPs: avgPs ? Math.round(avgPs) : null, window: null };
     }
 
     // ── Startup / redraft: Value 35 / Starters 35 / Construction 30 ──
@@ -3178,39 +3246,8 @@ _DRAFT_ROOM_HTML = r"""
   // A genuinely even field (low variance) stays tight; a field with real separation
   // spreads out. The raw score is preserved on grade.rawScore.
   function _applyFieldCurve(out){
-    if (!state) return;
+    if (!state || state.type === 'rookie') return;  // rookie grades are absolute (Teams-page letters), not curved
     if (!out || out.length < 3) return;             // need a real field to curve against
-    if (state.type === 'rookie'){
-      // Rookie grade = mostly ABSOLUTE value-over-expected, with a light relative
-      // term as an in-field tiebreaker.
-      //
-      // grade.eff is value drafted / value the pick slots were worth on the consensus
-      // board. Drafting to the board = 1.0; > 1 beat it (caught fallers), < 1 reached.
-      // The ABSOLUTE score anchors the letter to what you actually did: 1.0 -> B, and
-      // each point of eff away from that moves the grade hard, so a big reach sinks to
-      // D/F and a big steal climbs to A+ regardless of how the rest of the field drafted
-      // (reaching a lot should be an F even if everyone else also reached). The RELATIVE
-      // term only spreads teams around the field so a clean mock - where everyone drafts
-      // near the board - still separates the best/worst builds instead of reading flat.
-      var effs = out.map(function(t){ return t.grade.eff; }).filter(function(v){ return v != null; });
-      if (effs.length < 3) return;
-      var em = effs.reduce(function(a, b){ return a + b; }, 0) / effs.length;
-      var ev = effs.reduce(function(a, b){ return a + (b - em) * (b - em); }, 0) / effs.length;
-      var effStd = Math.max(Math.sqrt(ev), 0.008);
-      out.forEach(function(t){
-        t.grade.rawScore = t.grade.score;
-        if (t.grade.eff == null) return;
-        // Absolute: 1.0 -> 73 (B); ~ -13% -> F, ~ +13% -> A+.
-        var absSc = 73 + (t.grade.eff - 1.0) * 200;
-        // Relative: where you sit in the field, clamped so one outlier isn't flung off.
-        var rz = Math.max(-2.5, Math.min(2.5, (t.grade.eff - em) / effStd));
-        var relSc = 73 + rz * 11;
-        var rsc = Math.round(Math.max(0, Math.min(100, 0.7 * absSc + 0.3 * relSc)));
-        t.grade.score = rsc;
-        t.grade.value = rsc;   // keep the "Draft Value" bar in step with the letter
-      });
-      return;
-    }
     var scores = out.map(function(t){ return t.grade.score; });
     var mean = scores.reduce(function(a, b){ return a + b; }, 0) / scores.length;
     var variance = scores.reduce(function(a, b){ return a + (b - mean) * (b - mean); }, 0) / scores.length;
@@ -3286,15 +3323,15 @@ _DRAFT_ROOM_HTML = r"""
       + '<span class="dr-gbar-pct" style="color:' + col + '">' + pct + '</span>'
       + '</div>';
   }
-  // Per-component max points. Rookie grade is value-only (value over expected
-  // draft capital); startup/redraft weights pick value, lineup strength, construction.
+  // Per-component max points. Rookie grade is a single 0-100 (the averaged per-pick
+  // letter grade); startup/redraft weights pick value, lineup strength, construction.
   function gradeMax(){
     return (state.type === 'rookie') ? { value:100, balance:0, tier:0 }
                                      : { value:35, balance:30, tier:35 };
   }
   function gradeBars(g){
     var m = gradeMax();
-    if (state.type === 'rookie') return gradeBar('Draft Value', g.value, m.value, 'How much value you drafted versus what your pick slots were worth on the consensus board. Beating the board (catching fallers, taking value over reaches) scores higher.');
+    if (state.type === 'rookie') return gradeBar('Draft Grade', g.value, m.value, 'Average of your per-pick grades. Each pick is scored on ADP value (vs the player\'s rookie ADP), whether the best player available was still on the board, and positional need.');
     // g.tier holds the starting-lineup strength component.
     return gradeBar('Value', g.value, m.value, 'How strong your picks are by pick score, weighted toward the earlier rounds.')
       + gradeBar('Starters', g.tier, m.tier, 'How good your projected starting lineup is versus a league-average team.')
@@ -3308,10 +3345,6 @@ _DRAFT_ROOM_HTML = r"""
     var g = gradeTeam();
     if (g){
       var gSub = '';
-      if (state.type === 'rookie' && g.eff != null){
-        var _ovr = Math.round((g.eff - 1.0) * 100);
-        gSub = (_ovr >= 0 ? '+' : '') + _ovr + '% vs board value';
-      }
       if (!gSub){ var _ga = teamArchetype(); if (_ga) gSub = _ga.label; }
       var _gwn = g.window;
       var gAgeSub = _gwn ? (esc(_gwn.label) + ' \xb7 Avg age ' + _gwn.avgAge.toFixed(1)) : '';
@@ -4387,10 +4420,6 @@ _DRAFT_ROOM_HTML = r"""
     if (g){
       var gl = gradeLetter(g.score);
       var gp = null;
-      if (state.type === 'rookie' && g.eff != null){
-        var _go = Math.round((g.eff - 1.0) * 100);
-        gp = (_go >= 0 ? '+' : '') + _go + '% vs board value';
-      }
       if (!gp){ var _sa = teamArchetype(); if (_sa) gp = _sa.label; }
       ctx.fillStyle = clr.win; ctx.font = 'bold 15px system-ui,Arial,sans-serif';
       ctx.fillText('Grade ' + gl + (gp ? ('  \xb7  ' + gp) : ''), pad, pad + 76);
