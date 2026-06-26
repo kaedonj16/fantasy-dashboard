@@ -4066,7 +4066,7 @@ _DRAFT_ROOM_HTML = r"""
       h += '<img class="dr-hs" src="' + playerImgUrl(pl) + '" alt="" onerror="this.style.visibility=\'hidden\'">';
       h += '<div class="dr-cell-body"><div class="dr-cell-name">' + esc(pl.name) + '</div>'
         + '<div class="dr-cell-meta"><span class="dr-posbadge" style="background:' + posColor(pl.position) + '">' + esc(pl.position) + '</span> ' + esc(pl.team || '') + '</div></div>';
-    }
+    }scored 98 this 
     return h;
   }
   function buildBoard(){

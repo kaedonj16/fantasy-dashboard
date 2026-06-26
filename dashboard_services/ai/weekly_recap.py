@@ -469,6 +469,6 @@ def get_weekly_ai_recap_preview() -> str:
             "Gridiron Ghosts lost to Dynasty Kings again. Week 7 rematch, same result, bigger margin this time. They're 0-2 against them on the season and the two losses account for the entire gap between their records. Not ideal.",
             "Slim Reaper Lemonade is doing that thing where they keep putting up big scores and losing anyway. Top-three scorer three weeks in a row, 1-2 in that stretch. Their points total is second in the league and they're sitting at 3-4. At some point that has to even out.",
             "Three teams are tied at 4-3 with five weeks left and two of them play each other in Week 8. Someone's going to separate. The bubble is real and a couple people in this league haven't fully processed that yet.",
-            "Also Rebuild from Hell scored 98 this week after putting up 134 last week. No notes. Fantasy is what it is.",
+            "Also JiggyJay30 scored 98 this week after putting up 134 last week. No notes. Fantasy is what it is.",
         ],
     })
