@@ -3004,49 +3004,41 @@ _DRAFT_ROOM_HTML = r"""
     var avgPs = psVals.length ? psVals.reduce(function(a, b){ return a + b; }, 0) / psVals.length : null;
 
     if (state.type === 'rookie'){
-      // Rookie drafts are about talent/value, not roster construction. The pick
-      // score can't drive the grade here: its youth term is near-maxed for every
-      // rookie and its ADP term floors anyone taken near consensus, so avgPs sits
-      // in a narrow high band and nearly everyone graded an A. Instead, grade each
-      // pick on the VALUE IT RETURNED FOR THE SLOT SPENT. A player who fell past his
-      // ADP (a steal) grades up; a reach grades down; taking the consensus board
-      // player is an average (~B) result. A modest absolute-caliber term keeps
-      // premium picks used on premium talent ahead of late-round dart throws.
-      var topVal = _gmaxVal;   // top rookie value across the whole draft (caliber ref)
+      // ── Rookie draft grade: value over expected draft capital ──
+      // Averaging per-pick scores never worked here: every team drafts decent
+      // rookies, so the scores barely differ and grades collapse into one band.
+      // Instead, measure how well a team converted ITS draft capital into value.
+      //
+      // Build the consensus value board for the whole draft (every player taken,
+      // plus the remaining pool, ranked by dynasty value). The player a team
+      // "should" land at pick N is the Nth-most-valuable player, so a team's
+      // EXPECTED haul is the sum of board values at its own pick slots. Compare
+      // that to the value it ACTUALLY drafted: beating the board - catching
+      // fallers, taking value while others reach for ADP - grades up; reaching
+      // grades down. Capital is handled automatically: each team is judged against
+      // what its own slots were worth, so picking late is never a penalty. The
+      // field curve (in _applyFieldCurve) turns the efficiency ratio into letters.
+      var board = [];
       Object.keys(state.picks).forEach(function(k){
         var pp = state.picks[k]; if (!pp) return;
         var fv = playersById[String(pp.id)];
         var vv = fv ? valOf(fv) : (pp.val || 0);
-        if (vv > topVal) topVal = vv;
+        if (vv > 0) board.push(vv);
       });
-      if (topVal <= 0) topVal = 1;
-      var _nT = state.teams || 12, rW = 0, rTot = 0;
+      players.forEach(function(q){ var v = valOf(q); if (v > 0) board.push(v); });
+      board.sort(function(a, b){ return b - a; });
+      var expSum = 0, accSum = 0;
       picks.forEach(function(x){
-        var full = playersById[String(x.id)];
-        var padp = full ? adpOf(full) : null;
-        // Value-efficiency: relative steal vs the pick slot (mirrors pickScore.relGap).
-        // 0.5 = drafted exactly at ADP; > 0.5 = fell to you; < 0.5 = reached.
-        var eff = 0.5;
-        if (padp != null){
-          var relSteal = (x.pn - padp) / Math.max(padp, 3);
-          eff = clamp01(0.5 + relSteal * 0.8);
-        }
-        var caliber = clamp01((x.val || 0) / topVal);
-        // Efficiency dominates: taking the consensus board player (no value gained)
-        // should land a B, not an A. Caliber is only a light tiebreaker so premium
-        // picks used on premium talent edge out late dart throws - it must not
-        // become a free A-floor for anyone who drafts chalk at the top.
-        var combined = 0.82 * eff + 0.18 * caliber;
-        // Light early-round weight: a R1 hit/miss defines the draft more than R5.
-        var _round = Math.max(1, Math.ceil((x.pn || 1) / _nT));
-        var _w = 1.0 / Math.pow(_round, 0.5);
-        rW += combined * _w; rTot += _w;
+        var idx = Math.min(Math.max(board.length - 1, 0), Math.max(0, (x.pn || 1) - 1));
+        expSum += board.length ? board[idx] : 0;
+        accSum += (x.val || 0);
       });
-      var rCombined = rTot > 0 ? rW / rTot : 0.5;
-      // Map: ~0.5 (at-ADP, average caliber) -> 70 (B); steals climb to A/A+, reaches
-      // fall to C/D. Centers the field on B so a great grade has to be earned.
-      var rv = Math.round(Math.max(0, Math.min(100, 30 + rCombined * 80)));
-      return { score: rv, value: rv, balance: 0, tier: 0, count: mine.length, avgPs: avgPs ? Math.round(avgPs) : null, window: null };
+      var eff = expSum > 0 ? accSum / expSum : 1.0;
+      // Absolute fallback used only when there's no field to curve (solo/tiny field):
+      // +1% over the board ≈ +0.8 pts, so drafting to consensus lands a solid B.
+      var rv = Math.round(Math.max(0, Math.min(100, 73 + (eff - 1.0) * 80)));
+      return { score: rv, value: rv, balance: 0, tier: 0, count: mine.length,
+        avgPs: avgPs ? Math.round(avgPs) : null, eff: eff, window: null };
     }
 
     // ── Startup / redraft: Value 35 / Starters 35 / Construction 30 ──
@@ -3186,8 +3178,31 @@ _DRAFT_ROOM_HTML = r"""
   // A genuinely even field (low variance) stays tight; a field with real separation
   // spreads out. The raw score is preserved on grade.rawScore.
   function _applyFieldCurve(out){
-    if (!state || state.type === 'rookie') return;  // rookie grades are absolute talent, not comparative
+    if (!state) return;
     if (!out || out.length < 3) return;             // need a real field to curve against
+    if (state.type === 'rookie'){
+      // Rookie grades curve on the value-over-expected ratio (grade.eff). Drafting
+      // to the consensus board = eff 1.0; > 1 beat it, < 1 reached. The center is
+      // absolute-aware: a field that, on the whole, beat consensus floats above a B
+      // and one that reached sinks below it, so a strong class isn't forced down to
+      // C's and a weak one isn't propped up. The std floor stops a near-identical
+      // field from being blown apart into A-through-F (no fabricated spread).
+      var effs = out.map(function(t){ return t.grade.eff; }).filter(function(v){ return v != null; });
+      if (effs.length < 3) return;
+      var em = effs.reduce(function(a, b){ return a + b; }, 0) / effs.length;
+      var ev = effs.reduce(function(a, b){ return a + (b - em) * (b - em); }, 0) / effs.length;
+      var effStd = Math.max(Math.sqrt(ev), 0.06);
+      var rCenter = 73 + (em - 1.0) * 40;   // field's absolute quality sets the middle
+      out.forEach(function(t){
+        t.grade.rawScore = t.grade.score;
+        if (t.grade.eff == null) return;
+        var rz = (t.grade.eff - em) / effStd;
+        var rsc = Math.round(Math.max(0, Math.min(100, rCenter + rz * 11)));
+        t.grade.score = rsc;
+        t.grade.value = rsc;   // keep the "Draft Value" bar in step with the letter
+      });
+      return;
+    }
     var scores = out.map(function(t){ return t.grade.score; });
     var mean = scores.reduce(function(a, b){ return a + b; }, 0) / scores.length;
     var variance = scores.reduce(function(a, b){ return a + (b - mean) * (b - mean); }, 0) / scores.length;
@@ -3263,15 +3278,15 @@ _DRAFT_ROOM_HTML = r"""
       + '<span class="dr-gbar-pct" style="color:' + col + '">' + pct + '</span>'
       + '</div>';
   }
-  // Per-component max points. Rookie grade is value-only (avg pick score);
-  // startup/redraft weights pick value, starting-lineup strength, and construction.
+  // Per-component max points. Rookie grade is value-only (value over expected
+  // draft capital); startup/redraft weights pick value, lineup strength, construction.
   function gradeMax(){
     return (state.type === 'rookie') ? { value:100, balance:0, tier:0 }
                                      : { value:35, balance:30, tier:35 };
   }
   function gradeBars(g){
     var m = gradeMax();
-    if (state.type === 'rookie') return gradeBar('Pick Value', g.value, m.value, 'How strong your picks are by pick score, weighted toward the earlier rounds.');
+    if (state.type === 'rookie') return gradeBar('Draft Value', g.value, m.value, 'How much value you drafted versus what your pick slots were worth on the consensus board. Beating the board (catching fallers, taking value over reaches) scores higher.');
     // g.tier holds the starting-lineup strength component.
     return gradeBar('Value', g.value, m.value, 'How strong your picks are by pick score, weighted toward the earlier rounds.')
       + gradeBar('Starters', g.tier, m.tier, 'How good your projected starting lineup is versus a league-average team.')
@@ -3284,7 +3299,11 @@ _DRAFT_ROOM_HTML = r"""
     var html = '';
     var g = gradeTeam();
     if (g){
-      var gSub = (state.type === 'rookie' && g.avgPs != null) ? ('Avg pick score ' + g.avgPs) : '';
+      var gSub = '';
+      if (state.type === 'rookie' && g.eff != null){
+        var _ovr = Math.round((g.eff - 1.0) * 100);
+        gSub = (_ovr >= 0 ? '+' : '') + _ovr + '% vs board value';
+      }
       if (!gSub){ var _ga = teamArchetype(); if (_ga) gSub = _ga.label; }
       var _gwn = g.window;
       var gAgeSub = _gwn ? (esc(_gwn.label) + ' \xb7 Avg age ' + _gwn.avgAge.toFixed(1)) : '';
@@ -4359,7 +4378,11 @@ _DRAFT_ROOM_HTML = r"""
     var g = gradeTeam();
     if (g){
       var gl = gradeLetter(g.score);
-      var gp = (state.type === 'rookie' && g.avgPs != null) ? ('Avg pick score ' + g.avgPs) : null;
+      var gp = null;
+      if (state.type === 'rookie' && g.eff != null){
+        var _go = Math.round((g.eff - 1.0) * 100);
+        gp = (_go >= 0 ? '+' : '') + _go + '% vs board value';
+      }
       if (!gp){ var _sa = teamArchetype(); if (_sa) gp = _sa.label; }
       ctx.fillStyle = clr.win; ctx.font = 'bold 15px system-ui,Arial,sans-serif';
       ctx.fillText('Grade ' + gl + (gp ? ('  \xb7  ' + gp) : ''), pad, pad + 76);
