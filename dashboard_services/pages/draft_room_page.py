@@ -3004,10 +3004,15 @@ _DRAFT_ROOM_HTML = r"""
     var avgPs = psVals.length ? psVals.reduce(function(a, b){ return a + b; }, 0) / psVals.length : null;
 
     if (state.type === 'rookie'){
-      // Rookie drafts are about talent/value, not roster construction. The grade
-      // is the average pick score (already a 0-100 talent+value signal), so two
-      // elite picks (e.g. 95 + 92) land an A+ regardless of positional balance.
-      var rv = avgPs != null ? Math.round(clamp01(avgPs / 100) * 100) : 50;
+      // Rookie drafts are about talent/value, not roster construction, so the grade
+      // is driven by the average pick score (a 0-100 talent+value signal). But avgPs
+      // clusters high - every team takes good available rookies - so a raw mapping
+      // handed nearly everyone an A. Contract the scale toward an elite anchor so
+      // only genuinely strong classes earn top grades: an average draft lands in the
+      // B range, weak value falls to C/D, and a truly elite haul still reaches A+.
+      var rawR = avgPs != null ? clamp01(avgPs / 100) * 100 : 50;
+      var ANCHOR_R = 97, GAIN_R = 1.5;   // grades fan out below the anchor as value drops
+      var rv = Math.round(Math.max(0, Math.min(100, ANCHOR_R - (ANCHOR_R - rawR) * GAIN_R)));
       return { score: rv, value: rv, balance: 0, tier: 0, count: mine.length, avgPs: avgPs ? Math.round(avgPs) : null, window: null };
     }
 
