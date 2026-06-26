@@ -396,11 +396,11 @@ _DRAFT_ROOM_HTML = r"""
   .dr-cell-claimed { box-shadow: inset 3px 0 0 #f59e0b; }     /* traded-in pick */
   .dr-cell-claimable { cursor: pointer; }
   .dr-cell-claimable:hover { outline: 1px dashed var(--accent,#38bdf8); outline-offset: -2px; }
-  .dr-cell-mineflag { position: absolute; top: 2px; right: 5px; font-size: 8px; font-weight: 800;
+  .dr-cell-mineflag { position: absolute; bottom: 2px; right: 5px; font-size: 8px; font-weight: 800;
     letter-spacing: .04em; color: var(--accent,#38bdf8); }
   .dr-cell-claimed .dr-cell-mineflag { color: #f59e0b; }
   /* Traded pick: who the pick was dealt to (shown on another team's seat). */
-  .dr-cell-owner { position: absolute; top: 2px; right: 5px; font-size: 8px; font-weight: 800;
+  .dr-cell-owner { position: absolute; bottom: 2px; right: 5px; font-size: 8px; font-weight: 800;
     letter-spacing: .04em; color: #f59e0b;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
   .dr-cell-just { animation: drPop .35s ease; }
