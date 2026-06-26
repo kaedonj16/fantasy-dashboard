@@ -4891,6 +4891,13 @@ _DRAFT_ROOM_HTML = r"""
     window.addEventListener('mousemove', onMove);
     window.addEventListener('touchend', onUp);
     window.addEventListener('mouseup', onUp);
+    // Don't interfere with options panel interactions
+    var optsPanel = document.getElementById('drOptsPanel');
+    var optsBtn = document.getElementById('drOptsBtn');
+    if (optsPanel && optsBtn){
+      optsPanel.addEventListener('touchstart', function(e){ e.stopPropagation(); }, { passive: false });
+      optsBtn.addEventListener('touchstart', function(e){ e.stopPropagation(); }, { passive: false });
+    }
     // Tapping a tab while peeking lifts the sheet to mid so the content shows.
     document.getElementById('drSideTabs').addEventListener('click', function(){
       if (mq.matches && snapIdx === 2) snapTo(1);
