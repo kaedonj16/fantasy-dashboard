@@ -2976,6 +2976,52 @@ _DRAFT_ROOM_HTML = r"""
     var label = avgAge <= 24.5 ? 'Future' : (avgAge >= 26.5 ? 'Win-Now' : 'Balanced');
     return { label: label, avgAge: avgAge };
   }
+  // Grade a single rookie pick with the BPA/ADP-diff letter system.
+  // Mirrors pick_grade() in app.py used by the Teams-tab draft grader.
+  function rookiePickGrade(adpDiff, need, isBpa, bpaGap, pos, qbCount, numTeams){
+    if (adpDiff == null) return 'N/A';
+    var bigReach = -(numTeams * 1.1);
+    var score;
+    if      (adpDiff >= 4)        score = 4;
+    else if (adpDiff >= 2)        score = 3;
+    else if (adpDiff >= -3)       score = 2;
+    else if (adpDiff >= bigReach) score = 1;
+    else                          score = 0;
+    if (isBpa) {
+      score += (adpDiff < -3) ? 1 : 2;
+    } else if (bpaGap != null && bpaGap >= 5) {
+      score = Math.max(score - 1, 0);
+    }
+    if (need) {
+      score += 1;
+    } else if (pos === 'QB' && !state.sf && qbCount >= 2) {
+      score = Math.max(score - 2, 0);
+    } else if (pos === 'QB' && !state.sf && qbCount >= 1) {
+      score = Math.max(score - 1, 0);
+    }
+    if (adpDiff >= -3) score = Math.max(score, 1);
+    if (need && adpDiff >= -4) score = Math.max(score, 2);
+    var map = {5:'A+', 4:'A', 3:'B', 2:'C', 1:'D', 0:'F'};
+    return map[Math.min(score, 5)] || 'F';
+  }
+  // Average letter grades into a team letter. Mirrors team_grade() in app.py.
+  function teamLetterFromPicks(letters){
+    if (!letters.length) return 'N/A';
+    var gv = {'A+':5,'A':4,'B':3,'C':2,'D':1,'F':0,'N/A':2};
+    var avg = letters.reduce(function(s,g){ return s + (gv[g] != null ? gv[g] : 2); }, 0) / letters.length;
+    if (avg >= 4.5) return 'A+';
+    if (avg >= 3.5) return 'A';
+    if (avg >= 2.5) return 'B';
+    if (avg >= 1.5) return 'C';
+    if (avg >= 0.5) return 'D';
+    return 'F';
+  }
+  // Map team letter to a canonical 0-100 score for gradeLetter() and sorting.
+  // Chosen so gradeLetter(letterToScore(L)) === L for each letter band.
+  function letterToScore(letter){
+    return {'A+':92,'A':87,'B':70,'C':55,'D':43,'F':20,'N/A':55}[letter] || 55;
+  }
+
   // Grade any team's picks. `mine` = sorted [{pn, p}] for one team.
   function gradePicks(mine){
     if (!mine || !mine.length) return null;
@@ -3004,10 +3050,52 @@ _DRAFT_ROOM_HTML = r"""
     var avgPs = psVals.length ? psVals.reduce(function(a, b){ return a + b; }, 0) / psVals.length : null;
 
     if (state.type === 'rookie'){
-      // Overall rookie grade = the Teams-page draft-tab team grade: the average of the
-      // per-pick pick scores (avg_pick_score). The per-pick PS chips are unchanged.
-      var rv = avgPs != null ? Math.round(Math.max(0, Math.min(100, avgPs))) : 50;
-      return { score: rv, value: rv, balance: 0, tier: 0, count: mine.length,
+      // Overall letter grade uses the BPA/ADP-diff system (same as the Teams-tab draft
+      // grade). Per-pick 0-100 pick-score chips are unchanged.
+      var _numTeams = state.teams || 12;
+      // Reconstruct which players were taken before each pick number so we can compute
+      // BPA (best player available) for each of this team's picks.
+      var _allPicks = [];
+      Object.keys(state.picks).forEach(function(k){
+        var pn = parseInt(k, 10);
+        if (state.picks[k]) _allPicks.push({ pn: pn, id: String(state.picks[k].id) });
+      });
+      _allPicks.sort(function(a, b){ return a.pn - b.pn; });
+      var _takenBefore = {}, _cumTaken = {};
+      _allPicks.forEach(function(ap){
+        _takenBefore[ap.pn] = Object.assign({}, _cumTaken);
+        _cumTaken[ap.id] = true;
+      });
+      var _rCounts = { QB:0, RB:0, WR:0, TE:0 };
+      var _letters = [];
+      picks.forEach(function(x){
+        var full = playersById[String(x.id)];
+        var myAdp = full ? adpOf(full) : null;
+        var adpDiff = (myAdp != null) ? (x.pn - myAdp) : null;
+        var pos = x.pos;
+        var need = (posTargets()[pos] || 0) > (_rCounts[pos] || 0);
+        var qbCount = _rCounts['QB'] || 0;
+        // BPA: find players with a better ADP still on the board at this pick.
+        var _taken = _takenBefore[x.pn] || {};
+        var _betterAdps = [];
+        if (myAdp != null){
+          players.forEach(function(q){
+            if (_taken[String(q.id)]) return;
+            var qa = adpOf(q);
+            if (qa != null && qa < myAdp) _betterAdps.push(qa);
+          });
+          _betterAdps.sort(function(a, b){ return a - b; });
+        }
+        var isBpa = _betterAdps.length === 0;
+        var bpaGap = (_betterAdps.length > 0 && myAdp != null) ? (myAdp - _betterAdps[0]) : null;
+        var letter = rookiePickGrade(adpDiff, need, isBpa, bpaGap, pos, qbCount, _numTeams);
+        if (letter !== 'N/A') _letters.push(letter);
+        if (_rCounts[pos] != null) _rCounts[pos]++;
+      });
+      var teamLetter = teamLetterFromPicks(_letters);
+      var rv = letterToScore(teamLetter);
+      return { score: rv, value: avgPs != null ? Math.round(avgPs) : 50,
+        balance: 0, tier: 0, count: mine.length,
         avgPs: avgPs ? Math.round(avgPs) : null, window: null };
     }
 
@@ -3233,7 +3321,7 @@ _DRAFT_ROOM_HTML = r"""
   }
   function gradeBars(g){
     var m = gradeMax();
-    if (state.type === 'rookie') return gradeBar('Pick Value', g.value, m.value, 'Your overall grade is the average of your per-pick scores (the same 0-100 pick score shown on each pick).');
+    if (state.type === 'rookie') return gradeBar('Avg Pick Score', g.value, 100, 'The bar shows average 0-100 pick score (same chips shown on each pick). The letter grade uses the BPA/ADP system: did you reach, and was a better player available?');
     // g.tier holds the starting-lineup strength component.
     return gradeBar('Value', g.value, m.value, 'How strong your picks are by pick score, weighted toward the earlier rounds.')
       + gradeBar('Starters', g.tier, m.tier, 'How good your projected starting lineup is versus a league-average team.')
