@@ -4550,40 +4550,44 @@ _DRAFT_ROOM_HTML = r"""
   document.getElementById('drReset').addEventListener('click', resetDraft);
   document.getElementById('drEdit').addEventListener('click', showSetup);
   document.getElementById('drPractice').addEventListener('click', startPracticeMock);
-  // Mobile options menu toggle. Uses the SAME proven pattern as the app's other
-  // dropdowns (custom selects, toolbar settings): a single persistent bubble-phase
-  // document listener closes the menu, and the toggle/panel call stopPropagation so
-  // the opening tap never reaches that listener. One click per tap + stopPropagation
-  // means the gesture that opens the menu can't also close it - on desktop or mobile.
+  // Mobile options menu. A full-screen transparent backdrop (z-index 199) sits
+  // behind the panel (z-index 200) and physically intercepts every outside tap.
+  // No document-level listeners, no stopPropagation races, no ghost-click timing.
+  // touchstart fires before iOS synthesizes a click; preventDefault() on it
+  // suppresses that follow-up click so only one close fires per gesture.
   (function(){
     var optsBtn = document.getElementById('drOptsBtn');
     var optsPanel = document.getElementById('drOptsPanel');
     if (!optsBtn || !optsPanel) return;
-    var openedAt = 0;
-    function closeOpts(){ optsPanel.classList.remove('is-open'); }
-    function openOpts(){ optsPanel.classList.add('is-open'); openedAt = Date.now(); }
+    var backdrop = document.createElement('div');
+    backdrop.style.cssText = 'position:fixed;top:0;right:0;bottom:0;left:0;z-index:199;display:none;-webkit-tap-highlight-color:transparent;cursor:pointer;';
+    document.body.appendChild(backdrop);
+    var ignoreBackdropClick = false;
+    function closeOpts(){
+      optsPanel.classList.remove('is-open');
+      backdrop.style.display = 'none';
+    }
+    function openOpts(){
+      optsPanel.classList.add('is-open');
+      backdrop.style.display = 'block';
+      ignoreBackdropClick = true;
+      setTimeout(function(){ ignoreBackdropClick = false; }, 50);
+    }
     optsBtn.addEventListener('click', function(e){
-      e.preventDefault();
       e.stopPropagation();
-      if (optsPanel.classList.contains('is-open')) closeOpts();
-      else openOpts();
+      optsPanel.classList.contains('is-open') ? closeOpts() : openOpts();
     });
-    // Keep the menu open while interacting inside it (e.g. the speed select); an
-    // action button (.dr-btn) closes it.
     optsPanel.addEventListener('click', function(e){
       e.stopPropagation();
       if (e.target.closest('.dr-btn')) closeOpts();
     });
-    // Outside tap closes the menu. The guard makes this robust on PWAs/touch
-    // devices, where a single tap can dispatch a duplicate or "ghost" click:
-    //   1. ignore events within 400ms of opening (the same gesture that opened it)
-    //   2. ignore taps inside the button or panel (those are handled above)
-    // Relying on stopPropagation alone let a stray second click insta-close it.
-    document.addEventListener('click', function(e){
-      if (!optsPanel.classList.contains('is-open')) return;
-      if (Date.now() - openedAt < 400) return;
-      if (optsBtn.contains(e.target) || optsPanel.contains(e.target)) return;
+    backdrop.addEventListener('touchstart', function(e){
+      if (ignoreBackdropClick) return;
+      e.preventDefault();
       closeOpts();
+    }, { passive: false });
+    backdrop.addEventListener('click', function(){
+      if (!ignoreBackdropClick) closeOpts();
     });
   })();
   document.getElementById('drBaSort').addEventListener('change', renderBA);
