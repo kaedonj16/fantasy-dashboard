@@ -4019,6 +4019,36 @@ _DRAFT_ROOM_HTML = r"""
     if (isMyPick(pn)) return '';
     return teamName(owner);
   }
+  // Pick score for a stored board pick. Mock picks store it at draft time; live/
+  // synced picks don't, so compute it retroactively at the historical pick slot
+  // (same approach gradePicks uses) and cache it back onto the pick object.
+  function storedPickScore(pn, pl){
+    if (!pl) return null;
+    if (pl.ps != null) return pl.ps;
+    var full = playersById[String(pl.id)];
+    if (!full || !players.length) return null;
+    var maxVal = 0; players.forEach(function(q){ var v = valOf(q); if (v > maxVal) maxVal = v; });
+    if (maxVal <= 0) return null;
+    // Owning team's positional counts from this team's earlier picks.
+    var owner = (state.pickOwners && state.pickOwners[pn] != null)
+      ? state.pickOwners[pn] : slotOnClock(pn, state.teams, state.order);
+    var counts = { QB:0, RB:0, WR:0, TE:0 };
+    Object.keys(state.picks).forEach(function(k){
+      var kp = parseInt(k, 10);
+      if (kp >= pn || !state.picks[k]) return;
+      var o2 = (state.pickOwners && state.pickOwners[kp] != null)
+        ? state.pickOwners[kp] : slotOnClock(kp, state.teams, state.order);
+      if (o2 !== owner) return;
+      var pos2 = (state.picks[k].position || '').toUpperCase();
+      if (counts[pos2] != null) counts[pos2]++;
+    });
+    var saved = state.current;
+    state.current = pn;
+    var ps = pickScore(full, maxVal, counts);
+    state.current = saved;
+    pl.ps = ps;   // memoize (matches what gradePicks would compute)
+    return ps;
+  }
   function cellInner(pn){
     var pl = state.picks[pn];
     var h = '<span class="dr-cell-num">' + pn + '</span>';
@@ -4027,7 +4057,7 @@ _DRAFT_ROOM_HTML = r"""
     if (_own) h += '<span class="dr-cell-owner">' + esc(_own) + '</span>';
     if (pl){
       if (_cellShowPs) {
-        var _cvps = pl.ps != null ? pl.ps : null;
+        var _cvps = storedPickScore(pn, pl);
         if (_cvps != null) h += '<span class="dr-cell-val" style="color:' + psColor(_cvps) + '">' + _cvps + '</span>';
       } else {
         if (pl.val != null) h += '<span class="dr-cell-val">' + Math.round(pl.val) + '</span>';
