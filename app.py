@@ -18931,8 +18931,15 @@ def api_sparklines():
         return _api_err("Sparklines unavailable", e)
 
 
-@app.route("/api/league-players")
-def api_league_players():
+def _build_league_players_payload(kdef: bool = False) -> dict:
+    """Build the full enriched player pool the Draft Room / Prospects pages use.
+
+    Factored out of the /api/league-players route so server-side consumers (e.g.
+    the draft-grades pick-score grader) can score players against the EXACT same
+    value / ADP / PPG / tier inputs the front-end sees, guaranteeing the Teams
+    page and the Draft Room show the same pick scores. Returns the raw dict
+    (un-jsonified); the route wraps it with jsonify(_sanitize_for_json(...)).
+    """
     try:
         model_value_table = [dict(p) for p in (get_model_value_table_cached() or [])]
     except Exception as e:
@@ -19469,7 +19476,7 @@ def api_league_players():
 
     # Optionally append K/DEF (draftable in redraft/startup with K/DEF slots) when ?kdef=1.
     # Kept out of the default response so dynasty rankings stay skill-position only.
-    if request.args.get("kdef"):
+    if kdef:
         try:
             from utils.utils import load_players_index as _lpi, NFL_TEAMS as _nfl_teams
             # Reuse the FantasyPros projections cache (keyed by id) so kickers carry
@@ -19520,11 +19527,18 @@ def api_league_players():
         except Exception as _e_kdef:
             logger.info("[api/league-players] K/DEF append skipped: %s", _e_kdef)
 
-    return jsonify(_sanitize_for_json({
+    return {
         "players": model_value_table,
         "tier_thresholds": _tier_thresholds_all,
         "adp_sources": _adp_sources,
-    }))
+    }
+
+
+@app.route("/api/league-players")
+def api_league_players():
+    return jsonify(_sanitize_for_json(
+        _build_league_players_payload(kdef=bool(request.args.get("kdef")))
+    ))
 
 
 @app.route("/api/teams")
@@ -22307,7 +22321,7 @@ def _ps_tier_of(value: float, thresholds: list):
 def _compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
                         avg_pick, pick_no, max_val, draft_type, is_sf,
                         need_raw, qb_count, total_picks=None, num_teams=None,
-                        ppg_norm=None) -> int:
+                        ppg_norm=None, ppr=1.0, tep=0.0, is_tier_cliff=False) -> int:
     pos = (pos or "").upper()
     # DB-sourced numbers arrive as decimal.Decimal; coerce to float so they mix
     # with the float weights below (Decimal * float raises TypeError).
@@ -22347,6 +22361,10 @@ def _compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
         adp_val = 0.5
 
     tier_score = _ps_clamp01((10 - min(tier, 9)) / 9) if tier else value_norm
+    # Tier-cliff boost: position scarcity when this player's tier is drying up
+    # (≤2 left in the bucket). Mirrors the Draft Room's isTierCliff() bump.
+    if is_tier_cliff:
+        tier_score = _ps_clamp01(tier_score + 0.15)
 
     need_ramp = _ps_clamp01((pick_no - 1) / 12.0)
     need = (1 - need_ramp) * 0.5 + need_ramp * need_raw
@@ -22384,6 +22402,16 @@ def _compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
         if qb_count >= 2:
             _pen *= 0.7
         s *= _pen
+
+    # Scoring-format adjustments: shift toward the build the league's scoring
+    # rewards. Mirrors the Draft Room's scoringCfg() multipliers exactly.
+    if tep and tep > 0 and pos == "TE":
+        s *= (1 + 0.12 * tep)
+    if pos in ("WR", "TE"):
+        if ppr is not None and ppr >= 1:
+            s *= 1.02
+    elif pos == "RB" and ppr is not None and ppr <= 0:
+        s *= 1.03
 
     # Depth normalization: re-anchor the 0-100 scale to what's achievable at this
     # pick slot so late-round picks aren't unfairly buried (mirrors the Draft Room).
@@ -22607,56 +22635,83 @@ def api_draft_grades():
         ps_targets: dict[str, float] = {}
         ps_pool_sorted: list = []
         ps_ready = False
+        # Pick-score ADP (separate from the letter-grade adp_info): sourced from
+        # the SAME league-players payload the Draft Room uses, so the score's ADP
+        # term matches the front-end exactly.
+        adp_ps_by_id: dict[str, float] = {}
+        # Tier-cliff lookup: (pos|tier) -> count still on the board after the draft.
+        tier_remaining: dict[str, int] = {}
+        # League scoring (PPR / TE-premium) for the format multipliers; defaults
+        # to full PPR / no TEP, matching the Draft Room's setup defaults.
+        _ppr, _tep = 1.0, 0.0
         try:
-            mvt = get_model_value_table_cached() or []
-            for _p in mvt:
-                _pid = str(_p.get("id") or "")
-                if not _pid:
-                    continue
-                val_by_id[_pid] = {
-                    "value": float(_p.get("value") or 0),
-                    "sf_value": float(_p.get("sf_value") or _p.get("value") or 0),
-                    "age": _p.get("age"),
-                    "position": str(_p.get("position") or "").upper(),
-                }
-            # Rookie drafts: overlay rookie-board values/ages so prospects score.
-            if _draft_type == "rookie":
+            _lg_sc = (get_league(platform, league_id, season) or {}).get("scoring_settings") or {}
+            if _lg_sc.get("rec") is not None:
+                _ppr = float(_lg_sc.get("rec") or 0)
+            _tep = float(_lg_sc.get("bonus_rec_te") or 0)
+        except Exception:
+            pass
+        try:
+            # Source value / ADP / PPG / age / momentum / tier from the SAME
+            # enriched pool the Draft Room consumes (/api/league-players), so the
+            # Teams page scores against identical inputs.
+            _lp_payload = _build_league_players_payload(kdef=False)
+            lp_players = _lp_payload.get("players") or []
+            lp_by_id = {str(_p.get("id")): _p for _p in lp_players if _p.get("id") is not None}
+
+            # Mirror the Draft Room's adpOf() / ppgOf() field selection by draft type.
+            def _lp_adp(_d):
+                if _draft_type == "rookie":
+                    return _d.get("sf_rookie_avg_pick") if is_sf else _d.get("rookie_avg_pick")
+                if _draft_type == "redraft":
+                    return _d.get("sf_redraft_avg_pick") if is_sf else _d.get("redraft_avg_pick")
+                return _d.get("sf_avg_pick") if is_sf else _d.get("avg_pick")
+
+            def _lp_ppg(_d):
+                _v = _d.get("proj_ppg")
+                if _v is None:
+                    _v = _d.get("ppg")
                 try:
-                    from data_building.rookie_pipeline.pipeline import (
-                        get_rookie_rankings_from_db, get_active_rookie_class,
-                    )
-                    for _r in (get_rookie_rankings_from_db(get_active_rookie_class()) or []):
-                        _sid = str(_r.get("sleeper_id") or "")
-                        if not _sid:
-                            continue
-                        _ex = val_by_id.get(_sid) or {}
-                        _v = float(_r.get("rookie_value") or _ex.get("value") or 0)
-                        _vsf = float(_r.get("rookie_sf_value") or _r.get("rookie_value") or _ex.get("sf_value") or 0)
-                        val_by_id[_sid] = {
-                            "value": _v, "sf_value": _vsf,
-                            "age": _r.get("age") if _r.get("age") is not None else _ex.get("age"),
-                            "position": str(_r.get("position") or _ex.get("position") or "").upper(),
-                            # Rookie-class tier from the prospect grade (prospects page),
-                            # so rookie-draft pick scores tier off the rookie pool.
-                            "prospect_tier": (int(_r["tier"]) if _r.get("tier") is not None else None),
-                        }
-                except Exception as _e_rk:
-                    logger.info("[draft-grades] rookie value overlay skipped: %s", _e_rk)
-            # Momentum (7-day overall rank change) from the player_values table.
-            try:
-                from dashboard_services.db import get_conn as _gc_ps
-                with _gc_ps() as _rc:
-                    for _r in _rc.execute(
-                        "SELECT player_id, rank_change_7d FROM player_values "
-                        "WHERE rank_change_7d IS NOT NULL"
-                    ).fetchall():
-                        mom_by_id[str(_r["player_id"])] = _r["rank_change_7d"]
-            except Exception:
-                pass
-            # Tier thresholds for this league type & size.
-            tier_thresholds = compute_tier_thresholds(mvt, "sf" if is_sf else "1qb", _num_teams) or []
-            # VOR replacement levels + need targets from the Draft Room's default
-            # roster shape (1QB/2RB/3WR/1TE/1FLEX, SF adds a SUPER_FLEX, 7 bench).
+                    return float(_v) if _v is not None else None
+                except (TypeError, ValueError):
+                    return None
+
+            for _pid, _d in lp_by_id.items():
+                _pos_lp = str(_d.get("position") or "").upper()
+                val_by_id[_pid] = {
+                    "value": float(_d.get("value") or 0),
+                    "sf_value": float(_d.get("sf_value") or _d.get("value") or 0),
+                    "age": _d.get("age"),
+                    "position": _pos_lp,
+                    # Rookie-class tier from the prospect grade (prospects page).
+                    "prospect_tier": (int(_d["prospect_tier"]) if _d.get("prospect_tier") is not None else None),
+                }
+                _m = _d.get("rank_change_7d")
+                if _m is not None:
+                    try:
+                        mom_by_id[_pid] = float(_m)
+                    except (TypeError, ValueError):
+                        pass
+                _pv = _lp_ppg(_d)
+                if _pv is not None and _pv > 0:
+                    ppg_by_id[_pid] = _pv
+                _a = _lp_adp(_d)
+                if _a is not None:
+                    try:
+                        adp_ps_by_id[_pid] = float(_a)
+                    except (TypeError, ValueError):
+                        pass
+
+            # Redraft ADP fallback: value-rank when no redraft ADP feed (mirrors
+            # the Draft Room's _radp fallback). Only fills players missing an ADP.
+            if _draft_type == "redraft":
+                _rd_rank = 0
+                for _pid, _v in sorted(redraft_val_by_id.items(), key=lambda kv: kv[1], reverse=True):
+                    _rd_rank += 1
+                    adp_ps_by_id.setdefault(_pid, float(_rd_rank))
+
+            # Tier thresholds for this league type & size (startup tiers off value).
+            tier_thresholds = compute_tier_thresholds(lp_players, "sf" if is_sf else "1qb", _num_teams) or []
             _vkey = "sf_value" if is_sf else "value"
 
             def _eff_val(_pid, _d):
@@ -22665,6 +22720,15 @@ def api_draft_grades():
                 if _draft_type == "redraft":
                     return float(redraft_val_by_id.get(_pid, 0) or 0)
                 return float(_d.get(_vkey) or 0)
+
+            # The tier the pick score uses for a player (mirrors the call site /
+            # the Draft Room's tierOf): rookie→prospect tier, startup→value tier.
+            def _score_tier(_pid, _d, _val):
+                if _draft_type == "redraft":
+                    return None
+                if _draft_type == "rookie":
+                    return _d.get("prospect_tier")
+                return _ps_tier_of(_val, tier_thresholds) if _d.get("position") in CORE_POS else None
 
             _starters = (
                 {"QB": 1.5, "RB": 2.0, "WR": 3.0, "TE": 1.0} if is_sf
@@ -22681,6 +22745,13 @@ def api_draft_grades():
                 _ev = _eff_val(_pid, _d)
                 _by_pos[_pp].append(_ev)
                 ps_pool_sorted.append((_ev, _pid))
+                # Tier-cliff: count players of each (pos|tier) still UNDRAFTED after
+                # this draft, matching the Draft Room's post-draft availablePool().
+                if _pid not in drafted_player_ids:
+                    _ct = _score_tier(_pid, _d, _ev)
+                    if _ct is not None:
+                        _ck = f"{_pp}|{_ct}"
+                        tier_remaining[_ck] = tier_remaining.get(_ck, 0) + 1
             for _pp, _arr in _by_pos.items():
                 _arr.sort(reverse=True)
                 if not _arr:
@@ -22691,22 +22762,8 @@ def api_draft_grades():
                 repl_by_pos[_pp] = _arr[_idx]
             ps_pool_sorted.sort(key=lambda x: x[0], reverse=True)
 
-            # Projected PPG by player (FantasyPros cache, keyed by id) + a
-            # position-relative scale (replacement -> 0, elite -> 1) so the pick
-            # score's production term matches the Draft Room's ppgNormOf.
-            try:
-                _fp_ppg = read_json_cached(
-                    os.path.join("cache", f"fp_projections_{season}_ppr.json")
-                ) or {}
-                for _pid, _e in _fp_ppg.items():
-                    try:
-                        _pv = float((_e or {}).get("ppg") or 0)
-                        if _pv > 0:
-                            ppg_by_id[str(_pid)] = _pv
-                    except (TypeError, ValueError):
-                        pass
-            except Exception:
-                pass
+            # Position-relative PPG scale (replacement -> 0, elite -> 1) from the
+            # same projected PPG the Draft Room's ppgNormOf uses.
             _ppg_by_pos: dict[str, list] = {"QB": [], "RB": [], "WR": [], "TE": []}
             for _pid, _d in val_by_id.items():
                 _pp = _d.get("position")
@@ -22733,12 +22790,13 @@ def api_draft_grades():
         # Per-team running count of this draft's picks by position (drives need).
         ps_team_counts: dict = _defaultdict(lambda: {"QB": 0, "RB": 0, "WR": 0, "TE": 0})
 
+        # Fixed top value across the whole eligible pool. The Draft Room's GRADING
+        # path (gradePicks/storedPickScore) normalizes against max value over the
+        # FULL pool, not the shrinking available pool, so use a fixed maximum here.
+        _ps_max_fixed = ps_pool_sorted[0][0] if ps_pool_sorted else 0.0
+
         def _ps_max_val() -> float:
-            """Top dynasty value still on the board (mirrors availablePool max)."""
-            for _v, _sid in ps_pool_sorted:
-                if _sid not in taken:
-                    return _v
-            return 0.0
+            return _ps_max_fixed
 
         # ── Calculate positional rankings based on avg_pick ───────────────────────
         pos_rankings: dict[str, dict[str, int]] = {}
@@ -22914,14 +22972,21 @@ def api_draft_grades():
                         _span = _psc["elite"] - _psc["repl"]
                         _ppg_n = (_ps_clamp01((_pv - _psc["repl"]) / _span)
                                   if _span > 0 else _ps_clamp01(_pv / max(_psc["elite"], 1)))
+                    # ADP for the score comes from the SAME feed the Draft Room uses
+                    # (separate from the letter-grade ADP), so the score's ADP term
+                    # matches the front-end. Tier-cliff uses the post-draft board.
+                    _ps_adp = adp_ps_by_id.get(player_id, avg_pick)
+                    _is_cliff = (_tier is not None
+                                 and tier_remaining.get(f"{pos}|{_tier}", 0) <= 2)
                     pick_score = _compute_pick_score(
                         pos=pos, value=_val, vor=_vor, tier=_tier,
                         age=_d.get("age"), rank_change_7d=mom_by_id.get(player_id),
-                        avg_pick=avg_pick, pick_no=pick_no, max_val=_ps_max_val(),
+                        avg_pick=_ps_adp, pick_no=pick_no, max_val=_ps_max_val(),
                         draft_type=_draft_type, is_sf=is_sf, need_raw=_need_raw,
                         qb_count=ps_team_counts[rid].get("QB", 0),
                         total_picks=_num_teams * _draft_rounds,
                         num_teams=_num_teams, ppg_norm=_ppg_n,
+                        ppr=_ppr, tep=_tep, is_tier_cliff=_is_cliff,
                     )
 
             picks_by_roster[rid].append({
