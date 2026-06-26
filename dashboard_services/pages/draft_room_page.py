@@ -3034,9 +3034,9 @@ _DRAFT_ROOM_HTML = r"""
         accSum += (x.val || 0);
       });
       var eff = expSum > 0 ? accSum / expSum : 1.0;
-      // Absolute fallback used only when there's no field to curve (solo/tiny field):
-      // +1% over the board ≈ +0.8 pts, so drafting to consensus lands a solid B.
-      var rv = Math.round(Math.max(0, Math.min(100, 73 + (eff - 1.0) * 80)));
+      // Absolute fallback used only when there's no field to curve (solo/tiny field).
+      // Matches the absolute anchor in _applyFieldCurve: 1.0 -> B, big reach -> D/F.
+      var rv = Math.round(Math.max(0, Math.min(100, 73 + (eff - 1.0) * 200)));
       return { score: rv, value: rv, balance: 0, tier: 0, count: mine.length,
         avgPs: avgPs ? Math.round(avgPs) : null, eff: eff, window: null };
     }
@@ -3181,28 +3181,31 @@ _DRAFT_ROOM_HTML = r"""
     if (!state) return;
     if (!out || out.length < 3) return;             // need a real field to curve against
     if (state.type === 'rookie'){
-      // Rookie grades curve on the value-over-expected ratio (grade.eff). Drafting
-      // to the consensus board = eff 1.0; > 1 beat it, < 1 reached. A team that takes
-      // strict best-available-by-value lands at exactly 1.0, so in a mock - where the
-      // CPUs draft near-optimally - the whole field clusters tightly around 1.0 and
-      // the only real signal is the small deviations from teams taking ADP/need over
-      // the higher-value player. We must normalize by the field's ACTUAL spread to
-      // surface those: a fat fixed floor (the old 0.06) dwarfed the real ~0.01 spread
-      // and flattened everyone to a B. The floor here is only large enough to keep a
-      // truly identical field from exploding, and z is clamped so one mild outlier
-      // can't be flung to F. Center is absolute-aware: a field that collectively beat
-      // consensus floats up, one that reached sinks.
+      // Rookie grade = mostly ABSOLUTE value-over-expected, with a light relative
+      // term as an in-field tiebreaker.
+      //
+      // grade.eff is value drafted / value the pick slots were worth on the consensus
+      // board. Drafting to the board = 1.0; > 1 beat it (caught fallers), < 1 reached.
+      // The ABSOLUTE score anchors the letter to what you actually did: 1.0 -> B, and
+      // each point of eff away from that moves the grade hard, so a big reach sinks to
+      // D/F and a big steal climbs to A+ regardless of how the rest of the field drafted
+      // (reaching a lot should be an F even if everyone else also reached). The RELATIVE
+      // term only spreads teams around the field so a clean mock - where everyone drafts
+      // near the board - still separates the best/worst builds instead of reading flat.
       var effs = out.map(function(t){ return t.grade.eff; }).filter(function(v){ return v != null; });
       if (effs.length < 3) return;
       var em = effs.reduce(function(a, b){ return a + b; }, 0) / effs.length;
       var ev = effs.reduce(function(a, b){ return a + (b - em) * (b - em); }, 0) / effs.length;
       var effStd = Math.max(Math.sqrt(ev), 0.008);
-      var rCenter = 73 + (em - 1.0) * 40;   // field's absolute quality sets the middle
       out.forEach(function(t){
         t.grade.rawScore = t.grade.score;
         if (t.grade.eff == null) return;
+        // Absolute: 1.0 -> 73 (B); ~ -13% -> F, ~ +13% -> A+.
+        var absSc = 73 + (t.grade.eff - 1.0) * 200;
+        // Relative: where you sit in the field, clamped so one outlier isn't flung off.
         var rz = Math.max(-2.5, Math.min(2.5, (t.grade.eff - em) / effStd));
-        var rsc = Math.round(Math.max(0, Math.min(100, rCenter + rz * 11)));
+        var relSc = 73 + rz * 11;
+        var rsc = Math.round(Math.max(0, Math.min(100, 0.7 * absSc + 0.3 * relSc)));
         t.grade.score = rsc;
         t.grade.value = rsc;   // keep the "Draft Value" bar in step with the letter
       });
