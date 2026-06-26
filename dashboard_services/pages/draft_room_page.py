@@ -3437,7 +3437,8 @@ _DRAFT_ROOM_HTML = r"""
           _tst.forEach(function(x){
             var _pnx = (team.picks.filter(function(pk){ return pk.p && pk.p.id === x.p.id; })[0] || {}).pn || 0;
             var pickRx = _pnx ? (function(){ var rd = Math.ceil(_pnx/state.teams); var pp = _pnx-(rd-1)*state.teams; return rd + '.' + (pp<10?'0'+pp:pp); })() : '';
-            var psRx = x.p.ps != null ? '<span class="dr-sum-ldtl-ps" style="color:' + psColor(x.p.ps) + '">' + x.p.ps + '</span>' : '';
+            var _ps = storedPickScore(_pnx, x.p);
+            var psRx = _ps != null ? '<span class="dr-sum-ldtl-ps" style="color:' + psColor(_ps) + '">' + _ps + '</span>' : '';
             dtlHtml += '<div class="dr-sum-ldtl-row">'
               + '<span class="dr-sum-ldtl-slot" style="background:' + slotColor(x.slot) + '">' + x.slot + '</span>'
               + '<span class="dr-sum-ldtl-name">' + esc(x.p.name) + '</span>'
