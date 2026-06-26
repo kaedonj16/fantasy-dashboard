@@ -3004,10 +3004,44 @@ _DRAFT_ROOM_HTML = r"""
     var avgPs = psVals.length ? psVals.reduce(function(a, b){ return a + b; }, 0) / psVals.length : null;
 
     if (state.type === 'rookie'){
-      // Rookie drafts are about talent/value, not roster construction. The grade
-      // is the average pick score (already a 0-100 talent+value signal), so two
-      // elite picks (e.g. 95 + 92) land an A+ regardless of positional balance.
-      var rv = avgPs != null ? Math.round(clamp01(avgPs / 100) * 100) : 50;
+      // Rookie drafts are about talent/value, not roster construction. The pick
+      // score can't drive the grade here: its youth term is near-maxed for every
+      // rookie and its ADP term floors anyone taken near consensus, so avgPs sits
+      // in a narrow high band and nearly everyone graded an A. Instead, grade each
+      // pick on the VALUE IT RETURNED FOR THE SLOT SPENT. A player who fell past his
+      // ADP (a steal) grades up; a reach grades down; taking the consensus board
+      // player is an average (~B) result. A modest absolute-caliber term keeps
+      // premium picks used on premium talent ahead of late-round dart throws.
+      var topVal = _gmaxVal;   // top rookie value across the whole draft (caliber ref)
+      Object.keys(state.picks).forEach(function(k){
+        var pp = state.picks[k]; if (!pp) return;
+        var fv = playersById[String(pp.id)];
+        var vv = fv ? valOf(fv) : (pp.val || 0);
+        if (vv > topVal) topVal = vv;
+      });
+      if (topVal <= 0) topVal = 1;
+      var _nT = state.teams || 12, rW = 0, rTot = 0;
+      picks.forEach(function(x){
+        var full = playersById[String(x.id)];
+        var padp = full ? adpOf(full) : null;
+        // Value-efficiency: relative steal vs the pick slot (mirrors pickScore.relGap).
+        // 0.5 = drafted exactly at ADP; > 0.5 = fell to you; < 0.5 = reached.
+        var eff = 0.5;
+        if (padp != null){
+          var relSteal = (x.pn - padp) / Math.max(padp, 3);
+          eff = clamp01(0.5 + relSteal * 0.8);
+        }
+        var caliber = clamp01((x.val || 0) / topVal);
+        var combined = 0.65 * eff + 0.35 * caliber;
+        // Light early-round weight: a R1 hit/miss defines the draft more than R5.
+        var _round = Math.max(1, Math.ceil((x.pn || 1) / _nT));
+        var _w = 1.0 / Math.pow(_round, 0.5);
+        rW += combined * _w; rTot += _w;
+      });
+      var rCombined = rTot > 0 ? rW / rTot : 0.5;
+      // Map: ~0.5 (at-ADP, average caliber) -> 70 (B); steals climb to A/A+, reaches
+      // fall to C/D. Centers the field on B so a great grade has to be earned.
+      var rv = Math.round(Math.max(0, Math.min(100, 30 + rCombined * 80)));
       return { score: rv, value: rv, balance: 0, tier: 0, count: mine.length, avgPs: avgPs ? Math.round(avgPs) : null, window: null };
     }
 
