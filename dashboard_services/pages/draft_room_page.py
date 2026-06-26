@@ -3925,7 +3925,7 @@ _DRAFT_ROOM_HTML = r"""
   function cellInner(pn){
     var pl = state.picks[pn];
     var h = '<span class="dr-cell-num">' + pn + '</span>';
-    if (isMyPick(pn) && !pl) h += '<span class="dr-cell-mineflag">YOU</span>';
+    if (isMyPick(pn)) h += '<span class="dr-cell-mineflag">YOU</span>';
     var _own = tradedOwnerLabel(pn);
     if (_own) h += '<span class="dr-cell-owner">' + esc(_own) + '</span>';
     if (pl){
