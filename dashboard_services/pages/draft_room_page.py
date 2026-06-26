@@ -189,6 +189,12 @@ _DRAFT_ROOM_HTML = r"""
 
     <div class="dr-cols">
       <div class="dr-board-wrap">
+        <div class="dr-board-toolbar">
+          <div class="dr-cell-toggle" id="drCellToggle" title="Toggle between dynasty value and pick score">
+            <span class="dr-ct-opt is-active" data-mode="val">Value</span>
+            <span class="dr-ct-opt" data-mode="ps">Pick Score</span>
+          </div>
+        </div>
         <div class="dr-board" id="drBoard"></div>
       </div>
       <aside class="dr-side" id="drSide">
@@ -316,11 +322,22 @@ _DRAFT_ROOM_HTML = r"""
   }
   .dr-btn-primary { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: #fff; }
   .dr-btn-ghost { background: transparent; font-weight: 600; }
-  /* Mobile options menu - hidden on desktop, inline panel */
-  .dr-opts-trigger { display: none; }
-  .dr-opts-panel { display: flex; align-items: center; gap: 6px; }
+  /* Options gear button + dropdown panel */
+  .dr-opts-trigger { display: flex; }
+  .dr-opts-panel {
+    display: none; flex-direction: column; gap: 2px;
+    position: absolute; top: calc(100% + 6px); right: 0;
+    background: var(--card, #1a1a1a); border: 1px solid var(--border, #333); border-radius: 12px;
+    padding: 6px; z-index: 200; min-width: 155px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.3);
+  }
+  .dr-opts-panel .dr-btn { width: 100%; text-align: left; padding: 9px 14px; border-radius: 8px; font-size: 13px;
+    background: var(--bg, #0f0f0f); color: var(--text, #fff); border: 1px solid var(--border, #333); }
+  .dr-opts-panel .dr-sim-speed { width: 100%; margin: 2px 0; padding: 6px 8px; border-radius: 8px;
+    border: 1px solid var(--border, #333); background: var(--bg, #0f0f0f); color: var(--text, #fff); font-size: 13px; }
   .dr-btn-danger { color: #ef4444; border-color: rgba(239,68,68,.4); }
   .dr-statusbar {
+    position: relative;
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
     padding: 10px 14px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 12px;
     background: var(--card);
@@ -407,6 +424,11 @@ _DRAFT_ROOM_HTML = r"""
   @keyframes drPop { 0% { transform: scale(.92); opacity: .3; } 100% { transform: scale(1); opacity: 1; } }
   .dr-cell-val { position: absolute; bottom: 2px; right: 5px; font-size: 9px; font-weight: 800; color: var(--accent,#38bdf8); }
   .dr-cell-num { position: absolute; top: 2px; left: 5px; font-size: 9px; font-weight: 700; color: var(--text-muted); }
+  .dr-board-toolbar { display: flex; align-items: center; justify-content: flex-end; padding: 4px 6px 2px; }
+  .dr-cell-toggle { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; font-size: 10px; font-weight: 700; }
+  .dr-ct-opt { padding: 3px 9px; cursor: pointer; color: var(--text-muted); transition: background .15s, color .15s; }
+  .dr-ct-opt.is-active { background: var(--accent,#38bdf8); color: #fff; }
+  .dr-ct-opt:not(.is-active):hover { background: var(--bg2,rgba(127,127,127,.12)); color: var(--text); }
   .dr-hs { width: 40px; height: 40px; border-radius: 8px 8px 0 0; object-fit: cover; object-position: top center;
     flex-shrink: 0; background: transparent; align-self: flex-end; }
   .dr-cell-body { min-width: 0; line-height: 1.2; }
@@ -645,21 +667,7 @@ _DRAFT_ROOM_HTML = r"""
     }
     .dr-status-right::-webkit-scrollbar { display: none; }
     .dr-status-right .dr-btn { flex: 0 0 auto; padding: 7px 11px; font-size: 12px; }
-    /* Gear/options button: show on mobile */
-    .dr-opts-trigger { display: flex; padding: 7px 11px; font-size: 15px; }
-    /* Options panel: floating dropdown anchored to statusbar */
-    .dr-statusbar { position: relative; }
-    .dr-opts-panel {
-      display: none; flex-direction: column; gap: 2px;
-      position: absolute; top: calc(100% + 6px); right: 0;
-      background: var(--card, #1a1a1a); border: 1px solid var(--border, #333); border-radius: 12px;
-      padding: 6px; z-index: 200; min-width: 155px;
-      box-shadow: 0 8px 32px rgba(0,0,0,.3);
-    }
-    .dr-opts-panel .dr-btn { width: 100%; text-align: left; padding: 9px 14px; border-radius: 8px; font-size: 13px;
-      background: var(--bg, #0f0f0f); color: var(--text, #fff); border: 1px solid var(--border, #333); }
-    .dr-opts-panel .dr-sim-speed { width: 100%; margin: 2px 0; padding: 6px 8px; border-radius: 8px;
-      border: 1px solid var(--border, #333); background: var(--bg, #0f0f0f); color: var(--text, #fff); font-size: 13px; }
+    .dr-opts-trigger { padding: 7px 11px; font-size: 15px; }
     .dr-side-tabs .otc-main-tab { font-size: 11px; padding: 6px 2px; }
     .dr-board-wrap { padding: 4px; max-width: calc(100vw - 16px); overflow-x: auto; }
     .dr-cta, .dr-setup-cta { flex-direction: column; align-items: stretch; }
@@ -999,6 +1007,7 @@ _DRAFT_ROOM_HTML = r"""
   var _summaryShown = false; // auto-open summary only once per draft
   var compareIds = [];     // 0-2 player IDs staged for comparison
   var _chipsCollapsed = false; // best-at-pos strip collapsed state
+  var _cellShowPs = false; // board cell corner: false=dynasty value, true=pick score
   var _timerInterval = null;   // pick countdown setInterval handle
   var _timerPickStart = null;  // Date.now() when current pick slot opened
   var _timerPickNo = null;     // which pick number the timer is counting for
@@ -4017,7 +4026,12 @@ _DRAFT_ROOM_HTML = r"""
     var _own = tradedOwnerLabel(pn);
     if (_own) h += '<span class="dr-cell-owner">' + esc(_own) + '</span>';
     if (pl){
-      if (pl.val != null) h += '<span class="dr-cell-val">' + Math.round(pl.val) + '</span>';
+      if (_cellShowPs) {
+        var _cvps = pl.ps != null ? pl.ps : null;
+        if (_cvps != null) h += '<span class="dr-cell-val" style="color:' + psColor(_cvps) + '">' + _cvps + '</span>';
+      } else {
+        if (pl.val != null) h += '<span class="dr-cell-val">' + Math.round(pl.val) + '</span>';
+      }
       h += '<img class="dr-hs" src="' + playerImgUrl(pl) + '" alt="" onerror="this.style.visibility=\'hidden\'">';
       h += '<div class="dr-cell-body"><div class="dr-cell-name">' + esc(pl.name) + '</div>'
         + '<div class="dr-cell-meta"><span class="dr-posbadge" style="background:' + posColor(pl.position) + '">' + esc(pl.position) + '</span> ' + esc(pl.team || '') + '</div></div>';
@@ -4633,6 +4647,14 @@ _DRAFT_ROOM_HTML = r"""
   document.getElementById('drConnect').addEventListener('click', detectLive);
   document.getElementById('drLiveList').addEventListener('click', function(e){
     var b = e.target.closest('.dr-live-item'); if (b) connectLive(b.getAttribute('data-id'));
+  });
+  document.getElementById('drCellToggle').addEventListener('click', function(e){
+    var opt = e.target.closest('.dr-ct-opt'); if (!opt) return;
+    var mode = opt.getAttribute('data-mode');
+    _cellShowPs = (mode === 'ps');
+    this.querySelectorAll('.dr-ct-opt').forEach(function(o){ o.classList.toggle('is-active', o.getAttribute('data-mode') === mode); });
+    // Repaint all filled cells so the corner stat updates immediately.
+    if (state) Object.keys(state.picks).forEach(function(k){ if (state.picks[k]) paintCell(parseInt(k, 10)); });
   });
   document.getElementById('drUndo').addEventListener('click', undo);
   document.getElementById('drReset').addEventListener('click', resetDraft);
