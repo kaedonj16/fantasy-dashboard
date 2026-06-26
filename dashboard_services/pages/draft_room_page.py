@@ -3032,7 +3032,11 @@ _DRAFT_ROOM_HTML = r"""
           eff = clamp01(0.5 + relSteal * 0.8);
         }
         var caliber = clamp01((x.val || 0) / topVal);
-        var combined = 0.65 * eff + 0.35 * caliber;
+        // Efficiency dominates: taking the consensus board player (no value gained)
+        // should land a B, not an A. Caliber is only a light tiebreaker so premium
+        // picks used on premium talent edge out late dart throws - it must not
+        // become a free A-floor for anyone who drafts chalk at the top.
+        var combined = 0.82 * eff + 0.18 * caliber;
         // Light early-round weight: a R1 hit/miss defines the draft more than R5.
         var _round = Math.max(1, Math.ceil((x.pn || 1) / _nT));
         var _w = 1.0 / Math.pow(_round, 0.5);
