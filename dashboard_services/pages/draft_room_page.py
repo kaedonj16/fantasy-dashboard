@@ -3182,21 +3182,26 @@ _DRAFT_ROOM_HTML = r"""
     if (!out || out.length < 3) return;             // need a real field to curve against
     if (state.type === 'rookie'){
       // Rookie grades curve on the value-over-expected ratio (grade.eff). Drafting
-      // to the consensus board = eff 1.0; > 1 beat it, < 1 reached. The center is
-      // absolute-aware: a field that, on the whole, beat consensus floats above a B
-      // and one that reached sinks below it, so a strong class isn't forced down to
-      // C's and a weak one isn't propped up. The std floor stops a near-identical
-      // field from being blown apart into A-through-F (no fabricated spread).
+      // to the consensus board = eff 1.0; > 1 beat it, < 1 reached. A team that takes
+      // strict best-available-by-value lands at exactly 1.0, so in a mock - where the
+      // CPUs draft near-optimally - the whole field clusters tightly around 1.0 and
+      // the only real signal is the small deviations from teams taking ADP/need over
+      // the higher-value player. We must normalize by the field's ACTUAL spread to
+      // surface those: a fat fixed floor (the old 0.06) dwarfed the real ~0.01 spread
+      // and flattened everyone to a B. The floor here is only large enough to keep a
+      // truly identical field from exploding, and z is clamped so one mild outlier
+      // can't be flung to F. Center is absolute-aware: a field that collectively beat
+      // consensus floats up, one that reached sinks.
       var effs = out.map(function(t){ return t.grade.eff; }).filter(function(v){ return v != null; });
       if (effs.length < 3) return;
       var em = effs.reduce(function(a, b){ return a + b; }, 0) / effs.length;
       var ev = effs.reduce(function(a, b){ return a + (b - em) * (b - em); }, 0) / effs.length;
-      var effStd = Math.max(Math.sqrt(ev), 0.06);
+      var effStd = Math.max(Math.sqrt(ev), 0.008);
       var rCenter = 73 + (em - 1.0) * 40;   // field's absolute quality sets the middle
       out.forEach(function(t){
         t.grade.rawScore = t.grade.score;
         if (t.grade.eff == null) return;
-        var rz = (t.grade.eff - em) / effStd;
+        var rz = Math.max(-2.5, Math.min(2.5, (t.grade.eff - em) / effStd));
         var rsc = Math.round(Math.max(0, Math.min(100, rCenter + rz * 11)));
         t.grade.score = rsc;
         t.grade.value = rsc;   // keep the "Draft Value" bar in step with the letter
