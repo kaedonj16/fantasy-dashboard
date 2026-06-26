@@ -396,16 +396,16 @@ _DRAFT_ROOM_HTML = r"""
   .dr-cell-claimed { box-shadow: inset 3px 0 0 #f59e0b; }     /* traded-in pick */
   .dr-cell-claimable { cursor: pointer; }
   .dr-cell-claimable:hover { outline: 1px dashed var(--accent,#38bdf8); outline-offset: -2px; }
-  .dr-cell-mineflag { position: absolute; bottom: 2px; right: 5px; font-size: 8px; font-weight: 800;
+  .dr-cell-mineflag { position: absolute; top: 2px; right: 5px; font-size: 8px; font-weight: 800;
     letter-spacing: .04em; color: var(--accent,#38bdf8); }
   .dr-cell-claimed .dr-cell-mineflag { color: #f59e0b; }
   /* Traded pick: who the pick was dealt to (shown on another team's seat). */
-  .dr-cell-owner { position: absolute; bottom: 2px; right: 5px; font-size: 8px; font-weight: 800;
+  .dr-cell-owner { position: absolute; top: 2px; right: 5px; font-size: 8px; font-weight: 800;
     letter-spacing: .04em; color: #f59e0b;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
   .dr-cell-just { animation: drPop .35s ease; }
   @keyframes drPop { 0% { transform: scale(.92); opacity: .3; } 100% { transform: scale(1); opacity: 1; } }
-  .dr-cell-val { position: absolute; top: 2px; right: 5px; font-size: 9px; font-weight: 800; color: var(--accent,#38bdf8); }
+  .dr-cell-val { position: absolute; bottom: 2px; right: 5px; font-size: 9px; font-weight: 800; color: var(--accent,#38bdf8); }
   .dr-cell-num { position: absolute; top: 2px; left: 5px; font-size: 9px; font-weight: 700; color: var(--text-muted); }
   .dr-hs { width: 40px; height: 40px; border-radius: 8px 8px 0 0; object-fit: cover; object-position: top center;
     flex-shrink: 0; background: transparent; align-self: flex-end; }
