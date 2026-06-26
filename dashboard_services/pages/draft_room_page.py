@@ -4562,6 +4562,7 @@ _DRAFT_ROOM_HTML = r"""
     var backdrop = document.createElement('div');
     backdrop.style.cssText = 'position:fixed;top:0;right:0;bottom:0;left:0;z-index:199;display:none;-webkit-tap-highlight-color:transparent;cursor:pointer;';
     document.body.appendChild(backdrop);
+    var ignoreBackdropClick = false;
     function closeOpts(){
       optsPanel.classList.remove('is-open');
       backdrop.style.display = 'none';
@@ -4569,6 +4570,8 @@ _DRAFT_ROOM_HTML = r"""
     function openOpts(){
       optsPanel.classList.add('is-open');
       backdrop.style.display = 'block';
+      ignoreBackdropClick = true;
+      setTimeout(function(){ ignoreBackdropClick = false; }, 50);
     }
     optsBtn.addEventListener('click', function(e){
       e.stopPropagation();
@@ -4579,10 +4582,13 @@ _DRAFT_ROOM_HTML = r"""
       if (e.target.closest('.dr-btn')) closeOpts();
     });
     backdrop.addEventListener('touchstart', function(e){
+      if (ignoreBackdropClick) return;
       e.preventDefault();
       closeOpts();
     }, { passive: false });
-    backdrop.addEventListener('click', closeOpts);
+    backdrop.addEventListener('click', function(){
+      if (!ignoreBackdropClick) closeOpts();
+    });
   })();
   document.getElementById('drBaSort').addEventListener('change', renderBA);
   document.getElementById('drSearch').addEventListener('input', renderBA);
