@@ -652,14 +652,14 @@ _DRAFT_ROOM_HTML = r"""
     .dr-opts-panel {
       display: none; flex-direction: column; gap: 2px;
       position: absolute; top: calc(100% + 6px); right: 0;
-      background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+      background: var(--card, #1a1a1a); border: 1px solid var(--border, #333); border-radius: 12px;
       padding: 6px; z-index: 200; min-width: 155px;
       box-shadow: 0 8px 32px rgba(0,0,0,.3);
     }
-    .dr-opts-panel.is-open { display: flex; }
-    .dr-opts-panel .dr-btn { width: 100%; text-align: left; padding: 9px 14px; border-radius: 8px; font-size: 13px; }
+    .dr-opts-panel .dr-btn { width: 100%; text-align: left; padding: 9px 14px; border-radius: 8px; font-size: 13px;
+      background: var(--bg, #0f0f0f); color: var(--text, #fff); border: 1px solid var(--border, #333); }
     .dr-opts-panel .dr-sim-speed { width: 100%; margin: 2px 0; padding: 6px 8px; border-radius: 8px;
-      border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 13px; }
+      border: 1px solid var(--border, #333); background: var(--bg, #0f0f0f); color: var(--text, #fff); font-size: 13px; }
     .dr-side-tabs .otc-main-tab { font-size: 11px; padding: 6px 2px; }
     .dr-board-wrap { padding: 4px; max-width: calc(100vw - 16px); overflow-x: auto; }
     .dr-cta, .dr-setup-cta { flex-direction: column; align-items: stretch; }
@@ -4550,46 +4550,21 @@ _DRAFT_ROOM_HTML = r"""
   document.getElementById('drReset').addEventListener('click', resetDraft);
   document.getElementById('drEdit').addEventListener('click', showSetup);
   document.getElementById('drPractice').addEventListener('click', startPracticeMock);
-  // Mobile options menu. A full-screen transparent backdrop (z-index 199) sits
-  // behind the panel (z-index 200) and physically intercepts every outside tap.
-  // No document-level listeners, no stopPropagation races, no ghost-click timing.
-  // touchstart fires before iOS synthesizes a click; preventDefault() on it
-  // suppresses that follow-up click so only one close fires per gesture.
-  (function(){
-    var optsBtn = document.getElementById('drOptsBtn');
-    var optsPanel = document.getElementById('drOptsPanel');
-    if (!optsBtn || !optsPanel) return;
-    var backdrop = document.createElement('div');
-    backdrop.style.cssText = 'position:fixed;top:0;right:0;bottom:0;left:0;z-index:199;display:none;-webkit-tap-highlight-color:transparent;cursor:pointer;';
-    document.body.appendChild(backdrop);
-    var ignoreBackdropClick = false;
-    function closeOpts(){
-      optsPanel.classList.remove('is-open');
-      backdrop.style.display = 'none';
+  document.getElementById('drOptsBtn').addEventListener('click', function(e){
+    e.stopPropagation();
+    var panel = document.getElementById('drOptsPanel');
+    var willOpen = panel.style.display === 'none';
+    panel.style.display = willOpen ? 'block' : 'none';
+    this.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+  });
+  document.addEventListener('click', function(e){
+    var panel = document.getElementById('drOptsPanel');
+    var btn = document.getElementById('drOptsBtn');
+    if (panel && btn && !btn.parentElement.contains(e.target)){
+      panel.style.display = 'none';
+      btn.setAttribute('aria-expanded', 'false');
     }
-    function openOpts(){
-      optsPanel.classList.add('is-open');
-      backdrop.style.display = 'block';
-      ignoreBackdropClick = true;
-      setTimeout(function(){ ignoreBackdropClick = false; }, 50);
-    }
-    optsBtn.addEventListener('click', function(e){
-      e.stopPropagation();
-      optsPanel.classList.contains('is-open') ? closeOpts() : openOpts();
-    });
-    optsPanel.addEventListener('click', function(e){
-      e.stopPropagation();
-      if (e.target.closest('.dr-btn')) closeOpts();
-    });
-    backdrop.addEventListener('touchstart', function(e){
-      if (ignoreBackdropClick) return;
-      e.preventDefault();
-      closeOpts();
-    }, { passive: false });
-    backdrop.addEventListener('click', function(){
-      if (!ignoreBackdropClick) closeOpts();
-    });
-  })();
+  });
   document.getElementById('drBaSort').addEventListener('change', renderBA);
   document.getElementById('drSearch').addEventListener('input', renderBA);
   document.getElementById('drBaList').addEventListener('click', function(e){
