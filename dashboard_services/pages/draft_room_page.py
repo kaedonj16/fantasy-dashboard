@@ -219,7 +219,7 @@ _DRAFT_ROOM_HTML = r"""
             <span class="dr-ct-opt" data-mode="ps">Pick Score</span>
           </div>
         </div>
-        <div class="dr-board" id="drBoard"></div>
+        <div class="dr-board-scroll"><div class="dr-board" id="drBoard"></div></div>
       </div>
       <aside class="dr-side" id="drSide">
         <button class="dr-sheet-handle" id="drSheetHandle" aria-label="Resize panel"><span class="dr-sheet-grip"></span></button>
@@ -424,7 +424,10 @@ _DRAFT_ROOM_HTML = r"""
   .dr-ls-pre_draft { background: rgba(245,158,11,.16); color: #f59e0b; }
   .dr-ls-complete { background: rgba(148,163,184,.16); color: #94a3b8; }
   .dr-cols { display: grid; grid-template-columns: 1fr 375px; gap: 14px; align-items: start; }
-  .dr-board-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--card); padding: 6px; }
+  .dr-board-wrap { position: relative; border: 1px solid var(--border); border-radius: 10px; background: var(--card); padding: 6px; }
+  /* Only the board scrolls horizontally; the toolbar (Value/Pick Score toggle)
+     stays pinned to the card so it doesn't drift when you scroll the grid. */
+  .dr-board-scroll { overflow-x: auto; }
   .dr-board { display: grid; gap: 5px; min-width: max-content; }
   .dr-cell {
     border: 1px solid var(--border); border-radius: 8px; padding: 5px 6px 0; min-height: 50px;
@@ -709,7 +712,7 @@ _DRAFT_ROOM_HTML = r"""
     .dr-opts-panel.dr-opts-in-sheet .dr-btn { width: auto; flex: 0 0 auto; text-align: center; }
     .dr-opts-panel.dr-opts-in-sheet .dr-sim-speed { width: auto; flex: 0 0 auto; margin: 0; }
     .dr-side-tabs .otc-main-tab { font-size: 11px; padding: 6px 2px; }
-    .dr-board-wrap { padding: 4px; max-width: calc(100vw - 16px); overflow-x: auto; }
+    .dr-board-wrap { padding: 4px; max-width: calc(100vw - 16px); }
     .dr-cta, .dr-setup-cta { flex-direction: column; align-items: stretch; }
     .dr-setup-cta .dr-btn { width: 100%; }
     .dr-prev-stats { grid-template-columns: repeat(2, 1fr); }
