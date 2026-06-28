@@ -193,6 +193,7 @@ _DRAFT_ROOM_HTML = r"""
         <button class="dr-btn dr-btn-primary" id="drSimStart" style="display:none;">&#9654;&nbsp; Start Draft</button>
         <button class="dr-btn dr-btn-ghost" id="drSimToggle" style="display:none;">Pause</button>
         <button class="dr-btn dr-btn-ghost" id="drAutoBtn" style="display:none;" title="Auto-draft best available on your picks">Auto Draft</button>
+        <button class="dr-btn dr-btn-ghost" id="drPractice" style="display:none;">Practice Mock</button>
         <button class="dr-btn dr-btn-ghost dr-opts-trigger" id="drOptsBtn" aria-label="Options"><i class="fa-solid fa-gear"></i></button>
         <div class="dr-opts-panel" id="drOptsPanel">
           <select class="dr-sim-speed" id="drSimSpeed" style="display:none;" title="Simulation speed">
@@ -202,7 +203,6 @@ _DRAFT_ROOM_HTML = r"""
             <option value="60">Instant</option>
           </select>
           <button class="dr-btn dr-btn-ghost" id="drSummaryBtn" style="display:none;">Summary</button>
-          <button class="dr-btn dr-btn-ghost" id="drPractice" style="display:none;">Practice Mock</button>
           <button class="dr-btn dr-btn-ghost" id="drShare">Share</button>
           <button class="dr-btn dr-btn-ghost" id="drUndo">Undo</button>
           <button class="dr-btn dr-btn-ghost" id="drEdit">Edit Setup</button>
@@ -229,6 +229,7 @@ _DRAFT_ROOM_HTML = r"""
           <button class="otc-main-tab" data-stab="queue">Queue</button>
           <button class="otc-main-tab" data-stab="needs">Team</button>
           <button class="otc-main-tab" data-stab="league">League</button>
+          <button class="otc-main-tab dr-tab-opts" data-stab="settings" aria-label="Settings" title="Settings"><i class="fa-solid fa-gear"></i></button>
         </div>
         <div class="dr-side-head" id="drBestControls">
           <div class="dr-side-controls">
@@ -348,6 +349,8 @@ _DRAFT_ROOM_HTML = r"""
   .dr-btn-ghost { background: transparent; font-weight: 600; }
   /* Options gear button + dropdown panel */
   .dr-opts-trigger { display: flex; }
+  /* The in-sheet Settings (gear) tab is mobile-only; desktop uses the gear dropdown. */
+  .dr-tab-opts { display: none; }
   .dr-opts-panel {
     display: none; flex-direction: column; gap: 2px;
     position: absolute; top: calc(100% + 6px); right: 0;
@@ -691,15 +694,17 @@ _DRAFT_ROOM_HTML = r"""
     }
     .dr-status-right::-webkit-scrollbar { display: none; }
     .dr-status-right .dr-btn { flex: 0 0 auto; padding: 7px 11px; font-size: 12px; }
-    /* Mobile: the gear dropdown moves INTO the draggable sheet (initOptsPlacement),
-       so the settings can't insta-close like an absolute dropdown. Hide the trigger. */
+    /* Mobile: the status-bar gear is replaced by a Settings (gear) TAB in the
+       sheet; tapping it shows the options inside the draggable sheet, so they
+       can't insta-close like an absolute dropdown. */
     .dr-opts-trigger { display: none !important; }
+    .dr-tab-opts { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
     .dr-opts-panel.dr-opts-in-sheet {
-      display: flex !important; position: static; inset: auto;
+      position: static; inset: auto;
       flex-direction: row; flex-wrap: wrap; gap: 6px;
       width: 100%; min-width: 0; margin: 0;
       background: transparent; border: none; box-shadow: none;
-      padding: 8px 10px 10px; border-bottom: 1px solid var(--border, #333);
+      padding: 10px;
     }
     .dr-opts-panel.dr-opts-in-sheet .dr-btn { width: auto; flex: 0 0 auto; text-align: center; }
     .dr-opts-panel.dr-opts-in-sheet .dr-sim-speed { width: auto; flex: 0 0 auto; margin: 0; }

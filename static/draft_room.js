@@ -1827,6 +1827,19 @@
     for (var i = 0; i < kbtns.length; i++){ kbtns[i].style.display = kdef ? '' : 'none'; }
     var bc = document.getElementById('drBestControls');
     if (bc) bc.style.display = (sideTab === 'best') ? '' : 'none';
+    // Settings tab (mobile): show the in-sheet options panel, hide the list/chips.
+    var optsInSheet = document.querySelector('#drSide .dr-opts-in-sheet');
+    var baList = document.getElementById('drBaList');
+    var chips = document.getElementById('drBestChips');
+    if (sideTab === 'settings'){
+      if (bc) bc.style.display = 'none';
+      if (chips) chips.style.display = 'none';
+      if (baList) baList.style.display = 'none';
+      if (optsInSheet) optsInSheet.style.display = 'flex';
+      return;
+    }
+    if (optsInSheet) optsInSheet.style.display = 'none';
+    if (baList) baList.style.display = '';
     if (sideTab === 'rec')    return renderRec();
     if (sideTab === 'queue')  return renderQueue();
     if (sideTab === 'needs')  return renderNeeds();
@@ -3780,14 +3793,14 @@
   document.addEventListener('touchstart', _maybeCloseOpts, { passive: true });
 
   // On mobile, relocate the gear's settings panel into the draggable sheet (the
-  // "movable container") so it's always reachable and can't insta-close like an
-  // absolute dropdown. Moving the DOM node preserves the option buttons'
-  // listeners; on desktop it stays a dropdown in the status bar.
+  // "movable container") and surface it via a Settings (gear) TAB in the sheet's
+  // tab bar — so it can't insta-close like an absolute dropdown. Moving the DOM
+  // node preserves the option buttons' listeners. renderSide() shows/hides the
+  // panel based on the active tab. On desktop it stays a dropdown in the status bar.
   (function initOptsPlacement(){
     var mq = window.matchMedia('(max-width: 900px)');
     var panel = document.getElementById('drOptsPanel');
     var side = document.getElementById('drSide');
-    var handle = document.getElementById('drSheetHandle');
     if (!panel || !side) return;
     var homeParent = panel.parentNode;     // dr-status-right (desktop home)
     var homeNext = panel.nextSibling;
@@ -3795,16 +3808,21 @@
       if (mq.matches){
         if (!panel.classList.contains('dr-opts-in-sheet')){
           panel.classList.add('dr-opts-in-sheet');
-          side.insertBefore(panel, handle ? handle.nextSibling : side.firstChild);
+          side.appendChild(panel);          // into the sheet's content area
         }
-        panel.style.display = '';          // let the in-sheet CSS show it
+        // Visibility is owned by renderSide (shown only under the Settings tab).
+        panel.style.display = (sideTab === 'settings') ? 'flex' : 'none';
       } else {
         if (panel.classList.contains('dr-opts-in-sheet')){
           panel.classList.remove('dr-opts-in-sheet');
           homeParent.insertBefore(panel, homeNext);
         }
         panel.style.display = 'none';      // desktop: hidden until the gear opens it
+        if (sideTab === 'settings') sideTab = 'best';   // no settings tab on desktop
       }
+      // Re-render the side panel so list/settings visibility matches the new layout
+      // (guarded: state is null before a draft starts, where renderSide would throw).
+      if (state) renderSide();
     }
     if (mq.addEventListener) mq.addEventListener('change', apply); else mq.addListener(apply);
     apply();
