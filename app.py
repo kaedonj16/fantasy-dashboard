@@ -1796,8 +1796,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             f"{tour_menu_item}"
             f"{league_switcher_html}"
             "<a href='/logout' class='settings-menu-item settings-menu-logout'>"
-            "  <img src='/static/logout.png' class='settings-menu-icon' alt='Logout'>"
-            "  <span class='settings-menu-label'>Logout</span>"
+            "  <img src='/static/logout.png' class='settings-menu-icon' alt='Sign Out'>"
+            "  <span class='settings-menu-label'>Sign Out</span>"
             "</a>"
         )
 
@@ -3234,7 +3234,7 @@ def handle_404(e):
         "<p>This page doesn&rsquo;t exist or may have moved. Check the URL or head back home.</p>"
         "<div class='links'>"
         "  <a class='primary' href='/'>&#8592; Home</a>"
-        "  <a class='secondary' href='/trade'>Trade Calc</a>"
+        "  <a class='secondary' href='/trade'>Trade Calculator</a>"
         "  <a class='secondary' href='/players'>Player Rankings</a>"
         "</div>"
         "</div></body></html>"
@@ -17663,7 +17663,7 @@ def api_refresh_page():
                   <div class="card-header"><h2>Graphs Unavailable</h2></div>
                   <div class="card-body">
                     <p>Weekly scoring graphs will appear once the season begins.</p>
-                    <p>During the offseason, use Dashboard, Teams, Activity, and Trade Calc for roster planning.</p>
+                    <p>During the offseason, use Dashboard, Teams, Activity, and Trade Calculator for roster planning.</p>
                   </div>
                 </div>
                 """
