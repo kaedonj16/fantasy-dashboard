@@ -116,3 +116,26 @@ def test_inline_scripts_parse():
                 msg = next((l for l in err if "SyntaxError" in l), err[-1] if err else "")
                 failures.append(f"{path} (string starting ~L{lineno}): {msg}")
     assert not failures, "Inline <script> JavaScript failed to parse:\n" + "\n".join(failures)
+
+
+# First-party static JS we hand-maintain (draft_room.js was extracted from an inline
+# template, so keep it under the same guard). Excludes vendored / generated *.min.js.
+_STATIC_JS = ["app.js", "draft_room.js", "player_page.js", "paywall.js", "sw.js"]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
+def test_static_js_parses():
+    failures: list[str] = []
+    checked = 0
+    for name in _STATIC_JS:
+        fp = os.path.join(_REPO_ROOT, "static", name)
+        if not os.path.exists(fp):
+            continue
+        checked += 1
+        res = subprocess.run(["node", "--check", fp], capture_output=True, text=True)
+        if res.returncode != 0:
+            err = res.stderr.strip().splitlines()
+            msg = next((l for l in err if "SyntaxError" in l), err[-1] if err else "")
+            failures.append(f"static/{name}: {msg}")
+    assert checked, "expected to find first-party static JS to check"
+    assert not failures, "Static JavaScript failed to parse:\n" + "\n".join(failures)
