@@ -18939,7 +18939,40 @@ def api_sparklines():
         return _api_err("Sparklines unavailable", e)
 
 
+_LP_PAYLOAD_CACHE: dict = {}          # kdef(bool) -> {"ts": model_ts, "payload": dict}
+_LP_PAYLOAD_LOCK = threading.Lock()
+
+
 def _build_league_players_payload(kdef: bool = False) -> dict:
+    """Memoized wrapper around the (expensive) enriched player-pool build.
+
+    The build re-reads model_values.json, injects pick values, derives redraft
+    values / rookies / birthdays / K-DEF / tier thresholds — non-trivial work
+    that ran on EVERY /api/league-players hit (Draft Room load, Prospects, and
+    the Teams-page draft-grades grader). The output is identical for all callers
+    until the underlying values change, so memoize it.
+
+    The cache is keyed on the model-value cache's timestamp, so it auto-
+    invalidates the moment values refresh — TTL expiry, the daily cron, or a
+    manual /api/flush-value-cache — with no coupling to those sites. Holding the
+    lock across the build also collapses a thundering herd of concurrent first
+    requests into a single rebuild.
+    """
+    key = bool(kdef)
+    with _LP_PAYLOAD_LOCK:
+        # Touch the model cache first so _MODEL_VALUE_CACHE_TS reflects the
+        # current (possibly just-reloaded) table before we read it as the key.
+        get_model_value_table_cached()
+        model_ts = _MODEL_VALUE_CACHE_TS
+        cached = _LP_PAYLOAD_CACHE.get(key)
+        if cached and model_ts and cached["ts"] == model_ts:
+            return cached["payload"]
+        payload = _build_league_players_payload_uncached(kdef=kdef)
+        _LP_PAYLOAD_CACHE[key] = {"ts": model_ts, "payload": payload}
+        return payload
+
+
+def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
     """Build the full enriched player pool the Draft Room / Prospects pages use.
 
     Factored out of the /api/league-players route so server-side consumers (e.g.
@@ -19544,9 +19577,14 @@ def _build_league_players_payload(kdef: bool = False) -> dict:
 
 @app.route("/api/league-players")
 def api_league_players():
-    return jsonify(_sanitize_for_json(
+    resp = jsonify(_sanitize_for_json(
         _build_league_players_payload(kdef=bool(request.args.get("kdef")))
     ))
+    # Payload is global (varies only by kdef) and refreshes at most every ~15 min,
+    # so a short shared cache is safe and trims repeat loads. The Draft Room still
+    # fetches with cache:'no-store', so it always re-validates.
+    resp.headers["Cache-Control"] = "public, max-age=120"
+    return resp
 
 
 @app.route("/api/teams")
