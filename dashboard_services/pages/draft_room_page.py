@@ -194,20 +194,6 @@ _DRAFT_ROOM_HTML = r"""
         <button class="dr-btn dr-btn-ghost" id="drSimToggle" style="display:none;">Pause</button>
         <button class="dr-btn dr-btn-ghost" id="drAutoBtn" style="display:none;" title="Auto-draft best available on your picks">Auto Draft</button>
         <button class="dr-btn dr-btn-ghost" id="drPractice" style="display:none;">Practice Mock</button>
-        <button class="dr-btn dr-btn-ghost dr-opts-trigger" id="drOptsBtn" aria-label="Options"><i class="fa-solid fa-gear"></i></button>
-        <div class="dr-opts-panel" id="drOptsPanel">
-          <select class="dr-sim-speed" id="drSimSpeed" style="display:none;" title="Simulation speed">
-            <option value="1400">Slow</option>
-            <option value="700" selected>Normal</option>
-            <option value="300">Fast</option>
-            <option value="60">Instant</option>
-          </select>
-          <button class="dr-btn dr-btn-ghost" id="drSummaryBtn" style="display:none;">Summary</button>
-          <button class="dr-btn dr-btn-ghost" id="drShare">Share</button>
-          <button class="dr-btn dr-btn-ghost" id="drUndo">Undo</button>
-          <button class="dr-btn dr-btn-ghost" id="drEdit">Edit Setup</button>
-          <button class="dr-btn dr-btn-ghost dr-btn-danger" id="drReset">Reset</button>
-        </div>
       </div>
     </div>
 
@@ -229,6 +215,22 @@ _DRAFT_ROOM_HTML = r"""
           <button class="otc-main-tab" data-stab="queue">Queue</button>
           <button class="otc-main-tab" data-stab="needs">Team</button>
           <button class="otc-main-tab" data-stab="league">League</button>
+          <div class="dr-side-opts">
+            <button class="dr-opts-trigger" id="drOptsBtn" aria-label="Settings" title="Settings"><i class="fa-solid fa-gear"></i></button>
+            <div class="dr-opts-panel" id="drOptsPanel">
+              <select class="dr-sim-speed" id="drSimSpeed" style="display:none;" title="Simulation speed">
+                <option value="1400">Slow</option>
+                <option value="700" selected>Normal</option>
+                <option value="300">Fast</option>
+                <option value="60">Instant</option>
+              </select>
+              <button class="dr-btn dr-btn-ghost" id="drSummaryBtn" style="display:none;">Summary</button>
+              <button class="dr-btn dr-btn-ghost" id="drShare">Share</button>
+              <button class="dr-btn dr-btn-ghost" id="drUndo">Undo</button>
+              <button class="dr-btn dr-btn-ghost" id="drEdit">Edit Setup</button>
+              <button class="dr-btn dr-btn-ghost dr-btn-danger" id="drReset">Reset</button>
+            </div>
+          </div>
         </div>
         <div class="dr-side-head" id="drBestControls">
           <div class="dr-side-controls">
@@ -346,8 +348,13 @@ _DRAFT_ROOM_HTML = r"""
   }
   .dr-btn-primary { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: #fff; }
   .dr-btn-ghost { background: transparent; font-weight: 600; }
-  /* Options gear button + dropdown panel */
-  .dr-opts-trigger { display: flex; }
+  /* Settings gear button — sits beside the side-panel tabs — + dropdown panel */
+  .dr-side-opts { position: relative; flex: 0 0 auto; display: flex; align-items: stretch; }
+  .dr-opts-trigger { display: flex; align-items: center; justify-content: center;
+    background: transparent; border: none; cursor: pointer; color: var(--text-muted);
+    font-size: 14px; padding: 0 9px; border-radius: 8px; }
+  .dr-opts-trigger:hover, .dr-opts-trigger[aria-expanded="true"] {
+    color: var(--accent,#38bdf8); background: rgba(56,189,248,.12); }
   .dr-opts-panel {
     display: none; flex-direction: column; gap: 2px;
     position: absolute; top: calc(100% + 6px); right: 0;
@@ -696,8 +703,8 @@ _DRAFT_ROOM_HTML = r"""
     }
     .dr-status-right::-webkit-scrollbar { display: none; }
     .dr-status-right .dr-btn { flex: 0 0 auto; padding: 7px 11px; font-size: 12px; }
-    .dr-opts-trigger { padding: 7px 11px; font-size: 15px; }
     .dr-side-tabs .otc-main-tab { font-size: 11px; padding: 6px 2px; }
+    .dr-opts-trigger { font-size: 13px; padding: 0 8px; }
     .dr-board-wrap { padding: 4px; max-width: calc(100vw - 16px); }
     .dr-cta, .dr-setup-cta { flex-direction: column; align-items: stretch; }
     .dr-setup-cta .dr-btn { width: 100%; }
