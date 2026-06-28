@@ -1827,19 +1827,6 @@
     for (var i = 0; i < kbtns.length; i++){ kbtns[i].style.display = kdef ? '' : 'none'; }
     var bc = document.getElementById('drBestControls');
     if (bc) bc.style.display = (sideTab === 'best') ? '' : 'none';
-    // Settings tab (mobile): show the in-sheet options panel, hide the list/chips.
-    var optsInSheet = document.querySelector('#drSide .dr-opts-in-sheet');
-    var baList = document.getElementById('drBaList');
-    var chips = document.getElementById('drBestChips');
-    if (sideTab === 'settings'){
-      if (bc) bc.style.display = 'none';
-      if (chips) chips.style.display = 'none';
-      if (baList) baList.style.display = 'none';
-      if (optsInSheet) optsInSheet.style.display = 'flex';
-      return;
-    }
-    if (optsInSheet) optsInSheet.style.display = 'none';
-    if (baList) baList.style.display = '';
     if (sideTab === 'rec')    return renderRec();
     if (sideTab === 'queue')  return renderQueue();
     if (sideTab === 'needs')  return renderNeeds();
@@ -1850,14 +1837,12 @@
   function showCompleteSidebar(){
     var side = document.getElementById('drSide');
     side.style.display = '';
-    // Show only Team/League for a finished draft - players/recs/queue are
-    // irrelevant. The Settings (gear) tab stays reachable (Summary/Share/Exit);
-    // its '' display lets the breakpoint CSS show it on mobile, hide on desktop.
+    // Show only the Team tab for a finished draft - players/recs/queue are irrelevant.
     var tabs = document.querySelectorAll('#drSideTabs .otc-main-tab');
     tabs.forEach(function(b){
       var stab = b.getAttribute('data-stab');
       if (stab === 'needs'){ b.classList.add('is-active'); b.style.display = ''; }
-      else if (stab === 'league' || stab === 'settings'){ b.classList.remove('is-active'); b.style.display = ''; }
+      else if (stab === 'league'){ b.classList.remove('is-active'); b.style.display = ''; }
       else { b.classList.remove('is-active'); b.style.display = 'none'; }
     });
     sideTab = 'needs';
@@ -3762,72 +3747,38 @@
   document.getElementById('drReset').addEventListener('click', resetDraft);
   document.getElementById('drEdit').addEventListener('click', showSetup);
   document.getElementById('drPractice').addEventListener('click', startPracticeMock);
-  var _optsOpenedAt = 0;   // guards against the opening tap's own events closing it (mobile)
-  function _optsIsOpen(panel){
-    // The panel is hidden via CSS (display:none), so a fresh inline style is '' —
-    // treat anything that isn't an explicit inline 'none' AND is actually visible
-    // as open. Using the inline value alone (=== 'none') misreads the initial state.
-    return panel.style.display !== '' && panel.style.display !== 'none';
-  }
-  function _setOpts(panel, btn, open){
-    panel.style.display = open ? 'flex' : 'none';
-    if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    if (open) _optsOpenedAt = Date.now();
-  }
-  document.getElementById('drOptsBtn').addEventListener('click', function(e){
-    e.stopPropagation();
+  // Header Settings dropdown (gear). Opens below the gear; closes on an outside
+  // tap or the gear again. The outside-close listener is attached on the NEXT
+  // tick after opening, so the very tap that opened it can't also close it —
+  // that race (touch + the synthesized click on mobile) is what made it
+  // insta-close. The listener is removed again on close.
+  (function initOptsDropdown(){
     var panel = document.getElementById('drOptsPanel');
-    _setOpts(panel, this, !_optsIsOpen(panel));
-  });
-  // Close on an outside tap (desktop dropdown only). Ignore events fired within
-  // the same gesture that opened it. When the panel lives inside the sheet
-  // (mobile), it is not a dropdown — it stays put and is never auto-closed.
-  function _maybeCloseOpts(e){
-    var panel = document.getElementById('drOptsPanel');
-    if (!panel || panel.classList.contains('dr-opts-in-sheet')) return;
-    if (Date.now() - _optsOpenedAt < 400) return;
     var btn = document.getElementById('drOptsBtn');
-    if (btn && _optsIsOpen(panel) && !btn.parentElement.contains(e.target)){
-      _setOpts(panel, btn, false);
+    if (!panel || !btn) return;
+    function isOpen(){ return panel.style.display !== '' && panel.style.display !== 'none'; }
+    function onDoc(e){
+      if (btn.parentElement.contains(e.target)) return;  // taps on the gear or panel
+      close();
     }
-  }
-  document.addEventListener('click', _maybeCloseOpts);
-  document.addEventListener('touchstart', _maybeCloseOpts, { passive: true });
-
-  // On mobile, relocate the gear's settings panel into the draggable sheet (the
-  // "movable container") and surface it via a Settings (gear) TAB in the sheet's
-  // tab bar — so it can't insta-close like an absolute dropdown. Moving the DOM
-  // node preserves the option buttons' listeners. renderSide() shows/hides the
-  // panel based on the active tab. On desktop it stays a dropdown in the status bar.
-  (function initOptsPlacement(){
-    var mq = window.matchMedia('(max-width: 900px)');
-    var panel = document.getElementById('drOptsPanel');
-    var side = document.getElementById('drSide');
-    if (!panel || !side) return;
-    var homeParent = panel.parentNode;     // dr-status-right (desktop home)
-    var homeNext = panel.nextSibling;
-    function apply(){
-      if (mq.matches){
-        if (!panel.classList.contains('dr-opts-in-sheet')){
-          panel.classList.add('dr-opts-in-sheet');
-          side.appendChild(panel);          // into the sheet's content area
-        }
-        // Visibility is owned by renderSide (shown only under the Settings tab).
-        panel.style.display = (sideTab === 'settings') ? 'flex' : 'none';
-      } else {
-        if (panel.classList.contains('dr-opts-in-sheet')){
-          panel.classList.remove('dr-opts-in-sheet');
-          homeParent.insertBefore(panel, homeNext);
-        }
-        panel.style.display = 'none';      // desktop: hidden until the gear opens it
-        if (sideTab === 'settings') sideTab = 'best';   // no settings tab on desktop
-      }
-      // Re-render the side panel so list/settings visibility matches the new layout
-      // (guarded: state is null before a draft starts, where renderSide would throw).
-      if (state) renderSide();
+    function close(){
+      panel.style.display = 'none';
+      btn.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('click', onDoc);
+      document.removeEventListener('touchstart', onDoc);
     }
-    if (mq.addEventListener) mq.addEventListener('change', apply); else mq.addListener(apply);
-    apply();
+    function open(){
+      panel.style.display = 'flex';
+      btn.setAttribute('aria-expanded', 'true');
+      setTimeout(function(){
+        document.addEventListener('click', onDoc);
+        document.addEventListener('touchstart', onDoc, { passive: true });
+      }, 0);
+    }
+    btn.addEventListener('click', function(e){
+      e.stopPropagation();
+      if (isOpen()) close(); else open();
+    });
   })();
   document.getElementById('drBaSort').addEventListener('change', renderBA);
   document.getElementById('drSearch').addEventListener('input', renderBA);

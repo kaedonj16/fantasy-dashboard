@@ -229,7 +229,6 @@ _DRAFT_ROOM_HTML = r"""
           <button class="otc-main-tab" data-stab="queue">Queue</button>
           <button class="otc-main-tab" data-stab="needs">Team</button>
           <button class="otc-main-tab" data-stab="league">League</button>
-          <button class="otc-main-tab dr-tab-opts" data-stab="settings" aria-label="Settings" title="Settings"><i class="fa-solid fa-gear"></i></button>
         </div>
         <div class="dr-side-head" id="drBestControls">
           <div class="dr-side-controls">
@@ -349,8 +348,6 @@ _DRAFT_ROOM_HTML = r"""
   .dr-btn-ghost { background: transparent; font-weight: 600; }
   /* Options gear button + dropdown panel */
   .dr-opts-trigger { display: flex; }
-  /* The in-sheet Settings (gear) tab is mobile-only; desktop uses the gear dropdown. */
-  .dr-tab-opts { display: none; }
   .dr-opts-panel {
     display: none; flex-direction: column; gap: 2px;
     position: absolute; top: calc(100% + 6px); right: 0;
@@ -699,20 +696,7 @@ _DRAFT_ROOM_HTML = r"""
     }
     .dr-status-right::-webkit-scrollbar { display: none; }
     .dr-status-right .dr-btn { flex: 0 0 auto; padding: 7px 11px; font-size: 12px; }
-    /* Mobile: the status-bar gear is replaced by a Settings (gear) TAB in the
-       sheet; tapping it shows the options inside the draggable sheet, so they
-       can't insta-close like an absolute dropdown. */
-    .dr-opts-trigger { display: none !important; }
-    .dr-tab-opts { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
-    .dr-opts-panel.dr-opts-in-sheet {
-      position: static; inset: auto;
-      flex-direction: row; flex-wrap: wrap; gap: 6px;
-      width: 100%; min-width: 0; margin: 0;
-      background: transparent; border: none; box-shadow: none;
-      padding: 10px;
-    }
-    .dr-opts-panel.dr-opts-in-sheet .dr-btn { width: auto; flex: 0 0 auto; text-align: center; }
-    .dr-opts-panel.dr-opts-in-sheet .dr-sim-speed { width: auto; flex: 0 0 auto; margin: 0; }
+    .dr-opts-trigger { padding: 7px 11px; font-size: 15px; }
     .dr-side-tabs .otc-main-tab { font-size: 11px; padding: 6px 2px; }
     .dr-board-wrap { padding: 4px; max-width: calc(100vw - 16px); }
     .dr-cta, .dr-setup-cta { flex-direction: column; align-items: stretch; }
