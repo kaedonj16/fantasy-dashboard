@@ -138,6 +138,86 @@ def _load_trades(season: int) -> list[dict]:
     return list(trades.values())
 
 
+# Same trades×assets join as _load_trades, but yielded one assembled trade at a
+# time instead of materialized into a list. Rows are ORDER BY t.id, so all asset
+# rows for a trade arrive consecutively and we can emit each trade as its id
+# changes — peak memory is one trade + one cursor batch, regardless of pool size.
+# run_analytics streams every compute pass through this so the full 120-day trade
+# set is never resident (that materialization was OOMing the 512Mi cron as the
+# league pool grew). Keep the SELECT identical to _load_trades.
+def _iter_trades(season: int):
+    cur_id = None
+    cur_trade: dict | None = None
+    with get_conn() as conn:
+        with conn.cursor(name="ti_iter_trades") as cur:
+            cur.itersize = 5000
+            cur.execute(
+                """
+                SELECT t.id, t.transaction_id, t.created_at,
+                       COALESCE(l.num_teams, 10) AS num_teams,
+                       a.side, a.asset_type, a.player_id,
+                       a.pick_season, a.pick_round, a.pick_order
+                FROM trade_intel_trades t
+                LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                LEFT JOIN trade_intel_assets  a ON a.trade_id  = t.id
+                WHERE t.season = %s AND t.status = 'complete'
+                  AND t.created_at >= NOW() - INTERVAL '120 days'
+                ORDER BY t.id
+                """,
+                (season,),
+            )
+            for r in cur:
+                tid = r["id"]
+                if tid != cur_id:
+                    if cur_trade is not None:
+                        yield cur_trade
+                    cur_id = tid
+                    cur_trade = {
+                        "trade_id":       tid,
+                        "transaction_id": r["transaction_id"],
+                        "created_at":     r["created_at"],
+                        "num_teams":      int(r["num_teams"] or 10),
+                        "assets":         [],
+                    }
+                if r["side"] is not None:
+                    cur_trade["assets"].append({
+                        "side":        r["side"],
+                        "asset_type":  r["asset_type"],
+                        "player_id":   r["player_id"],
+                        "pick_season": r["pick_season"],
+                        "pick_round":  r["pick_round"],
+                        "pick_order":  r["pick_order"],
+                    })
+    if cur_trade is not None:
+        yield cur_trade
+
+
+def _trade_size_distribution(season: int) -> tuple[dict, int]:
+    """(size-bucket -> trade count, total trades) for the 120-day window, computed
+    in SQL so it costs no client memory (replaces a full-list Counter pass)."""
+    dist: dict[str, int] = {}
+    total = 0
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT COALESCE(l.num_teams, 10) AS num_teams, COUNT(*) AS n
+                FROM trade_intel_trades t
+                LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                WHERE t.season = %s AND t.status = 'complete'
+                  AND t.created_at >= NOW() - INTERVAL '120 days'
+                GROUP BY 1
+                """,
+                (season,),
+            )
+            for r in cur:
+                n = int(r["n"] or 0)
+                total += n
+                b = _size_bucket(int(r["num_teams"] or 10))
+                dist[b] = dist.get(b, 0) + n
+    return dist, total
+
+
 # ---------------------------------------------------------------------------
 # Value helpers
 # ---------------------------------------------------------------------------
@@ -176,7 +256,9 @@ def _side_value(assets: list[dict], side: str, values: dict[str, dict], fmt: str
 _SIZE_BUCKETS = ("8", "10", "12", "14")
 
 
-def _compute_player_stats(trades: list[dict], values: dict[str, dict], season: int) -> list[dict]:
+def _compute_player_stats(make_trades, values: dict[str, dict], season: int) -> list[dict]:
+    # `make_trades` is a zero-arg factory returning a fresh iterator of trade
+    # dicts, so the full trade set is streamed (never materialized as a list).
     now        = datetime.now(tz=timezone.utc)
     cut_7d     = now - timedelta(days=7)
     cut_14d    = now - timedelta(days=14)
@@ -215,7 +297,7 @@ def _compute_player_stats(trades: list[dict], values: dict[str, dict], season: i
 
     stats: dict[str, AccType] = defaultdict(_empty_acc)
 
-    for trade in trades:
+    for trade in make_trades():
         assets  = trade["assets"]
         created = trade["created_at"]
         if created and created.tzinfo is None:
@@ -373,11 +455,11 @@ def _compute_player_stats(trades: list[dict], values: dict[str, dict], season: i
 # Common trade packages (recent-weighted occurrence)
 # ---------------------------------------------------------------------------
 
-def _compute_packages(trades: list[dict], season: int) -> list[dict]:
+def _compute_packages(make_trades, season: int) -> list[dict]:
     now   = datetime.now(tz=timezone.utc)
     hits: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
 
-    for trade in trades:
+    for trade in make_trades():
         assets   = trade["assets"]
         created  = trade["created_at"]
         if created and created.tzinfo is None:
@@ -578,7 +660,7 @@ def _ensure_pick_stats_table() -> None:
             )
 
 
-def _compute_pick_stats(trades: list[dict], values: dict[str, dict], season: int) -> list[dict]:
+def _compute_pick_stats(make_trades, values: dict[str, dict], season: int) -> list[dict]:
     now     = datetime.now(tz=timezone.utc)
     cut_14d = now - timedelta(days=14)
     cut_90d = now - timedelta(days=90)
@@ -601,7 +683,7 @@ def _compute_pick_stats(trades: list[dict], values: dict[str, dict], season: int
 
     stats: dict[tuple, AccType] = defaultdict(_empty_acc)
 
-    for trade in trades:
+    for trade in make_trades():
         assets  = trade["assets"]
         created = trade["created_at"]
         if created and created.tzinfo is None:
@@ -739,28 +821,29 @@ def run_analytics(season: int | None = None) -> dict:
     values = _load_model_values(season)
     logger.info("[analytics] %d players in value table", len(values))
 
-    logger.info("[analytics] Loading trade data for season %d...", season)
-    trades = _load_trades(season)
-    logger.info("[analytics] %d trades loaded", len(trades))
+    # Stream trades through each pass via a fresh server-side cursor instead of
+    # materializing the full 120-day set (that list, iterated three times, was the
+    # OOM as the league pool grew). Each pass holds only its bounded accumulator
+    # (keyed by player / pick-bucket / package) plus one cursor batch.
+    make_trades = lambda: _iter_trades(season)
 
-    if not trades:
+    logger.info("[analytics] Counting trades for season %d...", season)
+    size_dist, total_trades = _trade_size_distribution(season)
+    logger.info("[analytics] %d trades in window", total_trades)
+    if total_trades == 0:
         logger.warning("[analytics] No trades found - skipping.")
         return {"player_stats": 0, "packages": 0, "pick_stats": 0}
-
-    # Log size distribution for observability
-    from collections import Counter
-    size_dist = Counter(_size_bucket(t["num_teams"]) for t in trades)
-    logger.info("[analytics] Trade size distribution: %s", dict(size_dist))
+    logger.info("[analytics] Trade size distribution: %s", size_dist)
 
     logger.info("[analytics] Computing time-aware player stats...")
-    player_stats = _compute_player_stats(trades, values, season)
+    player_stats = _compute_player_stats(make_trades, values, season)
     n_stats = _upsert_player_stats(player_stats)
     del player_stats
     gc.collect()
     logger.info("[analytics] Upserted %d player stat rows", n_stats)
 
     logger.info("[analytics] Computing common packages...")
-    packages = _compute_packages(trades, season)
+    packages = _compute_packages(make_trades, season)
     n_pkgs = _upsert_packages(packages)
     del packages
     gc.collect()
@@ -769,8 +852,8 @@ def run_analytics(season: int | None = None) -> dict:
     logger.info("[analytics] Ensuring pick stats table...")
     _ensure_pick_stats_table()
     logger.info("[analytics] Computing pick market values...")
-    pick_stats = _compute_pick_stats(trades, values, season)
-    del trades, values
+    pick_stats = _compute_pick_stats(make_trades, values, season)
+    del values
     gc.collect()
     n_picks = _upsert_pick_stats(pick_stats)
     del pick_stats
