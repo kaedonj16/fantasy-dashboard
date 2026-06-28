@@ -21368,14 +21368,13 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 .otc-settings-toggle-btn {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 7px 13px;
+  justify-content: center;
+  /* Icon-only gear (matches the Draft Room Options button — no text label). */
+  padding: 7px 9px;
   border-radius: 9px;
   border: 1px solid var(--border);
   background: var(--card-bg);
   color: var(--text);
-  font-size: 12px;
-  font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
   transition: background .12s, border-color .12s, color .12s, box-shadow .12s;
@@ -21386,7 +21385,7 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   border-color: var(--accent);
   color: var(--accent);
 }
-.otc-settings-gear { transition: transform .25s ease; flex-shrink: 0; }
+.otc-settings-gear { font-size: 15px; line-height: 1; transition: transform .25s ease; flex-shrink: 0; }
 .otc-settings-toggle-btn:hover .otc-settings-gear,
 .otc-settings-toggle-btn[aria-expanded="true"] .otc-settings-gear { transform: rotate(45deg); }
 
