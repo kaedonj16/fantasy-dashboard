@@ -3747,21 +3747,36 @@
   document.getElementById('drReset').addEventListener('click', resetDraft);
   document.getElementById('drEdit').addEventListener('click', showSetup);
   document.getElementById('drPractice').addEventListener('click', startPracticeMock);
+  var _optsOpenedAt = 0;   // guards against the opening tap's own events closing it (mobile)
+  function _optsIsOpen(panel){
+    // The panel is hidden via CSS (display:none), so a fresh inline style is '' —
+    // treat anything that isn't an explicit inline 'none' AND is actually visible
+    // as open. Using the inline value alone (=== 'none') misreads the initial state.
+    return panel.style.display !== '' && panel.style.display !== 'none';
+  }
+  function _setOpts(panel, btn, open){
+    panel.style.display = open ? 'flex' : 'none';
+    if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) _optsOpenedAt = Date.now();
+  }
   document.getElementById('drOptsBtn').addEventListener('click', function(e){
     e.stopPropagation();
     var panel = document.getElementById('drOptsPanel');
-    var willOpen = panel.style.display === 'none';
-    panel.style.display = willOpen ? 'block' : 'none';
-    this.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    _setOpts(panel, this, !_optsIsOpen(panel));
   });
-  document.addEventListener('click', function(e){
+  // Close on an outside tap. Ignore events fired within the same gesture that
+  // opened it: on mobile a single tap can dispatch touch + a synthesized click,
+  // and the trailing one would otherwise close the panel the instant it opens.
+  function _maybeCloseOpts(e){
+    if (Date.now() - _optsOpenedAt < 400) return;
     var panel = document.getElementById('drOptsPanel');
     var btn = document.getElementById('drOptsBtn');
-    if (panel && btn && !btn.parentElement.contains(e.target)){
-      panel.style.display = 'none';
-      btn.setAttribute('aria-expanded', 'false');
+    if (panel && btn && _optsIsOpen(panel) && !btn.parentElement.contains(e.target)){
+      _setOpts(panel, btn, false);
     }
-  });
+  }
+  document.addEventListener('click', _maybeCloseOpts);
+  document.addEventListener('touchstart', _maybeCloseOpts, { passive: true });
   document.getElementById('drBaSort').addEventListener('change', renderBA);
   document.getElementById('drSearch').addEventListener('input', renderBA);
   document.getElementById('drBaList').addEventListener('click', function(e){
