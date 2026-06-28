@@ -902,7 +902,14 @@ def render_matchup_slide(
             status_code = "2"
         elif game_date == today_str and game_time:
             try:
-                if parse_game_datetime(game_time) > now_dt:
+                # parse_game_datetime parses only the clock time, so its date
+                # defaults to 1900 — anchor it to today before comparing to now,
+                # otherwise the kickoff is always "in the past" and a game later
+                # today is never corrected back to scheduled.
+                kickoff = parse_game_datetime(game_time).replace(
+                    year=now_dt.year, month=now_dt.month, day=now_dt.day
+                )
+                if kickoff > now_dt:
                     # future kick within same date – treat as scheduled
                     status_code = "0"
             except ValueError:
