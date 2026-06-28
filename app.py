@@ -253,6 +253,16 @@ _PLAYOFF_SIM_CACHE_TTL = 3600  # 1 hour
 _SHARE_CARD_CACHE: dict = {}
 _SHARE_CARD_CACHE_TTL = 600  # 10 minutes
 
+# Cache for /api/draft-grades responses (keyed by platform/league_id/season/league_type).
+# Short TTL keeps a live draft's grades fresh while making repeat tab-opens instant.
+_DRAFT_GRADES_CACHE: dict = {}
+_DRAFT_GRADES_CACHE_TTL = 300  # 5 minutes
+
+# Cache for value-tier thresholds (keyed by model-cache timestamp + league shape).
+# compute_tier_thresholds is an O(n·window) scan over the value table; the inputs
+# only change when values refresh, so memoize on the model-cache timestamp.
+_TIER_THRESH_CACHE: dict = {}
+
 # How long a league context is considered fresh
 CACHE_TTL = 60 * 60 * 12  # 12 hours
 
@@ -5782,6 +5792,30 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
         reverse=True,
     )
     return thresholds if len(thresholds) >= 2 else _FALLBACK_THRESHOLDS
+
+
+def _tier_thresholds_cached(league_type: str = "1qb", league_size: int = 10,
+                            num_tiers: int = _MAX_DISPLAY_TIERS, t1_size: int = None) -> list:
+    """Memoized compute_tier_thresholds over the standard cached value table.
+
+    The thresholds depend only on the value distribution, which changes only when
+    values refresh, so key the cache on the model-cache timestamp. Use this from
+    hot per-request paths (e.g. /api/trade-eval) instead of recomputing the
+    O(n·window) scan every call.
+    """
+    get_model_value_table_cached()  # refresh _MODEL_VALUE_CACHE_TS if stale
+    key = (_MODEL_VALUE_CACHE_TS, league_type, int(league_size), int(num_tiers), t1_size)
+    hit = _TIER_THRESH_CACHE.get(key)
+    if hit is not None:
+        return hit
+    out = compute_tier_thresholds(
+        get_model_value_table_cached(), league_type, league_size, num_tiers, t1_size
+    )
+    if len(_TIER_THRESH_CACHE) > 64:        # bound: clear on overflow (keys are few)
+        _TIER_THRESH_CACHE.clear()
+    _TIER_THRESH_CACHE[key] = out
+    return out
+
 
 def _asset_tier(value: float, thresholds: list = None) -> int:
     t = thresholds if thresholds is not None else _FALLBACK_THRESHOLDS
@@ -18549,7 +18583,10 @@ def api_trade_eval():
     side_a = build_side(side_a_players, side_a_picks)
     side_b = build_side(side_b_players, side_b_picks)
 
-    tier_thresholds = compute_tier_thresholds(value_table, league_type, league_size)
+    # Tiers come from the same cached value source as `value_table` (both the DB
+    # current values), memoized on the model-cache timestamp so a burst of trade
+    # evals doesn't recompute the O(n·window) scan each request.
+    tier_thresholds = _tier_thresholds_cached(league_type, league_size)
     # Only apply depth adjustment when BOTH sides have assets and the counts
     # differ. A one-sided trade (nothing on the other side) has no comparison to
     # make, so each asset should report its full value - no stack penalty.
@@ -22654,6 +22691,14 @@ def api_draft_grades():
     league_type = str(request.args.get("league_type", "1qb")).strip().lower()
     is_sf = (league_type == "sf")
 
+    # Short-TTL response cache: grading rebuilds the league-players payload and
+    # walks every pick, so a burst of tab-opens (or several league members
+    # viewing) would each pay the full cost. A 5-min TTL keeps a live draft fresh.
+    _dg_key = (platform, league_id, season, league_type)
+    _dg_hit = _DRAFT_GRADES_CACHE.get(_dg_key)
+    if _dg_hit and (time.time() - _dg_hit[0]) < _DRAFT_GRADES_CACHE_TTL:
+        return jsonify(_dg_hit[1])
+
     try:
         from dashboard_services.api import fetch_json
         from collections import defaultdict as _defaultdict
@@ -23330,7 +23375,7 @@ def api_draft_grades():
         all_picks_flat = [p for t in results for p in t["picks"]]
         total_rounds = max((p["round"] for p in all_picks_flat), default=_draft_rounds or 1)
 
-        return jsonify({
+        _dg_payload = {
             "draft_id":     str(draft_id),
             "season":       season,
             "league_type":  league_type,
@@ -23339,7 +23384,11 @@ def api_draft_grades():
             "num_teams":    _num_teams,
             "total_rounds": total_rounds,
             "teams":        results,
-        })
+        }
+        if len(_DRAFT_GRADES_CACHE) > 256:   # bound memory; entries are small
+            _DRAFT_GRADES_CACHE.clear()
+        _DRAFT_GRADES_CACHE[_dg_key] = (time.time(), _dg_payload)
+        return jsonify(_dg_payload)
 
     except Exception:
         logger.exception("[draft-grades] Unexpected error")
