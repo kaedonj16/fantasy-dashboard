@@ -3764,19 +3764,51 @@
     var panel = document.getElementById('drOptsPanel');
     _setOpts(panel, this, !_optsIsOpen(panel));
   });
-  // Close on an outside tap. Ignore events fired within the same gesture that
-  // opened it: on mobile a single tap can dispatch touch + a synthesized click,
-  // and the trailing one would otherwise close the panel the instant it opens.
+  // Close on an outside tap (desktop dropdown only). Ignore events fired within
+  // the same gesture that opened it. When the panel lives inside the sheet
+  // (mobile), it is not a dropdown — it stays put and is never auto-closed.
   function _maybeCloseOpts(e){
-    if (Date.now() - _optsOpenedAt < 400) return;
     var panel = document.getElementById('drOptsPanel');
+    if (!panel || panel.classList.contains('dr-opts-in-sheet')) return;
+    if (Date.now() - _optsOpenedAt < 400) return;
     var btn = document.getElementById('drOptsBtn');
-    if (panel && btn && _optsIsOpen(panel) && !btn.parentElement.contains(e.target)){
+    if (btn && _optsIsOpen(panel) && !btn.parentElement.contains(e.target)){
       _setOpts(panel, btn, false);
     }
   }
   document.addEventListener('click', _maybeCloseOpts);
   document.addEventListener('touchstart', _maybeCloseOpts, { passive: true });
+
+  // On mobile, relocate the gear's settings panel into the draggable sheet (the
+  // "movable container") so it's always reachable and can't insta-close like an
+  // absolute dropdown. Moving the DOM node preserves the option buttons'
+  // listeners; on desktop it stays a dropdown in the status bar.
+  (function initOptsPlacement(){
+    var mq = window.matchMedia('(max-width: 900px)');
+    var panel = document.getElementById('drOptsPanel');
+    var side = document.getElementById('drSide');
+    var handle = document.getElementById('drSheetHandle');
+    if (!panel || !side) return;
+    var homeParent = panel.parentNode;     // dr-status-right (desktop home)
+    var homeNext = panel.nextSibling;
+    function apply(){
+      if (mq.matches){
+        if (!panel.classList.contains('dr-opts-in-sheet')){
+          panel.classList.add('dr-opts-in-sheet');
+          side.insertBefore(panel, handle ? handle.nextSibling : side.firstChild);
+        }
+        panel.style.display = '';          // let the in-sheet CSS show it
+      } else {
+        if (panel.classList.contains('dr-opts-in-sheet')){
+          panel.classList.remove('dr-opts-in-sheet');
+          homeParent.insertBefore(panel, homeNext);
+        }
+        panel.style.display = 'none';      // desktop: hidden until the gear opens it
+      }
+    }
+    if (mq.addEventListener) mq.addEventListener('change', apply); else mq.addListener(apply);
+    apply();
+  })();
   document.getElementById('drBaSort').addEventListener('change', renderBA);
   document.getElementById('drSearch').addEventListener('input', renderBA);
   document.getElementById('drBaList').addEventListener('click', function(e){

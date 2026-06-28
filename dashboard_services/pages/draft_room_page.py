@@ -691,7 +691,18 @@ _DRAFT_ROOM_HTML = r"""
     }
     .dr-status-right::-webkit-scrollbar { display: none; }
     .dr-status-right .dr-btn { flex: 0 0 auto; padding: 7px 11px; font-size: 12px; }
-    .dr-opts-trigger { padding: 7px 11px; font-size: 15px; }
+    /* Mobile: the gear dropdown moves INTO the draggable sheet (initOptsPlacement),
+       so the settings can't insta-close like an absolute dropdown. Hide the trigger. */
+    .dr-opts-trigger { display: none !important; }
+    .dr-opts-panel.dr-opts-in-sheet {
+      display: flex !important; position: static; inset: auto;
+      flex-direction: row; flex-wrap: wrap; gap: 6px;
+      width: 100%; min-width: 0; margin: 0;
+      background: transparent; border: none; box-shadow: none;
+      padding: 8px 10px 10px; border-bottom: 1px solid var(--border, #333);
+    }
+    .dr-opts-panel.dr-opts-in-sheet .dr-btn { width: auto; flex: 0 0 auto; text-align: center; }
+    .dr-opts-panel.dr-opts-in-sheet .dr-sim-speed { width: auto; flex: 0 0 auto; margin: 0; }
     .dr-side-tabs .otc-main-tab { font-size: 11px; padding: 6px 2px; }
     .dr-board-wrap { padding: 4px; max-width: calc(100vw - 16px); overflow-x: auto; }
     .dr-cta, .dr-setup-cta { flex-direction: column; align-items: stretch; }
