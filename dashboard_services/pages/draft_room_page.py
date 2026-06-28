@@ -424,10 +424,12 @@ _DRAFT_ROOM_HTML = r"""
   .dr-ls-pre_draft { background: rgba(245,158,11,.16); color: #f59e0b; }
   .dr-ls-complete { background: rgba(148,163,184,.16); color: #94a3b8; }
   .dr-cols { display: grid; grid-template-columns: 1fr 375px; gap: 14px; align-items: start; }
-  .dr-board-wrap { position: relative; border: 1px solid var(--border); border-radius: 10px; background: var(--card); padding: 6px; }
+  /* min-width:0 lets this grid item shrink to its track instead of growing to
+     the wide board's width (the inner scroll, not the card, holds the overflow). */
+  .dr-board-wrap { position: relative; min-width: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--card); padding: 6px; }
   /* Only the board scrolls horizontally; the toolbar (Value/Pick Score toggle)
      stays pinned to the card so it doesn't drift when you scroll the grid. */
-  .dr-board-scroll { overflow-x: auto; }
+  .dr-board-scroll { overflow-x: auto; min-width: 0; }
   .dr-board { display: grid; gap: 5px; min-width: max-content; }
   .dr-cell {
     border: 1px solid var(--border); border-radius: 8px; padding: 5px 6px 0; min-height: 50px;

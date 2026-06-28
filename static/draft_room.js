@@ -1850,12 +1850,14 @@
   function showCompleteSidebar(){
     var side = document.getElementById('drSide');
     side.style.display = '';
-    // Show only the Team tab for a finished draft - players/recs/queue are irrelevant.
+    // Show only Team/League for a finished draft - players/recs/queue are
+    // irrelevant. The Settings (gear) tab stays reachable (Summary/Share/Exit);
+    // its '' display lets the breakpoint CSS show it on mobile, hide on desktop.
     var tabs = document.querySelectorAll('#drSideTabs .otc-main-tab');
     tabs.forEach(function(b){
       var stab = b.getAttribute('data-stab');
       if (stab === 'needs'){ b.classList.add('is-active'); b.style.display = ''; }
-      else if (stab === 'league'){ b.classList.remove('is-active'); b.style.display = ''; }
+      else if (stab === 'league' || stab === 'settings'){ b.classList.remove('is-active'); b.style.display = ''; }
       else { b.classList.remove('is-active'); b.style.display = 'none'; }
     });
     sideTab = 'needs';
