@@ -339,8 +339,13 @@ def get_player_value_history(
     else:
         _1qb_col, _sf_col = "value", "value_sf"
 
-    # SF column: prefer calibrated value_sf, fall back to raw sf_value, then 1QB value
-    _sf_expr = f"COALESCE({_sf_col}, sf_value, {_1qb_col}, value)"
+    # SF column: prefer the SMOOTHED sf_value. smooth_value_history.py applies its
+    # EMA to `value` and `sf_value` only — not to value_sf / the size-specific
+    # columns — so reading value_sf first produced a spiky SF line while 1QB (which
+    # reads the smoothed `value`) stayed clean. The final point is re-aligned to
+    # calibrated_value_sf below, so using the smoothed base keeps the right end
+    # value while giving a clean trend.
+    _sf_expr = f"COALESCE(sf_value, {_sf_col}, {_1qb_col}, value)"
 
     with get_conn() as conn:
         rows = conn.execute(

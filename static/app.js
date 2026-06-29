@@ -8954,7 +8954,10 @@ function openPlayerModal(playerId, playerName, opts) {
             const xPad = Math.max(n * 0.02, 0.5);
 
             const layout = {
-              margin: { l: 36, r: 16, t: 10, b: 26 },
+              // r needs to fit half of the last (right-most) date label, which is
+              // centered on the final data point at the plot's right edge — too
+              // small and the last date clips off.
+              margin: { l: 36, r: 34, t: 10, b: 26 },
               height: chartHeight,
               paper_bgcolor: 'transparent',
               plot_bgcolor: 'transparent',
