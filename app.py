@@ -424,6 +424,7 @@ _PUBLIC_JS_V = _static_hash(_PUBLIC_JS_FILE)
 _PAYWALL_JS_V = _static_hash("paywall.js")
 _REDZONE_JS_V = _static_hash("redzone.js")
 _RANKINGS_JS_V = _static_hash("rankings.js")
+_DRAFT_ASSISTANT_JS_V = _static_hash("draft_assistant.js")
 _CSS_FILE = _ensure_minified_css()
 _CSS_V = _static_hash(_CSS_FILE)
 _FA_V = _static_hash("font-awesome.css")
@@ -11946,6 +11947,9 @@ def page_prospects(platform: str, season: int, league_id: str):
     from dashboard_services.pages.rookies_page import build_prospects_body
     from dashboard_services.admin_auth import is_admin
     body_html = build_prospects_body(is_admin=is_admin())
+    # The Draft Assistant module is split out of app.js so it only loads here.
+    # `defer` runs it after the page's app.js, so getCurrentRosterId etc. exist.
+    body_html += f'\n<script src="/static/draft_assistant.js?v={_DRAFT_ASSISTANT_JS_V}" defer></script>'
     return render_page("Prospect Rankings", league_id, "prospects", body_html, platform, season)
 
 

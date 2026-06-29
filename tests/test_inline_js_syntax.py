@@ -120,7 +120,7 @@ def test_inline_scripts_parse():
 
 # First-party static JS we hand-maintain (draft_room.js was extracted from an inline
 # template, so keep it under the same guard). Excludes vendored / generated *.min.js.
-_STATIC_JS = ["app.js", "draft_room.js", "redzone.js", "rankings.js", "player_page.js", "paywall.js", "sw.js"]
+_STATIC_JS = ["app.js", "draft_room.js", "redzone.js", "rankings.js", "draft_assistant.js", "player_page.js", "paywall.js", "sw.js"]
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
