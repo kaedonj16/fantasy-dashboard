@@ -25472,11 +25472,26 @@ def build_portfolio_body(
         ".pf-league-stat{text-align:center;font-size:14px;font-weight:600;white-space:nowrap;}"
         ".pf-league-type{text-align:right;padding-right:8px;white-space:nowrap;}"
         ".pf-streak{justify-content:center;}"
+        # Mobile: the 5-column table is too cramped, so each league becomes a
+        # stacked card — name + type badge on top, position chips below, then a
+        # labeled Record/Rank strip (the Streak column is dropped).
         "@media(max-width:600px){"
-        ".pf-leagues-table th:nth-child(4),.pf-leagues-table td:nth-child(4){display:none;}"
-        ".pf-leagues-table th:nth-child(2){width:56px;}"
-        ".pf-leagues-table th:nth-child(3){width:48px;}"
-        ".pf-leagues-table th:nth-child(5){width:82px;}"
+        ".pf-leagues-table thead{display:none;}"
+        ".pf-leagues-table,.pf-leagues-table tbody{display:block;width:100%;}"
+        ".pf-league-row{display:flex;flex-wrap:wrap;align-items:flex-start;column-gap:10px;"
+        "border:1px solid var(--grid);border-radius:12px;background:var(--card);"
+        "padding:12px 14px;margin-bottom:10px;}"
+        ".pf-league-row+.pf-league-row{margin-top:0;}"
+        ".pf-league-row td{display:block;border-top:none;padding:0;}"
+        ".pf-leagues-table td.pf-league-name-cell{flex:1 1 60%;order:1;min-width:0;}"
+        ".pf-league-link{font-size:15px;}"
+        ".pf-league-type{order:2;flex:0 0 auto;text-align:right;padding:0;}"
+        ".pf-pos-chips{flex-basis:100%;gap:8px 14px;margin-top:8px;}"
+        ".pf-league-stat{order:3;flex:0 0 auto;display:inline-flex;align-items:baseline;gap:6px;"
+        "text-align:left;font-size:15px;margin:12px 22px 0 0;}"
+        ".pf-league-stat[data-label]::before{content:attr(data-label);font-size:10px;font-weight:700;"
+        "color:var(--text-subtle);text-transform:uppercase;letter-spacing:.05em;}"
+        ".pf-leagues-table td:nth-child(4){display:none;}"
         "}"
         "</style>"
     )
@@ -25520,8 +25535,8 @@ def build_portfolio_body(
 
         if lg.get("error") or lg.get("not_in_league"):
             league_rows += (
-                f"<tr>"
-                f"<td colspan='5'>"
+                f"<tr class='pf-league-row'>"
+                f"<td colspan='5' style='flex-basis:100%;'>"
                 f"<div style='display:flex;align-items:center;gap:8px;'>"
                 f"<span style='flex:1;color:var(--text-muted);font-weight:600;'>{name}</span>"
                 f"<span style='color:var(--text-subtle);font-size:12px;'>unavailable</span>"
@@ -25581,8 +25596,8 @@ def build_portfolio_body(
             f"<a href='{href}' class='pf-league-link'>{name}</a>{off_note}"
             f"{badges_div}"
             f"</td>"
-            f"<td class='pf-league-stat'><span class='{rec_cls2}'>{rec}</span></td>"
-            f"<td class='pf-league-stat'>{rank}/{total}</td>"
+            f"<td class='pf-league-stat' data-label='Record'><span class='{rec_cls2}'>{rec}</span></td>"
+            f"<td class='pf-league-stat' data-label='Rank'>{rank}/{total}</td>"
             f"<td class='pf-league-stat'><div class='pf-streak'>{dots}</div></td>"
             f"<td class='pf-league-type'>{arch_badge}</td>"
             f"</tr>"
