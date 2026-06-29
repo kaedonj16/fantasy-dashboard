@@ -20618,7 +20618,15 @@ def api_player_details(player_id: str):
 
         # Sync league globals if league_id provided
         if league_id:
-            sync_league_globals(platform, league_id, season)
+            # sync_league_globals is a no-op for Sleeper — get_league() is what
+            # populates the request-scoped scoring globals (incl. bonus_rec_te,
+            # which TE-premium scaling reads). Without this the modal sees bare
+            # defaults and never applies the TE premium.
+            if platform == "sleeper":
+                from dashboard_services.api import get_league as _get_league
+                _get_league(league_id)
+            else:
+                sync_league_globals(platform, league_id, season)
             scoring_settings = get_effective_scoring_settings()
         else:
             # Default scoring settings if no league context
