@@ -8640,6 +8640,9 @@ function openPlayerModal(playerId, playerName, opts) {
           ${ppgCard}
           ${totalCard}
         </div>
+        ${(data.te_premium > 0 && pos === 'TE')
+          ? `<div class="pm-tep-note"><i class="fa-solid fa-arrow-up"></i> Value reflects TE Premium (+${Math.round(data.te_premium * 20)}%)</div>`
+          : ''}
       `;
 
       if (hasChart) {

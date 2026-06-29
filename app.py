@@ -20911,6 +20911,20 @@ def api_player_details(player_id: str):
         except Exception:
             pass
 
+        # TE-premium leagues make tight ends worth more. Scale a TE's value (and its
+        # whole value history) so the modal shows the value as it counts in THIS
+        # league — consistent with the trade calculator / activity feed. No-op for
+        # non-TEs and non-TE-premium leagues. (player_value is the cached table row,
+        # so we never mutate it — the multiplier is applied as values are read out.)
+        _modal_tep = te_premium_from_settings(scoring_settings)
+        _modal_pos = str(player_meta.get("pos") or "").upper()
+        _te_mult = (1.0 + _modal_tep * 0.20) if (_modal_tep and _modal_pos == "TE") else 1.0
+        if _te_mult != 1.0:
+            for _h in (value_history or []):
+                for _k in ("value_1qb", "value_sf", "value"):
+                    if _h.get(_k) is not None:
+                        _h[_k] = round(float(_h[_k]) * _te_mult, 1)
+
         _modal_age = age_from_bday(player_meta.get("bDay")) or player_value.get("age") or player_meta.get("age")
         response = {
             "player_id": player_id,
@@ -20918,14 +20932,15 @@ def api_player_details(player_id: str):
             "position": player_meta.get("pos"),
             "team": player_meta.get("team"),
             "age": _modal_age,
+            "te_premium": _modal_tep,
             "pos_rank": player_value.get("pos_rank"),
             "pos_rank_label": player_value.get("pos_rank_label"),
             "espnHeadshot": player_meta.get("espnHeadshot"),
             "fantasy_team": fantasy_team,
             "fantasy_team_owner": fantasy_team_owner,
             "stats": {
-                "value": round(player_value.get("value", 0), 1) if player_value.get("value") else None,
-                "sf_value": round(player_value.get("sf_value", 0), 1) if player_value.get("sf_value") else None,
+                "value": round(player_value.get("value", 0) * _te_mult, 1) if player_value.get("value") else None,
+                "sf_value": round(player_value.get("sf_value", 0) * _te_mult, 1) if player_value.get("sf_value") else None,
                 "pos_rank": player_value.get("pos_rank"),
                 "pos_rank_label": player_value.get("pos_rank_label"),
                 "sf_pos_rank": player_value.get("sf_pos_rank"),
