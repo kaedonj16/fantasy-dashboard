@@ -8875,14 +8875,18 @@ function openPlayerModal(playerId, playerName, opts) {
           const spanDays  = (latestD && earliestD) ? (latestD - earliestD) / 86400000 : 0;
 
           function renderChart(history) {
-            const xData = history.map(d => formatDateLabel(d.as_of_date));
-            const n = xData.length;
+            const n = history.length;
+            const xIdx  = history.map((_, i) => i);            // numeric x for clean tick control
+            const dates = history.map(d => formatDateLabel(d.as_of_date));
 
-            const y1qb = history.map(d => d.value_1qb ?? d.value);
-            const ysf  = history.map(d => d.value_sf  ?? d.value);
+            const y1qb = history.map(d => Number(d.value_1qb ?? d.value));
+            const ysf  = history.map(d => Number(d.value_sf  ?? d.value));
 
-            // Check if 1QB and SF values are meaningfully different (e.g. QBs differ; non-QBs may be same)
-            const hasDualSeries = y1qb.some((v, i) => Math.abs(v - ysf[i]) > 1);
+            // Only QBs differ meaningfully between 1QB and Superflex. For everyone
+            // else the two track together (any divergence is data jitter), so show a
+            // single clean line instead of a noisy second series.
+            const isQB = (typeof pos !== 'undefined' && pos === 'QB');
+            const hasDualSeries = isQB && y1qb.some((v, i) => Math.abs(v - ysf[i]) > 1);
 
             const allY = hasDualSeries ? [...y1qb, ...ysf] : y1qb;
             const yMin = Math.min(...allY);
@@ -8893,75 +8897,78 @@ function openPlayerModal(playerId, playerName, opts) {
             const currentVal = allY[allY.length - 1] ?? yMax;
             const yFloor = Math.max(0, currentVal - 200);
 
-            const midIdx = Math.floor((n - 1) / 2);
-            const firstDateStr  = formatDateLabel(history[0].as_of_date);
-            const midDateStr    = formatDateLabel(history[midIdx].as_of_date);
-            const latestDateStr = formatDateLabel(history[n - 1].as_of_date);
-            const tickvals = n <= 1 ? [xData[0]]
-                           : n <= 2 ? [xData[0], xData[n - 1]]
-                           : [xData[0], xData[midIdx], xData[n - 1]];
-            const ticktext  = n <= 1 ? [latestDateStr]
-                            : n <= 2 ? [firstDateStr, latestDateStr]
-                            : [firstDateStr, midDateStr, latestDateStr];
+            // 3-4 evenly spaced date ticks (deduped) so labels never collide.
+            const tickCount = Math.max(2, Math.min(4, n));
+            const tickvals = [];
+            if (n <= 1) { tickvals.push(0); }
+            else {
+              for (let i = 0; i < tickCount; i++) {
+                const idx = Math.round(i * (n - 1) / (tickCount - 1));
+                if (!tickvals.includes(idx)) tickvals.push(idx);
+              }
+            }
+            const ticktext = tickvals.map(i => dates[i]);
 
             const mutedColor = getComputedStyle(document.documentElement)
               .getPropertyValue('--text-muted').trim() || '#6b7280';
+            const gridColor = getComputedStyle(document.documentElement)
+              .getPropertyValue('--border').trim() || 'rgba(127,127,127,.18)';
 
-            const extendedX    = [...xData, '', '', '', ''];
-            const extended1qb  = [...y1qb, null, null, null, null];
-            const extendedsf   = [...ysf,  null, null, null, null];
-
-            const hover1qb = [...xData.map((date, i) => `<b>${date}</b><br>1QB: ${y1qb[i]?.toFixed(1) || ''}`), '', '', '', ''];
-            const hoverSF  = [...xData.map((date, i) => `<b>${date}</b><br>SF: ${ysf[i]?.toFixed(1) || ''}`), '', '', '', ''];
+            const hover1qb = dates.map((date, i) => `<b>${date}</b><br>1QB: ${y1qb[i]?.toFixed(1) || ''}`);
+            const hoverSF  = dates.map((date, i) => `<b>${date}</b><br>SF: ${ysf[i]?.toFixed(1) || ''}`);
 
             const trace1qb = {
-              x: extendedX, y: extended1qb,
+              x: xIdx, y: y1qb,
               type: 'scatter', mode: 'lines', name: '1QB',
-              line: { color: '#3b82f6', width: 2, shape: 'spline', smoothing: 1.2 },
+              line: { color: '#3b82f6', width: 2.5, shape: 'spline', smoothing: 1.3 },
               fill: hasDualSeries ? 'none' : 'tozeroy',
-              fillcolor: 'rgba(59, 130, 246, 0.1)',
+              fillcolor: 'rgba(59, 130, 246, 0.08)',
               hovertemplate: '%{text}<extra></extra>',
               text: hover1qb,
             };
             const traceSF = {
-              x: extendedX, y: extendedsf,
+              x: xIdx, y: ysf,
               type: 'scatter', mode: 'lines', name: 'SF',
-              line: { color: '#f59e0b', width: 2, shape: 'spline', smoothing: 1.2 },
+              line: { color: '#f59e0b', width: 2.5, shape: 'spline', smoothing: 1.3 },
               fill: 'none',
               hovertemplate: '%{text}<extra></extra>',
               text: hoverSF,
             };
 
             const traces = hasDualSeries ? [trace1qb, traceSF] : [
-              { ...trace1qb, name: 'Value', text: [...xData.map((date, i) => `<b>${date}</b><br>Value: ${y1qb[i]?.toFixed(1) || ''}`), '', '', '', ''] }
+              { ...trace1qb, name: 'Value', text: dates.map((date, i) => `<b>${date}</b><br>Value: ${y1qb[i]?.toFixed(1) || ''}`) }
             ];
 
             const isMobile = window.innerWidth <= 768;
             const chartHeight = isMobile ? 200 : 250;
+            const xPad = Math.max(n * 0.02, 0.5);
 
             const layout = {
-              margin: { l: 30, r: 20, t: 10, b: 36 },
+              margin: { l: 36, r: 16, t: 10, b: 26 },
               height: chartHeight,
               paper_bgcolor: 'transparent',
               plot_bgcolor: 'transparent',
               showlegend: hasDualSeries,
-              legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: 1.1, font: { size: 11, color: mutedColor } },
+              legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: 1.14, font: { size: 11, color: mutedColor } },
               xaxis: {
                 showgrid: false,
-                type: 'category',
+                zeroline: false,
                 tickmode: 'array',
-                tickvals: [...tickvals, tickvals.length, tickvals.length + 1, tickvals.length + 2, tickvals.length + 3],
-                ticktext: [...ticktext, '', '', ''],
+                tickvals: tickvals,
+                ticktext: ticktext,
                 tickangle: 0,
                 tickfont: { size: 11, color: mutedColor },
                 fixedrange: true,
-                range: [-(xData.length * 0.3), xData.length + 2],
+                range: [-xPad, (n - 1) + xPad],
               },
               yaxis: {
                 showgrid: true,
+                gridcolor: gridColor,
+                zeroline: false,
                 showticklabels: true,
                 range: [Math.min(yMin - yPad, yFloor), yMax + yPad],
                 tickfont: { size: 11, color: mutedColor },
+                nticks: 5,
               },
               hovermode: 'closest',
             };
