@@ -20939,8 +20939,8 @@ def api_player_details(player_id: str):
             "fantasy_team": fantasy_team,
             "fantasy_team_owner": fantasy_team_owner,
             "stats": {
-                "value": round(player_value.get("value", 0) * _te_mult, 1) if player_value.get("value") else None,
-                "sf_value": round(player_value.get("sf_value", 0) * _te_mult, 1) if player_value.get("sf_value") else None,
+                "value": round(float(player_value.get("value", 0)) * _te_mult, 1) if player_value.get("value") else None,
+                "sf_value": round(float(player_value.get("sf_value", 0)) * _te_mult, 1) if player_value.get("sf_value") else None,
                 "pos_rank": player_value.get("pos_rank"),
                 "pos_rank_label": player_value.get("pos_rank_label"),
                 "sf_pos_rank": player_value.get("sf_pos_rank"),
