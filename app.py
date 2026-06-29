@@ -422,6 +422,7 @@ _APP_JS_V = _static_hash(_APP_JS_FILE)
 _PUBLIC_JS_FILE = _ensure_public_js()
 _PUBLIC_JS_V = _static_hash(_PUBLIC_JS_FILE)
 _PAYWALL_JS_V = _static_hash("paywall.js")
+_REDZONE_JS_V = _static_hash("redzone.js")
 _CSS_FILE = _ensure_minified_css()
 _CSS_V = _static_hash(_CSS_FILE)
 _FA_V = _static_hash("font-awesome.css")
@@ -11054,6 +11055,10 @@ def page_redzone(platform: str, season: int, league_id: str):
     body = (
         '<div id="rz-root" class="rz-page"><div class="rz-boot-spinner">Loading...</div></div>'
         f'<script>window.__rz__={json.dumps(data)};</script>'
+        # The Redzone live module is split out of app.js so it only loads here.
+        # `defer` runs it after the page's blocking app.js, so the shared helpers
+        # (openPlayerModal, window._rzBuildLiveHtml/_rzSyncTabLive) are defined.
+        f'<script src="/static/redzone.js?v={_REDZONE_JS_V}" defer></script>'
     )
     return render_page("BR Redzone", league_id, "redzone", body, platform, season)
 
