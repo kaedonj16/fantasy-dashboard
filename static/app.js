@@ -8857,6 +8857,7 @@ function openPlayerModal(playerId, playerName, opts) {
       if (data.value_history && data.value_history.length > 0) {
         const chartDiv = document.getElementById('playerValueChart');
         if (chartDiv) {
+          const fullHistory = data.value_history;
           const formatDateLabel = (dateStr) => {
             if (!dateStr) return '';
             const m = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -8865,104 +8866,141 @@ function openPlayerModal(playerId, playerName, opts) {
             const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
             return `${monthNames[parseInt(month, 10) - 1]} ${parseInt(day, 10)}`;
           };
-
-          const xData = data.value_history.map(d => formatDateLabel(d.as_of_date));
-          const n = xData.length;
-
-          const y1qb = data.value_history.map(d => d.value_1qb ?? d.value);
-          const ysf  = data.value_history.map(d => d.value_sf  ?? d.value);
-
-          // Check if 1QB and SF values are meaningfully different (e.g. QBs differ; non-QBs may be same)
-          const hasDualSeries = y1qb.some((v, i) => Math.abs(v - ysf[i]) > 1);
-
-          const allY = hasDualSeries ? [...y1qb, ...ysf] : y1qb;
-          const yMin = Math.min(...allY);
-          const yMax = Math.max(...allY);
-          const yRange = yMax - yMin;
-          const yPad = Math.max(yRange * 0.15, 20);
-          // Floor: no tighter than (currentValue - 200), so small wiggles don't look huge
-          const currentVal = allY[allY.length - 1] ?? yMax;
-          const yFloor = Math.max(0, currentVal - 200);
-
-          const midIdx = Math.floor((n - 1) / 2);
-          const firstDateStr  = formatDateLabel(data.value_history[0].as_of_date);
-          const midDateStr    = formatDateLabel(data.value_history[midIdx].as_of_date);
-          const latestDateStr = formatDateLabel(data.value_history[n - 1].as_of_date);
-          const tickvals = n <= 1 ? [xData[0]]
-                         : n <= 2 ? [xData[0], xData[n - 1]]
-                         : [xData[0], xData[midIdx], xData[n - 1]];
-          const ticktext  = n <= 1 ? [latestDateStr]
-                          : n <= 2 ? [firstDateStr, latestDateStr]
-                          : [firstDateStr, midDateStr, latestDateStr];
-
-          const mutedColor = getComputedStyle(document.documentElement)
-            .getPropertyValue('--text-muted').trim() || '#6b7280';
-
-          const extendedX    = [...xData, '', '', '', ''];
-          const extended1qb  = [...y1qb, null, null, null, null];
-          const extendedsf   = [...ysf,  null, null, null, null];
-
-          const hover1qb = [...xData.map((date, i) => `<b>${date}</b><br>1QB: ${y1qb[i]?.toFixed(1) || ''}`), '', '', '', ''];
-          const hoverSF  = [...xData.map((date, i) => `<b>${date}</b><br>SF: ${ysf[i]?.toFixed(1) || ''}`), '', '', '', ''];
-
-          const trace1qb = {
-            x: extendedX, y: extended1qb,
-            type: 'scatter', mode: 'lines', name: '1QB',
-            line: { color: '#3b82f6', width: 2, shape: 'spline', smoothing: 1.2 },
-            fill: hasDualSeries ? 'none' : 'tozeroy',
-            fillcolor: 'rgba(59, 130, 246, 0.1)',
-            hovertemplate: '%{text}<extra></extra>',
-            text: hover1qb,
+          const parseHistDate = (s) => {
+            const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+            return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
           };
-          const traceSF = {
-            x: extendedX, y: extendedsf,
-            type: 'scatter', mode: 'lines', name: 'SF',
-            line: { color: '#f59e0b', width: 2, shape: 'spline', smoothing: 1.2 },
-            fill: 'none',
-            hovertemplate: '%{text}<extra></extra>',
-            text: hoverSF,
-          };
+          const latestD   = parseHistDate(fullHistory[fullHistory.length - 1].as_of_date);
+          const earliestD = parseHistDate(fullHistory[0].as_of_date);
+          const spanDays  = (latestD && earliestD) ? (latestD - earliestD) / 86400000 : 0;
 
-          const traces = hasDualSeries ? [trace1qb, traceSF] : [
-            { ...trace1qb, name: 'Value', text: [...xData.map((date, i) => `<b>${date}</b><br>Value: ${y1qb[i]?.toFixed(1) || ''}`), '', '', '', ''] }
-          ];
+          function renderChart(history) {
+            const xData = history.map(d => formatDateLabel(d.as_of_date));
+            const n = xData.length;
 
-          const isMobile = window.innerWidth <= 768;
-          const chartHeight = isMobile ? 200 : 250;
+            const y1qb = history.map(d => d.value_1qb ?? d.value);
+            const ysf  = history.map(d => d.value_sf  ?? d.value);
 
-          const layout = {
-            margin: { l: 30, r: 20, t: 10, b: 36 },
-            height: chartHeight,
-            paper_bgcolor: 'transparent',
-            plot_bgcolor: 'transparent',
-            showlegend: hasDualSeries,
-            legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: 1.1, font: { size: 11, color: mutedColor } },
-            xaxis: {
-              showgrid: false,
-              type: 'category',
-              tickmode: 'array',
-              tickvals: [...tickvals, tickvals.length, tickvals.length + 1, tickvals.length + 2, tickvals.length + 3],
-              ticktext: [...ticktext, '', '', ''],
-              tickangle: 0,
-              tickfont: { size: 11, color: mutedColor },
-              fixedrange: true,
-              range: [-(xData.length * 0.3), xData.length + 2],
-            },
-            yaxis: {
-              showgrid: true,
-              showticklabels: true,
-              range: [Math.min(yMin - yPad, yFloor), yMax + yPad],
-              tickfont: { size: 11, color: mutedColor },
-            },
-            hovermode: 'closest',
-          };
+            // Check if 1QB and SF values are meaningfully different (e.g. QBs differ; non-QBs may be same)
+            const hasDualSeries = y1qb.some((v, i) => Math.abs(v - ysf[i]) > 1);
 
-          if (window.ensurePlotly) window.ensurePlotly().then(function () {
-            Plotly.newPlot('playerValueChart', traces, layout, {
-              displayModeBar: false,
-              responsive: true
+            const allY = hasDualSeries ? [...y1qb, ...ysf] : y1qb;
+            const yMin = Math.min(...allY);
+            const yMax = Math.max(...allY);
+            const yRange = yMax - yMin;
+            const yPad = Math.max(yRange * 0.15, 20);
+            // Floor: no tighter than (currentValue - 200), so small wiggles don't look huge
+            const currentVal = allY[allY.length - 1] ?? yMax;
+            const yFloor = Math.max(0, currentVal - 200);
+
+            const midIdx = Math.floor((n - 1) / 2);
+            const firstDateStr  = formatDateLabel(history[0].as_of_date);
+            const midDateStr    = formatDateLabel(history[midIdx].as_of_date);
+            const latestDateStr = formatDateLabel(history[n - 1].as_of_date);
+            const tickvals = n <= 1 ? [xData[0]]
+                           : n <= 2 ? [xData[0], xData[n - 1]]
+                           : [xData[0], xData[midIdx], xData[n - 1]];
+            const ticktext  = n <= 1 ? [latestDateStr]
+                            : n <= 2 ? [firstDateStr, latestDateStr]
+                            : [firstDateStr, midDateStr, latestDateStr];
+
+            const mutedColor = getComputedStyle(document.documentElement)
+              .getPropertyValue('--text-muted').trim() || '#6b7280';
+
+            const extendedX    = [...xData, '', '', '', ''];
+            const extended1qb  = [...y1qb, null, null, null, null];
+            const extendedsf   = [...ysf,  null, null, null, null];
+
+            const hover1qb = [...xData.map((date, i) => `<b>${date}</b><br>1QB: ${y1qb[i]?.toFixed(1) || ''}`), '', '', '', ''];
+            const hoverSF  = [...xData.map((date, i) => `<b>${date}</b><br>SF: ${ysf[i]?.toFixed(1) || ''}`), '', '', '', ''];
+
+            const trace1qb = {
+              x: extendedX, y: extended1qb,
+              type: 'scatter', mode: 'lines', name: '1QB',
+              line: { color: '#3b82f6', width: 2, shape: 'spline', smoothing: 1.2 },
+              fill: hasDualSeries ? 'none' : 'tozeroy',
+              fillcolor: 'rgba(59, 130, 246, 0.1)',
+              hovertemplate: '%{text}<extra></extra>',
+              text: hover1qb,
+            };
+            const traceSF = {
+              x: extendedX, y: extendedsf,
+              type: 'scatter', mode: 'lines', name: 'SF',
+              line: { color: '#f59e0b', width: 2, shape: 'spline', smoothing: 1.2 },
+              fill: 'none',
+              hovertemplate: '%{text}<extra></extra>',
+              text: hoverSF,
+            };
+
+            const traces = hasDualSeries ? [trace1qb, traceSF] : [
+              { ...trace1qb, name: 'Value', text: [...xData.map((date, i) => `<b>${date}</b><br>Value: ${y1qb[i]?.toFixed(1) || ''}`), '', '', '', ''] }
+            ];
+
+            const isMobile = window.innerWidth <= 768;
+            const chartHeight = isMobile ? 200 : 250;
+
+            const layout = {
+              margin: { l: 30, r: 20, t: 10, b: 36 },
+              height: chartHeight,
+              paper_bgcolor: 'transparent',
+              plot_bgcolor: 'transparent',
+              showlegend: hasDualSeries,
+              legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: 1.1, font: { size: 11, color: mutedColor } },
+              xaxis: {
+                showgrid: false,
+                type: 'category',
+                tickmode: 'array',
+                tickvals: [...tickvals, tickvals.length, tickvals.length + 1, tickvals.length + 2, tickvals.length + 3],
+                ticktext: [...ticktext, '', '', ''],
+                tickangle: 0,
+                tickfont: { size: 11, color: mutedColor },
+                fixedrange: true,
+                range: [-(xData.length * 0.3), xData.length + 2],
+              },
+              yaxis: {
+                showgrid: true,
+                showticklabels: true,
+                range: [Math.min(yMin - yPad, yFloor), yMax + yPad],
+                tickfont: { size: 11, color: mutedColor },
+              },
+              hovermode: 'closest',
+            };
+
+            if (window.ensurePlotly) window.ensurePlotly().then(function () {
+              Plotly.newPlot('playerValueChart', traces, layout, {
+                displayModeBar: false,
+                responsive: true
+              });
+            }).catch(function () {});
+          }
+
+          // Time-range filter — only show ranges the data actually spans (e.g. a
+          // player with 2 weeks of history gets no "3 Mo"/"1 Yr" buttons).
+          const RANGES = [{ label: '1 Mo', days: 30 }, { label: '3 Mo', days: 90 }, { label: '1 Yr', days: 365 }];
+          const applicable = RANGES.filter(r => spanDays > r.days);
+          if (applicable.length && latestD) {
+            const subsetFor = (days) => {
+              if (!isFinite(days)) return fullHistory;
+              const cutoff = latestD.getTime() - days * 86400000;
+              const sub = fullHistory.filter(d => { const dd = parseHistDate(d.as_of_date); return dd && dd.getTime() >= cutoff; });
+              return sub.length ? sub : fullHistory;
+            };
+            const ranges = applicable.concat([{ label: 'All', days: Infinity }]);
+            const bar = document.createElement('div');
+            bar.className = 'pvc-range-bar';
+            bar.innerHTML = ranges.map(r =>
+              `<button type="button" class="pvc-range-btn${r.days === Infinity ? ' is-active' : ''}" data-days="${r.days}">${r.label}</button>`
+            ).join('');
+            chartDiv.parentNode.insertBefore(bar, chartDiv);
+            bar.addEventListener('click', (e) => {
+              const b = e.target.closest('.pvc-range-btn');
+              if (!b) return;
+              bar.querySelectorAll('.pvc-range-btn').forEach(x => x.classList.toggle('is-active', x === b));
+              renderChart(subsetFor(parseFloat(b.getAttribute('data-days'))));
             });
-          }).catch(function () {});
+          }
+
+          renderChart(fullHistory);
         }
       }
 
