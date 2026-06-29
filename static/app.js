@@ -8623,17 +8623,27 @@ function openPlayerModal(playerId, playerName, opts) {
       const sfPosLabel   = data.stats?.sf_pos_rank_label;
       const sfOvrRank    = data.stats?.sf_value_ovr_rank;
 
+      // TE-premium pill: shown beside the value titles when THIS league applies
+      // a TE premium and the player is a tight end. Half premium → "TE+",
+      // full (1pt) premium → "TE++". Mirrors the value scaling done server-side.
+      const _tep = (pos === 'TE') ? (Number(data.te_premium) || 0) : 0;
+      const tepPill = _tep >= 0.75
+        ? '<span class="pm-tep-pill" title="Full TE premium (+20%)">TE++</span>'
+        : _tep >= 0.25
+        ? '<span class="pm-tep-pill" title="TE premium (+10%)">TE+</span>'
+        : '';
+
       const _heroCardCount = 2 + (ppgCard ? 1 : 0) + (totalCard ? 1 : 0);
       const heroGridStyle = `style="grid-template-columns:repeat(${_heroCardCount},1fr);"`;
       let overviewHTML = `
         <div class="pm-hero-row" ${heroGridStyle}>
           <div class="pm-hero-stat pm-hero-primary">
-            <div class="pm-hero-label">1QB Value</div>
+            <div class="pm-hero-label">1QB Value${tepPill}</div>
             <div class="pm-hero-val" style="color:#3b82f6;">${val1qb > 0 ? val1qb : '-'}</div>
             <div class="pm-hero-sub">${valPosRank ? `POS : ${valPosRank} · OVR : ${valOvrRank ?? '–'}` : '-'}</div>
           </div>
           <div class="pm-hero-stat">
-            <div class="pm-hero-label">SF Value</div>
+            <div class="pm-hero-label">SF Value${tepPill}</div>
             <div class="pm-hero-val">${valsf > 0 ? valsf : '-'}</div>
             <div class="pm-hero-sub">${sfPosRank ? `POS : ${sfPosRank} · OVR : ${sfOvrRank ?? '–'}` : '-'}</div>
           </div>

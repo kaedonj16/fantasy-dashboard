@@ -13970,6 +13970,25 @@ img, svg, canvas {
   letter-spacing: 0.04em;
   margin-bottom: 4px;
 }
+/* TE-premium pill beside the value title (1QB Value TE+, SF Value TE++). */
+.pm-tep-pill {
+  display: inline-block;
+  margin-left: 5px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+  color: #7c3aed;
+  background: rgba(124, 58, 237, 0.12);
+  border: 1px solid rgba(124, 58, 237, 0.32);
+}
+:root[data-theme="dark"] .pm-tep-pill {
+  color: #c4b5fd;
+  background: rgba(139, 92, 246, 0.18);
+  border-color: rgba(139, 92, 246, 0.42);
+}
 .pm-hero-val {
   font-size: 26px;
   font-weight: 700;

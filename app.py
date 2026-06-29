@@ -5287,6 +5287,9 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     # Detect by checking if any rookie from this year's class is already rostered.
     _rookie_draft_done = bool(_rookie_sids and any(sid in rostered_ids for sid in _rookie_sids))
 
+    # Auto-apply the league's TE premium to waiver values, like elsewhere.
+    _tep_dash = te_premium_from_settings(ctx.get("scoring_settings"))
+
     waiver_candidates = []
     for row in model_value_table:
         if not isinstance(row, dict):
@@ -5306,6 +5309,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             val = float(row.get("value") or 0.0)
         except Exception:
             val = 0.0
+        val = apply_te_premium(val, pos, _tep_dash)
         if val <= 0:
             continue
 
@@ -9863,6 +9867,9 @@ def api_waiver_candidates():
     _rp_wv = ctx.get("roster_positions") or []
     _is_sf_wv = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_wv)
     _vf_wv = "sf_value" if _is_sf_wv else "value"
+    # Auto-apply the league's TE premium, exactly like Superflex auto-picks the
+    # value column: a no-op for non-TE-premium leagues / non-TEs.
+    _tep_wv = te_premium_from_settings(ctx.get("scoring_settings"))
 
     candidates = []
     for row in model_value_table:
@@ -9883,6 +9890,7 @@ def api_waiver_candidates():
             val = float(row.get(_vf_wv) or row.get("value") or 0.0)
         except Exception:
             val = 0.0
+        val = apply_te_premium(val, pos, _tep_wv)
         if val <= 0:
             continue
         pmeta_wv = players_index.get(pid, {})
