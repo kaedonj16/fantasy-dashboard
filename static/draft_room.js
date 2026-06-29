@@ -3753,32 +3753,80 @@
   // that race (touch + the synthesized click on mobile) is what made it
   // insta-close. The listener is removed again on close.
   (function initOptsDropdown(){
+    var wrap = document.querySelector('.dr-side-opts');
     var panel = document.getElementById('drOptsPanel');
     var btn = document.getElementById('drOptsBtn');
-    if (!panel || !btn) return;
-    function isOpen(){ return panel.style.display !== '' && panel.style.display !== 'none'; }
+    if (!wrap || !panel || !btn) return;
+    var mq = window.matchMedia('(max-width: 900px)');
+    var statusRight = document.querySelector('.dr-status-right');
+    var tabs = document.getElementById('drSideTabs');
+    var panelHome = panel.parentNode, panelNext = panel.nextSibling;
+
+    // Gear lives in the header on desktop, beside the side-panel tabs on mobile.
+    function placeWrap(){
+      var dest = mq.matches ? tabs : statusRight;
+      if (dest && wrap.parentNode !== dest) dest.appendChild(wrap);
+    }
+    function isOpen(){ return btn.getAttribute('aria-expanded') === 'true'; }
+
+    function position(){
+      if (!mq.matches){
+        // Desktop: CSS-anchored dropdown below the gear (in the header).
+        panel.style.position = ''; panel.style.top = ''; panel.style.bottom = '';
+        panel.style.left = ''; panel.style.right = '';
+        return;
+      }
+      // Mobile: fixed popover so it escapes the sheet (transformed + overflow:hidden).
+      // Opens UPWARD when the gear sits in the lower half of the screen (sheet at the
+      // mid snap), DOWNWARD when it's in the upper half (sheet at the top snap).
+      var r = btn.getBoundingClientRect();
+      panel.style.position = 'fixed';
+      panel.style.left = 'auto';
+      panel.style.right = Math.max(8, window.innerWidth - r.right) + 'px';
+      if (r.top > window.innerHeight * 0.5){
+        panel.style.bottom = (window.innerHeight - r.top + 6) + 'px';
+        panel.style.top = 'auto';
+      } else {
+        panel.style.top = (r.bottom + 6) + 'px';
+        panel.style.bottom = 'auto';
+      }
+    }
     function onDoc(e){
-      if (btn.parentElement.contains(e.target)) return;  // taps on the gear or panel
+      if (btn.contains(e.target) || panel.contains(e.target)) return;  // gear / panel taps
       close();
     }
-    function close(){
-      panel.style.display = 'none';
-      btn.setAttribute('aria-expanded', 'false');
-      document.removeEventListener('click', onDoc);
-      document.removeEventListener('touchstart', onDoc);
-    }
     function open(){
+      if (mq.matches && panel.parentNode !== document.body) document.body.appendChild(panel);
       panel.style.display = 'flex';
+      position();
       btn.setAttribute('aria-expanded', 'true');
       setTimeout(function(){
         document.addEventListener('click', onDoc);
         document.addEventListener('touchstart', onDoc, { passive: true });
+        window.addEventListener('resize', position);
       }, 0);
+    }
+    function close(){
+      panel.style.display = 'none';
+      btn.setAttribute('aria-expanded', 'false');
+      if (panel.parentNode === document.body){
+        panel.style.position = ''; panel.style.top = ''; panel.style.bottom = '';
+        panel.style.left = ''; panel.style.right = '';
+        panelHome.insertBefore(panel, panelNext);   // back beside the gear
+      }
+      document.removeEventListener('click', onDoc);
+      document.removeEventListener('touchstart', onDoc);
+      window.removeEventListener('resize', position);
     }
     btn.addEventListener('click', function(e){
       e.stopPropagation();
       if (isOpen()) close(); else open();
     });
+    // Tapping an action in the menu dismisses it (the speed <select> doesn't).
+    panel.addEventListener('click', function(e){ if (e.target.closest('.dr-btn')) close(); });
+    if (mq.addEventListener) mq.addEventListener('change', function(){ if (isOpen()) close(); placeWrap(); });
+    else if (mq.addListener) mq.addListener(placeWrap);
+    placeWrap();
   })();
   document.getElementById('drBaSort').addEventListener('change', renderBA);
   document.getElementById('drSearch').addEventListener('input', renderBA);
