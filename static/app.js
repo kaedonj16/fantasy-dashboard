@@ -8882,11 +8882,11 @@ function openPlayerModal(playerId, playerName, opts) {
             const y1qb = history.map(d => Number(d.value_1qb ?? d.value));
             const ysf  = history.map(d => Number(d.value_sf  ?? d.value));
 
-            // Only QBs differ meaningfully between 1QB and Superflex. For everyone
-            // else the two track together (any divergence is data jitter), so show a
-            // single clean line instead of a noisy second series.
-            const isQB = (typeof pos !== 'undefined' && pos === 'QB');
-            const hasDualSeries = isQB && y1qb.some((v, i) => Math.abs(v - ysf[i]) > 1);
+            // Show both 1QB and Superflex lines whenever they genuinely diverge.
+            // Both columns are EMA-smoothed at the data layer (smooth_value_history.py),
+            // so the SF series is already clean; for players where SF tracks 1QB the
+            // two coincide and we fall back to a single "Value" line.
+            const hasDualSeries = y1qb.some((v, i) => Math.abs(v - ysf[i]) > 1);
 
             const allY = hasDualSeries ? [...y1qb, ...ysf] : y1qb;
             const yMin = Math.min(...allY);
