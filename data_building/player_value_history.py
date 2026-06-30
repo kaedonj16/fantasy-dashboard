@@ -346,6 +346,11 @@ def get_player_value_history(
     # calibrated_value_sf below, so using the smoothed base keeps the right end
     # value while giving a clean trend.
     _sf_expr = f"COALESCE(sf_value, {_sf_col}, {_1qb_col}, value)"
+    # Same reasoning for 1QB: the smoother only touches `value`, not the
+    # size-specific value_8/12/14 columns, so on 8/12/14-team leagues those
+    # produced a spiky 1QB line. Prefer the smoothed base `value` (re-scaled to
+    # the calibrated endpoint below); fall back to the size column if it's null.
+    _1qb_expr = f"COALESCE(value, {_1qb_col})"
 
     with get_conn() as conn:
         rows = conn.execute(
@@ -356,7 +361,7 @@ def get_player_value_history(
                 name,
                 position,
                 team,
-                COALESCE({_1qb_col}, value) AS value_1qb,
+                {_1qb_expr}                 AS value_1qb,
                 {_sf_expr}                  AS value_sf,
                 source
             FROM player_value_history
