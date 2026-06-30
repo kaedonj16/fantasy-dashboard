@@ -5249,7 +5249,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     roster_cards_html = "".join(ranked_snapshot_html)
 
     roster_leader = roster_cards[0]["team_name"] if roster_cards else "N/A"
-    highest_roster_value = f"{roster_cards[0]['roster_value']:.0f}" if roster_cards else "0"
+    highest_roster_value = f"{roster_cards[0]['roster_value']:,.0f}" if roster_cards else "0"
     
     # Calculate total draft capital across all rosters
     total_draft_capital = 0.0
@@ -5567,12 +5567,12 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             </div>
             <div class="os-stat-card">
               <div class="os-stat-label">League leader</div>
-              <div class="os-stat-value">{highest_roster_value}</div>
-              <div class="os-stat-sub">{roster_leader}</div>
+              <div class="os-stat-value">{roster_leader}</div>
+              <div class="os-stat-sub">{highest_roster_value} roster value</div>
             </div>
             <div class="os-stat-card">
               <div class="os-stat-label">Draft Capital Index</div>
-              <div class="os-stat-value">{total_draft_capital:.0f}</div>
+              <div class="os-stat-value">{total_draft_capital:,.0f}</div>
               <div class="os-stat-sub">Based on modeled pick values</div>
             </div>
           </div>
