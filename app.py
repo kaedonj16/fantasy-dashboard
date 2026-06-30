@@ -25507,6 +25507,19 @@ def build_portfolio_body(
         ".pf-league-link{font-size:15px;}"
         ".pf-league-type{order:2;flex:0 0 auto;text-align:right;padding:0;}"
         ".pf-pos-chips{flex-basis:100%;gap:8px 14px;margin-top:9px;}"
+        # Player Holdings: the 5-col table clips names on phones. Collapse each row
+        # into a card — badge + name/leagues + value — and drop the secondary Rank
+        # and Shares columns (the leagues list already conveys ownership breadth).
+        "#pfTable thead{display:none;}"
+        "#pfTable,#pfTable tbody{display:block;width:100%;}"
+        "#pfTable tr.pf-row{display:flex;align-items:center;gap:10px;"
+        "border:1px solid var(--grid);border-radius:12px;padding:10px 12px;margin-bottom:8px;}"
+        "#pfTable tr.pf-row td{display:block;border:none;padding:0;}"
+        "#pfTable tr.pf-row td:nth-child(3),#pfTable tr.pf-row td:nth-child(4){display:none;}"
+        "#pfTable tr.pf-row td:nth-child(1){flex:0 0 auto;}"
+        "#pfTable tr.pf-row td.team{flex:1 1 auto;min-width:0;max-width:none;text-align:left;}"
+        "#pfTable tr.pf-row td.team>div:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"
+        "#pfTable tr.pf-row td:nth-child(5){flex:0 0 auto;margin-left:auto;font-size:17px;}"
         "}"
         "</style>"
     )
