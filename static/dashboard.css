@@ -17419,6 +17419,19 @@ button:disabled {
   /* Hide ease bar column on mobile - saves ~90px */
   .sched-ease-td,
   th.sched-th:last-child { display: none; }
+
+  /* The owner/"Rostered" badges truncate to unreadable stubs ("SLI…", "SUP…")
+     in the narrow sticky column — drop them on mobile and give the space back to
+     the player names. (Higher specificity to beat the later base rule.) */
+  .sched-rank-player-line .sched-roster-badge { display: none; }
+  .sched-td-player { max-width: 168px; }
+  .sched-pname { max-width: 128px; }
+
+  /* Shadow on the sticky first column so it reads as pinned while the week
+     cells scroll underneath, rather than looking like the table is just cut off. */
+  .sched-th-player { box-shadow: 6px 0 7px -5px rgba(15,23,42,0.28); }
+  .sched-td-player { box-shadow: 6px 0 7px -5px rgba(15,23,42,0.18); }
+  .sched-grid-wrap { -webkit-overflow-scrolling: touch; }
 }
 
 /* ── Skip link (accessibility) ─────────────────────────────────── */
