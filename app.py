@@ -25473,25 +25473,26 @@ def build_portfolio_body(
         ".pf-league-type{text-align:right;padding-right:8px;white-space:nowrap;}"
         ".pf-streak{justify-content:center;}"
         # Mobile: the 5-column table is too cramped, so each league becomes a
-        # stacked card — name + type badge on top, position chips below, then a
-        # labeled Record/Rank strip (the Streak column is dropped).
+        # compact card — league name + type badge on one row, position-rank chips
+        # below. Record / Rank / Streak are dropped on mobile (they're 0-0 / ?
+        # placeholders in the offseason and add clutter; the full table keeps them
+        # on desktop). High-specificity selectors override the .standings-table
+        # cell borders so no stray underlines bleed through.
         "@media(max-width:600px){"
         ".pf-leagues-table thead{display:none;}"
         ".pf-leagues-table,.pf-leagues-table tbody{display:block;width:100%;}"
-        ".pf-league-row{display:flex;flex-wrap:wrap;align-items:flex-start;column-gap:10px;"
-        "border:1px solid var(--grid);border-radius:12px;background:var(--card);"
+        ".pf-leagues-table tr.pf-league-row{display:flex;flex-wrap:wrap;align-items:flex-start;"
+        "column-gap:10px;border:1px solid var(--grid);border-radius:12px;background:var(--card);"
         "padding:12px 14px;margin-bottom:10px;}"
-        ".pf-league-row+.pf-league-row{margin-top:0;}"
-        ".pf-league-row td{display:block;border-top:none;padding:0;}"
+        ".pf-leagues-table tr.pf-league-row td{display:block;border:none;padding:0;}"
+        # Hide Record/Rank/Streak — selectors must out-specify the display:block above.
+        ".pf-leagues-table tr.pf-league-row td:nth-child(2),"
+        ".pf-leagues-table tr.pf-league-row td:nth-child(3),"
+        ".pf-leagues-table tr.pf-league-row td:nth-child(4){display:none;}"
         ".pf-leagues-table td.pf-league-name-cell{flex:1 1 60%;order:1;min-width:0;}"
         ".pf-league-link{font-size:15px;}"
         ".pf-league-type{order:2;flex:0 0 auto;text-align:right;padding:0;}"
-        ".pf-pos-chips{flex-basis:100%;gap:8px 14px;margin-top:8px;}"
-        ".pf-league-stat{order:3;flex:0 0 auto;display:inline-flex;align-items:baseline;gap:6px;"
-        "text-align:left;font-size:15px;margin:12px 22px 0 0;}"
-        ".pf-league-stat[data-label]::before{content:attr(data-label);font-size:10px;font-weight:700;"
-        "color:var(--text-subtle);text-transform:uppercase;letter-spacing:.05em;}"
-        ".pf-leagues-table td:nth-child(4){display:none;}"
+        ".pf-pos-chips{flex-basis:100%;gap:8px 14px;margin-top:9px;}"
         "}"
         "</style>"
     )
