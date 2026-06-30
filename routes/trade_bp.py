@@ -750,6 +750,23 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         border-color: var(--accent, #3b82f6);
         font-weight: 700;
       }}
+      /* Mobile: stack the info above the controls and let the page buttons wrap,
+         instead of one flex row that overflows the screen edge. */
+      @media (max-width: 600px) {{
+        .ti-pagination {{
+          flex-direction: column;
+          align-items: stretch;
+          gap: 12px;
+        }}
+        .ti-pagination-info {{
+          text-align: center;
+        }}
+        .ti-pagination-controls {{
+          justify-content: center;
+          flex-wrap: wrap;
+          gap: 8px;
+        }}
+      }}
 
       /* ── Trade History Modal ── */
       .ti-trades-modal {{
