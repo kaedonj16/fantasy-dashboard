@@ -50,3 +50,10 @@ def test_unknown_route_does_not_500():
     # A missing page should 404 (or redirect), never raise a 5xx.
     resp = _client.get("/this-route-does-not-exist-xyz-123")
     assert resp.status_code < 500
+
+
+def test_changelog_api_ok():
+    # DB-free blueprint route (routes/misc_api_bp.py): returns a JSON list.
+    resp = _client.get("/api/changelog")
+    assert resp.status_code == 200
+    assert resp.is_json

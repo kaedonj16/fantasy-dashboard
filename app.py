@@ -617,6 +617,13 @@ try:
 except Exception as e:
     logger.warning("[seo-bp] skipped: %s", e)
 
+try:
+    from routes.misc_api_bp import misc_api_bp
+    app.register_blueprint(misc_api_bp)
+    logger.info("[misc-api-bp] registered")
+except Exception as e:
+    logger.warning("[misc-api-bp] skipped: %s", e)
+
 
 
 def generate_recent_updates_html(limit=5):
@@ -18450,11 +18457,7 @@ def api_advanced_metrics_weekly_bulk():
         return jsonify({"byId": {}, "keys": []}), 200
 
 
-@app.route("/api/advanced-metrics/seasons")
-def api_advanced_metrics_seasons():
-    """Return available seasons in player_advanced_metrics, newest first."""
-    from data_building.advanced_metrics import get_available_seasons
-    return jsonify({"seasons": get_available_seasons()})
+# /api/advanced-metrics/seasons extracted to routes/misc_api_bp.py
 
 
 @app.route("/api/advanced-metrics/config")
@@ -18805,16 +18808,7 @@ def api_breakout_candidates():
         return jsonify([])
 
 
-@app.route("/api/nfl-state")
-def api_nfl_state():
-    """Get current NFL state from Sleeper API."""
-    try:
-        from dashboard_services.api import get_nfl_state
-        state = get_nfl_state()
-        return jsonify(state or {})
-    except Exception as e:
-        logger.info(f"[nfl-state] Error: {e}")
-        return jsonify({}), 500
+# /api/nfl-state extracted to routes/misc_api_bp.py
 
 
 
@@ -20482,10 +20476,7 @@ def api_sleeper_user_leagues():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-@app.route("/api/changelog")
-def api_changelog():
-    """Return the changelog entries."""
-    return jsonify(CHANGELOG)
+# /api/changelog extracted to routes/misc_api_bp.py
 
 
 @app.route("/api/weekly-trends")
