@@ -14041,9 +14041,10 @@ def build_schedule_body(ctx):
           g.players.push(p);
         });
 
-        var head = '<th class="sched-th sched-th-player">Team</th>';
+        var head = '<th class="sched-th sched-th-player">Team</th>' +
+                   '<th class="sched-th sched-th-sos">Avg</th>';
         for (var i = 0; i < weeks.length; i++) head += '<th class="sched-th">WK ' + weeks[i] + '</th>';
-        head += '<th class="sched-th">Avg</th><th class="sched-th sched-th-ease" style="min-width:90px;">Ease</th>';
+        head += '<th class="sched-th sched-th-ease" style="min-width:90px;">Ease</th>';
 
         var rows = '';
         groups.forEach(function(g, idx) {
@@ -14099,8 +14100,8 @@ def build_schedule_body(ctx):
                 '<span class="sched-nfl">' + esc(g.team) + '</span>' +
               '</div>' +
             '</td>' +
+            '<td class="sched-td sched-sos-td" style="color:' + avgColor + ';">' + avgTxt + '</td>' +
             cells +
-            '<td class="sched-td" style="font-size:12px;font-weight:700;color:' + avgColor + ';white-space:nowrap;">' + avgTxt + '</td>' +
             '<td class="sched-td sched-ease-td">' + easeBar + '</td>' +
           '</tr>';
         });
