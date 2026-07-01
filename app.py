@@ -8836,19 +8836,7 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
         return ctx
 
 
-@app.route("/api/trade-count")
-def api_trade_count():
-    """Get the count of trades from trade_intel_trades table."""
-    try:
-        from dashboard_services.db import get_conn
-        with get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM trade_intel_trades")
-            count = cursor.fetchone()[0]
-        return jsonify({"count": count})
-    except Exception as e:
-        # Return fallback count if table doesn't exist or other error
-        return jsonify({"count": 15000})
+# /api/trade-count extracted to routes/misc_api_bp.py
 
 
 @app.route("/api/refresh-league", methods=["POST"])
@@ -26852,10 +26840,7 @@ def dynasty_trade_value_chart():
 
 # ── Top Movers (was Risers & Fallers) ─────────────────────────────────────────
 
-@app.route("/risers-fallers")
-def risers_fallers_redirect():
-    from flask import redirect as _redir
-    return _redir("/top-movers", 301)
+# /risers-fallers extracted to routes/misc_api_bp.py
 
 @app.route("/top-movers")
 def top_movers_page():

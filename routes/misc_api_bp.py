@@ -4,6 +4,8 @@ Routes:
     /api/changelog
     /api/nfl-state
     /api/advanced-metrics/seasons
+    /api/trade-count
+    /risers-fallers            (legacy 301 -> /top-movers)
 
 Extracted from app.py to reduce monolith size.
 Dependencies: dashboard_services.* / data_building.* only - no app.py internals.
@@ -12,7 +14,7 @@ from __future__ import annotations
 
 import logging
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, redirect
 
 from dashboard_services.changelog import CHANGELOG
 
@@ -44,3 +46,23 @@ def api_advanced_metrics_seasons():
     """Return available seasons in player_advanced_metrics, newest first."""
     from data_building.advanced_metrics import get_available_seasons
     return jsonify({"seasons": get_available_seasons()})
+
+
+@misc_api_bp.route("/api/trade-count")
+def api_trade_count():
+    """Get the count of trades from trade_intel_trades table."""
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM trade_intel_trades")
+            count = cursor.fetchone()[0]
+        return jsonify({"count": count})
+    except Exception:
+        # Return fallback count if table doesn't exist or other error
+        return jsonify({"count": 15000})
+
+
+@misc_api_bp.route("/risers-fallers")
+def risers_fallers_redirect():
+    return redirect("/top-movers", 301)
