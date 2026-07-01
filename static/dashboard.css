@@ -4,6 +4,19 @@
    Duplicate selectors merged: 36
    Duplicate properties removed: 122
    Auto-cleaned: 2026-03-25
+   ============================================
+
+   RESPONSIVE BREAKPOINTS — use these canonical widths, not one-off values.
+   Mixing near-duplicate breakpoints (480 vs 540, 640 vs 700 …) for related
+   components is what caused several mobile layout bugs where siblings drifted
+   out of sync. Prefer:
+     480px  — small phone
+     600px  — phone
+     768px  — tablet
+     900px  — small desktop / large tablet
+     1180px — desktop
+   tests/test_css_health.py ratchets the distinct max-width breakpoint count so
+   new one-off values can't creep back in.
    ============================================ */
 
 /* ============================================
@@ -13312,7 +13325,6 @@ img, svg, canvas {
 }
 
 /* ── Player Modal News ─────────────────────────────────────────────────────── */
-.pm-news-section { }
 
 .pm-news-item {
   padding: 10px 0;
@@ -15001,7 +15013,6 @@ tr.team-clickable {
 }
 
 /* ─── Teams Analytics Card ───────────────────────────────────────────────── */
-.teams-analytics-card {}
 
 .analytics-empty {
   padding: 24px;
