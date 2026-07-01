@@ -7767,8 +7767,10 @@ def build_activity_body(ctx: dict) -> str:
       }}
 
       @media (max-width: 900px) {{
+        /* 2x2 instead of four tall stacked cards — far less vertical space. */
         .bract-summary-grid {{
-          grid-template-columns: 1fr;
+          grid-template-columns: 1fr 1fr;
+          gap: 8px;
         }}
       }}
     </style>
