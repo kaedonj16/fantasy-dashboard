@@ -16353,12 +16353,14 @@ tr.team-clickable {
 }
 
 @media (max-width: 700px) {
+  /* Both award grids go two-up from tablet down (fun-awards-grid previously only
+     switched at 480px, so it collapsed to one column in the 481-700px range). */
   .awards-records-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  .fun-awards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 }
 @media (max-width: 480px) {
-  /* Keep two columns on phones instead of one tall stacked column of cards. */
   .awards-records-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
-  .fun-awards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fun-awards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 }
 
 /* ── Mobile polish (consolidated) ────────────────────────────────────────── */
