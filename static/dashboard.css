@@ -16334,6 +16334,7 @@ tr.team-clickable {
   font-weight: 800;
   color: var(--text);
   line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .fun-award-sub {
@@ -16355,8 +16356,9 @@ tr.team-clickable {
   .awards-records-grid { grid-template-columns: repeat(2, 1fr) !important; }
 }
 @media (max-width: 480px) {
-  .awards-records-grid { grid-template-columns: 1fr !important; }
-  .fun-awards-grid { grid-template-columns: 1fr; }
+  /* Keep two columns on phones instead of one tall stacked column of cards. */
+  .awards-records-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .fun-awards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* ── Mobile polish (consolidated) ────────────────────────────────────────── */
