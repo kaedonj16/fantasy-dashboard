@@ -9687,7 +9687,7 @@ img, svg, canvas {
   }
 }
 
-@media (max-width: 700px) {
+@media (max-width: 720px) {
   .sidebar {
     grid-template-columns: 1fr;
   }
@@ -10148,7 +10148,7 @@ img, svg, canvas {
   }
 }
 
-@media (max-width: 700px) {
+@media (max-width: 720px) {
   h1 {
     font-size: 30px;
     margin: 16px 0 24px;
@@ -10167,7 +10167,7 @@ img, svg, canvas {
   }
 }
 
-@media (max-width: 728px) {
+@media (max-width: 720px) {
   .ad-container {
     max-width: 100%;
     min-height: 70px;
@@ -11478,7 +11478,7 @@ img, svg, canvas {
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 768px) {
   .history-header {
     flex-direction: column;
   }
@@ -16363,7 +16363,7 @@ tr.team-clickable {
   background: linear-gradient(90deg, rgba(245,158,11,0.1) 0%, var(--card) 100%);
 }
 
-@media (max-width: 700px) {
+@media (max-width: 720px) {
   /* Both award grids go two-up from tablet down (fun-awards-grid previously only
      switched at 480px, so it collapsed to one column in the 481-700px range). */
   .awards-records-grid { grid-template-columns: repeat(2, 1fr) !important; }
@@ -18164,7 +18164,7 @@ button:disabled {
 .ask-gm-send:hover:not(:disabled) { opacity: .88; transform: scale(1.05); }
 .ask-gm-send:disabled { opacity: .35; cursor: not-allowed; }
 
-@media (max-width: 500px) {
+@media (max-width: 480px) {
   #ask-gm-panel { width: calc(100vw - 20px); right: 10px; bottom: 60px; }
 }
 

@@ -14,9 +14,9 @@ import re
 
 _CSS_PATH = os.path.join(os.path.dirname(__file__), "..", "static", "dashboard.css")
 
-# Ratchet: today the file uses 23 distinct max-width @media breakpoints. It may
+# Ratchet: the file uses this many distinct max-width @media breakpoints. It may
 # only shrink from here — never add another near-duplicate "mobile" width.
-MAX_BREAKPOINTS = 23
+MAX_BREAKPOINTS = 19
 
 
 def _css():
