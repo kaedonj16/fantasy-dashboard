@@ -269,7 +269,7 @@ def get_trade_ai_analysis(
                     elif rnd >= 3:
                         summary["thirds_plus"] += 1
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
         return summary
 
     def pos_totals(assets: list[dict]) -> dict[str, float]:
@@ -351,7 +351,7 @@ def get_trade_ai_analysis(
                 if abs(closest["avg_pick"] - overall) <= num_teams // 2 + 1:
                     pick_prospects[pk] = {"name": closest["name"], "position": closest["position"], "adp_overall": round(closest["avg_pick"], 1)}
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
     # Opponent team context
     opponent_ctx: dict = {}
@@ -378,7 +378,7 @@ def get_trade_ai_analysis(
                     "weak_positions": opp_team_ctx.get("weak_positions") or [],
                 }
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
     payload = {
         "team_context": {

@@ -6,6 +6,7 @@ Also handles the league-context variants: /<platform>/<season>/<league_id>/...
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -112,7 +113,7 @@ def sitemap_xml():
             ET.SubElement(url_el, "priority").text = "0.7"
             ET.SubElement(url_el, "changefreq").text = "weekly"
     except Exception:
-        pass  # never let player-page enumeration break the sitemap
+        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
     xml_bytes = ET.tostring(urlset, encoding="unicode", xml_declaration=False)
     body = '<?xml version="1.0" encoding="UTF-8"?>\n' + xml_bytes

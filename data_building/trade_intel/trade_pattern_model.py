@@ -458,7 +458,7 @@ def load_model(path: str = MODEL_PATH) -> Optional[dict]:
                 if age.days > 14:
                     logger.warning("[trade_model] Model is %d days old", age.days)
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
         with _MODEL_CACHE_LOCK:
             _MODEL_CACHE[path] = (sig, model)
         return model

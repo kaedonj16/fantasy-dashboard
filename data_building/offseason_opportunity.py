@@ -10,6 +10,7 @@ Key scenarios:
 - Backup RB becomes lead back after departure
 """
 
+import logging
 import json
 from datetime import date
 from typing import Dict, List, Optional, Any, Tuple
@@ -177,7 +178,7 @@ def init_offseason_opportunity_db():
                 ADD COLUMN IF NOT EXISTS player_name VARCHAR(100);
             """)
         except Exception:
-            pass  # Column already exists or other issue
+            logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
         # Add performance indexes for faster queries
         create_performance_indexes(conn)
@@ -209,7 +210,7 @@ def create_performance_indexes(conn):
         try:
             conn.execute(index_sql)
         except Exception:
-            pass  # Index already exists or table doesn't exist yet
+            logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
 
 def track_roster_change(
@@ -1155,7 +1156,7 @@ def get_offseason_breakout_candidates(
                 for row in projected_data:
                     projected_opportunity_by_id[row["player_id"]] = row
         except Exception:
-            pass  # If table doesn't exist or query fails, continue without increases
+            logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
         # Build API response
         results = []

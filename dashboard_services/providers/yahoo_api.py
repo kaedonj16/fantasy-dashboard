@@ -143,7 +143,7 @@ def save_tokens(guid: str, access_token: str, refresh_token: str, expires_in: in
     try:
         _init_token_table()
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
     with get_conn() as conn:
         conn.execute("""
@@ -162,7 +162,7 @@ def load_tokens(guid: str) -> Optional[Dict[str, Any]]:
     try:
         _init_token_table()
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
     try:
         with get_conn() as conn:
             row = conn.execute(

@@ -1,3 +1,4 @@
+import logging
 from datetime import date, datetime
 import os
 import subprocess
@@ -115,7 +116,7 @@ def _player_values_fresh() -> bool:
                 return False
             return True
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
     return False
 
 
@@ -131,7 +132,7 @@ def _trade_intel_fresh() -> bool:
             t = row["t"]
             return (t.date() if hasattr(t, "date") else t) == _today()
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
     return False
 
 
@@ -160,7 +161,7 @@ def _wls_fresh() -> bool:
                 return False
             return True
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
     return False
 
 
@@ -704,4 +705,4 @@ if __name__ == "__main__":
                 'timestamp': datetime.now().isoformat()
             })
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("suppressed exception", exc_info=True)

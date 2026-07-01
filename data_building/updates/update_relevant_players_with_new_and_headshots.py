@@ -4,6 +4,7 @@ Add new players from players_index.json to players_index_relevant.json
 and fetch their ESPN headshots.
 """
 
+import logging
 import json
 from pathlib import Path
 import requests
@@ -61,7 +62,7 @@ def is_rookie_or_new_player(meta: dict) -> bool:
             if 2000 <= birth_year <= 2006:
                 return True
         except (ValueError, IndexError):
-            pass
+            logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
     
     return False
 

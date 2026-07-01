@@ -51,6 +51,7 @@ Usage:
     python scripts/backfill_history.py 2018 2019 --with-pff
 """
 
+import logging
 import argparse
 import os
 import sys
@@ -128,7 +129,7 @@ def backfill_nflverse(season: int) -> None:
     try:
         nflverse_main(["--season", str(season)])
     except SystemExit:
-        pass
+        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
     except Exception as e:
         print(f"  [nflverse] failed: {e}")
 

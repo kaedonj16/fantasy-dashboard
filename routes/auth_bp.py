@@ -54,7 +54,7 @@ def api_identify():
             for lg in raw if lg.get("league_id")
         ]
     except Exception:
-        pass  # leagues list is optional; checkout can still proceed
+        logger.debug("suppressed exception", exc_info=True)
 
     return jsonify({
         "ok": True,

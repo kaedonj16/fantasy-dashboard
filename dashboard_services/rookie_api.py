@@ -276,7 +276,7 @@ def rankings():
                         if _pn:
                             _sid_to_norm[str(_sid)] = _norm(_pn)
             except Exception:
-                pass
+                logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
             sf_by_name:  Dict[str, float] = {_sid_to_norm[s]: v for s, v in sf_map.items()  if s in _sid_to_norm}
             qb1_by_name: Dict[str, float] = {_sid_to_norm[s]: v for s, v in qb1_map.items() if s in _sid_to_norm}
@@ -292,7 +292,7 @@ def rankings():
                         if pname in sf_by_name:  d["sf_avg_pick"] = sf_by_name[pname]
                         if pname in qb1_by_name: d["avg_pick"]    = qb1_by_name[pname]
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
 
         # Sort: tier ascending, then display_value descending within each tier
@@ -875,7 +875,7 @@ def draft_status():
                         d = _dt.datetime.strptime(d[:10], "%Y-%m-%d").date()
                     draft_date = d
             except Exception:
-                pass
+                logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
         if draft_date is None:
             draft_date = _dt.date(year, 4, 26)  # typical end-of-draft fallback

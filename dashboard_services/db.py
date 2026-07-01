@@ -100,7 +100,7 @@ def _configure_pooled_conn(conn: psycopg.Connection) -> None:
         try:
             conn.rollback()
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
 
 def _get_pool():
@@ -161,7 +161,7 @@ def _get_conn_direct(autocommit: bool, retries: int) -> Iterator[psycopg.Connect
                 if is_connection_healthy(conn):
                     conn.rollback()
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
         raise
     finally:
         conn.close()
@@ -203,7 +203,7 @@ def get_conn(autocommit: bool = False, retries: int = 3) -> Iterator[psycopg.Con
             try:
                 conn.autocommit = False
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
         # pool.connection().__exit__ rolls back (non-autocommit) and returns it.
         cm.__exit__(type(e), e, e.__traceback__)
         raise
@@ -212,6 +212,6 @@ def get_conn(autocommit: bool = False, retries: int = 3) -> Iterator[psycopg.Con
             try:
                 conn.autocommit = False
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
         # pool.connection().__exit__ commits (non-autocommit) and returns it.
         cm.__exit__(None, None, None)

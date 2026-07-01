@@ -6,6 +6,7 @@ ranked at that metric in a sortable, searchable table with a relative bar. The
 position filter auto-narrows to the positions where the metric is meaningful
 (with manual override). Data comes from /api/advanced-metrics/leaderboard.
 """
+import logging
 import json
 from html import escape as _esc
 from typing import Optional
@@ -115,7 +116,7 @@ def build_advanced_metrics_body(
                 if _wrow and _wrow["mw"]:
                     _current_week = int(_wrow["mw"])
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
     cfg = json.dumps({
         "hasPremium": bool(has_premium),

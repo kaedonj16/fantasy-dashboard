@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from pathlib import Path
 
@@ -174,7 +175,7 @@ def record_calibrated_history_snapshot() -> int:
             if pid and nm and nm != "Unknown":
                 name_map[pid] = nm
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
     # Fill gaps with players_index
     try:
         players_index = load_players_index() or {}
@@ -184,7 +185,7 @@ def record_calibrated_history_snapshot() -> int:
                 if nm:
                     name_map[str(pid)] = nm
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
     with get_conn() as conn:
         try:

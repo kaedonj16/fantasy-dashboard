@@ -11,6 +11,7 @@ These metrics inform the breakout detection algorithm and can be displayed in th
 
 from __future__ import annotations
 
+import logging
 import json as _json
 import os
 from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING
@@ -1831,7 +1832,7 @@ def get_available_metric_weeks(player_id: str, season: int) -> List[int]:
             ).fetchall()
             weeks.update(int(r["week"]) for r in rows2)
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
     return sorted(weeks)
 
 
@@ -2677,7 +2678,7 @@ def _compute_position_bounds(srows: List[dict]) -> Dict[str, list]:
                 if float(g) < 4:
                     continue
             except (TypeError, ValueError):
-                pass
+                logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
         # Stored metric columns that are also rankable/leaderboard metrics.
         for col, val in r.items():
             if col in LEADERBOARD_METRICS:
@@ -3034,7 +3035,7 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                                    else sum(1 for x in vals.values() if x > _val))
                         all_ranks.setdefault(_pid, {})[metric] = _better + 1
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
         # Per-metric value bounds [min, max] across qualified players, so the
         # client can scale bars by the metric's actual value within its

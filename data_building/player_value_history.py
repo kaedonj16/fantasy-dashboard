@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from datetime import date, timedelta
 from typing import Optional, Iterable
@@ -392,7 +393,7 @@ def get_player_value_history(
             if _cal_row["calibrated_value_sf"] and _last_raw_sf > 0:
                 _cal_scale_sf = float(_cal_row["calibrated_value_sf"]) / _last_raw_sf
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
     _use_sf = league_type.lower() == "sf"
 
@@ -632,7 +633,7 @@ def _get_top_movers_uncached(
             if pid and nm and nm != "Unknown":
                 name_map[pid] = nm
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
     try:
         from utils.utils import load_players_index
         for pid, info in (load_players_index() or {}).items():
@@ -641,7 +642,7 @@ def _get_top_movers_uncached(
                 if nm:
                     name_map[str(pid)] = nm
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
     movers = []
     for row in rows:

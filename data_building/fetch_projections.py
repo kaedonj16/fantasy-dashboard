@@ -190,7 +190,7 @@ def fetch_fp_season_projections(
                 logger.debug("[fp_proj] Returning %d cached players", len(data))
                 return data
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
     # Build Sleeper name index for ID mapping
     if players_index is None:

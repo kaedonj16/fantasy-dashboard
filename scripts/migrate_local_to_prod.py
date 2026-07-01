@@ -26,6 +26,7 @@ Usage:
         python scripts/migrate_local_to_prod.py --dry-run
 """
 
+import logging
 import argparse
 import os
 import sys
@@ -493,7 +494,7 @@ def main() -> int:
                 try:
                     prod_conn.rollback()
                 except Exception:
-                    pass
+                    logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
     print()
     print("=" * 60)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import json
 import re
 from datetime import date, timedelta
@@ -86,7 +87,7 @@ def _load_persisted_scale() -> float:
         if row and row.get("value"):
             return float(row["value"])
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
     try:
         return float(json.loads(_SCALE_CACHE_PATH.read_text()).get("scale", 0) or 0)
     except Exception:
@@ -118,12 +119,12 @@ def _persist_scale(scale: float) -> None:
                 (_SCALE_STATE_KEY, rounded),
             )
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
     try:
         _SCALE_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
         _SCALE_CACHE_PATH.write_text(json.dumps({"scale": rounded}))
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
 
 def _load_state(key: str) -> float:
@@ -146,7 +147,7 @@ def _load_state(key: str) -> float:
         if row and row.get("value"):
             return float(row["value"])
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
     return 0.0
 
 
@@ -174,7 +175,7 @@ def _save_state(key: str, value: float) -> None:
                 (key, round(float(value), 6)),
             )
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
 def _load_prev_board_from_db() -> dict[str, dict]:
     """Load yesterday's player values from player_value_history (durable Postgres store).

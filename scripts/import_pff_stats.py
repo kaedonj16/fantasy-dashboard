@@ -11,6 +11,7 @@ Usage:
     python scripts/import_pff_stats.py --type all
 """
 
+import logging
 import csv
 import os
 import re
@@ -134,7 +135,7 @@ def import_stats(stat_type: str, season: int = 2025) -> bool:
                                 try:
                                     update_data[db_col] = _convert(raw, db_col)
                                 except (ValueError, TypeError):
-                                    pass
+                                    logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
                         if not update_data:
                             skipped_count += 1

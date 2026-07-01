@@ -57,7 +57,7 @@ def _cache_put(key: str, png: bytes):
             oldest = min(_CACHE.items(), key=lambda kv: kv[1][0])[0]
             _CACHE.pop(oldest, None)
         except ValueError:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
     _CACHE[key] = (time.time(), png)
 
 
@@ -145,7 +145,7 @@ def render_url_to_png(
                 try:
                     browser.close()
                 except Exception:
-                    pass
+                    logger.debug("suppressed exception", exc_info=True)
 
     if png and cache_key:
         _cache_put(cache_key, png)

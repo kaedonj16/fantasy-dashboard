@@ -148,7 +148,7 @@ def _pricing_body() -> str:
                     season = _dt.now().year
                     return_to = f"/sleeper/{season}/{league_id_meta}/dashboard?new_subscriber=1"
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
 
         safe_return = html.escape(return_to) if return_to else ""
         viewer_user_id = _session.get("viewer_user_id") or _session.get("viewer_username") or ""

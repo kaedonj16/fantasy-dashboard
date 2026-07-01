@@ -630,7 +630,7 @@ def _normalize_pick_bucket(pick_order) -> str:
         float(s)
         return "mid"
     except ValueError:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
     if s.startswith("e"):
         return "early"
     if s.startswith("l"):

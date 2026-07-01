@@ -3,6 +3,7 @@ Dynasty SEO hub pages: trade value chart, risers/fallers, rankings by position.
 All pages are public (no league context required).
 """
 from __future__ import annotations
+import logging
 import html
 import re
 from datetime import datetime
@@ -24,13 +25,13 @@ def _pick_round(p: dict) -> int | None:
         try:
             return int(pid.split("_")[1])
         except (IndexError, ValueError):
-            pass
+            logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
     m2 = _PICK_NAME_RE.match(name)
     if m2:
         try:
             return int(re.split(r'\s+', name)[1])
         except (IndexError, ValueError):
-            pass
+            logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
     return None
 
 

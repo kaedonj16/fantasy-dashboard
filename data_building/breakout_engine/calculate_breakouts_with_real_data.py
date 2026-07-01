@@ -10,6 +10,7 @@ This version:
 - removes verbose print output
 """
 
+import logging
 import os
 from datetime import date
 from typing import Any, Dict, List, Tuple, Optional
@@ -117,7 +118,7 @@ def build_usage_maps(usage_table: List[Dict]) -> Tuple[Dict[str, Dict], Dict[str
             try:
                 age_by_id[pid] = float(age)
             except (TypeError, ValueError):
-                pass
+                logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
     return usage_by_id, age_by_id
 
@@ -561,7 +562,7 @@ def apply_candidate_filter(candidates: List[Any], usage_by_id: Dict[str, Dict]) 
             setattr(candidate, "breakout_candidate_status", status)
             setattr(candidate, "breakout_candidate_multiplier", multiplier)
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
         if not is_eligible:
             if status == "excluded_star":
@@ -582,7 +583,7 @@ def apply_candidate_filter(candidates: List[Any], usage_by_id: Dict[str, Dict]) 
                 if isinstance(component_scores, dict):
                     opportunity_opened_score = component_scores.get('opportunity_opened', 0)
             except Exception:
-                pass
+                logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
             if _has_blocking_starter(
                 player_id=player_id,
@@ -599,7 +600,7 @@ def apply_candidate_filter(candidates: List[Any], usage_by_id: Dict[str, Dict]) 
                 try:
                     setattr(candidate, "breakout_candidate_multiplier", multiplier)
                 except Exception:
-                    pass
+                    logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
         try:
             candidate.raw_breakout_opportunity_score = _safe_float(candidate.breakout_opportunity_score)
@@ -608,7 +609,7 @@ def apply_candidate_filter(candidates: List[Any], usage_by_id: Dict[str, Dict]) 
                 2
             )
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
         if status in summary:
             summary[status] += 1

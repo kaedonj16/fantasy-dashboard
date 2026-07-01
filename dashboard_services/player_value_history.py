@@ -407,7 +407,7 @@ def load_current_values_from_db() -> list[dict]:
                         int(_pp[2])
                         _slot_yr_rnd.add(_key)
                     except ValueError:
-                        pass
+                        logger.debug("suppressed exception", exc_info=True)
 
     assets = []
     for row in rows:
@@ -460,7 +460,7 @@ def load_current_values_from_db() -> list[dict]:
                 try:
                     asset["age"] = round(float(asset["age"]), 1)
                 except Exception:
-                    pass
+                    logger.debug("suppressed exception", exc_info=True)
         
         # Normalise field names expected by the rest of the app
         asset.setdefault("sf_value", asset.get("value") or 0.0)
@@ -671,7 +671,7 @@ def _get_top_movers_from_db(
             if nm:
                 players_index_map[str(pid)] = nm
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
     import re as _re
 

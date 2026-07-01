@@ -585,7 +585,7 @@ def build_league_history_map(platform: str, league_id: str, season: int) -> dict
         try:
             league_season = int(league.get("season"))
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
         resolved_league_id = str(league.get("league_id") or cursor_league_id).strip()
 

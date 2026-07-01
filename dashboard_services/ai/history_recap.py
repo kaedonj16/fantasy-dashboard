@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import json
 import threading
 
@@ -471,7 +472,7 @@ def get_league_season_summary(history_ctx: dict, season: int) -> str:
             result = _generate_league_summary_ai(payload)
             save_cached_ai_text(cache_key_inner, result)
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
     threading.Thread(
         target=_bg_generate,

@@ -16,6 +16,7 @@ Public API:
 """
 from __future__ import annotations
 
+import logging
 import json
 import os
 import re
@@ -56,7 +57,7 @@ def _cache_read(key: str) -> Optional[Any]:
         try:
             return json.loads(p.read_text())
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
     return None
 
 

@@ -13,6 +13,7 @@ Requires TANK01_API_KEY in the environment (or a .env file in the project root).
 
 from __future__ import annotations
 
+import logging
 import json
 import os
 from pathlib import Path
@@ -26,7 +27,7 @@ try:
     from dotenv import load_dotenv
     load_dotenv()
 except Exception:
-    pass
+    logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
 from utils.utils import (
     TANK01_API_HOST,

@@ -10,6 +10,7 @@ Scraping strategy (tried in order for each player):
 
 from __future__ import annotations
 
+import logging
 import re
 import time
 from datetime import date, datetime
@@ -192,7 +193,7 @@ def parse_dob_and_calculate_age(
             try:
                 parsed_dob = datetime.strptime(iso_match.group(1), "%Y-%m-%d").date()
             except ValueError:
-                pass
+                logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
     if parsed_dob is None:
         return None, None

@@ -9,6 +9,7 @@ Provides functions to fetch data needed for component score calculations:
 - Team statistics
 """
 
+import logging
 import json
 import os
 from datetime import date, timedelta
@@ -526,7 +527,7 @@ def get_all_players_with_opportunity(season: int, min_value_rank: int = 600) -> 
             with open(players_index_path, 'r') as f:
                 players_index = json.load(f)
     except (json.JSONDecodeError, IOError):
-        pass  # Non-fatal - names will remain NULL
+        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
     query = """
         SELECT
@@ -636,7 +637,7 @@ def load_all_player_usage(season: int) -> Dict[str, Dict]:
             with open(players_index_path, 'r') as f:
                 players_index = json.load(f)
     except (json.JSONDecodeError, IOError):
-        pass  # Non-fatal - fall back to usage-cache age
+        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
     try:
         with open(cache_path, 'r') as f:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Dict, List
 from urllib.parse import quote_plus
@@ -216,7 +217,7 @@ def render_injury_accordion(df_inj: pd.DataFrame) -> str:
                 try:
                     upd_str = last_upd.strftime("%-m/%-d")
                 except Exception:
-                    pass
+                    logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
             meta = " · ".join(p for p in [nfl, pos, body] if p)
 

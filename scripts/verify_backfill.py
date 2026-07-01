@@ -16,6 +16,7 @@ Usage:
     python -m scripts.verify_backfill 2016 2017 2018 2019 2020 2021 2022 2023 2024 2025
 """
 
+import logging
 import argparse
 import glob
 import json
@@ -36,7 +37,7 @@ def schedule_stats(season: int):
                 weeks += 1
                 games += len(data)
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
     return weeks, games
 
 

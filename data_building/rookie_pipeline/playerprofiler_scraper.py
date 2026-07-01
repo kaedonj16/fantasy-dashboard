@@ -13,6 +13,7 @@ Public API
 """
 from __future__ import annotations
 
+import logging
 import json
 import re
 import time
@@ -179,7 +180,7 @@ def _extract_age_from_pp_html(html: str) -> Optional[float]:
                 if found is not None:
                     return found
             except (json.JSONDecodeError, AttributeError):
-                pass
+                logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
     # ── Strategy 2: any <script> tag with age key + numeric value ─────────────
     age_json_re = re.compile(

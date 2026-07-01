@@ -44,6 +44,7 @@ Usage
 """
 from __future__ import annotations
 
+import logging
 import argparse
 import json
 import math
@@ -702,7 +703,7 @@ def detect_changes(
                             curr_rosters[gsis_id] = {**prev_rosters[gsis_id], "team": prev_team}
                             continue
                 except Exception:
-                    pass  # fall through to normal departure logic if index unavailable
+                    logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
             u = prev_usage.get(gsis_id, {})
             change_type = "trade" if curr_team in VALID_TEAMS else "free_agent"

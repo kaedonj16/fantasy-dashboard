@@ -17,6 +17,7 @@ Individual steps are also exported for targeted refreshes.
 """
 from __future__ import annotations
 
+import logging
 import os
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
@@ -650,7 +651,7 @@ def is_draft_complete(draft_year: int, conn=None) -> bool:
                     draft_date = _dt.strptime(draft_date[:10], "%Y-%m-%d").date()
                 return today >= draft_date
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
         # Check if any actual picks are already stored
         try:
@@ -662,7 +663,7 @@ def is_draft_complete(draft_year: int, conn=None) -> bool:
                 if cur.fetchone():
                     return True
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
     # Fallback: NFL Draft starts late April and lasts ~2 days (rounds 1-7)
     # April 26 is a safe cutoff - the draft is over by then in any recent year.

@@ -3,6 +3,7 @@
 Add new players from Tank01 to existing players_index without overwriting.
 """
 
+import logging
 import json
 from pathlib import Path
 import requests
@@ -84,7 +85,7 @@ def add_new_players_from_tank01():
                     entry["exp"] = exp_int
                     entry["draft_year"] = _current_nfl_season - exp_int + 1
             except (TypeError, ValueError):
-                pass
+                logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
         new_players[sleeper_id] = entry
         updated_players.append(f"{name} ({team})")

@@ -39,6 +39,7 @@ Normalization contract - every player dict returned by this module has:
 """
 from __future__ import annotations
 
+import logging
 import csv
 import datetime
 import hashlib
@@ -322,7 +323,7 @@ def fetch_local_combine_csv(draft_year: int) -> Dict[str, Dict[str, Any]]:
                     try:
                         athleticism['forty_yard'] = float(forty)
                     except (ValueError, TypeError):
-                        pass
+                        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
                 
                 # Vertical jump (inches)
                 vertical = row.get('VERT')
@@ -334,7 +335,7 @@ def fetch_local_combine_csv(draft_year: int) -> Dict[str, Dict[str, Any]]:
                         else:
                             athleticism['vertical_inches'] = vert_val
                     except (ValueError, TypeError):
-                        pass
+                        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
                 
                 # Broad jump (inches)
                 broad = row.get('BROAD')
@@ -342,7 +343,7 @@ def fetch_local_combine_csv(draft_year: int) -> Dict[str, Dict[str, Any]]:
                     try:
                         athleticism['broad_jump_in'] = int(float(broad))
                     except (ValueError, TypeError):
-                        pass
+                        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
                 
                 # 3-cone drill
                 three_cone = row.get('3 CONE')
@@ -350,7 +351,7 @@ def fetch_local_combine_csv(draft_year: int) -> Dict[str, Dict[str, Any]]:
                     try:
                         athleticism['three_cone'] = float(three_cone)
                     except (ValueError, TypeError):
-                        pass
+                        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
                 
                 # Short shuttle
                 shuttle = row.get('SHUTTLE')
@@ -358,7 +359,7 @@ def fetch_local_combine_csv(draft_year: int) -> Dict[str, Dict[str, Any]]:
                     try:
                         athleticism['short_shuttle'] = float(shuttle)
                     except (ValueError, TypeError):
-                        pass
+                        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
                 
                 # Bench press
                 bench = row.get('BENCH')
@@ -366,7 +367,7 @@ def fetch_local_combine_csv(draft_year: int) -> Dict[str, Dict[str, Any]]:
                     try:
                         athleticism['bench_reps'] = int(float(bench))
                     except (ValueError, TypeError):
-                        pass
+                        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
                 
                 # Height (convert NFL format to inches)
                 height = row.get('HEIGHT')
@@ -381,7 +382,7 @@ def fetch_local_combine_csv(draft_year: int) -> Dict[str, Dict[str, Any]]:
                             total_inches = feet * 12 + inches + eighths / 8
                             athleticism['height_inches'] = total_inches
                     except (ValueError, TypeError):
-                        pass
+                        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
                 
                 # Weight
                 weight = row.get('WEIGHT')
@@ -389,7 +390,7 @@ def fetch_local_combine_csv(draft_year: int) -> Dict[str, Dict[str, Any]]:
                     try:
                         athleticism['weight_lbs'] = int(float(weight))
                     except (ValueError, TypeError):
-                        pass
+                        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
                 
                 # RAS (Relative Athletic Score)
                 ras = row.get('RAS')
@@ -397,7 +398,7 @@ def fetch_local_combine_csv(draft_year: int) -> Dict[str, Dict[str, Any]]:
                     try:
                         athleticism['ras_score'] = float(ras)
                     except (ValueError, TypeError):
-                        pass
+                        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
                 
                 # Only add if we have at least one measurement
                 if athleticism:
@@ -960,7 +961,7 @@ def _parse_height(raw) -> Optional[int]:
             try:
                 return int(parts[0]) * 12 + int(parts[1])
             except (ValueError, IndexError):
-                pass
+                logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
     try:
         return int(s)
     except ValueError:

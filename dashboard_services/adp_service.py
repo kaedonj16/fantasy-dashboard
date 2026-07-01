@@ -232,7 +232,7 @@ def fetch_sleeper_adp(season: int) -> dict:
                 try:
                     _row[_k] = float(_v)
                 except (TypeError, ValueError):
-                    pass
+                    logger.debug("suppressed exception", exc_info=True)
         if _row:
             out[_pid] = _row
     try:

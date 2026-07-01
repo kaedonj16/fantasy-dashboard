@@ -560,7 +560,7 @@ def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
             ).fetchall()
         pos_map = {str(r["player_id"]): str(r["position"]).upper() for r in rows}
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
     ppg_map: dict = {}
 
@@ -585,7 +585,7 @@ def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
                         "pos": pos_map.get(str(pid), ""),
                     }
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
     # Priority 2: FantasyPros season projections (preseason or gap-filler)
     try:
@@ -595,7 +595,7 @@ def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
             if str(pid) not in ppg_map and info.get("ppg", 0) > 0:
                 ppg_map[str(pid)] = {"ppg": info["ppg"], "pos": info.get("pos", "")}
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
     # Priority 3: Prior-season usage cache
     try:
@@ -618,7 +618,7 @@ def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
                         ppg_map[pid] = {"ppg": ppg, "pos": pos}
                 break
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
     return ppg_map, pos_map
 
@@ -1207,7 +1207,7 @@ def _estimate_from_rosters(
             ).fetchall()
         pos_map = {str(r["player_id"]): str(r["position"]).upper() for r in rows}
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
     if not ppg_map and not pos_map:
         return []
@@ -1293,7 +1293,7 @@ def _blend_weekly_projections(
             ).fetchall()
         pos_map = {str(r["player_id"]): str(r["position"]).upper() for r in rows}
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
     # Flatten multi-variant projections to a single pts value per player
     week_ppg: dict[str, dict] = {}

@@ -127,7 +127,7 @@ def load_pick_value_table(
                     if int(parts[1]) > _MAX_ROUND:
                         continue
                 except (ValueError, IndexError):
-                    pass
+                    logger.debug("suppressed exception", exc_info=True)
                 wls_final[key] = float(val)
             if wls_final:
                 # Enforce monotonic ordering for slot picks: within each (year, round),
@@ -172,7 +172,7 @@ def load_pick_value_table(
                             int(p2[2])
                             slot_groups2[f"{p2[0]}_{p2[1]}"].append((int(p2[2]), key, val))
                         except (ValueError, IndexError):
-                            pass
+                            logger.debug("suppressed exception", exc_info=True)
                     for gk, sl in slot_groups2.items():
                         sl.sort(key=lambda x: x[0])
                         rm = float("inf")
@@ -212,7 +212,7 @@ def load_pick_value_table(
                             if _mv > 0:
                                 fixed[_mid] = _mv
                 except Exception:
-                    pass
+                    logger.debug("suppressed exception", exc_info=True)
 
                 return fixed
         except Exception:

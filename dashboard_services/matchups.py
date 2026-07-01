@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import json
 from datetime import datetime, date
 from itertools import zip_longest
@@ -913,7 +914,7 @@ def render_matchup_slide(
                     # future kick within same date – treat as scheduled
                     status_code = "0"
             except ValueError:
-                pass
+                logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
         if status_code == "0":
             dow = ""
@@ -922,7 +923,7 @@ def render_matchup_slide(
                     dt = datetime.strptime(game_date, "%Y%m%d")
                     dow = dt.strftime("%a")
                 except ValueError:
-                    pass
+                    logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
             display_time = game_time
             if display_time.endswith("p"):

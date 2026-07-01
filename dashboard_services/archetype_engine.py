@@ -1420,7 +1420,7 @@ def get_archetype_suggestions(
             from data_building.simulate_playoff_odds import build_ppg_map as _build_ppg_map
             ppg_map, pos_map = _build_ppg_map(ctx)
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
     def _lval(pids: List[str]) -> float:
         if ppg_map and roster_positions:
@@ -1660,7 +1660,7 @@ def get_archetype_suggestions(
     try:
         _vid_int = int(viewer_roster_id)
     except (TypeError, ValueError):
-        pass
+        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
     for t in top:
         pid = t["player_id"]
@@ -1697,7 +1697,7 @@ def get_archetype_suggestions(
                 pod = (new_po_pct - current_playoff_pct) / 100.0
                 wpd = _win_prob(new_avg, league_avg) - current_wp
             except Exception:
-                pass
+                logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
         why = _build_why(t, archetype, tp, wpd)
 

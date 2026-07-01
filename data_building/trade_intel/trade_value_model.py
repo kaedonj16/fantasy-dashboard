@@ -106,7 +106,7 @@ def _pick_key(asset: dict, current_year: int | None = None) -> str:
             slot_int = int(slot)
             return f"pick_{year}_{rd}_{slot_int:02d}"
         except (ValueError, TypeError):
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
     # Future picks (or current-year without slot): use bucket
     bucket: str | None = None
@@ -114,7 +114,7 @@ def _pick_key(asset: dict, current_year: int | None = None) -> str:
         try:
             bucket = _slot_to_bucket(int(slot))
         except (ValueError, TypeError):
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
     if bucket is None:
         order = asset.get("pick_order")

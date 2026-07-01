@@ -25,7 +25,7 @@ def _normalize_vapid_private_key(priv):
             loaded = load_pem_private_key(priv.encode(), password=None)
             return loaded.private_bytes(Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()).decode()
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
     try:
         raw = base64.urlsafe_b64decode(priv + "==")
@@ -33,7 +33,7 @@ def _normalize_vapid_private_key(priv):
             key = derive_private_key(int.from_bytes(raw, "big"), SECP256R1())
             return key.private_bytes(Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()).decode()
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
     return priv
 
@@ -108,7 +108,7 @@ def _send_to_endpoints(endpoints, title, body, url="/", tag="update"):
                 )
                 conn.commit()
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
     return sent
 
 
@@ -617,7 +617,7 @@ def notify_top_movers():
                 if (_date.today() - _date.fromisoformat(last)).days < 7:
                     return
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
 
         from data_building.player_value_history import get_top_movers
         movers = get_top_movers(days=7, limit=3)

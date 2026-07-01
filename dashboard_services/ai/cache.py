@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import hashlib
 import json
 import time
@@ -52,4 +53,4 @@ def save_cached_ai_text(cache_key: str, content: str) -> None:
         try:
             tmp.unlink(missing_ok=True)
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
