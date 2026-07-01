@@ -6231,11 +6231,31 @@ window.initTradePage = function initTradePage(root = document) {
     const menu = root.querySelector("#otcSettingsMenu");
     const panel = root.querySelector("#otcSettingsDropdown");
     if (!btn || !panel) return;
+    // The panel is absolutely positioned (right:0) under the gear, which sits
+    // mid-row — so on a narrow screen a ~250px menu runs off the LEFT edge.
+    // On phones, break it out to fixed positioning clamped to the viewport;
+    // on wider screens leave the CSS default.
+    function positionPanel() {
+      if (window.innerWidth > 600) {
+        panel.style.position = panel.style.top = panel.style.left =
+          panel.style.right = panel.style.width = "";
+        return;
+      }
+      const r = btn.getBoundingClientRect();
+      const w = Math.min(panel.offsetWidth || 260, window.innerWidth - 24);
+      let left = Math.max(12, Math.min(r.right - w, window.innerWidth - w - 12));
+      panel.style.position = "fixed";
+      panel.style.top = (r.bottom + 8) + "px";
+      panel.style.left = left + "px";
+      panel.style.right = "auto";
+      panel.style.width = w + "px";
+    }
     bindOnce(btn, "otcSettingsToggle", "click", (e) => {
       e.stopPropagation();
       const willOpen = panel.style.display === "none";
       panel.style.display = willOpen ? "block" : "none";
       btn.setAttribute("aria-expanded", willOpen ? "true" : "false");
+      if (willOpen) positionPanel();
     });
     bindOnce(document, "otcSettingsOutside", "click", (e) => {
       if (menu && !menu.contains(e.target)) {
