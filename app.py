@@ -14043,7 +14043,7 @@ def build_schedule_body(ctx):
 
         var head = '<th class="sched-th sched-th-player">Team</th>';
         for (var i = 0; i < weeks.length; i++) head += '<th class="sched-th">WK ' + weeks[i] + '</th>';
-        head += '<th class="sched-th">Avg</th><th class="sched-th" style="min-width:90px;">Ease</th>';
+        head += '<th class="sched-th">Avg</th><th class="sched-th sched-th-ease" style="min-width:90px;">Ease</th>';
 
         var rows = '';
         groups.forEach(function(g, idx) {

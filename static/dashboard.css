@@ -17330,6 +17330,9 @@ button:disabled {
 }
 .sched-pname { cursor: pointer; font-weight: 600; }
 .sched-pname:hover { color: var(--accent); }
+/* Rankings view is filtered to a single position, so the per-row position badge
+   just repeats the selected pill — hide it there (My Players keeps it, mixed pos). */
+#schedRankingsGrid .sched-pos { display: none; }
 .sched-nfl { font-size: 11px; color: var(--text-muted); margin-left: 6px; }
 /* On the rankings cell, push the NFL team to the far right of the player column */
 .sched-rank-player-cell { width: 100%; }
@@ -17416,9 +17419,11 @@ button:disabled {
   .sched-nfl { font-size: 9px; }
   .sched-pos { font-size: 9px; padding: 1px 3px; margin-right: 2px; flex-shrink: 0; }
 
-  /* Hide ease bar column on mobile - saves ~90px */
+  /* Hide the ease-bar column on mobile - saves ~90px. Target the Ease header by
+     its own class, not :last-child (which also clipped the last week's header in
+     the My Players view, since that grid has no Ease column). */
   .sched-ease-td,
-  th.sched-th:last-child { display: none; }
+  .sched-th-ease { display: none; }
 
   /* The owner/"Rostered" badges truncate to unreadable stubs ("SLI…", "SUP…")
      in the narrow sticky column — drop them on mobile and give the space back to
