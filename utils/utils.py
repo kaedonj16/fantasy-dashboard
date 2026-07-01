@@ -864,35 +864,9 @@ def map_weekly_projections_to_sleeper(
     return out
 
 
-def pick_proj_variant(raw_sleeper_settings: dict) -> str:
-    """
-    Return the projection variant key that matches a league's scoring settings.
-    Keys: ppr | half_ppr | std | tep | 6pt_ppr | 6pt_half | 6pt_tep
-    """
-    s = raw_sleeper_settings or {}
-    rec      = float(s.get("rec", 1.0))
-    te_bonus = float(s.get("bonus_rec_te", 0.0))
-    pass_td  = float(s.get("pass_td", 4.0))
-
-    tep   = te_bonus >= 0.25
-    six   = pass_td >= 5.5
-
-    if rec >= 1.0:
-        base = "ppr"
-    elif rec >= 0.4:
-        base = "half_ppr"
-    else:
-        base = "std"
-
-    if six and tep and base == "ppr":
-        return "6pt_tep"
-    if six and base == "ppr":
-        return "6pt_ppr"
-    if six and base == "half_ppr":
-        return "6pt_half"
-    if tep and base == "ppr":
-        return "tep"
-    return base
+# Pure logic lives in utils/proj_variant.py so it's unit-testable without this
+# module's heavier deps. Re-exported here since callers import it from utils.utils.
+from utils.proj_variant import pick_proj_variant
 
 
 # ------------------------------------------------
