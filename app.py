@@ -1362,7 +1362,7 @@ def get_page_html_from_cache(platform: str, season: int, league_id: str, page: s
             mem_entry.setdefault("page_html", {})[page] = (time.time(), html)
             return html
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
     return None
 
@@ -1377,7 +1377,7 @@ def store_page_html(platform: str, season: int, league_id: str, page: str, html:
             f.write(html)
         os.replace(tmp, path)  # atomic - readers never see a partial file
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
 def get_awards_agg_from_cache(platform: str, season: int, league_id: str):
     entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
@@ -3555,7 +3555,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     try:
         clear_activity_cache_for_league(resolved_league_id)
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
     league = get_league(platform, resolved_league_id, viewed_season)
     users = get_users(platform, resolved_league_id, viewed_season)
@@ -3621,7 +3621,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
         scores_body = get_nfl_scores_for_date(date.today().strftime("%Y%m%d"))
         ctx["team_game_lookup"] = build_team_game_lookup(scores_body)
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
     # ---------- Standings / dashboard / weekly core tables ----------
     if page in ("standings", "dashboard", "weekly"):
@@ -4573,7 +4573,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
             try:
                 values_by_id[str(row["id"])] = float(row.get("value") or 0)
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
 
     pick_by_key: dict[str, float] = load_pick_value_table() or {}
 
@@ -4622,7 +4622,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         for t in est_teams:
             rid_to_proj[str(t["roster_id"])] = float(t.get("avg") or 0.0)
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
     proj_total = sum(rid_to_proj.values()) or 1.0
     for r in team_rows:
         r["value_pct"] = r["total"] / league_value_total * 100
@@ -4868,7 +4868,7 @@ def render_share_rankings(ctx: dict) -> str:
         for r in rows:
             values_by_pid[str(r["player_id"])] = float(r["v"] or 0)
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
     rid_to_roster = {str(r.get("roster_id")): r for r in rosters}
 
@@ -4895,7 +4895,7 @@ def render_share_rankings(ctx: dict) -> str:
             for t in est_teams:
                 rid_to_proj[str(t["roster_id"])] = float(t.get("avg") or 0.0)
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
     # ── Build rows ────────────────────────────────────────────────────────────
     if is_offseason:
@@ -5147,7 +5147,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
                     countdown_text = "Draft passed"
                     draft_subtext = "Awaiting season start date."
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
     teams_ctx = build_teams_overview(
         rosters=rosters,
@@ -5194,7 +5194,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
                 if int(pk.get("round") or 0) == 1:
                     first_round_count += 1
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
 
         badge_bits = []
         if first_round_count > 0:
@@ -5285,7 +5285,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             ).fetchall()
         _rookie_sids = {str(r["sleeper_id"]) for r in _rr if r["sleeper_id"]}
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
     # Rookies are only waiver-eligible after the fantasy rookie draft is complete.
     # Detect by checking if any rookie from this year's class is already rostered.
@@ -5368,7 +5368,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
                             if _r.get("breakout_opportunity_score") is not None:
                                 waiver_breakout[_r["player_id"]] = float(_r["breakout_opportunity_score"])
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
     # Age primes by position (peak dynasty window)
     _prime_max = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
@@ -5685,7 +5685,7 @@ def _market_scale(fmt: str = "1qb") -> float:
         if p.exists():
             return float(_json.loads(p.read_text()).get(f"scale_{fmt}", 1.0))
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
     return 1.0
 
 
@@ -6616,7 +6616,7 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
             if _v > 0:
                 fallback[_fp_pid] = round(_v, 2)
     except FileNotFoundError:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
     except Exception as _e:
         logger.debug(f"[projections] FP fallback load failed: {_e}")
 
@@ -6804,7 +6804,7 @@ def build_historical_pick_slot_map(
                     slot += 1
 
     except Exception:
-        pass  # fall through to regular-season-only fallback
+        logger.debug("suppressed exception", exc_info=True)
 
     # ---- Fallback: regular-season standings only ----
     if not slot_map:
@@ -7347,7 +7347,7 @@ def build_activity_body(ctx: dict) -> str:
                         try:
                             exact_slot = resolve_exact_pick_slot(platform, resolved_league_id, int(season), pick)
                         except Exception:
-                            pass
+                            logger.debug("suppressed exception", exc_info=True)
 
                     # Use exact slot if available, otherwise fall back to mid
                     if exact_slot:
@@ -7381,7 +7381,7 @@ def build_activity_body(ctx: dict) -> str:
                         try:
                             exact_slot = resolve_exact_pick_slot(platform, resolved_league_id, int(season), pick)
                         except Exception:
-                            pass
+                            logger.debug("suppressed exception", exc_info=True)
 
                     # Use exact slot if available, otherwise fall back to mid
                     if exact_slot:
@@ -7915,7 +7915,7 @@ def _team_pick_value(
             try:
                 exact_slot = resolve_exact_pick_slot(platform, league_id, season, pick_for_slot)
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
 
         if exact_slot:
             key = f"{pk_season}_{rnd}_{exact_slot:02d}"
@@ -8875,7 +8875,7 @@ def api_refresh_league():
             if os.path.exists(path):
                 os.remove(path)
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
     return jsonify({"ok": True})
 
 
@@ -9054,7 +9054,7 @@ def page_portfolio():
                         opp = float(row.get("opp_pts") or row.get("PA") or 0)
                         streak.append("W" if pts > opp else "L")
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
         league_obj = lctx.get("league") or {}
         # Urgency score: lower = needs more attention
         urgency = wins - losses + (rank if isinstance(rank, int) else 0) * -0.1
@@ -9218,7 +9218,7 @@ def api_waiver_candidates():
             ).fetchall()
         _rookie_sids_wv = {str(r["sleeper_id"]) for r in _rr_wv if r["sleeper_id"]}
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
     _rookie_draft_done_wv = bool(_rookie_sids_wv and any(sid in rostered_ids for sid in _rookie_sids_wv))
 
     players_index = ctx.get("players_index") or {}
@@ -9299,7 +9299,7 @@ def api_waiver_candidates():
                             if _r.get("breakout_opportunity_score") is not None:
                                 waiver_breakout[_r["player_id"]] = float(_r["breakout_opportunity_score"])
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
     # Weekly usage trends: recent role growth is the strongest waiver signal.
     usage_trends: dict = {}
@@ -9440,7 +9440,7 @@ def api_start_sit_options():
     try:
         fpts_against = _compute_fpts_against(season)
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
     # ── Z-score matchup rank tables (rank 1 = easiest, one per position) ─────
     _z_rank_tables: dict = {}
@@ -9481,7 +9481,7 @@ def api_start_sit_options():
                     opp_label_map[home] = f"vs {away}"
                     opp_label_map[away] = f"@ {home}"
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
     # ── Weekly projections - SAME source as the player modal & matchups page ───
     # build_projections_by_week() returns Tank01 weekly values (variant-adjusted,
@@ -9531,7 +9531,7 @@ def api_start_sit_options():
         season_ppg = {pid: round(sum(v) / len(v), 1) for pid, v in _season_pts.items() if v}
         recent_ppg_map = {pid: round(sum(v) / len(v), 1) for pid, v in _recent_pts.items() if v}
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
     # ── Weekly usage trends: rising/falling role nudges close calls ──────────
     _ss_usage_trends: dict = {}
@@ -9737,7 +9737,7 @@ def _rz_get_projections(season: int, week: int) -> dict:
             if isinstance(v, dict):
                 data[str(pid)] = float(v.get("ppr") or v.get("half_ppr") or 0)
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
     _RZ_PROJ_CACHE[key] = {"ts": time.time(), "data": data}
     return data
 
@@ -10250,7 +10250,7 @@ def _redzone_collect(platform, league_id, season, week):
     try:
         proj_pts = _rz_get_projections(season, week)
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
     matchups_out = []
     for m in matchups:
@@ -11827,7 +11827,7 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
             if _draftable:
                 num_rounds_startup = len(_draftable)
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
     body = build_draft_room_body(
         league_id, season, platform,
         is_guest=is_guest, num_teams=num_teams, is_superflex=is_sf,
@@ -11868,7 +11868,7 @@ def _order_from_sleeper(draft: dict) -> str:
         if int(rev or 0) == 3:
             return "3rr"
     except (TypeError, ValueError):
-        pass
+        logger.debug("suppressed exception", exc_info=True)
     return "snake"
 
 
@@ -12357,7 +12357,7 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
                                 career_owners[_uid]["trade_count"] = career_owners[_uid].get("trade_count", 0) + 1
                                 career_owners[_uid]["activity"] = career_owners[_uid].get("activity", 0) + 2
         except Exception as _e:
-            pass  # transaction data unavailable; skip these awards
+            logger.debug("suppressed exception", exc_info=True)
 
         # ── Bench Warmer MVP: points left on bench ─────────────────────────
         try:
@@ -12386,7 +12386,7 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
                     _ens(career_owners, _uid)
                     career_owners[_uid]["bench_pts"] = career_owners[_uid].get("bench_pts", 0.0) + _bench
         except Exception as _e:
-            pass  # matchup data unavailable; skip bench award
+            logger.debug("suppressed exception", exc_info=True)
 
         champ_name, runner_up_name = get_champion_and_runner_up(ctx)
         champ_uid = name_to_uid.get(champ_name) or champ_name
@@ -14315,7 +14315,7 @@ def api_schedule_rankings():
                         if tname:
                             owner_by_pid[str(pid)] = tname
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
 
         # Build value lookup once - used for depth-chart cap and final sort
         value_by_pid: dict = {}
@@ -14365,7 +14365,7 @@ def api_schedule_rankings():
                         if _pts > 0:
                             player_pts_actual.setdefault(str(_pid), {})[w] = round(_pts, 1)
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
 
         player_pts_proj: dict = {}
         try:
@@ -14379,7 +14379,7 @@ def api_schedule_rankings():
                     if _v > 0:
                         player_pts_proj.setdefault(str(_pid), {})[w] = round(_v, 1)
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
         results = []
         for pid, info in players_idx.items():
@@ -15612,7 +15612,7 @@ def build_commissioner_body(ctx):
             league_id, range(1, max(reg_season_weeks + 1, 2)), platform=platform, season=season
         ) or {}
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
     # Per-roster move counts from actual transactions (not roster snapshot)
     txn_by_rid: dict = {}
@@ -15690,7 +15690,7 @@ def build_commissioner_body(ctx):
             if prev is not None:
                 seed = _standings_map.get(int(prev))
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
         if seed is not None:
             if 1 <= seed <= 3:
                 bucket = "early"
@@ -16011,7 +16011,7 @@ def index():
                     get_league_ctx_from_cache(p, rid, hist_s)
                     time.sleep(2)  # spread out API load to avoid rate limiting
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
 
         threading.Thread(
             target=_preload_history, args=(platform, league_id, season), daemon=True
@@ -16651,7 +16651,7 @@ def api_debug_values():
             _basket_state = _load_state(_BASKET_STATE_KEY)
             _headroom_state = _load_state(_HEADROOM_STATE_KEY)
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
         return jsonify({
             "model_values_json_mtime": _mv_mtime,
             "in_memory_cache_age_seconds": _cache_age,
@@ -16871,7 +16871,7 @@ def api_trade_outcome():
                     if key in pick_values:
                         return float(pick_values[key])
                 except (ValueError, TypeError):
-                    pass
+                    logger.debug("suppressed exception", exc_info=True)
 
             # Bucket lookup - derive bucket from slot if pick_order is absent
             order = asset.get("pick_order")
@@ -16880,7 +16880,7 @@ def api_trade_outcome():
                     s = int(slot)
                     order = "early" if s <= 4 else ("mid" if s <= 8 else "late")
                 except (ValueError, TypeError):
-                    pass
+                    logger.debug("suppressed exception", exc_info=True)
             order = order or "mid"
 
             if order in ("early", "mid", "late"):
@@ -16909,7 +16909,7 @@ def api_trade_outcome():
                         if result is not None:
                             then_values[pid] = result
                     except Exception:
-                        pass  # Leave absent - _build_row treats missing pid as None
+                        logger.debug("suppressed exception", exc_info=True)
 
         received_rows = []
         sent_rows = []
@@ -17644,7 +17644,7 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
                         int(_pp[2])
                         _slot_yr_rnd.add(_key)
                     except ValueError:
-                        pass
+                        logger.debug("suppressed exception", exc_info=True)
 
         _injected_picks = []
         _seen_ids: set = set(_db_pick_ids)
@@ -17696,7 +17696,7 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
                         int(_pp2[2])
                         _slot_yr_rnd.add(_k2)
                     except ValueError:
-                        pass
+                        logger.debug("suppressed exception", exc_info=True)
 
         # Inject model_values.json bucket picks, preferring them over WLS for
         # future years (WLS bucket values are in WLS units; model values are
@@ -17747,7 +17747,7 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
             if _json_injected:
                 logger.info(f"[api/league-players] model_values.json picks injected/overridden: {_json_injected}")
         except Exception as _e_json_picks:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
     except Exception as _e_picks:
         logger.info(f"[api/league-players] pick injection skipped: {_e_picks}")
 
@@ -17797,7 +17797,7 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
                 if _pid in _rk_map:
                     _p["rank_change_7d"] = _rk_map[_pid]
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
     # Attach redraft values from the DB so the rankings/trade tools can offer a
     # Dynasty↔Redraft toggle (model_values.json only carries dynasty values).
@@ -18181,7 +18181,7 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
                             if _ppj > 0:
                                 _row["proj_ppg"] = round(_ppj, 1)
                         except (TypeError, ValueError):
-                            pass
+                            logger.debug("suppressed exception", exc_info=True)
                     _kdef.append(_row)
             # Team defenses: not in players_index at all. Generate one entry per NFL
             # team. Sleeper identifies DST players by the team abbreviation as the ID.
@@ -19511,7 +19511,7 @@ def api_player_details(player_id: str):
                     _total_pts_ovr_rank = None
                 break
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
         # TE-premium leagues make tight ends worth more. Scale a TE's value (and its
         # whole value history) so the modal shows the value as it counts in THIS
@@ -19747,7 +19747,7 @@ def api_player_game_logs(player_id: str):
                 if not _peek_proj(_upcoming).get(player_id) and _peek_proj(_upcoming + 1).get(player_id):
                     _upcoming = _upcoming + 1
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
         # Weeks already covered by actual stats - skip those when projecting
         _actual_weeks = {
             g.get("week") for g in (game_logs_by_year.get(_upcoming) or [])
@@ -19787,7 +19787,7 @@ def api_player_game_logs(player_id: str):
                                 for _w in range(1, 19):
                                     _proj_vals[_w] = round(_ppg, 2)
                     except FileNotFoundError:
-                        pass
+                        logger.debug("suppressed exception", exc_info=True)
 
                 if _proj_vals:
                     _mv = list(_proj_vals.values())
@@ -19804,7 +19804,7 @@ def api_player_game_logs(player_id: str):
                             if isinstance(_sg, list) and _wn not in _sched:
                                 _sched[_wn] = _sg
                         except Exception:
-                            pass
+                            logger.debug("suppressed exception", exc_info=True)
 
                     _proj_logs = []
                     for _w in range(1, 19):
@@ -20016,7 +20016,7 @@ def api_team_details(roster_id: str):
                                 "trade_data": tp
                             })
                     except Exception:
-                        pass
+                        logger.debug("suppressed exception", exc_info=True)
 
                 # Second check: This team's own draft position pick (only if not already found as acquired)
                 own_position_found = any(p["original_owner"] == int(roster_id) for p in owned_picks)
@@ -20035,7 +20035,7 @@ def api_team_details(roster_id: str):
                                 })
                                 break
                         except Exception:
-                            pass
+                            logger.debug("suppressed exception", exc_info=True)
 
                 # If no traded picks found, check if this team owns their own pick by default
                 # BUT also check if we should add the default pick in addition to acquired picks
@@ -20053,7 +20053,7 @@ def api_team_details(roster_id: str):
                                 pick_traded_away = True
                                 break
                         except Exception:
-                            pass
+                            logger.debug("suppressed exception", exc_info=True)
 
                     if not pick_traded_away:
                         owned_picks.append({
@@ -20101,7 +20101,7 @@ def api_team_details(roster_id: str):
             total_value += _team_pick_value(picks_for_value, pick_by_key, platform=platform,
                                             league_id=league_id, season=season)
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
         # Get graph data for team modal
         graphs_data = {}
@@ -20864,7 +20864,7 @@ def api_schedule_strength():
                     # Normalize to a "projected points" scale (~100-160 range) for display consistency
                     avg_pts_by_rid[rid] = round(100.0 + roster_val / 50.0, 2)
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
 
         # Build future matchups map: rid -> list of opponent roster_ids
         future_opponents: dict[str, list] = {str(r.get("roster_id")): [] for r in rosters}
@@ -21369,7 +21369,7 @@ def api_draft_grades():
                         try:
                             redraft_val_by_id[str(_r["player_id"])] = float(_r["rv"] or 0)
                         except (TypeError, ValueError):
-                            pass
+                            logger.debug("suppressed exception", exc_info=True)
             except Exception as _e_rd:
                 logger.info("[draft-grades] redraft values skipped: %s", _e_rd)
             # If we couldn't load redraft values, fall back to startup grading.
@@ -21477,7 +21477,7 @@ def api_draft_grades():
                 for _r in _rp:
                     eligible_sids.add(str(_r["sleeper_id"]))
             except Exception:
-                pass  # fall back to full board if DB unavailable
+                logger.debug("suppressed exception", exc_info=True)
 
         # All eligible players with ADP data, sorted best → worst
         board_all: list[str] = sorted(
@@ -21516,7 +21516,7 @@ def api_draft_grades():
                 _ppr = float(_lg_sc.get("rec") or 0)
             _tep = float(_lg_sc.get("bonus_rec_te") or 0)
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
         try:
             # Source value / ADP / PPG / age / momentum / tier from the SAME
             # enriched pool the Draft Room consumes (/api/league-players), so the
@@ -21557,7 +21557,7 @@ def api_draft_grades():
                     try:
                         mom_by_id[_pid] = float(_m)
                     except (TypeError, ValueError):
-                        pass
+                        logger.debug("suppressed exception", exc_info=True)
                 _pv = _lp_ppg(_d)
                 if _pv is not None and _pv > 0:
                     ppg_by_id[_pid] = _pv
@@ -21566,7 +21566,7 @@ def api_draft_grades():
                     try:
                         adp_ps_by_id[_pid] = float(_a)
                     except (TypeError, ValueError):
-                        pass
+                        logger.debug("suppressed exception", exc_info=True)
 
             # Redraft ADP fallback: value-rank when no redraft ADP feed (mirrors
             # the Draft Room's _radp fallback). Only fills players missing an ADP.
@@ -22953,7 +22953,7 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
                     if row.get("years_exp") is not None:
                         years_exp_map[str(row["player_id"])] = int(row["years_exp"])
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
     # Breakout candidates - use the SAME source as the Breakout Engine page so the
     # "Breakout" signal here is consistent with what shows up there.
@@ -22963,7 +22963,7 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
         _bo = _get_bo(season=season, min_score=50)
         breakout_pids = {str(c["player_id"]) for c in (_bo.get("candidates") or [])}
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
     POSITIONS = ["QB", "RB", "WR", "TE"]
     prime_max = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
@@ -23438,7 +23438,7 @@ def _resolve_pick_asset(pick_id: str, num_teams: int, values_by_id: Optional[dic
                         and str(_mp.get("id")) == str(pick_id)):
                     val = float(_mp.get("value") or 0); break
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
     if val <= 0:
         val = {1: 300.0, 2: 150.0, 3: 70.0}.get(rnd, 40.0)
 
@@ -23574,7 +23574,7 @@ def api_trade_intel_player_packages(player_id: str):
         try:
             value_table = list(get_model_value_table_cached() or [])
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
         if not value_table:
             value_table = list(get_model_value_table_cached() or [])
 
@@ -23685,7 +23685,7 @@ def api_trade_intel_player_packages(player_id: str):
                             if _mpid and _mpval > 0 and not pick_val_lookup.get(_mpid):
                                 pick_val_lookup[_mpid] = _mpval
                     except Exception:
-                        pass
+                        logger.debug("suppressed exception", exc_info=True)
                     # Slot map for current season: {original_roster_id -> slot_number}
                     _slot_map: dict = {}
                     try:
@@ -23693,7 +23693,7 @@ def api_trade_intel_player_packages(player_id: str):
                             platform, league_id, season, season - 1
                         ) or {}
                     except Exception:
-                        pass
+                        logger.debug("suppressed exception", exc_info=True)
 
                     def _pick_bucket(slot):
                         if not slot:
@@ -25046,7 +25046,7 @@ def api_trade_ideas_for_target():
                     values_by_id[_pid]["buy_sell_ratio"] = float(_r["buy_sell_ratio"] or 1.0)
                     values_by_id[_pid]["market_trend"]   = round(float(_r["market_trend"] or 0.0) * _market_scale(), 1)
         except Exception:
-            pass  # market signals optional - fall back to rank_change_7d only
+            logger.debug("suppressed exception", exc_info=True)
 
         target_info = values_by_id.get(target_player_id)
         if not target_info:
@@ -26164,7 +26164,7 @@ def api_ask_gm():
                 from utils.utils import load_players_index
                 players_index = load_players_index() or {}
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
 
             value_table = list(get_model_value_table_cached() or [])
             values_by_id = {str(r["id"]): r for r in value_table if isinstance(r, dict) and r.get("id")}
@@ -26256,7 +26256,7 @@ def api_league_bulletins():
                         "avatar": str(u.get("avatar") or ""),
                     }
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
         clean = []
         for b in bulletins[:25]:
@@ -26318,7 +26318,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
             from utils.utils import load_players_index
             players_index = load_players_index() or {}
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
         value_table = list(get_model_value_table_cached() or [])
         values_by_id = {str(r["id"]): r for r in value_table if isinstance(r, dict) and r.get("id")}
 
@@ -26388,7 +26388,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
                         age = today.year - y - ((today.month, today.day) < (m, d))
                         return float(age) if 15 <= age <= 50 else None
                 except (ValueError, TypeError):
-                    pass
+                    logger.debug("suppressed exception", exc_info=True)
                 return None
 
             for pid in (r.get("players") or []):
@@ -26426,7 +26426,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         try:
             _pick_tbl_rank = load_pick_value_table() or {}
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
         _all_totals = {}
         for _r2 in rosters:
             _rid2 = str(_r2.get("roster_id") or "")
@@ -26443,7 +26443,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
                     platform=platform, league_id=league_id, season=season,
                 )
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
             _all_totals[_rid2] = _pv2 + _pkv2
         dynasty_rank = sum(1 for v in _all_totals.values() if v > total_value) + 1
 
@@ -26529,7 +26529,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
             grade_label = grade_data.get("grade", "–")
             win_window = grade_data.get("win_window", "")
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
         # ── Grade colour ─────────────────────────────────────────────────────
         _grade_color = (
@@ -26788,7 +26788,7 @@ def api_live_draft_suggest():
                 is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"}
                             for s in (league_info.get("roster_positions") or []))
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
         vfield = "sf_value" if is_sf else "value"
 
         # Build needs vector for the drafting team
@@ -26800,7 +26800,7 @@ def api_live_draft_suggest():
                     ndata = needs_resp.get_json() or {}
                     needs = ndata.get("needs") or {}
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
 
         NEED_BOOST = {2: 1.30, 1: 1.12, 0: 1.0, -1: 0.95, -2: 0.90}
 
@@ -27193,7 +27193,7 @@ def page_trade_card(share_id: str):
             from dashboard_services.picks import load_pick_value_table as _lpvt
             pick_tbl = _lpvt() or {}
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
         result = []
         for pid in (ids_str or "").split(","):
             pid = pid.strip()
@@ -27347,7 +27347,7 @@ def page_trade_card(share_id: str):
         <div class="pi-grid">{cells}</div>
       </div>"""
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
     # Show PI by default for signed-in premium users
     _pi_default = False
@@ -27357,7 +27357,7 @@ def page_trade_card(share_id: str):
             try:
                 _pi_default = has_premium_access(_viewer_id, p.get("league_id") or None, p.get("platform") or "sleeper")
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
     pi_html = pi_html.replace("__PI_DISPLAY__", "block" if (_pi_default and not is_og) else "none")
 
     # In embed/modal mode the PI toggle lives in the scm-toolbar (via postMessage).
@@ -27623,7 +27623,7 @@ def _init_push_table():
                 try:
                     conn.execute(f"ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS {col} {defn}")
                 except Exception:
-                    pass
+                    logger.debug("suppressed exception", exc_info=True)
             conn.commit()
             # Multi-league support: a device (endpoint) can subscribe to several
             # leagues — one row per (endpoint, league_id). Replace the old
@@ -27933,7 +27933,7 @@ def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
                     )
                 conn.commit()
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
     return jsonify({"ok": True, "sent": sent, "failed": failed})
 
