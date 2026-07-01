@@ -6885,27 +6885,10 @@ def format_pick_display_label(
 
 
 # ── TE premium scoring helpers ───────────────────────────────────────────────
-# A league that awards bonus points per TE reception ("TE premium") makes tight
-# ends more valuable. We snap the league's Sleeper `bonus_rec_te` to the supported
-# tiers (0 / 0.5 / 1.0) and scale TE values by +20% per full point — matching the
-# trade calculator so values are consistent across every page that shows them.
-def te_premium_from_settings(scoring_settings) -> float:
-    try:
-        b = float((scoring_settings or {}).get("bonus_rec_te") or 0)
-    except (TypeError, ValueError, AttributeError):
-        return 0.0
-    return 1.0 if b >= 0.75 else 0.5 if b >= 0.25 else 0.0
-
-
-def apply_te_premium(value, position, te_premium) -> float:
-    """Scale a TE's value up for TE-premium leagues; pass-through otherwise."""
-    try:
-        v = float(value or 0)
-    except (TypeError, ValueError):
-        return 0.0
-    if te_premium and str(position or "").upper() == "TE":
-        return v * (1.0 + te_premium * 0.20)
-    return v
+# Pure logic lives in utils/value_helpers.py so it can be unit-tested without
+# importing this module's full (pandas / DB) stack. Re-exported here since many
+# call sites reference the bare names.
+from utils.value_helpers import apply_te_premium, te_premium_from_settings
 
 
 def build_activity_body(ctx: dict) -> str:
