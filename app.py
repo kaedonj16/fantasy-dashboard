@@ -650,44 +650,7 @@ def generate_recent_updates_html(limit=5):
     return '\n'.join(html_parts)
 
 
-def get_team_full_name(abbreviation: str) -> str:
-    """Map team abbreviation to full team name."""
-    team_names = {
-        "ARI": "Arizona Cardinals",
-        "ATL": "Atlanta Falcons",
-        "BAL": "Baltimore Ravens",
-        "BUF": "Buffalo Bills",
-        "CAR": "Carolina Panthers",
-        "CHI": "Chicago Bears",
-        "CIN": "Cincinnati Bengals",
-        "CLE": "Cleveland Browns",
-        "DAL": "Dallas Cowboys",
-        "DEN": "Denver Broncos",
-        "DET": "Detroit Lions",
-        "GB": "Green Bay Packers",
-        "HOU": "Houston Texans",
-        "IND": "Indianapolis Colts",
-        "JAX": "Jacksonville Jaguars",
-        "KC": "Kansas City Chiefs",
-        "LV": "Las Vegas Raiders",
-        "LAC": "Los Angeles Chargers",
-        "LAR": "Los Angeles Rams",
-        "MIA": "Miami Dolphins",
-        "MIN": "Minnesota Vikings",
-        "NE": "New England Patriots",
-        "NO": "New Orleans Saints",
-        "NYG": "New York Giants",
-        "NYJ": "New York Jets",
-        "PHI": "Philadelphia Eagles",
-        "PIT": "Pittsburgh Steelers",
-        "SF": "San Francisco 49ers",
-        "SEA": "Seattle Seahawks",
-        "TB": "Tampa Bay Buccaneers",
-        "TEN": "Tennessee Titans",
-        "WAS": "Washington Commanders",
-        "WSH": "Washington Commanders"
-    }
-    return team_names.get(abbreviation.upper(), abbreviation)
+from utils.nfl_teams import get_team_full_name  # noqa: E402
 
 
 FORM_BODY = """
@@ -1477,20 +1440,7 @@ def get_available_history_seasons(platform: str, league_id: str, current_season:
     return seasons
 
 
-def get_default_history_season(available_seasons: List[int], current_season: int) -> int:
-    """
-    Default to the most recent completed season, not the current season.
-    If there is no prior season, fall back to the newest available season.
-    """
-    available = sorted({int(s) for s in available_seasons if s}, reverse=True)
-    if not available:
-        return int(current_season)
-
-    past = [s for s in available if s < int(current_season)]
-    if past:
-        return past[0]
-
-    return available[0]
+from utils.history_seasons import get_default_history_season  # noqa: E402
 
 
 def _games_scheduled_today(season, week) -> bool:
