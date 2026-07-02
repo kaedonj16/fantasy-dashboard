@@ -100,15 +100,20 @@ def test_injured_ahead_missing_order_treated_as_deep():
     assert injured_ahead(None, [{"depth_order": 1, "status": "OUT"}]) == ["OUT"]
 
 
-def test_vacancy_score_uses_expected_points_over_timeline():
-    # Defaults: per_ppg=1.0, horizon=4, fallback_ppg=9.
-    # IR (sev 1.0, 6wk capped at 4) with a 14-ppg role -> 1*4*14=56 -> capped 55.
-    assert depth_chart_vacancy_score([{"status": "IR", "proj_ppg": 14}]) == pytest.approx(55.0)
-    # IR with a 7-ppg role -> 1*4*7 = 28.
-    assert depth_chart_vacancy_score([{"status": "IR", "proj_ppg": 7}]) == pytest.approx(28.0)
-    # Bare status -> fallback ppg 9: IR -> 1*4*9 = 36.
-    assert depth_chart_vacancy_score(["IR"]) == pytest.approx(36.0)
+_DISC4 = 1 + 0.85 + 0.85 ** 2 + 0.85 ** 3   # discounted weeks for a 4-week outage
+_DISC3 = 1 + 0.85 + 0.85 ** 2
+
+
+def test_vacancy_score_scales_with_ppg_and_discounts_weeks():
+    # Bigger projected role -> higher score; bare status uses the fallback ppg and
+    # lands between the small and big role cases.
+    big = depth_chart_vacancy_score([{"status": "IR", "proj_ppg": 14}])
+    small = depth_chart_vacancy_score([{"status": "IR", "proj_ppg": 7}])
+    bare = depth_chart_vacancy_score(["IR"])
+    assert small < bare < big
     assert depth_chart_vacancy_score([]) == 0.0
+    # Later weeks are discounted: a 4-week IR is worth less than 4x its per-week rate.
+    assert expected_vacated_points([{"status": "IR", "proj_ppg": 10, "weeks_out": 4}]) == pytest.approx(_DISC4 * 10)
 
 
 def test_timeline_ir_beats_one_week_out_for_same_role():
@@ -179,29 +184,29 @@ def test_projection_timeline_overrides_injury_class_estimate():
     # is treated as ~certain (the projection literally shows him out).
     proj = expected_vacated_points([{"status": "OUT", "proj_ppg": 10, "weeks_out": 3}])
     label = expected_vacated_points([{"status": "OUT", "proj_ppg": 10}])
-    assert proj == pytest.approx(1.0 * 3 * 10)   # projection-derived
-    assert label == pytest.approx(0.85 * 1 * 10)  # injury-class fallback
+    assert proj == pytest.approx(1.0 * _DISC3 * 10)   # projection-derived, discounted
+    assert label == pytest.approx(0.85 * 1 * 10)       # injury-class fallback, 1 week
     assert proj > label
 
 
 def test_projection_timeline_capped_by_horizon():
     # 8 projected weeks out is capped at the scoring horizon (default 4).
-    assert expected_vacated_points([{"status": "IR", "proj_ppg": 10, "weeks_out": 8}]) == pytest.approx(1.0 * 4 * 10)
+    assert expected_vacated_points([{"status": "IR", "proj_ppg": 10, "weeks_out": 8}]) == pytest.approx(_DISC4 * 10)
 
 
 def test_zero_weeks_out_falls_back_to_injury_class():
     # A confirmed injury whose projections don't show him out (weeks_out 0) still
     # gets the injury-class credit — projections extend, never erase, an injury.
     got = expected_vacated_points([{"status": "IR", "proj_ppg": 10, "weeks_out": 0}])
-    assert got == pytest.approx(1.0 * 4 * 10)  # IR class: min(6,4) weeks
+    assert got == pytest.approx(_DISC4 * 10)  # IR class: min(6,4) weeks, discounted
 
 
 def test_questionable_ahead_scores_points():
     healthy = _cand(value=250, position="RB")
     q_ahead = _cand(value=250, position="RB", player_id="q")
     q_ahead["injured_ahead"] = ["QUESTIONABLE"]  # bare status -> fallback ppg 9
-    # Q: sev 0.3 * 0.4wk * 9ppg = 1.08 injury pts.
-    assert waiver_pickup_score(q_ahead, {}) == pytest.approx(waiver_pickup_score(healthy, {}) + 1.08)
+    injury = depth_chart_vacancy_score(["QUESTIONABLE"])
+    assert waiver_pickup_score(q_ahead, {}) == pytest.approx(waiver_pickup_score(healthy, {}) + injury)
 
 
 def test_build_depth_index_and_lookup():
@@ -352,10 +357,10 @@ def test_correlated_opportunity_not_triple_counted():
     # Injury (+40) + usage (+30) + breakout (+30) all fire. They are correlated
     # (all mean "role opening up"), so the model combines them with diminishing
     # returns instead of adding all three.
-    # Bare IR -> base 36 (fallback ppg 9); usage spike +30; breakout 60 -> +30.
-    injury, usage, breakout = 36.0, 30.0, 30.0
-    naive_sum = injury + usage + breakout                       # 96
-    combined = injury + 0.5 * usage + 0.25 * breakout           # 58.5
+    injury = depth_chart_vacancy_score(["IR"])  # bare IR, fallback ppg, discounted
+    usage, breakout = 30.0, 30.0
+    naive_sum = injury + usage + breakout
+    combined = injury + 0.5 * usage + 0.25 * breakout
     assert combined < naive_sum
 
     # Isolate the opportunity portion of the real score: a candidate with all
@@ -371,11 +376,96 @@ def test_correlated_opportunity_not_triple_counted():
 # ---- #7 vacated volume -----------------------------------------------------
 
 def test_volume_weight_scales_injury_credit():
-    # Bare IR -> base 36 (fallback ppg 9); volume_weight is an optional nudge.
+    base = depth_chart_vacancy_score(["IR"])                 # volume_weight 1.0
     low = depth_chart_vacancy_score(["IR"], volume_weight=0.7)
     high = depth_chart_vacancy_score(["IR"], volume_weight=1.25)
     assert high > low
-    assert low == pytest.approx(36.0 * 0.7)
+    assert low == pytest.approx(base * 0.7)
+
+
+# ---- #1/#2 forward projection + role-transfer guard -----------------------
+
+def test_forward_projection_adds_to_score():
+    plain = _cand(value=300, position="WR")
+    projd = _cand(value=300, position="WR")
+    projd["ros_ppg"] = 12   # forward projected ppg
+    assert waiver_pickup_score(projd, {}) > waiver_pickup_score(plain, {})
+
+
+def test_role_transfer_guard_fades_injury_when_already_inherited():
+    # Two backups behind an IR'd 12-ppg starter. One has already taken over
+    # (own projection ~ the role); the other hasn't (own projection ~0).
+    inherited = _cand(value=250, position="RB", player_id="a")
+    inherited["vacated"] = [{"status": "IR", "proj_ppg": 12}]
+    inherited["own_proj_ppg"] = 11   # basically has the job
+    fresh = _cand(value=250, position="RB", player_id="b")
+    fresh["vacated"] = [{"status": "IR", "proj_ppg": 12}]
+    fresh["own_proj_ppg"] = 0        # hasn't taken over yet -> full injury upside
+    # The un-inherited backup gets far more injury credit than the one already in.
+    assert waiver_pickup_score(fresh, {}) > waiver_pickup_score(inherited, {})
+
+
+# ---- #3 schedule ease ------------------------------------------------------
+
+def test_schedule_bonus_easy_hard_neutral():
+    from utils.waiver_score import schedule_bonus
+    assert schedule_bonus(1, 32) > 0        # easiest slate
+    assert schedule_bonus(32, 32) < 0       # hardest slate
+    # A median schedule is roughly neutral.
+    assert abs(schedule_bonus(16, 32)) < 1.0
+    assert schedule_bonus(None, 32) == 0.0
+
+
+def test_easier_schedule_scores_higher():
+    easy = _cand(value=300, position="QB")
+    easy["schedule_ease_rank"], easy["schedule_total"] = 2, 32
+    hard = _cand(value=300, position="QB")
+    hard["schedule_ease_rank"], hard["schedule_total"] = 31, 32
+    assert waiver_pickup_score(easy, {}) > waiver_pickup_score(hard, {})
+
+
+# ---- #4 positional scarcity / VOR -----------------------------------------
+
+def test_replacement_levels_and_scarcity_multiplier():
+    from utils.waiver_score import replacement_levels, scarcity_multiplier
+    vals = {"RB": [900, 700, 500, 300, 100], "WR": [800, 600, 400]}
+    repl = replacement_levels(vals, {"RB": 3, "WR": 2})
+    assert repl["RB"] == 500   # 3rd-best RB
+    assert repl["WR"] == 600   # 2nd-best WR
+    # A player well above replacement gets a >1 multiplier; below gets 1.0.
+    assert scarcity_multiplier("RB", 1000, repl) > 1.0
+    assert scarcity_multiplier("RB", 400, repl) == pytest.approx(1.0)
+    assert scarcity_multiplier("RB", 200, repl) == pytest.approx(1.0)  # below replacement -> no penalty
+
+
+def test_scarcity_mult_applied_to_score():
+    base = _cand(value=500, position="RB")
+    scarce = _cand(value=500, position="RB")
+    scarce["scarcity_mult"] = 1.2
+    assert waiver_pickup_score(scarce, {}) == pytest.approx(waiver_pickup_score(base, {}) * 1.2)
+
+
+# ---- #7 blended / shrunk trend --------------------------------------------
+
+def test_blended_trend_shrinks_single_window():
+    from utils.waiver_score import blended_trend
+    # One window is shrunk toward zero (x0.8 at default trend_shrink 0.2).
+    assert blended_trend({"7d": 10}) == pytest.approx(8.0)
+    # More corroborating windows -> less shrink and an averaged value.
+    assert blended_trend({"7d": 10, "14d": 10}) == pytest.approx(10 * (1 - 0.1))
+    assert blended_trend({"7d": None}) == 0.0
+    assert blended_trend({}) == 0.0
+
+
+# ---- #8 near-term weeks weigh more ----------------------------------------
+
+def test_discounted_weeks_favor_near_term():
+    from utils.waiver_score import _discounted_weeks
+    assert _discounted_weeks(1, 0.85) == pytest.approx(1.0)
+    assert _discounted_weeks(2, 0.85) == pytest.approx(1.85)
+    assert _discounted_weeks(0.4, 0.85) == pytest.approx(0.4)
+    # 4 discounted weeks < 4 flat weeks.
+    assert _discounted_weeks(4, 0.85) < 4.0
 
 
 # ---- waiver_pickup_score --------------------------------------------------
@@ -393,12 +483,16 @@ def test_usage_spike_adds_and_caps():
 
 
 def test_positive_trend_and_cap():
-    assert waiver_pickup_score(_cand(value=500, rank_change_7d=10), {}) == pytest.approx(95.0)
+    # Trend is noise-shrunk (single 7d window -> x0.8): rank 10 -> 8 -> +28.
+    assert waiver_pickup_score(_cand(value=500, rank_change_7d=10), {}) == pytest.approx(88.0)
+    # rank 20 -> 16 -> min(16*3.5, 45) = 45 (still caps): 60 + 45.
     assert waiver_pickup_score(_cand(value=500, rank_change_7d=20), {}) == pytest.approx(105.0)
 
 
 def test_negative_trend_penalized_and_floored():
-    assert waiver_pickup_score(_cand(value=500, rank_change_7d=-4), {}) == pytest.approx(54.0)
+    # rank -4 -> -3.2 -> max(-3.2*1.5, -15) = -4.8.
+    assert waiver_pickup_score(_cand(value=500, rank_change_7d=-4), {}) == pytest.approx(55.2)
+    # rank -30 -> -24 -> floored at -15.
     assert waiver_pickup_score(_cand(value=500, rank_change_7d=-30), {}) == pytest.approx(45.0)
 
 

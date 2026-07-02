@@ -85,9 +85,12 @@ class WaiverWeights:
     injury_max: float = 55.0
     # Injury vacancy is scored from expected vacated fantasy points over a
     # forward window: sev * min(weeks_out, horizon) * projected_ppg, times this.
-    injury_pts_per_vacated_ppg: float = 1.0
+    injury_pts_per_vacated_ppg: float = 1.2
     injury_horizon_weeks: float = 4.0
     injury_fallback_ppg: float = 9.0  # used when the injured player's proj is unknown
+    # Near-term weeks matter more (you can always drop the player later), so each
+    # future week of a vacancy is discounted by this per week (#8).
+    injury_week_decay: float = 0.85
     usage_per_ratio: float = 30.0
     usage_max: float = 50.0
     breakout_per: float = 0.5
@@ -108,6 +111,13 @@ class WaiverWeights:
     age_floor: float = -22.0
     # Roster need: up to +need_max_bonus (fraction) for a high-need position.
     need_max_bonus: float = 0.25
+    # Weekly rank trend is a single noisy window; shrink it toward zero (#7).
+    trend_shrink: float = 0.2
+    # Upcoming schedule ease: up to this many points for a soft slate (#3).
+    schedule_bonus_max: float = 12.0
+    # Positional scarcity: up to +scarcity_max_bonus (fraction) for a player well
+    # above replacement level at a scarce position (#4).
+    scarcity_max_bonus: float = 0.20
 
 
 WEIGHTS = WaiverWeights()
@@ -115,6 +125,21 @@ WEIGHTS = WaiverWeights()
 
 def _clamp01(x: float) -> float:
     return 0.0 if x < 0 else 1.0 if x > 1 else x
+
+
+def _discounted_weeks(weeks: float, decay: float) -> float:
+    """Sum of geometrically-decayed week weights: week 0 counts 1.0, week 1
+    counts ``decay``, week 2 ``decay**2`` ... so near-term weeks of a vacancy
+    matter more than distant ones (#8). Handles fractional final weeks."""
+    total = 0.0
+    i = 0
+    rem = max(0.0, float(weeks))
+    while rem > 1e-9 and i < 64:
+        step = 1.0 if rem >= 1.0 else rem
+        total += step * (decay ** i)
+        rem -= step
+        i += 1
+    return total
 
 
 # ---------------------------------------------------------------------------
@@ -366,7 +391,8 @@ def expected_vacated_points(vacated, horizon_weeks: float = None,
             ppg_v = float(ppg) if ppg is not None else float(fallback_ppg)
         except (TypeError, ValueError):
             ppg_v = float(fallback_ppg)
-        total += likelihood * weeks * max(0.0, ppg_v)
+        # Discount later weeks — near-term opportunity is worth more (#8).
+        total += likelihood * _discounted_weeks(weeks, w.injury_week_decay) * max(0.0, ppg_v)
     return total
 
 
@@ -409,6 +435,86 @@ def self_injury_multiplier(status) -> float:
 
 
 # ---------------------------------------------------------------------------
+# Trend / schedule / scarcity
+# ---------------------------------------------------------------------------
+
+def blended_trend(windows, w: WaiverWeights = WEIGHTS) -> float:
+    """Blend one or more rank-change windows into a single, noise-shrunk trend (#7).
+
+    ``windows`` maps a window label to its rank change (e.g. {"7d": 6, "14d": 4}).
+    A single window is inherently noisy, so the blend is shrunk toward zero; the
+    more windows corroborate, the less it is shrunk. Missing/None windows are
+    ignored, so this improves automatically once longer windows exist in the data.
+    """
+    vals = []
+    for v in (windows or {}).values():
+        if v is None:
+            continue
+        try:
+            vals.append(float(v))
+        except (TypeError, ValueError):
+            continue
+    if not vals:
+        return 0.0
+    avg = sum(vals) / len(vals)
+    shrink = w.trend_shrink / max(1, len(vals))
+    return avg * (1.0 - shrink)
+
+
+def schedule_bonus(ease_rank, total_teams, w: WaiverWeights = WEIGHTS) -> float:
+    """Bonus/penalty for the upcoming schedule (#3).
+
+    ``ease_rank`` is the position's matchup rank (1 = easiest slate), out of
+    ``total_teams``. Easiest slates earn up to +schedule_bonus_max/2, the hardest
+    lose the same, and a median schedule is neutral.
+    """
+    try:
+        rank = float(ease_rank)
+        total = float(total_teams)
+    except (TypeError, ValueError):
+        return 0.0
+    if not rank or total < 2:
+        return 0.0
+    pct = 1.0 - (rank - 1.0) / (total - 1.0)   # 1.0 easiest ... 0.0 hardest
+    return w.schedule_bonus_max * (pct - 0.5)
+
+
+def replacement_levels(values_by_pos: dict, cutoffs: dict) -> dict:
+    """Replacement-level value per position: the value at the position's roster
+    cutoff rank (#4). ``values_by_pos``: {pos: [values...]}; ``cutoffs``: {pos:
+    rank}. Positions with no cutoff or no values are omitted.
+    """
+    out: dict = {}
+    for pos, vals in (values_by_pos or {}).items():
+        cut = int((cutoffs or {}).get(pos, 0) or 0)
+        if cut <= 0 or not vals:
+            continue
+        sv = sorted((float(v) for v in vals if v is not None), reverse=True)
+        if not sv:
+            continue
+        idx = min(cut, len(sv)) - 1
+        out[pos] = sv[max(0, idx)]
+    return out
+
+
+def scarcity_multiplier(position, value, replacement_by_pos: dict,
+                        w: WaiverWeights = WEIGHTS) -> float:
+    """Multiplier (1 .. 1+scarcity_max_bonus) rewarding value above the position's
+    replacement level (#4) — the same nominal value is worth more at a scarce
+    position where the drop-off past the starters is steeper."""
+    repl = (replacement_by_pos or {}).get(position)
+    try:
+        v = float(value or 0)
+        repl = float(repl) if repl is not None else 0.0
+    except (TypeError, ValueError):
+        return 1.0
+    if repl <= 0:
+        return 1.0
+    edge = _clamp01((v - repl) / repl)   # fraction above replacement, capped +100%
+    return 1.0 + w.scarcity_max_bonus * edge
+
+
+# ---------------------------------------------------------------------------
 # Composite score + signal
 # ---------------------------------------------------------------------------
 
@@ -419,8 +525,10 @@ def waiver_pickup_score(c: dict, waiver_breakout: dict,
 
     ``c`` is a candidate dict. Recognized keys: value, age, position,
     rank_change_7d, player_id, and (all optional, default to a no-op when
-    absent) ros_ppg, usage_stat, usage_delta, injured_ahead, healthy_ahead,
-    vacated_volume_weight, injury_freshness, need_mult, self_status.
+    absent) ros_ppg, own_proj_ppg, trend_windows, usage_stat, usage_delta,
+    injured_ahead, vacated, healthy_ahead, vacated_volume_weight,
+    injury_freshness, need_mult, scarcity_mult, self_status,
+    schedule_ease_rank, schedule_total.
     """
     try:
         val = float(c.get("value") or 0)
@@ -428,11 +536,10 @@ def waiver_pickup_score(c: dict, waiver_breakout: dict,
         val = 0.0
     age = c.get("age") or 0
     pos = c.get("position")
-    rank_chg = c.get("rank_change_7d") or 0
     bscore = waiver_breakout.get(c.get("player_id"), 0) or 0
     prime = prime_max.get(pos, 28)
 
-    # Base worth: saturating dynasty value + rest-of-season projection (#5).
+    # Base worth: saturating dynasty value + forward projected production (#1/#5).
     value_pts = value_component(val, w)
     proj_pts = projection_component(c.get("ros_ppg"), w)
 
@@ -447,17 +554,35 @@ def waiver_pickup_score(c: dict, waiver_breakout: dict,
         freshness=float(c.get("injury_freshness") or 1.0),
         w=w,
     )
+    # Role-transfer guard (#2): if the candidate's own forward projection already
+    # reflects the vacated role (they've taken over), the injury upside is priced
+    # in — fade it so we don't double-count. Full credit only for un-inherited
+    # opportunity (own projection still ~0).
+    own_ppg = c.get("own_proj_ppg")
+    if own_ppg is not None:
+        role_ppg = max((float(v.get("proj_ppg") or 0)
+                        for v in (c.get("vacated") or []) if isinstance(v, dict)), default=0.0)
+        if role_ppg > 0:
+            try:
+                injury_pts *= _clamp01(1.0 - float(own_ppg) / role_ppg)
+            except (TypeError, ValueError):
+                pass
     usage_pts = min(usage_ratio(c.get("usage_stat"), c.get("usage_delta")) * w.usage_per_ratio,
                     w.usage_max)
     breakout_pts = min(bscore * w.breakout_per, w.breakout_max)
     opp = sorted([injury_pts, usage_pts, breakout_pts], reverse=True)
     opportunity_pts = opp[0] + w.opp_second * opp[1] + w.opp_third * opp[2]  # (#6)
 
-    # Weekly rank trend: reward risers, mildly penalize players falling away.
+    # Weekly rank trend, blended across available windows and noise-shrunk (#7).
+    rank_chg = blended_trend(c.get("trend_windows") or {"7d": c.get("rank_change_7d")}, w)
     if rank_chg > 0:
         trend_pts = min(rank_chg * w.trend_up_per, w.trend_up_max)
     else:
         trend_pts = max(rank_chg * w.trend_down_per, w.trend_down_floor)
+
+    # Upcoming schedule ease (#3): a soft slate is a small nudge, a brutal one a
+    # small penalty.
+    sched_pts = schedule_bonus(c.get("schedule_ease_rank"), c.get("schedule_total"), w)
 
     # Age: smooth youth reward / past-prime decay, both bounded.
     if not age:
@@ -469,10 +594,13 @@ def waiver_pickup_score(c: dict, waiver_breakout: dict,
         else:
             age_pts = max(w.age_base + gap * w.age_decay_per, w.age_floor)
 
-    raw = value_pts + proj_pts + opportunity_pts + trend_pts + age_pts
+    raw = value_pts + proj_pts + opportunity_pts + trend_pts + sched_pts + age_pts
 
-    # Roster-aware (#4): a position of real need to the viewer is worth more.
+    # Roster-aware (#4a): a position of real need to the viewer is worth more.
     raw *= float(c.get("need_mult") or 1.0)
+    # Positional scarcity (#4b): value above replacement is worth more at a
+    # scarce position.
+    raw *= float(c.get("scarcity_mult") or 1.0)
     # Candidate's own health (#2): a hurt backup isn't this week's add.
     raw *= self_injury_multiplier(c.get("self_status"))
     return raw

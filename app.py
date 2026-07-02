@@ -4850,6 +4850,8 @@ from utils.waiver_score import (  # noqa: E402
     depth_analysis_for_player as _depth_analysis_for_player,
     need_multiplier as _need_multiplier,
     positional_need_scores as _positional_need_scores,
+    replacement_levels as _replacement_levels,
+    scarcity_multiplier as _scarcity_multiplier,
     strip_bye_weeks as _strip_bye_weeks,
     waiver_pickup_score as _waiver_pickup_score,
     waiver_signal as _waiver_signal,
@@ -8921,6 +8923,52 @@ def api_waiver_candidates():
             return None
         return _weeks_out_from_projections(series)
 
+    def _forward_ppg_wv(pid):
+        """Mean of a player's own upcoming (non-bye) weekly projections — a
+        forward-looking production estimate (#1), better than backward ppg."""
+        if not _future_week_projs_wv:
+            return None
+        _pm = _full_players_wv.get(str(pid)) or players_index.get(str(pid)) or {}
+        _team = str(_pm.get("team") or "").upper()
+        vals = []
+        for _i, _wm in enumerate(_future_week_projs_wv):
+            _tset = _future_week_teams_wv[_i] if _i < len(_future_week_teams_wv) else set()
+            if _tset and _team and _team not in _tset:
+                continue  # bye
+            _p = _week_pts_wv(_wm, pid)
+            if _p is not None:
+                vals.append(max(0.0, _p))
+        return (sum(vals) / len(vals)) if vals else None
+
+    # Upcoming schedule ease per position (#3): a soft slate nudges a candidate up.
+    _matchup_by_pos_wv: dict = {}
+    try:
+        for _mp in ("QB", "RB", "WR", "TE"):
+            _rmap, _mtot, _minfo, _mz = _matchup_rank_table(season, _mp)
+            _matchup_by_pos_wv[_mp] = (_rmap or {}, int(_mtot or 0))
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+
+    # Positional scarcity / value-over-replacement (#4): value above the position's
+    # replacement level is worth more where the drop-off is steeper.
+    _repl_by_pos_wv: dict = {}
+    try:
+        _vals_by_pos = {}
+        for _row in model_value_table:
+            if isinstance(_row, dict):
+                _rpos = str(_row.get("position") or _row.get("pos") or "").upper()
+                if _rpos in ("QB", "RB", "WR", "TE"):
+                    try:
+                        _vals_by_pos.setdefault(_rpos, []).append(float(_row.get("value") or 0.0))
+                    except (TypeError, ValueError):
+                        pass
+        _teams_n = len(rosters) or 12
+        _repl_cutoffs = {"QB": _teams_n * 2, "RB": _teams_n * 3,
+                         "WR": _teams_n * 3, "TE": _teams_n * 1}
+        _repl_by_pos_wv = _replacement_levels(_vals_by_pos, _repl_cutoffs)
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+
     # Viewer roster need (#4): a position the viewer is short on is worth more.
     _need_scores_wv: dict = {}
     try:
@@ -8993,8 +9041,23 @@ def api_waiver_candidates():
         _self = _full_players_wv.get(c["player_id"]) or {}
         c["self_status"] = _self.get("injury_status") or _self.get("status") or ""
 
-        c["ros_ppg"] = _ppg_by_pid_wv.get(c["player_id"])
+        # Forward projected ppg for this candidate (#1) — used for production and,
+        # via the transfer guard (#2), to fade injury upside they've already taken.
+        _fwd_ppg = _forward_ppg_wv(c["player_id"])
+        c["own_proj_ppg"] = _fwd_ppg
+        c["ros_ppg"] = _fwd_ppg if _fwd_ppg is not None else _ppg_by_pid_wv.get(c["player_id"])
+
         c["need_mult"] = _need_multiplier(c["position"], _need_scores_wv)
+
+        # Upcoming schedule ease (#3).
+        _team_up = str(_self.get("team") or players_index.get(c["player_id"], {}).get("team")
+                       or c.get("team") or "").upper()
+        _rmap_s, _tot_s = _matchup_by_pos_wv.get(c["position"], ({}, 0))
+        c["schedule_ease_rank"] = _rmap_s.get(_team_up)
+        c["schedule_total"] = _tot_s
+
+        # Positional scarcity (#4).
+        c["scarcity_mult"] = _scarcity_multiplier(c["position"], c["value"], _repl_by_pos_wv)
 
     candidates.sort(key=lambda c: _waiver_pickup_score(c, waiver_breakout, _WAIVER_PRIME_MAX), reverse=True)
     if position_filter and position_filter in {"QB", "RB", "WR", "TE"}:
@@ -9023,8 +9086,10 @@ def api_waiver_candidates():
             "usage_series": ut.get("series"),
             "injured_ahead": len(c.get("injured_ahead") or []),
             "healthy_ahead": c.get("healthy_ahead"),
-            "ros_ppg": c.get("ros_ppg"),
+            "ros_ppg": round(c["ros_ppg"], 1) if c.get("ros_ppg") is not None else None,
             "roster_need": round((c.get("need_mult") or 1.0) - 1.0, 3),
+            "scarcity": round((c.get("scarcity_mult") or 1.0) - 1.0, 3),
+            "schedule_ease_rank": c.get("schedule_ease_rank"),
         })
 
     return jsonify({"candidates": result, "total": len(result)})
