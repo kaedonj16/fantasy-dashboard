@@ -12,6 +12,7 @@ from utils.waiver_score import (
     depth_analysis_for_player,
     depth_chart_vacancy_score,
     expected_vacated_points,
+    weeks_out_from_projections,
     injured_ahead,
     injured_ahead_for_player,
     need_multiplier,
@@ -128,6 +129,41 @@ def test_expected_vacated_points_math():
     assert expected_vacated_points([{"status": "DOUBTFUL", "proj_ppg": 10}]) == pytest.approx(0.5 * 0.8 * 10)
     # Healthy status contributes nothing.
     assert expected_vacated_points([{"status": "ACTIVE", "proj_ppg": 20}]) == 0.0
+
+
+# ---- projection-derived injury timeline ------------------------------------
+
+def test_weeks_out_from_projections_counts_leading_zeros():
+    # Out weeks 1-3 (~0 proj), returns week 4.
+    assert weeks_out_from_projections([0.0, 0.2, 0.0, 14.5, 15.0]) == 3
+    # Playing now -> 0 weeks out.
+    assert weeks_out_from_projections([12.0, 0.0, 0.0]) == 0
+    # Missing/None treated as out.
+    assert weeks_out_from_projections([None, None, 10.0]) == 2
+    assert weeks_out_from_projections([]) == 0
+
+
+def test_projection_timeline_overrides_injury_class_estimate():
+    # Same status + role, but projections say the player is out 3 weeks vs the
+    # injury-class default (OUT -> 1 week). The projection wins, and likelihood
+    # is treated as ~certain (the projection literally shows him out).
+    proj = expected_vacated_points([{"status": "OUT", "proj_ppg": 10, "weeks_out": 3}])
+    label = expected_vacated_points([{"status": "OUT", "proj_ppg": 10}])
+    assert proj == pytest.approx(1.0 * 3 * 10)   # projection-derived
+    assert label == pytest.approx(0.85 * 1 * 10)  # injury-class fallback
+    assert proj > label
+
+
+def test_projection_timeline_capped_by_horizon():
+    # 8 projected weeks out is capped at the scoring horizon (default 4).
+    assert expected_vacated_points([{"status": "IR", "proj_ppg": 10, "weeks_out": 8}]) == pytest.approx(1.0 * 4 * 10)
+
+
+def test_zero_weeks_out_falls_back_to_injury_class():
+    # A confirmed injury whose projections don't show him out (weeks_out 0) still
+    # gets the injury-class credit — projections extend, never erase, an injury.
+    got = expected_vacated_points([{"status": "IR", "proj_ppg": 10, "weeks_out": 0}])
+    assert got == pytest.approx(1.0 * 4 * 10)  # IR class: min(6,4) weeks
 
 
 def test_questionable_ahead_scores_points():

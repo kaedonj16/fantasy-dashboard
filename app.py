@@ -4845,12 +4845,14 @@ def build_standings_body(ctx: dict) -> str:
 
 from utils.waiver_score import (  # noqa: E402
     WAIVER_PRIME_MAX as _WAIVER_PRIME_MAX,
+    WEIGHTS,
     build_depth_index as _build_depth_index,
     depth_analysis_for_player as _depth_analysis_for_player,
     need_multiplier as _need_multiplier,
     positional_need_scores as _positional_need_scores,
     waiver_pickup_score as _waiver_pickup_score,
     waiver_signal as _waiver_signal,
+    weeks_out_from_projections as _weeks_out_from_projections,
 )
 
 
@@ -8846,6 +8848,61 @@ def api_waiver_candidates():
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
+    # Season projected PPG — the *healthy* production of a role, used to value an
+    # injury vacancy (the injured player projects ~0 while hurt, so their own
+    # recent ppg understates the role).
+    _season_ppg_wv: dict = {}
+    try:
+        from data_building.fetch_projections import fetch_fp_season_projections
+        _nfl_pj = get_nfl_state() or {}
+        _pj_season = int(_nfl_pj.get("season") or season)
+        for _pid, _row in (fetch_fp_season_projections(_pj_season, "ppr") or {}).items():
+            if isinstance(_row, dict) and _row.get("ppg") is not None:
+                _season_ppg_wv[str(_pid)] = _row.get("ppg")
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+
+    # Upcoming weekly projections — a player projected for ~0 points across the
+    # next N weeks IS the projection provider's read on how long they're out, so
+    # count the leading zero-run to get the injury timeline directly (#: weeks
+    # out from projections rather than guessing from the injury label).
+    _future_week_projs_wv: list = []
+    try:
+        from utils.utils import load_week_projection
+        _nfl_wk = get_nfl_state() or {}
+        _proj_season = int(_nfl_wk.get("season") or season)
+        _cur_week = int(_nfl_wk.get("week") or _nfl_wk.get("display_week") or 1)
+        _horizon = int(round(float(WEIGHTS.injury_horizon_weeks))) + 2
+        for _w in range(_cur_week, _cur_week + _horizon):
+            _wp = load_week_projection(_proj_season, _w) or {}
+            _future_week_projs_wv.append(_wp if isinstance(_wp, dict) else {})
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+
+    def _week_pts_wv(week_map, pid):
+        """Extract a numeric weekly projection for pid from a (possibly
+        variant-nested) week projection map; None when absent."""
+        v = (week_map or {}).get(str(pid))
+        if isinstance(v, dict):
+            for _k in ("ppr", "pts", "points", "proj", "half_ppr", "std"):
+                if _k in v:
+                    v = v[_k]
+                    break
+        try:
+            return float(v) if v is not None and not isinstance(v, dict) else None
+        except (TypeError, ValueError):
+            return None
+
+    def _weeks_out_wv(pid):
+        """Projection-derived weeks-out for an injured player, or None if the
+        weekly projections aren't available."""
+        if not _future_week_projs_wv:
+            return None
+        series = [_week_pts_wv(_wm, pid) for _wm in _future_week_projs_wv]
+        if all(x is None for x in series):
+            return None
+        return _weeks_out_from_projections(series)
+
     # Viewer roster need (#4): a position the viewer is short on is worth more.
     _need_scores_wv: dict = {}
     try:
@@ -8903,12 +8960,15 @@ def api_waiver_candidates():
         _inj_pids = _da["injured_pids_ahead"]
         c["injured_ahead"] = _da["injured_ahead"]
         c["healthy_ahead"] = _da["healthy_ahead"]
-        # Attach each injured-ahead player's projected PPG so the vacancy is
-        # scored from expected vacated points over the injury timeline, not just
-        # status severity. Recent PPR ppg is the projection proxy (#5's source).
+        # Value each vacancy from the injured player's role production (healthy
+        # season projected ppg, else recent ppg) and, crucially, from how long
+        # they're projected to be out (leading zero-run in the weekly
+        # projections) rather than a fixed guess by injury label.
         _vac = _da["vacated"]
         for _v in _vac:
-            _v["proj_ppg"] = _ppg_by_pid_wv.get(str(_v.get("pid")))
+            _vpid = str(_v.get("pid"))
+            _v["proj_ppg"] = _season_ppg_wv.get(_vpid) or _ppg_by_pid_wv.get(_vpid)
+            _v["weeks_out"] = _weeks_out_wv(_vpid)
         c["vacated"] = _vac
         c["injury_freshness"] = _freshness_wv(_inj_pids)
 

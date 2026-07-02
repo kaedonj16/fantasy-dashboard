@@ -269,20 +269,46 @@ def _proximity_weight(healthy_ahead: int) -> float:
     return {0: 1.0, 1: 0.55, 2: 0.2}.get(healthy_ahead, 0.0)
 
 
+def weeks_out_from_projections(weekly_projs, zero_threshold: float = 1.0) -> int:
+    """Derive weeks-out from the leading run of ~zero weekly projections.
+
+    Projection providers zero out a player's weekly points for every week they're
+    expected to miss, so the number of consecutive at-or-below-threshold weeks
+    starting now is a direct read on the injury timeline — far better than
+    guessing from the injury label. ``weekly_projs`` is this player's projected
+    points for the upcoming weeks, in order (week now, +1, +2, ...).
+    """
+    n = 0
+    for p in (weekly_projs or []):
+        try:
+            v = float(p) if p is not None else 0.0
+        except (TypeError, ValueError):
+            v = 0.0
+        if v <= zero_threshold:
+            n += 1
+        else:
+            break
+    return n
+
+
 def expected_vacated_points(vacated, horizon_weeks: float = None,
                             fallback_ppg: float = None,
                             w: WaiverWeights = WEIGHTS) -> float:
     """Expected fantasy points a candidate inherits from injuries ahead.
 
-    ``vacated`` items may be plain status strings or ``{status, proj_ppg}`` dicts.
-    For each injured player ahead:
+    ``vacated`` items may be plain status strings or dicts with ``status`` and,
+    optionally, ``proj_ppg`` (the vacated role's healthy production) and
+    ``weeks_out`` (a projection-derived timeline — how many upcoming weeks the
+    player is projected for ~zero). For each injured player ahead:
 
-        likelihood_out(status) * min(weeks_out(status), horizon) * projected_ppg
+        likelihood * min(weeks_out, horizon) * projected_ppg
 
-    which folds together the injury's *likelihood* (severity), its *timeline*
-    (weeks out, by injury class) and the vacated role's *production* (projected
-    PPG, falling back to a startable baseline when unknown). Summed across
-    everyone injured ahead.
+    Timeline source: when ``weeks_out`` is present and positive it is
+    authoritative (the projections literally show the player out that long) and
+    likelihood is ~1.0; otherwise the injury *class* supplies both an estimated
+    duration (INJURY_DURATION_WEEKS) and a likelihood (VACANCY_SEVERITY). PPG
+    falls back to a startable baseline when unknown. Summed across everyone
+    injured ahead.
     """
     if horizon_weeks is None:
         horizon_weeks = w.injury_horizon_weeks
@@ -293,18 +319,35 @@ def expected_vacated_points(vacated, horizon_weeks: float = None,
         if isinstance(item, dict):
             st = str(item.get("status") or "").upper()
             ppg = item.get("proj_ppg")
+            weeks_override = item.get("weeks_out")
         else:
             st = str(item or "").upper()
             ppg = None
+            weeks_override = None
         sev = VACANCY_SEVERITY.get(st, 0.0)
-        if sev <= 0:
+
+        # Projection-derived timeline is authoritative when it shows the player
+        # out; otherwise fall back to the injury-class estimate. (A projection
+        # that shows them playing never zeroes out a confirmed injury — it just
+        # doesn't extend it — so real injuries aren't dropped on projection quirks.)
+        try:
+            wo = float(weeks_override) if weeks_override is not None else 0.0
+        except (TypeError, ValueError):
+            wo = 0.0
+        if wo > 0:
+            weeks = min(wo, float(horizon_weeks))
+            likelihood = 1.0
+        elif sev > 0:
+            weeks = min(INJURY_DURATION_WEEKS.get(st, 1.0), float(horizon_weeks))
+            likelihood = sev
+        else:
             continue
-        weeks = min(INJURY_DURATION_WEEKS.get(st, 1.0), float(horizon_weeks))
+
         try:
             ppg_v = float(ppg) if ppg is not None else float(fallback_ppg)
         except (TypeError, ValueError):
             ppg_v = float(fallback_ppg)
-        total += sev * weeks * max(0.0, ppg_v)
+        total += likelihood * weeks * max(0.0, ppg_v)
     return total
 
 
