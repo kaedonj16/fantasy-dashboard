@@ -1214,21 +1214,7 @@ def get_viewer_session() -> dict:
     return viewer_data
 
 
-def format_sleeper_league_option(league: dict) -> dict:
-    settings = league.get("settings") or {}
-
-    return {
-        "league_id": str(league.get("league_id", "")),
-        "name": league.get("name") or "Unnamed League",
-        "season": str(league.get("season") or ""),
-        "total_rosters": league.get("total_rosters") or settings.get("num_teams") or "",
-        "avatar": league.get("avatar") or "",
-        "label": (
-            f"{league.get('name') or 'Unnamed League'} "
-            f"({league.get('season') or ''}) • "
-            f"{league.get('total_rosters') or settings.get('num_teams') or '?'} teams"
-        ),
-    }
+from utils.league_payload import format_sleeper_league_option  # noqa: E402
 
 
 def _cache_key(platform: str, season: int, league_id: str):
@@ -2380,59 +2366,10 @@ def has_draft_ended(league_id: str, platform: str, season: int) -> bool:
         return False
 
 
-def get_most_recent_valid_draft_for_season(drafts: list, season: int) -> Optional[dict]:
-    """
-    Pick the most recent draft from the provided list, using the best available
-    timestamp field. Return it only if it belongs to the viewed season.
-
-    If the newest draft is from an older season, return None so the caller
-    can keep TBD logic.
-    """
-    if not isinstance(drafts, list) or not drafts:
-        return None
-
-    def draft_sort_ts(d: dict) -> int:
-        if not isinstance(d, dict):
-            return -1
-        return max(
-            _safe_int(d.get("start_time"), -1),
-            _safe_int(d.get("created"), -1),
-            _safe_int(d.get("last_picked"), -1),
-            _safe_int(d.get("last_message_time"), -1),
-        )
-
-    valid_drafts = [d for d in drafts if isinstance(d, dict)]
-    if not valid_drafts:
-        return None
-
-    most_recent = max(valid_drafts, key=draft_sort_ts)
-    most_recent_season = _safe_int(most_recent.get("season"))
-
-    if most_recent_season != int(season):
-        return None
-
-    return most_recent
-
-
-def _build_roster_map(users: list, rosters: list) -> dict:
-    """Map roster_id → display name, using metadata.team_name with user fallback."""
-    user_fallback = {
-        u["user_id"]: (
-                (u.get("metadata") or {}).get("team_name")
-                or u.get("display_name")
-                or u.get("username")
-                or str(u["user_id"])
-        )
-        for u in users
-    }
-    roster_map = {}
-    for r in rosters:
-        rid = str(r["roster_id"])
-        owner_id = r.get("owner_id")
-        roster_map[rid] = (r.get("metadata") or {}).get("team_name") or user_fallback.get(
-            owner_id, f"Roster {rid}"
-        )
-    return roster_map
+from utils.league_payload import (  # noqa: E402
+    build_roster_map as _build_roster_map,
+    get_most_recent_valid_draft_for_season,
+)
 
 
 def _load_rookie_rankings_for_ctx() -> list[dict]:
