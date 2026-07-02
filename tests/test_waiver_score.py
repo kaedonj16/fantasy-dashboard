@@ -12,6 +12,7 @@ from utils.waiver_score import (
     depth_analysis_for_player,
     depth_chart_vacancy_score,
     expected_vacated_points,
+    strip_bye_weeks,
     weeks_out_from_projections,
     injured_ahead,
     injured_ahead_for_player,
@@ -141,6 +142,35 @@ def test_weeks_out_from_projections_counts_leading_zeros():
     # Missing/None treated as out.
     assert weeks_out_from_projections([None, None, 10.0]) == 2
     assert weeks_out_from_projections([]) == 0
+
+
+def test_strip_bye_weeks_removes_bye_entries():
+    projs = [0.0, 0.0, 0.0, 12.0]
+    plays = [True, True, False, True]     # week 3 is a bye
+    assert strip_bye_weeks(projs, plays) == [0.0, 0.0, 12.0]
+
+
+def test_strip_bye_weeks_missing_flags_keeps_all():
+    projs = [0.0, 5.0]
+    assert strip_bye_weeks(projs, None) == [0.0, 5.0]
+    assert strip_bye_weeks(projs, [True]) == [0.0, 5.0]  # short list -> keep extras
+
+
+def test_bye_not_counted_as_weeks_out():
+    # Player out week 1, BYE week 2, plays week 3. Without stripping the bye the
+    # zero-run would read 2 weeks out; stripping it gives the true 1 week.
+    projs = [0.0, 0.0, 12.0]
+    plays = [True, False, True]           # week 2 is the bye
+    assert weeks_out_from_projections(projs) == 2                      # naive
+    assert weeks_out_from_projections(strip_bye_weeks(projs, plays)) == 1  # bye-aware
+
+
+def test_bye_does_not_break_injury_streak():
+    # Out weeks 1-2, BYE week 3, still out week 4, back week 5. The bye shouldn't
+    # split the streak: true timeline is 3 missed games.
+    projs = [0.0, 0.0, 0.0, 0.0, 11.0]
+    plays = [True, True, False, True, True]  # week 3 is the bye
+    assert weeks_out_from_projections(strip_bye_weeks(projs, plays)) == 3
 
 
 def test_projection_timeline_overrides_injury_class_estimate():

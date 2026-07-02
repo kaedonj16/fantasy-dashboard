@@ -269,6 +269,25 @@ def _proximity_weight(healthy_ahead: int) -> float:
     return {0: 1.0, 1: 0.55, 2: 0.2}.get(healthy_ahead, 0.0)
 
 
+def strip_bye_weeks(weekly_projs, plays_this_week) -> list:
+    """Drop a player's bye week(s) from their upcoming-projection series.
+
+    A bye projects ~0 just like an injury, so counting it would both overstate
+    the timeline and break/extend the streak wrongly. ``plays_this_week`` is a
+    parallel sequence of booleans (True/None = the team is scheduled that week,
+    False = bye); False entries are removed so the zero-run reflects games
+    actually missed, not byes.
+    """
+    projs = list(weekly_projs or [])
+    out = []
+    for i, p in enumerate(projs):
+        plays = plays_this_week[i] if (plays_this_week and i < len(plays_this_week)) else True
+        if plays is False:
+            continue
+        out.append(p)
+    return out
+
+
 def weeks_out_from_projections(weekly_projs, zero_threshold: float = 1.0) -> int:
     """Derive weeks-out from the leading run of ~zero weekly projections.
 

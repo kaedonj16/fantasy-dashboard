@@ -4850,6 +4850,7 @@ from utils.waiver_score import (  # noqa: E402
     depth_analysis_for_player as _depth_analysis_for_player,
     need_multiplier as _need_multiplier,
     positional_need_scores as _positional_need_scores,
+    strip_bye_weeks as _strip_bye_weeks,
     waiver_pickup_score as _waiver_pickup_score,
     waiver_signal as _waiver_signal,
     weeks_out_from_projections as _weeks_out_from_projections,
@@ -8867,8 +8868,9 @@ def api_waiver_candidates():
     # count the leading zero-run to get the injury timeline directly (#: weeks
     # out from projections rather than guessing from the injury label).
     _future_week_projs_wv: list = []
+    _future_week_teams_wv: list = []   # parallel: set of teams playing each week
     try:
-        from utils.utils import load_week_projection
+        from utils.utils import load_week_projection, load_week_schedule
         _nfl_wk = get_nfl_state() or {}
         _proj_season = int(_nfl_wk.get("season") or season)
         _cur_week = int(_nfl_wk.get("week") or _nfl_wk.get("display_week") or 1)
@@ -8876,6 +8878,14 @@ def api_waiver_candidates():
         for _w in range(_cur_week, _cur_week + _horizon):
             _wp = load_week_projection(_proj_season, _w) or {}
             _future_week_projs_wv.append(_wp if isinstance(_wp, dict) else {})
+            _teams = set()
+            for _g in (load_week_schedule(_proj_season, _w) or []):
+                if isinstance(_g, dict):
+                    for _side in ("away", "home"):
+                        _t = str(_g.get(_side) or "").upper()
+                        if _t:
+                            _teams.add(_t)
+            _future_week_teams_wv.append(_teams)
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
@@ -8895,10 +8905,18 @@ def api_waiver_candidates():
 
     def _weeks_out_wv(pid):
         """Projection-derived weeks-out for an injured player, or None if the
-        weekly projections aren't available."""
+        weekly projections aren't available. Bye weeks (team not scheduled) are
+        stripped first so a bye isn't mistaken for a missed game."""
         if not _future_week_projs_wv:
             return None
+        _pm = _full_players_wv.get(str(pid)) or players_index.get(str(pid)) or {}
+        _team = str(_pm.get("team") or "").upper()
         series = [_week_pts_wv(_wm, pid) for _wm in _future_week_projs_wv]
+        plays = [
+            (_team in _tset) if (_tset and _team) else True
+            for _tset in _future_week_teams_wv
+        ]
+        series = _strip_bye_weeks(series, plays)
         if all(x is None for x in series):
             return None
         return _weeks_out_from_projections(series)
