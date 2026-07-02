@@ -4846,6 +4846,7 @@ def build_standings_body(ctx: dict) -> str:
 from utils.waiver_score import (  # noqa: E402
     WAIVER_PRIME_MAX as _WAIVER_PRIME_MAX,
     waiver_pickup_score as _waiver_pickup_score,
+    waiver_signal as _waiver_signal,
 )
 
 
@@ -5146,30 +5147,13 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
-    # Age primes by position (peak dynasty window)
-    _prime_max = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
-
-    def _waiver_signal(c: dict) -> tuple[str, str]:
-        """Return (badge_class, label) for the pickup signal."""
-        rank_chg = c["rank_change_7d"] or 0
-        age = c["age"] or 0
-        pos = c["position"]
-        bscore = waiver_breakout.get(c["player_id"], 0)
-        prime = _prime_max.get(pos, 28)
-
-        if bscore >= 55:
-            return ("signal-breakout", "Breakout")
-        if rank_chg >= 8:
-            return ("signal-rising", "Rising Fast")
-        if rank_chg >= 3:
-            return ("signal-rising", "Trending Up")
-        if age < prime - 2 and c["value"] >= 300:
-            return ("signal-value", "Value Play")
-        if age > prime + 2:
-            return ("signal-aging", "Sell Window")
-        return ("signal-hold", "Available")
-
-    waiver_candidates.sort(key=lambda c: _waiver_pickup_score(c, waiver_breakout, _prime_max), reverse=True)
+    # Ranking + signal labels are shared with the /api/waiver-candidates surface
+    # (utils.waiver_score) so both order and badge players identically. This card
+    # has no weekly usage data, so the usage-spike term is simply a no-op here.
+    waiver_candidates.sort(
+        key=lambda c: _waiver_pickup_score(c, waiver_breakout, _WAIVER_PRIME_MAX),
+        reverse=True,
+    )
 
     waiver_html = []
     for p in waiver_candidates[:10]:
@@ -5182,7 +5166,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             sub_bits.append(f"Age {p['age']:.1f}")
         subline = " • ".join(sub_bits)
 
-        sig_cls, sig_label = _waiver_signal(p)
+        sig_cls, sig_label = _waiver_signal(p, waiver_breakout, _WAIVER_PRIME_MAX)
 
         waiver_html.append(
             f"""
@@ -8833,46 +8817,21 @@ def api_waiver_candidates():
     except Exception:
         usage_trends = {}
 
-    # Minimum last-3-week-vs-season rise to call it a usage spike, per stat.
-    _usage_spike_min = {"snap_pct": 8.0, "touches": 3.0, "targets": 2.0}
+    # Attach each candidate's usage trend so the shared scorer/labeler in
+    # utils.waiver_score can factor recent role growth (usage spikes) into both
+    # the ranking and the badge — not just the badge as before.
+    for c in candidates:
+        ut = usage_trends.get(c["player_id"]) or {}
+        c["usage_delta"] = ut.get("delta")
+        c["usage_stat"] = ut.get("stat")
 
-    def _usage_spike(c: dict):
-        ut = usage_trends.get(c["player_id"])
-        if not ut or ut.get("delta") is None:
-            return None
-        if ut["delta"] >= _usage_spike_min.get(ut.get("stat"), 3.0):
-            return ut
-        return None
-
-    _prime_max = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
-
-    def _wv_signal(c: dict) -> tuple:
-        rank_chg = c["rank_change_7d"] or 0
-        age = c["age"] or 0
-        pos = c["position"]
-        bscore = waiver_breakout.get(c["player_id"], 0)
-        prime = _prime_max.get(pos, 28)
-        if _usage_spike(c):
-            return ("signal-usage", "Usage Spike")
-        if bscore >= 55:
-            return ("signal-breakout", "Breakout")
-        if rank_chg >= 8:
-            return ("signal-rising", "Rising Fast")
-        if rank_chg >= 3:
-            return ("signal-rising", "Trending Up")
-        if age < prime - 2 and c["value"] >= 300:
-            return ("signal-value", "Value Play")
-        if age > prime + 2:
-            return ("signal-aging", "Sell Window")
-        return ("signal-hold", "Available")
-
-    candidates.sort(key=lambda c: _waiver_pickup_score(c, waiver_breakout, _prime_max), reverse=True)
+    candidates.sort(key=lambda c: _waiver_pickup_score(c, waiver_breakout, _WAIVER_PRIME_MAX), reverse=True)
     if position_filter and position_filter in {"QB", "RB", "WR", "TE"}:
         candidates = [c for c in candidates if c["position"] == position_filter]
 
     result = []
     for c in candidates[:30]:
-        sig_cls, sig_label = _wv_signal(c)
+        sig_cls, sig_label = _waiver_signal(c, waiver_breakout, _WAIVER_PRIME_MAX)
         bscore = waiver_breakout.get(c["player_id"], 0.0)
         ut = usage_trends.get(c["player_id"]) or {}
         result.append({
@@ -8887,7 +8846,7 @@ def api_waiver_candidates():
             "breakout_score": bscore,
             "signal": sig_label,
             "signal_class": sig_cls,
-            "composite_score": _waiver_pickup_score(c, waiver_breakout, _prime_max),
+            "composite_score": _waiver_pickup_score(c, waiver_breakout, _WAIVER_PRIME_MAX),
             "usage_delta": ut.get("delta"),
             "usage_stat": ut.get("stat"),
             "usage_series": ut.get("series"),

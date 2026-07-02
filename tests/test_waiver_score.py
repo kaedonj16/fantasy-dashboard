@@ -1,76 +1,150 @@
-"""Unit tests for utils.waiver_score.waiver_pickup_score.
+"""Unit tests for utils.waiver_score.
 
 Pure logic — no app / DB import — so these run anywhere pytest does.
 """
-from utils.waiver_score import WAIVER_PRIME_MAX, waiver_pickup_score
+import pytest
+
+from utils.waiver_score import (
+    USAGE_SPIKE_MIN,
+    WAIVER_PRIME_MAX,
+    usage_ratio,
+    value_component,
+    waiver_pickup_score,
+    waiver_signal,
+)
 
 
-def _cand(value=100, age=None, position="RB", rank_change_7d=0, player_id="p1"):
+def _cand(value=500, age=None, position="RB", rank_change_7d=0, player_id="p1",
+          usage_stat=None, usage_delta=None):
     return {
-        "value": value,
-        "age": age,
-        "position": position,
-        "rank_change_7d": rank_change_7d,
-        "player_id": player_id,
+        "value": value, "age": age, "position": position,
+        "rank_change_7d": rank_change_7d, "player_id": player_id,
+        "usage_stat": usage_stat, "usage_delta": usage_delta,
     }
 
 
-def test_base_value_with_no_bonuses():
-    # No age, no trend, no breakout -> just the raw value.
-    c = _cand(value=120, age=None, rank_change_7d=0)
-    assert waiver_pickup_score(c, {}) == 120
+# ---- value_component ------------------------------------------------------
+
+def test_value_component_shape():
+    assert value_component(0) == 0.0
+    assert value_component(500) == pytest.approx(60.0)
+    assert value_component(1500) == pytest.approx(90.0)
 
 
-def test_positive_trend_adds_bonus_capped_at_60():
-    strong = _cand(value=100, rank_change_7d=100)   # 100*4 capped at 60
-    mild = _cand(value=100, rank_change_7d=5)        # 5*4 = 20
-    assert waiver_pickup_score(strong, {}) == 160
-    assert waiver_pickup_score(mild, {}) == 120
+def test_value_component_monotonic_and_concave():
+    a, b, c = value_component(200), value_component(400), value_component(600)
+    assert a < b < c
+    # Concave: equal value steps yield shrinking gains.
+    assert (b - a) > (c - b)
 
 
-def test_negative_trend_ignored():
-    c = _cand(value=100, rank_change_7d=-30)
-    assert waiver_pickup_score(c, {}) == 100
+def test_value_component_bad_input_zero():
+    assert value_component(None) == 0.0
+    assert value_component("x") == 0.0
 
 
-def test_breakout_bonus_capped_at_50():
-    c = _cand(value=100, player_id="star")
-    big = waiver_pickup_score(c, {"star": 500})   # 500*0.5 capped at 50
-    small = waiver_pickup_score(c, {"star": 20})  # 20*0.5 = 10
-    assert big == 150
-    assert small == 110
+# ---- usage_ratio ----------------------------------------------------------
+
+def test_usage_ratio_thresholds():
+    assert usage_ratio("snap_pct", 8) == pytest.approx(1.0)
+    assert usage_ratio("touches", 6) == pytest.approx(2.0)
+    assert usage_ratio("targets", 1) == pytest.approx(0.5)
 
 
-def test_prime_age_gives_full_age_bonus():
-    # RB prime = 26; at/under prime the age bonus is the full +30.
-    c = _cand(value=100, age=24, position="RB")
-    assert waiver_pickup_score(c, {}) == 130
+def test_usage_ratio_unknown_stat_uses_default():
+    assert usage_ratio("mystery", 3) == pytest.approx(1.0)
 
 
-def test_past_prime_age_penalized():
-    # RB prime 26; age 29 -> 30 - (29-26)*10 = 0 age bonus.
-    c = _cand(value=100, age=29, position="RB")
-    assert waiver_pickup_score(c, {}) == 100
-    # Even further past prime goes negative.
-    c2 = _cand(value=100, age=31, position="RB")
-    assert waiver_pickup_score(c2, {}) == 100 + (30 - 50)
+def test_usage_ratio_missing_data_zero():
+    assert usage_ratio(None, 5) == 0.0
+    assert usage_ratio("snap_pct", None) == 0.0
+    assert usage_ratio("snap_pct", "nan") == 0.0
 
 
-def test_position_specific_prime():
-    # QB prime is 33 vs RB 26; a 30-year-old QB is still in prime.
-    qb = _cand(value=100, age=30, position="QB")
-    rb = _cand(value=100, age=30, position="RB")
-    assert waiver_pickup_score(qb, {}) > waiver_pickup_score(rb, {})
+# ---- waiver_pickup_score --------------------------------------------------
+
+def test_value_only_base():
+    assert waiver_pickup_score(_cand(value=500), {}) == pytest.approx(60.0)
 
 
-def test_unknown_position_uses_default_prime_28():
-    assert WAIVER_PRIME_MAX.get("K") is None
-    c = _cand(value=100, age=28, position="K")
-    # default prime 28 -> full +30 bonus at age 28.
-    assert waiver_pickup_score(c, {}) == 130
+def test_usage_spike_adds_and_caps():
+    assert waiver_pickup_score(
+        _cand(value=500, usage_stat="snap_pct", usage_delta=8), {}) == pytest.approx(90.0)
+    # 2x threshold -> 60 raw, capped at +50.
+    assert waiver_pickup_score(
+        _cand(value=500, usage_stat="snap_pct", usage_delta=16), {}) == pytest.approx(110.0)
 
 
-def test_all_bonuses_combine():
-    c = _cand(value=100, age=24, position="RB", rank_change_7d=10, player_id="x")
-    # value 100 + trend min(40,60)=40 + breakout min(30*0.5,50)=15 + age 30
-    assert waiver_pickup_score(c, {"x": 30}) == 185
+def test_positive_trend_and_cap():
+    assert waiver_pickup_score(_cand(value=500, rank_change_7d=10), {}) == pytest.approx(95.0)
+    assert waiver_pickup_score(_cand(value=500, rank_change_7d=20), {}) == pytest.approx(105.0)
+
+
+def test_negative_trend_penalized_and_floored():
+    assert waiver_pickup_score(_cand(value=500, rank_change_7d=-4), {}) == pytest.approx(54.0)
+    assert waiver_pickup_score(_cand(value=500, rank_change_7d=-30), {}) == pytest.approx(45.0)
+
+
+def test_breakout_adds_and_caps():
+    assert waiver_pickup_score(_cand(value=500, player_id="x"), {"x": 60}) == pytest.approx(90.0)
+    assert waiver_pickup_score(_cand(value=500, player_id="x"), {"x": 200}) == pytest.approx(105.0)
+
+
+def test_age_curve():
+    # RB prime 26. Young (22) rewarded, at-prime modest, past-prime decays/floors.
+    assert waiver_pickup_score(_cand(value=500, position="RB", age=22), {}) == pytest.approx(90.0)
+    assert waiver_pickup_score(_cand(value=500, position="RB", age=26), {}) == pytest.approx(82.0)
+    assert waiver_pickup_score(_cand(value=500, position="RB", age=30), {}) == pytest.approx(54.0)
+    assert waiver_pickup_score(_cand(value=500, position="RB", age=40), {}) == pytest.approx(38.0)
+
+
+def test_age_youth_bonus_capped():
+    # Very young still caps the age term at +36 (value 500 -> 60).
+    assert waiver_pickup_score(_cand(value=500, position="RB", age=18), {}) == pytest.approx(96.0)
+
+
+def test_emerging_player_outranks_static_veteran():
+    veteran = _cand(value=1500, position="WR", age=28)                    # high static value
+    emerging = _cand(value=250, position="RB", age=22, rank_change_7d=6,
+                     player_id="e", usage_stat="snap_pct", usage_delta=12)  # opportunity stack
+    assert waiver_pickup_score(emerging, {"e": 60}) > waiver_pickup_score(veteran, {})
+
+
+def test_missing_fields_do_not_raise():
+    assert waiver_pickup_score({}, {}) == pytest.approx(0.0)
+
+
+# ---- waiver_signal --------------------------------------------------------
+
+def test_signal_usage_spike_takes_precedence():
+    c = _cand(player_id="x", usage_stat="snap_pct", usage_delta=8)
+    # Even with a breakout score, usage spike wins.
+    assert waiver_signal(c, {"x": 99})[1] == "Usage Spike"
+
+
+def test_signal_breakout():
+    assert waiver_signal(_cand(player_id="x"), {"x": 55})[1] == "Breakout"
+
+
+def test_signal_rising_bands():
+    assert waiver_signal(_cand(rank_change_7d=8), {})[1] == "Rising Fast"
+    assert waiver_signal(_cand(rank_change_7d=4), {})[1] == "Trending Up"
+
+
+def test_signal_value_play():
+    # RB prime 26, age 22 (< prime-2), value >= 300.
+    assert waiver_signal(_cand(position="RB", age=22, value=400), {})[1] == "Value Play"
+
+
+def test_signal_sell_window():
+    # RB prime 26, age 29 (> prime+2).
+    assert waiver_signal(_cand(position="RB", age=29, value=400), {})[1] == "Sell Window"
+
+
+def test_signal_default_available():
+    assert waiver_signal(_cand(position="RB", age=26, value=100), {})[1] == "Available"
+
+
+def test_tables_have_expected_positions():
+    assert set(WAIVER_PRIME_MAX) == {"QB", "RB", "WR", "TE"}
+    assert set(USAGE_SPIKE_MIN) == {"snap_pct", "touches", "targets"}
