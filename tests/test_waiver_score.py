@@ -7,6 +7,10 @@ import pytest
 from utils.waiver_score import (
     USAGE_SPIKE_MIN,
     WAIVER_PRIME_MAX,
+    build_depth_index,
+    depth_chart_vacancy_score,
+    injured_ahead,
+    injured_ahead_for_player,
     usage_ratio,
     value_component,
     waiver_pickup_score,
@@ -59,6 +63,73 @@ def test_usage_ratio_missing_data_zero():
     assert usage_ratio(None, 5) == 0.0
     assert usage_ratio("snap_pct", None) == 0.0
     assert usage_ratio("snap_pct", "nan") == 0.0
+
+
+# ---- depth-chart injury vacancy -------------------------------------------
+
+def test_injured_ahead_only_counts_players_above():
+    teammates = [
+        {"depth_order": 1, "status": "IR"},        # starter, ahead, injured
+        {"depth_order": 2, "status": "OUT"},        # ahead, injured
+        {"depth_order": 4, "status": "OUT"},        # behind me (order 3) -> ignored
+        {"depth_order": 1, "status": "ACTIVE"},     # ahead but healthy -> ignored
+    ]
+    assert injured_ahead(3, teammates) == ["IR", "OUT"]
+
+
+def test_injured_ahead_questionable_excluded():
+    assert injured_ahead(2, [{"depth_order": 1, "status": "QUESTIONABLE"}]) == []
+
+
+def test_injured_ahead_missing_order_treated_as_deep():
+    # Candidate with no depth order still benefits from an injured starter.
+    assert injured_ahead(None, [{"depth_order": 1, "status": "OUT"}]) == ["OUT"]
+
+
+def test_vacancy_score_scales_with_severity_and_count():
+    assert depth_chart_vacancy_score([]) == 0.0
+    assert depth_chart_vacancy_score(["IR"]) == pytest.approx(40.0)     # 1.0 * 40
+    assert depth_chart_vacancy_score(["OUT"]) == pytest.approx(34.0)    # 0.85 * 40
+    # Two injured ahead: top dominates, second adds a little.
+    assert depth_chart_vacancy_score(["IR", "OUT"]) == pytest.approx(40.0 + 0.85 * 8)
+    # Capped at 55.
+    assert depth_chart_vacancy_score(["IR", "IR", "IR", "IR"]) == pytest.approx(55.0)
+
+
+def test_build_depth_index_and_lookup():
+    full = {
+        "starter": {"team": "KC", "position": "RB", "depth_chart_order": 1, "injury_status": "IR"},
+        "backup":  {"team": "KC", "position": "RB", "depth_chart_order": 2, "injury_status": ""},
+        "other":   {"team": "KC", "position": "WR", "depth_chart_order": 1, "injury_status": "OUT"},
+    }
+    idx = build_depth_index(full)
+    assert set(idx) == {("KC", "RB"), ("KC", "WR")}
+    # The backup RB has an injured starter (IR) ahead.
+    assert injured_ahead_for_player("backup", full, idx) == ["IR"]
+    # The starter has nobody ahead.
+    assert injured_ahead_for_player("starter", full, idx) == []
+
+
+def test_injury_vacancy_boosts_score_and_badge():
+    healthy = _cand(value=250, position="RB")
+    vacated = _cand(value=250, position="RB", player_id="b")
+    vacated["injured_ahead"] = ["IR"]
+    assert waiver_pickup_score(vacated, {}) > waiver_pickup_score(healthy, {})
+    assert waiver_signal(vacated, {})[1] == "Next Man Up"
+
+
+def test_next_man_up_outranks_usage_spike_badge():
+    c = _cand(player_id="x", usage_stat="snap_pct", usage_delta=8)
+    c["injured_ahead"] = ["OUT"]
+    assert waiver_signal(c, {})[1] == "Next Man Up"
+
+
+def test_doubtful_ahead_scores_but_no_next_man_up_badge():
+    # DOUBTFUL contributes points but is too weak to claim the "Next Man Up" badge.
+    c = _cand(value=250, position="RB", rank_change_7d=5)
+    c["injured_ahead"] = ["DOUBTFUL"]
+    assert depth_chart_vacancy_score(c["injured_ahead"]) > 0
+    assert waiver_signal(c, {})[1] != "Next Man Up"
 
 
 # ---- waiver_pickup_score --------------------------------------------------

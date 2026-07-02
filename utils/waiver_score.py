@@ -24,6 +24,13 @@ WAIVER_PRIME_MAX = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
 # candidate whose delta hits its stat's threshold has a usage ratio of 1.0.
 USAGE_SPIKE_MIN = {"snap_pct": 8.0, "touches": 3.0, "targets": 2.0}
 
+# NFL injury/roster statuses that meaningfully vacate the role of the players
+# behind them on the depth chart, weighted by how much opportunity they free up.
+# QUESTIONABLE is intentionally excluded — too weak to drive a waiver add.
+VACANCY_SEVERITY = {
+    "IR": 1.0, "PUP": 1.0, "NFI": 1.0, "SUSP": 0.9, "OUT": 0.85, "DOUBTFUL": 0.5,
+}
+
 
 def value_component(val) -> float:
     """Saturating value contribution (0 .. ~120).
@@ -56,6 +63,76 @@ def usage_ratio(stat, delta) -> float:
         return 0.0
 
 
+def build_depth_index(full_players: dict) -> dict:
+    """Group a Sleeper players map by (team, position) for depth-chart lookups.
+
+    Returns ``{(TEAM, POS): [{"pid", "depth_order", "status"}, ...]}`` where
+    ``status`` is the player's injury_status (falling back to roster status).
+    """
+    idx: dict = {}
+    for pid, p in (full_players or {}).items():
+        if not isinstance(p, dict):
+            continue
+        team = str(p.get("team") or "").upper()
+        pos = str(p.get("position") or "").upper()
+        if not team or not pos:
+            continue
+        idx.setdefault((team, pos), []).append({
+            "pid": str(pid),
+            "depth_order": p.get("depth_chart_order"),
+            "status": p.get("injury_status") or p.get("status") or "",
+        })
+    return idx
+
+
+def injured_ahead(depth_order, teammates) -> list:
+    """Vacating injury statuses of same-position teammates ranked AHEAD.
+
+    ``depth_order`` is this candidate's depth_chart_order (1 = starter); a falsy
+    value is treated as deep so any injured starter ahead still counts.
+    ``teammates`` is an iterable of ``{"depth_order", "status"}`` dicts for the
+    same team + position. Only statuses in VACANCY_SEVERITY are returned.
+    """
+    mine = depth_order or 99
+    out = []
+    for t in teammates:
+        o = t.get("depth_order") or 99
+        st = str(t.get("status") or "").upper()
+        if o < mine and st in VACANCY_SEVERITY:
+            out.append(st)
+    return out
+
+
+def injured_ahead_for_player(pid, full_players: dict, depth_index: dict) -> list:
+    """Convenience wrapper: vacating statuses ahead of ``pid`` on its depth chart."""
+    fp = full_players or {}
+    p = fp.get(pid) or fp.get(str(pid)) or {}
+    team = str(p.get("team") or "").upper()
+    pos = str(p.get("position") or "").upper()
+    if not team or not pos:
+        return []
+    group = (depth_index or {}).get((team, pos)) or []
+    teammates = [g for g in group if g.get("pid") != str(pid)]
+    return injured_ahead(p.get("depth_chart_order"), teammates)
+
+
+def depth_chart_vacancy_score(statuses) -> float:
+    """Points for injured players sitting ahead on the depth chart (0 .. 55).
+
+    The most severe vacancy dominates — an injured starter directly ahead is the
+    strongest waiver signal there is — and additional injured bodies ahead add a
+    little more on top.
+    """
+    sev = sorted(
+        (VACANCY_SEVERITY.get(str(s).upper(), 0.0) for s in (statuses or [])),
+        reverse=True,
+    )
+    sev = [x for x in sev if x > 0]
+    if not sev:
+        return 0.0
+    return min(sev[0] * 40.0 + sum(sev[1:]) * 8.0, 55.0)
+
+
 def waiver_pickup_score(c: dict, waiver_breakout: dict,
                         prime_max: dict = WAIVER_PRIME_MAX) -> float:
     """Composite waiver-pickup score: value + usage + trend + breakout + age.
@@ -76,6 +153,10 @@ def waiver_pickup_score(c: dict, waiver_breakout: dict,
 
     # Value: saturating base so it informs but doesn't dominate.
     value_pts = value_component(val)
+
+    # Injury vacancy: injured players ahead on the depth chart free up the role
+    # directly (a starter on IR makes the backup a must-add). Up to +55.
+    injury_pts = depth_chart_vacancy_score(c.get("injured_ahead"))
 
     # Usage spike: recent role growth, the strongest "add now" signal. Hitting a
     # stat's spike threshold is +30; ~1.7x threshold caps at +50.
@@ -101,7 +182,7 @@ def waiver_pickup_score(c: dict, waiver_breakout: dict,
         else:
             age_pts = max(22.0 + gap * 7.0, -22.0)
 
-    return value_pts + usage_pts + trend_pts + breakout_pts + age_pts
+    return value_pts + injury_pts + usage_pts + trend_pts + breakout_pts + age_pts
 
 
 def waiver_signal(c: dict, waiver_breakout: dict,
@@ -122,6 +203,11 @@ def waiver_signal(c: dict, waiver_breakout: dict,
     except (TypeError, ValueError):
         val = 0.0
 
+    # A confirmed injury to a player ahead is the most actionable signal — the
+    # role is vacated right now — so it outranks even a usage spike.
+    if any(VACANCY_SEVERITY.get(str(s).upper(), 0.0) >= 0.85
+           for s in (c.get("injured_ahead") or [])):
+        return ("signal-injury", "Next Man Up")
     if usage_ratio(c.get("usage_stat"), c.get("usage_delta")) >= 1.0:
         return ("signal-usage", "Usage Spike")
     if bscore >= 55:

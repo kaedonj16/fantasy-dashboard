@@ -4845,6 +4845,8 @@ def build_standings_body(ctx: dict) -> str:
 
 from utils.waiver_score import (  # noqa: E402
     WAIVER_PRIME_MAX as _WAIVER_PRIME_MAX,
+    build_depth_index as _build_depth_index,
+    injured_ahead_for_player as _injured_ahead_for_player,
     waiver_pickup_score as _waiver_pickup_score,
     waiver_signal as _waiver_signal,
 )
@@ -8817,13 +8819,29 @@ def api_waiver_candidates():
     except Exception:
         usage_trends = {}
 
-    # Attach each candidate's usage trend so the shared scorer/labeler in
-    # utils.waiver_score can factor recent role growth (usage spikes) into both
-    # the ranking and the badge — not just the badge as before.
+    # Depth-chart injury vacancies: an injured player ahead of a candidate on
+    # the same team+position frees up the role directly. The reduced players_index
+    # cache lacks depth_chart_order / injury_status, so pull the full Sleeper
+    # players feed (get_players_global) and index it once per request.
+    _depth_idx_wv: dict = {}
+    _full_players_wv: dict = {}
+    try:
+        _full_players_wv = get_players_global() or {}
+        _depth_idx_wv = _build_depth_index(_full_players_wv)
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+
+    # Attach each candidate's usage trend + depth-chart vacancy so the shared
+    # scorer/labeler in utils.waiver_score can factor recent role growth (usage
+    # spikes) and injuries-ahead into both the ranking and the badge — not just
+    # the badge as before.
     for c in candidates:
         ut = usage_trends.get(c["player_id"]) or {}
         c["usage_delta"] = ut.get("delta")
         c["usage_stat"] = ut.get("stat")
+        c["injured_ahead"] = _injured_ahead_for_player(
+            c["player_id"], _full_players_wv, _depth_idx_wv
+        )
 
     candidates.sort(key=lambda c: _waiver_pickup_score(c, waiver_breakout, _WAIVER_PRIME_MAX), reverse=True)
     if position_filter and position_filter in {"QB", "RB", "WR", "TE"}:
@@ -8850,6 +8868,7 @@ def api_waiver_candidates():
             "usage_delta": ut.get("delta"),
             "usage_stat": ut.get("stat"),
             "usage_series": ut.get("series"),
+            "injured_ahead": len(c.get("injured_ahead") or []),
         })
 
     return jsonify({"candidates": result, "total": len(result)})
