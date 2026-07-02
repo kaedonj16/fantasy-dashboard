@@ -77,8 +77,13 @@ def test_injured_ahead_only_counts_players_above():
     assert injured_ahead(3, teammates) == ["IR", "OUT"]
 
 
-def test_injured_ahead_questionable_excluded():
-    assert injured_ahead(2, [{"depth_order": 1, "status": "QUESTIONABLE"}]) == []
+def test_injured_ahead_questionable_now_counts():
+    # QUESTIONABLE ahead is a real (if softer) bump and should be tracked.
+    assert injured_ahead(2, [{"depth_order": 1, "status": "QUESTIONABLE"}]) == ["QUESTIONABLE"]
+
+
+def test_injured_ahead_healthy_status_ignored():
+    assert injured_ahead(2, [{"depth_order": 1, "status": "ACTIVE"}]) == []
 
 
 def test_injured_ahead_missing_order_treated_as_deep():
@@ -88,12 +93,21 @@ def test_injured_ahead_missing_order_treated_as_deep():
 
 def test_vacancy_score_scales_with_severity_and_count():
     assert depth_chart_vacancy_score([]) == 0.0
-    assert depth_chart_vacancy_score(["IR"]) == pytest.approx(40.0)     # 1.0 * 40
-    assert depth_chart_vacancy_score(["OUT"]) == pytest.approx(34.0)    # 0.85 * 40
+    assert depth_chart_vacancy_score(["IR"]) == pytest.approx(40.0)          # 1.0 * 40
+    assert depth_chart_vacancy_score(["OUT"]) == pytest.approx(34.0)         # 0.85 * 40
+    assert depth_chart_vacancy_score(["DOUBTFUL"]) == pytest.approx(20.0)    # 0.5 * 40
+    assert depth_chart_vacancy_score(["QUESTIONABLE"]) == pytest.approx(12.0)  # 0.3 * 40
     # Two injured ahead: top dominates, second adds a little.
     assert depth_chart_vacancy_score(["IR", "OUT"]) == pytest.approx(40.0 + 0.85 * 8)
     # Capped at 55.
     assert depth_chart_vacancy_score(["IR", "IR", "IR", "IR"]) == pytest.approx(55.0)
+
+
+def test_questionable_ahead_scores_points():
+    healthy = _cand(value=250, position="RB")
+    q_ahead = _cand(value=250, position="RB", player_id="q")
+    q_ahead["injured_ahead"] = ["QUESTIONABLE"]
+    assert waiver_pickup_score(q_ahead, {}) == pytest.approx(waiver_pickup_score(healthy, {}) + 12.0)
 
 
 def test_build_depth_index_and_lookup():
@@ -124,12 +138,26 @@ def test_next_man_up_outranks_usage_spike_badge():
     assert waiver_signal(c, {})[1] == "Next Man Up"
 
 
-def test_doubtful_ahead_scores_but_no_next_man_up_badge():
-    # DOUBTFUL contributes points but is too weak to claim the "Next Man Up" badge.
+def test_doubtful_ahead_earns_next_man_up():
+    # DOUBTFUL (likely out) is a strong-enough vacancy for the "Next Man Up" badge.
     c = _cand(value=250, position="RB", rank_change_7d=5)
     c["injured_ahead"] = ["DOUBTFUL"]
-    assert depth_chart_vacancy_score(c["injured_ahead"]) > 0
-    assert waiver_signal(c, {})[1] != "Next Man Up"
+    assert waiver_signal(c, {})[1] == "Next Man Up"
+
+
+def test_questionable_ahead_earns_soft_bump_badge():
+    # QUESTIONABLE alone is the softer "Bumped Up" tier, not "Next Man Up".
+    c = _cand(value=250, position="RB")
+    c["injured_ahead"] = ["QUESTIONABLE"]
+    cls, label = waiver_signal(c, {})
+    assert (cls, label) == ("signal-injury-soft", "Bumped Up")
+
+
+def test_soft_bump_yields_to_real_usage_and_trend_signals():
+    # A questionable-ahead bump shouldn't outrank a confirmed usage spike.
+    c = _cand(player_id="x", usage_stat="snap_pct", usage_delta=8)
+    c["injured_ahead"] = ["QUESTIONABLE"]
+    assert waiver_signal(c, {})[1] == "Usage Spike"
 
 
 # ---- waiver_pickup_score --------------------------------------------------

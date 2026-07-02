@@ -24,12 +24,19 @@ WAIVER_PRIME_MAX = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
 # candidate whose delta hits its stat's threshold has a usage ratio of 1.0.
 USAGE_SPIKE_MIN = {"snap_pct": 8.0, "touches": 3.0, "targets": 2.0}
 
-# NFL injury/roster statuses that meaningfully vacate the role of the players
-# behind them on the depth chart, weighted by how much opportunity they free up.
-# QUESTIONABLE is intentionally excluded — too weak to drive a waiver add.
+# NFL injury/roster statuses that vacate opportunity for the players behind them
+# on the depth chart, weighted by how likely the injured player is to miss time
+# (and thus how much of the role opens up). Even a QUESTIONABLE tag ahead is a
+# real bump — the backup is one setback from the job — so it scores, just less
+# than a confirmed absence.
 VACANCY_SEVERITY = {
-    "IR": 1.0, "PUP": 1.0, "NFI": 1.0, "SUSP": 0.9, "OUT": 0.85, "DOUBTFUL": 0.5,
+    "IR": 1.0, "PUP": 1.0, "NFI": 1.0, "SUSP": 0.9, "OUT": 0.85,
+    "DOUBTFUL": 0.5, "QUESTIONABLE": 0.3,
 }
+
+# Severity at/above which the vacancy is treated as a genuine "role is open now"
+# (confirmed/likely absence -> "Next Man Up"); below it is a softer bump.
+VACANCY_STRONG = 0.5
 
 
 def value_component(val) -> float:
@@ -203,10 +210,12 @@ def waiver_signal(c: dict, waiver_breakout: dict,
     except (TypeError, ValueError):
         val = 0.0
 
-    # A confirmed injury to a player ahead is the most actionable signal — the
-    # role is vacated right now — so it outranks even a usage spike.
-    if any(VACANCY_SEVERITY.get(str(s).upper(), 0.0) >= 0.85
-           for s in (c.get("injured_ahead") or [])):
+    inj_sev = max((VACANCY_SEVERITY.get(str(s).upper(), 0.0)
+                   for s in (c.get("injured_ahead") or [])), default=0.0)
+
+    # A confirmed/likely absence ahead is the most actionable signal — the role
+    # is vacated now — so it outranks even a usage spike.
+    if inj_sev >= VACANCY_STRONG:
         return ("signal-injury", "Next Man Up")
     if usage_ratio(c.get("usage_stat"), c.get("usage_delta")) >= 1.0:
         return ("signal-usage", "Usage Spike")
@@ -216,6 +225,10 @@ def waiver_signal(c: dict, waiver_breakout: dict,
         return ("signal-rising", "Rising Fast")
     if rank_chg >= 3:
         return ("signal-rising", "Trending Up")
+    # A softer injury bump (e.g. the starter is Questionable): worth flagging,
+    # but weaker than a confirmed out or a real usage/trend signal.
+    if inj_sev > 0:
+        return ("signal-injury-soft", "Bumped Up")
     if age and age < prime - 2 and val >= 300:
         return ("signal-value", "Value Play")
     if age and age > prime + 2:

@@ -66,6 +66,8 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .signal-aging    { background: #f59e0b20; color: #f59e0b; }
 .signal-hold     { background: var(--row); color: var(--text-muted); }
 .signal-usage    { background: #ef444420; color: #ef4444; }
+.signal-injury      { background: #f43f5e20; color: #f43f5e; }
+.signal-injury-soft { background: #fb923c20; color: #fb923c; }
 .wv-usage-chip {
   display: inline-block; font-size: 10px; font-weight: 700; color: #10b981;
   margin-left: 6px; white-space: nowrap;
