@@ -4846,7 +4846,9 @@ def build_standings_body(ctx: dict) -> str:
 from utils.waiver_score import (  # noqa: E402
     WAIVER_PRIME_MAX as _WAIVER_PRIME_MAX,
     build_depth_index as _build_depth_index,
-    injured_ahead_for_player as _injured_ahead_for_player,
+    depth_analysis_for_player as _depth_analysis_for_player,
+    need_multiplier as _need_multiplier,
+    positional_need_scores as _positional_need_scores,
     waiver_pickup_score as _waiver_pickup_score,
     waiver_signal as _waiver_signal,
 )
@@ -8831,17 +8833,99 @@ def api_waiver_candidates():
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
-    # Attach each candidate's usage trend + depth-chart vacancy so the shared
-    # scorer/labeler in utils.waiver_score can factor recent role growth (usage
-    # spikes) and injuries-ahead into both the ranking and the badge — not just
-    # the badge as before.
+    # Model value by pid — used to weight a vacancy by how much volume the
+    # injured player commanded (#7: backup to a bellcow > backup to a committee).
+    _val_by_pid_wv: dict = {}
+    for _row in model_value_table:
+        if isinstance(_row, dict):
+            try:
+                _val_by_pid_wv[str(_row.get("id") or "")] = float(_row.get("value") or 0.0)
+            except (TypeError, ValueError):
+                pass
+
+    # Recent PPR points-per-game as a rest-of-season production proxy (#5).
+    _ppg_by_pid_wv: dict = {}
+    try:
+        from utils.utils import load_usage_table
+        for _u in (load_usage_table() or []):
+            if isinstance(_u, dict):
+                _upid = str(_u.get("player_id") or _u.get("id") or "")
+                if _upid:
+                    _ppg_by_pid_wv[_upid] = _u.get("ppr_ppg")
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+
+    # Viewer roster need (#4): a position the viewer is short on is worth more.
+    _need_scores_wv: dict = {}
+    try:
+        _rp_counts = {}
+        for _s in _rp_wv:
+            _rp_counts[str(_s).upper()] = _rp_counts.get(str(_s).upper(), 0) + 1
+        _flex_n = _rp_counts.get("FLEX", 0)
+        _sf_n = _rp_counts.get("SUPER_FLEX", 0) + _rp_counts.get("SFLEX", 0)
+        _starter_reqs = {
+            "QB": _rp_counts.get("QB", 0) + _sf_n + 1,
+            "RB": _rp_counts.get("RB", 0) + _flex_n + _sf_n + 1,
+            "WR": _rp_counts.get("WR", 0) + _flex_n + _sf_n + 1,
+            "TE": _rp_counts.get("TE", 0) + 1,
+        }
+        _vsess = get_viewer_session_for_league(ctx.get("users") or [], rosters)
+        _vrid = str((_vsess or {}).get("viewer_roster_id") or "")
+        if _vrid:
+            _vros = next((r for r in rosters if str(r.get("roster_id")) == _vrid), None)
+            if _vros:
+                _counts = {}
+                for _pid in (_vros.get("players") or []):
+                    _pp = _full_players_wv.get(str(_pid)) or players_index.get(str(_pid)) or {}
+                    _ppos = str(_pp.get("position") or _pp.get("pos") or "").upper()
+                    if _ppos in ("QB", "RB", "WR", "TE"):
+                        _counts[_ppos] = _counts.get(_ppos, 0) + 1
+                _need_scores_wv = _positional_need_scores(_counts, _starter_reqs)
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+
+    _now_ms_wv = time.time() * 1000.0
+
+    def _vol_weight_wv(injured_pids):
+        if not injured_pids:
+            return 1.0
+        mv = max((_val_by_pid_wv.get(str(p), 0.0) for p in injured_pids), default=0.0)
+        return max(0.7, min(1.3, 0.7 + mv / 1000.0 * 0.5))
+
+    def _freshness_wv(injured_pids):
+        # Proxy for injury recency via Sleeper's last_modified (ms): a role that
+        # went stale weeks ago is largely already absorbed by whoever replaced it.
+        lms = [
+            _full_players_wv.get(str(p), {}).get("last_modified")
+            for p in (injured_pids or [])
+        ]
+        lms = [x for x in lms if isinstance(x, (int, float)) and x > 0]
+        if not lms:
+            return 1.0
+        days_old = (_now_ms_wv - max(lms)) / 86400000.0
+        return max(0.6, min(1.0, 1.0 - max(0.0, days_old - 10.0) / 60.0))
+
+    # Attach every signal the shared scorer/labeler in utils.waiver_score reads,
+    # so ranking + badge reflect: usage spikes, depth-chart injury vacancies
+    # (proximity/volume/freshness weighted), the candidate's own health, roster
+    # need, and rest-of-season production — not just static dynasty value.
     for c in candidates:
         ut = usage_trends.get(c["player_id"]) or {}
         c["usage_delta"] = ut.get("delta")
         c["usage_stat"] = ut.get("stat")
-        c["injured_ahead"] = _injured_ahead_for_player(
-            c["player_id"], _full_players_wv, _depth_idx_wv
-        )
+
+        _da = _depth_analysis_for_player(c["player_id"], _full_players_wv, _depth_idx_wv)
+        _inj_pids = _da["injured_pids_ahead"]
+        c["injured_ahead"] = _da["injured_ahead"]
+        c["healthy_ahead"] = _da["healthy_ahead"]
+        c["vacated_volume_weight"] = _vol_weight_wv(_inj_pids)
+        c["injury_freshness"] = _freshness_wv(_inj_pids)
+
+        _self = _full_players_wv.get(c["player_id"]) or {}
+        c["self_status"] = _self.get("injury_status") or _self.get("status") or ""
+
+        c["ros_ppg"] = _ppg_by_pid_wv.get(c["player_id"])
+        c["need_mult"] = _need_multiplier(c["position"], _need_scores_wv)
 
     candidates.sort(key=lambda c: _waiver_pickup_score(c, waiver_breakout, _WAIVER_PRIME_MAX), reverse=True)
     if position_filter and position_filter in {"QB", "RB", "WR", "TE"}:
@@ -8869,6 +8953,9 @@ def api_waiver_candidates():
             "usage_stat": ut.get("stat"),
             "usage_series": ut.get("series"),
             "injured_ahead": len(c.get("injured_ahead") or []),
+            "healthy_ahead": c.get("healthy_ahead"),
+            "ros_ppg": c.get("ros_ppg"),
+            "roster_need": round((c.get("need_mult") or 1.0) - 1.0, 3),
         })
 
     return jsonify({"candidates": result, "total": len(result)})

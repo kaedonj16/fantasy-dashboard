@@ -8,9 +8,15 @@ from utils.waiver_score import (
     USAGE_SPIKE_MIN,
     WAIVER_PRIME_MAX,
     build_depth_index,
+    depth_analysis,
+    depth_analysis_for_player,
     depth_chart_vacancy_score,
     injured_ahead,
     injured_ahead_for_player,
+    need_multiplier,
+    positional_need_scores,
+    projection_component,
+    self_injury_multiplier,
     usage_ratio,
     value_component,
     waiver_pickup_score,
@@ -158,6 +164,128 @@ def test_soft_bump_yields_to_real_usage_and_trend_signals():
     c = _cand(player_id="x", usage_stat="snap_pct", usage_delta=8)
     c["injured_ahead"] = ["QUESTIONABLE"]
     assert waiver_signal(c, {})[1] == "Usage Spike"
+
+
+# ---- #1 proximity: healthy blockers dampen the injury boost ---------------
+
+def test_healthy_blocker_ahead_reduces_injury_credit():
+    # An IR ahead, but a healthy body still sits between candidate and the field.
+    strong = depth_chart_vacancy_score(["IR"], healthy_ahead=0)
+    blocked = depth_chart_vacancy_score(["IR"], healthy_ahead=1)
+    more_blocked = depth_chart_vacancy_score(["IR"], healthy_ahead=2)
+    none = depth_chart_vacancy_score(["IR"], healthy_ahead=3)
+    assert strong > blocked > more_blocked > none == 0.0
+
+
+def test_depth_analysis_counts_healthy_blockers():
+    teammates = [
+        {"depth_order": 1, "status": "IR", "pid": "a"},        # injured, ahead
+        {"depth_order": 2, "status": "ACTIVE", "pid": "b"},     # healthy, ahead -> blocks
+        {"depth_order": 4, "status": "OUT", "pid": "c"},        # behind me -> ignored
+    ]
+    out = depth_analysis(3, teammates)
+    assert out["injured_ahead"] == ["IR"]
+    assert out["injured_pids_ahead"] == ["a"]
+    assert out["healthy_ahead"] == 1
+
+
+def test_next_man_up_requires_no_healthy_blocker():
+    blocked = _cand(value=250, position="RB", player_id="x")
+    blocked["injured_ahead"] = ["IR"]
+    blocked["healthy_ahead"] = 1
+    # A healthy body still ahead -> not "Next Man Up", but still a soft bump.
+    assert waiver_signal(blocked, {})[1] == "Bumped Up"
+
+
+# ---- #2 candidate's own injury --------------------------------------------
+
+def test_self_injury_multiplier_tiers():
+    assert self_injury_multiplier("OUT") == 0.0
+    assert self_injury_multiplier("IR") == 0.0
+    assert self_injury_multiplier("DOUBTFUL") == 0.35
+    assert self_injury_multiplier("QUESTIONABLE") == 0.85
+    assert self_injury_multiplier("") == 1.0
+
+
+def test_own_out_status_zeroes_score_and_labels_injured():
+    c = _cand(value=800, position="RB", age=24)
+    c["self_status"] = "OUT"
+    assert waiver_pickup_score(c, {}) == 0.0
+    assert waiver_signal(c, {})[1] == "Injured"
+
+
+# ---- #3 stale injuries -----------------------------------------------------
+
+def test_freshness_decays_injury_credit():
+    fresh = depth_chart_vacancy_score(["IR"], freshness=1.0)
+    stale = depth_chart_vacancy_score(["IR"], freshness=0.4)
+    assert stale == pytest.approx(fresh * 0.4)
+
+
+# ---- #4 roster need --------------------------------------------------------
+
+def test_positional_need_scores():
+    need = positional_need_scores({"RB": 1, "WR": 4}, {"RB": 4, "WR": 4})
+    assert need["RB"] == pytest.approx(0.75)   # short 3 of 4
+    assert need["WR"] == pytest.approx(0.0)     # fully stocked
+
+
+def test_need_multiplier_boosts_high_need_position():
+    assert need_multiplier("RB", {"RB": 1.0}) == pytest.approx(1.25)
+    assert need_multiplier("RB", {"RB": 0.0}) == pytest.approx(1.0)
+    assert need_multiplier("QB", {}) == 1.0     # unknown -> neutral
+
+
+def test_need_mult_applied_to_score():
+    base = _cand(value=500, position="RB")
+    needed = _cand(value=500, position="RB")
+    needed["need_mult"] = 1.25
+    assert waiver_pickup_score(needed, {}) == pytest.approx(waiver_pickup_score(base, {}) * 1.25)
+
+
+# ---- #5 rest-of-season projection -----------------------------------------
+
+def test_projection_component_scales_and_caps():
+    assert projection_component(0) == 0.0
+    assert projection_component(10) == pytest.approx(40.0)   # 10 * 4
+    assert projection_component(100) == pytest.approx(60.0)  # capped
+
+
+def test_ros_ppg_adds_to_score():
+    plain = _cand(value=300, position="WR")
+    projd = _cand(value=300, position="WR")
+    projd["ros_ppg"] = 12
+    assert waiver_pickup_score(projd, {}) > waiver_pickup_score(plain, {})
+
+
+# ---- #6 opportunity signals combine with diminishing returns --------------
+
+def test_correlated_opportunity_not_triple_counted():
+    # Injury (+40) + usage (+30) + breakout (+30) all fire. They are correlated
+    # (all mean "role opening up"), so the model combines them with diminishing
+    # returns instead of adding all three.
+    injury, usage, breakout = 40.0, 30.0, 30.0
+    naive_sum = injury + usage + breakout                       # 100
+    combined = injury + 0.5 * usage + 0.25 * breakout           # 62.5
+    assert combined < naive_sum
+
+    # Isolate the opportunity portion of the real score: a candidate with all
+    # three vs. an otherwise-identical one with none, at the same value/age.
+    with_all = _cand(value=200, position="RB", age=26, player_id="x",
+                     usage_stat="snap_pct", usage_delta=8)
+    with_all["injured_ahead"] = ["IR"]
+    none = _cand(value=200, position="RB", age=26, player_id="y")
+    delta = waiver_pickup_score(with_all, {"x": 60}) - waiver_pickup_score(none, {})
+    assert delta == pytest.approx(combined)
+
+
+# ---- #7 vacated volume -----------------------------------------------------
+
+def test_volume_weight_scales_injury_credit():
+    low = depth_chart_vacancy_score(["IR"], volume_weight=0.7)
+    high = depth_chart_vacancy_score(["IR"], volume_weight=1.25)
+    assert high > low
+    assert low == pytest.approx(40.0 * 0.7)
 
 
 # ---- waiver_pickup_score --------------------------------------------------
