@@ -54,6 +54,17 @@ VACANCY_SEVERITY = {
 # (confirmed/likely absence -> "Next Man Up"); below it is a softer bump.
 VACANCY_STRONG = 0.5
 
+# Expected weeks the role stays open, by the injured player's status — the
+# injury "timeline". Sleeper doesn't publish per-player return dates, so this is
+# modeled by injury class: IR/PUP/NFI are multi-week (NFL IR = min 4 games), a
+# plain OUT is week-to-week (~1 game), and Doubtful/Questionable are this-week
+# calls. Combined with the vacated role's projected points, this turns "someone
+# ahead is hurt" into "how many points does the role free up over the window".
+INJURY_DURATION_WEEKS = {
+    "IR": 6.0, "PUP": 6.0, "NFI": 6.0, "SUSP": 4.0,
+    "OUT": 1.0, "DOUBTFUL": 0.8, "QUESTIONABLE": 0.4,
+}
+
 # Statuses that mean a player is NOT expected on the field, so they no longer
 # block the depth chart for the player behind them.
 _OUT_STATUSES = {"IR", "PUP", "NFI", "SUSP", "OUT", "DOUBTFUL"}
@@ -72,6 +83,11 @@ class WaiverWeights:
     proj_max: float = 60.0
     # Opportunity components (pre-combine caps).
     injury_max: float = 55.0
+    # Injury vacancy is scored from expected vacated fantasy points over a
+    # forward window: sev * min(weeks_out, horizon) * projected_ppg, times this.
+    injury_pts_per_vacated_ppg: float = 1.0
+    injury_horizon_weeks: float = 4.0
+    injury_fallback_ppg: float = 9.0  # used when the injured player's proj is unknown
     usage_per_ratio: float = 30.0
     usage_max: float = 50.0
     breakout_per: float = 0.5
@@ -199,6 +215,7 @@ def depth_analysis(candidate_order, teammates) -> dict:
     mine = candidate_order or 99
     injured: list = []
     injured_pids: list = []
+    vacated: list = []
     healthy_ahead = 0
     for t in teammates:
         o = t.get("depth_order") or 99
@@ -207,13 +224,15 @@ def depth_analysis(candidate_order, teammates) -> dict:
         st = str(t.get("status") or "").upper()
         if st in VACANCY_SEVERITY:
             injured.append(st)
+            vacated.append({"status": st, "pid": t.get("pid"), "proj_ppg": t.get("proj_ppg")})
             if t.get("pid") is not None:
                 injured_pids.append(t.get("pid"))
         if _will_play(st):
             healthy_ahead += 1
     return {
-        "injured_ahead": injured,
+        "injured_ahead": injured,          # statuses (badge / severity)
         "injured_pids_ahead": injured_pids,
+        "vacated": vacated,                # [{status, pid, proj_ppg}] for scoring
         "healthy_ahead": healthy_ahead,
     }
 
@@ -250,29 +269,65 @@ def _proximity_weight(healthy_ahead: int) -> float:
     return {0: 1.0, 1: 0.55, 2: 0.2}.get(healthy_ahead, 0.0)
 
 
-def depth_chart_vacancy_score(statuses, healthy_ahead: int = 0,
+def expected_vacated_points(vacated, horizon_weeks: float = None,
+                            fallback_ppg: float = None,
+                            w: WaiverWeights = WEIGHTS) -> float:
+    """Expected fantasy points a candidate inherits from injuries ahead.
+
+    ``vacated`` items may be plain status strings or ``{status, proj_ppg}`` dicts.
+    For each injured player ahead:
+
+        likelihood_out(status) * min(weeks_out(status), horizon) * projected_ppg
+
+    which folds together the injury's *likelihood* (severity), its *timeline*
+    (weeks out, by injury class) and the vacated role's *production* (projected
+    PPG, falling back to a startable baseline when unknown). Summed across
+    everyone injured ahead.
+    """
+    if horizon_weeks is None:
+        horizon_weeks = w.injury_horizon_weeks
+    if fallback_ppg is None:
+        fallback_ppg = w.injury_fallback_ppg
+    total = 0.0
+    for item in (vacated or []):
+        if isinstance(item, dict):
+            st = str(item.get("status") or "").upper()
+            ppg = item.get("proj_ppg")
+        else:
+            st = str(item or "").upper()
+            ppg = None
+        sev = VACANCY_SEVERITY.get(st, 0.0)
+        if sev <= 0:
+            continue
+        weeks = min(INJURY_DURATION_WEEKS.get(st, 1.0), float(horizon_weeks))
+        try:
+            ppg_v = float(ppg) if ppg is not None else float(fallback_ppg)
+        except (TypeError, ValueError):
+            ppg_v = float(fallback_ppg)
+        total += sev * weeks * max(0.0, ppg_v)
+    return total
+
+
+def depth_chart_vacancy_score(vacated, healthy_ahead: int = 0,
                               volume_weight: float = 1.0, freshness: float = 1.0,
                               w: WaiverWeights = WEIGHTS) -> float:
     """Points for injured players sitting ahead on the depth chart (0 .. injury_max).
 
-    The most severe vacancy dominates — an injured starter directly ahead is the
-    strongest waiver signal there is — and additional injured bodies ahead add a
-    little more. The raw amount is then scaled by:
+    Scored from the *expected vacated fantasy points* (likelihood × timeline ×
+    projected production), so a season-ending injury to a high-scoring role
+    ahead dwarfs a one-week absence — then scaled by:
 
       * proximity (#1): healthy players still ahead dampen it,
-      * vacated volume (#7): a backup to a bellcow is worth more than to a
-        committee, and
       * freshness (#3): a stale injury whose role has already transferred is
-        worth less.
+        worth less, and
+      * volume_weight: optional extra nudge (kept for back-compat; defaults 1.0).
+
+    ``vacated`` accepts status strings or ``{status, proj_ppg}`` dicts.
     """
-    sev = sorted(
-        (VACANCY_SEVERITY.get(str(s).upper(), 0.0) for s in (statuses or [])),
-        reverse=True,
-    )
-    sev = [x for x in sev if x > 0]
-    if not sev:
+    ev = expected_vacated_points(vacated, w=w)
+    if ev <= 0:
         return 0.0
-    base = min(sev[0] * 40.0 + sum(sev[1:]) * 8.0, w.injury_max)
+    base = min(ev * w.injury_pts_per_vacated_ppg, w.injury_max)
     scaled = base * _proximity_weight(healthy_ahead) * float(volume_weight) * float(freshness)
     return max(0.0, scaled)
 
@@ -320,8 +375,11 @@ def waiver_pickup_score(c: dict, waiver_breakout: dict,
     proj_pts = projection_component(c.get("ros_ppg"), w)
 
     # --- Opportunity signals (correlated -> combined with diminishing returns) --
+    # Prefer the projection-aware `vacated` list (status + projected PPG); fall
+    # back to bare `injured_ahead` statuses (which use a baseline PPG) so callers
+    # that don't supply projections still work.
     injury_pts = depth_chart_vacancy_score(
-        c.get("injured_ahead"),
+        c.get("vacated") if c.get("vacated") is not None else c.get("injured_ahead"),
         healthy_ahead=int(c.get("healthy_ahead") or 0),
         volume_weight=float(c.get("vacated_volume_weight") or 1.0),
         freshness=float(c.get("injury_freshness") or 1.0),

@@ -11,6 +11,7 @@ from utils.waiver_score import (
     depth_analysis,
     depth_analysis_for_player,
     depth_chart_vacancy_score,
+    expected_vacated_points,
     injured_ahead,
     injured_ahead_for_player,
     need_multiplier,
@@ -97,23 +98,44 @@ def test_injured_ahead_missing_order_treated_as_deep():
     assert injured_ahead(None, [{"depth_order": 1, "status": "OUT"}]) == ["OUT"]
 
 
-def test_vacancy_score_scales_with_severity_and_count():
+def test_vacancy_score_uses_expected_points_over_timeline():
+    # Defaults: per_ppg=1.0, horizon=4, fallback_ppg=9.
+    # IR (sev 1.0, 6wk capped at 4) with a 14-ppg role -> 1*4*14=56 -> capped 55.
+    assert depth_chart_vacancy_score([{"status": "IR", "proj_ppg": 14}]) == pytest.approx(55.0)
+    # IR with a 7-ppg role -> 1*4*7 = 28.
+    assert depth_chart_vacancy_score([{"status": "IR", "proj_ppg": 7}]) == pytest.approx(28.0)
+    # Bare status -> fallback ppg 9: IR -> 1*4*9 = 36.
+    assert depth_chart_vacancy_score(["IR"]) == pytest.approx(36.0)
     assert depth_chart_vacancy_score([]) == 0.0
-    assert depth_chart_vacancy_score(["IR"]) == pytest.approx(40.0)          # 1.0 * 40
-    assert depth_chart_vacancy_score(["OUT"]) == pytest.approx(34.0)         # 0.85 * 40
-    assert depth_chart_vacancy_score(["DOUBTFUL"]) == pytest.approx(20.0)    # 0.5 * 40
-    assert depth_chart_vacancy_score(["QUESTIONABLE"]) == pytest.approx(12.0)  # 0.3 * 40
-    # Two injured ahead: top dominates, second adds a little.
-    assert depth_chart_vacancy_score(["IR", "OUT"]) == pytest.approx(40.0 + 0.85 * 8)
-    # Capped at 55.
-    assert depth_chart_vacancy_score(["IR", "IR", "IR", "IR"]) == pytest.approx(55.0)
+
+
+def test_timeline_ir_beats_one_week_out_for_same_role():
+    # Same 8-ppg role: a season-ending IR opens it for weeks; a one-week OUT for a
+    # single game -> IR should score far higher.
+    ir = depth_chart_vacancy_score([{"status": "IR", "proj_ppg": 8}])       # 1*4*8 = 32
+    out = depth_chart_vacancy_score([{"status": "OUT", "proj_ppg": 8}])     # 0.85*1*8 = 6.8
+    assert ir > out * 3
+
+
+def test_bigger_projected_role_scores_higher():
+    bell = depth_chart_vacancy_score([{"status": "IR", "proj_ppg": 12}])    # 48
+    committee = depth_chart_vacancy_score([{"status": "IR", "proj_ppg": 5}])  # 20
+    assert bell > committee
+
+
+def test_expected_vacated_points_math():
+    assert expected_vacated_points([{"status": "OUT", "proj_ppg": 10}]) == pytest.approx(0.85 * 1 * 10)
+    assert expected_vacated_points([{"status": "DOUBTFUL", "proj_ppg": 10}]) == pytest.approx(0.5 * 0.8 * 10)
+    # Healthy status contributes nothing.
+    assert expected_vacated_points([{"status": "ACTIVE", "proj_ppg": 20}]) == 0.0
 
 
 def test_questionable_ahead_scores_points():
     healthy = _cand(value=250, position="RB")
     q_ahead = _cand(value=250, position="RB", player_id="q")
-    q_ahead["injured_ahead"] = ["QUESTIONABLE"]
-    assert waiver_pickup_score(q_ahead, {}) == pytest.approx(waiver_pickup_score(healthy, {}) + 12.0)
+    q_ahead["injured_ahead"] = ["QUESTIONABLE"]  # bare status -> fallback ppg 9
+    # Q: sev 0.3 * 0.4wk * 9ppg = 1.08 injury pts.
+    assert waiver_pickup_score(q_ahead, {}) == pytest.approx(waiver_pickup_score(healthy, {}) + 1.08)
 
 
 def test_build_depth_index_and_lookup():
@@ -264,9 +286,10 @@ def test_correlated_opportunity_not_triple_counted():
     # Injury (+40) + usage (+30) + breakout (+30) all fire. They are correlated
     # (all mean "role opening up"), so the model combines them with diminishing
     # returns instead of adding all three.
-    injury, usage, breakout = 40.0, 30.0, 30.0
-    naive_sum = injury + usage + breakout                       # 100
-    combined = injury + 0.5 * usage + 0.25 * breakout           # 62.5
+    # Bare IR -> base 36 (fallback ppg 9); usage spike +30; breakout 60 -> +30.
+    injury, usage, breakout = 36.0, 30.0, 30.0
+    naive_sum = injury + usage + breakout                       # 96
+    combined = injury + 0.5 * usage + 0.25 * breakout           # 58.5
     assert combined < naive_sum
 
     # Isolate the opportunity portion of the real score: a candidate with all
@@ -282,10 +305,11 @@ def test_correlated_opportunity_not_triple_counted():
 # ---- #7 vacated volume -----------------------------------------------------
 
 def test_volume_weight_scales_injury_credit():
+    # Bare IR -> base 36 (fallback ppg 9); volume_weight is an optional nudge.
     low = depth_chart_vacancy_score(["IR"], volume_weight=0.7)
     high = depth_chart_vacancy_score(["IR"], volume_weight=1.25)
     assert high > low
-    assert low == pytest.approx(40.0 * 0.7)
+    assert low == pytest.approx(36.0 * 0.7)
 
 
 # ---- waiver_pickup_score --------------------------------------------------

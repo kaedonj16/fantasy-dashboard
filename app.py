@@ -8833,17 +8833,8 @@ def api_waiver_candidates():
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
-    # Model value by pid — used to weight a vacancy by how much volume the
-    # injured player commanded (#7: backup to a bellcow > backup to a committee).
-    _val_by_pid_wv: dict = {}
-    for _row in model_value_table:
-        if isinstance(_row, dict):
-            try:
-                _val_by_pid_wv[str(_row.get("id") or "")] = float(_row.get("value") or 0.0)
-            except (TypeError, ValueError):
-                pass
-
-    # Recent PPR points-per-game as a rest-of-season production proxy (#5).
+    # Recent PPR points-per-game as a rest-of-season production proxy (#5), also
+    # reused to size injury vacancies by the vacated role's production (#7).
     _ppg_by_pid_wv: dict = {}
     try:
         from utils.utils import load_usage_table
@@ -8886,12 +8877,6 @@ def api_waiver_candidates():
 
     _now_ms_wv = time.time() * 1000.0
 
-    def _vol_weight_wv(injured_pids):
-        if not injured_pids:
-            return 1.0
-        mv = max((_val_by_pid_wv.get(str(p), 0.0) for p in injured_pids), default=0.0)
-        return max(0.7, min(1.3, 0.7 + mv / 1000.0 * 0.5))
-
     def _freshness_wv(injured_pids):
         # Proxy for injury recency via Sleeper's last_modified (ms): a role that
         # went stale weeks ago is largely already absorbed by whoever replaced it.
@@ -8918,7 +8903,13 @@ def api_waiver_candidates():
         _inj_pids = _da["injured_pids_ahead"]
         c["injured_ahead"] = _da["injured_ahead"]
         c["healthy_ahead"] = _da["healthy_ahead"]
-        c["vacated_volume_weight"] = _vol_weight_wv(_inj_pids)
+        # Attach each injured-ahead player's projected PPG so the vacancy is
+        # scored from expected vacated points over the injury timeline, not just
+        # status severity. Recent PPR ppg is the projection proxy (#5's source).
+        _vac = _da["vacated"]
+        for _v in _vac:
+            _v["proj_ppg"] = _ppg_by_pid_wv.get(str(_v.get("pid")))
+        c["vacated"] = _vac
         c["injury_freshness"] = _freshness_wv(_inj_pids)
 
         _self = _full_players_wv.get(c["player_id"]) or {}
