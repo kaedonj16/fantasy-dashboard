@@ -9480,54 +9480,12 @@ def _rz_get_projections(season: int, week: int) -> dict:
     return data
 
 
-def _rz_num(v) -> float:
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return 0.0
-
-
-def _rz_stat_line_from_ps(ps: dict) -> dict:
-    """Map a Tank01 playerStats entry to our canonical stat_line (QB/RB/WR/TE/K)."""
-    passing   = ps.get("Passing")   or {}
-    rushing   = ps.get("Rushing")   or {}
-    receiving = ps.get("Receiving") or {}
-    kicking   = ps.get("Kicking")   or {}
-    return {
-        "pass_yds": _rz_num(passing.get("passYds")),
-        "pass_td":  _rz_num(passing.get("passTD")),
-        "int":      _rz_num(passing.get("int")),
-        "carries":  _rz_num(rushing.get("carries")),
-        "rush_yds": _rz_num(rushing.get("rushYds")),
-        "rush_td":  _rz_num(rushing.get("rushTD")),
-        "rec":      _rz_num(receiving.get("receptions")),
-        "rec_yds":  _rz_num(receiving.get("recYds")),
-        "rec_td":   _rz_num(receiving.get("recTD")),
-        "targets":  _rz_num(receiving.get("targets")),
-        # Kicker fields
-        "fgm":      _rz_num(kicking.get("fgm") or kicking.get("fgMade")),
-        "fg_long":  _rz_num(kicking.get("fgLng") or kicking.get("fg_long") or kicking.get("fgLong")),
-        "xpm":      _rz_num(kicking.get("xpm") or kicking.get("xpMade")),
-    }
-
-
-def _rz_safe_epoch(v) -> float:
-    """Coerce a Tank01 epoch (string/float) to a float seconds value, or 0."""
-    try:
-        return float(v) if v not in (None, "") else 0.0
-    except (TypeError, ValueError):
-        return 0.0
-
-
-def _rz_def_stat_line(team_side: dict) -> dict:
-    """Build DEF stat_line from Tank01 teamStats[home/away] entry."""
-    defense = team_side.get("Defense") or team_side.get("defense") or {}
-    return {
-        "sacks":   _rz_num(defense.get("sacks") or defense.get("totalSacks")),
-        "def_int": _rz_num(defense.get("int") or defense.get("interceptions")),
-        "fum_rec": _rz_num(defense.get("fumblesRecovered") or defense.get("fumRec")),
-        "def_td":  _rz_num(defense.get("touchdowns") or defense.get("totalTD") or defense.get("defTD")),
-    }
+from utils.redzone_stats import (  # noqa: E402
+    rz_def_stat_line as _rz_def_stat_line,
+    rz_num as _rz_num,
+    rz_safe_epoch as _rz_safe_epoch,
+    rz_stat_line_from_ps as _rz_stat_line_from_ps,
+)
 
 
 # ── Demo mode ──────────────────────────────────────────────────────────────────
