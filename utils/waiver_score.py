@@ -31,6 +31,7 @@ production rather than leaving them hand-picked.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 # Age past which each position starts losing the age bonus (peak dynasty window).
@@ -113,6 +114,13 @@ class WaiverWeights:
     need_max_bonus: float = 0.25
     # Weekly rank trend is a single noisy window; shrink it toward zero (#7).
     trend_shrink: float = 0.2
+    # rank_change_7d is *overall* rank movement, which is dense (noisy) for deep
+    # players. Discount the trend by depth: a move at positional rank D counts
+    # like D / (D + trend_depth_ref) less. The badge thresholds scale with depth
+    # too, so a deep player needs a proportionally bigger move to "rise".
+    trend_depth_ref: float = 24.0
+    trend_fast_frac: float = 0.5   # "Rising Fast" needs >= max(8, frac * pos_depth)
+    trend_up_frac: float = 0.2     # "Trending Up" needs >= max(3, frac * pos_depth)
     # Upcoming schedule ease: up to this many points for a soft slate (#3).
     schedule_bonus_max: float = 12.0
     # Positional scarcity: up to +scarcity_max_bonus (fraction) for a player well
@@ -125,6 +133,20 @@ WEIGHTS = WaiverWeights()
 
 def _clamp01(x: float) -> float:
     return 0.0 if x < 0 else 1.0 if x > 1 else x
+
+
+def _pos_depth(c: dict):
+    """Positional rank depth for a candidate, e.g. 89 for a WR89. Read from
+    ``pos_rank`` if present, else parsed from the trailing number of
+    ``pos_rank_label``. Used to discount noisy deep-player rank movement."""
+    pr = c.get("pos_rank")
+    try:
+        if pr:
+            return int(pr)
+    except (TypeError, ValueError):
+        pass
+    m = re.search(r"(\d+)\s*$", str(c.get("pos_rank_label") or ""))
+    return int(m.group(1)) if m else None
 
 
 def _discounted_weeks(weeks: float, decay: float) -> float:
@@ -573,8 +595,13 @@ def waiver_pickup_score(c: dict, waiver_breakout: dict,
     opp = sorted([injury_pts, usage_pts, breakout_pts], reverse=True)
     opportunity_pts = opp[0] + w.opp_second * opp[1] + w.opp_third * opp[2]  # (#6)
 
-    # Weekly rank trend, blended across available windows and noise-shrunk (#7).
+    # Weekly rank trend, blended across available windows and noise-shrunk (#7),
+    # then discounted by positional depth so a deep player's dense (noisy) overall
+    # rank swings don't inflate the score.
     rank_chg = blended_trend(c.get("trend_windows") or {"7d": c.get("rank_change_7d")}, w)
+    _depth = _pos_depth(c)
+    if _depth and _depth > 0:
+        rank_chg *= w.trend_depth_ref / (_depth + w.trend_depth_ref)
     if rank_chg > 0:
         trend_pts = min(rank_chg * w.trend_up_per, w.trend_up_max)
     else:
@@ -607,7 +634,8 @@ def waiver_pickup_score(c: dict, waiver_breakout: dict,
 
 
 def waiver_signal(c: dict, waiver_breakout: dict,
-                  prime_max: dict = WAIVER_PRIME_MAX) -> "tuple[str, str]":
+                  prime_max: dict = WAIVER_PRIME_MAX,
+                  w: WaiverWeights = WEIGHTS) -> "tuple[str, str]":
     """Return (badge_class, label) describing why a candidate is interesting.
 
     Shared by both waiver surfaces. Branches that read data a surface doesn't
@@ -624,6 +652,13 @@ def waiver_signal(c: dict, waiver_breakout: dict,
     except (TypeError, ValueError):
         val = 0.0
 
+    # rank_change_7d is overall-rank movement, which is dense/noisy for deep
+    # players — a WR89 drifts 8+ overall spots on nothing. Require a move that
+    # scales with positional depth so "Rising Fast" stays meaningful.
+    _depth = _pos_depth(c)
+    _fast_thr = max(8.0, w.trend_fast_frac * _depth) if _depth else 8.0
+    _up_thr = max(3.0, w.trend_up_frac * _depth) if _depth else 3.0
+
     # A candidate who is himself out isn't a "target" — label the reason.
     if str(c.get("self_status") or "").upper() in {"IR", "PUP", "NFI", "SUSP", "OUT"}:
         return ("signal-aging", "Injured")
@@ -639,9 +674,9 @@ def waiver_signal(c: dict, waiver_breakout: dict,
         return ("signal-usage", "Usage Spike")
     if bscore >= 55:
         return ("signal-breakout", "Breakout")
-    if rank_chg >= 8:
+    if rank_chg >= _fast_thr:
         return ("signal-rising", "Rising Fast")
-    if rank_chg >= 3:
+    if rank_chg >= _up_thr:
         return ("signal-rising", "Trending Up")
     # A softer injury bump: a vacancy exists but the candidate isn't cleanly next
     # up (a healthy body remains) or the injury is only Questionable.

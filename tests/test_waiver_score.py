@@ -542,6 +542,32 @@ def test_signal_rising_bands():
     assert waiver_signal(_cand(rank_change_7d=4), {})[1] == "Trending Up"
 
 
+def test_deep_player_needs_bigger_move_to_rise():
+    # A WR89 that drifted +8 overall spots is noise, not a real riser: with a
+    # depth-scaled threshold (~max(8, 0.5*89)=44.5) it does NOT read "Rising Fast".
+    deep = _cand(rank_change_7d=8, position="WR", age=27)
+    deep["pos_rank_label"] = "WR89"
+    assert waiver_signal(deep, {})[1] != "Rising Fast"
+    # A shallow, startable player moving the same +8 IS rising fast.
+    shallow = _cand(rank_change_7d=8, position="WR", age=27)
+    shallow["pos_rank_label"] = "WR12"
+    assert waiver_signal(shallow, {})[1] == "Rising Fast"
+    # A genuinely huge move for the deep player still registers.
+    deep_big = _cand(rank_change_7d=60, position="WR", age=27)
+    deep_big["pos_rank_label"] = "WR89"
+    assert waiver_signal(deep_big, {})[1] == "Rising Fast"
+
+
+def test_depth_discounts_trend_in_score():
+    # Same +20 overall move: a deep player gets far less trend credit than a
+    # shallow one, so dense-rank noise stops inflating deep players' scores.
+    deep = _cand(value=200, position="WR", rank_change_7d=20)
+    deep["pos_rank_label"] = "WR90"
+    shallow = _cand(value=200, position="WR", rank_change_7d=20)
+    shallow["pos_rank_label"] = "WR10"
+    assert waiver_pickup_score(shallow, {}) > waiver_pickup_score(deep, {})
+
+
 def test_signal_value_play():
     # RB prime 26, age 22 (< prime-2), value >= 300.
     assert waiver_signal(_cand(position="RB", age=22, value=400), {})[1] == "Value Play"
