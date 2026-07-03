@@ -1599,14 +1599,15 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         _rz_pulse = ""
         if not offseason_mode:
             # Live when the current NFL week's schedule has a game dated today.
+            # Only surface the Redzone link when games are actually on today —
+            # there's nothing live to watch otherwise.
             _rz_week = nfl_state.get("week") or nfl_state.get("display_week")
             _rz_live = _games_scheduled_today(nfl_state.get("season") or season, _rz_week)
-            _rz_label = (
-                "<span class='rz-nav-live'><span class='rz-nav-dot'></span>Redzone</span>"
-                if _rz_live else "Redzone"
-            )
-            _weekly_items.append((_rz_label, "page_redzone", "redzone", False))
             if _rz_live:
+                _weekly_items.append((
+                    "<span class='rz-nav-live'><span class='rz-nav-dot'></span>Redzone</span>",
+                    "page_redzone", "redzone", False,
+                ))
                 _rz_pulse = "nav-pill-redzone-live"
         nav_pills.append(nav_pill_dropdown(
             "Weekly", _weekly_items, ["weekly", "recap", "redzone"],
