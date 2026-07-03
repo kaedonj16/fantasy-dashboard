@@ -18846,10 +18846,23 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   height: 2px;
   background: linear-gradient(90deg, var(--rz-red), rgba(248,113,113,.4));
 }
+/* Full-bleed the alert + header bars to the viewport edges (flush), regardless
+   of the page shell's side padding. */
+.rz-notif-cta,
+.rz-header {
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+}
 .rz-brand { display: flex; align-items: center; gap: 9px; }
+/* The identity dot is static/muted by default and only "lives" (red + pulse)
+   when games are actually in progress, so the page doesn't look live in the
+   offseason. */
 .rz-brand-dot {
   width: 9px; height: 9px;
   border-radius: 50%;
+  background: var(--rz-muted);
+}
+.rz-brand-dot.is-live {
   background: var(--rz-red);
   box-shadow: 0 0 0 4px var(--rz-red-soft);
   animation: rz-pulse 1.6s ease-in-out infinite;

@@ -1590,6 +1590,7 @@
     if (!TABS.some(function(t) { return t.key === _activeTab; })) _activeTab = 'plays';
 
     var live = _anyLive();
+    var idle = !_isDemo && !live && !_isGameDay();  // offseason / no games today
     var liveChip = live ? '<span class="rz-live-chip"><span class="rz-nav-dot"></span>LIVE</span>' : '';
     var demoPill = _isDemo ? '<span class="rz-demo-pill">DEMO</span>' : '';
     var showFilters = (_activeTab === 'plays' || _activeTab === 'top');
@@ -1633,14 +1634,14 @@
     var demoLink = !_isDemo ? '<a href="?demo=1" class="rz-demo-btn">Demo</a>' : '';
     var exitBtn  = _isDemo ? '<button class="rz-demo-exit" id="rz-demo-exit">Exit Demo</button>' : '';
     var staleChip = _lastPollFailed ? '<span class="rz-stale-badge">⚠ Stale</span>' : '';
-    var timerLabel = _lastPollFailed ? '?' : _fmtTimer(_countdown);
+    var timerLabel = _lastPollFailed ? '?' : (idle ? '—' : _fmtTimer(_countdown));
     var notifCta = (!_notifDismissed && 'Notification' in window && Notification.permission === 'default')
       ? '<div class="rz-notif-cta" id="rz-notif-cta"><span>Enable TD alerts</span><button class="rz-notif-cta-btn" id="rz-notif-enable">Enable</button><button class="rz-notif-cta-x" id="rz-notif-dismiss">✕</button></div>'
       : '';
     root.innerHTML =
       notifCta
       + '<div class="rz-header">'
-      + '<div class="rz-brand"><div class="rz-brand-dot"></div><span class="rz-brand-name">BR Redzone</span><span class="rz-brand-week">Wk ' + (_state.week || '') + '</span>' + demoPill + '</div>'
+      + '<div class="rz-brand"><div class="rz-brand-dot' + (live ? ' is-live' : '') + '"></div><span class="rz-brand-name">BR Redzone</span><span class="rz-brand-week">Wk ' + (_state.week || '') + '</span>' + demoPill + '</div>'
       + '<div class="rz-header-right">' + demoLink + exitBtn + staleChip + liveChip + '<button class="rz-refresh-timer" id="rz-timer">' + timerLabel + '</button></div>'
       + '</div>'
       + '<div class="rz-content">'
@@ -1868,16 +1869,18 @@
   }
 
   function _tick() {
+    // Offseason / non-game day: stay idle — no countdown, no polling, no live
+    // look. Checked first so the timer never ticks down when nothing is on.
+    if (!_isDemo && !_isGameDay()) {
+      _countdown = 3600;
+      var elIdle = document.getElementById('rz-timer');
+      if (elIdle && elIdle.textContent !== '—') elIdle.textContent = '—';
+      return;
+    }
     _countdown--;
     var el = document.getElementById('rz-timer');
     if (el) el.textContent = _fmtTimer(_countdown);
     if (_countdown <= 0) {
-      if (!_isGameDay()) {
-        // Non-game day: show idle state, don't poll
-        _countdown = 3600;
-        if (el) el.textContent = '—';
-        return;
-      }
       _countdown = _pollInterval();
       _refresh();
     }
