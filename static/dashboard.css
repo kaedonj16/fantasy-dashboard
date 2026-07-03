@@ -12171,6 +12171,20 @@ img, svg, canvas {
   gap: 12px;
 }
 
+/* "View the full page" link on excerpt/summary cards. */
+.os-section-link {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent, #3b82f6);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: opacity .15s ease;
+}
+.os-section-link:hover {
+  text-decoration: underline;
+  opacity: .85;
+}
+
 .gm-memo-error {
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.3);

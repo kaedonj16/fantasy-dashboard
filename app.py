@@ -3784,9 +3784,23 @@ def render_standings(team_stats, length) -> str:
     """
 
 
+def _section_page_link(label: str, endpoint: str, platform, season, league_id) -> str:
+    """A small 'view the full page' link for an excerpt card's section header.
+
+    Renders nothing (safely) if the URL can't be built, so callers can drop it
+    into any os-section-head without guarding.
+    """
+    try:
+        href = url_for(endpoint, platform=platform, season=season, league_id=str(league_id))
+    except Exception:
+        return ""
+    return f"<a class='os-section-link' href='{html.escape(href)}'>{html.escape(label)} &rarr;</a>"
+
+
 def build_dashboard_body(ctx: dict) -> str:
     league_id = ctx["league_id"]
     season = ctx["current_season"]
+    platform = ctx.get("platform", "sleeper")
     rosters = ctx["rosters"]
     users = ctx["users"]
     current_week = ctx["current_week"]
@@ -3957,7 +3971,10 @@ def build_dashboard_body(ctx: dict) -> str:
               <h2 class="os-section-title">Standings</h2>
               <div class="os-section-subtitle">Where every team sits right now</div>
             </div>
-            <button type="button" class="card-collapse-toggle" data-target="dash-standings-body">&#9660;</button>
+            <div class="os-section-head-actions">
+              {_section_page_link("Full standings", "page_standings", platform, season, league_id)}
+              <button type="button" class="card-collapse-toggle" data-target="dash-standings-body">&#9660;</button>
+            </div>
           </div>
           <div class="card-collapsible-body" id="dash-standings-body">
             {standings_html}
@@ -5445,7 +5462,10 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
               <h2 class="os-section-title">Offseason Team Snapshot</h2>
               <div class="os-section-subtitle">Roster value and future capital across the league</div>
             </div>
-            <button type="button" class="card-collapse-toggle" data-target="team-snapshot-body">▼</button>
+            <div class="os-section-head-actions">
+              {_section_page_link("All teams", "page_teams", platform, season, ctx.get("league_id"))}
+              <button type="button" class="card-collapse-toggle" data-target="team-snapshot-body">▼</button>
+            </div>
           </div>
           <div class="os-snapshot-list card-collapsible-body" id="team-snapshot-body">
             {roster_cards_html or "<p>No offseason roster data available yet.</p>"}
@@ -5551,7 +5571,10 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
               <h2 class="os-section-title">Waiver Wire Targets</h2>
               <div class="os-section-subtitle">Smart pickups based on value + trend + breakout potential</div>
             </div>
-            <button type="button" class="card-collapse-toggle" data-target="waiver-assets-body">▼</button>
+            <div class="os-section-head-actions">
+              {_section_page_link("Waivers & Start/Sit", "page_waivers", platform, season, ctx.get("league_id"))}
+              <button type="button" class="card-collapse-toggle" data-target="waiver-assets-body">▼</button>
+            </div>
           </div>
           <div class="os-waiver-list card-collapsible-body" id="waiver-assets-body">
             {top_waiver_assets_html or "<p>No waiver values available yet.</p>"}
