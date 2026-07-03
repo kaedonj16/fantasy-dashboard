@@ -1018,7 +1018,10 @@ def build_trade_calculator_body(
 
             <div id="moversTabContent" class="otc-tab-content is-active">
               <div class="otc-mini-section">
-                <div class="otc-mini-section-title">Top Risers</div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <div class="otc-mini-section-title">Top Risers</div>
+                  <a href="/top-movers" class="otc-view-all-link" style="font-size: 12px; color: #3b82f6; text-decoration: none; font-weight: 500;">View All &rarr;</a>
+                </div>
                 <div id="otcRisersList" class="otc-mini-list">
                   <div class="otc-movers-empty">Loading movers...</div>
                 </div>
