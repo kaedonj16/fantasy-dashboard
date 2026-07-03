@@ -4928,6 +4928,7 @@ def build_standings_body(ctx: dict) -> str:
 from utils.waiver_score import (  # noqa: E402
     WAIVER_PRIME_MAX as _WAIVER_PRIME_MAX,
     WEIGHTS,
+    adaptive_trend_thresholds as _adaptive_trend_thresholds,
     build_depth_index as _build_depth_index,
     depth_analysis_for_player as _depth_analysis_for_player,
     need_multiplier as _need_multiplier,
@@ -5247,7 +5248,13 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     )
 
     waiver_html = []
-    for p in waiver_candidates[:10]:
+    _shown_waivers = waiver_candidates[:10]
+    # Badge trend relative to the shown set so a trend-sorted list doesn't read
+    # "Rising Fast" on every row.
+    _wv_fast_thr, _wv_up_thr = _adaptive_trend_thresholds(
+        [c.get("rank_change_7d") for c in _shown_waivers]
+    )
+    for p in _shown_waivers:
         sub_bits = [p["position"]]
         if p["team"]:
             sub_bits.append(p["team"])
@@ -5257,7 +5264,10 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             sub_bits.append(f"Age {p['age']:.1f}")
         subline = " • ".join(sub_bits)
 
-        sig_cls, sig_label = _waiver_signal(p, waiver_breakout, _WAIVER_PRIME_MAX)
+        sig_cls, sig_label = _waiver_signal(
+            p, waiver_breakout, _WAIVER_PRIME_MAX,
+            fast_thr=_wv_fast_thr, up_thr=_wv_up_thr,
+        )
 
         waiver_html.append(
             f"""
@@ -9146,8 +9156,15 @@ def api_waiver_candidates():
         candidates = [c for c in candidates if c["position"] == position_filter]
 
     result = []
-    for c in candidates[:30]:
-        sig_cls, sig_label = _waiver_signal(c, waiver_breakout, _WAIVER_PRIME_MAX)
+    _shown = candidates[:30]
+    # Badge trend relative to the shown set so the (trend-sorted) list doesn't
+    # read "Rising Fast" on every row.
+    _fast_thr, _up_thr = _adaptive_trend_thresholds([c.get("rank_change_7d") for c in _shown])
+    for c in _shown:
+        sig_cls, sig_label = _waiver_signal(
+            c, waiver_breakout, _WAIVER_PRIME_MAX,
+            fast_thr=_fast_thr, up_thr=_up_thr,
+        )
         bscore = waiver_breakout.get(c["player_id"], 0.0)
         ut = usage_trends.get(c["player_id"]) or {}
         result.append({

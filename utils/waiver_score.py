@@ -119,8 +119,16 @@ class WaiverWeights:
     # like D / (D + trend_depth_ref) less. The badge thresholds scale with depth
     # too, so a deep player needs a proportionally bigger move to "rise".
     trend_depth_ref: float = 24.0
-    trend_fast_frac: float = 0.5   # "Rising Fast" needs >= max(8, frac * pos_depth)
-    trend_up_frac: float = 0.2     # "Trending Up" needs >= max(3, frac * pos_depth)
+    trend_fast_frac: float = 0.5   # "Rising Fast" needs >= max(floor, frac * pos_depth)
+    trend_up_frac: float = 0.2     # "Trending Up" needs >= max(floor, frac * pos_depth)
+    trend_fast_floor: float = 8.0
+    trend_up_floor: float = 3.0
+    # A waiver list is sorted by a trend-weighted score, so *everything* shown is
+    # a riser — labeling them all "Rising Fast" is useless. Badge relative to the
+    # displayed set: only movers at/above these percentiles of the shown pool
+    # earn the trend badges.
+    trend_fast_pct: float = 0.70
+    trend_up_pct: float = 0.40
     # Upcoming schedule ease: up to this many points for a soft slate (#3).
     schedule_bonus_max: float = 12.0
     # Positional scarcity: up to +scarcity_max_bonus (fraction) for a player well
@@ -483,6 +491,27 @@ def blended_trend(windows, w: WaiverWeights = WEIGHTS) -> float:
     return avg * (1.0 - shrink)
 
 
+def adaptive_trend_thresholds(rank_changes, w: WaiverWeights = WEIGHTS) -> "tuple[float, float]":
+    """Trend-badge thresholds derived from the *displayed* candidates' rank moves.
+
+    Because the waiver list is sorted by a trend-weighted score, every shown
+    player is a riser; a fixed threshold labels them all "Rising Fast". Instead,
+    reserve "Rising Fast" for the strongest movers in the shown set (>= the
+    trend_fast_pct percentile) and "Trending Up" for the next tier, so the badges
+    actually differentiate. Falls back to the fixed floors when there aren't
+    enough positive movers to form a distribution.
+    """
+    pos = sorted(float(x) for x in (rank_changes or []) if x is not None and float(x) > 0)
+    if len(pos) < 5:
+        return (w.trend_fast_floor, w.trend_up_floor)
+
+    def _q(p):
+        return pos[min(len(pos) - 1, int(p * len(pos)))]
+
+    return (max(w.trend_fast_floor, _q(w.trend_fast_pct)),
+            max(w.trend_up_floor, _q(w.trend_up_pct)))
+
+
 def schedule_bonus(ease_rank, total_teams, w: WaiverWeights = WEIGHTS) -> float:
     """Bonus/penalty for the upcoming schedule (#3).
 
@@ -635,11 +664,15 @@ def waiver_pickup_score(c: dict, waiver_breakout: dict,
 
 def waiver_signal(c: dict, waiver_breakout: dict,
                   prime_max: dict = WAIVER_PRIME_MAX,
-                  w: WaiverWeights = WEIGHTS) -> "tuple[str, str]":
+                  w: WaiverWeights = WEIGHTS,
+                  fast_thr=None, up_thr=None) -> "tuple[str, str]":
     """Return (badge_class, label) describing why a candidate is interesting.
 
     Shared by both waiver surfaces. Branches that read data a surface doesn't
-    provide (usage, depth chart) are simply no-ops there.
+    provide (usage, depth chart) are simply no-ops there. ``fast_thr``/``up_thr``
+    are pool-relative trend thresholds (see adaptive_trend_thresholds); when
+    given they combine with the depth-based bar so a player must be both a
+    meaningful mover for their depth AND a top mover in the shown set to "rise".
     """
     rank_chg = c.get("rank_change_7d") or 0
     age = c.get("age") or 0
@@ -656,8 +689,14 @@ def waiver_signal(c: dict, waiver_breakout: dict,
     # players — a WR89 drifts 8+ overall spots on nothing. Require a move that
     # scales with positional depth so "Rising Fast" stays meaningful.
     _depth = _pos_depth(c)
-    _fast_thr = max(8.0, w.trend_fast_frac * _depth) if _depth else 8.0
-    _up_thr = max(3.0, w.trend_up_frac * _depth) if _depth else 3.0
+    _fast_thr = max(w.trend_fast_floor, w.trend_fast_frac * _depth) if _depth else w.trend_fast_floor
+    _up_thr = max(w.trend_up_floor, w.trend_up_frac * _depth) if _depth else w.trend_up_floor
+    # Combine with the pool-relative bar so a trend-sorted list doesn't label
+    # everything "Rising Fast": a player must clear both bars.
+    if fast_thr is not None:
+        _fast_thr = max(_fast_thr, float(fast_thr))
+    if up_thr is not None:
+        _up_thr = max(_up_thr, float(up_thr))
 
     # A candidate who is himself out isn't a "target" — label the reason.
     if str(c.get("self_status") or "").upper() in {"IR", "PUP", "NFI", "SUSP", "OUT"}:

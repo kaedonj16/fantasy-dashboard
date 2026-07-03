@@ -558,6 +558,35 @@ def test_deep_player_needs_bigger_move_to_rise():
     assert waiver_signal(deep_big, {})[1] == "Rising Fast"
 
 
+def test_adaptive_thresholds_prevent_all_rising_fast():
+    from utils.waiver_score import adaptive_trend_thresholds
+    # A trend-sorted set where every player is a big riser.
+    moves = [50, 46, 43, 40, 38, 35, 33, 30, 28, 25]
+    fast, up = adaptive_trend_thresholds(moves)
+    # Only the top movers clear "fast"; the bar sits well inside the pack.
+    n_fast = sum(1 for m in moves if m >= fast)
+    n_up = sum(1 for m in moves if up <= m < fast)
+    assert 1 <= n_fast <= 4          # not everyone is Rising Fast
+    assert n_up >= 1                  # a middle "Trending Up" tier exists
+    assert n_fast + n_up < len(moves) # and some fall through to other badges
+
+
+def test_adaptive_thresholds_fallback_when_few_movers():
+    from utils.waiver_score import adaptive_trend_thresholds
+    assert adaptive_trend_thresholds([]) == (8.0, 3.0)
+    assert adaptive_trend_thresholds([10, None, -5]) == (8.0, 3.0)  # <5 positives
+
+
+def test_pool_threshold_combines_with_depth_bar():
+    # A deep player who's a big mover in raw terms still shouldn't rise if the
+    # pool bar (top of the shown set) is above their move.
+    c = _cand(rank_change_7d=20, position="WR")
+    c["pos_rank_label"] = "WR80"
+    # Pool says you need +40 to be "fast"; depth says max(8,40)=40 too.
+    cls, label = waiver_signal(c, {}, fast_thr=40, up_thr=15)
+    assert label != "Rising Fast"
+
+
 def test_depth_discounts_trend_in_score():
     # Same +20 overall move: a deep player gets far less trend credit than a
     # shallow one, so dense-rank noise stops inflating deep players' scores.
