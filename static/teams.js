@@ -15,6 +15,15 @@
       var _draftEnded      = _cfg.draftEnded;
       var _loaded          = {};
 
+      // A small right-aligned "view the full page" link for a tab panel.
+      function _fullPageLink(label, path) {
+        if (!_platform || !_leagueId || !_season) return '';
+        var href = '/' + _platform + '/' + _season + '/' + _leagueId + path;
+        return '<div style="display:flex;justify-content:flex-end;margin-bottom:10px;">' +
+          '<a href="' + href + '" style="font-size:12px;font-weight:600;color:#3b82f6;' +
+          'text-decoration:none;white-space:nowrap;">' + label + ' →</a></div>';
+      }
+
 
       function loadBtm() {
         if (_loaded.btm) return;
@@ -432,7 +441,7 @@
               '<div id="draftTeamView">' + buildByTeamHtml() + '</div>' +
               '<div id="draftRoundView" style="display:none;"></div>';
 
-            panel.innerHTML = tabsHtml;
+            panel.innerHTML = _fullPageLink('Draft history', '/draft/history') + tabsHtml;
 
             // Accordion toggle for By Team view
             panel.querySelectorAll('.draft-acc-header').forEach(function(btn) {
@@ -584,8 +593,8 @@
                       '<span class="ri-player-meta">' + metaParts.join(' · ') + '</span>' +
                     '</div>' +
                     '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
-                      '<span style="font-size:11px;color:var(--text-muted);font-weight:600;">' + (p.value || 0) + '</span>' +
                       '<span class="ri-signal" style="color:' + sc + ';background:' + sc + '18;">' + p.signal + '</span>' +
+                      '<span style="font-size:11px;color:var(--text-muted);font-weight:600;min-width:34px;text-align:right;">' + (p.value || 0) + '</span>' +
                     '</div>' +
                   '</div>';
                 });
@@ -615,7 +624,8 @@
           .then(r => r.json())
           .then(data => {
             if (!data.success) { panel.innerHTML = '<p class="analytics-empty">' + (data.error || 'Failed to load.') + '</p>'; return; }
-            panel.innerHTML = data.html || '<p class="analytics-empty">No rankings available.</p>';
+            panel.innerHTML = _fullPageLink('Full standings', '/standings') +
+              (data.html || '<p class="analytics-empty">No rankings available.</p>');
           })
           .catch(function() { panel.innerHTML = '<p class="analytics-empty">Could not load power rankings.</p>'; });
       }
