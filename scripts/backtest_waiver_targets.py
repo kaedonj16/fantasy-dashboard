@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import datetime as _dt
 import os
 import sys
 from typing import Callable, Dict, List, Optional, Tuple
@@ -94,25 +95,170 @@ class WeekSnapshot:
     realized_points: Dict[str, float]      # player_id -> total points over W+1..W+horizon
 
 
-def _default_snapshot_loader(season: int, week: int, horizon: int) -> Optional[WeekSnapshot]:
-    """Best-effort loader off the app's stores.
+_CORE_POS = ("QB", "RB", "WR", "TE")
 
-    Kept deliberately thin and defensive: it wires the documented loaders when
-    they're available and returns None (with a printed reason) otherwise, so the
-    harness degrades to a clear "wire me up" message instead of a stack trace in
-    environments where the historical stores aren't present.
+
+def _fetch(cur, sql: str, params=()) -> List[dict]:
+    """Run a query and return rows as dicts, whether the cursor yields dict rows
+    (RealDictCursor) or plain tuples."""
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+    if not rows:
+        return []
+    if isinstance(rows[0], dict):
+        return [dict(r) for r in rows]
+    cols = [d[0] for d in cur.description]
+    return [dict(zip(cols, r)) for r in rows]
+
+
+def _week_anchor_date(season: int, week: int) -> "_dt.date":
+    """The calendar date to read week-W values 'as of' — the day after week W's
+    last game. Uses the cached schedule when available, else estimates from the
+    NFL season start (Thursday after Labor Day)."""
+    try:
+        from utils.utils import load_week_schedule
+        dates = []
+        for g in (load_week_schedule(int(season), int(week)) or []):
+            gd = str(g.get("gameDate") or "") if isinstance(g, dict) else ""
+            if len(gd) == 8 and gd.isdigit():
+                dates.append(_dt.date(int(gd[:4]), int(gd[4:6]), int(gd[6:8])))
+        if dates:
+            return max(dates) + _dt.timedelta(days=1)
+    except Exception:
+        pass
+    sep1 = _dt.date(int(season), 9, 1)
+    labor_day = sep1 + _dt.timedelta(days=(7 - sep1.weekday()) % 7)   # first Monday of Sept
+    week1_thu = labor_day + _dt.timedelta(days=3)                     # Thu after Labor Day
+    return week1_thu + _dt.timedelta(days=(int(week) - 1) * 7 + 4)    # ~Monday after week W
+
+
+def _snapshot_date_on_or_before(cur, d: "_dt.date"):
+    rows = _fetch(
+        cur,
+        "SELECT DISTINCT as_of_date FROM player_value_history "
+        "WHERE as_of_date <= %s AND source = 'model' ORDER BY as_of_date DESC LIMIT 1",
+        (d,),
+    )
+    return rows[0]["as_of_date"] if rows else None
+
+
+def _load_value_snapshot(cur, snap_date) -> Dict[str, dict]:
+    """{player_id: {value, position, pos_rank_label}} for one value-history date,
+    limited to core offensive positions."""
+    rows = _fetch(
+        cur,
+        "SELECT player_id, position, value FROM player_value_history "
+        "WHERE as_of_date = %s AND source = 'model' AND position IN ('QB','RB','WR','TE')",
+        (snap_date,),
+    )
+    out: Dict[str, dict] = {}
+    for r in rows:
+        try:
+            val = float(r.get("value") or 0)
+        except (TypeError, ValueError):
+            val = 0.0
+        if val < 5:
+            continue
+        out[str(r["player_id"])] = {"value": val, "position": str(r.get("position") or "").upper()}
+    # Positional rank labels (WR12, RB27 …) for the depth-aware trend logic.
+    by_pos: Dict[str, list] = {}
+    for pid, v in out.items():
+        by_pos.setdefault(v["position"], []).append((pid, v["value"]))
+    for pos, lst in by_pos.items():
+        lst.sort(key=lambda t: t[1], reverse=True)
+        for i, (pid, _) in enumerate(lst):
+            out[pid]["pos_rank_label"] = f"{pos}{i + 1}"
+    return out
+
+
+def _player_overall_ranks(vals: Dict[str, dict]) -> Dict[str, int]:
+    """Player-only overall rank by value (1 = highest), matching how the app
+    derives rank_change_7d."""
+    ordered = sorted(vals.items(), key=lambda kv: kv[1]["value"], reverse=True)
+    return {pid: i + 1 for i, (pid, _) in enumerate(ordered)}
+
+
+def _default_snapshot_loader(season: int, week: int, horizon: int) -> Optional[WeekSnapshot]:
+    """Build a WeekSnapshot from the app's historical stores.
+
+    * candidates      <- player_value_history at the snapshot on/before week W
+                         (value + positional rank label + rank_change_7d vs the
+                         snapshot ~7 days earlier). No lookahead.
+    * breakout        <- breakout_opportunity_scores, latest per player as of the
+                         anchor date ({} when none exist historically).
+    * realized_points <- SUM(player_weekly_metrics.ppr_pts) over weeks W+1..W+H.
+
+    Note: injury/usage/projection enrichment and age aren't reconstructable from
+    the historical stores, so this validates the value + trend + breakout core of
+    the model (its ranking vs. a value-only baseline), not those live-only signals.
     """
     try:
-        from utils.fantasy_scoring import score_stats  # noqa: F401
-        # NOTE: the concrete historical loaders differ per deployment. Wire the
-        # three fields of WeekSnapshot here against your value-history + weekly
-        # stats tables. Left unimplemented on purpose rather than guessing a
-        # schema that may not match your DB.
-        print(f"[backtest] No historical loader wired for {season} wk{week}; "
-              f"implement _default_snapshot_loader() against your stores.")
+        from dashboard_services.db import get_conn
+    except Exception as exc:
+        print(f"[backtest] DB unavailable: {exc}")
         return None
+
+    try:
+        anchor = _week_anchor_date(season, week)
+        prior = anchor - _dt.timedelta(days=7)
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                snap = _snapshot_date_on_or_before(cur, anchor)
+                if not snap:
+                    print(f"[backtest] wk{week}: no value_history snapshot on/before {anchor}")
+                    return None
+                cur_vals = _load_value_snapshot(cur, snap)
+                prior_snap = _snapshot_date_on_or_before(cur, prior)
+                prior_vals = _load_value_snapshot(cur, prior_snap) if prior_snap else {}
+
+                realized_rows = _fetch(
+                    cur,
+                    "SELECT player_id, SUM(ppr_pts) AS pts FROM player_weekly_metrics "
+                    "WHERE season = %s AND week > %s AND week <= %s GROUP BY player_id",
+                    (int(season), int(week), int(week) + int(horizon)),
+                )
+                realized = {}
+                for r in realized_rows:
+                    try:
+                        realized[str(r["player_id"])] = float(r.get("pts") or 0)
+                    except (TypeError, ValueError):
+                        pass
+
+                breakout: Dict[str, float] = {}
+                try:
+                    b_rows = _fetch(
+                        cur,
+                        "SELECT DISTINCT ON (player_id) player_id, breakout_opportunity_score "
+                        "FROM breakout_opportunity_scores WHERE as_of_date <= %s "
+                        "ORDER BY player_id, as_of_date DESC",
+                        (anchor,),
+                    )
+                    for r in b_rows:
+                        s = r.get("breakout_opportunity_score")
+                        if s is not None:
+                            breakout[str(r["player_id"])] = float(s)
+                except Exception:
+                    breakout = {}   # table may not exist / no history
+
+        if not cur_vals or not realized:
+            print(f"[backtest] wk{week}: values={len(cur_vals)} realized={len(realized)} — skipping")
+            return None
+
+        cur_rank = _player_overall_ranks(cur_vals)
+        prior_rank = _player_overall_ranks(prior_vals)
+        candidates = []
+        for pid, v in cur_vals.items():
+            rc = (prior_rank[pid] - cur_rank[pid]) if (pid in prior_rank and pid in cur_rank) else None
+            candidates.append({
+                "player_id": pid,
+                "position": v["position"],
+                "value": v["value"],
+                "pos_rank_label": v.get("pos_rank_label"),
+                "rank_change_7d": rc,
+            })
+        return WeekSnapshot(candidates=candidates, breakout=breakout, realized_points=realized)
     except Exception as exc:  # pragma: no cover - env dependent
-        print(f"[backtest] snapshot load failed for {season} wk{week}: {exc}")
+        print(f"[backtest] wk{week} load failed: {exc}")
         return None
 
 
