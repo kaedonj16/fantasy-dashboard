@@ -3666,6 +3666,52 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     return ctx
 
 
+def render_standings_compact(team_stats, length=None) -> str:
+    """Narrow standings for the dashboard left rail: Rank · Team · Record · PF.
+
+    The full render_standings table has 8 columns and is too wide for a 340px
+    sidebar; this trims to the essentials so it fits.
+    """
+    if team_stats is None or team_stats.empty:
+        return "<div class='muted' style='padding:12px 14px;'>No standings data yet.</div>"
+
+    df = team_stats.copy()
+    df = df.sort_values(by=["Wins", "PF", "PA"], ascending=[False, False, True]).reset_index(drop=True)
+    df["Rank"] = df.index + 1
+
+    rows = []
+    for _, row in df.iterrows():
+        record = f"{int(row['Wins'])}-{int(row['Losses'])}"
+        if int(row.get("Ties", 0) or 0):
+            record += f"-{int(row['Ties'])}"
+        avatar = row.get("avatar", "")
+        img = (
+            f"<img class='avatar sm' src='{avatar}' alt='' onerror=\"this.style.display='none'\">"
+            if avatar else ""
+        )
+        rows.append(f"""
+            <tr>
+              <td class="num">{int(row['Rank'])}</td>
+              <td class="team">{img} {html.escape(str(row['owner']))}</td>
+              <td>{record}</td>
+              <td>{row['PF']:.0f}</td>
+            </tr>""")
+
+    if length:
+        rows = rows[:length]
+
+    return f"""
+        <table class="standings-table standings-compact" data-page="standings">
+          <thead>
+            <tr><th>#</th><th>Team</th><th>Rec</th><th>PF</th></tr>
+          </thead>
+          <tbody>
+            {''.join(rows)}
+          </tbody>
+        </table>
+    """
+
+
 def render_standings(team_stats, length) -> str:
     if team_stats is None or team_stats.empty:
         return """
@@ -3772,7 +3818,7 @@ def build_dashboard_body(ctx: dict) -> str:
         except Exception:
             logger.debug("dashboard: front office briefing failed", exc_info=True)
 
-    standings_html = render_standings(team_stats, 5)
+    standings_html = render_standings_compact(team_stats)
 
     finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
     if not finalized_df.empty:
@@ -3868,10 +3914,10 @@ def build_dashboard_body(ctx: dict) -> str:
             _rec = f"{int(_vrow['Wins'])}-{int(_vrow['Losses'])}"
             if int(_vrow.get("Ties", 0) or 0):
                 _rec += f"-{int(_vrow['Ties'])}"
-            _hero_cards.append(("Your record", _rec, f"{_dash_ord(int(_vrow['Rank']))} of {_n_teams}"))
+            _hero_cards.append(("Your record", _rec, _dash_ord(int(_vrow['Rank']))))
             _pf = _hs.sort_values("PF", ascending=False).reset_index(drop=True)
             _pf_rank = int(_pf.index[_pf["owner"].astype(str) == _vname][0]) + 1
-            _hero_cards.append(("Points for", f"{float(_vrow['PF']):.0f}", f"{_dash_ord(_pf_rank)} in league"))
+            _hero_cards.append(("Points for", f"{float(_vrow['PF']):.0f}", _dash_ord(_pf_rank)))
             _streak = str(_vrow.get("Streak") or "").strip()
             _hero_cards.append(("This week", f"Week {current_week}",
                                 f"{_streak} streak" if _streak else f"{len(_dash_matchups)} matchups"))
@@ -3905,6 +3951,18 @@ def build_dashboard_body(ctx: dict) -> str:
     body = f"""
     <div class="os-layout">
       <aside class="os-left-col">
+        <section class="os-card os-col-fill">
+          <div class="os-section-head">
+            <div class="os-section-head-content">
+              <h2 class="os-section-title">Standings</h2>
+              <div class="os-section-subtitle">Where every team sits right now</div>
+            </div>
+            <button type="button" class="card-collapse-toggle" data-target="dash-standings-body">&#9660;</button>
+          </div>
+          <div class="card-collapsible-body" id="dash-standings-body">
+            {standings_html}
+          </div>
+        </section>
         {awards_html}
       </aside>
 
@@ -3926,19 +3984,6 @@ def build_dashboard_body(ctx: dict) -> str:
         {front_office_card_html}
 
         {matchup_html}
-
-        <section class="os-card os-col-fill">
-          <div class="os-section-head">
-            <div class="os-section-head-content">
-              <h2 class="os-section-title">Standings</h2>
-              <div class="os-section-subtitle">Where every team sits right now</div>
-            </div>
-            <button type="button" class="card-collapse-toggle" data-target="dash-standings-body">&#9660;</button>
-          </div>
-          <div class="card-collapsible-body" id="dash-standings-body">
-            {standings_html}
-          </div>
-        </section>
       </main>
 
       <aside class="os-right-col">
