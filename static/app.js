@@ -8768,10 +8768,14 @@ function openPlayerModal(playerId, playerName, opts) {
       // ── Show tab bar and configure it ─────────────────────────────────────
       const pmTabBar = document.getElementById('pmTabBar');
 
-      // Inject Live tab button (always available; stub fetches on non-Redzone pages)
-      if (window.__rzGetPlayerLive) {
-        const _existLive = pmTabBar ? pmTabBar.querySelector('.pm-tab[data-tab="live"]') : null;
-        if (_existLive) _existLive.remove();
+      // Inject Live/Redzone tab. Shown whenever the season is active (same gate
+      // as the Redzone nav item), and always on the Redzone page/Demo itself
+      // (#rz-root present). Hidden in the offseason. __seasonActive !== false
+      // treats an unknown flag as active, preserving prior behavior.
+      const _seasonActive = (window.__seasonActive !== false) || !!document.getElementById('rz-root');
+      const _existLive = pmTabBar ? pmTabBar.querySelector('.pm-tab[data-tab="live"]') : null;
+      if (_existLive) _existLive.remove();
+      if (window.__rzGetPlayerLive && _seasonActive) {
         const _liveBtn = document.createElement('button');
         _liveBtn.className = 'pm-tab pm-tab-live';
         _liveBtn.dataset.tab = 'live';

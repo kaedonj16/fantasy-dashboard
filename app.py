@@ -1384,6 +1384,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     offseason_mode = ((nfl_state.get("season_type") or "").lower() == "off") and (
             int(nfl_state.get("season") or datetime.now().year) == int(season or 0)
     )
+    # Exposed for client code (e.g. the player-modal Redzone tab, which hides in
+    # the offseason). Uses the same condition that gates the Redzone nav item.
+    season_active_flag = f"<script>window.__seasonActive={'false' if offseason_mode else 'true'};</script>"
 
     # Changelog bell (used in both home and league nav)
     changelog_bell = (
@@ -1526,6 +1529,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             f"    {home_utility_bar}"
             "  </div>"
             "</nav>"
+            f"{season_active_flag}"
         )
 
     # -------- League nav (with league_id) --------
@@ -1786,6 +1790,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         "  </div>"
         "</nav>"
         f"{signin_modal}"
+        f"{season_active_flag}"
     )
 
 
