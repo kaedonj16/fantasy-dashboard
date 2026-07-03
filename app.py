@@ -3849,22 +3849,104 @@ def build_dashboard_body(ctx: dict) -> str:
         </div>
         """
 
+    # ---- Hero stat cards — mirror the offseason hub's hero card ----
+    def _dash_ord(n) -> str:
+        n = int(n)
+        suf = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+        return f"{n}{suf}"
+
+    _hero_cards: list = []
+    try:
+        _hs = team_stats.copy()
+        _hs = _hs.sort_values(by=["Wins", "PF", "PA"], ascending=[False, False, True]).reset_index(drop=True)
+        _hs["Rank"] = _hs.index + 1
+        _n_teams = len(_hs)
+        _vname = str(viewer.get("viewer_team_name") or "")
+        _vmask = (_hs["owner"].astype(str) == _vname) if _vname else None
+        if _vname and _vmask is not None and bool(_vmask.any()):
+            _vrow = _hs[_vmask].iloc[0]
+            _rec = f"{int(_vrow['Wins'])}-{int(_vrow['Losses'])}"
+            if int(_vrow.get("Ties", 0) or 0):
+                _rec += f"-{int(_vrow['Ties'])}"
+            _hero_cards.append(("Your record", _rec, f"{_dash_ord(int(_vrow['Rank']))} of {_n_teams}"))
+            _pf = _hs.sort_values("PF", ascending=False).reset_index(drop=True)
+            _pf_rank = int(_pf.index[_pf["owner"].astype(str) == _vname][0]) + 1
+            _hero_cards.append(("Points for", f"{float(_vrow['PF']):.0f}", f"{_dash_ord(_pf_rank)} in league"))
+            _streak = str(_vrow.get("Streak") or "").strip()
+            _hero_cards.append(("This week", f"Week {current_week}",
+                                f"{_streak} streak" if _streak else f"{len(_dash_matchups)} matchups"))
+        else:
+            _top = _hs.iloc[0]
+            _hero_cards.append(("League leader", str(_top["owner"]),
+                                f"{int(_top['Wins'])}-{int(_top['Losses'])} record"))
+            _hi = _hs.sort_values("PF", ascending=False).iloc[0]
+            _hero_cards.append(("Most points", f"{float(_hi['PF']):.0f}", str(_hi["owner"])))
+            _hero_cards.append(("This week", f"Week {current_week}", f"{len(_dash_matchups)} matchups"))
+    except Exception:
+        logger.debug("dashboard hero stats failed", exc_info=True)
+        _hero_cards = [("This week", f"Week {current_week}", "Live scoring & standings")]
+
+    _hero_stats_html = "".join(
+        f"""<div class="os-stat-card">
+              <div class="os-stat-label">{html.escape(str(_lbl))}</div>
+              <div class="os-stat-value">{html.escape(str(_val))}</div>
+              <div class="os-stat-sub">{html.escape(str(_sub))}</div>
+            </div>"""
+        for _lbl, _val, _sub in _hero_cards
+    )
+
+    _viewer_team = viewer.get("viewer_team_name")
+    _hero_copy = (
+        f"Welcome back, {html.escape(str(_viewer_team))}. Your matchup, standings, and moves at a glance."
+        if _viewer_team else
+        "Your matchups, standings, and weekly moves at a glance."
+    )
+
     body = f"""
-    <aside class="overview-sidebar-left">
-      {awards_html}
-    </aside>
-    <div class="overview-main">
-      {gm_card_html}
-      {front_office_card_html}
-      <div class="card central">
-        <h2>Standings</h2>
-        {standings_html}
-      </div>
-      {matchup_html}
+    <div class="os-layout">
+      <aside class="os-left-col">
+        {awards_html}
+      </aside>
+
+      <main class="os-main-col">
+        <section class="os-hero-card">
+          <div class="os-hero-top">
+            <div>
+              <div class="os-hero-kicker">Viewing {season} season &middot; Week {current_week}</div>
+              <h1 class="os-hero-title">Season Hub</h1>
+              <p class="os-hero-copy">{_hero_copy}</p>
+            </div>
+          </div>
+          <div class="os-hero-stats">
+            {_hero_stats_html}
+          </div>
+        </section>
+
+        {gm_card_html}
+        {front_office_card_html}
+
+        {matchup_html}
+
+        <section class="os-card os-col-fill">
+          <div class="os-section-head">
+            <div class="os-section-head-content">
+              <h2 class="os-section-title">Standings</h2>
+              <div class="os-section-subtitle">Where every team sits right now</div>
+            </div>
+            <button type="button" class="card-collapse-toggle" data-target="dash-standings-body">&#9660;</button>
+          </div>
+          <div class="card-collapsible-body" id="dash-standings-body">
+            {standings_html}
+          </div>
+        </section>
+      </main>
+
+      <aside class="os-right-col">
+        <div class="os-sidebar-shell">
+          {teams_sidebar_html}
+        </div>
+      </aside>
     </div>
-    <aside class="overview-sidebar">
-      {teams_sidebar_html}
-    </aside>
     """
 
     return body
