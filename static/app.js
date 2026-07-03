@@ -8039,16 +8039,16 @@ document.addEventListener('DOMContentLoaded', function() {
       if (targetBody) {
         const isCollapsed = targetBody.classList.contains('collapsed');
 
+        // Toggle the collapsed class only; the CSS rotates the original arrow
+        // glyph. (Swapping innerHTML to a Font Awesome icon here caused an
+        // inconsistent/red arrow on iOS when the injected glyph fell back to a
+        // system font.)
         if (isCollapsed) {
-          // Expand
           targetBody.classList.remove('collapsed');
           this.classList.remove('collapsed');
-          this.innerHTML = '<i class="fa-solid fa-chevron-down" aria-hidden="true"></i>';
         } else {
-          // Collapse
           targetBody.classList.add('collapsed');
           this.classList.add('collapsed');
-          this.innerHTML = '<i class="fa-solid fa-chevron-right" aria-hidden="true"></i>';
         }
       }
     });
