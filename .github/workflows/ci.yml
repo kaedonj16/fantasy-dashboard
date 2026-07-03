@@ -31,6 +31,15 @@ jobs:
       - name: Compile all Python (syntax check)
         run: python -m compileall -q app.py dashboard_services data_building routes models utils scripts
 
+      - name: Run unit tests
+        # The suite is pure-Python (no pandas/DB needed); app-dependent tests
+        # skip cleanly when the full stack isn't installed. Guards the model
+        # logic (waiver_score, tiers, pick_score, ...) and the CSS/JS health
+        # ratchets on every push.
+        run: |
+          pip install pytest
+          python -m pytest tests/ -q
+
   javascript:
     name: JavaScript syntax
     runs-on: ubuntu-latest
