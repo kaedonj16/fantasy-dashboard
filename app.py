@@ -1488,6 +1488,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 ("Draft History", "/draft/history", "draft-history"),
             ], ["draft", "draft-history"], "draftNavDropdown"),
         ]
+        # Portfolio was only reachable from inside a league's nav; signed-in
+        # users should be able to get to their leagues from global pages too.
+        if session.get("viewer_username"):
+            pills.append(simple_pill("My Leagues", "/portfolio", "portfolio"))
 
         player_search_html = (
             "<div class='nav-search-wrapper' id='navSearchWrapper'>"
@@ -1602,6 +1606,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         _weekly_items = [
             ("Matchups",     "page_weekly", "weekly", False),
             ("Weekly Recap", "page_recap",  "recap",  False),
+            ("Opponent Scout", "page_scout", "scout", False),
             ("Lineup Efficiency", "page_optimal", "optimal", False),
         ]
         # Redzone lives inside the Weekly dropdown. When a game is actually
@@ -1620,7 +1625,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             if _rz_live:
                 _rz_pulse = "nav-pill-redzone-live"
         nav_pills.append(nav_pill_dropdown(
-            "Weekly", _weekly_items, ["weekly", "recap", "redzone", "optimal"],
+            "Weekly", _weekly_items, ["weekly", "recap", "redzone", "scout", "optimal"],
             "weeklyNavDropdown", btn_extra_cls=_rz_pulse,
         ))
     nav_pills.append(nav_pill_dropdown("League", [
@@ -3986,8 +3991,8 @@ def _viewer_lineup_alert_html(ctx: dict, viewer_roster_id) -> str:
         platform = ctx.get("platform", "sleeper")
         league_id = ctx.get("league_id", "")
         fix_url = url_for(
-            "page_weekly", platform=platform, season=season, league_id=league_id
-        )
+            "page_waivers", platform=platform, season=season, league_id=league_id
+        ) + "?tab=startsit"
         n = len(issues)
         title = f"{n} lineup issue" + ("s" if n > 1 else "")
         items = "".join(

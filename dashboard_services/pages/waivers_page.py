@@ -468,6 +468,19 @@ function wvRenderStartSit() {{
 }}
 
 document.addEventListener('DOMContentLoaded', wvLoad);
+
+// Deep link: ?tab=startsit opens the Start/Sit Advisor (switches the mobile
+// tab and scrolls the section into view on desktop).
+document.addEventListener('DOMContentLoaded', function() {{
+  try {{
+    const params = new URLSearchParams(window.location.search);
+    if ((params.get('tab') || '').toLowerCase() === 'startsit') {{
+      wvSetTab('startsit');
+      const sec = document.getElementById('wvSectionStartSit');
+      if (sec) sec.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+    }}
+  }} catch (e) {{}}
+}});
 </script>
 """
 

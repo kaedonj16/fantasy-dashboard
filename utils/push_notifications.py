@@ -302,11 +302,12 @@ def notify_lineup_lock():
                 oid = str(r[4] or "")
                 if oid in issue_summary_by_owner:
                     flagged_by_owner.setdefault(oid, []).append(r)
+            fix_url = f"/{platform}/{season}/{league_id}/waivers?tab=startsit"
             for oid, orows in flagged_by_owner.items():
                 body = f"Week {week} kicks off in about an hour. {issue_summary_by_owner[oid]}."
                 sent += _send_to_endpoints(
                     _filter_prefs(orows, "lineup_lock"),
-                    "Your lineup needs attention", body, url, tag,
+                    "Your lineup needs attention", body, fix_url, tag,
                 )
         logger.info("[notify] lineup_lock week %s sent %d", week, sent)
 
