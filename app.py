@@ -3671,15 +3671,18 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     return ctx
 
 
-def render_standings_compact(team_stats, length=None) -> str:
+def render_standings_compact(team_stats, length=None, movement=None) -> str:
     """Narrow standings for the dashboard left rail: Rank · Team · Record · PF.
 
     The full render_standings table has 8 columns and is too wide for a 340px
-    sidebar; this trims to the essentials so it fits.
+    sidebar; this trims to the essentials so it fits. ``movement`` is an optional
+    {owner: delta} map (positive = climbed since last week) rendered as a small
+    arrow next to the rank.
     """
     if team_stats is None or team_stats.empty:
         return "<div class='muted' style='padding:12px 14px;'>No standings data yet.</div>"
 
+    movement = movement or {}
     df = team_stats.copy()
     df = df.sort_values(by=["Wins", "PF", "PA"], ascending=[False, False, True]).reset_index(drop=True)
     df["Rank"] = df.index + 1
@@ -3694,9 +3697,16 @@ def render_standings_compact(team_stats, length=None) -> str:
             f"<img class='avatar sm' src='{avatar}' alt='' onerror=\"this.style.display='none'\">"
             if avatar else ""
         )
+        _mv = movement.get(str(row["owner"]))
+        mv_html = ""
+        if _mv:
+            if _mv > 0:
+                mv_html = f"<span class='rank-move up' title='Up {_mv} since last week'>&#9650;{_mv}</span>"
+            elif _mv < 0:
+                mv_html = f"<span class='rank-move down' title='Down {abs(_mv)} since last week'>&#9660;{abs(_mv)}</span>"
         rows.append(f"""
             <tr>
-              <td class="num">{int(row['Rank'])}</td>
+              <td class="num">{int(row['Rank'])}{mv_html}</td>
               <td class="team">{img} {html.escape(str(row['owner']))}</td>
               <td>{record}</td>
               <td>{row['PF']:.0f}</td>
@@ -3802,6 +3812,115 @@ def _section_page_link(label: str, endpoint: str, platform, season, league_id) -
     return f"<a class='os-section-link' href='{html.escape(href)}'>{html.escape(label)} &rarr;</a>"
 
 
+def _standings_movement(df_weekly) -> dict:
+    """Week-over-week standings-rank movement per owner, from finalized weeks.
+
+    Ranks teams by (cumulative wins, cumulative points-for) through the last
+    finalized week and through the week before, returning {owner: prev_rank -
+    cur_rank} where positive means the team climbed. Empty until 2+ finalized
+    weeks exist. Arrows are decorative, so any failure returns {} quietly.
+    """
+    try:
+        fin = df_weekly[df_weekly["finalized"] == True]
+        if fin.empty:
+            return {}
+        weeks = sorted(int(w) for w in fin["week"].unique())
+        if len(weeks) < 2:
+            return {}
+        cur_w, prev_w = weeks[-1], weeks[-2]
+
+        def _rank_through(wk):
+            sub = fin[fin["week"] <= wk]
+            agg = (
+                sub.groupby("owner")
+                .agg(W=("win", "sum"), PF=("points", "sum"))
+                .reset_index()
+                .sort_values(by=["W", "PF"], ascending=[False, False])
+                .reset_index(drop=True)
+            )
+            return {str(r["owner"]): i + 1 for i, r in agg.iterrows()}
+
+        cur = _rank_through(cur_w)
+        prev = _rank_through(prev_w)
+        return {o: (prev[o] - cur[o]) for o in cur if o in prev}
+    except Exception:
+        logger.debug("standings movement failed", exc_info=True)
+        return {}
+
+
+def _render_usage_movers(ctx: dict, viewer_roster_id) -> str:
+    """Compact strip of the viewer's rostered players whose recent usage is
+    rising fastest — last-3-week average vs season average of the position's
+    key volume stat (QB snap %, RB touches, WR/TE targets). Returns '' when
+    there's nothing meaningful to show."""
+    if not viewer_roster_id:
+        return ""
+    try:
+        rosters = ctx.get("rosters") or []
+        roster = next(
+            (r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)),
+            None,
+        )
+        if not roster:
+            return ""
+        pids = {
+            str(p) for p in (roster.get("players") or [])
+            if str(p) not in {"0", "", "None"}
+        }
+        if not pids:
+            return ""
+
+        season = int(ctx.get("current_season") or 0)
+        from data_building.weekly_metrics import get_usage_trends
+        trends = get_usage_trends(season) or {}
+        players_index = ctx.get("players_index") or {}
+        _stat_lbl = {"snap_pct": "snap%", "touches": "touches", "targets": "targets"}
+
+        movers = []
+        for pid in pids:
+            t = trends.get(pid)
+            if not t:
+                continue
+            delta = t.get("delta")
+            # Genuine risers only (matches the card title); ignore noise and
+            # players without enough weeks to trust the trend.
+            if delta is None or delta < 1.5 or int(t.get("weeks_played") or 0) < 3:
+                continue
+            pmeta = players_index.get(pid) or {}
+            name = pmeta.get("full_name") or pmeta.get("name") or f"Player {pid}"
+            movers.append((float(delta), str(name), t))
+        if not movers:
+            return ""
+        movers.sort(key=lambda x: x[0], reverse=True)
+        movers = movers[:3]  # concise: top risers only
+
+        rows = []
+        for delta, name, t in movers:
+            stat = _stat_lbl.get(t.get("stat"), t.get("stat") or "")
+            avg = float(t.get("season_avg") or 0)
+            recent = float(t.get("recent_avg") or 0)
+            rows.append(f"""
+              <li class="usage-mover">
+                <span class="um-name">{html.escape(name)}</span>
+                <span class="um-detail">{stat} {avg:g}&rarr;{recent:g}</span>
+                <span class="um-delta up">&#9650;{delta:g}</span>
+              </li>""")
+
+        return f"""
+        <section class="os-card usage-movers-card">
+          <div class="os-section-head">
+            <div class="os-section-head-content">
+              <h2 class="os-section-title">Usage risers</h2>
+              <div class="os-section-subtitle">Your players trending up in snaps &amp; touches</div>
+            </div>
+          </div>
+          <ul class="usage-movers-list">{''.join(rows)}</ul>
+        </section>"""
+    except Exception:
+        logger.debug("usage movers failed", exc_info=True)
+        return ""
+
+
 def build_dashboard_body(ctx: dict) -> str:
     league_id = ctx["league_id"]
     season = ctx["current_season"]
@@ -3837,7 +3956,10 @@ def build_dashboard_body(ctx: dict) -> str:
         except Exception:
             logger.debug("dashboard: front office briefing failed", exc_info=True)
 
-    standings_html = render_standings_compact(team_stats)
+    standings_html = render_standings_compact(
+        team_stats, movement=_standings_movement(df_weekly)
+    )
+    usage_movers_html = _render_usage_movers(ctx, viewer_roster_id)
 
     finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
     if not finalized_df.empty:
@@ -3951,14 +4073,32 @@ def build_dashboard_body(ctx: dict) -> str:
         logger.debug("dashboard hero stats failed", exc_info=True)
         _hero_cards = [("This week", f"Week {current_week}", "Live scoring & standings")]
 
-    _hero_stats_html = "".join(
+    _hero_tiles = [
         f"""<div class="os-stat-card">
               <div class="os-stat-label">{html.escape(str(_lbl))}</div>
               <div class="os-stat-value">{html.escape(str(_val))}</div>
               <div class="os-stat-sub">{html.escape(str(_sub))}</div>
             </div>"""
         for _lbl, _val, _sub in _hero_cards
-    )
+    ]
+
+    # Playoff-odds tile — the Monte Carlo sim is heavy and cached behind the
+    # /api/playoff-odds endpoint, so render a placeholder and fill it client-side
+    # to keep first paint fast. Only meaningful when the viewer owns a team.
+    if viewer_roster_id:
+        _playoff_tile_html = f"""<div class="os-stat-card os-stat-playoff" id="dash-playoff-tile"
+              data-platform="{html.escape(str(platform))}"
+              data-league="{html.escape(str(league_id))}"
+              data-season="{html.escape(str(season))}"
+              data-roster="{html.escape(str(viewer_roster_id))}">
+              <div class="os-stat-label">Playoff odds</div>
+              <div class="os-stat-value" id="dash-playoff-val">&mdash;</div>
+              <div class="os-stat-sub" id="dash-playoff-sub">Simulating&hellip;</div>
+            </div>"""
+        # Slot right after the first (record) tile so it reads prominently.
+        _hero_tiles.insert(1, _playoff_tile_html)
+
+    _hero_stats_html = "".join(_hero_tiles)
 
     _viewer_team = viewer.get("viewer_team_name")
     _hero_copy = (
@@ -4004,6 +4144,7 @@ def build_dashboard_body(ctx: dict) -> str:
 
         {gm_card_html}
         {front_office_card_html}
+        {usage_movers_html}
 
         {matchup_html}
       </main>
@@ -4014,6 +4155,42 @@ def build_dashboard_body(ctx: dict) -> str:
         </div>
       </aside>
     </div>
+    <script>
+    (function() {{
+      var el = document.getElementById('dash-playoff-tile');
+      if (!el) return;
+      var rid = el.getAttribute('data-roster');
+      var qs = 'platform=' + encodeURIComponent(el.getAttribute('data-platform')) +
+               '&league_id=' + encodeURIComponent(el.getAttribute('data-league')) +
+               '&season=' + encodeURIComponent(el.getAttribute('data-season'));
+      fetch('/api/playoff-odds?' + qs)
+        .then(function(r) {{ return r.ok ? r.json() : null; }})
+        .then(function(d) {{
+          var odds = (d && d.odds) || [];
+          var row = null;
+          for (var i = 0; i < odds.length; i++) {{
+            if (String(odds[i].roster_id) === String(rid)) {{ row = odds[i]; break; }}
+          }}
+          if (!row) {{ el.remove(); return; }}
+          var pct = Math.round(row.playoff_pct || 0);
+          var valEl = document.getElementById('dash-playoff-val');
+          var subEl = document.getElementById('dash-playoff-sub');
+          if (valEl) valEl.textContent = pct + '%';
+          var sub;
+          if (d.is_complete || row.is_complete) {{
+            sub = pct >= 100 ? 'Clinched' : (pct <= 0 ? 'Eliminated' : 'Playoff bound');
+          }} else {{
+            var first = Math.round(row.first_seed_pct || 0);
+            var bye = Math.round(row.bye_pct || 0);
+            sub = first > 0 ? (first + '% top seed')
+                : (bye > 0 ? (bye + '% first-round bye') : 'to make the playoffs');
+          }}
+          if (subEl) subEl.textContent = sub;
+          el.classList.add('is-loaded');
+        }})
+        .catch(function() {{ el.remove(); }});
+    }})();
+    </script>
     """
 
     return body
