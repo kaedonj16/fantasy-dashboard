@@ -17,6 +17,16 @@ from utils.tier_thresholds import FALLBACK_THRESHOLDS
 NUM_TIERS = 9
 
 
+def build_tier_caps(num_tiers: int) -> dict:
+    """Per-tier value-retention caps, linearly interpolated from 1.0 (T1)
+    down to 0.38 (bottom tier). Returns {tier: cap}."""
+    high, low = 1.0, 0.38
+    if num_tiers <= 1:
+        return {1: 1.0}
+    return {t: round(high - (high - low) * (t - 1) / (num_tiers - 1), 3)
+            for t in range(1, num_tiers + 1)}
+
+
 def asset_tier(value: float, thresholds: list = None) -> int:
     t = thresholds if thresholds is not None else FALLBACK_THRESHOLDS
     for i, threshold in enumerate(t):

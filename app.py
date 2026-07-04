@@ -164,29 +164,9 @@ def _api_err(msg: str = "Request failed", e: Exception = None, code: int = 500):
     return jsonify({"error": msg, "ok": False}), code
 
 
-def _rel_time(dt) -> str:
-    """Human-relative timestamp: 'Today 3:42 PM', '2d ago', 'May 12'."""
-    now = datetime.now(EASTERN)
-    dt_et = dt.astimezone(EASTERN)
-    diff = now - dt_et
-    secs = diff.total_seconds()
-    if secs < 60:
-        return "Just now"
-    if secs < 3600:
-        mins = int(secs // 60)
-        return f"{mins}m ago"
-    today = now.date()
-    if dt_et.date() == today:
-        hour = dt_et.strftime("%I").lstrip("0") or "12"
-        return f"Today {hour}:{dt_et.strftime('%M %p')}"
-    if dt_et.date() == (now - timedelta(days=1)).date():
-        return f"Yesterday"
-    days = (today - dt_et.date()).days
-    if days < 7:
-        return f"{days}d ago"
-    if days < 30:
-        return f"{days // 7}w ago"
-    return dt_et.strftime("%b %d")
+# Pure logic lives in utils/relative_time.py so it can be unit-tested without
+# this module's full stack.
+from utils.relative_time import rel_time as _rel_time  # noqa: E402
 
 
 # ── Sentry error tracking ─────────────────────────────────────────────────────
@@ -6014,14 +5994,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
 
 # Depth cap: each additional asset beyond the anchor is worth less (position 0 = anchor)
-def _build_tier_caps(num_tiers: int) -> dict:
-    high, low = 1.0, 0.38
-    if num_tiers <= 1:
-        return {1: 1.0}
-    return {t: round(high - (high - low) * (t - 1) / (num_tiers - 1), 3)
-            for t in range(1, num_tiers + 1)}
-
-from utils.tier_stack import NUM_TIERS as _NUM_TIERS  # noqa: E402
+from utils.tier_stack import NUM_TIERS as _NUM_TIERS, build_tier_caps as _build_tier_caps  # noqa: E402
 _TIER_CAPS  = _build_tier_caps(_NUM_TIERS)
 from utils.tier_thresholds import FALLBACK_THRESHOLDS as _FALLBACK_THRESHOLDS  # noqa: E402
 
@@ -6859,6 +6832,16 @@ def build_status_by_week(season: int, weeks: int, players_index, teams_index, id
 
 HISTORICAL_PICK_SLOT_CACHE: Dict[Tuple[str, str, int], Dict[int, int]] = {}
 
+# Pure pick-slot ordering rules live in utils/pick_slots.py so they can be
+# unit-tested without the pandas/DB stack.
+from utils.pick_slots import (  # noqa: E402
+    compute_pick_slots as _pk_compute_pick_slots,
+    pick_label as _pk_pick_label,
+    placements_from_bracket as _pk_placements_from_bracket,
+    slots_from_regular_season as _pk_slots_from_regular_season,
+)
+
+
 def build_historical_pick_slot_map(
         platform: str,
         root_league_id: str,
@@ -6926,64 +6909,19 @@ def build_historical_pick_slot_map(
     total_teams = len(reg_ranks) or len(reg_team_stats)
 
     # ---- Try to get playoff bracket for accurate final standings ----
+    # Ordering rules live in utils/pick_slots.py (pure, unit-tested).
     slot_map: Dict[int, int] = {}
     try:
         winners_bracket = get_bracket(platform, resolved_league_id, "winners", source_season) or []
-
         if winners_bracket:
-            # Collect every roster_id that appears in the bracket as a direct integer
-            playoff_rids: set[int] = set()
-            for m in winners_bracket:
-                for key in ("t1", "t2", "w", "l"):
-                    v = m.get(key)
-                    if isinstance(v, int) and v > 0:
-                        playoff_rids.add(v)
-
-            # Determine final placement from matchups that have a "p" field.
-            # Sleeper sets p on the decisive matchup for each placement:
-            #   winner → placement p, loser → placement p+1
-            playoff_placements: Dict[int, int] = {}
-            for m in winners_bracket:
-                p = m.get("p")
-                if p is None:
-                    continue
-                p = int(p)
-                w = m.get("w")
-                l = m.get("l")
-                if isinstance(w, int) and w > 0:
-                    playoff_placements[w] = p
-                if isinstance(l, int) and l > 0:
-                    playoff_placements[l] = p + 1
-
-            if playoff_placements:
-                # Non-playoff teams: assign slots 1…N ordered worst→best regular season
-                non_playoff = sorted(
-                    [(rid, rank) for rid, rank in reg_ranks.items() if rid not in playoff_rids],
-                    key=lambda x: x[1],   # highest rank number = worst record
-                    reverse=True,
-                )
-                # Playoff teams: assign next slots ordered by worst→best playoff finish
-                playoff_ordered = sorted(
-                    [(rid, place) for rid, place in playoff_placements.items()],
-                    key=lambda x: x[1],   # highest placement number = worst finish
-                    reverse=True,
-                )
-
-                slot = 1
-                for rid, _ in non_playoff:
-                    slot_map[rid] = slot
-                    slot += 1
-                for rid, _ in playoff_ordered:
-                    slot_map[rid] = slot
-                    slot += 1
-
+            playoff_rids, playoff_placements = _pk_placements_from_bracket(winners_bracket)
+            slot_map = _pk_compute_pick_slots(reg_ranks, playoff_rids, playoff_placements)
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
     # ---- Fallback: regular-season standings only ----
     if not slot_map:
-        for rid, rank in reg_ranks.items():
-            slot_map[rid] = total_teams - rank + 1
+        slot_map = _pk_slots_from_regular_season(reg_ranks, total_teams)
 
     HISTORICAL_PICK_SLOT_CACHE[cache_key] = slot_map
     return slot_map
@@ -7050,12 +6988,7 @@ def format_pick_display_label(
         current_season=current_season,
         pick=pick,
     )
-
-    if exact_slot is not None:
-        return f"{year} {rnd}.{exact_slot:02d}"
-
-    suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
-    return f"{year} {rnd}{suffix} (Mid)"
+    return _pk_pick_label(year, rnd, exact_slot)
 
 
 # ── TE premium scoring helpers ───────────────────────────────────────────────
@@ -7981,11 +7914,8 @@ def build_activity_body(ctx: dict) -> str:
 from utils.roster_strength import weighted_pos_strength as _weighted_pos_strength  # noqa: E402
 
 
-def _avg_pick_value_for_round(by_id: dict, season: int, rnd: int) -> float:
-    """Average model value of all picks matching season + round prefix."""
-    prefix = f"{season}_{rnd}_"
-    vals = [v for k, v in by_id.items() if k.startswith(prefix)]
-    return (sum(vals) / len(vals)) if vals else 0.0
+# Pure logic lives in utils/pick_slots.py; re-exported under the original name.
+from utils.pick_slots import avg_pick_value_for_round as _avg_pick_value_for_round  # noqa: E402
 
 
 def _team_pick_value(

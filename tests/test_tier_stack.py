@@ -2,7 +2,12 @@
 
 Pure logic — no app / DB import — so these run anywhere pytest does.
 """
-from utils.tier_stack import NUM_TIERS, apply_tier_stack_adjustment, asset_tier
+from utils.tier_stack import (
+    NUM_TIERS,
+    apply_tier_stack_adjustment,
+    asset_tier,
+    build_tier_caps,
+)
 
 
 # ---- asset_tier -----------------------------------------------------------
@@ -92,3 +97,22 @@ def test_annotations_written_on_each_item():
             assert "tier" in item
             assert item["stack_mult"] == 1.0
             assert "effective_value" in item
+
+
+# ---- build_tier_caps ------------------------------------------------------
+
+def test_tier_caps_endpoints():
+    caps = build_tier_caps(NUM_TIERS)
+    assert caps[1] == 1.0
+    assert caps[NUM_TIERS] == 0.38
+
+
+def test_tier_caps_monotonically_decreasing():
+    caps = build_tier_caps(NUM_TIERS)
+    vals = [caps[t] for t in range(1, NUM_TIERS + 1)]
+    assert vals == sorted(vals, reverse=True)
+
+
+def test_tier_caps_single_tier():
+    assert build_tier_caps(1) == {1: 1.0}
+    assert build_tier_caps(0) == {1: 1.0}
