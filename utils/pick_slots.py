@@ -104,3 +104,49 @@ def avg_pick_value_for_round(by_id: dict, season: int, rnd: int) -> float:
     prefix = f"{season}_{rnd}_"
     vals = [v for k, v in by_id.items() if k.startswith(prefix)]
     return (sum(vals) / len(vals)) if vals else 0.0
+
+
+def is_pick_asset_id(asset_id) -> bool:
+    """A draft-pick asset id looks like '2026_1_01' or '2026_1_early'
+    (year_round_slotOrBucket). Player ids are bare numeric Sleeper ids."""
+    parts = str(asset_id or "").split("_")
+    if len(parts) < 2:
+        return False
+    yr = parts[0]
+    return len(yr) == 4 and yr.isdigit() and parts[1].isdigit()
+
+
+def parse_pick_asset(pick_id) -> Optional[dict]:
+    """Parse a pick asset id into its parts plus a display name.
+
+    Returns {"season", "round", "slot" (int or None), "slot_raw" (the third
+    segment verbatim, e.g. "01" or "early"), "bucket" ("Early"/"Mid"/"Late" or
+    None), "name"} or None when the id is not a recognizable pick.
+    Names: "2026 1.03" (exact slot), "2026 1st (Early)" (bucket),
+    "2026 1st" (round only).
+    """
+    if not is_pick_asset_id(pick_id):
+        return None
+    parts = str(pick_id).split("_")
+    try:
+        yr = int(parts[0])
+        rnd = int(parts[1])
+    except (ValueError, IndexError):
+        return None
+    third = parts[2] if len(parts) >= 3 else ""
+    sfx = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
+    bkt = {"early": "Early", "mid": "Mid", "late": "Late"}.get(third.lower())
+    if bkt:
+        name = f"{yr} {rnd}{sfx} ({bkt})"
+    elif third.isdigit():
+        name = f"{yr} {rnd}.{int(third):02d}"
+    else:
+        name = f"{yr} {rnd}{sfx}"
+    return {
+        "season": yr,
+        "round": rnd,
+        "slot": int(third) if third.isdigit() else None,
+        "slot_raw": third,
+        "bucket": bkt,
+        "name": name,
+    }

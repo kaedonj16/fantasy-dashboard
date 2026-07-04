@@ -2,6 +2,8 @@
 from utils.pick_slots import (
     avg_pick_value_for_round,
     compute_pick_slots,
+    is_pick_asset_id,
+    parse_pick_asset,
     pick_label,
     placements_from_bracket,
     slots_from_regular_season,
@@ -98,3 +100,47 @@ class TestAvgPickValueForRound:
 
     def test_no_matches(self):
         assert avg_pick_value_for_round(self.BY_ID, 2027, 1) == 0.0
+
+
+class TestIsPickAssetId:
+    def test_slot_and_bucket_forms(self):
+        assert is_pick_asset_id("2026_1_01")
+        assert is_pick_asset_id("2026_1_early")
+        assert is_pick_asset_id("2026_2")
+
+    def test_player_ids_rejected(self):
+        assert not is_pick_asset_id("4046")       # bare Sleeper id
+        assert not is_pick_asset_id("")
+        assert not is_pick_asset_id(None)
+
+    def test_malformed_rejected(self):
+        assert not is_pick_asset_id("26_1_01")     # 2-digit year
+        assert not is_pick_asset_id("year_1_01")   # non-numeric year
+        assert not is_pick_asset_id("2026_x_01")   # non-numeric round
+
+
+class TestParsePickAsset:
+    def test_exact_slot(self):
+        p = parse_pick_asset("2026_1_03")
+        assert p["season"] == 2026 and p["round"] == 1
+        assert p["slot"] == 3 and p["slot_raw"] == "03"
+        assert p["bucket"] is None
+        assert p["name"] == "2026 1.03"
+
+    def test_bucket(self):
+        p = parse_pick_asset("2027_2_early")
+        assert p["bucket"] == "Early"
+        assert p["slot"] is None and p["slot_raw"] == "early"
+        assert p["name"] == "2027 2nd (Early)"
+
+    def test_round_only(self):
+        p = parse_pick_asset("2026_3")
+        assert p["slot_raw"] == ""
+        assert p["name"] == "2026 3rd"
+
+    def test_fourth_round_suffix(self):
+        assert parse_pick_asset("2026_4_mid")["name"] == "2026 4th (Mid)"
+
+    def test_invalid_returns_none(self):
+        assert parse_pick_asset("4046") is None
+        assert parse_pick_asset(None) is None

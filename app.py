@@ -23110,14 +23110,12 @@ def api_archetype_suggestions():
         return _api_err("Archetype suggestions failed", exc)
 
 
-def _is_pick_asset_id(asset_id: str) -> bool:
-    """A draft-pick asset id looks like '2026_1_01' or '2026_1_early'
-    (year_round_slotOrBucket). Player ids are bare numeric Sleeper ids."""
-    parts = str(asset_id or "").split("_")
-    if len(parts) < 2:
-        return False
-    yr = parts[0]
-    return len(yr) == 4 and yr.isdigit() and parts[1].isdigit()
+# Pick-asset id parsing lives in utils/pick_slots.py; re-exported under the
+# original name.
+from utils.pick_slots import (  # noqa: E402
+    is_pick_asset_id as _is_pick_asset_id,
+    parse_pick_asset as _parse_pick_asset,
+)
 
 
 def _resolve_pick_asset(pick_id: str, num_teams: int, values_by_id: Optional[dict] = None) -> Optional[dict]:
@@ -23127,23 +23125,14 @@ def _resolve_pick_asset(pick_id: str, num_teams: int, values_by_id: Optional[dic
     Returns {name, value, position:'PICK', is_pick, pick_season, pick_round,
     pick_order} or None if the id is not a recognizable pick.
     """
-    if not _is_pick_asset_id(pick_id):
+    parsed = _parse_pick_asset(pick_id)
+    if not parsed:
         return None
-    parts = str(pick_id).split("_")
-    try:
-        yr  = int(parts[0])
-        rnd = int(parts[1])
-    except (ValueError, IndexError):
-        return None
-    third = parts[2] if len(parts) >= 3 else ""
-    sfx = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
-    bkt = {"early": "Early", "mid": "Mid", "late": "Late"}.get(third.lower())
-    if bkt:
-        name = f"{yr} {rnd}{sfx} ({bkt})"
-    elif third.isdigit():
-        name = f"{yr} {rnd}.{int(third):02d}"
-    else:
-        name = f"{yr} {rnd}{sfx}"
+    yr    = parsed["season"]
+    rnd   = parsed["round"]
+    third = parsed["slot_raw"]
+    bkt   = parsed["bucket"]
+    name  = parsed["name"]
 
     # Value: in-memory value table → calibrated pick value table → model_values.json
     # → realistic round default. Mirrors the slot→bucket→round-average hierarchy
