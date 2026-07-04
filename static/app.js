@@ -8046,9 +8046,11 @@ document.addEventListener('DOMContentLoaded', function() {
         if (isCollapsed) {
           targetBody.classList.remove('collapsed');
           this.classList.remove('collapsed');
+          this.setAttribute('aria-expanded', 'true');
         } else {
           targetBody.classList.add('collapsed');
           this.classList.add('collapsed');
+          this.setAttribute('aria-expanded', 'false');
         }
       }
     });

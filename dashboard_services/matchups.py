@@ -872,7 +872,7 @@ def render_matchup_slide(
         record = t.get('record', '0-0')
         username = t.get('username') or ''
         ava = t.get("avatar") or ""
-        img_html = f"<img class='avatar m-av' src='{ava}' onerror=\"this.style.display='none'\">" if ava else ""
+        img_html = f"<img class='avatar m-av' src='{ava}' alt='' onerror=\"this.style.display='none'\">" if ava else ""
         name_el = f"<div class='m-team-name team-clickable' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'>{name}</div>"
         if side == 'left':
             meta = f"<div class='m-team-meta'>{record} &bull; @{username}</div>"
@@ -1206,7 +1206,9 @@ def render_matchup_slide(
         l_bar = win_green if l_leading else lose_fade
         r_bar = win_green if not l_leading else lose_fade
         track_bg = f"linear-gradient(to right,{l_bar} {lp}%,{r_bar} {lp}%)"
-        win_bar_html = f"""<div class="m-win-bar">
+        _wp_lname = str(m['left'].get('name') or 'left team').replace('"', '')
+        _wp_rname = str(m['right'].get('name') or 'right team').replace('"', '')
+        win_bar_html = f"""<div class="m-win-bar" role="img" aria-label="Win probability: {_wp_lname} {lp} percent, {_wp_rname} {rp} percent">
   <span class="m-wp-pct" style="color:{l_col};">{lp}%</span>
   <div class="m-wp-track" style="background:{track_bg};"></div>
   <span class="m-wp-pct" style="color:{r_col};text-align:right;">{rp}%</span>

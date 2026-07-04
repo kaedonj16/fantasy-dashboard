@@ -65,6 +65,7 @@ from dashboard_services.changelog import CHANGELOG
 from dashboard_services.injuries import build_injury_report, render_injury_accordion
 from dashboard_services.matchups import (
     compute_team_projections_for_weeks,
+    compute_win_prob,
     render_matchup_carousel_weeks,
     render_matchup_slide,
 )
@@ -149,6 +150,11 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+# Count every warning/error that reaches the logging system so silent
+# degradation is visible via /api/health/errors instead of lost in stdout.
+from utils.error_monitor import install as _install_error_monitor  # noqa: E402
+_install_error_monitor()
 
 
 def _api_err(msg: str = "Request failed", e: Exception = None, code: int = 500):
@@ -1596,6 +1602,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         _weekly_items = [
             ("Matchups",     "page_weekly", "weekly", False),
             ("Weekly Recap", "page_recap",  "recap",  False),
+            ("Lineup Efficiency", "page_optimal", "optimal", False),
         ]
         # Redzone lives inside the Weekly dropdown. When a game is actually
         # scheduled for today the Weekly button glows and the Redzone item
@@ -1613,7 +1620,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             if _rz_live:
                 _rz_pulse = "nav-pill-redzone-live"
         nav_pills.append(nav_pill_dropdown(
-            "Weekly", _weekly_items, ["weekly", "recap", "redzone"],
+            "Weekly", _weekly_items, ["weekly", "recap", "redzone", "optimal"],
             "weeklyNavDropdown", btn_extra_cls=_rz_pulse,
         ))
     nav_pills.append(nav_pill_dropdown("League", [
@@ -3718,7 +3725,7 @@ def render_standings_compact(team_stats, length=None, movement=None) -> str:
     return f"""
         <table class="standings-table standings-compact" data-page="standings">
           <thead>
-            <tr><th>#</th><th>Team</th><th>Rec</th><th>PF</th></tr>
+            <tr><th scope='col'>#</th><th scope='col'>Team</th><th scope='col'>Rec</th><th scope='col'>PF</th></tr>
           </thead>
           <tbody>
             {''.join(rows)}
@@ -3782,14 +3789,14 @@ def render_standings(team_stats, length) -> str:
         <table class="standings-table" data-page="standings">
           <thead>
             <tr>
-              <th>Rank</th>
-              <th>Team</th>
-              <th>Record</th>
-              <th>PF</th>
-              <th>PA</th>
-              <th>Streak</th>
-              <th>SOS Past</th>
-              <th>SOS Future</th>
+              <th scope="col">Rank</th>
+              <th scope="col">Team</th>
+              <th scope="col">Record</th>
+              <th scope="col">PF</th>
+              <th scope="col">PA</th>
+              <th scope="col">Streak</th>
+              <th scope="col">SOS Past</th>
+              <th scope="col">SOS Future</th>
             </tr>
           </thead>
           <tbody>
@@ -3921,6 +3928,155 @@ def _render_usage_movers(ctx: dict, viewer_roster_id) -> str:
         return ""
 
 
+def _viewer_lineup_alert_html(ctx: dict, viewer_roster_id) -> str:
+    """Warning strip for the Season Hub when the viewer's current starters have
+    problems: empty slots, serious injury designations, or byes. Empty string
+    when the lineup is clean or the viewer has no team."""
+    if not viewer_roster_id:
+        return ""
+    try:
+        from utils.lineup_issues import find_lineup_issues
+
+        rosters = ctx.get("rosters") or []
+        roster = next(
+            (r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)),
+            None,
+        )
+        if not roster:
+            return ""
+        starters = [str(p) for p in (roster.get("starters") or [])]
+        if not starters:
+            return ""
+
+        season = int(ctx.get("current_season") or 0)
+        current_week = int(ctx.get("current_week") or 0)
+        players_map = ctx.get("players_map") or {}
+
+        # Injury designations live only on the full Sleeper players feed.
+        try:
+            full_players = get_players_global() or {}
+        except Exception:
+            full_players = {}
+
+        player_info = {}
+        for pid in starters:
+            base = players_map.get(pid) or {}
+            full = full_players.get(pid) or {}
+            player_info[pid] = {
+                "name": base.get("name") or full.get("full_name") or "",
+                "team": base.get("team") or full.get("team") or "",
+                "injury_status": full.get("injury_status") or "",
+            }
+
+        # Teams with a game this week; empty set skips bye detection.
+        teams_playing = set()
+        try:
+            for g in (load_week_schedule(season, current_week) or []):
+                for side in ("home", "away"):
+                    t = str(g.get(side) or "").upper()
+                    if t:
+                        teams_playing.add(t)
+        except Exception:
+            teams_playing = set()
+
+        issues = find_lineup_issues(starters, player_info, teams_playing)
+        if not issues:
+            return ""
+
+        platform = ctx.get("platform", "sleeper")
+        league_id = ctx.get("league_id", "")
+        fix_url = url_for(
+            "page_weekly", platform=platform, season=season, league_id=league_id
+        )
+        n = len(issues)
+        title = f"{n} lineup issue" + ("s" if n > 1 else "")
+        items = "".join(
+            f"<li>{html.escape(i['detail'])}</li>" for i in issues[:6]
+        )
+        return f"""
+        <section class="os-card lineup-alert-card">
+          <div class="lineup-alert-head">
+            <span class="lineup-alert-title">{title} for Week {current_week}</span>
+            <a class="os-section-link" href="{fix_url}">Fix your lineup &rarr;</a>
+          </div>
+          <ul class="lineup-alert-list">{items}</ul>
+        </section>"""
+    except Exception:
+        logger.debug("lineup alert failed", exc_info=True)
+        return ""
+
+
+def _render_bench_check(ctx: dict, viewer_roster_id, last_final_week: int) -> str:
+    """One-line post-week feedback: how many points the viewer's optimal lineup
+    left on the bench in the last finalized week, linking to the Lineup
+    Efficiency page. Empty string when there's nothing to say."""
+    if not viewer_roster_id or not last_final_week:
+        return ""
+    try:
+        matchups_by_week = ctx.get("matchups_by_week") or {}
+        team = None
+        for m in matchups_by_week.get(last_final_week, []):
+            for side in ("left", "right"):
+                t = m.get(side) or {}
+                if str(t.get("roster_id", "")) == str(viewer_roster_id):
+                    team = t
+                    break
+            if team:
+                break
+        if not team:
+            return ""
+
+        starters = team.get("starters") or []
+        bench = team.get("bench") or []
+        if not starters:
+            return ""
+        pts_map = {p["pid"]: float(p.get("pts") or 0) for p in starters + bench}
+        pos_map = {p["pid"]: str(p.get("pos") or "") for p in starters + bench}
+        actual = sum(float(p.get("pts") or 0) for p in starters)
+
+        roster_positions = ctx.get("roster_positions")
+        if roster_positions is not None and hasattr(roster_positions, "tolist"):
+            roster_positions = roster_positions.tolist()
+        if not roster_positions:
+            return ""
+
+        from utils.optimal_lineup import compute_optimal_lineup
+        _opt_set, opt_pts = compute_optimal_lineup(
+            pts_map, pos_map, roster_positions, list(pts_map)
+        )
+        if not opt_pts:
+            return ""
+        left_on_bench = opt_pts - actual
+
+        platform = ctx.get("platform", "sleeper")
+        season = ctx.get("current_season")
+        league_id = ctx.get("league_id", "")
+        eff_url = url_for(
+            "page_optimal", platform=platform, season=season, league_id=league_id
+        )
+        if left_on_bench < 1.0:
+            msg = (
+                f"Week {last_final_week} bench check: you started your optimal "
+                f"lineup. Nothing left on the bench."
+            )
+        else:
+            msg = (
+                f"Week {last_final_week} bench check: your optimal lineup scored "
+                f"{opt_pts:.1f}. You scored {actual:.1f} and left "
+                f"{left_on_bench:.1f} points on the bench."
+            )
+        return f"""
+        <section class="os-card bench-check-card">
+          <div class="bench-check-row">
+            <span class="bench-check-msg">{html.escape(msg)}</span>
+            <a class="os-section-link" href="{eff_url}">Lineup efficiency &rarr;</a>
+          </div>
+        </section>"""
+    except Exception:
+        logger.debug("bench check failed", exc_info=True)
+        return ""
+
+
 def build_dashboard_body(ctx: dict) -> str:
     league_id = ctx["league_id"]
     season = ctx["current_season"]
@@ -3960,12 +4116,15 @@ def build_dashboard_body(ctx: dict) -> str:
         team_stats, movement=_standings_movement(df_weekly)
     )
     usage_movers_html = _render_usage_movers(ctx, viewer_roster_id)
+    lineup_alert_html = _viewer_lineup_alert_html(ctx, viewer_roster_id)
 
     finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
     if not finalized_df.empty:
         last_final_week = int(finalized_df["week"].max())
     else:
         last_final_week = 0  # no finalized weeks yet → show projections for current week
+
+    bench_check_html = _render_bench_check(ctx, viewer_roster_id, last_final_week)
 
     _fpts_against_dash = _compute_fpts_against(season)
     _dash_vid = str(viewer_roster_id or "")
@@ -4060,8 +4219,32 @@ def build_dashboard_body(ctx: dict) -> str:
             _pf_rank = int(_pf.index[_pf["owner"].astype(str) == _vname][0]) + 1
             _hero_cards.append(("Points for", f"{float(_vrow['PF']):.0f}", _dash_ord(_pf_rank)))
             _streak = str(_vrow.get("Streak") or "").strip()
-            _hero_cards.append(("This week", f"Week {current_week}",
-                                f"{_streak} streak" if _streak else f"{len(_dash_matchups)} matchups"))
+            # Win probability for the viewer's matchup, from the same model the
+            # matchup slides' win bar uses. Only for a live/upcoming week.
+            _win_sub = ""
+            try:
+                if _dash_matchups and current_week > last_final_week:
+                    _m0 = _dash_matchups[0]
+                    _l0 = _m0.get("left") or {}
+                    _r0 = _m0.get("right") or {}
+                    if _dash_vid and _dash_vid in (str(_l0.get("roster_id", "")), str(_r0.get("roster_id", ""))):
+                        _wp_proj = (proj_by_week.get(current_week) or {}).get("projections") or {}
+                        _wp_status = (statuses.get(current_week) or {}).get("statuses", {})
+                        _wp = compute_win_prob(_l0, _r0, _wp_status, _wp_proj)
+                        if str(_r0.get("roster_id", "")) == _dash_vid:
+                            _wp = 1.0 - _wp
+                        _win_sub = f"{round(_wp * 100)}% to win"
+            except Exception:
+                logger.debug("hero win prob failed", exc_info=True)
+            if _win_sub and _streak:
+                _tw_sub = f"{_streak} streak, {_win_sub}"
+            elif _win_sub:
+                _tw_sub = _win_sub
+            elif _streak:
+                _tw_sub = f"{_streak} streak"
+            else:
+                _tw_sub = f"{len(_dash_matchups)} matchups"
+            _hero_cards.append(("This week", f"Week {current_week}", _tw_sub))
         else:
             _top = _hs.iloc[0]
             _hero_cards.append(("League leader", str(_top["owner"]),
@@ -4118,7 +4301,7 @@ def build_dashboard_body(ctx: dict) -> str:
             </div>
             <div class="os-section-head-actions">
               {_section_page_link("Full standings", "page_standings", platform, season, league_id)}
-              <button type="button" class="card-collapse-toggle" data-target="dash-standings-body">&#9660;</button>
+              <button type="button" class="card-collapse-toggle" aria-label="Toggle section" aria-expanded="true" data-target="dash-standings-body">&#9660;</button>
             </div>
           </div>
           <div class="card-collapsible-body" id="dash-standings-body">
@@ -4142,11 +4325,13 @@ def build_dashboard_body(ctx: dict) -> str:
           </div>
         </section>
 
+        {lineup_alert_html}
         {gm_card_html}
         {front_office_card_html}
         {usage_movers_html}
 
         {matchup_html}
+        {bench_check_html}
       </main>
 
       <aside class="os-right-col">
@@ -5598,7 +5783,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
                       data-viewer-roster-id="{viewer_roster_id}">
                 Generate Report
               </button>
-              <button type="button" class="card-collapse-toggle" data-target="gm-memo-body">▼</button>
+              <button type="button" class="card-collapse-toggle" aria-label="Toggle section" aria-expanded="true" data-target="gm-memo-body">▼</button>
             </div>
           </div>
           <div class="os-ai-copy card-collapsible-body" id="gm-memo-body">
@@ -5627,7 +5812,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
               <h2 class="os-section-title">Front Office Briefing</h2>
               <div class="os-section-subtitle">Offseason priorities</div>
             </div>
-            <button type="button" class="card-collapse-toggle" data-target="front-office-body">▼</button>
+            <button type="button" class="card-collapse-toggle" aria-label="Toggle section" aria-expanded="true" data-target="front-office-body">▼</button>
           </div>
           <div class="os-ai-copy card-collapsible-body" id="front-office-body">
             {front_office_html}
@@ -5662,7 +5847,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             </div>
             <div class="os-section-head-actions">
               {_section_page_link("All teams", "page_teams", platform, season, ctx.get("league_id"))}
-              <button type="button" class="card-collapse-toggle" data-target="team-snapshot-body">▼</button>
+              <button type="button" class="card-collapse-toggle" aria-label="Toggle section" aria-expanded="true" data-target="team-snapshot-body">▼</button>
             </div>
           </div>
           <div class="os-snapshot-list card-collapsible-body" id="team-snapshot-body">
@@ -5804,7 +5989,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             </div>
             <div class="os-section-head-actions">
               {_section_page_link("Waivers & Start/Sit", "page_waivers", platform, season, ctx.get("league_id"))}
-              <button type="button" class="card-collapse-toggle" data-target="waiver-assets-body">▼</button>
+              <button type="button" class="card-collapse-toggle" aria-label="Toggle section" aria-expanded="true" data-target="waiver-assets-body">▼</button>
             </div>
           </div>
           <div class="os-waiver-list card-collapsible-body" id="waiver-assets-body">
@@ -27515,6 +27700,26 @@ def api_push_preferences():
             logger.warning("[push] preferences put error: %s", exc)
             return jsonify({"error": str(exc)}), 500
         return jsonify({"ok": True})
+
+
+@app.route("/api/health/errors")
+@limiter.limit("30 per minute")
+def api_health_errors():
+    """Warning/error counts since process start, most frequent first.
+    Requires X-Admin-Secret header. Pass ?reset=1 to clear the counters."""
+    secret = request.headers.get("X-Admin-Secret", "")
+    admin_secret = os.environ.get("ADMIN_SECRET", "")
+    if not admin_secret or secret != admin_secret:
+        return jsonify({"error": "Forbidden"}), 403
+    from utils import error_monitor
+    if request.args.get("reset") == "1":
+        error_monitor.reset()
+        return jsonify({"ok": True, "reset": True})
+    try:
+        limit = int(request.args.get("limit") or 100)
+    except ValueError:
+        limit = 100
+    return jsonify(error_monitor.snapshot(limit=limit))
 
 
 @app.route("/api/push/broadcast", methods=["POST"])

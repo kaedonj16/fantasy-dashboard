@@ -240,17 +240,74 @@ def notify_lineup_lock():
                 return
 
         # Send per league so each subscriber gets a link into their own league's
-        # weekly hub (everyone subscribes while signed in to a league).
+        # weekly hub. Owners whose starting lineup has real problems (empty
+        # slots, serious injury designations, byes) get a specific message
+        # instead of the generic reminder.
+        from utils.lineup_issues import find_lineup_issues, summarize_issues
+
+        teams_playing = set()
+        for g in games:
+            for side in ("home", "away"):
+                t = str(g.get(side) or "").upper()
+                if t:
+                    teams_playing.add(t)
+
+        nfl_players = None
         sent = 0
         for league_id, platform in _get_subscribed_leagues():
-            sent += _broadcast_league(
-                league_id,
-                title="Lineups lock soon",
-                body=f"Week {week} kicks off in about an hour. Make sure your starters are set.",
-                url=f"/{platform}/{season}/{league_id}/weekly",
-                tag=f"lineup-lock-{season}-{week}",
-                notif_type="lineup_lock",
+            url = f"/{platform}/{season}/{league_id}/weekly"
+            tag = f"lineup-lock-{season}-{week}"
+            generic = f"Week {week} kicks off in about an hour. Make sure your starters are set."
+
+            issue_summary_by_owner: dict = {}
+            if platform == "sleeper":
+                try:
+                    from dashboard_services.api import get_nfl_players, get_rosters
+                    if nfl_players is None:
+                        nfl_players = get_nfl_players() or {}
+                    for roster in (get_rosters(league_id) or []):
+                        owner_id = roster.get("owner_id") or ""
+                        starters = [str(p) for p in (roster.get("starters") or [])]
+                        if not owner_id or not starters:
+                            continue
+                        player_info = {}
+                        for pid in starters:
+                            pl = nfl_players.get(pid) or {}
+                            player_info[pid] = {
+                                "name": pl.get("full_name") or pl.get("last_name") or "",
+                                "team": pl.get("team") or "",
+                                "injury_status": pl.get("injury_status") or "",
+                            }
+                        issues = find_lineup_issues(starters, player_info, teams_playing)
+                        if issues:
+                            issue_summary_by_owner[str(owner_id)] = summarize_issues(issues)
+                except Exception as le:
+                    logger.warning("[notify] lineup_lock issue scan %s: %s", league_id, le)
+
+            with get_conn() as conn:
+                rows = conn.execute(
+                    "SELECT endpoint, p256dh, auth, prefs, owner_id "
+                    "FROM push_subscriptions WHERE league_id = %s",
+                    (str(league_id),)
+                ).fetchall()
+
+            normal = [r for r in rows if str(r[4] or "") not in issue_summary_by_owner]
+            sent += _send_to_endpoints(
+                _filter_prefs(normal, "lineup_lock"),
+                "Lineups lock soon", generic, url, tag,
             )
+
+            flagged_by_owner: dict = {}
+            for r in rows:
+                oid = str(r[4] or "")
+                if oid in issue_summary_by_owner:
+                    flagged_by_owner.setdefault(oid, []).append(r)
+            for oid, orows in flagged_by_owner.items():
+                body = f"Week {week} kicks off in about an hour. {issue_summary_by_owner[oid]}."
+                sent += _send_to_endpoints(
+                    _filter_prefs(orows, "lineup_lock"),
+                    "Your lineup needs attention", body, url, tag,
+                )
         logger.info("[notify] lineup_lock week %s sent %d", week, sent)
 
         with get_conn() as conn:
