@@ -5635,6 +5635,22 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         </section>
         """
 
+    # Projected playoff-odds tile — the offseason hub runs on the upcoming
+    # season, which has no games yet, so /api/playoff-odds returns the sim's
+    # preseason projection (is_projected). Placeholder is filled client-side and
+    # removes itself when the schedule/roster data isn't ready to project.
+    _os_playoff_tile_html = ""
+    if viewer_roster_id:
+        _os_playoff_tile_html = f"""<div class="os-stat-card os-stat-playoff" id="os-playoff-tile"
+              data-platform="{html.escape(str(platform))}"
+              data-league="{html.escape(str(ctx.get('league_id', '')))}"
+              data-season="{html.escape(str(season))}"
+              data-roster="{html.escape(str(viewer_roster_id))}">
+              <div class="os-stat-label">Projected playoff odds</div>
+              <div class="os-stat-value" id="os-playoff-val">&mdash;</div>
+              <div class="os-stat-sub" id="os-playoff-sub">Projecting&hellip;</div>
+            </div>"""
+
     body = f"""
     <div class="os-layout">
       <aside class="os-left-col">
@@ -5683,6 +5699,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
               <div class="os-stat-value">{total_draft_capital:,.0f}</div>
               <div class="os-stat-sub">Based on modeled pick values</div>
             </div>
+            {_os_playoff_tile_html}
           </div>
 
           <div class="os-hero-footer" id="osDraftSubtext">
@@ -5739,6 +5756,38 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
           setInterval(tick, 60000);
           setInterval(refresh, 30000);
           refresh();
+        }})();
+        </script>
+        <script>
+        (function() {{
+          var el = document.getElementById('os-playoff-tile');
+          if (!el) return;
+          var rid = el.getAttribute('data-roster');
+          var qs = 'platform=' + encodeURIComponent(el.getAttribute('data-platform')) +
+                   '&league_id=' + encodeURIComponent(el.getAttribute('data-league')) +
+                   '&season=' + encodeURIComponent(el.getAttribute('data-season'));
+          fetch('/api/playoff-odds?' + qs)
+            .then(function(r) {{ return r.ok ? r.json() : null; }})
+            .then(function(d) {{
+              var odds = (d && d.odds) || [];
+              var row = null;
+              for (var i = 0; i < odds.length; i++) {{
+                if (String(odds[i].roster_id) === String(rid)) {{ row = odds[i]; break; }}
+              }}
+              // Only a genuine preseason projection belongs here; if the sim
+              // couldn't project (no schedule/rosters yet) there's nothing to show.
+              if (!row || !row.is_projected) {{ el.remove(); return; }}
+              var pct = Math.round(row.playoff_pct || 0);
+              var valEl = document.getElementById('os-playoff-val');
+              var subEl = document.getElementById('os-playoff-sub');
+              if (valEl) valEl.textContent = pct + '%';
+              var first = Math.round(row.first_seed_pct || 0);
+              if (subEl) subEl.textContent = first > 0
+                ? ('Projected · ' + first + '% top seed')
+                : 'Projected from current rosters';
+              el.classList.add('is-loaded');
+            }})
+            .catch(function() {{ el.remove(); }});
         }})();
         </script>
 
