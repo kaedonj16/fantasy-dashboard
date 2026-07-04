@@ -9994,88 +9994,17 @@ from utils.redzone_stats import (  # noqa: E402
 # renders the individual plays (targets / catches / carries / TDs) that occurred.
 
 _RZ_DEMO_START = 150     # sim seconds the page-load snapshot is built at
-_RZ_DEMO_GAME  = 600     # sim seconds = "full game"
-_RZ_DEMO_SCORING = {
-    "pass_yd": 0.04, "pass_td": 4.0, "pass_int": -2.0,
-    "rush_yd": 0.1, "rush_td": 6.0,
-    "rec": 0.5, "rec_yd": 0.1, "rec_td": 6.0,
-}
 
-
-def _rz_demo_rng(seed: int):
-    s = seed & 0x7FFFFFFF or 1
-    def nxt():
-        nonlocal s
-        s = (s * 1103515245 + 12345) & 0x7FFFFFFF
-        return s / 0x7FFFFFFF
-    return nxt
-
-
-def _rz_demo_script(pid: str, pos: str) -> list:
-    """Deterministic per-player list of plays across the simulated game."""
-    r = _rz_demo_rng(sum(ord(c) for c in pid) * 2654435761)
-    plays, tt = [], 18 + int(r() * 40)
-    while tt < _RZ_DEMO_GAME:
-        roll = r()
-        if pos == "QB":
-            if roll < 0.76:
-                plays.append({"t": tt, "kind": "pass", "yds": 4 + int(r() * 28),
-                              "td": 1 if r() < 0.11 else 0})
-            elif roll < 0.90:
-                plays.append({"t": tt, "kind": "rush", "yds": 1 + int(r() * 12),
-                              "td": 1 if r() < 0.08 else 0})
-            else:
-                plays.append({"t": tt, "kind": "int"})
-            tt += 32 + int(r() * 40)
-        elif pos == "RB":
-            if roll < 0.66:
-                plays.append({"t": tt, "kind": "rush", "yds": int(r() * 14),
-                              "td": 1 if r() < 0.07 else 0})
-            elif roll < 0.86:
-                plays.append({"t": tt, "kind": "rec", "yds": 2 + int(r() * 11),
-                              "td": 1 if r() < 0.05 else 0})
-            else:
-                plays.append({"t": tt, "kind": "target"})
-            tt += 46 + int(r() * 54)
-        else:  # WR / TE
-            if roll < 0.50:
-                plays.append({"t": tt, "kind": "rec", "yds": 3 + int(r() * 22),
-                              "td": 1 if r() < 0.09 else 0})
-            else:
-                plays.append({"t": tt, "kind": "target"})
-            tt += 50 + int(r() * 70)
-    return plays
-
-
-def _rz_demo_fold(plays: list, t: float) -> dict:
-    L = {"pass_yds": 0.0, "pass_td": 0.0, "int": 0.0, "carries": 0.0,
-         "rush_yds": 0.0, "rush_td": 0.0, "rec": 0.0, "rec_yds": 0.0,
-         "rec_td": 0.0, "targets": 0.0}
-    for p in plays:
-        if p["t"] > t:
-            break
-        k = p["kind"]
-        if k == "rush":
-            L["carries"] += 1; L["rush_yds"] += p["yds"]; L["rush_td"] += p.get("td", 0)
-        elif k == "rec":
-            L["rec"] += 1; L["targets"] += 1; L["rec_yds"] += p["yds"]; L["rec_td"] += p.get("td", 0)
-        elif k == "target":
-            L["targets"] += 1
-        elif k == "pass":
-            L["pass_yds"] += p["yds"]; L["pass_td"] += p.get("td", 0)
-        elif k == "int":
-            L["int"] += 1
-    return L
-
-
-def _rz_demo_pts(L: dict) -> float:
-    s = _RZ_DEMO_SCORING
-    return round(
-        L["pass_yds"] * s["pass_yd"] + L["pass_td"] * s["pass_td"] + L["int"] * s["pass_int"]
-        + L["rush_yds"] * s["rush_yd"] + L["rush_td"] * s["rush_td"]
-        + L["rec"] * s["rec"] + L["rec_yds"] * s["rec_yd"] + L["rec_td"] * s["rec_td"],
-        2,
-    )
+# The deterministic play-by-play simulation lives in utils/redzone_demo.py so
+# it can be unit-tested; re-exported here under the original names.
+from utils.redzone_demo import (  # noqa: E402
+    DEMO_GAME_SECONDS as _RZ_DEMO_GAME,
+    DEMO_SCORING as _RZ_DEMO_SCORING,
+    demo_fold as _rz_demo_fold,
+    demo_pts as _rz_demo_pts,
+    demo_rng as _rz_demo_rng,
+    demo_script as _rz_demo_script,
+)
 
 
 # Flat points for K / DEF (no play-by-play scripting)
@@ -13670,14 +13599,12 @@ _SCHED_POS_ORDER = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "K": 4, "DEF": 5}
 
 # Normalize schedule-file team codes to the abbreviations used everywhere else
 # (e.g. the schedule uses WSH; players_index and the ratings use WAS).
-_SCHED_TEAM_ALIAS = {"WSH": "WAS", "JAC": "JAX", "LA": "LAR", "OAK": "LV",
-                     "SD": "LAC", "STL": "LAR", "ARZ": "ARI", "BLT": "BAL",
-                     "CLV": "CLE", "HST": "HOU"}
-
-
-def _norm_sched_team(t):
-    t = (t or "").upper().strip()
-    return _SCHED_TEAM_ALIAS.get(t, t)
+# Pure schedule-ease helpers live in utils/schedule_ease.py; re-exported
+# under the original names.
+from utils.schedule_ease import (  # noqa: E402
+    SCHED_TEAM_ALIAS as _SCHED_TEAM_ALIAS,
+    norm_sched_team as _norm_sched_team,
+)
 
 
 _TEAM_BYE_CACHE: dict = {}   # season -> {team: bye_week}
@@ -13723,18 +13650,7 @@ def _team_bye_map(season: int) -> dict:
     return byes
 
 
-def _sched_rank_color(rank, total):
-    """Color for a matchup by opponent's fpts-allowed rank (1 = easiest)."""
-    if not rank or not total:
-        return "#6b7280", "transparent"
-    pct = rank / total
-    if pct <= 0.25:
-        return "#22c55e", "#22c55e18"   # elite (most pts allowed)
-    if pct <= 0.50:
-        return "#84cc16", "#84cc1618"
-    if pct <= 0.75:
-        return "#f59e0b", "#f59e0b18"
-    return "#ef4444", "#ef444418"        # brutal (fewest pts allowed)
+from utils.schedule_ease import sched_rank_color as _sched_rank_color  # noqa: E402
 
 
 def _load_matchup_ratings(season: int) -> dict:
@@ -13791,13 +13707,7 @@ def _matchup_rank_table(season: int, position: str):
     return {t: i + 1 for i, (t, _) in enumerate(fpairs)}, len(fpairs), finfo, False
 
 
-def _matchup_cell_ease(rank, total, info):
-    """Per-cell ease (0-100). Prefer the z-derived ease; fall back to rank percentile."""
-    if info and info.get("ease") is not None:
-        return float(info["ease"])
-    if rank and total and total > 1:
-        return round((total - rank) / (total - 1) * 100, 1)
-    return 0.0
+from utils.schedule_ease import matchup_cell_ease as _matchup_cell_ease  # noqa: E402
 
 
 def _compute_schedule_grid(season: int, pids, weeks):
@@ -17388,20 +17298,8 @@ def api_trade_eval():
     })
 
 
-def _sanitize_for_json(obj):
-    """
-    Recursively walk obj and replace NaN/inf/-inf floats with None
-    so that json.dumps / jsonify produce valid JSON that
-    fetch().json() can parse.
-    """
-    if isinstance(obj, dict):
-        return {k: _sanitize_for_json(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_sanitize_for_json(v) for v in obj]
-    if isinstance(obj, float):
-        if math.isnan(obj) or math.isinf(obj):
-            return None
-    return obj
+# Lives in utils/json_sanitize.py; re-exported under the original name.
+from utils.json_sanitize import sanitize_for_json as _sanitize_for_json  # noqa: E402
 
 
 @app.route("/api/trade-eval/playoff-impact", methods=["POST"])
@@ -19962,17 +19860,10 @@ def api_player_game_logs(player_id: str):
         return _api_err("Request failed", e)
 
 
-def clean_nan_for_json(obj):
-    """Recursively replace NaN values with None for JSON compatibility."""
-    import math
-    if isinstance(obj, dict):
-        return {k: clean_nan_for_json(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [clean_nan_for_json(item) for item in obj]
-    elif isinstance(obj, float) and math.isnan(obj):
-        return None
-    else:
-        return obj
+# Same sanitizer as _sanitize_for_json (utils/json_sanitize.py). This name
+# previously only replaced NaN; it now also nulls infinities, which json.dumps
+# would otherwise emit as invalid-JSON Infinity literals.
+clean_nan_for_json = _sanitize_for_json
 
 
 @app.route("/api/team-details/<roster_id>")
