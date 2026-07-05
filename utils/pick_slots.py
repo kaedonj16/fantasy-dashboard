@@ -106,6 +106,57 @@ def avg_pick_value_for_round(by_id: dict, season: int, rnd: int) -> float:
     return (sum(vals) / len(vals)) if vals else 0.0
 
 
+def bucket_for_slot(slot: int, num_teams: int) -> str:
+    """Early/mid/late bucket for a draft slot within a round."""
+    if not num_teams or num_teams < 1:
+        return "mid"
+    third = num_teams / 3.0
+    if slot <= third:
+        return "early"
+    if slot <= 2 * third:
+        return "mid"
+    return "late"
+
+
+def pick_value_from_table(tbl: dict, year: int, rnd: int, slot: Optional[int] = None,
+                          num_teams: Optional[int] = None) -> float:
+    """Resolve a pick's value from a pick-value table with graceful fallback.
+
+    Lookup order: exact slot key ("2027_1_03") -> slot bucket key
+    ("2027_1_early") -> average of all slot keys in the round -> bare round
+    key ("2027_1") -> 0.0. Mirrors the hierarchy used by the trade-intel
+    resolver so a pick is never silently collapsed to a flat number when
+    finer-grained data exists.
+    """
+    tbl = tbl or {}
+
+    def _pos(v) -> float:
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            return 0.0
+        return v if v > 0 else 0.0
+
+    if slot:
+        v = _pos(tbl.get(f"{year}_{rnd}_{int(slot):02d}") or tbl.get(f"{year}_{rnd}_{int(slot)}"))
+        if v:
+            return v
+        if num_teams:
+            v = _pos(tbl.get(f"{year}_{rnd}_{bucket_for_slot(int(slot), int(num_teams))}"))
+            if v:
+                return v
+    slot_vals = [
+        _pos(v) for k, v in tbl.items()
+        if k.startswith(f"{year}_{rnd}_") and k.split("_")[-1].isdigit() and _pos(v)
+    ]
+    if slot_vals:
+        return round(sum(slot_vals) / len(slot_vals), 1)
+    v = _pos(tbl.get(f"{year}_{rnd}_mid"))
+    if v:
+        return v
+    return _pos(tbl.get(f"{year}_{rnd}"))
+
+
 def is_pick_asset_id(asset_id) -> bool:
     """A draft-pick asset id looks like '2026_1_01' or '2026_1_early'
     (year_round_slotOrBucket). Player ids are bare numeric Sleeper ids."""

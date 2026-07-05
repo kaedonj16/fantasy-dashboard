@@ -144,3 +144,56 @@ class TestParsePickAsset:
     def test_invalid_returns_none(self):
         assert parse_pick_asset("4046") is None
         assert parse_pick_asset(None) is None
+
+
+# ---- bucket_for_slot / pick_value_from_table --------------------------------
+
+from utils.pick_slots import bucket_for_slot, pick_value_from_table
+
+
+class TestBucketForSlot:
+    def test_twelve_team_thirds(self):
+        assert bucket_for_slot(1, 12) == "early"
+        assert bucket_for_slot(4, 12) == "early"
+        assert bucket_for_slot(5, 12) == "mid"
+        assert bucket_for_slot(8, 12) == "mid"
+        assert bucket_for_slot(9, 12) == "late"
+        assert bucket_for_slot(12, 12) == "late"
+
+    def test_degenerate_league_size(self):
+        assert bucket_for_slot(1, 0) == "mid"
+
+
+class TestPickValueFromTable:
+    TBL = {
+        "2027_1_01": 900.0,
+        "2027_1_02": 800.0,
+        "2027_1_early": 850.0,
+        "2027_1_mid": 500.0,
+        "2027_2": 150.0,
+    }
+
+    def test_exact_slot_wins(self):
+        assert pick_value_from_table(self.TBL, 2027, 1, slot=1, num_teams=12) == 900.0
+
+    def test_bucket_fallback_when_slot_missing(self):
+        # Slot 3 has no key; early bucket (slot 3 of 12) should be used.
+        assert pick_value_from_table(self.TBL, 2027, 1, slot=3, num_teams=12) == 850.0
+
+    def test_slot_average_when_no_slot_given(self):
+        assert pick_value_from_table(self.TBL, 2027, 1) == 850.0  # avg(900, 800)
+
+    def test_round_key_fallback(self):
+        assert pick_value_from_table(self.TBL, 2027, 2) == 150.0
+
+    def test_mid_bucket_before_round_key(self):
+        tbl = {"2027_3_mid": 60.0, "2027_3": 40.0}
+        assert pick_value_from_table(tbl, 2027, 3) == 60.0
+
+    def test_unknown_pick_is_zero(self):
+        assert pick_value_from_table(self.TBL, 2029, 1) == 0.0
+        assert pick_value_from_table({}, 2027, 1) == 0.0
+
+    def test_non_positive_values_skipped(self):
+        tbl = {"2027_1_01": 0, "2027_1_mid": -5, "2027_1": 33.0}
+        assert pick_value_from_table(tbl, 2027, 1, slot=1, num_teams=12) == 33.0

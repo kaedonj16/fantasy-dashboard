@@ -235,6 +235,27 @@ _ROSTER_API_CACHE_TTL = 180  # seconds
 _PLAYOFF_SIM_CACHE: dict = {}
 _PLAYOFF_SIM_CACHE_TTL = 3600  # 1 hour
 
+
+def _playoff_sim_cached(ctx: dict, platform: str) -> list:
+    """simulate_playoff_odds behind the module TTL cache (shared by the odds
+    API, standings seeding, the trade-window card, and draft capital)."""
+    try:
+        from data_building.simulate_playoff_odds import simulate_playoff_odds
+        key = (
+            platform,
+            str(ctx.get("league_id") or ""),
+            int(ctx.get("season") or ctx.get("current_season") or 0),
+        )
+        hit = _PLAYOFF_SIM_CACHE.get(key)
+        if hit and time.time() - hit["ts"] < _PLAYOFF_SIM_CACHE_TTL:
+            return hit["data"] or []
+        odds = simulate_playoff_odds(ctx, platform=platform) or []
+        _PLAYOFF_SIM_CACHE[key] = {"data": odds, "ts": time.time()}
+        return odds
+    except Exception:
+        logger.debug("playoff sim failed", exc_info=True)
+        return []
+
 # Cache for share card HTML (keyed by platform/league_id/season/roster_id).
 _SHARE_CARD_CACHE: dict = {}
 _SHARE_CARD_CACHE_TTL = 600  # 10 minutes
@@ -1626,7 +1647,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill_dropdown("Draft", [
         ("Draft Room",    "page_draft_room",    "draft",         False),
         ("Draft History", "page_draft_history", "draft-history", False),
-    ], ["draft", "draft-history"], "draftNavDropdown"))
+        ("Draft Capital", "page_draft_capital", "draft-capital", False),
+    ], ["draft", "draft-history", "draft-capital"], "draftNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",   "page_awards",   "awards",   False),
         ("Graphs",   "page_graphs",   "graphs",   False),
@@ -4104,6 +4126,121 @@ def _roster_moves_alert_html(ctx: dict, viewer_roster_id) -> str:
         return ""
 
 
+def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
+    """Buy/sell trade-window advisor for the Season Hub: playoff odds plus
+    roster-age standing plus the trade deadline, with partners on the opposite
+    side of the market. Empty string when it has nothing confident to say."""
+    if not viewer_roster_id:
+        return ""
+    try:
+        from utils.trade_window import trade_partners, trade_window_verdict
+
+        platform = ctx.get("platform", "sleeper")
+        odds = _playoff_sim_cached(ctx, platform)
+        if not odds:
+            return ""
+        me = next(
+            (r for r in odds if str(r.get("roster_id")) == str(viewer_roster_id)),
+            None,
+        )
+        if not me or me.get("is_complete"):
+            return ""
+        pct = float(me.get("playoff_pct") or 0)
+
+        settings = (ctx.get("league") or {}).get("settings") or {}
+        current_week = int(ctx.get("current_week") or 0)
+        try:
+            deadline = int(settings.get("trade_deadline") or 0)
+        except (TypeError, ValueError):
+            deadline = 0
+        weeks_to = None
+        if 0 < deadline < 30:
+            if current_week > deadline:
+                return ""  # deadline passed; the window is closed
+            weeks_to = deadline - current_week
+
+        # Roster-age standing: average age of each team's 8 most valuable players.
+        age_rank = None
+        n_teams = len(odds)
+        try:
+            values_by_id = {
+                str(row["id"]): row
+                for row in (get_model_value_table_cached() or [])
+                if isinstance(row, dict) and row.get("id") is not None
+            }
+            team_ages: dict = {}
+            for r in ctx.get("rosters") or []:
+                rid = str(r.get("roster_id"))
+                core = sorted(
+                    (
+                        (float(v.get("value") or 0), float(v.get("age") or 0))
+                        for p in (r.get("players") or [])
+                        if (v := values_by_id.get(str(p))) and float(v.get("age") or 0) > 0
+                    ),
+                    reverse=True,
+                )[:8]
+                if core:
+                    team_ages[rid] = sum(a for _, a in core) / len(core)
+            if str(viewer_roster_id) in team_ages and len(team_ages) >= 4:
+                _order = sorted(team_ages.items(), key=lambda kv: -kv[1])
+                age_rank = next(
+                    i + 1 for i, (rid, _) in enumerate(_order) if rid == str(viewer_roster_id)
+                )
+                n_teams = len(team_ages)
+        except Exception:
+            logger.debug("trade window age rank failed", exc_info=True)
+
+        vw = trade_window_verdict(pct, weeks_to, age_rank, n_teams)
+        partners = trade_partners(
+            [
+                {
+                    "name": r.get("team_name"),
+                    "playoff_pct": r.get("playoff_pct"),
+                    "is_viewer": str(r.get("roster_id")) == str(viewer_roster_id),
+                }
+                for r in odds
+            ],
+            vw["verdict"],
+        )
+
+        verdict = vw["verdict"]
+        titles = {"buy": "Buy window", "sell": "Sell window", "hold": "Hold"}
+        lines = []
+        if weeks_to is not None:
+            when = "this week" if weeks_to == 0 else (
+                "next week" if weeks_to == 1 else f"{weeks_to} weeks away")
+            lines.append(f"Week {deadline} trade deadline, {when}.")
+        _odds_line = f"You're at {pct:.0f}% playoff odds"
+        if age_rank and n_teams:
+            _sfx = "th" if 10 <= age_rank % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(age_rank % 10, "th")
+            _odds_line += f" with the {age_rank}{_sfx}-oldest core of {n_teams}"
+        lines.append(_odds_line + ".")
+        mod_lines = {
+            "all_in": "Your core is old and you're contending. The window is now.",
+            "youth": "Your core is young. Stay patient and keep stacking picks.",
+            "aging_bubble": "Aging core on the playoff bubble. Pick a direction before the deadline.",
+        }
+        if vw["modifier"] in mod_lines:
+            lines.append(mod_lines[vw["modifier"]])
+        if partners:
+            who = "Sellers to call" if verdict == "buy" else "Buyers to call"
+            lines.append(f"{who}: {', '.join(html.escape(p) for p in partners)}.")
+
+        items = "".join(f"<li>{line}</li>" for line in lines)
+        urgent_cls = " tw-urgent" if vw["urgent"] and verdict != "hold" else ""
+        return f"""
+        <section class="os-card trade-window-card tw-{verdict}{urgent_cls}">
+          <div class="lineup-alert-head">
+            <span class="lineup-alert-title">Trade window: {titles[verdict]}</span>
+            <a class="os-section-link" href="/trade?tab=suggestions">Trade suggestions &rarr;</a>
+          </div>
+          <ul class="lineup-alert-list">{items}</ul>
+        </section>"""
+    except Exception:
+        logger.debug("trade window card failed", exc_info=True)
+        return ""
+
+
 def _render_bench_check(ctx: dict, viewer_roster_id, last_final_week: int) -> str:
     """One-line post-week feedback: how many points the viewer's optimal lineup
     left on the bench in the last finalized week, linking to the Lineup
@@ -4216,6 +4353,7 @@ def build_dashboard_body(ctx: dict) -> str:
     usage_movers_html = _render_usage_movers(ctx, viewer_roster_id)
     lineup_alert_html = _viewer_lineup_alert_html(ctx, viewer_roster_id)
     roster_moves_html = _roster_moves_alert_html(ctx, viewer_roster_id)
+    trade_window_html = _trade_window_card_html(ctx, viewer_roster_id)
 
     finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
     if not finalized_df.empty:
@@ -4454,6 +4592,7 @@ def build_dashboard_body(ctx: dict) -> str:
         {roster_moves_html}
         {gm_card_html}
         {front_office_card_html}
+        {trade_window_html}
         {usage_movers_html}
 
         {matchup_html}
@@ -6021,7 +6160,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             <div class="os-stat-card">
               <div class="os-stat-label">Draft Capital Index</div>
               <div class="os-stat-value">{total_draft_capital:,.0f}</div>
-              <div class="os-stat-sub">Based on modeled pick values</div>
+              <div class="os-stat-sub"><a class="os-stat-sub-link" href="{url_for('page_draft_capital', platform=platform, season=season, league_id=ctx.get('league_id', ''))}">View team breakdown &rarr;</a></div>
             </div>
             {_os_playoff_tile_html}
           </div>
@@ -6991,6 +7130,7 @@ HISTORICAL_PICK_SLOT_CACHE: Dict[Tuple[str, str, int], Dict[int, int]] = {}
 from utils.pick_slots import (  # noqa: E402
     compute_pick_slots as _pk_compute_pick_slots,
     pick_label as _pk_pick_label,
+    pick_value_from_table as _pk_pick_value_from_table,
     placements_from_bracket as _pk_placements_from_bracket,
     slots_from_regular_season as _pk_slots_from_regular_season,
 )
@@ -12132,6 +12272,126 @@ def page_draft_history(platform: str = None, season: int = None, league_id: str 
     return render_page(
         "Draft History | BR Fantasy", league_id, "draft", body, platform, season,
         description="Review your league's past and live fantasy football drafts pick-by-pick.",
+    )
+
+
+def build_draft_capital_body(ctx: dict) -> str:
+    """League-wide draft capital: every team's future picks with projected
+    slots and modeled values, ranked by total capital.
+
+    Slots for next year's picks are projected from the playoff-odds sim
+    (worst projected finish picks first); later years fall back to round
+    values since their order depends on a season that hasn't been played.
+    """
+    platform = ctx.get("platform", "sleeper")
+    season = int(ctx.get("season") or ctx.get("current_season") or 0)
+    league_id = ctx.get("league_id", "")
+    rosters = ctx.get("rosters") or []
+    roster_map = ctx.get("roster_map") or {}
+    picks_by_roster = ctx.get("picks_by_roster") or {}
+    num_teams = len(rosters) or 10
+
+    # Projected draft order for picks in season+1, from projected final
+    # standings this season (fewest average final wins picks first).
+    proj_year = season + 1
+    slot_by_original: dict = {}
+    odds = _playoff_sim_cached(ctx, platform)
+    if odds:
+        _order = sorted(
+            odds,
+            key=lambda r: (
+                float(r.get("avg_final_wins") or r.get("wins") or 0),
+                float(r.get("playoff_pct") or 0),
+            ),
+        )
+        slot_by_original = {str(r.get("roster_id")): i + 1 for i, r in enumerate(_order)}
+
+    try:
+        from dashboard_services.picks import load_pick_value_table
+        pick_tbl = dict(load_pick_value_table(league_teams=num_teams) or {})
+    except Exception:
+        logger.debug("draft capital: pick value table failed", exc_info=True)
+        pick_tbl = {}
+
+    teams = []
+    for rid in sorted(roster_map, key=lambda k: str(roster_map.get(k) or "")):
+        picks = picks_by_roster.get(str(rid)) or []
+        rows = []
+        total = 0.0
+        for pk in picks:
+            try:
+                yr = int(pk.get("season") or 0)
+                rnd = int(pk.get("round") or 0)
+            except (TypeError, ValueError):
+                continue
+            if not yr or not rnd:
+                continue
+            orig = str(pk.get("original_owner") or rid)
+            slot = slot_by_original.get(orig) if yr == proj_year else None
+            label = _pk_pick_label(yr, rnd, slot)
+            val = _pk_pick_value_from_table(pick_tbl, yr, rnd, slot, num_teams)
+            total += val
+            from_txt = ""
+            if orig != str(rid):
+                from_name = roster_map.get(orig) or f"Roster {orig}"
+                from_txt = f"<span class='dc-from'>from {html.escape(str(from_name))}</span>"
+            proj_badge = "<span class='dc-proj'>projected</span>" if slot else ""
+            rows.append(
+                f"<li class='dc-pick'>"
+                f"<span class='dc-pick-label'>{html.escape(label)}</span>"
+                f"{from_txt}{proj_badge}"
+                f"<span class='dc-pick-val'>{val:,.0f}</span>"
+                f"</li>"
+            )
+        teams.append({
+            "rid": str(rid),
+            "name": str(roster_map.get(rid) or f"Roster {rid}"),
+            "total": total,
+            "rows": rows,
+        })
+
+    teams.sort(key=lambda t: -t["total"])
+
+    cards = []
+    for i, t in enumerate(teams, start=1):
+        rows_html = "".join(t["rows"]) or "<li class='dc-pick dc-none'>No future picks</li>"
+        cards.append(f"""
+        <section class="os-card dc-team-card">
+          <div class="os-section-head">
+            <div class="os-section-head-content">
+              <h2 class="os-section-title">#{i} {html.escape(t['name'])}</h2>
+              <div class="os-section-subtitle">{t['total']:,.0f} total pick value</div>
+            </div>
+          </div>
+          <ul class="dc-pick-list">{rows_html}</ul>
+        </section>""")
+
+    note = (
+        f"Slots for {proj_year} picks are projected from this season's "
+        f"playoff-odds simulation (worst projected finish picks first) and firm "
+        f"up as games are played. Later years use round values until their "
+        f"order is knowable."
+    )
+    return f"""
+    <div class="dc-page">
+      <div class="page-header">
+        <h1>Draft Capital</h1>
+        <p class="muted">{note}</p>
+      </div>
+      <div class="dc-grid">
+        {''.join(cards)}
+      </div>
+    </div>
+    """
+
+
+@app.route("/<platform>/<int:season>/<league_id>/draft-capital")
+def page_draft_capital(platform: str, season: int, league_id: str):
+    ctx = get_league_ctx_from_cache(platform, league_id, season)
+    body = build_draft_capital_body(ctx)
+    return render_page(
+        "Draft Capital | BR Fantasy", league_id, "draft-capital", body, platform, season,
+        description="Every team's future rookie picks with projected slots and modeled values.",
     )
 
 
