@@ -740,69 +740,103 @@
   function ageLeanLabel(l){
     return { win_now: 'Win now', youth: 'Youth' }[l] || '';
   }
-  function _ageLeanMult(lean, pos, age){
+  // Age-lean intensity: like the strategy params, each team commits to its
+  // rebuild/win-now identity to a different degree per draft.
+  function _ageLeanIntensity(slot){
+    if (!state.simAgeInt) state.simAgeInt = {};
+    if (state.simAgeInt[slot] == null){
+      state.simAgeInt[slot] = Math.round((0.70 + _rand01(slot + ':ageint') * 0.60) * 100) / 100;
+    }
+    return state.simAgeInt[slot];
+  }
+  function _ageLeanMult(lean, pos, age, I){
     if (!lean || lean === 'neutral') return 1;
     if (pos === 'K' || pos === 'DEF') return 1;
     if (age == null) return 1;
+    I = I || 1;
     if (lean === 'win_now'){
-      if (age >= 27) return 1.3;
-      if (age >= 25) return 1.15;
-      if (age <= 23) return 0.7;
+      if (age >= 27) return _scaleMult(1.3, I);
+      if (age >= 25) return _scaleMult(1.15, I);
+      if (age <= 23) return _scaleMult(0.7, I);
       return 1;
     }
     // youth: hoard early-20s upside, punt the aging core entirely.
-    if (age <= 23) return 1.5;
-    if (age <= 25) return 1.15;
-    if (age >= 30) return 0.35;
-    if (age >= 27) return 0.55;
+    if (age <= 23) return _scaleMult(1.5, I);
+    if (age <= 25) return _scaleMult(1.15, I);
+    if (age >= 30) return _scaleMult(0.35, I);
+    if (age >= 27) return _scaleMult(0.55, I);
     return 1;
   }
+  // Per-team execution style for the strategy: no two teams (or drafts) run
+  // the same plan identically. Intensity scales how hard the multipliers pull
+  // (0.7 = half-hearted, 1.35 = doctrinaire) and shift moves the plan's round
+  // windows by -1/0/+1. Seeded per slot per draft, saved with state.
+  function _stratParams(slot){
+    if (!state.simStratParams) state.simStratParams = {};
+    if (!state.simStratParams[slot]){
+      state.simStratParams[slot] = {
+        intensity: Math.round((0.70 + _rand01(slot + ':strint') * 0.65) * 100) / 100,
+        shift: Math.floor(_rand01(slot + ':strwin') * 3) - 1,
+      };
+    }
+    return state.simStratParams[slot];
+  }
+  // Scale a multiplier's deviation from 1 by the team's intensity, floored so
+  // an aggressive fade can't hit zero.
+  function _scaleMult(base, intensity){
+    return Math.max(0.1, 1 + (base - 1) * intensity);
+  }
   // Weight multiplier a strategy applies to a candidate: pos, how many of that
-  // position the team already has, and the current round.
-  function _stratMult(strat, pos, have, round){
+  // position the team already has, the current round, and the team's execution
+  // params (intensity + window shift).
+  function _stratMult(strat, pos, have, round, prm){
     if (!strat || strat === 'bpa') return 1;
+    var I = prm ? prm.intensity : 1;
+    var S = prm ? prm.shift : 0;
     if (strat === 'rb_heavy'){
-      if (round <= 3){
-        if (pos === 'RB') return 1.6;
-        if (pos === 'WR') return 0.8;
+      if (round <= Math.max(1, 3 + S)){
+        if (pos === 'RB') return _scaleMult(1.6, I);
+        if (pos === 'WR') return _scaleMult(0.8, I);
       }
       return 1;
     }
     if (strat === 'wr_heavy'){
       // WR-first without the structural RB fade of zero_rb: load up on
       // receivers early but still take a value RB when one falls.
-      if (round <= 3){
-        if (pos === 'WR') return 1.6;
-        if (pos === 'RB') return 0.8;
+      if (round <= Math.max(1, 3 + S)){
+        if (pos === 'WR') return _scaleMult(1.6, I);
+        if (pos === 'RB') return _scaleMult(0.8, I);
       }
       return 1;
     }
     if (strat === 'zero_rb'){
       // Fade RB early, hammer WR; then a catch-up window for RB volume.
-      if (round <= 5){
-        if (pos === 'RB') return 0.35;
-        if (pos === 'WR') return 1.5;
-        if (pos === 'TE') return 1.15;
+      var zEnd = Math.max(2, 5 + S);
+      if (round <= zEnd){
+        if (pos === 'RB') return _scaleMult(0.35, I);
+        if (pos === 'WR') return _scaleMult(1.5, I);
+        if (pos === 'TE') return _scaleMult(1.15, I);
         return 1;
       }
-      if (round <= 10 && pos === 'RB') return 1.35;
+      if (round <= 10 + S && pos === 'RB') return _scaleMult(1.35, I);
       return 1;
     }
     if (strat === 'hero_rb'){
-      // One anchor RB in the first two rounds, then WRs while fading RB depth.
-      if (round <= 2 && pos === 'RB') return have === 0 ? 1.8 : 0.35;
-      if (round <= 6){
-        if (pos === 'RB') return 0.45;
-        if (pos === 'WR') return 1.3;
+      // One anchor RB in the first rounds, then WRs while fading RB depth.
+      var hEnd = Math.max(1, 2 + S);
+      if (round <= hEnd && pos === 'RB') return have === 0 ? _scaleMult(1.8, I) : _scaleMult(0.35, I);
+      if (round <= Math.max(3, 6 + S)){
+        if (pos === 'RB') return _scaleMult(0.45, I);
+        if (pos === 'WR') return _scaleMult(1.3, I);
       }
       return 1;
     }
     if (strat === 'elite_te'){
-      if (round <= 3 && pos === 'TE' && have === 0) return 1.9;
+      if (round <= Math.max(1, 3 + S) && pos === 'TE' && have === 0) return _scaleMult(1.9, I);
       return 1;
     }
     if (strat === 'early_qb'){
-      if (round <= 4 && pos === 'QB') return 1.6;
+      if (round <= Math.max(2, 4 + S) && pos === 'QB') return _scaleMult(1.6, I);
       return 1;
     }
     return 1;
@@ -847,7 +881,9 @@
     var persona = _simPersona(slot);
     var _bias = _simBias(slot);
     var _strat = _simStrategy(slot);
+    var _stratPrm = _stratParams(slot);
     var _ageLean = _simAgeLean(slot);
+    var _ageInt = _ageLeanIntensity(slot);
     // Score every candidate from THIS CPU team's perspective (its own roster,
     // depth, and next pick) so need is judged for the right team, not the viewer.
     var cpuCtx = _cpuCtx(slot);
@@ -970,10 +1006,10 @@
       var biasMult = _bias[pos] || 1;
       // Named strategy plan (RB heavy / Zero RB / Hero RB / Elite TE / Early QB).
       // Early-QB only pulls while the starting QB room is unfilled.
-      var stratMult = _stratMult(_strat, pos, have, _curRound);
+      var stratMult = _stratMult(_strat, pos, have, _curRound, _stratPrm);
       if (_strat === 'early_qb' && pos === 'QB' && have >= _qbStarters) stratMult = 1;
       // Dynasty age lean (startup only): win-now pays for vets, youth punts them.
-      var ageMult = _ageLeanMult(_ageLean, pos, p.age != null ? Number(p.age) : null);
+      var ageMult = _ageLeanMult(_ageLean, pos, p.age != null ? Number(p.age) : null, _ageInt);
       w *= needBoost * biasMult * stratMult * ageMult / overFactor;
       // Hard guard: a backup at a starter-filled slot has little marginal value,
       // so the CPU must never REACH for one - only take it if its real ADP has
