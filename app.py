@@ -4111,6 +4111,32 @@ def build_dashboard_body(ctx: dict) -> str:
 
     bench_check_html = _render_bench_check(ctx, viewer_roster_id, last_final_week)
 
+    # Waiver Wire Targets card (same builder as the offseason hub). Uses the
+    # live model-value cache rather than the ctx copy, which can go stale.
+    waiver_card_html = ""
+    try:
+        _wv_table = list(get_model_value_table_cached() or []) or (ctx.get("model_value_table") or [])
+        _wv_rows = _build_waiver_targets_rows(ctx, _wv_table)
+        if _wv_rows:
+            waiver_card_html = f"""
+        <section class="os-card os-col-fill">
+          <div class="os-section-head">
+            <div class="os-section-head-content">
+              <h2 class="os-section-title">Waiver Wire Targets</h2>
+              <div class="os-section-subtitle">Smart pickups based on value + trend + breakout potential</div>
+            </div>
+            <div class="os-section-head-actions">
+              {_section_page_link("Waivers & Start/Sit", "page_waivers", platform, season, league_id)}
+              <button type="button" class="card-collapse-toggle" aria-label="Toggle section" aria-expanded="true" data-target="dash-waiver-body">&#9660;</button>
+            </div>
+          </div>
+          <div class="os-waiver-list card-collapsible-body" id="dash-waiver-body">
+            {_wv_rows}
+          </div>
+        </section>"""
+    except Exception:
+        logger.debug("dashboard waiver card failed", exc_info=True)
+
     _fpts_against_dash = _compute_fpts_against(season)
     _dash_vid = str(viewer_roster_id or "")
     _dash_matchups = sorted(
@@ -4317,6 +4343,7 @@ def build_dashboard_body(ctx: dict) -> str:
 
         {matchup_html}
         {bench_check_html}
+        {waiver_card_html}
       </main>
 
       <aside class="os-right-col">
@@ -5356,6 +5383,169 @@ from utils.waiver_score import (  # noqa: E402
 )
 
 
+def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 10) -> str:
+    """Row markup for the Waiver Wire Targets card, shared by the offseason hub
+    and the in-season Season Hub.
+
+    Ranking + signal labels are shared with the /api/waiver-candidates surface
+    (utils.waiver_score) so both order and badge players identically. This card
+    has no weekly usage data, so the usage-spike term is simply a no-op here.
+    Returns '' when no candidates are available.
+    """
+    rosters = ctx.get("rosters") or []
+    players_index = ctx.get("players_index") or {}
+
+    rostered_ids = {
+        str(pid)
+        for r in rosters
+        for pid in (r.get("players") or [])
+    }
+
+    # Build a set of sleeper_ids for this year's rookie class from DB.
+    _rookie_sids: set[str] = set()
+    try:
+        from data_building.rookie_pipeline.pipeline import get_active_rookie_class as _arc
+        _ry = _arc()
+        from dashboard_services.db import get_conn as _gc_w
+        with _gc_w() as _wc:
+            _rr = _wc.execute(
+                "SELECT sleeper_id FROM rookie_prospects WHERE draft_class_year = %s AND sleeper_id IS NOT NULL",
+                (_ry,),
+            ).fetchall()
+        _rookie_sids = {str(r["sleeper_id"]) for r in _rr if r["sleeper_id"]}
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+
+    # Rookies are only waiver-eligible after the fantasy rookie draft is complete.
+    # Detect by checking if any rookie from this year's class is already rostered.
+    _rookie_draft_done = bool(_rookie_sids and any(sid in rostered_ids for sid in _rookie_sids))
+
+    # Auto-apply the league's TE premium to waiver values, like elsewhere.
+    _tep_dash = te_premium_from_settings(ctx.get("scoring_settings"))
+
+    waiver_candidates = []
+    for row in model_value_table:
+        if not isinstance(row, dict):
+            continue
+        pid = str(row.get("id") or "")
+        pos = str(row.get("position") or row.get("pos") or "").upper()
+        team = str(row.get("team") or players_index.get(pid, {}).get("team") or "").strip().upper()
+        if not pid or pid in rostered_ids:
+            continue
+        if team in ("", "FA", "FREE AGENT"):
+            continue
+        if pos not in {"QB", "RB", "WR", "TE"}:
+            continue
+        if pid in _rookie_sids and not _rookie_draft_done:
+            continue
+        try:
+            val = float(row.get("value") or 0.0)
+        except Exception:
+            val = 0.0
+        val = apply_te_premium(val, pos, _tep_dash)
+        if val <= 0:
+            continue
+
+        try:
+            age = float(row.get("age") or 0)
+        except Exception:
+            age = 0.0
+
+        rank_change = row.get("rank_change_7d")
+
+        # Prioritize name from the current value table row, then fallback to players_index
+        player_name = (
+            row.get("name") or
+            players_index.get(pid, {}).get("name") or
+            f"Player {pid}"  # More informative fallback than "Unknown"
+        )
+
+        waiver_candidates.append({
+            "player_id": pid,
+            "name": player_name,
+            "position": pos,
+            "team": row.get("team") or players_index.get(pid, {}).get("team") or "",
+            "value": val,
+            "age": age,
+            "pos_rank_label": row.get("pos_rank_label") or "",
+            "rank_change_7d": rank_change,
+        })
+
+    # Bulk-fetch breakout scores for waiver candidates from DB
+    waiver_breakout: dict = {}
+    try:
+        _db_url = os.getenv("DATABASE_URL", "").strip()
+        if _db_url and not any(t in _db_url for t in ("USER", "PASSWORD", "HOST")):
+            from dashboard_services.db import get_conn as _gc
+            _pids = [c["player_id"] for c in waiver_candidates[:100]]
+            if _pids:
+                with _gc() as _conn:
+                    with _conn.cursor() as _cur:
+                        _cur.execute(
+                            """
+                            SELECT DISTINCT ON (player_id)
+                                player_id,
+                                breakout_opportunity_score
+                            FROM breakout_opportunity_scores
+                            WHERE player_id = ANY(%s)
+                            ORDER BY player_id, as_of_date DESC
+                            """,
+                            (_pids,),
+                        )
+                        for _r in _cur.fetchall():
+                            _r = dict(_r)
+                            if _r.get("breakout_opportunity_score") is not None:
+                                waiver_breakout[_r["player_id"]] = float(_r["breakout_opportunity_score"])
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+
+    waiver_candidates.sort(
+        key=lambda c: _waiver_pickup_score(c, waiver_breakout, _WAIVER_PRIME_MAX),
+        reverse=True,
+    )
+
+    waiver_html = []
+    _shown_waivers = waiver_candidates[:limit]
+    # Badge trend relative to the shown set so a trend-sorted list doesn't read
+    # "Rising Fast" on every row.
+    _wv_fast_thr, _wv_up_thr = _adaptive_trend_thresholds(
+        [c.get("rank_change_7d") for c in _shown_waivers]
+    )
+    for p in _shown_waivers:
+        sub_bits = [p["position"]]
+        if p["team"]:
+            sub_bits.append(p["team"])
+        if p["pos_rank_label"]:
+            sub_bits.append(p["pos_rank_label"])
+        if p["age"]:
+            sub_bits.append(f"Age {p['age']:.1f}")
+        subline = " • ".join(sub_bits)
+
+        sig_cls, sig_label = _waiver_signal(
+            p, waiver_breakout, _WAIVER_PRIME_MAX,
+            fast_thr=_wv_fast_thr, up_thr=_wv_up_thr,
+        )
+
+        waiver_html.append(
+            f"""
+            <div class="os-waiver-row">
+              <div class="os-waiver-main">
+                <div class="os-waiver-name-row">
+                  <span class="os-waiver-name player-clickable" style="cursor:pointer;font-weight:600;" data-player-id='{p['player_id']}' data-player-name='{p['name']}'>{p['name']}</span>
+                </div>
+                <div class="os-waiver-sub">{subline}</div>
+              </div>
+              <div class="os-waiver-right">
+                <span class="waiver-signal {sig_cls}">{sig_label}</span>
+                <span class="os-waiver-value">{p['value']:.0f}</span>
+              </div>
+            </div>
+            """
+        )
+
+    return "".join(waiver_html)
+
+
 def build_offseason_dashboard_body(ctx: dict) -> str:
     league = ctx["league"]
     platform = ctx["platform"]
@@ -5548,159 +5738,8 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         
         total_draft_capital += roster_value
 
-    rostered_ids = {
-        str(pid)
-        for r in rosters
-        for pid in (r.get("players") or [])
-    }
-
-    # --- Waiver Recommendations: gather candidates ---
-    # Build a set of sleeper_ids for this year's rookie class from DB.
-    _rookie_sids: set[str] = set()
-    try:
-        from data_building.rookie_pipeline.pipeline import get_active_rookie_class as _arc
-        _ry = _arc()
-        from dashboard_services.db import get_conn as _gc_w
-        with _gc_w() as _wc:
-            _rr = _wc.execute(
-                "SELECT sleeper_id FROM rookie_prospects WHERE draft_class_year = %s AND sleeper_id IS NOT NULL",
-                (_ry,),
-            ).fetchall()
-        _rookie_sids = {str(r["sleeper_id"]) for r in _rr if r["sleeper_id"]}
-    except Exception:
-        logger.debug("suppressed exception", exc_info=True)
-
-    # Rookies are only waiver-eligible after the fantasy rookie draft is complete.
-    # Detect by checking if any rookie from this year's class is already rostered.
-    _rookie_draft_done = bool(_rookie_sids and any(sid in rostered_ids for sid in _rookie_sids))
-
-    # Auto-apply the league's TE premium to waiver values, like elsewhere.
-    _tep_dash = te_premium_from_settings(ctx.get("scoring_settings"))
-
-    waiver_candidates = []
-    for row in model_value_table:
-        if not isinstance(row, dict):
-            continue
-        pid = str(row.get("id") or "")
-        pos = str(row.get("position") or row.get("pos") or "").upper()
-        team = str(row.get("team") or players_index.get(pid, {}).get("team") or "").strip().upper()
-        if not pid or pid in rostered_ids:
-            continue
-        if team in ("", "FA", "FREE AGENT"):
-            continue
-        if pos not in {"QB", "RB", "WR", "TE"}:
-            continue
-        if pid in _rookie_sids and not _rookie_draft_done:
-            continue
-        try:
-            val = float(row.get("value") or 0.0)
-        except Exception:
-            val = 0.0
-        val = apply_te_premium(val, pos, _tep_dash)
-        if val <= 0:
-            continue
-
-        try:
-            age = float(row.get("age") or 0)
-        except Exception:
-            age = 0.0
-
-        rank_change = row.get("rank_change_7d")
-
-        # Prioritize name from the current value table row, then fallback to players_index
-        player_name = (
-            row.get("name") or 
-            players_index.get(pid, {}).get("name") or 
-            f"Player {pid}"  # More informative fallback than "Unknown"
-        )
-        
-        waiver_candidates.append({
-            "player_id": pid,
-            "name": player_name,
-            "position": pos,
-            "team": row.get("team") or players_index.get(pid, {}).get("team") or "",
-            "value": val,
-            "age": age,
-            "pos_rank_label": row.get("pos_rank_label") or "",
-            "rank_change_7d": rank_change,
-        })
-
-    # Bulk-fetch breakout scores for waiver candidates from DB
-    waiver_breakout: dict = {}
-    try:
-        _db_url = os.getenv("DATABASE_URL", "").strip()
-        if _db_url and not any(t in _db_url for t in ("USER", "PASSWORD", "HOST")):
-            from dashboard_services.db import get_conn as _gc
-            _pids = [c["player_id"] for c in waiver_candidates[:100]]
-            if _pids:
-                with _gc() as _conn:
-                    with _conn.cursor() as _cur:
-                        _cur.execute(
-                            """
-                            SELECT DISTINCT ON (player_id)
-                                player_id,
-                                breakout_opportunity_score
-                            FROM breakout_opportunity_scores
-                            WHERE player_id = ANY(%s)
-                            ORDER BY player_id, as_of_date DESC
-                            """,
-                            (_pids,),
-                        )
-                        for _r in _cur.fetchall():
-                            _r = dict(_r)
-                            if _r.get("breakout_opportunity_score") is not None:
-                                waiver_breakout[_r["player_id"]] = float(_r["breakout_opportunity_score"])
-    except Exception:
-        logger.debug("suppressed exception", exc_info=True)
-
-    # Ranking + signal labels are shared with the /api/waiver-candidates surface
-    # (utils.waiver_score) so both order and badge players identically. This card
-    # has no weekly usage data, so the usage-spike term is simply a no-op here.
-    waiver_candidates.sort(
-        key=lambda c: _waiver_pickup_score(c, waiver_breakout, _WAIVER_PRIME_MAX),
-        reverse=True,
-    )
-
-    waiver_html = []
-    _shown_waivers = waiver_candidates[:10]
-    # Badge trend relative to the shown set so a trend-sorted list doesn't read
-    # "Rising Fast" on every row.
-    _wv_fast_thr, _wv_up_thr = _adaptive_trend_thresholds(
-        [c.get("rank_change_7d") for c in _shown_waivers]
-    )
-    for p in _shown_waivers:
-        sub_bits = [p["position"]]
-        if p["team"]:
-            sub_bits.append(p["team"])
-        if p["pos_rank_label"]:
-            sub_bits.append(p["pos_rank_label"])
-        if p["age"]:
-            sub_bits.append(f"Age {p['age']:.1f}")
-        subline = " • ".join(sub_bits)
-
-        sig_cls, sig_label = _waiver_signal(
-            p, waiver_breakout, _WAIVER_PRIME_MAX,
-            fast_thr=_wv_fast_thr, up_thr=_wv_up_thr,
-        )
-
-        waiver_html.append(
-            f"""
-            <div class="os-waiver-row">
-              <div class="os-waiver-main">
-                <div class="os-waiver-name-row">
-                  <span class="os-waiver-name player-clickable" style="cursor:pointer;font-weight:600;" data-player-id='{p['player_id']}' data-player-name='{p['name']}'>{p['name']}</span>
-                </div>
-                <div class="os-waiver-sub">{subline}</div>
-              </div>
-              <div class="os-waiver-right">
-                <span class="waiver-signal {sig_cls}">{sig_label}</span>
-                <span class="os-waiver-value">{p['value']:.0f}</span>
-              </div>
-            </div>
-            """
-        )
-
-    top_waiver_assets_html = "".join(waiver_html)
+    # Waiver card rows are shared with the in-season Season Hub.
+    top_waiver_assets_html = _build_waiver_targets_rows(ctx, model_value_table)
 
     # Build matchup carousel (even if offseason/preseason - show with 0 projections)
     matchup_html = ""
