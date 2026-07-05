@@ -282,16 +282,6 @@ def build_advanced_metrics_body(
             <span class="am-filter-sep">&#8211;</span>
             <input type="number" id="amAgeMax" class="am-age-input" placeholder="Max" min="18" max="45">
           </div>
-          <div class="am-age-wrap" id="amExpWrap" style="display:none;">
-            <span class="am-filter-label">Exp:</span>
-            <select id="amExpFilter" class="am-select am-season-select" style="font-size:12px;padding:4px 8px;">
-              <option value="">Any</option>
-              <option value="rookie">Rookies</option>
-              <option value="le1">2nd year or less</option>
-              <option value="le2">3rd year or less</option>
-              <option value="ge4">4+ years</option>
-            </select>
-          </div>
           <div class="am-vol-ctrl" id="amGamesCtrl" style="display:none;">
             <span class="am-filter-label" id="amVolLabel">Min</span>
             <select id="amMinGames" class="am-select am-season-select" style="font-size:12px;padding:4px 8px;"></select>
@@ -1093,7 +1083,6 @@ _AM_JS = r"""
                   showTrends: false,    // weekly usage trend column toggle
                   trendsBySeason: {},   // seasonKey -> { player_id -> trend obj }
                   ageMin: '', ageMax: '',
-                  expFilter: '',       // '' | 'rookie' | 'le1' | 'le2' | 'ge4'
                   comboFilters: [],     // [{key, op, val}]
                   filterColKeys: new Set(), // keys auto-shown as compact cols when used in filters
                   cmpSeasons: {},       // player_id -> season override in the Compare modal
@@ -2348,17 +2337,6 @@ _AM_JS = r"""
         return true;
       });
     }
-    if (state.expFilter) {
-      displayRows = displayRows.filter(function(r) {
-        const ex = r.years_exp;
-        if (ex == null) return false;
-        if (state.expFilter === 'rookie') return ex === 0;
-        if (state.expFilter === 'le1') return ex <= 1;
-        if (state.expFilter === 'le2') return ex <= 2;
-        if (state.expFilter === 'ge4') return ex >= 4;
-        return true;
-      });
-    }
     state.comboFilters.forEach(function(f) {
       displayRows = displayRows.filter(function(r) {
         let v;
@@ -2366,6 +2344,8 @@ _AM_JS = r"""
           v = Number(r.value);
         } else if (f.key === 'age') {
           v = r.age != null ? Number(r.age) : null;
+        } else if (f.key === 'exp') {
+          v = r.years_exp != null ? Number(r.years_exp) : null;
         } else {
           const ed2 = state.extraData[f.key];
           v = ed2 ? ed2.byId[String(r.player_id)] : undefined;
@@ -3480,7 +3460,7 @@ _AM_JS = r"""
     if (!bar || !chips) return;
     if (filterKey) {
       const primaryPositions = new Set(relevantPositions(state.metric));
-      const added = new Set(['age', 'primary']);
+      const added = new Set(['age', 'exp', 'primary']);
 
       // Position-aware ordered filter keys: volume counts → per-game rates → usage rates.
       const _FILTER_ORDER = [
@@ -3519,8 +3499,8 @@ _AM_JS = r"""
         added.add(key);
       });
 
-      // Order: Age → volume/rates → primary metric → extra metrics
-      const opts = [{ value: 'age', label: 'Age' }];
+      // Order: Age/Exp → volume/rates → primary metric → extra metrics
+      const opts = [{ value: 'age', label: 'Age' }, { value: 'exp', label: 'Years Exp' }];
       volOpts.forEach(function(o) { opts.push(o); });
       opts.push({ value: 'primary', label: (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || state.metric });
       state.extraMetrics.forEach(function(key) {
@@ -3536,6 +3516,7 @@ _AM_JS = r"""
       const lbl = f.key === 'primary'
         ? ((cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || state.metric)
         : f.key === 'age' ? 'Age'
+        : f.key === 'exp' ? 'Years Exp'
         : ((cfg.metrics[f.key] && cfg.metrics[f.key].label) || f.key);
       const opSym = f.op === 'gte' ? '≥' : '≤';
       return '<span class="am-filter-chip">' + lbl + ' ' + opSym + ' ' + f.val
@@ -3544,10 +3525,9 @@ _AM_JS = r"""
     // Show the filter bar only when there's something to show: active chips,
     // the age-input controls, the vol (min games) control, or the filter form.
     const ageVis  = (document.getElementById('amAgeWrap')  || {}).style.display !== 'none';
-    const expVis  = (document.getElementById('amExpWrap')  || {}).style.display !== 'none';
     const volVis  = (document.getElementById('amGamesCtrl') || {}).style.display !== 'none';
     const formVis = (document.getElementById('amFilterForm') || {}).style.display !== 'none';
-    if (bar) bar.style.display = (state.comboFilters.length > 0 || ageVis || expVis || volVis || formVis) ? 'flex' : 'none';
+    if (bar) bar.style.display = (state.comboFilters.length > 0 || ageVis || volVis || formVis) ? 'flex' : 'none';
   }
   window.amRemoveFilter = function(idx) {
     const removed = state.comboFilters[idx];
@@ -3570,14 +3550,15 @@ _AM_JS = r"""
     const wrap = document.getElementById('amAgeWrap');
     if (!wrap) return;
     const hasAge = state.rows.some(r => r.age != null);
-    // Experience control follows the same visibility rules as the age inputs.
-    const expWrap = document.getElementById('amExpWrap');
-    const hasExp = state.rows.some(r => r.years_exp != null);
+    if (!hasAge) { wrap.style.display = 'none'; updateFilterBar(); return; }
+    // On mobile, only show the age inputs when the Filters dropdown is open.
     const isMobile = window.innerWidth <= 600;
-    const fb = document.getElementById('amFilterBar');
-    const mobileOpen = fb && fb.classList.contains('am-mobile-open');
-    wrap.style.display = !hasAge ? 'none' : (isMobile && !mobileOpen ? 'none' : '');
-    if (expWrap) expWrap.style.display = !hasExp ? 'none' : (isMobile && !mobileOpen ? 'none' : '');
+    if (isMobile) {
+      const fb = document.getElementById('amFilterBar');
+      wrap.style.display = (fb && fb.classList.contains('am-mobile-open')) ? '' : 'none';
+    } else {
+      wrap.style.display = '';
+    }
     updateFilterBar();
   }
 
@@ -3742,10 +3723,6 @@ _AM_JS = r"""
   const ageMaxEl = document.getElementById('amAgeMax');
   if (ageMinEl) ageMinEl.addEventListener('input', function() { state.ageMin = ageMinEl.value || ''; state.page = 0; render(); });
   if (ageMaxEl) ageMaxEl.addEventListener('input', function() { state.ageMax = ageMaxEl.value || ''; state.page = 0; render(); });
-
-  // Experience filter (rookies / early-career / veterans).
-  const expSel = document.getElementById('amExpFilter');
-  if (expSel) expSel.addEventListener('change', function() { state.expFilter = expSel.value || ''; state.page = 0; render(); });
 
   // Combo filter form.
   const addFilterBtn = document.getElementById('amAddFilterBtn');
