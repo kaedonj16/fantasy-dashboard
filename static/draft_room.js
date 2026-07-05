@@ -705,22 +705,23 @@
       var r = _rand01(slot + ':strat');
       var s;
       if (state.type === 'rookie'){
-        // Rookie drafts are short and value-driven: only simple positional
-        // leans make sense (zero_rb's early window reads as WR-first here).
-        s = r < 0.60 ? 'bpa' : (r < 0.80 ? 'rb_heavy' : 'zero_rb');
-      } else if (r < 0.40) s = 'bpa';
-      else if (r < 0.55) s = 'rb_heavy';
-      else if (r < 0.70) s = 'zero_rb';
-      else if (r < 0.80) s = 'hero_rb';
-      else if (r < 0.90) s = 'elite_te';
+        // Rookie drafts are short and value-driven: only the simple
+        // RB-first/WR-first leans make sense.
+        s = r < 0.55 ? 'bpa' : (r < 0.78 ? 'rb_heavy' : 'wr_heavy');
+      } else if (r < 0.35) s = 'bpa';
+      else if (r < 0.48) s = 'rb_heavy';
+      else if (r < 0.61) s = 'wr_heavy';
+      else if (r < 0.74) s = 'zero_rb';
+      else if (r < 0.83) s = 'hero_rb';
+      else if (r < 0.92) s = 'elite_te';
       else               s = 'early_qb';
       state.simStrats[slot] = s;
     }
     return state.simStrats[slot];
   }
   function stratLabel(s){
-    return { rb_heavy: 'RB heavy', zero_rb: 'Zero RB', hero_rb: 'Hero RB',
-             elite_te: 'Elite TE', early_qb: 'Early QB' }[s] || '';
+    return { rb_heavy: 'RB heavy', wr_heavy: 'WR heavy', zero_rb: 'Zero RB',
+             hero_rb: 'Hero RB', elite_te: 'Elite TE', early_qb: 'Early QB' }[s] || '';
   }
   // Weight multiplier a strategy applies to a candidate: pos, how many of that
   // position the team already has, and the current round.
@@ -730,6 +731,15 @@
       if (round <= 3){
         if (pos === 'RB') return 1.6;
         if (pos === 'WR') return 0.8;
+      }
+      return 1;
+    }
+    if (strat === 'wr_heavy'){
+      // WR-first without the structural RB fade of zero_rb: load up on
+      // receivers early but still take a value RB when one falls.
+      if (round <= 3){
+        if (pos === 'WR') return 1.6;
+        if (pos === 'RB') return 0.8;
       }
       return 1;
     }
