@@ -3965,6 +3965,50 @@ def _viewer_lineup_alert_html(ctx: dict, viewer_roster_id) -> str:
             teams_playing = set()
 
         issues = find_lineup_issues(starters, player_info, teams_playing)
+
+        # Projection-based upgrades: bench players out-projecting a starter at
+        # the same position this week (legal like-for-like swaps only).
+        try:
+            from utils.lineup_issues import projection_upgrades
+
+            proj_map = {
+                str(k): v
+                for k, v in (
+                    ((ctx.get("proj_by_week") or {}).get(current_week) or {}).get("projections") or {}
+                ).items()
+            }
+            reserve_set = {str(p) for p in (roster.get("reserve") or [])}
+            taxi_set = {str(p) for p in (roster.get("taxi") or [])}
+            eligible = [
+                str(p) for p in (roster.get("players") or [])
+                if str(p) not in reserve_set and str(p) not in taxi_set
+            ]
+            pos_map = {
+                pid: str((players_map.get(pid) or {}).get("pos")
+                         or (full_players.get(pid) or {}).get("position") or "")
+                for pid in eligible
+            }
+            roster_positions = ctx.get("roster_positions")
+            if roster_positions is not None and hasattr(roster_positions, "tolist"):
+                roster_positions = roster_positions.tolist()
+            swaps = projection_upgrades(
+                starters, eligible, proj_map, pos_map, roster_positions or []
+            )
+            for s in swaps:
+                _in_name = (players_map.get(s["in"]) or {}).get("name") or f"Player {s['in']}"
+                _out_name = (players_map.get(s["out"]) or {}).get("name") or f"Player {s['out']}"
+                _in_proj = float(proj_map.get(s["in"]) or 0)
+                _out_proj = float(proj_map.get(s["out"]) or 0)
+                issues.append({
+                    "kind": "projection", "pid": s["in"], "name": _in_name,
+                    "detail": (
+                        f"{_in_name} projects {_in_proj:.1f} on your bench; "
+                        f"{_out_name} is starting at {_out_proj:.1f}"
+                    ),
+                })
+        except Exception:
+            logger.debug("projection upgrades failed", exc_info=True)
+
         if not issues:
             return ""
 
@@ -3988,6 +4032,75 @@ def _viewer_lineup_alert_html(ctx: dict, viewer_roster_id) -> str:
         </section>"""
     except Exception:
         logger.debug("lineup alert failed", exc_info=True)
+        return ""
+
+
+def _roster_moves_alert_html(ctx: dict, viewer_roster_id) -> str:
+    """Roster-efficiency card for the Season Hub: IR-eligible players wasting
+    active spots, recovered players stuck in IR slots, and open taxi slots with
+    stashable rookies. Empty string when the roster is fully efficient."""
+    if not viewer_roster_id:
+        return ""
+    try:
+        from utils.roster_compliance import roster_compliance_issues
+
+        rosters = ctx.get("rosters") or []
+        roster = next(
+            (r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)),
+            None,
+        )
+        if not roster:
+            return ""
+
+        settings = (ctx.get("league") or {}).get("settings") or {}
+        reserve_slots = int(settings.get("reserve_slots") or 0)
+        taxi_slots = int(settings.get("taxi_slots") or 0)
+        if reserve_slots <= 0 and taxi_slots <= 0:
+            return ""  # league has neither IR nor taxi slots
+
+        players_map = ctx.get("players_map") or {}
+        try:
+            full_players = get_players_global() or {}
+        except Exception:
+            full_players = {}
+
+        pids = [str(p) for p in (roster.get("players") or [])]
+        player_info = {}
+        for pid in pids:
+            base = players_map.get(pid) or {}
+            full = full_players.get(pid) or {}
+            player_info[pid] = {
+                "name": base.get("name") or full.get("full_name") or "",
+                "injury_status": full.get("injury_status") or "",
+                "years_exp": full.get("years_exp"),
+            }
+
+        issues = roster_compliance_issues(
+            players=pids,
+            starters=[str(p) for p in (roster.get("starters") or [])],
+            reserve=[str(p) for p in (roster.get("reserve") or [])],
+            taxi=[str(p) for p in (roster.get("taxi") or [])],
+            player_info=player_info,
+            reserve_slots=reserve_slots,
+            taxi_slots=taxi_slots,
+        )
+        if not issues:
+            return ""
+
+        n = len(issues)
+        title = f"{n} roster move" + ("s" if n > 1 else "") + " available"
+        items = "".join(
+            f"<li>{html.escape(i['detail'])}</li>" for i in issues[:5]
+        )
+        return f"""
+        <section class="os-card lineup-alert-card roster-moves-card">
+          <div class="lineup-alert-head">
+            <span class="lineup-alert-title">{title}</span>
+          </div>
+          <ul class="lineup-alert-list">{items}</ul>
+        </section>"""
+    except Exception:
+        logger.debug("roster moves alert failed", exc_info=True)
         return ""
 
 
@@ -4102,6 +4215,7 @@ def build_dashboard_body(ctx: dict) -> str:
     )
     usage_movers_html = _render_usage_movers(ctx, viewer_roster_id)
     lineup_alert_html = _viewer_lineup_alert_html(ctx, viewer_roster_id)
+    roster_moves_html = _roster_moves_alert_html(ctx, viewer_roster_id)
 
     finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
     if not finalized_df.empty:
@@ -4337,6 +4451,7 @@ def build_dashboard_body(ctx: dict) -> str:
         </section>
 
         {lineup_alert_html}
+        {roster_moves_html}
         {gm_card_html}
         {front_office_card_html}
         {usage_movers_html}

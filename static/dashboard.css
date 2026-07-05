@@ -12260,6 +12260,14 @@ img, svg, canvas {
   padding: 2px 0;
 }
 
+/* Roster-moves variant: informational (blue) rather than warning (amber) */
+.roster-moves-card {
+  border-left-color: #3b82f6;
+}
+.roster-moves-card .lineup-alert-title {
+  color: #3b82f6;
+}
+
 /* Post-week bench check strip */
 .bench-check-card {
   padding: 10px 16px;

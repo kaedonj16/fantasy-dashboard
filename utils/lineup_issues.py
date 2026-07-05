@@ -69,6 +69,84 @@ def find_lineup_issues(
     return empties + injuries + byes
 
 
+def projection_upgrades(
+    starters: List[str],
+    eligible_players: List[str],
+    proj_map: Dict[str, float],
+    pos_map: Dict[str, str],
+    roster_positions: List[str],
+    min_gain: float = 2.0,
+    max_swaps: int = 2,
+) -> List[dict]:
+    """Same-position bench-for-starter swaps that raise projected points.
+
+    Runs the optimal-lineup solver on this week's projections, then pairs each
+    bench player the optimizer wants to start with the lowest-projected current
+    starter at the same position. Only like-for-like swaps are suggested (a WR
+    for a WR), so every suggestion is a legal move regardless of flex rules;
+    cross-position flex upgrades are deliberately left out rather than risk
+    recommending an impossible lineup.
+
+    Args:
+        starters: current starter pids in slot order ("0" = empty slot).
+        eligible_players: pids allowed to start (active roster, i.e. not on
+            IR/taxi). Should include the current starters.
+        proj_map: {pid: projected points} for this week.
+        pos_map: {pid: position}.
+        roster_positions: league slot list (e.g. ["QB","RB","RB","FLEX",...]).
+        min_gain: minimum projected-point gain for a swap to be worth a nudge.
+        max_swaps: cap on suggestions, best first.
+
+    Returns [{"in": pid, "out": pid, "gain": float}], best gain first.
+    """
+    from utils.optimal_lineup import compute_optimal_lineup
+
+    starter_set = {str(p) for p in starters or [] if str(p) not in EMPTY_SLOT_IDS}
+    pids = [str(p) for p in eligible_players or [] if str(p) not in EMPTY_SLOT_IDS]
+    if not pids or not proj_map or not roster_positions or not starter_set:
+        return []
+
+    opt_set, _opt_pts = compute_optimal_lineup(proj_map, pos_map, roster_positions, pids)
+    if not opt_set:
+        return []
+
+    def _proj(pid: str) -> float:
+        try:
+            return float(proj_map.get(pid) or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    bench_ins = sorted(
+        (p for p in opt_set if p not in starter_set),
+        key=_proj, reverse=True,
+    )
+    starter_outs = sorted(
+        (p for p in starter_set if p not in opt_set),
+        key=_proj,
+    )
+
+    swaps: List[dict] = []
+    used_outs: set = set()
+    for pin in bench_ins:
+        pos = str(pos_map.get(pin) or "").upper()
+        pick = None
+        for pout in starter_outs:
+            if pout in used_outs:
+                continue
+            if str(pos_map.get(pout) or "").upper() == pos:
+                pick = pout
+                break
+        if pick is None:
+            continue  # no same-position starter to displace; skip (flex case)
+        gain = _proj(pin) - _proj(pick)
+        used_outs.add(pick)
+        if gain >= min_gain:
+            swaps.append({"in": pin, "out": pick, "gain": round(gain, 1)})
+
+    swaps.sort(key=lambda s: -s["gain"])
+    return swaps[:max_swaps]
+
+
 def summarize_issues(issues: List[dict], max_names: int = 3) -> str:
     """One-sentence summary for pushes and compact UI.
 

@@ -107,3 +107,57 @@ def test_no_em_dashes_or_emojis_in_output():
     text = summarize_issues(issues) + "".join(i["detail"] for i in issues)
     assert "—" not in text  # em dash
     assert all(ord(c) < 0x2600 for c in text)  # no emoji blocks
+
+
+# ---- projection_upgrades ----------------------------------------------------
+
+from utils.lineup_issues import projection_upgrades
+
+SLOTS = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"]
+POS = {
+    "q1": "QB", "r1": "RB", "r2": "RB", "r3": "RB",
+    "w1": "WR", "w2": "WR", "w3": "WR", "t1": "TE", "t2": "TE",
+}
+
+
+def test_upgrade_suggested_for_outprojecting_bench_player():
+    starters = ["q1", "r1", "r2", "w1", "w2", "t1", "r3"]
+    proj = {"q1": 18, "r1": 12, "r2": 10, "r3": 9, "w1": 11, "w2": 4, "w3": 13, "t1": 7}
+    swaps = projection_upgrades(starters, list(POS), proj, POS, SLOTS)
+    assert swaps
+    assert swaps[0]["in"] == "w3" and swaps[0]["out"] == "w2"
+    assert swaps[0]["gain"] == 9.0
+
+
+def test_no_upgrade_when_lineup_already_optimal():
+    starters = ["q1", "r1", "r2", "w1", "w3", "t1", "r3"]
+    proj = {"q1": 18, "r1": 12, "r2": 10, "r3": 9, "w1": 11, "w2": 4, "w3": 13, "t1": 7}
+    assert projection_upgrades(starters, list(POS), proj, POS, SLOTS) == []
+
+
+def test_small_gain_below_threshold_ignored():
+    starters = ["q1", "r1", "r2", "w1", "w2", "t1", "r3"]
+    proj = {"q1": 18, "r1": 12, "r2": 10, "r3": 9, "w1": 11, "w2": 12.0, "w3": 13.0, "t1": 7}
+    assert projection_upgrades(starters, list(POS), proj, POS, SLOTS, min_gain=2.0) == []
+
+
+def test_cross_position_flex_swaps_not_suggested():
+    # Optimizer wants a second TE in the FLEX over an RB; like-for-like only,
+    # so no suggestion should be produced for a TE-for-RB swap.
+    starters = ["q1", "r1", "r2", "w1", "w2", "t1", "r3"]
+    proj = {"q1": 18, "r1": 12, "r2": 10, "r3": 2, "w1": 11, "w2": 9, "w3": 1, "t1": 7, "t2": 15}
+    swaps = projection_upgrades(starters, list(POS), proj, POS, SLOTS)
+    assert all(POS[s["in"]] == POS[s["out"]] for s in swaps)
+
+
+def test_empty_inputs_return_no_swaps():
+    assert projection_upgrades([], list(POS), {"q1": 10}, POS, SLOTS) == []
+    assert projection_upgrades(["q1"], list(POS), {}, POS, SLOTS) == []
+    assert projection_upgrades(["q1"], list(POS), {"q1": 10}, POS, []) == []
+
+
+def test_max_swaps_cap():
+    starters = ["q1", "r1", "r2", "w1", "w2", "t1", "t2"]
+    proj = {"q1": 1, "r1": 1, "r2": 1, "r3": 20, "w1": 1, "w2": 1, "w3": 20, "t1": 1, "t2": 1}
+    swaps = projection_upgrades(starters, list(POS), proj, POS, SLOTS, max_swaps=1)
+    assert len(swaps) == 1
