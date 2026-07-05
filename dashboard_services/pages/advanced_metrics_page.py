@@ -217,6 +217,11 @@ def build_advanced_metrics_body(
           <div class="am-ctrl am-mobile-filter am-ctrl-weekbar" id="amWeekCtrl">
             <label class="am-ctrl-label">Week Range</label>
             <div id="amWkBarHost"></div>
+            <div class="am-quick-ranges" id="amQuickRanges">
+              <button type="button" class="am-qr active" data-range="">Season</button>
+              <button type="button" class="am-qr" data-range="last2">Last 2</button>
+              <button type="button" class="am-qr" data-range="last4">Last 4</button>
+            </div>
           </div>
           <div class="am-ctrl am-mobile-filter" id="amTeamCtrl">
             <label class="am-ctrl-label">Team</label>
@@ -250,6 +255,7 @@ def build_advanced_metrics_body(
           </div>
           <button id="amAddFilterBtn" type="button" class="am-add-stat-btn">&#43; Filter</button>
           <button id="amFiltersBtn" type="button" class="am-sort-btn am-filters-btn">Filters &#9662;</button>
+          <button id="amExportBtn" type="button" class="am-sort-btn" title="Download the current filtered view as a CSV">CSV</button>
           <label class="am-roster-toggle" id="amTrendToggleWrap" title="Show each player's recent usage trend (last 6 weeks) next to the metric">
             <input type="checkbox" id="amTrendToggle">
             <span>Usage trends</span>
@@ -275,6 +281,16 @@ def build_advanced_metrics_body(
             <input type="number" id="amAgeMin" class="am-age-input" placeholder="Min" min="18" max="45">
             <span class="am-filter-sep">&#8211;</span>
             <input type="number" id="amAgeMax" class="am-age-input" placeholder="Max" min="18" max="45">
+          </div>
+          <div class="am-age-wrap" id="amExpWrap" style="display:none;">
+            <span class="am-filter-label">Exp:</span>
+            <select id="amExpFilter" class="am-select am-season-select" style="font-size:12px;padding:4px 8px;">
+              <option value="">Any</option>
+              <option value="rookie">Rookies</option>
+              <option value="le1">2nd year or less</option>
+              <option value="le2">3rd year or less</option>
+              <option value="ge4">4+ years</option>
+            </select>
           </div>
           <div class="am-vol-ctrl" id="amGamesCtrl" style="display:none;">
             <span class="am-filter-label" id="amVolLabel">Min</span>
@@ -481,6 +497,17 @@ def build_advanced_metrics_body(
       .am-season-select { min-width:90px; }
       .am-search { width:100%; box-sizing:border-box; }
       .am-sort-btn { cursor:pointer; font-weight:600; white-space:nowrap; }
+      /* Quick week-range chips (Season / Last 2 / Last 4) */
+      .am-quick-ranges { display:flex; gap:4px; margin-top:5px; }
+      .am-qr {
+        padding:2px 9px; font-size:11px; font-weight:600; cursor:pointer;
+        border:1px solid var(--border); border-radius:999px;
+        background:var(--card); color:var(--text-muted);
+      }
+      .am-qr.active { background:var(--accent,#3b82f6); border-color:var(--accent,#3b82f6); color:#fff; }
+      /* Compare position-average baseline column */
+      .am-cmp-baseline-head .am-cmp-head-name { color:var(--text-muted); }
+      .am-cmp-baseline { opacity:.75; border-left:1px dashed var(--border); }
       /* Subcontrols row: positions + action buttons + toggles */
       .am-subcontrols { display:flex; align-items:center; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
       .am-positions { display:flex; gap:5px; flex:1 1 auto; min-width:0; overflow-x:auto; padding-bottom:1px; }
@@ -1066,6 +1093,7 @@ _AM_JS = r"""
                   showTrends: false,    // weekly usage trend column toggle
                   trendsBySeason: {},   // seasonKey -> { player_id -> trend obj }
                   ageMin: '', ageMax: '',
+                  expFilter: '',       // '' | 'rookie' | 'le1' | 'le2' | 'ge4'
                   comboFilters: [],     // [{key, op, val}]
                   filterColKeys: new Set(), // keys auto-shown as compact cols when used in filters
                   cmpSeasons: {},       // player_id -> season override in the Compare modal
@@ -1607,7 +1635,7 @@ _AM_JS = r"""
     entries = entries.filter(e => e[1] != null && !Number.isNaN(e[1]));
     const byPos = {};
     entries.forEach(e => { (byPos[e[2]] = byPos[e[2]] || []).push(e); });
-    const ranks = {}, bounds = {}, counts = {};
+    const ranks = {}, bounds = {}, counts = {}, avgs = {};
     Object.keys(byPos).forEach(pos => {
       const arr = byPos[pos];
       arr.sort((a, b) => lower ? a[1] - b[1] : b[1] - a[1]);
@@ -1615,8 +1643,9 @@ _AM_JS = r"""
       const vals = arr.map(e => e[1]);
       bounds[pos] = [Math.min(...vals), Math.max(...vals)];
       counts[pos] = arr.length;
+      avgs[pos] = vals.reduce((a, b) => a + b, 0) / vals.length;
     });
-    return { ranks: ranks, bounds: bounds, counts: counts };
+    return { ranks: ranks, bounds: bounds, counts: counts, avgs: avgs };
   }
   // Bar fill (8–100%) by RANK within position — so a mid-ranked player in a
   // bunched-top metric (role score, snap share, yards/touch…) doesn't show a
@@ -1821,6 +1850,13 @@ _AM_JS = r"""
     // simply re-aggregate those same metrics over the chosen weeks.
     metricsList = [state.metric, ...state.extraMetrics];
 
+    // Baseline column: when every pinned player shares a position, show that
+    // position's average (from the loaded page-season leaderboard) as a
+    // reference point next to the player columns.
+    const _cmpBasePos = (players.length && players.every(p =>
+        String(p.position || '').toUpperCase() === String(players[0].position || '').toUpperCase()
+      )) ? String(players[0].position || '').toUpperCase() : null;
+
     let html = '<table class="am-cmp-table"><thead><tr><th>Metric</th>';
     players.forEach((p) => {
       const pid = String(p.player_id);
@@ -1837,6 +1873,12 @@ _AM_JS = r"""
             : '<span class="am-cmp-player-meta">' + (p.team || '') + '</span>')
         + '</th>';
     });
+    if (_cmpBasePos) {
+      html += '<th class="am-cmp-player-head am-cmp-baseline-head">'
+        + '<div class="am-cmp-head-name">' + _cmpBasePos + ' avg</div>'
+        + '<span class="am-cmp-player-meta">page season</span>'
+        + '</th>';
+    }
     html += '</tr></thead><tbody>';
 
     metricsList.forEach(key => {
@@ -1867,6 +1909,12 @@ _AM_JS = r"""
           + (rk ? '<span class="am-cmp-rank">#' + rk + '</span>' : '')
           + '<div class="am-cmp-bar"><div style="width:' + w + '%;background:' + posColor(p.position) + '"></div></div></td>';
       });
+      if (_cmpBasePos) {
+        const av = (stats && stats.avgs) ? stats.avgs[_cmpBasePos] : null;
+        html += '<td class="am-cmp-baseline">'
+          + (av != null ? '<span class="am-cmp-val">' + fmtVal(av, key) + '</span>' : '<span style="opacity:.4">–</span>')
+          + '</td>';
+      }
       html += '</tr>';
     });
     html += '</tbody></table>';
@@ -2300,6 +2348,17 @@ _AM_JS = r"""
         return true;
       });
     }
+    if (state.expFilter) {
+      displayRows = displayRows.filter(function(r) {
+        const ex = r.years_exp;
+        if (ex == null) return false;
+        if (state.expFilter === 'rookie') return ex === 0;
+        if (state.expFilter === 'le1') return ex <= 1;
+        if (state.expFilter === 'le2') return ex <= 2;
+        if (state.expFilter === 'ge4') return ex >= 4;
+        return true;
+      });
+    }
     state.comboFilters.forEach(function(f) {
       displayRows = displayRows.filter(function(r) {
         let v;
@@ -2374,6 +2433,9 @@ _AM_JS = r"""
     } else if (avgNote) {
       avgNote.style.display = 'none';
     }
+
+    // Snapshot the fully filtered/sorted view (pre-pagination) for CSV export.
+    state._exportRows = displayRows;
 
     // Pagination: clamp current page then slice.
     const total = displayRows.length;
@@ -2549,6 +2611,7 @@ _AM_JS = r"""
   function resolveWeekRange() {
     const cw = cfg.currentWeek || 18;
     if (!state.weekRange) return { ws: null, we: null };
+    if (state.weekRange === 'last2')  return { ws: Math.max(1, cw - 1), we: cw };
     if (state.weekRange === 'last4')  return { ws: Math.max(1, cw - 3), we: cw };
     if (state.weekRange === 'last8')  return { ws: Math.max(1, cw - 7), we: cw };
     if (state.weekRange === 'last12') return { ws: Math.max(1, cw - 11), we: cw };
@@ -3481,9 +3544,10 @@ _AM_JS = r"""
     // Show the filter bar only when there's something to show: active chips,
     // the age-input controls, the vol (min games) control, or the filter form.
     const ageVis  = (document.getElementById('amAgeWrap')  || {}).style.display !== 'none';
+    const expVis  = (document.getElementById('amExpWrap')  || {}).style.display !== 'none';
     const volVis  = (document.getElementById('amGamesCtrl') || {}).style.display !== 'none';
     const formVis = (document.getElementById('amFilterForm') || {}).style.display !== 'none';
-    if (bar) bar.style.display = (state.comboFilters.length > 0 || ageVis || volVis || formVis) ? 'flex' : 'none';
+    if (bar) bar.style.display = (state.comboFilters.length > 0 || ageVis || expVis || volVis || formVis) ? 'flex' : 'none';
   }
   window.amRemoveFilter = function(idx) {
     const removed = state.comboFilters[idx];
@@ -3506,15 +3570,14 @@ _AM_JS = r"""
     const wrap = document.getElementById('amAgeWrap');
     if (!wrap) return;
     const hasAge = state.rows.some(r => r.age != null);
-    if (!hasAge) { wrap.style.display = 'none'; updateFilterBar(); return; }
-    // On mobile, only show the age inputs when the Filters dropdown is open.
+    // Experience control follows the same visibility rules as the age inputs.
+    const expWrap = document.getElementById('amExpWrap');
+    const hasExp = state.rows.some(r => r.years_exp != null);
     const isMobile = window.innerWidth <= 600;
-    if (isMobile) {
-      const fb = document.getElementById('amFilterBar');
-      wrap.style.display = (fb && fb.classList.contains('am-mobile-open')) ? '' : 'none';
-    } else {
-      wrap.style.display = '';
-    }
+    const fb = document.getElementById('amFilterBar');
+    const mobileOpen = fb && fb.classList.contains('am-mobile-open');
+    wrap.style.display = !hasAge ? 'none' : (isMobile && !mobileOpen ? 'none' : '');
+    if (expWrap) expWrap.style.display = !hasExp ? 'none' : (isMobile && !mobileOpen ? 'none' : '');
     updateFilterBar();
   }
 
@@ -3558,23 +3621,91 @@ _AM_JS = r"""
   // before we call it (the inline script runs before the <script src="app.js"> tag).
   const amMaxWk     = cfg.currentWeek || 18;
   const amWkBarHost = document.getElementById('amWkBarHost');
+  function _amSyncQuickChips(key) {
+    document.querySelectorAll('#amQuickRanges .am-qr').forEach(function(b) {
+      b.classList.toggle('active', (b.getAttribute('data-range') || '') === key);
+    });
+  }
+  function _amBuildWkBar(selWs, selWe) {
+    if (typeof _wkBarBuild !== 'function' || !amWkBarHost) return;
+    amWkBarHost.innerHTML = _wkBarBuild('amWkBar', 1, amMaxWk, selWs, selWe);
+    _wkBarInit('amWkBar', function(ws, we) {
+      const isFull = (ws <= 1 && we >= amMaxWk);
+      state.weekRange = isFull ? '' : 'custom';
+      state.weekStart = isFull ? null : ws;
+      state.weekEnd   = isFull ? null : we;
+      state.minVol    = '';
+      if (minGamesSel) minGamesSel.value = '';
+      updateVolCtrl();
+      updateVolHeader();
+      // A drag is either back-to-season or a custom range; no quick chip matches
+      // custom, so all chips clear (Season re-lights when the drag spans all).
+      _amSyncQuickChips(isFull ? '' : 'custom');
+      state.page = 0; fetchData();
+    });
+  }
   if (amWkBarHost) {
-    function _amInitWkBar() {
-      if (typeof _wkBarBuild !== 'function') return;
-      amWkBarHost.innerHTML = _wkBarBuild('amWkBar', 1, amMaxWk, 1, amMaxWk);
-      _wkBarInit('amWkBar', function(ws, we) {
-        const isFull = (ws <= 1 && we >= amMaxWk);
-        state.weekRange = isFull ? '' : 'custom';
-        state.weekStart = isFull ? null : ws;
-        state.weekEnd   = isFull ? null : we;
-        state.minVol    = '';
-        if (minGamesSel) minGamesSel.value = '';
-        updateVolCtrl();
-        updateVolHeader();
-        state.page = 0; fetchData();
+    window.addEventListener('load', function() { _amBuildWkBar(1, amMaxWk); });
+  }
+  // Quick range chips: Season / Last 2 / Last 4 (rolling windows ending at the
+  // current week) — the scouting workflow without dragging the bar each time.
+  const quickWrap = document.getElementById('amQuickRanges');
+  if (quickWrap) {
+    quickWrap.addEventListener('click', function(e) {
+      const btn = e.target.closest('.am-qr');
+      if (!btn) return;
+      const key = btn.getAttribute('data-range') || '';
+      state.weekRange = key;
+      state.weekStart = null;
+      state.weekEnd   = null;
+      state.minVol    = '';
+      if (minGamesSel) minGamesSel.value = '';
+      updateVolCtrl();
+      updateVolHeader();
+      _amSyncQuickChips(key);
+      const r = resolveWeekRange();
+      _amBuildWkBar(r.ws || 1, r.we || amMaxWk);
+      state.page = 0; fetchData();
+    });
+  }
+  // CSV export of the current filtered/sorted view (all pages, not just the
+  // visible one). Columns: identity + primary metric + any added metrics.
+  const exportBtn = document.getElementById('amExportBtn');
+  if (exportBtn) {
+    exportBtn.addEventListener('click', function() {
+      const rows = state._exportRows || [];
+      if (!rows.length) return;
+      const metricLbl = (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || state.metric;
+      const extraKeys = state.extraMetrics.filter(k => state.extraData[k]);
+      const head = ['Player', 'Team', 'Pos', 'Age', 'Exp', metricLbl, 'Games']
+        .concat(extraKeys.map(k => (cfg.metrics[k] && cfg.metrics[k].label) || k));
+      const esc = function(v) {
+        if (v == null) return '';
+        v = String(v);
+        return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+      };
+      const lines = [head.map(esc).join(',')];
+      rows.forEach(function(r) {
+        const line = [
+          r.name || '', r.team || '', r.position || '',
+          r.age != null ? r.age : '', r.years_exp != null ? r.years_exp : '',
+          r.value != null ? r.value : '',
+          r.vol != null ? r.vol : (r.games != null ? r.games : ''),
+        ].concat(extraKeys.map(function(k) {
+          const v = state.extraData[k].byId[String(r.player_id)];
+          return v != null ? v : '';
+        }));
+        lines.push(line.map(esc).join(','));
       });
-    }
-    window.addEventListener('load', _amInitWkBar);
+      const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      const rangeTag = state.weekRange ? '_' + state.weekRange : '';
+      a.download = 'metrics_' + state.metric + '_' + (state.season || 'season') + rangeTag + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function() { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+    });
   }
   if (rosterChk) {
     rosterChk.addEventListener('change', () => { state.rosterOnly = rosterChk.checked; state.page = 0; render(); });
@@ -3611,6 +3742,10 @@ _AM_JS = r"""
   const ageMaxEl = document.getElementById('amAgeMax');
   if (ageMinEl) ageMinEl.addEventListener('input', function() { state.ageMin = ageMinEl.value || ''; state.page = 0; render(); });
   if (ageMaxEl) ageMaxEl.addEventListener('input', function() { state.ageMax = ageMaxEl.value || ''; state.page = 0; render(); });
+
+  // Experience filter (rookies / early-career / veterans).
+  const expSel = document.getElementById('amExpFilter');
+  if (expSel) expSel.addEventListener('change', function() { state.expFilter = expSel.value || ''; state.page = 0; render(); });
 
   // Combo filter form.
   const addFilterBtn = document.getElementById('amAddFilterBtn');

@@ -216,6 +216,7 @@ _DRAFT_ROOM_HTML = r"""
           <button class="otc-main-tab" data-stab="needs">Team</button>
           <button class="otc-main-tab" data-stab="league">League</button>
           <div class="dr-side-opts">
+            <button class="dr-opts-trigger" id="drPickTradeBtn" aria-label="Pick trade evaluator" title="Pick trade evaluator"><i class="fa-solid fa-right-left"></i></button>
             <button class="dr-opts-trigger" id="drOptsBtn" aria-label="Settings" title="Settings"><i class="fa-solid fa-gear"></i></button>
             <div class="dr-opts-panel" id="drOptsPanel">
               <select class="dr-sim-speed" id="drSimSpeed" style="display:none;" title="Simulation speed">
@@ -528,6 +529,22 @@ _DRAFT_ROOM_HTML = r"""
   .dr-run-banner { margin: 10px 10px 4px; padding: 8px 10px; border-radius: 8px; font-size: 12px;
     background: rgba(239,68,68,.12); color: #ef4444; border: 1px solid rgba(239,68,68,.3); }
   .dr-run-banner b { color: #ef4444; }
+  .dr-cliff-banner { background: rgba(245,158,11,.12); color: #f59e0b; border-color: rgba(245,158,11,.35); }
+  .dr-cliff-banner b { color: #f59e0b; }
+  /* Pick trade evaluator (inside drModal) */
+  .dr-pt-title { font-size: 15px; font-weight: 800; margin-bottom: 4px; }
+  .dr-pt-sub { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; line-height: 1.45; }
+  .dr-pt-lbl { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .05em; color: var(--text-muted); margin: 8px 0 3px; }
+  .dr-pt-input { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--card); color: var(--text); font-size: 13px; outline: none; }
+  .dr-pt-result { margin-top: 12px; }
+  .dr-pt-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .dr-pt-side-h { font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .05em; color: var(--text-muted); margin-bottom: 4px; }
+  .dr-pt-row { font-size: 13px; padding: 2px 0; }
+  .dr-pt-proxy { font-size: 11px; color: var(--text-muted); }
+  .dr-pt-verdict { margin-top: 10px; font-size: 14px; font-weight: 800; }
   .dr-prev-score-hero { border: 1px solid; border-radius: 10px; padding: 12px 10px 10px; margin-bottom: 12px; text-align: center; }
   .dr-prev-score-num { font-size: 44px; font-weight: 900; line-height: 1; }
   .dr-prev-score-lbl { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-top: 2px; }

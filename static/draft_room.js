@@ -1809,7 +1809,21 @@
     var q = (state.queue || []).map(function(id){ return playersById[String(id)]; })
       .filter(function(p){ return p && !drafted[String(p.id)]; });
     if (!q.length){ listInto('<div class="dr-empty-note">Your queue is empty. Tap the ☆ on any player to add a target.</div>'); return; }
-    var html = ''; q.forEach(function(p){ html += playerRowHtml(p); });
+    // Survival odds on every queued target: the whole point of a queue is
+    // deciding who can wait until your next pick, so show the number.
+    var nextPick = nextOwnedAfterCurrent();
+    var html = alertBanners();
+    q.forEach(function(p){
+      var opts = {};
+      if (nextPick){
+        var wp = availProb(p, nextPick);
+        if (wp != null){
+          if (wp >= 55) opts.wait = { pn: nextPick, prob: wp };
+          else opts.availAt = { pn: nextPick, prob: wp };
+        }
+      }
+      html += playerRowHtml(p, opts);
+    });
     listInto(html);
   }
 
@@ -1865,6 +1879,27 @@
       + ' of the last 5 picks. Weigh your ' + hot + ' need before the tier dries up.</div>';
   }
 
+  // Tier-cliff banner: a position whose top-tier (T1-2) shelf is about to
+  // empty. Suppressed in round 1 so naturally-thin positions (TE) don't cry
+  // wolf before the draft has shape; after that, 1-2 left is a real cliff.
+  function cliffBanner(){
+    if (state.type === 'redraft') return '';
+    if ((state.current || 1) <= (state.teams || 12)) return '';
+    var out = '';
+    ['QB','RB','WR','TE'].forEach(function(pos){
+      var n = posTopRemaining(pos);
+      if (n === 1){
+        out += '<div class="dr-run-banner dr-cliff-banner"><i class="fa-solid fa-triangle-exclamation"></i> '
+          + '<b>Last T1-2 ' + pos + '</b> on the board.</div>';
+      } else if (n === 2){
+        out += '<div class="dr-run-banner dr-cliff-banner"><i class="fa-solid fa-triangle-exclamation"></i> '
+          + '<b>Only 2 T1-2 ' + pos + 's</b> left.</div>';
+      }
+    });
+    return out;
+  }
+  function alertBanners(){ return runBanner() + cliffBanner(); }
+
   function renderRec(){
     if (!hasOwned()){ listInto('<div class="dr-empty-note">Set your pick slot to get personalized recommendations.</div>'); return; }
     var counts = myPosCounts();
@@ -1873,7 +1908,7 @@
     var maxVal = 0; pool.forEach(function(p){ var v = valOf(p); if (v > maxVal) maxVal = v; });
     pool.forEach(function(p){ p._ps = pickScore(p, maxVal, counts); });
     pool.sort(function(a, b){ return b._ps - a._ps; });
-    var html = balanceAlert();
+    var html = balanceAlert() + alertBanners();
     // Assistant looks across your whole draft capital: a player you can likely
     // get at a later owned pick is flagged so you can spend this pick elsewhere.
     var nextPick = nextOwnedAfterCurrent();
@@ -3207,7 +3242,7 @@
     });
     if (!pool.length){ listInto('<div class="dr-empty-note">No players match.</div>'); return; }
     var nextPick = hasOwned() ? nextOwnedAfterCurrent() : null;
-    var html = balanceAlert();
+    var html = balanceAlert() + alertBanners();
     // K/DEF have no startup ADP so they sort to the very end and fall past the
     // 200-player cap. Separate them out so they always render after skill players.
     var _isKD = function(p){ var pos = String(p.position||'').toUpperCase(); return pos === 'K' || pos === 'DEF'; };
@@ -3396,6 +3431,82 @@
     btns.appendChild(ok);
     m.style.display = 'flex';
   }
+  // ── In-draft pick trade evaluator ───────────────────────────────────────────
+  // Values an overall pick number as the player likely on the board there: the
+  // k-th best remaining player by ADP, where k is how many picks away it is.
+  // Board-derived, so it prices THIS draft (a thin board makes late picks cheap).
+  function pickNumValue(pn){
+    var cur = state.current || 1;
+    var k = Math.max(1, Math.round(pn) - cur + 1);
+    var pool = availablePool().slice().sort(function(a, b){
+      var aa = adpOf(a), ab = adpOf(b);
+      if (aa == null && ab == null) return valOf(b) - valOf(a);
+      if (aa == null) return 1;
+      if (ab == null) return -1;
+      return aa - ab;
+    });
+    if (!pool.length) return null;
+    var p = pool[Math.min(k, pool.length) - 1];
+    return { value: Math.round(valOf(p)), proxy: p };
+  }
+  function _parsePickNums(s){
+    return String(s || '').split(/[,\s]+/)
+      .map(function(t){ return parseInt(t, 10); })
+      .filter(function(n){ return n >= 1 && n <= 600; });
+  }
+  function drPickTradeOpen(){
+    var m = document.getElementById('drModal');
+    var msg = document.getElementById('drModalMsg');
+    msg.innerHTML = '<div class="dr-pt-title">Pick trade evaluator</div>'
+      + '<div class="dr-pt-sub">Overall pick numbers, comma separated. Each pick is priced as the player likely on the board there (by ADP on this draft’s remaining pool).</div>'
+      + '<label class="dr-pt-lbl">You give</label>'
+      + '<input id="drPtGive" class="dr-pt-input" inputmode="numeric" placeholder="e.g. 14">'
+      + '<label class="dr-pt-lbl">You get</label>'
+      + '<input id="drPtGet" class="dr-pt-input" inputmode="numeric" placeholder="e.g. 22, 27">'
+      + '<div id="drPtResult" class="dr-pt-result"></div>';
+    var btns = document.getElementById('drModalBtns');
+    btns.innerHTML = '';
+    var close = document.createElement('button');
+    close.className = 'dr-btn'; close.textContent = 'Close';
+    close.addEventListener('click', function(){ m.style.display = 'none'; });
+    btns.appendChild(close);
+    function sideHtml(nums){
+      var tot = 0;
+      var rows = nums.map(function(pn){
+        var v = pickNumValue(pn);
+        if (!v) return '<div class="dr-pt-row">#' + pn + ' — n/a</div>';
+        tot += v.value;
+        return '<div class="dr-pt-row">#' + pn + ' &asymp; <b>' + v.value + '</b>'
+          + ' <span class="dr-pt-proxy">(' + esc(v.proxy.name) + ')</span></div>';
+      }).join('');
+      return { html: rows, tot: tot };
+    }
+    function evalNow(){
+      var give = _parsePickNums(document.getElementById('drPtGive').value);
+      var get  = _parsePickNums(document.getElementById('drPtGet').value);
+      var out = document.getElementById('drPtResult');
+      if (!give.length || !get.length){ out.innerHTML = ''; return; }
+      var g = sideHtml(give), r = sideHtml(get);
+      var diff = r.tot - g.tot;
+      var even = Math.abs(diff) <= Math.max(20, g.tot * 0.05);
+      var verdict = even ? 'Even trade'
+        : (diff > 0 ? 'You win by ~' + diff : 'You lose by ~' + (-diff));
+      var col = even ? 'var(--text-muted)' : (diff > 0 ? '#22c55e' : '#ef4444');
+      out.innerHTML = '<div class="dr-pt-cols">'
+        + '<div><div class="dr-pt-side-h">Give (' + g.tot + ')</div>' + g.html + '</div>'
+        + '<div><div class="dr-pt-side-h">Get (' + r.tot + ')</div>' + r.html + '</div>'
+        + '</div>'
+        + '<div class="dr-pt-verdict" style="color:' + col + '">' + verdict + '</div>';
+    }
+    msg.querySelector('#drPtGive').addEventListener('input', evalNow);
+    msg.querySelector('#drPtGet').addEventListener('input', evalNow);
+    m.style.display = 'flex';
+  }
+  (function(){
+    var b = document.getElementById('drPickTradeBtn');
+    if (b) b.addEventListener('click', drPickTradeOpen);
+  })();
+
   function drConfirm(msg, okLabel, cb){
     if (typeof okLabel === 'function'){ cb = okLabel; okLabel = 'Confirm'; }
     var m = document.getElementById('drModal');

@@ -18830,6 +18830,18 @@ def api_advanced_metrics_leaderboard():
         logger.exception(f"[api/advanced-metrics/leaderboard] error for metric={metric}: {e}")
         players = []
 
+    # Attach experience so the client can offer a rookie/years-exp filter; the
+    # reduced players index has no years_exp, so read the full feed (cached).
+    try:
+        _full_players_lb = get_players_global() or {}
+        for _p in players or []:
+            if "years_exp" not in _p:
+                _p["years_exp"] = (
+                    _full_players_lb.get(str(_p.get("player_id"))) or {}
+                ).get("years_exp")
+    except Exception:
+        logger.debug("leaderboard years_exp enrich failed", exc_info=True)
+
     spec = LEADERBOARD_METRICS[metric]
     vol_col = (spec.get("min_vol") or {}).get("col") or "games"
     resp = jsonify({
