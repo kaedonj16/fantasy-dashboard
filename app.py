@@ -8280,7 +8280,19 @@ def build_teams_body(ctx: dict) -> str:
     # expandable PICKS detail row on each team card.
     _pk_proj_year = current_season + 1
     _pk_slot_by_original: dict = {}
+    _pk_final_slots: dict = {}
     _pk_value_tbl: dict = {}
+    # Exact slots for the upcoming draft: its order is already cemented by
+    # last season's final standings (same source _team_pick_value uses).
+    try:
+        _pk_final_slots = build_historical_pick_slot_map(
+            platform=platform,
+            root_league_id=league_id,
+            current_season=current_season,
+            source_season=current_season - 1,
+        ) or {}
+    except Exception:
+        logger.debug("teams: final pick slots failed", exc_info=True)
     try:
         _pk_odds = _playoff_sim_cached(ctx, platform)
         if _pk_odds:
@@ -8794,7 +8806,17 @@ def build_teams_body(ctx: dict) -> str:
             if not _pk_yr or not _pk_rnd:
                 continue
             _pk_orig = str(_pk.get("original_owner") or rid)
-            _pk_slot = _pk_slot_by_original.get(_pk_orig) if _pk_yr == _pk_proj_year else None
+            _pk_slot = None
+            _pk_is_proj = False
+            if _pk_yr == current_season:
+                # Upcoming draft: order is final (last season is in the books).
+                try:
+                    _pk_slot = _pk_final_slots.get(int(_pk_orig))
+                except (TypeError, ValueError):
+                    _pk_slot = None
+            elif _pk_yr == _pk_proj_year:
+                _pk_slot = _pk_slot_by_original.get(_pk_orig)
+                _pk_is_proj = _pk_slot is not None
             _pk_lbl = _pk_pick_label(_pk_yr, _pk_rnd, _pk_slot)
             _pk_val = _pk_pick_value_from_table(
                 _pk_value_tbl, _pk_yr, _pk_rnd, _pk_slot, len(rosters) or 10
@@ -8803,7 +8825,7 @@ def build_teams_body(ctx: dict) -> str:
             if _pk_orig != str(rid):
                 _pk_from_name = roster_map.get(_pk_orig) or f"Roster {_pk_orig}"
                 _pk_from = f"<span class='dc-from'>from {html.escape(str(_pk_from_name))}</span>"
-            _pk_badge = "<span class='dc-proj'>projected</span>" if _pk_slot else ""
+            _pk_badge = "<span class='dc-proj'>projected</span>" if _pk_is_proj else ""
             _pk_rows.append(
                 f"<li class='dc-pick'>"
                 f"<span class='dc-pick-label'>{html.escape(_pk_lbl)}</span>"
