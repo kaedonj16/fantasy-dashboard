@@ -531,6 +531,9 @@ _DRAFT_ROOM_HTML = r"""
   .dr-run-banner b { color: #ef4444; }
   .dr-cliff-banner { background: rgba(245,158,11,.12); color: #f59e0b; border-color: rgba(245,158,11,.35); }
   .dr-cliff-banner b { color: #f59e0b; }
+  .dr-strat-tag { margin-left: 6px; font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--text-muted); border: 1px solid var(--border);
+    border-radius: 999px; padding: 1px 7px; vertical-align: middle; white-space: nowrap; }
   /* Pick trade evaluator (inside drModal) */
   .dr-pt-title { font-size: 15px; font-weight: 800; margin-bottom: 4px; }
   .dr-pt-sub { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; line-height: 1.45; }

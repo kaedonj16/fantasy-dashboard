@@ -693,6 +693,77 @@
     }
     return state.simBias[slot];
   }
+  // Named draft strategies: a persistent early-round game plan per CPU team on
+  // top of the softer persona/bias. Assigned once per draft from the seeded RNG
+  // and saved with state, so a team executes its plan consistently all draft.
+  // 'bpa' teams have no plan; the rest shape the first rounds then fade, and
+  // every existing sanity guard (overcrowding, backup-reach, K/DEF fill) still
+  // applies on top so a plan can never produce a broken roster.
+  function _simStrategy(slot){
+    if (!state.simStrats) state.simStrats = {};
+    if (!state.simStrats[slot]){
+      var r = _rand01(slot + ':strat');
+      var s;
+      if (state.type === 'rookie'){
+        // Rookie drafts are short and value-driven: only simple positional
+        // leans make sense (zero_rb's early window reads as WR-first here).
+        s = r < 0.60 ? 'bpa' : (r < 0.80 ? 'rb_heavy' : 'zero_rb');
+      } else if (r < 0.40) s = 'bpa';
+      else if (r < 0.55) s = 'rb_heavy';
+      else if (r < 0.70) s = 'zero_rb';
+      else if (r < 0.80) s = 'hero_rb';
+      else if (r < 0.90) s = 'elite_te';
+      else               s = 'early_qb';
+      state.simStrats[slot] = s;
+    }
+    return state.simStrats[slot];
+  }
+  function stratLabel(s){
+    return { rb_heavy: 'RB heavy', zero_rb: 'Zero RB', hero_rb: 'Hero RB',
+             elite_te: 'Elite TE', early_qb: 'Early QB' }[s] || '';
+  }
+  // Weight multiplier a strategy applies to a candidate: pos, how many of that
+  // position the team already has, and the current round.
+  function _stratMult(strat, pos, have, round){
+    if (!strat || strat === 'bpa') return 1;
+    if (strat === 'rb_heavy'){
+      if (round <= 3){
+        if (pos === 'RB') return 1.6;
+        if (pos === 'WR') return 0.8;
+      }
+      return 1;
+    }
+    if (strat === 'zero_rb'){
+      // Fade RB early, hammer WR; then a catch-up window for RB volume.
+      if (round <= 5){
+        if (pos === 'RB') return 0.35;
+        if (pos === 'WR') return 1.5;
+        if (pos === 'TE') return 1.15;
+        return 1;
+      }
+      if (round <= 10 && pos === 'RB') return 1.35;
+      return 1;
+    }
+    if (strat === 'hero_rb'){
+      // One anchor RB in the first two rounds, then WRs while fading RB depth.
+      if (round <= 2 && pos === 'RB') return have === 0 ? 1.8 : 0.35;
+      if (round <= 6){
+        if (pos === 'RB') return 0.45;
+        if (pos === 'WR') return 1.3;
+      }
+      return 1;
+    }
+    if (strat === 'elite_te'){
+      if (round <= 3 && pos === 'TE' && have === 0) return 1.9;
+      return 1;
+    }
+    if (strat === 'early_qb'){
+      if (round <= 4 && pos === 'QB') return 1.6;
+      return 1;
+    }
+    return 1;
+  }
+
   // Build a CPU team's scoring context (its own above-replacement counts, its own
   // picks, and its own next pick) so pickScore judges need for THAT team, not the
   // viewer's. Mirrors psCtx()/nextOwnedAfterCurrent() but scoped to one draft slot.
@@ -731,6 +802,7 @@
     // gives it slight positional preferences.
     var persona = _simPersona(slot);
     var _bias = _simBias(slot);
+    var _strat = _simStrategy(slot);
     // Score every candidate from THIS CPU team's perspective (its own roster,
     // depth, and next pick) so need is judged for the right team, not the viewer.
     var cpuCtx = _cpuCtx(slot);
@@ -851,7 +923,11 @@
       }
       // Gentle per-team positional lean (skill positions only).
       var biasMult = _bias[pos] || 1;
-      w *= needBoost * biasMult / overFactor;
+      // Named strategy plan (RB heavy / Zero RB / Hero RB / Elite TE / Early QB).
+      // Early-QB only pulls while the starting QB room is unfilled.
+      var stratMult = _stratMult(_strat, pos, have, _curRound);
+      if (_strat === 'early_qb' && pos === 'QB' && have >= _qbStarters) stratMult = 1;
+      w *= needBoost * biasMult * stratMult / overFactor;
       // Hard guard: a backup at a starter-filled slot has little marginal value,
       // so the CPU must never REACH for one - only take it if its real ADP has
       // fallen to this pick or later. Covers a 2nd QB in 1QB, a 3rd QB in SF (both
@@ -2501,9 +2577,16 @@
       var winTag = w ? '<span class="dr-sum-lwin dr-win-' + w.label.toLowerCase().replace('-','') + '">' + esc(w.label) + '</span>' : '';
       var tCol = t.grade.score >= 75 ? '#22c55e' : t.grade.score >= 60 ? '#38bdf8' : t.grade.score >= 45 ? '#f59e0b' : '#ef4444';
       var rCls = i < 3 ? (' ' + _rc[i]) : '';
+      // In a mock, show each CPU team's drafting plan so their behavior reads
+      // as intentional (Zero RB, RB heavy, ...) rather than random.
+      var stratTag = '';
+      if (sim && !t.isMe && state.simStrats){
+        var _sl = stratLabel(state.simStrats[t.slot]);
+        if (_sl) stratTag = '<span class="dr-strat-tag">' + _sl + '</span>';
+      }
       html += '<div class="dr-sum-lrow' + (t.isMe ? ' is-me' : '') + '" data-legslot="' + t.slot + '">'
         + '<span class="dr-sum-lrank' + rCls + '">' + (i + 1) + '</span>'
-        + '<span class="dr-sum-lname">' + esc(t.name) + '</span>'
+        + '<span class="dr-sum-lname">' + esc(t.name) + stratTag + '</span>'
         + winTag
         + '<span class="dr-sum-lgrade" style="color:' + tCol + '">' + gradeLetter(t.grade.score) + '</span>'
         + '<span class="dr-sum-lchev">&#9660;</span>'
