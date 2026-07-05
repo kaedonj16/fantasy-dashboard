@@ -1647,8 +1647,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill_dropdown("Draft", [
         ("Draft Room",    "page_draft_room",    "draft",         False),
         ("Draft History", "page_draft_history", "draft-history", False),
-        ("Draft Capital", "page_draft_capital", "draft-capital", False),
-    ], ["draft", "draft-history", "draft-capital"], "draftNavDropdown"))
+    ], ["draft", "draft-history"], "draftNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",   "page_awards",   "awards",   False),
         ("Graphs",   "page_graphs",   "graphs",   False),
@@ -6160,7 +6159,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             <div class="os-stat-card">
               <div class="os-stat-label">Draft Capital Index</div>
               <div class="os-stat-value">{total_draft_capital:,.0f}</div>
-              <div class="os-stat-sub"><a class="os-stat-sub-link" href="{url_for('page_draft_capital', platform=platform, season=season, league_id=ctx.get('league_id', ''))}">View team breakdown &rarr;</a></div>
+              <div class="os-stat-sub"><a class="os-stat-sub-link" href="{url_for('page_teams', platform=platform, season=season, league_id=ctx.get('league_id', ''))}">View team breakdown &rarr;</a></div>
             </div>
             {_os_playoff_tile_html}
           </div>
@@ -8275,6 +8274,33 @@ def build_teams_body(ctx: dict) -> str:
     picks_by_roster = ctx.get("picks_by_roster") or {}
     league_id = str(ctx.get("league_id") or "")
     current_season = _safe_int((ctx.get("league") or {}).get("season"), datetime.now().year)
+
+    # Projected draft slots for next year's picks, from projected final
+    # standings this season (fewest average final wins picks first). Feeds the
+    # expandable PICKS detail row on each team card.
+    _pk_proj_year = current_season + 1
+    _pk_slot_by_original: dict = {}
+    _pk_value_tbl: dict = {}
+    try:
+        _pk_odds = _playoff_sim_cached(ctx, platform)
+        if _pk_odds:
+            _pk_order = sorted(
+                _pk_odds,
+                key=lambda r: (
+                    float(r.get("avg_final_wins") or r.get("wins") or 0),
+                    float(r.get("playoff_pct") or 0),
+                ),
+            )
+            _pk_slot_by_original = {
+                str(r.get("roster_id")): i + 1 for i, r in enumerate(_pk_order)
+            }
+    except Exception:
+        logger.debug("teams: pick slot projection failed", exc_info=True)
+    try:
+        from dashboard_services.picks import load_pick_value_table as _lpvt_teams
+        _pk_value_tbl = dict(_lpvt_teams(league_teams=len(rosters) or 10) or {})
+    except Exception:
+        logger.debug("teams: pick value table failed", exc_info=True)
     
     viewer = ctx.get("viewer") or {}
     viewer_roster_id = viewer.get("viewer_roster_id")
@@ -8739,6 +8765,7 @@ def build_teams_body(ctx: dict) -> str:
         table_rows.append(
             "<tr class='pos-row pos-picks-row'>"
             "  <td class='pos-name'>"
+            "    <span class='pos-row-toggle'>▾</span> "
             "    <i class='fa-solid fa-clipboard-list' style='font-size:11px;opacity:0.7;'></i> PICKS"
             "  </td>"
             f"  <td class='pos-count'>{pick_count}</td>"
@@ -8752,6 +8779,52 @@ def build_teams_body(ctx: dict) -> str:
             "    </div>"
             "  </td>"
             "  <td class='pos-rank'></td>"
+            "</tr>"
+        )
+
+        # Expandable pick detail: each future pick with its projected slot
+        # ("2027 1.03" from the playoff-odds sim, tagged projected) and value.
+        _pk_rows = []
+        for _pk in picks_by_roster.get(str(rid), []):
+            try:
+                _pk_yr = int(_pk.get("season") or 0)
+                _pk_rnd = int(_pk.get("round") or 0)
+            except (TypeError, ValueError):
+                continue
+            if not _pk_yr or not _pk_rnd:
+                continue
+            _pk_orig = str(_pk.get("original_owner") or rid)
+            _pk_slot = _pk_slot_by_original.get(_pk_orig) if _pk_yr == _pk_proj_year else None
+            _pk_lbl = _pk_pick_label(_pk_yr, _pk_rnd, _pk_slot)
+            _pk_val = _pk_pick_value_from_table(
+                _pk_value_tbl, _pk_yr, _pk_rnd, _pk_slot, len(rosters) or 10
+            )
+            _pk_from = ""
+            if _pk_orig != str(rid):
+                _pk_from_name = roster_map.get(_pk_orig) or f"Roster {_pk_orig}"
+                _pk_from = f"<span class='dc-from'>from {html.escape(str(_pk_from_name))}</span>"
+            _pk_badge = "<span class='dc-proj'>projected</span>" if _pk_slot else ""
+            _pk_rows.append(
+                f"<li class='dc-pick'>"
+                f"<span class='dc-pick-label'>{html.escape(_pk_lbl)}</span>"
+                f"{_pk_from}{_pk_badge}"
+                f"<span class='dc-pick-val'>{_pk_val:,.0f}</span>"
+                f"</li>"
+            )
+        _pk_note = (
+            f"<div class='dc-note'>{_pk_proj_year} slots are projected from current "
+            f"playoff odds; later years use round values.</div>"
+            if any("dc-proj" in r for r in _pk_rows) else ""
+        )
+        _pk_detail = (
+            f"<ul class='dc-pick-list'>{''.join(_pk_rows)}</ul>{_pk_note}"
+            if _pk_rows else "<div class='dc-none'>No future picks</div>"
+        )
+        table_rows.append(
+            "<tr class='pos-detail-row' data-pos='PICKS' style='display:none;'>"
+            "  <td colspan='8'>"
+            f"    <div class='pos-detail-inner'>{_pk_detail}</div>"
+            "  </td>"
             "</tr>"
         )
 
@@ -12272,126 +12345,6 @@ def page_draft_history(platform: str = None, season: int = None, league_id: str 
     return render_page(
         "Draft History | BR Fantasy", league_id, "draft", body, platform, season,
         description="Review your league's past and live fantasy football drafts pick-by-pick.",
-    )
-
-
-def build_draft_capital_body(ctx: dict) -> str:
-    """League-wide draft capital: every team's future picks with projected
-    slots and modeled values, ranked by total capital.
-
-    Slots for next year's picks are projected from the playoff-odds sim
-    (worst projected finish picks first); later years fall back to round
-    values since their order depends on a season that hasn't been played.
-    """
-    platform = ctx.get("platform", "sleeper")
-    season = int(ctx.get("season") or ctx.get("current_season") or 0)
-    league_id = ctx.get("league_id", "")
-    rosters = ctx.get("rosters") or []
-    roster_map = ctx.get("roster_map") or {}
-    picks_by_roster = ctx.get("picks_by_roster") or {}
-    num_teams = len(rosters) or 10
-
-    # Projected draft order for picks in season+1, from projected final
-    # standings this season (fewest average final wins picks first).
-    proj_year = season + 1
-    slot_by_original: dict = {}
-    odds = _playoff_sim_cached(ctx, platform)
-    if odds:
-        _order = sorted(
-            odds,
-            key=lambda r: (
-                float(r.get("avg_final_wins") or r.get("wins") or 0),
-                float(r.get("playoff_pct") or 0),
-            ),
-        )
-        slot_by_original = {str(r.get("roster_id")): i + 1 for i, r in enumerate(_order)}
-
-    try:
-        from dashboard_services.picks import load_pick_value_table
-        pick_tbl = dict(load_pick_value_table(league_teams=num_teams) or {})
-    except Exception:
-        logger.debug("draft capital: pick value table failed", exc_info=True)
-        pick_tbl = {}
-
-    teams = []
-    for rid in sorted(roster_map, key=lambda k: str(roster_map.get(k) or "")):
-        picks = picks_by_roster.get(str(rid)) or []
-        rows = []
-        total = 0.0
-        for pk in picks:
-            try:
-                yr = int(pk.get("season") or 0)
-                rnd = int(pk.get("round") or 0)
-            except (TypeError, ValueError):
-                continue
-            if not yr or not rnd:
-                continue
-            orig = str(pk.get("original_owner") or rid)
-            slot = slot_by_original.get(orig) if yr == proj_year else None
-            label = _pk_pick_label(yr, rnd, slot)
-            val = _pk_pick_value_from_table(pick_tbl, yr, rnd, slot, num_teams)
-            total += val
-            from_txt = ""
-            if orig != str(rid):
-                from_name = roster_map.get(orig) or f"Roster {orig}"
-                from_txt = f"<span class='dc-from'>from {html.escape(str(from_name))}</span>"
-            proj_badge = "<span class='dc-proj'>projected</span>" if slot else ""
-            rows.append(
-                f"<li class='dc-pick'>"
-                f"<span class='dc-pick-label'>{html.escape(label)}</span>"
-                f"{from_txt}{proj_badge}"
-                f"<span class='dc-pick-val'>{val:,.0f}</span>"
-                f"</li>"
-            )
-        teams.append({
-            "rid": str(rid),
-            "name": str(roster_map.get(rid) or f"Roster {rid}"),
-            "total": total,
-            "rows": rows,
-        })
-
-    teams.sort(key=lambda t: -t["total"])
-
-    cards = []
-    for i, t in enumerate(teams, start=1):
-        rows_html = "".join(t["rows"]) or "<li class='dc-pick dc-none'>No future picks</li>"
-        cards.append(f"""
-        <section class="os-card dc-team-card">
-          <div class="os-section-head">
-            <div class="os-section-head-content">
-              <h2 class="os-section-title">#{i} {html.escape(t['name'])}</h2>
-              <div class="os-section-subtitle">{t['total']:,.0f} total pick value</div>
-            </div>
-          </div>
-          <ul class="dc-pick-list">{rows_html}</ul>
-        </section>""")
-
-    note = (
-        f"Slots for {proj_year} picks are projected from this season's "
-        f"playoff-odds simulation (worst projected finish picks first) and firm "
-        f"up as games are played. Later years use round values until their "
-        f"order is knowable."
-    )
-    return f"""
-    <div class="dc-page">
-      <div class="page-header">
-        <h1>Draft Capital</h1>
-        <p class="muted">{note}</p>
-      </div>
-      <div class="dc-grid">
-        {''.join(cards)}
-      </div>
-    </div>
-    """
-
-
-@app.route("/<platform>/<int:season>/<league_id>/draft-capital")
-def page_draft_capital(platform: str, season: int, league_id: str):
-    ctx = get_league_ctx_from_cache(platform, league_id, season)
-    body = build_draft_capital_body(ctx)
-    return render_page(
-        "Draft Capital | BR Fantasy", league_id, "draft-capital", body, platform, season,
-        description="Every team's future rookie picks with projected slots and modeled values.",
     )
 
 
