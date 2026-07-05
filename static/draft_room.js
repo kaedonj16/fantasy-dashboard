@@ -1059,7 +1059,27 @@
     // grab the best available one first so the slot doesn't go empty.
     var _kd = _autoKDefNeed(pool);
     if (_kd) return _kd;
-    var scored = pool.map(function(p){ return { p: p, s: pickScoreFor(p) || 0 }; });
+    // User-chosen auto-draft plan: apply the same strategy/age-lean shaping the
+    // CPU teams use, at full intensity with no window jitter (you picked the
+    // plan deliberately, so it executes straight).
+    var strat = state.myStrat || '';
+    var lean = state.myAgeLean || '';
+    var counts = strat || lean ? myPosCounts() : null;
+    var round = Math.ceil(state.current / (state.teams || 12));
+    var prm = { intensity: 1, shift: 0 };
+    var qbStarters = state.sf ? 2 : 1;
+    var scored = pool.map(function(p){
+      var s = pickScoreFor(p) || 0;
+      if (strat || lean){
+        var pos = (p.position || '').toUpperCase();
+        var have = (counts && counts[pos]) || 0;
+        var sm = _stratMult(strat, pos, have, round, prm);
+        if (strat === 'early_qb' && pos === 'QB' && have >= qbStarters) sm = 1;
+        var am = _ageLeanMult(lean, pos, p.age != null ? Number(p.age) : null, 1);
+        s = s * sm * am;
+      }
+      return { p: p, s: s };
+    });
     scored.sort(function(a, b){ return b.s - a.s; });
     return scored[0].p;
   }
@@ -1152,6 +1172,19 @@
       ab.style.display = running ? '' : 'none';
       ab.textContent = simAutoDraft ? 'Manual' : 'Auto Draft';
       ab.className = 'dr-btn ' + (simAutoDraft ? 'dr-btn-primary' : 'dr-btn-ghost');
+    }
+    // Auto-draft plan selectors: strategy whenever a mock is up; age lean only
+    // for startup drafts (redraft has no age axis, rookie classes are young).
+    var ms = document.getElementById('drMyStrat');
+    var ml = document.getElementById('drMyAgeLean');
+    if (ms){
+      ms.style.display = (ready || running) ? '' : 'none';
+      ms.value = (state && state.myStrat) || '';
+    }
+    if (ml){
+      var startup = state && state.type !== 'redraft' && state.type !== 'rookie';
+      ml.style.display = ((ready || running) && startup) ? '' : 'none';
+      ml.value = (state && state.myAgeLean) || '';
     }
   }
   // User hit Start Draft: kick off the CPU picks.
@@ -4002,6 +4035,14 @@
   });
   document.getElementById('drSimSpeed').addEventListener('change', function(){
     simSpeed = parseInt(this.value, 10) || 700;
+  });
+  var _myStratSel = document.getElementById('drMyStrat');
+  if (_myStratSel) _myStratSel.addEventListener('change', function(){
+    if (state){ state.myStrat = this.value || ''; save(); }
+  });
+  var _myLeanSel = document.getElementById('drMyAgeLean');
+  if (_myLeanSel) _myLeanSel.addEventListener('change', function(){
+    if (state){ state.myAgeLean = this.value || ''; save(); }
   });
   document.getElementById('drSideTabs').addEventListener('click', function(e){
     var b = e.target.closest('.otc-main-tab'); if (!b) return;

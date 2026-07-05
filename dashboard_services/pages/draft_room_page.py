@@ -225,6 +225,20 @@ _DRAFT_ROOM_HTML = r"""
                 <option value="300">Fast</option>
                 <option value="60">Instant</option>
               </select>
+              <select class="dr-sim-speed" id="drMyStrat" style="display:none;" title="Strategy your auto-draft follows on your picks">
+                <option value="">Auto: Balanced</option>
+                <option value="rb_heavy">Auto: RB heavy</option>
+                <option value="wr_heavy">Auto: WR heavy</option>
+                <option value="zero_rb">Auto: Zero RB</option>
+                <option value="hero_rb">Auto: Hero RB</option>
+                <option value="elite_te">Auto: Elite TE</option>
+                <option value="early_qb">Auto: Early QB</option>
+              </select>
+              <select class="dr-sim-speed" id="drMyAgeLean" style="display:none;" title="Age lean your auto-draft follows on your picks">
+                <option value="">Age: Neutral</option>
+                <option value="win_now">Age: Win now</option>
+                <option value="youth">Age: Youth</option>
+              </select>
               <button class="dr-btn dr-btn-ghost" id="drSummaryBtn" style="display:none;">Summary</button>
               <button class="dr-btn dr-btn-ghost" id="drShare">Share</button>
               <button class="dr-btn dr-btn-ghost" id="drUndo">Undo</button>
