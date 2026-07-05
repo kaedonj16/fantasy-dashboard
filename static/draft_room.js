@@ -723,6 +723,40 @@
     return { rb_heavy: 'RB heavy', wr_heavy: 'WR heavy', zero_rb: 'Zero RB',
              hero_rb: 'Hero RB', elite_te: 'Elite TE', early_qb: 'Early QB' }[s] || '';
   }
+  // Dynasty age lean: a second, independent axis for startup drafts. A win-now
+  // team pays up for proven vets and fades rookies; a youth team punts the
+  // short term and hoards early-20s upside. Orthogonal to the positional plan,
+  // so "Zero RB + win now" and "RB heavy + youth" both occur. Startup only:
+  // redraft has no age dimension and rookie classes are uniformly young.
+  function _simAgeLean(slot){
+    if (state.type === 'redraft' || state.type === 'rookie') return 'neutral';
+    if (!state.simAgeLeans) state.simAgeLeans = {};
+    if (!state.simAgeLeans[slot]){
+      var r = _rand01(slot + ':agelean');
+      state.simAgeLeans[slot] = r < 0.55 ? 'neutral' : (r < 0.78 ? 'win_now' : 'youth');
+    }
+    return state.simAgeLeans[slot];
+  }
+  function ageLeanLabel(l){
+    return { win_now: 'Win now', youth: 'Youth' }[l] || '';
+  }
+  function _ageLeanMult(lean, pos, age){
+    if (!lean || lean === 'neutral') return 1;
+    if (pos === 'K' || pos === 'DEF') return 1;
+    if (age == null) return 1;
+    if (lean === 'win_now'){
+      if (age >= 27) return 1.3;
+      if (age >= 25) return 1.15;
+      if (age <= 23) return 0.7;
+      return 1;
+    }
+    // youth: hoard early-20s upside, punt the aging core entirely.
+    if (age <= 23) return 1.5;
+    if (age <= 25) return 1.15;
+    if (age >= 30) return 0.35;
+    if (age >= 27) return 0.55;
+    return 1;
+  }
   // Weight multiplier a strategy applies to a candidate: pos, how many of that
   // position the team already has, and the current round.
   function _stratMult(strat, pos, have, round){
@@ -813,6 +847,7 @@
     var persona = _simPersona(slot);
     var _bias = _simBias(slot);
     var _strat = _simStrategy(slot);
+    var _ageLean = _simAgeLean(slot);
     // Score every candidate from THIS CPU team's perspective (its own roster,
     // depth, and next pick) so need is judged for the right team, not the viewer.
     var cpuCtx = _cpuCtx(slot);
@@ -937,7 +972,9 @@
       // Early-QB only pulls while the starting QB room is unfilled.
       var stratMult = _stratMult(_strat, pos, have, _curRound);
       if (_strat === 'early_qb' && pos === 'QB' && have >= _qbStarters) stratMult = 1;
-      w *= needBoost * biasMult * stratMult / overFactor;
+      // Dynasty age lean (startup only): win-now pays for vets, youth punts them.
+      var ageMult = _ageLeanMult(_ageLean, pos, p.age != null ? Number(p.age) : null);
+      w *= needBoost * biasMult * stratMult * ageMult / overFactor;
       // Hard guard: a backup at a starter-filled slot has little marginal value,
       // so the CPU must never REACH for one - only take it if its real ADP has
       // fallen to this pick or later. Covers a 2nd QB in 1QB, a 3rd QB in SF (both
@@ -2588,11 +2625,21 @@
       var tCol = t.grade.score >= 75 ? '#22c55e' : t.grade.score >= 60 ? '#38bdf8' : t.grade.score >= 45 ? '#f59e0b' : '#ef4444';
       var rCls = i < 3 ? (' ' + _rc[i]) : '';
       // In a mock, show each CPU team's drafting plan so their behavior reads
-      // as intentional (Zero RB, RB heavy, ...) rather than random.
+      // as intentional (Zero RB, Win now, ...) rather than random.
       var stratTag = '';
-      if (sim && !t.isMe && state.simStrats){
-        var _sl = stratLabel(state.simStrats[t.slot]);
-        if (_sl) stratTag = '<span class="dr-strat-tag">' + _sl + '</span>';
+      if (sim && !t.isMe){
+        var _parts = [];
+        if (state.simStrats){
+          var _sl = stratLabel(state.simStrats[t.slot]);
+          if (_sl) _parts.push(_sl);
+        }
+        if (state.simAgeLeans){
+          var _al = ageLeanLabel(state.simAgeLeans[t.slot]);
+          if (_al) _parts.push(_al);
+        }
+        _parts.forEach(function(lbl){
+          stratTag += '<span class="dr-strat-tag">' + lbl + '</span>';
+        });
       }
       html += '<div class="dr-sum-lrow' + (t.isMe ? ' is-me' : '') + '" data-legslot="' + t.slot + '">'
         + '<span class="dr-sum-lrank' + rCls + '">' + (i + 1) + '</span>'
