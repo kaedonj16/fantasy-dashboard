@@ -92,3 +92,30 @@ def test_js_and_python_pick_scores_match():
         f"{len(mismatches)} formula mismatches, first: "
         f"case={mismatches[0][0]} js={mismatches[0][1]} py={mismatches[0][2]}"
     )
+
+
+def test_starter_counts_match():
+    from utils.pick_score import starter_counts
+
+    rng = random.Random(7)
+    cases = [
+        {"QB": 1, "SF": 0, "RB": 2, "WR": 3, "TE": 1, "FLEX": 1},
+        {"QB": 1, "SF": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 2},
+        {"QB": 2, "SF": 0, "RB": 3, "WR": 3, "TE": 2, "FLEX": 0},
+    ]
+    for _ in range(50):
+        cases.append({k: rng.randint(0, 4) for k in ("QB", "SF", "RB", "WR", "TE", "FLEX")})
+    driver = (
+        "const {starterCounts} = require(%s);\n"
+        "const cases = %s;\n"
+        "process.stdout.write(JSON.stringify(cases.map(starterCounts)));\n"
+        % (json.dumps(str(PICK_JS)), json.dumps(cases))
+    )
+    res = subprocess.run(["node", "-e", driver], capture_output=True, text=True, timeout=30)
+    assert res.returncode == 0, res.stderr
+    js_out = json.loads(res.stdout)
+    for c, js in zip(cases, js_out):
+        py = starter_counts(c)
+        assert {k: float(v) for k, v in js.items()} == {k: float(v) for k, v in py.items()}, (
+            f"starter_counts mismatch for {c}: js={js} py={py}"
+        )

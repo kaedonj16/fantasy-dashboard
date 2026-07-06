@@ -111,5 +111,22 @@
     return Math.floor(clamp01(s) * 100 + 0.5);
   }
 
-  return { computePickScore: computePickScore };
+  // Effective starters per position from a league's roster slot counts, used to
+  // anchor VOR and PPG replacement levels. Shared so the draft room and the
+  // server derive the SAME replacement index from the SAME roster (the WR/RB
+  // gap between them was the main cause of mismatched grades). Splits SF half to
+  // QB and FLEX half each to RB/WR, matching the draft room's computeReplacement.
+  //   counts: { QB, SF, RB, WR, TE, FLEX }  ->  { QB, RB, WR, TE } (floats)
+  function starterCounts(counts) {
+    var c = counts || {};
+    var n = function (k) { return +c[k] || 0; };
+    return {
+      QB: n('QB') + n('SF') * 0.5,
+      RB: n('RB') + n('FLEX') * 0.5,
+      WR: n('WR') + n('FLEX') * 0.5,
+      TE: n('TE'),
+    };
+  }
+
+  return { computePickScore: computePickScore, starterCounts: starterCounts };
 });

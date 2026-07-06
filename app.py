@@ -21417,6 +21417,7 @@ from utils.pick_score import ps_tier_of as _ps_tier_of  # noqa: E402
 
 
 from utils.pick_score import compute_pick_score as _compute_pick_score  # noqa: E402
+from utils.pick_score import starter_counts as _ps_starter_counts  # noqa: E402
 
 
 # ── Draft-Room-aligned TEAM grade ────────────────────────────────────────────
@@ -21734,8 +21735,20 @@ def api_draft_grades():
                     _rd_rank += 1
                     adp_ps_by_id.setdefault(_pid, float(_rd_rank))
 
-            # Tier thresholds for this league type & size (startup tiers off value).
-            tier_thresholds = compute_tier_thresholds(lp_players, "sf" if is_sf else "1qb", _num_teams) or []
+            # Tier thresholds: read the SAME precomputed table the Draft Room
+            # uses (from the league-players payload) with the same size-fallback
+            # chain, instead of recomputing here - so tiers (and the 0.12-weighted
+            # tier term) match the front end exactly.
+            _tt_all = _lp_payload.get("tier_thresholds") or {}
+            _tt_lt = "sf" if is_sf else "1qb"
+            _tt_sz = str(_num_teams)
+            tier_thresholds = (
+                (_tt_all.get(_tt_lt) or {}).get(_tt_sz)
+                or (_tt_all.get(_tt_lt) or {}).get("12")
+                or (_tt_all.get("1qb") or {}).get("12")
+                or (_tt_all.get("1qb") or {}).get("10")
+                or []
+            )
             _vkey = "sf_value" if is_sf else "value"
 
             def _eff_val(_pid, _d):
@@ -21754,10 +21767,26 @@ def api_draft_grades():
                     return _d.get("prospect_tier")
                 return _ps_tier_of(_val, tier_thresholds) if _d.get("position") in CORE_POS else None
 
-            _starters = (
-                {"QB": 1.5, "RB": 2.0, "WR": 3.0, "TE": 1.0} if is_sf
-                else {"QB": 1.0, "RB": 2.5, "WR": 3.5, "TE": 1.0}
-            )
+            # Starter counts per position from the league's actual roster slots
+            # (same source and math as the Draft Room's computeReplacement), so
+            # VOR/PPG replacement levels match the front end instead of a
+            # hardcoded guess. Falls back to a standard roster if slots are absent.
+            _rp_norm = {
+                "QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE",
+                "FLEX": "FLEX", "WRRB_FLEX": "FLEX", "REC_FLEX": "FLEX", "WRRBTE_FLEX": "FLEX",
+                "SUPER_FLEX": "SF", "SFLEX": "SF",
+            }
+            _rp_counts = {"QB": 0, "SF": 0, "RB": 0, "WR": 0, "TE": 0, "FLEX": 0}
+            try:
+                for _s in ((get_league(platform, league_id, season) or {}).get("roster_positions") or []):
+                    _k = _rp_norm.get(str(_s).upper())
+                    if _k:
+                        _rp_counts[_k] += 1
+            except Exception:
+                logger.debug("[draft-grades] roster slots for starters failed", exc_info=True)
+            if not any(_rp_counts.values()):
+                _rp_counts = {"QB": 1, "SF": 1 if is_sf else 0, "RB": 2, "WR": 3, "TE": 1, "FLEX": 1}
+            _starters = _ps_starter_counts(_rp_counts)
             _by_pos: dict[str, list] = {"QB": [], "RB": [], "WR": [], "TE": []}
             # Eligible scoring pool: rookies for rookie drafts, else all skill players.
             for _pid, _d in val_by_id.items():
@@ -21813,6 +21842,10 @@ def api_draft_grades():
 
         # Per-team running count of this draft's picks by position (drives need).
         ps_team_counts: dict = _defaultdict(lambda: {"QB": 0, "RB": 0, "WR": 0, "TE": 0})
+        # Above-replacement (quality) counts per team, for the quality-adjusted
+        # need term (matches the Draft Room: two below-replacement RBs still
+        # leave a real RB need).
+        ps_team_qual_counts: dict = _defaultdict(lambda: {"QB": 0, "RB": 0, "WR": 0, "TE": 0})
 
         # Fixed top value across the whole eligible pool. The Draft Room's GRADING
         # path (gradePicks/storedPickScore) normalizes against max value over the
@@ -21986,8 +22019,19 @@ def api_draft_grades():
                     else:
                         _tier = _ps_tier_of(_val, tier_thresholds) if pos in CORE_POS else None
                     _tgt = ps_targets.get(pos, 0)
-                    _have = ps_team_counts[rid].get(pos, 0)
-                    _need_raw = _ps_clamp01(max(0, _tgt - _have) / _tgt) if _tgt else 0.0
+                    if _tgt:
+                        _have = ps_team_counts[rid].get(pos, 0)
+                        _qhave = ps_team_qual_counts[rid].get(pos, 0)
+                        # Quality-adjusted need (matches the Draft Room's
+                        # max(count-need, quality-need)); qual_have <= have so the
+                        # quality term dominates, keeping a real need when a team's
+                        # bodies at a position are below replacement.
+                        _need_raw = max(
+                            _ps_clamp01(max(0, _tgt - _have) / _tgt),
+                            _ps_clamp01(max(0, _tgt - _qhave) / _tgt),
+                        )
+                    else:
+                        _need_raw = 0.0
                     # Production term: position-normalized projected PPG.
                     _ppg_n = None
                     _psc = ppg_scale_by_pos.get(pos)
@@ -22037,6 +22081,15 @@ def api_draft_grades():
                 roster_pos_counts.setdefault(rid, {pos: 0 for pos in CORE_POS})
                 roster_pos_counts[rid][pos] = roster_pos_counts[rid].get(pos, 0) + 1
                 ps_team_counts[rid][pos] = ps_team_counts[rid].get(pos, 0) + 1
+                # Above-replacement bump for the quality-adjusted need term.
+                if ps_ready:
+                    try:
+                        _qd = val_by_id.get(player_id)
+                        _qrepl = repl_by_pos.get(pos)
+                        if _qd is not None and _qrepl is not None and _eff_val(player_id, _qd) > _qrepl:
+                            ps_team_qual_counts[rid][pos] = ps_team_qual_counts[rid].get(pos, 0) + 1
+                    except Exception:
+                        logger.debug("[draft-grades] qual-need count failed", exc_info=True)
 
         # ── Draft-Room-aligned team grade inputs ─────────────────────────────
         # League starting-lineup slots (skill positions only; K/DEF excluded from

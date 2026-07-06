@@ -30,6 +30,27 @@ def ps_tier_of(value: float, thresholds: list):
     return len(thresholds) + 1
 
 
+def starter_counts(counts: dict) -> dict:
+    """Mirror of static/pick_score.js `starterCounts`; pinned by the parity test.
+    Effective starters per position from roster slot counts (SF split half to QB,
+    FLEX split half each to RB/WR), so the server's VOR/PPG replacement levels
+    match the draft room's computeReplacement instead of a hardcoded guess."""
+    c = counts or {}
+
+    def n(k):
+        try:
+            return float(c.get(k) or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    return {
+        "QB": n("QB") + n("SF") * 0.5,
+        "RB": n("RB") + n("FLEX") * 0.5,
+        "WR": n("WR") + n("FLEX") * 0.5,
+        "TE": n("TE"),
+    }
+
+
 def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
                        avg_pick, pick_no, max_val, draft_type, is_sf,
                        need_raw, qb_count, total_picks=None, num_teams=None,

@@ -1463,13 +1463,10 @@
     pool = pool || players;
     var rs = (state && state.roster) || defaultRoster();
     var teams = state.teams || 12;
-    var flex = rs.FLEX || 0, sf = rs.SF || 0;
-    var starters = {
-      QB: (rs.QB || 0) + sf * 0.5,
-      RB: (rs.RB || 0) + flex * 0.5,
-      WR: (rs.WR || 0) + flex * 0.5,
-      TE: (rs.TE || 0)
-    };
+    // Roster-derived starter counts, shared with the server grade so both anchor
+    // replacement to the same numbers (a hardcoded server guess was the main
+    // cause of WR/RB grade mismatches).
+    var starters = BRPickScore.starterCounts(rs);
     var byPos = { QB: [], RB: [], WR: [], TE: [] };
     pool.forEach(function(p){
       var pos = (p.position || '').toUpperCase();
