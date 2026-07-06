@@ -1145,9 +1145,17 @@
         var have = (counts && counts[pos]) || 0;
         var sm = _stratMult(strat, pos, have, round, prm);
         if (strat === 'early_qb' && pos === 'QB' && have >= qbStarters) sm = 1;
-        // Same reach discipline as the CPU: the plan boost fades when acting
-        // on it means reaching well past this player's ADP.
-        sm = _stratReachDamp(sm, adpOf(p), state.current);
+        // Hard reach cap: pick scores sit close together, so even a damped
+        // boost in score space can force a multi-pick reach (RB heavy at 1.07
+        // taking the ADP-14 RB). The plan boost applies only at or within a
+        // quarter round of value; beyond that the plan waits for its spot.
+        if (sm > 1){
+          var _apk = adpOf(p);
+          if (_apk != null && _apk < 9000
+              && (_apk - state.current) > (state.teams || 12) * 0.25){
+            sm = 1;
+          }
+        }
         var am = _ageLeanMult(lean, pos, p.age != null ? Number(p.age) : null, 1);
         s = s * sm * am;
       }
@@ -3736,19 +3744,33 @@
     return { value: Math.round(valOf(p)), proxy: p };
   }
   function _parsePickNums(s){
-    return String(s || '').split(/[,\s]+/)
-      .map(function(t){ return parseInt(t, 10); })
+    // Accepts overall pick numbers ("22") and round.pick ("2.10"), separated
+    // by commas, spaces, or slashes - the iOS numeric keypad has no comma, so
+    // any reasonable separator must work.
+    var teams = state.teams || 12;
+    return String(s || '').split(/[,\s\/;]+/)
+      .map(function(t){
+        t = t.trim();
+        if (!t) return NaN;
+        var m = t.match(/^(\d{1,2})\.(\d{1,2})$/);
+        if (m){
+          var r = parseInt(m[1], 10), p = parseInt(m[2], 10);
+          if (r >= 1 && p >= 1 && p <= teams) return (r - 1) * teams + p;
+          return NaN;
+        }
+        return parseInt(t, 10);
+      })
       .filter(function(n){ return n >= 1 && n <= 600; });
   }
   function drPickTradeOpen(){
     var m = document.getElementById('drModal');
     var msg = document.getElementById('drModalMsg');
     msg.innerHTML = '<div class="dr-pt-title">Pick trade evaluator</div>'
-      + '<div class="dr-pt-sub">Overall pick numbers, comma separated. Each pick is priced as the player likely on the board there (by ADP on this draft’s remaining pool).</div>'
+      + '<div class="dr-pt-sub">Overall picks ("22") or round.pick ("2.10"), separated by commas or spaces. Each pick is priced as the player likely on the board there (by ADP on this draft’s remaining pool).</div>'
       + '<label class="dr-pt-lbl">You give</label>'
-      + '<input id="drPtGive" class="dr-pt-input" inputmode="numeric" placeholder="e.g. 14">'
+      + '<input id="drPtGive" class="dr-pt-input" autocomplete="off" placeholder="e.g. 14 or 1.07">'
       + '<label class="dr-pt-lbl">You get</label>'
-      + '<input id="drPtGet" class="dr-pt-input" inputmode="numeric" placeholder="e.g. 22, 27">'
+      + '<input id="drPtGet" class="dr-pt-input" autocomplete="off" placeholder="e.g. 22, 27">'
       + '<div id="drPtResult" class="dr-pt-result"></div>';
     var btns = document.getElementById('drModalBtns');
     btns.innerHTML = '';
@@ -3791,6 +3813,8 @@
   (function(){
     var b = document.getElementById('drPickTradeBtn');
     if (b) b.addEventListener('click', drPickTradeOpen);
+    var b2 = document.getElementById('drPickTradeBtn2');
+    if (b2) b2.addEventListener('click', drPickTradeOpen);
   })();
 
   function drConfirm(msg, okLabel, cb){

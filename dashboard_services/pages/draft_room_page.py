@@ -216,7 +216,7 @@ _DRAFT_ROOM_HTML = r"""
           <button class="otc-main-tab" data-stab="needs">Team</button>
           <button class="otc-main-tab" data-stab="league">League</button>
           <div class="dr-side-opts">
-            <button class="dr-opts-trigger" id="drPickTradeBtn" aria-label="Pick trade evaluator" title="Pick trade evaluator"><i class="fa-solid fa-right-left"></i></button>
+            <button class="dr-opts-trigger" id="drPickTradeBtn" aria-label="Pick trade evaluator" title="Pick trade evaluator"><i class="fa-solid fa-scale-balanced"></i></button>
             <button class="dr-opts-trigger" id="drOptsBtn" aria-label="Settings" title="Settings"><i class="fa-solid fa-gear"></i></button>
             <div class="dr-opts-panel" id="drOptsPanel">
               <select class="dr-sim-speed" id="drSimSpeed" style="display:none;" title="Simulation speed">
@@ -240,6 +240,7 @@ _DRAFT_ROOM_HTML = r"""
                 <option value="youth">Age: Youth</option>
               </select>
               <button class="dr-btn dr-btn-ghost" id="drSummaryBtn" style="display:none;">Summary</button>
+              <button class="dr-btn dr-btn-ghost" id="drPickTradeBtn2">Pick Trade</button>
               <button class="dr-btn dr-btn-ghost" id="drShare">Share</button>
               <button class="dr-btn dr-btn-ghost" id="drUndo">Undo</button>
               <button class="dr-btn dr-btn-ghost" id="drEdit">Edit Setup</button>
