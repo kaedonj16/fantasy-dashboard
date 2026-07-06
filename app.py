@@ -293,6 +293,13 @@ app = Flask(
     static_url_path="/static"  # URL base for static files
 )
 
+# Behind Render's TLS-terminating proxy, Flask otherwise sees plain http and
+# builds http:// URLs (request.host_url/base_url) - which made the sitemap
+# submit http URLs that all 301 to https ("Page with redirect" in Search
+# Console). Trust exactly one proxy hop for proto/host/port.
+from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+
 def _static_hash(filename: str) -> str:
     path = Path(__file__).parent / "static" / filename
     try:
@@ -616,13 +623,6 @@ try:
     logger.info("[yahoo-auth-bp] registered")
 except Exception as e:
     logger.warning("[yahoo-auth-bp] skipped: %s", e)
-
-try:
-    from routes.seo_bp import seo_bp
-    app.register_blueprint(seo_bp)
-    logger.info("[seo-bp] registered")
-except Exception as e:
-    logger.warning("[seo-bp] skipped: %s", e)
 
 try:
     from routes.misc_api_bp import misc_api_bp
@@ -12187,6 +12187,22 @@ def get_player_slug_index() -> dict:
     return _PLAYER_SLUG_CACHE
 
 
+def get_top_player_slugs(limit: int = 300) -> list:
+    """Slugs of the top players by dynasty value, for the sitemap's per-player
+    URLs. Submitting every slug floods the sitemap with thousands of thin pages
+    Google then reports as "Discovered - currently not indexed"; the top slice
+    is the set with real content and search demand."""
+    from dashboard_services.pages.player_page import build_slug_index
+    tbl = [
+        r for r in (get_model_value_table_cached() or [])
+        if isinstance(r, dict)
+        and str(r.get("position") or "").upper() in {"QB", "RB", "WR", "TE"}
+        and float(r.get("value") or 0) > 0
+    ]
+    tbl.sort(key=lambda r: float(r.get("value") or 0), reverse=True)
+    return sorted(build_slug_index(tbl[: max(1, int(limit))]).keys())
+
+
 @app.route("/player/<slug>")
 @app.route("/player/<slug>/trade-value")
 def page_player_trade_value(slug: str):
@@ -12197,7 +12213,10 @@ def page_player_trade_value(slug: str):
     idx = get_player_slug_index()
     pid = idx.get(slug_norm)
     if not pid:
-        abort(404)
+        # Stale/unknown slug (player renamed, retired, or fell out of the value
+        # table): consolidate to the rankings hub rather than 404 - these were
+        # showing up as Not Found errors in Search Console after slug churn.
+        return redirect("/players", code=301)
 
     # Canonical-slug redirect: if the requested slug isn't the normalized one,
     # or it's the bare /player/<slug> form, send 301 to /player/<slug>/trade-value.
@@ -26975,8 +26994,7 @@ def api_live_draft_suggest():
         return _api_err("Request failed", exc)
 
 
-# robots.txt / sitemap.xml were extracted to routes/seo_bp.py (registered near
-# the other blueprints, above).
+# robots.txt / sitemap.xml are served by routes/public_bp.py.
 
 
 # ── Dynasty Trade Value Chart ─────────────────────────────────────────────────

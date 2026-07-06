@@ -7,12 +7,28 @@ Also handles the league-context variants: /<platform>/<season>/<league_id>/...
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
 from flask import Blueprint, send_file, request
 
 public_bp = Blueprint("public", __name__)
+
+
+def _seo_origin() -> str:
+    """Canonical https origin for robots/sitemap URLs.
+
+    Prefers PRIMARY_DOMAIN (same normalization as app.py) so the sitemap always
+    advertises canonical URLs even when crawled via the onrender.com host; falls
+    back to the request origin (https-correct behind the proxy via ProxyFix).
+    """
+    pd = os.environ.get("PRIMARY_DOMAIN", "").strip().lower()
+    if pd.startswith("www."):
+        pd = pd[4:]
+    if pd:
+        return f"https://{pd}"
+    return request.host_url.rstrip("/")
 
 
 def _render(title: str, league_id: Optional[str], active: str, body: str,
@@ -43,7 +59,7 @@ def ads_txt():
 
 @public_bp.route("/robots.txt")
 def robots_txt():
-    base = request.host_url.rstrip("/")
+    base = _seo_origin()
     body = (
         "User-agent: *\n"
         "Allow: /\n"
@@ -62,7 +78,7 @@ def robots_txt():
 def sitemap_xml():
     from app import get_nfl_state
     from datetime import datetime
-    base = request.host_url.rstrip("/")
+    base = _seo_origin()
     nfl_state = get_nfl_state() or {}
     season = int(nfl_state.get("season") or datetime.now().year)
 
@@ -104,10 +120,12 @@ def sitemap_xml():
         ET.SubElement(url_el, "priority").text = priority
         ET.SubElement(url_el, "changefreq").text = changefreq
 
-    # Per-player trade-value pages
+    # Per-player trade-value pages: only the top slice by value. Submitting
+    # every slug floods the sitemap with thousands of thin pages that Google
+    # reports as "Discovered - currently not indexed" and wastes crawl budget.
     try:
-        from app import get_player_slug_index
-        for slug in sorted(get_player_slug_index().keys()):
+        from app import get_top_player_slugs
+        for slug in get_top_player_slugs(300):
             url_el = ET.SubElement(urlset, "url")
             ET.SubElement(url_el, "loc").text = f"{base}/player/{slug}/trade-value"
             ET.SubElement(url_el, "priority").text = "0.7"
