@@ -3813,8 +3813,6 @@
   (function(){
     var b = document.getElementById('drPickTradeBtn');
     if (b) b.addEventListener('click', drPickTradeOpen);
-    var b2 = document.getElementById('drPickTradeBtn2');
-    if (b2) b2.addEventListener('click', drPickTradeOpen);
   })();
 
   function drConfirm(msg, okLabel, cb){

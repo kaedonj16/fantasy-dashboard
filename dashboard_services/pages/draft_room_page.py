@@ -240,7 +240,6 @@ _DRAFT_ROOM_HTML = r"""
                 <option value="youth">Age: Youth</option>
               </select>
               <button class="dr-btn dr-btn-ghost" id="drSummaryBtn" style="display:none;">Summary</button>
-              <button class="dr-btn dr-btn-ghost" id="drPickTradeBtn2">Pick Trade</button>
               <button class="dr-btn dr-btn-ghost" id="drShare">Share</button>
               <button class="dr-btn dr-btn-ghost" id="drUndo">Undo</button>
               <button class="dr-btn dr-btn-ghost" id="drEdit">Edit Setup</button>
