@@ -1260,6 +1260,19 @@
     var ml = document.getElementById('drMyAgeLean');
     if (ms){
       ms.style.display = (ready || running) ? '' : 'none';
+      // Rookie drafts only support the simple RB-first/WR-first leans (same
+      // restriction as the CPU teams): structural plans like Zero RB would
+      // fade a position for essentially the whole short draft.
+      var _rk = state && state.type === 'rookie';
+      var _rkAllowed = { '': 1, rb_heavy: 1, wr_heavy: 1 };
+      for (var _oi = 0; _oi < ms.options.length; _oi++){
+        var _ov = ms.options[_oi].value;
+        ms.options[_oi].hidden = _rk && !_rkAllowed[_ov];
+      }
+      if (_rk && state.myStrat && !_rkAllowed[state.myStrat]){
+        state.myStrat = '';
+        save();
+      }
       ms.value = (state && state.myStrat) || '';
     }
     if (ml){
