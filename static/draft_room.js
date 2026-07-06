@@ -1023,6 +1023,26 @@
       // Executing the plan on this player must not force a big reach: the boost
       // fades with how far past ADP the player still is at this pick.
       stratMult = _stratReachDamp(stratMult, c.ae != null ? c.ae : a, pn);
+      // Plan flexibility, part 1: a real value fall breaks through a fade. A
+      // Zero RB team still takes the RB who slid a quarter round past ADP -
+      // the fade relaxes with the slide and is fully neutral by 3/4 of a round.
+      if (stratMult < 1){
+        var _slide = Math.max(0, pn - (c.ae != null ? c.ae : a));
+        var _slideFree = (state.teams || 12) * 0.25;
+        var _slideSpan = (state.teams || 12) * 0.5;
+        if (_slide > _slideFree){
+          var _rel = Math.min(1, (_slide - _slideFree) / _slideSpan);
+          stratMult = stratMult + (1 - stratMult) * _rel;
+        }
+      }
+      // Plan flexibility, part 2: a plan never forces a clearly inferior
+      // player. The boost scales away as this candidate's pick score falls
+      // off the board's best - when the plan position's shelf is bare, the
+      // team quietly pivots to value instead of forcing a bad fit.
+      if (stratMult > 1 && pv != null && bestPv > 0){
+        var _q = Math.max(0, Math.min(1, (pv / bestPv) / 0.75));
+        stratMult = 1 + (stratMult - 1) * _q;
+      }
       // Dynasty age lean (startup only): win-now pays for vets, youth punts them.
       var ageMult = _ageLeanMult(_ageLean, pos, p.age != null ? Number(p.age) : null, _ageInt);
       w *= needBoost * biasMult * stratMult * ageMult / overFactor;
