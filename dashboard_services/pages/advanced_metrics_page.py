@@ -275,6 +275,7 @@ def build_advanced_metrics_body(
 
         <!-- Filter bar: only visible when combo filters, age, or vol control is active. -->
         <div id="amFilterBar" class="am-filter-bar" style="display:none;">
+          <button id="amAddFilterBtnM" type="button" class="am-add-stat-btn am-add-filter-m">&#43; Filter</button>
           <div class="am-filter-chips" id="amFilterChips"></div>
           <div class="am-age-wrap" id="amAgeWrap" style="display:none;">
             <span class="am-filter-label">Age:</span>
@@ -503,6 +504,9 @@ def build_advanced_metrics_body(
       .am-positions { display:flex; gap:5px; flex:1 1 auto; min-width:0; overflow-x:auto; padding-bottom:1px; }
       .am-roster-toggle { flex-shrink:0; }
       .am-filters-btn { display:none; }
+      /* Mobile-only add-filter button living inside the Filters panel; on
+         desktop the standalone + Filter chip covers this. */
+      .am-add-filter-m { display:none; }
       /* Mobile: metric 2/3 + season 1/3 on the first row, search full width,
          Team/Min/Sort collapsed behind a Filters button beside the position
          pills, toggles wrap underneath. Desktop keeps one aligned row. */
@@ -516,6 +520,10 @@ def build_advanced_metrics_body(
         .am-ctrl .am-select, .am-ctrl .am-sort-btn { width:100%; min-width:0; box-sizing:border-box; }
         .am-controls:not(.am-open) .am-mobile-filter { display:none !important; }
         .am-filters-btn { display:inline-block; flex-shrink:0; padding:6px 12px; font-size:12px; border-radius:20px; }
+        /* One filter entry point on mobile: the Filters dropdown. The standalone
+           + Filter chip hides; its action moves inside the opened panel. */
+        #amAddFilterBtn { display:none; }
+        #amFilterBar.am-mobile-open .am-add-filter-m { display:inline-block; }
         .am-subcontrols { row-gap:8px; }
         .am-positions { flex:1 1 auto; flex-wrap:wrap; overflow-x:visible; min-width:0; }
       }
@@ -3527,7 +3535,10 @@ _AM_JS = r"""
     const ageVis  = (document.getElementById('amAgeWrap')  || {}).style.display !== 'none';
     const volVis  = (document.getElementById('amGamesCtrl') || {}).style.display !== 'none';
     const formVis = (document.getElementById('amFilterForm') || {}).style.display !== 'none';
-    if (bar) bar.style.display = (state.comboFilters.length > 0 || ageVis || volVis || formVis) ? 'flex' : 'none';
+    // On mobile the opened Filters panel must show even when empty, so its
+    // in-panel + Filter button has somewhere to live.
+    const mOpen = bar && bar.classList.contains('am-mobile-open') && window.innerWidth <= 600;
+    if (bar) bar.style.display = (state.comboFilters.length > 0 || ageVis || volVis || formVis || mOpen) ? 'flex' : 'none';
   }
   window.amRemoveFilter = function(idx) {
     const removed = state.comboFilters[idx];
@@ -3730,13 +3741,17 @@ _AM_JS = r"""
   const filterApply  = document.getElementById('amFilterApply');
   const filterCancel = document.getElementById('amFilterCancel');
   if (addFilterBtn && filterForm) {
-    addFilterBtn.addEventListener('click', function() {
+    const toggleFilterForm = function() {
       const opening = filterForm.style.display === 'none';
       filterForm.style.display = opening ? '' : 'none';
       // Ensure the filter bar is visible when the form is open.
       const fb = document.getElementById('amFilterBar');
       if (opening && fb) { fb.style.display = 'flex'; updateFilterBar(); }
-    });
+    };
+    addFilterBtn.addEventListener('click', toggleFilterForm);
+    // Mobile twin inside the Filters panel (the standalone chip hides <=600px).
+    const addFilterBtnM = document.getElementById('amAddFilterBtnM');
+    if (addFilterBtnM) addFilterBtnM.addEventListener('click', toggleFilterForm);
   }
   if (filterApply) {
     filterApply.addEventListener('click', function() {
