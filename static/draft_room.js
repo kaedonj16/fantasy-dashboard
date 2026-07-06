@@ -1929,10 +1929,16 @@
     }
     var s = w.vor*vorNorm + w.value*valueNorm + w.adp*adpVal + w.tier*tierScore + w.need*need + w.youth*youth + w.mom*mom + w.ppg*ppgN;
 
+    // Grading mode skips the live-draft *timing* terms below (survival and the
+    // redraft handcuff) so a pick's GRADE reflects its quality, not when it was
+    // taken. The Python grade (utils/pick_score.compute_pick_score, used by the
+    // Teams page) never had these terms, so this keeps the two grades identical.
+    var grading = !!(opts && opts.grading);
+
     // #6: Opportunity cost via survival to next owned pick.
     // Low survival = urgency bonus; high survival = slight penalty (can wait).
     var nextOwned = (opts && opts.nextOwned !== undefined) ? opts.nextOwned : nextOwnedAfterCurrent();
-    if (nextOwned){
+    if (!grading && nextOwned){
       var survProb = availProb(p, nextOwned);
       if (survProb != null) s += 0.05 - survProb / 100 * 0.08;
     }
@@ -1954,7 +1960,8 @@
 
     // #7: Redraft handcuff boost. If user owns the starter at this position+team,
     // the backup has significant insurance value worth a meaningful PS bump.
-    if (state.type === 'redraft' && pos === 'RB'){
+    // Skipped in grading mode (a live-draft roster-fit nudge, not pick quality).
+    if (!grading && state.type === 'redraft' && pos === 'RB'){
       var myRBTeams = {};
       ((opts && opts.picksList) || myPicksList()).forEach(function(mp){
         if ((mp.position || '').toUpperCase() === 'RB' && mp.team) myRBTeams[mp.team] = true;
@@ -2418,15 +2425,19 @@
     var picks = []; // { id, pos, ps, val, ppg }
     mine.forEach(function(m){
       var pos = (m.p.position || '').toUpperCase();
-      // Per-pick score: stored for mock picks; computed at historical pick# for live picks
-      var ps = m.p.ps;
+      // Grade score: recompute at the pick number in grading mode (no live
+      // survival/handcuff timing terms) so it measures pick quality and matches
+      // the server's compute_pick_score exactly. Falls back to the stored live
+      // score only when the player is no longer resolvable.
       var full = playersById[String(m.p.id)];
-      if (ps == null && players.length > 0 && _gmaxVal > 0 && full){
+      var ps = null;
+      if (players.length > 0 && _gmaxVal > 0 && full){
         var _saved = state.current;
         state.current = m.pn;
-        ps = pickScore(full, _gmaxVal, countsSoFar);
+        ps = pickScore(full, _gmaxVal, countsSoFar, { grading: true });
         state.current = _saved;
       }
+      if (ps == null) ps = m.p.ps;
       if (countsSoFar[pos] != null) countsSoFar[pos]++;
       if (counts[pos] != null) counts[pos]++;
       picks.push({ id: m.p.id, pos: pos, ps: ps, pn: m.pn,
