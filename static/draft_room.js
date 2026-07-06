@@ -786,6 +786,21 @@
   function _scaleMult(base, intensity){
     return Math.max(0.1, 1 + (base - 1) * intensity);
   }
+  // Strategy freedom scales with the price of executing it. A boost on a player
+  // already at/near pick value applies in full (at 1.01 a Hero RB team can take
+  // whichever elite RB it wants; they're all at value there), while a boost that
+  // requires reaching past ADP fades linearly and is gone by about a round of
+  // reach - so a plan never forces taking the ADP-14 RB at pick 7 just to stay
+  // on script. Fades (mult < 1) pass through: passing on a player costs nothing.
+  function _stratReachDamp(mult, adpEff, pn){
+    if (mult <= 1 || adpEff == null || adpEff >= 9000) return mult;
+    var teams = state.teams || 12;
+    var freeR = teams * 0.25, spanR = teams * 0.75;
+    var reach = Math.max(0, adpEff - pn);
+    if (reach <= freeR) return mult;
+    var damp = Math.max(0, 1 - (reach - freeR) / spanR);
+    return 1 + (mult - 1) * damp;
+  }
   // Weight multiplier a strategy applies to a candidate: pos, how many of that
   // position the team already has, the current round, and the team's execution
   // params (intensity + window shift).
@@ -949,7 +964,7 @@
       // CPU can sense a thinning position (a run on QBs/RBs) and act before the
       // cupboard is bare. 55 is a "startable" pick-score floor.
       if (pv != null && pv >= 55){ var _pp = (p.position||'').toUpperCase(); posQualLeft[_pp] = (posQualLeft[_pp] || 0) + 1; }
-      cands.push({ p: p, w: w, a: a, pv: pv });
+      cands.push({ p: p, w: w, a: a, pv: pv, ae: aEff });
     });
     cands.forEach(function(c){
       var p = c.p, w = c.w, a = c.a, pv = c.pv;
@@ -1008,6 +1023,9 @@
       // Early-QB only pulls while the starting QB room is unfilled.
       var stratMult = _stratMult(_strat, pos, have, _curRound, _stratPrm);
       if (_strat === 'early_qb' && pos === 'QB' && have >= _qbStarters) stratMult = 1;
+      // Executing the plan on this player must not force a big reach: the boost
+      // fades with how far past ADP the player still is at this pick.
+      stratMult = _stratReachDamp(stratMult, c.ae != null ? c.ae : a, pn);
       // Dynasty age lean (startup only): win-now pays for vets, youth punts them.
       var ageMult = _ageLeanMult(_ageLean, pos, p.age != null ? Number(p.age) : null, _ageInt);
       w *= needBoost * biasMult * stratMult * ageMult / overFactor;
@@ -1038,6 +1056,35 @@
       if (a >= 9000) w = Math.max(w, 1e-9 * valOf(p));
       c.w = w;
     });
+    // Strategy freedom at value: a team drafting for its plan takes ITS guy,
+    // not strictly the board's guy. Among same-position candidates at or near
+    // pick value, an actively-boosted position's candidates flatten toward the
+    // best one - so a Hero RB team at 1.01 might take any of the elite RBs
+    // rather than always the ADP #1. Only applies within the free-reach window
+    // (a quarter round), so it never widens into actual reaching.
+    if (_strat && _strat !== 'bpa'){
+      var _freePick = (state.teams || 12) * 0.25;
+      var _boostedPos = {};
+      ['QB','RB','WR','TE'].forEach(function(bp){
+        var bHave = counts[bp] || 0;
+        var bm = _stratMult(_strat, bp, bHave, _curRound, _stratPrm);
+        if (_strat === 'early_qb' && bp === 'QB' && bHave >= _qbStarters) bm = 1;
+        if (bm > 1) _boostedPos[bp] = true;
+      });
+      var _posTopW = {};
+      cands.forEach(function(c){
+        var bp = (c.p.position || '').toUpperCase();
+        if (!_boostedPos[bp] || c.w <= 0) return;
+        if (Math.max(0, (c.ae != null ? c.ae : c.a) - pn) > _freePick) return;
+        if (!_posTopW[bp] || c.w > _posTopW[bp]) _posTopW[bp] = c.w;
+      });
+      cands.forEach(function(c){
+        var bp = (c.p.position || '').toUpperCase();
+        if (!_boostedPos[bp] || !_posTopW[bp] || c.w <= 0) return;
+        if (Math.max(0, (c.ae != null ? c.ae : c.a) - pn) > _freePick) return;
+        c.w = Math.max(c.w, _posTopW[bp] * 0.5);
+      });
+    }
     // Restrict to the realistic field, then sample proportionally to weight so
     // the favorite usually wins but upsets happen at the documented rate.
     cands.sort(function(x, y){ return y.w - x.w; });
@@ -1075,6 +1122,9 @@
         var have = (counts && counts[pos]) || 0;
         var sm = _stratMult(strat, pos, have, round, prm);
         if (strat === 'early_qb' && pos === 'QB' && have >= qbStarters) sm = 1;
+        // Same reach discipline as the CPU: the plan boost fades when acting
+        // on it means reaching well past this player's ADP.
+        sm = _stratReachDamp(sm, adpOf(p), state.current);
         var am = _ageLeanMult(lean, pos, p.age != null ? Number(p.age) : null, 1);
         s = s * sm * am;
       }
