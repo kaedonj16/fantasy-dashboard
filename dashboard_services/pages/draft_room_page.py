@@ -216,7 +216,7 @@ _DRAFT_ROOM_HTML = r"""
           <button class="otc-main-tab" data-stab="needs">Team</button>
           <button class="otc-main-tab" data-stab="league">League</button>
           <div class="dr-side-opts">
-            <button class="dr-opts-trigger" id="drPickTradeBtn" aria-label="Pick trade evaluator" title="Pick trade evaluator"><i class="fa-solid fa-scale-balanced"></i></button>
+            <button class="dr-opts-trigger dr-pt-trigger" id="drPickTradeBtn" aria-label="Pick trade evaluator" title="Pick trade evaluator">Trade</button>
             <button class="dr-opts-trigger" id="drOptsBtn" aria-label="Settings" title="Settings"><i class="fa-solid fa-gear"></i></button>
             <div class="dr-opts-panel" id="drOptsPanel">
               <select class="dr-sim-speed" id="drSimSpeed" style="display:none;" title="Simulation speed">
@@ -549,6 +549,7 @@ _DRAFT_ROOM_HTML = r"""
     letter-spacing: .04em; color: var(--text-muted); border: 1px solid var(--border);
     border-radius: 999px; padding: 1px 7px; vertical-align: middle; white-space: nowrap; }
   /* Pick trade evaluator (inside drModal) */
+  .dr-pt-trigger { font-size: 12px; font-weight: 700; white-space: nowrap; }
   .dr-pt-title { font-size: 15px; font-weight: 800; margin-bottom: 4px; }
   .dr-pt-sub { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; line-height: 1.45; }
   .dr-pt-lbl { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase;
