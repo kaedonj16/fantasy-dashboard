@@ -1056,12 +1056,13 @@
       if (a >= 9000) w = Math.max(w, 1e-9 * valOf(p));
       c.w = w;
     });
-    // Strategy freedom at value: a team drafting for its plan takes ITS guy,
-    // not strictly the board's guy. Among same-position candidates at or near
-    // pick value, an actively-boosted position's candidates flatten toward the
-    // best one - so a Hero RB team at 1.01 might take any of the elite RBs
-    // rather than always the ADP #1. Only applies within the free-reach window
-    // (a quarter round), so it never widens into actual reaching.
+    // Strategy freedom at value: a team drafting for its plan may take ITS guy
+    // instead of strictly the board's guy - but only among players whose ADP is
+    // basically the same. Anchor on the boosted position's lowest-ADP candidate
+    // near this pick; candidates within ~one sigma of the anchor's ADP flatten
+    // toward its weight (near-coin-flips, e.g. RB1 at 1.2 vs RB2 at 1.9 for the
+    // 1.01 Hero RB team). Anyone meaningfully later in ADP keeps ADP order, so
+    // this adds preference among equals without ever skipping down the board.
     if (_strat && _strat !== 'bpa'){
       var _freePick = (state.teams || 12) * 0.25;
       var _boostedPos = {};
@@ -1071,18 +1072,23 @@
         if (_strat === 'early_qb' && bp === 'QB' && bHave >= _qbStarters) bm = 1;
         if (bm > 1) _boostedPos[bp] = true;
       });
-      var _posTopW = {};
+      var _posAnchor = {};  // pos -> {ae, w} of the lowest-ADP in-window candidate
       cands.forEach(function(c){
         var bp = (c.p.position || '').toUpperCase();
         if (!_boostedPos[bp] || c.w <= 0) return;
-        if (Math.max(0, (c.ae != null ? c.ae : c.a) - pn) > _freePick) return;
-        if (!_posTopW[bp] || c.w > _posTopW[bp]) _posTopW[bp] = c.w;
+        var ae = c.ae != null ? c.ae : c.a;
+        if (ae >= 9000 || Math.max(0, ae - pn) > _freePick) return;
+        if (!_posAnchor[bp] || ae < _posAnchor[bp].ae) _posAnchor[bp] = { ae: ae, w: c.w };
       });
       cands.forEach(function(c){
         var bp = (c.p.position || '').toUpperCase();
-        if (!_boostedPos[bp] || !_posTopW[bp] || c.w <= 0) return;
-        if (Math.max(0, (c.ae != null ? c.ae : c.a) - pn) > _freePick) return;
-        c.w = Math.max(c.w, _posTopW[bp] * 0.5);
+        var an = _posAnchor[bp];
+        if (!an || c.w <= 0) return;
+        var ae = c.ae != null ? c.ae : c.a;
+        if (ae >= 9000 || Math.max(0, ae - pn) > _freePick) return;
+        var eps = Math.max(0.75, simSigma(an.ae));
+        if (ae - an.ae > eps) return;  // not basically the same - ADP order stands
+        c.w = Math.max(c.w, an.w * 0.65);
       });
     }
     // Restrict to the realistic field, then sample proportionally to weight so
