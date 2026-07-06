@@ -1852,144 +1852,52 @@
     if (pos === 'K' || pos === 'DEF') return null;
     var adp = adpOf(p);
 
-    // Blend DB dynasty value with ADP-implied quality so market consensus
-    // prevents DB value gaps (especially new rookies) from dragging the score
-    // unfairly low when the ADP says the player is a legitimate round-2/3 pick.
-    var dbValueNorm = maxVal > 0 ? clamp01(valOf(p) / maxVal) : 0;
-    var totalPicks = (state.teams || 12) * (state.rounds || 16);
-    var adpQualNorm = (adp != null && totalPicks > 0) ? clamp01(1 - adp / totalPicks) : null;
-    var valueNorm = (adpQualNorm != null) ? (dbValueNorm * 0.35 + adpQualNorm * 0.65) : dbValueNorm;
-
-    // #1: VOR separates above-replacement talent; negative VOR (below replacement) = 0.
-    var vor = vorOf(p);
-    var vorNorm = (vor != null) ? clamp01(vor / Math.max(maxVal, 1)) : valueNorm * 0.8;
-
-    // ADP component with #4 elite-ADP floor.
-    // relGap is proportional so a 2-pick fall from ADP 2 = a 10-pick fall from ADP 20.
-    var adpVal;
-    if (adp != null) {
-      var gap = state.current - adp;
-      var relGap = gap / Math.max(adp, 1.5);
-      if (relGap >= 0.5)       adpVal = 1.0;
-      else if (relGap >= 0)    adpVal = 0.5 + relGap;
-      else if (relGap >= -0.3) adpVal = 0.5 + relGap;
-      else                     adpVal = Math.max(0, 0.2 + relGap * 0.25);
-      // #4: Top-8 ADP players earn a floor so taking them near their ADP still scores well.
-      if (adp <= 8) adpVal = Math.max(adpVal, clamp01(0.5 + (8 - adp) / 16));
-    } else { adpVal = 0.5; }
-
-    var tier = tierOf(p);
-    var tierScore = tier ? clamp01((10 - Math.min(tier, 9)) / 9) : valueNorm;
-    if (isTierCliff(p)) tierScore = clamp01(tierScore + 0.15);
-
-    // #3: Quality-adjusted need: count of already-owned players at this position that
-    // are above replacement level. Two below-replacement RBs still leaves a real need.
-    // posTargets() and the per-position above-replacement counts are shared across
-    // the whole scoring pass, so read them from the memoized render context.
-    var _ctx = psCtx();
-    var _qualByPos = (opts && opts.qualByPos) || _ctx.qualByPos;
-    var t = _ctx.targets[pos];
-    var needRaw = t ? clamp01(Math.max(0, t - (counts[pos] || 0)) / t) : 0;
-    var myQualAtPos = _qualByPos[pos] || 0;
-    var qualNeedRaw = t ? clamp01(Math.max(0, t - myQualAtPos) / t) : 0;
-    needRaw = Math.max(needRaw, qualNeedRaw);
-    var needRamp = clamp01((state.current - 1) / 12);
-    var need = (1 - needRamp) * 0.5 + needRamp * needRaw;
-
-    // #2: Position-adjusted age peaks. RB declines earliest, QB latest.
-    var age = (p.age != null) ? Number(p.age) : null;
-    var youth = 0.5;
-    if (age != null && ['RB','WR','TE','QB'].indexOf(pos) >= 0){
-      var agePeaks = { RB: 24, WR: 27, TE: 27, QB: 29 };
-      var peak = agePeaks[pos] || 27;
-      youth = clamp01((peak - age + 4) / 8);
-    }
-    var mom = clamp01((p.rank_change_7d || 0) / 20 + 0.5);
-
-    // Production: current (Sleeper PPG) or projected PPG, normalized within the
-    // position. Missing PPG falls back to valueNorm so the player isn't penalized
-    // for absent data - value already correlates with production.
-    var ppgN = ppgNormOf(p);
-    if (ppgN == null) ppgN = valueNorm;
-
-    // #5: Draft-type context weights. Weights sum to ~1.05 so elite picks can reach 100.
-    var w;
-    if (state.type === 'rookie'){
-      // Rookie: upside and youth dominate; production is mostly projection (noisy),
-      // so PPG carries only a light weight.
-      w = { vor: 0.06, value: 0.18, adp: 0.29, tier: 0.12, need: 0.05, youth: 0.24, mom: 0.06, ppg: 0.05 };
-    } else if (state.type === 'redraft'){
-      // Redraft: production now is the whole game - PPG is a primary signal
-      // alongside VOR and ADP; youth is ignored entirely.
-      w = { vor: 0.10, value: 0.24, adp: 0.33, tier: 0.08, need: 0.07, youth: 0.00, mom: 0.03, ppg: 0.18 };
-    } else {
-      // Startup dynasty: balanced blend of talent, value, and future potential.
-      // PPG adds a current-production lens on top of long-term dynasty value.
-      w = { vor: 0.07, value: 0.24, adp: 0.30, tier: 0.12, need: 0.09, youth: 0.10, mom: 0.03, ppg: 0.10 };
-    }
-    var s = w.vor*vorNorm + w.value*valueNorm + w.adp*adpVal + w.tier*tierScore + w.need*need + w.youth*youth + w.mom*mom + w.ppg*ppgN;
-
-    // Grading mode skips the live-draft *timing* terms below (survival and the
-    // redraft handcuff) so a pick's GRADE reflects its quality, not when it was
-    // taken. The Python grade (utils/pick_score.compute_pick_score, used by the
-    // Teams page) never had these terms, so this keeps the two grades identical.
+    // All grade math lives in static/pick_score.js (BRPickScore), shared with the
+    // Python server grade (utils/pick_score.compute_pick_score) and pinned by a
+    // parity test - so the Draft Room and Teams page can never grade a pick
+    // differently. This wrapper only gathers inputs.
     var grading = !!(opts && opts.grading);
 
-    // #6: Opportunity cost via survival to next owned pick.
-    // Low survival = urgency bonus; high survival = slight penalty (can wait).
-    var nextOwned = (opts && opts.nextOwned !== undefined) ? opts.nextOwned : nextOwnedAfterCurrent();
-    if (!grading && nextOwned){
-      var survProb = availProb(p, nextOwned);
-      if (survProb != null) s += 0.05 - survProb / 100 * 0.08;
-    }
+    // Quality-adjusted need: two below-replacement RBs still leave a real need.
+    var _ctx = psCtx();
+    var _qualByPos = (opts && opts.qualByPos) || _ctx.qualByPos;
+    var _t = _ctx.targets[pos];
+    var needRaw = _t ? clamp01(Math.max(0, _t - (counts[pos] || 0)) / _t) : 0;
+    var _qualNeed = _t ? clamp01(Math.max(0, _t - (_qualByPos[pos] || 0)) / _t) : 0;
+    needRaw = Math.max(needRaw, _qualNeed);
 
-    // QB overfill (1QB only): a second QB carries real opportunity cost only in
-    // the early rounds, when startable skill players are still on the board.
-    // By the late rounds a backup QB is a normal roster-building pick, so the
-    // penalty tapers to nothing. A 3rd+ QB stays a bit more discounted.
-    if (!state.sf && pos === 'QB' && (counts['QB'] || 0) >= 1){
-      var _qbRound = Math.ceil(state.current / (state.teams || 12));
-      var _qbPen;
-      if (_qbRound <= 3)      _qbPen = 0.30;   // early: heavy - wasting a premium pick
-      else if (_qbRound <= 6) _qbPen = 0.60;   // mid: moderate cost
-      else if (_qbRound <= 9) _qbPen = 0.85;   // later: minor
-      else                    _qbPen = 1.0;    // late: no penalty - backup/streamer
-      if ((counts['QB'] || 0) >= 2) _qbPen *= 0.7;   // 3rd+ QB: still discouraged
-      s *= _qbPen;
-    }
+    // Position-normalized PPG (null -> the formula falls back to value).
+    var ppgN = ppgNormOf(p);
 
-    // #7: Redraft handcuff boost. If user owns the starter at this position+team,
-    // the backup has significant insurance value worth a meaningful PS bump.
-    // Skipped in grading mode (a live-draft roster-fit nudge, not pick quality).
+    // Live-draft-only timing terms; grading passes neither, matching the server.
+    var survivalAdj = 0;
+    if (!grading){
+      var nextOwned = (opts && opts.nextOwned !== undefined) ? opts.nextOwned : nextOwnedAfterCurrent();
+      if (nextOwned){
+        var survProb = availProb(p, nextOwned);
+        if (survProb != null) survivalAdj = 0.05 - survProb / 100 * 0.08;
+      }
+    }
+    var handcuff = false;
     if (!grading && state.type === 'redraft' && pos === 'RB'){
       var myRBTeams = {};
       ((opts && opts.picksList) || myPicksList()).forEach(function(mp){
         if ((mp.position || '').toUpperCase() === 'RB' && mp.team) myRBTeams[mp.team] = true;
       });
-      if (p.team && myRBTeams[p.team]) s = Math.min(1, s + 0.15);
+      if (p.team && myRBTeams[p.team]) handcuff = true;
     }
 
-    // Scoring-format adjustments: shift recommendations toward the build the
-    // league's scoring actually rewards, without recomputing raw player values.
     var _sc = scoringCfg();
-    if (_sc.tep > 0 && pos === 'TE') s *= (1 + 0.12 * _sc.tep);   // TE premium lifts TEs
-    if (pos === 'WR' || pos === 'TE'){ if (_sc.ppr >= 1) s *= 1.02; }  // full PPR favors receivers
-    else if (pos === 'RB' && _sc.ppr <= 0) s *= 1.03;                  // standard favors RBs
-
-    // Depth normalization: re-anchor the 0-100 scale relative to what is
-    // achievable at this pick slot. The pool shrinks as the draft progresses
-    // so a strong late-round slider isn't unfairly buried in the 40s. The boost
-    // is intentionally gentle: par falls from 1.0 (pick 1) to ~0.57 (last pick),
-    // so the best available in the mid-late rounds lands ~70-80, not a clamped
-    // 100. A steeper curve over-boosted round 15 picks to 100.
-    var _tot = (state.teams || 12) * (state.rounds || 16);
-    if (_tot > 1){
-      var _depth = Math.min(0.98, (state.current - 1) / _tot);
-      var _par   = Math.max(0.40, 1.0 - _depth * 0.44);
-      s = s / _par;
-    }
-
-    return Math.round(clamp01(s) * 100);
+    return BRPickScore.computePickScore({
+      pos: pos, value: valOf(p), vor: vorOf(p), tier: tierOf(p),
+      age: (p.age != null ? Number(p.age) : null), rankChange7d: p.rank_change_7d,
+      avgPick: adp, pickNo: state.current, maxVal: maxVal,
+      draftType: state.type, isSf: state.sf, needRaw: needRaw,
+      qbCount: counts['QB'] || 0, totalPicks: (state.teams || 12) * (state.rounds || 16),
+      numTeams: state.teams || 12, ppgNorm: ppgN,
+      ppr: _sc.ppr, tep: _sc.tep, isTierCliff: isTierCliff(p),
+      survivalAdj: survivalAdj, handcuff: handcuff,
+    });
   }
   // How many players remain in this player's (position|tier) bucket.
   function tierRemaining(p){
@@ -3419,7 +3327,10 @@
   // (same approach gradePicks uses) and cache it back onto the pick object.
   function storedPickScore(pn, pl){
     if (!pl) return null;
-    if (pl.ps != null) return pl.ps;
+    // Display the GRADE score (no live survival/handcuff timing terms) so every
+    // per-pick chip matches the Teams-page grade. Memoized separately from the
+    // live pl.ps (which the sim stores with timing terms for its own use).
+    if (pl.gps != null) return pl.gps;
     var full = playersById[String(pl.id)];
     if (!full || !players.length) return null;
     var maxVal = 0; players.forEach(function(q){ var v = valOf(q); if (v > maxVal) maxVal = v; });
@@ -3439,9 +3350,9 @@
     });
     var saved = state.current;
     state.current = pn;
-    var ps = pickScore(full, maxVal, counts);
+    var ps = pickScore(full, maxVal, counts, { grading: true });
     state.current = saved;
-    pl.ps = ps;   // memoize (matches what gradePicks would compute)
+    pl.gps = ps;   // memoize the grade score (matches gradePicks / the server)
     return ps;
   }
   function cellInner(pn){

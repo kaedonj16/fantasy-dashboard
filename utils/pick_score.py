@@ -7,6 +7,8 @@ the client-side Draft Room. Pure — reuses ``clamp01`` from utils.draft_grade.
 """
 from __future__ import annotations
 
+import math
+
 from utils.draft_grade import clamp01
 
 # Component weights per draft type (approximately normalized within each row).
@@ -31,7 +33,13 @@ def ps_tier_of(value: float, thresholds: list):
 def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
                        avg_pick, pick_no, max_val, draft_type, is_sf,
                        need_raw, qb_count, total_picks=None, num_teams=None,
-                       ppg_norm=None, ppr=1.0, tep=0.0, is_tier_cliff=False) -> int:
+                       ppg_norm=None, ppr=1.0, tep=0.0, is_tier_cliff=False,
+                       survival_adj=0.0, handcuff=False) -> int:
+    """Mirror of static/pick_score.js `computePickScore`; the two are pinned
+    identical by tests/test_pick_score_parity.py. ``survival_adj`` and
+    ``handcuff`` are the live-draft-only timing terms (default off); the grade
+    never passes them, which is why the Teams-page grade and the Draft Room
+    grade agree. Do not edit this without editing the JS (and vice versa)."""
     pos = (pos or "").upper()
     # DB-sourced numbers arrive as decimal.Decimal; coerce to float so they mix
     # with the float weights below (Decimal * float raises TypeError).
@@ -95,6 +103,10 @@ def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
          + w["tier"] * tier_score + w["need"] * need + w["youth"] * youth
          + w["mom"] * mom + w.get("ppg", 0.0) * ppg_n)
 
+    # Live-draft survival/opportunity-cost term (0 for grading).
+    if survival_adj:
+        s += float(survival_adj)
+
     # QB overfill (1QB only): a second QB only carries real opportunity cost in
     # the early rounds. By the late rounds a backup QB is a normal pick, so the
     # penalty tapers out (mirrors the Draft Room).
@@ -113,6 +125,10 @@ def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
             _pen *= 0.7
         s *= _pen
 
+    # Live-draft redraft handcuff term (False for grading).
+    if handcuff:
+        s = min(1.0, s + 0.15)
+
     # Scoring-format adjustments: shift toward the build the league's scoring
     # rewards. Mirrors the Draft Room's scoringCfg() multipliers exactly.
     if tep and tep > 0 and pos == "TE":
@@ -130,4 +146,4 @@ def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
         _par = max(0.40, 1.0 - _depth * 0.44)
         s = s / _par
 
-    return int(round(clamp01(s) * 100))
+    return int(math.floor(clamp01(s) * 100 + 0.5))  # round-half-up, matching JS
