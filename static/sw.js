@@ -2,7 +2,7 @@
 // Caches static assets and key pages for offline/fast repeat loads.
 // Handles Web Push notifications.
 
-const CACHE_NAME = 'br-fantasy-v7';
+const CACHE_NAME = 'br-fantasy-v8';
 
 // How long to wait on the network for a page (when we already have a cached
 // copy) before painting the cached version. This is what kills the blank
@@ -95,7 +95,21 @@ async function handleNavigate(request) {
     // while networkFetch keeps running in the background to refresh the cache.
     const timeout = new Promise(resolve => setTimeout(() => resolve(null), NAV_TIMEOUT_MS));
     const winner = await Promise.race([networkFetch, timeout]);
-    return winner || cached;
+    if (!winner) {
+      // Cached shell went to the screen; when the real page lands, tell the
+      // client so it can swap the stale paint for fresh data (app.js listens
+      // and reloads only within the first moments after launch).
+      networkFetch.then(response => {
+        if (!response) return;
+        clients.matchAll({ type: 'window' }).then(wcs => {
+          wcs.forEach(wc => {
+            if (wc.url === request.url) wc.postMessage({ type: 'nav-fresh', url: request.url });
+          });
+        });
+      });
+      return cached;
+    }
+    return winner;
   }
 
   // No cached copy yet: wait for the network, then fall back to the home shell.

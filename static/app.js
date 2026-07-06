@@ -8,6 +8,55 @@
 // ============================================================
 
 
+// ── Stale-page auto-refresh (PWA resume + cached-shell launch) ───────────────
+// Reopening the installed app resumes a frozen page from the last session, and
+// on a slow network the service worker paints the last cached copy - both show
+// stale data. Reload when the page comes back to the foreground after sitting
+// idle, and listen for the service worker's "a fresh copy just landed" signal
+// right after a cached-shell launch. Live surfaces (draft room, Redzone) manage
+// their own freshness and are never yanked out from under the user.
+(function () {
+  var STALE_MS = 10 * 60 * 1000;   // resume older than this -> reload
+  var loadedAt = Date.now();
+  var reloading = false;
+  function liveSurface() {
+    return !!document.getElementById('drSideTabs') || !!document.getElementById('rz-root');
+  }
+  function reloadOnce() {
+    if (reloading || liveSurface()) return;
+    // Loop guard: at most one automatic reload per minute per tab.
+    var last = 0;
+    try { last = parseInt(sessionStorage.getItem('brAutoRefreshTs') || '0', 10); } catch (e) {}
+    if (Date.now() - last < 60000) return;
+    try { sessionStorage.setItem('brAutoRefreshTs', String(Date.now())); } catch (e) {}
+    reloading = true;
+    location.reload();
+  }
+  function maybeResumeReload() {
+    if (Date.now() - loadedAt >= STALE_MS) reloadOnce();
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') maybeResumeReload();
+  });
+  // bfcache restore (back/forward or PWA resume on some platforms).
+  window.addEventListener('pageshow', function (e) {
+    if (e.persisted) maybeResumeReload();
+  });
+  // Service worker says a fresh copy of this page just replaced the cached
+  // shell we're looking at. Only auto-reload right after launch (the user has
+  // barely seen the stale paint); once they're reading/scrolling, let it be.
+  if (navigator.serviceWorker) {
+    navigator.serviceWorker.addEventListener('message', function (e) {
+      var d = e.data || {};
+      if (d.type !== 'nav-fresh') return;
+      if (d.url && d.url !== location.href) return;
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - loadedAt > 20000) return;
+      reloadOnce();
+    });
+  }
+})();
+
 // ── Auto-restore expired session ─────────────────────────────────────────────
 // If the server session expired but we still have saved_viewer in localStorage,
 // silently call /api/quick-set-viewer so the user stays logged in.
