@@ -38,6 +38,14 @@ def _draft_room_js_v() -> str:
     return _DRAFT_ROOM_JS_V
 
 
+def _static_v(name: str) -> str:
+    try:
+        _p = Path(__file__).resolve().parents[2] / "static" / name
+        return hashlib.md5(_p.read_bytes()).hexdigest()[:8]
+    except OSError:
+        return "0"
+
+
 def build_draft_room_body(
     league_id: Optional[str],
     season: Optional[int],
@@ -70,6 +78,7 @@ def build_draft_room_body(
     return (
         f'<script>window.__draftCfg = {cfg_json};</script>\n'
         + _DRAFT_ROOM_HTML
+        + f'\n<script src="/static/draft_grade_curve.js?v={_static_v("draft_grade_curve.js")}" defer></script>\n'
         + f'\n<script src="/static/draft_room.js?v={_draft_room_js_v()}" defer></script>\n'
     )
 

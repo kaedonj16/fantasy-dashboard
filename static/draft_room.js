@@ -2624,30 +2624,15 @@
   function _applyFieldCurve(out){
     if (!state || state.type === 'rookie') return;  // rookie grades are absolute (Teams-page letters), not curved
     if (!out || out.length < 3) return;             // need a real field to curve against
-    var scores = out.map(function(t){ return t.grade.score; });
-    var mean = scores.reduce(function(a, b){ return a + b; }, 0) / scores.length;
-    var variance = scores.reduce(function(a, b){ return a + (b - mean) * (b - mean); }, 0) / scores.length;
-    var std = Math.sqrt(variance);
-    // Floor the spread so a near-identical field isn't blown apart (no fabrication)
-    // while still giving a readable range when teams genuinely differ.
-    var effStd = Math.max(std, 8);
-    var ANCHOR = 74;   // the field-average team lands at a solid B
-    var PTS = 11;      // grade points per standard deviation of real separation
-    // Early-draft damping: a few picks per team is mostly noise, so the curve
-    // spreads at half strength and ramps to full by round 6.
+    // Curve math lives in static/draft_grade_curve.js (shared with the Python
+    // server grade via a parity test) so both surfaces stay identical.
     var _teams = state.teams || 12;
-    var _roundsDone = Math.floor(((state.current || 1) - 1) / _teams);
-    var ptsEff = PTS * (0.5 + 0.5 * Math.max(0, Math.min(1, _roundsDone / 6)));
-    out.forEach(function(t){
+    var roundsDone = Math.floor(((state.current || 1) - 1) / _teams);
+    var raws = out.map(function(t){ return t.grade.score; });
+    var curved = BRDraftGrade.curveFieldScores(raws, roundsDone);
+    out.forEach(function(t, i){
       t.grade.rawScore = t.grade.score;
-      var z = (t.grade.score - mean) / effStd;
-      var curved = ANCHOR + z * ptsEff;
-      // Being best-of-field can't manufacture elite letters: the curve tops out
-      // just above the raw composite, and the A band requires real raw quality -
-      // the best draft in a mediocre room reads B+/A-, not A+.
-      curved = Math.min(curved, t.grade.rawScore + 8);
-      if (curved >= 85 && t.grade.rawScore < 80) curved = 84;
-      t.grade.score = Math.round(Math.max(0, Math.min(100, curved)));
+      t.grade.score = curved[i];
     });
   }
   // Classify a startup/redraft build into a recognizable draft archetype based on

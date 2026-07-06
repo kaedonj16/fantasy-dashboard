@@ -155,13 +155,33 @@ def dr_team_grade_score(
     return float(value_pts + starter_pts + balance_pts)
 
 
-def dr_apply_field_curve(scores: "list[float]") -> "list[float]":
-    """Mirror _applyFieldCurve(): curve raw composites against the field so real
-    separation reads on a B-anchored scale. Needs >=3 teams; else returns as-is."""
-    if len(scores) < 3:
-        return scores
-    mean = sum(scores) / len(scores)
-    variance = sum((s - mean) ** 2 for s in scores) / len(scores)
+def dr_apply_field_curve(scores: "list[float]", rounds_done: int = 99) -> "list[float]":
+    """Mirror of static/draft_grade_curve.js `curveFieldScores`. This is a
+    deliberate cross-runtime copy (browser draft room vs Python server); the two
+    are pinned identical by tests/test_draft_grade_curve_parity.py, so any change
+    to one fails CI until the other matches. Do not edit this without editing the
+    JS (and vice versa).
+
+    Curve raw composites against the field so real separation reads on a
+    B-anchored scale. ``rounds_done`` drives early-draft damping; the Teams page
+    only grades completed drafts, so it defaults to full spread. Needs >=3 teams.
+    """
+    n = len(scores)
+    if n < 3:
+        return list(scores)
+    mean = sum(scores) / n
+    variance = sum((s - mean) ** 2 for s in scores) / n
     eff_std = max(math.sqrt(variance), 8)
     ANCHOR, PTS = 74, 11
-    return [max(0.0, min(100.0, round(ANCHOR + ((s - mean) / eff_std) * PTS))) for s in scores]
+    ramp = max(0.0, min(1.0, (rounds_done or 0) / 6))
+    pts_eff = PTS * (0.5 + 0.5 * ramp)
+    out = []
+    for raw in scores:
+        z = (raw - mean) / eff_std
+        curved = ANCHOR + z * pts_eff
+        curved = min(curved, raw + 8)             # can't out-curve the raw composite
+        if curved >= 85 and raw < 80:             # A band needs real raw quality
+            curved = 84
+        curved = max(0.0, min(100.0, curved))
+        out.append(float(math.floor(curved + 0.5)))  # round-half-up, matching JS
+    return out

@@ -97,8 +97,12 @@ def test_field_curve_passthrough_under_three():
 
 
 def test_field_curve_centers_on_anchor():
-    # Three identical scores -> zero spread -> every team lands on the anchor (74).
-    assert dr_apply_field_curve([60, 60, 60]) == [74, 74, 74]
+    # Zero spread would center every team on the anchor (74), but the raw cap
+    # keeps a mediocre field from being inflated: a 60-composite team tops out
+    # at raw + 8 = 68 no matter how it compares to the field.
+    assert dr_apply_field_curve([60, 60, 60]) == [68, 68, 68]
+    # A strong tied field is not capped down: 90 + 8 leaves the anchor intact.
+    assert dr_apply_field_curve([90, 90, 90]) == [74, 74, 74]
 
 
 def test_field_curve_orders_preserved_and_bounded():
