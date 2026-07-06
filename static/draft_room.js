@@ -737,9 +737,6 @@
     }
     return state.simAgeLeans[slot];
   }
-  function ageLeanLabel(l){
-    return { win_now: 'Win now', youth: 'Youth' }[l] || '';
-  }
   // Age-lean intensity: like the strategy params, each team commits to its
   // rebuild/win-now identity to a different degree per draft.
   function _ageLeanIntensity(slot){
@@ -2595,10 +2592,21 @@
     var effStd = Math.max(std, 8);
     var ANCHOR = 74;   // the field-average team lands at a solid B
     var PTS = 11;      // grade points per standard deviation of real separation
+    // Early-draft damping: a few picks per team is mostly noise, so the curve
+    // spreads at half strength and ramps to full by round 6.
+    var _teams = state.teams || 12;
+    var _roundsDone = Math.floor(((state.current || 1) - 1) / _teams);
+    var ptsEff = PTS * (0.5 + 0.5 * Math.max(0, Math.min(1, _roundsDone / 6)));
     out.forEach(function(t){
       t.grade.rawScore = t.grade.score;
       var z = (t.grade.score - mean) / effStd;
-      t.grade.score = Math.round(Math.max(0, Math.min(100, ANCHOR + z * PTS)));
+      var curved = ANCHOR + z * ptsEff;
+      // Being best-of-field can't manufacture elite letters: the curve tops out
+      // just above the raw composite, and the A band requires real raw quality -
+      // the best draft in a mediocre room reads B+/A-, not A+.
+      curved = Math.min(curved, t.grade.rawScore + 8);
+      if (curved >= 85 && t.grade.rawScore < 80) curved = 84;
+      t.grade.score = Math.round(Math.max(0, Math.min(100, curved)));
     });
   }
   // Classify a startup/redraft build into a recognizable draft archetype based on
@@ -2749,22 +2757,15 @@
       var winTag = w ? '<span class="dr-sum-lwin dr-win-' + w.label.toLowerCase().replace('-','') + '">' + esc(w.label) + '</span>' : '';
       var tCol = t.grade.score >= 75 ? '#22c55e' : t.grade.score >= 60 ? '#38bdf8' : t.grade.score >= 45 ? '#f59e0b' : '#ef4444';
       var rCls = i < 3 ? (' ' + _rc[i]) : '';
-      // In a mock, show each CPU team's drafting plan so their behavior reads
-      // as intentional (Zero RB, Win now, ...) rather than random.
+      // In a mock, show each CPU team's positional plan so its behavior reads
+      // as intentional (Zero RB, RB heavy, ...). The age lean is deliberately
+      // NOT shown here: the window chip already reflects age posture from the
+      // actual roster, and showing intent next to result reads as contradictory
+      // ("Win now" pill beside a "Balanced" chip).
       var stratTag = '';
-      if (sim && !t.isMe){
-        var _parts = [];
-        if (state.simStrats){
-          var _sl = stratLabel(state.simStrats[t.slot]);
-          if (_sl) _parts.push(_sl);
-        }
-        if (state.simAgeLeans){
-          var _al = ageLeanLabel(state.simAgeLeans[t.slot]);
-          if (_al) _parts.push(_al);
-        }
-        _parts.forEach(function(lbl){
-          stratTag += '<span class="dr-strat-tag">' + lbl + '</span>';
-        });
+      if (sim && !t.isMe && state.simStrats){
+        var _sl = stratLabel(state.simStrats[t.slot]);
+        if (_sl) stratTag = '<span class="dr-strat-tag">' + _sl + '</span>';
       }
       html += '<div class="dr-sum-lrow' + (t.isMe ? ' is-me' : '') + '" data-legslot="' + t.slot + '">'
         + '<span class="dr-sum-lrank' + rCls + '">' + (i + 1) + '</span>'
