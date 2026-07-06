@@ -2777,13 +2777,13 @@
       var winTag = w ? '<span class="dr-sum-lwin dr-win-' + w.label.toLowerCase().replace('-','') + '">' + esc(w.label) + '</span>' : '';
       var tCol = t.grade.score >= 75 ? '#22c55e' : t.grade.score >= 60 ? '#38bdf8' : t.grade.score >= 45 ? '#f59e0b' : '#ef4444';
       var rCls = i < 3 ? (' ' + _rc[i]) : '';
-      // In a mock, show each CPU team's positional plan so its behavior reads
-      // as intentional (Zero RB, RB heavy, ...). The age lean is deliberately
-      // NOT shown here: the window chip already reflects age posture from the
-      // actual roster, and showing intent next to result reads as contradictory
-      // ("Win now" pill beside a "Balanced" chip).
+      // CPU plans are hole cards: hidden while the draft is live (reading the
+      // room from picks is the skill a mock trains) and revealed once it ends,
+      // so you can check your inferences. The age lean is never shown: the
+      // window chip already reflects age posture from the actual roster.
       var stratTag = '';
-      if (sim && !t.isMe && state.simStrats){
+      var _draftDone = state.current > (state.teams || 12) * (state.rounds || 0);
+      if (sim && _draftDone && !t.isMe && state.simStrats){
         var _sl = stratLabel(state.simStrats[t.slot]);
         if (_sl) stratTag = '<span class="dr-strat-tag">' + _sl + '</span>';
       }
