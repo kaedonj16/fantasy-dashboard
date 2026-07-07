@@ -14031,6 +14031,21 @@ tr.team-clickable {
     flex-direction: column;
   }
 
+  /* Charts: stack full width instead of squeezing weekly (66%) + radar (34%)
+     side by side, which crushed the radar into an unreadable sliver. */
+  #tm-panel-charts.active {
+    flex-direction: column;
+    gap: 20px;
+  }
+  .tm-chart-weekly,
+  .tm-chart-radar,
+  .tm-chart-svg {
+    flex: 1 1 100%;
+    max-width: 100%;
+    min-width: 0;
+    width: 100%;
+  }
+
   .team-modal-body-left,
   .team-modal-body-right {
     flex: 1;
