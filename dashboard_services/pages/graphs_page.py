@@ -5,6 +5,62 @@ import numpy as np
 import plotly.graph_objs as go
 
 from utils.utils import z_better_outward
+from utils.all_play import all_play_analysis
+from utils.standings_viz import luck_quadrant_svg, value_age_svg
+
+
+def _luck_and_value_age_cards(ctx: dict, df_weekly_finalized) -> str:
+    """Two league-wide SVG scatters for the graphs page: a performance-vs-luck
+    quadrant (all-play win rate vs actual) and a dynasty-value-vs-age quadrant.
+    Both are server-rendered SVG (no Plotly), and return '' individually when
+    there isn't enough data, so the cards simply don't appear."""
+    viewer_owner = str((ctx.get("viewer") or {}).get("viewer_team_name") or "")
+
+    luck_svg = ""
+    try:
+        if df_weekly_finalized is not None and not df_weekly_finalized.empty:
+            weekly_scores: dict = {}
+            actual_wins: dict = {}
+            for _, r in df_weekly_finalized.iterrows():
+                wk = int(r["week"])
+                owner = str(r["owner"])
+                weekly_scores.setdefault(wk, {})[owner] = float(r["points"] or 0)
+                actual_wins[owner] = actual_wins.get(owner, 0.0) + float(r.get("win") or 0)
+            luck_svg = luck_quadrant_svg(all_play_analysis(weekly_scores, actual_wins), viewer_owner)
+    except Exception:
+        luck_svg = ""
+
+    value_age_svg_str = ""
+    try:
+        from dashboard_services.ai.context_builders import team_value_age_rows
+        value_age_svg_str = value_age_svg(team_value_age_rows(ctx), viewer_owner)
+    except Exception:
+        value_age_svg_str = ""
+
+    cards = ""
+    if luck_svg:
+        cards += f"""
+            <div class="card">
+              <div class="card-header-row">
+                <h2>Performance vs Luck</h2>
+              </div>
+              <div class="card-body graph-body svg-graph-body">
+                <div class="svg-graph-note">All-play win rate (how you would do against the whole league each week) vs your actual win rate. Above the dashed line means you have won more than your scoring earned.</div>
+                {luck_svg}
+              </div>
+            </div>"""
+    if value_age_svg_str:
+        cards += f"""
+            <div class="card">
+              <div class="card-header-row">
+                <h2>Dynasty Value vs Age</h2>
+              </div>
+              <div class="card-body graph-body svg-graph-body">
+                <div class="svg-graph-note">Each team by total roster value and average age. Top-left is young and loaded; top-right is a closing win-now window.</div>
+                {value_age_svg_str}
+              </div>
+            </div>"""
+    return cards
 
 
 def build_graphs_body(ctx: dict) -> str:
@@ -180,6 +236,9 @@ def build_graphs_body(ctx: dict) -> str:
     pfpa_json = _fig_json(figs["pf_pa"])
     line_json  = _fig_json(figs["scores_line"])
     box_json   = _fig_json(figs["scores_box"])
+
+    # League-wide SVG scatters (luck quadrant + dynasty value vs age).
+    svg_cards_html = _luck_and_value_age_cards(ctx, df_weekly)
 
     # ---------- Sidebar: top teams + metrics + unified legend ----------
     top_rows = []
@@ -368,6 +427,8 @@ def build_graphs_body(ctx: dict) -> str:
                 <div id="chart-box" style="width:100%;min-height:350px;"></div>
               </div>
             </div>
+
+            {svg_cards_html}
 
             <div class="card">
               <div class="card-header-row">

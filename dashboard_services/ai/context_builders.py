@@ -102,6 +102,45 @@ def detect_team_direction(players: list[dict], future_picks: list[dict]) -> str:
     return "balanced"
 
 
+def team_value_age_rows(ctx: dict) -> list[dict]:
+    """Per-team roster snapshot: total dynasty value and average player age.
+
+    Drives the graphs-page / team-modal "Dynasty value vs age" scatter. One row
+    per roster: {owner, total_value, avg_age, n}. avg_age is a plain mean over
+    players with a known age; total_value sums the format-correct model value.
+    Empty list when there are no rosters (safe for callers to iterate).
+    """
+    rosters = ctx.get("rosters") or []
+    if not rosters:
+        return []
+    roster_map = ctx.get("roster_map") or {}
+    model_value_lookup = build_model_value_lookup(
+        ctx.get("model_value_table") or [], is_sf=_ctx_is_sf(ctx)
+    )
+    players_index = ctx.get("players_index") or {}
+    players_map = ctx.get("players_map") or {}
+
+    rows: list[dict] = []
+    for r in rosters:
+        rid = str(r.get("roster_id"))
+        owner = roster_map.get(rid) or f"Roster {rid}"
+        players = summarize_roster_players(r, players_index, players_map, model_value_lookup)
+        total_value = sum(_safe_float(p.get("value")) for p in players)
+        ages = [
+            _safe_float(p.get("age"))
+            for p in players
+            if p.get("age") not in (None, "")
+        ]
+        avg_age = sum(ages) / len(ages) if ages else 0.0
+        rows.append({
+            "owner": owner,
+            "total_value": round(total_value, 1),
+            "avg_age": round(avg_age, 1),
+            "n": len(players),
+        })
+    return rows
+
+
 def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Union[dict, None]:
     rosters = ctx.get("rosters") or []
     roster = next((r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)), None)

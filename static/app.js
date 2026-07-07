@@ -13430,6 +13430,13 @@ function renderTeamDetails(data) {
       graphsHTML += '<div class="team-modal-section tm-chart-radar"><h3>Team Breakdown</h3><div class="team-chart-container" id="teamRadarChart"></div></div>';
     }
   }
+  // League-wide SVG scatters (this team highlighted), injected as-is.
+  if (data.graphs && data.graphs.luck_svg) {
+    graphsHTML += '<div class="team-modal-section tm-chart-svg"><h3>Performance vs Luck</h3><div class="team-svg-chart">' + data.graphs.luck_svg + '</div></div>';
+  }
+  if (data.graphs && data.graphs.value_age_svg) {
+    graphsHTML += '<div class="team-modal-section tm-chart-svg"><h3>Dynasty Value vs Age</h3><div class="team-svg-chart">' + data.graphs.value_age_svg + '</div></div>';
+  }
 
   // Populate tab panels
   const rosterPanel = document.getElementById('tm-panel-roster');

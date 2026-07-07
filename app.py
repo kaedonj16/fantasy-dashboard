@@ -3740,7 +3740,36 @@ def render_standings_compact(team_stats, length=None, movement=None) -> str:
     """
 
 
-def render_standings(team_stats, length) -> str:
+def _ord_str(n) -> str:
+    """Ordinal string: 1 -> '1st', 2 -> '2nd', 11 -> '11th'."""
+    n = int(n)
+    suf = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suf}"
+
+
+def _all_play_from_df_weekly(df_weekly) -> dict:
+    """All-play / luck analysis keyed by owner name, from finalized weeks."""
+    try:
+        if df_weekly is None or df_weekly.empty or "finalized" not in df_weekly.columns:
+            return {}
+        fin = df_weekly[df_weekly["finalized"] == True]
+        if fin.empty:
+            return {}
+        weekly_scores: dict = {}
+        actual_wins: dict = {}
+        for _, r in fin.iterrows():
+            wk = int(r["week"])
+            owner = str(r["owner"])
+            weekly_scores.setdefault(wk, {})[owner] = float(r["points"] or 0)
+            actual_wins[owner] = actual_wins.get(owner, 0.0) + float(r["win"] or 0)
+        from utils.all_play import all_play_analysis
+        return all_play_analysis(weekly_scores, actual_wins)
+    except Exception:
+        logger.debug("all-play analysis failed", exc_info=True)
+        return {}
+
+
+def render_standings(team_stats, length, all_play: dict = None) -> str:
     if team_stats is None or team_stats.empty:
         return """
         <div class="card-body">
@@ -3776,6 +3805,16 @@ def render_standings(team_stats, length) -> str:
             if avatar else ""
         )
 
+        _ap = (all_play or {}).get(str(row['owner'])) or {}
+        _luck = _ap.get('luck_delta')
+        if _luck is None:
+            _luck_cell = "<span class='muted'>&ndash;</span>"
+        else:
+            _lcls = 'luck-pos' if _luck >= 1 else ('luck-neg' if _luck <= -1 else 'luck-neu')
+            _lsign = '+' if _luck > 0 else ''
+            _luck_cell = f"<span class='luck-chip {_lcls}' title='Actual wins minus expected wins from all-play'>{_lsign}{_luck:.1f}</span>"
+        _seed = _ap.get('expected_seed')
+        _seed_cell = _ord_str(_seed) if _seed else "<span class='muted'>&ndash;</span>"
         rows.append(f"""
             <tr>
               <td class="num">{int(row['Rank'])}</td>
@@ -3784,6 +3823,8 @@ def render_standings(team_stats, length) -> str:
               <td>{row['PF']:.1f}</td>
               <td>{row['PA']:.1f}</td>
               <td>{streak}</td>
+              <td>{_luck_cell}</td>
+              <td>{_seed_cell}</td>
               <td>{row.get('past_sos', 0.0):.1f}</td>
               <td>{row.get('ros_sos', 0.0):.1f}</td>
             </tr>
@@ -3801,6 +3842,8 @@ def render_standings(team_stats, length) -> str:
               <th scope="col">PF</th>
               <th scope="col">PA</th>
               <th scope="col">Streak</th>
+              <th scope="col" title="Actual wins minus expected wins (from all-play). + = luckier than your scoring earned.">Luck</th>
+              <th scope="col" title="Where you'd be seeded by all-play record instead of actual wins.">Exp. Seed</th>
               <th scope="col">SOS Past</th>
               <th scope="col">SOS Future</th>
             </tr>
@@ -5550,7 +5593,8 @@ def build_standings_body(ctx: dict) -> str:
     rosters = ctx["rosters"]
     num_teams = len({str(r.get("roster_id")) for r in rosters})
 
-    standings_html = render_standings(team_stats, num_teams)
+    _all_play = _all_play_from_df_weekly(df_weekly)
+    standings_html = render_standings(team_stats, num_teams, all_play=_all_play)
 
     if (
             df_weekly is not None
@@ -20602,6 +20646,27 @@ def api_team_details(roster_id: str):
                             "points": round(float(row["points"]), 1)
                         })
 
+                    # League-wide SVG scatters (same renderers as the Graphs
+                    # page), highlighting this team. Server-rendered so the modal
+                    # can inject them directly without loading Plotly.
+                    league_luck_svg = ""
+                    league_value_age_svg = ""
+                    try:
+                        from utils.standings_viz import luck_quadrant_svg, value_age_svg
+                        from utils.all_play import all_play_analysis
+                        _ws: dict = {}
+                        _aw: dict = {}
+                        for _, _r in df_weekly.iterrows():
+                            _wk = int(_r["week"])
+                            _o = str(_r["owner"])
+                            _ws.setdefault(_wk, {})[_o] = float(_r["points"] or 0)
+                            _aw[_o] = _aw.get(_o, 0.0) + float(_r.get("win") or 0)
+                        league_luck_svg = luck_quadrant_svg(all_play_analysis(_ws, _aw), team_name or "")
+                        from dashboard_services.ai.context_builders import team_value_age_rows
+                        league_value_age_svg = value_age_svg(team_value_age_rows(ctx), team_name or "")
+                    except Exception:
+                        logger.debug("team-modal league scatters failed", exc_info=True)
+
                     # Get z-scores for radar chart
                     metrics = ["PF", "PA", "MAX", "MIN", "AVG", "STD"]
                     Z = z_better_outward(team_stats, metrics)
@@ -20646,6 +20711,8 @@ def api_team_details(roster_id: str):
                                 "z_scores": z_scores,
                                 "raw_stats": raw_stats
                             },
+                            "luck_svg": league_luck_svg,
+                            "value_age_svg": league_value_age_svg,
                             "season_used": graph_season  # Add info about which season data was used
                         }
                     else:
