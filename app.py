@@ -4295,6 +4295,98 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
         return ""
 
 
+def _render_season_review_card(ctx: dict, viewer_roster_id, df_weekly, team_stats) -> str:
+    """Season-in-review card for the viewer's team: record, scoring, best/worst
+    week, longest win streak, and the luck read (all-play record, luck delta,
+    expected vs actual seed). Empty string until there are finalized weeks."""
+    if not viewer_roster_id:
+        return ""
+    try:
+        from utils.season_review import season_review
+
+        roster_map = ctx.get("roster_map") or {}
+        owner = str(roster_map.get(str(viewer_roster_id)) or (ctx.get("viewer") or {}).get("viewer_team_name") or "")
+        if not owner:
+            return ""
+
+        if df_weekly is None or df_weekly.empty or "finalized" not in df_weekly.columns:
+            return ""
+        fin = df_weekly[df_weekly["finalized"] == True]
+        mine = fin[fin["owner"] == owner]
+        if mine.empty:
+            return ""
+        weekly = [
+            {"week": int(r["week"]), "points": float(r["points"] or 0), "win": float(r["win"] or 0)}
+            for _, r in mine.iterrows()
+        ]
+
+        all_play = _all_play_from_df_weekly(df_weekly)
+        ap_entry = all_play.get(owner)
+
+        # Finish rank and PF rank from the standings frame.
+        finish_rank = pf_rank = num_teams = None
+        if team_stats is not None and not team_stats.empty and "owner" in team_stats.columns:
+            _ts = team_stats.copy()
+            num_teams = len(_ts)
+            _ord = _ts.sort_values(by=["Wins", "PF", "PA"], ascending=[False, False, True]).reset_index(drop=True)
+            _match = _ord.index[_ord["owner"] == owner].tolist()
+            if _match:
+                finish_rank = int(_match[0]) + 1
+            _pf = _ts.sort_values(by=["PF"], ascending=[False]).reset_index(drop=True)
+            _pfm = _pf.index[_pf["owner"] == owner].tolist()
+            if _pfm:
+                pf_rank = int(_pfm[0]) + 1
+
+        r = season_review(weekly, all_play_entry=ap_entry, finish_rank=finish_rank,
+                          num_teams=num_teams, pf_rank=pf_rank)
+        if not r:
+            return ""
+
+        def _stat(label, value, sub=""):
+            sub_html = f"<div class='sr-stat-sub'>{sub}</div>" if sub else ""
+            return (f"<div class='sr-stat'><div class='sr-stat-label'>{html.escape(label)}</div>"
+                    f"<div class='sr-stat-value'>{value}</div>{sub_html}</div>")
+
+        stats = []
+        _rec = html.escape(r["record"])
+        _finish = f"{_ord_str(r['finish_rank'])}" + (f" of {r['num_teams']}" if r.get("num_teams") else "") if r.get("finish_rank") else ""
+        stats.append(_stat("Record", _rec, _finish))
+        stats.append(_stat("Points For", f"{r['points_for']:.0f}",
+                           (f"{_ord_str(r['pf_rank'])} in scoring" if r.get("pf_rank") else f"{r['avg_points']:.1f}/wk")))
+        stats.append(_stat("Best Week", f"{r['best_week']['points']:.0f}", f"Week {r['best_week']['week']}"))
+        stats.append(_stat("Worst Week", f"{r['worst_week']['points']:.0f}", f"Week {r['worst_week']['week']}"))
+        if r.get("longest_win_streak"):
+            stats.append(_stat("Longest Streak", f"{r['longest_win_streak']}W", ""))
+        if r.get("all_play_record"):
+            _ld = r.get("luck_delta")
+            _luck_sub = ""
+            if _ld is not None:
+                if _ld >= 1:
+                    _luck_sub = f"Lucky (+{_ld:.1f} wins)"
+                elif _ld <= -1:
+                    _luck_sub = f"Unlucky ({_ld:.1f} wins)"
+                else:
+                    _luck_sub = "About deserved"
+            stats.append(_stat("All-Play", html.escape(r["all_play_record"]), _luck_sub))
+        if r.get("expected_seed") and r.get("finish_rank"):
+            _seed_sub = "Matched your seed" if r["expected_seed"] == r["finish_rank"] else f"Finished {_ord_str(r['finish_rank'])}"
+            stats.append(_stat("Deserved Seed", _ord_str(r["expected_seed"]), _seed_sub))
+
+        return f"""
+        <section class="os-card sr-card">
+          <div class="os-section-head">
+            <div class="os-section-head-content">
+              <h2 class="os-section-title">Season in Review</h2>
+              <div class="os-section-subtitle">{html.escape(owner)} &middot; through {len(weekly)} week{'s' if len(weekly) != 1 else ''}</div>
+            </div>
+          </div>
+          <div class="sr-grid">{''.join(stats)}</div>
+        </section>"""
+    except Exception:
+        logger.debug("season review card failed", exc_info=True)
+        return ""
+
+
 def _render_bench_check(ctx: dict, viewer_roster_id, last_final_week: int) -> str:
     """One-line post-week feedback: how many points the viewer's optimal lineup
     left on the bench in the last finalized week, linking to the Lineup
@@ -4408,6 +4500,7 @@ def build_dashboard_body(ctx: dict) -> str:
     lineup_alert_html = _viewer_lineup_alert_html(ctx, viewer_roster_id)
     roster_moves_html = _roster_moves_alert_html(ctx, viewer_roster_id)
     trade_window_html = _trade_window_card_html(ctx, viewer_roster_id)
+    season_review_html = _render_season_review_card(ctx, viewer_roster_id, df_weekly, team_stats)
 
     finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
     if not finalized_df.empty:
@@ -4651,6 +4744,7 @@ def build_dashboard_body(ctx: dict) -> str:
 
         {matchup_html}
         {bench_check_html}
+        {season_review_html}
         {waiver_card_html}
       </main>
 
@@ -5874,6 +5968,12 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     viewer = ctx.get("viewer") or {}
     viewer_roster_id = viewer.get("viewer_roster_id")
 
+    # Season-in-review of the just-completed season (renders nothing if the
+    # offseason ctx has no finalized weekly data for the viewer).
+    season_review_html = _render_season_review_card(
+        ctx, viewer_roster_id, ctx.get("df_weekly"), ctx.get("team_stats")
+    )
+
     front_office_html = ""
     latest_draft = ctx.get("latest_draft")
     draft_text = "Draft date not set"
@@ -6311,6 +6411,8 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
         {gm_card_html}
         {front_office_card_html}
+
+        {season_review_html}
 
         {matchup_html}
 

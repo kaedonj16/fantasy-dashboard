@@ -16300,6 +16300,39 @@ tr.team-clickable {
   text-align: center;
 }
 
+/* Season in Review card */
+.sr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  padding: 14px 16px 16px;
+}
+.sr-stat {
+  background: var(--bg-alt);
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.sr-stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+.sr-stat-value {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.15;
+  margin-top: 2px;
+}
+.sr-stat-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
 /* Star icon + count/alert badge */
 .watchlist-star { color: #f59e0b; font-size: 15px; line-height: 1; }
 .watchlist-count-badge {
