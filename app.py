@@ -21053,20 +21053,22 @@ def api_team_details(roster_id: str):
                     # can inject them directly without loading Plotly.
                     league_luck_svg = ""
                     league_value_age_svg = ""
+                    # Shared per-team colors so the two modal scatters agree.
+                    _oc = {}
                     try:
-                        from utils.standings_viz import luck_quadrant_svg, value_age_svg
-                        from utils.all_play import all_play_analysis
-                        from dashboard_services.ai.context_builders import team_value_age_rows
                         from dashboard_services.pages.graphs_page import owner_color_map
-
-                        # Shared per-team colors so the two modal scatters agree.
                         _rmap = ctx.get("roster_map") or {}
                         _oc = owner_color_map([
                             str(_rmap.get(str(r.get("roster_id"))) or f"Roster {r.get('roster_id')}")
                             for r in rosters
                         ])
+                    except Exception:
+                        _rmap = ctx.get("roster_map") or {}
 
-                        # Luck: from the resolved season's finalized weeks.
+                    # Luck: from the resolved season's finalized weeks.
+                    try:
+                        from utils.standings_viz import luck_quadrant_svg
+                        from utils.all_play import all_play_analysis
                         _ws: dict = {}
                         _aw: dict = {}
                         for _, _r in df_weekly.iterrows():
@@ -21075,9 +21077,14 @@ def api_team_details(roster_id: str):
                             _ws.setdefault(_wk, {})[_o] = float(_r["points"] or 0)
                             _aw[_o] = _aw.get(_o, 0.0) + float(_r.get("win") or 0)
                         league_luck_svg = luck_quadrant_svg(all_play_analysis(_ws, _aw), team_name or "", _oc)
+                    except Exception:
+                        logger.warning("team-modal luck scatter failed", exc_info=True)
 
-                        # Value/age: current rosters + live value table (the graph
-                        # season's ctx can carry a stale or empty value table).
+                    # Value/age: current rosters + live value table (the graph
+                    # season's ctx can carry a stale or empty value table).
+                    try:
+                        from utils.standings_viz import value_age_svg
+                        from dashboard_services.ai.context_builders import team_value_age_rows
                         _val_ctx = {
                             "rosters": rosters,
                             "roster_map": _rmap,
@@ -21088,7 +21095,7 @@ def api_team_details(roster_id: str):
                         }
                         league_value_age_svg = value_age_svg(team_value_age_rows(_val_ctx), team_name or "", _oc)
                     except Exception:
-                        logger.debug("team-modal league scatters failed", exc_info=True)
+                        logger.warning("team-modal value/age scatter failed", exc_info=True)
 
                     # Get z-scores for radar chart
                     metrics = ["PF", "PA", "MAX", "MIN", "AVG", "STD"]

@@ -13782,12 +13782,13 @@ img, svg, canvas {
 }
 #tm-panel-roster.active { display: flex; }
 
-/* Charts panel: side by side */
+/* Charts panel: weekly + radar on row 1, the SVG scatters wrap to row 2 */
 #tm-panel-charts {
   display: none;
 }
 #tm-panel-charts.active {
   display: flex;
+  flex-wrap: wrap;
   gap: 24px;
   align-items: flex-start;
 }
@@ -13798,6 +13799,8 @@ img, svg, canvas {
 }
 .tm-chart-weekly { flex: 0 0 66%; min-width: 0; }
 .tm-chart-radar  { flex: 0 0 calc(34% - 24px); min-width: 0; }
+/* League scatters: two per row on desktop, full width when the modal is narrow */
+.tm-chart-svg { flex: 1 1 calc(50% - 12px); min-width: 260px; }
 
 .team-modal-loading,
 .team-modal-error {
