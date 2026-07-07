@@ -37,6 +37,19 @@ def test_luck_quadrant_skips_teams_with_no_games():
     assert svg.startswith("<svg")
 
 
+def test_luck_quadrant_hidden_before_any_wins():
+    # Season start: everyone has games but nobody has won yet -> hide it.
+    a = _analysis(5)
+    for v in a.values():
+        v["actual_wins"] = 0.0
+    assert luck_quadrant_svg(a, "") == ""
+
+
+def test_luck_quadrant_uses_owner_colors():
+    svg = luck_quadrant_svg(_analysis(4), "", owner_colors={"T1": "#123456"})
+    assert 'fill="#123456"' in svg
+
+
 def _vrows(n):
     return [
         {"owner": f"T{i}", "total_value": 1000 + i * 100, "avg_age": 24 + i * 0.5, "n": 15}
@@ -63,3 +76,8 @@ def test_value_age_ignores_zero_value_teams():
     svg = value_age_svg(rows, "")
     assert svg.startswith("<svg")
     assert "Empty" not in svg
+
+
+def test_value_age_uses_owner_colors():
+    svg = value_age_svg(_vrows(4), "", owner_colors={"T0": "#abcdef"})
+    assert 'fill="#abcdef"' in svg

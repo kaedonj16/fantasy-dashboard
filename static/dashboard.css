@@ -8399,6 +8399,17 @@ select:focus {
   text-align: right;
 }
 
+/* Career Standings sidebar: let the (often long) team name flex/wrap on the
+   left and keep the record + PF sized to content on the right so they never
+   wrap mid-value (e.g. "11-3", "2094 PF" stay on one line each). */
+.career-standings .mini-row {
+  grid-template-columns: minmax(0, 1fr) max-content;
+  column-gap: 12px;
+  align-items: start;
+}
+.career-standings .mini-label { min-width: 0; }
+.career-standings .mini-stat { white-space: nowrap; }
+
 .more {
   color: #22c55e;
 }

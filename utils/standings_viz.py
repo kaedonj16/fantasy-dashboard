@@ -30,16 +30,22 @@ def _esc(s) -> str:
     return html.escape(str(s))
 
 
-def luck_quadrant_svg(analysis: dict, viewer_owner: str = "") -> str:
+def luck_quadrant_svg(analysis: dict, viewer_owner: str = "", owner_colors: dict = None) -> str:
     """SVG scatter of actual win% (y) vs all-play win% (x) with a 'deserved'
-    diagonal. Returns '' when fewer than 3 teams have played a game."""
+    diagonal. Points use the shared per-owner color map (identity); the luck
+    signal is the position above/below the diagonal. Returns '' when fewer than
+    3 teams have played, or before any team has actually won a game (at season
+    start every point sits on the zero line and the chart is meaningless)."""
     rows: List[Tuple[str, dict]] = [
         (o, a) for o, a in (analysis or {}).items()
         if a.get("games") and a["games"] > 0
     ]
     if len(rows) < 3:
         return ""
+    if sum(float(a.get("actual_wins") or 0) for _, a in rows) <= 0:
+        return ""
 
+    colors = owner_colors or {}
     W, H, pad = 460, 340, 44
     x0, y0, x1, y1 = pad, 16, W - 16, H - pad
 
@@ -50,7 +56,9 @@ def luck_quadrant_svg(analysis: dict, viewer_owner: str = "") -> str:
         return y1 - pct * (y1 - y0)
 
     parts = [
-        f'<svg viewBox="0 0 {W} {H}" class="luck-quadrant" role="img" '
+        f'<svg viewBox="0 0 {W} {H}" width="{W}" height="{H}" '
+        f'style="width:100%;max-width:520px;height:auto;display:block;margin:0 auto;" '
+        f'class="luck-quadrant" role="img" '
         f'aria-label="Performance vs luck: each team plotted by all-play win rate against actual win rate">'
     ]
     parts.append(
@@ -71,7 +79,7 @@ def luck_quadrant_svg(analysis: dict, viewer_owner: str = "") -> str:
         ax = sx(a["all_play_pct"])
         ay = sy(a["actual_wins"] / a["games"])
         delta = a.get("luck_delta", 0)
-        col = _LUCK if delta >= 1 else (_UNLUCK if delta <= -1 else _NEU)
+        col = colors.get(str(owner)) or _NEU
         is_me = viewer_owner and str(owner) == str(viewer_owner)
         r = 7 if is_me else 5
         ring = ' stroke="var(--text,#0f172a)" stroke-width="2"' if is_me else ' stroke="#fff" stroke-width="1"'
@@ -100,16 +108,18 @@ def _median(vals: List[float]) -> float:
     return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2.0
 
 
-def value_age_svg(rows: List[dict], viewer_owner: str = "") -> str:
+def value_age_svg(rows: List[dict], viewer_owner: str = "", owner_colors: dict = None) -> str:
     """SVG scatter of total dynasty value (y) vs average roster age (x), split
     into quadrants by the league medians. Younger + more valuable (top-left) is
-    the ascending-dynasty corner. Returns '' with fewer than 3 valued teams."""
+    the ascending-dynasty corner. Points use the shared per-owner color map.
+    Returns '' with fewer than 3 valued teams."""
     pts = [
         r for r in (rows or [])
         if (r.get("total_value") or 0) > 0 and (r.get("avg_age") or 0) > 0
     ]
     if len(pts) < 3:
         return ""
+    colors = owner_colors or {}
 
     ages = [float(r["avg_age"]) for r in pts]
     vals = [float(r["total_value"]) for r in pts]
@@ -132,7 +142,9 @@ def value_age_svg(rows: List[dict], viewer_owner: str = "") -> str:
         return y1 - (val - v_lo) / max(v_hi - v_lo, 1e-9) * (y1 - y0)
 
     parts = [
-        f'<svg viewBox="0 0 {W} {H}" class="luck-quadrant" role="img" '
+        f'<svg viewBox="0 0 {W} {H}" width="{W}" height="{H}" '
+        f'style="width:100%;max-width:520px;height:auto;display:block;margin:0 auto;" '
+        f'class="luck-quadrant" role="img" '
         f'aria-label="Dynasty value versus average roster age for each team">'
     ]
     parts.append(
@@ -157,7 +169,7 @@ def value_age_svg(rows: List[dict], viewer_owner: str = "") -> str:
         px, py = sx(float(r["avg_age"])), sy(float(r["total_value"]))
         is_me = viewer_owner and str(owner) == str(viewer_owner)
         rad = 7 if is_me else 5
-        col = _LUCK if is_me else _ACCENT
+        col = colors.get(str(owner)) or _ACCENT
         ring = ' stroke="var(--text,#0f172a)" stroke-width="2"' if is_me else ' stroke="#fff" stroke-width="1"'
         short = _esc(str(owner)[:12])
         parts.append(

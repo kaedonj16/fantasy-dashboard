@@ -11363,7 +11363,11 @@ def page_graphs(platform: str, season: int, league_id: str):
                 # from the current rosters, luck from the most recent completed
                 # season's weekly results.
                 try:
-                    from dashboard_services.pages.graphs_page import _luck_and_value_age_cards
+                    from dashboard_services.pages.graphs_page import _luck_and_value_age_cards, owner_color_map
+                    _co = None
+                    _cts = career_ctx.get("team_stats")
+                    if _cts is not None and not _cts.empty and "owner" in _cts.columns:
+                        _co = owner_color_map(_cts["owner"].tolist())
                     _luck_df = None
                     _latest = max(available_seasons)
                     _lrid = resolve_league_id_for_season(platform, league_id, season, _latest)
@@ -11376,7 +11380,7 @@ def page_graphs(platform: str, season: int, league_id: str):
                     # Use the live value table (the ctx copy can be stale/empty),
                     # so the dynasty-value-vs-age scatter always has real values.
                     _val_ctx = {**ctx, "model_value_table": (get_model_value_table_cached() or ctx.get("model_value_table") or [])}
-                    _svg_cards = _luck_and_value_age_cards(_val_ctx, _luck_df)
+                    _svg_cards = _luck_and_value_age_cards(_val_ctx, _luck_df, _co)
                     if _svg_cards and '<div class="graphs-page">' in charts_html:
                         charts_html = charts_html.replace(
                             '<div class="graphs-page">',

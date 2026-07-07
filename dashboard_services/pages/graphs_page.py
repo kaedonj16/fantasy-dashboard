@@ -9,11 +9,21 @@ from utils.all_play import all_play_analysis
 from utils.standings_viz import luck_quadrant_svg, value_age_svg
 
 
-def _luck_and_value_age_cards(ctx: dict, df_weekly_finalized) -> str:
+def owner_color_map(owners) -> Dict[str, str]:
+    """Per-owner color from the shared graphs COLOR_CYCLE, so a team is the same
+    color across every chart on the page (and the new SVG scatters)."""
+    m: Dict[str, str] = {}
+    for idx, o in enumerate(owners or []):
+        m[str(o)] = COLOR_CYCLE[idx % len(COLOR_CYCLE)]
+    return m
+
+
+def _luck_and_value_age_cards(ctx: dict, df_weekly_finalized, owner_colors: dict = None) -> str:
     """Two league-wide SVG scatters for the graphs page: a performance-vs-luck
     quadrant (all-play win rate vs actual) and a dynasty-value-vs-age quadrant.
     Both are server-rendered SVG (no Plotly), and return '' individually when
-    there isn't enough data, so the cards simply don't appear."""
+    there isn't enough data, so the cards simply don't appear. ``owner_colors``
+    is the shared per-team color map so points match the other charts."""
     viewer_owner = str((ctx.get("viewer") or {}).get("viewer_team_name") or "")
 
     luck_svg = ""
@@ -26,14 +36,14 @@ def _luck_and_value_age_cards(ctx: dict, df_weekly_finalized) -> str:
                 owner = str(r["owner"])
                 weekly_scores.setdefault(wk, {})[owner] = float(r["points"] or 0)
                 actual_wins[owner] = actual_wins.get(owner, 0.0) + float(r.get("win") or 0)
-            luck_svg = luck_quadrant_svg(all_play_analysis(weekly_scores, actual_wins), viewer_owner)
+            luck_svg = luck_quadrant_svg(all_play_analysis(weekly_scores, actual_wins), viewer_owner, owner_colors)
     except Exception:
         luck_svg = ""
 
     value_age_svg_str = ""
     try:
         from dashboard_services.ai.context_builders import team_value_age_rows
-        value_age_svg_str = value_age_svg(team_value_age_rows(ctx), viewer_owner)
+        value_age_svg_str = value_age_svg(team_value_age_rows(ctx), viewer_owner, owner_colors)
     except Exception:
         value_age_svg_str = ""
 
@@ -238,7 +248,7 @@ def build_graphs_body(ctx: dict) -> str:
     box_json   = _fig_json(figs["scores_box"])
 
     # League-wide SVG scatters (luck quadrant + dynasty value vs age).
-    svg_cards_html = _luck_and_value_age_cards(ctx, df_weekly)
+    svg_cards_html = _luck_and_value_age_cards(ctx, df_weekly, owner_colors)
 
     # ---------- Sidebar: top teams + metrics + unified legend ----------
     top_rows = []
@@ -596,7 +606,7 @@ def build_career_graphs_body(career_ctx: dict) -> str:
         )
 
     sidebar_html = f"""
-        <div class="card small">
+        <div class="card small career-standings">
           <div class="card-header"><h3>Career Standings</h3></div>
           <div class="card-body mini-body">{sidebar_rows}</div>
         </div>
