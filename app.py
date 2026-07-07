@@ -19316,14 +19316,21 @@ def api_watchlist_alerts():
 
 @app.route("/api/since-last-visit")
 def api_since_last_visit():
-    """League activity (trades + waiver adds) newer than the client's ``since``
-    timestamp (ms). Powers the dashboard "Since your last visit" digest; the
-    last-visit time itself is tracked client-side in localStorage."""
-    empty = {"trades": 0, "waivers": 0, "items": [], "latest_ts": 0}
+    """Powers the dashboard "Since your last visit" digest. Returns:
+
+      - trades/waivers/items: league activity newer than the client's ``since``
+        timestamp (ms); only computed when a real last-visit baseline exists.
+      - roster: a snapshot of the viewer's roster (value + injury per player)
+        so the client can diff it against its own stored snapshot to surface
+        value moves and new injuries since the last visit.
+
+    The last-visit time and the roster snapshot are both tracked client-side in
+    localStorage, keeping this a true per-visit diff rather than a rolling feed."""
+    result = {"trades": 0, "waivers": 0, "items": [], "latest_ts": 0, "roster": []}
     platform = request.args.get("platform", "sleeper")
     league_id = request.args.get("league_id")
     if not league_id:
-        return jsonify(empty)
+        return jsonify(result)
     try:
         season = int(request.args.get("season") or datetime.now().year)
     except (TypeError, ValueError):
@@ -19332,52 +19339,90 @@ def api_since_last_visit():
         since_ms = int(request.args.get("since") or 0)
     except (TypeError, ValueError):
         since_ms = 0
+    roster_id = str(request.args.get("roster_id") or "").strip()
+    is_sf = str(request.args.get("league_type", "1qb")).strip().lower() == "sf"
 
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
-        adf = ctx.get("activity_df")
-        if adf is None or adf.empty or "ts" not in adf.columns:
-            return jsonify(empty)
-        rows = adf[adf["ts"].notna()].copy()
-        if rows.empty:
-            return jsonify(empty)
-
-        def _ms(ts):
-            try:
-                return int(ts.timestamp() * 1000)
-            except Exception:
-                return 0
-
-        rows["ts_ms"] = rows["ts"].map(_ms)
-        if since_ms > 0:
-            rows = rows[rows["ts_ms"] > since_ms]
-        if rows.empty:
-            return jsonify(empty)
-
-        rows = rows.sort_values("ts_ms", ascending=False)
-        trades = int((rows["kind"] == "trade").sum())
-        waivers = int((rows["kind"] == "waiver").sum())
-        latest_ts = int(rows["ts_ms"].iloc[0])
-
-        items = []
-        for _, r in rows.head(8).iterrows():
-            data = r["data"] or {}
-            if r["kind"] == "trade":
-                names = [str(t.get("name") or "?") for t in (data.get("teams") or [])]
-                text = "Trade: " + " and ".join(names[:2]) + (" +more" if len(names) > 2 else "")
-            else:
-                nm = str(data.get("name") or "?")
-                adds = data.get("adds") or []
-                who = ", ".join(str(p.get("name") or "?") for p in adds[:2])
-                if len(adds) > 2:
-                    who += f" +{len(adds) - 2}"
-                text = f"{nm} added {who}" if who else f"{nm} made a move"
-            items.append({"kind": r["kind"], "text": text, "ts": int(r["ts_ms"]), "week": int(r["week"])})
-
-        return jsonify({"trades": trades, "waivers": waivers, "items": items, "latest_ts": latest_ts})
     except Exception:
-        logger.debug("since-last-visit digest failed", exc_info=True)
-        return jsonify(empty)
+        logger.debug("since-last-visit ctx failed", exc_info=True)
+        return jsonify(result)
+
+    # Trades + waiver adds newer than the last visit (needs a real baseline).
+    if since_ms > 0:
+        try:
+            adf = ctx.get("activity_df")
+            if adf is not None and not adf.empty and "ts" in adf.columns:
+                rows = adf[adf["ts"].notna()].copy()
+                if not rows.empty:
+                    def _ms(ts):
+                        try:
+                            return int(ts.timestamp() * 1000)
+                        except Exception:
+                            return 0
+
+                    rows["ts_ms"] = rows["ts"].map(_ms)
+                    rows = rows[rows["ts_ms"] > since_ms]
+                    if not rows.empty:
+                        rows = rows.sort_values("ts_ms", ascending=False)
+                        result["trades"] = int((rows["kind"] == "trade").sum())
+                        result["waivers"] = int((rows["kind"] == "waiver").sum())
+                        result["latest_ts"] = int(rows["ts_ms"].iloc[0])
+                        for _, r in rows.head(8).iterrows():
+                            data = r["data"] or {}
+                            if r["kind"] == "trade":
+                                names = [str(t.get("name") or "?") for t in (data.get("teams") or [])]
+                                text = "Trade: " + " and ".join(names[:2]) + (" +more" if len(names) > 2 else "")
+                            else:
+                                nm = str(data.get("name") or "?")
+                                adds = data.get("adds") or []
+                                who = ", ".join(str(p.get("name") or "?") for p in adds[:2])
+                                if len(adds) > 2:
+                                    who += f" +{len(adds) - 2}"
+                                text = f"{nm} added {who}" if who else f"{nm} made a move"
+                            result["items"].append(
+                                {"kind": r["kind"], "text": text, "ts": int(r["ts_ms"]), "week": int(r["week"])}
+                            )
+        except Exception:
+            logger.debug("since-last-visit activity failed", exc_info=True)
+
+    # Viewer roster snapshot (value + injury) for the client to diff.
+    if roster_id:
+        try:
+            roster = next(
+                (r for r in (ctx.get("rosters") or []) if str(r.get("roster_id")) == roster_id),
+                None,
+            )
+            if roster:
+                vmap = {str(p.get("id")): p for p in (get_model_value_table_cached() or []) if p.get("id")}
+                pidx = get_players_index_global() or {}
+                snap = []
+                for pid in (roster.get("players") or []):
+                    spid = str(pid)
+                    meta = pidx.get(spid) or {}
+                    vrow = vmap.get(spid) or {}
+                    value = vrow.get("sf_value") if (is_sf and vrow.get("sf_value") is not None) else vrow.get("value")
+                    try:
+                        value = round(float(value or 0), 1)
+                    except (TypeError, ValueError):
+                        value = 0.0
+                    name = meta.get("full_name") or meta.get("name") or (
+                        (str(meta.get("first_name") or "") + " " + str(meta.get("last_name") or "")).strip()
+                    )
+                    injury = str(meta.get("injury_status") or "").strip()
+                    inj_active = bool(injury) and injury.upper() not in ("ACTIVE", "HEALTHY", "NA")
+                    snap.append({
+                        "pid": spid,
+                        "name": name or spid,
+                        "pos": meta.get("position") or meta.get("pos") or "",
+                        "value": value,
+                        "injury": injury if inj_active else "",
+                    })
+                result["roster"] = snap
+        except Exception:
+            logger.debug("since-last-visit roster snapshot failed", exc_info=True)
+
+    return jsonify(result)
 
 
 @app.route("/api/player-indicators")

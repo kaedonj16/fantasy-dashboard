@@ -11324,6 +11324,47 @@ function _slvTimeAgo(ms) {
   return Math.floor(s / 86400) + 'd ago';
 }
 
+// A player whose dynasty value shifted by at least this much since your last
+// visit is worth surfacing (filters out normal day-to-day model noise).
+const SLV_VALUE_THRESHOLD = 100;
+
+function _slvSection(title, rowsHtml) {
+  if (!rowsHtml) return '';
+  return '<div class="slv-section"><div class="slv-section-title">' + _wlEsc(title) + '</div>' +
+    '<ul class="slv-list">' + rowsHtml + '</ul></div>';
+}
+
+// Diff the server's current roster snapshot against the one stored at the last
+// visit to find value moves and newly-injured players. Also persists the fresh
+// snapshot. Returns { movers, injuries } (empty arrays on the first visit).
+function _slvRosterDiff(leagueId, rid, roster) {
+  const out = { movers: [], injuries: [] };
+  if (!rid || !Array.isArray(roster) || !roster.length) return out;
+  const snapKey = 'brfantasy_slv_snap_' + leagueId + '_' + rid;
+  let snap = null;
+  try { snap = JSON.parse(localStorage.getItem(snapKey) || 'null'); } catch (_) {}
+
+  if (snap && snap.p) {
+    roster.forEach(function (p) {
+      const prev = snap.p[p.pid];
+      if (prev && typeof prev.v === 'number' && p.value) {
+        const dv = p.value - prev.v;
+        if (Math.abs(dv) >= SLV_VALUE_THRESHOLD) out.movers.push({ name: p.name, pos: p.pos, delta: dv });
+      }
+      if (p.injury && (!prev || !prev.i)) out.injuries.push({ name: p.name, pos: p.pos, status: p.injury });
+    });
+    out.movers.sort(function (a, b) { return Math.abs(b.delta) - Math.abs(a.delta); });
+    out.movers = out.movers.slice(0, 5);
+    out.injuries = out.injuries.slice(0, 5);
+  }
+
+  // Save the new snapshot for next time.
+  const store = { ts: Date.now(), p: {} };
+  roster.forEach(function (p) { store.p[p.pid] = { v: p.value, i: p.injury ? 1 : 0 }; });
+  try { localStorage.setItem(snapKey, JSON.stringify(store)); } catch (_) {}
+  return out;
+}
+
 async function initSinceLastVisit() {
   const el = document.getElementById('sinceLastVisitCard');
   if (!el || el.getAttribute('data-slv-done') === '1') return;
@@ -11335,31 +11376,58 @@ async function initSinceLastVisit() {
   const since = parseInt(localStorage.getItem(key) || '0', 10) || 0;
   // Always stamp the visit forward so the next load measures from now.
   try { localStorage.setItem(key, String(Date.now())); } catch (_) {}
-  // First ever visit: nothing to diff against, stay quiet.
-  if (!since) return;
+
+  const rid = String((typeof window !== 'undefined' && window._viewerRid) || '');
 
   try {
     const url = '/api/since-last-visit?platform=' + encodeURIComponent(ctx.platform) +
       '&season=' + encodeURIComponent(ctx.season) +
       '&league_id=' + encodeURIComponent(ctx.leagueId) +
-      '&since=' + encodeURIComponent(since);
+      '&since=' + encodeURIComponent(since) +
+      '&roster_id=' + encodeURIComponent(rid) +
+      '&' + _wlLeagueParams();
     const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) return;
     const d = await res.json();
+
     const items = (d && d.items) || [];
-    if (!items.length) return;
+    const diff = _slvRosterDiff(ctx.leagueId, rid, (d && d.roster) || []);
 
-    const bits = [];
-    if (d.trades) bits.push(d.trades + ' trade' + (d.trades > 1 ? 's' : ''));
-    if (d.waivers) bits.push(d.waivers + ' waiver move' + (d.waivers > 1 ? 's' : ''));
-    const summary = bits.join(' and ') || 'New activity';
-
-    const rows = items.map(function (it) {
+    // Activity rows (trades + waivers).
+    const activityRows = items.map(function (it) {
       return '<li class="slv-item"><span class="slv-item-kind slv-kind-' + _wlEsc(it.kind) + '">' +
         (it.kind === 'trade' ? 'Trade' : 'Waiver') + '</span>' +
         '<span class="slv-item-text">' + _wlEsc(it.text) + '</span>' +
         '<span class="slv-item-ago">' + _slvTimeAgo(it.ts) + '</span></li>';
     }).join('');
+
+    // Value-move rows.
+    const moverRows = diff.movers.map(function (m) {
+      const up = m.delta > 0;
+      return '<li class="slv-item"><span class="slv-item-kind slv-kind-value">Value</span>' +
+        '<span class="slv-item-text">' + _wlEsc(m.name) +
+          (m.pos ? ' <span class="wl-item-pos">' + _wlEsc(m.pos) + '</span>' : '') + '</span>' +
+        '<span class="slv-item-ago wl-chip ' + (up ? 'wl-chip-up' : 'wl-chip-down') + '">' +
+          (up ? '+' : '-') + Math.abs(Math.round(m.delta)) + '</span></li>';
+    }).join('');
+
+    // New-injury rows.
+    const injuryRows = diff.injuries.map(function (i) {
+      const short = _WL_INJ_SHORT[String(i.status).toUpperCase()] || _wlEsc(String(i.status).slice(0, 4));
+      return '<li class="slv-item"><span class="slv-item-kind slv-kind-injury">Injury</span>' +
+        '<span class="slv-item-text">' + _wlEsc(i.name) +
+          (i.pos ? ' <span class="wl-item-pos">' + _wlEsc(i.pos) + '</span>' : '') + '</span>' +
+        '<span class="slv-item-ago wl-chip wl-chip-inj" title="' + _wlEsc(i.status) + '">' + short + '</span></li>';
+    }).join('');
+
+    if (!activityRows && !moverRows && !injuryRows) return;  // nothing new -> stay hidden
+
+    const bits = [];
+    if (d.trades) bits.push(d.trades + ' trade' + (d.trades > 1 ? 's' : ''));
+    if (d.waivers) bits.push(d.waivers + ' waiver move' + (d.waivers > 1 ? 's' : ''));
+    if (diff.movers.length) bits.push(diff.movers.length + ' value move' + (diff.movers.length > 1 ? 's' : ''));
+    if (diff.injuries.length) bits.push(diff.injuries.length + ' new injur' + (diff.injuries.length > 1 ? 'ies' : 'y'));
+    const summary = bits.join(', ') || 'New activity';
 
     el.innerHTML =
       '<section class="os-card slv-card">' +
@@ -11368,7 +11436,9 @@ async function initSinceLastVisit() {
           '<div class="slv-sub">' + _wlEsc(summary) + '</div></div>' +
           '<button class="slv-dismiss" aria-label="Dismiss" onclick="this.closest(\'.slv-wrap\').remove()">&times;</button>' +
         '</div>' +
-        '<ul class="slv-list">' + rows + '</ul>' +
+        _slvSection('New activity', activityRows) +
+        _slvSection('Value moves on your roster', moverRows) +
+        _slvSection('New injuries on your roster', injuryRows) +
       '</section>';
   } catch (_) {}
 }

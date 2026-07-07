@@ -16319,9 +16319,18 @@ tr.team-clickable {
 }
 .slv-kind-trade { background: rgba(99, 102, 241, 0.15); color: #4f46e5; }
 .slv-kind-waiver { background: rgba(22, 163, 74, 0.15); color: #16a34a; }
+.slv-kind-value { background: rgba(14, 165, 233, 0.15); color: #0369a1; }
+.slv-kind-injury { background: rgba(245, 158, 11, 0.16); color: #b45309; }
 [data-theme="dark"] .slv-kind-trade { color: #a5b4fc; }
+[data-theme="dark"] .slv-kind-value { color: #7dd3fc; }
+[data-theme="dark"] .slv-kind-injury { color: #fbbf24; }
 .slv-item-text { flex: 1; min-width: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .slv-item-ago { flex-shrink: 0; color: var(--text-muted); font-size: 11px; }
+.slv-section + .slv-section { margin-top: 10px; }
+.slv-section-title {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--text-muted); margin: 12px 0 4px;
+}
 
 /* Season in Review card */
 .sr-grid {
