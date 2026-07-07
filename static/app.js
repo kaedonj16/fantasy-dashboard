@@ -13080,7 +13080,7 @@ function openTeamModal(rosterId, teamName) {
     </div>
     <div class="tm-tab-bar">
       <button class="tm-tab active" data-tab="roster" onclick="tmSwitchTab('roster')">Roster</button>
-      <button class="tm-tab" data-tab="charts" onclick="tmSwitchTab('charts')">Charts</button>
+      <button class="tm-tab" data-tab="charts" onclick="tmSwitchTab('charts')">Graphs</button>
       <button class="tm-tab" data-tab="trades" onclick="tmSwitchTab('trades')">Trades</button>
     </div>
     <div class="team-modal-body">
