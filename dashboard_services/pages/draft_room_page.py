@@ -80,6 +80,7 @@ def build_draft_room_body(
         + _DRAFT_ROOM_HTML
         + f'\n<script src="/static/draft_grade_curve.js?v={_static_v("draft_grade_curve.js")}" defer></script>\n'
         + f'\n<script src="/static/pick_score.js?v={_static_v("pick_score.js")}" defer></script>\n'
+        + f'\n<script src="/static/draft_grade_team.js?v={_static_v("draft_grade_team.js")}" defer></script>\n'
         + f'\n<script src="/static/draft_room.js?v={_draft_room_js_v()}" defer></script>\n'
     )
 

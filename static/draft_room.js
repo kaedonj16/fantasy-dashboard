@@ -2401,93 +2401,25 @@
         avgPs: avgPs ? Math.round(avgPs) : null, window: null };
     }
 
-    // ── Startup / redraft: Value 35 / Starters 35 / Construction 30 ──
-    // Build the best starting lineup (value desc) to mark starters + slot coverage.
-    // K/DEF are excluded from grading: kicker/defense quality is near-random and
-    // shouldn't move a draft grade, so they don't count toward starter PS,
-    // strength, or construction coverage.
-    var slots = lineupSlots().filter(function(s){ return s !== 'K' && s !== 'DEF'; });
-    var _gstart = optimalLineup(picks, slots);
-    var starterIds = _gstart.starterIds;
-    var filled = 0;
-    for (var _fi = 0; _fi < slots.length; _fi++){ if (_gstart.starters[_fi].p) filled++; }
-    var coverage = slots.length ? filled / slots.length : 0;
-
-    // 1) Starter quality: round-weighted average PS of starting-lineup picks only.
-    // Bench picks are excluded so deep startup drafts aren't penalized for filler.
-    // Picks are weighted by 1/sqrt(round) so a round-1 starter counts ~4.5x more
-    // than a round-20 starter - reflecting that early picks are harder to get right
-    // and define the team. PS itself is already depth-normalized by pickScore, so
-    // this weight purely captures the roster-impact premium of early picks.
-    var _nTeams = state.teams || 12;
-    var _wSum = 0, _wTot = 0;
-    picks.forEach(function(x){
-      if (!starterIds[String(x.id)] || x.ps == null) return;
-      var _round = Math.max(1, Math.ceil((x.pn || 1) / _nTeams));
-      // W(r) = 1/r^0.75 — power law backed by Chase Stuart's 31-year NFL AV
-      // regression (k=0.67) with a slight upward adjustment for fantasy
-      // where early picks matter most. k=0.60: R1=1.0, R2=0.66, R5=0.35.
-      var _w = 1.0 / Math.pow(_round, 0.60);
-      _wSum += x.ps * _w; _wTot += _w;
-    });
-    var starterAvgPs = _wTot > 0 ? _wSum / _wTot : avgPs;
-    var valuePts = starterAvgPs != null ? Math.round(clamp01(starterAvgPs / 100) * 35) : 17;
-
-    // 2) Starting-lineup strength vs a league-average team. Projected PPG leads.
-    //    Redraft is now-focused -> pure projected PPG. Startup is now + future ->
-    //    PPG (production now) blended with dynasty value (long-term upside/longevity).
-    var starterArr = picks.filter(function(x){ return starterIds[String(x.id)]; });
-    var nStart = (state.teams || 12) * slots.length;
-    function avgTopN(arr, n){ var s = arr.slice().sort(function(a, b){ return b - a; }).slice(0, n); return s.length ? s.reduce(function(a, b){ return a + b; }, 0) / s.length : 0; }
-    // Projected-PPG ratio (the "now" production signal) - primary driver.
-    var ppgRatio = null;
-    var myPpgs = starterArr.map(function(x){ return x.ppg; }).filter(function(v){ return v != null; });
-    if (myPpgs.length >= Math.max(2, Math.floor(starterArr.length * 0.5))){
-      var myPpgAvg = myPpgs.reduce(function(a, b){ return a + b; }, 0) / myPpgs.length;
-      var poolPpgs = []; players.forEach(function(q){ var v = ppgOf(q); if (v != null) poolPpgs.push(v); });
-      var leaguePpgAvg = avgTopN(poolPpgs, nStart);
-      if (leaguePpgAvg > 0) ppgRatio = myPpgAvg / leaguePpgAvg;
+    // Startup / redraft composite (Value 35 / Starters 35 / Construction 30)
+    // lives in static/draft_grade_team.js (BRTeamGrade), shared with the Python
+    // server grade and pinned by a parity test. K/DEF are excluded from grading.
+    var _slots = lineupSlots().filter(function(s){ return s !== 'K' && s !== 'DEF'; });
+    var _leaguePpg = [];
+    players.forEach(function(q){ var v = ppgOf(q); if (v != null) _leaguePpg.push(v); });
+    var _leagueVal = players.map(function(q){ return valOf(q); });
+    var _comp = BRTeamGrade.teamGradeComposite(
+      picks, _slots, posTargets(), state.teams || 12, state.type, _leaguePpg, _leagueVal
+    );
+    if (!_comp){
+      return { score: 0, value: 0, balance: 0, tier: 0, count: mine.length,
+        avgPs: avgPs != null ? Math.round(avgPs) : null, window: null };
     }
-    // Dynasty/format value ratio (the "future" signal; also the fallback when PPG is sparse).
-    var myValAvg = starterArr.length ? starterArr.reduce(function(a, x){ return a + (x.val || 0); }, 0) / starterArr.length : 0;
-    var leagueValAvg = avgTopN(players.map(function(q){ return valOf(q); }), nStart);
-    var valueRatio = leagueValAvg > 0 ? myValAvg / leagueValAvg : null;
-    var strengthRatio;
-    if (state.type === 'redraft'){
-      // Now only: projected PPG, value as a fallback when PPG data is missing.
-      strengthRatio = ppgRatio != null ? ppgRatio : (valueRatio != null ? valueRatio : 0.80);
-    } else {
-      // Startup: now + future. PPG-led with dynasty value adding the long-term lens.
-      if (ppgRatio != null && valueRatio != null) strengthRatio = 0.6 * ppgRatio + 0.4 * valueRatio;
-      else strengthRatio = ppgRatio != null ? ppgRatio : (valueRatio != null ? valueRatio : 0.80);
-    }
-    // Map ratio: 0.80 (weak) → 0 pts, 1.20 (elite) → full; ~1.0 is league-average.
-    var starterPts = Math.round(clamp01((strengthRatio - 0.80) / 0.40) * 35);
-
-    // 3) Construction: how well you built a usable roster. Three real signals so
-    //    this component doesn't saturate at full marks for every completed team:
-    //    coverage (did you fill your starting lineup), balance (sensible depth at
-    //    each position), and efficiency (did you avoid over-stacking one spot while
-    //    leaving holes). Efficiency is what separates two complete rosters: a team
-    //    that burned late picks on a 4th RB grades below one that spread its capital
-    //    across genuine needs.
-    var targets = posTargets(), bsum = 0, usefulPicks = 0, gradedPicks = 0;
-    ['QB','RB','WR','TE'].forEach(function(pos){
-      var t = targets[pos] || 0;
-      bsum += t ? Math.min(counts[pos] || 0, t) / t : 0;
-      var cap = t + 1;                          // target depth + one bench stash
-      usefulPicks += Math.min(counts[pos] || 0, cap);
-      gradedPicks += counts[pos] || 0;
-    });
-    var efficiency = gradedPicks > 0 ? usefulPicks / gradedPicks : 1;
-    var constructionRaw = clamp01(0.45 * coverage + 0.30 * (bsum / 4) + 0.25 * efficiency);
-    var ramp = Math.min(1, mine.length / 8); // lenient early before the roster can be full
-    var balancePts = Math.round(((1 - ramp) * 0.85 + ramp * constructionRaw) * 30);
-
-    var total = valuePts + starterPts + balancePts;
-    return { score: total, value: valuePts, balance: balancePts, tier: starterPts, count: mine.length,
-      avgPs: avgPs ? Math.round(avgPs) : null, strength: Math.round(strengthRatio * 100),
-      window: _competitiveWindow(starterArr) };
+    var _starterArr = picks.filter(function(x){ return _comp.starterIds[String(x.id)]; });
+    return { score: _comp.total, value: _comp.value, balance: _comp.balance, tier: _comp.starter,
+      count: mine.length, avgPs: avgPs != null ? Math.round(avgPs) : null,
+      strength: Math.round(_comp.strengthRatio * 100),
+      window: _competitiveWindow(_starterArr) };
   }
   // Grade every team in the draft, sorted best-first. Picks are attributed by
   // OWNERSHIP, not by the board column they sit in: every pick the user owns (a
