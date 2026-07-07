@@ -1729,7 +1729,19 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "</div>"
         )
 
-    watchlist_btn = ""  # disabled
+    watchlist_btn = (
+        "<div class='watchlist-nav-wrapper'>"
+        "  <button type='button' id='watchlistNavBtn' class='utility-icon-btn' "
+        "          aria-label='Watchlist' title='Watchlist' onclick='toggleWatchlistPanel()'>"
+        "    <span class='watchlist-star' aria-hidden='true'>&#9733;</span>"
+        "  </button>"
+        "  <span id='watchlistNavCount' class='watchlist-count-badge' style='display:none'></span>"
+        "  <div id='watchlistNavPanel' class='watchlist-nav-panel' style='display:none;'>"
+        "    <div class='watchlist-nav-header'>Watchlist</div>"
+        "    <div id='watchlistNavList'></div>"
+        "  </div>"
+        "</div>"
+    )
 
     player_search_html = (
         "<div class='nav-search-wrapper' id='navSearchWrapper'>"
@@ -19118,6 +19130,82 @@ def api_player_deltas():
             deltas[pid] = float(delta)
 
     return jsonify(deltas)
+
+
+# A 7-day dynasty-value swing at or beyond this (in value points) is worth
+# surfacing as a watchlist alert. Tunable in one place.
+WATCHLIST_VALUE_ALERT_THRESHOLD = 150.0
+
+
+@app.route("/api/watchlist-alerts")
+def api_watchlist_alerts():
+    """Alert data for a set of watched player ids (client passes ?ids=a,b,c).
+
+    Returns {player_id: {name, position, team, value, delta7, injury, alert}}
+    where ``alert`` is True when the player moved at least
+    WATCHLIST_VALUE_ALERT_THRESHOLD in value over the last 7 days or carries a
+    real injury designation. Player attributes are global (the watchlist itself
+    is device-local), so no league context is required."""
+    ids_raw = str(request.args.get("ids", ""))
+    ids = [s.strip() for s in ids_raw.split(",") if s.strip()][:80]
+    if not ids:
+        return jsonify({})
+
+    league_type = str(request.args.get("league_type", "1qb")).strip().lower()
+    is_sf = league_type == "sf"
+    try:
+        league_size = int(request.args.get("league_size", 10))
+        if league_size not in (8, 10, 12, 14):
+            league_size = 10
+    except (TypeError, ValueError):
+        league_size = 10
+
+    # One (cached) movers board gives 7-day deltas for essentially every player.
+    delta_map: dict = {}
+    try:
+        movers = get_top_movers(days=7, limit=2000, league_type=league_type, league_size=league_size) or {}
+        for p in (movers.get("risers", []) + movers.get("fallers", [])):
+            pid = str(p.get("player_id", ""))
+            d = p.get("delta")
+            if pid and d is not None:
+                delta_map[pid] = float(d)
+    except Exception:
+        logger.debug("watchlist-alerts movers lookup failed", exc_info=True)
+
+    vmap = {str(p.get("id")): p for p in (get_model_value_table_cached() or []) if p.get("id")}
+    pidx = get_players_index_global() or {}
+
+    def _name(meta):
+        n = meta.get("full_name") or meta.get("name")
+        if not n:
+            fn, ln = meta.get("first_name") or "", meta.get("last_name") or ""
+            n = (fn + " " + ln).strip()
+        return n or ""
+
+    out: dict = {}
+    for pid in ids:
+        meta = pidx.get(pid) or {}
+        vrow = vmap.get(pid) or {}
+        value = vrow.get("sf_value") if (is_sf and vrow.get("sf_value") is not None) else vrow.get("value")
+        try:
+            value = round(float(value or 0), 1)
+        except (TypeError, ValueError):
+            value = 0.0
+        delta = delta_map.get(pid)
+        delta7 = round(delta, 1) if delta is not None else None
+        injury = str(meta.get("injury_status") or "").strip()
+        injury_active = bool(injury) and injury.upper() not in ("ACTIVE", "HEALTHY", "NA")
+        value_alert = delta is not None and abs(delta) >= WATCHLIST_VALUE_ALERT_THRESHOLD
+        out[pid] = {
+            "name": _name(meta),
+            "position": meta.get("position") or meta.get("pos") or "",
+            "team": meta.get("team") or "",
+            "value": value,
+            "delta7": delta7,
+            "injury": injury if injury_active else "",
+            "alert": bool(value_alert or injury_active),
+        }
+    return jsonify(out)
 
 
 @app.route("/api/player-indicators")

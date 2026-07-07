@@ -8390,6 +8390,19 @@ function openPlayerModal(playerId, playerName, opts) {
   document.body.appendChild(overlay);
   document.body.style.overflow = 'hidden';
 
+  // Wire the watchlist star (add/remove this player from the device watchlist).
+  try {
+    const _wlBtn = document.getElementById('playerModalWatchlistBtn');
+    if (_wlBtn && typeof _toggleWatchlist === 'function') {
+      _wlBtn.style.display = '';
+      _updateWatchlistBtn(_wlBtn, playerId);
+      _wlBtn.onclick = function () {
+        _toggleWatchlist({ player_id: playerId, name: playerName || '', position: (opts.position || '') });
+        _updateWatchlistBtn(_wlBtn, playerId);
+      };
+    }
+  } catch (_) {}
+
   // Fetch player data (with 5-min localStorage cache to speed up re-opens)
   const _cacheKey = 'pm_cache_' + apiUrl;
   const _cacheTTL = 5 * 60 * 1000;
@@ -11191,6 +11204,50 @@ function _updateWatchlistBtn(btn, player_id) {
   btn.classList.toggle('player-modal-watchlist-btn--active', watched);
 }
 
+function _wlEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+function _wlLeagueParams() {
+  const lt = (typeof _leagueType !== 'undefined' && _leagueType) ? _leagueType : '1qb';
+  const ls = (typeof _leagueSize !== 'undefined' && _leagueSize) ? _leagueSize : 10;
+  return 'league_type=' + encodeURIComponent(lt) + '&league_size=' + encodeURIComponent(ls);
+}
+
+let _wlAlertsCache = { ts: 0, ids: '', data: {} };
+async function _fetchWatchlistAlerts(ids) {
+  const key = ids.join(',');
+  if (!key) return {};
+  const now = Date.now();
+  if (_wlAlertsCache.ids === key && now - _wlAlertsCache.ts < 60000) return _wlAlertsCache.data;
+  try {
+    const res = await fetch('/api/watchlist-alerts?ids=' + encodeURIComponent(key) + '&' + _wlLeagueParams(), { cache: 'no-store' });
+    if (!res.ok) return {};
+    const data = (await res.json()) || {};
+    _wlAlertsCache = { ts: now, ids: key, data: data };
+    return data;
+  } catch (_) { return {}; }
+}
+
+const _WL_INJ_SHORT = { QUESTIONABLE: 'Q', DOUBTFUL: 'D', OUT: 'OUT', IR: 'IR', PUP: 'PUP', SUSPENDED: 'SUS', DNR: 'DNR', COV: 'COV' };
+function _wlChipsHtml(a) {
+  if (!a) return '';
+  let html = '';
+  if (a.value) html += '<span class="wl-chip wl-chip-val" title="Dynasty value">' + Math.round(a.value) + '</span>';
+  if (a.delta7 != null && Math.abs(a.delta7) >= 1) {
+    const up = a.delta7 > 0;
+    html += '<span class="wl-chip ' + (up ? 'wl-chip-up' : 'wl-chip-down') + '" title="7-day value change">' +
+      (up ? '+' : '-') + Math.abs(Math.round(a.delta7)) + '</span>';
+  }
+  if (a.injury) {
+    const short = _WL_INJ_SHORT[String(a.injury).toUpperCase()] || _wlEsc(String(a.injury).slice(0, 4));
+    html += '<span class="wl-chip wl-chip-inj" title="' + _wlEsc(a.injury) + '">' + short + '</span>';
+  }
+  return html;
+}
+
 function _refreshWatchlistNav() {
   const countEl = document.getElementById('watchlistNavCount');
   const listEl  = document.getElementById('watchlistNavList');
@@ -11198,18 +11255,34 @@ function _refreshWatchlistNav() {
   if (countEl) {
     countEl.style.display = list.length > 0 ? '' : 'none';
     countEl.textContent   = list.length > 9 ? '9+' : String(list.length);
+    countEl.classList.remove('has-alert');
   }
   if (!listEl) return;
   if (!list.length) {
-    listEl.innerHTML = '<div class="watchlist-nav-empty">No players watched yet.<br>Click the <i class="fa-regular fa-star" aria-hidden="true"></i> icon in a player card to add.</div>';
+    listEl.innerHTML = '<div class="watchlist-nav-empty">No players watched yet.<br>Click the <span class="watchlist-star">&#9733;</span> icon on a player to add.</div>';
     return;
   }
   listEl.innerHTML = list.map(p =>
     '<div class="watchlist-nav-item" onclick="openPlayerModal(' + JSON.stringify(p.player_id) + ',' + JSON.stringify(p.name || '') + ')">' +
-      '<span>' + (p.name || p.player_id) + (p.position ? ' <span style="color:var(--text-muted);font-size:11px">' + p.position + '</span>' : '') + '</span>' +
+      '<span class="wl-item-main">' +
+        '<span class="wl-item-name">' + _wlEsc(p.name || p.player_id) +
+          (p.position ? ' <span class="wl-item-pos">' + _wlEsc(p.position) + '</span>' : '') + '</span>' +
+        '<span class="wl-item-chips" data-wl-chips="' + _wlEsc(String(p.player_id)) + '"></span>' +
+      '</span>' +
       '<button class="watchlist-nav-item-remove" onclick="event.stopPropagation();_removeWatchlistNav(' + JSON.stringify(p.player_id) + ')" title="Remove">&times;</button>' +
     '</div>'
   ).join('');
+  // Enhance rows with alert chips (value, 7-day delta, injury) and flag the badge.
+  _fetchWatchlistAlerts(list.map(p => String(p.player_id))).then(function (data) {
+    let anyAlert = false;
+    list.forEach(function (p) {
+      const a = data[String(p.player_id)];
+      const cell = listEl.querySelector('[data-wl-chips="' + String(p.player_id).replace(/"/g, '') + '"]');
+      if (cell) cell.innerHTML = _wlChipsHtml(a);
+      if (a && a.alert) anyAlert = true;
+    });
+    if (countEl && anyAlert) countEl.classList.add('has-alert');
+  });
 }
 
 function _removeWatchlistNav(player_id) {

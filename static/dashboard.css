@@ -16300,6 +16300,47 @@ tr.team-clickable {
   text-align: center;
 }
 
+/* Star icon + count/alert badge */
+.watchlist-star { color: #f59e0b; font-size: 15px; line-height: 1; }
+.watchlist-count-badge {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--text-muted);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+  pointer-events: none;
+}
+.watchlist-count-badge.has-alert { background: #ef4444; }
+
+/* Watchlist row layout + alert chips */
+.watchlist-nav-item { gap: 8px; }
+.wl-item-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.wl-item-name { color: var(--text); font-weight: 500; }
+.wl-item-pos { color: var(--text-muted); font-size: 11px; font-weight: 400; }
+.wl-item-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+.wl-item-chips:empty { display: none; }
+.wl-chip {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--bg-alt);
+  color: var(--text-muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.wl-chip-up { background: rgba(22, 163, 74, 0.15); color: #16a34a; }
+.wl-chip-down { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.wl-chip-inj { background: rgba(245, 158, 11, 0.16); color: #b45309; }
+[data-theme="dark"] .wl-chip-inj { color: #fbbf24; }
+
 /* ============================================
    PROSPECT / ROOKIE SHARED COMPONENTS
    (used in rookie modal and player modal prospect section)
