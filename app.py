@@ -11167,6 +11167,13 @@ def page_graphs(platform: str, season: int, league_id: str):
     default_view = "career" if offseason else str(season)
     view = request.args.get("view", default_view)
 
+    # Current-vs-all-time members toggle (defaults to current members only).
+    members = "all" if str(request.args.get("members", "current")).lower() == "all" else "current"
+    current_owners = set()
+    _cur_ts = ctx.get("team_stats")
+    if _cur_ts is not None and not _cur_ts.empty and "owner" in _cur_ts.columns:
+        current_owners = {str(o) for o in _cur_ts["owner"].tolist()}
+
     # Build the season-selector dropdown (navigate via URL query param)
     graphs_base_url = url_for("page_graphs", platform=platform, season=season, league_id=league_id)
     selector_opts = []
@@ -11185,12 +11192,25 @@ def page_graphs(platform: str, season: int, league_id: str):
             f"{'selected' if view == str(s) else ''}>{s}</option>"
         )
 
+    # Current-vs-all-time member toggle (only meaningful for the career view,
+    # where former members would otherwise appear across every chart).
+    members_toggle_html = ""
+    if view == "career":
+        _cur_url = f"{graphs_base_url}?view=career&members=current"
+        _all_url = f"{graphs_base_url}?view=career&members=all"
+        members_toggle_html = f"""
+        <div class="members-toggle" role="group" aria-label="Member filter">
+          <a class="members-toggle-btn {'active' if members == 'current' else ''}" href="{_cur_url}">Current members</a>
+          <a class="members-toggle-btn {'active' if members == 'all' else ''}" href="{_all_url}">All-time</a>
+        </div>"""
+
     season_selector_html = f"""
     <div class="graphs-season-selector">
       <label class="graphs-season-label">View:</label>
       <select class="graphs-season-select" onchange="window.location.href=this.value">
         {"".join(selector_opts)}
       </select>
+      {members_toggle_html}
     </div>"""
 
     # ── Render the appropriate graphs ──────────────────────────────────────
@@ -11207,7 +11227,10 @@ def page_graphs(platform: str, season: int, league_id: str):
         else:
             try:
                 # Build career ctx from all available seasons
-                career_ctx = _build_career_graphs_ctx_live(platform, league_id, season, available_seasons)
+                career_ctx = _build_career_graphs_ctx_live(
+                    platform, league_id, season, available_seasons,
+                    only_owners=(current_owners if members == "current" else None),
+                )
                 charts_html = build_career_graphs_body(career_ctx)
             except Exception as exc:
                 import traceback; traceback.print_exc()
@@ -11241,9 +11264,13 @@ def page_graphs(platform: str, season: int, league_id: str):
 
 
 def _build_career_graphs_ctx_live(
-    platform: str, league_id: str, season: int, available_seasons: list
+    platform: str, league_id: str, season: int, available_seasons: list,
+    only_owners: set = None,
 ) -> dict:
-    """Aggregate team_stats and df_weekly across all completed seasons for career graphs."""
+    """Aggregate team_stats and df_weekly across all completed seasons for career
+    graphs. When ``only_owners`` is a non-empty set of owner names, the career
+    aggregate is restricted to those members (used by the current-vs-all-time
+    toggle to drop owners no longer in the league)."""
     career: dict = {}  # owner -> {Wins, Losses, Ties, PF, PA, weekly_pts, season_pf}
     season_pf_rows: list = []  # rows for per-season bar chart: {season, owner, pf}
 
@@ -11329,6 +11356,16 @@ def _build_career_graphs_ctx_live(
 
     df_combined = pd.concat(combined_dfs, ignore_index=True) if combined_dfs else pd.DataFrame()
     season_pf_df = pd.DataFrame(season_pf_rows) if season_pf_rows else pd.DataFrame()
+
+    # Restrict to current members when the toggle asks for it.
+    if only_owners:
+        _keep = {str(o) for o in only_owners}
+        if not team_stats.empty and "owner" in team_stats.columns:
+            team_stats = team_stats[team_stats["owner"].astype(str).isin(_keep)].reset_index(drop=True)
+        if not df_combined.empty and "owner" in df_combined.columns:
+            df_combined = df_combined[df_combined["owner"].astype(str).isin(_keep)].reset_index(drop=True)
+        if not season_pf_df.empty and "owner" in season_pf_df.columns:
+            season_pf_df = season_pf_df[season_pf_df["owner"].astype(str).isin(_keep)].reset_index(drop=True)
 
     return {
         "team_stats": team_stats,
@@ -13394,12 +13431,26 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
 
 @app.route("/<platform>/<int:season>/<league_id>/awards")
 def page_awards(platform: str, season: int, league_id: str):
-    cached = get_page_html_from_cache(platform, season, league_id, "awards")
+    # Current-vs-all-time members toggle (defaults to current members only).
+    members = "all" if str(request.args.get("members", "current")).lower() == "all" else "current"
+    awards_cache_key = f"awards:{members}"
+    cached = get_page_html_from_cache(platform, season, league_id, awards_cache_key)
     if cached:
         return render_page("League Awards", league_id, "awards", cached, platform, season)
 
     available, career_owners, championships, season_records, user_id_to_name = \
         _collect_all_season_data(platform, league_id, season)
+
+    # Restrict the all-time standings/superlatives to current members when asked.
+    # Season records and championship banners stay intact (historical facts).
+    if members == "current" and career_owners:
+        try:
+            _cur_ctx = get_league_ctx_from_cache(platform, league_id, season)
+            _cur_ids = {str(r.get("owner_id")) for r in (_cur_ctx.get("rosters") or []) if r.get("owner_id") is not None}
+            if _cur_ids:
+                career_owners = {uid: d for uid, d in career_owners.items() if str(uid) in _cur_ids}
+        except Exception:
+            logger.debug("awards current-member filter failed", exc_info=True)
 
     if not available or not career_owners:
         body_html = """
@@ -13413,7 +13464,7 @@ def page_awards(platform: str, season: int, league_id: str):
             </div>
           </div>
         </div>"""
-        store_page_html(platform, season, league_id, "awards", body_html)
+        store_page_html(platform, season, league_id, awards_cache_key, body_html)
         return render_page("League Awards", league_id, "awards", body_html, platform, season)
 
     try:
@@ -13421,11 +13472,19 @@ def page_awards(platform: str, season: int, league_id: str):
         _league_name = (ctx.get("league") or {}).get("name") or ""
     except Exception:
         _league_name = ""
-    body_html = _build_awards_html(
+
+    _awards_base = f"/{platform}/{season}/{league_id}/awards"
+    members_toggle_html = f"""
+    <div class="members-toggle" role="group" aria-label="Member filter" style="justify-content:flex-end;margin-bottom:8px;">
+      <a class="members-toggle-btn {'active' if members == 'current' else ''}" href="{_awards_base}?members=current">Current members</a>
+      <a class="members-toggle-btn {'active' if members == 'all' else ''}" href="{_awards_base}?members=all">All-time</a>
+    </div>"""
+
+    body_html = members_toggle_html + _build_awards_html(
         career_owners, championships, season_records, user_id_to_name,
         platform=platform, season=season, league_id=league_id, league_name=_league_name,
     )
-    store_page_html(platform, season, league_id, "awards", body_html)
+    store_page_html(platform, season, league_id, awards_cache_key, body_html)
     return render_page("League Awards", league_id, "awards", body_html, platform, season)
 
 

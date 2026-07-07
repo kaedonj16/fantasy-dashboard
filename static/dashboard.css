@@ -14234,6 +14234,34 @@ tr.team-clickable {
   min-width: 180px;
 }
 
+/* Current-vs-all-time member toggle (Graphs career view + Awards page) */
+.members-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.members-toggle-btn {
+  font-size: 13px;
+  padding: 6px 12px;
+  color: var(--text-muted);
+  background: var(--card);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.members-toggle-btn + .members-toggle-btn {
+  border-left: 1px solid var(--border);
+}
+.members-toggle-btn:hover { color: var(--text); }
+.members-toggle-btn.active {
+  background: var(--accent, #6366f1);
+  color: #fff;
+  font-weight: 600;
+}
+
 /* ============================================
    NEW USER TOUR
    ============================================ */
