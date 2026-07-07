@@ -11287,10 +11287,17 @@ def page_graphs(platform: str, season: int, league_id: str):
 
     # Current-vs-all-time members toggle (defaults to current members only).
     members = "all" if str(request.args.get("members", "current")).lower() == "all" else "current"
+    # Current members = current rosters' owner names. roster_map is populated even
+    # in the offseason (team_stats can be empty then), so prefer it; the career
+    # aggregate is keyed by these same owner names.
     current_owners = set()
-    _cur_ts = ctx.get("team_stats")
-    if _cur_ts is not None and not _cur_ts.empty and "owner" in _cur_ts.columns:
-        current_owners = {str(o) for o in _cur_ts["owner"].tolist()}
+    _rmap = ctx.get("roster_map") or {}
+    if _rmap:
+        current_owners = {str(v) for v in _rmap.values() if v}
+    if not current_owners:
+        _cur_ts = ctx.get("team_stats")
+        if _cur_ts is not None and not _cur_ts.empty and "owner" in _cur_ts.columns:
+            current_owners = {str(o) for o in _cur_ts["owner"].tolist()}
 
     # Build the season-selector dropdown (navigate via URL query param)
     graphs_base_url = url_for("page_graphs", platform=platform, season=season, league_id=league_id)
@@ -11350,6 +11357,33 @@ def page_graphs(platform: str, season: int, league_id: str):
                     only_owners=(current_owners if members == "current" else None),
                 )
                 charts_html = build_career_graphs_body(career_ctx)
+
+                # The luck + value/age scatters aren't season-aggregates, so the
+                # career builder doesn't emit them. Inject them here: value/age
+                # from the current rosters, luck from the most recent completed
+                # season's weekly results.
+                try:
+                    from dashboard_services.pages.graphs_page import _luck_and_value_age_cards
+                    _luck_df = None
+                    _latest = max(available_seasons)
+                    _lrid = resolve_league_id_for_season(platform, league_id, season, _latest)
+                    _lctx = get_league_ctx_from_cache(platform, _lrid, _latest)
+                    _ldf = _lctx.get("df_weekly")
+                    if _ldf is not None and not _ldf.empty and "finalized" in _ldf.columns:
+                        _luck_df = _ldf[_ldf["finalized"] == True]
+                        if members == "current" and current_owners and "owner" in _luck_df.columns:
+                            _luck_df = _luck_df[_luck_df["owner"].astype(str).isin(current_owners)]
+                    # Use the live value table (the ctx copy can be stale/empty),
+                    # so the dynasty-value-vs-age scatter always has real values.
+                    _val_ctx = {**ctx, "model_value_table": (get_model_value_table_cached() or ctx.get("model_value_table") or [])}
+                    _svg_cards = _luck_and_value_age_cards(_val_ctx, _luck_df)
+                    if _svg_cards and '<div class="graphs-page">' in charts_html:
+                        charts_html = charts_html.replace(
+                            '<div class="graphs-page">',
+                            '<div class="graphs-page">' + _svg_cards, 1,
+                        )
+                except Exception:
+                    logger.debug("career graphs scatter injection failed", exc_info=True)
             except Exception as exc:
                 import traceback; traceback.print_exc()
                 charts_html = (
