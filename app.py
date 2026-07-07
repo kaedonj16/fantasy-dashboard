@@ -21056,6 +21056,17 @@ def api_team_details(roster_id: str):
                     try:
                         from utils.standings_viz import luck_quadrant_svg, value_age_svg
                         from utils.all_play import all_play_analysis
+                        from dashboard_services.ai.context_builders import team_value_age_rows
+                        from dashboard_services.pages.graphs_page import owner_color_map
+
+                        # Shared per-team colors so the two modal scatters agree.
+                        _rmap = ctx.get("roster_map") or {}
+                        _oc = owner_color_map([
+                            str(_rmap.get(str(r.get("roster_id"))) or f"Roster {r.get('roster_id')}")
+                            for r in rosters
+                        ])
+
+                        # Luck: from the resolved season's finalized weeks.
                         _ws: dict = {}
                         _aw: dict = {}
                         for _, _r in df_weekly.iterrows():
@@ -21063,9 +21074,19 @@ def api_team_details(roster_id: str):
                             _o = str(_r["owner"])
                             _ws.setdefault(_wk, {})[_o] = float(_r["points"] or 0)
                             _aw[_o] = _aw.get(_o, 0.0) + float(_r.get("win") or 0)
-                        league_luck_svg = luck_quadrant_svg(all_play_analysis(_ws, _aw), team_name or "")
-                        from dashboard_services.ai.context_builders import team_value_age_rows
-                        league_value_age_svg = value_age_svg(team_value_age_rows(ctx), team_name or "")
+                        league_luck_svg = luck_quadrant_svg(all_play_analysis(_ws, _aw), team_name or "", _oc)
+
+                        # Value/age: current rosters + live value table (the graph
+                        # season's ctx can carry a stale or empty value table).
+                        _val_ctx = {
+                            "rosters": rosters,
+                            "roster_map": _rmap,
+                            "model_value_table": get_model_value_table_cached() or ctx.get("model_value_table") or [],
+                            "players_index": ctx.get("players_index") or (get_players_index_global() or {}),
+                            "players_map": ctx.get("players_map") or {},
+                            "roster_positions": ctx.get("roster_positions") or (league or {}).get("roster_positions") or [],
+                        }
+                        league_value_age_svg = value_age_svg(team_value_age_rows(_val_ctx), team_name or "", _oc)
                     except Exception:
                         logger.debug("team-modal league scatters failed", exc_info=True)
 
