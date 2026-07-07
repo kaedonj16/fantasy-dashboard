@@ -4735,6 +4735,8 @@ def build_dashboard_body(ctx: dict) -> str:
           </div>
         </section>
 
+        <div id="sinceLastVisitCard" class="slv-wrap" data-slv-init="1"></div>
+
         {lineup_alert_html}
         {roster_moves_html}
         {gm_card_html}
@@ -6408,6 +6410,8 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             .catch(function() {{ el.remove(); }});
         }})();
         </script>
+
+        <div id="sinceLastVisitCard" class="slv-wrap" data-slv-init="1"></div>
 
         {gm_card_html}
         {front_office_card_html}
@@ -19308,6 +19312,72 @@ def api_watchlist_alerts():
             "alert": bool(value_alert or injury_active),
         }
     return jsonify(out)
+
+
+@app.route("/api/since-last-visit")
+def api_since_last_visit():
+    """League activity (trades + waiver adds) newer than the client's ``since``
+    timestamp (ms). Powers the dashboard "Since your last visit" digest; the
+    last-visit time itself is tracked client-side in localStorage."""
+    empty = {"trades": 0, "waivers": 0, "items": [], "latest_ts": 0}
+    platform = request.args.get("platform", "sleeper")
+    league_id = request.args.get("league_id")
+    if not league_id:
+        return jsonify(empty)
+    try:
+        season = int(request.args.get("season") or datetime.now().year)
+    except (TypeError, ValueError):
+        season = datetime.now().year
+    try:
+        since_ms = int(request.args.get("since") or 0)
+    except (TypeError, ValueError):
+        since_ms = 0
+
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        adf = ctx.get("activity_df")
+        if adf is None or adf.empty or "ts" not in adf.columns:
+            return jsonify(empty)
+        rows = adf[adf["ts"].notna()].copy()
+        if rows.empty:
+            return jsonify(empty)
+
+        def _ms(ts):
+            try:
+                return int(ts.timestamp() * 1000)
+            except Exception:
+                return 0
+
+        rows["ts_ms"] = rows["ts"].map(_ms)
+        if since_ms > 0:
+            rows = rows[rows["ts_ms"] > since_ms]
+        if rows.empty:
+            return jsonify(empty)
+
+        rows = rows.sort_values("ts_ms", ascending=False)
+        trades = int((rows["kind"] == "trade").sum())
+        waivers = int((rows["kind"] == "waiver").sum())
+        latest_ts = int(rows["ts_ms"].iloc[0])
+
+        items = []
+        for _, r in rows.head(8).iterrows():
+            data = r["data"] or {}
+            if r["kind"] == "trade":
+                names = [str(t.get("name") or "?") for t in (data.get("teams") or [])]
+                text = "Trade: " + " and ".join(names[:2]) + (" +more" if len(names) > 2 else "")
+            else:
+                nm = str(data.get("name") or "?")
+                adds = data.get("adds") or []
+                who = ", ".join(str(p.get("name") or "?") for p in adds[:2])
+                if len(adds) > 2:
+                    who += f" +{len(adds) - 2}"
+                text = f"{nm} added {who}" if who else f"{nm} made a move"
+            items.append({"kind": r["kind"], "text": text, "ts": int(r["ts_ms"]), "week": int(r["week"])})
+
+        return jsonify({"trades": trades, "waivers": waivers, "items": items, "latest_ts": latest_ts})
+    except Exception:
+        logger.debug("since-last-visit digest failed", exc_info=True)
+        return jsonify(empty)
 
 
 @app.route("/api/player-indicators")

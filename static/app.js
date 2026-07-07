@@ -7037,6 +7037,9 @@ window.initPageRoot = function initPageRoot(root = document) {
   
   // Setup fun awards grid if present
   if (typeof setupFunAwardsGrid === 'function') setupFunAwardsGrid();
+
+  // Dashboard "since your last visit" digest (fires on in-app nav too).
+  if (typeof initSinceLastVisit === 'function') initSinceLastVisit();
 };
 
 function showDashboardLoadingOverlay(text, subtext) {
@@ -11302,6 +11305,74 @@ function toggleWatchlistPanel() {
     panel.style.display = '';
   }
 }
+
+// ── "Since your last visit" digest ──────────────────────────────────────────
+// Last-visit time is tracked client-side (per league) in localStorage; the
+// server returns activity newer than it.
+function _slvLeagueCtx() {
+  const parts = window.location.pathname.split('/').filter(Boolean);
+  if (parts.length >= 3 && !isNaN(parseInt(parts[1], 10))) {
+    return { platform: parts[0], season: parts[1], leagueId: parts[2] };
+  }
+  return null;
+}
+
+function _slvTimeAgo(ms) {
+  const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+  return Math.floor(s / 86400) + 'd ago';
+}
+
+async function initSinceLastVisit() {
+  const el = document.getElementById('sinceLastVisitCard');
+  if (!el || el.getAttribute('data-slv-done') === '1') return;
+  el.setAttribute('data-slv-done', '1');
+  const ctx = _slvLeagueCtx();
+  if (!ctx) return;
+
+  const key = 'brfantasy_lastvisit_' + ctx.leagueId;
+  const since = parseInt(localStorage.getItem(key) || '0', 10) || 0;
+  // Always stamp the visit forward so the next load measures from now.
+  try { localStorage.setItem(key, String(Date.now())); } catch (_) {}
+  // First ever visit: nothing to diff against, stay quiet.
+  if (!since) return;
+
+  try {
+    const url = '/api/since-last-visit?platform=' + encodeURIComponent(ctx.platform) +
+      '&season=' + encodeURIComponent(ctx.season) +
+      '&league_id=' + encodeURIComponent(ctx.leagueId) +
+      '&since=' + encodeURIComponent(since);
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) return;
+    const d = await res.json();
+    const items = (d && d.items) || [];
+    if (!items.length) return;
+
+    const bits = [];
+    if (d.trades) bits.push(d.trades + ' trade' + (d.trades > 1 ? 's' : ''));
+    if (d.waivers) bits.push(d.waivers + ' waiver move' + (d.waivers > 1 ? 's' : ''));
+    const summary = bits.join(' and ') || 'New activity';
+
+    const rows = items.map(function (it) {
+      return '<li class="slv-item"><span class="slv-item-kind slv-kind-' + _wlEsc(it.kind) + '">' +
+        (it.kind === 'trade' ? 'Trade' : 'Waiver') + '</span>' +
+        '<span class="slv-item-text">' + _wlEsc(it.text) + '</span>' +
+        '<span class="slv-item-ago">' + _slvTimeAgo(it.ts) + '</span></li>';
+    }).join('');
+
+    el.innerHTML =
+      '<section class="os-card slv-card">' +
+        '<div class="slv-head">' +
+          '<div><h2 class="slv-title">Since your last visit</h2>' +
+          '<div class="slv-sub">' + _wlEsc(summary) + '</div></div>' +
+          '<button class="slv-dismiss" aria-label="Dismiss" onclick="this.closest(\'.slv-wrap\').remove()">&times;</button>' +
+        '</div>' +
+        '<ul class="slv-list">' + rows + '</ul>' +
+      '</section>';
+  } catch (_) {}
+}
+document.addEventListener('DOMContentLoaded', initSinceLastVisit);
 
 window.addEventListener('watchlist-updated', _refreshWatchlistNav);
 document.addEventListener('click', function(e) {
