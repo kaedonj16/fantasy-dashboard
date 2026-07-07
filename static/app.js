@@ -13646,10 +13646,14 @@ function renderTeamDetails(data) {
   }
   // League-wide SVG scatters (this team highlighted), injected as-is.
   if (data.graphs && data.graphs.luck_svg) {
-    graphsHTML += '<div class="team-modal-section tm-chart-svg"><h3>Performance vs Luck</h3><div class="team-svg-chart">' + data.graphs.luck_svg + '</div></div>';
+    graphsHTML += '<div class="team-modal-section tm-chart-svg"><h3>Performance vs Luck</h3>' +
+      '<div class="tm-svg-note">All-play strength vs actual wins across the league. Above the dashed line means winning more than the scoring earned.</div>' +
+      '<div class="team-svg-chart">' + data.graphs.luck_svg + '</div></div>';
   }
   if (data.graphs && data.graphs.value_age_svg) {
-    graphsHTML += '<div class="team-modal-section tm-chart-svg"><h3>Dynasty Value vs Age</h3><div class="team-svg-chart">' + data.graphs.value_age_svg + '</div></div>';
+    graphsHTML += '<div class="team-modal-section tm-chart-svg"><h3>Dynasty Value vs Age</h3>' +
+      '<div class="tm-svg-note">Every team by total roster value and average age. Top-left is young and loaded; top-right is a closing win-now window.</div>' +
+      '<div class="team-svg-chart">' + data.graphs.value_age_svg + '</div></div>';
   }
 
   // Populate tab panels

@@ -25,6 +25,11 @@ _UNLUCK = "#3b82f6"  # blue: unluckier than scoring earned
 _NEU = "#94a3b8"     # gray: within a game of deserved
 _ACCENT = "#6366f1"  # indigo: neutral team marker for value/age
 
+# Point labels get a background-colored halo (paint-order stroke) so they stay
+# legible where teams cluster and labels overlap points/gridlines.
+_LBL = ('font-size="9.5" fill="var(--text,#334155)" paint-order="stroke" '
+        'stroke="var(--card,#ffffff)" stroke-width="2.5" stroke-linejoin="round"')
+
 
 def _esc(s) -> str:
     return html.escape(str(s))
@@ -91,9 +96,9 @@ def luck_quadrant_svg(analysis: dict, viewer_owner: str = "", owner_colors: dict
             f'<circle cx="{ax:.1f}" cy="{ay:.1f}" r="{r}" fill="{col}"{ring}/>'
         )
         if ax > x1 - 70:
-            parts.append(f'<text x="{ax-r-3:.1f}" y="{ay+3:.1f}" font-size="9.5" fill="var(--text,#334155)" text-anchor="end">{short}</text></g>')
+            parts.append(f'<text x="{ax-r-3:.1f}" y="{ay+3:.1f}" {_LBL} text-anchor="end">{short}</text></g>')
         else:
-            parts.append(f'<text x="{ax+r+3:.1f}" y="{ay+3:.1f}" font-size="9.5" fill="var(--text,#334155)">{short}</text></g>')
+            parts.append(f'<text x="{ax+r+3:.1f}" y="{ay+3:.1f}" {_LBL}>{short}</text></g>')
 
     parts.append("</svg>")
     return "".join(parts)
@@ -178,9 +183,9 @@ def value_age_svg(rows: List[dict], viewer_owner: str = "", owner_colors: dict =
             f'<circle cx="{px:.1f}" cy="{py:.1f}" r="{rad}" fill="{col}"{ring}/>'
         )
         if px > x1 - 70:
-            parts.append(f'<text x="{px-rad-3:.1f}" y="{py+3:.1f}" font-size="9.5" fill="var(--text,#334155)" text-anchor="end">{short}</text></g>')
+            parts.append(f'<text x="{px-rad-3:.1f}" y="{py+3:.1f}" {_LBL} text-anchor="end">{short}</text></g>')
         else:
-            parts.append(f'<text x="{px+rad+3:.1f}" y="{py+3:.1f}" font-size="9.5" fill="var(--text,#334155)">{short}</text></g>')
+            parts.append(f'<text x="{px+rad+3:.1f}" y="{py+3:.1f}" {_LBL}>{short}</text></g>')
 
     parts.append("</svg>")
     return "".join(parts)

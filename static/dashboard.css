@@ -13799,8 +13799,23 @@ img, svg, canvas {
 }
 .tm-chart-weekly { flex: 0 0 66%; min-width: 0; }
 .tm-chart-radar  { flex: 0 0 calc(34% - 24px); min-width: 0; }
-/* League scatters: two per row on desktop, full width when the modal is narrow */
-.tm-chart-svg { flex: 1 1 calc(50% - 12px); min-width: 260px; }
+/* League scatters: two per row on desktop, full width when the modal is narrow.
+   Grow to fill the row (a lone chart takes the full width) and let the SVG,
+   which is capped + auto-centered, sit in the middle instead of hugging left. */
+.tm-chart-svg {
+  flex: 1 1 calc(50% - 12px);
+  min-width: 260px;
+  max-width: none;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.tm-svg-note {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-muted);
+  margin: 2px 0 10px;
+}
+.team-svg-chart { display: flex; justify-content: center; }
 
 .team-modal-loading,
 .team-modal-error {
