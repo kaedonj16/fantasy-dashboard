@@ -1812,6 +1812,17 @@ window.resetMatchupCarousels = function (root) {
 // Plotly Fixes (hover offset + axis title placement)
 // ------------------------------------------------------------
 
+// Brand look for client-built Plotly charts (mirror of dashboard_services/plotly_theme.py).
+window.brandPlotlyFont = 'InterVariable, Inter, system-ui, -apple-system, sans-serif';
+window.brandPlotlyLayout = function (extra) {
+  return Object.assign({
+    font: { family: window.brandPlotlyFont, size: 12.5, color: '#7c8798' },
+    paper_bgcolor: 'rgba(0,0,0,0)',
+    plot_bgcolor: 'rgba(0,0,0,0)',
+    hoverlabel: { font: { family: window.brandPlotlyFont, size: 12 } },
+  }, extra || {});
+};
+
 function _fixOnePlotly(gd) {
   const P = window.Plotly;
   if (!P || !gd) return;
@@ -8258,6 +8269,7 @@ document.addEventListener('DOMContentLoaded', function() {
               // Plotly layout
               const layout = {
                 template: 'plotly_white',
+                font: { family: window.brandPlotlyFont, size: 12.5 },
                 height: 430,
                 margin: { l: 40, r: 20, t: 20, b: 40 },
                 legend: { orientation: 'h', yanchor: 'bottom', y: 1.02, x: 0 },
@@ -13334,10 +13346,7 @@ function openTeamModal(rosterId, teamName) {
     </div>
     <div class="team-modal-body">
       <div class="tm-panel active" id="tm-panel-roster">
-        <div class="team-modal-loading">
-          <div class="loading-spinner"></div>
-          <div>Loading team details...</div>
-        </div>
+        ${_tmLoadingHtml()}
       </div>
       <div class="tm-panel" id="tm-panel-charts"></div>
       <div class="tm-panel" id="tm-panel-trades"></div>
@@ -13549,9 +13558,19 @@ async function checkTradeOutcome(btn) {
   }
 }
 
+// Content-shaped skeleton while the roster loads (nicer than a bare spinner).
+// The trailing text div is also the slow-load status line fetchTeamDetails updates.
+function _tmLoadingHtml() {
+  let rows = '';
+  for (let i = 0; i < 6; i++) {
+    rows += '<div class="skeleton skeleton-line ' + (i % 3 === 0 ? 'w-80' : (i % 3 === 1 ? 'w-60' : 'w-40')) + '"></div>';
+  }
+  return '<div class="team-modal-loading"><div class="tm-skel">' + rows + '</div><div class="tm-loading-note">Loading team details…</div></div>';
+}
+
 function tmRetry() {
   const p = document.getElementById('tm-panel-roster');
-  if (p) p.innerHTML = '<div class="team-modal-loading"><div class="loading-spinner"></div><div>Loading team details…</div></div>';
+  if (p) p.innerHTML = _tmLoadingHtml();
   if (window._tmRosterId != null) fetchTeamDetails(window._tmRosterId);
 }
 
@@ -13572,7 +13591,7 @@ async function fetchTeamDetails(rosterId) {
     }
 
     slowTimer = setTimeout(() => {
-      const note = document.querySelector('#tm-panel-roster .team-modal-loading div:last-child');
+      const note = document.querySelector('#tm-panel-roster .tm-loading-note');
       if (note) note.textContent = 'Still loading (the first open of a team can take a few seconds)…';
     }, 8000);
     hardTimer = setTimeout(() => controller.abort(), 30000);
@@ -13986,6 +14005,7 @@ function renderTeamDetails(data) {
 
       const weeklyLayout = {
         template: theme.template,
+        font: { family: window.brandPlotlyFont, size: 12.5 },
         xaxis: { 
           title: 'Week', 
           standoff: 12,
@@ -14049,6 +14069,7 @@ function renderTeamDetails(data) {
 
       const theme = getPlotlyTheme();
       const radarLayout = {
+        font: { family: window.brandPlotlyFont, size: 12.5 },
         template: theme.template,
         polar: {
           domain: { x: [0.05, 0.95], y: [0.05, 0.95] },

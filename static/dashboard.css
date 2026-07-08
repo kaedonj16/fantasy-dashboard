@@ -20,6 +20,47 @@
    ============================================ */
 
 /* ============================================
+   SKELETON LOADERS — content-shaped placeholders instead of bare spinners.
+   Usage: <div class="skeleton skeleton-line w-60"></div>
+   ============================================ */
+@keyframes skeleton-sweep { 100% { transform: translateX(100%); } }
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  animation: skeleton-sweep 1.4s ease infinite;
+}
+[data-theme="dark"] .skeleton::after {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07), transparent);
+}
+.skeleton-line { height: 12px; margin: 8px 0; }
+.skeleton-line.w-40 { width: 40%; }
+.skeleton-line.w-60 { width: 60%; }
+.skeleton-line.w-80 { width: 80%; }
+.skeleton-circle { border-radius: 50%; }
+.tm-skel { width: 100%; max-width: 520px; padding: 4px 8px 12px; }
+
+/* ============================================
+   BRAND FONT — Inter (variable, self-hosted)
+   Ships in static/fonts/web/; preloaded from render_page's <head>.
+   ============================================ */
+@font-face {
+  font-family: "InterVariable";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/static/fonts/web/InterVariable.woff2") format("woff2");
+}
+
+/* ============================================
    ANIMATIONS & KEYFRAMES
    ============================================ */
 @keyframes spin {
@@ -105,6 +146,24 @@
   --loss: #ef4444;
   --warning: #f59e0b;
   --info: #38bdf8;
+  /* Typography */
+  --font-sans: "InterVariable", "Inter", system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 14px;
+  --text-md: 16px;
+  --text-lg: 20px;
+  --text-xl: 24px;
+  --text-2xl: 32px;
+  /* Spacing scale (4px rhythm) — use these instead of one-off paddings */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
   --radius-sm: 10px;
   --radius: 14px;
   --radius-lg: 18px;
@@ -125,7 +184,7 @@
 
 :root[data-theme="dark"] {
   --bg: #020617;
-  --bg-alt: #020617;
+  --bg-alt: #060d1f;  /* a step above --bg so cards/pages read as layered, not flat */
   --card: #0f172a;
   --card-soft: #111827;
   --row: #0b1220;
@@ -193,11 +252,40 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  font-family: var(--font-sans);
+  font-optical-sizing: auto;
   background: var(--bg-alt);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* Type rhythm: tighter tracking on display text, tabular figures on data. */
+h1, h2, h3, h4 { letter-spacing: -0.02em; }
+table, .standings-table, .mini-value, .mini-stat, .sr-stat-value,
+.wl-chip, .history-card-value, .fun-award-winner {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Consistent, accessible focus ring everywhere (mouse clicks stay clean). */
+:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+
+/* Interactive elements respond to hover/press uniformly. Low specificity so
+   component rules still win. */
+:where(button, .nav-pill, .tab-btn, .members-toggle-btn, .card-collapse-toggle) {
+  transition: color .15s ease, background-color .15s ease, border-color .15s ease,
+              box-shadow .15s ease, transform .15s ease;
+}
+:where(button):active { transform: scale(.985); }
+
+/* Honor reduced-motion preferences globally. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 html {
@@ -935,6 +1023,10 @@ ul {
   display: inline-flex;
   justify-content: center;
 }
+
+/* Inline SVG chrome icons: inherit the button's color, never squish. */
+.nav-svg-icon { flex-shrink: 0; display: inline-block; vertical-align: middle; }
+svg.settings-menu-icon { width: 18px; height: 18px; }
 
 /* Make PNG icons match theme colors */
 img[src*="gear.png"],
@@ -6053,7 +6145,10 @@ select:focus {
 
 .os-hero-card {
   padding: 22px;
-  background: linear-gradient(135deg, #0f2747 0%, #183a63 100%);
+  /* Layered: soft radial glow over the brand gradient for depth. */
+  background:
+    radial-gradient(ellipse 80% 60% at 85% -10%, rgba(56, 189, 248, 0.18), transparent 60%),
+    linear-gradient(135deg, #0f2747 0%, #183a63 100%);
   color: #ffffff;
   margin-bottom: 18px;
   max-width: 100%;

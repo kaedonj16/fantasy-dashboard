@@ -1000,6 +1000,8 @@ BASE_HTML = """
     <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
     <link rel="preconnect" href="https://pagead2.googlesyndication.com" crossorigin>
     <link rel="dns-prefetch" href="https://pagead2.googlesyndication.com">
+    <!-- Brand font: preload so text renders in Inter on first paint (font-display: swap). -->
+    <link rel="preload" href="/static/fonts/web/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
     {sentry_js}
 
     <link rel="icon" href="/static/BR_Logo.png" type="image/png">
@@ -1416,6 +1418,42 @@ def _games_scheduled_today(season, week) -> bool:
         return False
 
 
+
+# ── Inline nav icons (Lucide outlines) ────────────────────────────────────────
+# One icon system for the chrome instead of mixed PNGs: consistent 1.75px
+# strokes, currentColor so they follow the button's theme color, no image
+# requests. cls/style pass through (e.g. theme-icon light-icon for the toggle).
+_NAV_ICON_PATHS = {
+    "bell": "<path d='M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9'/><path d='M10.3 21a1.94 1.94 0 0 0 3.4 0'/>",
+    "moon": "<path d='M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z'/>",
+    "sun": ("<circle cx='12' cy='12' r='4'/><path d='M12 2v2'/><path d='M12 20v2'/>"
+            "<path d='m4.93 4.93 1.41 1.41'/><path d='m17.66 17.66 1.41 1.41'/><path d='M2 12h2'/>"
+            "<path d='M20 12h2'/><path d='m6.34 17.66-1.41 1.41'/><path d='m19.07 4.93-1.41 1.41'/>"),
+    "gear": ("<path d='M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08"
+             "a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74"
+             "l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25"
+             "a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25"
+             "a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08"
+             "a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38"
+             "a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z'/>"
+             "<circle cx='12' cy='12' r='3'/>"),
+    "search": "<circle cx='11' cy='11' r='8'/><path d='m21 21-4.3-4.3'/>",
+    "menu": "<path d='M4 6h16'/><path d='M4 12h16'/><path d='M4 18h16'/>",
+    "logout": "<path d='M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4'/><path d='m16 17 5-5-5-5'/><path d='M21 12H9'/>",
+}
+
+
+def _nav_icon(name: str, cls: str = "", style: str = "", size: int = 16) -> str:
+    body = _NAV_ICON_PATHS.get(name, "")
+    cls_attr = f" {cls}" if cls else ""
+    style_attr = f" style='{style}'" if style else ""
+    return (
+        f"<svg class='nav-svg-icon{cls_attr}' width='{size}' height='{size}' viewBox='0 0 24 24' "
+        f"fill='none' stroke='currentColor' stroke-width='1.75' stroke-linecap='round' "
+        f"stroke-linejoin='round' aria-hidden='true'{style_attr}>{body}</svg>"
+    )
+
+
 def build_nav(league_id: Optional[str], active: str, platform: str, season: int) -> str:
     """
     active (league pages): 'dashboard','standings','power','weekly','teams','activity','injuries','trade','graphs'
@@ -1438,7 +1476,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     changelog_bell = (
         "<div class='changelog-bell-wrapper'>"
         "  <button type='button' id='changelogBell' class='changelog-bell-btn' aria-label='Recent Updates'>"
-        "    <img src='/static/bell.png' style='width: 16px; height: 16px;' alt='Recent Updates'>"
+        "    " + _nav_icon("bell") +
         "  </button>"
         "  <div class='changelog-dot changelog-dot-hidden'></div>"
         "  <div id='changelogDropdown' class='changelog-dropdown' style='display:none;'></div>"
@@ -1448,8 +1486,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # Dark mode toggle button HTML (used in settings dropdown)
     dark_mode_toggle_html = (
         "<button type='button' class='settings-menu-item' id='settingsDarkModeBtn'>"
-        "  <img src='/static/moon.png' class='settings-menu-icon theme-icon light-icon' alt='Toggle dark mode'>"
-        "  <img src='/static/images/sun-solid.png' class='settings-menu-icon theme-icon dark-icon' style='display:none;' alt='Toggle light mode'>"
+        "  " + _nav_icon("moon", cls="settings-menu-icon theme-icon light-icon") +
+        "  " + _nav_icon("sun", cls="settings-menu-icon theme-icon dark-icon", style="display:none;") +
         "  <span class='settings-menu-label theme-text'>Dark Mode</span>"
         "</button>"
     )
@@ -1470,7 +1508,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         "<div class='settings-gear-wrapper'>"
         "  <button type='button' id='settingsGearBtn' class='utility-icon-btn' "
         "          aria-label='Settings' title='Settings'>"
-        "    <img src='/static/gear.png' style='width:16px;height:16px;' alt='Settings'>"
+        "    " + _nav_icon("gear") +
         "  </button>"
         "  <span id='gearDot' class='nav-notif-dot' style='display:none'></span>"
         f"  <div id='settingsDropdown' class='settings-dropdown' style='display:none;'>"
@@ -1536,7 +1574,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         player_search_html = (
             "<div class='nav-search-wrapper' id='navSearchWrapper'>"
             "  <div class='nav-search-inner'>"
-            "    <img src='/static/images/magnifying-glass-solid.png' class='nav-search-icon' alt='Search'>"
+            "    " + _nav_icon("search", cls="nav-search-icon") +
             "    <input type='text' id='navPlayerSearch' class='nav-search-input'"
             "           placeholder='Search players…' autocomplete='off' spellcheck='false' aria-label='Search players'/>"
             "    <button type='button' class='nav-search-clear' id='navSearchClear' aria-label='Clear search'>×</button>"
@@ -1552,7 +1590,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             f"  {changelog_bell}"
             f"  {settings_gear}"
             "  <button class='nav-hamburger utility-icon-btn' id='navToggle' aria-label='Menu'>"
-            "    <img src='/static/images/bars-solid.png' style='width:16px;height:16px;' alt=''>"
+            "    " + _nav_icon("menu") +
             "  </button>"
             "</div>"
         )
@@ -1718,7 +1756,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         # Update settings dropdown content for logged-in users with full menu
         settings_content = (
             "<button type='button' class='settings-menu-item' id='settingsChangelogBtn'>"
-            "  <img src='/static/bell.png' class='settings-menu-icon' alt='Changelog'>"
+            "  " + _nav_icon("bell", cls="settings-menu-icon") +
             "  <span class='settings-menu-label'>Notifications</span>"
             "  <span id='settingsNotifDot' class='settings-notif-dot' style='display:none'></span>"
             "</button>"
@@ -1726,7 +1764,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             f"{tour_menu_item}"
             f"{league_switcher_html}"
             "<a href='/logout' class='settings-menu-item settings-menu-logout'>"
-            "  <img src='/static/logout.png' class='settings-menu-icon' alt='Sign Out'>"
+            "  " + _nav_icon("logout", cls="settings-menu-icon") +
             "  <span class='settings-menu-label'>Sign Out</span>"
             "</a>"
         )
@@ -1736,7 +1774,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "<div class='settings-gear-wrapper'>"
             "  <button type='button' id='settingsGearBtn' class='utility-icon-btn' "
             "          aria-label='Settings' title='Settings'>"
-            "    <img src='/static/gear.png' style='width:16px;height:16px;' alt='Settings'>"
+            "    " + _nav_icon("gear") +
             "  </button>"
             "  <span id='gearDot' class='nav-notif-dot' style='display:none'></span>"
             f"  <div id='settingsDropdown' class='settings-dropdown' style='display:none;'>"
@@ -1749,8 +1787,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         signin_item = (
             "<button type='button' class='settings-menu-item' "
             "        onclick='document.getElementById(\"signinModal\").style.display=\"flex\"'>"
-            "  <img src='/static/logout.png' class='settings-menu-icon' alt='Sign In' "
-            "       style='transform:scaleX(-1);'>"
+            "  " + _nav_icon("logout", cls="settings-menu-icon", style="transform:scaleX(-1);") +
             "  <span class='settings-menu-label'>Sign In</span>"
             "</button>"
         )
@@ -1759,7 +1796,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "<div class='settings-gear-wrapper'>"
             "  <button type='button' id='settingsGearBtn' class='utility-icon-btn' "
             "          aria-label='Settings' title='Settings'>"
-            "    <img src='/static/gear.png' style='width:16px;height:16px;' alt='Settings'>"
+            "    " + _nav_icon("gear") +
             "  </button>"
             "  <span id='gearDot' class='nav-notif-dot' style='display:none'></span>"
             f"  <div id='settingsDropdown' class='settings-dropdown' style='display:none;'>"
@@ -1792,7 +1829,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     player_search_html = (
         "<div class='nav-search-wrapper' id='navSearchWrapper'>"
         "  <div class='nav-search-inner'>"
-        "    <img src='/static/images/magnifying-glass-solid.png' class='nav-search-icon' alt='Search'>"
+        "    " + _nav_icon("search", cls="nav-search-icon") +
         "    <input type='text' id='navPlayerSearch' class='nav-search-input'"
         "           placeholder='Search players…' autocomplete='off' spellcheck='false' aria-label='Search players'/>"
         "    <button type='button' class='nav-search-clear' id='navSearchClear' aria-label='Clear search'>×</button>"
@@ -1809,7 +1846,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         f"  {changelog_bell}"
         f"  {settings_gear}"
         "  <button class='nav-hamburger utility-icon-btn' id='navToggle' aria-label='Menu'>"
-        "    <img src='/static/images/bars-solid.png' style='width:16px;height:16px;' alt=''>"
+        "    " + _nav_icon("menu") +
         "  </button>"
         "</div>"
     )
