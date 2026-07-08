@@ -2811,7 +2811,7 @@ thead th {
 strong + .player-badge,
 .player-clickable + .player-badge,
 .player-badge + .player-badge {
-  margin-left: 6px;
+  margin-left: 4px;
 }
 
 .player-badge-rookie {
