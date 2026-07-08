@@ -13033,6 +13033,13 @@ img, svg, canvas {
   display: inline-block;
 }
 
+/* Collapsed = arrow points right. Rotating the original unicode glyph keeps a
+   consistent grey arrow on every platform (swapping to an FA icon rendered as a
+   red system-font glyph on iOS). */
+.game-log-year-toggle.collapsed {
+  transform: rotate(-90deg);
+}
+
 .game-log-year-title {
   font-size: 14px;
   font-weight: 600;
