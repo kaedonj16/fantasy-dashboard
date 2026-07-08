@@ -3783,10 +3783,11 @@ def render_standings_compact(team_stats, length=None, movement=None) -> str:
 
 
 def _ord_str(n) -> str:
-    """Ordinal string: 1 -> '1st', 2 -> '2nd', 11 -> '11th'."""
-    n = int(n)
-    suf = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-    return f"{n}{suf}"
+    """Ordinal string: 1 -> '1st', 2 -> '2nd', 11 -> '11th'. Delegates to the
+    shared, unit-tested utils.format.ordinal (kept as a thin alias so existing
+    call sites don't change)."""
+    from utils.format import ordinal
+    return ordinal(n)
 
 
 def _all_play_from_df_weekly(df_weekly) -> dict:
@@ -4636,10 +4637,7 @@ def build_dashboard_body(ctx: dict) -> str:
         """
 
     # ---- Hero stat cards — mirror the offseason hub's hero card ----
-    def _dash_ord(n) -> str:
-        n = int(n)
-        suf = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-        return f"{n}{suf}"
+    from utils.format import ordinal as _dash_ord
 
     _hero_cards: list = []
     try:
@@ -25542,8 +25540,7 @@ def api_trade_intel_player_send_packages(player_id: str):
 
         picks_by_roster = ctx.get("picks_by_roster") or {}
 
-        def _ordinal(n: int) -> str:
-            return {1: "1st", 2: "2nd", 3: "3rd"}.get(n, f"{n}th")
+        from utils.format import ordinal as _ordinal
 
         def _rival_picks(rid: str) -> list:
             raw = picks_by_roster.get(str(rid)) or picks_by_roster.get(rid) or []
