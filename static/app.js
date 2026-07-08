@@ -11628,28 +11628,97 @@ function _wlPageTableHtml(rows) {
   return head + body;
 }
 
+// Last name (or last two hyphenated tokens) for compact scatter labels.
+function _wlShortName(name) {
+  const parts = String(name || '').trim().split(/\s+/);
+  return parts.length ? parts[parts.length - 1] : String(name || '');
+}
+
+// "Nice" round tick step so value/age axes land on clean numbers.
+function _wlNiceStep(span, target) {
+  const raw = span / Math.max(target, 1);
+  const mag = Math.pow(10, Math.floor(Math.log10(raw || 1)));
+  const norm = raw / mag;
+  const step = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+  return step * mag;
+}
+
 function _wlPageScatterSvg(rows) {
   const pts = rows.filter(r => r.value > 0 && r.age > 0);
   if (pts.length < 3) return '<div class="wl-muted" style="padding:8px 4px">Add a few players with a known age and value to see the value-vs-age chart.</div>';
-  const W = 620, H = 300, pad = 44, x0 = pad, y0 = 14, x1 = W - 14, y1 = H - pad;
+
+  const W = 640, H = 300, padL = 50, padR = 18, padT = 16, padB = 34;
+  const x0 = padL, x1 = W - padR, y0 = padT, y1 = H - padB;
   const ages = pts.map(r => r.age), vals = pts.map(r => r.value);
-  let aLo = Math.min.apply(null, ages) - 0.6, aHi = Math.max.apply(null, ages) + 0.6;
-  let vLo = 0, vHi = Math.max.apply(null, vals) * 1.08 || 1;
+  const aMin = Math.min.apply(null, ages), aMax = Math.max.apply(null, ages);
+  const vMin = Math.min.apply(null, vals), vMax = Math.max.apply(null, vals);
+
+  // Age axis: integer ticks with half a year of breathing room each side.
+  let aLo = Math.floor(aMin - 0.5), aHi = Math.ceil(aMax + 0.5);
+  if (aHi - aLo < 3) aHi = aLo + 3;
+  // Value axis: floor a bit below the lowest point (not forced to 0) so a
+  // watchlist of similar-valued stars spreads out instead of jamming at the top.
+  const vStep = _wlNiceStep((vMax - vMin) || vMax || 1, 4);
+  let vLo = Math.max(0, Math.floor((vMin - (vMax - vMin) * 0.35 - 1) / vStep) * vStep);
+  let vHi = Math.ceil((vMax + (vMax - vMin) * 0.12 + 1) / vStep) * vStep;
+  if (vHi <= vLo) vHi = vLo + vStep;
+
   const sx = a => x0 + (a - aLo) / Math.max(aHi - aLo, 1e-6) * (x1 - x0);
   const sy = v => y1 - (v - vLo) / Math.max(vHi - vLo, 1e-6) * (y1 - y0);
+
   let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" style="width:100%;max-width:640px;height:auto;display:block" class="wl-scatter" role="img" aria-label="Watched players by value and age">';
-  s += '<rect x="' + x0 + '" y="' + y0 + '" width="' + (x1 - x0) + '" height="' + (y1 - y0) + '" fill="none" stroke="var(--border,#e2e8f0)"/>';
-  s += '<text x="' + ((x0 + x1) / 2) + '" y="' + (H - 8) + '" font-size="11" fill="var(--text-muted,#94a3b8)" text-anchor="middle">Age &rarr;</text>';
-  s += '<text x="12" y="' + ((y0 + y1) / 2) + '" font-size="11" fill="var(--text-muted,#94a3b8)" text-anchor="middle" transform="rotate(-90 12 ' + ((y0 + y1) / 2) + ')">Value &rarr;</text>';
-  pts.forEach(function (r) {
+
+  // Horizontal gridlines + value ticks (hairline, recessive, clean numbers).
+  for (let v = vLo; v <= vHi + 1e-6; v += vStep) {
+    const gy = sy(v).toFixed(1);
+    s += '<line x1="' + x0 + '" y1="' + gy + '" x2="' + x1 + '" y2="' + gy + '" stroke="var(--border,#e2e8f0)" stroke-width="1"/>';
+    s += '<text x="' + (x0 - 8) + '" y="' + (sy(v) + 3.5).toFixed(1) + '" font-size="10" fill="var(--text-muted,#94a3b8)" text-anchor="end">' + Math.round(v).toLocaleString() + '</text>';
+  }
+  // Age ticks along the baseline (step out if the span is wide).
+  const aStep = (aHi - aLo) > 10 ? 2 : 1;
+  for (let a = aLo; a <= aHi + 1e-6; a += aStep) {
+    s += '<text x="' + sx(a).toFixed(1) + '" y="' + (y1 + 16) + '" font-size="10" fill="var(--text-muted,#94a3b8)" text-anchor="middle">' + a + '</text>';
+  }
+  s += '<text x="' + ((x0 + x1) / 2) + '" y="' + (H - 3) + '" font-size="10.5" fill="var(--text-muted,#94a3b8)" text-anchor="middle" font-weight="600">Age</text>';
+  s += '<text x="13" y="' + ((y0 + y1) / 2) + '" font-size="10.5" fill="var(--text-muted,#94a3b8)" text-anchor="middle" font-weight="600" transform="rotate(-90 13 ' + ((y0 + y1) / 2) + ')">Value</text>';
+
+  // Place each label, then de-collide vertically; draw a leader line to any
+  // label that had to move so it stays tied to its dot.
+  const labels = pts.map(function (r) {
     const px = sx(r.age), py = sy(r.value);
-    const up = (r.delta7 || 0) > 0, dn = (r.delta7 || 0) < 0;
-    const col = up ? '#16a34a' : (dn ? '#ef4444' : '#6366f1');
-    s += '<g><title>' + _wlEsc(r.name) + ': ' + Math.round(r.value) + ' value, age ' + r.age + '</title>' +
-      '<circle cx="' + px.toFixed(1) + '" cy="' + py.toFixed(1) + '" r="5" fill="' + col + '" stroke="#fff"/>' +
-      '<text x="' + (px + 7).toFixed(1) + '" y="' + (py + 3).toFixed(1) + '" font-size="9.5" fill="var(--text,#334155)" paint-order="stroke" stroke="var(--card,#fff)" stroke-width="2.5" stroke-linejoin="round">' + _wlEsc(String(r.name).slice(0, 14)) + '</text></g>';
+    // Match the table's chip threshold: only a >=1 move counts as rising/falling.
+    const d = r.delta7 || 0;
+    const col = d >= 1 ? '#16a34a' : (d <= -1 ? '#ef4444' : '#94a3b8');
+    const left = px > x0 + (x1 - x0) * 0.7;       // near right edge -> label to the left
+    return { r: r, px: px, py: py, col: col, left: left,
+             lx: left ? px - 8 : px + 8, ly: py + 3, text: _wlShortName(r.name) };
   });
-  return s + '</svg>';
+  labels.sort((a, b) => a.ly - b.ly);
+  let prevY = -Infinity;
+  labels.forEach(function (L) {
+    if (L.ly - prevY < 12) L.ly = prevY + 12;
+    L.ly = Math.max(y0 + 8, Math.min(y1 - 2, L.ly));
+    prevY = L.ly;
+  });
+
+  labels.forEach(function (L) {
+    const moved = Math.abs(L.ly - (L.py + 3)) > 4;
+    s += '<g><title>' + _wlEsc(L.r.name) + ': ' + Math.round(L.r.value).toLocaleString() + ' value, age ' + L.r.age + '</title>';
+    if (moved) {
+      s += '<line x1="' + L.px.toFixed(1) + '" y1="' + L.py.toFixed(1) + '" x2="' + L.lx.toFixed(1) + '" y2="' + (L.ly - 3).toFixed(1) + '" stroke="var(--border,#cbd5e1)" stroke-width="1"/>';
+    }
+    s += '<circle cx="' + L.px.toFixed(1) + '" cy="' + L.py.toFixed(1) + '" r="5" fill="' + L.col + '" stroke="var(--card,#fff)" stroke-width="2"/>';
+    s += '<text x="' + L.lx.toFixed(1) + '" y="' + L.ly.toFixed(1) + '" font-size="10" fill="var(--text,#334155)" text-anchor="' + (L.left ? 'end' : 'start') + '" paint-order="stroke" stroke="var(--card,#fff)" stroke-width="2.5" stroke-linejoin="round">' + _wlEsc(L.text) + '</text></g>';
+  });
+  s += '</svg>';
+
+  // Legend for the momentum encoding (dots are colored by 7-day value move).
+  s += '<div class="wl-scatter-legend">' +
+    '<span class="wl-lg"><span class="wl-lg-dot" style="background:#16a34a"></span>Rising</span>' +
+    '<span class="wl-lg"><span class="wl-lg-dot" style="background:#ef4444"></span>Falling</span>' +
+    '<span class="wl-lg"><span class="wl-lg-dot" style="background:#94a3b8"></span>Flat</span>' +
+    '<span class="wl-lg-note">7-day value</span></div>';
+  return s;
 }
 
 async function initWatchlistPage() {
