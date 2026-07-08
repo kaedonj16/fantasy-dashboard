@@ -9842,10 +9842,10 @@ def build_watchlist_page_body() -> str:
     <div class="page-layout" data-page="watchlist">
       <main class="page-main">
         <div class="wl-page">
-          <div class="wl-page-head">
-            <div>
+          <header class="wl-page-head">
+            <div class="wl-head-title">
               <h1 class="wl-page-title">Watchlist</h1>
-              <div id="wlPageSyncNote" class="wl-sync-note"></div>
+              <span id="wlPageCount" class="wl-count-pill" hidden></span>
             </div>
             <label class="wl-page-sort">Sort
               <select id="wlPageSort" class="search">
@@ -9856,12 +9856,20 @@ def build_watchlist_page_body() -> str:
                 <option value="added">Recently added</option>
               </select>
             </label>
-          </div>
+          </header>
+          <div id="wlPageSyncNote" class="wl-sync-note"></div>
+
+          <div id="wlPageStats" class="wl-stats"></div>
+
           <div class="card wl-page-card">
-            <div class="card-header"><h3>Value vs Age</h3></div>
+            <div class="wl-card-head">
+              <h3>Value vs Age</h3>
+              <span class="wl-card-hint">Younger &amp; higher is better</span>
+            </div>
             <div class="card-body"><div id="wlPageScatter" class="wl-page-scatter"></div></div>
           </div>
           <div class="card wl-page-card">
+            <div class="wl-card-head"><h3>Watched Players</h3></div>
             <div class="card-body"><div id="wlPageTable" class="wl-page-table"></div></div>
           </div>
         </div>

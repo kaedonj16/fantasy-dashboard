@@ -11609,7 +11609,8 @@ function _wlPageTableHtml(rows) {
     '<span class="wl-c-delta">7d</span><span class="wl-c-age">Age</span>' +
     '<span class="wl-c-inj">Status</span><span class="wl-c-rm"></span></div>';
   const body = rows.map(function (r) {
-    const meta = [r.position, r.team].filter(Boolean).map(_wlEsc).join(' &middot; ');
+    const posBadge = r.position ? '<span class="pos-badge wl-pos ' + _wlEsc(r.position) + '">' + _wlEsc(r.position) + '</span>' : '<span class="wl-pos-empty"></span>';
+    const team = r.team ? '<span class="wl-p-meta">' + _wlEsc(r.team) + '</span>' : '';
     let delta = '<span class="wl-muted">&ndash;</span>';
     if (r.delta7 != null && Math.abs(r.delta7) >= 1) {
       const up = r.delta7 > 0;
@@ -11617,8 +11618,8 @@ function _wlPageTableHtml(rows) {
     }
     const inj = r.injury ? '<span class="wl-chip wl-chip-inj">' + _wlEsc(r.injury) + '</span>' : '';
     return '<div class="wl-page-row" role="button" tabindex="0" data-pid="' + _wlEsc(r.pid) + '" data-name="' + _wlEsc(r.name) + '">' +
-      '<span class="wl-c-name"><span class="wl-p-name">' + _wlEsc(r.name) + '</span>' + (meta ? '<span class="wl-p-meta">' + meta + '</span>' : '') + '</span>' +
-      '<span class="wl-c-val">' + (r.value != null ? Math.round(r.value) : '<span class="wl-muted">&ndash;</span>') + '</span>' +
+      '<span class="wl-c-name">' + posBadge + '<span class="wl-p-info"><span class="wl-p-name">' + _wlEsc(r.name) + '</span>' + team + '</span></span>' +
+      '<span class="wl-c-val">' + (r.value != null ? Math.round(r.value).toLocaleString() : '<span class="wl-muted">&ndash;</span>') + '</span>' +
       '<span class="wl-c-delta">' + delta + '</span>' +
       '<span class="wl-c-age">' + (r.age != null ? r.age : '<span class="wl-muted">&ndash;</span>') + '</span>' +
       '<span class="wl-c-inj">' + inj + '</span>' +
@@ -11641,6 +11642,37 @@ function _wlNiceStep(span, target) {
   const norm = raw / mag;
   const step = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
   return step * mag;
+}
+
+// At-a-glance KPI tiles for the watchlist (count, avg value, avg age, top mover).
+function _wlStatsHtml(rows) {
+  if (!rows.length) return '';
+  const vals = rows.filter(r => r.value != null).map(r => r.value);
+  const ages = rows.filter(r => r.age != null).map(r => r.age);
+  const avgVal = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+  const avgAge = ages.length ? (ages.reduce((a, b) => a + b, 0) / ages.length) : null;
+  let mover = null;
+  rows.forEach(function (r) {
+    if (r.delta7 != null && Math.abs(r.delta7) >= 1 && (mover === null || Math.abs(r.delta7) > Math.abs(mover.delta7))) mover = r;
+  });
+  function tile(label, value, sub) {
+    return '<div class="wl-stat"><div class="wl-stat-label">' + label + '</div>' +
+      '<div class="wl-stat-value">' + value + '</div>' +
+      (sub ? '<div class="wl-stat-sub">' + sub + '</div>' : '') + '</div>';
+  }
+  let moverTile;
+  if (mover) {
+    const up = mover.delta7 > 0;
+    moverTile = tile('Top mover',
+      '<span class="' + (up ? 'wl-up' : 'wl-down') + '">' + (up ? '+' : '-') + Math.abs(Math.round(mover.delta7)) + '</span>',
+      _wlEsc(_wlShortName(mover.name)));
+  } else {
+    moverTile = tile('Top mover', '<span class="wl-muted">&ndash;</span>', 'last 7 days');
+  }
+  return tile('Players', String(rows.length), 'tracked') +
+    tile('Avg value', avgVal == null ? '<span class="wl-muted">&ndash;</span>' : avgVal.toLocaleString(), 'dynasty') +
+    tile('Avg age', avgAge == null ? '<span class="wl-muted">&ndash;</span>' : avgAge.toFixed(1), 'years') +
+    moverTile;
 }
 
 function _wlPageScatterSvg(rows) {
@@ -11728,19 +11760,27 @@ async function initWatchlistPage() {
   const scatterEl = document.getElementById('wlPageScatter');
   const sortEl = document.getElementById('wlPageSort');
   const noteEl = document.getElementById('wlPageSyncNote');
+  const statsEl = document.getElementById('wlPageStats');
+  const countEl = document.getElementById('wlPageCount');
 
   await _wlServerSyncOnce();
   const list = _getWatchlist();
   if (noteEl) noteEl.textContent = _wlSignedIn() ? 'Synced to your account' : 'Saved on this device — sign in to sync across devices';
 
   function draw(rows) {
+    if (countEl) {
+      countEl.textContent = rows.length + (rows.length === 1 ? ' player' : ' players');
+      countEl.hidden = rows.length === 0;
+    }
     if (!rows.length) {
       tableEl.innerHTML = '<div class="wl-page-empty">Your watchlist is empty. Add players with the star on any player card or modal.</div>';
       if (scatterEl) scatterEl.innerHTML = '';
+      if (statsEl) statsEl.innerHTML = '';
       return;
     }
     const mode = sortEl ? sortEl.value : 'value';
     const sorted = _wlSortRows(rows.slice(), mode);
+    if (statsEl) statsEl.innerHTML = _wlStatsHtml(sorted);
     tableEl.innerHTML = _wlPageTableHtml(sorted);
     if (scatterEl) scatterEl.innerHTML = _wlPageScatterSvg(sorted);
   }
