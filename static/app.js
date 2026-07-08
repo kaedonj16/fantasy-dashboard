@@ -11355,7 +11355,15 @@ function _wlClearAll() {
 }
 
 // ── Watchlist cross-device sync (server-backed when signed in) ───────────────
-function _wlSignedIn() { return typeof window !== 'undefined' && !!window._isSignedIn; }
+function _wlSignedIn() {
+  // Gate on the SAME identity the server keys the watchlist on: viewer_user_id
+  // (window._viewerUid), not viewer_username (window._isSignedIn). The two can
+  // diverge, and the server returns synced:false for any request without a user
+  // id - so gating on the wrong field left a device silently unsynced (it kept
+  // its own local list and never pulled the account's).
+  if (typeof window === 'undefined') return false;
+  return window._viewerUid != null && String(window._viewerUid).trim() !== '';
+}
 
 function _wlServerAdd(player) {
   if (!_wlSignedIn()) return;
