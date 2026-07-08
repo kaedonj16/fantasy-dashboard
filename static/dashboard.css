@@ -16621,16 +16621,57 @@ tr.team-clickable {
 /* ============================================
    FULL WATCHLIST PAGE (/watchlist)
    ============================================ */
-.wl-page { max-width: 900px; margin: 0 auto; padding: 8px 0 24px; }
+.wl-page { max-width: 920px; margin: 0 auto; padding: 8px 0 40px; }
 .wl-page-head {
-  display: flex; align-items: flex-end; justify-content: space-between;
-  gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 2px;
 }
-.wl-page-title { margin: 0; font-size: 24px; color: var(--text); }
-.wl-sync-note { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.wl-head-title { display: flex; align-items: center; gap: 12px; }
+.wl-page-title { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02em; color: var(--text); }
+/* Suppress the global centered h1 underline on this page title. */
+.wl-page-title::after { display: none; }
+.wl-count-pill {
+  font-size: 12px; font-weight: 600; color: var(--accent);
+  background: var(--accent-soft, rgba(18,45,75,.08));
+  padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+}
+[data-theme="dark"] .wl-count-pill { background: rgba(255,255,255,.08); color: var(--text); }
+.wl-sync-note { font-size: 12.5px; color: var(--text-muted); margin: 0 0 18px; }
 .wl-page-sort { font-size: 13px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
 .wl-page-sort select { min-width: 180px; }
 .wl-page-card { margin-bottom: 16px; }
+
+/* KPI tiles */
+.wl-stats {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 12px; margin-bottom: 18px;
+}
+.wl-stats:empty { display: none; }
+.wl-stat {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 16px); padding: 14px 16px;
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,.04));
+}
+.wl-stat-label {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--text-muted); margin-bottom: 6px;
+}
+.wl-stat-value {
+  font-size: 26px; font-weight: 700; line-height: 1.05; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.wl-stat-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 3px; }
+.wl-stat .wl-up { color: #16a34a; }
+.wl-stat .wl-down { color: #ef4444; }
+
+/* Card headers */
+.wl-card-head {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  padding: 16px 18px 0;
+}
+.wl-card-head h3 { margin: 0; font-size: 15px; font-weight: 700; color: var(--text); }
+.wl-card-head h3::after { display: none; }
+.wl-card-hint { font-size: 12px; color: var(--text-muted); }
 .wl-page-scatter { overflow-x: auto; display: flex; flex-direction: column; align-items: center; }
 .wl-scatter-legend {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
@@ -16661,9 +16702,18 @@ tr.team-clickable {
 }
 .wl-page-row--head:hover { background: none; }
 .wl-c-val, .wl-c-delta, .wl-c-age, .wl-c-inj, .wl-c-rm { text-align: right; }
-.wl-c-name { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.wl-c-val { font-variant-numeric: tabular-nums; font-weight: 600; }
+.wl-c-age { font-variant-numeric: tabular-nums; }
+.wl-c-name { min-width: 0; display: flex; flex-direction: row; align-items: center; gap: 10px; }
+.wl-p-info { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .wl-p-name { color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wl-p-meta { color: var(--text-muted); font-size: 11px; }
+.wl-pos {
+  flex-shrink: 0; height: 20px; width: auto; min-width: 30px;
+  font-size: 10px; padding: 2px 6px; border-radius: 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.wl-pos-empty { width: 30px; flex-shrink: 0; }
 .wl-muted { color: var(--text-muted); }
 .wl-page-remove {
   background: none; border: none; cursor: pointer; color: var(--text-muted);
@@ -16676,6 +16726,10 @@ tr.team-clickable {
   /* Drop Age + Status columns; the four remaining cells fill the four tracks. */
   .wl-page-row { grid-template-columns: minmax(0,1fr) 56px 50px 32px; }
   .wl-c-age, .wl-c-inj { display: none; }
+  .wl-stats { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .wl-stat-value { font-size: 22px; }
+  .wl-page-title { font-size: 24px; }
+  .wl-page-head { align-items: flex-start; }
 }
 
 /* ============================================
