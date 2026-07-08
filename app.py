@@ -30,6 +30,7 @@ from flask import (
     Response,
     stream_with_context,
     abort,
+    g,
 )
 try:
     from flask_compress import Compress
@@ -444,6 +445,35 @@ _CSS_FILE = _ensure_minified_css()
 _CSS_V = _static_hash(_CSS_FILE)
 _FA_V = _static_hash("font-awesome.css")
 _ICONS_V = _static_hash("icons.css")
+
+
+@app.before_request
+def _perf_start():
+    # Cheap monotonic stamp; read back in _perf_record to time the request.
+    g._perf_t0 = time.perf_counter()
+
+
+@app.after_request
+def _perf_record(response):
+    """Fold each non-static request into the per-endpoint timing monitor, and
+    log a one-line warning for anything slow so it also shows up in the error
+    monitor and prod logs."""
+    try:
+        t0 = getattr(g, "_perf_t0", None)
+        if t0 is not None and not request.path.startswith("/static/"):
+            dur_ms = (time.perf_counter() - t0) * 1000.0
+            from utils import perf_monitor
+            perf_monitor.record(
+                request.endpoint or request.path, request.method, dur_ms, response.status_code
+            )
+            if dur_ms >= perf_monitor.SLOW_MS:
+                logger.warning(
+                    "[slow] %s %s %.0fms status=%s",
+                    request.method, request.path, dur_ms, response.status_code,
+                )
+    except Exception:
+        logger.debug("perf record failed", exc_info=True)
+    return response
 
 
 @app.after_request
@@ -26822,6 +26852,31 @@ if os.environ.get("RUN_STARTUP_DAILY_BUILD") == "1":
     threading.Thread(target=_run_startup_daily, daemon=True).start()
 
 
+def _warm_global_caches() -> None:
+    """Best-effort warm of the league-independent caches (model value table +
+    players index) so the first user request after a deploy doesn't pay the
+    cold-load cost. Deliberately DELAYED and backgrounded so it never competes
+    with the health probe during Render's port-scan window (the daily build was
+    disabled for exactly that reason). These two loads are far lighter than the
+    daily build, but this stays opt-in via WARM_CACHES_ON_START=1 out of caution."""
+    try:
+        time.sleep(float(os.environ.get("WARM_CACHES_DELAY", "30") or 30))
+        t0 = time.perf_counter()
+        for name, fn in (("model value table", get_model_value_table_cached),
+                         ("players index", get_players_index_global)):
+            try:
+                fn()
+            except Exception:
+                logger.debug("warm: %s failed", name, exc_info=True)
+        logger.info("[startup] global caches warmed in %.1fs", time.perf_counter() - t0)
+    except Exception:
+        logger.debug("cache warm failed", exc_info=True)
+
+
+if os.environ.get("WARM_CACHES_ON_START") == "1":
+    threading.Thread(target=_warm_global_caches, daemon=True, name="cache-warm").start()
+
+
 
 
 # ── Feature 10 + 15: Ask My GM - streaming AI chat ───────────────────────────
@@ -28504,6 +28559,26 @@ def api_health_errors():
     except ValueError:
         limit = 100
     return jsonify(error_monitor.snapshot(limit=limit))
+
+
+@app.route("/api/health/timing")
+@limiter.limit("30 per minute")
+def api_health_timing():
+    """Per-endpoint request timing since process start, slowest first.
+    Requires X-Admin-Secret. ?reset=1 clears; ?sort=avg|max|slow|total; ?limit=N."""
+    secret = request.headers.get("X-Admin-Secret", "")
+    admin_secret = os.environ.get("ADMIN_SECRET", "")
+    if not admin_secret or secret != admin_secret:
+        return jsonify({"error": "Forbidden"}), 403
+    from utils import perf_monitor
+    if request.args.get("reset") == "1":
+        perf_monitor.reset()
+        return jsonify({"ok": True, "reset": True})
+    try:
+        limit = int(request.args.get("limit") or 100)
+    except ValueError:
+        limit = 100
+    return jsonify(perf_monitor.snapshot(limit=limit, sort=request.args.get("sort", "total")))
 
 
 @app.route("/api/push/broadcast", methods=["POST"])
