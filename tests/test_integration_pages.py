@@ -64,6 +64,40 @@ def test_watchlist_api_unsynced_when_signed_out(offline_client):
     assert r2.status_code == 200 and r2.get_json().get("synced") is False
 
 
+def test_watchlist_rows_for_parses_dict_rows(monkeypatch):
+    """get_conn() uses psycopg's dict_row factory, so _rows_for must key rows by
+    column name. Indexing by position (r[0]) raised KeyError and silently emptied
+    every read, so nothing ever synced across devices. This guards that path."""
+    import contextlib
+    import datetime
+    import dashboard_services.db as db
+    from routes import watchlist_bp as wb
+
+    class _Cur:
+        def fetchall(self):
+            return [{
+                "player_id": "9509", "name": "Bijan Robinson",
+                "position": "RB", "team": "ATL",
+                "added_at": datetime.datetime(2026, 1, 2, 3, 4, 5),
+            }]
+
+    class _Conn:
+        def execute(self, *a, **k):
+            return _Cur()
+
+    @contextlib.contextmanager
+    def _fake_conn():
+        yield _Conn()
+
+    monkeypatch.setattr(db, "get_conn", _fake_conn)
+    rows = wb._rows_for("u_1")
+    assert rows == [{
+        "player_id": "9509", "name": "Bijan Robinson",
+        "position": "RB", "team": "ATL",
+        "added_at": "2026-01-02T03:04:05",
+    }]
+
+
 def test_push_routes_registered(offline_client):
     # Extracted into routes/push_bp.py — verify the blueprint is mounted.
     # vapid-public-key returns 200 (ephemeral key) or 503 (not configured);

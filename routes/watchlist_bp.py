@@ -69,16 +69,20 @@ def _rows_for(user_key):
             "WHERE user_key = %s ORDER BY added_at DESC",
             (user_key,),
         ).fetchall()
-    return [
-        {
-            "player_id": str(r[0]),
-            "name": r[1] or "",
-            "position": r[2] or "",
-            "team": r[3] or "",
-            "added_at": r[4].isoformat() if r[4] else None,
-        }
-        for r in rows
-    ]
+    # get_conn() uses psycopg's dict_row factory, so each row is a dict keyed by
+    # column name - indexing by position (r[0]) raises KeyError and silently
+    # emptied every read, so nothing ever synced across devices.
+    out = []
+    for r in rows:
+        added = r.get("added_at")
+        out.append({
+            "player_id": str(r.get("player_id")),
+            "name": r.get("name") or "",
+            "position": r.get("position") or "",
+            "team": r.get("team") or "",
+            "added_at": added.isoformat() if hasattr(added, "isoformat") else added,
+        })
+    return out
 
 
 def _upsert(conn, user_key, item):
