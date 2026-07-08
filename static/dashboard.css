@@ -13764,10 +13764,12 @@ img, svg, canvas {
 
 .team-modal-body-left {
   flex: 0 0 50%;
+  min-width: 0;
 }
 
 .team-modal-body-right {
   flex: 0 0 calc(50% - 24px);
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -13868,6 +13870,8 @@ img, svg, canvas {
 
 .team-roster-table {
   width: 100%;
+  table-layout: fixed;   /* respect the % column widths so long names wrap
+                            instead of forcing the table (and modal) wider */
   border-collapse: collapse;
   font-size: 14px;
 }
