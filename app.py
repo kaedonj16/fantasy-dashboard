@@ -555,26 +555,14 @@ app.config.update(
 )
 
 # ── Rate limiting ─────────────────────────────────────────────────────────────
-_redis_url = os.environ.get("REDIS_URL", "")
-_limiter_storage = f"redis://{_redis_url.split('://')[-1]}" if _redis_url else "memory://"
-try:
-    from flask_limiter import Limiter
-    from flask_limiter.util import get_remote_address
-    limiter = Limiter(
-        get_remote_address,
-        app=app,
-        default_limits=[],
-        storage_uri=_limiter_storage,
-    )
-    backend = "redis" if _redis_url else "memory (set REDIS_URL for multi-worker)"
-    logger.info("[limiter] Flask-Limiter enabled (%s backend)", backend)
-except ImportError:
+# The limiter itself lives in extensions.py (unbound) so route blueprints can
+# import and use @limiter.limit without importing app.py; bind it here.
+from extensions import limiter, LIMITER_BACKEND  # noqa: E402
+limiter.init_app(app)
+if LIMITER_BACKEND:
+    logger.info("[limiter] Flask-Limiter enabled (%s backend)", LIMITER_BACKEND)
+else:
     logger.warning("[limiter] Flask-Limiter not installed - rate limiting disabled")
-    class _NoopLimiter:
-        def limit(self, *a, **kw):
-            def decorator(f): return f
-            return decorator
-    limiter = _NoopLimiter()
 
 # Response compression
 if Compress is not None:
@@ -660,6 +648,13 @@ try:
     logger.info("[misc-api-bp] registered")
 except Exception as e:
     logger.warning("[misc-api-bp] skipped: %s", e)
+
+try:
+    from routes.health_bp import health_bp
+    app.register_blueprint(health_bp)
+    logger.info("[health-bp] registered")
+except Exception as e:
+    logger.warning("[health-bp] skipped: %s", e)
 
 
 
@@ -28539,46 +28534,6 @@ def api_push_preferences():
             logger.warning("[push] preferences put error: %s", exc)
             return jsonify({"error": str(exc)}), 500
         return jsonify({"ok": True})
-
-
-@app.route("/api/health/errors")
-@limiter.limit("30 per minute")
-def api_health_errors():
-    """Warning/error counts since process start, most frequent first.
-    Requires X-Admin-Secret header. Pass ?reset=1 to clear the counters."""
-    secret = request.headers.get("X-Admin-Secret", "")
-    admin_secret = os.environ.get("ADMIN_SECRET", "")
-    if not admin_secret or secret != admin_secret:
-        return jsonify({"error": "Forbidden"}), 403
-    from utils import error_monitor
-    if request.args.get("reset") == "1":
-        error_monitor.reset()
-        return jsonify({"ok": True, "reset": True})
-    try:
-        limit = int(request.args.get("limit") or 100)
-    except ValueError:
-        limit = 100
-    return jsonify(error_monitor.snapshot(limit=limit))
-
-
-@app.route("/api/health/timing")
-@limiter.limit("30 per minute")
-def api_health_timing():
-    """Per-endpoint request timing since process start, slowest first.
-    Requires X-Admin-Secret. ?reset=1 clears; ?sort=avg|max|slow|total; ?limit=N."""
-    secret = request.headers.get("X-Admin-Secret", "")
-    admin_secret = os.environ.get("ADMIN_SECRET", "")
-    if not admin_secret or secret != admin_secret:
-        return jsonify({"error": "Forbidden"}), 403
-    from utils import perf_monitor
-    if request.args.get("reset") == "1":
-        perf_monitor.reset()
-        return jsonify({"ok": True, "reset": True})
-    try:
-        limit = int(request.args.get("limit") or 100)
-    except ValueError:
-        limit = 100
-    return jsonify(perf_monitor.snapshot(limit=limit, sort=request.args.get("sort", "total")))
 
 
 @app.route("/api/push/broadcast", methods=["POST"])

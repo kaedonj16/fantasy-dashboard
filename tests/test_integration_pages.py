@@ -43,3 +43,15 @@ def test_health_timing_requires_admin(offline_client):
     # No/incorrect admin secret -> 403 (never leaks timing without auth).
     r = offline_client.get("/api/health/timing")
     assert r.status_code == 403
+
+
+def test_health_endpoints_work_with_admin_secret(offline_client, monkeypatch):
+    # Proves the routes extracted into routes/health_bp.py are registered and
+    # functional through the shared limiter.
+    monkeypatch.setenv("ADMIN_SECRET", "s3cret")
+    r = offline_client.get("/api/health/timing", headers={"X-Admin-Secret": "s3cret"})
+    assert r.status_code == 200
+    assert "endpoints" in r.get_json()
+    r = offline_client.get("/api/health/errors", headers={"X-Admin-Secret": "s3cret"})
+    assert r.status_code == 200
+    assert "errors" in r.get_json()
