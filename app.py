@@ -663,6 +663,13 @@ try:
 except Exception as e:
     logger.warning("[push-bp] skipped: %s", e)
 
+try:
+    from routes.watchlist_bp import watchlist_bp
+    app.register_blueprint(watchlist_bp)
+    logger.info("[watchlist-bp] registered")
+except Exception as e:
+    logger.warning("[watchlist-bp] skipped: %s", e)
+
 
 
 def generate_recent_updates_html(limit=5):
@@ -1777,6 +1784,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         "              onclick='_wlClearAll()' style='display:none'>Clear all</button>"
         "    </div>"
         "    <div id='watchlistNavList'></div>"
+        "    <a class='watchlist-page-link' href='/watchlist'>Open full watchlist &rarr;</a>"
         "  </div>"
         "</div>"
     )
@@ -9787,6 +9795,57 @@ def page_portfolio():
         nav_platform = first.get("platform") or "sleeper"
         nav_season = first.get("season") or season
     return render_page("My Leagues – BR Fantasy", nav_league_id, "portfolio", body, nav_platform, nav_season)
+
+
+def build_watchlist_page_body() -> str:
+    """Shell for the full watchlist page. Client-driven: static/app.js's
+    initWatchlistPage reads the (synced/local) watchlist, fetches per-player
+    value/mover/injury data, and renders the sortable table + value-vs-age chart."""
+    return """
+    <div class="page-layout" data-page="watchlist">
+      <main class="page-main">
+        <div class="wl-page">
+          <div class="wl-page-head">
+            <div>
+              <h1 class="wl-page-title">Watchlist</h1>
+              <div id="wlPageSyncNote" class="wl-sync-note"></div>
+            </div>
+            <label class="wl-page-sort">Sort
+              <select id="wlPageSort" class="search">
+                <option value="value">Value (high to low)</option>
+                <option value="mover">Biggest 7-day move</option>
+                <option value="age">Age (young to old)</option>
+                <option value="name">Name (A to Z)</option>
+                <option value="added">Recently added</option>
+              </select>
+            </label>
+          </div>
+          <div class="card wl-page-card">
+            <div class="card-header"><h3>Value vs Age</h3></div>
+            <div class="card-body"><div id="wlPageScatter" class="wl-page-scatter"></div></div>
+          </div>
+          <div class="card wl-page-card">
+            <div class="card-body"><div id="wlPageTable" class="wl-page-table"></div></div>
+          </div>
+        </div>
+      </main>
+    </div>
+    """
+
+
+@app.route("/watchlist")
+def page_watchlist():
+    body = build_watchlist_page_body()
+    nav_lid = session.get("last_league_id")
+    nav_platform = session.get("last_platform")
+    try:
+        nav_season = int(session.get("last_season")) if session.get("last_season") else None
+    except (TypeError, ValueError):
+        nav_season = None
+    return render_page(
+        "Watchlist – BR Fantasy", nav_lid, "watchlist", body, nav_platform, nav_season,
+        description="Your dynasty player watchlist with values, 7-day movers and injuries.",
+    )
 
 
 @app.route("/api/waiver-candidates")
@@ -19379,10 +19438,15 @@ def api_watchlist_alerts():
         injury = str(meta.get("injury_status") or "").strip()
         injury_active = bool(injury) and injury.upper() not in ("ACTIVE", "HEALTHY", "NA")
         value_alert = delta is not None and abs(delta) >= WATCHLIST_VALUE_ALERT_THRESHOLD
+        try:
+            _age = float(meta.get("age")) if meta.get("age") not in (None, "") else None
+        except (TypeError, ValueError):
+            _age = None
         out[pid] = {
             "name": _name(meta),
             "position": meta.get("position") or meta.get("pos") or "",
             "team": meta.get("team") or "",
+            "age": _age,
             "value": value,
             "delta7": delta7,
             "injury": injury if injury_active else "",
