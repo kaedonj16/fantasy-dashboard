@@ -1812,6 +1812,17 @@ window.resetMatchupCarousels = function (root) {
 // Plotly Fixes (hover offset + axis title placement)
 // ------------------------------------------------------------
 
+// Brand look for client-built Plotly charts (mirror of dashboard_services/plotly_theme.py).
+window.brandPlotlyFont = 'InterVariable, Inter, system-ui, -apple-system, sans-serif';
+window.brandPlotlyLayout = function (extra) {
+  return Object.assign({
+    font: { family: window.brandPlotlyFont, size: 12.5, color: '#7c8798' },
+    paper_bgcolor: 'rgba(0,0,0,0)',
+    plot_bgcolor: 'rgba(0,0,0,0)',
+    hoverlabel: { font: { family: window.brandPlotlyFont, size: 12 } },
+  }, extra || {});
+};
+
 function _fixOnePlotly(gd) {
   const P = window.Plotly;
   if (!P || !gd) return;
@@ -7044,6 +7055,9 @@ window.initPageRoot = function initPageRoot(root = document) {
 
   // Dashboard "since your last visit" digest (fires on in-app nav too).
   if (typeof initSinceLastVisit === 'function') initSinceLastVisit();
+
+  // Full watchlist page (fires on in-app nav too).
+  if (typeof initWatchlistPage === 'function' && root.querySelector('#wlPageTable')) initWatchlistPage();
 };
 
 function showDashboardLoadingOverlay(text, subtext) {
@@ -8255,6 +8269,7 @@ document.addEventListener('DOMContentLoaded', function() {
               // Plotly layout
               const layout = {
                 template: 'plotly_white',
+                font: { family: window.brandPlotlyFont, size: 12.5 },
                 height: 430,
                 margin: { l: 40, r: 20, t: 20, b: 40 },
                 legend: { orientation: 'h', yanchor: 'bottom', y: 1.02, x: 0 },
@@ -11204,9 +11219,11 @@ function _toggleWatchlist(player) {
   const pid = String(player.player_id);
   const list = _getWatchlist();
   const idx = list.findIndex(p => String(p.player_id) === pid);
-  if (idx >= 0) list.splice(idx, 1);
-  else list.unshift(player);
+  let added;
+  if (idx >= 0) { list.splice(idx, 1); added = false; }
+  else { list.unshift(player); added = true; }
   _saveWatchlist(list);
+  if (added) _wlServerAdd(player); else _wlServerRemove(pid);
 }
 
 function _updateWatchlistBtn(btn, player_id) {
@@ -11322,13 +11339,60 @@ function _removeWatchlistNav(player_id) {
   const pid = String(player_id);
   const list = _getWatchlist().filter(p => String(p.player_id) !== pid);
   _saveWatchlist(list);
+  _wlServerRemove(pid);
   _refreshWatchlistNav();
 }
 
 function _wlClearAll() {
-  if (!_getWatchlist().length) return;
+  const list = _getWatchlist();
+  if (!list.length) return;
   _saveWatchlist([]);
+  list.forEach(p => _wlServerRemove(String(p.player_id)));
   _refreshWatchlistNav();
+}
+
+// ── Watchlist cross-device sync (server-backed when signed in) ───────────────
+function _wlSignedIn() { return typeof window !== 'undefined' && !!window._isSignedIn; }
+
+function _wlServerAdd(player) {
+  if (!_wlSignedIn()) return;
+  fetch('/api/watchlist', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      player_id: String(player.player_id), name: player.name || '',
+      position: player.position || '', team: player.team || '',
+    }),
+  }).catch(function () {});
+}
+
+function _wlServerRemove(pid) {
+  if (!_wlSignedIn()) return;
+  fetch('/api/watchlist/' + encodeURIComponent(String(pid)), { method: 'DELETE' }).catch(function () {});
+}
+
+let _wlSyncDone = false;
+async function _wlServerSync() {
+  if (!_wlSignedIn()) return;
+  try {
+    const res = await fetch('/api/watchlist/merge', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: _getWatchlist() }),
+    });
+    if (!res.ok) return;
+    const d = await res.json();
+    if (d && d.synced && Array.isArray(d.items)) {
+      const merged = d.items.map(function (it) {
+        return { player_id: String(it.player_id), name: it.name || '', position: it.position || '', team: it.team || '' };
+      });
+      localStorage.setItem(_WL_KEY, JSON.stringify(merged));
+      window.dispatchEvent(new Event('watchlist-updated'));
+    }
+  } catch (_) {}
+}
+function _wlServerSyncOnce() {
+  if (_wlSyncDone) return Promise.resolve();
+  _wlSyncDone = true;
+  return _wlServerSync();
 }
 
 // Delegated handlers for the watchlist panel (robust for any player-id type;
@@ -11522,6 +11586,130 @@ document.addEventListener('click', function(e) {
   }
 });
 document.addEventListener('DOMContentLoaded', _refreshWatchlistNav);
+// Pull the account's synced watchlist on load (signed-in only), then refresh.
+document.addEventListener('DOMContentLoaded', function () { _wlServerSyncOnce().then(_refreshWatchlistNav); });
+
+// ── Full watchlist page (/watchlist) ────────────────────────────────────────
+function _wlSortRows(rows, mode) {
+  const n = v => (v == null ? -Infinity : v);
+  if (mode === 'value')      rows.sort((a, b) => n(b.value) - n(a.value));
+  else if (mode === 'mover') rows.sort((a, b) => Math.abs(n(b.delta7)) - Math.abs(n(a.delta7)));
+  else if (mode === 'age')   rows.sort((a, b) => (a.age == null ? 99 : a.age) - (b.age == null ? 99 : b.age));
+  else if (mode === 'name')  rows.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  // 'added' keeps the stored order (newest first)
+  return rows;
+}
+
+function _wlPageTableHtml(rows) {
+  const head = '<div class="wl-page-row wl-page-row--head">' +
+    '<span class="wl-c-name">Player</span><span class="wl-c-val">Value</span>' +
+    '<span class="wl-c-delta">7d</span><span class="wl-c-age">Age</span>' +
+    '<span class="wl-c-inj">Status</span><span class="wl-c-rm"></span></div>';
+  const body = rows.map(function (r) {
+    const meta = [r.position, r.team].filter(Boolean).map(_wlEsc).join(' &middot; ');
+    let delta = '<span class="wl-muted">&ndash;</span>';
+    if (r.delta7 != null && Math.abs(r.delta7) >= 1) {
+      const up = r.delta7 > 0;
+      delta = '<span class="wl-chip ' + (up ? 'wl-chip-up' : 'wl-chip-down') + '">' + (up ? '+' : '-') + Math.abs(Math.round(r.delta7)) + '</span>';
+    }
+    const inj = r.injury ? '<span class="wl-chip wl-chip-inj">' + _wlEsc(r.injury) + '</span>' : '';
+    return '<div class="wl-page-row" role="button" tabindex="0" data-pid="' + _wlEsc(r.pid) + '" data-name="' + _wlEsc(r.name) + '">' +
+      '<span class="wl-c-name"><span class="wl-p-name">' + _wlEsc(r.name) + '</span>' + (meta ? '<span class="wl-p-meta">' + meta + '</span>' : '') + '</span>' +
+      '<span class="wl-c-val">' + (r.value != null ? Math.round(r.value) : '<span class="wl-muted">&ndash;</span>') + '</span>' +
+      '<span class="wl-c-delta">' + delta + '</span>' +
+      '<span class="wl-c-age">' + (r.age != null ? r.age : '<span class="wl-muted">&ndash;</span>') + '</span>' +
+      '<span class="wl-c-inj">' + inj + '</span>' +
+      '<span class="wl-c-rm"><button type="button" class="wl-page-remove" data-remove="' + _wlEsc(r.pid) + '" aria-label="Remove" title="Remove">&times;</button></span>' +
+    '</div>';
+  }).join('');
+  return head + body;
+}
+
+function _wlPageScatterSvg(rows) {
+  const pts = rows.filter(r => r.value > 0 && r.age > 0);
+  if (pts.length < 3) return '<div class="wl-muted" style="padding:8px 4px">Add a few players with a known age and value to see the value-vs-age chart.</div>';
+  const W = 620, H = 300, pad = 44, x0 = pad, y0 = 14, x1 = W - 14, y1 = H - pad;
+  const ages = pts.map(r => r.age), vals = pts.map(r => r.value);
+  let aLo = Math.min.apply(null, ages) - 0.6, aHi = Math.max.apply(null, ages) + 0.6;
+  let vLo = 0, vHi = Math.max.apply(null, vals) * 1.08 || 1;
+  const sx = a => x0 + (a - aLo) / Math.max(aHi - aLo, 1e-6) * (x1 - x0);
+  const sy = v => y1 - (v - vLo) / Math.max(vHi - vLo, 1e-6) * (y1 - y0);
+  let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" style="width:100%;max-width:640px;height:auto;display:block" class="wl-scatter" role="img" aria-label="Watched players by value and age">';
+  s += '<rect x="' + x0 + '" y="' + y0 + '" width="' + (x1 - x0) + '" height="' + (y1 - y0) + '" fill="none" stroke="var(--border,#e2e8f0)"/>';
+  s += '<text x="' + ((x0 + x1) / 2) + '" y="' + (H - 8) + '" font-size="11" fill="var(--text-muted,#94a3b8)" text-anchor="middle">Age &rarr;</text>';
+  s += '<text x="12" y="' + ((y0 + y1) / 2) + '" font-size="11" fill="var(--text-muted,#94a3b8)" text-anchor="middle" transform="rotate(-90 12 ' + ((y0 + y1) / 2) + ')">Value &rarr;</text>';
+  pts.forEach(function (r) {
+    const px = sx(r.age), py = sy(r.value);
+    const up = (r.delta7 || 0) > 0, dn = (r.delta7 || 0) < 0;
+    const col = up ? '#16a34a' : (dn ? '#ef4444' : '#6366f1');
+    s += '<g><title>' + _wlEsc(r.name) + ': ' + Math.round(r.value) + ' value, age ' + r.age + '</title>' +
+      '<circle cx="' + px.toFixed(1) + '" cy="' + py.toFixed(1) + '" r="5" fill="' + col + '" stroke="#fff"/>' +
+      '<text x="' + (px + 7).toFixed(1) + '" y="' + (py + 3).toFixed(1) + '" font-size="9.5" fill="var(--text,#334155)" paint-order="stroke" stroke="var(--card,#fff)" stroke-width="2.5" stroke-linejoin="round">' + _wlEsc(String(r.name).slice(0, 14)) + '</text></g>';
+  });
+  return s + '</svg>';
+}
+
+async function initWatchlistPage() {
+  const tableEl = document.getElementById('wlPageTable');
+  if (!tableEl || tableEl._wlInit) return;
+  tableEl._wlInit = true;
+  const scatterEl = document.getElementById('wlPageScatter');
+  const sortEl = document.getElementById('wlPageSort');
+  const noteEl = document.getElementById('wlPageSyncNote');
+
+  await _wlServerSyncOnce();
+  const list = _getWatchlist();
+  if (noteEl) noteEl.textContent = _wlSignedIn() ? 'Synced to your account' : 'Saved on this device — sign in to sync across devices';
+
+  function draw(rows) {
+    if (!rows.length) {
+      tableEl.innerHTML = '<div class="wl-page-empty">Your watchlist is empty. Add players with the star on any player card or modal.</div>';
+      if (scatterEl) scatterEl.innerHTML = '';
+      return;
+    }
+    const mode = sortEl ? sortEl.value : 'value';
+    const sorted = _wlSortRows(rows.slice(), mode);
+    tableEl.innerHTML = _wlPageTableHtml(sorted);
+    if (scatterEl) scatterEl.innerHTML = _wlPageScatterSvg(sorted);
+  }
+
+  const cur = _getWatchlist();
+  if (!cur.length) { draw([]); return; }
+  const alerts = await _fetchWatchlistAlerts(cur.map(p => String(p.player_id)));
+  const rows = cur.map(function (p) {
+    const a = alerts[String(p.player_id)] || {};
+    return {
+      pid: String(p.player_id), name: p.name || a.name || String(p.player_id),
+      position: p.position || a.position || '', team: p.team || a.team || '',
+      age: (a.age != null ? a.age : null), value: (a.value != null ? a.value : null),
+      delta7: (a.delta7 != null ? a.delta7 : null), injury: a.injury || '',
+    };
+  });
+  if (sortEl && !sortEl._wlBound) { sortEl._wlBound = true; sortEl.addEventListener('change', function () { draw(rows); }); }
+  // Re-render when the list changes (e.g. a remove on this page).
+  window.addEventListener('watchlist-updated', function () {
+    const fresh = _getWatchlist().map(function (p) {
+      const r = rows.find(x => x.pid === String(p.player_id));
+      return r || { pid: String(p.player_id), name: p.name || String(p.player_id), position: p.position || '', team: p.team || '', age: null, value: null, delta7: null, injury: '' };
+    });
+    rows.length = 0; Array.prototype.push.apply(rows, fresh);
+    draw(rows);
+  });
+  draw(rows);
+}
+
+// Delegated handlers for the full-page rows (open player / remove).
+document.addEventListener('click', function (e) {
+  const rm = e.target.closest && e.target.closest('.wl-page-remove');
+  if (rm) { e.preventDefault(); e.stopPropagation(); _removeWatchlistNav(rm.getAttribute('data-remove')); return; }
+  const row = e.target.closest && e.target.closest('.wl-page-row');
+  if (row && row.getAttribute('data-pid') && typeof openPlayerModal === 'function') {
+    openPlayerModal(row.getAttribute('data-pid'), row.getAttribute('data-name') || '', { force: true });
+  }
+});
+document.addEventListener('DOMContentLoaded', function () {
+  if (document.getElementById('wlPageTable')) initWatchlistPage();
+});
 
 // Create rkModal structure and CSS if they don't exist (for pages other than rookies page)
 function createRkModalIfMissing() {
@@ -13158,10 +13346,7 @@ function openTeamModal(rosterId, teamName) {
     </div>
     <div class="team-modal-body">
       <div class="tm-panel active" id="tm-panel-roster">
-        <div class="team-modal-loading">
-          <div class="loading-spinner"></div>
-          <div>Loading team details...</div>
-        </div>
+        ${_tmLoadingHtml()}
       </div>
       <div class="tm-panel" id="tm-panel-charts"></div>
       <div class="tm-panel" id="tm-panel-trades"></div>
@@ -13373,9 +13558,19 @@ async function checkTradeOutcome(btn) {
   }
 }
 
+// Content-shaped skeleton while the roster loads (nicer than a bare spinner).
+// The trailing text div is also the slow-load status line fetchTeamDetails updates.
+function _tmLoadingHtml() {
+  let rows = '';
+  for (let i = 0; i < 6; i++) {
+    rows += '<div class="skeleton skeleton-line ' + (i % 3 === 0 ? 'w-80' : (i % 3 === 1 ? 'w-60' : 'w-40')) + '"></div>';
+  }
+  return '<div class="team-modal-loading"><div class="tm-skel">' + rows + '</div><div class="tm-loading-note">Loading team details…</div></div>';
+}
+
 function tmRetry() {
   const p = document.getElementById('tm-panel-roster');
-  if (p) p.innerHTML = '<div class="team-modal-loading"><div class="loading-spinner"></div><div>Loading team details…</div></div>';
+  if (p) p.innerHTML = _tmLoadingHtml();
   if (window._tmRosterId != null) fetchTeamDetails(window._tmRosterId);
 }
 
@@ -13396,7 +13591,7 @@ async function fetchTeamDetails(rosterId) {
     }
 
     slowTimer = setTimeout(() => {
-      const note = document.querySelector('#tm-panel-roster .team-modal-loading div:last-child');
+      const note = document.querySelector('#tm-panel-roster .tm-loading-note');
       if (note) note.textContent = 'Still loading (the first open of a team can take a few seconds)…';
     }, 8000);
     hardTimer = setTimeout(() => controller.abort(), 30000);
@@ -13810,6 +14005,7 @@ function renderTeamDetails(data) {
 
       const weeklyLayout = {
         template: theme.template,
+        font: { family: window.brandPlotlyFont, size: 12.5 },
         xaxis: { 
           title: 'Week', 
           standoff: 12,
@@ -13873,6 +14069,7 @@ function renderTeamDetails(data) {
 
       const theme = getPlotlyTheme();
       const radarLayout = {
+        font: { family: window.brandPlotlyFont, size: 12.5 },
         template: theme.template,
         polar: {
           domain: { x: [0.05, 0.95], y: [0.05, 0.95] },

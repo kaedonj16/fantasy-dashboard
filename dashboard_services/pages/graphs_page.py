@@ -5,6 +5,7 @@ import numpy as np
 import plotly.graph_objs as go
 
 from utils.utils import z_better_outward
+from dashboard_services.plotly_theme import apply_brand_layout
 from utils.all_play import all_play_analysis
 from utils.standings_viz import luck_quadrant_svg, value_age_svg
 
@@ -243,6 +244,9 @@ def build_graphs_body(ctx: dict) -> str:
     def _fig_json(fig):
         return fig.to_json().replace("</", "<\\/")
 
+    for _f in figs.values():
+        apply_brand_layout(_f)
+
     pfpa_json = _fig_json(figs["pf_pa"])
     line_json  = _fig_json(figs["scores_line"])
     box_json   = _fig_json(figs["scores_box"])
@@ -357,7 +361,9 @@ def build_graphs_body(ctx: dict) -> str:
 
       const layout = {{
         title: 'Radar Comparison (select two teams)',
-        polar: {{ radialaxis: {{ visible: false }} }},
+        font: {{ family: (window.brandPlotlyFont || 'system-ui, sans-serif'), size: 12.5, color: '#7c8798' }},
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        polar: {{ radialaxis: {{ visible: false }}, bgcolor: 'rgba(0,0,0,0)' }},
         showlegend: false,
         margin: {{ l: 40, r: 20, t: 40, b: 30 }}
       }};
@@ -580,6 +586,9 @@ def build_career_graphs_body(career_ctx: dict) -> str:
 
     def _fig_json(fig):
         return fig.to_json().replace("</", "<\\/")
+
+    for _f in figs.values():
+        apply_brand_layout(_f)
 
     scatter_json = _fig_json(figs["pf_pa"])
     season_json  = _fig_json(figs["season_pf"])

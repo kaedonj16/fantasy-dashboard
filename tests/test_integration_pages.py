@@ -45,6 +45,25 @@ def test_health_timing_requires_admin(offline_client):
     assert r.status_code == 403
 
 
+def test_watchlist_page_renders(offline_client):
+    r = offline_client.get("/watchlist")
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert 'id="wlPageTable"' in html
+    assert 'data-page="watchlist"' in html
+
+
+def test_watchlist_api_unsynced_when_signed_out(offline_client):
+    # Not signed in (no viewer_user_id in session) -> synced:false, no DB needed.
+    r = offline_client.get("/api/watchlist")
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body.get("synced") is False and body.get("items") == []
+    # merge is also a safe no-op when signed out.
+    r2 = offline_client.post("/api/watchlist/merge", json={"items": [{"player_id": "1"}]})
+    assert r2.status_code == 200 and r2.get_json().get("synced") is False
+
+
 def test_push_routes_registered(offline_client):
     # Extracted into routes/push_bp.py — verify the blueprint is mounted.
     # vapid-public-key returns 200 (ephemeral key) or 503 (not configured);
