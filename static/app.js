@@ -9647,7 +9647,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint) {
         <div class="game-log-year-section">
           <div class="game-log-year-header" onclick="toggleGameLogYear(this)">
             <div class="game-log-year-header-main">
-              <span class="game-log-year-toggle" id="toggle-${year}">▼</span>
+              <span class="game-log-year-toggle ${isFirstYear ? '' : 'collapsed'}" id="toggle-${year}">▼</span>
               <span class="game-log-year-title">${year} Season</span>
               ${isProjection ? '<span class="game-log-proj-badge">Projected</span>' : ''}
             </div>
@@ -11188,12 +11188,15 @@ function toggleGameLogYear(arg) {
   const toggle = header.querySelector('.game-log-year-toggle');
   if (!content || !toggle) return;
 
+  // Toggle the collapsed class only; the CSS rotates the original arrow glyph.
+  // (Swapping innerHTML to a Font Awesome icon here caused an inconsistent/red
+  // arrow on iOS when the injected glyph fell back to a system font.)
   if (content.classList.contains('expanded')) {
     content.classList.remove('expanded');
-    toggle.innerHTML = '<i class="fa-solid fa-chevron-right" aria-hidden="true"></i>';
+    toggle.classList.add('collapsed');
   } else {
     content.classList.add('expanded');
-    toggle.innerHTML = '<i class="fa-solid fa-chevron-down" aria-hidden="true"></i>';
+    toggle.classList.remove('collapsed');
   }
 }
 

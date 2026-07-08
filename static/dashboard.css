@@ -2805,6 +2805,15 @@ thead th {
   vertical-align: middle;
 }
 
+/* Separate a badge from the player name (or a preceding badge) it sits beside,
+   so tags like ELITE aren't pressed right against the name. Adjacency-scoped so
+   a badge that leads a bulleted meta row keeps no leading indent. */
+strong + .player-badge,
+.player-clickable + .player-badge,
+.player-badge + .player-badge {
+  margin-left: 4px;
+}
+
 .player-badge-rookie {
   background: rgba(59, 130, 246, 0.15);
   color: #2563eb;
@@ -13031,6 +13040,13 @@ img, svg, canvas {
   transition: transform 0.2s ease;
   width: 12px;
   display: inline-block;
+}
+
+/* Collapsed = arrow points right. Rotating the original unicode glyph keeps a
+   consistent grey arrow on every platform (swapping to an FA icon rendered as a
+   red system-font glyph on iOS). */
+.game-log-year-toggle.collapsed {
+  transform: rotate(-90deg);
 }
 
 .game-log-year-title {

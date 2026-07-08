@@ -19475,8 +19475,14 @@ def api_watchlist_alerts():
         injury = str(meta.get("injury_status") or "").strip()
         injury_active = bool(injury) and injury.upper() not in ("ACTIVE", "HEALTHY", "NA")
         value_alert = delta is not None and abs(delta) >= WATCHLIST_VALUE_ALERT_THRESHOLD
+        # The global players index carries no age; the model value table does
+        # (it derives it from the player's birthday). Prefer the value row, fall
+        # back to any age the index happens to hold.
+        _age_src = vrow.get("age")
+        if _age_src in (None, ""):
+            _age_src = meta.get("age")
         try:
-            _age = float(meta.get("age")) if meta.get("age") not in (None, "") else None
+            _age = float(_age_src) if _age_src not in (None, "") else None
         except (TypeError, ValueError):
             _age = None
         out[pid] = {
@@ -27749,7 +27755,7 @@ def top_movers_page():
 
     return render_page(
         f"Top Movers: {date_label} | BR Fantasy",
-        None, "players", body,
+        None, "top-movers", body,
         description=(
             f"Dynasty fantasy football risers and fallers for the week of {date_label}. "
             f"Biggest trade value movers, act fast with the BR Fantasy Trade Calculator."

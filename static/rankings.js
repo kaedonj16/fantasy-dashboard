@@ -80,6 +80,20 @@ function prGetSparkData(pid) {
   return entry[prValueKey(false)] || entry['value'] || null;
 }
 
+// Rescale a sparkline series so its last point equals `target` (the value shown
+// in the row). The API scales each series to the calibrated base value, which
+// omits the TE premium and size-specific column that prGetValue applies - so
+// without this the sparkline's endpoint drifts from the displayed number.
+function prAlignSpark(series, target) {
+  if (!series || series.length < 2) return series;
+  const last = series[series.length - 1];
+  if (!last || !isFinite(last) || !isFinite(target) || target <= 0) return series;
+  const scale = target / last;
+  // Skip a no-op rescale (already aligned) to avoid tiny float churn.
+  if (Math.abs(scale - 1) < 1e-6) return series;
+  return series.map(v => v * scale);
+}
+
 // ---- Fuzzy search (mirrors trade calc logic) ----
 function prFuzzyScore(name, query) {
   if (!name || !query) return 0;
@@ -494,7 +508,12 @@ function prRender() {
     if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
 
     const rankChange = p.rank_change_7d;
-    const sparkData = prGetSparkData(p.id);
+    // Align the sparkline to the value actually displayed in this row. The
+    // /api/sparklines series ends at the calibrated base value (no TE premium,
+    // base league size), while `val` = prGetValue(p) applies the TE premium and
+    // the size-specific column - so rescale the whole series so its last point
+    // equals `val`. Preserves the 7-day shape; guarantees the endpoint matches.
+    const sparkData = prAlignSpark(prGetSparkData(p.id), val);
 
     // Arrow column: sparkline when data available, chevron otherwise
     let arrowCell = '';
@@ -693,7 +712,13 @@ function prGetTier(p) {
 
 // Load data
 Promise.all([
-  fetch('/api/league-players', { cache: 'no-store' }).then(r => r.json()),
+  // Fail loud on a non-2xx: the server can return a 500 whose body is still
+  // valid JSON (the _api_err shape), which would otherwise parse into an empty
+  // players list and render a blank table with no error shown.
+  fetch('/api/league-players', { cache: 'no-store' }).then(r => {
+    if (!r.ok) throw new Error('league-players HTTP ' + r.status);
+    return r.json();
+  }),
   fetch('/api/player-indicators?league_type=1qb&league_size=10', { cache: 'no-store' })
     .then(r => r.json()).catch(() => ({}))
 ]).then(([resp, indicators]) => {
@@ -776,7 +801,13 @@ Promise.all([
       };
     })
     .filter(p => ['QB','RB','WR','TE','PICK'].includes(p.position) || p.is_rookie)
-    
+
+  // A 200 response with an empty/malformed payload (e.g. the value table failed
+  // to load server-side) would otherwise render as a silent blank table.
+  if (!prAllPlayers.length) {
+    throw new Error('league-players returned no players');
+  }
+
   document.getElementById('prLoading').style.display = 'none';
   prLoaded = true;
   prRender();
