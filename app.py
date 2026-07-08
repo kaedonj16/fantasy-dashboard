@@ -19475,16 +19475,19 @@ def api_watchlist_alerts():
         injury = str(meta.get("injury_status") or "").strip()
         injury_active = bool(injury) and injury.upper() not in ("ACTIVE", "HEALTHY", "NA")
         value_alert = delta is not None and abs(delta) >= WATCHLIST_VALUE_ALERT_THRESHOLD
-        # The global players index carries no age; the model value table does
-        # (it derives it from the player's birthday). Prefer the value row, fall
-        # back to any age the index happens to hold.
-        _age_src = vrow.get("age")
-        if _age_src in (None, ""):
-            _age_src = meta.get("age")
-        try:
-            _age = float(_age_src) if _age_src not in (None, "") else None
-        except (TypeError, ValueError):
-            _age = None
+        # Compute a precise decimal age from the birthday (the players index
+        # reliably carries bDay everywhere). The value table's age column is a
+        # whole-number age in production, so fall back to it only if there's no
+        # birthday. Mirrors the age_from_bday pattern used across the app.
+        _age = age_from_bday(meta.get("bDay"))
+        if _age is None:
+            _age_src = vrow.get("age")
+            if _age_src in (None, ""):
+                _age_src = meta.get("age")
+            try:
+                _age = float(_age_src) if _age_src not in (None, "") else None
+            except (TypeError, ValueError):
+                _age = None
         out[pid] = {
             "name": _name(meta),
             "position": meta.get("position") or meta.get("pos") or "",
