@@ -13709,11 +13709,11 @@ img, svg, canvas {
 }
 
 .team-modal-body {
-  flex: 1;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
+  flex: 1 1 auto;
   min-height: 0;
+  overflow-y: auto;            /* the single vertical scroll container */
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Team modal tabs - mirrors .pm-tab-bar / .pm-tab */
@@ -13758,10 +13758,6 @@ img, svg, canvas {
 
 .tm-panel {
   display: none;
-  flex: 1;
-  min-height: 0;      /* allow the panel to shrink so overflow-y can scroll */
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
   padding: 24px;
 }
 .tm-panel.active { display: block; }
