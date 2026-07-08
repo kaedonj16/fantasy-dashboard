@@ -148,12 +148,23 @@ def ttl_cache(ttl: int = 300):
             frozen_kwargs = _freeze(kwargs)
             key = (func.__name__, frozen_args, frozen_kwargs)
 
-            if key in _cache:
-                ts, cached_result = _cache[key]
+            entry = _cache.get(key)
+            if entry is not None:
+                ts, cached_result = entry
                 if time.time() - ts < ttl:
                     return cached_result
-                del _cache[key]
+                # Expired: try to refresh, but if the upstream call fails (e.g. a
+                # slow/down Sleeper API) serve the stale value instead of raising.
+                # Keeping the last-known-good value out of the cache until a
+                # successful refresh means an outage never takes a page down.
+                try:
+                    result = func(*args, **kwargs)
+                except Exception:
+                    return cached_result
+                _cache[key] = (time.time(), result)
+                return result
 
+            # Cold cache: nothing to fall back to, so a failure propagates.
             result = func(*args, **kwargs)
             _cache[key] = (time.time(), result)
             return result
@@ -310,9 +321,24 @@ def get_matchups(league_id: str, week: int) -> List[dict]:
     return fetch_json(f"/league/{league_id}/matchups/{week}")
 
 
-@ttl_cache(ttl=300)
+_LAST_NFL_STATE: dict = {}
+
+
+@ttl_cache(ttl=900)
 def get_nfl_state() -> dict:
-    return fetch_json("/state/nfl") or {}
+    # Runs in build_nav on every page (18+ call sites), so it must never hang or
+    # raise when Sleeper is slow/down. NFL state (week/season type) changes at
+    # most daily, so a 15-minute TTL is plenty and a short timeout keeps page
+    # loads snappy. On failure, fall back to the last-known-good state so a
+    # Sleeper outage never takes the site down.
+    global _LAST_NFL_STATE
+    try:
+        state = fetch_json("/state/nfl", timeout=6, retries=2) or {}
+    except Exception:
+        return _LAST_NFL_STATE
+    if state:
+        _LAST_NFL_STATE = state
+    return state
 
 
 @ttl_cache(ttl=300)
