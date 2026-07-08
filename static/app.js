@@ -8356,6 +8356,9 @@ function openPlayerModal(playerId, playerName, opts) {
   const modal = document.createElement('div');
   modal.className = 'player-modal';
   modal.id = 'playerModal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-label', (playerName ? playerName + ': player details' : 'Player details'));
 
   modal.innerHTML = `
     <div class="player-modal-header">
@@ -12944,11 +12947,12 @@ function openComparisonView(p1, p2) {
   }
 }
 
-// Close modal on Escape key
+// Close the topmost open modal on Escape (player modal can sit on top of the
+// team modal, so close it first). Previously only the player modal responded.
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
-    closePlayerModal();
-  }
+  if (e.key !== 'Escape') return;
+  if (typeof closePlayerModal === 'function' && document.getElementById('playerModal')) { closePlayerModal(); return; }
+  if (typeof closeTeamModal === 'function' && document.getElementById('teamModal')) { closeTeamModal(); return; }
 });
 // Make player modal work site-wide
 document.addEventListener('DOMContentLoaded', function() {
@@ -13066,6 +13070,9 @@ function openTeamModal(rosterId, teamName) {
   const modal = document.createElement('div');
   modal.className = 'team-modal';
   modal.id = 'teamModal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-label', (teamName ? teamName + ': team details' : 'Team details'));
 
   window._tmRosterId = rosterId;
 
