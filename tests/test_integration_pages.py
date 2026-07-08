@@ -45,6 +45,14 @@ def test_health_timing_requires_admin(offline_client):
     assert r.status_code == 403
 
 
+def test_push_routes_registered(offline_client):
+    # Extracted into routes/push_bp.py — verify the blueprint is mounted.
+    # vapid-public-key returns 200 (ephemeral key) or 503 (not configured);
+    # broadcast requires the admin secret.
+    assert offline_client.get("/api/push/vapid-public-key").status_code in (200, 503)
+    assert offline_client.post("/api/push/broadcast", json={}).status_code == 403
+
+
 def test_health_endpoints_work_with_admin_secret(offline_client, monkeypatch):
     # Proves the routes extracted into routes/health_bp.py are registered and
     # functional through the shared limiter.

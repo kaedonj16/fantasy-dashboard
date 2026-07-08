@@ -8374,7 +8374,7 @@ function openPlayerModal(playerId, playerName, opts) {
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-        <button class="player-modal-watchlist-btn" id="playerModalWatchlistBtn" title="Add to watchlist" style="display: none;"><i class="fa-regular fa-star" aria-hidden="true"></i></button>
+        <button class="player-modal-watchlist-btn" id="playerModalWatchlistBtn" title="Add to watchlist" aria-pressed="false" style="display: none;"><span class="wl-star-glyph" aria-hidden="true">☆</span></button>
         ${_ppSlug ? `<a class="player-modal-page-btn" href="/player/${_ppSlug}/trade-value" title="View full player page">Player Page</a>` : ''}
         <button class="player-modal-compare-btn" id="playerModalCompareBtn" title="Compare players">Compare Player</button>
         <button class="player-modal-close" onclick="closePlayerModal()">×</button>
@@ -11196,12 +11196,14 @@ function _saveWatchlist(list) {
 }
 
 function _isWatched(player_id) {
-  return _getWatchlist().some(p => p.player_id === player_id);
+  const pid = String(player_id);
+  return _getWatchlist().some(p => String(p.player_id) === pid);
 }
 
 function _toggleWatchlist(player) {
+  const pid = String(player.player_id);
   const list = _getWatchlist();
-  const idx = list.findIndex(p => p.player_id === player.player_id);
+  const idx = list.findIndex(p => String(p.player_id) === pid);
   if (idx >= 0) list.splice(idx, 1);
   else list.unshift(player);
   _saveWatchlist(list);
@@ -11209,8 +11211,11 @@ function _toggleWatchlist(player) {
 
 function _updateWatchlistBtn(btn, player_id) {
   const watched = _isWatched(player_id);
-  btn.innerHTML = watched ? '<i class="fa-solid fa-star" aria-hidden="true"></i>' : '<i class="fa-regular fa-star" aria-hidden="true"></i>';
+  // Unicode stars (hollow/filled) render reliably regardless of the bundled
+  // icon set; FontAwesome's regular star isn't always present.
+  btn.innerHTML = '<span class="wl-star-glyph" aria-hidden="true">' + (watched ? '★' : '☆') + '</span>';
   btn.title = watched ? 'Remove from watchlist' : 'Add to watchlist';
+  btn.setAttribute('aria-pressed', watched ? 'true' : 'false');
   btn.classList.toggle('player-modal-watchlist-btn--active', watched);
 }
 
@@ -11258,48 +11263,105 @@ function _wlChipsHtml(a) {
   return html;
 }
 
+function _wlPidSel(pid) { return String(pid).replace(/["\\]/g, ''); }
+
 function _refreshWatchlistNav() {
-  const countEl = document.getElementById('watchlistNavCount');
+  const btn     = document.getElementById('watchlistNavBtn');
+  const starEl  = btn && btn.querySelector('.watchlist-star');
+  const alertEl = document.getElementById('watchlistNavAlert');
+  const countEl = document.getElementById('watchlistNavHeaderCount');
+  const clearEl = document.getElementById('watchlistClearBtn');
   const listEl  = document.getElementById('watchlistNavList');
   const list = _getWatchlist();
-  if (countEl) {
-    countEl.style.display = list.length > 0 ? '' : 'none';
-    countEl.textContent   = list.length > 9 ? '9+' : String(list.length);
-    countEl.classList.remove('has-alert');
-  }
+
+  // Nav star: hollow when nothing is watched, filled gold when it has players.
+  if (starEl) starEl.innerHTML = list.length ? '&#9733;' : '&#9734;';
+  if (btn) btn.classList.toggle('has-items', list.length > 0);
+  if (alertEl) alertEl.style.display = 'none';           // set below once alerts load
+  if (countEl) countEl.textContent = list.length ? String(list.length) : '';
+  if (clearEl) clearEl.style.display = list.length ? '' : 'none';
   if (!listEl) return;
+
   if (!list.length) {
-    listEl.innerHTML = '<div class="watchlist-nav-empty">No players watched yet.<br>Click the <span class="watchlist-star">&#9733;</span> icon on a player to add.</div>';
+    listEl.innerHTML = '<div class="watchlist-nav-empty">No players watched yet.<br>Tap the <span class="watchlist-star">&#9734;</span> star on a player to add them.</div>';
     return;
   }
-  listEl.innerHTML = list.map(p =>
-    '<div class="watchlist-nav-item" onclick="openPlayerModal(' + JSON.stringify(p.player_id) + ',' + JSON.stringify(p.name || '') + ')">' +
-      '<span class="wl-item-main">' +
-        '<span class="wl-item-name">' + _wlEsc(p.name || p.player_id) +
-          (p.position ? ' <span class="wl-item-pos">' + _wlEsc(p.position) + '</span>' : '') + '</span>' +
-        '<span class="wl-item-chips" data-wl-chips="' + _wlEsc(String(p.player_id)) + '"></span>' +
-      '</span>' +
-      '<button class="watchlist-nav-item-remove" onclick="event.stopPropagation();_removeWatchlistNav(' + JSON.stringify(p.player_id) + ')" title="Remove">&times;</button>' +
-    '</div>'
-  ).join('');
-  // Enhance rows with alert chips (value, 7-day delta, injury) and flag the badge.
-  _fetchWatchlistAlerts(list.map(p => String(p.player_id))).then(function (data) {
+
+  listEl.innerHTML = list.map(function (p) {
+    const pid = _wlEsc(String(p.player_id));
+    const meta = [p.position, p.team].filter(Boolean).map(_wlEsc).join(' &middot; ');
+    return '<div class="watchlist-nav-item" role="button" tabindex="0" data-pid="' + pid + '" data-name="' + _wlEsc(p.name || '') + '">' +
+        '<span class="wl-item-main">' +
+          '<span class="wl-item-name">' + _wlEsc(p.name || p.player_id) + '</span>' +
+          '<span class="wl-item-meta" data-wl-meta="' + pid + '">' + meta + '</span>' +
+          '<span class="wl-item-chips" data-wl-chips="' + pid + '"></span>' +
+        '</span>' +
+        '<button type="button" class="watchlist-nav-item-remove" data-remove="' + pid + '" aria-label="Remove from watchlist" title="Remove">&times;</button>' +
+      '</div>';
+  }).join('');
+
+  // Enhance rows with alert chips + backfill position/team from the server.
+  _fetchWatchlistAlerts(list.map(function (p) { return String(p.player_id); })).then(function (data) {
     let anyAlert = false;
     list.forEach(function (p) {
+      const sel = _wlPidSel(p.player_id);
       const a = data[String(p.player_id)];
-      const cell = listEl.querySelector('[data-wl-chips="' + String(p.player_id).replace(/"/g, '') + '"]');
+      const cell = listEl.querySelector('[data-wl-chips="' + sel + '"]');
       if (cell) cell.innerHTML = _wlChipsHtml(a);
+      const metaEl = listEl.querySelector('[data-wl-meta="' + sel + '"]');
+      if (metaEl && !metaEl.textContent.trim() && a && (a.position || a.team)) {
+        metaEl.textContent = [a.position, a.team].filter(Boolean).join(' · ');
+      }
       if (a && a.alert) anyAlert = true;
     });
-    if (countEl && anyAlert) countEl.classList.add('has-alert');
+    if (alertEl) alertEl.style.display = anyAlert ? '' : 'none';
   });
 }
 
 function _removeWatchlistNav(player_id) {
-  const list = _getWatchlist().filter(p => p.player_id !== player_id);
+  const pid = String(player_id);
+  const list = _getWatchlist().filter(p => String(p.player_id) !== pid);
   _saveWatchlist(list);
   _refreshWatchlistNav();
 }
+
+function _wlClearAll() {
+  if (!_getWatchlist().length) return;
+  _saveWatchlist([]);
+  _refreshWatchlistNav();
+}
+
+// Delegated handlers for the watchlist panel (robust for any player-id type;
+// inline onclick with a string id broke on the quotes it produced).
+document.addEventListener('click', function (e) {
+  const rm = e.target.closest && e.target.closest('.watchlist-nav-item-remove');
+  if (rm) {
+    e.preventDefault();
+    e.stopPropagation();
+    _removeWatchlistNav(rm.getAttribute('data-remove'));
+    return;
+  }
+  const item = e.target.closest && e.target.closest('.watchlist-nav-item');
+  if (item && item.getAttribute('data-pid')) {
+    const panel = document.getElementById('watchlistNavPanel');
+    if (panel) panel.style.display = 'none';
+    if (typeof openPlayerModal === 'function') {
+      openPlayerModal(item.getAttribute('data-pid'), item.getAttribute('data-name') || '', { force: true });
+    }
+  }
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const item = e.target.closest && e.target.closest('.watchlist-nav-item');
+  if (item && item.getAttribute('data-pid')) {
+    e.preventDefault();
+    const panel = document.getElementById('watchlistNavPanel');
+    if (panel) panel.style.display = 'none';
+    if (typeof openPlayerModal === 'function') {
+      openPlayerModal(item.getAttribute('data-pid'), item.getAttribute('data-name') || '', { force: true });
+    }
+  }
+});
 
 function toggleWatchlistPanel() {
   const panel = document.getElementById('watchlistNavPanel');
