@@ -509,6 +509,13 @@ ul {
   width: 100%;
 }
 
+/* The watchlist page has no sidebar, so the 230px sidebar track only shoved the
+   content off to the left. Give it a single full-width column so .wl-page
+   (max-width + margin auto) centers in the viewport. */
+.page-layout[data-page="watchlist"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .page-main {
   display: flex;
   flex-direction: column;
@@ -1022,7 +1029,10 @@ ul {
   width: 20px;
   display: inline-flex;
   justify-content: center;
+  color: var(--accent);
 }
+/* Sign Out is a colored (red) action - let its icon follow the label color. */
+.settings-menu-logout .settings-menu-icon { color: inherit; }
 
 /* Inline SVG chrome icons: inherit the button's color, never squish. */
 .nav-svg-icon { flex-shrink: 0; display: inline-block; vertical-align: middle; }
@@ -1455,6 +1465,7 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
   transform: translate(-50%, -50%);
   width: 18px;
   height: 18px;
+  color: var(--accent);
 }
 
 .nav-search-wrapper:focus-within .nav-search-icon {
@@ -16565,7 +16576,7 @@ tr.team-clickable {
 }
 
 /* Star icon: hollow + muted when empty, filled gold when it has players. */
-.watchlist-star { color: var(--text-muted); font-size: 16px; line-height: 1; }
+.watchlist-star { color: var(--accent); font-size: 16px; line-height: 1; }
 #watchlistNavBtn.has-items .watchlist-star { color: #f59e0b; }
 /* Small alert dot on the star only when a watched player has a value move / injury. */
 .watchlist-alert-dot {
