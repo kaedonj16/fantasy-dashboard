@@ -28457,7 +28457,8 @@ def _notify_changelog_on_startup():
             row = conn.execute(
                 "SELECT value FROM app_state WHERE key = 'changelog_last_pushed'"
             ).fetchone()
-            last_pushed = (row[0] if row else None)
+            # get_conn() returns dict rows; index by column name, not position.
+            last_pushed = (row["value"] if row else None)
 
         if last_pushed == latest_date:
             return  # already notified for this entry

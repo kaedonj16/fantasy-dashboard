@@ -312,18 +312,19 @@ def translate_all(
             player_ids = [s["player_id"] for s in scores]
             rows = conn.execute(query, (player_ids,)).fetchall()
             
+            # get_conn() returns dict rows; index by column name, not position.
             for row in rows:
-                pid = str(row[0])
+                pid = str(row["player_id"])
                 existing_values[pid] = {
-                    "rookie_value": float(row[1]),      # value_1qb as base value
-                    "rookie_sf_value": float(row[2]) if row[2] else None,  # value_sf
-                    "rookie_value_8": float(row[3]) if row[3] else None,  # value_8
-                    "rookie_value_12": float(row[4]) if row[4] else None,  # value_12
-                    "rookie_value_14": float(row[5]) if row[5] else None,  # value_14
+                    "rookie_value": float(row["value_1qb"]),      # base value
+                    "rookie_sf_value": float(row["value_sf"]) if row["value_sf"] else None,
+                    "rookie_value_8": float(row["value_8"]) if row["value_8"] else None,
+                    "rookie_value_12": float(row["value_12"]) if row["value_12"] else None,
+                    "rookie_value_14": float(row["value_14"]) if row["value_14"] else None,
                     "rookie_value_16": None,  # Not in database schema
-                    "rookie_sf_value_8": float(row[6]) if row[6] else None,  # sf_value_8
-                    "rookie_sf_value_12": float(row[7]) if row[7] else None,  # sf_value_12
-                    "rookie_sf_value_14": float(row[8]) if row[8] else None,  # sf_value_14
+                    "rookie_sf_value_8": float(row["sf_value_8"]) if row["sf_value_8"] else None,
+                    "rookie_sf_value_12": float(row["sf_value_12"]) if row["sf_value_12"] else None,
+                    "rookie_sf_value_14": float(row["sf_value_14"]) if row["sf_value_14"] else None,
                     "rookie_sf_value_16": None,  # Not in database schema
                 }
         print(f"[translate_all] Found {len(existing_values)} existing values in database")
