@@ -16324,6 +16324,10 @@ tr.team-clickable {
   z-index: 300;
 }
 .watchlist-nav-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   padding: 10px 14px;
   font-size: 12px;
   font-weight: 700;
@@ -16332,6 +16336,30 @@ tr.team-clickable {
   color: var(--text-muted);
   border-bottom: 0.5px solid var(--border);
 }
+.watchlist-nav-count {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 5px;
+  margin-left: 4px;
+  border-radius: 999px;
+  background: var(--bg-alt);
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: center;
+}
+.watchlist-nav-count:empty { display: none; }
+.watchlist-clear-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 2px 4px;
+}
+.watchlist-clear-btn:hover { color: #ef4444; }
 .watchlist-nav-item {
   display: flex;
   align-items: center;
@@ -16425,30 +16453,30 @@ tr.team-clickable {
   margin-top: 1px;
 }
 
-/* Star icon + count/alert badge */
-.watchlist-star { color: #f59e0b; font-size: 15px; line-height: 1; }
-.watchlist-count-badge {
+/* Star icon: hollow + muted when empty, filled gold when it has players. */
+.watchlist-star { color: var(--text-muted); font-size: 16px; line-height: 1; }
+#watchlistNavBtn.has-items .watchlist-star { color: #f59e0b; }
+/* Small alert dot on the star only when a watched player has a value move / injury. */
+.watchlist-alert-dot {
   position: absolute;
-  top: -4px;
-  right: -6px;
-  min-width: 15px;
-  height: 15px;
-  padding: 0 3px;
-  border-radius: 999px;
-  background: var(--text-muted);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 15px;
-  text-align: center;
+  top: 0;
+  right: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #ef4444;
+  border: 2px solid var(--card, #fff);
   pointer-events: none;
 }
-.watchlist-count-badge.has-alert { background: #ef4444; }
 
 /* Watchlist row layout + alert chips */
 .watchlist-nav-item { gap: 8px; }
-.wl-item-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
-.wl-item-name { color: var(--text); font-weight: 500; }
+.watchlist-nav-item:focus-visible { outline: 2px solid var(--accent, #3b82f6); outline-offset: -2px; }
+.wl-item-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.wl-item-name { color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wl-item-meta { color: var(--text-muted); font-size: 11px; font-weight: 400; }
+.wl-item-meta:empty { display: none; }
+.wl-item-chips { margin-top: 2px; }
 .wl-item-pos { color: var(--text-muted); font-size: 11px; font-weight: 400; }
 .wl-item-chips { display: flex; gap: 4px; flex-wrap: wrap; }
 .wl-item-chips:empty { display: none; }
