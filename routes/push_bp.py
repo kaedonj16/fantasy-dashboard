@@ -227,7 +227,7 @@ def api_push_leagues():
                 "WHERE endpoint = %s AND COALESCE(league_id, '') <> ''",
                 (endpoint,),
             ).fetchall()
-        return jsonify({"league_ids": [r[0] for r in rows]})
+        return jsonify({"league_ids": [r["league_id"] for r in rows]})
     except Exception as exc:
         logger.warning("[push] leagues get error: %s", exc)
         return jsonify({"league_ids": []})
@@ -248,7 +248,7 @@ def api_push_preferences():
                 row = conn.execute(
                     "SELECT prefs FROM push_subscriptions WHERE endpoint = %s", (endpoint,)
                 ).fetchone()
-            prefs_raw = (row[0] if row else None) or "{}"
+            prefs_raw = (row["prefs"] if row else None) or "{}"
             return jsonify({"prefs": _json.loads(prefs_raw)})
         except Exception as exc:
             logger.warning("[push] preferences get error: %s", exc)
@@ -339,7 +339,7 @@ def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
     stale         = []
 
     for row in rows:
-        ep, p256dh, auth = row[0], row[1], row[2]
+        ep, p256dh, auth = row["endpoint"], row["p256dh"], row["auth"]
         try:
             webpush(
                 subscription_info={"endpoint": ep, "keys": {"p256dh": p256dh, "auth": auth}},
