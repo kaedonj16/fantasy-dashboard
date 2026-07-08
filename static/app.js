@@ -3032,13 +3032,16 @@ window.initTradePage = function initTradePage(root = document) {
     return Number(sel?.value || 0) || 0;
   }
 
-  // Position multipliers matching the server-side _SCORING_MULTS table
+  // Position multipliers. MUST match the server-side _SCORING_MULTS table in
+  // app.py (build_side); tests/test_scoring_mult_parity.py fails if they drift.
   const SCORING_MULTS = {
     ppr:  { QB: 1.00, RB: 1.00, WR: 1.00, TE: 1.00 },
     half: { QB: 1.00, RB: 1.06, WR: 0.97, TE: 0.94 },
     std:  { QB: 1.00, RB: 1.13, WR: 0.93, TE: 0.87 },
   };
 
+  // Mirror of app.py build_side's per-player value math. Uses falsy fallback
+  // (|| 0) and round-half-up so the live preview matches the server total.
   function getPlayerValue(player) {
     const leagueType = getLeagueType();
     const size = getLeagueSize();
@@ -3051,20 +3054,21 @@ window.initTradePage = function initTradePage(root = document) {
     // TE premium scales tight-end values (~+20% at full 1.0 pt/reception).
     if (tePremium && pos === "TE") mult *= (1 + tePremium * 0.20);
 
+    const _n = v => Number(v) || 0;  // falsy fallback, matching the server's `or`
     let base;
     if (scoringType === "redraft") {
       // Redraft values are league-size agnostic (1QB vs SF only).
-      base = Number(leagueType === "sf"
-        ? (player.redraft_value_sf ?? player.redraft_value_1qb ?? 0)
-        : (player.redraft_value_1qb ?? 0));
+      base = leagueType === "sf"
+        ? (_n(player.redraft_value_sf) || _n(player.redraft_value_1qb))
+        : _n(player.redraft_value_1qb);
     } else if (leagueType === "sf") {
       const key = size === 10 ? "sf_value" : `sf_value_${size}`;
-      base = Number(player[key] ?? player.sf_value ?? player.value ?? 0);
+      base = _n(player[key]) || _n(player.sf_value) || _n(player.value);
     } else {
       const key = size === 10 ? "value" : `value_${size}`;
-      base = Number(player[key] ?? player.value ?? 0);
+      base = _n(player[key]) || _n(player.value);
     }
-    return Math.round(base * mult * 10) / 10;
+    return Math.floor(base * mult * 10 + 0.5) / 10;  // round half up, matching app.py
   }
 
   function isTargetsTabActive() {

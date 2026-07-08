@@ -17840,10 +17840,13 @@ def api_trade_eval():
             pos = player.get("position")
 
             # Apply scoring format multiplier, plus TE-premium boost for tight ends.
+            # NOTE: this mirrors getPlayerValue() in static/app.js exactly (the
+            # _SCORING_MULTS table above matches SCORING_MULTS there, and both use
+            # round-half-up). tests/test_scoring_mult_parity.py pins the tables.
             _mult = scoring_mults.get((pos or "").upper(), 1.0)
             if te_premium and (pos or "").upper() == "TE":
                 _mult *= (1 + te_premium * 0.20)
-            val = round(val * _mult, 1)
+            val = math.floor(val * _mult * 10 + 0.5) / 10  # round half up, matching JS Math.round
             team = player.get("team")
             age = player.get("age")
 
