@@ -13827,7 +13827,21 @@ img, svg, canvas {
   color: var(--text-muted);
   font-size: 15px;
   width: 100%;
+  gap: 8px;
+  text-align: center;
 }
+.tm-retry-btn {
+  margin-top: 8px;
+  padding: 8px 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--accent, #3b82f6);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tm-retry-btn:hover { filter: brightness(1.05); }
 
 /* Override flexbox layout when loading/error */
 .team-modal-body:has(.team-modal-loading),

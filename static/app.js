@@ -13300,7 +13300,17 @@ async function checkTradeOutcome(btn) {
   }
 }
 
+function tmRetry() {
+  const p = document.getElementById('tm-panel-roster');
+  if (p) p.innerHTML = '<div class="team-modal-loading"><div class="loading-spinner"></div><div>Loading team details…</div></div>';
+  if (window._tmRosterId != null) fetchTeamDetails(window._tmRosterId);
+}
+
 async function fetchTeamDetails(rosterId) {
+  // Never let the modal spin forever: reassure after 8s and hard-abort at 30s.
+  const controller = new AbortController();
+  let slowTimer = null, hardTimer = null;
+  const _clear = () => { if (slowTimer) clearTimeout(slowTimer); if (hardTimer) clearTimeout(hardTimer); };
   try {
     // Extract league context from URL path: /<platform>/<season>/<league_id>/<page>
     const pathParts = window.location.pathname.split('/').filter(p => p);
@@ -13312,8 +13322,18 @@ async function fetchTeamDetails(rosterId) {
       throw new Error('League ID not found in URL');
     }
 
+    slowTimer = setTimeout(() => {
+      const note = document.querySelector('#tm-panel-roster .team-modal-loading div:last-child');
+      if (note) note.textContent = 'Still loading (the first open of a team can take a few seconds)…';
+    }, 8000);
+    hardTimer = setTimeout(() => controller.abort(), 30000);
+
     const _tmLt = (typeof _leagueType !== 'undefined') ? _leagueType : '1qb';
-    const response = await fetch(`/api/team-details/${rosterId}?league_id=${leagueId}&platform=${platform}&season=${season}&league_type=${encodeURIComponent(_tmLt)}`);
+    const response = await fetch(
+      `/api/team-details/${rosterId}?league_id=${leagueId}&platform=${platform}&season=${season}&league_type=${encodeURIComponent(_tmLt)}`,
+      { signal: controller.signal }
+    );
+    _clear();
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
@@ -13323,12 +13343,15 @@ async function fetchTeamDetails(rosterId) {
     renderTeamDetails(data);
 
   } catch (error) {
+    _clear();
     console.error('[team-modal] Error fetching team details:', error);
+    const aborted = error && error.name === 'AbortError';
     const _errPanel = document.getElementById('tm-panel-roster');
     if (_errPanel) _errPanel.innerHTML = `
       <div class="team-modal-error">
-        <div>Failed to load team details</div>
-        <div style="color: #9ca3af; font-size: 14px;">${error.message}</div>
+        <div>${aborted ? 'This is taking too long to load.' : 'Failed to load team details'}</div>
+        <div style="color: #9ca3af; font-size: 14px;">${aborted ? 'The first load of a team can be slow. Try again.' : (error.message || '')}</div>
+        <button class="tm-retry-btn" onclick="tmRetry()">Retry</button>
       </div>
     `;
   }
