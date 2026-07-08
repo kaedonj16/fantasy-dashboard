@@ -13759,7 +13759,9 @@ img, svg, canvas {
 .tm-panel {
   display: none;
   flex: 1;
+  min-height: 0;      /* allow the panel to shrink so overflow-y can scroll */
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 24px;
 }
 .tm-panel.active { display: block; }
