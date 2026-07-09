@@ -14999,6 +14999,52 @@ tr.team-clickable {
   color: #10b981 !important;
   font-weight: 800;
 }
+
+/* Compare tabs (shared by the modal and the standalone page). */
+.compare-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  margin: 4px 0 18px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.compare-tabs::-webkit-scrollbar { display: none; }
+.compare-tab {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 10px 14px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  white-space: nowrap;
+  transition: color .15s ease, border-color .15s ease;
+}
+.compare-tab:hover { color: var(--text); }
+.compare-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.compare-tab-panel[hidden] { display: none; }
+
+/* Winner highlight on a hero value card. */
+.pm-hero-stat.compare-hero-win {
+  position: relative;
+  border-color: #10b981;
+  box-shadow: inset 0 0 0 1px #10b981;
+  background: color-mix(in srgb, #10b981 8%, var(--bg-alt));
+}
+.pm-hero-stat.compare-hero-win::after {
+  content: "\2713";
+  position: absolute;
+  top: 5px;
+  right: 8px;
+  font-size: 10px;
+  font-weight: 800;
+  color: #10b981;
+}
 /* Rank sub-line stays muted/regular weight even when its value cell wins, so it
    reads the same as the player modal's "(#N)" badge regardless of win state. */
 .compare-metric-p1-val .pm-comp-sub.rank-badge,
