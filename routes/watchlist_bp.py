@@ -45,11 +45,14 @@ def _init_wl_table():
                     name       TEXT,
                     position   TEXT,
                     team       TEXT,
+                    note       TEXT,
                     added_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     PRIMARY KEY (user_key, player_id)
                 )
                 """
             )
+            # Add the note column to tables created before notes existed.
+            conn.execute("ALTER TABLE user_watchlist ADD COLUMN IF NOT EXISTS note TEXT")
             conn.commit()
         _WL_TABLE_INIT = True
     except Exception as exc:
@@ -65,7 +68,7 @@ def _rows_for(user_key):
     from dashboard_services.db import get_conn
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT player_id, name, position, team, added_at FROM user_watchlist "
+            "SELECT player_id, name, position, team, note, added_at FROM user_watchlist "
             "WHERE user_key = %s ORDER BY added_at DESC",
             (user_key,),
         ).fetchall()
@@ -80,6 +83,7 @@ def _rows_for(user_key):
             "name": r.get("name") or "",
             "position": r.get("position") or "",
             "team": r.get("team") or "",
+            "note": r.get("note") or "",
             "added_at": added.isoformat() if hasattr(added, "isoformat") else added,
         })
     return out
@@ -91,14 +95,15 @@ def _upsert(conn, user_key, item):
         return
     conn.execute(
         """
-        INSERT INTO user_watchlist (user_key, player_id, name, position, team)
-        VALUES (%s, %s, %s, %s, %s)
+        INSERT INTO user_watchlist (user_key, player_id, name, position, team, note)
+        VALUES (%s, %s, %s, %s, %s, %s)
         ON CONFLICT (user_key, player_id) DO UPDATE SET
             name     = COALESCE(EXCLUDED.name,     user_watchlist.name),
             position = COALESCE(EXCLUDED.position, user_watchlist.position),
-            team     = COALESCE(EXCLUDED.team,     user_watchlist.team)
+            team     = COALESCE(EXCLUDED.team,     user_watchlist.team),
+            note     = COALESCE(EXCLUDED.note,     user_watchlist.note)
         """,
-        (user_key, pid, item.get("name"), item.get("position"), item.get("team")),
+        (user_key, pid, item.get("name"), item.get("position"), item.get("team"), item.get("note")),
     )
 
 
@@ -154,6 +159,39 @@ def api_watchlist_remove(player_id):
         return jsonify({"synced": True, "ok": True})
     except Exception as exc:
         logger.warning("[watchlist] remove failed: %s", exc)
+        return jsonify({"synced": False})
+
+
+@watchlist_bp.route("/api/watchlist/note", methods=["POST"])
+@limiter.limit("120 per minute")
+def api_watchlist_note():
+    """Set (or clear) the personal note on a watched player. Unlike the add
+    upsert, this writes the note verbatim so an empty string clears it."""
+    uk = _user_key()
+    if not uk:
+        return jsonify({"synced": False})
+    data = request.get_json(force=True) or {}
+    pid = str(data.get("player_id") or "").strip()
+    if not pid:
+        return jsonify({"error": "player_id required"}), 400
+    note = data.get("note")
+    note = ("" if note is None else str(note))[:500]
+    _init_wl_table()
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO user_watchlist (user_key, player_id, name, position, team, note)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (user_key, player_id) DO UPDATE SET note = EXCLUDED.note
+                """,
+                (uk, pid, data.get("name"), data.get("position"), data.get("team"), note),
+            )
+            conn.commit()
+        return jsonify({"synced": True, "ok": True})
+    except Exception as exc:
+        logger.warning("[watchlist] note failed: %s", exc)
         return jsonify({"synced": False})
 
 

@@ -93,7 +93,7 @@ def test_watchlist_rows_for_parses_dict_rows(monkeypatch):
     rows = wb._rows_for("u_1")
     assert rows == [{
         "player_id": "9509", "name": "Bijan Robinson",
-        "position": "RB", "team": "ATL",
+        "position": "RB", "team": "ATL", "note": "",
         "added_at": "2026-01-02T03:04:05",
     }]
 
