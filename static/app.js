@@ -12370,6 +12370,142 @@ function _cmpFuzzyScore(name, query) {
   return 0;
 }
 
+// Create the minimal player-modal shell openComparisonView expects. Normally the
+// modal already exists (compare is launched from inside an open player modal),
+// but the standalone /compare page has none, so we build the same overlay +
+// header containers + body that closePlayerModal knows how to tear down.
+function _ensureCompareModalShell() {
+  const existing = document.getElementById('playerModal');
+  if (existing) return existing;
+  const overlay = document.createElement('div');
+  overlay.className = 'player-modal-overlay';
+  overlay.addEventListener('click', function (e) {
+    if (e.target === overlay && typeof closePlayerModal === 'function') closePlayerModal();
+  });
+  const modal = document.createElement('div');
+  modal.className = 'player-modal';
+  modal.id = 'playerModal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-label', 'Player comparison');
+  modal.innerHTML =
+    '<div class="player-modal-header">' +
+      '<div class="player-modal-headshot-container"><img class="player-modal-headshot" src="" alt="" /></div>' +
+      '<div class="player-modal-title-section"></div>' +
+      '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
+        '<button class="player-modal-close" onclick="closePlayerModal()" aria-label="Close">×</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="player-modal-body" id="playerModalBody"></div>';
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  document.body.style.overflow = 'hidden';
+  return modal;
+}
+
+// ── Standalone /compare page ──────────────────────────────────────────────────
+// A first-class front door for the comparison view: two pickers + deep-linkable
+// ?p1=&p2= URLs. It drives the same openComparisonView the player modal uses, so
+// the comparison itself never drifts out of sync.
+function initComparePage() {
+  const root = document.querySelector('[data-page="compare"]');
+  if (!root) return;
+  const chosen = { 1: null, 2: null };
+  const hintEl = document.getElementById('cmpPageHint');
+
+  function _fetchDetails(pid) {
+    return fetch('/api/player-details/' + encodeURIComponent(pid))
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+  }
+
+  function _openFor(d1, d2) {
+    if (hintEl) hintEl.textContent = 'Comparison open. Close it to pick different players.';
+    _ensureCompareModalShell();
+    if (typeof openComparisonView === 'function') openComparisonView(d1, d2);
+  }
+
+  function _maybeCompare() {
+    if (!chosen[1] || !chosen[2]) return;
+    try {
+      const u = new URL(window.location.href);
+      u.searchParams.set('p1', chosen[1].player_id);
+      u.searchParams.set('p2', chosen[2].player_id);
+      history.replaceState(null, '', u);
+    } catch (_) {}
+    if (hintEl) hintEl.textContent = 'Loading comparison…';
+    Promise.all([_fetchDetails(chosen[1].player_id), _fetchDetails(chosen[2].player_id)])
+      .then(([d1, d2]) => _openFor(d1, d2))
+      .catch(() => { if (hintEl) hintEl.textContent = 'Could not load one of the players. Try again.'; });
+  }
+
+  function _bindPicker(slot) {
+    const input = document.getElementById('cmpPick' + slot);
+    const results = document.getElementById('cmpResults' + slot);
+    if (!input || !results) return;
+    let debounce, currentQuery = '';
+    function render(list) {
+      const players = Array.isArray(list) ? list : (list.players || []);
+      const other = chosen[slot === 1 ? 2 : 1];
+      const filtered = players.filter(p => !other || String(p.player_id) !== String(other.player_id));
+      if (!filtered.length) { results.innerHTML = '<div class="compare-pick-empty">No players found</div>'; return; }
+      results.innerHTML = filtered.slice(0, 10).map(p =>
+        '<button type="button" class="compare-pick-result" data-pid="' + _wlEsc(p.player_id) + '" data-name="' + _wlEsc(p.name) +
+        '" data-pos="' + _wlEsc(p.position || '') + '" data-team="' + _wlEsc(p.team || '') + '">' +
+        '<span class="compare-pick-rname">' + _wlEsc(p.name) + '</span>' +
+        '<span class="compare-pick-rmeta">' + _wlEsc((p.position || '') + (p.team ? ' · ' + p.team : '')) + '</span></button>'
+      ).join('');
+    }
+    input.addEventListener('input', function () {
+      clearTimeout(debounce);
+      const q = input.value.trim();
+      if (q.length < 2) { results.innerHTML = ''; return; }
+      currentQuery = q;
+      debounce = setTimeout(function () {
+        fetch('/api/players?q=' + encodeURIComponent(q) + '&limit=20')
+          .then(r => r.json())
+          .then(list => { if (currentQuery === q) render(list); })
+          .catch(() => { results.innerHTML = '<div class="compare-pick-empty">Search failed</div>'; });
+      }, 220);
+    });
+    results.addEventListener('click', function (e) {
+      const btn = e.target.closest && e.target.closest('.compare-pick-result');
+      if (!btn) return;
+      chosen[slot] = {
+        player_id: btn.getAttribute('data-pid'), name: btn.getAttribute('data-name'),
+        position: btn.getAttribute('data-pos'), team: btn.getAttribute('data-team'),
+      };
+      input.value = btn.getAttribute('data-name');
+      results.innerHTML = '';
+      _maybeCompare();
+    });
+    document.addEventListener('click', function (e) {
+      if (input.parentElement && !input.parentElement.contains(e.target)) results.innerHTML = '';
+    });
+  }
+
+  _bindPicker(1);
+  _bindPicker(2);
+
+  // Deep link: ?p1=&p2= prefills both pickers and opens the comparison.
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const q1 = params.get('p1'), q2 = params.get('p2');
+    if (q1 && q2) {
+      if (hintEl) hintEl.textContent = 'Loading comparison…';
+      Promise.all([_fetchDetails(q1), _fetchDetails(q2)]).then(([d1, d2]) => {
+        chosen[1] = { player_id: String(d1.player_id || q1), name: d1.name || d1.full_name || '', position: d1.position || '', team: d1.team || '' };
+        chosen[2] = { player_id: String(d2.player_id || q2), name: d2.name || d2.full_name || '', position: d2.position || '', team: d2.team || '' };
+        const i1 = document.getElementById('cmpPick1'); if (i1) i1.value = chosen[1].name;
+        const i2 = document.getElementById('cmpPick2'); if (i2) i2.value = chosen[2].name;
+        _openFor(d1, d2);
+      }).catch(() => { if (hintEl) hintEl.textContent = 'Could not load that comparison. Search to pick players.'; });
+    }
+  } catch (_) {}
+}
+document.addEventListener('DOMContentLoaded', function () {
+  if (document.querySelector('[data-page="compare"]')) initComparePage();
+});
+
 function openCompareSearch(player1Data) {
   const modal = document.getElementById('playerModal');
   const body = document.getElementById('playerModalBody');
