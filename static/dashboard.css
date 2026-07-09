@@ -3330,14 +3330,6 @@ strong + .player-badge,
   opacity: 0.92;
 }
 
-.fullscreen-loading-overlay .loading-spinner {
-  width: 40px;
-  height: 40px;
-  border-width: 3px;
-  border-top-color: #38bdf8;
-  margin: 0 0 14px 0;
-}
-
 .fullscreen-loading-text {
   font-size: 15px;
   font-weight: 600;
@@ -15007,6 +14999,28 @@ tr.team-clickable {
   color: #10b981 !important;
   font-weight: 800;
 }
+
+/* Compare tabs reuse the player-modal .pm-tab-bar / .pm-tab styling for
+   consistency; just give the bar some breathing room and hide inactive panels. */
+.compare-tab-bar { margin: 4px 0 18px; border-radius: 8px 8px 0 0; }
+.compare-tab-panel[hidden] { display: none; }
+
+/* Winner highlight on a hero value card. */
+.pm-hero-stat.compare-hero-win {
+  position: relative;
+  border-color: #10b981;
+  box-shadow: inset 0 0 0 1px #10b981;
+  background: color-mix(in srgb, #10b981 8%, var(--bg-alt));
+}
+.pm-hero-stat.compare-hero-win::after {
+  content: "\2713";
+  position: absolute;
+  top: 5px;
+  right: 8px;
+  font-size: 10px;
+  font-weight: 800;
+  color: #10b981;
+}
 /* Rank sub-line stays muted/regular weight even when its value cell wins, so it
    reads the same as the player modal's "(#N)" badge regardless of win state. */
 .compare-metric-p1-val .pm-comp-sub.rank-badge,
@@ -16851,13 +16865,22 @@ tr.team-clickable {
 /* ── Compare page ─────────────────────────────────────────────────────────── */
 .page-layout[data-page="compare"] { grid-template-columns: minmax(0, 1fr); }
 .compare-page { max-width: 920px; margin: 0 auto; padding: 8px 0 40px; }
+
+/* The result is a contained report card so it reads as one deliberate unit. */
 .compare-page-result:empty { display: none; }
-.compare-page-result { margin-top: 20px; }
+.compare-page-result {
+  margin-top: 24px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl, 20px);
+  box-shadow: var(--shadow-md, 0 4px 16px rgba(0, 0, 0, .06));
+  padding: 4px 24px 24px;
+}
 /* Inline dual header on the page (the modal renders this inside its header bar). */
 .compare-inline-header {
-  padding: 6px 2px 16px;
+  padding: 20px 2px;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 8px;
+  margin: 0 0 6px;
 }
 .compare-page-head { margin-bottom: 22px; }
 .compare-page-title {
@@ -16866,7 +16889,10 @@ tr.team-clickable {
 .compare-page-title::after { display: none; }
 .compare-page-sub { margin: 6px 0 0; color: var(--text-muted); font-size: 14px; }
 .compare-pickers {
-  display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: end;
+  display: grid; grid-template-columns: 1fr auto 1fr; gap: 16px; align-items: end;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 16px); padding: 18px 20px;
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, .04));
 }
 .compare-picker { min-width: 0; }
 .compare-pick-label {
@@ -16902,10 +16928,75 @@ tr.team-clickable {
 .compare-pick-rmeta { font-size: 11px; color: var(--text-muted); }
 .compare-pick-empty { padding: 12px; text-align: center; color: var(--text-muted); font-size: 13px; }
 .compare-page-hint { margin-top: 22px; text-align: center; color: var(--text-muted); font-size: 13px; }
-@media (max-width: 560px) {
+
+/* Action bar (swap / copy / watch / trade) shown once a comparison is active.
+   The [hidden] guards win over these display rules (a class would otherwise
+   override the attribute's display:none). */
+.compare-actions[hidden], .compare-empty[hidden] { display: none !important; }
+.compare-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.compare-action-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 13px; border-radius: 999px; cursor: pointer;
+  font-size: 13px; font-weight: 600; text-decoration: none;
+  background: var(--card); border: 1px solid var(--border); color: var(--text);
+  transition: border-color .15s ease, background .15s ease, transform .1s ease;
+}
+.compare-action-btn:hover { border-color: var(--accent); color: var(--accent); }
+.compare-action-btn:active { transform: translateY(1px); }
+
+/* Empty state: recent + popular quick-start matchups. */
+.compare-empty { margin-top: 26px; display: flex; flex-direction: column; gap: 22px; }
+.compare-empty-title {
+  font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--text-muted); margin-bottom: 10px;
+}
+.compare-chip-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.compare-chip {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 11px 16px; border-radius: 12px; text-decoration: none;
+  background: var(--card); border: 1px solid var(--border);
+  transition: border-color .15s ease, transform .1s ease, box-shadow .15s ease;
+}
+.compare-chip:hover {
+  border-color: var(--accent); transform: translateY(-1px);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, .06));
+}
+.compare-chip-name { font-size: 14px; font-weight: 600; color: var(--text); white-space: nowrap; }
+.compare-chip:hover .compare-chip-name { color: var(--accent); }
+.compare-chip-vs {
+  flex-shrink: 0; font-size: 10px; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--text-muted);
+  background: var(--bg-alt); padding: 3px 7px; border-radius: 6px;
+}
+@media (max-width: 600px) {
   .compare-pickers { grid-template-columns: 1fr; }
   .compare-vs { padding: 4px 0; text-align: center; }
   .compare-page-title { font-size: 24px; }
+}
+
+/* Compare result on phones: a two-up hero grid overflows the viewport (1fr can't
+   shrink below its content). Stack the two players instead, keeping each
+   player's own cards 2-up so they still fit. Scoped to the page and forced past
+   the modal's own mobile rules. */
+@media (max-width: 640px) {
+  [data-page="compare"] .compare-page-result { padding: 2px 14px 18px; }
+  [data-page="compare"] .compare-hero-section { grid-template-columns: 1fr !important; gap: 16px; }
+  [data-page="compare"] .compare-hero-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    gap: 8px;
+  }
+  [data-page="compare"] .compare-hero-player,
+  [data-page="compare"] .pm-hero-stat { min-width: 0; }
+  [data-page="compare"] .compare-gamelogs-section,
+  [data-page="compare"] .compare-weekly-section { grid-template-columns: 1fr; }
+  [data-page="compare"] .compare-actions { gap: 6px; }
+  [data-page="compare"] .compare-action-btn { padding: 7px 11px; font-size: 12.5px; }
+  /* The modal's chart rule bleeds 12px past each side; keep it inside the page. */
+  [data-page="compare"] .player-modal-chart-container { margin: 0 !important; }
+  [data-page="compare"] .compare-page,
+  [data-page="compare"] .compare-page-result,
+  [data-page="compare"] .compare-tab-panel { min-width: 0; max-width: 100%; }
 }
 
 /* ============================================

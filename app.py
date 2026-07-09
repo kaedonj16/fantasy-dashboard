@@ -970,7 +970,6 @@ FORM_BODY = """
 <div class="fullscreen-loading-overlay" id="dashboardLoadingOverlay" style="display:none;">
   <img src="/static/BR_Logo.png"      alt="BR Fantasy" class="flo-logo flo-logo-light">
   <img src="/static/BR_Logo_dark.png" alt="BR Fantasy" class="flo-logo flo-logo-dark">
-  <div class="loading-spinner"></div>
   <div class="fullscreen-loading-text">Building your dashboard…</div>
   <div class="fullscreen-loading-subtext">This usually takes a few seconds</div>
   <div class="flo-progress-track"><div class="flo-progress-bar" id="floProgressBar"></div></div>
@@ -27797,11 +27796,34 @@ def _compare_name_for_id(pid: str | None) -> str | None:
     return None
 
 
-def build_compare_page_body() -> str:
+def _compare_popular_matchups(n_pairs: int = 4) -> str:
+    """A few marquee matchups (top players by value, paired) for the empty state."""
+    try:
+        table = get_model_value_table_cached() or []
+    except Exception:
+        table = []
+    ranked = sorted(
+        (r for r in table if r.get("id") and r.get("name") and (r.get("value") or 0) > 0),
+        key=lambda r: float(r.get("value") or 0), reverse=True,
+    )[: n_pairs * 2]
+    chips = []
+    for i in range(0, len(ranked) - 1, 2):
+        a, b = ranked[i], ranked[i + 1]
+        href = f"/compare?p1={a['id']}&p2={b['id']}"
+        chips.append(
+            f"<a class='compare-chip' href='{href}'>"
+            f"<span class='compare-chip-name'>{html.escape(str(a['name']))}</span>"
+            f"<span class='compare-chip-vs'>vs</span>"
+            f"<span class='compare-chip-name'>{html.escape(str(b['name']))}</span></a>"
+        )
+    return "".join(chips)
+
+
+def build_compare_page_body(popular_html: str = "") -> str:
     """Shell for the standalone compare page. Client-driven: static/app.js's
     initComparePage wires the two pickers, reads any ?p1=&p2= deep link, and
-    drives the existing comparison view (openComparisonView)."""
-    return """
+    renders the comparison inline via renderCompareInline."""
+    return f"""
     <div class="page-layout" data-page="compare">
       <main class="page-main">
         <div class="compare-page">
@@ -27826,7 +27848,22 @@ def build_compare_page_body() -> str:
               </div>
             </div>
           </div>
-          <div class="compare-page-hint" id="cmpPageHint">Pick two players to see the full comparison.</div>
+          <div class="compare-actions" id="cmpActions" hidden>
+            <button type="button" class="compare-action-btn" data-cmp-action="swap" title="Swap the two players">&#8646; Swap sides</button>
+            <button type="button" class="compare-action-btn" data-cmp-action="copy" title="Copy a shareable link">Copy link</button>
+            <button type="button" class="compare-action-btn" data-cmp-action="watch" title="Add both players to your watchlist">&#9734; Watch both</button>
+            <a class="compare-action-btn" id="cmpTradeLink" href="/trade" title="Load these two into the trade calculator">Trade calculator &#8599;</a>
+          </div>
+          <div class="compare-empty" id="cmpEmptyState">
+            <div class="compare-empty-block" id="cmpRecent" hidden>
+              <div class="compare-empty-title">Recently compared</div>
+              <div class="compare-chip-row" id="cmpRecentChips"></div>
+            </div>
+            <div class="compare-empty-block">
+              <div class="compare-empty-title">Popular matchups</div>
+              <div class="compare-chip-row">{popular_html}</div>
+            </div>
+          </div>
           <div id="comparePageResult" class="compare-page-result"></div>
         </div>
       </main>
@@ -27848,7 +27885,7 @@ def page_compare():
         title = "Compare Players | BR Fantasy"
         desc = ("Put any two dynasty fantasy football players side by side: trade value, "
                 "advanced metrics, weekly usage, and game logs.")
-    body = build_compare_page_body()
+    body = build_compare_page_body(_compare_popular_matchups())
     nav_lid = session.get("last_league_id")
     nav_platform = session.get("last_platform")
     try:
