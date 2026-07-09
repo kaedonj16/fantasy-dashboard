@@ -1560,11 +1560,12 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"),
             simple_dropdown("Players", [
                 ("Player Rankings", "/players",   "players"),
+                ("Compare Players", "/compare", "compare"),
                 ("Advanced Metrics", "/metrics", "advanced-metrics"),
                 ("Top Movers", "/top-movers", "top-movers"),
                 ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "/breakouts", "breakouts"),
                 ("Prospects",       "/prospects",   "prospects"),
-            ], ["players", "prospects", "breakouts", "top-movers"], "playersNavDropdown"),
+            ], ["players", "prospects", "breakouts", "top-movers", "compare"], "playersNavDropdown"),
             simple_dropdown("Draft", [
                 ("Draft Room",    "/draft",         "draft"),
                 ("Draft History", "/draft/history", "draft-history"),
@@ -1718,13 +1719,14 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     ], ["standings", "teams", "activity", "league_health"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
+        ("Compare Players", "page_compare", "compare", False),
         ("Top Movers", "top_movers_page", "top-movers", False),
         ("Advanced Metrics", "page_advanced_metrics", "advanced-metrics", False),
         ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
         ("Waivers & Start/Sit", "page_waivers",  "waivers",   False),
         ("Schedule Assistant",  "page_schedule",  "schedule",  False),
-    ], ["players", "prospects", "breakouts", "waivers", "schedule", "top-movers"], "playersNavDropdown"))
+    ], ["players", "prospects", "breakouts", "waivers", "schedule", "top-movers", "compare"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Draft", [
         ("Draft Room",    "page_draft_room",    "draft",         False),
         ("Draft History", "page_draft_history", "draft-history", False),
@@ -27777,6 +27779,82 @@ def top_movers_page():
             f"Biggest trade value movers, act fast with the BR Fantasy Trade Calculator."
         ),
     )
+
+
+# ── Player Comparison ─────────────────────────────────────────────────────────
+
+def _compare_name_for_id(pid: str | None) -> str | None:
+    """Resolve a player display name from an id via the cached value table."""
+    if not pid:
+        return None
+    pid = str(pid).strip()
+    try:
+        for r in (get_model_value_table_cached() or []):
+            if str(r.get("id")) == pid:
+                return r.get("name")
+    except Exception:
+        pass
+    return None
+
+
+def build_compare_page_body() -> str:
+    """Shell for the standalone compare page. Client-driven: static/app.js's
+    initComparePage wires the two pickers, reads any ?p1=&p2= deep link, and
+    drives the existing comparison view (openComparisonView)."""
+    return """
+    <div class="page-layout" data-page="compare">
+      <main class="page-main">
+        <div class="compare-page">
+          <header class="compare-page-head">
+            <h1 class="compare-page-title">Compare Players</h1>
+            <p class="compare-page-sub">Put any two players side by side: dynasty value, advanced metrics, weekly usage, and game logs.</p>
+          </header>
+          <div class="compare-pickers">
+            <div class="compare-picker">
+              <label class="compare-pick-label">Player 1</label>
+              <div class="compare-pick-field">
+                <input type="text" class="compare-pick-input" id="cmpPick1" placeholder="Search a player…" autocomplete="off" aria-label="Search player 1">
+                <div class="compare-pick-results" id="cmpResults1"></div>
+              </div>
+            </div>
+            <div class="compare-vs" aria-hidden="true">VS</div>
+            <div class="compare-picker">
+              <label class="compare-pick-label">Player 2</label>
+              <div class="compare-pick-field">
+                <input type="text" class="compare-pick-input" id="cmpPick2" placeholder="Search a player…" autocomplete="off" aria-label="Search player 2">
+                <div class="compare-pick-results" id="cmpResults2"></div>
+              </div>
+            </div>
+          </div>
+          <div class="compare-page-hint" id="cmpPageHint">Pick two players to see the full comparison.</div>
+        </div>
+      </main>
+    </div>
+    """
+
+
+@app.route("/compare")
+def page_compare():
+    p1 = request.args.get("p1")
+    p2 = request.args.get("p2")
+    n1 = _compare_name_for_id(p1)
+    n2 = _compare_name_for_id(p2)
+    if n1 and n2:
+        title = f"{n1} vs {n2} Dynasty Comparison | BR Fantasy"
+        desc = (f"Compare {n1} and {n2}: dynasty fantasy football trade value, advanced "
+                f"metrics, weekly usage, and game logs side by side.")
+    else:
+        title = "Compare Players | BR Fantasy"
+        desc = ("Put any two dynasty fantasy football players side by side: trade value, "
+                "advanced metrics, weekly usage, and game logs.")
+    body = build_compare_page_body()
+    nav_lid = session.get("last_league_id")
+    nav_platform = session.get("last_platform")
+    try:
+        nav_season = int(session.get("last_season")) if session.get("last_season") else None
+    except (TypeError, ValueError):
+        nav_season = None
+    return render_page(title, nav_lid, "compare", body, nav_platform, nav_season, description=desc)
 
 
 # ── Rankings Hub ──────────────────────────────────────────────────────────────

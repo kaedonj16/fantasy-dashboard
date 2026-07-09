@@ -45,6 +45,26 @@ def test_health_timing_requires_admin(offline_client):
     assert r.status_code == 403
 
 
+def test_compare_page_renders(offline_client):
+    r = offline_client.get("/compare")
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert 'data-page="compare"' in html
+    assert 'id="cmpPick1"' in html and 'id="cmpPick2"' in html
+
+
+def test_compare_page_seo_title_from_ids(offline_client):
+    # When both ids resolve to names, the <title> names the matchup (shareable/SEO).
+    from app import get_model_value_table_cached
+    table = get_model_value_table_cached() or []
+    if len(table) < 2:
+        import pytest as _pytest
+        _pytest.skip("no value table in this environment")
+    p1, p2 = str(table[0]["id"]), str(table[1]["id"])
+    html = offline_client.get(f"/compare?p1={p1}&p2={p2}").get_data(as_text=True)
+    assert " vs " in html and "Dynasty Comparison" in html
+
+
 def test_watchlist_page_renders(offline_client):
     r = offline_client.get("/watchlist")
     assert r.status_code == 200
