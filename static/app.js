@@ -11910,6 +11910,34 @@ document.addEventListener('DOMContentLoaded', function () {
   if (document.getElementById('wlPageTable')) initWatchlistPage();
 });
 
+// ── Offline indicator ─────────────────────────────────────────────────────────
+// The service worker serves cached pages when the network drops, so PWA users
+// could otherwise stare at stale data with no signal. Show a small banner while
+// offline and clear it the moment connectivity returns.
+(function () {
+  function _ensureOfflineBar() {
+    var bar = document.getElementById('offlineBar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'offlineBar';
+      bar.className = 'offline-bar';
+      bar.setAttribute('role', 'status');
+      bar.setAttribute('aria-live', 'polite');
+      bar.innerHTML = '<span class="offline-dot" aria-hidden="true"></span>' +
+        '<span>You are offline. Showing saved data.</span>';
+      document.body.appendChild(bar);
+    }
+    return bar;
+  }
+  function _update() {
+    _ensureOfflineBar().classList.toggle('offline-bar-show', navigator.onLine === false);
+  }
+  window.addEventListener('online', _update);
+  window.addEventListener('offline', _update);
+  if (document.readyState !== 'loading') _update();
+  else document.addEventListener('DOMContentLoaded', _update);
+})();
+
 // Create rkModal structure and CSS if they don't exist (for pages other than rookies page)
 function createRkModalIfMissing() {
   // Check if modal already exists
