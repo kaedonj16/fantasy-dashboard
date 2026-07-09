@@ -16974,6 +16974,31 @@ tr.team-clickable {
   .compare-page-title { font-size: 24px; }
 }
 
+/* Compare result on phones: a two-up hero grid overflows the viewport (1fr can't
+   shrink below its content). Stack the two players instead, keeping each
+   player's own cards 2-up so they still fit. Scoped to the page and forced past
+   the modal's own mobile rules. */
+@media (max-width: 620px) {
+  [data-page="compare"] .compare-page-result { padding: 2px 14px 18px; }
+  [data-page="compare"] .compare-hero-section { grid-template-columns: 1fr !important; gap: 16px; }
+  [data-page="compare"] .compare-hero-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    gap: 8px;
+  }
+  [data-page="compare"] .compare-hero-player,
+  [data-page="compare"] .pm-hero-stat { min-width: 0; }
+  [data-page="compare"] .compare-gamelogs-section,
+  [data-page="compare"] .compare-weekly-section { grid-template-columns: 1fr; }
+  [data-page="compare"] .compare-actions { gap: 6px; }
+  [data-page="compare"] .compare-action-btn { padding: 7px 11px; font-size: 12.5px; }
+  /* The modal's chart rule bleeds 12px past each side; keep it inside the page. */
+  [data-page="compare"] .player-modal-chart-container { margin: 0 !important; }
+  [data-page="compare"] .compare-page,
+  [data-page="compare"] .compare-page-result,
+  [data-page="compare"] .compare-tab-panel { min-width: 0; max-width: 100%; }
+}
+
 /* ============================================
    PROSPECT / ROOKIE SHARED COMPONENTS
    (used in rookie modal and player modal prospect section)
