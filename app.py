@@ -970,7 +970,6 @@ FORM_BODY = """
 <div class="fullscreen-loading-overlay" id="dashboardLoadingOverlay" style="display:none;">
   <img src="/static/BR_Logo.png"      alt="BR Fantasy" class="flo-logo flo-logo-light">
   <img src="/static/BR_Logo_dark.png" alt="BR Fantasy" class="flo-logo flo-logo-dark">
-  <div class="loading-spinner"></div>
   <div class="fullscreen-loading-text">Building your dashboard…</div>
   <div class="fullscreen-loading-subtext">This usually takes a few seconds</div>
   <div class="flo-progress-track"><div class="flo-progress-bar" id="floProgressBar"></div></div>

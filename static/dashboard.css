@@ -3330,14 +3330,6 @@ strong + .player-badge,
   opacity: 0.92;
 }
 
-.fullscreen-loading-overlay .loading-spinner {
-  width: 40px;
-  height: 40px;
-  border-width: 3px;
-  border-top-color: #38bdf8;
-  margin: 0 0 14px 0;
-}
-
 .fullscreen-loading-text {
   font-size: 15px;
   font-weight: 600;
