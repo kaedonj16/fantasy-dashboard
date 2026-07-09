@@ -12374,21 +12374,54 @@ function _cmpFuzzyScore(name, query) {
 // A first-class front door for the comparison view: two pickers + deep-linkable
 // ?p1=&p2= URLs. It drives the same openComparisonView the player modal uses, so
 // the comparison itself never drifts out of sync.
+const _CMP_RECENT_KEY = 'brfantasy_recent_compares';
+
 function initComparePage() {
   const root = document.querySelector('[data-page="compare"]');
   if (!root) return;
   const chosen = { 1: null, 2: null };
-  const hintEl = document.getElementById('cmpPageHint');
+  const emptyEl = document.getElementById('cmpEmptyState');
+  const actionsEl = document.getElementById('cmpActions');
+  const resultEl = document.getElementById('comparePageResult');
 
   function _fetchDetails(pid) {
     return fetch('/api/player-details/' + encodeURIComponent(pid))
       .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
   }
 
+  function _recordRecent(a, b) {
+    if (!a || !b) return;
+    let list = [];
+    try { list = JSON.parse(localStorage.getItem(_CMP_RECENT_KEY) || '[]'); } catch (_) {}
+    const key = a.player_id + 'v' + b.player_id;
+    list = list.filter(x => (x.a.id + 'v' + x.b.id) !== key && (x.b.id + 'v' + x.a.id) !== key);
+    list.unshift({ a: { id: String(a.player_id), name: a.name || '' }, b: { id: String(b.player_id), name: b.name || '' } });
+    list = list.slice(0, 6);
+    try { localStorage.setItem(_CMP_RECENT_KEY, JSON.stringify(list)); } catch (_) {}
+  }
+
+  function _renderRecent() {
+    const wrap = document.getElementById('cmpRecent');
+    const row = document.getElementById('cmpRecentChips');
+    if (!wrap || !row) return;
+    let list = [];
+    try { list = JSON.parse(localStorage.getItem(_CMP_RECENT_KEY) || '[]'); } catch (_) {}
+    if (!list.length) { wrap.hidden = true; return; }
+    row.innerHTML = list.map(x =>
+      '<a class="compare-chip" href="/compare?p1=' + encodeURIComponent(x.a.id) + '&p2=' + encodeURIComponent(x.b.id) + '">' +
+      '<span class="compare-chip-name">' + _wlEsc(x.a.name) + '</span>' +
+      '<span class="compare-chip-vs">vs</span>' +
+      '<span class="compare-chip-name">' + _wlEsc(x.b.name) + '</span></a>'
+    ).join('');
+    wrap.hidden = false;
+  }
+
   function _openFor(d1, d2) {
-    if (hintEl) hintEl.style.display = 'none';
-    const host = document.getElementById('comparePageResult');
-    if (typeof renderCompareInline === 'function') renderCompareInline(d1, d2, host);
+    if (emptyEl) emptyEl.hidden = true;
+    if (actionsEl) actionsEl.hidden = false;
+    if (typeof renderCompareInline === 'function') renderCompareInline(d1, d2, resultEl);
+    _recordRecent(chosen[1] || { player_id: d1.player_id, name: d1.name }, chosen[2] || { player_id: d2.player_id, name: d2.name });
+    _renderRecent();
   }
 
   function _maybeCompare() {
@@ -12399,11 +12432,40 @@ function initComparePage() {
       u.searchParams.set('p2', chosen[2].player_id);
       history.replaceState(null, '', u);
     } catch (_) {}
-    if (hintEl) hintEl.textContent = 'Loading comparison…';
     Promise.all([_fetchDetails(chosen[1].player_id), _fetchDetails(chosen[2].player_id)])
       .then(([d1, d2]) => _openFor(d1, d2))
-      .catch(() => { if (hintEl) hintEl.textContent = 'Could not load one of the players. Try again.'; });
+      .catch(() => { if (resultEl) resultEl.innerHTML = '<div class="compare-pick-empty">Could not load one of the players. Try again.</div>'; });
   }
+
+  // Swap / copy-link / watch-both actions.
+  if (actionsEl && !actionsEl._cmpBound) {
+    actionsEl._cmpBound = true;
+    actionsEl.addEventListener('click', function (e) {
+      const btn = e.target.closest && e.target.closest('[data-cmp-action]');
+      if (!btn) return;
+      const act = btn.getAttribute('data-cmp-action');
+      if (act === 'swap') {
+        if (!chosen[1] || !chosen[2]) return;
+        const t = chosen[1]; chosen[1] = chosen[2]; chosen[2] = t;
+        const i1 = document.getElementById('cmpPick1'); if (i1) i1.value = chosen[1].name || '';
+        const i2 = document.getElementById('cmpPick2'); if (i2) i2.value = chosen[2].name || '';
+        _maybeCompare();
+      } else if (act === 'copy') {
+        const done = () => { const o = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => { btn.textContent = o; }, 1400); };
+        if (navigator.clipboard) navigator.clipboard.writeText(window.location.href).then(done).catch(done);
+        else done();
+      } else if (act === 'watch') {
+        [chosen[1], chosen[2]].forEach(p => {
+          if (p && typeof _isWatched === 'function' && !_isWatched(p.player_id) && typeof _toggleWatchlist === 'function') {
+            _toggleWatchlist({ player_id: String(p.player_id), name: p.name || '', position: p.position || '', team: p.team || '' });
+          }
+        });
+        const o = btn.innerHTML; btn.innerHTML = '&#10003; Added'; setTimeout(() => { btn.innerHTML = o; }, 1400);
+      }
+    });
+  }
+
+  _renderRecent();
 
   function _bindPicker(slot) {
     const input = document.getElementById('cmpPick' + slot);
@@ -12458,14 +12520,13 @@ function initComparePage() {
     const params = new URLSearchParams(window.location.search);
     const q1 = params.get('p1'), q2 = params.get('p2');
     if (q1 && q2) {
-      if (hintEl) hintEl.textContent = 'Loading comparison…';
       Promise.all([_fetchDetails(q1), _fetchDetails(q2)]).then(([d1, d2]) => {
         chosen[1] = { player_id: String(d1.player_id || q1), name: d1.name || d1.full_name || '', position: d1.position || '', team: d1.team || '' };
         chosen[2] = { player_id: String(d2.player_id || q2), name: d2.name || d2.full_name || '', position: d2.position || '', team: d2.team || '' };
         const i1 = document.getElementById('cmpPick1'); if (i1) i1.value = chosen[1].name;
         const i2 = document.getElementById('cmpPick2'); if (i2) i2.value = chosen[2].name;
         _openFor(d1, d2);
-      }).catch(() => { if (hintEl) hintEl.textContent = 'Could not load that comparison. Search to pick players.'; });
+      }).catch(() => { if (resultEl) resultEl.innerHTML = '<div class="compare-pick-empty">Could not load that comparison. Search to pick players.</div>'; });
     }
   } catch (_) {}
 }
@@ -13386,11 +13447,11 @@ function _compareBodyHTML(p1, p2, opts) {
       </div>` : '';
   return `
     <div class="compare-body">
-      <div class="compare-tabs" role="tablist">
-        <button type="button" class="compare-tab active" data-cmptab="overview" role="tab" aria-selected="true" onclick="cmpSwitchTab('overview')">Overview</button>
-        <button type="button" class="compare-tab" data-cmptab="metrics" role="tab" aria-selected="false" onclick="cmpSwitchTab('metrics')">Advanced Metrics</button>
-        <button type="button" class="compare-tab" data-cmptab="usage" role="tab" aria-selected="false" onclick="cmpSwitchTab('usage')">Usage</button>
-        <button type="button" class="compare-tab" data-cmptab="logs" role="tab" aria-selected="false" onclick="cmpSwitchTab('logs')">Game Logs</button>
+      <div class="pm-tab-bar compare-tab-bar" role="tablist">
+        <button type="button" class="pm-tab active" data-cmptab="overview" role="tab" aria-selected="true" onclick="cmpSwitchTab('overview')">Overview</button>
+        <button type="button" class="pm-tab" data-cmptab="metrics" role="tab" aria-selected="false" onclick="cmpSwitchTab('metrics')">Advanced Metrics</button>
+        <button type="button" class="pm-tab" data-cmptab="usage" role="tab" aria-selected="false" onclick="cmpSwitchTab('usage')">Usage</button>
+        <button type="button" class="pm-tab" data-cmptab="logs" role="tab" aria-selected="false" onclick="cmpSwitchTab('logs')">Game Logs</button>
       </div>
 
       <div class="compare-tab-panel" data-cmppanel="overview">
@@ -13440,7 +13501,7 @@ function _compareBodyHTML(p1, p2, opts) {
 // Switch compare tabs (shared by the modal and the standalone page). Resizes the
 // value-history chart when Overview becomes visible so Plotly picks up its width.
 function cmpSwitchTab(tab) {
-  document.querySelectorAll('.compare-tab').forEach(function (b) {
+  document.querySelectorAll('.compare-tab-bar [data-cmptab]').forEach(function (b) {
     const on = b.dataset.cmptab === tab;
     b.classList.toggle('active', on);
     b.setAttribute('aria-selected', on ? 'true' : 'false');

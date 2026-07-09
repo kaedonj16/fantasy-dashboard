@@ -15000,33 +15000,9 @@ tr.team-clickable {
   font-weight: 800;
 }
 
-/* Compare tabs (shared by the modal and the standalone page). */
-.compare-tabs {
-  display: flex;
-  gap: 2px;
-  border-bottom: 1px solid var(--border);
-  margin: 4px 0 18px;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-}
-.compare-tabs::-webkit-scrollbar { display: none; }
-.compare-tab {
-  flex: 0 0 auto;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 10px 14px;
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--text-muted);
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  white-space: nowrap;
-  transition: color .15s ease, border-color .15s ease;
-}
-.compare-tab:hover { color: var(--text); }
-.compare-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+/* Compare tabs reuse the player-modal .pm-tab-bar / .pm-tab styling for
+   consistency; just give the bar some breathing room and hide inactive panels. */
+.compare-tab-bar { margin: 4px 0 18px; border-radius: 8px 8px 0 0; }
 .compare-tab-panel[hidden] { display: none; }
 
 /* Winner highlight on a hero value card. */
@@ -16952,6 +16928,46 @@ tr.team-clickable {
 .compare-pick-rmeta { font-size: 11px; color: var(--text-muted); }
 .compare-pick-empty { padding: 12px; text-align: center; color: var(--text-muted); font-size: 13px; }
 .compare-page-hint { margin-top: 22px; text-align: center; color: var(--text-muted); font-size: 13px; }
+
+/* Action bar (swap / copy / watch / trade) shown once a comparison is active.
+   The [hidden] guards win over these display rules (a class would otherwise
+   override the attribute's display:none). */
+.compare-actions[hidden], .compare-empty[hidden] { display: none !important; }
+.compare-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.compare-action-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 13px; border-radius: 999px; cursor: pointer;
+  font-size: 13px; font-weight: 600; text-decoration: none;
+  background: var(--card); border: 1px solid var(--border); color: var(--text);
+  transition: border-color .15s ease, background .15s ease, transform .1s ease;
+}
+.compare-action-btn:hover { border-color: var(--accent); color: var(--accent); }
+.compare-action-btn:active { transform: translateY(1px); }
+
+/* Empty state: recent + popular quick-start matchups. */
+.compare-empty { margin-top: 26px; display: flex; flex-direction: column; gap: 22px; }
+.compare-empty-title {
+  font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--text-muted); margin-bottom: 10px;
+}
+.compare-chip-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.compare-chip {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 11px 16px; border-radius: 12px; text-decoration: none;
+  background: var(--card); border: 1px solid var(--border);
+  transition: border-color .15s ease, transform .1s ease, box-shadow .15s ease;
+}
+.compare-chip:hover {
+  border-color: var(--accent); transform: translateY(-1px);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, .06));
+}
+.compare-chip-name { font-size: 14px; font-weight: 600; color: var(--text); white-space: nowrap; }
+.compare-chip:hover .compare-chip-name { color: var(--accent); }
+.compare-chip-vs {
+  flex-shrink: 0; font-size: 10px; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--text-muted);
+  background: var(--bg-alt); padding: 3px 7px; border-radius: 6px;
+}
 @media (max-width: 560px) {
   .compare-pickers { grid-template-columns: 1fr; }
   .compare-vs { padding: 4px 0; text-align: center; }
