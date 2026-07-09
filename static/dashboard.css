@@ -16850,7 +16850,15 @@ tr.team-clickable {
 
 /* ── Compare page ─────────────────────────────────────────────────────────── */
 .page-layout[data-page="compare"] { grid-template-columns: minmax(0, 1fr); }
-.compare-page { max-width: 760px; margin: 0 auto; padding: 8px 0 40px; }
+.compare-page { max-width: 920px; margin: 0 auto; padding: 8px 0 40px; }
+.compare-page-result:empty { display: none; }
+.compare-page-result { margin-top: 20px; }
+/* Inline dual header on the page (the modal renders this inside its header bar). */
+.compare-inline-header {
+  padding: 6px 2px 16px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
 .compare-page-head { margin-bottom: 22px; }
 .compare-page-title {
   margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02em; color: var(--text);

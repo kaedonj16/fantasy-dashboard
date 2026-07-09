@@ -27827,6 +27827,7 @@ def build_compare_page_body() -> str:
             </div>
           </div>
           <div class="compare-page-hint" id="cmpPageHint">Pick two players to see the full comparison.</div>
+          <div id="comparePageResult" class="compare-page-result"></div>
         </div>
       </main>
     </div>
