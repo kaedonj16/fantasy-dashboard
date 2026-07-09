@@ -27852,7 +27852,7 @@ def build_compare_page_body(popular_html: str = "") -> str:
             <button type="button" class="compare-action-btn" data-cmp-action="swap" title="Swap the two players">&#8646; Swap sides</button>
             <button type="button" class="compare-action-btn" data-cmp-action="copy" title="Copy a shareable link">Copy link</button>
             <button type="button" class="compare-action-btn" data-cmp-action="watch" title="Add both players to your watchlist">&#9734; Watch both</button>
-            <a class="compare-action-btn" href="/trade" title="Open the trade calculator">Trade calculator &#8599;</a>
+            <a class="compare-action-btn" id="cmpTradeLink" href="/trade" title="Load these two into the trade calculator">Trade calculator &#8599;</a>
           </div>
           <div class="compare-empty" id="cmpEmptyState">
             <div class="compare-empty-block" id="cmpRecent" hidden>

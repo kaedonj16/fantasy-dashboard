@@ -16968,7 +16968,7 @@ tr.team-clickable {
   letter-spacing: .06em; color: var(--text-muted);
   background: var(--bg-alt); padding: 3px 7px; border-radius: 6px;
 }
-@media (max-width: 560px) {
+@media (max-width: 600px) {
   .compare-pickers { grid-template-columns: 1fr; }
   .compare-vs { padding: 4px 0; text-align: center; }
   .compare-page-title { font-size: 24px; }
@@ -16978,7 +16978,7 @@ tr.team-clickable {
    shrink below its content). Stack the two players instead, keeping each
    player's own cards 2-up so they still fit. Scoped to the page and forced past
    the modal's own mobile rules. */
-@media (max-width: 620px) {
+@media (max-width: 640px) {
   [data-page="compare"] .compare-page-result { padding: 2px 14px 18px; }
   [data-page="compare"] .compare-hero-section { grid-template-columns: 1fr !important; gap: 16px; }
   [data-page="compare"] .compare-hero-row {

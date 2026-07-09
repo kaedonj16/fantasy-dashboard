@@ -12420,6 +12420,12 @@ function initComparePage() {
     if (emptyEl) emptyEl.hidden = true;
     if (actionsEl) actionsEl.hidden = false;
     if (typeof renderCompareInline === 'function') renderCompareInline(d1, d2, resultEl);
+    // Point the trade-calculator link at these two players (player 1 -> side A,
+    // player 2 -> side B), using the calculator's shareable ?a=&b= id params.
+    const tradeLink = document.getElementById('cmpTradeLink');
+    if (tradeLink && d1 && d2) {
+      tradeLink.href = '/trade?a=' + encodeURIComponent(d1.player_id) + '&b=' + encodeURIComponent(d2.player_id);
+    }
     _recordRecent(chosen[1] || { player_id: d1.player_id, name: d1.name }, chosen[2] || { player_id: d2.player_id, name: d2.name });
     _renderRecent();
   }
