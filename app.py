@@ -9864,6 +9864,7 @@ def build_watchlist_page_body() -> str:
           <div id="wlPageSyncNote" class="wl-sync-note"></div>
 
           <div id="wlPageStats" class="wl-stats"></div>
+          <div id="wlPageAlerts" class="wl-alerts-wrap"></div>
 
           <div class="card wl-page-card">
             <div class="wl-card-head">

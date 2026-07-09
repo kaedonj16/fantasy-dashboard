@@ -11381,6 +11381,68 @@ function _wlServerRemove(pid) {
   fetch('/api/watchlist/' + encodeURIComponent(String(pid)), { method: 'DELETE' }).catch(function () {});
 }
 
+// Set (or clear) a watched player's note: update localStorage (which re-renders
+// the page) and mirror to the account when signed in so it follows across devices.
+function _wlServerSetNote(pid, note) {
+  if (!_wlSignedIn()) return;
+  fetch('/api/watchlist/note', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ player_id: String(pid), note: note || '' }),
+  }).catch(function () {});
+}
+
+function _wlSetNote(pid, note) {
+  pid = String(pid);
+  const list = _getWatchlist();
+  const it = list.find(p => String(p.player_id) === pid);
+  if (it) { it.note = note || ''; _saveWatchlist(list); }  // dispatches watchlist-updated
+  _wlServerSetNote(pid, note);
+}
+
+// Replace a note button with an inline input; commit on Enter/blur, cancel on Esc.
+function _wlOpenNoteEditor(btn) {
+  const pid = btn.getAttribute('data-note-pid');
+  const current = (_getWatchlist().find(p => String(p.player_id) === String(pid)) || {}).note || '';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'wl-note-input';
+  input.maxLength = 500;
+  input.value = current;
+  input.placeholder = 'Add a note…';
+  btn.replaceWith(input);
+  input.focus();
+  input.select();
+  let done = false;
+  function commit(save) {
+    if (done) return;
+    done = true;
+    if (save && input.value.trim() !== current) _wlSetNote(pid, input.value.trim());
+    else window.dispatchEvent(new Event('watchlist-updated'));  // restore via re-render
+  }
+  input.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); commit(true); }
+    else if (ev.key === 'Escape') { ev.preventDefault(); commit(false); }
+  });
+  input.addEventListener('blur', function () { commit(true); });
+}
+
+// Banner listing watched players that need attention (value alert or injury).
+function _wlAlertsHtml(rows) {
+  const alerted = rows.filter(r => r.alert || r.injury);
+  if (!alerted.length) return '';
+  const items = alerted.map(function (r) {
+    let reason, cls;
+    if (r.injury) { reason = _wlEsc(r.injury); cls = 'inj'; }
+    else { reason = (r.delta7 > 0 ? '+' : '') + Math.round(r.delta7 || 0) + ' / 7d'; cls = r.delta7 > 0 ? 'up' : 'down'; }
+    return '<button type="button" class="wl-alert-item" data-pid="' + _wlEsc(r.pid) + '" data-name="' + _wlEsc(r.name) + '">' +
+      '<span class="wl-alert-name">' + _wlEsc(r.name) + '</span>' +
+      '<span class="wl-alert-reason ' + cls + '">' + reason + '</span></button>';
+  }).join('');
+  const n = alerted.length;
+  return '<div class="wl-alerts"><div class="wl-alerts-head">' + n + ' player' + (n === 1 ? '' : 's') +
+    ' need' + (n === 1 ? 's' : '') + ' attention</div><div class="wl-alerts-list">' + items + '</div></div>';
+}
+
 let _wlSyncDone = false;
 async function _wlServerSync() {
   if (!_wlSignedIn()) return;
@@ -11625,8 +11687,11 @@ function _wlPageTableHtml(rows) {
       delta = '<span class="wl-chip ' + (up ? 'wl-chip-up' : 'wl-chip-down') + '">' + (up ? '+' : '-') + Math.abs(Math.round(r.delta7)) + '</span>';
     }
     const inj = r.injury ? '<span class="wl-chip wl-chip-inj">' + _wlEsc(r.injury) + '</span>' : '';
+    const noteBtn = r.note
+      ? '<button type="button" class="wl-note-btn has-note" data-note-pid="' + _wlEsc(r.pid) + '" title="Edit note">' + _wlEsc(r.note) + '</button>'
+      : '<button type="button" class="wl-note-btn" data-note-pid="' + _wlEsc(r.pid) + '">+ note</button>';
     return '<div class="wl-page-row" role="button" tabindex="0" data-pid="' + _wlEsc(r.pid) + '" data-name="' + _wlEsc(r.name) + '">' +
-      '<span class="wl-c-name">' + posBadge + '<span class="wl-p-info"><span class="wl-p-name">' + _wlEsc(r.name) + '</span>' + team + '</span></span>' +
+      '<span class="wl-c-name">' + posBadge + '<span class="wl-p-info"><span class="wl-p-name">' + _wlEsc(r.name) + '</span>' + team + noteBtn + '</span></span>' +
       '<span class="wl-c-val">' + (r.value != null ? Math.round(r.value).toLocaleString() : '<span class="wl-muted">&ndash;</span>') + '</span>' +
       '<span class="wl-c-delta">' + delta + '</span>' +
       '<span class="wl-c-age">' + (r.age != null ? r.age : '<span class="wl-muted">&ndash;</span>') + '</span>' +
@@ -11770,6 +11835,7 @@ async function initWatchlistPage() {
   const noteEl = document.getElementById('wlPageSyncNote');
   const statsEl = document.getElementById('wlPageStats');
   const countEl = document.getElementById('wlPageCount');
+  const alertsEl = document.getElementById('wlPageAlerts');
 
   await _wlServerSyncOnce();
   const list = _getWatchlist();
@@ -11784,11 +11850,13 @@ async function initWatchlistPage() {
       tableEl.innerHTML = '<div class="wl-page-empty">Your watchlist is empty. Add players with the star on any player card or modal.</div>';
       if (scatterEl) scatterEl.innerHTML = '';
       if (statsEl) statsEl.innerHTML = '';
+      if (alertsEl) alertsEl.innerHTML = '';
       return;
     }
     const mode = sortEl ? sortEl.value : 'value';
     const sorted = _wlSortRows(rows.slice(), mode);
     if (statsEl) statsEl.innerHTML = _wlStatsHtml(sorted);
+    if (alertsEl) alertsEl.innerHTML = _wlAlertsHtml(sorted);
     tableEl.innerHTML = _wlPageTableHtml(sorted);
     if (scatterEl) scatterEl.innerHTML = _wlPageScatterSvg(sorted);
   }
@@ -11803,6 +11871,7 @@ async function initWatchlistPage() {
       position: p.position || a.position || '', team: p.team || a.team || '',
       age: (a.age != null ? a.age : null), value: (a.value != null ? a.value : null),
       delta7: (a.delta7 != null ? a.delta7 : null), injury: a.injury || '',
+      alert: !!a.alert, note: p.note || '',
     };
   });
   if (sortEl && !sortEl._wlBound) { sortEl._wlBound = true; sortEl.addEventListener('change', function () { draw(rows); }); }
@@ -11810,7 +11879,9 @@ async function initWatchlistPage() {
   window.addEventListener('watchlist-updated', function () {
     const fresh = _getWatchlist().map(function (p) {
       const r = rows.find(x => x.pid === String(p.player_id));
-      return r || { pid: String(p.player_id), name: p.name || String(p.player_id), position: p.position || '', team: p.team || '', age: null, value: null, delta7: null, injury: '' };
+      // Reuse the alert-enriched row, but always take the latest note from storage.
+      if (r) { r.note = p.note || ''; return r; }
+      return { pid: String(p.player_id), name: p.name || String(p.player_id), position: p.position || '', team: p.team || '', age: null, value: null, delta7: null, injury: '', alert: false, note: p.note || '' };
     });
     rows.length = 0; Array.prototype.push.apply(rows, fresh);
     draw(rows);
@@ -11822,6 +11893,14 @@ async function initWatchlistPage() {
 document.addEventListener('click', function (e) {
   const rm = e.target.closest && e.target.closest('.wl-page-remove');
   if (rm) { e.preventDefault(); e.stopPropagation(); _removeWatchlistNav(rm.getAttribute('data-remove')); return; }
+  const noteBtn = e.target.closest && e.target.closest('.wl-note-btn');
+  if (noteBtn) { e.preventDefault(); e.stopPropagation(); _wlOpenNoteEditor(noteBtn); return; }
+  const alertItem = e.target.closest && e.target.closest('.wl-alert-item');
+  if (alertItem && typeof openPlayerModal === 'function') {
+    e.preventDefault();
+    openPlayerModal(alertItem.getAttribute('data-pid'), alertItem.getAttribute('data-name') || '', { force: true });
+    return;
+  }
   const row = e.target.closest && e.target.closest('.wl-page-row');
   if (row && row.getAttribute('data-pid') && typeof openPlayerModal === 'function') {
     openPlayerModal(row.getAttribute('data-pid'), row.getAttribute('data-name') || '', { force: true });
