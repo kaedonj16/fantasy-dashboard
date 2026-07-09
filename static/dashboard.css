@@ -16851,13 +16851,22 @@ tr.team-clickable {
 /* ── Compare page ─────────────────────────────────────────────────────────── */
 .page-layout[data-page="compare"] { grid-template-columns: minmax(0, 1fr); }
 .compare-page { max-width: 920px; margin: 0 auto; padding: 8px 0 40px; }
+
+/* The result is a contained report card so it reads as one deliberate unit. */
 .compare-page-result:empty { display: none; }
-.compare-page-result { margin-top: 20px; }
+.compare-page-result {
+  margin-top: 24px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl, 20px);
+  box-shadow: var(--shadow-md, 0 4px 16px rgba(0, 0, 0, .06));
+  padding: 4px 24px 24px;
+}
 /* Inline dual header on the page (the modal renders this inside its header bar). */
 .compare-inline-header {
-  padding: 6px 2px 16px;
+  padding: 20px 2px;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 8px;
+  margin: 0 0 6px;
 }
 .compare-page-head { margin-bottom: 22px; }
 .compare-page-title {
@@ -16866,7 +16875,10 @@ tr.team-clickable {
 .compare-page-title::after { display: none; }
 .compare-page-sub { margin: 6px 0 0; color: var(--text-muted); font-size: 14px; }
 .compare-pickers {
-  display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: end;
+  display: grid; grid-template-columns: 1fr auto 1fr; gap: 16px; align-items: end;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 16px); padding: 18px 20px;
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, .04));
 }
 .compare-picker { min-width: 0; }
 .compare-pick-label {
