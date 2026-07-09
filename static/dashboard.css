@@ -16801,12 +16801,51 @@ tr.team-clickable {
 
 @media (max-width: 640px) {
   /* Drop Age + Status columns; the four remaining cells fill the four tracks. */
-  .wl-page-row { grid-template-columns: minmax(0,1fr) 56px 50px 32px; }
+  .wl-page-row { grid-template-columns: minmax(0,1fr) 56px 50px 36px; }
   .wl-c-age, .wl-c-inj { display: none; }
   .wl-stats { grid-template-columns: repeat(2, 1fr); gap: 10px; }
   .wl-stat-value { font-size: 22px; }
   .wl-page-title { font-size: 24px; }
   .wl-page-head { align-items: flex-start; }
+  /* Bigger touch targets on phones. */
+  .wl-page-remove { padding: 8px 4px; font-size: 20px; margin: -6px -2px; }
+  .wl-note-btn { padding: 4px 0; font-size: 12px; }
+}
+
+/* ── Offline indicator (PWA) ─────────────────────────────────────────────── */
+.offline-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translate(-50%, 260%);
+  z-index: 4000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+  padding: 9px 16px;
+  border-radius: 999px;
+  background: #1f2937;
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .28);
+  transition: transform .3s ease;
+}
+.offline-bar-show { transform: translate(-50%, 0); }
+.offline-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f59e0b;
+  flex-shrink: 0;
+}
+[data-theme="dark"] .offline-bar {
+  background: #0b1220;
+  border: 1px solid rgba(255, 255, 255, .12);
+}
+@media (prefers-reduced-motion: reduce) {
+  .offline-bar { transition: none; }
 }
 
 /* ============================================
