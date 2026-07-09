@@ -12370,39 +12370,6 @@ function _cmpFuzzyScore(name, query) {
   return 0;
 }
 
-// Create the minimal player-modal shell openComparisonView expects. Normally the
-// modal already exists (compare is launched from inside an open player modal),
-// but the standalone /compare page has none, so we build the same overlay +
-// header containers + body that closePlayerModal knows how to tear down.
-function _ensureCompareModalShell() {
-  const existing = document.getElementById('playerModal');
-  if (existing) return existing;
-  const overlay = document.createElement('div');
-  overlay.className = 'player-modal-overlay';
-  overlay.addEventListener('click', function (e) {
-    if (e.target === overlay && typeof closePlayerModal === 'function') closePlayerModal();
-  });
-  const modal = document.createElement('div');
-  modal.className = 'player-modal';
-  modal.id = 'playerModal';
-  modal.setAttribute('role', 'dialog');
-  modal.setAttribute('aria-modal', 'true');
-  modal.setAttribute('aria-label', 'Player comparison');
-  modal.innerHTML =
-    '<div class="player-modal-header">' +
-      '<div class="player-modal-headshot-container"><img class="player-modal-headshot" src="" alt="" /></div>' +
-      '<div class="player-modal-title-section"></div>' +
-      '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
-        '<button class="player-modal-close" onclick="closePlayerModal()" aria-label="Close">×</button>' +
-      '</div>' +
-    '</div>' +
-    '<div class="player-modal-body" id="playerModalBody"></div>';
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
-  document.body.style.overflow = 'hidden';
-  return modal;
-}
-
 // ── Standalone /compare page ──────────────────────────────────────────────────
 // A first-class front door for the comparison view: two pickers + deep-linkable
 // ?p1=&p2= URLs. It drives the same openComparisonView the player modal uses, so
@@ -12419,9 +12386,9 @@ function initComparePage() {
   }
 
   function _openFor(d1, d2) {
-    if (hintEl) hintEl.textContent = 'Comparison open. Close it to pick different players.';
-    _ensureCompareModalShell();
-    if (typeof openComparisonView === 'function') openComparisonView(d1, d2);
+    if (hintEl) hintEl.style.display = 'none';
+    const host = document.getElementById('comparePageResult');
+    if (typeof renderCompareInline === 'function') renderCompareInline(d1, d2, host);
   }
 
   function _maybeCompare() {
@@ -13398,29 +13365,17 @@ function _cmpLoadGameLogs(pid, position, containerId) {
     });
 }
 
-function openComparisonView(p1, p2) {
-  const modal = document.getElementById('playerModal');
-  const body = document.getElementById('playerModalBody');
-  if (!modal || !body) return;
-
-  modal.classList.add('compare-mode');
-
-  // Update the header to show both players instead of single player
-  const headerTitleSection = modal.querySelector('.player-modal-title-section');
-  const headshotContainer = modal.querySelector('.player-modal-headshot-container');
-  if (headshotContainer) headshotContainer.style.display = 'none';
-  if (headerTitleSection) {
-    headerTitleSection.innerHTML = `
-      <div class="compare-dual-header">
-        ${_buildComparePlayerHeader(p1)}
-        <div class="compare-vs-badge">VS</div>
-        ${_buildComparePlayerHeader(p2)}
-      </div>
-    `;
-  }
-
-  // Build the comparison body
-  body.innerHTML = `
+// Comparison body markup, shared by the player-modal compare view and the
+// standalone /compare page so the two never drift. opts.nav adds the modal-only
+// back / profile buttons (the page has its own navigation).
+function _compareBodyHTML(p1, p2, opts) {
+  opts = opts || {};
+  const navBtns = opts.nav ? `
+      <div class="compare-nav-btns">
+        <button class="compare-back-btn" id="compareBackBtn">← Back to ${p1.name}</button>
+        <button class="compare-profile-btn" id="compareP2ProfileBtn">${p2.name}'s Profile →</button>
+      </div>` : '';
+  return `
     <div class="compare-body">
       <div class="compare-hero-section">
         <div class="compare-hero-player" id="compareHero1" data-name="${p1.full_name || ''}">${_buildCompareHeroHTML(p1)}</div>
@@ -13477,58 +13432,36 @@ function openComparisonView(p1, p2) {
 
       <div class="pm-section-header"><span class="pm-section-label">Value History</span></div>
       <div id="compareValueChart" class="player-modal-chart-container" style="min-height:200px;"></div>
-
-      <div class="compare-nav-btns">
-        <button class="compare-back-btn" id="compareBackBtn">← Back to ${p1.name}</button>
-        <button class="compare-profile-btn" id="compareP2ProfileBtn">${p2.name}'s Profile →</button>
-      </div>
+      ${navBtns}
     </div>
   `;
+}
 
-  // Inject game logs for both players. /api/player-details deliberately returns
-  // an empty game_logs_by_year (it's expensive), so — like the single player
-  // modal's Stats tab — we lazy-load them from /api/player-game-logs here.
+// Post-render wiring shared by both compare surfaces: lazy game logs, metrics
+// (with per-side season selection), and the dual value-history chart.
+function _compareWireView(p1, p2) {
   _cmpLoadGameLogs(p1.player_id, p1.position, 'compareGameLogs1');
   _cmpLoadGameLogs(p2.player_id, p2.position, 'compareGameLogs2');
 
-  // Weekly usage trends are rendered by cmpRenderWeekly() (driven from
-  // cmpRenderMetrics) so they track each side's selected season + week range.
-
-  document.getElementById('compareBackBtn')?.addEventListener('click', () => {
-    closePlayerModal();
-    setTimeout(() => openPlayerModal(p1.player_id, p1.name), 220);
-  });
-
-  document.getElementById('compareP2ProfileBtn')?.addEventListener('click', () => {
-    closePlayerModal();
-    setTimeout(() => openPlayerModal(p2.player_id, p2.name), 220);
-  });
-
-  // Remember names so each player's season selector can be labeled.
   _comparePlayerNames[p1.player_id] = p1.name || p1.full_name || 'Player 1';
   _comparePlayerNames[p2.player_id] = p2.name || p2.full_name || 'Player 2';
   _cmpSides[1].position = (p1.position || '').toUpperCase();
   _cmpSides[2].position = (p2.position || '').toUpperCase();
 
-  // Fetch NFL state to determine if it's offseason, then load metrics with
-  // independent per-player season selection (defaults to the same season).
   fetch('/api/nfl-state').then(r => r.json()).catch(() => ({}))
     .then(nflState => {
       const isOffseason = (nflState.season_type || '').toLowerCase() === 'off';
       const currentSeason = nflState.season || new Date().getFullYear();
-      // During offseason, default to career metrics (no season parameter)
       const defaultSeason = isOffseason ? null : currentSeason;
       loadCompareMetrics(p1.player_id, p2.player_id, defaultSeason, defaultSeason);
     });
 
-  // Render value history chart with two lines
-  if (document.getElementById('compareValueChart')) {
-    const chartDiv = document.getElementById('compareValueChart');
+  const chartDiv = document.getElementById('compareValueChart');
+  if (chartDiv) {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
     const textColor = isDark ? '#9ca3af' : '#6b7280';
     const bgColor = isDark ? '#1e293b' : '#f8fafc';
-
     const makeTrace = (history, name, color) => {
       const dates = (history || []).map(h => h.as_of_date || h.date);
       const vals  = (history || []).map(h => h.value);
@@ -13538,12 +13471,10 @@ function openComparisonView(p1, p2) {
         hovertemplate: `<b>${name}</b><br>%{x}<br>Value: %{y}<extra></extra>`,
       };
     };
-
     const traces = [
       makeTrace(p1.value_history, p1.name, '#3b82f6'),
       makeTrace(p2.value_history, p2.name, '#f59e0b'),
     ];
-
     const _cmpLayout = {
       paper_bgcolor: 'transparent',
       plot_bgcolor: bgColor,
@@ -13558,6 +13489,55 @@ function openComparisonView(p1, p2) {
       Plotly.newPlot(chartDiv, traces, _cmpLayout, { responsive: true, displayModeBar: false });
     }).catch(function () {});
   }
+}
+
+// Render the full comparison inline into a page container (the /compare page).
+function renderCompareInline(p1, p2, hostEl) {
+  if (!hostEl) return;
+  hostEl.innerHTML =
+    '<div class="compare-dual-header compare-inline-header">' +
+      _buildComparePlayerHeader(p1) +
+      '<div class="compare-vs-badge">VS</div>' +
+      _buildComparePlayerHeader(p2) +
+    '</div>' +
+    _compareBodyHTML(p1, p2, { nav: false });
+  _compareWireView(p1, p2);
+}
+
+function openComparisonView(p1, p2) {
+  const modal = document.getElementById('playerModal');
+  const body = document.getElementById('playerModalBody');
+  if (!modal || !body) return;
+
+  modal.classList.add('compare-mode');
+
+  // Update the header to show both players instead of single player
+  const headerTitleSection = modal.querySelector('.player-modal-title-section');
+  const headshotContainer = modal.querySelector('.player-modal-headshot-container');
+  if (headshotContainer) headshotContainer.style.display = 'none';
+  if (headerTitleSection) {
+    headerTitleSection.innerHTML = `
+      <div class="compare-dual-header">
+        ${_buildComparePlayerHeader(p1)}
+        <div class="compare-vs-badge">VS</div>
+        ${_buildComparePlayerHeader(p2)}
+      </div>
+    `;
+  }
+
+  // Build the comparison body (shared with the standalone /compare page).
+  body.innerHTML = _compareBodyHTML(p1, p2, { nav: true });
+
+  document.getElementById('compareBackBtn')?.addEventListener('click', () => {
+    closePlayerModal();
+    setTimeout(() => openPlayerModal(p1.player_id, p1.name), 220);
+  });
+  document.getElementById('compareP2ProfileBtn')?.addEventListener('click', () => {
+    closePlayerModal();
+    setTimeout(() => openPlayerModal(p2.player_id, p2.name), 220);
+  });
+
+  _compareWireView(p1, p2);
 }
 
 // Close the topmost open modal on Escape (player modal can sit on top of the
