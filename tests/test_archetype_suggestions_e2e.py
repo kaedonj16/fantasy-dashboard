@@ -125,10 +125,10 @@ def test_buy_suggestions_carry_fit_note_field():
         assert "fit_note" in s
 
 
-def test_monte_carlo_swaps_are_deduped_and_not_per_target(monkeypatch):
-    """The engine must not run a separate per-target 10k-sim (the UI shows the
-    per-package net_* numbers), and identical post-trade rosters must reuse one
-    simulation. Inject a fake sim state and count simulate_with_swap calls."""
+def test_monte_carlo_swaps_are_deduped(monkeypatch):
+    """simulate_with_swap is deterministic (common-random-numbers seed), so
+    identical post-trade rosters must reuse a single 10k run rather than
+    re-simulating. Inject a fake sim state and count the calls."""
     import time as _t
     import data_building.simulate_playoff_odds as sim
 
@@ -162,16 +162,14 @@ def test_monte_carlo_swaps_are_deduped_and_not_per_target(monkeypatch):
     sugg = out["suggestions"]
     assert sugg, "expected consolidate suggestions with the injected sim state"
 
-    # Every simulated roster is unique (memoized) - no key appears twice.
+    # Memoization: every simulated roster is unique - no key appears twice.
     assert len(calls["pids"]) == len(set(calls["pids"])), "swap results were not memoized"
 
-    # The number of sims equals the number of DISTINCT post-trade rosters implied
-    # by the surfaced packages - i.e. exactly one per unique lineup, with no extra
-    # per-target simulation.
-    distinct_rosters = set()
+    # Each surfaced package's exact post-trade roster (drop the sent players, add
+    # the target) must have been simulated - that is the accurate net_* number.
+    simulated = set(calls["pids"])
     for s in sugg:
         sent = {str(a.get("player_id")) for a in s["suggested_send"]
                 if a.get("player_id") and not a.get("is_pick")}
         roster = frozenset([p for p in viewer_pids if p not in sent] + [str(s["player_id"])])
-        distinct_rosters.add(roster)
-    assert len(calls["pids"]) == len(distinct_rosters)
+        assert roster in simulated

@@ -1876,14 +1876,36 @@ def get_archetype_suggestions(
         pos = t["position"]
         tp  = _trend_pct(pid, t["value"], old_vals, values_by_id)
 
-        # Target-add impact (analytical). The accurate, simulation-based numbers
-        # are computed per package below as net_* (drop the exact sent players,
-        # add the target), and the UI always prefers those. Running a separate
-        # 10k-sim here just to fill the non-net fields - which are only a display
-        # fallback for the never-hit "no package" case - doubled the simulation
-        # load per target for no visible gain, so keep the cheap formula.
+        # Per-target "impact" (win % / playoff odds if acquired) shown in the
+        # Impact table: build the hypothetical roster (add target, drop the
+        # weakest same-position player) and simulate it. This is the accurate
+        # number; the crude analytical _wp_delta is only a fallback when no sim
+        # state exists. Routed through _cached_swap so identical rosters reuse a
+        # single 10k run.
+        same_pos_pids = [
+            p for p in viewer_players
+            if str(values_by_id.get(p, {}).get("position") or "").upper() == pos
+        ]
+        if same_pos_pids:
+            if ppg_map and roster_positions:
+                drop_pid = min(same_pos_pids,
+                               key=lambda p: (ppg_map.get(str(p)) or {}).get("ppg", 0))
+            else:
+                drop_pid = min(same_pos_pids,
+                               key=lambda p: _f(values_by_id.get(p, {}).get("value")))
+            new_pids = [p for p in viewer_players if p != drop_pid] + [pid]
+        else:
+            new_pids = viewer_players + [pid]
+
         wpd = t.get("win_prob_delta", 0.0)
         pod = _playoff_odds(new_wp_base + wpd, num_weeks, num_teams, playoff_spots) - current_po
+        if sim_state is not None and _vid_int is not None:
+            try:
+                new_po_pct, new_avg = _cached_swap(new_pids)
+                pod = (new_po_pct - current_playoff_pct) / 100.0
+                wpd = _win_prob(new_avg, league_avg) - current_wp
+            except Exception:
+                logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
         why = _build_why(t, archetype, tp, wpd)
 
