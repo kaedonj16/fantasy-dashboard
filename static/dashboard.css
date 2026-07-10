@@ -13485,31 +13485,45 @@ img, svg, canvas {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* Sleeper dynasty ADP line under the hero value cards. */
-.pm-adp-row {
-  display: flex;
-  align-items: center;
-  gap: 7px;
+/* Sleeper ADP matrix (dynasty/redraft x 1QB/SF) under the hero value cards. */
+.pm-adp-block {
   margin-top: 10px;
-  padding: 8px 12px;
+  padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md, 12px);
   background: var(--row);
-  font-size: 12.5px;
 }
-.pm-adp-row i { font-size: 11px; color: var(--text-subtle); }
-.pm-adp-label { color: var(--text-muted); font-weight: 600; }
-.pm-adp-sep { color: var(--text-subtle); }
-.pm-adp-val { color: var(--text); font-weight: 800; font-variant-numeric: tabular-nums; }
-.pm-adp-mode {
-  margin-left: auto;
-  font-size: 10px;
+.pm-adp-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
   font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
   color: var(--text-muted);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 1px 8px;
+  margin-bottom: 8px;
 }
+.pm-adp-head i { font-size: 10px; color: var(--text-subtle); }
+.pm-adp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.pm-adp-table th,
+.pm-adp-table td { padding: 5px 8px; text-align: center; }
+.pm-adp-table thead th {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--text-subtle);
+}
+.pm-adp-table tbody th {
+  text-align: left; font-size: 11px; font-weight: 700; color: var(--text-muted);
+}
+.pm-adp-table td {
+  color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.pm-adp-table tbody tr + tr th,
+.pm-adp-table tbody tr + tr td { border-top: 1px solid var(--border); }
+/* The column matching the viewer's league type. */
+.pm-adp-table .pm-adp-cur { background: var(--accent-soft, rgba(56,189,248,.12)); }
+.pm-adp-table thead th.pm-adp-cur { color: var(--accent, #3b82f6); }
+.pm-adp-na { color: var(--text-subtle); font-weight: 600; }
 .pm-section-divider {
   border: none;
   border-top: 1px solid var(--border);

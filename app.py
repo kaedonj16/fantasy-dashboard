@@ -20566,20 +20566,34 @@ def api_player_details(player_id: str):
 
         _modal_age = age_from_bday(player_meta.get("bDay")) or player_value.get("age") or player_meta.get("age")
 
-        # Sleeper dynasty ADP - the same feed the player rankings page uses
-        # (Sleeper's projections API, cached daily by fetch_sleeper_adp, so this
-        # is a cheap dict lookup on modal open). Pick the ADP flavor matching the
-        # viewer's league type; None on any failure so the modal degrades cleanly.
-        _adp_val = None
+        # Sleeper ADP - the same feed the player rankings page uses (Sleeper's
+        # projections API, cached daily by fetch_sleeper_adp, so this is a cheap
+        # dict lookup on modal open). Surface all four flavors (dynasty/redraft x
+        # 1QB/SF); each is None when Sleeper has no value for it, and the whole
+        # object is None when none are present, so the modal degrades cleanly.
+        _adp = None
         try:
             from dashboard_services.adp_service import fetch_sleeper_adp
             _adp_row = (fetch_sleeper_adp(int(season)) or {}).get(str(player_id)) or {}
-            if _modal_lt == "sf":
-                _adp_val = _adp_row.get("adp_dynasty_2qb") or _adp_row.get("adp_dynasty_ppr")
-            else:
-                _adp_val = (_adp_row.get("adp_dynasty_ppr")
-                            or _adp_row.get("adp_dynasty_half_ppr")
-                            or _adp_row.get("adp_dynasty_std"))
+
+            def _adp_pick(*keys):
+                for _k in keys:
+                    _v = _adp_row.get(_k)
+                    if _v is not None:
+                        try:
+                            return round(float(_v), 1)
+                        except (TypeError, ValueError):
+                            pass
+                return None
+
+            _adp_all = {
+                "dynasty_1qb": _adp_pick("adp_dynasty_ppr", "adp_dynasty_half_ppr", "adp_dynasty_std"),
+                "dynasty_sf":  _adp_pick("adp_dynasty_2qb"),
+                "redraft_1qb": _adp_pick("adp_ppr", "adp_half_ppr", "adp_std"),
+                "redraft_sf":  _adp_pick("adp_2qb"),
+            }
+            if any(v is not None for v in _adp_all.values()):
+                _adp = _adp_all
         except Exception:
             logger.debug("[api_player_details] Sleeper ADP lookup skipped", exc_info=True)
 
@@ -20619,7 +20633,7 @@ def api_player_details(player_id: str):
                 "total_pts": _total_pts,
                 "total_pts_rank": _total_pts_rank,
                 "total_pts_ovr_rank": _total_pts_ovr_rank,
-                "adp": round(float(_adp_val), 1) if _adp_val else None,
+                "adp": _adp,
             },
             "value_history": value_history,
             "game_logs_by_year": game_logs_by_year,

@@ -8749,16 +8749,27 @@ function openPlayerModal(playerId, playerName, opts) {
         ? '<span class="pm-tep-pill" title="TE premium (+10%)">TE+</span>'
         : '';
 
-      // Sleeper dynasty ADP (same feed as the rankings page), for this league type.
+      // Sleeper ADP (same feed as the rankings page): dynasty + redraft, 1QB + SF.
+      // Highlight the column matching the viewer's league type.
       const _adp = data.stats?.adp;
-      const _adpLtLabel = (typeof _leagueType !== 'undefined' && _leagueType === 'sf') ? 'Superflex' : '1QB';
-      const adpRow = (_adp != null) ? `
-        <div class="pm-adp-row">
-          <i class="fa-solid fa-list-ol" aria-hidden="true"></i>
-          <span class="pm-adp-label">Sleeper Dynasty ADP</span>
-          <span class="pm-adp-sep">·</span>
-          <span class="pm-adp-val">${_adp}</span>
-          <span class="pm-adp-mode">${_adpLtLabel}</span>
+      const _adpIsSf = (typeof _leagueType !== 'undefined' && _leagueType === 'sf');
+      const _adpCell = v => (v != null ? v : '<span class="pm-adp-na">–</span>');
+      const adpRow = (_adp && (_adp.dynasty_1qb != null || _adp.dynasty_sf != null || _adp.redraft_1qb != null || _adp.redraft_sf != null)) ? `
+        <div class="pm-adp-block">
+          <div class="pm-adp-head"><i class="fa-solid fa-list-ol" aria-hidden="true"></i> Sleeper ADP</div>
+          <table class="pm-adp-table">
+            <thead><tr><th></th>
+              <th class="${_adpIsSf ? '' : 'pm-adp-cur'}">1QB</th>
+              <th class="${_adpIsSf ? 'pm-adp-cur' : ''}">SF</th></tr></thead>
+            <tbody>
+              <tr><th>Dynasty</th>
+                <td class="${_adpIsSf ? '' : 'pm-adp-cur'}">${_adpCell(_adp.dynasty_1qb)}</td>
+                <td class="${_adpIsSf ? 'pm-adp-cur' : ''}">${_adpCell(_adp.dynasty_sf)}</td></tr>
+              <tr><th>Redraft</th>
+                <td class="${_adpIsSf ? '' : 'pm-adp-cur'}">${_adpCell(_adp.redraft_1qb)}</td>
+                <td class="${_adpIsSf ? 'pm-adp-cur' : ''}">${_adpCell(_adp.redraft_sf)}</td></tr>
+            </tbody>
+          </table>
         </div>` : '';
 
       const _heroCardCount = 2 + (ppgCard ? 1 : 0) + (totalCard ? 1 : 0);
