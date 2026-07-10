@@ -12447,18 +12447,33 @@ function initComparePage() {
     wrap.hidden = false;
   }
 
+  function _tradeHref(id1, id2) {
+    return '/trade?a=' + encodeURIComponent(id1) + '&b=' + encodeURIComponent(id2);
+  }
+
   function _openFor(d1, d2) {
     if (emptyEl) emptyEl.hidden = true;
     if (actionsEl) actionsEl.hidden = false;
-    if (typeof renderCompareInline === 'function') renderCompareInline(d1, d2, resultEl);
     // Point the trade-calculator link at these two players (player 1 -> side A,
-    // player 2 -> side B), using the calculator's shareable ?a=&b= id params.
+    // player 2 -> side B) via the calculator's shareable ?a=&b= id params. Set
+    // this BEFORE rendering so a render error can't leave the button pointing at
+    // an empty /trade.
     const tradeLink = document.getElementById('cmpTradeLink');
-    if (tradeLink && d1 && d2) {
-      tradeLink.href = '/trade?a=' + encodeURIComponent(d1.player_id) + '&b=' + encodeURIComponent(d2.player_id);
-    }
+    if (tradeLink && d1 && d2) tradeLink.href = _tradeHref(d1.player_id, d2.player_id);
+    if (typeof renderCompareInline === 'function') renderCompareInline(d1, d2, resultEl);
     _recordRecent(chosen[1] || { player_id: d1.player_id, name: d1.name }, chosen[2] || { player_id: d2.player_id, name: d2.name });
     _renderRecent();
+  }
+
+  // Belt-and-suspenders: rebuild the trade-calc link from the current selection
+  // at click time, so it loads the two players even if _openFor's href update
+  // was skipped (e.g. a render error) or is stale after a swap.
+  const _tradeLinkEl = document.getElementById('cmpTradeLink');
+  if (_tradeLinkEl && !_tradeLinkEl._cmpBound) {
+    _tradeLinkEl._cmpBound = true;
+    _tradeLinkEl.addEventListener('click', function () {
+      if (chosen[1] && chosen[2]) this.href = _tradeHref(chosen[1].player_id, chosen[2].player_id);
+    });
   }
 
   function _maybeCompare() {
