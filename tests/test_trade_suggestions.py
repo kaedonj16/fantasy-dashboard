@@ -87,7 +87,46 @@ def test_fair_mid_tier_consolidation_is_surfaced():
         assert eff >= target  # never an effective underpay for the holder
 
 
+def test_partner_need_biases_package_choice():
+    """Within the value band, the engine should prefer sending a position the
+    partner is thin at over an equally-valued one they're stacked at."""
+    ladder = _ladder()
+    target = 500.0
+    # Two interchangeable-value single sends: a WR and an RB, both in band.
+    sends = [
+        {"player_id": "wr1", "name": "WR One", "position": "WR", "value": 500.0},
+        {"player_id": "rb1", "name": "RB One", "position": "RB", "value": 500.0},
+    ]
+    # Partner is thin at RB, stacked at WR -> expect the RB to be offered.
+    pkgs = _select_packages(sends, target, "contending", max_pkgs=1,
+                            sorted_vals=ladder, league_size=10,
+                            need_positions={"RB"}, stacked_positions={"WR"})
+    assert pkgs and pkgs[0][0]["position"] == "RB"
+    # Flip the partner's need -> the WR should now be offered instead.
+    pkgs2 = _select_packages(sends, target, "contending", max_pkgs=1,
+                             sorted_vals=ladder, league_size=10,
+                             need_positions={"WR"}, stacked_positions={"RB"})
+    assert pkgs2 and pkgs2[0][0]["position"] == "WR"
+
+
 def test_acceptance_uses_effective_value():
     # Fair effective value -> mid acceptance; clear effective overpay -> high.
     assert _estimate_acceptance(700, 700, is_preferred=False) == 50
-    assert _estimate_acceptance(800, 700, is_preferred=False) == 72
+    assert _estimate_acceptance(800, 700, is_preferred=False) >= 70
+
+
+def test_acceptance_curve_is_continuous():
+    # Distinct ratios must yield distinct scores (no four-bucket collapse), and
+    # the curve is monotonic in the send/receive ratio.
+    a = _estimate_acceptance(690, 700, is_preferred=False)
+    b = _estimate_acceptance(700, 700, is_preferred=False)
+    c = _estimate_acceptance(710, 700, is_preferred=False)
+    assert a < b < c
+    assert b == 50  # parity sits at the midpoint
+
+
+def test_acceptance_fit_shifts_score():
+    # A positive positional-fit nudge raises acceptance; a negative one lowers it.
+    base = _estimate_acceptance(700, 700, is_preferred=False, fit=0)
+    assert _estimate_acceptance(700, 700, is_preferred=False, fit=10) > base
+    assert _estimate_acceptance(700, 700, is_preferred=False, fit=-10) < base
