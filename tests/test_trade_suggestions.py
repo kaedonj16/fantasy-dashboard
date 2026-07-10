@@ -13,10 +13,26 @@ import math
 
 from dashboard_services.archetype_engine import (
     _acquire_band,
+    _availability,
     _depth_penalty,
     _estimate_acceptance,
     _select_packages,
 )
+
+
+def test_availability_keeps_studs_and_frees_surplus_depth():
+    """A rival's best player at a position is a keeper even when they're stacked
+    there (the reported bug: a top-tier RB/WR shouldn't be treated as available
+    just because its owner has a surplus). Only the depth behind the stud is
+    freed up by that surplus."""
+    # Depth rank 1 = their best at the spot -> held, no matter the position count.
+    assert _availability(1, 4) == 0.75
+    assert _availability(1, 1) == 0.75
+    # Buried depth on a stacked roster is the most movable.
+    assert _availability(4, 4) == 1.25
+    assert _availability(3, 3) == 1.10
+    # A stud is deprioritised relative to the depth its surplus actually frees.
+    assert _availability(1, 4) < _availability(3, 4)
 
 
 def _ladder(n=300):

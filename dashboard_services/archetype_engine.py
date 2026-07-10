@@ -321,6 +321,25 @@ def _fit_note(pkg: List[Dict], need: Optional[set], target_pos: str,
     return (text[:1].upper() + text[1:]) if text else ""
 
 
+def _availability(depth_rank: int, pos_count: int) -> float:
+    """How likely a rival is to part with a player, as a ranking multiplier.
+
+    Teams keep their best at a position and move the depth behind it, so a
+    surplus frees up a rival's RB3/RB4 - not their RB1. Key off the player's
+    depth rank on their OWN roster (1 = their best at that position), so a stud
+    stays a keeper even on a stacked team.
+    """
+    if depth_rank <= 1:
+        return 0.75          # their best at the spot - a keeper regardless of depth
+    if pos_count >= 4:
+        return 1.25          # buried depth on a stacked roster - very movable
+    if pos_count >= 3:
+        return 1.10
+    if pos_count <= 1:
+        return 0.85          # their only body there
+    return 1.0
+
+
 def _suggestion_rank(r: Dict[str, Any]) -> float:
     """Composite ordering key for a finished suggestion: weight roster impact
     (net playoff-odds delta) most, then how likely the partner is to accept, so
@@ -1755,6 +1774,17 @@ def get_archetype_suggestions(
     scored: List[Tuple[float, Dict]] = []
     peak_pos = PEAK_AGE
 
+    # Owner positional depth rank: 1 = the owner's BEST player at that position.
+    # Teams keep their stud at a spot and move the depth behind it, so a surplus
+    # makes a rival's RB3/RB4 available - not their RB1.
+    owner_depth_rank: Dict[str, int] = {}
+    _by_owner_pos: Dict[tuple, list] = {}
+    for _t in all_targets:
+        _by_owner_pos.setdefault((_t["owner_roster_id"], _t["position"]), []).append(_t)
+    for _lst in _by_owner_pos.values():
+        for _i, _tt in enumerate(sorted(_lst, key=lambda x: -_f(x.get("value"))), start=1):
+            owner_depth_rank[_tt["player_id"]] = _i
+
     for t in all_targets:
         pid  = t["player_id"]
         val  = t["value"]
@@ -1807,23 +1837,37 @@ def get_archetype_suggestions(
         # strong target. This is also the fallback the Impact table shows when no
         # sim state is available.
         wpd = _win_prob(_lval(_impact_roster(pid, pos)), league_avg) - current_wp
-
-        # A partner is likelier to move a player from a position they're deep at
-        # and likelier to hold their only starter, so tilt the target ranking by
-        # the partner's surplus at the target's position (0.88x thin → 1.12x deep).
-        _pcounts = owner_meta.get(str(t["owner_roster_id"]), {}).get("pos_counts") or {}
-        _cnt = _pcounts.get(pos, 0)
-        surplus_mult = 0.88 if _cnt <= 1 else (1.12 if _cnt >= 4 else 1.0)
-
         t["win_prob_delta"] = wpd
-        scored.append(((score + wpd * 0.25) * surplus_mult, t))
 
-    # ── Rank: one player per (team, position), best overall ───────────────────
-    # Allows e.g. a team's stud RB *and* stud WR to both surface, but not two
-    # RBs from the same team. Falls back to player-only dedup if results are thin.
+        # Availability: teams keep their best at a position and move the depth
+        # behind it, so what a surplus frees up is a rival's RB3/RB4, not their
+        # RB1. Key off the player's depth rank on their OWN roster, not just the
+        # position count - a stud stays a keeper even on a stacked team.
+        _pcounts = owner_meta.get(str(t["owner_roster_id"]), {}).get("pos_counts") or {}
+        avail = _availability(owner_depth_rank.get(pid, 1), _pcounts.get(pos, 0))
+
+        if archetype == "consolidate":
+            # Gear toward the USER's team: how much this target upgrades their
+            # lineup (win-prob delta) weighs about as much as the player's raw
+            # value/production, so the list isn't just the top-5 overall names -
+            # it favors real upgrades at the user's weaker spots. fit is 0..1.
+            fit = min(1.0, max(0.0, wpd) / 0.06)
+            final = (0.55 * score + 0.45 * fit) * avail
+        else:
+            final = (score + wpd * 0.25) * avail
+
+        scored.append((final, t))
+
+    # ── Rank: surface a varied slate, not just the top overall names ──────────
+    # One player per (team, position), and at most a few per position, so the
+    # list spreads across positions/tiers instead of being five RB studs. Falls
+    # back to filling remaining slots if the caps leave it thin.
+    _MAX_TARGETS = 8
+    _MAX_PER_POS = 3
     scored.sort(key=lambda x: x[0], reverse=True)
     seen_owner_pos: set = set()
     seen_players:   set = set()
+    pos_in_top:     Dict[str, int] = {}
     top: List[Dict] = []
     for _, t in scored:
         if t["player_id"] in seen_players:
@@ -1831,16 +1875,19 @@ def get_archetype_suggestions(
         key = (t["owner_roster_id"], t["position"])
         if key in seen_owner_pos:
             continue
+        if pos_in_top.get(t["position"], 0) >= _MAX_PER_POS:
+            continue
         seen_owner_pos.add(key)
         seen_players.add(t["player_id"])
+        pos_in_top[t["position"]] = pos_in_top.get(t["position"], 0) + 1
         top.append(t)
-        if len(top) >= 5:
+        if len(top) >= _MAX_TARGETS:
             break
 
-    # Relax (team, position) cap if not enough results
-    if len(top) < 3:
+    # Relax the caps if the slate is thin.
+    if len(top) < 4:
         for _, t in scored:
-            if t["player_id"] not in seen_players and len(top) < 5:
+            if t["player_id"] not in seen_players and len(top) < _MAX_TARGETS:
                 seen_players.add(t["player_id"])
                 top.append(t)
 
