@@ -20232,33 +20232,54 @@ _COMPARE_MAX_TIERS = 5
 
 
 def _compute_compare_baselines():
-    """Positional-tier average "players" for the compare page: WR1 = the mean of
-    the top 12 WRs by dynasty value, WR2 = ranks 13-24, and so on for each
-    position. Each entry is shaped like /api/player-details (id / name / position
-    / stats) so the compare UI can treat a tier average as an opponent. PPG /
-    total points use half-PPR from the most recent season with usage data."""
+    """Positional-tier average "players" for the compare page, ranked by FANTASY
+    production: WR1 = the mean of the top 12 WRs by total fantasy points (the
+    season positional finish), WR2 = ranks 13-24, and so on for each position.
+    Each entry is shaped like /api/player-details (id / name / position / stats)
+    so the compare UI can treat a tier average as an opponent. Points use half-PPR
+    from the most recent season with usage data; dynasty value / SF value are
+    averaged across each tier's players from the model value table."""
     global _COMPARE_BASELINES_CACHE, _COMPARE_BASELINES_TS
     now = time.time()
     if _COMPARE_BASELINES_CACHE is not None and now - _COMPARE_BASELINES_TS < _COMPARE_BASELINES_TTL:
         return _COMPARE_BASELINES_CACHE
 
-    table = get_model_value_table_cached() or []
+    # Dynasty / SF value per player id (an averaged stat per tier, not the ranker).
+    val_by_id = {}
+    for p in (get_model_value_table_cached() or []):
+        pid = str(p.get("id") or "")
+        if pid:
+            val_by_id[pid] = p
 
-    # PPG / total per player id from the most recent season with usage data.
-    ppg_by_id, total_by_id, ppg_season = {}, {}, None
+    # Fantasy points per player from the most recent season with usage data.
+    # players_by_pos: position -> list of {id, ppg, total} with >= 4 games played.
+    players_by_pos, ppg_season = {}, None
     try:
         _season = int((get_nfl_state() or {}).get("season") or 0)
     except Exception:
         _season = 0
-    for _s in [_season, _season - 1]:
-        if _s <= 0:
-            continue
+    # Candidate seasons newest-first: the live season when known, then recent
+    # calendar years as a fallback so this still resolves if nfl-state is
+    # unavailable. First season with a usage file wins.
+    _cands, _seen = [], set()
+    import datetime as _dt
+    for _c in ([_season, _season - 1] if _season > 0 else []) + \
+              [_dt.datetime.now().year - _o for _o in range(0, 4)]:
+        if _c > 0 and _c not in _seen:
+            _seen.add(_c)
+            _cands.append(_c)
+    for _s in _cands:
         _ud = _load_usage_rows_cached(_s)
         if not _ud:
             continue
+        _acc = {}
         for _p in _ud:
             _u = _p.get("usage") or {}
-            if int(_u.get("games") or 0) < 4:
+            _g = int(_u.get("games") or 0)
+            if _g < 4:
+                continue
+            _pos = str(_p.get("position") or "").upper()
+            if _pos not in ("QB", "RB", "WR", "TE"):
                 continue
             _pp = _u.get("half_ppr_ppg")
             if _pp is None:
@@ -20270,9 +20291,10 @@ def _compute_compare_baselines():
                 _pp = round(float(_pp), 1)
             except (TypeError, ValueError):
                 continue
-            ppg_by_id[_pid] = _pp
-            total_by_id[_pid] = round(_pp * int(_u.get("games") or 0), 1)
-        if ppg_by_id:
+            _acc.setdefault(_pos, []).append(
+                {"id": _pid, "ppg": _pp, "total": round(_pp * _g, 1)})
+        if _acc:
+            players_by_pos = _acc
             ppg_season = _s
             break
 
@@ -20280,19 +20302,23 @@ def _compute_compare_baselines():
         vals = [v for v in vals if v is not None]
         return round(sum(vals) / len(vals), 1) if vals else None
 
+    def _val(pid, key):
+        v = (val_by_id.get(pid) or {}).get(key)
+        try:
+            return float(v) if v else None
+        except (TypeError, ValueError):
+            return None
+
     out = []
     for pos in ("QB", "RB", "WR", "TE"):
-        players = sorted(
-            [p for p in table
-             if str(p.get("position") or "").upper() == pos
-             and float(p.get("value") or 0) > 0],
-            key=lambda p: float(p.get("value") or 0), reverse=True,
-        )
+        # Rank the position by total fantasy points - the season finish that
+        # "top 12 WRs" actually means.
+        ranked = sorted(players_by_pos.get(pos, []), key=lambda r: r["total"], reverse=True)
         for t in range(1, _COMPARE_MAX_TIERS + 1):
-            chunk = players[(t - 1) * _COMPARE_TIER_SIZE : t * _COMPARE_TIER_SIZE]
+            chunk = ranked[(t - 1) * _COMPARE_TIER_SIZE : t * _COMPARE_TIER_SIZE]
             if len(chunk) < 6:   # don't emit a tiny trailing tier
                 break
-            ids = [str(p.get("id") or "") for p in chunk]
+            ids = [r["id"] for r in chunk]
             lo = (t - 1) * _COMPARE_TIER_SIZE + 1
             hi = lo + len(chunk) - 1
             out.append({
@@ -20304,14 +20330,14 @@ def _compute_compare_baselines():
                 "tier_range": f"{pos}{lo}-{pos}{hi}",
                 "espnHeadshot": "",
                 "stats": {
-                    "value": _mean([float(p.get("value") or 0) for p in chunk]),
-                    "sf_value": _mean([(float(p.get("sf_value")) if p.get("sf_value") else None) for p in chunk]),
+                    "value": _mean([_val(i, "value") for i in ids]),
+                    "sf_value": _mean([_val(i, "sf_value") for i in ids]),
                     "pos_rank": None, "pos_rank_label": f"{pos}{t}",
                     "sf_pos_rank": None, "sf_pos_rank_label": f"{pos}{t}",
                     "value_ovr_rank": None, "sf_value_ovr_rank": None,
-                    "ppg": _mean([ppg_by_id.get(i) for i in ids]),
+                    "ppg": _mean([r["ppg"] for r in chunk]),
                     "ppg_rank": None, "ppg_ovr_rank": None, "ppg_season": ppg_season,
-                    "total_pts": _mean([total_by_id.get(i) for i in ids]),
+                    "total_pts": _mean([r["total"] for r in chunk]),
                     "total_pts_rank": None, "total_pts_ovr_rank": None,
                 },
                 "value_history": [],
