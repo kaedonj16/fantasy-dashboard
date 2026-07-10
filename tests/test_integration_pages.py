@@ -126,6 +126,59 @@ def test_push_routes_registered(offline_client):
     assert offline_client.post("/api/push/broadcast", json={}).status_code == 403
 
 
+def test_push_broadcast_prunes_dead_410_subscriptions(monkeypatch):
+    """A 404/410 push means the subscription is permanently gone and must be
+    deleted so it stops being retried forever. requests.Response is falsy for
+    non-2xx (its __bool__ returns .ok), so `if exc.response` silently skipped
+    real 410s and they were never pruned. This guards the fixed detection."""
+    import contextlib
+    pywebpush = pytest.importorskip("pywebpush")  # excluded from the dev venv
+    import requests
+    import dashboard_services.db as db
+    import routes.push_bp as pb
+
+    monkeypatch.setattr(pb, "_get_vapid_keys", lambda: {"private": "x", "public": "y"})
+    monkeypatch.setattr(pb, "_init_push_table", lambda: None)
+
+    import utils.push_notifications as pn
+    monkeypatch.setattr(pn, "_make_vapid", lambda k: object())
+
+    # webpush() always fails with a 410 whose Response is falsy (like the real bug).
+    resp = requests.models.Response()
+    resp.status_code = 410
+    assert not resp  # confirms the truthiness footgun this test exists for
+
+    def _boom(**kw):
+        raise pywebpush.WebPushException("Push failed: 410 Gone", response=resp)
+
+    monkeypatch.setattr(pywebpush, "webpush", _boom)
+
+    deleted = []
+
+    class _Cur:
+        def fetchall(self):
+            return [{"endpoint": "https://fcm/dead", "p256dh": "k", "auth": "a"}]
+
+    class _Conn:
+        def execute(self, sql, params=None):
+            if "DELETE" in sql:
+                deleted.append(params)
+            return _Cur()
+        def commit(self):
+            pass
+
+    @contextlib.contextmanager
+    def _fake_conn(*a, **k):
+        yield _Conn()
+
+    monkeypatch.setattr(db, "get_conn", _fake_conn)
+
+    body, status = pb._push_broadcast("Title", "Body")
+    assert status == 200
+    assert body["sent"] == 0 and body["failed"] == 1
+    assert deleted and "https://fcm/dead" in str(deleted[-1])
+
+
 def test_health_endpoints_work_with_admin_secret(offline_client, monkeypatch):
     # Proves the routes extracted into routes/health_bp.py are registered and
     # functional through the shared limiter.
