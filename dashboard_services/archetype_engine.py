@@ -14,6 +14,9 @@ import time as _time
 from itertools import combinations
 from typing import Any, Dict, List, Optional, Tuple
 
+from utils.tier_stack import asset_tier
+from utils.tier_thresholds import FALLBACK_THRESHOLDS, compute_tier_thresholds
+
 log = logging.getLogger(__name__)
 
 # ── Sim-state cache (keyed by platform:league_id:season, 5-min TTL) ──────────
@@ -33,6 +36,12 @@ SLOTS_SF:  Dict[str, int] = {"QB": 2, "RB": 2, "WR": 2, "TE": 1, "FLEX": 1}
 # Position weight for target scoring (higher = better consolidation target)
 SCARCITY_1QB = {"QB": 0.80, "RB": 1.00, "WR": 1.00, "TE": 0.85}
 SCARCITY_SF  = {"QB": 1.00, "RB": 1.00, "WR": 1.00, "TE": 0.85}
+
+# Consolidate is trading *up* comparable assets, not dumping scrubs: the
+# headliner of a send package must sit within this many tiers of the target.
+# Two mid-first WRs (T3) for a stud RB (T1) is a real consolidation; a wall of
+# T5 depth for that same stud is not, no matter how the raw values add up.
+_CONSOLIDATE_MAX_TIER_DROP = 2
 
 COMPLEMENT = {
     "contending":  "rebuilding",
@@ -626,6 +635,7 @@ def _select_packages(
     sends: List[Dict], target_val: float, archetype: str, max_pkgs: int = 2,
     sorted_vals: Optional[List[float]] = None, league_size: int = 10,
     need_positions: Optional[set] = None, stacked_positions: Optional[set] = None,
+    tier_thresholds: Optional[List[float]] = None,
 ) -> List[List[Dict]]:
     """Return up to max_pkgs distinct send packages whose *depth-adjusted* value
     lands in the acquire band for this target (see _acquire_band).
@@ -721,12 +731,26 @@ def _select_packages(
         # Priority: 2 players → 3 players → 2 players + pick
         results_c: List[List[Dict]] = []
 
+        # Tier guard: a real consolidation trades comparable-quality assets up a
+        # tier or two, not a pile of low-tier depth for a stud. Require the
+        # package's headliner (its best piece) to sit within a bounded number of
+        # tiers of the target - "don't go down too many tiers" to reach it.
+        _thr = tier_thresholds or FALLBACK_THRESHOLDS
+        target_tier = asset_tier(target_val, _thr)
+
+        def _tier_ok(*assets) -> bool:
+            tiers = [asset_tier(a.get("value", 0), _thr) for a in assets
+                     if not (a.get("is_pick") or a.get("position") == "PICK")]
+            if not tiers:
+                return True
+            return (min(tiers) - target_tier) <= _CONSOLIDATE_MAX_TIER_DROP
+
         # 1. Best 2-player package
         best2, best2_d = None, float("inf")
         for a, b in combinations(player_pool, 2):
             if a["position"] == "QB" and b["position"] == "QB":
                 continue
-            if _in_band(a, b) and _dist(a, b) < best2_d:
+            if _in_band(a, b) and _tier_ok(a, b) and _dist(a, b) < best2_d:
                 best2_d, best2 = _dist(a, b), [a, b]
         if best2:
             results_c.append(best2)
@@ -739,7 +763,8 @@ def _select_packages(
                 if sum(1 for x in (a, b, c) if x["position"] == "QB") > 1:
                     continue
                 pkg_pids = {a["player_id"], b["player_id"], c["player_id"]}
-                if _in_band(a, b, c) and _dist(a, b, c) < best3_d and not pkg_pids.issubset(used_pids):
+                if (_in_band(a, b, c) and _tier_ok(a, b, c)
+                        and _dist(a, b, c) < best3_d and not pkg_pids.issubset(used_pids)):
                     best3_d, best3 = _dist(a, b, c), [a, b, c]
             if best3:
                 results_c.append(best3)
@@ -751,18 +776,19 @@ def _select_packages(
                 for a, b in combinations(player_pool[:8], 2):
                     if a["position"] == "QB" and b["position"] == "QB":
                         continue
-                    if _in_band(a, b, pk) and _dist(a, b, pk) < best_pp_d:
+                    if _in_band(a, b, pk) and _tier_ok(a, b, pk) and _dist(a, b, pk) < best_pp_d:
                         best_pp_d, best_pp = _dist(a, b, pk), [a, b, pk]
             if best_pp:
                 results_c.append(best_pp)
 
-        # Fallback: widen window, still require 2+ assets, closest on effective
+        # Fallback: widen window, still require 2+ assets and a tier-comparable
+        # headliner, closest on effective value.
         if not results_c:
             fallback2, fallback2_d = None, float("inf")
             for a, b in combinations(player_pool, 2):
                 if a["position"] == "QB" and b["position"] == "QB":
                     continue
-                if _dist(a, b) < fallback2_d:
+                if _tier_ok(a, b) and _dist(a, b) < fallback2_d:
                     fallback2_d, fallback2 = _dist(a, b), [a, b]
             if fallback2:
                 results_c.append(fallback2)
@@ -1798,12 +1824,30 @@ def get_archetype_suggestions(
         reverse=True,
     )
 
+    # Value-drop tier boundaries for this league, so consolidate can reason in
+    # tiers ("don't trade down too many tiers to reach a stud") rather than raw
+    # value alone. values_by_id["value"] is already league-type-adjusted, so let
+    # the thresholder key off "value" (its default). Falls back to the static
+    # thresholds on a thin value table.
+    try:
+        tier_thresholds = compute_tier_thresholds(
+            list(values_by_id.values())) or FALLBACK_THRESHOLDS
+    except Exception:
+        tier_thresholds = FALLBACK_THRESHOLDS
+
     def _can_afford_stud(target_val: float) -> bool:
         """True when the viewer holds enough top-tier value to assemble a package
         whose depth-adjusted total clears the consolidate band for this target -
-        i.e. a loaded team really can consolidate into a #1 like Bijan/Gibbs."""
+        i.e. a loaded team really can consolidate into a #1 like Bijan/Gibbs. The
+        viewer's headliner must also be tier-comparable to the stud, so a team
+        can't reach a #1 by stacking depth that sits too many tiers below it."""
         lo = target_val * _acquire_band(target_val, "consolidate")[0]
         sv = _send_vals
+        if not sv:
+            return False
+        # Headliner has to be within the consolidate tier band of the target.
+        if asset_tier(sv[0], tier_thresholds) - asset_tier(target_val, tier_thresholds) > _CONSOLIDATE_MAX_TIER_DROP:
+            return False
         if len(sv) >= 2 and (sv[0] + sv[1] - _depth_penalty(1, sorted_vals, num_teams)) >= lo:
             return True
         if len(sv) >= 3 and (sv[0] + sv[1] + sv[2] - _depth_penalty(2, sorted_vals, num_teams)) >= lo:
@@ -1999,6 +2043,7 @@ def get_archetype_suggestions(
             send_candidates, t["value"], archetype, max_pkgs=3,
             sorted_vals=sorted_vals, league_size=num_teams,
             need_positions=_p_need, stacked_positions=_p_stacked,
+            tier_thresholds=tier_thresholds,
         )
         if not pkgs:
             pkgs = [[]]

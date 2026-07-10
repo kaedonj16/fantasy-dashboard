@@ -125,6 +125,32 @@ def test_partner_need_biases_package_choice():
     assert pkgs2 and pkgs2[0][0]["position"] == "WR"
 
 
+def test_consolidate_wont_trade_down_too_many_tiers():
+    """Consolidation trades comparable-quality assets up a tier or two - it is not
+    a way to launder a pile of low-tier depth into a stud. Even when several
+    lesser pieces sum into the target's value band, a package with no
+    tier-comparable headliner must not be surfaced; a package that leads with a
+    near-tier asset should be."""
+    ladder = _ladder()
+    target = 850.0  # a T1 stud on the fallback thresholds
+    # Two T4 wings whose effective value lands squarely in the acquire band, but
+    # neither is within two tiers of a T1 - this is the "down too many tiers" case.
+    scrub = [
+        {"player_id": "a", "name": "WR A", "position": "WR", "value": 470.0},
+        {"player_id": "b", "name": "RB B", "position": "RB", "value": 470.0},
+    ]
+    assert _select_packages(scrub, target, "consolidate", max_pkgs=3,
+                            sorted_vals=ladder, league_size=10) == []
+    # A tier-comparable headliner (T2) plus a throw-in is a real consolidation.
+    comparable = [
+        {"player_id": "c", "name": "WR C", "position": "WR", "value": 700.0},
+        {"player_id": "d", "name": "RB D", "position": "RB", "value": 210.0},
+    ]
+    pkgs = _select_packages(comparable, target, "consolidate", max_pkgs=3,
+                            sorted_vals=ladder, league_size=10)
+    assert pkgs, "a package with a tier-comparable headliner should be surfaced"
+
+
 def test_acceptance_uses_effective_value():
     # Fair effective value -> mid acceptance; clear effective overpay -> high.
     assert _estimate_acceptance(700, 700, is_preferred=False) == 50
