@@ -13013,7 +13013,9 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
 
       // Yardage metrics
       'yards_per_target': 12, 'yards_per_reception': 16, 'yards_per_carry': 7,
-      'yards_per_touch': 8, 'yards_per_attempt': 10, 'avg_depth_of_target': 20,
+      // yards/touch spans RBs (~5) and WR/TE (~13-14); ceiling covers the top
+      // end so receivers don't peg the bar (was 8, which saturated every WR/TE).
+      'yards_per_touch': 14, 'yards_per_attempt': 10, 'avg_depth_of_target': 20,
       'yards_after_catch': 600, 'yards_after_catch_per_reception': 10,
 
       // NGS tracking metrics (yards)
@@ -13031,8 +13033,11 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
       // Stored as raw % values (0-20 or 0-100 range)
       'big_time_throw_rate': 15, 'pressure_to_sack_rate': 50,
 
-      // Rating / score metrics
-      'nfl_passer_rating': 130, 'target_quality_score': 20,
+      // Rating / score metrics. target_quality_score is a volume-weighted
+      // composite (targets*2 + yds/target*1.5 + rec_tds*15), so it runs in the
+      // hundreds - an elite WR season is ~450-550. The old ceiling of 20 made
+      // every qualified player peg the bar at 100%.
+      'nfl_passer_rating': 130, 'target_quality_score': 520,
       'elusive_rating': 200, 'role_score': 100,
 
       // Volume counts
