@@ -1785,6 +1785,31 @@ def get_archetype_suggestions(
         for _i, _tt in enumerate(sorted(_lst, key=lambda x: -_f(x.get("value"))), start=1):
             owner_depth_rank[_tt["player_id"]] = _i
 
+    # League value ladder (drives the depth penalty) + the viewer's best sendable
+    # assets, used to decide whether they can actually afford a rival's stud.
+    sorted_vals = sorted(
+        (v for v in (_f(x.get("value")) for x in values_by_id.values()) if v > 0),
+        reverse=True,
+    )
+    _send_vals = sorted(
+        (_f(values_by_id.get(p, {}).get("value")) for p in viewer_players
+         if str(values_by_id.get(p, {}).get("position") or "").upper() in SKILL_POS
+         and not (untouchable_ids and p in untouchable_ids)),
+        reverse=True,
+    )
+
+    def _can_afford_stud(target_val: float) -> bool:
+        """True when the viewer holds enough top-tier value to assemble a package
+        whose depth-adjusted total clears the consolidate band for this target -
+        i.e. a loaded team really can consolidate into a #1 like Bijan/Gibbs."""
+        lo = target_val * _acquire_band(target_val, "consolidate")[0]
+        sv = _send_vals
+        if len(sv) >= 2 and (sv[0] + sv[1] - _depth_penalty(1, sorted_vals, num_teams)) >= lo:
+            return True
+        if len(sv) >= 3 and (sv[0] + sv[1] + sv[2] - _depth_penalty(2, sorted_vals, num_teams)) >= lo:
+            return True
+        return False
+
     for t in all_targets:
         pid  = t["player_id"]
         val  = t["value"]
@@ -1844,7 +1869,19 @@ def get_archetype_suggestions(
         # RB1. Key off the player's depth rank on their OWN roster, not just the
         # position count - a stud stays a keeper even on a stacked team.
         _pcounts = owner_meta.get(str(t["owner_roster_id"]), {}).get("pos_counts") or {}
-        avail = _availability(owner_depth_rank.get(pid, 1), _pcounts.get(pos, 0))
+        _drank = owner_depth_rank.get(pid, 1)
+        if archetype == "consolidate" and _drank <= 1:
+            # A rival's stud (their best at the spot) is only a realistic
+            # consolidate target if the viewer is loaded enough to package
+            # top-tier assets for it. If they can't afford a fair offer, don't
+            # suggest it at all; when they can, it competes on merit.
+            if not _can_afford_stud(val):
+                continue
+            # Prefer the stud over the owner's own depth (which the (owner, pos)
+            # dedup would otherwise pick): a loaded team wants Bijan, not the RB4.
+            avail = 1.30
+        else:
+            avail = _availability(_drank, _pcounts.get(pos, 0))
 
         if archetype == "consolidate":
             # Gear toward the USER's team: how much this target upgrades their
@@ -1898,13 +1935,6 @@ def get_archetype_suggestions(
     viewer_picks = picks_by_roster.get(str(viewer_roster_id)) or \
                    picks_by_roster.get(viewer_roster_id) or []
     send_candidates += _pick_send_candidates(viewer_picks, num_teams, slot_map, current_season=season)
-
-    # League-wide value ladder (descending) drives the depth penalty so the
-    # engine reasons about the same effective value the trade card shows.
-    sorted_vals = sorted(
-        (v for v in (_f(x.get("value")) for x in values_by_id.values()) if v > 0),
-        reverse=True,
-    )
 
     results = []
     new_wp_base = current_wp  # alias for clarity inside loop
