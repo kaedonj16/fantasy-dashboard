@@ -125,6 +125,88 @@ def test_buy_suggestions_carry_fit_note_field():
         assert "fit_note" in s
 
 
+def _affordability_ctx(loaded):
+    """A 3-team league whose rival (roster 2) is stacked at RB behind a true #1
+    ("Big Stud", value 1000). The viewer (roster 1) is either *loaded* (two
+    top-tier assets they can package for the stud) or *weak* (only low-value
+    pieces). Everything else is held equal so the only variable is affordability."""
+    def P(pid, name, pos, val, age, team="FA"):
+        return {"id": pid, "name": name, "position": pos, "team": team,
+                "age": age, "value": val, "sf_value": val,
+                "redraft_value_1qb": val * 0.8, "redraft_value_sf": val * 0.8,
+                "pos_rank_label": f"{pos}1", "rank_change_7d": 0}
+
+    table = [
+        # Rival roster 2: a genuine #1 RB plus surplus RB depth behind him.
+        P("big_stud", "Big Stud", "RB", 1000, 23, "DET"),
+        P("r2_rb2", "Rival RB2", "RB", 300, 26, "DET"),
+        P("r2_rb3", "Rival RB3", "RB", 240, 27, "DET"),
+        P("r2_wr", "Rival WR", "WR", 260, 28, "DET"),
+        # Rival roster 3: a second target so the pool is never single-entry.
+        P("r3_wr", "Rival WR1", "WR", 520, 24, "CIN"),
+        P("r3_rb", "Rival RB1", "RB", 280, 27, "CIN"),
+    ]
+    if loaded:
+        # Two studs the viewer can bundle into a fair offer for Big Stud.
+        table += [
+            P("v_a", "Viewer Stud A", "WR", 620, 24, "PHI"),
+            P("v_b", "Viewer Stud B", "WR", 560, 25, "PHI"),
+            P("v_c", "Viewer RB", "RB", 300, 27, "PHI"),
+            P("v_d", "Viewer TE", "TE", 240, 28, "PHI"),
+        ]
+    else:
+        # Only low-value depth: no package clears the star band for Big Stud.
+        table += [
+            P("v_a", "Viewer WR", "WR", 300, 27, "PHI"),
+            P("v_b", "Viewer RB", "RB", 260, 28, "PHI"),
+            P("v_c", "Viewer WR2", "WR", 220, 29, "PHI"),
+            P("v_d", "Viewer TE", "TE", 200, 28, "PHI"),
+        ]
+    rosters = [
+        {"roster_id": 1, "players": ["v_a", "v_b", "v_c", "v_d"]},
+        {"roster_id": 2, "players": ["big_stud", "r2_rb2", "r2_rb3", "r2_wr"]},
+        {"roster_id": 3, "players": ["r3_wr", "r3_rb"]},
+    ]
+    return {
+        "rosters": rosters,
+        "roster_map": {1: "Viewer", 2: "Team Two", 3: "Team Three"},
+        "standings_map": {1: 3, 2: 1, 3: 2},
+        "model_value_table": table,
+        "picks_by_roster": {},
+        "settings": {"playoff_week_start": 15},
+    }
+
+
+def _consolidate_target_names(ctx):
+    """Run consolidate on the analytical (no-sim) path and return the acquire
+    target names, so a test can assert what the engine did/didn't surface."""
+    import time as _t
+    ae._SIM_CACHE["sleeper:afford:2026"] = {"sim_state": None, "base_odds": {}, "ts": _t.time()}
+    try:
+        out = ae.get_archetype_suggestions(
+            archetype="consolidate", platform="sleeper", league_id="afford",
+            season=2026, viewer_roster_id="1", league_type="1qb", league_size=10,
+            ctx=ctx,
+        )
+    finally:
+        ae._SIM_CACHE.pop("sleeper:afford:2026", None)
+    return [s["name"] for s in out["suggestions"]]
+
+
+def test_loaded_team_can_consolidate_into_a_rival_stud():
+    """A rival's #1 is a keeper for a weak team (it can't assemble a fair offer),
+    but a *loaded* team that can package top-tier assets should see it as a real
+    consolidate target. This pins the affordability gate: same rival stud, the
+    only difference is whether the viewer can afford it."""
+    loaded = _consolidate_target_names(_affordability_ctx(loaded=True))
+    weak = _consolidate_target_names(_affordability_ctx(loaded=False))
+    assert "Big Stud" in loaded, "a loaded team should be able to consolidate into a #1"
+    assert "Big Stud" not in weak, "a weak team can't afford the stud, so don't suggest it"
+    # The weak team still gets useful, affordable targets - the gate narrows the
+    # pool, it doesn't empty it.
+    assert weak, "a weak team should still see affordable consolidate targets"
+
+
 def test_analytical_impact_is_bounded_without_sim_state(monkeypatch):
     """The Impact table's per-target win % / playoff-odds come from the analytical
     model when a league has no sim state. That model used to mix the target's raw
