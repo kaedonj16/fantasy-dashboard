@@ -20309,40 +20309,11 @@ def _compute_compare_baselines():
         except (TypeError, ValueError):
             return None
 
-    # Average each tier's players' advanced metrics so the compare page's
-    # Advanced Metrics tab works against a tier. Reads per-player season metrics
-    # from the DB; degrades to no metrics if the DB is unavailable (offline).
-    _adv_fns = {"dead": False}
-
-    def _avg_tier_metrics(ids, season):
-        if not season or _adv_fns["dead"]:
-            return {}
-        try:
-            from data_building.advanced_metrics import (
-                get_player_metrics_by_season, strip_premium_metrics)
-        except Exception:
-            _adv_fns["dead"] = True
-            return {}
-        _skip = {"season", "player_id", "week", "games", "as_of_date"}
-        acc = {}
-        for pid in ids:
-            try:
-                m = get_player_metrics_by_season(str(pid), int(season))
-            except Exception:
-                _adv_fns["dead"] = True  # DB unavailable - stop trying
-                return {}
-            for k, v in (m or {}).items():
-                if k in _skip or isinstance(v, bool) or not isinstance(v, (int, float)):
-                    continue
-                acc.setdefault(k, []).append(float(v))
-        avg = {k: round(sum(vs) / len(vs), 3) for k, vs in acc.items() if vs}
-        try:
-            avg = strip_premium_metrics(avg) or {}
-        except Exception:
-            pass
-        return avg
-
-    out = []
+    # Build tier definitions first, then bulk-fetch every tier player's advanced
+    # metrics in ONE query (not one per player) so the Advanced Metrics tab can
+    # show a tier average. Degrades to no metrics if the DB is unavailable.
+    tiers = []          # (pos, t, chunk, ids, lo, hi)
+    all_ids = set()
     for pos in ("QB", "RB", "WR", "TE"):
         # Rank the position by total fantasy points - the season finish that
         # "top 12 WRs" actually means.
@@ -20352,30 +20323,63 @@ def _compute_compare_baselines():
             if len(chunk) < 6:   # don't emit a tiny trailing tier
                 break
             ids = [r["id"] for r in chunk]
+            all_ids.update(ids)
             lo = (t - 1) * _COMPARE_TIER_SIZE + 1
-            hi = lo + len(chunk) - 1
-            out.append({
-                "player_id": f"avg-{pos}-{t}",
-                "name": f"Avg {pos}{t}",
-                "position": pos,
-                "team": "TIER",
-                "is_baseline": True,
-                "tier_range": f"{pos}{lo}-{pos}{hi}",
-                "espnHeadshot": "",
-                "stats": {
-                    "value": _mean([_val(i, "value") for i in ids]),
-                    "sf_value": _mean([_val(i, "sf_value") for i in ids]),
-                    "pos_rank": None, "pos_rank_label": f"{pos}{t}",
-                    "sf_pos_rank": None, "sf_pos_rank_label": f"{pos}{t}",
-                    "value_ovr_rank": None, "sf_value_ovr_rank": None,
-                    "ppg": _mean([r["ppg"] for r in chunk]),
-                    "ppg_rank": None, "ppg_ovr_rank": None, "ppg_season": ppg_season,
-                    "total_pts": _mean([r["total"] for r in chunk]),
-                    "total_pts_rank": None, "total_pts_ovr_rank": None,
-                },
-                "value_history": [],
-                "metrics": _avg_tier_metrics(ids, ppg_season),
-            })
+            tiers.append((pos, t, chunk, ids, lo, lo + len(chunk) - 1))
+
+    metrics_by_id = {}
+    if all_ids and ppg_season:
+        try:
+            from data_building.advanced_metrics import get_players_metrics_by_season
+            metrics_by_id = get_players_metrics_by_season(sorted(all_ids), int(ppg_season)) or {}
+        except Exception:
+            metrics_by_id = {}
+
+    _skip_metric = {"season", "player_id", "week", "games", "as_of_date"}
+
+    def _avg_tier_metrics(ids):
+        acc = {}
+        for pid in ids:
+            for k, v in (metrics_by_id.get(str(pid)) or {}).items():
+                if k in _skip_metric or isinstance(v, bool) or not isinstance(v, (int, float)):
+                    continue
+                acc.setdefault(k, []).append(float(v))
+        avg = {k: round(sum(vs) / len(vs), 3) for k, vs in acc.items() if vs}
+        try:
+            from data_building.advanced_metrics import strip_premium_metrics
+            avg = strip_premium_metrics(avg) or {}
+        except Exception:
+            pass
+        return avg
+
+    out = []
+    for pos, t, chunk, ids, lo, hi in tiers:
+        _tier_vals = [v for v in (_val(i, "value") for i in ids) if v is not None]
+        out.append({
+            "player_id": f"avg-{pos}-{t}",
+            "name": f"Avg {pos}{t}",
+            "position": pos,
+            "team": "TIER",
+            "is_baseline": True,
+            "tier_range": f"{pos}{lo}-{pos}{hi}",
+            # Dynasty-value spread across the tier, so the compare chart can draw
+            # the tier as a shaded band rather than a single flat line.
+            "value_band": [round(min(_tier_vals)), round(max(_tier_vals))] if _tier_vals else None,
+            "espnHeadshot": "",
+            "stats": {
+                "value": _mean([_val(i, "value") for i in ids]),
+                "sf_value": _mean([_val(i, "sf_value") for i in ids]),
+                "pos_rank": None, "pos_rank_label": f"{pos}{t}",
+                "sf_pos_rank": None, "sf_pos_rank_label": f"{pos}{t}",
+                "value_ovr_rank": None, "sf_value_ovr_rank": None,
+                "ppg": _mean([r["ppg"] for r in chunk]),
+                "ppg_rank": None, "ppg_ovr_rank": None, "ppg_season": ppg_season,
+                "total_pts": _mean([r["total"] for r in chunk]),
+                "total_pts_rank": None, "total_pts_ovr_rank": None,
+            },
+            "value_history": [],
+            "metrics": _avg_tier_metrics(ids),
+        })
 
     _COMPARE_BASELINES_CACHE = out
     _COMPARE_BASELINES_TS = now

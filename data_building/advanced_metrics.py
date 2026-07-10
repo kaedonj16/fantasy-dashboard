@@ -1174,6 +1174,38 @@ def get_player_metrics_by_season(player_id: str, season: int) -> Optional[Dict[s
         return merged
 
 
+def get_players_metrics_by_season(player_ids, season: int) -> Dict[str, Dict[str, Any]]:
+    """Bulk form of get_player_metrics_by_season: one query for many players.
+
+    Returns {player_id: merged_metrics} using the same newest-first coalescing
+    (latest non-null value wins per column). Players with no rows are omitted.
+    Lets callers that need a whole cohort (e.g. a positional tier average) avoid
+    a query per player.
+    """
+    ids = [str(p) for p in (player_ids or []) if p]
+    if not ids:
+        return {}
+    with get_conn() as conn:
+        rows = conn.execute("""
+            SELECT * FROM player_advanced_metrics
+            WHERE season = %s AND player_id = ANY(%s)
+            ORDER BY player_id, as_of_date DESC
+        """, (season, ids)).fetchall()
+
+    out: Dict[str, Dict[str, Any]] = {}
+    for r in rows:
+        r = dict(r)
+        pid = str(r.get("player_id"))
+        merged = out.get(pid)
+        if merged is None:
+            out[pid] = dict(r)  # first (most recent) row for this player
+        else:
+            for key, value in r.items():
+                if merged.get(key) is None and value is not None:
+                    merged[key] = value
+    return out
+
+
 def get_player_career_metrics(player_id: str) -> Optional[Dict[str, Any]]:
     """
     Retrieve career-advanced metrics aggregated across all seasons for a player.

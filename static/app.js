@@ -8399,6 +8399,7 @@ function openPlayerModal(playerId, playerName, opts) {
         <button class="player-modal-watchlist-btn" id="playerModalWatchlistBtn" title="Add to watchlist" aria-pressed="false" style="display: none;"><span class="wl-star-glyph" aria-hidden="true">☆</span></button>
         ${_ppSlug ? `<a class="player-modal-page-btn" href="/player/${_ppSlug}/trade-value" title="View full player page">Player Page</a>` : ''}
         <button class="player-modal-compare-btn" id="playerModalCompareBtn" title="Compare players">Compare Player</button>
+        <button class="player-modal-compare-btn player-modal-tier-btn" id="playerModalTierBtn" title="Compare to positional tier average" style="display:none;">vs Tier</button>
         <button class="player-modal-close" onclick="closePlayerModal()">×</button>
       </div>
     </div>
@@ -9005,6 +9006,29 @@ function openPlayerModal(playerId, playerName, opts) {
       const cmpBtn = document.getElementById('playerModalCompareBtn');
       if (cmpBtn) {
         cmpBtn.addEventListener('click', () => openCompareSearch(data));
+      }
+
+      // ── "vs Tier" quick compare against this player's positional tier average ─
+      const tierBtn = document.getElementById('playerModalTierBtn');
+      if (tierBtn) {
+        const _tpos = (data.position || '').toUpperCase();
+        if (['QB', 'RB', 'WR', 'TE'].includes(_tpos)) {
+          // Pick the tier on the SAME basis the tiers are built - the player's
+          // fantasy-points finish (total_pts_rank) - so a WR20 benchmarks against
+          // Avg WR2 and a WR5 against Avg WR1. Fall back to dynasty pos rank, then
+          // tier 1, for players with no scoring finish (e.g. rookies).
+          const _st = data.stats || {};
+          const _rank = Number(_st.total_pts_rank || _st.pos_rank || data.pos_rank || 0);
+          const _tier = (_rank > 12) ? 2 : 1;
+          tierBtn.textContent = 'vs Avg ' + _tpos + _tier;
+          tierBtn.style.display = '';
+          tierBtn.onclick = () => {
+            window.location.href = '/compare?p1=' + encodeURIComponent(data.player_id)
+              + '&p2=avg-' + _tpos + '-' + _tier;
+          };
+        } else {
+          tierBtn.style.display = 'none';
+        }
       }
 
       // ── Render value history chart in Overview panel ───────────────────────
@@ -12909,6 +12933,13 @@ function _buildCompareHeroHTML(p, other) {
   const season = p.stats?.ppg_season ? ` · ${p.stats.ppg_season}` : '';
   const hasScoringRow = ppg != null || total != null;
 
+  // A tier average has no rank; label each card with its tier scope instead of a
+  // blank "-" sub. Value cards get the tier range, scoring cards the season.
+  const isB = !!p.is_baseline;
+  const tierRange = p.tier_range || '';
+  const seasonAvg = p.stats?.ppg_season ? `${p.stats.ppg_season} avg` : 'tier avg';
+  const valSub = isB ? (tierRange || 'tier avg') : '';
+
   // Highlight the better side of each cross-comparable stat (higher wins). Ranks
   // are position-relative so they are not compared across players.
   const _o = (other && other.stats) || {};
@@ -12925,13 +12956,13 @@ function _buildCompareHeroHTML(p, other) {
       <div class="pm-hero-stat${winppg}" style="padding:10px 10px;">
         <div class="pm-hero-label">PPG${season}</div>
         <div class="pm-hero-val" style="font-size:20px;">${ppg}</div>
-        <div class="pm-hero-sub">${ppgRank ? `POS : ${ppgRank} · OVR : ${ppgOvrRank ?? '–'}` : '-'}</div>
+        <div class="pm-hero-sub">${isB ? seasonAvg : (ppgRank ? `POS : ${ppgRank} · OVR : ${ppgOvrRank ?? '–'}` : '-')}</div>
       </div>` : ''}
       ${total != null ? `
       <div class="pm-hero-stat${wintot}" style="padding:10px 10px;">
         <div class="pm-hero-label">Total Pts${season}</div>
         <div class="pm-hero-val" style="font-size:20px;">${total}</div>
-        <div class="pm-hero-sub">${totalRank ? `POS : ${totalRank} · OVR : ${totalOvrRank ?? '–'}` : '-'}</div>
+        <div class="pm-hero-sub">${isB ? seasonAvg : (totalRank ? `POS : ${totalRank} · OVR : ${totalOvrRank ?? '–'}` : '-')}</div>
       </div>` : ''}
     </div>` : '';
 
@@ -12940,12 +12971,12 @@ function _buildCompareHeroHTML(p, other) {
       <div class="pm-hero-stat pm-hero-primary${win1qb}" style="padding:10px 10px;">
         <div class="pm-hero-label">1QB Value</div>
         <div class="pm-hero-val" style="font-size:20px;color:#3b82f6;">${val1qb > 0 ? val1qb : '-'}</div>
-        <div class="pm-hero-sub">${valPosRank ? `POS : ${valPosRank} · OVR : ${valOvrRank ?? '–'}` : '-'}</div>
+        <div class="pm-hero-sub">${isB ? valSub : (valPosRank ? `POS : ${valPosRank} · OVR : ${valOvrRank ?? '–'}` : '-')}</div>
       </div>
       <div class="pm-hero-stat${winsf}" style="padding:10px 10px;">
         <div class="pm-hero-label">SF Value</div>
         <div class="pm-hero-val" style="font-size:20px;">${valsf > 0 ? valsf : '-'}</div>
-        <div class="pm-hero-sub">${sfPosRank ? `POS : ${sfPosRank} · OVR : ${sfOvrRank ?? '–'}` : '-'}</div>
+        <div class="pm-hero-sub">${isB ? valSub : (sfPosRank ? `POS : ${sfPosRank} · OVR : ${sfOvrRank ?? '–'}` : '-')}</div>
       </div>
     </div>
     ${scoringRow}
@@ -13802,6 +13833,19 @@ function _compareWireView(p1, p2) {
       makeTrace(p1, b1, '#3b82f6'),
       makeTrace(p2, b2, '#f59e0b'),
     ];
+    // Draw a tier average as a shaded value band (its min-max dynasty value across
+    // the tier) with the average as the dashed line through it, so it reads as a
+    // range rather than a single hard line.
+    const _bandShapes = [];
+    [[p1, b1, '59,130,246'], [p2, b2, '245,158,11']].forEach(([p, isB, rgb]) => {
+      if (isB && Array.isArray(p.value_band) && p.value_band.length === 2) {
+        _bandShapes.push({
+          type: 'rect', xref: 'paper', x0: 0, x1: 1, yref: 'y',
+          y0: p.value_band[0], y1: p.value_band[1],
+          fillcolor: `rgba(${rgb},0.10)`, line: { width: 0 }, layer: 'below',
+        });
+      }
+    });
     const _cmpLayout = {
       paper_bgcolor: 'transparent',
       plot_bgcolor: bgColor,
@@ -13811,6 +13855,7 @@ function _compareWireView(p1, p2) {
       legend: { font: { size: 12, color: textColor }, bgcolor: 'transparent', orientation: 'h', x: 0, y: 1.1 },
       hovermode: 'x unified',
       showlegend: true,
+      shapes: _bandShapes,
     };
     if (window.ensurePlotly) window.ensurePlotly().then(function () {
       Plotly.newPlot(chartDiv, traces, _cmpLayout, { responsive: true, displayModeBar: false });

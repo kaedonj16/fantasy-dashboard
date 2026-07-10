@@ -92,6 +92,74 @@ def test_compare_baselines_endpoint(offline_client):
     assert totals == sorted(totals, reverse=True)
 
 
+def test_get_players_metrics_by_season_bulk_coalesces(monkeypatch):
+    """The bulk metrics fetch groups rows by player and coalesces newest-first
+    (latest non-null wins per column), the same rule as the single-player fetch,
+    so a whole tier's metrics come back in one query."""
+    import contextlib
+    import data_building.advanced_metrics as am
+
+    rows = [
+        # player 1: two snapshots with complementary nulls (newest first)
+        {"player_id": "1", "season": 2025, "as_of_date": "2025-02", "yards_per_target": 9.0, "catch_rate": None},
+        {"player_id": "1", "season": 2025, "as_of_date": "2025-01", "yards_per_target": None, "catch_rate": 0.7},
+        {"player_id": "2", "season": 2025, "as_of_date": "2025-02", "yards_per_target": 8.0, "catch_rate": 0.6},
+    ]
+
+    class _Cur:
+        def fetchall(self):
+            return rows
+
+    class _Conn:
+        def execute(self, *a, **k):
+            return _Cur()
+
+    @contextlib.contextmanager
+    def _fake_conn(*a, **k):
+        yield _Conn()
+
+    monkeypatch.setattr(am, "get_conn", _fake_conn)
+    out = am.get_players_metrics_by_season(["1", "2"], 2025)
+    assert out["1"]["yards_per_target"] == 9.0   # newest row wins
+    assert out["1"]["catch_rate"] == 0.7         # coalesced from the older row
+    assert out["2"]["yards_per_target"] == 8.0
+    # No ids -> no query, empty result.
+    assert am.get_players_metrics_by_season([], 2025) == {}
+
+
+def test_compare_baselines_metrics_are_averaged_in_one_query(monkeypatch):
+    """Each tier's advanced metrics are the mean of that tier's players, fetched
+    with a single bulk query (not one per player). Meta columns are excluded and
+    a value band accompanies the average for the compare chart."""
+    import app
+    import data_building.advanced_metrics as am
+
+    calls = {"n": 0}
+
+    def _fake_bulk(ids, season):
+        calls["n"] += 1
+        # Give every player the same values so the average is exact and checkable.
+        return {str(i): {"yards_per_target": 9.0, "catch_rate": 0.65, "season": season}
+                for i in ids}
+
+    monkeypatch.setattr(am, "get_players_metrics_by_season", _fake_bulk)
+    app._COMPARE_BASELINES_CACHE = None
+    try:
+        baselines = app._compute_compare_baselines()
+        if not baselines:
+            import pytest as _pytest
+            _pytest.skip("no usage/points data in this environment")
+        assert calls["n"] == 1, "metrics must be fetched in one bulk query, not per player"
+        wr1 = next(b for b in baselines if b["name"] == "Avg WR1")
+        assert wr1["metrics"]["yards_per_target"] == 9.0
+        assert wr1["metrics"]["catch_rate"] == 0.65
+        assert "season" not in wr1["metrics"]  # meta column excluded
+        band = wr1["value_band"]
+        assert isinstance(band, list) and band[0] <= wr1["stats"]["value"] <= band[1]
+    finally:
+        app._COMPARE_BASELINES_CACHE = None  # don't leak the mocked metrics
+
+
 def test_watchlist_page_renders(offline_client):
     r = offline_client.get("/watchlist")
     assert r.status_code == 200
