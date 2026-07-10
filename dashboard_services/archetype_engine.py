@@ -1854,42 +1854,36 @@ def get_archetype_suggestions(
     except (TypeError, ValueError):
         logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
+    # Per-request memo for the Monte Carlo swap. simulate_with_swap is
+    # deterministic (common-random-numbers seed), so identical post-trade rosters
+    # return identical odds - different packages that collapse to the same lineup
+    # (or the same target reached two ways) then reuse one 10k-sim instead of
+    # re-running it. Keyed by the viewer's resulting player set.
+    _swap_cache: Dict[frozenset, Tuple[float, float]] = {}
+
+    def _cached_swap(pids_after):
+        key = frozenset(str(p) for p in pids_after)
+        hit = _swap_cache.get(key)
+        if hit is not None:
+            return hit
+        from data_building.simulate_playoff_odds import simulate_with_swap as _sim_swap
+        res = _sim_swap(sim_state, _vid_int, pids_after, n_sims=10_000)
+        _swap_cache[key] = res
+        return res
+
     for t in top:
         pid = t["player_id"]
         pos = t["position"]
         tp  = _trend_pct(pid, t["value"], old_vals, values_by_id)
 
-        # Build the hypothetical roster: add target, drop weakest same-pos player
-        same_pos_pids = [
-            p for p in viewer_players
-            if str(values_by_id.get(p, {}).get("position") or "").upper() == pos
-        ]
-        if same_pos_pids:
-            if ppg_map and roster_positions:
-                drop_pid = min(
-                    same_pos_pids,
-                    key=lambda p: (ppg_map.get(str(p)) or {}).get("ppg", 0),
-                )
-            else:
-                drop_pid = min(
-                    same_pos_pids,
-                    key=lambda p: _f(values_by_id.get(p, {}).get("value")),
-                )
-            new_pids = [p for p in viewer_players if p != drop_pid] + [pid]
-        else:
-            new_pids = viewer_players + [pid]
-
+        # Target-add impact (analytical). The accurate, simulation-based numbers
+        # are computed per package below as net_* (drop the exact sent players,
+        # add the target), and the UI always prefers those. Running a separate
+        # 10k-sim here just to fill the non-net fields - which are only a display
+        # fallback for the never-hit "no package" case - doubled the simulation
+        # load per target for no visible gain, so keep the cheap formula.
         wpd = t.get("win_prob_delta", 0.0)
         pod = _playoff_odds(new_wp_base + wpd, num_weeks, num_teams, playoff_spots) - current_po
-
-        if sim_state is not None and _vid_int is not None:
-            try:
-                from data_building.simulate_playoff_odds import simulate_with_swap as _sim_swap
-                new_po_pct, new_avg = _sim_swap(sim_state, _vid_int, new_pids, n_sims=10_000)
-                pod = (new_po_pct - current_playoff_pct) / 100.0
-                wpd = _win_prob(new_avg, league_avg) - current_wp
-            except Exception:
-                logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
         why = _build_why(t, archetype, tp, wpd)
 
@@ -1931,8 +1925,7 @@ def get_archetype_suggestions(
             net_wpd_pkg = None
             if sim_state is not None and _vid_int is not None:
                 try:
-                    from data_building.simulate_playoff_odds import simulate_with_swap as _sim_swap
-                    _net_po_pct, _net_avg = _sim_swap(sim_state, _vid_int, net_roster, n_sims=10_000)
+                    _net_po_pct, _net_avg = _cached_swap(net_roster)
                     net_pod_pkg = (_net_po_pct - current_playoff_pct) / 100.0
                     net_wpd_pkg = _win_prob(_net_avg, league_avg) - current_wp
                 except Exception:
