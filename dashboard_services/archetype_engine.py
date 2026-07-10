@@ -1117,6 +1117,8 @@ def _build_distribute(
                 "pos_rank_label": values_by_id[stud].get("pos_rank_label", ""),
                 "why":            (f"Spread {sname}'s value into {len(combo)} starters from {pname}. "
                                    f"{ceiling_note.capitalize()}, filling multiple holes at once."),
+                "fit_note":       _fit_note([{"position": spos}],
+                                            owner_meta.get(owner, {}).get("need"), None, None),
                 "partner_team":   pname,
                 "partner_arch":   p_arch,
                 # departure cost: impact table (cost of losing this stud alone)
@@ -1166,6 +1168,7 @@ def _build_rebuilding(
     sim_state: Optional[Dict] = None,
     current_playoff_pct: float = 0.0,
     viewer_roster_id: Any = None,
+    owner_meta: Optional[Dict[str, Dict]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Rebuild = sell win-now vets for younger assets of similar dynasty value.
@@ -1400,6 +1403,10 @@ def _build_rebuilding(
                 "redraft_value":  display_rdft,
                 "pos_rank_label": display_rank,
                 "why":            why,
+                "fit_note":       _fit_note(
+                    [{"position": vpos}],
+                    (owner_meta or {}).get(str(opt.get("partner_rid")), {}).get("need"),
+                    None, None),
                 "partner_team":   opt["partner_name"],
                 "partner_arch":   opt["partner_arch"],
                 "win_prob_delta":         round(departure_wpd, 4),
@@ -1723,6 +1730,7 @@ def get_archetype_suggestions(
             sim_state=sim_state,
             current_playoff_pct=current_playoff_pct,
             viewer_roster_id=viewer_roster_id,
+            owner_meta=owner_meta,
         )
         return {"suggestions": _sugg, "current_playoff_pct": round(current_playoff_pct, 1)}
 
