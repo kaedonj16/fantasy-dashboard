@@ -286,7 +286,8 @@ def api_push_broadcast():
     body  = data.get("body",  "Your weekly dynasty risers and fallers are ready!")
     url   = data.get("url",   "/top-movers")
     tag   = data.get("tag",   "weekly-update")
-    return _push_broadcast(title=title, body=body, url=url, tag=tag)
+    body_dict, status = _push_broadcast(title=title, body=body, url=url, tag=tag)
+    return jsonify(body_dict), status
 
 
 @push_bp.route("/api/cron/notifications", methods=["POST"])
@@ -312,21 +313,28 @@ def api_cron_notifications():
 
 
 def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
+    """Send a push to every subscribed device. Returns a (body_dict, status)
+    tuple - deliberately NOT a Flask response, so it is safe to call outside a
+    request/app context (e.g. the changelog startup notifier). The HTTP endpoint
+    wraps the dict in jsonify."""
     import json as _json
     keys = _get_vapid_keys()
     if not keys:
-        return jsonify({"error": "Push not configured"}), 503
+        return {"error": "Push not configured"}, 503
     _init_push_table()
     try:
         from pywebpush import webpush, WebPushException
         from dashboard_services.db import get_conn
         with get_conn() as _pconn:
+            # DISTINCT ON (endpoint): a device may have several league rows, but a
+            # global broadcast should reach each device only once.
             rows = _pconn.execute(
-                "SELECT endpoint, p256dh, auth FROM push_subscriptions"
+                "SELECT DISTINCT ON (endpoint) endpoint, p256dh, auth "
+                "FROM push_subscriptions ORDER BY endpoint"
             ).fetchall()
     except Exception as exc:
         logger.warning("[push] broadcast query failed: %s", exc)
-        return jsonify({"error": "DB error"}), 500
+        return {"error": "DB error"}, 500
 
     payload       = _json.dumps({"title": title, "body": body, "url": url, "tag": tag})
     try:
@@ -334,7 +342,7 @@ def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
         vapid_obj = _make_vapid(keys["private"])
     except Exception as exc:
         logger.warning("[push] Could not build Vapid object: %s", exc)
-        return jsonify({"error": "VAPID key error"}), 500
+        return {"error": "VAPID key error"}, 500
     sent = failed = 0
     stale         = []
 
@@ -349,7 +357,18 @@ def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
             )
             sent += 1
         except WebPushException as exc:
-            if exc.response and exc.response.status_code in (404, 410):
+            # A 404/410 means the subscription is permanently dead and must be
+            # pruned so we stop retrying it forever. Note: requests.Response is
+            # falsy for non-2xx (its __bool__ returns .ok), so `if exc.response`
+            # skips real 410s - check `is not None` and fall back to parsing the
+            # status out of the message.
+            resp = getattr(exc, "response", None)
+            status = resp.status_code if resp is not None else None
+            if status is None:
+                import re as _re
+                m = _re.search(r"\b([45]\d\d)\b", str(exc))
+                status = int(m.group(1)) if m else 0
+            if status in (404, 410):
                 stale.append(ep)
             else:
                 logger.warning("[push] send failed %s: %s", ep[:50], exc)
@@ -362,14 +381,14 @@ def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
         try:
             from dashboard_services.db import get_conn
             with get_conn() as conn:
-                for ep in stale:
-                    conn.execute(
-                        "DELETE FROM push_subscriptions WHERE endpoint = %s", (ep,)
-                    )
+                conn.execute(
+                    "DELETE FROM push_subscriptions WHERE endpoint = ANY(%s)", (stale,)
+                )
                 conn.commit()
+            logger.info("[push] pruned %d dead subscription(s)", len(stale))
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
 
-    return jsonify({"ok": True, "sent": sent, "failed": failed})
+    return {"ok": True, "sent": sent, "failed": failed}, 200
 
 

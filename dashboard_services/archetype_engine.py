@@ -1591,6 +1591,19 @@ def get_archetype_suggestions(
 
     viewer_lineup_val = _lval(viewer_players)
 
+    def _impact_roster(pid: str, pos: str) -> List[str]:
+        """The hypothetical roster if the viewer acquires this target: add it and
+        drop the weakest same-position player (by PPG when available, else value)."""
+        same = [p for p in viewer_players
+                if str(values_by_id.get(p, {}).get("position") or "").upper() == pos]
+        if not same:
+            return viewer_players + [pid]
+        if ppg_map and roster_positions:
+            drop = min(same, key=lambda p: (ppg_map.get(str(p)) or {}).get("ppg", 0))
+        else:
+            drop = min(same, key=lambda p: _f(values_by_id.get(p, {}).get("value")))
+        return [p for p in viewer_players if p != drop] + [pid]
+
     # Count viewer's skill-position players per position (used by distribute)
     viewer_pos_counts: Dict[str, int] = {}
     for pid in viewer_players:
@@ -1786,14 +1799,14 @@ def get_archetype_suggestions(
         if score is None:
             continue
 
-        # Win-prob delta: assume replacing weakest player of same position
-        same_pos_vals = [
-            _f(values_by_id.get(p2, {}).get("value"))
-            for p2 in viewer_players
-            if values_by_id.get(p2, {}).get("position") == pos
-        ]
-        replace_val = min(same_pos_vals) if same_pos_vals else 0
-        wpd = _wp_delta(viewer_lineup_val, val, replace_val, league_avg)
+        # Win-prob delta of acquiring this target (add it, drop weakest same-pos).
+        # Score the *new lineup* with the same _lval basis as the current lineup
+        # so both sides are in the same units. The old _wp_delta added the
+        # target's raw dynasty value onto a lineup/PPG-scale total, which mixed
+        # scales and saturated the win-prob curve to an absurd ~+50% for every
+        # strong target. This is also the fallback the Impact table shows when no
+        # sim state is available.
+        wpd = _win_prob(_lval(_impact_roster(pid, pos)), league_avg) - current_wp
 
         # A partner is likelier to move a player from a position they're deep at
         # and likelier to hold their only starter, so tilt the target ranking by
@@ -1876,14 +1889,27 @@ def get_archetype_suggestions(
         pos = t["position"]
         tp  = _trend_pct(pid, t["value"], old_vals, values_by_id)
 
-        # Target-add impact (analytical). The accurate, simulation-based numbers
-        # are computed per package below as net_* (drop the exact sent players,
-        # add the target), and the UI always prefers those. Running a separate
-        # 10k-sim here just to fill the non-net fields - which are only a display
-        # fallback for the never-hit "no package" case - doubled the simulation
-        # load per target for no visible gain, so keep the cheap formula.
-        wpd = t.get("win_prob_delta", 0.0)
+        # Per-target "impact" (win % / playoff odds if acquired) shown in the
+        # Impact table: build the hypothetical roster (add target, drop the
+        # weakest same-position player) and simulate it. This is the accurate
+        # number; the analytical value stored on the target is the fallback when
+        # no sim state exists. Routed through _cached_swap so identical rosters
+        # reuse a single 10k run.
+        new_pids = _impact_roster(pid, pos)
+
+        # Analytical fallback, clamped to a plausible single-acquisition swing so
+        # a thin value model can never surface an absurd number (a real trade
+        # moves weekly win prob by at most ~20 points). The sim below overrides
+        # this with the accurate value whenever sim state is available.
+        wpd = max(-0.20, min(0.20, t.get("win_prob_delta", 0.0)))
         pod = _playoff_odds(new_wp_base + wpd, num_weeks, num_teams, playoff_spots) - current_po
+        if sim_state is not None and _vid_int is not None:
+            try:
+                new_po_pct, new_avg = _cached_swap(new_pids)
+                pod = (new_po_pct - current_playoff_pct) / 100.0
+                wpd = _win_prob(new_avg, league_avg) - current_wp
+            except Exception:
+                logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
         why = _build_why(t, archetype, tp, wpd)
 

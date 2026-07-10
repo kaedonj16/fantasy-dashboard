@@ -125,10 +125,38 @@ def test_buy_suggestions_carry_fit_note_field():
         assert "fit_note" in s
 
 
-def test_monte_carlo_swaps_are_deduped_and_not_per_target(monkeypatch):
-    """The engine must not run a separate per-target 10k-sim (the UI shows the
-    per-package net_* numbers), and identical post-trade rosters must reuse one
-    simulation. Inject a fake sim state and count simulate_with_swap calls."""
+def test_analytical_impact_is_bounded_without_sim_state(monkeypatch):
+    """The Impact table's per-target win % / playoff-odds come from the analytical
+    model when a league has no sim state. That model used to mix the target's raw
+    dynasty value into a lineup/PPG-scale total, saturating the win-prob curve so
+    every strong target showed the same absurd ~+50%. It now scores the whole new
+    lineup in consistent units and is clamped, so values stay modest and varied."""
+    import time as _t
+    ctx = _seed_ctx()
+    # Force the no-sim path so the analytical fallback (not simulate_with_swap)
+    # produces the per-target impact numbers.
+    ae._SIM_CACHE["sleeper:testlg:2026"] = {"sim_state": None, "base_odds": {}, "ts": _t.time()}
+    try:
+        out = ae.get_archetype_suggestions(
+            archetype="consolidate", platform="sleeper", league_id="testlg",
+            season=2026, viewer_roster_id="1", league_type="1qb", league_size=10,
+            ctx=ctx,
+        )
+    finally:
+        ae._SIM_CACHE.pop("sleeper:testlg:2026", None)
+
+    wpds = [s["win_prob_delta"] for s in out["suggestions"]]
+    assert wpds, "expected suggestions on the no-sim analytical path"
+    # Clamped to a plausible single-acquisition swing (the old bug was ~0.51).
+    assert all(-0.20 <= w <= 0.20 for w in wpds)
+    # Not the old degenerate case where every strong target showed one number.
+    assert len(set(round(w, 3) for w in wpds)) > 1
+
+
+def test_monte_carlo_swaps_are_deduped(monkeypatch):
+    """simulate_with_swap is deterministic (common-random-numbers seed), so
+    identical post-trade rosters must reuse a single 10k run rather than
+    re-simulating. Inject a fake sim state and count the calls."""
     import time as _t
     import data_building.simulate_playoff_odds as sim
 
@@ -162,16 +190,14 @@ def test_monte_carlo_swaps_are_deduped_and_not_per_target(monkeypatch):
     sugg = out["suggestions"]
     assert sugg, "expected consolidate suggestions with the injected sim state"
 
-    # Every simulated roster is unique (memoized) - no key appears twice.
+    # Memoization: every simulated roster is unique - no key appears twice.
     assert len(calls["pids"]) == len(set(calls["pids"])), "swap results were not memoized"
 
-    # The number of sims equals the number of DISTINCT post-trade rosters implied
-    # by the surfaced packages - i.e. exactly one per unique lineup, with no extra
-    # per-target simulation.
-    distinct_rosters = set()
+    # Each surfaced package's exact post-trade roster (drop the sent players, add
+    # the target) must have been simulated - that is the accurate net_* number.
+    simulated = set(calls["pids"])
     for s in sugg:
         sent = {str(a.get("player_id")) for a in s["suggested_send"]
                 if a.get("player_id") and not a.get("is_pick")}
         roster = frozenset([p for p in viewer_pids if p not in sent] + [str(s["player_id"])])
-        distinct_rosters.add(roster)
-    assert len(calls["pids"]) == len(distinct_rosters)
+        assert roster in simulated

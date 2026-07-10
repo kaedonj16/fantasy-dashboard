@@ -28695,8 +28695,10 @@ def _notify_changelog_on_startup():
         title = f"BR Fantasy: {tag_labels.get(tag, 'Update')}"
 
         from routes.push_bp import _push_broadcast
-        result = _push_broadcast(title=title, body=body, url=link, tag=f"changelog-{latest_date}")
-        sent = result.get_json().get("sent", 0) if hasattr(result, "get_json") else 0
+        # _push_broadcast returns a plain (dict, status) tuple, so this is safe to
+        # call at import time with no Flask app context.
+        result, _status = _push_broadcast(title=title, body=body, url=link, tag=f"changelog-{latest_date}")
+        sent = result.get("sent", 0) if isinstance(result, dict) else 0
         logger.info("[changelog-push] sent %d notifications for entry %s", sent, latest_date)
 
         # Mark this date as notified regardless of send count
