@@ -20281,9 +20281,11 @@ def _compute_compare_baselines():
             _pos = str(_p.get("position") or "").upper()
             if _pos not in ("QB", "RB", "WR", "TE"):
                 continue
-            _pp = _u.get("half_ppr_ppg")
+            # Standardize on full PPR so the tiers are a fixed, recognizable
+            # benchmark regardless of the viewer's league scoring.
+            _pp = _u.get("ppr_ppg")
             if _pp is None:
-                _pp = _u.get("ppr_ppg") or _u.get("std_scoring_ppg") or _u.get("std_ppg")
+                _pp = _u.get("half_ppr_ppg") or _u.get("std_scoring_ppg") or _u.get("std_ppg")
             _pid = str(_p.get("id") or "")
             if _pp is None or not _pid:
                 continue
@@ -20303,7 +20305,11 @@ def _compute_compare_baselines():
         return round(sum(vals) / len(vals), 1) if vals else None
 
     def _val(pid, key):
-        v = (val_by_id.get(pid) or {}).get(key)
+        # 12-team basis: prefer the 12-team value column, fall back to the default.
+        row = val_by_id.get(pid) or {}
+        v = row.get(key + "_12")
+        if v is None:
+            v = row.get(key)
         try:
             return float(v) if v else None
         except (TypeError, ValueError):

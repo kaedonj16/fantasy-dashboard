@@ -15282,6 +15282,19 @@ tr.team-clickable {
 .compare-result-headshot[src=""] {
   display: none;
 }
+/* Tier-average opponent in the modal compare search: a glyph instead of a
+   headshot, plus a soft accent wash on the row. */
+.compare-result-tier-ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.compare-search-baseline {
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
 .compare-result-info {
   flex: 1;
   min-width: 0;

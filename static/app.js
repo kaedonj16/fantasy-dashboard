@@ -12439,47 +12439,16 @@ function initComparePage() {
   const actionsEl = document.getElementById('cmpActions');
   const resultEl = document.getElementById('comparePageResult');
 
-  // Tier-average opponents (Avg WR1, RB2, ...) selectable alongside real players.
-  // Fetched once and cached; keyed by their synthetic "avg-POS-tier" id.
-  const _baselines = {};        // id -> full baseline object (player-details shape)
-  let _baselineList = [];       // array for picker matching
-  const _baselinesReady = fetch('/api/compare-baselines')
-    .then(r => r.ok ? r.json() : { baselines: [] })
-    .then(d => {
-      _baselineList = (d && d.baselines) || [];
-      _baselineList.forEach(b => {
-        _baselines[String(b.player_id)] = b;
-        // Feed the metrics tab: it looks a baseline side up here instead of
-        // hitting /api/player-advanced-metrics.
-        _cmpBaselineStore[String(b.player_id)] = {
-          metrics: b.metrics || {}, position: b.position || '',
-          season: (b.stats && b.stats.ppg_season) || null,
-          label: (b.tier_range || b.name) + ((b.stats && b.stats.ppg_season) ? ' · ' + b.stats.ppg_season + ' avg' : ' avg'),
-        };
-      });
-    })
-    .catch(() => {});
-
-  const _isBaseline = pid => String(pid || '').startsWith('avg-');
-
-  // Baselines whose name/tier/position matches the query, as player-like picker
-  // rows. Matches "wr", "wr1", "avg", "rb2", "tier", etc.
-  function _matchBaselines(q) {
-    const s = (q || '').toLowerCase().replace(/\s+/g, '');
-    if (!s) return [];
-    return _baselineList.filter(b => {
-      const name = (b.name || '').toLowerCase().replace(/\s+/g, '');   // "avgwr1"
-      const label = ((b.stats && b.stats.pos_rank_label) || '').toLowerCase(); // "wr1"
-      const pos = (b.position || '').toLowerCase();
-      return name.includes(s) || label.startsWith(s) || ('avg' + label).includes(s)
-        || (s.length <= 3 && pos.startsWith(s)) || 'tier'.startsWith(s) || 'average'.startsWith(s);
-    }).slice(0, 6);
-  }
+  // Tier-average opponents (Avg WR1/WR2, ...) selectable alongside real players,
+  // fetched once via the shared loader so the modal search reuses the same data.
+  const _baselinesReady = _cmpEnsureBaselines();
+  const _isBaseline = pid => _cmpIsBaseline(pid);
+  const _matchBaselines = q => _cmpMatchBaselines(q);
 
   function _fetchDetails(pid) {
     if (_isBaseline(pid)) {
       return _baselinesReady.then(() => {
-        const b = _baselines[String(pid)];
+        const b = _cmpBaselineById[String(pid)];
         if (!b) throw new Error('unknown baseline ' + pid);
         return b;
       });
@@ -12663,7 +12632,7 @@ function initComparePage() {
       results.innerHTML = filtered.slice(0, 12).map(p => {
         const isB = !!p.is_baseline;
         const meta = isB
-          ? ((p.tier_range || p.position) + ' average')
+          ? ((p.tier_range || p.position) + ' · PPR 12-team avg')
           : ((p.position || '') + (p.team ? ' · ' + p.team : ''));
         return '<button type="button" class="compare-pick-result' + (isB ? ' compare-pick-baseline' : '') + '" role="option" aria-selected="false" data-pid="' + _wlEsc(p.player_id) + '" data-name="' + _wlEsc(p.name) +
           '" data-pos="' + _wlEsc(p.position || '') + '" data-team="' + _wlEsc(p.team || '') + '">' +
@@ -12795,28 +12764,46 @@ function openCompareSearch(player1Data) {
   document.getElementById('compareSelfBtn')?.addEventListener('click', () => {
     openComparisonView(player1Data, Object.assign({}, player1Data));
   });
+  // Preload the tier averages so they can be offered as compare opponents here
+  // too (Avg WR1/WR2, ...), not just on the standalone /compare page.
+  _cmpEnsureBaselines();
   input.focus();
 
-  function renderResults(players) {
-    if (!players.length) {
+  function renderResults(players, q) {
+    // Tier-average opponents matching the query come first, tagged as baselines.
+    const merged = _cmpMatchBaselines(q || '').concat(players || []);
+    if (!merged.length) {
       resultsBox.innerHTML = '<div class="compare-search-empty">No players found</div>';
       return;
     }
-    resultsBox.innerHTML = players.slice(0, 10).map(p => `
-      <div class="compare-search-result-item" data-pid="${p.player_id}" data-pname="${p.name}">
-        <img src="${p.espnHeadshot || ''}" class="compare-result-headshot" alt="${p.name}" />
+    resultsBox.innerHTML = merged.slice(0, 12).map(p => {
+      const isB = !!p.is_baseline;
+      const meta = isB ? ((p.tier_range || p.position) + ' · PPR 12-team avg')
+                       : ((p.position || '') + ' · ' + (p.team || ''));
+      const rightVal = isB ? ((p.stats && p.stats.value) || '-') : (p.value || '-');
+      const ico = isB
+        ? '<div class="compare-result-headshot compare-result-tier-ico" aria-hidden="true">Σ</div>'
+        : `<img src="${p.espnHeadshot || ''}" class="compare-result-headshot" alt="${_cmpEsc(p.name)}" />`;
+      return `
+      <div class="compare-search-result-item${isB ? ' compare-search-baseline' : ''}" data-pid="${_cmpEsc(p.player_id)}" data-pname="${_cmpEsc(p.name)}" data-baseline="${isB ? '1' : ''}">
+        ${ico}
         <div class="compare-result-info">
-          <div class="compare-result-name">${p.name}</div>
-          <div class="compare-result-meta">${p.position || ''} · ${p.team || ''}</div>
+          <div class="compare-result-name">${_cmpEsc(p.name)}${isB ? '<span class="compare-pick-tag">TIER AVG</span>' : ''}</div>
+          <div class="compare-result-meta">${_cmpEsc(meta)}</div>
         </div>
-        <div class="compare-result-value">${p.value || '-'}</div>
-      </div>
-    `).join('');
+        <div class="compare-result-value">${rightVal}</div>
+      </div>`;
+    }).join('');
 
     resultsBox.querySelectorAll('.compare-search-result-item').forEach(item => {
       item.addEventListener('click', () => {
         const pid = item.dataset.pid;
-        const pname = item.dataset.pname;
+        // Tier averages are already loaded - open directly, no player fetch.
+        if (item.dataset.baseline === '1') {
+          const b = _cmpBaselineById[String(pid)];
+          if (b) openComparisonView(player1Data, b);
+          return;
+        }
         // Show loading state
         body.innerHTML = '<div class="player-modal-loading"><div class="loading-spinner"></div><div>Loading comparison...</div></div>';
         // Fetch second player details
@@ -12850,10 +12837,11 @@ function openCompareSearch(player1Data) {
         if (_currentQuery !== q) return; // stale response
         // Support both paginated {players:[...]} and flat [...] responses
         const players = Array.isArray(list) ? list : (list.players || []);
-        renderResults(players.filter(p => p.player_id !== player1Data.player_id));
+        renderResults(players.filter(p => p.player_id !== player1Data.player_id), q);
       })
       .catch(() => {
-        resultsBox.innerHTML = '<div class="compare-search-empty" style="color:#ef4444;">Search failed</div>';
+        // Search failed, but tier averages are local - still offer any matches.
+        if (_currentQuery === q) renderResults([], q);
       });
   }
 
@@ -13346,6 +13334,47 @@ var _cmpRenderToken = 0;   // guards against out-of-order responses from rapid c
 
 function _cmpIsBaseline(pid) { return String(pid || '').startsWith('avg-'); }
 
+// Tier-average opponents (Avg WR1/WR2, ...), fetched once and shared by both
+// compare surfaces (the standalone /compare picker and the player-modal search).
+var _cmpBaselineList = [];       // array of baseline objects, for query matching
+var _cmpBaselineById = {};       // `avg-POS-tier` -> full baseline object
+var _cmpBaselinesPromise = null; // in-flight/settled fetch guard
+function _cmpBaselineLabel(b) {
+  return (b.tier_range || b.name) + ' · PPR 12-team'
+    + ((b.stats && b.stats.ppg_season) ? ' · ' + b.stats.ppg_season : '') + ' avg';
+}
+function _cmpEnsureBaselines() {
+  if (_cmpBaselinesPromise) return _cmpBaselinesPromise;
+  _cmpBaselinesPromise = fetch('/api/compare-baselines')
+    .then(r => r.ok ? r.json() : { baselines: [] })
+    .then(d => {
+      _cmpBaselineList = (d && d.baselines) || [];
+      _cmpBaselineList.forEach(b => {
+        _cmpBaselineById[String(b.player_id)] = b;
+        _cmpBaselineStore[String(b.player_id)] = {
+          metrics: b.metrics || {}, position: b.position || '',
+          season: (b.stats && b.stats.ppg_season) || null, label: _cmpBaselineLabel(b),
+        };
+      });
+      return _cmpBaselineList;
+    })
+    .catch(() => []);
+  return _cmpBaselinesPromise;
+}
+// Baselines whose name/tier/position matches the query, as player-like rows.
+// Matches "wr", "wr1", "avg", "rb2", "tier", etc.
+function _cmpMatchBaselines(q) {
+  const s = (q || '').toLowerCase().replace(/\s+/g, '');
+  if (!s) return [];
+  return _cmpBaselineList.filter(b => {
+    const name = (b.name || '').toLowerCase().replace(/\s+/g, '');   // "avgwr1"
+    const label = ((b.stats && b.stats.pos_rank_label) || '').toLowerCase(); // "wr1"
+    const pos = (b.position || '').toLowerCase();
+    return name.includes(s) || label.startsWith(s) || ('avg' + label).includes(s)
+      || (s.length <= 3 && pos.startsWith(s)) || 'tier'.startsWith(s) || 'average'.startsWith(s);
+  }).slice(0, 6);
+}
+
 function _cmpEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
 
 // Aggregate a player's weekly rows over [wkStart,wkEnd] into the weekly-capable
@@ -13697,7 +13726,7 @@ function _compareBodyHTML(p1, p2, opts) {
   const navBtns = opts.nav ? `
       <div class="compare-nav-btns">
         <button class="compare-back-btn" id="compareBackBtn">← Back to ${p1.name}</button>
-        <button class="compare-profile-btn" id="compareP2ProfileBtn">${p2.name}'s Profile →</button>
+        ${p2 && p2.is_baseline ? '' : `<button class="compare-profile-btn" id="compareP2ProfileBtn">${p2.name}'s Profile →</button>`}
       </div>` : '';
   return `
     <div class="compare-body">
