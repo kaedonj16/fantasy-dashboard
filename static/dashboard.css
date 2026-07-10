@@ -13485,45 +13485,39 @@ img, svg, canvas {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* Sleeper ADP matrix (dynasty/redraft x 1QB/SF) under the hero value cards. */
-.pm-adp-block {
-  margin-top: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md, 12px);
-  background: var(--row);
-}
+/* Sleeper ADP: two format cards (Dynasty / Redraft), each with 1QB + SF. */
+.pm-adp-block { margin-top: 10px; }
 .pm-adp-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .05em;
-  color: var(--text-muted);
-  margin-bottom: 8px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--text-muted); margin-bottom: 8px;
 }
-.pm-adp-head i { font-size: 10px; color: var(--text-subtle); }
-.pm-adp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.pm-adp-table th,
-.pm-adp-table td { padding: 5px 8px; text-align: center; }
-.pm-adp-table thead th {
-  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
-  color: var(--text-subtle);
+.pm-adp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pm-adp-card {
+  padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--row);
 }
-.pm-adp-table tbody th {
-  text-align: left; font-size: 11px; font-weight: 700; color: var(--text-muted);
+.pm-adp-card-h {
+  font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text-subtle); margin-bottom: 8px;
 }
-.pm-adp-table td {
-  color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums;
+.pm-adp-kvs { display: flex; gap: 8px; }
+.pm-adp-kv {
+  flex: 1; text-align: center; padding: 8px 4px; border-radius: 9px;
+  background: var(--bg-alt); border: 1px solid transparent;
 }
-.pm-adp-table tbody tr + tr th,
-.pm-adp-table tbody tr + tr td { border-top: 1px solid var(--border); }
-/* The column matching the viewer's league type. */
-.pm-adp-table .pm-adp-cur { background: var(--accent-soft, rgba(56,189,248,.12)); }
-.pm-adp-table thead th.pm-adp-cur { color: var(--accent, #3b82f6); }
-.pm-adp-na { color: var(--text-subtle); font-weight: 600; }
+.pm-adp-kv .k {
+  display: block; font-size: 10px; font-weight: 700; letter-spacing: .03em; color: var(--text-subtle);
+}
+.pm-adp-kv .v {
+  display: block; margin-top: 3px; font-size: 18px; font-weight: 800;
+  color: var(--text); font-variant-numeric: tabular-nums; line-height: 1.1;
+}
+/* Value matching the viewer's league type. */
+.pm-adp-kv.pm-adp-cur {
+  background: var(--accent-soft, rgba(56,189,248,.12));
+  border-color: var(--accent-soft-2, rgba(56,189,248,.25));
+}
+.pm-adp-kv.pm-adp-cur .v { color: var(--accent, #3b82f6); }
+.pm-adp-na { color: var(--text-subtle); font-weight: 700; }
 .pm-section-divider {
   border: none;
   border-top: 1px solid var(--border);

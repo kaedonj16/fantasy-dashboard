@@ -8749,27 +8749,27 @@ function openPlayerModal(playerId, playerName, opts) {
         ? '<span class="pm-tep-pill" title="TE premium (+10%)">TE+</span>'
         : '';
 
-      // Sleeper ADP (same feed as the rankings page): dynasty + redraft, 1QB + SF.
-      // Highlight the column matching the viewer's league type.
+      // Sleeper ADP (same feed as the rankings page): dynasty + redraft, 1QB + SF,
+      // grouped into two format cards. The value matching the viewer's league
+      // type is highlighted.
       const _adp = data.stats?.adp;
       const _adpIsSf = (typeof _leagueType !== 'undefined' && _leagueType === 'sf');
-      const _adpCell = v => (v != null ? v : '<span class="pm-adp-na">–</span>');
+      const _adpV = v => (v != null ? v : '<span class="pm-adp-na">–</span>');
+      const _adpCard = (label, oneqb, sf) => `
+        <div class="pm-adp-card">
+          <div class="pm-adp-card-h">${label}</div>
+          <div class="pm-adp-kvs">
+            <div class="pm-adp-kv${_adpIsSf ? '' : ' pm-adp-cur'}"><span class="k">1QB</span><span class="v">${_adpV(oneqb)}</span></div>
+            <div class="pm-adp-kv${_adpIsSf ? ' pm-adp-cur' : ''}"><span class="k">SF</span><span class="v">${_adpV(sf)}</span></div>
+          </div>
+        </div>`;
       const adpRow = (_adp && (_adp.dynasty_1qb != null || _adp.dynasty_sf != null || _adp.redraft_1qb != null || _adp.redraft_sf != null)) ? `
         <div class="pm-adp-block">
-          <div class="pm-adp-head"><i class="fa-solid fa-list-ol" aria-hidden="true"></i> Sleeper ADP</div>
-          <table class="pm-adp-table">
-            <thead><tr><th></th>
-              <th class="${_adpIsSf ? '' : 'pm-adp-cur'}">1QB</th>
-              <th class="${_adpIsSf ? 'pm-adp-cur' : ''}">SF</th></tr></thead>
-            <tbody>
-              <tr><th>Dynasty</th>
-                <td class="${_adpIsSf ? '' : 'pm-adp-cur'}">${_adpCell(_adp.dynasty_1qb)}</td>
-                <td class="${_adpIsSf ? 'pm-adp-cur' : ''}">${_adpCell(_adp.dynasty_sf)}</td></tr>
-              <tr><th>Redraft</th>
-                <td class="${_adpIsSf ? '' : 'pm-adp-cur'}">${_adpCell(_adp.redraft_1qb)}</td>
-                <td class="${_adpIsSf ? 'pm-adp-cur' : ''}">${_adpCell(_adp.redraft_sf)}</td></tr>
-            </tbody>
-          </table>
+          <div class="pm-adp-head">Sleeper ADP</div>
+          <div class="pm-adp-grid">
+            ${_adpCard('Dynasty', _adp.dynasty_1qb, _adp.dynasty_sf)}
+            ${_adpCard('Redraft', _adp.redraft_1qb, _adp.redraft_sf)}
+          </div>
         </div>` : '';
 
       const _heroCardCount = 2 + (ppgCard ? 1 : 0) + (totalCard ? 1 : 0);
@@ -12447,18 +12447,33 @@ function initComparePage() {
     wrap.hidden = false;
   }
 
+  function _tradeHref(id1, id2) {
+    return '/trade?a=' + encodeURIComponent(id1) + '&b=' + encodeURIComponent(id2);
+  }
+
   function _openFor(d1, d2) {
     if (emptyEl) emptyEl.hidden = true;
     if (actionsEl) actionsEl.hidden = false;
-    if (typeof renderCompareInline === 'function') renderCompareInline(d1, d2, resultEl);
     // Point the trade-calculator link at these two players (player 1 -> side A,
-    // player 2 -> side B), using the calculator's shareable ?a=&b= id params.
+    // player 2 -> side B) via the calculator's shareable ?a=&b= id params. Set
+    // this BEFORE rendering so a render error can't leave the button pointing at
+    // an empty /trade.
     const tradeLink = document.getElementById('cmpTradeLink');
-    if (tradeLink && d1 && d2) {
-      tradeLink.href = '/trade?a=' + encodeURIComponent(d1.player_id) + '&b=' + encodeURIComponent(d2.player_id);
-    }
+    if (tradeLink && d1 && d2) tradeLink.href = _tradeHref(d1.player_id, d2.player_id);
+    if (typeof renderCompareInline === 'function') renderCompareInline(d1, d2, resultEl);
     _recordRecent(chosen[1] || { player_id: d1.player_id, name: d1.name }, chosen[2] || { player_id: d2.player_id, name: d2.name });
     _renderRecent();
+  }
+
+  // Belt-and-suspenders: rebuild the trade-calc link from the current selection
+  // at click time, so it loads the two players even if _openFor's href update
+  // was skipped (e.g. a render error) or is stale after a swap.
+  const _tradeLinkEl = document.getElementById('cmpTradeLink');
+  if (_tradeLinkEl && !_tradeLinkEl._cmpBound) {
+    _tradeLinkEl._cmpBound = true;
+    _tradeLinkEl.addEventListener('click', function () {
+      if (chosen[1] && chosen[2]) this.href = _tradeHref(chosen[1].player_id, chosen[2].player_id);
+    });
   }
 
   function _maybeCompare() {
