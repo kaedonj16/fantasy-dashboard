@@ -8749,27 +8749,27 @@ function openPlayerModal(playerId, playerName, opts) {
         ? '<span class="pm-tep-pill" title="TE premium (+10%)">TE+</span>'
         : '';
 
-      // Sleeper ADP (same feed as the rankings page): dynasty + redraft, 1QB + SF.
-      // Highlight the column matching the viewer's league type.
+      // Sleeper ADP (same feed as the rankings page): dynasty + redraft, 1QB + SF,
+      // grouped into two format cards. The value matching the viewer's league
+      // type is highlighted.
       const _adp = data.stats?.adp;
       const _adpIsSf = (typeof _leagueType !== 'undefined' && _leagueType === 'sf');
-      const _adpCell = v => (v != null ? v : '<span class="pm-adp-na">–</span>');
+      const _adpV = v => (v != null ? v : '<span class="pm-adp-na">–</span>');
+      const _adpCard = (label, oneqb, sf) => `
+        <div class="pm-adp-card">
+          <div class="pm-adp-card-h">${label}</div>
+          <div class="pm-adp-kvs">
+            <div class="pm-adp-kv${_adpIsSf ? '' : ' pm-adp-cur'}"><span class="k">1QB</span><span class="v">${_adpV(oneqb)}</span></div>
+            <div class="pm-adp-kv${_adpIsSf ? ' pm-adp-cur' : ''}"><span class="k">SF</span><span class="v">${_adpV(sf)}</span></div>
+          </div>
+        </div>`;
       const adpRow = (_adp && (_adp.dynasty_1qb != null || _adp.dynasty_sf != null || _adp.redraft_1qb != null || _adp.redraft_sf != null)) ? `
         <div class="pm-adp-block">
-          <div class="pm-adp-head"><i class="fa-solid fa-list-ol" aria-hidden="true"></i> Sleeper ADP</div>
-          <table class="pm-adp-table">
-            <thead><tr><th></th>
-              <th class="${_adpIsSf ? '' : 'pm-adp-cur'}">1QB</th>
-              <th class="${_adpIsSf ? 'pm-adp-cur' : ''}">SF</th></tr></thead>
-            <tbody>
-              <tr><th>Dynasty</th>
-                <td class="${_adpIsSf ? '' : 'pm-adp-cur'}">${_adpCell(_adp.dynasty_1qb)}</td>
-                <td class="${_adpIsSf ? 'pm-adp-cur' : ''}">${_adpCell(_adp.dynasty_sf)}</td></tr>
-              <tr><th>Redraft</th>
-                <td class="${_adpIsSf ? '' : 'pm-adp-cur'}">${_adpCell(_adp.redraft_1qb)}</td>
-                <td class="${_adpIsSf ? 'pm-adp-cur' : ''}">${_adpCell(_adp.redraft_sf)}</td></tr>
-            </tbody>
-          </table>
+          <div class="pm-adp-head">Sleeper ADP</div>
+          <div class="pm-adp-grid">
+            ${_adpCard('Dynasty', _adp.dynasty_1qb, _adp.dynasty_sf)}
+            ${_adpCard('Redraft', _adp.redraft_1qb, _adp.redraft_sf)}
+          </div>
         </div>` : '';
 
       const _heroCardCount = 2 + (ppgCard ? 1 : 0) + (totalCard ? 1 : 0);
