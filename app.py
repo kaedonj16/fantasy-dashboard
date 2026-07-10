@@ -24310,16 +24310,33 @@ def _resolve_pick_asset(pick_id: str, num_teams: int, values_by_id: Optional[dic
 
 
 def _value_matched_acquire_packages(focus_value: float, players: list, picks: list,
-                                     max_options: int = 12) -> list:
+                                     max_options: int = 12,
+                                     sorted_vals: list | None = None,
+                                     league_size: int = 10) -> list:
     """Build value-matched ASSET packages (players + picks from the viewer's roster)
     whose combined value is close to focus_value. Used for the pick build-around
     path: 'what would I give to acquire this pick?'.
+
+    Labels and the acceptable band are computed on *effective* (depth-adjusted)
+    value so a multi-asset offer is judged the way the trade card scores it: the
+    side sending more bodies absorbs a bench penalty, so three pieces for one
+    target that looks "fair" in raw value actually reads as an overpay. Matching
+    on effective value keeps the surfaced offers feasible for both sides.
 
     Returns a list shaped for renderPackagePage (assets / value_label / value_class).
     """
     if focus_value <= 0:
         return []
-    lo, hi = focus_value * 0.82, focus_value * 1.12
+
+    from dashboard_services.archetype_engine import _depth_penalty
+
+    def _eff(assets: list) -> float:
+        raw = sum(a["value"] for a in assets)
+        return raw - _depth_penalty(max(0, len(assets) - 1), sorted_vals, league_size)
+
+    # Band is on effective value; keep the raw window a touch wider so viable
+    # multi-piece packages (which lose value to the penalty) still get built.
+    lo, hi = focus_value * 0.80, focus_value * 1.25
 
     def _passet(p: dict) -> dict:
         return {
@@ -24351,8 +24368,9 @@ def _value_matched_acquire_packages(focus_value: float, players: list, picks: li
     out: list = []
     seen: set = set()
 
-    def _label(total: float) -> tuple:
-        r = total / focus_value if focus_value else 0
+    def _label(eff: float) -> tuple:
+        # Label on effective value: this is what the trade card balance reflects.
+        r = eff / focus_value if focus_value else 0
         if r <= 0.94:
             return "Great deal", "great"
         if r <= 1.08:
@@ -24361,13 +24379,16 @@ def _value_matched_acquire_packages(focus_value: float, players: list, picks: li
 
     def _add(assets: list):
         total = round(sum(a["value"] for a in assets), 1)
-        if not (lo <= total <= hi):
+        eff = _eff(assets)
+        # Band and underpay guard both live on effective value so nothing that
+        # would read as a lopsided steal for the sender gets surfaced.
+        if not (lo <= total <= hi) or eff < focus_value * 0.90:
             return
         key = frozenset(a.get("player_id") or a["name"] for a in assets)
         if key in seen:
             return
         seen.add(key)
-        label, cls = _label(total)
+        label, cls = _label(eff)
         out.append({
             "assets":           assets,
             "send_value":       total,
@@ -24375,7 +24396,7 @@ def _value_matched_acquire_packages(focus_value: float, players: list, picks: li
             "value_class":      cls,
             "is_profile_match": True,
             "frequency":        0,
-            "_fit":             abs(total - focus_value),
+            "_fit":             abs(eff - focus_value),
         })
 
     # 1 player / 1 pick
@@ -24714,8 +24735,13 @@ def api_trade_intel_player_packages(player_id: str):
                 pk for pk in (viewer_picks or [])
                 if str(player_id) not in _vpick_ids(pk)
             ]
+            _ladder = sorted(
+                (v for v in (float(x.get("value") or 0) for x in values_by_id.values()) if v > 0),
+                reverse=True,
+            )
             pick_packages = _value_matched_acquire_packages(
-                focus_value, viewer_players, _viewer_picks_offer
+                focus_value, viewer_players, _viewer_picks_offer,
+                sorted_vals=_ladder, league_size=num_teams,
             )
             return jsonify({
                 "player_name":         player_name,
