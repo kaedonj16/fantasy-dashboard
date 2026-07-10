@@ -12423,7 +12423,16 @@ function initComparePage() {
     .then(r => r.ok ? r.json() : { baselines: [] })
     .then(d => {
       _baselineList = (d && d.baselines) || [];
-      _baselineList.forEach(b => { _baselines[String(b.player_id)] = b; });
+      _baselineList.forEach(b => {
+        _baselines[String(b.player_id)] = b;
+        // Feed the metrics tab: it looks a baseline side up here instead of
+        // hitting /api/player-advanced-metrics.
+        _cmpBaselineStore[String(b.player_id)] = {
+          metrics: b.metrics || {}, position: b.position || '',
+          season: (b.stats && b.stats.ppg_season) || null,
+          label: (b.tier_range || b.name) + ((b.stats && b.stats.ppg_season) ? ' · ' + b.stats.ppg_season + ' avg' : ' avg'),
+        };
+      });
     })
     .catch(() => {});
 
@@ -13301,7 +13310,10 @@ var _cmpSides = {
 };
 var _cmpWeeklyCache = {};  // `${pid}_${season}` -> weeks[]
 var _cmpAdvCache = {};     // `${pid}_${seasonParam}` -> advanced-metrics payload
+var _cmpBaselineStore = {}; // `avg-POS-tier` -> { metrics, position, season, label }
 var _cmpRenderToken = 0;   // guards against out-of-order responses from rapid clicks
+
+function _cmpIsBaseline(pid) { return String(pid || '').startsWith('avg-'); }
 
 function _cmpEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
 
@@ -13409,6 +13421,16 @@ async function _cmpFetchRanks(pid, season, ws, we) {
 
 // Fetch one side's metrics for display (season-level, or week-range aggregate).
 async function _cmpFetchSide(side) {
+  // Tier averages carry their metrics precomputed (averaged across the tier's
+  // players); serve those instead of a per-player lookup. No ranks/bounds - an
+  // average has no positional rank - so bars fall back to the value scale.
+  if (_cmpIsBaseline(side.pid)) {
+    const store = _cmpBaselineStore[String(side.pid)] || {};
+    if (store.position && !side.position) side.position = store.position;
+    side.seasons = store.season ? [store.season] : [];
+    side.rangeMeta = null;
+    return { metrics: store.metrics || {}, ref: null, ranks: {}, counts: {}, bounds: {} };
+  }
   const seasonParam = side.season === null ? 'career' : side.season;
   const advKey = side.pid + '_' + seasonParam;
   let advData = _cmpAdvCache[advKey];
@@ -13450,6 +13472,13 @@ async function _cmpFetchSide(side) {
 function _cmpSideSelector(which) {
   const side = _cmpSides[which];
   const name = _comparePlayerNames[side.pid] || ('Player ' + which);
+  // Tier averages have no season/week controls - they're a fixed season average.
+  if (_cmpIsBaseline(side.pid)) {
+    const store = _cmpBaselineStore[String(side.pid)] || {};
+    const sideCls = which === 2 ? ' compare-season-col-right' : '';
+    return '<div class="compare-season-col' + sideCls + '"><div class="compare-season-label">' + _cmpEsc(name) + '</div>'
+      + '<div class="compare-baseline-scope">' + _cmpEsc(store.label || 'tier average') + '</div></div>';
+  }
   const seasons = (side.seasons || []).slice().sort((a, b) => b - a);
   const isCareer = side.season === null;
   const sideCls = which === 2 ? ' compare-season-col-right' : '';
@@ -13521,6 +13550,7 @@ function cmpSetCustom(which, start, end) {
 function _cmpInitWkBars() {
   [1, 2].forEach(function(which) {
     const side = _cmpSides[which];
+    if (_cmpIsBaseline(side.pid)) return; // tier average — no week bar
     if (side.season === null) return; // career — no bar rendered
     const maxWk = (side.rangeMeta && side.rangeMeta.maxWk) ? side.rangeMeta.maxWk : 18;
     _wkBarInit('cmpWkBar' + which, function(ws, we) {
@@ -13567,6 +13597,10 @@ async function cmpRenderWeekly(which) {
   const el = document.getElementById('compareWeekly' + which);
   if (!el) return;
   const side = _cmpSides[which];
+  if (_cmpIsBaseline(side.pid)) {
+    el.innerHTML = '<div class="compare-pick-empty">Weekly usage isn\'t shown for tier averages.</div>';
+    return;
+  }
   // Career has no single weekly series; fall back to the most recent season.
   const season = side.season || (side.seasons || []).slice().sort((a, b) => b - a)[0];
   if (!season) { el.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Pick a season to see weekly trends.</div>'; return; }
@@ -13724,22 +13758,16 @@ function _compareWireView(p1, p2) {
   _cmpSides[1].position = (p1.position || '').toUpperCase();
   _cmpSides[2].position = (p2.position || '').toUpperCase();
 
-  if (b1 || b2) {
-    const mc = document.getElementById('compareMetricsContent');
-    if (mc) mc.innerHTML = '<div class="compare-pick-empty">Advanced metrics aren\'t available for tier averages.</div>';
-    ['compareWeekly1', 'compareWeekly2'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.innerHTML = '<div class="compare-pick-empty">' + _bnote + '</div>';
+  // Advanced Metrics tab loads for baselines too - a baseline side serves its
+  // precomputed tier-average metrics (see _cmpFetchSide), a real side loads
+  // normally. The weekly-usage sub-panel self-guards per side (cmpRenderWeekly).
+  fetch('/api/nfl-state').then(r => r.json()).catch(() => ({}))
+    .then(nflState => {
+      const isOffseason = (nflState.season_type || '').toLowerCase() === 'off';
+      const currentSeason = nflState.season || new Date().getFullYear();
+      const defaultSeason = isOffseason ? null : currentSeason;
+      loadCompareMetrics(p1.player_id, p2.player_id, defaultSeason, defaultSeason);
     });
-  } else {
-    fetch('/api/nfl-state').then(r => r.json()).catch(() => ({}))
-      .then(nflState => {
-        const isOffseason = (nflState.season_type || '').toLowerCase() === 'off';
-        const currentSeason = nflState.season || new Date().getFullYear();
-        const defaultSeason = isOffseason ? null : currentSeason;
-        loadCompareMetrics(p1.player_id, p2.player_id, defaultSeason, defaultSeason);
-      });
-  }
 
   const chartDiv = document.getElementById('compareValueChart');
   if (chartDiv) {

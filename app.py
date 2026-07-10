@@ -20228,7 +20228,7 @@ _COMPARE_BASELINES_CACHE = None
 _COMPARE_BASELINES_TS = 0.0
 _COMPARE_BASELINES_TTL = 300
 _COMPARE_TIER_SIZE = 12
-_COMPARE_MAX_TIERS = 5
+_COMPARE_MAX_TIERS = 2
 
 
 def _compute_compare_baselines():
@@ -20309,6 +20309,39 @@ def _compute_compare_baselines():
         except (TypeError, ValueError):
             return None
 
+    # Average each tier's players' advanced metrics so the compare page's
+    # Advanced Metrics tab works against a tier. Reads per-player season metrics
+    # from the DB; degrades to no metrics if the DB is unavailable (offline).
+    _adv_fns = {"dead": False}
+
+    def _avg_tier_metrics(ids, season):
+        if not season or _adv_fns["dead"]:
+            return {}
+        try:
+            from data_building.advanced_metrics import (
+                get_player_metrics_by_season, strip_premium_metrics)
+        except Exception:
+            _adv_fns["dead"] = True
+            return {}
+        _skip = {"season", "player_id", "week", "games", "as_of_date"}
+        acc = {}
+        for pid in ids:
+            try:
+                m = get_player_metrics_by_season(str(pid), int(season))
+            except Exception:
+                _adv_fns["dead"] = True  # DB unavailable - stop trying
+                return {}
+            for k, v in (m or {}).items():
+                if k in _skip or isinstance(v, bool) or not isinstance(v, (int, float)):
+                    continue
+                acc.setdefault(k, []).append(float(v))
+        avg = {k: round(sum(vs) / len(vs), 3) for k, vs in acc.items() if vs}
+        try:
+            avg = strip_premium_metrics(avg) or {}
+        except Exception:
+            pass
+        return avg
+
     out = []
     for pos in ("QB", "RB", "WR", "TE"):
         # Rank the position by total fantasy points - the season finish that
@@ -20341,6 +20374,7 @@ def _compute_compare_baselines():
                     "total_pts_rank": None, "total_pts_ovr_rank": None,
                 },
                 "value_history": [],
+                "metrics": _avg_tier_metrics(ids, ppg_season),
             })
 
     _COMPARE_BASELINES_CACHE = out

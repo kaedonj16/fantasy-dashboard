@@ -75,10 +75,17 @@ def test_compare_baselines_endpoint(offline_client):
     if not baselines:
         import pytest as _pytest
         _pytest.skip("no usage/points data in this environment")
+    from collections import Counter
+    per_pos = Counter(b["position"] for b in baselines)
     for b in baselines:
         assert str(b["player_id"]).startswith("avg-")
         assert b.get("is_baseline") is True
         assert b.get("position") in ("QB", "RB", "WR", "TE")
+        # Averaged advanced metrics ride along for the Advanced Metrics tab (may be
+        # empty when the metrics DB is unavailable, but the key is always present).
+        assert isinstance(b.get("metrics"), dict)
+    # Two tiers per position at most (groups 1-2 only).
+    assert all(c <= 2 for c in per_pos.values())
     # Tiers are ranked by fantasy production, so WR1's avg total points >= WR2's.
     wr = [b for b in baselines if b["position"] == "WR"]
     totals = [b["stats"]["total_pts"] for b in wr]

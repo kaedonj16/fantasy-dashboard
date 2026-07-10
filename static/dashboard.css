@@ -14939,6 +14939,11 @@ tr.team-clickable {
   color: var(--text-muted);
   white-space: nowrap;
 }
+.compare-baseline-scope {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 4px 0 2px;
+}
 .compare-season-pills {
   display: flex;
   gap: 5px;
