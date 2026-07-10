@@ -5693,6 +5693,12 @@ window.initTradePage = function initTradePage(root = document) {
           ? `<span class="otc-strategy-partner"><span class="dot" style="background:${pAColor};"></span>${pName}</span>`
           : "";
 
+        // Partner-fit chip: why this package suits the other side's roster.
+        const fitNote = t.fit_note ? esc(t.fit_note) : "";
+        const fitHtml = fitNote
+          ? `<span class="otc-strategy-fit"><i class="fa-solid fa-puzzle-piece"></i>${fitNote}</span>`
+          : "";
+
         // Analyze button data
         const receiveEnc = encodeURIComponent(JSON.stringify(getAssets));
         const sendEnc    = encodeURIComponent(JSON.stringify(giveAssets));
@@ -5709,6 +5715,7 @@ window.initTradePage = function initTradePage(root = document) {
               ${renderAssetHtml(giveAssets)}
             </div>
           </div>
+          ${fitHtml ? `<div class="otc-rt-fit">${fitHtml}</div>` : ""}
           <div class="otc-rt-footer">
             <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0;">
               ${gradeHtml}${acptHtml}${wpdHtml}${podHtml}

@@ -303,6 +303,24 @@ def _acceptance_fit(pkg: List[Dict], need: Optional[set], stacked: Optional[set]
     return max(-12, min(12, bonus))
 
 
+def _fit_note(pkg: List[Dict], need: Optional[set], target_pos: str,
+              partner_counts: Optional[Dict[str, int]]) -> str:
+    """Short, human explanation of why a package suits the partner's roster:
+    which of their needs the send fills, and whether the target comes from a
+    position they're deep at. Empty when there's nothing worth saying."""
+    notes: List[str] = []
+    send_pos = {a.get("position") for a in (pkg or [])
+                if not a.get("is_pick") and a.get("position") != "PICK"}
+    matched = [p for p in ("QB", "RB", "WR", "TE")
+               if need and p in need and p in send_pos]
+    if matched:
+        notes.append("fills their " + "/".join(matched) + " need")
+    if partner_counts and target_pos and partner_counts.get(target_pos, 0) >= 4:
+        notes.append(f"from their {target_pos} surplus")
+    text = ", ".join(notes[:2])
+    return (text[:1].upper() + text[1:]) if text else ""
+
+
 def _suggestion_rank(r: Dict[str, Any]) -> float:
     """Composite ordering key for a finished suggestion: weight roster impact
     (net playoff-odds delta) most, then how likely the partner is to accept, so
@@ -1937,6 +1955,8 @@ def get_archetype_suggestions(
                 "net_win_prob_delta":      round(net_wpd_pkg, 4),
                 "net_playoff_odds_delta":  round(net_pod_pkg, 4),
                 "acceptance_pct":          acpt,
+                "fit_note":                _fit_note(pkg, _p_need, pos,
+                                                     _pmeta.get("pos_counts")),
                 "direction":               "acquire",
                 "suggested_send":          pkg,
             })
