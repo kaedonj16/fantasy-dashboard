@@ -151,6 +151,31 @@ def test_consolidate_wont_trade_down_too_many_tiers():
     assert pkgs, "a package with a tier-comparable headliner should be surfaced"
 
 
+def test_tier_guard_applies_to_every_package_path():
+    """The tier guard is not consolidate-only: the contending/acquire path must
+    reject a package that reaches a stud purely with low-tier depth, while still
+    surfacing a tier-comparable package and a fair one-for-one."""
+    ladder = _ladder()
+    target = 850.0  # T1 on the fallback thresholds
+    scrub = [
+        {"player_id": "a", "name": "WR A", "position": "WR", "value": 460.0},
+        {"player_id": "b", "name": "RB B", "position": "RB", "value": 460.0},
+    ]
+    assert _select_packages(scrub, target, "contending", max_pkgs=3,
+                            sorted_vals=ladder, league_size=10) == []
+    # Tier-comparable headliner is fine.
+    comparable = [
+        {"player_id": "c", "name": "WR C", "position": "WR", "value": 720.0},
+        {"player_id": "d", "name": "RB D", "position": "RB", "value": 150.0},
+    ]
+    assert _select_packages(comparable, target, "contending", max_pkgs=3,
+                            sorted_vals=ladder, league_size=10)
+    # A fair one-for-one (a single near-value asset) must never be blocked.
+    one = [{"player_id": "e", "name": "WR E", "position": "WR", "value": 840.0}]
+    assert _select_packages(one, target, "contending", max_pkgs=3,
+                            sorted_vals=ladder, league_size=10)
+
+
 def test_acceptance_uses_effective_value():
     # Fair effective value -> mid acceptance; clear effective overpay -> high.
     assert _estimate_acceptance(700, 700, is_preferred=False) == 50

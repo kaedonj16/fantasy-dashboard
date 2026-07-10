@@ -647,6 +647,11 @@ def _select_packages(
     to clear the band, several lesser pieces must out-total the target in RAW
     value by enough to survive the depth penalty.
 
+    Every candidate structure - consolidate, contending, player+pick, and the
+    closest-match fallbacks - is also held to a tier guard: the package's
+    headliner must sit within _CONSOLIDATE_MAX_TIER_DROP tiers of the target, so
+    no path can quietly assemble a wall of low-tier depth to reach a stud.
+
     Selection also respects the *partner's* roster: within the value band, a
     package is preferred when it sends a position the partner is thin at
     (need_positions) and de-prioritised when it piles onto one they are already
@@ -702,6 +707,21 @@ def _select_packages(
         e = _eff(*assets)
         return lo <= e <= hi
 
+    # Tier guard, applied to every package: a fair offer trades comparable-quality
+    # assets, not a pile of low-tier depth summed up to a stud's price. Require the
+    # package's headliner (its best piece) to sit within a bounded number of tiers
+    # of the target - "don't go down too many tiers" to reach it. Picks carry no
+    # tier and are ignored by the check.
+    _thr = tier_thresholds or FALLBACK_THRESHOLDS
+    _target_tier = asset_tier(target_val, _thr)
+
+    def _tier_ok(*assets) -> bool:
+        tiers = [asset_tier(a.get("value", 0), _thr) for a in assets
+                 if not (a.get("is_pick") or a.get("position") == "PICK")]
+        if not tiers:
+            return True
+        return (min(tiers) - _target_tier) <= _CONSOLIDATE_MAX_TIER_DROP
+
     def _drop_underpays(pkgs: List[List[Dict]]) -> List[List[Dict]]:
         return [p for p in pkgs if _eff(*p) >= eff_floor]
 
@@ -730,20 +750,6 @@ def _select_packages(
         # one star still has to clear the star's price after the depth penalty.
         # Priority: 2 players → 3 players → 2 players + pick
         results_c: List[List[Dict]] = []
-
-        # Tier guard: a real consolidation trades comparable-quality assets up a
-        # tier or two, not a pile of low-tier depth for a stud. Require the
-        # package's headliner (its best piece) to sit within a bounded number of
-        # tiers of the target - "don't go down too many tiers" to reach it.
-        _thr = tier_thresholds or FALLBACK_THRESHOLDS
-        target_tier = asset_tier(target_val, _thr)
-
-        def _tier_ok(*assets) -> bool:
-            tiers = [asset_tier(a.get("value", 0), _thr) for a in assets
-                     if not (a.get("is_pick") or a.get("position") == "PICK")]
-            if not tiers:
-                return True
-            return (min(tiers) - target_tier) <= _CONSOLIDATE_MAX_TIER_DROP
 
         # 1. Best 2-player package
         best2, best2_d = None, float("inf")
@@ -800,17 +806,17 @@ def _select_packages(
     # ── 1. Player-only: exhaustive 1 / 2 / 3-player search (effective) ───────
     best, best_d = None, float("inf")
     for c in player_pool:
-        if _in_band(c) and _dist(c) < best_d:
+        if _in_band(c) and _tier_ok(c) and _dist(c) < best_d:
             best_d, best = _dist(c), [c]
     for a, b in combinations(player_pool, 2):
         if a["position"] == "QB" and b["position"] == "QB":
             continue
-        if _in_band(a, b) and _dist(a, b) < best_d:
+        if _in_band(a, b) and _tier_ok(a, b) and _dist(a, b) < best_d:
             best_d, best = _dist(a, b), [a, b]
     for a, b, c in combinations(player_pool[:7], 3):
         if sum(1 for x in (a, b, c) if x["position"] == "QB") > 1:
             continue
-        if _in_band(a, b, c) and _dist(a, b, c) < best_d:
+        if _in_band(a, b, c) and _tier_ok(a, b, c) and _dist(a, b, c) < best_d:
             best_d, best = _dist(a, b, c), [a, b, c]
     if best:
         results.append(best)
@@ -824,12 +830,12 @@ def _select_packages(
             if _in_band(pk) and _dist(pk) < best_pp_d:
                 best_pp_d, best_pp = _dist(pk), [pk]
             for c in mp:
-                if _in_band(c, pk) and _dist(c, pk) < best_pp_d:
+                if _in_band(c, pk) and _tier_ok(c, pk) and _dist(c, pk) < best_pp_d:
                     best_pp_d, best_pp = _dist(c, pk), [c, pk]
             for a, b in combinations(mp, 2):
                 if a["position"] == "QB" and b["position"] == "QB":
                     continue
-                if _in_band(a, b, pk) and _dist(a, b, pk) < best_pp_d:
+                if _in_band(a, b, pk) and _tier_ok(a, b, pk) and _dist(a, b, pk) < best_pp_d:
                     best_pp_d, best_pp = _dist(a, b, pk), [a, b, pk]
         if best_pp:
             results.append(best_pp)
@@ -844,7 +850,7 @@ def _select_packages(
                 best_2p_d, best_2p = _dist(pk1, pk2), [pk1, pk2]
             # One player + two picks
             for c in mp:
-                if _in_band(c, pk1, pk2) and _dist(c, pk1, pk2) < best_2p_d:
+                if _in_band(c, pk1, pk2) and _tier_ok(c, pk1, pk2) and _dist(c, pk1, pk2) < best_2p_d:
                     best_2p_d, best_2p = _dist(c, pk1, pk2), [c, pk1, pk2]
         if best_2p:
             results.append(best_2p)
@@ -854,17 +860,17 @@ def _select_packages(
         all_pool = (player_pool + pick_pool)[:15]
         fallback, fallback_d = None, float("inf")
         for c in all_pool:
-            if _dist(c) < fallback_d:
+            if _tier_ok(c) and _dist(c) < fallback_d:
                 fallback_d, fallback = _dist(c), [c]
         for a, b in combinations(all_pool, 2):
             if a.get("position") == "QB" and b.get("position") == "QB":
                 continue
-            if _dist(a, b) < fallback_d:
+            if _tier_ok(a, b) and _dist(a, b) < fallback_d:
                 fallback_d, fallback = _dist(a, b), [a, b]
         for a, b, c in combinations(all_pool[:7], 3):
             if sum(1 for x in (a, b, c) if x["position"] == "QB") > 1:
                 continue
-            if _dist(a, b, c) < fallback_d:
+            if _tier_ok(a, b, c) and _dist(a, b, c) < fallback_d:
                 fallback_d, fallback = _dist(a, b, c), [a, b, c]
         if fallback:
             results.append(fallback)
