@@ -65,6 +65,29 @@ def test_compare_page_seo_title_from_ids(offline_client):
     assert " vs " in html and "Dynasty Comparison" in html
 
 
+def test_compare_baselines_endpoint(offline_client):
+    """The compare page's tier-average opponents (Avg WR1, RB2, ...). Each entry
+    must be shaped like /api/player-details (synthetic id, position, stats with a
+    numeric value) so the compare UI can treat it as a player."""
+    r = offline_client.get("/api/compare-baselines")
+    assert r.status_code == 200
+    baselines = r.get_json().get("baselines", [])
+    if not baselines:
+        import pytest as _pytest
+        _pytest.skip("no value table in this environment")
+    for b in baselines:
+        assert str(b["player_id"]).startswith("avg-")
+        assert b.get("is_baseline") is True
+        assert b.get("position") in ("QB", "RB", "WR", "TE")
+        # A tier average always has a numeric dynasty value (its whole point);
+        # PPG may be null when no usage season is available.
+        assert isinstance(b["stats"]["value"], (int, float))
+    # Tiers are per-position and ordered, so WR1's average value >= WR2's.
+    wr = [b for b in baselines if b["position"] == "WR"]
+    vals = [b["stats"]["value"] for b in wr]
+    assert vals == sorted(vals, reverse=True)
+
+
 def test_watchlist_page_renders(offline_client):
     r = offline_client.get("/watchlist")
     assert r.status_code == 200

@@ -12415,7 +12415,42 @@ function initComparePage() {
   const actionsEl = document.getElementById('cmpActions');
   const resultEl = document.getElementById('comparePageResult');
 
+  // Tier-average opponents (Avg WR1, RB2, ...) selectable alongside real players.
+  // Fetched once and cached; keyed by their synthetic "avg-POS-tier" id.
+  const _baselines = {};        // id -> full baseline object (player-details shape)
+  let _baselineList = [];       // array for picker matching
+  const _baselinesReady = fetch('/api/compare-baselines')
+    .then(r => r.ok ? r.json() : { baselines: [] })
+    .then(d => {
+      _baselineList = (d && d.baselines) || [];
+      _baselineList.forEach(b => { _baselines[String(b.player_id)] = b; });
+    })
+    .catch(() => {});
+
+  const _isBaseline = pid => String(pid || '').startsWith('avg-');
+
+  // Baselines whose name/tier/position matches the query, as player-like picker
+  // rows. Matches "wr", "wr1", "avg", "rb2", "tier", etc.
+  function _matchBaselines(q) {
+    const s = (q || '').toLowerCase().replace(/\s+/g, '');
+    if (!s) return [];
+    return _baselineList.filter(b => {
+      const name = (b.name || '').toLowerCase().replace(/\s+/g, '');   // "avgwr1"
+      const label = ((b.stats && b.stats.pos_rank_label) || '').toLowerCase(); // "wr1"
+      const pos = (b.position || '').toLowerCase();
+      return name.includes(s) || label.startsWith(s) || ('avg' + label).includes(s)
+        || (s.length <= 3 && pos.startsWith(s)) || 'tier'.startsWith(s) || 'average'.startsWith(s);
+    }).slice(0, 6);
+  }
+
   function _fetchDetails(pid) {
+    if (_isBaseline(pid)) {
+      return _baselinesReady.then(() => {
+        const b = _baselines[String(pid)];
+        if (!b) throw new Error('unknown baseline ' + pid);
+        return b;
+      });
+    }
     return fetch('/api/player-details/' + encodeURIComponent(pid))
       .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
   }
@@ -12459,7 +12494,15 @@ function initComparePage() {
     // this BEFORE rendering so a render error can't leave the button pointing at
     // an empty /trade.
     const tradeLink = document.getElementById('cmpTradeLink');
-    if (tradeLink && d1 && d2) tradeLink.href = _tradeHref(d1.player_id, d2.player_id);
+    // A tier average has no place in the trade calculator, so hide the link when
+    // either side is a baseline.
+    const _hasBaseline = d1 && d2 && (_isBaseline(d1.player_id) || _isBaseline(d2.player_id));
+    if (tradeLink) {
+      // Use display, not [hidden]: .compare-action-btn sets display and would
+      // override the hidden attribute.
+      if (_hasBaseline) { tradeLink.style.display = 'none'; }
+      else { tradeLink.style.display = ''; if (d1 && d2) tradeLink.href = _tradeHref(d1.player_id, d2.player_id); }
+    }
     if (typeof renderCompareInline === 'function') renderCompareInline(d1, d2, resultEl);
     _recordRecent(chosen[1] || { player_id: d1.player_id, name: d1.name }, chosen[2] || { player_id: d2.player_id, name: d2.name });
     _renderRecent();
@@ -12509,7 +12552,7 @@ function initComparePage() {
         else done();
       } else if (act === 'watch') {
         [chosen[1], chosen[2]].forEach(p => {
-          if (p && typeof _isWatched === 'function' && !_isWatched(p.player_id) && typeof _toggleWatchlist === 'function') {
+          if (p && !_isBaseline(p.player_id) && typeof _isWatched === 'function' && !_isWatched(p.player_id) && typeof _toggleWatchlist === 'function') {
             _toggleWatchlist({ player_id: String(p.player_id), name: p.name || '', position: p.position || '', team: p.team || '' });
           }
         });
@@ -12575,18 +12618,25 @@ function initComparePage() {
       if (clearBtn) clearBtn.hidden = false;
       _maybeCompare();
     }
-    function render(list) {
+    function render(list, q) {
       const players = Array.isArray(list) ? list : (list.players || []);
       const other = chosen[slot === 1 ? 2 : 1];
-      const filtered = players.filter(p => !other || String(p.player_id) !== String(other.player_id));
+      // Tier-average opponents matching the query come first, tagged so they read
+      // as baselines rather than players.
+      const merged = _matchBaselines(q).concat(players);
+      const filtered = merged.filter(p => !other || String(p.player_id) !== String(other.player_id));
       activeIdx = -1;
       if (!filtered.length) { results.innerHTML = '<div class="compare-pick-empty">No players found</div>'; input.setAttribute('aria-expanded', 'false'); return; }
-      results.innerHTML = filtered.slice(0, 10).map(p =>
-        '<button type="button" class="compare-pick-result" role="option" aria-selected="false" data-pid="' + _wlEsc(p.player_id) + '" data-name="' + _wlEsc(p.name) +
-        '" data-pos="' + _wlEsc(p.position || '') + '" data-team="' + _wlEsc(p.team || '') + '">' +
-        '<span class="compare-pick-rname">' + _wlEsc(p.name) + '</span>' +
-        '<span class="compare-pick-rmeta">' + _wlEsc((p.position || '') + (p.team ? ' · ' + p.team : '')) + '</span></button>'
-      ).join('');
+      results.innerHTML = filtered.slice(0, 12).map(p => {
+        const isB = !!p.is_baseline;
+        const meta = isB
+          ? ((p.tier_range || p.position) + ' average')
+          : ((p.position || '') + (p.team ? ' · ' + p.team : ''));
+        return '<button type="button" class="compare-pick-result' + (isB ? ' compare-pick-baseline' : '') + '" role="option" aria-selected="false" data-pid="' + _wlEsc(p.player_id) + '" data-name="' + _wlEsc(p.name) +
+          '" data-pos="' + _wlEsc(p.position || '') + '" data-team="' + _wlEsc(p.team || '') + '">' +
+          '<span class="compare-pick-rname">' + _wlEsc(p.name) + (isB ? '<span class="compare-pick-tag">TIER AVG</span>' : '') + '</span>' +
+          '<span class="compare-pick-rmeta">' + _wlEsc(meta) + '</span></button>';
+      }).join('');
       input.setAttribute('aria-expanded', 'true');
     }
     input.addEventListener('input', function () {
@@ -12598,8 +12648,8 @@ function initComparePage() {
       debounce = setTimeout(function () {
         fetch('/api/players?q=' + encodeURIComponent(q) + '&limit=20')
           .then(r => r.json())
-          .then(list => { if (currentQuery === q) render(list); })
-          .catch(() => { results.innerHTML = '<div class="compare-pick-empty">Search failed</div>'; });
+          .then(list => { if (currentQuery === q) render(list, q); })
+          .catch(() => { if (currentQuery === q) render([], q); });
       }, 220);
     });
     // Arrow / Enter / Escape navigation of the suggestion list.
@@ -13657,21 +13707,39 @@ function cmpSwitchTab(tab) {
 // Post-render wiring shared by both compare surfaces: lazy game logs, metrics
 // (with per-side season selection), and the dual value-history chart.
 function _compareWireView(p1, p2) {
-  _cmpLoadGameLogs(p1.player_id, p1.position, 'compareGameLogs1');
-  _cmpLoadGameLogs(p2.player_id, p2.position, 'compareGameLogs2');
+  // Tier averages have no game logs, advanced metrics, or weekly usage; show a
+  // note in those tabs instead of firing lookups that would 404 on the synthetic
+  // "avg-POS-tier" id.
+  const _isB = pid => String(pid || '').startsWith('avg-');
+  const b1 = _isB(p1.player_id), b2 = _isB(p2.player_id);
+  const _bnote = 'Not available for tier averages.';
+
+  if (b1) { const el = document.getElementById('compareGameLogs1'); if (el) el.innerHTML = '<div class="compare-pick-empty">' + _bnote + '</div>'; }
+  else _cmpLoadGameLogs(p1.player_id, p1.position, 'compareGameLogs1');
+  if (b2) { const el = document.getElementById('compareGameLogs2'); if (el) el.innerHTML = '<div class="compare-pick-empty">' + _bnote + '</div>'; }
+  else _cmpLoadGameLogs(p2.player_id, p2.position, 'compareGameLogs2');
 
   _comparePlayerNames[p1.player_id] = p1.name || p1.full_name || 'Player 1';
   _comparePlayerNames[p2.player_id] = p2.name || p2.full_name || 'Player 2';
   _cmpSides[1].position = (p1.position || '').toUpperCase();
   _cmpSides[2].position = (p2.position || '').toUpperCase();
 
-  fetch('/api/nfl-state').then(r => r.json()).catch(() => ({}))
-    .then(nflState => {
-      const isOffseason = (nflState.season_type || '').toLowerCase() === 'off';
-      const currentSeason = nflState.season || new Date().getFullYear();
-      const defaultSeason = isOffseason ? null : currentSeason;
-      loadCompareMetrics(p1.player_id, p2.player_id, defaultSeason, defaultSeason);
+  if (b1 || b2) {
+    const mc = document.getElementById('compareMetricsContent');
+    if (mc) mc.innerHTML = '<div class="compare-pick-empty">Advanced metrics aren\'t available for tier averages.</div>';
+    ['compareWeekly1', 'compareWeekly2'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = '<div class="compare-pick-empty">' + _bnote + '</div>';
     });
+  } else {
+    fetch('/api/nfl-state').then(r => r.json()).catch(() => ({}))
+      .then(nflState => {
+        const isOffseason = (nflState.season_type || '').toLowerCase() === 'off';
+        const currentSeason = nflState.season || new Date().getFullYear();
+        const defaultSeason = isOffseason ? null : currentSeason;
+        loadCompareMetrics(p1.player_id, p2.player_id, defaultSeason, defaultSeason);
+      });
+  }
 
   const chartDiv = document.getElementById('compareValueChart');
   if (chartDiv) {
@@ -13679,18 +13747,32 @@ function _compareWireView(p1, p2) {
     const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
     const textColor = isDark ? '#9ca3af' : '#6b7280';
     const bgColor = isDark ? '#1e293b' : '#f8fafc';
-    const makeTrace = (history, name, color) => {
-      const dates = (history || []).map(h => h.as_of_date || h.date);
-      const vals  = (history || []).map(h => h.value);
+    // Shared date axis from whichever side(s) have real history, so a tier
+    // average can be drawn as a flat dashed reference line across the same span.
+    let _axis = [];
+    [p1, p2].forEach(p => (p.value_history || []).forEach(h => { const d = h.as_of_date || h.date; if (d) _axis.push(d); }));
+    _axis = Array.from(new Set(_axis)).sort();
+    if (!_axis.length) _axis = [new Date().toISOString().slice(0, 10)];
+    const makeTrace = (p, isB, color) => {
+      if (isB) {
+        const v = (p.stats && p.stats.value) != null ? p.stats.value : null;
+        return {
+          x: _axis, y: _axis.map(() => v), mode: 'lines', name: p.name,
+          line: { color, width: 2, dash: 'dash' },
+          hovertemplate: `<b>${p.name}</b><br>tier average<br>Value: ${v}<extra></extra>`,
+        };
+      }
+      const dates = (p.value_history || []).map(h => h.as_of_date || h.date);
+      const vals  = (p.value_history || []).map(h => h.value);
       return {
-        x: dates, y: vals, mode: 'lines', name,
+        x: dates, y: vals, mode: 'lines', name: p.name,
         line: { color, width: 2.5 },
-        hovertemplate: `<b>${name}</b><br>%{x}<br>Value: %{y}<extra></extra>`,
+        hovertemplate: `<b>${p.name}</b><br>%{x}<br>Value: %{y}<extra></extra>`,
       };
     };
     const traces = [
-      makeTrace(p1.value_history, p1.name, '#3b82f6'),
-      makeTrace(p2.value_history, p2.name, '#f59e0b'),
+      makeTrace(p1, b1, '#3b82f6'),
+      makeTrace(p2, b2, '#f59e0b'),
     ];
     const _cmpLayout = {
       paper_bgcolor: 'transparent',

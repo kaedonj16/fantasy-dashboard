@@ -16997,9 +16997,16 @@ tr.team-clickable {
 .compare-pick-result:last-child { border-bottom: none; }
 .compare-pick-result:hover,
 .compare-pick-result.active { background: var(--bg-alt); }
-.compare-pick-rname { font-weight: 600; color: var(--text); font-size: 14px; }
+.compare-pick-rname { font-weight: 600; color: var(--text); font-size: 14px; display: flex; align-items: center; gap: 7px; }
 .compare-pick-rmeta { font-size: 11px; color: var(--text-muted); }
 .compare-pick-empty { padding: 12px; text-align: center; color: var(--text-muted); font-size: 13px; }
+/* Tier-average rows in the picker read as baselines, not players. */
+.compare-pick-baseline { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.compare-pick-tag {
+  font-size: 9px; font-weight: 800; letter-spacing: 0.05em;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent);
+  padding: 1px 5px; border-radius: 4px; text-transform: uppercase;
+}
 .compare-page-hint { margin-top: 22px; text-align: center; color: var(--text-muted); font-size: 13px; }
 
 /* Action bar (swap / copy / watch / trade) shown once a comparison is active.
