@@ -736,8 +736,20 @@ def _select_packages(
                 out.append(p)
         return out
 
-    player_pool = [s for s in sends
-                   if not s.get("is_pick") and s.get("position") != "PICK"][:12]
+    _players = [s for s in sends
+                if not s.get("is_pick") and s.get("position") != "PICK"]
+    # Keep the combinatorial search stocked with the best-scored fillers, but
+    # always fold in the highest-VALUE assets too. Consolidate deliberately
+    # scores a team's own studs as poor everyday chips, which on a deep roster
+    # would truncate them out of the pool entirely - yet those are exactly the
+    # pieces a loaded team must package to trade up into a bigger stud. Without
+    # this, an affordable stud target surfaces but no send package can be built.
+    player_pool = _players[:12]
+    _seen_pp = {id(s) for s in player_pool}
+    for s in sorted(_players, key=lambda x: -x.get("value", 0))[:6]:
+        if id(s) not in _seen_pp:
+            _seen_pp.add(id(s))
+            player_pool.append(s)
     pick_pool   = [s for s in sends
                    if s.get("is_pick") or s.get("position") == "PICK"]
 
@@ -2051,8 +2063,11 @@ def get_archetype_suggestions(
             need_positions=_p_need, stacked_positions=_p_stacked,
             tier_thresholds=tier_thresholds,
         )
-        if not pkgs:
-            pkgs = [[]]
+        # An acquire suggestion with nothing to offer is not a suggestion. If no
+        # value/tier-valid send package can be assembled for this target, drop it
+        # rather than render a card with an empty "you give" side.
+        if not pkgs or not any(pkg for pkg in pkgs):
+            continue
 
         for pkg in pkgs:
             send_val = sum(p.get("value", 0) for p in pkg) if pkg else 0

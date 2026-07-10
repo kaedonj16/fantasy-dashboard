@@ -118,6 +118,19 @@ def test_consolidate_has_targets_and_is_ranked():
             assert len(s["suggested_send"]) >= 2
 
 
+def test_acquire_suggestions_always_carry_a_send_package():
+    """An acquire suggestion with nothing to offer is not a suggestion. When no
+    value/tier-valid package can be assembled for a target it must be dropped,
+    never rendered as a card with an empty 'you give' side (the reported bug:
+    every consolidate card showed a target but an empty send)."""
+    for archetype in ("consolidate", "contending"):
+        out = _run(archetype)
+        for s in out["suggestions"]:
+            if s.get("direction") == "acquire":
+                assert s.get("suggested_send"), (
+                    f"{archetype} target {s.get('name')!r} surfaced with an empty send")
+
+
 def test_buy_suggestions_carry_fit_note_field():
     # fit_note is always present on acquire suggestions (may be empty string).
     out = _run("consolidate")
