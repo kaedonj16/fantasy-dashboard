@@ -16925,6 +16925,17 @@ tr.team-clickable {
   outline: none; border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft, rgba(56, 189, 248, .15));
 }
+/* Leave room for the clear (x) button so long names don't sit under it. */
+.compare-pick-input { padding-right: 34px; }
+.compare-pick-clear {
+  position: absolute; top: 50%; right: 8px; transform: translateY(-50%);
+  width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: 50%; background: var(--bg-alt); color: var(--text-muted);
+  font-size: 16px; line-height: 1; cursor: pointer; padding: 0;
+}
+.compare-pick-clear:hover { background: var(--border); color: var(--text); }
+/* A class-level display would otherwise defeat the [hidden] attribute. */
+.compare-pick-clear[hidden] { display: none !important; }
 .compare-vs { font-weight: 800; color: var(--text-muted); font-size: 13px; padding-bottom: 12px; }
 .compare-pick-results {
   position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 60;
@@ -16939,7 +16950,8 @@ tr.team-clickable {
   cursor: pointer; text-align: left;
 }
 .compare-pick-result:last-child { border-bottom: none; }
-.compare-pick-result:hover { background: var(--bg-alt); }
+.compare-pick-result:hover,
+.compare-pick-result.active { background: var(--bg-alt); }
 .compare-pick-rname { font-weight: 600; color: var(--text); font-size: 14px; }
 .compare-pick-rmeta { font-size: 11px; color: var(--text-muted); }
 .compare-pick-empty { padding: 12px; text-align: center; color: var(--text-muted); font-size: 13px; }

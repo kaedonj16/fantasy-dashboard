@@ -27822,26 +27822,60 @@ def _compare_name_for_id(pid: str | None) -> str | None:
     return None
 
 
-def _compare_popular_matchups(n_pairs: int = 4) -> str:
-    """A few marquee matchups (top players by value, paired) for the empty state."""
+def _compare_popular_matchups(n_pairs: int = 5) -> str:
+    """A few marquee matchups for the empty state.
+
+    Pairs same-position, adjacent-in-value players (RB1 vs RB2, WR1 vs WR2, ...)
+    rather than pairing the top players sequentially by overall value. Adjacent
+    same-position players are the real "who's better" debates - same role,
+    similar value - whereas a positional-blind 1st-vs-2nd-overall pairing can put
+    a QB next to a WR, which is not a meaningful comparison.
+    """
     try:
         table = get_model_value_table_cached() or []
     except Exception:
         table = []
-    ranked = sorted(
-        (r for r in table if r.get("id") and r.get("name") and (r.get("value") or 0) > 0),
+
+    from collections import defaultdict
+    by_pos: dict = defaultdict(list)
+    for r in sorted(
+        (x for x in table if x.get("id") and x.get("name") and (x.get("value") or 0) > 0),
         key=lambda r: float(r.get("value") or 0), reverse=True,
-    )[: n_pairs * 2]
-    chips = []
-    for i in range(0, len(ranked) - 1, 2):
-        a, b = ranked[i], ranked[i + 1]
-        href = f"/compare?p1={a['id']}&p2={b['id']}"
-        chips.append(
-            f"<a class='compare-chip' href='{href}'>"
-            f"<span class='compare-chip-name'>{html.escape(str(a['name']))}</span>"
-            f"<span class='compare-chip-vs'>vs</span>"
-            f"<span class='compare-chip-name'>{html.escape(str(b['name']))}</span></a>"
-        )
+    ):
+        pos = str(r.get("position") or "").upper()
+        if pos in ("QB", "RB", "WR", "TE"):
+            by_pos[pos].append(r)
+
+    # Adjacent pairs within each position: (1,2), (3,4), (5,6) - the top few.
+    pos_pairs: dict = {}
+    for pos, players in by_pos.items():
+        pos_pairs[pos] = [(players[i], players[i + 1])
+                          for i in range(0, min(len(players) - 1, 6), 2)]
+
+    # Interleave across positions so the row is varied (a RB debate, a WR debate,
+    # a QB debate, a TE debate, then the next tier) instead of all one position.
+    order = ["RB", "WR", "QB", "TE"]
+    chips: list = []
+    round_i = 0
+    while len(chips) < n_pairs:
+        added = False
+        for pos in order:
+            plist = pos_pairs.get(pos) or []
+            if round_i < len(plist):
+                a, b = plist[round_i]
+                href = f"/compare?p1={a['id']}&p2={b['id']}"
+                chips.append(
+                    f"<a class='compare-chip' href='{href}'>"
+                    f"<span class='compare-chip-name'>{html.escape(str(a['name']))}</span>"
+                    f"<span class='compare-chip-vs'>vs</span>"
+                    f"<span class='compare-chip-name'>{html.escape(str(b['name']))}</span></a>"
+                )
+                added = True
+                if len(chips) >= n_pairs:
+                    break
+        if not added:
+            break
+        round_i += 1
     return "".join(chips)
 
 
@@ -27861,16 +27895,18 @@ def build_compare_page_body(popular_html: str = "") -> str:
             <div class="compare-picker">
               <label class="compare-pick-label">Player 1</label>
               <div class="compare-pick-field">
-                <input type="text" class="compare-pick-input" id="cmpPick1" placeholder="Search a player…" autocomplete="off" aria-label="Search player 1">
-                <div class="compare-pick-results" id="cmpResults1"></div>
+                <input type="text" class="compare-pick-input" id="cmpPick1" placeholder="Search a player…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="cmpResults1" aria-autocomplete="list" aria-label="Search player 1">
+                <button type="button" class="compare-pick-clear" id="cmpClear1" aria-label="Clear player 1" hidden>&times;</button>
+                <div class="compare-pick-results" id="cmpResults1" role="listbox"></div>
               </div>
             </div>
             <div class="compare-vs" aria-hidden="true">VS</div>
             <div class="compare-picker">
               <label class="compare-pick-label">Player 2</label>
               <div class="compare-pick-field">
-                <input type="text" class="compare-pick-input" id="cmpPick2" placeholder="Search a player…" autocomplete="off" aria-label="Search player 2">
-                <div class="compare-pick-results" id="cmpResults2"></div>
+                <input type="text" class="compare-pick-input" id="cmpPick2" placeholder="Search a player…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="cmpResults2" aria-autocomplete="list" aria-label="Search player 2">
+                <button type="button" class="compare-pick-clear" id="cmpClear2" aria-label="Clear player 2" hidden>&times;</button>
+                <div class="compare-pick-results" id="cmpResults2" role="listbox"></div>
               </div>
             </div>
           </div>

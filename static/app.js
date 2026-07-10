@@ -12462,6 +12462,7 @@ function initComparePage() {
         const t = chosen[1]; chosen[1] = chosen[2]; chosen[2] = t;
         const i1 = document.getElementById('cmpPick1'); if (i1) i1.value = chosen[1].name || '';
         const i2 = document.getElementById('cmpPick2'); if (i2) i2.value = chosen[2].name || '';
+        _syncClears();
         _maybeCompare();
       } else if (act === 'copy') {
         const done = () => { const o = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => { btn.textContent = o; }, 1400); };
@@ -12480,27 +12481,80 @@ function initComparePage() {
 
   _renderRecent();
 
+  function _syncClears() {
+    [1, 2].forEach(s => {
+      const inp = document.getElementById('cmpPick' + s);
+      const clr = document.getElementById('cmpClear' + s);
+      if (inp && clr) clr.hidden = !inp.value;
+    });
+  }
+
+  function _clearSlot(slot, focus) {
+    chosen[slot] = null;
+    const inp = document.getElementById('cmpPick' + slot);
+    const res = document.getElementById('cmpResults' + slot);
+    const clr = document.getElementById('cmpClear' + slot);
+    if (inp) { inp.value = ''; inp.setAttribute('aria-expanded', 'false'); }
+    if (res) res.innerHTML = '';
+    if (clr) clr.hidden = true;
+    // The pair is now incomplete, so tear the comparison back down to the
+    // empty state rather than leaving a stale result under empty inputs.
+    if (resultEl) resultEl.innerHTML = '';
+    if (actionsEl) actionsEl.hidden = true;
+    if (emptyEl) emptyEl.hidden = false;
+    if (focus && inp) inp.focus();
+  }
+
   function _bindPicker(slot) {
     const input = document.getElementById('cmpPick' + slot);
     const results = document.getElementById('cmpResults' + slot);
+    const clearBtn = document.getElementById('cmpClear' + slot);
     if (!input || !results) return;
-    let debounce, currentQuery = '';
+    let debounce, currentQuery = '', activeIdx = -1;
+
+    function _items() { return Array.from(results.querySelectorAll('.compare-pick-result')); }
+    function _setActive(idx) {
+      const items = _items();
+      if (!items.length) { activeIdx = -1; return; }
+      activeIdx = (idx + items.length) % items.length;
+      items.forEach((el, i) => {
+        const on = i === activeIdx;
+        el.classList.toggle('active', on);
+        el.setAttribute('aria-selected', on ? 'true' : 'false');
+        if (on) el.scrollIntoView({ block: 'nearest' });
+      });
+    }
+    function _select(btn) {
+      if (!btn) return;
+      chosen[slot] = {
+        player_id: btn.getAttribute('data-pid'), name: btn.getAttribute('data-name'),
+        position: btn.getAttribute('data-pos'), team: btn.getAttribute('data-team'),
+      };
+      input.value = btn.getAttribute('data-name');
+      results.innerHTML = '';
+      input.setAttribute('aria-expanded', 'false');
+      if (clearBtn) clearBtn.hidden = false;
+      _maybeCompare();
+    }
     function render(list) {
       const players = Array.isArray(list) ? list : (list.players || []);
       const other = chosen[slot === 1 ? 2 : 1];
       const filtered = players.filter(p => !other || String(p.player_id) !== String(other.player_id));
-      if (!filtered.length) { results.innerHTML = '<div class="compare-pick-empty">No players found</div>'; return; }
+      activeIdx = -1;
+      if (!filtered.length) { results.innerHTML = '<div class="compare-pick-empty">No players found</div>'; input.setAttribute('aria-expanded', 'false'); return; }
       results.innerHTML = filtered.slice(0, 10).map(p =>
-        '<button type="button" class="compare-pick-result" data-pid="' + _wlEsc(p.player_id) + '" data-name="' + _wlEsc(p.name) +
+        '<button type="button" class="compare-pick-result" role="option" aria-selected="false" data-pid="' + _wlEsc(p.player_id) + '" data-name="' + _wlEsc(p.name) +
         '" data-pos="' + _wlEsc(p.position || '') + '" data-team="' + _wlEsc(p.team || '') + '">' +
         '<span class="compare-pick-rname">' + _wlEsc(p.name) + '</span>' +
         '<span class="compare-pick-rmeta">' + _wlEsc((p.position || '') + (p.team ? ' · ' + p.team : '')) + '</span></button>'
       ).join('');
+      input.setAttribute('aria-expanded', 'true');
     }
     input.addEventListener('input', function () {
       clearTimeout(debounce);
       const q = input.value.trim();
-      if (q.length < 2) { results.innerHTML = ''; return; }
+      if (clearBtn) clearBtn.hidden = !input.value;
+      if (q.length < 2) { results.innerHTML = ''; input.setAttribute('aria-expanded', 'false'); return; }
       currentQuery = q;
       debounce = setTimeout(function () {
         fetch('/api/players?q=' + encodeURIComponent(q) + '&limit=20')
@@ -12509,24 +12563,51 @@ function initComparePage() {
           .catch(() => { results.innerHTML = '<div class="compare-pick-empty">Search failed</div>'; });
       }, 220);
     });
+    // Arrow / Enter / Escape navigation of the suggestion list.
+    input.addEventListener('keydown', function (e) {
+      const items = _items();
+      if (e.key === 'ArrowDown') {
+        if (items.length) { e.preventDefault(); _setActive(activeIdx + 1); }
+      } else if (e.key === 'ArrowUp') {
+        if (items.length) { e.preventDefault(); _setActive(activeIdx - 1); }
+      } else if (e.key === 'Enter') {
+        if (items.length) {
+          e.preventDefault();
+          _select(items[activeIdx >= 0 ? activeIdx : 0]);
+        }
+      } else if (e.key === 'Escape') {
+        if (results.innerHTML) { e.preventDefault(); results.innerHTML = ''; input.setAttribute('aria-expanded', 'false'); }
+        else if (input.value) { _clearSlot(slot, true); }
+      }
+    });
     results.addEventListener('click', function (e) {
       const btn = e.target.closest && e.target.closest('.compare-pick-result');
-      if (!btn) return;
-      chosen[slot] = {
-        player_id: btn.getAttribute('data-pid'), name: btn.getAttribute('data-name'),
-        position: btn.getAttribute('data-pos'), team: btn.getAttribute('data-team'),
-      };
-      input.value = btn.getAttribute('data-name');
-      results.innerHTML = '';
-      _maybeCompare();
+      if (btn) _select(btn);
     });
+    results.addEventListener('mousemove', function (e) {
+      const btn = e.target.closest && e.target.closest('.compare-pick-result');
+      if (btn) _setActive(_items().indexOf(btn));
+    });
+    if (clearBtn && !clearBtn._cmpBound) {
+      clearBtn._cmpBound = true;
+      clearBtn.addEventListener('click', function () { _clearSlot(slot, true); });
+    }
     document.addEventListener('click', function (e) {
-      if (input.parentElement && !input.parentElement.contains(e.target)) results.innerHTML = '';
+      if (input.parentElement && !input.parentElement.contains(e.target)) { results.innerHTML = ''; input.setAttribute('aria-expanded', 'false'); }
     });
   }
 
   _bindPicker(1);
   _bindPicker(2);
+
+  // Focus the first empty picker on load so you can type immediately (skipped
+  // when a ?p1=&p2= deep link is already populating both sides).
+  (function _autofocus() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('p1') && params.get('p2')) return;
+    const first = document.getElementById('cmpPick1');
+    if (first) { try { first.focus(); } catch (_) {} }
+  })();
 
   // Deep link: ?p1=&p2= prefills both pickers and opens the comparison.
   try {
@@ -12538,6 +12619,7 @@ function initComparePage() {
         chosen[2] = { player_id: String(d2.player_id || q2), name: d2.name || d2.full_name || '', position: d2.position || '', team: d2.team || '' };
         const i1 = document.getElementById('cmpPick1'); if (i1) i1.value = chosen[1].name;
         const i2 = document.getElementById('cmpPick2'); if (i2) i2.value = chosen[2].name;
+        _syncClears();
         _openFor(d1, d2);
       }).catch(() => { if (resultEl) resultEl.innerHTML = '<div class="compare-pick-empty">Could not load that comparison. Search to pick players.</div>'; });
     }
