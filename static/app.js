@@ -12691,6 +12691,42 @@ function initComparePage() {
   _bindPicker(1);
   _bindPicker(2);
 
+  // Put a chosen player/baseline into the first open slot and compare. Used by
+  // the one-tap tier-average chips below.
+  function _pickInto(obj) {
+    const slot = !chosen[1] ? 1 : (!chosen[2] ? 2 : 1);
+    chosen[slot] = { player_id: obj.player_id, name: obj.name, position: obj.position || '', team: obj.team || '' };
+    const inp = document.getElementById('cmpPick' + slot);
+    if (inp) inp.value = obj.name;
+    const clr = document.getElementById('cmpClear' + slot);
+    if (clr) clr.hidden = false;
+    _maybeCompare();
+  }
+
+  // One-tap "benchmark vs a tier" chips (Avg QB1/QB2, RB1/RB2, ...) so comparing
+  // against a tier average is a visible button, not only a search term.
+  _baselinesReady.then(function () {
+    const wrap = document.getElementById('cmpTierBlock');
+    const row = document.getElementById('cmpTierChips');
+    if (!wrap || !row || !_cmpBaselineList.length) return;
+    const _posOrder = { QB: 0, RB: 1, WR: 2, TE: 3 };
+    const ordered = _cmpBaselineList.slice().sort((a, b) =>
+      (_posOrder[a.position] - _posOrder[b.position])
+      || String(a.player_id).localeCompare(String(b.player_id)));
+    row.innerHTML = ordered.map(b => {
+      const label = (b.stats && b.stats.pos_rank_label) || b.name;
+      return '<button type="button" class="compare-tier-chip pos-' + _wlEsc(b.position)
+        + '" data-bid="' + _wlEsc(b.player_id) + '">Avg ' + _wlEsc(label) + '</button>';
+    }).join('');
+    row.querySelectorAll('.compare-tier-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const b = _cmpBaselineById[btn.getAttribute('data-bid')];
+        if (b) _pickInto(b);
+      });
+    });
+    wrap.hidden = false;
+  });
+
   // Focus the first empty picker on load so you can type immediately (skipped
   // when a ?p1=&p2= deep link is already populating both sides).
   (function _autofocus() {

@@ -17109,6 +17109,24 @@ tr.team-clickable {
 .compare-chip-pos.pos-RB { background: rgba(34, 197, 94, .14);  color: #22c55e; }
 .compare-chip-pos.pos-WR { background: rgba(59, 130, 246, .14); color: #3b82f6; }
 .compare-chip-pos.pos-TE { background: rgba(245, 158, 11, .14); color: #f59e0b; }
+
+/* One-tap "benchmark vs a tier" chips - flow inline, colour-coded by position. */
+.compare-empty-subnote {
+  font-size: 11px; font-weight: 600; color: var(--text-muted);
+  margin-left: 6px; letter-spacing: .02em;
+}
+#cmpTierChips { display: flex !important; flex-wrap: wrap; gap: 8px; }
+.compare-tier-chip {
+  font-size: 12.5px; font-weight: 700; cursor: pointer;
+  padding: 7px 12px; border-radius: 999px;
+  background: var(--bg-alt); color: var(--text); border: 1px solid var(--border);
+  transition: background .15s, border-color .15s;
+}
+.compare-tier-chip:hover { background: var(--surface); }
+.compare-tier-chip.pos-QB { border-color: rgba(239, 68, 68, .4);  color: #ef4444; }
+.compare-tier-chip.pos-RB { border-color: rgba(34, 197, 94, .4);  color: #22c55e; }
+.compare-tier-chip.pos-WR { border-color: rgba(59, 130, 246, .4); color: #3b82f6; }
+.compare-tier-chip.pos-TE { border-color: rgba(245, 158, 11, .4); color: #f59e0b; }
 @media (max-width: 600px) {
   .compare-pickers { grid-template-columns: 1fr; }
   .compare-vs { padding: 4px 0; text-align: center; }
