@@ -17082,18 +17082,20 @@ tr.team-clickable {
   .compare-chip-row { grid-template-columns: 1fr; }
 }
 
-/* Compare result on phones: a two-up hero grid overflows the viewport (1fr can't
-   shrink below its content). Stack the two players instead, keeping each
-   player's own cards 2-up so they still fit. Scoped to the page and forced past
-   the modal's own mobile rules. */
+/* Compare result on phones: put each player in their own column side by side
+   (P1 left, P2 right) with that player's cards stacked vertically down the
+   column, so the two players read as two parallel columns. Scoped to the page
+   and forced past the modal's own mobile rules. */
 @media (max-width: 640px) {
   [data-page="compare"] .compare-page-result { padding: 2px 14px 18px; }
-  [data-page="compare"] .compare-hero-section { grid-template-columns: 1fr !important; gap: 16px; }
+  [data-page="compare"] .compare-hero-section { grid-template-columns: 1fr 1fr !important; gap: 10px; }
   [data-page="compare"] .compare-hero-row {
-    display: grid !important;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
-    gap: 8px;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 6px;
+    margin-top: 6px;
   }
+  [data-page="compare"] .compare-hero-row:first-of-type { margin-top: 0; }
   [data-page="compare"] .compare-hero-player,
   [data-page="compare"] .pm-hero-stat { min-width: 0; }
   [data-page="compare"] .compare-gamelogs-section,
