@@ -55,8 +55,8 @@ def api_trade_count():
         from dashboard_services.db import get_conn
         with get_conn() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM trade_intel_trades")
-            count = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) AS n FROM trade_intel_trades")
+            count = cursor.fetchone()["n"]
         return jsonify({"count": count})
     except Exception:
         # Return fallback count if table doesn't exist or other error

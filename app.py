@@ -12293,7 +12293,9 @@ def page_breakouts(platform: str, season: int, league_id: str):
             with _bc.cursor() as _bcur:
                 _bcur.execute("SELECT MAX(season) FROM breakout_opportunity_scores")
                 _bo_row = _bcur.fetchone()
-                bo_season = int((_bo_row or {}).get("max") or _bo_row[0] or season)
+                # dict_row: MAX(season) comes back as {"max": ...}; the old
+                # _bo_row[0] fallback would KeyError on the empty-table case.
+                bo_season = int((_bo_row or {}).get("max") or season)
     except Exception:
         bo_season = max(season, datetime.now().year)
 

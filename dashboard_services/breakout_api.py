@@ -1028,7 +1028,9 @@ def _resolve_bo_season(requested: Optional[int]) -> Optional[int]:
             with _c.cursor() as _cur:
                 _cur.execute("SELECT MAX(season) FROM breakout_opportunity_scores")
                 _row = _cur.fetchone()
-                latest = int((_row or {}).get("max") or _row[0] or 0)
+                # dict_row: MAX(season) is {"max": ...}; the old _row[0] fallback
+                # would KeyError when the table is empty.
+                latest = int((_row or {}).get("max") or 0)
     except Exception:
         latest = 0
     if not latest:
