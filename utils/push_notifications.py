@@ -113,19 +113,29 @@ def _send_to_endpoints(endpoints, title, body, url="/", tag="update"):
 
 
 def _filter_prefs(rows, notif_type):
-    """Strip rows where the user has explicitly disabled notif_type. Default is enabled."""
+    """Strip rows where the user has explicitly disabled notif_type. Default is
+    enabled. Rows come from get_conn() (psycopg dict_row), so they are keyed by
+    column name - indexing by position (r[0]) raised KeyError and, because the
+    callers swallow exceptions, silently sent to nobody."""
     import json as _json
+
+    def _endpoint_tuple(r):
+        return (r["endpoint"], r["p256dh"], r["auth"])
+
     if not notif_type:
-        return [(r[0], r[1], r[2]) for r in rows]
+        return [_endpoint_tuple(r) for r in rows]
     result = []
     for r in rows:
-        prefs_raw = r[3] if len(r) > 3 else None
-        try:
-            prefs = _json.loads(prefs_raw or "{}")
-        except Exception:
-            prefs = {}
+        prefs_raw = r.get("prefs")
+        if isinstance(prefs_raw, dict):
+            prefs = prefs_raw          # JSONB comes back already decoded
+        else:
+            try:
+                prefs = _json.loads(prefs_raw or "{}")
+            except Exception:
+                prefs = {}
         if prefs.get(notif_type, True) is not False:
-            result.append((r[0], r[1], r[2]))
+            result.append(_endpoint_tuple(r))
     return result
 
 
@@ -181,7 +191,7 @@ def _broadcast_owner(league_id, owner_id, title, body, url="/", tag="update", no
 
 def _app_state_get(conn, key):
     row = conn.execute("SELECT value FROM app_state WHERE key = %s", (key,)).fetchone()
-    return row[0] if row else None
+    return row["value"] if row else None
 
 
 def _app_state_set(conn, key, value):
@@ -198,11 +208,11 @@ def _get_subscribed_leagues():
         from dashboard_services.db import get_conn
         with get_conn() as conn:
             rows = conn.execute(
-                "SELECT DISTINCT league_id, COALESCE(platform, 'sleeper') "
+                "SELECT DISTINCT league_id, COALESCE(platform, 'sleeper') AS platform "
                 "FROM push_subscriptions "
                 "WHERE league_id IS NOT NULL AND league_id != ''"
             ).fetchall()
-        return [(r[0], r[1]) for r in rows]
+        return [(r["league_id"], r["platform"]) for r in rows]
     except Exception:
         return []
 
@@ -291,7 +301,7 @@ def notify_lineup_lock():
                     (str(league_id),)
                 ).fetchall()
 
-            normal = [r for r in rows if str(r[4] or "") not in issue_summary_by_owner]
+            normal = [r for r in rows if str(r["owner_id"] or "") not in issue_summary_by_owner]
             sent += _send_to_endpoints(
                 _filter_prefs(normal, "lineup_lock"),
                 "Lineups lock soon", generic, url, tag,
@@ -299,7 +309,7 @@ def notify_lineup_lock():
 
             flagged_by_owner: dict = {}
             for r in rows:
-                oid = str(r[4] or "")
+                oid = str(r["owner_id"] or "")
                 if oid in issue_summary_by_owner:
                     flagged_by_owner.setdefault(oid, []).append(r)
             fix_url = f"/{platform}/{season}/{league_id}/waivers?tab=startsit"
@@ -554,8 +564,12 @@ def notify_playoff_odds():
                     continue
 
                 by_roster = {}
-                for rid, wk, pct in rows:
-                    by_roster.setdefault(rid, {})[wk] = float(pct or 0)
+                for r in rows:
+                    # dict_row rows: key by column name, not position. Tuple
+                    # unpacking here would bind the column *names*, then float()
+                    # would throw and the swallowing try/except would silently
+                    # skip every playoff-swing alert.
+                    by_roster.setdefault(r["roster_id"], {})[r["week"]] = float(r["playoff_probability"] or 0)
 
                 rosters = get_rosters(platform, league_id, season) or []
                 roster_to_owner = {r.get("roster_id"): r.get("owner_id") for r in rosters}

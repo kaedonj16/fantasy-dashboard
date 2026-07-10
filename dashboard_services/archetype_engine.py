@@ -261,22 +261,126 @@ def _playoff_odds(
     return 0.5 * (1.0 + math.erf(z / math.sqrt(2)))
 
 
-def _estimate_acceptance(send_val: float, receive_val: float, is_preferred: bool) -> int:
-    """Estimate acceptance likelihood (0–90) from the partner team's perspective.
+def _estimate_acceptance(send_val: float, receive_val: float, is_preferred: bool,
+                         fit: int = 0) -> int:
+    """Estimate acceptance likelihood (5–90) from the partner team's perspective.
 
-    Partner receives send_val (viewer's assets) and gives up receive_val (their player).
-    A higher send/receive ratio means the partner is getting the better end.
+    Partner receives send_val (viewer's assets) and gives up receive_val (their
+    player). A higher send/receive ratio means the partner is getting the better
+    end. Both values should already be depth-adjusted (effective) so the ratio
+    reflects the balance the trade card shows.
+
+    The curve is continuous (a logistic centered at parity) rather than four
+    hard buckets, so near-identical deals no longer collapse to the same flat
+    number: ratio 1.00 → ~50, 1.10 → ~67, 0.90 → ~33, 1.20 → ~80.
+
+    ``fit`` nudges the estimate for non-value factors the ratio can't see -
+    chiefly whether the package addresses a position the partner is thin at
+    (positive) or piles onto one they are already deep at (negative).
     """
     ratio = send_val / max(receive_val, 1.0)
-    if ratio >= 1.10:
-        base = 72
-    elif ratio >= 0.95:
-        base = 50
-    elif ratio >= 0.85:
-        base = 32
-    else:
-        base = 16
-    return min(90, max(5, base + (10 if is_preferred else 0)))
+    base = 100.0 / (1.0 + math.exp(-7.0 * (ratio - 1.0)))
+    score = base + (8 if is_preferred else 0) + fit
+    return int(min(90, max(5, round(score))))
+
+
+def _acceptance_fit(pkg: List[Dict], need: Optional[set], stacked: Optional[set]) -> int:
+    """Acceptance nudge for how well a send package fits the partner's roster:
+    positive when it sends a position they're thin at, negative when it piles
+    onto one they're already deep at. Clamped so it tilts, never dominates, the
+    value-based estimate."""
+    if not pkg or not (need or stacked):
+        return 0
+    bonus = 0
+    for a in pkg:
+        if a.get("is_pick") or a.get("position") == "PICK":
+            continue
+        pos = a.get("position")
+        if need and pos in need:
+            bonus += 6
+        elif stacked and pos in stacked:
+            bonus -= 8
+    return max(-12, min(12, bonus))
+
+
+def _fit_note(pkg: List[Dict], need: Optional[set], target_pos: str,
+              partner_counts: Optional[Dict[str, int]]) -> str:
+    """Short, human explanation of why a package suits the partner's roster:
+    which of their needs the send fills, and whether the target comes from a
+    position they're deep at. Empty when there's nothing worth saying."""
+    notes: List[str] = []
+    send_pos = {a.get("position") for a in (pkg or [])
+                if not a.get("is_pick") and a.get("position") != "PICK"}
+    matched = [p for p in ("QB", "RB", "WR", "TE")
+               if need and p in need and p in send_pos]
+    if matched:
+        notes.append("fills their " + "/".join(matched) + " need")
+    if partner_counts and target_pos and partner_counts.get(target_pos, 0) >= 4:
+        notes.append(f"from their {target_pos} surplus")
+    text = ", ".join(notes[:2])
+    return (text[:1].upper() + text[1:]) if text else ""
+
+
+def _suggestion_rank(r: Dict[str, Any]) -> float:
+    """Composite ordering key for a finished suggestion: weight roster impact
+    (net playoff-odds delta) most, then how likely the partner is to accept, so
+    the list leads with deals that are both worthwhile and realistic. Negative
+    impact is preserved (not floored) so ceiling-trimming deals sink."""
+    impact = min(1.0, (r.get("net_playoff_odds_delta") or 0.0) / 0.15)
+    accept = (r.get("acceptance_pct") or 0) / 100.0
+    return 0.6 * impact + 0.4 * accept
+
+
+def _depth_penalty(delta: int, sorted_vals: Optional[List[float]], league_size: int = 10) -> float:
+    """Roster-depth penalty the side sending MORE assets absorbs in an unequal
+    trade. Mirrors utils.tier_stack.apply_tier_stack_adjustment so the value we
+    reason about here matches the *effective* value the trade card displays.
+
+    When a package of N assets is acquired for a single target, the acquiring
+    side sends ``delta = N - 1`` extra bodies; each extra body is only worth a
+    deep-bench replacement, so its contribution to the deal is discounted.
+    """
+    if delta <= 0:
+        return 0.0
+    base_rank = int(league_size) * 38
+    _PENALTY_FRAC = 0.5
+    n = len(sorted_vals) if sorted_vals else 0
+    total = 0.0
+    for i in range(delta):
+        if n:
+            rank = min(n, base_rank + i * 10)
+            idx = min(rank - 1, n - 1)
+            total += sorted_vals[idx] * _PENALTY_FRAC
+        else:
+            total += max(20.0, (80.0 + i * -5.0) * _PENALTY_FRAC)
+    return total
+
+
+def _acquire_band(target_val: float, archetype: str) -> Tuple[float, float]:
+    """Effective-value multiplier band a send package must land in to acquire a
+    target. Bands are expressed against the target's value and applied to the
+    package's *depth-adjusted* value, so a package that clears the band reads as
+    fair (or a slight, deliberate overpay) on the trade card - the balance both
+    sides actually see.
+
+    Higher-value targets carry a small "star premium": elite players rarely move
+    at par, so the acquiring side is expected to pay a touch over to pry one
+    loose. That keeps suggestions realistic (feasible for both sides) instead of
+    surfacing lopsided steals the holder would never accept.
+    """
+    if archetype == "consolidate":
+        # Trading up for a star: pay a touch over on effective value. The
+        # premium scales with the target so elites cost more to pry loose.
+        if target_val >= 900:
+            star = 0.05
+        elif target_val >= 650:
+            star = 0.03
+        else:
+            star = 0.0
+        return (1.00 + star, 1.14 + star)
+    # Win-now / lateral swaps: fair effective value, no premium. The depth
+    # penalty baked into effective value already keeps multi-asset offers honest.
+    return (0.96, 1.08)
 
 
 # ── Team archetype inference ──────────────────────────────────────────────────
@@ -467,10 +571,16 @@ def _score_sends(
             else:
                 sc = 0.15
         elif archetype == "consolidate":
-            if 300 <= val <= 650:
-                sc = 0.85 - abs(val - 475) / 475      # sweet spot mid-tier
-            else:
+            # Consolidate = trade several lesser pieces up into one better
+            # player, so the send pool wants mid- AND low-tier assets. Studs
+            # make poor consolidation chips (you'd be shipping the very
+            # concentration you're trying to build), so they score near zero;
+            # everyone else scores higher the cheaper they are, keeping the
+            # combinatorial search stocked with usable filler.
+            if val >= 950:
                 sc = 0.05
+            else:
+                sc = max(0.1, 0.9 - val / 3000.0)
         elif archetype == "distribute":
             if val >= 800:
                 sc = 1.0
@@ -494,35 +604,88 @@ def _score_sends(
 
 
 def _select_packages(
-    sends: List[Dict], target_val: float, archetype: str, max_pkgs: int = 2
+    sends: List[Dict], target_val: float, archetype: str, max_pkgs: int = 2,
+    sorted_vals: Optional[List[float]] = None, league_size: int = 10,
+    need_positions: Optional[set] = None, stacked_positions: Optional[set] = None,
 ) -> List[List[Dict]]:
-    """Return up to max_pkgs distinct send packages within −4% / +6% of target.
+    """Return up to max_pkgs distinct send packages whose *depth-adjusted* value
+    lands in the acquire band for this target (see _acquire_band).
+
+    Packages are scored on effective (depth-adjusted) value, not raw sum,
+    because effective value is what the trade card shows once the side sending
+    more bodies absorbs the bench penalty. Matching on effective value is what
+    stops a multi-piece offer from reading as a lopsided underpay for a star:
+    to clear the band, several lesser pieces must out-total the target in RAW
+    value by enough to survive the depth penalty.
+
+    Selection also respects the *partner's* roster: within the value band, a
+    package is preferred when it sends a position the partner is thin at
+    (need_positions) and de-prioritised when it piles onto one they are already
+    deep at (stacked_positions). A fair-value package the partner has no roster
+    use for is not actually a likely trade.
 
     Surfaces different trade structures per target:
-      1. Best player-only combo (1–3 players, no picks)
+      1. Best player-only combo (1-3 players, no picks)
       2. Best player + draft-pick combo (if the viewer has picks)
-    Falls back to the absolute-closest combo when nothing lands in the window.
-
-    The band is deliberately tight on the low side so the engine never
-    surfaces a lopsided underpay (e.g. sending 89% of a target's value).
-    Raw package value sits a touch above the effective value the trade card
-    shows once depth adjustments are applied, so a hard ~96% floor keeps the
-    *displayed* balance close to fair.
+    Falls back to the closest-effective combo when nothing lands in the window.
     """
     if not sends:
         return []
 
-    lo, hi = target_val * 0.96, target_val * 1.06
+    lo_mult, hi_mult = _acquire_band(target_val, archetype)
+    lo, hi = target_val * lo_mult, target_val * hi_mult
 
-    # Hard underpay floor: even the fallback paths (which otherwise pick the
-    # absolute-closest combo with no bounds) must not surface a package worth
-    # meaningfully less than the target. Showing no suggestion is better than a
-    # lopsided one the partner would never accept.
-    underpay_floor = target_val * 0.92
+    # Hard floor on effective value: even the fallback paths (which otherwise
+    # pick the closest combo with no bounds) must not surface a package the card
+    # would show as a meaningful underpay. Showing nothing is better than a
+    # lopsided offer the holder would never accept.
+    eff_floor = target_val * max(0.90, lo_mult - 0.04)
+
+    _FIT_UNIT = 45.0  # value-points of "closeness" credit per positional-fit signal
+
+    def _eff(*assets) -> float:
+        raw = sum(a.get("value", 0) for a in assets)
+        return raw - _depth_penalty(max(0, len(assets) - 1), sorted_vals, league_size)
+
+    def _fit_adj(assets) -> float:
+        # Reward sending what the partner needs, discourage what they're stacked
+        # at. Applied to the closeness metric only (never to the value band), so
+        # it breaks ties between otherwise comparable packages rather than
+        # overriding value matching.
+        if not (need_positions or stacked_positions):
+            return 0.0
+        adj = 0.0
+        for a in assets:
+            if a.get("is_pick") or a.get("position") == "PICK":
+                continue
+            pos = a.get("position")
+            if need_positions and pos in need_positions:
+                adj -= _FIT_UNIT
+            elif stacked_positions and pos in stacked_positions:
+                adj += _FIT_UNIT * 1.2
+        return adj
+
+    def _dist(*assets) -> float:
+        """Closeness metric (lower is better): effective-value gap, nudged by fit."""
+        return abs(_eff(*assets) - target_val) + _fit_adj(assets)
+
+    def _in_band(*assets) -> bool:
+        e = _eff(*assets)
+        return lo <= e <= hi
 
     def _drop_underpays(pkgs: List[List[Dict]]) -> List[List[Dict]]:
-        return [p for p in pkgs
-                if sum(a.get("value", 0) for a in p) >= underpay_floor]
+        return [p for p in pkgs if _eff(*p) >= eff_floor]
+
+    def _dedup(pkgs: List[List[Dict]]) -> List[List[Dict]]:
+        # Drop structurally identical packages (same asset set) so the surfaced
+        # options are genuinely different offers, not the same one twice.
+        out, seen = [], set()
+        for p in pkgs:
+            key = frozenset(a.get("player_id") or a.get("name") for a in p)
+            if key and key not in seen:
+                seen.add(key)
+                out.append(p)
+        return out
 
     player_pool = [s for s in sends
                    if not s.get("is_pick") and s.get("position") != "PICK"][:12]
@@ -533,12 +696,10 @@ def _select_packages(
         return [player_pool[:1]] if player_pool else []
 
     if archetype == "consolidate":
-        # Consolidate = trade up: always send 2+ assets, never 1-for-1.
-        # Trading up should cost a small premium (you're paying for quality
-        # concentration), so the band leans slightly above target - but it
-        # must never dip into underpay territory.
+        # Consolidate = trade up: always send 2+ assets, never 1-for-1. Every
+        # package is measured on effective value, so bundling three bodies for
+        # one star still has to clear the star's price after the depth penalty.
         # Priority: 2 players → 3 players → 2 players + pick
-        lo_c, hi_c = target_val * 0.97, target_val * 1.12
         results_c: List[List[Dict]] = []
 
         # 1. Best 2-player package
@@ -546,10 +707,8 @@ def _select_packages(
         for a, b in combinations(player_pool, 2):
             if a["position"] == "QB" and b["position"] == "QB":
                 continue
-            s = a["value"] + b["value"]
-            d = abs(s - target_val)
-            if lo_c <= s <= hi_c and d < best2_d:
-                best2_d, best2 = d, [a, b]
+            if _in_band(a, b) and _dist(a, b) < best2_d:
+                best2_d, best2 = _dist(a, b), [a, b]
         if best2:
             results_c.append(best2)
 
@@ -560,11 +719,9 @@ def _select_packages(
             for a, b, c in combinations(player_pool[:8], 3):
                 if sum(1 for x in (a, b, c) if x["position"] == "QB") > 1:
                     continue
-                s = a["value"] + b["value"] + c["value"]
-                d = abs(s - target_val)
                 pkg_pids = {a["player_id"], b["player_id"], c["player_id"]}
-                if lo_c <= s <= hi_c and d < best3_d and not pkg_pids.issubset(used_pids):
-                    best3_d, best3 = d, [a, b, c]
+                if _in_band(a, b, c) and _dist(a, b, c) < best3_d and not pkg_pids.issubset(used_pids):
+                    best3_d, best3 = _dist(a, b, c), [a, b, c]
             if best3:
                 results_c.append(best3)
 
@@ -575,50 +732,41 @@ def _select_packages(
                 for a, b in combinations(player_pool[:8], 2):
                     if a["position"] == "QB" and b["position"] == "QB":
                         continue
-                    s = a["value"] + b["value"] + pk["value"]
-                    d = abs(s - target_val)
-                    if lo_c <= s <= hi_c and d < best_pp_d:
-                        best_pp_d, best_pp = d, [a, b, pk]
+                    if _in_band(a, b, pk) and _dist(a, b, pk) < best_pp_d:
+                        best_pp_d, best_pp = _dist(a, b, pk), [a, b, pk]
             if best_pp:
                 results_c.append(best_pp)
 
-        # Fallback: widen window, still require 2+ assets
+        # Fallback: widen window, still require 2+ assets, closest on effective
         if not results_c:
             fallback2, fallback2_d = None, float("inf")
             for a, b in combinations(player_pool, 2):
                 if a["position"] == "QB" and b["position"] == "QB":
                     continue
-                s = a["value"] + b["value"]
-                d = abs(s - target_val)
-                if d < fallback2_d:
-                    fallback2_d, fallback2 = d, [a, b]
+                if _dist(a, b) < fallback2_d:
+                    fallback2_d, fallback2 = _dist(a, b), [a, b]
             if fallback2:
                 results_c.append(fallback2)
 
-        return _drop_underpays(results_c)[:max_pkgs]
+        return _dedup(_drop_underpays(results_c))[:max_pkgs]
 
     results: List[List[Dict]] = []
 
-    # ── 1. Player-only: exhaustive 1 / 2 / 3-player search ───────────────────
+    # ── 1. Player-only: exhaustive 1 / 2 / 3-player search (effective) ───────
     best, best_d = None, float("inf")
     for c in player_pool:
-        d = abs(c["value"] - target_val)
-        if lo <= c["value"] <= hi and d < best_d:
-            best_d, best = d, [c]
+        if _in_band(c) and _dist(c) < best_d:
+            best_d, best = _dist(c), [c]
     for a, b in combinations(player_pool, 2):
         if a["position"] == "QB" and b["position"] == "QB":
             continue
-        s = a["value"] + b["value"]
-        d = abs(s - target_val)
-        if lo <= s <= hi and d < best_d:
-            best_d, best = d, [a, b]
+        if _in_band(a, b) and _dist(a, b) < best_d:
+            best_d, best = _dist(a, b), [a, b]
     for a, b, c in combinations(player_pool[:7], 3):
         if sum(1 for x in (a, b, c) if x["position"] == "QB") > 1:
             continue
-        s = a["value"] + b["value"] + c["value"]
-        d = abs(s - target_val)
-        if lo <= s <= hi and d < best_d:
-            best_d, best = d, [a, b, c]
+        if _in_band(a, b, c) and _dist(a, b, c) < best_d:
+            best_d, best = _dist(a, b, c), [a, b, c]
     if best:
         results.append(best)
 
@@ -628,21 +776,16 @@ def _select_packages(
         best_pp, best_pp_d = None, float("inf")
         for pk in pick_pool:
             # Just the pick alone
-            d = abs(pk["value"] - target_val)
-            if lo <= pk["value"] <= hi and d < best_pp_d:
-                best_pp_d, best_pp = d, [pk]
+            if _in_band(pk) and _dist(pk) < best_pp_d:
+                best_pp_d, best_pp = _dist(pk), [pk]
             for c in mp:
-                s = c["value"] + pk["value"]
-                d = abs(s - target_val)
-                if lo <= s <= hi and d < best_pp_d:
-                    best_pp_d, best_pp = d, [c, pk]
+                if _in_band(c, pk) and _dist(c, pk) < best_pp_d:
+                    best_pp_d, best_pp = _dist(c, pk), [c, pk]
             for a, b in combinations(mp, 2):
                 if a["position"] == "QB" and b["position"] == "QB":
                     continue
-                s = a["value"] + b["value"] + pk["value"]
-                d = abs(s - target_val)
-                if lo <= s <= hi and d < best_pp_d:
-                    best_pp_d, best_pp = d, [a, b, pk]
+                if _in_band(a, b, pk) and _dist(a, b, pk) < best_pp_d:
+                    best_pp_d, best_pp = _dist(a, b, pk), [a, b, pk]
         if best_pp:
             results.append(best_pp)
 
@@ -652,45 +795,36 @@ def _select_packages(
         best_2p, best_2p_d = None, float("inf")
         for pk1, pk2 in combinations(pick_pool, 2):
             # Two picks alone
-            s = pk1["value"] + pk2["value"]
-            d = abs(s - target_val)
-            if lo <= s <= hi and d < best_2p_d:
-                best_2p_d, best_2p = d, [pk1, pk2]
+            if _in_band(pk1, pk2) and _dist(pk1, pk2) < best_2p_d:
+                best_2p_d, best_2p = _dist(pk1, pk2), [pk1, pk2]
             # One player + two picks
             for c in mp:
-                s = c["value"] + pk1["value"] + pk2["value"]
-                d = abs(s - target_val)
-                if lo <= s <= hi and d < best_2p_d:
-                    best_2p_d, best_2p = d, [c, pk1, pk2]
+                if _in_band(c, pk1, pk2) and _dist(c, pk1, pk2) < best_2p_d:
+                    best_2p_d, best_2p = _dist(c, pk1, pk2), [c, pk1, pk2]
         if best_2p:
             results.append(best_2p)
 
-    # ── Fallback: absolute-closest across all assets if window missed ─────────
+    # ── Fallback: closest-effective across all assets if window missed ────────
     if not results:
         all_pool = (player_pool + pick_pool)[:15]
         fallback, fallback_d = None, float("inf")
         for c in all_pool:
-            d = abs(c["value"] - target_val)
-            if d < fallback_d:
-                fallback_d, fallback = d, [c]
+            if _dist(c) < fallback_d:
+                fallback_d, fallback = _dist(c), [c]
         for a, b in combinations(all_pool, 2):
             if a.get("position") == "QB" and b.get("position") == "QB":
                 continue
-            s = a["value"] + b["value"]
-            d = abs(s - target_val)
-            if d < fallback_d:
-                fallback_d, fallback = d, [a, b]
+            if _dist(a, b) < fallback_d:
+                fallback_d, fallback = _dist(a, b), [a, b]
         for a, b, c in combinations(all_pool[:7], 3):
             if sum(1 for x in (a, b, c) if x["position"] == "QB") > 1:
                 continue
-            s = a["value"] + b["value"] + c["value"]
-            d = abs(s - target_val)
-            if d < fallback_d:
-                fallback_d, fallback = d, [a, b, c]
+            if _dist(a, b, c) < fallback_d:
+                fallback_d, fallback = _dist(a, b, c), [a, b, c]
         if fallback:
             results.append(fallback)
 
-    return _drop_underpays(results)[:max_pkgs]
+    return _dedup(_drop_underpays(results))[:max_pkgs]
 
 
 # ── Pick send candidates ──────────────────────────────────────────────────────
@@ -860,6 +994,11 @@ def _build_distribute(
     Viewer sends one concentrated stud and receives a 2–3 player depth package.
     Each card = one stud → one partner's multi-player return.
     """
+    # League-wide value ladder for effective-value (depth-penalty) math. Here the
+    # partner is the side sending more bodies (the depth package), so their
+    # return is what absorbs the bench penalty.
+    _sv = sorted((v for v in (_f(x.get("value")) for x in values_by_id.values()) if v > 0),
+                 reverse=True)
     studs = sorted(
         [p for p in viewer_players
          if values_by_id.get(p, {}).get("position") in SKILL_POS
@@ -956,7 +1095,12 @@ def _build_distribute(
                           - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
 
             recv_val = sum(c["value"] for c in combo)
-            acpt    = _estimate_acceptance(sval, recv_val, is_preferred=True)
+            # Partner ships the multi-player package, so their outgoing value is
+            # discounted by the depth penalty - the same effective view the trade
+            # card shows. This makes the depth return look (correctly) more
+            # attractive for them to give up.
+            recv_eff = recv_val - _depth_penalty(max(0, len(combo) - 1), _sv, num_teams)
+            acpt    = _estimate_acceptance(sval, recv_eff, is_preferred=True)
 
             pname  = _roster_name(roster_map, owner)
             p_arch = owner_meta.get(owner, {}).get("arch", "")
@@ -973,6 +1117,8 @@ def _build_distribute(
                 "pos_rank_label": values_by_id[stud].get("pos_rank_label", ""),
                 "why":            (f"Spread {sname}'s value into {len(combo)} starters from {pname}. "
                                    f"{ceiling_note.capitalize()}, filling multiple holes at once."),
+                "fit_note":       _fit_note([{"position": spos}],
+                                            owner_meta.get(owner, {}).get("need"), None, None),
                 "partner_team":   pname,
                 "partner_arch":   p_arch,
                 # departure cost: impact table (cost of losing this stud alone)
@@ -997,6 +1143,7 @@ def _build_distribute(
         if len(results) >= 15:
             break
 
+    results.sort(key=_suggestion_rank, reverse=True)
     return results
 
 
@@ -1021,6 +1168,7 @@ def _build_rebuilding(
     sim_state: Optional[Dict] = None,
     current_playoff_pct: float = 0.0,
     viewer_roster_id: Any = None,
+    owner_meta: Optional[Dict[str, Dict]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Rebuild = sell win-now vets for younger assets of similar dynasty value.
@@ -1031,6 +1179,11 @@ def _build_rebuilding(
       3. Young player + draft pick combo
     Whichever best matches the vet's value wins.
     """
+    # League-wide value ladder for effective-value (depth-penalty) math. The
+    # partner ships the youth/pick return, so they are the multi-asset side that
+    # absorbs the depth penalty.
+    _sv = sorted((v for v in (_f(x.get("value")) for x in values_by_id.values()) if v > 0),
+                 reverse=True)
     # Sellable vets: at/past positional peak age with real remaining value.
     vets = sorted(
         [p for p in viewer_players
@@ -1187,7 +1340,11 @@ def _build_rebuilding(
 
             recv_total = sum(a.get("value", 0) for a in opt["recv_assets"])
             is_pref    = opt["partner_arch"] == COMPLEMENT.get("rebuilding", "")
-            acpt       = _estimate_acceptance(vval, recv_total, is_preferred=is_pref)
+            # Partner sends the multi-asset youth/pick return, so discount it by
+            # the depth penalty (effective value) for the acceptance estimate.
+            recv_eff   = recv_total - _depth_penalty(
+                max(0, len(opt["recv_assets"]) - 1), _sv, num_teams)
+            acpt       = _estimate_acceptance(vval, recv_eff, is_preferred=is_pref)
 
             # ── Display / why text ─────────────────────────────────────────
             primary = opt["primary"]
@@ -1246,6 +1403,10 @@ def _build_rebuilding(
                 "redraft_value":  display_rdft,
                 "pos_rank_label": display_rank,
                 "why":            why,
+                "fit_note":       _fit_note(
+                    [{"position": vpos}],
+                    (owner_meta or {}).get(str(opt.get("partner_rid")), {}).get("need"),
+                    None, None),
                 "partner_team":   opt["partner_name"],
                 "partner_arch":   opt["partner_arch"],
                 "win_prob_delta":         round(departure_wpd, 4),
@@ -1266,6 +1427,7 @@ def _build_rebuilding(
         if len(results) >= 15:
             break
 
+    results.sort(key=_suggestion_rank, reverse=True)
     return results
 
 
@@ -1485,7 +1647,16 @@ def get_archetype_suggestions(
         p_weak = [pos for pos in ("RB", "WR", "TE", "QB")
                   if p_pos_counts.get(pos, 0) < 3][:2]
         p_phrase = _partner_phrase(p_arch, p_name, seed, playoff_spots, p_avg_age, p_rdft_ratio, p_weak)
-        owner_meta[rid] = {"arch": p_arch, "name": p_name, "phrase": p_phrase}
+        # Positions the partner is thin at (would welcome) vs deep at (won't want
+        # more of). Used to bias which of our players we send and to nudge the
+        # acceptance estimate - a fair-value deal a partner has no roster use for
+        # is not actually a likely deal.
+        p_need   = {pos for pos in SKILL_POS if p_pos_counts.get(pos, 0) < 3}
+        p_stacked = {pos for pos in SKILL_POS if p_pos_counts.get(pos, 0) >= 4}
+        owner_meta[rid] = {
+            "arch": p_arch, "name": p_name, "phrase": p_phrase,
+            "pos_counts": p_pos_counts, "need": p_need, "stacked": p_stacked,
+        }
 
         for pid in pids:
             if pid in viewer_players:
@@ -1559,6 +1730,7 @@ def get_archetype_suggestions(
             sim_state=sim_state,
             current_playoff_pct=current_playoff_pct,
             viewer_roster_id=viewer_roster_id,
+            owner_meta=owner_meta,
         )
         return {"suggestions": _sugg, "current_playoff_pct": round(current_playoff_pct, 1)}
 
@@ -1596,12 +1768,18 @@ def get_archetype_suggestions(
             ) * sc * pref_bonus
 
         elif archetype == "consolidate":
-            if val < 600:
+            # Consolidating doesn't only mean chasing the very top tier: taking a
+            # few lesser pieces up to a solid mid-tier starter is a real upgrade.
+            # Allow mid-tier targets in (floor well below the old 600) and soften
+            # the raw-value term so a productive ~450-650 player competes with a
+            # pure-value stud instead of always being buried behind it.
+            if val < 350:
                 continue
             rdft_ratio = rdft / max(1, val) if rdft > 0 else 0.6
             score = (
-                0.60 * min(1.0, val / 1200) +
-                0.25 * rdft_ratio +
+                0.42 * min(1.0, val / 900) +
+                0.30 * rdft_ratio +
+                0.13 * min(1.0, val / 1400) +
                 0.15 * (1.0 if tp >= 0 else 0.7)
             ) * sc * pref_bonus
 
@@ -1617,8 +1795,15 @@ def get_archetype_suggestions(
         replace_val = min(same_pos_vals) if same_pos_vals else 0
         wpd = _wp_delta(viewer_lineup_val, val, replace_val, league_avg)
 
+        # A partner is likelier to move a player from a position they're deep at
+        # and likelier to hold their only starter, so tilt the target ranking by
+        # the partner's surplus at the target's position (0.88x thin → 1.12x deep).
+        _pcounts = owner_meta.get(str(t["owner_roster_id"]), {}).get("pos_counts") or {}
+        _cnt = _pcounts.get(pos, 0)
+        surplus_mult = 0.88 if _cnt <= 1 else (1.12 if _cnt >= 4 else 1.0)
+
         t["win_prob_delta"] = wpd
-        scored.append((score + wpd * 0.25, t))
+        scored.append(((score + wpd * 0.25) * surplus_mult, t))
 
     # ── Rank: one player per (team, position), best overall ───────────────────
     # Allows e.g. a team's stud RB *and* stud WR to both surface, but not two
@@ -1654,6 +1839,13 @@ def get_archetype_suggestions(
                    picks_by_roster.get(viewer_roster_id) or []
     send_candidates += _pick_send_candidates(viewer_picks, num_teams, slot_map, current_season=season)
 
+    # League-wide value ladder (descending) drives the depth penalty so the
+    # engine reasons about the same effective value the trade card shows.
+    sorted_vals = sorted(
+        (v for v in (_f(x.get("value")) for x in values_by_id.values()) if v > 0),
+        reverse=True,
+    )
+
     results = []
     new_wp_base = current_wp  # alias for clarity inside loop
     _vid_int: Optional[int] = None
@@ -1662,53 +1854,63 @@ def get_archetype_suggestions(
     except (TypeError, ValueError):
         logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
+    # Per-request memo for the Monte Carlo swap. simulate_with_swap is
+    # deterministic (common-random-numbers seed), so identical post-trade rosters
+    # return identical odds - different packages that collapse to the same lineup
+    # (or the same target reached two ways) then reuse one 10k-sim instead of
+    # re-running it. Keyed by the viewer's resulting player set.
+    _swap_cache: Dict[frozenset, Tuple[float, float]] = {}
+
+    def _cached_swap(pids_after):
+        key = frozenset(str(p) for p in pids_after)
+        hit = _swap_cache.get(key)
+        if hit is not None:
+            return hit
+        from data_building.simulate_playoff_odds import simulate_with_swap as _sim_swap
+        res = _sim_swap(sim_state, _vid_int, pids_after, n_sims=10_000)
+        _swap_cache[key] = res
+        return res
+
     for t in top:
         pid = t["player_id"]
         pos = t["position"]
         tp  = _trend_pct(pid, t["value"], old_vals, values_by_id)
 
-        # Build the hypothetical roster: add target, drop weakest same-pos player
-        same_pos_pids = [
-            p for p in viewer_players
-            if str(values_by_id.get(p, {}).get("position") or "").upper() == pos
-        ]
-        if same_pos_pids:
-            if ppg_map and roster_positions:
-                drop_pid = min(
-                    same_pos_pids,
-                    key=lambda p: (ppg_map.get(str(p)) or {}).get("ppg", 0),
-                )
-            else:
-                drop_pid = min(
-                    same_pos_pids,
-                    key=lambda p: _f(values_by_id.get(p, {}).get("value")),
-                )
-            new_pids = [p for p in viewer_players if p != drop_pid] + [pid]
-        else:
-            new_pids = viewer_players + [pid]
-
+        # Target-add impact (analytical). The accurate, simulation-based numbers
+        # are computed per package below as net_* (drop the exact sent players,
+        # add the target), and the UI always prefers those. Running a separate
+        # 10k-sim here just to fill the non-net fields - which are only a display
+        # fallback for the never-hit "no package" case - doubled the simulation
+        # load per target for no visible gain, so keep the cheap formula.
         wpd = t.get("win_prob_delta", 0.0)
         pod = _playoff_odds(new_wp_base + wpd, num_weeks, num_teams, playoff_spots) - current_po
 
-        if sim_state is not None and _vid_int is not None:
-            try:
-                from data_building.simulate_playoff_odds import simulate_with_swap as _sim_swap
-                new_po_pct, new_avg = _sim_swap(sim_state, _vid_int, new_pids, n_sims=10_000)
-                pod = (new_po_pct - current_playoff_pct) / 100.0
-                wpd = _win_prob(new_avg, league_avg) - current_wp
-            except Exception:
-                logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
-
         why = _build_why(t, archetype, tp, wpd)
 
-        pkgs = _select_packages(send_candidates, t["value"], archetype, max_pkgs=3)
+        # Bias the package toward positions this partner is thin at (and away
+        # from ones they're stacked at) so the offer is one they'd actually use.
+        _pmeta    = owner_meta.get(str(t["owner_roster_id"]), {})
+        _p_need   = _pmeta.get("need")
+        _p_stacked = _pmeta.get("stacked")
+        pkgs = _select_packages(
+            send_candidates, t["value"], archetype, max_pkgs=3,
+            sorted_vals=sorted_vals, league_size=num_teams,
+            need_positions=_p_need, stacked_positions=_p_stacked,
+        )
         if not pkgs:
             pkgs = [[]]
 
         for pkg in pkgs:
             send_val = sum(p.get("value", 0) for p in pkg) if pkg else 0
+            # Judge acceptance on the depth-adjusted (effective) value the trade
+            # card shows, not the raw sum - a multi-piece package looks generous
+            # in raw value but reads as fair once the bench penalty applies.
+            eff_send = send_val - _depth_penalty(
+                max(0, len(pkg) - 1), sorted_vals, num_teams) if pkg else 0
             recv_val = t["value"]
-            acpt     = _estimate_acceptance(send_val, recv_val, is_preferred=t["is_pref"])
+            acpt     = _estimate_acceptance(
+                eff_send, recv_val, is_preferred=t["is_pref"],
+                fit=_acceptance_fit(pkg, _p_need, _p_stacked))
 
             # Per-package net odds: build the exact post-trade roster (drop the
             # sent players, add the target) and re-run the SAME Monte Carlo
@@ -1723,8 +1925,7 @@ def get_archetype_suggestions(
             net_wpd_pkg = None
             if sim_state is not None and _vid_int is not None:
                 try:
-                    from data_building.simulate_playoff_odds import simulate_with_swap as _sim_swap
-                    _net_po_pct, _net_avg = _sim_swap(sim_state, _vid_int, net_roster, n_sims=10_000)
+                    _net_po_pct, _net_avg = _cached_swap(net_roster)
                     net_pod_pkg = (_net_po_pct - current_playoff_pct) / 100.0
                     net_wpd_pkg = _win_prob(_net_avg, league_avg) - current_wp
                 except Exception:
@@ -1755,6 +1956,8 @@ def get_archetype_suggestions(
                 "net_win_prob_delta":      round(net_wpd_pkg, 4),
                 "net_playoff_odds_delta":  round(net_pod_pkg, 4),
                 "acceptance_pct":          acpt,
+                "fit_note":                _fit_note(pkg, _p_need, pos,
+                                                     _pmeta.get("pos_counts")),
                 "direction":               "acquire",
                 "suggested_send":          pkg,
             })
@@ -1762,5 +1965,11 @@ def get_archetype_suggestions(
                 break
         if len(results) >= 15:
             break
+
+    # Surface the most compelling deals first: ones that both move the needle
+    # (net playoff-odds impact) AND the partner would plausibly accept. Value
+    # matching already happened per package; this orders across targets so a
+    # fair-but-flat deal doesn't sit above a high-impact, high-acceptance one.
+    results.sort(key=_suggestion_rank, reverse=True)
 
     return {"suggestions": results, "current_playoff_pct": round(current_playoff_pct, 1)}

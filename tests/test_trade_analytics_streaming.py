@@ -23,7 +23,18 @@ if "dashboard_services.db" not in sys.modules:
     except Exception:
         _stub = types.ModuleType("dashboard_services.db")
         _stub.get_conn = lambda *a, **k: None
-        sys.modules.setdefault("dashboard_services", types.ModuleType("dashboard_services"))
+        if "dashboard_services" not in sys.modules:
+            # Keep it a real package (with __path__ to the source dir) so other
+            # test modules can still import sibling submodules like
+            # dashboard_services.archetype_engine — a plain ModuleType here has
+            # no __path__ and would shadow the namespace package for the rest of
+            # the run, breaking their imports at collection time.
+            import os
+            _pkg = types.ModuleType("dashboard_services")
+            _pkg.__path__ = [os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "dashboard_services")]
+            sys.modules["dashboard_services"] = _pkg
         sys.modules["dashboard_services.db"] = _stub
 
 from data_building.trade_intel import analytics

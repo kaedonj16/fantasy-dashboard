@@ -12293,7 +12293,9 @@ def page_breakouts(platform: str, season: int, league_id: str):
             with _bc.cursor() as _bcur:
                 _bcur.execute("SELECT MAX(season) FROM breakout_opportunity_scores")
                 _bo_row = _bcur.fetchone()
-                bo_season = int((_bo_row or {}).get("max") or _bo_row[0] or season)
+                # dict_row: MAX(season) comes back as {"max": ...}; the old
+                # _bo_row[0] fallback would KeyError on the empty-table case.
+                bo_season = int((_bo_row or {}).get("max") or season)
     except Exception:
         bo_season = max(season, datetime.now().year)
 
@@ -20563,6 +20565,38 @@ def api_player_details(player_id: str):
                         _h[_k] = round(float(_h[_k]) * _te_mult, 1)
 
         _modal_age = age_from_bday(player_meta.get("bDay")) or player_value.get("age") or player_meta.get("age")
+
+        # Sleeper ADP - the same feed the player rankings page uses (Sleeper's
+        # projections API, cached daily by fetch_sleeper_adp, so this is a cheap
+        # dict lookup on modal open). Surface all four flavors (dynasty/redraft x
+        # 1QB/SF); each is None when Sleeper has no value for it, and the whole
+        # object is None when none are present, so the modal degrades cleanly.
+        _adp = None
+        try:
+            from dashboard_services.adp_service import fetch_sleeper_adp
+            _adp_row = (fetch_sleeper_adp(int(season)) or {}).get(str(player_id)) or {}
+
+            def _adp_pick(*keys):
+                for _k in keys:
+                    _v = _adp_row.get(_k)
+                    if _v is not None:
+                        try:
+                            return round(float(_v), 1)
+                        except (TypeError, ValueError):
+                            pass
+                return None
+
+            _adp_all = {
+                "dynasty_1qb": _adp_pick("adp_dynasty_ppr", "adp_dynasty_half_ppr", "adp_dynasty_std"),
+                "dynasty_sf":  _adp_pick("adp_dynasty_2qb"),
+                "redraft_1qb": _adp_pick("adp_ppr", "adp_half_ppr", "adp_std"),
+                "redraft_sf":  _adp_pick("adp_2qb"),
+            }
+            if any(v is not None for v in _adp_all.values()):
+                _adp = _adp_all
+        except Exception:
+            logger.debug("[api_player_details] Sleeper ADP lookup skipped", exc_info=True)
+
         response = {
             "player_id": player_id,
             "name": player_meta.get("name", "Unknown"),
@@ -20599,6 +20633,7 @@ def api_player_details(player_id: str):
                 "total_pts": _total_pts,
                 "total_pts_rank": _total_pts_rank,
                 "total_pts_ovr_rank": _total_pts_ovr_rank,
+                "adp": _adp,
             },
             "value_history": value_history,
             "game_logs_by_year": game_logs_by_year,
@@ -24310,16 +24345,33 @@ def _resolve_pick_asset(pick_id: str, num_teams: int, values_by_id: Optional[dic
 
 
 def _value_matched_acquire_packages(focus_value: float, players: list, picks: list,
-                                     max_options: int = 12) -> list:
+                                     max_options: int = 12,
+                                     sorted_vals: list | None = None,
+                                     league_size: int = 10) -> list:
     """Build value-matched ASSET packages (players + picks from the viewer's roster)
     whose combined value is close to focus_value. Used for the pick build-around
     path: 'what would I give to acquire this pick?'.
+
+    Labels and the acceptable band are computed on *effective* (depth-adjusted)
+    value so a multi-asset offer is judged the way the trade card scores it: the
+    side sending more bodies absorbs a bench penalty, so three pieces for one
+    target that looks "fair" in raw value actually reads as an overpay. Matching
+    on effective value keeps the surfaced offers feasible for both sides.
 
     Returns a list shaped for renderPackagePage (assets / value_label / value_class).
     """
     if focus_value <= 0:
         return []
-    lo, hi = focus_value * 0.82, focus_value * 1.12
+
+    from dashboard_services.archetype_engine import _depth_penalty
+
+    def _eff(assets: list) -> float:
+        raw = sum(a["value"] for a in assets)
+        return raw - _depth_penalty(max(0, len(assets) - 1), sorted_vals, league_size)
+
+    # Band is on effective value; keep the raw window a touch wider so viable
+    # multi-piece packages (which lose value to the penalty) still get built.
+    lo, hi = focus_value * 0.80, focus_value * 1.25
 
     def _passet(p: dict) -> dict:
         return {
@@ -24351,8 +24403,9 @@ def _value_matched_acquire_packages(focus_value: float, players: list, picks: li
     out: list = []
     seen: set = set()
 
-    def _label(total: float) -> tuple:
-        r = total / focus_value if focus_value else 0
+    def _label(eff: float) -> tuple:
+        # Label on effective value: this is what the trade card balance reflects.
+        r = eff / focus_value if focus_value else 0
         if r <= 0.94:
             return "Great deal", "great"
         if r <= 1.08:
@@ -24361,13 +24414,16 @@ def _value_matched_acquire_packages(focus_value: float, players: list, picks: li
 
     def _add(assets: list):
         total = round(sum(a["value"] for a in assets), 1)
-        if not (lo <= total <= hi):
+        eff = _eff(assets)
+        # Band and underpay guard both live on effective value so nothing that
+        # would read as a lopsided steal for the sender gets surfaced.
+        if not (lo <= total <= hi) or eff < focus_value * 0.90:
             return
         key = frozenset(a.get("player_id") or a["name"] for a in assets)
         if key in seen:
             return
         seen.add(key)
-        label, cls = _label(total)
+        label, cls = _label(eff)
         out.append({
             "assets":           assets,
             "send_value":       total,
@@ -24375,7 +24431,7 @@ def _value_matched_acquire_packages(focus_value: float, players: list, picks: li
             "value_class":      cls,
             "is_profile_match": True,
             "frequency":        0,
-            "_fit":             abs(total - focus_value),
+            "_fit":             abs(eff - focus_value),
         })
 
     # 1 player / 1 pick
@@ -24714,8 +24770,13 @@ def api_trade_intel_player_packages(player_id: str):
                 pk for pk in (viewer_picks or [])
                 if str(player_id) not in _vpick_ids(pk)
             ]
+            _ladder = sorted(
+                (v for v in (float(x.get("value") or 0) for x in values_by_id.values()) if v > 0),
+                reverse=True,
+            )
             pick_packages = _value_matched_acquire_packages(
-                focus_value, viewer_players, _viewer_picks_offer
+                focus_value, viewer_players, _viewer_picks_offer,
+                sorted_vals=_ladder, league_size=num_teams,
             )
             return jsonify({
                 "player_name":         player_name,
@@ -27796,26 +27857,60 @@ def _compare_name_for_id(pid: str | None) -> str | None:
     return None
 
 
-def _compare_popular_matchups(n_pairs: int = 4) -> str:
-    """A few marquee matchups (top players by value, paired) for the empty state."""
+def _compare_popular_matchups(n_pairs: int = 5) -> str:
+    """A few marquee matchups for the empty state.
+
+    Pairs same-position, adjacent-in-value players (RB1 vs RB2, WR1 vs WR2, ...)
+    rather than pairing the top players sequentially by overall value. Adjacent
+    same-position players are the real "who's better" debates - same role,
+    similar value - whereas a positional-blind 1st-vs-2nd-overall pairing can put
+    a QB next to a WR, which is not a meaningful comparison.
+    """
     try:
         table = get_model_value_table_cached() or []
     except Exception:
         table = []
-    ranked = sorted(
-        (r for r in table if r.get("id") and r.get("name") and (r.get("value") or 0) > 0),
+
+    from collections import defaultdict
+    by_pos: dict = defaultdict(list)
+    for r in sorted(
+        (x for x in table if x.get("id") and x.get("name") and (x.get("value") or 0) > 0),
         key=lambda r: float(r.get("value") or 0), reverse=True,
-    )[: n_pairs * 2]
-    chips = []
-    for i in range(0, len(ranked) - 1, 2):
-        a, b = ranked[i], ranked[i + 1]
-        href = f"/compare?p1={a['id']}&p2={b['id']}"
-        chips.append(
-            f"<a class='compare-chip' href='{href}'>"
-            f"<span class='compare-chip-name'>{html.escape(str(a['name']))}</span>"
-            f"<span class='compare-chip-vs'>vs</span>"
-            f"<span class='compare-chip-name'>{html.escape(str(b['name']))}</span></a>"
-        )
+    ):
+        pos = str(r.get("position") or "").upper()
+        if pos in ("QB", "RB", "WR", "TE"):
+            by_pos[pos].append(r)
+
+    # Adjacent pairs within each position: (1,2), (3,4), (5,6) - the top few.
+    pos_pairs: dict = {}
+    for pos, players in by_pos.items():
+        pos_pairs[pos] = [(players[i], players[i + 1])
+                          for i in range(0, min(len(players) - 1, 6), 2)]
+
+    # Interleave across positions so the row is varied (a RB debate, a WR debate,
+    # a QB debate, a TE debate, then the next tier) instead of all one position.
+    order = ["RB", "WR", "QB", "TE"]
+    chips: list = []
+    round_i = 0
+    while len(chips) < n_pairs:
+        added = False
+        for pos in order:
+            plist = pos_pairs.get(pos) or []
+            if round_i < len(plist):
+                a, b = plist[round_i]
+                href = f"/compare?p1={a['id']}&p2={b['id']}"
+                chips.append(
+                    f"<a class='compare-chip' href='{href}'>"
+                    f"<span class='compare-chip-name'>{html.escape(str(a['name']))}</span>"
+                    f"<span class='compare-chip-vs'>vs</span>"
+                    f"<span class='compare-chip-name'>{html.escape(str(b['name']))}</span></a>"
+                )
+                added = True
+                if len(chips) >= n_pairs:
+                    break
+        if not added:
+            break
+        round_i += 1
     return "".join(chips)
 
 
@@ -27835,16 +27930,18 @@ def build_compare_page_body(popular_html: str = "") -> str:
             <div class="compare-picker">
               <label class="compare-pick-label">Player 1</label>
               <div class="compare-pick-field">
-                <input type="text" class="compare-pick-input" id="cmpPick1" placeholder="Search a player…" autocomplete="off" aria-label="Search player 1">
-                <div class="compare-pick-results" id="cmpResults1"></div>
+                <input type="text" class="compare-pick-input" id="cmpPick1" placeholder="Search a player…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="cmpResults1" aria-autocomplete="list" aria-label="Search player 1">
+                <button type="button" class="compare-pick-clear" id="cmpClear1" aria-label="Clear player 1" hidden>&times;</button>
+                <div class="compare-pick-results" id="cmpResults1" role="listbox"></div>
               </div>
             </div>
             <div class="compare-vs" aria-hidden="true">VS</div>
             <div class="compare-picker">
               <label class="compare-pick-label">Player 2</label>
               <div class="compare-pick-field">
-                <input type="text" class="compare-pick-input" id="cmpPick2" placeholder="Search a player…" autocomplete="off" aria-label="Search player 2">
-                <div class="compare-pick-results" id="cmpResults2"></div>
+                <input type="text" class="compare-pick-input" id="cmpPick2" placeholder="Search a player…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="cmpResults2" aria-autocomplete="list" aria-label="Search player 2">
+                <button type="button" class="compare-pick-clear" id="cmpClear2" aria-label="Clear player 2" hidden>&times;</button>
+                <div class="compare-pick-results" id="cmpResults2" role="listbox"></div>
               </div>
             </div>
           </div>
