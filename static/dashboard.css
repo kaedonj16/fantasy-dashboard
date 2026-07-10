@@ -17043,15 +17043,14 @@ tr.team-clickable {
   font-size: 12px; font-weight: 700; text-transform: uppercase;
   letter-spacing: .05em; color: var(--text-muted); margin-bottom: 12px;
 }
-/* Even, fill-the-row grid instead of loose left-aligned wrapping. Min column
-   width is wide enough to hold both names without truncating; it drops to a
-   single column when the container is narrow. */
+/* Two-column grid of stacked matchup cards. Stacking (badge / name / vs /
+   name) lets each card stay narrow without truncating either name. */
 .compare-chip-row {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 10px;
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
 }
 .compare-chip {
-  display: flex; align-items: center; gap: 9px;
-  padding: 12px 15px; border-radius: 12px; text-decoration: none;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 14px 14px; border-radius: 12px; text-decoration: none; text-align: center;
   background: var(--card); border: 1px solid var(--border);
   transition: border-color .15s ease, transform .1s ease, box-shadow .15s ease;
 }
@@ -17060,15 +17059,15 @@ tr.team-clickable {
   box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, .06));
 }
 .compare-chip-name {
-  font-size: 14px; font-weight: 600; color: var(--text);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+  font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.25;
 }
 .compare-chip:hover .compare-chip-name { color: var(--accent); }
 .compare-chip-vs {
-  flex-shrink: 0; font-size: 10px; font-weight: 800; text-transform: uppercase;
+  font-size: 10px; font-weight: 800; text-transform: uppercase;
   letter-spacing: .06em; color: var(--text-muted);
-  background: var(--bg-alt); padding: 3px 7px; border-radius: 6px;
+  background: var(--bg-alt); padding: 2px 8px; border-radius: 6px;
 }
+.compare-chip-pos { margin-bottom: 2px; }
 .compare-chip-pos {
   flex-shrink: 0; font-size: 10px; font-weight: 800; letter-spacing: .03em;
   padding: 3px 7px; border-radius: 6px; background: var(--bg-alt); color: var(--text-muted);
