@@ -27899,8 +27899,10 @@ def _compare_popular_matchups(n_pairs: int = 5) -> str:
             if round_i < len(plist):
                 a, b = plist[round_i]
                 href = f"/compare?p1={a['id']}&p2={b['id']}"
+                _cpos = html.escape(pos)
                 chips.append(
                     f"<a class='compare-chip' href='{href}'>"
+                    f"<span class='compare-chip-pos pos-{_cpos}'>{_cpos}</span>"
                     f"<span class='compare-chip-name'>{html.escape(str(a['name']))}</span>"
                     f"<span class='compare-chip-vs'>vs</span>"
                     f"<span class='compare-chip-name'>{html.escape(str(b['name']))}</span></a>"
@@ -27923,8 +27925,9 @@ def build_compare_page_body(popular_html: str = "") -> str:
       <main class="page-main">
         <div class="compare-page">
           <header class="compare-page-head">
+            <span class="compare-page-eyebrow"><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i> Head to head</span>
             <h1 class="compare-page-title">Compare Players</h1>
-            <p class="compare-page-sub">Put any two players side by side: dynasty value, advanced metrics, weekly usage, and game logs.</p>
+            <p class="compare-page-sub">Put any two players side by side and see who comes out ahead.</p>
           </header>
           <div class="compare-pickers">
             <div class="compare-picker">
@@ -27952,6 +27955,12 @@ def build_compare_page_body(popular_html: str = "") -> str:
             <a class="compare-action-btn" id="cmpTradeLink" href="/trade" title="Load these two into the trade calculator">Trade calculator &#8599;</a>
           </div>
           <div class="compare-empty" id="cmpEmptyState">
+            <div class="compare-features">
+              <div class="compare-feature"><span class="cf-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 17 9 11 13 15 21 6"></polyline><polyline points="15 6 21 6 21 12"></polyline></svg></span><span>Dynasty value</span></div>
+              <div class="compare-feature"><span class="cf-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6" y1="20" x2="6" y2="11"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="18" y1="20" x2="18" y2="14"></line></svg></span><span>Advanced metrics</span></div>
+              <div class="compare-feature"><span class="cf-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="16" y1="2" x2="16" y2="6"></line></svg></span><span>Weekly usage</span></div>
+              <div class="compare-feature"><span class="cf-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="9" y1="6" x2="21" y2="6"></line><line x1="9" y1="12" x2="21" y2="12"></line><line x1="9" y1="18" x2="21" y2="18"></line><line x1="4" y1="6" x2="4.01" y2="6"></line><line x1="4" y1="12" x2="4.01" y2="12"></line><line x1="4" y1="18" x2="4.01" y2="18"></line></svg></span><span>Game logs</span></div>
+            </div>
             <div class="compare-empty-block" id="cmpRecent" hidden>
               <div class="compare-empty-title">Recently compared</div>
               <div class="compare-chip-row" id="cmpRecentChips"></div>
