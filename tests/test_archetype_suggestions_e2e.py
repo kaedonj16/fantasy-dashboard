@@ -125,6 +125,34 @@ def test_buy_suggestions_carry_fit_note_field():
         assert "fit_note" in s
 
 
+def test_analytical_impact_is_bounded_without_sim_state(monkeypatch):
+    """The Impact table's per-target win % / playoff-odds come from the analytical
+    model when a league has no sim state. That model used to mix the target's raw
+    dynasty value into a lineup/PPG-scale total, saturating the win-prob curve so
+    every strong target showed the same absurd ~+50%. It now scores the whole new
+    lineup in consistent units and is clamped, so values stay modest and varied."""
+    import time as _t
+    ctx = _seed_ctx()
+    # Force the no-sim path so the analytical fallback (not simulate_with_swap)
+    # produces the per-target impact numbers.
+    ae._SIM_CACHE["sleeper:testlg:2026"] = {"sim_state": None, "base_odds": {}, "ts": _t.time()}
+    try:
+        out = ae.get_archetype_suggestions(
+            archetype="consolidate", platform="sleeper", league_id="testlg",
+            season=2026, viewer_roster_id="1", league_type="1qb", league_size=10,
+            ctx=ctx,
+        )
+    finally:
+        ae._SIM_CACHE.pop("sleeper:testlg:2026", None)
+
+    wpds = [s["win_prob_delta"] for s in out["suggestions"]]
+    assert wpds, "expected suggestions on the no-sim analytical path"
+    # Clamped to a plausible single-acquisition swing (the old bug was ~0.51).
+    assert all(-0.20 <= w <= 0.20 for w in wpds)
+    # Not the old degenerate case where every strong target showed one number.
+    assert len(set(round(w, 3) for w in wpds)) > 1
+
+
 def test_monte_carlo_swaps_are_deduped(monkeypatch):
     """simulate_with_swap is deterministic (common-random-numbers seed), so
     identical post-trade rosters must reuse a single 10k run rather than
