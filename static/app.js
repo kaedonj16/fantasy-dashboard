@@ -13595,8 +13595,8 @@ function _compareBodyHTML(p1, p2, opts) {
 
       <div class="compare-tab-panel" data-cmppanel="overview">
         <div class="compare-hero-section">
-          <div class="compare-hero-player" id="compareHero1" data-name="${p1.full_name || ''}">${_buildCompareHeroHTML(p1, p2)}</div>
-          <div class="compare-hero-player" id="compareHero2" data-name="${p2.full_name || ''}">${_buildCompareHeroHTML(p2, p1)}</div>
+          <div class="compare-hero-player" id="compareHero1" data-name="${(p1.name || p1.full_name || '').replace(/"/g, '&quot;')}">${_buildCompareHeroHTML(p1, p2)}</div>
+          <div class="compare-hero-player" id="compareHero2" data-name="${(p2.name || p2.full_name || '').replace(/"/g, '&quot;')}">${_buildCompareHeroHTML(p2, p1)}</div>
         </div>
         <hr class="pm-section-divider">
         <div class="pm-section-header"><span class="pm-section-label">Value History</span></div>

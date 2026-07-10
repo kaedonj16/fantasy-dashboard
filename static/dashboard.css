@@ -15340,21 +15340,25 @@ tr.team-clickable {
     margin: 0;
   }
 
-  /* Player name label above each column */
+  /* Player name label above each block, so a stacked (or two-up) layout always
+     says which player these cards belong to. Colour-matched to the value-history
+     chart lines (P1 blue, P2 orange) to reinforce the identity. */
   .compare-hero-player::before {
     display: block;
-    font-size: 9px;
-    font-weight: 700;
+    font-size: 11px;
+    font-weight: 800;
     color: var(--text-muted);
     text-transform: uppercase;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.04em;
     margin-bottom: 6px;
+    padding-bottom: 5px;
+    border-bottom: 2px solid var(--border);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  #compareHero1::before { content: attr(data-name); }
-  #compareHero2::before { content: attr(data-name); }
+  #compareHero1::before { content: attr(data-name); color: #3b82f6; border-bottom-color: rgba(59,130,246,0.35); }
+  #compareHero2::before { content: attr(data-name); color: #f59e0b; border-bottom-color: rgba(245,158,11,0.35); }
 
   /* Each player's cards stack in a single column */
   .compare-hero-row {
