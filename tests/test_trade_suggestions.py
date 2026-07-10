@@ -176,6 +176,27 @@ def test_tier_guard_applies_to_every_package_path():
                             sorted_vals=ladder, league_size=10)
 
 
+def test_studs_stay_in_pool_for_a_stud_target():
+    """Consolidate scores a team's own studs as poor everyday chips, so
+    _score_sends puts them last. On a deep roster that would truncate them out
+    of the search pool entirely - yet a stud is exactly what a loaded team must
+    package to trade up into a bigger stud. The selector must fold the
+    highest-value assets back in, so a T1 target still gets a real package."""
+    ladder = _ladder()
+    # Send list ordered the way _score_sends returns it for consolidate: cheap
+    # fillers first, the two studs dead last.
+    sends = [{"player_id": f"d{i}", "name": f"Depth {i}",
+              "position": "WR" if i % 2 else "RB", "value": 300.0 - i * 10}
+             for i in range(12)]
+    sends += [{"player_id": "s1", "name": "Stud A", "position": "WR", "value": 1010.0},
+              {"player_id": "s2", "name": "Stud B", "position": "RB", "value": 980.0}]
+    pkgs = _select_packages(sends, 1050.0, "consolidate", max_pkgs=3,
+                            sorted_vals=ladder, league_size=10)
+    assert pkgs, "a loaded team must be able to package a stud for a bigger stud"
+    # The package that reaches a T1 target has to lean on a stud, not pure filler.
+    assert any(a["value"] >= 900 for pkg in pkgs for a in pkg)
+
+
 def test_acceptance_uses_effective_value():
     # Fair effective value -> mid acceptance; clear effective overpay -> high.
     assert _estimate_acceptance(700, 700, is_preferred=False) == 50
