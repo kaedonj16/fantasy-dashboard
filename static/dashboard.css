@@ -13485,6 +13485,31 @@ img, svg, canvas {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Sleeper dynasty ADP line under the hero value cards. */
+.pm-adp-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 12px);
+  background: var(--row);
+  font-size: 12.5px;
+}
+.pm-adp-row i { font-size: 11px; color: var(--text-subtle); }
+.pm-adp-label { color: var(--text-muted); font-weight: 600; }
+.pm-adp-sep { color: var(--text-subtle); }
+.pm-adp-val { color: var(--text); font-weight: 800; font-variant-numeric: tabular-nums; }
+.pm-adp-mode {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 1px 8px;
+}
 .pm-section-divider {
   border: none;
   border-top: 1px solid var(--border);

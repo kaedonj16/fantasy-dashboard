@@ -20565,6 +20565,24 @@ def api_player_details(player_id: str):
                         _h[_k] = round(float(_h[_k]) * _te_mult, 1)
 
         _modal_age = age_from_bday(player_meta.get("bDay")) or player_value.get("age") or player_meta.get("age")
+
+        # Sleeper dynasty ADP - the same feed the player rankings page uses
+        # (Sleeper's projections API, cached daily by fetch_sleeper_adp, so this
+        # is a cheap dict lookup on modal open). Pick the ADP flavor matching the
+        # viewer's league type; None on any failure so the modal degrades cleanly.
+        _adp_val = None
+        try:
+            from dashboard_services.adp_service import fetch_sleeper_adp
+            _adp_row = (fetch_sleeper_adp(int(season)) or {}).get(str(player_id)) or {}
+            if _modal_lt == "sf":
+                _adp_val = _adp_row.get("adp_dynasty_2qb") or _adp_row.get("adp_dynasty_ppr")
+            else:
+                _adp_val = (_adp_row.get("adp_dynasty_ppr")
+                            or _adp_row.get("adp_dynasty_half_ppr")
+                            or _adp_row.get("adp_dynasty_std"))
+        except Exception:
+            logger.debug("[api_player_details] Sleeper ADP lookup skipped", exc_info=True)
+
         response = {
             "player_id": player_id,
             "name": player_meta.get("name", "Unknown"),
@@ -20601,6 +20619,7 @@ def api_player_details(player_id: str):
                 "total_pts": _total_pts,
                 "total_pts_rank": _total_pts_rank,
                 "total_pts_ovr_rank": _total_pts_ovr_rank,
+                "adp": round(float(_adp_val), 1) if _adp_val else None,
             },
             "value_history": value_history,
             "game_logs_by_year": game_logs_by_year,

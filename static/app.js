@@ -8749,6 +8749,18 @@ function openPlayerModal(playerId, playerName, opts) {
         ? '<span class="pm-tep-pill" title="TE premium (+10%)">TE+</span>'
         : '';
 
+      // Sleeper dynasty ADP (same feed as the rankings page), for this league type.
+      const _adp = data.stats?.adp;
+      const _adpLtLabel = (typeof _leagueType !== 'undefined' && _leagueType === 'sf') ? 'Superflex' : '1QB';
+      const adpRow = (_adp != null) ? `
+        <div class="pm-adp-row">
+          <i class="fa-solid fa-list-ol" aria-hidden="true"></i>
+          <span class="pm-adp-label">Sleeper Dynasty ADP</span>
+          <span class="pm-adp-sep">·</span>
+          <span class="pm-adp-val">${_adp}</span>
+          <span class="pm-adp-mode">${_adpLtLabel}</span>
+        </div>` : '';
+
       const _heroCardCount = 2 + (ppgCard ? 1 : 0) + (totalCard ? 1 : 0);
       const heroGridStyle = `style="grid-template-columns:repeat(${_heroCardCount},1fr);"`;
       let overviewHTML = `
@@ -8766,6 +8778,7 @@ function openPlayerModal(playerId, playerName, opts) {
           ${ppgCard}
           ${totalCard}
         </div>
+        ${adpRow}
       `;
 
       if (hasChart) {
