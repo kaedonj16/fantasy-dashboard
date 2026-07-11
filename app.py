@@ -20347,9 +20347,15 @@ def _compute_compare_baselines():
         acc = {}
         for pid in ids:
             for k, v in (metrics_by_id.get(str(pid)) or {}).items():
-                if k in _skip_metric or isinstance(v, bool) or not isinstance(v, (int, float)):
+                if k in _skip_metric or v is None or isinstance(v, bool):
                     continue
-                acc.setdefault(k, []).append(float(v))
+                # Postgres NUMERIC columns arrive as Decimal, which isn't an
+                # int/float - coerce numerically and skip anything non-numeric
+                # (names, dates) so a whole tier's metrics aren't silently dropped.
+                try:
+                    acc.setdefault(k, []).append(float(v))
+                except (TypeError, ValueError):
+                    continue
         avg = {k: round(sum(vs) / len(vs), 3) for k, vs in acc.items() if vs}
         try:
             from data_building.advanced_metrics import strip_premium_metrics
