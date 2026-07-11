@@ -4380,17 +4380,24 @@
     var isMe = ownsAllInColumn(slot);
     var total = teams * state.rounds;
     var nameLabel = isMe ? 'You (Team ' + slot + ')' : teamName(slot);
+    // Resolve the seat that OWNS a pick, following traded picks (a team can own
+    // picks sitting in another seat's column) - so the tip reflects the team's
+    // real haul, not just what fell in this column. Falls back to snake order.
+    function ownerOf(pn){
+      return (state.pickOwners && state.pickOwners[pn] != null)
+        ? state.pickOwners[pn] : slotOnClock(pn, teams, state.order);
+    }
     var nextPick = null;
     for (var pn = state.current; pn <= total; pn++){
-      if (slotOnClock(pn, teams, state.order) === slot && !state.picks[pn]){ nextPick = pn; break; }
+      if (ownerOf(pn) === slot && !state.picks[pn]){ nextPick = pn; break; }
     }
     var nextHtml = nextPick ? '<div class="dr-team-tip-next">Next pick: #' + nextPick + '</div>' : '';
 
-    // Collect this seat's selections (in pick order) once, shared by both layouts.
+    // Collect this team's selections (in pick order) once, shared by both layouts.
     var seatPicks = [];
     Object.keys(state.picks).map(Number).sort(function(a, b){ return a - b; }).forEach(function(pn){
       var pick = state.picks[pn]; if (!pick) return;
-      if (slotOnClock(pn, teams, state.order) !== slot) return;
+      if (ownerOf(pn) !== slot) return;
       seatPicks.push(pick);
     });
 
