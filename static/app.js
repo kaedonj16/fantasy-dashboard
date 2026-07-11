@@ -13801,9 +13801,10 @@ function _compareBodyHTML(p1, p2, opts) {
           <div class="compare-hero-player" id="compareHero1" data-name="${(p1.name || p1.full_name || '').replace(/"/g, '&quot;')}">${_buildCompareHeroHTML(p1, p2)}</div>
           <div class="compare-hero-player" id="compareHero2" data-name="${(p2.name || p2.full_name || '').replace(/"/g, '&quot;')}">${_buildCompareHeroHTML(p2, p1)}</div>
         </div>
+        ${(p1 && p1.is_baseline && p2 && p2.is_baseline) ? '' : `
         <hr class="pm-section-divider">
         <div class="pm-section-header"><span class="pm-section-label">Value History</span></div>
-        <div id="compareValueChart" class="player-modal-chart-container" style="min-height:220px;"></div>
+        <div id="compareValueChart" class="player-modal-chart-container" style="min-height:220px;"></div>`}
       </div>
 
       <div class="compare-tab-panel" data-cmppanel="metrics" hidden>

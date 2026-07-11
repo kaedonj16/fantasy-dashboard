@@ -160,6 +160,31 @@ def test_compare_baselines_metrics_are_averaged_in_one_query(monkeypatch):
         app._COMPARE_BASELINES_CACHE = None  # don't leak the mocked metrics
 
 
+def test_compare_baselines_metrics_coerce_decimal(monkeypatch):
+    """Postgres NUMERIC columns come back as Decimal, not float. The averaging
+    must coerce them, not drop them - dropping left tier metrics empty, so an
+    avg-vs-avg comparison showed 'No shared metrics'."""
+    from decimal import Decimal
+    import app
+    import data_building.advanced_metrics as am
+
+    monkeypatch.setattr(am, "get_players_metrics_by_season",
+                        lambda ids, season: {str(i): {"yards_per_target": Decimal("9.0"),
+                                                      "catch_rate": Decimal("0.65")}
+                                             for i in ids})
+    app._COMPARE_BASELINES_CACHE = None
+    try:
+        baselines = app._compute_compare_baselines()
+        if not baselines:
+            import pytest as _pytest
+            _pytest.skip("no usage/points data in this environment")
+        wr1 = next(b for b in baselines if b["name"] == "Avg WR1")
+        assert wr1["metrics"].get("yards_per_target") == 9.0
+        assert wr1["metrics"].get("catch_rate") == 0.65
+    finally:
+        app._COMPARE_BASELINES_CACHE = None
+
+
 def test_watchlist_page_renders(offline_client):
     r = offline_client.get("/watchlist")
     assert r.status_code == 200
