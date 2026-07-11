@@ -2621,8 +2621,10 @@
     var html = '';
     var g = gradeTeam();
     if (g){
-      var gSub = (state.type === 'rookie' && g.avgPs != null) ? ('Avg pick score ' + g.avgPs) : '';
-      if (!gSub){ var _ga = teamArchetype(); if (_ga) gSub = _ga.label; }
+      // The rookie card shows "Avg Pick Score" as a labeled bar below, so don't
+      // repeat it as the subtitle - use the team archetype label instead.
+      var gSub = '';
+      var _ga = teamArchetype(); if (_ga) gSub = _ga.label;
       var _gwn = g.window;
       var gAgeSub = _gwn ? (esc(_gwn.label) + ' \xb7 Avg age ' + _gwn.avgAge.toFixed(1)) : '';
       html += '<div class="dr-grade-card"><div class="dr-grade-letter">' + gradeLetter(g.score) + '</div>'
