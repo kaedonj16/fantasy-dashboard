@@ -556,7 +556,13 @@
   }
 
   function loadPlayers(){
-    var url = '/api/league-players' + (wantsKDef() ? '?kdef=1' : '');
+    var params = wantsKDef() ? ['kdef=1'] : [];
+    // Historical/synced completed draft: grade against THAT season's ADP. The
+    // server overlays that season's Sleeper ADP and no-ops for the current one.
+    if (state && state.mode === 'live' && state.isComplete && state.season){
+      params.push('season=' + encodeURIComponent(state.season));
+    }
+    var url = '/api/league-players' + (params.length ? ('?' + params.join('&')) : '');
     fetch(url, { cache: 'no-store' })
       .then(function(r){ return r.json(); })
       .then(function(resp){
@@ -2958,6 +2964,7 @@
           slot: slot, order: order, picks: {}, current: 1,
           owned: buildOwnedFromResponse(d, teams, rounds, order, slot),
           mode: 'live', isComplete: isComplete, isDrafting: isDrafting, sourceDraftId: draftId,
+          season: parseInt(d.season, 10) || 0,   // draft's season, for point-in-time ADP grading
           status: String(d.status || ''),
           pickTimer: parseInt(d.pick_timer) || 0,
           startTime: parseInt(d.start_time) || 0,
@@ -2966,6 +2973,10 @@
           roster: _parseRosterPositions(d.roster_positions)
         };
         applyLivePicks(d.picks || []);
+        // Completed draft: reload the pool against that season's ADP so grades
+        // reflect ADP at draft time, not today. No-op cost for the current season
+        // (server returns the shared current-season pool); overlays for past ones.
+        if (isComplete && state.season){ loadPlayers(); }
         // Seed the poll signature so the first poll doesn't redundantly rebuild.
         _liveSig = liveSig(d); _pollLastAt = Date.now();
         showMain();
@@ -4369,17 +4380,24 @@
     var isMe = ownsAllInColumn(slot);
     var total = teams * state.rounds;
     var nameLabel = isMe ? 'You (Team ' + slot + ')' : teamName(slot);
+    // Resolve the seat that OWNS a pick, following traded picks (a team can own
+    // picks sitting in another seat's column) - so the tip reflects the team's
+    // real haul, not just what fell in this column. Falls back to snake order.
+    function ownerOf(pn){
+      return (state.pickOwners && state.pickOwners[pn] != null)
+        ? state.pickOwners[pn] : slotOnClock(pn, teams, state.order);
+    }
     var nextPick = null;
     for (var pn = state.current; pn <= total; pn++){
-      if (slotOnClock(pn, teams, state.order) === slot && !state.picks[pn]){ nextPick = pn; break; }
+      if (ownerOf(pn) === slot && !state.picks[pn]){ nextPick = pn; break; }
     }
     var nextHtml = nextPick ? '<div class="dr-team-tip-next">Next pick: #' + nextPick + '</div>' : '';
 
-    // Collect this seat's selections (in pick order) once, shared by both layouts.
+    // Collect this team's selections (in pick order) once, shared by both layouts.
     var seatPicks = [];
     Object.keys(state.picks).map(Number).sort(function(a, b){ return a - b; }).forEach(function(pn){
       var pick = state.picks[pn]; if (!pick) return;
-      if (slotOnClock(pn, teams, state.order) !== slot) return;
+      if (ownerOf(pn) !== slot) return;
       seatPicks.push(pick);
     });
 
