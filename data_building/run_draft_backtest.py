@@ -12,6 +12,12 @@ It needs what the app needs: importable ``app`` (Flask), a reachable
 valuations / no drafts and report an empty sample — it never fabricates data.
 
 Usage:
+    # Easiest: pass your CURRENT league ID + --history to auto-discover every
+    # prior completed season via the previous_league_id chain.
+    python -m data_building.run_draft_backtest \
+        --league <current_league_id> --season 2025 --history
+
+    # Or list completed-season league IDs explicitly:
     python -m data_building.run_draft_backtest \
         --league 123456789012345678 987654321098765432 \
         --season 2024 [--sf] [--draft-type startup] [--method spearman]
@@ -149,17 +155,46 @@ def build_value_fn(draft_type: str, is_sf: bool, num_teams: int):
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--league", nargs="+", required=True, metavar="LEAGUE_ID",
-                    help="One or more Sleeper league IDs (completed seasons).")
-    ap.add_argument("--season", type=int, required=True)
+                    help="One or more Sleeper league IDs. With --history, pass your "
+                         "CURRENT league ID(s) and prior seasons are auto-discovered.")
+    ap.add_argument("--season", type=int, required=True,
+                    help="Season of the --league IDs (the anchor for --history).")
+    ap.add_argument("--history", action="store_true",
+                    help="Walk previous_league_id from each --league ID and backtest "
+                         "every PRIOR completed season (the anchor season itself is "
+                         "excluded - it has no final standings yet).")
     ap.add_argument("--sf", action="store_true", help="Superflex valuation.")
     ap.add_argument("--draft-type", default="startup", choices=["startup", "redraft", "rookie"])
     ap.add_argument("--num-teams", type=int, default=12)
     ap.add_argument("--method", default="spearman", choices=["spearman", "pearson"])
     args = ap.parse_args(argv)
 
+    league_ids = list(args.league)
+    if args.history:
+        try:
+            from dashboard_services.api import build_league_history_map
+        except Exception as e:
+            print(f"--history needs a reachable app/network ({e}).", file=sys.stderr)
+            return 1
+        discovered: list[str] = []
+        for anchor in args.league:
+            hist = build_league_history_map("sleeper", anchor, args.season) or {}
+            # Prior completed seasons only - drop the anchor (in-progress) season.
+            for yr, lid in sorted(hist.items()):
+                if int(yr) < int(args.season):
+                    discovered.append(str(lid))
+        # Dedup, preserve order.
+        league_ids = list(dict.fromkeys(discovered))
+        if not league_ids:
+            print("No prior completed seasons found via previous_league_id. "
+                  "This may be a first-year league, or the chain isn't set.")
+            return 1
+        print(f"--history expanded {len(args.league)} current league(s) -> "
+              f"{len(league_ids)} prior completed season(s).\n")
+
     value_fn = build_value_fn(args.draft_type, args.sf, args.num_teams)
     samples = load_sleeper_samples(
-        args.league, args.season, value_fn=value_fn,
+        league_ids, args.season, value_fn=value_fn,
         draft_type=args.draft_type, is_sf=args.sf, num_teams=args.num_teams,
     )
     if not samples:
