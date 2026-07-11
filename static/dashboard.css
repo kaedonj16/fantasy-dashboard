@@ -17009,9 +17009,15 @@ tr.team-clickable {
 .compare-pick-clear:hover { background: var(--border); color: var(--text); }
 /* A class-level display would otherwise defeat the [hidden] attribute. */
 .compare-pick-clear[hidden] { display: none !important; }
-/* Align the VS with the input row: clear the label (uppercase 12px + 6px margin)
-   above the fields so it sits level with the inputs, not the labels. */
-.compare-vs { font-weight: 800; color: var(--text-muted); font-size: 13px; margin-top: 34px; }
+/* VS as a small round badge, vertically centred on the input row (clearing the
+   uppercase label above the fields). */
+.compare-vs {
+  align-self: start; margin-top: 26px;
+  width: 34px; height: 34px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 11px; letter-spacing: .04em; color: var(--text-muted);
+  background: var(--bg-alt); border: 1px solid var(--border); border-radius: 999px;
+}
 .compare-pick-results {
   position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 60;
   background: var(--card); border: 1px solid var(--border); border-radius: 12px;
@@ -17066,6 +17072,11 @@ tr.team-clickable {
   padding: 16px 10px; text-align: center;
   background: var(--card); border: 1px solid var(--border); border-radius: 14px;
   font-size: 13px; font-weight: 600; color: var(--text-muted);
+  transition: border-color .15s ease, transform .1s ease, box-shadow .15s ease;
+}
+.compare-feature:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm, 0 2px 8px rgba(0, 0, 0, .06));
 }
 .compare-feature .cf-ico {
   width: 38px; height: 38px; display: flex; align-items: center; justify-content: center;
@@ -17073,6 +17084,11 @@ tr.team-clickable {
   background: var(--accent-soft, rgba(56, 189, 248, .1));
 }
 .compare-feature .cf-ico svg { width: 20px; height: 20px; display: block; }
+/* Give each "what you'll see" tile its own accent so the strip has some life. */
+.compare-feature:nth-child(1) .cf-ico { color: #22c55e; background: rgba(34, 197, 94, .12); }
+.compare-feature:nth-child(2) .cf-ico { color: #3b82f6; background: rgba(59, 130, 246, .12); }
+.compare-feature:nth-child(3) .cf-ico { color: #f59e0b; background: rgba(245, 158, 11, .12); }
+.compare-feature:nth-child(4) .cf-ico { color: #8b5cf6; background: rgba(139, 92, 246, .12); }
 
 .compare-empty-title {
   font-size: 12px; font-weight: 700; text-transform: uppercase;
@@ -17098,9 +17114,10 @@ tr.team-clickable {
 }
 .compare-chip:hover .compare-chip-name { color: var(--accent); }
 .compare-chip-vs {
-  font-size: 10px; font-weight: 800; text-transform: uppercase;
-  letter-spacing: .06em; color: var(--text-muted);
-  background: var(--bg-alt); padding: 2px 8px; border-radius: 6px;
+  font-size: 9px; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--text-muted);
+  width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
+  background: var(--bg-alt); border-radius: 999px;
 }
 .compare-chip-pos { margin-bottom: 2px; }
 .compare-chip-pos {
@@ -17136,12 +17153,17 @@ tr.team-clickable {
 .compare-suggest-chip.pos-RB { border-color: rgba(34, 197, 94, .45);  color: #22c55e; }
 .compare-suggest-chip.pos-WR { border-color: rgba(59, 130, 246, .45); color: #3b82f6; }
 .compare-suggest-chip.pos-TE { border-color: rgba(245, 158, 11, .45); color: #f59e0b; }
-/* Tier-vs-tier debate among the popular matchups: faint accent so it reads as
-   a benchmark, not two named players. */
-.compare-chip-tier { background: color-mix(in srgb, var(--accent) 4%, transparent); }
+/* Tier-vs-tier debate among the popular matchups: a dashed accent border so it
+   reads as an aggregate benchmark, not two named players. */
+.compare-chip-tier {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--accent) 5%, var(--card));
+}
+.compare-chip-tier:hover { border-style: dashed; }
 @media (max-width: 600px) {
   .compare-pickers { grid-template-columns: 1fr; }
-  .compare-vs { padding: 4px 0; text-align: center; margin-top: 0; }
+  .compare-vs { margin: 2px auto 0; }
   .compare-page-title { font-size: 24px; }
   .compare-features { grid-template-columns: repeat(2, 1fr); }
   .compare-chip-row { grid-template-columns: 1fr; }
