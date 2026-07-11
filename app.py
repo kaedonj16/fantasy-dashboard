@@ -20223,6 +20223,185 @@ def api_calculate_breakout_scores():
 
 
 
+# ── Compare page: positional-tier baselines (Avg WR1, WR2, ...) ──────────────
+_COMPARE_BASELINES_CACHE = None
+_COMPARE_BASELINES_TS = 0.0
+_COMPARE_BASELINES_TTL = 300
+_COMPARE_TIER_SIZE = 12
+_COMPARE_MAX_TIERS = 2
+
+
+def _compute_compare_baselines():
+    """Positional-tier average "players" for the compare page, ranked by FANTASY
+    production: WR1 = the mean of the top 12 WRs by total fantasy points (the
+    season positional finish), WR2 = ranks 13-24, and so on for each position.
+    Each entry is shaped like /api/player-details (id / name / position / stats)
+    so the compare UI can treat a tier average as an opponent. Points use half-PPR
+    from the most recent season with usage data; dynasty value / SF value are
+    averaged across each tier's players from the model value table."""
+    global _COMPARE_BASELINES_CACHE, _COMPARE_BASELINES_TS
+    now = time.time()
+    if _COMPARE_BASELINES_CACHE is not None and now - _COMPARE_BASELINES_TS < _COMPARE_BASELINES_TTL:
+        return _COMPARE_BASELINES_CACHE
+
+    # Dynasty / SF value per player id (an averaged stat per tier, not the ranker).
+    val_by_id = {}
+    for p in (get_model_value_table_cached() or []):
+        pid = str(p.get("id") or "")
+        if pid:
+            val_by_id[pid] = p
+
+    # Fantasy points per player from the most recent season with usage data.
+    # players_by_pos: position -> list of {id, ppg, total} with >= 4 games played.
+    players_by_pos, ppg_season = {}, None
+    try:
+        _season = int((get_nfl_state() or {}).get("season") or 0)
+    except Exception:
+        _season = 0
+    # Candidate seasons newest-first: the live season when known, then recent
+    # calendar years as a fallback so this still resolves if nfl-state is
+    # unavailable. First season with a usage file wins.
+    _cands, _seen = [], set()
+    import datetime as _dt
+    for _c in ([_season, _season - 1] if _season > 0 else []) + \
+              [_dt.datetime.now().year - _o for _o in range(0, 4)]:
+        if _c > 0 and _c not in _seen:
+            _seen.add(_c)
+            _cands.append(_c)
+    for _s in _cands:
+        _ud = _load_usage_rows_cached(_s)
+        if not _ud:
+            continue
+        _acc = {}
+        for _p in _ud:
+            _u = _p.get("usage") or {}
+            _g = int(_u.get("games") or 0)
+            if _g < 4:
+                continue
+            _pos = str(_p.get("position") or "").upper()
+            if _pos not in ("QB", "RB", "WR", "TE"):
+                continue
+            # Standardize on full PPR so the tiers are a fixed, recognizable
+            # benchmark regardless of the viewer's league scoring.
+            _pp = _u.get("ppr_ppg")
+            if _pp is None:
+                _pp = _u.get("half_ppr_ppg") or _u.get("std_scoring_ppg") or _u.get("std_ppg")
+            _pid = str(_p.get("id") or "")
+            if _pp is None or not _pid:
+                continue
+            try:
+                _pp = round(float(_pp), 1)
+            except (TypeError, ValueError):
+                continue
+            _acc.setdefault(_pos, []).append(
+                {"id": _pid, "ppg": _pp, "total": round(_pp * _g, 1)})
+        if _acc:
+            players_by_pos = _acc
+            ppg_season = _s
+            break
+
+    def _mean(vals):
+        vals = [v for v in vals if v is not None]
+        return round(sum(vals) / len(vals), 1) if vals else None
+
+    def _val(pid, key):
+        # 12-team basis: prefer the 12-team value column, fall back to the default.
+        row = val_by_id.get(pid) or {}
+        v = row.get(key + "_12")
+        if v is None:
+            v = row.get(key)
+        try:
+            return float(v) if v else None
+        except (TypeError, ValueError):
+            return None
+
+    # Build tier definitions first, then bulk-fetch every tier player's advanced
+    # metrics in ONE query (not one per player) so the Advanced Metrics tab can
+    # show a tier average. Degrades to no metrics if the DB is unavailable.
+    tiers = []          # (pos, t, chunk, ids, lo, hi)
+    all_ids = set()
+    for pos in ("QB", "RB", "WR", "TE"):
+        # Rank the position by total fantasy points - the season finish that
+        # "top 12 WRs" actually means.
+        ranked = sorted(players_by_pos.get(pos, []), key=lambda r: r["total"], reverse=True)
+        for t in range(1, _COMPARE_MAX_TIERS + 1):
+            chunk = ranked[(t - 1) * _COMPARE_TIER_SIZE : t * _COMPARE_TIER_SIZE]
+            if len(chunk) < 6:   # don't emit a tiny trailing tier
+                break
+            ids = [r["id"] for r in chunk]
+            all_ids.update(ids)
+            lo = (t - 1) * _COMPARE_TIER_SIZE + 1
+            tiers.append((pos, t, chunk, ids, lo, lo + len(chunk) - 1))
+
+    metrics_by_id = {}
+    if all_ids and ppg_season:
+        try:
+            from data_building.advanced_metrics import get_players_metrics_by_season
+            metrics_by_id = get_players_metrics_by_season(sorted(all_ids), int(ppg_season)) or {}
+        except Exception:
+            metrics_by_id = {}
+
+    _skip_metric = {"season", "player_id", "week", "games", "as_of_date"}
+
+    def _avg_tier_metrics(ids):
+        acc = {}
+        for pid in ids:
+            for k, v in (metrics_by_id.get(str(pid)) or {}).items():
+                if k in _skip_metric or isinstance(v, bool) or not isinstance(v, (int, float)):
+                    continue
+                acc.setdefault(k, []).append(float(v))
+        avg = {k: round(sum(vs) / len(vs), 3) for k, vs in acc.items() if vs}
+        try:
+            from data_building.advanced_metrics import strip_premium_metrics
+            avg = strip_premium_metrics(avg) or {}
+        except Exception:
+            pass
+        return avg
+
+    out = []
+    for pos, t, chunk, ids, lo, hi in tiers:
+        _tier_vals = [v for v in (_val(i, "value") for i in ids) if v is not None]
+        out.append({
+            "player_id": f"avg-{pos}-{t}",
+            "name": f"Avg {pos}{t}",
+            "position": pos,
+            "team": "TIER",
+            "is_baseline": True,
+            "tier_range": f"{pos}{lo}-{pos}{hi}",
+            # Dynasty-value spread across the tier, so the compare chart can draw
+            # the tier as a shaded band rather than a single flat line.
+            "value_band": [round(min(_tier_vals)), round(max(_tier_vals))] if _tier_vals else None,
+            "espnHeadshot": "",
+            "stats": {
+                "value": _mean([_val(i, "value") for i in ids]),
+                "sf_value": _mean([_val(i, "sf_value") for i in ids]),
+                "pos_rank": None, "pos_rank_label": f"{pos}{t}",
+                "sf_pos_rank": None, "sf_pos_rank_label": f"{pos}{t}",
+                "value_ovr_rank": None, "sf_value_ovr_rank": None,
+                "ppg": _mean([r["ppg"] for r in chunk]),
+                "ppg_rank": None, "ppg_ovr_rank": None, "ppg_season": ppg_season,
+                "total_pts": _mean([r["total"] for r in chunk]),
+                "total_pts_rank": None, "total_pts_ovr_rank": None,
+            },
+            "value_history": [],
+            "metrics": _avg_tier_metrics(ids),
+        })
+
+    _COMPARE_BASELINES_CACHE = out
+    _COMPARE_BASELINES_TS = now
+    return out
+
+
+@app.route("/api/compare-baselines")
+def api_compare_baselines():
+    """Selectable tier-average opponents for the compare page (Avg WR1, RB2, ...)."""
+    try:
+        return jsonify({"baselines": _compute_compare_baselines()})
+    except Exception:
+        logger.exception("[api_compare_baselines] error")
+        return jsonify({"baselines": []}), 200
+
+
 @app.route("/api/player-details/<player_id>")
 def api_player_details(player_id: str):
     """Get comprehensive player details for modal display."""
@@ -27927,25 +28106,27 @@ def build_compare_page_body(popular_html: str = "") -> str:
           <header class="compare-page-head">
             <span class="compare-page-eyebrow"><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i> Head to head</span>
             <h1 class="compare-page-title">Compare Players</h1>
-            <p class="compare-page-sub">Put any two players side by side and see who comes out ahead.</p>
+            <p class="compare-page-sub">Put any two players side by side and see who comes out ahead. Type a tier like <strong>WR1</strong> or <strong>RB2</strong> to compare against the average of those top players.</p>
           </header>
           <div class="compare-pickers">
             <div class="compare-picker">
               <label class="compare-pick-label">Player 1</label>
               <div class="compare-pick-field">
-                <input type="text" class="compare-pick-input" id="cmpPick1" placeholder="Search a player…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="cmpResults1" aria-autocomplete="list" aria-label="Search player 1">
+                <input type="text" class="compare-pick-input" id="cmpPick1" placeholder="Search a player or type WR1…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="cmpResults1" aria-autocomplete="list" aria-label="Search player 1">
                 <button type="button" class="compare-pick-clear" id="cmpClear1" aria-label="Clear player 1" hidden>&times;</button>
                 <div class="compare-pick-results" id="cmpResults1" role="listbox"></div>
               </div>
+              <div class="compare-tier-suggest" id="cmpSuggest1" hidden></div>
             </div>
             <div class="compare-vs" aria-hidden="true">VS</div>
             <div class="compare-picker">
               <label class="compare-pick-label">Player 2</label>
               <div class="compare-pick-field">
-                <input type="text" class="compare-pick-input" id="cmpPick2" placeholder="Search a player…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="cmpResults2" aria-autocomplete="list" aria-label="Search player 2">
+                <input type="text" class="compare-pick-input" id="cmpPick2" placeholder="Search a player or type WR1…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="cmpResults2" aria-autocomplete="list" aria-label="Search player 2">
                 <button type="button" class="compare-pick-clear" id="cmpClear2" aria-label="Clear player 2" hidden>&times;</button>
                 <div class="compare-pick-results" id="cmpResults2" role="listbox"></div>
               </div>
+              <div class="compare-tier-suggest" id="cmpSuggest2" hidden></div>
             </div>
           </div>
           <div class="compare-actions" id="cmpActions" hidden>
@@ -27967,7 +28148,7 @@ def build_compare_page_body(popular_html: str = "") -> str:
             </div>
             <div class="compare-empty-block">
               <div class="compare-empty-title">Popular matchups</div>
-              <div class="compare-chip-row">{popular_html}</div>
+              <div class="compare-chip-row" id="cmpPopularChips">{popular_html}</div>
             </div>
           </div>
           <div id="comparePageResult" class="compare-page-result"></div>

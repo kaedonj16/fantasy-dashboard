@@ -8399,6 +8399,7 @@ function openPlayerModal(playerId, playerName, opts) {
         <button class="player-modal-watchlist-btn" id="playerModalWatchlistBtn" title="Add to watchlist" aria-pressed="false" style="display: none;"><span class="wl-star-glyph" aria-hidden="true">☆</span></button>
         ${_ppSlug ? `<a class="player-modal-page-btn" href="/player/${_ppSlug}/trade-value" title="View full player page">Player Page</a>` : ''}
         <button class="player-modal-compare-btn" id="playerModalCompareBtn" title="Compare players">Compare Player</button>
+        <button class="player-modal-compare-btn player-modal-tier-btn" id="playerModalTierBtn" title="Compare to positional tier average" style="display:none;">vs Tier</button>
         <button class="player-modal-close" onclick="closePlayerModal()">×</button>
       </div>
     </div>
@@ -9005,6 +9006,29 @@ function openPlayerModal(playerId, playerName, opts) {
       const cmpBtn = document.getElementById('playerModalCompareBtn');
       if (cmpBtn) {
         cmpBtn.addEventListener('click', () => openCompareSearch(data));
+      }
+
+      // ── "vs Tier" quick compare against this player's positional tier average ─
+      const tierBtn = document.getElementById('playerModalTierBtn');
+      if (tierBtn) {
+        const _tpos = (data.position || '').toUpperCase();
+        if (['QB', 'RB', 'WR', 'TE'].includes(_tpos)) {
+          // Pick the tier on the SAME basis the tiers are built - the player's
+          // fantasy-points finish (total_pts_rank) - so a WR20 benchmarks against
+          // Avg WR2 and a WR5 against Avg WR1. Fall back to dynasty pos rank, then
+          // tier 1, for players with no scoring finish (e.g. rookies).
+          const _st = data.stats || {};
+          const _rank = Number(_st.total_pts_rank || _st.pos_rank || data.pos_rank || 0);
+          const _tier = (_rank > 12) ? 2 : 1;
+          tierBtn.textContent = 'vs Avg ' + _tpos + _tier;
+          tierBtn.style.display = '';
+          tierBtn.onclick = () => {
+            window.location.href = '/compare?p1=' + encodeURIComponent(data.player_id)
+              + '&p2=avg-' + _tpos + '-' + _tier;
+          };
+        } else {
+          tierBtn.style.display = 'none';
+        }
       }
 
       // ── Render value history chart in Overview panel ───────────────────────
@@ -12415,7 +12439,20 @@ function initComparePage() {
   const actionsEl = document.getElementById('cmpActions');
   const resultEl = document.getElementById('comparePageResult');
 
+  // Tier-average opponents (Avg WR1/WR2, ...) selectable alongside real players,
+  // fetched once via the shared loader so the modal search reuses the same data.
+  const _baselinesReady = _cmpEnsureBaselines();
+  const _isBaseline = pid => _cmpIsBaseline(pid);
+  const _matchBaselines = q => _cmpMatchBaselines(q);
+
   function _fetchDetails(pid) {
+    if (_isBaseline(pid)) {
+      return _baselinesReady.then(() => {
+        const b = _cmpBaselineById[String(pid)];
+        if (!b) throw new Error('unknown baseline ' + pid);
+        return b;
+      });
+    }
     return fetch('/api/player-details/' + encodeURIComponent(pid))
       .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
   }
@@ -12459,7 +12496,15 @@ function initComparePage() {
     // this BEFORE rendering so a render error can't leave the button pointing at
     // an empty /trade.
     const tradeLink = document.getElementById('cmpTradeLink');
-    if (tradeLink && d1 && d2) tradeLink.href = _tradeHref(d1.player_id, d2.player_id);
+    // A tier average has no place in the trade calculator, so hide the link when
+    // either side is a baseline.
+    const _hasBaseline = d1 && d2 && (_isBaseline(d1.player_id) || _isBaseline(d2.player_id));
+    if (tradeLink) {
+      // Use display, not [hidden]: .compare-action-btn sets display and would
+      // override the hidden attribute.
+      if (_hasBaseline) { tradeLink.style.display = 'none'; }
+      else { tradeLink.style.display = ''; if (d1 && d2) tradeLink.href = _tradeHref(d1.player_id, d2.player_id); }
+    }
     if (typeof renderCompareInline === 'function') renderCompareInline(d1, d2, resultEl);
     _recordRecent(chosen[1] || { player_id: d1.player_id, name: d1.name }, chosen[2] || { player_id: d2.player_id, name: d2.name });
     _renderRecent();
@@ -12509,7 +12554,7 @@ function initComparePage() {
         else done();
       } else if (act === 'watch') {
         [chosen[1], chosen[2]].forEach(p => {
-          if (p && typeof _isWatched === 'function' && !_isWatched(p.player_id) && typeof _toggleWatchlist === 'function') {
+          if (p && !_isBaseline(p.player_id) && typeof _isWatched === 'function' && !_isWatched(p.player_id) && typeof _toggleWatchlist === 'function') {
             _toggleWatchlist({ player_id: String(p.player_id), name: p.name || '', position: p.position || '', team: p.team || '' });
           }
         });
@@ -12541,6 +12586,7 @@ function initComparePage() {
     if (resultEl) resultEl.innerHTML = '';
     if (actionsEl) actionsEl.hidden = true;
     if (emptyEl) emptyEl.hidden = false;
+    _renderSuggestions();
     if (focus && inp) inp.focus();
   }
 
@@ -12573,20 +12619,28 @@ function initComparePage() {
       results.innerHTML = '';
       input.setAttribute('aria-expanded', 'false');
       if (clearBtn) clearBtn.hidden = false;
+      _renderSuggestions();
       _maybeCompare();
     }
-    function render(list) {
+    function render(list, q) {
       const players = Array.isArray(list) ? list : (list.players || []);
       const other = chosen[slot === 1 ? 2 : 1];
-      const filtered = players.filter(p => !other || String(p.player_id) !== String(other.player_id));
+      // Tier-average opponents matching the query come first, tagged so they read
+      // as baselines rather than players.
+      const merged = _matchBaselines(q).concat(players);
+      const filtered = merged.filter(p => !other || String(p.player_id) !== String(other.player_id));
       activeIdx = -1;
       if (!filtered.length) { results.innerHTML = '<div class="compare-pick-empty">No players found</div>'; input.setAttribute('aria-expanded', 'false'); return; }
-      results.innerHTML = filtered.slice(0, 10).map(p =>
-        '<button type="button" class="compare-pick-result" role="option" aria-selected="false" data-pid="' + _wlEsc(p.player_id) + '" data-name="' + _wlEsc(p.name) +
-        '" data-pos="' + _wlEsc(p.position || '') + '" data-team="' + _wlEsc(p.team || '') + '">' +
-        '<span class="compare-pick-rname">' + _wlEsc(p.name) + '</span>' +
-        '<span class="compare-pick-rmeta">' + _wlEsc((p.position || '') + (p.team ? ' · ' + p.team : '')) + '</span></button>'
-      ).join('');
+      results.innerHTML = filtered.slice(0, 12).map(p => {
+        const isB = !!p.is_baseline;
+        const meta = isB
+          ? ((p.tier_range || p.position) + ' · PPR 12-team avg')
+          : ((p.position || '') + (p.team ? ' · ' + p.team : ''));
+        return '<button type="button" class="compare-pick-result' + (isB ? ' compare-pick-baseline' : '') + '" role="option" aria-selected="false" data-pid="' + _wlEsc(p.player_id) + '" data-name="' + _wlEsc(p.name) +
+          '" data-pos="' + _wlEsc(p.position || '') + '" data-team="' + _wlEsc(p.team || '') + '">' +
+          '<span class="compare-pick-rname">' + _wlEsc(p.name) + (isB ? '<span class="compare-pick-tag">TIER AVG</span>' : '') + '</span>' +
+          '<span class="compare-pick-rmeta">' + _wlEsc(meta) + '</span></button>';
+      }).join('');
       input.setAttribute('aria-expanded', 'true');
     }
     input.addEventListener('input', function () {
@@ -12598,8 +12652,8 @@ function initComparePage() {
       debounce = setTimeout(function () {
         fetch('/api/players?q=' + encodeURIComponent(q) + '&limit=20')
           .then(r => r.json())
-          .then(list => { if (currentQuery === q) render(list); })
-          .catch(() => { results.innerHTML = '<div class="compare-pick-empty">Search failed</div>'; });
+          .then(list => { if (currentQuery === q) render(list, q); })
+          .catch(() => { if (currentQuery === q) render([], q); });
       }, 220);
     });
     // Arrow / Enter / Escape navigation of the suggestion list.
@@ -12638,6 +12692,63 @@ function initComparePage() {
 
   _bindPicker(1);
   _bindPicker(2);
+
+  // Put a baseline into a specific slot and compare (used by the tier suggestions).
+  function _pickIntoSlot(slot, obj) {
+    chosen[slot] = { player_id: obj.player_id, name: obj.name, position: obj.position || '', team: obj.team || '' };
+    const inp = document.getElementById('cmpPick' + slot);
+    if (inp) inp.value = obj.name;
+    const clr = document.getElementById('cmpClear' + slot);
+    if (clr) clr.hidden = false;
+    _renderSuggestions();
+    _maybeCompare();
+  }
+
+  // Contextual tier suggestion: once one real player is chosen, offer to compare
+  // them against Avg POS1 / POS2 of their position, shown under the still-empty
+  // slot. Nothing is suggested for a tier-vs-anything or an empty board.
+  function _renderSuggestions() {
+    [1, 2].forEach(slot => {
+      const el = document.getElementById('cmpSuggest' + slot);
+      if (!el) return;
+      const other = chosen[slot === 1 ? 2 : 1];
+      const pos = ((other && other.position) || '').toUpperCase();
+      const eligible = !chosen[slot] && other && !_isBaseline(other.player_id)
+        && ['QB', 'RB', 'WR', 'TE'].includes(pos);
+      const tiers = eligible
+        ? [1, 2].map(t => _cmpBaselineById['avg-' + pos + '-' + t]).filter(Boolean) : [];
+      if (!tiers.length) { el.innerHTML = ''; el.hidden = true; return; }
+      el.innerHTML = '<span class="compare-suggest-label">Benchmark ' + _wlEsc(other.name) + ' vs</span>'
+        + tiers.map(b => '<button type="button" class="compare-suggest-chip pos-' + _wlEsc(pos)
+            + '" data-bid="' + _wlEsc(b.player_id) + '">Avg '
+            + _wlEsc((b.stats && b.stats.pos_rank_label) || b.name) + '</button>').join('')
+        + '<span class="compare-suggest-note">PPR &middot; 12-team</span>';
+      el.querySelectorAll('.compare-suggest-chip').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const b = _cmpBaselineById[btn.getAttribute('data-bid')];
+          if (b) _pickIntoSlot(slot, b);
+        });
+      });
+      el.hidden = false;
+    });
+  }
+
+  // Seed the Popular matchups with tier-vs-tier debates (Avg WR1 vs Avg WR2, ...)
+  // so the tier feature is discoverable before any player is picked.
+  _baselinesReady.then(function () {
+    const row = document.getElementById('cmpPopularChips');
+    if (!row || !_cmpBaselineList.length) return;
+    const html = ['WR', 'RB', 'QB', 'TE'].map(pos => {
+      const t1 = _cmpBaselineById['avg-' + pos + '-1'], t2 = _cmpBaselineById['avg-' + pos + '-2'];
+      if (!t1 || !t2) return '';
+      return '<a class="compare-chip compare-chip-tier" href="/compare?p1=' + t1.player_id + '&p2=' + t2.player_id + '">'
+        + '<span class="compare-chip-pos pos-' + pos + '">' + pos + '</span>'
+        + '<span class="compare-chip-name">' + _wlEsc(t1.name) + '</span>'
+        + '<span class="compare-chip-vs">vs</span>'
+        + '<span class="compare-chip-name">' + _wlEsc(t2.name) + '</span></a>';
+    }).join('');
+    if (html) row.insertAdjacentHTML('afterbegin', html);
+  });
 
   // Focus the first empty picker on load so you can type immediately (skipped
   // when a ?p1=&p2= deep link is already populating both sides).
@@ -12712,28 +12823,46 @@ function openCompareSearch(player1Data) {
   document.getElementById('compareSelfBtn')?.addEventListener('click', () => {
     openComparisonView(player1Data, Object.assign({}, player1Data));
   });
+  // Preload the tier averages so they can be offered as compare opponents here
+  // too (Avg WR1/WR2, ...), not just on the standalone /compare page.
+  _cmpEnsureBaselines();
   input.focus();
 
-  function renderResults(players) {
-    if (!players.length) {
+  function renderResults(players, q) {
+    // Tier-average opponents matching the query come first, tagged as baselines.
+    const merged = _cmpMatchBaselines(q || '').concat(players || []);
+    if (!merged.length) {
       resultsBox.innerHTML = '<div class="compare-search-empty">No players found</div>';
       return;
     }
-    resultsBox.innerHTML = players.slice(0, 10).map(p => `
-      <div class="compare-search-result-item" data-pid="${p.player_id}" data-pname="${p.name}">
-        <img src="${p.espnHeadshot || ''}" class="compare-result-headshot" alt="${p.name}" />
+    resultsBox.innerHTML = merged.slice(0, 12).map(p => {
+      const isB = !!p.is_baseline;
+      const meta = isB ? ((p.tier_range || p.position) + ' · PPR 12-team avg')
+                       : ((p.position || '') + ' · ' + (p.team || ''));
+      const rightVal = isB ? ((p.stats && p.stats.value) || '-') : (p.value || '-');
+      const ico = isB
+        ? '<div class="compare-result-headshot compare-result-tier-ico" aria-hidden="true">Σ</div>'
+        : `<img src="${p.espnHeadshot || ''}" class="compare-result-headshot" alt="${_cmpEsc(p.name)}" />`;
+      return `
+      <div class="compare-search-result-item${isB ? ' compare-search-baseline' : ''}" data-pid="${_cmpEsc(p.player_id)}" data-pname="${_cmpEsc(p.name)}" data-baseline="${isB ? '1' : ''}">
+        ${ico}
         <div class="compare-result-info">
-          <div class="compare-result-name">${p.name}</div>
-          <div class="compare-result-meta">${p.position || ''} · ${p.team || ''}</div>
+          <div class="compare-result-name">${_cmpEsc(p.name)}${isB ? '<span class="compare-pick-tag">TIER AVG</span>' : ''}</div>
+          <div class="compare-result-meta">${_cmpEsc(meta)}</div>
         </div>
-        <div class="compare-result-value">${p.value || '-'}</div>
-      </div>
-    `).join('');
+        <div class="compare-result-value">${rightVal}</div>
+      </div>`;
+    }).join('');
 
     resultsBox.querySelectorAll('.compare-search-result-item').forEach(item => {
       item.addEventListener('click', () => {
         const pid = item.dataset.pid;
-        const pname = item.dataset.pname;
+        // Tier averages are already loaded - open directly, no player fetch.
+        if (item.dataset.baseline === '1') {
+          const b = _cmpBaselineById[String(pid)];
+          if (b) openComparisonView(player1Data, b);
+          return;
+        }
         // Show loading state
         body.innerHTML = '<div class="player-modal-loading"><div class="loading-spinner"></div><div>Loading comparison...</div></div>';
         // Fetch second player details
@@ -12767,10 +12896,11 @@ function openCompareSearch(player1Data) {
         if (_currentQuery !== q) return; // stale response
         // Support both paginated {players:[...]} and flat [...] responses
         const players = Array.isArray(list) ? list : (list.players || []);
-        renderResults(players.filter(p => p.player_id !== player1Data.player_id));
+        renderResults(players.filter(p => p.player_id !== player1Data.player_id), q);
       })
       .catch(() => {
-        resultsBox.innerHTML = '<div class="compare-search-empty" style="color:#ef4444;">Search failed</div>';
+        // Search failed, but tier averages are local - still offer any matches.
+        if (_currentQuery === q) renderResults([], q);
       });
   }
 
@@ -12850,6 +12980,13 @@ function _buildCompareHeroHTML(p, other) {
   const season = p.stats?.ppg_season ? ` · ${p.stats.ppg_season}` : '';
   const hasScoringRow = ppg != null || total != null;
 
+  // A tier average has no rank; label each card with its tier scope instead of a
+  // blank "-" sub. Value cards get the tier range, scoring cards the season.
+  const isB = !!p.is_baseline;
+  const tierRange = p.tier_range || '';
+  const seasonAvg = p.stats?.ppg_season ? `${p.stats.ppg_season} avg` : 'tier avg';
+  const valSub = isB ? (tierRange || 'tier avg') : '';
+
   // Highlight the better side of each cross-comparable stat (higher wins). Ranks
   // are position-relative so they are not compared across players.
   const _o = (other && other.stats) || {};
@@ -12866,13 +13003,13 @@ function _buildCompareHeroHTML(p, other) {
       <div class="pm-hero-stat${winppg}" style="padding:10px 10px;">
         <div class="pm-hero-label">PPG${season}</div>
         <div class="pm-hero-val" style="font-size:20px;">${ppg}</div>
-        <div class="pm-hero-sub">${ppgRank ? `POS : ${ppgRank} · OVR : ${ppgOvrRank ?? '–'}` : '-'}</div>
+        <div class="pm-hero-sub">${isB ? seasonAvg : (ppgRank ? `POS : ${ppgRank} · OVR : ${ppgOvrRank ?? '–'}` : '-')}</div>
       </div>` : ''}
       ${total != null ? `
       <div class="pm-hero-stat${wintot}" style="padding:10px 10px;">
         <div class="pm-hero-label">Total Pts${season}</div>
         <div class="pm-hero-val" style="font-size:20px;">${total}</div>
-        <div class="pm-hero-sub">${totalRank ? `POS : ${totalRank} · OVR : ${totalOvrRank ?? '–'}` : '-'}</div>
+        <div class="pm-hero-sub">${isB ? seasonAvg : (totalRank ? `POS : ${totalRank} · OVR : ${totalOvrRank ?? '–'}` : '-')}</div>
       </div>` : ''}
     </div>` : '';
 
@@ -12881,12 +13018,12 @@ function _buildCompareHeroHTML(p, other) {
       <div class="pm-hero-stat pm-hero-primary${win1qb}" style="padding:10px 10px;">
         <div class="pm-hero-label">1QB Value</div>
         <div class="pm-hero-val" style="font-size:20px;color:#3b82f6;">${val1qb > 0 ? val1qb : '-'}</div>
-        <div class="pm-hero-sub">${valPosRank ? `POS : ${valPosRank} · OVR : ${valOvrRank ?? '–'}` : '-'}</div>
+        <div class="pm-hero-sub">${isB ? valSub : (valPosRank ? `POS : ${valPosRank} · OVR : ${valOvrRank ?? '–'}` : '-')}</div>
       </div>
       <div class="pm-hero-stat${winsf}" style="padding:10px 10px;">
         <div class="pm-hero-label">SF Value</div>
         <div class="pm-hero-val" style="font-size:20px;">${valsf > 0 ? valsf : '-'}</div>
-        <div class="pm-hero-sub">${sfPosRank ? `POS : ${sfPosRank} · OVR : ${sfOvrRank ?? '–'}` : '-'}</div>
+        <div class="pm-hero-sub">${isB ? valSub : (sfPosRank ? `POS : ${sfPosRank} · OVR : ${sfOvrRank ?? '–'}` : '-')}</div>
       </div>
     </div>
     ${scoringRow}
@@ -13251,7 +13388,51 @@ var _cmpSides = {
 };
 var _cmpWeeklyCache = {};  // `${pid}_${season}` -> weeks[]
 var _cmpAdvCache = {};     // `${pid}_${seasonParam}` -> advanced-metrics payload
+var _cmpBaselineStore = {}; // `avg-POS-tier` -> { metrics, position, season, label }
 var _cmpRenderToken = 0;   // guards against out-of-order responses from rapid clicks
+
+function _cmpIsBaseline(pid) { return String(pid || '').startsWith('avg-'); }
+
+// Tier-average opponents (Avg WR1/WR2, ...), fetched once and shared by both
+// compare surfaces (the standalone /compare picker and the player-modal search).
+var _cmpBaselineList = [];       // array of baseline objects, for query matching
+var _cmpBaselineById = {};       // `avg-POS-tier` -> full baseline object
+var _cmpBaselinesPromise = null; // in-flight/settled fetch guard
+function _cmpBaselineLabel(b) {
+  return (b.tier_range || b.name) + ' · PPR 12-team'
+    + ((b.stats && b.stats.ppg_season) ? ' · ' + b.stats.ppg_season : '') + ' avg';
+}
+function _cmpEnsureBaselines() {
+  if (_cmpBaselinesPromise) return _cmpBaselinesPromise;
+  _cmpBaselinesPromise = fetch('/api/compare-baselines')
+    .then(r => r.ok ? r.json() : { baselines: [] })
+    .then(d => {
+      _cmpBaselineList = (d && d.baselines) || [];
+      _cmpBaselineList.forEach(b => {
+        _cmpBaselineById[String(b.player_id)] = b;
+        _cmpBaselineStore[String(b.player_id)] = {
+          metrics: b.metrics || {}, position: b.position || '',
+          season: (b.stats && b.stats.ppg_season) || null, label: _cmpBaselineLabel(b),
+        };
+      });
+      return _cmpBaselineList;
+    })
+    .catch(() => []);
+  return _cmpBaselinesPromise;
+}
+// Baselines whose name/tier/position matches the query, as player-like rows.
+// Matches "wr", "wr1", "avg", "rb2", "tier", etc.
+function _cmpMatchBaselines(q) {
+  const s = (q || '').toLowerCase().replace(/\s+/g, '');
+  if (!s) return [];
+  return _cmpBaselineList.filter(b => {
+    const name = (b.name || '').toLowerCase().replace(/\s+/g, '');   // "avgwr1"
+    const label = ((b.stats && b.stats.pos_rank_label) || '').toLowerCase(); // "wr1"
+    const pos = (b.position || '').toLowerCase();
+    return name.includes(s) || label.startsWith(s) || ('avg' + label).includes(s)
+      || (s.length <= 3 && pos.startsWith(s)) || 'tier'.startsWith(s) || 'average'.startsWith(s);
+  }).slice(0, 6);
+}
 
 function _cmpEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
 
@@ -13359,6 +13540,16 @@ async function _cmpFetchRanks(pid, season, ws, we) {
 
 // Fetch one side's metrics for display (season-level, or week-range aggregate).
 async function _cmpFetchSide(side) {
+  // Tier averages carry their metrics precomputed (averaged across the tier's
+  // players); serve those instead of a per-player lookup. No ranks/bounds - an
+  // average has no positional rank - so bars fall back to the value scale.
+  if (_cmpIsBaseline(side.pid)) {
+    const store = _cmpBaselineStore[String(side.pid)] || {};
+    if (store.position && !side.position) side.position = store.position;
+    side.seasons = store.season ? [store.season] : [];
+    side.rangeMeta = null;
+    return { metrics: store.metrics || {}, ref: null, ranks: {}, counts: {}, bounds: {} };
+  }
   const seasonParam = side.season === null ? 'career' : side.season;
   const advKey = side.pid + '_' + seasonParam;
   let advData = _cmpAdvCache[advKey];
@@ -13400,6 +13591,13 @@ async function _cmpFetchSide(side) {
 function _cmpSideSelector(which) {
   const side = _cmpSides[which];
   const name = _comparePlayerNames[side.pid] || ('Player ' + which);
+  // Tier averages have no season/week controls - they're a fixed season average.
+  if (_cmpIsBaseline(side.pid)) {
+    const store = _cmpBaselineStore[String(side.pid)] || {};
+    const sideCls = which === 2 ? ' compare-season-col-right' : '';
+    return '<div class="compare-season-col' + sideCls + '"><div class="compare-season-label">' + _cmpEsc(name) + '</div>'
+      + '<div class="compare-baseline-scope">' + _cmpEsc(store.label || 'tier average') + '</div></div>';
+  }
   const seasons = (side.seasons || []).slice().sort((a, b) => b - a);
   const isCareer = side.season === null;
   const sideCls = which === 2 ? ' compare-season-col-right' : '';
@@ -13471,6 +13669,7 @@ function cmpSetCustom(which, start, end) {
 function _cmpInitWkBars() {
   [1, 2].forEach(function(which) {
     const side = _cmpSides[which];
+    if (_cmpIsBaseline(side.pid)) return; // tier average — no week bar
     if (side.season === null) return; // career — no bar rendered
     const maxWk = (side.rangeMeta && side.rangeMeta.maxWk) ? side.rangeMeta.maxWk : 18;
     _wkBarInit('cmpWkBar' + which, function(ws, we) {
@@ -13517,6 +13716,10 @@ async function cmpRenderWeekly(which) {
   const el = document.getElementById('compareWeekly' + which);
   if (!el) return;
   const side = _cmpSides[which];
+  if (_cmpIsBaseline(side.pid)) {
+    el.innerHTML = '<div class="compare-pick-empty">Weekly usage isn\'t shown for tier averages.</div>';
+    return;
+  }
   // Career has no single weekly series; fall back to the most recent season.
   const season = side.season || (side.seasons || []).slice().sort((a, b) => b - a)[0];
   if (!season) { el.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Pick a season to see weekly trends.</div>'; return; }
@@ -13582,7 +13785,7 @@ function _compareBodyHTML(p1, p2, opts) {
   const navBtns = opts.nav ? `
       <div class="compare-nav-btns">
         <button class="compare-back-btn" id="compareBackBtn">← Back to ${p1.name}</button>
-        <button class="compare-profile-btn" id="compareP2ProfileBtn">${p2.name}'s Profile →</button>
+        ${p2 && p2.is_baseline ? '' : `<button class="compare-profile-btn" id="compareP2ProfileBtn">${p2.name}'s Profile →</button>`}
       </div>` : '';
   return `
     <div class="compare-body">
@@ -13595,8 +13798,8 @@ function _compareBodyHTML(p1, p2, opts) {
 
       <div class="compare-tab-panel" data-cmppanel="overview">
         <div class="compare-hero-section">
-          <div class="compare-hero-player" id="compareHero1" data-name="${p1.full_name || ''}">${_buildCompareHeroHTML(p1, p2)}</div>
-          <div class="compare-hero-player" id="compareHero2" data-name="${p2.full_name || ''}">${_buildCompareHeroHTML(p2, p1)}</div>
+          <div class="compare-hero-player" id="compareHero1" data-name="${(p1.name || p1.full_name || '').replace(/"/g, '&quot;')}">${_buildCompareHeroHTML(p1, p2)}</div>
+          <div class="compare-hero-player" id="compareHero2" data-name="${(p2.name || p2.full_name || '').replace(/"/g, '&quot;')}">${_buildCompareHeroHTML(p2, p1)}</div>
         </div>
         <hr class="pm-section-divider">
         <div class="pm-section-header"><span class="pm-section-label">Value History</span></div>
@@ -13657,14 +13860,26 @@ function cmpSwitchTab(tab) {
 // Post-render wiring shared by both compare surfaces: lazy game logs, metrics
 // (with per-side season selection), and the dual value-history chart.
 function _compareWireView(p1, p2) {
-  _cmpLoadGameLogs(p1.player_id, p1.position, 'compareGameLogs1');
-  _cmpLoadGameLogs(p2.player_id, p2.position, 'compareGameLogs2');
+  // Tier averages have no game logs, advanced metrics, or weekly usage; show a
+  // note in those tabs instead of firing lookups that would 404 on the synthetic
+  // "avg-POS-tier" id.
+  const _isB = pid => String(pid || '').startsWith('avg-');
+  const b1 = _isB(p1.player_id), b2 = _isB(p2.player_id);
+  const _bnote = 'Not available for tier averages.';
+
+  if (b1) { const el = document.getElementById('compareGameLogs1'); if (el) el.innerHTML = '<div class="compare-pick-empty">' + _bnote + '</div>'; }
+  else _cmpLoadGameLogs(p1.player_id, p1.position, 'compareGameLogs1');
+  if (b2) { const el = document.getElementById('compareGameLogs2'); if (el) el.innerHTML = '<div class="compare-pick-empty">' + _bnote + '</div>'; }
+  else _cmpLoadGameLogs(p2.player_id, p2.position, 'compareGameLogs2');
 
   _comparePlayerNames[p1.player_id] = p1.name || p1.full_name || 'Player 1';
   _comparePlayerNames[p2.player_id] = p2.name || p2.full_name || 'Player 2';
   _cmpSides[1].position = (p1.position || '').toUpperCase();
   _cmpSides[2].position = (p2.position || '').toUpperCase();
 
+  // Advanced Metrics tab loads for baselines too - a baseline side serves its
+  // precomputed tier-average metrics (see _cmpFetchSide), a real side loads
+  // normally. The weekly-usage sub-panel self-guards per side (cmpRenderWeekly).
   fetch('/api/nfl-state').then(r => r.json()).catch(() => ({}))
     .then(nflState => {
       const isOffseason = (nflState.season_type || '').toLowerCase() === 'off';
@@ -13679,19 +13894,46 @@ function _compareWireView(p1, p2) {
     const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
     const textColor = isDark ? '#9ca3af' : '#6b7280';
     const bgColor = isDark ? '#1e293b' : '#f8fafc';
-    const makeTrace = (history, name, color) => {
-      const dates = (history || []).map(h => h.as_of_date || h.date);
-      const vals  = (history || []).map(h => h.value);
+    // Shared date axis from whichever side(s) have real history, so a tier
+    // average can be drawn as a flat dashed reference line across the same span.
+    let _axis = [];
+    [p1, p2].forEach(p => (p.value_history || []).forEach(h => { const d = h.as_of_date || h.date; if (d) _axis.push(d); }));
+    _axis = Array.from(new Set(_axis)).sort();
+    if (!_axis.length) _axis = [new Date().toISOString().slice(0, 10)];
+    const makeTrace = (p, isB, color) => {
+      if (isB) {
+        const v = (p.stats && p.stats.value) != null ? p.stats.value : null;
+        return {
+          x: _axis, y: _axis.map(() => v), mode: 'lines', name: p.name,
+          line: { color, width: 2, dash: 'dash' },
+          hovertemplate: `<b>${p.name}</b><br>tier average<br>Value: ${v}<extra></extra>`,
+        };
+      }
+      const dates = (p.value_history || []).map(h => h.as_of_date || h.date);
+      const vals  = (p.value_history || []).map(h => h.value);
       return {
-        x: dates, y: vals, mode: 'lines', name,
+        x: dates, y: vals, mode: 'lines', name: p.name,
         line: { color, width: 2.5 },
-        hovertemplate: `<b>${name}</b><br>%{x}<br>Value: %{y}<extra></extra>`,
+        hovertemplate: `<b>${p.name}</b><br>%{x}<br>Value: %{y}<extra></extra>`,
       };
     };
     const traces = [
-      makeTrace(p1.value_history, p1.name, '#3b82f6'),
-      makeTrace(p2.value_history, p2.name, '#f59e0b'),
+      makeTrace(p1, b1, '#3b82f6'),
+      makeTrace(p2, b2, '#f59e0b'),
     ];
+    // Draw a tier average as a shaded value band (its min-max dynasty value across
+    // the tier) with the average as the dashed line through it, so it reads as a
+    // range rather than a single hard line.
+    const _bandShapes = [];
+    [[p1, b1, '59,130,246'], [p2, b2, '245,158,11']].forEach(([p, isB, rgb]) => {
+      if (isB && Array.isArray(p.value_band) && p.value_band.length === 2) {
+        _bandShapes.push({
+          type: 'rect', xref: 'paper', x0: 0, x1: 1, yref: 'y',
+          y0: p.value_band[0], y1: p.value_band[1],
+          fillcolor: `rgba(${rgb},0.10)`, line: { width: 0 }, layer: 'below',
+        });
+      }
+    });
     const _cmpLayout = {
       paper_bgcolor: 'transparent',
       plot_bgcolor: bgColor,
@@ -13701,6 +13943,7 @@ function _compareWireView(p1, p2) {
       legend: { font: { size: 12, color: textColor }, bgcolor: 'transparent', orientation: 'h', x: 0, y: 1.1 },
       hovermode: 'x unified',
       showlegend: true,
+      shapes: _bandShapes,
     };
     if (window.ensurePlotly) window.ensurePlotly().then(function () {
       Plotly.newPlot(chartDiv, traces, _cmpLayout, { responsive: true, displayModeBar: false });
