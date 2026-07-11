@@ -17100,7 +17100,7 @@ tr.team-clickable {
   display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
 }
 .compare-chip {
-  display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 9px;
+  display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 9px;
   padding: 11px 15px; border-radius: 12px; text-decoration: none; overflow: hidden;
   background: var(--card); border: 1px solid var(--border);
   transition: border-color .15s ease, transform .12s ease, box-shadow .15s ease, background .15s ease;
