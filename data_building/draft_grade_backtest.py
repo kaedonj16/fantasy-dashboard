@@ -270,6 +270,57 @@ def calibration_bins(
     return out
 
 
+_LETTER_ORDER = ["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D", "F"]
+
+
+def letter_calibration(
+    samples: Sequence[TeamSample], raw_grade_fn=None,
+    rounds_done: int = 99, weights: Optional[dict] = None,
+) -> List[dict]:
+    """Report mean outcome per LETTER grade a team would actually receive.
+
+    Unlike ``calibration_bins`` (which bins by raw score), this runs the SHIPPED
+    field curve + band mapping — curved within each team's own league, exactly as
+    the Draft Room / Teams page do — so it answers the real question: does the
+    A-F letter a user sees track success? If the A rows don't out-perform the B/C
+    rows, the letter bands (or the curve anchor) are miscalibrated and this table
+    is what tells you which way to move them.
+
+    ``raw_grade_fn(sample) -> 0-100 raw composite`` defaults to the mean pick
+    score. Leagues with <3 teams are skipped (the curve needs a field). Returns
+    [{letter, n, outcome_mean}] ordered best->worst; only letters that occur.
+    """
+    from utils.draft_grade import dr_apply_field_curve, dr_grade_letter
+
+    if raw_grade_fn is None:
+        def raw_grade_fn(s):  # default: the team's mean pick score
+            return team_avg_ps(s, weights)
+
+    by_league: Dict[object, List[TeamSample]] = {}
+    for s in samples:
+        by_league.setdefault(s.meta.get("league_id"), []).append(s)
+
+    pairs: List[Tuple[str, float]] = []
+    for _lg, members in by_league.items():
+        graded = [(s, raw_grade_fn(s)) for s in members]
+        graded = [(s, g) for s, g in graded if g is not None]
+        if len(graded) < 3:
+            continue  # no field to curve against
+        curved = dr_apply_field_curve([g for _s, g in graded], rounds_done)
+        for (s, _g), c in zip(graded, curved):
+            pairs.append((dr_grade_letter(c), float(s.outcome)))
+
+    agg: Dict[str, List[float]] = {}
+    for letter, outcome in pairs:
+        row = agg.setdefault(letter, [0.0, 0.0])  # [count, sum]
+        row[0] += 1
+        row[1] += outcome
+    return [
+        {"letter": L, "n": int(agg[L][0]), "outcome_mean": agg[L][1] / agg[L][0]}
+        for L in _LETTER_ORDER if L in agg
+    ]
+
+
 def _perturb(base: dict, key: str, delta: float) -> dict:
     """A copy of ``base`` with ``key`` nudged by ``delta`` then renormalized to
     the original weight sum, so sweeps compare re-weightings, not rescalings."""

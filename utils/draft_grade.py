@@ -173,7 +173,11 @@ def dr_apply_field_curve(scores: "list[float]", rounds_done: int = 99) -> "list[
     mean = sum(scores) / n
     variance = sum((s - mean) ** 2 for s in scores) / n
     eff_std = max(math.sqrt(variance), 8)
-    ANCHOR, PTS = 74, 11
+    # PTS trimmed 11 -> 9: the draft backtest showed grade separation only weakly
+    # predicts real success (r ~0.15-0.22), so the old spread was over-confident -
+    # a +1 SD team read as a full A. At 9, grades regress a touch more toward the
+    # B anchor, so an A now needs ~+1.5 SD, matching the modest true signal.
+    ANCHOR, PTS = 74, 9
     ramp = max(0.0, min(1.0, (rounds_done or 0) / 6))
     pts_eff = PTS * (0.5 + 0.5 * ramp)
     out = []
