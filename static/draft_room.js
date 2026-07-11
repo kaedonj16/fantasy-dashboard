@@ -556,7 +556,13 @@
   }
 
   function loadPlayers(){
-    var url = '/api/league-players' + (wantsKDef() ? '?kdef=1' : '');
+    var params = wantsKDef() ? ['kdef=1'] : [];
+    // Historical/synced completed draft: grade against THAT season's ADP. The
+    // server overlays that season's Sleeper ADP and no-ops for the current one.
+    if (state && state.mode === 'live' && state.isComplete && state.season){
+      params.push('season=' + encodeURIComponent(state.season));
+    }
+    var url = '/api/league-players' + (params.length ? ('?' + params.join('&')) : '');
     fetch(url, { cache: 'no-store' })
       .then(function(r){ return r.json(); })
       .then(function(resp){
@@ -2958,6 +2964,7 @@
           slot: slot, order: order, picks: {}, current: 1,
           owned: buildOwnedFromResponse(d, teams, rounds, order, slot),
           mode: 'live', isComplete: isComplete, isDrafting: isDrafting, sourceDraftId: draftId,
+          season: parseInt(d.season, 10) || 0,   // draft's season, for point-in-time ADP grading
           status: String(d.status || ''),
           pickTimer: parseInt(d.pick_timer) || 0,
           startTime: parseInt(d.start_time) || 0,
@@ -2966,6 +2973,10 @@
           roster: _parseRosterPositions(d.roster_positions)
         };
         applyLivePicks(d.picks || []);
+        // Completed draft: reload the pool against that season's ADP so grades
+        // reflect ADP at draft time, not today. No-op cost for the current season
+        // (server returns the shared current-season pool); overlays for past ones.
+        if (isComplete && state.season){ loadPlayers(); }
         // Seed the poll signature so the first poll doesn't redundantly rebuild.
         _liveSig = liveSig(d); _pollLastAt = Date.now();
         showMain();

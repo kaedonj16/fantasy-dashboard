@@ -12893,6 +12893,7 @@ def api_draft_live():
             "status": draft.get("status"),
             "type": draft.get("type"),
             "draft_type": draft_type,
+            "season": draft.get("season"),   # draft's season, so a historical view grades vs that year's ADP
             "pick_timer": pick_timer,
             "start_time": draft.get("start_time"),   # scheduled start (epoch ms), pre-draft countdown
             "teams": settings.get("teams"),
@@ -12946,6 +12947,7 @@ def api_draft_live():
         "status": draft.get("status"),
         "type": draft.get("type"),
         "draft_type": draft_type,
+        "season": draft.get("season"),   # draft's season, so a historical view grades vs that year's ADP
         "pick_timer": pick_timer,
         "start_time": draft.get("start_time"),   # scheduled start (epoch ms), pre-draft countdown
         "teams": settings.get("teams"),
@@ -18434,6 +18436,110 @@ _LP_PAYLOAD_CACHE: dict = {}          # kdef(bool) -> {"ts": model_ts, "payload"
 _LP_PAYLOAD_LOCK = threading.Lock()
 
 
+_ADP_FIELDS = ("avg_pick", "sf_avg_pick", "rookie_avg_pick",
+               "sf_rookie_avg_pick", "redraft_avg_pick", "sf_redraft_avg_pick")
+
+
+def _attach_adp_to_players(players, adp_season, clear_first=False):
+    """Attach per-player ADP for ``adp_season`` onto each player dict; return
+    adp_sources {mode: label}.
+
+    Primary source is Sleeper's projections API (season-parameterized), fallback
+    is our crawled draft_adp table (also season-keyed). Factored out of the
+    payload build so the /api/league-players route can overlay a *historical*
+    season's ADP for past-draft views without rebuilding the pool. ``clear_first``
+    nulls the six ADP fields before attaching, so a historical overlay can't leak
+    the current season's ADP for players Sleeper has no entry for that year.
+    """
+    _adp_sources = {"startup": "none", "rookie": "none", "redraft": "none"}
+    try:
+        from dashboard_services.adp_service import (
+            fetch_league_adp_from_db as _fl_adp,
+            fetch_sleeper_adp as _sleeper_adp,
+        )
+
+        if clear_first:
+            for _p in players:
+                for _f in _ADP_FIELDS:
+                    if _f in _p:
+                        _p[_f] = None
+
+        def _norm_adp(_m: dict) -> dict:
+            out = {}
+            for _k, _v in (_m or {}).items():
+                if isinstance(_v, dict):
+                    _ap = _v.get("avg_pick")
+                    if _ap is None:
+                        _ap = _v.get("adp_rank")
+                else:
+                    _ap = _v
+                if _ap is not None:
+                    out[str(_k)] = float(_ap)
+            return out
+
+        def _crawl_adp(is_sf: bool, draft_type: str, min_s: int) -> dict:
+            return _norm_adp(_fl_adp(is_sf, adp_season, draft_type, min_samples=min_s) or {})
+
+        # DraftCrawl maps (fallback)
+        _c_su1, _c_susf = _crawl_adp(False, "startup", 10), _crawl_adp(True, "startup", 10)
+        _c_rk1, _c_rksf = _crawl_adp(False, "rookie", 5), _crawl_adp(True, "rookie", 5)
+
+        # Sleeper projections ADP (primary). Pick the first present field per mode.
+        _sa = _sleeper_adp(adp_season) or {}
+
+        def _sa_pick(_pid, *keys):
+            _r = _sa.get(_pid) or {}
+            for _k in keys:
+                if _r.get(_k) is not None:
+                    return _r[_k]
+            return None
+
+        _used = {"startup": False, "rookie": False, "redraft": False}
+        _rookie_from_crawl = False
+
+        def _attach(_p, field, sleeper_val, crawl_map, _pid, mode):
+            if sleeper_val is not None:
+                _p[field] = sleeper_val
+                _used[mode] = True
+            elif _pid in crawl_map:
+                _p[field] = crawl_map[_pid]
+
+        for _p in players:
+            _pid = str(_p.get("id") or "")
+            _attach(_p, "avg_pick", _sa_pick(_pid, "adp_dynasty_ppr", "adp_dynasty_half_ppr", "adp_dynasty_std"), _c_su1, _pid, "startup")
+            _attach(_p, "sf_avg_pick", _sa_pick(_pid, "adp_dynasty_2qb", "adp_dynasty_ppr"), _c_susf, _pid, "startup")
+            # Rookie ADP: prefer our draft-crawl data (reflects real league picks),
+            # fall back to Sleeper community ADP when crawl has no sample.
+            _rk_sa = _sa_pick(_pid, "adp_dynasty_rookie", "adp_rookie")
+            if _pid in _c_rk1:
+                _p["rookie_avg_pick"] = _c_rk1[_pid]; _used["rookie"] = True; _rookie_from_crawl = True
+            elif _rk_sa is not None:
+                _p["rookie_avg_pick"] = _rk_sa; _used["rookie"] = True
+            if _pid in _c_rksf:
+                _p["sf_rookie_avg_pick"] = _c_rksf[_pid]; _used["rookie"] = True; _rookie_from_crawl = True
+            elif _rk_sa is not None:
+                _p["sf_rookie_avg_pick"] = _rk_sa; _used["rookie"] = True
+            _r1 = _sa_pick(_pid, "adp_ppr", "adp_half_ppr", "adp_std")
+            if _r1 is not None:
+                _p["redraft_avg_pick"] = _r1; _used["redraft"] = True
+            _rsf = _sa_pick(_pid, "adp_2qb", "adp_ppr")
+            if _rsf is not None:
+                _p["sf_redraft_avg_pick"] = _rsf; _used["redraft"] = True
+
+        for _mode in ("startup", "rookie", "redraft"):
+            if _mode == "rookie" and _rookie_from_crawl:
+                _adp_sources[_mode] = "DraftCrawl"
+            elif _used[_mode]:
+                _adp_sources[_mode] = "Sleeper"
+            elif _mode == "startup" and (_c_su1 or _c_susf):
+                _adp_sources[_mode] = "Community"
+            elif _mode == "rookie" and (_c_rk1 or _c_rksf):
+                _adp_sources[_mode] = "DraftCrawl"
+    except Exception as _e_adp:
+        logger.info("[api/league-players] ADP attach skipped: %s", _e_adp)
+    return _adp_sources
+
+
 def _build_league_players_payload(kdef: bool = False) -> dict:
     """Memoized wrapper around the (expensive) enriched player-pool build.
 
@@ -18906,91 +19012,10 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
                 compute_tier_thresholds(model_value_table, _lt, _sz)
             ]
 
-    # Attach ADP so the rankings/draft room can sort & simulate by ADP.
-    # Primary: Sleeper's own ADP from its projections API (api.sleeper.com),
-    # server-reachable with no bot/CORS issues. Fallback: ADP aggregated from
-    # real Sleeper drafts (our crawler). adp_sources reports which feed was used.
-    _adp_sources = {"startup": "none", "rookie": "none", "redraft": "none"}
-    try:
-        from dashboard_services.adp_service import (
-            fetch_league_adp_from_db as _fl_adp,
-            fetch_sleeper_adp as _sleeper_adp,
-        )
-        _adp_season = int((get_nfl_state() or {}).get("season") or datetime.now().year)
-
-        def _norm_adp(_m: dict) -> dict:
-            out = {}
-            for _k, _v in (_m or {}).items():
-                if isinstance(_v, dict):
-                    _ap = _v.get("avg_pick")
-                    if _ap is None:
-                        _ap = _v.get("adp_rank")
-                else:
-                    _ap = _v
-                if _ap is not None:
-                    out[str(_k)] = float(_ap)
-            return out
-
-        def _crawl_adp(is_sf: bool, draft_type: str, min_s: int) -> dict:
-            return _norm_adp(_fl_adp(is_sf, _adp_season, draft_type, min_samples=min_s) or {})
-
-        # DraftCrawl maps (fallback)
-        _c_su1, _c_susf = _crawl_adp(False, "startup", 10), _crawl_adp(True, "startup", 10)
-        _c_rk1, _c_rksf = _crawl_adp(False, "rookie", 5), _crawl_adp(True, "rookie", 5)
-
-        # Sleeper projections ADP (primary). Pick the first present field per mode.
-        _sa = _sleeper_adp(_adp_season) or {}
-
-        def _sa_pick(_pid, *keys):
-            _r = _sa.get(_pid) or {}
-            for _k in keys:
-                if _r.get(_k) is not None:
-                    return _r[_k]
-            return None
-
-        _used = {"startup": False, "rookie": False, "redraft": False}
-        _rookie_from_crawl = False
-
-        def _attach(_p, field, sleeper_val, crawl_map, _pid, mode):
-            if sleeper_val is not None:
-                _p[field] = sleeper_val
-                _used[mode] = True
-            elif _pid in crawl_map:
-                _p[field] = crawl_map[_pid]
-
-        for _p in model_value_table:
-            _pid = str(_p.get("id") or "")
-            _attach(_p, "avg_pick", _sa_pick(_pid, "adp_dynasty_ppr", "adp_dynasty_half_ppr", "adp_dynasty_std"), _c_su1, _pid, "startup")
-            _attach(_p, "sf_avg_pick", _sa_pick(_pid, "adp_dynasty_2qb", "adp_dynasty_ppr"), _c_susf, _pid, "startup")
-            # Rookie ADP: prefer our draft-crawl data (reflects real league picks),
-            # fall back to Sleeper community ADP when crawl has no sample.
-            _rk_sa = _sa_pick(_pid, "adp_dynasty_rookie", "adp_rookie")
-            if _pid in _c_rk1:
-                _p["rookie_avg_pick"] = _c_rk1[_pid]; _used["rookie"] = True; _rookie_from_crawl = True
-            elif _rk_sa is not None:
-                _p["rookie_avg_pick"] = _rk_sa; _used["rookie"] = True
-            if _pid in _c_rksf:
-                _p["sf_rookie_avg_pick"] = _c_rksf[_pid]; _used["rookie"] = True; _rookie_from_crawl = True
-            elif _rk_sa is not None:
-                _p["sf_rookie_avg_pick"] = _rk_sa; _used["rookie"] = True
-            _r1 = _sa_pick(_pid, "adp_ppr", "adp_half_ppr", "adp_std")
-            if _r1 is not None:
-                _p["redraft_avg_pick"] = _r1; _used["redraft"] = True
-            _rsf = _sa_pick(_pid, "adp_2qb", "adp_ppr")
-            if _rsf is not None:
-                _p["sf_redraft_avg_pick"] = _rsf; _used["redraft"] = True
-
-        for _mode in ("startup", "rookie", "redraft"):
-            if _mode == "rookie" and _rookie_from_crawl:
-                _adp_sources[_mode] = "DraftCrawl"
-            elif _used[_mode]:
-                _adp_sources[_mode] = "Sleeper"
-            elif _mode == "startup" and (_c_su1 or _c_susf):
-                _adp_sources[_mode] = "Community"
-            elif _mode == "rookie" and (_c_rk1 or _c_rksf):
-                _adp_sources[_mode] = "DraftCrawl"
-    except Exception as _e_adp:
-        logger.info("[api/league-players] ADP attach skipped: %s", _e_adp)
+    # Attach ADP so the rankings/draft room can sort & simulate by ADP, for the
+    # CURRENT season. The route overlays a historical season's ADP on request.
+    _adp_season = int((get_nfl_state() or {}).get("season") or datetime.now().year)
+    _adp_sources = _attach_adp_to_players(model_value_table, _adp_season)
 
     # Attach NFL bye week per player (by team) when real schedule data exists.
     # No fabricated byes: if the season schedule is not loaded this is a no-op.
@@ -19068,9 +19093,32 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
 
 @app.route("/api/league-players")
 def api_league_players():
-    resp = jsonify(_sanitize_for_json(
-        _build_league_players_payload(kdef=bool(request.args.get("kdef")))
-    ))
+    payload = _build_league_players_payload(kdef=bool(request.args.get("kdef")))
+
+    # Historical draft views pass ?season=<yr> so grades use the ADP OF THAT
+    # SEASON (Sleeper's projections API is season-keyed; the crawl fallback too),
+    # not today's. We overlay onto a COPY so the shared memoized payload — which
+    # carries current-season ADP — is never mutated. Player value stays current
+    # (no historical value snapshots exist), so only the ADP term is point-in-time.
+    _cur_season = int((get_nfl_state() or {}).get("season") or datetime.now().year)
+    _season_arg = request.args.get("season")
+    try:
+        _want_season = int(_season_arg) if _season_arg else _cur_season
+    except (TypeError, ValueError):
+        _want_season = _cur_season
+
+    if _want_season != _cur_season:
+        _players = [dict(_p) for _p in (payload.get("players") or [])]
+        _adp_sources = _attach_adp_to_players(_players, _want_season, clear_first=True)
+        payload = dict(payload)
+        payload["players"] = _players
+        payload["adp_sources"] = _adp_sources
+        payload["adp_season"] = _want_season
+        resp = jsonify(_sanitize_for_json(payload))
+        resp.headers["Cache-Control"] = "no-store"  # season-specific, not the shared pool
+        return resp
+
+    resp = jsonify(_sanitize_for_json(payload))
     # Payload is global (varies only by kdef) and refreshes at most every ~15 min,
     # so a short shared cache is safe and trims repeat loads. The Draft Room still
     # fetches with cache:'no-store', so it always re-validates.
