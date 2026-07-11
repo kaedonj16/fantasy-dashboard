@@ -32,14 +32,35 @@ import argparse
 import sys
 from typing import Optional
 
-from utils.pick_score import ps_tier_of
+from utils.pick_score import PS_WEIGHTS, ps_tier_of
 from utils.tier_thresholds import compute_tier_thresholds
 from data_building.draft_grade_backtest import (
-    WEIGHT_CANDIDATES,
+    candidate_grid,
     correlate_grades_to_finish,
     load_sleeper_samples,
     sweep,
 )
+
+
+def _fmt(r) -> str:
+    return "   n/a" if r is None else f"{r:+.3f}"
+
+
+def _report_group(title: str, samples, method: str, seed_type=None, top: int = 8) -> None:
+    """Print a group's shipped-weight correlation + a sweep seeded from the right
+    table. ``seed_type`` picks the PS_WEIGHTS row to nudge around (None -> startup,
+    for the mixed 'ALL' view where no single per-type table applies)."""
+    n = len(samples)
+    if n < 8:
+        print(f"== {title}: {n} teams — too few to trust, skipping.\n")
+        return
+    base_r = correlate_grades_to_finish(samples, method=method)
+    print(f"== {title}: {n} teams — shipped {method} r = {_fmt(base_r)}")
+    seed = PS_WEIGHTS.get(seed_type or "startup", PS_WEIGHTS["startup"])
+    ranked = sweep(samples, candidate_grid(seed), method=method)
+    for label, _w, r in ranked[:top]:
+        print(f"     {_fmt(r)}  {label}")
+    print()
 
 
 def _clamp01(x: float) -> float:
@@ -246,17 +267,25 @@ def main(argv=None) -> int:
         print(f"Auto-detected: {sf_n} SF / {len(samples) - sf_n} 1QB teams; types [{type_str}].")
     print()
 
-    base_r = correlate_grades_to_finish(samples, method=args.method)
-    print(f"Shipped weights: {args.method} r = "
-          f"{'n/a' if base_r is None else f'{base_r:+.3f}'} "
-          f"(grade vs season points-for; higher = grades track success)\n")
+    _report_group("ALL leagues (mixed types share one uniform table — see note)",
+                  samples, args.method, seed_type=None)
 
-    print("Candidate sweep (best predictor first):")
-    for label, _w, r in sweep(samples, WEIGHT_CANDIDATES, method=args.method):
-        print(f"  {'   n/a' if r is None else f'{r:+.3f}'}  {label}")
-    print("\nA nudge that beats 'base' by a clear margin is a real signal to fold "
-          "into PS_WEIGHTS (and its JS mirror). One league-season is noisy — run "
-          "several before changing weights.")
+    # Per-draft-type breakdown: each type uses a different shipped weight table
+    # (rookie leans on youth, startup doesn't), so a single uniform sweep across a
+    # mixed pool grades against a handicapped baseline. Sweeping WITHIN a type,
+    # seeded from THAT type's shipped table, is the apples-to-apples comparison
+    # that can actually justify a weight change.
+    by_type: dict = {}
+    for s in samples:
+        by_type.setdefault(s.meta.get("draft_type") or "?", []).append(s)
+    if len(by_type) > 1:
+        for dtype in sorted(by_type):
+            _report_group(f"{dtype} leagues only", by_type[dtype], args.method, seed_type=dtype)
+
+    print("Read: a nudge only counts if it beats that group's 'base' by a clear, "
+          "consistent margin. 'base' IS the shipped table for that type, so "
+          "base-at-top means the current weights are already best. Fold a real "
+          "winner into PS_WEIGHTS AND static/pick_score.js (parity-pinned).")
     return 0
 
 
