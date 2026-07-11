@@ -12799,24 +12799,47 @@ def api_draft_detect():
         return jsonify({"drafts": [], "error": "league_required"})
     if platform != "sleeper":
         return jsonify({"drafts": [], "unsupported": True})
+    # The draft-history page wants every season's draft; the dashboard countdown
+    # card only needs this league's, so it stays a single call unless history=1.
+    want_history = (request.args.get("history") or "").strip() in ("1", "true", "yes")
     out = []
+    seen_ids: set = set()
     try:
-        drafts = get_drafts(platform, league_id, season) or []
-        for d in drafts:
-            settings = d.get("settings") or {}
-            rounds_val = int(settings.get("rounds") or 15)
-            draft_type = "rookie" if 0 < rounds_val <= 5 else "startup"
-            out.append({
-                "draft_id": str(d.get("draft_id") or ""),
-                "status": d.get("status"),
-                "type": d.get("type"),
-                "draft_type": draft_type,
-                "season": d.get("season"),
-                "start_time": d.get("start_time"),   # scheduled start (epoch ms) for the imminent-draft banner
-                "teams": settings.get("teams"),
-                "rounds": settings.get("rounds"),
-                "order": _order_from_sleeper(d),
-            })
+        # A Sleeper league chains across seasons via previous_league_id, so walk
+        # the whole history and collect every season's drafts. Newest league
+        # first so the current season leads.
+        hist = {}
+        if want_history:
+            try:
+                hist = build_league_history_map(platform, league_id, season) or {}
+            except Exception:
+                hist = {}
+        league_ids = list(dict.fromkeys(
+            [league_id] + [lid for _yr, lid in sorted(hist.items(), reverse=True)]))
+        for lid in league_ids:
+            try:
+                drafts = get_drafts(platform, lid, season) or []
+            except Exception:
+                continue
+            for d in drafts:
+                did = str(d.get("draft_id") or "")
+                if not did or did in seen_ids:
+                    continue
+                seen_ids.add(did)
+                settings = d.get("settings") or {}
+                rounds_val = int(settings.get("rounds") or 15)
+                draft_type = "rookie" if 0 < rounds_val <= 5 else "startup"
+                out.append({
+                    "draft_id": did,
+                    "status": d.get("status"),
+                    "type": d.get("type"),
+                    "draft_type": draft_type,
+                    "season": d.get("season"),
+                    "start_time": d.get("start_time"),   # scheduled start (epoch ms) for the imminent-draft banner
+                    "teams": settings.get("teams"),
+                    "rounds": settings.get("rounds"),
+                    "order": _order_from_sleeper(d),
+                })
     except Exception as exc:
         logger.warning("[draft-detect] error: %s", exc)
     return jsonify({"drafts": out})

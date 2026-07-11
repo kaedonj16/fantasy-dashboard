@@ -1053,7 +1053,7 @@ _DRAFT_HISTORY_HTML = r"""
 <div class="dr-wrap">
   <div class="dr-hero">
     <h1 class="dr-title">Draft History</h1>
-    <p class="dr-sub">Your league's drafts. Open any board to review the picks pick-by-pick.</p>
+    <p class="dr-sub">Every draft in your league's history. Open any board to review the picks pick-by-pick.</p>
   </div>
   <div id="drHistList" class="dr-hist-list">
     <div class="dr-loading"><div class="loading-spinner" style="width:22px;height:22px;"></div><span>Loading…</span></div>
@@ -1103,17 +1103,21 @@ _DRAFT_HISTORY_HTML = r"""
       listEl.innerHTML = '<div class="dr-hist-empty">No drafts found for this league yet.</div>';
       return;
     }
-    // Live/upcoming first, then completed.
+    // Live/upcoming first, then completed; newest season first within each.
     var rank = { drafting: 0, pre_draft: 1, complete: 2 };
-    drafts.sort(function(a, b){ return (rank[a.status] != null ? rank[a.status] : 3) - (rank[b.status] != null ? rank[b.status] : 3); });
+    drafts.sort(function(a, b){
+      var ra = (rank[a.status] != null ? rank[a.status] : 3), rb = (rank[b.status] != null ? rank[b.status] : 3);
+      if (ra !== rb) return ra - rb;
+      return (Number(b.season) || 0) - (Number(a.season) || 0);
+    });
     var html = '';
     drafts.forEach(function(d){
       var typeLabel = d.draft_type ? (d.draft_type.charAt(0).toUpperCase() + d.draft_type.slice(1)) : 'Draft';
-      var title = typeLabel + ' Draft'
+      var title = (d.season ? (String(d.season) + ' ') : '') + typeLabel + ' Draft'
         + ' · ' + (d.teams || '?') + ' teams · ' + (d.rounds || '?') + ' rounds';
       html += '<div class="dr-hist-card">'
         + '<div class="dr-hist-body"><div class="dr-hist-title">' + esc(title) + statusTag(d.status) + '</div>'
-        + '<div class="dr-hist-meta">' + esc((d.order || 'snake')) + ' order' + (d.season ? (' · ' + esc(String(d.season))) : '') + '</div></div>'
+        + '<div class="dr-hist-meta">' + esc((d.order || 'snake')) + ' order</div></div>'
         + '<div class="dr-hist-actions">'
         + '<a class="dr-btn dr-btn-primary" href="' + esc(cfg.base) + '?live=' + encodeURIComponent(d.draft_id) + '">Open board</a>'
         + '</div></div>';
@@ -1127,7 +1131,7 @@ _DRAFT_HISTORY_HTML = r"""
         + 'You can still run a mock in the <a href="' + esc(cfg.base) + '">Draft Room</a>.</div>';
       return;
     }
-    fetch('/api/draft/detect?platform=' + encodeURIComponent(cfg.platform)
+    fetch('/api/draft/detect?history=1&platform=' + encodeURIComponent(cfg.platform)
         + '&league_id=' + encodeURIComponent(cfg.leagueId) + '&season=' + (cfg.season || ''), { cache: 'no-store' })
       .then(function(r){ return r.json(); })
       .then(function(resp){
