@@ -3247,6 +3247,10 @@
     var gp = document.getElementById('drGradePill');
     var g = gradeTeam();
     if (g){ gp.style.display = ''; gp.textContent = 'Grade ' + gradeLetter(g.score); } else { gp.style.display = 'none'; }
+    // The pick-trade evaluator only makes sense while picks are still to be made;
+    // hide it once the draft is done/complete (nothing left to trade for).
+    var _ptBtn = document.getElementById('drPickTradeBtn');
+    if (_ptBtn) _ptBtn.style.display = (done || (state && state.isComplete)) ? 'none' : '';
     // The report card grades every team in the league, so make it reachable any
     // time there are picks on the board - not just when the draft is finished -
     // so you can compare other teams' grades mid-draft.
