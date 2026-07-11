@@ -607,7 +607,10 @@ _DRAFT_ROOM_HTML = r"""
     border:1px solid var(--border); color:var(--text-muted); font-size:9px; font-weight:800; font-style:normal;
     cursor:help; margin-left:4px; position:relative; vertical-align:middle; line-height:1; flex-shrink:0; }
   .dr-info:hover, .dr-info:focus { border-color:var(--accent,#38bdf8); color:var(--accent,#38bdf8); outline:none; }
-  .dr-info::after { content: attr(data-tip); position:absolute; top:calc(100% + 6px); left:50%; transform:translateX(-50%);
+  /* Anchor the tooltip's left edge to the icon and extend rightward. These info
+     icons all sit on the LEFT of their label, so a centered tooltip overflowed
+     the panel's left edge and got clipped by its overflow:hidden ancestor. */
+  .dr-info::after { content: attr(data-tip); position:absolute; top:calc(100% + 6px); left:0; transform:none;
     width:max-content; max-width:210px; background:var(--card); color:var(--text); border:1px solid var(--border);
     border-radius:8px; padding:7px 9px; font-size:11px; font-weight:500; font-style:normal; line-height:1.4; text-align:left;
     box-shadow:0 8px 24px rgba(0,0,0,.28); opacity:0; pointer-events:none; transition:opacity .12s; z-index:600; white-space:normal; }
