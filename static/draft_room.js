@@ -1134,15 +1134,20 @@
     // plan deliberately, so it executes straight).
     var strat = state.myStrat || '';
     var lean = state.myAgeLean || '';
-    var counts = strat || lean ? myPosCounts() : null;
+    // Always track counts/targets so the auto-draft respects roster needs the way
+    // the CPU does (it used to only when a strategy/lean was set, which let it
+    // stack a saturated position while a starter slot sat empty).
+    var counts = myPosCounts();
+    var targets = posTargets();
+    var rs = (state && state.roster) || {};
     var round = Math.ceil(state.current / (state.teams || 12));
     var prm = { intensity: 1, shift: 0 };
     var qbStarters = state.sf ? 2 : 1;
     var scored = pool.map(function(p){
       var s = pickScoreFor(p) || 0;
+      var pos = (p.position || '').toUpperCase();
+      var have = counts[pos] || 0;
       if (strat || lean){
-        var pos = (p.position || '').toUpperCase();
-        var have = (counts && counts[pos]) || 0;
         var sm = _stratMult(strat, pos, have, round, prm);
         if (strat === 'early_qb' && pos === 'QB' && have >= qbStarters) sm = 1;
         // Hard reach cap: pick scores sit close together, so even a damped
@@ -1158,6 +1163,22 @@
         }
         var am = _ageLeanMult(lean, pos, p.age != null ? Number(p.age) : null, 1);
         s = s * sm * am;
+      }
+      // Roster-need shaping (mirrors the CPU's simPick guards): never reach ahead
+      // of ADP for a backup at a single-start position (a 2nd TE in 1TE, a 2nd QB
+      // in 1QB), deprioritize a position once you're past a realistic depth, and
+      // pull toward an OPEN dedicated starter slot (e.g. a 2nd starting RB).
+      if (s > 0 && pos !== 'K' && pos !== 'DEF'){
+        var target = targets[pos] || 0;
+        var sSlots = rs[pos] || 0;             // dedicated starter slots (RB=2, TE=1, ...)
+        var adp = adpOf(p);
+        var backupReach = adp != null && adp < 9000 && state.current < adp && (
+          (pos === 'QB' && have >= qbStarters) ||
+          (pos === 'TE' && (rs.TE || 0) <= 1 && have >= 1)
+        );
+        if (backupReach) s = 0;
+        else if (target > 0 && have >= target) s *= 0.4;   // past realistic depth
+        else if (sSlots > 0 && have < sSlots) s *= 1.35;    // open dedicated starter
       }
       return { p: p, s: s };
     });
@@ -2664,19 +2685,35 @@
           if (!team || !team.picks) return;
           var _sp = team.picks.slice().map(function(x){ return x.p; }).filter(Boolean);
           var _tst = optimalLineup(_sp).starters.filter(function(x){ return x.p; });
+          // Starters fill the lineup slots; everything else is bench. Show the
+          // whole board, not just starters, so a team's full set of picks is visible.
+          var _starterIds = {};
+          _tst.forEach(function(x){ if (x.p && x.p.id != null) _starterIds[x.p.id] = true; });
+          var _bench = team.picks.slice()
+            .filter(function(pk){ return pk.p && !_starterIds[pk.p.id]; })
+            .sort(function(a, b){ return (a.pn || 0) - (b.pn || 0); });
+          function _pickRx(pn){
+            if (!pn) return '';
+            var rd = Math.ceil(pn / state.teams); var pp = pn - (rd - 1) * state.teams;
+            return rd + '.' + (pp < 10 ? '0' + pp : pp);
+          }
+          function _ldtlRow(slotLabel, p, pn){
+            var pickRx = _pickRx(pn);
+            var _ps = storedPickScore(pn, p);
+            var psRx = _ps != null ? '<span class="dr-sum-ldtl-ps" style="color:' + psColor(_ps) + '">' + _ps + '</span>' : '';
+            return '<div class="dr-sum-ldtl-row">'
+              + '<span class="dr-sum-ldtl-slot" style="background:' + slotColor(slotLabel) + '">' + esc(slotLabel) + '</span>'
+              + '<span class="dr-sum-ldtl-name">' + esc(p.name) + '</span>'
+              + (pickRx ? '<span class="dr-sum-ldtl-pick">' + pickRx + '</span>' : '')
+              + psRx + '</div>';
+          }
           var dtlHtml = '';
           _tst.forEach(function(x){
             var _pnx = (team.picks.filter(function(pk){ return pk.p && pk.p.id === x.p.id; })[0] || {}).pn || 0;
-            var pickRx = _pnx ? (function(){ var rd = Math.ceil(_pnx/state.teams); var pp = _pnx-(rd-1)*state.teams; return rd + '.' + (pp<10?'0'+pp:pp); })() : '';
-            var _ps = storedPickScore(_pnx, x.p);
-            var psRx = _ps != null ? '<span class="dr-sum-ldtl-ps" style="color:' + psColor(_ps) + '">' + _ps + '</span>' : '';
-            dtlHtml += '<div class="dr-sum-ldtl-row">'
-              + '<span class="dr-sum-ldtl-slot" style="background:' + slotColor(x.slot) + '">' + x.slot + '</span>'
-              + '<span class="dr-sum-ldtl-name">' + esc(x.p.name) + '</span>'
-              + (pickRx ? '<span class="dr-sum-ldtl-pick">' + pickRx + '</span>' : '')
-              + psRx + '</div>';
+            dtlHtml += _ldtlRow(x.slot, x.p, _pnx);
           });
-          dtl.innerHTML = dtlHtml || '<span style="font-size:10px;color:var(--text-muted);padding:4px 0;display:block">No starters found</span>';
+          _bench.forEach(function(pk){ dtlHtml += _ldtlRow('BN', pk.p, pk.pn || 0); });
+          dtl.innerHTML = dtlHtml || '<span style="font-size:10px;color:var(--text-muted);padding:4px 0;display:block">No picks found</span>';
         }
       });
     });
