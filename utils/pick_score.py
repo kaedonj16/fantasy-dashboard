@@ -105,7 +105,9 @@ def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
     if is_tier_cliff:
         tier_score = clamp01(tier_score + 0.15)
 
-    need_ramp = clamp01((pick_no - 1) / 12.0)
+    # Need ramps in a touch earlier than before (/10 vs /12) so roster
+    # construction starts to matter before the mid rounds, not only after.
+    need_ramp = clamp01((pick_no - 1) / 10.0)
     need = (1 - need_ramp) * 0.5 + need_ramp * need_raw
 
     youth = 0.5
@@ -145,6 +147,26 @@ def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
         if qb_count >= 2:
             _pen *= 0.7
         s *= _pen
+
+    # Redundancy: a pick at a skill position already stocked to its realistic
+    # depth target (need_raw == 0) is a bench body at a full spot while other
+    # starting needs may remain - the opportunity cost the old score ignored
+    # (it just dropped the need bonus). Penalize it, hardest at single-start TE
+    # and in the early rounds; bench depth in the late rounds is normal, so the
+    # penalty tapers out. QB overfill has its own rule above.
+    if need_raw <= 0 and pos in ("RB", "WR", "TE"):
+        _teams2 = int(num_teams) if num_teams else 12
+        _rd2 = (int(pick_no) - 1) // max(_teams2, 1) + 1 if pick_no else 1
+        _single = pos == "TE"   # standard 1-TE start; RB/WR are multi-start depth
+        if _rd2 <= 3:
+            _rp = 0.55 if _single else 0.82
+        elif _rd2 <= 6:
+            _rp = 0.72 if _single else 0.90
+        elif _rd2 <= 9:
+            _rp = 0.86 if _single else 0.96
+        else:
+            _rp = 1.0
+        s *= _rp
 
     # Live-draft redraft handcuff term (False for grading).
     if handcuff:

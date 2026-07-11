@@ -929,6 +929,23 @@
     var _qbGap = Math.max(3, Math.round(9.5 - (_qbFullRound || 1) * 0.5)) + Math.round(_rand01(slot + ':qbgap') * 2);
     var _backupQBWanted = _qbFullRound != null &&
       ((_curRound - _qbFullRound) >= _qbGap || _curRound >= (state.rounds || 20) * 0.8);
+    // CPU realism inputs (read this team's roster once): stack a QB with his
+    // pass-catchers, handcuff a backup to my own RB, and avoid piling startable
+    // players onto a single bye week. Small tie-breakers, not reach-forcing.
+    var _myQbTeams = {}, _myPassTeams = {}, _myRbTeams = {}, _myByes = {};
+    (cpuCtx.picksList || []).forEach(function(mp){
+      var _mf = playersById[String(mp.id)] || mp;
+      var _mpos = (_mf.position || '').toUpperCase();
+      var _tm = (_mf.team || '').toUpperCase();
+      if (_tm){
+        if (_mpos === 'QB') _myQbTeams[_tm] = true;
+        else if (_mpos === 'WR' || _mpos === 'TE') _myPassTeams[_tm] = true;
+        else if (_mpos === 'RB') _myRbTeams[_tm] = true;
+      }
+      var _bw = Number(_mf.bye_week);
+      if (_bw) _myByes[_bw] = (_myByes[_bw] || 0) + 1;
+    });
+    var _stackOn = (state.type === 'redraft' || state.type === 'startup');
     var cands = [];
     var bestPv = 0;   // highest pick score available (the "best player on the board")
     var posQualLeft = {};  // count of remaining startable-quality players per position
@@ -1046,6 +1063,19 @@
       // Dynasty age lean (startup only): win-now pays for vets, youth punts them.
       var ageMult = _ageLeanMult(_ageLean, pos, p.age != null ? Number(p.age) : null, _ageInt);
       w *= needBoost * biasMult * stratMult * ageMult / overFactor;
+      // CPU realism (weekly-lineup formats): stack the team's QB with his
+      // pass-catchers, insure an owned RB with its handcuff, and shade away from
+      // stacking startable players on a shared bye. Kept small so they break
+      // ties near value rather than forcing a reach.
+      var _tmU = (p.team || '').toUpperCase();
+      if (_stackOn && _tmU){
+        if ((pos === 'WR' || pos === 'TE') && _myQbTeams[_tmU]) w *= 1.08;
+        else if (pos === 'QB' && _myPassTeams[_tmU]) w *= 1.06;
+        if (state.type === 'redraft' && pos === 'RB' && _myRbTeams[_tmU]) w *= 1.05;
+      }
+      if (state.type === 'redraft' && p.bye_week && (_myByes[Number(p.bye_week)] || 0) >= 2){
+        w *= 0.92;
+      }
       // Hard guard: a backup at a starter-filled slot has little marginal value,
       // so the CPU must never REACH for one - only take it if its real ADP has
       // fallen to this pick or later. Covers a 2nd QB in 1QB, a 3rd QB in SF (both
