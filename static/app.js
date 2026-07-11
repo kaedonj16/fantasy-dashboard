@@ -12586,6 +12586,7 @@ function initComparePage() {
     if (resultEl) resultEl.innerHTML = '';
     if (actionsEl) actionsEl.hidden = true;
     if (emptyEl) emptyEl.hidden = false;
+    _renderSuggestions();
     if (focus && inp) inp.focus();
   }
 
@@ -12618,6 +12619,7 @@ function initComparePage() {
       results.innerHTML = '';
       input.setAttribute('aria-expanded', 'false');
       if (clearBtn) clearBtn.hidden = false;
+      _renderSuggestions();
       _maybeCompare();
     }
     function render(list, q) {
@@ -12691,40 +12693,61 @@ function initComparePage() {
   _bindPicker(1);
   _bindPicker(2);
 
-  // Put a chosen player/baseline into the first open slot and compare. Used by
-  // the one-tap tier-average chips below.
-  function _pickInto(obj) {
-    const slot = !chosen[1] ? 1 : (!chosen[2] ? 2 : 1);
+  // Put a baseline into a specific slot and compare (used by the tier suggestions).
+  function _pickIntoSlot(slot, obj) {
     chosen[slot] = { player_id: obj.player_id, name: obj.name, position: obj.position || '', team: obj.team || '' };
     const inp = document.getElementById('cmpPick' + slot);
     if (inp) inp.value = obj.name;
     const clr = document.getElementById('cmpClear' + slot);
     if (clr) clr.hidden = false;
+    _renderSuggestions();
     _maybeCompare();
   }
 
-  // One-tap "benchmark vs a tier" chips (Avg QB1/QB2, RB1/RB2, ...) so comparing
-  // against a tier average is a visible button, not only a search term.
-  _baselinesReady.then(function () {
-    const wrap = document.getElementById('cmpTierBlock');
-    const row = document.getElementById('cmpTierChips');
-    if (!wrap || !row || !_cmpBaselineList.length) return;
-    const _posOrder = { QB: 0, RB: 1, WR: 2, TE: 3 };
-    const ordered = _cmpBaselineList.slice().sort((a, b) =>
-      (_posOrder[a.position] - _posOrder[b.position])
-      || String(a.player_id).localeCompare(String(b.player_id)));
-    row.innerHTML = ordered.map(b => {
-      const label = (b.stats && b.stats.pos_rank_label) || b.name;
-      return '<button type="button" class="compare-tier-chip pos-' + _wlEsc(b.position)
-        + '" data-bid="' + _wlEsc(b.player_id) + '">Avg ' + _wlEsc(label) + '</button>';
-    }).join('');
-    row.querySelectorAll('.compare-tier-chip').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const b = _cmpBaselineById[btn.getAttribute('data-bid')];
-        if (b) _pickInto(b);
+  // Contextual tier suggestion: once one real player is chosen, offer to compare
+  // them against Avg POS1 / POS2 of their position, shown under the still-empty
+  // slot. Nothing is suggested for a tier-vs-anything or an empty board.
+  function _renderSuggestions() {
+    [1, 2].forEach(slot => {
+      const el = document.getElementById('cmpSuggest' + slot);
+      if (!el) return;
+      const other = chosen[slot === 1 ? 2 : 1];
+      const pos = ((other && other.position) || '').toUpperCase();
+      const eligible = !chosen[slot] && other && !_isBaseline(other.player_id)
+        && ['QB', 'RB', 'WR', 'TE'].includes(pos);
+      const tiers = eligible
+        ? [1, 2].map(t => _cmpBaselineById['avg-' + pos + '-' + t]).filter(Boolean) : [];
+      if (!tiers.length) { el.innerHTML = ''; el.hidden = true; return; }
+      el.innerHTML = '<span class="compare-suggest-label">Benchmark ' + _wlEsc(other.name) + ' vs</span>'
+        + tiers.map(b => '<button type="button" class="compare-suggest-chip pos-' + _wlEsc(pos)
+            + '" data-bid="' + _wlEsc(b.player_id) + '">Avg '
+            + _wlEsc((b.stats && b.stats.pos_rank_label) || b.name) + '</button>').join('')
+        + '<span class="compare-suggest-note">PPR &middot; 12-team</span>';
+      el.querySelectorAll('.compare-suggest-chip').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const b = _cmpBaselineById[btn.getAttribute('data-bid')];
+          if (b) _pickIntoSlot(slot, b);
+        });
       });
+      el.hidden = false;
     });
-    wrap.hidden = false;
+  }
+
+  // Seed the Popular matchups with tier-vs-tier debates (Avg WR1 vs Avg WR2, ...)
+  // so the tier feature is discoverable before any player is picked.
+  _baselinesReady.then(function () {
+    const row = document.getElementById('cmpPopularChips');
+    if (!row || !_cmpBaselineList.length) return;
+    const html = ['WR', 'RB', 'QB', 'TE'].map(pos => {
+      const t1 = _cmpBaselineById['avg-' + pos + '-1'], t2 = _cmpBaselineById['avg-' + pos + '-2'];
+      if (!t1 || !t2) return '';
+      return '<a class="compare-chip compare-chip-tier" href="/compare?p1=' + t1.player_id + '&p2=' + t2.player_id + '">'
+        + '<span class="compare-chip-pos pos-' + pos + '">' + pos + '</span>'
+        + '<span class="compare-chip-name">' + _wlEsc(t1.name) + '</span>'
+        + '<span class="compare-chip-vs">vs</span>'
+        + '<span class="compare-chip-name">' + _wlEsc(t2.name) + '</span></a>';
+    }).join('');
+    if (html) row.insertAdjacentHTML('afterbegin', html);
   });
 
   // Focus the first empty picker on load so you can type immediately (skipped

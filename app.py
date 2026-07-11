@@ -28116,6 +28116,7 @@ def build_compare_page_body(popular_html: str = "") -> str:
                 <button type="button" class="compare-pick-clear" id="cmpClear1" aria-label="Clear player 1" hidden>&times;</button>
                 <div class="compare-pick-results" id="cmpResults1" role="listbox"></div>
               </div>
+              <div class="compare-tier-suggest" id="cmpSuggest1" hidden></div>
             </div>
             <div class="compare-vs" aria-hidden="true">VS</div>
             <div class="compare-picker">
@@ -28125,6 +28126,7 @@ def build_compare_page_body(popular_html: str = "") -> str:
                 <button type="button" class="compare-pick-clear" id="cmpClear2" aria-label="Clear player 2" hidden>&times;</button>
                 <div class="compare-pick-results" id="cmpResults2" role="listbox"></div>
               </div>
+              <div class="compare-tier-suggest" id="cmpSuggest2" hidden></div>
             </div>
           </div>
           <div class="compare-actions" id="cmpActions" hidden>
@@ -28140,17 +28142,13 @@ def build_compare_page_body(popular_html: str = "") -> str:
               <div class="compare-feature"><span class="cf-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="16" y1="2" x2="16" y2="6"></line></svg></span><span>Weekly usage</span></div>
               <div class="compare-feature"><span class="cf-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="9" y1="6" x2="21" y2="6"></line><line x1="9" y1="12" x2="21" y2="12"></line><line x1="9" y1="18" x2="21" y2="18"></line><line x1="4" y1="6" x2="4.01" y2="6"></line><line x1="4" y1="12" x2="4.01" y2="12"></line><line x1="4" y1="18" x2="4.01" y2="18"></line></svg></span><span>Game logs</span></div>
             </div>
-            <div class="compare-empty-block" id="cmpTierBlock" hidden>
-              <div class="compare-empty-title">Benchmark against a tier average <span class="compare-empty-subnote">PPR &middot; 12-team</span></div>
-              <div class="compare-chip-row" id="cmpTierChips"></div>
-            </div>
             <div class="compare-empty-block" id="cmpRecent" hidden>
               <div class="compare-empty-title">Recently compared</div>
               <div class="compare-chip-row" id="cmpRecentChips"></div>
             </div>
             <div class="compare-empty-block">
               <div class="compare-empty-title">Popular matchups</div>
-              <div class="compare-chip-row">{popular_html}</div>
+              <div class="compare-chip-row" id="cmpPopularChips">{popular_html}</div>
             </div>
           </div>
           <div id="comparePageResult" class="compare-page-result"></div>

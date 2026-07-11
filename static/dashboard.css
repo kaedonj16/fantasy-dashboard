@@ -16978,7 +16978,7 @@ tr.team-clickable {
 .compare-page-title::after { display: none; }
 .compare-page-sub { margin: 8px 0 0; color: var(--text-muted); font-size: 15px; }
 .compare-pickers {
-  display: grid; grid-template-columns: 1fr auto 1fr; gap: 16px; align-items: end;
+  display: grid; grid-template-columns: 1fr auto 1fr; gap: 16px; align-items: start;
   background: var(--card); border: 1px solid var(--border);
   border-radius: var(--radius-lg, 16px); padding: 18px 20px;
   box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, .04));
@@ -17009,7 +17009,9 @@ tr.team-clickable {
 .compare-pick-clear:hover { background: var(--border); color: var(--text); }
 /* A class-level display would otherwise defeat the [hidden] attribute. */
 .compare-pick-clear[hidden] { display: none !important; }
-.compare-vs { font-weight: 800; color: var(--text-muted); font-size: 13px; padding-bottom: 12px; }
+/* Align the VS with the input row: clear the label (uppercase 12px + 6px margin)
+   above the fields so it sits level with the inputs, not the labels. */
+.compare-vs { font-weight: 800; color: var(--text-muted); font-size: 13px; margin-top: 34px; }
 .compare-pick-results {
   position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 60;
   background: var(--card); border: 1px solid var(--border); border-radius: 12px;
@@ -17110,26 +17112,36 @@ tr.team-clickable {
 .compare-chip-pos.pos-WR { background: rgba(59, 130, 246, .14); color: #3b82f6; }
 .compare-chip-pos.pos-TE { background: rgba(245, 158, 11, .14); color: #f59e0b; }
 
-/* One-tap "benchmark vs a tier" chips - flow inline, colour-coded by position. */
-.compare-empty-subnote {
-  font-size: 11px; font-weight: 600; color: var(--text-muted);
-  margin-left: 6px; letter-spacing: .02em;
+/* Contextual "benchmark vs tier" suggestion under an empty picker slot. */
+.compare-tier-suggest {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 7px;
+  margin-top: 9px;
 }
-#cmpTierChips { display: flex !important; flex-wrap: wrap; gap: 8px; }
-.compare-tier-chip {
-  font-size: 12.5px; font-weight: 700; cursor: pointer;
-  padding: 7px 12px; border-radius: 999px;
+.compare-tier-suggest[hidden] { display: none; }
+.compare-suggest-label {
+  font-size: 11.5px; font-weight: 600; color: var(--text-muted);
+}
+.compare-suggest-note {
+  font-size: 10px; font-weight: 600; color: var(--text-muted);
+  opacity: .7; letter-spacing: .02em;
+}
+.compare-suggest-chip {
+  font-size: 12px; font-weight: 700; cursor: pointer;
+  padding: 5px 11px; border-radius: 999px;
   background: var(--bg-alt); color: var(--text); border: 1px solid var(--border);
   transition: background .15s, border-color .15s;
 }
-.compare-tier-chip:hover { background: var(--surface); }
-.compare-tier-chip.pos-QB { border-color: rgba(239, 68, 68, .4);  color: #ef4444; }
-.compare-tier-chip.pos-RB { border-color: rgba(34, 197, 94, .4);  color: #22c55e; }
-.compare-tier-chip.pos-WR { border-color: rgba(59, 130, 246, .4); color: #3b82f6; }
-.compare-tier-chip.pos-TE { border-color: rgba(245, 158, 11, .4); color: #f59e0b; }
+.compare-suggest-chip:hover { background: var(--surface); }
+.compare-suggest-chip.pos-QB { border-color: rgba(239, 68, 68, .45);  color: #ef4444; }
+.compare-suggest-chip.pos-RB { border-color: rgba(34, 197, 94, .45);  color: #22c55e; }
+.compare-suggest-chip.pos-WR { border-color: rgba(59, 130, 246, .45); color: #3b82f6; }
+.compare-suggest-chip.pos-TE { border-color: rgba(245, 158, 11, .45); color: #f59e0b; }
+/* Tier-vs-tier debate among the popular matchups: faint accent so it reads as
+   a benchmark, not two named players. */
+.compare-chip-tier { background: color-mix(in srgb, var(--accent) 4%, transparent); }
 @media (max-width: 600px) {
   .compare-pickers { grid-template-columns: 1fr; }
-  .compare-vs { padding: 4px 0; text-align: center; }
+  .compare-vs { padding: 4px 0; text-align: center; margin-top: 0; }
   .compare-page-title { font-size: 24px; }
   .compare-features { grid-template-columns: repeat(2, 1fr); }
   .compare-chip-row { grid-template-columns: 1fr; }
