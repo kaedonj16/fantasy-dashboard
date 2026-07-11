@@ -55,7 +55,7 @@ def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
                        avg_pick, pick_no, max_val, draft_type, is_sf,
                        need_raw, qb_count, total_picks=None, num_teams=None,
                        ppg_norm=None, ppr=1.0, tep=0.0, is_tier_cliff=False,
-                       survival_adj=0.0, handcuff=False) -> int:
+                       survival_adj=0.0, handcuff=False, weights=None) -> int:
     """Mirror of static/pick_score.js `computePickScore`; the two are pinned
     identical by tests/test_pick_score_parity.py. ``survival_adj`` and
     ``handcuff`` are the live-draft-only timing terms (default off); the grade
@@ -121,7 +121,10 @@ def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
     # so a player isn't penalized for absent projections (mirrors the Draft Room).
     ppg_n = ppg_norm if ppg_norm is not None else value_norm
 
-    w = PS_WEIGHTS.get(draft_type, PS_WEIGHTS["startup"])
+    # ``weights`` lets the backtest harness sweep alternate weight tables
+    # (data_building/draft_grade_backtest.py) without touching the shipped
+    # PS_WEIGHTS. Defaults to the live table, so the parity test is unaffected.
+    w = weights if weights is not None else PS_WEIGHTS.get(draft_type, PS_WEIGHTS["startup"])
     s = (w["vor"] * vor_norm + w["value"] * value_norm + w["adp"] * adp_val
          + w["tier"] * tier_score + w["need"] * need + w["youth"] * youth
          + w["mom"] * mom + w.get("ppg", 0.0) * ppg_n)
