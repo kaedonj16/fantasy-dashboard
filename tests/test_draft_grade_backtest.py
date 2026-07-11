@@ -13,6 +13,7 @@ from data_building.draft_grade_backtest import (
     _synthetic_samples,
     candidate_grid,
     correlate_grades_to_finish,
+    detect_sleeper_meta,
     outcome_from_rank,
     pearson,
     spearman,
@@ -54,6 +55,34 @@ def test_spearman_handles_ties():
     # Ties share the average rank; a constant-tie column is undefined (None).
     assert spearman([1, 2, 2, 3], [1, 2, 3, 4]) is not None
     assert spearman([1, 1, 1, 1], [1, 2, 3, 4]) is None
+
+
+def test_detect_sleeper_meta_superflex_and_type():
+    sf_league = {
+        "roster_positions": ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "SUPER_FLEX", "BN"],
+        "settings": {"type": 2}, "total_rosters": 12,
+    }
+    # 12-round draft in a dynasty SF league -> startup, SF true.
+    is_sf, dtype, teams = detect_sleeper_meta(sf_league, {"settings": {"rounds": 15}}, 12)
+    assert is_sf is True and dtype == "startup" and teams == 12
+
+
+def test_detect_sleeper_meta_1qb_rookie_and_redraft():
+    oneqb = {"roster_positions": ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "BN"],
+             "settings": {"type": 2}, "total_rosters": 10}
+    # Short draft in a dynasty 1QB league -> rookie draft.
+    is_sf, dtype, teams = detect_sleeper_meta(oneqb, {"settings": {"rounds": 4}}, 10)
+    assert is_sf is False and dtype == "rookie" and teams == 10
+    # type == 0 is redraft regardless of rounds.
+    redraft = {**oneqb, "settings": {"type": 0}}
+    _, dtype2, _ = detect_sleeper_meta(redraft, {"settings": {"rounds": 15}}, 10)
+    assert dtype2 == "redraft"
+
+
+def test_detect_sleeper_meta_falls_back_on_garbage():
+    is_sf, dtype, teams = detect_sleeper_meta(None, None, 0,
+                                              default_type="startup", default_sf=True, default_teams=12)
+    assert is_sf is True and dtype == "startup" and teams == 12
 
 
 def test_outcome_from_rank_inverts():

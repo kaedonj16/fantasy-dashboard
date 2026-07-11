@@ -213,32 +213,83 @@ WEIGHT_CANDIDATES: List[Tuple[str, dict]] = candidate_grid(PS_WEIGHTS["startup"]
 # --------------------------------------------------------------------------- #
 # Real-data loader (Sleeper). Documented + defensive; returns [] offline.
 # --------------------------------------------------------------------------- #
+def detect_sleeper_meta(
+    league: dict, draft: dict, num_rosters: int, *,
+    default_type: str = "startup", default_sf: bool = False, default_teams: int = 12,
+) -> Tuple[bool, str, int]:
+    """Infer (is_sf, draft_type, num_teams) from a Sleeper league + its draft.
+
+    * SF: ``SUPER_FLEX`` in roster_positions, or >=2 QB-eligible starting slots.
+    * draft_type: settings.type == 0 -> redraft; else a short draft (<=5 rounds)
+      is a dynasty rookie draft, a long one is a startup. This matters because a
+      dynasty league's *first* season is a startup but later seasons are rookie
+      drafts, and each uses a different ADP/value basis.
+    * num_teams: roster count (falls back to total_rosters, then default).
+
+    Anything unparseable falls back to the passed defaults — never raises.
+    """
+    is_sf, draft_type, num_teams = default_sf, default_type, default_teams
+    if not league:
+        return is_sf, draft_type, num_teams
+    try:
+        rp = league.get("roster_positions") or []
+        if rp:  # only override SF when we actually know the roster shape
+            qb_slots = sum(1 for s in rp if s in ("QB", "SUPER_FLEX"))
+            is_sf = ("SUPER_FLEX" in rp) or (qb_slots >= 2)
+        num_teams = int(num_rosters) or int(league.get("total_rosters") or 0) or default_teams
+        settings = league.get("settings") or {}
+        rounds = int(((draft or {}).get("settings") or {}).get("rounds") or 0)
+        if int(settings.get("type") or 0) == 0:
+            draft_type = "redraft"
+        elif 1 <= rounds <= 5:
+            draft_type = "rookie"
+        else:
+            draft_type = "startup"
+    except Exception:
+        pass
+    return is_sf, draft_type, num_teams
+
+
 def load_sleeper_samples(
     league_ids: Sequence[str],
     season: int,
     *,
-    value_fn: Callable[[dict], Optional[dict]],
+    value_fn: Optional[Callable[[dict], Optional[dict]]] = None,
+    value_fn_factory: Optional[Callable[[bool, str], Callable[[dict], Optional[dict]]]] = None,
     draft_type: str = "startup",
     is_sf: bool = False,
     num_teams: int = 12,
+    auto_detect: bool = False,
 ) -> List[TeamSample]:
     """Build ``TeamSample`` rows from completed Sleeper leagues.
 
     For each league it pulls the completed draft's picks and the final standings,
-    then turns each roster's picks into ``compute_pick_score`` inputs via
+    then turns each roster's picks into ``compute_pick_score`` inputs via a
     ``value_fn`` (the caller's DB-backed valuation lookup: given a pick dict it
     returns {value, vor, tier, age, rank_change_7d, avg_pick, max_val, ppg_norm}
-    or None to skip). The outcome is season points-for (settings.fpts), which is
-    a lower-noise success signal than final rank.
+    or None to skip). The outcome is season points-for (settings.fpts), a
+    lower-noise success signal than final rank.
 
-    This function only runs where Sleeper is reachable and ``value_fn`` has DB
-    access; with neither (the offline test sandbox) it swallows the fetch error
-    and returns ``[]`` so the module stays importable and testable everywhere.
+    Two modes:
+      * Fixed: pass ``value_fn`` and the global ``is_sf``/``draft_type`` — every
+        league is graded on that one basis.
+      * Auto (``auto_detect=True`` + ``value_fn_factory``): each league's SF-ness
+        and draft type are detected from Sleeper (``detect_sleeper_meta``) and the
+        matching ``value_fn = value_fn_factory(is_sf, draft_type)`` is used. This
+        is what a MIXED 1QB/SF portfolio needs so each league is scored correctly.
+
+    This only runs where Sleeper is reachable and the valuation lookup has DB
+    access; offline it swallows the fetch error and returns ``[]`` so the module
+    stays importable and testable everywhere.
     """
     try:
-        from dashboard_services.api import get_drafts, get_draft_picks, get_rosters
+        from dashboard_services.api import (
+            get_drafts, get_draft_picks, get_rosters, get_league,
+        )
     except Exception:
         return []
+    if value_fn is None and value_fn_factory is None:
+        raise ValueError("provide value_fn or value_fn_factory")
 
     samples: List[TeamSample] = []
     for league_id in league_ids:
@@ -247,14 +298,29 @@ def load_sleeper_samples(
             done = [d for d in drafts if (d.get("status") == "complete")]
             if not done:
                 continue
-            draft_id = str(done[0].get("draft_id"))
+            draft_obj = done[0]
+            draft_id = str(draft_obj.get("draft_id"))
             picks = get_draft_picks(draft_id) or []
             rosters = get_rosters(str(league_id)) or []
         except Exception:
             # Network/DB unavailable (offline sandbox) — skip this league.
             continue
 
-        total_picks = len(picks) or (num_teams * 15)
+        lg_is_sf, lg_type, lg_teams = is_sf, draft_type, (len(rosters) or num_teams)
+        if auto_detect and value_fn_factory is not None:
+            try:
+                league = get_league(str(league_id)) or {}
+            except Exception:
+                league = {}
+            lg_is_sf, lg_type, lg_teams = detect_sleeper_meta(
+                league, draft_obj, len(rosters),
+                default_type=draft_type, default_sf=is_sf, default_teams=num_teams,
+            )
+            league_value_fn = value_fn_factory(lg_is_sf, lg_type)
+        else:
+            league_value_fn = value_fn
+
+        total_picks = len(picks) or (lg_teams * 15)
         # Season points-for per roster (settings.fpts[.fpts_decimal]).
         pf_by_roster: Dict[str, float] = {}
         for r in rosters:
@@ -270,10 +336,10 @@ def load_sleeper_samples(
             pos = (meta.get("position") or "").upper()
             pick_no = int(pk.get("pick_no") or 0)
             row = {
-                "pos": pos, "pick_no": pick_no, "draft_type": draft_type,
-                "is_sf": is_sf, "num_teams": num_teams, "total_picks": total_picks,
+                "pos": pos, "pick_no": pick_no, "draft_type": lg_type,
+                "is_sf": lg_is_sf, "num_teams": lg_teams, "total_picks": total_picks,
             }
-            vals = value_fn({**pk, "position": pos, "pick_no": pick_no})
+            vals = league_value_fn({**pk, "position": pos, "pick_no": pick_no})
             if not vals:
                 continue
             row.update(vals)
@@ -286,7 +352,8 @@ def load_sleeper_samples(
                 continue
             samples.append(TeamSample(
                 picks=team_picks, outcome=pf_by_roster[rid],
-                label=f"{league_id}:{rid}", meta={"league_id": str(league_id)},
+                label=f"{league_id}:{rid}",
+                meta={"league_id": str(league_id), "is_sf": lg_is_sf, "draft_type": lg_type},
             ))
     return samples
 

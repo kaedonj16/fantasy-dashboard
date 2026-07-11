@@ -12,12 +12,13 @@ It needs what the app needs: importable ``app`` (Flask), a reachable
 valuations / no drafts and report an empty sample — it never fabricates data.
 
 Usage:
-    # Easiest: pass your CURRENT league ID + --history to auto-discover every
-    # prior completed season via the previous_league_id chain.
+    # Mixed portfolio of current leagues: --history reaches prior completed
+    # seasons, --auto-type grades each on its own 1QB/SF + startup/redraft/rookie
+    # basis (detected from Sleeper). No need to sort leagues by format yourself.
     python -m data_building.run_draft_backtest \
-        --league <current_league_id> --season 2025 --history
+        --league <id1> <id2> ... --season 2026 --history --auto-type
 
-    # Or list completed-season league IDs explicitly:
+    # Or force one basis for all leagues, listing completed-season IDs directly:
     python -m data_building.run_draft_backtest \
         --league 123456789012345678 987654321098765432 \
         --season 2024 [--sf] [--draft-type startup] [--method spearman]
@@ -152,6 +153,25 @@ def build_value_fn(draft_type: str, is_sf: bool, num_teams: int):
     return value_fn
 
 
+def make_value_fn_factory(num_teams: int):
+    """A cached ``factory(is_sf, draft_type) -> value_fn`` for mixed portfolios.
+
+    Each (is_sf, draft_type) combo builds its own valuation basis (value column,
+    positional replacement, ADP field, tier thresholds) once, reusing the app's
+    memoized player pool underneath. Lets one backtest run correctly grade a mix
+    of 1QB/SF and startup/redraft/rookie leagues.
+    """
+    cache: dict = {}
+
+    def factory(is_sf: bool, draft_type: str):
+        key = (bool(is_sf), str(draft_type))
+        if key not in cache:
+            cache[key] = build_value_fn(draft_type, is_sf, num_teams)
+        return cache[key]
+
+    return factory
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--league", nargs="+", required=True, metavar="LEAGUE_ID",
@@ -163,8 +183,14 @@ def main(argv=None) -> int:
                     help="Walk previous_league_id from each --league ID and backtest "
                          "every PRIOR completed season (the anchor season itself is "
                          "excluded - it has no final standings yet).")
-    ap.add_argument("--sf", action="store_true", help="Superflex valuation.")
-    ap.add_argument("--draft-type", default="startup", choices=["startup", "redraft", "rookie"])
+    ap.add_argument("--auto-type", action="store_true",
+                    help="Detect each league's format (1QB/SF and startup/redraft/"
+                         "rookie) from Sleeper and grade it on the right basis. Use "
+                         "this for a MIXED portfolio; it overrides --sf/--draft-type.")
+    ap.add_argument("--sf", action="store_true",
+                    help="Force Superflex valuation for all leagues (ignored with --auto-type).")
+    ap.add_argument("--draft-type", default="startup", choices=["startup", "redraft", "rookie"],
+                    help="Force draft type for all leagues (ignored with --auto-type).")
     ap.add_argument("--num-teams", type=int, default=12)
     ap.add_argument("--method", default="spearman", choices=["spearman", "pearson"])
     args = ap.parse_args(argv)
@@ -192,18 +218,33 @@ def main(argv=None) -> int:
         print(f"--history expanded {len(args.league)} current league(s) -> "
               f"{len(league_ids)} prior completed season(s).\n")
 
-    value_fn = build_value_fn(args.draft_type, args.sf, args.num_teams)
-    samples = load_sleeper_samples(
-        league_ids, args.season, value_fn=value_fn,
-        draft_type=args.draft_type, is_sf=args.sf, num_teams=args.num_teams,
-    )
+    if args.auto_type:
+        samples = load_sleeper_samples(
+            league_ids, args.season, value_fn_factory=make_value_fn_factory(args.num_teams),
+            draft_type=args.draft_type, is_sf=args.sf, num_teams=args.num_teams,
+            auto_detect=True,
+        )
+    else:
+        value_fn = build_value_fn(args.draft_type, args.sf, args.num_teams)
+        samples = load_sleeper_samples(
+            league_ids, args.season, value_fn=value_fn,
+            draft_type=args.draft_type, is_sf=args.sf, num_teams=args.num_teams,
+        )
     if not samples:
         print("No gradeable teams found — check league IDs, network, and DATABASE_URL.")
         return 1
 
     n_picks = sum(len(s.picks) for s in samples)
     print(f"Loaded {len(samples)} teams ({n_picks} graded picks) "
-          f"across {len(set(s.meta.get('league_id') for s in samples))} leagues.\n")
+          f"across {len(set(s.meta.get('league_id') for s in samples))} leagues.")
+    if args.auto_type:
+        sf_n = sum(1 for s in samples if s.meta.get("is_sf"))
+        types = {}
+        for s in samples:
+            types[s.meta.get("draft_type")] = types.get(s.meta.get("draft_type"), 0) + 1
+        type_str = ", ".join(f"{k}:{v}" for k, v in sorted(types.items()))
+        print(f"Auto-detected: {sf_n} SF / {len(samples) - sf_n} 1QB teams; types [{type_str}].")
+    print()
 
     base_r = correlate_grades_to_finish(samples, method=args.method)
     print(f"Shipped weights: {args.method} r = "
