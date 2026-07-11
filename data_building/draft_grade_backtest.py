@@ -66,6 +66,60 @@ def outcome_from_rank(final_rank: int, num_teams: int) -> float:
     return float(n - r + 1)
 
 
+def rank_success(final_rank: int, num_teams: int) -> float:
+    """Final standing -> [0, 1] success (champion 1.0, last 0.0). Unlike
+    ``outcome_from_rank`` this is normalized across league sizes, so successes
+    from different seasons/leagues are comparable and can be averaged."""
+    n = max(int(num_teams), 2)
+    r = min(max(int(final_rank), 1), n)
+    return (n - r) / (n - 1)
+
+
+def multiyear_outcome(successes: Sequence[float], decay: float = 0.75) -> Optional[float]:
+    """Combine per-season successes into one outcome, weighting the draft season
+    most and decaying forward (a startup draft's payoff is heaviest early but
+    should still reward sustained contention). ``successes`` is ordered
+    [draft_season, +1, +2, ...]. Returns None if empty."""
+    if not successes:
+        return None
+    wsum = tot = 0.0
+    for i, s in enumerate(successes):
+        w = decay ** i
+        wsum += w * float(s)
+        tot += w
+    return wsum / tot if tot > 0 else None
+
+
+def final_ranks(rosters: Sequence[dict], winners_bracket: Sequence[dict]) -> Dict[str, int]:
+    """Map roster_id -> final standing (1 = champion) for one completed season.
+
+    Playoff teams take their bracket placement; everyone else is ranked beneath
+    them by regular-season record (wins, then points-for). With no bracket it
+    degrades to a pure regular-season ranking. Pure — no IO.
+    """
+    from utils.pick_slots import placements_from_bracket
+
+    _playoff_rids, placements = placements_from_bracket(list(winners_bracket or []))
+    ranked: Dict[str, int] = {str(rid): int(p) for rid, p in placements.items()}
+    max_place = max(placements.values()) if placements else 0
+
+    remaining = []
+    for r in rosters or []:
+        rid = str(r.get("roster_id"))
+        if rid in ranked:
+            continue
+        st = r.get("settings") or {}
+        wins = float(st.get("wins") or 0)
+        pf = float(st.get("fpts") or 0) + float(st.get("fpts_decimal") or 0) / 100.0
+        remaining.append((rid, wins, pf))
+    remaining.sort(key=lambda x: (x[1], x[2]), reverse=True)  # best record first
+    nxt = max_place + 1
+    for rid, _w, _pf in remaining:
+        ranked[rid] = nxt
+        nxt += 1
+    return ranked
+
+
 # --------------------------------------------------------------------------- #
 # Pure statistics (no numpy/scipy dependency)
 # --------------------------------------------------------------------------- #
@@ -354,6 +408,131 @@ def load_sleeper_samples(
                 picks=team_picks, outcome=pf_by_roster[rid],
                 label=f"{league_id}:{rid}",
                 meta={"league_id": str(league_id), "is_sf": lg_is_sf, "draft_type": lg_type},
+            ))
+    return samples
+
+
+def load_startup_multiyear_samples(
+    current_league_id: str,
+    season: int,
+    *,
+    value_fn_factory: Callable[[bool, str], Callable[[dict], Optional[dict]]],
+    num_teams: int = 12,
+    min_seasons: int = 2,
+    decay: float = 0.75,
+) -> List[TeamSample]:
+    """Grade STARTUP drafts against a MULTI-YEAR outcome instead of same-season
+    points-for.
+
+    Same-season points-for barely tracks a dynasty startup's grade (the backtest
+    showed r~0.05): the draft rewards long-term value, which pays off over the
+    *following* seasons, not the draft year. This walks the league's full history
+    (``build_league_history_map``), and for each season whose draft is a startup
+    it scores that draft against how each manager's team finished across that
+    season and every later one (``rank_success`` per season, combined by
+    ``multiyear_outcome`` with a forward decay). Managers are matched across
+    seasons by owner_id (roster_id can change; the owner does not).
+
+    Real-data only (needs Sleeper + DB-backed valuations); returns ``[]`` offline.
+    """
+    try:
+        from dashboard_services.api import (
+            build_league_history_map, get_league, get_drafts, get_draft_picks,
+            get_rosters, get_bracket,
+        )
+    except Exception:
+        return []
+    try:
+        hist = build_league_history_map("sleeper", str(current_league_id), int(season)) or {}
+    except Exception:
+        return []
+    if len(hist) < min_seasons:
+        return []
+    seasons_sorted = sorted(int(y) for y in hist.keys())
+
+    # Per-season standings + owner map, fetched once and reused across draft years.
+    season_data: Dict[int, Optional[dict]] = {}
+    for yr in seasons_sorted:
+        lid = hist[yr]
+        try:
+            rosters = get_rosters(str(lid)) or []
+            try:
+                bracket = get_bracket(str(lid), "winners") or []
+            except Exception:
+                bracket = []
+            season_data[yr] = {
+                "ranks": final_ranks(rosters, bracket),
+                "owner": {str(r.get("roster_id")): (str(r.get("owner_id")) if r.get("owner_id") is not None else None)
+                          for r in rosters},
+                "teams": len(rosters) or num_teams,
+            }
+        except Exception:
+            season_data[yr] = None
+
+    samples: List[TeamSample] = []
+    for yr in seasons_sorted:
+        sd = season_data.get(yr)
+        if not sd:
+            continue
+        lid = hist[yr]
+        try:
+            drafts = get_drafts(str(lid)) or []
+            done = [d for d in drafts if d.get("status") == "complete"]
+            if not done:
+                continue
+            draft_obj = done[0]
+            league = get_league(str(lid)) or {}
+        except Exception:
+            continue
+        is_sf, dtype, teams = detect_sleeper_meta(
+            league, draft_obj, sd["teams"], default_teams=num_teams)
+        if dtype != "startup":
+            continue  # rookie/redraft drafts are graded elsewhere
+        forward = [s for s in seasons_sorted if s >= yr and season_data.get(s)]
+        if len(forward) < min_seasons:
+            continue  # too little forward history to judge sustained success
+        try:
+            picks = get_draft_picks(str(draft_obj.get("draft_id"))) or []
+        except Exception:
+            continue
+
+        value_fn = value_fn_factory(is_sf, "startup")
+        total_picks = len(picks) or teams * 15
+        owner_this = sd["owner"]
+        by_owner: Dict[str, List[dict]] = {}
+        for pk in picks:
+            owner = owner_this.get(str(pk.get("roster_id")))
+            if not owner:
+                continue
+            meta = pk.get("metadata") or {}
+            pos = (meta.get("position") or "").upper()
+            pick_no = int(pk.get("pick_no") or 0)
+            row = {
+                "pos": pos, "pick_no": pick_no, "draft_type": "startup",
+                "is_sf": is_sf, "num_teams": teams, "total_picks": total_picks,
+            }
+            vals = value_fn({**pk, "position": pos, "pick_no": pick_no})
+            if not vals:
+                continue
+            row.update(vals)
+            row.setdefault("qb_count", 0)
+            row.setdefault("need_raw", 0.5)
+            by_owner.setdefault(owner, []).append(row)
+
+        for owner, team_picks in by_owner.items():
+            successes = []
+            for s in forward:
+                sds = season_data[s]
+                rid_s = next((rid for rid, ow in sds["owner"].items() if ow == owner), None)
+                if rid_s is not None and rid_s in sds["ranks"]:
+                    successes.append(rank_success(sds["ranks"][rid_s], sds["teams"]))
+            outcome = multiyear_outcome(successes, decay=decay)
+            if outcome is None:
+                continue
+            samples.append(TeamSample(
+                picks=team_picks, outcome=outcome, label=f"{lid}:{owner}",
+                meta={"league_id": str(lid), "is_sf": is_sf, "draft_type": "startup",
+                      "seasons": len(successes)},
             ))
     return samples
 

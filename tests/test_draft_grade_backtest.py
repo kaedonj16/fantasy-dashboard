@@ -14,8 +14,11 @@ from data_building.draft_grade_backtest import (
     candidate_grid,
     correlate_grades_to_finish,
     detect_sleeper_meta,
+    final_ranks,
+    multiyear_outcome,
     outcome_from_rank,
     pearson,
+    rank_success,
     spearman,
     sweep,
     team_avg_ps,
@@ -83,6 +86,51 @@ def test_detect_sleeper_meta_falls_back_on_garbage():
     is_sf, dtype, teams = detect_sleeper_meta(None, None, 0,
                                               default_type="startup", default_sf=True, default_teams=12)
     assert is_sf is True and dtype == "startup" and teams == 12
+
+
+def test_rank_success_normalized_across_sizes():
+    # Champion 1.0, last 0.0, regardless of league size (comparable across seasons).
+    assert rank_success(1, 12) == 1.0
+    assert rank_success(12, 12) == 0.0
+    assert rank_success(1, 10) == 1.0
+    assert rank_success(10, 10) == 0.0
+    # Mid-pack is between; clamps out-of-range.
+    assert 0.0 < rank_success(6, 12) < 1.0
+    assert rank_success(99, 12) == 0.0
+
+
+def test_multiyear_outcome_weights_draft_season_most():
+    # One unit of success in the draft year outweighs the same unit years later.
+    draft_year = multiyear_outcome([1.0, 0.0, 0.0])
+    later_year = multiyear_outcome([0.0, 0.0, 1.0])
+    assert draft_year > later_year
+    # Empty -> None; single season -> that season's value.
+    assert multiyear_outcome([]) is None
+    assert multiyear_outcome([0.7]) == 0.7
+
+
+def test_final_ranks_bracket_then_regular_season():
+    # Champion (w=1,p=1) and runner-up (l=1,p=2) from the bracket; the rest
+    # ranked beneath by wins then points-for.
+    bracket = [{"p": 1, "w": 5, "l": 8}]
+    rosters = [
+        {"roster_id": 5, "settings": {"wins": 10, "fpts": 1500}},
+        {"roster_id": 8, "settings": {"wins": 9, "fpts": 1400}},
+        {"roster_id": 3, "settings": {"wins": 8, "fpts": 1600}},
+        {"roster_id": 4, "settings": {"wins": 2, "fpts": 900}},
+    ]
+    ranks = final_ranks(rosters, bracket)
+    assert ranks["5"] == 1 and ranks["8"] == 2   # champion, runner-up
+    assert ranks["3"] == 3 and ranks["4"] == 4   # better record ranks ahead
+
+
+def test_final_ranks_no_bracket_is_regular_season():
+    rosters = [
+        {"roster_id": 1, "settings": {"wins": 5, "fpts": 1000}},
+        {"roster_id": 2, "settings": {"wins": 8, "fpts": 1200}},
+    ]
+    ranks = final_ranks(rosters, [])
+    assert ranks["2"] == 1 and ranks["1"] == 2   # best record first
 
 
 def test_outcome_from_rank_inverts():

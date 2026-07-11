@@ -38,6 +38,7 @@ from data_building.draft_grade_backtest import (
     candidate_grid,
     correlate_grades_to_finish,
     load_sleeper_samples,
+    load_startup_multiyear_samples,
     sweep,
 )
 
@@ -193,6 +194,29 @@ def make_value_fn_factory(num_teams: int):
     return factory
 
 
+def _run_startup_multiyear(args) -> int:
+    """Startup-only backtest against a multi-year outcome (sustained finish)."""
+    factory = make_value_fn_factory(args.num_teams)
+    samples = []
+    for anchor in args.league:
+        samples.extend(load_startup_multiyear_samples(
+            anchor, args.season, value_fn_factory=factory, num_teams=args.num_teams))
+    if not samples:
+        print("No startup drafts with enough forward history found. Needs current "
+              "league ID(s) whose previous_league_id chain includes a startup season "
+              "with >=2 later completed seasons — and a reachable app/network/DB.")
+        return 1
+    avg_seasons = sum(s.meta.get("seasons", 0) for s in samples) / len(samples)
+    print(f"Loaded {len(samples)} startup teams "
+          f"(avg {avg_seasons:.1f} seasons of forward outcome each) "
+          f"across {len(set(s.meta.get('league_id') for s in samples))} startup drafts.\n")
+    _report_group("startup vs multi-year finish", samples, args.method, seed_type="startup")
+    print("Outcome = decayed mean of each manager's per-season finish from the draft "
+          "year forward (champion 1.0, last 0.0). A nudge that beats 'base' here is a "
+          "startup-weight signal that same-season points-for couldn't see.")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--league", nargs="+", required=True, metavar="LEAGUE_ID",
@@ -214,7 +238,15 @@ def main(argv=None) -> int:
                     help="Force draft type for all leagues (ignored with --auto-type).")
     ap.add_argument("--num-teams", type=int, default=12)
     ap.add_argument("--method", default="spearman", choices=["spearman", "pearson"])
+    ap.add_argument("--startup-multiyear", action="store_true",
+                    help="Grade STARTUP drafts against a multi-year outcome (how each "
+                         "manager's team finished across the draft season and every "
+                         "later one) instead of noisy same-season points-for. Pass your "
+                         "CURRENT --league ID(s); walks the full history itself.")
     args = ap.parse_args(argv)
+
+    if args.startup_multiyear:
+        return _run_startup_multiyear(args)
 
     league_ids = list(args.league)
     if args.history:
