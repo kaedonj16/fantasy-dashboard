@@ -17100,8 +17100,8 @@ tr.team-clickable {
   display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
 }
 .compare-chip {
-  display: flex; flex-direction: column; align-items: center; gap: 8px;
-  padding: 15px 16px; border-radius: 14px; text-decoration: none; text-align: center;
+  display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 9px;
+  padding: 11px 15px; border-radius: 12px; text-decoration: none; overflow: hidden;
   background: var(--card); border: 1px solid var(--border);
   transition: border-color .15s ease, transform .12s ease, box-shadow .15s ease, background .15s ease;
 }
@@ -17111,23 +17111,17 @@ tr.team-clickable {
   background: color-mix(in srgb, var(--accent) 4%, var(--card));
 }
 .compare-chip-name {
-  font-size: 14.5px; font-weight: 700; color: var(--text); line-height: 1.2;
+  font-size: 13.5px; font-weight: 700; color: var(--text); line-height: 1.2;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
 }
 .compare-chip:hover .compare-chip-name { color: var(--accent); }
 .compare-chip-vs {
-  position: relative;
+  flex-shrink: 0;
   font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em;
   color: var(--text-muted);
-  width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
   background: var(--bg-alt); border-radius: 999px;
 }
-/* Short connector lines flanking the VS so the two names read as one matchup. */
-.compare-chip-vs::before, .compare-chip-vs::after {
-  content: ''; position: absolute; top: 50%; width: 42px; height: 1px; background: var(--border);
-}
-.compare-chip-vs::before { right: 100%; margin-right: 8px; }
-.compare-chip-vs::after  { left: 100%;  margin-left: 8px; }
-.compare-chip-pos { margin-bottom: 2px; }
 .compare-chip-pos {
   flex-shrink: 0; font-size: 10px; font-weight: 800; letter-spacing: .03em;
   padding: 3px 7px; border-radius: 6px; background: var(--bg-alt); color: var(--text-muted);
