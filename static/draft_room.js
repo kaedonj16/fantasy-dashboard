@@ -2621,8 +2621,10 @@
     var html = '';
     var g = gradeTeam();
     if (g){
-      var gSub = (state.type === 'rookie' && g.avgPs != null) ? ('Avg pick score ' + g.avgPs) : '';
-      if (!gSub){ var _ga = teamArchetype(); if (_ga) gSub = _ga.label; }
+      // The rookie card shows "Avg Pick Score" as a labeled bar below, so don't
+      // repeat it as the subtitle - use the team archetype label instead.
+      var gSub = '';
+      var _ga = teamArchetype(); if (_ga) gSub = _ga.label;
       var _gwn = g.window;
       var gAgeSub = _gwn ? (esc(_gwn.label) + ' \xb7 Avg age ' + _gwn.avgAge.toFixed(1)) : '';
       html += '<div class="dr-grade-card"><div class="dr-grade-letter">' + gradeLetter(g.score) + '</div>'
@@ -3247,6 +3249,10 @@
     var gp = document.getElementById('drGradePill');
     var g = gradeTeam();
     if (g){ gp.style.display = ''; gp.textContent = 'Grade ' + gradeLetter(g.score); } else { gp.style.display = 'none'; }
+    // The pick-trade evaluator only makes sense while picks are still to be made;
+    // hide it once the draft is done/complete (nothing left to trade for).
+    var _ptBtn = document.getElementById('drPickTradeBtn');
+    if (_ptBtn) _ptBtn.style.display = (done || (state && state.isComplete)) ? 'none' : '';
     // The report card grades every team in the league, so make it reachable any
     // time there are picks on the board - not just when the draft is finished -
     // so you can compare other teams' grades mid-draft.
