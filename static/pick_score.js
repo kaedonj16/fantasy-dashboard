@@ -68,7 +68,9 @@
     var tierScore = tier ? clamp01((10 - Math.min(tier, 9)) / 9) : valueNorm;
     if (o.isTierCliff) tierScore = clamp01(tierScore + 0.15);
 
-    var needRamp = clamp01((pickNo - 1) / 12.0);
+    // Need ramps in a touch earlier than before (/10 vs /12) so roster
+    // construction starts to matter before the mid rounds, not only after.
+    var needRamp = clamp01((pickNo - 1) / 10.0);
     var need = (1 - needRamp) * 0.5 + needRamp * needRaw;
 
     var youth = 0.5;
@@ -93,6 +95,22 @@
       var pen = round <= 3 ? 0.30 : (round <= 6 ? 0.60 : (round <= 9 ? 0.85 : 1.0));
       if ((o.qbCount || 0) >= 2) pen *= 0.7;
       s *= pen;
+    }
+
+    // Redundancy: a pick at a skill position already stocked to its realistic
+    // depth target (needRaw == 0) is a bench body at a full spot while other
+    // starting needs may remain - the opportunity cost the old score ignored.
+    // Penalize it, hardest at single-start TE and in the early rounds; late-round
+    // bench depth is normal so the penalty tapers out. QB has its own rule above.
+    if (needRaw <= 0 && (pos === 'RB' || pos === 'WR' || pos === 'TE')) {
+      var teams2 = o.numTeams ? +o.numTeams : 12;
+      var rd2 = pickNo ? Math.floor((pickNo - 1) / Math.max(teams2, 1)) + 1 : 1;
+      var single = pos === 'TE';   // standard 1-TE start; RB/WR are multi-start depth
+      var rp = rd2 <= 3 ? (single ? 0.55 : 0.82)
+             : rd2 <= 6 ? (single ? 0.72 : 0.90)
+             : rd2 <= 9 ? (single ? 0.86 : 0.96)
+             : 1.0;
+      s *= rp;
     }
 
     // Live-draft redraft handcuff term. Grading passes false.

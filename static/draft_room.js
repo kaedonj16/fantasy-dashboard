@@ -929,6 +929,23 @@
     var _qbGap = Math.max(3, Math.round(9.5 - (_qbFullRound || 1) * 0.5)) + Math.round(_rand01(slot + ':qbgap') * 2);
     var _backupQBWanted = _qbFullRound != null &&
       ((_curRound - _qbFullRound) >= _qbGap || _curRound >= (state.rounds || 20) * 0.8);
+    // CPU realism inputs (read this team's roster once): stack a QB with his
+    // pass-catchers, handcuff a backup to my own RB, and avoid piling startable
+    // players onto a single bye week. Small tie-breakers, not reach-forcing.
+    var _myQbTeams = {}, _myPassTeams = {}, _myRbTeams = {}, _myByes = {};
+    (cpuCtx.picksList || []).forEach(function(mp){
+      var _mf = playersById[String(mp.id)] || mp;
+      var _mpos = (_mf.position || '').toUpperCase();
+      var _tm = (_mf.team || '').toUpperCase();
+      if (_tm){
+        if (_mpos === 'QB') _myQbTeams[_tm] = true;
+        else if (_mpos === 'WR' || _mpos === 'TE') _myPassTeams[_tm] = true;
+        else if (_mpos === 'RB') _myRbTeams[_tm] = true;
+      }
+      var _bw = Number(_mf.bye_week);
+      if (_bw) _myByes[_bw] = (_myByes[_bw] || 0) + 1;
+    });
+    var _stackOn = (state.type === 'redraft' || state.type === 'startup');
     var cands = [];
     var bestPv = 0;   // highest pick score available (the "best player on the board")
     var posQualLeft = {};  // count of remaining startable-quality players per position
@@ -1046,6 +1063,19 @@
       // Dynasty age lean (startup only): win-now pays for vets, youth punts them.
       var ageMult = _ageLeanMult(_ageLean, pos, p.age != null ? Number(p.age) : null, _ageInt);
       w *= needBoost * biasMult * stratMult * ageMult / overFactor;
+      // CPU realism (weekly-lineup formats): stack the team's QB with his
+      // pass-catchers, insure an owned RB with its handcuff, and shade away from
+      // stacking startable players on a shared bye. Kept small so they break
+      // ties near value rather than forcing a reach.
+      var _tmU = (p.team || '').toUpperCase();
+      if (_stackOn && _tmU){
+        if ((pos === 'WR' || pos === 'TE') && _myQbTeams[_tmU]) w *= 1.08;
+        else if (pos === 'QB' && _myPassTeams[_tmU]) w *= 1.06;
+        if (state.type === 'redraft' && pos === 'RB' && _myRbTeams[_tmU]) w *= 1.05;
+      }
+      if (state.type === 'redraft' && p.bye_week && (_myByes[Number(p.bye_week)] || 0) >= 2){
+        w *= 0.92;
+      }
       // Hard guard: a backup at a starter-filled slot has little marginal value,
       // so the CPU must never REACH for one - only take it if its real ADP has
       // fallen to this pick or later. Covers a 2nd QB in 1QB, a 3rd QB in SF (both
@@ -1134,15 +1164,20 @@
     // plan deliberately, so it executes straight).
     var strat = state.myStrat || '';
     var lean = state.myAgeLean || '';
-    var counts = strat || lean ? myPosCounts() : null;
+    // Always track counts/targets so the auto-draft respects roster needs the way
+    // the CPU does (it used to only when a strategy/lean was set, which let it
+    // stack a saturated position while a starter slot sat empty).
+    var counts = myPosCounts();
+    var targets = posTargets();
+    var rs = (state && state.roster) || {};
     var round = Math.ceil(state.current / (state.teams || 12));
     var prm = { intensity: 1, shift: 0 };
     var qbStarters = state.sf ? 2 : 1;
     var scored = pool.map(function(p){
       var s = pickScoreFor(p) || 0;
+      var pos = (p.position || '').toUpperCase();
+      var have = counts[pos] || 0;
       if (strat || lean){
-        var pos = (p.position || '').toUpperCase();
-        var have = (counts && counts[pos]) || 0;
         var sm = _stratMult(strat, pos, have, round, prm);
         if (strat === 'early_qb' && pos === 'QB' && have >= qbStarters) sm = 1;
         // Hard reach cap: pick scores sit close together, so even a damped
@@ -1158,6 +1193,22 @@
         }
         var am = _ageLeanMult(lean, pos, p.age != null ? Number(p.age) : null, 1);
         s = s * sm * am;
+      }
+      // Roster-need shaping (mirrors the CPU's simPick guards): never reach ahead
+      // of ADP for a backup at a single-start position (a 2nd TE in 1TE, a 2nd QB
+      // in 1QB), deprioritize a position once you're past a realistic depth, and
+      // pull toward an OPEN dedicated starter slot (e.g. a 2nd starting RB).
+      if (s > 0 && pos !== 'K' && pos !== 'DEF'){
+        var target = targets[pos] || 0;
+        var sSlots = rs[pos] || 0;             // dedicated starter slots (RB=2, TE=1, ...)
+        var adp = adpOf(p);
+        var backupReach = adp != null && adp < 9000 && state.current < adp && (
+          (pos === 'QB' && have >= qbStarters) ||
+          (pos === 'TE' && (rs.TE || 0) <= 1 && have >= 1)
+        );
+        if (backupReach) s = 0;
+        else if (target > 0 && have >= target) s *= 0.4;   // past realistic depth
+        else if (sSlots > 0 && have < sSlots) s *= 1.35;    // open dedicated starter
       }
       return { p: p, s: s };
     });
@@ -2664,19 +2715,35 @@
           if (!team || !team.picks) return;
           var _sp = team.picks.slice().map(function(x){ return x.p; }).filter(Boolean);
           var _tst = optimalLineup(_sp).starters.filter(function(x){ return x.p; });
+          // Starters fill the lineup slots; everything else is bench. Show the
+          // whole board, not just starters, so a team's full set of picks is visible.
+          var _starterIds = {};
+          _tst.forEach(function(x){ if (x.p && x.p.id != null) _starterIds[x.p.id] = true; });
+          var _bench = team.picks.slice()
+            .filter(function(pk){ return pk.p && !_starterIds[pk.p.id]; })
+            .sort(function(a, b){ return (a.pn || 0) - (b.pn || 0); });
+          function _pickRx(pn){
+            if (!pn) return '';
+            var rd = Math.ceil(pn / state.teams); var pp = pn - (rd - 1) * state.teams;
+            return rd + '.' + (pp < 10 ? '0' + pp : pp);
+          }
+          function _ldtlRow(slotLabel, p, pn){
+            var pickRx = _pickRx(pn);
+            var _ps = storedPickScore(pn, p);
+            var psRx = _ps != null ? '<span class="dr-sum-ldtl-ps" style="color:' + psColor(_ps) + '">' + _ps + '</span>' : '';
+            return '<div class="dr-sum-ldtl-row">'
+              + '<span class="dr-sum-ldtl-slot" style="background:' + slotColor(slotLabel) + '">' + esc(slotLabel) + '</span>'
+              + '<span class="dr-sum-ldtl-name">' + esc(p.name) + '</span>'
+              + (pickRx ? '<span class="dr-sum-ldtl-pick">' + pickRx + '</span>' : '')
+              + psRx + '</div>';
+          }
           var dtlHtml = '';
           _tst.forEach(function(x){
             var _pnx = (team.picks.filter(function(pk){ return pk.p && pk.p.id === x.p.id; })[0] || {}).pn || 0;
-            var pickRx = _pnx ? (function(){ var rd = Math.ceil(_pnx/state.teams); var pp = _pnx-(rd-1)*state.teams; return rd + '.' + (pp<10?'0'+pp:pp); })() : '';
-            var _ps = storedPickScore(_pnx, x.p);
-            var psRx = _ps != null ? '<span class="dr-sum-ldtl-ps" style="color:' + psColor(_ps) + '">' + _ps + '</span>' : '';
-            dtlHtml += '<div class="dr-sum-ldtl-row">'
-              + '<span class="dr-sum-ldtl-slot" style="background:' + slotColor(x.slot) + '">' + x.slot + '</span>'
-              + '<span class="dr-sum-ldtl-name">' + esc(x.p.name) + '</span>'
-              + (pickRx ? '<span class="dr-sum-ldtl-pick">' + pickRx + '</span>' : '')
-              + psRx + '</div>';
+            dtlHtml += _ldtlRow(x.slot, x.p, _pnx);
           });
-          dtl.innerHTML = dtlHtml || '<span style="font-size:10px;color:var(--text-muted);padding:4px 0;display:block">No starters found</span>';
+          _bench.forEach(function(pk){ dtlHtml += _ldtlRow('BN', pk.p, pk.pn || 0); });
+          dtl.innerHTML = dtlHtml || '<span style="font-size:10px;color:var(--text-muted);padding:4px 0;display:block">No picks found</span>';
         }
       });
     });
@@ -3462,6 +3529,20 @@
       var _olS = optimalLineup(mine);
       starters = _olS.starters;
       bench = _olS.bench;
+      // A synced/completed draft's picks never got a live pick score, so their
+      // PS chips (and the Avg/Starter PS stats) would be blank. Recompute the
+      // grade score - memoized, same value the Teams page shows - so the report
+      // card is populated regardless of how the draft was run.
+      var _idToPn = {};
+      Object.keys(state.picks || {}).forEach(function(k){
+        var _pp = state.picks[k]; if (_pp) _idToPn[String(_pp.id)] = parseInt(k, 10);
+      });
+      mine.forEach(function(p){
+        if (p && p.ps == null){
+          var _g = storedPickScore(_idToPn[String(p.id)] || 0, p);
+          if (_g != null) p.ps = _g;
+        }
+      });
     }
 
     // Grade ring + component bars

@@ -63,6 +63,25 @@ def test_superflex_has_no_qb_penalty():
     assert sf >= one_qb
 
 
+def test_overdraft_penalty_hits_saturated_positions():
+    # A pick at a position already at its depth target (need_raw=0) grades below
+    # the same pick when the position is still a need - the redundancy penalty.
+    te_need = compute_pick_score(**_base(pos="TE", need_raw=1.0, pick_no=25))
+    te_full = compute_pick_score(**_base(pos="TE", need_raw=0.0, pick_no=25))
+    rb_need = compute_pick_score(**_base(pos="RB", need_raw=1.0, pick_no=25))
+    rb_full = compute_pick_score(**_base(pos="RB", need_raw=0.0, pick_no=25))
+    assert te_full < te_need and rb_full < rb_need
+    # Single-start TE is punished harder than multi-start RB at equal saturation.
+    assert (te_need - te_full) > (rb_need - rb_full)
+
+
+def test_overdraft_penalty_tapers_in_late_rounds():
+    # A bench body at a full position is normal late, so the penalty fades out.
+    early = compute_pick_score(**_base(pos="TE", need_raw=0.0, pick_no=25))
+    late = compute_pick_score(**_base(pos="TE", need_raw=0.0, pick_no=175))
+    assert late >= early
+
+
 def test_te_premium_boosts_te():
     plain = compute_pick_score(**_base(pos="TE", tep=0.0))
     tep = compute_pick_score(**_base(pos="TE", tep=1.0))
