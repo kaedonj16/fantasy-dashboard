@@ -35,8 +35,10 @@ from typing import Optional
 from utils.pick_score import PS_WEIGHTS, ps_tier_of
 from utils.tier_thresholds import compute_tier_thresholds
 from data_building.draft_grade_backtest import (
+    calibration_bins,
     candidate_grid,
     correlate_grades_to_finish,
+    letter_calibration,
     load_sleeper_samples,
     load_startup_multiyear_samples,
     sweep,
@@ -61,6 +63,21 @@ def _report_group(title: str, samples, method: str, seed_type=None, top: int = 8
     ranked = sweep(samples, candidate_grid(seed), method=method)
     for label, _w, r in ranked[:top]:
         print(f"     {_fmt(r)}  {label}")
+
+    # Grade-quintile calibration: is the raw grade SCALE monotonic with success?
+    bins = calibration_bins(samples, n_bins=5)
+    if bins:
+        print("     grade quintile -> mean outcome (want it to climb):")
+        for b in bins:
+            print(f"       Q{b['bin']} (n={b['n']:>3}): outcome {b['outcome_mean']:.2f}")
+
+    # Letter calibration: does the actual A-F letter (real curve, per league)
+    # track outcomes? If A rows don't beat B/C, shift the curve anchor/bands.
+    letters = letter_calibration(samples)
+    if letters:
+        print("     letter grade -> mean outcome (should fall A -> F):")
+        for L in letters:
+            print(f"       {L['letter']:>2} (n={L['n']:>3}): outcome {L['outcome_mean']:.2f}")
     print()
 
 

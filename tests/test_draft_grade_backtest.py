@@ -16,6 +16,7 @@ from data_building.draft_grade_backtest import (
     correlate_grades_to_finish,
     detect_sleeper_meta,
     final_ranks,
+    letter_calibration,
     multiyear_outcome,
     outcome_from_rank,
     pearson,
@@ -230,6 +231,40 @@ def test_calibration_bins_are_monotonic_on_signal():
 
 def test_calibration_bins_empty_when_too_few():
     assert calibration_bins([TeamSample(picks=[], outcome=1.0)], n_bins=5) == []
+
+
+def _league_samples(n_leagues=4, teams=12, seed=2):
+    import random
+    rnd = random.Random(seed)
+    out = []
+    for lg in range(n_leagues):
+        for t in range(teams):
+            # value spread across the league; outcome tracks drafted value.
+            v = 1000 + t * 700 + rnd.uniform(-300, 300)
+            out.append(TeamSample(
+                picks=[_pick(value=v, vor=v * 0.5, max_val=10000)],
+                outcome=v,
+                meta={"league_id": f"L{lg}"},
+            ))
+    return out
+
+
+def test_letter_calibration_tracks_outcome_on_signal():
+    rows = letter_calibration(_league_samples())
+    assert rows and all(r["n"] > 0 for r in rows)
+    # Rows are ordered best->worst; the best letter out-performs the worst.
+    assert rows[0]["outcome_mean"] > rows[-1]["outcome_mean"]
+    # Letters come from the canonical A+..F order.
+    order = ["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D", "F"]
+    idxs = [order.index(r["letter"]) for r in rows]
+    assert idxs == sorted(idxs)
+
+
+def test_letter_calibration_skips_uncurvable_leagues():
+    # A 2-team league can't be curved against a field -> no letters.
+    two = [TeamSample(picks=[_pick(value=v)], outcome=v, meta={"league_id": "X"})
+           for v in (2000, 8000)]
+    assert letter_calibration(two) == []
 
 
 def test_candidate_grid_renormalizes_and_covers_all_levers():

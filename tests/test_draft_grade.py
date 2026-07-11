@@ -111,6 +111,16 @@ def test_field_curve_orders_preserved_and_bounded():
     assert all(0.0 <= v <= 100.0 for v in out)
 
 
+def test_field_curve_compressed_a_needs_more_than_one_sd():
+    # Recalibrated spread (PTS 9, was 11): the backtest showed grade separation
+    # only weakly predicts success, so a +1 SD team now lands in A- rather than a
+    # full A - an A requires clearly more than one SD of real separation.
+    curved = dr_apply_field_curve([66, 74, 82])   # top team is exactly +1 SD
+    assert curved == [65, 74, 83]
+    assert dr_grade_letter(curved[2]) == "A-"     # +1 SD -> A-, not A
+    assert dr_grade_letter(curved[1]) == "B"      # field average stays a B
+
+
 # ---- dr_team_grade_score --------------------------------------------------
 
 def test_team_grade_none_for_empty_picks():

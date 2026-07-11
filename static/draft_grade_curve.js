@@ -12,7 +12,10 @@
   root.BRDraftGrade = api;
 })(typeof self !== 'undefined' ? self : this, function () {
   var ANCHOR = 74;   // the field-average team lands at a solid B
-  var PTS = 11;      // grade points per standard deviation of real separation
+  // PTS trimmed 11 -> 9: the draft backtest showed grade separation only weakly
+  // predicts real success, so the old spread over-stated it (a +1 SD team read as
+  // a full A). At 9, grades regress a touch more toward B - an A needs ~+1.5 SD.
+  var PTS = 9;       // grade points per standard deviation of real separation
 
   // Curve raw composite scores against the field so real separation reads on a
   // B-anchored scale, without letting best-of-field manufacture elite letters.

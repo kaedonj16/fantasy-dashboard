@@ -1560,8 +1560,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             simple_dropdown("Players", [
                 ("Player Rankings", "/players",   "players"),
                 ("Compare Players", "/compare", "compare"),
-                ("Advanced Metrics", "/metrics", "advanced-metrics"),
                 ("Top Movers", "/top-movers", "top-movers"),
+                ("Advanced Metrics", "/metrics", "advanced-metrics"),
                 ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "/breakouts", "breakouts"),
                 ("Prospects",       "/prospects",   "prospects"),
             ], ["players", "prospects", "breakouts", "top-movers", "compare"], "playersNavDropdown"),
@@ -1690,6 +1690,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             ("Weekly Recap", "page_recap",  "recap",  False),
             ("Opponent Scout", "page_scout", "scout", False),
             ("Lineup Efficiency", "page_optimal", "optimal", False),
+            # Roster/lineup tools live with the other weekly tools, not Players.
+            ("Waivers & Start/Sit", "page_waivers", "waivers", False),
+            ("Schedule Assistant",  "page_schedule", "schedule", False),
         ]
         # Redzone lives inside the Weekly dropdown. When a game is actually
         # scheduled for today the Weekly button glows and the Redzone item
@@ -1707,7 +1710,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             if _rz_live:
                 _rz_pulse = "nav-pill-redzone-live"
         nav_pills.append(nav_pill_dropdown(
-            "Weekly", _weekly_items, ["weekly", "recap", "redzone", "scout", "optimal"],
+            "Weekly", _weekly_items,
+            ["weekly", "recap", "redzone", "scout", "optimal", "waivers", "schedule"],
             "weeklyNavDropdown", btn_extra_cls=_rz_pulse,
         ))
     nav_pills.append(nav_pill_dropdown("League", [
@@ -1723,9 +1727,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Advanced Metrics", "page_advanced_metrics", "advanced-metrics", False),
         ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
-        ("Waivers & Start/Sit", "page_waivers",  "waivers",   False),
-        ("Schedule Assistant",  "page_schedule",  "schedule",  False),
-    ], ["players", "prospects", "breakouts", "waivers", "schedule", "top-movers", "compare"], "playersNavDropdown"))
+    ], ["players", "prospects", "breakouts", "top-movers", "compare"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Draft", [
         ("Draft Room",    "page_draft_room",    "draft",         False),
         ("Draft History", "page_draft_history", "draft-history", False),
@@ -18440,7 +18442,7 @@ _ADP_FIELDS = ("avg_pick", "sf_avg_pick", "rookie_avg_pick",
                "sf_rookie_avg_pick", "redraft_avg_pick", "sf_redraft_avg_pick")
 
 
-def _attach_adp_to_players(players, adp_season, clear_first=False):
+def _attach_adp_to_players(players, adp_season, clear_first=False, sleeper_only=False):
     """Attach per-player ADP for ``adp_season`` onto each player dict; return
     adp_sources {mode: label}.
 
@@ -18450,6 +18452,8 @@ def _attach_adp_to_players(players, adp_season, clear_first=False):
     season's ADP for past-draft views without rebuilding the pool. ``clear_first``
     nulls the six ADP fields before attaching, so a historical overlay can't leak
     the current season's ADP for players Sleeper has no entry for that year.
+    ``sleeper_only`` skips the crawl fallback entirely (used for historical views,
+    which grade against Sleeper's own season ADP only, not the current crawl).
     """
     _adp_sources = {"startup": "none", "rookie": "none", "redraft": "none"}
     try:
@@ -18480,9 +18484,13 @@ def _attach_adp_to_players(players, adp_season, clear_first=False):
         def _crawl_adp(is_sf: bool, draft_type: str, min_s: int) -> dict:
             return _norm_adp(_fl_adp(is_sf, adp_season, draft_type, min_samples=min_s) or {})
 
-        # DraftCrawl maps (fallback)
-        _c_su1, _c_susf = _crawl_adp(False, "startup", 10), _crawl_adp(True, "startup", 10)
-        _c_rk1, _c_rksf = _crawl_adp(False, "rookie", 5), _crawl_adp(True, "rookie", 5)
+        # DraftCrawl maps (fallback). Skipped for historical views (sleeper_only),
+        # which use Sleeper's own season ADP - never the current-season crawl.
+        if sleeper_only:
+            _c_su1 = _c_susf = _c_rk1 = _c_rksf = {}
+        else:
+            _c_su1, _c_susf = _crawl_adp(False, "startup", 10), _crawl_adp(True, "startup", 10)
+            _c_rk1, _c_rksf = _crawl_adp(False, "rookie", 5), _crawl_adp(True, "rookie", 5)
 
         # Sleeper projections ADP (primary). Pick the first present field per mode.
         _sa = _sleeper_adp(adp_season) or {}
@@ -19109,7 +19117,7 @@ def api_league_players():
 
     if _want_season != _cur_season:
         _players = [dict(_p) for _p in (payload.get("players") or [])]
-        _adp_sources = _attach_adp_to_players(_players, _want_season, clear_first=True)
+        _adp_sources = _attach_adp_to_players(_players, _want_season, clear_first=True, sleeper_only=True)
         payload = dict(payload)
         payload["players"] = _players
         payload["adp_sources"] = _adp_sources
