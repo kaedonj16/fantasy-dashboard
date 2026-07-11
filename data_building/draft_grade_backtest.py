@@ -235,6 +235,41 @@ def sweep(
     return out
 
 
+def calibration_bins(
+    samples: Sequence[TeamSample], weights: Optional[dict] = None, n_bins: int = 5,
+) -> List[dict]:
+    """Bin teams into ``n_bins`` equal-count grade tiers and report the mean
+    outcome of each — a reliability check on the grade SCALE (not the weights).
+
+    A well-calibrated grade is monotonic: the top grade bin should have a clearly
+    higher mean outcome than the bottom. If the top two bins have the same
+    outcome, the scale saturates up top (an 'A' means nothing beyond a 'B'); if
+    it's flat or inverted, the grade isn't measuring success. Returns one dict
+    per bin: {bin, n, grade_lo, grade_hi, grade_mean, outcome_mean}, low->high.
+    """
+    gs, os_ = grades_and_outcomes(samples, weights)
+    n = len(gs)
+    if n < n_bins:
+        return []
+    order = sorted(range(n), key=lambda i: gs[i])
+    out: List[dict] = []
+    for b in range(n_bins):
+        lo = (b * n) // n_bins
+        hi = ((b + 1) * n) // n_bins
+        idx = order[lo:hi]
+        if not idx:
+            continue
+        gvals = [gs[i] for i in idx]
+        ovals = [os_[i] for i in idx]
+        out.append({
+            "bin": b + 1, "n": len(idx),
+            "grade_lo": min(gvals), "grade_hi": max(gvals),
+            "grade_mean": sum(gvals) / len(gvals),
+            "outcome_mean": sum(ovals) / len(ovals),
+        })
+    return out
+
+
 def _perturb(base: dict, key: str, delta: float) -> dict:
     """A copy of ``base`` with ``key`` nudged by ``delta`` then renormalized to
     the original weight sum, so sweeps compare re-weightings, not rescalings."""

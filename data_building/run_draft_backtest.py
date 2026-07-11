@@ -35,6 +35,7 @@ from typing import Optional
 from utils.pick_score import PS_WEIGHTS, ps_tier_of
 from utils.tier_thresholds import compute_tier_thresholds
 from data_building.draft_grade_backtest import (
+    calibration_bins,
     candidate_grid,
     correlate_grades_to_finish,
     load_sleeper_samples,
@@ -61,6 +62,18 @@ def _report_group(title: str, samples, method: str, seed_type=None, top: int = 8
     ranked = sweep(samples, candidate_grid(seed), method=method)
     for label, _w, r in ranked[:top]:
         print(f"     {_fmt(r)}  {label}")
+    # Calibration: mean outcome per grade quintile — is the scale monotonic?
+    bins = calibration_bins(samples, n_bins=5)
+    if bins:
+        print("     grade quintile -> mean outcome (want it to climb monotonically):")
+        for b in bins:
+            print(f"       Q{b['bin']} grade {b['grade_lo']:.0f}-{b['grade_hi']:.0f} "
+                  f"(n={b['n']:>3}): outcome {b['outcome_mean']:.2f}")
+        lift = bins[-1]["outcome_mean"] - bins[0]["outcome_mean"]
+        top_flat = abs(bins[-1]["outcome_mean"] - bins[-2]["outcome_mean"])
+        note = ("scale saturates at the top (A adds little over B)"
+                if top_flat < 0.15 * abs(lift or 1) else "top grades separate cleanly")
+        print(f"       top-vs-bottom lift = {lift:+.2f}; {note}")
     print()
 
 

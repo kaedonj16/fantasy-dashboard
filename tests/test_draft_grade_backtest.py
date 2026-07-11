@@ -11,6 +11,7 @@ from data_building.draft_grade_backtest import (
     TeamSample,
     _perturb,
     _synthetic_samples,
+    calibration_bins,
     candidate_grid,
     correlate_grades_to_finish,
     detect_sleeper_meta,
@@ -213,6 +214,22 @@ def test_sweep_sorts_best_first_and_handles_none():
     ranked = sweep(samples, [("flat", flat), ("real", real)])
     assert ranked[0][0] == "real"
     assert ranked[-1][2] is None
+
+
+def test_calibration_bins_are_monotonic_on_signal():
+    # On the value-driven synthetic signal, higher grade bins should have higher
+    # mean outcomes (a well-calibrated scale).
+    samples = _synthetic_samples(seed=11)
+    bins = calibration_bins(samples, n_bins=5)
+    assert len(bins) == 5
+    assert all(b["n"] > 0 for b in bins)
+    # Bins are ordered low->high grade, and the top bin out-performs the bottom.
+    assert bins[0]["grade_mean"] < bins[-1]["grade_mean"]
+    assert bins[-1]["outcome_mean"] > bins[0]["outcome_mean"]
+
+
+def test_calibration_bins_empty_when_too_few():
+    assert calibration_bins([TeamSample(picks=[], outcome=1.0)], n_bins=5) == []
 
 
 def test_candidate_grid_renormalizes_and_covers_all_levers():
