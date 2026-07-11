@@ -41,6 +41,7 @@ from data_building.draft_grade_backtest import (
     letter_calibration,
     load_sleeper_samples,
     load_startup_multiyear_samples,
+    pick_score_by_round,
     sweep,
 )
 
@@ -78,6 +79,15 @@ def _report_group(title: str, samples, method: str, seed_type=None, top: int = 8
         print("     letter grade -> mean outcome (should fall A -> F):")
         for L in letters:
             print(f"       {L['letter']:>2} (n={L['n']:>3}): outcome {L['outcome_mean']:.2f}")
+
+    # Per-round pick-score scale: should be roughly FLAT if depth-normalization
+    # is calibrated. A slope means late rounds are under/over-scored.
+    rounds = pick_score_by_round(samples)
+    if rounds:
+        print("     avg pick score by round (want it ~flat):")
+        for R in rounds:
+            bar = "#" * int(round(R["score_mean"] / 4))
+            print(f"       R{R['round']:>2} (n={R['n']:>4}): {R['score_mean']:5.1f}  {bar}")
     print()
 
 

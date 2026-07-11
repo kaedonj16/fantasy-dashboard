@@ -18,6 +18,7 @@ from data_building.draft_grade_backtest import (
     final_ranks,
     letter_calibration,
     multiyear_outcome,
+    pick_score_by_round,
     outcome_from_rank,
     pearson,
     rank_success,
@@ -265,6 +266,25 @@ def test_letter_calibration_skips_uncurvable_leagues():
     two = [TeamSample(picks=[_pick(value=v)], outcome=v, meta={"league_id": "X"})
            for v in (2000, 8000)]
     assert letter_calibration(two) == []
+
+
+def test_pick_score_by_round_groups_by_round():
+    # Two picks in round 1 (pick_no 1..12) and one in round 2 (pick_no 13) for a
+    # 12-team draft -> two round buckets keyed by (pick_no-1)//teams + 1.
+    s = TeamSample(picks=[
+        _pick(pick_no=1, num_teams=12),
+        _pick(pick_no=5, num_teams=12),
+        _pick(pick_no=13, num_teams=12),
+    ], outcome=1.0)
+    rows = pick_score_by_round([s])
+    assert [r["round"] for r in rows] == [1, 2]
+    assert rows[0]["n"] == 2 and rows[1]["n"] == 1
+    assert all(0 <= r["score_mean"] <= 100 for r in rows)
+
+
+def test_pick_score_by_round_ignores_bad_pick_no():
+    s = TeamSample(picks=[_pick(pick_no=0, num_teams=12)], outcome=1.0)
+    assert pick_score_by_round([s]) == []
 
 
 def test_candidate_grid_renormalizes_and_covers_all_levers():

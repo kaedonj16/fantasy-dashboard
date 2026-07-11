@@ -187,6 +187,39 @@ def team_avg_ps(sample: TeamSample, weights: Optional[dict] = None) -> Optional[
     return sum(scores) / len(scores)
 
 
+def pick_score_by_round(
+    samples: Sequence[TeamSample], weights: Optional[dict] = None,
+) -> List[dict]:
+    """Mean pick score per draft ROUND across every pick in ``samples``.
+
+    A calibration check on the depth-normalization (the ``_par`` re-anchoring in
+    compute_pick_score): if that scale is right, average pick score should be
+    roughly FLAT across rounds. A downward slope means late rounds are
+    under-scored (par too aggressive); an upward slope means over-corrected.
+    Round is ``(pick_no - 1) // num_teams + 1``. Returns [{round, n, score_mean}]
+    ordered by round.
+    """
+    agg: Dict[int, List[float]] = {}
+    for s in samples:
+        for pk in s.picks:
+            try:
+                teams = int(pk.get("num_teams") or 12) or 12
+                pick_no = int(pk.get("pick_no") or 0)
+                if pick_no <= 0:
+                    continue
+                rnd = (pick_no - 1) // teams + 1
+                score = compute_pick_score(weights=weights, **pk)
+            except Exception:
+                continue
+            row = agg.setdefault(rnd, [0.0, 0.0])  # [count, sum]
+            row[0] += 1
+            row[1] += score
+    return [
+        {"round": r, "n": int(agg[r][0]), "score_mean": agg[r][1] / agg[r][0]}
+        for r in sorted(agg)
+    ]
+
+
 def grades_and_outcomes(
     samples: Sequence[TeamSample], weights: Optional[dict] = None
 ) -> Tuple[List[float], List[float]]:
