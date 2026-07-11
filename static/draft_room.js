@@ -3499,6 +3499,20 @@
       var _olS = optimalLineup(mine);
       starters = _olS.starters;
       bench = _olS.bench;
+      // A synced/completed draft's picks never got a live pick score, so their
+      // PS chips (and the Avg/Starter PS stats) would be blank. Recompute the
+      // grade score - memoized, same value the Teams page shows - so the report
+      // card is populated regardless of how the draft was run.
+      var _idToPn = {};
+      Object.keys(state.picks || {}).forEach(function(k){
+        var _pp = state.picks[k]; if (_pp) _idToPn[String(_pp.id)] = parseInt(k, 10);
+      });
+      mine.forEach(function(p){
+        if (p && p.ps == null){
+          var _g = storedPickScore(_idToPn[String(p.id)] || 0, p);
+          if (_g != null) p.ps = _g;
+        }
+      });
     }
 
     // Grade ring + component bars
