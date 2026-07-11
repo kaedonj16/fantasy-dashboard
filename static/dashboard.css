@@ -17100,26 +17100,28 @@ tr.team-clickable {
   display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
 }
 .compare-chip {
-  display: flex; flex-direction: column; align-items: center; gap: 6px;
-  padding: 14px 14px; border-radius: 12px; text-decoration: none; text-align: center;
+  display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 9px;
+  padding: 11px 15px; border-radius: 12px; text-decoration: none; overflow: hidden;
   background: var(--card); border: 1px solid var(--border);
-  transition: border-color .15s ease, transform .1s ease, box-shadow .15s ease;
+  transition: border-color .15s ease, transform .12s ease, box-shadow .15s ease, background .15s ease;
 }
 .compare-chip:hover {
-  border-color: var(--accent); transform: translateY(-1px);
-  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, .06));
+  border-color: var(--accent); transform: translateY(-2px);
+  box-shadow: var(--shadow-md, 0 6px 18px rgba(0, 0, 0, .09));
+  background: color-mix(in srgb, var(--accent) 4%, var(--card));
 }
 .compare-chip-name {
-  font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.25;
+  font-size: 13.5px; font-weight: 700; color: var(--text); line-height: 1.2;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
 }
 .compare-chip:hover .compare-chip-name { color: var(--accent); }
 .compare-chip-vs {
-  font-size: 9px; font-weight: 800; text-transform: uppercase;
-  letter-spacing: .08em; color: var(--text-muted);
+  flex-shrink: 0;
+  font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--text-muted);
   width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
   background: var(--bg-alt); border-radius: 999px;
 }
-.compare-chip-pos { margin-bottom: 2px; }
 .compare-chip-pos {
   flex-shrink: 0; font-size: 10px; font-weight: 800; letter-spacing: .03em;
   padding: 3px 7px; border-radius: 6px; background: var(--bg-alt); color: var(--text-muted);
@@ -17129,30 +17131,35 @@ tr.team-clickable {
 .compare-chip-pos.pos-WR { background: rgba(59, 130, 246, .14); color: #3b82f6; }
 .compare-chip-pos.pos-TE { background: rgba(245, 158, 11, .14); color: #f59e0b; }
 
-/* Contextual "benchmark vs tier" suggestion under an empty picker slot. */
+/* Contextual "benchmark vs tier" suggestion under an empty picker slot: a soft
+   dashed panel (matching the tier-benchmark motif) with position-tinted chips. */
 .compare-tier-suggest {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 7px;
-  margin-top: 9px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin-top: 10px; padding: 10px 12px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--card));
+  border: 1px dashed color-mix(in srgb, var(--accent) 32%, var(--border));
+  border-radius: 12px;
 }
 .compare-tier-suggest[hidden] { display: none; }
 .compare-suggest-label {
-  font-size: 11.5px; font-weight: 600; color: var(--text-muted);
+  font-size: 11.5px; font-weight: 700; color: var(--text);
 }
 .compare-suggest-note {
   font-size: 10px; font-weight: 600; color: var(--text-muted);
-  opacity: .7; letter-spacing: .02em;
+  opacity: .75; letter-spacing: .02em; margin-left: auto;
 }
 .compare-suggest-chip {
   font-size: 12px; font-weight: 700; cursor: pointer;
-  padding: 5px 11px; border-radius: 999px;
-  background: var(--bg-alt); color: var(--text); border: 1px solid var(--border);
-  transition: background .15s, border-color .15s;
+  padding: 5px 12px; border-radius: 999px;
+  background: var(--card); color: var(--text); border: 1px solid var(--border);
+  transition: background .15s, border-color .15s, transform .1s;
 }
-.compare-suggest-chip:hover { background: var(--surface); }
-.compare-suggest-chip.pos-QB { border-color: rgba(239, 68, 68, .45);  color: #ef4444; }
-.compare-suggest-chip.pos-RB { border-color: rgba(34, 197, 94, .45);  color: #22c55e; }
-.compare-suggest-chip.pos-WR { border-color: rgba(59, 130, 246, .45); color: #3b82f6; }
-.compare-suggest-chip.pos-TE { border-color: rgba(245, 158, 11, .45); color: #f59e0b; }
+.compare-suggest-chip:hover { transform: translateY(-1px); }
+.compare-suggest-chip:active { transform: translateY(0); }
+.compare-suggest-chip.pos-QB { border-color: rgba(239, 68, 68, .45);  color: #ef4444; background: rgba(239, 68, 68, .07); }
+.compare-suggest-chip.pos-RB { border-color: rgba(34, 197, 94, .45);  color: #22c55e; background: rgba(34, 197, 94, .07); }
+.compare-suggest-chip.pos-WR { border-color: rgba(59, 130, 246, .45); color: #3b82f6; background: rgba(59, 130, 246, .07); }
+.compare-suggest-chip.pos-TE { border-color: rgba(245, 158, 11, .45); color: #f59e0b; background: rgba(245, 158, 11, .07); }
 /* Tier-vs-tier debate among the popular matchups: a dashed accent border so it
    reads as an aggregate benchmark, not two named players. */
 .compare-chip-tier {
