@@ -103,3 +103,10 @@ def test_weights_roughly_normalized():
     # Weights are approximately normalized (not exactly 1.0 by design).
     for row in PS_WEIGHTS.values():
         assert 0.9 <= sum(row.values()) <= 1.1
+
+
+def test_rookie_momentum_is_down_weighted():
+    # Pinned by the draft backtest: a 7-day ranking blip is noise for predicting
+    # a rookie's season, so rookie momentum stays low (was 0.06, cut to 0.03).
+    # Don't restore it without re-running data_building/run_draft_backtest.py.
+    assert PS_WEIGHTS["rookie"]["mom"] <= 0.03

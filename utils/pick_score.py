@@ -12,8 +12,13 @@ import math
 from utils.draft_grade import clamp01
 
 # Component weights per draft type (approximately normalized within each row).
+# Rookie momentum (rank_change_7d) was down-weighted 0.06 -> 0.03 after a
+# 509-team backtest (data_building/run_draft_backtest.py): cutting it raised the
+# grade-vs-rookie-season correlation monotonically (r +0.220 -> +0.233), i.e. a
+# 7-day ranking blip is noise for predicting a full season. The freed 0.03 went
+# to value/adp, the levers that held up in the same sweep.
 PS_WEIGHTS = {
-    "rookie":  {"vor": 0.06, "value": 0.18, "adp": 0.29, "tier": 0.12, "need": 0.05, "youth": 0.24, "mom": 0.06, "ppg": 0.05},
+    "rookie":  {"vor": 0.06, "value": 0.20, "adp": 0.30, "tier": 0.12, "need": 0.05, "youth": 0.24, "mom": 0.03, "ppg": 0.05},
     "redraft": {"vor": 0.10, "value": 0.24, "adp": 0.33, "tier": 0.08, "need": 0.07, "youth": 0.00, "mom": 0.03, "ppg": 0.18},
     "startup": {"vor": 0.07, "value": 0.24, "adp": 0.30, "tier": 0.12, "need": 0.09, "youth": 0.10, "mom": 0.03, "ppg": 0.10},
 }
