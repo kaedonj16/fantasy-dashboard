@@ -821,7 +821,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
     if (!name || !q) return 0;
     var n = name.toLowerCase(), qL = q.toLowerCase();
     if (n.includes(qL)) return 100 + (100 - n.indexOf(qL));
-    var nw = n.split(/[\s\-]+/);
+    var nw = n.split(/[\\s\\-]+/);
     if (nw.some(function(w){ return w.startsWith(qL); })) return 60;
     return 0;
   }
