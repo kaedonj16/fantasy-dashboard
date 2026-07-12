@@ -305,37 +305,86 @@ def calibration_bins(
 
 _LETTER_ORDER = ["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D", "F"]
 
+# Default lineup slots + construction targets per format, so the composite grade
+# (dr_team_grade_score) can be reconstructed from a team's pick-score inputs. A
+# calibration approximation, not a per-league roster read.
+_SLOTS_1QB = ["QB", "RB", "RB", "WR", "WR", "WR", "TE", "FLEX"]
+_SLOTS_SF = _SLOTS_1QB + ["SF"]
+_TARGETS_1QB = {"QB": 2, "RB": 5, "WR": 6, "TE": 2}
+_TARGETS_SF = {"QB": 3, "RB": 5, "WR": 5, "TE": 2}
+
+
+def _team_composite(sample: TeamSample, league_val_list, league_ppg_list,
+                    weights: Optional[dict] = None) -> Optional[float]:
+    """Reconstruct the shipped Value/Starters/Construction composite
+    (dr_team_grade_score, 0-100) for one team from its pick-score inputs — the
+    same raw score the Draft Room / Teams page feed to the field curve. Uses the
+    league's value/ppg lists for the 'vs a league-average team' component."""
+    from utils.draft_grade import dr_team_grade_score
+
+    is_sf = bool(sample.meta.get("is_sf"))
+    picks = []
+    for i, pk in enumerate(sample.picks):
+        try:
+            ps = compute_pick_score(weights=weights, **pk)
+        except Exception:
+            continue
+        picks.append({
+            "id": i, "pos": pk.get("pos"), "ps": ps, "pn": pk.get("pick_no"),
+            "val": pk.get("value"), "ppg": pk.get("ppg_norm"),
+        })
+    if not picks:
+        return None
+    try:
+        teams = int(sample.picks[0].get("num_teams") or 12) or 12
+    except Exception:
+        teams = 12
+    slots = _SLOTS_SF if is_sf else _SLOTS_1QB
+    targets = _TARGETS_SF if is_sf else _TARGETS_1QB
+    dtype = "redraft" if (sample.meta.get("draft_type") == "redraft") else "startup"
+    return dr_team_grade_score(
+        picks, slots=slots, targets=targets, num_teams=teams, draft_type=dtype,
+        league_ppg_list=list(league_ppg_list), league_val_list=list(league_val_list),
+    )
+
 
 def letter_calibration(
     samples: Sequence[TeamSample], raw_grade_fn=None,
     rounds_done: int = 99, weights: Optional[dict] = None,
+    include_types=("startup", "redraft"),
 ) -> List[dict]:
     """Report mean outcome per LETTER grade a team would actually receive.
 
-    Unlike ``calibration_bins`` (which bins by raw score), this runs the SHIPPED
-    field curve + band mapping — curved within each team's own league, exactly as
-    the Draft Room / Teams page do — so it answers the real question: does the
-    A-F letter a user sees track success? If the A rows don't out-perform the B/C
-    rows, the letter bands (or the curve anchor) are miscalibrated and this table
-    is what tells you which way to move them.
+    Runs the SHIPPED composite (Value/Starters/Construction) + field curve + band
+    mapping, curved within each team's own league exactly as the Draft Room /
+    Teams page do — so it answers: does the A-F letter a user sees track success?
+    If the A rows don't out-perform B/C, the anchor/bands are miscalibrated and
+    this table shows which way to move them.
 
-    ``raw_grade_fn(sample) -> 0-100 raw composite`` defaults to the mean pick
-    score. Leagues with <3 teams are skipped (the curve needs a field). Returns
+    Defaults to the real composite (``raw_grade_fn=None``); pass a
+    ``raw_grade_fn(sample) -> 0-100`` to override (e.g. mean pick score). The
+    field curve is the startup/redraft model (rookie drafts use a different
+    letter system), so by default only those ``include_types`` are graded.
+    Leagues with <3 teams are skipped (the curve needs a field). Returns
     [{letter, n, outcome_mean}] ordered best->worst; only letters that occur.
     """
     from utils.draft_grade import dr_apply_field_curve, dr_grade_letter
 
-    if raw_grade_fn is None:
-        def raw_grade_fn(s):  # default: the team's mean pick score
-            return team_avg_ps(s, weights)
-
+    use_composite = raw_grade_fn is None
     by_league: Dict[object, List[TeamSample]] = {}
     for s in samples:
+        if use_composite and include_types and (s.meta.get("draft_type") or "startup") not in include_types:
+            continue
         by_league.setdefault(s.meta.get("league_id"), []).append(s)
 
     pairs: List[Tuple[str, float]] = []
     for _lg, members in by_league.items():
-        graded = [(s, raw_grade_fn(s)) for s in members]
+        if use_composite:
+            lvl = [pk.get("value") for s in members for pk in s.picks if pk.get("value") is not None]
+            lpl = [pk.get("ppg_norm") for s in members for pk in s.picks if pk.get("ppg_norm") is not None]
+            graded = [(s, _team_composite(s, lvl, lpl, weights)) for s in members]
+        else:
+            graded = [(s, raw_grade_fn(s)) for s in members]
         graded = [(s, g) for s, g in graded if g is not None]
         if len(graded) < 3:
             continue  # no field to curve against
@@ -352,6 +401,7 @@ def letter_calibration(
         {"letter": L, "n": int(agg[L][0]), "outcome_mean": agg[L][1] / agg[L][0]}
         for L in _LETTER_ORDER if L in agg
     ]
+
 
 
 def _perturb(base: dict, key: str, delta: float) -> dict:

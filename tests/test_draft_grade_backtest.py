@@ -250,12 +250,43 @@ def _league_samples(n_leagues=4, teams=12, seed=2):
     return out
 
 
+def _full_team_samples(n_leagues=5, teams=12, seed=4):
+    """Leagues of teams with full ~8-pick rosters spanning positions, value scaled
+    by team skill so the composite grade has real spread and tracks outcome."""
+    import random
+    rnd = random.Random(seed)
+    positions = ["QB", "RB", "RB", "WR", "WR", "WR", "TE", "RB"]
+    out = []
+    for lg in range(n_leagues):
+        for t in range(teams):
+            skill = 0.4 + t / (teams - 1)  # 0.4 .. 1.4 across the league
+            picks = []
+            for i, pos in enumerate(positions):
+                v = max(300.0, (8000 - i * 700) * skill + rnd.uniform(-300, 300))
+                picks.append(_pick(pos=pos, value=v, vor=v * 0.5, max_val=9000,
+                                   pick_no=i * teams + t + 1,
+                                   ppg_norm=min(1.0, v / 9000), num_teams=teams))
+            out.append(TeamSample(picks=picks, outcome=skill,
+                                  meta={"league_id": f"L{lg}", "is_sf": False,
+                                        "draft_type": "startup"}))
+    return out
+
+
+def test_letter_calibration_composite_has_realistic_spread():
+    # The real composite (default) must NOT jam everyone into D/F the way the raw
+    # mean-pick-score did: multiple letters appear and some grade C- or better.
+    rows = letter_calibration(_full_team_samples())
+    assert rows and len({r["letter"] for r in rows}) >= 3
+    assert {r["letter"] for r in rows} & {"A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-"}
+    # Higher letters track the value-driven outcome (best >= worst).
+    assert rows[0]["outcome_mean"] >= rows[-1]["outcome_mean"]
+
+
 def test_letter_calibration_tracks_outcome_on_signal():
-    rows = letter_calibration(_league_samples())
+    # Override path: the simple mean-pick-score grade through the curve + bands.
+    rows = letter_calibration(_league_samples(), raw_grade_fn=lambda s: team_avg_ps(s))
     assert rows and all(r["n"] > 0 for r in rows)
-    # Rows are ordered best->worst; the best letter out-performs the worst.
     assert rows[0]["outcome_mean"] > rows[-1]["outcome_mean"]
-    # Letters come from the canonical A+..F order.
     order = ["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D", "F"]
     idxs = [order.index(r["letter"]) for r in rows]
     assert idxs == sorted(idxs)
@@ -265,7 +296,7 @@ def test_letter_calibration_skips_uncurvable_leagues():
     # A 2-team league can't be curved against a field -> no letters.
     two = [TeamSample(picks=[_pick(value=v)], outcome=v, meta={"league_id": "X"})
            for v in (2000, 8000)]
-    assert letter_calibration(two) == []
+    assert letter_calibration(two, raw_grade_fn=lambda s: team_avg_ps(s)) == []
 
 
 def test_pick_score_by_round_groups_by_round():
