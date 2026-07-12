@@ -12769,6 +12769,12 @@ function openCompareSearch(player1Data) {
   if (tabBar) tabBar.style.display = 'none';
 
   const esc = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+  const _tpos = (player1Data.position || '').toUpperCase();
+  const _tierChips = ['QB', 'RB', 'WR', 'TE'].includes(_tpos) ? `
+            <div class="compare-tier-chips" aria-label="Benchmark vs a positional tier average">
+              <button type="button" class="compare-tier-chip" data-avg="avg-${_tpos}-1">vs Avg ${_tpos}1</button>
+              <button type="button" class="compare-tier-chip" data-avg="avg-${_tpos}-2">vs Avg ${_tpos}2</button>
+            </div>` : '';
   body.innerHTML = `
     <div class="compare-search-panel">
       <div class="compare-search-header">
@@ -12791,6 +12797,7 @@ function openCompareSearch(player1Data) {
           <button type="button" id="compareSelfBtn" class="compare-self-btn">
             &#8644; Compare ${esc(player1Data.name)}'s own seasons
           </button>
+          ${_tierChips}
           <div id="compareSearchResults" class="compare-search-results"></div>
         </div>
       </div>
@@ -12806,6 +12813,13 @@ function openCompareSearch(player1Data) {
   // Preload the tier averages so they can be offered as compare opponents here
   // too (Avg WR1/WR2, ...), not just on the standalone /compare page.
   _cmpEnsureBaselines();
+  // Benchmark against a positional-tier average (Avg QB1/QB2, WR1/WR2, ...).
+  body.querySelectorAll('.compare-tier-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      window.location.href = '/compare?p1=' + encodeURIComponent(player1Data.player_id)
+        + '&p2=' + encodeURIComponent(chip.dataset.avg);
+    });
+  });
   input.focus();
 
   function renderResults(players, q) {

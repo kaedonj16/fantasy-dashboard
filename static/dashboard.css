@@ -15234,6 +15234,31 @@ tr.team-clickable {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
+/* Positional-tier-average benchmark chips under the compare search. */
+.compare-tier-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.compare-tier-chip {
+  flex: 1 1 0;
+  padding: 8px 12px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.compare-tier-chip:hover {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
 .compare-search-results {
   /* In-flow (not absolute) so it's never clipped by the modal's overflow:hidden */
   margin-top: 4px;
