@@ -173,13 +173,12 @@ def dr_apply_field_curve(scores: "list[float]", rounds_done: int = 99) -> "list[
     mean = sum(scores) / n
     variance = sum((s - mean) ** 2 for s in scores) / n
     eff_std = max(math.sqrt(variance), 8)
-    # ANCHOR 74 -> 70, PTS 11 -> 9, both from the letter-calibration backtest.
-    # At anchor 74 the field average was a B, so the top THIRD of every league
-    # landed in A-range (measured ~31% of teams) - too generous for "A = elite".
-    # Anchoring the average at a low B (70) reserves A-range for ~the best 1-2
-    # teams per league (~15%). PTS 9 keeps the spread modest to match the weak
-    # measured signal (grade separation only lightly predicts real success).
-    ANCHOR, PTS = 70, 9
+    # ANCHOR 74 -> 68, PTS 11 -> 9, from the letter-calibration backtest. At 74
+    # the top THIRD of every league landed in A-range (~31% of teams) - too
+    # generous for "A = elite". Anchoring the average at a B- reserves A-range for
+    # ~the best 1 team per league (~10-15%); the best drafter still earns an A-.
+    # PTS 9 keeps the spread modest to match the weak measured signal.
+    ANCHOR, PTS = 68, 9
     ramp = max(0.0, min(1.0, (rounds_done or 0) / 6))
     pts_eff = PTS * (0.5 + 0.5 * ramp)
     out = []
