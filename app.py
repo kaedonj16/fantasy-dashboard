@@ -10458,6 +10458,7 @@ def api_start_sit_options():
     opponent_map: dict = {}
     opp_label_map: dict = {}
     home_team_of: dict = {}   # team abbr -> the HOME team of its game (for venue)
+    week_games: list = []     # (home, away, gameDate) for Vegas + weather lookups
     try:
         from utils.utils import load_week_sched as _lsched
         if current_week > 0:
@@ -10472,6 +10473,18 @@ def api_start_sit_options():
                     opp_label_map[away] = f"@ {home}"
                     home_team_of[home] = home
                     home_team_of[away] = home
+                    week_games.append((home, away, str(game.get("gameDate") or "")))
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+
+    # ── Live game conditions: Vegas implied team totals + weather ─────────────
+    # Cached and fully best-effort; on any failure rows just fall back to the
+    # static dome/cold venue tags.
+    game_conditions: dict = {}
+    try:
+        from utils.game_conditions import build_week_conditions
+        if week_games:
+            game_conditions = build_week_conditions(season, current_week, week_games)
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
@@ -10621,6 +10634,8 @@ def api_start_sit_options():
             "usage_delta":   usage_delta,
             "usage_stat":    _ut_ss.get("stat"),
             "game_env":      _ss_game_env(home_team_of.get(team), current_week) if not on_bye else None,
+            "implied_total": (game_conditions.get(team) or {}).get("implied_total") if not on_bye else None,
+            "weather":       (game_conditions.get(team) or {}).get("weather") if not on_bye else None,
             "_score":        score,
         })
 

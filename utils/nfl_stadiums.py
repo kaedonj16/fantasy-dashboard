@@ -20,40 +20,41 @@ from __future__ import annotations
 
 from typing import Optional
 
-# team abbr -> (stadium name, dome?, outdoor climate profile)
+# team abbr -> stadium name, dome?, outdoor climate profile, and lat/lon (for
+# weather lookups; domes carry coords too but weather is skipped for them).
 STADIUMS: dict[str, dict] = {
-    "ARI": {"name": "State Farm Stadium", "dome": True,  "climate": "dome"},
-    "ATL": {"name": "Mercedes-Benz Stadium", "dome": True, "climate": "dome"},
-    "BAL": {"name": "M&T Bank Stadium", "dome": False, "climate": "cold"},
-    "BUF": {"name": "Highmark Stadium", "dome": False, "climate": "cold"},
-    "CAR": {"name": "Bank of America Stadium", "dome": False, "climate": "mild"},
-    "CHI": {"name": "Soldier Field", "dome": False, "climate": "cold"},
-    "CIN": {"name": "Paycor Stadium", "dome": False, "climate": "cold"},
-    "CLE": {"name": "Huntington Bank Field", "dome": False, "climate": "cold"},
-    "DAL": {"name": "AT&T Stadium", "dome": True, "climate": "dome"},
-    "DEN": {"name": "Empower Field", "dome": False, "climate": "cold"},
-    "DET": {"name": "Ford Field", "dome": True, "climate": "dome"},
-    "GB":  {"name": "Lambeau Field", "dome": False, "climate": "cold"},
-    "HOU": {"name": "NRG Stadium", "dome": True, "climate": "dome"},
-    "IND": {"name": "Lucas Oil Stadium", "dome": True, "climate": "dome"},
-    "JAX": {"name": "EverBank Stadium", "dome": False, "climate": "warm"},
-    "KC":  {"name": "Arrowhead Stadium", "dome": False, "climate": "cold"},
-    "LV":  {"name": "Allegiant Stadium", "dome": True, "climate": "dome"},
-    "LAC": {"name": "SoFi Stadium", "dome": True, "climate": "dome"},
-    "LAR": {"name": "SoFi Stadium", "dome": True, "climate": "dome"},
-    "MIA": {"name": "Hard Rock Stadium", "dome": False, "climate": "warm"},
-    "MIN": {"name": "U.S. Bank Stadium", "dome": True, "climate": "dome"},
-    "NE":  {"name": "Gillette Stadium", "dome": False, "climate": "cold"},
-    "NO":  {"name": "Caesars Superdome", "dome": True, "climate": "dome"},
-    "NYG": {"name": "MetLife Stadium", "dome": False, "climate": "cold"},
-    "NYJ": {"name": "MetLife Stadium", "dome": False, "climate": "cold"},
-    "PHI": {"name": "Lincoln Financial Field", "dome": False, "climate": "cold"},
-    "PIT": {"name": "Acrisure Stadium", "dome": False, "climate": "cold"},
-    "SEA": {"name": "Lumen Field", "dome": False, "climate": "mild"},
-    "SF":  {"name": "Levi's Stadium", "dome": False, "climate": "mild"},
-    "TB":  {"name": "Raymond James Stadium", "dome": False, "climate": "warm"},
-    "TEN": {"name": "Nissan Stadium", "dome": False, "climate": "mild"},
-    "WAS": {"name": "Northwest Stadium", "dome": False, "climate": "cold"},
+    "ARI": {"name": "State Farm Stadium", "dome": True,  "climate": "dome", "lat": 33.5276, "lon": -112.2626},
+    "ATL": {"name": "Mercedes-Benz Stadium", "dome": True, "climate": "dome", "lat": 33.7554, "lon": -84.4009},
+    "BAL": {"name": "M&T Bank Stadium", "dome": False, "climate": "cold", "lat": 39.2780, "lon": -76.6227},
+    "BUF": {"name": "Highmark Stadium", "dome": False, "climate": "cold", "lat": 42.7738, "lon": -78.7870},
+    "CAR": {"name": "Bank of America Stadium", "dome": False, "climate": "mild", "lat": 35.2258, "lon": -80.8528},
+    "CHI": {"name": "Soldier Field", "dome": False, "climate": "cold", "lat": 41.8623, "lon": -87.6167},
+    "CIN": {"name": "Paycor Stadium", "dome": False, "climate": "cold", "lat": 39.0955, "lon": -84.5161},
+    "CLE": {"name": "Huntington Bank Field", "dome": False, "climate": "cold", "lat": 41.5061, "lon": -81.6995},
+    "DAL": {"name": "AT&T Stadium", "dome": True, "climate": "dome", "lat": 32.7473, "lon": -97.0945},
+    "DEN": {"name": "Empower Field", "dome": False, "climate": "cold", "lat": 39.7439, "lon": -105.0201},
+    "DET": {"name": "Ford Field", "dome": True, "climate": "dome", "lat": 42.3400, "lon": -83.0456},
+    "GB":  {"name": "Lambeau Field", "dome": False, "climate": "cold", "lat": 44.5013, "lon": -88.0622},
+    "HOU": {"name": "NRG Stadium", "dome": True, "climate": "dome", "lat": 29.6847, "lon": -95.4107},
+    "IND": {"name": "Lucas Oil Stadium", "dome": True, "climate": "dome", "lat": 39.7601, "lon": -86.1639},
+    "JAX": {"name": "EverBank Stadium", "dome": False, "climate": "warm", "lat": 30.3239, "lon": -81.6373},
+    "KC":  {"name": "Arrowhead Stadium", "dome": False, "climate": "cold", "lat": 39.0489, "lon": -94.4839},
+    "LV":  {"name": "Allegiant Stadium", "dome": True, "climate": "dome", "lat": 36.0909, "lon": -115.1833},
+    "LAC": {"name": "SoFi Stadium", "dome": True, "climate": "dome", "lat": 33.9535, "lon": -118.3392},
+    "LAR": {"name": "SoFi Stadium", "dome": True, "climate": "dome", "lat": 33.9535, "lon": -118.3392},
+    "MIA": {"name": "Hard Rock Stadium", "dome": False, "climate": "warm", "lat": 25.9580, "lon": -80.2389},
+    "MIN": {"name": "U.S. Bank Stadium", "dome": True, "climate": "dome", "lat": 44.9736, "lon": -93.2575},
+    "NE":  {"name": "Gillette Stadium", "dome": False, "climate": "cold", "lat": 42.0909, "lon": -71.2643},
+    "NO":  {"name": "Caesars Superdome", "dome": True, "climate": "dome", "lat": 29.9511, "lon": -90.0812},
+    "NYG": {"name": "MetLife Stadium", "dome": False, "climate": "cold", "lat": 40.8135, "lon": -74.0745},
+    "NYJ": {"name": "MetLife Stadium", "dome": False, "climate": "cold", "lat": 40.8135, "lon": -74.0745},
+    "PHI": {"name": "Lincoln Financial Field", "dome": False, "climate": "cold", "lat": 39.9008, "lon": -75.1675},
+    "PIT": {"name": "Acrisure Stadium", "dome": False, "climate": "cold", "lat": 40.4468, "lon": -80.0158},
+    "SEA": {"name": "Lumen Field", "dome": False, "climate": "mild", "lat": 47.5952, "lon": -122.3316},
+    "SF":  {"name": "Levi's Stadium", "dome": False, "climate": "mild", "lat": 37.4030, "lon": -121.9700},
+    "TB":  {"name": "Raymond James Stadium", "dome": False, "climate": "warm", "lat": 27.9759, "lon": -82.5033},
+    "TEN": {"name": "Nissan Stadium", "dome": False, "climate": "mild", "lat": 36.1665, "lon": -86.7713},
+    "WAS": {"name": "Northwest Stadium", "dome": False, "climate": "cold", "lat": 38.9076, "lon": -76.8645},
 }
 
 # Common alternate abbreviations seen across Sleeper / Tank01 / ESPN feeds.
@@ -71,6 +72,14 @@ def normalize_team(team: str) -> str:
     """Uppercase and de-alias an NFL team abbreviation."""
     t = str(team or "").strip().upper()
     return ALIASES.get(t, t)
+
+
+def stadium_coords(team: str) -> Optional[tuple]:
+    """(lat, lon) for a team's home stadium, or None for an unknown team."""
+    st = STADIUMS.get(normalize_team(team))
+    if not st:
+        return None
+    return (st["lat"], st["lon"])
 
 
 def game_environment(home_team: str, week: Optional[int] = None) -> Optional[dict]:

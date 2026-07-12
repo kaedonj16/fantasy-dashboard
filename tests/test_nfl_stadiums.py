@@ -9,9 +9,10 @@ def test_all_32_teams_present():
     # Every team key is a 2-3 letter abbr and carries the required fields.
     for abbr, st in STADIUMS.items():
         assert 2 <= len(abbr) <= 3
-        assert set(st) == {"name", "dome", "climate"}
+        assert set(st) == {"name", "dome", "climate", "lat", "lon"}
         assert st["climate"] in {"dome", "cold", "mild", "warm"}
         assert (st["climate"] == "dome") == st["dome"]
+        assert -90 <= st["lat"] <= 90 and -180 <= st["lon"] <= 0  # continental US
 
 
 def test_dome_is_weatherproof_regardless_of_week():
