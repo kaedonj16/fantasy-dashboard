@@ -41,8 +41,16 @@ from __future__ import annotations
 # 2**14 = 16_384 scenarios. Above this the single-pass enumeration stops being
 # cheap enough to run per request, and we're past the final-two-weeks window
 # (a 12-team league plays 6 games/week, so two weeks is 12 games) where exact
-# clinch math is the interesting answer.
+# per-game math (magic numbers, "win and you're in") is the interesting answer.
+# Beyond it we fall back to the bounds classifier, which proves clinched /
+# eliminated / controls-destiny without enumerating.
 MAX_ENUM_GAMES = 14
+
+# Only surface the outlook inside the stretch run - roughly the final five weeks,
+# which is about when the first teams become mathematically eliminated. Earlier
+# than this nothing is settled and every row would read "Alive", so we defer to
+# the Monte Carlo odds instead (callers see show=False).
+SHOW_WITHIN_WEEKS = 5
 
 
 def compute_scenarios(
@@ -52,6 +60,7 @@ def compute_scenarios(
     *,
     n_byes: int = 0,
     divisions: bool = False,
+    show_weeks: int = SHOW_WITHIN_WEEKS,
 ) -> dict:
     """Classify every team's playoff standing across all remaining-game outcomes.
 
@@ -64,13 +73,16 @@ def compute_scenarios(
         divisions: when True the league seeds by division and this top-N model
             doesn't apply, so we return ``exact=False``.
 
-    Returns:
-        ``{"exact": bool, "remaining_games": int, "teams": {roster_id: {...}}}``.
-        Each per-team dict (only when ``exact``) carries: ``status``
-        (clinched_bye / clinched / alive / eliminated), ``controls_destiny``,
-        ``wins_to_clinch`` (magic number or None if help is needed),
-        ``clinch_if_win_next``, ``out_if_lose_next``, ``next_game``,
-        ``best_seed`` and ``worst_seed``.
+    Returns a dict with ``show`` (surface it at all?), ``mode`` ("exact" for the
+    enumerated final ~2 weeks, "bounds" for the best/worst-case weeks 3-5, or
+    None when not shown), ``exact`` (== mode == "exact", back-compat),
+    ``remaining_games``, ``remaining_weeks``, and ``teams`` keyed by roster id.
+    Each per-team dict carries ``status`` (clinched_bye / clinched / alive /
+    eliminated), ``controls_destiny``, ``best_seed``, ``worst_seed``, and
+    ``next_game``. The exact mode additionally fills the per-game levers:
+    ``wins_to_clinch`` (magic number), ``clinch_if_win_next``,
+    ``out_if_lose_next``, and ``needs_help``; bounds mode leaves those at
+    their neutral defaults.
     """
     idx_of = {int(t["roster_id"]): i for i, t in enumerate(teams)}
     m = len(teams)
@@ -85,25 +97,48 @@ def compute_scenarios(
             if a in idx_of and b in idx_of and a != b:
                 games.append((int(wk), idx_of[a], idx_of[b]))
     g = len(games)
-
-    result: dict = {"exact": True, "remaining_games": g, "teams": {}}
-    if divisions or g > MAX_ENUM_GAMES or m == 0 or playoff_teams <= 0:
-        result["exact"] = False
-        return result
-
-    base = [float(t.get("wins", 0)) + 0.5 * float(t.get("ties", 0)) for t in teams]
-    pf = [float(t.get("pf", 0.0)) for t in teams]
-    # Points-for as a sub-win tiebreak: scaled below 1 so a win always outranks
-    # any points-for edge, but points-for still orders teams level on wins.
-    pf_denom = (max(pf) + 1.0) if pf and max(pf) > 0 else 1.0
-    base_key = [base[i] + pf[i] / pf_denom for i in range(m)]
+    remaining_weeks = len({wk for wk, _a, _b in games})
 
     # Each team's remaining games in week order; the first is its "next game".
     own_games: list[list[tuple[int, bool]]] = [[] for _ in range(m)]  # (game_idx, is_a)
     for gi, (_wk, a, b) in enumerate(games):
         own_games[a].append((gi, True))
         own_games[b].append((gi, False))
-    next_game_idx = [og[0][0] if og else None for og in own_games]  # earliest is first added
+    next_game_idx = [og[0][0] if og else None for og in own_games]
+
+    def _next_game(i: int) -> "Optional[dict]":
+        ngi = next_game_idx[i]
+        if ngi is None:
+            return None
+        _wk, ga, gb = games[ngi]
+        opp = gb if ga == i else ga
+        return {"week": _wk, "opp": int(teams[opp]["roster_id"])}
+
+    result: dict = {
+        "exact": False, "show": False, "mode": None,
+        "remaining_games": g, "remaining_weeks": remaining_weeks, "teams": {},
+    }
+    if divisions or m == 0 or playoff_teams <= 0:
+        return result
+    if remaining_weeks > show_weeks:
+        return result  # too early in the season - defer to the odds
+    result["show"] = True
+
+    if g > MAX_ENUM_GAMES:
+        result["mode"] = "bounds"
+        result["teams"] = _bounds_classify(
+            teams, own_games, playoff_teams, n_byes, _next_game
+        )
+        return result
+
+    result["mode"] = "exact"
+    result["exact"] = True
+    base = [float(t.get("wins", 0)) + 0.5 * float(t.get("ties", 0)) for t in teams]
+    pf = [float(t.get("pf", 0.0)) for t in teams]
+    # Points-for as a sub-win tiebreak: scaled below 1 so a win always outranks
+    # any points-for edge, but points-for still orders teams level on wins.
+    pf_denom = (max(pf) + 1.0) if pf and max(pf) > 0 else 1.0
+    base_key = [base[i] + pf[i] / pf_denom for i in range(m)]
 
     # Single pass over the 2**g scenarios, accumulating per-team facts.
     ever_in = [False] * m
@@ -171,13 +206,15 @@ def compute_scenarios(
         g_i = len(own_games[i])
 
         entry: dict = {
+            "mode": "exact",
             "best_seed": best_seed[i],
             "worst_seed": worst_seed[i],
             "controls_destiny": False,
             "wins_to_clinch": 0 if clinched else None,
             "clinch_if_win_next": False,
             "out_if_lose_next": False,
-            "next_game": None,
+            "needs_help": False,
+            "next_game": _next_game(i),
         }
 
         if clinched:
@@ -188,14 +225,9 @@ def compute_scenarios(
         else:
             entry["status"] = "alive"
 
-        ngi = next_game_idx[i]
-        if ngi is not None:
-            gwk, ga, gb = games[ngi]
-            opp = gb if ga == i else ga
-            entry["next_game"] = {"week": gwk, "opp": int(teams[opp]["roster_id"])}
-            if entry["status"] == "alive":
-                entry["clinch_if_win_next"] = nxt_win_seen[i] and not nxt_win_out[i]
-                entry["out_if_lose_next"] = nxt_lose_seen[i] and not nxt_lose_in[i]
+        if entry["status"] == "alive" and next_game_idx[i] is not None:
+            entry["clinch_if_win_next"] = nxt_win_seen[i] and not nxt_win_out[i]
+            entry["out_if_lose_next"] = nxt_lose_seen[i] and not nxt_lose_in[i]
 
         if entry["status"] == "alive":
             # Magic number: fewest own wins that guarantee a berth. If a team is
@@ -205,6 +237,7 @@ def compute_scenarios(
             if worst_fail_w[i] >= g_i:
                 entry["wins_to_clinch"] = None
                 entry["controls_destiny"] = False
+                entry["needs_help"] = True
             else:
                 entry["wins_to_clinch"] = worst_fail_w[i] + 1
                 entry["controls_destiny"] = True
@@ -212,6 +245,71 @@ def compute_scenarios(
         result["teams"][rid] = entry
 
     return result
+
+
+def _bounds_classify(teams, own_games, playoff_teams, n_byes, next_game_fn) -> dict:
+    """Prove clinched / eliminated / controls-destiny from best/worst-case win
+    bounds, without enumerating - used when too many games remain to brute-force.
+
+    All three verdicts are *safe*: because rivals share games (one team's win is
+    another's loss) but the bounds treat every rival as independently able to hit
+    its ceiling, the "threats" are over-counted for clinch/control and the
+    "guaranteed ahead" are under-counted for elimination. So a verdict here is
+    never wrong, only sometimes deferred to a later week. Ties are broken by
+    current points-for, matching the exact enumerator. No per-game levers (magic
+    number, "win and you're in") - those need the exact path.
+    """
+    m = len(teams)
+    base = [float(t.get("wins", 0)) + 0.5 * float(t.get("ties", 0)) for t in teams]
+    pf = [float(t.get("pf", 0.0)) for t in teams]
+    ceil = [base[i] + len(own_games[i]) for i in range(m)]
+
+    out: dict = {}
+    for i, t in enumerate(teams):
+        # Rivals guaranteed to finish above i even if i wins out (i at its ceiling).
+        guaranteed_above = sum(
+            1 for j in range(m) if j != i and (
+                base[j] > ceil[i] or (base[j] == ceil[i] and pf[j] > pf[i])
+            )
+        )
+        # Rivals that could still finish above i if i loses out (i at its floor).
+        threats_floor = sum(
+            1 for j in range(m) if j != i and (
+                ceil[j] > base[i] or (ceil[j] == base[i] and pf[j] > pf[i])
+            )
+        )
+        # Rivals that could finish above i even when i wins out.
+        threats_ceiling = sum(
+            1 for j in range(m) if j != i and (
+                ceil[j] > ceil[i] or (ceil[j] == ceil[i] and pf[j] > pf[i])
+            )
+        )
+
+        entry: dict = {
+            "mode": "bounds",
+            "best_seed": guaranteed_above + 1,
+            "worst_seed": threats_floor + 1,
+            "controls_destiny": False,
+            "wins_to_clinch": None,
+            "clinch_if_win_next": False,
+            "out_if_lose_next": False,
+            "needs_help": False,
+            "next_game": next_game_fn(i),
+        }
+
+        if guaranteed_above >= playoff_teams:
+            entry["status"] = "eliminated"
+        elif threats_floor < playoff_teams:
+            bye = n_byes > 0 and threats_floor < n_byes
+            entry["status"] = "clinched_bye" if bye else "clinched"
+            entry["wins_to_clinch"] = 0
+        else:
+            entry["status"] = "alive"
+            entry["controls_destiny"] = threats_ceiling < playoff_teams
+
+        out[int(t["roster_id"])] = entry
+
+    return out
 
 
 def scenario_summary(entry: dict) -> str:
@@ -232,6 +330,6 @@ def scenario_summary(entry: dict) -> str:
         return "Control your destiny"
     if entry.get("out_if_lose_next"):
         return "Must win to survive"
-    if entry.get("wins_to_clinch") is None:
+    if entry.get("needs_help"):
         return "Alive, needs help"
     return "Alive"

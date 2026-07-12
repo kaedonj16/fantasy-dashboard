@@ -22476,8 +22476,11 @@ def api_playoff_scenarios():
         teams_out.sort(key=lambda x: (x.get("best_seed") or 99, x.get("worst_seed") or 99))
 
         return jsonify({
+            "show":           scen.get("show", False),
+            "mode":           scen.get("mode"),
             "exact":          scen.get("exact", False),
             "remaining_games": scen.get("remaining_games", 0),
+            "remaining_weeks": scen.get("remaining_weeks", 0),
             "playoff_teams":  playoff_teams,
             "n_byes":         n_byes,
             "current_week":   current_week,

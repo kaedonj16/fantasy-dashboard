@@ -1543,7 +1543,7 @@ function initPlayoffOdds(root = document) {
               `&season=${encodeURIComponent(season)}`
             )
               .then(r => (r.ok ? r.json() : null))
-              .then(scen => { if (scen && scen.exact) _annotatePlayoffScenarios(panel, scen); })
+              .then(scen => { if (scen && scen.show) _annotatePlayoffScenarios(panel, scen); })
               .catch(() => {});
           }
         })
@@ -1698,7 +1698,7 @@ function _annotatePlayoffScenarios(panel, scen) {
   if (sub && !sub.querySelector('.po-scen-note')) {
     const note = document.createElement('span');
     note.className = 'po-scen-note';
-    note.textContent = ' · exact clinch outlook';
+    note.textContent = scen.mode === 'exact' ? ' · exact clinch outlook' : ' · clinch outlook';
     sub.appendChild(note);
   }
 }

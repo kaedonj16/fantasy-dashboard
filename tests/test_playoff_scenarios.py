@@ -87,7 +87,7 @@ def test_summary_needs_help_branch():
     # gets the plain "need help" line.
     entry = {
         "status": "alive", "controls_destiny": False, "wins_to_clinch": None,
-        "clinch_if_win_next": False, "out_if_lose_next": False,
+        "clinch_if_win_next": False, "out_if_lose_next": False, "needs_help": True,
     }
     assert scenario_summary(entry) == "Alive, needs help"
 
@@ -109,6 +109,73 @@ def test_clinched_bye_detected():
     res = compute_scenarios(teams, matchups, playoff_teams=4, n_byes=1)
     assert res["teams"][1]["status"] == "clinched_bye"
     assert scenario_summary(res["teams"][1]) == "Clinched bye"
+
+
+# ---- bounds mode (weeks 3-5, too many games to enumerate) -----------------
+
+def _round_robin(team_ids, weeks):
+    """Build `weeks` weeks of games pairing teams up (rotating) for bounds tests."""
+    matchups = {}
+    n = len(team_ids)
+    for w in range(weeks):
+        games = []
+        order = team_ids[:]
+        # simple rotation so pairings vary week to week
+        order = order[w % n:] + order[:w % n]
+        for k in range(0, n - 1, 2):
+            games.append((order[k], order[k + 1]))
+        matchups[10 + w] = games
+    return matchups
+
+
+def test_bounds_mode_engaged_for_multi_week_window():
+    ids = list(range(1, 9))
+    teams = _teams([(i, 5, 700 + i) for i in ids])
+    matchups = _round_robin(ids, 4)  # 4 weeks * 4 games = 16 games > MAX_ENUM_GAMES
+    res = compute_scenarios(teams, matchups, playoff_teams=4)
+    assert res["show"] is True
+    assert res["mode"] == "bounds"
+    assert res["exact"] is False
+    assert res["remaining_games"] > MAX_ENUM_GAMES
+
+
+def test_bounds_proves_elimination_multi_week():
+    # 8 teams, top 4. One team is buried far enough that even winning its 4
+    # remaining games it can't catch four teams already well ahead.
+    ids = list(range(1, 9))
+    recs = [(1, 11, 1200), (2, 10, 1150), (3, 10, 1100), (4, 9, 1050),
+            (5, 3, 600), (6, 4, 650), (7, 5, 700), (8, 1, 400)]
+    teams = _teams(recs)
+    matchups = _round_robin(ids, 4)
+    res = compute_scenarios(teams, matchups, playoff_teams=4)
+    assert res["mode"] == "bounds"
+    # Team 8 tops out at 1+4 = 5 wins; teams 1-4 already have >5 -> eliminated.
+    assert res["teams"][8]["status"] == "eliminated"
+    assert scenario_summary(res["teams"][8]) == "Eliminated"
+
+
+def test_bounds_proves_clinch_multi_week():
+    ids = list(range(1, 9))
+    # Team 1 so far ahead that even losing out, fewer than 4 teams can catch it.
+    recs = [(1, 12, 1400), (2, 6, 800), (3, 6, 790), (4, 6, 780),
+            (5, 6, 770), (6, 5, 760), (7, 5, 750), (8, 4, 700)]
+    teams = _teams(recs)
+    matchups = _round_robin(ids, 4)  # 4 weeks (16 games) -> bounds, within window
+    res = compute_scenarios(teams, matchups, playoff_teams=4)
+    assert res["mode"] == "bounds"
+    assert res["teams"][1]["status"] == "clinched"
+    # A mid-pack team is neither clinched nor eliminated this far out.
+    assert res["teams"][6]["status"] == "alive"
+
+
+def test_not_shown_before_the_window():
+    ids = list(range(1, 9))
+    teams = _teams([(i, 3, 700 + i) for i in ids])
+    matchups = _round_robin(ids, 6)  # 6 weeks > SHOW_WITHIN_WEEKS
+    res = compute_scenarios(teams, matchups, playoff_teams=4)
+    assert res["show"] is False
+    assert res["mode"] is None
+    assert res["teams"] == {}
 
 
 # ---- fall-back / guard rails ----------------------------------------------
