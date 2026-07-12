@@ -215,23 +215,23 @@ def compute_scenarios(
 
 
 def scenario_summary(entry: dict) -> str:
-    """One-line human-readable "what you need" for a single team entry."""
+    """Short "what you need" label for a single team entry (no dashes)."""
     status = entry.get("status")
     if status == "clinched_bye":
-        return "Clinched a first-round bye"
+        return "Clinched bye"
     if status == "clinched":
-        return "Clinched a playoff berth"
+        return "Clinched"
     if status == "eliminated":
-        return "Eliminated from playoff contention"
+        return "Eliminated"
     if entry.get("clinch_if_win_next"):
-        return "Win this week and you're in"
+        return "Win and you're in"
     if entry.get("controls_destiny"):
         n = entry.get("wins_to_clinch")
         if n:
-            return f"Win out and you're in ({n} more win{'s' if n != 1 else ''})"
-        return "Control your own destiny - win out and you're in"
+            return f"{n} win{'s' if n != 1 else ''} to clinch"
+        return "Control your destiny"
     if entry.get("out_if_lose_next"):
-        return "Must win this week to stay alive"
+        return "Must win to survive"
     if entry.get("wins_to_clinch") is None:
-        return "In the hunt - you'll need help"
-    return "In the hunt"
+        return "Alive, needs help"
+    return "Alive"

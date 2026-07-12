@@ -62,7 +62,7 @@ def test_win_and_youre_in_one_game_swing():
         assert e["out_if_lose_next"] is True
         assert e["controls_destiny"] is True
         assert e["wins_to_clinch"] == 1
-        assert scenario_summary(e) == "Win this week and you're in"
+        assert scenario_summary(e) == "Win and you're in"
 
 
 def test_needs_help_not_in_control():
@@ -79,7 +79,7 @@ def test_needs_help_not_in_control():
     # A loss this week does mathematically eliminate it, so the punchier
     # must-win alert is the right headline (it still needs help even if it wins).
     assert e3["out_if_lose_next"] is True
-    assert scenario_summary(e3) == "Must win this week to stay alive"
+    assert scenario_summary(e3) == "Must win to survive"
 
 
 def test_summary_needs_help_branch():
@@ -89,7 +89,7 @@ def test_summary_needs_help_branch():
         "status": "alive", "controls_destiny": False, "wins_to_clinch": None,
         "clinch_if_win_next": False, "out_if_lose_next": False,
     }
-    assert scenario_summary(entry) == "In the hunt - you'll need help"
+    assert scenario_summary(entry) == "Alive, needs help"
 
 
 def test_seed_range_reported_for_contender():
@@ -108,7 +108,7 @@ def test_clinched_bye_detected():
     matchups = {14: [(2, 3), (1, 4)]}
     res = compute_scenarios(teams, matchups, playoff_teams=4, n_byes=1)
     assert res["teams"][1]["status"] == "clinched_bye"
-    assert scenario_summary(res["teams"][1]) == "Clinched a first-round bye"
+    assert scenario_summary(res["teams"][1]) == "Clinched bye"
 
 
 # ---- fall-back / guard rails ----------------------------------------------
