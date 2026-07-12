@@ -10228,48 +10228,74 @@ def api_waiver_candidates():
     # (proximity/volume/freshness weighted), the candidate's own health, roster
     # need, and rest-of-season production — not just static dynasty value.
     for c in candidates:
-        ut = usage_trends.get(c["player_id"]) or {}
-        c["usage_delta"] = ut.get("delta")
-        c["usage_stat"] = ut.get("stat")
+        # Safe defaults so a failed signal-join for one candidate can't 500 the
+        # whole response (or the sort / result-building below that read these).
+        c.setdefault("usage_delta", None)
+        c.setdefault("usage_stat", None)
+        c["injured_ahead"] = c.get("injured_ahead") or []
+        c.setdefault("healthy_ahead", None)
+        c["vacated"] = c.get("vacated") or []
+        c.setdefault("injury_freshness", None)
+        c.setdefault("self_status", "")
+        c.setdefault("own_proj_ppg", None)
+        c.setdefault("ros_ppg", None)
+        c.setdefault("need_mult", 1.0)
+        c.setdefault("schedule_ease_rank", None)
+        c.setdefault("schedule_total", 0)
+        c.setdefault("scarcity_mult", 1.0)
+        try:
+            ut = usage_trends.get(c["player_id"]) or {}
+            c["usage_delta"] = ut.get("delta")
+            c["usage_stat"] = ut.get("stat")
 
-        _da = _depth_analysis_for_player(c["player_id"], _full_players_wv, _depth_idx_wv)
-        _inj_pids = _da["injured_pids_ahead"]
-        c["injured_ahead"] = _da["injured_ahead"]
-        c["healthy_ahead"] = _da["healthy_ahead"]
-        # Value each vacancy from the injured player's role production (healthy
-        # season projected ppg, else recent ppg) and, crucially, from how long
-        # they're projected to be out (leading zero-run in the weekly
-        # projections) rather than a fixed guess by injury label.
-        _vac = _da["vacated"]
-        for _v in _vac:
-            _vpid = str(_v.get("pid"))
-            _v["proj_ppg"] = _season_ppg_wv.get(_vpid) or _ppg_by_pid_wv.get(_vpid)
-            _v["weeks_out"] = _weeks_out_wv(_vpid)
-        c["vacated"] = _vac
-        c["injury_freshness"] = _freshness_wv(_inj_pids)
+            _da = _depth_analysis_for_player(c["player_id"], _full_players_wv, _depth_idx_wv)
+            _inj_pids = _da["injured_pids_ahead"]
+            c["injured_ahead"] = _da["injured_ahead"]
+            c["healthy_ahead"] = _da["healthy_ahead"]
+            # Value each vacancy from the injured player's role production (healthy
+            # season projected ppg, else recent ppg) and, crucially, from how long
+            # they're projected to be out (leading zero-run in the weekly
+            # projections) rather than a fixed guess by injury label.
+            _vac = _da["vacated"]
+            for _v in _vac:
+                _vpid = str(_v.get("pid"))
+                _v["proj_ppg"] = _season_ppg_wv.get(_vpid) or _ppg_by_pid_wv.get(_vpid)
+                _v["weeks_out"] = _weeks_out_wv(_vpid)
+            c["vacated"] = _vac
+            c["injury_freshness"] = _freshness_wv(_inj_pids)
 
-        _self = _full_players_wv.get(c["player_id"]) or {}
-        c["self_status"] = _self.get("injury_status") or _self.get("status") or ""
+            _self = _full_players_wv.get(c["player_id"]) or {}
+            c["self_status"] = _self.get("injury_status") or _self.get("status") or ""
 
-        # Forward projected ppg for this candidate (#1) — used for production and,
-        # via the transfer guard (#2), to fade injury upside they've already taken.
-        _fwd_ppg = _forward_ppg_wv(c["player_id"])
-        c["own_proj_ppg"] = _fwd_ppg
-        c["ros_ppg"] = _fwd_ppg if _fwd_ppg is not None else _ppg_by_pid_wv.get(c["player_id"])
+            # Forward projected ppg for this candidate (#1) — used for production
+            # and, via the transfer guard (#2), to fade injury upside taken.
+            _fwd_ppg = _forward_ppg_wv(c["player_id"])
+            c["own_proj_ppg"] = _fwd_ppg
+            c["ros_ppg"] = _fwd_ppg if _fwd_ppg is not None else _ppg_by_pid_wv.get(c["player_id"])
 
-        c["need_mult"] = _need_multiplier(c["position"], _need_scores_wv)
+            c["need_mult"] = _need_multiplier(c["position"], _need_scores_wv)
 
-        # Upcoming schedule ease (#3).
-        _team_up = str(_self.get("team") or players_index.get(c["player_id"], {}).get("team")
-                       or c.get("team") or "").upper()
-        _rmap_s, _tot_s = _matchup_by_pos_wv.get(c["position"], ({}, 0))
-        c["schedule_ease_rank"] = _rmap_s.get(_team_up)
-        c["schedule_total"] = _tot_s
+            # Upcoming schedule ease (#3).
+            _team_up = str(_self.get("team") or players_index.get(c["player_id"], {}).get("team")
+                           or c.get("team") or "").upper()
+            _rmap_s, _tot_s = _matchup_by_pos_wv.get(c["position"], ({}, 0))
+            c["schedule_ease_rank"] = _rmap_s.get(_team_up)
+            c["schedule_total"] = _tot_s
 
-        # Positional scarcity (#4).
-        c["scarcity_mult"] = _scarcity_multiplier(c["position"], c["value"], _repl_by_pos_wv)
+            # Positional scarcity (#4).
+            c["scarcity_mult"] = _scarcity_multiplier(c["position"], c["value"], _repl_by_pos_wv)
+        except Exception:
+            logger.exception("[waiver-candidates] signal join failed for %s", c.get("player_id"))
+            continue
 
-    candidates.sort(key=lambda c: _waiver_pickup_score(c, waiver_breakout, _WAIVER_PRIME_MAX), reverse=True)
+    def _safe_pickup_score(c):
+        try:
+            return _waiver_pickup_score(c, waiver_breakout, _WAIVER_PRIME_MAX)
+        except Exception:
+            logger.exception("[waiver-candidates] pickup score failed for %s", c.get("player_id"))
+            return 0.0
+
+    candidates.sort(key=_safe_pickup_score, reverse=True)
     if position_filter and position_filter in {"QB", "RB", "WR", "TE"}:
         candidates = [c for c in candidates if c["position"] == position_filter]
 
@@ -10279,35 +10305,39 @@ def api_waiver_candidates():
     # read "Rising Fast" on every row.
     _fast_thr, _up_thr = _adaptive_trend_thresholds([c.get("rank_change_7d") for c in _shown])
     for c in _shown:
-        sig_cls, sig_label = _waiver_signal(
-            c, waiver_breakout, _WAIVER_PRIME_MAX,
-            fast_thr=_fast_thr, up_thr=_up_thr,
-        )
-        bscore = waiver_breakout.get(c["player_id"], 0.0)
-        ut = usage_trends.get(c["player_id"]) or {}
-        result.append({
-            "player_id": c["player_id"],
-            "name": c["name"],
-            "position": c["position"],
-            "team": c["team"],
-            "value": c["value"],
-            "age": c["age"],
-            "pos_rank_label": c["pos_rank_label"],
-            "rank_change_7d": c["rank_change_7d"],
-            "breakout_score": bscore,
-            "signal": sig_label,
-            "signal_class": sig_cls,
-            "composite_score": _waiver_pickup_score(c, waiver_breakout, _WAIVER_PRIME_MAX),
-            "usage_delta": ut.get("delta"),
-            "usage_stat": ut.get("stat"),
-            "usage_series": ut.get("series"),
-            "injured_ahead": len(c.get("injured_ahead") or []),
-            "healthy_ahead": c.get("healthy_ahead"),
-            "ros_ppg": round(c["ros_ppg"], 1) if c.get("ros_ppg") is not None else None,
-            "roster_need": round((c.get("need_mult") or 1.0) - 1.0, 3),
-            "scarcity": round((c.get("scarcity_mult") or 1.0) - 1.0, 3),
-            "schedule_ease_rank": c.get("schedule_ease_rank"),
-        })
+        try:
+            sig_cls, sig_label = _waiver_signal(
+                c, waiver_breakout, _WAIVER_PRIME_MAX,
+                fast_thr=_fast_thr, up_thr=_up_thr,
+            )
+            bscore = waiver_breakout.get(c["player_id"], 0.0)
+            ut = usage_trends.get(c["player_id"]) or {}
+            result.append({
+                "player_id": c["player_id"],
+                "name": c["name"],
+                "position": c["position"],
+                "team": c["team"],
+                "value": c["value"],
+                "age": c["age"],
+                "pos_rank_label": c["pos_rank_label"],
+                "rank_change_7d": c["rank_change_7d"],
+                "breakout_score": bscore,
+                "signal": sig_label,
+                "signal_class": sig_cls,
+                "composite_score": _safe_pickup_score(c),
+                "usage_delta": ut.get("delta"),
+                "usage_stat": ut.get("stat"),
+                "usage_series": ut.get("series"),
+                "injured_ahead": len(c.get("injured_ahead") or []),
+                "healthy_ahead": c.get("healthy_ahead"),
+                "ros_ppg": round(c["ros_ppg"], 1) if c.get("ros_ppg") is not None else None,
+                "roster_need": round((c.get("need_mult") or 1.0) - 1.0, 3),
+                "scarcity": round((c.get("scarcity_mult") or 1.0) - 1.0, 3),
+                "schedule_ease_rank": c.get("schedule_ease_rank"),
+            })
+        except Exception:
+            logger.exception("[waiver-candidates] result row failed for %s", c.get("player_id"))
+            continue
 
     return jsonify({"candidates": result, "total": len(result)})
 
