@@ -12812,12 +12812,20 @@ function openCompareSearch(player1Data) {
   });
   // Preload the tier averages so they can be offered as compare opponents here
   // too (Avg WR1/WR2, ...), not just on the standalone /compare page.
-  _cmpEnsureBaselines();
-  // Benchmark against a positional-tier average (Avg QB1/QB2, WR1/WR2, ...).
+  const _baselinesReady = _cmpEnsureBaselines();
+  // Benchmark against a positional-tier average (Avg QB1/QB2, WR1/WR2, ...) -
+  // render inline in the modal, same as picking a player from the results.
   body.querySelectorAll('.compare-tier-chip').forEach(chip => {
     chip.addEventListener('click', () => {
-      window.location.href = '/compare?p1=' + encodeURIComponent(player1Data.player_id)
-        + '&p2=' + encodeURIComponent(chip.dataset.avg);
+      const avgId = chip.dataset.avg;  // e.g. "avg-TE-1"
+      body.innerHTML = '<div class="player-modal-loading"><div class="loading-spinner"></div><div>Loading comparison...</div></div>';
+      Promise.resolve(_baselinesReady).then(() => {
+        const b = _cmpBaselineById[String(avgId)];
+        if (b) openComparisonView(player1Data, b);
+        else body.innerHTML = '<div class="player-modal-loading"><div style="color:#ef4444;">Tier average unavailable</div></div>';
+      }).catch(() => {
+        body.innerHTML = '<div class="player-modal-loading"><div style="color:#ef4444;">Failed to load tier average</div></div>';
+      });
     });
   });
   input.focus();
