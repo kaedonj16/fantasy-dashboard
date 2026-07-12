@@ -8399,7 +8399,6 @@ function openPlayerModal(playerId, playerName, opts) {
         <button class="player-modal-watchlist-btn" id="playerModalWatchlistBtn" title="Add to watchlist" aria-pressed="false" style="display: none;"><span class="wl-star-glyph" aria-hidden="true">☆</span></button>
         ${_ppSlug ? `<a class="player-modal-page-btn" href="/player/${_ppSlug}/trade-value" title="View full player page">Player Page</a>` : ''}
         <button class="player-modal-compare-btn" id="playerModalCompareBtn" title="Compare players">Compare Player</button>
-        <button class="player-modal-compare-btn player-modal-tier-btn" id="playerModalTierBtn" title="Compare to positional tier average" style="display:none;">vs Tier</button>
         <button class="player-modal-close" onclick="closePlayerModal()">×</button>
       </div>
     </div>
@@ -9008,28 +9007,9 @@ function openPlayerModal(playerId, playerName, opts) {
         cmpBtn.addEventListener('click', () => openCompareSearch(data));
       }
 
-      // ── "vs Tier" quick compare against this player's positional tier average ─
-      const tierBtn = document.getElementById('playerModalTierBtn');
-      if (tierBtn) {
-        const _tpos = (data.position || '').toUpperCase();
-        if (['QB', 'RB', 'WR', 'TE'].includes(_tpos)) {
-          // Pick the tier on the SAME basis the tiers are built - the player's
-          // fantasy-points finish (total_pts_rank) - so a WR20 benchmarks against
-          // Avg WR2 and a WR5 against Avg WR1. Fall back to dynasty pos rank, then
-          // tier 1, for players with no scoring finish (e.g. rookies).
-          const _st = data.stats || {};
-          const _rank = Number(_st.total_pts_rank || _st.pos_rank || data.pos_rank || 0);
-          const _tier = (_rank > 12) ? 2 : 1;
-          tierBtn.textContent = 'vs Avg ' + _tpos + _tier;
-          tierBtn.style.display = '';
-          tierBtn.onclick = () => {
-            window.location.href = '/compare?p1=' + encodeURIComponent(data.player_id)
-              + '&p2=avg-' + _tpos + '-' + _tier;
-          };
-        } else {
-          tierBtn.style.display = 'none';
-        }
-      }
+      // The "vs Avg <pos><tier>" benchmark is reachable from the Compare Player
+      // search (it offers the positional-tier averages as pickable opponents),
+      // so it is no longer surfaced as a standalone header chip.
 
       // ── Render value history chart in Overview panel ───────────────────────
       if (data.value_history && data.value_history.length > 0) {

@@ -14645,16 +14645,6 @@ tr.team-clickable {
 .player-modal-compare-btn:hover {
   background: rgba(59, 130, 246, 0.2);
 }
-/* Secondary "vs Tier" quick-compare: same shape, muted so it reads as a shortcut
-   next to the primary Compare Player action. */
-.player-modal-tier-btn {
-  background: transparent;
-  border-color: var(--border);
-  color: var(--text-muted);
-}
-.player-modal-tier-btn:hover {
-  background: var(--bg-alt);
-}
 
 .player-modal-page-btn {
   background: transparent;
