@@ -11,10 +11,12 @@
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.BRDraftGrade = api;
 })(typeof self !== 'undefined' ? self : this, function () {
-  var ANCHOR = 74;   // the field-average team lands at a solid B
-  // PTS trimmed 11 -> 9: the draft backtest showed grade separation only weakly
-  // predicts real success, so the old spread over-stated it (a +1 SD team read as
-  // a full A). At 9, grades regress a touch more toward B - an A needs ~+1.5 SD.
+  // ANCHOR 74 -> 70 from the letter-calibration backtest: at 74 the top THIRD of
+  // every league landed in A-range (~31% of teams) - too generous. Anchoring the
+  // average at a low B reserves A-range for ~the best 1-2 teams per league.
+  var ANCHOR = 70;   // the field-average team lands at a low B
+  // PTS 11 -> 9: grade separation only weakly predicts real success, so keep the
+  // spread modest - an A needs ~+1.5 SD, not +1.
   var PTS = 9;       // grade points per standard deviation of real separation
 
   // Curve raw composite scores against the field so real separation reads on a
