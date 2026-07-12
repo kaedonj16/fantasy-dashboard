@@ -40,7 +40,7 @@ from data_building.draft_grade_backtest import (
     correlate_grades_to_finish,
     letter_calibration,
     load_sleeper_samples,
-    load_startup_multiyear_samples,
+    load_multiyear_samples,
     pick_score_by_round,
     sweep,
 )
@@ -221,26 +221,27 @@ def make_value_fn_factory(num_teams: int):
     return factory
 
 
-def _run_startup_multiyear(args) -> int:
-    """Startup-only backtest against a multi-year outcome (sustained finish)."""
+def _run_multiyear(args, dtype: str, decay: float) -> int:
+    """Backtest one draft type against a multi-year outcome (sustained finish)."""
     factory = make_value_fn_factory(args.num_teams)
     samples = []
     for anchor in args.league:
-        samples.extend(load_startup_multiyear_samples(
-            anchor, args.season, value_fn_factory=factory, num_teams=args.num_teams))
+        samples.extend(load_multiyear_samples(
+            anchor, args.season, value_fn_factory=factory, draft_types=(dtype,),
+            num_teams=args.num_teams, decay=decay))
     if not samples:
-        print("No startup drafts with enough forward history found. Needs current "
-              "league ID(s) whose previous_league_id chain includes a startup season "
+        print(f"No {dtype} drafts with enough forward history found. Needs current "
+              f"league ID(s) whose previous_league_id chain includes a {dtype} season "
               "with >=2 later completed seasons — and a reachable app/network/DB.")
         return 1
     avg_seasons = sum(s.meta.get("seasons", 0) for s in samples) / len(samples)
-    print(f"Loaded {len(samples)} startup teams "
+    print(f"Loaded {len(samples)} {dtype} teams "
           f"(avg {avg_seasons:.1f} seasons of forward outcome each) "
-          f"across {len(set(s.meta.get('league_id') for s in samples))} startup drafts.\n")
-    _report_group("startup vs multi-year finish", samples, args.method, seed_type="startup")
+          f"across {len(set(s.meta.get('league_id') for s in samples))} {dtype} drafts.\n")
+    _report_group(f"{dtype} vs multi-year finish", samples, args.method, seed_type=dtype)
     print("Outcome = decayed mean of each manager's per-season finish from the draft "
           "year forward (champion 1.0, last 0.0). A nudge that beats 'base' here is a "
-          "startup-weight signal that same-season points-for couldn't see.")
+          f"{dtype}-weight signal that same-season points-for couldn't see.")
     return 0
 
 
@@ -270,10 +271,16 @@ def main(argv=None) -> int:
                          "manager's team finished across the draft season and every "
                          "later one) instead of noisy same-season points-for. Pass your "
                          "CURRENT --league ID(s); walks the full history itself.")
+    ap.add_argument("--rookie-multiyear", action="store_true",
+                    help="Same multi-year outcome, for ROOKIE drafts - a rookie class "
+                         "pays off in years 2-3, so year-1 points is the wrong yardstick "
+                         "(uses a higher forward decay so later seasons count more).")
     args = ap.parse_args(argv)
 
     if args.startup_multiyear:
-        return _run_startup_multiyear(args)
+        return _run_multiyear(args, "startup", decay=0.75)
+    if args.rookie_multiyear:
+        return _run_multiyear(args, "rookie", decay=0.9)
 
     league_ids = list(args.league)
     if args.history:
