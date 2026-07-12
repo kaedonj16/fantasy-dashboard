@@ -1681,6 +1681,8 @@ function _annotatePlayoffScenarios(panel, scen) {
     if (tr.querySelector('.po-outlook')) return;
     const rid = tr.getAttribute('data-roster-id');
     const t = rid != null ? byRid[String(rid)] : null;
+    // Strike through and dim teams that are mathematically out of it.
+    if (t && t.status === 'eliminated') tr.classList.add('po-row-eliminated');
     const td = document.createElement('td');
     td.className = 'po-outlook';
     if (t && t.summary) {
