@@ -95,6 +95,21 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-ss-stat-lbl { font-size: 10px; color: var(--text-subtle); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
 .wv-ss-stat-val { font-size: 13px; font-weight: 700; color: var(--text); }
 .wv-ss-stat-val.muted { color: var(--text-muted); }
+.wv-ss-env, .wv-ss-total { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 6px; align-self: flex-start; }
+.wv-ss-env-dome { background: rgba(59,130,246,.14); color: #1d4ed8; }
+.wv-ss-env-cold { background: rgba(56,189,248,.16); color: #0369a1; }
+.wv-ss-env-wind { background: rgba(148,163,184,.20); color: #475569; }
+.wv-ss-env-precip { background: rgba(59,130,246,.14); color: #1d4ed8; }
+[data-theme="dark"] .wv-ss-env-dome { background: rgba(59,130,246,.20); color: #60a5fa; }
+[data-theme="dark"] .wv-ss-env-cold { background: rgba(56,189,248,.20); color: #7dd3fc; }
+[data-theme="dark"] .wv-ss-env-wind { background: rgba(148,163,184,.24); color: #cbd5e1; }
+[data-theme="dark"] .wv-ss-env-precip { background: rgba(59,130,246,.22); color: #93c5fd; }
+/* Vegas implied team total: green when high, muted when low */
+.wv-ss-total-high { background: rgba(34,197,94,.16); color: #15803d; }
+.wv-ss-total-mid  { background: rgba(148,163,184,.16); color: var(--text-muted); }
+.wv-ss-total-low  { background: rgba(239,68,68,.14); color: #b91c1c; }
+[data-theme="dark"] .wv-ss-total-high { background: rgba(34,197,94,.20); color: #4ade80; }
+[data-theme="dark"] .wv-ss-total-low  { background: rgba(239,68,68,.20); color: #f87171; }
 
 /* Matchup chip */
 .wv-mu { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; }
@@ -250,6 +265,28 @@ function wvInjBadge(inj) {{
   if (['DOUBTFUL','D'].includes(u))          return `<span class="wv-inj-d">D</span>`;
   if (['QUESTIONABLE','Q','GTD'].includes(u)) return `<span class="wv-inj-q">Q</span>`;
   return `<span class="wv-inj-q">${{inj}}</span>`;
+}}
+
+// Game-environment chips: live weather (or static dome/cold venue) + Vegas
+// implied team total. Any field may be absent; render only what's present.
+function wvGameChips(p) {{
+  let out = '';
+  const env = p.weather || p.game_env;
+  if (env) {{
+    const lbl = p.weather ? 'Weather' : 'Venue';
+    const note = (env.note || '').replace(/"/g, '&quot;');
+    out += '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">' + lbl + '</span>' +
+           '<span class="wv-ss-env wv-ss-env-' + env.kind + '" title="' + note + '">' +
+           env.label + '</span></div>';
+  }}
+  if (p.implied_total != null) {{
+    const it = p.implied_total;
+    const k = it >= 26 ? 'high' : (it <= 18 ? 'low' : 'mid');
+    out += '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Vegas</span>' +
+           '<span class="wv-ss-total wv-ss-total-' + k + '" title="Implied team total (Vegas)">' +
+           it + ' implied</span></div>';
+  }}
+  return out;
 }}
 
 // ── Load ──────────────────────────────────────────────────────────────────────
@@ -437,6 +474,7 @@ function wvRenderStartSit() {{
           ${{p.recent_ppg > 0 ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">L4 PPG</span><span class="wv-ss-stat-val">${{p.recent_ppg}}</span></div>` : ''}}
           ${{usageStat}}
           ${{p.opponent       ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Opp</span><span class="wv-ss-stat-val muted">${{p.opponent}}</span></div>` : ''}}
+          ${{wvGameChips(p)}}
           ${{muChip ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Matchup</span><span class="wv-ss-stat-val">${{muChip}}</span></div>` : ''}}
           ${{p.fpts_against > 0 ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Def allows</span><span class="wv-ss-stat-val muted">${{p.fpts_against}} pts</span></div>` : ''}}
         </div>`;

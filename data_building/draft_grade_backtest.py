@@ -581,26 +581,29 @@ def load_sleeper_samples(
     return samples
 
 
-def load_startup_multiyear_samples(
+def load_multiyear_samples(
     current_league_id: str,
     season: int,
     *,
     value_fn_factory: Callable[[bool, str], Callable[[dict], Optional[dict]]],
+    draft_types: Sequence[str] = ("startup",),
     num_teams: int = 12,
     min_seasons: int = 2,
     decay: float = 0.75,
 ) -> List[TeamSample]:
-    """Grade STARTUP drafts against a MULTI-YEAR outcome instead of same-season
-    points-for.
+    """Grade drafts of the given ``draft_types`` against a MULTI-YEAR outcome
+    instead of same-season points-for.
 
-    Same-season points-for barely tracks a dynasty startup's grade (the backtest
-    showed r~0.05): the draft rewards long-term value, which pays off over the
-    *following* seasons, not the draft year. This walks the league's full history
-    (``build_league_history_map``), and for each season whose draft is a startup
-    it scores that draft against how each manager's team finished across that
-    season and every later one (``rank_success`` per season, combined by
-    ``multiyear_outcome`` with a forward decay). Managers are matched across
-    seasons by owner_id (roster_id can change; the owner does not).
+    Same-season points-for barely tracks a dynasty draft's grade because the
+    payoff lands over the *following* seasons, not the draft year - true for a
+    startup's long-term value and doubly so for a rookie class (a rookie barely
+    plays year 1, breaks out year 2-3). This walks the league's full history
+    (``build_league_history_map``), and for each qualifying draft season it scores
+    the draft against how each manager's team finished across that season and
+    every later one (``rank_success`` per season, combined by ``multiyear_outcome``
+    with a forward ``decay`` - use a higher decay for rookies so later seasons,
+    where the class matures, count more). Managers are matched across seasons by
+    owner_id (roster_id can change; the owner does not).
 
     Real-data only (needs Sleeper + DB-backed valuations); returns ``[]`` offline.
     """
@@ -655,8 +658,8 @@ def load_startup_multiyear_samples(
             continue
         is_sf, dtype, teams = detect_sleeper_meta(
             league, draft_obj, sd["teams"], default_teams=num_teams)
-        if dtype != "startup":
-            continue  # rookie/redraft drafts are graded elsewhere
+        if dtype not in draft_types:
+            continue  # only the requested draft type(s)
         forward = [s for s in seasons_sorted if s >= yr and season_data.get(s)]
         if len(forward) < min_seasons:
             continue  # too little forward history to judge sustained success
@@ -665,7 +668,7 @@ def load_startup_multiyear_samples(
         except Exception:
             continue
 
-        value_fn = value_fn_factory(is_sf, "startup")
+        value_fn = value_fn_factory(is_sf, dtype)
         total_picks = len(picks) or teams * 15
         owner_this = sd["owner"]
         by_owner: Dict[str, List[dict]] = {}
@@ -677,7 +680,7 @@ def load_startup_multiyear_samples(
             pos = (meta.get("position") or "").upper()
             pick_no = int(pk.get("pick_no") or 0)
             row = {
-                "pos": pos, "pick_no": pick_no, "draft_type": "startup",
+                "pos": pos, "pick_no": pick_no, "draft_type": dtype,
                 "is_sf": is_sf, "num_teams": teams, "total_picks": total_picks,
             }
             vals = value_fn({**pk, "position": pos, "pick_no": pick_no})
@@ -700,10 +703,15 @@ def load_startup_multiyear_samples(
                 continue
             samples.append(TeamSample(
                 picks=team_picks, outcome=outcome, label=f"{lid}:{owner}",
-                meta={"league_id": str(lid), "is_sf": is_sf, "draft_type": "startup",
+                meta={"league_id": str(lid), "is_sf": is_sf, "draft_type": dtype,
                       "seasons": len(successes)},
             ))
     return samples
+
+
+def load_startup_multiyear_samples(current_league_id, season, **kw):
+    """Back-compat wrapper: multi-year outcome for startup drafts only."""
+    return load_multiyear_samples(current_league_id, season, draft_types=("startup",), **kw)
 
 
 # --------------------------------------------------------------------------- #

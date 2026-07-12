@@ -17,6 +17,8 @@ from data_building.draft_grade_backtest import (
     detect_sleeper_meta,
     final_ranks,
     letter_calibration,
+    load_multiyear_samples,
+    load_startup_multiyear_samples,
     multiyear_outcome,
     pick_score_by_round,
     outcome_from_rank,
@@ -328,3 +330,11 @@ def test_candidate_grid_renormalizes_and_covers_all_levers():
     # _perturb keeps the total weight budget (renormalized to base sum).
     bumped = _perturb(base, "value", 0.10)
     assert math.isclose(sum(bumped.values()), sum(base.values()), rel_tol=1e-9)
+
+
+def test_multiyear_loaders_safe_offline():
+    # Real-data loaders return [] without Sleeper/DB rather than raising, and the
+    # startup wrapper delegates to the generalized loader.
+    f = lambda is_sf, dtype: (lambda pk: None)
+    assert load_multiyear_samples("0", 2026, value_fn_factory=f, draft_types=("rookie",)) == []
+    assert load_startup_multiyear_samples("0", 2026, value_fn_factory=f) == []

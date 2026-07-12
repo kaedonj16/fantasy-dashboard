@@ -1533,6 +1533,19 @@ function initPlayoffOdds(root = document) {
           }
           panel.innerHTML = _renderPlayoffOdds(data);
           fadeInCard(panel);
+          // Layer the exact clinch/elimination outlook over the odds table when
+          // we're in the final-weeks window (the scenarios endpoint returns
+          // exact=false otherwise, and we leave the odds table untouched).
+          if (!data.is_complete) {
+            fetch(
+              `/api/playoff-scenarios?platform=${encodeURIComponent(platform)}` +
+              `&league_id=${encodeURIComponent(leagueId)}` +
+              `&season=${encodeURIComponent(season)}`
+            )
+              .then(r => (r.ok ? r.json() : null))
+              .then(scen => { if (scen && scen.show) _annotatePlayoffScenarios(panel, scen); })
+              .catch(() => {});
+          }
         })
         .catch(() => {
           panel.innerHTML = '<p class="po-error">Unable to load playoff odds.</p>';
@@ -1638,6 +1651,58 @@ function _renderPlayoffOdds(data) {
       <tbody>${rows}</tbody>
     </table>
   </div>`;
+}
+
+function _poScenClass(t) {
+  if (t.status === 'clinched' || t.status === 'clinched_bye') return 'po-out-clinched';
+  if (t.status === 'eliminated') return 'po-out-eliminated';
+  if (t.controls_destiny) return 'po-out-control';
+  return 'po-out-alive';
+}
+
+// Add an "Outlook" column to the playoff-odds table with each team's exact
+// clinch/elimination scenario ("Win this week and you're in", "Clinched",
+// "Eliminated", magic numbers). Rows are matched by data-roster-id; teams with
+// no scenario entry get a dash. Safe no-op if the table isn't present.
+function _annotatePlayoffScenarios(panel, scen) {
+  const table = panel && panel.querySelector('.po-table');
+  if (!table || !scen || !scen.teams || !scen.teams.length) return;
+  const byRid = {};
+  scen.teams.forEach(t => { byRid[String(t.roster_id)] = t; });
+
+  const headRow = table.querySelector('thead tr');
+  if (headRow && !headRow.querySelector('.po-outlook')) {
+    const th = document.createElement('th');
+    th.className = 'po-outlook';
+    th.textContent = 'Outlook';
+    headRow.appendChild(th);
+  }
+  table.querySelectorAll('tbody tr').forEach(tr => {
+    if (tr.querySelector('.po-outlook')) return;
+    const rid = tr.getAttribute('data-roster-id');
+    const t = rid != null ? byRid[String(rid)] : null;
+    // Strike through and dim teams that are mathematically out of it.
+    if (t && t.status === 'eliminated') tr.classList.add('po-row-eliminated');
+    const td = document.createElement('td');
+    td.className = 'po-outlook';
+    if (t && t.summary) {
+      const pill = document.createElement('span');
+      pill.className = 'po-out-pill ' + _poScenClass(t);
+      pill.textContent = t.summary;
+      td.appendChild(pill);
+    } else {
+      td.innerHTML = '<span class="po-out-dash">–</span>';
+    }
+    tr.appendChild(td);
+  });
+
+  const sub = panel.querySelector('.po-subtitle');
+  if (sub && !sub.querySelector('.po-scen-note')) {
+    const note = document.createElement('span');
+    note.className = 'po-scen-note';
+    note.textContent = scen.mode === 'exact' ? ' · exact clinch outlook' : ' · clinch outlook';
+    sub.appendChild(note);
+  }
 }
 
 function initTeamTabs(root = document) {
