@@ -22376,6 +22376,91 @@ def api_playoff_odds():
         return jsonify({"error": "Internal error"}), 500
 
 
+@app.route("/api/playoff-scenarios")
+def api_playoff_scenarios():
+    """Exact clinch / elimination picture for the final regular-season weeks.
+
+    Complements /api/playoff-odds (probabilities) with the deterministic
+    "what do I need" answer: who has clinched, who is eliminated, who controls
+    their own destiny, magic numbers, and one-game "win and you're in" swings.
+    Enumerates every remaining-game outcome, so it is only exact inside the
+    end-of-season window (few enough games); otherwise it returns exact=false
+    and the UI falls back to the odds.
+
+    Query params: platform, league_id, season
+    """
+    platform  = (request.args.get("platform") or "sleeper").strip().lower()
+    league_id = (request.args.get("league_id") or "").strip()
+    season_s  = (request.args.get("season") or "").strip()
+
+    if not league_id or not season_s:
+        return jsonify({"error": "missing params"}), 400
+    try:
+        season = int(season_s)
+    except ValueError:
+        return jsonify({"error": "invalid season"}), 400
+
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        if not ctx:
+            return jsonify({"error": "league not found"}), 404
+
+        from data_building.simulate_playoff_odds import build_sim_state, _n_byes
+        from data_building.playoff_scenarios import compute_scenarios, scenario_summary
+
+        settings      = ctx.get("league_settings") or {}
+        current_week  = int(ctx.get("current_week") or 0)
+        divisions     = int(settings.get("divisions") or 0) >= 2
+
+        state = build_sim_state(ctx, platform)
+        if not state:
+            # Season complete or no schedule data — no live race to describe.
+            return jsonify({
+                "exact": False, "reason": "not_in_season",
+                "current_week": current_week, "teams": [],
+            })
+
+        playoff_teams = int(state.get("playoff_teams") or 6)
+        n_byes        = _n_byes(playoff_teams)
+        sim_teams     = state.get("teams") or []
+        scen_teams    = [
+            {"roster_id": t["roster_id"], "wins": t.get("wins", 0),
+             "ties": t.get("ties", 0), "pf": t.get("pf", 0.0)}
+            for t in sim_teams
+        ]
+        scen = compute_scenarios(
+            scen_teams, state.get("matchups") or {}, playoff_teams,
+            n_byes=n_byes, divisions=divisions,
+        )
+
+        name_by_rid = {int(t["roster_id"]): t.get("name") for t in sim_teams}
+        rec_by_rid  = {int(t["roster_id"]): (t.get("wins", 0), t.get("losses", 0),
+                                             t.get("ties", 0)) for t in sim_teams}
+        teams_out = []
+        for rid, entry in (scen.get("teams") or {}).items():
+            w, l, ti = rec_by_rid.get(int(rid), (0, 0, 0))
+            teams_out.append({
+                "roster_id":   int(rid),
+                "name":        name_by_rid.get(int(rid)),
+                "record":      f"{w}-{l}" + (f"-{ti}" if ti else ""),
+                "summary":     scenario_summary(entry),
+                **entry,
+            })
+        teams_out.sort(key=lambda x: (x.get("best_seed") or 99, x.get("worst_seed") or 99))
+
+        return jsonify({
+            "exact":          scen.get("exact", False),
+            "remaining_games": scen.get("remaining_games", 0),
+            "playoff_teams":  playoff_teams,
+            "n_byes":         n_byes,
+            "current_week":   current_week,
+            "teams":          teams_out,
+        })
+    except Exception as exc:
+        logger.exception("[playoff-scenarios] %s", exc)
+        return jsonify({"error": "Internal error"}), 500
+
+
 from dashboard_services.adp_service import (
     fetch_fc_rookie_adp as _fetch_fc_rookie_adp,
     fetch_fc_startup_adp as _fetch_fc_startup_adp,
