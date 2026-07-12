@@ -95,6 +95,11 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-ss-stat-lbl { font-size: 10px; color: var(--text-subtle); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
 .wv-ss-stat-val { font-size: 13px; font-weight: 700; color: var(--text); }
 .wv-ss-stat-val.muted { color: var(--text-muted); }
+.wv-ss-env { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 6px; align-self: flex-start; }
+.wv-ss-env-dome { background: rgba(59,130,246,.14); color: #1d4ed8; }
+.wv-ss-env-cold { background: rgba(56,189,248,.16); color: #0369a1; }
+[data-theme="dark"] .wv-ss-env-dome { background: rgba(59,130,246,.20); color: #60a5fa; }
+[data-theme="dark"] .wv-ss-env-cold { background: rgba(56,189,248,.20); color: #7dd3fc; }
 
 /* Matchup chip */
 .wv-mu { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; }
@@ -437,6 +442,7 @@ function wvRenderStartSit() {{
           ${{p.recent_ppg > 0 ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">L4 PPG</span><span class="wv-ss-stat-val">${{p.recent_ppg}}</span></div>` : ''}}
           ${{usageStat}}
           ${{p.opponent       ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Opp</span><span class="wv-ss-stat-val muted">${{p.opponent}}</span></div>` : ''}}
+          ${{p.game_env ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Venue</span><span class="wv-ss-env wv-ss-env-${{p.game_env.kind}}" title="${{p.game_env.note || ''}}">${{p.game_env.label}}</span></div>` : ''}}
           ${{muChip ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Matchup</span><span class="wv-ss-stat-val">${{muChip}}</span></div>` : ''}}
           ${{p.fpts_against > 0 ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Def allows</span><span class="wv-ss-stat-val muted">${{p.fpts_against}} pts</span></div>` : ''}}
         </div>`;

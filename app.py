@@ -10342,6 +10342,29 @@ def api_waiver_candidates():
     return jsonify({"candidates": result, "total": len(result)})
 
 
+def _ss_game_env(home_team: "Optional[str]", week: int) -> "Optional[dict]":
+    """Compact game-environment chip for a start/sit row, or None.
+
+    Only returns a tag when there's actual lineup signal - an indoor
+    (weather-proof) venue or a cold-weather outdoor site in the late-season
+    window. Warm/mild outdoor games stay unmarked to avoid chip clutter.
+    """
+    if not home_team:
+        return None
+    try:
+        from utils.nfl_stadiums import game_environment
+        env = game_environment(home_team, week)
+    except Exception:
+        return None
+    if not env:
+        return None
+    if env.get("dome"):
+        return {"label": "Dome", "kind": "dome", "note": env.get("note")}
+    if env.get("cold"):
+        return {"label": "Cold", "kind": "cold", "note": env.get("note")}
+    return None
+
+
 @app.route("/api/start-sit-options")
 def api_start_sit_options():
     """
@@ -10434,6 +10457,7 @@ def api_start_sit_options():
     # ── Opponent map from current week schedule ───────────────────────────────
     opponent_map: dict = {}
     opp_label_map: dict = {}
+    home_team_of: dict = {}   # team abbr -> the HOME team of its game (for venue)
     try:
         from utils.utils import load_week_sched as _lsched
         if current_week > 0:
@@ -10446,6 +10470,8 @@ def api_start_sit_options():
                     opponent_map[away] = home
                     opp_label_map[home] = f"vs {away}"
                     opp_label_map[away] = f"@ {home}"
+                    home_team_of[home] = home
+                    home_team_of[away] = home
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
@@ -10594,6 +10620,7 @@ def api_start_sit_options():
             "injury_status": injury_status,
             "usage_delta":   usage_delta,
             "usage_stat":    _ut_ss.get("stat"),
+            "game_env":      _ss_game_env(home_team_of.get(team), current_week) if not on_bye else None,
             "_score":        score,
         })
 
