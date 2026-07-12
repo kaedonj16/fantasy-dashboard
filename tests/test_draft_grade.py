@@ -97,12 +97,12 @@ def test_field_curve_passthrough_under_three():
 
 
 def test_field_curve_centers_on_anchor():
-    # Zero spread would center every team on the anchor (74), but the raw cap
+    # Zero spread would center every team on the anchor (70), but the raw cap
     # keeps a mediocre field from being inflated: a 60-composite team tops out
     # at raw + 8 = 68 no matter how it compares to the field.
     assert dr_apply_field_curve([60, 60, 60]) == [68, 68, 68]
-    # A strong tied field is not capped down: 90 + 8 leaves the anchor intact.
-    assert dr_apply_field_curve([90, 90, 90]) == [74, 74, 74]
+    # A strong tied field lands on the anchor (a low B), not capped down.
+    assert dr_apply_field_curve([90, 90, 90]) == [70, 70, 70]
 
 
 def test_field_curve_orders_preserved_and_bounded():
@@ -112,13 +112,13 @@ def test_field_curve_orders_preserved_and_bounded():
 
 
 def test_field_curve_compressed_a_needs_more_than_one_sd():
-    # Recalibrated spread (PTS 9, was 11): the backtest showed grade separation
-    # only weakly predicts success, so a +1 SD team now lands in A- rather than a
-    # full A - an A requires clearly more than one SD of real separation.
+    # Recalibrated (anchor 70, PTS 9): the average draft is a low B and an A is
+    # reserved for clearly-above-average drafts. A +1 SD team lands in B+, so an
+    # A requires well over one SD of real separation.
     curved = dr_apply_field_curve([66, 74, 82])   # top team is exactly +1 SD
-    assert curved == [65, 74, 83]
-    assert dr_grade_letter(curved[2]) == "A-"     # +1 SD -> A-, not A
-    assert dr_grade_letter(curved[1]) == "B"      # field average stays a B
+    assert curved == [61, 70, 79]
+    assert dr_grade_letter(curved[2]) == "B+"     # +1 SD -> B+, not A
+    assert dr_grade_letter(curved[1]) == "B"      # field average is a (low) B
 
 
 # ---- dr_team_grade_score --------------------------------------------------
