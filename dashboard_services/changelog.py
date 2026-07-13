@@ -11,6 +11,11 @@ CHANGELOG = [
         "link": "/waivers"
     },
     {
+        "date": "2026-07-13",
+        "tag": "new",
+        "text": "Playoff Picture: the Playoff Odds now include an exact clinch and elimination outlook down the stretch. See who has clinched a berth or a first-round bye, who is mathematically eliminated (their row is struck through), who controls their own destiny, and the magic number of wins each team needs to clinch. It appears over the final five weeks or so of the regular season.",
+    },
+    {
         "date": "2026-06-24",
         "tag": "new",
         "text": "Draft Room: A full draft assistant with real-time pick tracking, best-available rankings, pick scoring, and post-draft grades. Run a mock for any format or connect directly to your live Sleeper draft. Supports rookie, startup, and redraft leagues with format-specific grading, team archetype detection, and a shareable draft summary card.",
