@@ -14925,6 +14925,8 @@ def build_schedule_body(ctx):
           <select id="schedWkStart" class="sched-select"></select>
           <span class="sched-ctrl-sep">to</span>
           <select id="schedWkEnd" class="sched-select"></select>
+          <button type="button" class="sched-preset-btn" id="schedFullPreset"
+            title="Show every remaining week">Full Season</button>
           <button type="button" class="sched-preset-btn" id="schedPlayoffPreset"
             title="Jump to the fantasy playoff weeks (15-17)">Playoffs</button>
         </div>
@@ -15277,35 +15279,43 @@ def build_schedule_body(ctx):
       startSel.addEventListener('change', function() {
         wkStart = parseInt(this.value, 10);
         if (wkEnd < wkStart) wkEnd = wkStart;
-        fillWeekSelects(); persist(); syncPlayoffBtn();
+        fillWeekSelects(); persist(); syncPresetBtns();
         if (currentView === 'my-players') renderGrid(); else { rankPage = 0; rankingsCache = null; renderRankings(); }
       });
       endSel.addEventListener('change', function() {
         wkEnd = parseInt(this.value, 10);
         if (wkStart > wkEnd) wkStart = wkEnd;
-        fillWeekSelects(); persist(); syncPlayoffBtn();
+        fillWeekSelects(); persist(); syncPresetBtns();
         if (currentView === 'my-players') renderGrid(); else { rankPage = 0; rankingsCache = null; renderRankings(); }
       });
 
-      // One-click jump to the fantasy playoff weeks (15-17), clamped to what's
-      // still selectable (can't pick weeks already played).
+      // One-click range presets: Full Season (every remaining week) and
+      // Playoffs (weeks 15-17), each clamped to what's still selectable.
+      var fullBtn    = document.getElementById('schedFullPreset');
       var playoffBtn = document.getElementById('schedPlayoffPreset');
-      function syncPlayoffBtn() {
-        if (!playoffBtn) return;
+      function syncPresetBtns() {
         var ps = Math.max(CFG.startWeek, 15), pe = Math.min(CFG.maxWeek, 17);
-        playoffBtn.classList.toggle('active', wkStart === ps && wkEnd === pe);
-        playoffBtn.disabled = ps > pe;
+        if (fullBtn) fullBtn.classList.toggle('active', wkStart === CFG.startWeek && wkEnd === CFG.maxWeek);
+        if (playoffBtn) {
+          playoffBtn.classList.toggle('active', wkStart === ps && wkEnd === pe);
+          playoffBtn.disabled = ps > pe;
+        }
+      }
+      function applyPreset(s, e) {
+        wkStart = s; wkEnd = e;
+        if (wkEnd < wkStart) wkEnd = wkStart;
+        fillWeekSelects(); persist(); syncPresetBtns();
+        if (currentView === 'my-players') renderGrid(); else { rankPage = 0; rankingsCache = null; renderRankings(); }
+      }
+      if (fullBtn) {
+        fullBtn.addEventListener('click', function() { applyPreset(CFG.startWeek, CFG.maxWeek); });
       }
       if (playoffBtn) {
         playoffBtn.addEventListener('click', function() {
-          wkStart = Math.max(CFG.startWeek, 15);
-          wkEnd   = Math.min(CFG.maxWeek, 17);
-          if (wkEnd < wkStart) wkEnd = wkStart;
-          fillWeekSelects(); persist(); syncPlayoffBtn();
-          if (currentView === 'my-players') renderGrid(); else { rankPage = 0; rankingsCache = null; renderRankings(); }
+          applyPreset(Math.max(CFG.startWeek, 15), Math.min(CFG.maxWeek, 17));
         });
-        syncPlayoffBtn();
       }
+      syncPresetBtns();
 
       addInput.addEventListener('input', function() {
         showAddResults(this.value.trim());
@@ -15403,21 +15413,30 @@ def build_schedule_body(ctx):
                 def _short(bp):
                     order = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "K": 4, "DEF": 5}
                     items = sorted(bp.items(), key=lambda kv: (-kv[1], order.get(kv[0], 9)))
-                    return ", ".join(f"{n} {p}" for p, n in items)
-                _chips = "".join(
-                    f'<span class="sbo-week{" sbo-crunch" if w["crunch"] else ""}">'
-                    f'<span class="sbo-wk">Wk {w["week"]}</span>'
-                    f'<span class="sbo-pos">{_short(w["by_pos"])}</span></span>'
-                    for w in _outlook[:6]
-                )
+                    return " ".join(
+                        f'<span class="sbo-tag">{n} {p}</span>' for p, n in items
+                    )
+                _warn = ('<i class="fa-solid fa-triangle-exclamation sbo-warn" '
+                         'aria-hidden="true"></i>')
+                def _chip(w):
+                    cr = w["crunch"]
+                    return (
+                        f'<div class="sbo-week{" is-crunch" if cr else ""}">'
+                        f'<span class="sbo-wk">{_warn if cr else ""}Wk {w["week"]}</span>'
+                        f'<span class="sbo-pos">{_short(w["by_pos"])}</span>'
+                        '</div>'
+                    )
+                _chips = "".join(_chip(w) for w in _outlook[:8])
                 _has_crunch = any(w["crunch"] for w in _outlook)
-                _note = ("Weeks where multiple starters share a bye are flagged"
+                _note = ("Amber = multiple starters share a bye"
                          if _has_crunch else "Upcoming byes on your roster")
                 bye_banner = (
                     '<div class="sched-bye-outlook" role="group" aria-label="Bye week outlook">'
+                    '<div class="sbo-header">'
                     '<span class="sbo-label">Bye Outlook</span>'
-                    f'<div class="sbo-weeks">{_chips}</div>'
                     f'<span class="sbo-note">{_note}</span>'
+                    '</div>'
+                    f'<div class="sbo-weeks">{_chips}</div>'
                     '</div>'
                 )
     except Exception:
