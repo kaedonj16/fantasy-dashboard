@@ -15694,21 +15694,22 @@ def page_schedule(platform: str, season: int, league_id: str):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _player_row(p: dict, owner: str, team_label: str, ava_html: str,
-                tag: str, tag_color: str) -> str:
+                tag: str, tone: str) -> str:
+    """tone: 'win' (sleeper) or 'loss' (bust) — drives the tokenized score color."""
     name = html.escape(str(p.get("name") or "Unknown"))
     pos  = html.escape(str(p.get("pos") or "–"))
     nfl  = html.escape(str(p.get("nfl") or ""))
     pts  = float(p.get("pts") or 0)
     return f"""
-<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);">
+<div class="rc-row">
   {ava_html}
-  <div style="flex:1;min-width:0;">
-    <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{name}</div>
-    <div style="font-size:11px;color:var(--muted);">{pos} · {nfl} &nbsp;·&nbsp; {html.escape(team_label)}</div>
+  <div class="rc-main">
+    <div class="rc-name">{name}</div>
+    <div class="rc-meta">{pos} · {nfl} &nbsp;·&nbsp; {html.escape(team_label)}</div>
   </div>
-  <div style="text-align:right;flex-shrink:0;">
-    <div style="font-size:16px;font-weight:800;color:{tag_color};">{pts:.2f}</div>
-    <div style="font-size:9px;color:var(--muted);font-weight:600;letter-spacing:.04em;">{tag}</div>
+  <div class="rc-score">
+    <div class="v {tone}">{pts:.2f}</div>
+    <div class="t">{tag}</div>
   </div>
 </div>"""
 
@@ -15800,12 +15801,12 @@ def _build_lineup_analysis_html(
 
     bust_rows = "".join(
         _player_row(p, owner, team, _ava_small(owner, rid),
-                    "BUST", "#ef4444")
+                    "BUST", "loss")
         for (rid, team, owner, p) in busts
     )
     sleeper_rows = "".join(
         _player_row(p, owner, team, _ava_small(owner, rid),
-                    "SLEEPER", "#22c55e")
+                    "SLEEPER", "win")
         for (rid, team, owner, p) in sleepers
     )
 
@@ -15822,30 +15823,22 @@ def _build_lineup_analysis_html(
         b_pts  = float(b.get("pts") or 0)
         gap    = item["gap"]
         return f"""
-<div style="border-bottom:1px solid var(--border);">
-  <div style="display:flex;align-items:center;gap:10px;padding:10px 14px 5px;">
-    <div style="width:30px;height:30px;border-radius:50%;background:#ef444420;display:flex;align-items:center;
-                justify-content:center;font-size:11px;font-weight:700;color:#ef4444;flex-shrink:0;">{s_name[0] if s_name else "?"}</div>
-    <div style="flex:1;min-width:0;">
-      <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{s_name}</div>
-      <div style="font-size:11px;color:var(--muted);">{s_pos} · {s_nfl} &nbsp;·&nbsp; {team}</div>
+<div class="rc-mistake">
+  <div class="rc-row">
+    <div class="rc-badge loss">{s_name[0] if s_name else "?"}</div>
+    <div class="rc-main">
+      <div class="rc-name">{s_name}</div>
+      <div class="rc-meta">{s_pos} · {s_nfl} &nbsp;·&nbsp; {team}</div>
     </div>
-    <div style="text-align:right;flex-shrink:0;">
-      <div style="font-size:16px;font-weight:800;color:#ef4444;">{s_pts:.2f}</div>
-      <div style="font-size:9px;color:var(--muted);font-weight:600;letter-spacing:.04em;">STARTED</div>
-    </div>
+    <div class="rc-score"><div class="v loss">{s_pts:.2f}</div><div class="t">STARTED</div></div>
   </div>
-  <div style="display:flex;align-items:center;gap:10px;padding:5px 14px 10px;">
-    <div style="width:30px;height:30px;border-radius:50%;background:#22c55e20;display:flex;align-items:center;
-                justify-content:center;font-size:11px;font-weight:700;color:#22c55e;flex-shrink:0;">{b_name[0] if b_name else "?"}</div>
-    <div style="flex:1;min-width:0;">
-      <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{b_name}</div>
-      <div style="font-size:11px;color:var(--muted);">{b_pos} · {b_nfl} &nbsp;·&nbsp; <span style="color:#f59e0b;font-weight:600;">-{gap:.1f} pts</span></div>
+  <div class="rc-row">
+    <div class="rc-badge win">{b_name[0] if b_name else "?"}</div>
+    <div class="rc-main">
+      <div class="rc-name">{b_name}</div>
+      <div class="rc-meta">{b_pos} · {b_nfl} &nbsp;·&nbsp; <span class="rc-gap">-{gap:.1f} pts</span></div>
     </div>
-    <div style="text-align:right;flex-shrink:0;">
-      <div style="font-size:16px;font-weight:800;color:#22c55e;">{b_pts:.2f}</div>
-      <div style="font-size:9px;color:var(--muted);font-weight:600;letter-spacing:.04em;">BENCHED</div>
-    </div>
+    <div class="rc-score"><div class="v win">{b_pts:.2f}</div><div class="t">BENCHED</div></div>
   </div>
 </div>"""
 
@@ -15884,51 +15877,39 @@ def _mock_lineup_analysis_html(team_names: list[str]) -> str:
         {"name": "Trey McBride", "pos": "TE", "nfl": "ARI", "pts": 19.1, "team": team_names[4] if len(team_names) > 4 else "Team E"},
     ]
 
-    def row(p, tag, color):
+    def row(p, tag, tone):
         name = html.escape(p['name']); pos = p['pos']; nfl = p['nfl']
         return f"""
-<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);">
-  <div style="width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;
-              display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0;">{name[0]}</div>
-  <div style="flex:1;min-width:0;">
-    <div style="font-weight:700;font-size:13px;">{name}</div>
-    <div style="font-size:11px;color:var(--muted);">{pos} · {nfl} &nbsp;·&nbsp; {html.escape(p['team'])}</div>
+<div class="rc-row">
+  <div class="rc-badge {tone}">{name[0]}</div>
+  <div class="rc-main">
+    <div class="rc-name">{name}</div>
+    <div class="rc-meta">{pos} · {nfl} &nbsp;·&nbsp; {html.escape(p['team'])}</div>
   </div>
-  <div style="text-align:right;flex-shrink:0;">
-    <div style="font-size:16px;font-weight:800;color:{color};">{p['pts']:.2f}</div>
-    <div style="font-size:9px;color:var(--muted);font-weight:600;letter-spacing:.04em;">{tag}</div>
-  </div>
+  <div class="rc-score"><div class="v {tone}">{p['pts']:.2f}</div><div class="t">{tag}</div></div>
 </div>"""
 
-    bust_rows = "".join(row(p, "BUST", "#ef4444") for p in busts)
-    sleeper_rows = "".join(row(p, "SLEEPER", "#22c55e") for p in sleepers)
+    bust_rows = "".join(row(p, "BUST", "loss") for p in busts)
+    sleeper_rows = "".join(row(p, "SLEEPER", "win") for p in sleepers)
 
     team0 = html.escape(team_names[0] if team_names else "Team A")
     mock_mistake = f"""
-<div style="border-bottom:1px solid var(--border);">
-  <div style="display:flex;align-items:center;gap:10px;padding:10px 14px 5px;">
-    <div style="width:30px;height:30px;border-radius:50%;background:#ef444420;display:flex;align-items:center;
-                justify-content:center;font-size:11px;font-weight:700;color:#ef4444;flex-shrink:0;">C</div>
-    <div style="flex:1;min-width:0;">
-      <div style="font-weight:700;font-size:13px;">Cooper Kupp</div>
-      <div style="font-size:11px;color:var(--muted);">WR · LAR &nbsp;·&nbsp; {team0}</div>
+<div class="rc-mistake">
+  <div class="rc-row">
+    <div class="rc-badge loss">C</div>
+    <div class="rc-main">
+      <div class="rc-name">Cooper Kupp</div>
+      <div class="rc-meta">WR · LAR &nbsp;·&nbsp; {team0}</div>
     </div>
-    <div style="text-align:right;flex-shrink:0;">
-      <div style="font-size:16px;font-weight:800;color:#ef4444;">2.60</div>
-      <div style="font-size:9px;color:var(--muted);font-weight:600;letter-spacing:.04em;">STARTED</div>
-    </div>
+    <div class="rc-score"><div class="v loss">2.60</div><div class="t">STARTED</div></div>
   </div>
-  <div style="display:flex;align-items:center;gap:10px;padding:5px 14px 10px;">
-    <div style="width:30px;height:30px;border-radius:50%;background:#22c55e20;display:flex;align-items:center;
-                justify-content:center;font-size:11px;font-weight:700;color:#22c55e;flex-shrink:0;">S</div>
-    <div style="flex:1;min-width:0;">
-      <div style="font-weight:700;font-size:13px;">Stefon Diggs</div>
-      <div style="font-size:11px;color:var(--muted);">WR · BUF &nbsp;·&nbsp; <span style="color:#f59e0b;font-weight:600;">-18.4 pts</span></div>
+  <div class="rc-row">
+    <div class="rc-badge win">S</div>
+    <div class="rc-main">
+      <div class="rc-name">Stefon Diggs</div>
+      <div class="rc-meta">WR · BUF &nbsp;·&nbsp; <span class="rc-gap">-18.4 pts</span></div>
     </div>
-    <div style="text-align:right;flex-shrink:0;">
-      <div style="font-size:16px;font-weight:800;color:#22c55e;">21.00</div>
-      <div style="font-size:9px;color:var(--muted);font-weight:600;letter-spacing:.04em;">BENCHED</div>
-    </div>
+    <div class="rc-score"><div class="v win">21.00</div><div class="t">BENCHED</div></div>
   </div>
 </div>"""
 
@@ -16240,20 +16221,18 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 
     def standing_row(rank, s):
         bar_pct = s["pf"] / max(r["pf"] for r in standings_rows_data) * 100 if standings_rows_data else 0
-        rank_color = "#f59e0b" if rank == 1 else ("var(--muted)" if rank > 3 else "var(--text)")
+        lead = " lead" if rank == 1 else ""
         return f"""
-<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);">
-  <div style="font-size:13px;font-weight:800;color:{rank_color};min-width:20px;text-align:center;">{rank}</div>
+<div class="st-row">
+  <div class="st-rank{lead}">{rank}</div>
   {ava_img(s["owner"], s["rid"], 28)}
-  <div style="flex:1;min-width:0;">
-    <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_name(s['owner'], s['rid'])}</div>
-    <div style="height:3px;background:var(--border);border-radius:2px;margin-top:3px;overflow:hidden;">
-      <div style="height:3px;background:var(--accent);border-radius:2px;width:{bar_pct:.0f}%;"></div>
-    </div>
+  <div class="st-main">
+    <div class="st-name">{team_name(s['owner'], s['rid'])}</div>
+    <div class="st-bar"><div class="st-fill" style="width:{bar_pct:.0f}%;"></div></div>
   </div>
-  <div style="text-align:right;flex-shrink:0;">
-    <div style="font-size:13px;font-weight:700;">{s['wins']}-{s['losses']}</div>
-    <div style="font-size:11px;color:var(--muted);">{s['pf']:.1f} PF</div>
+  <div class="st-rec">
+    <div class="wl">{s['wins']}-{s['losses']}</div>
+    <div class="pf">{s['pf']:.1f} PF</div>
   </div>
 </div>"""
 
