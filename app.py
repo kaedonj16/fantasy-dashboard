@@ -10366,7 +10366,9 @@ def _load_season_weekly_points(season: int, scoring_settings: dict) -> dict:
         return hit[1]
     out: dict = {}
     try:
-        pattern = os.path.join("cache", "sleeper_stats", f"sleeper_stats_s{season}_w*.json")
+        # Absolute cache path: a relative "cache" glob silently yields nothing
+        # when the server's working directory isn't the repo root.
+        pattern = os.path.join(CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{season}_w*.json")
         for wf in glob.glob(pattern):
             try:
                 with open(wf) as f:
@@ -10599,7 +10601,7 @@ def api_start_sit_options():
     try:
         import glob as _glob
         _stat_files = sorted(_glob.glob(
-            os.path.join("cache", "sleeper_stats", f"sleeper_stats_s{season}_w*.json")
+            os.path.join(CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{season}_w*.json")
         ))
         _season_pts: dict = {}
         _recent_files = _stat_files[-4:]   # last 4 weeks for form
@@ -14523,7 +14525,7 @@ def _compute_fpts_against(season: int) -> dict:
 
     # Weekly stats files: sleeper_stats_s{year}_w{week}_*.json
     stat_files = sorted(_glob.glob(
-        os.path.join("cache", "sleeper_stats", f"sleeper_stats_s{season}_w*.json")
+        os.path.join(CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{season}_w*.json")
     ))
 
     # totals[team][pos] = list of fpts scored against them
@@ -15405,7 +15407,7 @@ def api_schedule_rankings():
         player_pts_actual: dict = {}
         weeks_with_stats: set  = set()
         for w in weeks:
-            sfiles = _glob.glob(os.path.join("cache", "sleeper_stats", f"sleeper_stats_s{season}_w{w}*.json"))
+            sfiles = _glob.glob(os.path.join(CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{season}_w{w}*.json"))
             if not sfiles:
                 continue
             weeks_with_stats.add(w)
@@ -17414,6 +17416,7 @@ _PPG_STATS_CACHE_TTL = 7200
 from utils.fantasy_scoring import score_stats as _score_stats  # noqa: E402
 from utils.consistency import consistency_profile as _consistency_profile  # noqa: E402
 from utils.consistency import blended_consistency_profile as _blended_consistency  # noqa: E402
+from utils.utils import CACHE_DIR  # noqa: E402  # absolute cache root (see relative-path note)
 
 
 def get_model_value_table_cached():
@@ -21113,7 +21116,7 @@ def api_player_game_logs(player_id: str):
         global _PLAYER_DETAIL_YEARS_CACHE, _PLAYER_DETAIL_YEARS_CACHE_TS
         now = time.time()
         if not _PLAYER_DETAIL_YEARS_CACHE or now - _PLAYER_DETAIL_YEARS_CACHE_TS > _PLAYER_DETAIL_YEARS_TTL:
-            stats_files = glob.glob(os.path.join("cache", "sleeper_stats", "sleeper_stats_*.json"))
+            stats_files = glob.glob(os.path.join(CACHE_DIR, "sleeper_stats", "sleeper_stats_*.json"))
             _fresh_years: set = set()
             for sf in stats_files:
                 bn = os.path.basename(sf)
@@ -21143,7 +21146,7 @@ def api_player_game_logs(player_id: str):
                     continue
 
             stats_by_week: dict = {}
-            for week_file in glob.glob(os.path.join("cache", "sleeper_stats", f"sleeper_stats_s{season_year}_w*.json")):
+            for week_file in glob.glob(os.path.join(CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{season_year}_w*.json")):
                 try:
                     m = re.match(r'sleeper_stats_s(\d+)_w(\d+)', os.path.basename(week_file))
                     if m:
