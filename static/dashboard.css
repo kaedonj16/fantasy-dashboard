@@ -18473,6 +18473,51 @@ button:disabled {
   color: #fff;
 }
 .sched-preset-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* Bye-week outlook strip: upcoming weeks where the roster shares byes. */
+.sched-bye-outlook {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin: 10px 0 4px;
+  padding: 10px 12px;
+  background: var(--card-soft);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.sbo-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--text-muted);
+}
+.sbo-weeks { display: flex; flex-wrap: wrap; gap: 6px; }
+.sbo-week {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--row);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.sbo-week .sbo-wk { color: var(--text); font-weight: 700; }
+/* A crunch week (byes meet or exceed a position's starting slots) stands out. */
+.sbo-week.sbo-crunch {
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
+  color: var(--warning);
+}
+.sbo-week.sbo-crunch .sbo-wk { color: var(--warning); }
+.sbo-note { font-size: 11px; color: var(--text-subtle); margin-left: auto; }
+@media (max-width: 600px) {
+  .sbo-note { display: none; }
+}
 .sched-add {
   position: relative;
   flex: 1;
