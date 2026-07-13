@@ -219,13 +219,15 @@ def build_advanced_metrics_body(
             <select id="amSeason" class="am-select am-season-select">__SEASON_OPTIONS__</select>
           </div>
           <div class="am-ctrl am-mobile-filter am-ctrl-weekbar" id="amWeekCtrl">
-            <label class="am-ctrl-label">Week Range</label>
-            <div id="amWkBarHost"></div>
-            <div class="am-quick-ranges" id="amQuickRanges">
-              <button type="button" class="am-qr active" data-range="">Season</button>
-              <button type="button" class="am-qr" data-range="last2">Last 2</button>
-              <button type="button" class="am-qr" data-range="last4">Last 4</button>
+            <div class="am-weekbar-head">
+              <label class="am-ctrl-label">Week Range</label>
+              <div class="am-quick-ranges" id="amQuickRanges">
+                <button type="button" class="am-qr active" data-range="">Season</button>
+                <button type="button" class="am-qr" data-range="last2">Last 2</button>
+                <button type="button" class="am-qr" data-range="last4">Last 4</button>
+              </div>
             </div>
+            <div id="amWkBarHost"></div>
           </div>
           <div class="am-ctrl am-mobile-filter" id="amTeamCtrl">
             <label class="am-ctrl-label">Team</label>
@@ -491,8 +493,11 @@ def build_advanced_metrics_body(
       .am-season-select { min-width:90px; }
       .am-search { width:100%; box-sizing:border-box; }
       .am-sort-btn { cursor:pointer; font-weight:600; white-space:nowrap; }
+      /* Week Range header: label + quick-range chips share one row so the
+         presets don't add height or push the bar out of line. */
+      .am-weekbar-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
       /* Quick week-range chips (Season / Last 2 / Last 4) */
-      .am-quick-ranges { display:flex; gap:4px; margin-top:5px; }
+      .am-quick-ranges { display:flex; gap:4px; }
       .am-qr {
         padding:2px 9px; font-size:11px; font-weight:600; cursor:pointer;
         border:1px solid var(--border); border-radius:999px;
