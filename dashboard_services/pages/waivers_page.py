@@ -59,17 +59,19 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-player-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 .wv-right { display: flex; align-items: center; gap: 10px; }
 .wv-value { font-size: 13px; font-weight: 700; color: var(--text); }
+/* Waiver signals: semantic ones route through tokens (theme-correct for free);
+   value stays purple and injury stays rose so they read as distinct categories. */
 .wv-signal { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 8px; }
-.signal-breakout { background: #10b98120; color: #10b981; }
-.signal-rising   { background: #3b82f620; color: #3b82f6; }
+.signal-breakout { background: color-mix(in srgb, var(--win) 15%, transparent); color: var(--win); }
+.signal-rising   { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
 .signal-value    { background: #8b5cf620; color: #8b5cf6; }
-.signal-aging    { background: #f59e0b20; color: #f59e0b; }
+.signal-aging    { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
 .signal-hold     { background: var(--row); color: var(--text-muted); }
-.signal-usage    { background: #ef444420; color: #ef4444; }
+.signal-usage    { background: color-mix(in srgb, var(--loss) 15%, transparent); color: var(--loss); }
 .signal-injury      { background: #f43f5e20; color: #f43f5e; }
-.signal-injury-soft { background: #fb923c20; color: #fb923c; }
+.signal-injury-soft { background: color-mix(in srgb, var(--orange) 16%, transparent); color: var(--orange); }
 .wv-usage-chip {
-  display: inline-block; font-size: 10px; font-weight: 700; color: #10b981;
+  display: inline-block; font-size: 10px; font-weight: 700; color: var(--win);
   margin-left: 6px; white-space: nowrap;
 }
 
@@ -80,7 +82,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
   padding: 10px 12px; border-radius: 8px; background: var(--card);
   border: 1px solid var(--border); margin-bottom: 6px;
 }
-.wv-ss-player.wv-ss-start  { border-color: #10b981; background: #10b98108; }
+.wv-ss-player.wv-ss-start  { border-color: var(--win); background: color-mix(in srgb, var(--win) 6%, transparent); }
 .wv-ss-player.wv-ss-bye    { opacity: .55; }
 .wv-ss-player.wv-ss-selected { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent-soft); }
 
@@ -97,12 +99,10 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-ss-stat-val { font-size: 13px; font-weight: 700; color: var(--text); }
 .wv-ss-stat-val.muted { color: var(--text-muted); }
 .wv-ss-env, .wv-ss-total, .wv-ss-cons { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 6px; align-self: flex-start; }
-.wv-ss-cons-steady   { background: rgba(34,197,94,.16); color: #15803d; }
+.wv-ss-cons-steady   { background: color-mix(in srgb, var(--win) 16%, transparent); color: var(--win); }
 .wv-ss-cons-balanced { background: rgba(148,163,184,.16); color: var(--text-muted); }
-.wv-ss-cons-volatile { background: rgba(234,179,8,.16); color: #a16207; }
+.wv-ss-cons-volatile { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); }
 .wv-ss-cons-boombust { background: rgba(168,85,247,.16); color: #7e22ce; }
-[data-theme="dark"] .wv-ss-cons-steady   { background: rgba(34,197,94,.20); color: #4ade80; }
-[data-theme="dark"] .wv-ss-cons-volatile { background: rgba(234,179,8,.20); color: #fbbf24; }
 [data-theme="dark"] .wv-ss-cons-boombust { background: rgba(168,85,247,.24); color: #c084fc; }
 /* Subtle "from last season" superscript on blended floor-ceiling */
 .wv-yr { font-size: .68em; font-weight: 600; color: var(--text-muted); vertical-align: super; margin-left: 2px; opacity: .85; }
@@ -115,23 +115,23 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 [data-theme="dark"] .wv-ss-env-wind { background: rgba(148,163,184,.24); color: #cbd5e1; }
 [data-theme="dark"] .wv-ss-env-precip { background: rgba(59,130,246,.22); color: #93c5fd; }
 /* Vegas implied team total: green when high, muted when low */
-.wv-ss-total-high { background: rgba(34,197,94,.16); color: #15803d; }
+.wv-ss-total-high { background: color-mix(in srgb, var(--win) 16%, transparent); color: var(--win); }
 .wv-ss-total-mid  { background: rgba(148,163,184,.16); color: var(--text-muted); }
-.wv-ss-total-low  { background: rgba(239,68,68,.14); color: #b91c1c; }
-[data-theme="dark"] .wv-ss-total-high { background: rgba(34,197,94,.20); color: #4ade80; }
-[data-theme="dark"] .wv-ss-total-low  { background: rgba(239,68,68,.20); color: #f87171; }
+.wv-ss-total-low  { background: color-mix(in srgb, var(--loss) 15%, transparent); color: var(--loss); }
 
-/* Matchup chip */
+/* Matchup chip: a 4-step easy→hard scale, so the middle "ok" keeps its own
+   lime step; the endpoints use the win/warning/loss tokens. */
 .wv-mu { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; }
-.wv-mu-easy { background: #22c55e20; color: #22c55e; }
-.wv-mu-ok   { background: #84cc1620; color: #84cc16; }
-.wv-mu-avg  { background: #f59e0b20; color: #f59e0b; }
-.wv-mu-hard { background: #ef444420; color: #ef4444; }
+.wv-mu-easy { background: color-mix(in srgb, var(--win) 16%, transparent); color: var(--win); }
+.wv-mu-ok   { background: #84cc1620; color: #65a30d; }
+.wv-mu-avg  { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
+.wv-mu-hard { background: color-mix(in srgb, var(--loss) 15%, transparent); color: var(--loss); }
+[data-theme="dark"] .wv-mu-ok { color: #a3e635; }
 
 /* Badges */
-.wv-ss-start-badge      { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #10b98120; color: #10b981; flex-shrink: 0; }
-.wv-ss-flex-start-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #10b98120; color: #10b981; border: 1px solid #10b98140; flex-shrink: 0; }
-.wv-ss-flex-badge       { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #3b82f620; color: #3b82f6; flex-shrink: 0; }
+.wv-ss-start-badge      { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--win) 15%, transparent); color: var(--win); flex-shrink: 0; }
+.wv-ss-flex-start-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--win) 15%, transparent); color: var(--win); border: 1px solid color-mix(in srgb, var(--win) 30%, transparent); flex-shrink: 0; }
+.wv-ss-flex-badge       { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); flex-shrink: 0; }
 .wv-ss-sit-badge        { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: var(--row); color: var(--text-muted); flex-shrink: 0; }
 .wv-ss-bye-badge        { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #f59e0b20; color: #f59e0b; flex-shrink: 0; }
 .wv-inj-out { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--loss) 16%, transparent); color: var(--loss); }
