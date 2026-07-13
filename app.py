@@ -5273,10 +5273,10 @@ def render_standings_sidebar(team_stats) -> str:
     # --------------------
     if hottest is not None:
         cards.append(f"""
-        <div class="card small" style="background: linear-gradient(180deg, #fff8e7, #ffe5b4);border:1px solid #f97316;">
+        <div class="card small hottest-card">
           <div class="card-header">
-            <h3 style="color:#dc2626;">Hottest Team</h3>
-            <h3 style="color:#dc2626;"><i class="fa-solid fa-fire"></i> {hottest['Streak']}</h3>
+            <h3>Hottest Team</h3>
+            <h3><i class="fa-solid fa-fire"></i> {hottest['Streak']}</h3>
           </div>
           <div class="card-body">
             <div class="highlight-game-card">
@@ -5295,7 +5295,7 @@ def render_standings_sidebar(team_stats) -> str:
     # --------------------
     if coldest is not None:
         cards.append(f"""
-        <div class="card small" style="border: 1px solid #163b82f6;background: rgb(44 166 173 / 12%);color: #163b82f6;">
+        <div class="card small coldest-card">
           <div class="card-header">
             <h3>Coldest Team</h3>
             <h3><i class="fa-solid fa-snowflake"></i> {coldest['Streak']}</h3>

@@ -5774,6 +5774,20 @@ select:focus {
   box-shadow: none;
 }
 
+/* Hottest / Coldest streak cards: keep the fire/ice feel but derive it from
+   tokens so the cards adapt to dark mode instead of painting a fixed light
+   gradient on the dark theme. */
+.hottest-card {
+  background: color-mix(in srgb, var(--warning) 10%, var(--card));
+  border-color: color-mix(in srgb, var(--orange) 45%, var(--border));
+}
+.hottest-card .card-header h3 { color: var(--orange); }
+.coldest-card {
+  background: color-mix(in srgb, var(--info) 10%, var(--card));
+  border-color: color-mix(in srgb, var(--info) 40%, var(--border));
+}
+.coldest-card .card-header h3 { color: color-mix(in srgb, var(--info) 62%, var(--text)); }
+
 /* ── Weekly recap: lineup cards (busts/sleepers/mistakes) + standings ──────
    Tokenized + tabular so scores stay legible in both themes and columns line
    up; rows highlight on hover. */
