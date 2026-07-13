@@ -15113,7 +15113,7 @@ tr.team-clickable {
 /* "Who has more" winner highlight on the better value of each metric row.
    (The directional carets were removed — the green bold value is the marker.) */
 .compare-metric-win {
-  color: #10b981 !important;
+  color: var(--win) !important;
   font-weight: 800;
 }
 
@@ -15125,9 +15125,9 @@ tr.team-clickable {
 /* Winner highlight on a hero value card. */
 .pm-hero-stat.compare-hero-win {
   position: relative;
-  border-color: #10b981;
-  box-shadow: inset 0 0 0 1px #10b981;
-  background: color-mix(in srgb, #10b981 8%, var(--bg-alt));
+  border-color: var(--win);
+  box-shadow: inset 0 0 0 1px var(--win);
+  background: color-mix(in srgb, var(--win) 9%, var(--bg-alt));
 }
 .pm-hero-stat.compare-hero-win::after {
   content: "\2713";
@@ -15136,7 +15136,7 @@ tr.team-clickable {
   right: 8px;
   font-size: 10px;
   font-weight: 800;
-  color: #10b981;
+  color: var(--win);
 }
 /* Rank sub-line stays muted/regular weight even when its value cell wins, so it
    reads the same as the player modal's "(#N)" badge regardless of win state. */
