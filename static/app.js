@@ -14065,9 +14065,9 @@ function _compareWireView(p1, p2) {
   const chartDiv = document.getElementById('compareValueChart');
   if (chartDiv) {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
-    const textColor = isDark ? '#9ca3af' : '#6b7280';
-    const bgColor = isDark ? '#1e293b' : '#f8fafc';
+    const _ct = window.brandPlotlyTheme ? window.brandPlotlyTheme() : {};
+    const gridColor = _ct.grid || (isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)');
+    const textColor = _ct.text || (isDark ? '#9ca3af' : '#6b7280');
     // Shared date axis from whichever side(s) have real history, so a tier
     // average can be drawn as a flat dashed reference line across the same span.
     let _axis = [];
@@ -14110,11 +14110,13 @@ function _compareWireView(p1, p2) {
     });
     const _cmpLayout = {
       paper_bgcolor: 'transparent',
-      plot_bgcolor: bgColor,
+      plot_bgcolor: 'transparent',
+      font: { family: window.brandPlotlyFont, color: textColor },
       margin: { t: 10, r: 16, b: 40, l: 46 },
       xaxis: { showgrid: false, tickfont: { size: 11, color: textColor }, zeroline: false },
       yaxis: { showgrid: true, gridcolor: gridColor, tickfont: { size: 11, color: textColor }, zeroline: false },
       legend: { font: { size: 12, color: textColor }, bgcolor: 'transparent', orientation: 'h', x: 0, y: 1.1 },
+      hoverlabel: { font: { family: window.brandPlotlyFont, size: 12 }, bgcolor: _ct.hoverBg, bordercolor: _ct.hoverBorder },
       hovermode: 'x unified',
       showlegend: true,
       shapes: _bandShapes,
