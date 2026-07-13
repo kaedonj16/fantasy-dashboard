@@ -2845,6 +2845,21 @@ strong + .player-badge,
   color: #15803d;
 }
 
+/* Injury designations (from the Sleeper feed). Severity by color:
+   out/IR = red, doubtful = orange, questionable = amber. */
+.player-badge-inj-out {
+  background: rgba(239, 68, 68, 0.15);
+  color: #dc2626;
+}
+.player-badge-inj-d {
+  background: rgba(249, 115, 22, 0.15);
+  color: #ea580c;
+}
+.player-badge-inj-q {
+  background: rgba(245, 158, 11, 0.15);
+  color: #b45309;
+}
+
 .otc-dropdown-item {
   display: flex;
   align-items: center;

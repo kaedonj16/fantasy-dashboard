@@ -8585,6 +8585,16 @@ function openPlayerModal(playerId, playerName, opts) {
       if (isBreakout(pid)) {
         badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
       }
+      // Injury designation (from the full Sleeper feed). Severity by color.
+      if (data.injury && data.injury.status) {
+        const _u = String(data.injury.status).toUpperCase();
+        let _icls = 'player-badge-inj-q';
+        if (['IR', 'OUT', 'PUP', 'SUSP', 'NFI'].includes(_u)) _icls = 'player-badge-inj-out';
+        else if (['DOUBTFUL', 'D'].includes(_u)) _icls = 'player-badge-inj-d';
+        const _tip = [data.injury.body_part, data.injury.notes].filter(Boolean).join(' · ') || _u;
+        const _lbl = _u.length > 14 ? _u.slice(0, 14) : _u;
+        badges += `<span class="player-badge ${_icls}" title="${String(_tip).replace(/"/g, '&quot;')}"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${_lbl}</span>`;
+      }
 
       // Name with inline badges
       const nameEl = document.querySelector('.player-modal-name');
