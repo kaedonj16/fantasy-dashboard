@@ -1896,6 +1896,24 @@ window.resetMatchupCarousels = function (root) {
 
 // Brand look for client-built Plotly charts (mirror of dashboard_services/plotly_theme.py).
 window.brandPlotlyFont = 'InterVariable, Inter, system-ui, -apple-system, sans-serif';
+// Categorical series palette, assigned in fixed order. Ordered for adjacent-hue
+// separation so a multi-line chart (e.g. league standings) stays distinguishable.
+window.brandPlotlyColorway = [
+  '#3b82f6', '#f59e0b', '#16a34a', '#ef4444', '#8b5cf6', '#06b6d4',
+  '#ec4899', '#84cc16', '#f97316', '#6366f1', '#14b8a6', '#eab308'
+];
+// Theme-aware axis/grid/hover colors so every chart matches light AND dark,
+// instead of Plotly's built-in plotly_white/plotly_dark templates.
+window.brandPlotlyTheme = function () {
+  var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  return {
+    dark: dark,
+    text: dark ? '#9aa7b8' : '#7c8798',
+    grid: dark ? 'rgba(148,163,184,0.14)' : 'rgba(15,23,42,0.08)',
+    hoverBg: dark ? '#0f172a' : '#ffffff',
+    hoverBorder: dark ? '#334155' : '#e5e7eb',
+  };
+};
 window.brandPlotlyLayout = function (extra) {
   return Object.assign({
     font: { family: window.brandPlotlyFont, size: 12.5, color: '#7c8798' },
@@ -8346,28 +8364,43 @@ document.addEventListener('DOMContentLoaded', function() {
               // Create div for Plotly chart
               chartContent.innerHTML = '<div id="historyChartPlotly" style="width: 100%; height: 430px;"></div>';
 
-              // Build Plotly traces
+              // Build Plotly traces (thin lines + small markers so up to a dozen
+              // teams stay readable rather than a marker-heavy tangle).
               const traces = data.data.map(team => ({
                 x: team.x,
                 y: team.y,
                 mode: 'lines+markers',
                 name: team.name,
+                line: { width: 2, shape: 'spline', smoothing: 0.6 },
+                marker: { size: 4 },
                 hovertemplate: '%{fullData.name}<br>Week %{x}<br>%{y:.1f} pts<extra></extra>'
               }));
 
-              // Plotly layout
+              // Theme-aware brand layout (replaces the always-white plotly_white
+              // template, which rendered a white chart on the dark theme).
+              const _t = window.brandPlotlyTheme();
               const layout = {
-                template: 'plotly_white',
-                font: { family: window.brandPlotlyFont, size: 12.5 },
+                colorway: window.brandPlotlyColorway,
+                font: { family: window.brandPlotlyFont, size: 12.5, color: _t.text },
                 height: 430,
-                margin: { l: 40, r: 20, t: 20, b: 40 },
-                legend: { orientation: 'h', yanchor: 'bottom', y: 1.02, x: 0 },
-                xaxis: { 
-                  title: 'Week',
+                paper_bgcolor: 'transparent',
+                plot_bgcolor: 'transparent',
+                margin: { l: 44, r: 20, t: 20, b: 40 },
+                legend: { orientation: 'h', yanchor: 'bottom', y: 1.02, x: 0, font: { size: 11, color: _t.text } },
+                hoverlabel: { font: { family: window.brandPlotlyFont, size: 12 }, bgcolor: _t.hoverBg, bordercolor: _t.hoverBorder },
+                hovermode: 'closest',
+                xaxis: {
+                  title: { text: 'Week', font: { size: 11, color: _t.text } },
+                  showgrid: false, zeroline: false,
+                  tickfont: { size: 11, color: _t.text },
                   tickmode: 'auto',
                   nticks: Math.min(10, Math.max(...data.data.flatMap(team => team.x)) || 18)
                 },
-                yaxis: { title: 'Points' }
+                yaxis: {
+                  title: { text: 'Points', font: { size: 11, color: _t.text } },
+                  showgrid: true, gridcolor: _t.grid, zeroline: false,
+                  tickfont: { size: 11, color: _t.text }
+                }
               };
 
               // Render chart (load Plotly on demand)
