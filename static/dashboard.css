@@ -5265,8 +5265,8 @@ select:focus {
   color: var(--border);
 }
 
-.rank-item .chips .chip.diff-pos { color: #16a34a; font-weight: 700; }
-.rank-item .chips .chip.diff-neg { color: #dc2626; font-weight: 700; }
+.rank-item .chips .chip.diff-pos { color: var(--win); font-weight: 700; }
+.rank-item .chips .chip.diff-neg { color: var(--loss); font-weight: 700; }
 
 .rank-item .chips .chip-streak {
   background: transparent;
@@ -6533,8 +6533,8 @@ select:focus {
 .signal-aging     { background: color-mix(in srgb, var(--loss) 14%, transparent);    color: var(--loss); }
 .signal-hold      { background: var(--row); color: var(--text-muted); border: 1px solid var(--border); }
 
-.waiver-arrow-up   { font-size: 10px; font-weight: 700; color: #22c55e; }
-.waiver-arrow-down { font-size: 10px; font-weight: 700; color: #ef4444; }
+.waiver-arrow-up   { font-size: 10px; font-weight: 700; color: var(--win); }
+.waiver-arrow-down { font-size: 10px; font-weight: 700; color: var(--loss); }
 
 /* ============================================
    STANDINGS & RANKINGS
@@ -6708,7 +6708,7 @@ select:focus {
 .po-bar-red    { background: #ef4444; }
 .po-label { font-size: 12px; font-weight: 600; }
 .po-pct-sym { font-size: 10px; font-weight: 400; color: var(--text-muted); }
-.po-made   { color: #22c55e; font-weight: 600; font-size: 12px; }
+.po-made   { color: var(--win); font-weight: 600; font-size: 12px; }
 .po-missed { color: var(--text-muted); font-size: 12px; }
 
 [data-theme="dark"] .po-bar-green  { background: #16a34a; }
@@ -8999,8 +8999,8 @@ git ad.page-sidebar {
   color: var(--border);
 }
 
-.podium .chips .chip.diff-pos { color: #16a34a; font-weight: 700; }
-.podium .chips .chip.diff-neg { color: #dc2626; font-weight: 700; }
+.podium .chips .chip.diff-pos { color: var(--win); font-weight: 700; }
+.podium .chips .chip.diff-neg { color: var(--loss); font-weight: 700; }
 
 /* Dark mode */
 html[data-theme="dark"] .podium .slot.first {
@@ -9014,10 +9014,6 @@ html[data-theme="dark"] .podium .slot.third {
 html[data-theme="dark"] .podium .bar {
   background: rgba(255, 255, 255, 0.08);
 }
-html[data-theme="dark"] .podium .chips .chip.diff-pos { color: #4ade80; }
-html[data-theme="dark"] .podium .chips .chip.diff-neg { color: #f87171; }
-html[data-theme="dark"] .rank-item .chips .chip.diff-pos { color: #4ade80; }
-html[data-theme="dark"] .rank-item .chips .chip.diff-neg { color: #f87171; }
 
 @media (max-width: 768px) {
   .podium .slot .wrap { padding: 12px 10px 10px; }
@@ -12425,8 +12421,8 @@ img, svg, canvas {
   line-height: 1;
   vertical-align: middle;
 }
-.standings-compact .rank-move.up { color: #16a34a; }
-.standings-compact .rank-move.down { color: #dc2626; }
+.standings-compact .rank-move.up { color: var(--win); }
+.standings-compact .rank-move.down { color: var(--loss); }
 
 /* Usage risers strip on the season hub */
 .usage-movers-card .usage-movers-list {
@@ -12460,7 +12456,7 @@ img, svg, canvas {
   font-weight: 700;
   white-space: nowrap;
 }
-.usage-mover .um-delta.up { color: #16a34a; }
+.usage-mover .um-delta.up { color: var(--win); }
 
 /* Playoff-odds hero tile fades in once the sim resolves */
 .os-stat-playoff .os-stat-value { transition: opacity .2s ease; }
@@ -12505,10 +12501,10 @@ img, svg, canvas {
   padding: 12px 16px;
 }
 .trade-window-card .lineup-alert-title { color: inherit; }
-.trade-window-card.tw-buy { border-left-color: #22c55e; }
-.trade-window-card.tw-buy .lineup-alert-title { color: #22c55e; }
-.trade-window-card.tw-sell { border-left-color: #ef4444; }
-.trade-window-card.tw-sell .lineup-alert-title { color: #ef4444; }
+.trade-window-card.tw-buy { border-left-color: var(--win); }
+.trade-window-card.tw-buy .lineup-alert-title { color: var(--win); }
+.trade-window-card.tw-sell { border-left-color: var(--loss); }
+.trade-window-card.tw-sell .lineup-alert-title { color: var(--loss); }
 .trade-window-card.tw-urgent { border-left-width: 5px; }
 
 /* Draft capital pick rows (expandable PICKS detail on team cards) */
@@ -16960,8 +16956,8 @@ tr.team-clickable {
 .wl-alert-item:hover { border-color: var(--accent); transform: translateY(-1px); }
 .wl-alert-name { font-weight: 600; }
 .wl-alert-reason { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.wl-alert-reason.up { color: #16a34a; }
-.wl-alert-reason.down { color: #ef4444; }
+.wl-alert-reason.up { color: var(--win); }
+.wl-alert-reason.down { color: var(--loss); }
 .wl-alert-reason.inj { color: #b45309; }
 [data-theme="dark"] .wl-alert-reason.inj { color: #fbbf24; }
 .wl-muted { color: var(--text-muted); }
