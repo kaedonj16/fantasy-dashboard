@@ -18454,6 +18454,25 @@ button:disabled {
   font-weight: 600;
   cursor: pointer;
 }
+.sched-preset-btn {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color .15s ease, background .15s ease, color .15s ease;
+}
+.sched-preset-btn:hover { border-color: var(--accent); color: var(--text); }
+.sched-preset-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.sched-preset-btn:disabled { opacity: .45; cursor: not-allowed; }
 .sched-add {
   position: relative;
   flex: 1;
