@@ -104,6 +104,8 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 [data-theme="dark"] .wv-ss-cons-steady   { background: rgba(34,197,94,.20); color: #4ade80; }
 [data-theme="dark"] .wv-ss-cons-volatile { background: rgba(234,179,8,.20); color: #fbbf24; }
 [data-theme="dark"] .wv-ss-cons-boombust { background: rgba(168,85,247,.24); color: #c084fc; }
+/* Subtle "from last season" superscript on blended floor-ceiling */
+.wv-yr { font-size: .68em; font-weight: 600; color: var(--text-muted); vertical-align: super; margin-left: 2px; opacity: .85; }
 .wv-ss-env-dome { background: rgba(59,130,246,.14); color: #1d4ed8; }
 .wv-ss-env-cold { background: rgba(56,189,248,.16); color: #0369a1; }
 .wv-ss-env-wind { background: rgba(148,163,184,.20); color: #475569; }
@@ -323,15 +325,15 @@ function wvConsistencyChips(p) {{
   const k = c.label === 'Steady' ? 'steady'
           : c.label === 'Volatile' ? 'volatile'
           : c.label === 'Boom or bust' ? 'boombust' : 'balanced';
-  const yr = c.season ? " '" + String(c.season).slice(-2) : '';
+  const yr = c.season ? '<sup class="wv-yr" title="from the ' + c.season + ' season">’' + String(c.season).slice(-2) + '</sup>' : '';
   const tip = 'Consistency ' + c.consistency + '/100 · boom ' +
               Math.round(c.boom_rate * 100) + '% · bust ' +
               Math.round(c.bust_rate * 100) + '% (' + c.games + ' g' +
               (c.season ? ', ' + c.season : '') + ')';
-  return '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Floor–Ceil' + yr + '</span>' +
-         '<span class="wv-ss-stat-val muted">' + c.floor + '–' + c.ceiling + '</span></div>' +
+  return '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Floor–Ceil</span>' +
+         '<span class="wv-ss-stat-val muted">' + c.floor + '–' + c.ceiling + yr + '</span></div>' +
          '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Profile</span>' +
-         '<span class="wv-ss-cons wv-ss-cons-' + k + '" title="' + tip + '">' + c.label + yr + '</span></div>';
+         '<span class="wv-ss-cons wv-ss-cons-' + k + '" title="' + tip + '">' + c.label + '</span></div>';
 }}
 
 // Compose the start/sit stats row in three groups, most-decisive first, with a
@@ -456,7 +458,7 @@ function wvIsSelected(id) {{
 // where a winner makes sense).
 function wvCmpDerive(p) {{
   const c = p.consistency, cOk = c && !c.small_sample;
-  const yr = cOk && c.season ? " '" + String(c.season).slice(-2) : '';
+  const yr = cOk && c.season ? '<sup class="wv-yr" title="from the ' + c.season + ' season">’' + String(c.season).slice(-2) + '</sup>' : '';
   const pk = !cOk ? '' : (c.label === 'Steady' ? 'steady'
     : c.label === 'Volatile' ? 'volatile'
     : c.label === 'Boom or bust' ? 'boombust' : 'balanced');
