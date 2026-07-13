@@ -11447,10 +11447,9 @@ function _removeWatchlistNav(player_id) {
 }
 
 function _wlClearAll() {
-  const list = _getWatchlist();
-  if (!list.length) return;
+  if (!_getWatchlist().length) return;
   _saveWatchlist([]);
-  list.forEach(p => _wlServerRemove(String(p.player_id)));
+  _wlServerClear();   // wipe the whole account, not just this device's local copy
   _refreshWatchlistNav();
 }
 
@@ -11479,6 +11478,12 @@ function _wlServerAdd(player) {
 function _wlServerRemove(pid) {
   if (!_wlSignedIn()) return;
   fetch('/api/watchlist/' + encodeURIComponent(String(pid)), { method: 'DELETE' }).catch(function () {});
+}
+
+// Clear the entire account watchlist (every device), not just local players.
+function _wlServerClear() {
+  if (!_wlSignedIn()) return Promise.resolve();
+  return fetch('/api/watchlist', { method: 'DELETE' }).catch(function () {});
 }
 
 // Set (or clear) a watched player's note: update localStorage (which re-renders
@@ -11543,23 +11548,51 @@ function _wlAlertsHtml(rows) {
     ' need' + (n === 1 ? 's' : '') + ' attention</div><div class="wl-alerts-list">' + items + '</div></div>';
 }
 
+function _wlMapItems(items) {
+  return (items || []).map(function (it) {
+    return {
+      player_id: String(it.player_id), name: it.name || '',
+      position: it.position || '', team: it.team || '', note: it.note || '',
+    };
+  });
+}
+
+// Replace the local list with the account's (server is the source of truth).
+function _wlServerPull() {
+  return fetch('/api/watchlist', { headers: { 'Accept': 'application/json' }, cache: 'no-store' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) {
+      if (d && d.synced && Array.isArray(d.items)) {
+        localStorage.setItem(_WL_KEY, JSON.stringify(_wlMapItems(d.items)));
+        window.dispatchEvent(new Event('watchlist-updated'));
+      }
+    }).catch(function () {});
+}
+
 let _wlSyncDone = false;
 async function _wlServerSync() {
   if (!_wlSignedIn()) return;
+  // First sign-in on this device: union any pre-signin local picks into the
+  // account. After that, the server is authoritative on load - we PULL and
+  // replace rather than re-uploading, so a "clear all" on another device sticks
+  // instead of being resurrected by this device's stale local list.
+  const migKey = '_wl_merged_' + String(window._viewerUid);
+  let migrated = false;
+  try { migrated = localStorage.getItem(migKey) === '1'; } catch (_) {}
+  if (migrated) { await _wlServerPull(); return; }
   try {
     const res = await fetch('/api/watchlist/merge', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items: _getWatchlist() }),
     });
-    if (!res.ok) return;
-    const d = await res.json();
-    if (d && d.synced && Array.isArray(d.items)) {
-      const merged = d.items.map(function (it) {
-        return { player_id: String(it.player_id), name: it.name || '', position: it.position || '', team: it.team || '' };
-      });
-      localStorage.setItem(_WL_KEY, JSON.stringify(merged));
-      window.dispatchEvent(new Event('watchlist-updated'));
+    if (res.ok) {
+      const d = await res.json();
+      if (d && d.synced && Array.isArray(d.items)) {
+        localStorage.setItem(_WL_KEY, JSON.stringify(_wlMapItems(d.items)));
+        window.dispatchEvent(new Event('watchlist-updated'));
+      }
     }
+    try { localStorage.setItem(migKey, '1'); } catch (_) {}
   } catch (_) {}
 }
 function _wlServerSyncOnce() {
