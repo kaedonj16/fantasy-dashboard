@@ -5774,6 +5774,71 @@ select:focus {
   box-shadow: none;
 }
 
+/* ── Weekly recap: lineup cards (busts/sleepers/mistakes) + standings ──────
+   Tokenized + tabular so scores stay legible in both themes and columns line
+   up; rows highlight on hover. */
+.rc-row {
+  display: flex; align-items: center; gap: 11px;
+  padding: 9px 16px; border-bottom: 1px solid var(--border);
+  transition: background .12s;
+}
+.rc-row:hover { background: var(--row); }
+.rc-main { flex: 1; min-width: 0; }
+.rc-name {
+  font-weight: 700; font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rc-meta { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+.rc-score { text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.rc-score .v { font-size: 17px; font-weight: 800; letter-spacing: -.02em; line-height: 1; }
+.rc-score .v.win  { color: var(--win); }
+.rc-score .v.loss { color: var(--loss); }
+.rc-score .t {
+  font-size: 9px; color: var(--text-subtle); font-weight: 700;
+  letter-spacing: .05em; margin-top: 2px;
+}
+.rc-gap { color: var(--warning); font-weight: 600; }
+/* Player-initial badge tinted by tone (used in coaching-mistake pairs). */
+.rc-badge {
+  width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 800;
+}
+.rc-badge.win  { background: color-mix(in srgb, var(--win) 15%, transparent);  color: var(--win); }
+.rc-badge.loss { background: color-mix(in srgb, var(--loss) 15%, transparent); color: var(--loss); }
+/* Coaching-mistake pairs: two rows share one bordered group. */
+.rc-mistake { border-bottom: 1px solid var(--border); }
+.rc-mistake .rc-row { border-bottom: none; }
+
+/* Standings snapshot */
+.st-row {
+  display: flex; align-items: center; gap: 11px;
+  padding: 9px 16px; border-bottom: 1px solid var(--border);
+  transition: background .12s;
+}
+.st-row:hover { background: var(--row); }
+.st-rank {
+  font-size: 13px; font-weight: 800; min-width: 18px; text-align: center;
+  color: var(--text-muted); font-variant-numeric: tabular-nums;
+}
+.st-rank.lead { color: var(--gold); }
+.st-main { flex: 1; min-width: 0; }
+.st-name {
+  font-weight: 600; font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.st-bar {
+  height: 5px; background: var(--border); border-radius: 99px;
+  margin-top: 4px; overflow: hidden;
+}
+.st-fill {
+  height: 100%; border-radius: 99px;
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 55%, transparent));
+}
+.st-rec { text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.st-rec .wl { font-size: 13px; font-weight: 700; }
+.st-rec .pf { font-size: 11px; color: var(--text-muted); }
+
 .recap-generate-btn svg {
   width: 16px;
   height: 16px;
