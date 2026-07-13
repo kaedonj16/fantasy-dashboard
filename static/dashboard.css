@@ -63,22 +63,10 @@
 /* ============================================
    ANIMATIONS & KEYFRAMES
    ============================================ */
+/* Pure rotation — each spinner owns its own border colors (see .loading-spinner)
+   so the accent stays on-brand and theme-aware instead of a fixed blue. */
 @keyframes spin {
-  0% {
-    transform: rotate(0deg);
-    border-top-color: #3498db;
-    border-right-color: transparent;
-  }
-  50% {
-    transform: rotate(180deg);
-    border-top-color: #3498db;
-    border-right-color: transparent;
-  }
-  100% {
-    transform: rotate(360deg);
-    border-top-color: #3498db;
-    border-right-color: transparent;
-  }
+  to { transform: rotate(360deg); }
 }
 
 @keyframes firePulse {
@@ -3308,9 +3296,9 @@ strong + .player-badge,
   margin: 10px auto;
   width: 24px;
   height: 24px;
-  border: 3px solid #f3f4f6;
+  border: 3px solid var(--border);
   border-radius: 50%;
-  border-top-color: #3498db;
+  border-top-color: var(--accent);
   border-right-color: transparent;
   animation: spin 1s linear infinite;
 }
