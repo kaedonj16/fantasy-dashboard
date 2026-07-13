@@ -282,6 +282,15 @@ def test_depth_analysis_counts_healthy_blockers():
     assert out["healthy_ahead"] == 1
 
 
+def test_depth_analysis_for_player_missing_team_returns_all_keys():
+    # A player with no team/position (common in the offseason) hits the early
+    # return; it must still carry every key the caller reads - notably "vacated"
+    # - so the waiver signal join can't KeyError.
+    out = depth_analysis_for_player("nope", {"nope": {"team": "", "position": ""}}, {})
+    assert set(out) >= {"injured_ahead", "injured_pids_ahead", "vacated", "healthy_ahead"}
+    assert out["vacated"] == []
+
+
 def test_next_man_up_requires_no_healthy_blocker():
     blocked = _cand(value=250, position="RB", player_id="x")
     blocked["injured_ahead"] = ["IR"]

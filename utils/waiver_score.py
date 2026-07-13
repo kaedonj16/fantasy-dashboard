@@ -299,7 +299,7 @@ def depth_analysis_for_player(pid, full_players: dict, depth_index: dict) -> dic
     team = str(p.get("team") or "").upper()
     pos = str(p.get("position") or "").upper()
     if not team or not pos:
-        return {"injured_ahead": [], "injured_pids_ahead": [], "healthy_ahead": 0}
+        return {"injured_ahead": [], "injured_pids_ahead": [], "vacated": [], "healthy_ahead": 0}
     group = (depth_index or {}).get((team, pos)) or []
     teammates = [g for g in group if g.get("pid") != str(pid)]
     return depth_analysis(p.get("depth_chart_order"), teammates)
