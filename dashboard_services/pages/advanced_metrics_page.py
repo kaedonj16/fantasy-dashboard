@@ -176,6 +176,10 @@ def build_advanced_metrics_body(
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M7 6.5v3M7 4.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
             Metric Glossary
           </button>
+          <button id="amExportBtn" type="button" class="am-legend-btn" title="Download the current filtered view as a CSV">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><path d="M7 1.5v7m0 0 2.3-2.3M7 8.5 4.7 6.2M2.5 10v1.5a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            CSV
+          </button>
         </div>
       </div>
 
@@ -255,7 +259,6 @@ def build_advanced_metrics_body(
           </div>
           <button id="amAddFilterBtn" type="button" class="am-add-stat-btn">&#43; Filter</button>
           <button id="amFiltersBtn" type="button" class="am-sort-btn am-filters-btn">Filters &#9662;</button>
-          <button id="amExportBtn" type="button" class="am-sort-btn" title="Download the current filtered view as a CSV">CSV</button>
           <label class="am-roster-toggle" id="amTrendToggleWrap" title="Show each player's recent usage trend (last 6 weeks) next to the metric">
             <input type="checkbox" id="amTrendToggle">
             <span>Usage trends</span>
@@ -3690,13 +3693,23 @@ _AM_JS = r"""
         lines.push(line.map(esc).join(','));
       });
       const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
       const rangeTag = state.weekRange ? '_' + state.weekRange : '';
-      a.download = 'metrics_' + state.metric + '_' + (state.season || 'season') + rangeTag + '.csv';
+      const fname = 'metrics_' + state.metric + '_' + (state.season || 'season') + rangeTag + '.csv';
+      if (window.navigator && window.navigator.msSaveOrOpenBlob) {
+        window.navigator.msSaveOrOpenBlob(blob, fname);
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fname;
+      a.rel = 'noopener';
+      a.target = '_self';           // download, never a new tab
+      a.style.display = 'none';
       document.body.appendChild(a);
       a.click();
-      setTimeout(function() { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+      a.remove();
+      setTimeout(function() { URL.revokeObjectURL(url); }, 4000);
     });
   }
   if (rosterChk) {
