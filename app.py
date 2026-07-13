@@ -15693,6 +15693,20 @@ def page_schedule(platform: str, season: int, league_id: str):
 # WEEKLY RECAP
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _face_html(p: dict, tone: str) -> str:
+    """Player headshot backed by a tone-tinted initial badge. The initial shows
+    through when the headshot is missing/404s (onerror removes the img)."""
+    name = str(p.get("name") or "?").strip()
+    initial = html.escape(name[0].upper() if name else "?")
+    pid = str(p.get("pid") or p.get("player_id") or "").strip()
+    img = ""
+    if pid:
+        url = f"https://sleepercdn.com/content/nfl/players/thumb/{pid}.jpg"
+        img = (f'<img class="rc-face" src="{url}" alt="" loading="lazy" '
+               f'decoding="async" onerror="this.remove()">')
+    return f'<div class="rc-badge {tone}">{initial}{img}</div>'
+
+
 def _player_row(p: dict, owner: str, team_label: str, ava_html: str,
                 tag: str, tone: str) -> str:
     """tone: 'win' (sleeper) or 'loss' (bust) — drives the tokenized score color."""
@@ -15800,12 +15814,12 @@ def _build_lineup_analysis_html(
     coaching_mistakes = bench_misses[:3]
 
     bust_rows = "".join(
-        _player_row(p, owner, team, _ava_small(owner, rid),
+        _player_row(p, owner, team, _face_html(p, "loss"),
                     "BUST", "loss")
         for (rid, team, owner, p) in busts
     )
     sleeper_rows = "".join(
-        _player_row(p, owner, team, _ava_small(owner, rid),
+        _player_row(p, owner, team, _face_html(p, "win"),
                     "SLEEPER", "win")
         for (rid, team, owner, p) in sleepers
     )
@@ -15825,7 +15839,7 @@ def _build_lineup_analysis_html(
         return f"""
 <div class="rc-mistake">
   <div class="rc-row">
-    <div class="rc-badge loss">{s_name[0] if s_name else "?"}</div>
+    {_face_html(s, "loss")}
     <div class="rc-main">
       <div class="rc-name">{s_name}</div>
       <div class="rc-meta">{s_pos} · {s_nfl} &nbsp;·&nbsp; {team}</div>
@@ -15833,7 +15847,7 @@ def _build_lineup_analysis_html(
     <div class="rc-score"><div class="v loss">{s_pts:.2f}</div><div class="t">STARTED</div></div>
   </div>
   <div class="rc-row">
-    <div class="rc-badge win">{b_name[0] if b_name else "?"}</div>
+    {_face_html(b, "win")}
     <div class="rc-main">
       <div class="rc-name">{b_name}</div>
       <div class="rc-meta">{b_pos} · {b_nfl} &nbsp;·&nbsp; <span class="rc-gap">-{gap:.1f} pts</span></div>

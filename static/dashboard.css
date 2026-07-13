@@ -5798,14 +5798,17 @@ select:focus {
   letter-spacing: .05em; margin-top: 2px;
 }
 .rc-gap { color: var(--warning); font-weight: 600; }
-/* Player-initial badge tinted by tone (used in coaching-mistake pairs). */
+/* Player face: a headshot overlaid on a tone-tinted initial badge, so the
+   initial shows through as the fallback if the headshot 404s or is removed. */
 .rc-badge {
+  position: relative; overflow: hidden;
   width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
   font-size: 11px; font-weight: 800;
 }
 .rc-badge.win  { background: color-mix(in srgb, var(--win) 15%, transparent);  color: var(--win); }
 .rc-badge.loss { background: color-mix(in srgb, var(--loss) 15%, transparent); color: var(--loss); }
+.rc-face { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 /* Coaching-mistake pairs: two rows share one bordered group. */
 .rc-mistake { border-bottom: 1px solid var(--border); }
 .rc-mistake .rc-row { border-bottom: none; }
