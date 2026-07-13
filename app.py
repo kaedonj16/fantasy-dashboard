@@ -14724,6 +14724,58 @@ def _matchup_rank_table(season: int, position: str):
 from utils.schedule_ease import matchup_cell_ease as _matchup_cell_ease  # noqa: E402
 
 
+_PLAYOFF_WEEKS = (15, 16, 17)
+_PLAYOFF_SOS_CACHE: dict = {}   # season -> {"ts": float, "by_pos": {pos: {team: (rank,total,ease)}}}
+_PLAYOFF_SOS_TTL = 6 * 3600     # refresh with the daily matchup-ratings cron
+
+
+def _playoff_sos_for(season: int, team: str, pos: str):
+    """Rest-of-season strength-of-schedule over the fantasy playoff weeks
+    (15-17) for a team+position. Returns (rank, total, ease) with rank 1 =
+    easiest, or None when unavailable. Cached per season+position (schedule is
+    fixed; ratings drift slowly), so the player modal can show it cheaply."""
+    season = int(season)
+    pos = (pos or "").upper()
+    team = _norm_sched_team(team)
+    if not team or pos not in ("QB", "RB", "WR", "TE"):
+        return None
+    now = time.time()
+    entry = _PLAYOFF_SOS_CACHE.get(season)
+    if not entry or now - entry.get("ts", 0) > _PLAYOFF_SOS_TTL:
+        entry = {"ts": now, "by_pos": {}}
+        _PLAYOFF_SOS_CACHE[season] = entry
+    by_pos = entry["by_pos"]
+    if pos not in by_pos:
+        try:
+            rank_map, total, info, _is_z = _matchup_rank_table(season, pos)
+            week_lookups = []
+            for w in _PLAYOFF_WEEKS:
+                lk = {}
+                for g in (load_week_schedule(season, w) or []):
+                    h = _norm_sched_team(g.get("home"))
+                    a = _norm_sched_team(g.get("away"))
+                    if h:
+                        lk[h] = a
+                    if a:
+                        lk[a] = h
+                week_lookups.append(lk)
+            team_ease: dict = {}
+            for t in rank_map.keys():
+                eases = []
+                for lk in week_lookups:
+                    opp = lk.get(t)
+                    if opp:
+                        eases.append(_matchup_cell_ease(rank_map.get(opp), total, info.get(opp, {})))
+                if eases:
+                    team_ease[t] = sum(eases) / len(eases)
+            ranked = sorted(team_ease.items(), key=lambda x: -x[1])
+            by_pos[pos] = {t: (i + 1, len(ranked), round(e, 1)) for i, (t, e) in enumerate(ranked)}
+        except Exception:
+            logger.debug("[playoff_sos] compute failed", exc_info=True)
+            by_pos[pos] = {}
+    return by_pos[pos].get(team)
+
+
 def _compute_schedule_grid(season: int, pids, weeks):
     """For each pid over the given weeks, return matchup + difficulty cells.
     Reuses the cached fpts-allowed table so this is cheap per request."""
@@ -14871,6 +14923,8 @@ def build_schedule_body(ctx):
           <select id="schedWkStart" class="sched-select"></select>
           <span class="sched-ctrl-sep">to</span>
           <select id="schedWkEnd" class="sched-select"></select>
+          <button type="button" class="sched-preset-btn" id="schedPlayoffPreset"
+            title="Jump to the fantasy playoff weeks (15-17)">Playoffs</button>
         </div>
 
         <!-- My Players: player search -->
@@ -15221,15 +15275,35 @@ def build_schedule_body(ctx):
       startSel.addEventListener('change', function() {
         wkStart = parseInt(this.value, 10);
         if (wkEnd < wkStart) wkEnd = wkStart;
-        fillWeekSelects(); persist();
+        fillWeekSelects(); persist(); syncPlayoffBtn();
         if (currentView === 'my-players') renderGrid(); else { rankPage = 0; rankingsCache = null; renderRankings(); }
       });
       endSel.addEventListener('change', function() {
         wkEnd = parseInt(this.value, 10);
         if (wkStart > wkEnd) wkStart = wkEnd;
-        fillWeekSelects(); persist();
+        fillWeekSelects(); persist(); syncPlayoffBtn();
         if (currentView === 'my-players') renderGrid(); else { rankPage = 0; rankingsCache = null; renderRankings(); }
       });
+
+      // One-click jump to the fantasy playoff weeks (15-17), clamped to what's
+      // still selectable (can't pick weeks already played).
+      var playoffBtn = document.getElementById('schedPlayoffPreset');
+      function syncPlayoffBtn() {
+        if (!playoffBtn) return;
+        var ps = Math.max(CFG.startWeek, 15), pe = Math.min(CFG.maxWeek, 17);
+        playoffBtn.classList.toggle('active', wkStart === ps && wkEnd === pe);
+        playoffBtn.disabled = ps > pe;
+      }
+      if (playoffBtn) {
+        playoffBtn.addEventListener('click', function() {
+          wkStart = Math.max(CFG.startWeek, 15);
+          wkEnd   = Math.min(CFG.maxWeek, 17);
+          if (wkEnd < wkStart) wkEnd = wkStart;
+          fillWeekSelects(); persist(); syncPlayoffBtn();
+          if (currentView === 'my-players') renderGrid(); else { rankPage = 0; rankingsCache = null; renderRankings(); }
+        });
+        syncPlayoffBtn();
+      }
 
       addInput.addEventListener('input', function() {
         showAddResults(this.value.trim());
@@ -21053,6 +21127,18 @@ def api_player_details(player_id: str):
         except Exception:
             logger.debug("[api_player_details] injury lookup skipped", exc_info=True)
 
+        # ── Playoff strength-of-schedule (fantasy weeks 15-17) ───────────────
+        # A rest-of-season buy/sell cue: how the player's team ranks for their
+        # position over the championship weeks. Cached; best-effort.
+        playoff_sos = None
+        try:
+            _sos = _playoff_sos_for(season, player_meta.get("team"), player_meta.get("pos"))
+            if _sos:
+                _sr, _st, _se = _sos
+                playoff_sos = {"rank": _sr, "total": _st, "ease": _se}
+        except Exception:
+            logger.debug("[api_player_details] playoff SoS skipped", exc_info=True)
+
         response = {
             "player_id": player_id,
             "name": player_meta.get("name", "Unknown"),
@@ -21066,6 +21152,7 @@ def api_player_details(player_id: str):
             "fantasy_team": fantasy_team,
             "fantasy_team_owner": fantasy_team_owner,
             "injury": injury,
+            "playoff_sos": playoff_sos,
             "stats": {
                 "value": round(float(player_value.get("value", 0)) * _te_mult, 1) if player_value.get("value") else None,
                 "sf_value": round(float(player_value.get("sf_value", 0)) * _te_mult, 1) if player_value.get("sf_value") else None,
