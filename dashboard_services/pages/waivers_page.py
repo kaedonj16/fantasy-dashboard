@@ -449,6 +449,29 @@ function wvRenderCompare() {{
     const l4ppgOth = other && (other.recent_ppg > 0 ? other.recent_ppg : other.season_ppg);
     const ppgWin   = (l4ppg > 0 && l4ppgOth > 0) ? (l4ppg > l4ppgOth ? 'wv-compare-win' : 'wv-compare-lose') : '';
     const muCls   = wvMuClass(p.def_rank, p.def_total);
+
+    // Reliability: floor-ceiling range + boom/bust profile (spelled out here so
+    // it needs no hover on mobile). Higher floor wins the Floor-Ceil row.
+    const c = p.consistency, oc = other && other.consistency;
+    const cOk = c && !c.small_sample;
+    const ocOk = oc && !oc.small_sample;
+    const yr = cOk && c.season ? " '" + String(c.season).slice(-2) : '';
+    const flCeil = cOk ? (c.floor + '–' + c.ceiling + yr) : '–';
+    const floorWin = (cOk && ocOk)
+      ? (c.floor > oc.floor ? 'wv-compare-win' : (c.floor < oc.floor ? 'wv-compare-lose' : '')) : '';
+    const pk = !cOk ? '' : (c.label === 'Steady' ? 'steady'
+      : c.label === 'Volatile' ? 'volatile'
+      : c.label === 'Boom or bust' ? 'boombust' : 'balanced');
+    const boomBust = cOk ? (Math.round(c.boom_rate * 100) + '% / ' + Math.round(c.bust_rate * 100) + '%') : '–';
+
+    // The spot: Vegas implied total (higher wins) + venue/weather.
+    const vegas = p.implied_total != null ? (p.implied_total + ' implied') : '–';
+    const vegasWin = (p.implied_total != null && other && other.implied_total != null)
+      ? (p.implied_total > other.implied_total ? 'wv-compare-win'
+        : (p.implied_total < other.implied_total ? 'wv-compare-lose' : '')) : '';
+    const env = p.weather || p.game_env;
+    const venue = env ? env.label : (p.on_bye ? 'BYE' : '–');
+    const venueCls = env ? ('wv-ss-env wv-ss-env-' + env.kind) : '';
     return `
       <div class="wv-compare-col">
         <div class="wv-compare-player-name">${{p.name}}</div>
@@ -462,6 +485,18 @@ function wvRenderCompare() {{
           <span class="wv-compare-val ${{ppgWin}}">${{p.recent_ppg > 0 ? p.recent_ppg : (p.season_ppg > 0 ? p.season_ppg : '–')}}</span>
         </div>
         <div class="wv-compare-row">
+          <span class="wv-compare-lbl">Floor–Ceil</span>
+          <span class="wv-compare-val ${{floorWin}}">${{flCeil}}</span>
+        </div>
+        <div class="wv-compare-row">
+          <span class="wv-compare-lbl">Profile</span>
+          <span class="wv-compare-val">${{cOk ? `<span class="wv-ss-cons wv-ss-cons-${{pk}}">${{c.label}}</span>` : '–'}}</span>
+        </div>
+        <div class="wv-compare-row">
+          <span class="wv-compare-lbl">Boom / Bust</span>
+          <span class="wv-compare-val">${{boomBust}}</span>
+        </div>
+        <div class="wv-compare-row">
           <span class="wv-compare-lbl">Opponent</span>
           <span class="wv-compare-val">${{p.opponent || (p.on_bye ? 'BYE' : '–')}}</span>
         </div>
@@ -472,6 +507,14 @@ function wvRenderCompare() {{
         <div class="wv-compare-row">
           <span class="wv-compare-lbl">Matchup rank</span>
           <span class="wv-compare-val">${{muChip || (p.on_bye ? '–' : 'No data')}}</span>
+        </div>
+        <div class="wv-compare-row">
+          <span class="wv-compare-lbl">Vegas total</span>
+          <span class="wv-compare-val ${{vegasWin}}">${{vegas}}</span>
+        </div>
+        <div class="wv-compare-row">
+          <span class="wv-compare-lbl">Venue</span>
+          <span class="wv-compare-val">${{venueCls ? `<span class="${{venueCls}}">${{venue}}</span>` : venue}}</span>
         </div>
         <div class="wv-compare-row">
           <span class="wv-compare-lbl">Dynasty rank</span>
