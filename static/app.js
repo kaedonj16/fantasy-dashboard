@@ -8656,18 +8656,6 @@ function openPlayerModal(playerId, playerName, opts) {
         metaParts.push(`<span class="pm-trend-pill" data-trend-tip="${_tipTxt}" style="padding:1px 6px;border-radius:4px;background:${vt.color}18;border:1px solid ${vt.color}40;color:${vt.color};font-size:10px;font-weight:700;cursor:help;">${vtIcon} ${vt.label}</span>`);
       }
 
-      // ── Playoff strength-of-schedule (fantasy weeks 15-17): a buy/sell cue ──
-      const psos = data.playoff_sos;
-      if (psos && psos.rank && psos.total) {
-        const _pct = psos.total > 1 ? (psos.total - psos.rank) / (psos.total - 1) : 0.5; // 1 = easiest
-        let _pc, _plabel;
-        if (_pct >= 0.66)      { _pc = 'var(--win)';     _plabel = 'Easy'; }
-        else if (_pct <= 0.33) { _pc = 'var(--loss)';    _plabel = 'Tough'; }
-        else                   { _pc = 'var(--warning)'; _plabel = 'Neutral'; }
-        const _ptip = 'Playoff schedule (Wks 15-17): ' + _plabel + ' · #' + psos.rank + ' of ' + psos.total +
-                      ' at ' + (data.position || 'position') + ' (1 = easiest)';
-        metaParts.push(`<span class="pm-sos-pill" title="${_ptip}" style="padding:1px 6px;border-radius:4px;background:color-mix(in srgb, ${_pc} 15%, transparent);color:${_pc};font-size:10px;font-weight:700;cursor:help;">Playoff SoS #${psos.rank}/${psos.total}</span>`);
-      }
       const metaEl = document.getElementById('playerModalMeta');
       let metaHTML = `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:0;">${metaParts.join('<span style="opacity:.35;margin:0 3px;">·</span>')}</div>`;
       if (data.fantasy_team) {

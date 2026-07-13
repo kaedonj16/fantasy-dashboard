@@ -120,6 +120,7 @@ def build_graphs_body(ctx: dict) -> str:
                 mode="markers+text",
                 text=[owner],
                 textposition="top center",
+                cliponaxis=False,
                 marker=dict(
                     size=11,
                     line=dict(color="black", width=1),
@@ -150,11 +151,17 @@ def build_graphs_body(ctx: dict) -> str:
         )
 
     figs["pf_pa"] = go.Figure(scatter_traces)
+    _xr = None
+    if len(x) and np.isfinite(x).all():
+        _pad = max((float(max(x)) - float(min(x))) * 0.12, 1.0)
+        _xr = [float(min(x)) - _pad, float(max(x)) + _pad]
     figs["pf_pa"].update_layout(
         xaxis_title=dict(text="Points Against (PA)", standoff=12),
+        xaxis=dict(range=_xr, automargin=True) if _xr else dict(automargin=True),
         yaxis_title=dict(text="Points For (PF)"),
+        yaxis=dict(automargin=True),
         hovermode="closest",
-        margin=dict(l=40, r=20, t=10, b=45),
+        margin=dict(l=52, r=40, t=10, b=45),
         showlegend=False,
     )
 
@@ -514,17 +521,25 @@ def build_career_graphs_body(career_ctx: dict) -> str:
                 mode="markers+text",
                 text=[owner],
                 textposition="top center",
+                cliponaxis=False,
                 marker=dict(size=12, color=owner_colors.get(owner), line=dict(color="black", width=1)),
                 name=owner,
                 showlegend=False,
             )
         )
     figs["pf_pa"] = go.Figure(scatter_traces)
+    _cx = team_stats["PA"].values
+    _cxr = None
+    if len(_cx) and np.isfinite(_cx).all():
+        _cpad = max((float(max(_cx)) - float(min(_cx))) * 0.12, 1.0)
+        _cxr = [float(min(_cx)) - _cpad, float(max(_cx)) + _cpad]
     figs["pf_pa"].update_layout(
         xaxis_title=dict(text="Career Points Against", standoff=12),
+        xaxis=dict(range=_cxr, automargin=True) if _cxr else dict(automargin=True),
         yaxis_title=dict(text="Career Points For"),
+        yaxis=dict(automargin=True),
         hovermode="closest",
-        margin=dict(l=40, r=20, t=10, b=45),
+        margin=dict(l=52, r=40, t=10, b=45),
         showlegend=False,
     )
 
