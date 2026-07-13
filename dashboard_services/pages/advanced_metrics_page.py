@@ -673,7 +673,7 @@ def build_advanced_metrics_body(
       .am-add-stat-btn:hover { border-color:var(--accent,#2563eb); color:var(--accent,#2563eb); }
       .am-add-stat-btn:disabled { opacity:.35; cursor:not-allowed; }
       .am-clear-btn { border-style:solid; }
-      .am-clear-btn:hover { border-color:#ef4444; color:#ef4444; }
+      .am-clear-btn:hover { border-color:var(--loss); color:var(--loss); }
       /* Stat picker dropdown */
       .am-stat-picker {
         position:absolute; top:calc(100% + 6px); right:0; z-index:200;
@@ -754,8 +754,8 @@ def build_advanced_metrics_body(
       .am-trend-inner { display:flex; align-items:center; gap:7px; }
       .am-spark { display:block; opacity:.85; }
       .am-trend-delta { font-size:10px; font-weight:700; white-space:nowrap; }
-      .am-trend-delta-up   { color:#10b981; }
-      .am-trend-delta-down { color:#ef4444; }
+      .am-trend-delta-up   { color:var(--win); }
+      .am-trend-delta-down { color:var(--loss); }
       .am-trend-delta-flat { color:var(--text-muted); opacity:.6; }
       @media (max-width:600px) { .am-trendcell { min-width:80px; } .am-spark { display:none; } }
       /* Pinned-player comparison modal — width grows with player count */
@@ -792,7 +792,7 @@ def build_advanced_metrics_body(
       /* Metric rows */
       .am-cmp-metric { font-weight:700; color:var(--text-muted); white-space:nowrap; font-size:12px; }
       .am-cmp-val { font-weight:800; font-variant-numeric:tabular-nums; font-size:14px; }
-      .am-cmp-best { color:#10b981; }
+      .am-cmp-best { color:var(--win); }
       .am-cmp-rank { font-size:10px; color:var(--text-muted); margin-left:6px; font-weight:700; }
       .am-cmp-bar { height:6px; border-radius:4px; background:rgba(128,128,128,.16); margin-top:6px; overflow:hidden; max-width:160px; }
       .am-cmp-bar > div { height:100%; border-radius:4px; transition:width .2s ease; }
@@ -800,8 +800,8 @@ def build_advanced_metrics_body(
         color:var(--text-muted); background:rgba(128,128,128,.05); padding:5px 12px !important; }
       /* YoY trend arrows - inline beside the value */
       .am-val-row { display:flex; align-items:center; gap:3px; }
-      .am-trend-up   { font-size:11px; font-weight:700; color:#10b981; line-height:1; flex-shrink:0; }
-      .am-trend-down { font-size:11px; font-weight:700; color:#ef4444; line-height:1; flex-shrink:0; }
+      .am-trend-up   { font-size:11px; font-weight:700; color:var(--win); line-height:1; flex-shrink:0; }
+      .am-trend-down { font-size:11px; font-weight:700; color:var(--loss); line-height:1; flex-shrink:0; }
       /* Pin button */
       .am-rank-cell { display:flex; align-items:center; gap:3px; }
       .am-pin-btn {
