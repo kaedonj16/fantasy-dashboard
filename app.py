@@ -10025,14 +10025,17 @@ def api_waiver_candidates():
         logger.debug("suppressed exception", exc_info=True)
 
     # Weekly usage trends: recent role growth is the strongest waiver signal.
+    # Usage trends are a live in-season signal: last-3-week average vs season
+    # average. In the offseason the only data is last season's final weeks, which
+    # reads as if it were current activity ("Usage Spike / +6 touches" in July),
+    # so we hide usage entirely until real games return. Value/breakout signals
+    # ("Breakout", "Trending Up" from value-rank movement) still show.
     usage_trends: dict = {}
     try:
         from data_building.weekly_metrics import get_usage_trends
         _nfl_wv = get_nfl_state() or {}
-        _trend_season_wv = int(_nfl_wv.get("season") or season)
-        if str(_nfl_wv.get("season_type") or "").lower() == "off":
-            _trend_season_wv -= 1
-        usage_trends = get_usage_trends(_trend_season_wv)
+        if str(_nfl_wv.get("season_type") or "").lower() != "off":
+            usage_trends = get_usage_trends(int(_nfl_wv.get("season") or season))
     except Exception:
         usage_trends = {}
 
