@@ -90,7 +90,8 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-ss-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 
 /* Stats row under the name */
-.wv-ss-stats { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
+.wv-ss-stats { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; align-items: stretch; }
+.wv-ss-div { width: 1px; align-self: stretch; background: var(--border); margin: 1px 0; flex: 0 0 auto; }
 .wv-ss-stat { display: flex; flex-direction: column; gap: 1px; }
 .wv-ss-stat-lbl { font-size: 10px; color: var(--text-subtle); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
 .wv-ss-stat-val { font-size: 13px; font-weight: 700; color: var(--text); }
@@ -286,33 +287,75 @@ function wvVenueChip(p) {{
          env.label + '</span></div>';
 }}
 
-// Vegas implied team total + weekly consistency chips. Any field may be absent;
-// render only what's present.
-function wvGameChips(p) {{
-  let out = '';
-  if (p.implied_total != null) {{
-    const it = p.implied_total;
-    const k = it >= 26 ? 'high' : (it <= 18 ? 'low' : 'mid');
-    out += '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Vegas</span>' +
-           '<span class="wv-ss-total wv-ss-total-' + k + '" title="Implied team total (Vegas)">' +
-           it + ' implied</span></div>';
-  }}
+// Vegas implied team total chip.
+function wvVegasChip(p) {{
+  if (p.implied_total == null) return '';
+  const it = p.implied_total;
+  const k = it >= 26 ? 'high' : (it <= 18 ? 'low' : 'mid');
+  return '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Vegas</span>' +
+         '<span class="wv-ss-total wv-ss-total-' + k + '" title="Implied team total (Vegas)">' +
+         it + ' implied</span></div>';
+}}
+
+// Weekly consistency chips: floor-ceiling range + boom/bust profile label.
+function wvConsistencyChips(p) {{
   const c = p.consistency;
-  if (c && !c.small_sample) {{
-    const k = c.label === 'Steady' ? 'steady'
-            : c.label === 'Volatile' ? 'volatile'
-            : c.label === 'Boom or bust' ? 'boombust' : 'balanced';
-    const yr = c.season ? " '" + String(c.season).slice(-2) : '';
-    const tip = 'Consistency ' + c.consistency + '/100 · boom ' +
-                Math.round(c.boom_rate * 100) + '% · bust ' +
-                Math.round(c.bust_rate * 100) + '% (' + c.games + ' g' +
-                (c.season ? ', ' + c.season : '') + ')';
-    out += '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Floor–Ceil' + yr + '</span>' +
-           '<span class="wv-ss-stat-val muted">' + c.floor + '–' + c.ceiling + '</span></div>';
-    out += '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Profile</span>' +
-           '<span class="wv-ss-cons wv-ss-cons-' + k + '" title="' + tip + '">' + c.label + yr + '</span></div>';
+  if (!c || c.small_sample) return '';
+  const k = c.label === 'Steady' ? 'steady'
+          : c.label === 'Volatile' ? 'volatile'
+          : c.label === 'Boom or bust' ? 'boombust' : 'balanced';
+  const yr = c.season ? " '" + String(c.season).slice(-2) : '';
+  const tip = 'Consistency ' + c.consistency + '/100 · boom ' +
+              Math.round(c.boom_rate * 100) + '% · bust ' +
+              Math.round(c.bust_rate * 100) + '% (' + c.games + ' g' +
+              (c.season ? ', ' + c.season : '') + ')';
+  return '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Floor–Ceil' + yr + '</span>' +
+         '<span class="wv-ss-stat-val muted">' + c.floor + '–' + c.ceiling + '</span></div>' +
+         '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Profile</span>' +
+         '<span class="wv-ss-cons wv-ss-cons-' + k + '" title="' + tip + '">' + c.label + yr + '</span></div>';
+}}
+
+// Compose the start/sit stats row in three groups, most-decisive first, with a
+// thin divider between groups:
+//   1. Output      - what to expect  (Proj PPG, L4 PPG)
+//   2. Reliability - can I trust it   (Floor-Ceil, Profile, Usage)
+//   3. The spot    - this week's game (Opp, Matchup, Vegas, Venue)
+// 'Def vs pos' is folded into the Matchup chip's tooltip to keep the row lean.
+function wvStatsRow(p) {{
+  const chip = (lbl, val, cls) =>
+    '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">' + lbl + '</span>' +
+    '<span class="wv-ss-stat-val ' + (cls || '') + '">' + val + '</span></div>';
+
+  const g1 = [];
+  if (p.proj_pts > 0)   g1.push(chip('Proj PPG', p.proj_pts));
+  if (p.recent_ppg > 0) g1.push(chip('L4 PPG', p.recent_ppg));
+
+  const g2 = [wvConsistencyChips(p)];
+  if (p.usage_delta != null && Math.abs(p.usage_delta) >= 1) {{
+    const upU = p.usage_delta > 0;
+    const lblU = p.usage_stat === 'snap_pct' ? 'snap%' : (p.usage_stat === 'touches' ? 'touches' : 'targets');
+    g2.push('<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Usage</span><span class="wv-ss-stat-val" style="color:' +
+            (upU ? '#10b981' : '#ef4444') + '" title="Last-3-week ' + lblU + ' vs season avg">' +
+            (upU ? '&#9650;' : '&#9660;') + ' ' + (upU ? '+' : '') + p.usage_delta + '</span></div>');
   }}
-  return out;
+
+  const g3 = [];
+  if (p.opponent) g3.push(chip('Opp', p.opponent, 'muted'));
+  const mu = !p.on_bye ? wvMuChip(p.def_rank, p.def_total) : '';
+  if (mu) {{
+    const dtip = p.fpts_against > 0
+      ? ' · ' + p.fpts_against + ' pts/gm allowed to ' + (p.position || 'the position')
+      : '';
+    g3.push('<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Matchup</span>' +
+            '<span class="wv-ss-stat-val" title="Matchup rank (1 = easiest)' + dtip + '">' + mu + '</span></div>');
+  }}
+  g3.push(wvVegasChip(p));
+  g3.push(wvVenueChip(p));
+
+  const groups = [g1, g2, g3].map(g => g.filter(Boolean).join('')).filter(Boolean);
+  return '<div class="wv-ss-stats">' +
+         groups.join('<span class="wv-ss-div" aria-hidden="true"></span>') +
+         '</div>';
 }}
 
 // ── Load ──────────────────────────────────────────────────────────────────────
@@ -484,27 +527,8 @@ function wvRenderStartSit() {{
               : '<span class="wv-ss-sit-badge">SIT</span>';
 
       const injBadge = wvInjBadge(p.injury_status);
-      const muChip   = !isBye ? wvMuChip(p.def_rank, p.def_total) : '';
       const cmpCls   = isSelected ? 'selected' : '';
-
-      let usageStat = '';
-      if (p.usage_delta != null && Math.abs(p.usage_delta) >= 1) {{
-        const upU = p.usage_delta > 0;
-        const lblU = p.usage_stat === 'snap_pct' ? 'snap%' : (p.usage_stat === 'touches' ? 'touches' : 'targets');
-        usageStat = `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Usage</span><span class="wv-ss-stat-val" style="color:${{upU ? '#10b981' : '#ef4444'}}" title="Last-3-week ${{lblU}} vs season avg">${{upU ? '&#9650;' : '&#9660;'}} ${{upU ? '+' : ''}}${{p.usage_delta}}</span></div>`;
-      }}
-
-      const statsRow = `
-        <div class="wv-ss-stats">
-          ${{p.proj_pts > 0   ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Proj PPG</span><span class="wv-ss-stat-val">${{p.proj_pts}}</span></div>` : ''}}
-          ${{p.recent_ppg > 0 ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">L4 PPG</span><span class="wv-ss-stat-val">${{p.recent_ppg}}</span></div>` : ''}}
-          ${{usageStat}}
-          ${{p.opponent       ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Opp</span><span class="wv-ss-stat-val muted">${{p.opponent}}</span></div>` : ''}}
-          ${{wvGameChips(p)}}
-          ${{muChip ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Matchup</span><span class="wv-ss-stat-val">${{muChip}}</span></div>` : ''}}
-          ${{wvVenueChip(p)}}
-          ${{p.fpts_against > 0 ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Def allows</span><span class="wv-ss-stat-val muted">${{p.fpts_against}} pts</span></div>` : ''}}
-        </div>`;
+      const statsRow = wvStatsRow(p);
 
       return `
         <div class="wv-ss-player ${{isStart ? 'wv-ss-start' : ''}} ${{isBye ? 'wv-ss-bye' : ''}} ${{isSelected ? 'wv-ss-selected' : ''}}">
