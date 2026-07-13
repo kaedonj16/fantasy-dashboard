@@ -872,7 +872,7 @@ def render_matchup_slide(
         record = t.get('record', '0-0')
         username = t.get('username') or ''
         ava = t.get("avatar") or ""
-        img_html = f"<img class='avatar m-av' src='{ava}' alt='' onerror=\"this.style.display='none'\">" if ava else ""
+        img_html = f"<img class='avatar m-av' src='{ava}' alt='' loading='lazy' decoding='async' onerror=\"this.style.display='none'\">" if ava else ""
         name_el = f"<div class='m-team-name team-clickable' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'>{name}</div>"
         if side == 'left':
             meta = f"<div class='m-team-meta'>{record} &bull; @{username}</div>"
