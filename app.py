@@ -15820,7 +15820,7 @@ def _build_lineup_analysis_html(
     )
     sleeper_rows = "".join(
         _player_row(p, owner, team, _face_html(p, "win"),
-                    "SLEEPER", "win")
+                    "GEM", "win")
         for (rid, team, owner, p) in sleepers
     )
 
@@ -15866,7 +15866,7 @@ def _build_lineup_analysis_html(
     {bust_rows or '<div style="padding:14px;color:var(--muted);">–</div>'}
   </div>
   <div class="card" style="overflow:hidden;">
-    <div class="card-header"><h3>Sleepers</h3><span style="font-size:12px;color:var(--muted);">Best bench performers</span></div>
+    <div class="card-header"><h3>Bench Gems</h3><span style="font-size:12px;color:var(--muted);">Best bench performers</span></div>
     {sleeper_rows or '<div style="padding:14px;color:var(--muted);">–</div>'}
   </div>
   <div class="card" style="overflow:hidden;">
@@ -15904,7 +15904,7 @@ def _mock_lineup_analysis_html(team_names: list[str]) -> str:
 </div>"""
 
     bust_rows = "".join(row(p, "BUST", "loss") for p in busts)
-    sleeper_rows = "".join(row(p, "SLEEPER", "win") for p in sleepers)
+    sleeper_rows = "".join(row(p, "GEM", "win") for p in sleepers)
 
     team0 = html.escape(team_names[0] if team_names else "Team A")
     mock_mistake = f"""
@@ -15934,7 +15934,7 @@ def _mock_lineup_analysis_html(team_names: list[str]) -> str:
     {bust_rows}
   </div>
   <div class="card" style="overflow:hidden;">
-    <div class="card-header"><h3>Sleepers</h3><span style="font-size:12px;color:var(--muted);">Best bench performers</span></div>
+    <div class="card-header"><h3>Bench Gems</h3><span style="font-size:12px;color:var(--muted);">Best bench performers</span></div>
     {sleeper_rows}
   </div>
   <div class="card" style="overflow:hidden;">
