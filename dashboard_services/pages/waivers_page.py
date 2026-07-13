@@ -95,7 +95,14 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-ss-stat-lbl { font-size: 10px; color: var(--text-subtle); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
 .wv-ss-stat-val { font-size: 13px; font-weight: 700; color: var(--text); }
 .wv-ss-stat-val.muted { color: var(--text-muted); }
-.wv-ss-env, .wv-ss-total { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 6px; align-self: flex-start; }
+.wv-ss-env, .wv-ss-total, .wv-ss-cons { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 6px; align-self: flex-start; }
+.wv-ss-cons-steady   { background: rgba(34,197,94,.16); color: #15803d; }
+.wv-ss-cons-balanced { background: rgba(148,163,184,.16); color: var(--text-muted); }
+.wv-ss-cons-volatile { background: rgba(234,179,8,.16); color: #a16207; }
+.wv-ss-cons-boombust { background: rgba(168,85,247,.16); color: #7e22ce; }
+[data-theme="dark"] .wv-ss-cons-steady   { background: rgba(34,197,94,.20); color: #4ade80; }
+[data-theme="dark"] .wv-ss-cons-volatile { background: rgba(234,179,8,.20); color: #fbbf24; }
+[data-theme="dark"] .wv-ss-cons-boombust { background: rgba(168,85,247,.24); color: #c084fc; }
 .wv-ss-env-dome { background: rgba(59,130,246,.14); color: #1d4ed8; }
 .wv-ss-env-cold { background: rgba(56,189,248,.16); color: #0369a1; }
 .wv-ss-env-wind { background: rgba(148,163,184,.20); color: #475569; }
@@ -285,6 +292,19 @@ function wvGameChips(p) {{
     out += '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Vegas</span>' +
            '<span class="wv-ss-total wv-ss-total-' + k + '" title="Implied team total (Vegas)">' +
            it + ' implied</span></div>';
+  }}
+  const c = p.consistency;
+  if (c && !c.small_sample) {{
+    const k = c.label === 'Steady' ? 'steady'
+            : c.label === 'Volatile' ? 'volatile'
+            : c.label === 'Boom or bust' ? 'boombust' : 'balanced';
+    const tip = 'Consistency ' + c.consistency + '/100 · boom ' +
+                Math.round(c.boom_rate * 100) + '% · bust ' +
+                Math.round(c.bust_rate * 100) + '% (' + c.games + ' g)';
+    out += '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Floor–Ceil</span>' +
+           '<span class="wv-ss-stat-val muted">' + c.floor + '–' + c.ceiling + '</span></div>';
+    out += '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Profile</span>' +
+           '<span class="wv-ss-cons wv-ss-cons-' + k + '" title="' + tip + '">' + c.label + '</span></div>';
   }}
   return out;
 }}
