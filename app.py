@@ -10252,14 +10252,14 @@ def api_waiver_candidates():
             c["usage_stat"] = ut.get("stat")
 
             _da = _depth_analysis_for_player(c["player_id"], _full_players_wv, _depth_idx_wv)
-            _inj_pids = _da["injured_pids_ahead"]
-            c["injured_ahead"] = _da["injured_ahead"]
-            c["healthy_ahead"] = _da["healthy_ahead"]
+            _inj_pids = _da.get("injured_pids_ahead") or []
+            c["injured_ahead"] = _da.get("injured_ahead") or []
+            c["healthy_ahead"] = _da.get("healthy_ahead") or 0
             # Value each vacancy from the injured player's role production (healthy
             # season projected ppg, else recent ppg) and, crucially, from how long
             # they're projected to be out (leading zero-run in the weekly
             # projections) rather than a fixed guess by injury label.
-            _vac = _da["vacated"]
+            _vac = _da.get("vacated") or []
             for _v in _vac:
                 _vpid = str(_v.get("pid"))
                 _v["proj_ppg"] = _season_ppg_wv.get(_vpid) or _ppg_by_pid_wv.get(_vpid)
