@@ -274,6 +274,38 @@ document.body.scrollTop = 0;
       if (idx >= 0 && opts[idx]) opts[idx].scrollIntoView({ block: 'nearest' });
     }
 
+    // Position the fixed-position list against the trigger's viewport rect so it
+    // escapes any overflow:hidden/auto ancestor. Called on open and on
+    // scroll/resize while open.
+    function positionList() {
+      var rect    = trigger.getBoundingClientRect();
+      var vp      = window.innerHeight;
+      var spaceBelow = vp - rect.bottom - 8;
+      var spaceAbove = rect.top - 8;
+      var maxH    = 280;
+
+      // Match the trigger width as a floor; let long options grow it wider.
+      list.style.minWidth = rect.width + 'px';
+      list.style.left     = rect.left + 'px';
+
+      if (spaceBelow >= Math.min(maxH, 120)) {
+        // Enough room below - standard position
+        list.style.top    = (rect.bottom + 4) + 'px';
+        list.style.bottom = 'auto';
+        list.style.maxHeight = Math.min(maxH, spaceBelow) + 'px';
+      } else if (spaceAbove > spaceBelow) {
+        // More room above - flip upward
+        list.style.top    = 'auto';
+        list.style.bottom = (vp - rect.top + 4) + 'px';
+        list.style.maxHeight = Math.min(maxH, spaceAbove) + 'px';
+      } else {
+        // Default to below with available space
+        list.style.top    = (rect.bottom + 4) + 'px';
+        list.style.bottom = 'auto';
+        list.style.maxHeight = Math.max(spaceBelow, 80) + 'px';
+      }
+    }
+
     function openList() {
       if (isOpen) return;
       if (_openWrap && _openWrap !== wrap) _openWrap._csdClose();
@@ -288,35 +320,15 @@ document.body.scrollTop = 0;
       list.style.maxHeight = '';
       list.style.display = 'block';
 
-      // Smart flip: position above if not enough room below
-      var rect    = trigger.getBoundingClientRect();
-      var vp      = window.innerHeight;
-      var spaceBelow = vp - rect.bottom - 8;
-      var spaceAbove = rect.top - 8;
-      var maxH    = 280;
-
-      if (spaceBelow >= Math.min(maxH, 120)) {
-        // Enough room below - standard position
-        list.style.top    = 'calc(100% + 4px)';
-        list.style.bottom = 'auto';
-        list.style.maxHeight = Math.min(maxH, spaceBelow) + 'px';
-      } else if (spaceAbove > spaceBelow) {
-        // More room above - flip upward
-        list.style.top    = 'auto';
-        list.style.bottom = 'calc(100% + 4px)';
-        list.style.maxHeight = Math.min(maxH, spaceAbove) + 'px';
-      } else {
-        // Default to below with available space
-        list.style.top    = 'calc(100% + 4px)';
-        list.style.bottom = 'auto';
-        list.style.maxHeight = Math.max(spaceBelow, 80) + 'px';
-      }
+      positionList();
 
       requestAnimationFrame(function () { list.classList.add('is-visible'); });
       var opts = getEnabled();
       focIdx = opts.findIndex(function (el) { return el.dataset.value === sel.value; });
       setFocus(focIdx);
     }
+
+    wrap._csdReposition = function () { if (isOpen) positionList(); };
 
     function closeList() {
       if (!isOpen) return;
@@ -372,6 +384,11 @@ document.body.scrollTop = 0;
 
   // One global outside-click handler closes any open dropdown
   document.addEventListener('click', function () { if (_openWrap) _openWrap._csdClose(); });
+
+  // The list is position:fixed, so keep it pinned to its trigger when the page
+  // or any scroll container moves (capture:true catches inner scrollers too).
+  window.addEventListener('scroll', function () { if (_openWrap && _openWrap._csdReposition) _openWrap._csdReposition(); }, true);
+  window.addEventListener('resize', function () { if (_openWrap && _openWrap._csdReposition) _openWrap._csdReposition(); });
 
   window.initCustomSelects = function (root) {
     (root || document).querySelectorAll('select:not([data-no-custom]):not([multiple])').forEach(initOne);

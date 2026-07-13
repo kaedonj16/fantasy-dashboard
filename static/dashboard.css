@@ -1102,8 +1102,8 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
 
 /* Constrain the CSD list to the panel width so it doesn't overflow horizontally */
 .settings-dropdown .csd-list {
-  min-width: 0;
-  width: 100%;
+  /* Width now comes from JS (min-width = trigger width) since the list is
+     position:fixed; a percentage width here would resolve against the viewport. */
   box-sizing: border-box;
 }
 
@@ -5098,10 +5098,11 @@ select:focus {
 }
 
 .csd-list {
-  position: absolute;
-  top: calc(100% + 4px);
+  /* Fixed positioning (coords set in JS from the trigger's viewport rect) so the
+     dropdown is never clipped by an ancestor with overflow:hidden/auto. */
+  position: fixed;
+  top: 0;
   left: 0;
-  min-width: 100%;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 10px;
