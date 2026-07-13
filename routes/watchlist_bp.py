@@ -162,6 +162,26 @@ def api_watchlist_remove(player_id):
         return jsonify({"synced": False})
 
 
+@watchlist_bp.route("/api/watchlist", methods=["DELETE"])
+@limiter.limit("60 per minute")
+def api_watchlist_clear():
+    """Clear the entire watchlist for the signed-in account (all players, all
+    devices). Distinct from the per-player DELETE below."""
+    uk = _user_key()
+    if not uk:
+        return jsonify({"synced": False})
+    _init_wl_table()
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute("DELETE FROM user_watchlist WHERE user_key = %s", (uk,))
+            conn.commit()
+        return jsonify({"synced": True, "ok": True})
+    except Exception as exc:
+        logger.warning("[watchlist] clear failed: %s", exc)
+        return jsonify({"synced": False})
+
+
 @watchlist_bp.route("/api/watchlist/note", methods=["POST"])
 @limiter.limit("120 per minute")
 def api_watchlist_note():
