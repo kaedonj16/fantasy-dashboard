@@ -152,7 +152,7 @@ def matchup_cards_last_week(
           <div class="mu-row">
             <div class="mu-team {l_cls}">
               <div style="display: flex; align-items: center; gap: 5px;">
-                <img class="avatar" src="{avatar}" onerror="this.style.display='none'">
+                <img class="avatar" src="{avatar}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">
                 <div class="mu-name left"><div style="display: flex; justify-content: flex-start;">{ln}</div><div style="font-weight: 400; font-size: small;">{winsL}-{lossesL} • @{username}</div></div>
               </div>
               <div class="mu-score">{lp:.2f}</div>
@@ -162,7 +162,7 @@ def matchup_cards_last_week(
               <div class="mu-score">{rp:.2f}</div>
               <div style="display: flex; align-items: center; justify-content: flex-end; gap: 5px;">
                 <div class="mu-name right"><div style="display: flex; justify-content: flex-end;">{rn}</div><div style="font-weight: 400; font-size: small">@{username2} • {winsR}-{lossesR}</div></div>
-                <img class="avatar" src="{avatar2}" onerror="this.style.display='none'">
+                <img class="avatar" src="{avatar2}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">
               </div>
             </div>
           </div>
