@@ -1,5 +1,5 @@
 """Unit tests for utils.consistency (pure boom-bust profiles)."""
-from utils.consistency import consistency_profile
+from utils.consistency import blended_consistency_profile, consistency_profile
 
 
 def test_none_for_no_games():
@@ -62,3 +62,44 @@ def test_unknown_position_uses_default_thresholds():
     prof = consistency_profile([19, 19, 19], "FLEX")
     # default boom threshold is 18, so 19s all boom
     assert prof["boom_rate"] == 1.0
+
+
+# ---- blended profile (last season -> molded by current) -------------------
+
+def test_blend_no_current_returns_prior_tagged():
+    prior = [10, 12, 14, 16, 18]
+    prof = blended_consistency_profile([], prior, "WR", prior_season=2025)
+    assert prof is not None
+    assert prof["season"] == 2025
+    assert prof["blended"] is False
+    assert prof["mean"] == consistency_profile(prior, "WR")["mean"]
+
+
+def test_blend_no_prior_returns_current():
+    cur = [20, 4, 22, 6]
+    prof = blended_consistency_profile(cur, [], "WR", prior_season=2025)
+    assert prof == consistency_profile(cur, "WR")
+    assert "blended" not in prof
+
+
+def test_blend_crossfades_toward_current():
+    # Prior: steady ~15. Current: two boom weeks ~28. Early on the blend should
+    # sit between the two and shift toward current as games are added.
+    prior = [15, 15, 15, 15, 15, 15, 15, 15]
+    two = blended_consistency_profile([28, 28], prior, "WR", prior_season=2025, full_season=8)
+    assert two["blended"] is True
+    assert two["weight_current"] == 0.25          # 2 / 8
+    assert 15 < two["mean"] < 28                  # pulled toward current, not all the way
+    six = blended_consistency_profile([28, 28, 28, 28, 28, 28], prior, "WR", full_season=8)
+    assert six["mean"] > two["mean"]              # more current games -> closer to 28
+
+
+def test_blend_full_season_is_pure_current():
+    prior = [15, 15, 15, 15]
+    cur = [28, 4, 30, 2, 26, 6, 24, 8]  # 8 games == full_season
+    prof = blended_consistency_profile(cur, prior, "WR", full_season=8)
+    assert prof == consistency_profile(cur, "WR")  # prior dropped entirely
+
+
+def test_blend_both_empty_is_none():
+    assert blended_consistency_profile([], [], "WR") is None

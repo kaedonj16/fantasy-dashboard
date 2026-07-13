@@ -10535,18 +10535,20 @@ def api_start_sit_options():
         logger.debug("suppressed exception", exc_info=True)
 
     # ── Weekly consistency / boom-bust profiles (from actual weekly scores) ──
-    # In-season uses this year's games. In the offseason (or weeks 1-2, before a
-    # meaningful sample), fall back per player to the most recent completed
-    # season so the profile is still useful, tagged with the year it's from.
+    # Start from last completed season and mold toward the current one as games
+    # come in (see blended_consistency_profile). We only need last season while
+    # the current one is still filling in - once it has a full crossfade's worth
+    # of games the profile is pure current and prior isn't loaded.
     weekly_pts_map: dict = {}
     prior_pts_map: dict = {}
     prior_season: Optional[int] = None
     try:
         from dashboard_services.api import SCORING_DEFAULTS as _SD_SS
+        from utils.consistency import BLEND_FULL_SEASON as _BLEND_FULL
         _eff_ss = {**_SD_SS, **(ctx.get("raw_scoring_settings") or {})}
         weekly_pts_map = _load_season_weekly_points(season, _eff_ss)
         _cur_max = max((len(v) for v in weekly_pts_map.values()), default=0)
-        if _cur_max < 3:  # offseason / very early season -> need last year
+        if _cur_max < _BLEND_FULL:  # still inside the crossfade window
             for _py in (season - 1, season - 2):
                 _pm = _load_season_weekly_points(_py, _eff_ss)
                 if max((len(v) for v in _pm.values()), default=0) >= 3:
@@ -10556,13 +10558,10 @@ def api_start_sit_options():
         logger.debug("suppressed exception", exc_info=True)
 
     def _resolve_consistency(pid: str, pos: str):
-        prof = _consistency_profile(weekly_pts_map.get(pid) or [], pos)
-        if (prof is None or prof.get("small_sample")) and prior_pts_map:
-            pp = _consistency_profile(prior_pts_map.get(pid) or [], pos)
-            if pp and not pp.get("small_sample"):
-                pp["season"] = prior_season
-                return pp
-        return prof
+        return _blended_consistency(
+            weekly_pts_map.get(pid) or [], prior_pts_map.get(pid) or [], pos,
+            prior_season=prior_season,
+        )
 
     # ── Weekly projections - SAME source as the player modal & matchups page ───
     # build_projections_by_week() returns Tank01 weekly values (variant-adjusted,
@@ -17407,6 +17406,7 @@ _PPG_STATS_CACHE_TTL = 7200
 
 from utils.fantasy_scoring import score_stats as _score_stats  # noqa: E402
 from utils.consistency import consistency_profile as _consistency_profile  # noqa: E402
+from utils.consistency import blended_consistency_profile as _blended_consistency  # noqa: E402
 
 
 def get_model_value_table_cached():
