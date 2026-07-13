@@ -10342,6 +10342,49 @@ def api_waiver_candidates():
     return jsonify({"candidates": result, "total": len(result)})
 
 
+_WEEKLY_PTS_CACHE: dict = {}
+_WEEKLY_PTS_TTL = 900  # 15 min; weekly stat files change at most once a week
+
+
+def _load_season_weekly_points(season: int, scoring_settings: dict) -> dict:
+    """{player_id: [weekly fantasy points]} for a season's played games.
+
+    Reads the cached Sleeper weekly stat files and scores each with the league's
+    settings. Only weeks a player has a stat line count as games played (byes /
+    inactives are absent). Cached by (season, scoring signature). Never raises.
+    """
+    import hashlib
+    sig = hashlib.md5(
+        json.dumps(scoring_settings or {}, sort_keys=True, default=str).encode()
+    ).hexdigest()[:10]
+    key = (int(season), sig)
+    hit = _WEEKLY_PTS_CACHE.get(key)
+    if hit and time.time() - hit[0] < _WEEKLY_PTS_TTL:
+        return hit[1]
+    out: dict = {}
+    try:
+        pattern = os.path.join("cache", "sleeper_stats", f"sleeper_stats_s{season}_w*.json")
+        for wf in glob.glob(pattern):
+            try:
+                with open(wf) as f:
+                    week_stats = json.load(f)
+            except Exception:
+                continue
+            if not isinstance(week_stats, dict):
+                continue
+            for pid, st in week_stats.items():
+                if not isinstance(st, dict):
+                    continue
+                try:
+                    out.setdefault(str(pid), []).append(round(float(_score_stats(st, scoring_settings)), 2))
+                except Exception:
+                    continue
+    except Exception:
+        logger.debug("[start-sit] weekly points load failed", exc_info=True)
+    _WEEKLY_PTS_CACHE[key] = (time.time(), out)
+    return out
+
+
 def _ss_game_env(home_team: "Optional[str]", week: int) -> "Optional[dict]":
     """Compact game-environment chip for a start/sit row, or None.
 
@@ -10487,6 +10530,36 @@ def api_start_sit_options():
             game_conditions = build_week_conditions(season, current_week, week_games)
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
+
+    # ── Weekly consistency / boom-bust profiles (from actual weekly scores) ──
+    # In-season uses this year's games. In the offseason (or weeks 1-2, before a
+    # meaningful sample), fall back per player to the most recent completed
+    # season so the profile is still useful, tagged with the year it's from.
+    weekly_pts_map: dict = {}
+    prior_pts_map: dict = {}
+    prior_season: Optional[int] = None
+    try:
+        from dashboard_services.api import SCORING_DEFAULTS as _SD_SS
+        _eff_ss = {**_SD_SS, **(ctx.get("raw_scoring_settings") or {})}
+        weekly_pts_map = _load_season_weekly_points(season, _eff_ss)
+        _cur_max = max((len(v) for v in weekly_pts_map.values()), default=0)
+        if _cur_max < 3:  # offseason / very early season -> need last year
+            for _py in (season - 1, season - 2):
+                _pm = _load_season_weekly_points(_py, _eff_ss)
+                if max((len(v) for v in _pm.values()), default=0) >= 3:
+                    prior_pts_map, prior_season = _pm, _py
+                    break
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+
+    def _resolve_consistency(pid: str, pos: str):
+        prof = _consistency_profile(weekly_pts_map.get(pid) or [], pos)
+        if (prof is None or prof.get("small_sample")) and prior_pts_map:
+            pp = _consistency_profile(prior_pts_map.get(pid) or [], pos)
+            if pp and not pp.get("small_sample"):
+                pp["season"] = prior_season
+                return pp
+        return prof
 
     # ── Weekly projections - SAME source as the player modal & matchups page ───
     # build_projections_by_week() returns Tank01 weekly values (variant-adjusted,
@@ -10636,6 +10709,7 @@ def api_start_sit_options():
             "game_env":      _ss_game_env(home_team_of.get(team), current_week) if not on_bye else None,
             "implied_total": (game_conditions.get(team) or {}).get("implied_total") if not on_bye else None,
             "weather":       (game_conditions.get(team) or {}).get("weather") if not on_bye else None,
+            "consistency":   _resolve_consistency(pid, pos),
             "_score":        score,
         })
 
@@ -17329,6 +17403,7 @@ _PPG_STATS_CACHE_TTL = 7200
 
 
 from utils.fantasy_scoring import score_stats as _score_stats  # noqa: E402
+from utils.consistency import consistency_profile as _consistency_profile  # noqa: E402
 
 
 def get_model_value_table_cached():
