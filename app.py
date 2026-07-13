@@ -16128,7 +16128,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
       </div>
     </div>
     <div style="text-align:right;flex-shrink:0;">
-      <div style="font-size:32px;font-weight:800;color:{accent};letter-spacing:-.5px;line-height:1;">{pts:.2f}</div>
+      <div style="font-size:32px;font-weight:800;color:{accent};letter-spacing:-.5px;line-height:1;font-variant-numeric:tabular-nums;">{pts:.2f}</div>
       <div style="font-size:11px;color:{accent};font-weight:600;margin-top:4px;">{html.escape(sub)}</div>
     </div>
   </div>
@@ -16170,10 +16170,10 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px;">
   {scorer_card("fa-solid fa-fire", "HIGH SCORER", high_row["owner"],
                float(high_row["points"]), str(high_row.get("roster_id","")),
-               high_sub, "#22c55e")}
+               high_sub, "var(--win)")}
   {scorer_card("fa-solid fa-arrow-trend-down", "LOW SCORER", low_row["owner"],
                float(low_row["points"]), str(low_row.get("roster_id","")),
-               low_sub, "#ef4444")}
+               low_sub, "var(--loss)")}
   {matchup_card("fa-solid fa-trophy", "BIGGEST WIN", blowout) if blowout else ""}
   {matchup_card("fa-solid fa-bolt", "CLOSEST GAME", closest) if closest else ""}
 </div>"""
@@ -16182,7 +16182,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     def matchup_result_row(m):
         w_team = team_name(m["winner"], m["w_rid"])
         l_team = team_name(m["loser"],  m["l_rid"])
-        margin_color = "#ef4444" if m["margin"] > 50 else ("#f59e0b" if m["margin"] > 20 else "#22c55e")
+        margin_color = "var(--loss)" if m["margin"] > 50 else ("var(--warning)" if m["margin"] > 20 else "var(--win)")
         return f"""
 <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);">
   <div style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;">
