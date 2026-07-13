@@ -10391,37 +10391,6 @@ def _load_season_weekly_points(season: int, scoring_settings: dict) -> dict:
     return out
 
 
-@app.route("/api/_debug/consistency")
-def api_debug_consistency():
-    """Diagnostic: what weekly-stat data does THIS server actually see?
-
-    Reports the resolved cache dir, working directory, and how many stat files /
-    player games are found for the current + last two seasons. Confirms whether a
-    blank consistency profile is a path problem, a missing-data problem, or a
-    stale deploy (this route 404s on builds that predate it). No sensitive data.
-    """
-    from dashboard_services.api import SCORING_DEFAULTS as _SD
-    pid = (request.args.get("player_id") or "").strip()
-    season = int(request.args.get("season") or datetime.now().year)
-    out: dict = {
-        "cache_dir": str(CACHE_DIR),
-        "cwd": os.getcwd(),
-        "cache_dir_exists": os.path.isdir(str(CACHE_DIR)),
-        "sleeper_stats_dir_exists": os.path.isdir(os.path.join(CACHE_DIR, "sleeper_stats")),
-        "seasons": {},
-    }
-    for s in (season, season - 1, season - 2):
-        pattern = os.path.join(CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{s}_w*.json")
-        files = glob.glob(pattern)
-        info: dict = {"file_count": len(files), "sample": os.path.basename(files[0]) if files else None}
-        if pid:
-            m = _load_season_weekly_points(s, dict(_SD))
-            info["player_games"] = len(m.get(str(pid)) or [])
-            info["players_with_data"] = len(m)
-        out["seasons"][str(s)] = info
-    return jsonify(out)
-
-
 def _ss_game_env(home_team: "Optional[str]", week: int) -> "Optional[dict]":
     """Compact game-environment chip for a start/sit row, or None.
 
