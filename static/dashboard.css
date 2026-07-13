@@ -13503,9 +13503,10 @@ img, svg, canvas {
   text-align: center;
 }
 .pm-hero-primary {
-  background: rgba(59, 130, 246, 0.08);
-  border-color: transparent;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }
+.pm-hero-primary .pm-hero-label { color: var(--accent); }
 .pm-hero-label {
   font-size: 10px;
   font-weight: 700;
