@@ -731,8 +731,8 @@ def build_trade_calculator_body(
             .otc-arch-away-row {{ margin-bottom:2px; }}
             .otc-arch-away {{
               display:inline-block;font-size:8px;font-weight:700;text-transform:uppercase;
-              letter-spacing:.06em;color:#f59e0b;
-              background:#f59e0b1a;padding:2px 6px;border-radius:3px;
+              letter-spacing:.06em;color:var(--warning);
+              background:color-mix(in srgb, var(--warning) 12%, transparent);padding:2px 6px;border-radius:3px;
             }}
             .otc-arch-pos {{
               font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px;
@@ -754,8 +754,8 @@ def build_trade_calculator_body(
               display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:10.5px;
             }}
             .otc-arch-wp {{ font-weight:700;padding:2px 8px;border-radius:5px;font-size:10px; }}
-            .otc-arch-wp.pos {{ background:#10b9811f;color:#10b981; }}
-            .otc-arch-wp.neg {{ background:#ef44441f;color:#ef4444; }}
+            .otc-arch-wp.pos {{ background:color-mix(in srgb, var(--win) 14%, transparent);color:var(--win); }}
+            .otc-arch-wp.neg {{ background:color-mix(in srgb, var(--loss) 14%, transparent);color:var(--loss); }}
             .otc-arch-partner {{
               display:inline-flex;align-items:center;gap:4px;
               color:var(--text-muted);font-weight:600;
@@ -764,9 +764,9 @@ def build_trade_calculator_body(
             .otc-arch-vmatch {{
               padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;
             }}
-            .otc-arch-vmatch-great {{ background:#10b9811f;color:#10b981; }}
+            .otc-arch-vmatch-great {{ background:color-mix(in srgb, var(--win) 14%, transparent);color:var(--win); }}
             .otc-arch-vmatch-fair  {{ background:var(--border);color:var(--text-muted); }}
-            .otc-arch-vmatch-light {{ background:#f59e0b1a;color:#f59e0b; }}
+            .otc-arch-vmatch-light {{ background:color-mix(in srgb, var(--warning) 14%, transparent);color:var(--warning); }}
             /* ── Suggestions sub-tab bar ── */
             .otc-sugg-subtab-bar {{
               display:flex;padding:10px 14px;gap:2px;
