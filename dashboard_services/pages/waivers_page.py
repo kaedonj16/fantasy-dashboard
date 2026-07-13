@@ -231,7 +231,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
     <div class="wv-section" id="wvSectionStartSit">
       <div class="wv-section-title">Start/Sit Advisor</div>
       <!-- Compare panel (hidden until 2 players selected) -->
-      <div id="wvComparePanel" style="display:none;"></div>
+      <div id="wvComparePanel" style="display:none;scroll-margin-top:16px;"></div>
       <div id="wvStartSit">
         <div class="wv-loading"><div class="loading-spinner"></div></div>
       </div>
@@ -447,6 +447,13 @@ function wvToggleCompare(p) {{
 
   wvRenderCompare();
   wvRenderStartSit();
+
+  // Once both players are picked the panel appears (often above the fold if you
+  // scrolled down to pick) - bring it into view.
+  if (wvCompare[0] && wvCompare[1]) {{
+    const panel = document.getElementById('wvComparePanel');
+    if (panel) panel.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+  }}
 }}
 
 function wvIsSelected(id) {{
