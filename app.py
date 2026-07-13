@@ -21036,6 +21036,23 @@ def api_player_details(player_id: str):
         except Exception:
             logger.debug("[api_player_details] Sleeper ADP lookup skipped", exc_info=True)
 
+        # ── Injury designation (from the full Sleeper players feed) ──────────
+        # Injury fields live only on the full feed, not the compact index. Best
+        # effort: on any failure the modal simply shows no injury chip.
+        injury = None
+        try:
+            _full_players = get_players_global() or {}
+            _fp = _full_players.get(str(player_id)) or {}
+            _raw_inj = str(_fp.get("injury_status") or "").strip()
+            if _raw_inj and _raw_inj.lower() not in ("active", "act"):
+                injury = {
+                    "status": _raw_inj,
+                    "body_part": (_fp.get("injury_body_part") or "").strip(),
+                    "notes": (_fp.get("injury_notes") or "").strip(),
+                }
+        except Exception:
+            logger.debug("[api_player_details] injury lookup skipped", exc_info=True)
+
         response = {
             "player_id": player_id,
             "name": player_meta.get("name", "Unknown"),
@@ -21048,6 +21065,7 @@ def api_player_details(player_id: str):
             "espnHeadshot": player_meta.get("espnHeadshot"),
             "fantasy_team": fantasy_team,
             "fantasy_team_owner": fantasy_team_owner,
+            "injury": injury,
             "stats": {
                 "value": round(float(player_value.get("value", 0)) * _te_mult, 1) if player_value.get("value") else None,
                 "sf_value": round(float(player_value.get("sf_value", 0)) * _te_mult, 1) if player_value.get("sf_value") else None,
