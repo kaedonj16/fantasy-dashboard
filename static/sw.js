@@ -2,7 +2,7 @@
 // Caches static assets and key pages for offline/fast repeat loads.
 // Handles Web Push notifications.
 
-const CACHE_NAME = 'br-fantasy-v8';
+const CACHE_NAME = 'br-fantasy-v9';
 
 // How long to wait on the network for a page (when we already have a cached
 // copy) before painting the cached version. This is what kills the blank
@@ -43,6 +43,12 @@ self.addEventListener('fetch', event => {
   const { request } = event;
   const url = new URL(request.url);
 
+  // Never touch non-http(s) schemes. In particular blob:/data: URLs: on iOS and
+  // in standalone PWAs an <a download> for a blob is treated as a *navigation*,
+  // which would otherwise land in handleNavigate(), fail to fetch the blob, and
+  // serve the cached home shell — leaving a loading screen that never resolves
+  // instead of downloading the file. Let the browser handle these natively.
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/')) return;
 
