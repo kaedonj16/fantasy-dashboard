@@ -274,18 +274,22 @@ function wvInjBadge(inj) {{
   return `<span class="wv-inj-q">${{inj}}</span>`;
 }}
 
-// Game-environment chips: live weather (or static dome/cold venue) + Vegas
-// implied team total. Any field may be absent; render only what's present.
+// Venue / weather chip: live weather when available, else the static dome/cold
+// venue tag. Rendered separately so it can sit after the matchup chip.
+function wvVenueChip(p) {{
+  const env = p.weather || p.game_env;
+  if (!env) return '';
+  const lbl = p.weather ? 'Weather' : 'Venue';
+  const note = (env.note || '').replace(/"/g, '&quot;');
+  return '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">' + lbl + '</span>' +
+         '<span class="wv-ss-env wv-ss-env-' + env.kind + '" title="' + note + '">' +
+         env.label + '</span></div>';
+}}
+
+// Vegas implied team total + weekly consistency chips. Any field may be absent;
+// render only what's present.
 function wvGameChips(p) {{
   let out = '';
-  const env = p.weather || p.game_env;
-  if (env) {{
-    const lbl = p.weather ? 'Weather' : 'Venue';
-    const note = (env.note || '').replace(/"/g, '&quot;');
-    out += '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">' + lbl + '</span>' +
-           '<span class="wv-ss-env wv-ss-env-' + env.kind + '" title="' + note + '">' +
-           env.label + '</span></div>';
-  }}
   if (p.implied_total != null) {{
     const it = p.implied_total;
     const k = it >= 26 ? 'high' : (it <= 18 ? 'low' : 'mid');
@@ -498,6 +502,7 @@ function wvRenderStartSit() {{
           ${{p.opponent       ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Opp</span><span class="wv-ss-stat-val muted">${{p.opponent}}</span></div>` : ''}}
           ${{wvGameChips(p)}}
           ${{muChip ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Matchup</span><span class="wv-ss-stat-val">${{muChip}}</span></div>` : ''}}
+          ${{wvVenueChip(p)}}
           ${{p.fpts_against > 0 ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Def allows</span><span class="wv-ss-stat-val muted">${{p.fpts_against}} pts</span></div>` : ''}}
         </div>`;
 
