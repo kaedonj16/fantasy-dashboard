@@ -172,6 +172,25 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-compare-val { font-weight: 700; }
 .wv-compare-win { color: #22c55e; }
 .wv-compare-lose { color: #ef4444; }
+
+/* Shared-label compare: value(a) · LABEL · value(b), one label per metric */
+.wv-cmp { padding: 6px 14px 12px; }
+.wv-cmp-row, .wv-cmp-head {
+  display: grid; grid-template-columns: 1fr minmax(86px, auto) 1fr;
+  align-items: center; gap: 10px; padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+.wv-cmp-row:last-child { border-bottom: none; }
+.wv-cmp-head { border-bottom: 2px solid var(--border); padding: 4px 0 10px; align-items: end; }
+.wv-cmp-a { text-align: right; font-weight: 700; font-size: 13px; }
+.wv-cmp-b { text-align: left;  font-weight: 700; font-size: 13px; }
+.wv-cmp-lbl {
+  text-align: center; color: var(--text-muted); font-size: 11px;
+  text-transform: uppercase; letter-spacing: .03em; font-weight: 600;
+}
+.wv-cmp-hcol:first-child { text-align: right; }
+.wv-cmp-name { font-size: 15px; font-weight: 800; color: var(--text); }
+.wv-cmp-sub  { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 </style>
 """
 
@@ -433,95 +452,62 @@ function wvIsSelected(id) {{
          (wvCompare[1] && wvCompare[1].player_id === id);
 }}
 
+// Derive every comparable field for one player (values + a sortable number
+// where a winner makes sense).
+function wvCmpDerive(p) {{
+  const c = p.consistency, cOk = c && !c.small_sample;
+  const yr = cOk && c.season ? " '" + String(c.season).slice(-2) : '';
+  const pk = !cOk ? '' : (c.label === 'Steady' ? 'steady'
+    : c.label === 'Volatile' ? 'volatile'
+    : c.label === 'Boom or bust' ? 'boombust' : 'balanced');
+  const env = p.weather || p.game_env;
+  return {{
+    proj:     p.proj_pts > 0 ? p.proj_pts : null,
+    l4:       p.recent_ppg > 0 ? p.recent_ppg : (p.season_ppg > 0 ? p.season_ppg : null),
+    floorNum: cOk ? c.floor : null,
+    flCeil:   cOk ? (c.floor + '–' + c.ceiling + yr) : '–',
+    profile:  cOk ? `<span class="wv-ss-cons wv-ss-cons-${{pk}}">${{c.label}}</span>` : '–',
+    boomBust: cOk ? (Math.round(c.boom_rate * 100) + '% / ' + Math.round(c.bust_rate * 100) + '%') : '–',
+    opp:      p.opponent || (p.on_bye ? 'BYE' : '–'),
+    def:      p.fpts_against > 0 ? `${{p.fpts_against}} pts` : (p.on_bye ? 'BYE' : '–'),
+    defCls:   wvMuClass(p.def_rank, p.def_total),
+    mu:       (!p.on_bye ? wvMuChip(p.def_rank, p.def_total) : '') || (p.on_bye ? '–' : 'No data'),
+    vegasNum: p.implied_total != null ? p.implied_total : null,
+    vegas:    p.implied_total != null ? (p.implied_total + ' implied') : '–',
+    venue:    env ? `<span class="wv-ss-env wv-ss-env-${{env.kind}}">${{env.label}}</span>` : (p.on_bye ? 'BYE' : '–'),
+    dynasty:  p.pos_rank_label || '–',
+  }};
+}}
+
+// Winner classes for a pair of numeric values (higher is better by default).
+function wvWinPair(av, bv, higher) {{
+  if (av == null || bv == null || av === bv) return ['', ''];
+  const aBetter = (higher === false) ? av < bv : av > bv;
+  return aBetter ? ['wv-compare-win', 'wv-compare-lose'] : ['wv-compare-lose', 'wv-compare-win'];
+}}
+
 function wvRenderCompare() {{
   const panel = document.getElementById('wvComparePanel');
   const a = wvCompare[0], b = wvCompare[1];
   if (!a || !b) {{ panel.style.display = 'none'; return; }}
   panel.style.display = 'block';
 
-  function col(p, other) {{
-    const muChip = wvMuChip(p.def_rank, p.def_total);
-    const defLabel = p.fpts_against > 0
-      ? `${{p.fpts_against}} pts/gm allowed`
-      : (p.on_bye ? 'BYE' : '–');
-    const projWin  = (other && p.proj_pts > 0 && other.proj_pts > 0)    ? (p.proj_pts   > other.proj_pts   ? 'wv-compare-win' : 'wv-compare-lose') : '';
-    const l4ppg    = p.recent_ppg > 0 ? p.recent_ppg : p.season_ppg;
-    const l4ppgOth = other && (other.recent_ppg > 0 ? other.recent_ppg : other.season_ppg);
-    const ppgWin   = (l4ppg > 0 && l4ppgOth > 0) ? (l4ppg > l4ppgOth ? 'wv-compare-win' : 'wv-compare-lose') : '';
-    const muCls   = wvMuClass(p.def_rank, p.def_total);
-
-    // Reliability: floor-ceiling range + boom/bust profile (spelled out here so
-    // it needs no hover on mobile). Higher floor wins the Floor-Ceil row.
-    const c = p.consistency, oc = other && other.consistency;
-    const cOk = c && !c.small_sample;
-    const ocOk = oc && !oc.small_sample;
-    const yr = cOk && c.season ? " '" + String(c.season).slice(-2) : '';
-    const flCeil = cOk ? (c.floor + '–' + c.ceiling + yr) : '–';
-    const floorWin = (cOk && ocOk)
-      ? (c.floor > oc.floor ? 'wv-compare-win' : (c.floor < oc.floor ? 'wv-compare-lose' : '')) : '';
-    const pk = !cOk ? '' : (c.label === 'Steady' ? 'steady'
-      : c.label === 'Volatile' ? 'volatile'
-      : c.label === 'Boom or bust' ? 'boombust' : 'balanced');
-    const boomBust = cOk ? (Math.round(c.boom_rate * 100) + '% / ' + Math.round(c.bust_rate * 100) + '%') : '–';
-
-    // The spot: Vegas implied total (higher wins) + venue/weather.
-    const vegas = p.implied_total != null ? (p.implied_total + ' implied') : '–';
-    const vegasWin = (p.implied_total != null && other && other.implied_total != null)
-      ? (p.implied_total > other.implied_total ? 'wv-compare-win'
-        : (p.implied_total < other.implied_total ? 'wv-compare-lose' : '')) : '';
-    const env = p.weather || p.game_env;
-    const venue = env ? env.label : (p.on_bye ? 'BYE' : '–');
-    const venueCls = env ? ('wv-ss-env wv-ss-env-' + env.kind) : '';
-    return `
-      <div class="wv-compare-col">
-        <div class="wv-compare-player-name">${{p.name}}</div>
-        <div class="wv-compare-player-sub">${{[p.team, p.pos_rank_label, p.opponent || (p.on_bye ? 'BYE' : '')].filter(Boolean).join(' · ')}}</div>
-        <div class="wv-compare-row">
-          <span class="wv-compare-lbl">Proj PPG</span>
-          <span class="wv-compare-val ${{projWin}}">${{p.proj_pts > 0 ? p.proj_pts : '–'}}</span>
-        </div>
-        <div class="wv-compare-row">
-          <span class="wv-compare-lbl">L4 PPG</span>
-          <span class="wv-compare-val ${{ppgWin}}">${{p.recent_ppg > 0 ? p.recent_ppg : (p.season_ppg > 0 ? p.season_ppg : '–')}}</span>
-        </div>
-        <div class="wv-compare-row">
-          <span class="wv-compare-lbl">Floor–Ceil</span>
-          <span class="wv-compare-val ${{floorWin}}">${{flCeil}}</span>
-        </div>
-        <div class="wv-compare-row">
-          <span class="wv-compare-lbl">Profile</span>
-          <span class="wv-compare-val">${{cOk ? `<span class="wv-ss-cons wv-ss-cons-${{pk}}">${{c.label}}</span>` : '–'}}</span>
-        </div>
-        <div class="wv-compare-row">
-          <span class="wv-compare-lbl">Boom / Bust</span>
-          <span class="wv-compare-val">${{boomBust}}</span>
-        </div>
-        <div class="wv-compare-row">
-          <span class="wv-compare-lbl">Opponent</span>
-          <span class="wv-compare-val">${{p.opponent || (p.on_bye ? 'BYE' : '–')}}</span>
-        </div>
-        <div class="wv-compare-row">
-          <span class="wv-compare-lbl">Def vs pos</span>
-          <span class="wv-compare-val ${{muCls}}">${{defLabel}}</span>
-        </div>
-        <div class="wv-compare-row">
-          <span class="wv-compare-lbl">Matchup rank</span>
-          <span class="wv-compare-val">${{muChip || (p.on_bye ? '–' : 'No data')}}</span>
-        </div>
-        <div class="wv-compare-row">
-          <span class="wv-compare-lbl">Vegas total</span>
-          <span class="wv-compare-val ${{vegasWin}}">${{vegas}}</span>
-        </div>
-        <div class="wv-compare-row">
-          <span class="wv-compare-lbl">Venue</span>
-          <span class="wv-compare-val">${{venueCls ? `<span class="${{venueCls}}">${{venue}}</span>` : venue}}</span>
-        </div>
-        <div class="wv-compare-row">
-          <span class="wv-compare-lbl">Dynasty rank</span>
-          <span class="wv-compare-val">${{p.pos_rank_label || '–'}}</span>
-        </div>
-      </div>`;
+  const da = wvCmpDerive(a), db = wvCmpDerive(b);
+  // Shared single label per metric: value(a) · LABEL · value(b).
+  function row(label, aHtml, bHtml, aCls, bCls) {{
+    return '<div class="wv-cmp-row">' +
+      '<span class="wv-cmp-a ' + (aCls || '') + '">' + aHtml + '</span>' +
+      '<span class="wv-cmp-lbl">' + label + '</span>' +
+      '<span class="wv-cmp-b ' + (bCls || '') + '">' + bHtml + '</span>' +
+      '</div>';
   }}
+  const dash = (v) => (v == null ? '–' : v);
+  const wProj = wvWinPair(da.proj, db.proj, true);
+  const wL4   = wvWinPair(da.l4, db.l4, true);
+  const wFl   = wvWinPair(da.floorNum, db.floorNum, true);
+  const wVeg  = wvWinPair(da.vegasNum, db.vegasNum, true);
+
+  const sub = (p) => [p.team, p.pos_rank_label, p.opponent || (p.on_bye ? 'BYE' : '')].filter(Boolean).join(' · ');
 
   panel.innerHTML = `
     <div class="wv-compare-panel">
@@ -529,9 +515,23 @@ function wvRenderCompare() {{
         <span>Compare</span>
         <button onclick="wvClearCompare()" style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;">Clear</button>
       </div>
-      <div class="wv-compare-grid">
-        ${{col(a, b)}}
-        ${{col(b, a)}}
+      <div class="wv-cmp">
+        <div class="wv-cmp-head">
+          <div class="wv-cmp-hcol"><div class="wv-cmp-name">${{a.name}}</div><div class="wv-cmp-sub">${{sub(a)}}</div></div>
+          <div class="wv-cmp-lbl"></div>
+          <div class="wv-cmp-hcol"><div class="wv-cmp-name">${{b.name}}</div><div class="wv-cmp-sub">${{sub(b)}}</div></div>
+        </div>
+        ${{row('Proj PPG', dash(da.proj), dash(db.proj), wProj[0], wProj[1])}}
+        ${{row('L4 PPG', dash(da.l4), dash(db.l4), wL4[0], wL4[1])}}
+        ${{row('Floor–Ceil', da.flCeil, db.flCeil, wFl[0], wFl[1])}}
+        ${{row('Profile', da.profile, db.profile)}}
+        ${{row('Boom / Bust', da.boomBust, db.boomBust)}}
+        ${{row('Opponent', da.opp, db.opp)}}
+        ${{row('Def vs pos', da.def, db.def, da.defCls, db.defCls)}}
+        ${{row('Matchup', da.mu, db.mu)}}
+        ${{row('Vegas total', da.vegas, db.vegas, wVeg[0], wVeg[1])}}
+        ${{row('Venue', da.venue, db.venue)}}
+        ${{row('Dynasty rank', da.dynasty, db.dynasty)}}
       </div>
     </div>`;
 }}
