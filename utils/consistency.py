@@ -28,6 +28,23 @@ _DEFAULT_THRESHOLDS = (18.0, 7.0)
 
 _MIN_GAMES = 3   # below this the profile is flagged small-sample
 
+# Weeks of current-season data at which the profile is fully "molded" to this
+# season and stops leaning on last year (a full crossfade by mid-season).
+BLEND_FULL_SEASON = 8
+
+
+def _label_for(consistency: int, boom_rate: float, bust_rate: float, small_sample: bool) -> str:
+    """Map a consistency score + boom/bust rates to a one-word profile label."""
+    if small_sample:
+        return "Small sample"
+    if boom_rate >= 0.30 and bust_rate >= 0.30:
+        return "Boom or bust"
+    if consistency >= 62:
+        return "Steady"
+    if consistency >= 40:
+        return "Balanced"
+    return "Volatile"
+
 
 def _percentile(sorted_vals: "list[float]", p: float) -> Optional[float]:
     """Linear-interpolated percentile (p in 0..100) of a pre-sorted list."""
@@ -78,16 +95,7 @@ def consistency_profile(weekly_points: "list[float]", position: str = "") -> Opt
     consistency = round(100 * max(0.0, min(1.0, 1.0 - cv)))
 
     small_sample = n < _MIN_GAMES
-    if small_sample:
-        label = "Small sample"
-    elif boom_rate >= 0.30 and bust_rate >= 0.30:
-        label = "Boom or bust"
-    elif consistency >= 62:
-        label = "Steady"
-    elif consistency >= 40:
-        label = "Balanced"
-    else:
-        label = "Volatile"
+    label = _label_for(consistency, boom_rate, bust_rate, small_sample)
 
     return {
         "games": n,
@@ -101,4 +109,63 @@ def consistency_profile(weekly_points: "list[float]", position: str = "") -> Opt
         "bust_rate": round(bust_rate, 2),
         "label": label,
         "small_sample": small_sample,
+    }
+
+
+def blended_consistency_profile(
+    current: "list[float]",
+    prior: "list[float]",
+    position: str = "",
+    *,
+    prior_season: Optional[int] = None,
+    full_season: int = BLEND_FULL_SEASON,
+) -> Optional[dict]:
+    """Consistency profile that starts from last season and molds to this one.
+
+    With no current-season games it returns last season's profile (tagged with
+    its year). As current games accumulate, each metric crossfades linearly from
+    prior toward current, weighting current by ``min(1, games / full_season)`` -
+    so by ~mid-season the profile is entirely the current year. With no prior
+    data it's just the current-season profile.
+    """
+    cur = consistency_profile(current, position)
+    pri = consistency_profile(prior, position)
+
+    if cur is None:
+        if pri is None:
+            return None
+        out = dict(pri)
+        out["season"] = prior_season   # pure last-season profile; tag the year
+        out["blended"] = False
+        return out
+    if pri is None:
+        return cur  # no history to lean on
+
+    n_cur = cur["games"]
+    w = max(0.0, min(1.0, n_cur / float(full_season)))
+    if w >= 1.0:
+        return cur  # fully molded to the current season
+
+    def bl(key: str) -> float:
+        return w * cur[key] + (1.0 - w) * pri[key]
+
+    consistency = round(bl("consistency"))
+    boom_rate = round(bl("boom_rate"), 2)
+    bust_rate = round(bl("bust_rate"), 2)
+    return {
+        "games": n_cur,
+        "prior_games": pri["games"],
+        "mean": round(bl("mean"), 1),
+        "floor": round(bl("floor"), 1),
+        "ceiling": round(bl("ceiling"), 1),
+        "std": round(bl("std"), 1),
+        "cv": round(bl("cv"), 2),
+        "consistency": consistency,
+        "boom_rate": boom_rate,
+        "bust_rate": bust_rate,
+        "label": _label_for(consistency, boom_rate, bust_rate, False),
+        "small_sample": False,
+        "blended": True,
+        "prior_season": prior_season,
+        "weight_current": round(w, 2),
     }
