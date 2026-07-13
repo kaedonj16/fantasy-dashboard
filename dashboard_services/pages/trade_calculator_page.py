@@ -1089,7 +1089,7 @@ def build_trade_calculator_body(
       <div id="tradeLoginModal" class="trade-login-modal" style="display:none;">
         <div class="trade-login-overlay"></div>
         <div class="trade-login-content">
-          <button type="button" class="trade-login-close" id="closeLoginModal">&times;</button>
+          <button type="button" class="trade-login-close" id="closeLoginModal" aria-label="Close">&times;</button>
           <h2 class="trade-login-title">Sign In to Analyze Trade</h2>
           <p class="trade-login-subtitle">Connect your Sleeper league to get personalized trade analysis</p>
 

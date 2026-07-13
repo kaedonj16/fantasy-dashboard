@@ -1056,7 +1056,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
             (r.draft_class_year ? '<span style="opacity:.4;">·</span><span>' + r.draft_class_year + ' Draft</span>' : '') +
           '</div>' +
         '</div>' +
-        '<button class="rk-modal-close" onclick="rkCloseModal()">✕</button>' +
+        '<button class="rk-modal-close" onclick="rkCloseModal()" aria-label="Close">✕</button>' +
       '</div>' +
 
       '<div class="rk-modal-body">' +
