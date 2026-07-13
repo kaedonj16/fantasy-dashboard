@@ -14916,6 +14916,8 @@ def build_schedule_body(ctx):
         </div>
       </div>
 
+      __BYE_BANNER__
+
       <!-- Shared controls: week range always; player search vs. rank controls flip per tab -->
       <div class="sched-controls sched-shared-controls">
         <div class="sched-week-range">
@@ -15377,6 +15379,51 @@ def build_schedule_body(ctx):
     </script>
     """.replace("__CFG__", cfg)
 
+    # ── Bye-week outlook strip: upcoming weeks where the viewer's roster has
+    # multiple players sharing a bye, so waiver moves can be planned ahead. ──
+    bye_banner = ""
+    try:
+        from utils.bye_outlook import build_bye_outlook as _bbo
+        _byes = _team_bye_map(season)
+        if _byes and roster_pids:
+            _reqs = dict(ctx.get("lineup_requirements") or {})
+            if not _reqs:
+                for _slot in (ctx.get("roster_positions") or []):
+                    _s = str(_slot).upper()
+                    if _s in {"QB", "RB", "WR", "TE", "K", "DEF"}:
+                        _reqs[_s] = _reqs.get(_s, 0) + 1
+            _roster = [
+                {"pos": (players_idx.get(pid) or {}).get("pos"),
+                 "team": (players_idx.get(pid) or {}).get("team")}
+                for pid in roster_pids
+            ]
+            _from = current_week if current_week and current_week >= 1 else 1
+            _outlook = _bbo(_byes, _roster, _reqs, from_week=_from)
+            if _outlook:
+                def _short(bp):
+                    order = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "K": 4, "DEF": 5}
+                    items = sorted(bp.items(), key=lambda kv: (-kv[1], order.get(kv[0], 9)))
+                    return ", ".join(f"{n} {p}" for p, n in items)
+                _chips = "".join(
+                    f'<span class="sbo-week{" sbo-crunch" if w["crunch"] else ""}">'
+                    f'<span class="sbo-wk">Wk {w["week"]}</span>'
+                    f'<span class="sbo-pos">{_short(w["by_pos"])}</span></span>'
+                    for w in _outlook[:6]
+                )
+                _has_crunch = any(w["crunch"] for w in _outlook)
+                _note = ("Weeks where multiple starters share a bye are flagged"
+                         if _has_crunch else "Upcoming byes on your roster")
+                bye_banner = (
+                    '<div class="sched-bye-outlook" role="group" aria-label="Bye week outlook">'
+                    '<span class="sbo-label">Bye Outlook</span>'
+                    f'<div class="sbo-weeks">{_chips}</div>'
+                    f'<span class="sbo-note">{_note}</span>'
+                    '</div>'
+                )
+    except Exception:
+        logger.debug("[schedule] bye outlook skipped", exc_info=True)
+
+    shell = shell.replace("__BYE_BANNER__", bye_banner)
     return shell + script
 
 
