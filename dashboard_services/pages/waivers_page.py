@@ -134,9 +134,9 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-ss-flex-badge       { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #3b82f620; color: #3b82f6; flex-shrink: 0; }
 .wv-ss-sit-badge        { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: var(--row); color: var(--text-muted); flex-shrink: 0; }
 .wv-ss-bye-badge        { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #f59e0b20; color: #f59e0b; flex-shrink: 0; }
-.wv-inj-out { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: #ef444420; color: #ef4444; }
-.wv-inj-q   { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: #f59e0b20; color: #f59e0b; }
-.wv-inj-d   { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: #f9731620; color: #f97316; }
+.wv-inj-out { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--loss) 16%, transparent); color: var(--loss); }
+.wv-inj-q   { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
+.wv-inj-d   { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--orange) 16%, transparent); color: var(--orange); }
 
 /* Compare button */
 .wv-cmp-btn {
