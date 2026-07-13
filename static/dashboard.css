@@ -1102,8 +1102,8 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
 
 /* Constrain the CSD list to the panel width so it doesn't overflow horizontally */
 .settings-dropdown .csd-list {
-  min-width: 0;
-  width: 100%;
+  /* Width now comes from JS (min-width = trigger width) since the list is
+     position:fixed; a percentage width here would resolve against the viewport. */
   box-sizing: border-box;
 }
 
@@ -5098,10 +5098,11 @@ select:focus {
 }
 
 .csd-list {
-  position: absolute;
-  top: calc(100% + 4px);
+  /* Fixed positioning (coords set in JS from the trigger's viewport rect) so the
+     dropdown is never clipped by an ancestor with overflow:hidden/auto. */
+  position: fixed;
+  top: 0;
   left: 0;
-  min-width: 100%;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -13351,12 +13352,12 @@ img, svg, canvas {
 }
 .wk-bar-bg {
   position: absolute;
-  top: 12px;
-  bottom: 12px;
+  top: 9px;
+  bottom: 9px;
   left: 0;
   right: 0;
   background: var(--wk-bar-bg);
-  border-radius: 999px;
+  border-radius: 4px;
 }
 /* Tick labels sit BELOW the track in a separate flex row so they can never be
    overlapped by the grip handles that sit at the track edges. */
@@ -13383,10 +13384,11 @@ img, svg, canvas {
 }
 .wk-bar-sel {
   position: absolute;
-  top: 12px;
-  bottom: 12px; /* match .wk-bar-bg top/bottom */
-  background: #3b82f6;
-  border-radius: 999px;
+  top: 9px;
+  bottom: 9px; /* match .wk-bar-bg top/bottom */
+  border: 2px solid #3b82f6;
+  border-radius: 4px;
+  background: var(--wk-bar-sel-fill);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -13394,7 +13396,7 @@ img, svg, canvas {
   cursor: grab;
   z-index: 1;
   overflow: visible; /* grips extend outside */
-  min-width: 12px;
+  min-width: 20px;
 }
 .wk-bar-sel:active { cursor: grabbing; }
 /* Side handles: pill grips that extend above/below the thin sel bar.
@@ -13402,29 +13404,34 @@ img, svg, canvas {
    overflow:visible on sel lets them extend outside the 12px bar height. */
 .wk-bar-grip {
   display: flex;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  gap: 2px;
+  width: 22px;
+  height: 26px;
   flex-shrink: 0;
   cursor: ew-resize;
-  background: #fff;
-  border: 2px solid #3b82f6;
-  border-radius: 50%;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
-  transition: border-color 0.12s, box-shadow 0.12s, transform 0.12s;
+  background: #3b82f6;
+  border-radius: 6px;
+  transition: background 0.12s;
   z-index: 2;
 }
-.wk-bar-grip:hover { border-color: #2563eb; transform: scale(1.08); }
+.wk-bar-grip:hover { background: #2563eb; }
 .wk-bar-grip:focus-visible {
   outline: 2px solid #93c5fd;
   outline-offset: 2px;
 }
-/* Shift each grip so it's centered on the selection edge (half-width = 9px). */
-.wk-bar-grip-l { margin-left: -9px; }
-.wk-bar-grip-r { margin-right: -9px; }
-/* Circular thumbs: hide the old pill's grip lines. */
-.wk-bar-grip span { display: none; }
+/* Shift each grip so it's centered on the selection edge (half-width = 11px). */
+.wk-bar-grip-l { margin-left: -11px; }
+.wk-bar-grip-r { margin-right: -11px; }
+.wk-bar-grip span {
+  display: block;
+  width: 2px;
+  height: 11px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.9);
+}
 /* Player modal: keep the week bar from stretching the full modal width. */
 .adv-week-bar-row .wk-bar { max-width: 520px; }
 .cmp-week-bar-wrap {
@@ -13443,9 +13450,9 @@ img, svg, canvas {
 @media (max-width: 600px) {
   .wk-bar-dense .wk-bar-ticks .wk-tick:nth-child(even) { font-size: 0; }
   .wk-bar-track { height: 34px; }            /* a touch taller for easier dragging */
-  .wk-bar-grip { width: 24px; height: 24px; } /* larger circular touch target */
-  .wk-bar-grip-l { margin-left: -12px; }
-  .wk-bar-grip-r { margin-right: -12px; }
+  .wk-bar-grip { width: 26px; height: 30px; } /* larger touch targets */
+  .wk-bar-grip-l { margin-left: -13px; }
+  .wk-bar-grip-r { margin-right: -13px; }
 }
 
 /* ============================================
