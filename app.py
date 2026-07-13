@@ -1000,6 +1000,10 @@ BASE_HTML = """
     <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
     <link rel="preconnect" href="https://pagead2.googlesyndication.com" crossorigin>
     <link rel="dns-prefetch" href="https://pagead2.googlesyndication.com">
+    <!-- Player headshots & avatars load from sleepercdn on image-heavy pages
+         (players, rosters, matchups); warm the connection so they paint sooner. -->
+    <link rel="preconnect" href="https://sleepercdn.com" crossorigin>
+    <link rel="dns-prefetch" href="https://sleepercdn.com">
     <!-- Brand font: preload so text renders in Inter on first paint (font-display: swap). -->
     <link rel="preload" href="/static/fonts/web/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
     {sentry_js}
@@ -3810,7 +3814,7 @@ def render_standings_compact(team_stats, length=None, movement=None) -> str:
             record += f"-{int(row['Ties'])}"
         avatar = row.get("avatar", "")
         img = (
-            f"<img class='avatar sm' src='{avatar}' alt='' onerror=\"this.style.display='none'\">"
+            f"<img class='avatar sm' src='{avatar}' alt='' loading='lazy' decoding='async' onerror=\"this.style.display='none'\">"
             if avatar else ""
         )
         _mv = movement.get(str(row["owner"]))
@@ -5572,7 +5576,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     for i, row in enumerate(team_rows, 1):
         av = row["avatar"]
         img = (
-            f"<img class='avatar sm' src='{av}' alt='' onerror=\"this.style.display='none'\">"
+            f"<img class='avatar sm' src='{av}' alt='' loading='lazy' decoding='async' onerror=\"this.style.display='none'\">"
             if av else ""
         )
         first_rd = sum(
@@ -8937,7 +8941,7 @@ def build_teams_body(ctx: dict) -> str:
         name = meta["name"]
         avatar = meta.get("avatar") or ""
         img_html = (
-            f"<img class='avatar' src='{avatar}' alt='' onerror=\"this.style.display='none'\">"
+            f"<img class='avatar' src='{avatar}' alt='' loading='lazy' decoding='async' onerror=\"this.style.display='none'\">"
             if avatar else ""
         )
 
@@ -28218,7 +28222,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         )
 
         avatar_html = (
-            f'<img src="{avatar_url}" class="sc-avatar" alt="avatar" onerror="this.style.display=\'none\'">'
+            f'<img src="{avatar_url}" class="sc-avatar" alt="avatar" loading="lazy" decoding="async" onerror="this.style.display=\'none\'">'
             if avatar_url else
             '<div class="sc-avatar sc-avatar-placeholder"></div>'
         )
