@@ -1357,12 +1357,12 @@ function bindOnce(el, key, type, handler, options) {
     const weeklyChart = document.getElementById('teamWeeklyChart');
     const radarChart = document.getElementById('teamRadarChart');
     
+    const _bt = window.brandPlotlyTheme ? window.brandPlotlyTheme() : {};
     if (weeklyChart) {
-      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-      const textColor = isDark ? '#ffffff' : '#000000';
-      const bgColor = isDark ? '#1f2937' : '#ffffff';
-      const borderColor = isDark ? '#374151' : '#e5e7eb';
-      
+      const textColor = _bt.text || '#7c8798';
+      const bgColor = _bt.hoverBg || '#ffffff';
+      const borderColor = _bt.hoverBorder || '#e5e7eb';
+
       Plotly.relayout(weeklyChart, {
         template: theme,
         'paper_bgcolor': 'rgba(0,0,0,0)',
@@ -1372,12 +1372,12 @@ function bindOnce(el, key, type, handler, options) {
         'hoverlabel.font.color': textColor
       });
     }
-    
+
     if (radarChart) {
       const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-      const textColor = isDark ? '#ffffff' : '#000000';
-      const gridColor = isDark ? '#374151' : '#e5e7eb';
-      const lineColor = isDark ? '#9ca3af' : '#6b7280';
+      const textColor = _bt.text || '#7c8798';
+      const gridColor = _bt.grid || (isDark ? 'rgba(148,163,184,0.14)' : 'rgba(15,23,42,0.08)');
+      const lineColor = isDark ? '#64748b' : '#94a3b8';
       
       Plotly.relayout(radarChart, {
         template: theme,
@@ -14934,14 +14934,21 @@ function renderTeamDetails(data) {
     chartsPanel.innerHTML = graphsHTML || '<div class="team-modal-empty">No chart data available</div>';
   }
 
-  // Helper function to get theme-appropriate Plotly styling
+  // Helper function to get theme-appropriate Plotly styling. Aligned with the
+  // brand chart system (soft muted text instead of harsh pure black/white, a
+  // subtle grid, transparent background so charts blend into their card).
   function getPlotlyTheme() {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const t = window.brandPlotlyTheme ? window.brandPlotlyTheme() : {};
     return {
       template: isDark ? 'plotly_dark' : 'plotly_white',
-      textColor: isDark ? '#ffffff' : '#000000',
-      gridColor: isDark ? '#374151' : '#e5e7eb',
-      lineColor: isDark ? '#9ca3af' : '#6b7280'
+      textColor: t.text || (isDark ? '#9aa7b8' : '#7c8798'),
+      gridColor: t.grid || (isDark ? 'rgba(148,163,184,0.14)' : 'rgba(15,23,42,0.08)'),
+      lineColor: isDark ? '#64748b' : '#94a3b8',
+      hoverBg: t.hoverBg || (isDark ? '#0f172a' : '#ffffff'),
+      hoverBorder: t.hoverBorder || (isDark ? '#334155' : '#e5e7eb'),
+      paper: 'transparent',
+      plot: 'transparent'
     };
   }
 
@@ -14959,8 +14966,8 @@ function renderTeamDetails(data) {
         type: 'scatter',
         mode: 'lines+markers',
         name: data.team_name,
-        line: { color: '#667eea', width: 3 },
-        marker: { size: 8 },
+        line: { color: (window.brandPlotlyColorway || ['#3b82f6'])[0], width: 2.5, shape: 'spline', smoothing: 0.6 },
+        marker: { size: 6 },
         hovertemplate: `<b>${data.team_name}</b><br>Week: %{x}<br>Points: %{y:.1f}<extra></extra>`
       }];
 
@@ -14982,22 +14989,26 @@ function renderTeamDetails(data) {
 
       const weeklyLayout = {
         template: theme.template,
-        font: { family: window.brandPlotlyFont, size: 12.5 },
-        xaxis: { 
-          title: 'Week', 
+        paper_bgcolor: theme.paper,
+        plot_bgcolor: theme.plot,
+        font: { family: window.brandPlotlyFont, size: 12.5, color: theme.textColor },
+        xaxis: {
+          title: 'Week',
           standoff: 12,
           color: theme.textColor,
-          gridcolor: theme.gridColor
+          showgrid: false,
+          zeroline: false
         },
-        yaxis: { 
+        yaxis: {
           title: 'Points',
           color: theme.textColor,
-          gridcolor: theme.gridColor
+          gridcolor: theme.gridColor,
+          zeroline: false
         },
         hovermode: 'x unified',
         hoverlabel: {
-          bgcolor: theme.template === 'plotly_dark' ? '#1f2937' : '#ffffff',
-          bordercolor: theme.template === 'plotly_dark' ? '#374151' : '#e5e7eb',
+          bgcolor: theme.hoverBg,
+          bordercolor: theme.hoverBorder,
           font: { color: theme.textColor }
         },
         margin: { l: 50, r: 20, t: 20, b: 50 },
@@ -15036,9 +15047,9 @@ function renderTeamDetails(data) {
         r: closedZScores,
         theta: closedMetrics,
         fill: 'toself',
-        fillcolor: 'rgba(102, 126, 234, 0.3)',
-        line: { color: '#667eea', width: 2 },
-        marker: { size: 6, color: '#667eea' },
+        fillcolor: 'rgba(59, 130, 246, 0.22)',
+        line: { color: '#3b82f6', width: 2 },
+        marker: { size: 6, color: '#3b82f6' },
         name: data.team_name,
         text: hoverText,
         hoverinfo: 'text'
