@@ -10536,9 +10536,10 @@ def api_start_sit_options():
 
     # ── Weekly consistency / boom-bust profiles (from actual weekly scores) ──
     # Start from last completed season and mold toward the current one as games
-    # come in (see blended_consistency_profile). We only need last season while
-    # the current one is still filling in - once it has a full crossfade's worth
-    # of games the profile is pure current and prior isn't loaded.
+    # come in (see blended_consistency_profile). Last season is loaded per-player:
+    # as long as any rostered player is still inside the crossfade window it's
+    # pulled in, so a player who has missed time keeps blending even after the
+    # league leaders have reached a full current-season sample.
     weekly_pts_map: dict = {}
     prior_pts_map: dict = {}
     prior_season: Optional[int] = None
@@ -10547,8 +10548,14 @@ def api_start_sit_options():
         from utils.consistency import BLEND_FULL_SEASON as _BLEND_FULL
         _eff_ss = {**_SD_SS, **(ctx.get("raw_scoring_settings") or {})}
         weekly_pts_map = _load_season_weekly_points(season, _eff_ss)
-        _cur_max = max((len(v) for v in weekly_pts_map.values()), default=0)
-        if _cur_max < _BLEND_FULL:  # still inside the crossfade window
+        # Per-player gate: load last season while ANY rostered player is still
+        # inside the crossfade window (fewer than a full crossfade's worth of
+        # current games), so a low-games player keeps blending even midseason
+        # after the league leaders have gone pure-current.
+        _needs_prior = any(
+            len(weekly_pts_map.get(str(_pid)) or []) < _BLEND_FULL for _pid in player_ids
+        )
+        if _needs_prior:
             for _py in (season - 1, season - 2):
                 _pm = _load_season_weekly_points(_py, _eff_ss)
                 if max((len(v) for v in _pm.values()), default=0) >= 3:
