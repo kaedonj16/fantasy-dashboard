@@ -6891,7 +6891,7 @@ select:focus {
   font-size: 44px; font-weight: 900; line-height: 1;
   color: var(--text);
 }
-.rivalry-wins--lead { color: #10b981; }
+.rivalry-wins--lead { color: var(--win); }
 .rivalry-divider {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   padding: 16px 18px; gap: 4px; border-left: 1px solid var(--border); border-right: 1px solid var(--border);
@@ -6920,7 +6920,7 @@ select:focus {
 }
 .rivalry-bar-fill {
   height: 100%; border-radius: 99px;
-  background: linear-gradient(90deg, #10b981, #34d399);
+  background: linear-gradient(90deg, var(--win), color-mix(in srgb, var(--win) 60%, #fff));
   transition: width 0.5s ease;
 }
 
@@ -6997,8 +6997,8 @@ select:focus {
   flex-shrink: 0;
   letter-spacing: -0.2px;
 }
-.pr-move-up   { color: #10b981; }
-.pr-move-down { color: #ef4444; }
+.pr-move-up   { color: var(--win); }
+.pr-move-down { color: var(--loss); }
 .pr-move-flat { color: var(--text-muted); opacity: 0.6; }
 .podium .podium-header h3 .pr-move { font-size: 11px; vertical-align: 2px; margin-left: 2px; }
 
