@@ -298,13 +298,15 @@ function wvGameChips(p) {{
     const k = c.label === 'Steady' ? 'steady'
             : c.label === 'Volatile' ? 'volatile'
             : c.label === 'Boom or bust' ? 'boombust' : 'balanced';
+    const yr = c.season ? " '" + String(c.season).slice(-2) : '';
     const tip = 'Consistency ' + c.consistency + '/100 · boom ' +
                 Math.round(c.boom_rate * 100) + '% · bust ' +
-                Math.round(c.bust_rate * 100) + '% (' + c.games + ' g)';
-    out += '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Floor–Ceil</span>' +
+                Math.round(c.bust_rate * 100) + '% (' + c.games + ' g' +
+                (c.season ? ', ' + c.season : '') + ')';
+    out += '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Floor–Ceil' + yr + '</span>' +
            '<span class="wv-ss-stat-val muted">' + c.floor + '–' + c.ceiling + '</span></div>';
     out += '<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Profile</span>' +
-           '<span class="wv-ss-cons wv-ss-cons-' + k + '" title="' + tip + '">' + c.label + '</span></div>';
+           '<span class="wv-ss-cons wv-ss-cons-' + k + '" title="' + tip + '">' + c.label + yr + '</span></div>';
   }}
   return out;
 }}
