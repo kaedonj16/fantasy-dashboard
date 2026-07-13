@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-07-13",
+        "tag": "new",
+        "text": "Start/Sit Advisor: every player now shows a boom-or-bust profile, with a floor-to-ceiling scoring range and a Steady, Balanced, Volatile, or Boom-or-bust read built from their weekly game-by-game scores (last season blends in until this year's sample fills out). Rows also surface live game conditions: the Vegas implied team total and a weather or venue chip (dome, cold, wind, rain). And the head-to-head Compare was rebuilt with one shared label per stat plus all of the new signals.",
+        "link": "/waivers"
+    },
+    {
         "date": "2026-06-24",
         "tag": "new",
         "text": "Draft Room: A full draft assistant with real-time pick tracking, best-available rankings, pick scoring, and post-draft grades. Run a mock for any format or connect directly to your live Sleeper draft. Supports rookie, startup, and redraft leagues with format-specific grading, team archetype detection, and a shareable draft summary card.",
