@@ -15860,20 +15860,20 @@ def _build_lineup_analysis_html(
                     or "<div style='padding:18px;color:var(--muted);font-size:13px;text-align:center;'>No major lineup mistakes this week - nice job, league.</div>"
 
     return f"""
-<div class="recap-lineup-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:20px;align-items:start;">
-  <div class="card" style="overflow:hidden;">
-    <div class="card-header"><h3>Busts</h3><span style="font-size:12px;color:var(--muted);">Worst starters</span></div>
-    {bust_rows or '<div style="padding:14px;color:var(--muted);">–</div>'}
-  </div>
-  <div class="card" style="overflow:hidden;">
-    <div class="card-header"><h3>Bench Gems</h3><span style="font-size:12px;color:var(--muted);">Best bench performers</span></div>
-    {sleeper_rows or '<div style="padding:14px;color:var(--muted);">–</div>'}
-  </div>
-  <div class="card" style="overflow:hidden;">
-    <div class="card-header"><h3>Coaching Mistakes</h3>
-      <span style="font-size:12px;color:var(--muted);">Bench vs starter (same pos)</span>
+<div class="card" style="overflow:hidden;margin-bottom:20px;">
+  <div class="recap-lineup-cols">
+    <div class="rlc-col">
+      <div class="rlc-head"><h3>Busts</h3><span>Worst starters</span></div>
+      {bust_rows or '<div style="padding:14px;color:var(--muted);">–</div>'}
     </div>
-    {mistakes_rows}
+    <div class="rlc-col">
+      <div class="rlc-head"><h3>Bench Gems</h3><span>Best bench performers</span></div>
+      {sleeper_rows or '<div style="padding:14px;color:var(--muted);">–</div>'}
+    </div>
+    <div class="rlc-col">
+      <div class="rlc-head"><h3>Coaching Mistakes</h3><span>Bench vs starter (same pos)</span></div>
+      {mistakes_rows}
+    </div>
   </div>
 </div>"""
 
@@ -15928,20 +15928,20 @@ def _mock_lineup_analysis_html(team_names: list[str]) -> str:
 </div>"""
 
     return f"""
-<div class="recap-lineup-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:20px;align-items:start;">
-  <div class="card" style="overflow:hidden;">
-    <div class="card-header"><h3>Busts</h3><span style="font-size:12px;color:var(--muted);">Worst starters</span></div>
-    {bust_rows}
-  </div>
-  <div class="card" style="overflow:hidden;">
-    <div class="card-header"><h3>Bench Gems</h3><span style="font-size:12px;color:var(--muted);">Best bench performers</span></div>
-    {sleeper_rows}
-  </div>
-  <div class="card" style="overflow:hidden;">
-    <div class="card-header"><h3>Coaching Mistakes</h3>
-      <span style="font-size:12px;color:var(--muted);">Bench vs starter (same pos)</span>
+<div class="card" style="overflow:hidden;margin-bottom:20px;">
+  <div class="recap-lineup-cols">
+    <div class="rlc-col">
+      <div class="rlc-head"><h3>Busts</h3><span>Worst starters</span></div>
+      {bust_rows}
     </div>
-    {mock_mistake}
+    <div class="rlc-col">
+      <div class="rlc-head"><h3>Bench Gems</h3><span>Best bench performers</span></div>
+      {sleeper_rows}
+    </div>
+    <div class="rlc-col">
+      <div class="rlc-head"><h3>Coaching Mistakes</h3><span>Bench vs starter (same pos)</span></div>
+      {mock_mistake}
+    </div>
   </div>
 </div>"""
 
@@ -16339,7 +16339,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 </div>"""
 
     scoreboard_and_recap = f"""
-<div class="recap-scoreboard-grid" style="display:grid;grid-template-columns:3fr 2fr;gap:16px;margin-bottom:20px;align-items:start;">
+<div class="recap-scoreboard-grid" style="display:grid;grid-template-columns:3fr 2fr;gap:16px;margin-bottom:20px;align-items:stretch;">
   {scoreboard_html.replace("margin-bottom:20px;", "")}
   {ai_column_html.replace("margin-bottom:20px;", "")}
 </div>"""
