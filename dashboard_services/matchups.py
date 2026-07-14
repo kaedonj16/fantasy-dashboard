@@ -305,7 +305,9 @@ def render_matchup_carousel_weeks(
         slides_html = slides_by_week.get(active_week) or "<div class='m-empty'>No matchups</div>"
 
     central = "central" if dashboard else ""
-    style = "max-width:800px;" if not dashboard else ""
+    # On the Weekly Hub (non-dashboard) let the carousel fill its grid column so
+    # it stretches to the stats sidebar instead of leaving a gap beside it.
+    style = ""
 
     return f"""
       <div class="card matchup-carousel {central}" data-section="matchups" style="{style} margin-bottom:30px;">
