@@ -13282,6 +13282,32 @@ img, svg, canvas {
   font-weight: 700;
   color: var(--text) !important;
 }
+/* Opponent code stacked over a matchup-difficulty chip */
+.game-log-table-opp .opp-stack {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  line-height: 1.15;
+}
+.game-log-table-opp .opp-code { font-weight: 700; color: var(--text); }
+.game-log-matchup {
+  display: inline-block;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 0 5px;
+  border-radius: 5px;
+  line-height: 1.5;
+  letter-spacing: .01em;
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+/* 4-tier difficulty scale, identical to sched_rank_color / the Schedule
+   Assistant grid (1 = easiest), so the same matchup reads the same everywhere. */
+.game-log-matchup.mt1 { color: #22c55e; background: #22c55e18; }
+.game-log-matchup.mt2 { color: #84cc16; background: #84cc1618; }
+.game-log-matchup.mt3 { color: #f59e0b; background: #f59e0b18; }
+.game-log-matchup.mt4 { color: #ef4444; background: #ef444418; }
 
 .game-log-table-pts {
   font-weight: 700;
@@ -14563,6 +14589,7 @@ tr.team-clickable {
 .graphs-season-selector {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 10px 16px;
   margin-bottom: 4px;
@@ -18560,18 +18587,17 @@ button:disabled {
 .sbo-weeks {
   display: flex;
   align-items: stretch;
+  flex-wrap: wrap;
   gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 4px;
-  scrollbar-width: thin;
+  padding-bottom: 2px;
 }
 .sbo-week {
   display: flex;
   flex-direction: column;
   gap: 5px;
-  flex: 0 0 auto;
-  min-width: 56px;
-  max-width: 150px;
+  flex: 0 1 auto;
+  min-width: 52px;
+  max-width: 100%;
   padding: 7px 10px;
   border-radius: 8px;
   background: var(--row);
@@ -18611,7 +18637,18 @@ button:disabled {
 .sbo-week.is-crunch .sbo-wk,
 .sbo-week.is-crunch .sbo-tag { color: var(--warning); }
 @media (max-width: 600px) {
+  /* Compact the whole strip: it is a glanceable heads-up, not a focal panel. */
   .sbo-note { display: none; }
+  .sched-bye-outlook { margin: 7px 0 2px; padding: 6px 8px 4px; border-radius: 10px; }
+  .sbo-header { margin-bottom: 5px; }
+  .sbo-label { font-size: 9.5px; letter-spacing: .04em; }
+  .sbo-weeks { gap: 5px; padding-bottom: 0; }
+  .sbo-week { padding: 4px 7px; gap: 1px; min-width: 42px; border-radius: 6px; }
+  .sbo-wk { font-size: 8.5px; gap: 3px; }
+  .sbo-pos { gap: 0 4px; }
+  .sbo-tag { font-size: 9.5px; }
+  .sbo-tag + .sbo-tag::before { margin-right: 4px; }
+  .sbo-warn { font-size: 8px; }
 }
 .sched-add {
   position: relative;

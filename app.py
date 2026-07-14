@@ -21525,6 +21525,33 @@ def api_player_game_logs(player_id: str):
             except Exception as _proj_err:
                 logger.debug(f"[game_logs] upcoming season projection failed: {_proj_err}")
 
+        # ── Matchup difficulty per game ───────────────────────────────────────
+        # Tag each game with the opponent defense's rank vs this position
+        # (1 = easiest, same SoS-adjusted table the Schedule Assistant uses), so
+        # the game log can show why a score was high or low. Only skill positions
+        # have ratings; seasons without a table (or projections for a future
+        # year) simply get no tag, leaving those rows uncolored.
+        _mpos = (player_meta.get("pos") or "").upper()
+        if _mpos in ("QB", "RB", "WR", "TE"):
+            from utils.schedule_ease import norm_sched_team as _norm_sched_team
+            for _yr, _logs in game_logs_by_year.items():
+                try:
+                    _rmap, _total, _info, _isz = _matchup_rank_table(int(_yr), _mpos)
+                except Exception:
+                    _rmap, _total = {}, 0
+                if not _rmap or not _total:
+                    continue
+                for _g in _logs:
+                    if _g.get("is_bye"):
+                        continue
+                    _opp = (_g.get("opponent") or "").lstrip("@").strip()
+                    if not _opp or _opp == "BYE":
+                        continue
+                    _rk = _rmap.get(_norm_sched_team(_opp))
+                    if _rk:
+                        _g["opp_rank"] = _rk
+                        _g["opp_total"] = _total
+
         return jsonify({"game_logs_by_year": game_logs_by_year})
     except Exception as e:
         logger.exception("[api_player_game_logs] error")

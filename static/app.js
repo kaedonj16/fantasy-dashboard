@@ -8656,18 +8656,6 @@ function openPlayerModal(playerId, playerName, opts) {
         metaParts.push(`<span class="pm-trend-pill" data-trend-tip="${_tipTxt}" style="padding:1px 6px;border-radius:4px;background:${vt.color}18;border:1px solid ${vt.color}40;color:${vt.color};font-size:10px;font-weight:700;cursor:help;">${vtIcon} ${vt.label}</span>`);
       }
 
-      // ── Playoff strength-of-schedule (fantasy weeks 15-17): a buy/sell cue ──
-      const psos = data.playoff_sos;
-      if (psos && psos.rank && psos.total) {
-        const _pct = psos.total > 1 ? (psos.total - psos.rank) / (psos.total - 1) : 0.5; // 1 = easiest
-        let _pc, _plabel;
-        if (_pct >= 0.66)      { _pc = 'var(--win)';     _plabel = 'Easy'; }
-        else if (_pct <= 0.33) { _pc = 'var(--loss)';    _plabel = 'Tough'; }
-        else                   { _pc = 'var(--warning)'; _plabel = 'Neutral'; }
-        const _ptip = 'Playoff schedule (Wks 15-17): ' + _plabel + ' · #' + psos.rank + ' of ' + psos.total +
-                      ' at ' + (data.position || 'position') + ' (1 = easiest)';
-        metaParts.push(`<span class="pm-sos-pill" title="${_ptip}" style="padding:1px 6px;border-radius:4px;background:color-mix(in srgb, ${_pc} 15%, transparent);color:${_pc};font-size:10px;font-weight:700;cursor:help;">Playoff SoS #${psos.rank}/${psos.total}</span>`);
-      }
       const metaEl = document.getElementById('playerModalMeta');
       let metaHTML = `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:0;">${metaParts.join('<span style="opacity:.35;margin:0 3px;">·</span>')}</div>`;
       if (data.fantasy_team) {
@@ -9763,6 +9751,27 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint) {
       return `<td>${disp}</td>`;
     }).join('');
 
+    // Matchup-difficulty chip: grades each game by how the opponent defense
+    // ranks vs this position (same SoS-adjusted table as the Schedule Assistant,
+    // #1 = easiest). Colors match sched_rank_color's 4-tier scale.
+    const _mPosWord = ({QB:'QBs',RB:'RBs',WR:'WRs',TE:'TEs'})[(positionHint||'').toUpperCase()] || 'this position';
+    const _matchupChip = (g) => {
+      const rk = g.opp_rank, tot = g.opp_total;
+      if (!rk || !tot) return '';
+      const pct = rk / tot;
+      const tier = pct <= 0.25 ? 1 : pct <= 0.50 ? 2 : pct <= 0.75 ? 3 : 4;
+      const opp = (g.opponent || '').replace('@', '');
+      const tip = `${opp} vs ${_mPosWord}: matchup rank #${rk} of ${tot} (#1 = easiest)`;
+      return `<span class="game-log-matchup mt${tier}" title="${tip}">D #${rk}</span>`;
+    };
+    const _oppCell = (g, dash) => {
+      const code = g.opponent || dash;
+      const chip = _matchupChip(g);
+      return chip
+        ? `<span class="opp-stack"><span class="opp-code">${code}</span>${chip}</span>`
+        : code;
+    };
+
     years.forEach((year, index) => {
       const gameLogs = game_logs_by_year[year];
       const isFirstYear = index === 0;
@@ -9850,7 +9859,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint) {
           statsHTML += `
             <tr class="game-log-table-row game-log-proj-row">
               <td>${projDate || `Wk ${game.week}`}</td>
-              <td class="game-log-table-opp">${game.opponent || '–'}</td>
+              <td class="game-log-table-opp">${_oppCell(game, '–')}</td>
               <td class="game-log-table-pts game-log-proj-pts">${projVal}</td>
               ${statCols.map(() => '<td>–</td>').join('')}
             </tr>
@@ -9885,7 +9894,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint) {
         statsHTML += `
           <tr class="${rowClass}">
             <td>${dateStr}</td>
-            <td class="game-log-table-opp">${game.opponent || '-'}</td>
+            <td class="game-log-table-opp">${_oppCell(game, '-')}</td>
             <td class="game-log-table-pts">${ptsCell}</td>
             ${_statCell(s)}
           </tr>
