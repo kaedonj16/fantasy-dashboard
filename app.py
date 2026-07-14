@@ -1715,9 +1715,13 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 "<span class='rz-nav-live'><span class='rz-nav-dot'></span>Redzone</span>"
                 if _rz_live else "Redzone"
             )
-            _weekly_items.append((_rz_label, "page_redzone", "redzone", False))
-            if _rz_live:
-                _rz_pulse = "nav-pill-redzone-live"
+            # Redzone live tracking relies on the Sleeper player index + Tank01
+            # boxscores, so it only works for Sleeper leagues. Hide it elsewhere
+            # rather than showing a broken, name-less live view.
+            if platform == "sleeper":
+                _weekly_items.append((_rz_label, "page_redzone", "redzone", False))
+                if _rz_live:
+                    _rz_pulse = "nav-pill-redzone-live"
         nav_pills.append(nav_pill_dropdown(
             "Weekly", _weekly_items,
             ["weekly", "recap", "redzone", "scout", "optimal", "waivers", "schedule"],
@@ -11500,6 +11504,20 @@ def _redzone_fetch_user(platform, league_id, season, week):
 @app.route("/<platform>/<int:season>/<league_id>/redzone")
 def page_redzone(platform: str, season: int, league_id: str):
     scope = "user" if request.args.get("scope") == "user" else "league"
+    # Redzone's live player feed is Sleeper-only; show an honest note instead of
+    # an empty, name-less live view when an ESPN/Yahoo user deep-links here.
+    if (platform or "").lower() != "sleeper" and request.args.get("demo") != "1":
+        body = (
+            "<div class='card central' style='max-width:560px;margin:32px auto;'>"
+            "<div class='card-body' style='padding:28px 24px;text-align:center;'>"
+            "<h2 style='margin:0 0 8px;'>Redzone is Sleeper-only for now</h2>"
+            "<p style='color:var(--text-muted);font-size:14px;line-height:1.6;margin:0;'>"
+            "Live Redzone tracking uses Sleeper's real-time player feed, which isn't "
+            "available for ESPN or Yahoo leagues yet. Everything else — your matchups, "
+            "scores, and the rest of the tools — works normally on this platform."
+            "</p></div></div>"
+        )
+        return render_page("BR Redzone", league_id, "redzone", body, platform, season)
     if request.args.get("demo") == "1":
         data = _redzone_demo_data(scope=scope)
     else:
