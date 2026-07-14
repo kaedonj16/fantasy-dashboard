@@ -18637,7 +18637,18 @@ button:disabled {
 .sbo-week.is-crunch .sbo-wk,
 .sbo-week.is-crunch .sbo-tag { color: var(--warning); }
 @media (max-width: 600px) {
+  /* Compact the whole strip: it is a glanceable heads-up, not a focal panel. */
   .sbo-note { display: none; }
+  .sched-bye-outlook { margin: 7px 0 2px; padding: 6px 8px 4px; border-radius: 10px; }
+  .sbo-header { margin-bottom: 5px; }
+  .sbo-label { font-size: 9.5px; letter-spacing: .04em; }
+  .sbo-weeks { gap: 5px; padding-bottom: 0; }
+  .sbo-week { padding: 4px 7px; gap: 1px; min-width: 42px; border-radius: 6px; }
+  .sbo-wk { font-size: 8.5px; gap: 3px; }
+  .sbo-pos { gap: 0 4px; }
+  .sbo-tag { font-size: 9.5px; }
+  .sbo-tag + .sbo-tag::before { margin-right: 4px; }
+  .sbo-warn { font-size: 8px; }
 }
 .sched-add {
   position: relative;
