@@ -16112,13 +16112,51 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 </div>"""
 
     # ── Headline cards ─────────────────────────────────────────────────────
-    def scorer_card(icon, label, name, pts, rid, sub, accent):
-        return f"""
-<div class="card" style="padding:18px 20px;display:flex;flex-direction:column;gap:14px;min-width:0;">
+    def _scorer_opp(row):
+        """The other team in this scorer's matchup, so the scorer cards can show
+        who they beat/lost to (matching the two-row matchup cards) instead of
+        leaving the card half-empty."""
+        try:
+            grp = week_df[week_df["matchup_id"] == row.get("matchup_id")]
+            others = grp[grp["owner"] != row["owner"]]
+            if others.empty:
+                return None
+            o = others.iloc[0]
+            return {"owner": o["owner"], "rid": str(o.get("roster_id", "")),
+                    "pts": float(o["points"])}
+        except Exception:
+            return None
+
+    def scorer_card(icon, label, name, pts, rid, sub, accent, opp=None):
+        header = f"""
   <div style="display:flex;align-items:center;gap:6px;">
     <i class="{icon}" style="font-size:13px;color:{accent};width:16px;text-align:center;"></i>
     <span style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--muted);">{label}</span>
+  </div>"""
+        if opp:
+            diff = abs(pts - opp["pts"])
+            result = f"{'Won' if pts > opp['pts'] else 'Lost'} by {diff:.1f}"
+            body = f"""
+  <div style="display:flex;flex-direction:column;gap:8px;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      {ava_img(name, rid, 36)}
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_name(name, rid)}</div>
+      </div>
+      <div style="font-size:24px;font-weight:800;color:{accent};flex-shrink:0;letter-spacing:-.5px;font-variant-numeric:tabular-nums;">{pts:.2f}</div>
+    </div>
+    <div style="height:1px;background:var(--border);"></div>
+    <div style="display:flex;align-items:center;gap:10px;opacity:0.45;">
+      {ava_img(opp["owner"], opp["rid"], 36)}
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_name(opp["owner"], opp["rid"])}</div>
+      </div>
+      <div style="font-size:24px;font-weight:800;flex-shrink:0;letter-spacing:-.5px;font-variant-numeric:tabular-nums;">{opp["pts"]:.1f}</div>
+    </div>
   </div>
+  <div style="font-size:11px;color:var(--muted);font-weight:600;"><span style="color:{accent};">{html.escape(sub)}</span> &middot; {result}</div>"""
+        else:
+            body = f"""
   <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
     <div style="display:flex;align-items:center;gap:10px;min-width:0;">
       {ava_img(name, rid, 44)}
@@ -16131,7 +16169,9 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
       <div style="font-size:32px;font-weight:800;color:{accent};letter-spacing:-.5px;line-height:1;font-variant-numeric:tabular-nums;">{pts:.2f}</div>
       <div style="font-size:11px;color:{accent};font-weight:600;margin-top:4px;">{html.escape(sub)}</div>
     </div>
-  </div>
+  </div>"""
+        return f"""
+<div class="card" style="padding:18px 20px;display:flex;flex-direction:column;gap:14px;min-width:0;">{header}{body}
 </div>"""
 
     def matchup_card(icon, label, m):
@@ -16170,10 +16210,10 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px;">
   {scorer_card("fa-solid fa-fire", "HIGH SCORER", high_row["owner"],
                float(high_row["points"]), str(high_row.get("roster_id","")),
-               high_sub, "var(--win)")}
+               high_sub, "var(--win)", _scorer_opp(high_row))}
   {scorer_card("fa-solid fa-arrow-trend-down", "LOW SCORER", low_row["owner"],
                float(low_row["points"]), str(low_row.get("roster_id","")),
-               low_sub, "var(--loss)")}
+               low_sub, "var(--loss)", _scorer_opp(low_row))}
   {matchup_card("fa-solid fa-trophy", "BIGGEST WIN", blowout) if blowout else ""}
   {matchup_card("fa-solid fa-bolt", "CLOSEST GAME", closest) if closest else ""}
 </div>"""
