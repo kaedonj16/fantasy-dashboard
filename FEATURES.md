@@ -19,7 +19,7 @@ A full breakdown of every feature on the site, organized by the main navigation.
 
 ## Dashboard
 
-- **Front Office Briefing / BR Front Office Report** — AI-generated report analyzing your roster, trade opportunities, and standings, personalized to your team.
+- **Front Office Report** — AI-generated report analyzing your roster, trade opportunities, and standings, personalized to your team.
 - **Offseason Hub** — Offseason team snapshot, draft countdown, and Draft Capital Index.
 - **Rookie Draft Assistant (preview)** — Surfaced on the dashboard during draft season.
 - **Waiver Wire Targets** — Top available adds ranked for your roster.

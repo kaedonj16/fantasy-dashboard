@@ -40,7 +40,6 @@ except ImportError:
 from dashboard_services.ai.history_recap import get_history_ai_recap
 from dashboard_services.ai.renderer import (
     get_team_gm_memo,
-    get_front_office_briefing,
     get_power_rankings_html,
     get_trade_suggestions_html,
     get_roster_grade,
@@ -4669,18 +4668,12 @@ def build_dashboard_body(ctx: dict) -> str:
     viewer_roster_id = viewer.get("viewer_roster_id")
 
     gm_memo_html = ""
-    front_office_html = ""
 
     if viewer_roster_id:
         try:
             gm_memo_html = get_team_gm_memo(ctx, str(viewer_roster_id))
         except Exception:
             logger.debug("dashboard: gm memo failed", exc_info=True)
-    else:
-        try:
-            front_office_html = get_front_office_briefing(ctx, str(viewer_roster_id))
-        except Exception:
-            logger.debug("dashboard: front office briefing failed", exc_info=True)
 
     standings_html = render_standings_compact(
         team_stats, movement=_standings_movement(df_weekly)
@@ -4771,25 +4764,11 @@ def build_dashboard_body(ctx: dict) -> str:
         gm_card_html = f"""
         <div class="card gm-card">
           <div class="card-header">
-            <h2>Your GM Memo</h2>
+            <h2>Front Office Report</h2>
             <div class="subtle-label">{viewer.get("viewer_team_name") or "Your Team"}</div>
           </div>
           <div class="card-body">
             {gm_memo_html}
-          </div>
-        </div>
-        """
-
-    front_office_card_html = ""
-    if front_office_html:
-        front_office_card_html = f"""
-        <div class="card fo-brief-card">
-          <div class="card-header">
-            <h2>Front Office Briefing</h2>
-            <div class="subtle-label">Daily plan</div>
-          </div>
-          <div class="card-body">
-            {front_office_html}
           </div>
         </div>
         """
@@ -4926,7 +4905,6 @@ def build_dashboard_body(ctx: dict) -> str:
         {lineup_alert_html}
         {roster_moves_html}
         {gm_card_html}
-        {front_office_card_html}
         {trade_window_html}
         {usage_movers_html}
 
@@ -6182,7 +6160,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         ctx, viewer_roster_id, ctx.get("df_weekly"), ctx.get("team_stats")
     )
 
-    front_office_html = ""
     latest_draft = ctx.get("latest_draft")
     draft_text = "Draft date not set"
     countdown_text = "TBD"
@@ -6413,7 +6390,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         <section class="os-card">
           <div class="os-section-head">
             <div class="os-section-head-content">
-              <h2 class="os-section-title">BR Front Office Report</h2>
+              <h2 class="os-section-title">Front Office Report</h2>
               <div class="os-section-subtitle">{viewer.get("viewer_team_name") or "Your Team"}</div>
             </div>
             <div class="os-section-head-actions">
@@ -6440,23 +6417,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
               </div>
             </div>
             <div id="gm-memo-result" style="display:none;"></div>
-          </div>
-        </section>
-        """
-
-    front_office_card_html = ""
-    if front_office_html:
-        front_office_card_html = f"""
-        <section class="os-card">
-          <div class="os-section-head">
-            <div class="os-section-head-content">
-              <h2 class="os-section-title">Front Office Briefing</h2>
-              <div class="os-section-subtitle">Offseason priorities</div>
-            </div>
-            <button type="button" class="card-collapse-toggle" aria-label="Toggle section" aria-expanded="true" data-target="front-office-body">▼</button>
-          </div>
-          <div class="os-ai-copy card-collapsible-body" id="front-office-body">
-            {front_office_html}
           </div>
         </section>
         """
@@ -6620,7 +6580,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         <div id="sinceLastVisitCard" class="slv-wrap" data-slv-init="1"></div>
 
         {gm_card_html}
-        {front_office_card_html}
 
         {season_review_html}
 

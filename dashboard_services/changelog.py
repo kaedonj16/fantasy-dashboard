@@ -341,7 +341,7 @@ CHANGELOG = [
     {
         "date": "2026-03-27",
         "tag": "new",
-        "text": "Team Reports: AI-powered Front Office Briefings analyze your roster, trade opportunities, and league standings",
+        "text": "Team Reports: the AI-powered Front Office Report analyzes your roster, trade opportunities, and league standings",
         "link": "/dashboard"
     },
     {
