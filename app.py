@@ -3881,7 +3881,8 @@ def _all_play_from_df_weekly(df_weekly) -> dict:
         return {}
 
 
-def render_standings(team_stats, length, all_play: dict = None) -> str:
+def render_standings(team_stats, length, all_play: dict = None,
+                     playoff_spots: int = None, total_regular_weeks: int = None) -> str:
     if team_stats is None or team_stats.empty:
         return """
         <div class="card-body">
@@ -3903,6 +3904,57 @@ def render_standings(team_stats, length, all_play: dict = None) -> str:
 
     df["Rank"] = df.index + 1
 
+    # ── Playoff picture (optional; enriches rows with clinch/seed status) ──────
+    pic_by_name: dict = {}
+    ctx_line = ""
+    _spots = None
+    if playoff_spots and total_regular_weeks:
+        try:
+            from utils.playoff_picture import compute_playoff_picture, bye_count
+            _teams = [
+                {"id": str(rr["owner"]), "name": str(rr["owner"]),
+                 "wins": int(rr["Wins"]), "losses": int(rr["Losses"]),
+                 "ties": int(rr.get("Ties", 0) or 0), "pf": float(rr["PF"])}
+                for _, rr in df.iterrows()
+            ]
+            _pic = compute_playoff_picture(_teams, int(playoff_spots), int(total_regular_weeks))
+            pic_by_name = {p["name"]: p for p in _pic}
+            _spots = int(playoff_spots)
+            _byes = bye_count(_spots)
+            _left = max((p["games_left"] for p in _pic), default=0)
+            _bye_txt = f" · top {_byes} get a bye" if _byes else ""
+            _left_txt = f" · {_left} to play" if _left else " · regular season complete"
+            ctx_line = (
+                "<div class='pp-ctx'>"
+                f"<span class='pp-ctx-main'>Top {_spots} advance{_bye_txt}{_left_txt}</span>"
+                "<span class='pp-legend'>"
+                "<span class='pp-lg'><i class='pp-dot pp-d-bye'></i>Bye</span>"
+                "<span class='pp-lg'><i class='pp-dot pp-d-in'></i>Clinched / In</span>"
+                "<span class='pp-lg'><i class='pp-dot pp-d-bub'></i>Bubble</span>"
+                "<span class='pp-lg'><i class='pp-dot pp-d-out'></i>Eliminated</span>"
+                "</span></div>"
+            )
+        except Exception:
+            logger.debug("[standings] playoff picture skipped", exc_info=True)
+            pic_by_name, _spots = {}, None
+
+    _STATUS_CLS = {"bye": "pp-bye", "clinched": "pp-clinched", "in": "pp-in",
+                   "bubble": "pp-bubble", "eliminated": "pp-out"}
+
+    def _pp_tag(p):
+        st = p["status"]
+        if st == "bye":
+            return "<span class='pp-tag pp-t-bye'>BYE</span>"
+        if st == "clinched":
+            return "<span class='pp-tag pp-t-in'>CLINCHED</span>"
+        if st == "eliminated":
+            return "<span class='pp-tag pp-t-out'>OUT</span>"
+        if st == "bubble":
+            if p["seed"] > (_spots or 0) and p["games_back"] > 0:
+                return f"<span class='pp-tag pp-t-bub'>{p['games_back']:g} GB</span>"
+            return "<span class='pp-tag pp-t-bub'>BUBBLE</span>"
+        return ""  # "in" carries the green accent, no tag needed
+
     for _, row in df.iterrows():
         record = f"{int(row['Wins'])}-{int(row['Losses'])}"
         if int(row.get("Ties", 0)):
@@ -3912,7 +3964,7 @@ def render_standings(team_stats, length, all_play: dict = None) -> str:
         avatar = row.get("avatar", "")
 
         img = (
-            f"<img class='avatar sm' src='{avatar}' alt='' "
+            f"<img class='avatar sm' src='{avatar}' alt='' loading='lazy' decoding='async' "
             "onerror=\"this.style.display='none'\">"
             if avatar else ""
         )
@@ -3927,10 +3979,28 @@ def render_standings(team_stats, length, all_play: dict = None) -> str:
             _luck_cell = f"<span class='luck-chip {_lcls}' title='Actual wins minus expected wins from all-play'>{_lsign}{_luck:.1f}</span>"
         _seed = _ap.get('expected_seed')
         _seed_cell = _ord_str(_seed) if _seed else "<span class='muted'>&ndash;</span>"
+
+        owner = str(row['owner'])
+        _p = pic_by_name.get(owner)
+        _trcls = ""
+        _tdcls = "team"
+        if _p:
+            _trcls = _STATUS_CLS.get(_p["status"], "")
+            _tdcls = "team pp-team-cell"
+            _tag = _pp_tag(_p)
+            # Flex line: the name ellipsizes, the status tag never clips (wraps
+            # under the name on very tight widths rather than getting cut off).
+            team_cell = (
+                f"<div class='pp-teamline'>{img}"
+                f"<span class='pp-team-name'>{html.escape(owner)}</span>{_tag}</div>"
+            )
+        else:
+            team_cell = f"{img} {html.escape(owner)}"
+
         rows.append(f"""
-            <tr>
+            <tr class="{_trcls}">
               <td class="num">{int(row['Rank'])}</td>
-              <td class="team">{img} {html.escape(str(row['owner']))}</td>
+              <td class="{_tdcls}">{team_cell}</td>
               <td>{record}</td>
               <td>{row['PF']:.1f}</td>
               <td>{row['PA']:.1f}</td>
@@ -3942,13 +4012,33 @@ def render_standings(team_stats, length, all_play: dict = None) -> str:
             </tr>
         """)
 
-    total_rows = rows[:length] if len(rows) != length else rows
+        # Clinch scenario for the teams straddling the line: one full-width row
+        # under the team, so the sentence never wraps inside the narrow cell.
+        if (_p and _p.get("scenario") and _p["status"] == "bubble"
+                and _p["seed"] in (_spots, (_spots or 0) + 1)):
+            rows.append(
+                "<tr class='pp-scnrow'><td colspan='10'>"
+                f"<div class='pp-scn'>{html.escape(_p['scenario'])}</div></td></tr>"
+            )
+
+        # Draw the playoff cutoff line right below the last team that advances.
+        if _spots and int(row['Rank']) == _spots and _spots < len(df):
+            rows.append(
+                "<tr class='pp-cutrow'><td colspan='10'>"
+                "<div class='pp-cut'>Playoff line</div></td></tr>"
+            )
+
+    if _spots:
+        total_rows = rows          # cutoff rows shift the count; show every team
+    else:
+        total_rows = rows[:length] if len(rows) != length else rows
 
     return f"""
+        {ctx_line}
         <table class="standings-table" data-page="standings">
           <thead>
             <tr>
-              <th scope="col">Rank</th>
+              <th scope="col">Seed</th>
               <th scope="col">Team</th>
               <th scope="col">Record</th>
               <th scope="col">PF</th>
@@ -5799,7 +5889,27 @@ def build_standings_body(ctx: dict) -> str:
     num_teams = len({str(r.get("roster_id")) for r in rosters})
 
     _all_play = _all_play_from_df_weekly(df_weekly)
-    standings_html = render_standings(team_stats, num_teams, all_play=_all_play)
+
+    # Playoff picture: only once the race is meaningful (past ~midseason), and
+    # only when we know the playoff format and regular-season length.
+    _pp_spots = _pp_weeks = None
+    try:
+        _settings = ctx.get("league_settings") or {}
+        _pws = int(_settings.get("playoff_week_start") or 0)
+        if _pws > 1:
+            _reg_weeks = _pws - 1
+            _played = int((team_stats["Wins"] + team_stats["Losses"]
+                           + team_stats.get("Ties", 0)).max())
+            if 6 <= _played <= _reg_weeks:
+                _pp_spots = int(_settings.get("playoff_teams") or 6)
+                _pp_weeks = _reg_weeks
+    except Exception:
+        _pp_spots = _pp_weeks = None
+
+    standings_html = render_standings(
+        team_stats, num_teams, all_play=_all_play,
+        playoff_spots=_pp_spots, total_regular_weeks=_pp_weeks,
+    )
 
     if (
             df_weekly is not None
