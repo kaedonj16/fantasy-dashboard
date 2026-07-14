@@ -2307,6 +2307,67 @@ button:hover {
   .po-table { min-width: 420px; }
 }
 
+/* ── Playoff picture: standings enrichment ─────────────────────────────────── */
+:root { --pp-bye: #7c3aed; }
+[data-theme="dark"] { --pp-bye: #a78bfa; }
+
+.pp-ctx {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 2px 2px 12px; font-size: 12px; color: var(--text-muted);
+}
+.pp-ctx-main { font-weight: 600; color: var(--text); }
+.pp-legend { display: flex; gap: 12px; flex-wrap: wrap; }
+.pp-lg { display: inline-flex; align-items: center; gap: 5px; }
+.pp-dot { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+.pp-d-bye { background: var(--pp-bye); }
+.pp-d-in  { background: var(--win); }
+.pp-d-bub { background: var(--warning); }
+.pp-d-out { background: var(--text-subtle); }
+
+/* Per-row status: a colored left bar on the seed cell + a subtle row tint. */
+.standings-table tr.pp-bye td:first-child { box-shadow: inset 4px 0 0 var(--pp-bye); }
+.standings-table tr.pp-in td:first-child,
+.standings-table tr.pp-clinched td:first-child { box-shadow: inset 4px 0 0 var(--win); }
+.standings-table tr.pp-bubble td:first-child { box-shadow: inset 4px 0 0 var(--warning); }
+.standings-table tr.pp-out td:first-child { box-shadow: inset 4px 0 0 color-mix(in srgb, var(--text-subtle) 70%, transparent); }
+.standings-table tr.pp-bye td { background: color-mix(in srgb, var(--pp-bye) 6%, transparent); }
+.standings-table tr.pp-bubble td { background: color-mix(in srgb, var(--warning) 6%, transparent); }
+.standings-table tr.pp-out td { opacity: .5; }
+
+.pp-tag {
+  font-size: 9.5px; font-weight: 800; letter-spacing: .03em; padding: 2px 7px;
+  border-radius: 999px; margin-left: 8px; vertical-align: middle; white-space: nowrap;
+}
+.pp-t-bye { color: var(--pp-bye); background: color-mix(in srgb, var(--pp-bye) 15%, transparent); }
+.pp-t-in  { color: var(--win); background: color-mix(in srgb, var(--win) 13%, transparent); }
+.pp-t-bub { color: var(--warning); background: color-mix(in srgb, var(--warning) 15%, transparent); }
+.pp-t-out { color: var(--text-subtle); background: color-mix(in srgb, var(--text-subtle) 16%, transparent); }
+/* Team cell (picture rows): drop the ellipsis clamp so the tag isn't cut. */
+.standings-table td.pp-team-cell {
+  max-width: none; overflow: visible; white-space: normal;
+}
+.pp-teamline {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 2px 6px; min-width: 0;
+}
+.pp-teamline .pp-team-name {
+  font-weight: 600; flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pp-teamline .pp-tag { flex-shrink: 0; margin-left: 0; }
+
+/* Clinch scenario: a full-width row under the team so the line never wraps
+   inside the narrow team cell. */
+.standings-table tr.pp-scnrow td { padding: 0 !important; border: 0 !important; background: transparent !important; }
+.pp-scn { font-size: 11.5px; color: var(--text-muted); line-height: 1.35; padding: 1px 10px 7px 40px; }
+
+/* Playoff cutoff line drawn between the last in-spot and the first out. */
+.standings-table tr.pp-cutrow td { padding: 0 !important; border: 0 !important; background: transparent !important; }
+.pp-cut {
+  display: flex; align-items: center; gap: 10px; padding: 5px 10px; margin: 2px 0;
+  color: var(--loss); font-size: 9.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+}
+.pp-cut::before, .pp-cut::after { content: ""; flex: 1; height: 1px; background: color-mix(in srgb, var(--loss) 35%, transparent); }
+
 @media (max-width: 480px) {
   .standings-table {
     font-size: 11px;
