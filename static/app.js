@@ -9762,7 +9762,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint) {
       const tier = pct <= 0.25 ? 1 : pct <= 0.50 ? 2 : pct <= 0.75 ? 3 : 4;
       const opp = (g.opponent || '').replace('@', '');
       const tip = `${opp} vs ${_mPosWord}: matchup rank #${rk} of ${tot} (#1 = easiest)`;
-      return `<span class="game-log-matchup mt${tier}" title="${tip}">D #${rk}</span>`;
+      return `<span class="game-log-matchup mt${tier}" title="${tip}">#${rk}</span>`;
     };
     const _oppCell = (g, dash) => {
       const code = g.opponent || dash;

@@ -21531,10 +21531,15 @@ def api_player_game_logs(player_id: str):
         # the game log can show why a score was high or low. Only skill positions
         # have ratings; seasons without a table (or projections for a future
         # year) simply get no tag, leaving those rows uncolored.
+        # Only annotate seasons that have a precomputed ratings file so we never
+        # trigger the expensive fpts-against fallback in this per-request path;
+        # _load_matchup_ratings is a cheap cached JSON read.
         _mpos = (player_meta.get("pos") or "").upper()
         if _mpos in ("QB", "RB", "WR", "TE"):
             from utils.schedule_ease import norm_sched_team as _norm_sched_team
             for _yr, _logs in game_logs_by_year.items():
+                if not _load_matchup_ratings(int(_yr)):
+                    continue
                 try:
                     _rmap, _total, _info, _isz = _matchup_rank_table(int(_yr), _mpos)
                 except Exception:
