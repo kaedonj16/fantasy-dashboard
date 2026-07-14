@@ -9751,6 +9751,27 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint) {
       return `<td>${disp}</td>`;
     }).join('');
 
+    // Matchup-difficulty chip: grades each game by how the opponent defense
+    // ranks vs this position (same SoS-adjusted table as the Schedule Assistant,
+    // #1 = easiest). Colors match sched_rank_color's 4-tier scale.
+    const _mPosWord = ({QB:'QBs',RB:'RBs',WR:'WRs',TE:'TEs'})[(positionHint||'').toUpperCase()] || 'this position';
+    const _matchupChip = (g) => {
+      const rk = g.opp_rank, tot = g.opp_total;
+      if (!rk || !tot) return '';
+      const pct = rk / tot;
+      const tier = pct <= 0.25 ? 1 : pct <= 0.50 ? 2 : pct <= 0.75 ? 3 : 4;
+      const opp = (g.opponent || '').replace('@', '');
+      const tip = `${opp} vs ${_mPosWord} — matchup rank #${rk} of ${tot} (#1 = easiest)`;
+      return `<span class="game-log-matchup mt${tier}" title="${tip}">D #${rk}</span>`;
+    };
+    const _oppCell = (g, dash) => {
+      const code = g.opponent || dash;
+      const chip = _matchupChip(g);
+      return chip
+        ? `<span class="opp-stack"><span class="opp-code">${code}</span>${chip}</span>`
+        : code;
+    };
+
     years.forEach((year, index) => {
       const gameLogs = game_logs_by_year[year];
       const isFirstYear = index === 0;
@@ -9838,7 +9859,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint) {
           statsHTML += `
             <tr class="game-log-table-row game-log-proj-row">
               <td>${projDate || `Wk ${game.week}`}</td>
-              <td class="game-log-table-opp">${game.opponent || '–'}</td>
+              <td class="game-log-table-opp">${_oppCell(game, '–')}</td>
               <td class="game-log-table-pts game-log-proj-pts">${projVal}</td>
               ${statCols.map(() => '<td>–</td>').join('')}
             </tr>
@@ -9873,7 +9894,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint) {
         statsHTML += `
           <tr class="${rowClass}">
             <td>${dateStr}</td>
-            <td class="game-log-table-opp">${game.opponent || '-'}</td>
+            <td class="game-log-table-opp">${_oppCell(game, '-')}</td>
             <td class="game-log-table-pts">${ptsCell}</td>
             ${_statCell(s)}
           </tr>

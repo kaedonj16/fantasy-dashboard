@@ -13282,6 +13282,33 @@ img, svg, canvas {
   font-weight: 700;
   color: var(--text) !important;
 }
+/* Opponent code stacked over a matchup-difficulty chip */
+.game-log-table-opp .opp-stack {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  line-height: 1.15;
+}
+.game-log-table-opp .opp-code { font-weight: 700; color: var(--text); }
+.game-log-matchup {
+  display: inline-block;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 0 5px;
+  border-radius: 5px;
+  line-height: 1.5;
+  letter-spacing: .01em;
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+/* 4-tier difficulty scale, matched to sched_rank_color (1 = easiest) */
+.game-log-matchup.mt1 { color: #22c55e; background: #22c55e18; }
+.game-log-matchup.mt2 { color: #65a30d; background: #84cc1618; }
+.game-log-matchup.mt3 { color: #d97706; background: #f59e0b18; }
+.game-log-matchup.mt4 { color: #ef4444; background: #ef444418; }
+[data-theme="dark"] .game-log-matchup.mt2 { color: #a3e635; }
+[data-theme="dark"] .game-log-matchup.mt3 { color: #fbbf24; }
 
 .game-log-table-pts {
   font-weight: 700;
