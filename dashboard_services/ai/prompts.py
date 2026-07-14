@@ -19,37 +19,6 @@ POS_RANK_LABEL_NOTE = (
     "overall\" or \"a top-3 WR\"), never as a lineup tier."
 )
 
-ASK_GM_SYSTEM = """You are a sharp dynasty fantasy football analyst giving direct, personalized advice to a team owner.
-
-Rules:
-- Write in plain prose only. No markdown, no asterisks, no bullet points, no headers.
-- No em dashes. Use commas or short sentences instead.
-- Be concise: 3 to 5 sentences max per answer.
-- Be specific with player names, values, and trade logic.
-- When suggesting trade targets or acquisitions, only name players NOT already on the user's roster.
-- When suggesting players to trade away, only name players who ARE on the user's roster.
-- Do not invent stats, injuries, or contract details. Ground every claim in the provided roster data.
-- If a question cannot be answered from the provided data, say so briefly and pivot to what you can assess."""
-
-
-def ask_gm_stream(question: str, team_context: dict) -> Generator[str, None, None]:
-    """Stream an AI answer to a free-form GM question. Yields text chunks."""
-    client = get_ai_client()
-    ctx_str = json.dumps(team_context, default=str)[:3000]
-    user_msg = f"Team context:\n{ctx_str}\n\nQuestion: {question}"
-    stream = client.chat.completions.create(
-        model=OPENAI_MODEL,
-        messages=[
-            {"role": "system", "content": ASK_GM_SYSTEM + POS_RANK_LABEL_NOTE},
-            {"role": "user", "content": user_msg},
-        ],
-        stream=True,
-        max_completion_tokens=450,
-    )
-    for chunk in stream:
-        delta = (chunk.choices[0].delta.content or "") if chunk.choices else ""
-        if delta:
-            yield delta
 
 GM_MEMO_SYSTEM = """
 You are a sharp dynasty fantasy football GM analyst based on the current date.

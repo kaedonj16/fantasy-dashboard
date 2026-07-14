@@ -1121,9 +1121,6 @@ BASE_HTML = """
 
     <!-- Cookie consent handled by Google's certified CMP (Funding Choices) -->
 
-    <!-- Feature 15: Ask My GM floating chat widget -->
-    {ask_gm_widget}
-
     <script src="/static/{app_js_file}?v={app_js_v}"></script>
     <script src="/static/paywall.js?v={paywall_js_v}"></script>
     <script>
@@ -2416,10 +2413,9 @@ def render_page(
     user_id = session.get("viewer_username")
     is_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform or "sleeper", season)
 
-    # Inject Ask My GM context for JS to pick up and add to the floating pill group
+    # Viewer context for client JS (player-modal roster context, etc.)
     viewer_roster_id = session.get("viewer_roster_id") or ""
     viewer_user_id   = session.get("viewer_user_id") or ""
-    ask_gm_widget = ""  # Ask My GM hidden for now
 
     import json as _json
     html = BASE_HTML.format(
@@ -2453,7 +2449,6 @@ def render_page(
         css_v=_CSS_V,
         fa_v=_FA_V,
         icons_v=_ICONS_V,
-        ask_gm_widget=ask_gm_widget,
         viewer_roster_id_js=_json.dumps(str(viewer_roster_id)),
         viewer_user_id_js=_json.dumps(str(viewer_user_id)),
         signed_in_js="true" if session.get("viewer_username") else "false",
@@ -27978,96 +27973,6 @@ if os.environ.get("WARM_CACHES_ON_START") == "1":
 
 
 
-# ── Feature 10 + 15: Ask My GM - streaming AI chat ───────────────────────────
-@app.route("/api/ask-gm", methods=["POST"])
-@limiter.limit("15 per minute")
-def api_ask_gm():
-    """SSE streaming endpoint for the Ask My GM chat widget."""
-    from dashboard_services.ai.prompts import ask_gm_stream
-    from dashboard_services.ai.client import ai_enabled
-
-    payload = request.get_json(force=True) or {}
-    question = str(payload.get("question") or "").strip()[:500]
-    league_id = str(payload.get("league_id") or "").strip()
-    season = int(payload.get("season") or datetime.now().year)
-    platform = str(payload.get("platform") or "sleeper").strip()
-    roster_id = str(payload.get("roster_id") or "").strip()
-
-    if not question or not league_id:
-        return jsonify({"error": "Missing required parameters"}), 400
-
-    _user_id = session.get("viewer_username")
-    if not has_premium_for_viewer(_user_id, session.get("viewer_user_id"), league_id, platform, season):
-        return jsonify({"error": "premium_required"}), 403
-
-    if not ai_enabled():
-        return jsonify({"error": "AI unavailable"}), 503
-
-    def _generate():
-        import json as _json
-        try:
-            ctx = get_league_ctx_from_cache(platform, league_id, season)
-            rosters = ctx.get("rosters") or []
-            standings = ctx.get("standings_map") or {}
-            users = ctx.get("users") or []
-            players_index = {}
-            try:
-                from utils.utils import load_players_index
-                players_index = load_players_index() or {}
-            except Exception:
-                logger.debug("suppressed exception", exc_info=True)
-
-            value_table = list(get_model_value_table_cached() or [])
-            values_by_id = {str(r["id"]): r for r in value_table if isinstance(r, dict) and r.get("id")}
-
-            team_ctx: dict = {"league_id": league_id, "season": season}
-            league_info = ctx.get("league") or {}
-            is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"}
-                        for s in (league_info.get("roster_positions") or []))
-            vfield = "sf_value" if is_sf else "value"
-            team_ctx["league_type"] = "SF" if is_sf else "1QB"
-            team_ctx["league_name"] = league_info.get("name", "")
-
-            uid_to_name: dict = {}
-            for u in users:
-                uid_to_name[str(u.get("user_id", ""))] = str(u.get("display_name") or u.get("username") or "Unknown")
-
-            for r in rosters:
-                if str(r.get("roster_id")) == roster_id:
-                    std = standings.get(roster_id) or standings.get(int(roster_id)) or {}
-                    owner_id = str(r.get("owner_id") or "")
-                    team_ctx["owner"] = uid_to_name.get(owner_id, "Unknown")
-                    team_ctx["record"] = f"{std.get('wins', 0)}-{std.get('losses', 0)}"
-                    team_ctx["points_for"] = round(float(std.get("pf") or 0), 1)
-                    players_detail = []
-                    for pid in (r.get("players") or []):
-                        meta = players_index.get(str(pid)) or {}
-                        vrow = values_by_id.get(str(pid)) or {}
-                        val = float(vrow.get(vfield) or vrow.get("value") or 0)
-                        if val > 0 or meta.get("pos"):
-                            players_detail.append({
-                                "name": meta.get("full_name") or meta.get("name") or str(pid),
-                                "pos": meta.get("pos", ""),
-                                "team": meta.get("team", ""),
-                                "value": round(val, 0),
-                            })
-                    players_detail.sort(key=lambda x: -x["value"])
-                    team_ctx["top_players"] = players_detail[:20]
-                    team_ctx["roster_size"] = len(r.get("players") or [])
-                    break
-
-            for chunk in ask_gm_stream(question, team_ctx):
-                yield f"data: {_json.dumps({'text': chunk})}\n\n"
-            yield "data: [DONE]\n\n"
-        except Exception as exc:
-            logger.exception("[api-ask-gm] %s", exc)
-            yield f"data: {_json.dumps({'error': 'AI unavailable, try again later.'})}\n\n"
-
-    return Response(
-        stream_with_context(_generate()),
-        mimetype="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
 
 
 # ── Feature 12: League Bulletins ─────────────────────────────────────────────
