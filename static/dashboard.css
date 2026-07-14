@@ -14332,12 +14332,13 @@ tr.team-clickable {
 
 /* Mobile responsive */
 @media (max-width: 768px) {
+  /* Float centered like the player modal (not a bottom sheet). */
+  .team-modal-overlay { padding: 16px; }
   .team-modal {
     max-height: 88dvh;
     max-height: 88vh;
-    border-radius: 16px 16px 0 0;
+    border-radius: 16px;
     margin: 0;
-    margin-top: auto;
     max-width: 100%;
   }
 
@@ -17702,11 +17703,11 @@ tr.team-clickable {
   .player-modal-header { padding-left: 16px; padding-right: 16px; }
 }
 
-/* Team modal: bottom-sheet on mobile */
+/* Team modal: float centered like the player modal on small phones */
 @media (max-width: 480px) {
-  .team-modal-overlay { align-items: flex-end; padding: 0; }
+  .team-modal-overlay { align-items: center; padding: 16px 4px; }
   .team-modal {
-    border-radius: 16px 16px 0 0;
+    border-radius: 16px;
     margin: 0;
     width: 100%;
     max-height: 88dvh;
