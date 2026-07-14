@@ -18135,6 +18135,29 @@ button:disabled {
   }
 }
 
+/* Recap lineup: one card, three divider-separated columns. Full-height
+   dividers make an uneven column (e.g. a short Coaching Mistakes list) read as
+   intentional instead of a floating short card with empty space beside it. */
+.recap-lineup-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+}
+.rlc-col { min-width: 0; display: flex; flex-direction: column; }
+.rlc-col + .rlc-col { border-left: 1px solid var(--border); }
+.rlc-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+}
+.rlc-head h3 { margin: 0; font-size: 15px; font-weight: 750; color: var(--text); }
+.rlc-head span { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+/* Drop the trailing row border so a column doesn't end on a stray line. */
+.rlc-col > .rc-row:last-child,
+.rlc-col > .rc-mistake:last-child { border-bottom: none; }
+@media (max-width: 720px) {
+  .recap-lineup-cols { grid-template-columns: 1fr; }
+  .rlc-col + .rlc-col { border-left: none; border-top: 1px solid var(--border); }
+}
+
 /* ── Toast notifications ──────────────────────────────────────────────────── */
 #toast-container {
   position: fixed;
