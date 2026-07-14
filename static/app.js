@@ -4064,7 +4064,7 @@ window.initTradePage = function initTradePage(root = document) {
 
     const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
     if (!hasPremium) {
-      body.innerHTML = '<div class="otc-movers-empty">Premium required.</div>';
+      body.innerHTML = '<div class="otc-movers-empty" style="display:flex;flex-direction:column;align-items:center;gap:8px;"><span>Unlock trade tools with PRO.</span><button class="pi-locked-btn" onclick="showPaywall(\'trade-suggestions\')">Upgrade</button></div>';
       return;
     }
 
@@ -4093,9 +4093,8 @@ window.initTradePage = function initTradePage(root = document) {
         { cache: "no-store" }
       );
       if (res.status === 403) {
-        const errData = await res.json().catch(() => ({}));
-        if (errData.paywall && typeof showPaywall === "function") showPaywall("trade-suggestions");
-        else body.innerHTML = '<div style="font-size:12px;color:var(--text-muted);">Premium required.</div>';
+        if (typeof showPaywall === "function") showPaywall("trade-suggestions");
+        else body.innerHTML = '<div style="font-size:12px;color:var(--text-muted);">Upgrade to PRO to unlock trade tools.</div>';
         return;
       }
       if (!res.ok) throw new Error("Failed");
@@ -5256,7 +5255,7 @@ window.initTradePage = function initTradePage(root = document) {
       const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
       if (!hasPremium) {
         suggTargetsLoaded = true;
-        container.innerHTML = '<div class="otc-movers-empty">Premium required.</div>';
+        container.innerHTML = '<div class="otc-movers-empty" style="display:flex;flex-direction:column;align-items:center;gap:8px;"><span>Unlock trade tools with PRO.</span><button class="pi-locked-btn" onclick="showPaywall(\'trade-suggestions\')">Upgrade</button></div>';
         return;
       }
 
@@ -5284,6 +5283,12 @@ window.initTradePage = function initTradePage(root = document) {
           `&league_type=${encodeURIComponent(leagueType)}&league_size=${encodeURIComponent(leagueSize)}`,
           { cache: "no-store" }
         );
+        if (res.status === 403) {
+          suggTargetsLoaded = true;
+          if (typeof showPaywall === "function") showPaywall("trade-suggestions");
+          else container.innerHTML = '<div class="otc-movers-empty">Upgrade to PRO to unlock trade tools.</div>';
+          return;
+        }
         if (!res.ok) throw new Error("Failed");
         const data = await res.json();
         suggTargetsLoaded = true;  // only mark done after a successful response
@@ -5518,7 +5523,7 @@ window.initTradePage = function initTradePage(root = document) {
 
       const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
       if (!hasPremium) {
-        strategyImpact.innerHTML = '<div class="otc-movers-empty">Premium required.</div>';
+        strategyImpact.innerHTML = '<div class="otc-movers-empty" style="display:flex;flex-direction:column;align-items:center;gap:8px;"><span>Unlock trade tools with PRO.</span><button class="pi-locked-btn" onclick="showPaywall(\'trade-suggestions\')">Upgrade</button></div>';
         strategyCards.innerHTML  = "";
         return;
       }
@@ -5567,7 +5572,7 @@ window.initTradePage = function initTradePage(root = document) {
         const res = await fetch(url, { cache: "no-store" });
         if (strategySpinner) strategySpinner.style.display = "none";
         if (res.status === 403) {
-          strategyImpact.innerHTML = '<div class="otc-movers-empty">Premium required.</div>';
+          strategyImpact.innerHTML = '<div class="otc-movers-empty" style="display:flex;flex-direction:column;align-items:center;gap:8px;"><span>Unlock trade tools with PRO.</span><button class="pi-locked-btn" onclick="showPaywall(\'trade-suggestions\')">Upgrade</button></div>';
           return;
         }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
