@@ -15860,7 +15860,7 @@ def _build_lineup_analysis_html(
                     or "<div style='padding:18px;color:var(--muted);font-size:13px;text-align:center;'>No major lineup mistakes this week - nice job, league.</div>"
 
     return f"""
-<div class="recap-lineup-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:20px;">
+<div class="recap-lineup-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:20px;align-items:start;">
   <div class="card" style="overflow:hidden;">
     <div class="card-header"><h3>Busts</h3><span style="font-size:12px;color:var(--muted);">Worst starters</span></div>
     {bust_rows or '<div style="padding:14px;color:var(--muted);">–</div>'}
@@ -15928,7 +15928,7 @@ def _mock_lineup_analysis_html(team_names: list[str]) -> str:
 </div>"""
 
     return f"""
-<div class="recap-lineup-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:20px;">
+<div class="recap-lineup-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:20px;align-items:start;">
   <div class="card" style="overflow:hidden;">
     <div class="card-header"><h3>Busts</h3><span style="font-size:12px;color:var(--muted);">Worst starters</span></div>
     {bust_rows}
