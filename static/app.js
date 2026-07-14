@@ -8290,7 +8290,7 @@ document.addEventListener('DOMContentLoaded', function() {
             emptyState.style.display = 'block';
             const errorDiv = document.createElement('div');
             errorDiv.className = 'gm-memo-error';
-            errorDiv.textContent = data.error || 'Failed to generate GM memo. Please try again.';
+            errorDiv.textContent = data.error || 'Failed to generate your Front Office Report. Please try again.';
             emptyState.appendChild(errorDiv);
           }
         }
