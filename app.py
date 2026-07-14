@@ -1471,6 +1471,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     _tab_param = request.args.get("tab", "")
     if active == "trade" and _tab_param == "suggestions":
         active = "trade-suggestions"
+    # Scout Report and Optimal Lineup live as tabs on the Matchups (weekly) page,
+    # not their own pages, so ?tab=scout/optimal highlights the right nav item.
+    if active == "weekly" and _tab_param in ("scout", "optimal"):
+        active = _tab_param
 
     nfl_state = get_nfl_state() or {}
     offseason_mode = ((nfl_state.get("season_type") or "").lower() == "off") and (
@@ -1693,8 +1697,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         _weekly_items = [
             ("Matchups",     "page_weekly", "weekly", False),
             ("Weekly Recap", "page_recap",  "recap",  False),
-            ("Opponent Scout", "page_scout", "scout", False),
-            ("Lineup Efficiency", "page_optimal", "optimal", False),
+            ("Opponent Scout", "page_weekly", "scout", False, "?tab=scout"),
+            ("Lineup Efficiency", "page_weekly", "optimal", False, "?tab=optimal"),
             # Roster/lineup tools live with the other weekly tools, not Players.
             ("Waivers & Start/Sit", "page_waivers", "waivers", False),
             ("Schedule Assistant",  "page_schedule", "schedule", False),
@@ -4529,8 +4533,8 @@ def _render_bench_check(ctx: dict, viewer_roster_id, last_final_week: int) -> st
         season = ctx.get("current_season")
         league_id = ctx.get("league_id", "")
         eff_url = url_for(
-            "page_optimal", platform=platform, season=season, league_id=league_id
-        )
+            "page_weekly", platform=platform, season=season, league_id=league_id
+        ) + "?tab=optimal"
         if left_on_bench < 1.0:
             msg = (
                 f"Week {last_final_week} bench check: you started your optimal "
@@ -9581,11 +9585,12 @@ def page_waivers(platform: str, season: int, league_id: str):
 
 @app.route("/<platform>/<int:season>/<league_id>/scout")
 def page_scout(platform: str, season: int, league_id: str):
-    ctx = get_league_ctx_from_cache(platform, league_id, season)
-    if not ctx.get("offseason_mode"):
-        ensure_weekly_bits(ctx)
-    body = build_scout_body(ctx)
-    return render_page("Opponent Scout – BR Fantasy", league_id, "scout", body, platform, season)
+    # Scout Report lives as a tab on the Matchups page, not its own page.
+    # Redirect (keeps old links/bookmarks working) to that tab.
+    return redirect(
+        url_for("page_weekly", platform=platform, season=season, league_id=league_id)
+        + "?tab=scout"
+    )
 
 
 @app.route("/portfolio")
@@ -14192,13 +14197,16 @@ def build_optimal_body(ctx):
     if sel_week < 1 or sel_week > max_week:
         sel_week = max_week
 
-    base_url = f"/{platform}/{season}/{league_id}/optimal"
+    # Optimal Lineup renders inside the Matchups page's "optimal" tab, so its
+    # internal view/period/week nav points back there (with ?tab=optimal) rather
+    # than to a standalone /optimal page.
+    base_url = f"/{platform}/{season}/{league_id}/weekly?tab=optimal"
 
     # ── Navigation ────────────────────────────────────────────────────────────
     def _tab(label, tv, tp, active):
         wk = f"&week={sel_week}" if tp == "weekly" else ""
         cls = "opt-tab active" if active else "opt-tab"
-        return f"<a class='{cls}' href='{base_url}?view={tv}&period={tp}{wk}'>{label}</a>"
+        return f"<a class='{cls}' href='{base_url}&view={tv}&period={tp}{wk}'>{label}</a>"
 
     week_opts = "".join(
         f"<option value='{w}'{' selected' if w == sel_week else ''}>Week {w}</option>"
@@ -14206,7 +14214,7 @@ def build_optimal_body(ctx):
     )
     week_picker = (
         f"<select class='opt-week-select' "
-        f"onchange=\"window.location='{base_url}?view={view}&period=weekly&week='+this.value\">"
+        f"onchange=\"window.location='{base_url}&view={view}&period=weekly&week='+this.value\">"
         f"{week_opts}</select>"
     ) if period == "weekly" else ""
 
@@ -14497,9 +14505,12 @@ def build_optimal_body(ctx):
 
 @app.route("/<platform>/<int:season>/<league_id>/optimal")
 def page_optimal(platform: str, season: int, league_id: str):
-    ctx = get_league_ctx_from_cache(platform, league_id, season)
-    body = build_optimal_body(ctx)
-    return render_page("Lineup Efficiency Tracker", league_id, "optimal", body, platform, season)
+    # Optimal Lineup lives as a tab on the Matchups page, not its own page.
+    # Redirect (keeps old links/bookmarks working) to that tab.
+    return redirect(
+        url_for("page_weekly", platform=platform, season=season, league_id=league_id)
+        + "?tab=optimal"
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
