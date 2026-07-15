@@ -453,6 +453,43 @@ print("[cron] weekly team maps built/refreshed: %d" % built)
 """, "build_weekly_team_map")
 
     # ------------------------------------------------------------------ #
+    # Step 4a3: One-time backfill of weekly target share by per-week team. #
+    # The incremental weekly-metrics build (4a) only rebuilds the latest   #
+    # weeks, so historical rows keep the old current-team target share -    #
+    # which is wrong for traded players and NULL when their team was blank  #
+    # at build time, dropping them from the target-share leaderboard. Force #
+    # a full rebuild of recent seasons ONCE (guarded by a marker) so the    #
+    # corrected per-week-team shares land. Runs after the team map (4a2) so  #
+    # mid-season trades resolve; falls back to season team otherwise.       #
+    # ------------------------------------------------------------------ #
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+import os
+from datetime import datetime
+from dashboard_services.api import get_nfl_state
+from data_building.weekly_metrics import build_weekly_metrics
+
+marker = os.path.join("cache", ".weekly_metrics_perweek_team_v1.done")
+if os.path.exists(marker):
+    print("[cron] weekly target-share per-week-team backfill already done")
+else:
+    nfl_state = get_nfl_state() or {}
+    current_season = int(nfl_state.get("season") or datetime.now().year)
+    total = 0
+    for yr in range(current_season - 3, current_season + 1):
+        n = build_weekly_metrics(yr, weeks=list(range(1, 19)))
+        total += n
+        print("[cron] rebuilt weekly metrics s%d: %d rows" % (yr, n))
+    try:
+        os.makedirs("cache", exist_ok=True)
+        with open(marker, "w") as f:
+            f.write("done")
+    except OSError:
+        pass
+    print("[cron] weekly target-share backfill complete: %d rows" % total)
+""", "backfill_weekly_target_share")
+
+    # ------------------------------------------------------------------ #
     # Step 4b: Defense-vs-position matchup ratings (z-scores)             #
     # Powers the Schedule Assistant rankings / ease scores.               #
     # Only rebuilt on Wednesdays during the regular/post season so each   #
