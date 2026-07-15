@@ -5098,7 +5098,7 @@ def render_power_and_playoffs(
         streak_frame_cls = streak_class(row)  # assumes you already have this helper
         avatar_url = row.get("avatar")
         avatar_html = (
-            f"<img class='avatar' src='{avatar_url}' alt='' "
+            f"<img class='avatar' src='{avatar_url}' alt='' loading='lazy' decoding='async' "
             "onerror=\"this.style.display='none'\">"
             if avatar_url else ""
         )
@@ -5189,7 +5189,7 @@ def render_power_and_playoffs(
 
         avatar_url = row.get("avatar")
         img = (
-            f"<img class='avatar sm' src='{avatar_url}' alt='' "
+            f"<img class='avatar sm' src='{avatar_url}' alt='' loading='lazy' decoding='async' "
             "onerror=\"this.style.display='none'\">"
             if avatar_url else ""
         )
@@ -5413,7 +5413,7 @@ def render_team_stats(team_stats, df_weekly) -> str:
     for _, r in stats_tbl[cols].iterrows():
         avatar = r.get("avatar", "")
         img = (
-            f"<img class='avatar sm' src='{avatar}' alt='' "
+            f"<img class='avatar sm' src='{avatar}' alt='' loading='lazy' decoding='async' "
             "onerror=\"this.style.display='none'\">"
             if avatar else ""
         )
@@ -8009,7 +8009,7 @@ def build_activity_body(ctx: dict) -> str:
 
                 avatar = tm.get("avatar") or ""
                 img = (
-                    f"<img class='avatar' src='{avatar}' alt='' "
+                    f"<img class='avatar' src='{avatar}' alt='' loading='lazy' decoding='async' "
                     "onerror=\"this.style.display='none'\">"
                     if avatar else ""
                 )
@@ -8147,7 +8147,7 @@ def build_activity_body(ctx: dict) -> str:
 
             avatar = d.get("avatar") or ""
             img = (
-                f"<img class='avatar' src='{avatar}' alt='' "
+                f"<img class='avatar' src='{avatar}' alt='' loading='lazy' decoding='async' "
                 "onerror=\"this.style.display='none'\">"
                 if avatar else ""
             )
@@ -15962,7 +15962,7 @@ def _build_lineup_analysis_html(
     def _ava_small(owner_name: str, rid: str = "", size: int = 30) -> str:
         ava = owner_avatar.get(owner_name, "")
         if ava:
-            return f"<img src='{ava}' alt='' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
+            return f"<img src='{ava}' alt='' loading='lazy' decoding='async' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
         initials = "".join(w[0].upper() for w in (team_by_rid.get(rid) or owner_name or "?").split()[:2])
         return (f"<div style='width:{size}px;height:{size}px;border-radius:50%;background:var(--accent);color:#fff;"
                 f"display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0;'>{initials}</div>")
@@ -16286,7 +16286,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     def ava_img(owner_name, rid="", size=32):
         ava = owner_avatar.get(owner_name, "")
         if ava:
-            return f"<img src='{ava}' alt='' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
+            return f"<img src='{ava}' alt='' loading='lazy' decoding='async' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
         initials = "".join(w[0].upper() for w in (team_by_rid.get(rid) or owner_name or "?").split()[:2])
         return (f"<div style='width:{size}px;height:{size}px;border-radius:50%;background:var(--accent);color:#fff;"
                 f"display:flex;align-items:center;justify-content:center;font-weight:700;font-size:{max(10, size//3)}px;"
