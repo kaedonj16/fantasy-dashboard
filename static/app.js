@@ -11887,6 +11887,12 @@ async function initSinceLastVisit() {
         _slvSection('Value moves on your roster', moverRows) +
         _slvSection('New injuries on your roster', injuryRows) +
       '</section>';
+
+    // Popup dismissal: click the backdrop (outside the card) or press Escape.
+    el.addEventListener('click', function (e) { if (e.target === el) el.remove(); });
+    document.addEventListener('keydown', function _slvEsc(e) {
+      if (e.key === 'Escape') { el.remove(); document.removeEventListener('keydown', _slvEsc); }
+    });
   } catch (_) {}
 }
 document.addEventListener('DOMContentLoaded', initSinceLastVisit);
