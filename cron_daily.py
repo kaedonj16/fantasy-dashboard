@@ -469,7 +469,11 @@ from datetime import datetime
 from dashboard_services.api import get_nfl_state
 from data_building.weekly_metrics import build_weekly_metrics
 
-marker = os.path.join("cache", ".weekly_metrics_perweek_team_v1.done")
+# v2: the first backfill ran against the player_history parquet, whose team
+# column is a current-roster snapshot (not the historical season team), so
+# traded players were still mis-pooled. Now that build_weekly_team_map sources
+# real per-week teams from import_weekly_rosters, rebuild once more.
+marker = os.path.join("cache", ".weekly_metrics_perweek_team_v2.done")
 if os.path.exists(marker):
     print("[cron] weekly target-share per-week-team backfill already done")
 else:
