@@ -413,11 +413,15 @@ print(f"[cron] Weekly metrics: {{n}} rows upserted")
     # Lets game logs show the opponent for the team a player was on THAT   #
     # week, and the Advanced Metrics team filter match every team a        #
     # traded player played for in a season (not just his current team).   #
-    # The active season is rebuilt each run (new weeks / mid-season        #
-    # trades); older seasons are built once since history never changes.   #
+    # Backfills every season the game logs actually display (derived from  #
+    # the cached sleeper_stats files, ~2016+), so a traded veteran's older #
+    # seasons are correct too. Historical seasons build once (file guard); #
+    # the active season is rebuilt each run for new weeks / mid-season     #
+    # trades.                                                              #
     # ------------------------------------------------------------------ #
     _run_step("""
 from dotenv import load_dotenv; load_dotenv()
+import glob, os, re
 from datetime import datetime
 from dashboard_services.api import get_nfl_state
 from data_building.external_data.player_team_history import build_weekly_team_map, weekly_team_map_path
@@ -426,10 +430,21 @@ nfl_state = get_nfl_state() or {}
 current_season = int(nfl_state.get("season") or datetime.now().year)
 season_type = str(nfl_state.get("season_type", "")).lower().strip()
 active = current_season - 1 if season_type == "off" else current_season
+
+# Seasons the game logs render = the seasons with cached weekly stat files.
+seasons = set()
+for f in glob.glob(os.path.join("cache", "sleeper_stats", "sleeper_stats_s*_w*.json")):
+    m = re.search(r"sleeper_stats_s(\\d{4})_w", os.path.basename(f))
+    if m:
+        seasons.add(int(m.group(1)))
+seasons = sorted(s for s in seasons if 2016 <= s <= current_season)
+if active not in seasons:
+    seasons.append(active)
+
 built = 0
-for yr in range(current_season - 4, current_season + 1):
+for yr in sorted(set(seasons)):
     if yr != active and weekly_team_map_path(yr).exists():
-        continue
+        continue  # historical season already built - team history never changes
     n = build_weekly_team_map(yr)
     if n:
         built += 1
