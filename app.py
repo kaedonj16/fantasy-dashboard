@@ -5098,7 +5098,7 @@ def render_power_and_playoffs(
         streak_frame_cls = streak_class(row)  # assumes you already have this helper
         avatar_url = row.get("avatar")
         avatar_html = (
-            f"<img class='avatar' src='{avatar_url}' alt='' "
+            f"<img class='avatar' src='{avatar_url}' alt='' loading='lazy' decoding='async' "
             "onerror=\"this.style.display='none'\">"
             if avatar_url else ""
         )
@@ -5189,7 +5189,7 @@ def render_power_and_playoffs(
 
         avatar_url = row.get("avatar")
         img = (
-            f"<img class='avatar sm' src='{avatar_url}' alt='' "
+            f"<img class='avatar sm' src='{avatar_url}' alt='' loading='lazy' decoding='async' "
             "onerror=\"this.style.display='none'\">"
             if avatar_url else ""
         )
@@ -5413,7 +5413,7 @@ def render_team_stats(team_stats, df_weekly) -> str:
     for _, r in stats_tbl[cols].iterrows():
         avatar = r.get("avatar", "")
         img = (
-            f"<img class='avatar sm' src='{avatar}' alt='' "
+            f"<img class='avatar sm' src='{avatar}' alt='' loading='lazy' decoding='async' "
             "onerror=\"this.style.display='none'\">"
             if avatar else ""
         )
@@ -8009,7 +8009,7 @@ def build_activity_body(ctx: dict) -> str:
 
                 avatar = tm.get("avatar") or ""
                 img = (
-                    f"<img class='avatar' src='{avatar}' alt='' "
+                    f"<img class='avatar' src='{avatar}' alt='' loading='lazy' decoding='async' "
                     "onerror=\"this.style.display='none'\">"
                     if avatar else ""
                 )
@@ -8147,7 +8147,7 @@ def build_activity_body(ctx: dict) -> str:
 
             avatar = d.get("avatar") or ""
             img = (
-                f"<img class='avatar' src='{avatar}' alt='' "
+                f"<img class='avatar' src='{avatar}' alt='' loading='lazy' decoding='async' "
                 "onerror=\"this.style.display='none'\">"
                 if avatar else ""
             )
@@ -11930,6 +11930,88 @@ def _build_career_graphs_ctx_live(
 
 
 
+def _rankings_ssr_content(limit: int = 150):
+    """Server-render the top-N dynasty rankings as real HTML rows + JSON-LD.
+
+    The rankings table is otherwise hydrated entirely client-side (rankings.js
+    fetches /api/league-players and fills #prList), so crawlers and the initial
+    paint see nothing but a "Loading players…" spinner - which reads to Google /
+    AdSense as thin, low-value content on our most SEO-targeted pages
+    (/dynasty-trade-value-chart, /rankings/dynasty*). Emitting the top players as
+    real markup gives an indexable, content-rich table and a faster first paint.
+    rankings.js then does list.innerHTML='' and re-renders #prList identically,
+    so there is no visible flash on hydration.
+
+    Uses the default public view (1QB / dynasty / 10-team = the `value` column),
+    which is exactly what the client renders on first load. Returns
+    (rows_html, jsonld_html); both are '' if the value table is unavailable, in
+    which case the page falls back to the spinner-only shell.
+    """
+    try:
+        payload = _build_league_players_payload()
+        players = payload.get("players") or []
+    except Exception:
+        logger.debug("rankings SSR: payload load failed", exc_info=True)
+        return "", ""
+
+    # Real NFL players only: exclude draft picks and not-yet-drafted rookies,
+    # which carry no standalone content value and clutter the indexable table.
+    ranked = [
+        p for p in players
+        if str(p.get("position") or "").upper() in ("QB", "RB", "WR", "TE")
+        and float(p.get("value") or 0) > 0
+        and not (p.get("is_rookie") and str(p.get("team") or "") in ("", "FA"))
+    ]
+    ranked.sort(key=lambda p: float(p.get("value") or 0), reverse=True)
+    ranked = ranked[:limit]
+    if not ranked:
+        return "", ""
+
+    rows = []
+    items = []
+    for i, p in enumerate(ranked, 1):
+        name     = html.escape(str(p.get("name") or "Unknown"))
+        team     = html.escape(str(p.get("team") or "–"))
+        pos_rank = html.escape(str(p.get("pos_rank_label") or p.get("position") or ""))
+        _age_v   = p.get("age")
+        try:
+            age = f"{float(_age_v):.1f}" if _age_v not in (None, "") else "–"
+        except (TypeError, ValueError):
+            age = "–"
+        _val_v = float(p.get("value") or 0)
+        val = f"{_val_v:.1f}" if _val_v > 0 else "-"
+        rows.append(
+            '<div class="pr-player-row pr-grid-row">'
+            f'<span class="pr-rank">#{i}</span>'
+            '<span class="pr-arrows"></span>'
+            f'<span class="pr-name player-clickable">{name}</span>'
+            f'<span class="pr-pos-cell">{pos_rank}</span>'
+            f'<span class="pr-age">{age}</span>'
+            f'<span class="pr-team">{team}</span>'
+            f'<span class="pr-value">{val}</span>'
+            '</div>'
+        )
+        items.append({
+            "@type": "ListItem",
+            "position": i,
+            "item": {"@type": "Thing", "name": str(p.get("name") or "Unknown")},
+        })
+
+    ld = {
+        "@context": "https://schema.org",
+        "@type": "ItemList",
+        "name": "Dynasty Fantasy Football Trade Value Rankings",
+        "itemListElement": items,
+    }
+    # Escape '<' so a player name can never break out of the ld+json <script>.
+    jsonld = (
+        '<script type="application/ld+json">'
+        + json.dumps(ld, separators=(",", ":")).replace("<", "\\u003c")
+        + '</script>'
+    )
+    return "".join(rows), jsonld
+
+
 @app.route("/players")
 @app.route("/<platform>/<int:season>/<league_id>/players")
 def page_players(platform: str = None, season: int = None, league_id: str = None,
@@ -12408,6 +12490,51 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 
     <!-- Player Rankings JS lives in static/rankings.js (injected below, deferred) -->
     """
+
+    # Server-render the top players so crawlers / the first paint see a real,
+    # content-rich table instead of a "Loading players…" spinner. rankings.js
+    # wipes and re-renders #prList on load, so this is a no-flash first paint.
+    _ssr_rows, _ssr_jsonld = _rankings_ssr_content()
+    if _ssr_rows:
+        body_html = body_html.replace(
+            '<div id="prList"></div>',
+            f'<div id="prList">{_ssr_rows}</div>',
+        )
+        # Hide the spinner and reveal the header/count for the pre-JS SSR view.
+        body_html = body_html.replace(
+            '<div id="prLoading" style="text-align:center;padding:40px;color:var(--text-muted);">',
+            '<div id="prLoading" style="display:none;text-align:center;padding:40px;color:var(--text-muted);">',
+        )
+        body_html = body_html.replace(
+            '<div id="prTableHeader" style="display:none;',
+            '<div id="prTableHeader" style="display:grid;',
+        )
+        body_html = body_html.replace(
+            '<div id="prCount" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;display:none;"></div>',
+            '<div id="prCount" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">'
+            'Top dynasty players by trade value</div>',
+        )
+        body_html += "\n" + _ssr_jsonld
+
+    # Editorial context above the table on the public SEO pages (no league) -
+    # AdSense/search weight human-readable framing around a data tool, and it
+    # gives the page unique on-page copy beyond the numbers themselves.
+    if not platform:
+        _intro = """
+    <div class="static-section" style="max-width:860px;margin:0 auto 10px;">
+      <p style="color:var(--text-muted);font-size:14px;line-height:1.7;margin:0;">
+        These are <strong>dynasty fantasy football trade values</strong> for every relevant
+        player, refreshed daily from real league-to-league market data and our value model.
+        Each number estimates what the rest of your league would give up to acquire a player,
+        weighing recent production, age, and long-term outlook &mdash; not just this week's box
+        score. Use the filters to switch between <strong>1QB and Superflex</strong>, change
+        league size, or toggle redraft scoring, then take any player into the free
+        <a href="/trade">Trade Calculator</a>. New to dynasty values? Start with
+        <a href="/guides/dynasty-trade-value">How Dynasty Trade Value Works</a>.
+      </p>
+    </div>
+    """
+        body_html = _intro + body_html
 
     # Auto-apply the league's TE premium (from its scoring settings) to the
     # rankings, so TE-premium leagues see boosted TE values without toggling.
@@ -15835,7 +15962,7 @@ def _build_lineup_analysis_html(
     def _ava_small(owner_name: str, rid: str = "", size: int = 30) -> str:
         ava = owner_avatar.get(owner_name, "")
         if ava:
-            return f"<img src='{ava}' alt='' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
+            return f"<img src='{ava}' alt='' loading='lazy' decoding='async' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
         initials = "".join(w[0].upper() for w in (team_by_rid.get(rid) or owner_name or "?").split()[:2])
         return (f"<div style='width:{size}px;height:{size}px;border-radius:50%;background:var(--accent);color:#fff;"
                 f"display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0;'>{initials}</div>")
@@ -16159,7 +16286,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     def ava_img(owner_name, rid="", size=32):
         ava = owner_avatar.get(owner_name, "")
         if ava:
-            return f"<img src='{ava}' alt='' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
+            return f"<img src='{ava}' alt='' loading='lazy' decoding='async' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
         initials = "".join(w[0].upper() for w in (team_by_rid.get(rid) or owner_name or "?").split()[:2])
         return (f"<div style='width:{size}px;height:{size}px;border-radius:50%;background:var(--accent);color:#fff;"
                 f"display:flex;align-items:center;justify-content:center;font-weight:700;font-size:{max(10, size//3)}px;"

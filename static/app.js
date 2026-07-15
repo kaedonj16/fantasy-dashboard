@@ -8519,7 +8519,7 @@ function openPlayerModal(playerId, playerName, opts) {
         <button class="player-modal-watchlist-btn" id="playerModalWatchlistBtn" title="Add to watchlist" aria-pressed="false" style="display: none;"><span class="wl-star-glyph" aria-hidden="true">☆</span></button>
         ${_ppSlug ? `<a class="player-modal-page-btn" href="/player/${_ppSlug}/trade-value" title="View full player page">Player Page</a>` : ''}
         <button class="player-modal-compare-btn" id="playerModalCompareBtn" title="Compare players">Compare Player</button>
-        <button class="player-modal-close" onclick="closePlayerModal()">×</button>
+        <button class="player-modal-close" onclick="closePlayerModal()" aria-label="Close">×</button>
       </div>
     </div>
     <div class="pm-tab-bar" id="pmTabBar" style="display:none">
@@ -8541,6 +8541,27 @@ function openPlayerModal(playerId, playerName, opts) {
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
   document.body.style.overflow = 'hidden';
+
+  // ── Accessibility: focus management + focus trap ──────────────────────────
+  // Remember what had focus so closePlayerModal can restore it, then move focus
+  // into the dialog so keyboard and screen-reader users land inside it instead
+  // of tabbing through the page behind the overlay.
+  overlay._pmReturnFocus = (document.activeElement instanceof HTMLElement) ? document.activeElement : null;
+  const _pmCloseBtn = modal.querySelector('.player-modal-close');
+  if (_pmCloseBtn) { try { _pmCloseBtn.focus(); } catch (_) {} }
+  // Keep Tab / Shift+Tab cycling within the dialog. Focusables are queried at
+  // key time so tabs/buttons added after the async data load are included.
+  overlay.addEventListener('keydown', function (e) {
+    if (e.key !== 'Tab') return;
+    const focusables = modal.querySelectorAll(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    const visible = Array.prototype.filter.call(focusables, el => el.getClientRects().length > 0);
+    if (!visible.length) return;
+    const first = visible[0], last = visible[visible.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
 
   // Wire the watchlist star (add/remove this player from the device watchlist).
   try {
@@ -12458,7 +12479,7 @@ function openProspectModal(playerId, playerName) {
               (r.draft_class_year ? '<span style="opacity:.4;">·</span><span>' + r.draft_class_year + ' Draft</span>' : '') +
             '</div>' +
           '</div>' +
-          '<button class="rk-modal-close" onclick="rkCloseModal()">✕</button>' +
+          '<button class="rk-modal-close" onclick="rkCloseModal()" aria-label="Close">✕</button>' +
         '</div>' +
 
         '<div class="rk-modal-body">' +
@@ -12562,9 +12583,15 @@ function openProspectModal(playerId, playerName) {
 function closePlayerModal() {
   const overlay = document.querySelector('.player-modal-overlay');
   if (overlay) {
+    const _return = overlay._pmReturnFocus;
     document.body.style.overflow = '';
     overlay.style.opacity = '0';
     setTimeout(() => overlay.remove(), 200);
+    // Restore focus to whatever opened the modal (the clicked player row / chip),
+    // so keyboard users are not dumped back at the top of the document.
+    if (_return && typeof _return.focus === 'function') {
+      try { _return.focus(); } catch (_) {}
+    }
   }
 }
 
@@ -14330,7 +14357,7 @@ function openTeamModal(rosterId, teamName) {
           <div class="loading-spinner" style="width: 16px; height: 16px;"></div>
         </div>
       </div>
-      <button class="team-modal-close" onclick="closeTeamModal()">×</button>
+      <button class="team-modal-close" onclick="closeTeamModal()" aria-label="Close">×</button>
     </div>
     <div class="tm-tab-bar">
       <button class="tm-tab active" data-tab="roster" onclick="tmSwitchTab('roster')">Roster</button>
@@ -14680,7 +14707,7 @@ function openBreakoutModal(playerId, playerName) {
           </div>
         </div>
       </div>
-      <button class="player-modal-close" onclick="closeBkModal()">×</button>
+      <button class="player-modal-close" onclick="closeBkModal()" aria-label="Close">×</button>
     </div>
     <div class="player-modal-body" id="bkModalBody">
       <div class="player-modal-loading">

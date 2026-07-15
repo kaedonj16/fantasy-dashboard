@@ -38,6 +38,8 @@ unit-testable anywhere.
 """
 from __future__ import annotations
 
+from typing import Optional
+
 # 2**14 = 16_384 scenarios. Above this the single-pass enumeration stops being
 # cheap enough to run per request, and we're past the final-two-weeks window
 # (a 12-team league plays 6 games/week, so two weeks is 12 games) where exact
