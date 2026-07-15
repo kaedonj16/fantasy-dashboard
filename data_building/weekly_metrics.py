@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional
 
 from dashboard_services.db import get_conn
 from data_building.external_data.sleeper_bulk_stats import fetch_week_stats
-from data_building.external_data.player_team_history import team_for_week
+from data_building.external_data.player_team_history import team_for_week, canon_team
 from utils.utils import load_players_index
 
 _POSITIONS = {"QB", "RB", "WR", "TE"}
@@ -115,8 +115,8 @@ def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None) -> int:
             if pos not in _POSITIONS:
                 continue
             tgt = _f(st.get("rec_tgt"))
-            team = (team_for_week(str(pid), int(season), int(week))
-                    or meta.get("team") or "").upper()
+            team = team_for_week(str(pid), int(season), int(week)) \
+                or canon_team(meta.get("team"))
             if team and tgt:
                 team_targets[team] = team_targets.get(team, 0.0) + tgt
             player_rows.append((str(pid), pos, team, st))
