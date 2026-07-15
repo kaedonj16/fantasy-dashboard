@@ -3956,14 +3956,39 @@ _AM_JS = r"""
       if (sel) sel.scrollIntoView({ block: 'nearest' });
     }
 
+    // The panel is absolutely positioned inside the card, whose global
+    // overflow:hidden clips a tall dropdown. Pin it with position:fixed relative
+    // to the button (like the info tooltip) so it escapes the card, and cap its
+    // height to the space below the button so it scrolls internally.
+    function positionPanel() {
+      const r = btn.getBoundingClientRect();
+      const avail = window.innerHeight - r.bottom - 16;
+      panel.style.position = 'fixed';
+      panel.style.top = (r.bottom + 6) + 'px';
+      panel.style.left = r.left + 'px';
+      panel.style.right = 'auto';
+      panel.style.zIndex = '900';
+      panel.style.maxHeight = Math.max(180, Math.min(560, avail)) + 'px';
+    }
+    function clearPosition() {
+      panel.style.position = '';
+      panel.style.top = '';
+      panel.style.left = '';
+      panel.style.right = '';
+      panel.style.zIndex = '';
+      panel.style.maxHeight = '';
+    }
+
     function openPanel() {
       buildPanel();
       wrap.classList.add('open');
       btn.setAttribute('aria-expanded', 'true');
+      positionPanel();
     }
     function closePanel() {
       wrap.classList.remove('open');
       btn.setAttribute('aria-expanded', 'false');
+      clearPosition();
     }
 
     btn.addEventListener('click', function(e) {
@@ -3972,6 +3997,9 @@ _AM_JS = r"""
     });
     panel.addEventListener('click', function(e) { e.stopPropagation(); });
     document.addEventListener('click', closePanel);
+    // A fixed panel would detach from the button on scroll/resize; close it.
+    window.addEventListener('resize', function() { if (wrap.classList.contains('open')) closePanel(); });
+    window.addEventListener('scroll', function() { if (wrap.classList.contains('open')) closePanel(); }, true);
 
     // Keep label in sync when metric changes via other code (e.g. amLoadPreset)
     metricSel.addEventListener('change', syncLabel);
