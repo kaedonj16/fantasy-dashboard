@@ -335,7 +335,8 @@ def notify_value_drops():
     try:
         from dashboard_services.db import get_conn
         from dashboard_services.player_value_history import get_top_movers
-        from dashboard_services.api import get_nfl_state, get_rosters
+        from dashboard_services.api import get_nfl_state
+        from dashboard_services.platform_api import get_rosters
 
         state  = get_nfl_state() or {}
         season = state.get("season")
@@ -398,7 +399,8 @@ def notify_waiver_candidates():
     """Notify league subscribers about the top available free agent once per week."""
     try:
         from dashboard_services.db import get_conn
-        from dashboard_services.api import get_nfl_state, get_rosters
+        from dashboard_services.api import get_nfl_state
+        from dashboard_services.platform_api import get_rosters
         from utils.utils import load_model_value_table
 
         state  = get_nfl_state() or {}
@@ -533,7 +535,8 @@ def notify_playoff_odds():
     """Notify owners when their playoff probability shifts 10+ points week over week."""
     try:
         from dashboard_services.db import get_conn
-        from dashboard_services.api import get_nfl_state, get_rosters
+        from dashboard_services.api import get_nfl_state
+        from dashboard_services.platform_api import get_rosters
 
         state  = get_nfl_state() or {}
         season = state.get("season")
@@ -608,7 +611,8 @@ def notify_breakout_roster():
     """Notify owners when a player on their roster is flagged as a breakout candidate."""
     try:
         from dashboard_services.db import get_conn
-        from dashboard_services.api import get_nfl_state, get_rosters
+        from dashboard_services.api import get_nfl_state
+        from dashboard_services.platform_api import get_rosters
         from dashboard_services.breakout_api import get_breakout_candidates
 
         state  = get_nfl_state() or {}
