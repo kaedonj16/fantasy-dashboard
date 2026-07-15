@@ -473,7 +473,7 @@ from data_building.weekly_metrics import build_weekly_metrics
 # JAX), so target-share pools for Rams/Washington players who fell back to the
 # index team are no longer split across two codes. (v2 switched the source to
 # import_weekly_rosters; v1 was the original parquet-based pass.)
-marker = os.path.join("cache", ".weekly_metrics_perweek_team_v3.done")
+marker = os.path.join("cache", ".weekly_metrics_perweek_team_v4.done")
 if os.path.exists(marker):
     print("[cron] weekly target-share per-week-team backfill already done")
 else:

@@ -51,36 +51,86 @@ def canon_team(t) -> str:
     s = str(t or "").strip().upper()
     return _TEAM_ALIASES.get(s, s)
 
-# In-process caches keyed by season (both refresh off file mtime).
-_WEEKLY_MAP_CACHE: Dict[int, tuple] = {}   # season -> (mtime, {sid: {week: team}})
+# In-process caches keyed by season.
+_WEEKLY_MAP_CACHE: Dict[int, tuple] = {}   # season -> (ts, {sid: {week: team}})
 _SEASON_MAP_CACHE: Dict[int, tuple] = {}   # season -> (ts, {sid: team})
 _SEASON_MAP_TTL = 900.0
+_WEEKLY_MAP_TTL = 900.0
 
 
 def weekly_team_map_path(season: int) -> Path:
     return _HISTORY_DIR / f"weekly_team_s{int(season)}.json"
 
 
+def _init_week_team_table(conn) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS player_week_team (
+            player_id TEXT    NOT NULL,
+            season    INTEGER NOT NULL,
+            week      INTEGER NOT NULL,
+            team      TEXT    NOT NULL,
+            PRIMARY KEY (player_id, season, week)
+        )
+        """
+    )
+
+
+def _load_week_team_from_db(season: int) -> Optional[Dict[str, Dict[int, str]]]:
+    """Per-week team map for a season from the shared DB, or None if the DB is
+    unavailable. The DB is the source of truth on Render, where cron (writer) and
+    the web service (reader) run in separate containers that do not share a
+    filesystem - a local JSON file never reaches the web service."""
+    try:
+        from dashboard_services.db import get_conn
+    except Exception:
+        return None
+    try:
+        with get_conn() as conn:
+            # Read-only: no CREATE (the web-service DB role may lack it). If the
+            # table doesn't exist yet (cron hasn't run), this raises and we fall
+            # back to the file.
+            rows = conn.execute(
+                "SELECT player_id, week, team FROM player_week_team WHERE season = %s",
+                (int(season),),
+            ).fetchall()
+    except Exception:
+        logger.debug("week-team DB read unavailable for %s", season, exc_info=True)
+        return None
+    out: Dict[str, Dict[int, str]] = {}
+    for r in rows:
+        sid = str(r["player_id"])
+        team = canon_team(r["team"])
+        try:
+            wk = int(r["week"])
+        except (TypeError, ValueError):
+            continue
+        if sid and team:
+            out.setdefault(sid, {})[wk] = team
+    return out
+
+
 def load_weekly_team_map(season: int) -> Dict[str, Dict[int, str]]:
     """{sleeper_id: {week:int -> team:str}} for a season, or {} if not built.
 
-    Cached in-process and invalidated when the file mtime changes so a fresh
-    cron build is picked up without a restart.
+    Reads the shared DB first (so the web service sees what cron built), falling
+    back to the local JSON file for environments without a DB (tests, one-off
+    scripts). Cached in-process with a short TTL.
     """
-    path = weekly_team_map_path(season)
-    try:
-        mtime = path.stat().st_mtime
-    except OSError:
-        _WEEKLY_MAP_CACHE.pop(int(season), None)
-        return {}
+    now = time.time()
     cached = _WEEKLY_MAP_CACHE.get(int(season))
-    if cached and cached[0] == mtime:
+    if cached and now - cached[0] < _WEEKLY_MAP_TTL:
         return cached[1]
+
+    db = _load_week_team_from_db(season)
+    if db:
+        _WEEKLY_MAP_CACHE[int(season)] = (now, db)
+        return db
+
+    out: Dict[str, Dict[int, str]] = {}
     try:
-        with open(path) as f:
+        with open(weekly_team_map_path(season)) as f:
             raw = json.load(f)
-        # JSON keys are strings; normalise week keys back to int.
-        out: Dict[str, Dict[int, str]] = {}
         for sid, weeks in (raw or {}).items():
             if not isinstance(weeks, dict):
                 continue
@@ -93,11 +143,12 @@ def load_weekly_team_map(season: int) -> Dict[str, Dict[int, str]]:
                     continue
             if wk_map:
                 out[str(sid)] = wk_map
-        _WEEKLY_MAP_CACHE[int(season)] = (mtime, out)
-        return out
+    except FileNotFoundError:
+        pass
     except Exception:
-        logger.debug("weekly_team_map load failed for %s", season, exc_info=True)
-        return {}
+        logger.debug("weekly_team_map file load failed for %s", season, exc_info=True)
+    _WEEKLY_MAP_CACHE[int(season)] = (now, out)
+    return out
 
 
 def season_team_map(season: int) -> Dict[str, str]:
@@ -222,17 +273,18 @@ def build_weekly_team_map(season: int) -> int:
         logger.info("build_weekly_team_map: missing columns in %s", list(df.columns)[:12])
         return 0
 
-    # Only need the gsis->sleeper crosswalk when the feed has no sleeper_id.
+    # Load the gsis->sleeper crosswalk whenever a gsis column exists, so rows
+    # with a null sleeper_id (the roster feed leaves ~27% of them blank) can
+    # still be resolved rather than silently dropped.
     crosswalk: Dict[str, str] = {}
-    if not c_sleeper:
+    if c_gsis:
         try:
             from data_building.external_data.nflverse_metrics import _gsis_to_sleeper
             crosswalk = _gsis_to_sleeper() or {}
         except Exception as e:
             logger.info("build_weekly_team_map: id crosswalk unavailable (%s)", e)
-            return 0
-        if not crosswalk:
-            return 0
+    if not (c_sleeper or crosswalk):
+        return 0
 
     def _norm_sleeper(v):
         if v is None:
@@ -254,9 +306,10 @@ def build_weekly_team_map(season: int) -> int:
         week = row.get(c_week)
         if team is None or week is None:
             continue
-        if c_sleeper:
-            sid = _norm_sleeper(row.get(c_sleeper))
-        else:
+        # Prefer a direct sleeper_id; fall back to the gsis crosswalk per row
+        # (sleeper_id is null on ~27% of roster rows).
+        sid = _norm_sleeper(row.get(c_sleeper)) if c_sleeper else None
+        if not sid and c_gsis and crosswalk:
             gsis = row.get(c_gsis)
             sid = crosswalk.get(str(gsis).strip()) if gsis is not None else None
         if not sid:
@@ -273,11 +326,39 @@ def build_weekly_team_map(season: int) -> int:
 
     if not count:
         return 0
-    _HISTORY_DIR.mkdir(parents=True, exist_ok=True)
-    path = weekly_team_map_path(season)
-    tmp = f"{path}.tmp"
-    with open(tmp, "w") as f:
-        json.dump(out, f, separators=(",", ":"))
-    os.replace(tmp, path)
+
+    # Persist to the shared DB (the source of truth the web service reads) and
+    # to the local file (fallback for DB-less environments).
+    try:
+        from dashboard_services.db import get_conn
+        rows = [(sid, int(season), int(wk), t)
+                for sid, wkmap in out.items() for wk, t in wkmap.items()]
+        with get_conn() as conn:
+            _init_week_team_table(conn)
+            conn.execute("DELETE FROM player_week_team WHERE season = %s", (int(season),))
+            with conn.cursor() as cur:
+                cur.executemany(
+                    "INSERT INTO player_week_team (player_id, season, week, team) "
+                    "VALUES (%s, %s, %s, %s)",
+                    rows,
+                )
+            conn.commit()
+        logger.info("build_weekly_team_map: wrote %d rows to DB for %s", len(rows), season)
+    except Exception:
+        logger.debug("week-team DB write failed for %s", season, exc_info=True)
+
+    try:
+        _HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+        path = weekly_team_map_path(season)
+        tmp = f"{path}.tmp"
+        with open(tmp, "w") as f:
+            json.dump(out, f, separators=(",", ":"))
+        os.replace(tmp, path)
+    except OSError:
+        logger.debug("week-team file write failed for %s", season, exc_info=True)
+
+    # Refresh the in-process cache so a same-process rebuild (the cron backfill
+    # runs build_weekly_metrics right after) sees the new map immediately.
+    _WEEKLY_MAP_CACHE.pop(int(season), None)
     logger.info("build_weekly_team_map: wrote %d player-weeks for %s", count, season)
     return count
