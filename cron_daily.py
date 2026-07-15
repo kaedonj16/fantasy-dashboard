@@ -409,6 +409,35 @@ print(f"[cron] Weekly metrics: {{n}} rows upserted")
 """, "build_weekly_metrics")
 
     # ------------------------------------------------------------------ #
+    # Step 4a2: Per-week NFL team map (recent_team per player-week).       #
+    # Lets game logs show the opponent for the team a player was on THAT   #
+    # week, and the Advanced Metrics team filter match every team a        #
+    # traded player played for in a season (not just his current team).   #
+    # The active season is rebuilt each run (new weeks / mid-season        #
+    # trades); older seasons are built once since history never changes.   #
+    # ------------------------------------------------------------------ #
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from datetime import datetime
+from dashboard_services.api import get_nfl_state
+from data_building.external_data.player_team_history import build_weekly_team_map, weekly_team_map_path
+
+nfl_state = get_nfl_state() or {}
+current_season = int(nfl_state.get("season") or datetime.now().year)
+season_type = str(nfl_state.get("season_type", "")).lower().strip()
+active = current_season - 1 if season_type == "off" else current_season
+built = 0
+for yr in range(current_season - 4, current_season + 1):
+    if yr != active and weekly_team_map_path(yr).exists():
+        continue
+    n = build_weekly_team_map(yr)
+    if n:
+        built += 1
+        print("[cron] weekly team map s%d: %d player-weeks" % (yr, n))
+print("[cron] weekly team maps built/refreshed: %d" % built)
+""", "build_weekly_team_map")
+
+    # ------------------------------------------------------------------ #
     # Step 4b: Defense-vs-position matchup ratings (z-scores)             #
     # Powers the Schedule Assistant rankings / ease scores.               #
     # Only rebuilt on Wednesdays during the regular/post season so each   #

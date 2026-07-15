@@ -19922,6 +19922,30 @@ def api_advanced_metrics_leaderboard():
     except Exception:
         logger.debug("leaderboard years_exp enrich failed", exc_info=True)
 
+    # Season-accurate team(s): each row must reflect the team the player was on
+    # DURING this season, not his current team - otherwise a traded player (e.g.
+    # Mike Evans, Tampa Bay in 2025 -> San Francisco now) drops out when you
+    # filter by his old team, even though he played there that whole season.
+    # teams_in_season returns every team he appeared for that season with the
+    # weeks on each, so the team filter can match any of them and the UI can flag
+    # a mid-season move. Only runs when a season is specified (always, from the
+    # page); skipped otherwise so behavior is unchanged.
+    if season:
+        try:
+            from data_building.external_data.player_team_history import teams_in_season
+            for _p in players or []:
+                stints = teams_in_season(str(_p.get("player_id")), season)
+                if not stints:
+                    continue
+                _p["teams"] = [s["team"] for s in stints]
+                _p["team_weeks"] = {s["team"]: s["weeks"] for s in stints}
+                # Display team = the one with the most weeks (ties -> first stint).
+                _primary = max(stints, key=lambda s: len(s.get("weeks") or []))
+                _p["team"] = _primary["team"]
+                _p["multi_team"] = len(stints) > 1
+        except Exception:
+            logger.debug("leaderboard season-team enrich failed", exc_info=True)
+
     spec = LEADERBOARD_METRICS[metric]
     vol_col = (spec.get("min_vol") or {}).get("col") or "games"
     resp = jsonify({
@@ -21608,11 +21632,16 @@ def api_player_game_logs(player_id: str):
                 return {k: s.get(k) for k in ["pass_yd","pass_td","pass_int","rush_att","rush_yd","rush_td","rec","rec_tgt","rec_yd","rec_td","fum_lost"]}
 
             if schedule_by_week:
-                # Full path: schedule available - include opponent and date
+                # Full path: schedule available - include opponent and date.
+                # Resolve the team the player was actually on THIS season/week
+                # (handles trades) rather than their current team, which would
+                # otherwise show the current team's opponents for past seasons.
+                from data_building.external_data.player_team_history import team_for_week
                 for week_num in sorted(schedule_by_week.keys()):
                     games = schedule_by_week[week_num]
                     if not isinstance(games, list):
                         continue
+                    wk_team = team_for_week(player_id, season_year, week_num) or player_team
                     opponent = ""
                     is_away  = False
                     game_date = ""
@@ -21621,9 +21650,9 @@ def api_player_game_logs(player_id: str):
                             continue
                         home_team = game.get("home", "")
                         away_team = game.get("away", "")
-                        if player_team and player_team == home_team:
+                        if wk_team and wk_team == home_team:
                             opponent = away_team; is_away = False; game_date = game.get("gameDate", ""); break
-                        elif player_team and player_team == away_team:
+                        elif wk_team and wk_team == away_team:
                             opponent = home_team; is_away = True;  game_date = game.get("gameDate", ""); break
                     stats = (stats_by_week.get(week_num) or {}).get(player_id)
                     # Bye week: no game found for this team and no stats
