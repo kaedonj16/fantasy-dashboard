@@ -36,6 +36,21 @@ logger = logging.getLogger(__name__)
 
 _HISTORY_DIR = Path("cache") / "player_history"
 
+# The app is inconsistent about a few team codes: the NFL schedule and nflverse
+# use LA / WAS / JAX, while the players index uses LAR / WSH. Team resolution
+# feeds two consumers that must agree - game-log opponent matching (compares
+# against the schedule) and the adv-metrics team filter/pool - so we canonicalise
+# every resolved team to the schedule/nflverse form. Only maps these fixed,
+# time-invariant display variants; historical relocations (OAK/SD/STL) are left
+# alone because both nflverse and the period's schedule already agree on them.
+_TEAM_ALIASES = {"LAR": "LA", "WSH": "WAS", "JAC": "JAX"}
+
+
+def canon_team(t) -> str:
+    """Normalise a team code to the schedule/nflverse convention (LA/WAS/JAX)."""
+    s = str(t or "").strip().upper()
+    return _TEAM_ALIASES.get(s, s)
+
 # In-process caches keyed by season (both refresh off file mtime).
 _WEEKLY_MAP_CACHE: Dict[int, tuple] = {}   # season -> (mtime, {sid: {week: team}})
 _SEASON_MAP_CACHE: Dict[int, tuple] = {}   # season -> (ts, {sid: team})
@@ -73,7 +88,7 @@ def load_weekly_team_map(season: int) -> Dict[str, Dict[int, str]]:
             for wk, team in weeks.items():
                 try:
                     if team:
-                        wk_map[int(wk)] = str(team).upper()
+                        wk_map[int(wk)] = canon_team(team)
                 except (TypeError, ValueError):
                     continue
             if wk_map:
@@ -104,7 +119,7 @@ def season_team_map(season: int) -> Dict[str, str]:
                 if sid is None or team is None:
                     continue
                 s = str(sid).strip()
-                t = str(team).strip().upper()
+                t = canon_team(team)
                 if s and t and t != "NAN":
                     out[s] = t
     except Exception:
@@ -250,7 +265,7 @@ def build_weekly_team_map(season: int) -> int:
             wk = int(week)
         except (TypeError, ValueError):
             continue
-        t = str(team).strip().upper()
+        t = canon_team(team)
         if not t or t == "NAN":
             continue
         out.setdefault(sid, {})[str(wk)] = t

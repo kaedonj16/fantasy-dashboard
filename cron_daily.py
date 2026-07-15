@@ -469,11 +469,11 @@ from datetime import datetime
 from dashboard_services.api import get_nfl_state
 from data_building.weekly_metrics import build_weekly_metrics
 
-# v2: the first backfill ran against the player_history parquet, whose team
-# column is a current-roster snapshot (not the historical season team), so
-# traded players were still mis-pooled. Now that build_weekly_team_map sources
-# real per-week teams from import_weekly_rosters, rebuild once more.
-marker = os.path.join("cache", ".weekly_metrics_perweek_team_v2.done")
+# v3: rebuild once more after team codes are canonicalised (LAR->LA, WSH->WAS,
+# JAX), so target-share pools for Rams/Washington players who fell back to the
+# index team are no longer split across two codes. (v2 switched the source to
+# import_weekly_rosters; v1 was the original parquet-based pass.)
+marker = os.path.join("cache", ".weekly_metrics_perweek_team_v3.done")
 if os.path.exists(marker):
     print("[cron] weekly target-share per-week-team backfill already done")
 else:
