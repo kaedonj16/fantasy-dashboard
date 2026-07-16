@@ -710,9 +710,23 @@ def _get_top_movers_uncached(
             if new_v > 0 and old_v < new_v * ratio:
                 continue
 
+        # Align the shown numbers to what the modal/rankings display. History
+        # stores the RAW model value; users see the calibrated + FC/DP-zeroed
+        # value. Rescale new/old/delta by that ratio so the board matches the
+        # modal. The percentage (delta/value) is ratio-invariant, so unchanged.
+        if current_values is not None:
+            disp = current_values.get(player_id)
+            raw_new = float(row_dict.get("new_value") or 0)
+            if disp is not None and raw_new > 0:
+                _r = disp / raw_new
+                row_dict["new_value"] = round(disp, 1)
+                row_dict["old_value"] = round(float(row_dict.get("old_value") or 0) * _r, 1)
+                row_dict["delta"] = round(float(row_dict.get("delta") or 0) * _r, 1)
+
         movers.append(row_dict)
 
-    risers = movers[:limit]
+    # Re-sort by the (possibly rescaled) delta so ordering matches the shown values.
+    risers = sorted(movers, key=lambda x: (x["delta"], x["new_value"]), reverse=True)[:limit]
     fallers = sorted(movers, key=lambda x: (x["delta"], x["new_value"]))[:limit]
 
     return {
