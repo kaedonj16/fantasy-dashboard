@@ -9100,7 +9100,7 @@ function openPlayerModal(playerId, playerName, opts) {
               cb.innerHTML = '<span style="color:var(--text-muted);">No close historical comps found.</span>';
               return;
             }
-            const tierColors = ['','#10b981','#3b82f6','#8b5cf6','#f59e0b','#6b7280','#9ca3af'];
+            const tierColors = ['','#10b981','#22d3ee','#3b82f6','#8b5cf6','#a855f7','#f59e0b','#f97316','#94a3b8','#64748b'];
             cb.innerHTML = comps.map(c => {
               const tc = tierColors[c.tier] || '#9ca3af';
               const pickStr = c.actual_pick ? ` · Pick ${c.actual_pick}` : '';
@@ -12445,7 +12445,7 @@ function openProspectModal(playerId, playerName) {
       var conf   = parseFloat(r.confidence_score||0);
       var age    = r.age != null ? parseFloat(r.age).toFixed(1) : '-';
       var tier   = r.tier || '?';
-      var tierColors = ['','#10b981','#3b82f6','#8b5cf6','#f59e0b','#6b7280','#9ca3af'];
+      var tierColors = ['','#10b981','#22d3ee','#3b82f6','#8b5cf6','#a855f7','#f59e0b','#f97316','#94a3b8','#64748b'];
       var tierColor  = tierColors[tier] || '#9ca3af';
 
       var reasons = (r.key_reasons||'').split('\\n').filter(function(l){ return l.trim(); });
@@ -12583,7 +12583,7 @@ function openProspectModal(playerId, playerName) {
             cb.innerHTML = '<span>No close historical comps found.</span>';
             return;
           }
-          var tc_ = ['','#10b981','#3b82f6','#8b5cf6','#f59e0b','#6b7280','#9ca3af'];
+          var tc_ = ['','#10b981','#22d3ee','#3b82f6','#8b5cf6','#a855f7','#f59e0b','#f97316','#94a3b8','#64748b'];
           cb.innerHTML = comps.map(function(c) {
             var tc = tc_[c.tier] || '#9ca3af';
             var pickStr = c.actual_pick ? ' · Pick ' + c.actual_pick : '';
