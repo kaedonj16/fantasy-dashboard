@@ -2875,7 +2875,9 @@ thead th {
   letter-spacing: 0.01em;
   vertical-align: middle;
   white-space: nowrap;
-  border: 1px solid transparent;
+  /* Hairline border in the chip's own hue (variants set `color`), for definition
+     on busy rows. currentColor makes it derive automatically per variant. */
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
 }
 
 /* Separate a badge from the player name (or a preceding badge) it sits beside,
@@ -16872,10 +16874,9 @@ tr.team-clickable {
 .slv-kind-trade { background: rgba(99, 102, 241, 0.15); color: #4f46e5; }
 .slv-kind-waiver { background: rgba(22, 163, 74, 0.15); color: #16a34a; }
 .slv-kind-value { background: rgba(14, 165, 233, 0.15); color: #0369a1; }
-.slv-kind-injury { background: rgba(245, 158, 11, 0.16); color: #b45309; }
+.slv-kind-injury { background: color-mix(in srgb, var(--inj-q) 18%, transparent); color: var(--inj-q); }
 [data-theme="dark"] .slv-kind-trade { color: #a5b4fc; }
 [data-theme="dark"] .slv-kind-value { color: #7dd3fc; }
-[data-theme="dark"] .slv-kind-injury { color: #fbbf24; }
 .slv-item-text { flex: 1; min-width: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .slv-item-ago { flex-shrink: 0; color: var(--text-muted); font-size: 11px; }
 .slv-section + .slv-section { margin-top: 10px; }
@@ -16946,17 +16947,18 @@ tr.team-clickable {
 .wl-item-chips:empty { display: none; }
 .wl-chip {
   font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 6px;
+  padding: 2px 7px;
+  border-radius: 7px;
   background: var(--bg-alt);
   color: var(--text-muted);
   font-weight: 600;
   white-space: nowrap;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
 }
 .wl-chip-up { background: color-mix(in srgb, var(--win) 15%, transparent); color: var(--win); }
 .wl-chip-down { background: color-mix(in srgb, var(--loss) 15%, transparent); color: var(--loss); }
-.wl-chip-inj { background: rgba(245, 158, 11, 0.16); color: #b45309; }
-[data-theme="dark"] .wl-chip-inj { color: #fbbf24; }
+/* Injury: same yellow ramp as the shared injury badge (was a one-off amber). */
+.wl-chip-inj { background: color-mix(in srgb, var(--inj-q) 18%, transparent); color: var(--inj-q); }
 
 /* Panel footer link to the full page */
 .watchlist-page-link {
