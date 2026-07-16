@@ -7453,15 +7453,15 @@ select:focus {
 }
 
 .delta-down {
-  color: #e05656;
+  color: var(--loss);
 }
 
 .delta-flat {
-  color: #9ca3af;
+  color: var(--text-muted);
 }
 
 .delta-up {
-  color: #31c36b;
+  color: var(--win);
 }
 
 .error-message {
@@ -21138,9 +21138,10 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   display: inline-block; width: 7px; height: 7px; border-radius: 50%;
   margin-left: 5px; vertical-align: middle; flex-shrink: 0;
 }
-.rz-inj-dot.questionable { background: #f59e0b; }
-.rz-inj-dot.doubtful     { background: #ef4444; opacity: .7; }
-.rz-inj-dot.out          { background: #ef4444; }
+/* Same yellow -> orange -> red injury ramp as the badges. */
+.rz-inj-dot.questionable { background: var(--inj-q); }
+.rz-inj-dot.doubtful     { background: var(--orange); }
+.rz-inj-dot.out          { background: var(--loss); }
 
 /* ── H2H record in matchup slide ─────── */
 .m-h2h {
