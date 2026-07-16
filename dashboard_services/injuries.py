@@ -189,6 +189,17 @@ _INJ_SEV_CLASS = {
     "SUSP":         "player-badge-inj-out",
 }
 
+# Severity -> accent color (theme-aware CSS var) for the row's left bar.
+_INJ_ACCENT = {
+    "IR":           "var(--loss)",
+    "OUT":          "var(--loss)",
+    "PUP":          "var(--loss)",
+    "NFI":          "var(--loss)",
+    "SUSP":         "var(--loss)",
+    "DOUBTFUL":     "var(--orange)",
+    "QUESTIONABLE": "var(--warning)",
+}
+
 
 def render_injury_accordion(df_inj: pd.DataFrame) -> str:
     if df_inj.empty:
@@ -206,6 +217,7 @@ def render_injury_accordion(df_inj: pd.DataFrame) -> str:
         for _, r in g.iterrows():
             status_raw = str(r.get("Injury") or r.get("Status") or "").strip()
             sev_class  = _INJ_SEV_CLASS.get(status_raw.upper(), "player-badge-inj-note")
+            accent     = _INJ_ACCENT.get(status_raw.upper(), "var(--text-muted)")
             label      = status_raw or "Note"
 
             player    = r["Player"]
@@ -225,7 +237,8 @@ def render_injury_accordion(df_inj: pd.DataFrame) -> str:
             meta = " · ".join(p for p in [nfl, pos, body] if p)
 
             rows.append(
-                f"<div class='inj-row'>"
+                f"<div class='inj-row' style='--inj-accent:{accent}'>"
+                f"  <span class='inj-accent-bar' aria-hidden='true'></span>"
                 f"  <div class='inj-left'>"
                 f"    <span class='inj-pname player-clickable' style='cursor:pointer'"
                 f"      data-player-id='{player_id}' data-player-name='{player}'>{player}</span>"
