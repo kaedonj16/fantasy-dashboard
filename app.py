@@ -19929,6 +19929,33 @@ def api_advanced_metrics_config():
     return resp
 
 
+def _displayed_value_map(league_type: str) -> dict:
+    """player_id -> the value shown everywhere else on the site.
+
+    get_model_value_table_cached() is the single source the app renders from:
+    it applies market calibration AND zeroes players not tracked by
+    FantasyCalc/DynastyProcess (washed-up vets). Passing this into get_top_movers
+    keeps the movers board consistent with those displayed values, so a player
+    whose raw model-history value is briefly inflated (while an anchor correction
+    unwinds) but who reads as ~0 everywhere else never surfaces as a mover.
+    """
+    use_sf = str(league_type).strip().lower() == "sf"
+    out: dict = {}
+    try:
+        for p in (get_model_value_table_cached() or []):
+            pid = str(p.get("id") or "")
+            if not pid:
+                continue
+            v = p.get("sf_value") if use_sf else p.get("value")
+            try:
+                out[pid] = float(v or 0)
+            except (TypeError, ValueError):
+                out[pid] = 0.0
+    except Exception:
+        logger.debug("[movers] displayed-value map failed", exc_info=True)
+    return out
+
+
 @app.route("/api/value-movers")
 def api_value_movers():
     try:
@@ -19953,7 +19980,8 @@ def api_value_movers():
 
     payload = get_top_movers(days=max(days, 1), limit=max(limit, 1), league_type=league_type,
                              league_size=league_size, min_baseline_value=10,
-                             min_current_value=20.0) or {}
+                             min_current_value=20.0,
+                             current_values=_displayed_value_map(league_type)) or {}
 
     if isinstance(payload, list):
         movers = payload
@@ -28660,13 +28688,15 @@ def top_movers_page():
     from data_building.player_value_history import get_top_movers
     try:
         movers = get_top_movers(days=7, limit=20, min_baseline_value=5,
-                                min_current_value=20.0)
+                                min_current_value=20.0,
+                                current_values=_displayed_value_map("1qb"))
     except Exception:
         movers = {"risers": [], "fallers": []}
 
     from datetime import datetime as _dt
     date_label = _dt.now().strftime("%B %d, %Y")
-    body = build_risers_fallers_body(movers, as_of_date=date_label)
+    body = build_risers_fallers_body(movers, as_of_date=date_label,
+                                     signed_in=bool(session.get("viewer_username")))
 
     return render_page(
         f"Top Movers: {date_label} | BR Fantasy",
