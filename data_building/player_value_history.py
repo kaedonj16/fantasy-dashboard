@@ -439,17 +439,27 @@ def get_top_movers(
         league_type: str = "1qb",
         league_size: int = 10,
         min_baseline_value: int = 0,
+        min_current_value: float = 0.0,
+        current_values: dict | None = None,
 ) -> dict:
-    """Cached wrapper around the (expensive) top-movers computation."""
+    """Cached wrapper around the (expensive) top-movers computation.
+
+    current_values maps player_id -> the DISPLAYED value (the calibrated +
+    FC/DP-zeroed number shown elsewhere); it is intentionally NOT part of the
+    cache key because it is stable for a given snapshot date, which the key
+    already tracks.
+    """
     init_value_history_db()
     latest = get_latest_snapshot_date(source=source)
-    key = (str(latest), days, limit, source, league_type, league_size, min_baseline_value)
+    key = (str(latest), days, limit, source, league_type, league_size,
+           min_baseline_value, min_current_value)
     hit = _TOP_MOVERS_CACHE.get(key)
     if hit is not None:
         return hit
     result = _get_top_movers_uncached(
         days=days, limit=limit, source=source, league_type=league_type,
         league_size=league_size, min_baseline_value=min_baseline_value,
+        min_current_value=min_current_value, current_values=current_values,
     )
     # Cache only a populated result so a transient empty board doesn't stick.
     if result and (result.get("risers") or result.get("fallers")):
@@ -468,6 +478,8 @@ def _get_top_movers_uncached(
         league_type: str = "1qb",
         league_size: int = 10,
         min_baseline_value: int = 0,
+        min_current_value: float = 0.0,
+        current_values: dict | None = None,
 ) -> dict:
     """
     Try requested window first (ex: 7 days).
@@ -483,6 +495,17 @@ def _get_top_movers_uncached(
             E.g. 10 filters out players who went from ~0 to a real value (just-drafted
             rookies), while keeping established players with genuine movement.
             Scale-independent - works regardless of how history rows were written.
+        min_current_value: Drop movers whose CURRENT displayed value is below
+            this floor. Only applied when current_values is also provided. The
+            raw model-history value can be transiently inflated for washed-up
+            players (e.g. while an anchor correction slowly unwinds), but if the
+            market has written a player down to ~nothing they don't belong in a
+            movers glance. Set to 0 to disable.
+        current_values: Map of player_id -> the DISPLAYED value (calibrated and
+            FantasyCalc/DynastyProcess-zeroed, i.e. what shows everywhere else on
+            the site). Supplied by the caller because that lives at the app layer
+            (get_model_value_table_cached). Used together with min_current_value.
+            Draft picks aren't in the map and are always kept.
     """
     init_value_history_db()
 
@@ -648,6 +671,22 @@ def _get_top_movers_uncached(
     for row in rows:
         row_dict = dict(row)
         player_id = str(row_dict["player_id"])
+
+        # Suppress players the market values at ~nothing today. Their raw
+        # model-history value (new_value/old_value here) can be inflated while an
+        # anchor correction unwinds, but the DISPLAYED value - calibrated AND
+        # FantasyCalc/DynastyProcess-zeroed, exactly what shows everywhere else -
+        # is the truth. current_values is that displayed-value map, supplied by
+        # the caller (which has get_model_value_table_cached). Draft picks aren't
+        # in it and are always kept.
+        if min_current_value > 0 and current_values is not None:
+            pos_u = str(row_dict.get("position") or "").upper()
+            is_pick = pos_u == "PICK" or ("_" in player_id)
+            if not is_pick:
+                dv = current_values.get(player_id)
+                if dv is None or dv < min_current_value:
+                    continue
+
         resolved = name_map.get(player_id)
         if resolved:
             row_dict["name"] = resolved
@@ -671,9 +710,23 @@ def _get_top_movers_uncached(
             if new_v > 0 and old_v < new_v * ratio:
                 continue
 
+        # Align the shown numbers to what the modal/rankings display. History
+        # stores the RAW model value; users see the calibrated + FC/DP-zeroed
+        # value. Rescale new/old/delta by that ratio so the board matches the
+        # modal. The percentage (delta/value) is ratio-invariant, so unchanged.
+        if current_values is not None:
+            disp = current_values.get(player_id)
+            raw_new = float(row_dict.get("new_value") or 0)
+            if disp is not None and raw_new > 0:
+                _r = disp / raw_new
+                row_dict["new_value"] = round(disp, 1)
+                row_dict["old_value"] = round(float(row_dict.get("old_value") or 0) * _r, 1)
+                row_dict["delta"] = round(float(row_dict.get("delta") or 0) * _r, 1)
+
         movers.append(row_dict)
 
-    risers = movers[:limit]
+    # Re-sort by the (possibly rescaled) delta so ordering matches the shown values.
+    risers = sorted(movers, key=lambda x: (x["delta"], x["new_value"]), reverse=True)[:limit]
     fallers = sorted(movers, key=lambda x: (x["delta"], x["new_value"]))[:limit]
 
     return {

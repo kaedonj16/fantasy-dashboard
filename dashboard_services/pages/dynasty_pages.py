@@ -273,8 +273,15 @@ def build_dynasty_value_chart_body(value_table: list[dict], as_of_date: str | No
 
 # ── Risers & Fallers ──────────────────────────────────────────────────────────
 
-def build_risers_fallers_body(movers: dict, as_of_date: str | None = None) -> str:
-    """Weekly risers and fallers page."""
+def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
+                              signed_in: bool = False) -> str:
+    """Weekly risers and fallers page.
+
+    signed_in: when True, player names render as clickable spans that open the
+    in-app player modal (via the global [data-player-id] handler) instead of
+    anchors that navigate to the public player page. Guests keep the crawlable
+    <a> link for SEO.
+    """
     from dashboard_services.pages.player_page import slugify
 
     date_str    = as_of_date or datetime.now().strftime("%B %d, %Y")
@@ -299,18 +306,31 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None) -> st
         # modal opens for signed-in users; logged-out visitors follow the href to
         # the public player page (handled by the global click handler in app.js).
         pid = str(p.get("player_id") or "")
+        is_real = bool(pid) and pos != "PICK" and "_" not in pid
         data_attrs = ""
-        if pid and pos != "PICK" and "_" not in pid:
+        if is_real:
             data_attrs = (
                 f' data-player-id="{html.escape(pid, quote=True)}"'
                 f' data-player-name="{html.escape(name, quote=True)}"'
+            )
+        # Signed-in users get a click-to-open-modal span (no href to race with
+        # the delegated handler); guests/picks keep the crawlable public link.
+        if is_real and signed_in:
+            name_el = (
+                f'<span class="rf-name player-clickable" role="button" tabindex="0"'
+                f'{data_attrs}>{html.escape(name)}</span>'
+            )
+        else:
+            name_el = (
+                f'<a class="rf-name" href="/player/{slug}/trade-value"{data_attrs}>'
+                f'{html.escape(name)}</a>'
             )
         return (
             f'<div class="rf-row" style="--pos-accent:{accent};">'
             f'<div class="rf-left-bar"></div>'
             f'<div class="rf-info">'
             f'<span class="rf-pos-badge" style="background:{accent};">{html.escape(pos)}</span>'
-            f'<a class="rf-name" href="/player/{slug}/trade-value"{data_attrs}>{html.escape(name)}</a>'
+            f'{name_el}'
             f'<span class="rf-team">{html.escape(team)}</span>'
             f'</div>'
             f'<div class="rf-val-wrap">'

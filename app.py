@@ -491,6 +491,77 @@ def _add_cache_headers(response):
     return response
 
 
+# ── Content-Security-Policy & security headers ──────────────────────────────
+# The app serves large inline HTML with inline <script>, inline <style>, and
+# ~140 inline on* event handlers. Nonces/hashes can't cover event-handler
+# attributes, and a browser ignores 'unsafe-inline' the moment a nonce/hash is
+# present, so script-src/style-src keep 'unsafe-inline'. The value we still buy
+# is real: injecting <script src="evil.com">, <base>, <object>, plugin content,
+# clickjacking frames, or hijacked form targets is all blocked, and the script
+# origin allowlist is pinned to the CDNs we actually use.
+#
+# img-src uses https: (not an allowlist): ads and logos legitimately load from
+# many Google/CDN image hosts, images can't execute, so a scheme allow is the
+# pragmatic, non-breaking choice.
+_CSP_POLICY = "; ".join([
+    "default-src 'self'",
+    # Google AdSense chain + Plotly (jsDelivr) + Sentry browser bundle.
+    "script-src 'self' 'unsafe-inline' "
+    "https://pagead2.googlesyndication.com https://*.googlesyndication.com "
+    "https://*.googleadservices.com https://*.google.com https://*.gstatic.com "
+    "https://*.doubleclick.net https://cdn.jsdelivr.net "
+    "https://browser.sentry-cdn.com",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data:",
+    # XHR/fetch/beacon: Sentry ingest + the ad chain's reporting endpoints.
+    "connect-src 'self' https://*.sentry.io https://*.google.com "
+    "https://*.googlesyndication.com https://*.doubleclick.net "
+    "https://pagead2.googlesyndication.com https://cdn.jsdelivr.net",
+    # Ads render inside iframes served from the Google ad hosts.
+    "frame-src https://*.googlesyndication.com https://*.doubleclick.net "
+    "https://*.google.com",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'self'",
+    "upgrade-insecure-requests",
+])
+
+# Set CSP_REPORT_ONLY=1 in the environment to emit the same policy as
+# Content-Security-Policy-Report-Only (observe violations in the console/Sentry
+# without blocking) — useful to validate the allowlist before enforcing.
+_CSP_HEADER_NAME = (
+    "Content-Security-Policy-Report-Only"
+    if os.environ.get("CSP_REPORT_ONLY", "").strip() in ("1", "true", "yes")
+    else "Content-Security-Policy"
+)
+
+# HSTS: the app is HTTPS-only behind Render/Cloudflare. No includeSubDomains
+# (avoids committing subdomains that may not be HTTPS) and no preload (a one-way
+# door). 1 year satisfies the audit.
+_STATIC_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), "
+                          "browsing-topics=()",
+    "Strict-Transport-Security": "max-age=31536000",
+}
+
+
+@app.after_request
+def _add_security_headers(response):
+    """Attach CSP + hardening headers to every response. Uses setdefault so any
+    endpoint that intentionally set its own value (e.g. a stricter one) wins."""
+    for name, value in _STATIC_SECURITY_HEADERS.items():
+        response.headers.setdefault(name, value)
+    # Don't clobber an endpoint-specific CSP if one was set deliberately.
+    if _CSP_HEADER_NAME not in response.headers:
+        response.headers[_CSP_HEADER_NAME] = _CSP_POLICY
+    return response
+
+
 @app.before_request
 def _canonical_host_redirect():
     """301 the *.onrender.com URL to PRIMARY_DOMAIN.
@@ -669,6 +740,13 @@ try:
     logger.info("[watchlist-bp] registered")
 except Exception as e:
     logger.warning("[watchlist-bp] skipped: %s", e)
+
+try:
+    from routes.history_bp import history_bp
+    app.register_blueprint(history_bp)
+    logger.info("[history-bp] registered")
+except Exception as e:
+    logger.warning("[history-bp] skipped: %s", e)
 
 
 
@@ -3170,177 +3248,8 @@ def handle_404(e):
 
 
 
-@app.route("/api/history/ai-recap")
-@limiter.limit("10 per minute")
-def history_ai_recap():
-    """Generate AI-powered season recap for a specific team."""
-    league_id = request.args.get("league_id")
-    season = request.args.get("season")
-    roster_id = request.args.get("roster_id")
-
-    if not all([league_id, season, roster_id]):
-        return jsonify({"error": "Missing required parameters"}), 400
-
-    try:
-        # Get the same context that the history page uses
-        platform = (request.args.get("platform") or "sleeper").strip().lower()
-        base_league_id = request.args.get("base_season", season)
-
-        # Resolve the correct league ID for the historical season
-        resolved_history_league_id = resolve_league_id_for_season(
-            platform=platform,
-            league_id=league_id,
-            current_season=int(base_league_id),
-            target_season=int(season),
-        )
-
-        # Get the exact same context the history page uses
-        ctx = get_league_ctx_from_cache(platform, resolved_history_league_id, int(season))
-        if not ctx:
-            return jsonify({"error": "League context not found"}), 404
-
-        # Generate recap
-        recap_html = get_history_ai_recap(ctx, roster_id)
-
-        return jsonify({"html": recap_html})
-
-    except Exception as e:
-        return jsonify({"error": "Failed to generate recap"}), 500
-
-
-@app.route("/api/history/<platform>/<int:season>/<league_id>/summary")
-def api_history_summary(platform: str, season: int, league_id: str):
-    """Get season awards/summary data."""
-    try:
-        from dashboard_services.pages.history_page import get_history_summary_html
-
-        history_season = int(request.args.get("history_season", season))
-
-        # Check if this is a valid history season
-        available_seasons = get_available_history_seasons(platform, league_id, season)
-        if not available_seasons:
-            return jsonify({
-                "html": "<div class='history-empty'>This is your first season. Historical data will be available after the season completes.</div>"
-            })
-
-        if history_season not in available_seasons:
-            return jsonify({
-                "html": "<div class='history-empty'>No data available for this season.</div>"
-            })
-
-        resolved_history_league_id = resolve_league_id_for_season(
-            platform=platform,
-            league_id=league_id,
-            current_season=season,
-            target_season=history_season,
-        )
-
-        history_ctx = get_league_ctx_from_cache(platform, resolved_history_league_id, history_season)
-        if not history_ctx:
-            return jsonify({"error": "League context not found"}), 404
-
-        html = get_history_summary_html(history_ctx)
-        return jsonify({"html": html})
-
-    except Exception as e:
-        logger.exception("[api_history_summary] Error")
-        return _api_err("Request failed", e)
-
-
-@app.route("/api/history/<platform>/<int:season>/<league_id>/standings")
-def api_history_standings(platform: str, season: int, league_id: str):
-    """Get regular season standings."""
-    try:
-        from dashboard_services.pages.history_page import get_history_standings_html
-
-        history_season = int(request.args.get("history_season", season))
-
-        # Check if this is a valid history season
-        available_seasons = get_available_history_seasons(platform, league_id, season)
-        if not available_seasons:
-            return jsonify({
-                "html": "<div class='history-empty'>This is your first season. Historical standings will be available after the season completes.</div>"
-            })
-
-        if history_season not in available_seasons:
-            return jsonify({
-                "html": "<div class='history-empty'>No standings data available for this season.</div>"
-            })
-
-        resolved_history_league_id = resolve_league_id_for_season(
-            platform=platform,
-            league_id=league_id,
-            current_season=season,
-            target_season=history_season,
-        )
-
-        history_ctx = get_league_ctx_from_cache(platform, resolved_history_league_id, history_season)
-        if not history_ctx:
-            return jsonify({"error": "League context not found"}), 404
-
-        html = get_history_standings_html(history_ctx)
-        return jsonify({"html": html})
-
-    except Exception as e:
-        logger.exception("[api_history_standings] Error")
-        return _api_err("Request failed", e)
-
-
-@app.route("/api/history/<platform>/<int:season>/<league_id>/chart")
-def api_history_chart(platform: str, season: int, league_id: str):
-    """Get season trend chart data."""
-    try:
-        from dashboard_services.pages.history_page import _filtered_season_df
-
-        history_season = int(request.args.get("history_season", season))
-
-        # Check if this is a valid history season
-        available_seasons = get_available_history_seasons(platform, league_id, season)
-        if not available_seasons:
-            return jsonify({
-                "error": "No data",
-                "html": "<div class='history-empty'>This is your first season. Week-by-week trends will be available after the season completes.</div>"
-            })
-
-        if history_season not in available_seasons:
-            return jsonify({
-                "error": "No data",
-                "html": "<div class='history-empty'>No weekly data available for this season.</div>"
-            })
-
-        resolved_history_league_id = resolve_league_id_for_season(
-            platform=platform,
-            league_id=league_id,
-            current_season=season,
-            target_season=history_season,
-        )
-
-        history_ctx = get_league_ctx_from_cache(platform, resolved_history_league_id, history_season)
-        if not history_ctx:
-            return jsonify({"error": "League context not found"}), 404
-
-        df_weekly = history_ctx.get("df_weekly", pd.DataFrame())
-        chart_df = _filtered_season_df(df_weekly)
-
-        if chart_df.empty or not {"week", "owner", "points"}.issubset(chart_df.columns):
-            return jsonify({"error": "No data",
-                            "html": "<div class='history-empty'>No weekly scoring data available for this season.</div>"})
-
-        # Build chart data for each team
-        chart_data = []
-        for owner, grp in chart_df.groupby("owner"):
-            grp = grp.sort_values("week")
-            chart_data.append({
-                "name": str(owner),
-                "x": grp["week"].tolist(),
-                "y": grp["points"].tolist(),
-            })
-
-        return jsonify({"data": chart_data})
-
-    except Exception as e:
-        logger.exception("[api_history_chart] Error")
-        return _api_err("Request failed", e)
+# NOTE: the /api/history/* endpoints now live in routes/history_bp.py
+# (registered below alongside the other blueprints).
 
 
 def ensure_weekly_bits(ctx: dict) -> None:
@@ -5098,7 +5007,7 @@ def render_power_and_playoffs(
         streak_frame_cls = streak_class(row)  # assumes you already have this helper
         avatar_url = row.get("avatar")
         avatar_html = (
-            f"<img class='avatar' src='{avatar_url}' alt='' "
+            f"<img class='avatar' src='{avatar_url}' alt='' loading='lazy' decoding='async' "
             "onerror=\"this.style.display='none'\">"
             if avatar_url else ""
         )
@@ -5189,7 +5098,7 @@ def render_power_and_playoffs(
 
         avatar_url = row.get("avatar")
         img = (
-            f"<img class='avatar sm' src='{avatar_url}' alt='' "
+            f"<img class='avatar sm' src='{avatar_url}' alt='' loading='lazy' decoding='async' "
             "onerror=\"this.style.display='none'\">"
             if avatar_url else ""
         )
@@ -5413,7 +5322,7 @@ def render_team_stats(team_stats, df_weekly) -> str:
     for _, r in stats_tbl[cols].iterrows():
         avatar = r.get("avatar", "")
         img = (
-            f"<img class='avatar sm' src='{avatar}' alt='' "
+            f"<img class='avatar sm' src='{avatar}' alt='' loading='lazy' decoding='async' "
             "onerror=\"this.style.display='none'\">"
             if avatar else ""
         )
@@ -8009,7 +7918,7 @@ def build_activity_body(ctx: dict) -> str:
 
                 avatar = tm.get("avatar") or ""
                 img = (
-                    f"<img class='avatar' src='{avatar}' alt='' "
+                    f"<img class='avatar' src='{avatar}' alt='' loading='lazy' decoding='async' "
                     "onerror=\"this.style.display='none'\">"
                     if avatar else ""
                 )
@@ -8147,7 +8056,7 @@ def build_activity_body(ctx: dict) -> str:
 
             avatar = d.get("avatar") or ""
             img = (
-                f"<img class='avatar' src='{avatar}' alt='' "
+                f"<img class='avatar' src='{avatar}' alt='' loading='lazy' decoding='async' "
                 "onerror=\"this.style.display='none'\">"
                 if avatar else ""
             )
@@ -11930,6 +11839,88 @@ def _build_career_graphs_ctx_live(
 
 
 
+def _rankings_ssr_content(limit: int = 150):
+    """Server-render the top-N dynasty rankings as real HTML rows + JSON-LD.
+
+    The rankings table is otherwise hydrated entirely client-side (rankings.js
+    fetches /api/league-players and fills #prList), so crawlers and the initial
+    paint see nothing but a "Loading players…" spinner - which reads to Google /
+    AdSense as thin, low-value content on our most SEO-targeted pages
+    (/dynasty-trade-value-chart, /rankings/dynasty*). Emitting the top players as
+    real markup gives an indexable, content-rich table and a faster first paint.
+    rankings.js then does list.innerHTML='' and re-renders #prList identically,
+    so there is no visible flash on hydration.
+
+    Uses the default public view (1QB / dynasty / 10-team = the `value` column),
+    which is exactly what the client renders on first load. Returns
+    (rows_html, jsonld_html); both are '' if the value table is unavailable, in
+    which case the page falls back to the spinner-only shell.
+    """
+    try:
+        payload = _build_league_players_payload()
+        players = payload.get("players") or []
+    except Exception:
+        logger.debug("rankings SSR: payload load failed", exc_info=True)
+        return "", ""
+
+    # Real NFL players only: exclude draft picks and not-yet-drafted rookies,
+    # which carry no standalone content value and clutter the indexable table.
+    ranked = [
+        p for p in players
+        if str(p.get("position") or "").upper() in ("QB", "RB", "WR", "TE")
+        and float(p.get("value") or 0) > 0
+        and not (p.get("is_rookie") and str(p.get("team") or "") in ("", "FA"))
+    ]
+    ranked.sort(key=lambda p: float(p.get("value") or 0), reverse=True)
+    ranked = ranked[:limit]
+    if not ranked:
+        return "", ""
+
+    rows = []
+    items = []
+    for i, p in enumerate(ranked, 1):
+        name     = html.escape(str(p.get("name") or "Unknown"))
+        team     = html.escape(str(p.get("team") or "–"))
+        pos_rank = html.escape(str(p.get("pos_rank_label") or p.get("position") or ""))
+        _age_v   = p.get("age")
+        try:
+            age = f"{float(_age_v):.1f}" if _age_v not in (None, "") else "–"
+        except (TypeError, ValueError):
+            age = "–"
+        _val_v = float(p.get("value") or 0)
+        val = f"{_val_v:.1f}" if _val_v > 0 else "-"
+        rows.append(
+            '<div class="pr-player-row pr-grid-row">'
+            f'<span class="pr-rank">#{i}</span>'
+            '<span class="pr-arrows"></span>'
+            f'<span class="pr-name player-clickable">{name}</span>'
+            f'<span class="pr-pos-cell">{pos_rank}</span>'
+            f'<span class="pr-age">{age}</span>'
+            f'<span class="pr-team">{team}</span>'
+            f'<span class="pr-value">{val}</span>'
+            '</div>'
+        )
+        items.append({
+            "@type": "ListItem",
+            "position": i,
+            "item": {"@type": "Thing", "name": str(p.get("name") or "Unknown")},
+        })
+
+    ld = {
+        "@context": "https://schema.org",
+        "@type": "ItemList",
+        "name": "Dynasty Fantasy Football Trade Value Rankings",
+        "itemListElement": items,
+    }
+    # Escape '<' so a player name can never break out of the ld+json <script>.
+    jsonld = (
+        '<script type="application/ld+json">'
+        + json.dumps(ld, separators=(",", ":")).replace("<", "\\u003c")
+        + '</script>'
+    )
+    return "".join(rows), jsonld
+
+
 @app.route("/players")
 @app.route("/<platform>/<int:season>/<league_id>/players")
 def page_players(platform: str = None, season: int = None, league_id: str = None,
@@ -12408,6 +12399,51 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 
     <!-- Player Rankings JS lives in static/rankings.js (injected below, deferred) -->
     """
+
+    # Server-render the top players so crawlers / the first paint see a real,
+    # content-rich table instead of a "Loading players…" spinner. rankings.js
+    # wipes and re-renders #prList on load, so this is a no-flash first paint.
+    _ssr_rows, _ssr_jsonld = _rankings_ssr_content()
+    if _ssr_rows:
+        body_html = body_html.replace(
+            '<div id="prList"></div>',
+            f'<div id="prList">{_ssr_rows}</div>',
+        )
+        # Hide the spinner and reveal the header/count for the pre-JS SSR view.
+        body_html = body_html.replace(
+            '<div id="prLoading" style="text-align:center;padding:40px;color:var(--text-muted);">',
+            '<div id="prLoading" style="display:none;text-align:center;padding:40px;color:var(--text-muted);">',
+        )
+        body_html = body_html.replace(
+            '<div id="prTableHeader" style="display:none;',
+            '<div id="prTableHeader" style="display:grid;',
+        )
+        body_html = body_html.replace(
+            '<div id="prCount" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;display:none;"></div>',
+            '<div id="prCount" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">'
+            'Top dynasty players by trade value</div>',
+        )
+        body_html += "\n" + _ssr_jsonld
+
+    # Editorial context above the table on the public SEO pages (no league) -
+    # AdSense/search weight human-readable framing around a data tool, and it
+    # gives the page unique on-page copy beyond the numbers themselves.
+    if not platform:
+        _intro = """
+    <div class="static-section" style="max-width:860px;margin:0 auto 10px;">
+      <p style="color:var(--text-muted);font-size:14px;line-height:1.7;margin:0;">
+        These are <strong>dynasty fantasy football trade values</strong> for every relevant
+        player, refreshed daily from real league-to-league market data and our value model.
+        Each number estimates what the rest of your league would give up to acquire a player,
+        weighing recent production, age, and long-term outlook &mdash; not just this week's box
+        score. Use the filters to switch between <strong>1QB and Superflex</strong>, change
+        league size, or toggle redraft scoring, then take any player into the free
+        <a href="/trade">Trade Calculator</a>. New to dynasty values? Start with
+        <a href="/guides/dynasty-trade-value">How Dynasty Trade Value Works</a>.
+      </p>
+    </div>
+    """
+        body_html = _intro + body_html
 
     # Auto-apply the league's TE premium (from its scoring settings) to the
     # rankings, so TE-premium leagues see boosted TE values without toggling.
@@ -15835,7 +15871,7 @@ def _build_lineup_analysis_html(
     def _ava_small(owner_name: str, rid: str = "", size: int = 30) -> str:
         ava = owner_avatar.get(owner_name, "")
         if ava:
-            return f"<img src='{ava}' alt='' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
+            return f"<img src='{ava}' alt='' loading='lazy' decoding='async' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
         initials = "".join(w[0].upper() for w in (team_by_rid.get(rid) or owner_name or "?").split()[:2])
         return (f"<div style='width:{size}px;height:{size}px;border-radius:50%;background:var(--accent);color:#fff;"
                 f"display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0;'>{initials}</div>")
@@ -16159,7 +16195,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     def ava_img(owner_name, rid="", size=32):
         ava = owner_avatar.get(owner_name, "")
         if ava:
-            return f"<img src='{ava}' alt='' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
+            return f"<img src='{ava}' alt='' loading='lazy' decoding='async' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
         initials = "".join(w[0].upper() for w in (team_by_rid.get(rid) or owner_name or "?").split()[:2])
         return (f"<div style='width:{size}px;height:{size}px;border-radius:50%;background:var(--accent);color:#fff;"
                 f"display:flex;align-items:center;justify-content:center;font-weight:700;font-size:{max(10, size//3)}px;"
@@ -19795,6 +19831,30 @@ def api_advanced_metrics_leaderboard():
     except Exception:
         logger.debug("leaderboard years_exp enrich failed", exc_info=True)
 
+    # Season-accurate team(s): each row must reflect the team the player was on
+    # DURING this season, not his current team - otherwise a traded player (e.g.
+    # Mike Evans, Tampa Bay in 2025 -> San Francisco now) drops out when you
+    # filter by his old team, even though he played there that whole season.
+    # teams_in_season returns every team he appeared for that season with the
+    # weeks on each, so the team filter can match any of them and the UI can flag
+    # a mid-season move. Only runs when a season is specified (always, from the
+    # page); skipped otherwise so behavior is unchanged.
+    if season:
+        try:
+            from data_building.external_data.player_team_history import teams_in_season
+            for _p in players or []:
+                stints = teams_in_season(str(_p.get("player_id")), season)
+                if not stints:
+                    continue
+                _p["teams"] = [s["team"] for s in stints]
+                _p["team_weeks"] = {s["team"]: s["weeks"] for s in stints}
+                # Display team = the one with the most weeks (ties -> first stint).
+                _primary = max(stints, key=lambda s: len(s.get("weeks") or []))
+                _p["team"] = _primary["team"]
+                _p["multi_team"] = len(stints) > 1
+        except Exception:
+            logger.debug("leaderboard season-team enrich failed", exc_info=True)
+
     spec = LEADERBOARD_METRICS[metric]
     vol_col = (spec.get("min_vol") or {}).get("col") or "games"
     resp = jsonify({
@@ -19869,6 +19929,33 @@ def api_advanced_metrics_config():
     return resp
 
 
+def _displayed_value_map(league_type: str) -> dict:
+    """player_id -> the value shown everywhere else on the site.
+
+    get_model_value_table_cached() is the single source the app renders from:
+    it applies market calibration AND zeroes players not tracked by
+    FantasyCalc/DynastyProcess (washed-up vets). Passing this into get_top_movers
+    keeps the movers board consistent with those displayed values, so a player
+    whose raw model-history value is briefly inflated (while an anchor correction
+    unwinds) but who reads as ~0 everywhere else never surfaces as a mover.
+    """
+    use_sf = str(league_type).strip().lower() == "sf"
+    out: dict = {}
+    try:
+        for p in (get_model_value_table_cached() or []):
+            pid = str(p.get("id") or "")
+            if not pid:
+                continue
+            v = p.get("sf_value") if use_sf else p.get("value")
+            try:
+                out[pid] = float(v or 0)
+            except (TypeError, ValueError):
+                out[pid] = 0.0
+    except Exception:
+        logger.debug("[movers] displayed-value map failed", exc_info=True)
+    return out
+
+
 @app.route("/api/value-movers")
 def api_value_movers():
     try:
@@ -19892,7 +19979,9 @@ def api_value_movers():
         league_size = 10
 
     payload = get_top_movers(days=max(days, 1), limit=max(limit, 1), league_type=league_type,
-                             league_size=league_size, min_baseline_value=10) or {}
+                             league_size=league_size, min_baseline_value=10,
+                             min_current_value=20.0,
+                             current_values=_displayed_value_map(league_type)) or {}
 
     if isinstance(payload, list):
         movers = payload
@@ -21481,11 +21570,16 @@ def api_player_game_logs(player_id: str):
                 return {k: s.get(k) for k in ["pass_yd","pass_td","pass_int","rush_att","rush_yd","rush_td","rec","rec_tgt","rec_yd","rec_td","fum_lost"]}
 
             if schedule_by_week:
-                # Full path: schedule available - include opponent and date
+                # Full path: schedule available - include opponent and date.
+                # Resolve the team the player was actually on THIS season/week
+                # (handles trades) rather than their current team, which would
+                # otherwise show the current team's opponents for past seasons.
+                from data_building.external_data.player_team_history import team_for_week
                 for week_num in sorted(schedule_by_week.keys()):
                     games = schedule_by_week[week_num]
                     if not isinstance(games, list):
                         continue
+                    wk_team = team_for_week(player_id, season_year, week_num) or player_team
                     opponent = ""
                     is_away  = False
                     game_date = ""
@@ -21494,9 +21588,9 @@ def api_player_game_logs(player_id: str):
                             continue
                         home_team = game.get("home", "")
                         away_team = game.get("away", "")
-                        if player_team and player_team == home_team:
+                        if wk_team and wk_team == home_team:
                             opponent = away_team; is_away = False; game_date = game.get("gameDate", ""); break
-                        elif player_team and player_team == away_team:
+                        elif wk_team and wk_team == away_team:
                             opponent = home_team; is_away = True;  game_date = game.get("gameDate", ""); break
                     stats = (stats_by_week.get(week_num) or {}).get(player_id)
                     # Bye week: no game found for this team and no stats
@@ -28593,13 +28687,16 @@ def top_movers_page():
     from dashboard_services.pages.dynasty_pages import build_risers_fallers_body
     from data_building.player_value_history import get_top_movers
     try:
-        movers = get_top_movers(days=7, limit=20, min_baseline_value=5)
+        movers = get_top_movers(days=7, limit=20, min_baseline_value=5,
+                                min_current_value=20.0,
+                                current_values=_displayed_value_map("1qb"))
     except Exception:
         movers = {"risers": [], "fallers": []}
 
     from datetime import datetime as _dt
     date_label = _dt.now().strftime("%B %d, %Y")
-    body = build_risers_fallers_body(movers, as_of_date=date_label)
+    body = build_risers_fallers_body(movers, as_of_date=date_label,
+                                     signed_in=bool(session.get("viewer_username")))
 
     return render_page(
         f"Top Movers: {date_label} | BR Fantasy",

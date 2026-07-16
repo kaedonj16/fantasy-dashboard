@@ -8519,7 +8519,7 @@ function openPlayerModal(playerId, playerName, opts) {
         <button class="player-modal-watchlist-btn" id="playerModalWatchlistBtn" title="Add to watchlist" aria-pressed="false" style="display: none;"><span class="wl-star-glyph" aria-hidden="true">☆</span></button>
         ${_ppSlug ? `<a class="player-modal-page-btn" href="/player/${_ppSlug}/trade-value" title="View full player page">Player Page</a>` : ''}
         <button class="player-modal-compare-btn" id="playerModalCompareBtn" title="Compare players">Compare Player</button>
-        <button class="player-modal-close" onclick="closePlayerModal()">×</button>
+        <button class="player-modal-close" onclick="closePlayerModal()" aria-label="Close">×</button>
       </div>
     </div>
     <div class="pm-tab-bar" id="pmTabBar" style="display:none">
@@ -8541,6 +8541,27 @@ function openPlayerModal(playerId, playerName, opts) {
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
   document.body.style.overflow = 'hidden';
+
+  // ── Accessibility: focus management + focus trap ──────────────────────────
+  // Remember what had focus so closePlayerModal can restore it, then move focus
+  // into the dialog so keyboard and screen-reader users land inside it instead
+  // of tabbing through the page behind the overlay.
+  overlay._pmReturnFocus = (document.activeElement instanceof HTMLElement) ? document.activeElement : null;
+  const _pmCloseBtn = modal.querySelector('.player-modal-close');
+  if (_pmCloseBtn) { try { _pmCloseBtn.focus(); } catch (_) {} }
+  // Keep Tab / Shift+Tab cycling within the dialog. Focusables are queried at
+  // key time so tabs/buttons added after the async data load are included.
+  overlay.addEventListener('keydown', function (e) {
+    if (e.key !== 'Tab') return;
+    const focusables = modal.querySelectorAll(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    const visible = Array.prototype.filter.call(focusables, el => el.getClientRects().length > 0);
+    if (!visible.length) return;
+    const first = visible[0], last = visible[visible.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
 
   // Wire the watchlist star (add/remove this player from the device watchlist).
   try {
@@ -11754,6 +11775,12 @@ function _slvTimeAgo(ms) {
 // visit is worth surfacing (filters out normal day-to-day model noise).
 const SLV_VALUE_THRESHOLD = 100;
 
+// Ignore players the market currently values at ~nothing, matching the Top
+// Movers floor. Their model value can wobble while an anchor correction
+// unwinds, but they aren't worth surfacing as a "value move" - and this keeps
+// the popup aligned with the calibrated values shown everywhere else.
+const SLV_MIN_VALUE = 20;
+
 function _slvSection(title, rowsHtml) {
   if (!rowsHtml) return '';
   return '<div class="slv-section"><div class="slv-section-title">' + _wlEsc(title) + '</div>' +
@@ -11773,11 +11800,11 @@ function _slvRosterDiff(leagueId, rid, roster) {
   if (snap && snap.p) {
     roster.forEach(function (p) {
       const prev = snap.p[p.pid];
-      if (prev && typeof prev.v === 'number' && p.value) {
+      if (prev && typeof prev.v === 'number' && p.value && p.value >= SLV_MIN_VALUE) {
         const dv = p.value - prev.v;
-        if (Math.abs(dv) >= SLV_VALUE_THRESHOLD) out.movers.push({ name: p.name, pos: p.pos, delta: dv });
+        if (Math.abs(dv) >= SLV_VALUE_THRESHOLD) out.movers.push({ name: p.name, pos: p.pos, delta: dv, pid: p.pid });
       }
-      if (p.injury && (!prev || !prev.i)) out.injuries.push({ name: p.name, pos: p.pos, status: p.injury });
+      if (p.injury && (!prev || !prev.i)) out.injuries.push({ name: p.name, pos: p.pos, status: p.injury, pid: p.pid });
     });
     out.movers.sort(function (a, b) { return Math.abs(b.delta) - Math.abs(a.delta); });
     out.movers = out.movers.slice(0, 5);
@@ -11827,11 +11854,20 @@ async function initSinceLastVisit() {
         '<span class="slv-item-ago">' + _slvTimeAgo(it.ts) + '</span></li>';
     }).join('');
 
+    // Player name, made clickable so it opens the in-app modal (via the global
+    // [data-player-id] handler) when we have a player id.
+    const _slvName = function (name, pid) {
+      const safe = _wlEsc(name);
+      if (!pid) return safe;
+      return '<span class="player-clickable" data-player-id="' + _wlEsc(String(pid)) +
+        '" data-player-name="' + _wlEsc(name) + '">' + safe + '</span>';
+    };
+
     // Value-move rows.
     const moverRows = diff.movers.map(function (m) {
       const up = m.delta > 0;
       return '<li class="slv-item"><span class="slv-item-kind slv-kind-value">Value</span>' +
-        '<span class="slv-item-text">' + _wlEsc(m.name) +
+        '<span class="slv-item-text">' + _slvName(m.name, m.pid) +
           (m.pos ? ' <span class="wl-item-pos">' + _wlEsc(m.pos) + '</span>' : '') + '</span>' +
         '<span class="slv-item-ago wl-chip ' + (up ? 'wl-chip-up' : 'wl-chip-down') + '">' +
           (up ? '+' : '-') + Math.abs(Math.round(m.delta)) + '</span></li>';
@@ -11841,7 +11877,7 @@ async function initSinceLastVisit() {
     const injuryRows = diff.injuries.map(function (i) {
       const short = _WL_INJ_SHORT[String(i.status).toUpperCase()] || _wlEsc(String(i.status).slice(0, 4));
       return '<li class="slv-item"><span class="slv-item-kind slv-kind-injury">Injury</span>' +
-        '<span class="slv-item-text">' + _wlEsc(i.name) +
+        '<span class="slv-item-text">' + _slvName(i.name, i.pid) +
           (i.pos ? ' <span class="wl-item-pos">' + _wlEsc(i.pos) + '</span>' : '') + '</span>' +
         '<span class="slv-item-ago wl-chip wl-chip-inj" title="' + _wlEsc(i.status) + '">' + short + '</span></li>';
     }).join('');
@@ -11866,6 +11902,12 @@ async function initSinceLastVisit() {
         _slvSection('Value moves on your roster', moverRows) +
         _slvSection('New injuries on your roster', injuryRows) +
       '</section>';
+
+    // Popup dismissal: click the backdrop (outside the card) or press Escape.
+    el.addEventListener('click', function (e) { if (e.target === el) el.remove(); });
+    document.addEventListener('keydown', function _slvEsc(e) {
+      if (e.key === 'Escape') { el.remove(); document.removeEventListener('keydown', _slvEsc); }
+    });
   } catch (_) {}
 }
 document.addEventListener('DOMContentLoaded', initSinceLastVisit);
@@ -12458,7 +12500,7 @@ function openProspectModal(playerId, playerName) {
               (r.draft_class_year ? '<span style="opacity:.4;">·</span><span>' + r.draft_class_year + ' Draft</span>' : '') +
             '</div>' +
           '</div>' +
-          '<button class="rk-modal-close" onclick="rkCloseModal()">✕</button>' +
+          '<button class="rk-modal-close" onclick="rkCloseModal()" aria-label="Close">✕</button>' +
         '</div>' +
 
         '<div class="rk-modal-body">' +
@@ -12562,9 +12604,15 @@ function openProspectModal(playerId, playerName) {
 function closePlayerModal() {
   const overlay = document.querySelector('.player-modal-overlay');
   if (overlay) {
+    const _return = overlay._pmReturnFocus;
     document.body.style.overflow = '';
     overlay.style.opacity = '0';
     setTimeout(() => overlay.remove(), 200);
+    // Restore focus to whatever opened the modal (the clicked player row / chip),
+    // so keyboard users are not dumped back at the top of the document.
+    if (_return && typeof _return.focus === 'function') {
+      try { _return.focus(); } catch (_) {}
+    }
   }
 }
 
@@ -14330,7 +14378,7 @@ function openTeamModal(rosterId, teamName) {
           <div class="loading-spinner" style="width: 16px; height: 16px;"></div>
         </div>
       </div>
-      <button class="team-modal-close" onclick="closeTeamModal()">×</button>
+      <button class="team-modal-close" onclick="closeTeamModal()" aria-label="Close">×</button>
     </div>
     <div class="tm-tab-bar">
       <button class="tm-tab active" data-tab="roster" onclick="tmSwitchTab('roster')">Roster</button>
@@ -14680,7 +14728,7 @@ function openBreakoutModal(playerId, playerName) {
           </div>
         </div>
       </div>
-      <button class="player-modal-close" onclick="closeBkModal()">×</button>
+      <button class="player-modal-close" onclick="closeBkModal()" aria-label="Close">×</button>
     </div>
     <div class="player-modal-body" id="bkModalBody">
       <div class="player-modal-loading">

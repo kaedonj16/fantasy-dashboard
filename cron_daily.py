@@ -409,6 +409,91 @@ print(f"[cron] Weekly metrics: {{n}} rows upserted")
 """, "build_weekly_metrics")
 
     # ------------------------------------------------------------------ #
+    # Step 4a2: Per-week NFL team map (recent_team per player-week).       #
+    # Lets game logs show the opponent for the team a player was on THAT   #
+    # week, and the Advanced Metrics team filter match every team a        #
+    # traded player played for in a season (not just his current team).   #
+    # Backfills every season the game logs actually display (derived from  #
+    # the cached sleeper_stats files, ~2016+), so a traded veteran's older #
+    # seasons are correct too. Historical seasons build once (file guard); #
+    # the active season is rebuilt each run for new weeks / mid-season     #
+    # trades.                                                              #
+    # ------------------------------------------------------------------ #
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+import glob, os, re
+from datetime import datetime
+from dashboard_services.api import get_nfl_state
+from data_building.external_data.player_team_history import build_weekly_team_map, weekly_team_map_path
+
+nfl_state = get_nfl_state() or {}
+current_season = int(nfl_state.get("season") or datetime.now().year)
+season_type = str(nfl_state.get("season_type", "")).lower().strip()
+active = current_season - 1 if season_type == "off" else current_season
+
+# Seasons the game logs render = the seasons with cached weekly stat files.
+seasons = set()
+for f in glob.glob(os.path.join("cache", "sleeper_stats", "sleeper_stats_s*_w*.json")):
+    m = re.search(r"sleeper_stats_s(\\d{4})_w", os.path.basename(f))
+    if m:
+        seasons.add(int(m.group(1)))
+seasons = sorted(s for s in seasons if 2016 <= s <= current_season)
+if active not in seasons:
+    seasons.append(active)
+
+built = 0
+for yr in sorted(set(seasons)):
+    if yr != active and weekly_team_map_path(yr).exists():
+        continue  # historical season already built - team history never changes
+    n = build_weekly_team_map(yr)
+    if n:
+        built += 1
+        print("[cron] weekly team map s%d: %d player-weeks" % (yr, n))
+print("[cron] weekly team maps built/refreshed: %d" % built)
+""", "build_weekly_team_map")
+
+    # ------------------------------------------------------------------ #
+    # Step 4a3: One-time backfill of weekly target share by per-week team. #
+    # The incremental weekly-metrics build (4a) only rebuilds the latest   #
+    # weeks, so historical rows keep the old current-team target share -    #
+    # which is wrong for traded players and NULL when their team was blank  #
+    # at build time, dropping them from the target-share leaderboard. Force #
+    # a full rebuild of recent seasons ONCE (guarded by a marker) so the    #
+    # corrected per-week-team shares land. Runs after the team map (4a2) so  #
+    # mid-season trades resolve; falls back to season team otherwise.       #
+    # ------------------------------------------------------------------ #
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+import os
+from datetime import datetime
+from dashboard_services.api import get_nfl_state
+from data_building.weekly_metrics import build_weekly_metrics
+
+# v3: rebuild once more after team codes are canonicalised (LAR->LA, WSH->WAS,
+# JAX), so target-share pools for Rams/Washington players who fell back to the
+# index team are no longer split across two codes. (v2 switched the source to
+# import_weekly_rosters; v1 was the original parquet-based pass.)
+marker = os.path.join("cache", ".weekly_metrics_perweek_team_v4.done")
+if os.path.exists(marker):
+    print("[cron] weekly target-share per-week-team backfill already done")
+else:
+    nfl_state = get_nfl_state() or {}
+    current_season = int(nfl_state.get("season") or datetime.now().year)
+    total = 0
+    for yr in range(current_season - 3, current_season + 1):
+        n = build_weekly_metrics(yr, weeks=list(range(1, 19)))
+        total += n
+        print("[cron] rebuilt weekly metrics s%d: %d rows" % (yr, n))
+    try:
+        os.makedirs("cache", exist_ok=True)
+        with open(marker, "w") as f:
+            f.write("done")
+    except OSError:
+        pass
+    print("[cron] weekly target-share backfill complete: %d rows" % total)
+""", "backfill_weekly_target_share")
+
+    # ------------------------------------------------------------------ #
     # Step 4b: Defense-vs-position matchup ratings (z-scores)             #
     # Powers the Schedule Assistant rankings / ease scores.               #
     # Only rebuilt on Wednesdays during the regular/post season so each   #

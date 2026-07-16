@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional
 
 from dashboard_services.db import get_conn
 from data_building.external_data.sleeper_bulk_stats import fetch_week_stats
+from data_building.external_data.player_team_history import team_for_week, canon_team
 from utils.utils import load_players_index
 
 _POSITIONS = {"QB", "RB", "WR", "TE"}
@@ -97,7 +98,13 @@ def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None) -> int:
         if not stats:
             continue
 
-        # Approximate team weekly target totals from the players index team map.
+        # Approximate team weekly target totals per team. Use the team the player
+        # was on THAT week (team_for_week), not his current team - otherwise a
+        # traded player's targets are pooled under his new team, which both
+        # mis-computes target share and, when his current team is transiently
+        # blank in the index, writes a NULL share that drops him from the
+        # target-share leaderboard entirely (raw-stat metrics still show him).
+        # Falls back to the current index team when no historical team is known.
         team_targets: Dict[str, float] = {}
         player_rows: List[tuple] = []
         for pid, st in stats.items():
@@ -108,7 +115,8 @@ def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None) -> int:
             if pos not in _POSITIONS:
                 continue
             tgt = _f(st.get("rec_tgt"))
-            team = (meta.get("team") or "").upper()
+            team = team_for_week(str(pid), int(season), int(week)) \
+                or canon_team(meta.get("team"))
             if team and tgt:
                 team_targets[team] = team_targets.get(team, 0.0) + tgt
             player_rows.append((str(pid), pos, team, st))

@@ -2191,9 +2191,42 @@ _AM_JS = r"""
       b.classList.toggle('active', p === state.position);
     });
   }
+  // Compact week list -> "1-9" / "1-3, 7-10" for the traded-player tooltip.
+  function amWeekRange(wks) {
+    if (!wks || !wks.length) return '';
+    wks = wks.slice().sort((a, b) => a - b);
+    const parts = []; let s = wks[0], p = wks[0];
+    for (let i = 1; i < wks.length; i++) {
+      if (wks[i] === p + 1) { p = wks[i]; continue; }
+      parts.push(s === p ? String(s) : s + '-' + p); s = p = wks[i];
+    }
+    parts.push(s === p ? String(s) : s + '-' + p);
+    return parts.join(', ');
+  }
+  // Team cell label. For a player who was on one team all season this is just
+  // the team code. For a mid-season trade it shows the team relevant to the
+  // current view (the filtered team, else the primary) with a '*' whose tooltip
+  // lists the weeks he was on it - so filtering "TB" for 2025 flags that a
+  // traded player was only there part of the year.
+  function amTeamLabel(r) {
+    const teams = (r.teams && r.teams.length) ? r.teams : [r.team || ''];
+    const sel = state.team ? state.team.toUpperCase() : '';
+    let shown = r.team || '';
+    if (sel && teams.some(t => (t || '').toUpperCase() === sel)) {
+      shown = teams.find(t => (t || '').toUpperCase() === sel) || shown;
+    }
+    if (!r.multi_team) return shown;
+    const wks = (r.team_weeks || {})[shown];
+    const tip = (wks && wks.length)
+      ? (shown + ': weeks ' + amWeekRange(wks) + ' · traded mid-season')
+      : (shown + ' · multiple teams this season');
+    return shown + '<span class="am-team-star" style="color:var(--accent);cursor:help;margin-left:1px;font-weight:700;" title="' + tip.replace(/"/g, '&quot;') + '">*</span>';
+  }
   function populateTeamFilter() {
     if (!teamSel) return;
-    const teams = [...new Set(state.rows.map(r => r.team || '').filter(Boolean))].sort();
+    // Include every team a player was on this season (traded players have a
+    // `teams` array), not just their displayed team, so the filter offers both.
+    const teams = [...new Set(state.rows.flatMap(r => (r.teams && r.teams.length ? r.teams : [r.team || ''])).filter(Boolean))].sort();
     const prev = state.team;
     teamSel.innerHTML = '<option value="">All Teams</option>'
       + teams.map(t => '<option value="' + t + '"' + (t === prev ? ' selected' : '') + '>' + t + '</option>').join('');
@@ -2343,7 +2376,14 @@ _AM_JS = r"""
       const q = state.search.toLowerCase();
       displayRows = displayRows.filter(r => (r.name || '').toLowerCase().includes(q));
     }
-    if (state.team) displayRows = displayRows.filter(r => (r.team || '').toUpperCase() === state.team.toUpperCase());
+    if (state.team) {
+      const _st = state.team.toUpperCase();
+      // Match any team the player was on this season (handles mid-season trades).
+      displayRows = displayRows.filter(r => {
+        const ts = (r.teams && r.teams.length) ? r.teams : [r.team || ''];
+        return ts.some(t => (t || '').toUpperCase() === _st);
+      });
+    }
     if (state.ageMin !== '' || state.ageMax !== '') {
       displayRows = displayRows.filter(function(r) {
         const age = r.age;
@@ -2475,7 +2515,7 @@ _AM_JS = r"""
         + '<span class="am-name">' + (r.name || '') + '</span>'
         + ownedBadge
         + '<span class="am-player-right">'
-        + '<span class="am-meta">' + (r.team || '') + '</span>'
+        + '<span class="am-meta">' + amTeamLabel(r) + '</span>'
         + '<span class="am-meta" style="color:' + col + ';font-weight:600">' + r.position + '</span>'
         + '</span></div></td>';
 
@@ -3916,14 +3956,39 @@ _AM_JS = r"""
       if (sel) sel.scrollIntoView({ block: 'nearest' });
     }
 
+    // The panel is absolutely positioned inside the card, whose global
+    // overflow:hidden clips a tall dropdown. Pin it with position:fixed relative
+    // to the button (like the info tooltip) so it escapes the card, and cap its
+    // height to the space below the button so it scrolls internally.
+    function positionPanel() {
+      const r = btn.getBoundingClientRect();
+      const avail = window.innerHeight - r.bottom - 16;
+      panel.style.position = 'fixed';
+      panel.style.top = (r.bottom + 6) + 'px';
+      panel.style.left = r.left + 'px';
+      panel.style.right = 'auto';
+      panel.style.zIndex = '900';
+      panel.style.maxHeight = Math.max(180, Math.min(560, avail)) + 'px';
+    }
+    function clearPosition() {
+      panel.style.position = '';
+      panel.style.top = '';
+      panel.style.left = '';
+      panel.style.right = '';
+      panel.style.zIndex = '';
+      panel.style.maxHeight = '';
+    }
+
     function openPanel() {
       buildPanel();
       wrap.classList.add('open');
       btn.setAttribute('aria-expanded', 'true');
+      positionPanel();
     }
     function closePanel() {
       wrap.classList.remove('open');
       btn.setAttribute('aria-expanded', 'false');
+      clearPosition();
     }
 
     btn.addEventListener('click', function(e) {
@@ -3932,6 +3997,9 @@ _AM_JS = r"""
     });
     panel.addEventListener('click', function(e) { e.stopPropagation(); });
     document.addEventListener('click', closePanel);
+    // A fixed panel would detach from the button on scroll/resize; close it.
+    window.addEventListener('resize', function() { if (wrap.classList.contains('open')) closePanel(); });
+    window.addEventListener('scroll', function() { if (wrap.classList.contains('open')) closePanel(); }, true);
 
     // Keep label in sync when metric changes via other code (e.g. amLoadPreset)
     metricSel.addEventListener('change', syncLabel);

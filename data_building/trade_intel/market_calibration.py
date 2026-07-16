@@ -41,6 +41,16 @@ TREND_BOOST_THRESHOLD       = 40     # market_trend points that trigger extra we
 TREND_BOOST_AMOUNT          = 0.10   # extra blend weight added when trending strongly
 STALENESS_PENALTY_THRESHOLD = 0.15   # if <15% of trades are from last 14d, penalise
 
+# Failsafe band around the model value. A trade-derived market value this far
+# from the model is almost always a bad regression (e.g. a WLS basket-
+# normalization shift that rescales the whole pool and roughly doubles small
+# players), not a real market signal. When the direct market value falls outside
+# the band we fall back to the model value instead of writing a wildly
+# miscalibrated number. Wide enough (0.5x-1.75x) that genuine market premiums
+# still pass; tight enough that a pool-wide ~2x rescale is caught.
+MAX_CALIB_RATIO = 1.75
+MIN_CALIB_RATIO = 0.50
+
 
 # ---------------------------------------------------------------------------
 # Data loading
@@ -230,12 +240,21 @@ def _calibrate_one(
     if has_direct and rookie_ok:
         mkt_1qb = market["market_1qb"]
         mkt_sf  = market["market_sf"]
-        return {
-            "calibrated_value_1qb": max(0, round(mkt_1qb, 2)),
-            "calibrated_value_sf":  max(0, round(mkt_sf,  2)),
-            "calibration_weight":   1.0,
-            "calibration_source":   "direct",
-        }
+        # Failsafe: only trust the direct market value when it sits within a sane
+        # band of the model value. A value far outside the band means the market
+        # regression is broken (e.g. a pool-wide rescale), so fall through to the
+        # tier-anchor / model path rather than doubling the player.
+        in_band = (
+            model_1qb > 0
+            and MIN_CALIB_RATIO * model_1qb <= mkt_1qb <= MAX_CALIB_RATIO * model_1qb
+        )
+        if in_band:
+            return {
+                "calibrated_value_1qb": max(0, round(mkt_1qb, 2)),
+                "calibrated_value_sf":  max(0, round(mkt_sf,  2)),
+                "calibration_weight":   1.0,
+                "calibration_source":   "direct",
+            }
 
     # ── Case 2: Rookie/prospect - tier anchor ──────────────────────────────
     if is_rookie and model_1qb > 0:

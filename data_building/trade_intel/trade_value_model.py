@@ -45,7 +45,7 @@ import numpy as np
 from dashboard_services.db import get_conn
 from dashboard_services.picks import load_pick_value_table
 from data_building.trade_intel._helpers import _decay_weight
-from data_building.value_model_training import _load_state, _save_state
+from data_building.value_model_training import _save_state
 
 logger = logging.getLogger(__name__)
 
@@ -54,10 +54,6 @@ MAX_VALUE          = 999.9
 MAX_LIFT           = 1.25  # player values capped at 125% of prior; picks float freely
 ANCHOR_BASKET_N    = 5     # anchor the top-N basket MEAN (not a single #1) to MAX_VALUE so
                            # one player's day-to-day WLS solve can't drag the whole board
-ANCHOR_EMA_ALPHA   = 0.15  # smooth the basket across runs - an unsmoothed single-day anchor
-                           # is what caused board-wide value swings (see issue: values
-                           # dropping for untraded players whenever the #1 player's solved
-                           # value moved, since everyone is divided by that one number)
 TRADES_LOOKBACK_DAYS = 120 # only load trades from the last N days; >60d = weight 0.08
 DAILY_MOVE_CAP     = 0.15  # max fractional day-over-day change in a calibrated value.
                            # The displayed value is COALESCE(calibrated, raw) - i.e. the
@@ -819,13 +815,17 @@ def run_trade_value_model(
             return np.clip(vec, 0.0, None)
         basket = sorted_desc[:k]
         raw_basket = float(basket.mean()) if basket.mean() > 0 else (float(player_vec.max()) or MAX_VALUE)
-        prev_basket = _load_state(state_key)
-        smoothed_basket = (
-            ANCHOR_EMA_ALPHA * raw_basket + (1.0 - ANCHOR_EMA_ALPHA) * prev_basket
-            if prev_basket > 0 else raw_basket
-        )
-        _save_state(state_key, smoothed_basket)
-        anchor = smoothed_basket if smoothed_basket > 0 else MAX_VALUE
+        # Anchor to TODAY's top-5 basket mean, fresh each run - do NOT smooth the
+        # anchor. The values being scaled (vec) are today's, so EMA-smoothing the
+        # anchor against a stale prior lags the numerator: when the raw WLS scale
+        # jumps (e.g. the first clean rebuild after a pipeline outage), the lagged
+        # anchor over-scales the whole board and roughly doubles the lower tiers.
+        # The top-5 MEAN already absorbs single-player trade noise - the swing the
+        # EMA was meant to guard against - and downstream calibration is bounded to
+        # a sane band around the model value. This mirrors the main value model,
+        # which dropped basket EMA for the same reason (2026-06-17).
+        _save_state(state_key, raw_basket)  # keep state current for inspection/tooling
+        anchor = raw_basket if raw_basket > 0 else MAX_VALUE
         return np.clip(vec / anchor * MAX_VALUE, 0.0, None)
 
     v_1qb_norm = _normalize(v_1qb_pos, f"wls_basket_{mode}_{league_size}_1qb")
