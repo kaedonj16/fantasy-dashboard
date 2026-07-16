@@ -11846,10 +11846,20 @@ async function initSinceLastVisit() {
     const items = (d && d.items) || [];
     const diff = _slvRosterDiff(ctx.leagueId, rid, (d && d.roster) || []);
 
+    // Event-type label: a neutral pill with a colored leading icon (event-feed
+    // look), so the digest scans as a feed rather than a row of status alarms.
+    const _SLV_ICON = { trade: 'fa-arrows-rotate', waiver: 'fa-inbox',
+                        value: 'fa-chart-line', injury: 'fa-triangle-exclamation' };
+    const _slvKind = function (kind, label) {
+      return '<span class="slv-item-kind slv-kind-' + kind + '">' +
+        '<i class="fa-solid ' + (_SLV_ICON[kind] || 'fa-circle') + '" aria-hidden="true"></i> ' +
+        label + '</span>';
+    };
+
     // Activity rows (trades + waivers).
     const activityRows = items.map(function (it) {
-      return '<li class="slv-item"><span class="slv-item-kind slv-kind-' + _wlEsc(it.kind) + '">' +
-        (it.kind === 'trade' ? 'Trade' : 'Waiver') + '</span>' +
+      const k = it.kind === 'trade' ? 'trade' : 'waiver';
+      return '<li class="slv-item">' + _slvKind(k, k === 'trade' ? 'Trade' : 'Waiver') +
         '<span class="slv-item-text">' + _wlEsc(it.text) + '</span>' +
         '<span class="slv-item-ago">' + _slvTimeAgo(it.ts) + '</span></li>';
     }).join('');
@@ -11866,7 +11876,7 @@ async function initSinceLastVisit() {
     // Value-move rows.
     const moverRows = diff.movers.map(function (m) {
       const up = m.delta > 0;
-      return '<li class="slv-item"><span class="slv-item-kind slv-kind-value">Value</span>' +
+      return '<li class="slv-item">' + _slvKind('value', 'Value') +
         '<span class="slv-item-text">' + _slvName(m.name, m.pid) +
           (m.pos ? ' <span class="wl-item-pos">' + _wlEsc(m.pos) + '</span>' : '') + '</span>' +
         '<span class="slv-item-ago wl-chip ' + (up ? 'wl-chip-up' : 'wl-chip-down') + '">' +
@@ -11876,7 +11886,7 @@ async function initSinceLastVisit() {
     // New-injury rows.
     const injuryRows = diff.injuries.map(function (i) {
       const short = _WL_INJ_SHORT[String(i.status).toUpperCase()] || _wlEsc(String(i.status).slice(0, 4));
-      return '<li class="slv-item"><span class="slv-item-kind slv-kind-injury">Injury</span>' +
+      return '<li class="slv-item">' + _slvKind('injury', 'Injury') +
         '<span class="slv-item-text">' + _slvName(i.name, i.pid) +
           (i.pos ? ' <span class="wl-item-pos">' + _wlEsc(i.pos) + '</span>' : '') + '</span>' +
         '<span class="slv-item-ago wl-chip wl-chip-inj" title="' + _wlEsc(i.status) + '">' + short + '</span></li>';

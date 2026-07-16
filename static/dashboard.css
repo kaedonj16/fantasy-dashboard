@@ -137,6 +137,7 @@
   --gold: #b45309;   /* elite badge accent (no semantic token maps to it) */
   --orange: #ea580c; /* doubtful / mid-severity, between warning and loss */
   --inj-q: #ca8a04;  /* questionable: a distinct yellow so it doesn't read as orange next to doubtful */
+  --indigo: #4f46e5; /* categorical: trade / activity */
   /* Typography */
   --font-sans: "InterVariable", "Inter", system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
   --text-xs: 11px;
@@ -194,6 +195,7 @@
   --gold: #fbbf24;   /* brighter on the dark ground */
   --orange: #fb923c;
   --inj-q: #facc15;  /* brighter yellow on the dark ground */
+  --indigo: #a5b4fc; /* lighter indigo for the dark ground */
   --weakest: #703a3a;
   --strongest: #2d4a39;
   /* week-bar */
@@ -2875,7 +2877,9 @@ thead th {
   letter-spacing: 0.01em;
   vertical-align: middle;
   white-space: nowrap;
-  border: 1px solid transparent;
+  /* Hairline border in the chip's own hue (variants set `color`), for definition
+     on busy rows. currentColor makes it derive automatically per variant. */
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
 }
 
 /* Separate a badge from the player name (or a preceding badge) it sits beside,
@@ -8370,19 +8374,6 @@ select:focus {
   flex-shrink: 0;
 }
 
-.inj-chip {
-  display: inline-block;
-  padding: 2px 9px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.inj-chip-ir           { background:#fee2e2; color:#991b1b; }
-.inj-chip-out          { background:#fecaca; color:#b91c1c; }
-.inj-chip-doubtful     { background:#ffedd5; color:#c2410c; }
-.inj-chip-questionable { background:#fef9c3; color:#854d0e; }
-.inj-chip-note         { background:#f1f5f9; color:#64748b; }
 
 .inj-upd {
   font-size: 11px;
@@ -16877,18 +16868,18 @@ tr.team-clickable {
 }
 .slv-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .slv-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+/* Event-feed label: neutral pill with a colored leading icon (the event type). */
 .slv-item-kind {
-  flex-shrink: 0; font-size: 10px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: .03em; padding: 1px 6px; border-radius: 6px;
-  background: var(--bg-alt); color: var(--text-muted);
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 600; padding: 3px 9px 3px 7px; border-radius: 7px;
+  background: var(--bg-alt); color: var(--text);
+  border: 1px solid var(--border);
 }
-.slv-kind-trade { background: rgba(99, 102, 241, 0.15); color: #4f46e5; }
-.slv-kind-waiver { background: rgba(22, 163, 74, 0.15); color: #16a34a; }
-.slv-kind-value { background: rgba(14, 165, 233, 0.15); color: #0369a1; }
-.slv-kind-injury { background: rgba(245, 158, 11, 0.16); color: #b45309; }
-[data-theme="dark"] .slv-kind-trade { color: #a5b4fc; }
-[data-theme="dark"] .slv-kind-value { color: #7dd3fc; }
-[data-theme="dark"] .slv-kind-injury { color: #fbbf24; }
+.slv-item-kind i { font-size: 10px; color: var(--evt-color, var(--text-muted)); }
+.slv-kind-trade  { --evt-color: var(--indigo); }
+.slv-kind-waiver { --evt-color: var(--win); }
+.slv-kind-value  { --evt-color: var(--accent); }
+.slv-kind-injury { --evt-color: var(--inj-q); }
 .slv-item-text { flex: 1; min-width: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .slv-item-ago { flex-shrink: 0; color: var(--text-muted); font-size: 11px; }
 .slv-section + .slv-section { margin-top: 10px; }
@@ -16959,17 +16950,18 @@ tr.team-clickable {
 .wl-item-chips:empty { display: none; }
 .wl-chip {
   font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 6px;
+  padding: 2px 7px;
+  border-radius: 7px;
   background: var(--bg-alt);
   color: var(--text-muted);
   font-weight: 600;
   white-space: nowrap;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
 }
 .wl-chip-up { background: color-mix(in srgb, var(--win) 15%, transparent); color: var(--win); }
 .wl-chip-down { background: color-mix(in srgb, var(--loss) 15%, transparent); color: var(--loss); }
-.wl-chip-inj { background: rgba(245, 158, 11, 0.16); color: #b45309; }
-[data-theme="dark"] .wl-chip-inj { color: #fbbf24; }
+/* Injury: same yellow ramp as the shared injury badge (was a one-off amber). */
+.wl-chip-inj { background: color-mix(in srgb, var(--inj-q) 18%, transparent); color: var(--inj-q); }
 
 /* Panel footer link to the full page */
 .watchlist-page-link {
