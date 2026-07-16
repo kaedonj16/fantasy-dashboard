@@ -51,9 +51,11 @@ def _should_skip_mover(p: dict) -> bool:
         return rd is None or rd > _MAX_PICK_ROUND
     return False
 
+# Matches the canonical .pos-badge palette (dashboard.css) so a position is the
+# same color on the top-movers page as everywhere else.
 _POS_COLOR = {
-    "QB": "#f59e0b", "RB": "#22c55e", "WR": "#3b82f6",
-    "TE": "#8b5cf6", "K": "#94a3b8", "DEF": "#64748b",
+    "QB": "#3b82f6", "RB": "#22c55e", "WR": "#f59e0b",
+    "TE": "#8b5cf6", "K": "#c92c68", "DEF": "#475569",
 }
 
 def _pc(pos: str) -> str:
@@ -299,7 +301,7 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
         slug   = slugify(name)
         sign   = "+" if change >= 0 else ""
         accent = _pc(pos)
-        delta_color = "#22c55e" if direction == "riser" else "#ef4444"
+        delta_color = "var(--win)" if direction == "riser" else "var(--loss)"
         pct = abs(change / val * 100) if val else 0
         pct_str = f"{pct:.0f}%" if pct >= 1 else ""
         # Real players (not draft picks) carry data-player-id so the in-app player

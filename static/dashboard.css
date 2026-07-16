@@ -7453,15 +7453,15 @@ select:focus {
 }
 
 .delta-down {
-  color: #e05656;
+  color: var(--loss);
 }
 
 .delta-flat {
-  color: #9ca3af;
+  color: var(--text-muted);
 }
 
 .delta-up {
-  color: #31c36b;
+  color: var(--win);
 }
 
 .error-message {
