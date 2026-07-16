@@ -2919,6 +2919,10 @@ strong + .player-badge,
   background: color-mix(in srgb, var(--warning) 16%, transparent);
   color: var(--warning);
 }
+.player-badge-inj-note {
+  background: color-mix(in srgb, var(--text-muted) 14%, transparent);
+  color: var(--text-muted);
+}
 
 .otc-dropdown-item {
   display: flex;
