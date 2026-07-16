@@ -136,6 +136,7 @@
   --info: #38bdf8;
   --gold: #b45309;   /* elite badge accent (no semantic token maps to it) */
   --orange: #ea580c; /* doubtful / mid-severity, between warning and loss */
+  --inj-q: #ca8a04;  /* questionable: a distinct yellow so it doesn't read as orange next to doubtful */
   /* Typography */
   --font-sans: "InterVariable", "Inter", system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
   --text-xs: 11px;
@@ -192,6 +193,7 @@
   --loss: #f87171;
   --gold: #fbbf24;   /* brighter on the dark ground */
   --orange: #fb923c;
+  --inj-q: #facc15;  /* brighter yellow on the dark ground */
   --weakest: #703a3a;
   --strongest: #2d4a39;
   /* week-bar */
@@ -2916,8 +2918,8 @@ strong + .player-badge,
   color: var(--orange);
 }
 .player-badge-inj-q {
-  background: color-mix(in srgb, var(--warning) 16%, transparent);
-  color: var(--warning);
+  background: color-mix(in srgb, var(--inj-q) 18%, transparent);
+  color: var(--inj-q);
 }
 .player-badge-inj-note {
   background: color-mix(in srgb, var(--text-muted) 14%, transparent);
@@ -8312,25 +8314,37 @@ select:focus {
   font-size: 12px;
   font-weight: 700;
 }
-.inj-badge-ir   { background:#fee2e2; color:#991b1b; }
-.inj-badge-out  { background:#fecaca; color:#b91c1c; }
-.inj-badge-dbt  { background:#ffedd5; color:#c2410c; }
-.inj-badge-q    { background:#fef9c3; color:#854d0e; }
-.inj-badge-note { background:#f1f5f9; color:#64748b; }
+.inj-badge-ir   { background: color-mix(in srgb, var(--loss) 16%, transparent);      color: var(--loss); }
+.inj-badge-out  { background: color-mix(in srgb, var(--loss) 16%, transparent);      color: var(--loss); }
+.inj-badge-dbt  { background: color-mix(in srgb, var(--orange) 16%, transparent);    color: var(--orange); }
+.inj-badge-q    { background: color-mix(in srgb, var(--inj-q) 18%, transparent);     color: var(--inj-q); }
+.inj-badge-note { background: color-mix(in srgb, var(--text-muted) 14%, transparent); color: var(--text-muted); }
 
 .inj-body {
   padding: 4px 14px 10px;
 }
 
 .inj-row {
+  position: relative;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  padding: 8px 0;
+  padding: 8px 0 8px 12px;
   border-top: 1px solid var(--border);
 }
 .inj-row:first-child { border-top: none; }
+
+/* Severity-colored accent bar down the left of each row (color set inline). */
+.inj-accent-bar {
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--inj-accent, var(--border));
+}
 
 .inj-left { flex: 1; min-width: 0; }
 
