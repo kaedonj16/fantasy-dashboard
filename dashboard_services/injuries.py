@@ -176,14 +176,17 @@ def build_injury_report(
     return df
 
 
+# Reuse the shared player-badge injury styles (theme-aware, and paired with the
+# warning triangle in the markup below) so these chips match the injury badges
+# shown on rosters and in the player modal.
 _INJ_SEV_CLASS = {
-    "IR":           "inj-chip-ir",
-    "OUT":          "inj-chip-out",
-    "DOUBTFUL":     "inj-chip-doubtful",
-    "QUESTIONABLE": "inj-chip-questionable",
-    "PUP":          "inj-chip-ir",
-    "NFI":          "inj-chip-ir",
-    "SUSP":         "inj-chip-out",
+    "IR":           "player-badge-inj-out",
+    "OUT":          "player-badge-inj-out",
+    "DOUBTFUL":     "player-badge-inj-d",
+    "QUESTIONABLE": "player-badge-inj-q",
+    "PUP":          "player-badge-inj-out",
+    "NFI":          "player-badge-inj-out",
+    "SUSP":         "player-badge-inj-out",
 }
 
 
@@ -202,7 +205,7 @@ def render_injury_accordion(df_inj: pd.DataFrame) -> str:
         rows: List[str] = []
         for _, r in g.iterrows():
             status_raw = str(r.get("Injury") or r.get("Status") or "").strip()
-            sev_class  = _INJ_SEV_CLASS.get(status_raw.upper(), "inj-chip-note")
+            sev_class  = _INJ_SEV_CLASS.get(status_raw.upper(), "player-badge-inj-note")
             label      = status_raw or "Note"
 
             player    = r["Player"]
@@ -229,7 +232,8 @@ def render_injury_accordion(df_inj: pd.DataFrame) -> str:
                 f"    <div class='inj-meta'>{meta}</div>"
                 f"  </div>"
                 f"  <div class='inj-right'>"
-                f"    <span class='inj-chip {sev_class}'>{label}</span>"
+                f"    <span class='player-badge {sev_class}'>"
+                f"<i class='fa-solid fa-triangle-exclamation' aria-hidden='true'></i> {label}</span>"
                 + (f"<span class='inj-upd'>{upd_str}</span>" if upd_str else "")
                 + f"  </div>"
                 f"</div>"
