@@ -197,7 +197,7 @@ _INJ_ACCENT = {
     "NFI":          "var(--loss)",
     "SUSP":         "var(--loss)",
     "DOUBTFUL":     "var(--orange)",
-    "QUESTIONABLE": "var(--warning)",
+    "QUESTIONABLE": "var(--inj-q)",
 }
 
 

@@ -136,6 +136,7 @@
   --info: #38bdf8;
   --gold: #b45309;   /* elite badge accent (no semantic token maps to it) */
   --orange: #ea580c; /* doubtful / mid-severity, between warning and loss */
+  --inj-q: #ca8a04;  /* questionable: a distinct yellow so it doesn't read as orange next to doubtful */
   /* Typography */
   --font-sans: "InterVariable", "Inter", system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
   --text-xs: 11px;
@@ -192,6 +193,7 @@
   --loss: #f87171;
   --gold: #fbbf24;   /* brighter on the dark ground */
   --orange: #fb923c;
+  --inj-q: #facc15;  /* brighter yellow on the dark ground */
   --weakest: #703a3a;
   --strongest: #2d4a39;
   /* week-bar */
@@ -2916,8 +2918,8 @@ strong + .player-badge,
   color: var(--orange);
 }
 .player-badge-inj-q {
-  background: color-mix(in srgb, var(--warning) 16%, transparent);
-  color: var(--warning);
+  background: color-mix(in srgb, var(--inj-q) 18%, transparent);
+  color: var(--inj-q);
 }
 .player-badge-inj-note {
   background: color-mix(in srgb, var(--text-muted) 14%, transparent);
@@ -8315,7 +8317,7 @@ select:focus {
 .inj-badge-ir   { background: color-mix(in srgb, var(--loss) 16%, transparent);      color: var(--loss); }
 .inj-badge-out  { background: color-mix(in srgb, var(--loss) 16%, transparent);      color: var(--loss); }
 .inj-badge-dbt  { background: color-mix(in srgb, var(--orange) 16%, transparent);    color: var(--orange); }
-.inj-badge-q    { background: color-mix(in srgb, var(--warning) 16%, transparent);   color: var(--warning); }
+.inj-badge-q    { background: color-mix(in srgb, var(--inj-q) 18%, transparent);     color: var(--inj-q); }
 .inj-badge-note { background: color-mix(in srgb, var(--text-muted) 14%, transparent); color: var(--text-muted); }
 
 .inj-body {
