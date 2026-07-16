@@ -11775,6 +11775,12 @@ function _slvTimeAgo(ms) {
 // visit is worth surfacing (filters out normal day-to-day model noise).
 const SLV_VALUE_THRESHOLD = 100;
 
+// Ignore players the market currently values at ~nothing, matching the Top
+// Movers floor. Their model value can wobble while an anchor correction
+// unwinds, but they aren't worth surfacing as a "value move" - and this keeps
+// the popup aligned with the calibrated values shown everywhere else.
+const SLV_MIN_VALUE = 20;
+
 function _slvSection(title, rowsHtml) {
   if (!rowsHtml) return '';
   return '<div class="slv-section"><div class="slv-section-title">' + _wlEsc(title) + '</div>' +
@@ -11794,11 +11800,11 @@ function _slvRosterDiff(leagueId, rid, roster) {
   if (snap && snap.p) {
     roster.forEach(function (p) {
       const prev = snap.p[p.pid];
-      if (prev && typeof prev.v === 'number' && p.value) {
+      if (prev && typeof prev.v === 'number' && p.value && p.value >= SLV_MIN_VALUE) {
         const dv = p.value - prev.v;
-        if (Math.abs(dv) >= SLV_VALUE_THRESHOLD) out.movers.push({ name: p.name, pos: p.pos, delta: dv });
+        if (Math.abs(dv) >= SLV_VALUE_THRESHOLD) out.movers.push({ name: p.name, pos: p.pos, delta: dv, pid: p.pid });
       }
-      if (p.injury && (!prev || !prev.i)) out.injuries.push({ name: p.name, pos: p.pos, status: p.injury });
+      if (p.injury && (!prev || !prev.i)) out.injuries.push({ name: p.name, pos: p.pos, status: p.injury, pid: p.pid });
     });
     out.movers.sort(function (a, b) { return Math.abs(b.delta) - Math.abs(a.delta); });
     out.movers = out.movers.slice(0, 5);
@@ -11848,11 +11854,20 @@ async function initSinceLastVisit() {
         '<span class="slv-item-ago">' + _slvTimeAgo(it.ts) + '</span></li>';
     }).join('');
 
+    // Player name, made clickable so it opens the in-app modal (via the global
+    // [data-player-id] handler) when we have a player id.
+    const _slvName = function (name, pid) {
+      const safe = _wlEsc(name);
+      if (!pid) return safe;
+      return '<span class="player-clickable" data-player-id="' + _wlEsc(String(pid)) +
+        '" data-player-name="' + _wlEsc(name) + '">' + safe + '</span>';
+    };
+
     // Value-move rows.
     const moverRows = diff.movers.map(function (m) {
       const up = m.delta > 0;
       return '<li class="slv-item"><span class="slv-item-kind slv-kind-value">Value</span>' +
-        '<span class="slv-item-text">' + _wlEsc(m.name) +
+        '<span class="slv-item-text">' + _slvName(m.name, m.pid) +
           (m.pos ? ' <span class="wl-item-pos">' + _wlEsc(m.pos) + '</span>' : '') + '</span>' +
         '<span class="slv-item-ago wl-chip ' + (up ? 'wl-chip-up' : 'wl-chip-down') + '">' +
           (up ? '+' : '-') + Math.abs(Math.round(m.delta)) + '</span></li>';
@@ -11862,7 +11877,7 @@ async function initSinceLastVisit() {
     const injuryRows = diff.injuries.map(function (i) {
       const short = _WL_INJ_SHORT[String(i.status).toUpperCase()] || _wlEsc(String(i.status).slice(0, 4));
       return '<li class="slv-item"><span class="slv-item-kind slv-kind-injury">Injury</span>' +
-        '<span class="slv-item-text">' + _wlEsc(i.name) +
+        '<span class="slv-item-text">' + _slvName(i.name, i.pid) +
           (i.pos ? ' <span class="wl-item-pos">' + _wlEsc(i.pos) + '</span>' : '') + '</span>' +
         '<span class="slv-item-ago wl-chip wl-chip-inj" title="' + _wlEsc(i.status) + '">' + short + '</span></li>';
     }).join('');
