@@ -19952,7 +19952,8 @@ def api_value_movers():
         league_size = 10
 
     payload = get_top_movers(days=max(days, 1), limit=max(limit, 1), league_type=league_type,
-                             league_size=league_size, min_baseline_value=10) or {}
+                             league_size=league_size, min_baseline_value=10,
+                             min_current_value=20.0) or {}
 
     if isinstance(payload, list):
         movers = payload
@@ -28658,7 +28659,8 @@ def top_movers_page():
     from dashboard_services.pages.dynasty_pages import build_risers_fallers_body
     from data_building.player_value_history import get_top_movers
     try:
-        movers = get_top_movers(days=7, limit=20, min_baseline_value=5)
+        movers = get_top_movers(days=7, limit=20, min_baseline_value=5,
+                                min_current_value=20.0)
     except Exception:
         movers = {"risers": [], "fallers": []}
 
