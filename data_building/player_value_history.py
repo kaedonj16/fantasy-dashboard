@@ -440,8 +440,15 @@ def get_top_movers(
         league_size: int = 10,
         min_baseline_value: int = 0,
         min_current_value: float = 0.0,
+        current_values: dict | None = None,
 ) -> dict:
-    """Cached wrapper around the (expensive) top-movers computation."""
+    """Cached wrapper around the (expensive) top-movers computation.
+
+    current_values maps player_id -> the DISPLAYED value (the calibrated +
+    FC/DP-zeroed number shown elsewhere); it is intentionally NOT part of the
+    cache key because it is stable for a given snapshot date, which the key
+    already tracks.
+    """
     init_value_history_db()
     latest = get_latest_snapshot_date(source=source)
     key = (str(latest), days, limit, source, league_type, league_size,
@@ -452,7 +459,7 @@ def get_top_movers(
     result = _get_top_movers_uncached(
         days=days, limit=limit, source=source, league_type=league_type,
         league_size=league_size, min_baseline_value=min_baseline_value,
-        min_current_value=min_current_value,
+        min_current_value=min_current_value, current_values=current_values,
     )
     # Cache only a populated result so a transient empty board doesn't stick.
     if result and (result.get("risers") or result.get("fallers")):
@@ -472,6 +479,7 @@ def _get_top_movers_uncached(
         league_size: int = 10,
         min_baseline_value: int = 0,
         min_current_value: float = 0.0,
+        current_values: dict | None = None,
 ) -> dict:
     """
     Try requested window first (ex: 7 days).
@@ -487,13 +495,17 @@ def _get_top_movers_uncached(
             E.g. 10 filters out players who went from ~0 to a real value (just-drafted
             rookies), while keeping established players with genuine movement.
             Scale-independent - works regardless of how history rows were written.
-        min_current_value: Drop movers whose CURRENT calibrated value (what users
-            actually see, from player_values) is below this floor. The raw
-            model-history value can be transiently inflated for washed-up players
-            (e.g. while an anchor correction slowly unwinds), but if the market
-            has written a player down to ~nothing they don't belong in a movers
-            glance. Players absent from player_values (e.g. draft picks) are kept.
-            Set to 0 to disable.
+        min_current_value: Drop movers whose CURRENT displayed value is below
+            this floor. Only applied when current_values is also provided. The
+            raw model-history value can be transiently inflated for washed-up
+            players (e.g. while an anchor correction slowly unwinds), but if the
+            market has written a player down to ~nothing they don't belong in a
+            movers glance. Set to 0 to disable.
+        current_values: Map of player_id -> the DISPLAYED value (calibrated and
+            FantasyCalc/DynastyProcess-zeroed, i.e. what shows everywhere else on
+            the site). Supplied by the caller because that lives at the app layer
+            (get_model_value_table_cached). Used together with min_current_value.
+            Draft picks aren't in the map and are always kept.
     """
     init_value_history_db()
 
@@ -634,27 +646,6 @@ def _get_top_movers_uncached(
 
             rows = cur.fetchall()
 
-            # Current calibrated value (what users actually see) for every mover,
-            # so we can suppress players the market has written down to ~nothing.
-            # One batch query rather than a per-player lookup.
-            cur_value_map: dict = {}
-            if rows and min_current_value > 0:
-                _pids = [str(r["player_id"]) for r in rows]
-                cur.execute(
-                    """
-                    SELECT player_id,
-                           COALESCE(calibrated_value_1qb, value_1qb) AS cur_1qb,
-                           COALESCE(calibrated_value_sf,  value_sf)  AS cur_sf
-                    FROM player_values
-                    WHERE player_id = ANY(%s)
-                    """,
-                    (_pids,),
-                )
-                _use_sf = (league_type == "sf")
-                for cr in cur.fetchall():
-                    v = cr["cur_sf"] if _use_sf else cr["cur_1qb"]
-                    cur_value_map[str(cr["player_id"])] = float(v) if v is not None else 0.0
-
     # Build name map: model table first (covers picks + all players), then players_index
     name_map: dict = {}
     try:
@@ -682,13 +673,19 @@ def _get_top_movers_uncached(
         player_id = str(row_dict["player_id"])
 
         # Suppress players the market values at ~nothing today. Their raw
-        # model-history value (new_value/old_value here) can be inflated while
-        # an anchor correction unwinds; the calibrated value is the truth users
-        # see. Players not in player_values (picks) have no entry -> keep them.
-        if min_current_value > 0:
-            cv = cur_value_map.get(player_id)
-            if cv is not None and cv < min_current_value:
-                continue
+        # model-history value (new_value/old_value here) can be inflated while an
+        # anchor correction unwinds, but the DISPLAYED value - calibrated AND
+        # FantasyCalc/DynastyProcess-zeroed, exactly what shows everywhere else -
+        # is the truth. current_values is that displayed-value map, supplied by
+        # the caller (which has get_model_value_table_cached). Draft picks aren't
+        # in it and are always kept.
+        if min_current_value > 0 and current_values is not None:
+            pos_u = str(row_dict.get("position") or "").upper()
+            is_pick = pos_u == "PICK" or ("_" in player_id)
+            if not is_pick:
+                dv = current_values.get(player_id)
+                if dv is None or dv < min_current_value:
+                    continue
 
         resolved = name_map.get(player_id)
         if resolved:
