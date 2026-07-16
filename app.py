@@ -491,6 +491,77 @@ def _add_cache_headers(response):
     return response
 
 
+# ── Content-Security-Policy & security headers ──────────────────────────────
+# The app serves large inline HTML with inline <script>, inline <style>, and
+# ~140 inline on* event handlers. Nonces/hashes can't cover event-handler
+# attributes, and a browser ignores 'unsafe-inline' the moment a nonce/hash is
+# present, so script-src/style-src keep 'unsafe-inline'. The value we still buy
+# is real: injecting <script src="evil.com">, <base>, <object>, plugin content,
+# clickjacking frames, or hijacked form targets is all blocked, and the script
+# origin allowlist is pinned to the CDNs we actually use.
+#
+# img-src uses https: (not an allowlist): ads and logos legitimately load from
+# many Google/CDN image hosts, images can't execute, so a scheme allow is the
+# pragmatic, non-breaking choice.
+_CSP_POLICY = "; ".join([
+    "default-src 'self'",
+    # Google AdSense chain + Plotly (jsDelivr) + Sentry browser bundle.
+    "script-src 'self' 'unsafe-inline' "
+    "https://pagead2.googlesyndication.com https://*.googlesyndication.com "
+    "https://*.googleadservices.com https://*.google.com https://*.gstatic.com "
+    "https://*.doubleclick.net https://cdn.jsdelivr.net "
+    "https://browser.sentry-cdn.com",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data:",
+    # XHR/fetch/beacon: Sentry ingest + the ad chain's reporting endpoints.
+    "connect-src 'self' https://*.sentry.io https://*.google.com "
+    "https://*.googlesyndication.com https://*.doubleclick.net "
+    "https://pagead2.googlesyndication.com https://cdn.jsdelivr.net",
+    # Ads render inside iframes served from the Google ad hosts.
+    "frame-src https://*.googlesyndication.com https://*.doubleclick.net "
+    "https://*.google.com",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'self'",
+    "upgrade-insecure-requests",
+])
+
+# Set CSP_REPORT_ONLY=1 in the environment to emit the same policy as
+# Content-Security-Policy-Report-Only (observe violations in the console/Sentry
+# without blocking) — useful to validate the allowlist before enforcing.
+_CSP_HEADER_NAME = (
+    "Content-Security-Policy-Report-Only"
+    if os.environ.get("CSP_REPORT_ONLY", "").strip() in ("1", "true", "yes")
+    else "Content-Security-Policy"
+)
+
+# HSTS: the app is HTTPS-only behind Render/Cloudflare. No includeSubDomains
+# (avoids committing subdomains that may not be HTTPS) and no preload (a one-way
+# door). 1 year satisfies the audit.
+_STATIC_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), "
+                          "browsing-topics=()",
+    "Strict-Transport-Security": "max-age=31536000",
+}
+
+
+@app.after_request
+def _add_security_headers(response):
+    """Attach CSP + hardening headers to every response. Uses setdefault so any
+    endpoint that intentionally set its own value (e.g. a stricter one) wins."""
+    for name, value in _STATIC_SECURITY_HEADERS.items():
+        response.headers.setdefault(name, value)
+    # Don't clobber an endpoint-specific CSP if one was set deliberately.
+    if _CSP_HEADER_NAME not in response.headers:
+        response.headers[_CSP_HEADER_NAME] = _CSP_POLICY
+    return response
+
+
 @app.before_request
 def _canonical_host_redirect():
     """301 the *.onrender.com URL to PRIMARY_DOMAIN.
