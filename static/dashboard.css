@@ -16553,9 +16553,18 @@ tr.team-clickable {
   font-size: 18px;
   font-weight: 800;
   color: var(--text-muted);
-  min-width: 20px;
-  text-align: right;
+  min-width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding-top: 2px;
+}
+/* Standings first column holds a rank medal (top 3) or a plain number. */
+.standings-table td.rank-cell {
+  text-align: center;
+  vertical-align: middle;
+  padding-top: 3px;
+  padding-bottom: 3px;
 }
 .pr-body { flex: 1; min-width: 0; }
 .pr-team-line {
