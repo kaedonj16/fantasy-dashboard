@@ -282,7 +282,10 @@ summary:focus-visible,
 [tabindex]:focus-visible,
 [role="button"]:focus-visible,
 [role="tab"]:focus-visible {
-  outline: 2px solid var(--accent);
+  /* !important so a keyboard focus ring always wins over the many
+     `:focus { outline: none }` rules — mouse clicks (plain :focus, not
+     :focus-visible) still suppress the default ring as before. */
+  outline: 2px solid var(--accent) !important;
   outline-offset: 2px;
 }
 
