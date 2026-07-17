@@ -134,10 +134,12 @@
   --loss: #ef4444;
   --warning: #f59e0b;
   --info: #38bdf8;
-  --gold: #b7791f;   /* elite badge accent — warm gold (no semantic token maps to it) */
+  --gold: #ca8a04;   /* elite badge — vibrant gold, kept close to the dark-mode gold */
   --orange: #ea580c; /* doubtful / mid-severity, between warning and loss */
   --inj-q: #ca8a04;  /* questionable: a distinct yellow so it doesn't read as orange next to doubtful */
   --indigo: #4f46e5; /* categorical: trade / activity */
+  --rookie: #2563eb; /* rookie badge — its own blue, so it reads the same hue in both themes
+                        (not the navy --accent, which is deliberately dark in light mode) */
   /* Typography */
   --font-sans: "InterVariable", "Inter", system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
   --text-xs: 11px;
@@ -196,6 +198,7 @@
   --orange: #fb923c;
   --inj-q: #facc15;  /* brighter yellow on the dark ground */
   --indigo: #a5b4fc; /* lighter indigo for the dark ground */
+  --rookie: #60a5fa; /* rookie badge blue, lightened just enough for the dark ground */
   --weakest: #703a3a;
   --strongest: #2d4a39;
   /* week-bar */
@@ -2929,8 +2932,8 @@ strong + .player-badge,
 }
 
 .player-badge-rookie {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  color: var(--accent);
+  background: color-mix(in srgb, var(--rookie) 15%, transparent);
+  color: var(--rookie);
 }
 
 .player-badge-breakout {
