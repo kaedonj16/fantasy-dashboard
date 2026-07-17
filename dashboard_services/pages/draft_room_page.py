@@ -997,6 +997,23 @@ _DRAFT_ROOM_HTML = r"""
   .dr-proj-bar-bg { height: 5px; border-radius: 3px; background: rgba(127,127,127,.15); overflow: hidden; }
   .dr-proj-bar-fill { height: 100%; border-radius: 3px; background: var(--accent,#38bdf8); }
   .dr-proj-bar-lbl { font-size: 9px; color: var(--text-muted); margin-top: 3px; }
+  /* Draft recap — biggest steals & reaches across the whole draft */
+  .dr-recap { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; margin-bottom: 14px; }
+  @media (max-width: 460px) { .dr-recap { grid-template-columns: 1fr; } }
+  .dr-recap-h { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; font-weight: 800;
+    color: var(--text-muted); margin: 0 0 6px; }
+  .dr-recap-grades-h { margin: 4px 0 8px; }
+  .dr-recap-row { display: flex; align-items: center; gap: 8px; padding: 5px 0;
+    border-bottom: 1px solid var(--border); }
+  .dr-recap-row:last-child { border-bottom: none; }
+  .dr-recap-pos { font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 5px; flex-shrink: 0;
+    color: #fff; min-width: 24px; text-align: center; }
+  .dr-recap-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .dr-recap-name { font-size: 12px; font-weight: 700; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dr-recap-sub { font-size: 10px; color: var(--text-muted); }
+  .dr-recap-ps { font-size: 13px; font-weight: 900; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+
   /* League grades list */
   .dr-sum-league { display: flex; flex-direction: column; gap: 3px; }
   .dr-sum-lrow { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px;

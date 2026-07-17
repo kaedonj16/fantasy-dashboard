@@ -2673,6 +2673,39 @@
     listInto(html);
   }
 
+  // Whole-draft recap: the best values and worst reaches across every team,
+  // scored by the same per-pick grade math the League chips already show. Returns
+  // '' until there are enough graded picks to be meaningful.
+  function _draftRecapHtml(allTeams){
+    var picks = [];
+    allTeams.forEach(function(t){
+      (t.picks || []).forEach(function(pk){
+        if (!pk || !pk.p) return;
+        var ps = storedPickScore(pk.pn, pk.p);
+        if (ps == null) return;
+        picks.push({ name: pk.p.name, pos: (pk.p.position || '').toUpperCase(), team: t.name, pn: pk.pn, ps: ps });
+      });
+    });
+    if (picks.length < 4) return '';
+    function rx(pn){ var teams = state.teams || 12; var rd = Math.ceil(pn / teams); var pp = pn - (rd - 1) * teams; return rd + '.' + (pp < 10 ? '0' + pp : pp); }
+    function rows(list){
+      return list.map(function(x){
+        return '<div class="dr-recap-row">'
+          + '<span class="dr-recap-pos" style="background:' + slotColor(x.pos) + '">' + esc(x.pos || '-') + '</span>'
+          + '<span class="dr-recap-main"><span class="dr-recap-name">' + esc(x.name) + '</span>'
+          + '<span class="dr-recap-sub">' + esc(x.team) + ' &middot; ' + rx(x.pn) + '</span></span>'
+          + '<span class="dr-recap-ps" style="color:' + psColor(x.ps) + '">' + x.ps + '</span>'
+          + '</div>';
+      }).join('');
+    }
+    var steals = picks.slice().sort(function(a, b){ return b.ps - a.ps; }).slice(0, 4);
+    var reaches = picks.slice().sort(function(a, b){ return a.ps - b.ps; }).slice(0, 4);
+    return '<div class="dr-recap">'
+      + '<div class="dr-recap-sec"><p class="dr-recap-h">&#128142; Biggest steals</p>' + rows(steals) + '</div>'
+      + '<div class="dr-recap-sec"><p class="dr-recap-h">&#128201; Biggest reaches</p>' + rows(reaches) + '</div>'
+      + '</div>';
+  }
+
   function renderLeague(){
     var allTeams = gradeAllTeams();
     if (!allTeams.length){
@@ -2684,7 +2717,7 @@
       return;
     }
     var _rc = ['gold','silver','bronze'];
-    var html = '<div class="dr-sum-league">';
+    var html = _draftRecapHtml(allTeams) + '<p class="dr-recap-h dr-recap-grades-h">&#127942; Draft grades</p><div class="dr-sum-league">';
     allTeams.forEach(function(t, i){
       var w = t.grade.window;
       var winTag = w ? '<span class="dr-sum-lwin dr-win-' + w.label.toLowerCase().replace('-','') + '">' + esc(w.label) + '</span>' : '';
