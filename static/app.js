@@ -2549,12 +2549,12 @@ window.initTradePage = function initTradePage(root = document) {
 
     const metaBits = buildMetaBits(p);
     if (isRookie(p.id)) {
-      metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-seedling" aria-hidden="true"></i> ROOKIE</span>');
+      metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
     } else if (p.is_rookie) {
-      metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-seedling" aria-hidden="true"></i> ROOKIE</span>');
+      metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
     }
     if (!p.is_rookie && isProspect(p.id)) {
-      metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-seedling" aria-hidden="true"></i> ROOKIE</span>');
+      metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>');
     }
     if (isBreakout(p.id)) {
       metaBits.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>');
@@ -2598,12 +2598,12 @@ window.initTradePage = function initTradePage(root = document) {
 
     const metaBits = buildMetaBits(p);
     if (isRookie(p.id)) {
-      metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-seedling" aria-hidden="true"></i> ROOKIE</span>');
+      metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
     } else if (p.is_rookie) {
-      metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-seedling" aria-hidden="true"></i> ROOKIE</span>');
+      metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
     }
     if (!p.is_rookie && isProspect(p.id)) {
-      metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-seedling" aria-hidden="true"></i> ROOKIE</span>');
+      metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>');
     }
     if (isBreakout(p.id)) {
       metaBits.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>');
@@ -3301,8 +3301,10 @@ window.initTradePage = function initTradePage(root = document) {
       if (isBreakout(p.id)) {
         badges.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i></span>');
       }
-      if (isRookie(p.id) || p.is_rookie || isProspect(p.id)) {
-        badges.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-seedling" aria-hidden="true"></i></span>');
+      if (isRookie(p.id) || p.is_rookie) {
+        badges.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i></span>');
+      } else if (isProspect(p.id)) {
+        badges.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i></span>');
       }
 
       // Text meta (pos · team · age) joined with " • "; badges appended space-separated.
@@ -8637,9 +8639,12 @@ function openPlayerModal(playerId, playerName, opts) {
       if (isElite(pid)) {
         badges += '<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i> ELITE</span>';
       }
-      // Show rookie badge for both years_exp === 0 AND players with no game logs (rookies without NFL stats)
-      if ((yearsExp != null && yearsExp === 0) || isRookieWithoutGameLogs || isProspect(pid)) {
-        badges += '<span class="player-badge player-badge-rookie"><i class="fa-solid fa-seedling" aria-hidden="true"></i> ROOKIE</span>';
+      // Rookie (drafted / year-0) gets the ROOKIE mark; a pre-draft prospect
+      // gets the PROSPECT seedling instead.
+      if ((yearsExp != null && yearsExp === 0) || isRookieWithoutGameLogs) {
+        badges += '<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>';
+      } else if (isProspect(pid)) {
+        badges += '<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>';
       }
       if (isBreakout(pid)) {
         badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
@@ -14293,7 +14298,7 @@ function addBreakoutBadgesToTeamsPage() {
         badges.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i> ELITE</span>');
       }
       if (isRookie) {
-        badges.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-seedling" aria-hidden="true"></i> ROOKIE</span>');
+        badges.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
       }
       if (!isElite && isBreakout(playerId)) {
         badges.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>');
@@ -14924,7 +14929,7 @@ function renderTeamDetails(data) {
         badges += '<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i> ELITE</span>';
       }
       if (isRookie) {
-        badges += '<span class="player-badge player-badge-rookie"><i class="fa-solid fa-seedling" aria-hidden="true"></i> ROOKIE</span>';
+        badges += '<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>';
       }
       if (isBreakoutPlayer) {
         badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
