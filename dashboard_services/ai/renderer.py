@@ -23,6 +23,7 @@ import logging
 
 from dashboard_services.ai.client import AIRateLimitError, AIUnavailableError
 from dashboard_services.providers.espn_api import safe_float
+from dashboard_services.rank_medals import rank_mark
 
 logger = logging.getLogger(__name__)
 
@@ -664,7 +665,7 @@ def _render_power_rankings_html_from_data(
 
         rows_html += f"""
         <div class="pr-row">
-          <div class="pr-rank">#{rank}</div>
+          <div class="pr-rank">{rank_mark(rank)}</div>
           <div class="pr-body">
             <div class="pr-team-line">
               <span class="pr-team-name team-clickable" data-roster-id="{rid}" data-team-name="{team_name}">{team_name}</span>

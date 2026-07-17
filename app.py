@@ -81,6 +81,7 @@ from dashboard_services.pages.history_page import (
 )
 from dashboard_services.pages.trade_calculator_page import build_trade_calculator_body
 from dashboard_services.picks import load_pick_value_table
+from dashboard_services.rank_medals import rank_mark
 from dashboard_services.platform_api import (
     get_bracket,
     get_drafts,
@@ -3906,7 +3907,7 @@ def render_standings(team_stats, length, all_play: dict = None,
 
         rows.append(f"""
             <tr class="{_trcls}">
-              <td class="num">{int(row['Rank'])}</td>
+              <td class="num rank-cell">{rank_mark(int(row['Rank']), size=28, ring_others=False)}</td>
               <td class="{_tdcls}">{team_cell}</td>
               <td>{record}</td>
               <td>{row['PF']:.1f}</td>
