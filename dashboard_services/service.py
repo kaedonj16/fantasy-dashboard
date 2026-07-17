@@ -280,16 +280,24 @@ def build_tables(
         owner_id = r.get("owner_id")
         display = roster_map.get(rid, f"Roster {rid}")
 
-        # Prefer a team-specific avatar only. The account profile picture is NOT
-        # used as a team mark — if a team hasn't set its own picture we fall back
-        # to an auto-generated crest so every team reads as a distinct identity.
-        team_avatar = None
+        # Order: team picture -> crest -> profile picture. A dedicated team
+        # picture always wins; otherwise a crest stands in (preferred over a
+        # personal photo); the profile picture is only a last-ditch fallback.
+        team_pic = None
+        u_id = None
         user_data = user_by_id.get(owner_id)
         if user_data:
             user_meta = user_data.get("metadata") or {}
-            team_avatar = user_meta.get("avatar")
-
-        owner_avatar[display] = avatar_url(team_avatar) if team_avatar else team_crest_data_uri(display)
+            team_pic = user_meta.get("avatar")
+            u_id = user_data.get("avatar")
+        if team_pic:
+            owner_avatar[display] = avatar_url(team_pic)
+        else:
+            profile_url = (
+                (f"https://sleepercdn.com/avatars/thumbs/{u_id}" if platform == "sleeper" else f"{u_id}")
+                if u_id else None
+            )
+            owner_avatar[display] = team_crest_data_uri(display) or (avatar_url(profile_url) if profile_url else None)
 
     def _fetch_week(week: int) -> list[dict]:
         try:
