@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import html
 import re
+from urllib.parse import quote
 
 # Mid-saturation hues that stay legible on both the light and dark card grounds.
 # Index chosen by a stable hash of the name so a team always gets the same color.
@@ -48,6 +49,13 @@ def _color_for(name: str) -> str:
     return _PALETTE[h % len(_PALETTE)]
 
 
+def _mix(hex_a: str, hex_b: str, t: float) -> str:
+    """Blend hex_a toward hex_b by fraction t, returning a #rrggbb hex."""
+    a = tuple(int(hex_a[i:i + 2], 16) for i in (1, 3, 5))
+    b = tuple(int(hex_b[i:i + 2], 16) for i in (1, 3, 5))
+    return "#" + "".join(f"{round(a[i] + (b[i] - a[i]) * t):02x}" for i in range(3))
+
+
 def team_crest(name: str, size: int = 32) -> str:
     """Return an inline-SVG hex crest for `name`, sized to `size` px square.
 
@@ -72,3 +80,30 @@ def team_crest(name: str, size: int = 32) -> str:
         f'style="font:800 {fs * 44 // size}px/1 system-ui,sans-serif">{initials}</text>'
         f'</svg>'
     )
+
+
+def team_crest_data_uri(name: str) -> str:
+    """A crest as a `data:` URI, for use as an <img src> in circular avatar slots.
+
+    Drawn on a 48×48 square canvas with the hex centered and sized to fit inside
+    the inscribed circle, so the app's `border-radius:50%` avatar frame clips only
+    the transparent corners — the shield stays whole. Colors are pre-computed to
+    plain hex (no color-mix/currentColor), since an SVG loaded as an image renders
+    without the page's CSS context.
+    """
+    initials = html.escape(crest_initials(name))
+    base = _color_for(name)
+    top = _mix(base, "#ffffff", 0.20)
+    edge = _mix(base, "#000000", 0.35)
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">'
+        f'<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">'
+        f'<stop offset="0" stop-color="{top}"/><stop offset="1" stop-color="{base}"/>'
+        '</linearGradient></defs>'
+        f'<path d="M24 3 L42 13 V35 L24 45 L6 35 V13 Z" fill="url(#g)" stroke="{edge}" stroke-width="1.4"/>'
+        f'<text x="24" y="30" text-anchor="middle" fill="#ffffff" '
+        'font-family="system-ui,-apple-system,sans-serif" font-weight="800" font-size="17">'
+        f'{initials}</text>'
+        '</svg>'
+    )
+    return "data:image/svg+xml," + quote(svg, safe="")

@@ -17,6 +17,7 @@ from dashboard_services.api import (
 from dashboard_services.matchups import build_matchup_preview
 from dashboard_services.platform_api import get_matchups, get_transactions as platform_get_transactions
 from dashboard_services.players import build_roster_display_maps
+from dashboard_services.team_crest import team_crest_data_uri
 from utils.utils import safe_owner_name
 
 _NFL_CITY: dict[str, str] = {
@@ -277,15 +278,16 @@ def build_tables(
         owner_id = r.get("owner_id")
         display = roster_map.get(rid, f"Roster {rid}")
 
-        avatar_id = None
+        # Prefer a team-specific avatar only. The account profile picture is NOT
+        # used as a team mark — if a team hasn't set its own picture we fall back
+        # to an auto-generated crest so every team reads as a distinct identity.
+        team_avatar = None
         user_data = user_by_id.get(owner_id)
         if user_data:
             user_meta = user_data.get("metadata") or {}
-            u_id = user_data.get("avatar")
-            avatar_id = user_meta.get("avatar") or (
-                f"https://sleepercdn.com/avatars/thumbs/{u_id}" if platform == "sleeper" else f"{u_id}")
+            team_avatar = user_meta.get("avatar")
 
-        owner_avatar[display] = avatar_url(avatar_id)
+        owner_avatar[display] = avatar_url(team_avatar) if team_avatar else team_crest_data_uri(display)
 
     def _fetch_week(week: int) -> list[dict]:
         try:
