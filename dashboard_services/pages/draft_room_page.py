@@ -998,10 +998,12 @@ _DRAFT_ROOM_HTML = r"""
   .dr-proj-bar-fill { height: 100%; border-radius: 3px; background: var(--accent,#38bdf8); }
   .dr-proj-bar-lbl { font-size: 9px; color: var(--text-muted); margin-top: 3px; }
   /* Draft recap — biggest steals & reaches across the whole draft */
-  .dr-recap { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; margin-bottom: 14px; }
-  @media (max-width: 460px) { .dr-recap { grid-template-columns: 1fr; } }
-  .dr-recap-h { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; font-weight: 800;
-    color: var(--text-muted); margin: 0 0 6px; }
+  .dr-league-body { padding: 8px 14px 14px; }
+  .dr-recap { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; margin-bottom: 16px; }
+  @media (max-width: 460px) { .dr-recap { grid-template-columns: 1fr; gap: 14px; } }
+  .dr-recap-h { display: flex; align-items: center; gap: 6px; font-size: 10px; text-transform: uppercase;
+    letter-spacing: .06em; font-weight: 800; color: var(--text-muted); margin: 0 0 8px; }
+  .dr-recap-ic { width: 12px; height: 12px; flex-shrink: 0; }
   .dr-recap-grades-h { margin: 4px 0 8px; }
   .dr-recap-row { display: flex; align-items: center; gap: 8px; padding: 5px 0;
     border-bottom: 1px solid var(--border); }
