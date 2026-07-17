@@ -680,7 +680,7 @@ def build_trade_calculator_body(
             .stl-asset.stl-muted {{ color:var(--text-muted); }}
             .stl-pos {{
               font-size:10px;font-weight:700;
-              padding:1px 5px;border-radius:4px;
+              padding:1px 5px;border-radius:6px;
               background:var(--row,#1e293b);
               color:var(--text);flex-shrink:0;
             }}
@@ -732,10 +732,10 @@ def build_trade_calculator_body(
             .otc-arch-away {{
               display:inline-block;font-size:8px;font-weight:700;text-transform:uppercase;
               letter-spacing:.06em;color:var(--warning);
-              background:color-mix(in srgb, var(--warning) 12%, transparent);padding:2px 6px;border-radius:3px;
+              background:color-mix(in srgb, var(--warning) 12%, transparent);padding:2px 6px;border-radius:6px;
             }}
             .otc-arch-pos {{
-              font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px;
+              font-size:9px;font-weight:700;padding:2px 5px;border-radius:6px;
               flex-shrink:0;min-width:24px;text-align:center;
             }}
             .otc-arch-name {{
@@ -753,7 +753,7 @@ def build_trade_calculator_body(
             .otc-arch-foot {{
               display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:10.5px;
             }}
-            .otc-arch-wp {{ font-weight:700;padding:2px 8px;border-radius:5px;font-size:10px; }}
+            .otc-arch-wp {{ font-weight:700;padding:2px 8px;border-radius:6px;font-size:10px; }}
             .otc-arch-wp.pos {{ background:color-mix(in srgb, var(--win) 14%, transparent);color:var(--win); }}
             .otc-arch-wp.neg {{ background:color-mix(in srgb, var(--loss) 14%, transparent);color:var(--loss); }}
             .otc-arch-partner {{
@@ -762,7 +762,7 @@ def build_trade_calculator_body(
             }}
             .otc-arch-partner .dot {{ width:6px;height:6px;border-radius:50%;flex-shrink:0; }}
             .otc-arch-vmatch {{
-              padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;
+              padding:2px 6px;border-radius:6px;font-size:10px;font-weight:700;
             }}
             .otc-arch-vmatch-great {{ background:color-mix(in srgb, var(--win) 14%, transparent);color:var(--win); }}
             .otc-arch-vmatch-fair  {{ background:var(--border);color:var(--text-muted); }}
@@ -803,7 +803,7 @@ def build_trade_calculator_body(
             .otc-strategy-clear-filter {{
               font-size:10px;font-weight:700;color:var(--accent);
               background:none;border:none;cursor:pointer;padding:2px 6px;
-              border-radius:4px;
+              border-radius:6px;
             }}
             .otc-strategy-clear-filter:hover {{ background:var(--row); }}
             /* ── Impact table rows ── */
@@ -823,7 +823,7 @@ def build_trade_calculator_body(
               display:flex;align-items:center;gap:6px;flex-shrink:0;
             }}
             .otc-strategy-impact-badge {{
-              padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700;
+              padding:2px 7px;border-radius:6px;font-size:10px;font-weight:700;
             }}
             /* ── Strategy cards container ── */
             #otcStrategyCards {{
@@ -972,7 +972,7 @@ def build_trade_calculator_body(
               <div class="otc-strategy-section-head">
                 <span class="otc-sugg-section-title">Impact <span id="otcStrategySpinner" style="display:none;font-size:10px;font-weight:500;color:var(--text-muted);"><i class="fa-solid fa-circle-notch" style="animation:spin .9s linear infinite;margin-right:2px;"></i>Simulating…</span></span>
                 <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-                  <span id="otcCurrentPOBadge" style="display:none;font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;background:var(--accent,#3b82f6)20;color:var(--accent,#3b82f6);"></span>
+                  <span id="otcCurrentPOBadge" style="display:none;font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;background:color-mix(in srgb, var(--accent) 13%, transparent);color:var(--accent);"></span>
                   <span class="otc-strategy-section-hint" id="otcStrategyImpactHint">Win % if acquired</span>
                 </div>
               </div>
