@@ -6337,7 +6337,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             <div class="otc-ai-empty" id="gm-memo-loading" style="display:none;">
               <div class="otc-ai-empty-title">Analyzing Your Roster...</div>
               <div class="otc-ai-empty-sub">
-                <div class="loading-spinner" style="margin: 10px auto; width: 30px; height: 30px; border: 3px solid #f3f4f6; border-radius: 50%; border-top-color: #3498db; animation: spin 1s linear infinite; border-right-color: transparent;"></div>
+                <div class="loading-spinner" style="margin: 10px auto; width: 30px; height: 30px; border: 3px solid var(--border); border-radius: 50%; border-top-color: var(--accent); animation: spin 1s linear infinite; border-right-color: transparent;"></div>
               </div>
             </div>
             <div id="gm-memo-result" style="display:none;"></div>
