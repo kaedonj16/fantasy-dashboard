@@ -1013,6 +1013,13 @@ _DRAFT_ROOM_HTML = r"""
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dr-recap-sub { font-size: 10px; color: var(--text-muted); }
   .dr-recap-ps { font-size: 13px; font-weight: 900; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+  .dr-recap-nums-h { margin: 4px 0 8px; }
+  .dr-recap-nums { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+  .dr-recap-tile { background: var(--card-soft, var(--bg)); border: 1px solid var(--border); border-radius: 11px; padding: 10px 11px; }
+  .dr-recap-tlbl { font-size: 9.5px; text-transform: uppercase; letter-spacing: .05em; font-weight: 800; color: var(--text-subtle); }
+  .dr-recap-tbig { font-size: 14px; font-weight: 800; color: var(--text); margin-top: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dr-recap-tsub { font-size: 10.5px; color: var(--text-muted); margin-top: 1px; }
 
   /* League grades list */
   .dr-sum-league { display: flex; flex-direction: column; gap: 3px; }

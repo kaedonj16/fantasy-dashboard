@@ -2700,10 +2700,39 @@
     }
     var steals = picks.slice().sort(function(a, b){ return b.ps - a.ps; }).slice(0, 4);
     var reaches = picks.slice().sort(function(a, b){ return a.ps - b.ps; }).slice(0, 4);
+
+    // ── By the numbers: a few whole-draft superlatives ──────────────────
+    // Best value drafter: highest average pick score across a team's picks.
+    var teamScores = {};
+    picks.forEach(function(p){ (teamScores[p.team] = teamScores[p.team] || []).push(p.ps); });
+    var valueTeam = '-', valueAvg = -1e9;
+    Object.keys(teamScores).forEach(function(tm){
+      var arr = teamScores[tm];
+      var avg = arr.reduce(function(a, b){ return a + b; }, 0) / arr.length;
+      if (avg > valueAvg){ valueAvg = avg; valueTeam = tm; }
+    });
+    // Most-drafted position.
+    var posCount = {};
+    picks.forEach(function(p){ if (p.pos) posCount[p.pos] = (posCount[p.pos] || 0) + 1; });
+    var topPos = Object.keys(posCount).sort(function(a, b){ return posCount[b] - posCount[a]; })[0] || '-';
+
+    function tile(label, big, sub){
+      return '<div class="dr-recap-tile"><div class="dr-recap-tlbl">' + label + '</div>'
+        + '<div class="dr-recap-tbig">' + esc(big) + '</div>'
+        + '<div class="dr-recap-tsub">' + esc(sub) + '</div></div>';
+    }
+    var numsHtml = '<div class="dr-recap-nums">'
+      + tile('Steal of the draft', steals[0].name, steals[0].team + ' · ' + rx(steals[0].pn))
+      + tile('Biggest reach', reaches[0].name, reaches[0].team + ' · ' + rx(reaches[0].pn))
+      + tile('Best value drafter', valueTeam, 'highest avg pick score')
+      + tile('Most drafted', topPos + (posCount[topPos] ? ' (' + posCount[topPos] + ')' : ''), picks.length + ' picks total')
+      + '</div>';
+
     return '<div class="dr-recap">'
       + '<div class="dr-recap-sec"><p class="dr-recap-h">&#128142; Biggest steals</p>' + rows(steals) + '</div>'
       + '<div class="dr-recap-sec"><p class="dr-recap-h">&#128201; Biggest reaches</p>' + rows(reaches) + '</div>'
-      + '</div>';
+      + '</div>'
+      + '<p class="dr-recap-h dr-recap-nums-h">&#128202; By the numbers</p>' + numsHtml;
   }
 
   function renderLeague(){
