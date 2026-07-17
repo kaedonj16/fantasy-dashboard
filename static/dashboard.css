@@ -5014,10 +5014,6 @@ a.otc-value-name:hover { text-decoration: underline; }
 
 .otc-verdict {
   margin-top: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
   text-align: center;
   font-size: 15px;
   font-weight: 700;
