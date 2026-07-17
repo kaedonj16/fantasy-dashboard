@@ -2673,9 +2673,19 @@
     listInto(html);
   }
 
-  // Whole-draft recap: the best values and worst reaches across every team,
-  // scored by the same per-pick grade math the League chips already show. Returns
-  // '' until there are enough graded picks to be meaningful.
+  // Monochrome inline icons for the recap headers (inherit the header color).
+  var _RECAP_IC = {
+    gem:    '<svg class="dr-recap-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M6 3h12l3 6-9 12L3 9z"/><path d="M3 9h18"/><path d="M9 3 7.5 9 12 21l4.5-12L15 3"/></svg>',
+    down:   '<svg class="dr-recap-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 8 9 12 13 9 21 16"/><polyline points="21 11 21 16 16 16"/></svg>',
+    bars:   '<svg class="dr-recap-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>',
+    trophy: '<svg class="dr-recap-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M7 6H4.5A1.5 1.5 0 0 0 3 7.5 3.5 3.5 0 0 0 6.5 11M17 6h2.5A1.5 1.5 0 0 1 21 7.5 3.5 3.5 0 0 1 17.5 11M9.5 18h5M8.5 21h7M12 14v4"/></svg>'
+  };
+
+  // Whole-draft recap: the biggest values and reaches vs. ADP across every team.
+  // Each pick's gap is its overall pick number minus the player's ADP: a positive
+  // gap means he fell (a steal), negative means he was reached for. Falls back to
+  // the per-pick grade score when ADP data isn't available. Returns '' until there
+  // are enough graded picks to be meaningful.
   function _draftRecapHtml(allTeams){
     var picks = [];
     allTeams.forEach(function(t){
@@ -2683,26 +2693,37 @@
         if (!pk || !pk.p) return;
         var ps = storedPickScore(pk.pn, pk.p);
         if (ps == null) return;
-        picks.push({ name: pk.p.name, pos: (pk.p.position || '').toUpperCase(), team: t.name, pn: pk.pn, ps: ps });
+        var full = playersById[String(pk.p.id)] || pk.p;
+        var adp = adpOf(full);
+        var gap = (adp != null) ? Math.round(pk.pn - adp) : null;
+        picks.push({ name: pk.p.name, pos: (pk.p.position || '').toUpperCase(), team: t.name, pn: pk.pn, ps: ps, gap: gap });
       });
     });
     if (picks.length < 4) return '';
+    var withGap = picks.filter(function(p){ return p.gap != null; });
+    var useGap = withGap.length >= 4;   // prefer ADP gap; fall back to grade score
+    var pool = useGap ? withGap : picks;
+
     function rx(pn){ var teams = state.teams || 12; var rd = Math.ceil(pn / teams); var pp = pn - (rd - 1) * teams; return rd + '.' + (pp < 10 ? '0' + pp : pp); }
+    function valTxt(x){ return (useGap && x.gap != null) ? ((x.gap > 0 ? '+' : '') + x.gap) : String(x.ps); }
+    function valCol(x){
+      if (useGap && x.gap != null) return x.gap > 0 ? '#22c55e' : (x.gap < 0 ? '#ef4444' : '#94a3b8');
+      return psColor(x.ps);
+    }
     function rows(list){
       return list.map(function(x){
         return '<div class="dr-recap-row">'
           + '<span class="dr-recap-pos" style="background:' + slotColor(x.pos) + '">' + esc(x.pos || '-') + '</span>'
           + '<span class="dr-recap-main"><span class="dr-recap-name">' + esc(x.name) + '</span>'
           + '<span class="dr-recap-sub">' + esc(x.team) + ' &middot; ' + rx(x.pn) + '</span></span>'
-          + '<span class="dr-recap-ps" style="color:' + psColor(x.ps) + '">' + x.ps + '</span>'
+          + '<span class="dr-recap-ps" style="color:' + valCol(x) + '" title="pick vs ADP">' + valTxt(x) + '</span>'
           + '</div>';
       }).join('');
     }
-    var steals = picks.slice().sort(function(a, b){ return b.ps - a.ps; }).slice(0, 4);
-    var reaches = picks.slice().sort(function(a, b){ return a.ps - b.ps; }).slice(0, 4);
+    var steals = pool.slice().sort(function(a, b){ return useGap ? (b.gap - a.gap) : (b.ps - a.ps); }).slice(0, 4);
+    var reaches = pool.slice().sort(function(a, b){ return useGap ? (a.gap - b.gap) : (a.ps - b.ps); }).slice(0, 4);
 
     // ── By the numbers: a few whole-draft superlatives ──────────────────
-    // Best value drafter: highest average pick score across a team's picks.
     var teamScores = {};
     picks.forEach(function(p){ (teamScores[p.team] = teamScores[p.team] || []).push(p.ps); });
     var valueTeam = '-', valueAvg = -1e9;
@@ -2711,7 +2732,6 @@
       var avg = arr.reduce(function(a, b){ return a + b; }, 0) / arr.length;
       if (avg > valueAvg){ valueAvg = avg; valueTeam = tm; }
     });
-    // Most-drafted position.
     var posCount = {};
     picks.forEach(function(p){ if (p.pos) posCount[p.pos] = (posCount[p.pos] || 0) + 1; });
     var topPos = Object.keys(posCount).sort(function(a, b){ return posCount[b] - posCount[a]; })[0] || '-';
@@ -2724,15 +2744,15 @@
     var numsHtml = '<div class="dr-recap-nums">'
       + tile('Steal of the draft', steals[0].name, steals[0].team + ' · ' + rx(steals[0].pn))
       + tile('Biggest reach', reaches[0].name, reaches[0].team + ' · ' + rx(reaches[0].pn))
-      + tile('Best value drafter', valueTeam, 'highest avg pick score')
+      + tile('Best value drafter', valueTeam, 'Highest average pick grade')
       + tile('Most drafted', topPos + (posCount[topPos] ? ' (' + posCount[topPos] + ')' : ''), picks.length + ' picks total')
       + '</div>';
 
     return '<div class="dr-recap">'
-      + '<div class="dr-recap-sec"><p class="dr-recap-h">&#128142; Biggest steals</p>' + rows(steals) + '</div>'
-      + '<div class="dr-recap-sec"><p class="dr-recap-h">&#128201; Biggest reaches</p>' + rows(reaches) + '</div>'
+      + '<div class="dr-recap-sec"><p class="dr-recap-h">' + _RECAP_IC.gem + 'Biggest steals</p>' + rows(steals) + '</div>'
+      + '<div class="dr-recap-sec"><p class="dr-recap-h">' + _RECAP_IC.down + 'Biggest reaches</p>' + rows(reaches) + '</div>'
       + '</div>'
-      + '<p class="dr-recap-h dr-recap-nums-h">&#128202; By the numbers</p>' + numsHtml;
+      + '<p class="dr-recap-h dr-recap-nums-h">' + _RECAP_IC.bars + 'By the numbers</p>' + numsHtml;
   }
 
   function renderLeague(){
@@ -2746,7 +2766,8 @@
       return;
     }
     var _rc = ['gold','silver','bronze'];
-    var html = _draftRecapHtml(allTeams) + '<p class="dr-recap-h dr-recap-grades-h">&#127942; Draft grades</p><div class="dr-sum-league">';
+    var html = '<div class="dr-league-body">' + _draftRecapHtml(allTeams)
+      + '<p class="dr-recap-h dr-recap-grades-h">' + _RECAP_IC.trophy + 'Draft grades</p><div class="dr-sum-league">';
     allTeams.forEach(function(t, i){
       var w = t.grade.window;
       var winTag = w ? '<span class="dr-sum-lwin dr-win-' + w.label.toLowerCase().replace('-','') + '">' + esc(w.label) + '</span>' : '';
@@ -2771,7 +2792,7 @@
         + '</div>'
         + '<div class="dr-sum-ldtl" id="drLegLdtl' + t.slot + '"></div>';
     });
-    html += '</div>';
+    html += '</div></div>';
     listInto(html);
     document.querySelectorAll('#drBaList [data-legslot]').forEach(function(row){
       row.addEventListener('click', function(){
