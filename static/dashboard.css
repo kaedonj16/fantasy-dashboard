@@ -2868,18 +2868,18 @@ thead th {
 .player-badge {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   font-size: 11px;
   font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 6px;
+  padding: 3px 9px;
+  border-radius: 7px;
   line-height: 1;
   letter-spacing: 0.01em;
   vertical-align: middle;
   white-space: nowrap;
   /* Hairline border in the chip's own hue (variants set `color`), for definition
      on busy rows. currentColor makes it derive automatically per variant. */
-  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 26%, transparent);
 }
 
 /* Separate a badge from the player name (or a preceding badge) it sits beside,
@@ -2892,7 +2892,7 @@ strong + .player-badge,
 }
 
 .player-badge-rookie {
-  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
   color: var(--accent);
 }
 
@@ -2902,12 +2902,12 @@ strong + .player-badge,
 }
 
 .player-badge-elite {
-  background: color-mix(in srgb, var(--gold) 16%, transparent);
+  background: color-mix(in srgb, var(--gold) 15%, transparent);
   color: var(--gold);
 }
 
 .player-badge-prospect {
-  background: color-mix(in srgb, var(--win) 14%, transparent);
+  background: color-mix(in srgb, var(--win) 15%, transparent);
   color: var(--win);
 }
 
