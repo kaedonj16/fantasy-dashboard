@@ -3612,8 +3612,24 @@ window.initTradePage = function initTradePage(root = document) {
       }
 
       if (verdictEl) {
-        verdictEl.textContent = data.verdict || "";
-        verdictEl.className = "otc-verdict";
+        // Perspective-aware verdict mark: your side (A) gaining value is a Steal,
+        // giving it up is an Overpay, and inside the fair band it's Fair.
+        const ft = Number(data.fair_threshold) ||
+                   ((Number(data.fair_pct) || 0) * maxSideTotal);
+        let vkind = "fair";
+        if (diff > ft) vkind = "steal";
+        else if (diff < -ft) vkind = "overpay";
+        const verdictMarks = {
+          steal:   { color: "var(--win)",     svg: '<path d="M6 3h12l3.2 5.2L12 22 2.8 8.2z" fill="currentColor"/>' },
+          fair:    { color: "var(--text-muted)", svg: '<path d="M12 4v14M5 8h14M5 8l-2 5h4zM19 8l-2 5h4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' },
+          overpay: { color: "var(--loss)",    svg: '<path d="M12 5v13M6 12l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>' },
+        };
+        const vm = verdictMarks[vkind];
+        verdictEl.innerHTML =
+          '<span class="otc-verdict-mark" style="color:' + vm.color + ';display:inline-flex;flex:none;">' +
+          '<svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">' + vm.svg + '</svg></span>';
+        verdictEl.appendChild(document.createTextNode(data.verdict || ""));
+        verdictEl.className = "otc-verdict otc-verdict-" + vkind;
       }
 
       if (errorBox) {
