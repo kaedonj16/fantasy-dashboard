@@ -578,8 +578,8 @@ def build_advanced_metrics_body(
         border-left:1px solid var(--border);
       }
       .am-row:hover { background:var(--bg-alt, rgba(0,0,0,.03)); }
-      .am-row.am-owned { background:rgba(59,130,246,0.08); }
-      .am-row.am-owned:hover { background:rgba(59,130,246,0.14); }
+      .am-row.am-owned { background:color-mix(in srgb, var(--accent) 8%, transparent); }
+      .am-row.am-owned:hover { background:color-mix(in srgb, var(--accent) 14%, transparent); }
       .am-owned-badge {
         font-size:9px; font-weight:800; letter-spacing:.04em; flex-shrink:0;
         color:var(--accent,#2563eb); border:1px solid var(--accent,#2563eb); border-radius:4px;
@@ -707,8 +707,8 @@ def build_advanced_metrics_body(
         margin-left:auto; flex-shrink:0;
         font-size:9px; font-weight:800; letter-spacing:.04em;
         padding:1px 4px; border-radius:4px;
-        background:rgba(16,185,129,.12); color:#10b981;
-        border:1px solid rgba(16,185,129,.3);
+        background:color-mix(in srgb, var(--win) 12%, transparent); color:var(--win);
+        border:1px solid color-mix(in srgb, var(--win) 30%, transparent);
       }
       .am-sp-check { width:14px; text-align:center; flex-shrink:0; font-size:12px; }
       /* Multi-stat stacked bar rows in table cell */
@@ -787,7 +787,7 @@ def build_advanced_metrics_body(
       .am-cmp-wkbar-wrap .wk-tick { font-size:0; }
       .am-cmp-wkbar-wrap .wk-tick:nth-child(odd) { font-size:9px; }
       .am-cmp-wknote { margin-top:6px; font-size:10px; font-weight:700; color:var(--text-muted); }
-      .am-cmp-wknote-warn { color:#f59e0b; }
+      .am-cmp-wknote-warn { color:var(--warning); }
       .am-cmp-wknote-muted { font-weight:600; opacity:.55; }
       /* Metric rows */
       .am-cmp-metric { font-weight:700; color:var(--text-muted); white-space:nowrap; font-size:12px; }
@@ -811,9 +811,9 @@ def build_advanced_metrics_body(
       }
       .am-row:hover .am-pin-btn { opacity:.55; }
       .am-pin-btn.am-pin-active { opacity:1 !important; color:var(--accent,#2563eb); }
-      .am-row.am-pinned { background:rgba(37,99,235,.05); }
-      .am-row.am-pinned:hover { background:rgba(37,99,235,.1); }
-      .am-row.am-pinned.am-owned { background:rgba(37,99,235,.1); }
+      .am-row.am-pinned { background:color-mix(in srgb, var(--accent) 5%, transparent); }
+      .am-row.am-pinned:hover { background:color-mix(in srgb, var(--accent) 10%, transparent); }
+      .am-row.am-pinned.am-owned { background:color-mix(in srgb, var(--accent) 10%, transparent); }
       .am-pin-divider td { border-bottom:2px dashed var(--accent,#2563eb) !important; padding:0 !important; height:2px !important; }
       /* Mobile: pack the compare table so two players fit on screen without the
          right column getting clipped. Drop the 520px min-width, shrink padding /
@@ -845,7 +845,7 @@ def build_advanced_metrics_body(
       .am-filter-chip {
         display:inline-flex; align-items:center; gap:4px;
         padding:3px 9px; border-radius:12px;
-        border:1px solid var(--accent,#2563eb); background:rgba(37,99,235,.08);
+        border:1px solid var(--accent,#2563eb); background:color-mix(in srgb, var(--accent) 8%, transparent);
         font-size:12px; font-weight:600; color:var(--accent,#2563eb); white-space:nowrap;
       }
       .am-filter-label { font-size:11px; font-weight:700; color:var(--text-muted); white-space:nowrap; }
@@ -882,10 +882,10 @@ def build_advanced_metrics_body(
       .am-sp-preset-wrap { padding:6px 10px; border-bottom:1px solid var(--border); }
       .am-sp-preset-btn {
         width:100%; padding:7px 10px; border:1px solid var(--accent,#2563eb); border-radius:8px;
-        background:rgba(37,99,235,.07); color:var(--accent,#2563eb);
+        background:color-mix(in srgb, var(--accent) 7%, transparent); color:var(--accent,#2563eb);
         font-size:12px; font-weight:700; cursor:pointer; text-align:center;
       }
-      .am-sp-preset-btn:hover { background:rgba(37,99,235,.14); }
+      .am-sp-preset-btn:hover { background:color-mix(in srgb, var(--accent) 14%, transparent); }
       /* Filter column headers inserted before primary metric column */
       th.am-filter-col-hdr { border-left:1px solid var(--border); }
       /* Mobile: show filter bar content (age inputs etc.) when Filters is open */
@@ -896,7 +896,7 @@ def build_advanced_metrics_body(
       .am-week-note {
         display:flex; align-items:center; gap:6px;
         font-size:12px; font-weight:600; color:var(--text-muted);
-        background:rgba(245,158,11,.08); border:1px solid rgba(245,158,11,.25);
+        background:color-mix(in srgb, var(--warning) 8%, transparent); border:1px solid color-mix(in srgb, var(--warning) 25%, transparent);
         border-radius:8px; padding:6px 12px; margin-bottom:10px;
       }
       /* Graph (scatter) modal */
