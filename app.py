@@ -82,6 +82,7 @@ from dashboard_services.pages.history_page import (
 from dashboard_services.pages.trade_calculator_page import build_trade_calculator_body
 from dashboard_services.picks import load_pick_value_table
 from dashboard_services.rank_medals import rank_mark
+from dashboard_services.team_crest import team_crest
 from dashboard_services.platform_api import (
     get_bracket,
     get_drafts,
@@ -16197,10 +16198,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         ava = owner_avatar.get(owner_name, "")
         if ava:
             return f"<img src='{ava}' alt='' loading='lazy' decoding='async' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
-        initials = "".join(w[0].upper() for w in (team_by_rid.get(rid) or owner_name or "?").split()[:2])
-        return (f"<div style='width:{size}px;height:{size}px;border-radius:50%;background:var(--accent);color:#fff;"
-                f"display:flex;align-items:center;justify-content:center;font-weight:700;font-size:{max(10, size//3)}px;"
-                f"flex-shrink:0;'>{initials}</div>")
+        return team_crest(team_by_rid.get(rid) or owner_name or "?", size)
 
     def team_name(owner, rid=""):
         return html.escape(team_by_rid.get(rid) or owner or "–")
