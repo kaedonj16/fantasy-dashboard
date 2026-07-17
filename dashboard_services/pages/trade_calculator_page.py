@@ -436,7 +436,7 @@ def build_trade_calculator_body(
                 <div class="otc-ai-empty" id="aiLoadingState" style="display:none;">
                   <div class="otc-ai-empty-title">Analyzing Trade...</div>
                   <div class="otc-ai-empty-sub">
-                    <div class="loading-spinner" style="margin: 10px auto; width: 30px; height: 30px; border: 3px solid #f3f4f6; border-radius: 50%; border-top-color: #3498db; animation: spin 1s linear infinite; border-right-color: transparent;"></div>
+                    <div class="loading-spinner" style="margin: 10px auto; width: 30px; height: 30px; border: 3px solid var(--border); border-radius: 50%; border-top-color: var(--accent); animation: spin 1s linear infinite; border-right-color: transparent;"></div>
                   </div>
                 </div>
                 <div class="otc-ai-empty" id="aiEmptyState">
@@ -581,9 +581,9 @@ def build_trade_calculator_body(
             .pi-roster-warn {{
               display:flex;align-items:flex-start;gap:6px;margin-top:8px;
               padding:7px 9px;border-radius:8px;font-size:11px;line-height:1.5;
-              background:rgba(234,179,8,.1);border:1px solid rgba(234,179,8,.3);
+              background:color-mix(in srgb, var(--warning) 12%, transparent);border:1px solid color-mix(in srgb, var(--warning) 30%, transparent);
             }}
-            .pi-roster-warn i {{ color:#ca8a04;margin-top:1px;flex-shrink:0; }}
+            .pi-roster-warn i {{ color:var(--warning);margin-top:1px;flex-shrink:0; }}
 
             /* ── Verdict banner ──────────────────────────────────── */
             .pi-verdict {{
@@ -660,7 +660,7 @@ def build_trade_calculator_body(
               color:var(--text);
               border:1px solid var(--border-color);
             }}
-            .stl-badge-sf {{ background:#7c3aed22;color:#a78bfa;border-color:#7c3aed44; }}
+            .stl-badge-sf {{ background:color-mix(in srgb, var(--indigo) 15%, transparent);color:var(--indigo);border-color:color-mix(in srgb, var(--indigo) 32%, transparent); }}
 
             .stl-card-body {{
               display:grid;
@@ -1020,7 +1020,7 @@ def build_trade_calculator_body(
               <div class="otc-mini-section">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                   <div class="otc-mini-section-title">Top Risers</div>
-                  <a href="/top-movers" class="otc-view-all-link" style="font-size: 12px; color: #3b82f6; text-decoration: none; font-weight: 500;">View All &rarr;</a>
+                  <a href="/top-movers" class="otc-view-all-link" style="font-size: 12px; color: var(--accent); text-decoration: none; font-weight: 500;">View All &rarr;</a>
                 </div>
                 <div id="otcRisersList" class="otc-mini-list">
                   <div class="otc-movers-empty">Loading movers...</div>
@@ -1039,7 +1039,7 @@ def build_trade_calculator_body(
               <div class="otc-mini-section">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                   <div class="otc-mini-section-title">Breakouts</div>
-                  <a href="{breakouts_url}" class="{breakouts_link_class}" style="font-size: 12px; color: #3b82f6; text-decoration: none; font-weight: 500;">{breakouts_link_text}</a>
+                  <a href="{breakouts_url}" class="{breakouts_link_class}" style="font-size: 12px; color: var(--accent); text-decoration: none; font-weight: 500;">{breakouts_link_text}</a>
                 </div>
                 <div id="otcBreakoutsList" class="otc-mini-list">
                   <div class="otc-movers-empty">Loading breakouts...</div>

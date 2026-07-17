@@ -947,8 +947,8 @@ def build_history_body(
     # Loading spinner HTML (unused when prerendered sections are provided)
     loading_spinner = """
     <div class="history-loading-state">
-      <div class="loading-spinner" style="margin: 20px auto; width: 30px; height: 30px; border: 3px solid #f3f4f6; border-radius: 50%; border-top-color: #3498db; animation: spin 1s linear infinite; border-right-color: transparent;"></div>
-      <div style="text-align: center; color: #94a3b8; font-size: 13px; margin-top: 12px;">Loading...</div>
+      <div class="loading-spinner" style="margin: 20px auto; width: 30px; height: 30px; border: 3px solid var(--border); border-radius: 50%; border-top-color: var(--accent); animation: spin 1s linear infinite; border-right-color: transparent;"></div>
+      <div style="text-align: center; color: var(--text-subtle); font-size: 13px; margin-top: 12px;">Loading...</div>
     </div>
     """
     awards_html    = prerendered["summary"]   if prerendered else loading_spinner
@@ -1036,7 +1036,7 @@ def build_history_body(
             <div class="otc-ai-empty" id="aiLoadingState" style="display:none;">
               <div class="otc-ai-empty-title">Analyzing Season...</div>
               <div class="otc-ai-empty-sub">
-                <div class="loading-spinner" style="margin: 10px auto; width: 30px; height: 30px; border: 3px solid #f3f4f6; border-radius: 50%; border-top-color: #3498db; animation: spin 1s linear infinite; border-right-color: transparent;"></div>
+                <div class="loading-spinner" style="margin: 10px auto; width: 30px; height: 30px; border: 3px solid var(--border); border-radius: 50%; border-top-color: var(--accent); animation: spin 1s linear infinite; border-right-color: transparent;"></div>
               </div>
             </div>
             <div id="aiAnalysisResult" class="recap-result" style="display:none;"></div>
