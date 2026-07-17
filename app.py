@@ -3196,13 +3196,25 @@ def get_trade_ai_analysis(
     return renderer_analysis(ctx, viewer_roster_id, viewer_side, side_a, side_b)
 
 
+# Inline Sora @font-face for standalone pages that don't load dashboard.css
+# (error pages, the shareable trade-card embed) so they match the site font.
+_SORA_FACES_MINI = (
+    "@font-face{font-family:'Sora';font-weight:400;font-display:swap;src:url('/static/fonts/web/sora-400.woff2') format('woff2')}"
+    "@font-face{font-family:'Sora';font-weight:700;font-display:swap;src:url('/static/fonts/web/sora-700.woff2') format('woff2')}"
+)
+_SORA_FACES = _SORA_FACES_MINI + (
+    "@font-face{font-family:'Sora';font-weight:600;font-display:swap;src:url('/static/fonts/web/sora-600.woff2') format('woff2')}"
+    "@font-face{font-family:'Sora';font-weight:800;font-display:swap;src:url('/static/fonts/web/sora-800.woff2') format('woff2')}"
+)
+
+
 @app.errorhandler(500)
 def handle_500(e):
     logger.exception("[500] Internal server error")
     return (
         "<!doctype html><html lang='en'><head><title>Error - BR Fantasy</title>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<style>body{font-family:sans-serif;background:#0f1623;color:#e2e8f0;"
+        "<style>" + _SORA_FACES_MINI + "body{font-family:'Sora',sans-serif;background:#0f1623;color:#e2e8f0;"
         "display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}"
         ".box{text-align:center;padding:40px 24px;max-width:400px;}"
         ".logo{font-size:13px;font-weight:700;color:#38bdf8;letter-spacing:.04em;margin-bottom:24px;}"
@@ -3223,7 +3235,7 @@ def handle_404(e):
     return (
         "<!doctype html><html lang='en'><head><title>Page Not Found - BR Fantasy</title>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<style>body{font-family:sans-serif;background:#0f1623;color:#e2e8f0;"
+        "<style>" + _SORA_FACES_MINI + "body{font-family:'Sora',sans-serif;background:#0f1623;color:#e2e8f0;"
         "display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}"
         ".box{text-align:center;padding:40px 24px;max-width:420px;}"
         ".logo{font-size:13px;font-weight:700;color:#38bdf8;letter-spacing:.04em;margin-bottom:8px;}"
@@ -29055,7 +29067,8 @@ def page_trade_card(share_id: str):
     except Exception as _e:
         logger.warning("[trade-card] lookup error for %s: %s", share_id, _e)
     if not row:
-        return "<h2 style='font-family:sans-serif;padding:40px'>Trade not found.</h2>", 404
+        return ("<style>" + _SORA_FACES_MINI + "</style>"
+                "<h2 style='font-family:\"Sora\",sans-serif;padding:40px'>Trade not found.</h2>"), 404
     try:
         _row = row if hasattr(row, "__getitem__") else {"params": row[0], "created_at": row[1]}
         p = _json.loads(_row["params"])
@@ -29326,7 +29339,8 @@ def page_trade_card(share_id: str):
     :root{{--tc-bg:#0b1120;--tc-card:#0f1d36;--tc-hdr:#0b1628;--tc-border:rgba(255,255,255,.1);--tc-border-sub:rgba(255,255,255,.07);--tc-text:#e2e8f0;--tc-text2:#f1f5f9;--tc-muted:#94a3b8;--tc-dim:#64748b;--tc-dimmer:#475569;--tc-bar:rgba(255,255,255,.08);}}
     [data-theme="light"]{{--tc-bg:#f1f5f9;--tc-card:#ffffff;--tc-hdr:#f8fafc;--tc-border:rgba(0,0,0,.1);--tc-border-sub:rgba(0,0,0,.06);--tc-text:#1e293b;--tc-text2:#0f172a;--tc-muted:#475569;--tc-dim:#64748b;--tc-dimmer:#94a3b8;--tc-bar:rgba(0,0,0,.07);}}
     *{{box-sizing:border-box;margin:0;padding:0}}
-    body{{background:var(--tc-bg);{'min-height:100vh;justify-content:center;' if not is_embed else ''}display:flex;flex-direction:column;align-items:center;padding:{body_pad};font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;transition:background .2s}}
+    {_SORA_FACES}
+    body{{background:var(--tc-bg);{'min-height:100vh;justify-content:center;' if not is_embed else ''}display:flex;flex-direction:column;align-items:center;padding:{body_pad};font-family:"Sora",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;transition:background .2s}}
     .wrap{{max-width:520px;width:100%;position:relative}}
     .card{{background:var(--tc-card);border:1px solid var(--tc-border);border-radius:20px;overflow:hidden;transition:background .2s,border-color .2s}}
     .card-header{{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--tc-border-sub);background:var(--tc-hdr)}}
