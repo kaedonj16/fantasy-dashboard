@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from .api import avatar_from_users
+from .api import avatar_from_users, team_avatar
 from .platform_api import get_users, get_rosters
 
 
@@ -133,6 +133,6 @@ def build_roster_display_maps(league_id: str, platform, season):
 
         name = meta.get("team_name") or user_fallback.get(owner_id, f"Roster {rid}")
         roster_name[rid] = name
-        roster_avatar[rid] = avatar_from_users(platform, users, owner_id)
+        roster_avatar[rid] = team_avatar(platform, r, users)
 
     return roster_name, roster_avatar

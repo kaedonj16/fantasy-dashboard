@@ -13,6 +13,7 @@ from dashboard_services.api import (
     avatar_url,
     get_nfl_state,
     avatar_from_users,
+    team_avatar,
 )
 from dashboard_services.matchups import build_matchup_preview
 from dashboard_services.platform_api import get_matchups, get_transactions as platform_get_transactions
@@ -75,10 +76,8 @@ def matchup_cards_last_week(
             settings.get("wins") or 0,
             settings.get("losses") or 0,
         )
-        owner_id = r.get("owner_id")
-        # avatar_from_users now yields the team crest when no team-specific picture
-        # is set (never the account picture).
-        avatar_by_rid[rid] = avatar_from_users(platform, users, owner_id)
+        # Team picture (roster- or user-level) -> crest -> profile picture.
+        avatar_by_rid[rid] = team_avatar(platform, r, users)
 
     buckets: dict[str, list] = defaultdict(list)
 
@@ -280,24 +279,8 @@ def build_tables(
         owner_id = r.get("owner_id")
         display = roster_map.get(rid, f"Roster {rid}")
 
-        # Order: team picture -> crest -> profile picture. A dedicated team
-        # picture always wins; otherwise a crest stands in (preferred over a
-        # personal photo); the profile picture is only a last-ditch fallback.
-        team_pic = None
-        u_id = None
-        user_data = user_by_id.get(owner_id)
-        if user_data:
-            user_meta = user_data.get("metadata") or {}
-            team_pic = user_meta.get("avatar")
-            u_id = user_data.get("avatar")
-        if team_pic:
-            owner_avatar[display] = avatar_url(team_pic)
-        else:
-            profile_url = (
-                (f"https://sleepercdn.com/avatars/thumbs/{u_id}" if platform == "sleeper" else f"{u_id}")
-                if u_id else None
-            )
-            owner_avatar[display] = team_crest_data_uri(display) or (avatar_url(profile_url) if profile_url else None)
+        # Team picture (roster- or user-level) -> crest -> profile picture.
+        owner_avatar[display] = team_avatar(platform, r, users)
 
     def _fetch_week(week: int) -> list[dict]:
         try:
