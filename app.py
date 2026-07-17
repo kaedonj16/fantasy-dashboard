@@ -5036,7 +5036,7 @@ def render_power_and_playoffs(
           <div class="slot {base_cls} {streak_frame_cls}">
             <div class="wrap">
               <div class='podium-header'>
-                <h3>{rank_mark(rank, size=32, wrap=False)} {move_arrow(name)}</h3>
+                <h3>#{rank} {move_arrow(name)}</h3>
                 {avatar_html}
               </div>
               <div class="name">{name}</div>
