@@ -5036,7 +5036,7 @@ def render_power_and_playoffs(
           <div class="slot {base_cls} {streak_frame_cls}">
             <div class="wrap">
               <div class='podium-header'>
-                <h3>#{rank} {move_arrow(name)}</h3>
+                <h3>{rank_mark(rank, size=32, wrap=False)} {move_arrow(name)}</h3>
                 {avatar_html}
               </div>
               <div class="name">{name}</div>
@@ -16257,10 +16257,15 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         except Exception:
             return None
 
-    def scorer_card(icon, label, name, pts, rid, sub, accent, opp=None):
+    def scorer_card(icon, label, name, pts, rid, sub, accent, opp=None, medal_rank=None):
+        # The week's HIGH SCORER earns a gold medal (a weekly award); the other
+        # cards keep their semantic icon.
+        mark = (rank_mark(medal_rank, size=22, wrap=False)
+                if medal_rank else
+                f'<i class="{icon}" style="font-size:13px;color:{accent};width:16px;text-align:center;"></i>')
         header = f"""
   <div style="display:flex;align-items:center;gap:6px;">
-    <i class="{icon}" style="font-size:13px;color:{accent};width:16px;text-align:center;"></i>
+    {mark}
     <span style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--muted);">{label}</span>
   </div>"""
         if opp:
@@ -16340,7 +16345,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px;">
   {scorer_card("fa-solid fa-fire", "HIGH SCORER", high_row["owner"],
                float(high_row["points"]), str(high_row.get("roster_id","")),
-               high_sub, "var(--win)", _scorer_opp(high_row))}
+               high_sub, "var(--win)", _scorer_opp(high_row), medal_rank=1)}
   {scorer_card("fa-solid fa-arrow-trend-down", "LOW SCORER", low_row["owner"],
                float(low_row["points"]), str(low_row.get("roster_id","")),
                low_sub, "var(--loss)", _scorer_opp(low_row))}
