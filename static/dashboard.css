@@ -134,7 +134,7 @@
   --loss: #ef4444;
   --warning: #f59e0b;
   --info: #38bdf8;
-  --gold: #b45309;   /* elite badge accent (no semantic token maps to it) */
+  --gold: #b7791f;   /* elite badge accent — warm gold (no semantic token maps to it) */
   --orange: #ea580c; /* doubtful / mid-severity, between warning and loss */
   --inj-q: #ca8a04;  /* questionable: a distinct yellow so it doesn't read as orange next to doubtful */
   --indigo: #4f46e5; /* categorical: trade / activity */
@@ -2868,7 +2868,7 @@ thead th {
 .player-badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   font-size: 11px;
   font-weight: 600;
   padding: 3px 9px;
@@ -2879,7 +2879,44 @@ thead th {
   white-space: nowrap;
   /* Hairline border in the chip's own hue (variants set `color`), for definition
      on busy rows. currentColor makes it derive automatically per variant. */
-  border: 1px solid color-mix(in srgb, currentColor 26%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+}
+
+/* Badge icons inherit the badge's own color. The role glyphs (star / ® / fire /
+   seedling) ship as pre-tinted PNGs whose baked-in filter color can't match the
+   label — e.g. the ® rendered indigo next to navy ROOKIE text. Re-drawing them as
+   masks filled with currentColor makes each badge a single, cohesive hue. Scoped
+   to .player-badge so the same PNGs keep their standalone colors elsewhere (the
+   premium star, draft-room fire, streak chips, etc.). */
+.player-badge .fa-star,
+.player-badge .fa-registered-solid,
+.player-badge .fa-fire,
+.player-badge .fa-seedling {
+  background-image: none;
+  background-color: currentColor;
+  filter: none;
+  -webkit-mask-repeat: no-repeat;
+          mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+          mask-position: center;
+  -webkit-mask-size: contain;
+          mask-size: contain;
+}
+.player-badge .fa-star {
+  -webkit-mask-image: url('images/star-solid.png');
+          mask-image: url('images/star-solid.png');
+}
+.player-badge .fa-registered-solid {
+  -webkit-mask-image: url('images/registered-solid.png');
+          mask-image: url('images/registered-solid.png');
+}
+.player-badge .fa-fire {
+  -webkit-mask-image: url('images/fire-solid.png');
+          mask-image: url('images/fire-solid.png');
+}
+.player-badge .fa-seedling {
+  -webkit-mask-image: url('images/seedling-solid.png');
+          mask-image: url('images/seedling-solid.png');
 }
 
 /* Separate a badge from the player name (or a preceding badge) it sits beside,
