@@ -76,6 +76,8 @@ def matchup_cards_last_week(
             settings.get("losses") or 0,
         )
         owner_id = r.get("owner_id")
+        # avatar_from_users now yields the team crest when no team-specific picture
+        # is set (never the account picture).
         avatar_by_rid[rid] = avatar_from_users(platform, users, owner_id)
 
     buckets: dict[str, list] = defaultdict(list)

@@ -201,14 +201,13 @@ def avatar_from_users(platform, users: list[dict], owner_id: Optional[str]) -> O
         return None
     meta = u.get("metadata") or {}
     avatar_meta = meta.get("avatar")
-    profile_id = u.get("avatar")
     if avatar_meta:
         return avatar_meta
-    if profile_id:
-        if platform == "sleeper":
-            return f"https://sleepercdn.com/avatars/thumbs/{profile_id}"
-        return f"{profile_id}"
-    return None
+    # No team-specific picture: fall back to an auto-generated crest from the
+    # team name (not the account profile picture, which every account has).
+    from dashboard_services.team_crest import team_crest_data_uri
+    team_name = meta.get("team_name") or u.get("display_name") or "?"
+    return team_crest_data_uri(team_name)
 
 
 def fetch_json(path: str, timeout: int = 25, retries: int = 3) -> dict:
