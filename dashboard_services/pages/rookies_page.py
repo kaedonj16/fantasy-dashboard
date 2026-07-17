@@ -497,8 +497,8 @@ def build_prospects_body(is_admin: bool = False) -> str:
 
   .rk-rank { font-size: 12px; font-weight: 700; color: var(--text-muted); display: flex; flex-direction: column; align-items: center; gap: 1px; }
   .rk-rank-arrow { font-size: 9px; line-height: 1; }
-  .rk-rank-arrow.up   { color: #22c55e; }
-  .rk-rank-arrow.down { color: #ef4444; }
+  .rk-rank-arrow.up   { color: var(--win); }
+  .rk-rank-arrow.down { color: var(--loss); }
   .rk-name-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .rk-name { font-size: 13px; font-weight: 600; color: var(--text); }
   .rk-name:hover { text-decoration: underline; }
@@ -519,12 +519,12 @@ def build_prospects_body(is_admin: bool = False) -> str:
     margin-left: 4px;
     vertical-align: middle;
   }
-  .rk-tier-1 { background: rgba(16,185,129,0.15); color: #10b981; }
-  .rk-tier-2 { background: rgba(59,130,246,0.15); color: #3b82f6; }
-  .rk-tier-3 { background: rgba(139,92,246,0.15); color: #8b5cf6; }
-  .rk-tier-4 { background: rgba(245,158,11,0.15); color: #f59e0b; }
-  .rk-tier-5 { background: rgba(107,114,128,0.15); color: #6b7280; }
-  .rk-tier-6 { background: rgba(107,114,128,0.10); color: #9ca3af; }
+  .rk-tier-1 { background: color-mix(in srgb, #10b981 15%, transparent); color: #10b981; }
+  .rk-tier-2 { background: color-mix(in srgb, #3b82f6 15%, transparent); color: #3b82f6; }
+  .rk-tier-3 { background: color-mix(in srgb, #8b5cf6 15%, transparent); color: #8b5cf6; }
+  .rk-tier-4 { background: color-mix(in srgb, #f59e0b 15%, transparent); color: #f59e0b; }
+  .rk-tier-5 { background: color-mix(in srgb, var(--text-muted) 15%, transparent); color: var(--text-muted); }
+  .rk-tier-6 { background: color-mix(in srgb, var(--text-subtle) 12%, transparent); color: var(--text-subtle); }
 
   /* Score bar */
   .rk-score-bar {
@@ -1219,12 +1219,12 @@ def build_prospects_body(is_admin: bool = False) -> str:
     .catch(function(err) {
       console.error('[rookies] Load error:', err);
       document.getElementById('rkLoading').innerHTML =
-        '<div style="color:#ef4444;">Failed to load rookie data. Please refresh.</div>';
+        '<div style="color:var(--loss);">Failed to load rookie data. Please refresh.</div>';
     });
 
   function _buildLinkSleeperHtml(playerId, existingSleeperIdVal) {
     if (existingSleeperIdVal) {
-      return '<div style="font-size:12px;color:var(--text-muted);">Sleeper ID: <strong style="color:var(--text);">' + existingSleeperIdVal + '</strong> <span style="color:#10b981;">✓ linked</span></div>';
+      return '<div style="font-size:12px;color:var(--text-muted);">Sleeper ID: <strong style="color:var(--text);">' + existingSleeperIdVal + '</strong> <span style="color:var(--win);">✓ linked</span></div>';
     }
     // Linking writes to the database - only admins see the controls.
     if (!window.RK_IS_ADMIN) { return ''; }

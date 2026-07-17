@@ -60,15 +60,17 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-right { display: flex; align-items: center; gap: 10px; }
 .wv-value { font-size: 13px; font-weight: 700; color: var(--text); }
 /* Waiver signals: semantic ones route through tokens (theme-correct for free);
-   value stays purple and injury stays rose so they read as distinct categories. */
+   value stays indigo and injury stays rose so they read as distinct categories.
+   Both use color-mix backgrounds and a dark-mode brightening so they adapt too. */
 .wv-signal { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 8px; }
 .signal-breakout { background: color-mix(in srgb, var(--win) 15%, transparent); color: var(--win); }
 .signal-rising   { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
-.signal-value    { background: #8b5cf620; color: #8b5cf6; }
+.signal-value    { background: color-mix(in srgb, var(--indigo) 16%, transparent); color: var(--indigo); }
 .signal-aging    { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
 .signal-hold     { background: var(--row); color: var(--text-muted); }
 .signal-usage    { background: color-mix(in srgb, var(--loss) 15%, transparent); color: var(--loss); }
-.signal-injury      { background: #f43f5e20; color: #f43f5e; }
+.signal-injury      { background: color-mix(in srgb, #f43f5e 15%, transparent); color: #f43f5e; }
+[data-theme="dark"] .signal-injury { color: #fb7185; }
 .signal-injury-soft { background: color-mix(in srgb, var(--orange) 16%, transparent); color: var(--orange); }
 .wv-usage-chip {
   display: inline-block; font-size: 10px; font-weight: 700; color: var(--win);
@@ -123,7 +125,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
    lime step; the endpoints use the win/warning/loss tokens. */
 .wv-mu { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; }
 .wv-mu-easy { background: color-mix(in srgb, var(--win) 16%, transparent); color: var(--win); }
-.wv-mu-ok   { background: #84cc1620; color: #65a30d; }
+.wv-mu-ok   { background: color-mix(in srgb, #84cc16 13%, transparent); color: #65a30d; }
 .wv-mu-avg  { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
 .wv-mu-hard { background: color-mix(in srgb, var(--loss) 15%, transparent); color: var(--loss); }
 [data-theme="dark"] .wv-mu-ok { color: #a3e635; }
@@ -133,7 +135,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-ss-flex-start-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--win) 15%, transparent); color: var(--win); border: 1px solid color-mix(in srgb, var(--win) 30%, transparent); flex-shrink: 0; }
 .wv-ss-flex-badge       { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); flex-shrink: 0; }
 .wv-ss-sit-badge        { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: var(--row); color: var(--text-muted); flex-shrink: 0; }
-.wv-ss-bye-badge        { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #f59e0b20; color: #f59e0b; flex-shrink: 0; }
+.wv-ss-bye-badge        { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--warning) 15%, transparent); color: var(--warning); flex-shrink: 0; }
 .wv-inj-out { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--loss) 16%, transparent); color: var(--loss); }
 .wv-inj-q   { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--inj-q) 18%, transparent); color: var(--inj-q); }
 .wv-inj-d   { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--orange) 16%, transparent); color: var(--orange); }
@@ -172,8 +174,8 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-compare-row:last-child { border-bottom: none; }
 .wv-compare-lbl { color: var(--text-muted); font-size: 12px; }
 .wv-compare-val { font-weight: 700; }
-.wv-compare-win { color: #22c55e; }
-.wv-compare-lose { color: #ef4444; }
+.wv-compare-win { color: var(--win); }
+.wv-compare-lose { color: var(--loss); }
 
 /* Shared-label compare: value(a) · LABEL · value(b), one label per metric */
 .wv-cmp { padding: 6px 14px 12px; }
@@ -356,7 +358,7 @@ function wvStatsRow(p) {{
     const upU = p.usage_delta > 0;
     const lblU = p.usage_stat === 'snap_pct' ? 'snap%' : (p.usage_stat === 'touches' ? 'touches' : 'targets');
     g2.push('<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Usage</span><span class="wv-ss-stat-val" style="color:' +
-            (upU ? '#10b981' : '#ef4444') + '" title="Last-3-week ' + lblU + ' vs season avg">' +
+            (upU ? 'var(--win)' : 'var(--loss)') + '" title="Last-3-week ' + lblU + ' vs season avg">' +
             (upU ? '&#9650;' : '&#9660;') + ' ' + (upU ? '+' : '') + p.usage_delta + '</span></div>');
   }}
 
