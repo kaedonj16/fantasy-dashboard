@@ -218,6 +218,39 @@ def avatar_from_users(platform, users: list[dict], owner_id: Optional[str]) -> O
     return None
 
 
+def team_avatar(platform, roster: dict, users: list[dict]) -> Union[str, None]:
+    """Resolve a team's avatar, checking a roster-level picture first.
+
+    A team picture can live on the roster (``roster.metadata.avatar``) or on the
+    league user (``user.metadata.avatar``); either one wins. Order:
+    roster team picture -> user team picture -> crest -> personal profile picture.
+    The crest prefers the roster/user team name so its monogram matches the team.
+    """
+    roster = roster or {}
+    rmeta = roster.get("metadata") or {}
+    if rmeta.get("avatar"):
+        return rmeta["avatar"]
+
+    owner_id = roster.get("owner_id")
+    u = next((x for x in users if x.get("user_id") == owner_id), None) if owner_id else None
+    umeta = (u.get("metadata") if u else None) or {}
+    if umeta.get("avatar"):
+        return umeta["avatar"]
+
+    from dashboard_services.team_crest import team_crest_data_uri
+    name = rmeta.get("team_name") or umeta.get("team_name") or (u.get("display_name") if u else None) or "Team"
+    crest = team_crest_data_uri(name)
+    if crest:
+        return crest
+
+    profile_id = u.get("avatar") if u else None
+    if profile_id:
+        if platform == "sleeper":
+            return f"https://sleepercdn.com/avatars/thumbs/{profile_id}"
+        return f"{profile_id}"
+    return None
+
+
 def fetch_json(path: str, timeout: int = 25, retries: int = 3) -> dict:
     url = f"{SLEEPER_BASE}{path}"
     last_err: Exception = RuntimeError("fetch_json: no attempts made")

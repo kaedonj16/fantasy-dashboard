@@ -7,7 +7,7 @@ from itertools import zip_longest
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
-from dashboard_services.api import avatar_from_users, get_nfl_scores_for_date, build_team_game_lookup, \
+from dashboard_services.api import avatar_from_users, team_avatar, get_nfl_scores_for_date, build_team_game_lookup, \
     get_league_settings
 from dashboard_services.platform_api import (
     get_matchups,
@@ -75,10 +75,14 @@ def build_matchup_preview(
     }
 
     avatar_cache: Dict[Optional[str], Any] = {}
+    roster_by_owner: Dict[Optional[str], dict] = {r.get("owner_id"): r for r in rosters}
 
     def get_avatar(owner_id: Optional[str]) -> Any:
         if owner_id not in avatar_cache:
-            avatar_cache[owner_id] = avatar_from_users(platform, users, owner_id) if owner_id is not None else None
+            avatar_cache[owner_id] = (
+                team_avatar(platform, roster_by_owner.get(owner_id), users)
+                if owner_id is not None else None
+            )
         return avatar_cache[owner_id]
 
     def _to_int(x) -> Optional[int]:
