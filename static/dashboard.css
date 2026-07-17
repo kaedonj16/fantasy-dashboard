@@ -60,6 +60,15 @@
   src: url("/static/fonts/web/InterVariable.woff2") format("woff2");
 }
 
+/* Sora — the site's primary typeface (self-hosted, SIL OFL). Weights 400–800
+   cover body through extrabold headings; the browser only downloads the ones a
+   page actually uses. */
+@font-face { font-family: "Sora"; font-style: normal; font-weight: 400; font-display: swap; src: url("/static/fonts/web/sora-400.woff2") format("woff2"); }
+@font-face { font-family: "Sora"; font-style: normal; font-weight: 500; font-display: swap; src: url("/static/fonts/web/sora-500.woff2") format("woff2"); }
+@font-face { font-family: "Sora"; font-style: normal; font-weight: 600; font-display: swap; src: url("/static/fonts/web/sora-600.woff2") format("woff2"); }
+@font-face { font-family: "Sora"; font-style: normal; font-weight: 700; font-display: swap; src: url("/static/fonts/web/sora-700.woff2") format("woff2"); }
+@font-face { font-family: "Sora"; font-style: normal; font-weight: 800; font-display: swap; src: url("/static/fonts/web/sora-800.woff2") format("woff2"); }
+
 /* ============================================
    ANIMATIONS & KEYFRAMES
    ============================================ */
@@ -141,7 +150,7 @@
   --rookie: #2563eb; /* rookie badge — its own blue, so it reads the same hue in both themes
                         (not the navy --accent, which is deliberately dark in light mode) */
   /* Typography */
-  --font-sans: "InterVariable", "Inter", system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  --font-sans: "Sora", "InterVariable", system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
   --text-xs: 11px;
   --text-sm: 12px;
   --text-base: 14px;

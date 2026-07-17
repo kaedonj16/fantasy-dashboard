@@ -1083,8 +1083,9 @@ BASE_HTML = """
          (players, rosters, matchups); warm the connection so they paint sooner. -->
     <link rel="preconnect" href="https://sleepercdn.com" crossorigin>
     <link rel="dns-prefetch" href="https://sleepercdn.com">
-    <!-- Brand font: preload so text renders in Inter on first paint (font-display: swap). -->
-    <link rel="preload" href="/static/fonts/web/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
+    <!-- Brand font: preload the common Sora weights so text renders in it on first paint (font-display: swap). -->
+    <link rel="preload" href="/static/fonts/web/sora-400.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/static/fonts/web/sora-700.woff2" as="font" type="font/woff2" crossorigin>
     {sentry_js}
 
     <link rel="icon" href="/static/BR_Logo.png" type="image/png">
