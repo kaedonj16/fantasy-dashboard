@@ -3190,10 +3190,14 @@ def get_trade_ai_analysis(
         viewer_side: str,
         side_a: dict,
         side_b: dict,
+        opponent_roster_id: str = "",
 ) -> str:
     """Get AI analysis for a trade using the new generator module"""
     from dashboard_services.ai.renderer import get_trade_ai_analysis as renderer_analysis
-    return renderer_analysis(ctx, viewer_roster_id, viewer_side, side_a, side_b)
+    return renderer_analysis(
+        ctx, viewer_roster_id, viewer_side, side_a, side_b,
+        opponent_roster_id=opponent_roster_id,
+    )
 
 
 # Inline brand-font @font-face for standalone pages that don't load dashboard.css
