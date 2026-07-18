@@ -82,3 +82,53 @@ def test_starter_value_is_top8_redraft():
     # Single-player rosters: starter value is just that player's redraft value.
     assert teams["Unlucky"]["starter_value"] == 1800.0
     assert teams["Cellar"]["starter_value"] == 400.0
+
+
+def _momentum_ctx():
+    """Two teams with identical season résumés (same PF, record, value) but
+    mirror-image recent form: HotNow was cold early and is red-hot lately, ColdNow
+    the reverse. A cellar team anchors the field."""
+    mvt = [
+        {"player_id": "a", "position": "RB", "value": 1500, "redraft_value_1qb": 1500},
+        {"player_id": "b", "position": "RB", "value": 1500, "redraft_value_1qb": 1500},
+    ]
+    a = [80, 80, 80, 120, 120, 120]
+    b = [120, 120, 120, 80, 80, 80]
+    c = [70, 70, 70, 70, 70, 70]
+    rows = []
+    for wk in range(6):
+        rows.append({"week": wk + 1, "roster_id": "A", "points": a[wk], "finalized": True})
+        rows.append({"week": wk + 1, "roster_id": "B", "points": b[wk], "finalized": True})
+        rows.append({"week": wk + 1, "roster_id": "C", "points": c[wk], "finalized": True})
+    return {
+        "rosters": [
+            {"roster_id": "A", "players": ["a"], "settings": {"wins": 3, "losses": 3, "fpts": 600}},
+            {"roster_id": "B", "players": ["b"], "settings": {"wins": 3, "losses": 3, "fpts": 600}},
+            {"roster_id": "C", "players": [], "settings": {"wins": 0, "losses": 6, "fpts": 420}},
+        ],
+        "standings_map": {"A": {"PF": 600}, "B": {"PF": 600}, "C": {"PF": 420}},
+        "roster_map": {"A": "HotNow", "B": "ColdNow", "C": "Cellar"},
+        "model_value_table": mvt,
+        "picks_by_roster": {},
+        "df_weekly": pd.DataFrame(rows),
+        "league_type": "1qb",
+    }
+
+
+def test_momentum_breaks_a_tie_between_identical_resumes():
+    teams = _by_name(cb.build_power_rankings_context(_momentum_ctx()))
+    hot, cold = teams["HotNow"], teams["ColdNow"]
+    # Same PF/record/value components...
+    assert hot["power_components"]["pf"] == cold["power_components"]["pf"]
+    assert hot["power_components"]["record"] == cold["power_components"]["record"]
+    # ...but recent form separates them.
+    assert hot["momentum"] > 0 and cold["momentum"] < 0
+    assert hot["momentum_label"] == "Heating up"
+    assert cold["momentum_label"] == "Cooling off"
+    assert hot["power_score"] > cold["power_score"]
+
+
+def test_power_components_are_exposed():
+    teams = cb.build_power_rankings_context(_momentum_ctx())["teams"]
+    for t in teams:
+        assert set(t["power_components"]) == {"pf", "record", "value", "momentum", "consistency"}

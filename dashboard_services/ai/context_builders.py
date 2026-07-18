@@ -1090,11 +1090,15 @@ def build_power_rankings_context(ctx: dict) -> dict:
     Build context for AI-generated power rankings.
 
     For each roster, compute a PowerScore:
-      0.30 * Z(PF) + 0.40 * Z(luck-adjusted win%) + 0.30 * Z(starter value)
+      0.25 * Z(PF)
+      + 0.30 * Z(luck-adjusted win%)
+      + 0.20 * Z(starter value)
+      + 0.15 * Z(momentum)
+      + 0.10 * Z(consistency)
     where the win term blends all-play (schedule-luck-free) with actual record,
-    and value is the top-8 win-now (redraft) total rather than a whole-roster
-    dynasty average. Then pass top_assets, direction, and win_window to AI for
-    narrative generation.
+    value is the top-8 win-now (redraft) total, momentum is recent all-play form
+    vs the season baseline, and consistency rewards steady week-to-week scoring.
+    Then pass top_assets, direction, and win_window to AI for narrative generation.
     win_window uses the same league-context percentile logic as the teams page cards.
     """
     rosters = ctx.get("rosters") or []
@@ -1145,7 +1149,14 @@ def build_power_rankings_context(ctx: dict) -> dict:
     # other team each week — is far more predictive of real strength, so the
     # power score blends toward it. Falls back to actual win% if weekly scores
     # aren't available (e.g. offseason / preseason).
+    # We also derive two form signals from the same weekly scores:
+    #   momentum    — recent all-play form (last ~3 wk) minus season all-play, so
+    #                 a team heating up outranks an identical résumé that's fading.
+    #   consistency — negative coefficient of variation of weekly points; a steady
+    #                 scorer is worth more than a boom/bust team with the same mean.
     _all_play_pct: dict[str, float] = {}
+    _momentum: dict[str, float] = {}
+    _consistency: dict[str, float] = {}
     try:
         _dfw = ctx.get("df_weekly")
         if _dfw is not None and getattr(_dfw, "empty", True) is False and "roster_id" in _dfw.columns:
@@ -1160,8 +1171,31 @@ def build_power_rankings_context(ctx: dict) -> dict:
             }
             _ap = all_play_analysis(_weekly_scores, _actual_wins)
             _all_play_pct = {t: v["all_play_pct"] for t, v in _ap.items()}
+
+            # Momentum: recent-form all-play (last 3 finalized weeks) vs season.
+            _weeks_sorted = sorted(_weekly_scores.keys())
+            if len(_weeks_sorted) >= 4:  # need a season baseline to compare against
+                _recent = {w: _weekly_scores[w] for w in _weeks_sorted[-3:]}
+                _recent_ap = all_play_analysis(_recent, _actual_wins)
+                _momentum = {
+                    t: round(_recent_ap.get(t, {}).get("all_play_pct", 0.0) - _all_play_pct.get(t, 0.0), 4)
+                    for t in _all_play_pct
+                }
+
+            # Consistency: -(std/mean) of weekly points per roster.
+            _pts_by_rid: dict[str, list[float]] = {}
+            for _wk_scores in _weekly_scores.values():
+                for _rid_s, _pts in _wk_scores.items():
+                    _pts_by_rid.setdefault(_rid_s, []).append(_pts)
+            for _rid_s, _arr in _pts_by_rid.items():
+                if len(_arr) >= 2:
+                    _m = sum(_arr) / len(_arr)
+                    _sd = (sum((x - _m) ** 2 for x in _arr) / len(_arr)) ** 0.5
+                    _consistency[_rid_s] = round(-(_sd / _m), 4) if _m > 0 else 0.0
     except Exception:
         _all_play_pct = {}
+        _momentum = {}
+        _consistency = {}
 
     team_data = []
     for roster in rosters:
@@ -1181,6 +1215,11 @@ def build_power_rankings_context(ctx: dict) -> dict:
         # nod to the actual record you're living in. Falls back to raw win%.
         ap_pct = _all_play_pct.get(rid)
         luck_adj_win = (0.70 * ap_pct + 0.30 * win_pct) if ap_pct is not None else win_pct
+
+        # Recent form + steadiness (default neutral when no weekly data).
+        momentum = _momentum.get(rid, 0.0)
+        consistency = _consistency.get(rid, 0.0)
+        momentum_label = "Heating up" if momentum >= 0.12 else ("Cooling off" if momentum <= -0.12 else "Steady")
 
         # Compute roster value
         roster_players_vals = []
@@ -1234,6 +1273,9 @@ def build_power_rankings_context(ctx: dict) -> dict:
             "pf": pf,
             "avg_value": round(avg_value, 1),
             "starter_value": starter_value,
+            "momentum": momentum,
+            "momentum_label": momentum_label,
+            "consistency": consistency,
             "avg_age": avg_age,
             "win_window": win_window,
             "direction": direction,
@@ -1261,16 +1303,30 @@ def build_power_rankings_context(ctx: dict) -> dict:
             return [0.0] * len(values)
         return [(v - mean) / std for v in values]
 
-    pf_vals = [t["pf"] for t in team_data]
-    win_vals = [t["luck_adj_win"] for t in team_data]   # luck-adjusted, not raw
-    val_vals = [t["starter_value"] for t in team_data]  # starter-weighted, win-now
+    pf_z = _z_scores([t["pf"] for t in team_data])
+    win_z = _z_scores([t["luck_adj_win"] for t in team_data])    # luck-adjusted, not raw
+    val_z = _z_scores([t["starter_value"] for t in team_data])   # starter-weighted, win-now
+    mom_z = _z_scores([t["momentum"] for t in team_data])        # recent form
+    con_z = _z_scores([t["consistency"] for t in team_data])     # steadiness
 
-    pf_z = _z_scores(pf_vals)
-    win_z = _z_scores(win_vals)
-    val_z = _z_scores(val_vals)
-
+    # PowerScore: résumé (PF + luck-adjusted record + win-now roster value) plus
+    # form (recent momentum) and steadiness (consistency). Weights sum to 1.0.
     for i, team in enumerate(team_data):
-        team["power_score"] = round(0.30 * pf_z[i] + 0.40 * win_z[i] + 0.30 * val_z[i], 3)
+        team["power_score"] = round(
+            0.25 * pf_z[i]
+            + 0.30 * win_z[i]
+            + 0.20 * val_z[i]
+            + 0.15 * mom_z[i]
+            + 0.10 * con_z[i],
+            3,
+        )
+        team["power_components"] = {
+            "pf": round(pf_z[i], 2),
+            "record": round(win_z[i], 2),
+            "value": round(val_z[i], 2),
+            "momentum": round(mom_z[i], 2),
+            "consistency": round(con_z[i], 2),
+        }
 
     team_data.sort(key=lambda t: t["power_score"], reverse=True)
 
