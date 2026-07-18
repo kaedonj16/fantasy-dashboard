@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
 import time as _time
 from itertools import combinations
 from typing import Any, Dict, List, Optional, Tuple
@@ -23,6 +24,28 @@ log = logging.getLogger(__name__)
 # ── Sim-state cache (keyed by platform:league_id:season, 5-min TTL) ──────────
 _SIM_CACHE: Dict[str, Any] = {}
 _SIM_CACHE_TTL = 300  # seconds
+# Per-league lock so two concurrent cold requests (e.g. clicking between strategy
+# chips) don't each run the 10k base simulation - the second waits and reuses it.
+_SIM_LOCKS: Dict[str, threading.Lock] = {}
+_SIM_LOCKS_GUARD = threading.Lock()
+
+# ── Full-result cache ────────────────────────────────────────────────────────
+# The whole pipeline (base sim + per-target/per-package Monte Carlo swaps) is
+# expensive, and the UI re-requests the same inputs constantly: switching
+# archetype chips and back, re-selecting a strategy, reopening the tab. Cache the
+# finished result per exact input so those are instant. TTL sits under the sim
+# cache's so a result never outlives the sim state it was built from.
+_RESULT_CACHE: Dict[tuple, Any] = {}
+_RESULT_CACHE_TTL = 120  # seconds
+_RESULT_CACHE_MAX = 256
+
+
+def _sim_lock_for(cache_key: str) -> threading.Lock:
+    with _SIM_LOCKS_GUARD:
+        lk = _SIM_LOCKS.get(cache_key)
+        if lk is None:
+            lk = _SIM_LOCKS[cache_key] = threading.Lock()
+        return lk
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
@@ -1612,7 +1635,49 @@ def get_archetype_suggestions(
     league_size: int = 10,
     ctx: Optional[Dict[str, Any]] = None,
     untouchable_ids: Optional[set] = None,
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
+    """Cached wrapper around the archetype pipeline.
+
+    The result is memoized per exact request so the common interactions -
+    switching archetype chips and back, re-selecting a strategy, reopening the
+    tab - skip the whole (expensive) Monte Carlo pipeline and return instantly.
+    """
+    _key = (
+        platform, str(league_id), int(season), str(viewer_roster_id),
+        (archetype or "").lower().strip(), (league_type or "").lower(), int(league_size),
+        tuple(sorted(str(x) for x in untouchable_ids)) if untouchable_ids else (),
+    )
+    _hit = _RESULT_CACHE.get(_key)
+    if _hit is not None and (_time.time() - _hit["ts"]) < _RESULT_CACHE_TTL:
+        return _hit["result"]
+
+    result = _get_archetype_suggestions_impl(
+        archetype=archetype, platform=platform, league_id=league_id, season=season,
+        viewer_roster_id=viewer_roster_id, league_type=league_type,
+        league_size=league_size, ctx=ctx, untouchable_ids=untouchable_ids,
+    )
+
+    # Only cache real, non-empty results - never lock in a transient empty
+    # (e.g. a cold ctx or a failed sim build) for the full TTL.
+    if isinstance(result, dict) and result.get("suggestions"):
+        if len(_RESULT_CACHE) >= _RESULT_CACHE_MAX:
+            _oldest = min(_RESULT_CACHE, key=lambda k: _RESULT_CACHE[k]["ts"])
+            _RESULT_CACHE.pop(_oldest, None)
+        _RESULT_CACHE[_key] = {"result": result, "ts": _time.time()}
+    return result
+
+
+def _get_archetype_suggestions_impl(
+    archetype: str,
+    platform: str,
+    league_id: str,
+    season: int,
+    viewer_roster_id: str,
+    league_type: str = "1qb",
+    league_size: int = 10,
+    ctx: Optional[Dict[str, Any]] = None,
+    untouchable_ids: Optional[set] = None,
+) -> Dict[str, Any]:
     """
     Returns up to 5 archetype-targeted trade suggestions.
     Gracefully degrades when DB or league context is unavailable.
@@ -1732,10 +1797,20 @@ def get_archetype_suggestions(
             base_odds  = _cached["base_odds"]
             log.debug("[archetype] sim cache hit for %s", _cache_key)
         else:
-            sim_state = _build_sim_state(ctx, platform=platform)
-            base_odds = _run_base_sim(sim_state, n_sims=10_000) if sim_state else {}
-            _SIM_CACHE[_cache_key] = {"sim_state": sim_state, "base_odds": base_odds, "ts": _time.time()}
-            log.debug("[archetype] sim cache miss, built fresh for %s", _cache_key)
+            # Serialize the cold build so overlapping requests (rapid chip
+            # switching) don't each run the 10k base sim. Re-check the cache
+            # inside the lock - the request we waited on may have just filled it.
+            with _sim_lock_for(_cache_key):
+                _cached = _SIM_CACHE.get(_cache_key)
+                if _cached and (_time.time() - _cached["ts"]) < _SIM_CACHE_TTL:
+                    sim_state = _cached["sim_state"]
+                    base_odds = _cached["base_odds"]
+                    log.debug("[archetype] sim cache hit (post-lock) for %s", _cache_key)
+                else:
+                    sim_state = _build_sim_state(ctx, platform=platform)
+                    base_odds = _run_base_sim(sim_state, n_sims=10_000) if sim_state else {}
+                    _SIM_CACHE[_cache_key] = {"sim_state": sim_state, "base_odds": base_odds, "ts": _time.time()}
+                    log.debug("[archetype] sim cache miss, built fresh for %s", _cache_key)
         if sim_state:
             ppg_map  = sim_state["ppg_map"]
             pos_map  = sim_state["pos_map"]
