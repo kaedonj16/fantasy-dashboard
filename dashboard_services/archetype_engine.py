@@ -1101,6 +1101,26 @@ def _build_distribute(
     # return is what absorbs the bench penalty.
     _sv = sorted((v for v in (_f(x.get("value")) for x in values_by_id.values()) if v > 0),
                  reverse=True)
+
+    # Per-position value rank across the league, so the return package can be held
+    # to pure starters ("distribute a stud INTO multiple starters", not depth).
+    _pos_rank_d: Dict[str, int] = {}
+    _pool_d: Dict[str, list] = {}
+    for _pid_d, _v_d in values_by_id.items():
+        _p_d = str(_v_d.get("position") or "").upper()
+        if _p_d in SKILL_POS:
+            _pool_d.setdefault(_p_d, []).append((_pid_d, _f(_v_d.get("value"))))
+    for _lst_d in _pool_d.values():
+        for _rk_d, (_pid_d, _val_d) in enumerate(sorted(_lst_d, key=lambda x: -x[1]), start=1):
+            _pos_rank_d[_pid_d] = _rk_d
+
+    def _is_starter_tier(tgt: Dict) -> bool:
+        return _pos_category(
+            str(tgt.get("position") or "").upper(),
+            _pos_rank_d.get(tgt.get("player_id")),
+            num_teams, league_type,
+        ) in ("starter", "elite")
+
     studs = sorted(
         [p for p in viewer_players
          if values_by_id.get(p, {}).get("position") in SKILL_POS
@@ -1134,8 +1154,11 @@ def _build_distribute(
         for owner, pool in targets_by_owner.items():
             if owner in used_owners:
                 continue
+            # Only assemble the return out of pure starters (or elites) - the
+            # point of distributing a stud is to come away with multiple startable
+            # pieces, not a pile of flex depth that happens to sum to the value.
             cand = sorted(
-                [p for p in pool if p["position"] not in saturated],
+                [p for p in pool if p["position"] not in saturated and _is_starter_tier(p)],
                 key=lambda x: x["value"], reverse=True
             )[:8]
             local_best: Optional[Tuple[str, List[Dict], float]] = None
