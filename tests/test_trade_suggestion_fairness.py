@@ -168,3 +168,62 @@ def test_contender_prefers_proven_acquisition(monkeypatch):
     young, old = _score_for(res, "Team 2"), _score_for(res, "Team 3")
     assert young is not None and old is not None
     assert old > young, "a contender should rank the proven (older) RB package higher"
+
+
+# ── Roster-aware consolidation ceiling (end-to-end through the real path) ──────
+
+def _mva2(pid, name, pos, val):
+    return {"player_id": pid, "name": name, "position": pos, "value": val, "age": 25}
+
+
+def _build_ceiling_ctx():
+    """WR-thin viewer (its only WR is flex-tier) that can still afford a rival's
+    elite WR one-for-one with an RB, so absent the ceiling that elite would be a
+    real, fair target. The ceiling should block it (a flex-only team shouldn't be
+    pitched a top-of-position stud)."""
+    mvt = [
+        _mva2("v_wr1", "V WR1", "WR", 300),   # lone flex WR -> WR is a need, best WR is flex
+        _mva2("v_rb1", "V RB1", "RB", 900), _mva2("v_rb2", "V RB2", "RB", 850),  # RB surplus to send
+    ]
+    rosters = [{"roster_id": "1", "players": ["v_wr1", "v_rb1", "v_rb2"]}]
+    roster_map = {"1": "Viewer"}
+
+    mvt += [_mva2("p_wr1", "Elite WR", "WR", 950), _mva2("p_rb1", "P RB1", "RB", 250)]
+    rosters.append({"roster_id": "2", "players": ["p_wr1", "p_rb1"]})
+    roster_map["2"] = "Partner"
+
+    for i in range(3, 13):  # filler to seed the need/surplus cutoffs
+        mvt += [_mva2(f"f{i}_wr", f"F{i} WR", "WR", 400), _mva2(f"f{i}_rb", f"F{i} RB", "RB", 450)]
+        rosters.append({"roster_id": str(i), "players": [f"f{i}_wr", f"f{i}_rb"]})
+        roster_map[str(i)] = f"Team {i}"
+
+    return {
+        "rosters": rosters, "model_value_table": mvt, "roster_map": roster_map,
+        "picks_by_roster": {},
+        "standings_map": {r["roster_id"]: {"wins": 5, "losses": 5} for r in rosters},
+        "rookie_rankings": [], "league_type": "1qb",
+        "roster_positions": ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "FLEX"],
+    }
+
+
+def _acquire_names(res):
+    return [t["name"] for p in res["top_partners"] for t in (p.get("targets_they_have") or [])]
+
+
+def test_ceiling_blocks_the_elite_for_a_flex_only_viewer_end_to_end(monkeypatch):
+    """Differential: the ONLY thing that changes is whether the shared ceiling is
+    active. With it on, the elite WR is never surfaced to a flex-only viewer; with
+    it stubbed off, the exact same league DOES surface it - proving the ceiling
+    (not the need/fairness machinery) is what removes it, through the real path."""
+    monkeypatch.setattr(cb, "build_team_gm_context",
+                        lambda ctx, rid: {"team_name": "Viewer", "direction": "balanced"})
+
+    on = cb.build_trade_suggestions_context(_build_ceiling_ctx(), "1")
+    assert "Elite WR" not in _acquire_names(on), "flex-only viewer must not be pitched the elite WR"
+
+    # Disable just the ceiling (the function re-imports it per call, so patching
+    # the source binds through) and re-run the identical league.
+    import utils.player_tiers as pt
+    monkeypatch.setattr(pt, "consolidate_target_allowed", lambda a, b: True)
+    off = cb.build_trade_suggestions_context(_build_ceiling_ctx(), "1")
+    assert "Elite WR" in _acquire_names(off), "without the ceiling the elite WR is a fair, real target"

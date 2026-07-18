@@ -831,6 +831,28 @@ def build_trade_suggestions_context(
             return max(-1.0, min(0.5, (avg_age - 23.0) * 0.15))    # penalize raw youth
         return 0.0
 
+    # Roster-aware consolidation ceiling, shared with the archetype engine so both
+    # suggestion surfaces steer a flex-only team to a pure starter (never an
+    # unrealistic elite reach) and a starter-rich team to an elite.
+    from utils.player_tiers import consolidate_target_allowed, pos_category, positional_ranks
+    _pt_ranks = positional_ranks(model_value_lookup)
+    _pt_starter_thr, _ = _derive_league_thresholds(ctx.get("roster_positions") or [], n_teams)
+    _pt_viewer_best: dict[str, tuple[int, float]] = {}
+    for _vp in (roster.get("players") or []):
+        _mv = model_value_lookup.get(str(_vp)) or {}
+        _vpos = str(_mv.get("position") or "").upper()
+        _vrk = _pt_ranks.get(str(_vp))
+        if _vpos in _SCARCITY_POSITIONS and _vrk and (_vpos not in _pt_viewer_best or _vrk < _pt_viewer_best[_vpos][0]):
+            _pt_viewer_best[_vpos] = (_vrk, _safe_float(_mv.get("value")))
+
+    def _target_tier_ok(target: dict) -> bool:
+        """Apply the shared consolidation ceiling to a candidate acquisition."""
+        _tpos = str(target.get("position") or "").upper()
+        _tcat = pos_category(_tpos, _pt_ranks.get(str(target.get("id"))), target.get("value"), _pt_starter_thr)
+        _best = _pt_viewer_best.get(_tpos)
+        _bcat = pos_category(_tpos, _best[0], _best[1], _pt_starter_thr) if _best else "depth"
+        return consolidate_target_allowed(_tcat, _bcat)
+
     # Find best trade partners
     partners = []
     for r in rosters:
@@ -867,7 +889,7 @@ def build_trade_suggestions_context(
         for pos in partner_surplus:
             if pos in viewer_needs:
                 top = _roster_top_players(r, pos, exclude_ids=viewer_player_ids)[:2]
-                targets_they_have.extend(top)
+                targets_they_have.extend(t for t in top if _target_tier_ok(t))
 
         # Surplus-liquidation path: viewer has surplus to give but no explicit need.
         # Partner can offer any high-value player at a position viewer is weak/neutral at.
@@ -883,7 +905,7 @@ def build_trade_suggestions_context(
                 weaker_positions = list(_SCARCITY_POSITIONS)
             for pos in weaker_positions:
                 top = _roster_top_players(r, pos, exclude_ids=viewer_player_ids)[:1]
-                targets_they_have.extend(p for p in top if p.get("value", 0) >= 350)
+                targets_they_have.extend(p for p in top if p.get("value", 0) >= 350 and _target_tier_ok(p))
             targets_they_have.sort(key=lambda x: x["value"], reverse=True)
             targets_they_have = targets_they_have[:1]
 

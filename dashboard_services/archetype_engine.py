@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from utils.roster_strength import STARTER_THRESHOLD, derive_league_thresholds
 from utils.tier_stack import asset_tier
-from utils.tier_thresholds import ELITE_RANK_CUTOFFS, FALLBACK_THRESHOLDS, compute_tier_thresholds
+from utils.tier_thresholds import FALLBACK_THRESHOLDS, compute_tier_thresholds
 
 log = logging.getLogger(__name__)
 
@@ -44,45 +44,20 @@ SCARCITY_SF  = {"QB": 1.00, "RB": 1.00, "WR": 1.00, "TE": 0.85}
 # T5 depth for that same stud is not, no matter how the raw values add up.
 _CONSOLIDATE_MAX_TIER_DROP = 2
 
-# Roster-aware consolidation tiers, both matched to existing app definitions:
-#   elite   = the ELITE chip's per-position value-rank cutoffs (ELITE_RANK_CUTOFFS)
-#   starter = starter-caliber value (utils.roster_strength, same as the depth
-#             warnings), scaled by league size
-# Everything rostered below the starter bar is flex; unknown/valueless is depth.
-def _pos_category(pos: str, rank: Optional[int], value: Optional[float],
-                  starter_threshold: Dict[str, float]) -> str:
-    if not rank:
-        return "depth"
-    if rank <= ELITE_RANK_CUTOFFS.get(pos, 3):
-        return "elite"
-    if _f(value) >= starter_threshold.get(pos, STARTER_THRESHOLD.get(pos, 350)):
-        return "starter"
-    return "flex"
+# ── Tunable suggestion parameters (kept together so the knobs are visible) ─────
+_DISTRIBUTE_STUD_FLOOR = 600         # min value for a player to be worth distributing
+_DISTRIBUTE_BAND = (0.96, 1.18)      # return-package value as a fraction of the stud
+_CONSOLIDATE_TARGET_FLOOR = 350      # min value to be a worthwhile consolidation target
 
-
-def _positional_ranks(values_by_id: Dict[str, Any]) -> Dict[str, int]:
-    """pid -> value rank within its own position (1 = highest-value at that
-    position) across the whole value table. Feeds _pos_category."""
-    pool: Dict[str, list] = {}
-    for pid, v in values_by_id.items():
-        p = str(v.get("position") or "").upper()
-        if p in SKILL_POS:
-            pool.setdefault(p, []).append((pid, _f(v.get("value"))))
-    ranks: Dict[str, int] = {}
-    for lst in pool.values():
-        for rk, (pid, _v) in enumerate(sorted(lst, key=lambda x: -x[1]), start=1):
-            ranks[pid] = rk
-    return ranks
-
-
-def _consolidate_target_allowed(target_cat: str, viewer_best_cat: str) -> bool:
-    """Whether a consolidation should aim at a target of `target_cat` given the
-    viewer's best existing player at that position. You only reach for an ELITE
-    (top-3) when you already roster a pure starter (or elite) there; a team with
-    only flex-worthy depth is steered to a pure starter instead."""
-    if target_cat == "elite" and viewer_best_cat not in ("starter", "elite"):
-        return False
-    return True
+# Roster-aware consolidation tiers live in utils.player_tiers as the single
+# source of truth, so the archetype engine and the proactive Suggestions tab
+# apply the same elite/starter/flex rules. Aliased to the private names used
+# throughout this module (and by tests/test_consolidate_tiers.py).
+from utils.player_tiers import (  # noqa: E402
+    consolidate_target_allowed as _consolidate_target_allowed,
+    pos_category as _pos_category,
+    positional_ranks as _positional_ranks,
+)
 
 
 COMPLEMENT = {
@@ -1121,7 +1096,7 @@ def _build_distribute(
     studs = sorted(
         [p for p in viewer_players
          if values_by_id.get(p, {}).get("position") in SKILL_POS
-         and _f(values_by_id[p].get("value")) >= 600
+         and _f(values_by_id[p].get("value")) >= _DISTRIBUTE_STUD_FLOOR
          and (not untouchable_ids or p not in untouchable_ids)],
         key=lambda p: _f(values_by_id[p].get("value")),
         reverse=True,
@@ -1137,7 +1112,7 @@ def _build_distribute(
         # Viewer SENDS the stud and RECEIVES this depth package, so the low end
         # is an underpay against the viewer - keep it tight (≥96%). Receiving a
         # modest depth premium is fine, so the high end stays a touch generous.
-        lo, hi = sval * 0.96, sval * 1.18
+        lo, hi = sval * _DISTRIBUTE_BAND[0], sval * _DISTRIBUTE_BAND[1]
 
         # In 1QB leagues a second QB has no FLEX slot and contributes nothing to
         # the lineup if the viewer already has a QB. RB/WR/TE all remain eligible
@@ -2011,7 +1986,7 @@ def get_archetype_suggestions(
             # Allow mid-tier targets in (floor well below the old 600) and soften
             # the raw-value term so a productive ~450-650 player competes with a
             # pure-value stud instead of always being buried behind it.
-            if val < 350:
+            if val < _CONSOLIDATE_TARGET_FLOOR:
                 continue
             rdft_ratio = rdft / max(1, val) if rdft > 0 else 0.6
             score = (
