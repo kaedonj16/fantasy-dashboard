@@ -16791,6 +16791,13 @@ tr.team-clickable {
   color: var(--text);
   line-height: 1.4;
 }
+.suggestion-balance {
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.suggestion-balance strong { color: var(--text); font-weight: 800; }
 
 /* ── Positional Scarcity Notes ───────────────────────── */
 .scarcity-notes-wrap {

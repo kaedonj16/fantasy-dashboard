@@ -939,10 +939,12 @@ def build_trade_suggestions_context(
                     # Send 2nd player onward at surplus positions (keep 1 starter)
                     all_surplus_sendable.extend(top[1:2] if pos_depth > 1 else top[:1])
             all_surplus_sendable.sort(key=lambda x: x["value"], reverse=True)
-            # Build package until combined value reaches ~80% of target
+            # Build package until combined value lands in a fair band around the
+            # target (~92%), so consolidation offers are realistic rather than
+            # obvious underpays.
             running = 0.0
             for p in all_surplus_sendable:
-                if running >= target_val * 0.80:
+                if running >= target_val * 0.92:
                     break
                 targets_viewer_sends.append(p)
                 running += p["value"]
@@ -962,10 +964,39 @@ def build_trade_suggestions_context(
         else:
             trade_type_hint = "swap"
 
+        # Value fairness: how even the two sides are (1.0 = perfectly balanced).
+        # A suggestion is only realistic if BOTH managers would plausibly ink it,
+        # so drop fleece-level mismatches and rank the rest by how fair they are
+        # rather than by positional fit alone. A modest premium is normal when
+        # consolidating depth into one stud, so the floor is lenient (0.62), but
+        # a lopsided robbery never gets surfaced.
+        _hi = max(value_you_get, value_you_give)
+        _lo = min(value_you_get, value_you_give)
+        fairness = round(_lo / _hi, 3) if _hi > 0 else 0.0
+        if fairness < 0.62:
+            continue
+        if fairness >= 0.90:
+            balance_label = "even"
+        elif value_you_give > value_you_get:
+            balance_label = "you pay a premium"   # consolidation / buying up
+        else:
+            balance_label = "you get a discount"  # selling depth for value
+
+        # Composite ranking: positional fit still matters most, but a fair,
+        # mutually beneficial deal now outranks a lopsided same-fit one, and a
+        # deal where the viewer isn't overpaying gets a small nudge.
+        suggestion_score = round(
+            match_score + fairness * 3.0 + (0.5 if value_you_get >= value_you_give else 0.0),
+            3,
+        )
+
         partners.append({
             "roster_id": rid,
             "team_name": roster_map.get(rid) or f"Team {rid}",
             "match_score": match_score,
+            "suggestion_score": suggestion_score,
+            "fairness": fairness,
+            "balance_label": balance_label,
             "partner_needs": partner_needs,
             "partner_surplus": partner_surplus,
             "targets_they_have": targets_they_have[:3],
@@ -976,7 +1007,7 @@ def build_trade_suggestions_context(
             "is_package_trade": is_package_trade,
         })
 
-    partners.sort(key=lambda x: x["match_score"], reverse=True)
+    partners.sort(key=lambda x: (x["suggestion_score"], x["match_score"]), reverse=True)
 
     # Pick-for-player suggestions: viewer offers a pick instead of a player.
     # Don't require partner_surplus - any team with a good player at a needed
