@@ -2550,6 +2550,40 @@ thead th {
 }
 
 /* ============================================
+   EMPTY STATE — one shared look for "nothing here yet" panels,
+   replacing the many one-off *-empty classes over time.
+   ============================================ */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 5px;
+  padding: 34px 20px;
+}
+.empty-state-icon {
+  width: 38px;
+  height: 38px;
+  margin-bottom: 5px;
+  color: var(--text-subtle);
+  opacity: 0.75;
+}
+.empty-state-icon svg { width: 100%; height: 100%; display: block; }
+.empty-state-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text);
+}
+.empty-state-sub {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  max-width: 42ch;
+}
+.empty-state-action { margin-top: 10px; }
+
+/* ============================================
    TRADE CALCULATOR
    ============================================ */
 .bar-a {
@@ -3813,10 +3847,27 @@ strong + .player-badge,
   background: var(--border);
 }
 
+.otc-main-tab {
+  position: relative;
+  z-index: 1;
+}
 .otc-main-tab.is-active {
   background: var(--card);
   color: var(--text);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+/* When the sliding indicator is active (JS ran), it becomes the active pill, so
+   drop the per-tab background and let the indicator carry it. Without JS the
+   rule above still shows a static active pill (no regression). The indicator is
+   still positioned under reduced motion — it just doesn't animate. */
+.otc-main-tabs.br-slide-tabs .otc-main-tab.is-active {
+  background: transparent;
+  box-shadow: none;
+}
+.otc-main-tabs .br-slide-ind {
+  background: var(--card);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
 }
 
 /* ── Suggestions tab layout ─────────────────────────────────── */
@@ -21644,3 +21695,118 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   grid-column: 1 / -1;
 }
 
+/* ============================================================================
+   MOTION LAYER
+   Reusable, tasteful animations wired across the site. Every effect here is
+   turned off under prefers-reduced-motion (block at the very end of this file
+   already zeroes animations/transitions globally, and we re-assert it below so
+   these keyframes never fire for motion-sensitive users).
+   ============================================================================ */
+
+/* -- Content entrance: fade + rise, optionally staggered ------------------- */
+@keyframes brRiseIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.br-page-enter { animation: brRiseIn .5s cubic-bezier(.2,.7,.3,1) both; }
+.br-stagger > * { animation: brRiseIn .48s cubic-bezier(.2,.7,.3,1) backwards; }
+.br-stagger > *:nth-child(1)  { animation-delay: .02s; }
+.br-stagger > *:nth-child(2)  { animation-delay: .07s; }
+.br-stagger > *:nth-child(3)  { animation-delay: .12s; }
+.br-stagger > *:nth-child(4)  { animation-delay: .17s; }
+.br-stagger > *:nth-child(5)  { animation-delay: .22s; }
+.br-stagger > *:nth-child(6)  { animation-delay: .27s; }
+.br-stagger > *:nth-child(7)  { animation-delay: .31s; }
+.br-stagger > *:nth-child(8)  { animation-delay: .35s; }
+.br-stagger > *:nth-child(n+9){ animation-delay: .38s; }
+
+/* -- Bars fill in: grow from 0 to the element's own (inline) width.
+   A keyframe that specifies only `from` lets `to` default to the underlying
+   width, so this works no matter what width each bar is set to. ------------- */
+@keyframes brBarGrow { from { width: 0; } }
+.analytics-bar-fill,
+.compare-bar-fill,
+.dr-gbar-fill,
+.dr-proj-bar-fill,
+.pos-bar-inner,
+.rivalry-bar-fill,
+.br-bar-grow {
+  animation: brBarGrow .9s cubic-bezier(.2,.7,.3,1) both;
+}
+
+/* -- Hover lift: signals "clickable" ---------------------------------------- */
+.br-lift { transition: transform .18s cubic-bezier(.2,.7,.3,1), box-shadow .18s ease; }
+.br-lift:hover { transform: translateY(-3px); box-shadow: 0 10px 24px rgba(0,0,0,.14); }
+:root[data-theme=dark] .br-lift:hover { box-shadow: 0 10px 26px rgba(0,0,0,.45); }
+
+/* -- Pop: scale-in with a little bounce (medals, toggled icons) ------------- */
+@keyframes brPop { 0% { opacity: 0; transform: scale(.4); } 60% { transform: scale(1.12); } 100% { opacity: 1; transform: scale(1); } }
+.rank-mark { animation: brPop .5s cubic-bezier(.2,.9,.3,1.2) backwards; }
+.br-pop { animation: brPop .45s cubic-bezier(.2,.9,.3,1.2); display: inline-block; }
+.rank-mark:nth-child(2) { animation-delay: .08s; }
+.rank-mark:nth-child(3) { animation-delay: .16s; }
+
+/* -- Live pulse dot: expanding ring instead of a hard blink ----------------- */
+@keyframes brPulseRing { 0% { transform: scale(1); opacity: .55; } 100% { transform: scale(2.6); opacity: 0; } }
+.live-dot { position: relative; animation: none; }
+.live-dot::after {
+  content: ""; position: absolute; inset: 0; border-radius: 999px;
+  background: inherit; animation: brPulseRing 1.6s ease-out infinite;
+}
+
+/* -- Chip pop-in: filter/position chips spring in, staggered ---------------- */
+@keyframes brChipPop { 0% { opacity: 0; transform: scale(.7); } 70% { transform: scale(1.06); } 100% { opacity: 1; transform: scale(1); } }
+.br-chip-pop > * { animation: brChipPop .38s cubic-bezier(.2,.9,.3,1.3) backwards; }
+.br-chip-pop > *:nth-child(2) { animation-delay: .05s; }
+.br-chip-pop > *:nth-child(3) { animation-delay: .10s; }
+.br-chip-pop > *:nth-child(4) { animation-delay: .15s; }
+.br-chip-pop > *:nth-child(5) { animation-delay: .20s; }
+.br-chip-pop > *:nth-child(n+6) { animation-delay: .24s; }
+
+/* -- Value change flash: quick tint on update ------------------------------- */
+@keyframes brFlashUp   { 0% { background: color-mix(in srgb, var(--win) 42%, transparent); }  100% { background: transparent; } }
+@keyframes brFlashDown { 0% { background: color-mix(in srgb, var(--loss) 42%, transparent); } 100% { background: transparent; } }
+.br-flash-up   { animation: brFlashUp 1s ease; }
+.br-flash-down { animation: brFlashDown 1s ease; }
+
+/* -- Shake on error --------------------------------------------------------- */
+@keyframes brShake { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-7px); } 40% { transform: translateX(6px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(3px); } }
+.br-shake { animation: brShake .4s ease; }
+
+/* -- Sparkline / trend line draws on (inline SVG paths) --------------------- */
+@keyframes brDraw { to { stroke-dashoffset: 0; } }
+.br-draw path { stroke-dasharray: var(--br-draw-len, 320); stroke-dashoffset: var(--br-draw-len, 320); animation: brDraw 1.1s ease forwards; }
+
+/* -- Row reorder (FLIP): rows glide to their new spot ----------------------- */
+.br-flip { transition: transform .42s cubic-bezier(.2,.7,.3,1); }
+
+/* -- Draft pick reveal: a just-made pick pops in with an accent ring -------- */
+@keyframes drPickReveal {
+  0%   { transform: scale(.6); opacity: 0; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 55%, transparent); }
+  55%  { transform: scale(1.06); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 transparent; }
+}
+.dr-cell-reveal { animation: drPickReveal .42s cubic-bezier(.2,.9,.3,1.2); position: relative; z-index: 2; }
+
+/* -- Sliding tab indicator -------------------------------------------------- */
+.br-slide-tabs { position: relative; }
+.br-slide-ind {
+  position: absolute; z-index: 0; pointer-events: none; border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  transition: left .28s cubic-bezier(.4,1.2,.4,1), width .28s cubic-bezier(.4,1.2,.4,1),
+              top .28s cubic-bezier(.4,1.2,.4,1), height .28s cubic-bezier(.4,1.2,.4,1);
+}
+/* Tabs must paint above the indicator (a positioned z-index:0 sibling would
+   otherwise cover in-flow button text). */
+.br-slide-tabs > button, .br-slide-tabs > a { position: relative; z-index: 1; }
+/* Underline variant: a solid accent bar tracking the active tab's bottom edge. */
+.br-slide-ind-underline { background: var(--accent); border-radius: 999px 999px 0 0; }
+.tm-tab-bar.br-slide-tabs .tm-tab.active,
+.pm-tab-bar.br-slide-tabs .pm-tab.active { border-bottom-color: transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  .br-page-enter, .br-stagger > *, .analytics-bar-fill, .compare-bar-fill,
+  .dr-gbar-fill, .dr-proj-bar-fill, .pos-bar-inner, .rivalry-bar-fill,
+  .br-bar-grow, .rank-mark, .br-pop, .live-dot::after, .br-chip-pop > *,
+  .br-flash-up, .br-flash-down, .br-shake, .br-draw path, .dr-cell-reveal {
+    animation: none !important;
+  }
+  .br-lift, .br-flip, .br-slide-ind { transition: none !important; }
+}

@@ -1033,6 +1033,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-sum-lrank.gold { color: var(--warning); }
   .dr-sum-lrank.silver { color: var(--text-subtle); }
   .dr-sum-lrank.bronze { color: #cd7c2f; }
+  .dr-sum-lrank.has-medal { width: 30px; display: inline-flex; align-items: center; justify-content: center; }
   .dr-sum-lname { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; color: var(--text);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dr-sum-lrow.is-me .dr-sum-lname { color: var(--accent,#38bdf8); }

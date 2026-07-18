@@ -743,7 +743,7 @@
       + '<button class="rz-filter-toggle' + (_filterOpen ? ' open' : '') + '" id="rz-filter-btn">'
       + (activeCount ? '⊞ Filter (' + activeCount + ')' : '⊞ Filter') + '</button>'
       + histBtn
-      + chips
+      + '<span class="br-chip-pop" style="display:contents">' + chips + '</span>'
       + '</div>'
       + panel;
   }

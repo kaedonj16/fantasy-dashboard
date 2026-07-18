@@ -481,6 +481,211 @@ function emptyState(container, message, iconClass) {
     '</div>';
 }
 
+// ── Motion layer ──────────────────────────────────────────────────────────────
+// Small, reusable animation helpers used across the site. Everything here is a
+// no-op when the user prefers reduced motion, and each helper is safe to call on
+// a missing element. The matching CSS lives in the MOTION LAYER block of
+// dashboard.css. Exposed on window so any page/renderer can call them.
+(function () {
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Re-trigger a one-shot CSS animation class on an element.
+  function replayClass(el, cls) {
+    if (!el) return;
+    el.classList.remove(cls);
+    void el.offsetWidth; // force reflow so the class re-adds cleanly
+    el.classList.add(cls);
+  }
+
+  // Flash an element green (up) or red (down) when its value changes.
+  window.brFlash = function (el, dir) {
+    if (!el || reduce) return;
+    var cls = dir === 'down' ? 'br-flash-down' : 'br-flash-up';
+    replayClass(el, cls);
+  };
+
+  // Shake an element (e.g. an invalid input) to signal an error.
+  window.brShake = function (el) {
+    if (!el) return;
+    if (reduce) { return; }
+    replayClass(el, 'br-shake');
+  };
+
+  // Pop an element in with a little bounce (e.g. a toggled-on star/icon).
+  window.brPop = function (el) {
+    if (!el || reduce) return;
+    replayClass(el, 'br-pop');
+  };
+
+  // Flash the numeric values that changed across a re-render. Snapshots the text
+  // of every `selector` under `container`, runs `mutate()` (which typically
+  // replaces innerHTML), then flashes any element whose number moved — green up,
+  // red down. Elements are matched by position, so `mutate` should keep their
+  // order stable (true for live score refreshes of the same matchups/rows).
+  window.brFlashUpdates = function (container, selector, mutate) {
+    if (!container) { mutate && mutate(); return; }
+    if (reduce) { mutate && mutate(); return; }
+    var before = [];
+    container.querySelectorAll(selector).forEach(function (el) { before.push(parseFloat(el.textContent)); });
+    mutate && mutate();
+    container.querySelectorAll(selector).forEach(function (el, i) {
+      var o = before[i], n = parseFloat(el.textContent);
+      if (isNaN(o) || isNaN(n) || o === n) return;
+      window.brFlash(el, n >= o ? 'up' : 'down');
+    });
+  };
+
+  // Count a number up from 0 (or `from`) to its target. `el` may carry
+  // data-countup="728.2" (target) and data-countup-dp="1" (decimal places);
+  // opts can override { to, from, dp, dur, suffix, prefix }.
+  window.brCountUp = function (el, opts) {
+    if (!el) return;
+    opts = opts || {};
+    var to = opts.to != null ? opts.to : parseFloat(el.getAttribute('data-countup'));
+    if (isNaN(to)) return;
+    var dp = opts.dp != null ? opts.dp : parseInt(el.getAttribute('data-countup-dp') || '0', 10);
+    var pre = opts.prefix != null ? opts.prefix : (el.getAttribute('data-countup-prefix') || '');
+    var suf = opts.suffix != null ? opts.suffix : (el.getAttribute('data-countup-suffix') || '');
+    var from = opts.from != null ? opts.from : 0;
+    var fmt = function (n) { return pre + n.toFixed(dp) + suf; };
+    if (reduce) { el.textContent = fmt(to); return; }
+    // Cancel any count-up still running on this element so rapid updates
+    // (e.g. adding several trade pieces quickly) don't fight each other.
+    var run = (el._brCountRun || 0) + 1; el._brCountRun = run;
+    var dur = opts.dur || 900, st = null;
+    (function tick(now) {
+      if (el._brCountRun !== run) return;
+      if (st === null) st = now;
+      var p = Math.min(1, (now - st) / dur);
+      var e = 1 - Math.pow(1 - p, 3); // easeOutCubic
+      el.textContent = fmt(from + (to - from) * e);
+      if (p < 1) requestAnimationFrame(tick);
+    })(performance.now());
+  };
+
+  // FLIP reorder: measure children, run `mutate()` (which reorders/replaces
+  // DOM), then animate each surviving child from its old spot to its new one.
+  // Children are matched by a key: data-flip-key attribute, else id.
+  window.brFlipReorder = function (container, mutate) {
+    if (!container) { if (mutate) mutate(); return; }
+    if (reduce) { mutate && mutate(); return; }
+    var keyOf = function (n) { return n.getAttribute && (n.getAttribute('data-flip-key') || n.id) || null; };
+    var first = {};
+    Array.prototype.forEach.call(container.children, function (c) {
+      var k = keyOf(c); if (k) first[k] = c.getBoundingClientRect();
+    });
+    mutate && mutate();
+    Array.prototype.forEach.call(container.children, function (c) {
+      var k = keyOf(c); if (!k || !first[k]) return;
+      var last = c.getBoundingClientRect();
+      var dx = first[k].left - last.left, dy = first[k].top - last.top;
+      if (!dx && !dy) return;
+      c.classList.add('br-flip');
+      c.style.transition = 'none';
+      c.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+      requestAnimationFrame(function () {
+        c.style.transition = '';
+        c.style.transform = '';
+      });
+    });
+  };
+
+  // Sliding tab indicator. Give the tab bar `data-br-slide-tabs`, mark its tab
+  // buttons with a selector (default: direct children that are buttons/links),
+  // and add the class that marks the active one (default: "active"/"on"/"is-active").
+  window.brSlideTabs = function (bar, opts) {
+    if (!bar) return;
+    opts = opts || {};
+    var sel = opts.tabSelector || ':scope > button, :scope > a';
+    var activeCls = opts.activeClass; // if given, we watch for it
+    var underline = !!opts.underline; // thin bar under the active tab vs. full pill
+    var ind = bar.querySelector(':scope > .br-slide-ind');
+    if (!ind) {
+      ind = document.createElement('span');
+      ind.className = 'br-slide-ind' + (underline ? ' br-slide-ind-underline' : '');
+      bar.insertBefore(ind, bar.firstChild);
+    }
+    bar.classList.add('br-slide-tabs');
+    function tabs() { try { return bar.querySelectorAll(sel); } catch (e) { return []; } }
+    function isActive(t) {
+      if (activeCls) return t.classList.contains(activeCls);
+      return t.classList.contains('active') || t.classList.contains('on') ||
+             t.classList.contains('is-active') || t.getAttribute('aria-selected') === 'true';
+    }
+    function move(t, animate) {
+      if (!t) return;
+      if (!animate) { ind.style.transition = 'none'; }
+      ind.style.left = t.offsetLeft + 'px';
+      ind.style.width = t.offsetWidth + 'px';
+      if (underline) {
+        var h = opts.underlineHeight || 2;
+        ind.style.top = (t.offsetTop + t.offsetHeight - h) + 'px';
+        ind.style.height = h + 'px';
+      } else {
+        ind.style.top = t.offsetTop + 'px';
+        ind.style.height = t.offsetHeight + 'px';
+      }
+      if (!animate) { void ind.offsetWidth; ind.style.transition = ''; }
+    }
+    function sync(animate) {
+      var list = tabs(), on = null;
+      Array.prototype.forEach.call(list, function (t) { if (isActive(t)) on = t; });
+      move(on || list[0], animate);
+    }
+    sync(false);
+    bar.addEventListener('click', function (e) {
+      var t = e.target.closest(sel.replace(/:scope\s*>\s*/g, ''));
+      if (t && bar.contains(t)) setTimeout(function () { sync(true); }, 0);
+    });
+    window.addEventListener('resize', function () { sync(false); });
+    // If the bar was hidden at init (e.g. inside a collapsed panel/modal), its
+    // tabs measured 0-wide. Re-sync once it actually has layout so the indicator
+    // lands in the right place the first time it's shown.
+    if (window.IntersectionObserver) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) { if (en.isIntersecting && bar.offsetWidth) sync(false); });
+      });
+      io.observe(bar);
+    }
+    bar._brSlideSync = sync;
+    return { sync: sync };
+  };
+
+  // Auto-wire on load: content entrance for the main page container, count-up
+  // for any [data-countup], and sliding tabs for any [data-br-slide-tabs].
+  function initMotion() {
+    if (!reduce) {
+      // Stagger the main container's direct children (cards/sections) so they
+      // fade-and-rise in. Staggering children — rather than transforming the
+      // whole page — avoids creating a containing block for any fixed/sticky
+      // descendants during the animation.
+      var main = document.getElementById('page-root') ||
+                 document.querySelector('main.page-main, main.os-main-col');
+      if (main && !main.classList.contains('br-stagger')) {
+        main.classList.add('br-stagger');
+      }
+      // Nav pills: a gentle staggered entrance, but only once per browser
+      // session. The nav is link-based (full page loads), so replaying it on
+      // every navigation would be noisy — this makes it a first-impression flourish.
+      try {
+        if (!sessionStorage.getItem('brNavEntered')) {
+          document.querySelectorAll('.nav-pills-container').forEach(function (nav) {
+            nav.classList.add('br-stagger');
+          });
+          sessionStorage.setItem('brNavEntered', '1');
+        }
+      } catch (e) { /* sessionStorage may be unavailable (private mode) */ }
+    }
+    document.querySelectorAll('[data-countup]').forEach(function (el) { window.brCountUp(el); });
+    document.querySelectorAll('[data-br-slide-tabs]').forEach(function (bar) { window.brSlideTabs(bar); });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initMotion);
+  } else {
+    initMotion();
+  }
+})();
+
 // ── PWA install prompt ────────────────────────────────────────────────────────
 (function () {
   var deferredPrompt = null;
@@ -3583,9 +3788,24 @@ window.initTradePage = function initTradePage(root = document) {
       state._lastEffA = aEff;
       state._lastEffB = bEff;
 
-      if (sideATotalEl) sideATotalEl.textContent = formatValue(aEff);
-      if (sideBTotalEl) sideBTotalEl.textContent = formatValue(bEff);
-      if (tradeDiffEl) tradeDiffEl.textContent = formatValue(diff);
+      // Roll the totals up to their new values and flash the direction of
+      // change (green up / red down). brCountUp/brFlash no-op under reduced
+      // motion, falling back to a plain value set.
+      var _prevA = parseFloat(sideATotalEl && sideATotalEl.textContent) || 0;
+      var _prevB = parseFloat(sideBTotalEl && sideBTotalEl.textContent) || 0;
+      var _prevD = parseFloat(tradeDiffEl && tradeDiffEl.textContent) || 0;
+      if (sideATotalEl) {
+        window.brCountUp(sideATotalEl, { to: aEff, from: _prevA, dp: 1, dur: 600 });
+        if (Math.abs(aEff - _prevA) >= 0.05) window.brFlash(sideATotalEl, aEff >= _prevA ? 'up' : 'down');
+      }
+      if (sideBTotalEl) {
+        window.brCountUp(sideBTotalEl, { to: bEff, from: _prevB, dp: 1, dur: 600 });
+        if (Math.abs(bEff - _prevB) >= 0.05) window.brFlash(sideBTotalEl, bEff >= _prevB ? 'up' : 'down');
+      }
+      if (tradeDiffEl) {
+        window.brCountUp(tradeDiffEl, { to: diff, from: _prevD, dp: 1, dur: 600 });
+        if (Math.abs(diff - _prevD) >= 0.05) window.brFlash(tradeDiffEl, diff >= _prevD ? 'up' : 'down');
+      }
 
       const maxSideTotal = Math.max(Math.abs(aEff), Math.abs(bEff), 1);
       let normalizedDiff = diff / maxSideTotal;
@@ -7471,6 +7691,7 @@ if (!platformBtns.length) return;
           espnErrorBox.textContent = "Enter a valid ESPN League ID (numbers only).";
           espnErrorBox.style.display = "block";
         }
+        window.brShake(espnLeagueIdInput);
         return;
       }
 
@@ -7528,6 +7749,7 @@ if (!platformBtns.length) return;
           yahooErrorBox.textContent = "Enter a valid Yahoo League ID (numbers only).";
           yahooErrorBox.style.display = "block";
         }
+        window.brShake(yahooLeagueIdInput);
         return;
       }
 
@@ -9093,6 +9315,15 @@ function openPlayerModal(playerId, playerName, opts) {
         if (overviewTabBtn) overviewTabBtn.classList.add('active');
       }
 
+      // Sliding underline under the active player-modal tab. Init here (not at
+      // modal creation) because the bar is display:none until now and its
+      // conditional tabs have just been resolved.
+      if (window.brSlideTabs) {
+        window._pmSlideTabs = window.brSlideTabs(pmTabBar, {
+          tabSelector: '.pm-tab', activeClass: 'active', underline: true
+        });
+      }
+
       // ── Lazy-load prospect comparables for rookies ─────────────────────────
       if (isRookieWithProspectData && pd.player_id) {
         fetch(`/api/prospects/comparables/${encodeURIComponent(pd.player_id)}`)
@@ -9384,6 +9615,7 @@ function pmSwitchTab(tab) {
   const btn = document.querySelector('.pm-tab[data-tab="' + tab + '"]');
   if (panel) panel.classList.add('pm-panel-active');
   if (btn) btn.classList.add('active');
+  if (window._pmSlideTabs) window._pmSlideTabs.sync(true);
 
   const pmTabBar = document.getElementById('pmTabBar');
   if (!pmTabBar) return;
@@ -10630,7 +10862,7 @@ function pmToggleWeeklyTrends(playerId) {
       wrap._weeklyData = d.weeks || [];
       body.innerHTML =
         '<div class="pm-wt-filter-bar">'
-        + '<div class="pm-wt-tabs">'
+        + '<div class="pm-wt-tabs br-chip-pop">'
         + '<button class="pm-wt-tab" data-n="">All</button>'
         + '<button class="pm-wt-tab" data-n="4">L4</button>'
         + '<button class="pm-wt-tab pm-wt-tab-active" data-n="8">L8</button>'
@@ -11450,6 +11682,7 @@ function _updateWatchlistBtn(btn, player_id) {
   btn.title = watched ? 'Remove from watchlist' : 'Add to watchlist';
   btn.setAttribute('aria-pressed', watched ? 'true' : 'false');
   btn.classList.toggle('player-modal-watchlist-btn--active', watched);
+  if (watched && window.brPop) window.brPop(btn.querySelector('.wl-star-glyph'));
 }
 
 function _wlEsc(s) {
@@ -14102,6 +14335,7 @@ function cmpSwitchTab(tab) {
   document.querySelectorAll('.compare-tab-panel').forEach(function (p) {
     p.hidden = (p.dataset.cmppanel !== tab);
   });
+  if (window._cmpSlideTabs) window._cmpSlideTabs.sync(true);
   if (tab === 'overview') {
     const c = document.getElementById('compareValueChart');
     if (c && window.Plotly && c.data) { try { Plotly.Plots.resize(c); } catch (_) {} }
@@ -14111,6 +14345,13 @@ function cmpSwitchTab(tab) {
 // Post-render wiring shared by both compare surfaces: lazy game logs, metrics
 // (with per-side season selection), and the dual value-history chart.
 function _compareWireView(p1, p2) {
+  // Sliding underline under the active compare tab (shared modal + page surface).
+  if (window.brSlideTabs) {
+    window._cmpSlideTabs = window.brSlideTabs(document.querySelector('.compare-tab-bar'), {
+      tabSelector: '.pm-tab', activeClass: 'active', underline: true
+    });
+  }
+
   // Tier averages have no game logs, advanced metrics, or weekly usage; show a
   // note in those tabs instead of firing lookups that would 404 on the synthetic
   // "avg-POS-tier" id.
@@ -14413,6 +14654,13 @@ function openTeamModal(rosterId, teamName) {
   document.body.appendChild(overlay);
   document.body.style.overflow = 'hidden';
 
+  // Sliding underline under the active tab (Roster / Graphs / Trades).
+  if (window.brSlideTabs) {
+    window._tmSlideTabs = window.brSlideTabs(modal.querySelector('.tm-tab-bar'), {
+      tabSelector: '.tm-tab', activeClass: 'active', underline: true
+    });
+  }
+
   // Fetch team details
   fetchTeamDetails(rosterId);
 }
@@ -14435,6 +14683,7 @@ function tmSwitchTab(tab) {
   const btn = document.querySelector('.tm-tab[data-tab="' + tab + '"]');
   if (panel) panel.classList.add('active');
   if (btn) btn.classList.add('active');
+  if (window._tmSlideTabs) window._tmSlideTabs.sync(true);
 
   if (tab === 'trades' && !window._tmTradesLoaded) {
     window._tmTradesLoaded = true;

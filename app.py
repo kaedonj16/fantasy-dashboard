@@ -4864,7 +4864,10 @@ def build_dashboard_body(ctx: dict) -> str:
           var pct = Math.round(row.playoff_pct || 0);
           var valEl = document.getElementById('dash-playoff-val');
           var subEl = document.getElementById('dash-playoff-sub');
-          if (valEl) valEl.textContent = pct + '%';
+          if (valEl) {{
+            if (window.brCountUp) window.brCountUp(valEl, {{ to: pct, dp: 0, suffix: '%', dur: 800 }});
+            else valEl.textContent = pct + '%';
+          }}
           var sub;
           if (d.is_complete || row.is_complete) {{
             sub = pct >= 100 ? 'Clinched' : (pct <= 0 ? 'Eliminated' : 'Playoff bound');
@@ -6490,7 +6493,10 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
               var pct = Math.round(row.playoff_pct || 0);
               var valEl = document.getElementById('os-playoff-val');
               var subEl = document.getElementById('os-playoff-sub');
-              if (valEl) valEl.textContent = pct + '%';
+              if (valEl) {{
+                if (window.brCountUp) window.brCountUp(valEl, {{ to: pct, dp: 0, suffix: '%', dur: 800 }});
+                else valEl.textContent = pct + '%';
+              }}
               var first = Math.round(row.first_seed_pct || 0);
               if (subEl) subEl.textContent = first > 0
                 ? ('Projected · ' + first + '% top seed')
@@ -7206,9 +7212,15 @@ def build_weekly_hub_body(ctx: dict) -> str:
         sideContainer.innerHTML = '<div class="week-side-panel active" data-week="' + w + '">' + data.highlights_html + '</div>';
       }}
       if (matchupsContainer && typeof data.matchups_html === 'string') {{
-        matchupsContainer.innerHTML = data.matchups_html;
-        if (typeof window.resetMatchupCarousels === 'function') window.resetMatchupCarousels(matchupsContainer);
-        if (typeof window.initPageRoot === 'function') window.initPageRoot(matchupsContainer);
+        var _applyMatchups = function() {{
+          matchupsContainer.innerHTML = data.matchups_html;
+          if (typeof window.resetMatchupCarousels === 'function') window.resetMatchupCarousels(matchupsContainer);
+          if (typeof window.initPageRoot === 'function') window.initPageRoot(matchupsContainer);
+        }};
+        // Flash any matchup score that moved since the last refresh (green up /
+        // red down); falls back to a plain swap under reduced motion.
+        if (window.brFlashUpdates) window.brFlashUpdates(matchupsContainer, '.m-score-val', _applyMatchups);
+        else _applyMatchups();
       }}
     }}).catch(function() {{}});
   }}, 60000);
@@ -11979,7 +11991,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             </div>
 
             <!-- Position filters -->
-            <div class="filter-positions">
+            <div class="filter-positions br-chip-pop">
               <button class="pos-pill active" data-pos="ALL" onclick="prTogglePos('ALL')">All</button>
               <button class="pos-pill" data-pos="QB" onclick="prTogglePos('QB')">QB</button>
               <button class="pos-pill" data-pos="RB" onclick="prTogglePos('RB')">RB</button>
@@ -12042,7 +12054,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             <!-- Sort dropdown -->
             <div class="filter-sort">
               <label class="filter-label">Sort by</label>
-              <select id="prSort" onchange="prPage=1;prRender()"
+              <select id="prSort" onchange="prPage=1;prFlipRender()"
                 style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
                        background:var(--card-bg);color:var(--text);font-size:12px;cursor:pointer;outline:none;min-height:34px;min-width:120px;">
                 <option value="value">Value</option>
