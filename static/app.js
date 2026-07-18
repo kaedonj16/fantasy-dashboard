@@ -5667,6 +5667,13 @@ window.initTradePage = function initTradePage(root = document) {
     let _strategyPage    = 0;
     let _currentPlayoffPct = null;
     const _STRATEGY_PAGE_SIZE = 5;
+    // Request sequencing: clicking off a strategy and back on fires overlapping
+    // requests. Without this, a late/stale response (e.g. an empty archetype that
+    // resolved after the one you re-selected) would clobber the current view with
+    // "No suggestions found". Each load bumps the token and aborts the prior fetch;
+    // only the newest response for the still-selected archetype is allowed to render.
+    let _strategyReqSeq   = 0;
+    let _strategyAbortCtrl = null;
 
     function _setSuggSubtab(tab) {
       _activeSubtab = tab;
@@ -5756,6 +5763,14 @@ window.initTradePage = function initTradePage(root = document) {
     async function loadStrategyView(archetype) {
       if (!strategyImpact || !strategyCards) return;
 
+      // Newest-request-wins: bump the token and cancel any in-flight load so a
+      // stale response can never render under a different (or the re-selected) chip.
+      const _mySeq = ++_strategyReqSeq;
+      if (_strategyAbortCtrl) { try { _strategyAbortCtrl.abort(); } catch (_) {} }
+      const _ctrl = new AbortController();
+      _strategyAbortCtrl = _ctrl;
+      const _isStale = () => _mySeq !== _strategyReqSeq || _activeArchetype !== archetype;
+
       const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
       if (!hasPremium) {
         strategyImpact.innerHTML = '<div class="otc-movers-empty" style="display:flex;flex-direction:column;align-items:center;gap:8px;"><span>Unlock trade tools with PRO.</span><button class="pi-locked-btn" onclick="showPaywall(\'trade-suggestions\')">Upgrade</button></div>';
@@ -5804,7 +5819,8 @@ window.initTradePage = function initTradePage(root = document) {
           `&league_size=${encodeURIComponent(leagueSize)}` +
           (_untouchableStr ? `&untouchable_ids=${encodeURIComponent(_untouchableStr)}` : "");
 
-        const res = await fetch(url, { cache: "no-store" });
+        const res = await fetch(url, { cache: "no-store", signal: _ctrl.signal });
+        if (_isStale()) return;  // a newer selection superseded this one
         if (strategySpinner) strategySpinner.style.display = "none";
         if (res.status === 403) {
           strategyImpact.innerHTML = '<div class="otc-movers-empty" style="display:flex;flex-direction:column;align-items:center;gap:8px;"><span>Unlock trade tools with PRO.</span><button class="pi-locked-btn" onclick="showPaywall(\'trade-suggestions\')">Upgrade</button></div>';
@@ -5813,6 +5829,7 @@ window.initTradePage = function initTradePage(root = document) {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
         const raw  = await res.json();
+        if (_isStale()) return;  // response came back after the user moved on
         const data = raw.suggestions ?? (Array.isArray(raw) ? raw : []);
         _currentPlayoffPct = raw.current_playoff_pct ?? null;
         _strategyData   = data;
@@ -5848,6 +5865,10 @@ window.initTradePage = function initTradePage(root = document) {
         if (strategyCardsHead) strategyCardsHead.style.display = "";
 
       } catch (err) {
+        // A superseded request was aborted on purpose - ignore it and leave the
+        // newer load to own the view.
+        if (err && err.name === "AbortError") return;
+        if (_isStale()) return;
         if (strategySpinner) strategySpinner.style.display = "none";
         strategyImpact.innerHTML = '<div class="otc-movers-empty">Could not load strategy.</div>';
         console.error("[strategy]", err);
