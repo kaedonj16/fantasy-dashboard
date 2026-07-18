@@ -124,6 +124,21 @@
 
 :root {
   --bg: #ffffff;
+  /* Compatibility aliases: alternate token names used across older markup
+     and inline styles. Defined once here (pointing at the real tokens, so
+     they track the theme) instead of undefined vars that silently drop the
+     property. */
+  --card-bg: var(--card);
+  --surface: var(--card);
+  --surface2: var(--bg-alt);
+  --muted: var(--text-muted);
+  --text-primary: var(--text);
+  --text-color: var(--text);
+  --border-color: var(--border);
+  --shadow-md: var(--shadow);
+  --rz-accent: var(--accent);
+  --color-win: var(--win);
+  --color-loss: var(--loss);
   --bg-alt: #f4f6f8;
   --card: #ffffff;
   --card-soft: #f8fafc;
@@ -4933,7 +4948,7 @@ strong + .player-badge,
   padding: 4px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--card-bg, var(--card));
+  background: var(--card-bg);
   font-size: 12px;
   font-weight: 500;
   color: var(--text);
