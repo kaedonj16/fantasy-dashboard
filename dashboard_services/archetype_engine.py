@@ -60,6 +60,21 @@ def _pos_category(pos: str, rank: Optional[int], value: Optional[float],
     return "flex"
 
 
+def _positional_ranks(values_by_id: Dict[str, Any]) -> Dict[str, int]:
+    """pid -> value rank within its own position (1 = highest-value at that
+    position) across the whole value table. Feeds _pos_category."""
+    pool: Dict[str, list] = {}
+    for pid, v in values_by_id.items():
+        p = str(v.get("position") or "").upper()
+        if p in SKILL_POS:
+            pool.setdefault(p, []).append((pid, _f(v.get("value"))))
+    ranks: Dict[str, int] = {}
+    for lst in pool.values():
+        for rk, (pid, _v) in enumerate(sorted(lst, key=lambda x: -x[1]), start=1):
+            ranks[pid] = rk
+    return ranks
+
+
 def _consolidate_target_allowed(target_cat: str, viewer_best_cat: str) -> bool:
     """Whether a consolidation should aim at a target of `target_cat` given the
     viewer's best existing player at that position. You only reach for an ELITE
@@ -1092,17 +1107,8 @@ def _build_distribute(
 
     # Per-position value rank across the league, so the return package can be held
     # to pure starters ("distribute a stud INTO multiple starters", not depth).
-    _pos_rank_d: Dict[str, int] = {}
-    _pool_d: Dict[str, list] = {}
-    for _pid_d, _v_d in values_by_id.items():
-        _p_d = str(_v_d.get("position") or "").upper()
-        if _p_d in SKILL_POS:
-            _pool_d.setdefault(_p_d, []).append((_pid_d, _f(_v_d.get("value"))))
-    for _lst_d in _pool_d.values():
-        for _rk_d, (_pid_d, _val_d) in enumerate(sorted(_lst_d, key=lambda x: -x[1]), start=1):
-            _pos_rank_d[_pid_d] = _rk_d
-
-    _starter_thr_d, _ = derive_league_thresholds(roster_positions or [], num_teams)
+    _pos_rank_d = _positional_ranks(values_by_id)
+    _starter_thr_d, _floor_d = derive_league_thresholds(roster_positions or [], num_teams)
 
     def _is_starter_tier(tgt: Dict) -> bool:
         return _pos_category(
@@ -1140,28 +1146,33 @@ def _build_distribute(
         if league_type != "sf" and (viewer_pos_counts or {}).get("QB", 0) >= 1:
             saturated.add("QB")
 
-        # Collect best combo per owner, then take top-3 value matches
-        owner_bests: List[Tuple[str, List[Dict], float]] = []
-        for owner, pool in targets_by_owner.items():
-            if owner in used_owners:
-                continue
-            # Only assemble the return out of pure starters (or elites) - the
-            # point of distributing a stud is to come away with multiple startable
-            # pieces, not a pile of flex depth that happens to sum to the value.
-            cand = sorted(
-                [p for p in pool if p["position"] not in saturated and _is_starter_tier(p)],
-                key=lambda x: x["value"], reverse=True
-            )[:8]
-            local_best: Optional[Tuple[str, List[Dict], float]] = None
-            for n in (2, 3):
-                for combo in combinations(cand, n):
-                    s = sum(c["value"] for c in combo)
-                    if lo <= s <= hi:
-                        diff = abs(s - sval)
-                        if local_best is None or diff < local_best[2]:
-                            local_best = (owner, list(combo), diff)
-            if local_best:
-                owner_bests.append(local_best)
+        # Collect best combo per owner. Prefer a return made of pure starters
+        # (that's the point of distributing a stud), but fall back to any combo
+        # in the value band when no owner can offer a startable package - a
+        # shallow league shouldn't leave the stud with no distribution at all.
+        def _collect_owner_bests(starters_only: bool) -> List[Tuple[str, List[Dict], float]]:
+            obs: List[Tuple[str, List[Dict], float]] = []
+            for owner, pool in targets_by_owner.items():
+                if owner in used_owners:
+                    continue
+                cand = sorted(
+                    [p for p in pool if p["position"] not in saturated
+                     and (not starters_only or _is_starter_tier(p))],
+                    key=lambda x: x["value"], reverse=True
+                )[:8]
+                local_best: Optional[Tuple[str, List[Dict], float]] = None
+                for n in (2, 3):
+                    for combo in combinations(cand, n):
+                        s = sum(c["value"] for c in combo)
+                        if lo <= s <= hi:
+                            diff = abs(s - sval)
+                            if local_best is None or diff < local_best[2]:
+                                local_best = (owner, list(combo), diff)
+                if local_best:
+                    obs.append(local_best)
+            return obs
+
+        owner_bests = _collect_owner_bests(starters_only=True) or _collect_owner_bests(starters_only=False)
 
         use_ppg = bool(ppg_map and roster_positions)
 
@@ -1177,15 +1188,29 @@ def _build_distribute(
         dep_pod     = (_playoff_odds(current_wp + dep_wpd, num_weeks, num_teams, playoff_spots)
                        - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots))
 
-        # Re-score each owner's best combo by how much it improves the lineup
-        scored_bests: List[Tuple[str, List[Dict], float, float]] = []
+        # Positions the viewer is short of starter-caliber players at AFTER
+        # sending the stud, so the return can be steered to fill real needs.
+        _dep_starter_ct: Dict[str, int] = {}
+        for _dp in dep_players:
+            _dv = values_by_id.get(_dp, {})
+            _dpos = str(_dv.get("position") or "").upper()
+            if _dpos in SKILL_POS and _f(_dv.get("value")) >= _starter_thr_d.get(_dpos, STARTER_THRESHOLD.get(_dpos, 350)):
+                _dep_starter_ct[_dpos] = _dep_starter_ct.get(_dpos, 0) + 1
+        _deficit_pos = {p for p in ("QB", "RB", "WR", "TE")
+                        if _dep_starter_ct.get(p, 0) < _floor_d.get(p, 1)}
+
+        # Re-score each owner's best combo by lineup improvement, then by how many
+        # of its starters plug a position the viewer is actually short at.
+        scored_bests: List[Tuple[str, List[Dict], float, float, int]] = []
         for owner, combo, diff in owner_bests:
             recv_ids_trial = [c["player_id"] for c in combo]
             lineup_gain = _lineup_score(dep_players + recv_ids_trial) - dep_lineup
-            scored_bests.append((owner, combo, diff, lineup_gain))
-        # Primary sort: lineup improvement descending; secondary: value closeness ascending
-        scored_bests.sort(key=lambda x: (-x[3], x[2]))
-        owner_bests = [(o, c, d) for o, c, d, _ in scored_bests]
+            need_fill = sum(1 for c in combo
+                            if str(c.get("position") or "").upper() in _deficit_pos and _is_starter_tier(c))
+            scored_bests.append((owner, combo, diff, lineup_gain, need_fill))
+        # Sort: lineup improvement, then needs filled, then value closeness.
+        scored_bests.sort(key=lambda x: (-x[3], -x[4], x[2]))
+        owner_bests = [(o, c, d) for o, c, d, _, _ in scored_bests]
 
         for owner, combo, _ in owner_bests[:3]:
             used_owners.add(owner)
@@ -1930,15 +1955,7 @@ def get_archetype_suggestions(
     # plus the viewer's best (lowest-rank) player at each position. The tiering
     # itself lives in module-level _pos_category / _consolidate_target_allowed so
     # it can be unit-tested; see their docstrings for the league-specific rules.
-    _pos_rank: Dict[str, int] = {}
-    _pos_pool: Dict[str, list] = {}
-    for _pid2, _v2 in values_by_id.items():
-        _p2 = str(_v2.get("position") or "").upper()
-        if _p2 in SKILL_POS:
-            _pos_pool.setdefault(_p2, []).append((_pid2, _f(_v2.get("value"))))
-    for _lst2 in _pos_pool.values():
-        for _rk2, (_pid2, _val2) in enumerate(sorted(_lst2, key=lambda x: -x[1]), start=1):
-            _pos_rank[_pid2] = _rk2
+    _pos_rank = _positional_ranks(values_by_id)
 
     _viewer_best_rank: Dict[str, int] = {}
     _viewer_best_val: Dict[str, float] = {}

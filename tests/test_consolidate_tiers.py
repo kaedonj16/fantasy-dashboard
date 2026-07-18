@@ -13,6 +13,7 @@ Pure module-level functions, so this runs in the base suite (no Flask/pandas).
 from dashboard_services.archetype_engine import (
     _consolidate_target_allowed,
     _pos_category,
+    _positional_ranks,
 )
 from utils.roster_strength import STARTER_THRESHOLD, derive_league_thresholds
 from utils.tier_thresholds import ELITE_RANK_CUTOFFS
@@ -50,6 +51,21 @@ def test_thresholds_scale_with_league_size():
 
 def test_unrostered_or_valueless_is_depth():
     assert _pos_category("WR", None, 999, _THR) == "depth"
+
+
+def test_positional_ranks_are_per_position_by_value():
+    vals = {
+        "w1": {"position": "WR", "value": 900},
+        "w2": {"position": "WR", "value": 700},
+        "w3": {"position": "WR", "value": 500},
+        "r1": {"position": "RB", "value": 800},
+        "r2": {"position": "RB", "value": 600},
+        "k1": {"position": "K", "value": 50},   # non-skill, ignored
+    }
+    ranks = _positional_ranks(vals)
+    assert ranks["w1"] == 1 and ranks["w2"] == 2 and ranks["w3"] == 3
+    assert ranks["r1"] == 1 and ranks["r2"] == 2
+    assert "k1" not in ranks
 
 
 def test_flex_only_team_cannot_reach_an_elite():
