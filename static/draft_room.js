@@ -3920,6 +3920,13 @@
     justPick = pn;
     state.current++;
     paintCell(pn);        // fill just-picked cell (incremental)
+    // Reveal the just-made pick with a pop + accent ring (CPU picks are ~700ms
+    // apart, so these land one at a time). CSS disables it under reduced motion.
+    var _revEl = document.getElementById('dc' + pn);
+    if (_revEl){
+      _revEl.classList.add('dr-cell-reveal');
+      _revEl.addEventListener('animationend', function(){ _revEl.classList.remove('dr-cell-reveal'); }, { once: true });
+    }
     refreshCurrent();     // move the on-the-clock highlight + auto-scroll
   }
   function draftPlayer(id){

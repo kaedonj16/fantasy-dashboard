@@ -7212,9 +7212,15 @@ def build_weekly_hub_body(ctx: dict) -> str:
         sideContainer.innerHTML = '<div class="week-side-panel active" data-week="' + w + '">' + data.highlights_html + '</div>';
       }}
       if (matchupsContainer && typeof data.matchups_html === 'string') {{
-        matchupsContainer.innerHTML = data.matchups_html;
-        if (typeof window.resetMatchupCarousels === 'function') window.resetMatchupCarousels(matchupsContainer);
-        if (typeof window.initPageRoot === 'function') window.initPageRoot(matchupsContainer);
+        var _applyMatchups = function() {{
+          matchupsContainer.innerHTML = data.matchups_html;
+          if (typeof window.resetMatchupCarousels === 'function') window.resetMatchupCarousels(matchupsContainer);
+          if (typeof window.initPageRoot === 'function') window.initPageRoot(matchupsContainer);
+        }};
+        // Flash any matchup score that moved since the last refresh (green up /
+        // red down); falls back to a plain swap under reduced motion.
+        if (window.brFlashUpdates) window.brFlashUpdates(matchupsContainer, '.m-score-val', _applyMatchups);
+        else _applyMatchups();
       }}
     }}).catch(function() {{}});
   }}, 60000);

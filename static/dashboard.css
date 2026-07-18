@@ -21777,6 +21777,14 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 /* -- Row reorder (FLIP): rows glide to their new spot ----------------------- */
 .br-flip { transition: transform .42s cubic-bezier(.2,.7,.3,1); }
 
+/* -- Draft pick reveal: a just-made pick pops in with an accent ring -------- */
+@keyframes drPickReveal {
+  0%   { transform: scale(.6); opacity: 0; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 55%, transparent); }
+  55%  { transform: scale(1.06); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 transparent; }
+}
+.dr-cell-reveal { animation: drPickReveal .42s cubic-bezier(.2,.9,.3,1.2); position: relative; z-index: 2; }
+
 /* -- Sliding tab indicator -------------------------------------------------- */
 .br-slide-tabs { position: relative; }
 .br-slide-ind {
@@ -21797,7 +21805,7 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   .br-page-enter, .br-stagger > *, .analytics-bar-fill, .compare-bar-fill,
   .dr-gbar-fill, .dr-proj-bar-fill, .pos-bar-inner, .rivalry-bar-fill,
   .br-bar-grow, .rank-mark, .br-pop, .live-dot::after, .br-chip-pop > *,
-  .br-flash-up, .br-flash-down, .br-shake, .br-draw path {
+  .br-flash-up, .br-flash-down, .br-shake, .br-draw path, .dr-cell-reveal {
     animation: none !important;
   }
   .br-lift, .br-flip, .br-slide-ind { transition: none !important; }

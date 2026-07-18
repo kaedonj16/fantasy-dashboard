@@ -517,6 +517,24 @@ function emptyState(container, message, iconClass) {
     replayClass(el, 'br-pop');
   };
 
+  // Flash the numeric values that changed across a re-render. Snapshots the text
+  // of every `selector` under `container`, runs `mutate()` (which typically
+  // replaces innerHTML), then flashes any element whose number moved — green up,
+  // red down. Elements are matched by position, so `mutate` should keep their
+  // order stable (true for live score refreshes of the same matchups/rows).
+  window.brFlashUpdates = function (container, selector, mutate) {
+    if (!container) { mutate && mutate(); return; }
+    if (reduce) { mutate && mutate(); return; }
+    var before = [];
+    container.querySelectorAll(selector).forEach(function (el) { before.push(parseFloat(el.textContent)); });
+    mutate && mutate();
+    container.querySelectorAll(selector).forEach(function (el, i) {
+      var o = before[i], n = parseFloat(el.textContent);
+      if (isNaN(o) || isNaN(n) || o === n) return;
+      window.brFlash(el, n >= o ? 'up' : 'down');
+    });
+  };
+
   // Count a number up from 0 (or `from`) to its target. `el` may carry
   // data-countup="728.2" (target) and data-countup-dp="1" (decimal places);
   // opts can override { to, from, dp, dur, suffix, prefix }.
