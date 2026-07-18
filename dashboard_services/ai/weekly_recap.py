@@ -238,10 +238,6 @@ _SIGNAL_WEIGHTS = {
     "drama":     0.60,
     "heat":      0.50,
 }
-_FACTOR_ICON = {
-    "stakes": "🏆", "closeness": "⚖️", "strength": "⭐",
-    "rivalry": "🔁", "drama": "🩹", "heat": "🔥",
-}
 # Projected points at risk (missing + half of questionable/bye) that saturate
 # the drama / star-watch signal.
 _DRAMA_FULL = 22.0
@@ -399,36 +395,35 @@ def _reason_bits(
         sa: dict, sb: dict, rank_a: int, rank_b: int, num_teams: int,
         win_prob: float, meetings: int, stakes_label: str | None,
         is_playoff: bool, round_label: str, top_star: dict | None,
-) -> tuple[str, str]:
-    """(headline, icon) explaining why THIS is the game of the week, from the
-    dominant scoring factor."""
-    icon = _FACTOR_ICON.get(top_factor or "", "🎯")
+) -> str:
+    """A short, specific headline explaining why THIS is the game of the week,
+    drawn from the dominant scoring factor."""
     top_third = max(2, round(num_teams / 3))
 
     if top_factor == "stakes":
-        return (round_label if is_playoff else (stakes_label or "Playoff implications")), ("🏆")
+        return round_label if is_playoff else (stakes_label or "Playoff seeding on the line")
     if top_factor == "closeness":
         lo = round(min(win_prob, 1 - win_prob) * 100)
-        return f"Projected coin-flip ({lo}/{100 - lo})", "⚖️"
+        return f"Dead heat on paper ({lo}-{100 - lo})"
     if top_factor == "strength":
         if rank_a <= 2 and rank_b <= 2:
-            return "Battle at the top", "⭐"
+            return "Two of the top teams, head to head"
         if rank_a <= top_third and rank_b <= top_third:
-            return "Two of the league's best", "⭐"
-        return "Heavyweight matchup", "⭐"
+            return "Two of the league's best"
+        return "Heavyweight matchup"
     if top_factor == "rivalry":
-        return ("Rubber match" if meetings >= 2 else "Rematch"), "🔁"
+        return "The rubber match" if meetings >= 2 else "A rematch with a score to settle"
     if top_factor == "heat":
         hot = [s for s in (sa, sb) if str(s.get("streak") or "").startswith("W")
                and int(str(s.get("streak"))[1:] or 0) >= 2]
         if len(hot) == 2:
-            return "Momentum clash", "🔥"
+            return "Two red-hot teams collide"
         if hot:
-            return f"{hot[0]['team']} is red-hot ({hot[0]['streak']})", "🔥"
-        return "Momentum matchup", "🔥"
+            return f"{hot[0]['team']} is rolling ({hot[0]['streak']})"
+        return "A momentum swing game"
     if top_factor == "drama" and top_star:
-        return f"Star watch: {top_star['name']} ({top_star['status']})", "🩹"
-    return ("The week's headline matchup", icon)
+        return f"Star on the shelf: {top_star['name']} ({top_star['status']})"
+    return "The week's headline matchup"
 
 
 def _build_next_week_preview(
@@ -518,7 +513,7 @@ def _build_next_week_preview(
 
         all_stars = out_a + out_b + maybe_a + maybe_b
         top_star = max(all_stars, key=lambda x: (x["proj"], x["value"] or 0.0)) if all_stars else None
-        headline, icon = _reason_bits(
+        headline = _reason_bits(
             top_factor, sa=sa, sb=sb, rank_a=rank_a, rank_b=rank_b, num_teams=num_teams,
             win_prob=win_prob, meetings=meetings, stakes_label=stakes_label,
             is_playoff=is_playoff, round_label=round_label, top_star=top_star,
@@ -547,7 +542,7 @@ def _build_next_week_preview(
             "h2h": {"meetings": meetings, "a_wins": a_wins, "b_wins": b_wins} if meetings else None,
             "out_a": out_a, "maybe_a": maybe_a, "bye_a": bye_a,
             "out_b": out_b, "maybe_b": maybe_b, "bye_b": bye_b,
-            "why": headline, "why_icon": icon, "top_factor": top_factor,
+            "why": headline, "top_factor": top_factor,
             "reasons": reasons,
             "score": round(score, 3),
         })
@@ -572,8 +567,7 @@ def _build_next_week_preview(
         "as_of": (nctx or {}).get("as_of"),
         "game_of_the_week": top,
         "also_watch": [
-            {"team_a": g["team_a"], "team_b": g["team_b"],
-             "why": g["why"], "why_icon": g["why_icon"]}
+            {"team_a": g["team_a"], "team_b": g["team_b"], "why": g["why"]}
             for g in games[1:3]
         ],
     }
@@ -824,18 +818,16 @@ def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
 
     # The WHY badge — the single biggest reason this is the game of the week.
     why = g.get("why") or "The week's headline matchup"
-    why_icon = g.get("why_icon") or "🎯"
-    why_badge = (
-        f"<div style='display:inline-flex;align-items:center;gap:6px;background:var(--accent);"
-        f"color:#fff;font-size:11px;font-weight:800;padding:4px 10px;border-radius:999px;"
-        f"margin-bottom:10px;'>{why_icon} {html.escape(str(why))}</div>"
-    )
+    badge_text = why
+    badge_bg = "var(--accent)"
     if preview.get("quiet_week"):
-        why_badge = (
-            f"<div style='display:inline-flex;align-items:center;gap:6px;background:var(--muted);"
-            f"color:#fff;font-size:11px;font-weight:800;padding:4px 10px;border-radius:999px;"
-            f"margin-bottom:10px;'>{why_icon} Quietest slate of the year, but: {html.escape(str(why))}</div>"
-        )
+        badge_text = f"Quietest slate of the year, but: {why}"
+        badge_bg = "var(--muted)"
+    why_badge = (
+        f"<div style='display:inline-flex;align-items:center;gap:6px;background:{badge_bg};"
+        f"color:#fff;font-size:11px;font-weight:700;letter-spacing:.02em;padding:4px 11px;"
+        f"border-radius:999px;margin-bottom:10px;'>{html.escape(str(badge_text))}</div>"
+    )
 
     def _side(team: str, record: str, rank, align: str) -> str:
         rank_str = f"#{rank}" if rank else ""
@@ -916,7 +908,7 @@ def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
         label = "Co-game of the week" if preview.get("close_second") else "Also worth watching"
         items = " &nbsp;·&nbsp; ".join(
             f"{html.escape(str(a['team_a']))} vs {html.escape(str(a['team_b']))} "
-            f"<span style='opacity:.75;'>({a.get('why_icon', '')} {html.escape(str(a.get('why') or ''))})</span>"
+            f"<span style='opacity:.75;'>({html.escape(str(a.get('why') or ''))})</span>"
             for a in also
         )
         also_html = (
@@ -1020,13 +1012,13 @@ def get_weekly_ai_recap_preview() -> tuple[str, str]:
                 "out_a": [], "maybe_a": [], "bye_a": [],
                 "out_b": [{"name": "Bijan Robinson", "pos": "RB", "status": "OUT", "proj": 19.4, "value": 8000}],
                 "maybe_b": [], "bye_b": [],
-                "why": "Battle at the top", "why_icon": "⭐", "top_factor": "strength",
+                "why": "Two of the top teams, head to head", "top_factor": "strength",
                 "reasons": ["two of the league's best", "a rematch", "Bijan Robinson (OUT) in doubt"],
                 "score": 2.31,
             },
             "also_watch": [
                 {"team_a": "Redzone Rebels", "team_b": "Endzone Elite",
-                 "why": "Projected coin-flip (51/49)", "why_icon": "⚖️"},
+                 "why": "Dead heat on paper (51-49)"},
             ],
         },
         "It's the game of the week because it's the top two teams in the league going at it, and it lands with Blitz Brigade down Bijan Robinson (OUT). "

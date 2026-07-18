@@ -150,7 +150,7 @@ def test_star_watch_surfaces_the_missing_player_as_the_why():
         df, storylines, selected_week=3, playoff_start=14, playoff_teams=6, num_teams=10, nctx=nctx,
     )
     got = preview["game_of_the_week"]
-    assert got["why"] == "Star watch: Bijan (OUT)"
+    assert got["why"] == "Star on the shelf: Bijan (OUT)"
     assert got["out_b"] and got["out_b"][0]["proj"] == 21.0
 
 

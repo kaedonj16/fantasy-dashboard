@@ -2,7 +2,7 @@
 // Caches static assets and key pages for offline/fast repeat loads.
 // Handles Web Push notifications.
 
-const CACHE_NAME = 'br-fantasy-v9';
+const CACHE_NAME = 'br-fantasy-v10';
 
 // How long to wait on the network for a page (when we already have a cached
 // copy) before painting the cached version. This is what kills the blank
@@ -82,17 +82,34 @@ self.addEventListener('fetch', event => {
   }
 });
 
+// A response that came back through an HTTP redirect (response.redirected)
+// CANNOT be used to satisfy a navigation request: the browser rejects it and
+// renders a blank screen. The PWA start_url is "/", which 302-redirects a
+// signed-in user to their dashboard, so every launch hit exactly this case.
+// Rebuild any redirected response as a plain, non-redirected one before it's
+// ever returned to a navigation or written to the cache.
+async function unredirect(response) {
+  if (!response || !response.redirected) return response;
+  const body = await response.clone().blob();
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
+
 async function handleNavigate(request) {
   const cache = await caches.open(CACHE_NAME);
   const cached = await cache.match(request);
 
-  // Kick off the network request. Clone BEFORE returning so the body isn't
-  // already consumed when we stash it in the cache.
-  const networkFetch = fetch(request).then(response => {
-    if (response && response.status === 200) {
-      try { cache.put(request, response.clone()); } catch (_) {}
+  // Kick off the network request. Normalize redirects and clone BEFORE
+  // returning so the body isn't already consumed when we stash it in the cache.
+  const networkFetch = fetch(request).then(async response => {
+    const clean = await unredirect(response);
+    if (clean && clean.status === 200) {
+      try { cache.put(request, clean.clone()); } catch (_) {}
     }
-    return response;
+    return clean;
   }).catch(() => null);
 
   if (cached) {
