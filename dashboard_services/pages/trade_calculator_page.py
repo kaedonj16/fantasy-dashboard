@@ -231,7 +231,7 @@ def build_trade_calculator_body(
         <input type="hidden" id="otcHasPremium" value="{has_premium_str}">
 
         <div class="otc-shell">
-          <div class="otc-main-tabs">
+          <div class="otc-main-tabs" data-br-slide-tabs>
             <button class="otc-main-tab is-active" data-tab="calculator">Calculator</button>
             <button class="otc-main-tab" data-tab="suggestions">
               Suggestions <span class="nav-pro-badge">PRO</span>

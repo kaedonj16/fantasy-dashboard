@@ -334,6 +334,15 @@ const PR_SORT_META = {
   adp:       { label: 'ADP',       cell: p => prFormatAdp(p) },
 };
 
+// Re-render with a FLIP animation so rows glide to their new positions when the
+// sort order changes (used by the Sort dropdown). Falls back to a plain render
+// when the helper is unavailable or the user prefers reduced motion.
+function prFlipRender() {
+  var list = document.getElementById('prList');
+  if (list && window.brFlipReorder) window.brFlipReorder(list, prRender);
+  else prRender();
+}
+
 // Sort and filter players, then render rows into the main table
 function prRender() {
   if (!prLoaded) return;
@@ -478,6 +487,7 @@ function prRender() {
     if (_tier) prevTier = _tier;
     const row = document.createElement('div');
     row.className = 'pr-player-row pr-grid-row';
+    row.setAttribute('data-flip-key', 'p' + p.id);
     row.style.cursor = 'pointer';
     row.onclick = function(e) {
       e.stopPropagation();

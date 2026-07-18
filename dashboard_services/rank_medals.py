@@ -106,6 +106,6 @@ def rank_mark(rank, size: int = 36, wrap: bool = True, ring_others: bool = True)
     if not wrap:
         return inner
     return (
-        f'<span style="display:inline-flex;align-items:center;justify-content:center;'
-        f'min-width:{size + 8}px">{inner}</span>'
+        f'<span class="rank-mark" style="display:inline-flex;align-items:center;'
+        f'justify-content:center;min-width:{size + 8}px">{inner}</span>'
     )

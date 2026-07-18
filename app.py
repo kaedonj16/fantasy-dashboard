@@ -12042,7 +12042,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             <!-- Sort dropdown -->
             <div class="filter-sort">
               <label class="filter-label">Sort by</label>
-              <select id="prSort" onchange="prPage=1;prRender()"
+              <select id="prSort" onchange="prPage=1;prFlipRender()"
                 style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
                        background:var(--card-bg);color:var(--text);font-size:12px;cursor:pointer;outline:none;min-height:34px;min-width:120px;">
                 <option value="value">Value</option>
