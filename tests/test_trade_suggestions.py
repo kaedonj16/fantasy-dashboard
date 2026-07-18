@@ -190,9 +190,11 @@ def test_studs_stay_in_pool_for_a_stud_target():
              for i in range(12)]
     sends += [{"player_id": "s1", "name": "Stud A", "position": "WR", "value": 1010.0},
               {"player_id": "s2", "name": "Stud B", "position": "RB", "value": 980.0}]
-    pkgs = _select_packages(sends, 1050.0, "consolidate", max_pkgs=3,
+    # Target must be a GENUINE upgrade over the studs (consolidation is trading up,
+    # not swapping your stud for a sliver), so aim at a true elite well above them.
+    pkgs = _select_packages(sends, 1650.0, "consolidate", max_pkgs=3,
                             sorted_vals=ladder, league_size=10)
-    assert pkgs, "a loaded team must be able to package a stud for a bigger stud"
+    assert pkgs, "a loaded team must be able to package studs for a bigger stud"
     # The package that reaches a T1 target has to lean on a stud, not pure filler.
     assert any(a["value"] >= 900 for pkg in pkgs for a in pkg)
 

@@ -16124,6 +16124,81 @@ def _build_recap_preview_df(team_names: list[str]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _build_next_week_ctx(
+    ctx: dict,
+    next_week: int,
+    playoff_start: int,
+    league_id: str,
+    season,
+    platform: str,
+    team_by_rid: dict,
+) -> Optional[dict]:
+    """Assemble everything the weekly-recap engine needs to pick next week's game
+    of the week: the matchup pairings, next-week player projections (for closeness
+    and star-impact), the injury index, dynasty values, which NFL teams play that
+    week (for byes), playoff framing, and a freshness stamp. Returns None if next
+    week's matchups can't be fetched (e.g. a playoff bracket that isn't seeded yet).
+    """
+    try:
+        from dashboard_services.matchups import build_matchup_preview
+        matchups = build_matchup_preview(
+            league_id=league_id, week=next_week, roster_map=team_by_rid,
+            players_map=ctx.get("players") or {}, season=season, platform=platform,
+        ) or []
+    except Exception:
+        matchups = []
+    if not matchups:
+        return None
+
+    # Next-week projections (Tank01 publishes upcoming weeks ahead of kickoff).
+    try:
+        bundles = build_projections_by_week(int(season), next_week, ctx.get("raw_scoring_settings"))
+        proj_by_pid = (bundles.get(next_week) or {}).get("projections") or {}
+    except Exception:
+        proj_by_pid = {}
+
+    # NFL teams playing next week — a starter whose team is absent is on bye.
+    try:
+        from dashboard_services.matchups import build_team_schedule_lookup
+        from utils.utils import load_week_schedule
+        playing_teams = set(build_team_schedule_lookup(load_week_schedule(int(season), next_week)).keys())
+    except Exception:
+        playing_teams = set()
+
+    value_by_pid = {
+        str(r["id"]): float(r.get("value") or 0)
+        for r in (ctx.get("model_value_table") or [])
+        if isinstance(r, dict) and r.get("id") is not None
+    }
+
+    # Playoff framing (relative to the playoff bracket size).
+    is_playoff = bool(playoff_start) and next_week >= playoff_start
+    round_label = "Playoff game"
+    if is_playoff:
+        playoff_teams = int(((ctx.get("league") or {}).get("settings") or {}).get("playoff_teams") or 6)
+        rounds = max(1, math.ceil(math.log2(playoff_teams))) if playoff_teams > 1 else 1
+        round_idx = next_week - playoff_start
+        if round_idx >= rounds - 1:
+            round_label = "Championship"
+        elif round_idx == rounds - 2:
+            round_label = "Semifinal"
+        elif round_idx == rounds - 3:
+            round_label = "Quarterfinal"
+        else:
+            round_label = f"Playoff Round {round_idx + 1}"
+
+    return {
+        "matchups": matchups,
+        "proj_by_pid": proj_by_pid,
+        "player_index": ctx.get("players_index") or {},
+        "value_by_pid": value_by_pid,
+        "playing_teams": playing_teams,
+        "is_playoff": is_playoff,
+        "playoff_round_label": round_label,
+        "as_of": datetime.now().strftime("%a %b %d"),
+    }
+
+
 def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     df_weekly  = ctx.get("df_weekly")
     roster_map = ctx.get("roster_map") or {}
@@ -16458,13 +16533,23 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
   {standing_rows_html}
 </div>"""
 
-    # ── AI weekly storyline column ─────────────────────────────────────────
+    # ── AI weekly storyline column + next-week game-of-the-week ────────────
     if preview_mode:
         from dashboard_services.ai.weekly_recap import get_weekly_ai_recap_preview
-        ai_column_html = get_weekly_ai_recap_preview()
+        ai_column_html, next_week_html = get_weekly_ai_recap_preview()
     else:
+        # Build a next-week preview only when this recap is for the latest
+        # finalized week overall (so the "upcoming" game is genuinely upcoming and
+        # its availability is current), and that next week isn't already played.
+        next_week = selected_week + 1
+        next_week_ctx = None
+        if selected_week == available_weeks[-1] and next_week not in available_weeks:
+            next_week_ctx = _build_next_week_ctx(
+                ctx, next_week, playoff_start, _league_id, _season, _platform, team_by_rid,
+            )
+
         from dashboard_services.ai.weekly_recap import get_weekly_ai_recap
-        ai_column_html = get_weekly_ai_recap(
+        ai_column_html, next_week_html = get_weekly_ai_recap(
             df_weekly=df_weekly,
             matchups_by_week=ctx.get("matchups_by_week") or {},
             selected_week=selected_week,
@@ -16472,6 +16557,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
             league=league,
             league_id=ctx.get("league_id") or "",
             season=ctx.get("season") or "",
+            next_week_ctx=next_week_ctx,
         )
 
     # ── Lineup analysis: busts, sleepers, coaching mistakes ────────────────
@@ -16503,7 +16589,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 </div>"""
 
     return (preview_banner + history_banner + week_selector + cards_html
-            + scoreboard_and_recap + lineup_html + standings_html)
+            + scoreboard_and_recap + (next_week_html or "") + lineup_html + standings_html)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/recap")

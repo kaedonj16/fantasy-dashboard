@@ -5685,6 +5685,13 @@ window.initTradePage = function initTradePage(root = document) {
       }
     }
 
+    var _ARCH_DESC = {
+      contending:  "Win now. Convert youth and picks into proven, immediate production, even at some long-term cost.",
+      rebuilding:  "Build for later. Move aging veterans for younger players and future draft capital that should appreciate.",
+      consolidate: "Raise your ceiling. Package several good pieces into one elite difference-maker for your starting lineup.",
+      distribute:  "Add depth and flexibility. Break one over-concentrated elite into multiple starters plus future picks.",
+    };
+
     function _setStrategyChip(arch) {
       _activeArchetype = arch;
       _strategyPage    = 0;
@@ -5696,6 +5703,12 @@ window.initTradePage = function initTradePage(root = document) {
         if (arch === "rebuilding") hint.textContent = "Production loss if you sell";
         else if (arch === "distribute") hint.textContent = "Win % cost of losing this stud";
         else hint.textContent = "Win % if acquired";
+      }
+      const desc = root.querySelector("#otcStrategyDesc");
+      if (desc) {
+        var txt = _ARCH_DESC[arch] || "";
+        desc.textContent = txt;
+        desc.style.display = txt ? "" : "none";
       }
     }
 

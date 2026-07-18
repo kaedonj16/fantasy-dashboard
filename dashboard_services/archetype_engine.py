@@ -48,6 +48,22 @@ _CONSOLIDATE_MAX_TIER_DROP = 2
 _DISTRIBUTE_STUD_FLOOR = 600         # min value for a player to be worth distributing
 _DISTRIBUTE_BAND = (0.96, 1.18)      # return-package value as a fraction of the stud
 _CONSOLIDATE_TARGET_FLOOR = 350      # min value to be a worthwhile consolidation target
+# Consolidation spends surplus depth to buy ONE better player, so the acquired
+# player must clearly out-value the best piece you send (else you're just
+# swapping your best player for a marginally better one - the opposite of
+# consolidating). The target must beat the send headliner by at least this much.
+_CONSOLIDATE_MIN_UPGRADE = 1.18
+# Every piece in a consolidation package must be a real asset, not a rock: no one
+# sells a stud for a pile of junk. Each non-pick piece has to clear this fraction
+# of the target's value. Kept low so a legitimate throw-in alongside a
+# tier-comparable headliner still qualifies, while genuine junk is filtered.
+_CONSOLIDATE_PIECE_FRACTION = 0.10
+# A "lone stud" is the viewer's single best asset when it stands clearly clear of
+# the rest (>= this multiple of their next-best). Consolidation must not spend it:
+# a one-stud team consolidates the depth AROUND the stud, it doesn't ship the
+# stud. Teams with several comparable studs have no lone stud and keep the option
+# to bundle two of them into an elite.
+_CONSOLIDATE_LONE_STUD_GAP = 1.5
 
 # Roster-aware consolidation tiers live in utils.player_tiers as the single
 # source of truth, so the archetype engine and the proactive Suggestions tab
@@ -576,8 +592,8 @@ def _build_why(
 
     if archetype == "distribute":
         return (
-            f"Distribute {name}'s value into multiple starters. "
-            f"{partner} needs depth and can offer a multi-player return."
+            f"Distribute {name}'s value into multiple starters and future picks. "
+            f"{partner} needs depth and can offer a multi-asset return."
         )
 
     return f"{name} improves your win probability by {wp_d:+.1%}."
@@ -739,6 +755,23 @@ def _select_packages(
             return True
         return (min(tiers) - _target_tier) <= _CONSOLIDATE_MAX_TIER_DROP
 
+    def _upgrade_ok(*assets) -> bool:
+        """Consolidation must be a real upgrade: the acquired player has to clearly
+        out-value the best single piece being sent. Otherwise you're spending your
+        best asset (plus extras) to move up a sliver - not consolidating."""
+        headliner = max((a.get("value", 0) for a in assets
+                         if not (a.get("is_pick") or a.get("position") == "PICK")), default=0)
+        return headliner <= 0 or target_val >= headliner * _CONSOLIDATE_MIN_UPGRADE
+
+    _piece_floor = target_val * _CONSOLIDATE_PIECE_FRACTION
+
+    def _pieces_respectable(*assets) -> bool:
+        """No package of rocks: every player piece must be a real asset relative to
+        the target (picks are capital and exempt). Stops a stud-priced target from
+        being 'reached' by bundling a good headliner with worthless junk."""
+        return all(a.get("value", 0) >= _piece_floor for a in assets
+                   if not (a.get("is_pick") or a.get("position") == "PICK"))
+
     def _drop_underpays(pkgs: List[List[Dict]]) -> List[List[Dict]]:
         return [p for p in pkgs if _eff(*p) >= eff_floor]
 
@@ -785,7 +818,7 @@ def _select_packages(
         for a, b in combinations(player_pool, 2):
             if a["position"] == "QB" and b["position"] == "QB":
                 continue
-            if _in_band(a, b) and _tier_ok(a, b) and _dist(a, b) < best2_d:
+            if _in_band(a, b) and _tier_ok(a, b) and _upgrade_ok(a, b) and _pieces_respectable(a, b) and _dist(a, b) < best2_d:
                 best2_d, best2 = _dist(a, b), [a, b]
         if best2:
             results_c.append(best2)
@@ -798,7 +831,8 @@ def _select_packages(
                 if sum(1 for x in (a, b, c) if x["position"] == "QB") > 1:
                     continue
                 pkg_pids = {a["player_id"], b["player_id"], c["player_id"]}
-                if (_in_band(a, b, c) and _tier_ok(a, b, c)
+                if (_in_band(a, b, c) and _tier_ok(a, b, c) and _upgrade_ok(a, b, c)
+                        and _pieces_respectable(a, b, c)
                         and _dist(a, b, c) < best3_d and not pkg_pids.issubset(used_pids)):
                     best3_d, best3 = _dist(a, b, c), [a, b, c]
             if best3:
@@ -811,19 +845,19 @@ def _select_packages(
                 for a, b in combinations(player_pool[:8], 2):
                     if a["position"] == "QB" and b["position"] == "QB":
                         continue
-                    if _in_band(a, b, pk) and _tier_ok(a, b, pk) and _dist(a, b, pk) < best_pp_d:
+                    if _in_band(a, b, pk) and _tier_ok(a, b, pk) and _upgrade_ok(a, b, pk) and _pieces_respectable(a, b, pk) and _dist(a, b, pk) < best_pp_d:
                         best_pp_d, best_pp = _dist(a, b, pk), [a, b, pk]
             if best_pp:
                 results_c.append(best_pp)
 
-        # Fallback: widen window, still require 2+ assets and a tier-comparable
-        # headliner, closest on effective value.
+        # Fallback: widen window, still require 2+ assets, a tier-comparable
+        # headliner, and a real upgrade; closest on effective value.
         if not results_c:
             fallback2, fallback2_d = None, float("inf")
             for a, b in combinations(player_pool, 2):
                 if a["position"] == "QB" and b["position"] == "QB":
                     continue
-                if _tier_ok(a, b) and _dist(a, b) < fallback2_d:
+                if _tier_ok(a, b) and _upgrade_ok(a, b) and _pieces_respectable(a, b) and _dist(a, b) < fallback2_d:
                     fallback2_d, fallback2 = _dist(a, b), [a, b]
             if fallback2:
                 results_c.append(fallback2)
@@ -1069,10 +1103,13 @@ def _build_distribute(
     sim_state: Optional[Dict] = None,
     current_playoff_pct: float = 0.0,
     viewer_roster_id: Any = None,
+    picks_by_owner: Optional[Dict[str, List[Dict]]] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Viewer sends one concentrated stud and receives a 2–3 player depth package.
-    Each card = one stud → one partner's multi-player return.
+    Viewer sends one concentrated stud and receives a package of several usable
+    pieces plus, where it balances the deal, future draft capital - the whole
+    point of distributing a star (Bijan -> James Cook + Emeka Egbuka + a 1st).
+    Each card = one stud → one partner's multi-asset return.
     """
     # League-wide value ladder for effective-value (depth-penalty) math. Here the
     # partner is the side sending more bodies (the depth package), so their
@@ -1130,14 +1167,24 @@ def _build_distribute(
             for owner, pool in targets_by_owner.items():
                 if owner in used_owners:
                     continue
-                cand = sorted(
+                players = sorted(
                     [p for p in pool if p["position"] not in saturated
                      and (not starters_only or _is_starter_tier(p))],
                     key=lambda x: x["value"], reverse=True
                 )[:8]
+                # The partner's best 1-2 picks are receivable future capital and
+                # can round out a package (Cook + Egbuka + a 1st). They never
+                # stand alone here: a distribution has to return usable players.
+                owner_picks = sorted(
+                    (picks_by_owner or {}).get(str(owner)) or [],
+                    key=lambda x: -x.get("value", 0),
+                )[:2]
+                cand = players + owner_picks
                 local_best: Optional[Tuple[str, List[Dict], float]] = None
                 for n in (2, 3):
                     for combo in combinations(cand, n):
+                        if not any(not c.get("is_pick") for c in combo):
+                            continue  # must include at least one usable player
                         s = sum(c["value"] for c in combo)
                         if lo <= s <= hi:
                             diff = abs(s - sval)
@@ -1222,6 +1269,12 @@ def _build_distribute(
             p_arch = owner_meta.get(owner, {}).get("arch", "")
             ceiling_note = "lineup ceiling rises" if net_wpd >= 0 else "adds depth but trims your ceiling"
 
+            _n_pk = sum(1 for c in combo if c.get("is_pick"))
+            _n_pl = len(combo) - _n_pk
+            _piece_desc = f"{_n_pl} starter{'s' if _n_pl != 1 else ''}"
+            if _n_pk:
+                _piece_desc += f" and {_n_pk} pick{'s' if _n_pk != 1 else ''}"
+
             results.append({
                 "player_id":      stud,
                 "name":           sname,
@@ -1231,7 +1284,7 @@ def _build_distribute(
                 "value":          round(sval, 1),
                 "redraft_value":  round(_f(values_by_id[stud].get("redraft_value")), 1),
                 "pos_rank_label": values_by_id[stud].get("pos_rank_label", ""),
-                "why":            (f"Spread {sname}'s value into {len(combo)} starters from {pname}. "
+                "why":            (f"Spread {sname}'s value into {_piece_desc} from {pname}. "
                                    f"{ceiling_note.capitalize()}, filling multiple holes at once."),
                 "fit_note":       _fit_note([{"position": spos}],
                                             owner_meta.get(owner, {}).get("need"), None, None),
@@ -1824,6 +1877,17 @@ def get_archetype_suggestions(
 
     # ── Distribute: viewer sends a stud for a depth package ───────────────────
     if archetype == "distribute":
+        # Distribute = break up a concentrated stud into several usable pieces AND
+        # future capital, so partner draft picks are receivable assets too (e.g.
+        # Bijan -> James Cook + Emeka Egbuka + a 1st). Convert each rival's picks
+        # the same way the rebuilding path does.
+        picks_by_owner: Dict[str, List[Dict]] = {}
+        for rid, pick_list in picks_by_roster.items():
+            if str(rid) == str(viewer_roster_id):
+                continue
+            converted = _pick_send_candidates(pick_list, num_teams, slot_map, current_season=season)
+            if converted:
+                picks_by_owner[str(rid)] = converted
         _sugg = _build_distribute(
             viewer_players, values_by_id, targets_by_owner, owner_meta,
             roster_map, league_type, viewer_lineup_val, league_avg,
@@ -1835,6 +1899,7 @@ def get_archetype_suggestions(
             sim_state=sim_state,
             current_playoff_pct=current_playoff_pct,
             viewer_roster_id=viewer_roster_id,
+            picks_by_owner=picks_by_owner,
         )
         return {"suggestions": _sugg, "current_playoff_pct": round(current_playoff_pct, 1)}
 
@@ -1888,12 +1953,29 @@ def get_archetype_suggestions(
         (v for v in (_f(x.get("value")) for x in values_by_id.values()) if v > 0),
         reverse=True,
     )
-    _send_vals = sorted(
-        (_f(values_by_id.get(p, {}).get("value")) for p in viewer_players
+    _send_ranked = sorted(
+        ((p, _f(values_by_id.get(p, {}).get("value"))) for p in viewer_players
          if str(values_by_id.get(p, {}).get("position") or "").upper() in SKILL_POS
          and not (untouchable_ids and p in untouchable_ids)),
-        reverse=True,
+        key=lambda x: -x[1],
     )
+    _send_vals = [v for _p, v in _send_ranked]
+
+    # A "lone stud": the viewer's single best asset when it stands clearly clear
+    # of the rest. Consolidation spends the depth AROUND it, never the stud
+    # itself — packaging your one irreplaceable player to move up a tier is a
+    # lateral swap, not a consolidation. Affordability and the send pool below
+    # therefore exclude it, which steers a one-stud team to targets it can reach
+    # by bundling surplus (the young mid WRs) instead of shipping its cornerstone.
+    _lone_stud_pid: Optional[str] = None
+    if archetype == "consolidate" and _send_ranked:
+        _ls_pid, _ls_val = _send_ranked[0]
+        _next_val = _send_ranked[1][1] if len(_send_ranked) > 1 else 0.0
+        if _ls_val > 0 and (_next_val <= 0 or _ls_val >= _next_val * _CONSOLIDATE_LONE_STUD_GAP):
+            _lone_stud_pid = _ls_pid
+    # Values the viewer can actually spend on a consolidation (surplus): every
+    # sendable asset except a protected lone stud.
+    _afford_vals = [v for _p, v in _send_ranked if _p != _lone_stud_pid]
 
     # Value-drop tier boundaries for this league, so consolidate can reason in
     # tiers ("don't trade down too many tiers to reach a stud") rather than raw
@@ -1913,7 +1995,9 @@ def get_archetype_suggestions(
         viewer's headliner must also be tier-comparable to the stud, so a team
         can't reach a #1 by stacking depth that sits too many tiers below it."""
         lo = target_val * _acquire_band(target_val, "consolidate")[0]
-        sv = _send_vals
+        # Judge affordability on surplus (the lone stud is not for sale here), so
+        # a one-stud team can't "afford" a rival's stud only by shipping its own.
+        sv = _afford_vals
         if not sv:
             return False
         # Headliner has to be within the consolidate tier band of the target.
@@ -2081,6 +2165,13 @@ def get_archetype_suggestions(
                    picks_by_roster.get(viewer_roster_id) or []
     send_candidates += _pick_send_candidates(viewer_picks, num_teams, slot_map, current_season=season)
 
+    # Protect a lone stud: consolidation packages are built from surplus only, so
+    # the engine can never propose shipping the viewer's one cornerstone to trade
+    # up a sliver. Targets only reachable by spending it simply won't produce a
+    # package and drop out of the suggestions.
+    if _lone_stud_pid is not None:
+        send_candidates = [s for s in send_candidates if s.get("player_id") != _lone_stud_pid]
+
     results = []
     new_wp_base = current_wp  # alias for clarity inside loop
     _vid_int: Optional[int] = None
@@ -2183,6 +2274,11 @@ def get_archetype_suggestions(
                 except Exception:
                     net_pod_pkg = None
 
+            # Whether the net numbers came from the accurate Monte Carlo swap
+            # (sim) or the crude analytical fallback. Only the sim path is precise
+            # enough to filter on.
+            _net_from_sim = net_pod_pkg is not None
+
             if net_pod_pkg is None:
                 # Analytical fallback (no sim state) - still per-package
                 net_lval   = _lval(net_roster)
@@ -2190,6 +2286,16 @@ def get_archetype_suggestions(
                 current_po_formula = _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
                 net_pod_pkg = _playoff_odds(net_wp_pkg, num_weeks, num_teams, playoff_spots) - current_po_formula
                 net_wpd_pkg = net_wp_pkg - current_wp
+
+            # A consolidation that leaves the roster clearly worse isn't a
+            # consolidation - it's a downgrade dressed up as one. On the accurate
+            # sim path, drop packages whose net effect on both win prob and
+            # playoff odds is negative (small tolerance for sim noise). The
+            # analytical fallback is too crude to filter on - on a thin bench it
+            # scores any depth-for-concentration swap as a loss.
+            if (archetype == "consolidate" and _net_from_sim
+                    and net_wpd_pkg < -0.005 and net_pod_pkg < 0):
+                continue
 
             results.append({
                 "player_id":      pid,
