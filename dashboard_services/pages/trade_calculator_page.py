@@ -786,6 +786,13 @@ def build_trade_calculator_body(
             .otc-sugg-subtab.is-active {{
               background:var(--text);color:var(--card);
             }}
+            /* Sliding indicator carries the fill when JS ran (no regression otherwise). */
+            .otc-sugg-subtab-toggle.br-slide-tabs .otc-sugg-subtab.is-active {{
+              background:transparent;
+            }}
+            .otc-sugg-subtab-toggle .br-slide-ind {{
+              background:var(--text);border-radius:7px;
+            }}
             /* ── Strategy panel ── */
             .otc-strategy-chips {{
               display:flex;overflow-x:auto;gap:6px;
@@ -911,7 +918,7 @@ def build_trade_calculator_body(
             </div>
             <!-- Sub-tab bar -->
             <div class="otc-sugg-subtab-bar">
-              <div class="otc-sugg-subtab-toggle">
+              <div class="otc-sugg-subtab-toggle" data-br-slide-tabs>
                 <button id="otcSubtabBuildAround" class="otc-sugg-subtab is-active">Build Around</button>
                 <button id="otcSubtabStrategy" class="otc-sugg-subtab">Strategy</button>
               </div>

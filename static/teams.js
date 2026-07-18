@@ -434,7 +434,7 @@
 
             // ── Wire up tabs and render ──────────────────────────────────────
             var tabsHtml =
-              '<div class="draft-view-tabs">' +
+              '<div class="draft-view-tabs br-chip-pop">' +
                 '<button class="draft-view-tab active" data-view="team">By Team</button>' +
                 '<button class="draft-view-tab" data-view="round">By Round</button>' +
               '</div>' +

@@ -620,6 +620,15 @@ function emptyState(container, message, iconClass) {
       if (t && bar.contains(t)) setTimeout(function () { sync(true); }, 0);
     });
     window.addEventListener('resize', function () { sync(false); });
+    // If the bar was hidden at init (e.g. inside a collapsed panel/modal), its
+    // tabs measured 0-wide. Re-sync once it actually has layout so the indicator
+    // lands in the right place the first time it's shown.
+    if (window.IntersectionObserver) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) { if (en.isIntersecting && bar.offsetWidth) sync(false); });
+      });
+      io.observe(bar);
+    }
     bar._brSlideSync = sync;
     return { sync: sync };
   };
@@ -10824,7 +10833,7 @@ function pmToggleWeeklyTrends(playerId) {
       wrap._weeklyData = d.weeks || [];
       body.innerHTML =
         '<div class="pm-wt-filter-bar">'
-        + '<div class="pm-wt-tabs">'
+        + '<div class="pm-wt-tabs br-chip-pop">'
         + '<button class="pm-wt-tab" data-n="">All</button>'
         + '<button class="pm-wt-tab" data-n="4">L4</button>'
         + '<button class="pm-wt-tab pm-wt-tab-active" data-n="8">L8</button>'
@@ -14297,6 +14306,7 @@ function cmpSwitchTab(tab) {
   document.querySelectorAll('.compare-tab-panel').forEach(function (p) {
     p.hidden = (p.dataset.cmppanel !== tab);
   });
+  if (window._cmpSlideTabs) window._cmpSlideTabs.sync(true);
   if (tab === 'overview') {
     const c = document.getElementById('compareValueChart');
     if (c && window.Plotly && c.data) { try { Plotly.Plots.resize(c); } catch (_) {} }
@@ -14306,6 +14316,13 @@ function cmpSwitchTab(tab) {
 // Post-render wiring shared by both compare surfaces: lazy game logs, metrics
 // (with per-side season selection), and the dual value-history chart.
 function _compareWireView(p1, p2) {
+  // Sliding underline under the active compare tab (shared modal + page surface).
+  if (window.brSlideTabs) {
+    window._cmpSlideTabs = window.brSlideTabs(document.querySelector('.compare-tab-bar'), {
+      tabSelector: '.pm-tab', activeClass: 'active', underline: true
+    });
+  }
+
   // Tier averages have no game logs, advanced metrics, or weekly usage; show a
   // note in those tabs instead of firing lookups that would 404 on the synthetic
   // "avg-POS-tier" id.
