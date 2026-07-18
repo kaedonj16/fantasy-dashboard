@@ -9,8 +9,10 @@
 The heavy roster-summary/grade helpers are stubbed so this stays a pure-math
 test with no Flask/pandas-provider dependencies (pandas itself is fine).
 """
-import pandas as pd
 import pytest
+
+# pandas isn't installed in the lightweight CI base suite; skip there.
+pd = pytest.importorskip("pandas")
 
 import dashboard_services.ai.context_builders as cb
 

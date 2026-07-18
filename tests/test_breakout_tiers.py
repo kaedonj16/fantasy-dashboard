@@ -6,7 +6,13 @@ compute_tier_thresholds blends each anchor 50/50 with a cohort percentile so the
 tiers stay calibrated to the field while staying tethered to the absolute
 meaning. These tests pin that behavior and the small-cohort fallback.
 """
-from dashboard_services.breakout_api import (
+import pytest
+
+# breakout_api imports Flask at module load; the CI base suite has no Flask, so
+# skip there. The functions under test are otherwise pure.
+pytest.importorskip("flask")
+
+from dashboard_services.breakout_api import (  # noqa: E402
     _ABS_TIERS,
     classify_breakout_type,
     compute_tier_thresholds,
