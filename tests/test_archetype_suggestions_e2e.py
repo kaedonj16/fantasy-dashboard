@@ -35,6 +35,17 @@ def _offline(monkeypatch):
     monkeypatch.setattr(api, "fetch_json", _fake_fetch_json)
 
 
+@pytest.fixture(autouse=True)
+def _clear_result_cache():
+    """The engine memoizes finished results per request key. Tests reuse league
+    ids across cases (and feed different ctxs under one id), so clear the cache
+    around each test to keep them independent - a concern only in tests, since
+    production keys map 1:1 to a ctx."""
+    ae._RESULT_CACHE.clear()
+    yield
+    ae._RESULT_CACHE.clear()
+
+
 def _seed_ctx():
     """A compact 4-team league: viewer (roster 1) holds mid-tier pieces; rivals
     hold a stud each, so consolidate/contending have real targets and
@@ -194,6 +205,9 @@ def _consolidate_target_names(ctx):
     """Run consolidate on the analytical (no-sim) path and return the acquire
     target names, so a test can assert what the engine did/didn't surface."""
     import time as _t
+    # Loaded vs weak share this league id but pass different ctxs, so bypass the
+    # result memo (which keys on the id, not the ctx) for this helper.
+    ae._RESULT_CACHE.clear()
     ae._SIM_CACHE["sleeper:afford:2026"] = {"sim_state": None, "base_odds": {}, "ts": _t.time()}
     try:
         out = ae.get_archetype_suggestions(
@@ -329,6 +343,39 @@ def _distribute_ctx():
         "picks_by_roster": {"2": [{"season": "2026", "round": 1, "original_roster_id": 2}]},
         "settings": {"playoff_week_start": 15},
     }
+
+
+def test_repeat_request_is_served_from_cache(monkeypatch):
+    """An identical request skips the expensive pipeline and returns the memoized
+    result; a different key (e.g. another archetype) recomputes."""
+    calls = {"n": 0}
+
+    def _counting(**_kw):
+        calls["n"] += 1
+        return {"suggestions": [{"name": "X"}], "current_playoff_pct": 1.0}
+
+    monkeypatch.setattr(ae, "_get_archetype_suggestions_impl", _counting)
+    kw = dict(archetype="consolidate", platform="sleeper", league_id="cachetest",
+              season=2026, viewer_roster_id="1", league_type="1qb", league_size=10, ctx={})
+
+    ae.get_archetype_suggestions(**kw)
+    ae.get_archetype_suggestions(**kw)
+    assert calls["n"] == 1, "second identical request should be served from cache"
+
+    ae.get_archetype_suggestions(**{**kw, "archetype": "distribute"})
+    assert calls["n"] == 2, "a different archetype is a different key -> recompute"
+
+    # An empty result is never cached (don't lock in a transient miss).
+    calls["n"] = 0
+
+    def _counting_empty(**_kw):
+        calls["n"] += 1
+        return {"suggestions": [], "current_playoff_pct": 0.0}
+
+    monkeypatch.setattr(ae, "_get_archetype_suggestions_impl", _counting_empty)
+    ae.get_archetype_suggestions(**{**kw, "league_id": "emptytest"})
+    ae.get_archetype_suggestions(**{**kw, "league_id": "emptytest"})
+    assert calls["n"] == 2, "empty results must not be cached"
 
 
 def test_distribute_can_return_future_capital():

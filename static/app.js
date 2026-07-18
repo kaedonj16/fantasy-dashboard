@@ -5797,13 +5797,21 @@ window.initTradePage = function initTradePage(root = document) {
       const strategySpinner = root.querySelector("#otcStrategySpinner");
       const impactHint      = root.querySelector("#otcStrategyImpactHint");
       if (strategySpinner) strategySpinner.style.display = "";
-      strategyImpact.innerHTML = [1,2,3].map(() => `
-        <div class="otc-strategy-impact-row" style="opacity:.5;pointer-events:none;">
-          <div style="width:26px;height:18px;border-radius:3px;background:var(--border);flex-shrink:0;"></div>
-          <div style="flex:1;height:13px;border-radius:5px;background:var(--border);animation:skeleton-pulse 1.2s ease-in-out infinite;"></div>
-          <div style="width:80px;height:13px;border-radius:5px;background:var(--border);animation:skeleton-pulse 1.2s ease-in-out infinite;"></div>
+      // Shimmering placeholder rows (shared .sk-shimmer system). The old markup
+      // referenced a non-existent `skeleton-pulse` keyframe, so nothing animated.
+      strategyImpact.innerHTML = [0,1,2,3,4].map(i => `
+        <div class="otc-strategy-impact-row" style="pointer-events:none;">
+          <div class="sk-shimmer" style="width:26px;height:18px;border-radius:4px;flex-shrink:0;animation-delay:${i*0.1}s;"></div>
+          <div class="sk-shimmer sk-line" style="flex:1;height:13px;margin:0;animation-delay:${i*0.1}s;"></div>
+          <div class="sk-shimmer sk-line" style="width:80px;height:13px;margin:0;animation-delay:${i*0.1+0.05}s;"></div>
         </div>`).join("");
-      strategyCards.innerHTML = "";
+      // Card-area shimmer too, so the whole panel reads as loading.
+      strategyCards.innerHTML = [0,1].map(i => `
+        <div class="otc-strategy-card" style="pointer-events:none;padding:14px;">
+          <div class="sk-shimmer sk-line sk-line--lg" style="width:45%;animation-delay:${i*0.12}s;"></div>
+          <div class="sk-shimmer sk-line" style="width:80%;animation-delay:${i*0.12+0.05}s;"></div>
+          <div class="sk-shimmer sk-line" style="width:65%;animation-delay:${i*0.12+0.1}s;"></div>
+        </div>`).join("");
       if (strategyCardsHead) strategyCardsHead.style.display = "none";
 
       try {
