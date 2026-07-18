@@ -24,13 +24,57 @@ breakout_bp = Blueprint('breakout', __name__, url_prefix='/api/breakout')
 # BREAKOUT TYPE CLASSIFICATION
 # =============================================================================
 
+# Absolute tier anchors used when a cohort is too small for percentiles.
+_ABS_TIERS = {"elite": 55.0, "strong": 45.0, "moderate": 35.0}
+
+
+def compute_tier_thresholds(scores: List[float]) -> Optional[Dict[str, float]]:
+    """Cohort-relative tier cutoffs for breakout classification.
+
+    Fixed absolute cutoffs (55/45/35) drift year to year as the underlying score
+    distribution shifts, so a strong season crowns too many "elite" breakouts and
+    a weak one too few. This blends each anchor 50/50 with a cohort percentile so
+    the tiers stay calibrated to the field while staying tethered to the absolute
+    meaning (a weak cohort can't manufacture an "elite" out of a mediocre score).
+
+    Returns None when the cohort is too small to trust percentiles (caller then
+    falls back to the absolute anchors).
+    """
+    vals = sorted(float(s) for s in scores if s is not None)
+    n = len(vals)
+    if n < 8:
+        return None
+
+    def pct(p: float) -> float:
+        if n == 1:
+            return vals[0]
+        idx = (p / 100.0) * (n - 1)
+        lo = int(idx)
+        hi = min(lo + 1, n - 1)
+        frac = idx - lo
+        return vals[lo] * (1 - frac) + vals[hi] * frac
+
+    elite = 0.5 * _ABS_TIERS["elite"] + 0.5 * pct(80)
+    strong = 0.5 * _ABS_TIERS["strong"] + 0.5 * pct(55)
+    moderate = 0.5 * _ABS_TIERS["moderate"] + 0.5 * pct(30)
+    # Preserve strict ordering with a small gap so no two tiers collapse.
+    strong = min(strong, elite - 2)
+    moderate = min(moderate, strong - 2)
+    return {"elite": round(elite, 1), "strong": round(strong, 1), "moderate": round(moderate, 1)}
+
+
 def classify_breakout_type(
     opportunity_score: float,
     readiness_score: float,
-    overall_score: float
+    overall_score: float,
+    tier_thresholds: Optional[Dict[str, float]] = None,
 ) -> Dict[str, str]:
     """
     Classify a breakout candidate by primary driver and profile.
+
+    tier_thresholds: optional {'elite','strong','moderate'} cutoffs (see
+    compute_tier_thresholds) to tier a candidate relative to its cohort. When
+    omitted, the fixed absolute anchors are used.
 
     Returns:
         {
@@ -40,6 +84,7 @@ def classify_breakout_type(
             'emoji': visual indicator
         }
     """
+    tiers = tier_thresholds or _ABS_TIERS
     # Normalize to 0-100 scale for comparison
     opp_pct = (opportunity_score / 100) * overall_score if overall_score > 0 else 0
     ready_pct = (readiness_score / 100) * overall_score if overall_score > 0 else 0
@@ -53,7 +98,7 @@ def classify_breakout_type(
         primary_driver = 'balanced'
 
     # Determine profile
-    if overall_score >= 55:
+    if overall_score >= tiers["elite"]:
         if primary_driver == 'opportunity':
             profile = 'elite_opportunity'
             profile_label = 'Elite Opportunity Breakout'
@@ -66,7 +111,7 @@ def classify_breakout_type(
             profile = 'balanced_elite'
             profile_label = 'Elite Balanced Breakout'
             icon_class = 'fa-gem'
-    elif overall_score >= 45:
+    elif overall_score >= tiers["strong"]:
         if primary_driver == 'opportunity':
             profile = 'strong_opportunity'
             profile_label = 'Strong Opportunity Situation'
@@ -79,7 +124,7 @@ def classify_breakout_type(
             profile = 'balanced_strong'
             profile_label = 'Strong Balanced Profile'
             icon_class = 'fa-bullseye'
-    elif overall_score >= 35:
+    elif overall_score >= tiers["moderate"]:
         profile = 'moderate'
         profile_label = 'Moderate Breakout Potential'
         icon_class = 'fa-chart-bar'
@@ -96,12 +141,14 @@ def classify_breakout_type(
     }
 
 
-def enrich_candidate_with_type(candidate: dict) -> dict:
-    """Add breakout type classification to candidate dict."""
+def enrich_candidate_with_type(candidate: dict, tier_thresholds: Optional[Dict[str, float]] = None) -> dict:
+    """Add breakout type classification to candidate dict. Pass tier_thresholds
+    (from compute_tier_thresholds over the cohort) for cohort-relative tiering."""
     classification = classify_breakout_type(
         float(candidate.get('opportunity_opened_score') or 0),
         float(candidate.get('player_readiness_score') or 0),
-        float(candidate.get('breakout_opportunity_score') or 0)
+        float(candidate.get('breakout_opportunity_score') or 0),
+        tier_thresholds=tier_thresholds,
     )
 
     return {
@@ -594,7 +641,13 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
             cursor.execute(query, [season, season, min_score])
             rows = cursor.fetchall()
 
-    candidates = [enrich_candidate_with_type(dict(row)) for row in rows]
+    # Tier candidates relative to this season's cohort (falls back to absolute
+    # anchors when the field is too small to trust percentiles).
+    _row_dicts = [dict(row) for row in rows]
+    _tier_thresholds = compute_tier_thresholds(
+        [float(r.get('breakout_opportunity_score') or 0) for r in _row_dicts]
+    )
+    candidates = [enrich_candidate_with_type(r, tier_thresholds=_tier_thresholds) for r in _row_dicts]
 
     # Enrich with PPG projection fields, falling back to cumulative_ppr + age derivation
     for c in candidates:

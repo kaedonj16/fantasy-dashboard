@@ -6143,6 +6143,10 @@ window.initTradePage = function initTradePage(root = document) {
       side_b_picks: sideBPickIds,
       viewer_roster_id: selectedTeamRosterId,
       viewer_team_name: selectedTeamName,
+      // The opponent bound in the UI (auto from acquired players' owner, or the
+      // Side B team dropdown). Lets the analyst name the partner even when the
+      // return is picks-only or platform ids don't match the calculator's.
+      opponent_roster_id: (typeof rosterFilter !== "undefined" && rosterFilter.sideBRid) || "",
     };
 
     try {

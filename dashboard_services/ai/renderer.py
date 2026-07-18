@@ -204,6 +204,7 @@ def get_trade_ai_analysis(
         viewer_side: str,
         side_a: dict,
         side_b: dict,
+        opponent_roster_id: str = "",
 ) -> str:
     team_ctx = build_team_gm_context(ctx, viewer_roster_id)
     if not team_ctx or not isinstance(team_ctx, dict):
@@ -310,10 +311,24 @@ def get_trade_ai_analysis(
     # Pick-to-prospect mapping using rookie ADP
     current_season = ctx.get("current_season") or ctx.get("season") or 2026
     num_teams = len(ctx.get("rosters") or []) or 12
-    is_sf = bool(ctx.get("is_sf") or any(
-        str(s).upper() in {"SUPER_FLEX", "SFLEX"}
-        for s in (ctx.get("roster_positions") or [])
-    ))
+    _roster_positions = [str(s).upper() for s in (ctx.get("roster_positions") or [])]
+    is_sf = bool(ctx.get("is_sf") or any(s in {"SUPER_FLEX", "SFLEX"} for s in _roster_positions))
+    # Starter format the analyst should reason from (QB value swings hard on this).
+    _qb_slots = sum(1 for s in _roster_positions if s == "QB")
+    _sf_slots = sum(1 for s in _roster_positions if s in {"SUPER_FLEX", "SFLEX"})
+    league_format = {
+        "qb_format": "Superflex/2QB" if is_sf else "1QB",
+        "superflex": is_sf,
+        "qb_starter_slots": _qb_slots + _sf_slots,
+        "starting_lineup": _roster_positions or None,
+        "note": (
+            "Superflex/2QB league: quarterbacks carry premium value; weight QB assets and QB "
+            "rookie picks up. The market values in this JSON already reflect the league format."
+            if is_sf else
+            "1QB league: standard single-QB scarcity. The market values in this JSON already "
+            "reflect the league format."
+        ),
+    }
     all_pick_ids = list(viewer_gets.get("pick_ids") or []) + list(viewer_gives.get("pick_ids") or [])
 
     pick_prospects: dict = {}
@@ -354,19 +369,27 @@ def get_trade_ai_analysis(
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
 
-    # Opponent team context
+    # Opponent team context. Prefer the opponent the UI actually bound (reliable
+    # even when the return is picks-only or the platform's roster ids don't match
+    # the calculator's player ids); only fall back to inferring the partner from
+    # the acquired players' owner when no explicit opponent was passed.
     opponent_ctx: dict = {}
     try:
-        opponent_side = side_b if viewer_side == "a" else side_a
-        opp_player_ids = {str(a.get("id")) for a in (opponent_side.get("assets") or []) if a.get("id")}
+        _roster_ids = {str(r.get("roster_id") or "") for r in (ctx.get("rosters") or [])}
         opp_roster_id = None
-        for roster in (ctx.get("rosters") or []):
-            rid = str(roster.get("roster_id") or "")
-            if rid == str(viewer_roster_id):
-                continue
-            if opp_player_ids & {str(p) for p in (roster.get("players") or [])}:
-                opp_roster_id = rid
-                break
+        _explicit = str(opponent_roster_id or "").strip()
+        if _explicit and _explicit != str(viewer_roster_id) and _explicit in _roster_ids:
+            opp_roster_id = _explicit
+        else:
+            opponent_side = side_b if viewer_side == "a" else side_a
+            opp_player_ids = {str(a.get("id")) for a in (opponent_side.get("assets") or []) if a.get("id")}
+            for roster in (ctx.get("rosters") or []):
+                rid = str(roster.get("roster_id") or "")
+                if rid == str(viewer_roster_id):
+                    continue
+                if opp_player_ids & {str(p) for p in (roster.get("players") or [])}:
+                    opp_roster_id = rid
+                    break
         if opp_roster_id:
             opp_team_ctx = build_team_gm_context(ctx, opp_roster_id)
             if opp_team_ctx:
@@ -418,11 +441,12 @@ def get_trade_ai_analysis(
             "pick_prospects": pick_prospects,
             "market_delta": market_delta,
         },
+        "league_format": league_format,
         "opponent_team": opponent_ctx or None,
     }
 
     # Build cache key for trade analysis
-    cache_key = build_ai_cache_key("trade_analysis", payload, "v4")
+    cache_key = build_ai_cache_key("trade_analysis", payload, "v5")
 
     # Try to get from cache first
     cached = load_cached_ai_text(cache_key)
@@ -587,7 +611,7 @@ def get_power_rankings_html(ctx: dict) -> str:
     if not teams:
         return "<p>Not enough data for power rankings.</p>"
 
-    cache_key = build_ai_cache_key("power_rankings", {"week": rankings_ctx.get("week"), "season": rankings_ctx.get("season"), "teams": [t["roster_id"] for t in teams]}, "v1")
+    cache_key = build_ai_cache_key("power_rankings", {"week": rankings_ctx.get("week"), "season": rankings_ctx.get("season"), "teams": [t["roster_id"] for t in teams]}, "v4")
     cached = load_cached_ai_text(cache_key)
     if cached:
         return cached
@@ -696,8 +720,13 @@ def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
 
     cache_key = build_ai_cache_key(
         "trade_suggestions",
-        {"roster_id": viewer_roster_id, "needs": suggestions_ctx.get("viewer_needs"), "surplus": suggestions_ctx.get("viewer_surplus")},
-        "v7",
+        {
+            "roster_id": viewer_roster_id,
+            "needs": suggestions_ctx.get("viewer_needs"),
+            "surplus": suggestions_ctx.get("viewer_surplus"),
+            "direction": suggestions_ctx.get("viewer_direction"),
+        },
+        "v9",
     )
     cached = load_cached_ai_text(cache_key)
     if cached:
@@ -758,11 +787,19 @@ def _render_trade_suggestions_fallback(ctx: dict) -> str:
             title = f"Target: {pname}"
             send_part = f" - offer {send_names}" if send_names else ""
             reasoning = f"They have depth at {html.escape(', '.join(p.get('partner_surplus') or []))} - target {target_names}{send_part}."
+
+        # Higher positional fit + a fairer deal = a more actionable suggestion.
+        fairness = p.get("fairness") or 0
+        urgency_cls, urgency_txt = ("urgency-low", "worth exploring")
+        if p.get("match_score", 0) >= 4 and fairness >= 0.80:
+            urgency_cls, urgency_txt = ("urgency-high", "strong fit")
+        elif p.get("match_score", 0) >= 2 and fairness >= 0.72:
+            urgency_cls, urgency_txt = ("urgency-medium", "good fit")
         partner_rows += f"""
         <div class="suggestion-card">
           <div class="suggestion-title">{html.escape(title)}</div>
           <div class="suggestion-reasoning">{html.escape(reasoning)}</div>
-          <div class="suggestion-urgency urgency-medium">medium priority</div>
+          <div class="suggestion-urgency {urgency_cls}">{urgency_txt}</div>
         </div>
         """
 

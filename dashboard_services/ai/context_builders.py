@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Union
 from utils.coerce import safe_float as _safe_float, safe_int as _safe_int
+from utils.all_play import all_play_analysis
 
 # Core fantasy positions used for scarcity analysis
 _SCARCITY_POSITIONS = {"QB", "RB", "WR", "TE"}
@@ -718,7 +719,10 @@ def build_trade_suggestions_context(
                 continue
             val = _safe_float(mv.get("value") or mv.get("model_value") or mv.get("trade_value"))
             if val > 0:
-                out.append({"id": spid, "name": str(mv.get("name") or spid), "value": round(val, 1), "position": pos})
+                out.append({
+                    "id": spid, "name": str(mv.get("name") or spid),
+                    "value": round(val, 1), "position": pos, "age": mv.get("age"),
+                })
         return sorted(out, key=lambda x: x["value"], reverse=True)
 
     n_teams = max(len(rosters), 1)
@@ -844,6 +848,28 @@ def build_trade_suggestions_context(
         vals = [roster_totals_map[rid].get(pos, 0.0) for rid in roster_totals_map]
         league_avg[pos] = sum(vals) / len(vals) if vals else 0.0
 
+    # Viewer's competitive direction — used to bias which targets fit. Computed
+    # once up front (also reused for the return payload) so the partner loop can
+    # reward direction-appropriate acquisitions.
+    viewer_team_ctx = build_team_gm_context(ctx, viewer_roster_id) or {}
+    viewer_direction = viewer_team_ctx.get("direction") or "balanced"
+
+    def _direction_age_fit(direction: str, targets: list[dict]) -> float:
+        """A small (+/-1) nudge on the suggestion score based on how well the age
+        profile of what the viewer would ACQUIRE fits their window. Contenders
+        want proven now (raw youth pays off too slowly); rebuilders want youth.
+        Neutral when direction is balanced or ages are unknown."""
+        ages = [_safe_float(t.get("age")) for t in targets if t.get("age") not in (None, "", 0)]
+        if not ages:
+            return 0.0
+        avg_age = sum(ages) / len(ages)
+        d = (direction or "").lower()
+        if "rebuild" in d or "sell" in d:
+            return max(-1.0, min(1.0, (26.0 - avg_age) * 0.20))   # younger = better
+        if "contend" in d or "win" in d or "buy" in d:
+            return max(-1.0, min(0.5, (avg_age - 23.0) * 0.15))    # penalize raw youth
+        return 0.0
+
     # Find best trade partners
     partners = []
     for r in rosters:
@@ -939,10 +965,12 @@ def build_trade_suggestions_context(
                     # Send 2nd player onward at surplus positions (keep 1 starter)
                     all_surplus_sendable.extend(top[1:2] if pos_depth > 1 else top[:1])
             all_surplus_sendable.sort(key=lambda x: x["value"], reverse=True)
-            # Build package until combined value reaches ~80% of target
+            # Build package until combined value lands in a fair band around the
+            # target (~92%), so consolidation offers are realistic rather than
+            # obvious underpays.
             running = 0.0
             for p in all_surplus_sendable:
-                if running >= target_val * 0.80:
+                if running >= target_val * 0.92:
                     break
                 targets_viewer_sends.append(p)
                 running += p["value"]
@@ -962,10 +990,36 @@ def build_trade_suggestions_context(
         else:
             trade_type_hint = "swap"
 
+        # Value fairness: how even the two sides are (1.0 = perfectly balanced).
+        # A suggestion is only realistic if BOTH managers would plausibly ink it,
+        # so drop fleece-level mismatches and rank the rest by how fair they are
+        # rather than by positional fit alone. A modest premium is normal when
+        # consolidating depth into one stud, so the floor is lenient (0.62), but
+        # a lopsided robbery never gets surfaced.
+        _hi = max(value_you_get, value_you_give)
+        _lo = min(value_you_get, value_you_give)
+        fairness = round(_lo / _hi, 3) if _hi > 0 else 0.0
+        if fairness < 0.62:
+            continue
+
+        # Composite ranking: positional fit still matters most, but a fair,
+        # mutually beneficial deal now outranks a lopsided same-fit one, a deal
+        # where the viewer isn't overpaying gets a small nudge, and the age
+        # profile of the acquisition is nudged toward the viewer's window.
+        direction_fit = _direction_age_fit(viewer_direction, targets_they_have)
+        suggestion_score = round(
+            match_score + fairness * 3.0
+            + (0.5 if value_you_get >= value_you_give else 0.0)
+            + direction_fit,
+            3,
+        )
+
         partners.append({
             "roster_id": rid,
             "team_name": roster_map.get(rid) or f"Team {rid}",
             "match_score": match_score,
+            "suggestion_score": suggestion_score,
+            "fairness": fairness,
             "partner_needs": partner_needs,
             "partner_surplus": partner_surplus,
             "targets_they_have": targets_they_have[:3],
@@ -976,7 +1030,7 @@ def build_trade_suggestions_context(
             "is_package_trade": is_package_trade,
         })
 
-    partners.sort(key=lambda x: x["match_score"], reverse=True)
+    partners.sort(key=lambda x: (x["suggestion_score"], x["match_score"]), reverse=True)
 
     # Pick-for-player suggestions: viewer offers a pick instead of a player.
     # Don't require partner_surplus - any team with a good player at a needed
@@ -1012,11 +1066,9 @@ def build_trade_suggestions_context(
         pick_trade_partners.sort(key=lambda x: max((t.get("value", 0) for t in x["targets_they_have"]), default=0), reverse=True)
         pick_trade_partners = pick_trade_partners[:3]
 
-    viewer_team_ctx = build_team_gm_context(ctx, viewer_roster_id) or {}
-
     return {
         "viewer_team": viewer_team_ctx.get("team_name") or f"Roster {viewer_roster_id}",
-        "viewer_direction": viewer_team_ctx.get("direction") or "balanced",
+        "viewer_direction": viewer_direction,
         "viewer_needs": viewer_needs,
         "viewer_surplus": viewer_surplus,
         "viewer_pos_ranks": {pos: viewer_ranks.get(pos, n_teams) for pos in _SCARCITY_POSITIONS},
@@ -1038,8 +1090,17 @@ def build_power_rankings_context(ctx: dict) -> dict:
     Build context for AI-generated power rankings.
 
     For each roster, compute a PowerScore:
-      0.30 * Z(PF) + 0.40 * Z(Win%) + 0.30 * Z(avg_roster_value)
-    Then pass top_assets, direction, and win_window to AI for narrative generation.
+      0.23 * Z(PF)
+      + 0.28 * Z(luck-adjusted win%)
+      + 0.19 * Z(starter value)
+      + 0.14 * Z(momentum)
+      + 0.08 * Z(consistency)
+      + 0.08 * Z(strength of schedule)
+    where the win term blends all-play (schedule-luck-free) with actual record,
+    value is the top-8 win-now (redraft) total, momentum is recent all-play form
+    vs the season baseline, consistency rewards steady week-to-week scoring, and
+    SoS credits a résumé earned against tougher opponents. Then pass top_assets,
+    direction, and win_window to AI for narrative generation.
     win_window uses the same league-context percentile logic as the teams page cards.
     """
     rosters = ctx.get("rosters") or []
@@ -1084,6 +1145,79 @@ def build_power_rankings_context(ctx: dict) -> dict:
     _dynasty_pct_fn = _make_pct_fn(_team_dynasty_total)
     _redraft_pct_fn = _make_pct_fn(_team_redraft_total)
 
+    # ── Luck-adjusted (all-play) win % per roster ──────────────────────────────
+    # Actual record is heavily schedule-luck-driven early in the season (a team
+    # can be 3-0 on middling scores). All-play — how you'd fare against every
+    # other team each week — is far more predictive of real strength, so the
+    # power score blends toward it. Falls back to actual win% if weekly scores
+    # aren't available (e.g. offseason / preseason).
+    # We also derive three schedule/form signals from the same weekly scores:
+    #   momentum    — recent all-play form (last ~3 wk) minus season all-play, so
+    #                 a team heating up outranks an identical résumé that's fading.
+    #   consistency — negative coefficient of variation of weekly points; a steady
+    #                 scorer is worth more than a boom/bust team with the same mean.
+    #   sos         — strength of schedule: the average season all-play strength of
+    #                 the opponents actually faced, so a résumé earned against tough
+    #                 teams is worth more than the same record against cupcakes.
+    _all_play_pct: dict[str, float] = {}
+    _momentum: dict[str, float] = {}
+    _consistency: dict[str, float] = {}
+    _sos: dict[str, float] = {}
+    try:
+        _dfw = ctx.get("df_weekly")
+        if _dfw is not None and getattr(_dfw, "empty", True) is False and "roster_id" in _dfw.columns:
+            _fin = _dfw[_dfw["finalized"] == True] if "finalized" in _dfw.columns else _dfw
+            _has_mid = "matchup_id" in _fin.columns
+            _weekly_scores: dict[int, dict[str, float]] = {}
+            _matchup_rosters: dict[tuple, list[str]] = {}
+            for _, _row in _fin.iterrows():
+                _wk = int(_row["week"])
+                _weekly_scores.setdefault(_wk, {})[str(_row["roster_id"])] = float(_row["points"] or 0.0)
+                if _has_mid and _row.get("matchup_id") is not None:
+                    _matchup_rosters.setdefault((_wk, _row.get("matchup_id")), []).append(str(_row["roster_id"]))
+            _actual_wins = {
+                str(r.get("roster_id")): _safe_float((r.get("settings") or {}).get("wins"))
+                for r in rosters
+            }
+            _ap = all_play_analysis(_weekly_scores, _actual_wins)
+            _all_play_pct = {t: v["all_play_pct"] for t, v in _ap.items()}
+
+            # Strength of schedule: average season all-play strength of the
+            # opponents each roster actually faced (opponents share a matchup_id).
+            _opp_strengths: dict[str, list[float]] = {}
+            for _rids in _matchup_rosters.values():
+                if len(_rids) == 2:
+                    a, b = _rids
+                    _opp_strengths.setdefault(a, []).append(_all_play_pct.get(b, 0.5))
+                    _opp_strengths.setdefault(b, []).append(_all_play_pct.get(a, 0.5))
+            _sos = {rid: round(sum(s) / len(s), 4) for rid, s in _opp_strengths.items() if s}
+
+            # Momentum: recent-form all-play (last 3 finalized weeks) vs season.
+            _weeks_sorted = sorted(_weekly_scores.keys())
+            if len(_weeks_sorted) >= 4:  # need a season baseline to compare against
+                _recent = {w: _weekly_scores[w] for w in _weeks_sorted[-3:]}
+                _recent_ap = all_play_analysis(_recent, _actual_wins)
+                _momentum = {
+                    t: round(_recent_ap.get(t, {}).get("all_play_pct", 0.0) - _all_play_pct.get(t, 0.0), 4)
+                    for t in _all_play_pct
+                }
+
+            # Consistency: -(std/mean) of weekly points per roster.
+            _pts_by_rid: dict[str, list[float]] = {}
+            for _wk_scores in _weekly_scores.values():
+                for _rid_s, _pts in _wk_scores.items():
+                    _pts_by_rid.setdefault(_rid_s, []).append(_pts)
+            for _rid_s, _arr in _pts_by_rid.items():
+                if len(_arr) >= 2:
+                    _m = sum(_arr) / len(_arr)
+                    _sd = (sum((x - _m) ** 2 for x in _arr) / len(_arr)) ** 0.5
+                    _consistency[_rid_s] = round(-(_sd / _m), 4) if _m > 0 else 0.0
+    except Exception:
+        _all_play_pct = {}
+        _momentum = {}
+        _consistency = {}
+        _sos = {}
+
     team_data = []
     for roster in rosters:
         rid = str(roster.get("roster_id") or "")
@@ -1098,6 +1232,19 @@ def build_power_rankings_context(ctx: dict) -> dict:
         standing = standings_map.get(rid) or {}
         pf = _safe_float(standing.get("PF") or fpts)
 
+        # Luck-adjusted win rate: mostly all-play (de-luffed strength), with a
+        # nod to the actual record you're living in. Falls back to raw win%.
+        ap_pct = _all_play_pct.get(rid)
+        luck_adj_win = (0.70 * ap_pct + 0.30 * win_pct) if ap_pct is not None else win_pct
+
+        # Recent form + steadiness (default neutral when no weekly data).
+        momentum = _momentum.get(rid, 0.0)
+        consistency = _consistency.get(rid, 0.0)
+        momentum_label = "Heating up" if momentum >= 0.12 else ("Cooling off" if momentum <= -0.12 else "Steady")
+        # Strength of schedule faced (league-average all-play ≈ 0.5).
+        sos = _sos.get(rid, 0.5)
+        sos_label = "Brutal" if sos >= 0.56 else ("Soft" if sos <= 0.44 else "Average")
+
         # Compute roster value
         roster_players_vals = []
         for pid in roster.get("players") or []:
@@ -1105,6 +1252,11 @@ def build_power_rankings_context(ctx: dict) -> dict:
             val = _safe_float(mv.get("value") or mv.get("model_value") or mv.get("trade_value"))
             roster_players_vals.append(val)
         avg_value = sum(roster_players_vals) / len(roster_players_vals) if roster_players_vals else 0.0
+        # Starter-weighted, win-now roster strength (top-8 redraft value already
+        # computed above). Better than a whole-roster dynasty average, which
+        # dilutes studs with deep benches and over-credits youth that doesn't
+        # help win this season.
+        starter_value = round(_team_redraft_total.get(rid_int, 0.0), 1)
 
         players_summary = summarize_roster_players(
             roster=roster,
@@ -1140,8 +1292,16 @@ def build_power_rankings_context(ctx: dict) -> dict:
             "wins": wins,
             "losses": losses,
             "win_pct": win_pct,
+            "luck_adj_win": round(luck_adj_win, 4),
+            "all_play_pct": round(ap_pct, 4) if ap_pct is not None else None,
             "pf": pf,
             "avg_value": round(avg_value, 1),
+            "starter_value": starter_value,
+            "momentum": momentum,
+            "momentum_label": momentum_label,
+            "consistency": consistency,
+            "sos": sos,
+            "sos_label": sos_label,
             "avg_age": avg_age,
             "win_window": win_window,
             "direction": direction,
@@ -1169,16 +1329,34 @@ def build_power_rankings_context(ctx: dict) -> dict:
             return [0.0] * len(values)
         return [(v - mean) / std for v in values]
 
-    pf_vals = [t["pf"] for t in team_data]
-    win_vals = [t["win_pct"] for t in team_data]
-    val_vals = [t["avg_value"] for t in team_data]
+    pf_z = _z_scores([t["pf"] for t in team_data])
+    win_z = _z_scores([t["luck_adj_win"] for t in team_data])    # luck-adjusted, not raw
+    val_z = _z_scores([t["starter_value"] for t in team_data])   # starter-weighted, win-now
+    mom_z = _z_scores([t["momentum"] for t in team_data])        # recent form
+    con_z = _z_scores([t["consistency"] for t in team_data])     # steadiness
+    sos_z = _z_scores([t["sos"] for t in team_data])             # schedule faced
 
-    pf_z = _z_scores(pf_vals)
-    win_z = _z_scores(win_vals)
-    val_z = _z_scores(val_vals)
-
+    # PowerScore: résumé (PF + luck-adjusted record + win-now roster value), form
+    # (recent momentum), steadiness (consistency), and how tough the schedule that
+    # produced the résumé was (SoS). Weights sum to 1.0.
     for i, team in enumerate(team_data):
-        team["power_score"] = round(0.30 * pf_z[i] + 0.40 * win_z[i] + 0.30 * val_z[i], 3)
+        team["power_score"] = round(
+            0.23 * pf_z[i]
+            + 0.28 * win_z[i]
+            + 0.19 * val_z[i]
+            + 0.14 * mom_z[i]
+            + 0.08 * con_z[i]
+            + 0.08 * sos_z[i],
+            3,
+        )
+        team["power_components"] = {
+            "pf": round(pf_z[i], 2),
+            "record": round(win_z[i], 2),
+            "value": round(val_z[i], 2),
+            "momentum": round(mom_z[i], 2),
+            "consistency": round(con_z[i], 2),
+            "sos": round(sos_z[i], 2),
+        }
 
     team_data.sort(key=lambda t: t["power_score"], reverse=True)
 
