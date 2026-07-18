@@ -975,6 +975,9 @@ def build_trade_calculator_body(
                 <button class="otc-arch-chip" data-arch="distribute">Distribute</button>
               </div>
 
+              <!-- One-line explanation of the selected strategy -->
+              <div id="otcStrategyDesc" class="otc-strategy-desc" style="display:none;font-size:12px;line-height:1.45;color:var(--text-muted);margin:8px 2px 4px;"></div>
+
               <!-- Impact table (current PO badge is inline on the right) -->
               <div class="otc-strategy-section-head">
                 <span class="otc-sugg-section-title">Impact <span id="otcStrategySpinner" style="display:none;font-size:10px;font-weight:500;color:var(--text-muted);"><i class="fa-solid fa-circle-notch" style="animation:spin .9s linear infinite;margin-right:2px;"></i>Simulating…</span></span>

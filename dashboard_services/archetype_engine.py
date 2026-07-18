@@ -53,6 +53,11 @@ _CONSOLIDATE_TARGET_FLOOR = 350      # min value to be a worthwhile consolidatio
 # swapping your best player for a marginally better one - the opposite of
 # consolidating). The target must beat the send headliner by at least this much.
 _CONSOLIDATE_MIN_UPGRADE = 1.18
+# Every piece in a consolidation package must be a real asset, not a rock: no one
+# sells a stud for a pile of junk. Each non-pick piece has to clear this fraction
+# of the target's value. Kept low so a legitimate throw-in alongside a
+# tier-comparable headliner still qualifies, while genuine junk is filtered.
+_CONSOLIDATE_PIECE_FRACTION = 0.10
 # A "lone stud" is the viewer's single best asset when it stands clearly clear of
 # the rest (>= this multiple of their next-best). Consolidation must not spend it:
 # a one-stud team consolidates the depth AROUND the stud, it doesn't ship the
@@ -587,8 +592,8 @@ def _build_why(
 
     if archetype == "distribute":
         return (
-            f"Distribute {name}'s value into multiple starters. "
-            f"{partner} needs depth and can offer a multi-player return."
+            f"Distribute {name}'s value into multiple starters and future picks. "
+            f"{partner} needs depth and can offer a multi-asset return."
         )
 
     return f"{name} improves your win probability by {wp_d:+.1%}."
@@ -758,6 +763,15 @@ def _select_packages(
                          if not (a.get("is_pick") or a.get("position") == "PICK")), default=0)
         return headliner <= 0 or target_val >= headliner * _CONSOLIDATE_MIN_UPGRADE
 
+    _piece_floor = target_val * _CONSOLIDATE_PIECE_FRACTION
+
+    def _pieces_respectable(*assets) -> bool:
+        """No package of rocks: every player piece must be a real asset relative to
+        the target (picks are capital and exempt). Stops a stud-priced target from
+        being 'reached' by bundling a good headliner with worthless junk."""
+        return all(a.get("value", 0) >= _piece_floor for a in assets
+                   if not (a.get("is_pick") or a.get("position") == "PICK"))
+
     def _drop_underpays(pkgs: List[List[Dict]]) -> List[List[Dict]]:
         return [p for p in pkgs if _eff(*p) >= eff_floor]
 
@@ -804,7 +818,7 @@ def _select_packages(
         for a, b in combinations(player_pool, 2):
             if a["position"] == "QB" and b["position"] == "QB":
                 continue
-            if _in_band(a, b) and _tier_ok(a, b) and _upgrade_ok(a, b) and _dist(a, b) < best2_d:
+            if _in_band(a, b) and _tier_ok(a, b) and _upgrade_ok(a, b) and _pieces_respectable(a, b) and _dist(a, b) < best2_d:
                 best2_d, best2 = _dist(a, b), [a, b]
         if best2:
             results_c.append(best2)
@@ -818,6 +832,7 @@ def _select_packages(
                     continue
                 pkg_pids = {a["player_id"], b["player_id"], c["player_id"]}
                 if (_in_band(a, b, c) and _tier_ok(a, b, c) and _upgrade_ok(a, b, c)
+                        and _pieces_respectable(a, b, c)
                         and _dist(a, b, c) < best3_d and not pkg_pids.issubset(used_pids)):
                     best3_d, best3 = _dist(a, b, c), [a, b, c]
             if best3:
@@ -830,7 +845,7 @@ def _select_packages(
                 for a, b in combinations(player_pool[:8], 2):
                     if a["position"] == "QB" and b["position"] == "QB":
                         continue
-                    if _in_band(a, b, pk) and _tier_ok(a, b, pk) and _upgrade_ok(a, b, pk) and _dist(a, b, pk) < best_pp_d:
+                    if _in_band(a, b, pk) and _tier_ok(a, b, pk) and _upgrade_ok(a, b, pk) and _pieces_respectable(a, b, pk) and _dist(a, b, pk) < best_pp_d:
                         best_pp_d, best_pp = _dist(a, b, pk), [a, b, pk]
             if best_pp:
                 results_c.append(best_pp)
@@ -842,7 +857,7 @@ def _select_packages(
             for a, b in combinations(player_pool, 2):
                 if a["position"] == "QB" and b["position"] == "QB":
                     continue
-                if _tier_ok(a, b) and _upgrade_ok(a, b) and _dist(a, b) < fallback2_d:
+                if _tier_ok(a, b) and _upgrade_ok(a, b) and _pieces_respectable(a, b) and _dist(a, b) < fallback2_d:
                     fallback2_d, fallback2 = _dist(a, b), [a, b]
             if fallback2:
                 results_c.append(fallback2)
@@ -1088,10 +1103,13 @@ def _build_distribute(
     sim_state: Optional[Dict] = None,
     current_playoff_pct: float = 0.0,
     viewer_roster_id: Any = None,
+    picks_by_owner: Optional[Dict[str, List[Dict]]] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Viewer sends one concentrated stud and receives a 2–3 player depth package.
-    Each card = one stud → one partner's multi-player return.
+    Viewer sends one concentrated stud and receives a package of several usable
+    pieces plus, where it balances the deal, future draft capital - the whole
+    point of distributing a star (Bijan -> James Cook + Emeka Egbuka + a 1st).
+    Each card = one stud → one partner's multi-asset return.
     """
     # League-wide value ladder for effective-value (depth-penalty) math. Here the
     # partner is the side sending more bodies (the depth package), so their
@@ -1149,14 +1167,24 @@ def _build_distribute(
             for owner, pool in targets_by_owner.items():
                 if owner in used_owners:
                     continue
-                cand = sorted(
+                players = sorted(
                     [p for p in pool if p["position"] not in saturated
                      and (not starters_only or _is_starter_tier(p))],
                     key=lambda x: x["value"], reverse=True
                 )[:8]
+                # The partner's best 1-2 picks are receivable future capital and
+                # can round out a package (Cook + Egbuka + a 1st). They never
+                # stand alone here: a distribution has to return usable players.
+                owner_picks = sorted(
+                    (picks_by_owner or {}).get(str(owner)) or [],
+                    key=lambda x: -x.get("value", 0),
+                )[:2]
+                cand = players + owner_picks
                 local_best: Optional[Tuple[str, List[Dict], float]] = None
                 for n in (2, 3):
                     for combo in combinations(cand, n):
+                        if not any(not c.get("is_pick") for c in combo):
+                            continue  # must include at least one usable player
                         s = sum(c["value"] for c in combo)
                         if lo <= s <= hi:
                             diff = abs(s - sval)
@@ -1241,6 +1269,12 @@ def _build_distribute(
             p_arch = owner_meta.get(owner, {}).get("arch", "")
             ceiling_note = "lineup ceiling rises" if net_wpd >= 0 else "adds depth but trims your ceiling"
 
+            _n_pk = sum(1 for c in combo if c.get("is_pick"))
+            _n_pl = len(combo) - _n_pk
+            _piece_desc = f"{_n_pl} starter{'s' if _n_pl != 1 else ''}"
+            if _n_pk:
+                _piece_desc += f" and {_n_pk} pick{'s' if _n_pk != 1 else ''}"
+
             results.append({
                 "player_id":      stud,
                 "name":           sname,
@@ -1250,7 +1284,7 @@ def _build_distribute(
                 "value":          round(sval, 1),
                 "redraft_value":  round(_f(values_by_id[stud].get("redraft_value")), 1),
                 "pos_rank_label": values_by_id[stud].get("pos_rank_label", ""),
-                "why":            (f"Spread {sname}'s value into {len(combo)} starters from {pname}. "
+                "why":            (f"Spread {sname}'s value into {_piece_desc} from {pname}. "
                                    f"{ceiling_note.capitalize()}, filling multiple holes at once."),
                 "fit_note":       _fit_note([{"position": spos}],
                                             owner_meta.get(owner, {}).get("need"), None, None),
@@ -1843,6 +1877,17 @@ def get_archetype_suggestions(
 
     # ── Distribute: viewer sends a stud for a depth package ───────────────────
     if archetype == "distribute":
+        # Distribute = break up a concentrated stud into several usable pieces AND
+        # future capital, so partner draft picks are receivable assets too (e.g.
+        # Bijan -> James Cook + Emeka Egbuka + a 1st). Convert each rival's picks
+        # the same way the rebuilding path does.
+        picks_by_owner: Dict[str, List[Dict]] = {}
+        for rid, pick_list in picks_by_roster.items():
+            if str(rid) == str(viewer_roster_id):
+                continue
+            converted = _pick_send_candidates(pick_list, num_teams, slot_map, current_season=season)
+            if converted:
+                picks_by_owner[str(rid)] = converted
         _sugg = _build_distribute(
             viewer_players, values_by_id, targets_by_owner, owner_meta,
             roster_map, league_type, viewer_lineup_val, league_avg,
@@ -1854,6 +1899,7 @@ def get_archetype_suggestions(
             sim_state=sim_state,
             current_playoff_pct=current_playoff_pct,
             viewer_roster_id=viewer_roster_id,
+            picks_by_owner=picks_by_owner,
         )
         return {"suggestions": _sugg, "current_playoff_pct": round(current_playoff_pct, 1)}
 

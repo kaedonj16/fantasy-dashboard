@@ -293,6 +293,71 @@ def test_consolidate_never_ships_the_lone_stud_and_uses_surplus():
     ), "expected a WR-surplus consolidation from the young mid WRs"
 
 
+def _distribute_ctx():
+    """Viewer holds a concentrated elite RB (value 3200) and thin depth. A rival
+    holds two starting-caliber WRs plus a 2026 1st, so the stud can be spread into
+    'usable pieces + future capital' (the Bijan -> Cook + Egbuka + a 1st shape)."""
+    def P(pid, name, pos, val, age, team="FA"):
+        return {"id": pid, "name": name, "position": pos, "team": team,
+                "age": age, "value": val, "sf_value": val,
+                "redraft_value_1qb": val * 0.8, "redraft_value_sf": val * 0.8,
+                "pos_rank_label": f"{pos}1", "rank_change_7d": 0}
+
+    table = [
+        P("elite_rb", "Elite RB", "RB", 3200, 24, "ATL"),
+        P("v_wr", "Viewer WR", "WR", 700, 26, "PHI"),
+        P("v_te", "Viewer TE", "TE", 300, 27, "PHI"),
+        # Rival roster 2: two starting-caliber WRs whose value + a pick balances the stud.
+        P("r2_wr1", "Rival WR1", "WR", 1500, 24, "DET"),
+        P("r2_wr2", "Rival WR2", "WR", 1300, 23, "DET"),
+        P("r2_dep", "Rival Depth", "RB", 250, 28, "DET"),
+        # Rival roster 3: alternative depth so the pool isn't single-entry.
+        P("r3_wr", "Rival WR", "WR", 1400, 25, "CIN"),
+        P("r3_rb", "Rival RB", "RB", 1250, 24, "CIN"),
+    ]
+    rosters = [
+        {"roster_id": 1, "players": ["elite_rb", "v_wr", "v_te"]},
+        {"roster_id": 2, "players": ["r2_wr1", "r2_wr2", "r2_dep"]},
+        {"roster_id": 3, "players": ["r3_wr", "r3_rb"]},
+    ]
+    return {
+        "rosters": rosters,
+        "roster_map": {1: "Viewer", 2: "Team Two", 3: "Team Three"},
+        "standings_map": {1: 2, 2: 1, 3: 3},
+        "model_value_table": table,
+        # Rival 2 holds a first-round pick — receivable future capital.
+        "picks_by_roster": {"2": [{"season": "2026", "round": 1, "original_roster_id": 2}]},
+        "settings": {"playoff_week_start": 15},
+    }
+
+
+def test_distribute_can_return_future_capital():
+    import time as _t
+    ae._SIM_CACHE["sleeper:dist:2026"] = {"sim_state": None, "base_odds": {}, "ts": _t.time()}
+    try:
+        out = ae.get_archetype_suggestions(
+            archetype="distribute", platform="sleeper", league_id="dist",
+            season=2026, viewer_roster_id="1", league_type="1qb", league_size=10,
+            ctx=_distribute_ctx(),
+        )
+    finally:
+        ae._SIM_CACHE.pop("sleeper:dist:2026", None)
+
+    sugg = out["suggestions"]
+    assert sugg, "an elite stud should be distributable"
+    # Every distribute card sends exactly the one stud...
+    for s in sugg:
+        assert len(s["suggested_send"]) == 1
+        assert s["suggested_send"][0]["name"] == "Elite RB"
+        # ...and returns multiple pieces.
+        assert len(s["suggested_receive"]) >= 2
+    # At least one return package includes future draft capital (a pick).
+    assert any(
+        any(a.get("position") == "PICK" for a in s["suggested_receive"])
+        for s in sugg
+    ), "distribute should be able to return picks as future capital"
+
+
 def test_analytical_impact_is_bounded_without_sim_state(monkeypatch):
     """The Impact table's per-target win % / playoff-odds come from the analytical
     model when a league has no sim state. That model used to mix the target's raw
