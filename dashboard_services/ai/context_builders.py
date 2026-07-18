@@ -522,53 +522,14 @@ def calculate_roster_grade(
 # Roster Depth Warning (replaces league-wide positional scarcity)
 # ──────────────────────────────────────────────────────────────────────────────
 
-# Fallback thresholds used when no league context is available
-_STARTER_THRESHOLD = {"QB": 500, "RB": 350, "WR": 350, "TE": 400}
-_DEPTH_FLOOR = {"QB": 1, "RB": 2, "WR": 3, "TE": 1}
-
-
-def _derive_league_thresholds(
-    roster_positions: list[str],
-    num_teams: int,
-) -> tuple[dict[str, int], dict[str, int]]:
-    """
-    Derive starter-caliber value thresholds and depth floors from actual
-    league settings.
-
-    Depth floor  = number of that position in the starting lineup
-                   (including FLEX, split evenly across RB/WR).
-    Value threshold scales down with league size: larger leagues spread
-    talent thinner, so a lower absolute value still constitutes a starter.
-    """
-    pos_counts: dict[str, int] = {}
-    flex_count = 0
-    for slot in roster_positions:
-        s = str(slot).upper()
-        if s in ("QB", "RB", "WR", "TE"):
-            pos_counts[s] = pos_counts.get(s, 0) + 1
-        elif s in ("FLEX", "RB_WR_FLEX", "RB_WR_TE", "WR_RB", "WR_TE", "RB_WR"):
-            flex_count += 1
-
-    # Distribute FLEX evenly across RB and WR (most common usage)
-    rb_flex = flex_count // 2
-    wr_flex = flex_count - rb_flex
-    floor: dict[str, int] = {
-        "QB": max(1, pos_counts.get("QB", 1)),
-        "RB": max(1, pos_counts.get("RB", 1) + rb_flex),
-        "WR": max(1, pos_counts.get("WR", 1) + wr_flex),
-        "TE": max(1, pos_counts.get("TE", 1)),
-    }
-
-    # Value threshold: base on 12-team league, scale linearly with team count.
-    # More teams = talent diluted = lower bar to be a starter.
-    scale = 12 / max(num_teams, 6)
-    threshold: dict[str, int] = {
-        "QB": round(500 * scale),
-        "RB": round(350 * scale),
-        "WR": round(350 * scale),
-        "TE": round(400 * scale),
-    }
-    return threshold, floor
+# Starter-caliber thresholds now live in utils.roster_strength (shared with the
+# consolidate/distribute engine so they can't drift). Aliased here to keep the
+# existing private names below unchanged.
+from utils.roster_strength import (  # noqa: E402
+    DEPTH_FLOOR as _DEPTH_FLOOR,
+    STARTER_THRESHOLD as _STARTER_THRESHOLD,
+    derive_league_thresholds as _derive_league_thresholds,
+)
 
 
 def calculate_roster_depth_warning(

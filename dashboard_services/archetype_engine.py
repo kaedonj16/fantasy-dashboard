@@ -14,6 +14,7 @@ import time as _time
 from itertools import combinations
 from typing import Any, Dict, List, Optional, Tuple
 
+from utils.roster_strength import STARTER_THRESHOLD, derive_league_thresholds
 from utils.tier_stack import asset_tier
 from utils.tier_thresholds import ELITE_RANK_CUTOFFS, FALLBACK_THRESHOLDS, compute_tier_thresholds
 
@@ -43,32 +44,18 @@ SCARCITY_SF  = {"QB": 1.00, "RB": 1.00, "WR": 1.00, "TE": 0.85}
 # T5 depth for that same stud is not, no matter how the raw values add up.
 _CONSOLIDATE_MAX_TIER_DROP = 2
 
-# Roster-aware consolidation tiers. "Elite" matches the ELITE chip exactly
-# (ELITE_RANK_CUTOFFS, per-position value rank); "pure starter" is startable
-# given the league's demand (dedicated slots + a share of FLEX, scaled by team
-# count); everything below is flex/depth.
-_FLEX_SHARE = {"RB": 0.45, "WR": 0.45, "TE": 0.10}    # who typically fills FLEX
-
-
-def _pos_starter_line(pos: str, num_teams: int, league_type: str) -> int:
-    """Positional rank at/above which a player is a league-startable ("pure
-    starter") at that position. Scales with league size and format (SF gives QBs
-    a second slot), so the same value bar shifts with the league."""
-    slots = SLOTS_SF if str(league_type).lower() == "sf" else SLOTS_1QB
-    dedicated = slots.get(pos, 0)
-    flexed = slots.get("FLEX", 0) * _FLEX_SHARE.get(pos, 0.0)
-    return max(1, round(max(num_teams, 1) * (dedicated + flexed)))
-
-
-def _pos_category(pos: str, rank: Optional[int], num_teams: int, league_type: str) -> str:
-    """'elite' | 'starter' | 'flex' | 'depth' for a player's positional value
-    rank in a given league (rank 1 = best at the position; None = not rostered).
-    The elite boundary matches the ELITE chip's per-position rank cutoffs."""
+# Roster-aware consolidation tiers, both matched to existing app definitions:
+#   elite   = the ELITE chip's per-position value-rank cutoffs (ELITE_RANK_CUTOFFS)
+#   starter = starter-caliber value (utils.roster_strength, same as the depth
+#             warnings), scaled by league size
+# Everything rostered below the starter bar is flex; unknown/valueless is depth.
+def _pos_category(pos: str, rank: Optional[int], value: Optional[float],
+                  starter_threshold: Dict[str, float]) -> str:
     if not rank:
         return "depth"
     if rank <= ELITE_RANK_CUTOFFS.get(pos, 3):
         return "elite"
-    if rank <= _pos_starter_line(pos, num_teams, league_type):
+    if _f(value) >= starter_threshold.get(pos, STARTER_THRESHOLD.get(pos, 350)):
         return "starter"
     return "flex"
 
@@ -1115,11 +1102,14 @@ def _build_distribute(
         for _rk_d, (_pid_d, _val_d) in enumerate(sorted(_lst_d, key=lambda x: -x[1]), start=1):
             _pos_rank_d[_pid_d] = _rk_d
 
+    _starter_thr_d, _ = derive_league_thresholds(roster_positions or [], num_teams)
+
     def _is_starter_tier(tgt: Dict) -> bool:
         return _pos_category(
             str(tgt.get("position") or "").upper(),
             _pos_rank_d.get(tgt.get("player_id")),
-            num_teams, league_type,
+            tgt.get("value"),
+            _starter_thr_d,
         ) in ("starter", "elite")
 
     studs = sorted(
@@ -1951,12 +1941,18 @@ def get_archetype_suggestions(
             _pos_rank[_pid2] = _rk2
 
     _viewer_best_rank: Dict[str, int] = {}
+    _viewer_best_val: Dict[str, float] = {}
     for _p in viewer_players:
         _vv = values_by_id.get(_p, {})
         _pp = str(_vv.get("position") or "").upper()
         _rr = _pos_rank.get(_p)
         if _pp in SKILL_POS and _rr and (_pp not in _viewer_best_rank or _rr < _viewer_best_rank[_pp]):
             _viewer_best_rank[_pp] = _rr
+            _viewer_best_val[_pp] = _f(_vv.get("value"))
+
+    # Starter-caliber value thresholds for this league (matches the depth-warning
+    # definition), used by the consolidation ceiling below.
+    _starter_thr, _ = derive_league_thresholds(ctx.get("roster_positions") or [], num_teams)
 
     for t in all_targets:
         pid  = t["player_id"]
@@ -1989,8 +1985,8 @@ def get_archetype_suggestions(
             # there. A team with only flex-worthy pieces at the position is
             # steered to a pure starter instead of an unrealistic reach for a
             # top-3 stud it has nothing comparable to consolidate.
-            _tgt_cat = _pos_category(pos, _pos_rank.get(pid), num_teams, league_type)
-            _best_cat = _pos_category(pos, _viewer_best_rank.get(pos), num_teams, league_type)
+            _tgt_cat = _pos_category(pos, _pos_rank.get(pid), val, _starter_thr)
+            _best_cat = _pos_category(pos, _viewer_best_rank.get(pos), _viewer_best_val.get(pos), _starter_thr)
             if not _consolidate_target_allowed(_tgt_cat, _best_cat):
                 continue
             # Consolidating doesn't only mean chasing the very top tier: taking a

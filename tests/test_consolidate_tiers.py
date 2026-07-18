@@ -1,52 +1,58 @@
-"""Guards the roster-aware consolidation ceiling in archetype_engine.
+"""Guards the roster-aware consolidation/distribution tiers in archetype_engine.
 
-The tier a consolidation aims for should depend on what the viewer already has at
-that position: a team with only flex-worthy pieces gets steered to a pure
-starter, never an unrealistic reach for a top-3 elite; a team that already
-rosters pure starters can consolidate them into an elite. Tiers are
-league-specific (starter demand scales with size and format).
+The tier a consolidation aims for depends on what the viewer already has at that
+position: a team with only flex-worthy pieces gets steered to a pure starter,
+never an unrealistic reach for an elite; a team that already rosters pure
+starters can consolidate them into an elite. Both boundaries are matched to
+existing app definitions:
+  - elite   = the ELITE chip's per-position value-rank cutoffs
+  - starter = starter-caliber value (same thresholds as the depth warnings)
 
 Pure module-level functions, so this runs in the base suite (no Flask/pandas).
 """
 from dashboard_services.archetype_engine import (
     _consolidate_target_allowed,
     _pos_category,
-    _pos_starter_line,
 )
+from utils.roster_strength import STARTER_THRESHOLD, derive_league_thresholds
 from utils.tier_thresholds import ELITE_RANK_CUTOFFS
 
-
-def test_starter_line_scales_with_league():
-    # More teams => more startable players at a position.
-    assert _pos_starter_line("WR", 12, "1qb") > _pos_starter_line("WR", 8, "1qb")
-    # Superflex roughly doubles QB starter demand vs 1QB.
-    assert _pos_starter_line("QB", 12, "sf") > _pos_starter_line("QB", 12, "1qb")
-    # TE (one slot, small flex share) has far fewer starters than WR.
-    assert _pos_starter_line("TE", 12, "1qb") < _pos_starter_line("WR", 12, "1qb")
-
-
-def test_position_categories():
-    n, lt = 12, "1qb"
-    line = _pos_starter_line("WR", n, lt)   # 35 in a 12-team 1QB league
-    wr_elite = ELITE_RANK_CUTOFFS["WR"]     # matches the ELITE chip (top 6)
-    assert _pos_category("WR", 1, n, lt) == "elite"
-    assert _pos_category("WR", wr_elite, n, lt) == "elite"       # last elite
-    assert _pos_category("WR", wr_elite + 1, n, lt) == "starter" # just below elite
-    assert _pos_category("WR", line, n, lt) == "starter"         # last startable
-    assert _pos_category("WR", line + 1, n, lt) == "flex"        # first flex/depth
-    assert _pos_category("WR", None, n, lt) == "depth"           # not rostered
+# 12-team, standard 1QB starting lineup (QB, 2RB, 2WR, TE, 2FLEX).
+_LINEUP = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "FLEX"]
+_THR, _ = derive_league_thresholds(_LINEUP, 12)
 
 
 def test_elite_matches_the_chip_cutoffs():
-    n, lt = 12, "1qb"
-    # A player exactly at the chip's positional cutoff is elite; one past it isn't.
+    # A player at the chip's positional value-rank cutoff is elite; one past it
+    # is not (it falls to starter/flex by value).
     for pos, cutoff in ELITE_RANK_CUTOFFS.items():
-        assert _pos_category(pos, cutoff, n, lt) == "elite"
-        assert _pos_category(pos, cutoff + 1, n, lt) != "elite"
+        big = STARTER_THRESHOLD[pos] * 3  # clearly elite-level value
+        assert _pos_category(pos, cutoff, big, _THR) == "elite"
+        assert _pos_category(pos, cutoff + 1, big, _THR) != "elite"
+
+
+def test_starter_matches_the_value_threshold():
+    thr = _THR["WR"]
+    rank_below_elite = ELITE_RANK_CUTOFFS["WR"] + 5
+    # At/above the starter-caliber value => pure starter.
+    assert _pos_category("WR", rank_below_elite, thr, _THR) == "starter"
+    assert _pos_category("WR", rank_below_elite, thr + 100, _THR) == "starter"
+    # Below it => flex/depth.
+    assert _pos_category("WR", rank_below_elite, thr - 1, _THR) == "flex"
+
+
+def test_thresholds_scale_with_league_size():
+    # Larger leagues dilute talent, so the starter bar drops.
+    thr_16, _ = derive_league_thresholds(_LINEUP, 16)
+    thr_8, _ = derive_league_thresholds(_LINEUP, 8)
+    assert thr_16["WR"] < thr_8["WR"]
+
+
+def test_unrostered_or_valueless_is_depth():
+    assert _pos_category("WR", None, 999, _THR) == "depth"
 
 
 def test_flex_only_team_cannot_reach_an_elite():
-    # A team whose best WR is only flex/depth should not be aimed at a top-3 WR.
     assert _consolidate_target_allowed("elite", "flex") is False
     assert _consolidate_target_allowed("elite", "depth") is False
 
@@ -57,7 +63,6 @@ def test_team_with_a_starter_can_consolidate_into_an_elite():
 
 
 def test_pure_starter_targets_are_always_allowed():
-    # Steering a flex-heavy team toward a pure starter is exactly the goal.
     for best in ("depth", "flex", "starter", "elite"):
         assert _consolidate_target_allowed("starter", best) is True
         assert _consolidate_target_allowed("flex", best) is True
