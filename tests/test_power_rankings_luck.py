@@ -131,4 +131,41 @@ def test_momentum_breaks_a_tie_between_identical_resumes():
 def test_power_components_are_exposed():
     teams = cb.build_power_rankings_context(_momentum_ctx())["teams"]
     for t in teams:
-        assert set(t["power_components"]) == {"pf", "record", "value", "momentum", "consistency"}
+        assert set(t["power_components"]) == {"pf", "record", "value", "momentum", "consistency", "sos"}
+
+
+def _sos_ctx():
+    """Four teams, four weeks, fixed schedule: TeamTough always plays the Strong
+    team, TeamCake always plays the Cellar. Tough and Cake post identical scores,
+    so only strength of schedule separates them."""
+    mvt = [{"player_id": p, "position": "RB", "value": 1500, "redraft_value_1qb": 1500}
+           for p in ("t", "k", "s", "c")]
+    sc = {"T": [100] * 4, "K": [100] * 4, "S": [130] * 4, "C": [60] * 4}
+    rows = []
+    for wk in range(4):
+        for mid, (x, y) in enumerate([("T", "S"), ("K", "C")]):
+            rows.append({"week": wk + 1, "matchup_id": mid, "roster_id": x, "points": sc[x][wk], "finalized": True})
+            rows.append({"week": wk + 1, "matchup_id": mid, "roster_id": y, "points": sc[y][wk], "finalized": True})
+    names = {"T": "TeamTough", "K": "TeamCake", "S": "Strong", "C": "Cellar"}
+    return {
+        "rosters": [{"roster_id": t, "players": ["t"], "settings": {"wins": 2, "losses": 2, "fpts": sum(sc[t])}}
+                    for t in ("T", "K", "S", "C")],
+        "standings_map": {t: {"PF": sum(sc[t])} for t in sc},
+        "roster_map": names,
+        "model_value_table": mvt,
+        "picks_by_roster": {},
+        "df_weekly": pd.DataFrame(rows),
+        "league_type": "1qb",
+    }
+
+
+def test_strength_of_schedule_breaks_a_tie():
+    teams = _by_name(cb.build_power_rankings_context(_sos_ctx()))
+    tough, cake = teams["TeamTough"], teams["TeamCake"]
+    # Identical scoring résumé...
+    assert tough["power_components"]["pf"] == cake["power_components"]["pf"]
+    # ...but the tougher schedule is recognized and rewarded.
+    assert tough["sos"] > cake["sos"]
+    assert tough["sos_label"] == "Brutal"
+    assert cake["sos_label"] == "Soft"
+    assert tough["power_score"] > cake["power_score"]
