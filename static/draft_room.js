@@ -2681,6 +2681,51 @@
     trophy: '<svg class="dr-recap-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M7 6H4.5A1.5 1.5 0 0 0 3 7.5 3.5 3.5 0 0 0 6.5 11M17 6h2.5A1.5 1.5 0 0 1 21 7.5 3.5 3.5 0 0 1 17.5 11M9.5 18h5M8.5 21h7M12 14v4"/></svg>'
   };
 
+  // Coin-style rank medals for the draft-grade board — a client-side port of
+  // rank_mark()/_medal_svg() in dashboard_services/rank_medals.py so the board's
+  // top 3 match the standings/power medals exactly. Gradient ids are prefixed
+  // "dr" to avoid colliding with any server-rendered medals on the page.
+  var _DR_METALS = {
+    gold:   { face: ['#fff7d6','#f6d375','#d9a531','#a9781f'], rim: ['#ffe89a','#c99a2e','#7d5a12'], edge: '#7d5a12', num: '#8a6410' },
+    silver: { face: ['#ffffff','#dde3ea','#a7b2be','#727d89'], rim: ['#eef2f6','#aab4bf','#66707b'], edge: '#66707b', num: '#5c6670' },
+    bronze: { face: ['#ffe6cc','#e0a56a','#bd7539','#7f4a22'], rim: ['#f0c39a','#b87a44','#7a4620'], edge: '#7a4620', num: '#7a4620' }
+  };
+  var _DR_CROWN =
+    '<path d="M-7 5 L7 5 L5.4 -3 L1.8 0.3 L0 -5 L-1.8 0.3 L-5.4 -3 Z" fill="url(#drmCrown)" stroke="#8a6410" stroke-width="0.6" stroke-linejoin="round"/>' +
+    '<circle cx="-7" cy="-3.4" r="1.4" fill="#f6d375" stroke="#8a6410" stroke-width="0.5"/>' +
+    '<circle cx="7" cy="-3.4" r="1.4" fill="#f6d375" stroke="#8a6410" stroke-width="0.5"/>' +
+    '<circle cx="0" cy="-6.4" r="1.5" fill="#fff7d6" stroke="#8a6410" stroke-width="0.5"/>';
+  function _drMedalSvg(metal, label, size, crown) {
+    var m = _DR_METALS[metal], f = m.face, r = m.rim, uid = metal;
+    var crownSvg = crown ? '<g transform="translate(32 7)">' + _DR_CROWN + '</g>' : '';
+    return '<svg viewBox="0 0 64 66" width="' + size + '" height="' + Math.floor(size * 66 / 64) + '" role="img" ' +
+      'aria-label="Rank ' + label + '" style="overflow:visible;flex:none;filter:drop-shadow(0 2px 3px rgba(0,0,0,.28))">' +
+      '<defs>' +
+      '<radialGradient id="drmFace-' + uid + '" cx="38%" cy="30%" r="78%">' +
+      '<stop offset="0%" stop-color="' + f[0] + '"/><stop offset="42%" stop-color="' + f[1] + '"/>' +
+      '<stop offset="80%" stop-color="' + f[2] + '"/><stop offset="100%" stop-color="' + f[3] + '"/></radialGradient>' +
+      '<linearGradient id="drmRim-' + uid + '" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0%" stop-color="' + r[0] + '"/><stop offset="52%" stop-color="' + r[1] + '"/>' +
+      '<stop offset="100%" stop-color="' + r[2] + '"/></linearGradient>' +
+      '<radialGradient id="drmCrown" cx="40%" cy="30%" r="80%"><stop offset="0%" stop-color="#fff7d6"/>' +
+      '<stop offset="60%" stop-color="#f4cf6a"/><stop offset="100%" stop-color="#d59f2e"/></radialGradient>' +
+      '</defs>' + crownSvg +
+      '<circle cx="32" cy="32" r="22" fill="url(#drmRim-' + uid + ')"/>' +
+      '<circle cx="32" cy="32" r="20.5" fill="none" stroke="' + m.edge + '" stroke-width="2.4" stroke-dasharray="1.7 2.2" opacity="0.45"/>' +
+      '<circle cx="32" cy="32" r="16.5" fill="url(#drmFace-' + uid + ')" stroke="' + m.edge + '" stroke-width="1"/>' +
+      '<circle cx="32" cy="32" r="16.5" fill="none" stroke="#ffffff" stroke-width="1" opacity="0.30"/>' +
+      '<path d="M20 24 A16 16 0 0 1 44 22" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" opacity="0.45"/>' +
+      '<text x="32" y="33" text-anchor="middle" dominant-baseline="central" style="font:800 18px system-ui,sans-serif" fill="#ffffff" opacity="0.5">' + label + '</text>' +
+      '<text x="32" y="32" text-anchor="middle" dominant-baseline="central" style="font:800 18px system-ui,sans-serif" fill="' + m.num + '">' + label + '</text>' +
+      '</svg>';
+  }
+  var _DR_RANK_METAL = { 1: 'gold', 2: 'silver', 3: 'bronze' };
+  function _drRankMedal(rank, size) {
+    var metal = _DR_RANK_METAL[rank];
+    if (!metal) return null;
+    return _drMedalSvg(metal, String(rank), rank === 1 ? size + 4 : size, rank === 1);
+  }
+
   // Whole-draft recap: the biggest values and reaches vs. ADP across every team.
   // Each pick's gap is its overall pick number minus the player's ADP: a positive
   // gap means he fell (a steal), negative means he was reached for. Falls back to
@@ -2773,6 +2818,10 @@
       var winTag = w ? '<span class="dr-sum-lwin dr-win-' + w.label.toLowerCase().replace('-','') + '">' + esc(w.label) + '</span>' : '';
       var tCol = t.grade.score >= 75 ? '#22c55e' : t.grade.score >= 60 ? '#38bdf8' : t.grade.score >= 45 ? '#f59e0b' : '#ef4444';
       var rCls = i < 3 ? (' ' + _rc[i]) : '';
+      var _medal = _drRankMedal(i + 1, 22);
+      var rankCell = _medal
+        ? '<span class="dr-sum-lrank has-medal rank-mark">' + _medal + '</span>'
+        : '<span class="dr-sum-lrank' + rCls + '">' + (i + 1) + '</span>';
       // CPU plans are hole cards: hidden while the draft is live (reading the
       // room from picks is the skill a mock trains) and revealed once it ends,
       // so you can check your inferences. The age lean is never shown: the
@@ -2784,7 +2833,7 @@
         if (_sl) stratTag = '<span class="dr-strat-tag">' + _sl + '</span>';
       }
       html += '<div class="dr-sum-lrow' + (t.isMe ? ' is-me' : '') + '" data-legslot="' + t.slot + '">'
-        + '<span class="dr-sum-lrank' + rCls + '">' + (i + 1) + '</span>'
+        + rankCell
         + '<span class="dr-sum-lname">' + esc(t.name) + stratTag + '</span>'
         + winTag
         + '<span class="dr-sum-lgrade" style="color:' + tCol + '">' + gradeLetter(t.grade.score) + '</span>'
