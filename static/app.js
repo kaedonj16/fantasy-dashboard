@@ -646,6 +646,17 @@ function emptyState(container, message, iconClass) {
       if (main && !main.classList.contains('br-stagger')) {
         main.classList.add('br-stagger');
       }
+      // Nav pills: a gentle staggered entrance, but only once per browser
+      // session. The nav is link-based (full page loads), so replaying it on
+      // every navigation would be noisy — this makes it a first-impression flourish.
+      try {
+        if (!sessionStorage.getItem('brNavEntered')) {
+          document.querySelectorAll('.nav-pills-container').forEach(function (nav) {
+            nav.classList.add('br-stagger');
+          });
+          sessionStorage.setItem('brNavEntered', '1');
+        }
+      } catch (e) { /* sessionStorage may be unavailable (private mode) */ }
     }
     document.querySelectorAll('[data-countup]').forEach(function (el) { window.brCountUp(el); });
     document.querySelectorAll('[data-br-slide-tabs]').forEach(function (bar) { window.brSlideTabs(bar); });
