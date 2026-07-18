@@ -43,6 +43,45 @@ SCARCITY_SF  = {"QB": 1.00, "RB": 1.00, "WR": 1.00, "TE": 0.85}
 # T5 depth for that same stud is not, no matter how the raw values add up.
 _CONSOLIDATE_MAX_TIER_DROP = 2
 
+# Roster-aware consolidation tiers. "Elite" is the top few at a position; "pure
+# starter" is startable given the league's demand (dedicated slots + a share of
+# FLEX, scaled by team count); everything below is flex/depth.
+_ELITE_RANK = 3                                       # top 3 at a position = elite
+_FLEX_SHARE = {"RB": 0.45, "WR": 0.45, "TE": 0.10}    # who typically fills FLEX
+
+
+def _pos_starter_line(pos: str, num_teams: int, league_type: str) -> int:
+    """Positional rank at/above which a player is a league-startable ("pure
+    starter") at that position. Scales with league size and format (SF gives QBs
+    a second slot), so the same value bar shifts with the league."""
+    slots = SLOTS_SF if str(league_type).lower() == "sf" else SLOTS_1QB
+    dedicated = slots.get(pos, 0)
+    flexed = slots.get("FLEX", 0) * _FLEX_SHARE.get(pos, 0.0)
+    return max(1, round(max(num_teams, 1) * (dedicated + flexed)))
+
+
+def _pos_category(pos: str, rank: Optional[int], num_teams: int, league_type: str) -> str:
+    """'elite' | 'starter' | 'flex' | 'depth' for a player's positional value
+    rank in a given league (rank 1 = best at the position; None = not rostered)."""
+    if not rank:
+        return "depth"
+    if rank <= _ELITE_RANK:
+        return "elite"
+    if rank <= _pos_starter_line(pos, num_teams, league_type):
+        return "starter"
+    return "flex"
+
+
+def _consolidate_target_allowed(target_cat: str, viewer_best_cat: str) -> bool:
+    """Whether a consolidation should aim at a target of `target_cat` given the
+    viewer's best existing player at that position. You only reach for an ELITE
+    (top-3) when you already roster a pure starter (or elite) there; a team with
+    only flex-worthy depth is steered to a pure starter instead."""
+    if target_cat == "elite" and viewer_best_cat not in ("starter", "elite"):
+        return False
+    return True
+
+
 COMPLEMENT = {
     "contending":  "rebuilding",
     "rebuilding":  "contending",
@@ -1872,6 +1911,29 @@ def get_archetype_suggestions(
             return True
         return False
 
+    # ── Roster-aware consolidation ceiling (data) ──────────────────────────────
+    # Per-position value rank across the league's player universe (1 = best),
+    # plus the viewer's best (lowest-rank) player at each position. The tiering
+    # itself lives in module-level _pos_category / _consolidate_target_allowed so
+    # it can be unit-tested; see their docstrings for the league-specific rules.
+    _pos_rank: Dict[str, int] = {}
+    _pos_pool: Dict[str, list] = {}
+    for _pid2, _v2 in values_by_id.items():
+        _p2 = str(_v2.get("position") or "").upper()
+        if _p2 in SKILL_POS:
+            _pos_pool.setdefault(_p2, []).append((_pid2, _f(_v2.get("value"))))
+    for _lst2 in _pos_pool.values():
+        for _rk2, (_pid2, _val2) in enumerate(sorted(_lst2, key=lambda x: -x[1]), start=1):
+            _pos_rank[_pid2] = _rk2
+
+    _viewer_best_rank: Dict[str, int] = {}
+    for _p in viewer_players:
+        _vv = values_by_id.get(_p, {})
+        _pp = str(_vv.get("position") or "").upper()
+        _rr = _pos_rank.get(_p)
+        if _pp in SKILL_POS and _rr and (_pp not in _viewer_best_rank or _rr < _viewer_best_rank[_pp]):
+            _viewer_best_rank[_pp] = _rr
+
     for t in all_targets:
         pid  = t["player_id"]
         val  = t["value"]
@@ -1898,6 +1960,15 @@ def get_archetype_suggestions(
             ) * sc * pref_bonus
 
         elif archetype == "consolidate":
+            # Roster-aware ceiling: only aim a position's consolidation at an
+            # ELITE (top-3) target when the viewer already owns a pure starter
+            # there. A team with only flex-worthy pieces at the position is
+            # steered to a pure starter instead of an unrealistic reach for a
+            # top-3 stud it has nothing comparable to consolidate.
+            _tgt_cat = _pos_category(pos, _pos_rank.get(pid), num_teams, league_type)
+            _best_cat = _pos_category(pos, _viewer_best_rank.get(pos), num_teams, league_type)
+            if not _consolidate_target_allowed(_tgt_cat, _best_cat):
+                continue
             # Consolidating doesn't only mean chasing the very top tier: taking a
             # few lesser pieces up to a solid mid-tier starter is a real upgrade.
             # Allow mid-tier targets in (floor well below the old 600) and soften
