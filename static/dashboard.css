@@ -2553,35 +2553,59 @@ thead th {
    EMPTY STATE — one shared look for "nothing here yet" panels,
    replacing the many one-off *-empty classes over time.
    ============================================ */
+/* ── Empty state (unified, single source of truth) ───────────────────────────
+   Supports a simple form (icon + .empty-state-msg) and a rich form
+   (.empty-state-title + .empty-state-sub), plus an optional button
+   (.empty-state-cta / .empty-state-action). The icon may be a FontAwesome <i>
+   (sized by font-size) or an inline <svg> wrapped in .empty-state-icon. */
 .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
-  gap: 5px;
+  gap: 8px;
   padding: 34px 20px;
 }
 .empty-state-icon {
-  width: 38px;
-  height: 38px;
-  margin-bottom: 5px;
+  font-size: 28px;
+  line-height: 1;
+  margin-bottom: 2px;
   color: var(--text-subtle);
-  opacity: 0.75;
+  opacity: 0.6;
 }
-.empty-state-icon svg { width: 100%; height: 100%; display: block; }
+.empty-state-icon svg { width: 36px; height: 36px; display: block; }
 .empty-state-title {
   font-size: 14px;
   font-weight: 800;
   color: var(--text);
 }
+.empty-state-msg,
 .empty-state-sub {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--text-muted);
   line-height: 1.5;
   max-width: 42ch;
+  margin: 0;
 }
-.empty-state-action { margin-top: 10px; }
+.empty-state-action { margin-top: 8px; }
+.empty-state-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 10px;
+  background: var(--accent, #38bdf8);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  margin-top: 4px;
+  transition: opacity .15s;
+}
+.empty-state-cta:hover { opacity: .85; }
 
 /* ============================================
    TRADE CALCULATOR
@@ -18422,27 +18446,8 @@ button:disabled {
   animation: cardFadeIn .3s ease forwards;
 }
 
-/* ── Consistent empty state ──────────────────────────────────────────────── */
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 32px 16px;
-  text-align: center;
-}
-.empty-state-icon {
-  font-size: 26px;
-  color: var(--muted, #64748b);
-  opacity: .5;
-}
-.empty-state-msg {
-  font-size: 13px;
-  color: var(--text-muted, #94a3b8);
-  margin: 0;
-  line-height: 1.5;
-}
+/* Empty state consolidated into the single source of truth near the top of
+   this file — see `.empty-state (unified…)`. */
 
 /* ── PWA install banner ───────────────────────────────────────────────────── */
 #pwa-install-banner {
@@ -19604,30 +19609,8 @@ button:disabled {
 }
 .home-step-item.done + .home-step-connector { background: var(--win); }
 
-/* ── Feature 7: Enhanced Empty States ───────────────────────────────────────*/
-.empty-state {
-  gap: 12px;
-  padding: 40px 20px;
-}
-.empty-state-icon { font-size: 30px; }
-.empty-state-msg { max-width: 280px; }
-.empty-state-cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  border-radius: 10px;
-  background: var(--accent, #38bdf8);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  text-decoration: none;
-  border: none;
-  cursor: pointer;
-  margin-top: 4px;
-  transition: opacity .15s;
-}
-.empty-state-cta:hover { opacity: .85; }
+/* Enhanced empty states folded into the unified `.empty-state` component near
+   the top of this file (icon + msg/title/sub + cta). */
 
 
 /* ── Feature 11: Lazy-Load Sentinel ─────────────────────────────────────────*/

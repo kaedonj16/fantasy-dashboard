@@ -34,8 +34,32 @@ var prPage = 1;
 var prPageSize = 50;
 
 var PR_SPARK_W = 38, PR_SPARK_H = 26;  // logical (CSS) px
+// Set true for the one render pass right after sparkline data first loads, so
+// the lines draw on left-to-right; false for later sort/filter re-renders.
+var _prSparkAnimate = false;
 
-function _prDrawSparkline(canvas, data) {
+function _prReducedMotion() {
+  return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+
+// Stroke the polyline up to a fraction `progress` (0–1) of its length, so the
+// caller can sweep it on. Even x-spacing means progress maps cleanly to segments.
+function _prStrokeSpark(ctx2d, pts, w, h, progress) {
+  ctx2d.clearRect(0, 0, w, h);
+  ctx2d.beginPath();
+  ctx2d.moveTo(pts[0].x, pts[0].y);
+  const segs = pts.length - 1;
+  const t = progress * segs;
+  const full = Math.floor(t);
+  for (let i = 1; i <= Math.min(full, segs); i++) ctx2d.lineTo(pts[i].x, pts[i].y);
+  if (full < segs) {
+    const frac = t - full, a = pts[full], b = pts[full + 1];
+    ctx2d.lineTo(a.x + (b.x - a.x) * frac, a.y + (b.y - a.y) * frac);
+  }
+  ctx2d.stroke();
+}
+
+function _prDrawSparkline(canvas, data, animate) {
   if (!canvas || !data || data.length < 2) return;
   const dpr = window.devicePixelRatio || 1;
   const w = PR_SPARK_W, h = PR_SPARK_H;
@@ -59,9 +83,17 @@ function _prDrawSparkline(canvas, data) {
   ctx2d.lineWidth = 1.5;
   ctx2d.lineJoin = 'round';
   ctx2d.lineCap = 'round';
-  ctx2d.beginPath();
-  pts.forEach((p, i) => i === 0 ? ctx2d.moveTo(p.x, p.y) : ctx2d.lineTo(p.x, p.y));
-  ctx2d.stroke();
+  if (animate && !_prReducedMotion()) {
+    let start = null; const dur = 650;
+    (function frame(now) {
+      if (start === null) start = now;
+      const p = Math.min(1, (now - start) / dur);
+      _prStrokeSpark(ctx2d, pts, w, h, 1 - Math.pow(1 - p, 3)); // easeOutCubic
+      if (p < 1) requestAnimationFrame(frame);
+    })(performance.now());
+  } else {
+    _prStrokeSpark(ctx2d, pts, w, h, 1);
+  }
 }
 
 // Single source of truth for value column key selection (used by prGetValue + prGetSparkData)
@@ -563,7 +595,7 @@ function prRender() {
 
     if (sparkData && sparkData.length >= 2) {
       const cnv = row.querySelector('.pr-sparkline');
-      if (cnv) _prDrawSparkline(cnv, sparkData);
+      if (cnv) _prDrawSparkline(cnv, sparkData, _prSparkAnimate);
     }
 
     list.appendChild(row);
@@ -823,7 +855,9 @@ Promise.all([
   // Lazy-load sparklines - re-render with sparkline data once ready
   fetch('/api/sparklines?v=4').then(r => r.json()).then(function(data) {
     prSparklines = data || {};
+    _prSparkAnimate = true;   // sweep the lines on for this first reveal only
     prRender();
+    _prSparkAnimate = false;
   }).catch(function() {});
 }).catch(err => {
   console.error('Error loading player rankings:', err);
