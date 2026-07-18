@@ -80,11 +80,10 @@ def test_surfaced_partners_are_not_fleece_level(monkeypatch):
     assert res is not None
     partners = res["top_partners"]
     assert partners, "expected at least one realistic trade partner"
-    # Every surfaced deal clears the fairness floor and carries the annotations.
+    # Every surfaced deal clears the fairness floor and carries the ranking fields.
     for p in partners:
         assert p["fairness"] >= 0.62
         assert "suggestion_score" in p
-        assert p["balance_label"] in {"even", "you pay a premium", "you get a discount"}
 
 
 def test_partners_ranked_by_composite_score(monkeypatch):

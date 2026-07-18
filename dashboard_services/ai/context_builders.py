@@ -975,12 +975,6 @@ def build_trade_suggestions_context(
         fairness = round(_lo / _hi, 3) if _hi > 0 else 0.0
         if fairness < 0.62:
             continue
-        if fairness >= 0.90:
-            balance_label = "even"
-        elif value_you_give > value_you_get:
-            balance_label = "you pay a premium"   # consolidation / buying up
-        else:
-            balance_label = "you get a discount"  # selling depth for value
 
         # Composite ranking: positional fit still matters most, but a fair,
         # mutually beneficial deal now outranks a lopsided same-fit one, and a
@@ -996,7 +990,6 @@ def build_trade_suggestions_context(
             "match_score": match_score,
             "suggestion_score": suggestion_score,
             "fairness": fairness,
-            "balance_label": balance_label,
             "partner_needs": partner_needs,
             "partner_surplus": partner_surplus,
             "targets_they_have": targets_they_have[:3],

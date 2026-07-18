@@ -759,19 +759,8 @@ def _render_trade_suggestions_fallback(ctx: dict) -> str:
             send_part = f" - offer {send_names}" if send_names else ""
             reasoning = f"They have depth at {html.escape(', '.join(p.get('partner_surplus') or []))} - target {target_names}{send_part}."
 
-        # Value balance line — shows the deal is realistic, not a lopsided pitch.
-        v_get = p.get("value_you_get") or 0
-        v_give = p.get("value_you_give") or 0
-        balance = html.escape(str(p.get("balance_label") or ""))
-        fairness = p.get("fairness") or 0
-        balance_html = ""
-        if v_get and v_give:
-            balance_html = (
-                f'<div class="suggestion-balance">You get <strong>~{v_get:g}</strong>'
-                f' &middot; give <strong>~{v_give:g}</strong>'
-                f'{f" &middot; {balance}" if balance else ""}</div>'
-            )
         # Higher positional fit + a fairer deal = a more actionable suggestion.
+        fairness = p.get("fairness") or 0
         urgency_cls, urgency_txt = ("urgency-low", "worth exploring")
         if p.get("match_score", 0) >= 4 and fairness >= 0.80:
             urgency_cls, urgency_txt = ("urgency-high", "strong fit")
@@ -781,7 +770,6 @@ def _render_trade_suggestions_fallback(ctx: dict) -> str:
         <div class="suggestion-card">
           <div class="suggestion-title">{html.escape(title)}</div>
           <div class="suggestion-reasoning">{html.escape(reasoning)}</div>
-          {balance_html}
           <div class="suggestion-urgency {urgency_cls}">{urgency_txt}</div>
         </div>
         """
