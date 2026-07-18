@@ -15,7 +15,7 @@ from itertools import combinations
 from typing import Any, Dict, List, Optional, Tuple
 
 from utils.tier_stack import asset_tier
-from utils.tier_thresholds import FALLBACK_THRESHOLDS, compute_tier_thresholds
+from utils.tier_thresholds import ELITE_RANK_CUTOFFS, FALLBACK_THRESHOLDS, compute_tier_thresholds
 
 log = logging.getLogger(__name__)
 
@@ -43,10 +43,10 @@ SCARCITY_SF  = {"QB": 1.00, "RB": 1.00, "WR": 1.00, "TE": 0.85}
 # T5 depth for that same stud is not, no matter how the raw values add up.
 _CONSOLIDATE_MAX_TIER_DROP = 2
 
-# Roster-aware consolidation tiers. "Elite" is the top few at a position; "pure
-# starter" is startable given the league's demand (dedicated slots + a share of
-# FLEX, scaled by team count); everything below is flex/depth.
-_ELITE_RANK = 3                                       # top 3 at a position = elite
+# Roster-aware consolidation tiers. "Elite" matches the ELITE chip exactly
+# (ELITE_RANK_CUTOFFS, per-position value rank); "pure starter" is startable
+# given the league's demand (dedicated slots + a share of FLEX, scaled by team
+# count); everything below is flex/depth.
 _FLEX_SHARE = {"RB": 0.45, "WR": 0.45, "TE": 0.10}    # who typically fills FLEX
 
 
@@ -62,10 +62,11 @@ def _pos_starter_line(pos: str, num_teams: int, league_type: str) -> int:
 
 def _pos_category(pos: str, rank: Optional[int], num_teams: int, league_type: str) -> str:
     """'elite' | 'starter' | 'flex' | 'depth' for a player's positional value
-    rank in a given league (rank 1 = best at the position; None = not rostered)."""
+    rank in a given league (rank 1 = best at the position; None = not rostered).
+    The elite boundary matches the ELITE chip's per-position rank cutoffs."""
     if not rank:
         return "depth"
-    if rank <= _ELITE_RANK:
+    if rank <= ELITE_RANK_CUTOFFS.get(pos, 3):
         return "elite"
     if rank <= _pos_starter_line(pos, num_teams, league_type):
         return "starter"

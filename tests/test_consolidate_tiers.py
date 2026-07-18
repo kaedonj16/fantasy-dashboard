@@ -13,6 +13,7 @@ from dashboard_services.archetype_engine import (
     _pos_category,
     _pos_starter_line,
 )
+from utils.tier_thresholds import ELITE_RANK_CUTOFFS
 
 
 def test_starter_line_scales_with_league():
@@ -26,13 +27,22 @@ def test_starter_line_scales_with_league():
 
 def test_position_categories():
     n, lt = 12, "1qb"
-    line = _pos_starter_line("WR", n, lt)  # 35 in a 12-team 1QB league
-    assert _pos_category("WR", 1, n, lt) == "elite"       # top 3
-    assert _pos_category("WR", 3, n, lt) == "elite"
-    assert _pos_category("WR", 4, n, lt) == "starter"     # just below elite
-    assert _pos_category("WR", line, n, lt) == "starter"  # last startable
-    assert _pos_category("WR", line + 1, n, lt) == "flex" # first flex/depth
-    assert _pos_category("WR", None, n, lt) == "depth"    # not rostered
+    line = _pos_starter_line("WR", n, lt)   # 35 in a 12-team 1QB league
+    wr_elite = ELITE_RANK_CUTOFFS["WR"]     # matches the ELITE chip (top 6)
+    assert _pos_category("WR", 1, n, lt) == "elite"
+    assert _pos_category("WR", wr_elite, n, lt) == "elite"       # last elite
+    assert _pos_category("WR", wr_elite + 1, n, lt) == "starter" # just below elite
+    assert _pos_category("WR", line, n, lt) == "starter"         # last startable
+    assert _pos_category("WR", line + 1, n, lt) == "flex"        # first flex/depth
+    assert _pos_category("WR", None, n, lt) == "depth"           # not rostered
+
+
+def test_elite_matches_the_chip_cutoffs():
+    n, lt = 12, "1qb"
+    # A player exactly at the chip's positional cutoff is elite; one past it isn't.
+    for pos, cutoff in ELITE_RANK_CUTOFFS.items():
+        assert _pos_category(pos, cutoff, n, lt) == "elite"
+        assert _pos_category(pos, cutoff + 1, n, lt) != "elite"
 
 
 def test_flex_only_team_cannot_reach_an_elite():
