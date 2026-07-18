@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Union
 from utils.coerce import safe_float as _safe_float, safe_int as _safe_int
+from utils.all_play import all_play_analysis
 
 # Core fantasy positions used for scarcity analysis
 _SCARCITY_POSITIONS = {"QB", "RB", "WR", "TE"}
@@ -1062,8 +1063,11 @@ def build_power_rankings_context(ctx: dict) -> dict:
     Build context for AI-generated power rankings.
 
     For each roster, compute a PowerScore:
-      0.30 * Z(PF) + 0.40 * Z(Win%) + 0.30 * Z(avg_roster_value)
-    Then pass top_assets, direction, and win_window to AI for narrative generation.
+      0.30 * Z(PF) + 0.40 * Z(luck-adjusted win%) + 0.30 * Z(starter value)
+    where the win term blends all-play (schedule-luck-free) with actual record,
+    and value is the top-8 win-now (redraft) total rather than a whole-roster
+    dynasty average. Then pass top_assets, direction, and win_window to AI for
+    narrative generation.
     win_window uses the same league-context percentile logic as the teams page cards.
     """
     rosters = ctx.get("rosters") or []
@@ -1108,6 +1112,30 @@ def build_power_rankings_context(ctx: dict) -> dict:
     _dynasty_pct_fn = _make_pct_fn(_team_dynasty_total)
     _redraft_pct_fn = _make_pct_fn(_team_redraft_total)
 
+    # ── Luck-adjusted (all-play) win % per roster ──────────────────────────────
+    # Actual record is heavily schedule-luck-driven early in the season (a team
+    # can be 3-0 on middling scores). All-play — how you'd fare against every
+    # other team each week — is far more predictive of real strength, so the
+    # power score blends toward it. Falls back to actual win% if weekly scores
+    # aren't available (e.g. offseason / preseason).
+    _all_play_pct: dict[str, float] = {}
+    try:
+        _dfw = ctx.get("df_weekly")
+        if _dfw is not None and getattr(_dfw, "empty", True) is False and "roster_id" in _dfw.columns:
+            _fin = _dfw[_dfw["finalized"] == True] if "finalized" in _dfw.columns else _dfw
+            _weekly_scores: dict[int, dict[str, float]] = {}
+            for _, _row in _fin.iterrows():
+                _wk = int(_row["week"])
+                _weekly_scores.setdefault(_wk, {})[str(_row["roster_id"])] = float(_row["points"] or 0.0)
+            _actual_wins = {
+                str(r.get("roster_id")): _safe_float((r.get("settings") or {}).get("wins"))
+                for r in rosters
+            }
+            _ap = all_play_analysis(_weekly_scores, _actual_wins)
+            _all_play_pct = {t: v["all_play_pct"] for t, v in _ap.items()}
+    except Exception:
+        _all_play_pct = {}
+
     team_data = []
     for roster in rosters:
         rid = str(roster.get("roster_id") or "")
@@ -1122,6 +1150,11 @@ def build_power_rankings_context(ctx: dict) -> dict:
         standing = standings_map.get(rid) or {}
         pf = _safe_float(standing.get("PF") or fpts)
 
+        # Luck-adjusted win rate: mostly all-play (de-luffed strength), with a
+        # nod to the actual record you're living in. Falls back to raw win%.
+        ap_pct = _all_play_pct.get(rid)
+        luck_adj_win = (0.70 * ap_pct + 0.30 * win_pct) if ap_pct is not None else win_pct
+
         # Compute roster value
         roster_players_vals = []
         for pid in roster.get("players") or []:
@@ -1129,6 +1162,11 @@ def build_power_rankings_context(ctx: dict) -> dict:
             val = _safe_float(mv.get("value") or mv.get("model_value") or mv.get("trade_value"))
             roster_players_vals.append(val)
         avg_value = sum(roster_players_vals) / len(roster_players_vals) if roster_players_vals else 0.0
+        # Starter-weighted, win-now roster strength (top-8 redraft value already
+        # computed above). Better than a whole-roster dynasty average, which
+        # dilutes studs with deep benches and over-credits youth that doesn't
+        # help win this season.
+        starter_value = round(_team_redraft_total.get(rid_int, 0.0), 1)
 
         players_summary = summarize_roster_players(
             roster=roster,
@@ -1164,8 +1202,11 @@ def build_power_rankings_context(ctx: dict) -> dict:
             "wins": wins,
             "losses": losses,
             "win_pct": win_pct,
+            "luck_adj_win": round(luck_adj_win, 4),
+            "all_play_pct": round(ap_pct, 4) if ap_pct is not None else None,
             "pf": pf,
             "avg_value": round(avg_value, 1),
+            "starter_value": starter_value,
             "avg_age": avg_age,
             "win_window": win_window,
             "direction": direction,
@@ -1194,8 +1235,8 @@ def build_power_rankings_context(ctx: dict) -> dict:
         return [(v - mean) / std for v in values]
 
     pf_vals = [t["pf"] for t in team_data]
-    win_vals = [t["win_pct"] for t in team_data]
-    val_vals = [t["avg_value"] for t in team_data]
+    win_vals = [t["luck_adj_win"] for t in team_data]   # luck-adjusted, not raw
+    val_vals = [t["starter_value"] for t in team_data]  # starter-weighted, win-now
 
     pf_z = _z_scores(pf_vals)
     win_z = _z_scores(win_vals)
