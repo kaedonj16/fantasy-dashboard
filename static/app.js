@@ -574,10 +574,11 @@ function emptyState(container, message, iconClass) {
     opts = opts || {};
     var sel = opts.tabSelector || ':scope > button, :scope > a';
     var activeCls = opts.activeClass; // if given, we watch for it
+    var underline = !!opts.underline; // thin bar under the active tab vs. full pill
     var ind = bar.querySelector(':scope > .br-slide-ind');
     if (!ind) {
       ind = document.createElement('span');
-      ind.className = 'br-slide-ind';
+      ind.className = 'br-slide-ind' + (underline ? ' br-slide-ind-underline' : '');
       bar.insertBefore(ind, bar.firstChild);
     }
     bar.classList.add('br-slide-tabs');
@@ -589,11 +590,17 @@ function emptyState(container, message, iconClass) {
     }
     function move(t, animate) {
       if (!t) return;
-      if (!animate) { var prev = ind.style.transition; ind.style.transition = 'none'; }
+      if (!animate) { ind.style.transition = 'none'; }
       ind.style.left = t.offsetLeft + 'px';
-      ind.style.top = t.offsetTop + 'px';
       ind.style.width = t.offsetWidth + 'px';
-      ind.style.height = t.offsetHeight + 'px';
+      if (underline) {
+        var h = opts.underlineHeight || 2;
+        ind.style.top = (t.offsetTop + t.offsetHeight - h) + 'px';
+        ind.style.height = h + 'px';
+      } else {
+        ind.style.top = t.offsetTop + 'px';
+        ind.style.height = t.offsetHeight + 'px';
+      }
       if (!animate) { void ind.offsetWidth; ind.style.transition = ''; }
     }
     function sync(animate) {
@@ -14584,6 +14591,13 @@ function openTeamModal(rosterId, teamName) {
   document.body.appendChild(overlay);
   document.body.style.overflow = 'hidden';
 
+  // Sliding underline under the active tab (Roster / Graphs / Trades).
+  if (window.brSlideTabs) {
+    window._tmSlideTabs = window.brSlideTabs(modal.querySelector('.tm-tab-bar'), {
+      tabSelector: '.tm-tab', activeClass: 'active', underline: true
+    });
+  }
+
   // Fetch team details
   fetchTeamDetails(rosterId);
 }
@@ -14606,6 +14620,7 @@ function tmSwitchTab(tab) {
   const btn = document.querySelector('.tm-tab[data-tab="' + tab + '"]');
   if (panel) panel.classList.add('active');
   if (btn) btn.classList.add('active');
+  if (window._tmSlideTabs) window._tmSlideTabs.sync(true);
 
   if (tab === 'trades' && !window._tmTradesLoaded) {
     window._tmTradesLoaded = true;

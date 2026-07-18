@@ -4864,7 +4864,10 @@ def build_dashboard_body(ctx: dict) -> str:
           var pct = Math.round(row.playoff_pct || 0);
           var valEl = document.getElementById('dash-playoff-val');
           var subEl = document.getElementById('dash-playoff-sub');
-          if (valEl) valEl.textContent = pct + '%';
+          if (valEl) {{
+            if (window.brCountUp) window.brCountUp(valEl, {{ to: pct, dp: 0, suffix: '%', dur: 800 }});
+            else valEl.textContent = pct + '%';
+          }}
           var sub;
           if (d.is_complete || row.is_complete) {{
             sub = pct >= 100 ? 'Clinched' : (pct <= 0 ? 'Eliminated' : 'Playoff bound');
@@ -6490,7 +6493,10 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
               var pct = Math.round(row.playoff_pct || 0);
               var valEl = document.getElementById('os-playoff-val');
               var subEl = document.getElementById('os-playoff-sub');
-              if (valEl) valEl.textContent = pct + '%';
+              if (valEl) {{
+                if (window.brCountUp) window.brCountUp(valEl, {{ to: pct, dp: 0, suffix: '%', dur: 800 }});
+                else valEl.textContent = pct + '%';
+              }}
               var first = Math.round(row.first_seed_pct || 0);
               if (subEl) subEl.textContent = first > 0
                 ? ('Projected · ' + first + '% top seed')
@@ -11979,7 +11985,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             </div>
 
             <!-- Position filters -->
-            <div class="filter-positions">
+            <div class="filter-positions br-chip-pop">
               <button class="pos-pill active" data-pos="ALL" onclick="prTogglePos('ALL')">All</button>
               <button class="pos-pill" data-pos="QB" onclick="prTogglePos('QB')">QB</button>
               <button class="pos-pill" data-pos="RB" onclick="prTogglePos('RB')">RB</button>

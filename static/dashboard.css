@@ -21784,6 +21784,12 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   transition: left .28s cubic-bezier(.4,1.2,.4,1), width .28s cubic-bezier(.4,1.2,.4,1),
               top .28s cubic-bezier(.4,1.2,.4,1), height .28s cubic-bezier(.4,1.2,.4,1);
 }
+/* Tabs must paint above the indicator (a positioned z-index:0 sibling would
+   otherwise cover in-flow button text). */
+.br-slide-tabs > button, .br-slide-tabs > a { position: relative; z-index: 1; }
+/* Underline variant: a solid accent bar tracking the active tab's bottom edge. */
+.br-slide-ind-underline { background: var(--accent); border-radius: 999px 999px 0 0; }
+.tm-tab-bar.br-slide-tabs .tm-tab.active { border-bottom-color: transparent; }
 
 @media (prefers-reduced-motion: reduce) {
   .br-page-enter, .br-stagger > *, .analytics-bar-fill, .compare-bar-fill,
