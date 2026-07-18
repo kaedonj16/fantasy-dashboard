@@ -9271,6 +9271,15 @@ function openPlayerModal(playerId, playerName, opts) {
         if (overviewTabBtn) overviewTabBtn.classList.add('active');
       }
 
+      // Sliding underline under the active player-modal tab. Init here (not at
+      // modal creation) because the bar is display:none until now and its
+      // conditional tabs have just been resolved.
+      if (window.brSlideTabs) {
+        window._pmSlideTabs = window.brSlideTabs(pmTabBar, {
+          tabSelector: '.pm-tab', activeClass: 'active', underline: true
+        });
+      }
+
       // ── Lazy-load prospect comparables for rookies ─────────────────────────
       if (isRookieWithProspectData && pd.player_id) {
         fetch(`/api/prospects/comparables/${encodeURIComponent(pd.player_id)}`)
@@ -9562,6 +9571,7 @@ function pmSwitchTab(tab) {
   const btn = document.querySelector('.pm-tab[data-tab="' + tab + '"]');
   if (panel) panel.classList.add('pm-panel-active');
   if (btn) btn.classList.add('active');
+  if (window._pmSlideTabs) window._pmSlideTabs.sync(true);
 
   const pmTabBar = document.getElementById('pmTabBar');
   if (!pmTabBar) return;

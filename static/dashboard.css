@@ -21789,7 +21789,8 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 .br-slide-tabs > button, .br-slide-tabs > a { position: relative; z-index: 1; }
 /* Underline variant: a solid accent bar tracking the active tab's bottom edge. */
 .br-slide-ind-underline { background: var(--accent); border-radius: 999px 999px 0 0; }
-.tm-tab-bar.br-slide-tabs .tm-tab.active { border-bottom-color: transparent; }
+.tm-tab-bar.br-slide-tabs .tm-tab.active,
+.pm-tab-bar.br-slide-tabs .pm-tab.active { border-bottom-color: transparent; }
 
 @media (prefers-reduced-motion: reduce) {
   .br-page-enter, .br-stagger > *, .analytics-bar-fill, .compare-bar-fill,
