@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import json
 import logging
+from math import erf, sqrt
 
 import pandas as pd
 
@@ -14,6 +15,7 @@ from dashboard_services.ai.client import (
     get_ai_client,
 )
 from dashboard_services.ai.renderer import ai_available
+from utils.all_play import all_play_analysis
 
 logger = logging.getLogger(__name__)
 
@@ -219,10 +221,33 @@ def _build_matchup_context(
     return result
 
 
-# Injury statuses that keep a player out (or likely out) of a lineup. A
-# QUESTIONABLE tag is deliberately excluded — those players usually suit up, so
-# flagging them as "missing" would cry wolf.
+# Statuses that keep a starter out of a lineup. QUESTIONABLE is handled
+# separately as a "will he play?" watch, not a hard miss.
 _OUT_STATUSES = {"OUT", "IR", "DOUBTFUL", "PUP", "NFI", "SUSP"}
+_MAYBE_STATUSES = {"QUESTIONABLE", "Q"}
+
+# How the six signals combine into the game-of-the-week score. Every signal is
+# normalized to 0-1 first (below), so these weights — not raw scales — decide
+# what wins. Stakes and closeness lead: what's on the line and whether it'll be
+# close is the heart of a great game.
+_SIGNAL_WEIGHTS = {
+    "stakes":    1.10,
+    "closeness": 1.00,
+    "strength":  0.90,
+    "rivalry":   0.60,
+    "drama":     0.60,
+    "heat":      0.50,
+}
+_FACTOR_ICON = {
+    "stakes": "🏆", "closeness": "⚖️", "strength": "⭐",
+    "rivalry": "🔁", "drama": "🩹", "heat": "🔥",
+}
+# Projected points at risk (missing + half of questionable/bye) that saturate
+# the drama / star-watch signal.
+_DRAMA_FULL = 22.0
+# Rough dynasty-value → weekly-points proxy, used only when a live weekly
+# projection isn't available for an injured starter.
+_VALUE_TO_PPG = 300.0
 
 
 def _prior_series(
@@ -251,49 +276,193 @@ def _prior_series(
     return meetings, a_wins, b_wins
 
 
-def _injured_starters(team_block: dict, player_index: dict, value_by_pid: dict) -> list[dict]:
-    """Starters on a team's projected next-week lineup who are OUT/IR/etc.,
-    ordered by dynasty value so the biggest name leads."""
+def _all_play_strength(df_weekly: pd.DataFrame, upto_week: int) -> dict:
+    """{rid: all-play win pct in [0,1]} through ``upto_week`` — a
+    schedule-independent strength rating, far steadier than a W-L seed early in
+    the year. A team that would beat most of the league every week rates high
+    even if its head-to-head luck has been bad."""
+    fin = df_weekly[(df_weekly["finalized"] == True) & (df_weekly["week"] <= upto_week)]
+    weekly_scores: dict = {}
+    for _, r in fin.iterrows():
+        weekly_scores.setdefault(int(r["week"]), {})[str(r["roster_id"])] = float(r.get("points") or 0.0)
+    ap = all_play_analysis(weekly_scores, {})
+    return {rid: v["all_play_pct"] for rid, v in ap.items()}
+
+
+def _proj_win_prob(starters_a: list, starters_b: list, proj_by_pid: dict) -> float:
+    """Team A's win probability from projections alone, modeling each starter as
+    normal(proj, sigma). For an upcoming week every starter is pending, so this is
+    a pure projection-based read of how close the game projects."""
+    def _stats(starters):
+        total = var = 0.0
+        for p in (starters or []):
+            proj = float(proj_by_pid.get(str(p.get("pid") or ""), 0.0) or 0.0)
+            total += proj
+            sigma = max(0.4 * proj, 4.0)
+            var += sigma * sigma
+        return total, var
+
+    ta, va = _stats(starters_a)
+    tb, vb = _stats(starters_b)
+    cv = va + vb
+    if cv < 1e-6:
+        return 0.5 if abs(ta - tb) < 1e-9 else (1.0 if ta > tb else 0.0)
+    z = (ta - tb) / (sqrt(cv) * sqrt(2.0))
+    return max(0.01, min(0.99, 0.5 * (1.0 + erf(z))))
+
+
+def _team_proj_total(starters: list, proj_by_pid: dict) -> float:
+    return sum(float(proj_by_pid.get(str(p.get("pid") or ""), 0.0) or 0.0) for p in (starters or []))
+
+
+def _starter_flags(
+        team_block: dict,
+        player_index: dict,
+        proj_by_pid: dict,
+        value_by_pid: dict,
+        playing_teams: set,
+) -> tuple[list, list, list, float]:
+    """Categorize a team's projected starters into out / questionable / on-bye,
+    each carrying its weekly projection (the real 'how much does losing them
+    hurt' measure) with dynasty value as a fallback. Returns
+    (out, questionable, bye, points_at_risk)."""
     out: list[dict] = []
+    maybe: list[dict] = []
+    byes: list[dict] = []
+    risk = 0.0
     for p in (team_block.get("starters") or []):
         pid = str(p.get("pid") or "")
         info = player_index.get(pid) or {}
         raw = str(info.get("injury_status") or info.get("status") or "").strip().upper()
+        proj = float(proj_by_pid.get(pid, 0.0) or 0.0)
+        impact = proj if proj > 0 else (value_by_pid.get(pid, 0.0) or 0.0) / _VALUE_TO_PPG
+        nfl = str(p.get("nfl") or "").upper()
+        entry = {
+            "name": p.get("name"), "pos": p.get("pos"),
+            "proj": round(proj, 1), "value": value_by_pid.get(pid, 0.0),
+        }
         if raw in _OUT_STATUSES:
-            out.append({
-                "name": p.get("name"),
-                "pos": p.get("pos"),
-                "status": raw,
-                "value": value_by_pid.get(pid, 0.0),
-            })
-    out.sort(key=lambda x: x["value"] or 0.0, reverse=True)
-    return out
+            out.append({**entry, "status": raw})
+            risk += impact
+        elif raw in _MAYBE_STATUSES:
+            maybe.append({**entry, "status": "QUESTIONABLE"})
+            risk += impact * 0.5
+        elif playing_teams and nfl and nfl not in playing_teams:
+            byes.append({**entry, "status": "BYE"})
+            risk += impact * 0.5
+
+    out.sort(key=lambda x: (x["proj"], x["value"] or 0.0), reverse=True)
+    maybe.sort(key=lambda x: (x["proj"], x["value"] or 0.0), reverse=True)
+    byes.sort(key=lambda x: (x["proj"], x["value"] or 0.0), reverse=True)
+    return out, maybe, byes, risk
+
+
+def _regular_stakes(
+        rank_a: int,
+        rank_b: int,
+        playoff_teams: int,
+        weeks_left_after: int,
+        has_bye_seed: bool,
+) -> tuple[float, str | None]:
+    """Normalized [0,1] playoff stakes for a regular-season game, plus a label
+    for why it matters. Stakes ramp up as the field tightens near the cutline."""
+    if not playoff_teams:
+        return 0.0, None
+    # Playoff stakes only ramp up over the last ~6 weeks; earlier than that the
+    # standings are too fluid for a single game to be a "decider".
+    urgency = max(0.0, min(1.0, 1.0 - weeks_left_after / 6.0))
+    if urgency <= 0.0:
+        return 0.0, None
+    cut = playoff_teams
+    prox_a = max(0.0, 1.0 - abs(rank_a - cut) / 3.0)
+    prox_b = max(0.0, 1.0 - abs(rank_b - cut) / 3.0)
+    value = urgency * (prox_a + prox_b) / 2.0
+    label: str | None = None
+
+    # Both teams straddling the cutline — a direct bubble game (weight by urgency).
+    if abs(rank_a - cut) <= 1 and abs(rank_b - cut) <= 1:
+        value = max(value, urgency * (1.0 if weeks_left_after == 0 else 0.75))
+        label = "Win-and-in" if weeks_left_after == 0 else "Playoff bubble decider"
+
+    # #1 seed / first-round bye on the line between two of the best.
+    if has_bye_seed and rank_a <= 2 and rank_b <= 2:
+        seed_val = urgency * 0.9
+        if seed_val >= value:
+            value, label = seed_val, "Top seed & first-round bye on the line"
+
+    return min(1.0, value), label
+
+
+def _reason_bits(
+        top_factor: str | None,
+        *,
+        sa: dict, sb: dict, rank_a: int, rank_b: int, num_teams: int,
+        win_prob: float, meetings: int, stakes_label: str | None,
+        is_playoff: bool, round_label: str, top_star: dict | None,
+) -> tuple[str, str]:
+    """(headline, icon) explaining why THIS is the game of the week, from the
+    dominant scoring factor."""
+    icon = _FACTOR_ICON.get(top_factor or "", "🎯")
+    top_third = max(2, round(num_teams / 3))
+
+    if top_factor == "stakes":
+        return (round_label if is_playoff else (stakes_label or "Playoff implications")), ("🏆")
+    if top_factor == "closeness":
+        lo = round(min(win_prob, 1 - win_prob) * 100)
+        return f"Projected coin-flip ({lo}/{100 - lo})", "⚖️"
+    if top_factor == "strength":
+        if rank_a <= 2 and rank_b <= 2:
+            return "Battle at the top", "⭐"
+        if rank_a <= top_third and rank_b <= top_third:
+            return "Two of the league's best", "⭐"
+        return "Heavyweight matchup", "⭐"
+    if top_factor == "rivalry":
+        return ("Rubber match" if meetings >= 2 else "Rematch"), "🔁"
+    if top_factor == "heat":
+        hot = [s for s in (sa, sb) if str(s.get("streak") or "").startswith("W")
+               and int(str(s.get("streak"))[1:] or 0) >= 2]
+        if len(hot) == 2:
+            return "Momentum clash", "🔥"
+        if hot:
+            return f"{hot[0]['team']} is red-hot ({hot[0]['streak']})", "🔥"
+        return "Momentum matchup", "🔥"
+    if top_factor == "drama" and top_star:
+        return f"Star watch: {top_star['name']} ({top_star['status']})", "🩹"
+    return ("The week's headline matchup", icon)
 
 
 def _build_next_week_preview(
         df_weekly: pd.DataFrame,
-        next_week_matchups: list,
         storyline_by_rid: dict,
-        player_index: dict,
-        value_by_pid: dict,
         selected_week: int,
         playoff_start: int,
         playoff_teams: int,
         num_teams: int,
+        nctx: dict,
 ) -> dict | None:
-    """Score each of next week's matchups on marquee value, closeness, playoff
-    stakes, streaks, a rematch angle, and missing starters, then pick a game of
-    the week. Everything here is deterministic and grounded in real data — the AI
-    only narrates the pick, it doesn't choose it."""
-    if not next_week_matchups:
+    """Score each of next week's matchups on six normalized signals — playoff
+    stakes, projected closeness, team strength (all-play), a rivalry angle,
+    star-availability drama, and momentum — combine them with intentional
+    weights, and pick the game of the week. Records which signal drove the pick
+    so the card and the AI can say *why*. Deterministic and data-grounded; the AI
+    only narrates the choice."""
+    matchups = (nctx or {}).get("matchups") or []
+    if not matchups:
         return None
 
     next_week = selected_week + 1
-    # Regular-season games left after next week's slate (0 = next week is the finale).
+    is_playoff = bool((nctx or {}).get("is_playoff"))
     weeks_left_after = max(0, playoff_start - 1 - next_week)
+    proj_by_pid = (nctx or {}).get("proj_by_pid") or {}
+    player_index = (nctx or {}).get("player_index") or {}
+    value_by_pid = (nctx or {}).get("value_by_pid") or {}
+    playing_teams = (nctx or {}).get("playing_teams") or set()
+    round_label = (nctx or {}).get("playoff_round_label") or "Playoff game"
+    strength = _all_play_strength(df_weekly, selected_week)
+    has_bye_seed = bool(playoff_teams) and playoff_teams not in (2, 4, 8, 16)
 
     games: list[dict] = []
-    for m in next_week_matchups:
+    for m in matchups:
         left = m.get("left") or {}
         right = m.get("right") or {}
         rid_a = str(left.get("roster_id") or "")
@@ -305,70 +474,106 @@ def _build_next_week_preview(
 
         rank_a = sa["rank_after"] or num_teams
         rank_b = sb["rank_after"] or num_teams
-        avg_rank = (rank_a + rank_b) / 2.0
-        rank_gap = abs(rank_a - rank_b)
-
-        inj_a = _injured_starters(left, player_index, value_by_pid)
-        inj_b = _injured_starters(right, player_index, value_by_pid)
         meetings, a_wins, b_wins = _prior_series(df_weekly, rid_a, rid_b, selected_week)
+        out_a, maybe_a, bye_a, risk_a = _starter_flags(left, player_index, proj_by_pid, value_by_pid, playing_teams)
+        out_b, maybe_b, bye_b, risk_b = _starter_flags(right, player_index, proj_by_pid, value_by_pid, playing_teams)
 
-        reasons: list[str] = []
+        # ── Six signals, each normalized to [0, 1] ─────────────────────────────
+        signals: dict[str, float] = {}
 
-        # Marquee: two good teams playing (lower average rank = better).
-        score = (num_teams - avg_rank) * 2.0
-        if avg_rank <= max(2, num_teams * 0.3):
-            reasons.append("two of the league's best")
+        # Team strength: average all-play win pct of the two teams.
+        signals["strength"] = (strength.get(rid_a, 0.5) + strength.get(rid_b, 0.5)) / 2.0
 
-        # Closeness in the standings.
-        score += max(0.0, 4 - rank_gap)
-        if rank_gap <= 1:
-            reasons.append("neighbors in the standings")
+        # Closeness: projected win prob near 50/50. Only trust it when both teams
+        # actually have projections, else an empty slate reads as a false 50/50.
+        have_proj = _team_proj_total(left.get("starters"), proj_by_pid) > 0 and \
+            _team_proj_total(right.get("starters"), proj_by_pid) > 0
+        win_prob = _proj_win_prob(left.get("starters"), right.get("starters"), proj_by_pid) if have_proj else 0.5
+        signals["closeness"] = max(0.0, 1.0 - 2.0 * abs(win_prob - 0.5)) if have_proj else 0.0
 
-        # Hot streaks on either side.
-        for s in (sa, sb):
+        # Momentum: combined win-streak heat.
+        def _hot(s):
             st = str(s.get("streak") or "")
-            if st.startswith("W") and int(st[1:] or 0) >= 3:
-                score += min(int(st[1:] or 0), 5) * 0.6
-                reasons.append(f"{s['team']} on a {st} run")
+            n = int(st[1:] or 0) if st.startswith("W") else 0
+            return n if n >= 2 else 0
+        signals["heat"] = min(1.0, (_hot(sa) + _hot(sb)) / 8.0)
 
-        # Playoff stakes: teams sitting on the bubble as the field tightens.
-        near_cut = sum(1 for s in (sa, sb) if abs((s["rank_after"] or num_teams) - playoff_teams) <= 1)
-        if playoff_teams and weeks_left_after <= 4 and near_cut:
-            score += near_cut * (5 - weeks_left_after)
-            reasons.append("playoff-race implications")
+        # Rivalry: a season series already underway.
+        signals["rivalry"] = 0.0 if meetings == 0 else (0.6 if meetings == 1 else 1.0)
 
-        # Rematch / season series.
-        if meetings >= 1:
-            score += 1.5
-            reasons.append("a rematch" if meetings == 1 else "the rubber match")
+        # Drama: projected points at risk from missing / questionable / bye stars.
+        signals["drama"] = min(1.0, (risk_a + risk_b) / _DRAMA_FULL)
 
-        # Missing starters add intrigue (and are the story either way).
-        if inj_a or inj_b:
-            top_inj = max(inj_a + inj_b, key=lambda x: x["value"] or 0.0)
-            score += 1.0
-            reasons.append(f"{top_inj['name']} ({top_inj['status']}) in question")
+        # Stakes: playoff picture (elimination in the playoffs themselves).
+        if is_playoff:
+            stakes_val, stakes_label = 1.0, round_label
+        else:
+            stakes_val, stakes_label = _regular_stakes(rank_a, rank_b, playoff_teams, weeks_left_after, has_bye_seed)
+        signals["stakes"] = stakes_val
+
+        # ── Weighted score + which factor drove it ─────────────────────────────
+        contrib = {k: _SIGNAL_WEIGHTS[k] * v for k, v in signals.items()}
+        score = sum(contrib.values())
+        top_factor = max(contrib, key=lambda k: contrib[k]) if score > 1e-9 else None
+
+        all_stars = out_a + out_b + maybe_a + maybe_b
+        top_star = max(all_stars, key=lambda x: (x["proj"], x["value"] or 0.0)) if all_stars else None
+        headline, icon = _reason_bits(
+            top_factor, sa=sa, sb=sb, rank_a=rank_a, rank_b=rank_b, num_teams=num_teams,
+            win_prob=win_prob, meetings=meetings, stakes_label=stakes_label,
+            is_playoff=is_playoff, round_label=round_label, top_star=top_star,
+        )
+
+        # Ordered supporting reasons (every meaningfully-firing factor, best first).
+        phrase = {
+            "stakes": stakes_label or ("elimination game" if is_playoff else None),
+            "closeness": f"projects as a {round(min(win_prob, 1 - win_prob) * 100)}/"
+                         f"{100 - round(min(win_prob, 1 - win_prob) * 100)} coin-flip" if signals["closeness"] >= 0.4 else None,
+            "strength": "two of the league's best" if signals["strength"] >= 0.55 else None,
+            "rivalry": ("rubber match" if meetings >= 2 else "a rematch") if meetings else None,
+            "drama": f"{top_star['name']} ({top_star['status']}) in doubt" if top_star else None,
+            "heat": (f"{sa['team']} on {sa['streak']}" if _hot(sa) >= _hot(sb) and _hot(sa)
+                     else (f"{sb['team']} on {sb['streak']}" if _hot(sb) else None)),
+        }
+        reasons = [phrase[k] for k in sorted(contrib, key=lambda k: -contrib[k])
+                   if phrase.get(k) and contrib[k] > 0.05]
 
         games.append({
             "team_a": sa["team"], "team_b": sb["team"],
             "record_a": sa["record_after"], "record_b": sb["record_after"],
             "rank_a": rank_a, "rank_b": rank_b,
             "streak_a": sa.get("streak"), "streak_b": sb.get("streak"),
+            "win_prob_a": round(win_prob * 100) if have_proj else None,
             "h2h": {"meetings": meetings, "a_wins": a_wins, "b_wins": b_wins} if meetings else None,
-            "injured_a": inj_a, "injured_b": inj_b,
+            "out_a": out_a, "maybe_a": maybe_a, "bye_a": bye_a,
+            "out_b": out_b, "maybe_b": maybe_b, "bye_b": bye_b,
+            "why": headline, "why_icon": icon, "top_factor": top_factor,
             "reasons": reasons,
-            "score": round(score, 2),
+            "score": round(score, 3),
         })
 
     if not games:
         return None
 
     games.sort(key=lambda g: -g["score"])
+    top = games[0]
+    # A quiet slate (nothing scored high) is framed honestly rather than hyped.
+    quiet_week = top["score"] < 0.9
+    # A near-tied runner-up is surfaced as a co-headliner.
+    close_second = len(games) > 1 and games[1]["score"] >= top["score"] * 0.9
+
     return {
         "next_week": next_week,
+        "is_playoff": is_playoff,
+        "round_label": round_label if is_playoff else None,
         "weeks_left_after": weeks_left_after,
-        "game_of_the_week": games[0],
+        "quiet_week": quiet_week,
+        "close_second": close_second,
+        "as_of": (nctx or {}).get("as_of"),
+        "game_of_the_week": top,
         "also_watch": [
-            {"team_a": g["team_a"], "team_b": g["team_b"], "reasons": g["reasons"][:2]}
+            {"team_a": g["team_a"], "team_b": g["team_b"],
+             "why": g["why"], "why_icon": g["why_icon"]}
             for g in games[1:3]
         ],
     }
@@ -380,9 +585,7 @@ def build_weekly_recap_payload(
         selected_week: int,
         team_by_rid: dict,
         league: dict,
-        next_week_matchups: list | None = None,
-        player_index: dict | None = None,
-        value_by_pid: dict | None = None,
+        next_week_ctx: dict | None = None,
 ) -> dict:
     storylines = _build_team_storylines(df_weekly, selected_week, team_by_rid)
     matchup_context = _build_matchup_context(df_weekly, selected_week, team_by_rid)
@@ -457,14 +660,12 @@ def build_weekly_recap_payload(
     storyline_by_rid = {str(s["rid"]): s for s in storylines}
     next_week_preview = _build_next_week_preview(
         df_weekly,
-        next_week_matchups or [],
         storyline_by_rid,
-        player_index or {},
-        value_by_pid or {},
         selected_week,
         playoff_start,
         playoff_teams,
         num_teams,
+        next_week_ctx or {},
     )
 
     return {
@@ -517,7 +718,7 @@ def _generate_ai_storyline(payload: dict) -> dict:
             },
             "looking_ahead": {
                 "type": "string",
-                "description": "2-3 sentences on next week's game of the week (provided in next_week_preview). Empty string if no preview data is given.",
+                "description": "2-3 sentences on next week's game of the week (provided in next_week_preview). OPEN by making clear why it's the game of the week (the 'why' field). Empty string if no preview data is given.",
             },
         },
         "required": ["headline", "paragraphs", "looking_ahead"],
@@ -565,10 +766,10 @@ Playoff race: {json.dumps(payload['playoff_race'])}
 
 Use the h2h and season_weeks data where it adds something real to the story - rematches, revenge games, scoring trends, a team peaking or fading. Lead with the most compelling storyline.
 
-Next week's game of the week (already picked for you from rankings, playoff stakes, streaks, rematches, and missing starters):
+Next week's game of the week (already picked for you). The "why" field is the single biggest reason it was chosen (playoff stakes, a projected coin-flip, two top teams, a rivalry rematch, a missing star, or momentum); "reasons" lists the supporting angles; out_a/out_b/maybe_a/maybe_b/bye_a/bye_b are missing, questionable, and on-bye starters with their projections:
 {json.dumps(payload.get('next_week_preview'))}
 
-For "looking_ahead": if next_week_preview is null, return an empty string. Otherwise write 2-3 sentences on that specific game_of_the_week - use the records, ranks, streaks, h2h, and any injured_a/injured_b starters (name + status). Say why it matters. Same voice as the recap. Do NOT restate every number; pick the ones that carry the story. Do not mention the other games unless it's natural.
+For "looking_ahead": if next_week_preview is null, return an empty string. Otherwise write 2-3 sentences on that game_of_the_week and OPEN by making the "why" explicit - if it's a playoff bubble decider, say that's why it's the game of the week; if it projects as a coin-flip, or a star is out, lead with that. Then support it with the records, ranks, streaks, h2h, or the specific missing starter (name + status). Same voice as the recap. Do NOT restate every number. Only mention the other games if it's natural.
 """.strip()
 
     resp = client.responses.create(
@@ -608,13 +809,33 @@ def _render_recap_html(result: dict) -> str:
 
 
 def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
-    """Render the 'Game of the Week' look-ahead card from the deterministic
-    preview data plus the AI's blurb. Returns '' when there's nothing to show."""
+    """Render the 'Game of the Week' look-ahead card: the eyebrow, a prominent
+    WHY badge (the reason it was chosen), the matchup with a projected win-prob
+    bar, the AI blurb, availability chips (out / questionable / bye) with a
+    freshness stamp, and an also-worth-watching row. Returns '' when there's
+    nothing to show."""
     if not preview or not preview.get("game_of_the_week"):
         return ""
 
     g = preview["game_of_the_week"]
     wk = preview.get("next_week")
+    eyebrow_lead = preview.get("round_label") if preview.get("is_playoff") else "GAME OF THE WEEK"
+    eyebrow = f"NEXT WEEK{f' · WEEK {wk}' if wk else ''} · {str(eyebrow_lead).upper()}"
+
+    # The WHY badge — the single biggest reason this is the game of the week.
+    why = g.get("why") or "The week's headline matchup"
+    why_icon = g.get("why_icon") or "🎯"
+    why_badge = (
+        f"<div style='display:inline-flex;align-items:center;gap:6px;background:var(--accent);"
+        f"color:#fff;font-size:11px;font-weight:800;padding:4px 10px;border-radius:999px;"
+        f"margin-bottom:10px;'>{why_icon} {html.escape(str(why))}</div>"
+    )
+    if preview.get("quiet_week"):
+        why_badge = (
+            f"<div style='display:inline-flex;align-items:center;gap:6px;background:var(--muted);"
+            f"color:#fff;font-size:11px;font-weight:800;padding:4px 10px;border-radius:999px;"
+            f"margin-bottom:10px;'>{why_icon} Quietest slate of the year, but: {html.escape(str(why))}</div>"
+        )
 
     def _side(team: str, record: str, rank, align: str) -> str:
         rank_str = f"#{rank}" if rank else ""
@@ -628,12 +849,26 @@ def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
         )
 
     matchup_row = (
-        "<div style='display:flex;align-items:center;gap:10px;margin:10px 0 12px 0;'>"
+        "<div style='display:flex;align-items:center;gap:10px;margin:4px 0 10px 0;'>"
         + _side(g["team_a"], g["record_a"], g["rank_a"], "left")
         + "<div style='font-size:11px;font-weight:800;color:var(--muted);flex:0 0 auto;'>VS</div>"
         + _side(g["team_b"], g["record_b"], g["rank_b"], "right")
         + "</div>"
     )
+
+    # Projected win-probability bar (only when projections were available).
+    wp = g.get("win_prob_a")
+    winbar_html = ""
+    if wp is not None:
+        rp = 100 - wp
+        winbar_html = (
+            "<div style='display:flex;align-items:center;gap:8px;margin-bottom:12px;'>"
+            f"<span style='font-size:11px;font-weight:800;color:var(--muted);flex:0 0 auto;'>{wp}%</span>"
+            "<div style='flex:1;height:6px;border-radius:3px;overflow:hidden;"
+            f"background:linear-gradient(to right,var(--accent) {wp}%,rgba(148,163,184,0.35) {wp}%);'></div>"
+            f"<span style='font-size:11px;font-weight:800;color:var(--muted);flex:0 0 auto;'>{rp}%</span>"
+            "</div>"
+        )
 
     blurb_html = ""
     if looking_ahead and str(looking_ahead).strip():
@@ -642,41 +877,61 @@ def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
             f"{html.escape(str(looking_ahead))}</p>"
         )
 
-    # Injury chips (worst first, capped so the card stays tight).
-    inj_chips = []
-    for who, injured in ((g["team_a"], g.get("injured_a")), (g["team_b"], g.get("injured_b"))):
-        for p in (injured or [])[:2]:
-            label = f"{p.get('name')} ({p.get('status')})"
-            inj_chips.append(
-                f"<span class='player-badge player-badge-inj-out' "
-                f"style='font-size:10px;'><i class='fa-solid fa-triangle-exclamation' "
-                f"aria-hidden='true'></i> {html.escape(label)}</span>"
-            )
-    inj_html = ""
-    if inj_chips:
-        inj_html = (
-            "<div style='display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;'>"
-            + "".join(inj_chips) + "</div>"
+    # Availability chips: out (red) / questionable (amber) / bye (muted), each
+    # with the player's projected points so "big" is visible.
+    def _chip(p, cls, icon):
+        proj = p.get("proj")
+        pts = f" · {proj:g} pts" if isinstance(proj, (int, float)) and proj else ""
+        label = f"{p.get('name')} ({p.get('status')}){pts}"
+        return (
+            f"<span class='player-badge {cls}' style='font-size:10px;'>"
+            f"<i class='fa-solid {icon}' aria-hidden='true'></i> {html.escape(label)}</span>"
         )
 
-    # Also-watch line.
+    chips = []
+    for side in ("a", "b"):
+        for p in (g.get(f"out_{side}") or [])[:2]:
+            chips.append(_chip(p, "player-badge-inj-out", "fa-triangle-exclamation"))
+        for p in (g.get(f"maybe_{side}") or [])[:1]:
+            chips.append(_chip(p, "player-badge-inj-q", "fa-circle-question"))
+        for p in (g.get(f"bye_{side}") or [])[:1]:
+            chips.append(_chip(p, "player-badge-inj-note", "fa-bed"))
+    avail_html = ""
+    if chips:
+        stamp = preview.get("as_of")
+        stamp_html = (
+            f"<span style='font-size:10px;color:var(--muted);margin-left:2px;'>availability as of {html.escape(str(stamp))}</span>"
+            if stamp else ""
+        )
+        avail_html = (
+            "<div style='display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:10px;'>"
+            + "".join(chips) + stamp_html + "</div>"
+        )
+
+    # Also-worth-watching, each with its own one-word why. A near-tied runner-up
+    # is flagged as a co-headliner.
     also = preview.get("also_watch") or []
     also_html = ""
     if also:
+        label = "Co-game of the week" if preview.get("close_second") else "Also worth watching"
         items = " &nbsp;·&nbsp; ".join(
-            f"{html.escape(str(a['team_a']))} vs {html.escape(str(a['team_b']))}" for a in also
+            f"{html.escape(str(a['team_a']))} vs {html.escape(str(a['team_b']))} "
+            f"<span style='opacity:.75;'>({a.get('why_icon', '')} {html.escape(str(a.get('why') or ''))})</span>"
+            for a in also
         )
         also_html = (
             f"<div style='font-size:11px;color:var(--muted);border-top:1px solid var(--border,"
-            f"rgba(148,163,184,0.2));padding-top:10px;'>Also worth watching: {items}</div>"
+            f"rgba(148,163,184,0.2));padding-top:10px;'>{label}: {items}</div>"
         )
 
     return f"""
 <div class="card" style="padding:18px 20px;margin-bottom:20px;">
-  <div style="font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--accent);margin-bottom:6px;">NEXT WEEK{f' · WEEK {wk}' if wk else ''} · GAME OF THE WEEK</div>
+  <div style="font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--accent);margin-bottom:6px;">{eyebrow}</div>
+  {why_badge}
   {matchup_row}
+  {winbar_html}
   {blurb_html}
-  {inj_html}
+  {avail_html}
   {also_html}
 </div>
 """
@@ -690,9 +945,7 @@ def get_weekly_ai_recap(
         league: dict,
         league_id: str,
         season,
-        next_week_matchups: list | None = None,
-        player_index: dict | None = None,
-        value_by_pid: dict | None = None,
+        next_week_ctx: dict | None = None,
 ) -> tuple[str, str]:
     """Return (recap_column_html, next_week_card_html). Either may be ''.
 
@@ -703,7 +956,7 @@ def get_weekly_ai_recap(
     if df_weekly is None or df_weekly.empty:
         return empty
 
-    cache_key = f"weekly_recap_{league_id}_{season}_w{selected_week}_v8_chat"
+    cache_key = f"weekly_recap_{league_id}_{season}_w{selected_week}_v9_chat"
     cached = _load_recap_no_ttl(cache_key)
     if cached is not None:
         recap_html, _, next_html = cached.partition(_NEXT_WEEK_SPLIT)
@@ -712,9 +965,7 @@ def get_weekly_ai_recap(
     try:
         payload = build_weekly_recap_payload(
             df_weekly, matchups_by_week, selected_week, team_by_rid, league,
-            next_week_matchups=next_week_matchups,
-            player_index=player_index,
-            value_by_pid=value_by_pid,
+            next_week_ctx=next_week_ctx,
         )
     except Exception as exc:
         logger.warning("[weekly-recap] payload build failed: %s", exc)
@@ -753,23 +1004,32 @@ def get_weekly_ai_recap_preview() -> tuple[str, str]:
     next_html = _render_next_week_html(
         {
             "next_week": 8,
+            "is_playoff": False,
+            "round_label": None,
             "weeks_left_after": 5,
+            "quiet_week": False,
+            "close_second": False,
+            "as_of": "Tue Nov 4",
             "game_of_the_week": {
                 "team_a": "Dynasty Kings", "team_b": "Blitz Brigade",
                 "record_a": "6-1", "record_b": "5-2",
                 "rank_a": 1, "rank_b": 3,
                 "streak_a": "W4", "streak_b": "W2",
+                "win_prob_a": 58,
                 "h2h": {"meetings": 1, "a_wins": 1, "b_wins": 0},
-                "injured_a": [],
-                "injured_b": [{"name": "Bijan Robinson", "pos": "RB", "status": "OUT", "value": 8000}],
-                "reasons": ["two of the league's best", "Dynasty Kings on a W4 run"],
-                "score": 22.5,
+                "out_a": [], "maybe_a": [], "bye_a": [],
+                "out_b": [{"name": "Bijan Robinson", "pos": "RB", "status": "OUT", "proj": 19.4, "value": 8000}],
+                "maybe_b": [], "bye_b": [],
+                "why": "Battle at the top", "why_icon": "⭐", "top_factor": "strength",
+                "reasons": ["two of the league's best", "a rematch", "Bijan Robinson (OUT) in doubt"],
+                "score": 2.31,
             },
             "also_watch": [
-                {"team_a": "Redzone Rebels", "team_b": "Endzone Elite", "reasons": ["neighbors in the standings"]},
+                {"team_a": "Redzone Rebels", "team_b": "Endzone Elite",
+                 "why": "Projected coin-flip (51/49)", "why_icon": "⚖️"},
             ],
         },
-        "The 1 vs 3 game everyone circled, and it lands with Blitz Brigade down Bijan Robinson (OUT). "
+        "It's the game of the week because it's the top two teams in the league going at it, and it lands with Blitz Brigade down Bijan Robinson (OUT). "
         "Dynasty Kings won the first meeting and haven't lost since. Blitz has to find points somewhere or the gap at the top gets real.",
     )
     return recap_html, next_html
