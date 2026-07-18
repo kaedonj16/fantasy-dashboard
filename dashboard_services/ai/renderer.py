@@ -204,6 +204,7 @@ def get_trade_ai_analysis(
         viewer_side: str,
         side_a: dict,
         side_b: dict,
+        opponent_roster_id: str = "",
 ) -> str:
     team_ctx = build_team_gm_context(ctx, viewer_roster_id)
     if not team_ctx or not isinstance(team_ctx, dict):
@@ -368,19 +369,27 @@ def get_trade_ai_analysis(
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
 
-    # Opponent team context
+    # Opponent team context. Prefer the opponent the UI actually bound (reliable
+    # even when the return is picks-only or the platform's roster ids don't match
+    # the calculator's player ids); only fall back to inferring the partner from
+    # the acquired players' owner when no explicit opponent was passed.
     opponent_ctx: dict = {}
     try:
-        opponent_side = side_b if viewer_side == "a" else side_a
-        opp_player_ids = {str(a.get("id")) for a in (opponent_side.get("assets") or []) if a.get("id")}
+        _roster_ids = {str(r.get("roster_id") or "") for r in (ctx.get("rosters") or [])}
         opp_roster_id = None
-        for roster in (ctx.get("rosters") or []):
-            rid = str(roster.get("roster_id") or "")
-            if rid == str(viewer_roster_id):
-                continue
-            if opp_player_ids & {str(p) for p in (roster.get("players") or [])}:
-                opp_roster_id = rid
-                break
+        _explicit = str(opponent_roster_id or "").strip()
+        if _explicit and _explicit != str(viewer_roster_id) and _explicit in _roster_ids:
+            opp_roster_id = _explicit
+        else:
+            opponent_side = side_b if viewer_side == "a" else side_a
+            opp_player_ids = {str(a.get("id")) for a in (opponent_side.get("assets") or []) if a.get("id")}
+            for roster in (ctx.get("rosters") or []):
+                rid = str(roster.get("roster_id") or "")
+                if rid == str(viewer_roster_id):
+                    continue
+                if opp_player_ids & {str(p) for p in (roster.get("players") or [])}:
+                    opp_roster_id = rid
+                    break
         if opp_roster_id:
             opp_team_ctx = build_team_gm_context(ctx, opp_roster_id)
             if opp_team_ctx:

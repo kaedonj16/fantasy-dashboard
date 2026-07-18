@@ -18620,6 +18620,7 @@ def api_trade_eval():
                 viewer_side=viewer_side,
                 side_a=side_a,
                 side_b=side_b,
+                opponent_roster_id=str(payload.get("opponent_roster_id") or ""),
             )
             # Compute post-trade depth warnings for the viewer's roster
             rosters = ctx.get("rosters") or []
