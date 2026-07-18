@@ -511,6 +511,12 @@ function emptyState(container, message, iconClass) {
     replayClass(el, 'br-shake');
   };
 
+  // Pop an element in with a little bounce (e.g. a toggled-on star/icon).
+  window.brPop = function (el) {
+    if (!el || reduce) return;
+    replayClass(el, 'br-pop');
+  };
+
   // Count a number up from 0 (or `from`) to its target. `el` may carry
   // data-countup="728.2" (target) and data-countup-dp="1" (decimal places);
   // opts can override { to, from, dp, dur, suffix, prefix }.
@@ -11638,6 +11644,7 @@ function _updateWatchlistBtn(btn, player_id) {
   btn.title = watched ? 'Remove from watchlist' : 'Add to watchlist';
   btn.setAttribute('aria-pressed', watched ? 'true' : 'false');
   btn.classList.toggle('player-modal-watchlist-btn--active', watched);
+  if (watched && window.brPop) window.brPop(btn.querySelector('.wl-star-glyph'));
 }
 
 function _wlEsc(s) {
