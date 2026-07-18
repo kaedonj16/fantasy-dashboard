@@ -15,6 +15,12 @@ from __future__ import annotations
 # degenerate to derive meaningful tiers from.
 FALLBACK_THRESHOLDS = [850.0, 700.0, 550.0, 420.0, 300.0, 200.0, 120.0, 60.0]
 
+# Per-position value-rank cutoffs that define an "elite" player, matching the
+# ELITE chip (api_player_indicators). A player ranked at/above the cutoff by
+# positional value is elite. Single source of truth so the chip and the
+# consolidate/distribute engine can't drift apart.
+ELITE_RANK_CUTOFFS = {"QB": 5, "RB": 6, "WR": 6, "TE": 5}
+
 # Tier display caps out here (T1 elite ... T12).
 MAX_DISPLAY_TIERS = 12
 

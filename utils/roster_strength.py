@@ -65,3 +65,54 @@ def weighted_pos_strength(vals: List[float], pos: str, slot_counts: Dict[str, in
     used = vals[:len(weights)]
     denom = sum(weights[:len(used)]) or 1.0
     return sum(v * w for v, w in zip(used, weights)) / denom
+
+
+# ── Starter-caliber value thresholds ──────────────────────────────────────────
+# The value at/above which a player is a "pure starter" at each position, plus
+# the number of that position a team is expected to start. Single source of
+# truth for the depth-warning system AND the consolidate/distribute engine, so
+# they never disagree on who is startable.
+STARTER_THRESHOLD = {"QB": 500, "RB": 350, "WR": 350, "TE": 400}
+DEPTH_FLOOR = {"QB": 1, "RB": 2, "WR": 3, "TE": 1}
+
+_FLEX_SLOT_NAMES = {"FLEX", "RB_WR_FLEX", "RB_WR_TE", "WR_RB", "WR_TE", "RB_WR"}
+
+
+def derive_league_thresholds(
+    roster_positions: List[str],
+    num_teams: int,
+) -> "tuple[Dict[str, int], Dict[str, int]]":
+    """Derive starter-caliber value thresholds and depth floors from actual
+    league settings.
+
+    Depth floor  = number of that position in the starting lineup (including
+                   FLEX, split evenly across RB/WR).
+    Value threshold scales down with league size: larger leagues spread talent
+    thinner, so a lower absolute value still constitutes a starter.
+    """
+    pos_counts: Dict[str, int] = {}
+    flex_count = 0
+    for slot in roster_positions:
+        s = str(slot).upper()
+        if s in ("QB", "RB", "WR", "TE"):
+            pos_counts[s] = pos_counts.get(s, 0) + 1
+        elif s in _FLEX_SLOT_NAMES:
+            flex_count += 1
+
+    rb_flex = flex_count // 2
+    wr_flex = flex_count - rb_flex
+    floor: Dict[str, int] = {
+        "QB": max(1, pos_counts.get("QB", 1)),
+        "RB": max(1, pos_counts.get("RB", 1) + rb_flex),
+        "WR": max(1, pos_counts.get("WR", 1) + wr_flex),
+        "TE": max(1, pos_counts.get("TE", 1)),
+    }
+
+    scale = 12 / max(num_teams, 6)
+    threshold: Dict[str, int] = {
+        "QB": round(STARTER_THRESHOLD["QB"] * scale),
+        "RB": round(STARTER_THRESHOLD["RB"] * scale),
+        "WR": round(STARTER_THRESHOLD["WR"] * scale),
+        "TE": round(STARTER_THRESHOLD["TE"] * scale),
+    }
+    return threshold, floor

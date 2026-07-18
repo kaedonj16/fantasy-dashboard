@@ -522,53 +522,14 @@ def calculate_roster_grade(
 # Roster Depth Warning (replaces league-wide positional scarcity)
 # ──────────────────────────────────────────────────────────────────────────────
 
-# Fallback thresholds used when no league context is available
-_STARTER_THRESHOLD = {"QB": 500, "RB": 350, "WR": 350, "TE": 400}
-_DEPTH_FLOOR = {"QB": 1, "RB": 2, "WR": 3, "TE": 1}
-
-
-def _derive_league_thresholds(
-    roster_positions: list[str],
-    num_teams: int,
-) -> tuple[dict[str, int], dict[str, int]]:
-    """
-    Derive starter-caliber value thresholds and depth floors from actual
-    league settings.
-
-    Depth floor  = number of that position in the starting lineup
-                   (including FLEX, split evenly across RB/WR).
-    Value threshold scales down with league size: larger leagues spread
-    talent thinner, so a lower absolute value still constitutes a starter.
-    """
-    pos_counts: dict[str, int] = {}
-    flex_count = 0
-    for slot in roster_positions:
-        s = str(slot).upper()
-        if s in ("QB", "RB", "WR", "TE"):
-            pos_counts[s] = pos_counts.get(s, 0) + 1
-        elif s in ("FLEX", "RB_WR_FLEX", "RB_WR_TE", "WR_RB", "WR_TE", "RB_WR"):
-            flex_count += 1
-
-    # Distribute FLEX evenly across RB and WR (most common usage)
-    rb_flex = flex_count // 2
-    wr_flex = flex_count - rb_flex
-    floor: dict[str, int] = {
-        "QB": max(1, pos_counts.get("QB", 1)),
-        "RB": max(1, pos_counts.get("RB", 1) + rb_flex),
-        "WR": max(1, pos_counts.get("WR", 1) + wr_flex),
-        "TE": max(1, pos_counts.get("TE", 1)),
-    }
-
-    # Value threshold: base on 12-team league, scale linearly with team count.
-    # More teams = talent diluted = lower bar to be a starter.
-    scale = 12 / max(num_teams, 6)
-    threshold: dict[str, int] = {
-        "QB": round(500 * scale),
-        "RB": round(350 * scale),
-        "WR": round(350 * scale),
-        "TE": round(400 * scale),
-    }
-    return threshold, floor
+# Starter-caliber thresholds now live in utils.roster_strength (shared with the
+# consolidate/distribute engine so they can't drift). Aliased here to keep the
+# existing private names below unchanged.
+from utils.roster_strength import (  # noqa: E402
+    DEPTH_FLOOR as _DEPTH_FLOOR,
+    STARTER_THRESHOLD as _STARTER_THRESHOLD,
+    derive_league_thresholds as _derive_league_thresholds,
+)
 
 
 def calculate_roster_depth_warning(
@@ -827,20 +788,34 @@ def build_trade_suggestions_context(
         for i, rid in enumerate(sorted_rids, start=1):
             pos_rank_map.setdefault(rid, {})[pos] = i
 
-    viewer_ranks = pos_rank_map.get(viewer_rid, {})
+    viewer_ranks = pos_rank_map.get(viewer_rid, {})  # kept for ordering / context only
 
-    # Need = bottom 35% of league; Surplus = top 30% of league (rank-based)
-    need_cutoff = max(1, round(n_teams * 0.35))
-    surplus_cutoff = max(1, round(n_teams * 0.30))
+    # ── Starter-gap need model ─────────────────────────────────────────────────
+    # A position is a NEED when you can't field your starters there (fewer
+    # startable players than the league's starting slots), and a tradeable
+    # SURPLUS when you roster a startable player beyond your slots. This matches
+    # how managers think ("I need a starting RB") far better than ranking
+    # positional value *totals*, which flex depth inflates - a team with three
+    # flex WRs and no starter now correctly reads as a WR need, not a surplus.
+    from utils.player_tiers import (
+        roster_position_counts, starter_gap_needs, startable_surplus,
+    )
+    _ng_starter_thr, _ng_depth_floor = _derive_league_thresholds(ctx.get("roster_positions") or [], n_teams)
 
-    viewer_needs = [
-        pos for pos in _SCARCITY_POSITIONS
-        if viewer_ranks.get(pos, n_teams) > n_teams - need_cutoff
-    ]
-    viewer_surplus = [
-        pos for pos in _SCARCITY_POSITIONS
-        if viewer_ranks.get(pos, n_teams) <= surplus_cutoff
-    ]
+    def _roster_counts(r: dict) -> dict:
+        return roster_position_counts(
+            (
+                (str((model_value_lookup.get(str(pid)) or {}).get("position") or ""),
+                 _safe_float((model_value_lookup.get(str(pid)) or {}).get("value")))
+                for pid in (r.get("players") or [])
+            ),
+            _ng_starter_thr,
+        )
+
+    _counts_by_rid = {str(r.get("roster_id") or ""): _roster_counts(r) for r in rosters}
+    viewer_counts = _counts_by_rid.get(viewer_rid) or _roster_counts(roster)
+    viewer_needs = starter_gap_needs(viewer_counts, _ng_depth_floor)
+    viewer_surplus = startable_surplus(viewer_counts, _ng_depth_floor)
 
     # League averages for context only
     league_avg: dict[str, float] = {}
@@ -870,6 +845,37 @@ def build_trade_suggestions_context(
             return max(-1.0, min(0.5, (avg_age - 23.0) * 0.15))    # penalize raw youth
         return 0.0
 
+    # Roster-aware consolidation ceiling, shared with the archetype engine so both
+    # suggestion surfaces steer a flex-only team to a pure starter (never an
+    # unrealistic elite reach) and a starter-rich team to an elite.
+    from utils.player_tiers import (
+        ceiling_needs, consolidate_target_allowed, pos_category, positional_ranks,
+    )
+    _pt_ranks = positional_ranks(model_value_lookup)
+    _pt_starter_thr = _ng_starter_thr  # same thresholds as the need model
+    _pt_viewer_best: dict[str, tuple[int, float]] = {}
+    for _vp in (roster.get("players") or []):
+        _mv = model_value_lookup.get(str(_vp)) or {}
+        _vpos = str(_mv.get("position") or "").upper()
+        _vrk = _pt_ranks.get(str(_vp))
+        if _vpos in _SCARCITY_POSITIONS and _vrk and (_vpos not in _pt_viewer_best or _vrk < _pt_viewer_best[_vpos][0]):
+            _pt_viewer_best[_vpos] = (_vrk, _safe_float(_mv.get("value")))
+
+    # Ceiling needs (tiered): positions where the viewer fields a starter but has
+    # no elite - a "want an upgrade" for contenders, distinct from a roster hole.
+    _viewer_best_cat = {
+        _p: pos_category(_p, _b[0], _b[1], _pt_starter_thr) for _p, _b in _pt_viewer_best.items()
+    }
+    viewer_ceiling_needs = ceiling_needs(viewer_counts, _viewer_best_cat, _ng_depth_floor)
+
+    def _target_tier_ok(target: dict) -> bool:
+        """Apply the shared consolidation ceiling to a candidate acquisition."""
+        _tpos = str(target.get("position") or "").upper()
+        _tcat = pos_category(_tpos, _pt_ranks.get(str(target.get("id"))), target.get("value"), _pt_starter_thr)
+        _best = _pt_viewer_best.get(_tpos)
+        _bcat = pos_category(_tpos, _best[0], _best[1], _pt_starter_thr) if _best else "depth"
+        return consolidate_target_allowed(_tcat, _bcat)
+
     # Find best trade partners
     partners = []
     for r in rosters:
@@ -877,15 +883,9 @@ def build_trade_suggestions_context(
         if rid == viewer_rid:
             continue
 
-        partner_ranks = pos_rank_map.get(rid, {})
-        partner_needs = [
-            pos for pos in _SCARCITY_POSITIONS
-            if partner_ranks.get(pos, n_teams) > n_teams - need_cutoff
-        ]
-        partner_surplus = [
-            pos for pos in _SCARCITY_POSITIONS
-            if partner_ranks.get(pos, n_teams) <= surplus_cutoff
-        ]
+        partner_counts = _counts_by_rid.get(rid) or _roster_counts(r)
+        partner_needs = starter_gap_needs(partner_counts, _ng_depth_floor)
+        partner_surplus = startable_surplus(partner_counts, _ng_depth_floor)
 
         # Score compatibility: viewer's surplus matches partner's need and vice versa
         match_score = 0
@@ -906,7 +906,7 @@ def build_trade_suggestions_context(
         for pos in partner_surplus:
             if pos in viewer_needs:
                 top = _roster_top_players(r, pos, exclude_ids=viewer_player_ids)[:2]
-                targets_they_have.extend(top)
+                targets_they_have.extend(t for t in top if _target_tier_ok(t))
 
         # Surplus-liquidation path: viewer has surplus to give but no explicit need.
         # Partner can offer any high-value player at a position viewer is weak/neutral at.
@@ -922,7 +922,7 @@ def build_trade_suggestions_context(
                 weaker_positions = list(_SCARCITY_POSITIONS)
             for pos in weaker_positions:
                 top = _roster_top_players(r, pos, exclude_ids=viewer_player_ids)[:1]
-                targets_they_have.extend(p for p in top if p.get("value", 0) >= 350)
+                targets_they_have.extend(p for p in top if p.get("value", 0) >= 350 and _target_tier_ok(p))
             targets_they_have.sort(key=lambda x: x["value"], reverse=True)
             targets_they_have = targets_they_have[:1]
 
@@ -1071,6 +1071,8 @@ def build_trade_suggestions_context(
         "viewer_direction": viewer_direction,
         "viewer_needs": viewer_needs,
         "viewer_surplus": viewer_surplus,
+        "viewer_ceiling_needs": viewer_ceiling_needs,
+        "viewer_starter_counts": {p: viewer_counts.get(p, {}) for p in _SCARCITY_POSITIONS},
         "viewer_pos_ranks": {pos: viewer_ranks.get(pos, n_teams) for pos in _SCARCITY_POSITIONS},
         "league_size": n_teams,
         "viewer_pos_totals": {pos: round(v, 1) for pos, v in viewer_totals.items()},

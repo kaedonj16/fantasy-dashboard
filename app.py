@@ -20330,8 +20330,9 @@ def api_player_indicators():
         value_table = get_model_value_table_cached() or []
         value_map = {str(p.get("id")): p for p in value_table}
 
-        # Top-N positional rank cutoffs for a 12-man PPR dynasty league
-        elite_rank_cutoffs = {'QB': 5, 'RB': 6, 'WR': 6, 'TE': 5}
+        # Top-N positional rank cutoffs (shared with the consolidate/distribute
+        # engine so the ELITE chip and trade suggestions never disagree).
+        from utils.tier_thresholds import ELITE_RANK_CUTOFFS as elite_rank_cutoffs
 
         from collections import defaultdict as _defaultdict
         pos_players: dict = _defaultdict(list)

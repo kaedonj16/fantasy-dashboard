@@ -475,6 +475,9 @@ CRITICAL RULES - follow exactly:
    e.g. "2026 1st Round Pick 1.01 (proj. Jeremiyah Love, RB)" if slot and proj_name are present,
    or "2026 1st Round Pick" if not. Put these pick label strings in you_give.
 3. Use viewer_needs/viewer_surplus and viewer_pos_ranks (1=best in league) as given - do NOT override them.
+   viewer_needs are roster HOLES (can't field a startable player) - fill these first.
+   viewer_ceiling_needs are filled spots with no elite - treat as upgrade targets, only for
+   a contender chasing a difference-maker, never at the expense of an unfilled need.
 4. trade_type must be:
    - up_tier: viewer receives more value (acquiring a better player via picks or surplus)
    - down_tier: viewer gives more value than they receive

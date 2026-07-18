@@ -14,6 +14,7 @@ import time as _time
 from itertools import combinations
 from typing import Any, Dict, List, Optional, Tuple
 
+from utils.roster_strength import STARTER_THRESHOLD, derive_league_thresholds
 from utils.tier_stack import asset_tier
 from utils.tier_thresholds import FALLBACK_THRESHOLDS, compute_tier_thresholds
 
@@ -42,6 +43,22 @@ SCARCITY_SF  = {"QB": 1.00, "RB": 1.00, "WR": 1.00, "TE": 0.85}
 # Two mid-first WRs (T3) for a stud RB (T1) is a real consolidation; a wall of
 # T5 depth for that same stud is not, no matter how the raw values add up.
 _CONSOLIDATE_MAX_TIER_DROP = 2
+
+# ── Tunable suggestion parameters (kept together so the knobs are visible) ─────
+_DISTRIBUTE_STUD_FLOOR = 600         # min value for a player to be worth distributing
+_DISTRIBUTE_BAND = (0.96, 1.18)      # return-package value as a fraction of the stud
+_CONSOLIDATE_TARGET_FLOOR = 350      # min value to be a worthwhile consolidation target
+
+# Roster-aware consolidation tiers live in utils.player_tiers as the single
+# source of truth, so the archetype engine and the proactive Suggestions tab
+# apply the same elite/starter/flex rules. Aliased to the private names used
+# throughout this module (and by tests/test_consolidate_tiers.py).
+from utils.player_tiers import (  # noqa: E402
+    consolidate_target_allowed as _consolidate_target_allowed,
+    pos_category as _pos_category,
+    positional_ranks as _positional_ranks,
+)
+
 
 COMPLEMENT = {
     "contending":  "rebuilding",
@@ -1062,10 +1079,24 @@ def _build_distribute(
     # return is what absorbs the bench penalty.
     _sv = sorted((v for v in (_f(x.get("value")) for x in values_by_id.values()) if v > 0),
                  reverse=True)
+
+    # Per-position value rank across the league, so the return package can be held
+    # to pure starters ("distribute a stud INTO multiple starters", not depth).
+    _pos_rank_d = _positional_ranks(values_by_id)
+    _starter_thr_d, _floor_d = derive_league_thresholds(roster_positions or [], num_teams)
+
+    def _is_starter_tier(tgt: Dict) -> bool:
+        return _pos_category(
+            str(tgt.get("position") or "").upper(),
+            _pos_rank_d.get(tgt.get("player_id")),
+            tgt.get("value"),
+            _starter_thr_d,
+        ) in ("starter", "elite")
+
     studs = sorted(
         [p for p in viewer_players
          if values_by_id.get(p, {}).get("position") in SKILL_POS
-         and _f(values_by_id[p].get("value")) >= 600
+         and _f(values_by_id[p].get("value")) >= _DISTRIBUTE_STUD_FLOOR
          and (not untouchable_ids or p not in untouchable_ids)],
         key=lambda p: _f(values_by_id[p].get("value")),
         reverse=True,
@@ -1081,7 +1112,7 @@ def _build_distribute(
         # Viewer SENDS the stud and RECEIVES this depth package, so the low end
         # is an underpay against the viewer - keep it tight (≥96%). Receiving a
         # modest depth premium is fine, so the high end stays a touch generous.
-        lo, hi = sval * 0.96, sval * 1.18
+        lo, hi = sval * _DISTRIBUTE_BAND[0], sval * _DISTRIBUTE_BAND[1]
 
         # In 1QB leagues a second QB has no FLEX slot and contributes nothing to
         # the lineup if the viewer already has a QB. RB/WR/TE all remain eligible
@@ -1090,25 +1121,33 @@ def _build_distribute(
         if league_type != "sf" and (viewer_pos_counts or {}).get("QB", 0) >= 1:
             saturated.add("QB")
 
-        # Collect best combo per owner, then take top-3 value matches
-        owner_bests: List[Tuple[str, List[Dict], float]] = []
-        for owner, pool in targets_by_owner.items():
-            if owner in used_owners:
-                continue
-            cand = sorted(
-                [p for p in pool if p["position"] not in saturated],
-                key=lambda x: x["value"], reverse=True
-            )[:8]
-            local_best: Optional[Tuple[str, List[Dict], float]] = None
-            for n in (2, 3):
-                for combo in combinations(cand, n):
-                    s = sum(c["value"] for c in combo)
-                    if lo <= s <= hi:
-                        diff = abs(s - sval)
-                        if local_best is None or diff < local_best[2]:
-                            local_best = (owner, list(combo), diff)
-            if local_best:
-                owner_bests.append(local_best)
+        # Collect best combo per owner. Prefer a return made of pure starters
+        # (that's the point of distributing a stud), but fall back to any combo
+        # in the value band when no owner can offer a startable package - a
+        # shallow league shouldn't leave the stud with no distribution at all.
+        def _collect_owner_bests(starters_only: bool) -> List[Tuple[str, List[Dict], float]]:
+            obs: List[Tuple[str, List[Dict], float]] = []
+            for owner, pool in targets_by_owner.items():
+                if owner in used_owners:
+                    continue
+                cand = sorted(
+                    [p for p in pool if p["position"] not in saturated
+                     and (not starters_only or _is_starter_tier(p))],
+                    key=lambda x: x["value"], reverse=True
+                )[:8]
+                local_best: Optional[Tuple[str, List[Dict], float]] = None
+                for n in (2, 3):
+                    for combo in combinations(cand, n):
+                        s = sum(c["value"] for c in combo)
+                        if lo <= s <= hi:
+                            diff = abs(s - sval)
+                            if local_best is None or diff < local_best[2]:
+                                local_best = (owner, list(combo), diff)
+                if local_best:
+                    obs.append(local_best)
+            return obs
+
+        owner_bests = _collect_owner_bests(starters_only=True) or _collect_owner_bests(starters_only=False)
 
         use_ppg = bool(ppg_map and roster_positions)
 
@@ -1124,15 +1163,29 @@ def _build_distribute(
         dep_pod     = (_playoff_odds(current_wp + dep_wpd, num_weeks, num_teams, playoff_spots)
                        - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots))
 
-        # Re-score each owner's best combo by how much it improves the lineup
-        scored_bests: List[Tuple[str, List[Dict], float, float]] = []
+        # Positions the viewer is short of starter-caliber players at AFTER
+        # sending the stud, so the return can be steered to fill real needs.
+        _dep_starter_ct: Dict[str, int] = {}
+        for _dp in dep_players:
+            _dv = values_by_id.get(_dp, {})
+            _dpos = str(_dv.get("position") or "").upper()
+            if _dpos in SKILL_POS and _f(_dv.get("value")) >= _starter_thr_d.get(_dpos, STARTER_THRESHOLD.get(_dpos, 350)):
+                _dep_starter_ct[_dpos] = _dep_starter_ct.get(_dpos, 0) + 1
+        _deficit_pos = {p for p in ("QB", "RB", "WR", "TE")
+                        if _dep_starter_ct.get(p, 0) < _floor_d.get(p, 1)}
+
+        # Re-score each owner's best combo by lineup improvement, then by how many
+        # of its starters plug a position the viewer is actually short at.
+        scored_bests: List[Tuple[str, List[Dict], float, float, int]] = []
         for owner, combo, diff in owner_bests:
             recv_ids_trial = [c["player_id"] for c in combo]
             lineup_gain = _lineup_score(dep_players + recv_ids_trial) - dep_lineup
-            scored_bests.append((owner, combo, diff, lineup_gain))
-        # Primary sort: lineup improvement descending; secondary: value closeness ascending
-        scored_bests.sort(key=lambda x: (-x[3], x[2]))
-        owner_bests = [(o, c, d) for o, c, d, _ in scored_bests]
+            need_fill = sum(1 for c in combo
+                            if str(c.get("position") or "").upper() in _deficit_pos and _is_starter_tier(c))
+            scored_bests.append((owner, combo, diff, lineup_gain, need_fill))
+        # Sort: lineup improvement, then needs filled, then value closeness.
+        scored_bests.sort(key=lambda x: (-x[3], -x[4], x[2]))
+        owner_bests = [(o, c, d) for o, c, d, _, _ in scored_bests]
 
         for owner, combo, _ in owner_bests[:3]:
             used_owners.add(owner)
@@ -1872,6 +1925,27 @@ def get_archetype_suggestions(
             return True
         return False
 
+    # ── Roster-aware consolidation ceiling (data) ──────────────────────────────
+    # Per-position value rank across the league's player universe (1 = best),
+    # plus the viewer's best (lowest-rank) player at each position. The tiering
+    # itself lives in module-level _pos_category / _consolidate_target_allowed so
+    # it can be unit-tested; see their docstrings for the league-specific rules.
+    _pos_rank = _positional_ranks(values_by_id)
+
+    _viewer_best_rank: Dict[str, int] = {}
+    _viewer_best_val: Dict[str, float] = {}
+    for _p in viewer_players:
+        _vv = values_by_id.get(_p, {})
+        _pp = str(_vv.get("position") or "").upper()
+        _rr = _pos_rank.get(_p)
+        if _pp in SKILL_POS and _rr and (_pp not in _viewer_best_rank or _rr < _viewer_best_rank[_pp]):
+            _viewer_best_rank[_pp] = _rr
+            _viewer_best_val[_pp] = _f(_vv.get("value"))
+
+    # Starter-caliber value thresholds for this league (matches the depth-warning
+    # definition), used by the consolidation ceiling below.
+    _starter_thr, _ = derive_league_thresholds(ctx.get("roster_positions") or [], num_teams)
+
     for t in all_targets:
         pid  = t["player_id"]
         val  = t["value"]
@@ -1898,12 +1972,21 @@ def get_archetype_suggestions(
             ) * sc * pref_bonus
 
         elif archetype == "consolidate":
+            # Roster-aware ceiling: only aim a position's consolidation at an
+            # ELITE (top-3) target when the viewer already owns a pure starter
+            # there. A team with only flex-worthy pieces at the position is
+            # steered to a pure starter instead of an unrealistic reach for a
+            # top-3 stud it has nothing comparable to consolidate.
+            _tgt_cat = _pos_category(pos, _pos_rank.get(pid), val, _starter_thr)
+            _best_cat = _pos_category(pos, _viewer_best_rank.get(pos), _viewer_best_val.get(pos), _starter_thr)
+            if not _consolidate_target_allowed(_tgt_cat, _best_cat):
+                continue
             # Consolidating doesn't only mean chasing the very top tier: taking a
             # few lesser pieces up to a solid mid-tier starter is a real upgrade.
             # Allow mid-tier targets in (floor well below the old 600) and soften
             # the raw-value term so a productive ~450-650 player competes with a
             # pure-value stud instead of always being buried behind it.
-            if val < 350:
+            if val < _CONSOLIDATE_TARGET_FLOOR:
                 continue
             rdft_ratio = rdft / max(1, val) if rdft > 0 else 0.6
             score = (
