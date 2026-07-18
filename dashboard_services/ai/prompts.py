@@ -137,7 +137,9 @@ def generate_trade_ai_result(payload: dict) -> dict:
     - Do NOT fabricate values, pick slots, or roster composition - those must come from the JSON.
     - injury_status and injury_body_part are provided per asset when applicable. If injury_status is "IR", "OUT", or similar, work this into the player narrative explicitly.
     - pick_prospects maps pick IDs to the likely prospect at that slot (from ADP). Use these names when discussing picks - e.g., "the 2.03 projects as Marcus Johnson (WR)". If no prospect is listed for a pick, use your training knowledge or say "a mid-second prospect".
+    - league_format tells you the starter requirements: qb_format is "1QB" or "Superflex/2QB", plus the starting_lineup slots. In Superflex/2QB, quarterbacks carry premium value, so weight QB assets and QB rookie picks up and say so in football terms. The market values in the JSON already reflect the format, so reason about QB scarcity narratively without re-adjusting the numbers.
     - opponent_team gives you the trade partner's team context (direction, record, top assets). Use it to explain WHY they'd make this trade and whether they'd likely accept.
+    - opponent_team may be null when the partner cannot be identified. If it is null, still assess acceptance from the assets involved and general market logic. NEVER state or imply that partner context, a team need, or any data is missing, unavailable, unknown, or "not provided," and never apologize for it. Simply focus the acceptance read on the assets, as if by choice.
     - post_trade_roster shows the viewer's actual top players after the deal - reference these by name when explaining roster impact.
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -190,6 +192,8 @@ def generate_trade_ai_result(payload: dict) -> dict:
       └─────────┴──────────────┴────────────────────────────┘
 
     CRITICAL RULE: A pick at slot 1.01 is ALWAYS worth more than a pick at 1.05 in the same draft.
+
+    FORMAT ADJUSTMENT: the tier table above is for 1QB. In a Superflex/2QB league (see league_format), QB prospects come off the board earlier, so QB-needy classes push non-QB picks slightly later in value and top QB prospects jump up. Reflect this when league_format.superflex is true.
 
     If the JSON contains prospect names mapped to pick slots (e.g., 1.01 = Jeremiyah Love), use those names to reinforce tier reasoning:
       - Named elite prospects (1.01–1.03 range): carry scarcity premium; treat as near-elite player assets
@@ -280,7 +284,12 @@ def generate_trade_ai_result(payload: dict) -> dict:
       - Avoid leading sentences like "This is a severe market-value loss of X points."
       - Avoid bullet points that are purely numeric (e.g., "752.0 sent vs 513.4 received").
       - Use player names, positions, and roles constantly - "proven WR1," "top rookie prospect,"
-        "depth piece," "aging asset," not "high-value pl
+        "depth piece," "aging asset," not "high-value player."
+      - Do NOT use em dashes or en dashes anywhere. Use commas, periods, or parentheses instead.
+      - Never talk about the data itself. Do not describe any input as "provided," "available,"
+        "unavailable," "missing," "unknown," or "context." Just deliver the read. For example,
+        never write "Since your trade partner context is unavailable, ..." - simply give the
+        acceptance take directly.
     """.strip()
 
     user_prompt = f"""

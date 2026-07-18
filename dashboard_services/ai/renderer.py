@@ -310,10 +310,24 @@ def get_trade_ai_analysis(
     # Pick-to-prospect mapping using rookie ADP
     current_season = ctx.get("current_season") or ctx.get("season") or 2026
     num_teams = len(ctx.get("rosters") or []) or 12
-    is_sf = bool(ctx.get("is_sf") or any(
-        str(s).upper() in {"SUPER_FLEX", "SFLEX"}
-        for s in (ctx.get("roster_positions") or [])
-    ))
+    _roster_positions = [str(s).upper() for s in (ctx.get("roster_positions") or [])]
+    is_sf = bool(ctx.get("is_sf") or any(s in {"SUPER_FLEX", "SFLEX"} for s in _roster_positions))
+    # Starter format the analyst should reason from (QB value swings hard on this).
+    _qb_slots = sum(1 for s in _roster_positions if s == "QB")
+    _sf_slots = sum(1 for s in _roster_positions if s in {"SUPER_FLEX", "SFLEX"})
+    league_format = {
+        "qb_format": "Superflex/2QB" if is_sf else "1QB",
+        "superflex": is_sf,
+        "qb_starter_slots": _qb_slots + _sf_slots,
+        "starting_lineup": _roster_positions or None,
+        "note": (
+            "Superflex/2QB league: quarterbacks carry premium value; weight QB assets and QB "
+            "rookie picks up. The market values in this JSON already reflect the league format."
+            if is_sf else
+            "1QB league: standard single-QB scarcity. The market values in this JSON already "
+            "reflect the league format."
+        ),
+    }
     all_pick_ids = list(viewer_gets.get("pick_ids") or []) + list(viewer_gives.get("pick_ids") or [])
 
     pick_prospects: dict = {}
@@ -418,11 +432,12 @@ def get_trade_ai_analysis(
             "pick_prospects": pick_prospects,
             "market_delta": market_delta,
         },
+        "league_format": league_format,
         "opponent_team": opponent_ctx or None,
     }
 
     # Build cache key for trade analysis
-    cache_key = build_ai_cache_key("trade_analysis", payload, "v4")
+    cache_key = build_ai_cache_key("trade_analysis", payload, "v5")
 
     # Try to get from cache first
     cached = load_cached_ai_text(cache_key)
