@@ -16458,13 +16458,42 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
   {standing_rows_html}
 </div>"""
 
-    # ── AI weekly storyline column ─────────────────────────────────────────
+    # ── AI weekly storyline column + next-week game-of-the-week ────────────
     if preview_mode:
         from dashboard_services.ai.weekly_recap import get_weekly_ai_recap_preview
-        ai_column_html = get_weekly_ai_recap_preview()
+        ai_column_html, next_week_html = get_weekly_ai_recap_preview()
     else:
+        # Only fetch a next-week preview when this recap is for the latest
+        # finalized regular-season week (so the "upcoming" game is genuinely
+        # upcoming and its injuries are current), not for an old week.
+        next_week = selected_week + 1
+        next_week_matchups = None
+        if (
+            selected_week == reg_weeks[-1]
+            and next_week < playoff_start
+            and next_week not in available_weeks
+        ):
+            try:
+                from dashboard_services.matchups import build_matchup_preview
+                next_week_matchups = build_matchup_preview(
+                    league_id=_league_id,
+                    week=next_week,
+                    roster_map=team_by_rid,
+                    players_map=ctx.get("players") or {},
+                    season=_season,
+                    platform=_platform,
+                ) or None
+            except Exception:
+                next_week_matchups = None
+
+        value_by_pid = {
+            str(r["id"]): float(r.get("value") or 0)
+            for r in (ctx.get("model_value_table") or [])
+            if isinstance(r, dict) and r.get("id") is not None
+        }
+
         from dashboard_services.ai.weekly_recap import get_weekly_ai_recap
-        ai_column_html = get_weekly_ai_recap(
+        ai_column_html, next_week_html = get_weekly_ai_recap(
             df_weekly=df_weekly,
             matchups_by_week=ctx.get("matchups_by_week") or {},
             selected_week=selected_week,
@@ -16472,6 +16501,9 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
             league=league,
             league_id=ctx.get("league_id") or "",
             season=ctx.get("season") or "",
+            next_week_matchups=next_week_matchups,
+            player_index=ctx.get("players_index") or {},
+            value_by_pid=value_by_pid,
         )
 
     # ── Lineup analysis: busts, sleepers, coaching mistakes ────────────────
@@ -16503,7 +16535,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 </div>"""
 
     return (preview_banner + history_banner + week_selector + cards_html
-            + scoreboard_and_recap + lineup_html + standings_html)
+            + scoreboard_and_recap + (next_week_html or "") + lineup_html + standings_html)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/recap")
