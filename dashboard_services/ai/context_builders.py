@@ -719,7 +719,10 @@ def build_trade_suggestions_context(
                 continue
             val = _safe_float(mv.get("value") or mv.get("model_value") or mv.get("trade_value"))
             if val > 0:
-                out.append({"id": spid, "name": str(mv.get("name") or spid), "value": round(val, 1), "position": pos})
+                out.append({
+                    "id": spid, "name": str(mv.get("name") or spid),
+                    "value": round(val, 1), "position": pos, "age": mv.get("age"),
+                })
         return sorted(out, key=lambda x: x["value"], reverse=True)
 
     n_teams = max(len(rosters), 1)
@@ -844,6 +847,28 @@ def build_trade_suggestions_context(
     for pos in _SCARCITY_POSITIONS:
         vals = [roster_totals_map[rid].get(pos, 0.0) for rid in roster_totals_map]
         league_avg[pos] = sum(vals) / len(vals) if vals else 0.0
+
+    # Viewer's competitive direction — used to bias which targets fit. Computed
+    # once up front (also reused for the return payload) so the partner loop can
+    # reward direction-appropriate acquisitions.
+    viewer_team_ctx = build_team_gm_context(ctx, viewer_roster_id) or {}
+    viewer_direction = viewer_team_ctx.get("direction") or "balanced"
+
+    def _direction_age_fit(direction: str, targets: list[dict]) -> float:
+        """A small (+/-1) nudge on the suggestion score based on how well the age
+        profile of what the viewer would ACQUIRE fits their window. Contenders
+        want proven now (raw youth pays off too slowly); rebuilders want youth.
+        Neutral when direction is balanced or ages are unknown."""
+        ages = [_safe_float(t.get("age")) for t in targets if t.get("age") not in (None, "", 0)]
+        if not ages:
+            return 0.0
+        avg_age = sum(ages) / len(ages)
+        d = (direction or "").lower()
+        if "rebuild" in d or "sell" in d:
+            return max(-1.0, min(1.0, (26.0 - avg_age) * 0.20))   # younger = better
+        if "contend" in d or "win" in d or "buy" in d:
+            return max(-1.0, min(0.5, (avg_age - 23.0) * 0.15))    # penalize raw youth
+        return 0.0
 
     # Find best trade partners
     partners = []
@@ -978,10 +1003,14 @@ def build_trade_suggestions_context(
             continue
 
         # Composite ranking: positional fit still matters most, but a fair,
-        # mutually beneficial deal now outranks a lopsided same-fit one, and a
-        # deal where the viewer isn't overpaying gets a small nudge.
+        # mutually beneficial deal now outranks a lopsided same-fit one, a deal
+        # where the viewer isn't overpaying gets a small nudge, and the age
+        # profile of the acquisition is nudged toward the viewer's window.
+        direction_fit = _direction_age_fit(viewer_direction, targets_they_have)
         suggestion_score = round(
-            match_score + fairness * 3.0 + (0.5 if value_you_get >= value_you_give else 0.0),
+            match_score + fairness * 3.0
+            + (0.5 if value_you_get >= value_you_give else 0.0)
+            + direction_fit,
             3,
         )
 
@@ -1037,11 +1066,9 @@ def build_trade_suggestions_context(
         pick_trade_partners.sort(key=lambda x: max((t.get("value", 0) for t in x["targets_they_have"]), default=0), reverse=True)
         pick_trade_partners = pick_trade_partners[:3]
 
-    viewer_team_ctx = build_team_gm_context(ctx, viewer_roster_id) or {}
-
     return {
         "viewer_team": viewer_team_ctx.get("team_name") or f"Roster {viewer_roster_id}",
-        "viewer_direction": viewer_team_ctx.get("direction") or "balanced",
+        "viewer_direction": viewer_direction,
         "viewer_needs": viewer_needs,
         "viewer_surplus": viewer_surplus,
         "viewer_pos_ranks": {pos: viewer_ranks.get(pos, n_teams) for pos in _SCARCITY_POSITIONS},

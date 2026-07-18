@@ -1,10 +1,10 @@
-"""Guards the value-fairness layer in build_trade_suggestions_context.
+"""Guards the ranking layers in build_trade_suggestions_context.
 
-The suggestion engine used to rank trade partners purely by positional fit and
-never looked at whether the two sides were close in value, so it could surface
-lopsided deals (give ~2x what you get) that no manager would ink. These tests
-pin the new behavior: fleece-level mismatches are dropped, surfaced partners are
-ranked by a composite score, and each carries the fairness/balance annotations.
+The suggestion engine used to rank trade partners purely by positional fit. It
+now also (1) drops fleece-level value mismatches and ranks the rest by a fairness
+composite, and (2) nudges the ranking by how well the acquisition's age profile
+fits the viewer's competitive window (contenders → proven, rebuilders → youth).
+These tests pin both behaviors.
 
 Pure functions only (the heavy GM-context dependency is stubbed), so this runs
 in the base suite without Flask/pandas.
@@ -98,3 +98,73 @@ def test_viewer_need_is_detected(monkeypatch):
     # as surplus regardless of the exact rank cutoffs.
     assert "RB" in res["viewer_needs"]
     assert "WR" in res["viewer_surplus"]
+
+
+# ── Team-direction (age) weighting ─────────────────────────────────────────────
+
+def _mva(pid, name, pos, val, age):
+    return {"player_id": pid, "name": name, "position": pos, "value": val, "age": age}
+
+
+def _build_age_ctx():
+    """WR-rich / RB-poor viewer with two equal-value RB partners: Team 2 offers
+    young backs (22), Team 3 offers older backs (30). Filler keeps cutoffs sane."""
+    mvt = [
+        _mva("v_wr1", "V WR1", "WR", 3600, 25), _mva("v_wr2", "V WR2", "WR", 3100, 26),
+        _mva("v_wr3", "V WR3", "WR", 2400, 24), _mva("v_rb1", "V RB1", "RB", 700, 27),
+        _mva("v_te1", "V TE1", "TE", 1000, 26),
+    ]
+    rosters = [{"roster_id": "1", "players": ["v_wr1", "v_wr2", "v_wr3", "v_rb1", "v_te1"]}]
+    roster_map = {"1": "Viewer"}
+
+    def team(i, age, rb_hi=3300, rb_lo=2700, wr=520):
+        rid = str(i)
+        mvt.extend([
+            _mva(f"r{i}_rb1", f"T{i} RB1", "RB", rb_hi, age),
+            _mva(f"r{i}_rb2", f"T{i} RB2", "RB", rb_lo, age),
+            _mva(f"r{i}_wr1", f"T{i} WR1", "WR", wr, 26),
+            _mva(f"r{i}_te1", f"T{i} TE1", "TE", 1000, 26),
+        ])
+        rosters.append({"roster_id": rid, "players": [f"r{i}_rb1", f"r{i}_rb2", f"r{i}_wr1", f"r{i}_te1"]})
+        roster_map[rid] = f"Team {i}"
+
+    team(2, 22)   # young backs
+    team(3, 30)   # older backs
+    for i in range(4, 11):
+        team(i, 26, rb_hi=1500, rb_lo=1200, wr=1500)  # balanced filler
+
+    return {
+        "rosters": rosters, "model_value_table": mvt, "roster_map": roster_map,
+        "picks_by_roster": {},
+        "standings_map": {r["roster_id"]: {"wins": 5, "losses": 5} for r in rosters},
+        "rookie_rankings": [], "league_type": "1qb",
+    }
+
+
+def _score_for(res, team_name):
+    for p in res["top_partners"]:
+        if p["team_name"] == team_name:
+            return p["suggestion_score"]
+    return None
+
+
+def _run_dir(monkeypatch, direction):
+    monkeypatch.setattr(
+        cb, "build_team_gm_context",
+        lambda ctx, rid: {"team_name": "Viewer", "direction": direction},
+    )
+    return cb.build_trade_suggestions_context(_build_age_ctx(), "1")
+
+
+def test_rebuilder_prefers_younger_acquisition(monkeypatch):
+    res = _run_dir(monkeypatch, "rebuilding")
+    young, old = _score_for(res, "Team 2"), _score_for(res, "Team 3")
+    assert young is not None and old is not None
+    assert young > old, "a rebuilder should rank the younger RB package higher"
+
+
+def test_contender_prefers_proven_acquisition(monkeypatch):
+    res = _run_dir(monkeypatch, "contending")
+    young, old = _score_for(res, "Team 2"), _score_for(res, "Team 3")
+    assert young is not None and old is not None
+    assert old > young, "a contender should rank the proven (older) RB package higher"
