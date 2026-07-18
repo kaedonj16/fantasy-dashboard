@@ -16,15 +16,23 @@ def _mv(pid, name, pos, val):
     return {"player_id": pid, "name": name, "position": pos, "value": val}
 
 
+_LINEUP = ["QB", "RB", "RB", "WR", "WR", "TE"]  # floors: RB 2, WR 2, QB 1, TE 1
+
+
 def _build_ctx():
-    """A 10-team league where the viewer (roster '1') is loaded at WR and thin at
-    RB. Teams 2-4 are the natural partners: RB-rich AND WR-poor, so they hold an
-    RB surplus the viewer needs and need the WR depth the viewer can spare. Teams
-    5-10 are balanced filler so the rank cutoffs land realistically."""
+    """A 10-team league where the viewer (roster '1') can field a WR surplus (3
+    startable WRs, one beyond its two WR slots) but has a starter-sized hole at RB
+    (only one startable back). Teams 2-4 are the natural partners: they roster an
+    RB surplus the viewer needs (3 startable backs) and a starter hole at WR the
+    viewer's spare WR fills. Teams 5-10 are balanced filler (exactly their starter
+    count at every spot, so neither needy nor in surplus) to keep cutoffs realistic.
+
+    Values sit clearly above/below the league starter bar (350 * 12/10 = 420) so
+    the starter-gap need model reads each roster the way a manager would."""
     mvt = []
     rosters = []
     roster_map = {}
-    # Viewer: elite WRs, weak RB.
+    # Viewer: three startable WRs (surplus of one), a single startable RB (hole).
     mvt += [
         _mv("v_wr1", "Viewer WR1", "WR", 3600),
         _mv("v_wr2", "Viewer WR2", "WR", 3100),
@@ -36,25 +44,27 @@ def _build_ctx():
     rosters.append({"roster_id": "1", "players": ["v_wr1", "v_wr2", "v_wr3", "v_rb1", "v_qb1", "v_te1"]})
     roster_map["1"] = "Viewer"
 
-    def _team(i, rb_hi, rb_lo, wr, qb=1100, te=1000):
+    def _team(i, rbs, wrs, qb=1100, te=1000):
         rid = str(i)
-        mvt.extend([
-            _mv(f"r{i}_rb1", f"T{i} RB1", "RB", rb_hi),
-            _mv(f"r{i}_rb2", f"T{i} RB2", "RB", rb_lo),
-            _mv(f"r{i}_wr1", f"T{i} WR1", "WR", wr),
-            _mv(f"r{i}_qb1", f"T{i} QB1", "QB", qb),
-            _mv(f"r{i}_te1", f"T{i} TE1", "TE", te),
-        ])
-        rosters.append({"roster_id": rid, "players": [f"r{i}_rb1", f"r{i}_rb2", f"r{i}_wr1", f"r{i}_qb1", f"r{i}_te1"]})
+        pids = [f"r{i}_qb1", f"r{i}_te1"]
+        mvt.extend([_mv(f"r{i}_qb1", f"T{i} QB1", "QB", qb), _mv(f"r{i}_te1", f"T{i} TE1", "TE", te)])
+        for j, val in enumerate(rbs, start=1):
+            mvt.append(_mv(f"r{i}_rb{j}", f"T{i} RB{j}", "RB", val))
+            pids.append(f"r{i}_rb{j}")
+        for j, val in enumerate(wrs, start=1):
+            mvt.append(_mv(f"r{i}_wr{j}", f"T{i} WR{j}", "WR", val))
+            pids.append(f"r{i}_wr{j}")
+        rosters.append({"roster_id": rid, "players": pids})
         roster_map[rid] = f"Team {i}"
 
-    # Partners 2-4: RB-rich, WR-poor (mirror the viewer).
-    _team(2, 3300, 2700, 520)
-    _team(3, 3100, 2600, 560)
-    _team(4, 2900, 2500, 600)
-    # Filler 5-10: balanced, mid RB / mid-high WR so they aren't WR-needy.
+    # Partners 2-4: RB surplus (3 startable), starter hole at WR (1 startable).
+    _team(2, [3300, 2700, 900], [520])
+    _team(3, [3100, 2600, 900], [560])
+    _team(4, [2900, 2500, 900], [600])
+    # Filler 5-10: exactly two startable RBs and two startable WRs — balanced, so
+    # they read as neither needy nor in surplus and don't crowd the partner ranks.
     for i in range(5, 11):
-        _team(i, 1500, 1200, 1500)
+        _team(i, [1500, 1200], [1500, 1300])
 
     return {
         "rosters": rosters,
@@ -64,6 +74,7 @@ def _build_ctx():
         "standings_map": {r["roster_id"]: {"wins": 5, "losses": 5} for r in rosters},
         "rookie_rankings": [],
         "league_type": "1qb",
+        "roster_positions": _LINEUP,
     }
 
 
@@ -107,8 +118,10 @@ def _mva(pid, name, pos, val, age):
 
 
 def _build_age_ctx():
-    """WR-rich / RB-poor viewer with two equal-value RB partners: Team 2 offers
-    young backs (22), Team 3 offers older backs (30). Filler keeps cutoffs sane."""
+    """WR-surplus / RB-hole viewer with two equal-value RB partners: Team 2 offers
+    young backs (22), Team 3 offers older backs (30). Both hold a real RB surplus
+    (3 startable) and a WR hole, so both surface; only their age profiles differ.
+    Filler teams are balanced so they don't crowd the ranking."""
     mvt = [
         _mva("v_wr1", "V WR1", "WR", 3600, 25), _mva("v_wr2", "V WR2", "WR", 3100, 26),
         _mva("v_wr3", "V WR3", "WR", 2400, 24), _mva("v_rb1", "V RB1", "RB", 700, 27),
@@ -117,27 +130,30 @@ def _build_age_ctx():
     rosters = [{"roster_id": "1", "players": ["v_wr1", "v_wr2", "v_wr3", "v_rb1", "v_te1"]}]
     roster_map = {"1": "Viewer"}
 
-    def team(i, age, rb_hi=3300, rb_lo=2700, wr=520):
+    def team(i, age, rbs=(3300, 2700, 900), wrs=(520,)):
         rid = str(i)
-        mvt.extend([
-            _mva(f"r{i}_rb1", f"T{i} RB1", "RB", rb_hi, age),
-            _mva(f"r{i}_rb2", f"T{i} RB2", "RB", rb_lo, age),
-            _mva(f"r{i}_wr1", f"T{i} WR1", "WR", wr, 26),
-            _mva(f"r{i}_te1", f"T{i} TE1", "TE", 1000, 26),
-        ])
-        rosters.append({"roster_id": rid, "players": [f"r{i}_rb1", f"r{i}_rb2", f"r{i}_wr1", f"r{i}_te1"]})
+        pids = [f"r{i}_te1"]
+        mvt.append(_mva(f"r{i}_te1", f"T{i} TE1", "TE", 1000, 26))
+        for j, val in enumerate(rbs, start=1):
+            mvt.append(_mva(f"r{i}_rb{j}", f"T{i} RB{j}", "RB", val, age))
+            pids.append(f"r{i}_rb{j}")
+        for j, val in enumerate(wrs, start=1):
+            mvt.append(_mva(f"r{i}_wr{j}", f"T{i} WR{j}", "WR", val, 26))
+            pids.append(f"r{i}_wr{j}")
+        rosters.append({"roster_id": rid, "players": pids})
         roster_map[rid] = f"Team {i}"
 
     team(2, 22)   # young backs
     team(3, 30)   # older backs
     for i in range(4, 11):
-        team(i, 26, rb_hi=1500, rb_lo=1200, wr=1500)  # balanced filler
+        team(i, 26, rbs=(1500, 1200), wrs=(1500, 1300))  # balanced filler
 
     return {
         "rosters": rosters, "model_value_table": mvt, "roster_map": roster_map,
         "picks_by_roster": {},
         "standings_map": {r["roster_id"]: {"wins": 5, "losses": 5} for r in rosters},
         "rookie_rankings": [], "league_type": "1qb",
+        "roster_positions": _LINEUP,
     }
 
 
@@ -177,19 +193,26 @@ def _mva2(pid, name, pos, val):
 
 
 def _build_ceiling_ctx():
-    """WR-thin viewer (its only WR is flex-tier) that can still afford a rival's
-    elite WR one-for-one with an RB, so absent the ceiling that elite would be a
-    real, fair target. The ceiling should block it (a flex-only team shouldn't be
-    pitched a top-of-position stud)."""
+    """WR-hole viewer whose best WR is flex-tier (below the 350 starter bar) and
+    who holds a real RB surplus (3 startable backs) to trade. The partner rosters
+    a WR surplus that includes an elite WR and has a starter hole at RB, so absent
+    the ceiling that elite WR is a real, fair target for the viewer's spare RB. The
+    ceiling should block it: a flex-only team shouldn't be pitched a top-of-position
+    stud, only steered to a pure starter."""
     mvt = [
-        _mva2("v_wr1", "V WR1", "WR", 300),   # lone flex WR -> WR is a need, best WR is flex
-        _mva2("v_rb1", "V RB1", "RB", 900), _mva2("v_rb2", "V RB2", "RB", 850),  # RB surplus to send
+        _mva2("v_wr1", "V WR1", "WR", 300),   # lone flex WR -> WR is a hole, best WR is flex
+        _mva2("v_rb1", "V RB1", "RB", 900), _mva2("v_rb2", "V RB2", "RB", 850),
+        _mva2("v_rb3", "V RB3", "RB", 800),   # 3 startable RBs -> a startable RB to spare
     ]
-    rosters = [{"roster_id": "1", "players": ["v_wr1", "v_rb1", "v_rb2"]}]
+    rosters = [{"roster_id": "1", "players": ["v_wr1", "v_rb1", "v_rb2", "v_rb3"]}]
     roster_map = {"1": "Viewer"}
 
-    mvt += [_mva2("p_wr1", "Elite WR", "WR", 950), _mva2("p_rb1", "P RB1", "RB", 250)]
-    rosters.append({"roster_id": "2", "players": ["p_wr1", "p_rb1"]})
+    # Partner: WR surplus (3 startable incl. the elite), starter hole at RB.
+    mvt += [
+        _mva2("p_wr1", "Elite WR", "WR", 950), _mva2("p_wr2", "P WR2", "WR", 500),
+        _mva2("p_wr3", "P WR3", "WR", 480), _mva2("p_rb1", "P RB1", "RB", 250),
+    ]
+    rosters.append({"roster_id": "2", "players": ["p_wr1", "p_wr2", "p_wr3", "p_rb1"]})
     roster_map["2"] = "Partner"
 
     for i in range(3, 13):  # filler to seed the need/surplus cutoffs
@@ -202,7 +225,7 @@ def _build_ceiling_ctx():
         "picks_by_roster": {},
         "standings_map": {r["roster_id"]: {"wins": 5, "losses": 5} for r in rosters},
         "rookie_rankings": [], "league_type": "1qb",
-        "roster_positions": ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "FLEX"],
+        "roster_positions": ["QB", "RB", "RB", "WR", "WR", "TE"],
     }
 
 

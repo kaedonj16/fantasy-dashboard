@@ -82,3 +82,65 @@ def test_pure_starter_targets_are_always_allowed():
     for best in ("depth", "flex", "starter", "elite"):
         assert _consolidate_target_allowed("starter", best) is True
         assert _consolidate_target_allowed("flex", best) is True
+
+
+# ── Starter-gap need model ─────────────────────────────────────────────────────
+from utils.player_tiers import (
+    ceiling_needs,
+    roster_position_counts,
+    startable_surplus,
+    starter_gap_needs,
+)
+
+# 12-team league starter bars (350/350 for RB/WR at 12 teams).
+_FLOOR = {"QB": 1, "RB": 2, "WR": 2, "TE": 1}
+
+
+def test_counts_split_startable_from_bench_depth():
+    # Only players clearing the value bar count as starters; the rest still add to
+    # the total. Three WRs but only two are startable; one flex-tier RB.
+    counts = roster_position_counts(
+        [("WR", 900), ("WR", 500), ("WR", 100), ("RB", 400), ("QB", 0)],
+        _THR,
+    )
+    assert counts["WR"] == {"total": 3, "starters": 2}
+    assert counts["RB"] == {"total": 1, "starters": 1}
+    assert counts["QB"] == {"total": 1, "starters": 0}   # below the QB bar
+    assert counts["TE"] == {"total": 0, "starters": 0}
+
+
+def test_starter_gap_is_a_hole_not_low_total():
+    # Flex depth never masks a hole: three below-bar WRs are still zero starters,
+    # so WR is a need; two startable RBs exactly fill the RB floor (no need).
+    counts = roster_position_counts(
+        [("WR", 100), ("WR", 120), ("WR", 90), ("RB", 500), ("RB", 400)],
+        _THR,
+    )
+    needs = starter_gap_needs(counts, _FLOOR)
+    assert "WR" in needs
+    assert "RB" not in needs
+
+
+def test_needs_are_ordered_by_gap_size():
+    # WR gap of 2 (floor 2, zero starters) outranks the QB gap of 1.
+    counts = roster_position_counts([("RB", 500), ("RB", 450)], _THR)
+    needs = starter_gap_needs(counts, _FLOOR)
+    assert needs[0] == "WR" and needs.index("WR") < needs.index("QB")
+
+
+def test_surplus_needs_a_startable_beyond_the_slots():
+    # Two startable RBs == the floor (not surplus); a third makes it tradeable.
+    two = roster_position_counts([("RB", 500), ("RB", 450)], _THR)
+    assert "RB" not in startable_surplus(two, _FLOOR)
+    three = roster_position_counts([("RB", 500), ("RB", 450), ("RB", 400)], _THR)
+    assert "RB" in startable_surplus(three, _FLOOR)
+
+
+def test_ceiling_need_is_a_filled_slot_without_an_elite():
+    # WR slot filled (two startable) but the best is only a starter -> ceiling gap;
+    # an elite best is no gap; an unfilled slot is a hole, not a ceiling need.
+    counts = roster_position_counts([("WR", 500), ("WR", 450), ("RB", 900)], _THR)
+    assert "WR" in ceiling_needs(counts, {"WR": "starter", "RB": "elite"}, _FLOOR)
+    assert "WR" not in ceiling_needs(counts, {"WR": "elite", "RB": "elite"}, _FLOOR)
+    thin = roster_position_counts([("WR", 500)], _THR)  # only 1 startable, floor 2
+    assert "WR" not in ceiling_needs(thin, {"WR": "starter"}, _FLOOR)

@@ -724,9 +724,10 @@ def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
             "roster_id": viewer_roster_id,
             "needs": suggestions_ctx.get("viewer_needs"),
             "surplus": suggestions_ctx.get("viewer_surplus"),
+            "ceiling_needs": suggestions_ctx.get("viewer_ceiling_needs"),
             "direction": suggestions_ctx.get("viewer_direction"),
         },
-        "v9",
+        "v10",
     )
     cached = load_cached_ai_text(cache_key)
     if cached:
