@@ -378,6 +378,23 @@ def test_repeat_request_is_served_from_cache(monkeypatch):
     assert calls["n"] == 2, "empty results must not be cached"
 
 
+def test_invalidate_league_caches_clears_that_league_only():
+    ae._SIM_CACHE.clear(); ae._RESULT_CACHE.clear()
+    import time as _t
+    ae._SIM_CACHE["sleeper:L1:2026"] = {"sim_state": None, "base_odds": {}, "ts": _t.time()}
+    ae._SIM_CACHE["sleeper:L2:2026"] = {"sim_state": None, "base_odds": {}, "ts": _t.time()}
+    ae._RESULT_CACHE[("sleeper", "L1", 2026, "1", "consolidate", "1qb", 10, ())] = {"result": {"suggestions": [1]}, "ts": _t.time()}
+    ae._RESULT_CACHE[("sleeper", "L2", 2026, "1", "consolidate", "1qb", 10, ())] = {"result": {"suggestions": [1]}, "ts": _t.time()}
+
+    ae.invalidate_league_caches("sleeper", "L1", 2026)
+
+    assert "sleeper:L1:2026" not in ae._SIM_CACHE
+    assert "sleeper:L2:2026" in ae._SIM_CACHE, "other leagues must be untouched"
+    assert not any(k[1] == "L1" for k in ae._RESULT_CACHE)
+    assert any(k[1] == "L2" for k in ae._RESULT_CACHE), "other leagues must be untouched"
+    ae._SIM_CACHE.clear(); ae._RESULT_CACHE.clear()
+
+
 def test_distribute_can_return_future_capital():
     import time as _t
     ae._SIM_CACHE["sleeper:dist:2026"] = {"sim_state": None, "base_odds": {}, "ts": _t.time()}

@@ -47,6 +47,22 @@ def _sim_lock_for(cache_key: str) -> threading.Lock:
             lk = _SIM_LOCKS[cache_key] = threading.Lock()
         return lk
 
+
+def invalidate_league_caches(platform: str, league_id: str, season) -> None:
+    """Drop the memoized sim state and finished results for one league so the
+    next request rebuilds from source. Called when a league is force-refreshed
+    (e.g. after a roster move) - otherwise the suggestions could stay stale for
+    the length of the cache TTLs."""
+    _SIM_CACHE.pop(f"{platform}:{league_id}:{season}", None)
+    try:
+        _season = int(season)
+    except (TypeError, ValueError):
+        _season = season
+    stale = [k for k in _RESULT_CACHE
+             if len(k) >= 3 and k[0] == platform and k[1] == str(league_id) and k[2] == _season]
+    for k in stale:
+        _RESULT_CACHE.pop(k, None)
+
 # ── Constants ────────────────────────────────────────────────────────────────
 
 PEAK_AGE: Dict[str, int] = {"QB": 29, "RB": 26, "WR": 27, "TE": 27}
@@ -2272,6 +2288,41 @@ def _get_archetype_suggestions_impl(
         _swap_cache[key] = res
         return res
 
+    # ── Parallel warm of the Monte Carlo swap cache ───────────────────────────
+    # The dominant first-load cost is the per-target and per-package 10k sims.
+    # They're independent and simulate_with_swap uses a local RNG (thread-safe),
+    # and the vectorized numpy MC releases the GIL - so build every target's
+    # packages once, up front, collect the exact rosters the assembly loop will
+    # simulate, and run them concurrently instead of one after another. Repeat
+    # loads are already instant via the result cache; this speeds the first one.
+    pkgs_by_target: Dict[str, List[List[Dict]]] = {}
+    for t in top:
+        _pm = owner_meta.get(str(t["owner_roster_id"]), {})
+        pkgs_by_target[t["player_id"]] = _select_packages(
+            send_candidates, t["value"], archetype, max_pkgs=3,
+            sorted_vals=sorted_vals, league_size=num_teams,
+            need_positions=_pm.get("need"), stacked_positions=_pm.get("stacked"),
+            tier_thresholds=tier_thresholds,
+        )
+
+    if sim_state is not None and _vid_int is not None:
+        _needed: Dict[frozenset, list] = {}
+        for t in top:
+            _r = _impact_roster(t["player_id"], t["position"])
+            _needed.setdefault(frozenset(str(p) for p in _r), _r)
+            for _pkg in (pkgs_by_target.get(t["player_id"]) or []):
+                _pp = {str(a.get("player_id", "")) for a in _pkg
+                       if a.get("player_id") and not a.get("is_pick")}
+                _nr = [p for p in viewer_players if str(p) not in _pp] + [t["player_id"]]
+                _needed.setdefault(frozenset(str(p) for p in _nr), _nr)
+        if len(_needed) > 1:
+            try:
+                from concurrent.futures import ThreadPoolExecutor
+                with ThreadPoolExecutor(max_workers=min(8, len(_needed))) as _pool:
+                    list(_pool.map(_cached_swap, list(_needed.values())))
+            except Exception:
+                log.debug("[archetype] parallel swap warm skipped", exc_info=True)
+
     for t in top:
         pid = t["player_id"]
         pos = t["position"]
@@ -2306,12 +2357,7 @@ def _get_archetype_suggestions_impl(
         _pmeta    = owner_meta.get(str(t["owner_roster_id"]), {})
         _p_need   = _pmeta.get("need")
         _p_stacked = _pmeta.get("stacked")
-        pkgs = _select_packages(
-            send_candidates, t["value"], archetype, max_pkgs=3,
-            sorted_vals=sorted_vals, league_size=num_teams,
-            need_positions=_p_need, stacked_positions=_p_stacked,
-            tier_thresholds=tier_thresholds,
-        )
+        pkgs = pkgs_by_target.get(pid) or []  # built (once) in the parallel-warm pass above
         # An acquire suggestion with nothing to offer is not a suggestion. If no
         # value/tier-valid send package can be assembled for this target, drop it
         # rather than render a card with an empty "you give" side.
