@@ -21853,9 +21853,43 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 .br-gotw-kicker { font-size: 10.5px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
 .br-gotw-title {
   display: inline-flex; align-items: center; gap: 9px;
-  font-size: 22px; font-weight: 900; letter-spacing: -.01em; line-height: 1.02; color: var(--accent);
+  font-size: 22px; font-weight: 900; letter-spacing: -.01em; line-height: 1.02;
 }
-.br-gotw-title i { font-size: 18px; }
+.br-gotw-title i { font-size: 18px; color: var(--accent); }
+.br-gotw-title span {
+  color: var(--accent);
+  background: linear-gradient(100deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 50%, #ffffff) 46%, var(--accent) 80%);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+
+/* Matchup: framed team crests charging at a central VS medallion. */
+.br-gotw-matchup { display: flex; align-items: center; gap: 12px; margin: 8px 0 14px; }
+.br-gotw-side { flex: 1; min-width: 0; display: flex; align-items: center; gap: 11px; }
+.br-gotw-side-right { flex-direction: row-reverse; }
+.br-gotw-side-right .br-gotw-side-txt { text-align: right; }
+.br-gotw-side-txt { flex: 1; min-width: 0; }
+.br-gotw-av {
+  width: 46px; height: 46px; border-radius: 50%; object-fit: cover; flex: 0 0 auto;
+  border: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 3px 12px color-mix(in srgb, var(--accent) 28%, transparent);
+  background: var(--card);
+}
+.br-gotw-av-ph {
+  display: grid; place-items: center; font-weight: 900; font-size: 19px; color: #fff;
+  background: linear-gradient(140deg, var(--accent), color-mix(in srgb, var(--accent) 45%, #000));
+}
+.br-gotw-name {
+  font-weight: 800; font-size: 18px; line-height: 1.15;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.br-gotw-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.br-gotw-vs {
+  flex: 0 0 auto; width: 40px; height: 40px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 12px; font-weight: 900; letter-spacing: .03em;
+  color: var(--accent); background: var(--card);
+  border: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  box-shadow: 0 3px 14px color-mix(in srgb, var(--accent) 25%, transparent);
+}
 .br-gotw-flash {
   position: absolute; inset: 0; pointer-events: none; opacity: 0; z-index: 2;
   background: radial-gradient(circle at 50% 32%, #fff, transparent 46%);

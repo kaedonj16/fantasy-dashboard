@@ -72,10 +72,15 @@ def _build_team_storylines(
         results = ["W" if w else "L" for w in grp["win"].tolist()]
         # Snapshot through selected_week
         owner = str(grp["owner"].iloc[0])
+        _av = ""
+        if "avatar" in grp.columns:
+            _av0 = grp["avatar"].iloc[0]
+            _av = str(_av0) if pd.notna(_av0) else ""
         teams[str(rid)] = {
             "rid": str(rid),
             "team": team_by_rid.get(str(rid), owner),
             "owner": owner,
+            "avatar": _av,
             "results": results,
             "weeks": [int(w) for w in grp["week"].tolist()],
             "pts_by_week": [float(p) for p in grp["points"].tolist()],
@@ -142,6 +147,7 @@ def _build_team_storylines(
             "rid": rid,
             "team": t["team"],
             "owner": t["owner"],
+            "avatar": t.get("avatar", ""),
             "this_week_pts": wr.get("pts"),
             "opp_pts": wr.get("opp_pts"),
             "won_this_week": wr.get("won"),
@@ -535,6 +541,7 @@ def _build_next_week_preview(
 
         games.append({
             "team_a": sa["team"], "team_b": sb["team"],
+            "avatar_a": sa.get("avatar", ""), "avatar_b": sb.get("avatar", ""),
             "record_a": sa["record_after"], "record_b": sb["record_after"],
             "rank_a": rank_a, "rank_b": rank_b,
             "streak_a": sa.get("streak"), "streak_b": sb.get("streak"),
@@ -821,26 +828,36 @@ def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
         "<div class='br-gotw-head'>"
         f"<span class='br-gotw-kicker'>{html.escape(kicker)}</span>"
         f"<span class='br-gotw-title'><i class='fa-solid fa-fire' aria-hidden='true'></i>"
-        f"{html.escape(str(title_lead))}</span>"
+        f"<span>{html.escape(str(title_lead))}</span></span>"
         "</div>"
     )
 
-    def _side(team: str, record: str, rank, align: str, cls: str) -> str:
+    def _side(team: str, record: str, rank, avatar, align: str, cls: str) -> str:
         rank_str = f"#{rank}" if rank else ""
         meta = " · ".join(x for x in [record, rank_str] if x)
-        return (
-            f"<div class='{cls}' style='flex:1;min-width:0;text-align:{align};'>"
-            f"<div style='font-weight:800;font-size:18px;line-height:1.2;overflow:hidden;"
-            f"text-overflow:ellipsis;white-space:nowrap;'>{html.escape(str(team))}</div>"
-            f"<div style='font-size:12px;color:var(--muted);margin-top:2px;'>{html.escape(meta)}</div>"
-            f"</div>"
+        if avatar:
+            av = (
+                f"<img class='br-gotw-av' src='{html.escape(str(avatar), quote=True)}' alt='' "
+                "loading='lazy' decoding='async' onerror=\"this.style.display='none'\">"
+            )
+        else:
+            # Initial-crest fallback so the layout stays balanced without a picture.
+            initial = html.escape((str(team).strip()[:1] or "?").upper())
+            av = f"<div class='br-gotw-av br-gotw-av-ph'>{initial}</div>"
+        txt = (
+            "<div class='br-gotw-side-txt'>"
+            f"<div class='br-gotw-name'>{html.escape(str(team))}</div>"
+            f"<div class='br-gotw-meta'>{html.escape(meta)}</div>"
+            "</div>"
         )
+        inner = f"{av}{txt}" if align == "left" else f"{txt}{av}"
+        return f"<div class='{cls} br-gotw-side br-gotw-side-{align}'>{inner}</div>"
 
     matchup_row = (
-        "<div style='display:flex;align-items:center;gap:10px;margin:4px 0 10px 0;'>"
-        + _side(g["team_a"], g["record_a"], g["rank_a"], "left", "br-gotw-l")
-        + "<div class='br-gotw-vs' style='font-size:11px;font-weight:800;color:var(--muted);flex:0 0 auto;'>VS</div>"
-        + _side(g["team_b"], g["record_b"], g["rank_b"], "right", "br-gotw-r")
+        "<div class='br-gotw-matchup'>"
+        + _side(g["team_a"], g["record_a"], g["rank_a"], g.get("avatar_a"), "left", "br-gotw-l")
+        + "<div class='br-gotw-vs'>VS</div>"
+        + _side(g["team_b"], g["record_b"], g["rank_b"], g.get("avatar_b"), "right", "br-gotw-r")
         + "</div>"
     )
 
