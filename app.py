@@ -9556,6 +9556,14 @@ def api_refresh_league():
                 os.remove(path)
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
+    # Drop the archetype engine's memoized sim state + suggestion results for this
+    # league, so strategy suggestions reflect the roster immediately after a refresh
+    # instead of serving a cached result for the length of its TTL.
+    try:
+        from dashboard_services.archetype_engine import invalidate_league_caches
+        invalidate_league_caches(platform, league_id, season)
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
     return jsonify({"ok": True})
 
 
