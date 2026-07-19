@@ -1129,23 +1129,25 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
                            f"{_meta} · {mvp.get('ppg', 0):.1f} per game, the season's top fantasy producer"))
 
     by_pos = (leaders or {}).get("by_pos") or {}
-    pos_rows = [(p, by_pos[p]["name"], by_pos[p]["pts"])
+    pos_rows = [(p, by_pos[p]["name"], f"{by_pos[p]['pts']:.1f}")
                 for p in ("QB", "RB", "WR", "TE") if by_pos.get(p)]
     if len(pos_rows) >= 3:
         slides.append({"kind": "posleaders", "eyebrow": "TOP AT EACH POSITION",
                        "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
                        "sub": "The points leader at every spot", "rows": pos_rows})
 
+    # Season records: biggest single week + hottest streak, grouped.
+    _rec_rows = []
     if summary.get("highest_week_value"):
-        slides.append(_num("highweek", "BIGGEST SINGLE WEEK",
-                           summary["highest_week_value"], 1, "",
-                           summary.get("highest_week_team", "-"),
-                           "The highest one-week score anyone put up all season"))
-
-    owner, streak_len = _wrapped_longest_win_streak(df_weekly, league)
-    if streak_len >= 3:
-        slides.append(_num("streak", "HOTTEST STREAK", float(streak_len), 0, " straight",
-                           owner, "The longest win streak of the season"))
+        _rec_rows.append(("BIG WEEK", summary.get("highest_week_team", "-"),
+                          f"{summary['highest_week_value']:.1f}"))
+    _streak_owner, _streak_len = _wrapped_longest_win_streak(df_weekly, league)
+    if _streak_len >= 3:
+        _rec_rows.append(("HOT STREAK", _streak_owner, f"{_streak_len} W"))
+    if _rec_rows:
+        slides.append({"kind": "records", "eyebrow": "SEASON RECORDS", "num": False,
+                       "big": "", "dp": 0, "suffix": "", "label": "",
+                       "sub": "The high-water marks of the year", "rows": _rec_rows})
 
     if summary.get("biggest_blowout_margin"):
         _bscore = summary.get("biggest_blowout_scores", "")
@@ -1163,30 +1165,33 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
                            f"{_cscore} · decided by the slimmest margin all season" if _cscore
                            else "Decided by the slimmest margin all season"))
 
-    # Luck index (all-play luck_delta): actual wins vs what the scoring earned.
+    # Luck index (all-play luck_delta): luckiest + unluckiest, grouped.
     _lucky, _unlucky = _wrapped_luck(history_ctx)
+    _luck_rows = []
     if _lucky and _lucky[1] >= 1.0:
-        slides.append(_txt("luckiest", "LUCKIEST TEAM", _lucky[0], "Won all the right weeks",
-                           f"{_lucky[1]:+.1f} wins above what its scoring earned. The schedule was kind."))
+        _luck_rows.append(("LUCKIEST", _lucky[0], f"{_lucky[1]:+.1f} W"))
     if _unlucky and _unlucky[1] <= -1.0:
-        slides.append(_txt("unluckiest", "UNLUCKIEST TEAM", _unlucky[0], "Deserved better",
-                           f"{_unlucky[1]:.1f} wins below what its scoring earned. The rough-luck team."))
+        _luck_rows.append(("UNLUCKIEST", _unlucky[0], f"{_unlucky[1]:.1f} W"))
+    if _luck_rows:
+        slides.append({"kind": "luck", "eyebrow": "THE LUCK INDEX", "num": False,
+                       "big": "", "dp": 0, "suffix": "", "label": "",
+                       "sub": "Wins above or below what the scoring earned", "rows": _luck_rows})
 
-    # ── Activity: total trades, most active trader, waiver-wire leader ─────────
+    # League activity: total trades, most active trader, waiver-wire leader.
     act = _wrapped_activity(history_ctx)
+    _act_rows = []
     if act.get("total_trades"):
-        slides.append(_num("trades", "TOTAL TRADES", float(act["total_trades"]), 0, "",
-                           "deals went down", "The league stayed busy on the phones all season"))
+        _act_rows.append(("TRADES", f"{act['total_trades']} deals", ""))
     _tt = act.get("top_trader")
     if _tt and _tt.get("n"):
-        _total = act.get("total_trades", 0)
-        _of = f" of the season's {_total}" if _total else ""
-        slides.append(_txt("toptrader", "MOST ACTIVE TRADER", _tt["owner"], "Always wheeling and dealing",
-                           f"In on {_tt['n']}{_of} trades this year"))
+        _act_rows.append(("TOP TRADER", _tt["owner"], f"{_tt['n']}"))
     _tw = act.get("top_waiver")
     if _tw and _tw.get("n"):
-        slides.append(_txt("waiver", "WAIVER WIRE WARRIOR", _tw["owner"], "Worked the wire",
-                           f"{_tw['n']} pickups, always hunting for an edge"))
+        _act_rows.append(("WAIVERS", _tw["owner"], f"{_tw['n']}"))
+    if _act_rows:
+        slides.append({"kind": "activity", "eyebrow": "LEAGUE ACTIVITY", "num": False,
+                       "big": "", "dp": 0, "suffix": "", "label": "",
+                       "sub": "Who worked the phones and the wire", "rows": _act_rows})
 
     if summary.get("runner_up") and summary.get("runner_up") not in ("-", None):
         slides.append(_txt("runnerup", "RUNNER-UP", summary["runner_up"], "So close",
@@ -1210,11 +1215,14 @@ def _render_season_wrapped(slides: list, league_name: str, season) -> tuple:
     slide_html = []
     for s in slides:
         if s.get("rows"):
-            # List slide (e.g. position leaders): a compact ranked list.
+            # List slide (position leaders, records, luck, activity): a compact
+            # keyed list. Value may be a display string or empty.
             rows = "".join(
-                f"<div class='wrapped-li'><span class='wrapped-li-k'>{_esc(str(k))}</span>"
+                "<div class='wrapped-li'>"
+                f"<span class='wrapped-li-k'>{_esc(str(k))}</span>"
                 f"<span class='wrapped-li-n'>{_esc(str(n))}</span>"
-                f"<span class='wrapped-li-v'>{float(v):.1f}</span></div>"
+                + (f"<span class='wrapped-li-v'>{_esc(str(v))}</span>" if v not in (None, "") else "")
+                + "</div>"
                 for k, n, v in s["rows"]
             )
             big = f"<div class='wrapped-list'>{rows}</div>"
