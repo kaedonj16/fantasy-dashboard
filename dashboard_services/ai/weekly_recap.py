@@ -712,7 +712,7 @@ def _generate_ai_storyline(payload: dict) -> dict:
             },
             "looking_ahead": {
                 "type": "string",
-                "description": "2-3 sentences on next week's game of the week (provided in next_week_preview). OPEN by making clear why it's the game of the week (the 'why' field). Empty string if no preview data is given.",
+                "description": "2-3 sentences on next week's game of the week (provided in next_week_preview), in the exact same group-chat voice as the recap paragraphs. Empty string if no preview data is given.",
             },
         },
         "required": ["headline", "paragraphs", "looking_ahead"],
@@ -763,7 +763,7 @@ Use the h2h and season_weeks data where it adds something real to the story - re
 Next week's game of the week (already picked for you). The "why" field is the single biggest reason it was chosen (playoff stakes, a projected coin-flip, two top teams, a rivalry rematch, a missing star, or momentum); "reasons" lists the supporting angles; out_a/out_b/maybe_a/maybe_b/bye_a/bye_b are missing, questionable, and on-bye starters with their projections:
 {json.dumps(payload.get('next_week_preview'))}
 
-For "looking_ahead": if next_week_preview is null, return an empty string. Otherwise write 2-3 sentences on that game_of_the_week and OPEN by making the "why" explicit - if it's a playoff bubble decider, say that's why it's the game of the week; if it projects as a coin-flip, or a star is out, lead with that. Then support it with the records, ranks, streaks, h2h, or the specific missing starter (name + status). Same voice as the recap. Do NOT restate every number. Only mention the other games if it's natural.
+For "looking_ahead": if next_week_preview is null, return an empty string. Otherwise write 2-3 sentences on that game_of_the_week in the SAME low-key group-chat voice as the recap paragraphs - like you're texting the group about the game you're most looking forward to next week. A separate badge already spells out the official reason, so do NOT write an explainer opener like "It's the game of the week because..." or "This is the game of the week..." - just talk about the matchup the way a friend would. The reason it matters (the "why" - playoff stakes, a coin-flip, two top teams, a rivalry rematch, a missing star, momentum) should still come through, but woven in naturally, not announced. Lead with whatever's actually interesting. Ground it in the records, ranks, streaks, h2h, or the specific missing starter (name + status), but do NOT restate every number. Only mention the other games if it's natural.
 """.strip()
 
     resp = client.responses.create(
@@ -824,16 +824,16 @@ def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
         badge_text = f"Quietest slate of the year, but: {why}"
         badge_bg = "var(--muted)"
     why_badge = (
-        f"<div style='display:inline-flex;align-items:center;gap:6px;background:{badge_bg};"
+        f"<div class='br-gotw-why' style='display:inline-flex;align-items:center;gap:6px;background:{badge_bg};"
         f"color:#fff;font-size:11px;font-weight:700;letter-spacing:.02em;padding:4px 11px;"
         f"border-radius:999px;margin-bottom:10px;'>{html.escape(str(badge_text))}</div>"
     )
 
-    def _side(team: str, record: str, rank, align: str) -> str:
+    def _side(team: str, record: str, rank, align: str, cls: str) -> str:
         rank_str = f"#{rank}" if rank else ""
         meta = " · ".join(x for x in [record, rank_str] if x)
         return (
-            f"<div style='flex:1;min-width:0;text-align:{align};'>"
+            f"<div class='{cls}' style='flex:1;min-width:0;text-align:{align};'>"
             f"<div style='font-weight:800;font-size:15px;line-height:1.2;overflow:hidden;"
             f"text-overflow:ellipsis;white-space:nowrap;'>{html.escape(str(team))}</div>"
             f"<div style='font-size:11px;color:var(--muted);margin-top:2px;'>{html.escape(meta)}</div>"
@@ -842,9 +842,9 @@ def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
 
     matchup_row = (
         "<div style='display:flex;align-items:center;gap:10px;margin:4px 0 10px 0;'>"
-        + _side(g["team_a"], g["record_a"], g["rank_a"], "left")
-        + "<div style='font-size:11px;font-weight:800;color:var(--muted);flex:0 0 auto;'>VS</div>"
-        + _side(g["team_b"], g["record_b"], g["rank_b"], "right")
+        + _side(g["team_a"], g["record_a"], g["rank_a"], "left", "br-gotw-l")
+        + "<div class='br-gotw-vs' style='font-size:11px;font-weight:800;color:var(--muted);flex:0 0 auto;'>VS</div>"
+        + _side(g["team_b"], g["record_b"], g["rank_b"], "right", "br-gotw-r")
         + "</div>"
     )
 
@@ -917,7 +917,8 @@ def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
         )
 
     return f"""
-<div class="card" style="padding:18px 20px;margin-bottom:20px;">
+<div class="card br-gotw" data-br-moment="gotw" style="padding:18px 20px;margin-bottom:20px;">
+  <div class="br-gotw-flash" aria-hidden="true"></div>
   <div style="font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--accent);margin-bottom:6px;">{eyebrow}</div>
   {why_badge}
   {matchup_row}
@@ -948,7 +949,7 @@ def get_weekly_ai_recap(
     if df_weekly is None or df_weekly.empty:
         return empty
 
-    cache_key = f"weekly_recap_{league_id}_{season}_w{selected_week}_v9_chat"
+    cache_key = f"weekly_recap_{league_id}_{season}_w{selected_week}_v10_chat"
     cached = _load_recap_no_ttl(cache_key)
     if cached is not None:
         recap_html, _, next_html = cached.partition(_NEXT_WEEK_SPLIT)

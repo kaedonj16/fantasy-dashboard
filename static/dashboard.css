@@ -21808,3 +21808,97 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   }
   .br-lift, .br-flip, .br-slide-ind { transition: none !important; }
 }
+
+/* ══ Big-moment animations ═════════════════════════════════════════════════════
+   Declarative reveals wired by brPlayMoment() in app.js: an element with
+   data-br-moment gets .br-mo-play added when it first scrolls into view. Base
+   (unplayed) state is always the resting, visible state, so no-JS and
+   reduced-motion users see the final result; the keyframes animate FROM the
+   hidden state (fill-mode both) only once played. */
+@keyframes brMoPop { from { opacity: 0; transform: scale(.7); } to { opacity: 1; transform: none; } }
+@keyframes brMoRise { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+
+/* Game-of-the-week clash: the two teams charge in, collide with a flash, the
+   why badge pops. */
+.br-gotw { position: relative; overflow: hidden; }
+.br-gotw-flash {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0; z-index: 2;
+  background: radial-gradient(circle at 50% 32%, #fff, transparent 46%);
+}
+.br-mo-play.br-gotw .br-gotw-l { animation: brGotwL .5s cubic-bezier(.2,.9,.3,1.15) .08s both; }
+.br-mo-play.br-gotw .br-gotw-r { animation: brGotwR .5s cubic-bezier(.2,.9,.3,1.15) .08s both; }
+.br-mo-play.br-gotw .br-gotw-vs { animation: brMoPop .32s ease .5s both; }
+.br-mo-play.br-gotw .br-gotw-why { animation: brMoPop .45s cubic-bezier(.2,1.5,.4,1) .56s both; }
+.br-mo-play.br-gotw .br-gotw-flash { animation: brGotwFlash .55s ease .5s; }
+@keyframes brGotwL { from { transform: translateX(-26px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes brGotwR { from { transform: translateX(26px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes brGotwFlash { 0% { opacity: 0; } 28% { opacity: .55; } 100% { opacity: 0; } }
+
+/* High-score explosion: gold rays sweep out behind the card, the card gives a
+   single glow pulse, and the point total counts up and pops. */
+.br-hs { position: relative; overflow: hidden; }
+.br-hs::before {
+  content: ""; position: absolute; top: 50%; left: 50%; width: 220px; height: 220px;
+  margin: -110px 0 0 -110px; border-radius: 50%; pointer-events: none; z-index: 0; opacity: 0;
+  background: conic-gradient(from 0deg, transparent 0 8deg, rgba(245,196,81,.28) 8deg 12deg, transparent 12deg 22deg);
+}
+.br-hs > * { position: relative; z-index: 1; }
+.br-mo-play.br-hs { animation: brHsGlow 1s ease .05s both; }
+.br-mo-play.br-hs::before { animation: brHsRays 1.1s ease-out .05s forwards; }
+.br-mo-play.br-hs .whl-pts { display: inline-block; animation: brMoPop .55s cubic-bezier(.2,1.5,.4,1) .15s both; }
+@keyframes brHsRays {
+  0% { opacity: 0; transform: scale(.4) rotate(0); }
+  30% { opacity: .9; }
+  100% { opacity: 0; transform: scale(1.4) rotate(40deg); }
+}
+@keyframes brHsGlow {
+  0% { box-shadow: 0 0 0 0 rgba(245,196,81,0); }
+  35% { box-shadow: 0 0 22px 2px rgba(245,196,81,.5); }
+  100% { box-shadow: 0 0 0 0 rgba(245,196,81,0); }
+}
+
+/* Champion crowning: the trophy label pops, the team name rises into place, and
+   a warm gold glow sweeps the card (gold confetti fires from brPlayMoment). */
+.br-champ { position: relative; }
+.br-mo-play.br-champ { animation: brChampGlow 1.2s ease .1s both; }
+.br-mo-play.br-champ .history-card-label { animation: brMoPop .5s cubic-bezier(.2,1.5,.4,1) .15s both; }
+.br-mo-play.br-champ .history-card-value { animation: brChampRise .6s cubic-bezier(.2,.8,.3,1) .4s both; }
+.br-mo-play.br-champ .history-card-sub { animation: brMoRise .5s ease .6s both; }
+@keyframes brChampRise { from { opacity: 0; transform: translateY(22px) scale(.94); } to { opacity: 1; transform: none; } }
+@keyframes brChampGlow {
+  0% { box-shadow: 0 0 0 0 rgba(245,196,81,0); }
+  40% { box-shadow: 0 0 30px 4px rgba(245,196,81,.42); }
+  100% { box-shadow: 0 0 0 0 rgba(245,196,81,0); }
+}
+
+/* Playoff clinch: a clinched team's CLINCHED pill stamps in and a green glow
+   sweeps its team cell the first time the standings row scrolls into view. */
+.br-mo-play[data-br-moment="clinch"] .pp-tag {
+  display: inline-block;
+  animation: brClinchStamp .55s cubic-bezier(.2,1.6,.4,1) .1s both;
+}
+.br-mo-play[data-br-moment="clinch"] .pp-team-cell { animation: brClinchGlow 1.1s ease .1s both; }
+@keyframes brClinchStamp {
+  0% { opacity: 0; transform: rotate(-10deg) scale(.4); }
+  60% { transform: rotate(-3deg) scale(1.12); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes brClinchGlow {
+  0% { box-shadow: inset 0 0 0 0 rgba(34,197,94,0); }
+  35% { box-shadow: inset 3px 0 0 0 rgba(34,197,94,.9), inset 0 0 26px rgba(34,197,94,.16); }
+  100% { box-shadow: inset 0 0 0 0 rgba(34,197,94,0); }
+}
+
+/* Breakout ignite: an elite candidate's card catches fire — the border warms to
+   ember, a flame glow pulses once, and the score badge pops in. */
+.br-brk { position: relative; }
+.br-mo-play.br-brk { animation: brBrkIgnite 1.1s ease .05s both; }
+.br-mo-play.br-brk .breakout-score-badge {
+  display: inline-block;
+  animation: brMoPop .5s cubic-bezier(.2,1.6,.4,1) .3s both;
+}
+@keyframes brBrkIgnite {
+  0% { border-color: var(--border-color); box-shadow: 0 0 0 0 rgba(249,115,22,0); }
+  45% { border-color: #f97316; box-shadow: 0 0 0 1px rgba(249,115,22,.7), 0 0 26px rgba(249,115,22,.4); }
+  100% { border-color: var(--border-color); box-shadow: 0 0 0 0 rgba(249,115,22,0); }
+}
