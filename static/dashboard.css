@@ -21156,6 +21156,27 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   animation: rz-event-in .36s cubic-bezier(.22,.68,0,1.2) both,
              rz-td-flash 1.6s .1s ease forwards;
 }
+/* The viewer's own touchdown gets a bigger green-and-gold burst (plus confetti
+   fired from redzone.js). */
+.rz-td-new.rz-td-mine {
+  animation: rz-event-in .36s cubic-bezier(.22,.68,0,1.2) both,
+             rz-td-mine-flash 1.9s .1s ease forwards;
+}
+@keyframes rz-td-mine-flash {
+  0%   { box-shadow: 0 0 0 0 rgba(34,197,94,.8), 0 0 24px rgba(245,158,11,.55); }
+  30%  { box-shadow: 0 0 0 10px rgba(34,197,94,.06), 0 0 44px rgba(245,158,11,.35); }
+  100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+}
+/* Explosive non-TD play (4+ fantasy points on one play): a quick blue pulse. */
+.rz-bigplay {
+  animation: rz-event-in .36s cubic-bezier(.22,.68,0,1.2) both,
+             rz-bigplay-pulse 1.2s .05s ease forwards;
+}
+@keyframes rz-bigplay-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(56,189,248,.55); }
+  35%  { box-shadow: 0 0 0 6px rgba(56,189,248,.04), 0 0 22px rgba(56,189,248,.22); }
+  100% { box-shadow: 0 0 0 0 rgba(56,189,248,0); }
+}
 
 /* ── My Team quick toggle ─────────────── */
 .rz-myteam-btn {
