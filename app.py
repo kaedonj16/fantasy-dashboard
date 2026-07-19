@@ -7165,6 +7165,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
           if (typeof window.initPageRoot === 'function') {{
             window.initPageRoot(matchupsContainer);
           }}
+          if (window.brInitMoments) window.brInitMoments(matchupsContainer);
         }}
       }})
       .catch(function(err) {{
@@ -7232,6 +7233,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
           matchupsContainer.innerHTML = data.matchups_html;
           if (typeof window.resetMatchupCarousels === 'function') window.resetMatchupCarousels(matchupsContainer);
           if (typeof window.initPageRoot === 'function') window.initPageRoot(matchupsContainer);
+          if (window.brInitMoments) window.brInitMoments(matchupsContainer);
         }};
         // Flash any matchup score that moved since the last refresh (green up /
         // red down); falls back to a plain swap under reduced motion.
@@ -9210,7 +9212,7 @@ def build_teams_body(ctx: dict) -> str:
 
         _is_viewer = str(rid) == str(viewer_roster_id or "")
         card_html = (
-            f"<div class='card team-strength-card {_window_cls}' data-sort-grade='{_grade_num}' data-sort-posindex='{_pos_idx:.4f}' data-sort-archetype='{_archetype_num}' data-roster-id='{rid}' data-original-index='{_card_idx}'" + (" data-viewer='1'" if _is_viewer else "") + ">"
+            f"<div class='card team-strength-card {_window_cls}' data-br-moment='draftgrade' data-sort-grade='{_grade_num}' data-sort-posindex='{_pos_idx:.4f}' data-sort-archetype='{_archetype_num}' data-roster-id='{rid}' data-original-index='{_card_idx}'" + (" data-viewer='1'" if _is_viewer else "") + ">"
             "  <div class='card-header-row'>"
             f"    <div style='display:flex;align-items:center;gap:8px;min-width:0;flex:1;'>{img_html}<h2 class='team-clickable' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'>{name}</h2>"
             f"<div class='mini-label' style='flex-shrink:0;'><span class='grade-window-label'>{_win_window}</span>"
