@@ -1224,6 +1224,15 @@ def render_matchup_slide(
     r_score, r_live = _score_html(m['right'], proj)
     proj_class = " has-proj" if (l_live or r_live) else ""
 
+    # Matchup-win moment: on a completed (non-projection) week, the winning side's
+    # score pops with a green glow and its team column lifts when the slide first
+    # scrolls into view. Skipped for live/projection weeks and for ties.
+    win_attr = ""
+    if not proj:
+        _lp, _rp = m['left'].get('pts_total'), m['right'].get('pts_total')
+        if isinstance(_lp, (int, float)) and isinstance(_rp, (int, float)) and _lp != _rp:
+            win_attr = f' data-br-moment="matchupwin" data-mo-win="{"left" if _lp > _rp else "right"}"'
+
     h2h = m.get("h2h") or {}
     h2h_l = h2h.get("left_wins", 0)
     h2h_r = h2h.get("right_wins", 0)
@@ -1235,7 +1244,7 @@ def render_matchup_slide(
         )
 
     return f"""
-    <div class="m-slide">
+    <div class="m-slide"{win_attr}>
       <div class="m-head">
         <div class="m-head-row">
           {_team_col(m['left'], 'left')}
