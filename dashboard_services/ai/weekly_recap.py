@@ -804,7 +804,7 @@ def _render_recap_html(result: dict) -> str:
 <div class="card" style="padding:18px 20px;margin-bottom:20px;">
   <div style="font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--accent);margin-bottom:6px;">FROM THE GROUP CHAT</div>
   <div style="font-size:18px;font-weight:800;margin-bottom:12px;line-height:1.25;">{headline}</div>
-  <div style="font-size:13px;line-height:1.55;color:var(--text);">
+  <div style="font-size:13px;line-height:1.55;color:var(--text);" data-br-reveal-text>
     {paragraphs_html}
   </div>
 </div>

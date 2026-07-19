@@ -22091,6 +22091,12 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 }
 @keyframes brRkEnter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
+/* AI text reveal (brRevealText): each block sharpens up as the report "writes". */
+@keyframes brTextIn {
+  from { opacity: 0; transform: translateY(9px); filter: blur(5px); }
+  to { opacity: 1; transform: none; filter: blur(0); }
+}
+
 /* Playoff bracket build: the round columns slide in left-to-right, so the
    bracket visibly fills round by round; the final (championship) column lands
    with a gold glow. */

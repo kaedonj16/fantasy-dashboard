@@ -779,6 +779,26 @@ function emptyState(container, message, iconClass) {
     });
   };
 
+  // Reveal AI-generated prose as if it's being composed: the block elements
+  // (paragraphs, list items, headings) fade and sharpen up in a quick cascade.
+  // Called after the Front Office Report, Season Recap, and Trade Analyst text
+  // lands, and on the weekly recap when it scrolls into view.
+  window.brRevealText = function (container, opts) {
+    if (!container) return;
+    opts = opts || {};
+    if (reduce) return;                     // leave the text fully shown
+    var sel = opts.selector || 'p, li, h1, h2, h3, h4, blockquote';
+    var blocks = Array.prototype.slice.call(container.querySelectorAll(sel));
+    if (!blocks.length) blocks = [container];
+    var stagger = opts.stagger || 85;
+    // Keep the whole reveal under ~2s no matter how long the report is.
+    if (blocks.length * stagger > 2000) stagger = Math.max(28, Math.round(2000 / blocks.length));
+    blocks.forEach(function (el, i) {
+      el.style.animation = 'brTextIn .5s cubic-bezier(.2,.7,.3,1) ' + (i * stagger) + 'ms both';
+      el.addEventListener('animationend', function () { el.style.animation = ''; }, { once: true });
+    });
+  };
+
   // Auto-wire on load: content entrance for the main page container, count-up
   // for any [data-countup], and sliding tabs for any [data-br-slide-tabs].
   function initMotion() {
@@ -807,6 +827,16 @@ function emptyState(container, message, iconClass) {
     document.querySelectorAll('[data-countup]').forEach(function (el) { window.brCountUp(el); });
     document.querySelectorAll('[data-br-slide-tabs]').forEach(function (bar) { window.brSlideTabs(bar); });
     initMoments();
+    // Server-rendered AI prose (e.g. the weekly recap) reveals when first seen.
+    var texts = document.querySelectorAll('[data-br-reveal-text]');
+    if (texts.length && window.IntersectionObserver) {
+      var tio = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+          if (en.isIntersecting) { window.brRevealText(en.target); tio.unobserve(en.target); }
+        });
+      }, { threshold: 0.3 });
+      texts.forEach(function (el) { tio.observe(el); });
+    }
   }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initMotion);
@@ -6355,6 +6385,7 @@ window.initTradePage = function initTradePage(root = document) {
         const _isPremium = document.getElementById('page-root')?.dataset.premium === 'true';
         if (data.analysis_html) {
           resultState.innerHTML = data.analysis_html;
+          if (window.brRevealText) window.brRevealText(resultState);
         } else if (!_isPremium) {
           resultState.innerHTML = `
             <div class="otc-ai-empty">
@@ -7420,6 +7451,7 @@ async function generateSeasonRecap() {
       resultState.style.display = "block";
       if (data.html) {
         resultState.innerHTML = data.html;
+        if (window.brRevealText) window.brRevealText(resultState);
       } else {
         resultState.innerHTML = `
           <div class="otc-ai-empty">
@@ -8681,6 +8713,7 @@ document.addEventListener('DOMContentLoaded', function() {
           if (resultState) {
             resultState.style.display = 'block';
             resultState.innerHTML = data.gm_memo_html;
+            if (window.brRevealText) window.brRevealText(resultState);
           }
         } else {
           // Show error
