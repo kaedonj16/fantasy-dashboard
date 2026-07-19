@@ -7050,6 +7050,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
             teams=teams_index,
             team_game_lookup=team_game_lookup,
             fpts_against=_fpts_against_weekly,
+            viewer_roster_id=_hub_vid,
         )
         for m in default_matchups
     ]
@@ -17877,6 +17878,7 @@ def api_weekly_week():
             teams=teams_index,
             team_game_lookup=team_game_lookup,
             fpts_against=_fpts_against_api,
+            viewer_roster_id=_api_vid,
         )
         for m in matchups
     ]

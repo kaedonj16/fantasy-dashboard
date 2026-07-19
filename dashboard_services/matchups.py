@@ -807,9 +807,14 @@ def render_matchup_slide(
         teams: dict,
         team_game_lookup: dict,
         fpts_against: Optional[dict] = None,
+        viewer_roster_id: Optional[str] = None,
 ) -> str:
     """One slide with rows like:
        [Left Name] [Left Pts/Proj] [Right Pts/Proj] [Right Name]
+
+    viewer_roster_id: when the viewer's own team wins this (current, finalized)
+    week, the slide plays the bigger "final whistle" takeover instead of the
+    small matchup-win pop.
     """
     proj = w > proj_week
 
@@ -1231,7 +1236,17 @@ def render_matchup_slide(
     if not proj:
         _lp, _rp = m['left'].get('pts_total'), m['right'].get('pts_total')
         if isinstance(_lp, (int, float)) and isinstance(_rp, (int, float)) and _lp != _rp:
-            win_attr = f' data-br-moment="matchupwin" data-mo-win="{"left" if _lp > _rp else "right"}"'
+            _won = "left" if _lp > _rp else "right"
+            win_attr = f' data-br-moment="matchupwin" data-mo-win="{_won}"'
+            # Live final whistle: the viewer's own team winning the current week
+            # gets a full-slide takeover with confetti, not just the score pop.
+            if viewer_roster_id and w == proj_week:
+                _won_rid = str(m[_won].get("roster_id"))
+                if _won_rid == str(viewer_roster_id):
+                    win_attr = (
+                        f' data-br-moment="whistle" data-mo-win="{_won}"'
+                        ' data-br-confetti="green" data-br-confetti-delay="250"'
+                    )
 
     h2h = m.get("h2h") or {}
     h2h_l = h2h.get("left_wins", 0)
