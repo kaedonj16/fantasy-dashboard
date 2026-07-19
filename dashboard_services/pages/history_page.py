@@ -593,14 +593,18 @@ def _history_chart(df_weekly: pd.DataFrame) -> str:
 
 def _summary_card(label: str, value: str, sub: str = "", featured: bool = False, card_type: str = "") -> str:
     cls = "history-card"
+    moment_attr = ""
     if card_type == "champion":
-        cls += " is-featured is-champion"
+        cls += " is-featured is-champion br-champ"
+        # Crowning moment: the trophy label draws in, the team name rises, and a
+        # burst of gold confetti fires when the card first scrolls into view.
+        moment_attr = ' data-br-moment="champion" data-br-confetti="gold" data-br-confetti-delay="650"'
     elif card_type == "runner_up":
         cls += " is-featured is-runner-up"
     elif featured:
         cls += " is-featured"
     return f"""
-    <div class="{cls}">
+    <div class="{cls}"{moment_attr}>
       <div class="history-card-label">{label}</div>
       <div class="history-card-value">{value}</div>
       {f'<div class="history-card-sub">{sub}</div>' if sub else ''}

@@ -651,6 +651,88 @@ function emptyState(container, message, iconClass) {
     return { sync: sync };
   };
 
+  // ── Big-moment animations ────────────────────────────────────────────────
+  // A tiny confetti burst on a positioned host element. Reduced-motion safe.
+  window.brConfetti = function (host, opts) {
+    if (reduce || !host || !host.getContext && !host.appendChild) return;
+    opts = opts || {};
+    var palette = opts.palette || ['#38bdf8', '#f5c451', '#2ecc71', '#ffffff'];
+    if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+    var canvas = document.createElement('canvas');
+    canvas.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:4';
+    host.appendChild(canvas);
+    var w = host.clientWidth, h = host.clientHeight, dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (!w || !h) { canvas.remove(); return; }
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    var ctx = canvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    var ox = opts.x != null ? opts.x : w / 2, oy = opts.y != null ? opts.y : h * 0.4;
+    var N = opts.count || 90, P = [];
+    for (var i = 0; i < N; i++) {
+      var a = Math.random() * Math.PI * 2, sp = 2 + Math.random() * 7;
+      P.push({ x: ox, y: oy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 4.5,
+        g: 0.15 + Math.random() * 0.12, s: 4 + Math.random() * 5, rot: Math.random() * 6,
+        vr: (Math.random() - 0.5) * 0.4, c: palette[i % palette.length], life: 55 + Math.random() * 40, t: 0 });
+    }
+    (function frame() {
+      ctx.clearRect(0, 0, w, h); var alive = false;
+      for (var j = 0; j < P.length; j++) {
+        var p = P[j]; if (p.t > p.life) continue; alive = true; p.t++;
+        p.vy += p.g; p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+        ctx.save(); ctx.globalAlpha = Math.max(0, 1 - p.t / p.life);
+        ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillStyle = p.c;
+        ctx.fillRect(-p.s / 2, -p.s / 2, p.s, p.s * 0.62); ctx.restore();
+      }
+      if (alive) requestAnimationFrame(frame); else canvas.remove();
+    })();
+  };
+
+  // Play a declarative moment once: add the trigger class, run any [data-countup]
+  // inside it, and fire confetti if requested (data-br-confetti="gold|green").
+  window.brPlayMoment = function (el) {
+    if (!el || el._brMoPlayed) return; el._brMoPlayed = true;
+    el.classList.add('br-mo-play');
+    // Count-ups use data-mo-count (not the global data-countup, which auto-runs
+    // on load) so the number animates when the moment plays into view.
+    var dur = parseInt(el.getAttribute('data-mo-dur') || '1200', 10);
+    el.querySelectorAll('[data-mo-count]').forEach(function (n) {
+      window.brCountUp(n, {
+        to: parseFloat(n.getAttribute('data-mo-count')),
+        dp: parseInt(n.getAttribute('data-mo-dp') || '0', 10),
+        suffix: n.getAttribute('data-mo-suffix') || '',
+        dur: dur,
+      });
+    });
+    var conf = el.getAttribute('data-br-confetti');
+    if (conf && !reduce) {
+      var pal = conf === 'gold' ? ['#f5c451', '#e0a828', '#fff1c2', '#38bdf8', '#ffffff']
+        : conf === 'green' ? ['#2ecc71', '#16a34a', '#a7f3d0', '#38bdf8', '#ffffff']
+        : null;
+      var delay = parseInt(el.getAttribute('data-br-confetti-delay') || '500', 10);
+      setTimeout(function () { window.brConfetti(el, { palette: pal, y: el.clientHeight * 0.42 }); }, delay);
+    }
+  };
+
+  // Observe every [data-br-moment] under `root` (defaults to the document) and
+  // play it the first time it scrolls into view. Exposed as window.brInitMoments
+  // so AJAX-injected surfaces (e.g. the weekly highlights panel) can re-scan the
+  // freshly-swapped markup — the DOMContentLoaded pass can't see it.
+  function initMoments(root) {
+    var scope = root || document;
+    var els = scope.querySelectorAll('[data-br-moment]');
+    if (!els.length) return;
+    if (window.IntersectionObserver) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+          if (en.isIntersecting) { window.brPlayMoment(en.target); io.unobserve(en.target); }
+        });
+      }, { threshold: 0.5 });
+      els.forEach(function (el) { io.observe(el); });
+    } else {
+      els.forEach(window.brPlayMoment);
+    }
+  }
+  window.brInitMoments = initMoments;
+
   // Auto-wire on load: content entrance for the main page container, count-up
   // for any [data-countup], and sliding tabs for any [data-br-slide-tabs].
   function initMotion() {
@@ -678,6 +760,7 @@ function emptyState(container, message, iconClass) {
     }
     document.querySelectorAll('[data-countup]').forEach(function (el) { window.brCountUp(el); });
     document.querySelectorAll('[data-br-slide-tabs]').forEach(function (bar) { window.brSlideTabs(bar); });
+    initMoments();
   }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initMotion);

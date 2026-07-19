@@ -3910,10 +3910,15 @@ def render_standings(team_stats, length, all_play: dict = None,
         _p = pic_by_name.get(owner)
         _trcls = ""
         _tdcls = "team"
+        _mo_attr = ""
         if _p:
             _trcls = _STATUS_CLS.get(_p["status"], "")
             _tdcls = "team pp-team-cell"
             _tag = _pp_tag(_p)
+            # Clinch moment: a team that has locked a playoff spot gets a green
+            # stamp + glow the first time its row scrolls into view.
+            if _p["status"] in ("clinched", "bye"):
+                _mo_attr = ' data-br-moment="clinch"'
             # Flex line: the name ellipsizes, the status tag never clips (wraps
             # under the name on very tight widths rather than getting cut off).
             team_cell = (
@@ -3924,7 +3929,7 @@ def render_standings(team_stats, length, all_play: dict = None,
             team_cell = f"{img} {html.escape(owner)}"
 
         rows.append(f"""
-            <tr class="{_trcls}">
+            <tr class="{_trcls}"{_mo_attr}>
               <td class="num rank-cell">{rank_mark(int(row['Rank']), size=28, ring_others=False)}</td>
               <td class="{_tdcls}">{team_cell}</td>
               <td>{record}</td>
@@ -6738,13 +6743,18 @@ def _render_weekly_highlights(
     if not rows:
         return ""
 
-    def _hl_single(title: str, team: dict) -> str:
+    def _hl_single(title: str, team: dict, big: bool = False) -> str:
+        # The highest score is a "big moment": the number counts up from zero and
+        # the card glows once as it scrolls in (wired by brPlayMoment in app.js).
+        card_cls = "whl-card br-hs" if big else "whl-card"
+        card_attr = ' data-br-moment="highscore" data-mo-dur="1100"' if big else ""
+        pts_attr = f' data-mo-count="{team["use_score"]:.1f}" data-mo-dp="1"' if big else ""
         return f"""
-        <div class="whl-card">
+        <div class="{card_cls}"{card_attr}>
           <div class="whl-label">{title}</div>
           <div class="whl-row">
             <span class="whl-name team-clickable" data-roster-id="{team['roster_id']}" data-team-name="{team['owner']}">{team['owner']}</span>
-            <span class="whl-pts">{team['use_score']:.1f}</span>
+            <span class="whl-pts"{pts_attr}>{team['use_score']:.1f}</span>
           </div>
         </div>"""
 
@@ -6771,7 +6781,7 @@ def _render_weekly_highlights(
     top = rows_sorted_desc[0]
     low = rows_sorted_asc[0]
 
-    highest_card = _hl_single("Highest Score", top)
+    highest_card = _hl_single("Highest Score", top, big=True)
     lowest_card  = _hl_single("Lowest Score",  low)
 
     # ------------------------------------------------------------------
@@ -7143,6 +7153,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
             '<div class="week-side-panel active" data-week="' + w + '">' +
               data.highlights_html +
             '</div>';
+          if (window.brInitMoments) window.brInitMoments(sideContainer);
         }}
 
         if (matchupsContainer && typeof data.matchups_html === 'string') {{
@@ -7214,6 +7225,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
       }}
       if (sideContainer && typeof data.highlights_html === 'string') {{
         sideContainer.innerHTML = '<div class="week-side-panel active" data-week="' + w + '">' + data.highlights_html + '</div>';
+        if (window.brInitMoments) window.brInitMoments(sideContainer);
       }}
       if (matchupsContainer && typeof data.matchups_html === 'string') {{
         var _applyMatchups = function() {{
@@ -12800,6 +12812,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
         }}
 
         container.innerHTML = html;
+        if (window.brInitMoments) window.brInitMoments(container);
       }}
 
       function renderBreakoutCard(candidate) {{
@@ -12841,8 +12854,13 @@ def page_breakouts(platform: str, season: int, league_id: str):
             : '';
 
           const barFill = Math.min(100, Math.max(0, topComp.val));
+          // Elite-tier candidates "ignite": the card catches fire (glow + score
+          // badge pop) the first time it scrolls into view.
+          const isElite = parseFloat(score) >= 65;
+          const cardCls = isElite ? 'breakout-card br-brk' : 'breakout-card';
+          const moAttr = isElite ? ' data-br-moment="breakout"' : '';
           return `
-            <div class="breakout-card" style="cursor:pointer;" onclick="openPlayerModal('` + pid + `', '` + name + `', {{tab:'breakout'}})">
+            <div class="` + cardCls + `"` + moAttr + ` style="cursor:pointer;" onclick="openPlayerModal('` + pid + `', '` + name + `', {{tab:'breakout'}})">
               <div class="breakout-card-header">
                 <div>
                   <div class="breakout-player-name">` + name + `</div>
