@@ -1003,8 +1003,10 @@ def _wrapped_player_leaders(history_ctx: dict) -> dict:
             name = p.get("name") or p.get("full_name")
             if not name:
                 continue
-            pos = str(p.get("position") or "").upper()
-            entry = {"name": str(name), "pos": pos, "nfl": str(p.get("team") or ""),
+            # players_map stores position under "pos"; players_index uses "position".
+            pos = str(p.get("pos") or p.get("position") or "").upper()
+            nfl = str(p.get("team") or p.get("nfl") or "")
+            entry = {"name": str(name), "pos": pos, "nfl": nfl,
                      "pts": round(pts, 1), "ppg": round(pts / games, 1) if games else 0.0}
             if mvp is None or pts > mvp["pts"]:
                 mvp = entry
@@ -1209,6 +1211,15 @@ _WRAPPED_JS = r"""
   var slides = Array.prototype.slice.call(stage.querySelectorAll('.wrapped-slide'));
   var bars = Array.prototype.slice.call(overlay.querySelectorAll('.wrapped-bar'));
   var idx = 0;
+  var timer = null;
+  var DUR = 5000;   // each slide plays for this long, then auto-advances
+
+  function clearTimer() { if (timer) { clearTimeout(timer); timer = null; } }
+  function scheduleNext(n) {
+    clearTimer();
+    if (n >= slides.length - 1) return;   // the finale (champion) holds
+    timer = setTimeout(function () { go(n + 1); }, DUR);
+  }
 
   function playSlide(n) {
     slides.forEach(function (s, i) {
@@ -1228,6 +1239,7 @@ _WRAPPED_JS = r"""
     if (el.getAttribute('data-kind') === 'champion' && window.brConfetti) {
       setTimeout(function () { window.brConfetti(el, { palette: ['#f5c451','#e0a828','#fff1c2','#ffffff'], y: el.clientHeight * 0.4, count: 120 }); }, 350);
     }
+    scheduleNext(n);   // when the slide finishes, move on
   }
   function go(n) {
     if (n < 0) return;
@@ -1240,6 +1252,7 @@ _WRAPPED_JS = r"""
     idx = 0; requestAnimationFrame(function () { playSlide(0); });
   }
   function close() {
+    clearTimer();
     overlay.hidden = true; overlay.setAttribute('aria-hidden', 'true');
     document.documentElement.style.overflow = '';
   }

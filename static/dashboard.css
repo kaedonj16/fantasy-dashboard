@@ -12153,10 +12153,6 @@ img, svg, canvas {
   .history-subtitle {
     font-size: 0.92rem;
     line-height: 1.5;
-    max-height: 72px;
-    overflow-y: auto;
-    overflow-x: hidden;
-    -webkit-overflow-scrolling: touch;
     max-width: 100%;
     word-wrap: break-word;
     overflow-wrap: break-word;
@@ -12463,7 +12459,6 @@ img, svg, canvas {
 
   .history-subtitle {
     font-size: 0.88rem;
-    max-height: 66px;
     max-width: 100%;
     word-wrap: break-word;
     overflow-wrap: break-word;
@@ -12495,7 +12490,6 @@ img, svg, canvas {
   .history-subtitle {
     font-size: 0.82rem;
     line-height: 1.4;
-    max-height: 58px;
     max-width: 100%;
     word-wrap: break-word;
     overflow-wrap: break-word;
@@ -22161,7 +22155,7 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 .wrapped-bar { flex: 1; height: 3px; border-radius: 3px; background: rgba(255,255,255,.22); overflow: hidden; }
 .wrapped-bar i { display: block; height: 100%; width: 0; background: #fff; border-radius: 3px; }
 .wrapped-bar.filled i { width: 100%; }
-.wrapped-bar.current i { width: 100%; transition: width 4s linear; }
+.wrapped-bar.current i { width: 100%; transition: width 4.8s linear; }
 
 .wrapped-close {
   position: absolute; top: 46px; right: 16px; z-index: 6;
