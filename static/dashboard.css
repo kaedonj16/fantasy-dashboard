@@ -22193,6 +22193,24 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 .wrapped-slide[data-kind="nailbiter"] { --wa: #14b8a6; }
 .wrapped-slide[data-kind="runnerup"]  { --wa: #94a3b8; }
 .wrapped-slide[data-kind="champion"]  { --wa: #f5c451; }
+.wrapped-slide[data-kind="mvp"]          { --wa: #22c55e; }
+.wrapped-slide[data-kind="posleaders"]   { --wa: #38bdf8; }
+.wrapped-slide[data-kind="overperformer"]{ --wa: #f97316; }
+
+/* Position-leaders list slide. */
+.wrapped-list {
+  position: relative; display: flex; flex-direction: column; gap: 11px;
+  width: 100%; max-width: 340px; margin: 8px auto 2px;
+}
+.wrapped-li { display: flex; align-items: baseline; gap: 12px; text-align: left; }
+.wrapped-li-k { flex: 0 0 40px; font-size: 12px; font-weight: 800; letter-spacing: .08em; color: var(--wa); filter: brightness(1.3); }
+.wrapped-li-n { flex: 1; min-width: 0; font-size: 19px; font-weight: 800; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wrapped-li-v { flex: 0 0 auto; font-size: 15px; font-weight: 800; color: rgba(255,255,255,.68); font-variant-numeric: tabular-nums; }
+.wrapped-slide.active .wrapped-li { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) both; }
+.wrapped-slide.active .wrapped-li:nth-child(1) { animation-delay: .16s; }
+.wrapped-slide.active .wrapped-li:nth-child(2) { animation-delay: .28s; }
+.wrapped-slide.active .wrapped-li:nth-child(3) { animation-delay: .40s; }
+.wrapped-slide.active .wrapped-li:nth-child(4) { animation-delay: .52s; }
 
 .wrapped-eyebrow {
   font-size: 13px; font-weight: 800; letter-spacing: .22em; text-transform: uppercase;

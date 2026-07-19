@@ -477,6 +477,8 @@ def _build_summary(history_ctx: dict) -> dict:
         "biggest_blowout_margin": 0.0,
         "unluckiest_team": "-",
         "unluckiest_delta": 0,
+        "overperformer_team": "-",
+        "overperformer_delta": 0,
     }
 
     if not team_stats.empty:
@@ -511,6 +513,12 @@ def _build_summary(history_ctx: dict) -> dict:
             unlucky = merged.sort_values(["delta", "pf_rank"], ascending=[False, True]).iloc[0]
             summary["unluckiest_team"] = str(unlucky["owner"])
             summary["unluckiest_delta"] = _safe_int(unlucky["delta"], 0)
+
+            # Overperformer: finished higher than its scoring rank would suggest
+            # (won the right weeks). delta = win_rank - pf_rank, so most negative.
+            over = merged.sort_values(["delta", "pf_rank"], ascending=[True, True]).iloc[0]
+            summary["overperformer_team"] = str(over["owner"])
+            summary["overperformer_delta"] = _safe_int(-over["delta"], 0)
 
     if not df_weekly.empty and {"owner", "points"}.issubset(df_weekly.columns):
         hi = df_weekly.loc[df_weekly["points"].idxmax()]
@@ -946,10 +954,81 @@ def _wrapped_longest_win_streak(df_weekly: pd.DataFrame, league: dict) -> tuple:
         return "", 0
 
 
-def _build_wrapped_slides(summary: dict, df_weekly: pd.DataFrame, league: dict,
-                          league_name: str, season) -> list:
-    """Ordered 'Season Wrapped' story slides built from the season summary.
-    Each slide: {kind, eyebrow, big, num, dp, suffix, label, sub}."""
+_WRAPPED_PLAYER_CACHE: dict = {}
+
+
+def _wrapped_player_leaders(history_ctx: dict) -> dict:
+    """Aggregate each player's regular-season fantasy production for the league
+    from the weekly boxscores, and return {'mvp': entry, 'by_pos': {QB/RB/WR/TE:
+    entry}} where entry is {name, pos, nfl, pts, ppg}. Cached per league+season
+    (completed seasons are static). Returns {} if unavailable."""
+    platform = str(history_ctx.get("platform") or "sleeper")
+    league_id = str(history_ctx.get("resolved_league_id") or history_ctx.get("league_id") or "")
+    season = history_ctx.get("season")
+    players_map = history_ctx.get("players_map") or history_ctx.get("players_index") or {}
+    if not league_id or not players_map:
+        return {}
+    ckey = (platform, league_id, str(season))
+    if ckey in _WRAPPED_PLAYER_CACHE:
+        return _WRAPPED_PLAYER_CACHE[ckey]
+
+    try:
+        from concurrent.futures import ThreadPoolExecutor
+        from dashboard_services.platform_api import get_matchups
+
+        po_start = _playoff_start_week(history_ctx.get("league") or {})
+        weeks = list(range(1, max(2, po_start)))
+
+        def _fetch(w):
+            try:
+                return get_matchups(platform, league_id, w, season) or []
+            except Exception:
+                return []
+
+        totals: dict[str, list] = {}  # pid -> [points, games_played]
+        with ThreadPoolExecutor(max_workers=min(len(weeks), 8)) as pool:
+            for mus in pool.map(_fetch, weeks):
+                for m in mus:
+                    for pid, pts in (m.get("players_points") or {}).items():
+                        pid = str(pid)
+                        if pid in ("", "0"):
+                            continue
+                        pv = float(pts or 0)
+                        e = totals.setdefault(pid, [0.0, 0])
+                        e[0] += pv
+                        if pv != 0:
+                            e[1] += 1
+
+        _POS = {"QB", "RB", "WR", "TE"}
+        mvp = None
+        by_pos: dict = {}
+        for pid, (pts, games) in totals.items():
+            p = players_map.get(pid) or {}
+            name = p.get("name") or p.get("full_name")
+            if not name:
+                continue
+            pos = str(p.get("position") or "").upper()
+            entry = {"name": str(name), "pos": pos, "nfl": str(p.get("team") or ""),
+                     "pts": round(pts, 1), "ppg": round(pts / games, 1) if games else 0.0}
+            if mvp is None or pts > mvp["pts"]:
+                mvp = entry
+            if pos in _POS and (pos not in by_pos or pts > by_pos[pos]["pts"]):
+                by_pos[pos] = entry
+
+        leaders = {"mvp": mvp, "by_pos": by_pos}
+        _WRAPPED_PLAYER_CACHE[ckey] = leaders
+        return leaders
+    except Exception:
+        return {}
+
+
+def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, season) -> list:
+    """Ordered 'Season Wrapped' story slides built from the season summary and
+    per-player leaders. Each slide: {kind, eyebrow, big, num, dp, suffix, label,
+    sub} (plus optional 'rows' for a list slide)."""
+    df_weekly = history_ctx.get("df_weekly", pd.DataFrame())
+    league = history_ctx.get("league") or {}
+
     def _txt(kind, eyebrow, big, label, sub):
         return {"kind": kind, "eyebrow": eyebrow, "big": big, "num": False,
                 "dp": 0, "suffix": "", "label": label, "sub": sub}
@@ -966,6 +1045,23 @@ def _build_wrapped_slides(summary: dict, df_weekly: pd.DataFrame, league: dict,
                            summary["top_scorer_value"], 1, "",
                            summary.get("top_scorer_team", "-"),
                            f"{summary.get('top_scorer_avg', 0):.1f} avg per week — the league's top scoring machine"))
+
+    # ── Player awards: season MVP + the best at each position ──────────────────
+    leaders = _wrapped_player_leaders(history_ctx)
+    mvp = (leaders or {}).get("mvp")
+    if mvp and mvp.get("pts"):
+        _meta = " · ".join(x for x in [mvp.get("pos"), mvp.get("nfl")] if x)
+        slides.append(_num("mvp", "LEAGUE MVP", float(mvp["pts"]), 1, "",
+                           mvp["name"],
+                           f"{_meta} · {mvp.get('ppg', 0):.1f} per game — the season's top fantasy producer"))
+
+    by_pos = (leaders or {}).get("by_pos") or {}
+    pos_rows = [(p, by_pos[p]["name"], by_pos[p]["pts"])
+                for p in ("QB", "RB", "WR", "TE") if by_pos.get(p)]
+    if len(pos_rows) >= 3:
+        slides.append({"kind": "posleaders", "eyebrow": "TOP AT EACH POSITION",
+                       "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
+                       "sub": "The points leader at every spot", "rows": pos_rows})
 
     if summary.get("highest_week_value"):
         slides.append(_num("highweek", "BIGGEST SINGLE WEEK",
@@ -990,6 +1086,12 @@ def _build_wrapped_slides(summary: dict, df_weekly: pd.DataFrame, league: dict,
                            summary.get("closest_matchup", "-"),
                            "Decided by the slimmest margin all season"))
 
+    if summary.get("overperformer_team") not in ("-", None) and summary.get("overperformer_delta", 0) >= 1:
+        _od = int(summary["overperformer_delta"])
+        slides.append(_txt("overperformer", "BIGGEST OVERACHIEVER",
+                           summary["overperformer_team"], "Punched above their weight",
+                           f"Finished {_od} spot{'s' if _od != 1 else ''} better than its scoring rank — won all the right weeks"))
+
     if summary.get("runner_up") and summary.get("runner_up") not in ("-", None):
         slides.append(_txt("runnerup", "RUNNER-UP", summary["runner_up"], "So close",
                            f"Finished {summary.get('runner_up_record', '')} — one game short"))
@@ -1011,7 +1113,16 @@ def _render_season_wrapped(slides: list, league_name: str, season) -> tuple:
 
     slide_html = []
     for s in slides:
-        if s["num"]:
+        if s.get("rows"):
+            # List slide (e.g. position leaders): a compact ranked list.
+            rows = "".join(
+                f"<div class='wrapped-li'><span class='wrapped-li-k'>{_esc(str(k))}</span>"
+                f"<span class='wrapped-li-n'>{_esc(str(n))}</span>"
+                f"<span class='wrapped-li-v'>{float(v):.1f}</span></div>"
+                for k, n, v in s["rows"]
+            )
+            big = f"<div class='wrapped-list'>{rows}</div>"
+        elif s["num"]:
             big = (f"<div class='wrapped-big' data-w-count='{s['big']}' "
                    f"data-w-dp='{s['dp']}' data-w-suffix=\"{_esc(s['suffix'], quote=True)}\">0</div>")
         else:
@@ -1151,7 +1262,7 @@ def build_history_body(
 
     # Season Wrapped: a stories-style recap, available once there's a champion.
     _wrapped_slides = _build_wrapped_slides(
-        summary, df_weekly, league, league_name, selected_history_season
+        history_ctx, summary, league_name, selected_history_season
     )
     _wrapped_btn, _wrapped_overlay = _render_season_wrapped(
         _wrapped_slides, league_name, selected_history_season
