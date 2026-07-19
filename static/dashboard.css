@@ -21995,7 +21995,7 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 .standings-week-select { min-width: 130px; }
 .standings-week-hint { font-size: 12px; color: var(--text-muted); flex: 1 1 auto; }
 .st-week-loading { opacity: .45; transition: opacity .15s ease; pointer-events: none; }
-@media (max-width: 560px) { .standings-week-hint { flex-basis: 100%; } }
+@media (max-width: 600px) { .standings-week-hint { flex-basis: 100%; } }
 
 /* Rankings shakeup: transient tints applied by brSwapRanks while a row travels
    to its new rank — climbers glow green, fallers dim. Raised so a moving row
