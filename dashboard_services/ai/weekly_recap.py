@@ -546,6 +546,8 @@ def _build_next_week_preview(
             "rank_a": rank_a, "rank_b": rank_b,
             "streak_a": sa.get("streak"), "streak_b": sb.get("streak"),
             "win_prob_a": round(win_prob * 100) if have_proj else None,
+            "proj_a": round(_team_proj_total(left.get("starters"), proj_by_pid), 1) if have_proj else None,
+            "proj_b": round(_team_proj_total(right.get("starters"), proj_by_pid), 1) if have_proj else None,
             "h2h": {"meetings": meetings, "a_wins": a_wins, "b_wins": b_wins} if meetings else None,
             "out_a": out_a, "maybe_a": maybe_a, "bye_a": bye_a,
             "out_b": out_b, "maybe_b": maybe_b, "bye_b": bye_b,
@@ -832,7 +834,7 @@ def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
         "</div>"
     )
 
-    def _side(team: str, record: str, rank, avatar, align: str, cls: str) -> str:
+    def _side(team: str, record: str, rank, avatar, proj, cls: str) -> str:
         rank_str = f"#{rank}" if rank else ""
         meta = " · ".join(x for x in [record, rank_str] if x)
         if avatar:
@@ -844,20 +846,24 @@ def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
             # Initial-crest fallback so the layout stays balanced without a picture.
             initial = html.escape((str(team).strip()[:1] or "?").upper())
             av = f"<div class='br-gotw-av br-gotw-av-ph'>{initial}</div>"
+        proj_html = (
+            f"<div class='br-gotw-proj'>{proj:.1f} <span>proj</span></div>"
+            if isinstance(proj, (int, float)) else ""
+        )
         txt = (
             "<div class='br-gotw-side-txt'>"
             f"<div class='br-gotw-name'>{html.escape(str(team))}</div>"
             f"<div class='br-gotw-meta'>{html.escape(meta)}</div>"
+            f"{proj_html}"
             "</div>"
         )
-        inner = f"{av}{txt}" if align == "left" else f"{txt}{av}"
-        return f"<div class='{cls} br-gotw-side br-gotw-side-{align}'>{inner}</div>"
+        return f"<div class='{cls} br-gotw-side'>{av}{txt}</div>"
 
     matchup_row = (
         "<div class='br-gotw-matchup'>"
-        + _side(g["team_a"], g["record_a"], g["rank_a"], g.get("avatar_a"), "left", "br-gotw-l")
+        + _side(g["team_a"], g["record_a"], g["rank_a"], g.get("avatar_a"), g.get("proj_a"), "br-gotw-l")
         + "<div class='br-gotw-vs'>VS</div>"
-        + _side(g["team_b"], g["record_b"], g["rank_b"], g.get("avatar_b"), "right", "br-gotw-r")
+        + _side(g["team_b"], g["record_b"], g["rank_b"], g.get("avatar_b"), g.get("proj_b"), "br-gotw-r")
         + "</div>"
     )
 

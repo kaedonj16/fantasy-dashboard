@@ -21865,9 +21865,9 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 /* Matchup: framed team crests charging at a central VS medallion. */
 .br-gotw-matchup { display: flex; align-items: center; gap: 12px; margin: 8px 0 14px; }
 .br-gotw-side { flex: 1; min-width: 0; display: flex; align-items: center; gap: 11px; }
-.br-gotw-side-right { flex-direction: row-reverse; }
-.br-gotw-side-right .br-gotw-side-txt { text-align: right; }
 .br-gotw-side-txt { flex: 1; min-width: 0; }
+.br-gotw-proj { font-size: 12px; font-weight: 800; color: var(--accent); margin-top: 3px; font-variant-numeric: tabular-nums; }
+.br-gotw-proj span { font-weight: 700; color: var(--muted); font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; }
 .br-gotw-av {
   width: 46px; height: 46px; border-radius: 50%; object-fit: cover; flex: 0 0 auto;
   border: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
@@ -22185,14 +22185,20 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 .wrapped-big-text { font-size: clamp(30px, 7vw, 62px); letter-spacing: -.02em; }
 .wrapped-label { font-size: clamp(18px, 4vw, 26px); font-weight: 800; color: #fff; }
 .wrapped-sub { font-size: 14.5px; line-height: 1.5; color: rgba(255,255,255,.72); max-width: 34ch; }
+.wrapped-crown {
+  position: relative; font-size: 42px; color: var(--wa); margin-bottom: 10px;
+  filter: drop-shadow(0 6px 22px color-mix(in srgb, var(--wa) 70%, transparent));
+}
 
 /* Staggered reveal of the active slide's content. */
+.wrapped-slide.active .wrapped-crown { animation: wrapCrown .7s cubic-bezier(.2,1.5,.4,1) .02s both; }
 .wrapped-slide.active .wrapped-eyebrow { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .05s both; }
 .wrapped-slide.active .wrapped-big     { animation: wrapPop .6s cubic-bezier(.2,1.4,.4,1) .16s both; }
 .wrapped-slide.active .wrapped-label   { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .34s both; }
 .wrapped-slide.active .wrapped-sub     { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .46s both; }
 @keyframes wrapUp  { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
 @keyframes wrapPop { from { opacity: 0; transform: scale(.72); } to { opacity: 1; transform: none; } }
+@keyframes wrapCrown { 0% { opacity: 0; transform: translateY(-14px) rotate(-12deg) scale(.6); } 60% { opacity: 1; transform: translateY(0) rotate(4deg) scale(1.12); } 100% { opacity: 1; transform: none; } }
 
 .wrapped-tap { position: absolute; top: 0; bottom: 0; z-index: 4; width: 40%; border: 0; background: transparent; cursor: pointer; }
 .wrapped-tap-prev { left: 0; }
