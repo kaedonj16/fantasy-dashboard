@@ -813,20 +813,16 @@ def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
 
     g = preview["game_of_the_week"]
     wk = preview.get("next_week")
-    eyebrow_lead = preview.get("round_label") if preview.get("is_playoff") else "GAME OF THE WEEK"
-    eyebrow = f"NEXT WEEK{f' · WEEK {wk}' if wk else ''} · {str(eyebrow_lead).upper()}"
-
-    # The WHY badge — the single biggest reason this is the game of the week.
-    why = g.get("why") or "The week's headline matchup"
-    badge_text = why
-    badge_bg = "var(--accent)"
-    if preview.get("quiet_week"):
-        badge_text = f"Quietest slate of the year, but: {why}"
-        badge_bg = "var(--muted)"
-    why_badge = (
-        f"<div class='br-gotw-why' style='display:inline-flex;align-items:center;gap:6px;background:{badge_bg};"
-        f"color:#fff;font-size:11px;font-weight:700;letter-spacing:.02em;padding:4px 11px;"
-        f"border-radius:999px;margin-bottom:10px;'>{html.escape(str(badge_text))}</div>"
+    title_lead = preview.get("round_label") if preview.get("is_playoff") else "Game of the Week"
+    kicker = f"NEXT WEEK{f' · WEEK {wk}' if wk else ''}"
+    # A prominent banner header instead of a small eyebrow, so the section reads
+    # as the marquee matchup it is.
+    header_html = (
+        "<div class='br-gotw-head'>"
+        f"<span class='br-gotw-kicker'>{html.escape(kicker)}</span>"
+        f"<span class='br-gotw-title'><i class='fa-solid fa-fire' aria-hidden='true'></i>"
+        f"{html.escape(str(title_lead))}</span>"
+        "</div>"
     )
 
     def _side(team: str, record: str, rank, align: str, cls: str) -> str:
@@ -834,9 +830,9 @@ def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
         meta = " · ".join(x for x in [record, rank_str] if x)
         return (
             f"<div class='{cls}' style='flex:1;min-width:0;text-align:{align};'>"
-            f"<div style='font-weight:800;font-size:15px;line-height:1.2;overflow:hidden;"
+            f"<div style='font-weight:800;font-size:18px;line-height:1.2;overflow:hidden;"
             f"text-overflow:ellipsis;white-space:nowrap;'>{html.escape(str(team))}</div>"
-            f"<div style='font-size:11px;color:var(--muted);margin-top:2px;'>{html.escape(meta)}</div>"
+            f"<div style='font-size:12px;color:var(--muted);margin-top:2px;'>{html.escape(meta)}</div>"
             f"</div>"
         )
 
@@ -919,8 +915,7 @@ def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
     return f"""
 <div class="card br-gotw" data-br-moment="gotw" style="padding:18px 20px;margin-bottom:20px;">
   <div class="br-gotw-flash" aria-hidden="true"></div>
-  <div style="font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--accent);margin-bottom:6px;">{eyebrow}</div>
-  {why_badge}
+  {header_html}
   {matchup_row}
   {winbar_html}
   {blurb_html}
