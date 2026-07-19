@@ -21863,8 +21863,8 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 }
 
 /* Matchup: framed team crests charging at a central VS medallion. */
-.br-gotw-matchup { display: flex; align-items: center; gap: 12px; margin: 8px 0 14px; }
-.br-gotw-side { flex: 1; min-width: 0; display: flex; align-items: center; gap: 11px; }
+.br-gotw-matchup { display: flex; align-items: center; gap: 10px; margin: 8px 0 14px; }
+.br-gotw-side { flex: 1; min-width: 0; display: flex; align-items: center; gap: 9px; }
 /* Right team mirrors the left: crest on the outside, text aligned toward it. */
 .br-gotw-r { flex-direction: row-reverse; }
 .br-gotw-r .br-gotw-side-txt { text-align: right; }
@@ -21872,23 +21872,26 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 .br-gotw-proj { font-size: 12px; font-weight: 800; color: var(--accent); margin-top: 3px; font-variant-numeric: tabular-nums; }
 .br-gotw-proj span { font-weight: 700; color: var(--muted); font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; }
 .br-gotw-av {
-  width: 46px; height: 46px; border-radius: 50%; object-fit: cover; flex: 0 0 auto;
+  width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex: 0 0 auto;
   border: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
   box-shadow: 0 3px 12px color-mix(in srgb, var(--accent) 28%, transparent);
   background: var(--card);
 }
 .br-gotw-av-ph {
-  display: grid; place-items: center; font-weight: 900; font-size: 19px; color: #fff;
+  display: grid; place-items: center; font-weight: 900; font-size: 17px; color: #fff;
   background: linear-gradient(140deg, var(--accent), color-mix(in srgb, var(--accent) 45%, #000));
 }
+/* Names wrap to at most two lines instead of truncating, so they stay readable
+   even in the narrow mobile card. */
 .br-gotw-name {
-  font-weight: 800; font-size: 18px; line-height: 1.15;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-weight: 800; font-size: 17px; line-height: 1.15;
+  overflow: hidden; word-break: break-word;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 }
 .br-gotw-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .br-gotw-vs {
-  flex: 0 0 auto; width: 40px; height: 40px; border-radius: 50%;
-  display: grid; place-items: center; font-size: 12px; font-weight: 900; letter-spacing: .03em;
+  flex: 0 0 auto; width: 36px; height: 36px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 11.5px; font-weight: 900; letter-spacing: .03em;
   color: var(--accent); background: var(--card);
   border: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
   box-shadow: 0 3px 14px color-mix(in srgb, var(--accent) 25%, transparent);
