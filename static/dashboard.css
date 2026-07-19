@@ -21865,6 +21865,9 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 /* Matchup: framed team crests charging at a central VS medallion. */
 .br-gotw-matchup { display: flex; align-items: center; gap: 12px; margin: 8px 0 14px; }
 .br-gotw-side { flex: 1; min-width: 0; display: flex; align-items: center; gap: 11px; }
+/* Right team mirrors the left: crest on the outside, text aligned toward it. */
+.br-gotw-r { flex-direction: row-reverse; }
+.br-gotw-r .br-gotw-side-txt { text-align: right; }
 .br-gotw-side-txt { flex: 1; min-width: 0; }
 .br-gotw-proj { font-size: 12px; font-weight: 800; color: var(--accent); margin-top: 3px; font-variant-numeric: tabular-nums; }
 .br-gotw-proj span { font-weight: 700; color: var(--muted); font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; }
