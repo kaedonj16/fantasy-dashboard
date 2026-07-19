@@ -1020,6 +1020,43 @@ def _wrapped_player_leaders(history_ctx: dict) -> dict:
         return {}
 
 
+def _wrapped_activity(history_ctx: dict) -> dict:
+    """Season transaction activity from ctx['activity_df']: total trades, the
+    most active trader (owner involved in the most trades), and the waiver-wire
+    leader (most adds). Returns {} when there's no activity data."""
+    try:
+        adf = history_ctx.get("activity_df")
+        if adf is None or getattr(adf, "empty", True) or "kind" not in getattr(adf, "columns", []):
+            return {}
+        total_trades = 0
+        trades_by_owner: dict = {}
+        waivers_by_owner: dict = {}
+        for _, row in adf.iterrows():
+            kind = row.get("kind")
+            data = row.get("data") or {}
+            if kind == "trade":
+                total_trades += 1
+                for tm in (data.get("teams") or []):
+                    nm = str(tm.get("name") or "").strip()
+                    if nm:
+                        trades_by_owner[nm] = trades_by_owner.get(nm, 0) + 1
+            elif kind == "waiver":
+                nm = str(data.get("name") or "").strip()
+                if nm:
+                    adds = data.get("adds") or []
+                    waivers_by_owner[nm] = waivers_by_owner.get(nm, 0) + (len(adds) if isinstance(adds, list) else 1)
+        out: dict = {"total_trades": total_trades}
+        if trades_by_owner:
+            o = max(trades_by_owner.items(), key=lambda x: x[1])
+            out["top_trader"] = {"owner": o[0], "n": o[1]}
+        if waivers_by_owner:
+            w = max(waivers_by_owner.items(), key=lambda x: x[1])
+            out["top_waiver"] = {"owner": w[0], "n": w[1]}
+        return out
+    except Exception:
+        return {}
+
+
 def _wrapped_luck(history_ctx: dict):
     """(lucky, unlucky) each as (owner, luck_delta) from the all-play luck index
     (actual wins minus expected wins), or (None, None). Same metric as the
@@ -1134,6 +1171,22 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
     if _unlucky and _unlucky[1] <= -1.0:
         slides.append(_txt("unluckiest", "UNLUCKIEST TEAM", _unlucky[0], "Deserved better",
                            f"{_unlucky[1]:.1f} wins below what its scoring earned. The rough-luck team."))
+
+    # ── Activity: total trades, most active trader, waiver-wire leader ─────────
+    act = _wrapped_activity(history_ctx)
+    if act.get("total_trades"):
+        slides.append(_num("trades", "TOTAL TRADES", float(act["total_trades"]), 0, "",
+                           "deals went down", "The league stayed busy on the phones all season"))
+    _tt = act.get("top_trader")
+    if _tt and _tt.get("n"):
+        _total = act.get("total_trades", 0)
+        _of = f" of the season's {_total}" if _total else ""
+        slides.append(_txt("toptrader", "MOST ACTIVE TRADER", _tt["owner"], "Always wheeling and dealing",
+                           f"In on {_tt['n']}{_of} trades this year"))
+    _tw = act.get("top_waiver")
+    if _tw and _tw.get("n"):
+        slides.append(_txt("waiver", "WAIVER WIRE WARRIOR", _tw["owner"], "Worked the wire",
+                           f"{_tw['n']} pickups, always hunting for an edge"))
 
     if summary.get("runner_up") and summary.get("runner_up") not in ("-", None):
         slides.append(_txt("runnerup", "RUNNER-UP", summary["runner_up"], "So close",

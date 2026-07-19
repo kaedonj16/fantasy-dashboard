@@ -22191,6 +22191,9 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 .wrapped-slide[data-kind="posleaders"]   { --wa: #38bdf8; }
 .wrapped-slide[data-kind="luckiest"]     { --wa: #10b981; }
 .wrapped-slide[data-kind="unluckiest"]   { --wa: #f43f5e; }
+.wrapped-slide[data-kind="trades"]       { --wa: #a855f7; }
+.wrapped-slide[data-kind="toptrader"]    { --wa: #06b6d4; }
+.wrapped-slide[data-kind="waiver"]       { --wa: #84cc16; }
 
 /* Position-leaders list slide. */
 .wrapped-list {
