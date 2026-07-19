@@ -21156,6 +21156,27 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   animation: rz-event-in .36s cubic-bezier(.22,.68,0,1.2) both,
              rz-td-flash 1.6s .1s ease forwards;
 }
+/* The viewer's own touchdown gets a bigger green-and-gold burst (plus confetti
+   fired from redzone.js). */
+.rz-td-new.rz-td-mine {
+  animation: rz-event-in .36s cubic-bezier(.22,.68,0,1.2) both,
+             rz-td-mine-flash 1.9s .1s ease forwards;
+}
+@keyframes rz-td-mine-flash {
+  0%   { box-shadow: 0 0 0 0 rgba(34,197,94,.8), 0 0 24px rgba(245,158,11,.55); }
+  30%  { box-shadow: 0 0 0 10px rgba(34,197,94,.06), 0 0 44px rgba(245,158,11,.35); }
+  100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+}
+/* Explosive non-TD play (4+ fantasy points on one play): a quick blue pulse. */
+.rz-bigplay {
+  animation: rz-event-in .36s cubic-bezier(.22,.68,0,1.2) both,
+             rz-bigplay-pulse 1.2s .05s ease forwards;
+}
+@keyframes rz-bigplay-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(56,189,248,.55); }
+  35%  { box-shadow: 0 0 0 6px rgba(56,189,248,.04), 0 0 22px rgba(56,189,248,.22); }
+  100% { box-shadow: 0 0 0 0 rgba(56,189,248,0); }
+}
 
 /* ── My Team quick toggle ─────────────── */
 .rz-myteam-btn {
@@ -21923,6 +21944,32 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   to { transform: none; opacity: 1; }
 }
 
+/* Live final whistle: the viewer's own team winning the current week gets a
+   full-slide takeover — a green flash sweeps the card, a big "W" stamps in, and
+   the winning score pops (green confetti fires from brPlayMoment). Reuses the
+   matchup-win score pop via the same data-mo-win hook. */
+.br-mo-play[data-br-moment="whistle"] { position: relative; }
+.br-mo-play[data-br-moment="whistle"]::before {
+  content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none;
+  border-radius: inherit; opacity: 0;
+  background: radial-gradient(circle at 50% 40%, rgba(34,197,94,.45), transparent 55%);
+  animation: brWhistleFlash .7s ease .1s;
+}
+.br-mo-play[data-br-moment="whistle"]::after {
+  content: "W"; position: absolute; top: 50%; left: 50%; z-index: 4; pointer-events: none;
+  transform: translate(-50%, -50%) scale(.3) rotate(-12deg); opacity: 0;
+  font-weight: 900; font-size: 88px; line-height: 1; color: #16a34a;
+  text-shadow: 0 6px 24px rgba(22,163,74,.5);
+  animation: brWhistleW 1.1s cubic-bezier(.2,1.5,.4,1) .18s both;
+}
+@keyframes brWhistleFlash { 0% { opacity: 0; } 30% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes brWhistleW {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(.3) rotate(-12deg); }
+  35% { opacity: 1; transform: translate(-50%, -50%) scale(1.15) rotate(-8deg); }
+  70% { opacity: 1; transform: translate(-50%, -50%) scale(1) rotate(-8deg); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1) rotate(-8deg); }
+}
+
 /* Draft grade reveal: a team's letter grade flips in like a report card the
    first time its strength card scrolls into view. */
 .br-mo-play[data-br-moment="draftgrade"] .roster-grade-inline {
@@ -21934,4 +21981,155 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   0% { opacity: 0; transform: rotateX(-90deg) scale(.8); }
   60% { opacity: 1; transform: rotateX(0) scale(1.12); }
   100% { transform: none; }
+}
+
+/* Standings week-selector bar (mirrors the Matchups hub week picker). */
+.standings-week-bar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+  margin: 0 0 14px; padding: 10px 14px;
+  background: var(--card, var(--surface)); border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+.standings-week-label { font-size: 12px; font-weight: 800; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--text-muted); }
+.standings-week-select { min-width: 130px; }
+.standings-week-hint { font-size: 12px; color: var(--text-muted); flex: 1 1 auto; }
+.st-week-loading { opacity: .45; transition: opacity .15s ease; pointer-events: none; }
+@media (max-width: 600px) { .standings-week-hint { flex-basis: 100%; } }
+
+/* Rankings shakeup: transient tints applied by brSwapRanks while a row travels
+   to its new rank — climbers glow green, fallers dim. Raised so a moving row
+   passes over its neighbours. */
+.rk-up, .rk-down { position: relative; z-index: 3; }
+.rk-up {
+  background-color: rgba(34, 197, 94, .16) !important;
+  box-shadow: inset 2px 0 0 rgba(34, 197, 94, .9);
+}
+.rk-down {
+  background-color: rgba(148, 163, 184, .10) !important;
+  opacity: .82;
+}
+@keyframes brRkEnter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* Playoff bracket build: the round columns slide in left-to-right, so the
+   bracket visibly fills round by round; the final (championship) column lands
+   with a gold glow. */
+.br-mo-play.bracket .bracket-round { animation: brBrkCol .5s cubic-bezier(.2,.8,.3,1) both; }
+.br-mo-play.bracket .bracket-round:nth-child(1) { animation-delay: .05s; }
+.br-mo-play.bracket .bracket-round:nth-child(2) { animation-delay: .30s; }
+.br-mo-play.bracket .bracket-round:nth-child(3) { animation-delay: .55s; }
+.br-mo-play.bracket .bracket-round:nth-child(4) { animation-delay: .80s; }
+.br-mo-play.bracket .bracket-round:nth-child(5) { animation-delay: 1.05s; }
+.br-mo-play.bracket .bracket-round:last-child .bracket-match {
+  animation: brBrkFinal .6s ease both;
+  animation-delay: 1.15s;
+}
+@keyframes brBrkCol { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: none; } }
+@keyframes brBrkFinal {
+  0% { box-shadow: 0 1px 4px rgba(0,0,0,.06), 0 0 0 0 rgba(245,196,81,0); }
+  45% { box-shadow: 0 1px 4px rgba(0,0,0,.06), 0 0 22px 2px rgba(245,196,81,.55); }
+  100% { box-shadow: 0 1px 4px rgba(0,0,0,.06), 0 0 0 0 rgba(245,196,81,0); }
+}
+
+/* ══ Season Wrapped ════════════════════════════════════════════════════════════
+   A stories-style, full-screen season recap launched from the history page.
+   Deliberately single-theme (a dark, immersive takeover) regardless of the
+   page theme — see _render_season_wrapped() in history_page.py. */
+.wrapped-launch {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+  font-size: 13px; font-weight: 800; letter-spacing: .01em; color: #fff;
+  padding: 8px 15px; border: 0; border-radius: 999px;
+  background: linear-gradient(120deg, #7c3aed, #db2777 55%, #f59e0b);
+  box-shadow: 0 6px 20px rgba(124, 58, 237, .35);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.wrapped-launch:hover { transform: translateY(-1px); box-shadow: 0 10px 26px rgba(219, 39, 119, .4); }
+.wrapped-launch:active { transform: translateY(0); }
+
+.wrapped-overlay {
+  position: fixed; inset: 0; z-index: 4000;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background:
+    radial-gradient(1200px 700px at 50% -10%, #241b4d 0%, transparent 60%),
+    linear-gradient(160deg, #0b0b16 0%, #141026 55%, #0b0b16 100%);
+  color: #fff; overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+  animation: wrapFade .35s ease both;
+}
+.wrapped-overlay[hidden] { display: none; }
+@keyframes wrapFade { from { opacity: 0; } to { opacity: 1; } }
+
+.wrapped-progress {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 5;
+  display: flex; gap: 5px; padding: 14px 16px;
+}
+.wrapped-bar { flex: 1; height: 3px; border-radius: 3px; background: rgba(255,255,255,.22); overflow: hidden; }
+.wrapped-bar i { display: block; height: 100%; width: 0; background: #fff; border-radius: 3px; }
+.wrapped-bar.filled i { width: 100%; }
+.wrapped-bar.current i { width: 100%; transition: width 4s linear; }
+
+.wrapped-close {
+  position: absolute; top: 46px; right: 16px; z-index: 6;
+  width: 38px; height: 38px; border-radius: 50%; cursor: pointer;
+  border: 0; background: rgba(255,255,255,.12); color: #fff; font-size: 22px; line-height: 1;
+}
+.wrapped-close:hover { background: rgba(255,255,255,.22); }
+
+.wrapped-stage { position: relative; width: min(680px, 92vw); height: min(80vh, 760px); }
+
+.wrapped-slide {
+  position: absolute; inset: 0; z-index: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; padding: 28px; gap: 14px; overflow: hidden;
+  opacity: 0; visibility: hidden; pointer-events: none;
+  --wa: #a78bfa;
+}
+.wrapped-slide::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; opacity: .55;
+  background: radial-gradient(60% 45% at 50% 34%, var(--wa) 0%, transparent 62%);
+}
+.wrapped-slide.active { opacity: 1; visibility: visible; pointer-events: auto; }
+
+.wrapped-slide[data-kind="intro"]     { --wa: #8b5cf6; }
+.wrapped-slide[data-kind="topscore"]  { --wa: #3b82f6; }
+.wrapped-slide[data-kind="highweek"]  { --wa: #f59e0b; }
+.wrapped-slide[data-kind="streak"]    { --wa: #ef4444; }
+.wrapped-slide[data-kind="blowout"]   { --wa: #a855f7; }
+.wrapped-slide[data-kind="nailbiter"] { --wa: #14b8a6; }
+.wrapped-slide[data-kind="runnerup"]  { --wa: #94a3b8; }
+.wrapped-slide[data-kind="champion"]  { --wa: #f5c451; }
+
+.wrapped-eyebrow {
+  font-size: 13px; font-weight: 800; letter-spacing: .22em; text-transform: uppercase;
+  color: var(--wa); filter: brightness(1.25);
+}
+.wrapped-big {
+  font-size: clamp(46px, 12vw, 104px); font-weight: 900; line-height: .95; letter-spacing: -.03em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 8px 40px color-mix(in srgb, var(--wa) 60%, transparent);
+}
+.wrapped-big-text { font-size: clamp(30px, 7vw, 62px); letter-spacing: -.02em; }
+.wrapped-label { font-size: clamp(18px, 4vw, 26px); font-weight: 800; color: #fff; }
+.wrapped-sub { font-size: 14.5px; line-height: 1.5; color: rgba(255,255,255,.72); max-width: 34ch; }
+
+/* Staggered reveal of the active slide's content. */
+.wrapped-slide.active .wrapped-eyebrow { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .05s both; }
+.wrapped-slide.active .wrapped-big     { animation: wrapPop .6s cubic-bezier(.2,1.4,.4,1) .16s both; }
+.wrapped-slide.active .wrapped-label   { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .34s both; }
+.wrapped-slide.active .wrapped-sub     { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .46s both; }
+@keyframes wrapUp  { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+@keyframes wrapPop { from { opacity: 0; transform: scale(.72); } to { opacity: 1; transform: none; } }
+
+.wrapped-tap { position: absolute; top: 0; bottom: 0; z-index: 4; width: 40%; border: 0; background: transparent; cursor: pointer; }
+.wrapped-tap-prev { left: 0; }
+.wrapped-tap-next { right: 0; width: 60%; }
+.wrapped-hint {
+  position: absolute; bottom: 18px; left: 0; right: 0; z-index: 5; text-align: center;
+  font-size: 11.5px; letter-spacing: .04em; color: rgba(255,255,255,.5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wrapped-overlay, .wrapped-slide.active .wrapped-eyebrow, .wrapped-slide.active .wrapped-big,
+  .wrapped-slide.active .wrapped-label, .wrapped-slide.active .wrapped-sub { animation-duration: .01ms; }
+  .wrapped-bar.current i { transition: none; }
 }

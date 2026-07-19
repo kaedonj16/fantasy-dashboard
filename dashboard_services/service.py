@@ -239,6 +239,100 @@ def render_top_three(top_by_pos: dict, rosters, roster_map, positions: list = No
     return "<div class='sidebar-grid'>" + "".join(blocks) + "</div>"
 
 
+def finalize_team_stats(
+        df_finalized: pd.DataFrame,
+        owner_avatar: dict,
+        matchups_by_week: dict,
+        users: list[dict],
+        last_week: int,
+) -> pd.DataFrame:
+    """Build the full standings/power team_stats table from finalized weekly
+    rows (records, PF/PA/AVG, performance PowerScore, strength of schedule, and
+    current streaks).
+
+    Shared by the season builder (build_tables) and the standings week-selector,
+    so a "through week N" view is produced by simply passing a week-capped
+    ``df_finalized`` and ``last_week=N`` here — both paths agree by construction.
+    """
+    records = _compute_team_records(df_finalized.copy())
+    team_stats = _aggregate_team_stats(df_finalized.copy(), records)
+
+    team_stats = team_stats.merge(
+        pd.Series(owner_avatar, name="avatar", dtype="object"),
+        left_on="owner",
+        right_index=True,
+        how="left",
+    )
+
+    last3 = (
+        df_finalized.sort_values(["owner", "week"])
+        .groupby("owner")["points"]
+        .apply(lambda s: s.tail(3).mean() if len(s) else 0.0)
+        .rename("Last3")
+        .reset_index()
+    )
+    team_stats = team_stats.merge(last3, on="owner", how="left")
+    team_stats["Last3"] = team_stats["Last3"].fillna(0.0)
+
+    def _z(series):
+        s = pd.Series(series, dtype="float64")
+        sd = float(s.std(ddof=0))
+        if sd == 0 or np.isnan(sd):
+            return pd.Series(0.0, index=s.index)
+        return (s - s.mean()) / sd
+
+    if "Win%" in team_stats.columns:
+        win_pct = team_stats["Win%"].fillna(0.0)
+    else:
+        if "Ties" in team_stats.columns:
+            ties = team_stats["Ties"].fillna(0.0)
+        else:
+            ties = 0.0
+        win_pct = ((team_stats["Wins"] + 0.5 * ties) / team_stats["G"].replace(0, np.nan)).fillna(0.0)
+
+    avg_pts = team_stats.get("AVG", pd.Series(0.0, index=team_stats.index)).fillna(0.0)
+    _std_col = team_stats["STD"] if "STD" in team_stats.columns else pd.Series(0.0, index=team_stats.index)
+    cons_inv = -_std_col.fillna(_std_col.mean() if len(_std_col) else 0.0)
+    ceiling = team_stats.get("MAX", pd.Series(0.0, index=team_stats.index)).fillna(0.0)
+    last3_series = team_stats["Last3"].fillna(0.0)
+
+    team_stats["Z_WinPercentage"] = _z(win_pct)
+    team_stats["Z_Avg"] = _z(avg_pts)
+    team_stats["Z_Last3"] = _z(last3_series)
+    team_stats["Z_Consistency"] = _z(cons_inv)
+    team_stats["Z_Ceiling"] = _z(ceiling)
+
+    # Weights: recency (Last3) promoted; raw Avg and Win% trimmed slightly
+    # so a hot team closing strong is rewarded over a stale season-long average.
+    W_WIN, W_AVG, W_LAST3, W_CONS, W_CEIL = 0.15, 0.25, 0.25, 0.15, 0.20
+    team_stats["Win%"] = win_pct
+    team_stats["PowerScore"] = (
+            W_WIN * team_stats["Z_WinPercentage"]
+            + W_AVG * team_stats["Z_Avg"]
+            + W_LAST3 * team_stats["Z_Last3"]
+            + W_CONS * team_stats["Z_Consistency"]
+            + W_CEIL * team_stats["Z_Ceiling"]
+    )
+
+    sos = build_team_strength(team_stats)
+    sos_dict = compute_sos_by_team(matchups_by_week, sos, last_week, users)
+    sos_df = (
+        pd.DataFrame.from_dict(sos_dict, orient="index")
+        .reset_index()
+        .rename(columns={"index": "owner"})
+    )
+    team_stats = team_stats.merge(sos_df, on="owner", how="left")
+
+    streaks_df = compute_streaks(df_finalized.copy())
+    team_stats = team_stats.merge(streaks_df, on="owner", how="left")
+
+    team_stats["StreakType"] = team_stats["StreakType"].fillna("")
+    team_stats["StreakLen"] = team_stats["StreakLen"].fillna(0).astype(int)
+    team_stats["Streak"] = team_stats["Streak"].fillna("")
+
+    return team_stats
+
+
 def build_tables(
         league_id: str,
         max_week: int,
@@ -340,82 +434,10 @@ def build_tables(
     finalized_mask = df_weekly["finalized"] == True
     df_finalized = df_weekly[finalized_mask].copy()
 
-    records = _compute_team_records(df_finalized.copy())
-    team_stats = _aggregate_team_stats(df_finalized.copy(), records)
-
-    team_stats = team_stats.merge(
-        pd.Series(owner_avatar, name="avatar"),
-        left_on="owner",
-        right_index=True,
-        how="left",
-    )
-
-    last3 = (
-        df_finalized.sort_values(["owner", "week"])
-        .groupby("owner")["points"]
-        .apply(lambda s: s.tail(3).mean() if len(s) else 0.0)
-        .rename("Last3")
-        .reset_index()
-    )
-    team_stats = team_stats.merge(last3, on="owner", how="left")
-    team_stats["Last3"] = team_stats["Last3"].fillna(0.0)
-
-    def _z(series):
-        s = pd.Series(series, dtype="float64")
-        sd = float(s.std(ddof=0))
-        if sd == 0 or np.isnan(sd):
-            return pd.Series(0.0, index=s.index)
-        return (s - s.mean()) / sd
-
-    if "Win%" in team_stats.columns:
-        win_pct = team_stats["Win%"].fillna(0.0)
-    else:
-        if "Ties" in team_stats.columns:
-            ties = team_stats["Ties"].fillna(0.0)
-        else:
-            ties = 0.0
-        win_pct = ((team_stats["Wins"] + 0.5 * ties) / team_stats["G"].replace(0, np.nan)).fillna(0.0)
-
-    avg_pts = team_stats.get("AVG", pd.Series(0.0, index=team_stats.index)).fillna(0.0)
-    _std_col = team_stats["STD"] if "STD" in team_stats.columns else pd.Series(0.0, index=team_stats.index)
-    cons_inv = -_std_col.fillna(_std_col.mean() if len(_std_col) else 0.0)
-    ceiling = team_stats.get("MAX", pd.Series(0.0, index=team_stats.index)).fillna(0.0)
-    last3_series = team_stats["Last3"].fillna(0.0)
-
-    team_stats["Z_WinPercentage"] = _z(win_pct)
-    team_stats["Z_Avg"] = _z(avg_pts)
-    team_stats["Z_Last3"] = _z(last3_series)
-    team_stats["Z_Consistency"] = _z(cons_inv)
-    team_stats["Z_Ceiling"] = _z(ceiling)
-
-    # Weights: recency (Last3) promoted; raw Avg and Win% trimmed slightly
-    # so a hot team closing strong is rewarded over a stale season-long average.
-    W_WIN, W_AVG, W_LAST3, W_CONS, W_CEIL = 0.15, 0.25, 0.25, 0.15, 0.20
-    team_stats["Win%"] = win_pct
-    team_stats["PowerScore"] = (
-            W_WIN * team_stats["Z_WinPercentage"]
-            + W_AVG * team_stats["Z_Avg"]
-            + W_LAST3 * team_stats["Z_Last3"]
-            + W_CONS * team_stats["Z_Consistency"]
-            + W_CEIL * team_stats["Z_Ceiling"]
-    )
-
-    sos = build_team_strength(team_stats)
     last_week = int(df_weekly["week"].max())
-    sos_dict = compute_sos_by_team(matchups_by_week, sos, last_week, users)
-    sos_df = (
-        pd.DataFrame.from_dict(sos_dict, orient="index")
-        .reset_index()
-        .rename(columns={"index": "owner"})
+    team_stats = finalize_team_stats(
+        df_finalized, owner_avatar, matchups_by_week, users, last_week
     )
-    team_stats = team_stats.merge(sos_df, on="owner", how="left")
-
-    streaks_df = compute_streaks(df_finalized.copy())
-    team_stats = team_stats.merge(streaks_df, on="owner", how="left")
-
-    team_stats["StreakType"] = team_stats["StreakType"].fillna("")
-    team_stats["StreakLen"] = team_stats["StreakLen"].fillna(0).astype(int)
-    team_stats["Streak"] = team_stats["Streak"].fillna("")
 
     return df_weekly, team_stats, roster_map
 
@@ -1188,7 +1210,9 @@ def playoff_bracket(
     if not html_rounds:
         return "<div class='po-empty'>No playoff bracket available.</div>"
 
-    return "<div class='bracket'>" + "".join(html_rounds) + "</div>"
+    # data-br-moment="bracket": the rounds build in left-to-right when the
+    # bracket first scrolls into view (see the big-moment CSS in dashboard.css).
+    return "<div class='bracket' data-br-moment='bracket'>" + "".join(html_rounds) + "</div>"
 
 
 def seed_top_n_from_team_stats(team_stats, roster_map, playoff_size: int = 6):

@@ -329,6 +329,29 @@
     return { desc: (segs.join(', ') || 'Active') + tail, kind: kind, stats: stats };
   }
 
+  // Big-play FX for a freshly-arrived feed event: touchdowns flash (with a
+  // confetti burst from the top of the feed when it's the viewer's own team),
+  // and explosive non-TD plays (4+ fantasy points on one play) get a lighter
+  // pulse. `container` is the scrollable feed list the burst is anchored to.
+  function _bigPlayFx(node, ev, container, live) {
+    if (ev.kind === 'td') {
+      node.classList.add('rz-td-new');
+      if (ev.mine) {
+        node.classList.add('rz-td-mine');
+        if (live && window.brConfetti) {
+          try {
+            window.brConfetti(container || node, {
+              palette: ['#f59e0b', '#fbbf24', '#22c55e', '#ffffff'],
+              y: 42, count: 30,
+            });
+          } catch (e) { /* confetti is decorative */ }
+        }
+      }
+    } else if ((ev.pts || 0) >= 4) {
+      node.classList.add('rz-bigplay');
+    }
+  }
+
   function _playsFromDiff(pid, oldL, newL, tags, scoring) {
     var pos = _pos(pid);
     var rid = tags.pidToRoster[pid] || '';
@@ -1366,7 +1389,7 @@
           // Insert each new play into the DOM individually, one at a time
           (function(n, e, delay) {
             setTimeout(function() {
-              if (e.kind === 'td') n.classList.add('rz-td-new');
+              _bigPlayFx(n, e, container, true);
               container.insertBefore(n, container.firstChild);
               n.querySelectorAll('[data-pid]').forEach(function(el) {
                 if (!el.dataset.pid || el.dataset.pid === '0') return;
@@ -1383,7 +1406,7 @@
           }
           if (isNew) {
             newIdx++;
-            if (ev.kind === 'td') node.classList.add('rz-td-new');
+            _bigPlayFx(node, ev, container, false);
           }
           frag.appendChild(node);
         }

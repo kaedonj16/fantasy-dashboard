@@ -913,6 +913,204 @@ def _build_rivalry_card(
     )
 
 
+def _wrapped_longest_win_streak(df_weekly: pd.DataFrame, league: dict) -> tuple:
+    """(owner, length) of the season's longest single-team win streak, or
+    ('', 0). Regular season, finalized games only."""
+    try:
+        df = _filtered_season_df(df_weekly)
+        if df is None or df.empty or "matchup_id" not in df.columns:
+            return "", 0
+        df = df.copy()
+        df["week"] = pd.to_numeric(df["week"], errors="coerce")
+        results: dict[str, list] = {}
+        for (_wk, _mid), grp in df.groupby(["week", "matchup_id"]):
+            if len(grp) != 2:
+                continue
+            g = grp.sort_values("owner")
+            a, b = g.iloc[0], g.iloc[1]
+            pa, pb = float(a.get("points", 0) or 0), float(b.get("points", 0) or 0)
+            if pa == pb:
+                continue
+            win, lose = (a, b) if pa > pb else (b, a)
+            results.setdefault(str(win["owner"]), []).append((int(win["week"]), "W"))
+            results.setdefault(str(lose["owner"]), []).append((int(lose["week"]), "L"))
+        best_owner, best_len = "", 0
+        for owner, seq in results.items():
+            run = 0
+            for _wk, r in sorted(seq):
+                run = run + 1 if r == "W" else 0
+                if run > best_len:
+                    best_len, best_owner = run, owner
+        return best_owner, best_len
+    except Exception:
+        return "", 0
+
+
+def _build_wrapped_slides(summary: dict, df_weekly: pd.DataFrame, league: dict,
+                          league_name: str, season) -> list:
+    """Ordered 'Season Wrapped' story slides built from the season summary.
+    Each slide: {kind, eyebrow, big, num, dp, suffix, label, sub}."""
+    def _txt(kind, eyebrow, big, label, sub):
+        return {"kind": kind, "eyebrow": eyebrow, "big": big, "num": False,
+                "dp": 0, "suffix": "", "label": label, "sub": sub}
+
+    def _num(kind, eyebrow, val, dp, suffix, label, sub):
+        return {"kind": kind, "eyebrow": eyebrow, "big": f"{val:.{dp}f}", "num": True,
+                "dp": dp, "suffix": suffix, "label": label, "sub": sub}
+
+    slides = [_txt("intro", f"{season} SEASON", league_name, "Wrapped",
+                   "A look back at the year that was")]
+
+    if summary.get("top_scorer_value"):
+        slides.append(_num("topscore", "MOST POINTS ON THE YEAR",
+                           summary["top_scorer_value"], 1, "",
+                           summary.get("top_scorer_team", "-"),
+                           f"{summary.get('top_scorer_avg', 0):.1f} avg per week — the league's top scoring machine"))
+
+    if summary.get("highest_week_value"):
+        slides.append(_num("highweek", "BIGGEST SINGLE WEEK",
+                           summary["highest_week_value"], 1, "",
+                           summary.get("highest_week_team", "-"),
+                           "The highest one-week score anyone put up all season"))
+
+    owner, streak_len = _wrapped_longest_win_streak(df_weekly, league)
+    if streak_len >= 3:
+        slides.append(_num("streak", "HOTTEST STREAK", float(streak_len), 0, " straight",
+                           owner, "The longest win streak of the season"))
+
+    if summary.get("biggest_blowout_margin"):
+        slides.append(_num("blowout", "BIGGEST BLOWOUT",
+                           summary["biggest_blowout_margin"], 1, " pts",
+                           summary.get("biggest_blowout", "-"),
+                           "The most lopsided result of the year"))
+
+    if summary.get("closest_margin"):
+        slides.append(_num("nailbiter", "CLOSEST GAME",
+                           summary["closest_margin"], 1, " pts",
+                           summary.get("closest_matchup", "-"),
+                           "Decided by the slimmest margin all season"))
+
+    if summary.get("runner_up") and summary.get("runner_up") not in ("-", None):
+        slides.append(_txt("runnerup", "RUNNER-UP", summary["runner_up"], "So close",
+                           f"Finished {summary.get('runner_up_record', '')} — one game short"))
+
+    if summary.get("champion") and summary.get("champion") not in ("-", None):
+        slides.append(_txt("champion", f"{season} CHAMPION", summary["champion"],
+                           "🏆", f"{summary.get('champion_record', '')} — league champion"))
+
+    return slides
+
+
+def _render_season_wrapped(slides: list, league_name: str, season) -> tuple:
+    """Return (launch_button_html, overlay_html) for the Season Wrapped stories
+    experience. Returns ('', '') when there isn't enough to tell a story."""
+    if len(slides) < 3:
+        return "", ""
+
+    bars = "".join("<span class='wrapped-bar'><i></i></span>" for _ in slides)
+
+    slide_html = []
+    for s in slides:
+        if s["num"]:
+            big = (f"<div class='wrapped-big' data-w-count='{s['big']}' "
+                   f"data-w-dp='{s['dp']}' data-w-suffix=\"{_esc(s['suffix'], quote=True)}\">0</div>")
+        else:
+            big = f"<div class='wrapped-big wrapped-big-text'>{_esc(str(s['big']))}</div>"
+        slide_html.append(
+            f"<section class='wrapped-slide' data-kind='{s['kind']}'>"
+            f"<div class='wrapped-eyebrow'>{_esc(str(s['eyebrow']))}</div>"
+            f"{big}"
+            f"<div class='wrapped-label'>{_esc(str(s['label']))}</div>"
+            f"<div class='wrapped-sub'>{_esc(str(s['sub']))}</div>"
+            f"</section>"
+        )
+
+    button = (
+        "<button type='button' class='wrapped-launch' id='wrappedLaunch'>"
+        "<i class='fa-solid fa-wand-magic-sparkles'></i> Season Wrapped</button>"
+    )
+
+    overlay = f"""
+    <div class="wrapped-overlay" id="wrappedOverlay" hidden aria-hidden="true">
+      <div class="wrapped-progress">{bars}</div>
+      <button type="button" class="wrapped-close" id="wrappedClose" aria-label="Close">&times;</button>
+      <div class="wrapped-stage" id="wrappedStage">{''.join(slide_html)}</div>
+      <button type="button" class="wrapped-tap wrapped-tap-prev" id="wrappedPrev" aria-label="Previous"></button>
+      <button type="button" class="wrapped-tap wrapped-tap-next" id="wrappedNext" aria-label="Next"></button>
+      <div class="wrapped-hint">Tap to advance · Esc to close</div>
+    </div>
+    <script>{_WRAPPED_JS}</script>
+    """
+    return button, overlay
+
+
+_WRAPPED_JS = r"""
+(function () {
+  var launch = document.getElementById('wrappedLaunch');
+  var overlay = document.getElementById('wrappedOverlay');
+  if (!launch || !overlay || overlay.__wrapBound) return;
+  overlay.__wrapBound = true;
+  var stage = document.getElementById('wrappedStage');
+  var slides = Array.prototype.slice.call(stage.querySelectorAll('.wrapped-slide'));
+  var bars = Array.prototype.slice.call(overlay.querySelectorAll('.wrapped-bar'));
+  var idx = 0;
+
+  function playSlide(n) {
+    slides.forEach(function (s, i) {
+      s.classList.toggle('active', i === n);
+      if (i < n) s.classList.add('seen'); else s.classList.remove('seen');
+    });
+    bars.forEach(function (b, i) { b.classList.toggle('filled', i < n); b.classList.toggle('current', i === n); });
+    var el = slides[n];
+    if (!el) return;
+    // Count-up the big number when the slide arrives.
+    var num = el.querySelector('[data-w-count]');
+    if (num && window.brCountUp) {
+      window.brCountUp(num, { to: parseFloat(num.getAttribute('data-w-count')),
+        dp: parseInt(num.getAttribute('data-w-dp') || '0', 10),
+        suffix: num.getAttribute('data-w-suffix') || '', dur: 1100 });
+    }
+    if (el.getAttribute('data-kind') === 'champion' && window.brConfetti) {
+      setTimeout(function () { window.brConfetti(el, { palette: ['#f5c451','#e0a828','#fff1c2','#ffffff'], y: el.clientHeight * 0.4, count: 120 }); }, 350);
+    }
+  }
+  function go(n) {
+    if (n < 0) return;
+    if (n >= slides.length) { close(); return; }
+    idx = n; playSlide(idx);
+  }
+  function open() {
+    overlay.hidden = false; overlay.setAttribute('aria-hidden', 'false');
+    document.documentElement.style.overflow = 'hidden';
+    idx = 0; requestAnimationFrame(function () { playSlide(0); });
+  }
+  function close() {
+    overlay.hidden = true; overlay.setAttribute('aria-hidden', 'true');
+    document.documentElement.style.overflow = '';
+  }
+
+  launch.addEventListener('click', open);
+  document.getElementById('wrappedClose').addEventListener('click', close);
+  document.getElementById('wrappedNext').addEventListener('click', function () { go(idx + 1); });
+  document.getElementById('wrappedPrev').addEventListener('click', function () { go(idx - 1); });
+  document.addEventListener('keydown', function (e) {
+    if (overlay.hidden) return;
+    if (e.key === 'Escape') close();
+    else if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); go(idx + 1); }
+    else if (e.key === 'ArrowLeft') go(idx - 1);
+  });
+  // Swipe on touch.
+  var sx = null;
+  stage.addEventListener('touchstart', function (e) { sx = e.touches[0].clientX; }, { passive: true });
+  stage.addEventListener('touchend', function (e) {
+    if (sx === null) return;
+    var dx = e.changedTouches[0].clientX - sx; sx = null;
+    if (Math.abs(dx) > 40) go(idx + (dx < 0 ? 1 : -1));
+  }, { passive: true });
+})();
+"""
+
+
 def build_history_body(
         history_ctx: dict,
         available_seasons: List[int],
@@ -947,6 +1145,14 @@ def build_history_body(
         options_html.append(f"<option value='{href}' {selected}>{yr}</option>")
 
     league_name = league.get("name") or "League History"
+
+    # Season Wrapped: a stories-style recap, available once there's a champion.
+    _wrapped_slides = _build_wrapped_slides(
+        summary, df_weekly, league, league_name, selected_history_season
+    )
+    _wrapped_btn, _wrapped_overlay = _render_season_wrapped(
+        _wrapped_slides, league_name, selected_history_season
+    )
 
     # Loading spinner HTML (unused when prerendered sections are provided)
     loading_spinner = """
@@ -984,6 +1190,7 @@ def build_history_body(
         </div>
 
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:12px;">
+          {_wrapped_btn}
           <a href="/{base_platform}/{base_season}/{base_league_id}/awards" class="awards-page-nav-link">
             <i class="fa-solid fa-trophy"></i>
             All-Time Awards
@@ -1056,4 +1263,5 @@ def build_history_body(
 
       {rivalry_html}
     </div>
+    {_wrapped_overlay}
     """
