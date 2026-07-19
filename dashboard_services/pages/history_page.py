@@ -477,8 +477,6 @@ def _build_summary(history_ctx: dict) -> dict:
         "biggest_blowout_margin": 0.0,
         "unluckiest_team": "-",
         "unluckiest_delta": 0,
-        "overperformer_team": "-",
-        "overperformer_delta": 0,
     }
 
     if not team_stats.empty:
@@ -513,12 +511,6 @@ def _build_summary(history_ctx: dict) -> dict:
             unlucky = merged.sort_values(["delta", "pf_rank"], ascending=[False, True]).iloc[0]
             summary["unluckiest_team"] = str(unlucky["owner"])
             summary["unluckiest_delta"] = _safe_int(unlucky["delta"], 0)
-
-            # Overperformer: finished higher than its scoring rank would suggest
-            # (won the right weeks). delta = win_rank - pf_rank, so most negative.
-            over = merged.sort_values(["delta", "pf_rank"], ascending=[True, True]).iloc[0]
-            summary["overperformer_team"] = str(over["owner"])
-            summary["overperformer_delta"] = _safe_int(-over["delta"], 0)
 
     if not df_weekly.empty and {"owner", "points"}.issubset(df_weekly.columns):
         hi = df_weekly.loc[df_weekly["points"].idxmax()]
@@ -1022,6 +1014,44 @@ def _wrapped_player_leaders(history_ctx: dict) -> dict:
         return {}
 
 
+def _wrapped_luck(history_ctx: dict):
+    """(lucky, unlucky) each as (owner, luck_delta) from the all-play luck index
+    (actual wins minus expected wins), or (None, None). Same metric as the
+    Standings 'Luck' column so the Wrapped agrees with the rest of the app."""
+    try:
+        from utils.all_play import all_play_analysis
+        df = history_ctx.get("df_weekly")
+        if df is None or df.empty or not {"owner", "points", "week"}.issubset(df.columns):
+            return None, None
+        df = _filtered_season_df(df)
+        if df is None or df.empty:
+            return None, None
+        df = df.copy()
+        if "finalized" in df.columns:
+            df = df[df["finalized"] == True]
+        df["week"] = pd.to_numeric(df["week"], errors="coerce")
+
+        weekly_scores: dict = {}
+        for wk, g in df.groupby("week"):
+            weekly_scores[int(wk)] = {str(r["owner"]): float(r["points"] or 0) for _, r in g.iterrows()}
+
+        actual: dict = {}
+        has_pa = "points_against" in df.columns
+        for _, r in df.iterrows():
+            o = str(r["owner"])
+            pf = float(r["points"] or 0)
+            pa = float(r.get("points_against") or 0) if has_pa else 0.0
+            actual[o] = actual.get(o, 0.0) + (1.0 if pf > pa else 0.5 if pf == pa else 0.0)
+
+        ana = all_play_analysis(weekly_scores, actual)
+        if not ana:
+            return None, None
+        items = [(t, d["luck_delta"]) for t, d in ana.items()]
+        return max(items, key=lambda x: x[1]), min(items, key=lambda x: x[1])
+    except Exception:
+        return None, None
+
+
 def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, season) -> list:
     """Ordered 'Season Wrapped' story slides built from the season summary and
     per-player leaders. Each slide: {kind, eyebrow, big, num, dp, suffix, label,
@@ -1086,17 +1116,14 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
                            summary.get("closest_matchup", "-"),
                            "Decided by the slimmest margin all season"))
 
-    if summary.get("overperformer_team") not in ("-", None) and summary.get("overperformer_delta", 0) >= 1:
-        _od = int(summary["overperformer_delta"])
-        slides.append(_txt("luckiest", "LUCKIEST TEAM",
-                           summary["overperformer_team"], "Won all the right weeks",
-                           f"Finished {_od} spot{'s' if _od != 1 else ''} higher than its scoring rank — the schedule was kind"))
-
-    if summary.get("unluckiest_team") not in ("-", None) and summary.get("unluckiest_delta", 0) >= 1:
-        _ud = int(summary["unluckiest_delta"])
-        slides.append(_txt("unluckiest", "UNLUCKIEST TEAM",
-                           summary["unluckiest_team"], "Deserved better",
-                           f"Scored like a contender but finished {_ud} spot{'s' if _ud != 1 else ''} lower — the rough-luck team"))
+    # Luck index (all-play luck_delta): actual wins vs what the scoring earned.
+    _lucky, _unlucky = _wrapped_luck(history_ctx)
+    if _lucky and _lucky[1] >= 1.0:
+        slides.append(_txt("luckiest", "LUCKIEST TEAM", _lucky[0], "Won all the right weeks",
+                           f"{_lucky[1]:+.1f} wins above what its scoring earned — the schedule was kind"))
+    if _unlucky and _unlucky[1] <= -1.0:
+        slides.append(_txt("unluckiest", "UNLUCKIEST TEAM", _unlucky[0], "Deserved better",
+                           f"{_unlucky[1]:.1f} wins below what its scoring earned — the rough-luck team"))
 
     if summary.get("runner_up") and summary.get("runner_up") not in ("-", None):
         slides.append(_txt("runnerup", "RUNNER-UP", summary["runner_up"], "So close",
