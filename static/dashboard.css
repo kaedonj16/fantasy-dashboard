@@ -22030,3 +22030,106 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   45% { box-shadow: 0 1px 4px rgba(0,0,0,.06), 0 0 22px 2px rgba(245,196,81,.55); }
   100% { box-shadow: 0 1px 4px rgba(0,0,0,.06), 0 0 0 0 rgba(245,196,81,0); }
 }
+
+/* ══ Season Wrapped ════════════════════════════════════════════════════════════
+   A stories-style, full-screen season recap launched from the history page.
+   Deliberately single-theme (a dark, immersive takeover) regardless of the
+   page theme — see _render_season_wrapped() in history_page.py. */
+.wrapped-launch {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+  font-size: 13px; font-weight: 800; letter-spacing: .01em; color: #fff;
+  padding: 8px 15px; border: 0; border-radius: 999px;
+  background: linear-gradient(120deg, #7c3aed, #db2777 55%, #f59e0b);
+  box-shadow: 0 6px 20px rgba(124, 58, 237, .35);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.wrapped-launch:hover { transform: translateY(-1px); box-shadow: 0 10px 26px rgba(219, 39, 119, .4); }
+.wrapped-launch:active { transform: translateY(0); }
+
+.wrapped-overlay {
+  position: fixed; inset: 0; z-index: 4000;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background:
+    radial-gradient(1200px 700px at 50% -10%, #241b4d 0%, transparent 60%),
+    linear-gradient(160deg, #0b0b16 0%, #141026 55%, #0b0b16 100%);
+  color: #fff; overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+  animation: wrapFade .35s ease both;
+}
+.wrapped-overlay[hidden] { display: none; }
+@keyframes wrapFade { from { opacity: 0; } to { opacity: 1; } }
+
+.wrapped-progress {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 5;
+  display: flex; gap: 5px; padding: 14px 16px;
+}
+.wrapped-bar { flex: 1; height: 3px; border-radius: 3px; background: rgba(255,255,255,.22); overflow: hidden; }
+.wrapped-bar i { display: block; height: 100%; width: 0; background: #fff; border-radius: 3px; }
+.wrapped-bar.filled i { width: 100%; }
+.wrapped-bar.current i { width: 100%; transition: width 4s linear; }
+
+.wrapped-close {
+  position: absolute; top: 46px; right: 16px; z-index: 6;
+  width: 38px; height: 38px; border-radius: 50%; cursor: pointer;
+  border: 0; background: rgba(255,255,255,.12); color: #fff; font-size: 22px; line-height: 1;
+}
+.wrapped-close:hover { background: rgba(255,255,255,.22); }
+
+.wrapped-stage { position: relative; width: min(680px, 92vw); height: min(80vh, 760px); }
+
+.wrapped-slide {
+  position: absolute; inset: 0; z-index: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; padding: 28px; gap: 14px; overflow: hidden;
+  opacity: 0; visibility: hidden; pointer-events: none;
+  --wa: #a78bfa;
+}
+.wrapped-slide::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; opacity: .55;
+  background: radial-gradient(60% 45% at 50% 34%, var(--wa) 0%, transparent 62%);
+}
+.wrapped-slide.active { opacity: 1; visibility: visible; pointer-events: auto; }
+
+.wrapped-slide[data-kind="intro"]     { --wa: #8b5cf6; }
+.wrapped-slide[data-kind="topscore"]  { --wa: #3b82f6; }
+.wrapped-slide[data-kind="highweek"]  { --wa: #f59e0b; }
+.wrapped-slide[data-kind="streak"]    { --wa: #ef4444; }
+.wrapped-slide[data-kind="blowout"]   { --wa: #a855f7; }
+.wrapped-slide[data-kind="nailbiter"] { --wa: #14b8a6; }
+.wrapped-slide[data-kind="runnerup"]  { --wa: #94a3b8; }
+.wrapped-slide[data-kind="champion"]  { --wa: #f5c451; }
+
+.wrapped-eyebrow {
+  font-size: 13px; font-weight: 800; letter-spacing: .22em; text-transform: uppercase;
+  color: var(--wa); filter: brightness(1.25);
+}
+.wrapped-big {
+  font-size: clamp(46px, 12vw, 104px); font-weight: 900; line-height: .95; letter-spacing: -.03em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 8px 40px color-mix(in srgb, var(--wa) 60%, transparent);
+}
+.wrapped-big-text { font-size: clamp(30px, 7vw, 62px); letter-spacing: -.02em; }
+.wrapped-label { font-size: clamp(18px, 4vw, 26px); font-weight: 800; color: #fff; }
+.wrapped-sub { font-size: 14.5px; line-height: 1.5; color: rgba(255,255,255,.72); max-width: 34ch; }
+
+/* Staggered reveal of the active slide's content. */
+.wrapped-slide.active .wrapped-eyebrow { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .05s both; }
+.wrapped-slide.active .wrapped-big     { animation: wrapPop .6s cubic-bezier(.2,1.4,.4,1) .16s both; }
+.wrapped-slide.active .wrapped-label   { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .34s both; }
+.wrapped-slide.active .wrapped-sub     { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .46s both; }
+@keyframes wrapUp  { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+@keyframes wrapPop { from { opacity: 0; transform: scale(.72); } to { opacity: 1; transform: none; } }
+
+.wrapped-tap { position: absolute; top: 0; bottom: 0; z-index: 4; width: 40%; border: 0; background: transparent; cursor: pointer; }
+.wrapped-tap-prev { left: 0; }
+.wrapped-tap-next { right: 0; width: 60%; }
+.wrapped-hint {
+  position: absolute; bottom: 18px; left: 0; right: 0; z-index: 5; text-align: center;
+  font-size: 11.5px; letter-spacing: .04em; color: rgba(255,255,255,.5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wrapped-overlay, .wrapped-slide.active .wrapped-eyebrow, .wrapped-slide.active .wrapped-big,
+  .wrapped-slide.active .wrapped-label, .wrapped-slide.active .wrapped-sub { animation-duration: .01ms; }
+  .wrapped-bar.current i { transition: none; }
+}
