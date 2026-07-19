@@ -733,6 +733,52 @@ function emptyState(container, message, iconClass) {
   }
   window.brInitMoments = initMoments;
 
+  // Rankings shakeup: swap `container`'s markup for `newHTML` and FLIP-animate
+  // every [data-rk-key] element that exists in both from its old position to its
+  // new one — risers glow green and climb, fallers dim and slide down. Used by
+  // the standings week-selector so scrubbing weeks visibly reshuffles the board.
+  window.brSwapRanks = function (container, newHTML) {
+    if (!container) return;
+    if (reduce || !container.querySelector('[data-rk-key]')) {
+      container.innerHTML = newHTML;
+      return;
+    }
+    // 1. First: record current positions by key.
+    var first = {};
+    container.querySelectorAll('[data-rk-key]').forEach(function (el) {
+      first[el.getAttribute('data-rk-key')] = el.getBoundingClientRect();
+    });
+    // 2. Swap in the new markup.
+    container.innerHTML = newHTML;
+    // 3. Last + Invert + Play for each element present in both frames.
+    var movers = container.querySelectorAll('[data-rk-key]');
+    movers.forEach(function (el) {
+      var key = el.getAttribute('data-rk-key');
+      var a = first[key];
+      if (!a) {                       // new entrant: gentle fade-in
+        el.style.animation = 'brRkEnter .45s ease both';
+        el.addEventListener('animationend', function () { el.style.animation = ''; }, { once: true });
+        return;
+      }
+      var b = el.getBoundingClientRect();
+      var dx = a.left - b.left, dy = a.top - b.top;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;   // held station
+      el.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+      el.style.transition = 'none';
+      el.classList.add(dy > 0 ? 'rk-up' : 'rk-down');     // b below a ⇒ climbed
+      // Next frame: release to the new position so it animates into place.
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          el.style.transition = 'transform .55s cubic-bezier(.2,.8,.3,1)';
+          el.style.transform = '';
+        });
+      });
+      el.addEventListener('transitionend', function () {
+        el.style.transition = ''; el.classList.remove('rk-up', 'rk-down');
+      }, { once: true });
+    });
+  };
+
   // Auto-wire on load: content entrance for the main page container, count-up
   // for any [data-countup], and sliding tabs for any [data-br-slide-tabs].
   function initMotion() {

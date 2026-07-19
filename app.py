@@ -3929,7 +3929,7 @@ def render_standings(team_stats, length, all_play: dict = None,
             team_cell = f"{img} {html.escape(owner)}"
 
         rows.append(f"""
-            <tr class="{_trcls}"{_mo_attr}>
+            <tr class="{_trcls}"{_mo_attr} data-rk-key="{html.escape(owner, quote=True)}">
               <td class="num rank-cell">{rank_mark(int(row['Rank']), size=28, ring_others=False)}</td>
               <td class="{_tdcls}">{team_cell}</td>
               <td>{record}</td>
@@ -5059,7 +5059,7 @@ def render_power_and_playoffs(
         chips_html += "</div>"
 
         return f"""
-          <div class="slot {base_cls} {streak_frame_cls}">
+          <div class="slot {base_cls} {streak_frame_cls}" data-rk-key="{html.escape(str(name), quote=True)}">
             <div class="wrap">
               <div class='podium-header'>
                 <h3>#{rank} {move_arrow(name)}</h3>
@@ -5131,7 +5131,7 @@ def render_power_and_playoffs(
         )
 
         rank_cards.append(
-            f"<div class='rank-item {css_cls}'>"
+            f"<div class='rank-item {css_cls}' data-rk-key='{html.escape(str(team), quote=True)}'>"
             f"<span class='pos'>#{pos}</span>"
             f"{move_arrow(team)}"
             f"{img}"
