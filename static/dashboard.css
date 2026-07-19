@@ -22195,7 +22195,8 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 .wrapped-slide[data-kind="champion"]  { --wa: #f5c451; }
 .wrapped-slide[data-kind="mvp"]          { --wa: #22c55e; }
 .wrapped-slide[data-kind="posleaders"]   { --wa: #38bdf8; }
-.wrapped-slide[data-kind="overperformer"]{ --wa: #f97316; }
+.wrapped-slide[data-kind="luckiest"]     { --wa: #10b981; }
+.wrapped-slide[data-kind="unluckiest"]   { --wa: #f43f5e; }
 
 /* Position-leaders list slide. */
 .wrapped-list {

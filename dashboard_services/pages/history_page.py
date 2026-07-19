@@ -1088,9 +1088,15 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
 
     if summary.get("overperformer_team") not in ("-", None) and summary.get("overperformer_delta", 0) >= 1:
         _od = int(summary["overperformer_delta"])
-        slides.append(_txt("overperformer", "BIGGEST OVERACHIEVER",
-                           summary["overperformer_team"], "Punched above their weight",
-                           f"Finished {_od} spot{'s' if _od != 1 else ''} better than its scoring rank — won all the right weeks"))
+        slides.append(_txt("luckiest", "LUCKIEST TEAM",
+                           summary["overperformer_team"], "Won all the right weeks",
+                           f"Finished {_od} spot{'s' if _od != 1 else ''} higher than its scoring rank — the schedule was kind"))
+
+    if summary.get("unluckiest_team") not in ("-", None) and summary.get("unluckiest_delta", 0) >= 1:
+        _ud = int(summary["unluckiest_delta"])
+        slides.append(_txt("unluckiest", "UNLUCKIEST TEAM",
+                           summary["unluckiest_team"], "Deserved better",
+                           f"Scored like a contender but finished {_ud} spot{'s' if _ud != 1 else ''} lower — the rough-luck team"))
 
     if summary.get("runner_up") and summary.get("runner_up") not in ("-", None):
         slides.append(_txt("runnerup", "RUNNER-UP", summary["runner_up"], "So close",
