@@ -5794,17 +5794,23 @@ def render_share_rankings(ctx: dict) -> str:
     </table>"""
 
 
-def build_standings_body(ctx: dict) -> str:
-    team_stats = ctx["team_stats"]
-    roster_map = ctx["roster_map"]
-    df_weekly = ctx["df_weekly"]
-    rosters = ctx["rosters"]
-    num_teams = len({str(r.get("roster_id")) for r in rosters})
+def _standings_available_weeks(ctx: dict) -> list:
+    """Finalized regular-season weeks available to the standings week-selector,
+    ascending. Empty when there aren't enough weeks to compare."""
+    df_weekly = ctx.get("df_weekly")
+    try:
+        if df_weekly is None or df_weekly.empty or "finalized" not in df_weekly.columns:
+            return []
+        fin = df_weekly[df_weekly["finalized"] == True]
+        return sorted(int(w) for w in fin["week"].unique())
+    except Exception:
+        return []
 
-    _all_play = _all_play_from_df_weekly(df_weekly)
 
-    # Playoff picture: only once the race is meaningful (past ~midseason), and
-    # only when we know the playoff format and regular-season length.
+def _standings_playoff_params(ctx: dict, team_stats):
+    """(_pp_spots, _pp_weeks) for render_standings, or (None, None) when the
+    playoff race isn't meaningful yet or the format is unknown. Uses the games
+    actually played in team_stats, so it stays correct for a week-capped view."""
     _pp_spots = _pp_weeks = None
     try:
         _settings = ctx.get("league_settings") or {}
@@ -5818,6 +5824,25 @@ def build_standings_body(ctx: dict) -> str:
                 _pp_weeks = _reg_weeks
     except Exception:
         _pp_spots = _pp_weeks = None
+    return _pp_spots, _pp_weeks
+
+
+def _standings_panels(ctx: dict, power_rankings=None) -> dict:
+    """Render the four swappable standings surfaces from ctx. Shared by the
+    standings page and the week-selector endpoint, so a "through week N" view is
+    just this called with a week-capped ctx (see build_standings_as_of_week).
+
+    power_rankings: value-blended list from build_power_rankings_context to match
+    the Teams page (current view); None ranks by the performance PowerScore in
+    team_stats, which is what a historical week can reconstruct faithfully."""
+    team_stats = ctx["team_stats"]
+    roster_map = ctx["roster_map"]
+    df_weekly = ctx["df_weekly"]
+    rosters = ctx["rosters"]
+    num_teams = len({str(r.get("roster_id")) for r in rosters})
+
+    _all_play = _all_play_from_df_weekly(df_weekly)
+    _pp_spots, _pp_weeks = _standings_playoff_params(ctx, team_stats)
 
     standings_html = render_standings(
         team_stats, num_teams, all_play=_all_play,
@@ -5832,27 +5857,144 @@ def build_standings_body(ctx: dict) -> str:
         detailed_df = df_weekly[df_weekly["finalized"] == True].copy()
     else:
         detailed_df = pd.DataFrame()
+    details_html = render_team_stats(team_stats, detailed_df)
 
-    table_html = render_team_stats(team_stats, detailed_df)
-    share_html = render_share_rankings(ctx)
-    # Use the same ranking source as the Teams page "Power Rankings" tab so the
-    # two views always agree.
-    try:
-        from dashboard_services.ai.context_builders import build_power_rankings_context
-        _pr_teams = (build_power_rankings_context(ctx) or {}).get("teams") or []
-    except Exception:
-        _pr_teams = []
-    power_playoffs_html = render_power_and_playoffs(
+    power_html = render_power_and_playoffs(
         team_stats,
         roster_map,
         ctx.get("resolved_league_id", ctx["league_id"]),
         ctx["platform"],
         ctx["season"],
-        power_rankings=_pr_teams,
+        power_rankings=power_rankings,
     )
     sidebar_html = render_standings_sidebar(team_stats)
+    return {
+        "standings": standings_html,
+        "details": details_html,
+        "power": power_html,
+        "sidebar": sidebar_html,
+    }
+
+
+def build_standings_as_of_week(ctx: dict, week: int) -> dict:
+    """Shallow-copied ctx whose team_stats and df_weekly are recomputed through
+    the given finalized week, so the standings/power surfaces render as they
+    stood then. Values come straight from the weekly scores, so the record,
+    PF/PA, streaks and performance PowerScore are all exact for that point."""
+    from dashboard_services.service import finalize_team_stats
+
+    df_weekly = ctx["df_weekly"]
+    wk = pd.to_numeric(df_weekly["week"], errors="coerce")
+    fin = df_weekly[(df_weekly["finalized"] == True) & (wk <= int(week))].copy()
+
+    owner_avatar = {}
+    if "owner" in df_weekly.columns and "avatar" in df_weekly.columns:
+        owner_avatar = dict(zip(df_weekly["owner"].astype(str), df_weekly["avatar"]))
+
+    team_stats = finalize_team_stats(
+        fin, owner_avatar,
+        ctx.get("matchups_by_week") or {},
+        ctx.get("users") or [],
+        int(week),
+    )
+
+    new_ctx = dict(ctx)
+    new_ctx["team_stats"] = team_stats
+    new_ctx["df_weekly"] = fin
+    return new_ctx
+
+
+def _standings_week_selector(ctx: dict, weeks: list) -> str:
+    """A 'Through Week N' selector (mirrors the Matchups hub week picker) plus
+    the JS that swaps the standings/power/sidebar panels via /api/standings-week.
+    Returns '' when there aren't at least two finalized weeks to scrub."""
+    if len(weeks) < 2:
+        return ""
+    latest = weeks[-1]
+    opts = "".join(
+        f"<option value='{w}'{' selected' if w == latest else ''}>"
+        f"Week {w}{' · latest' if w == latest else ''}</option>"
+        for w in weeks
+    )
+    platform_js = json.dumps(str(ctx["platform"]))
+    season_js = json.dumps(str(ctx["season"]))
+    league_js = json.dumps(str(ctx["league_id"]))
+    return f"""
+    <div class="standings-week-bar">
+      <label for="standingsWeek" class="standings-week-label">Standings through</label>
+      <select id="standingsWeek" class="search standings-week-select">{opts}</select>
+      <span class="standings-week-hint">See the standings &amp; power ranking as they stood after any week</span>
+    </div>
+    <script>
+    (function() {{
+      var sel = document.getElementById('standingsWeek');
+      if (!sel || sel.__stBound) return;
+      sel.__stBound = true;
+      var seq = 0, ctrl = null;
+      function panels() {{
+        return {{
+          standings: document.getElementById('stStandingsInner'),
+          details:   document.getElementById('stDetailsInner'),
+          power:     document.getElementById('stPowerInner'),
+          sidebar:   document.getElementById('stSidebarInner')
+        }};
+      }}
+      function setLoading(on) {{
+        var p = panels();
+        Object.keys(p).forEach(function(k) {{
+          if (p[k]) p[k].classList.toggle('st-week-loading', on);
+        }});
+      }}
+      sel.addEventListener('change', function() {{
+        var w = String(sel.value || '');
+        if (!w) return;
+        var my = ++seq;
+        if (ctrl) {{ try {{ ctrl.abort(); }} catch (e) {{}} }}
+        ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        setLoading(true);
+        var url = '/api/standings-week?platform=' + encodeURIComponent({platform_js}) +
+          '&season=' + encodeURIComponent({season_js}) +
+          '&league_id=' + encodeURIComponent({league_js}) +
+          '&week=' + encodeURIComponent(w);
+        fetch(url, {{ signal: ctrl ? ctrl.signal : undefined }})
+          .then(function(r) {{ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }})
+          .then(function(data) {{
+            if (my !== seq || !data || !data.ok) return;
+            var p = panels();
+            var map = {{ standings: data.standings_html, details: data.details_html,
+                        power: data.power_html, sidebar: data.sidebar_html }};
+            Object.keys(map).forEach(function(k) {{
+              if (p[k] && typeof map[k] === 'string') {{
+                if (window.brSwapRanks) {{ window.brSwapRanks(p[k], map[k]); }}
+                else {{ p[k].innerHTML = map[k]; }}
+                if (window.initPageRoot) window.initPageRoot(p[k]);
+                if (window.brInitMoments) window.brInitMoments(p[k]);
+              }}
+            }});
+          }})
+          .catch(function(err) {{ if (err && err.name === 'AbortError') return; }})
+          .finally(function() {{ if (my === seq) setLoading(false); }});
+      }});
+    }})();
+    </script>
+    """
+
+def build_standings_body(ctx: dict) -> str:
+    # Value-blended power ranking (matches the Teams page "Power Rankings" tab)
+    # for the live view; the week-selector re-renders with the performance
+    # PowerScore, which is what past weeks can reconstruct faithfully.
+    try:
+        from dashboard_services.ai.context_builders import build_power_rankings_context
+        _pr_teams = (build_power_rankings_context(ctx) or {}).get("teams") or []
+    except Exception:
+        _pr_teams = []
+
+    panels = _standings_panels(ctx, power_rankings=_pr_teams)
+    share_html = render_share_rankings(ctx)
+    week_bar = _standings_week_selector(ctx, _standings_available_weeks(ctx))
 
     body = f"""
+    {week_bar}
     <div class="standings-main two-col-standings">
       <div class="standings-col">
         <div class="card">
@@ -5862,10 +6004,10 @@ def build_standings_body(ctx: dict) -> str:
               <button class="tab-btn" data-tab="details">Detailed Stats</button>
               <div class="tab-panels">
                 <div class="tab-panel active" data-tab="standings">
-                  {standings_html}
+                  <div id="stStandingsInner">{panels['standings']}</div>
                 </div>
                 <div class="tab-panel" data-tab="details">
-                  {table_html}
+                  <div id="stDetailsInner">{panels['details']}</div>
                   <div class="footer">
                     Default sort: Win% ↓ then PF ↓. Click headers to sort.
                   </div>
@@ -5876,7 +6018,7 @@ def build_standings_body(ctx: dict) -> str:
         </div>
       </div>
       <div class="standings-col">
-        {power_playoffs_html}
+        <div id="stPowerInner">{panels['power']}</div>
       </div>
     </div>
     <div class="card standings-shares-card">
@@ -5884,7 +6026,7 @@ def build_standings_body(ctx: dict) -> str:
       {share_html}
     </div>
     <aside class="overview-sidebar">
-      {sidebar_html}
+      <div id="stSidebarInner">{panels['sidebar']}</div>
     </aside>
     """
 
@@ -9604,6 +9746,36 @@ def page_standings(platform: str, season: int, league_id: str):
         body = build_standings_body(ctx)
 
     return render_page("BR Fantasy Standings", league_id, "standings", body, platform, season)
+
+
+@app.route("/api/standings-week")
+def api_standings_week():
+    """Re-render the standings/power/sidebar panels as they stood through a
+    chosen finalized week, for the standings page week-selector."""
+    platform = request.args.get("platform", "sleeper")
+    league_id = request.args.get("league_id", "")
+    try:
+        season = int(request.args.get("season", 0))
+        week = int(request.args.get("week", 0))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "bad params"}), 400
+    if not league_id or week <= 0:
+        return jsonify({"ok": False, "error": "missing params"}), 400
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        capped = build_standings_as_of_week(ctx, week)
+        panels = _standings_panels(capped, power_rankings=None)
+        return jsonify({
+            "ok": True,
+            "week": week,
+            "standings_html": panels["standings"],
+            "details_html": panels["details"],
+            "power_html": panels["power"],
+            "sidebar_html": panels["sidebar"],
+        })
+    except Exception as e:
+        logger.warning("[standings-week] render failed: %s", e, exc_info=True)
+        return jsonify({"ok": False, "error": "render failed"}), 500
 
 
 @app.route("/<platform>/<int:season>/<league_id>/waivers")

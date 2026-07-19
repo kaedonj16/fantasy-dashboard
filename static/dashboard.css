@@ -21935,3 +21935,17 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   60% { opacity: 1; transform: rotateX(0) scale(1.12); }
   100% { transform: none; }
 }
+
+/* Standings week-selector bar (mirrors the Matchups hub week picker). */
+.standings-week-bar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+  margin: 0 0 14px; padding: 10px 14px;
+  background: var(--card, var(--surface)); border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+.standings-week-label { font-size: 12px; font-weight: 800; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--text-muted); }
+.standings-week-select { min-width: 130px; }
+.standings-week-hint { font-size: 12px; color: var(--text-muted); flex: 1 1 auto; }
+.st-week-loading { opacity: .45; transition: opacity .15s ease; pointer-events: none; }
+@media (max-width: 560px) { .standings-week-hint { flex-basis: 100%; } }
