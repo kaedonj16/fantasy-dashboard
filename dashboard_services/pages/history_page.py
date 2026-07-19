@@ -1193,11 +1193,13 @@ def build_history_body(
         </div>
 
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:12px;">
-          {_wrapped_btn}
-          <a href="/{base_platform}/{base_season}/{base_league_id}/awards" class="awards-page-nav-link">
-            <i class="fa-solid fa-trophy"></i>
-            All-Time Awards
-          </a>
+          <div class="history-header-actions">
+            {_wrapped_btn}
+            <a href="/{base_platform}/{base_season}/{base_league_id}/awards" class="awards-page-nav-link">
+              <i class="fa-solid fa-trophy"></i>
+              All-Time Awards
+            </a>
+          </div>
           <div class="history-season-picker">
             <label for="history-season-select">Season</label>
             <select

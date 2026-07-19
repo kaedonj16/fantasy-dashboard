@@ -17751,6 +17751,15 @@ tr.team-clickable {
    ============================================ */
 
 /* Cross-page nav link pill (awards ↔ history) */
+/* Season Wrapped + All-Time Awards sit side by side in the history header. */
+.history-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .awards-page-nav-link {
   display: inline-flex;
   align-items: center;
