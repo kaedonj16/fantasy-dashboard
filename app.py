@@ -3380,7 +3380,12 @@ def ensure_weekly_bits(ctx: dict) -> None:
     _apply_proj_column()
 
 
-def refresh_league_ctx_section(platform: str, league_id: str, page: str, season: int) -> dict:
+def refresh_league_ctx_section(platform: str, league_id: str, page: str, season: int,
+                               full: bool = False) -> dict:
+    """Refresh the cached league context. By default only the sections the given
+    page needs are re-fetched; with ``full=True`` every page's sections are
+    rebuilt and all cached page HTML is cleared, so a single refresh makes the
+    whole site fresh (the other pages you navigate to next, too)."""
     key = _cache_key(platform, season, league_id)
     entry = DASHBOARD_CACHE.get(key)
 
@@ -3475,7 +3480,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
         logger.debug("suppressed exception", exc_info=True)
 
     # ---------- Standings / dashboard / weekly core tables ----------
-    if page in ("standings", "dashboard", "weekly"):
+    if full or page in ("standings", "dashboard", "weekly"):
         if offseason_mode:
             ctx["df_weekly"] = pd.DataFrame()
             ctx["team_stats"] = pd.DataFrame()
@@ -3505,7 +3510,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
                 ctx["standings_map"] = {}
 
     # ---------- Activity / injuries ----------
-    if page in ("activity", "dashboard"):
+    if full or page in ("activity", "dashboard"):
         clear_activity_cache_for_league(resolved_league_id)
 
         ctx["activity_df"] = build_week_activity(
@@ -3543,7 +3548,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
         )
 
     # ---------- Weekly / dashboard projections & matchups ----------
-    if page in ("weekly", "dashboard"):
+    if full or page in ("weekly", "dashboard"):
         clear_weekly_cache_for_league(resolved_league_id)
 
         if offseason_mode:
@@ -3634,7 +3639,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
                 ctx["df_weekly"] = df
 
     # ---------- Teams page ----------
-    if page == "teams":
+    if full or page == "teams":
         # Rosters/traded already re-fetched from cleared cache in core section above.
         ctx["model_value_table"] = ctx.get("model_value_table") or list(get_model_value_table_cached() or [])
 
@@ -3660,7 +3665,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
                 logger.info(f"[refresh] teams picks refresh skipped: {e}")
 
     # ---------- Trade page ----------
-    if page == "trade":
+    if full or page == "trade":
         # Keep the shared table fresh so the trade calc reflects newest values
         ctx["model_value_table"] = ctx.get("model_value_table") or list(get_model_value_table_cached() or [])
 
@@ -3670,7 +3675,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
         _MODEL_VALUE_CACHE_TS = time.time()
 
     # ---------- Offseason dashboard refresh ----------
-    if page == "dashboard" and offseason_mode:
+    if (full or page == "dashboard") and offseason_mode:
         ctx["model_value_table"] = ctx.get("model_value_table") or list(get_model_value_table_cached() or [])
 
         if platform == "sleeper":
@@ -3711,7 +3716,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
 
     # ---------- Invalidate rendered HTML cache for refreshable pages ----------
     page_html = entry.setdefault("page_html", {})
-    if page == "dashboard":
+    if full or page == "dashboard":
         for p in ("dashboard", "activity", "teams", "graphs", "standings", "weekly"):
             page_html.pop(p, None)
     else:
@@ -17919,7 +17924,16 @@ def api_refresh_page():
         return jsonify({"ok": False, "error": f"Unknown page '{page}'"}), 400
 
     try:
-        ctx = refresh_league_ctx_section(platform, league_id, page, season)
+        # The refresh button refreshes the whole site: every page's data is
+        # rebuilt now, so navigating elsewhere afterwards shows fresh data too.
+        ctx = refresh_league_ctx_section(platform, league_id, page, season, full=True)
+
+        # Also drop the trade-suggestion / simulation caches so those refresh.
+        try:
+            from dashboard_services.archetype_engine import invalidate_league_caches
+            invalidate_league_caches(platform, league_id, season)
+        except Exception:
+            logger.debug("[refresh-page] archetype cache invalidation skipped", exc_info=True)
 
         if page == "dashboard":
             if ctx.get("offseason_mode"):
