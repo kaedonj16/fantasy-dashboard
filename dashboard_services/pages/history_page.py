@@ -538,6 +538,8 @@ def _build_summary(history_ctx: dict) -> dict:
                     "week": _safe_int(winner["week"]),
                     "winner": str(winner["owner"]),
                     "loser": str(loser["owner"]),
+                    "winner_pts": _safe_float(winner["points"]),
+                    "loser_pts": _safe_float(loser["points"]),
                     "margin": margin,
                 }
             )
@@ -547,9 +549,11 @@ def _build_summary(history_ctx: dict) -> dict:
             blowout = max(matchup_rows, key=lambda x: x["margin"])
 
             summary["closest_matchup"] = f"Week {closest['week']}: {closest['winner']} over {closest['loser']}"
+            summary["closest_scores"] = f"{closest['winner_pts']:.1f}-{closest['loser_pts']:.1f}"
             summary["closest_margin"] = _safe_float(closest["margin"])
 
             summary["biggest_blowout"] = f"Week {blowout['week']}: {blowout['winner']} over {blowout['loser']}"
+            summary["biggest_blowout_scores"] = f"{blowout['winner_pts']:.1f}-{blowout['loser_pts']:.1f}"
             summary["biggest_blowout_margin"] = _safe_float(blowout["margin"])
 
     return summary
@@ -999,8 +1003,10 @@ def _wrapped_player_leaders(history_ctx: dict) -> dict:
             name = p.get("name") or p.get("full_name")
             if not name:
                 continue
-            pos = str(p.get("position") or "").upper()
-            entry = {"name": str(name), "pos": pos, "nfl": str(p.get("team") or ""),
+            # players_map stores position under "pos"; players_index uses "position".
+            pos = str(p.get("pos") or p.get("position") or "").upper()
+            nfl = str(p.get("team") or p.get("nfl") or "")
+            entry = {"name": str(name), "pos": pos, "nfl": nfl,
                      "pts": round(pts, 1), "ppg": round(pts / games, 1) if games else 0.0}
             if mvp is None or pts > mvp["pts"]:
                 mvp = entry
@@ -1010,6 +1016,43 @@ def _wrapped_player_leaders(history_ctx: dict) -> dict:
         leaders = {"mvp": mvp, "by_pos": by_pos}
         _WRAPPED_PLAYER_CACHE[ckey] = leaders
         return leaders
+    except Exception:
+        return {}
+
+
+def _wrapped_activity(history_ctx: dict) -> dict:
+    """Season transaction activity from ctx['activity_df']: total trades, the
+    most active trader (owner involved in the most trades), and the waiver-wire
+    leader (most adds). Returns {} when there's no activity data."""
+    try:
+        adf = history_ctx.get("activity_df")
+        if adf is None or getattr(adf, "empty", True) or "kind" not in getattr(adf, "columns", []):
+            return {}
+        total_trades = 0
+        trades_by_owner: dict = {}
+        waivers_by_owner: dict = {}
+        for _, row in adf.iterrows():
+            kind = row.get("kind")
+            data = row.get("data") or {}
+            if kind == "trade":
+                total_trades += 1
+                for tm in (data.get("teams") or []):
+                    nm = str(tm.get("name") or "").strip()
+                    if nm:
+                        trades_by_owner[nm] = trades_by_owner.get(nm, 0) + 1
+            elif kind == "waiver":
+                nm = str(data.get("name") or "").strip()
+                if nm:
+                    adds = data.get("adds") or []
+                    waivers_by_owner[nm] = waivers_by_owner.get(nm, 0) + (len(adds) if isinstance(adds, list) else 1)
+        out: dict = {"total_trades": total_trades}
+        if trades_by_owner:
+            o = max(trades_by_owner.items(), key=lambda x: x[1])
+            out["top_trader"] = {"owner": o[0], "n": o[1]}
+        if waivers_by_owner:
+            w = max(waivers_by_owner.items(), key=lambda x: x[1])
+            out["top_waiver"] = {"owner": w[0], "n": w[1]}
+        return out
     except Exception:
         return {}
 
@@ -1074,7 +1117,7 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
         slides.append(_num("topscore", "MOST POINTS ON THE YEAR",
                            summary["top_scorer_value"], 1, "",
                            summary.get("top_scorer_team", "-"),
-                           f"{summary.get('top_scorer_avg', 0):.1f} avg per week — the league's top scoring machine"))
+                           f"{summary.get('top_scorer_avg', 0):.1f} avg per week, the league's top scoring machine"))
 
     # ── Player awards: season MVP + the best at each position ──────────────────
     leaders = _wrapped_player_leaders(history_ctx)
@@ -1083,55 +1126,80 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
         _meta = " · ".join(x for x in [mvp.get("pos"), mvp.get("nfl")] if x)
         slides.append(_num("mvp", "LEAGUE MVP", float(mvp["pts"]), 1, "",
                            mvp["name"],
-                           f"{_meta} · {mvp.get('ppg', 0):.1f} per game — the season's top fantasy producer"))
+                           f"{_meta} · {mvp.get('ppg', 0):.1f} per game, the season's top fantasy producer"))
 
     by_pos = (leaders or {}).get("by_pos") or {}
-    pos_rows = [(p, by_pos[p]["name"], by_pos[p]["pts"])
+    pos_rows = [(p, by_pos[p]["name"], f"{by_pos[p]['pts']:.1f}")
                 for p in ("QB", "RB", "WR", "TE") if by_pos.get(p)]
     if len(pos_rows) >= 3:
         slides.append({"kind": "posleaders", "eyebrow": "TOP AT EACH POSITION",
                        "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
                        "sub": "The points leader at every spot", "rows": pos_rows})
 
+    # Season records: biggest single week + hottest streak, grouped.
+    _rec_rows = []
     if summary.get("highest_week_value"):
-        slides.append(_num("highweek", "BIGGEST SINGLE WEEK",
-                           summary["highest_week_value"], 1, "",
-                           summary.get("highest_week_team", "-"),
-                           "The highest one-week score anyone put up all season"))
-
-    owner, streak_len = _wrapped_longest_win_streak(df_weekly, league)
-    if streak_len >= 3:
-        slides.append(_num("streak", "HOTTEST STREAK", float(streak_len), 0, " straight",
-                           owner, "The longest win streak of the season"))
+        _rec_rows.append(("BIG WEEK", summary.get("highest_week_team", "-"),
+                          f"{summary['highest_week_value']:.1f}"))
+    _streak_owner, _streak_len = _wrapped_longest_win_streak(df_weekly, league)
+    if _streak_len >= 3:
+        _rec_rows.append(("HOT STREAK", _streak_owner, f"{_streak_len} W"))
+    if _rec_rows:
+        slides.append({"kind": "records", "eyebrow": "SEASON RECORDS", "num": False,
+                       "big": "", "dp": 0, "suffix": "", "label": "",
+                       "sub": "The high-water marks of the year", "rows": _rec_rows})
 
     if summary.get("biggest_blowout_margin"):
+        _bscore = summary.get("biggest_blowout_scores", "")
         slides.append(_num("blowout", "BIGGEST BLOWOUT",
                            summary["biggest_blowout_margin"], 1, " pts",
                            summary.get("biggest_blowout", "-"),
-                           "The most lopsided result of the year"))
+                           f"{_bscore} · the most lopsided result of the year" if _bscore
+                           else "The most lopsided result of the year"))
 
     if summary.get("closest_margin"):
+        _cscore = summary.get("closest_scores", "")
         slides.append(_num("nailbiter", "CLOSEST GAME",
                            summary["closest_margin"], 1, " pts",
                            summary.get("closest_matchup", "-"),
-                           "Decided by the slimmest margin all season"))
+                           f"{_cscore} · decided by the slimmest margin all season" if _cscore
+                           else "Decided by the slimmest margin all season"))
 
-    # Luck index (all-play luck_delta): actual wins vs what the scoring earned.
+    # Luck index (all-play luck_delta): luckiest + unluckiest, grouped.
     _lucky, _unlucky = _wrapped_luck(history_ctx)
+    _luck_rows = []
     if _lucky and _lucky[1] >= 1.0:
-        slides.append(_txt("luckiest", "LUCKIEST TEAM", _lucky[0], "Won all the right weeks",
-                           f"{_lucky[1]:+.1f} wins above what its scoring earned — the schedule was kind"))
+        _luck_rows.append(("LUCKIEST", _lucky[0], f"{_lucky[1]:+.1f} W"))
     if _unlucky and _unlucky[1] <= -1.0:
-        slides.append(_txt("unluckiest", "UNLUCKIEST TEAM", _unlucky[0], "Deserved better",
-                           f"{_unlucky[1]:.1f} wins below what its scoring earned — the rough-luck team"))
+        _luck_rows.append(("UNLUCKIEST", _unlucky[0], f"{_unlucky[1]:.1f} W"))
+    if _luck_rows:
+        slides.append({"kind": "luck", "eyebrow": "THE LUCK INDEX", "num": False,
+                       "big": "", "dp": 0, "suffix": "", "label": "",
+                       "sub": "Wins above or below what the scoring earned", "rows": _luck_rows})
+
+    # League activity: total trades, most active trader, waiver-wire leader.
+    act = _wrapped_activity(history_ctx)
+    _act_rows = []
+    if act.get("total_trades"):
+        _act_rows.append(("TRADES", f"{act['total_trades']} deals", ""))
+    _tt = act.get("top_trader")
+    if _tt and _tt.get("n"):
+        _act_rows.append(("TOP TRADER", _tt["owner"], f"{_tt['n']}"))
+    _tw = act.get("top_waiver")
+    if _tw and _tw.get("n"):
+        _act_rows.append(("WAIVERS", _tw["owner"], f"{_tw['n']}"))
+    if _act_rows:
+        slides.append({"kind": "activity", "eyebrow": "LEAGUE ACTIVITY", "num": False,
+                       "big": "", "dp": 0, "suffix": "", "label": "",
+                       "sub": "Who worked the phones and the wire", "rows": _act_rows})
 
     if summary.get("runner_up") and summary.get("runner_up") not in ("-", None):
         slides.append(_txt("runnerup", "RUNNER-UP", summary["runner_up"], "So close",
-                           f"Finished {summary.get('runner_up_record', '')} — one game short"))
+                           f"Finished {summary.get('runner_up_record', '')}, one game short"))
 
     if summary.get("champion") and summary.get("champion") not in ("-", None):
         slides.append(_txt("champion", f"{season} CHAMPION", summary["champion"],
-                           "", f"{summary.get('champion_record', '')} — league champion"))
+                           "", f"{summary.get('champion_record', '')} · league champion"))
 
     return slides
 
@@ -1147,11 +1215,14 @@ def _render_season_wrapped(slides: list, league_name: str, season) -> tuple:
     slide_html = []
     for s in slides:
         if s.get("rows"):
-            # List slide (e.g. position leaders): a compact ranked list.
+            # List slide (position leaders, records, luck, activity): a compact
+            # keyed list. Value may be a display string or empty.
             rows = "".join(
-                f"<div class='wrapped-li'><span class='wrapped-li-k'>{_esc(str(k))}</span>"
+                "<div class='wrapped-li'>"
+                f"<span class='wrapped-li-k'>{_esc(str(k))}</span>"
                 f"<span class='wrapped-li-n'>{_esc(str(n))}</span>"
-                f"<span class='wrapped-li-v'>{float(v):.1f}</span></div>"
+                + (f"<span class='wrapped-li-v'>{_esc(str(v))}</span>" if v not in (None, "") else "")
+                + "</div>"
                 for k, n, v in s["rows"]
             )
             big = f"<div class='wrapped-list'>{rows}</div>"
@@ -1201,6 +1272,15 @@ _WRAPPED_JS = r"""
   var slides = Array.prototype.slice.call(stage.querySelectorAll('.wrapped-slide'));
   var bars = Array.prototype.slice.call(overlay.querySelectorAll('.wrapped-bar'));
   var idx = 0;
+  var timer = null;
+  var DUR = 5000;   // each slide plays for this long, then auto-advances
+
+  function clearTimer() { if (timer) { clearTimeout(timer); timer = null; } }
+  function scheduleNext(n) {
+    clearTimer();
+    if (n >= slides.length - 1) return;   // the finale (champion) holds
+    timer = setTimeout(function () { go(n + 1); }, DUR);
+  }
 
   function playSlide(n) {
     slides.forEach(function (s, i) {
@@ -1220,6 +1300,7 @@ _WRAPPED_JS = r"""
     if (el.getAttribute('data-kind') === 'champion' && window.brConfetti) {
       setTimeout(function () { window.brConfetti(el, { palette: ['#f5c451','#e0a828','#fff1c2','#ffffff'], y: el.clientHeight * 0.4, count: 120 }); }, 350);
     }
+    scheduleNext(n);   // when the slide finishes, move on
   }
   function go(n) {
     if (n < 0) return;
@@ -1232,6 +1313,7 @@ _WRAPPED_JS = r"""
     idx = 0; requestAnimationFrame(function () { playSlide(0); });
   }
   function close() {
+    clearTimer();
     overlay.hidden = true; overlay.setAttribute('aria-hidden', 'true');
     document.documentElement.style.overflow = '';
   }
