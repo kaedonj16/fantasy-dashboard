@@ -668,7 +668,7 @@ def get_history_summary_html(history_ctx: dict) -> str:
     featured_cards_html = "".join(
         [
             _summary_card(
-                "<i class='fa-solid fa-trophy' aria-hidden='true'></i> Champion",
+                "<i class='fa-solid fa-crown' aria-hidden='true'></i> Champion",
                 summary["champion"],
                 f"Regular season record: {summary['champion_record']}",
                 card_type="champion",
@@ -996,7 +996,7 @@ def _build_wrapped_slides(summary: dict, df_weekly: pd.DataFrame, league: dict,
 
     if summary.get("champion") and summary.get("champion") not in ("-", None):
         slides.append(_txt("champion", f"{season} CHAMPION", summary["champion"],
-                           "🏆", f"{summary.get('champion_record', '')} — league champion"))
+                           "", f"{summary.get('champion_record', '')} — league champion"))
 
     return slides
 
@@ -1016,12 +1016,15 @@ def _render_season_wrapped(slides: list, league_name: str, season) -> tuple:
                    f"data-w-dp='{s['dp']}' data-w-suffix=\"{_esc(s['suffix'], quote=True)}\">0</div>")
         else:
             big = f"<div class='wrapped-big wrapped-big-text'>{_esc(str(s['big']))}</div>"
+        crown = ("<i class='fa-solid fa-crown wrapped-crown' aria-hidden='true'></i>"
+                 if s["kind"] == "champion" else "")
         slide_html.append(
             f"<section class='wrapped-slide' data-kind='{s['kind']}'>"
+            f"{crown}"
             f"<div class='wrapped-eyebrow'>{_esc(str(s['eyebrow']))}</div>"
             f"{big}"
-            f"<div class='wrapped-label'>{_esc(str(s['label']))}</div>"
-            f"<div class='wrapped-sub'>{_esc(str(s['sub']))}</div>"
+            + (f"<div class='wrapped-label'>{_esc(str(s['label']))}</div>" if s['label'] else "")
+            + f"<div class='wrapped-sub'>{_esc(str(s['sub']))}</div>"
             f"</section>"
         )
 

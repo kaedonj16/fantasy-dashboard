@@ -72,10 +72,15 @@ def _build_team_storylines(
         results = ["W" if w else "L" for w in grp["win"].tolist()]
         # Snapshot through selected_week
         owner = str(grp["owner"].iloc[0])
+        _av = ""
+        if "avatar" in grp.columns:
+            _av0 = grp["avatar"].iloc[0]
+            _av = str(_av0) if pd.notna(_av0) else ""
         teams[str(rid)] = {
             "rid": str(rid),
             "team": team_by_rid.get(str(rid), owner),
             "owner": owner,
+            "avatar": _av,
             "results": results,
             "weeks": [int(w) for w in grp["week"].tolist()],
             "pts_by_week": [float(p) for p in grp["points"].tolist()],
@@ -142,6 +147,7 @@ def _build_team_storylines(
             "rid": rid,
             "team": t["team"],
             "owner": t["owner"],
+            "avatar": t.get("avatar", ""),
             "this_week_pts": wr.get("pts"),
             "opp_pts": wr.get("opp_pts"),
             "won_this_week": wr.get("won"),
@@ -535,10 +541,13 @@ def _build_next_week_preview(
 
         games.append({
             "team_a": sa["team"], "team_b": sb["team"],
+            "avatar_a": sa.get("avatar", ""), "avatar_b": sb.get("avatar", ""),
             "record_a": sa["record_after"], "record_b": sb["record_after"],
             "rank_a": rank_a, "rank_b": rank_b,
             "streak_a": sa.get("streak"), "streak_b": sb.get("streak"),
             "win_prob_a": round(win_prob * 100) if have_proj else None,
+            "proj_a": round(_team_proj_total(left.get("starters"), proj_by_pid), 1) if have_proj else None,
+            "proj_b": round(_team_proj_total(right.get("starters"), proj_by_pid), 1) if have_proj else None,
             "h2h": {"meetings": meetings, "a_wins": a_wins, "b_wins": b_wins} if meetings else None,
             "out_a": out_a, "maybe_a": maybe_a, "bye_a": bye_a,
             "out_b": out_b, "maybe_b": maybe_b, "bye_b": bye_b,
@@ -813,38 +822,48 @@ def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
 
     g = preview["game_of_the_week"]
     wk = preview.get("next_week")
-    eyebrow_lead = preview.get("round_label") if preview.get("is_playoff") else "GAME OF THE WEEK"
-    eyebrow = f"NEXT WEEK{f' · WEEK {wk}' if wk else ''} · {str(eyebrow_lead).upper()}"
-
-    # The WHY badge — the single biggest reason this is the game of the week.
-    why = g.get("why") or "The week's headline matchup"
-    badge_text = why
-    badge_bg = "var(--accent)"
-    if preview.get("quiet_week"):
-        badge_text = f"Quietest slate of the year, but: {why}"
-        badge_bg = "var(--muted)"
-    why_badge = (
-        f"<div class='br-gotw-why' style='display:inline-flex;align-items:center;gap:6px;background:{badge_bg};"
-        f"color:#fff;font-size:11px;font-weight:700;letter-spacing:.02em;padding:4px 11px;"
-        f"border-radius:999px;margin-bottom:10px;'>{html.escape(str(badge_text))}</div>"
+    title_lead = preview.get("round_label") if preview.get("is_playoff") else "Game of the Week"
+    kicker = f"NEXT WEEK{f' · WEEK {wk}' if wk else ''}"
+    # A prominent banner header instead of a small eyebrow, so the section reads
+    # as the marquee matchup it is.
+    header_html = (
+        "<div class='br-gotw-head'>"
+        f"<span class='br-gotw-kicker'>{html.escape(kicker)}</span>"
+        f"<span class='br-gotw-title'><i class='fa-solid fa-fire' aria-hidden='true'></i>"
+        f"<span>{html.escape(str(title_lead))}</span></span>"
+        "</div>"
     )
 
-    def _side(team: str, record: str, rank, align: str, cls: str) -> str:
+    def _side(team: str, record: str, rank, avatar, proj, cls: str) -> str:
         rank_str = f"#{rank}" if rank else ""
         meta = " · ".join(x for x in [record, rank_str] if x)
-        return (
-            f"<div class='{cls}' style='flex:1;min-width:0;text-align:{align};'>"
-            f"<div style='font-weight:800;font-size:15px;line-height:1.2;overflow:hidden;"
-            f"text-overflow:ellipsis;white-space:nowrap;'>{html.escape(str(team))}</div>"
-            f"<div style='font-size:11px;color:var(--muted);margin-top:2px;'>{html.escape(meta)}</div>"
-            f"</div>"
+        if avatar:
+            av = (
+                f"<img class='br-gotw-av' src='{html.escape(str(avatar), quote=True)}' alt='' "
+                "loading='lazy' decoding='async' onerror=\"this.style.display='none'\">"
+            )
+        else:
+            # Initial-crest fallback so the layout stays balanced without a picture.
+            initial = html.escape((str(team).strip()[:1] or "?").upper())
+            av = f"<div class='br-gotw-av br-gotw-av-ph'>{initial}</div>"
+        proj_html = (
+            f"<div class='br-gotw-proj'>{proj:.1f} <span>proj</span></div>"
+            if isinstance(proj, (int, float)) else ""
         )
+        txt = (
+            "<div class='br-gotw-side-txt'>"
+            f"<div class='br-gotw-name'>{html.escape(str(team))}</div>"
+            f"<div class='br-gotw-meta'>{html.escape(meta)}</div>"
+            f"{proj_html}"
+            "</div>"
+        )
+        return f"<div class='{cls} br-gotw-side'>{av}{txt}</div>"
 
     matchup_row = (
-        "<div style='display:flex;align-items:center;gap:10px;margin:4px 0 10px 0;'>"
-        + _side(g["team_a"], g["record_a"], g["rank_a"], "left", "br-gotw-l")
-        + "<div class='br-gotw-vs' style='font-size:11px;font-weight:800;color:var(--muted);flex:0 0 auto;'>VS</div>"
-        + _side(g["team_b"], g["record_b"], g["rank_b"], "right", "br-gotw-r")
+        "<div class='br-gotw-matchup'>"
+        + _side(g["team_a"], g["record_a"], g["rank_a"], g.get("avatar_a"), g.get("proj_a"), "br-gotw-l")
+        + "<div class='br-gotw-vs'>VS</div>"
+        + _side(g["team_b"], g["record_b"], g["rank_b"], g.get("avatar_b"), g.get("proj_b"), "br-gotw-r")
         + "</div>"
     )
 
@@ -919,8 +938,7 @@ def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
     return f"""
 <div class="card br-gotw" data-br-moment="gotw" style="padding:18px 20px;margin-bottom:20px;">
   <div class="br-gotw-flash" aria-hidden="true"></div>
-  <div style="font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--accent);margin-bottom:6px;">{eyebrow}</div>
-  {why_badge}
+  {header_html}
   {matchup_row}
   {winbar_html}
   {blurb_html}
