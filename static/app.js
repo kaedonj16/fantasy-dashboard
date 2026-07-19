@@ -790,11 +790,11 @@ function emptyState(container, message, iconClass) {
     var sel = opts.selector || 'p, li, h1, h2, h3, h4, blockquote';
     var blocks = Array.prototype.slice.call(container.querySelectorAll(sel));
     if (!blocks.length) blocks = [container];
-    var stagger = opts.stagger || 85;
-    // Keep the whole reveal under ~2s no matter how long the report is.
-    if (blocks.length * stagger > 2000) stagger = Math.max(28, Math.round(2000 / blocks.length));
+    var stagger = opts.stagger || 130;
+    // Keep the whole reveal under ~2.8s no matter how long the report is.
+    if (blocks.length * stagger > 2800) stagger = Math.max(45, Math.round(2800 / blocks.length));
     blocks.forEach(function (el, i) {
-      el.style.animation = 'brTextIn .5s cubic-bezier(.2,.7,.3,1) ' + (i * stagger) + 'ms both';
+      el.style.animation = 'brTextIn .65s cubic-bezier(.2,.7,.3,1) ' + (i * stagger) + 'ms both';
       el.addEventListener('animationend', function () { el.style.animation = ''; }, { once: true });
     });
   };
