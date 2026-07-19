@@ -21963,3 +21963,23 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   opacity: .82;
 }
 @keyframes brRkEnter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* Playoff bracket build: the round columns slide in left-to-right, so the
+   bracket visibly fills round by round; the final (championship) column lands
+   with a gold glow. */
+.br-mo-play.bracket .bracket-round { animation: brBrkCol .5s cubic-bezier(.2,.8,.3,1) both; }
+.br-mo-play.bracket .bracket-round:nth-child(1) { animation-delay: .05s; }
+.br-mo-play.bracket .bracket-round:nth-child(2) { animation-delay: .30s; }
+.br-mo-play.bracket .bracket-round:nth-child(3) { animation-delay: .55s; }
+.br-mo-play.bracket .bracket-round:nth-child(4) { animation-delay: .80s; }
+.br-mo-play.bracket .bracket-round:nth-child(5) { animation-delay: 1.05s; }
+.br-mo-play.bracket .bracket-round:last-child .bracket-match {
+  animation: brBrkFinal .6s ease both;
+  animation-delay: 1.15s;
+}
+@keyframes brBrkCol { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: none; } }
+@keyframes brBrkFinal {
+  0% { box-shadow: 0 1px 4px rgba(0,0,0,.06), 0 0 0 0 rgba(245,196,81,0); }
+  45% { box-shadow: 0 1px 4px rgba(0,0,0,.06), 0 0 22px 2px rgba(245,196,81,.55); }
+  100% { box-shadow: 0 1px 4px rgba(0,0,0,.06), 0 0 0 0 rgba(245,196,81,0); }
+}

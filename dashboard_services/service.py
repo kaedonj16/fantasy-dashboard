@@ -1210,7 +1210,9 @@ def playoff_bracket(
     if not html_rounds:
         return "<div class='po-empty'>No playoff bracket available.</div>"
 
-    return "<div class='bracket'>" + "".join(html_rounds) + "</div>"
+    # data-br-moment="bracket": the rounds build in left-to-right when the
+    # bracket first scrolls into view (see the big-moment CSS in dashboard.css).
+    return "<div class='bracket' data-br-moment='bracket'>" + "".join(html_rounds) + "</div>"
 
 
 def seed_top_n_from_team_stats(team_stats, roster_map, playoff_size: int = 6):
