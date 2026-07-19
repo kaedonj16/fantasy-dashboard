@@ -1150,20 +1150,22 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
                        "sub": "The high-water marks of the year", "rows": _rec_rows})
 
     if summary.get("biggest_blowout_margin"):
-        _bscore = summary.get("biggest_blowout_scores", "")
-        slides.append(_num("blowout", "BIGGEST BLOWOUT",
-                           summary["biggest_blowout_margin"], 1, " pts",
-                           summary.get("biggest_blowout", "-"),
-                           f"{_bscore} · the most lopsided result of the year" if _bscore
-                           else "The most lopsided result of the year"))
+        _b = _num("blowout", "BIGGEST BLOWOUT",
+                  summary["biggest_blowout_margin"], 1, " pts",
+                  summary.get("biggest_blowout", "-"),
+                  "The most lopsided result of the year")
+        if summary.get("biggest_blowout_scores"):
+            _b["scoreline"] = summary["biggest_blowout_scores"]
+        slides.append(_b)
 
     if summary.get("closest_margin"):
-        _cscore = summary.get("closest_scores", "")
-        slides.append(_num("nailbiter", "CLOSEST GAME",
-                           summary["closest_margin"], 1, " pts",
-                           summary.get("closest_matchup", "-"),
-                           f"{_cscore} · decided by the slimmest margin all season" if _cscore
-                           else "Decided by the slimmest margin all season"))
+        _c = _num("nailbiter", "CLOSEST GAME",
+                  summary["closest_margin"], 1, " pts",
+                  summary.get("closest_matchup", "-"),
+                  "Decided by the slimmest margin all season")
+        if summary.get("closest_scores"):
+            _c["scoreline"] = summary["closest_scores"]
+        slides.append(_c)
 
     # Luck index (all-play luck_delta): luckiest + unluckiest, grouped.
     _lucky, _unlucky = _wrapped_luck(history_ctx)
@@ -1227,10 +1229,24 @@ def _render_season_wrapped(slides: list, league_name: str, season) -> tuple:
             )
             big = f"<div class='wrapped-list'>{rows}</div>"
         elif s["num"]:
-            big = (f"<div class='wrapped-big' data-w-count='{s['big']}' "
-                   f"data-w-dp='{s['dp']}' data-w-suffix=\"{_esc(s['suffix'], quote=True)}\">0</div>")
+            # Number counts up; the unit rides alongside as a quiet superscript
+            # (rendered statically so it isn't animated as text).
+            unit = str(s.get("suffix") or "").strip()
+            big = ("<div class='wrapped-num'>"
+                   f"<span class='wrapped-big' data-w-count='{s['big']}' data-w-dp='{s['dp']}'>0</span>"
+                   + (f"<span class='wrapped-unit'>{_esc(unit)}</span>" if unit else "")
+                   + "</div>")
         else:
             big = f"<div class='wrapped-big wrapped-big-text'>{_esc(str(s['big']))}</div>"
+        # Optional scoreline chip (e.g. "226.9-96.2"): winner shown solid.
+        score_html = ""
+        _sl = str(s.get("scoreline") or "")
+        if "-" in _sl:
+            _w, _l = _sl.split("-", 1)
+            score_html = ("<div class='wrapped-scoreline'>"
+                          f"<span class='wrapped-score win'>{_esc(_w.strip())}</span>"
+                          "<span class='wrapped-score-x'>vs</span>"
+                          f"<span class='wrapped-score'>{_esc(_l.strip())}</span></div>")
         crown = ("<i class='fa-solid fa-crown wrapped-crown' aria-hidden='true'></i>"
                  if s["kind"] == "champion" else "")
         slide_html.append(
@@ -1239,6 +1255,7 @@ def _render_season_wrapped(slides: list, league_name: str, season) -> tuple:
             f"<div class='wrapped-eyebrow'>{_esc(str(s['eyebrow']))}</div>"
             f"{big}"
             + (f"<div class='wrapped-label'>{_esc(str(s['label']))}</div>" if s['label'] else "")
+            + score_html
             + f"<div class='wrapped-sub'>{_esc(str(s['sub']))}</div>"
             f"</section>"
         )

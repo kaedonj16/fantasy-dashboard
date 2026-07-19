@@ -22169,14 +22169,22 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 .wrapped-slide {
   position: absolute; inset: 0; z-index: 1;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  text-align: center; padding: 28px; gap: 14px; overflow: hidden;
+  text-align: center; padding: 28px; gap: 15px; overflow: hidden;
   opacity: 0; visibility: hidden; pointer-events: none;
   --wa: #a78bfa;
 }
+/* Backdrop: a spotlight bloom centered on the content, warmed by a soft
+   accent wash up top and grounded by a vignette so the slide never reads as
+   text floating in a void. */
 .wrapped-slide::before {
-  content: ""; position: absolute; inset: 0; z-index: -1; opacity: .55;
-  background: radial-gradient(60% 45% at 50% 34%, var(--wa) 0%, transparent 62%);
+  content: ""; position: absolute; inset: 0; z-index: -1;
+  background:
+    radial-gradient(46% 34% at 50% 50%, color-mix(in srgb, var(--wa) 60%, transparent) 0%, transparent 70%),
+    radial-gradient(90% 60% at 50% 8%, color-mix(in srgb, var(--wa) 22%, transparent) 0%, transparent 60%),
+    radial-gradient(120% 90% at 50% 116%, rgba(0,0,0,.5) 0%, transparent 55%);
 }
+.wrapped-slide.active::before { animation: wrapGlow 1s ease both; }
+@keyframes wrapGlow { from { opacity: 0; transform: scale(1.12); } to { opacity: 1; transform: none; } }
 .wrapped-slide.active { opacity: 1; visibility: visible; pointer-events: auto; }
 
 .wrapped-slide[data-kind="intro"]     { --wa: #8b5cf6; }
@@ -22209,17 +22217,38 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 .wrapped-slide.active .wrapped-li:nth-child(4) { animation-delay: .52s; }
 
 .wrapped-eyebrow {
-  font-size: 13px; font-weight: 800; letter-spacing: .22em; text-transform: uppercase;
-  color: var(--wa); filter: brightness(1.25);
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 800; letter-spacing: .2em; text-transform: uppercase;
+  color: color-mix(in srgb, var(--wa) 55%, #fff);
+  padding: 6px 14px; border-radius: 999px;
+  background: color-mix(in srgb, var(--wa) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wa) 38%, transparent);
 }
+/* Number + its unit: the stat is the hero, the unit a quiet superscript. */
+.wrapped-num { display: inline-flex; align-items: baseline; justify-content: center; gap: .16em; }
 .wrapped-big {
+  display: inline-block;
   font-size: clamp(46px, 12vw, 104px); font-weight: 900; line-height: .95; letter-spacing: -.03em;
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 8px 40px color-mix(in srgb, var(--wa) 60%, transparent);
+  text-shadow: 0 10px 46px color-mix(in srgb, var(--wa) 55%, transparent);
 }
-.wrapped-big-text { font-size: clamp(30px, 7vw, 62px); letter-spacing: -.02em; }
-.wrapped-label { font-size: clamp(18px, 4vw, 26px); font-weight: 800; color: #fff; }
+.wrapped-unit {
+  font-size: clamp(17px, 4vw, 34px); font-weight: 800; letter-spacing: -.01em;
+  color: color-mix(in srgb, var(--wa) 62%, #fff);
+}
+.wrapped-big-text { font-size: clamp(30px, 7vw, 62px); letter-spacing: -.02em; text-wrap: balance; }
+.wrapped-label { font-size: clamp(18px, 4vw, 26px); font-weight: 800; color: #fff; text-wrap: balance; }
 .wrapped-sub { font-size: 14.5px; line-height: 1.5; color: rgba(255,255,255,.72); max-width: 34ch; }
+/* Scoreline chip for game slides (blowout / nailbiter). */
+.wrapped-scoreline {
+  display: inline-flex; align-items: center; gap: 12px;
+  padding: 8px 16px; border-radius: 12px;
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12);
+  font-variant-numeric: tabular-nums; font-weight: 800;
+}
+.wrapped-score { font-size: 21px; color: rgba(255,255,255,.6); }
+.wrapped-score.win { color: #fff; }
+.wrapped-score-x { font-size: 12px; font-weight: 700; letter-spacing: .1em; color: rgba(255,255,255,.4); }
 .wrapped-crown {
   position: relative; font-size: 42px; color: var(--wa); margin-bottom: 10px;
   filter: drop-shadow(0 6px 22px color-mix(in srgb, var(--wa) 70%, transparent));
@@ -22229,8 +22258,9 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 .wrapped-slide.active .wrapped-crown { animation: wrapCrown .7s cubic-bezier(.2,1.5,.4,1) .02s both; }
 .wrapped-slide.active .wrapped-eyebrow { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .05s both; }
 .wrapped-slide.active .wrapped-big     { animation: wrapPop .6s cubic-bezier(.2,1.4,.4,1) .16s both; }
-.wrapped-slide.active .wrapped-label   { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .34s both; }
-.wrapped-slide.active .wrapped-sub     { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .46s both; }
+.wrapped-slide.active .wrapped-label     { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .34s both; }
+.wrapped-slide.active .wrapped-scoreline { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .44s both; }
+.wrapped-slide.active .wrapped-sub       { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .54s both; }
 @keyframes wrapUp  { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
 @keyframes wrapPop { from { opacity: 0; transform: scale(.72); } to { opacity: 1; transform: none; } }
 @keyframes wrapCrown { 0% { opacity: 0; transform: translateY(-14px) rotate(-12deg) scale(.6); } 60% { opacity: 1; transform: translateY(0) rotate(4deg) scale(1.12); } 100% { opacity: 1; transform: none; } }
@@ -22244,7 +22274,9 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .wrapped-overlay, .wrapped-slide.active .wrapped-eyebrow, .wrapped-slide.active .wrapped-big,
-  .wrapped-slide.active .wrapped-label, .wrapped-slide.active .wrapped-sub { animation-duration: .01ms; }
+  .wrapped-overlay, .wrapped-slide.active::before,
+  .wrapped-slide.active .wrapped-eyebrow, .wrapped-slide.active .wrapped-big,
+  .wrapped-slide.active .wrapped-label, .wrapped-slide.active .wrapped-scoreline,
+  .wrapped-slide.active .wrapped-sub { animation-duration: .01ms; }
   .wrapped-bar.current i { transition: none; }
 }
