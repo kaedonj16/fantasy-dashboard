@@ -538,6 +538,8 @@ def _build_summary(history_ctx: dict) -> dict:
                     "week": _safe_int(winner["week"]),
                     "winner": str(winner["owner"]),
                     "loser": str(loser["owner"]),
+                    "winner_pts": _safe_float(winner["points"]),
+                    "loser_pts": _safe_float(loser["points"]),
                     "margin": margin,
                 }
             )
@@ -547,9 +549,11 @@ def _build_summary(history_ctx: dict) -> dict:
             blowout = max(matchup_rows, key=lambda x: x["margin"])
 
             summary["closest_matchup"] = f"Week {closest['week']}: {closest['winner']} over {closest['loser']}"
+            summary["closest_scores"] = f"{closest['winner_pts']:.1f}-{closest['loser_pts']:.1f}"
             summary["closest_margin"] = _safe_float(closest["margin"])
 
             summary["biggest_blowout"] = f"Week {blowout['week']}: {blowout['winner']} over {blowout['loser']}"
+            summary["biggest_blowout_scores"] = f"{blowout['winner_pts']:.1f}-{blowout['loser_pts']:.1f}"
             summary["biggest_blowout_margin"] = _safe_float(blowout["margin"])
 
     return summary
@@ -1074,7 +1078,7 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
         slides.append(_num("topscore", "MOST POINTS ON THE YEAR",
                            summary["top_scorer_value"], 1, "",
                            summary.get("top_scorer_team", "-"),
-                           f"{summary.get('top_scorer_avg', 0):.1f} avg per week — the league's top scoring machine"))
+                           f"{summary.get('top_scorer_avg', 0):.1f} avg per week, the league's top scoring machine"))
 
     # ── Player awards: season MVP + the best at each position ──────────────────
     leaders = _wrapped_player_leaders(history_ctx)
@@ -1083,7 +1087,7 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
         _meta = " · ".join(x for x in [mvp.get("pos"), mvp.get("nfl")] if x)
         slides.append(_num("mvp", "LEAGUE MVP", float(mvp["pts"]), 1, "",
                            mvp["name"],
-                           f"{_meta} · {mvp.get('ppg', 0):.1f} per game — the season's top fantasy producer"))
+                           f"{_meta} · {mvp.get('ppg', 0):.1f} per game, the season's top fantasy producer"))
 
     by_pos = (leaders or {}).get("by_pos") or {}
     pos_rows = [(p, by_pos[p]["name"], by_pos[p]["pts"])
@@ -1105,33 +1109,37 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
                            owner, "The longest win streak of the season"))
 
     if summary.get("biggest_blowout_margin"):
+        _bscore = summary.get("biggest_blowout_scores", "")
         slides.append(_num("blowout", "BIGGEST BLOWOUT",
                            summary["biggest_blowout_margin"], 1, " pts",
                            summary.get("biggest_blowout", "-"),
-                           "The most lopsided result of the year"))
+                           f"{_bscore} · the most lopsided result of the year" if _bscore
+                           else "The most lopsided result of the year"))
 
     if summary.get("closest_margin"):
+        _cscore = summary.get("closest_scores", "")
         slides.append(_num("nailbiter", "CLOSEST GAME",
                            summary["closest_margin"], 1, " pts",
                            summary.get("closest_matchup", "-"),
-                           "Decided by the slimmest margin all season"))
+                           f"{_cscore} · decided by the slimmest margin all season" if _cscore
+                           else "Decided by the slimmest margin all season"))
 
     # Luck index (all-play luck_delta): actual wins vs what the scoring earned.
     _lucky, _unlucky = _wrapped_luck(history_ctx)
     if _lucky and _lucky[1] >= 1.0:
         slides.append(_txt("luckiest", "LUCKIEST TEAM", _lucky[0], "Won all the right weeks",
-                           f"{_lucky[1]:+.1f} wins above what its scoring earned — the schedule was kind"))
+                           f"{_lucky[1]:+.1f} wins above what its scoring earned. The schedule was kind."))
     if _unlucky and _unlucky[1] <= -1.0:
         slides.append(_txt("unluckiest", "UNLUCKIEST TEAM", _unlucky[0], "Deserved better",
-                           f"{_unlucky[1]:.1f} wins below what its scoring earned — the rough-luck team"))
+                           f"{_unlucky[1]:.1f} wins below what its scoring earned. The rough-luck team."))
 
     if summary.get("runner_up") and summary.get("runner_up") not in ("-", None):
         slides.append(_txt("runnerup", "RUNNER-UP", summary["runner_up"], "So close",
-                           f"Finished {summary.get('runner_up_record', '')} — one game short"))
+                           f"Finished {summary.get('runner_up_record', '')}, one game short"))
 
     if summary.get("champion") and summary.get("champion") not in ("-", None):
         slides.append(_txt("champion", f"{season} CHAMPION", summary["champion"],
-                           "", f"{summary.get('champion_record', '')} — league champion"))
+                           "", f"{summary.get('champion_record', '')} · league champion"))
 
     return slides
 
