@@ -996,7 +996,7 @@ def _build_wrapped_slides(summary: dict, df_weekly: pd.DataFrame, league: dict,
 
     if summary.get("champion") and summary.get("champion") not in ("-", None):
         slides.append(_txt("champion", f"{season} CHAMPION", summary["champion"],
-                           "🏆", f"{summary.get('champion_record', '')} — league champion"))
+                           "", f"{summary.get('champion_record', '')} — league champion"))
 
     return slides
 
@@ -1020,8 +1020,8 @@ def _render_season_wrapped(slides: list, league_name: str, season) -> tuple:
             f"<section class='wrapped-slide' data-kind='{s['kind']}'>"
             f"<div class='wrapped-eyebrow'>{_esc(str(s['eyebrow']))}</div>"
             f"{big}"
-            f"<div class='wrapped-label'>{_esc(str(s['label']))}</div>"
-            f"<div class='wrapped-sub'>{_esc(str(s['sub']))}</div>"
+            + (f"<div class='wrapped-label'>{_esc(str(s['label']))}</div>" if s['label'] else "")
+            + f"<div class='wrapped-sub'>{_esc(str(s['sub']))}</div>"
             f"</section>"
         )
 
