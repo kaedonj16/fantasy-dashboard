@@ -22134,6 +22134,10 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 }
 .wrapped-launch:hover { transform: translateY(-1px); box-shadow: 0 10px 26px rgba(219, 39, 119, .4); }
 .wrapped-launch:active { transform: translateY(0); }
+/* Fetching the overlay on first open: spin the wand and dim slightly. */
+.wrapped-launch-loading { opacity: .78; pointer-events: none; }
+.wrapped-launch-loading i { animation: wrapLaunchSpin .8s linear infinite; }
+@keyframes wrapLaunchSpin { to { transform: rotate(360deg); } }
 
 .wrapped-overlay {
   position: fixed; inset: 0; z-index: 4000;

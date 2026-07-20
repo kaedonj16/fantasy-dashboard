@@ -1095,10 +1095,16 @@ def _wrapped_luck(history_ctx: dict):
         return None, None
 
 
-def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, season) -> list:
+def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, season,
+                          include_players: bool = True) -> list:
     """Ordered 'Season Wrapped' story slides built from the season summary and
     per-player leaders. Each slide: {kind, eyebrow, big, num, dp, suffix, label,
-    sub} (plus optional 'rows' for a list slide)."""
+    sub} (plus optional 'rows' for a list slide).
+
+    include_players=False skips the MVP / position-leader slides, which are the
+    only ones that need per-week boxscore fetches. The page render uses that
+    cheap path just to decide whether to show the launcher; the lazy /wrapped
+    endpoint builds the full deck."""
     df_weekly = history_ctx.get("df_weekly", pd.DataFrame())
     league = history_ctx.get("league") or {}
 
@@ -1120,21 +1126,24 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
                            f"{summary.get('top_scorer_avg', 0):.1f} avg per week, the league's top scoring machine"))
 
     # ── Player awards: season MVP + the best at each position ──────────────────
-    leaders = _wrapped_player_leaders(history_ctx)
-    mvp = (leaders or {}).get("mvp")
-    if mvp and mvp.get("pts"):
-        _meta = " · ".join(x for x in [mvp.get("pos"), mvp.get("nfl")] if x)
-        slides.append(_num("mvp", "LEAGUE MVP", float(mvp["pts"]), 1, "",
-                           mvp["name"],
-                           f"{_meta} · {mvp.get('ppg', 0):.1f} per game, the season's top fantasy producer"))
+    # These are the only slides that need per-week boxscore fetches, so the
+    # cheap availability check skips them.
+    if include_players:
+        leaders = _wrapped_player_leaders(history_ctx)
+        mvp = (leaders or {}).get("mvp")
+        if mvp and mvp.get("pts"):
+            _meta = " · ".join(x for x in [mvp.get("pos"), mvp.get("nfl")] if x)
+            slides.append(_num("mvp", "LEAGUE MVP", float(mvp["pts"]), 1, "",
+                               mvp["name"],
+                               f"{_meta} · {mvp.get('ppg', 0):.1f} per game, the season's top fantasy producer"))
 
-    by_pos = (leaders or {}).get("by_pos") or {}
-    pos_rows = [(p, by_pos[p]["name"], f"{by_pos[p]['pts']:.1f}")
-                for p in ("QB", "RB", "WR", "TE") if by_pos.get(p)]
-    if len(pos_rows) >= 3:
-        slides.append({"kind": "posleaders", "eyebrow": "TOP AT EACH POSITION",
-                       "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
-                       "sub": "The points leader at every spot", "rows": pos_rows})
+        by_pos = (leaders or {}).get("by_pos") or {}
+        pos_rows = [(p, by_pos[p]["name"], f"{by_pos[p]['pts']:.1f}")
+                    for p in ("QB", "RB", "WR", "TE") if by_pos.get(p)]
+        if len(pos_rows) >= 3:
+            slides.append({"kind": "posleaders", "eyebrow": "TOP AT EACH POSITION",
+                           "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
+                           "sub": "The points leader at every spot", "rows": pos_rows})
 
     # Season records: biggest single week + hottest streak, grouped.
     _rec_rows = []
@@ -1206,11 +1215,12 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
     return slides
 
 
-def _render_season_wrapped(slides: list, league_name: str, season) -> tuple:
-    """Return (launch_button_html, overlay_html) for the Season Wrapped stories
-    experience. Returns ('', '') when there isn't enough to tell a story."""
+def _wrapped_overlay_markup(slides: list) -> str:
+    """Return the Season Wrapped overlay markup (no launch button, no script) so
+    it can be fetched and injected lazily. '' when there isn't enough to tell a
+    story."""
     if len(slides) < 3:
-        return "", ""
+        return ""
 
     bars = "".join("<span class='wrapped-bar'><i></i></span>" for _ in slides)
 
@@ -1262,12 +1272,7 @@ def _render_season_wrapped(slides: list, league_name: str, season) -> tuple:
             f"</section>"
         )
 
-    button = (
-        "<button type='button' class='wrapped-launch' id='wrappedLaunch'>"
-        "<i class='fa-solid fa-wand-magic-sparkles'></i> Season Wrapped</button>"
-    )
-
-    overlay = f"""
+    return f"""
     <div class="wrapped-overlay" id="wrappedOverlay" hidden aria-hidden="true">
       <div class="wrapped-progress">{bars}</div>
       <button type="button" class="wrapped-close" id="wrappedClose" aria-label="Close">&times;</button>
@@ -1276,85 +1281,131 @@ def _render_season_wrapped(slides: list, league_name: str, season) -> tuple:
       <button type="button" class="wrapped-tap wrapped-tap-next" id="wrappedNext" aria-label="Next"></button>
       <div class="wrapped-hint">Tap to advance · Esc to close</div>
     </div>
-    <script>{_WRAPPED_JS}</script>
     """
-    return button, overlay
 
 
-_WRAPPED_JS = r"""
+def render_history_wrapped_overlay(history_ctx: dict, selected_history_season) -> str:
+    """Build the full Season Wrapped overlay markup (including the boxscore-backed
+    MVP / position slides). Called by the lazy /wrapped endpoint on first open."""
+    league = history_ctx.get("league") or {}
+    league_name = league.get("name") or "League History"
+    summary = history_ctx.get("summary") or _build_summary(history_ctx)
+    slides = _build_wrapped_slides(history_ctx, summary, league_name, selected_history_season)
+    return _wrapped_overlay_markup(slides)
+
+
+def _wrapped_launcher_html(wrapped_url: str) -> str:
+    """The launch button + empty mount + bootstrap. The overlay itself is fetched
+    from wrapped_url the first time the button is clicked, so the heavy boxscore
+    aggregation never blocks the page render."""
+    return (
+        "<button type='button' class='wrapped-launch' id='wrappedLaunch' "
+        f"data-wrapped-url=\"{_esc(str(wrapped_url), quote=True)}\">"
+        "<i class='fa-solid fa-wand-magic-sparkles'></i> Season Wrapped</button>"
+        "<div id='wrappedMount'></div>"
+        f"<script>{_WRAPPED_BOOTSTRAP_JS}</script>"
+    )
+
+
+_WRAPPED_BOOTSTRAP_JS = r"""
 (function () {
   var launch = document.getElementById('wrappedLaunch');
-  var overlay = document.getElementById('wrappedOverlay');
-  if (!launch || !overlay || overlay.__wrapBound) return;
-  overlay.__wrapBound = true;
-  var stage = document.getElementById('wrappedStage');
-  var slides = Array.prototype.slice.call(stage.querySelectorAll('.wrapped-slide'));
-  var bars = Array.prototype.slice.call(overlay.querySelectorAll('.wrapped-bar'));
-  var idx = 0;
-  var timer = null;
-  var DUR = 5000;   // each slide plays for this long, then auto-advances
+  var mount = document.getElementById('wrappedMount');
+  if (!launch || !mount || launch.__wrapBound) return;
+  launch.__wrapBound = true;
+  var loaded = false, loading = false;
 
-  function clearTimer() { if (timer) { clearTimeout(timer); timer = null; } }
-  function scheduleNext(n) {
-    clearTimer();
-    if (n >= slides.length - 1) return;   // the finale (champion) holds
-    timer = setTimeout(function () { go(n + 1); }, DUR);
-  }
+  // Wire up nav/keyboard/touch on a freshly-injected overlay once, and expose
+  // its open() on the element so repeat clicks just reopen it.
+  function bindOverlay() {
+    var overlay = document.getElementById('wrappedOverlay');
+    if (!overlay) return null;
+    if (overlay.__navBound) return overlay;
+    overlay.__navBound = true;
+    var stage = document.getElementById('wrappedStage');
+    var slides = Array.prototype.slice.call(stage.querySelectorAll('.wrapped-slide'));
+    var bars = Array.prototype.slice.call(overlay.querySelectorAll('.wrapped-bar'));
+    var idx = 0, timer = null, DUR = 5000;   // each slide auto-advances after DUR
 
-  function playSlide(n) {
-    slides.forEach(function (s, i) {
-      s.classList.toggle('active', i === n);
-      if (i < n) s.classList.add('seen'); else s.classList.remove('seen');
+    function clearTimer() { if (timer) { clearTimeout(timer); timer = null; } }
+    function scheduleNext(n) {
+      clearTimer();
+      if (n >= slides.length - 1) return;   // the finale (champion) holds
+      timer = setTimeout(function () { go(n + 1); }, DUR);
+    }
+    function playSlide(n) {
+      slides.forEach(function (s, i) {
+        s.classList.toggle('active', i === n);
+        if (i < n) s.classList.add('seen'); else s.classList.remove('seen');
+      });
+      bars.forEach(function (b, i) { b.classList.toggle('filled', i < n); b.classList.toggle('current', i === n); });
+      var el = slides[n];
+      if (!el) return;
+      var num = el.querySelector('[data-w-count]');
+      if (num && window.brCountUp) {
+        window.brCountUp(num, { to: parseFloat(num.getAttribute('data-w-count')),
+          dp: parseInt(num.getAttribute('data-w-dp') || '0', 10),
+          suffix: num.getAttribute('data-w-suffix') || '', dur: 1100 });
+      }
+      if (el.getAttribute('data-kind') === 'champion' && window.brConfetti) {
+        setTimeout(function () { window.brConfetti(el, { palette: ['#f5c451','#e0a828','#fff1c2','#ffffff'], y: el.clientHeight * 0.4, count: 120 }); }, 350);
+      }
+      scheduleNext(n);
+    }
+    function go(n) {
+      if (n < 0) return;
+      if (n >= slides.length) { close(); return; }
+      idx = n; playSlide(idx);
+    }
+    function open() {
+      overlay.hidden = false; overlay.setAttribute('aria-hidden', 'false');
+      document.documentElement.style.overflow = 'hidden';
+      idx = 0; requestAnimationFrame(function () { playSlide(0); });
+    }
+    function close() {
+      clearTimer();
+      overlay.hidden = true; overlay.setAttribute('aria-hidden', 'true');
+      document.documentElement.style.overflow = '';
+    }
+    overlay.__open = open;
+    document.getElementById('wrappedClose').addEventListener('click', close);
+    document.getElementById('wrappedNext').addEventListener('click', function () { go(idx + 1); });
+    document.getElementById('wrappedPrev').addEventListener('click', function () { go(idx - 1); });
+    document.addEventListener('keydown', function (e) {
+      if (overlay.hidden) return;
+      if (e.key === 'Escape') close();
+      else if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); go(idx + 1); }
+      else if (e.key === 'ArrowLeft') go(idx - 1);
     });
-    bars.forEach(function (b, i) { b.classList.toggle('filled', i < n); b.classList.toggle('current', i === n); });
-    var el = slides[n];
-    if (!el) return;
-    // Count-up the big number when the slide arrives.
-    var num = el.querySelector('[data-w-count]');
-    if (num && window.brCountUp) {
-      window.brCountUp(num, { to: parseFloat(num.getAttribute('data-w-count')),
-        dp: parseInt(num.getAttribute('data-w-dp') || '0', 10),
-        suffix: num.getAttribute('data-w-suffix') || '', dur: 1100 });
-    }
-    if (el.getAttribute('data-kind') === 'champion' && window.brConfetti) {
-      setTimeout(function () { window.brConfetti(el, { palette: ['#f5c451','#e0a828','#fff1c2','#ffffff'], y: el.clientHeight * 0.4, count: 120 }); }, 350);
-    }
-    scheduleNext(n);   // when the slide finishes, move on
-  }
-  function go(n) {
-    if (n < 0) return;
-    if (n >= slides.length) { close(); return; }
-    idx = n; playSlide(idx);
-  }
-  function open() {
-    overlay.hidden = false; overlay.setAttribute('aria-hidden', 'false');
-    document.documentElement.style.overflow = 'hidden';
-    idx = 0; requestAnimationFrame(function () { playSlide(0); });
-  }
-  function close() {
-    clearTimer();
-    overlay.hidden = true; overlay.setAttribute('aria-hidden', 'true');
-    document.documentElement.style.overflow = '';
+    var sx = null;
+    stage.addEventListener('touchstart', function (e) { sx = e.touches[0].clientX; }, { passive: true });
+    stage.addEventListener('touchend', function (e) {
+      if (sx === null) return;
+      var dx = e.changedTouches[0].clientX - sx; sx = null;
+      if (Math.abs(dx) > 40) go(idx + (dx < 0 ? 1 : -1));
+    }, { passive: true });
+    return overlay;
   }
 
-  launch.addEventListener('click', open);
-  document.getElementById('wrappedClose').addEventListener('click', close);
-  document.getElementById('wrappedNext').addEventListener('click', function () { go(idx + 1); });
-  document.getElementById('wrappedPrev').addEventListener('click', function () { go(idx - 1); });
-  document.addEventListener('keydown', function (e) {
-    if (overlay.hidden) return;
-    if (e.key === 'Escape') close();
-    else if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); go(idx + 1); }
-    else if (e.key === 'ArrowLeft') go(idx - 1);
+  function openWrapped() {
+    var overlay = bindOverlay();
+    if (overlay && overlay.__open) overlay.__open();
+  }
+
+  launch.addEventListener('click', function () {
+    var url = launch.getAttribute('data-wrapped-url');
+    if (loaded || !url) { openWrapped(); return; }   // already injected, or nothing to fetch
+    if (loading) return;
+    loading = true;
+    launch.classList.add('wrapped-launch-loading');
+    fetch(url, { headers: { 'X-Requested-With': 'fetch' } })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d && d.html) { mount.innerHTML = d.html; loaded = true; openWrapped(); }
+      })
+      .catch(function () {})
+      .then(function () { loading = false; launch.classList.remove('wrapped-launch-loading'); });
   });
-  // Swipe on touch.
-  var sx = null;
-  stage.addEventListener('touchstart', function (e) { sx = e.touches[0].clientX; }, { passive: true });
-  stage.addEventListener('touchend', function (e) {
-    if (sx === null) return;
-    var dx = e.changedTouches[0].clientX - sx; sx = null;
-    if (Math.abs(dx) > 40) go(idx + (dx < 0 ? 1 : -1));
-  }, { passive: true });
 })();
 """
 
@@ -1394,13 +1445,21 @@ def build_history_body(
 
     league_name = league.get("name") or "League History"
 
-    # Season Wrapped: a stories-style recap, available once there's a champion.
-    _wrapped_slides = _build_wrapped_slides(
-        history_ctx, summary, league_name, selected_history_season
+    # Season Wrapped: a stories-style recap, lazy-loaded on first click so its
+    # per-week boxscore fetches never block the page render. Here we only build
+    # the cheap (no-boxscore) slide set to decide whether to show the launcher.
+    _wrapped_cheap = _build_wrapped_slides(
+        history_ctx, summary, league_name, selected_history_season, include_players=False
     )
-    _wrapped_btn, _wrapped_overlay = _render_season_wrapped(
-        _wrapped_slides, league_name, selected_history_season
-    )
+    if len(_wrapped_cheap) >= 3:
+        _wrapped_url = (
+            f"/api/history/{base_platform}/{base_season}/{base_league_id}"
+            f"/wrapped?history_season={selected_history_season}"
+        )
+        _wrapped_btn = _wrapped_launcher_html(_wrapped_url)
+    else:
+        _wrapped_btn = ""
+    _wrapped_overlay = ""  # injected lazily into #wrappedMount by the launcher
 
     # Loading spinner HTML (unused when prerendered sections are provided)
     loading_spinner = """
