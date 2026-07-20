@@ -9419,7 +9419,7 @@ def build_teams_body(ctx: dict) -> str:
             f"      {_grade_badge}"
             + f"      <button class='share-report-btn' title='Share team report card' "
                f"data-roster='{rid}' data-platform='{platform}' data-season='{current_season}' data-league='{league_id}'>"
-               f"<img src='/static/images/share-solid.png' class='share-report-icon' alt='Share'></button>"
+               "<svg class='share-report-icon' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><circle cx='18' cy='5' r='3'/><circle cx='6' cy='12' r='3'/><circle cx='18' cy='19' r='3'/><line x1='8.59' y1='13.51' x2='15.42' y2='17.49'/><line x1='15.41' y1='6.51' x2='8.59' y2='10.49'/></svg></button>"
             +
             "      <button class='team-card-toggle' aria-label='Expand card' aria-expanded='false'>"
             "        <svg width='14' height='14' viewBox='0 0 14 14' fill='none'>"
@@ -16613,7 +16613,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
           style="display:flex;align-items:center;gap:5px;padding:5px 12px;border-radius:6px;
                  border:1px solid var(--border);background:var(--card);color:var(--text);
                  font-size:13px;cursor:pointer;font-weight:600;">
-    <i class="fa-solid fa-paper-plane" style="font-size:11px;"></i> Share
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg> Share
   </button>
   <script type="application/json" id="recapShareData">{_recap_share_json}</script>
 </div>"""

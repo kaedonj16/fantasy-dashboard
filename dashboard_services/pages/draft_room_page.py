@@ -251,7 +251,7 @@ _DRAFT_ROOM_HTML = r"""
                 <option value="youth">Age: Youth</option>
               </select>
               <button class="dr-btn dr-btn-ghost" id="drSummaryBtn" style="display:none;">Summary</button>
-              <button class="dr-btn dr-btn-ghost" id="drShare">Share</button>
+              <button class="dr-btn dr-btn-ghost" id="drShare"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px;margin-right:4px;"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>Share</button>
               <button class="dr-btn dr-btn-ghost" id="drUndo">Undo</button>
               <button class="dr-btn dr-btn-ghost" id="drEdit">Edit Setup</button>
               <button class="dr-btn dr-btn-ghost dr-btn-danger" id="drReset">Reset</button>
@@ -286,7 +286,7 @@ _DRAFT_ROOM_HTML = r"""
         </div>
         <div id="drCompleteBar" style="display:none;">
           <button class="dr-btn dr-btn-primary" id="drCompleteSummaryBtn" style="width:100%;">Draft Summary</button>
-          <button class="dr-btn" id="drCompleteShareBtn" style="width:100%;">Share</button>
+          <button class="dr-btn" id="drCompleteShareBtn" style="width:100%;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px;margin-right:4px;"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>Share</button>
         </div>
       </aside>
     </div>
@@ -328,7 +328,7 @@ _DRAFT_ROOM_HTML = r"""
       </div>
       <img class="dr-shareview-img" id="drShareViewImg" alt="Draft preview">
       <div class="dr-shareview-footer">
-        <button class="dr-btn dr-btn-primary" id="drShareViewShare">Share</button>
+        <button class="dr-btn dr-btn-primary" id="drShareViewShare"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px;margin-right:4px;"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>Share</button>
         <button class="dr-btn" id="drShareViewDl">Download</button>
       </div>
     </div>
