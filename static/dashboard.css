@@ -22324,6 +22324,17 @@ button:disabled {
   filter: drop-shadow(0 6px 22px color-mix(in srgb, var(--wa) 70%, transparent));
 }
 
+/* Branding: the wordmark opens the intro slide, and a quiet watermark sits at
+   the bottom of the stage on every later slide. */
+.wrapped-intro-logo { width: 128px; height: auto; margin-bottom: 4px; }
+.wrapped-slide.active .wrapped-intro-logo { animation: wrapPop .7s cubic-bezier(.2,1.4,.4,1) both; }
+.wrapped-brand {
+  position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%);
+  width: 72px; height: auto; opacity: .5; z-index: 3; pointer-events: none;
+  transition: opacity .4s ease;
+}
+.wrapped-stage:has(.wrapped-slide[data-kind="intro"].active) .wrapped-brand { opacity: 0; }
+
 /* Staggered reveal of the active slide's content. */
 .wrapped-slide.active .wrapped-crown { animation: wrapCrown .7s cubic-bezier(.2,1.5,.4,1) .02s both; }
 .wrapped-slide.active .wrapped-eyebrow { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .05s both; }
@@ -22347,7 +22358,8 @@ button:disabled {
   .wrapped-overlay, .wrapped-slide.active::before,
   .wrapped-slide.active .wrapped-eyebrow, .wrapped-slide.active .wrapped-big,
   .wrapped-slide.active .wrapped-label, .wrapped-slide.active .wrapped-scoreline,
-  .wrapped-slide.active .wrapped-sub, .wrapped-slide.active .wrapped-li > * { animation-duration: .01ms; }
+  .wrapped-slide.active .wrapped-sub, .wrapped-slide.active .wrapped-li,
+  .wrapped-slide.active .wrapped-intro-logo { animation-duration: .01ms; }
   .wrapped-slide, .wrapped-slide.seen { transform: none; transition: opacity .2s linear; }
   .wrapped-bar.current i { transition: none; }
 }

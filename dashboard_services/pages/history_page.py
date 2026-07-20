@@ -1262,9 +1262,13 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None) -> str
                           f"<span class='wrapped-score'>{_esc(_l.strip())}</span></div>")
         crown = ("<i class='fa-solid fa-crown wrapped-crown' aria-hidden='true'></i>"
                  if s["kind"] == "champion" else "")
+        # The intro opens on the BR wordmark; every later slide carries the
+        # small stage watermark instead (hidden while the intro is active).
+        intro_logo = ("<img src='/static/BR_Logo_dark.png' alt='BR Fantasy' class='wrapped-intro-logo'>"
+                      if s["kind"] == "intro" else "")
         slide_html.append(
             f"<section class='wrapped-slide' data-kind='{s['kind']}'>"
-            f"{crown}"
+            f"{intro_logo}{crown}"
             f"<div class='wrapped-eyebrow'>{_esc(str(s['eyebrow']))}</div>"
             f"{big}"
             + (f"<div class='wrapped-label'>{_esc(str(s['label']))}</div>" if s['label'] else "")
@@ -1281,7 +1285,7 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None) -> str
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg><span>Share</span>
       </button>
       <button type="button" class="wrapped-close" id="wrappedClose" aria-label="Close">&times;</button>
-      <div class="wrapped-stage" id="wrappedStage">{''.join(slide_html)}</div>
+      <div class="wrapped-stage" id="wrappedStage">{''.join(slide_html)}<img src="/static/BR_Logo_dark.png" alt="" class="wrapped-brand" aria-hidden="true"></div>
       <button type="button" class="wrapped-tap wrapped-tap-prev" id="wrappedPrev" aria-label="Previous"></button>
       <button type="button" class="wrapped-tap wrapped-tap-next" id="wrappedNext" aria-label="Next"></button>
       <div class="wrapped-hint">Tap to advance · Esc to close</div>
