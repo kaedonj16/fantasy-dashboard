@@ -1219,11 +1219,13 @@ def _render_season_wrapped(slides: list, league_name: str, season) -> tuple:
         if s.get("rows"):
             # List slide (position leaders, records, luck, activity): a compact
             # keyed list. Value may be a display string or empty.
+            # Always emit all three cells (value may be empty) so the grid
+            # keeps three columns per row and every column stays aligned.
             rows = "".join(
                 "<div class='wrapped-li'>"
                 f"<span class='wrapped-li-k'>{_esc(str(k))}</span>"
                 f"<span class='wrapped-li-n'>{_esc(str(n))}</span>"
-                + (f"<span class='wrapped-li-v'>{_esc(str(v))}</span>" if v not in (None, "") else "")
+                f"<span class='wrapped-li-v'>{_esc(str(v)) if v not in (None, '') else ''}</span>"
                 + "</div>"
                 for k, n, v in s["rows"]
             )
