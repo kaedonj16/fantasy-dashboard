@@ -1117,14 +1117,16 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
         return {"kind": kind, "eyebrow": eyebrow, "big": f"{val:.{dp}f}", "num": True,
                 "dp": dp, "suffix": suffix, "label": label, "sub": sub}
 
-    slides = [_txt("intro", f"{season} SEASON", league_name, "Wrapped",
-                   "A look back at the year that was")]
+    slides = [{**_txt("intro", f"{season} SEASON", league_name, "Wrapped",
+                      "A look back at the year that was"),
+               "bgword": f"'{str(season)[-2:]}"}]
 
     if summary.get("top_scorer_value"):
-        slides.append(_num("topscore", "MOST POINTS ON THE YEAR",
-                           summary["top_scorer_value"], 1, "",
-                           summary.get("top_scorer_team", "-"),
-                           f"{summary.get('top_scorer_avg', 0):.1f} avg per week, the league's top scoring machine"))
+        slides.append({**_num("topscore", "MOST POINTS ON THE YEAR",
+                              summary["top_scorer_value"], 1, " PTS",
+                              summary.get("top_scorer_team", "-"),
+                              f"{summary.get('top_scorer_avg', 0):.1f} avg per week, the league's top scoring machine"),
+                       "bgword": str(int(summary["top_scorer_value"]))})
 
     # ── Player awards: season MVP + the best at each position ──────────────────
     # These are the only slides that need per-week boxscore fetches, so the
@@ -1134,9 +1136,10 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
         mvp = (leaders or {}).get("mvp")
         if mvp and mvp.get("pts"):
             _meta = " · ".join(x for x in [mvp.get("pos"), mvp.get("nfl")] if x)
-            slides.append(_num("mvp", "LEAGUE MVP", float(mvp["pts"]), 1, "",
-                               mvp["name"],
-                               f"{_meta} · {mvp.get('ppg', 0):.1f} per game, the season's top fantasy producer"))
+            slides.append({**_num("mvp", "LEAGUE MVP", float(mvp["pts"]), 1, " PTS",
+                                  mvp["name"],
+                                  f"{_meta} · {mvp.get('ppg', 0):.1f} per game, the season's top fantasy producer"),
+                           "bgword": str(int(float(mvp["pts"])))})
 
         by_pos = (leaders or {}).get("by_pos") or {}
         pos_rows = [(p, by_pos[p]["name"], f"{by_pos[p]['pts']:.1f}")
@@ -1144,7 +1147,8 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
         if len(pos_rows) >= 3:
             slides.append({"kind": "posleaders", "eyebrow": "TOP AT EACH POSITION",
                            "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
-                           "sub": "The points leader at every spot", "rows": pos_rows})
+                           "sub": "The points leader at every spot", "rows": pos_rows,
+                           "bgword": "TOP"})
 
     # Season records: biggest single week + hottest streak, grouped.
     _rec_rows = []
@@ -1157,22 +1161,25 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
     if _rec_rows:
         slides.append({"kind": "records", "eyebrow": "SEASON RECORDS", "num": False,
                        "big": "", "dp": 0, "suffix": "", "label": "",
-                       "sub": "The high-water marks of the year", "rows": _rec_rows})
+                       "sub": "The high-water marks of the year", "rows": _rec_rows,
+                       "bgword": "BEST"})
 
     if summary.get("biggest_blowout_margin"):
         _b = _num("blowout", "BIGGEST BLOWOUT",
-                  summary["biggest_blowout_margin"], 1, " pts",
+                  summary["biggest_blowout_margin"], 1, " PTS",
                   summary.get("biggest_blowout", "-"),
                   "The most lopsided result of the year")
+        _b["bgword"] = str(int(summary["biggest_blowout_margin"]))
         if summary.get("biggest_blowout_scores"):
             _b["scoreline"] = summary["biggest_blowout_scores"]
         slides.append(_b)
 
     if summary.get("closest_margin"):
         _c = _num("nailbiter", "CLOSEST GAME",
-                  summary["closest_margin"], 1, " pts",
+                  summary["closest_margin"], 1, " PTS",
                   summary.get("closest_matchup", "-"),
                   "Decided by the slimmest margin all season")
+        _c["bgword"] = f"{summary['closest_margin']:.1f}"
         if summary.get("closest_scores"):
             _c["scoreline"] = summary["closest_scores"]
         slides.append(_c)
@@ -1187,7 +1194,8 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
     if _luck_rows:
         slides.append({"kind": "luck", "eyebrow": "THE LUCK INDEX", "num": False,
                        "big": "", "dp": 0, "suffix": "", "label": "",
-                       "sub": "Wins above or below what the scoring earned", "rows": _luck_rows})
+                       "sub": "Wins above or below what the scoring earned", "rows": _luck_rows,
+                       "bgword": "LUCK"})
 
     # League activity: total trades, most active trader, waiver-wire leader.
     act = _wrapped_activity(history_ctx)
@@ -1203,78 +1211,115 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
     if _act_rows:
         slides.append({"kind": "activity", "eyebrow": "LEAGUE ACTIVITY", "num": False,
                        "big": "", "dp": 0, "suffix": "", "label": "",
-                       "sub": "Who worked the phones and the wire", "rows": _act_rows})
+                       "sub": "Who worked the phones and the wire", "rows": _act_rows,
+                       "bgword": "MOVES"})
 
     if summary.get("runner_up") and summary.get("runner_up") not in ("-", None):
-        slides.append(_txt("runnerup", "RUNNER-UP", summary["runner_up"], "So close",
-                           f"Finished {summary.get('runner_up_record', '')}, one game short"))
+        slides.append({**_txt("runnerup", "RUNNER-UP", summary["runner_up"], "So close",
+                              f"Finished {summary.get('runner_up_record', '')}, one game short"),
+                       "bgword": "2ND"})
 
     if summary.get("champion") and summary.get("champion") not in ("-", None):
-        slides.append(_txt("champion", f"{season} CHAMPION", summary["champion"],
-                           "", f"{summary.get('champion_record', '')} · league champion"))
+        slides.append({**_txt("champion", f"{season} CHAMPION", summary["champion"],
+                              "", "Took the crown when it mattered most"),
+                       "bgword": "CHAMP",
+                       "record": str(summary.get("champion_record", "") or "")})
 
     return slides
 
 
-def _wrapped_overlay_markup(slides: list, share_data: dict | None = None) -> str:
+def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
+                            season=None) -> str:
     """Return the Season Wrapped overlay markup (no launch button, no script) so
     it can be fetched and injected lazily. '' when there isn't enough to tell a
-    story."""
+    story. Editorial layout: left-aligned content on a strict margin, a kicker
+    rule above each headline, a giant outlined background word, and a broadcast
+    footer bug on every slide."""
     if len(slides) < 3:
         return ""
 
     bars = "".join("<span class='wrapped-bar'><i></i></span>" for _ in slides)
+    season_txt = _esc(str(season)) if season not in (None, "") else ""
+    foot = (
+        "<div class='wrapped-foot'>"
+        "<img src='/static/BR_Logo_dark.png' alt=''>"
+        "<span class='wrapped-foot-line'></span>"
+        f"<span class='wrapped-foot-season'>{season_txt} SEASON</span>"
+        "</div>"
+    )
 
     slide_html = []
     for s in slides:
-        if s.get("rows"):
-            # List slide (position leaders, records, luck, activity): each row
-            # stacks its label above the name (full-width, wraps) with the value
-            # to the right. Value may be empty.
+        kind = s["kind"]
+        kicker = (f"<div class='wrapped-kicker'><span class='wrapped-kicker-rule'></span>"
+                  f"<span class='wrapped-kicker-txt'>{_esc(str(s['eyebrow']))}</span></div>")
+        bgword = (f"<div class='wrapped-bgword' aria-hidden='true'>{_esc(str(s['bgword']))}</div>"
+                  if s.get("bgword") else "")
+        sub = (f"<div class='wrapped-divider'></div>"
+               f"<div class='wrapped-sub'>{_esc(str(s['sub']))}</div>")
+
+        if kind == "intro":
+            body = (
+                "<img src='/static/BR_Logo_dark.png' alt='BR Fantasy' class='wrapped-intro-logo'>"
+                f"<div class='wrapped-league'>{_esc(str(s['big']))}</div>"
+                "<div class='wrapped-word'>SEASON<br>WRAPPED</div>"
+                + sub
+            )
+        elif kind == "champion":
+            record = str(s.get("record") or "")
+            record_html = (
+                "<div class='wrapped-record'>"
+                + (f"<span class='wrapped-record-badge'>{_esc(record)}</span>" if record else "")
+                + "<span class='wrapped-record-txt'>League champion</span></div>"
+            )
+            body = (
+                "<div class='wrapped-rays' aria-hidden='true'></div>"
+                "<i class='fa-solid fa-crown wrapped-crown' aria-hidden='true'></i>"
+                + kicker
+                + f"<div class='wrapped-cname'>{_esc(str(s['big']))}</div>"
+                + record_html + sub
+            )
+        elif s.get("rows"):
             rows = "".join(
-                "<div class='wrapped-li'>"
-                f"<span class='wrapped-li-k'>{_esc(str(k))}</span>"
-                "<div class='wrapped-li-main'>"
-                f"<span class='wrapped-li-n'>{_esc(str(n))}</span>"
-                + (f"<span class='wrapped-li-v'>{_esc(str(v))}</span>" if v not in (None, "") else "")
+                "<div class='wrapped-row'>"
+                f"<div class='wrapped-row-k'>{_esc(str(k))}</div>"
+                "<div class='wrapped-row-m'>"
+                f"<span class='wrapped-row-n'>{_esc(str(n))}</span>"
+                + (f"<span class='wrapped-row-v'>{_esc(str(v))}</span>" if v not in (None, "") else "")
                 + "</div></div>"
                 for k, n, v in s["rows"]
             )
-            big = f"<div class='wrapped-list'>{rows}</div>"
+            body = kicker + f"<div class='wrapped-rows'>{rows}</div>" + sub
         elif s["num"]:
-            # Number counts up; the unit rides alongside as a quiet superscript
-            # (rendered statically so it isn't animated as text).
             unit = str(s.get("suffix") or "").strip()
-            big = ("<div class='wrapped-num'>"
-                   f"<span class='wrapped-big' data-w-count='{s['big']}' data-w-dp='{s['dp']}'>0</span>"
-                   + (f"<span class='wrapped-unit'>{_esc(unit)}</span>" if unit else "")
-                   + "</div>")
+            score_html = ""
+            _sl = str(s.get("scoreline") or "")
+            if "-" in _sl:
+                _w, _l = _sl.split("-", 1)
+                score_html = ("<div class='wrapped-scores'>"
+                              f"<span class='wrapped-score-w'>{_esc(_w.strip())}</span>"
+                              "<span class='wrapped-score-x'>VS</span>"
+                              f"<span class='wrapped-score-l'>{_esc(_l.strip())}</span></div>")
+            body = (
+                kicker
+                + "<div class='wrapped-num'>"
+                  f"<span class='wrapped-big' data-w-count='{s['big']}' data-w-dp='{s['dp']}'>0</span>"
+                + (f"<span class='wrapped-unit'>{_esc(unit)}</span>" if unit else "")
+                + "</div>"
+                + (f"<div class='wrapped-name'>{_esc(str(s['label']))}</div>" if s["label"] else "")
+                + score_html + sub
+            )
         else:
-            big = f"<div class='wrapped-big wrapped-big-text'>{_esc(str(s['big']))}</div>"
-        # Optional scoreline chip (e.g. "226.9-96.2"): winner shown solid.
-        score_html = ""
-        _sl = str(s.get("scoreline") or "")
-        if "-" in _sl:
-            _w, _l = _sl.split("-", 1)
-            score_html = ("<div class='wrapped-scoreline'>"
-                          f"<span class='wrapped-score win'>{_esc(_w.strip())}</span>"
-                          "<span class='wrapped-score-x'>vs</span>"
-                          f"<span class='wrapped-score'>{_esc(_l.strip())}</span></div>")
-        crown = ("<i class='fa-solid fa-crown wrapped-crown' aria-hidden='true'></i>"
-                 if s["kind"] == "champion" else "")
-        # The intro opens on the BR wordmark; every later slide carries the
-        # small stage watermark instead (hidden while the intro is active).
-        intro_logo = ("<img src='/static/BR_Logo_dark.png' alt='BR Fantasy' class='wrapped-intro-logo'>"
-                      if s["kind"] == "intro" else "")
+            # Text slide (runner-up): big name with its short label under it.
+            body = (
+                kicker
+                + f"<div class='wrapped-cname'>{_esc(str(s['big']))}</div>"
+                + (f"<div class='wrapped-name'>{_esc(str(s['label']))}</div>" if s["label"] else "")
+                + sub
+            )
+
         slide_html.append(
-            f"<section class='wrapped-slide' data-kind='{s['kind']}'>"
-            f"{intro_logo}{crown}"
-            f"<div class='wrapped-eyebrow'>{_esc(str(s['eyebrow']))}</div>"
-            f"{big}"
-            + (f"<div class='wrapped-label'>{_esc(str(s['label']))}</div>" if s['label'] else "")
-            + score_html
-            + f"<div class='wrapped-sub'>{_esc(str(s['sub']))}</div>"
-            f"</section>"
+            f"<section class='wrapped-slide' data-kind='{kind}'>{bgword}{body}{foot}</section>"
         )
 
     share_json = json.dumps(share_data or {}).replace("</", "<\\/")
@@ -1285,7 +1330,7 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None) -> str
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg><span>Share</span>
       </button>
       <button type="button" class="wrapped-close" id="wrappedClose" aria-label="Close">&times;</button>
-      <div class="wrapped-stage" id="wrappedStage">{''.join(slide_html)}<img src="/static/BR_Logo_dark.png" alt="" class="wrapped-brand" aria-hidden="true"></div>
+      <div class="wrapped-stage" id="wrappedStage">{''.join(slide_html)}</div>
       <button type="button" class="wrapped-tap wrapped-tap-prev" id="wrappedPrev" aria-label="Previous"></button>
       <button type="button" class="wrapped-tap wrapped-tap-next" id="wrappedNext" aria-label="Next"></button>
       <div class="wrapped-hint">Tap to advance · Esc to close</div>
@@ -1341,7 +1386,7 @@ def render_history_wrapped_overlay(history_ctx: dict, selected_history_season) -
     summary = history_ctx.get("summary") or _build_summary(history_ctx)
     slides = _build_wrapped_slides(history_ctx, summary, league_name, selected_history_season)
     share_data = _wrapped_share_data(slides, summary, league_name, selected_history_season)
-    return _wrapped_overlay_markup(slides, share_data)
+    return _wrapped_overlay_markup(slides, share_data, season=selected_history_season)
 
 
 def _wrapped_launcher_html(wrapped_url: str) -> str:
@@ -1407,6 +1452,13 @@ _WRAPPED_BOOTSTRAP_JS = r"""
     for (i = 0; i < chars.length; i++) { ctx.fillText(chars[i], x, y); x += ctx.measureText(chars[i]).width + ls; }
     ctx.textAlign = a;
   }
+  // Measured width of letter-spaced text (matches lsLeft's layout).
+  function lsWidth(ctx, text, ls) {
+    var chars = Array.from(String(text == null ? '' : text));
+    var t = 0;
+    for (var i = 0; i < chars.length; i++) t += ctx.measureText(chars[i]).width + ls;
+    return Math.max(0, t - ls);
+  }
   // Left-aligned text with letter-spacing, returns the ending x.
   function lsLeft(ctx, text, x, y, ls) {
     var chars = Array.from(String(text == null ? '' : text));
@@ -1427,87 +1479,112 @@ _WRAPPED_BOOTSTRAP_JS = r"""
     ctx.closePath(); ctx.fill();
   }
 
-  // Paint the single shareable 'Season Wrapped' summary card (story format).
+  // Paint the single shareable 'Season Wrapped' summary card (story format),
+  // matching the overlay's editorial style: left-aligned on a strict margin,
+  // brand type (Archivo / Inter), an outlined season mark, and a footer bug.
+  var F_BODY = "'Archivo', -apple-system, BlinkMacSystemFont, sans-serif";
+  var F_DISP = "'InterVariable', 'Archivo', -apple-system, sans-serif";
   function paintWrappedCard(data, logo) {
-    var W = 1080, H = 1920, PAD = 90, PURPLE = '#b98cf6', GOLD = '#f5c451';
+    var W = 1080, H = 1920, PAD = 90, PURPLE = '#a78bfa', GOLD = '#f5c451';
     var c = document.createElement('canvas'); c.width = W; c.height = H;
     var ctx = c.getContext('2d');
+    // Ground: deep purple gradient + one soft glow, top-left.
     var g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, '#1a1138'); g.addColorStop(0.5, '#120d26'); g.addColorStop(1, '#0a0714');
+    g.addColorStop(0, '#221247'); g.addColorStop(0.55, '#120b26'); g.addColorStop(1, '#07060c');
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-    var rg = ctx.createRadialGradient(W / 2, 560, 0, W / 2, 560, 680);
-    rg.addColorStop(0, 'rgba(124,58,237,0.34)'); rg.addColorStop(1, 'rgba(124,58,237,0)');
+    var rg = ctx.createRadialGradient(W * 0.2, 480, 0, W * 0.2, 480, 760);
+    rg.addColorStop(0, 'rgba(124,58,237,0.30)'); rg.addColorStop(1, 'rgba(124,58,237,0)');
     ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
-    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 
-    // Header
-    ctx.fillStyle = '#ffffff'; ctx.font = '800 62px ' + FONT;
-    centerText(ctx, data.league || 'League', W / 2, 250, W - 2 * PAD);
-    ctx.fillStyle = PURPLE; ctx.font = '800 38px ' + FONT;
-    lsCenter(ctx, ((data.season || '') + '  SEASON WRAPPED').toUpperCase(), W / 2, 322, 5);
+    // Outlined season mark bleeding off the top-right.
+    var yr = "'" + String(data.season || '').slice(-2);
+    ctx.save();
+    ctx.font = '900 330px ' + F_DISP;
+    ctx.strokeStyle = PURPLE; ctx.lineWidth = 4; ctx.globalAlpha = 0.13;
+    var yw = ctx.measureText(yr).width;
+    ctx.strokeText(yr, W - yw + 40, 400);
+    ctx.restore();
 
-    var y = 430;
-    // Champion hero
-    if (data.champion) {
-      var cx0 = PAD, cw = W - 2 * PAD, ch = 320;
-      ctx.save();
-      roundRect(ctx, cx0, y, cw, ch, 34);
-      ctx.fillStyle = 'rgba(245,196,81,0.10)'; ctx.fill();
-      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(245,196,81,0.5)'; ctx.stroke();
-      ctx.restore();
-      drawCrown(ctx, W / 2, y + 118, 92, GOLD);
-      ctx.fillStyle = GOLD; ctx.font = '800 32px ' + FONT;
-      lsCenter(ctx, 'CHAMPION', W / 2, y + 172, 6);
-      ctx.fillStyle = '#ffffff';
-      var cs = 68; ctx.font = '800 ' + cs + 'px ' + FONT;
-      while (ctx.measureText(data.champion).width > cw - 80 && cs > 40) { cs -= 3; ctx.font = '800 ' + cs + 'px ' + FONT; }
-      centerText(ctx, data.champion, W / 2, y + 248, cw - 80);
-      if (data.champion_record) {
-        ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = '600 34px ' + FONT;
-        centerText(ctx, data.champion_record, W / 2, y + 296);
-      }
-      y += ch + 46;
-    }
-
-    // Highlights panel
-    var hs = (data.highlights || []).slice(0, 5);
-    if (hs.length) {
-      var px = PAD, pw = W - 2 * PAD, rowH = 150, ptop = 34, pbot = 24;
-      var ph = ptop + hs.length * rowH - (rowH - 118) + pbot;
-      ph = ptop + hs.length * 118 + (hs.length - 1) * 30 + pbot;
-      roundRect(ctx, px, y, pw, ph, 34);
-      ctx.fillStyle = 'rgba(255,255,255,0.045)'; ctx.fill();
-      ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(255,255,255,0.09)'; ctx.stroke();
-      var innerX = px + 46, valX = px + pw - 46;
-      var ry = y + ptop;
-      hs.forEach(function (row, i) {
-        ctx.textAlign = 'left'; ctx.fillStyle = PURPLE; ctx.font = '800 27px ' + FONT;
-        lsLeft(ctx, String(row.k || '').toUpperCase(), innerX, ry + 36, 2);
-        // value first, to know how much room the name has
-        var vtxt = String(row.v || '');
-        ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,0.72)'; ctx.font = '800 44px ' + FONT;
-        var vw = vtxt ? ctx.measureText(vtxt).width : 0;
-        if (vtxt) ctx.fillText(vtxt, valX, ry + 92);
-        ctx.textAlign = 'left'; ctx.fillStyle = '#ffffff'; ctx.font = '800 46px ' + FONT;
-        var nameMax = (valX - innerX) - (vw ? vw + 28 : 0);
-        ctx.fillText(ellip(ctx, row.n, nameMax), innerX, ry + 94);
-        if (i < hs.length - 1) {
-          ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 1;
-          ctx.beginPath(); ctx.moveTo(innerX, ry + 118 + 15); ctx.lineTo(valX, ry + 118 + 15); ctx.stroke();
-        }
-        ry += 118 + 30;
-      });
-      y += ph;
-    }
-
-    // Footer: the BR wordmark, with a text fallback if the logo didn't load.
+    // Header: logo, league, kicker.
     if (logo) {
-      var lw = 200, lh = lw * (logo.naturalHeight || 454) / (logo.naturalWidth || 512);
-      ctx.drawImage(logo, W / 2 - lw / 2, H - lh - 64, lw, lh);
-    } else {
-      ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = '800 28px ' + FONT;
-      lsCenter(ctx, 'BR FANTASY  ·  SEASON WRAPPED', W / 2, H - 88, 4);
+      var lw = 150, lh = lw * (logo.naturalHeight || 454) / (logo.naturalWidth || 512);
+      ctx.drawImage(logo, PAD, 130, lw, lh);
     }
+    ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.font = '800 46px ' + F_BODY;
+    ctx.fillText(ellip(ctx, data.league || 'League', W - 2 * PAD), PAD, 388);
+    ctx.fillStyle = PURPLE;
+    ctx.fillRect(PAD, 432, 54, 8);
+    ctx.font = '800 34px ' + F_BODY;
+    lsLeft(ctx, 'SEASON WRAPPED', PAD + 76, 444, 8);
+
+    // Champion block.
+    var y = 560;
+    if (data.champion) {
+      ctx.fillStyle = GOLD;
+      ctx.fillRect(PAD, y, 54, 8);
+      ctx.font = '800 34px ' + F_BODY;
+      lsLeft(ctx, (String(data.season || '') + ' CHAMPION').trim(), PAD + 76, y + 12, 8);
+      ctx.fillStyle = '#ffffff';
+      var cs = 92; ctx.font = '900 ' + cs + 'px ' + F_DISP;
+      while (ctx.measureText(data.champion).width > W - 2 * PAD && cs > 54) {
+        cs -= 4; ctx.font = '900 ' + cs + 'px ' + F_DISP;
+      }
+      ctx.fillText(ellip(ctx, data.champion, W - 2 * PAD), PAD, y + 130);
+      var ry0 = y + 176;
+      if (data.champion_record) {
+        ctx.font = '800 32px ' + F_BODY;
+        var bw = ctx.measureText(data.champion_record).width + 44;
+        var bg = ctx.createLinearGradient(PAD, 0, PAD + bw, 0);
+        bg.addColorStop(0, '#f5c451'); bg.addColorStop(1, '#e8a41f');
+        roundRect(ctx, PAD, ry0, bw, 58, 10);
+        ctx.fillStyle = bg; ctx.fill();
+        ctx.fillStyle = '#0d0a04';
+        ctx.fillText(data.champion_record, PAD + 22, ry0 + 41);
+        ctx.fillStyle = 'rgba(255,255,255,0.66)'; ctx.font = '700 34px ' + F_BODY;
+        ctx.fillText('League champion', PAD + bw + 24, ry0 + 41);
+      }
+      y = ry0 + 120;
+    }
+
+    // Divider then highlight rows: label over name, value right in accent.
+    ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(PAD, y, W - 2 * PAD, 2);
+    y += 52;
+    var hs = (data.highlights || []).slice(0, 5);
+    var valX = W - PAD;
+    hs.forEach(function (row, i) {
+      ctx.fillStyle = PURPLE; ctx.font = '800 28px ' + F_BODY;
+      lsLeft(ctx, String(row.k || '').toUpperCase(), PAD, y, 6);
+      var vtxt = String(row.v || '');
+      ctx.font = '900 48px ' + F_DISP;
+      var vw = vtxt ? ctx.measureText(vtxt).width : 0;
+      if (vtxt) { ctx.fillStyle = PURPLE; ctx.fillText(vtxt, valX - vw, y + 62); }
+      ctx.fillStyle = '#ffffff'; ctx.font = '800 46px ' + F_BODY;
+      ctx.fillText(ellip(ctx, row.n, (valX - PAD) - (vw ? vw + 34 : 0)), PAD, y + 62);
+      if (i < hs.length - 1) {
+        ctx.fillStyle = 'rgba(255,255,255,0.1)';
+        ctx.fillRect(PAD, y + 100, W - 2 * PAD, 1);
+      }
+      y += 152;
+    });
+
+    // Footer bug: wordmark + hairline + season.
+    var fy = H - 120;
+    var fx = PAD;
+    if (logo) {
+      var flw = 104, flh = flw * (logo.naturalHeight || 454) / (logo.naturalWidth || 512);
+      ctx.globalAlpha = 0.85;
+      ctx.drawImage(logo, PAD, fy - flh / 2, flw, flh);
+      ctx.globalAlpha = 1;
+      fx = PAD + flw + 28;
+    }
+    ctx.font = '700 28px ' + F_BODY;
+    var seasonTxt = (String(data.season || '') + ' SEASON').trim();
+    var stW = lsWidth(ctx, seasonTxt, 6);
+    ctx.fillStyle = 'rgba(255,255,255,0.14)';
+    ctx.fillRect(fx, fy, (W - PAD - stW - 30) - fx, 1);
+    ctx.fillStyle = 'rgba(255,255,255,0.42)';
+    lsLeft(ctx, seasonTxt, W - PAD - stW, fy + 10, 6);
     return c;
   }
 
@@ -1522,6 +1599,7 @@ _WRAPPED_BOOTSTRAP_JS = r"""
     var slides = Array.prototype.slice.call(stage.querySelectorAll('.wrapped-slide'));
     var bars = Array.prototype.slice.call(overlay.querySelectorAll('.wrapped-bar'));
     var idx = 0, timer = null, DUR = 5000;   // each slide auto-advances after DUR
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     function clearTimer() { if (timer) { clearTimeout(timer); timer = null; } }
     function scheduleNext(n) {
@@ -1529,14 +1607,42 @@ _WRAPPED_BOOTSTRAP_JS = r"""
       if (n >= slides.length - 1) return;   // the finale (champion) holds
       timer = setTimeout(function () { go(n + 1); }, DUR);
     }
+    // Story-style ticks, driven from JS so they always mirror navigation:
+    // skipping ahead snaps the skipped bar full and restarts the next from 0,
+    // and going back empties the later bars and replays the revisited one.
+    function setBars(n) {
+      bars.forEach(function (b, i) {
+        var fill = b.firstElementChild;
+        if (!fill) return;
+        fill.style.transition = 'none';
+        fill.style.width = i < n ? '100%' : '0%';
+        b.classList.toggle('current', i === n);
+      });
+      var cur = bars[n] && bars[n].firstElementChild;
+      if (!cur) return;
+      if (reduce || n >= slides.length - 1) { cur.style.width = '100%'; return; }
+      void cur.offsetWidth;   // commit the 0% start before animating
+      cur.style.transition = 'width ' + DUR + 'ms linear';
+      cur.style.width = '100%';
+    }
+    // Freeze the current bar in place (share sheet up), then replay it.
+    function freezeBar() {
+      var cur = bars[idx] && bars[idx].firstElementChild;
+      if (!cur) return;
+      var w = cur.getBoundingClientRect().width;
+      cur.style.transition = 'none';
+      cur.style.width = w + 'px';
+    }
     function playSlide(n) {
       slides.forEach(function (s, i) {
         s.classList.toggle('active', i === n);
         if (i < n) s.classList.add('seen'); else s.classList.remove('seen');
       });
-      bars.forEach(function (b, i) { b.classList.toggle('filled', i < n); b.classList.toggle('current', i === n); });
+      setBars(n);
       var el = slides[n];
       if (!el) return;
+      // Tint the current progress tick with the active slide's accent.
+      try { overlay.style.setProperty('--wa', getComputedStyle(el).getPropertyValue('--wa')); } catch (e) {}
       var num = el.querySelector('[data-w-count]');
       if (num && window.brCountUp) {
         window.brCountUp(num, { to: parseFloat(num.getAttribute('data-w-count')),
@@ -1587,10 +1693,15 @@ _WRAPPED_BOOTSTRAP_JS = r"""
       if (window.brBrandLogo) window.brBrandLogo();   // pre-warm the wordmark
       shareBtn.addEventListener('click', function () {
         clearTimer();   // pause auto-advance while the share sheet is up
+        freezeBar();    // hold the tick where it was
         var data = {};
         try { data = JSON.parse((document.getElementById('wrappedShareData') || {}).textContent || '{}'); } catch (e) {}
         shareBtn.classList.add('wrapped-share-busy');
-        var done = function () { shareBtn.classList.remove('wrapped-share-busy'); };
+        var done = function () {
+          shareBtn.classList.remove('wrapped-share-busy');
+          // Replay the slide's clock from the top: tick and timer back in sync.
+          setBars(idx); scheduleNext(idx);
+        };
         var logoP = window.brBrandLogo ? window.brBrandLogo() : Promise.resolve(null);
         logoP.then(function (logo) {
           var canvas;

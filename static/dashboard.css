@@ -22161,10 +22161,11 @@ button:disabled {
   position: absolute; top: 0; left: 0; right: 0; z-index: 5;
   display: flex; gap: 5px; padding: 14px 16px;
 }
-.wrapped-bar { flex: 1; height: 3px; border-radius: 3px; background: rgba(255,255,255,.22); overflow: hidden; }
-.wrapped-bar i { display: block; height: 100%; width: 0; background: #fff; border-radius: 3px; }
-.wrapped-bar.filled i { width: 100%; }
-.wrapped-bar.current i { width: 100%; transition: width 4.8s linear; }
+/* Story ticks. Fill widths are driven from JS (setBars) so skipping ahead,
+   jumping back, and pausing all stay in sync with the actual slide clock. */
+.wrapped-bar { flex: 1; height: 3px; border-radius: 3px; background: rgba(255,255,255,.18); overflow: hidden; }
+.wrapped-bar i { display: block; height: 100%; width: 0; background: rgba(255,255,255,.85); border-radius: 3px; }
+.wrapped-bar.current i { background: var(--wa, #fff); }
 
 .wrapped-close {
   position: absolute; top: 46px; right: 16px; z-index: 6;
@@ -22217,131 +22218,158 @@ button:disabled {
 
 .wrapped-slide {
   position: absolute; inset: 0; z-index: 1;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  text-align: center; padding: 28px; gap: 15px; overflow: hidden;
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+  text-align: left; padding: 0 34px; overflow: hidden;
+  font-family: "Archivo", -apple-system, BlinkMacSystemFont, sans-serif;
   opacity: 0; pointer-events: none;
   /* Future slides wait off to the right; the whole slide flows in and out. */
   transform: translateX(54px) scale(.985);
   transition: opacity .45s ease, transform .6s cubic-bezier(.2,.85,.3,1);
-  --wa: #a78bfa;
+  --wa: #a78bfa; --wg0: #221247; --wg1: #120b26; --wglow: rgba(124,58,237,.32);
 }
 /* Slides already seen exit to the left. */
 .wrapped-slide.seen { transform: translateX(-54px) scale(.985); }
-/* Backdrop: a spotlight bloom centered on the content, warmed by a soft
-   accent wash up top and grounded by a vignette so the slide never reads as
-   text floating in a void. */
+/* Ground: one hue family per slide — a deep gradient plus a single soft glow
+   behind the type block. Clean fields, no floating blobs. */
 .wrapped-slide::before {
   content: ""; position: absolute; inset: 0; z-index: -1;
   background:
-    radial-gradient(46% 34% at 50% 50%, color-mix(in srgb, var(--wa) 60%, transparent) 0%, transparent 70%),
-    radial-gradient(90% 60% at 50% 8%, color-mix(in srgb, var(--wa) 22%, transparent) 0%, transparent 60%),
-    radial-gradient(120% 90% at 50% 116%, rgba(0,0,0,.5) 0%, transparent 55%);
+    radial-gradient(110% 60% at 18% 30%, var(--wglow) 0%, transparent 65%),
+    linear-gradient(168deg, var(--wg0) 0%, var(--wg1) 55%, #07060c 100%);
 }
 .wrapped-slide.active::before { animation: wrapGlow 1s ease both; }
-@keyframes wrapGlow { from { opacity: 0; transform: scale(1.12); } to { opacity: 1; transform: none; } }
+@keyframes wrapGlow { from { opacity: 0; } to { opacity: 1; } }
 .wrapped-slide.active { opacity: 1; pointer-events: auto; transform: none; z-index: 2; }
 
-.wrapped-slide[data-kind="intro"]     { --wa: #8b5cf6; }
-.wrapped-slide[data-kind="topscore"]  { --wa: #3b82f6; }
-.wrapped-slide[data-kind="highweek"]  { --wa: #f59e0b; }
-.wrapped-slide[data-kind="streak"]    { --wa: #ef4444; }
-.wrapped-slide[data-kind="blowout"]   { --wa: #a855f7; }
-.wrapped-slide[data-kind="nailbiter"] { --wa: #14b8a6; }
-.wrapped-slide[data-kind="runnerup"]  { --wa: #94a3b8; }
-.wrapped-slide[data-kind="champion"]  { --wa: #f5c451; }
-.wrapped-slide[data-kind="mvp"]          { --wa: #22c55e; }
-.wrapped-slide[data-kind="posleaders"]   { --wa: #38bdf8; }
-.wrapped-slide[data-kind="records"]      { --wa: #f59e0b; }
-.wrapped-slide[data-kind="luck"]         { --wa: #10b981; }
-.wrapped-slide[data-kind="activity"]     { --wa: #06b6d4; }
+.wrapped-slide[data-kind="intro"]      { --wa: #a78bfa; --wg0: #221247; --wg1: #120b26; --wglow: rgba(124,58,237,.32); }
+.wrapped-slide[data-kind="topscore"]   { --wa: #60a5fa; --wg0: #0f2147; --wg1: #0a1226; --wglow: rgba(59,130,246,.30); }
+.wrapped-slide[data-kind="mvp"]        { --wa: #4ade80; --wg0: #0d2b1c; --wg1: #081810; --wglow: rgba(34,197,94,.26); }
+.wrapped-slide[data-kind="posleaders"] { --wa: #38bdf8; --wg0: #0a2438; --wg1: #07141f; --wglow: rgba(56,189,248,.26); }
+.wrapped-slide[data-kind="records"]    { --wa: #f6a821; --wg0: #2b1c08; --wg1: #140e06; --wglow: rgba(246,168,33,.22); }
+.wrapped-slide[data-kind="blowout"]    { --wa: #c084fc; --wg0: #2a1348; --wg1: #150a26; --wglow: rgba(168,85,247,.30); }
+.wrapped-slide[data-kind="nailbiter"]  { --wa: #2dd4bf; --wg0: #0a2b27; --wg1: #071714; --wglow: rgba(20,184,166,.26); }
+.wrapped-slide[data-kind="luck"]       { --wa: #34d399; --wg0: #0c2b20; --wg1: #081712; --wglow: rgba(16,185,129,.24); }
+.wrapped-slide[data-kind="activity"]   { --wa: #22d3ee; --wg0: #0a2733; --wg1: #06141b; --wglow: rgba(6,182,212,.26); }
+.wrapped-slide[data-kind="runnerup"]   { --wa: #a5b4c8; --wg0: #1d2431; --wg1: #10141c; --wglow: rgba(148,163,184,.22); }
+.wrapped-slide[data-kind="champion"]   { --wa: #f5c451; --wg0: #2c1f06; --wg1: #151005; --wglow: rgba(245,196,81,.26); }
 
-/* List slide (position leaders, records, luck, activity): each row stacks its
-   label above the name so the name gets the full card width and never
-   truncates; the value sits to the right of the name. */
-.wrapped-list {
-  position: relative; display: flex; flex-direction: column; gap: 15px;
-  width: 100%; max-width: 400px; margin: 6px auto 0;
-  padding: 16px 18px; text-align: left;
-  background: rgba(255,255,255,.045);
-  border: 1px solid rgba(255,255,255,.09); border-radius: 16px;
+/* Giant outlined stat, bleeding off the right edge behind the content. */
+.wrapped-bgword {
+  position: absolute; z-index: 0; right: -22px; top: 88px;
+  font-family: "InterVariable", "Archivo", sans-serif; font-weight: 900;
+  font-size: 120px; letter-spacing: -.04em; line-height: .84;
+  color: transparent; -webkit-text-stroke: 2px var(--wa);
+  opacity: .13; text-align: right; pointer-events: none; user-select: none;
 }
-.wrapped-li { display: flex; flex-direction: column; gap: 3px; }
-.wrapped-li-k {
-  font-size: 11px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase;
-  color: var(--wa); filter: brightness(1.3);
-}
-.wrapped-li-main { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
-.wrapped-li-n {
-  min-width: 0; font-size: 20px; font-weight: 800; line-height: 1.2; color: #fff;
-  overflow-wrap: anywhere;   /* wrap long team names instead of clipping them */
-}
-.wrapped-li-v {
-  flex: 0 0 auto; font-size: 16px; font-weight: 800; white-space: nowrap;
-  color: rgba(255,255,255,.66); font-variant-numeric: tabular-nums;
-}
-/* Stagger the rows in. */
-.wrapped-slide.active .wrapped-li { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) both; }
-.wrapped-slide.active .wrapped-li:nth-child(1) { animation-delay: .18s; }
-.wrapped-slide.active .wrapped-li:nth-child(2) { animation-delay: .29s; }
-.wrapped-slide.active .wrapped-li:nth-child(3) { animation-delay: .40s; }
-.wrapped-slide.active .wrapped-li:nth-child(4) { animation-delay: .51s; }
 
-.wrapped-eyebrow {
-  display: inline-flex; align-items: center; gap: 8px;
-  font-size: 12px; font-weight: 800; letter-spacing: .2em; text-transform: uppercase;
-  color: color-mix(in srgb, var(--wa) 55%, #fff);
-  padding: 6px 14px; border-radius: 999px;
-  background: color-mix(in srgb, var(--wa) 15%, transparent);
-  border: 1px solid color-mix(in srgb, var(--wa) 38%, transparent);
+/* Kicker: short accent rule + uppercase label above every headline. */
+.wrapped-kicker { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+.wrapped-kicker-rule { width: 26px; height: 3px; border-radius: 2px; background: var(--wa); }
+.wrapped-kicker-txt {
+  font-size: 13px; font-weight: 800; letter-spacing: .22em; text-transform: uppercase;
+  color: var(--wa);
 }
-/* Number + its unit: the stat is the hero, the unit a quiet superscript. */
-.wrapped-num { display: inline-flex; align-items: baseline; justify-content: center; gap: .16em; }
+
+/* Intro: logo, league, then SEASON WRAPPED as the hero in the brand gradient. */
+.wrapped-intro-logo { width: 104px; height: auto; margin-bottom: 26px; }
+.wrapped-league {
+  font-size: 15px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: rgba(255,255,255,.62); margin-bottom: 10px;
+}
+.wrapped-word {
+  font-family: "InterVariable", "Archivo", sans-serif; font-weight: 900;
+  font-size: 56px; line-height: .96; letter-spacing: -.03em;
+  background: linear-gradient(100deg, #a78bfa 0%, #ec6ab7 55%, #f5a623 105%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+
+/* Number + unit: broadcast numerals, left-anchored. */
+.wrapped-num { display: flex; align-items: baseline; gap: 8px; margin-left: -4px; }
 .wrapped-big {
-  display: inline-block;
-  font-size: clamp(46px, 12vw, 104px); font-weight: 900; line-height: .95; letter-spacing: -.03em;
+  font-family: "InterVariable", "Archivo", sans-serif; font-weight: 900;
+  font-size: 92px; line-height: .9; letter-spacing: -.045em;
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 10px 46px color-mix(in srgb, var(--wa) 55%, transparent);
 }
-.wrapped-unit {
-  font-size: clamp(17px, 4vw, 34px); font-weight: 800; letter-spacing: -.01em;
-  color: color-mix(in srgb, var(--wa) 62%, #fff);
+.wrapped-unit { font-size: 30px; font-weight: 800; color: var(--wa); }
+.wrapped-name { font-size: 24px; font-weight: 800; line-height: 1.22; margin-top: 14px; letter-spacing: -.01em; }
+.wrapped-cname {
+  font-family: "InterVariable", "Archivo", sans-serif; font-weight: 900;
+  font-size: 42px; line-height: 1.08; letter-spacing: -.025em; overflow-wrap: anywhere;
 }
-.wrapped-big-text { font-size: clamp(30px, 7vw, 62px); letter-spacing: -.02em; text-wrap: balance; }
-.wrapped-label { font-size: clamp(18px, 4vw, 26px); font-weight: 800; color: #fff; text-wrap: balance; }
-.wrapped-sub { font-size: 14.5px; line-height: 1.5; color: rgba(255,255,255,.72); max-width: 34ch; }
-/* Scoreline chip for game slides (blowout / nailbiter). */
-.wrapped-scoreline {
-  display: inline-flex; align-items: center; gap: 12px;
-  padding: 8px 16px; border-radius: 12px;
-  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12);
-  font-variant-numeric: tabular-nums; font-weight: 800;
+.wrapped-divider { width: 100%; height: 1px; background: rgba(255,255,255,.12); margin: 22px 0 14px; }
+.wrapped-sub { font-size: 14px; line-height: 1.55; font-weight: 500; color: rgba(255,255,255,.6); max-width: 30ch; }
+
+/* Final-score line for game slides. */
+.wrapped-scores { display: flex; align-items: baseline; gap: 10px; margin-top: 14px; font-variant-numeric: tabular-nums; }
+.wrapped-score-w { font-size: 22px; font-weight: 800; }
+.wrapped-score-x { font-size: 12px; font-weight: 700; letter-spacing: .14em; color: rgba(255,255,255,.38); }
+.wrapped-score-l { font-size: 22px; font-weight: 800; color: rgba(255,255,255,.42); }
+
+/* List slides: label-over-name rows separated by hairlines, values in accent. */
+.wrapped-rows { display: flex; flex-direction: column; width: 100%; }
+.wrapped-row { padding: 17px 0; }
+.wrapped-row + .wrapped-row { border-top: 1px solid rgba(255,255,255,.1); }
+.wrapped-row-k { font-size: 12px; font-weight: 800; letter-spacing: .2em; color: var(--wa); margin-bottom: 7px; }
+.wrapped-row-m { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; }
+.wrapped-row-n { min-width: 0; font-size: 22px; font-weight: 800; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.wrapped-row-v {
+  flex: 0 0 auto; font-family: "InterVariable", "Archivo", sans-serif; font-weight: 900;
+  font-size: 24px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--wa);
 }
-.wrapped-score { font-size: 21px; color: rgba(255,255,255,.6); }
-.wrapped-score.win { color: #fff; }
-.wrapped-score-x { font-size: 12px; font-weight: 700; letter-spacing: .1em; color: rgba(255,255,255,.4); }
+.wrapped-slide.active .wrapped-row { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) both; }
+.wrapped-slide.active .wrapped-row:nth-child(1) { animation-delay: .18s; }
+.wrapped-slide.active .wrapped-row:nth-child(2) { animation-delay: .29s; }
+.wrapped-slide.active .wrapped-row:nth-child(3) { animation-delay: .40s; }
+.wrapped-slide.active .wrapped-row:nth-child(4) { animation-delay: .51s; }
+
+/* Champion finale: crown, gold record chip, light rays. */
 .wrapped-crown {
-  position: relative; font-size: 42px; color: var(--wa); margin-bottom: 10px;
+  position: relative; font-size: 40px; color: var(--wa); margin-bottom: 20px;
   filter: drop-shadow(0 6px 22px color-mix(in srgb, var(--wa) 70%, transparent));
 }
-
-/* Branding: the wordmark opens the intro slide, and a quiet watermark sits at
-   the bottom of the stage on every later slide. */
-.wrapped-intro-logo { width: 128px; height: auto; margin-bottom: 4px; }
-.wrapped-slide.active .wrapped-intro-logo { animation: wrapPop .7s cubic-bezier(.2,1.4,.4,1) both; }
-.wrapped-brand {
-  position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%);
-  width: 72px; height: auto; opacity: .5; z-index: 3; pointer-events: none;
-  transition: opacity .4s ease;
+.wrapped-record { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
+.wrapped-record-badge {
+  font-size: 13px; font-weight: 800; letter-spacing: .06em; color: #0d0a04;
+  background: linear-gradient(120deg, #f5c451, #e8a41f); padding: 5px 12px; border-radius: 6px;
 }
-.wrapped-stage:has(.wrapped-slide[data-kind="intro"].active) .wrapped-brand { opacity: 0; }
+.wrapped-record-txt { font-size: 15px; font-weight: 700; color: rgba(255,255,255,.66); }
+.wrapped-rays {
+  position: absolute; z-index: 0; left: 62%; top: 40%; width: 820px; height: 820px;
+  transform: translate(-50%,-50%); pointer-events: none; opacity: .1;
+  background: conic-gradient(from 10deg,
+    transparent 0 20deg, #f5c451 20deg 22deg, transparent 22deg 58deg, #f5c451 58deg 60deg,
+    transparent 60deg 98deg, #f5c451 98deg 100deg, transparent 100deg 140deg, #f5c451 140deg 142deg,
+    transparent 142deg 190deg, #f5c451 190deg 192deg, transparent 192deg 235deg, #f5c451 235deg 237deg,
+    transparent 237deg 285deg, #f5c451 285deg 287deg, transparent 287deg 330deg, #f5c451 330deg 332deg,
+    transparent 332deg 360deg);
+  -webkit-mask: radial-gradient(closest-side, #000 0%, rgba(0,0,0,.4) 50%, transparent 72%);
+          mask: radial-gradient(closest-side, #000 0%, rgba(0,0,0,.4) 50%, transparent 72%);
+}
+
+/* Broadcast footer bug: wordmark + hairline + season, bottom-left. */
+.wrapped-foot {
+  position: absolute; left: 34px; right: 34px; bottom: 26px; z-index: 2;
+  display: flex; align-items: center; gap: 12px;
+}
+.wrapped-foot img { width: 46px; height: auto; opacity: .85; }
+.wrapped-foot-line { flex: 1; height: 1px; background: rgba(255,255,255,.14); }
+.wrapped-foot-season { font-size: 11px; font-weight: 700; letter-spacing: .2em; color: rgba(255,255,255,.42); }
 
 /* Staggered reveal of the active slide's content. */
-.wrapped-slide.active .wrapped-crown { animation: wrapCrown .7s cubic-bezier(.2,1.5,.4,1) .02s both; }
-.wrapped-slide.active .wrapped-eyebrow { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .05s both; }
-.wrapped-slide.active .wrapped-big     { animation: wrapPop .6s cubic-bezier(.2,1.4,.4,1) .16s both; }
-.wrapped-slide.active .wrapped-label     { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .34s both; }
-.wrapped-slide.active .wrapped-scoreline { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .44s both; }
-.wrapped-slide.active .wrapped-sub       { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .54s both; }
+.wrapped-slide.active .wrapped-intro-logo { animation: wrapPop .7s cubic-bezier(.2,1.4,.4,1) both; }
+.wrapped-slide.active .wrapped-crown   { animation: wrapCrown .7s cubic-bezier(.2,1.5,.4,1) .02s both; }
+.wrapped-slide.active .wrapped-kicker  { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .05s both; }
+.wrapped-slide.active .wrapped-league  { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .08s both; }
+.wrapped-slide.active .wrapped-word,
+.wrapped-slide.active .wrapped-num,
+.wrapped-slide.active .wrapped-cname   { animation: wrapPop .6s cubic-bezier(.2,1.4,.4,1) .16s both; }
+.wrapped-slide.active .wrapped-name    { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .32s both; }
+.wrapped-slide.active .wrapped-scores,
+.wrapped-slide.active .wrapped-record  { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .42s both; }
+.wrapped-slide.active .wrapped-divider { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .5s both; }
+.wrapped-slide.active .wrapped-sub     { animation: wrapUp .5s cubic-bezier(.2,.8,.3,1) .56s both; }
+.wrapped-slide.active .wrapped-bgword  { animation: wrapBg .9s ease .1s both; }
+@keyframes wrapBg  { from { opacity: 0; transform: translateY(14px); } to { opacity: .13; transform: none; } }
 @keyframes wrapUp  { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
 @keyframes wrapPop { from { opacity: 0; transform: scale(.72); } to { opacity: 1; transform: none; } }
 @keyframes wrapCrown { 0% { opacity: 0; transform: translateY(-14px) rotate(-12deg) scale(.6); } 60% { opacity: 1; transform: translateY(0) rotate(4deg) scale(1.12); } 100% { opacity: 1; transform: none; } }
@@ -22356,10 +22384,14 @@ button:disabled {
 
 @media (prefers-reduced-motion: reduce) {
   .wrapped-overlay, .wrapped-slide.active::before,
-  .wrapped-slide.active .wrapped-eyebrow, .wrapped-slide.active .wrapped-big,
-  .wrapped-slide.active .wrapped-label, .wrapped-slide.active .wrapped-scoreline,
-  .wrapped-slide.active .wrapped-sub, .wrapped-slide.active .wrapped-li,
+  .wrapped-slide.active .wrapped-kicker, .wrapped-slide.active .wrapped-league,
+  .wrapped-slide.active .wrapped-word, .wrapped-slide.active .wrapped-num,
+  .wrapped-slide.active .wrapped-cname, .wrapped-slide.active .wrapped-name,
+  .wrapped-slide.active .wrapped-scores, .wrapped-slide.active .wrapped-record,
+  .wrapped-slide.active .wrapped-divider, .wrapped-slide.active .wrapped-sub,
+  .wrapped-slide.active .wrapped-row, .wrapped-slide.active .wrapped-bgword,
+  .wrapped-slide.active .wrapped-crown,
   .wrapped-slide.active .wrapped-intro-logo { animation-duration: .01ms; }
   .wrapped-slide, .wrapped-slide.seen { transform: none; transition: opacity .2s linear; }
-  .wrapped-bar.current i { transition: none; }
+  .wrapped-bar i { transition: none !important; }
 }
