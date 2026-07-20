@@ -3086,6 +3086,10 @@ _AM_JS = r"""
       return '<rect x="' + bx.toFixed(1) + '" y="' + (y - 11) + '" width="' + w.toFixed(1) + '" height="16" rx="8" fill="' + chipBg + '" stroke="' + chipBorder + '"/>'
         + txt((bx + w / 2).toFixed(1), (y + 1).toFixed(1), t, L.fLeg - 2, TH.muted, 700, 'middle');
     };
+    // Obstacle boxes labels must dodge (the trend chip is registered here so
+    // names never sit on top of it); Pass 2 appends every placed label too.
+    const placed = [];
+    const chipW = function(t) { return t.length * (L.fLeg - 3.2) * 0.62 + 16; };
     // Trend line: the population's least-squares fit, clipped to the plot area,
     // tagged with a chip carrying R^2 so the strength of the fit is visible.
     if (trend && isFinite(trend.m) && isFinite(trend.b)) {
@@ -3105,7 +3109,10 @@ _AM_JS = r"""
         // Chip near the line's right end, nudged clear of the plot edge.
         const chipTxt = 'TREND · R² ' + (Math.round(trend.r2 * 100) / 100).toFixed(2);
         const cy2 = Math.min(Math.max(ty2 + (ty2 < (padT + H - padB) / 2 ? 22 : -16), padT + 14), H - padB - 10);
-        s += chip(Math.min(tx2, W - padR - 4), cy2, chipTxt, 'end');
+        const cx2 = Math.min(tx2, W - padR - 4);
+        s += chip(cx2, cy2, chipTxt, 'end');
+        const cw = chipW(chipTxt);
+        placed.push({ x1: cx2 - cw - 2, y1: cy2 - 12, x2: cx2 + 2, y2: cy2 + 6 });
       }
     }
     // Emphasis: the top-ranked players carry the story — full-strength dots and
@@ -3137,11 +3144,13 @@ _AM_JS = r"""
     // Pass 2 — labels with collision avoidance; higher-ranked names claim space
     // first. Star labels are bold ink with the ranked value in the accent; the
     // rest are quiet and dropped when they'd collide.
-    const charW = lblSize * 0.56;
     const lblH = lblSize + 2;
-    const placed = [];
-    const overlaps = function(a, b) {
-      return a.x1 < b.x2 && a.x2 > b.x1 && a.y1 < b.y2 && a.y2 > b.y1;
+    // Intersection area of two boxes (0 when clear) — lets a crowded star pick
+    // the least-bad anchor instead of stacking on a neighbour.
+    const ovArea = function(a, b) {
+      const ix = Math.min(a.x2, b.x2) - Math.max(a.x1, b.x1);
+      const iy = Math.min(a.y2, b.y2) - Math.max(a.y1, b.y1);
+      return (ix > 0 && iy > 0) ? ix * iy : 0;
     };
     ptData.forEach(function(d) {
       if (d.idx >= showCut) return;
@@ -3151,30 +3160,41 @@ _AM_JS = r"""
       const fs = isStar ? L.fStar : lblSize;
       const tw = (nm.length + valTxt.length) * fs * 0.56;
       const gap = d.r + 4, vy = d.cy + 3.5;
+      const up1 = d.cy - d.r - 4, dn1 = d.cy + d.r + lblH;
+      // Eight anchors around the dot, near ones first, farther stacked ones last
+      // so a tight cluster spreads vertically instead of piling up.
       const cands = [
         { x: d.cx + gap, y: vy, anchor: 'start' },
         { x: d.cx - gap, y: vy, anchor: 'end' },
-        { x: d.cx + gap, y: d.cy - d.r - 4, anchor: 'start' },
-        { x: d.cx + gap, y: d.cy + d.r + lblH, anchor: 'start' },
-        { x: d.cx - gap, y: d.cy - d.r - 4, anchor: 'end' },
-        { x: d.cx - gap, y: d.cy + d.r + lblH, anchor: 'end' }
+        { x: d.cx + gap, y: up1, anchor: 'start' },
+        { x: d.cx - gap, y: up1, anchor: 'end' },
+        { x: d.cx + gap, y: dn1, anchor: 'start' },
+        { x: d.cx - gap, y: dn1, anchor: 'end' },
+        { x: d.cx + gap, y: up1 - lblH, anchor: 'start' },
+        { x: d.cx - gap, y: up1 - lblH, anchor: 'end' },
+        { x: d.cx + gap, y: dn1 + lblH, anchor: 'start' },
+        { x: d.cx - gap, y: dn1 + lblH, anchor: 'end' }
       ];
-      let chosen = null;
+      let chosen = null, chosenBox = null, best = null, bestBox = null, bestScore = Infinity;
       for (let ci = 0; ci < cands.length; ci++) {
         const c = cands[ci];
         const x1 = c.anchor === 'end' ? c.x - tw : c.x;
         const x2 = x1 + tw;
         if (x1 < padL - 2 || x2 > W - padR + 2) continue;
+        if (c.y - lblH < padT || c.y + 3 > H - padB) continue;
         const box = { x1: x1 - 1, y1: c.y - lblH, x2: x2 + 1, y2: c.y + 3 };
-        let hit = false;
-        for (let pi = 0; pi < placed.length; pi++) { if (overlaps(box, placed[pi])) { hit = true; break; } }
-        if (!hit) { chosen = c; placed.push(box); break; }
+        let score = 0;
+        for (let pi = 0; pi < placed.length; pi++) score += ovArea(box, placed[pi]);
+        if (score === 0) { chosen = c; chosenBox = box; break; }
+        if (score < bestScore) { bestScore = score; best = c; bestBox = box; }
       }
-      if (!chosen) {
-        if (!isStar) return;
-        chosen = cands[0];
-        const x1 = chosen.x, box = { x1: x1 - 1, y1: chosen.y - lblH, x2: x1 + tw + 1, y2: chosen.y + 3 };
-        placed.push(box);
+      if (chosen) {
+        placed.push(chosenBox);
+      } else {
+        // No clear slot: stars keep their name at the least-crowded anchor;
+        // quiet field labels bow out rather than smear the plot.
+        if (!isStar || !best) return;
+        chosen = best; placed.push(bestBox);
       }
       const lblFill = isStar ? TH.text : TH.muted;
       s += '<text x="' + chosen.x.toFixed(1) + '" y="' + chosen.y.toFixed(1) + '"'
