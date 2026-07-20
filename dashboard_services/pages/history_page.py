@@ -1278,7 +1278,7 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None) -> str
     <div class="wrapped-overlay" id="wrappedOverlay" hidden aria-hidden="true">
       <div class="wrapped-progress">{bars}</div>
       <button type="button" class="wrapped-share" id="wrappedShare" aria-label="Share">
-        <i class="fa-solid fa-arrow-up-from-bracket"></i><span>Share</span>
+        <i class="fa-solid fa-paper-plane"></i><span>Share</span>
       </button>
       <button type="button" class="wrapped-close" id="wrappedClose" aria-label="Close">&times;</button>
       <div class="wrapped-stage" id="wrappedStage">{''.join(slide_html)}</div>
@@ -1347,7 +1347,7 @@ def _wrapped_launcher_html(wrapped_url: str) -> str:
     return (
         "<button type='button' class='wrapped-launch' id='wrappedLaunch' "
         f"data-wrapped-url=\"{_esc(str(wrapped_url), quote=True)}\">"
-        "<i class='fa-solid fa-wand-magic-sparkles'></i> Season Wrapped</button>"
+        "<i class='fa-solid fa-star'></i> Season Wrapped</button>"
         "<div id='wrappedMount'></div>"
         f"<script>{_WRAPPED_BOOTSTRAP_JS}</script>"
     )

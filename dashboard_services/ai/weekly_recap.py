@@ -903,10 +903,12 @@ def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
     for side in ("a", "b"):
         for p in (g.get(f"out_{side}") or [])[:2]:
             chips.append(_chip(p, "player-badge-inj-out", "fa-triangle-exclamation"))
+        # Icon classes must exist in the self-hosted Font Awesome subset
+        # (static/font-awesome.css) or they silently render as nothing.
         for p in (g.get(f"maybe_{side}") or [])[:1]:
-            chips.append(_chip(p, "player-badge-inj-q", "fa-circle-question"))
+            chips.append(_chip(p, "player-badge-inj-q", "fa-circle-info"))
         for p in (g.get(f"bye_{side}") or [])[:1]:
-            chips.append(_chip(p, "player-badge-inj-note", "fa-bed"))
+            chips.append(_chip(p, "player-badge-inj-note", "fa-calendar-days"))
     avail_html = ""
     if chips:
         stamp = preview.get("as_of")

@@ -16613,7 +16613,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
           style="display:flex;align-items:center;gap:5px;padding:5px 12px;border-radius:6px;
                  border:1px solid var(--border);background:var(--card);color:var(--text);
                  font-size:13px;cursor:pointer;font-weight:600;">
-    <i class="fa-solid fa-arrow-up-from-bracket" style="font-size:11px;"></i> Share
+    <i class="fa-solid fa-paper-plane" style="font-size:11px;"></i> Share
   </button>
   <script type="application/json" id="recapShareData">{_recap_share_json}</script>
 </div>"""
