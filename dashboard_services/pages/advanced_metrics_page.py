@@ -2946,10 +2946,22 @@ _AM_JS = r"""
       });
       const xLower = cfg.metrics[xk] && cfg.metrics[xk].lowerBetter;
       ptsAll.sort(function(a, b) { return xLower ? a.x - b.x : b.x - a.x; });
-      // Compute averages from the FULL eligible population so average lines are
-      // consistent regardless of the TopN display setting.
-      const avgXFull = ptsAll.length ? ptsAll.reduce(function(s, p) { return s + p.x; }, 0) / ptsAll.length : 0;
-      const avgYFull = ptsAll.length ? ptsAll.reduce(function(s, p) { return s + p.y; }, 0) / ptsAll.length : 0;
+      // Least-squares trend fit over the FULL eligible population, so the line
+      // is stable regardless of the TopN display setting.
+      let trend = null;
+      if (ptsAll.length >= 3) {
+        const n = ptsAll.length;
+        let sx = 0, sy = 0, sxx = 0, sxy = 0, syy = 0;
+        ptsAll.forEach(function(p) { sx += p.x; sy += p.y; sxx += p.x * p.x; sxy += p.x * p.y; syy += p.y * p.y; });
+        const den = n * sxx - sx * sx;
+        if (Math.abs(den) > 1e-9) {
+          const m = (n * sxy - sx * sy) / den;
+          const b = (sy - m * sx) / n;
+          const denR = (n * sxx - sx * sx) * (n * syy - sy * sy);
+          const r = denR > 0 ? (n * sxy - sx * sy) / Math.sqrt(denR) : 0;
+          trend = { m: m, b: b, r2: r * r };
+        }
+      }
       const pts = ptsAll.slice(0, topN);
       if (!pts.length) {
         plot.innerHTML = '<div class="am-graph-empty">No players have data for both metrics with the current filters.</div>';
@@ -2965,7 +2977,7 @@ _AM_JS = r"""
       _amPinnedDot = null; _amHideHoverForce();
       _amLoadLogo(_amGraphTheme).then(function(logo) {
         if (token !== _amGraphToken) return;
-        plot.innerHTML = _amBuildScatter(pts, xk, yk, zk, logo, avgXFull, avgYFull);
+        plot.innerHTML = _amBuildScatter(pts, xk, yk, zk, logo, trend);
         const tipEl = document.getElementById('amGraphTip');
         if (tipEl) tipEl.innerHTML = '<span style="opacity:.6">Hover or tap a point for player details</span>';
         // Signal the social-preview renderer that the graph is fully drawn.
@@ -2980,9 +2992,9 @@ _AM_JS = r"""
   // Builds a fully self-contained SVG (explicit theme colors, embedded logo
   // watermark, in-SVG title/legend) so it renders identically on screen and when
   // rasterized to a shareable PNG. `logo` is a data: URI (may be empty).
-  // `avgXFull`/`avgYFull` are averages from the full population; when provided
-  // the crosshair lines reflect the whole position group, not just the visible TopN.
-  function _amBuildScatter(pts, xk, yk, zk, logo, avgXFull, avgYFull) {
+  // `trend` is a least-squares fit {m, b, r2} over the full population, so the
+  // line reflects the whole position group, not just the visible TopN.
+  function _amBuildScatter(pts, xk, yk, zk, logo, trend) {
     const TH = _amGraphPalette();
     const FONT = "'Archivo',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
     // Responsive layout: a portrait viewBox with larger relative fonts on phones
@@ -3067,10 +3079,6 @@ _AM_JS = r"""
     s += txt(((padL + W - padR) / 2).toFixed(1), (H - padB + 36), _amEsc(cfg.metrics[xk].label).toUpperCase(), L.fAxis, TH.text, 800, 'middle', null, 1.8);
     s += txt(0, 0, _amEsc(cfg.metrics[yk].label).toUpperCase(), L.fAxis, TH.text, 800, 'middle',
       'translate(13,' + ((padT + H - padB) / 2).toFixed(1) + ') rotate(-90)', 1.8);
-    // Average reference lines: quiet neutral dashes with small chips, splitting
-    // the plot into above/below-average quadrants.
-    const avgX = (avgXFull != null) ? avgXFull : xs.reduce(function(a, b) { return a + b; }, 0) / xs.length;
-    const avgY = (avgYFull != null) ? avgYFull : ys.reduce(function(a, b) { return a + b; }, 0) / ys.length;
     const avgCol = TH.dark ? 'rgba(148,163,184,.55)' : '#aab4c2';
     const chip = function(x, y, t, anchor) {
       const w = t.length * (L.fLeg - 3.2) * 0.62 + 16;
@@ -3078,22 +3086,27 @@ _AM_JS = r"""
       return '<rect x="' + bx.toFixed(1) + '" y="' + (y - 11) + '" width="' + w.toFixed(1) + '" height="16" rx="8" fill="' + chipBg + '" stroke="' + chipBorder + '"/>'
         + txt((bx + w / 2).toFixed(1), (y + 1).toFixed(1), t, L.fLeg - 2, TH.muted, 700, 'middle');
     };
-    const hasAX = avgX >= xmin && avgX <= xmax, hasAY = avgY >= ymin && avgY <= ymax;
-    if (hasAX) {
-      const ax = px(avgX);
-      s += '<line x1="' + ax.toFixed(1) + '" y1="' + padT + '" x2="' + ax.toFixed(1) + '" y2="' + (H - padB) + '" stroke="' + avgCol + '" stroke-width="1.1" stroke-dasharray="2 5"/>';
-      s += chip(ax + 6, padT + 13, 'AVG ' + _amEsc(fmtX(avgX)), 'start');
-    }
-    if (hasAY) {
-      const ay = py(avgY);
-      s += '<line x1="' + padL + '" y1="' + ay.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + ay.toFixed(1) + '" stroke="' + avgCol + '" stroke-width="1.1" stroke-dasharray="2 5"/>';
-      s += chip(W - padR - 4, ay - 12, 'AVG ' + _amEsc(fmtY(avgY)), 'end');
-    }
-    // Quadrant tags (factual, metric-agnostic) when the crosshair is complete.
-    if (hasAX && hasAY && !isNarrow) {
-      const qCol = TH.dark ? 'rgba(148,163,184,.4)' : '#b9c2cd';
-      s += txt(W - padR - 6, padT + 14, 'ABOVE AVG · BOTH', L.fLeg - 2, qCol, 800, 'end', null, 2);
-      s += txt(padL + 6, H - padB - 8, 'BELOW AVG · BOTH', L.fLeg - 2, qCol, 800, 'start', null, 2);
+    // Trend line: the population's least-squares fit, clipped to the plot area,
+    // tagged with a chip carrying R^2 so the strength of the fit is visible.
+    if (trend && isFinite(trend.m) && isFinite(trend.b)) {
+      const yAt = function(x) { return trend.m * x + trend.b; };
+      let x1 = xmin, x2 = xmax;
+      if (Math.abs(trend.m) > 1e-12) {
+        // Intersect the line with the y-range so a steep fit doesn't overshoot.
+        const cand = [(ymin - trend.b) / trend.m, (ymax - trend.b) / trend.m].sort(function(a, b) { return a - b; });
+        x1 = Math.max(x1, cand[0]); x2 = Math.min(x2, cand[1]);
+      } else if (trend.b < ymin || trend.b > ymax) {
+        x2 = x1 - 1;   // flat line outside the view: skip
+      }
+      if (x2 > x1) {
+        const tx1 = px(x1), ty1 = py(yAt(x1)), tx2 = px(x2), ty2 = py(yAt(x2));
+        s += '<line x1="' + tx1.toFixed(1) + '" y1="' + ty1.toFixed(1) + '" x2="' + tx2.toFixed(1) + '" y2="' + ty2.toFixed(1)
+          + '" stroke="' + accent + '" stroke-width="1.6" stroke-dasharray="7 5" opacity="0.55" stroke-linecap="round"/>';
+        // Chip near the line's right end, nudged clear of the plot edge.
+        const chipTxt = 'TREND · R² ' + (Math.round(trend.r2 * 100) / 100).toFixed(2);
+        const cy2 = Math.min(Math.max(ty2 + (ty2 < (padT + H - padB) / 2 ? 22 : -16), padT + 14), H - padB - 10);
+        s += chip(Math.min(tx2, W - padR - 4), cy2, chipTxt, 'end');
+      }
     }
     // Emphasis: the top-ranked players carry the story — full-strength dots and
     // bold "Name 23.6" labels; the rest of the pool becomes a muted field with a
