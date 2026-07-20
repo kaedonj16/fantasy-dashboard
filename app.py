@@ -16540,6 +16540,24 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                  font-size:16px;line-height:1;flex-shrink:0;" aria-label="Dismiss">&#x2715;</button>
 </div>"""
 
+    # Data for the client-drawn shareable recap card (static/app.js paints it
+    # onto a canvas and hands it to the native share sheet).
+    _card_matchups = sorted(matchups, key=lambda x: -x["w_pts"])[:6]
+    _recap_share = {
+        "league": str(league.get("name") or "League"),
+        "week": int(selected_week),
+        "season": str(_season),
+        "games": [{"w": m["winner"], "l": m["loser"],
+                   "ws": round(m["w_pts"], 1), "ls": round(m["l_pts"], 1)}
+                  for m in _card_matchups],
+        "top": {"team": str(high_row["owner"]), "pts": round(float(high_row["points"]), 1)},
+        "blowout": ({"team": blowout["winner"], "margin": round(blowout["margin"], 1)}
+                    if blowout else None),
+        "closest": ({"team": closest["winner"], "margin": round(closest["margin"], 1)}
+                    if closest else None),
+    }
+    _recap_share_json = json.dumps(_recap_share).replace("</", "<\\/")
+
     week_selector = f"""
 <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
   <h2 style="margin:0;font-size:20px;">Week {selected_week} Recap</h2>
@@ -16554,6 +16572,13 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                  font-size:13px;cursor:pointer;font-weight:600;">
     <i class="fa-solid fa-link" style="font-size:11px;"></i> Share
   </button>
+  <button type="button" id="recapShareBtn"
+          style="display:flex;align-items:center;gap:5px;padding:5px 12px;border-radius:6px;
+                 border:1px solid var(--border);background:var(--card);color:var(--text);
+                 font-size:13px;cursor:pointer;font-weight:600;">
+    <i class="fa-solid fa-image" style="font-size:11px;"></i> Share card
+  </button>
+  <script type="application/json" id="recapShareData">{_recap_share_json}</script>
 </div>"""
 
     # ── Headline cards ─────────────────────────────────────────────────────
