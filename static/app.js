@@ -1377,6 +1377,8 @@ function emptyState(container, message, iconClass) {
       catch (e) { anchorDataUrl(); }
     });
   }
+  // Reusable by other surfaces (e.g. Season Wrapped's summary card).
+  window.brShareCanvas = _shareOrDownloadCanvas;
 
   window.openShareCardModal = function (cardUrl, shareUrl, calcUrl) {
     var existing = document.getElementById('scm-overlay');
