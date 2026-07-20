@@ -1375,23 +1375,39 @@ _WRAPPED_BOOTSTRAP_JS = r"""
   function ellip(ctx, text, max) {
     text = String(text == null ? '' : text);
     if (ctx.measureText(text).width <= max) return text;
-    var t = text;
-    while (t.length > 1 && ctx.measureText(t + '…').width > max) t = t.slice(0, -1);
-    return t + '…';
+    // Trim by code points (Array.from), not UTF-16 units, so an emoji is never
+    // cut in half into a broken glyph.
+    var chars = Array.from(text);
+    while (chars.length > 1 && ctx.measureText(chars.join('') + '…').width > max) chars.pop();
+    return chars.join('') + '…';
+  }
+  // Centered text drawn via manual measurement with left alignment. WebKit
+  // (iOS Safari) misplaces canvas fillText when textAlign is 'center' and the
+  // string contains emoji — the text splits into runs and the alignment is
+  // applied wrong — so team names with emoji drifted off-center. Measuring and
+  // positioning ourselves sidesteps that entirely.
+  function centerText(ctx, text, cx, y, maxW) {
+    var t = maxW ? ellip(ctx, text, maxW) : String(text == null ? '' : text);
+    var w = ctx.measureText(t).width;
+    var a = ctx.textAlign; ctx.textAlign = 'left';
+    ctx.fillText(t, cx - w / 2, y);
+    ctx.textAlign = a;
   }
   // Centered text with letter-spacing (px between glyphs).
   function lsCenter(ctx, text, cx, y, ls) {
+    var chars = Array.from(String(text == null ? '' : text));
     var i, total = 0;
-    for (i = 0; i < text.length; i++) total += ctx.measureText(text[i]).width + ls;
+    for (i = 0; i < chars.length; i++) total += ctx.measureText(chars[i]).width + ls;
     total -= ls;
     var x = cx - total / 2, a = ctx.textAlign; ctx.textAlign = 'left';
-    for (i = 0; i < text.length; i++) { ctx.fillText(text[i], x, y); x += ctx.measureText(text[i]).width + ls; }
+    for (i = 0; i < chars.length; i++) { ctx.fillText(chars[i], x, y); x += ctx.measureText(chars[i]).width + ls; }
     ctx.textAlign = a;
   }
   // Left-aligned text with letter-spacing, returns the ending x.
   function lsLeft(ctx, text, x, y, ls) {
+    var chars = Array.from(String(text == null ? '' : text));
     var a = ctx.textAlign; ctx.textAlign = 'left';
-    for (var i = 0; i < text.length; i++) { ctx.fillText(text[i], x, y); x += ctx.measureText(text[i]).width + ls; }
+    for (var i = 0; i < chars.length; i++) { ctx.fillText(chars[i], x, y); x += ctx.measureText(chars[i]).width + ls; }
     ctx.textAlign = a; return x;
   }
   function drawCrown(ctx, cx, baseY, w, color) {
@@ -1422,7 +1438,7 @@ _WRAPPED_BOOTSTRAP_JS = r"""
 
     // Header
     ctx.fillStyle = '#ffffff'; ctx.font = '800 62px ' + FONT;
-    ctx.fillText(ellip(ctx, data.league || 'League', W - 2 * PAD), W / 2, 250);
+    centerText(ctx, data.league || 'League', W / 2, 250, W - 2 * PAD);
     ctx.fillStyle = PURPLE; ctx.font = '800 38px ' + FONT;
     lsCenter(ctx, ((data.season || '') + '  SEASON WRAPPED').toUpperCase(), W / 2, 322, 5);
 
@@ -1441,10 +1457,10 @@ _WRAPPED_BOOTSTRAP_JS = r"""
       ctx.fillStyle = '#ffffff';
       var cs = 68; ctx.font = '800 ' + cs + 'px ' + FONT;
       while (ctx.measureText(data.champion).width > cw - 80 && cs > 40) { cs -= 3; ctx.font = '800 ' + cs + 'px ' + FONT; }
-      ctx.fillText(ellip(ctx, data.champion, cw - 80), W / 2, y + 248);
+      centerText(ctx, data.champion, W / 2, y + 248, cw - 80);
       if (data.champion_record) {
         ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = '600 34px ' + FONT;
-        ctx.fillText(data.champion_record, W / 2, y + 296);
+        centerText(ctx, data.champion_record, W / 2, y + 296);
       }
       y += ch + 46;
     }
