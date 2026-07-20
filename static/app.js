@@ -1380,6 +1380,150 @@ function emptyState(container, message, iconClass) {
   // Reusable by other surfaces (e.g. Season Wrapped's summary card).
   window.brShareCanvas = _shareOrDownloadCanvas;
 
+  // ── Weekly recap share card ────────────────────────────────────────────────
+  // Paints a story-format (1080x1920) card of the week: final scores for every
+  // matchup plus the highlight strip, then hands it to the native share sheet.
+  // All centered text is measured manually (WebKit misplaces canvas fillText
+  // with textAlign:center when the string contains emoji), and ellipsizing
+  // trims by code points so an emoji is never cut into a broken half-glyph.
+  (function () {
+    var FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+
+    function ellip(ctx, text, max) {
+      text = String(text == null ? '' : text);
+      if (ctx.measureText(text).width <= max) return text;
+      var chars = Array.from(text);
+      while (chars.length > 1 && ctx.measureText(chars.join('') + '…').width > max) chars.pop();
+      return chars.join('') + '…';
+    }
+    function centerText(ctx, text, cx, y, maxW) {
+      var t = maxW ? ellip(ctx, text, maxW) : String(text == null ? '' : text);
+      var w = ctx.measureText(t).width;
+      ctx.fillText(t, cx - w / 2, y);
+    }
+    function lsCenter(ctx, text, cx, y, ls) {
+      var chars = Array.from(String(text == null ? '' : text));
+      var i, total = 0;
+      for (i = 0; i < chars.length; i++) total += ctx.measureText(chars[i]).width + ls;
+      total -= ls;
+      var x = cx - total / 2;
+      for (i = 0; i < chars.length; i++) { ctx.fillText(chars[i], x, y); x += ctx.measureText(chars[i]).width + ls; }
+    }
+    function roundRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    function paintRecapCard(d) {
+      var W = 1080, H = 1920, PAD = 90, BLUE = '#7cb8f6', GREEN = '#34d399';
+      var c = document.createElement('canvas'); c.width = W; c.height = H;
+      var ctx = c.getContext('2d');
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+      var g = ctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, '#0f1c3a'); g.addColorStop(0.5, '#0c1428'); g.addColorStop(1, '#080d1a');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      var rg = ctx.createRadialGradient(W / 2, 520, 0, W / 2, 520, 700);
+      rg.addColorStop(0, 'rgba(59,130,246,0.30)'); rg.addColorStop(1, 'rgba(59,130,246,0)');
+      ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+
+      // Header
+      ctx.fillStyle = '#ffffff'; ctx.font = '800 60px ' + FONT;
+      centerText(ctx, d.league || 'League', W / 2, 240, W - 2 * PAD);
+      ctx.fillStyle = BLUE; ctx.font = '800 38px ' + FONT;
+      lsCenter(ctx, 'WEEK ' + (d.week || '') + '  RECAP', W / 2, 312, 5);
+
+      // Scoreboard panel
+      var games = (d.games || []).slice(0, 6);
+      var y = 400, px = PAD, pw = W - 2 * PAD;
+      if (games.length) {
+        var rowH = 128, gap = 18, ptop = 40, pbot = 30;
+        var ph = ptop + games.length * rowH + (games.length - 1) * gap + pbot;
+        roundRect(ctx, px, y, pw, ph, 34);
+        ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fill();
+        ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(255,255,255,0.10)'; ctx.stroke();
+        var innerX = px + 44, innerR = px + pw - 44;
+        var scoreW = 130;   // right-aligned score column
+        var nameMax = innerR - innerX - scoreW - 26;
+        var ry = y + ptop;
+        games.forEach(function (m, i) {
+          // winner line (solid) then loser line (dim); scores right-aligned
+          ctx.font = '800 40px ' + FONT;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(ellip(ctx, m.w, nameMax), innerX, ry + 40);
+          var ws = Number(m.ws).toFixed(1), wsw = ctx.measureText(ws).width;
+          ctx.fillText(ws, innerR - wsw, ry + 40);
+          ctx.fillStyle = 'rgba(255,255,255,0.5)';
+          ctx.fillText(ellip(ctx, m.l, nameMax), innerX, ry + 96);
+          var ls = Number(m.ls).toFixed(1), lsw = ctx.measureText(ls).width;
+          ctx.fillText(ls, innerR - lsw, ry + 96);
+          if (i < games.length - 1) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(innerX, ry + rowH - 8); ctx.lineTo(innerR, ry + rowH - 8);
+            ctx.stroke();
+          }
+          ry += rowH + gap;
+        });
+        y += ph + 44;
+      }
+
+      // Highlight strip
+      var hs = [];
+      if (d.top) hs.push({ k: 'TOP SCORE', n: d.top.team, v: Number(d.top.pts).toFixed(1) });
+      if (d.blowout) hs.push({ k: 'BLOWOUT', n: d.blowout.team, v: '+' + d.blowout.margin });
+      if (d.closest) hs.push({ k: 'NAILBITER', n: d.closest.team, v: 'by ' + d.closest.margin });
+      if (hs.length && y < H - 260) {
+        var hRowH = 108, hTop = 34, hBot = 22;
+        var hH = hTop + hs.length * hRowH - 20 + hBot;
+        roundRect(ctx, px, y, pw, hH, 34);
+        ctx.fillStyle = 'rgba(52,211,153,0.07)'; ctx.fill();
+        ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(52,211,153,0.25)'; ctx.stroke();
+        var hx = px + 44, hr = px + pw - 44, hy = y + hTop;
+        hs.forEach(function (row) {
+          ctx.fillStyle = GREEN; ctx.font = '800 26px ' + FONT;
+          ctx.fillText(row.k, hx, hy + 26);
+          ctx.font = '800 42px ' + FONT;
+          ctx.fillStyle = 'rgba(255,255,255,0.72)';
+          var vw = ctx.measureText(row.v).width;
+          ctx.fillText(row.v, hr - vw, hy + 78);
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(ellip(ctx, row.n, hr - hx - vw - 30), hx, hy + 78);
+          hy += hRowH;
+        });
+      }
+
+      // Footer
+      ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = '800 28px ' + FONT;
+      lsCenter(ctx, 'BR FANTASY  ·  WEEK ' + (d.week || '') + ' RECAP', W / 2, H - 88, 4);
+      return c;
+    }
+
+    function bind() {
+      var btn = document.getElementById('recapShareBtn');
+      var dataEl = document.getElementById('recapShareData');
+      if (!btn || !dataEl || btn.__brBound) return;
+      btn.__brBound = true;
+      btn.addEventListener('click', function () {
+        var d = {};
+        try { d = JSON.parse(dataEl.textContent || '{}'); } catch (e) { return; }
+        var orig = btn.innerHTML;
+        btn.disabled = true; btn.style.opacity = '.7';
+        var done = function () { btn.disabled = false; btn.style.opacity = ''; btn.innerHTML = orig; };
+        var canvas;
+        try { canvas = paintRecapCard(d); } catch (e) { done(); return; }
+        window.brShareCanvas(canvas, 'week-' + (d.week || '') + '-recap.png',
+          (d.league || 'League') + ' — Week ' + (d.week || '') + ' Recap').then(done, done);
+      });
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind);
+    else bind();
+  })();
+
   window.openShareCardModal = function (cardUrl, shareUrl, calcUrl) {
     var existing = document.getElementById('scm-overlay');
     if (existing) existing.remove();

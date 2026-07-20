@@ -4,6 +4,9 @@ cache/ai_cache
 # Target share cache (generated at runtime)
 cache/target_share/
 
+# Weekly projections cache (generated at runtime)
+cache/projections/
+
 # Generated data files
 data/engine_values.csv
 data/usage_table.json

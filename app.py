@@ -239,9 +239,19 @@ _PLAYOFF_SIM_CACHE: dict = {}
 _PLAYOFF_SIM_CACHE_TTL = 3600  # 1 hour
 
 
-def _playoff_sim_cached(ctx: dict, platform: str) -> list:
+_PLAYOFF_SIM_BUILDING: set = set()
+_PLAYOFF_SIM_BUILDING_LOCK = threading.Lock()
+
+
+def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
     """simulate_playoff_odds behind the module TTL cache (shared by the odds
-    API, standings seeding, the trade-window card, and draft capital)."""
+    API, standings seeding, the trade-window card, and draft capital).
+
+    block=False serves only a warm cache: on a miss it kicks the sim off in a
+    background thread and returns [] immediately. Synchronous render paths
+    (e.g. the dashboard's trade-window card) use that so a cold sim — several
+    projection fetches plus a Monte Carlo run — never blocks a page paint;
+    the surface simply appears on the next visit."""
     try:
         from data_building.simulate_playoff_odds import simulate_playoff_odds
         key = (
@@ -252,6 +262,25 @@ def _playoff_sim_cached(ctx: dict, platform: str) -> list:
         hit = _PLAYOFF_SIM_CACHE.get(key)
         if hit and time.time() - hit["ts"] < _PLAYOFF_SIM_CACHE_TTL:
             return hit["data"] or []
+
+        def _run(snapshot=dict(ctx)):
+            try:
+                odds = simulate_playoff_odds(snapshot, platform=platform) or []
+                _PLAYOFF_SIM_CACHE[key] = {"data": odds, "ts": time.time()}
+            except Exception:
+                logger.debug("background playoff sim failed", exc_info=True)
+            finally:
+                with _PLAYOFF_SIM_BUILDING_LOCK:
+                    _PLAYOFF_SIM_BUILDING.discard(key)
+
+        if not block:
+            with _PLAYOFF_SIM_BUILDING_LOCK:
+                if key in _PLAYOFF_SIM_BUILDING:
+                    return []
+                _PLAYOFF_SIM_BUILDING.add(key)
+            threading.Thread(target=_run, daemon=True).start()
+            return []
+
         odds = simulate_playoff_odds(ctx, platform=platform) or []
         _PLAYOFF_SIM_CACHE[key] = {"data": odds, "ts": time.time()}
         return odds
@@ -4323,7 +4352,8 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
         from utils.trade_window import trade_partners, trade_window_verdict
 
         platform = ctx.get("platform", "sleeper")
-        odds = _playoff_sim_cached(ctx, platform)
+        # Warm-cache only: a cold sim must never block the dashboard paint.
+        odds = _playoff_sim_cached(ctx, platform, block=False)
         if not odds:
             return ""
         me = next(
@@ -6251,9 +6281,24 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     )
 
     latest_draft = ctx.get("latest_draft")
+    countdown_label = "Draft countdown"
     draft_text = "Draft date not set"
     countdown_text = "TBD"
     draft_subtext = "Set once your league schedules the draft."
+
+    # Week 1 kickoff, from Sleeper's NFL state (used for the no-draft-scheduled
+    # tile and the post-draft countdown alike).
+    _week1_delta = None
+    _week1_date_txt = ""
+    try:
+        _ssd = (get_nfl_state() or {}).get("season_start_date")
+        if _ssd:
+            from dateutil import parser
+            _week1_dt = parser.parse(_ssd).replace(tzinfo=EASTERN)
+            _week1_delta = (_week1_dt.date() - datetime.now(EASTERN).date()).days
+            _week1_date_txt = _week1_dt.strftime("%b %d, %Y")
+    except Exception as e:
+        logger.info(f"[offseason] Failed to parse season_start_date: {e}")
 
     draft_ts_ms = None
 
@@ -6277,34 +6322,32 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
                 draft_subtext = "Countdown to your next league draft."
             else:
                 # Draft has passed - show Week 1 countdown
-                nfl_state = get_nfl_state() or {}
-                season_start_date = nfl_state.get("season_start_date")
-
-                if season_start_date:
-                    try:
-                        # Parse season start date (format: "YYYY-MM-DD")
-                        from dateutil import parser
-                        week1_dt = parser.parse(season_start_date).replace(tzinfo=EASTERN)
-                        week1_delta = (week1_dt.date() - now_dt.date()).days
-
-                        if week1_delta > 0:
-                            countdown_text = f"{week1_delta} days"
-                            draft_subtext = "Countdown to Week 1 kickoff."
-                        elif week1_delta == 0:
-                            countdown_text = "Today!"
-                            draft_subtext = "Week 1 starts today!"
-                        else:
-                            countdown_text = "Season started"
-                            draft_subtext = "Week 1 is underway!"
-                    except Exception as e:
-                        logger.info(f"[offseason] Failed to parse season_start_date: {e}")
-                        countdown_text = "Draft passed"
-                        draft_subtext = "Season starting soon."
+                if _week1_delta is not None:
+                    if _week1_delta > 0:
+                        countdown_text = f"{_week1_delta} days"
+                        draft_subtext = "Countdown to Week 1 kickoff."
+                    elif _week1_delta == 0:
+                        countdown_text = "Today!"
+                        draft_subtext = "Week 1 starts today!"
+                    else:
+                        countdown_text = "Season started"
+                        draft_subtext = "Week 1 is underway!"
                 else:
                     countdown_text = "Draft passed"
                     draft_subtext = "Awaiting season start date."
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
+    elif _week1_delta is not None and _week1_delta >= 0:
+        # No draft on the calendar: count down to the season itself instead of
+        # sitting on a dead "TBD" tile all summer.
+        countdown_label = "Season kickoff"
+        if _week1_delta == 0:
+            countdown_text = "Today!"
+            draft_text = "Week 1 starts today"
+        else:
+            countdown_text = f"{_week1_delta} days"
+            draft_text = f"Week 1 kicks off {_week1_date_txt}"
+        draft_subtext = "Draft date not set — schedule it before kickoff."
 
     teams_ctx = build_teams_overview(
         rosters=rosters,
@@ -6561,7 +6604,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
           <div class="os-hero-stats">
             <div class="os-stat-card" id="osDraftCdCard" data-draft-ts="{draft_ts_ms or 0}" data-detect-url="/api/draft/detect?platform={platform}&league_id={ctx.get('league_id','')}&season={season}">
-              <div class="os-stat-label">Draft countdown</div>
+              <div class="os-stat-label">{countdown_label}</div>
               <div class="os-stat-value" id="osDraftCdVal">{countdown_text}</div>
               <div class="os-stat-sub" id="osDraftCdSub">{draft_text}</div>
             </div>
@@ -16540,6 +16583,24 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                  font-size:16px;line-height:1;flex-shrink:0;" aria-label="Dismiss">&#x2715;</button>
 </div>"""
 
+    # Data for the client-drawn shareable recap card (static/app.js paints it
+    # onto a canvas and hands it to the native share sheet).
+    _card_matchups = sorted(matchups, key=lambda x: -x["w_pts"])[:6]
+    _recap_share = {
+        "league": str(league.get("name") or "League"),
+        "week": int(selected_week),
+        "season": str(_season),
+        "games": [{"w": m["winner"], "l": m["loser"],
+                   "ws": round(m["w_pts"], 1), "ls": round(m["l_pts"], 1)}
+                  for m in _card_matchups],
+        "top": {"team": str(high_row["owner"]), "pts": round(float(high_row["points"]), 1)},
+        "blowout": ({"team": blowout["winner"], "margin": round(blowout["margin"], 1)}
+                    if blowout else None),
+        "closest": ({"team": closest["winner"], "margin": round(closest["margin"], 1)}
+                    if closest else None),
+    }
+    _recap_share_json = json.dumps(_recap_share).replace("</", "<\\/")
+
     week_selector = f"""
 <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
   <h2 style="margin:0;font-size:20px;">Week {selected_week} Recap</h2>
@@ -16554,6 +16615,13 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                  font-size:13px;cursor:pointer;font-weight:600;">
     <i class="fa-solid fa-link" style="font-size:11px;"></i> Share
   </button>
+  <button type="button" id="recapShareBtn"
+          style="display:flex;align-items:center;gap:5px;padding:5px 12px;border-radius:6px;
+                 border:1px solid var(--border);background:var(--card);color:var(--text);
+                 font-size:13px;cursor:pointer;font-weight:600;">
+    <i class="fa-solid fa-image" style="font-size:11px;"></i> Share card
+  </button>
+  <script type="application/json" id="recapShareData">{_recap_share_json}</script>
 </div>"""
 
     # ── Headline cards ─────────────────────────────────────────────────────
