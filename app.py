@@ -6281,9 +6281,24 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     )
 
     latest_draft = ctx.get("latest_draft")
+    countdown_label = "Draft countdown"
     draft_text = "Draft date not set"
     countdown_text = "TBD"
     draft_subtext = "Set once your league schedules the draft."
+
+    # Week 1 kickoff, from Sleeper's NFL state (used for the no-draft-scheduled
+    # tile and the post-draft countdown alike).
+    _week1_delta = None
+    _week1_date_txt = ""
+    try:
+        _ssd = (get_nfl_state() or {}).get("season_start_date")
+        if _ssd:
+            from dateutil import parser
+            _week1_dt = parser.parse(_ssd).replace(tzinfo=EASTERN)
+            _week1_delta = (_week1_dt.date() - datetime.now(EASTERN).date()).days
+            _week1_date_txt = _week1_dt.strftime("%b %d, %Y")
+    except Exception as e:
+        logger.info(f"[offseason] Failed to parse season_start_date: {e}")
 
     draft_ts_ms = None
 
@@ -6307,34 +6322,32 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
                 draft_subtext = "Countdown to your next league draft."
             else:
                 # Draft has passed - show Week 1 countdown
-                nfl_state = get_nfl_state() or {}
-                season_start_date = nfl_state.get("season_start_date")
-
-                if season_start_date:
-                    try:
-                        # Parse season start date (format: "YYYY-MM-DD")
-                        from dateutil import parser
-                        week1_dt = parser.parse(season_start_date).replace(tzinfo=EASTERN)
-                        week1_delta = (week1_dt.date() - now_dt.date()).days
-
-                        if week1_delta > 0:
-                            countdown_text = f"{week1_delta} days"
-                            draft_subtext = "Countdown to Week 1 kickoff."
-                        elif week1_delta == 0:
-                            countdown_text = "Today!"
-                            draft_subtext = "Week 1 starts today!"
-                        else:
-                            countdown_text = "Season started"
-                            draft_subtext = "Week 1 is underway!"
-                    except Exception as e:
-                        logger.info(f"[offseason] Failed to parse season_start_date: {e}")
-                        countdown_text = "Draft passed"
-                        draft_subtext = "Season starting soon."
+                if _week1_delta is not None:
+                    if _week1_delta > 0:
+                        countdown_text = f"{_week1_delta} days"
+                        draft_subtext = "Countdown to Week 1 kickoff."
+                    elif _week1_delta == 0:
+                        countdown_text = "Today!"
+                        draft_subtext = "Week 1 starts today!"
+                    else:
+                        countdown_text = "Season started"
+                        draft_subtext = "Week 1 is underway!"
                 else:
                     countdown_text = "Draft passed"
                     draft_subtext = "Awaiting season start date."
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
+    elif _week1_delta is not None and _week1_delta >= 0:
+        # No draft on the calendar: count down to the season itself instead of
+        # sitting on a dead "TBD" tile all summer.
+        countdown_label = "Season kickoff"
+        if _week1_delta == 0:
+            countdown_text = "Today!"
+            draft_text = "Week 1 starts today"
+        else:
+            countdown_text = f"{_week1_delta} days"
+            draft_text = f"Week 1 kicks off {_week1_date_txt}"
+        draft_subtext = "Draft date not set — schedule it before kickoff."
 
     teams_ctx = build_teams_overview(
         rosters=rosters,
@@ -6591,7 +6604,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
           <div class="os-hero-stats">
             <div class="os-stat-card" id="osDraftCdCard" data-draft-ts="{draft_ts_ms or 0}" data-detect-url="/api/draft/detect?platform={platform}&league_id={ctx.get('league_id','')}&season={season}">
-              <div class="os-stat-label">Draft countdown</div>
+              <div class="os-stat-label">{countdown_label}</div>
               <div class="os-stat-value" id="osDraftCdVal">{countdown_text}</div>
               <div class="os-stat-sub" id="osDraftCdSub">{draft_text}</div>
             </div>
