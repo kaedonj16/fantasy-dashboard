@@ -113,6 +113,46 @@ def api_history_summary(platform: str, season: int, league_id: str):
         return _api_err("Request failed", e)
 
 
+@history_bp.route("/api/history/<platform>/<int:season>/<league_id>/wrapped")
+def api_history_wrapped(platform: str, season: int, league_id: str):
+    """Build the full Season Wrapped overlay (including the boxscore-backed MVP /
+    position slides). Lazy-loaded on first click so the page render never blocks
+    on the per-week fetches."""
+    from app import _api_err, get_available_history_seasons, get_league_ctx_from_cache
+
+    try:
+        from dashboard_services.pages.history_page import (
+            _build_summary,
+            render_history_wrapped_overlay,
+        )
+
+        history_season = int(request.args.get("history_season", season))
+
+        available_seasons = get_available_history_seasons(platform, league_id, season)
+        if not available_seasons or history_season not in available_seasons:
+            return jsonify({"html": ""})
+
+        resolved_history_league_id = resolve_league_id_for_season(
+            platform=platform,
+            league_id=league_id,
+            current_season=season,
+            target_season=history_season,
+        )
+
+        history_ctx = get_league_ctx_from_cache(platform, resolved_history_league_id, history_season)
+        if not history_ctx:
+            return jsonify({"html": ""})
+
+        # Summary is cheap and the overlay builder needs it; cache it on the ctx.
+        history_ctx.setdefault("summary", _build_summary(history_ctx))
+        html = render_history_wrapped_overlay(history_ctx, history_season)
+        return jsonify({"html": html})
+
+    except Exception as e:
+        logger.exception("[api_history_wrapped] Error")
+        return _api_err("Request failed", e)
+
+
 @history_bp.route("/api/history/<platform>/<int:season>/<league_id>/standings")
 def api_history_standings(platform: str, season: int, league_id: str):
     """Get regular season standings."""
