@@ -16609,17 +16609,11 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                  background:var(--card);color:var(--text);font-size:13px;cursor:pointer;">
     {week_opts}
   </select>
-  <button onclick="(function(b){{var u=window.location.href,o=b.innerHTML;if(navigator.clipboard&&navigator.clipboard.writeText){{navigator.clipboard.writeText(u).then(function(){{b.innerHTML='Copied!';setTimeout(function(){{b.innerHTML=o;}},2000);}},function(){{prompt('Copy this link:',u);}});}}else{{prompt('Copy this link:',u);}}}})(this)"
-          style="display:flex;align-items:center;gap:5px;padding:5px 12px;border-radius:6px;
-                 border:1px solid var(--border);background:var(--card);color:var(--text);
-                 font-size:13px;cursor:pointer;font-weight:600;">
-    <i class="fa-solid fa-link" style="font-size:11px;"></i> Share
-  </button>
   <button type="button" id="recapShareBtn"
           style="display:flex;align-items:center;gap:5px;padding:5px 12px;border-radius:6px;
                  border:1px solid var(--border);background:var(--card);color:var(--text);
                  font-size:13px;cursor:pointer;font-weight:600;">
-    <i class="fa-solid fa-image" style="font-size:11px;"></i> Share card
+    <i class="fa-solid fa-arrow-up-from-bracket" style="font-size:11px;"></i> Share
   </button>
   <script type="application/json" id="recapShareData">{_recap_share_json}</script>
 </div>"""
