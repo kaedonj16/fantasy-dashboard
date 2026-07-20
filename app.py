@@ -239,9 +239,19 @@ _PLAYOFF_SIM_CACHE: dict = {}
 _PLAYOFF_SIM_CACHE_TTL = 3600  # 1 hour
 
 
-def _playoff_sim_cached(ctx: dict, platform: str) -> list:
+_PLAYOFF_SIM_BUILDING: set = set()
+_PLAYOFF_SIM_BUILDING_LOCK = threading.Lock()
+
+
+def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
     """simulate_playoff_odds behind the module TTL cache (shared by the odds
-    API, standings seeding, the trade-window card, and draft capital)."""
+    API, standings seeding, the trade-window card, and draft capital).
+
+    block=False serves only a warm cache: on a miss it kicks the sim off in a
+    background thread and returns [] immediately. Synchronous render paths
+    (e.g. the dashboard's trade-window card) use that so a cold sim — several
+    projection fetches plus a Monte Carlo run — never blocks a page paint;
+    the surface simply appears on the next visit."""
     try:
         from data_building.simulate_playoff_odds import simulate_playoff_odds
         key = (
@@ -252,6 +262,25 @@ def _playoff_sim_cached(ctx: dict, platform: str) -> list:
         hit = _PLAYOFF_SIM_CACHE.get(key)
         if hit and time.time() - hit["ts"] < _PLAYOFF_SIM_CACHE_TTL:
             return hit["data"] or []
+
+        def _run(snapshot=dict(ctx)):
+            try:
+                odds = simulate_playoff_odds(snapshot, platform=platform) or []
+                _PLAYOFF_SIM_CACHE[key] = {"data": odds, "ts": time.time()}
+            except Exception:
+                logger.debug("background playoff sim failed", exc_info=True)
+            finally:
+                with _PLAYOFF_SIM_BUILDING_LOCK:
+                    _PLAYOFF_SIM_BUILDING.discard(key)
+
+        if not block:
+            with _PLAYOFF_SIM_BUILDING_LOCK:
+                if key in _PLAYOFF_SIM_BUILDING:
+                    return []
+                _PLAYOFF_SIM_BUILDING.add(key)
+            threading.Thread(target=_run, daemon=True).start()
+            return []
+
         odds = simulate_playoff_odds(ctx, platform=platform) or []
         _PLAYOFF_SIM_CACHE[key] = {"data": odds, "ts": time.time()}
         return odds
@@ -4323,7 +4352,8 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
         from utils.trade_window import trade_partners, trade_window_verdict
 
         platform = ctx.get("platform", "sleeper")
-        odds = _playoff_sim_cached(ctx, platform)
+        # Warm-cache only: a cold sim must never block the dashboard paint.
+        odds = _playoff_sim_cached(ctx, platform, block=False)
         if not odds:
             return ""
         me = next(
