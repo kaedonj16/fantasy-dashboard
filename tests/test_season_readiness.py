@@ -62,7 +62,7 @@ def inseason_ctx(monkeypatch):
 
     df_weekly = _build_df_weekly()
     team_stats = finalize_team_stats(
-        df_weekly[df_weekly["finalized"] == True],
+        df_weekly[df_weekly["finalized"]],
         {o: "" for o in OWNERS}, {}, [], 10,
     )
     ctx = {
