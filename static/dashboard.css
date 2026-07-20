@@ -19887,23 +19887,18 @@ button:disabled {
   white-space: nowrap;
 }
 
-/* Share button in team cards */
+/* Share button in team cards. The icon is the shared inline share-nodes SVG
+   (stroke: currentColor), so theming is plain color rules instead of the
+   invert filters the old black PNG needed. */
 .share-report-icon {
   width: 15px;
   height: 15px;
   display: block;
-  object-fit: contain;
-  filter: brightness(0) saturate(100%) invert(40%);
-  transition: filter .15s;
-}
-html[data-theme="dark"] .share-report-icon {
-  filter: brightness(0) saturate(100%) invert(80%);
+  color: var(--text-muted, #64748b);
+  transition: color .15s;
 }
 .share-report-btn:hover .share-report-icon {
-  filter: brightness(0) saturate(100%) invert(15%);
-}
-html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
-  filter: brightness(0) saturate(100%) invert(100%);
+  color: var(--text, #0f172a);
 }
 .share-report-btn {
   display: inline-flex;
@@ -22187,7 +22182,7 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 .wrapped-share span { line-height: 1; }
 .wrapped-share:hover { background: rgba(255,255,255,.22); }
 .wrapped-share-busy { opacity: .6; pointer-events: none; }
-.wrapped-share-busy i { animation: wrapLaunchSpin .8s linear infinite; }
+.wrapped-share-busy i, .wrapped-share-busy svg { animation: wrapLaunchSpin .8s linear infinite; }
 @media (min-width: 768px) {
   .wrapped-share {
     top: calc((100vh - var(--wrap-h)) / 2 + 14px);
