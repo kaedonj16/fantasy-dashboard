@@ -1227,16 +1227,16 @@ def _wrapped_overlay_markup(slides: list) -> str:
     slide_html = []
     for s in slides:
         if s.get("rows"):
-            # List slide (position leaders, records, luck, activity): a compact
-            # keyed list. Value may be a display string or empty.
-            # Always emit all three cells (value may be empty) so the grid
-            # keeps three columns per row and every column stays aligned.
+            # List slide (position leaders, records, luck, activity): each row
+            # stacks its label above the name (full-width, wraps) with the value
+            # to the right. Value may be empty.
             rows = "".join(
                 "<div class='wrapped-li'>"
                 f"<span class='wrapped-li-k'>{_esc(str(k))}</span>"
+                "<div class='wrapped-li-main'>"
                 f"<span class='wrapped-li-n'>{_esc(str(n))}</span>"
-                f"<span class='wrapped-li-v'>{_esc(str(v)) if v not in (None, '') else ''}</span>"
-                + "</div>"
+                + (f"<span class='wrapped-li-v'>{_esc(str(v))}</span>" if v not in (None, "") else "")
+                + "</div></div>"
                 for k, n, v in s["rows"]
             )
             big = f"<div class='wrapped-list'>{rows}</div>"
