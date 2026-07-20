@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+import json
 import math
 from html import escape as _esc
 import numpy as np
@@ -1215,7 +1216,7 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
     return slides
 
 
-def _wrapped_overlay_markup(slides: list) -> str:
+def _wrapped_overlay_markup(slides: list, share_data: dict | None = None) -> str:
     """Return the Season Wrapped overlay markup (no launch button, no script) so
     it can be fetched and injected lazily. '' when there isn't enough to tell a
     story."""
@@ -1272,16 +1273,60 @@ def _wrapped_overlay_markup(slides: list) -> str:
             f"</section>"
         )
 
+    share_json = json.dumps(share_data or {}).replace("</", "<\\/")
     return f"""
     <div class="wrapped-overlay" id="wrappedOverlay" hidden aria-hidden="true">
       <div class="wrapped-progress">{bars}</div>
+      <button type="button" class="wrapped-share" id="wrappedShare" aria-label="Share">
+        <i class="fa-solid fa-arrow-up-from-bracket"></i><span>Share</span>
+      </button>
       <button type="button" class="wrapped-close" id="wrappedClose" aria-label="Close">&times;</button>
       <div class="wrapped-stage" id="wrappedStage">{''.join(slide_html)}</div>
       <button type="button" class="wrapped-tap wrapped-tap-prev" id="wrappedPrev" aria-label="Previous"></button>
       <button type="button" class="wrapped-tap wrapped-tap-next" id="wrappedNext" aria-label="Next"></button>
       <div class="wrapped-hint">Tap to advance · Esc to close</div>
+      <script type="application/json" id="wrappedShareData">{share_json}</script>
     </div>
     """
+
+
+def _wrapped_share_data(slides: list, summary: dict, league_name: str, season) -> dict:
+    """Curated highlights for the single shareable 'Season Wrapped' summary card,
+    drawn client-side to a canvas. Built from the same slides so the card agrees
+    with the deck."""
+    by_kind = {s.get("kind"): s for s in slides}
+
+    def _hi(k, n, v):
+        return {"k": str(k), "n": str(n), "v": str(v)}
+
+    highlights: list = []
+    if summary.get("top_scorer_value"):
+        highlights.append(_hi("TOP SCORER", summary.get("top_scorer_team", "-"),
+                              f"{summary['top_scorer_value']:.1f}"))
+    mvp = by_kind.get("mvp")
+    if mvp and mvp.get("label"):
+        highlights.append(_hi("LEAGUE MVP", mvp["label"], f"{mvp['big']}"))
+    if summary.get("biggest_blowout_margin"):
+        highlights.append(_hi("BIGGEST BLOWOUT", summary.get("biggest_blowout", "-"),
+                              f"{summary['biggest_blowout_margin']:.1f}"))
+    if summary.get("closest_margin"):
+        highlights.append(_hi("CLOSEST GAME", summary.get("closest_matchup", "-"),
+                              f"{summary['closest_margin']:.1f}"))
+    luck = by_kind.get("luck")
+    if luck and luck.get("rows"):
+        _k, _n, _v = luck["rows"][0]
+        highlights.append(_hi("LUCKIEST", _n, _v))
+
+    champion = summary.get("champion")
+    if champion in ("-", None):
+        champion = None
+    return {
+        "league": str(league_name),
+        "season": str(season),
+        "champion": champion,
+        "champion_record": str(summary.get("champion_record", "") or ""),
+        "highlights": highlights[:5],
+    }
 
 
 def render_history_wrapped_overlay(history_ctx: dict, selected_history_season) -> str:
@@ -1291,7 +1336,8 @@ def render_history_wrapped_overlay(history_ctx: dict, selected_history_season) -
     league_name = league.get("name") or "League History"
     summary = history_ctx.get("summary") or _build_summary(history_ctx)
     slides = _build_wrapped_slides(history_ctx, summary, league_name, selected_history_season)
-    return _wrapped_overlay_markup(slides)
+    share_data = _wrapped_share_data(slides, summary, league_name, selected_history_season)
+    return _wrapped_overlay_markup(slides, share_data)
 
 
 def _wrapped_launcher_html(wrapped_url: str) -> str:
@@ -1314,6 +1360,131 @@ _WRAPPED_BOOTSTRAP_JS = r"""
   if (!launch || !mount || launch.__wrapBound) return;
   launch.__wrapBound = true;
   var loaded = false, loading = false;
+
+  var FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+  function ellip(ctx, text, max) {
+    text = String(text == null ? '' : text);
+    if (ctx.measureText(text).width <= max) return text;
+    var t = text;
+    while (t.length > 1 && ctx.measureText(t + '…').width > max) t = t.slice(0, -1);
+    return t + '…';
+  }
+  // Centered text with letter-spacing (px between glyphs).
+  function lsCenter(ctx, text, cx, y, ls) {
+    var i, total = 0;
+    for (i = 0; i < text.length; i++) total += ctx.measureText(text[i]).width + ls;
+    total -= ls;
+    var x = cx - total / 2, a = ctx.textAlign; ctx.textAlign = 'left';
+    for (i = 0; i < text.length; i++) { ctx.fillText(text[i], x, y); x += ctx.measureText(text[i]).width + ls; }
+    ctx.textAlign = a;
+  }
+  // Left-aligned text with letter-spacing, returns the ending x.
+  function lsLeft(ctx, text, x, y, ls) {
+    var a = ctx.textAlign; ctx.textAlign = 'left';
+    for (var i = 0; i < text.length; i++) { ctx.fillText(text[i], x, y); x += ctx.measureText(text[i]).width + ls; }
+    ctx.textAlign = a; return x;
+  }
+  function drawCrown(ctx, cx, baseY, w, color) {
+    var h = w * 0.72, x0 = cx - w / 2, x1 = cx + w / 2;
+    ctx.fillStyle = color; ctx.beginPath();
+    ctx.moveTo(x0, baseY);
+    ctx.lineTo(x0, baseY - h * 0.55);
+    ctx.lineTo(x0 + w * 0.26, baseY - h * 0.2);
+    ctx.lineTo(cx, baseY - h);
+    ctx.lineTo(x1 - w * 0.26, baseY - h * 0.2);
+    ctx.lineTo(x1, baseY - h * 0.55);
+    ctx.lineTo(x1, baseY);
+    ctx.closePath(); ctx.fill();
+  }
+
+  // Paint the single shareable 'Season Wrapped' summary card (story format).
+  function paintWrappedCard(data) {
+    var W = 1080, H = 1920, PAD = 90, PURPLE = '#b98cf6', GOLD = '#f5c451';
+    var c = document.createElement('canvas'); c.width = W; c.height = H;
+    var ctx = c.getContext('2d');
+    var g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#1a1138'); g.addColorStop(0.5, '#120d26'); g.addColorStop(1, '#0a0714');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    var rg = ctx.createRadialGradient(W / 2, 560, 0, W / 2, 560, 680);
+    rg.addColorStop(0, 'rgba(124,58,237,0.34)'); rg.addColorStop(1, 'rgba(124,58,237,0)');
+    ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+
+    // Header
+    ctx.fillStyle = '#ffffff'; ctx.font = '800 62px ' + FONT;
+    ctx.fillText(ellip(ctx, data.league || 'League', W - 2 * PAD), W / 2, 250);
+    ctx.fillStyle = PURPLE; ctx.font = '800 38px ' + FONT;
+    lsCenter(ctx, ((data.season || '') + '  SEASON WRAPPED').toUpperCase(), W / 2, 322, 5);
+
+    var y = 430;
+    // Champion hero
+    if (data.champion) {
+      var cx0 = PAD, cw = W - 2 * PAD, ch = 320;
+      ctx.save();
+      roundRect(ctx, cx0, y, cw, ch, 34);
+      ctx.fillStyle = 'rgba(245,196,81,0.10)'; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(245,196,81,0.5)'; ctx.stroke();
+      ctx.restore();
+      drawCrown(ctx, W / 2, y + 118, 92, GOLD);
+      ctx.fillStyle = GOLD; ctx.font = '800 32px ' + FONT;
+      lsCenter(ctx, 'CHAMPION', W / 2, y + 172, 6);
+      ctx.fillStyle = '#ffffff';
+      var cs = 68; ctx.font = '800 ' + cs + 'px ' + FONT;
+      while (ctx.measureText(data.champion).width > cw - 80 && cs > 40) { cs -= 3; ctx.font = '800 ' + cs + 'px ' + FONT; }
+      ctx.fillText(ellip(ctx, data.champion, cw - 80), W / 2, y + 248);
+      if (data.champion_record) {
+        ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = '600 34px ' + FONT;
+        ctx.fillText(data.champion_record, W / 2, y + 296);
+      }
+      y += ch + 46;
+    }
+
+    // Highlights panel
+    var hs = (data.highlights || []).slice(0, 5);
+    if (hs.length) {
+      var px = PAD, pw = W - 2 * PAD, rowH = 150, ptop = 34, pbot = 24;
+      var ph = ptop + hs.length * rowH - (rowH - 118) + pbot;
+      ph = ptop + hs.length * 118 + (hs.length - 1) * 30 + pbot;
+      roundRect(ctx, px, y, pw, ph, 34);
+      ctx.fillStyle = 'rgba(255,255,255,0.045)'; ctx.fill();
+      ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(255,255,255,0.09)'; ctx.stroke();
+      var innerX = px + 46, valX = px + pw - 46;
+      var ry = y + ptop;
+      hs.forEach(function (row, i) {
+        ctx.textAlign = 'left'; ctx.fillStyle = PURPLE; ctx.font = '800 27px ' + FONT;
+        lsLeft(ctx, String(row.k || '').toUpperCase(), innerX, ry + 36, 2);
+        // value first, to know how much room the name has
+        var vtxt = String(row.v || '');
+        ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,0.72)'; ctx.font = '800 44px ' + FONT;
+        var vw = vtxt ? ctx.measureText(vtxt).width : 0;
+        if (vtxt) ctx.fillText(vtxt, valX, ry + 92);
+        ctx.textAlign = 'left'; ctx.fillStyle = '#ffffff'; ctx.font = '800 46px ' + FONT;
+        var nameMax = (valX - innerX) - (vw ? vw + 28 : 0);
+        ctx.fillText(ellip(ctx, row.n, nameMax), innerX, ry + 94);
+        if (i < hs.length - 1) {
+          ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(innerX, ry + 118 + 15); ctx.lineTo(valX, ry + 118 + 15); ctx.stroke();
+        }
+        ry += 118 + 30;
+      });
+      y += ph;
+    }
+
+    // Footer
+    ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = '800 28px ' + FONT;
+    lsCenter(ctx, 'BR FANTASY  ·  SEASON WRAPPED', W / 2, H - 88, 4);
+    return c;
+  }
 
   // Wire up nav/keyboard/touch on a freshly-injected overlay once, and expose
   // its open() on the element so repeat clicks just reopen it.
@@ -1384,6 +1555,26 @@ _WRAPPED_BOOTSTRAP_JS = r"""
       var dx = e.changedTouches[0].clientX - sx; sx = null;
       if (Math.abs(dx) > 40) go(idx + (dx < 0 ? 1 : -1));
     }, { passive: true });
+
+    // Share: paint the summary card and hand it to the native share sheet.
+    var shareBtn = document.getElementById('wrappedShare');
+    if (shareBtn) {
+      shareBtn.addEventListener('click', function () {
+        clearTimer();   // pause auto-advance while the share sheet is up
+        var data = {};
+        try { data = JSON.parse((document.getElementById('wrappedShareData') || {}).textContent || '{}'); } catch (e) {}
+        shareBtn.classList.add('wrapped-share-busy');
+        var done = function () { shareBtn.classList.remove('wrapped-share-busy'); };
+        var canvas;
+        try { canvas = paintWrappedCard(data); } catch (e) { done(); return; }
+        if (window.brShareCanvas) {
+          window.brShareCanvas(canvas, 'season-wrapped.png', (data.league || 'League') + ' — Season Wrapped').then(done, done);
+        } else {
+          try { window.open(canvas.toDataURL('image/png'), '_blank'); } catch (e) {}
+          done();
+        }
+      });
+    }
     return overlay;
   }
 

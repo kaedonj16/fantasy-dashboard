@@ -22168,6 +22168,23 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 }
 .wrapped-close:hover { background: rgba(255,255,255,.22); }
 
+.wrapped-share {
+  position: absolute; top: 46px; left: 16px; z-index: 6; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 38px; padding: 0 15px 0 13px; border: 0; border-radius: 999px;
+  background: rgba(255,255,255,.12); color: #fff; font-size: 14px; font-weight: 800;
+}
+.wrapped-share span { line-height: 1; }
+.wrapped-share:hover { background: rgba(255,255,255,.22); }
+.wrapped-share-busy { opacity: .6; pointer-events: none; }
+.wrapped-share-busy i { animation: wrapLaunchSpin .8s linear infinite; }
+@media (min-width: 768px) {
+  .wrapped-share {
+    top: calc((100vh - var(--wrap-h)) / 2 + 14px);
+    left: calc((100vw - var(--wrap-w)) / 2 + 14px);
+  }
+}
+
 .wrapped-stage { position: relative; width: min(680px, 92vw); height: min(80vh, 760px); }
 
 /* Desktop: bind the story into a centered portrait card (with the progress bar
