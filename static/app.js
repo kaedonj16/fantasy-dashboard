@@ -1380,6 +1380,22 @@ function emptyState(container, message, iconClass) {
   // Reusable by other surfaces (e.g. Season Wrapped's summary card).
   window.brShareCanvas = _shareOrDownloadCanvas;
 
+  // The BR wordmark used to brand share-card canvases (light-on-dark variant;
+  // same-origin, so drawing it never taints the canvas). Cached after first
+  // load; resolves null on failure so painters fall back to a text footer.
+  var _brandImg = null, _brandImgP = null;
+  window.brBrandLogo = function () {
+    if (_brandImg) return Promise.resolve(_brandImg);
+    if (_brandImgP) return _brandImgP;
+    _brandImgP = new Promise(function (res) {
+      var im = new Image();
+      im.onload = function () { _brandImg = im; res(im); };
+      im.onerror = function () { res(null); };
+      im.src = '/static/BR_Logo_dark.png';
+    });
+    return _brandImgP;
+  };
+
   // ── Weekly recap share card ────────────────────────────────────────────────
   // Paints a story-format (1080x1920) card of the week: final scores for every
   // matchup plus the highlight strip, then hands it to the native share sheet.
@@ -1419,7 +1435,7 @@ function emptyState(container, message, iconClass) {
       ctx.closePath();
     }
 
-    function paintRecapCard(d) {
+    function paintRecapCard(d, logo) {
       var W = 1080, H = 1920, PAD = 90, BLUE = '#7cb8f6', GREEN = '#34d399';
       var c = document.createElement('canvas'); c.width = W; c.height = H;
       var ctx = c.getContext('2d');
@@ -1497,9 +1513,14 @@ function emptyState(container, message, iconClass) {
         });
       }
 
-      // Footer
-      ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = '800 28px ' + FONT;
-      lsCenter(ctx, 'BR FANTASY  ·  WEEK ' + (d.week || '') + ' RECAP', W / 2, H - 88, 4);
+      // Footer: the BR wordmark, with a text fallback if the logo didn't load.
+      if (logo) {
+        var lw = 200, lh = lw * (logo.naturalHeight || 454) / (logo.naturalWidth || 512);
+        ctx.drawImage(logo, W / 2 - lw / 2, H - lh - 64, lw, lh);
+      } else {
+        ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = '800 28px ' + FONT;
+        lsCenter(ctx, 'BR FANTASY  ·  WEEK ' + (d.week || '') + ' RECAP', W / 2, H - 88, 4);
+      }
       return c;
     }
 
@@ -1508,16 +1529,20 @@ function emptyState(container, message, iconClass) {
       var dataEl = document.getElementById('recapShareData');
       if (!btn || !dataEl || btn.__brBound) return;
       btn.__brBound = true;
+      if (window.brBrandLogo) window.brBrandLogo();   // pre-warm the wordmark
       btn.addEventListener('click', function () {
         var d = {};
         try { d = JSON.parse(dataEl.textContent || '{}'); } catch (e) { return; }
         var orig = btn.innerHTML;
         btn.disabled = true; btn.style.opacity = '.7';
         var done = function () { btn.disabled = false; btn.style.opacity = ''; btn.innerHTML = orig; };
-        var canvas;
-        try { canvas = paintRecapCard(d); } catch (e) { done(); return; }
-        window.brShareCanvas(canvas, 'week-' + (d.week || '') + '-recap.png',
-          (d.league || 'League') + ' — Week ' + (d.week || '') + ' Recap').then(done, done);
+        var logoP = window.brBrandLogo ? window.brBrandLogo() : Promise.resolve(null);
+        logoP.then(function (logo) {
+          var canvas;
+          try { canvas = paintRecapCard(d, logo); } catch (e) { done(); return; }
+          window.brShareCanvas(canvas, 'week-' + (d.week || '') + '-recap.png',
+            (d.league || 'League') + ' — Week ' + (d.week || '') + ' Recap').then(done, done);
+        });
       });
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind);

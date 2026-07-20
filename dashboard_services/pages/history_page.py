@@ -1424,7 +1424,7 @@ _WRAPPED_BOOTSTRAP_JS = r"""
   }
 
   // Paint the single shareable 'Season Wrapped' summary card (story format).
-  function paintWrappedCard(data) {
+  function paintWrappedCard(data, logo) {
     var W = 1080, H = 1920, PAD = 90, PURPLE = '#b98cf6', GOLD = '#f5c451';
     var c = document.createElement('canvas'); c.width = W; c.height = H;
     var ctx = c.getContext('2d');
@@ -1496,9 +1496,14 @@ _WRAPPED_BOOTSTRAP_JS = r"""
       y += ph;
     }
 
-    // Footer
-    ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = '800 28px ' + FONT;
-    lsCenter(ctx, 'BR FANTASY  ·  SEASON WRAPPED', W / 2, H - 88, 4);
+    // Footer: the BR wordmark, with a text fallback if the logo didn't load.
+    if (logo) {
+      var lw = 200, lh = lw * (logo.naturalHeight || 454) / (logo.naturalWidth || 512);
+      ctx.drawImage(logo, W / 2 - lw / 2, H - lh - 64, lw, lh);
+    } else {
+      ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = '800 28px ' + FONT;
+      lsCenter(ctx, 'BR FANTASY  ·  SEASON WRAPPED', W / 2, H - 88, 4);
+    }
     return c;
   }
 
@@ -1575,20 +1580,24 @@ _WRAPPED_BOOTSTRAP_JS = r"""
     // Share: paint the summary card and hand it to the native share sheet.
     var shareBtn = document.getElementById('wrappedShare');
     if (shareBtn) {
+      if (window.brBrandLogo) window.brBrandLogo();   // pre-warm the wordmark
       shareBtn.addEventListener('click', function () {
         clearTimer();   // pause auto-advance while the share sheet is up
         var data = {};
         try { data = JSON.parse((document.getElementById('wrappedShareData') || {}).textContent || '{}'); } catch (e) {}
         shareBtn.classList.add('wrapped-share-busy');
         var done = function () { shareBtn.classList.remove('wrapped-share-busy'); };
-        var canvas;
-        try { canvas = paintWrappedCard(data); } catch (e) { done(); return; }
-        if (window.brShareCanvas) {
-          window.brShareCanvas(canvas, 'season-wrapped.png', (data.league || 'League') + ' — Season Wrapped').then(done, done);
-        } else {
-          try { window.open(canvas.toDataURL('image/png'), '_blank'); } catch (e) {}
-          done();
-        }
+        var logoP = window.brBrandLogo ? window.brBrandLogo() : Promise.resolve(null);
+        logoP.then(function (logo) {
+          var canvas;
+          try { canvas = paintWrappedCard(data, logo); } catch (e) { done(); return; }
+          if (window.brShareCanvas) {
+            window.brShareCanvas(canvas, 'season-wrapped.png', (data.league || 'League') + ' — Season Wrapped').then(done, done);
+          } else {
+            try { window.open(canvas.toDataURL('image/png'), '_blank'); } catch (e) {}
+            done();
+          }
+        });
       });
     }
     return overlay;
