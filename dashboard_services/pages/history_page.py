@@ -1375,23 +1375,39 @@ _WRAPPED_BOOTSTRAP_JS = r"""
   function ellip(ctx, text, max) {
     text = String(text == null ? '' : text);
     if (ctx.measureText(text).width <= max) return text;
-    var t = text;
-    while (t.length > 1 && ctx.measureText(t + '…').width > max) t = t.slice(0, -1);
-    return t + '…';
+    // Trim by code points (Array.from), not UTF-16 units, so an emoji is never
+    // cut in half into a broken glyph.
+    var chars = Array.from(text);
+    while (chars.length > 1 && ctx.measureText(chars.join('') + '…').width > max) chars.pop();
+    return chars.join('') + '…';
+  }
+  // Centered text drawn via manual measurement with left alignment. WebKit
+  // (iOS Safari) misplaces canvas fillText when textAlign is 'center' and the
+  // string contains emoji — the text splits into runs and the alignment is
+  // applied wrong — so team names with emoji drifted off-center. Measuring and
+  // positioning ourselves sidesteps that entirely.
+  function centerText(ctx, text, cx, y, maxW) {
+    var t = maxW ? ellip(ctx, text, maxW) : String(text == null ? '' : text);
+    var w = ctx.measureText(t).width;
+    var a = ctx.textAlign; ctx.textAlign = 'left';
+    ctx.fillText(t, cx - w / 2, y);
+    ctx.textAlign = a;
   }
   // Centered text with letter-spacing (px between glyphs).
   function lsCenter(ctx, text, cx, y, ls) {
+    var chars = Array.from(String(text == null ? '' : text));
     var i, total = 0;
-    for (i = 0; i < text.length; i++) total += ctx.measureText(text[i]).width + ls;
+    for (i = 0; i < chars.length; i++) total += ctx.measureText(chars[i]).width + ls;
     total -= ls;
     var x = cx - total / 2, a = ctx.textAlign; ctx.textAlign = 'left';
-    for (i = 0; i < text.length; i++) { ctx.fillText(text[i], x, y); x += ctx.measureText(text[i]).width + ls; }
+    for (i = 0; i < chars.length; i++) { ctx.fillText(chars[i], x, y); x += ctx.measureText(chars[i]).width + ls; }
     ctx.textAlign = a;
   }
   // Left-aligned text with letter-spacing, returns the ending x.
   function lsLeft(ctx, text, x, y, ls) {
+    var chars = Array.from(String(text == null ? '' : text));
     var a = ctx.textAlign; ctx.textAlign = 'left';
-    for (var i = 0; i < text.length; i++) { ctx.fillText(text[i], x, y); x += ctx.measureText(text[i]).width + ls; }
+    for (var i = 0; i < chars.length; i++) { ctx.fillText(chars[i], x, y); x += ctx.measureText(chars[i]).width + ls; }
     ctx.textAlign = a; return x;
   }
   function drawCrown(ctx, cx, baseY, w, color) {
@@ -1422,7 +1438,7 @@ _WRAPPED_BOOTSTRAP_JS = r"""
 
     // Header
     ctx.fillStyle = '#ffffff'; ctx.font = '800 62px ' + FONT;
-    ctx.fillText(ellip(ctx, data.league || 'League', W - 2 * PAD), W / 2, 250);
+    centerText(ctx, data.league || 'League', W / 2, 250, W - 2 * PAD);
     ctx.fillStyle = PURPLE; ctx.font = '800 38px ' + FONT;
     lsCenter(ctx, ((data.season || '') + '  SEASON WRAPPED').toUpperCase(), W / 2, 322, 5);
 
@@ -1441,10 +1457,10 @@ _WRAPPED_BOOTSTRAP_JS = r"""
       ctx.fillStyle = '#ffffff';
       var cs = 68; ctx.font = '800 ' + cs + 'px ' + FONT;
       while (ctx.measureText(data.champion).width > cw - 80 && cs > 40) { cs -= 3; ctx.font = '800 ' + cs + 'px ' + FONT; }
-      ctx.fillText(ellip(ctx, data.champion, cw - 80), W / 2, y + 248);
+      centerText(ctx, data.champion, W / 2, y + 248, cw - 80);
       if (data.champion_record) {
         ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = '600 34px ' + FONT;
-        ctx.fillText(data.champion_record, W / 2, y + 296);
+        centerText(ctx, data.champion_record, W / 2, y + 296);
       }
       y += ch + 46;
     }
@@ -1652,16 +1668,33 @@ def build_history_body(
         _wrapped_btn = ""
     _wrapped_overlay = ""  # injected lazily into #wrappedMount by the launcher
 
-    # Loading spinner HTML (unused when prerendered sections are provided)
-    loading_spinner = """
-    <div class="history-loading-state">
-      <div class="loading-spinner" style="margin: 20px auto; width: 30px; height: 30px; border: 3px solid var(--border); border-radius: 50%; border-top-color: var(--accent); animation: spin 1s linear infinite; border-right-color: transparent;"></div>
-      <div style="text-align: center; color: var(--text-subtle); font-size: 13px; margin-top: 12px;">Loading...</div>
-    </div>
-    """
-    awards_html    = prerendered["summary"]   if prerendered else loading_spinner
-    standings_html = prerendered["standings"] if prerendered else loading_spinner
-    chart_html     = prerendered["chart"]     if prerendered else loading_spinner
+    # Shimmer skeletons shaped like the content they stand in for, so the lazy
+    # /api/history/* sections read as "arriving" rather than a bare spinner.
+    # (Unused when prerendered sections are provided.)
+    _sk_card = (
+        "<div class='history-card'>"
+        "<div class='sk-shimmer sk-line sk-line--sm' style='width:45%'></div>"
+        "<div class='sk-shimmer sk-line sk-line--lg' style='width:72%;margin-top:8px'></div>"
+        "<div class='sk-shimmer sk-line sk-line--sm' style='width:58%;margin-top:6px'></div>"
+        "</div>"
+    )
+    awards_skeleton = f"<div class='history-awards-grid'>{_sk_card * 6}</div>"
+    _sk_row = (
+        "<div style='display:flex;align-items:center;gap:12px;padding:10px 0;'>"
+        "<div class='sk-shimmer sk-avatar' style='width:22px;height:22px'></div>"
+        "<div class='sk-shimmer sk-line' style='width:38%;margin:0'></div>"
+        "<div class='sk-shimmer sk-line' style='width:13%;margin:0 0 0 auto'></div>"
+        "<div class='sk-shimmer sk-line' style='width:13%;margin:0'></div>"
+        "</div>"
+    )
+    standings_skeleton = f"<div style='padding-top:12px'>{_sk_row * 8}</div>"
+    chart_skeleton = (
+        "<div class='sk-shimmer' style='width:100%;height:280px;"
+        "border-radius:12px;margin-top:6px'></div>"
+    )
+    awards_html    = prerendered["summary"]   if prerendered else awards_skeleton
+    standings_html = prerendered["standings"] if prerendered else standings_skeleton
+    chart_html     = prerendered["chart"]     if prerendered else chart_skeleton
     tour_input     = '<input type="hidden" id="historyTourMode" value="1">' if prerendered else ""
 
     rivalry_html = _build_rivalry_card(

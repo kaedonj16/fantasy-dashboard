@@ -2023,6 +2023,13 @@ _AD_INIT = """(function(){
         }
       } catch(e) { console.warn('AdSense init error:', e); }
     };
+    // Ad script blocked or unreachable: collapse the reserved slots so they
+    // don't sit as empty grey bands (CSS hides [data-ads-blocked] containers).
+    s.onerror = function(){
+      document.querySelectorAll('.ad-container').forEach(function(c){
+        c.setAttribute('data-ads-blocked', '1');
+      });
+    };
     document.head.appendChild(s);
   }
   var evts = ['scroll','pointerdown','keydown','touchstart','mousemove'];

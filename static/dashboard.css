@@ -12917,6 +12917,15 @@ img, svg, canvas {
   overflow: hidden;
 }
 
+/* Collapse a slot AdSense reports as unfilled (and ones marked blocked when
+   the ad script itself never loads) so nobody stares at an empty grey band.
+   The height reservation above still prevents CLS for slots that do fill;
+   collapsing is a single deliberate shift only once the slot is known-empty. */
+.ad-container:has(ins.adsbygoogle[data-ad-status="unfilled"]),
+.ad-container[data-ads-blocked] {
+  display: none;
+}
+
 .ad-top-banner {
   margin-top: 8px;
   margin-bottom: 16px;
