@@ -1652,16 +1652,33 @@ def build_history_body(
         _wrapped_btn = ""
     _wrapped_overlay = ""  # injected lazily into #wrappedMount by the launcher
 
-    # Loading spinner HTML (unused when prerendered sections are provided)
-    loading_spinner = """
-    <div class="history-loading-state">
-      <div class="loading-spinner" style="margin: 20px auto; width: 30px; height: 30px; border: 3px solid var(--border); border-radius: 50%; border-top-color: var(--accent); animation: spin 1s linear infinite; border-right-color: transparent;"></div>
-      <div style="text-align: center; color: var(--text-subtle); font-size: 13px; margin-top: 12px;">Loading...</div>
-    </div>
-    """
-    awards_html    = prerendered["summary"]   if prerendered else loading_spinner
-    standings_html = prerendered["standings"] if prerendered else loading_spinner
-    chart_html     = prerendered["chart"]     if prerendered else loading_spinner
+    # Shimmer skeletons shaped like the content they stand in for, so the lazy
+    # /api/history/* sections read as "arriving" rather than a bare spinner.
+    # (Unused when prerendered sections are provided.)
+    _sk_card = (
+        "<div class='history-card'>"
+        "<div class='sk-shimmer sk-line sk-line--sm' style='width:45%'></div>"
+        "<div class='sk-shimmer sk-line sk-line--lg' style='width:72%;margin-top:8px'></div>"
+        "<div class='sk-shimmer sk-line sk-line--sm' style='width:58%;margin-top:6px'></div>"
+        "</div>"
+    )
+    awards_skeleton = f"<div class='history-awards-grid'>{_sk_card * 6}</div>"
+    _sk_row = (
+        "<div style='display:flex;align-items:center;gap:12px;padding:10px 0;'>"
+        "<div class='sk-shimmer sk-avatar' style='width:22px;height:22px'></div>"
+        "<div class='sk-shimmer sk-line' style='width:38%;margin:0'></div>"
+        "<div class='sk-shimmer sk-line' style='width:13%;margin:0 0 0 auto'></div>"
+        "<div class='sk-shimmer sk-line' style='width:13%;margin:0'></div>"
+        "</div>"
+    )
+    standings_skeleton = f"<div style='padding-top:12px'>{_sk_row * 8}</div>"
+    chart_skeleton = (
+        "<div class='sk-shimmer' style='width:100%;height:280px;"
+        "border-radius:12px;margin-top:6px'></div>"
+    )
+    awards_html    = prerendered["summary"]   if prerendered else awards_skeleton
+    standings_html = prerendered["standings"] if prerendered else standings_skeleton
+    chart_html     = prerendered["chart"]     if prerendered else chart_skeleton
     tour_input     = '<input type="hidden" id="historyTourMode" value="1">' if prerendered else ""
 
     rivalry_html = _build_rivalry_card(
