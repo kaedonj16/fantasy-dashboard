@@ -12034,12 +12034,13 @@ img, svg, canvas {
     flex-direction: column;
     padding: 18px 16px;
     max-width: 100%;
-    overflow: hidden;
+    /* No overflow clip here: it cut off the Season Wrapped button's glow.
+       Horizontal scroll is already guarded by .history-page { overflow-x }. */
   }
 
   .history-header > div {
     max-width: 100%;
-    overflow: hidden;
+    min-width: 0;
   }
 
   .history-season-picker {
