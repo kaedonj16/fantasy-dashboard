@@ -2984,132 +2984,160 @@ _AM_JS = r"""
   // the crosshair lines reflect the whole position group, not just the visible TopN.
   function _amBuildScatter(pts, xk, yk, zk, logo, avgXFull, avgYFull) {
     const TH = _amGraphPalette();
-    const FONT = "system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+    const FONT = "'Archivo',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
     // Responsive layout: a portrait viewBox with larger relative fonts on phones
     // (smaller viewBox width => each unit scales up on screen, so text stays legible).
     const isNarrow = (window.innerWidth || 800) <= 600;
     const L = isNarrow
-      ? { W: 392, H: 510, padL: 46, padR: 14, padT: 52, padB: 80, fTitle: 14, fSub: 11, fTick: 12, fAxis: 12.5, fLeg: 12, nt: 3, logo: 185, dotMin: 5.5, dotMax: 13 }
-      : { W: 720, H: 580, padL: 64, padR: 22, padT: 54, padB: 70, fTitle: 14, fSub: 10.5, fTick: 10, fAxis: 11, fLeg: 11, nt: 4, logo: 250, dotMin: 4, dotMax: 15 };
+      ? { W: 392, H: 540, padL: 46, padR: 16, padT: 92, padB: 96, fTitle: 16, fSub: 10.5, fTick: 11, fAxis: 10, fLeg: 10.5, ntX: 4, ntY: 5, dotMin: 5.5, dotMax: 13, fStar: 11.5, fLbl: 10 }
+      : { W: 720, H: 600, padL: 60, padR: 24, padT: 100, padB: 96, fTitle: 19, fSub: 11.5, fTick: 10.5, fAxis: 10.5, fLeg: 10.5, ntX: 5, ntY: 6, dotMin: 4, dotMax: 15, fStar: 11, fLbl: 9 };
     const W = L.W, H = L.H, padL = L.padL, padR = L.padR, padT = L.padT, padB = L.padB;
     const xs = pts.map(function(p) { return p.x; });
     const ys = pts.map(function(p) { return p.y; });
-    let xmin = Math.min.apply(null, xs), xmax = Math.max.apply(null, xs);
-    let ymin = Math.min.apply(null, ys), ymax = Math.max.apply(null, ys);
-    if (xmin === xmax) { xmin -= 1; xmax += 1; }
-    if (ymin === ymax) { ymin -= 1; ymax += 1; }
-    xmin -= (xmax - xmin) * 0.06; xmax += (xmax - xmin) * 0.06;
-    ymin -= (ymax - ymin) * 0.06; ymax += (ymax - ymin) * 0.06;
+    // Round tick domains: snap the axis to a nice step so ticks read "9, 12, 15"
+    // instead of the raw data min/max.
+    function niceStep(span, target) {
+      const raw = span / Math.max(1, target);
+      const mag = Math.pow(10, Math.floor(Math.log(raw) / Math.LN10));
+      const cands = [1, 2, 2.5, 5, 10];
+      for (let i = 0; i < cands.length; i++) { if (mag * cands[i] >= raw - 1e-9) return mag * cands[i]; }
+      return mag * 10;
+    }
+    function niceDomain(vmin, vmax, target) {
+      if (vmin === vmax) { vmin -= 1; vmax += 1; }
+      const step = niceStep(vmax - vmin, target);
+      const lo = Math.floor(vmin / step) * step;
+      const hi = Math.ceil(vmax / step) * step;
+      return { lo: lo, hi: hi, step: step };
+    }
+    const dx = niceDomain(Math.min.apply(null, xs), Math.max.apply(null, xs), L.ntX);
+    const dy = niceDomain(Math.min.apply(null, ys), Math.max.apply(null, ys), L.ntY);
+    const xmin = dx.lo, xmax = dx.hi, ymin = dy.lo, ymax = dy.hi;
     const px = function(v) { return padL + ((v - xmin) / (xmax - xmin)) * (W - padL - padR); };
     const py = function(v) { return H - padB - ((v - ymin) / (ymax - ymin)) * (H - padT - padB); };
     let rOf = function() { return isNarrow ? 6 : 5; };
+    let zmin = null, zmax = null;
     if (zk) {
       const zs = pts.map(function(p) { return p.z; }).filter(function(v) { return v != null && isFinite(v); });
       if (zs.length) {
-        const zmin = Math.min.apply(null, zs), zmax = Math.max.apply(null, zs);
+        zmin = Math.min.apply(null, zs); zmax = Math.max.apply(null, zs);
         const span = (zmax - zmin) || 1;
         rOf = function(p) { return (p.z == null || !isFinite(p.z)) ? (L.dotMin * 0.7) : (L.dotMin + ((p.z - zmin) / span) * (L.dotMax - L.dotMin)); };
       }
     }
     const fmtX = function(v) { return fmtVal(v, xk); };
     const fmtY = function(v) { return fmtVal(v, yk); };
-    const txt = function(x, y, str, size, fill, weight, anchor, transform) {
+    const fmtTick = function(v, step) { return (step % 1 === 0) ? String(Math.round(v)) : v.toFixed(step * 10 % 1 === 0 ? 1 : 2); };
+    const txt = function(x, y, str, size, fill, weight, anchor, transform, ls) {
       return '<text x="' + x + '" y="' + y + '"'
         + (anchor ? ' text-anchor="' + anchor + '"' : '')
         + (transform ? ' transform="' + transform + '"' : '')
+        + (ls ? ' letter-spacing="' + ls + '"' : '')
         + ' font-size="' + size + '" font-weight="' + (weight || 400)
         + '" fill="' + fill + '">' + str + '</text>';
     };
+    const accent = posColor((pts[0] && pts[0].position) || 'WR');
+    const chipBg = TH.dark ? '#1b2740' : '#f2f5f9';
+    const chipBorder = TH.dark ? 'rgba(148,163,184,.32)' : '#dbe2ea';
     let s = '<svg class="am-graph-svg" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"'
       + ' viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" style="font-family:' + FONT + ';">';
     // Themed panel background.
     s += '<rect x="0.5" y="0.5" width="' + (W - 1) + '" height="' + (H - 1) + '" rx="14" fill="' + TH.bg + '" stroke="' + TH.border + '"/>';
-    // Faint centered BR logo watermark (behind the data).
-    if (logo) {
-      const lw = 230, lh = 230;
-      const lx = padL + (W - padL - padR) / 2 - lw / 2;
-      const ly = padT + (H - padT - padB) / 2 - lh / 2;
-      s += '<image href="' + logo + '" xlink:href="' + logo + '" x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1)
-        + '" width="' + lw + '" height="' + lh + '" opacity="0.10" preserveAspectRatio="xMidYMid meet"/>';
-    }
-    // Title + context subtitle.
-    s += txt((W / 2).toFixed(1), 24, _amEsc(cfg.metrics[yk].label) + ' vs ' + _amEsc(cfg.metrics[xk].label), L.fTitle, TH.text, 800, 'middle');
+    // Editorial header: accent kicker rule + label, left-aligned title + context.
+    s += '<rect x="' + padL + '" y="24" width="20" height="3.5" rx="1.75" fill="' + accent + '"/>';
+    s += txt(padL + 28, 30, 'ADVANCED METRICS', L.fSub - 1, accent, 800, 'start', null, 2.2);
+    s += txt(padL, 56, _amEsc(cfg.metrics[yk].label) + ' vs ' + _amEsc(cfg.metrics[xk].label), L.fTitle, TH.text, 800, 'start');
     const noteEl = document.getElementById('amGraphCtxNote');
     const ctx = noteEl ? noteEl.textContent : '';
-    if (ctx) s += txt((W / 2).toFixed(1), 41, _amEsc(ctx), L.fSub, TH.muted, 500, 'middle');
-    // Axes.
-    s += '<line x1="' + padL + '" y1="' + (H - padB) + '" x2="' + (W - padR) + '" y2="' + (H - padB) + '" stroke="' + TH.axis + '"/>';
-    s += '<line x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (H - padB) + '" stroke="' + TH.axis + '"/>';
-    for (let i = 0; i <= L.nt; i++) {
-      const xv = xmin + (xmax - xmin) * i / L.nt, xx = px(xv);
-      if (i > 0) s += '<line x1="' + xx.toFixed(1) + '" y1="' + padT + '" x2="' + xx.toFixed(1) + '" y2="' + (H - padB) + '" stroke="' + TH.grid + '"/>';
-      s += txt(xx.toFixed(1), (H - padB + 16), _amEsc(fmtX(xv)), L.fTick, TH.muted, 400, 'middle');
-      const yv = ymin + (ymax - ymin) * i / L.nt, yy = py(yv);
-      if (i > 0) s += '<line x1="' + padL + '" y1="' + yy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + yy.toFixed(1) + '" stroke="' + TH.grid + '"/>';
-      s += txt((padL - 7), (yy + 3).toFixed(1), _amEsc(fmtY(yv)), L.fTick, TH.muted, 400, 'end');
+    const sub = (ctx ? ctx + ' · ' : '') + (zk ? 'bubble = ' + cfg.metrics[zk].label : '');
+    if (sub) s += txt(padL, 76, _amEsc(sub), L.fSub, TH.muted, 500, 'start');
+    // Grid: hairlines at round ticks; a single baseline instead of a hard frame.
+    for (let xv = xmin; xv <= xmax + 1e-9; xv += dx.step) {
+      const xx = px(xv);
+      s += '<line x1="' + xx.toFixed(1) + '" y1="' + padT + '" x2="' + xx.toFixed(1) + '" y2="' + (H - padB) + '" stroke="' + TH.grid + '"/>';
+      s += txt(xx.toFixed(1), (H - padB + 16), fmtTick(xv, dx.step), L.fTick, TH.muted, 600, 'middle');
     }
-    // Axis titles.
-    s += txt(((padL + W - padR) / 2).toFixed(1), (H - padB + 38), _amEsc(cfg.metrics[xk].label), L.fAxis, TH.text, 700, 'middle');
-    s += txt(0, 0, _amEsc(cfg.metrics[yk].label), L.fAxis, TH.text, 700, 'middle',
-      'translate(15,' + ((padT + H - padB) / 2).toFixed(1) + ') rotate(-90)');
-    // Average reference lines — crosshair splitting above/below-average quadrants.
-    // Uses the full-population averages passed from amRenderGraph so the lines
-    // are stable regardless of the TopN setting.
+    for (let yv = ymin; yv <= ymax + 1e-9; yv += dy.step) {
+      const yy = py(yv);
+      s += '<line x1="' + padL + '" y1="' + yy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + yy.toFixed(1) + '" stroke="' + TH.grid + '"/>';
+      s += txt((padL - 8), (yy + 3.5).toFixed(1), fmtTick(yv, dy.step), L.fTick, TH.muted, 600, 'end');
+    }
+    s += '<line x1="' + padL + '" y1="' + (H - padB) + '" x2="' + (W - padR) + '" y2="' + (H - padB) + '" stroke="' + TH.axis + '" stroke-width="1.2"/>';
+    // Axis titles: small caps, letter-spaced.
+    s += txt(((padL + W - padR) / 2).toFixed(1), (H - padB + 36), _amEsc(cfg.metrics[xk].label).toUpperCase(), L.fAxis, TH.text, 800, 'middle', null, 1.8);
+    s += txt(0, 0, _amEsc(cfg.metrics[yk].label).toUpperCase(), L.fAxis, TH.text, 800, 'middle',
+      'translate(13,' + ((padT + H - padB) / 2).toFixed(1) + ') rotate(-90)', 1.8);
+    // Average reference lines: quiet neutral dashes with small chips, splitting
+    // the plot into above/below-average quadrants.
     const avgX = (avgXFull != null) ? avgXFull : xs.reduce(function(a, b) { return a + b; }, 0) / xs.length;
     const avgY = (avgYFull != null) ? avgYFull : ys.reduce(function(a, b) { return a + b; }, 0) / ys.length;
-    const avgCol = (_amGraphTheme === 'dark') ? '#f59e0b' : '#d97706';
-    if (avgX >= xmin && avgX <= xmax) {
+    const avgCol = TH.dark ? 'rgba(148,163,184,.55)' : '#aab4c2';
+    const chip = function(x, y, t, anchor) {
+      const w = t.length * (L.fLeg - 3.2) * 0.62 + 16;
+      const bx = anchor === 'end' ? x - w : x;
+      return '<rect x="' + bx.toFixed(1) + '" y="' + (y - 11) + '" width="' + w.toFixed(1) + '" height="16" rx="8" fill="' + chipBg + '" stroke="' + chipBorder + '"/>'
+        + txt((bx + w / 2).toFixed(1), (y + 1).toFixed(1), t, L.fLeg - 2, TH.muted, 700, 'middle');
+    };
+    const hasAX = avgX >= xmin && avgX <= xmax, hasAY = avgY >= ymin && avgY <= ymax;
+    if (hasAX) {
       const ax = px(avgX);
-      s += '<line x1="' + ax.toFixed(1) + '" y1="' + padT + '" x2="' + ax.toFixed(1) + '" y2="' + (H - padB)
-        + '" stroke="' + avgCol + '" stroke-width="1.2" stroke-dasharray="5 4" opacity="0.85"/>';
-      s += txt((ax + 3).toFixed(1), (padT + 11), 'avg ' + _amEsc(fmtX(avgX)), L.fLeg - 1, avgCol, 700, 'start');
+      s += '<line x1="' + ax.toFixed(1) + '" y1="' + padT + '" x2="' + ax.toFixed(1) + '" y2="' + (H - padB) + '" stroke="' + avgCol + '" stroke-width="1.1" stroke-dasharray="2 5"/>';
+      s += chip(ax + 6, padT + 13, 'AVG ' + _amEsc(fmtX(avgX)), 'start');
     }
-    if (avgY >= ymin && avgY <= ymax) {
+    if (hasAY) {
       const ay = py(avgY);
-      s += '<line x1="' + padL + '" y1="' + ay.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + ay.toFixed(1)
-        + '" stroke="' + avgCol + '" stroke-width="1.2" stroke-dasharray="5 4" opacity="0.85"/>';
-      s += txt((W - padR - 3).toFixed(1), (ay - 4).toFixed(1), 'avg ' + _amEsc(fmtY(avgY)), L.fLeg - 1, avgCol, 700, 'end');
+      s += '<line x1="' + padL + '" y1="' + ay.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + ay.toFixed(1) + '" stroke="' + avgCol + '" stroke-width="1.1" stroke-dasharray="2 5"/>';
+      s += chip(W - padR - 4, ay - 12, 'AVG ' + _amEsc(fmtY(avgY)), 'end');
     }
-    // Label counts scale with pool size:
-    //   ≤50 → bold top 10, show top 25
-    //   >50  → bold top 15, show top 30
-    // pts is pre-sorted best-first, so index position = rank.
-    const boldCut = pts.length > 50 ? 15 : 10;
-    const showCut = pts.length > 50 ? 30 : 25;
-    const lblSize = isNarrow ? 10 : 9;
-    // Pre-compute per-point layout so we can do two passes (circles then labels).
+    // Quadrant tags (factual, metric-agnostic) when the crosshair is complete.
+    if (hasAX && hasAY && !isNarrow) {
+      const qCol = TH.dark ? 'rgba(148,163,184,.4)' : '#b9c2cd';
+      s += txt(W - padR - 6, padT + 14, 'ABOVE AVG · BOTH', L.fLeg - 2, qCol, 800, 'end', null, 2);
+      s += txt(padL + 6, H - padB - 8, 'BELOW AVG · BOTH', L.fLeg - 2, qCol, 800, 'start', null, 2);
+    }
+    // Emphasis: the top-ranked players carry the story — full-strength dots and
+    // bold "Name 23.6" labels; the rest of the pool becomes a muted field with a
+    // few quiet labels. pts is pre-sorted best-first, so index = rank.
+    const starCut = Math.min(8, Math.max(4, Math.round(pts.length * 0.3)));
+    const showCut = Math.min(pts.length, starCut + (pts.length > 50 ? 14 : 10));
+    const lblSize = L.fLbl;
     const ptData = pts.map(function(p, idx) {
       const cx = px(p.x), cy = py(p.y), r = rOf(p), col = posColor(p.position);
       const stats = [[cfg.metrics[xk].label, fmtX(p.x)], [cfg.metrics[yk].label, fmtY(p.y)]];
       if (zk) stats.push([cfg.metrics[zk].label, p.z != null ? fmtVal(p.z, zk) : '–']);
       const info = { nm: p.name, pos: p.position || '', hs: p.headshot || '', stats: stats };
-      return { p: p, idx: idx, cx: cx, cy: cy, r: r, col: col, info: info };
+      return { p: p, idx: idx, cx: cx, cy: cy, r: r, col: col, info: info, star: idx < starCut };
     });
-    // Pass 1 — circles, largest-first so small dots render on top.
-    ptData.slice().sort(function(a, b) { return b.r - a.r; }).forEach(function(d) {
+    // Pass 1 — field dots first (muted), then stars on top, largest-first within
+    // each group so small dots stay clickable.
+    const fieldOp = TH.dark ? 0.3 : 0.24;
+    ptData.filter(function(d) { return !d.star; }).sort(function(a, b) { return b.r - a.r; }).forEach(function(d) {
       s += '<circle class="am-graph-dot" cx="' + d.cx.toFixed(1) + '" cy="' + d.cy.toFixed(1) + '" r="' + d.r.toFixed(1)
-        + '" fill="' + d.col + '" fill-opacity="0.78" stroke="' + TH.bg + '" stroke-width="1.5"'
+        + '" fill="' + d.col + '" fill-opacity="' + fieldOp + '" stroke="' + TH.bg + '" stroke-width="1.4"'
         + ' data-info="' + _amEsc(JSON.stringify(d.info)) + '"></circle>';
     });
-    // Pass 2 — labels on top of all circles, with a bg-colored halo so they're
-    // readable over both dots and the watermark. ptData is in rank order, so
-    // higher-ranked names claim space first; for each label we try a set of
-    // candidate positions around the dot and take the first that doesn't collide
-    // with an already-placed label. If every candidate collides, the label is
-    // dropped rather than stacked on top of another (no more buried names).
-    const charW = lblSize * 0.56; // rough avg glyph width for width estimation
+    ptData.filter(function(d) { return d.star; }).sort(function(a, b) { return b.r - a.r; }).forEach(function(d) {
+      s += '<circle class="am-graph-dot" cx="' + d.cx.toFixed(1) + '" cy="' + d.cy.toFixed(1) + '" r="' + d.r.toFixed(1)
+        + '" fill="' + d.col + '" stroke="' + TH.bg + '" stroke-width="2"'
+        + ' data-info="' + _amEsc(JSON.stringify(d.info)) + '"></circle>';
+    });
+    // Pass 2 — labels with collision avoidance; higher-ranked names claim space
+    // first. Star labels are bold ink with the ranked value in the accent; the
+    // rest are quiet and dropped when they'd collide.
+    const charW = lblSize * 0.56;
     const lblH = lblSize + 2;
-    const placed = []; // {x1,y1,x2,y2} of committed labels
+    const placed = [];
     const overlaps = function(a, b) {
       return a.x1 < b.x2 && a.x2 > b.x1 && a.y1 < b.y2 && a.y2 > b.y1;
     };
     ptData.forEach(function(d) {
       if (d.idx >= showCut) return;
-      const isBold = d.idx < boldCut;
-      const lbl = _amEsc(_amLastName(d.p.name));
-      const tw = _amLastName(d.p.name).length * charW;
-      const gap = d.r + 3, vy = d.cy + 3;
-      // Candidate anchors: right, left, above-right, below-right, above-left, below-left.
+      const isStar = d.star;
+      const nm = _amLastName(d.p.name);
+      const valTxt = isStar ? ' ' + fmtX(d.p.x) : '';
+      const fs = isStar ? L.fStar : lblSize;
+      const tw = (nm.length + valTxt.length) * fs * 0.56;
+      const gap = d.r + 4, vy = d.cy + 3.5;
       const cands = [
         { x: d.cx + gap, y: vy, anchor: 'start' },
         { x: d.cx - gap, y: vy, anchor: 'end' },
@@ -3123,44 +3151,61 @@ _AM_JS = r"""
         const c = cands[ci];
         const x1 = c.anchor === 'end' ? c.x - tw : c.x;
         const x2 = x1 + tw;
-        // Reject off-panel candidates.
         if (x1 < padL - 2 || x2 > W - padR + 2) continue;
         const box = { x1: x1 - 1, y1: c.y - lblH, x2: x2 + 1, y2: c.y + 3 };
         let hit = false;
         for (let pi = 0; pi < placed.length; pi++) { if (overlaps(box, placed[pi])) { hit = true; break; } }
         if (!hit) { chosen = c; placed.push(box); break; }
       }
-      // Bold (top-ranked) names are important enough to always show: if every
-      // candidate collided, force the right position so they're never dropped.
       if (!chosen) {
-        if (!isBold) return;
+        if (!isStar) return;
         chosen = cands[0];
         const x1 = chosen.x, box = { x1: x1 - 1, y1: chosen.y - lblH, x2: x1 + tw + 1, y2: chosen.y + 3 };
         placed.push(box);
       }
+      const lblFill = isStar ? TH.text : TH.muted;
       s += '<text x="' + chosen.x.toFixed(1) + '" y="' + chosen.y.toFixed(1) + '"'
         + (chosen.anchor === 'end' ? ' text-anchor="end"' : '')
-        + ' font-size="' + lblSize + '" font-weight="' + (isBold ? 700 : 400) + '"'
-        + ' fill="' + (isBold ? TH.text : TH.muted) + '"'
+        + ' font-size="' + fs + '" font-weight="' + (isStar ? 800 : 500) + '"'
+        + ' fill="' + lblFill + '"'
         + ' stroke="' + TH.bg + '" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill"'
-        + '>' + lbl + '</text>';
+        + '>' + _amEsc(nm)
+        + (isStar ? '<tspan font-weight="700" fill="' + d.col + '">' + _amEsc(valTxt) + '</tspan>' : '')
+        + '</text>';
     });
-    // In-SVG legend (positions present) + bubble note, so the shared image is complete.
+    // Footer row: position chips (when mixed) + real bubble-size reference
+    // circles + the brand bug, replacing the giant center watermark.
     const posPresent = [];
     pts.forEach(function(p) { if (p.position && posPresent.indexOf(p.position) === -1) posPresent.push(p.position); });
-    const legendItems = posPresent.slice();
-    const legendY = H - 16;
-    if (legendItems.length > 1 || zk) {
-      const segW = isNarrow ? 50 : 64;
-      const bubbleW = zk ? (isNarrow ? 70 : 150) : 0;
-      const totalW = legendItems.length * segW + bubbleW;
-      let lx2 = Math.max(8, (W - totalW) / 2);
-      legendItems.forEach(function(pp) {
-        s += '<circle cx="' + (lx2 + 5).toFixed(1) + '" cy="' + (legendY - 3) + '" r="5" fill="' + posColor(pp) + '" fill-opacity="0.85"/>';
-        s += txt((lx2 + 14).toFixed(1), legendY, _amEsc(pp), L.fLeg, TH.muted, 600, 'start');
-        lx2 += segW;
+    const footY = H - 22;
+    let fx = padL;
+    if (posPresent.length > 1) {
+      posPresent.forEach(function(pp) {
+        s += '<circle cx="' + (fx + 4.5) + '" cy="' + (footY - 3.5) + '" r="4.5" fill="' + posColor(pp) + '"/>';
+        s += txt(fx + 13, footY, _amEsc(pp), L.fLeg, TH.muted, 700, 'start');
+        fx += 13 + pp.length * L.fLeg * 0.62 + 14;
       });
-      if (zk) s += txt((lx2 + 4).toFixed(1), legendY, (isNarrow ? '○ = ' : '○ Bubble = ') + _amEsc(cfg.metrics[zk].label), L.fLeg - 0.5, TH.muted, 500, 'start');
+      fx += 6;
+    }
+    if (zk && zmin != null && zmax != null && zmax > zmin) {
+      s += txt(fx, footY, _amEsc(cfg.metrics[zk].label).toUpperCase(), L.fLeg - 2, TH.muted, 800, 'start', null, 1.6);
+      fx += (cfg.metrics[zk].label.length) * (L.fLeg - 2) * 0.78 + 26;
+      const refs = isNarrow ? [zmin, zmax] : [zmin, (zmin + zmax) / 2, zmax];
+      refs.forEach(function(v) {
+        const rr = rOf({ z: v });
+        s += '<circle cx="' + (fx + rr).toFixed(1) + '" cy="' + (footY - 4) + '" r="' + rr.toFixed(1) + '" fill="none" stroke="' + avgCol + '" stroke-width="1.4"/>';
+        s += txt((fx + rr).toFixed(1), footY + 0.5, fmtTick(Math.round(v * 10) / 10, (zmax - zmin) >= 3 ? 1 : 0.1), L.fLeg - 2.5, TH.muted, 700, 'middle');
+        fx += rr * 2 + 16;
+      });
+    }
+    if (logo) {
+      const blw = isNarrow ? 30 : 34, blh = blw * 0.887;
+      const bx = W - padR - blw;
+      if (bx - 14 > fx) {
+        s += '<line x1="' + (fx + 8) + '" y1="' + (footY - 4) + '" x2="' + (bx - 12) + '" y2="' + (footY - 4) + '" stroke="' + TH.grid + '"/>';
+      }
+      s += '<image href="' + logo + '" xlink:href="' + logo + '" x="' + bx + '" y="' + (footY - 4 - blh / 2).toFixed(1)
+        + '" width="' + blw + '" height="' + blh.toFixed(1) + '" opacity="0.9" preserveAspectRatio="xMidYMid meet"/>';
     }
     s += '</svg>';
     return s;

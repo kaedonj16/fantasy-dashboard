@@ -11,11 +11,11 @@ mirrored constants in static/app.js (window.brandPlotlyLayout).
 """
 from __future__ import annotations
 
-BRAND_FONT = "InterVariable, Inter, system-ui, -apple-system, sans-serif"
+BRAND_FONT = "Archivo, InterVariable, Inter, system-ui, -apple-system, sans-serif"
 # Mid-grey that stays legible on white cards and on the dark navy card.
 AXIS_TEXT = "#7c8798"
-GRID = "rgba(148, 163, 184, 0.22)"
-AXIS_LINE = "rgba(148, 163, 184, 0.38)"
+GRID = "rgba(148, 163, 184, 0.18)"
+AXIS_LINE = "rgba(148, 163, 184, 0.34)"
 
 
 def apply_brand_layout(fig):
@@ -26,7 +26,18 @@ def apply_brand_layout(fig):
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         hoverlabel=dict(font=dict(family=BRAND_FONT, size=12)),
+        legend=dict(
+            font=dict(family=BRAND_FONT, size=11.5),
+            bgcolor="rgba(0,0,0,0)",
+            borderwidth=0,
+        ),
     )
-    fig.update_xaxes(gridcolor=GRID, zerolinecolor=AXIS_LINE, linecolor=AXIS_LINE, tickcolor=AXIS_LINE)
-    fig.update_yaxes(gridcolor=GRID, zerolinecolor=AXIS_LINE, linecolor=AXIS_LINE, tickcolor=AXIS_LINE)
+    fig.update_xaxes(
+        gridcolor=GRID, zerolinecolor=AXIS_LINE, linecolor=AXIS_LINE, tickcolor=AXIS_LINE,
+        tickfont=dict(size=11), title_font=dict(size=12), ticks="outside", ticklen=4,
+    )
+    fig.update_yaxes(
+        gridcolor=GRID, zerolinecolor=AXIS_LINE, linecolor=AXIS_LINE, tickcolor=AXIS_LINE,
+        tickfont=dict(size=11), title_font=dict(size=12),
+    )
     return fig

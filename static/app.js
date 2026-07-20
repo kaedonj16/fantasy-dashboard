@@ -2430,7 +2430,7 @@ window.resetMatchupCarousels = function (root) {
 // ------------------------------------------------------------
 
 // Brand look for client-built Plotly charts (mirror of dashboard_services/plotly_theme.py).
-window.brandPlotlyFont = 'InterVariable, Inter, system-ui, -apple-system, sans-serif';
+window.brandPlotlyFont = 'Archivo, InterVariable, Inter, system-ui, -apple-system, sans-serif';
 // Categorical series palette, assigned in fixed order. Ordered for adjacent-hue
 // separation so a multi-line chart (e.g. league standings) stays distinguishable.
 window.brandPlotlyColorway = [
@@ -2455,6 +2455,7 @@ window.brandPlotlyLayout = function (extra) {
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
     hoverlabel: { font: { family: window.brandPlotlyFont, size: 12 } },
+    legend: { font: { family: window.brandPlotlyFont, size: 11.5 }, bgcolor: 'rgba(0,0,0,0)', borderwidth: 0 },
   }, extra || {});
 };
 
