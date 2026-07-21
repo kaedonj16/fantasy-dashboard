@@ -14927,6 +14927,15 @@ tr.team-clickable {
     width: max-content;
     min-width: 100%;
     font-size: 11px;
+    /* The base rule sets overflow:hidden (to clip rounded corners), which would
+       make the table itself the scroll container and defeat the sticky columns
+       below. Let the year-content wrapper be the scroller instead. */
+    overflow: visible;
+  }
+
+  /* Move corner rounding to the scrolling wrapper so it still clips cleanly. */
+  .game-log-year-content {
+    border-radius: 10px;
   }
 
   .game-log-table th {
@@ -14939,21 +14948,64 @@ tr.team-clickable {
     font-size: 11px;
   }
 
-  .game-log-table td:first-child,
-  .game-log-table th:first-child {
-    padding-left: 8px;
+  /* Freeze Date / Opp / Pts as a left pane while the stat columns scroll.
+     Fixed widths give each frozen column a known offset for the next one. */
+  .game-log-table th:nth-child(1),
+  .game-log-table td:nth-child(1),
+  .game-log-table th:nth-child(2),
+  .game-log-table td:nth-child(2),
+  .game-log-table th:nth-child(3),
+  .game-log-table td:nth-child(3) {
     position: sticky;
-    left: 0;
     background: var(--card);
+    white-space: nowrap;
+  }
+
+  .game-log-table th:nth-child(1),
+  .game-log-table td:nth-child(1) {
+    left: 0;
+    width: 48px;
+    padding-left: 8px;
+  }
+
+  .game-log-table th:nth-child(2),
+  .game-log-table td:nth-child(2) {
+    left: 48px;
+    width: 46px;
+  }
+
+  .game-log-table th:nth-child(3),
+  .game-log-table td:nth-child(3) {
+    left: 94px;
+    width: 54px;
+    /* Shadow marks where the frozen pane ends and scrolling begins. */
+    box-shadow: 6px 0 8px -6px rgba(0, 0, 0, 0.35);
+  }
+
+  /* Header corner cells stay above the frozen body cells (which sit above the
+     scrolling stat cells). */
+  .game-log-table thead th:nth-child(-n+3) {
+    z-index: 3;
+  }
+  .game-log-table tbody td:nth-child(-n+3),
+  .game-log-table tfoot td:nth-child(-n+3) {
     z-index: 1;
   }
 
-  .game-log-table tbody tr:hover td:first-child {
+  /* Give the frozen cells each row's own background so the scrolling stat
+     cells can't bleed through underneath them. */
+  .game-log-table tbody tr:nth-child(even) td:nth-child(-n+3) {
+    background: var(--row);
+  }
+  .game-log-table tbody tr:hover td:nth-child(-n+3) {
     background: var(--bg-alt);
   }
-
-  .game-log-table tfoot td:first-child {
+  .game-log-table tfoot td:nth-child(-n+3) {
     background: var(--bg-alt);
+  }
+  .game-log-no-stats td:nth-child(-n+3),
+  .game-log-bye td:nth-child(-n+3) {
+    background-color: #f9fafb;
   }
 
   /* Adjust year header for mobile */
