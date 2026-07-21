@@ -9781,6 +9781,9 @@ function openPlayerModal(playerId, playerName, opts) {
         });
       }
 
+      // Warm the other tabs in the background so switching to them is instant.
+      pmPrefetchTabs();
+
       // ── Lazy-load prospect comparables for rookies ─────────────────────────
       if (isRookieWithProspectData && pd.player_id) {
         fetch(`/api/prospects/comparables/${encodeURIComponent(pd.player_id)}`)
@@ -10227,6 +10230,35 @@ function pmSwitchTab(tab) {
         }
       });
   }
+}
+
+// Prefetch the lazy tabs (Stats / Trades / Adv Metrics) once the modal's
+// Overview has loaded, so clicking a tab shows already-rendered content instead
+// of a spinner. We reuse pmSwitchTab's exact load path by briefly activating
+// each un-loaded tab and restoring the current one — all synchronously in one
+// idle callback, so no intermediate tab state is ever painted.
+function pmPrefetchTabs() {
+  const bar = document.getElementById('pmTabBar');
+  if (!bar || bar.dataset.pmPrefetched) return;
+  bar.dataset.pmPrefetched = '1';
+  const run = function () {
+    if (!document.getElementById('pmTabBar')) return; // modal closed meanwhile
+    const activeBtn = document.querySelector('.pm-tab.active');
+    const activeTab = (activeBtn && activeBtn.dataset.tab) || 'overview';
+    const tabs = ['stats', 'trades'];
+    if (bar.dataset.pmHasMetrics) tabs.push('metrics');
+    tabs.forEach(function (t) {
+      const panel = document.getElementById('pm-panel-' + t);
+      const btn = document.querySelector('.pm-tab[data-tab="' + t + '"]');
+      // Only warm tabs that exist, are visible, and haven't loaded yet.
+      if (panel && !panel.dataset.loaded && btn && btn.style.display !== 'none') {
+        pmSwitchTab(t);
+      }
+    });
+    pmSwitchTab(activeTab); // restore — net-zero visual change
+  };
+  if (window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 1500 });
+  else setTimeout(run, 400);
 }
 
 // ── Breakout tab HTML builder (returns HTML string, no DOM side effects) ─────
