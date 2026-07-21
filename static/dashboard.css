@@ -16787,9 +16787,10 @@ tr.team-clickable {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 32px;
-  height: 26px;
-  padding: 0 8px;
+  min-width: 30px;
+  /* Symmetric padding instead of a fixed height + line-height:1 — the latter
+     let iOS Safari push the letter to the top of the box. */
+  padding: 5px 9px;
   border-radius: 8px;
   line-height: 1;
   font-size: 13px;
@@ -16799,12 +16800,14 @@ tr.team-clickable {
   flex-shrink: 0;
   cursor: default;
 }
-/* Grade colors as theme tokens (the old pastels were light-mode only and
-   broke on the dark card): A green, B blue, C amber, D red. */
+/* Grade colors: A green, B blue, C amber, D red. B uses an explicit blue,
+   not var(--accent) — the brand accent is a dark navy, which rendered the B
+   badge as a washed-out grey. */
 .grade-a { background: color-mix(in srgb, var(--win) 16%, transparent);     color: var(--win); }
-.grade-b { background: color-mix(in srgb, var(--accent) 15%, transparent);  color: var(--accent); }
+.grade-b { background: color-mix(in srgb, #3b82f6 16%, transparent);        color: #3b82f6; }
 .grade-c { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); }
 .grade-d { background: color-mix(in srgb, var(--loss) 15%, transparent);    color: var(--loss); }
+[data-theme="dark"] .grade-b { color: #60a5fa; }
 .grade-window-label {
   font-size: 11px;
   color: var(--text-muted);
