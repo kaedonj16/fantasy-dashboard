@@ -13563,8 +13563,15 @@ img, svg, canvas {
 }
 
 /* Game Log Year Sections */
+/* Each season is one card: a header strip on top and its table below share a
+   single border, rounding and shadow (site card tokens). */
 .game-log-year-section {
   margin-bottom: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
 }
 
 .game-log-year-header {
@@ -13573,17 +13580,19 @@ img, svg, canvas {
   justify-content: space-between;
   padding: 10px 12px;
   background: var(--bg-alt);
-  border: 1px solid var(--border);
-  border-radius: 10px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: opacity 0.2s ease;
   user-select: none;
 }
 
 .game-log-year-header:hover {
-  background: var(--bg-alt);
-  border-color: var(--border);
-  opacity: 0.8;
+  opacity: 0.85;
+}
+
+/* Divider under the header only while the season is open, so it reads as one
+   connected card rather than a header sitting on top of a separate table. */
+.game-log-year-header:has(+ .game-log-year-content.expanded) {
+  border-bottom: 1px solid var(--border);
 }
 
 .game-log-year-header-main {
@@ -13623,23 +13632,18 @@ img, svg, canvas {
   max-height: 0;
   overflow: hidden;
   transition: max-height 0.3s ease;
-  margin-top: 6px;
 }
 
 .game-log-year-content.expanded {
   max-height: 2000px;
 }
 
-/* Game Log Table */
+/* Game Log Table - the frame/rounding lives on .game-log-year-section now. */
 .game-log-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
-  margin-top: 8px;
   background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  overflow: hidden;
 }
 
 .game-log-table thead {
@@ -14923,19 +14927,12 @@ tr.team-clickable {
   .game-log-table {
     /* Size to content and fill the row, but don't force a fixed 800px that
        spreads a 7-column table into wide, gappy columns. Wider tables (QB
-       with every passing/rushing split) still overflow and scroll. */
+       with every passing/rushing split) still overflow and scroll. The
+       section card owns the frame; the table must not clip (overflow:hidden
+       would make it the scroll container and defeat the sticky columns). */
     width: max-content;
     min-width: 100%;
     font-size: 11px;
-    /* The base rule sets overflow:hidden (to clip rounded corners), which would
-       make the table itself the scroll container and defeat the sticky columns
-       below. Let the year-content wrapper be the scroller instead. */
-    overflow: visible;
-  }
-
-  /* Move corner rounding to the scrolling wrapper so it still clips cleanly. */
-  .game-log-year-content {
-    border-radius: 10px;
   }
 
   .game-log-table th {
@@ -14978,8 +14975,8 @@ tr.team-clickable {
   .game-log-table td:nth-child(3) {
     left: 94px;
     width: 54px;
-    /* Shadow marks where the frozen pane ends and scrolling begins. */
-    box-shadow: 6px 0 8px -6px rgba(0, 0, 0, 0.35);
+    /* Subtle divider marks where the frozen pane ends and scrolling begins. */
+    border-right: 1px solid var(--border);
   }
 
   /* Header corner cells stay above the frozen body cells (which sit above the
