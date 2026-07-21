@@ -13663,6 +13663,17 @@ img, svg, canvas {
   padding-left: 12px;
 }
 
+/* Date + Opp are fixed labels — shrink them to their content so the wider
+   Pts/stat columns absorb the remaining width instead of every column
+   spreading evenly across the table. */
+.game-log-table th:nth-child(1),
+.game-log-table td:nth-child(1),
+.game-log-table th:nth-child(2),
+.game-log-table td:nth-child(2) {
+  width: 1%;
+  white-space: nowrap;
+}
+
 .game-log-table tbody tr {
   border-bottom: 1px solid var(--border);
   transition: background 0.15s ease;
