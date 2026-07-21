@@ -9174,7 +9174,7 @@ function openPlayerModal(playerId, playerName, opts) {
         <div class="player-modal-title-text">
           <h2 class="player-modal-name">${playerName || 'Loading...'}</h2>
           <div class="player-modal-meta" id="playerModalMeta">
-            <div class="loading-spinner" style="width: 16px; height: 16px;"></div>
+            <span class="skeleton skeleton-line" style="display:inline-block;width:150px;height:12px;margin:2px 0 0;border-radius:5px;"></span>
           </div>
         </div>
       </div>
@@ -9194,21 +9194,27 @@ function openPlayerModal(playerId, playerName, opts) {
       <button class="pm-tab" data-tab="trades" onclick="pmSwitchTab('trades')">Trades</button>
     </div>
     <div class="player-modal-body" id="playerModalBody">
-      <div class="pm-skel" style="padding:18px;">
-        <div style="display:flex;align-items:center;gap:14px;">
-          <div class="skeleton" style="width:56px;height:56px;border-radius:50%;flex:0 0 auto;"></div>
-          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:9px;">
-            <div class="skeleton skeleton-line" style="width:52%;height:16px;margin:0;"></div>
-            <div class="skeleton skeleton-line" style="width:34%;height:11px;margin:0;"></div>
+      <div class="pm-skel" style="padding:16px 18px;">
+        <div class="pm-hero-row">
+          <div class="pm-hero-stat pm-hero-primary">
+            <div class="skeleton skeleton-line" style="width:64%;height:9px;margin:0 auto 9px;"></div>
+            <div class="skeleton skeleton-line" style="width:50%;height:22px;margin:2px auto 9px;"></div>
+            <div class="skeleton skeleton-line" style="width:80%;height:8px;margin:0 auto;"></div>
+          </div>
+          <div class="pm-hero-stat">
+            <div class="skeleton skeleton-line" style="width:64%;height:9px;margin:0 auto 9px;"></div>
+            <div class="skeleton skeleton-line" style="width:50%;height:22px;margin:2px auto 9px;"></div>
+            <div class="skeleton skeleton-line" style="width:80%;height:8px;margin:0 auto;"></div>
+          </div>
+          <div class="pm-hero-stat">
+            <div class="skeleton skeleton-line" style="width:64%;height:9px;margin:0 auto 9px;"></div>
+            <div class="skeleton skeleton-line" style="width:50%;height:22px;margin:2px auto 9px;"></div>
+            <div class="skeleton skeleton-line" style="width:80%;height:8px;margin:0 auto;"></div>
           </div>
         </div>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:18px;">
-          <div class="skeleton" style="height:58px;border-radius:10px;"></div>
-          <div class="skeleton" style="height:58px;border-radius:10px;"></div>
-          <div class="skeleton" style="height:58px;border-radius:10px;"></div>
-          <div class="skeleton" style="height:58px;border-radius:10px;"></div>
-        </div>
-        <div class="skeleton" style="height:190px;border-radius:12px;margin-top:14px;"></div>
+        <hr class="pm-section-divider">
+        <div class="skeleton skeleton-line" style="width:96px;height:10px;margin:14px 0 12px;"></div>
+        <div class="skeleton" style="height:200px;border-radius:12px;"></div>
       </div>
     </div>
   `;
