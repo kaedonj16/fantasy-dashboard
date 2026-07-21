@@ -8932,31 +8932,34 @@ select:focus {
 }
 
 .manager-pill {
-  padding: 6px 10px;
+  padding: 7px 15px;
   background: var(--row);
-  border: none;
+  border: 1px solid transparent;
   cursor: pointer;
   white-space: nowrap;
   font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
+  font-weight: 700;
+  color: var(--text-muted);
+  transition: background .14s ease, color .14s ease, border-color .14s ease;
 }
 
 .manager-pill.active {
   background: var(--accent);
   color: #ffffff;
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
-.manager-pill:hover {
-  background: var(--accent);
-  color: white;
+.manager-pill:not(.active):hover {
+  color: var(--text);
+  border-color: var(--border);
+  background: var(--card);
 }
 
 .manager-pills-carousel {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin-bottom: 10px;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .manager-pills-row {
@@ -9218,23 +9221,29 @@ git ad.page-sidebar {
 }
 
 .pill-arrow {
-  border: none;
-  background: var(--bg-alt);
-  color: var(--text);
-  width: 22px;
-  height: 22px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text-muted);
+  width: 30px;
+  height: 30px;
   border-radius: 999px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 16px;
+  line-height: 1;
   padding: 0;
+  flex-shrink: 0;
+  transition: background .14s ease, color .14s ease, border-color .14s ease;
 }
 
 .pill-arrow:hover {
-  background: var(--accent);
+  background: var(--accent-soft, rgba(56, 189, 248, .12));
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
 }
+.pill-arrow:active { transform: scale(0.94); }
 
 .pill-row {
   display: flex;
