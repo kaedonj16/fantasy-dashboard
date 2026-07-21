@@ -6181,30 +6181,19 @@ def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 
         })
 
     # Bulk-fetch breakout scores for waiver candidates from DB
+    # Breakout scores that align with the Breakout Engine page (same season
+    # resolution + eligibility gate), so the "Breakout" waiver signal never tags
+    # a player the engine wouldn't call a breakout.
     waiver_breakout: dict = {}
     try:
         _db_url = os.getenv("DATABASE_URL", "").strip()
         if _db_url and not any(t in _db_url for t in ("USER", "PASSWORD", "HOST")):
-            from dashboard_services.db import get_conn as _gc
-            _pids = [c["player_id"] for c in waiver_candidates[:100]]
-            if _pids:
-                with _gc() as _conn:
-                    with _conn.cursor() as _cur:
-                        _cur.execute(
-                            """
-                            SELECT DISTINCT ON (player_id)
-                                player_id,
-                                breakout_opportunity_score
-                            FROM breakout_opportunity_scores
-                            WHERE player_id = ANY(%s)
-                            ORDER BY player_id, as_of_date DESC
-                            """,
-                            (_pids,),
-                        )
-                        for _r in _cur.fetchall():
-                            _r = dict(_r)
-                            if _r.get("breakout_opportunity_score") is not None:
-                                waiver_breakout[_r["player_id"]] = float(_r["breakout_opportunity_score"])
+            from dashboard_services.breakout_api import aligned_breakout_scores as _abs
+            _bo_season = ctx.get("season") or ctx.get("current_season")
+            waiver_breakout = _abs(
+                [c["player_id"] for c in waiver_candidates[:100]],
+                int(_bo_season) if _bo_season else None,
+            )
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
@@ -10266,29 +10255,18 @@ def api_waiver_candidates():
             "rank_change_7d": row.get("rank_change_7d"),
         })
 
+    # Breakout scores that align with the Breakout Engine page (same season
+    # resolution + eligibility gate), so the "Breakout" waiver signal never tags
+    # a player the engine wouldn't call a breakout.
     waiver_breakout: dict = {}
     try:
         _db_url = os.getenv("DATABASE_URL", "").strip()
         if _db_url and not any(t in _db_url for t in ("USER", "PASSWORD", "HOST")):
-            from dashboard_services.db import get_conn as _gc
-            _pids = [c["player_id"] for c in candidates[:100]]
-            if _pids:
-                with _gc() as _conn:
-                    with _conn.cursor() as _cur:
-                        _cur.execute(
-                            """
-                            SELECT DISTINCT ON (player_id)
-                                player_id, breakout_opportunity_score
-                            FROM breakout_opportunity_scores
-                            WHERE player_id = ANY(%s)
-                            ORDER BY player_id, as_of_date DESC
-                            """,
-                            (_pids,),
-                        )
-                        for _r in _cur.fetchall():
-                            _r = dict(_r)
-                            if _r.get("breakout_opportunity_score") is not None:
-                                waiver_breakout[_r["player_id"]] = float(_r["breakout_opportunity_score"])
+            from dashboard_services.breakout_api import aligned_breakout_scores as _abs
+            waiver_breakout = _abs(
+                [c["player_id"] for c in candidates[:100]],
+                int(season) if season else None,
+            )
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 

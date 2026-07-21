@@ -68,19 +68,10 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-player-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 .wv-right { display: flex; align-items: center; gap: 10px; }
 .wv-value { font-size: 13px; font-weight: 700; color: var(--text); }
-/* Waiver signals: semantic ones route through tokens (theme-correct for free);
-   value stays indigo and injury stays rose so they read as distinct categories.
-   Both use color-mix backgrounds and a dark-mode brightening so they adapt too. */
+/* Waiver signals: the .wv-signal shape lives here; the .signal-* colour palette
+   is defined once in dashboard.css so this page and the Season/Offseason Hub
+   waiver-targets card share one identical set (no per-surface drift). */
 .wv-signal { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 8px; }
-.signal-breakout { background: color-mix(in srgb, var(--win) 15%, transparent); color: var(--win); }
-.signal-rising   { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
-.signal-value    { background: color-mix(in srgb, var(--indigo) 16%, transparent); color: var(--indigo); }
-.signal-aging    { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
-.signal-hold     { background: var(--row); color: var(--text-muted); }
-.signal-usage    { background: color-mix(in srgb, var(--loss) 15%, transparent); color: var(--loss); }
-.signal-injury      { background: color-mix(in srgb, #f43f5e 15%, transparent); color: #f43f5e; }
-[data-theme="dark"] .signal-injury { color: #fb7185; }
-.signal-injury-soft { background: color-mix(in srgb, var(--orange) 16%, transparent); color: var(--orange); }
 .wv-usage-chip {
   display: inline-block; font-size: 10px; font-weight: 700; color: var(--win);
   margin-left: 6px; white-space: nowrap;

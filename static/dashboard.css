@@ -6890,11 +6890,20 @@ select:focus {
   text-transform: uppercase;
   border: 1px solid transparent;
 }
-.signal-breakout { background: color-mix(in srgb, var(--warning) 15%, transparent); color: var(--warning); }
-.signal-rising    { background: color-mix(in srgb, var(--win) 14%, transparent);     color: var(--win); }
-.signal-value     { background: color-mix(in srgb, var(--accent) 13%, transparent);  color: var(--accent); }
-.signal-aging     { background: color-mix(in srgb, var(--loss) 14%, transparent);    color: var(--loss); }
-.signal-hold      { background: var(--row); color: var(--text-muted); border: 1px solid var(--border); }
+/* Canonical waiver-signal chip palette — the single source of truth for BOTH
+   waiver surfaces (the /waivers page and the Season/Offseason Hub targets card),
+   so a given signal reads the same colour everywhere. Breakout is green to match
+   the Breakout Engine's top-tier emerald identity (amber is that engine's
+   below-threshold, "not a breakout" colour). */
+.signal-breakout { background: color-mix(in srgb, var(--win) 15%, transparent); color: var(--win); }
+.signal-rising   { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.signal-value    { background: color-mix(in srgb, var(--indigo) 16%, transparent); color: var(--indigo); }
+.signal-aging    { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
+.signal-hold     { background: var(--row); color: var(--text-muted); }
+.signal-usage    { background: color-mix(in srgb, var(--loss) 15%, transparent); color: var(--loss); }
+.signal-injury      { background: color-mix(in srgb, #f43f5e 15%, transparent); color: #f43f5e; }
+[data-theme="dark"] .signal-injury { color: #fb7185; }
+.signal-injury-soft { background: color-mix(in srgb, var(--orange) 16%, transparent); color: var(--orange); }
 
 .waiver-arrow-up   { font-size: 10px; font-weight: 700; color: var(--win); }
 .waiver-arrow-down { font-size: 10px; font-weight: 700; color: var(--loss); }

@@ -157,6 +157,22 @@ def enrich_candidate_with_type(candidate: dict, tier_thresholds: Optional[Dict[s
     }
 
 
+def engine_breakout_excluded(position, age, readiness_usage_baseline) -> bool:
+    """The Breakout Engine's own 'this is not a breakout' rule, factored out so
+    any other surface (e.g. the waiver 'Breakout' signal) can gate on exactly the
+    same condition and never tag a player the engine itself would drop.
+
+    Currently: an established veteran QB (26+ already carrying a real usage
+    baseline) is not a breakout candidate. Keep this in lockstep with the filter
+    in get_breakout_candidates()."""
+    try:
+        return (position == 'QB'
+                and float(age or 0) >= 26
+                and float(readiness_usage_baseline or 0) >= 20)
+    except (TypeError, ValueError):
+        return False
+
+
 def _generate_key_reasons_from_details(row: dict) -> str:
     """Derive key_reasons from stored component_details when the DB column is empty."""
     cd = row.get('component_details') or {}
@@ -666,8 +682,9 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
 
     filtered = []
     for c in candidates:
-        # QB-specific: already an established veteran starter is not a breakout
-        if c.get('position') == 'QB' and float(c.get('age') or 0) >= 26 and float(c.get('readiness_usage_baseline') or 0) >= 20:
+        # An established veteran starter is not a breakout (shared predicate so
+        # the waiver 'Breakout' signal gates on the exact same rule).
+        if engine_breakout_excluded(c.get('position'), c.get('age'), c.get('readiness_usage_baseline')):
             continue
         filtered.append(c)
     candidates = filtered
@@ -1091,6 +1108,53 @@ def _resolve_bo_season(requested: Optional[int]) -> Optional[int]:
     if requested is None or requested < latest:
         return latest
     return requested
+
+
+def aligned_breakout_scores(player_ids, requested_season: Optional[int] = None) -> Dict[str, float]:
+    """Breakout scores for the given players that MATCH the Breakout Engine page.
+
+    The waiver 'Breakout' signal used to read raw breakout_opportunity_score with
+    no season filter (so a prior-season score could linger) and no eligibility
+    gate (so a veteran QB the engine excludes could still be tagged). This routes
+    both waiver surfaces through the same season resolution (_resolve_bo_season)
+    and the same exclusion rule (engine_breakout_excluded) the engine uses, so a
+    'Breakout' tag means exactly what the engine means. Returns {} on any error.
+    """
+    out: Dict[str, float] = {}
+    pids = [p for p in (player_ids or []) if p]
+    if not pids:
+        return out
+    try:
+        season = _resolve_bo_season(requested_season)
+        if not season:
+            return out
+        query = """
+            SELECT DISTINCT ON (player_id)
+                player_id,
+                breakout_opportunity_score,
+                position,
+                (component_details->'player_readiness'->>'age')::numeric AS age,
+                (component_details->'player_readiness'->>'usage_baseline_score')::numeric AS readiness_usage_baseline
+            FROM breakout_opportunity_scores
+            WHERE season = %s
+              AND player_id = ANY(%s)
+            ORDER BY player_id, as_of_date DESC, calculated_at DESC
+        """
+        with get_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(query, [season, pids])
+                rows = cursor.fetchall()
+        for row in rows:
+            r = dict(row)
+            score = r.get("breakout_opportunity_score")
+            if score is None:
+                continue
+            if engine_breakout_excluded(r.get("position"), r.get("age"), r.get("readiness_usage_baseline")):
+                continue
+            out[r["player_id"]] = float(score)
+    except Exception:
+        logger.debug("aligned_breakout_scores failed", exc_info=True)
+    return out
 
 
 @breakout_bp.route('/candidates')
