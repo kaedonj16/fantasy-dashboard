@@ -15405,6 +15405,18 @@ async function fetchTeamDetails(rosterId) {
     const data = await response.json();
     renderTeamDetails(data);
 
+    // Warm the Trades tab in the background so switching to it is instant
+    // (Graphs are already built at render time; only Trades fetches lazily).
+    if (!window._tmTradesLoaded && window._tmRosterId) {
+      const _tmWarmTrades = function () {
+        if (window._tmTradesLoaded || !document.getElementById('tm-panel-trades')) return;
+        window._tmTradesLoaded = true;
+        tmLoadTrades(window._tmRosterId);
+      };
+      if (window.requestIdleCallback) window.requestIdleCallback(_tmWarmTrades, { timeout: 1500 });
+      else setTimeout(_tmWarmTrades, 400);
+    }
+
   } catch (error) {
     _clear();
     console.error('[team-modal] Error fetching team details:', error);
