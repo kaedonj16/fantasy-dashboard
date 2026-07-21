@@ -14814,6 +14814,11 @@ tr.team-clickable {
 @media (max-width: 768px) {
   .player-modal-overlay { padding: 16px 4px; }
   .player-modal {
+    /* Fixed height (not max-height) so the sheet stays the same size whether a
+       tab is loading or loaded — the body scrolls internally instead of the
+       whole modal growing and shrinking. */
+    height: 88dvh;
+    height: 88vh;
     max-height: 88dvh;
     max-height: 88vh;
     border-radius: 18px;
