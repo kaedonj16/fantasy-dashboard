@@ -1168,7 +1168,7 @@ _DRAFT_HISTORY_HTML = r"""
         if (resp.unsupported){ listEl.innerHTML = '<div class="dr-hist-empty">Draft history is available for Sleeper leagues.</div>'; return; }
         render(resp.drafts || []);
       })
-      .catch(function(){ listEl.innerHTML = '<div class="dr-hist-empty">Could not load drafts.</div>'; });
+      .catch(function(){ window.brErrorState(listEl, 'Could not load drafts.', loadList, { compact: true }); });
   }
 
   loadList();

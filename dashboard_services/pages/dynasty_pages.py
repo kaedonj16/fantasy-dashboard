@@ -346,10 +346,18 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
     risers_html  = "".join(_player_row(p, "riser")  for p in risers)
     fallers_html = "".join(_player_row(p, "faller") for p in fallers)
 
+    _rf_empty = (
+        '<div class="empty-state is-compact">'
+        '<span class="empty-state-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"/>'
+        '<path d="M4 19h16"/><path d="m7 14 3-3 3 2 4-5"/></svg></span>'
+        '<p class="empty-state-msg">No movement to show yet — check back once values shift.</p>'
+        '</div>'
+    )
     if not risers_html:
-        risers_html  = '<p class="rf-empty">No data available yet.</p>'
+        risers_html = _rf_empty
     if not fallers_html:
-        fallers_html = '<p class="rf-empty">No data available yet.</p>'
+        fallers_html = _rf_empty
 
     range_note = (
         f"Comparing {html.escape(str(comp_date))} to {html.escape(str(latest_date))}"

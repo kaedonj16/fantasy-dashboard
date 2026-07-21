@@ -5621,6 +5621,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     )
 
     # ── left-column dynasty rankings table ───────────────────────────────────
+    _max_total = max((r["total"] for r in team_rows), default=0) or 1
     table_rows_html = ""
     for i, row in enumerate(team_rows, 1):
         av = row["avatar"]
@@ -5634,15 +5635,21 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         )
         picks_label = f"{first_rd} 1st" if first_rd else f"{row['n_picks']} picks" if row["n_picks"] else "–"
         picks_td = "" if platform == "espn" else f"<td class='num'>{picks_label}</td>"
+        # Medal rank for the top 3; a value bar scaled to the leader so magnitude
+        # reads at a glance (scoped to .dynasty-table so other tables are unchanged).
+        rank_cls = f" rank-{i}" if i <= 3 else ""
+        tr_cls = " class='is-top3'" if i <= 3 else ""
+        bar_pct = max(4, min(100, round(row["total"] / _max_total * 100)))
         table_rows_html += (
-            f"<tr>"
-            f"<td class='num'>{i}</td>"
+            f"<tr{tr_cls}>"
+            f"<td class='num'><span class='dyn-rank{rank_cls}'>{i}</span></td>"
             f"<td class='team'>{img} {row['name']}</td>"
-            f"<td class='num'>{row['total']:.0f}</td>"
+            f"<td class='num dyn-val-cell'><span class='dyn-val'>{row['total']:.0f}</span>"
+            f"<span class='dyn-bar'><span style='width:{bar_pct}%'></span></span></td>"
             f"<td class='num'>{row['player_v']:.0f}</td>"
             f"{picks_td}"
-            f"<td class='num'>{row['value_pct']:.1f}%</td>"
-            f"<td class='num'>{row['prod_pct']:.1f}%</td>"
+            f"<td class='num dyn-pct'>{row['value_pct']:.1f}%</td>"
+            f"<td class='num dyn-pct'>{row['prod_pct']:.1f}%</td>"
             f"</tr>"
         )
 
@@ -6181,30 +6188,19 @@ def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 
         })
 
     # Bulk-fetch breakout scores for waiver candidates from DB
+    # Breakout scores that align with the Breakout Engine page (same season
+    # resolution + eligibility gate), so the "Breakout" waiver signal never tags
+    # a player the engine wouldn't call a breakout.
     waiver_breakout: dict = {}
     try:
         _db_url = os.getenv("DATABASE_URL", "").strip()
         if _db_url and not any(t in _db_url for t in ("USER", "PASSWORD", "HOST")):
-            from dashboard_services.db import get_conn as _gc
-            _pids = [c["player_id"] for c in waiver_candidates[:100]]
-            if _pids:
-                with _gc() as _conn:
-                    with _conn.cursor() as _cur:
-                        _cur.execute(
-                            """
-                            SELECT DISTINCT ON (player_id)
-                                player_id,
-                                breakout_opportunity_score
-                            FROM breakout_opportunity_scores
-                            WHERE player_id = ANY(%s)
-                            ORDER BY player_id, as_of_date DESC
-                            """,
-                            (_pids,),
-                        )
-                        for _r in _cur.fetchall():
-                            _r = dict(_r)
-                            if _r.get("breakout_opportunity_score") is not None:
-                                waiver_breakout[_r["player_id"]] = float(_r["breakout_opportunity_score"])
+            from dashboard_services.breakout_api import aligned_breakout_scores as _abs
+            _bo_season = ctx.get("season") or ctx.get("current_season")
+            waiver_breakout = _abs(
+                [c["player_id"] for c in waiver_candidates[:100]],
+                int(_bo_season) if _bo_season else None,
+            )
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
@@ -6245,7 +6241,7 @@ def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 
                 <div class="os-waiver-sub">{subline}</div>
               </div>
               <div class="os-waiver-right">
-                <span class="waiver-signal {sig_cls}">{sig_label}</span>
+                <span class="chip chip--sm {sig_cls}">{sig_label}</span>
                 <span class="os-waiver-value">{p['value']:.0f}</span>
               </div>
             </div>
@@ -6396,51 +6392,46 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             except Exception:
                 logger.debug("suppressed exception", exc_info=True)
 
-        badge_bits = []
-        if first_round_count > 0:
-            badge_bits.append(f"{first_round_count} first{'s' if first_round_count != 1 else ''}")
-        if pick_count > 0:
-            badge_bits.append(f"{pick_count} future picks")
-
-        badge_html = ""
-        if badge_bits:
-            badge_html = "".join(
-                f"<span class='os-snapshot-chip'>{bit}</span>" for bit in badge_bits[:2]
-            )
-
         roster_cards.append({
             "team_name": team_name,
             "roster_value": roster_value,
             "pick_count": pick_count,
+            "first_round_count": first_round_count,
             "roster_id": rid,
-            "html": f"""
-            <div class="os-snapshot-card team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{team_name}">
-              <div class="os-snapshot-top">
-                <div class="os-snapshot-rank-block">
-                  <div class="os-snapshot-team">{team_name}</div>
-                  <div class="os-snapshot-meta">Total value</div>
-                </div>
-                <div class="os-snapshot-value">{roster_value:.0f}</div>
-              </div>
-              <div class="os-snapshot-bottom">
-                <div class="os-snapshot-chip-row">
-                  {badge_html}
-                </div>
-              </div>
-            </div>
-            """
         })
 
     roster_cards.sort(key=lambda x: x["roster_value"], reverse=True)
 
+    # Value leaderboard: rank medallion (gold/silver/bronze for the top 3), a bar
+    # scaled to the leader so magnitudes read at a glance, and canonical chips.
+    max_value = roster_cards[0]["roster_value"] if roster_cards and roster_cards[0]["roster_value"] > 0 else 1
     ranked_snapshot_html = []
     for idx, card in enumerate(roster_cards, start=1):
+        rv = card["roster_value"]
+        pct = max(4, min(100, round(rv / max_value * 100)))
+        fr = card["first_round_count"]
+        pc = card["pick_count"]
+        chips = []
+        if fr > 0:
+            chips.append(f"<span class='chip chip--sm'>{fr} first{'s' if fr != 1 else ''}</span>")
+        if pc > 0:
+            chips.append(f"<span class='chip chip--sm'>{pc} future pick{'s' if pc != 1 else ''}</span>")
+        chips_html = f"<div class=\"os-snap-chips\">{''.join(chips)}</div>" if chips else ""
+        medal_cls = f"is-{idx}" if idx <= 3 else ""
         ranked_snapshot_html.append(
             f"""
-            <div class="os-snapshot-rank-wrap">
-              <div class="os-snapshot-rank">#{idx}</div>
-              <div class="os-snapshot-rank-card">
-                {card["html"]}
+            <div class="os-snap-row {medal_cls} team-clickable" style="cursor:pointer;" data-roster-id="{card['roster_id']}" data-team-name="{card['team_name']}">
+              <div class="os-snap-medal">{idx}</div>
+              <div class="os-snap-body">
+                <div class="os-snap-head">
+                  <div class="os-snap-name">{card['team_name']}</div>
+                  <div class="os-snap-valblock">
+                    <div class="os-snap-value">{rv:,.0f}</div>
+                    <div class="os-snap-kicker">Total value</div>
+                  </div>
+                </div>
+                <div class="os-snap-bar"><span style="width:{pct}%"></span></div>
+                {chips_html}
               </div>
             </div>
             """
@@ -10266,29 +10257,18 @@ def api_waiver_candidates():
             "rank_change_7d": row.get("rank_change_7d"),
         })
 
+    # Breakout scores that align with the Breakout Engine page (same season
+    # resolution + eligibility gate), so the "Breakout" waiver signal never tags
+    # a player the engine wouldn't call a breakout.
     waiver_breakout: dict = {}
     try:
         _db_url = os.getenv("DATABASE_URL", "").strip()
         if _db_url and not any(t in _db_url for t in ("USER", "PASSWORD", "HOST")):
-            from dashboard_services.db import get_conn as _gc
-            _pids = [c["player_id"] for c in candidates[:100]]
-            if _pids:
-                with _gc() as _conn:
-                    with _conn.cursor() as _cur:
-                        _cur.execute(
-                            """
-                            SELECT DISTINCT ON (player_id)
-                                player_id, breakout_opportunity_score
-                            FROM breakout_opportunity_scores
-                            WHERE player_id = ANY(%s)
-                            ORDER BY player_id, as_of_date DESC
-                            """,
-                            (_pids,),
-                        )
-                        for _r in _cur.fetchall():
-                            _r = dict(_r)
-                            if _r.get("breakout_opportunity_score") is not None:
-                                waiver_breakout[_r["player_id"]] = float(_r["breakout_opportunity_score"])
+            from dashboard_services.breakout_api import aligned_breakout_scores as _abs
+            waiver_breakout = _abs(
+                [c["player_id"] for c in candidates[:100]],
+                int(season) if season else None,
+            )
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 

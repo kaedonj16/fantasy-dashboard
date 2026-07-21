@@ -825,7 +825,7 @@ def _build_rivalry_card(
               if (d.error) { result.innerHTML = '<div class="rivalry-empty">' + d.error + '</div>'; return; }
               var games = d.games || [];
               if (!games.length) {
-                result.innerHTML = '<div class="rivalry-empty">These two managers have never faced each other.</div>';
+                window.brEmptyState(result, { icon: 'search', title: 'No head-to-head yet', message: 'These two managers have never faced each other.', compact: true });
                 return;
               }
               var nA = nameOf(selA), nB = nameOf(selB);
@@ -903,7 +903,7 @@ def _build_rivalry_card(
               result.innerHTML = html;
             })
             .catch(function() {
-              result.innerHTML = '<div class="rivalry-empty">Could not load rivalry data. Try again.</div>';
+              window.brErrorState(result, 'Could not load rivalry data.', function() { goBtn.click(); }, { compact: true });
             });
         });
       })();

@@ -1030,7 +1030,7 @@ def build_trade_calculator_body(
               <div class="otc-mini-section">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                   <div class="otc-mini-section-title">Top Risers</div>
-                  <a href="/top-movers" class="otc-view-all-link" style="font-size: 12px; color: var(--accent); text-decoration: none; font-weight: 500;">View All &rarr;</a>
+                  <a href="/top-movers" class="otc-view-all-link">View All &rarr;</a>
                 </div>
                 <div id="otcRisersList" class="otc-mini-list">
                   <div class="otc-movers-empty">Loading movers...</div>
@@ -1049,7 +1049,7 @@ def build_trade_calculator_body(
               <div class="otc-mini-section">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                   <div class="otc-mini-section-title">Breakouts</div>
-                  <a href="{breakouts_url}" class="{breakouts_link_class}" style="font-size: 12px; color: var(--accent); text-decoration: none; font-weight: 500;">{breakouts_link_text}</a>
+                  <a href="{breakouts_url}" class="{breakouts_link_class}">{breakouts_link_text}</a>
                 </div>
                 <div id="otcBreakoutsList" class="otc-mini-list">
                   <div class="otc-movers-empty">Loading breakouts...</div>

@@ -467,19 +467,78 @@ function fadeInCard(el) {
   el.classList.add('card-fade-in');
 }
 
+// Inline state icons — the shipped Font Awesome is subsetted (some fa-* glyphs
+// render blank), so the shared empty/error states use inline SVG to stay solid.
+var BR_STATE_ICONS = {
+  empty:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5 5.2 4.6A2 2 0 0 1 7 3.6h10a2 2 0 0 1 1.8 1L21 8.5"/><path d="M3 8.5h5l1.2 2.2h5.6L16 8.5h5v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.7-4.7"/></svg>',
+  error:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 4.3 2.5 18a2 2 0 0 0 1.7 3h15.6a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4.5"/><circle cx="12" cy="17" r=".9" fill="currentColor" stroke="none"/></svg>',
+  lock:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>',
+  retry:  '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.6 8a5.6 5.6 0 1 1-1.7-4"/><path d="M13.9 2.4V5.2h-2.8"/></svg>'
+};
+function _brStateEsc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 /**
- * Render a consistent empty state inside a container.
+ * Shared empty/error state. One look for "nothing here" and "couldn't load"
+ * across every surface, replacing the old hand-rolled grey-text divs.
+ *   window.brEmptyState(el, { icon:'search', title:'No players', message:'…' })
+ *   window.brErrorState(el, 'Unable to load lineup data', reloadFn)
+ * container may be an element or an element id. `retry` is a function wired to
+ * a "Try again" button; `icon` is a key of BR_STATE_ICONS (or pass iconSvg).
+ */
+window.brEmptyState = function (container, opts) {
+  var el = (typeof container === 'string') ? document.getElementById(container) : container;
+  if (!el) return;
+  opts = opts || {};
+  var icon = opts.iconSvg || BR_STATE_ICONS[opts.icon] || BR_STATE_ICONS.empty;
+  var cls = 'empty-state'
+    + (opts.compact ? ' is-compact' : '')
+    + (opts.error ? ' empty-state-error' : '');
+  el.innerHTML =
+    '<div class="' + cls + '">' +
+      '<span class="empty-state-icon">' + icon + '</span>' +
+      (opts.title ? '<p class="empty-state-title">' + _brStateEsc(opts.title) + '</p>' : '') +
+      (opts.message ? '<p class="empty-state-msg">' + _brStateEsc(opts.message) + '</p>' : '') +
+    '</div>';
+  var box = el.firstElementChild;
+  if (opts.retry && box) {
+    var act = document.createElement('div');
+    act.className = 'empty-state-action';
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'empty-state-retry';
+    btn.innerHTML = BR_STATE_ICONS.retry + '<span>' + _brStateEsc(opts.retryLabel || 'Try again') + '</span>';
+    btn.addEventListener('click', opts.retry);
+    act.appendChild(btn);
+    box.appendChild(act);
+  }
+  return el;
+};
+
+/** Error convenience wrapper: alert icon + optional retry. */
+window.brErrorState = function (container, message, retry, opts) {
+  opts = opts || {};
+  return window.brEmptyState(container, {
+    error: true,
+    icon: 'error',
+    title: opts.title || 'Couldn’t load',
+    message: message || 'Something went wrong.',
+    retry: retry,
+    retryLabel: opts.retryLabel,
+    compact: opts.compact
+  });
+};
+
+/**
+ * Legacy signature kept for existing callers.
  * Usage: emptyState(el, 'No players found', 'fa-user-slash')
  */
 function emptyState(container, message, iconClass) {
-  if (!container) return;
-  iconClass = iconClass || 'fa-inbox';
-  container.innerHTML =
-    '<div class="empty-state">' +
-      '<i class="fa-solid ' + iconClass + ' empty-state-icon"></i>' +
-      '<p class="empty-state-msg">' + (message || 'Nothing here yet.') + '</p>' +
-    '</div>';
+  window.brEmptyState(container, { message: message || 'Nothing here yet.', icon: 'empty' });
 }
+window.emptyState = emptyState;
 
 // ── Motion layer ──────────────────────────────────────────────────────────────
 // Small, reusable animation helpers used across the site. Everything here is a
@@ -2080,7 +2139,7 @@ function initPlayoffOdds(root = document) {
         .then(r => r.json())
         .then(data => {
           if (data.error || !data.odds) {
-            panel.innerHTML = '<p class="po-error">Unable to load playoff odds.</p>';
+            window.brErrorState(panel, 'Unable to load playoff odds.', () => { delete panel.dataset.loadedAt; btn.click(); }, { compact: true });
             return;
           }
           panel.innerHTML = _renderPlayoffOdds(data);
@@ -2100,8 +2159,8 @@ function initPlayoffOdds(root = document) {
           }
         })
         .catch(() => {
-          panel.innerHTML = '<p class="po-error">Unable to load playoff odds.</p>';
           delete panel.dataset.loadedAt;
+          window.brErrorState(panel, 'Unable to load playoff odds.', () => { delete panel.dataset.loadedAt; btn.click(); }, { compact: true });
         });
     });
   });
@@ -9135,9 +9194,21 @@ function openPlayerModal(playerId, playerName, opts) {
       <button class="pm-tab" data-tab="trades" onclick="pmSwitchTab('trades')">Trades</button>
     </div>
     <div class="player-modal-body" id="playerModalBody">
-      <div class="player-modal-loading">
-        <div class="loading-spinner"></div>
-        <div>Loading player data...</div>
+      <div class="pm-skel" style="padding:18px;">
+        <div style="display:flex;align-items:center;gap:14px;">
+          <div class="skeleton" style="width:56px;height:56px;border-radius:50%;flex:0 0 auto;"></div>
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:9px;">
+            <div class="skeleton skeleton-line" style="width:52%;height:16px;margin:0;"></div>
+            <div class="skeleton skeleton-line" style="width:34%;height:11px;margin:0;"></div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:18px;">
+          <div class="skeleton" style="height:58px;border-radius:10px;"></div>
+          <div class="skeleton" style="height:58px;border-radius:10px;"></div>
+          <div class="skeleton" style="height:58px;border-radius:10px;"></div>
+          <div class="skeleton" style="height:58px;border-radius:10px;"></div>
+        </div>
+        <div class="skeleton" style="height:190px;border-radius:12px;margin-top:14px;"></div>
       </div>
     </div>
   `;
@@ -10075,14 +10146,14 @@ function pmSwitchTab(tab) {
         if (!panel.isConnected) return;
         const logsByYear = data.game_logs_by_year || {};
         if (!Object.keys(logsByYear).length) {
-          panel.innerHTML = '<div class="player-modal-loading" style="padding:40px 0;"><div style="color:var(--text-muted);font-size:13px;">No game log data available.</div></div>';
+          window.brEmptyState(panel, { icon: 'search', title: 'No game logs', message: 'No game-by-game data is available for this player yet.', compact: true });
           return;
         }
         panel.innerHTML = _buildStatsHTML(logsByYear, false, (pmTabBar && pmTabBar.dataset.pmPosition) || '');
       })
       .catch(() => {
         if (panel.isConnected) {
-          panel.innerHTML = '<div class="player-modal-loading" style="padding:40px 0;"><div style="color:var(--text-muted);font-size:13px;">Could not load stats.</div></div>';
+          window.brErrorState(panel, 'Could not load stats.', () => { panel.dataset.loaded = ''; pmSwitchTab(tab); }, { compact: true });
         }
       });
   }
@@ -10146,7 +10217,7 @@ function pmSwitchTab(tab) {
       })
       .catch(() => {
         if (panel.isConnected) {
-          panel.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">Could not load trade history.</div></div>';
+          window.brErrorState(panel, 'Could not load trade history.', () => { panel.dataset.loaded = ''; pmSwitchTab(tab); }, { compact: true });
         }
       });
   }
@@ -11261,7 +11332,7 @@ function pmToggleWeeklyTrends(playerId) {
       pmWtRender(wrap, wrapPosition);
     })
     .catch(function() {
-      body.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Could not load weekly data.</div>';
+      window.brErrorState(body, 'Could not load weekly data.', null, { compact: true });
     });
 }
 
@@ -13225,7 +13296,7 @@ function openProspectModal(playerId, playerName) {
     })
     .catch(function(err) {
       console.error('Error loading prospect data:', err);
-      content.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">Could not load prospect data.</div>';
+      window.brErrorState(content, 'Could not load prospect data.', function() { location.reload(); });
     });
 }
 
@@ -14568,7 +14639,8 @@ function cmpRenderMetrics() {
     cmpRenderWeekly(2);
   }).catch(() => {
     if (token !== _cmpRenderToken) return;
-    metricsDiv.innerHTML = selectors() + '<div id="compareMetricsRows"><div style="padding:12px 0;color:var(--text-muted);font-size:13px;">Could not load advanced metrics.</div></div>';
+    metricsDiv.innerHTML = selectors() + '<div id="compareMetricsRows"></div>';
+    window.brErrorState('compareMetricsRows', 'Could not load advanced metrics.', null, { compact: true });
     _cmpInitWkBars();
   });
 }
@@ -14630,13 +14702,13 @@ function _cmpLoadGameLogs(pid, position, containerId) {
       if (!el.isConnected) return;
       const logsByYear = data.game_logs_by_year || {};
       if (!Object.keys(logsByYear).length) {
-        el.innerHTML = '<div style="padding:24px 0;color:var(--text-muted);font-size:13px;text-align:center;">No game log data available.</div>';
+        window.brEmptyState(el, { icon: 'search', title: 'No game logs', message: 'No game-by-game data is available for this player yet.', compact: true });
         return;
       }
       el.innerHTML = _buildStatsHTML(logsByYear, true, position || '');
     })
     .catch(() => {
-      if (el.isConnected) el.innerHTML = '<div style="padding:24px 0;color:var(--text-muted);font-size:13px;text-align:center;">Could not load game logs.</div>';
+      if (el.isConnected) window.brErrorState(el, 'Could not load game logs.', null, { compact: true });
     });
 }
 
