@@ -13771,16 +13771,16 @@ img, svg, canvas {
 /* Games where player didn't play */
 .game-log-no-stats {
   opacity: 0.5;
-  background-color: #f9fafb;
+  background-color: var(--row);
 }
 
 .game-log-no-stats:hover {
   opacity: 0.7;
-  background-color: #f3f4f6;
+  background-color: var(--bg-alt);
 }
 
 .game-log-no-stats td:first-child {
-  background-color: #f9fafb;
+  background-color: var(--row);
 }
 
 .game-log-proj-badge {
@@ -13809,16 +13809,16 @@ img, svg, canvas {
 
 .game-log-bye {
   opacity: 0.45;
-  background-color: #f9fafb;
+  background-color: var(--row);
 }
 
 .game-log-bye:hover {
   opacity: 0.6;
-  background-color: #f3f4f6;
+  background-color: var(--bg-alt);
 }
 
 .game-log-bye td:first-child {
-  background-color: #f9fafb;
+  background-color: var(--row);
 }
 
 /* ============================================
@@ -15005,7 +15005,7 @@ tr.team-clickable {
   }
   .game-log-no-stats td:nth-child(-n+3),
   .game-log-bye td:nth-child(-n+3) {
-    background-color: #f9fafb;
+    background-color: var(--row);
   }
 
   /* Adjust year header for mobile */
