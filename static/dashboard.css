@@ -1860,6 +1860,25 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
   margin-bottom: 12px;
 }
 
+/* Value Rankings has a single, non-switchable tab — render it as a card title
+   rather than a lone interactive-looking pill. */
+.dynasty-value-strip .tab-btn,
+.dynasty-value-strip .tab-btn.active,
+.dynasty-value-strip .tab-btn:hover {
+  background: transparent;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  padding: 2px 4px 8px;
+  border-radius: 0;
+  cursor: default;
+  text-align: left;
+  align-self: flex-start;
+  width: auto;
+  flex: 0 0 auto;
+}
+
 .card, .side-card, .award-card, .trade-calc-card {
   background: var(--card);
   border: 1px solid var(--border);
