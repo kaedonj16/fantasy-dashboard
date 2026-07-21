@@ -14929,12 +14929,15 @@ tr.team-clickable {
     font-size: 11px;
     /* The base rule sets overflow:hidden (to clip rounded corners), which would
        make the table itself the scroll container and defeat the sticky columns
-       below. Let the year-content wrapper be the scroller instead. */
+       below. Let the year-content wrapper own the border, rounding and scroll
+       instead so the corners stay soft and the sticky columns work. */
     overflow: visible;
+    border: none;
+    border-radius: 0;
   }
 
-  /* Move corner rounding to the scrolling wrapper so it still clips cleanly. */
   .game-log-year-content {
+    border: 1px solid var(--border);
     border-radius: 10px;
   }
 
@@ -14978,8 +14981,8 @@ tr.team-clickable {
   .game-log-table td:nth-child(3) {
     left: 94px;
     width: 54px;
-    /* Shadow marks where the frozen pane ends and scrolling begins. */
-    box-shadow: 6px 0 8px -6px rgba(0, 0, 0, 0.35);
+    /* Subtle divider marks where the frozen pane ends and scrolling begins. */
+    border-right: 1px solid var(--border);
   }
 
   /* Header corner cells stay above the frozen body cells (which sit above the
