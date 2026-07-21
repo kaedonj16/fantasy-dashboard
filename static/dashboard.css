@@ -2111,7 +2111,7 @@ label {
 /* ============================================
    BUTTONS & ACTIONS
    ============================================ */
-.badge, .chip, .trade-player-chip, .pill-toggle, .manager-pill, .link-pill {
+.badge, .trade-player-chip, .pill-toggle, .manager-pill, .link-pill {
   border-radius: 999px;
 }
 
@@ -2699,18 +2699,40 @@ thead th {
   background: #475569;
 }
 
+/* ── Canonical chip ───────────────────────────────────────────────────────
+   The one status-chip shape for the whole site. Base is a neutral boxy chip;
+   a semantic colour modifier (.chip--good / --info / --accent / --warn / --bad
+   / --alert / --hot / --neutral) fills it. .chip--sm is the compact 10px size.
+   Domain colour classes (e.g. the waiver .signal-*) are aliased onto the same
+   modifier colours below, so there is a single source of truth. New chips
+   should use `.chip` + a modifier; bespoke chip classes migrate to it. */
 .chip {
-  background: var(--row);
-  border: 1px solid var(--grid);
-  padding: 2px 6px;
-  color: var(--text-muted);
-  white-space: nowrap;
   display: inline-flex;
   align-items: center;
+  gap: 4px;
+  background: var(--row);
+  border: 1px solid var(--grid);
+  border-radius: 6px;
+  padding: 2px 8px;
+  color: var(--text-muted);
   font-size: 11px;
   font-weight: 700;
-  margin-top: 2px;
+  line-height: 1.45;
+  white-space: nowrap;
 }
+.chip--sm { font-size: 10px; padding: 2px 7px; }
+/* Colour modifiers — each paired with the equivalent waiver .signal-* alias so
+   the colour is defined exactly once. Modifiers drop the neutral base border. */
+.chip--good,   .signal-breakout    { background: color-mix(in srgb, var(--win) 15%, transparent);     color: var(--win);          border-color: transparent; }
+.chip--info,   .signal-rising      { background: color-mix(in srgb, var(--accent) 14%, transparent);  color: var(--accent);       border-color: transparent; }
+.chip--accent, .signal-value       { background: color-mix(in srgb, var(--indigo) 16%, transparent);  color: var(--indigo);       border-color: transparent; }
+.chip--warn,   .signal-aging       { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning);      border-color: transparent; }
+.chip--bad,    .signal-usage       { background: color-mix(in srgb, var(--loss) 15%, transparent);    color: var(--loss);         border-color: transparent; }
+.chip--alert,  .signal-injury      { background: color-mix(in srgb, #f43f5e 15%, transparent);        color: #f43f5e;             border-color: transparent; }
+.chip--hot,    .signal-injury-soft { background: color-mix(in srgb, var(--orange) 16%, transparent);  color: var(--orange);       border-color: transparent; }
+.chip--neutral,.signal-hold        { background: var(--row);                                          color: var(--text-muted);   border-color: transparent; }
+[data-theme="dark"] .chip--alert,
+[data-theme="dark"] .signal-injury { color: #fb7185; }
 
 .chip-value {
   font-weight: 700;
@@ -6879,35 +6901,9 @@ select:focus {
   flex-shrink: 0;
 }
 
-/* Waiver signal chip SHAPE — one rule for both waiver surfaces (the /waivers
-   page's .wv-signal and the Hub targets card's .waiver-signal). Boxy 6px radius
-   to match the page's sibling chips (matchup, injury, start/sit badges) and the
-   site's status badges; the .signal-* palette adds the colour. */
-.wv-signal,
-.waiver-signal {
-  display: inline-flex;
-  align-items: center;
-  font-size: 10px;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 6px;
-  border: 1px solid transparent;
-  white-space: nowrap;
-}
-/* Canonical waiver-signal chip palette — the single source of truth for BOTH
-   waiver surfaces (the /waivers page and the Season/Offseason Hub targets card),
-   so a given signal reads the same colour everywhere. Breakout is green to match
-   the Breakout Engine's top-tier emerald identity (amber is that engine's
-   below-threshold, "not a breakout" colour). */
-.signal-breakout { background: color-mix(in srgb, var(--win) 15%, transparent); color: var(--win); }
-.signal-rising   { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
-.signal-value    { background: color-mix(in srgb, var(--indigo) 16%, transparent); color: var(--indigo); }
-.signal-aging    { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
-.signal-hold     { background: var(--row); color: var(--text-muted); }
-.signal-usage    { background: color-mix(in srgb, var(--loss) 15%, transparent); color: var(--loss); }
-.signal-injury      { background: color-mix(in srgb, #f43f5e 15%, transparent); color: #f43f5e; }
-[data-theme="dark"] .signal-injury { color: #fb7185; }
-.signal-injury-soft { background: color-mix(in srgb, var(--orange) 16%, transparent); color: var(--orange); }
+/* Waiver signal chips render as the canonical `.chip .chip--sm` + a .signal-*
+   colour alias (defined alongside the .chip--* modifiers by the .chip base), so
+   both waiver surfaces share the one site-wide chip. No shape/colour lives here. */
 
 .waiver-arrow-up   { font-size: 10px; font-weight: 700; color: var(--win); }
 .waiver-arrow-down { font-size: 10px; font-weight: 700; color: var(--loss); }

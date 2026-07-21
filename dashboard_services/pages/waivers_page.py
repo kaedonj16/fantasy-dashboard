@@ -68,10 +68,9 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-player-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 .wv-right { display: flex; align-items: center; gap: 10px; }
 .wv-value { font-size: 13px; font-weight: 700; color: var(--text); }
-/* Waiver signal chips: both the .wv-signal SHAPE and the .signal-* colour
-   palette live once in dashboard.css (shared with the Hub targets card's
-   .waiver-signal), so the chips are identical across surfaces and match the
-   site's pill convention. Nothing chip-related is overridden here. */
+/* Waiver signal chips use the site's canonical `.chip .chip--sm` + a .signal-*
+   colour alias (all defined once in dashboard.css). Nothing chip-related is
+   overridden here. */
 .wv-usage-chip {
   display: inline-block; font-size: 10px; font-weight: 700; color: var(--win);
   margin-left: 6px; white-space: nowrap;
@@ -470,7 +469,7 @@ function wvRenderWaivers() {{
         <div class="wv-player-sub">${{[p.position, p.team, p.pos_rank_label, p.age ? 'Age ' + parseFloat(p.age).toFixed(1) : ''].filter(Boolean).join(' · ')}}${{usageChip}}</div>
       </div>
       <div class="wv-right">
-        <span class="wv-signal ${{p.signal_class}}">${{p.signal}}</span>
+        <span class="chip chip--sm ${{p.signal_class}}">${{p.signal}}</span>
         <span class="wv-value">${{Math.round(p.value)}}</span>
       </div>
     </div>

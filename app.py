@@ -6234,7 +6234,7 @@ def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 
                 <div class="os-waiver-sub">{subline}</div>
               </div>
               <div class="os-waiver-right">
-                <span class="waiver-signal {sig_cls}">{sig_label}</span>
+                <span class="chip chip--sm {sig_cls}">{sig_label}</span>
                 <span class="os-waiver-value">{p['value']:.0f}</span>
               </div>
             </div>
