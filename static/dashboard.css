@@ -324,6 +324,28 @@ table, .standings-table, .mini-value, .mini-stat, .sr-stat-value,
 .wl-chip, .history-card-value, .fun-award-winner {
   font-variant-numeric: tabular-nums;
 }
+/* Tabular figures on the card/row value surfaces too (tables are covered
+   above), so digit columns line up and a value that ticks up or down doesn't
+   shift its neighbours. tabular-nums is a no-op on non-numeric text, so a
+   broad list here is safe. */
+.wv-value, .wv-ss-stat-val, .wv-cmp-a, .wv-cmp-b, .wv-cmp-poschip,
+.player-modal-stat-value, .team-modal-stat-value, .pm-hero-val, .pm-comp-val,
+.pr-rank, .pr-value, .rnk-rank, .rnk-val, .btm-rank, .btm-rank-num, .st-rank,
+.otc-value, .otc-stat-value, .otc-value-score, .otc-value-rank, .otc-chip-value, .otc-chip-delta,
+.otc-dropdown-value, .otc-dropdown-rank, .otc-mini-delta, .otc-sugg-pkg-value, .otc-sugg-dropdown-val,
+.player-trade-value, .player-value, .compare-pts, .compare-pts-val, .compare-result-value,
+.compare-metric-p1-val, .compare-metric-p2-val, .trade-ai-score, .roster-grade-score,
+.dynasty-value, .da-val, .da-rank, .dvt-val, .dvt-rank, .dvt-pos-rank,
+.rk-hero-val, .rk-meas-val, .rk-comp-val, .am-rank,
+.sched-fpts, .sched-rank, .sched-rank-num, .sched-ease-num,
+.os-stat-value, .os-snapshot-value, .os-snapshot-rank, .os-waiver-value,
+.adp-value, .all-players-value, .chip-value, .csd-value, .mu-score, .breakout-score,
+.analytics-bar-val, .analytics-pick-val, .analytics-pick-num, .live-pts, .team-score, .team-value,
+.pos-rank, .sc-stat-val, .sc-player-val, .sc-pos-rank, .slv-kind-value, .tick-val,
+.m-proj, .m-score, .m-score-val, .m-wp-pct, .dc-proj, .dc-pick-val, .dr-proj,
+.game-log-proj, .game-log-proj-pts, .game-log-table-pts, .po-pct, .po-proj, .trend-delta {
+  font-variant-numeric: tabular-nums;
+}
 
 /* Consistent, accessible focus ring everywhere (mouse clicks stay clean). */
 :focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
