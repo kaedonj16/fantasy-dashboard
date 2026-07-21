@@ -21877,6 +21877,26 @@ def api_player_details(player_id: str):
         return _api_err("Request failed", e)
 
 
+# Short-TTL cache of computed game logs, keyed by player + season + scoring
+# settings. The Stats tab globs and parses many per-week stat/schedule/projection
+# files across every season on each call; caching the result lets the modal's
+# prefetch and any repeat opens skip all of that disk work. TTL is short so new
+# weekly stats and updated projections still surface.
+_GAME_LOGS_CACHE: Dict[str, tuple] = {}
+_GAME_LOGS_CACHE_TTL = 300      # seconds
+_GAME_LOGS_CACHE_MAX = 1500     # entries; evict oldest when exceeded
+
+
+def _game_logs_cache_key(player_id: str, season: int, scoring_settings: dict) -> str:
+    try:
+        ss = hashlib.md5(
+            json.dumps(scoring_settings, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()[:12]
+    except Exception:
+        ss = "0"
+    return f"{player_id}|{season}|{ss}"
+
+
 @app.route("/api/player-game-logs/<player_id>")
 def api_player_game_logs(player_id: str):
     """Game logs for the Stats tab -- lazy-loaded separately from player-details."""
@@ -21907,6 +21927,13 @@ def api_player_game_logs(player_id: str):
                 "rush_yd": 0.1,  "rush_td": 6.0, "rec": 1.0,
                 "rec_yd": 0.1,   "rec_td": 6.0,  "fum_lost": -2.0,
             }
+
+        # Serve a recent identical computation straight from cache, skipping all
+        # the per-week file globbing/parsing below.
+        _cache_key = _game_logs_cache_key(player_id, season, scoring_settings)
+        _cached = _GAME_LOGS_CACHE.get(_cache_key)
+        if _cached and time.time() - _cached[0] < _GAME_LOGS_CACHE_TTL:
+            return jsonify({"game_logs_by_year": _cached[1]})
 
         players_index = load_relevant_index() or {}
         player_meta = players_index.get(player_id) or {}
@@ -22181,6 +22208,12 @@ def api_player_game_logs(player_id: str):
                     if _rk:
                         _g["opp_rank"] = _rk
                         _g["opp_total"] = _total
+
+        # Cache the fully-computed result (bounded; evict oldest when full).
+        if len(_GAME_LOGS_CACHE) >= _GAME_LOGS_CACHE_MAX:
+            for _k in sorted(_GAME_LOGS_CACHE, key=lambda k: _GAME_LOGS_CACHE[k][0])[:_GAME_LOGS_CACHE_MAX // 10]:
+                _GAME_LOGS_CACHE.pop(_k, None)
+        _GAME_LOGS_CACHE[_cache_key] = (time.time(), game_logs_by_year)
 
         return jsonify({"game_logs_by_year": game_logs_by_year})
     except Exception as e:
