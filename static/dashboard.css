@@ -14921,7 +14921,11 @@ tr.team-clickable {
   }
 
   .game-log-table {
-    min-width: 800px;
+    /* Size to content and fill the row, but don't force a fixed 800px that
+       spreads a 7-column table into wide, gappy columns. Wider tables (QB
+       with every passing/rushing split) still overflow and scroll. */
+    width: max-content;
+    min-width: 100%;
     font-size: 11px;
   }
 
