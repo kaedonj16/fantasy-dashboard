@@ -6880,17 +6880,17 @@ select:focus {
 }
 
 /* Waiver signal chip SHAPE — one rule for both waiver surfaces (the /waivers
-   page's .wv-signal and the Hub targets card's .waiver-signal). Pill-shaped to
-   match the site's chip/badge convention (see the border-radius:999px rule for
-   .badge/.chip/.pill-toggle above); the .signal-* palette adds the colour. */
+   page's .wv-signal and the Hub targets card's .waiver-signal). Boxy 6px radius
+   to match the page's sibling chips (matchup, injury, start/sit badges) and the
+   site's status badges; the .signal-* palette adds the colour. */
 .wv-signal,
 .waiver-signal {
   display: inline-flex;
   align-items: center;
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 700;
-  padding: 3px 10px;
-  border-radius: 999px;
+  padding: 2px 8px;
+  border-radius: 6px;
   border: 1px solid transparent;
   white-space: nowrap;
 }
