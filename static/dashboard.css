@@ -2622,6 +2622,32 @@ thead th {
 }
 .empty-state-cta:hover { opacity: .85; }
 
+/* Error variant: same layout, a muted red-tinted icon, and a neutral "Try
+   again" button (an outline so it doesn't read as the page's primary action).
+   Rendered by window.brErrorState / window.brEmptyState in app.js. */
+.empty-state-error .empty-state-icon { color: var(--loss, #ef4444); opacity: .85; }
+.empty-state-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 15px;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  margin-top: 4px;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.empty-state-retry:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft, rgba(56,189,248,.10)); }
+.empty-state-retry svg { width: 13px; height: 13px; }
+.empty-state.is-compact { padding: 20px 16px; gap: 6px; }
+.empty-state.is-compact .empty-state-icon { font-size: 22px; }
+.empty-state.is-compact .empty-state-icon svg { width: 26px; height: 26px; }
+
 /* ============================================
    TRADE CALCULATOR
    ============================================ */

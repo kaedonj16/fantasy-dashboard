@@ -390,8 +390,12 @@ def build_advanced_metrics_body(
           </button>
         </div>
 
-        <div id="amEmpty" style="display:none;text-align:center;padding:40px 0;color:var(--text-muted);">
-          No data for this metric yet.
+        <div id="amEmpty" style="display:none;">
+          <div class="empty-state">
+            <span class="empty-state-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"/><path d="M4 19h16"/><rect x="7" y="11" width="3" height="5" rx="1"/><rect x="12.5" y="8" width="3" height="8" rx="1"/><rect x="18" y="13" width="3" height="3" rx="1" opacity=".5"/></svg></span>
+            <p class="empty-state-title">No data yet</p>
+            <p class="empty-state-msg">This metric doesn’t have enough sample to chart for the current filters.</p>
+          </div>
         </div>
 
         <div id="amAvgNote" class="am-avg-note" style="display:none;">
@@ -2433,7 +2437,9 @@ _AM_JS = r"""
       empty.style.display = ''; tbody.innerHTML = '';
       if (avgNote) avgNote.style.display = 'none';
       if (paginationEl) paginationEl.style.display = 'none';
-      empty.textContent = state.rosterOnly ? 'None of your players rank for this metric.' : 'No data for this metric yet.';
+      window.brEmptyState(empty, state.rosterOnly
+        ? { icon: 'search', title: 'No ranked players', message: 'None of your rostered players rank for this metric yet.' }
+        : { icon: 'search', title: 'No data yet', message: 'This metric doesn’t have enough sample to rank for the current filters.' });
       return;
     }
     empty.style.display = 'none';
@@ -2964,7 +2970,7 @@ _AM_JS = r"""
       }
       const pts = ptsAll.slice(0, topN);
       if (!pts.length) {
-        plot.innerHTML = '<div class="am-graph-empty">No players have data for both metrics with the current filters.</div>';
+        window.brEmptyState(plot, { icon: 'search', title: 'Nothing to plot', message: 'No players have data for both metrics with the current filters.' });
         return;
       }
       // Preload headshots so they're browser-cached by first hover.
@@ -2986,7 +2992,7 @@ _AM_JS = r"""
         }
       });
     }).catch(function() {
-      if (token === _amGraphToken) plot.innerHTML = '<div class="am-graph-empty">Could not load graph data.</div>';
+      if (token === _amGraphToken) window.brErrorState(plot, 'Could not load graph data.', window.amRenderGraph);
     });
   };
   // Builds a fully self-contained SVG (explicit theme colors, embedded logo

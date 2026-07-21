@@ -421,7 +421,7 @@ function wvLoad() {{
   fetch(`/api/waiver-candidates?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
     .then(r => r.json())
     .then(d => {{ wvWaiverData = d.candidates || []; wvRenderWaivers(); }})
-    .catch(() => {{ document.getElementById('wvWaiverList').innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:20px;">Unable to load</div>'; }});
+    .catch(() => {{ window.brErrorState('wvWaiverList', 'Unable to load waiver data.', wvLoad); }});
 
   fetch(`/api/start-sit-options?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
     .then(r => r.json())
@@ -438,8 +438,7 @@ function wvLoad() {{
       wvRenderStartSit();
     }})
     .catch(() => {{
-      document.getElementById('wvStartSit').innerHTML =
-        '<div style="color:var(--text-muted);text-align:center;padding:20px;">Unable to load lineup data</div>';
+      window.brErrorState('wvStartSit', 'Unable to load lineup data.', wvLoad);
     }});
 }}
 
@@ -448,7 +447,7 @@ function wvRenderWaivers() {{
   const list = document.getElementById('wvWaiverList');
   let players = wvWaiverData;
   if (wvCurrentPos !== 'ALL') players = players.filter(p => p.position === wvCurrentPos);
-  if (!players.length) {{ list.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:20px;">No players found</div>'; return; }}
+  if (!players.length) {{ window.brEmptyState('wvWaiverList', {{ icon: 'search', title: 'No waiver targets', message: 'Nothing to add at this position right now.', compact: true }}); return; }}
   list.innerHTML = players.slice(0, 20).map(p => {{
     let usageChip = '';
     if (p.usage_delta != null && p.usage_delta >= 1) {{
@@ -708,7 +707,8 @@ function wvRenderStartSit() {{
     return `<div class="wv-ss-pos-group"><div class="wv-ss-pos-label">${{pos}} <span style="font-size:10px;font-weight:500;color:var(--text-muted);">(${{slotCount}} starter${{slotCount > 1 ? 's' : ''}})</span></div>${{rows}}</div>`;
   }}).join('');
 
-  el.innerHTML = sections || '<div style="color:var(--text-muted);text-align:center;padding:20px;">No roster data found</div>';
+  if (sections) {{ el.innerHTML = sections; }}
+  else {{ window.brEmptyState(el, {{ icon: 'search', title: 'No roster data', message: 'We couldn’t find a lineup to analyze for this position.' }}); }}
 }}
 
 document.addEventListener('DOMContentLoaded', wvLoad);

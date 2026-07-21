@@ -122,9 +122,12 @@ def build_prospects_body(is_admin: bool = False) -> str:
     <div id="rkList"></div>
 
     <!-- Empty -->
-    <div id="rkEmpty" style="display:none;text-align:center;padding:40px;color:var(--text-muted);">
-      <div style="font-size:24px;margin-bottom:8px;"><i class="fa-solid fa-football" aria-hidden="true"></i></div>
-      No prospects match your filters
+    <div id="rkEmpty" style="display:none;">
+      <div class="empty-state">
+        <span class="empty-state-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.7-4.7"/></svg></span>
+        <p class="empty-state-title">No prospects match</p>
+        <p class="empty-state-msg">Try clearing a filter or widening your position and tier selections.</p>
+      </div>
     </div>
 
     <!-- Pagination -->
@@ -1150,8 +1153,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
         }).join('');
       })
       .catch(function() {
-        var cb = document.getElementById('rkComparablesBody');
-        if (cb) cb.innerHTML = '<span>Could not load comparables.</span>';
+        window.brErrorState('rkComparablesBody', 'Could not load comparables.', null, { compact: true });
       });
   }
 
