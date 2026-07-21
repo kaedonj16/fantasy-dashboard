@@ -1406,12 +1406,6 @@ def page_trade_database(platform: str, season: int, league_id: str):
       }}
       .tdb-card-date {{ font-size: 11px; color: var(--text-muted); font-weight: 500; }}
       .tdb-badges {{ display: flex; gap: 5px; flex-wrap: wrap; }}
-      .tdb-badge {{
-        font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 8px;
-        background: var(--row, #1e293b); color: var(--text);
-        border: 1px solid var(--border);
-      }}
-      .tdb-badge-sf {{ background: #7c3aed22; color: #a78bfa; border-color: #7c3aed44; }}
       .tdb-card-body {{ display: grid; grid-template-columns: 1fr 1px 1fr; }}
       .tdb-col {{ padding: 12px 14px; display: flex; flex-direction: column; gap: 5px; }}
       .tdb-col-divider {{ background: var(--border); }}
@@ -1422,9 +1416,16 @@ def page_trade_database(platform: str, season: int, league_id: str):
       .tdb-asset.tdb-match {{ font-weight: 800; color: var(--accent, #3b82f6); }}
       .tdb-asset.tdb-pick {{ color: var(--text-muted); font-size: 14px; font-weight: 500; }}
       .tdb-pos {{
-        font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px;
-        background: var(--row, #1e293b); color: var(--text); flex-shrink: 0;
+        font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 5px;
+        background: var(--row); color: var(--text-muted); flex-shrink: 0; letter-spacing: .02em;
       }}
+      /* Position colours (match the roster badges site-wide) */
+      .tdb-pos.pos-QB {{ background: color-mix(in srgb, #3b82f6 16%, transparent); color: #3b82f6; }}
+      .tdb-pos.pos-RB {{ background: color-mix(in srgb, #22c55e 16%, transparent); color: #16a34a; }}
+      .tdb-pos.pos-WR {{ background: color-mix(in srgb, #f59e0b 18%, transparent); color: #d97706; }}
+      .tdb-pos.pos-TE {{ background: color-mix(in srgb, #8b5cf6 16%, transparent); color: #8b5cf6; }}
+      [data-theme="dark"] .tdb-pos.pos-RB {{ color: #22c55e; }}
+      [data-theme="dark"] .tdb-pos.pos-WR {{ color: #f59e0b; }}
       @media(max-width: 480px) {{
         .tdb-card-body {{ grid-template-columns: 1fr; }}
         .tdb-col-divider {{ height: 1px; width: auto; }}
@@ -1662,15 +1663,15 @@ def page_trade_database(platform: str, season: int, league_id: str):
         const matchIdsB = new Set(selectedB.map(p => p.id));
         listEl.innerHTML = '';
         trades.forEach(t => {{
-          const sfBadge    = t.is_superflex === true  ? '<span class="tdb-badge tdb-badge-sf">SF</span>'
-                           : t.is_superflex === false ? '<span class="tdb-badge">1QB</span>' : '';
-          const teamsBadge = t.num_teams    ? `<span class="tdb-badge">${{t.num_teams}} Teams</span>` : '';
-          const scoreBadge = t.scoring_type ? `<span class="tdb-badge">${{t.scoring_type.toUpperCase()}}</span>` : '';
+          const sfBadge    = t.is_superflex === true  ? '<span class="chip chip--sm chip--accent">SF</span>'
+                           : t.is_superflex === false ? '<span class="chip chip--sm">1QB</span>' : '';
+          const teamsBadge = t.num_teams    ? `<span class="chip chip--sm">${{t.num_teams}} Teams</span>` : '';
+          const scoreBadge = t.scoring_type ? `<span class="chip chip--sm">${{t.scoring_type.toUpperCase()}}</span>` : '';
           function renderAsset(a) {{
             const pid   = a.player_id ? String(a.player_id) : '';
             const match = pid && (matchIdsA.has(pid) || matchIdsB.has(pid));
             const cls = 'tdb-asset' + (a.type === 'pick' ? ' tdb-pick' : '') + (match ? ' tdb-match' : '');
-            const pos = a.position && a.type === 'player' ? `<span class="tdb-pos">${{a.position}}</span>` : '';
+            const pos = a.position && a.type === 'player' ? `<span class="tdb-pos pos-${{a.position}}">${{a.position}}</span>` : '';
             return `<div class="${{cls}}">${{a.name}}${{pos}}</div>`;
           }}
           const sideA = (t.side_a || []).map(renderAsset).join('') || '<div class="tdb-asset" style="color:var(--text-muted)">-</div>';
