@@ -6367,13 +6367,25 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     # Build pick-value lookup from WLS-derived table (overlays FantasyCalc/DynastyProcess)
     pick_by_key: Dict[str, float] = load_pick_value_table() or {}
 
+    # TE-premium scaling so the snapshot total matches the team modal (and the
+    # trade calculator / activity feed), which scale TE values up for leagues
+    # that award bonus points per TE reception.
+    _tep_snap = te_premium_from_settings(ctx.get("scoring_settings"))
+
     roster_cards = []
 
     for r in rosters:
         rid = str(r.get("roster_id"))
         team_name = roster_map.get(rid, f"Roster {rid}")
         player_ids = [str(pid) for pid in (r.get("players") or [])]
-        roster_value = sum(values_by_id.get(pid, 0.0) for pid in player_ids)
+        roster_value = sum(
+            apply_te_premium(
+                values_by_id.get(pid, 0.0),
+                (players_index.get(pid) or {}).get("pos"),
+                _tep_snap,
+            )
+            for pid in player_ids
+        )
         team_picks = picks_by_roster.get(rid, []) if isinstance(picks_by_roster, dict) else []
         pick_count = len(team_picks)
 
