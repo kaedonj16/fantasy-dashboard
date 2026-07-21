@@ -1860,11 +1860,13 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
   margin-bottom: 12px;
 }
 
-/* Value Rankings has a single, non-switchable tab — render it as a card title
-   rather than a lone interactive-looking pill. */
-.dynasty-value-strip .tab-btn,
-.dynasty-value-strip .tab-btn.active,
-.dynasty-value-strip .tab-btn:hover {
+/* Value Rankings currently has a single, non-switchable tab — render THAT as a
+   card title rather than a lone interactive-looking pill. Gated on
+   :only-of-type so it only applies while there's exactly one tab: if a second
+   tab is ever added to this strip, both revert to normal clickable pills. */
+.dynasty-value-strip .tab-btn:only-of-type,
+.dynasty-value-strip .tab-btn:only-of-type.active,
+.dynasty-value-strip .tab-btn:only-of-type:hover {
   background: transparent;
   color: var(--text);
   font-size: 16px;
