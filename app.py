@@ -5621,6 +5621,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     )
 
     # ── left-column dynasty rankings table ───────────────────────────────────
+    _max_total = max((r["total"] for r in team_rows), default=0) or 1
     table_rows_html = ""
     for i, row in enumerate(team_rows, 1):
         av = row["avatar"]
@@ -5634,15 +5635,21 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         )
         picks_label = f"{first_rd} 1st" if first_rd else f"{row['n_picks']} picks" if row["n_picks"] else "–"
         picks_td = "" if platform == "espn" else f"<td class='num'>{picks_label}</td>"
+        # Medal rank for the top 3; a value bar scaled to the leader so magnitude
+        # reads at a glance (scoped to .dynasty-table so other tables are unchanged).
+        rank_cls = f" rank-{i}" if i <= 3 else ""
+        tr_cls = " class='is-top3'" if i <= 3 else ""
+        bar_pct = max(4, min(100, round(row["total"] / _max_total * 100)))
         table_rows_html += (
-            f"<tr>"
-            f"<td class='num'>{i}</td>"
+            f"<tr{tr_cls}>"
+            f"<td class='num'><span class='dyn-rank{rank_cls}'>{i}</span></td>"
             f"<td class='team'>{img} {row['name']}</td>"
-            f"<td class='num'>{row['total']:.0f}</td>"
+            f"<td class='num dyn-val-cell'><span class='dyn-val'>{row['total']:.0f}</span>"
+            f"<span class='dyn-bar'><span style='width:{bar_pct}%'></span></span></td>"
             f"<td class='num'>{row['player_v']:.0f}</td>"
             f"{picks_td}"
-            f"<td class='num'>{row['value_pct']:.1f}%</td>"
-            f"<td class='num'>{row['prod_pct']:.1f}%</td>"
+            f"<td class='num dyn-pct'>{row['value_pct']:.1f}%</td>"
+            f"<td class='num dyn-pct'>{row['prod_pct']:.1f}%</td>"
             f"</tr>"
         )
 

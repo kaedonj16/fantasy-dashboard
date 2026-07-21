@@ -2362,6 +2362,41 @@ button:hover {
   min-height: 46px;
 }
 
+/* Value Rankings — a more editorial take on the shared standings table
+   (scoped to .dynasty-table so every other standings table is unchanged):
+   medal ranks for the top 3, a value bar scaled to the leader, an emphasised
+   value, and de-emphasised secondary percentages. */
+.dynasty-table td { border-top-color: color-mix(in srgb, var(--grid) 55%, transparent); padding: 9px 6px; }
+.dynasty-table tbody tr.is-top3 td { background: color-mix(in srgb, var(--accent) 4%, transparent); }
+.dynasty-table tbody tr:hover td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.dynasty-table td.team img { width: 24px; height: 24px; box-shadow: 0 0 0 1px var(--border); }
+.dyn-rank {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 24px; height: 24px; padding: 0 5px; border-radius: 7px;
+  font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text-muted);
+}
+.dyn-rank.rank-1 { background: linear-gradient(135deg, #fcd34d, #f59e0b); color: #3f2d03; }
+.dyn-rank.rank-2 { background: linear-gradient(135deg, #eef2f7, #a9b6c7); color: #27303d; }
+.dyn-rank.rank-3 { background: linear-gradient(135deg, #eabb92, #c2803f); color: #3a2408; }
+.dyn-val { display: block; font-weight: 800; font-variant-numeric: tabular-nums; }
+.dyn-bar { display: block; height: 3px; margin: 5px auto 0; width: 80%; max-width: 68px; border-radius: 999px; background: var(--row); overflow: hidden; }
+.dyn-bar > span { display: block; height: 100%; border-radius: 999px; background: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+.dynasty-table tbody tr:nth-child(1) .dyn-bar > span { background: linear-gradient(90deg, #fcd34d, #f59e0b); }
+.dynasty-table tbody tr:nth-child(2) .dyn-bar > span { background: linear-gradient(90deg, #d3dbe6, #a9b6c7); }
+.dynasty-table tbody tr:nth-child(3) .dyn-bar > span { background: linear-gradient(90deg, #eabb92, #c2803f); }
+.dyn-pct { color: var(--text-muted); font-weight: 600; }
+/* Narrow screens: keep the emphasis but add zero width vs the original table
+   so all five columns still fit — drop the bar, keep 20px avatars, and render
+   the top-3 rank as a coloured number instead of a filled badge box. */
+@media (max-width: 640px) {
+  .dynasty-table .dyn-bar { display: none; }
+  .dynasty-table td.team img { width: 20px; height: 20px; }
+  .dynasty-table .dyn-rank { min-width: 0; height: auto; padding: 0; background: none !important; box-shadow: none; }
+  .dynasty-table .dyn-rank.rank-1 { color: #d97706; }
+  .dynasty-table .dyn-rank.rank-2 { color: #64748b; }
+  .dynasty-table .dyn-rank.rank-3 { color: #b45309; }
+}
+
 @media (max-width: 640px) {
   .standings-table {
     font-size: 12px;
