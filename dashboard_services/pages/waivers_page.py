@@ -186,15 +186,50 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 }
 .wv-cmp-row:last-child { border-bottom: none; }
 .wv-cmp-head { border-bottom: 2px solid var(--border); padding: 4px 0 10px; align-items: end; }
-.wv-cmp-a { text-align: right; font-weight: 700; font-size: 13px; }
-.wv-cmp-b { text-align: left;  font-weight: 700; font-size: 13px; }
+.wv-cmp-a { text-align: right; font-weight: 700; font-size: 13px; color: var(--text); }
+.wv-cmp-b { text-align: left;  font-weight: 700; font-size: 13px; color: var(--text); }
 .wv-cmp-lbl {
-  text-align: center; color: var(--text-muted); font-size: 11px;
-  text-transform: uppercase; letter-spacing: .03em; font-weight: 600;
+  text-align: center; color: var(--text-subtle); font-size: 10.5px;
+  text-transform: uppercase; letter-spacing: .04em; font-weight: 700;
 }
+/* Winner gets a soft green pill; the loser just stays neutral (no red — a
+   lower projection isn't a failure). The value is wrapped in .wv-cmp-v so the
+   pill hugs the number instead of filling the whole column. */
+.wv-cmp-v { display: inline-block; }
+.wv-cmp-a.wv-compare-win, .wv-cmp-b.wv-compare-win { color: var(--win); font-weight: 800; }
+.wv-compare-win .wv-cmp-v {
+  background: color-mix(in srgb, var(--win) 14%, transparent);
+  padding: 2px 9px; border-radius: 999px;
+}
+.wv-compare-lose { color: var(--text); font-weight: 700; }
 .wv-cmp-hcol:first-child { text-align: right; }
-.wv-cmp-name { font-size: 15px; font-weight: 800; color: var(--text); }
-.wv-cmp-sub  { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.wv-cmp-name { font-size: 15px; font-weight: 800; color: var(--text); line-height: 1.15; }
+.wv-cmp-sub  { font-size: 11px; color: var(--text-muted); }
+.wv-cmp-headmeta { display: flex; align-items: center; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
+.wv-cmp-hcol:first-child .wv-cmp-headmeta { justify-content: flex-end; }
+.wv-cmp-poschip {
+  font-size: 10px; font-weight: 800; letter-spacing: .02em;
+  padding: 1px 7px; border-radius: 999px; white-space: nowrap;
+}
+.wv-cmp-vs {
+  align-self: center; justify-self: center; font-size: 10px; font-weight: 800;
+  color: var(--text-subtle); letter-spacing: .06em;
+  border: 1px solid var(--border); border-radius: 999px; padding: 3px 7px;
+}
+/* Verdict banner: the advisor's actual call, up top where it's read first. */
+.wv-cmp-verdict {
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  padding: 11px 14px; border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--win) 9%, transparent);
+}
+.wv-cmp-verdict.toss { background: rgba(148,163,184,.10); }
+.wv-cmp-verdict-pill {
+  font-size: 10px; font-weight: 800; letter-spacing: .07em;
+  padding: 3px 9px; border-radius: 6px; background: var(--win); color: #fff; flex-shrink: 0;
+}
+.wv-cmp-verdict.toss .wv-cmp-verdict-pill { background: var(--text-muted); }
+.wv-cmp-verdict-name { font-size: 14px; font-weight: 800; color: var(--text); }
+.wv-cmp-verdict-why  { font-size: 12px; color: var(--text-muted); }
 </style>
 """
 
@@ -497,6 +532,42 @@ function wvWinPair(av, bv, higher) {{
   return aBetter ? ['wv-compare-win', 'wv-compare-lose'] : ['wv-compare-lose', 'wv-compare-win'];
 }}
 
+// Position-tinted rank chip (QB38, WR12…) for the compare header.
+const WV_POS_COL = {{ QB: '#3b82f6', RB: '#22c55e', WR: '#f59e0b', TE: '#8b5cf6', K: '#14b8a6', DEF: '#64748b' }};
+function wvPosChip(p) {{
+  const lbl = p.pos_rank_label || p.position || '';
+  if (!lbl) return '';
+  const c = WV_POS_COL[p.position] || 'var(--text-muted)';
+  return '<span class="wv-cmp-poschip" style="color:' + c + ';background:color-mix(in srgb,' + c + ' 15%,transparent);">' + lbl + '</span>';
+}}
+
+// The advisor's call: weigh projection (heaviest), floor, matchup and Vegas
+// total; whoever leads on the weighted tally is the start. Returns the winning
+// side plus the one or two edges that decided it, or a toss-up when it's level.
+function wvVerdict(a, b, da, db) {{
+  const edges = [];
+  if (da.proj != null && db.proj != null && da.proj !== db.proj) {{
+    const wi = da.proj > db.proj ? 0 : 1;
+    edges.push({{ idx: wi, w: 3, txt: 'higher projection (+' + Math.abs(da.proj - db.proj).toFixed(1) + ')' }});
+  }}
+  if (da.floorNum != null && db.floorNum != null && da.floorNum !== db.floorNum) {{
+    edges.push({{ idx: da.floorNum > db.floorNum ? 0 : 1, w: 2, txt: 'a safer floor' }});
+  }}
+  if (a.def_rank && b.def_rank && a.def_rank !== b.def_rank) {{
+    edges.push({{ idx: a.def_rank < b.def_rank ? 0 : 1, w: 2, txt: 'an easier matchup' }});
+  }}
+  if (da.vegasNum != null && db.vegasNum != null && da.vegasNum !== db.vegasNum) {{
+    edges.push({{ idx: da.vegasNum > db.vegasNum ? 0 : 1, w: 1, txt: 'a higher team total' }});
+  }}
+  if (!edges.length) return null;
+  let s0 = 0, s1 = 0;
+  edges.forEach(e => {{ if (e.idx === 0) s0 += e.w; else s1 += e.w; }});
+  if (s0 === s1) return {{ idx: null }};
+  const wi = s0 > s1 ? 0 : 1;
+  const reasons = edges.filter(e => e.idx === wi).sort((x, y) => y.w - x.w).slice(0, 2).map(e => e.txt);
+  return {{ idx: wi, reasons: reasons }};
+}}
+
 function wvRenderCompare() {{
   const panel = document.getElementById('wvComparePanel');
   const a = wvCompare[0], b = wvCompare[1];
@@ -504,12 +575,21 @@ function wvRenderCompare() {{
   panel.style.display = 'block';
 
   const da = wvCmpDerive(a), db = wvCmpDerive(b);
-  // Shared single label per metric: value(a) · LABEL · value(b).
+  // True when a value carries no data, so a row where both sides are empty can
+  // be dropped instead of printing a lonely pair of dashes.
+  const isEmpty = (v) => {{
+    if (v == null) return true;
+    const t = String(v).replace(/<[^>]*>/g, '').trim();
+    return t === '' || t === '–' || t === '-';
+  }};
+  // Shared single label per metric: value(a) · LABEL · value(b). Winning side's
+  // value is pilled via .wv-cmp-v; rows empty on both sides are skipped.
   function row(label, aHtml, bHtml, aCls, bCls) {{
+    if (isEmpty(aHtml) && isEmpty(bHtml)) return '';
     return '<div class="wv-cmp-row">' +
-      '<span class="wv-cmp-a ' + (aCls || '') + '">' + aHtml + '</span>' +
+      '<span class="wv-cmp-a ' + (aCls || '') + '"><span class="wv-cmp-v">' + aHtml + '</span></span>' +
       '<span class="wv-cmp-lbl">' + label + '</span>' +
-      '<span class="wv-cmp-b ' + (bCls || '') + '">' + bHtml + '</span>' +
+      '<span class="wv-cmp-b ' + (bCls || '') + '"><span class="wv-cmp-v">' + bHtml + '</span></span>' +
       '</div>';
   }}
   const dash = (v) => (v == null ? '–' : v);
@@ -518,7 +598,28 @@ function wvRenderCompare() {{
   const wFl   = wvWinPair(da.floorNum, db.floorNum, true);
   const wVeg  = wvWinPair(da.vegasNum, db.vegasNum, true);
 
-  const sub = (p) => [p.team, p.pos_rank_label, p.opponent || (p.on_bye ? 'BYE' : '')].filter(Boolean).join(' · ');
+  const sub = (p) => [p.team, p.opponent || (p.on_bye ? 'BYE' : '')].filter(Boolean).join(' · ');
+
+  // Recommendation banner up top — the reason people opened the advisor.
+  const v = wvVerdict(a, b, da, db);
+  let verdictHtml = '';
+  if (v && v.idx != null) {{
+    const w = v.idx === 0 ? a : b;
+    let why = v.reasons.join(' and ');
+    why = why.charAt(0).toUpperCase() + why.slice(1);
+    verdictHtml =
+      '<div class="wv-cmp-verdict">' +
+        '<span class="wv-cmp-verdict-pill">START</span>' +
+        '<span class="wv-cmp-verdict-name">' + w.name + '</span>' +
+        '<span class="wv-cmp-verdict-why">' + why + '</span>' +
+      '</div>';
+  }} else if (v) {{
+    verdictHtml =
+      '<div class="wv-cmp-verdict toss">' +
+        '<span class="wv-cmp-verdict-pill">TOSS-UP</span>' +
+        '<span class="wv-cmp-verdict-why">Nearly identical outlook — go with your gut.</span>' +
+      '</div>';
+  }}
 
   panel.innerHTML = `
     <div class="wv-compare-panel">
@@ -526,11 +627,12 @@ function wvRenderCompare() {{
         <span>Compare</span>
         <button onclick="wvClearCompare()" style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;">Clear</button>
       </div>
+      ${{verdictHtml}}
       <div class="wv-cmp">
         <div class="wv-cmp-head">
-          <div class="wv-cmp-hcol"><div class="wv-cmp-name">${{a.name}}</div><div class="wv-cmp-sub">${{sub(a)}}</div></div>
-          <div class="wv-cmp-lbl"></div>
-          <div class="wv-cmp-hcol"><div class="wv-cmp-name">${{b.name}}</div><div class="wv-cmp-sub">${{sub(b)}}</div></div>
+          <div class="wv-cmp-hcol"><div class="wv-cmp-name">${{a.name}}</div><div class="wv-cmp-headmeta">${{wvPosChip(a)}}<span class="wv-cmp-sub">${{sub(a)}}</span></div></div>
+          <div class="wv-cmp-vs">VS</div>
+          <div class="wv-cmp-hcol"><div class="wv-cmp-name">${{b.name}}</div><div class="wv-cmp-headmeta">${{wvPosChip(b)}}<span class="wv-cmp-sub">${{sub(b)}}</span></div></div>
         </div>
         ${{row('Proj PPG', dash(da.proj), dash(db.proj), wProj[0], wProj[1])}}
         ${{row('L4 PPG', dash(da.l4), dash(db.l4), wL4[0], wL4[1])}}
@@ -542,7 +644,6 @@ function wvRenderCompare() {{
         ${{row('Matchup', da.mu, db.mu)}}
         ${{row('Vegas total', da.vegas, db.vegas, wVeg[0], wVeg[1])}}
         ${{row('Venue', da.venue, db.venue)}}
-        ${{row('Dynasty rank', da.dynasty, db.dynasty)}}
       </div>
     </div>`;
 }}
