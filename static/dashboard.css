@@ -6806,6 +6806,46 @@ select:focus {
   color: var(--text);
 }
 
+/* Offseason Team Snapshot — editorial value leaderboard. One card per team:
+   a rank medallion (gold/silver/bronze for the top 3), the team + total value,
+   a bar scaled to the leader for at-a-glance comparison, and canonical chips. */
+.os-snap-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 13px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease;
+}
+.os-snap-row:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.os-snap-medal {
+  width: 40px; height: 40px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums;
+  background: var(--row); color: var(--text-muted); border: 1px solid var(--border);
+}
+.os-snap-row.is-1 .os-snap-medal { background: linear-gradient(135deg, #fcd34d, #f59e0b); color: #3f2d03; border-color: transparent; box-shadow: 0 3px 10px rgba(245,158,11,.36); }
+.os-snap-row.is-2 .os-snap-medal { background: linear-gradient(135deg, #eef2f7, #a9b6c7); color: #27303d; border-color: transparent; box-shadow: 0 3px 10px rgba(148,163,184,.30); }
+.os-snap-row.is-3 .os-snap-medal { background: linear-gradient(135deg, #eabb92, #c2803f); color: #3a2408; border-color: transparent; box-shadow: 0 3px 10px rgba(194,128,63,.30); }
+.os-snap-body { min-width: 0; display: flex; flex-direction: column; gap: 9px; }
+.os-snap-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.os-snap-name {
+  font-size: 15px; font-weight: 800; color: var(--text); line-height: 1.2;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.os-snap-valblock { flex-shrink: 0; text-align: right; line-height: 1; }
+.os-snap-value { font-size: 19px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.os-snap-kicker { font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .09em; color: var(--text-subtle); margin-top: 3px; }
+.os-snap-bar { height: 5px; border-radius: 999px; background: var(--row); overflow: hidden; }
+.os-snap-bar > span { display: block; height: 100%; border-radius: 999px; background: color-mix(in srgb, var(--accent) 60%, var(--border)); }
+.os-snap-row.is-1 .os-snap-bar > span { background: linear-gradient(90deg, #fcd34d, #f59e0b); }
+.os-snap-row.is-2 .os-snap-bar > span { background: linear-gradient(90deg, #d3dbe6, #a9b6c7); }
+.os-snap-row.is-3 .os-snap-bar > span { background: linear-gradient(90deg, #eabb92, #c2803f); }
+.os-snap-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+
 .os-stat-card {
   border-radius: 14px;
   padding: 14px 16px;
@@ -12607,6 +12647,7 @@ img, svg, canvas {
   }
 
   .os-snapshot-team,
+  .os-snap-name,
   .os-waiver-name {
     font-size: 13px;
   }

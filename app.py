@@ -6385,51 +6385,46 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             except Exception:
                 logger.debug("suppressed exception", exc_info=True)
 
-        badge_bits = []
-        if first_round_count > 0:
-            badge_bits.append(f"{first_round_count} first{'s' if first_round_count != 1 else ''}")
-        if pick_count > 0:
-            badge_bits.append(f"{pick_count} future picks")
-
-        badge_html = ""
-        if badge_bits:
-            badge_html = "".join(
-                f"<span class='os-snapshot-chip'>{bit}</span>" for bit in badge_bits[:2]
-            )
-
         roster_cards.append({
             "team_name": team_name,
             "roster_value": roster_value,
             "pick_count": pick_count,
+            "first_round_count": first_round_count,
             "roster_id": rid,
-            "html": f"""
-            <div class="os-snapshot-card team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{team_name}">
-              <div class="os-snapshot-top">
-                <div class="os-snapshot-rank-block">
-                  <div class="os-snapshot-team">{team_name}</div>
-                  <div class="os-snapshot-meta">Total value</div>
-                </div>
-                <div class="os-snapshot-value">{roster_value:.0f}</div>
-              </div>
-              <div class="os-snapshot-bottom">
-                <div class="os-snapshot-chip-row">
-                  {badge_html}
-                </div>
-              </div>
-            </div>
-            """
         })
 
     roster_cards.sort(key=lambda x: x["roster_value"], reverse=True)
 
+    # Value leaderboard: rank medallion (gold/silver/bronze for the top 3), a bar
+    # scaled to the leader so magnitudes read at a glance, and canonical chips.
+    max_value = roster_cards[0]["roster_value"] if roster_cards and roster_cards[0]["roster_value"] > 0 else 1
     ranked_snapshot_html = []
     for idx, card in enumerate(roster_cards, start=1):
+        rv = card["roster_value"]
+        pct = max(4, min(100, round(rv / max_value * 100)))
+        fr = card["first_round_count"]
+        pc = card["pick_count"]
+        chips = []
+        if fr > 0:
+            chips.append(f"<span class='chip chip--sm'>{fr} first{'s' if fr != 1 else ''}</span>")
+        if pc > 0:
+            chips.append(f"<span class='chip chip--sm'>{pc} future pick{'s' if pc != 1 else ''}</span>")
+        chips_html = f"<div class=\"os-snap-chips\">{''.join(chips)}</div>" if chips else ""
+        medal_cls = f"is-{idx}" if idx <= 3 else ""
         ranked_snapshot_html.append(
             f"""
-            <div class="os-snapshot-rank-wrap">
-              <div class="os-snapshot-rank">#{idx}</div>
-              <div class="os-snapshot-rank-card">
-                {card["html"]}
+            <div class="os-snap-row {medal_cls} team-clickable" style="cursor:pointer;" data-roster-id="{card['roster_id']}" data-team-name="{card['team_name']}">
+              <div class="os-snap-medal">{idx}</div>
+              <div class="os-snap-body">
+                <div class="os-snap-head">
+                  <div class="os-snap-name">{card['team_name']}</div>
+                  <div class="os-snap-valblock">
+                    <div class="os-snap-value">{rv:,.0f}</div>
+                    <div class="os-snap-kicker">Total value</div>
+                  </div>
+                </div>
+                <div class="os-snap-bar"><span style="width:{pct}%"></span></div>
+                {chips_html}
               </div>
             </div>
             """
