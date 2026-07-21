@@ -68,10 +68,10 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-player-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 .wv-right { display: flex; align-items: center; gap: 10px; }
 .wv-value { font-size: 13px; font-weight: 700; color: var(--text); }
-/* Waiver signals: the .wv-signal shape lives here; the .signal-* colour palette
-   is defined once in dashboard.css so this page and the Season/Offseason Hub
-   waiver-targets card share one identical set (no per-surface drift). */
-.wv-signal { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 8px; }
+/* Waiver signal chips: both the .wv-signal SHAPE and the .signal-* colour
+   palette live once in dashboard.css (shared with the Hub targets card's
+   .waiver-signal), so the chips are identical across surfaces and match the
+   site's pill convention. Nothing chip-related is overridden here. */
 .wv-usage-chip {
   display: inline-block; font-size: 10px; font-weight: 700; color: var(--win);
   margin-left: 6px; white-space: nowrap;

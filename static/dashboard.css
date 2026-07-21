@@ -6879,16 +6879,20 @@ select:focus {
   flex-shrink: 0;
 }
 
+/* Waiver signal chip SHAPE — one rule for both waiver surfaces (the /waivers
+   page's .wv-signal and the Hub targets card's .waiver-signal). Pill-shaped to
+   match the site's chip/badge convention (see the border-radius:999px rule for
+   .badge/.chip/.pill-toggle above); the .signal-* palette adds the colour. */
+.wv-signal,
 .waiver-signal {
   display: inline-flex;
   align-items: center;
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 6px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: 999px;
   border: 1px solid transparent;
+  white-space: nowrap;
 }
 /* Canonical waiver-signal chip palette — the single source of truth for BOTH
    waiver surfaces (the /waivers page and the Season/Offseason Hub targets card),
