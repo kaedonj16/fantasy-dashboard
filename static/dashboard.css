@@ -14938,7 +14938,9 @@ tr.team-clickable {
 
   .game-log-year-content {
     border: 1px solid var(--border);
-    border-radius: 6px;
+    /* Flush under its header: square top, rounded bottom, no gap. */
+    border-radius: 0 0 6px 6px;
+    margin-top: 0;
   }
 
   .game-log-table th {
@@ -15016,6 +15018,15 @@ tr.team-clickable {
     flex-direction: column;
     align-items: flex-start;
     gap: 6px;
+    border-radius: 6px;
+  }
+
+  /* When the season is open, the header flows straight into its table as one
+     connected card: round only the top, drop the shared bottom edge. */
+  .game-log-year-header:has(+ .game-log-year-content.expanded) {
+    border-bottom: none;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
   }
 
   .game-log-year-summary {
