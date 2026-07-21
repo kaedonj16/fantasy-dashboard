@@ -20127,7 +20127,7 @@ button:disabled {
 .rf-hero { margin-bottom: 20px; }
 .rf-title { font-size: clamp(18px, 4vw, 26px); font-weight: 800; color: var(--text, #e2e8f0); margin: 0 0 8px; }
 .rf-subtitle { font-size: 14px; color: var(--text-muted, #94a3b8); margin: 0; line-height: 1.5; }
-.rf-subtitle a { color: #38bdf8; }
+.rf-subtitle a { color: var(--accent, #38bdf8); }
 .rf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 @media (max-width: 640px) { .rf-grid { grid-template-columns: 1fr; } }
 .rf-col-title { font-size: 15px; font-weight: 700; color: var(--text, #e2e8f0); margin: 0 0 10px; display: flex; align-items: center; gap: 7px; }
@@ -20140,7 +20140,7 @@ button:disabled {
   overflow: hidden;
   transition: background 0.15s, border-color 0.15s;
 }
-.rf-row:hover { background: #1f3357; border-color: var(--pos-accent, #38bdf8); }
+.rf-row:hover { background: color-mix(in srgb, var(--pos-accent, #38bdf8) 8%, var(--card-bg, #1a2744)); border-color: var(--pos-accent, #38bdf8); }
 .rf-left-bar {
   width: 3px; align-self: stretch; flex-shrink: 0;
   background: var(--pos-accent, #94a3b8);
@@ -20149,11 +20149,11 @@ button:disabled {
 }
 .rf-info { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; overflow: hidden; }
 .rf-pos-badge { font-size: 10px; font-weight: 700; color: #fff; border-radius: 6px; padding: 1px 5px; flex-shrink: 0; }
-.rf-name { font-size: 13px; font-weight: 600; color: #e2e8f0; text-decoration: none; flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.rf-name:hover { color: #38bdf8; text-decoration: underline; }
+.rf-name { font-size: 13px; font-weight: 600; color: var(--text, #e2e8f0); text-decoration: none; flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.rf-name:hover { color: var(--accent, #38bdf8); text-decoration: underline; }
 .rf-team { font-size: 11px; color: var(--text-subtle); flex-shrink: 0; }
 .rf-val-wrap { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; min-width: 52px; }
-.rf-val  { font-size: 14px; font-weight: 700; color: #e2e8f0; }
+.rf-val  { font-size: 14px; font-weight: 700; color: var(--text, #e2e8f0); font-variant-numeric: tabular-nums; }
 .rf-delta { font-size: 11px; font-weight: 700; }
 .rf-delta small { font-weight: 500; opacity: .75; }
 .rf-col-title-up  { color: var(--win) !important; }
