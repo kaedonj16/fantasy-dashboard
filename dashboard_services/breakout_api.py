@@ -1110,24 +1110,32 @@ def _resolve_bo_season(requested: Optional[int]) -> Optional[int]:
     return requested
 
 
+# Mirror the /candidates route defaults so the waiver 'Breakout' tag reflects
+# exactly the set the Breakout Engine page displays. Keep in sync with the route.
+_BO_PAGE_MIN_SCORE = 0.0
+_BO_PAGE_LIMIT = 15
+
+
 def aligned_breakout_scores(player_ids, requested_season: Optional[int] = None) -> Dict[str, float]:
     """Breakout scores for the given players that MATCH the Breakout Engine page.
 
-    The waiver 'Breakout' signal used to read raw breakout_opportunity_score with
-    no season filter (so a prior-season score could linger) and no eligibility
-    gate (so a veteran QB the engine excludes could still be tagged). This routes
-    both waiver surfaces through the same season resolution (_resolve_bo_season)
-    and the same exclusion rule (engine_breakout_excluded) the engine uses, so a
-    'Breakout' tag means exactly what the engine means. Returns {} on any error.
+    A waiver 'Breakout' tag should mean the player is actually shown on the
+    Breakout page. So this reproduces the page's *displayed set* exactly rather
+    than just any lingering score: current snapshot only (latest as_of_date),
+    the same score floor, the same exclusion rule (engine_breakout_excluded),
+    and the same top-N cap. A player ranked below the cap (or whose only score
+    is from an older snapshot) is therefore no longer tagged. Returns the score
+    for each requested player that lands in that set; {} on any error.
     """
     out: Dict[str, float] = {}
-    pids = [p for p in (player_ids or []) if p]
+    pids = {str(p) for p in (player_ids or []) if p}
     if not pids:
         return out
     try:
         season = _resolve_bo_season(requested_season)
         if not season:
             return out
+        # Same selection as get_breakout_candidates: latest snapshot + floor.
         query = """
             SELECT DISTINCT ON (player_id)
                 player_id,
@@ -1137,21 +1145,29 @@ def aligned_breakout_scores(player_ids, requested_season: Optional[int] = None) 
                 (component_details->'player_readiness'->>'usage_baseline_score')::numeric AS readiness_usage_baseline
             FROM breakout_opportunity_scores
             WHERE season = %s
-              AND player_id = ANY(%s)
+              AND as_of_date = (
+                  SELECT MAX(as_of_date) FROM breakout_opportunity_scores WHERE season = %s
+              )
+              AND breakout_opportunity_score >= %s
             ORDER BY player_id, as_of_date DESC, calculated_at DESC
         """
         with get_conn() as conn:
             with conn.cursor() as cursor:
-                cursor.execute(query, [season, pids])
-                rows = cursor.fetchall()
-        for row in rows:
-            r = dict(row)
+                cursor.execute(query, [season, season, _BO_PAGE_MIN_SCORE])
+                rows = [dict(r) for r in cursor.fetchall()]
+        # Same exclusion + top-N ranking the page applies before display.
+        eligible = []
+        for r in rows:
             score = r.get("breakout_opportunity_score")
             if score is None:
                 continue
             if engine_breakout_excluded(r.get("position"), r.get("age"), r.get("readiness_usage_baseline")):
                 continue
-            out[r["player_id"]] = float(score)
+            eligible.append((str(r["player_id"]), float(score)))
+        eligible.sort(key=lambda t: t[1], reverse=True)
+        for pid, score in eligible[:_BO_PAGE_LIMIT]:
+            if pid in pids:
+                out[pid] = score
     except Exception:
         logger.debug("aligned_breakout_scores failed", exc_info=True)
     return out
