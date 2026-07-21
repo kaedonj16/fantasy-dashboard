@@ -14938,7 +14938,7 @@ tr.team-clickable {
 
   .game-log-year-content {
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 6px;
   }
 
   .game-log-table th {
