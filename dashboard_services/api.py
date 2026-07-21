@@ -202,29 +202,32 @@ def avatar_from_users(platform, users: list[dict], owner_id: Optional[str]) -> O
     meta = u.get("metadata") or {}
     avatar_meta = meta.get("avatar")   # the team-specific picture
     profile_id = u.get("avatar")       # the personal profile picture
-    # Order: team picture -> crest -> profile picture. A dedicated team picture
-    # always wins; otherwise a crest stands in (preferred over a personal photo);
-    # the profile picture is only a last-ditch fallback.
+    # Order: team picture -> profile picture -> crest. Any real image (including
+    # the manager's profile picture) beats the generated crest monogram, which is
+    # only a last-ditch fallback when no picture exists at all.
     if avatar_meta:
         return avatar_meta
-    from dashboard_services.team_crest import team_crest_data_uri
-    crest = team_crest_data_uri(meta.get("team_name") or u.get("display_name") or "?")
-    if crest:
-        return crest
     if profile_id:
         if platform == "sleeper":
             return f"https://sleepercdn.com/avatars/thumbs/{profile_id}"
         return f"{profile_id}"
+    from dashboard_services.team_crest import team_crest_data_uri
+    crest = team_crest_data_uri(meta.get("team_name") or u.get("display_name") or "?")
+    if crest:
+        return crest
     return None
 
 
 def team_avatar(platform, roster: dict, users: list[dict]) -> Union[str, None]:
-    """Resolve a team's avatar, checking a roster-level picture first.
+    """Resolve a team's avatar, preferring any real picture over the crest.
 
     A team picture can live on the roster (``roster.metadata.avatar``) or on the
     league user (``user.metadata.avatar``); either one wins. Order:
-    roster team picture -> user team picture -> crest -> personal profile picture.
-    The crest prefers the roster/user team name so its monogram matches the team.
+    roster team picture -> user team picture -> personal profile picture ->
+    generated crest. A real image (including the manager's profile picture) is
+    always preferred over the monogram crest, which is only a last resort when
+    no picture exists at all. The crest prefers the roster/user team name so its
+    monogram matches the team.
     """
     roster = roster or {}
     rmeta = roster.get("metadata") or {}
@@ -237,17 +240,21 @@ def team_avatar(platform, roster: dict, users: list[dict]) -> Union[str, None]:
     if umeta.get("avatar"):
         return umeta["avatar"]
 
+    # A real profile picture beats the generated crest — a manager who set a
+    # profile pic but no custom team avatar should show their pic, not a monogram.
+    profile_id = u.get("avatar") if u else None
+    if profile_id:
+        if platform == "sleeper":
+            return f"https://sleepercdn.com/avatars/thumbs/{profile_id}"
+        return f"{profile_id}"
+
+    # Last resort: a generated crest monogram from the team / manager name.
     from dashboard_services.team_crest import team_crest_data_uri
     name = rmeta.get("team_name") or umeta.get("team_name") or (u.get("display_name") if u else None) or "Team"
     crest = team_crest_data_uri(name)
     if crest:
         return crest
 
-    profile_id = u.get("avatar") if u else None
-    if profile_id:
-        if platform == "sleeper":
-            return f"https://sleepercdn.com/avatars/thumbs/{profile_id}"
-        return f"{profile_id}"
     return None
 
 
