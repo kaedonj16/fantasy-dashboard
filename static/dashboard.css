@@ -48,6 +48,20 @@
 .skeleton-circle { border-radius: 50%; }
 .tm-skel { width: 100%; max-width: 520px; padding: 4px 8px 12px; }
 
+/* Generic list skeleton — a stack of card rows (optional avatar + two text
+   lines + trailing chip) shaped like the app's row lists, so content swaps in
+   without the layout jumping. Markup: <div class="sk-list"><div class="sk-card-row">… */
+.sk-list { display: flex; flex-direction: column; gap: 8px; }
+.sk-card-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px; border-radius: 10px;
+  background: var(--card); border: 1px solid var(--border);
+}
+.sk-card-row .sk-av { width: 34px; height: 34px; border-radius: 50%; flex: 0 0 auto; }
+.sk-card-row .sk-lines { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+.sk-card-row .sk-chip { width: 46px; height: 22px; border-radius: 8px; flex: 0 0 auto; }
+.sk-card-row .skeleton-line { margin: 0; height: 11px; }
+
 /* ============================================
    BRAND FONT — Inter (variable, self-hosted)
    Ships in static/fonts/web/; preloaded from render_page's <head>.

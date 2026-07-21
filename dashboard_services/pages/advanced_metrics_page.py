@@ -372,9 +372,12 @@ def build_advanced_metrics_body(
           </div>
         </div>
 
-        <div id="amLoading" style="text-align:center;padding:40px 0;color:var(--text-muted);">
-          <div class="loading-spinner" style="margin:0 auto 12px;"></div>
-          Loading metrics…
+        <div id="amLoading" class="sk-list" style="margin-top:6px;">
+          <div class="sk-card-row"><div class="skeleton" style="width:20px;height:14px;border-radius:4px;flex:0 0 auto"></div><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:44%"></div><div class="skeleton skeleton-line" style="width:26%;height:9px"></div></div><div class="skeleton" style="width:56px;height:20px;border-radius:6px;flex:0 0 auto"></div></div>
+          <div class="sk-card-row"><div class="skeleton" style="width:20px;height:14px;border-radius:4px;flex:0 0 auto"></div><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:52%"></div><div class="skeleton skeleton-line" style="width:30%;height:9px"></div></div><div class="skeleton" style="width:56px;height:20px;border-radius:6px;flex:0 0 auto"></div></div>
+          <div class="sk-card-row"><div class="skeleton" style="width:20px;height:14px;border-radius:4px;flex:0 0 auto"></div><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:38%"></div><div class="skeleton skeleton-line" style="width:24%;height:9px"></div></div><div class="skeleton" style="width:56px;height:20px;border-radius:6px;flex:0 0 auto"></div></div>
+          <div class="sk-card-row"><div class="skeleton" style="width:20px;height:14px;border-radius:4px;flex:0 0 auto"></div><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:48%"></div><div class="skeleton skeleton-line" style="width:28%;height:9px"></div></div><div class="skeleton" style="width:56px;height:20px;border-radius:6px;flex:0 0 auto"></div></div>
+          <div class="sk-card-row"><div class="skeleton" style="width:20px;height:14px;border-radius:4px;flex:0 0 auto"></div><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:42%"></div><div class="skeleton skeleton-line" style="width:26%;height:9px"></div></div><div class="skeleton" style="width:56px;height:20px;border-radius:6px;flex:0 0 auto"></div></div>
         </div>
 
         <div id="amPaywall" style="display:none;text-align:center;padding:48px 16px;">
@@ -2932,7 +2935,7 @@ _AM_JS = r"""
     // flash) so reopening / toggling axes is effectively instant.
     const allCached = urls.every(function(u) { return _amLbCache.has(u); });
     if (!allCached) {
-      plot.innerHTML = '<div class="am-graph-empty"><div class="loading-spinner" style="margin:0 auto 10px;"></div>Loading…</div>';
+      plot.innerHTML = '<div class="skeleton" style="width:100%;height:340px;border-radius:14px;"></div>';
     }
     Promise.all(urls.map(_amFetchLeaderboard)).then(function(results) {
       if (token !== _amGraphToken) return;

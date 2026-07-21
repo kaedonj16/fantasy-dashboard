@@ -113,9 +113,13 @@ def build_prospects_body(is_admin: bool = False) -> str:
     </div>
 
     <!-- Loading -->
-    <div id="rkLoading" style="text-align:center;padding:40px;color:var(--text-muted);">
-      <div class="loading-spinner" style="margin:0 auto 12px;"></div>
-      Loading rookie prospects…
+    <div id="rkLoading" class="sk-list" style="margin-top:4px;">
+      <div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:46%"></div><div class="skeleton skeleton-line" style="width:30%;height:9px"></div></div><div class="skeleton sk-chip"></div></div>
+      <div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:38%"></div><div class="skeleton skeleton-line" style="width:26%;height:9px"></div></div><div class="skeleton sk-chip"></div></div>
+      <div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:52%"></div><div class="skeleton skeleton-line" style="width:34%;height:9px"></div></div><div class="skeleton sk-chip"></div></div>
+      <div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:42%"></div><div class="skeleton skeleton-line" style="width:24%;height:9px"></div></div><div class="skeleton sk-chip"></div></div>
+      <div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:48%"></div><div class="skeleton skeleton-line" style="width:30%;height:9px"></div></div><div class="skeleton sk-chip"></div></div>
+      <div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:40%"></div><div class="skeleton skeleton-line" style="width:28%;height:9px"></div></div><div class="skeleton sk-chip"></div></div>
     </div>
 
     <!-- Rows -->

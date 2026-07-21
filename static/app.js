@@ -9194,9 +9194,21 @@ function openPlayerModal(playerId, playerName, opts) {
       <button class="pm-tab" data-tab="trades" onclick="pmSwitchTab('trades')">Trades</button>
     </div>
     <div class="player-modal-body" id="playerModalBody">
-      <div class="player-modal-loading">
-        <div class="loading-spinner"></div>
-        <div>Loading player data...</div>
+      <div class="pm-skel" style="padding:18px;">
+        <div style="display:flex;align-items:center;gap:14px;">
+          <div class="skeleton" style="width:56px;height:56px;border-radius:50%;flex:0 0 auto;"></div>
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:9px;">
+            <div class="skeleton skeleton-line" style="width:52%;height:16px;margin:0;"></div>
+            <div class="skeleton skeleton-line" style="width:34%;height:11px;margin:0;"></div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:18px;">
+          <div class="skeleton" style="height:58px;border-radius:10px;"></div>
+          <div class="skeleton" style="height:58px;border-radius:10px;"></div>
+          <div class="skeleton" style="height:58px;border-radius:10px;"></div>
+          <div class="skeleton" style="height:58px;border-radius:10px;"></div>
+        </div>
+        <div class="skeleton" style="height:190px;border-radius:12px;margin-top:14px;"></div>
       </div>
     </div>
   `;

@@ -47,6 +47,15 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 @media(min-width: 769px) { .wv-section { display: block !important; } }
 .wv-section-title { font-size: 14px; font-weight: 700; margin-bottom: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
 .wv-loading { display: flex; justify-content: center; padding: 40px; }
+/* Content-shaped loading placeholder — mirrors the real rows so the layout
+   doesn't jump when data arrives (replaces a bare centered spinner). */
+.wv-skel { display: flex; flex-direction: column; gap: 8px; }
+.wv-skel-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px; border-radius: 8px; background: var(--card); border: 1px solid var(--border);
+}
+.wv-skel-left { display: flex; flex-direction: column; gap: 7px; flex: 1; min-width: 0; }
+.wv-skel-row .skeleton-line { margin: 0; }
 
 /* Waiver wire rows */
 .wv-player-row {
@@ -233,6 +242,15 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 </style>
 """
 
+    _skel_widths = [46, 38, 52, 34, 44, 40]
+    wv_skel = '<div class="wv-skel">' + ''.join(
+        '<div class="wv-skel-row"><div class="wv-skel-left">'
+        f'<div class="skeleton skeleton-line" style="width:{w}%;height:11px"></div>'
+        f'<div class="skeleton skeleton-line" style="width:{max(22, w - 16)}%;height:9px"></div>'
+        '</div><div class="skeleton" style="width:44px;height:22px;border-radius:8px"></div></div>'
+        for w in _skel_widths
+    ) + '</div>'
+
     html_body = f"""
 <div class="wv-page">
   <!-- Position filter pills -->
@@ -260,7 +278,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
     <div class="wv-section wv-tab-active" id="wvSectionWaivers">
       <div class="wv-section-title">Waiver Wire</div>
       <div id="wvWaiverList">
-        <div class="wv-loading"><div class="loading-spinner"></div></div>
+        {wv_skel}
       </div>
     </div>
 
@@ -270,7 +288,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
       <!-- Compare panel (hidden until 2 players selected) -->
       <div id="wvComparePanel" style="display:none;scroll-margin-top:16px;"></div>
       <div id="wvStartSit">
-        <div class="wv-loading"><div class="loading-spinner"></div></div>
+        {wv_skel}
       </div>
     </div>
   </div>
