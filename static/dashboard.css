@@ -8633,6 +8633,15 @@ select:focus {
   flex-direction: column;
 }
 
+/* Injury-overview card header: give it separation from the team list (the bare
+   .card h2 has margin:0, so it sat flush against the first row) and keep it
+   comfortably larger than the rows on phones — the global .card h2 drops to
+   0.9rem at ≤480px, which left the card title smaller than its own list items. */
+.card.injury-overview h2 { margin: 0 0 10px; }
+@media (max-width: 640px) {
+  .card.injury-overview h2 { font-size: 16px; }
+}
+
 .inj-list {
   display: flex;
   flex-direction: column;
