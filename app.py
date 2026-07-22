@@ -2073,7 +2073,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         f"      <input type='hidden' name='season' value='{season}'>"
         f"      <input type='hidden' name='league_id' value='{league_id}'>"
         f"      <input type='hidden' name='next' value='{request.path + ('?' + request.query_string.decode() if request.query_string else '')}'>"
-        f"      <input class='signin-modal-input' type='text' name='username' placeholder='{_signin_ph}' autocomplete='username' autofocus>"
+        f"      <input class='signin-modal-input' type='text' name='username' aria-label='Username or team name' placeholder='{_signin_ph}' autocomplete='username' autofocus>"
         f"      <div class='signin-modal-actions'>"
         f"        <button class='signin-modal-submit' type='submit'>Sign In</button>"
         f"        <button class='signin-modal-cancel' type='button'"
