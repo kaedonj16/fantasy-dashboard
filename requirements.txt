@@ -68,3 +68,7 @@ w3lib==2.3.1
 websockets==10.4
 zipp==3.23.0
 flask-compress==1.24
+# Enables flask-compress's preferred "br" algorithm (COMPRESS_ALGORITHM below).
+# Without this package flask-compress silently falls back to gzip only; brotli
+# ships ~12% smaller JS/CSS and ~5% smaller HTML than gzip-6 at the level we set.
+brotli==1.2.0

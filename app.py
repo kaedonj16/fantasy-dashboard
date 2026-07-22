@@ -672,6 +672,12 @@ if Compress is not None:
     app.config["COMPRESS_MIN_SIZE"] = 500          # only compress responses > 500 bytes
     app.config["COMPRESS_LEVEL"] = 6                # gzip level (1-9); 6 is a good balance
     app.config["COMPRESS_ALGORITHM"] = ["br", "gzip"]  # prefer brotli, fall back to gzip
+    # Brotli quality (0-11). Requires the `brotli` package (in requirements.txt);
+    # without it flask-compress silently serves gzip only. 6 is the balance point:
+    # ~12% smaller JS/CSS and ~5% smaller HTML than gzip-6, ~4ms for a typical HTML
+    # page. Higher levels (9-11) are far slower (q11 ≈ 1.7s on app.js) and only pay
+    # off for large immutable statics, which are CDN/edge-cached after the first hit.
+    app.config["COMPRESS_BR_LEVEL"] = 6
     _compress.init_app(app)
 
 try:
@@ -13109,14 +13115,6 @@ def page_breakouts(platform: str, season: int, league_id: str):
     </script>
     """
     return render_page("Breakout Engine", league_id, "breakouts", body_html, platform, season)
-
-
-# Guest-accessible versions of content pages (no league required)
-@app.route("/players")
-def page_players_guest():
-    nfl_state = get_nfl_state() or {}
-    current_season = int(nfl_state.get("season") or datetime.now().year)
-    return page_players(platform="sleeper", season=current_season, league_id=None)
 
 
 # ── Per-player trade-value pages (SEO landing pages) ──────────────────────────

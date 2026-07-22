@@ -25,7 +25,7 @@ from urllib.parse import urlencode
 import requests
 
 from utils.utils import load_players_index
-from utils.coerce import safe_int as _safe_int
+from utils.coerce import safe_float as _safe_float, safe_int as _safe_int
 
 logger = logging.getLogger(__name__)
 
@@ -341,13 +341,6 @@ def _extract_roster_players(team_data: List) -> List[Dict]:
         if entry and "player" in entry:
             out.append(entry["player"])
     return out
-
-
-def _safe_float(x: Any, default: float = 0.0) -> float:
-    try:
-        return default if x is None else float(x)
-    except Exception:
-        return default
 
 
 # ---------------------------------------------------------------------------
