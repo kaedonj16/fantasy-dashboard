@@ -514,14 +514,30 @@ def _fc_adp_source(season: int, is_sf: bool, scoring_type: str) -> Dict[str, flo
     return out
 
 
+def fetch_yahoo_adp(league_id, token, season: int, is_sf: bool) -> Dict[str, float]:
+    """canonical id -> Yahoo average draft pick for a league.
+
+    Thin wrapper over the Yahoo provider so the provider stays the only place
+    that talks to Yahoo. Yahoo's draft_analysis is already scored for the
+    league's own format, so ``is_sf`` is informational here. Empty on any
+    failure (no token, network, mapping) so the resolver falls back."""
+    if not (league_id and token):
+        return {}
+    try:
+        from dashboard_services.providers.yahoo_api import get_draft_analysis_adp
+        return get_draft_analysis_adp(int(season), str(league_id), str(token)) or {}
+    except Exception:
+        logger.debug("adp_service: Yahoo ADP fetch failed", exc_info=True)
+        return {}
+
+
 def _yahoo_adp_source(season: int, is_sf: bool, scoring_type: str,
                       league_id, token) -> Dict[str, float]:
-    # Yahoo ADP is redraft-only and needs a user token. fetch_yahoo_adp lands in
-    # a follow-up; until then this yields nothing and callers fall back.
+    # Yahoo ADP is redraft-only and needs a user token; other axes yield nothing.
     if scoring_type != "redraft" or not (league_id and token):
         return {}
     try:
-        return fetch_yahoo_adp(league_id, token, int(season), is_sf) or {}  # type: ignore[name-defined]
+        return fetch_yahoo_adp(league_id, token, int(season), is_sf) or {}
     except Exception:
         return {}
 

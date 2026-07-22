@@ -883,7 +883,7 @@ FORM_BODY = """
     <div class="home-hero-left">
       <h1 class="home-title">BR Fantasy Dashboard</h1>
       <p class="home-subtitle">
-        Your dynasty league, upgraded. Advanced analytics, AI-powered insights, and professional-grade tools for Sleeper and ESPN leagues.
+        Your dynasty league, upgraded. Advanced analytics, AI-powered insights, and professional-grade tools for Sleeper, ESPN, and Yahoo leagues.
       </p>
 
       <ul class="home-bullets">
@@ -920,7 +920,7 @@ FORM_BODY = """
           <div class="platform-selector">
             <button type="button" class="platform-btn active" data-platform="sleeper">Sleeper</button>
             <button type="button" class="platform-btn" data-platform="espn">ESPN</button>
-            <button type="button" class="platform-btn platform-btn-soon" data-platform="yahoo" disabled aria-disabled="true">Yahoo <span class="platform-soon">Soon</span></button>
+            <button type="button" class="platform-btn" data-platform="yahoo">Yahoo</button>
           </div>
         </div>
 
