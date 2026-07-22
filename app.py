@@ -18354,6 +18354,13 @@ def api_flush_value_cache():
     global _MODEL_VALUE_CACHE, _MODEL_VALUE_CACHE_TS
     _MODEL_VALUE_CACHE    = None
     _MODEL_VALUE_CACHE_TS = 0
+    # Drop the memoized DB current-values table too so trade eval/suggestions and
+    # rookie rankings reload fresh values instead of waiting out its TTL.
+    try:
+        from dashboard_services.player_value_history import clear_current_values_cache
+        clear_current_values_cache()
+    except Exception:
+        logger.debug("[flush-value-cache] current-values cache clear failed", exc_info=True)
     # Also drop the advanced-metrics daily caches (value table, position ranks,
     # metric leaderboards) so the page/modals serve freshly rebuilt values.
     try:
@@ -18409,6 +18416,11 @@ def api_run_daily_cron():
             global _MODEL_VALUE_CACHE, _MODEL_VALUE_CACHE_TS
             _MODEL_VALUE_CACHE    = None
             _MODEL_VALUE_CACHE_TS = 0
+            try:
+                from dashboard_services.player_value_history import clear_current_values_cache
+                clear_current_values_cache()
+            except Exception:
+                logger.debug("[run-daily-cron] current-values cache clear failed", exc_info=True)
             try:
                 from data_building.advanced_metrics import clear_daily_caches
                 clear_daily_caches()
