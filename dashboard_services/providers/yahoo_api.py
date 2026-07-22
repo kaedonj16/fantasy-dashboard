@@ -347,6 +347,29 @@ def _name_pos_to_canonical() -> Dict[str, str]:
     return mapping
 
 
+@lru_cache(maxsize=1)
+def _yahoo_id_to_canonical() -> Dict[str, str]:
+    """Exact yahoo_id -> canonical Sleeper id crosswalk.
+
+    A Yahoo player's ``player_id`` equals Sleeper's ``yahoo_id``, which the full
+    Sleeper players feed carries for (almost) every player. Building the map from
+    that feed gives a precise id match and avoids the lossy name/pos/team fallback
+    (which silently drops Jr./Sr., rookies, and stale-team players). Cached for the
+    process; empty on any failure so callers fall back to name matching."""
+    try:
+        from dashboard_services.api import get_nfl_players
+        feed = get_nfl_players() or {}
+    except Exception:
+        logger.debug("[yahoo] player feed load failed for crosswalk", exc_info=True)
+        return {}
+    out: Dict[str, str] = {}
+    for sleeper_id, info in feed.items():
+        yid = (info or {}).get("yahoo_id")
+        if yid:
+            out[str(yid)] = str(sleeper_id)
+    return out
+
+
 def _yahoo_pos(raw_pos: str) -> str:
     _MAP = {
         "QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE",
@@ -356,7 +379,36 @@ def _yahoo_pos(raw_pos: str) -> str:
     return _MAP.get((raw_pos or "").upper(), (raw_pos or "").upper())
 
 
-def _resolve_player(yahoo_name: str, yahoo_pos: str, yahoo_team: str) -> Optional[str]:
+def _flatten_yahoo_player(rp: Any) -> tuple:
+    """Normalize a Yahoo ``player`` entry to (meta_dict, selected_position).
+
+    Yahoo returns a player as ``[[{k:v}, {k:v}, ...], {selected_position}]`` —
+    the metadata is a positional list of single-key dicts. Merge it into one
+    flat dict (also tolerating an already-flat dict), so callers can read
+    ``name``/``player_id``/``editorial_team_abbr`` uniformly."""
+    meta_part = rp[0] if isinstance(rp, list) and rp else rp
+    flat: Dict[str, Any] = {}
+    if isinstance(meta_part, list):
+        for part in meta_part:
+            if isinstance(part, dict):
+                flat.update(part)
+    elif isinstance(meta_part, dict):
+        flat = meta_part
+    sel_pos = None
+    if isinstance(rp, list) and len(rp) > 1 and isinstance(rp[1], dict):
+        sel_pos = (rp[1].get("selected_position") or {}).get("position")
+    return flat, sel_pos
+
+
+def _resolve_player(
+    yahoo_name: str, yahoo_pos: str, yahoo_team: str, yahoo_id: Optional[str] = None
+) -> Optional[str]:
+    """Map a Yahoo player to a canonical Sleeper id. Prefers the exact yahoo_id
+    crosswalk; falls back to name/pos/team when the id is unknown."""
+    if yahoo_id:
+        hit = _yahoo_id_to_canonical().get(str(yahoo_id))
+        if hit:
+            return hit
     from utils.utils import normalize_name
     m    = _name_pos_to_canonical()
     name = normalize_name(yahoo_name or "")
@@ -502,10 +554,7 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
         reserve:  List[str] = []
 
         for rp in raw_players:
-            p_meta  = rp[0] if isinstance(rp, list) else rp
-            sel_pos = None
-            if isinstance(rp, list) and len(rp) > 1:
-                sel_pos = (rp[1].get("selected_position") or {}).get("position")
+            p_meta, sel_pos = _flatten_yahoo_player(rp)
 
             name     = (p_meta.get("name") or {}).get("full") or ""
             pos_list = p_meta.get("display_position") or p_meta.get("eligible_positions") or ""
@@ -513,8 +562,9 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
                 pos_list = pos_list.get("position") or ""
             pos  = (pos_list.split(",")[0] if isinstance(pos_list, str) else "") or ""
             team = (p_meta.get("editorial_team_abbr") or "").upper()
+            yid  = str(p_meta.get("player_id") or "")
 
-            canon = _resolve_player(name, pos, team)
+            canon = _resolve_player(name, pos, team, yahoo_id=yid)
             if not canon:
                 continue
 

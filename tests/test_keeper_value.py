@@ -1,7 +1,8 @@
 """Unit tests for the keeper decision engine (utils/keeper_value.py)."""
 from utils.keeper_value import (
     KeeperRules, KeeperCandidate, market_round, keeper_cost_round, verdict,
-    analyze, evaluate, total_surplus, project_league_keepers, KEEP, TOSS, PASS,
+    analyze, evaluate, total_surplus, project_league_keepers, cost_collisions,
+    KEEP, TOSS, PASS,
 )
 
 
@@ -161,3 +162,36 @@ def test_project_league_keepers_respects_limit():
     teams = {"me": _roster()}
     assert project_league_keepers(teams, _rules(), limit=1)["me"] == ["a"]  # just Bowers
     assert project_league_keepers(teams, _rules(), limit=0)["me"] == []
+
+
+# ── cost_collisions ──────────────────────────────────────────────────────────
+
+def test_cost_collisions_flags_shared_cost_round():
+    # Two kept players both cost round 5.
+    cands = [
+        KeeperCandidate("a", "A", "RB", 5, 0, 4, 900),   # cost R5, market R1 -> +4 keep
+        KeeperCandidate("b", "B", "WR", 5, 0, 6, 800),   # cost R5, market R1 -> +4 keep
+        KeeperCandidate("c", "C", "TE", 9, 0, 30, 500),  # cost R9, market R3 -> +6 keep
+    ]
+    ranked = evaluate(cands, _rules(), limit=3)
+    coll = cost_collisions(ranked)
+    assert coll == {5: ["a", "b"]}   # only the shared round, both ids
+
+
+def test_cost_collisions_none_when_unique_or_not_kept():
+    cands = [
+        KeeperCandidate("a", "A", "RB", 5, 0, 4, 900),   # kept, cost R5
+        KeeperCandidate("b", "B", "WR", 8, 0, 6, 800),   # kept, cost R8
+        KeeperCandidate("d", "D", "WR", 5, 0, 60, 100),  # NOT kept (negative surplus), cost R5
+    ]
+    ranked = evaluate(cands, _rules(), limit=2)
+    assert cost_collisions(ranked) == {}   # the two kept differ; the R5 dup isn't kept
+
+
+def test_years_kept_escalation_changes_cost_via_evaluate():
+    # Same player, more years kept -> earlier (costlier) round -> lower surplus.
+    c0 = KeeperCandidate("a", "A", "RB", 10, 0, 40, 500)   # cost R10, market R4 -> +6
+    c2 = KeeperCandidate("a", "A", "RB", 10, 2, 40, 500)   # cost R8 (esc 1x2), market R4 -> +4
+    analyze(c0, _rules(escalation=1)); analyze(c2, _rules(escalation=1))
+    assert c0.cost_round == 10 and c0.surplus == 6
+    assert c2.cost_round == 8 and c2.surplus == 4
