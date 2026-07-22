@@ -8,7 +8,7 @@ into candidates and hands them to the client, which re-runs the same math live
 as the manager tweaks the keeper limit and cost rules.
 
 Draft-round auto-detection uses Sleeper's draft results; on ESPN/Yahoo (and for
-waiver adds anywhere) the round starts blank and the manager sets it — the tool
+waiver adds anywhere) the round starts blank and the manager sets it; the tool
 still works, it just can't pre-fill the cost.
 """
 from __future__ import annotations

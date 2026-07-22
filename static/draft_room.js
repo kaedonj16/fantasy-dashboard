@@ -675,7 +675,6 @@
     }).join('');
     el.innerHTML =
       '<div class="dr-keeper-head">' +
-        '<span class="dr-keeper-key" aria-hidden="true">🔑</span>' +
         '<b>Keepers ' + (keepersOn ? 'applied' : 'off') + '</b>' +
         '<span class="dr-keeper-sub">' + keeperSet.length + ' off the board · ' +
           mine + ' yours, ' + proj + ' projected</span>' +
@@ -684,7 +683,7 @@
           (keepersOn ? 'Turn off' : 'Apply') + '</button>' +
       '</div>' +
       '<div id="drKeeperList" class="dr-keeper-list" hidden>' + rows +
-        '<div class="dr-keeper-note">Other teams’ keepers are projected from the same surplus model — estimates, not their declared keepers.</div>' +
+        '<div class="dr-keeper-note">Other teams’ keepers are projected from the same surplus model. They are estimates, not their declared keepers.</div>' +
       '</div>';
     var vbtn = document.getElementById('drKeeperView');
     var tbtn = document.getElementById('drKeeperToggle');

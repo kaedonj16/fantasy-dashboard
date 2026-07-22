@@ -8648,7 +8648,6 @@ select:focus {
   border-radius: 12px; padding: 12px 14px; margin: 0 0 14px; }
 .dr-keeper-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   font-size: 14px; color: var(--text); }
-.dr-keeper-key { font-size: 16px; }
 .dr-keeper-sub { color: var(--text-muted); font-size: 12.5px; }
 .dr-keeper-btn { font: inherit; font-size: 12px; font-weight: 600; color: var(--accent);
   background: transparent; border: 1px solid var(--border); border-radius: 8px;

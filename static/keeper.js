@@ -1,4 +1,4 @@
-/* Keeper Assistant — client interactivity.
+/* Keeper Assistant - client interactivity.
  *
  * Mirrors utils/keeper_value.py so the keeper limit, cost rules and per-player
  * round edits recompute live without a server round-trip. Keep the math here in
@@ -85,7 +85,7 @@
     elList.innerHTML = rows.map(function (row) {
       if (row.keep) total += row.surplus;
       var cls = row.keep ? "keep" : "cut";
-      var sval = row.surplus == null ? "—" : fmt(row.surplus);
+      var sval = row.surplus == null ? "-" : fmt(row.surplus);
       var mkt = row.mkt == null ? "off-board" : ("market R" + row.mkt);
       return '<div class="kpr-row ' + cls + '">' +
         '<div class="kpr-chk">' + (row.keep ? CHECK : "") + "</div>" +
@@ -106,16 +106,16 @@
       var draftedTxt = (row.p.draftedRound == null || row.p.draftedRound === "")
         ? '<input class="kpr-drnd" type="number" min="1" data-id="' + esc(row.p.id) + '" placeholder="R?" value="">'
         : ("Drafted R" + row.p.draftedRound);
-      var mkt = row.mkt == null ? '<span style="color:var(--text-muted)">—</span>'
+      var mkt = row.mkt == null ? '<span style="color:var(--text-muted)">-</span>'
         : ("Round " + row.mkt + ' <span style="color:var(--text-muted)">· ' + Math.round(row.p.value || 0) + "</span>");
       var w = Math.round(Math.abs(row.surplus || 0) / mx * 100);
       var sColor = "var(--text-muted)";
       if (row.verdict === "keep") sColor = "var(--win,#15803d)";
       else if (row.verdict === "toss") sColor = "var(--inj-q,#ca8a04)";
-      var sval = row.surplus == null ? "—" : fmt(row.surplus);
+      var sval = row.surplus == null ? "-" : fmt(row.surplus);
       var vlabel = { keep: "KEEP", toss: "TOSS-UP", pass: "PASS" }[row.verdict];
       return "<tr>" +
-        "<td><span class=\"kpr-pos " + esc(pos) + "\">" + (esc(pos) || "—") + "</span>" +
+        "<td><span class=\"kpr-pos " + esc(pos) + "\">" + (esc(pos) || "-") + "</span>" +
         '<span class="kpr-nm">' + esc(row.p.name) + "</span><div class=\"kpr-sub\">" + draftedTxt + "</div></td>" +
         '<td class="r">Round ' + row.cost + "</td>" +
         '<td class="r">' + mkt + "</td>" +

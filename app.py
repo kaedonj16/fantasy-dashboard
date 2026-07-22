@@ -13431,14 +13431,14 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
 @app.route("/keeper")
 @app.route("/<platform>/<int:season>/<league_id>/keeper")
 def page_keeper(platform: str = None, season: int = None, league_id: str = None):
-    """Keeper Assistant — decide who to keep next season."""
+    """Keeper Assistant: decide who to keep next season."""
     from dashboard_services.pages.keeper_page import build_keeper_body
     if not league_id:
         body = (
             "<div class='card central' style='text-align:center;padding:44px 16px;'>"
             "<h2>Keeper Assistant</h2>"
             "<p style='color:var(--text-muted);max-width:54ch;margin:10px auto 0;line-height:1.6;'>"
-            "Open one of your leagues to see keeper recommendations — who returns the most "
+            "Open one of your leagues to see keeper recommendations: who returns the most "
             "draft-capital value at their keeper cost, and the optimal set to keep under your "
             "league limit.</p></div>"
         )
