@@ -119,6 +119,21 @@ def render_keeper_html(seed: dict) -> str:
   .kpr-warn{{font-size:12.5px;color:var(--inj-q,#b45309);background:color-mix(in srgb,var(--inj-q,#b45309) 12%,transparent);
     border:1px solid color-mix(in srgb,var(--inj-q,#b45309) 32%,transparent);border-radius:9px;
     padding:8px 12px;margin-bottom:8px;}}
+  /* Mobile: the optimizer is the primary view. Drop the redundant middle label,
+     tighten rows, and compact the table so columns aren't chopped. */
+  @media (max-width:560px){{
+    .kpr-cfg{{gap:8px 12px;padding:12px;}}
+    .kpr-opt{{padding:12px;}}
+    .kpr-row{{grid-template-columns:20px 1fr auto;gap:9px;padding:10px 11px;}}
+    .kpr-mid{{display:none;}}
+    .kpr-nm{{font-size:14px;}}
+    .kpr-draft-btn{{width:100%;justify-content:center;}}
+    table.kpr-tbl{{min-width:470px;}}
+    .kpr-tbl thead th,.kpr-tbl tbody td{{padding:9px 8px;}}
+    .kpr-tbl .kpr-sub{{white-space:nowrap;}}
+    .kpr-drnd{{width:44px;}}
+    .kpr-yrs{{width:36px;}}
+  }}
   @media (prefers-reduced-motion:reduce){{.kpr-row{{transition:none;}}}}
 </style>
 

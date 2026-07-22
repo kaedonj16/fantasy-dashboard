@@ -71,16 +71,30 @@ def _adp_map(is_sf: bool) -> Dict[str, float]:
     return out
 
 
+def _draft_rounds(d: Optional[Dict[str, Any]]) -> int:
+    try:
+        return int(((d or {}).get("settings") or {}).get("rounds") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _best_draft(drafts: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The draft most likely to hold where current players were acquired: a
+    completed draft with the most rounds (a startup / full draft rather than a
+    small annual rookie draft), falling back to the most recent listed."""
+    pool = [d for d in (drafts or []) if str(d.get("status")) == "complete"] or list(drafts or [])
+    if not pool:
+        return None
+    return max(pool, key=_draft_rounds)
+
+
 def _drafted_round_map(platform: str, league_id: str) -> Dict[str, int]:
     """player_id -> the round they were drafted (Sleeper only; empty otherwise)."""
     if (platform or "").lower() != "sleeper":
         return {}
     try:
         from dashboard_services.api import get_drafts, get_draft_picks
-        drafts = get_drafts(league_id) or []
-        # Prefer a completed draft; fall back to the most recent listed.
-        draft = next((d for d in drafts if str(d.get("status")) == "complete"), None) \
-            or (drafts[0] if drafts else None)
+        draft = _best_draft(get_drafts(league_id) or [])
         if not draft:
             return {}
         picks = get_draft_picks(str(draft.get("draft_id"))) or []
@@ -100,15 +114,18 @@ def _drafted_round_map(platform: str, league_id: str) -> Dict[str, int]:
 
 
 def _num_rounds(platform: str, league_id: str, default: int = 15) -> int:
+    """Draft rounds for the keeper-cost scale. Uses the startup/full draft's
+    round count; defaults to a standard redraft depth when it can't be detected
+    or looks like a small rookie-only draft (which would make the undrafted cost
+    absurdly cheap)."""
     if (platform or "").lower() != "sleeper":
         return default
     try:
         from dashboard_services.api import get_drafts
-        drafts = get_drafts(league_id) or []
-        draft = next((d for d in drafts if str(d.get("status")) == "complete"), None) \
-            or (drafts[0] if drafts else None)
-        rounds = int(((draft or {}).get("settings") or {}).get("rounds") or 0)
-        return rounds or default
+        rounds = _draft_rounds(_best_draft(get_drafts(league_id) or []))
+        # A tiny round count is almost certainly a rookie draft, not the main
+        # draft the keeper cost should scale against.
+        return rounds if rounds >= 8 else default
     except Exception:
         return default
 
@@ -144,14 +161,30 @@ def _viewer_roster(ctx: Dict[str, Any], viewer_roster_id: Optional[str]) -> Opti
     return rosters[0] if rosters else None
 
 
+def _value_rank_map(values: Dict[str, float]) -> Dict[str, float]:
+    """player_id -> overall rank by redraft value (1 = most valuable).
+
+    Used as an ADP proxy when market ADP is unavailable (common in the offseason,
+    or when the FantasyCalc fetch is empty) so surplus is still computable instead
+    of every player showing "off-board"."""
+    ranked = sorted(
+        ((pid, v) for pid, v in values.items() if v and v > 0),
+        key=lambda kv: -kv[1],
+    )
+    return {pid: float(i + 1) for i, (pid, _v) in enumerate(ranked)}
+
+
 def _candidates_for_ids(
     player_ids: List[str],
     players_index: Dict[str, Any],
     values: Dict[str, float],
     adp: Dict[str, float],
     drafted: Dict[str, int],
+    value_rank: Optional[Dict[str, float]] = None,
 ) -> List[KeeperCandidate]:
-    """Build keeper candidates for a set of player ids (one team's roster)."""
+    """Build keeper candidates for a set of player ids (one team's roster).
+    Market ADP falls back to the redraft value rank when it's missing."""
+    value_rank = value_rank or {}
     out: List[KeeperCandidate] = []
     for pid in player_ids:
         meta = players_index.get(pid) or {}
@@ -161,7 +194,7 @@ def _candidates_for_ids(
             position=(meta.get("pos") or meta.get("position") or "").upper(),
             drafted_round=drafted.get(pid),   # None → UI/user sets it
             years_kept=0,
-            adp_overall=adp.get(pid),
+            adp_overall=adp.get(pid) or value_rank.get(pid),
             value=values.get(pid, 0.0),
         ))
     return out
@@ -201,6 +234,7 @@ def compute_league_keepers(
         logger.debug("[keeper] players_index load failed", exc_info=True)
     values = _redraft_value_map(is_sf)
     adp = _adp_map(is_sf)
+    value_rank = _value_rank_map(values)
     drafted = _drafted_round_map(platform, league_id)
     rules = KeeperRules(league_size=league_size, num_rounds=num_rounds)
 
@@ -208,7 +242,7 @@ def compute_league_keepers(
     for r in (ctx.get("rosters") or []):
         rid = str(r.get("roster_id"))
         pids = [str(p) for p in (r.get("players") or [])]
-        per_team[rid] = _candidates_for_ids(pids, players_index, values, adp, drafted)
+        per_team[rid] = _candidates_for_ids(pids, players_index, values, adp, drafted, value_rank)
 
     by_team = project_league_keepers(per_team, rules, limit)
 
@@ -261,12 +295,13 @@ def build_keeper_body(
 
     values = _redraft_value_map(is_sf)
     adp = _adp_map(is_sf)
+    value_rank = _value_rank_map(values)
     drafted = _drafted_round_map(platform, league_id)
 
     roster = _viewer_roster(ctx, viewer_roster_id) or {}
     player_ids = [str(p) for p in (roster.get("players") or [])]
 
-    candidates = _candidates_for_ids(player_ids, players_index, values, adp, drafted)
+    candidates = _candidates_for_ids(player_ids, players_index, values, adp, drafted, value_rank)
     rules = KeeperRules(league_size=league_size, num_rounds=num_rounds)
     ranked = evaluate(candidates, rules, limit=max_keepers)
 
