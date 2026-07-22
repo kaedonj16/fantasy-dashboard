@@ -166,6 +166,20 @@ def total_surplus(candidates: Sequence[KeeperCandidate]) -> int:
     return sum(c.surplus or 0 for c in candidates if c.keep)
 
 
+def cost_collisions(candidates: Sequence[KeeperCandidate]) -> dict:
+    """Cost rounds shared by more than one *kept* candidate.
+
+    Many keeper leagues forbid keeping two players at the same draft-round cost
+    (you only own one pick per round) and bump duplicates to adjacent rounds.
+    Returns {round: [player_id, ...]} for each round with a conflict, so the UI
+    can warn rather than silently mis-price. Empty when there's no clash."""
+    by_round: dict = {}
+    for c in candidates:
+        if c.keep:
+            by_round.setdefault(c.cost_round, []).append(c.player_id)
+    return {rd: ids for rd, ids in by_round.items() if len(ids) > 1}
+
+
 def project_league_keepers(
     rosters: dict,
     rules: KeeperRules,

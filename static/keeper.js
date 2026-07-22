@@ -79,10 +79,20 @@
     return rows.reduce(function (m, r) { return Math.max(m, Math.abs(r.surplus || 0)); }, 1);
   }
 
+  function collisionWarning(rows) {
+    var byRound = {};
+    rows.forEach(function (r) { if (r.keep) { (byRound[r.cost] = byRound[r.cost] || []).push(r); } });
+    var clashes = Object.keys(byRound).filter(function (rd) { return byRound[rd].length > 1; });
+    if (!clashes.length) return "";
+    var parts = clashes.map(function (rd) { return byRound[rd].length + " keepers cost Round " + rd; });
+    return '<div class="kpr-warn">Heads up: ' + parts.join("; ") +
+      ". Many leagues bump a duplicate to the next open round.</div>";
+  }
+
   function renderOptimizer(rows) {
     if (!rows.length) { elList.innerHTML = '<div class="kpr-empty">No players on this roster yet.</div>'; elTot.textContent = "+0 rd"; return; }
     var total = 0;
-    elList.innerHTML = rows.map(function (row) {
+    var body = rows.map(function (row) {
       if (row.keep) total += row.surplus;
       var cls = row.keep ? "keep" : "cut";
       var sval = row.surplus == null ? "-" : fmt(row.surplus);
@@ -95,6 +105,7 @@
         '<div class="kpr-val ' + (row.keep ? "keep" : "pass") + '">' + sval + "</div>" +
         "</div>";
     }).join("");
+    elList.innerHTML = collisionWarning(rows) + body;
     elTot.textContent = fmt(total);
     if (elLimN) elLimN.textContent = elLim ? elLim.value : "0";
   }
@@ -106,6 +117,8 @@
       var draftedTxt = (row.p.draftedRound == null || row.p.draftedRound === "")
         ? '<input class="kpr-drnd" type="number" min="1" data-id="' + esc(row.p.id) + '" placeholder="R?" value="">'
         : ("Drafted R" + row.p.draftedRound);
+      draftedTxt += ' · kept <input class="kpr-yrs" type="number" min="0" max="15" data-id="' +
+        esc(row.p.id) + '" value="' + (row.p.yearsKept || 0) + '" aria-label="Years kept"> yr';
       var mkt = row.mkt == null ? '<span style="color:var(--text-muted)">-</span>'
         : ("Round " + row.mkt + ' <span style="color:var(--text-muted)">· ' + Math.round(row.p.value || 0) + "</span>");
       var w = Math.round(Math.abs(row.surplus || 0) / mx * 100);
@@ -131,6 +144,15 @@
         var v = parseInt(inp.value, 10);
         var pl = players.filter(function (p) { return String(p.id) === String(pid); })[0];
         if (pl) { pl.draftedRound = (v > 0 ? v : null); render(); }
+      });
+    });
+    // Wire per-player years-kept inputs (drives the escalation rule).
+    Array.prototype.forEach.call(elTbody.querySelectorAll(".kpr-yrs"), function (inp) {
+      inp.addEventListener("change", function () {
+        var pid = inp.getAttribute("data-id");
+        var v = parseInt(inp.value, 10);
+        var pl = players.filter(function (p) { return String(p.id) === String(pid); })[0];
+        if (pl) { pl.yearsKept = (v > 0 ? v : 0); render(); }
       });
     });
   }

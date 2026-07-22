@@ -114,6 +114,11 @@ def render_keeper_html(seed: dict) -> str:
   .kpr-note{{padding:12px 16px;border-top:1px solid var(--border);font-size:12px;color:var(--text-muted);}}
   .kpr-drnd{{width:58px;font:inherit;font-size:12px;font-weight:600;color:var(--text);
     background:var(--card);border:1px solid var(--border);border-radius:7px;padding:3px 6px;text-align:center;}}
+  .kpr-yrs{{width:42px;font:inherit;font-size:11px;font-weight:600;color:var(--text);
+    background:var(--card);border:1px solid var(--border);border-radius:6px;padding:1px 4px;text-align:center;}}
+  .kpr-warn{{font-size:12.5px;color:var(--inj-q,#b45309);background:color-mix(in srgb,var(--inj-q,#b45309) 12%,transparent);
+    border:1px solid color-mix(in srgb,var(--inj-q,#b45309) 32%,transparent);border-radius:9px;
+    padding:8px 12px;margin-bottom:8px;}}
   @media (prefers-reduced-motion:reduce){{.kpr-row{{transition:none;}}}}
 </style>
 
