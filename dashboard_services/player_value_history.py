@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import date, timedelta
 from typing import Optional, Iterable
 import numpy as np
@@ -8,6 +9,27 @@ import numpy as np
 from dashboard_services.db import get_conn
 
 logger = logging.getLogger(__name__)
+
+# Memoize the (expensive) current-values build: a full player_values scan plus a
+# players-index load plus two passes of pick-hierarchy processing. The table is
+# refreshed once daily by cron, so a short TTL is safe and removes that work from
+# hot request paths (trade eval, trade suggestions, rookie rankings). Callers
+# mutate the rows they get back (e.g. FC-zeroing in get_model_value_table_cached
+# sets p["value"]=0), so every call is handed an isolated copy of flat scalar
+# dicts — never the cached originals — preserving the "fresh list per call"
+# semantics the direct DB build used to provide.
+_CURRENT_VALUES_CACHE: Optional[list] = None
+_CURRENT_VALUES_CACHE_TS: float = 0.0
+_CURRENT_VALUES_CACHE_TTL: float = 300.0  # seconds
+
+
+def clear_current_values_cache() -> None:
+    """Drop the memoized current-values table so the next call reloads from the
+    DB. Call after a cron run alongside the other value-cache flushes so freshly
+    rebuilt values are served immediately instead of waiting out the TTL."""
+    global _CURRENT_VALUES_CACHE, _CURRENT_VALUES_CACHE_TS
+    _CURRENT_VALUES_CACHE = None
+    _CURRENT_VALUES_CACHE_TS = 0.0
 
 
 def init_value_history_db() -> None:
@@ -336,8 +358,17 @@ def load_current_values_from_db() -> list[dict]:
     Load current player and pick values from the player_values table (one row per player/pick,
     updated daily by cron_daily).  Falls back gracefully if the table doesn't
     exist yet or the DB is unavailable.
+
+    Result is memoized for _CURRENT_VALUES_CACHE_TTL; each caller gets an
+    isolated copy (rows are mutated downstream), so this is a drop-in speedup
+    with the same semantics as the uncached build.
     """
     from utils.utils import normalize_name
+
+    global _CURRENT_VALUES_CACHE, _CURRENT_VALUES_CACHE_TS
+    cached = _CURRENT_VALUES_CACHE
+    if cached is not None and (time.time() - _CURRENT_VALUES_CACHE_TS) < _CURRENT_VALUES_CACHE_TTL:
+        return [dict(p) for p in cached]
 
     try:
         with get_conn() as conn:
@@ -517,7 +548,9 @@ def load_current_values_from_db() -> list[dict]:
     # Database already has correct position ranks based on calibrated values
     # No recalculation needed - use the database values directly
 
-    return assets
+    _CURRENT_VALUES_CACHE = assets
+    _CURRENT_VALUES_CACHE_TS = time.time()
+    return [dict(p) for p in assets]
 
 
 def load_calibration_overrides() -> dict[str, dict]:
