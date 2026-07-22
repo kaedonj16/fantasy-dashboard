@@ -32,13 +32,41 @@ def norm_platform(platform: str) -> str:
     return (platform or "sleeper").lower().strip()
 
 
-def _yahoo_token() -> str:
-    """Retrieve the Yahoo access token from the Flask request session."""
+def _yahoo_token(league_id: str = "", season: int = 0) -> str:
+    """Resolve a valid Yahoo access token for a data fetch.
+
+    Priority:
+      1. The viewer's own session identity: session ``yahoo_guid`` → the DB-backed,
+         auto-refreshing token (so it no longer dies after ~1h). Falls back to a
+         raw ``yahoo_access_token`` left in the session by an older flow.
+      2. Any authorized owner of this league → their DB token. This is what lets a
+         non-owner viewer (public share) or a background/cron job — neither of
+         which has the owner's session — load a Yahoo league.
+
+    Returns "" when nothing can produce a token (caller degrades gracefully).
+    """
+    from dashboard_services.providers.yahoo_api import (
+        get_valid_access_token, get_league_token,
+    )
+    # 1) viewer's own session (only meaningful inside a request context)
     try:
         from flask import session
-        return session.get("yahoo_access_token") or ""
+        guid = session.get("yahoo_guid") or ""
+        if guid:
+            tok = get_valid_access_token(guid)
+            if tok:
+                return tok
+        raw = session.get("yahoo_access_token") or ""
+        if raw:
+            return raw
     except RuntimeError:
-        return ""
+        pass  # no request context (background job) → fall through to league owner
+    # 2) any authorized owner of this league (works with no session)
+    if league_id:
+        tok = get_league_token(league_id, season or 0)
+        if tok:
+            return tok
+    return ""
 
 
 def get_league(platform: str, league_id: str, season: int) -> Dict[str, Any]:
@@ -47,7 +75,7 @@ def get_league(platform: str, league_id: str, season: int) -> Dict[str, Any]:
         return espn_get_league(season, league_id)
     if platform == "yahoo":
         from dashboard_services.providers.yahoo_api import get_league as yahoo_get_league
-        return yahoo_get_league(season, league_id, _yahoo_token())
+        return yahoo_get_league(season, league_id, _yahoo_token(league_id, season))
     return sleeper_get_league(league_id)
 
 
@@ -57,7 +85,7 @@ def get_users(platform: str, league_id: str, season: int) -> List[Dict[str, Any]
         return espn_get_users(season, league_id)
     if platform == "yahoo":
         from dashboard_services.providers.yahoo_api import get_users as yahoo_get_users
-        return yahoo_get_users(season, league_id, _yahoo_token())
+        return yahoo_get_users(season, league_id, _yahoo_token(league_id, season))
     return sleeper_get_users(league_id)
 
 
@@ -67,7 +95,7 @@ def get_rosters(platform: str, league_id: str, season: int) -> List[Dict[str, An
         return espn_get_rosters(season, league_id)
     if platform == "yahoo":
         from dashboard_services.providers.yahoo_api import get_rosters as yahoo_get_rosters
-        return yahoo_get_rosters(season, league_id, _yahoo_token())
+        return yahoo_get_rosters(season, league_id, _yahoo_token(league_id, season))
     return sleeper_get_rosters(league_id)
 
 
@@ -77,7 +105,7 @@ def get_matchups(platform: str, league_id: str, week: int, season: int) -> List[
         return espn_get_matchups(season, league_id, week)
     if platform == "yahoo":
         from dashboard_services.providers.yahoo_api import get_matchups as yahoo_get_matchups
-        return yahoo_get_matchups(season, league_id, week, _yahoo_token())
+        return yahoo_get_matchups(season, league_id, week, _yahoo_token(league_id, season))
     return sleeper_get_matchups(league_id, week)
 
 
@@ -94,7 +122,7 @@ def get_bracket(platform: str, league_id: str, kind: str, season: int):
         return espn_get_bracket_like(league_id=league_id, season=season, kind=kind)
     if p == "yahoo":
         from dashboard_services.providers.yahoo_api import get_bracket_like as yahoo_bracket
-        return yahoo_bracket(league_id, season, kind, _yahoo_token())
+        return yahoo_bracket(league_id, season, kind, _yahoo_token(league_id, season))
     return sleeper_get_bracket(league_id, kind)
 
 
@@ -104,7 +132,7 @@ def get_drafts(platform: str, league_id: str, season: int) -> List[Dict[str, Any
         return espn_get_drafts(season, league_id)
     if p == "yahoo":
         from dashboard_services.providers.yahoo_api import get_drafts as yahoo_get_drafts
-        return yahoo_get_drafts(season, league_id, _yahoo_token())
+        return yahoo_get_drafts(season, league_id, _yahoo_token(league_id, season))
     return sleeper_get_drafts(league_id)
 
 
@@ -115,7 +143,7 @@ def get_transactions(platform: str, league_id: str, week: int, season: int) -> L
         return espn_get_transactions(season, league_id, week)
     if p == "yahoo":
         from dashboard_services.providers.yahoo_api import get_transactions as yahoo_get_transactions
-        return yahoo_get_transactions(season, league_id, week, _yahoo_token())
+        return yahoo_get_transactions(season, league_id, week, _yahoo_token(league_id, season))
     return sleeper_get_transactions(league_id, week) or []
 
 
@@ -133,7 +161,7 @@ def sync_league_globals(platform: str, league_id: str, season: int) -> None:
             data = espn_get_league_globals(season, league_id)
         else:
             from dashboard_services.providers.yahoo_api import get_league_globals as yahoo_globals
-            data = yahoo_globals(season, league_id, _yahoo_token())
+            data = yahoo_globals(season, league_id, _yahoo_token(league_id, season))
         if data:
             set_league_globals(
                 scoring_settings=data.get("scoring_settings"),
