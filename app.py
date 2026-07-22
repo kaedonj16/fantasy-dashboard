@@ -226,6 +226,63 @@ _PLOTLY_LOADER = (
 )
 
 DASHBOARD_CACHE = {}
+# Bound the per-league cache. Each entry holds a full league context plus
+# rendered page HTML, and on the public site any visitor can look up any league,
+# so without eviction this dict grows without limit (a slow OOM on a
+# long-running worker). Cap the entry count and evict the oldest ~10% when
+# exceeded — the same bounded pattern used by _GAME_LOGS_CACHE below.
+DASHBOARD_CACHE_MAX = 400
+
+
+def _prune_dashboard_cache(keep: Optional[str] = None) -> None:
+    """Evict the oldest ~10% of DASHBOARD_CACHE entries once it exceeds
+    DASHBOARD_CACHE_MAX. Called on every entry-creation path so total memory
+    stays bounded regardless of how many distinct leagues get looked up. ``keep``
+    is the key about to be written; it is never evicted, so a caller updating a
+    hot entry can't lose the ctx it's building on."""
+    if len(DASHBOARD_CACHE) < DASHBOARD_CACHE_MAX:
+        return
+
+    def _age(k):
+        e = DASHBOARD_CACHE.get(k) or {}
+        ts = e.get("ts")
+        if ts is not None:
+            return ts
+        # Entries created only via the page_html/awards setdefault paths carry
+        # their timestamps one level down; use the most recent as the age.
+        cand = [r[0] for r in (e.get("page_html") or {}).values() if isinstance(r, tuple)]
+        aw = e.get("awards_agg")
+        if isinstance(aw, tuple):
+            cand.append(aw[0])
+        return max(cand) if cand else 0.0
+
+    candidates = [k for k in DASHBOARD_CACHE if k != keep]
+    for k in sorted(candidates, key=_age)[:max(1, DASHBOARD_CACHE_MAX // 10)]:
+        DASHBOARD_CACHE.pop(k, None)
+
+
+def _prune_ttl_cache(cache: dict, max_entries: int) -> None:
+    """Evict the oldest ~10% of a per-league/per-roster TTL cache once it exceeds
+    ``max_entries``. These caches key on ids from an effectively unbounded space
+    (any league/roster a visitor looks up), so a TTL alone doesn't cap memory —
+    stale entries linger until their exact key is requested again. Handles both
+    entry shapes used here: ``{'ts': float, ...}`` dicts and ``(ts, payload)``
+    tuples."""
+    if len(cache) < max_entries:
+        return
+
+    def _age(k):
+        e = cache.get(k)
+        if isinstance(e, dict):
+            return e.get("ts", 0.0)
+        if isinstance(e, tuple) and e and isinstance(e[0], (int, float)):
+            return e[0]
+        return 0.0
+
+    for k in sorted(list(cache), key=_age)[:max(1, max_entries // 10)]:
+        cache.pop(k, None)
+
+
 # Per-key locks prevent simultaneous first-loads for the same league from both
 # running the full build_league_context (~40 API calls) at the same time.
 _CTX_LOCKS: dict = {}
@@ -233,10 +290,12 @@ _CTX_LOCKS_LOCK = threading.Lock()
 # Short-lived cache for /api/league-rosters responses (pick-slot resolution is expensive).
 _ROSTER_API_CACHE: dict = {}
 _ROSTER_API_CACHE_TTL = 180  # seconds
+_ROSTER_API_CACHE_MAX = 300  # entries; oldest ~10% evicted when exceeded
 
 # Cache for Monte Carlo playoff simulation results (keyed by platform/league_id/season).
 _PLAYOFF_SIM_CACHE: dict = {}
 _PLAYOFF_SIM_CACHE_TTL = 3600  # 1 hour
+_PLAYOFF_SIM_CACHE_MAX = 200  # entries; oldest ~10% evicted when exceeded
 
 
 _PLAYOFF_SIM_BUILDING: set = set()
@@ -266,6 +325,7 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
         def _run(snapshot=dict(ctx)):
             try:
                 odds = simulate_playoff_odds(snapshot, platform=platform) or []
+                _prune_ttl_cache(_PLAYOFF_SIM_CACHE, _PLAYOFF_SIM_CACHE_MAX)
                 _PLAYOFF_SIM_CACHE[key] = {"data": odds, "ts": time.time()}
             except Exception:
                 logger.debug("background playoff sim failed", exc_info=True)
@@ -282,6 +342,7 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
             return []
 
         odds = simulate_playoff_odds(ctx, platform=platform) or []
+        _prune_ttl_cache(_PLAYOFF_SIM_CACHE, _PLAYOFF_SIM_CACHE_MAX)
         _PLAYOFF_SIM_CACHE[key] = {"data": odds, "ts": time.time()}
         return odds
     except Exception:
@@ -291,11 +352,13 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
 # Cache for share card HTML (keyed by platform/league_id/season/roster_id).
 _SHARE_CARD_CACHE: dict = {}
 _SHARE_CARD_CACHE_TTL = 600  # 10 minutes
+_SHARE_CARD_CACHE_MAX = 200  # entries; oldest ~10% evicted when exceeded
 
 # Cache for /api/draft-grades responses (keyed by platform/league_id/season/league_type).
 # Short TTL keeps a live draft's grades fresh while making repeat tab-opens instant.
 _DRAFT_GRADES_CACHE: dict = {}
 _DRAFT_GRADES_CACHE_TTL = 300  # 5 minutes
+_DRAFT_GRADES_CACHE_MAX = 200  # entries; oldest ~10% evicted when exceeded
 
 # Cache for value-tier thresholds (keyed by model-cache timestamp + league shape).
 # compute_tier_thresholds is an O(n·window) scan over the value table; the inputs
@@ -1405,7 +1468,9 @@ def get_page_html_from_cache(platform: str, season: int, league_id: str, page: s
         path = _page_html_tmp_path(platform, season, league_id, page)
         if os.path.exists(path) and time.time() - os.path.getmtime(path) <= PAGE_HTML_TTL:
             html = open(path, encoding="utf-8").read()
-            mem_entry = DASHBOARD_CACHE.setdefault(_cache_key(platform, season, league_id), {})
+            _ck = _cache_key(platform, season, league_id)
+            _prune_dashboard_cache(keep=_ck)
+            mem_entry = DASHBOARD_CACHE.setdefault(_ck, {})
             mem_entry.setdefault("page_html", {})[page] = (time.time(), html)
             return html
     except Exception:
@@ -1415,7 +1480,9 @@ def get_page_html_from_cache(platform: str, season: int, league_id: str, page: s
 
 
 def store_page_html(platform: str, season: int, league_id: str, page: str, html: str) -> None:
-    entry = DASHBOARD_CACHE.setdefault(_cache_key(platform, season, league_id), {})
+    _k = _cache_key(platform, season, league_id)
+    _prune_dashboard_cache(keep=_k)
+    entry = DASHBOARD_CACHE.setdefault(_k, {})
     entry.setdefault("page_html", {})[page] = (time.time(), html)
     try:
         path = _page_html_tmp_path(platform, season, league_id, page)
@@ -1440,7 +1507,9 @@ def get_awards_agg_from_cache(platform: str, season: int, league_id: str):
 
 
 def store_awards_agg(platform: str, season: int, league_id: str, payload) -> None:
-    entry = DASHBOARD_CACHE.setdefault(_cache_key(platform, season, league_id), {})
+    _k = _cache_key(platform, season, league_id)
+    _prune_dashboard_cache(keep=_k)
+    entry = DASHBOARD_CACHE.setdefault(_k, {})
     entry["awards_agg"] = (time.time(), payload)
 
 
@@ -3433,6 +3502,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
 
     if not entry:
         ctx = build_league_context(platform, league_id, season)
+        _prune_dashboard_cache()
         DASHBOARD_CACHE[key] = {"ctx": ctx, "ts": time.time(), "page_html": {}}
         return ctx
 
@@ -9748,6 +9818,7 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
             )
             return ctx
         ctx = build_league_context(platform, league_id, season)
+        _prune_dashboard_cache()
         DASHBOARD_CACHE[key] = {"ctx": ctx, "ts": time.time(), "page_html": {}}
         return ctx
 
@@ -17757,6 +17828,7 @@ def index():
             league_id=league_id,
             season=season,
         )
+        _prune_dashboard_cache()
         DASHBOARD_CACHE[key] = {"ctx": ctx, "ts": time.time(), "page_html": {}}
 
         # Preload historical season contexts in the background so History/Awards/Graphs
@@ -20138,6 +20210,7 @@ def api_league_rosters():
             "teams": teams,
             "viewer_roster_id": str(viewer.get("viewer_roster_id") or ""),
         }
+        _prune_ttl_cache(_ROSTER_API_CACHE, _ROSTER_API_CACHE_MAX)
         _ROSTER_API_CACHE[_roster_key] = {"data": payload, "ts": time.time()}
         return jsonify(payload)
     except Exception as e:
@@ -24293,6 +24366,7 @@ def api_draft_grades():
         }
         if len(_DRAFT_GRADES_CACHE) > 256:   # bound memory; entries are small
             _DRAFT_GRADES_CACHE.clear()
+        _prune_ttl_cache(_DRAFT_GRADES_CACHE, _DRAFT_GRADES_CACHE_MAX)
         _DRAFT_GRADES_CACHE[_dg_key] = (time.time(), _dg_payload)
         return jsonify(_dg_payload)
 
@@ -28969,6 +29043,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
 </body>
 </html>"""
         if not is_embed:
+            _prune_ttl_cache(_SHARE_CARD_CACHE, _SHARE_CARD_CACHE_MAX)
             _SHARE_CARD_CACHE[_sc_key] = {"html": card_html, "ts": time.time()}
         return card_html, 200, {"Content-Type": "text/html; charset=utf-8"}
     except Exception as exc:
