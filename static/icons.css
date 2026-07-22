@@ -71,3 +71,33 @@
 
 /* Specific overrides for home page icons */
 .home-feature-icon .fa-trophy { filter: brightness(0) saturate(100%) invert(72%) sepia(78%) saturate(865%) hue-rotate(354deg) brightness(101%) contrast(105%) !important; }
+
+/* ── Font-glyph fallback for icons with no PNG mapping ────────────────────────
+   This file swaps Font Awesome glyphs for tinted PNGs and, at the top, blanks
+   every glyph via `.fa-solid::before{content:none!important}`. Any fa-solid icon
+   used in the app WITHOUT a PNG mapping above therefore rendered as a blank 1em
+   box (e.g. the injury/questionable chip's fa-triangle-exclamation). font-awesome.css
+   still ships these codepoints and the same-origin webfont, so restore the glyph
+   for the unmapped icons. `.fa-solid.fa-x` (specificity 0,2,1) + !important beats
+   the blanket `.fa-solid::before` reset (0,1,1). Glyphs honor `color:`, which the
+   colored severity chips (questionable=amber, out=red) depend on — a PNG mask
+   would not. Codepoints verified against static/font-awesome.css. */
+.fa-solid.fa-arrow-down::before        { content: "\f063" !important; }
+.fa-solid.fa-arrow-down-short-wide::before { content: "\f884" !important; }
+.fa-solid.fa-arrow-up::before          { content: "\f062" !important; }
+.fa-solid.fa-arrow-up-short-wide::before   { content: "\f885" !important; }
+.fa-solid.fa-arrows-rotate::before     { content: "\f021" !important; }
+.fa-solid.fa-bell::before              { content: "\f0f3" !important; }
+.fa-solid.fa-circle-check::before      { content: "\f058" !important; }
+.fa-solid.fa-circle-notch::before      { content: "\f1ce" !important; }
+.fa-solid.fa-circle-xmark::before      { content: "\f057" !important; }
+.fa-solid.fa-heart::before             { content: "\f004" !important; }
+.fa-solid.fa-inbox::before             { content: "\f01c" !important; }
+.fa-solid.fa-minus::before             { content: "\f068" !important; }
+.fa-solid.fa-newspaper::before         { content: "\f1ea" !important; }
+.fa-solid.fa-right-to-bracket::before  { content: "\f2f6" !important; }
+.fa-solid.fa-shield-halved::before     { content: "\f3ed" !important; }
+.fa-solid.fa-triangle-exclamation::before { content: "\f071" !important; }
+.fa-solid.fa-user::before              { content: "\f007" !important; }
+.fa-solid.fa-user-slash::before        { content: "\f506" !important; }
+.fa-solid.fa-users::before             { content: "\f0c0" !important; }
