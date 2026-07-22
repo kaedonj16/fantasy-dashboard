@@ -209,6 +209,85 @@ def get_valid_access_token(guid: str) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
+# League → owner mapping
+#
+# Yahoo OAuth tokens are account-level, so any league member who has authorized
+# can read the whole league. Recording which guid(s) authorized while viewing a
+# league lets a *different* viewer (a public share) or a background/cron job —
+# neither of which has the owner's session — fetch the league on their behalf.
+# ---------------------------------------------------------------------------
+
+def _init_league_owner_table() -> None:
+    """Create the yahoo_league_owners table if it doesn't exist yet."""
+    from dashboard_services.db import get_conn
+    with get_conn() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS yahoo_league_owners (
+                league_id  TEXT        NOT NULL,
+                season     INTEGER     NOT NULL,
+                guid       TEXT        NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (league_id, season, guid)
+            )
+        """)
+
+
+def save_league_owner(league_id: str, season: int, guid: str) -> None:
+    """Record that ``guid``'s stored token can read ``(league_id, season)``."""
+    if not (league_id and guid):
+        return
+    from dashboard_services.db import get_conn
+    try:
+        _init_league_owner_table()
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+    try:
+        with get_conn() as conn:
+            conn.execute("""
+                INSERT INTO yahoo_league_owners (league_id, season, guid, updated_at)
+                VALUES (%s, %s, %s, NOW())
+                ON CONFLICT (league_id, season, guid) DO UPDATE SET updated_at = NOW()
+            """, (str(league_id), int(season), guid))
+    except Exception as exc:
+        logger.warning("[yahoo] save_league_owner failed: %s", exc)
+
+
+def get_league_token(league_id: str, season: int) -> Optional[str]:
+    """Return a valid (auto-refreshed) access token from any authorized owner of
+    this league, or None. Prefers an owner who authorized for the exact season,
+    then the most recently updated — since the token is account-level, any of
+    them can read it. This is the path background jobs and non-owner viewers use.
+    """
+    if not league_id:
+        return None
+    from dashboard_services.db import get_conn
+    try:
+        _init_league_owner_table()
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT guid FROM yahoo_league_owners
+                WHERE league_id = %s
+                ORDER BY (season = %s) DESC, updated_at DESC
+                """,
+                (str(league_id), int(season or 0)),
+            ).fetchall()
+    except Exception as exc:
+        logger.warning("[yahoo] get_league_token lookup failed: %s", exc)
+        return None
+
+    for row in rows or []:
+        guid = row["guid"] if isinstance(row, dict) else row[0]
+        tok = get_valid_access_token(guid)
+        if tok:
+            return tok
+    return None
+
+
+# ---------------------------------------------------------------------------
 # API request helper
 # ---------------------------------------------------------------------------
 

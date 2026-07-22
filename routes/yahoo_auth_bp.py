@@ -63,7 +63,9 @@ def yahoo_auth_start():
 @yahoo_auth_bp.route("/auth/yahoo/callback")
 def yahoo_auth_callback():
     """Handle Yahoo OAuth callback, exchange code for tokens."""
-    from dashboard_services.providers.yahoo_api import exchange_code_for_tokens, save_tokens
+    from dashboard_services.providers.yahoo_api import (
+        exchange_code_for_tokens, save_tokens, save_league_owner,
+    )
 
     error = request.args.get("error")
     if error:
@@ -111,12 +113,18 @@ def yahoo_auth_callback():
     session["viewer_username"]    = team_name or guid
     session.permanent             = True
 
-    # If we have a league_id, redirect into the league dashboard
+    # If we have a league_id, record this guid as an authorized owner of the
+    # league (so non-owner viewers and background jobs can fetch it later) and
+    # redirect into the league dashboard.
     if league_id:
         from datetime import datetime
         from dashboard_services.api import get_nfl_state
         nfl_state  = get_nfl_state() or {}
         season     = int(nfl_state.get("season") or datetime.now().year)
+        try:
+            save_league_owner(league_id, season, guid)
+        except Exception:
+            logger.warning("[yahoo_auth] save_league_owner failed", exc_info=True)
         return redirect(f"/yahoo/{season}/{league_id}/dashboard")
 
     return redirect(next_url)
