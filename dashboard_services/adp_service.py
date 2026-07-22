@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Dict
+from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -443,3 +443,140 @@ def build_model_adp_fallback(is_sf: bool, season: int, filter_undrafted: bool = 
     except Exception:
         logger.exception("adp_service: build_model_adp_fallback failed (sf=%s, season=%s)", is_sf, season)
         return {}
+
+
+# ── Unified market-ADP resolver ──────────────────────────────────────────────
+# One entry point every surface (keeper tool, rankings, draft room) uses to ask
+# for ADP, so the source and scoring axis are chosen in one place instead of ad
+# hoc per consumer. New sources (e.g. a replacement dynasty/rookie feed) slot in
+# as another adapter below and get registered in ADP_SOURCES.
+
+# Sleeper projection ADP fields per (scoring_type, is_superflex), most- to
+# least-preferred.
+_SLEEPER_ADP_FIELDS = {
+    ("redraft", False): ("adp_ppr", "adp_half_ppr", "adp_std"),
+    ("redraft", True):  ("adp_2qb", "adp_ppr", "adp_half_ppr", "adp_std"),
+    ("dynasty", False): ("adp_dynasty_ppr", "adp_dynasty_half_ppr", "adp_dynasty_std"),
+    ("dynasty", True):  ("adp_dynasty_2qb", "adp_dynasty_ppr", "adp_dynasty_half_ppr", "adp_dynasty_std"),
+    ("rookie", False):  ("adp_dynasty_rookie", "adp_rookie"),
+    ("rookie", True):   ("adp_dynasty_rookie", "adp_rookie"),
+}
+
+# Which market sources are valid per scoring axis. Yahoo publishes redraft ADP
+# only (it is a seasonal platform), so it is offered for redraft alone.
+ADP_SOURCES = {
+    "redraft": ("sleeper", "yahoo", "fc"),
+    "dynasty": ("sleeper", "fc"),
+    "rookie":  ("sleeper", "fc"),
+}
+
+
+def _adp_overall_from_row(row: dict, fields) -> Optional[float]:
+    for f in fields:
+        v = (row or {}).get(f)
+        try:
+            if v is not None and float(v) > 0:
+                return float(v)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _sleeper_adp_source(season: int, is_sf: bool, scoring_type: str) -> Dict[str, float]:
+    fields = _SLEEPER_ADP_FIELDS.get((scoring_type, is_sf)) or _SLEEPER_ADP_FIELDS[("redraft", is_sf)]
+    out: Dict[str, float] = {}
+    for pid, row in (fetch_sleeper_adp(int(season)) or {}).items():
+        ov = _adp_overall_from_row(row, fields)
+        if ov:
+            out[str(pid)] = ov
+    return out
+
+
+def _fc_adp_source(season: int, is_sf: bool, scoring_type: str) -> Dict[str, float]:
+    try:
+        if scoring_type == "rookie":
+            raw = fetch_fc_rookie_adp(is_sf, int(season)) or {}
+        elif scoring_type == "dynasty":
+            raw = fetch_fc_startup_adp(is_sf) or {}
+        else:
+            raw = fetch_fc_redraft_adp(is_sf) or {}
+    except Exception:
+        logger.debug("adp_service: FC source failed", exc_info=True)
+        return {}
+    out: Dict[str, float] = {}
+    for pid, info in raw.items():
+        try:
+            ov = float((info or {}).get("avg_pick") or (info or {}).get("adp_rank") or 0)
+        except (TypeError, ValueError):
+            ov = 0.0
+        if ov > 0:
+            out[str(pid)] = ov
+    return out
+
+
+def _yahoo_adp_source(season: int, is_sf: bool, scoring_type: str,
+                      league_id, token) -> Dict[str, float]:
+    # Yahoo ADP is redraft-only and needs a user token. fetch_yahoo_adp lands in
+    # a follow-up; until then this yields nothing and callers fall back.
+    if scoring_type != "redraft" or not (league_id and token):
+        return {}
+    try:
+        return fetch_yahoo_adp(league_id, token, int(season), is_sf) or {}  # type: ignore[name-defined]
+    except Exception:
+        return {}
+
+
+def consensus_adp(source_maps) -> Dict[str, float]:
+    """Blend several ``{id: overall_adp}`` maps into one consensus map.
+
+    A single source is returned as-is (raw ADP kept). With two or more, each
+    source is ranked independently (1 = earliest) and a player's consensus ADP is
+    the average of their ranks across the sources that list them, so one source
+    on a different numeric scale can't skew the blend."""
+    present = [m for m in source_maps if m]
+    if not present:
+        return {}
+    if len(present) == 1:
+        return dict(present[0])
+    ranks_per_source = []
+    for m in present:
+        order = sorted(m.items(), key=lambda kv: kv[1])
+        ranks_per_source.append({pid: i + 1 for i, (pid, _v) in enumerate(order)})
+    agg: Dict[str, list] = {}
+    for ranks in ranks_per_source:
+        for pid, r in ranks.items():
+            agg.setdefault(pid, []).append(r)
+    return {pid: sum(rs) / len(rs) for pid, rs in agg.items()}
+
+
+def resolve_market_adp(season: int, is_sf: bool, scoring_type: str = "redraft",
+                       source: str = "consensus", league_id=None, token=None) -> Dict[str, float]:
+    """canonical player_id -> overall market ADP for a scoring axis and source.
+
+    scoring_type: ``redraft`` | ``dynasty`` | ``rookie``.
+    source:       ``sleeper`` | ``yahoo`` | ``fc`` | ``consensus``. ``yahoo`` is
+                  redraft-only; requesting it on another axis yields nothing and
+                  the resolver falls back. Empty result means no source had data
+                  (the caller can apply its own fallback, e.g. value rank)."""
+    scoring_type = scoring_type if scoring_type in ("redraft", "dynasty", "rookie") else "redraft"
+    valid = ADP_SOURCES.get(scoring_type, ("sleeper", "fc"))
+
+    def _src(name: str) -> Dict[str, float]:
+        if name == "sleeper":
+            return _sleeper_adp_source(season, is_sf, scoring_type)
+        if name == "fc":
+            return _fc_adp_source(season, is_sf, scoring_type)
+        if name == "yahoo":
+            return _yahoo_adp_source(season, is_sf, scoring_type, league_id, token)
+        return {}
+
+    if source == "consensus":
+        blended = consensus_adp([_src(n) for n in valid])
+        if blended:
+            return blended
+    elif source in valid:
+        got = _src(source)
+        if got:
+            return got
+    # Fallback: sleeper, then fc.
+    return _sleeper_adp_source(season, is_sf, scoring_type) or _fc_adp_source(season, is_sf, scoring_type)

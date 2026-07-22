@@ -9,27 +9,33 @@ import types
 from dashboard_services.pages import keeper_page as kp
 
 
-def _fake_adp_service(sleeper=None, fc=None):
+def _fake_adp_service(resolve):
     m = types.ModuleType("dashboard_services.adp_service")
-    m.fetch_sleeper_adp = lambda season: (sleeper or {})
-    m.fetch_fc_redraft_adp = lambda is_sf: (fc or {})
+    m.resolve_market_adp = resolve
     return m
 
 
-def test_adp_prefers_sleeper_and_picks_right_field(monkeypatch):
-    fake = _fake_adp_service(
-        sleeper={"1": {"adp_ppr": 3.0, "adp_2qb": 2.0}, "2": {"adp_ppr": 20.0}},
-        fc={"9": {"avg_pick": 99.0}},
-    )
-    monkeypatch.setitem(sys.modules, "dashboard_services.adp_service", fake)
-    assert kp._adp_map(is_sf=False, season=2026) == {"1": 3.0, "2": 20.0}   # 1QB -> adp_ppr; FC ignored
-    assert kp._adp_map(is_sf=True, season=2026)["1"] == 2.0                 # SF -> adp_2qb
+def test_adp_delegates_to_resolver_redraft(monkeypatch):
+    # _adp_map is a thin redraft wrapper over the shared resolver; field/source
+    # selection lives in test_adp_resolver.py. Here we only assert the delegation:
+    # keeper decisions always ask the redraft axis and pass the requested source.
+    seen = {}
+
+    def resolve(season, is_sf, scoring_type="consensus", source="consensus"):
+        seen.update(season=season, is_sf=is_sf, scoring_type=scoring_type, source=source)
+        return {"1": 3.0, "2": 20.0}
+
+    monkeypatch.setitem(sys.modules, "dashboard_services.adp_service", _fake_adp_service(resolve))
+    assert kp._adp_map(is_sf=True, season=2026, source="sleeper") == {"1": 3.0, "2": 20.0}
+    assert seen == {"season": 2026, "is_sf": True, "scoring_type": "redraft", "source": "sleeper"}
 
 
-def test_adp_falls_back_to_fc_when_sleeper_empty(monkeypatch):
-    fake = _fake_adp_service(sleeper={}, fc={"9": {"avg_pick": 99.0}})
-    monkeypatch.setitem(sys.modules, "dashboard_services.adp_service", fake)
-    assert kp._adp_map(is_sf=False, season=2026) == {"9": 99.0}
+def test_adp_returns_empty_when_resolver_raises(monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("network down")
+
+    monkeypatch.setitem(sys.modules, "dashboard_services.adp_service", _fake_adp_service(boom))
+    assert kp._adp_map(is_sf=False, season=2026) == {}
 
 
 def test_value_rank_ranks_by_value_and_skips_zero():

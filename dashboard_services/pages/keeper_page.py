@@ -52,46 +52,20 @@ def _redraft_value_map(is_sf: bool) -> Dict[str, float]:
     return out
 
 
-def _adp_map(is_sf: bool, season: int) -> Dict[str, float]:
-    """player_id -> overall redraft ADP (1 = consensus #1 pick).
+def _adp_map(is_sf: bool, season: int, source: str = "consensus") -> Dict[str, float]:
+    """player_id -> overall redraft ADP via the shared resolver.
 
-    Prefers Sleeper's own ADP (api.sleeper.com projections), which is
-    server-reachable and populated year-round; FantasyCalc is a secondary source
-    that is frequently blocked from the server (which left the keeper page with
-    no ADP at all). Yahoo does not publish an ADP feed, so Sleeper's ADP serves
-    as the market ADP for every platform. Uses redraft fields (superflex prefers
-    adp_2qb, 1QB prefers adp_ppr), matching the rest of the app."""
-    fields = ("adp_2qb", "adp_ppr", "adp_half_ppr", "adp_std") if is_sf \
-        else ("adp_ppr", "adp_half_ppr", "adp_std")
-    out: Dict[str, float] = {}
-
-    # 1) Sleeper ADP (reliable, server-reachable)
+    Keeper decisions are redraft, so this always asks the redraft axis. ``source``
+    is one of sleeper / yahoo / consensus (for the future source selector);
+    Sleeper is the reliable server-reachable feed, Yahoo is redraft-only, and
+    consensus blends what's available. Empty result -> caller falls back to the
+    value rank."""
     try:
-        from dashboard_services.adp_service import fetch_sleeper_adp
-        for pid, row in (fetch_sleeper_adp(int(season)) or {}).items():
-            for f in fields:
-                v = (row or {}).get(f)
-                if v and float(v) > 0:
-                    out[str(pid)] = float(v)
-                    break
+        from dashboard_services.adp_service import resolve_market_adp
+        return resolve_market_adp(int(season), is_sf, scoring_type="redraft", source=source) or {}
     except Exception:
-        logger.debug("[keeper] sleeper adp load failed", exc_info=True)
-    if out:
-        return out
-
-    # 2) FantasyCalc redraft ADP (secondary)
-    try:
-        from dashboard_services.adp_service import fetch_fc_redraft_adp
-        for pid, info in (fetch_fc_redraft_adp(is_sf) or {}).items():
-            try:
-                ov = float((info or {}).get("avg_pick") or (info or {}).get("adp_rank") or 0)
-            except (TypeError, ValueError):
-                ov = 0.0
-            if ov > 0:
-                out[str(pid)] = ov
-    except Exception:
-        logger.debug("[keeper] fc adp load failed", exc_info=True)
-    return out
+        logger.debug("[keeper] adp resolve failed", exc_info=True)
+        return {}
 
 
 def _draft_rounds(d: Optional[Dict[str, Any]]) -> int:
