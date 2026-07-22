@@ -1,7 +1,7 @@
 """Unit tests for the keeper decision engine (utils/keeper_value.py)."""
 from utils.keeper_value import (
     KeeperRules, KeeperCandidate, market_round, keeper_cost_round, verdict,
-    analyze, evaluate, total_surplus, KEEP, TOSS, PASS,
+    analyze, evaluate, total_surplus, project_league_keepers, KEEP, TOSS, PASS,
 )
 
 
@@ -138,3 +138,26 @@ def test_evaluate_limit_zero_keeps_nothing():
     ranked = evaluate(_roster(), _rules(), limit=0)
     assert all(not c.keep for c in ranked)
     assert total_surplus(ranked) == 0
+
+
+# ── project_league_keepers ───────────────────────────────────────────────────
+
+def test_project_league_keepers_picks_each_team_optimal_set():
+    teams = {
+        "me": _roster(),  # optimal 2 = Bowers, Gibbs
+        "rival": [
+            KeeperCandidate("x", "Stud", "RB", 12, 0, 6, 900),   # market R1, cost R12 -> +11
+            KeeperCandidate("y", "Mid", "WR", 4, 0, 40, 500),    # market R4, cost R4  -> 0 (not kept)
+        ],
+        "empty": [],
+    }
+    projected = project_league_keepers(teams, _rules(), limit=2)
+    assert projected["me"] == ["a", "c"]        # Bowers, Gibbs (value tie-break)
+    assert projected["rival"] == ["x"]          # only the positive-surplus stud
+    assert projected["empty"] == []
+
+
+def test_project_league_keepers_respects_limit():
+    teams = {"me": _roster()}
+    assert project_league_keepers(teams, _rules(), limit=1)["me"] == ["a"]  # just Bowers
+    assert project_league_keepers(teams, _rules(), limit=0)["me"] == []

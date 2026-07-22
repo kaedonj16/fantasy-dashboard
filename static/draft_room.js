@@ -54,6 +54,8 @@
   var _setupRoster = null; // roster config built on setup page
   var _rosterMode  = 'auto'; // 'auto' = use league/defaults locked; 'custom' = editable steppers
   var _setupOwned = null;  // claimed picks (pickNumber -> true) built on setup page
+  var keeperSet = [];      // [{id,name,pos,rosterId,costRound,projected}] from cfg.keepers
+  var keepersOn = false;   // whether league keepers are removed from the board
   var _setupOwnedSig = ''; // staleness signature for _setupOwned
   var _capAddRound = null; // round whose inline slot picker is open (or null)
   var _capLateOpen = false;// whether the combined late-rounds section is expanded
@@ -593,6 +595,7 @@
           drafted = {};
           Object.keys(state.picks).forEach(function(k){ var pp = state.picks[k]; if (pp) drafted[String(pp.id)] = true; });
         }
+        applyKeepers();   // no-op unless league keepers are enabled
         render();
         if (sim) scheduleSim();   // begin CPU picks once players are loaded
       })
@@ -600,6 +603,94 @@
         document.getElementById('drBaList').innerHTML =
           '<div class="dr-loading">Could not load players. Refresh to retry.</div>';
       });
+  }
+
+  // ── Keepers ──────────────────────────────────────────────────────────────
+  // League keepers (yours + projections for other teams) come from the keeper
+  // tool via __draftCfg.keepers. Applying them just marks those players as
+  // already-drafted, so they drop out of the best-available pool. Everything
+  // here is a no-op when there are no keepers, so the draft room is unchanged
+  // for non-keeper leagues.
+  function initKeepers(){
+    var kp = cfg.keepers;
+    if (!kp || !Array.isArray(kp.kept) || !kp.kept.length) return;
+    keeperSet = kp.kept.slice();
+    // Merge the handoff: the keeper page stashes the viewer's *actual* picks,
+    // which replace the projection for their own team.
+    try {
+      var ovRaw = sessionStorage.getItem('brKeeperOverride');
+      if (ovRaw){
+        var ov = JSON.parse(ovRaw);
+        if (ov && String(ov.leagueId) === String(cfg.leagueId) && kp.viewerRoster != null){
+          var vr = String(kp.viewerRoster);
+          var meta = {};
+          keeperSet.forEach(function(k){ if (String(k.rosterId) === vr) meta[String(k.id)] = k; });
+          var mine = (ov.ids || []).map(function(id){
+            return meta[String(id)] || { id: String(id), rosterId: vr, projected: false };
+          });
+          mine.forEach(function(m){ m.projected = false; });
+          keeperSet = keeperSet.filter(function(k){ return String(k.rosterId) !== vr; }).concat(mine);
+        }
+      }
+    } catch (e) { /* ignore malformed override */ }
+    keepersOn = keeperSet.length > 0;
+    renderKeeperBanner();
+  }
+
+  function applyKeepers(){
+    if (!keepersOn) return;
+    keeperSet.forEach(function(k){ if (k && k.id != null) drafted[String(k.id)] = true; });
+  }
+
+  function setKeepersOn(on){
+    keepersOn = on;
+    if (on){ applyKeepers(); }
+    else { keeperSet.forEach(function(k){ if (k && k.id != null) delete drafted[String(k.id)]; }); }
+    render();
+    renderKeeperBanner();
+  }
+
+  function renderKeeperBanner(){
+    if (!keeperSet.length) return;
+    var wrap = document.querySelector('.dr-wrap');
+    if (!wrap) return;
+    var el = document.getElementById('drKeeperBanner');
+    if (!el){
+      el = document.createElement('div');
+      el.id = 'drKeeperBanner';
+      el.className = 'dr-keeper-banner';
+      wrap.insertBefore(el, wrap.firstChild);
+    }
+    var mine = keeperSet.filter(function(k){ return !k.projected; }).length;
+    var proj = keeperSet.length - mine;
+    var esc = function(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); };
+    var rows = keeperSet.slice().sort(function(a,b){ return (a.projected?1:0) - (b.projected?1:0); }).map(function(k){
+      var tag = k.projected
+        ? '<span class="dr-keeper-tag proj">projected</span>'
+        : '<span class="dr-keeper-tag mine">your keeper</span>';
+      var cost = k.costRound ? (' · R' + k.costRound) : '';
+      return '<div class="dr-keeper-item"><span>' + esc(k.name || ('Player ' + k.id)) +
+        (k.pos ? ' <span class="dr-keeper-pos">' + esc(k.pos) + '</span>' : '') +
+        cost + '</span>' + tag + '</div>';
+    }).join('');
+    el.innerHTML =
+      '<div class="dr-keeper-head">' +
+        '<span class="dr-keeper-key" aria-hidden="true">🔑</span>' +
+        '<b>Keepers ' + (keepersOn ? 'applied' : 'off') + '</b>' +
+        '<span class="dr-keeper-sub">' + keeperSet.length + ' off the board · ' +
+          mine + ' yours, ' + proj + ' projected</span>' +
+        '<button type="button" id="drKeeperView" class="dr-keeper-btn">Details</button>' +
+        '<button type="button" id="drKeeperToggle" class="dr-keeper-btn">' +
+          (keepersOn ? 'Turn off' : 'Apply') + '</button>' +
+      '</div>' +
+      '<div id="drKeeperList" class="dr-keeper-list" hidden>' + rows +
+        '<div class="dr-keeper-note">Other teams’ keepers are projected from the same surplus model — estimates, not their declared keepers.</div>' +
+      '</div>';
+    var vbtn = document.getElementById('drKeeperView');
+    var tbtn = document.getElementById('drKeeperToggle');
+    var list = document.getElementById('drKeeperList');
+    if (vbtn && list) vbtn.addEventListener('click', function(){ list.hidden = !list.hidden; });
+    if (tbtn) tbtn.addEventListener('click', function(){ setKeepersOn(!keepersOn); });
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
@@ -4697,6 +4788,8 @@
   // Open a specific league draft directly: ?connect=<id> (from the site-wide
   // "Join Draft Room" banner) or ?live=<id> (from Draft History). Otherwise
   // resume the in-progress session draft.
+  initKeepers();   // seed league keepers from the keeper tool (no-op if none)
+
   var _qs = new URLSearchParams(location.search);
   var urlLive = _qs.get('connect') || _qs.get('live');
   if (urlLive){

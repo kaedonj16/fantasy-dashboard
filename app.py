@@ -13395,6 +13395,21 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
                 num_rounds_startup = len(_draftable)
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
+    # League keepers: surface them in the draft room either when the league is a
+    # real keeper league, or when the user explicitly came from the keeper tool
+    # (?keepers=1). Never for plain redraft leagues, so the board is unchanged.
+    keepers_payload = None
+    if league_id:
+        try:
+            from dashboard_services.pages.keeper_page import compute_league_keepers, league_keeper_limit
+            _ctx = get_league_ctx_from_cache(platform, league_id, season)
+            if request.args.get("keepers") or league_keeper_limit(_ctx) > 0:
+                keepers_payload = compute_league_keepers(
+                    _ctx, platform=platform, league_id=league_id,
+                    viewer_roster_id=session.get("viewer_roster_id"),
+                )
+        except Exception:
+            logger.debug("[draft-room] keeper compute skipped", exc_info=True)
     body = build_draft_room_body(
         league_id, season, platform,
         is_guest=is_guest, num_teams=num_teams, is_superflex=is_sf,
@@ -13402,6 +13417,7 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
         viewer_user_id=session.get("viewer_user_id"),
         num_rounds_rookie=num_rounds_rookie,
         num_rounds_startup=num_rounds_startup,
+        keepers=keepers_payload,
     )
     return render_page(
         "Draft Room | BR Fantasy", league_id, "draft", body, platform, season,

@@ -24,6 +24,11 @@ def _asset_v(name: str) -> str:
 def render_keeper_html(seed: dict) -> str:
     seed_json = json.dumps(seed, separators=(",", ":"))
     kjs_v = _asset_v("keeper.js")
+    draft_btn = (
+        '<button type="button" id="kpr-to-draft" class="kpr-draft-btn">'
+        '<i class="fa-solid fa-arrow-right-to-bracket" aria-hidden="true"></i> Open in Draft Room</button>'
+        if seed.get("draftUrl") else ""
+    )
     auto = seed.get("autoDraft")
     auto_badge = (
         '<span class="kpr-auto"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> '
@@ -35,6 +40,9 @@ def render_keeper_html(seed: dict) -> str:
     return f"""
 <style>
   .kpr-wrap{{max-width:960px;margin:0 auto;}}
+  .kpr-draft-btn{{display:inline-flex;align-items:center;gap:7px;font:inherit;font-size:13px;font-weight:700;
+    color:#fff;background:var(--accent);border:0;border-radius:10px;padding:9px 15px;cursor:pointer;white-space:nowrap;}}
+  .kpr-draft-btn:hover{{filter:brightness(1.06);}}
   .kpr-cfg{{display:flex;align-items:center;gap:10px 18px;flex-wrap:wrap;padding:14px 16px;
     border-bottom:1px solid var(--border);}}
   .kpr-auto{{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;
@@ -117,6 +125,7 @@ def render_keeper_html(seed: dict) -> str:
         Who’s worth keeping? Surplus = where a player drafts today minus what he costs to keep.
       </div>
     </div>
+    {draft_btn}
   </div>
 
   <div class="card-body" style="padding-top:0;">

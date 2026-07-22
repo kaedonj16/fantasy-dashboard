@@ -153,5 +153,23 @@
   if (elViewOpt) elViewOpt.addEventListener("click", function () { showView("opt"); });
   if (elViewTbl) elViewTbl.addEventListener("click", function () { showView("tbl"); });
 
+  // Handoff to the Draft Room: stash the viewer's actual keeper picks so the
+  // draft room overrides its projection for your team, then navigate. The draft
+  // room computes the league-wide (projected) keeper set server-side.
+  var elToDraft = $("kpr-to-draft");
+  if (elToDraft && seed.draftUrl) {
+    elToDraft.addEventListener("click", function () {
+      var kept = compute().filter(function (r) { return r.keep; }).map(function (r) { return String(r.p.id); });
+      try {
+        sessionStorage.setItem("brKeeperOverride", JSON.stringify({
+          leagueId: String(seed.leagueId || ""),
+          rosterId: String(seed.viewerRoster || ""),
+          ids: kept
+        }));
+      } catch (e) { /* private mode: draft room still shows projections */ }
+      window.location.href = seed.draftUrl;
+    });
+  }
+
   render();
 })();

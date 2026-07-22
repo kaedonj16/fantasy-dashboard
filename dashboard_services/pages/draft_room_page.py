@@ -58,6 +58,7 @@ def build_draft_room_body(
     viewer_user_id: Optional[str] = None,
     num_rounds_rookie: Optional[int] = None,
     num_rounds_startup: Optional[int] = None,
+    keepers: Optional[dict] = None,
 ) -> str:
     cfg = {
         "leagueId": league_id or "",
@@ -70,6 +71,9 @@ def build_draft_room_body(
         "viewerUserId": str(viewer_user_id) if viewer_user_id else "",
         "numRoundsRookie":  int(num_rounds_rookie)  if num_rounds_rookie  else None,
         "numRoundsStartup": int(num_rounds_startup) if num_rounds_startup else None,
+        # League keepers (from the keeper tool) to drop from the board. Omitted /
+        # empty for non-keeper leagues, where the draft room behaves exactly as before.
+        "keepers": keepers or None,
     }
     cfg_json = json.dumps(cfg)
     # cfg is a plain inline script so it runs during parse, before the deferred

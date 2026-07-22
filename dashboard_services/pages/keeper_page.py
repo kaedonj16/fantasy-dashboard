@@ -17,7 +17,9 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from utils.keeper_value import KeeperRules, KeeperCandidate, evaluate
+from utils.keeper_value import (
+    KeeperRules, KeeperCandidate, evaluate, analyze, project_league_keepers,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +113,8 @@ def _num_rounds(platform: str, league_id: str, default: int = 15) -> int:
         return default
 
 
-def _max_keepers(ctx: Dict[str, Any], default: int = 2) -> int:
+def _detected_keeper_limit(ctx: Dict[str, Any]) -> int:
+    """The league's real keeper limit from settings, or 0 if none is configured."""
     for src in (ctx.get("league_settings"), ctx.get("settings"), ctx):
         try:
             v = int((src or {}).get("max_keepers") or 0)
@@ -119,7 +122,17 @@ def _max_keepers(ctx: Dict[str, Any], default: int = 2) -> int:
                 return v
         except (TypeError, ValueError, AttributeError):
             continue
-    return default
+    return 0
+
+
+def _max_keepers(ctx: Dict[str, Any], default: int = 2) -> int:
+    return _detected_keeper_limit(ctx) or default
+
+
+def league_keeper_limit(ctx: Dict[str, Any]) -> int:
+    """Public: real keeper limit for gating (0 = not a detected keeper league).
+    The draft room uses this to decide whether to auto-surface keepers."""
+    return _detected_keeper_limit(ctx)
 
 
 def _viewer_roster(ctx: Dict[str, Any], viewer_roster_id: Optional[str]) -> Optional[Dict[str, Any]]:
@@ -129,6 +142,97 @@ def _viewer_roster(ctx: Dict[str, Any], viewer_roster_id: Optional[str]) -> Opti
             if str(r.get("roster_id")) == str(viewer_roster_id):
                 return r
     return rosters[0] if rosters else None
+
+
+def _candidates_for_ids(
+    player_ids: List[str],
+    players_index: Dict[str, Any],
+    values: Dict[str, float],
+    adp: Dict[str, float],
+    drafted: Dict[str, int],
+) -> List[KeeperCandidate]:
+    """Build keeper candidates for a set of player ids (one team's roster)."""
+    out: List[KeeperCandidate] = []
+    for pid in player_ids:
+        meta = players_index.get(pid) or {}
+        out.append(KeeperCandidate(
+            player_id=pid,
+            name=meta.get("name") or f"Player {pid}",
+            position=(meta.get("pos") or meta.get("position") or "").upper(),
+            drafted_round=drafted.get(pid),   # None → UI/user sets it
+            years_kept=0,
+            adp_overall=adp.get(pid),
+            value=values.get(pid, 0.0),
+        ))
+    return out
+
+
+def compute_league_keepers(
+    ctx: Dict[str, Any],
+    platform: str = "sleeper",
+    league_id: str = "",
+    viewer_roster_id: Optional[str] = None,
+    viewer_kept_ids: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """League-wide keeper set for the draft board.
+
+    Every team's likely keepers are projected with the surplus optimizer; the
+    viewer's team is replaced by their *actual* selections when ``viewer_kept_ids``
+    is supplied (the handoff from the keeper page). Returns a payload the draft
+    room seeds into __draftCfg.keepers:
+
+        {limit, viewerRoster, autoDraft,
+         byTeam: {roster_id: [player_id, ...]},
+         kept:   [{id, name, pos, rosterId, costRound, projected}, ...]}
+    """
+    is_sf = _is_superflex(ctx)
+    try:
+        league_size = int(ctx.get("total_rosters") or len(ctx.get("rosters") or []) or 12)
+    except (TypeError, ValueError):
+        league_size = 12
+    num_rounds = _num_rounds(platform, league_id)
+    limit = _max_keepers(ctx)
+
+    players_index: Dict[str, Any] = {}
+    try:
+        from utils.utils import load_players_index
+        players_index = load_players_index() or {}
+    except Exception:
+        logger.debug("[keeper] players_index load failed", exc_info=True)
+    values = _redraft_value_map(is_sf)
+    adp = _adp_map(is_sf)
+    drafted = _drafted_round_map(platform, league_id)
+    rules = KeeperRules(league_size=league_size, num_rounds=num_rounds)
+
+    per_team: Dict[str, List[KeeperCandidate]] = {}
+    for r in (ctx.get("rosters") or []):
+        rid = str(r.get("roster_id"))
+        pids = [str(p) for p in (r.get("players") or [])]
+        per_team[rid] = _candidates_for_ids(pids, players_index, values, adp, drafted)
+
+    by_team = project_league_keepers(per_team, rules, limit)
+
+    vr = str(viewer_roster_id) if viewer_roster_id is not None else None
+    if vr is not None and viewer_kept_ids is not None:
+        by_team[vr] = [str(x) for x in viewer_kept_ids]
+
+    kept: List[Dict[str, Any]] = []
+    for rid, ids in by_team.items():
+        cand_by_id = {c.player_id: c for c in per_team.get(rid, [])}
+        for pid in ids:
+            c = cand_by_id.get(pid)
+            if not c:
+                continue
+            analyze(c, rules)
+            kept.append({
+                "id": pid, "name": c.name, "pos": c.position,
+                "rosterId": rid, "costRound": c.cost_round,
+                "projected": not (vr is not None and rid == vr and viewer_kept_ids is not None),
+            })
+    return {
+        "limit": limit, "viewerRoster": vr, "autoDraft": bool(drafted),
+        "byTeam": by_team, "kept": kept,
+    }
 
 
 def build_keeper_body(
@@ -162,31 +266,24 @@ def build_keeper_body(
     roster = _viewer_roster(ctx, viewer_roster_id) or {}
     player_ids = [str(p) for p in (roster.get("players") or [])]
 
-    candidates: List[KeeperCandidate] = []
-    for pid in player_ids:
-        meta = players_index.get(pid) or {}
-        name = meta.get("name") or f"Player {pid}"
-        pos = (meta.get("pos") or meta.get("position") or "").upper()
-        candidates.append(KeeperCandidate(
-            player_id=pid,
-            name=name,
-            position=pos,
-            drafted_round=drafted.get(pid),          # None → user sets it
-            years_kept=0,                            # v1 default; editable in UI
-            adp_overall=adp.get(pid),
-            value=values.get(pid, 0.0),
-        ))
-
+    candidates = _candidates_for_ids(player_ids, players_index, values, adp, drafted)
     rules = KeeperRules(league_size=league_size, num_rounds=num_rounds)
     ranked = evaluate(candidates, rules, limit=max_keepers)
 
+    _plat = (platform or "sleeper").lower()
+    _season = ctx.get("season") or ""
+    draft_url = (f"/{_plat}/{_season}/{league_id}/draft?keepers=1"
+                 if (league_id and _season) else "")
     seed = {
         "leagueSize": league_size,
         "numRounds": num_rounds,
         "maxKeepers": max_keepers,
         "isSuperflex": is_sf,
         "autoDraft": bool(drafted),   # did we auto-detect draft rounds?
-        "platform": (platform or "sleeper").lower(),
+        "platform": _plat,
+        "leagueId": str(league_id or ""),
+        "draftUrl": draft_url,
+        "viewerRoster": str(viewer_roster_id) if viewer_roster_id is not None else "",
         "players": [
             {
                 "id": c.player_id, "name": c.name, "pos": c.position,

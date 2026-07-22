@@ -164,3 +164,25 @@ def evaluate(
 def total_surplus(candidates: Sequence[KeeperCandidate]) -> int:
     """Sum of surplus across the currently-kept candidates."""
     return sum(c.surplus or 0 for c in candidates if c.keep)
+
+
+def project_league_keepers(
+    rosters: dict,
+    rules: KeeperRules,
+    limit: Optional[int],
+) -> dict:
+    """Project each team's likely keepers for draft-board planning.
+
+    ``rosters`` maps a team key -> that team's list of KeeperCandidate. Every
+    team is assumed to keep its value-optimal set under ``limit`` (the same
+    surplus optimizer used for the viewer). Returns team key -> list of kept
+    player_ids.
+
+    This is a *projection*: real keeper intentions aren't published before a
+    draft, so the caller should surface these as editable estimates, not fact —
+    except for the viewer's own team, whose selections are known."""
+    out: dict = {}
+    for team, cands in (rosters or {}).items():
+        ranked = evaluate(cands, rules, limit=limit)
+        out[team] = [c.player_id for c in ranked if c.keep]
+    return out
