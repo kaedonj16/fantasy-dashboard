@@ -3,7 +3,33 @@
 keeper_page imports lightly (no pandas/flask at module load), so these run in
 the pure unit suite.
 """
+import sys
+import types
+
 from dashboard_services.pages import keeper_page as kp
+
+
+def _fake_adp_service(sleeper=None, fc=None):
+    m = types.ModuleType("dashboard_services.adp_service")
+    m.fetch_sleeper_adp = lambda season: (sleeper or {})
+    m.fetch_fc_redraft_adp = lambda is_sf: (fc or {})
+    return m
+
+
+def test_adp_prefers_sleeper_and_picks_right_field(monkeypatch):
+    fake = _fake_adp_service(
+        sleeper={"1": {"adp_ppr": 3.0, "adp_2qb": 2.0}, "2": {"adp_ppr": 20.0}},
+        fc={"9": {"avg_pick": 99.0}},
+    )
+    monkeypatch.setitem(sys.modules, "dashboard_services.adp_service", fake)
+    assert kp._adp_map(is_sf=False, season=2026) == {"1": 3.0, "2": 20.0}   # 1QB -> adp_ppr; FC ignored
+    assert kp._adp_map(is_sf=True, season=2026)["1"] == 2.0                 # SF -> adp_2qb
+
+
+def test_adp_falls_back_to_fc_when_sleeper_empty(monkeypatch):
+    fake = _fake_adp_service(sleeper={}, fc={"9": {"avg_pick": 99.0}})
+    monkeypatch.setitem(sys.modules, "dashboard_services.adp_service", fake)
+    assert kp._adp_map(is_sf=False, season=2026) == {"9": 99.0}
 
 
 def test_value_rank_ranks_by_value_and_skips_zero():

@@ -52,22 +52,45 @@ def _redraft_value_map(is_sf: bool) -> Dict[str, float]:
     return out
 
 
-def _adp_map(is_sf: bool) -> Dict[str, float]:
-    """player_id -> overall redraft ADP (1 = consensus #1 pick)."""
+def _adp_map(is_sf: bool, season: int) -> Dict[str, float]:
+    """player_id -> overall redraft ADP (1 = consensus #1 pick).
+
+    Prefers Sleeper's own ADP (api.sleeper.com projections), which is
+    server-reachable and populated year-round; FantasyCalc is a secondary source
+    that is frequently blocked from the server (which left the keeper page with
+    no ADP at all). Yahoo does not publish an ADP feed, so Sleeper's ADP serves
+    as the market ADP for every platform. Uses redraft fields (superflex prefers
+    adp_2qb, 1QB prefers adp_ppr), matching the rest of the app."""
+    fields = ("adp_2qb", "adp_ppr", "adp_half_ppr", "adp_std") if is_sf \
+        else ("adp_ppr", "adp_half_ppr", "adp_std")
+    out: Dict[str, float] = {}
+
+    # 1) Sleeper ADP (reliable, server-reachable)
+    try:
+        from dashboard_services.adp_service import fetch_sleeper_adp
+        for pid, row in (fetch_sleeper_adp(int(season)) or {}).items():
+            for f in fields:
+                v = (row or {}).get(f)
+                if v and float(v) > 0:
+                    out[str(pid)] = float(v)
+                    break
+    except Exception:
+        logger.debug("[keeper] sleeper adp load failed", exc_info=True)
+    if out:
+        return out
+
+    # 2) FantasyCalc redraft ADP (secondary)
     try:
         from dashboard_services.adp_service import fetch_fc_redraft_adp
-        raw = fetch_fc_redraft_adp(is_sf) or {}
+        for pid, info in (fetch_fc_redraft_adp(is_sf) or {}).items():
+            try:
+                ov = float((info or {}).get("avg_pick") or (info or {}).get("adp_rank") or 0)
+            except (TypeError, ValueError):
+                ov = 0.0
+            if ov > 0:
+                out[str(pid)] = ov
     except Exception:
-        logger.debug("[keeper] adp load failed", exc_info=True)
-        return {}
-    out: Dict[str, float] = {}
-    for pid, info in raw.items():
-        try:
-            ov = float((info or {}).get("avg_pick") or (info or {}).get("adp_rank") or 0)
-        except (TypeError, ValueError):
-            ov = 0.0
-        if ov > 0:
-            out[str(pid)] = ov
+        logger.debug("[keeper] fc adp load failed", exc_info=True)
     return out
 
 
@@ -233,7 +256,7 @@ def compute_league_keepers(
     except Exception:
         logger.debug("[keeper] players_index load failed", exc_info=True)
     values = _redraft_value_map(is_sf)
-    adp = _adp_map(is_sf)
+    adp = _adp_map(is_sf, int(ctx.get("season") or 0))
     value_rank = _value_rank_map(values)
     drafted = _drafted_round_map(platform, league_id)
     rules = KeeperRules(league_size=league_size, num_rounds=num_rounds)
@@ -294,7 +317,7 @@ def build_keeper_body(
         logger.debug("[keeper] players_index load failed", exc_info=True)
 
     values = _redraft_value_map(is_sf)
-    adp = _adp_map(is_sf)
+    adp = _adp_map(is_sf, int(ctx.get("season") or 0))
     value_rank = _value_rank_map(values)
     drafted = _drafted_round_map(platform, league_id)
 
