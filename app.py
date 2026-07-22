@@ -1923,9 +1923,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Prospect Rankings", "page_prospects",  "prospects", False),
     ], ["players", "prospects", "breakouts", "top-movers", "compare"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Draft", [
-        ("Draft Room",    "page_draft_room",    "draft",         False),
-        ("Draft History", "page_draft_history", "draft-history", False),
-    ], ["draft", "draft-history"], "draftNavDropdown"))
+        ("Draft Room",       "page_draft_room",    "draft",         False),
+        ("Keeper Assistant", "page_keeper",        "keeper",        False),
+        ("Draft History",    "page_draft_history", "draft-history", False),
+    ], ["draft", "draft-history", "keeper"], "draftNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",   "page_awards",   "awards",   False),
         ("Graphs",   "page_graphs",   "graphs",   False),
@@ -13408,6 +13409,43 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
             "Fantasy football draft assistant and draft board with best-available, "
             "ADP, and snake / linear / third-round-reversal support for Sleeper, ESPN, and Yahoo."
         ),
+    )
+
+
+@app.route("/keeper")
+@app.route("/<platform>/<int:season>/<league_id>/keeper")
+def page_keeper(platform: str = None, season: int = None, league_id: str = None):
+    """Keeper Assistant — decide who to keep next season."""
+    from dashboard_services.pages.keeper_page import build_keeper_body
+    if not league_id:
+        body = (
+            "<div class='card central' style='text-align:center;padding:44px 16px;'>"
+            "<h2>Keeper Assistant</h2>"
+            "<p style='color:var(--text-muted);max-width:54ch;margin:10px auto 0;line-height:1.6;'>"
+            "Open one of your leagues to see keeper recommendations — who returns the most "
+            "draft-capital value at their keeper cost, and the optimal set to keep under your "
+            "league limit.</p></div>"
+        )
+        return render_page(
+            "Keeper Assistant | BR Fantasy", None, "keeper", body,
+            description="Fantasy football keeper tool: decide who to keep with surplus-value scoring and an optimal-set optimizer.",
+        )
+    ctx = {}
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        league_id = ctx.get("league_id") or league_id
+        season = int(ctx.get("season") or season or datetime.now().year)
+    except Exception as _e:
+        logger.info("[keeper] league ctx load failed: %s", _e)
+    viewer_roster_id = session.get("viewer_roster_id") or None
+    body = build_keeper_body(
+        ctx or {}, viewer_roster_id=viewer_roster_id,
+        platform=(platform or "sleeper"), league_id=league_id,
+    )
+    return render_page(
+        "Keeper Assistant | BR Fantasy", league_id, "keeper", body, platform, season,
+        description=("Keeper league tool: rank your roster by keeper surplus and pick the optimal "
+                     "set to keep under your league's limit, from redraft values and market ADP."),
     )
 
 
