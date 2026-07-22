@@ -463,12 +463,21 @@ _SLEEPER_ADP_FIELDS = {
 }
 
 # Which market sources are valid per scoring axis. Yahoo publishes redraft ADP
-# only (it is a seasonal platform), so it is offered for redraft alone.
+# only (it is a seasonal platform), so it is offered for redraft alone. The
+# draft-crawler ("crawler") only sees dynasty startup and rookie drafts, so it
+# is offered on those two axes.
 ADP_SOURCES = {
     "redraft": ("sleeper", "yahoo", "fc"),
-    "dynasty": ("sleeper", "fc"),
-    "rookie":  ("sleeper", "fc"),
+    "dynasty": ("sleeper", "crawler", "fc"),
+    "rookie":  ("sleeper", "crawler", "fc"),
 }
+
+# resolver scoring axis -> draft_adp.draft_type produced by the crawler.
+_CRAWLER_DRAFT_TYPE = {"dynasty": "startup", "rookie": "rookie"}
+
+# Reference league size the crawler's size-normalized ADP is rescaled onto, so
+# the output reads as an overall pick in a standard 12-team draft.
+_CRAWLER_REF_SIZE = 12
 
 
 def _adp_overall_from_row(row: dict, fields) -> Optional[float]:
@@ -512,6 +521,80 @@ def _fc_adp_source(season: int, is_sf: bool, scoring_type: str) -> Dict[str, flo
         if ov > 0:
             out[str(pid)] = ov
     return out
+
+
+def fetch_crawler_adp(season: int, is_sf: bool, scoring_type: str,
+                      min_samples: int = 20) -> Dict[str, float]:
+    """canonical id -> size-combined ADP from the draft-crawler aggregate table.
+
+    The crawler stores one ``draft_adp`` row per
+    (player, draft_type, season, is_superflex, num_teams), so a player has a
+    separate average for 10-, 12-, 14-team drafts. Raw pick numbers are not
+    comparable across sizes (pick 24 is round 3 in a 10-team but round 2 in a
+    12-team), so each row is first converted to a size-independent round
+    position ``avg_pick / num_teams``, sample-size-weighted across sizes, then
+    rescaled to a reference 12-team draft. Formats stay separate: dynasty and
+    rookie are distinct markets (and distinct axes), never blended together.
+
+    Only dynasty startup and rookie drafts are crawled, so ``redraft`` yields
+    nothing. Falls back to the latest season with data when the requested season
+    is empty (early in a season the startups are sparse). Empty on any failure."""
+    draft_type = _CRAWLER_DRAFT_TYPE.get(scoring_type)
+    if not draft_type:
+        return {}
+    try:
+        from dashboard_services.db import get_conn
+
+        def _query(season_val: int):
+            with get_conn() as conn:
+                return conn.execute(
+                    """
+                    SELECT
+                        player_id,
+                        SUM((avg_pick / num_teams) * sample_size)
+                            / NULLIF(SUM(sample_size), 0) AS norm_round,
+                        SUM(sample_size) AS n
+                    FROM draft_adp
+                    WHERE draft_type   = %s
+                      AND season       = %s
+                      AND is_superflex = %s
+                      AND num_teams BETWEEN 8 AND 18
+                    GROUP BY player_id
+                    HAVING SUM(sample_size) >= %s
+                    ORDER BY norm_round ASC
+                    """,
+                    (draft_type, season_val, is_sf, min_samples),
+                ).fetchall()
+
+        rows = _query(int(season))
+        if not rows:
+            with get_conn() as conn:
+                latest = conn.execute(
+                    "SELECT MAX(season) AS s FROM draft_adp "
+                    "WHERE draft_type = %s AND is_superflex = %s",
+                    (draft_type, is_sf),
+                ).fetchone()
+            latest_season = latest and latest["s"]
+            if latest_season and int(latest_season) != int(season):
+                rows = _query(int(latest_season))
+
+        out: Dict[str, float] = {}
+        for r in rows or []:
+            nr = r["norm_round"]
+            if nr is None:
+                continue
+            try:
+                out[str(r["player_id"])] = float(nr) * _CRAWLER_REF_SIZE
+            except (TypeError, ValueError):
+                continue
+        return out
+    except Exception:
+        logger.debug("adp_service: crawler ADP source failed", exc_info=True)
+        return {}
+
+
+def _crawler_adp_source(season: int, is_sf: bool, scoring_type: str) -> Dict[str, float]:
+    return fetch_crawler_adp(int(season), is_sf, scoring_type)
 
 
 def fetch_yahoo_adp(league_id, token, season: int, is_sf: bool) -> Dict[str, float]:
@@ -565,15 +648,32 @@ def consensus_adp(source_maps) -> Dict[str, float]:
     return {pid: sum(rs) / len(rs) for pid, rs in agg.items()}
 
 
+def ordinal_rank_adp(adp_map) -> Dict[str, float]:
+    """Replace ADP values with their 1-based draft order (1, 2, 3, ...).
+
+    A mean-of-picks ADP never bottoms out at a clean 1.0 (the consensus No. 1 is
+    still taken third in some drafts, so the average floats above the floor).
+    For a single-source display that should read like a board, ranking by ADP
+    turns those raw averages into contiguous slots. Ties break by id for a
+    stable order. This is a presentation transform; keep the raw values for any
+    math that needs the gaps between picks."""
+    order = sorted(adp_map.items(), key=lambda kv: (kv[1], str(kv[0])))
+    return {str(pid): float(i) for i, (pid, _v) in enumerate(order, start=1)}
+
+
 def resolve_market_adp(season: int, is_sf: bool, scoring_type: str = "redraft",
-                       source: str = "consensus", league_id=None, token=None) -> Dict[str, float]:
+                       source: str = "consensus", league_id=None, token=None,
+                       as_rank: bool = False) -> Dict[str, float]:
     """canonical player_id -> overall market ADP for a scoring axis and source.
 
     scoring_type: ``redraft`` | ``dynasty`` | ``rookie``.
-    source:       ``sleeper`` | ``yahoo`` | ``fc`` | ``consensus``. ``yahoo`` is
-                  redraft-only; requesting it on another axis yields nothing and
-                  the resolver falls back. Empty result means no source had data
-                  (the caller can apply its own fallback, e.g. value rank)."""
+    source:       ``sleeper`` | ``yahoo`` | ``fc`` | ``crawler`` | ``consensus``.
+                  ``yahoo`` is redraft-only and ``crawler`` is dynasty/rookie
+                  only; requesting a source off its axis yields nothing and the
+                  resolver falls back. Empty result means no source had data
+                  (the caller can apply its own fallback, e.g. value rank).
+    as_rank:      when True the result is re-ranked to contiguous 1..N draft
+                  order (see ``ordinal_rank_adp``) for a clean board display."""
     scoring_type = scoring_type if scoring_type in ("redraft", "dynasty", "rookie") else "redraft"
     valid = ADP_SOURCES.get(scoring_type, ("sleeper", "fc"))
 
@@ -582,17 +682,25 @@ def resolve_market_adp(season: int, is_sf: bool, scoring_type: str = "redraft",
             return _sleeper_adp_source(season, is_sf, scoring_type)
         if name == "fc":
             return _fc_adp_source(season, is_sf, scoring_type)
+        if name == "crawler":
+            return _crawler_adp_source(season, is_sf, scoring_type)
         if name == "yahoo":
             return _yahoo_adp_source(season, is_sf, scoring_type, league_id, token)
         return {}
 
+    def _finish(m: Dict[str, float]) -> Dict[str, float]:
+        return ordinal_rank_adp(m) if (as_rank and m) else m
+
     if source == "consensus":
         blended = consensus_adp([_src(n) for n in valid])
         if blended:
-            return blended
+            return _finish(blended)
     elif source in valid:
         got = _src(source)
         if got:
-            return got
-    # Fallback: sleeper, then fc.
-    return _sleeper_adp_source(season, is_sf, scoring_type) or _fc_adp_source(season, is_sf, scoring_type)
+            return _finish(got)
+    # Fallback: sleeper, then crawler (dynasty/rookie), then fc.
+    fallback = (_sleeper_adp_source(season, is_sf, scoring_type)
+                or _crawler_adp_source(season, is_sf, scoring_type)
+                or _fc_adp_source(season, is_sf, scoring_type))
+    return _finish(fallback)
