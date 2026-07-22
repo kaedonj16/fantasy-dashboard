@@ -8642,6 +8642,31 @@ select:focus {
   .card.injury-overview h2 { font-size: 16px; }
 }
 
+/* Keeper banner in the Draft Room (only present when the keeper tool hands off
+   league keepers, or the league is a real keeper league). */
+.dr-keeper-banner { background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 12px 14px; margin: 0 0 14px; }
+.dr-keeper-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  font-size: 14px; color: var(--text); }
+.dr-keeper-sub { color: var(--text-muted); font-size: 12.5px; }
+.dr-keeper-btn { font: inherit; font-size: 12px; font-weight: 600; color: var(--accent);
+  background: transparent; border: 1px solid var(--border); border-radius: 8px;
+  padding: 5px 11px; cursor: pointer; }
+.dr-keeper-btn:hover { border-color: var(--accent); }
+.dr-keeper-head .dr-keeper-btn:last-child { margin-left: auto; }
+.dr-keeper-list { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.dr-keeper-item { display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; font-size: 13px; color: var(--text); padding: 6px 8px; border-radius: 8px;
+  background: var(--card-soft, var(--bg-alt)); }
+.dr-keeper-pos { font-size: 10px; font-weight: 700; color: var(--text-muted); }
+.dr-keeper-tag { font-size: 10.5px; font-weight: 700; letter-spacing: .03em;
+  padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.dr-keeper-tag.mine { color: var(--win, #15803d);
+  background: color-mix(in srgb, var(--win, #15803d) 14%, transparent); }
+.dr-keeper-tag.proj { color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-muted) 14%, transparent); }
+.dr-keeper-note { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }
+
 .inj-list {
   display: flex;
   flex-direction: column;

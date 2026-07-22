@@ -1923,9 +1923,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Prospect Rankings", "page_prospects",  "prospects", False),
     ], ["players", "prospects", "breakouts", "top-movers", "compare"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Draft", [
-        ("Draft Room",    "page_draft_room",    "draft",         False),
-        ("Draft History", "page_draft_history", "draft-history", False),
-    ], ["draft", "draft-history"], "draftNavDropdown"))
+        ("Draft Room",       "page_draft_room",    "draft",         False),
+        ("Keeper Assistant", "page_keeper",        "keeper",        False),
+        ("Draft History",    "page_draft_history", "draft-history", False),
+    ], ["draft", "draft-history", "keeper"], "draftNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",   "page_awards",   "awards",   False),
         ("Graphs",   "page_graphs",   "graphs",   False),
@@ -13394,6 +13395,21 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
                 num_rounds_startup = len(_draftable)
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
+    # League keepers: surface them in the draft room either when the league is a
+    # real keeper league, or when the user explicitly came from the keeper tool
+    # (?keepers=1). Never for plain redraft leagues, so the board is unchanged.
+    keepers_payload = None
+    if league_id:
+        try:
+            from dashboard_services.pages.keeper_page import compute_league_keepers, league_keeper_limit
+            _ctx = get_league_ctx_from_cache(platform, league_id, season)
+            if request.args.get("keepers") or league_keeper_limit(_ctx) > 0:
+                keepers_payload = compute_league_keepers(
+                    _ctx, platform=platform, league_id=league_id,
+                    viewer_roster_id=session.get("viewer_roster_id"),
+                )
+        except Exception:
+            logger.debug("[draft-room] keeper compute skipped", exc_info=True)
     body = build_draft_room_body(
         league_id, season, platform,
         is_guest=is_guest, num_teams=num_teams, is_superflex=is_sf,
@@ -13401,6 +13417,7 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
         viewer_user_id=session.get("viewer_user_id"),
         num_rounds_rookie=num_rounds_rookie,
         num_rounds_startup=num_rounds_startup,
+        keepers=keepers_payload,
     )
     return render_page(
         "Draft Room | BR Fantasy", league_id, "draft", body, platform, season,
@@ -13408,6 +13425,43 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
             "Fantasy football draft assistant and draft board with best-available, "
             "ADP, and snake / linear / third-round-reversal support for Sleeper, ESPN, and Yahoo."
         ),
+    )
+
+
+@app.route("/keeper")
+@app.route("/<platform>/<int:season>/<league_id>/keeper")
+def page_keeper(platform: str = None, season: int = None, league_id: str = None):
+    """Keeper Assistant: decide who to keep next season."""
+    from dashboard_services.pages.keeper_page import build_keeper_body
+    if not league_id:
+        body = (
+            "<div class='card central' style='text-align:center;padding:44px 16px;'>"
+            "<h2>Keeper Assistant</h2>"
+            "<p style='color:var(--text-muted);max-width:54ch;margin:10px auto 0;line-height:1.6;'>"
+            "Open one of your leagues to see keeper recommendations: who returns the most "
+            "draft-capital value at their keeper cost, and the optimal set to keep under your "
+            "league limit.</p></div>"
+        )
+        return render_page(
+            "Keeper Assistant | BR Fantasy", None, "keeper", body,
+            description="Fantasy football keeper tool: decide who to keep with surplus-value scoring and an optimal-set optimizer.",
+        )
+    ctx = {}
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        league_id = ctx.get("league_id") or league_id
+        season = int(ctx.get("season") or season or datetime.now().year)
+    except Exception as _e:
+        logger.info("[keeper] league ctx load failed: %s", _e)
+    viewer_roster_id = session.get("viewer_roster_id") or None
+    body = build_keeper_body(
+        ctx or {}, viewer_roster_id=viewer_roster_id,
+        platform=(platform or "sleeper"), league_id=league_id,
+    )
+    return render_page(
+        "Keeper Assistant | BR Fantasy", league_id, "keeper", body, platform, season,
+        description=("Keeper league tool: rank your roster by keeper surplus and pick the optimal "
+                     "set to keep under your league's limit, from redraft values and market ADP."),
     )
 
 
