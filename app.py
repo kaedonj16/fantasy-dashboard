@@ -12375,27 +12375,24 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
               <span class="active-setting-tag">Dynasty</span>
               <span class="active-setting-tag" id="prTepTag" style="display:none;">TE+</span>
             </div>
-            <!-- Sort dropdown -->
-            <div class="filter-sort">
-              <label class="filter-label">Sort by</label>
-              <select id="prSort" onchange="prPage=1;prFlipRender()"
-                style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
-                       background:var(--card-bg);color:var(--text);font-size:12px;cursor:pointer;outline:none;min-height:34px;min-width:120px;">
-                <option value="value">Value</option>
-                <option value="adp">ADP</option>
-                <option value="age">Age</option>
-                <option value="pos_rank">Pos Rank</option>
-                <option value="ppg">PPG</option>
-                <option value="total_pts">Total Points</option>
-              </select>
-            </div>
-            <!-- ADP source selector: shown only when sorting by ADP -->
-            <div class="filter-sort" id="prAdpSrcWrap" style="display:none;">
-              <label class="filter-label">ADP source</label>
-              <select id="prAdpSource" onchange="prReloadAdpSource()"
-                style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
-                       background:var(--card-bg);color:var(--text);font-size:12px;cursor:pointer;outline:none;min-height:34px;min-width:120px;">
-              </select>
+            <!-- Sort + ADP source: a paired control group (side by side on
+                 mobile; the ADP source only appears when sorting by ADP). -->
+            <div class="filter-sort-group">
+              <div class="filter-sort">
+                <label class="filter-label" for="prSort">Sort by</label>
+                <select id="prSort" onchange="prPage=1;prFlipRender()">
+                  <option value="value">Value</option>
+                  <option value="adp">ADP</option>
+                  <option value="age">Age</option>
+                  <option value="pos_rank">Pos Rank</option>
+                  <option value="ppg">PPG</option>
+                  <option value="total_pts">Total Points</option>
+                </select>
+              </div>
+              <div class="filter-sort" id="prAdpSrcWrap" style="display:none;">
+                <label class="filter-label" for="prAdpSource">ADP source</label>
+                <select id="prAdpSource" onchange="prReloadAdpSource()"></select>
+              </div>
             </div>
           </div>
         </div>
@@ -12545,7 +12542,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         flex-wrap: nowrap;
       }
       .filter-row-secondary .active-settings-indicator::-webkit-scrollbar { display: none; }
-      .filter-row-secondary .filter-sort { flex-shrink: 0; }
+      .filter-row-secondary .filter-sort-group { flex-shrink: 0; }
       .filter-search {
         position: relative;
         flex: 1;
@@ -12656,10 +12653,43 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         font-size: 11px;
         font-weight: 600;
       }
+      .filter-sort-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-shrink: 0;
+      }
       .filter-sort {
         display: flex;
         align-items: center;
         gap: 8px;
+      }
+      .filter-sort select {
+        padding: 7px 30px 7px 11px;
+        border-radius: 9px;
+        border: 1px solid var(--border);
+        background: var(--card-bg);
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        outline: none;
+        min-height: 36px;
+        min-width: 128px;
+        transition: border-color 0.12s, box-shadow 0.12s;
+        /* Custom chevron so both selects match across platforms */
+        -webkit-appearance: none;
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 11px center;
+      }
+      .filter-sort select:hover {
+        border-color: var(--accent);
+      }
+      .filter-sort select:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-soft);
       }
       .filter-label {
         font-size: 11px;
@@ -12740,9 +12770,29 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           flex-wrap: wrap;
           gap: 8px;
         }
-        .filter-sort,
+        /* Sort + ADP source sit side by side on their own row, each a tidy
+           field with the label stacked above a full-width select. Grid columns
+           of minmax(0,1fr) keep them equal and never overflow; a hidden ADP
+           source leaves one column, so Sort by fills the row. */
+        .filter-sort-group {
+          display: grid;
+          grid-auto-flow: column;
+          grid-auto-columns: minmax(0, 1fr);
+          gap: 10px;
+          width: 100%;
+        }
+        .filter-sort {
+          min-width: 0;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 5px;
+        }
+        .filter-sort .filter-label {
+          font-size: 10px;
+        }
         .filter-sort select {
           width: 100%;
+          min-width: 0;
         }
         /* Table: hide Age on tablets - rank | arrow | name | pos | team | sort */
         .pr-grid-row { grid-template-columns: 28px 42px 1fr 44px 42px 56px !important; }
