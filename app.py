@@ -19496,20 +19496,27 @@ def _attach_adp_from_source(players, adp_season, source, league_id=None, token=N
     """Overlay every ADP field from a single chosen source via the resolver.
 
     Used when the UI's source selector requests an explicit source
-    (sleeper / yahoo / brfantasy / fc / consensus). The resolver keeps each
-    source on its valid axis (Yahoo redraft-only, BR Fantasy dynasty/rookie
-    only) and falls back per axis when a source has no data there, so a choice
-    like "Yahoo" fills redraft from Yahoo and leaves dynasty/rookie on their
-    best available feed. Returns adp_sources {mode: label}."""
+    (sleeper / yahoo / brfantasy / consensus). The resolver keeps each source on
+    its valid axis (Yahoo redraft-only, BR Fantasy dynasty/rookie only) and
+    falls back per axis when a source has no data there, so a choice like
+    "Yahoo" fills redraft from Yahoo and leaves dynasty/rookie on their best
+    available feed. Returns adp_sources {mode: label}.
+
+    BR Fantasy is drawn from real draft picks, so its averaged ADP never bottoms
+    out at 1.0 (the consensus No. 1 still goes third in some drafts). When it is
+    the chosen single source, re-rank to a contiguous 1..N board so it reads like
+    a draft board rather than showing a 5.3 floor."""
     from dashboard_services.adp_service import resolve_market_adp, ADP_SOURCE_LABELS
 
     label = ADP_SOURCE_LABELS.get(source, source.title())
+    as_rank = (source == "brfantasy")
     by_field = {}
     used = {"startup": False, "rookie": False, "redraft": False}
     for mode, scoring_type, is_sf, field in _ADP_MODE_AXES:
         try:
             m = resolve_market_adp(int(adp_season), is_sf, scoring_type=scoring_type,
-                                   source=source, league_id=league_id, token=token) or {}
+                                   source=source, league_id=league_id, token=token,
+                                   as_rank=as_rank) or {}
         except Exception:
             m = {}
         by_field[field] = m
@@ -23715,8 +23722,6 @@ def api_playoff_scenarios():
 
 
 from dashboard_services.adp_service import (
-    fetch_fc_rookie_adp as _fetch_fc_rookie_adp,
-    fetch_fc_startup_adp as _fetch_fc_startup_adp,
     fetch_league_adp_from_db as _fetch_league_adp_from_db_impl,
     build_model_adp_fallback as _build_model_adp_fallback,
 )
@@ -23876,9 +23881,10 @@ def api_draft_grades():
             _nfl_draft_done = is_draft_complete(season)
 
         # ── ADP lookup ────────────────────────────────────────────────────────
-        # Startup drafts use FantasyCalc dynasty rankings as the ADP source
-        # (avg_pick = FC overallRank, so Josh Allen ≈ 1).  Rookie drafts keep
-        # the league-crawled data (Sleeper pick numbers within the rookie pool).
+        # Startup and rookie drafts grade against the league-crawled BR Fantasy
+        # ADP (real Sleeper pick numbers, size-normalized), falling back to the
+        # value model when the crawl is sparse. Redraft has no market feed, so
+        # it derives ADP from the redraft-value rank.
         if _draft_type == "redraft":
             # No redraft ADP feed exists, so derive ADP from redraft-value rank
             # (best redraft value = ADP 1), mirroring the Draft Room fallback.
@@ -23889,25 +23895,14 @@ def api_draft_grades():
                 _pos = str((players_index.get(_pid) or {}).get("pos", "")).upper()
                 adp_info[_pid] = {"avg_pick": _rank, "position": _pos}
             adp_source = "redraft-value"
-        elif _draft_type == "startup":
-            adp_info = _fetch_fc_startup_adp(is_sf)
-            if adp_info:
-                adp_source = "fantasycalc"
-            else:
-                adp_info = _fetch_league_adp_from_db(is_sf, season, _draft_type, _num_teams)
-                adp_source = "league" if adp_info else "none"
         else:
-            # rookie draft: league crawl → FC rookie → model
+            # startup or rookie: league crawl (BR Fantasy) → value model.
             adp_info = _fetch_league_adp_from_db(is_sf, season, _draft_type, _num_teams)
             if adp_info:
                 adp_source = "league"
             else:
-                adp_info = _fetch_fc_rookie_adp(is_sf, season)
-                if adp_info:
-                    adp_source = "fantasycalc"
-                else:
-                    adp_info = _build_model_adp_fallback(is_sf, season, filter_undrafted=_nfl_draft_done)
-                    adp_source = "model" if adp_info else "none"
+                adp_info = _build_model_adp_fallback(is_sf, season, filter_undrafted=_nfl_draft_done)
+                adp_source = "model" if adp_info else "none"
         users   = get_users(platform, league_id, season) or []
         roster_map = _build_roster_map(users, rosters)
 
