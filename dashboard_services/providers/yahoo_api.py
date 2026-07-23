@@ -749,6 +749,86 @@ def get_drafts(season: int, league_id: str, access_token: str) -> List[Dict[str,
     }]
 
 
+def _draft_analysis_block(player_entry: Any) -> Optional[Dict[str, Any]]:
+    """Pull the draft_analysis dict out of a Yahoo players-collection entry.
+
+    With the ``/draft_analysis`` sub-resource the player is
+    ``[[meta...], {"draft_analysis": {...}}]`` (sometimes a further list), so scan
+    every part for the draft_analysis key rather than assuming a fixed index."""
+    parts = player_entry if isinstance(player_entry, list) else [player_entry]
+    for part in parts:
+        if isinstance(part, dict) and "draft_analysis" in part:
+            da = part["draft_analysis"]
+            if isinstance(da, list):  # occasionally wrapped as a positional list
+                merged: Dict[str, Any] = {}
+                for d in da:
+                    if isinstance(d, dict):
+                        merged.update(d)
+                return merged
+            if isinstance(da, dict):
+                return da
+    return None
+
+
+def get_draft_analysis_adp(
+    season: int, league_id: str, access_token: str, max_players: int = 300
+) -> Dict[str, float]:
+    """canonical Sleeper id -> average draft pick, from Yahoo's draft_analysis.
+
+    Yahoo's ADP is league-format-aware (it reflects how this league's scoring
+    drafts), redraft-only, and paginates 25 players at a time, so page through
+    the players collection until a short page or ``max_players`` is reached.
+    Returns overall ADP keyed by canonical id; players we can't map are skipped.
+    Empty on any failure so the resolver falls back to another source."""
+    out: Dict[str, float] = {}
+    league_key = _league_key(league_id)
+    start = 0
+    page = 25
+    try:
+        while start < max_players:
+            raw = _yahoo_get(
+                access_token,
+                f"league/{league_key}/players;start={start};count={page}/draft_analysis",
+            )
+            lg = (raw.get("fantasy_content", {}) or {}).get("league") or []
+            players_block = None
+            for item in lg:
+                if isinstance(item, dict) and "players" in item:
+                    players_block = item["players"]
+                    break
+            if not players_block:
+                break
+            count = _safe_int(players_block.get("count")) or 0
+            if count <= 0:
+                break
+            for i in range(count):
+                entry = (players_block.get(str(i)) or {}).get("player")
+                if not entry:
+                    continue
+                flat, _ = _flatten_yahoo_player(entry)
+                da = _draft_analysis_block(entry)
+                if not da:
+                    continue
+                ap = _safe_float(da.get("average_pick"))
+                if not ap or ap <= 0:
+                    continue
+                canon = _resolve_player(
+                    flat.get("name", {}).get("full") if isinstance(flat.get("name"), dict) else flat.get("name"),
+                    (flat.get("display_position") or flat.get("primary_position") or ""),
+                    (flat.get("editorial_team_abbr") or ""),
+                    yahoo_id=flat.get("player_id"),
+                )
+                if canon:
+                    out[str(canon)] = float(ap)
+            if count < page:
+                break
+            start += page
+    except Exception as exc:
+        logger.warning("[yahoo] get_draft_analysis_adp failed at start=%s: %s", start, exc)
+        return out
+    return out
+
+
 def get_bracket_like(league_id: str, season: int, kind: str, access_token: str) -> List[Dict[str, Any]]:
     """Yahoo playoff bracket - returns an empty list; bracket rendering is best-effort."""
     return []

@@ -668,7 +668,9 @@ _DRAFT_ROOM_HTML = r"""
   .dr-pos-filters { display: flex; gap: 4px; flex-wrap: wrap; }
   .dr-pos { font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg); color: var(--text-muted); cursor: pointer; }
   .dr-pos.active { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: #fff; }
-  .dr-adp-src { font-size: 10px; color: var(--text-muted); }
+  .dr-adp-src { font-size: 10px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+  .dr-adp-src-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .dr-adp-src-select { padding: 4px 7px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 11px; cursor: pointer; outline: none; }
   .dr-ba-list { overflow-y: auto; flex: 1; }
   .dr-ba-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px 8px 5px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .12s; }
   .dr-ba-row:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }

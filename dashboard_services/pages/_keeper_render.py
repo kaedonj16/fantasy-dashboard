@@ -8,6 +8,7 @@ layout lives in the scoped .kpr- block below.
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 from pathlib import Path
 
@@ -37,6 +38,27 @@ def render_keeper_html(seed: dict) -> str:
         '<span class="kpr-auto kpr-auto-off"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> '
         'Set each player’s keeper round below</span>'
     )
+    # ADP source selector: reloads the page with ?adp_source=<v> so the surplus
+    # model re-runs against the chosen market ADP. Only shown when the server
+    # offered options (redraft sources: consensus / sleeper / yahoo / fc).
+    _src_opts = seed.get("adpSourceOptions") or []
+    source_sel = ""
+    if _src_opts:
+        _cur = seed.get("adpSource") or "consensus"
+        _opt_html = "".join(
+            '<option value="{v}"{sel}>{l}</option>'.format(
+                v=html.escape(str(o.get("value"))),
+                l=html.escape(str(o.get("label"))),
+                sel=" selected" if o.get("value") == _cur else "",
+            )
+            for o in _src_opts
+        )
+        source_sel = (
+            '<div class="kpr-rule"><label for="kpr-src">ADP source</label>'
+            '<select id="kpr-src" onchange="var u=new URL(window.location.href);'
+            "u.searchParams.set('adp_source',this.value);window.location.href=u.toString();\">"
+            + _opt_html + "</select></div>"
+        )
     return f"""
 <style>
   .kpr-wrap{{max-width:960px;margin:0 auto;}}
@@ -119,6 +141,21 @@ def render_keeper_html(seed: dict) -> str:
   .kpr-warn{{font-size:12.5px;color:var(--inj-q,#b45309);background:color-mix(in srgb,var(--inj-q,#b45309) 12%,transparent);
     border:1px solid color-mix(in srgb,var(--inj-q,#b45309) 32%,transparent);border-radius:9px;
     padding:8px 12px;margin-bottom:8px;}}
+  /* Mobile: the optimizer is the primary view. Drop the redundant middle label,
+     tighten rows, and compact the table so columns aren't chopped. */
+  @media (max-width:560px){{
+    .kpr-cfg{{gap:8px 12px;padding:12px;}}
+    .kpr-opt{{padding:12px;}}
+    .kpr-row{{grid-template-columns:20px 1fr auto;gap:9px;padding:10px 11px;}}
+    .kpr-mid{{display:none;}}
+    .kpr-nm{{font-size:14px;}}
+    .kpr-draft-btn{{width:100%;justify-content:center;}}
+    table.kpr-tbl{{min-width:470px;}}
+    .kpr-tbl thead th,.kpr-tbl tbody td{{padding:9px 8px;}}
+    .kpr-tbl .kpr-sub{{white-space:nowrap;}}
+    .kpr-drnd{{width:44px;}}
+    .kpr-yrs{{width:36px;}}
+  }}
   @media (prefers-reduced-motion:reduce){{.kpr-row{{transition:none;}}}}
 </style>
 
@@ -136,6 +173,7 @@ def render_keeper_html(seed: dict) -> str:
   <div class="card-body" style="padding-top:0;">
     <div class="kpr-cfg">
       {auto_badge}
+      {source_sel}
       <div class="kpr-rule">
         <label for="kpr-cost">Keeper cost</label>
         <select id="kpr-cost">

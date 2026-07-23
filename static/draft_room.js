@@ -61,6 +61,8 @@
   var _capLateOpen = false;// whether the combined late-rounds section is expanded
   var tierThresholds = {}; // {leagueType:{size:[...]}} from /api/league-players
   var adpSources = {};     // {startup|rookie|redraft: 'Sleeper'|'none'} from /api/league-players
+  var adpSourceOptions = {}; // {startup|rookie|redraft: [{value,label}]} from payload
+  var adpSource = 'auto';    // currently selected ADP source ('auto' = server default)
   var _boardSig = null;    // board structure signature (rebuild only when it changes)
   var _summaryShown = false; // auto-open summary only once per draft
   var compareIds = [];     // 0-2 player IDs staged for comparison
@@ -564,6 +566,14 @@
     if (state && state.mode === 'live' && state.isComplete && state.season){
       params.push('season=' + encodeURIComponent(state.season));
     }
+    // Explicit ADP source (from the source selector). "auto" keeps the server
+    // default; any real source (incl. consensus) overlays via the resolver.
+    // Carry league context so Yahoo/consensus can resolve a league token.
+    if (adpSource && adpSource !== 'auto'){
+      params.push('adp_source=' + encodeURIComponent(adpSource));
+      if (cfg.leagueId) params.push('league_id=' + encodeURIComponent(cfg.leagueId));
+      if (cfg.platform) params.push('platform=' + encodeURIComponent(cfg.platform));
+    }
     var url = '/api/league-players' + (params.length ? ('?' + params.join('&')) : '');
     fetch(url, { cache: 'no-store' })
       .then(function(r){ return r.json(); })
@@ -571,6 +581,7 @@
         var raw = Array.isArray(resp) ? resp : (resp.players || []);
         tierThresholds = (!Array.isArray(resp) && resp.tier_thresholds) ? resp.tier_thresholds : {};
         adpSources = (!Array.isArray(resp) && resp.adp_sources) ? resp.adp_sources : {};
+        if (!Array.isArray(resp) && resp.adp_source_options) adpSourceOptions = resp.adp_source_options;
         players = raw.filter(function(p){
           if (!p || p.id == null) return false;
           var pos = String(p.position || '').toUpperCase();
@@ -3659,9 +3670,43 @@
     if (_boardSig !== boardSig()) buildBoard();
   }
 
+  // Build/refresh the ADP source dropdown inside #drAdpSrc for the current
+  // draft mode (state.type). Options come from the payload and already exclude
+  // sources invalid for the mode (Yahoo redraft-only, BR Fantasy dyn/rookie).
+  function syncAdpSourceSelector(){
+    var host = document.getElementById('drAdpSrc');
+    if (!host) return;
+    var serverOpts = adpSourceOptions[state.type] || [];
+    if (!serverOpts.length){
+      host.textContent = 'ADP source: ' + (adpSources[state.type] || 'unavailable');
+      return;
+    }
+    // "Auto" is the server default the pool loads with; label it with the
+    // source the server actually used so the dropdown never misstates it.
+    var usedLabel = adpSources[state.type];
+    var autoLabel = (usedLabel && usedLabel !== 'none') ? ('Auto (' + usedLabel + ')') : 'Auto';
+    var opts = [{ value: 'auto', label: autoLabel }].concat(serverOpts);
+    var sel = document.getElementById('drAdpSource');
+    if (!sel){
+      host.innerHTML = '<label class="dr-adp-src-label" for="drAdpSource">ADP source</label>'
+        + '<select id="drAdpSource" class="dr-adp-src-select"></select>';
+      sel = document.getElementById('drAdpSource');
+      sel.addEventListener('change', function(){
+        adpSource = sel.value;
+        loadPlayers();   // re-fetch the pool scored by the chosen source
+      });
+    }
+    var want = sel.value || adpSource;
+    sel.innerHTML = opts.map(function(o){
+      return '<option value="' + o.value + '">' + o.label + '</option>';
+    }).join('');
+    var has = opts.some(function(o){ return o.value === want; });
+    sel.value = has ? want : (opts[0] ? opts[0].value : 'consensus');
+    adpSource = sel.value;
+  }
+
   function renderBA(){
-    var srcEl = document.getElementById('drAdpSrc');
-    if (srcEl){ srcEl.textContent = 'ADP source: ' + (adpSources[state.type] || 'unavailable'); }
+    syncAdpSourceSelector();
     var sortBy = document.getElementById('drBaSort').value;
     var q = (document.getElementById('drSearch').value || '').trim().toLowerCase();
     var pool = availablePool().filter(function(p){
