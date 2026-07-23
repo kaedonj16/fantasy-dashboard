@@ -132,3 +132,28 @@ def test_get_draft_analysis_adp_skips_zero_and_unmapped(monkeypatch):
     yahoo_api._yahoo_id_to_canonical.cache_clear()
     yahoo_api._name_pos_to_canonical.cache_clear()
     assert adp == {}   # zero-pick dropped; unmapped id dropped
+
+
+# ── draft results (keeper drafted-round) ─────────────────────────────────────
+
+def _draft_results_payload(results):
+    block = {str(i): {"draft_result": r} for i, r in enumerate(results)}
+    block["count"] = len(results)
+    return {"fantasy_content": {"league": [{}, {"draft_results": block}]}}
+
+
+def test_get_draft_results_maps_player_key_to_round(monkeypatch):
+    import dashboard_services.api as api
+    monkeypatch.setattr(api, "get_nfl_players",
+                        lambda: {"111": {"yahoo_id": "5"}, "222": {"yahoo_id": "6"}})
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    payload = _draft_results_payload([
+        {"round": "1", "pick": "1", "player_key": "nfl.p.5"},
+        {"round": "7", "pick": "80", "player_key": "nfl.p.6"},
+        {"round": "3", "pick": "30", "player_key": "nfl.p.999"},   # unmapped -> skipped
+        {"pick": "5", "player_key": "nfl.p.5"},                    # no round -> skipped
+    ])
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", lambda t, p, params=None: payload)
+    out = yahoo_api.get_draft_results(2026, "12345", "tok")
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    assert out == {"111": 1, "222": 7}   # mapped by yahoo_id; unmapped/round-less dropped

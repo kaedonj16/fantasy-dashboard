@@ -749,6 +749,44 @@ def get_drafts(season: int, league_id: str, access_token: str) -> List[Dict[str,
     }]
 
 
+def get_draft_results(season: int, league_id: str, access_token: str) -> Dict[str, int]:
+    """canonical Sleeper id -> the round the player was drafted, from Yahoo's
+    league draftresults resource.
+
+    Each draft_result carries ``pick``, ``round``, and a ``player_key`` of the
+    form ``nfl.p.<player_id>`` where ``player_id`` is the Yahoo id (== Sleeper's
+    ``yahoo_id``), so map it through the existing crosswalk. Empty on any failure
+    (no draft yet, network, mapping) so callers fall back gracefully."""
+    out: Dict[str, int] = {}
+    try:
+        raw = _yahoo_get(access_token, f"league/{_league_key(league_id)}/draftresults")
+        lg = (raw.get("fantasy_content", {}) or {}).get("league") or []
+        block = None
+        for item in lg:
+            if isinstance(item, dict) and "draft_results" in item:
+                block = item["draft_results"]
+                break
+        if not block:
+            return {}
+        count = _safe_int(block.get("count")) or 0
+        xwalk = _yahoo_id_to_canonical()
+        for i in range(count):
+            entry = block.get(str(i)) or {}
+            dr = entry.get("draft_result") or {}
+            rnd = _safe_int(dr.get("round"))
+            pkey = str(dr.get("player_key") or "")
+            if not rnd or not pkey:
+                continue
+            yid = pkey.rsplit(".", 1)[-1]     # nfl.p.12345 -> 12345
+            canon = xwalk.get(str(yid))
+            if canon:
+                out[str(canon)] = int(rnd)
+    except Exception as exc:
+        logger.warning("[yahoo] get_draft_results failed: %s", exc)
+        return out
+    return out
+
+
 def _draft_analysis_block(player_entry: Any) -> Optional[Dict[str, Any]]:
     """Pull the draft_analysis dict out of a Yahoo players-collection entry.
 
