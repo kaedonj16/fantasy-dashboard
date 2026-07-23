@@ -68,6 +68,18 @@ def test_best_draft_prefers_completed_with_most_rounds():
     assert kp._best_draft(drafts)["draft_id"] == "startup"   # completed + most rounds
 
 
+def test_num_rounds_yahoo_from_deepest_drafted_round():
+    # Yahoo has no round count in its draft list, so derive it from the picks.
+    assert kp._num_rounds("yahoo", "L", drafted={"a": 1, "b": 16, "c": 9}) == 16
+    # A tiny/empty draft falls back to the standard default depth.
+    assert kp._num_rounds("yahoo", "L", drafted={"a": 3}) == 15
+    assert kp._num_rounds("yahoo", "L", drafted={}) == 15
+
+
+def test_drafted_round_map_other_platform_empty():
+    assert kp._drafted_round_map("espn", "L", 2026) == {}
+
+
 def test_best_draft_falls_back_when_none_complete():
     drafts = [{"draft_id": "x", "status": "pre_draft", "settings": {"rounds": 12}}]
     assert kp._best_draft(drafts)["draft_id"] == "x"

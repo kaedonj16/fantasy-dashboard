@@ -85,9 +85,29 @@ def _best_draft(drafts: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     return max(pool, key=_draft_rounds)
 
 
-def _drafted_round_map(platform: str, league_id: str) -> Dict[str, int]:
-    """player_id -> the round they were drafted (Sleeper only; empty otherwise)."""
-    if (platform or "").lower() != "sleeper":
+def _yahoo_drafted_round_map(league_id: str, season: int) -> Dict[str, int]:
+    """player_id -> drafted round for a Yahoo league (via draftresults)."""
+    try:
+        from dashboard_services.providers.yahoo_api import get_league_token, get_draft_results
+        token = get_league_token(str(league_id), int(season))
+        if not token:
+            return {}
+        return get_draft_results(int(season), str(league_id), token) or {}
+    except Exception:
+        logger.debug("[keeper] yahoo draft load failed", exc_info=True)
+        return {}
+
+
+def _drafted_round_map(platform: str, league_id: str, season: int = 0) -> Dict[str, int]:
+    """player_id -> the round they were drafted, for Sleeper or Yahoo leagues.
+
+    Sleeper reads the completed startup draft's picks; Yahoo reads the league
+    draftresults resource. Empty for other platforms (players show as undrafted
+    and users set costs manually)."""
+    plat = (platform or "").lower()
+    if plat == "yahoo":
+        return _yahoo_drafted_round_map(league_id, season)
+    if plat != "sleeper":
         return {}
     try:
         from dashboard_services.api import get_drafts, get_draft_picks
@@ -110,12 +130,17 @@ def _drafted_round_map(platform: str, league_id: str) -> Dict[str, int]:
     return out
 
 
-def _num_rounds(platform: str, league_id: str, default: int = 15) -> int:
+def _num_rounds(platform: str, league_id: str, default: int = 15, drafted: Optional[Dict[str, int]] = None) -> int:
     """Draft rounds for the keeper-cost scale. Uses the startup/full draft's
     round count; defaults to a standard redraft depth when it can't be detected
     or looks like a small rookie-only draft (which would make the undrafted cost
-    absurdly cheap)."""
-    if (platform or "").lower() != "sleeper":
+    absurdly cheap). Yahoo has no round count in its draft list, so derive it
+    from the deepest drafted round when a ``drafted`` map is supplied."""
+    plat = (platform or "").lower()
+    if plat == "yahoo":
+        rounds = max(drafted.values()) if drafted else 0
+        return rounds if rounds >= 8 else default
+    if plat != "sleeper":
         return default
     try:
         from dashboard_services.api import get_drafts
@@ -220,7 +245,7 @@ def compute_league_keepers(
         league_size = int(ctx.get("total_rosters") or len(ctx.get("rosters") or []) or 12)
     except (TypeError, ValueError):
         league_size = 12
-    num_rounds = _num_rounds(platform, league_id)
+    _season = int(ctx.get("season") or 0)
     limit = _max_keepers(ctx)
 
     players_index: Dict[str, Any] = {}
@@ -230,9 +255,10 @@ def compute_league_keepers(
     except Exception:
         logger.debug("[keeper] players_index load failed", exc_info=True)
     values = _redraft_value_map(is_sf)
-    adp = _adp_map(is_sf, int(ctx.get("season") or 0))
+    adp = _adp_map(is_sf, _season)
     value_rank = _value_rank_map(values)
-    drafted = _drafted_round_map(platform, league_id)
+    drafted = _drafted_round_map(platform, league_id, _season)
+    num_rounds = _num_rounds(platform, league_id, drafted=drafted)
     rules = KeeperRules(league_size=league_size, num_rounds=num_rounds)
 
     per_team: Dict[str, List[KeeperCandidate]] = {}
@@ -285,7 +311,7 @@ def build_keeper_body(
         league_size = int(ctx.get("total_rosters") or len(ctx.get("rosters") or []) or 12)
     except (TypeError, ValueError):
         league_size = 12
-    num_rounds = _num_rounds(platform, league_id)
+    _season = int(ctx.get("season") or 0)
     max_keepers = _max_keepers(ctx)
 
     players_index = {}
@@ -296,9 +322,10 @@ def build_keeper_body(
         logger.debug("[keeper] players_index load failed", exc_info=True)
 
     values = _redraft_value_map(is_sf)
-    adp = _adp_map(is_sf, int(ctx.get("season") or 0), source=adp_source)
+    adp = _adp_map(is_sf, _season, source=adp_source)
     value_rank = _value_rank_map(values)
-    drafted = _drafted_round_map(platform, league_id)
+    drafted = _drafted_round_map(platform, league_id, _season)
+    num_rounds = _num_rounds(platform, league_id, drafted=drafted)
 
     roster = _viewer_roster(ctx, viewer_roster_id) or {}
     player_ids = [str(p) for p in (roster.get("players") or [])]
