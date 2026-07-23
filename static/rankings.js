@@ -32,6 +32,9 @@ var prSearchQuery = '';
 var prLoaded = false;
 var prPage = 1;
 var prPageSize = 50;
+var prAdpSourceOptions = {};    // {startup|rookie|redraft: [{value,label}]} from payload
+var prAdpSource = 'consensus';  // currently selected ADP source
+var prAdpReloading = false;     // guards concurrent source re-fetches
 
 var PR_SPARK_W = 38, PR_SPARK_H = 26;  // logical (CSS) px
 // Set true for the one render pass right after sparkline data first loads, so
@@ -354,6 +357,60 @@ function prFormatAdp(p) {
   return (v != null) ? Number(v).toFixed(1) : '–';
 }
 
+// Which ADP source menu applies, given the current scoring mode.
+function prAdpMode() {
+  return prScoringType === 'redraft' ? 'redraft' : 'startup';
+}
+
+// Show the ADP-source dropdown only while sorting by ADP, and populate it with
+// the sources valid for the current scoring mode (Yahoo redraft-only, BR
+// Fantasy dynasty/rookie only). Preserves the current selection when possible.
+function prSyncAdpSourceUI(sortBy) {
+  const wrap = document.getElementById('prAdpSrcWrap');
+  const sel = document.getElementById('prAdpSource');
+  if (!wrap || !sel) return;
+  const show = sortBy === 'adp';
+  wrap.style.display = show ? '' : 'none';
+  if (!show) return;
+  const opts = prAdpSourceOptions[prAdpMode()] || [];
+  const want = sel.value || prAdpSource;
+  sel.innerHTML = opts.map(o =>
+    '<option value="' + o.value + '">' + o.label + '</option>').join('');
+  const has = opts.some(o => o.value === want);
+  sel.value = has ? want : (opts[0] ? opts[0].value : 'consensus');
+  prAdpSource = sel.value;
+}
+
+// Re-fetch the pool with the chosen ADP source and merge only the ADP fields
+// back onto the loaded players (preserving all client-side enrichment), then
+// re-render. A no-op when nothing changed avoids a needless round trip.
+function prReloadAdpSource() {
+  const sel = document.getElementById('prAdpSource');
+  if (!sel || prAdpReloading) return;
+  prAdpSource = sel.value;
+  let url = '/api/league-players?adp_source=' + encodeURIComponent(prAdpSource);
+  if (window.__leagueId) url += '&league_id=' + encodeURIComponent(window.__leagueId);
+  if (window.__platform) url += '&platform=' + encodeURIComponent(window.__platform);
+  prAdpReloading = true;
+  fetch(url, { cache: 'no-store' })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+    .then(resp => {
+      const pls = Array.isArray(resp) ? resp : (resp.players || []);
+      const byId = {};
+      pls.forEach(p => { byId[String(p.id)] = p; });
+      const F = ['avg_pick', 'sf_avg_pick', 'rookie_avg_pick',
+                 'sf_rookie_avg_pick', 'redraft_avg_pick', 'sf_redraft_avg_pick'];
+      prAllPlayers.forEach(p => {
+        const src = byId[String(p.id)];
+        if (src) F.forEach(f => { p[f] = (src[f] != null ? src[f] : null); });
+      });
+      prPage = 1;
+      prRender();
+    })
+    .catch(() => { /* keep current ADP on failure */ })
+    .finally(() => { prAdpReloading = false; });
+}
+
 const PR_SORT_META = {
   rank:      { label: 'Value',    cell: p => prFormatValue(prGetValue(p)) },
   value:     { label: 'Value',    cell: p => prFormatValue(prGetValue(p)) },
@@ -379,6 +436,7 @@ function prFlipRender() {
 function prRender() {
   if (!prLoaded) return;
   const sortBy = document.getElementById('prSort').value;
+  prSyncAdpSourceUI(sortBy);
 
   // On mobile (≤768px) the Age column is hidden, so switch the sort column
   // to show whatever is being sorted. On desktop all columns are visible.
@@ -767,6 +825,7 @@ Promise.all([
   // Support both old (array) and new (object with players + tier_thresholds) format
   const rawPlayers = Array.isArray(resp) ? resp : (resp.players || []);
   prTierThresholds = (!Array.isArray(resp) && resp.tier_thresholds) ? resp.tier_thresholds : {};
+  prAdpSourceOptions = (!Array.isArray(resp) && resp.adp_source_options) ? resp.adp_source_options : {};
 
   // Helper function to calculate precise age from birthday
   function calculateAgeFromBirthday(bDay) {

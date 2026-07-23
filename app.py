@@ -12389,6 +12389,14 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
                 <option value="total_pts">Total Points</option>
               </select>
             </div>
+            <!-- ADP source selector: shown only when sorting by ADP -->
+            <div class="filter-sort" id="prAdpSrcWrap" style="display:none;">
+              <label class="filter-label">ADP source</label>
+              <select id="prAdpSource" onchange="prReloadAdpSource()"
+                style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
+                       background:var(--card-bg);color:var(--text);font-size:12px;cursor:pointer;outline:none;min-height:34px;min-width:120px;">
+              </select>
+            </div>
           </div>
         </div>
 
@@ -12806,6 +12814,16 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             _lg_tep = 0.0
         if _lg_tep:
             body_html += f"\n<script>window.__leagueTePremium = {_lg_tep};</script>"
+
+    # League context for the ADP source selector (Yahoo token / consensus need
+    # the active league). Emitted as a small inline script before rankings.js.
+    body_html += (
+        "\n<script>"
+        f"window.__leagueId={json.dumps(str(league_id or ''))};"
+        f"window.__platform={json.dumps(str(platform or ''))};"
+        f"window.__adpSeason={json.dumps(int(season) if season else 0)};"
+        "</script>"
+    )
 
     # Rankings logic was moved to a cacheable, minified static file. `defer` runs
     # it after the page's app.js and after the inline __leagueTePremium injection
@@ -13454,9 +13472,14 @@ def page_keeper(platform: str = None, season: int = None, league_id: str = None)
     except Exception as _e:
         logger.info("[keeper] league ctx load failed: %s", _e)
     viewer_roster_id = session.get("viewer_roster_id") or None
+    from dashboard_services.adp_service import ADP_SOURCE_LABELS as _ADP_LABELS
+    _kadp_src = (request.args.get("adp_source") or "consensus").strip().lower()
+    if _kadp_src not in _ADP_LABELS:
+        _kadp_src = "consensus"
     body = build_keeper_body(
         ctx or {}, viewer_roster_id=viewer_roster_id,
         platform=(platform or "sleeper"), league_id=league_id,
+        adp_source=_kadp_src,
     )
     return render_page(
         "Keeper Assistant | BR Fantasy", league_id, "keeper", body, platform, season,

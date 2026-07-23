@@ -8,6 +8,7 @@ layout lives in the scoped .kpr- block below.
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 from pathlib import Path
 
@@ -37,6 +38,27 @@ def render_keeper_html(seed: dict) -> str:
         '<span class="kpr-auto kpr-auto-off"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> '
         'Set each player’s keeper round below</span>'
     )
+    # ADP source selector: reloads the page with ?adp_source=<v> so the surplus
+    # model re-runs against the chosen market ADP. Only shown when the server
+    # offered options (redraft sources: consensus / sleeper / yahoo / fc).
+    _src_opts = seed.get("adpSourceOptions") or []
+    source_sel = ""
+    if _src_opts:
+        _cur = seed.get("adpSource") or "consensus"
+        _opt_html = "".join(
+            '<option value="{v}"{sel}>{l}</option>'.format(
+                v=html.escape(str(o.get("value"))),
+                l=html.escape(str(o.get("label"))),
+                sel=" selected" if o.get("value") == _cur else "",
+            )
+            for o in _src_opts
+        )
+        source_sel = (
+            '<div class="kpr-rule"><label for="kpr-src">ADP source</label>'
+            '<select id="kpr-src" onchange="var u=new URL(window.location.href);'
+            "u.searchParams.set('adp_source',this.value);window.location.href=u.toString();\">"
+            + _opt_html + "</select></div>"
+        )
     return f"""
 <style>
   .kpr-wrap{{max-width:960px;margin:0 auto;}}
@@ -151,6 +173,7 @@ def render_keeper_html(seed: dict) -> str:
   <div class="card-body" style="padding-top:0;">
     <div class="kpr-cfg">
       {auto_badge}
+      {source_sel}
       <div class="kpr-rule">
         <label for="kpr-cost">Keeper cost</label>
         <select id="kpr-cost">

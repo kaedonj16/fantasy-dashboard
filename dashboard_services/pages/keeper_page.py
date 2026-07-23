@@ -271,8 +271,13 @@ def build_keeper_body(
     viewer_roster_id: Optional[str] = None,
     platform: str = "sleeper",
     league_id: str = "",
+    adp_source: str = "consensus",
 ) -> str:
-    """Return the Keeper Assistant page body HTML for a league context."""
+    """Return the Keeper Assistant page body HTML for a league context.
+
+    ``adp_source`` picks which market ADP feeds the surplus model (keeper
+    decisions are redraft, so the redraft sources apply: consensus / sleeper /
+    yahoo / fc). The page's source dropdown reloads with ?adp_source=<v>."""
     from dashboard_services.pages._keeper_render import render_keeper_html  # local import: keeps this module import-light
 
     is_sf = _is_superflex(ctx)
@@ -291,7 +296,7 @@ def build_keeper_body(
         logger.debug("[keeper] players_index load failed", exc_info=True)
 
     values = _redraft_value_map(is_sf)
-    adp = _adp_map(is_sf, int(ctx.get("season") or 0))
+    adp = _adp_map(is_sf, int(ctx.get("season") or 0), source=adp_source)
     value_rank = _value_rank_map(values)
     drafted = _drafted_round_map(platform, league_id)
 
@@ -306,6 +311,11 @@ def build_keeper_body(
     _season = ctx.get("season") or ""
     draft_url = (f"/{_plat}/{_season}/{league_id}/draft?keepers=1"
                  if (league_id and _season) else "")
+    try:
+        from dashboard_services.adp_service import adp_source_options
+        _src_opts = [{"value": v, "label": l} for v, l in adp_source_options("redraft")]
+    except Exception:
+        _src_opts = []
     seed = {
         "leagueSize": league_size,
         "numRounds": num_rounds,
@@ -315,6 +325,8 @@ def build_keeper_body(
         "platform": _plat,
         "leagueId": str(league_id or ""),
         "draftUrl": draft_url,
+        "adpSource": adp_source,
+        "adpSourceOptions": _src_opts,
         "viewerRoster": str(viewer_roster_id) if viewer_roster_id is not None else "",
         "players": [
             {
