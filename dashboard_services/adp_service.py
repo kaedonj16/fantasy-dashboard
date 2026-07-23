@@ -52,11 +52,19 @@ def fetch_league_adp_from_db(
 
         from dashboard_services.db import get_conn
         with get_conn() as conn:
+            # Size-normalize before combining across league sizes: a raw pick
+            # number is not comparable between a 10- and a 14-team draft (pick 24
+            # is round 3 in one, round 2 in the other). Convert each size's row to
+            # a round position (avg_pick / num_teams), sample-weight across sizes,
+            # then rescale to a reference 12-team pick so avg_pick stays an
+            # overall-pick number for callers. Ordering by the round position is
+            # equivalent to ordering by the rescaled pick (monotonic).
             rows = conn.execute(
                 """
                 SELECT
                     da.player_id,
-                    SUM(da.avg_pick * da.sample_size) / SUM(da.sample_size) AS avg_pick,
+                    SUM((da.avg_pick / da.num_teams::numeric) * da.sample_size)
+                        / NULLIF(SUM(da.sample_size), 0) AS norm_round,
                     SUM(da.sample_size) AS sample_size
                 FROM draft_adp da
                 WHERE da.draft_type   = %s
@@ -65,7 +73,7 @@ def fetch_league_adp_from_db(
                   AND da.num_teams BETWEEN 8 AND 16
                 GROUP BY da.player_id
                 HAVING SUM(da.sample_size) >= %s
-                ORDER BY avg_pick ASC
+                ORDER BY norm_round ASC
                 """,
                 (draft_type, season, is_sf, min_samples),
             ).fetchall()
@@ -91,9 +99,13 @@ def fetch_league_adp_from_db(
             pid = str(row["player_id"])
             pos = pos_map.get(pid, "")
             pos_counters[pos] = pos_counters.get(pos, 0) + 1
+            try:
+                _overall = float(row["norm_round"]) * _CRAWLER_REF_SIZE
+            except (TypeError, ValueError):
+                _overall = float(rank)
             result[pid] = {
                 "adp_rank":    rank,
-                "avg_pick":    float(row["avg_pick"] or rank),
+                "avg_pick":    _overall or float(rank),
                 "std_pick":    0,
                 "pos_rank":    pos_counters[pos],
                 "position":    pos,

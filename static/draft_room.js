@@ -62,7 +62,7 @@
   var tierThresholds = {}; // {leagueType:{size:[...]}} from /api/league-players
   var adpSources = {};     // {startup|rookie|redraft: 'Sleeper'|'none'} from /api/league-players
   var adpSourceOptions = {}; // {startup|rookie|redraft: [{value,label}]} from payload
-  var adpSource = 'consensus'; // currently selected ADP source (drives loadPlayers)
+  var adpSource = 'auto';    // currently selected ADP source ('auto' = server default)
   var _boardSig = null;    // board structure signature (rebuild only when it changes)
   var _summaryShown = false; // auto-open summary only once per draft
   var compareIds = [];     // 0-2 player IDs staged for comparison
@@ -566,9 +566,10 @@
     if (state && state.mode === 'live' && state.isComplete && state.season){
       params.push('season=' + encodeURIComponent(state.season));
     }
-    // Explicit ADP source (from the source selector). Carry league context so
-    // Yahoo/consensus can resolve a league token server-side.
-    if (adpSource && adpSource !== 'consensus'){
+    // Explicit ADP source (from the source selector). "auto" keeps the server
+    // default; any real source (incl. consensus) overlays via the resolver.
+    // Carry league context so Yahoo/consensus can resolve a league token.
+    if (adpSource && adpSource !== 'auto'){
       params.push('adp_source=' + encodeURIComponent(adpSource));
       if (cfg.leagueId) params.push('league_id=' + encodeURIComponent(cfg.leagueId));
       if (cfg.platform) params.push('platform=' + encodeURIComponent(cfg.platform));
@@ -3675,11 +3676,16 @@
   function syncAdpSourceSelector(){
     var host = document.getElementById('drAdpSrc');
     if (!host) return;
-    var opts = adpSourceOptions[state.type] || [];
-    if (!opts.length){
+    var serverOpts = adpSourceOptions[state.type] || [];
+    if (!serverOpts.length){
       host.textContent = 'ADP source: ' + (adpSources[state.type] || 'unavailable');
       return;
     }
+    // "Auto" is the server default the pool loads with; label it with the
+    // source the server actually used so the dropdown never misstates it.
+    var usedLabel = adpSources[state.type];
+    var autoLabel = (usedLabel && usedLabel !== 'none') ? ('Auto (' + usedLabel + ')') : 'Auto';
+    var opts = [{ value: 'auto', label: autoLabel }].concat(serverOpts);
     var sel = document.getElementById('drAdpSource');
     if (!sel){
       host.innerHTML = '<label class="dr-adp-src-label" for="drAdpSource">ADP source</label>'

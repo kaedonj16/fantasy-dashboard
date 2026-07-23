@@ -33,7 +33,8 @@ var prLoaded = false;
 var prPage = 1;
 var prPageSize = 50;
 var prAdpSourceOptions = {};    // {startup|rookie|redraft: [{value,label}]} from payload
-var prAdpSource = 'consensus';  // currently selected ADP source
+var prAdpSources = {};          // {startup|rookie|redraft: 'Sleeper'|...} label the server used
+var prAdpSource = 'auto';       // currently selected ADP source ('auto' = server default)
 var prAdpReloading = false;     // guards concurrent source re-fetches
 
 var PR_SPARK_W = 38, PR_SPARK_H = 26;  // logical (CSS) px
@@ -372,12 +373,18 @@ function prSyncAdpSourceUI(sortBy) {
   const show = sortBy === 'adp';
   wrap.style.display = show ? '' : 'none';
   if (!show) return;
-  const opts = prAdpSourceOptions[prAdpMode()] || [];
+  const mode = prAdpMode();
+  // "Auto" is the default the page loads with (the server's memoized attach).
+  // Label it with whatever source the server actually used, so the dropdown
+  // never claims a source the shown ADP didn't come from.
+  const usedLabel = prAdpSources[mode];
+  const autoLabel = usedLabel && usedLabel !== 'none' ? ('Auto (' + usedLabel + ')') : 'Auto';
+  const opts = [{ value: 'auto', label: autoLabel }].concat(prAdpSourceOptions[mode] || []);
   const want = sel.value || prAdpSource;
   sel.innerHTML = opts.map(o =>
     '<option value="' + o.value + '">' + o.label + '</option>').join('');
   const has = opts.some(o => o.value === want);
-  sel.value = has ? want : (opts[0] ? opts[0].value : 'consensus');
+  sel.value = has ? want : 'auto';
   prAdpSource = sel.value;
 }
 
@@ -388,14 +395,20 @@ function prReloadAdpSource() {
   const sel = document.getElementById('prAdpSource');
   if (!sel || prAdpReloading) return;
   prAdpSource = sel.value;
-  let url = '/api/league-players?adp_source=' + encodeURIComponent(prAdpSource);
-  if (window.__leagueId) url += '&league_id=' + encodeURIComponent(window.__leagueId);
-  if (window.__platform) url += '&platform=' + encodeURIComponent(window.__platform);
+  // "Auto" re-fetches the server default (no adp_source override); any real
+  // source overlays via the resolver.
+  let url = '/api/league-players';
+  if (prAdpSource && prAdpSource !== 'auto') {
+    url += '?adp_source=' + encodeURIComponent(prAdpSource);
+    if (window.__leagueId) url += '&league_id=' + encodeURIComponent(window.__leagueId);
+    if (window.__platform) url += '&platform=' + encodeURIComponent(window.__platform);
+  }
   prAdpReloading = true;
   fetch(url, { cache: 'no-store' })
     .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
     .then(resp => {
       const pls = Array.isArray(resp) ? resp : (resp.players || []);
+      if (!Array.isArray(resp) && resp.adp_sources) prAdpSources = resp.adp_sources;
       const byId = {};
       pls.forEach(p => { byId[String(p.id)] = p; });
       const F = ['avg_pick', 'sf_avg_pick', 'rookie_avg_pick',
@@ -826,6 +839,7 @@ Promise.all([
   const rawPlayers = Array.isArray(resp) ? resp : (resp.players || []);
   prTierThresholds = (!Array.isArray(resp) && resp.tier_thresholds) ? resp.tier_thresholds : {};
   prAdpSourceOptions = (!Array.isArray(resp) && resp.adp_source_options) ? resp.adp_source_options : {};
+  prAdpSources = (!Array.isArray(resp) && resp.adp_sources) ? resp.adp_sources : {};
 
   // Helper function to calculate precise age from birthday
   function calculateAgeFromBirthday(bDay) {

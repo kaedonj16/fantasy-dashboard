@@ -190,3 +190,25 @@ def test_source_options_dynasty_offers_brfantasy_not_yahoo():
 
 def test_source_options_unknown_axis_falls_back_to_redraft():
     assert A.adp_source_options("bogus") == A.adp_source_options("redraft")
+
+
+# ── fetch_league_adp_from_db size-normalized combination ─────────────────────
+
+def test_league_adp_db_normalizes_across_sizes(monkeypatch, tmp_path):
+    # Point the cache at an empty dir so the function goes to the (faked) DB,
+    # and confirm avg_pick is the size-normalized round rescaled to 12 teams.
+    import utils.paths
+    monkeypatch.setattr(utils.paths, "DATA_DIR", tmp_path)
+
+    def handler(sql, params):
+        if "player_values" in sql:                 # position lookup
+            return [{"player_id": "1", "position": "RB"},
+                    {"player_id": "2", "position": "WR"}]
+        return [{"player_id": "1", "norm_round": 0.5, "sample_size": 60},   # -> pick 6.0
+                {"player_id": "2", "norm_round": 2.0, "sample_size": 60}]   # -> pick 24.0
+    _install_fake_db(monkeypatch, handler)
+
+    out = A.fetch_league_adp_from_db(is_sf=False, season=2026, draft_type="startup", min_samples=10)
+    assert out["1"]["avg_pick"] == 6.0
+    assert out["2"]["avg_pick"] == 24.0
+    assert out["1"]["adp_rank"] == 1 and out["2"]["adp_rank"] == 2
