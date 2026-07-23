@@ -464,20 +464,40 @@ _SLEEPER_ADP_FIELDS = {
 
 # Which market sources are valid per scoring axis. Yahoo publishes redraft ADP
 # only (it is a seasonal platform), so it is offered for redraft alone. The
-# draft-crawler ("crawler") only sees dynasty startup and rookie drafts, so it
-# is offered on those two axes.
+# "brfantasy" source is our own draft-crawler feed, which only sees dynasty
+# startup and rookie drafts, so it is offered on those two axes.
 ADP_SOURCES = {
     "redraft": ("sleeper", "yahoo", "fc"),
-    "dynasty": ("sleeper", "crawler", "fc"),
-    "rookie":  ("sleeper", "crawler", "fc"),
+    "dynasty": ("sleeper", "brfantasy", "fc"),
+    "rookie":  ("sleeper", "brfantasy", "fc"),
 }
 
-# resolver scoring axis -> draft_adp.draft_type produced by the crawler.
+# Human labels for the ADP sources, for source-selector UIs.
+ADP_SOURCE_LABELS = {
+    "sleeper":   "Sleeper",
+    "yahoo":     "Yahoo",
+    "brfantasy": "BR Fantasy",
+    "fc":        "FantasyCalc",
+    "consensus": "Consensus",
+}
+
+# resolver scoring axis -> draft_adp.draft_type produced by the BR Fantasy crawler.
 _CRAWLER_DRAFT_TYPE = {"dynasty": "startup", "rookie": "rookie"}
 
 # Reference league size the crawler's size-normalized ADP is rescaled onto, so
 # the output reads as an overall pick in a standard 12-team draft.
 _CRAWLER_REF_SIZE = 12
+
+
+def adp_source_options(scoring_type: str):
+    """[(value, label)] of the sources valid for a scoring axis, plus Consensus.
+
+    Drives the source-selector dropdowns so each surface offers exactly the
+    sources that make sense for what is being drafted (Yahoo only for redraft,
+    BR Fantasy only for dynasty/rookie)."""
+    st = scoring_type if scoring_type in ADP_SOURCES else "redraft"
+    values = ["consensus", *ADP_SOURCES[st]]
+    return [(v, ADP_SOURCE_LABELS.get(v, v.title())) for v in values]
 
 
 def _adp_overall_from_row(row: dict, fields) -> Optional[float]:
@@ -667,10 +687,10 @@ def resolve_market_adp(season: int, is_sf: bool, scoring_type: str = "redraft",
     """canonical player_id -> overall market ADP for a scoring axis and source.
 
     scoring_type: ``redraft`` | ``dynasty`` | ``rookie``.
-    source:       ``sleeper`` | ``yahoo`` | ``fc`` | ``crawler`` | ``consensus``.
-                  ``yahoo`` is redraft-only and ``crawler`` is dynasty/rookie
-                  only; requesting a source off its axis yields nothing and the
-                  resolver falls back. Empty result means no source had data
+    source:       ``sleeper`` | ``yahoo`` | ``fc`` | ``brfantasy`` |
+                  ``consensus``. ``yahoo`` is redraft-only and ``brfantasy`` is
+                  dynasty/rookie only; requesting a source off its axis yields
+                  nothing and the resolver falls back. Empty result means no data
                   (the caller can apply its own fallback, e.g. value rank).
     as_rank:      when True the result is re-ranked to contiguous 1..N draft
                   order (see ``ordinal_rank_adp``) for a clean board display."""
@@ -682,7 +702,7 @@ def resolve_market_adp(season: int, is_sf: bool, scoring_type: str = "redraft",
             return _sleeper_adp_source(season, is_sf, scoring_type)
         if name == "fc":
             return _fc_adp_source(season, is_sf, scoring_type)
-        if name == "crawler":
+        if name == "brfantasy":
             return _crawler_adp_source(season, is_sf, scoring_type)
         if name == "yahoo":
             return _yahoo_adp_source(season, is_sf, scoring_type, league_id, token)

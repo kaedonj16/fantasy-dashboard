@@ -161,6 +161,32 @@ def test_resolve_dynasty_consensus_includes_crawler(monkeypatch):
                                                                 "b": {"adp_dynasty_ppr": 2.0}})
     monkeypatch.setattr(A, "fetch_fc_startup_adp", lambda is_sf: {})
     monkeypatch.setattr(A, "_crawler_adp_source", lambda season, is_sf, st: {"a": 24.0, "b": 6.0})
-    # sleeper says a<b, crawler says b<a -> consensus rank-average is a tie at 1.5.
+    # sleeper says a<b, brfantasy says b<a -> consensus rank-average is a tie at 1.5.
     c = A.resolve_market_adp(2026, False, "dynasty", "consensus")
     assert c["a"] == 1.5 and c["b"] == 1.5
+
+
+def test_resolve_brfantasy_source_value(monkeypatch):
+    monkeypatch.setattr(A, "_crawler_adp_source", lambda season, is_sf, st: {"x": 6.0, "y": 24.0})
+    assert A.resolve_market_adp(2026, False, "dynasty", "brfantasy") == {"x": 6.0, "y": 24.0}
+
+
+# ── adp_source_options (selector menus) ──────────────────────────────────────
+
+def test_source_options_redraft_offers_yahoo_not_brfantasy():
+    opts = A.adp_source_options("redraft")
+    values = [v for v, _label in opts]
+    assert values[0] == "consensus"
+    assert "yahoo" in values and "brfantasy" not in values
+    assert dict(opts)["yahoo"] == "Yahoo"
+
+
+def test_source_options_dynasty_offers_brfantasy_not_yahoo():
+    opts = A.adp_source_options("dynasty")
+    values = [v for v, _label in opts]
+    assert "brfantasy" in values and "yahoo" not in values
+    assert dict(opts)["brfantasy"] == "BR Fantasy"
+
+
+def test_source_options_unknown_axis_falls_back_to_redraft():
+    assert A.adp_source_options("bogus") == A.adp_source_options("redraft")

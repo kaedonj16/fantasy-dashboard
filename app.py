@@ -19456,6 +19456,50 @@ _ADP_FIELDS = ("avg_pick", "sf_avg_pick", "rookie_avg_pick",
                "sf_rookie_avg_pick", "redraft_avg_pick", "sf_redraft_avg_pick")
 
 
+# Rankings/draft-room "mode" -> resolver (scoring_type, is_sf) -> player field.
+# Drives the explicit source-selector overlay (below), which fills all six ADP
+# fields from one chosen source via the shared resolver.
+_ADP_MODE_AXES = (
+    ("startup", "dynasty", False, "avg_pick"),
+    ("startup", "dynasty", True,  "sf_avg_pick"),
+    ("rookie",  "rookie",  False, "rookie_avg_pick"),
+    ("rookie",  "rookie",  True,  "sf_rookie_avg_pick"),
+    ("redraft", "redraft", False, "redraft_avg_pick"),
+    ("redraft", "redraft", True,  "sf_redraft_avg_pick"),
+)
+
+
+def _attach_adp_from_source(players, adp_season, source, league_id=None, token=None):
+    """Overlay every ADP field from a single chosen source via the resolver.
+
+    Used when the UI's source selector requests an explicit source
+    (sleeper / yahoo / brfantasy / fc / consensus). The resolver keeps each
+    source on its valid axis (Yahoo redraft-only, BR Fantasy dynasty/rookie
+    only) and falls back per axis when a source has no data there, so a choice
+    like "Yahoo" fills redraft from Yahoo and leaves dynasty/rookie on their
+    best available feed. Returns adp_sources {mode: label}."""
+    from dashboard_services.adp_service import resolve_market_adp, ADP_SOURCE_LABELS
+
+    label = ADP_SOURCE_LABELS.get(source, source.title())
+    by_field = {}
+    used = {"startup": False, "rookie": False, "redraft": False}
+    for mode, scoring_type, is_sf, field in _ADP_MODE_AXES:
+        try:
+            m = resolve_market_adp(int(adp_season), is_sf, scoring_type=scoring_type,
+                                   source=source, league_id=league_id, token=token) or {}
+        except Exception:
+            m = {}
+        by_field[field] = m
+        if m:
+            used[mode] = True
+    for _p in players:
+        _pid = str(_p.get("id") or "")
+        for _field, _m in by_field.items():
+            _v = _m.get(_pid)
+            _p[_field] = _v if _v is not None else None
+    return {mode: (label if used[mode] else "none") for mode in used}
+
+
 def _attach_adp_to_players(players, adp_season, clear_first=False, sleeper_only=False):
     """Attach per-player ADP for ``adp_season`` onto each player dict; return
     adp_sources {mode: label}.
@@ -20106,10 +20150,24 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
         except Exception as _e_kdef:
             logger.info("[api/league-players] K/DEF append skipped: %s", _e_kdef)
 
+    # Source-selector menu options per scoring mode (static, cheap). Lets the
+    # rankings / draft-room dropdowns offer exactly the sources valid for what
+    # is being drafted (Yahoo redraft-only, BR Fantasy dynasty/rookie only).
+    try:
+        from dashboard_services.adp_service import adp_source_options as _adp_opts
+        _adp_source_options = {
+            "startup": [{"value": v, "label": l} for v, l in _adp_opts("dynasty")],
+            "rookie":  [{"value": v, "label": l} for v, l in _adp_opts("rookie")],
+            "redraft": [{"value": v, "label": l} for v, l in _adp_opts("redraft")],
+        }
+    except Exception:
+        _adp_source_options = {}
+
     return {
         "players": model_value_table,
         "tier_thresholds": _tier_thresholds_all,
         "adp_sources": _adp_sources,
+        "adp_source_options": _adp_source_options,
     }
 
 
@@ -20129,6 +20187,14 @@ def api_league_players():
     except (TypeError, ValueError):
         _want_season = _cur_season
 
+    # Explicit ADP source selector (rankings / draft room dropdowns). "auto"
+    # (or absent) keeps the memoized default attach; any real source overlays
+    # onto a copy so one user's choice never leaks into the shared pool.
+    from dashboard_services.adp_service import ADP_SOURCE_LABELS
+    _adp_source = (request.args.get("adp_source") or "").strip().lower()
+    if _adp_source not in ADP_SOURCE_LABELS:
+        _adp_source = ""
+
     if _want_season != _cur_season:
         _players = [dict(_p) for _p in (payload.get("players") or [])]
         _adp_sources = _attach_adp_to_players(_players, _want_season, clear_first=True, sleeper_only=True)
@@ -20138,6 +20204,27 @@ def api_league_players():
         payload["adp_season"] = _want_season
         resp = jsonify(_sanitize_for_json(payload))
         resp.headers["Cache-Control"] = "no-store"  # season-specific, not the shared pool
+        return resp
+
+    if _adp_source:
+        _lg = (request.args.get("league_id") or session.get("last_league_id") or "").strip()
+        _plat = (request.args.get("platform") or session.get("last_platform") or "").strip().lower()
+        _tok = None
+        if _adp_source in ("yahoo", "consensus") and _plat == "yahoo" and _lg:
+            try:
+                from dashboard_services.providers.yahoo_api import get_league_token
+                _tok = get_league_token(_lg, _cur_season)
+            except Exception:
+                _tok = None
+        _players = [dict(_p) for _p in (payload.get("players") or [])]
+        _adp_sources = _attach_adp_from_source(_players, _cur_season, _adp_source,
+                                               league_id=_lg or None, token=_tok)
+        payload = dict(payload)
+        payload["players"] = _players
+        payload["adp_sources"] = _adp_sources
+        payload["adp_source"] = _adp_source
+        resp = jsonify(_sanitize_for_json(payload))
+        resp.headers["Cache-Control"] = "no-store"  # source-specific, not the shared pool
         return resp
 
     resp = jsonify(_sanitize_for_json(payload))
