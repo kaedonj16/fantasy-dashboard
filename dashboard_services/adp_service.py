@@ -122,74 +122,6 @@ def fetch_league_adp_from_db(
         return {}
 
 
-def fetch_fc_startup_adp(is_sf: bool) -> dict:
-    """
-    Fetch dynasty startup ADP from FantasyCalc for all players (not just rookies).
-
-    Returns sleeper_id -> {adp_rank, pos_rank, position, avg_pick} where avg_pick
-    equals the FantasyCalc overall dynasty rank (1 = consensus #1 startup pick).
-    Caches per league type per day.
-    """
-    import json as _json
-    from datetime import date
-    from utils.paths import DATA_DIR
-
-    key = f"fc_startup_adp_{'sf' if is_sf else '1qb'}_{date.today().isoformat()}.json"
-    cache_path = DATA_DIR / key
-    if cache_path.exists():
-        try:
-            with open(cache_path) as _f:
-                return _json.load(_f)
-        except Exception:
-            logger.warning("adp_service: corrupt startup ADP cache at %s, rebuilding", cache_path)
-
-    num_qbs = 2 if is_sf else 1
-    # No type= filter → all dynasty players (startup pool)
-    url = f"https://fantasycalc.com/api/values/current?numQbs={num_qbs}&ppr=0.5"
-    try:
-        import requests as _req
-        resp = _req.get(url, timeout=15, headers={"User-Agent": "fantasy-dashboard/1.0"})
-        resp.raise_for_status()
-        if not resp.text.strip():
-            logger.info("adp_service: FantasyCalc startup returned empty body (sf=%s) - skipping", is_sf)
-            return {}
-        fc_data = resp.json()
-    except Exception as _exc:
-        logger.warning("adp_service: FantasyCalc startup fetch failed (sf=%s): %s", is_sf, _exc)
-        fc_data = []
-
-    if not fc_data:
-        return {}
-
-    # Sort by overallRank ascending so rank 1 = pick 1
-    sorted_entries = sorted(
-        [e for e in fc_data if isinstance(e, dict) and e.get("overallRank")],
-        key=lambda e: e["overallRank"],
-    )
-
-    result: dict = {}
-    pos_counters: dict = {}
-    for rank, entry in enumerate(sorted_entries, start=1):
-        p = entry.get("player") or {}
-        sid = str(p.get("sleeperId") or "")
-        if not sid or sid == "None":
-            continue
-        pos = str(p.get("position") or "").upper()
-        pos_counters[pos] = pos_counters.get(pos, 0) + 1
-        result[sid] = {
-            "adp_rank":  rank,
-            "avg_pick":  float(entry["overallRank"]),
-            "pos_rank":  pos_counters[pos],
-            "position":  pos,
-        }
-
-    try:
-        _atomic_json_write(cache_path, result)
-    except Exception:
-        logger.warning("adp_service: failed to write startup ADP cache to %s", cache_path, exc_info=True)
-    return result
-
-
 def fetch_sleeper_adp(season: int) -> dict:
     """Per-player ADP from Sleeper's own projections API (api.sleeper.com).
 
@@ -252,167 +184,6 @@ def fetch_sleeper_adp(season: int) -> dict:
     except Exception:
         logger.warning("adp_service: failed to write Sleeper ADP cache to %s", cache_path, exc_info=True)
     return out
-
-
-def fetch_fc_redraft_adp(is_sf: bool) -> dict:
-    """
-    Fetch REDRAFT market ADP from FantasyCalc (isDynasty=false) for all players.
-
-    Returns sleeper_id -> {adp_rank, pos_rank, position, avg_pick} where avg_pick
-    is the redraft overall rank (1 = consensus #1 redraft pick). Cached per league
-    type per day. Empty dict on any failure (callers fall back).
-    """
-    import json as _json
-    from datetime import date
-    from utils.paths import DATA_DIR
-
-    key = f"fc_redraft_adp_{'sf' if is_sf else '1qb'}_{date.today().isoformat()}.json"
-    cache_path = DATA_DIR / key
-    if cache_path.exists():
-        try:
-            with open(cache_path) as _f:
-                return _json.load(_f)
-        except Exception:
-            logger.warning("adp_service: corrupt redraft ADP cache at %s, rebuilding", cache_path)
-
-    num_qbs = 2 if is_sf else 1
-    url = f"https://fantasycalc.com/api/values/current?numQbs={num_qbs}&ppr=1&isDynasty=false"
-    try:
-        import requests as _req
-        resp = _req.get(url, timeout=15, headers={"User-Agent": "fantasy-dashboard/1.0"})
-        resp.raise_for_status()
-        if not resp.text.strip():
-            logger.info("adp_service: FantasyCalc redraft returned empty body (sf=%s)", is_sf)
-            return {}
-        fc_data = resp.json()
-    except Exception as _exc:
-        logger.warning("adp_service: FantasyCalc redraft fetch failed (sf=%s): %s", is_sf, _exc)
-        return {}
-
-    if not fc_data:
-        return {}
-
-    sorted_entries = sorted(
-        [e for e in fc_data if isinstance(e, dict) and e.get("overallRank")],
-        key=lambda e: e["overallRank"],
-    )
-    result: dict = {}
-    pos_counters: dict = {}
-    for rank, entry in enumerate(sorted_entries, start=1):
-        p = entry.get("player") or {}
-        sid = str(p.get("sleeperId") or "")
-        if not sid or sid == "None":
-            continue
-        pos = str(p.get("position") or "").upper()
-        pos_counters[pos] = pos_counters.get(pos, 0) + 1
-        result[sid] = {
-            "adp_rank":  rank,
-            "avg_pick":  float(entry["overallRank"]),
-            "pos_rank":  pos_counters[pos],
-            "position":  pos,
-        }
-    try:
-        _atomic_json_write(cache_path, result)
-    except Exception:
-        logger.warning("adp_service: failed to write redraft ADP cache to %s", cache_path, exc_info=True)
-    return result
-
-
-def fetch_fc_rookie_adp(is_sf: bool, season: int) -> dict:
-    """
-    Fetch dynasty rookie ADP from FantasyCalc and return a map of
-    sleeper_id -> {adp_rank, pos_rank, position}.
-    Caches per league type per day.
-    """
-    import json as _json
-    from datetime import date
-    from utils.paths import DATA_DIR
-
-    key = f"fc_rookie_adp_{'sf' if is_sf else '1qb'}_{date.today().isoformat()}.json"
-    cache_path = DATA_DIR / key
-    if cache_path.exists():
-        try:
-            with open(cache_path) as _f:
-                return _json.load(_f)
-        except Exception:
-            logger.warning("adp_service: corrupt rookie ADP cache at %s, rebuilding", cache_path)
-
-    num_qbs = 2 if is_sf else 1
-    url = f"https://fantasycalc.com/api/values/current?numQbs={num_qbs}&type=1&ppr=0.5"
-    try:
-        import requests as _req
-        resp = _req.get(url, timeout=10, headers={"User-Agent": "fantasy-dashboard/1.0"})
-        resp.raise_for_status()
-        fc_data = resp.json()
-    except Exception:
-        logger.warning("adp_service: FantasyCalc fetch failed (sf=%s)", is_sf, exc_info=True)
-        fc_data = []
-
-    fc_by_sleeper: dict = {}
-    for entry in (fc_data or []):
-        p = entry.get("player") or {}
-        sid = str(p.get("sleeperId") or "")
-        if sid and sid != "None":
-            fc_by_sleeper[sid] = {
-                "overall_rank": entry.get("overallRank"),
-                "pos_rank":     entry.get("positionalRank"),
-                "position":     str(p.get("position") or "").upper(),
-                "name":         p.get("name") or "",
-            }
-
-    result: dict = {}
-    try:
-        from dashboard_services.db import get_conn
-        with get_conn() as _conn:
-            all_rows = _conn.execute(
-                "SELECT sleeper_id, name, position FROM rookie_prospects "
-                "WHERE draft_class_year = %s",
-                (season,)
-            ).fetchall()
-
-        our_sids = {str(r["sleeper_id"]) for r in all_rows if r["sleeper_id"]}
-        sid_matched = sorted(
-            [(sid, fc_by_sleeper[sid]) for sid in our_sids if sid in fc_by_sleeper],
-            key=lambda x: (x[1]["overall_rank"] or 9999)
-        )
-        for rookie_rank, (sid, info) in enumerate(sid_matched, start=1):
-            result[sid] = {
-                "adp_rank": rookie_rank,
-                "fc_overall": info["overall_rank"],
-                "pos_rank":   info["pos_rank"],
-                "position":   info["position"],
-            }
-
-        our_names = {str(r["name"]).lower() for r in all_rows}
-        name_matched = sorted(
-            [entry for entry in (fc_data or [])
-             if (entry.get("player") or {}).get("name", "").lower() in our_names],
-            key=lambda e: (e.get("overallRank") or 9999)
-        )
-        for entry in name_matched:
-            p = entry.get("player") or {}
-            sid = str(p.get("sleeperId") or "")
-            if not sid or sid in result:
-                continue
-            result[sid] = {
-                "adp_rank": len(result) + 1,
-                "fc_overall": entry.get("overallRank"),
-                "pos_rank":   entry.get("positionalRank"),
-                "position":   str(p.get("position") or "").upper(),
-            }
-
-        all_entries = sorted(result.items(), key=lambda kv: kv[1].get("fc_overall") or 9999)
-        result = {sid: {**info, "adp_rank": rank}
-                  for rank, (sid, info) in enumerate(all_entries, start=1)}
-
-    except Exception:
-        logger.exception("adp_service: rookie ADP matching failed (sf=%s, season=%s)", is_sf, season)
-
-    try:
-        _atomic_json_write(cache_path, result)
-    except Exception:
-        logger.warning("adp_service: failed to write rookie ADP cache to %s", cache_path, exc_info=True)
-    return result
 
 
 def build_model_adp_fallback(is_sf: bool, season: int, filter_undrafted: bool = False) -> dict:
@@ -479,9 +250,9 @@ _SLEEPER_ADP_FIELDS = {
 # "brfantasy" source is our own draft-crawler feed, which only sees dynasty
 # startup and rookie drafts, so it is offered on those two axes.
 ADP_SOURCES = {
-    "redraft": ("sleeper", "yahoo", "fc"),
-    "dynasty": ("sleeper", "brfantasy", "fc"),
-    "rookie":  ("sleeper", "brfantasy", "fc"),
+    "redraft": ("sleeper", "yahoo"),
+    "dynasty": ("sleeper", "brfantasy"),
+    "rookie":  ("sleeper", "brfantasy"),
 }
 
 # Human labels for the ADP sources, for source-selector UIs.
@@ -489,7 +260,6 @@ ADP_SOURCE_LABELS = {
     "sleeper":   "Sleeper",
     "yahoo":     "Yahoo",
     "brfantasy": "BR Fantasy",
-    "fc":        "FantasyCalc",
     "consensus": "Consensus",
 }
 
@@ -529,28 +299,6 @@ def _sleeper_adp_source(season: int, is_sf: bool, scoring_type: str) -> Dict[str
     for pid, row in (fetch_sleeper_adp(int(season)) or {}).items():
         ov = _adp_overall_from_row(row, fields)
         if ov:
-            out[str(pid)] = ov
-    return out
-
-
-def _fc_adp_source(season: int, is_sf: bool, scoring_type: str) -> Dict[str, float]:
-    try:
-        if scoring_type == "rookie":
-            raw = fetch_fc_rookie_adp(is_sf, int(season)) or {}
-        elif scoring_type == "dynasty":
-            raw = fetch_fc_startup_adp(is_sf) or {}
-        else:
-            raw = fetch_fc_redraft_adp(is_sf) or {}
-    except Exception:
-        logger.debug("adp_service: FC source failed", exc_info=True)
-        return {}
-    out: Dict[str, float] = {}
-    for pid, info in raw.items():
-        try:
-            ov = float((info or {}).get("avg_pick") or (info or {}).get("adp_rank") or 0)
-        except (TypeError, ValueError):
-            ov = 0.0
-        if ov > 0:
             out[str(pid)] = ov
     return out
 
@@ -699,21 +447,19 @@ def resolve_market_adp(season: int, is_sf: bool, scoring_type: str = "redraft",
     """canonical player_id -> overall market ADP for a scoring axis and source.
 
     scoring_type: ``redraft`` | ``dynasty`` | ``rookie``.
-    source:       ``sleeper`` | ``yahoo`` | ``fc`` | ``brfantasy`` |
-                  ``consensus``. ``yahoo`` is redraft-only and ``brfantasy`` is
-                  dynasty/rookie only; requesting a source off its axis yields
-                  nothing and the resolver falls back. Empty result means no data
-                  (the caller can apply its own fallback, e.g. value rank).
+    source:       ``sleeper`` | ``yahoo`` | ``brfantasy`` | ``consensus``.
+                  ``yahoo`` is redraft-only and ``brfantasy`` is dynasty/rookie
+                  only; requesting a source off its axis yields nothing and the
+                  resolver falls back. Empty result means no data (the caller can
+                  apply its own fallback, e.g. value rank).
     as_rank:      when True the result is re-ranked to contiguous 1..N draft
                   order (see ``ordinal_rank_adp``) for a clean board display."""
     scoring_type = scoring_type if scoring_type in ("redraft", "dynasty", "rookie") else "redraft"
-    valid = ADP_SOURCES.get(scoring_type, ("sleeper", "fc"))
+    valid = ADP_SOURCES.get(scoring_type, ("sleeper",))
 
     def _src(name: str) -> Dict[str, float]:
         if name == "sleeper":
             return _sleeper_adp_source(season, is_sf, scoring_type)
-        if name == "fc":
-            return _fc_adp_source(season, is_sf, scoring_type)
         if name == "brfantasy":
             return _crawler_adp_source(season, is_sf, scoring_type)
         if name == "yahoo":
@@ -731,8 +477,7 @@ def resolve_market_adp(season: int, is_sf: bool, scoring_type: str = "redraft",
         got = _src(source)
         if got:
             return _finish(got)
-    # Fallback: sleeper, then crawler (dynasty/rookie), then fc.
+    # Fallback: sleeper, then the BR Fantasy crawler (dynasty/rookie).
     fallback = (_sleeper_adp_source(season, is_sf, scoring_type)
-                or _crawler_adp_source(season, is_sf, scoring_type)
-                or _fc_adp_source(season, is_sf, scoring_type))
+                or _crawler_adp_source(season, is_sf, scoring_type))
     return _finish(fallback)

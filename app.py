@@ -12375,27 +12375,24 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
               <span class="active-setting-tag">Dynasty</span>
               <span class="active-setting-tag" id="prTepTag" style="display:none;">TE+</span>
             </div>
-            <!-- Sort dropdown -->
-            <div class="filter-sort">
-              <label class="filter-label">Sort by</label>
-              <select id="prSort" onchange="prPage=1;prFlipRender()"
-                style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
-                       background:var(--card-bg);color:var(--text);font-size:12px;cursor:pointer;outline:none;min-height:34px;min-width:120px;">
-                <option value="value">Value</option>
-                <option value="adp">ADP</option>
-                <option value="age">Age</option>
-                <option value="pos_rank">Pos Rank</option>
-                <option value="ppg">PPG</option>
-                <option value="total_pts">Total Points</option>
-              </select>
-            </div>
-            <!-- ADP source selector: shown only when sorting by ADP -->
-            <div class="filter-sort" id="prAdpSrcWrap" style="display:none;">
-              <label class="filter-label">ADP source</label>
-              <select id="prAdpSource" onchange="prReloadAdpSource()"
-                style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
-                       background:var(--card-bg);color:var(--text);font-size:12px;cursor:pointer;outline:none;min-height:34px;min-width:120px;">
-              </select>
+            <!-- Sort + ADP source: a paired control group (side by side on
+                 mobile; the ADP source only appears when sorting by ADP). -->
+            <div class="filter-sort-group">
+              <div class="filter-sort">
+                <label class="filter-label" for="prSort">Sort by</label>
+                <select id="prSort" onchange="prPage=1;prFlipRender()">
+                  <option value="value">Value</option>
+                  <option value="adp">ADP</option>
+                  <option value="age">Age</option>
+                  <option value="pos_rank">Pos Rank</option>
+                  <option value="ppg">PPG</option>
+                  <option value="total_pts">Total Points</option>
+                </select>
+              </div>
+              <div class="filter-sort" id="prAdpSrcWrap" style="display:none;">
+                <label class="filter-label" for="prAdpSource">ADP source</label>
+                <select id="prAdpSource" onchange="prReloadAdpSource()"></select>
+              </div>
             </div>
           </div>
         </div>
@@ -12545,7 +12542,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         flex-wrap: nowrap;
       }
       .filter-row-secondary .active-settings-indicator::-webkit-scrollbar { display: none; }
-      .filter-row-secondary .filter-sort { flex-shrink: 0; }
+      .filter-row-secondary .filter-sort-group { flex-shrink: 0; }
       .filter-search {
         position: relative;
         flex: 1;
@@ -12656,10 +12653,43 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         font-size: 11px;
         font-weight: 600;
       }
+      .filter-sort-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-shrink: 0;
+      }
       .filter-sort {
         display: flex;
         align-items: center;
         gap: 8px;
+      }
+      .filter-sort select {
+        padding: 7px 30px 7px 11px;
+        border-radius: 9px;
+        border: 1px solid var(--border);
+        background: var(--card-bg);
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        outline: none;
+        min-height: 36px;
+        min-width: 128px;
+        transition: border-color 0.12s, box-shadow 0.12s;
+        /* Custom chevron so both selects match across platforms */
+        -webkit-appearance: none;
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 11px center;
+      }
+      .filter-sort select:hover {
+        border-color: var(--accent);
+      }
+      .filter-sort select:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-soft);
       }
       .filter-label {
         font-size: 11px;
@@ -12740,9 +12770,29 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           flex-wrap: wrap;
           gap: 8px;
         }
-        .filter-sort,
+        /* Sort + ADP source sit side by side on their own row, each a tidy
+           field with the label stacked above a full-width select. Grid columns
+           of minmax(0,1fr) keep them equal and never overflow; a hidden ADP
+           source leaves one column, so Sort by fills the row. */
+        .filter-sort-group {
+          display: grid;
+          grid-auto-flow: column;
+          grid-auto-columns: minmax(0, 1fr);
+          gap: 10px;
+          width: 100%;
+        }
+        .filter-sort {
+          min-width: 0;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 5px;
+        }
+        .filter-sort .filter-label {
+          font-size: 10px;
+        }
         .filter-sort select {
           width: 100%;
+          min-width: 0;
         }
         /* Table: hide Age on tablets - rank | arrow | name | pos | team | sort */
         .pr-grid-row { grid-template-columns: 28px 42px 1fr 44px 42px 56px !important; }
@@ -19496,20 +19546,27 @@ def _attach_adp_from_source(players, adp_season, source, league_id=None, token=N
     """Overlay every ADP field from a single chosen source via the resolver.
 
     Used when the UI's source selector requests an explicit source
-    (sleeper / yahoo / brfantasy / fc / consensus). The resolver keeps each
-    source on its valid axis (Yahoo redraft-only, BR Fantasy dynasty/rookie
-    only) and falls back per axis when a source has no data there, so a choice
-    like "Yahoo" fills redraft from Yahoo and leaves dynasty/rookie on their
-    best available feed. Returns adp_sources {mode: label}."""
+    (sleeper / yahoo / brfantasy / consensus). The resolver keeps each source on
+    its valid axis (Yahoo redraft-only, BR Fantasy dynasty/rookie only) and
+    falls back per axis when a source has no data there, so a choice like
+    "Yahoo" fills redraft from Yahoo and leaves dynasty/rookie on their best
+    available feed. Returns adp_sources {mode: label}.
+
+    BR Fantasy is drawn from real draft picks, so its averaged ADP never bottoms
+    out at 1.0 (the consensus No. 1 still goes third in some drafts). When it is
+    the chosen single source, re-rank to a contiguous 1..N board so it reads like
+    a draft board rather than showing a 5.3 floor."""
     from dashboard_services.adp_service import resolve_market_adp, ADP_SOURCE_LABELS
 
     label = ADP_SOURCE_LABELS.get(source, source.title())
+    as_rank = (source == "brfantasy")
     by_field = {}
     used = {"startup": False, "rookie": False, "redraft": False}
     for mode, scoring_type, is_sf, field in _ADP_MODE_AXES:
         try:
             m = resolve_market_adp(int(adp_season), is_sf, scoring_type=scoring_type,
-                                   source=source, league_id=league_id, token=token) or {}
+                                   source=source, league_id=league_id, token=token,
+                                   as_rank=as_rank) or {}
         except Exception:
             m = {}
         by_field[field] = m
@@ -23715,8 +23772,6 @@ def api_playoff_scenarios():
 
 
 from dashboard_services.adp_service import (
-    fetch_fc_rookie_adp as _fetch_fc_rookie_adp,
-    fetch_fc_startup_adp as _fetch_fc_startup_adp,
     fetch_league_adp_from_db as _fetch_league_adp_from_db_impl,
     build_model_adp_fallback as _build_model_adp_fallback,
 )
@@ -23876,9 +23931,10 @@ def api_draft_grades():
             _nfl_draft_done = is_draft_complete(season)
 
         # ── ADP lookup ────────────────────────────────────────────────────────
-        # Startup drafts use FantasyCalc dynasty rankings as the ADP source
-        # (avg_pick = FC overallRank, so Josh Allen ≈ 1).  Rookie drafts keep
-        # the league-crawled data (Sleeper pick numbers within the rookie pool).
+        # Startup and rookie drafts grade against the league-crawled BR Fantasy
+        # ADP (real Sleeper pick numbers, size-normalized), falling back to the
+        # value model when the crawl is sparse. Redraft has no market feed, so
+        # it derives ADP from the redraft-value rank.
         if _draft_type == "redraft":
             # No redraft ADP feed exists, so derive ADP from redraft-value rank
             # (best redraft value = ADP 1), mirroring the Draft Room fallback.
@@ -23889,25 +23945,14 @@ def api_draft_grades():
                 _pos = str((players_index.get(_pid) or {}).get("pos", "")).upper()
                 adp_info[_pid] = {"avg_pick": _rank, "position": _pos}
             adp_source = "redraft-value"
-        elif _draft_type == "startup":
-            adp_info = _fetch_fc_startup_adp(is_sf)
-            if adp_info:
-                adp_source = "fantasycalc"
-            else:
-                adp_info = _fetch_league_adp_from_db(is_sf, season, _draft_type, _num_teams)
-                adp_source = "league" if adp_info else "none"
         else:
-            # rookie draft: league crawl → FC rookie → model
+            # startup or rookie: league crawl (BR Fantasy) → value model.
             adp_info = _fetch_league_adp_from_db(is_sf, season, _draft_type, _num_teams)
             if adp_info:
                 adp_source = "league"
             else:
-                adp_info = _fetch_fc_rookie_adp(is_sf, season)
-                if adp_info:
-                    adp_source = "fantasycalc"
-                else:
-                    adp_info = _build_model_adp_fallback(is_sf, season, filter_undrafted=_nfl_draft_done)
-                    adp_source = "model" if adp_info else "none"
+                adp_info = _build_model_adp_fallback(is_sf, season, filter_undrafted=_nfl_draft_done)
+                adp_source = "model" if adp_info else "none"
         users   = get_users(platform, league_id, season) or []
         roster_map = _build_roster_map(users, rosters)
 

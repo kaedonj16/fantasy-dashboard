@@ -48,22 +48,21 @@ def test_resolve_dynasty_uses_dynasty_field(monkeypatch):
 
 def test_resolve_yahoo_is_redraft_only_and_falls_back(monkeypatch):
     monkeypatch.setattr(A, "fetch_sleeper_adp", lambda season: {"1": {"adp_dynasty_ppr": 8.0}})
-    monkeypatch.setattr(A, "fetch_fc_startup_adp", lambda is_sf: {})
     # yahoo requested on the dynasty axis is invalid -> resolver falls back to sleeper dynasty.
     assert A.resolve_market_adp(2026, False, "dynasty", "yahoo") == {"1": 8.0}
 
 
-def test_resolve_consensus_blends_sleeper_and_fc(monkeypatch):
+def test_resolve_consensus_blends_sleeper_and_yahoo(monkeypatch):
     monkeypatch.setattr(A, "fetch_sleeper_adp", lambda season: {"a": {"adp_ppr": 1.0}, "b": {"adp_ppr": 2.0}})
-    monkeypatch.setattr(A, "fetch_fc_redraft_adp", lambda is_sf: {"a": {"avg_pick": 2.0}, "b": {"avg_pick": 1.0}})
-    # No token, so the yahoo source contributes nothing.
-    c = A.resolve_market_adp(2026, False, "redraft", "consensus")
+    monkeypatch.setattr(A, "fetch_yahoo_adp", lambda lg, tok, season, is_sf: {"a": 2.0, "b": 1.0})
+    # sleeper says a<b, yahoo says b<a -> consensus rank-average is a tie at 1.5.
+    c = A.resolve_market_adp(2026, False, "redraft", "consensus", league_id="L", token="T")
     assert c["a"] == 1.5 and c["b"] == 1.5
 
 
 def test_resolve_empty_when_no_sources(monkeypatch):
     monkeypatch.setattr(A, "fetch_sleeper_adp", lambda season: {})
-    monkeypatch.setattr(A, "fetch_fc_redraft_adp", lambda is_sf: {})
+    # sleeper empty and no yahoo token -> redraft has no source with data.
     assert A.resolve_market_adp(2026, False, "redraft", "consensus") == {}
 
 
@@ -86,7 +85,6 @@ def test_resolve_as_rank_applies_ordinal(monkeypatch):
     monkeypatch.setattr(A, "fetch_sleeper_adp",
                         lambda season: {"a": {"adp_dynasty_ppr": 3.3}, "b": {"adp_dynasty_ppr": 9.9}})
     monkeypatch.setattr(A, "_crawler_adp_source", lambda *a, **k: {})
-    monkeypatch.setattr(A, "fetch_fc_startup_adp", lambda is_sf: {})
     out = A.resolve_market_adp(2026, False, "dynasty", "sleeper", as_rank=True)
     assert out == {"a": 1.0, "b": 2.0}
 
@@ -159,7 +157,6 @@ def test_crawler_falls_back_to_latest_season(monkeypatch):
 def test_resolve_dynasty_consensus_includes_crawler(monkeypatch):
     monkeypatch.setattr(A, "fetch_sleeper_adp", lambda season: {"a": {"adp_dynasty_ppr": 1.0},
                                                                 "b": {"adp_dynasty_ppr": 2.0}})
-    monkeypatch.setattr(A, "fetch_fc_startup_adp", lambda is_sf: {})
     monkeypatch.setattr(A, "_crawler_adp_source", lambda season, is_sf, st: {"a": 24.0, "b": 6.0})
     # sleeper says a<b, brfantasy says b<a -> consensus rank-average is a tie at 1.5.
     c = A.resolve_market_adp(2026, False, "dynasty", "consensus")
