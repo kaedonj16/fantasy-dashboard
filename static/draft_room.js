@@ -607,6 +607,9 @@
           Object.keys(state.picks).forEach(function(k){ var pp = state.picks[k]; if (pp) drafted[String(pp.id)] = true; });
         }
         applyKeepers();   // no-op unless league keepers are enabled
+        // Re-render the banner now that playersById exists, so keepers that
+        // arrived as bare ids from the handoff can show a real name/position.
+        renderKeeperBanner();
         render();
         if (sim) scheduleSim();   // begin CPU picks once players are loaded
       })
@@ -684,15 +687,24 @@
     var mine = keeperSet.filter(function(k){ return !k.projected; }).length;
     var proj = keeperSet.length - mine;
     var esc = function(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); };
+    // Your own handed-off picks carry only an id when the server's projection
+    // didn't include them for your team, so fill name/position from the loaded
+    // player pool rather than rendering a raw "Player 8134".
     var rows = keeperSet.slice().sort(function(a,b){ return (a.projected?1:0) - (b.projected?1:0); }).map(function(k){
+      var meta = playersById[String(k.id)] || {};
+      var nm  = k.name || meta.name;
+      var pos = k.pos  || meta.position;
       var tag = k.projected
         ? '<span class="dr-keeper-tag proj">projected</span>'
         : '<span class="dr-keeper-tag mine">your keeper</span>';
       var cost = k.costRound ? (' · R' + k.costRound) : '';
-      return '<div class="dr-keeper-item"><span>' + esc(k.name || ('Player ' + k.id)) +
-        (k.pos ? ' <span class="dr-keeper-pos">' + esc(k.pos) + '</span>' : '') +
+      return '<div class="dr-keeper-item"><span>' + esc(nm || ('Player ' + k.id)) +
+        (pos ? ' <span class="dr-keeper-pos">' + esc(pos) + '</span>' : '') +
         cost + '</span>' + tag + '</div>';
     }).join('');
+    // Keep the details panel open across re-renders (the toggle rebuilds this
+    // markup, which would otherwise collapse the list the user just opened).
+    var _wasOpen = (function(){ var l = document.getElementById('drKeeperList'); return l && !l.hidden; })();
     el.innerHTML =
       '<div class="dr-keeper-head">' +
         '<b>Keepers ' + (keepersOn ? 'applied' : 'off') + '</b>' +
@@ -702,7 +714,7 @@
         '<button type="button" id="drKeeperToggle" class="dr-keeper-btn">' +
           (keepersOn ? 'Turn off' : 'Apply') + '</button>' +
       '</div>' +
-      '<div id="drKeeperList" class="dr-keeper-list" hidden>' + rows +
+      '<div id="drKeeperList" class="dr-keeper-list"' + (_wasOpen ? '' : ' hidden') + '>' + rows +
         '<div class="dr-keeper-note">Other teams’ keepers are projected from the same surplus model. They are estimates, not their declared keepers.</div>' +
       '</div>';
     var vbtn = document.getElementById('drKeeperView');
@@ -714,7 +726,12 @@
 
   // ── Render ───────────────────────────────────────────────────────────────
   function render(){
-    if (state && !state.queue) state.queue = [];
+    // No draft yet (setup screen): there is nothing to draw, and every renderer
+    // below dereferences state. Bailing here keeps callers that can fire before
+    // a draft exists - e.g. the keeper banner's Turn off / Apply toggle - from
+    // throwing and silently aborting the rest of their work.
+    if (!state) return;
+    if (!state.queue) state.queue = [];
     renderStatus(); renderBoard(); renderSide(); justPick = null; save();
     var _tot = state.teams * state.rounds;
     // Draft is over once current passes the last pick - open the summary regardless

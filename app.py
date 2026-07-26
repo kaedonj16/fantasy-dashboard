@@ -13472,9 +13472,26 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
             from dashboard_services.pages.keeper_page import compute_league_keepers, league_keeper_limit
             _ctx = get_league_ctx_from_cache(platform, league_id, season)
             if request.args.get("keepers") or league_keeper_limit(_ctx) > 0:
+                # The keeper tool hands off the limit and cost rules the user is
+                # playing by so rival projections use the same ones, instead of
+                # the server defaults (which price every undrafted player at the
+                # last round).
+                def _karg(name):
+                    try:
+                        raw = request.args.get(name)
+                        return int(raw) if raw not in (None, "") else None
+                    except (TypeError, ValueError):
+                        return None
+                _klimit = _karg("klimit") or None
+                _krules = {k: v for k, v in (
+                    ("undrafted_round", _karg("kundr")),
+                    ("round_offset",    _karg("koff")),
+                    ("escalation",      _karg("kesc")),
+                ) if v is not None}
                 keepers_payload = compute_league_keepers(
                     _ctx, platform=platform, league_id=league_id,
                     viewer_roster_id=session.get("viewer_roster_id"),
+                    limit_override=_klimit, rules_override=_krules or None,
                 )
         except Exception:
             logger.debug("[draft-room] keeper compute skipped", exc_info=True)
