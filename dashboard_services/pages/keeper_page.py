@@ -293,6 +293,8 @@ def compute_league_keepers(
     league_id: str = "",
     viewer_roster_id: Optional[str] = None,
     viewer_kept_ids: Optional[List[str]] = None,
+    limit_override: Optional[int] = None,
+    rules_override: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """League-wide keeper set for the draft board.
 
@@ -304,6 +306,17 @@ def compute_league_keepers(
         {limit, viewerRoster, autoDraft,
          byTeam: {roster_id: [player_id, ...]},
          kept:   [{id, name, pos, rosterId, costRound, projected}, ...]}
+
+    ``limit_override`` is the keeper limit the user is actually playing by (the
+    keeper page's "Keep up to N", carried over in the handoff). Without it every
+    other team was projected against the league default, so a user keeping 3
+    still saw rivals holding far fewer.
+
+    ``rules_override`` carries the same page's cost rules (undrafted round,
+    round offset, escalation). The undrafted round matters most: left at the
+    default it is the last round, so every player with no drafted round - which
+    on a dynasty roster is most of them - prices identically at the deepest
+    round the league has ever drafted.
     """
     is_sf = _is_superflex(ctx)
     try:
@@ -311,7 +324,11 @@ def compute_league_keepers(
     except (TypeError, ValueError):
         league_size = 12
     _season = int(ctx.get("season") or 0)
-    limit = _max_keepers(ctx)
+    try:
+        limit = int(limit_override) if limit_override else _max_keepers(ctx)
+    except (TypeError, ValueError):
+        limit = _max_keepers(ctx)
+    limit = max(0, min(limit, 25))   # sane bound; the value arrives from a query param
 
     players_index: Dict[str, Any] = {}
     try:
@@ -323,7 +340,22 @@ def compute_league_keepers(
     adp = _adp_map(is_sf, _season)
     value_rank = _value_rank_map(values)
     drafted, num_rounds = _draft_context(platform, league_id, _season)
-    rules = KeeperRules(league_size=league_size, num_rounds=num_rounds)
+    _ro = rules_override or {}
+
+    def _rule_int(key, lo, hi, default=None):
+        try:
+            v = int(_ro[key])
+        except (KeyError, TypeError, ValueError):
+            return default
+        return max(lo, min(hi, v))
+
+    rules = KeeperRules(
+        league_size=league_size,
+        num_rounds=num_rounds,
+        round_offset=_rule_int("round_offset", -5, 5, 0) or 0,
+        escalation=_rule_int("escalation", 0, 5, 1) if _ro else 1,
+        undrafted_round=_rule_int("undrafted_round", 1, num_rounds),
+    )
 
     per_team: Dict[str, List[KeeperCandidate]] = {}
     for r in (ctx.get("rosters") or []):

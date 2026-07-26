@@ -182,6 +182,7 @@
   if (elToDraft && seed.draftUrl) {
     elToDraft.addEventListener("click", function () {
       var kept = compute().filter(function (r) { return r.keep; }).map(function (r) { return String(r.p.id); });
+      var lim = parseInt(elLim && elLim.value, 10) || kept.length || 1;
       try {
         sessionStorage.setItem("brKeeperOverride", JSON.stringify({
           leagueId: String(seed.leagueId || ""),
@@ -189,7 +190,17 @@
           ids: kept
         }));
       } catch (e) { /* private mode: draft room still shows projections */ }
-      window.location.href = seed.draftUrl;
+      // Carry the keeper rules so the other teams' projections use the same
+      // ones you're playing by, instead of the server's defaults. The undrafted
+      // cost matters most: left to the default, every player without a drafted
+      // round (most of a dynasty roster) prices at the last round.
+      var r = rules();
+      var qs = "klimit=" + encodeURIComponent(lim) +
+               "&kundr=" + encodeURIComponent(r.undraftedRound) +
+               "&koff="  + encodeURIComponent(r.roundOffset) +
+               "&kesc="  + encodeURIComponent(r.escalation);
+      window.location.href = seed.draftUrl +
+        (seed.draftUrl.indexOf("?") >= 0 ? "&" : "?") + qs;
     });
   }
 

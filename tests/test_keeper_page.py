@@ -105,6 +105,81 @@ def test_draft_handoff_link_prefers_ctx_season(monkeypatch):
     assert "/sleeper/2025/L123/draft?keepers=1" in html
 
 
+def _league_ctx_for_limits(monkeypatch):
+    vals = [{"id": c, "redraft_value_1qb": v} for c, v in
+            (("a", 1200), ("b", 1100), ("c", 1000), ("d", 900), ("e", 800), ("f", 700))]
+    idx = {c: {"name": c.upper(), "pos": "WR"} for c in "abcdef"}
+    for name, attrs in (
+        ("dashboard_services.player_value_history", {"load_current_values_from_db": lambda: vals}),
+        ("utils.utils", {"load_players_index": lambda: idx}),
+    ):
+        m = types.ModuleType(name)
+        for k, v in attrs.items():
+            setattr(m, k, v)
+        monkeypatch.setitem(sys.modules, name, m)
+    monkeypatch.setattr(kp, "_adp_map",
+                        lambda is_sf, season, source="consensus": {c: i + 1 for i, c in enumerate("abcdef")})
+    monkeypatch.setattr(kp, "_draft_context", lambda plat, lid, season: ({}, 15))
+    return {"season": 2026, "total_rosters": 2,
+            "rosters": [{"roster_id": 1, "players": ["a", "b", "c"]},
+                        {"roster_id": 2, "players": ["d", "e", "f"]}],
+            "roster_positions": ["WR"]}
+
+
+def test_keeper_limit_override_applies_to_every_team(monkeypatch):
+    """The user's "Keep up to N" is handed off from the keeper page. Without it
+    rival teams were projected against the league default, so a user keeping 3
+    saw everyone else holding fewer."""
+    ctx = _league_ctx_for_limits(monkeypatch)
+    out = kp.compute_league_keepers(ctx, platform="sleeper", league_id="L",
+                                    viewer_roster_id="1", limit_override=3)
+    assert out["limit"] == 3
+    assert out["byTeam"]["1"] == ["a", "b", "c"]
+    assert out["byTeam"]["2"] == ["d", "e", "f"]
+
+
+def test_keeper_limit_falls_back_to_league_default(monkeypatch):
+    ctx = _league_ctx_for_limits(monkeypatch)
+    out = kp.compute_league_keepers(ctx, platform="sleeper", league_id="L",
+                                    viewer_roster_id="1", limit_override=None)
+    assert out["limit"] == 2
+    assert out["byTeam"]["2"] == ["d", "e"]
+
+
+def test_undrafted_cost_override_repricing(monkeypatch):
+    """With no drafted rounds (a dynasty roster), every player prices at the
+    undrafted default - the deepest round the league ever drafted. The keeper
+    page's "Undrafted cost" now rides along so the user can reprice them."""
+    ctx = _league_ctx_for_limits(monkeypatch)
+    monkeypatch.setattr(kp, "_draft_context", lambda plat, lid, season: ({}, 23))
+    default = kp.compute_league_keepers(ctx, platform="sleeper", league_id="L",
+                                        viewer_roster_id="1", limit_override=3)
+    assert {k["costRound"] for k in default["kept"]} == {23}
+    tuned = kp.compute_league_keepers(ctx, platform="sleeper", league_id="L",
+                                      viewer_roster_id="1", limit_override=3,
+                                      rules_override={"undrafted_round": 15})
+    assert {k["costRound"] for k in tuned["kept"]} == {15}
+
+
+def test_rules_override_is_bounded_to_real_rounds(monkeypatch):
+    """Rules arrive from query params, so an absurd undrafted round must clamp
+    into the league's actual draft depth rather than through it."""
+    ctx = _league_ctx_for_limits(monkeypatch)
+    monkeypatch.setattr(kp, "_draft_context", lambda plat, lid, season: ({}, 20))
+    out = kp.compute_league_keepers(ctx, platform="sleeper", league_id="L",
+                                    viewer_roster_id="1", limit_override=3,
+                                    rules_override={"undrafted_round": 999})
+    assert {k["costRound"] for k in out["kept"]} == {20}
+
+
+def test_keeper_limit_override_is_bounded(monkeypatch):
+    """The value arrives from a query param, so it must not be trusted raw."""
+    ctx = _league_ctx_for_limits(monkeypatch)
+    out = kp.compute_league_keepers(ctx, platform="sleeper", league_id="L",
+                                    viewer_roster_id="1", limit_override=9999)
+    assert out["limit"] == 25
+
+
 def test_num_rounds_yahoo_from_deepest_drafted_round():
     # Yahoo has no round count in its draft list, so derive it from the picks.
     assert kp._num_rounds("yahoo", "L", drafted={"a": 1, "b": 16, "c": 9}) == 16
