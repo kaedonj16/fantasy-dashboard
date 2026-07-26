@@ -87,6 +87,16 @@ _CONSOLIDATE_MAX_TIER_DROP = 2
 _DISTRIBUTE_STUD_FLOOR = 600         # min value for a player to be worth distributing
 _DISTRIBUTE_BAND = (0.96, 1.18)      # return-package value as a fraction of the stud
 _CONSOLIDATE_TARGET_FLOOR = 350      # min value to be a worthwhile consolidation target
+# Ranking multiplier applied per archetype-pattern miss (roster shape, value
+# floor, affordability). Off-pattern targets are demoted rather than dropped so
+# every rival player stays reachable - a manager can always see what it would
+# take to get a given player - while natural fits still lead the slate.
+_STRETCH_PENALTY = 0.45
+# Extra tier drop allowed when building a package for a stretch target. The
+# value band and piece floors still apply, so the offer stays fair value - this
+# only lets a roster without a tier-comparable headliner reach the player with
+# more, lesser pieces instead of getting no suggestion at all.
+_STRETCH_TIER_SLACK = 2
 # Consolidation spends surplus depth to buy ONE better player, so the acquired
 # player must clearly out-value the best piece you send (else you're just
 # swapping your best player for a marginally better one - the opposite of
@@ -707,7 +717,7 @@ def _select_packages(
     sends: List[Dict], target_val: float, archetype: str, max_pkgs: int = 2,
     sorted_vals: Optional[List[float]] = None, league_size: int = 10,
     need_positions: Optional[set] = None, stacked_positions: Optional[set] = None,
-    tier_thresholds: Optional[List[float]] = None,
+    tier_thresholds: Optional[List[float]] = None, stretch: bool = False,
 ) -> List[List[Dict]]:
     """Return up to max_pkgs distinct send packages whose *depth-adjusted* value
     lands in the acquire band for this target (see _acquire_band).
@@ -787,12 +797,20 @@ def _select_packages(
     _thr = tier_thresholds or FALLBACK_THRESHOLDS
     _target_tier = asset_tier(target_val, _thr)
 
+    # A stretch target is one the archetype wouldn't normally steer this roster
+    # to. The tier guard is about package *shape*, not fairness, and enforcing it
+    # there means a manager with no comparable headliner sees nothing at all for
+    # that player. So allow a deeper tier drop for stretch targets: the value
+    # band, effective-value floor and piece floor still apply, so the offer stays
+    # fair value rather than a lowball - it just costs more, lesser pieces.
+    _tier_drop = _CONSOLIDATE_MAX_TIER_DROP + (_STRETCH_TIER_SLACK if stretch else 0)
+
     def _tier_ok(*assets) -> bool:
         tiers = [asset_tier(a.get("value", 0), _thr) for a in assets
                  if not (a.get("is_pick") or a.get("position") == "PICK")]
         if not tiers:
             return True
-        return (min(tiers) - _target_tier) <= _CONSOLIDATE_MAX_TIER_DROP
+        return (min(tiers) - _target_tier) <= _tier_drop
 
     def _upgrade_ok(*assets) -> bool:
         """Consolidation must be a real upgrade: the acquired player has to clearly
@@ -2133,10 +2151,16 @@ def _get_archetype_suggestions_impl(
         pref_bonus = 1.15 if t["is_pref"] else 1.0
 
         score: Optional[float] = None
+        # Off-pattern targets are ranked DOWN, never dropped. A manager should
+        # always be able to see what it would take to get a given player, even
+        # when his roster doesn't match the shape the archetype usually trades
+        # for; silently excluding them made those players look unobtainable.
+        # Each miss compounds, so a natural fit still outranks a stretch.
+        stretch = 1.0
 
         if archetype == "contending":
             if val < 200:
-                continue
+                stretch *= _STRETCH_PENALTY
             rdft_ratio = rdft / max(1, val) if rdft > 0 else 0.5
             age_sc     = max(0.0, 1.0 - abs(age - peak) / 6.0) if age else 0.5
             score = (
@@ -2147,22 +2171,21 @@ def _get_archetype_suggestions_impl(
             ) * sc * pref_bonus
 
         elif archetype == "consolidate":
-            # Roster-aware ceiling: only aim a position's consolidation at an
-            # ELITE (top-3) target when the viewer already owns a pure starter
-            # there. A team with only flex-worthy pieces at the position is
-            # steered to a pure starter instead of an unrealistic reach for a
-            # top-3 stud it has nothing comparable to consolidate.
+            # Roster-aware ceiling: aiming a position's consolidation at an ELITE
+            # (top-3) target fits best when the viewer already owns a pure starter
+            # there. A team with only flex-worthy pieces is steered toward a pure
+            # starter first, but the elite target stays reachable as a stretch.
             _tgt_cat = _pos_category(pos, _pos_rank.get(pid), val, _starter_thr)
             _best_cat = _pos_category(pos, _viewer_best_rank.get(pos), _viewer_best_val.get(pos), _starter_thr)
             if not _consolidate_target_allowed(_tgt_cat, _best_cat):
-                continue
+                stretch *= _STRETCH_PENALTY
             # Consolidating doesn't only mean chasing the very top tier: taking a
             # few lesser pieces up to a solid mid-tier starter is a real upgrade.
             # Allow mid-tier targets in (floor well below the old 600) and soften
             # the raw-value term so a productive ~450-650 player competes with a
             # pure-value stud instead of always being buried behind it.
             if val < _CONSOLIDATE_TARGET_FLOOR:
-                continue
+                stretch *= _STRETCH_PENALTY
             rdft_ratio = rdft / max(1, val) if rdft > 0 else 0.6
             score = (
                 0.42 * min(1.0, val / 900) +
@@ -2191,15 +2214,18 @@ def _get_archetype_suggestions_impl(
         _pcounts = owner_meta.get(str(t["owner_roster_id"]), {}).get("pos_counts") or {}
         _drank = owner_depth_rank.get(pid, 1)
         if archetype == "consolidate" and _drank <= 1:
-            # A rival's stud (their best at the spot) is only a realistic
-            # consolidate target if the viewer is loaded enough to package
-            # top-tier assets for it. If they can't afford a fair offer, don't
-            # suggest it at all; when they can, it competes on merit.
-            if not _can_afford_stud(val):
-                continue
-            # Prefer the stud over the owner's own depth (which the (owner, pos)
-            # dedup would otherwise pick): a loaded team wants Bijan, not the RB4.
-            avail = 1.30
+            # A rival's stud (their best at the spot) fits the consolidate
+            # pattern when the viewer is loaded enough to package top-tier
+            # assets for it. If they can't afford a fair offer it's a stretch,
+            # not an impossibility - rank it down but keep it reachable.
+            if _can_afford_stud(val):
+                # Prefer the stud over the owner's own depth (which the
+                # (owner, pos) dedup would otherwise pick): a loaded team wants
+                # Bijan, not the RB4.
+                avail = 1.30
+            else:
+                stretch *= _STRETCH_PENALTY
+                avail = _availability(_drank, _pcounts.get(pos, 0))
         else:
             avail = _availability(_drank, _pcounts.get(pos, 0))
 
@@ -2212,6 +2238,10 @@ def _get_archetype_suggestions_impl(
             final = (0.55 * score + 0.45 * fit) * avail
         else:
             final = (score + wpd * 0.25) * avail
+
+        # Off-pattern targets sort below natural fits but stay in the slate.
+        final *= stretch
+        t["is_stretch"] = stretch < 1.0
 
         scored.append((final, t))
 
@@ -2302,7 +2332,7 @@ def _get_archetype_suggestions_impl(
             send_candidates, t["value"], archetype, max_pkgs=3,
             sorted_vals=sorted_vals, league_size=num_teams,
             need_positions=_pm.get("need"), stacked_positions=_pm.get("stacked"),
-            tier_thresholds=tier_thresholds,
+            tier_thresholds=tier_thresholds, stretch=bool(t.get("is_stretch")),
         )
 
     if sim_state is not None and _vid_int is not None:
@@ -2438,6 +2468,10 @@ def _get_archetype_suggestions_impl(
                 "fit_note":                _fit_note(pkg, _p_need, pos,
                                                      _pmeta.get("pos_counts")),
                 "direction":               "acquire",
+                # True when the target sits outside the archetype's usual shape
+                # (roster fit / value floor / affordability). Still a real,
+                # value-matched offer - just flagged so the UI can say so.
+                "is_stretch":              bool(t.get("is_stretch")),
                 "suggested_send":          pkg,
             })
             if len(results) >= 15:
