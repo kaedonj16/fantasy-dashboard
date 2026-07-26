@@ -180,6 +180,54 @@ def test_keeper_limit_override_is_bounded(monkeypatch):
     assert out["limit"] == 25
 
 
+# ── Dynasty leagues: the tool doesn't apply ──────────────────────────────────
+
+_DYN_BASE = {"season": 2026, "total_rosters": 12,
+             "rosters": [{"roster_id": 1, "players": ["a"]}],
+             "roster_positions": ["RB"]}
+
+
+def test_dynasty_without_keeper_limit_is_detected():
+    # Sleeper league type: 0 redraft, 1 keeper, 2 dynasty.
+    assert kp.is_dynasty_without_keepers(dict(_DYN_BASE, league_settings={"type": 2})) is True
+
+
+def test_dynasty_with_a_keeper_limit_keeps_the_tool():
+    """A dynasty league that configures keepers is a real keeper league."""
+    ctx = dict(_DYN_BASE, league_settings={"type": 2, "max_keepers": 2})
+    assert kp.is_dynasty_without_keepers(ctx) is False
+
+
+def test_non_dynasty_types_keep_the_tool():
+    for t in (0, 1):
+        ctx = dict(_DYN_BASE, league_settings={"type": t})
+        assert kp.is_dynasty_without_keepers(ctx) is False, t
+
+
+def test_unknown_league_type_keeps_the_tool():
+    """ESPN and Yahoo publish no dynasty flag, so they must not be hidden."""
+    assert kp.is_dynasty_without_keepers(dict(_DYN_BASE, league_settings={})) is False
+    assert kp.is_dynasty_without_keepers(dict(_DYN_BASE)) is False
+
+
+def test_dynasty_renders_the_notice_instead_of_the_table(monkeypatch):
+    _stub_body_deps(monkeypatch)
+    html = kp.build_keeper_body(dict(_DYN_BASE, league_settings={"type": 2}),
+                                viewer_roster_id="1", platform="sleeper",
+                                league_id="L", season=2026)
+    assert "kpr-dyn" in html and "You keep everyone" in html
+    assert "kpr-tbody" not in html          # no placeholder-cost table
+    assert "Show it anyway" in html         # escape hatch for informal keepers
+
+
+def test_dynasty_force_shows_the_tool(monkeypatch):
+    _stub_body_deps(monkeypatch)
+    html = kp.build_keeper_body(dict(_DYN_BASE, league_settings={"type": 2}),
+                                viewer_roster_id="1", platform="sleeper",
+                                league_id="L", season=2026, force=True)
+    assert "kpr-tbody" in html and "kpr-dyn" not in html
+
+
 def test_num_rounds_yahoo_from_deepest_drafted_round():
     # Yahoo has no round count in its draft list, so derive it from the picks.
     assert kp._num_rounds("yahoo", "L", drafted={"a": 1, "b": 16, "c": 9}) == 16

@@ -22,6 +22,55 @@ def _asset_v(name: str) -> str:
         return "0"
 
 
+def render_dynasty_notice_html(draft_url: str = "", show_anyway_url: str = "") -> str:
+    """Explain why the keeper tool doesn't apply to a true dynasty league.
+
+    Shown instead of the table when the league keeps every player: the surplus
+    model needs a drafted round per player, which a dynasty roster mostly
+    doesn't have, so the numbers would be placeholders dressed as analysis."""
+    draft_btn = (
+        f'<a class="kpr-draft-btn" href="{html.escape(draft_url)}">Open the Draft Room</a>'
+        if draft_url else ""
+    )
+    anyway = (
+        f'<a class="kpr-anyway" href="{html.escape(show_anyway_url)}">Show it anyway</a>'
+        if show_anyway_url else ""
+    )
+    return f"""
+<style>
+  .kpr-wrap{{max-width:760px;margin:0 auto;width:100%;box-sizing:border-box;}}
+  .kpr-dyn{{padding:34px 22px;text-align:center;}}
+  .kpr-dyn h2{{margin:0 0 8px;font-size:20px;}}
+  .kpr-dyn p{{color:var(--text-muted);font-size:14px;line-height:1.65;max-width:56ch;margin:0 auto 12px;}}
+  .kpr-dyn-tag{{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;
+    letter-spacing:.03em;color:var(--accent);background:var(--accent-soft);
+    padding:5px 11px;border-radius:999px;margin-bottom:14px;}}
+  .kpr-dyn-actions{{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:18px;}}
+  .kpr-draft-btn{{display:inline-flex;align-items:center;gap:7px;font:inherit;font-size:13px;font-weight:700;
+    color:#fff;background:var(--accent);border:0;border-radius:10px;padding:10px 16px;cursor:pointer;
+    text-decoration:none;white-space:nowrap;}}
+  .kpr-draft-btn:hover{{filter:brightness(1.06);}}
+  .kpr-anyway{{display:inline-flex;align-items:center;font:inherit;font-size:13px;font-weight:600;
+    color:var(--text-muted);background:transparent;border:1px solid var(--border);border-radius:10px;
+    padding:10px 16px;text-decoration:none;white-space:nowrap;}}
+  .kpr-anyway:hover{{border-color:var(--accent);color:var(--accent);}}
+</style>
+<div class="card central kpr-wrap">
+  <div class="kpr-dyn">
+    <span class="kpr-dyn-tag">Dynasty league</span>
+    <h2>You keep everyone</h2>
+    <p>This league carries full rosters season to season, so there’s no keeper decision to
+    make and nothing for this tool to rank.</p>
+    <p>The keeper math prices a player by the round he was drafted in, compared to where he
+    goes today. A dynasty roster is built from a startup years ago plus rookie drafts, trades
+    and waivers, so most of your players have no drafted round here at all. Every one of them
+    would show the same placeholder cost, and a surplus to match.</p>
+    <div class="kpr-dyn-actions">{draft_btn}{anyway}</div>
+  </div>
+</div>
+"""
+
+
 def render_keeper_html(seed: dict) -> str:
     seed_json = json.dumps(seed, separators=(",", ":"))
     kjs_v = _asset_v("keeper.js")
@@ -65,18 +114,41 @@ def render_keeper_html(seed: dict) -> str:
   .kpr-draft-btn{{display:inline-flex;align-items:center;gap:7px;font:inherit;font-size:13px;font-weight:700;
     color:#fff;background:var(--accent);border:0;border-radius:10px;padding:9px 15px;cursor:pointer;white-space:nowrap;}}
   .kpr-draft-btn:hover{{filter:brightness(1.06);}}
-  .kpr-cfg{{display:flex;align-items:center;gap:10px 18px;flex-wrap:wrap;padding:14px 16px;
+  /* Config row: label-over-control fields all sit on one baseline, so the
+     badge and the view toggle line up with the inputs instead of floating. */
+  .kpr-cfg{{display:flex;align-items:flex-end;gap:12px 16px;flex-wrap:wrap;padding:14px 16px;
     border-bottom:1px solid var(--border);}}
+  /* Fields wrap among themselves so the view toggle stays pinned to the right
+     of the first line rather than being pushed onto a line of its own. */
+  .kpr-fields{{display:flex;align-items:flex-end;gap:12px 16px;flex-wrap:wrap;flex:0 1 auto;min-width:0;}}
   .kpr-auto{{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;
     letter-spacing:.03em;color:var(--win,#15803d);background:color-mix(in srgb,var(--win,#15803d) 14%,transparent);
-    padding:4px 10px;border-radius:999px;}}
+    padding:6px 11px;border-radius:999px;white-space:nowrap;}}
   .kpr-auto-off{{color:var(--text-muted);background:color-mix(in srgb,var(--text-muted) 14%,transparent);}}
-  .kpr-rule{{display:flex;flex-direction:column;gap:2px;}}
-  .kpr-rule label{{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--text-muted);}}
+  .kpr-rule{{display:flex;flex-direction:column;gap:4px;min-width:0;}}
+  .kpr-rule label{{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);
+    font-weight:700;white-space:nowrap;}}
   .kpr-rule select,.kpr-rule input{{font:inherit;font-size:13px;font-weight:600;color:var(--text);
-    background:var(--card-bg,var(--card));border:1px solid var(--border);border-radius:8px;padding:5px 8px;}}
-  .kpr-views{{margin-left:auto;display:inline-flex;background:var(--bg-alt,var(--card-soft));border:1px solid var(--border);
-    border-radius:10px;padding:3px;gap:2px;}}
+    background:var(--card-bg,var(--card));border:1px solid var(--border);border-radius:8px;
+    padding:7px 9px;min-height:36px;box-sizing:border-box;
+    transition:border-color .12s,box-shadow .12s;}}
+  /* Sized so the whole row fits on one line at typical widths; the number
+     input otherwise renders far wider than the selects beside it. */
+  .kpr-rule select{{min-width:158px;}}
+  #kpr-src{{min-width:128px;}}
+  .kpr-rule input{{width:104px;}}
+  .kpr-rule select:hover,.kpr-rule input:hover{{border-color:var(--accent);}}
+  .kpr-rule select:focus,.kpr-rule input:focus{{outline:none;border-color:var(--accent);
+    box-shadow:0 0 0 3px var(--accent-soft);}}
+  /* View switch lives in the card header next to the draft button: it toggles
+     the whole card, and keeping it out of the config row stops it stranding on
+     a line of its own once the rule fields fill the width. */
+  /* min-width:0 lets the title block shrink; without it the long subtitle sets
+     a max-content floor and pushes the whole card wider than the viewport. */
+  .kpr-head-text{{min-width:0;flex:1 1 240px;}}
+  .kpr-head-actions{{display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0;}}
+  .kpr-views{{display:inline-flex;background:var(--bg-alt,var(--card-soft));border:1px solid var(--border);
+    border-radius:10px;padding:3px;gap:2px;flex-shrink:0;}}
   .kpr-views button{{font:inherit;font-size:12.5px;font-weight:600;color:var(--text-muted);background:transparent;
     border:0;border-radius:7px;padding:6px 12px;cursor:pointer;}}
   .kpr-views button[aria-selected="true"]{{background:var(--card);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.08);}}
@@ -112,14 +184,26 @@ def render_keeper_html(seed: dict) -> str:
   .kpr-val{{font-weight:800;text-align:right;min-width:52px;font-variant-numeric:tabular-nums;}}
   .kpr-val.keep{{color:var(--win,#15803d);}} .kpr-val.toss{{color:var(--inj-q,#ca8a04);}} .kpr-val.pass{{color:var(--text-muted);}}
 
-  .kpr-tbl-scroll{{overflow-x:auto;padding:4px 2px 8px;}}
-  table.kpr-tbl{{width:100%;border-collapse:collapse;min-width:560px;}}
-  .kpr-tbl thead th{{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);
-    text-align:left;font-weight:700;padding:10px 14px;border-bottom:1px solid var(--border);}}
+  /* The table keeps a min-width so columns stay readable; max-width pins the
+     scroller to the card so the page itself never scrolls sideways. */
+  .kpr-tbl-scroll{{overflow-x:auto;padding:4px 2px 8px;max-width:100%;}}
+  .kpr-wrap{{width:100%;box-sizing:border-box;}}
+  table.kpr-tbl{{width:100%;border-collapse:collapse;min-width:620px;}}
+  .kpr-tbl thead th{{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);
+    text-align:left;font-weight:700;padding:9px 14px;border-bottom:1px solid var(--border);white-space:nowrap;}}
   .kpr-tbl th.r,.kpr-tbl td.r{{text-align:right;}}
-  .kpr-tbl tbody td{{padding:11px 14px;border-bottom:1px solid color-mix(in srgb,var(--border) 55%,transparent);
-    vertical-align:middle;font-variant-numeric:tabular-nums;}}
+  .kpr-tbl tbody td{{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--border) 55%,transparent);
+    vertical-align:middle;font-variant-numeric:tabular-nums;white-space:nowrap;}}
   .kpr-tbl tbody tr:hover{{background:var(--card-soft,var(--bg-alt));}}
+  /* Player cell: badge + name on one line, the editable round/years controls on
+     a tidy second line instead of inputs jammed inline with the text. */
+  .kpr-tbl td:first-child{{white-space:normal;}}
+  .kpr-tbl .kpr-nm-line{{display:flex;align-items:center;gap:8px;}}
+  .kpr-tbl .kpr-pos{{margin-right:0;flex-shrink:0;}}
+  .kpr-tbl .kpr-sub{{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:5px;line-height:1.5;}}
+  /* Column rhythm: keep the numeric columns from being squeezed by the name. */
+  .kpr-tbl th:nth-child(2),.kpr-tbl td:nth-child(2),
+  .kpr-tbl th:nth-child(3),.kpr-tbl td:nth-child(3){{width:1%;}}
   .kpr-pos{{font-size:10px;font-weight:800;color:#fff;border-radius:5px;padding:2px 5px;margin-right:8px;}}
   .kpr-pos.QB{{background:#c026d3;}} .kpr-pos.RB{{background:#0d9488;}} .kpr-pos.WR{{background:#2563eb;}}
   .kpr-pos.TE{{background:#ea580c;}} .kpr-pos.K,.kpr-pos.DEF{{background:#64748b;}}
@@ -129,49 +213,74 @@ def render_keeper_html(seed: dict) -> str:
   .kpr-verdict.keep{{color:var(--win,#15803d);background:color-mix(in srgb,var(--win,#15803d) 14%,transparent);}}
   .kpr-verdict.toss{{color:var(--inj-q,#ca8a04);background:color-mix(in srgb,var(--inj-q,#ca8a04) 15%,transparent);}}
   .kpr-verdict.pass{{color:var(--text-muted);background:color-mix(in srgb,var(--text-muted) 14%,transparent);}}
-  .kpr-bar{{display:inline-block;width:70px;height:7px;border-radius:5px;background:var(--border);
-    overflow:hidden;vertical-align:middle;margin-right:8px;}}
+  .kpr-bar{{display:inline-block;width:64px;height:6px;border-radius:5px;
+    background:color-mix(in srgb,var(--border) 70%,transparent);
+    overflow:hidden;vertical-align:middle;margin-right:9px;}}
   .kpr-bar i{{display:block;height:100%;border-radius:5px;}}
+  .kpr-tbl td .kpr-bar + b{{display:inline-block;min-width:52px;text-align:right;}}
   .kpr-empty{{padding:34px 16px;text-align:center;color:var(--text-muted);}}
   .kpr-note{{padding:12px 16px;border-top:1px solid var(--border);font-size:12px;color:var(--text-muted);}}
-  .kpr-drnd{{width:58px;font:inherit;font-size:12px;font-weight:600;color:var(--text);
-    background:var(--card);border:1px solid var(--border);border-radius:7px;padding:3px 6px;text-align:center;}}
-  .kpr-yrs{{width:42px;font:inherit;font-size:11px;font-weight:600;color:var(--text);
-    background:var(--card);border:1px solid var(--border);border-radius:6px;padding:1px 4px;text-align:center;}}
+  .kpr-drnd,.kpr-yrs{{font:inherit;font-size:11.5px;font-weight:600;color:var(--text);
+    background:var(--card);border:1px solid var(--border);border-radius:7px;padding:3px 5px;
+    text-align:center;vertical-align:middle;}}
+  .kpr-drnd{{width:52px;}}
+  .kpr-yrs{{width:44px;}}
+  .kpr-drnd:focus,.kpr-yrs:focus{{outline:none;border-color:var(--accent);
+    box-shadow:0 0 0 2px var(--accent-soft);}}
+  .kpr-dot{{opacity:.55;}}
+  .kpr-drafted{{white-space:nowrap;}}
   .kpr-warn{{font-size:12.5px;color:var(--inj-q,#b45309);background:color-mix(in srgb,var(--inj-q,#b45309) 12%,transparent);
     border:1px solid color-mix(in srgb,var(--inj-q,#b45309) 32%,transparent);border-radius:9px;
     padding:8px 12px;margin-bottom:8px;}}
   /* Mobile: the optimizer is the primary view. Drop the redundant middle label,
      tighten rows, and compact the table so columns aren't chopped. */
   @media (max-width:560px){{
-    .kpr-cfg{{gap:8px 12px;padding:12px;}}
+    .kpr-cfg{{gap:10px;padding:12px;}}
+    /* Each control takes a full row so labels and inputs stop colliding, and
+       the view toggle spans the width instead of stranding on its own line. */
+    .kpr-fields{{gap:10px;}}
+    .kpr-rule{{flex:1 1 100%;}}
+    .kpr-rule select,.kpr-rule input{{width:100%;min-width:0;}}
+    .kpr-head-actions{{width:100%;}}
+    .kpr-views{{width:100%;}}
+    .kpr-views button{{flex:1;}}
     .kpr-opt{{padding:12px;}}
     .kpr-row{{grid-template-columns:20px 1fr auto;gap:9px;padding:10px 11px;}}
     .kpr-mid{{display:none;}}
     .kpr-nm{{font-size:14px;}}
     .kpr-draft-btn{{width:100%;justify-content:center;}}
-    table.kpr-tbl{{min-width:470px;}}
-    .kpr-tbl thead th,.kpr-tbl tbody td{{padding:9px 8px;}}
-    .kpr-tbl .kpr-sub{{white-space:nowrap;}}
-    .kpr-drnd{{width:44px;}}
-    .kpr-yrs{{width:36px;}}
+    table.kpr-tbl{{min-width:500px;}}
+    .kpr-tbl thead th,.kpr-tbl tbody td{{padding:9px 9px;}}
+    /* Keep the name on one line and the editable round/years on the next, so a
+       long name can't split the cell into a ragged block. */
+    .kpr-tbl td:first-child{{white-space:nowrap;}}
+    .kpr-tbl .kpr-sub{{flex-wrap:nowrap;}}
+    .kpr-drnd{{width:46px;}}
+    .kpr-yrs{{width:40px;}}
   }}
   @media (prefers-reduced-motion:reduce){{.kpr-row{{transition:none;}}}}
 </style>
 
 <div class="card central kpr-wrap">
   <div class="card-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
-    <div>
+    <div class="kpr-head-text">
       <h2>Keeper Assistant</h2>
       <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
         Who’s worth keeping? Surplus = where a player drafts today minus what he costs to keep.
       </div>
     </div>
-    {draft_btn}
+    <div class="kpr-head-actions">
+      <div class="kpr-views" role="tablist" aria-label="View">
+        <button id="kpr-view-opt" role="tab" aria-selected="true">Optimizer</button>
+        <button id="kpr-view-tbl" role="tab" aria-selected="false">Full table</button>
+      </div>
+      {draft_btn}
+    </div>
   </div>
 
   <div class="card-body" style="padding-top:0;">
     <div class="kpr-cfg">
+      <div class="kpr-fields">
       {auto_badge}
       {source_sel}
       <div class="kpr-rule">
@@ -194,9 +303,6 @@ def render_keeper_html(seed: dict) -> str:
         <label for="kpr-undr">Undrafted cost</label>
         <input id="kpr-undr" type="number" min="1" inputmode="numeric" placeholder="last">
       </div>
-      <div class="kpr-views" role="tablist" aria-label="View">
-        <button id="kpr-view-opt" role="tab" aria-selected="true">Optimizer</button>
-        <button id="kpr-view-tbl" role="tab" aria-selected="false">Full table</button>
       </div>
     </div>
 
