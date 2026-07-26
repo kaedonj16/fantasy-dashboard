@@ -329,6 +329,11 @@ body {
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* App-like scrolling: keep the rubber-band bounce inside the app instead of
+     revealing a blank void past the content, and stop a downward overscroll at
+     the top from triggering the browser's pull-to-refresh (which reloads the
+     whole page and shatters the SPA feel). */
+  overscroll-behavior-y: contain;
 }
 
 /* Keyboard focus ring — one consistent accent outline on every interactive
@@ -1433,7 +1438,10 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
   grid-template-columns: auto 1fr auto;
   gap: 20px;
   align-items: center;
-  padding: 12px 20px;
+  /* Pad past the notch / status bar in a standalone PWA (viewport-fit=cover),
+     while keeping the normal padding in a browser tab where the insets are 0. */
+  padding: max(12px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+           12px max(20px, env(safe-area-inset-left));
   background: var(--bg);
   border-bottom: 1px solid var(--border);
   position: sticky;
