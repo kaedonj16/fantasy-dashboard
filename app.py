@@ -1166,7 +1166,10 @@ BASE_HTML = """
     {meta_tags}
     {og_tags}
     {json_ld}
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- viewport-fit=cover lets the standalone app draw under the notch and home
+         indicator; the CSS then pads content back with env(safe-area-inset-*),
+         so it fills the screen like a native app instead of being letterboxed. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     
     <!-- Google AdSense -->
     {adsense_script}
@@ -1191,7 +1194,11 @@ BASE_HTML = """
     <link rel="apple-touch-icon" href="/static/BR_Logo.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/static/BR_Logo.png">
     <link rel="manifest" href="/static/manifest.json">
-    <meta name="theme-color" content="#38bdf8">
+    <!-- Status-bar chrome matches the top nav's background so the app reads as
+         one surface. The app theme is a manual toggle (not OS-driven), so this
+         is kept in sync by app.js rather than a prefers-color-scheme meta, which
+         would mismatch a user on OS-dark who hasn't switched the app to dark. -->
+    <meta name="theme-color" id="br-theme-color" content="#ffffff">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="BR Fantasy">

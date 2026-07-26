@@ -1922,6 +1922,16 @@ function bindOnce(el, key, type, handler, options) {
     document.documentElement.setAttribute('data-theme', 'dark');
   }
 
+  // Keep the PWA status-bar color matched to the app's actual theme (the top
+  // nav's background), so the OS chrome and the app read as one surface.
+  function syncThemeColor() {
+    const m = document.getElementById('br-theme-color');
+    if (!m) return;
+    const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+    m.setAttribute('content', dark ? '#020617' : '#ffffff');
+  }
+  syncThemeColor();
+
   function toggleDarkMode() {
     const root = document.documentElement;
     const currentTheme = root.getAttribute('data-theme');
@@ -1937,7 +1947,8 @@ function bindOnce(el, key, type, handler, options) {
 
     // Update toggle button icons
     updateThemeIcons();
-    
+    syncThemeColor();
+
     // Update existing Plotly charts to match new theme
     updatePlotlyChartsTheme();
   }
