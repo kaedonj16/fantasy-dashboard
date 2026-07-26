@@ -13529,7 +13529,7 @@ def page_keeper(platform: str = None, season: int = None, league_id: str = None)
     body = build_keeper_body(
         ctx or {}, viewer_roster_id=viewer_roster_id,
         platform=(platform or "sleeper"), league_id=league_id,
-        adp_source=_kadp_src,
+        adp_source=_kadp_src, season=season,
     )
     return render_page(
         "Keeper Assistant | BR Fantasy", league_id, "keeper", body, platform, season,
