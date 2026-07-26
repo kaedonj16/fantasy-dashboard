@@ -68,6 +68,43 @@ def test_best_draft_prefers_completed_with_most_rounds():
     assert kp._best_draft(drafts)["draft_id"] == "startup"   # completed + most rounds
 
 
+def _stub_body_deps(monkeypatch):
+    """Minimal stubs so build_keeper_body renders without the DB/player index."""
+    for name, attrs in (
+        ("dashboard_services.player_value_history",
+         {"load_current_values_from_db": lambda: [{"id": "a", "redraft_value_1qb": 1000.0}]}),
+        ("utils.utils", {"load_players_index": lambda: {"a": {"name": "A", "pos": "RB"}}}),
+    ):
+        m = types.ModuleType(name)
+        for k, v in attrs.items():
+            setattr(m, k, v)
+        monkeypatch.setitem(sys.modules, name, m)
+    monkeypatch.setattr(kp, "_adp_map", lambda is_sf, season, source="consensus": {"a": 1.0})
+    monkeypatch.setattr(kp, "_draft_context", lambda plat, lid, season: ({"a": 5}, 15))
+
+
+_BODY_CTX = {"total_rosters": 10, "rosters": [{"roster_id": 1, "players": ["a"]}],
+             "roster_positions": ["RB"]}
+
+
+def test_draft_handoff_link_uses_route_season_when_ctx_has_none(monkeypatch):
+    """The "Open in Draft Room" button is the only way to carry keepers into the
+    draft room. Building its link from ctx alone meant a cached ctx without a
+    season produced an empty link, which dropped the button entirely."""
+    _stub_body_deps(monkeypatch)
+    html = kp.build_keeper_body(dict(_BODY_CTX), viewer_roster_id="1",
+                                platform="sleeper", league_id="L123", season=2026)
+    assert "kpr-to-draft" in html
+    assert "/sleeper/2026/L123/draft?keepers=1" in html
+
+
+def test_draft_handoff_link_prefers_ctx_season(monkeypatch):
+    _stub_body_deps(monkeypatch)
+    html = kp.build_keeper_body(dict(_BODY_CTX, season=2025), viewer_roster_id="1",
+                                platform="sleeper", league_id="L123", season=2026)
+    assert "/sleeper/2025/L123/draft?keepers=1" in html
+
+
 def test_num_rounds_yahoo_from_deepest_drafted_round():
     # Yahoo has no round count in its draft list, so derive it from the picks.
     assert kp._num_rounds("yahoo", "L", drafted={"a": 1, "b": 16, "c": 9}) == 16

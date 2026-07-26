@@ -624,16 +624,24 @@
   // for non-keeper leagues.
   function initKeepers(){
     var kp = cfg.keepers;
-    if (!kp || !Array.isArray(kp.kept) || !kp.kept.length) return;
-    keeperSet = kp.kept.slice();
+    if (!kp) return;   // not a keeper league and not arrived from the keeper tool
+    // Start from the league-wide projection, which may legitimately be empty
+    // (e.g. no team has a positive-surplus keeper). The user's own picks are
+    // merged below and stand on their own: returning early on an empty
+    // projection used to throw away the very selections they just handed off.
+    keeperSet = Array.isArray(kp.kept) ? kp.kept.slice() : [];
     // Merge the handoff: the keeper page stashes the viewer's *actual* picks,
     // which replace the projection for their own team.
     try {
       var ovRaw = sessionStorage.getItem('brKeeperOverride');
       if (ovRaw){
         var ov = JSON.parse(ovRaw);
-        if (ov && String(ov.leagueId) === String(cfg.leagueId) && kp.viewerRoster != null){
-          var vr = String(kp.viewerRoster);
+        // Fall back to the roster stashed with the handoff: when the session
+        // has no viewer_roster_id the server sends viewerRoster null, which
+        // used to discard the user's actual keeper picks and leave only the
+        // league-wide projection.
+        var vr = String((kp.viewerRoster != null ? kp.viewerRoster : ov && ov.rosterId) || '');
+        if (ov && String(ov.leagueId) === String(cfg.leagueId) && vr){
           var meta = {};
           keeperSet.forEach(function(k){ if (String(k.rosterId) === vr) meta[String(k.id)] = k; });
           var mine = (ov.ids || []).map(function(id){
@@ -644,7 +652,8 @@
         }
       }
     } catch (e) { /* ignore malformed override */ }
-    keepersOn = keeperSet.length > 0;
+    if (!keeperSet.length) return;
+    keepersOn = true;
     renderKeeperBanner();
   }
 

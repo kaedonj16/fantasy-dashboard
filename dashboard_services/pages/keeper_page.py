@@ -362,12 +362,18 @@ def build_keeper_body(
     platform: str = "sleeper",
     league_id: str = "",
     adp_source: str = "consensus",
+    season: Optional[int] = None,
 ) -> str:
     """Return the Keeper Assistant page body HTML for a league context.
 
     ``adp_source`` picks which market ADP feeds the surplus model (keeper
     decisions are redraft, so the redraft sources apply: consensus / sleeper /
-    yahoo / fc). The page's source dropdown reloads with ?adp_source=<v>."""
+    yahoo). The page's source dropdown reloads with ?adp_source=<v>.
+
+    ``season`` is the route's season. It is passed explicitly because the
+    Draft Room handoff link needs one: when a cached ctx comes back without a
+    season the link used to render empty, which silently dropped the whole
+    "Open in Draft Room" button and left no way to carry keepers over."""
     from dashboard_services.pages._keeper_render import render_keeper_html  # local import: keeps this module import-light
 
     is_sf = _is_superflex(ctx)
@@ -375,7 +381,9 @@ def build_keeper_body(
         league_size = int(ctx.get("total_rosters") or len(ctx.get("rosters") or []) or 12)
     except (TypeError, ValueError):
         league_size = 12
-    _season = int(ctx.get("season") or 0)
+    # Prefer the ctx season, but fall back to the route's so a ctx without one
+    # still yields a working Draft Room link (and a real ADP season).
+    _season = int(ctx.get("season") or season or 0)
     max_keepers = _max_keepers(ctx)
 
     players_index = {}
@@ -398,7 +406,9 @@ def build_keeper_body(
     ranked = evaluate(candidates, rules, limit=max_keepers)
 
     _plat = (platform or "sleeper").lower()
-    _season = ctx.get("season") or ""
+    # Reuses the resolved season above (ctx, else the route's). Deriving it from
+    # ctx alone here silently produced an empty link - and therefore no
+    # "Open in Draft Room" button - whenever the cached ctx had no season.
     draft_url = (f"/{_plat}/{_season}/{league_id}/draft?keepers=1"
                  if (league_id and _season) else "")
     try:
