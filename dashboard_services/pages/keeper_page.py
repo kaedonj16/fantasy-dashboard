@@ -98,58 +98,123 @@ def _yahoo_drafted_round_map(league_id: str, season: int) -> Dict[str, int]:
         return {}
 
 
+def _sleeper_league_chain(league_id: str, season: int, max_seasons: int = 5) -> List[str]:
+    """This league's id plus its prior seasons' ids, newest season first.
+
+    Sleeper gives every season its own league_id (linked by previous_league_id),
+    so the current league only knows about the current season's draft."""
+    ids: List[str] = [str(league_id)]
+    try:
+        from dashboard_services.api import build_league_history_map
+        hist = build_league_history_map("sleeper", str(league_id), int(season or 0)) or {}
+        for _yr in sorted(hist.keys(), reverse=True):
+            lid = str(hist[_yr])
+            if lid not in ids:
+                ids.append(lid)
+    except Exception:
+        logger.debug("[keeper] league history walk failed", exc_info=True)
+    return ids[:max_seasons]
+
+
+def _sleeper_draft_history(league_id: str, season: int) -> tuple:
+    """(player_id -> most recent drafted round, deepest completed draft rounds).
+
+    Walks the league's season chain newest-first. In the offseason the current
+    season's draft has not happened yet (pre_draft, no picks), so the rounds a
+    roster was actually built in live under a previous season's league. Each
+    player keeps the round from the most recent draft that took him, and the
+    round scale comes from the deepest completed draft found (a startup/full
+    draft rather than a small rookie draft)."""
+    drafted: Dict[str, int] = {}
+    deepest = 0
+    try:
+        from dashboard_services.api import get_drafts, get_draft_picks
+    except Exception:
+        logger.debug("[keeper] sleeper draft api unavailable", exc_info=True)
+        return drafted, deepest
+
+    for lid in _sleeper_league_chain(league_id, season):
+        try:
+            drafts = get_drafts(lid) or []
+        except Exception:
+            logger.debug("[keeper] draft list failed for %s", lid, exc_info=True)
+            continue
+        # Completed drafts only (a scheduled draft has no picks), deepest first
+        # so the full draft sets the round scale before any rookie draft.
+        done = [d for d in drafts if str(d.get("status")) == "complete"]
+        for d in sorted(done, key=_draft_rounds, reverse=True):
+            try:
+                picks = get_draft_picks(str(d.get("draft_id"))) or []
+            except Exception:
+                logger.debug("[keeper] picks failed for %s", d.get("draft_id"), exc_info=True)
+                continue
+            if not picks:
+                continue
+            deepest = max(deepest, _draft_rounds(d))
+            for p in picks:
+                pid = str(p.get("player_id") or "")
+                rnd = p.get("round")
+                if not pid or not rnd or pid in drafted:
+                    continue   # first hit wins: newest season, deepest draft
+                try:
+                    drafted[pid] = int(rnd)
+                except (TypeError, ValueError):
+                    continue
+    return drafted, deepest
+
+
 def _drafted_round_map(platform: str, league_id: str, season: int = 0) -> Dict[str, int]:
     """player_id -> the round they were drafted, for Sleeper or Yahoo leagues.
 
-    Sleeper reads the completed startup draft's picks; Yahoo reads the league
-    draftresults resource. Empty for other platforms (players show as undrafted
-    and users set costs manually)."""
+    Sleeper walks the league's season chain for completed drafts; Yahoo reads the
+    league draftresults resource. Empty for other platforms (players show as
+    undrafted and users set costs manually)."""
     plat = (platform or "").lower()
     if plat == "yahoo":
         return _yahoo_drafted_round_map(league_id, season)
     if plat != "sleeper":
         return {}
-    try:
-        from dashboard_services.api import get_drafts, get_draft_picks
-        draft = _best_draft(get_drafts(league_id) or [])
-        if not draft:
-            return {}
-        picks = get_draft_picks(str(draft.get("draft_id"))) or []
-    except Exception:
-        logger.debug("[keeper] draft load failed", exc_info=True)
-        return {}
-    out: Dict[str, int] = {}
-    for p in picks:
-        pid = str(p.get("player_id") or "")
-        rnd = p.get("round")
-        if pid and rnd:
-            try:
-                out[pid] = int(rnd)
-            except (TypeError, ValueError):
-                continue
-    return out
+    return _sleeper_draft_history(league_id, season)[0]
 
 
-def _num_rounds(platform: str, league_id: str, default: int = 15, drafted: Optional[Dict[str, int]] = None) -> int:
-    """Draft rounds for the keeper-cost scale. Uses the startup/full draft's
-    round count; defaults to a standard redraft depth when it can't be detected
-    or looks like a small rookie-only draft (which would make the undrafted cost
-    absurdly cheap). Yahoo has no round count in its draft list, so derive it
-    from the deepest drafted round when a ``drafted`` map is supplied."""
+def _num_rounds(platform: str, league_id: str, default: int = 15,
+                drafted: Optional[Dict[str, int]] = None, deepest: int = 0) -> int:
+    """Draft rounds for the keeper-cost scale.
+
+    Uses the startup/full draft's round count; defaults to a standard redraft
+    depth when it can't be detected or looks like a small rookie-only draft
+    (which would make the undrafted cost absurdly cheap). ``deepest`` is the
+    round count found while loading Sleeper picks; Yahoo has no round count in
+    its draft list, so it derives the scale from the deepest drafted round."""
     plat = (platform or "").lower()
     if plat == "yahoo":
         rounds = max(drafted.values()) if drafted else 0
         return rounds if rounds >= 8 else default
     if plat != "sleeper":
         return default
+    if deepest >= 8:
+        return deepest
+    # No usable round count from the picks walk: fall back to the league's own
+    # draft list, then to standard depth.
     try:
         from dashboard_services.api import get_drafts
         rounds = _draft_rounds(_best_draft(get_drafts(league_id) or []))
-        # A tiny round count is almost certainly a rookie draft, not the main
-        # draft the keeper cost should scale against.
         return rounds if rounds >= 8 else default
     except Exception:
         return default
+
+
+def _draft_context(platform: str, league_id: str, season: int) -> tuple:
+    """(drafted_round_map, num_rounds) for a league, in one pass.
+
+    Keeps the Sleeper season-chain walk to a single fetch instead of doing it
+    once for the picks and again for the round count."""
+    plat = (platform or "").lower()
+    if plat == "sleeper":
+        drafted, deepest = _sleeper_draft_history(league_id, season)
+        return drafted, _num_rounds(plat, league_id, drafted=drafted, deepest=deepest)
+    drafted = _drafted_round_map(plat, league_id, season)
+    return drafted, _num_rounds(plat, league_id, drafted=drafted)
 
 
 def _detected_keeper_limit(ctx: Dict[str, Any]) -> int:
@@ -257,8 +322,7 @@ def compute_league_keepers(
     values = _redraft_value_map(is_sf)
     adp = _adp_map(is_sf, _season)
     value_rank = _value_rank_map(values)
-    drafted = _drafted_round_map(platform, league_id, _season)
-    num_rounds = _num_rounds(platform, league_id, drafted=drafted)
+    drafted, num_rounds = _draft_context(platform, league_id, _season)
     rules = KeeperRules(league_size=league_size, num_rounds=num_rounds)
 
     per_team: Dict[str, List[KeeperCandidate]] = {}
@@ -324,8 +388,7 @@ def build_keeper_body(
     values = _redraft_value_map(is_sf)
     adp = _adp_map(is_sf, _season, source=adp_source)
     value_rank = _value_rank_map(values)
-    drafted = _drafted_round_map(platform, league_id, _season)
-    num_rounds = _num_rounds(platform, league_id, drafted=drafted)
+    drafted, num_rounds = _draft_context(platform, league_id, _season)
 
     roster = _viewer_roster(ctx, viewer_roster_id) or {}
     player_ids = [str(p) for p in (roster.get("players") or [])]
