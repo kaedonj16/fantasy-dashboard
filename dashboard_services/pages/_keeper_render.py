@@ -22,6 +22,55 @@ def _asset_v(name: str) -> str:
         return "0"
 
 
+def render_dynasty_notice_html(draft_url: str = "", show_anyway_url: str = "") -> str:
+    """Explain why the keeper tool doesn't apply to a true dynasty league.
+
+    Shown instead of the table when the league keeps every player: the surplus
+    model needs a drafted round per player, which a dynasty roster mostly
+    doesn't have, so the numbers would be placeholders dressed as analysis."""
+    draft_btn = (
+        f'<a class="kpr-draft-btn" href="{html.escape(draft_url)}">Open the Draft Room</a>'
+        if draft_url else ""
+    )
+    anyway = (
+        f'<a class="kpr-anyway" href="{html.escape(show_anyway_url)}">Show it anyway</a>'
+        if show_anyway_url else ""
+    )
+    return f"""
+<style>
+  .kpr-wrap{{max-width:760px;margin:0 auto;width:100%;box-sizing:border-box;}}
+  .kpr-dyn{{padding:34px 22px;text-align:center;}}
+  .kpr-dyn h2{{margin:0 0 8px;font-size:20px;}}
+  .kpr-dyn p{{color:var(--text-muted);font-size:14px;line-height:1.65;max-width:56ch;margin:0 auto 12px;}}
+  .kpr-dyn-tag{{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;
+    letter-spacing:.03em;color:var(--accent);background:var(--accent-soft);
+    padding:5px 11px;border-radius:999px;margin-bottom:14px;}}
+  .kpr-dyn-actions{{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:18px;}}
+  .kpr-draft-btn{{display:inline-flex;align-items:center;gap:7px;font:inherit;font-size:13px;font-weight:700;
+    color:#fff;background:var(--accent);border:0;border-radius:10px;padding:10px 16px;cursor:pointer;
+    text-decoration:none;white-space:nowrap;}}
+  .kpr-draft-btn:hover{{filter:brightness(1.06);}}
+  .kpr-anyway{{display:inline-flex;align-items:center;font:inherit;font-size:13px;font-weight:600;
+    color:var(--text-muted);background:transparent;border:1px solid var(--border);border-radius:10px;
+    padding:10px 16px;text-decoration:none;white-space:nowrap;}}
+  .kpr-anyway:hover{{border-color:var(--accent);color:var(--accent);}}
+</style>
+<div class="card central kpr-wrap">
+  <div class="kpr-dyn">
+    <span class="kpr-dyn-tag">Dynasty league</span>
+    <h2>You keep everyone</h2>
+    <p>This league carries full rosters season to season, so there’s no keeper decision to
+    make and nothing for this tool to rank.</p>
+    <p>The keeper math prices a player by the round he was drafted in, compared to where he
+    goes today. A dynasty roster is built from a startup years ago plus rookie drafts, trades
+    and waivers, so most of your players have no drafted round here at all. Every one of them
+    would show the same placeholder cost, and a surplus to match.</p>
+    <div class="kpr-dyn-actions">{draft_btn}{anyway}</div>
+  </div>
+</div>
+"""
+
+
 def render_keeper_html(seed: dict) -> str:
     seed_json = json.dumps(seed, separators=(",", ":"))
     kjs_v = _asset_v("keeper.js")

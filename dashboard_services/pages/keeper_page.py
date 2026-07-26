@@ -233,6 +233,37 @@ def _max_keepers(ctx: Dict[str, Any], default: int = 2) -> int:
     return _detected_keeper_limit(ctx) or default
 
 
+def _league_type_code(ctx: Dict[str, Any]) -> Optional[int]:
+    """Sleeper's league type: 0 redraft, 1 keeper, 2 dynasty. None if unknown.
+
+    Only Sleeper publishes this; ESPN and Yahoo have no dynasty flag, so those
+    leagues stay unknown and are treated as keeper-capable."""
+    for src in (ctx.get("league_settings"), ctx.get("settings")):
+        try:
+            v = (src or {}).get("type")
+            if v is not None:
+                return int(v)
+        except (TypeError, ValueError, AttributeError):
+            continue
+    return None
+
+
+def is_dynasty_without_keepers(ctx: Dict[str, Any]) -> bool:
+    """True for a true dynasty league: you keep your whole roster, so there is
+    no keeper decision to make.
+
+    The surplus model prices a keeper by the round he was drafted in. Dynasty
+    rosters are built from a startup years back plus rookie drafts, trades and
+    waivers, so most players have no drafted round in the current league and all
+    of them collapse onto the undrafted default - the last round. That produced
+    a page of identical, meaningless costs (and inflated surpluses to match).
+    Rather than show numbers that look real, the page explains itself.
+
+    A dynasty league that *does* configure a keeper limit is a real keeper
+    league and keeps the tool."""
+    return _league_type_code(ctx) == 2 and _detected_keeper_limit(ctx) == 0
+
+
 def league_keeper_limit(ctx: Dict[str, Any]) -> int:
     """Public: real keeper limit for gating (0 = not a detected keeper league).
     The draft room uses this to decide whether to auto-surface keepers."""
@@ -395,6 +426,7 @@ def build_keeper_body(
     league_id: str = "",
     adp_source: str = "consensus",
     season: Optional[int] = None,
+    force: bool = False,
 ) -> str:
     """Return the Keeper Assistant page body HTML for a league context.
 
@@ -405,8 +437,21 @@ def build_keeper_body(
     ``season`` is the route's season. It is passed explicitly because the
     Draft Room handoff link needs one: when a cached ctx comes back without a
     season the link used to render empty, which silently dropped the whole
-    "Open in Draft Room" button and left no way to carry keepers over."""
-    from dashboard_services.pages._keeper_render import render_keeper_html  # local import: keeps this module import-light
+    "Open in Draft Room" button and left no way to carry keepers over.
+
+    A true dynasty league keeps every player, so the tool explains itself
+    instead of rendering placeholder costs; ``force`` (from ?show=1) overrides
+    that for a dynasty league that runs informal keepers."""
+    from dashboard_services.pages._keeper_render import (  # local import: keeps this module import-light
+        render_keeper_html, render_dynasty_notice_html,
+    )
+
+    _plat_early = (platform or "sleeper").lower()
+    _season_early = int(ctx.get("season") or season or 0)
+    if not force and is_dynasty_without_keepers(ctx):
+        _durl = (f"/{_plat_early}/{_season_early}/{league_id}/draft"
+                 if (league_id and _season_early) else "")
+        return render_dynasty_notice_html(draft_url=_durl, show_anyway_url="?show=1")
 
     is_sf = _is_superflex(ctx)
     try:
