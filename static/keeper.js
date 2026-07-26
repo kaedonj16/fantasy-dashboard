@@ -115,9 +115,10 @@
     elTbody.innerHTML = rows.map(function (row) {
       var pos = (row.p.pos || "").toUpperCase();
       var draftedTxt = (row.p.draftedRound == null || row.p.draftedRound === "")
-        ? '<input class="kpr-drnd" type="number" min="1" data-id="' + esc(row.p.id) + '" placeholder="R?" value="">'
-        : ("Drafted R" + row.p.draftedRound);
-      draftedTxt += ' · kept <input class="kpr-yrs" type="number" min="0" max="15" data-id="' +
+        ? '<input class="kpr-drnd" type="number" min="1" data-id="' + esc(row.p.id) +
+          '" placeholder="R?" value="" aria-label="Drafted round">'
+        : ('<span class="kpr-drafted">Drafted R' + row.p.draftedRound + "</span>");
+      draftedTxt += '<span class="kpr-dot">·</span>kept <input class="kpr-yrs" type="number" min="0" max="15" data-id="' +
         esc(row.p.id) + '" value="' + (row.p.yearsKept || 0) + '" aria-label="Years kept"> yr';
       var mkt = row.mkt == null ? '<span style="color:var(--text-muted)">-</span>'
         : ("Round " + row.mkt + ' <span style="color:var(--text-muted)">· ' + Math.round(row.p.value || 0) + "</span>");
@@ -128,8 +129,8 @@
       var sval = row.surplus == null ? "-" : fmt(row.surplus);
       var vlabel = { keep: "KEEP", toss: "TOSS-UP", pass: "PASS" }[row.verdict];
       return "<tr>" +
-        "<td><span class=\"kpr-pos " + esc(pos) + "\">" + (esc(pos) || "-") + "</span>" +
-        '<span class="kpr-nm">' + esc(row.p.name) + "</span><div class=\"kpr-sub\">" + draftedTxt + "</div></td>" +
+        '<td><div class="kpr-nm-line"><span class="kpr-pos ' + esc(pos) + '">' + (esc(pos) || "-") + "</span>" +
+        '<span class="kpr-nm">' + esc(row.p.name) + '</span></div><div class="kpr-sub">' + draftedTxt + "</div></td>" +
         '<td class="r">Round ' + row.cost + "</td>" +
         '<td class="r">' + mkt + "</td>" +
         '<td class="r"><span class="kpr-bar"><i style="width:' + w + "%;background:" + sColor + '"></i></span>' +
