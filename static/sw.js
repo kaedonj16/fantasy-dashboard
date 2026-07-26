@@ -2,7 +2,7 @@
 // Caches static assets and key pages for offline/fast repeat loads.
 // Handles Web Push notifications.
 
-const CACHE_NAME = 'br-fantasy-v12';
+const CACHE_NAME = 'br-fantasy-v13';
 
 // How long to wait on the network for a page (when we already have a cached
 // copy) before painting the cached version. This is what kills the blank
@@ -16,7 +16,11 @@ const PRECACHE_URLS = [
   '/static/app.js',
   '/static/BR_Logo.png',
   '/static/Website_Logo.png',
+  '/static/offline.html',
 ];
+
+// Branded page shown when a navigation can't be served from network or cache.
+const OFFLINE_URL = '/static/offline.html';
 
 // ── Install: pre-cache static assets ─────────────────────────────────────────
 self.addEventListener('install', event => {
@@ -135,11 +139,14 @@ async function handleNavigate(request) {
     return winner;
   }
 
-  // No cached copy yet: wait for the network, then fall back to the home shell.
+  // No cached copy yet: wait for the network, then fall back to the home shell,
+  // and finally to the branded offline page rather than a browser error screen.
   const net = await networkFetch;
   if (net) return net;
   const home = await cache.match('/');
-  return home || Response.error();
+  if (home) return home;
+  const offline = await cache.match(OFFLINE_URL);
+  return offline || Response.error();
 }
 
 // ── Push notifications ─────────────────────────────────────────────────────────
