@@ -436,9 +436,20 @@
   function readSetup(){
     var teams = parseInt(document.getElementById('drTeams').value, 10);
     var sf = document.getElementById('drSf').value === '1';
-    var rd = document.getElementById('drType').value === 'redraft';
+    // A keeper draft IS a redraft that starts with some picks already spent, so
+    // it runs as type 'redraft' (same values, pool, K/DEF rules and pick-score
+    // weights) with a keeper flag driving the extra behavior. Giving it its own
+    // type would silently fall through to startup weights when grading.
+    var rawType = document.getElementById('drType').value;
+    var keeper = rawType === 'keeper';
+    var rd = keeper || rawType === 'redraft';
+    var kcEl = document.getElementById('drKeeperCount');
+    var ksEl = document.getElementById('drKeeperSource');
     return {
-      type:   document.getElementById('drType').value,
+      type:   keeper ? 'redraft' : rawType,
+      keeper: keeper,
+      keeperCount:  keeper ? Math.max(0, Math.min(10, parseInt(kcEl && kcEl.value, 10) || 0)) : 0,
+      keeperSource: keeper ? ((ksEl && ksEl.value) || 'assistant') : null,
       teams:  teams,
       rounds: Math.max(1, Math.min(40, parseInt(document.getElementById('drRounds').value, 10) || 15)),
       sf:     sf,
@@ -533,6 +544,16 @@
       var pprEl = document.getElementById('drPpr'); if (pprEl) pprEl.value = String(state.scoring.ppr != null ? state.scoring.ppr : 1);
       var tepEl = document.getElementById('drTep'); if (tepEl) tepEl.value = String(state.scoring.tep != null ? state.scoring.tep : 0);
     }
+    // A keeper draft is stored as type 'redraft' + keeper, so re-select the
+    // Keeper option (rather than plain Redraft) when editing one.
+    if (state && state.keeper){
+      var tEl = document.getElementById('drType'); if (tEl) tEl.value = 'keeper';
+      var kcEl = document.getElementById('drKeeperCount');
+      if (kcEl && state.keeperCount != null){ kcEl.value = String(state.keeperCount); kcEl.dataset.touched = '1'; }
+      var ksEl = document.getElementById('drKeeperSource');
+      if (ksEl && state.keeperSource) ksEl.value = state.keeperSource;
+    }
+    syncKeeperSetupFields(document.getElementById('drType').value === 'keeper');
     renderSetupRoster();
     renderSetupCapital();
   }
@@ -607,6 +628,8 @@
           Object.keys(state.picks).forEach(function(k){ var pp = state.picks[k]; if (pp) drafted[String(pp.id)] = true; });
         }
         applyKeepers();   // no-op unless league keepers are enabled
+        // Keeper draft: spend each keeper's cost-round pick before play starts.
+        seedKeeperPicks();
         // Re-render the banner now that playersById exists, so keepers that
         // arrived as bare ids from the handoff can show a real name/position.
         renderKeeperBanner();
@@ -625,16 +648,18 @@
   // already-drafted, so they drop out of the best-available pool. Everything
   // here is a no-op when there are no keepers, so the draft room is unchanged
   // for non-keeper leagues.
+  // Both keeper sources are kept so the setup's "Keepers" control can switch
+  // between them: the assistant's league-wide projection, and the picks you
+  // actually chose on the keeper page (handed off in sessionStorage).
+  var keeperProjected = [];
+  var keeperOverride = null;   // {rosterId, ids} for this league, if handed off
+
   function initKeepers(){
     var kp = cfg.keepers;
     if (!kp) return;   // not a keeper league and not arrived from the keeper tool
-    // Start from the league-wide projection, which may legitimately be empty
-    // (e.g. no team has a positive-surplus keeper). The user's own picks are
-    // merged below and stand on their own: returning early on an empty
-    // projection used to throw away the very selections they just handed off.
-    keeperSet = Array.isArray(kp.kept) ? kp.kept.slice() : [];
-    // Merge the handoff: the keeper page stashes the viewer's *actual* picks,
-    // which replace the projection for their own team.
+    // The projection may legitimately be empty (e.g. no team has a
+    // positive-surplus keeper); your own picks stand on their own.
+    keeperProjected = Array.isArray(kp.kept) ? kp.kept.slice() : [];
     try {
       var ovRaw = sessionStorage.getItem('brKeeperOverride');
       if (ovRaw){
@@ -645,24 +670,126 @@
         // league-wide projection.
         var vr = String((kp.viewerRoster != null ? kp.viewerRoster : ov && ov.rosterId) || '');
         if (ov && String(ov.leagueId) === String(cfg.leagueId) && vr){
-          var meta = {};
-          keeperSet.forEach(function(k){ if (String(k.rosterId) === vr) meta[String(k.id)] = k; });
-          var mine = (ov.ids || []).map(function(id){
-            return meta[String(id)] || { id: String(id), rosterId: vr, projected: false };
-          });
-          mine.forEach(function(m){ m.projected = false; });
-          keeperSet = keeperSet.filter(function(k){ return String(k.rosterId) !== vr; }).concat(mine);
+          keeperOverride = { rosterId: vr, ids: (ov.ids || []).map(String) };
         }
       }
     } catch (e) { /* ignore malformed override */ }
+    keeperSet = computeKeeperSet();
     if (!keeperSet.length) return;
     keepersOn = true;
     renderKeeperBanner();
   }
 
+  // Effective keepers for the current setup. "Pick my own" uses the selections
+  // handed off from the keeper page for your team; "Use Keeper Assistant" uses
+  // the optimizer's projection for every team including yours. Rival teams are
+  // always projected, capped at the league's keepers-per-team.
+  function computeKeeperSet(){
+    var out = keeperProjected.slice();
+    var source = (state && state.keeperSource) || 'manual';
+    if (source !== 'assistant' && keeperOverride){
+      var vr = keeperOverride.rosterId;
+      var meta = {};
+      out.forEach(function(k){ if (String(k.rosterId) === vr) meta[String(k.id)] = k; });
+      var mine = keeperOverride.ids.map(function(id){
+        return meta[String(id)] || { id: String(id), rosterId: vr, projected: false };
+      });
+      mine.forEach(function(m){ m.projected = false; });
+      out = out.filter(function(k){ return String(k.rosterId) !== vr; }).concat(mine);
+    }
+    // Cap each rival team at the league's keepers-per-team. Your own count is
+    // whatever you actually chose.
+    var cap = state && state.keeper ? state.keeperCount : null;
+    if (cap != null && cap >= 0){
+      var myR = keeperOverride && keeperOverride.rosterId;
+      var seen = {};
+      out = out.filter(function(k){
+        var rid = String(k.rosterId);
+        if (myR && rid === myR) return true;
+        seen[rid] = (seen[rid] || 0) + 1;
+        return seen[rid] <= cap;
+      });
+    }
+    return out;
+  }
+
   function applyKeepers(){
     if (!keepersOn) return;
     keeperSet.forEach(function(k){ if (k && k.id != null) drafted[String(k.id)] = true; });
+  }
+
+  // ── Keeper drafts ────────────────────────────────────────────────────────
+  // In a keeper draft each kept player costs his team the pick at his keeper
+  // round, so those picks are spent before the draft starts. Seeding them onto
+  // the board (rather than only hiding the players) makes the pick economy real:
+  // teams draft fewer times, the rounds line up, and because a keeper occupies a
+  // genuine pick slot it flows into the draft grade exactly like any other pick
+  // - which is the point of a keeper, a stud held at a late round grades great.
+
+  // Map a keeper's roster to a draft seat. The viewer's own seat is known; rival
+  // rosters get a stable, deterministic seat so each team loses picks in the
+  // right rounds. Seat identity is approximate in a mock, the pick economy is not.
+  function keeperSlotMap(){
+    var map = {};
+    var vr = cfg.keepers && cfg.keepers.viewerRoster;
+    var mySlot = (state && state.slot) || 1;
+    if (vr != null && vr !== '') map[String(vr)] = mySlot;
+    var rosters = Object.keys((cfg.keepers && cfg.keepers.byTeam) || {})
+      .filter(function(rid){ return String(rid) !== String(vr); })
+      .sort(function(a, b){ return String(a).localeCompare(String(b), undefined, { numeric: true }); });
+    var teams = (state && state.teams) || 12;
+    var free = [];
+    for (var s = 1; s <= teams; s++) if (s !== mySlot) free.push(s);
+    rosters.forEach(function(rid, i){ if (i < free.length) map[String(rid)] = free[i]; });
+    return map;
+  }
+
+  function seedKeeperPicks(){
+    if (!state || !state.keeper || !keepersOn) return;
+    // Re-derive now that the draft's keeper source and per-team cap are known
+    // (initKeepers runs at page load, before any draft is configured).
+    keeperSet = computeKeeperSet();
+    keeperSet.forEach(function(k){ if (k && k.id != null) drafted[String(k.id)] = true; });
+    if (!keeperSet.length) return;
+    var teams = state.teams, rounds = state.rounds, order = state.order;
+    var slotBy = keeperSlotMap();
+    var used = {};
+    keeperSet.forEach(function(k){
+      if (!k || k.id == null) return;
+      var slot = slotBy[String(k.rosterId)];
+      if (!slot) return;                                  // unknown seat: player just stays off the board
+      var rnd = parseInt(k.costRound, 10);
+      if (!rnd || rnd < 1 || rnd > rounds) return;        // cost outside this draft
+      // Two keepers can't spend the same pick; bump to the next open round for
+      // that seat, mirroring how leagues resolve a cost collision.
+      var pn = null;
+      for (var r = rnd; r <= rounds; r++){
+        var cand = pickNum(r, slot, teams, order);
+        if (!used[cand] && !state.picks[cand]){ pn = cand; break; }
+      }
+      if (pn == null) return;
+      used[pn] = true;
+      var p = playersById[String(k.id)] || {};
+      state.picks[pn] = {
+        id: k.id,
+        name: k.name || p.name || ('Player ' + k.id),
+        position: k.pos || p.position || '',
+        team: p.team || '',
+        val: Math.round(p.id != null ? valOf(p) : 0),
+        ps: (p.id != null ? pickScoreFor(p, pn) : null),
+        reason: 'Keeper (R' + rnd + ')',
+        keeper: true
+      };
+      drafted[String(k.id)] = true;
+    });
+    skipFilledPicks();
+  }
+
+  // Keeper picks are already on the board, so the clock must step over them.
+  function skipFilledPicks(){
+    if (!state) return;
+    var total = state.teams * state.rounds;
+    while (state.current <= total && state.picks[state.current]) state.current++;
   }
 
   function setKeepersOn(on){
@@ -1512,6 +1639,10 @@
       _resetTransient();
       state = {
         type: prev.type, teams: prev.teams, rounds: prev.rounds, sf: !!prev.sf,
+        // Carry the keeper setup so a practice mock of a keeper league still
+        // spends the same picks on keepers.
+        keeper: !!prev.keeper, keeperCount: prev.keeperCount || 0,
+        keeperSource: prev.keeperSource || null,
         slot: prev.slot, order: prev.order,
         roster: prev.roster || defaultRoster(!!prev.sf, prev.type === 'redraft'),
         scoring: prev.scoring || scoringCfg(),
@@ -2038,6 +2169,9 @@
     // parity test - so the Draft Room and Teams page can never grade a pick
     // differently. This wrapper only gathers inputs.
     var grading = !!(opts && opts.grading);
+    // Pick this score is being computed AT. Defaults to the clock, but a
+    // keeper is scored at the pick his keeper round consumed.
+    var _pn = (opts && opts.pickNo) || state.current;
 
     // Quality-adjusted need: two below-replacement RBs still leave a real need.
     var _ctx = psCtx();
@@ -2072,7 +2206,7 @@
     return BRPickScore.computePickScore({
       pos: pos, value: valOf(p), vor: vorOf(p), tier: tierOf(p),
       age: (p.age != null ? Number(p.age) : null), rankChange7d: p.rank_change_7d,
-      avgPick: adp, pickNo: state.current, maxVal: maxVal,
+      avgPick: adp, pickNo: _pn, maxVal: maxVal,
       draftType: state.type, isSf: state.sf, needRaw: needRaw,
       qbCount: counts['QB'] || 0, totalPicks: (state.teams || 12) * (state.rounds || 16),
       numTeams: state.teams || 12, ppgNorm: ppgN,
@@ -2090,8 +2224,8 @@
     var t = psCtx().targets[pos];
     var need = t ? Math.max(0, t - (counts[pos] || 0)) : 0;
     var adp = adpOf(p);
-    var fell = (adp != null) ? Math.round(state.current - adp) : null;
-    var relGap = (adp != null) ? ((state.current - adp) / Math.max(adp, 1.5)) : null;
+    var fell = (adp != null) ? Math.round(_pn - adp) : null;
+    var relGap = (adp != null) ? ((_pn - adp) / Math.max(adp, 1.5)) : null;
     var tier = tierOf(p);
     var left = tierRemaining(p);
     // QB overfill: only a warning early, when a skill player is the better use of
@@ -3577,6 +3711,7 @@
     return 'dr-cell' + (pl ? ' dr-cell-filled' : ' dr-cell-empty')
       + (mine ? ' dr-cell-mine' : '') + (traded ? ' dr-cell-claimed' : '')
       + ((canClaim(pn)) ? ' dr-cell-claimable' : '')
+      + (pl && pl.keeper ? ' dr-cell-keeper' : '')
       + (pn === justPick ? ' dr-cell-just' : '');
   }
   // Future, uncommitted picks can be claimed/unclaimed in mock/manual mode.
@@ -3630,7 +3765,8 @@
   function cellInner(pn){
     var pl = state.picks[pn];
     var h = '<span class="dr-cell-num">' + pn + '</span>';
-    if (isMyPick(pn)) h += '<span class="dr-cell-mineflag">YOU</span>';
+    if (pl && pl.keeper) h += '<span class="dr-cell-keepflag">KEEP</span>';
+    else if (isMyPick(pn)) h += '<span class="dr-cell-mineflag">YOU</span>';
     var _own = tradedOwnerLabel(pn);
     if (_own) h += '<span class="dr-cell-owner">' + esc(_own) + '</span>';
     if (pl){
@@ -3784,10 +3920,10 @@
   }
 
   // Pick Score for a single player (computes the pool max + your roster counts).
-  function pickScoreFor(p){
+  function pickScoreFor(p, pickNo){
     var pool = availablePool();
     var maxVal = 0; pool.forEach(function(x){ var v = valOf(x); if (v > maxVal) maxVal = v; });
-    return pickScore(p, maxVal, myPosCounts());
+    return pickScore(p, maxVal, myPosCounts(), pickNo ? { pickNo: pickNo } : undefined);
   }
 
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){
@@ -4080,6 +4216,7 @@
     drafted[String(p.id)] = true;
     justPick = pn;
     state.current++;
+    skipFilledPicks();    // step over picks already spent on keepers
     paintCell(pn);        // fill just-picked cell (incremental)
     // Reveal the just-made pick with a pop + accent ring (CPU picks are ~700ms
     // apart, so these land one at a time). CSS disables it under reduced motion.
@@ -4590,8 +4727,32 @@
     var rf = document.getElementById('drRoundsField');
     if (rf) rf.style.display = isRookie ? '' : 'none';
     if (isRookie) document.getElementById('drRounds').value = String(cfg.numRoundsRookie || 3);
+    syncKeeperSetupFields(this.value === 'keeper');
     renderSetupCapital();   // refresh claimed-pick list after rounds change
   });
+
+  // Keeper-only setup fields. Defaults come from the league's own keeper payload
+  // so the count matches what the league actually allows.
+  function syncKeeperSetupFields(on){
+    Array.prototype.forEach.call(document.querySelectorAll('.dr-keeper-only'), function(el){
+      el.style.display = on ? '' : 'none';
+    });
+    if (!on) return;
+    var cEl = document.getElementById('drKeeperCount');
+    if (cEl && !cEl.dataset.touched){
+      var lim = cfg.keepers && cfg.keepers.limit;
+      cEl.value = String(lim != null ? lim : 2);
+    }
+    var sEl = document.getElementById('drKeeperSource');
+    if (sEl && !(cfg.keepers && (cfg.keepers.kept || []).length)){
+      // Nothing from the assistant for this league - default to picking your own.
+      sEl.value = 'manual';
+    }
+  }
+  (function(){
+    var cEl = document.getElementById('drKeeperCount');
+    if (cEl) cEl.addEventListener('input', function(){ this.dataset.touched = '1'; });
+  })();
   // Any control that changes the pick map resets claimed picks to the slot default.
   ['drTeams','drRounds','drOrder','drSlot'].forEach(function(idn){
     document.getElementById(idn).addEventListener('change', renderSetupCapital);

@@ -110,7 +110,20 @@ _DRAFT_ROOM_HTML = r"""
               <option value="startup">Startup (Dynasty)</option>
               <option value="rookie">Rookie (Dynasty)</option>
               <option value="redraft">Redraft</option>
+              <option value="keeper">Keeper</option>
             </select>
+          </div>
+          <!-- Keeper-only options; shown when Draft Type is Keeper. A keeper
+               draft is a redraft where each kept player costs that team the pick
+               at his keeper round, so those picks come off the board up front. -->
+          <div class="dr-field dr-keeper-only" style="display:none;"><span>Keepers</span>
+            <select id="drKeeperSource">
+              <option value="assistant">Use Keeper Assistant</option>
+              <option value="manual">Pick my own</option>
+            </select>
+          </div>
+          <div class="dr-field dr-keeper-only" style="display:none;"><span>Keepers / Team</span>
+            <input id="drKeeperCount" type="number" min="0" max="10" step="1" value="2">
           </div>
           <div class="dr-field"><span>QB Format</span>
             <select id="drSf">
@@ -482,6 +495,11 @@ _DRAFT_ROOM_HTML = r"""
   .dr-cell-mineflag { position: absolute; top: 2px; right: 5px; font-size: 8px; font-weight: 800;
     letter-spacing: .04em; color: var(--accent,#38bdf8); }
   .dr-cell-claimed .dr-cell-mineflag { color: var(--warning); }
+  /* Keeper: a pick spent before the draft, so it reads as settled rather than
+     as a live selection. */
+  .dr-cell-keeper { background: color-mix(in srgb, var(--win,#15803d) 10%, var(--card)); }
+  .dr-cell-keepflag { position: absolute; top: 2px; right: 5px; font-size: 8px; font-weight: 800;
+    letter-spacing: .04em; color: var(--win,#15803d); }
   /* Traded pick: who the pick was dealt to (shown on another team's seat). */
   .dr-cell-owner { position: absolute; top: 2px; right: 5px; font-size: 8px; font-weight: 800;
     letter-spacing: .04em; color: var(--warning);
