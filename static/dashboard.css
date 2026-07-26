@@ -22730,3 +22730,123 @@ button:disabled {
   .wrapped-slide, .wrapped-slide.seen { transform: none; transition: opacity .2s linear; }
   .wrapped-bar i { transition: none !important; }
 }
+
+/* ============================================
+   APP-LIKE INTERACTION FEEL (PWA)
+   ============================================
+   Touch feedback + cross-page transitions so the installed app responds like
+   a native one. All scoped so desktop/mouse and reduced-motion are unaffected. */
+
+/* No grey tap flash on interactive elements; we supply our own press state. */
+a, button, [role="button"], [role="tab"], summary, label,
+.pos-pill, .settings-toggle, .filter-settings-btn, select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Pressed feedback on touch only (pointer:coarse), so mouse hover is untouched.
+   A quick, small scale reads as a real button press. */
+@media (pointer: coarse) {
+  button, [role="button"], [role="tab"], .pos-pill, .settings-toggle {
+    transition: transform .08s ease;
+  }
+  button:active, [role="button"]:active, [role="tab"]:active,
+  .pos-pill:active, .settings-toggle:active {
+    transform: scale(0.97);
+  }
+}
+@media (pointer: coarse) and (prefers-reduced-motion: reduce) {
+  button:active, [role="button"]:active, [role="tab"]:active,
+  .pos-pill:active, .settings-toggle:active { transform: none; }
+}
+
+/* Cross-document view transitions: a soft fade between pages in supporting
+   browsers (Chrome / Android installed PWA). No effect where unsupported. */
+@view-transition { navigation: auto; }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; }
+}
+
+/* PWA "update installed" prompt: a tap-to-refresh pill pinned above the home
+   indicator. Sits on the safe-area inset so it clears the gesture bar. */
+.br-update-banner {
+  position: fixed;
+  left: 50%;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: var(--z-toast);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--accent, #1e3a5f);
+  border: 0;
+  border-radius: 999px;
+  padding: 11px 18px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
+  cursor: pointer;
+  animation: brUpdateIn .28s ease both;
+}
+.br-update-banner .br-update-cta {
+  font-weight: 600;
+  opacity: .82;
+  border-left: 1px solid rgba(255, 255, 255, .35);
+  padding-left: 10px;
+}
+@keyframes brUpdateIn {
+  from { opacity: 0; transform: translate(-50%, 12px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+@media (prefers-reduced-motion: reduce) { .br-update-banner { animation: none; } }
+
+/* ============================================
+   MOBILE BOTTOM TAB BAR (PWA)
+   ============================================
+   A thumb-reachable dock to the five core league sections. Hidden on desktop
+   (the top nav covers it) and only present on league pages. */
+.br-tabbar { display: none; }
+
+@media (max-width: 768px) {
+  .br-tabbar {
+    display: flex;
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: var(--z-chrome);
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    /* Clear the home indicator: the row is a fixed height, the inset is extra. */
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    box-shadow: 0 -1px 0 rgba(0, 0, 0, .04);
+  }
+  .br-tabbar-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    height: 56px;
+    text-decoration: none;
+    color: var(--text-muted);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: .01em;
+    -webkit-tap-highlight-color: transparent;
+    transition: color .12s ease, transform .08s ease;
+  }
+  .br-tabbar-item .nav-svg-icon { display: block; }
+  .br-tabbar-item.active { color: var(--accent); }
+  .br-tabbar-item:active { transform: scale(0.94); }
+  .br-tabbar-lbl { line-height: 1; }
+
+  /* Reserve space so the fixed bar never covers the last of the content. */
+  .has-tabbar { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
+}
+@media (max-width: 768px) and (prefers-reduced-motion: reduce) {
+  .br-tabbar-item { transition: color .12s ease; }
+  .br-tabbar-item:active { transform: none; }
+}
