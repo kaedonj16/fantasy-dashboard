@@ -1636,7 +1636,50 @@ _NAV_ICON_PATHS = {
                  "A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937"
                  "l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135"
                  "a.5.5 0 0 1-.963 0z'/><path d='M20 3v4'/><path d='M22 5h-4'/><path d='M4 17v2'/><path d='M5 18H3'/>"),
+    # Bottom tab-bar icons.
+    "home": "<path d='m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'/><path d='M9 22V12h6v10'/>",
+    "bars": ("<path d='M3 3v18h18'/><rect x='7' y='10' width='3' height='8' rx='1'/>"
+             "<rect x='12' y='6' width='3' height='12' rx='1'/><rect x='17' y='13' width='3' height='5' rx='1'/>"),
+    "swap": ("<path d='m17 2 4 4-4 4'/><path d='M3 11v-1a4 4 0 0 1 4-4h14'/>"
+             "<path d='m7 22-4-4 4-4'/><path d='M21 13v1a4 4 0 0 1-4 4H3'/>"),
+    "clipboard": ("<rect width='8' height='4' x='8' y='2' rx='1' ry='1'/>"
+                  "<path d='M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2'/>"
+                  "<path d='M12 11h4'/><path d='M12 16h4'/><path d='M8 11h.01'/><path d='M8 16h.01'/>"),
+    "users": ("<path d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'/><circle cx='9' cy='7' r='4'/>"
+              "<path d='M22 21v-2a4 4 0 0 0-3-3.87'/><path d='M16 3.13a4 4 0 0 1 0 7.75'/>"),
 }
+
+
+def _bottom_nav(active: str, league_id, platform, season) -> str:
+    """Mobile bottom tab bar for the five core league destinations.
+
+    A thumb-reachable dock is the change that most reads as "this is an app"
+    rather than a website. Only rendered inside a league (needs league context)
+    and only shown on phones (CSS); desktop keeps the top nav. Active state
+    reuses the same key build_nav() sets, so the top nav and the dock always
+    agree on where you are."""
+    if not (league_id and platform and season):
+        return ""
+    def _u(ep):
+        return url_for(ep, platform=platform, season=season, league_id=league_id)
+    tabs = [
+        ("Home",    "home",      _u("page_dashboard"),  {"dashboard"}),
+        ("Players", "bars",      _u("page_players"),    {"players"}),
+        ("Trades",  "swap",      _u("trade.page_trade"),
+            {"trade", "trade-suggestions", "trade-database", "trade-intel"}),
+        ("Draft",   "clipboard", _u("page_draft_room"), {"draft"}),
+        ("Teams",   "users",     _u("page_teams"),      {"teams"}),
+    ]
+    items = ""
+    for label, icon, href, keys in tabs:
+        on = active in keys
+        cls = "br-tabbar-item" + (" active" if on else "")
+        aria = " aria-current='page'" if on else ""
+        items += (
+            f"<a class='{cls}'{aria} href='{href}'>"
+            f"{_nav_icon(icon, size=22)}<span class='br-tabbar-lbl'>{label}</span></a>"
+        )
+    return f"<nav class='br-tabbar' aria-label='Primary'>{items}</nav>"
 
 
 def _nav_icon(name: str, cls: str = "", style: str = "", size: int = 16) -> str:
@@ -2608,6 +2651,11 @@ def render_page(
         )
 
     wrapped_body = f"<div class='page-shell' data-page='{active}'>{body_html}</div>"
+    # Mobile bottom tab bar (phones only, league pages only). Appended as a
+    # fixed sibling; CSS reserves space so it never overlaps content.
+    _bottom = _bottom_nav(active, _nav_lid, _nav_platform, _nav_season)
+    if _bottom:
+        wrapped_body = f"<div class='has-tabbar'>{wrapped_body}</div>{_bottom}"
 
     user_id = session.get("viewer_username")
     is_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform or "sleeper", season)
