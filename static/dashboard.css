@@ -22730,3 +22730,73 @@ button:disabled {
   .wrapped-slide, .wrapped-slide.seen { transform: none; transition: opacity .2s linear; }
   .wrapped-bar i { transition: none !important; }
 }
+
+/* ============================================
+   APP-LIKE INTERACTION FEEL (PWA)
+   ============================================
+   Touch feedback + cross-page transitions so the installed app responds like
+   a native one. All scoped so desktop/mouse and reduced-motion are unaffected. */
+
+/* No grey tap flash on interactive elements; we supply our own press state. */
+a, button, [role="button"], [role="tab"], summary, label,
+.pos-pill, .settings-toggle, .filter-settings-btn, select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Pressed feedback on touch only (pointer:coarse), so mouse hover is untouched.
+   A quick, small scale reads as a real button press. */
+@media (pointer: coarse) {
+  button, [role="button"], [role="tab"], .pos-pill, .settings-toggle {
+    transition: transform .08s ease;
+  }
+  button:active, [role="button"]:active, [role="tab"]:active,
+  .pos-pill:active, .settings-toggle:active {
+    transform: scale(0.97);
+  }
+}
+@media (pointer: coarse) and (prefers-reduced-motion: reduce) {
+  button:active, [role="button"]:active, [role="tab"]:active,
+  .pos-pill:active, .settings-toggle:active { transform: none; }
+}
+
+/* Cross-document view transitions: a soft fade between pages in supporting
+   browsers (Chrome / Android installed PWA). No effect where unsupported. */
+@view-transition { navigation: auto; }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; }
+}
+
+/* PWA "update installed" prompt: a tap-to-refresh pill pinned above the home
+   indicator. Sits on the safe-area inset so it clears the gesture bar. */
+.br-update-banner {
+  position: fixed;
+  left: 50%;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: var(--z-toast);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--accent, #1e3a5f);
+  border: 0;
+  border-radius: 999px;
+  padding: 11px 18px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
+  cursor: pointer;
+  animation: brUpdateIn .28s ease both;
+}
+.br-update-banner .br-update-cta {
+  font-weight: 600;
+  opacity: .82;
+  border-left: 1px solid rgba(255, 255, 255, .35);
+  padding-left: 10px;
+}
+@keyframes brUpdateIn {
+  from { opacity: 0; transform: translate(-50%, 12px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+@media (prefers-reduced-motion: reduce) { .br-update-banner { animation: none; } }

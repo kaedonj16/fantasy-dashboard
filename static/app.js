@@ -457,6 +457,41 @@ window.showToast = (function () {
 })();
 
 /**
+ * Light haptic feedback for a confirmed action (draft pick, trade submit).
+ * A no-op where the Vibration API is unavailable (notably iOS Safari), so it's
+ * always safe to call. Silent under reduced-motion.
+ */
+window.brHaptic = function (pattern) {
+  try {
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (navigator.vibrate) navigator.vibrate(pattern || 12);
+  } catch (_) { /* unsupported */ }
+};
+
+/**
+ * PWA update prompt. The service worker skipWaiting()s, so a new version takes
+ * control on its own; this just tells a long-lived session so the user can
+ * reload for the latest instead of running stale assets until they happen to
+ * relaunch. Keyed off controllerchange, guarded so the first-load claim (when
+ * there was no controller yet) doesn't fire a spurious prompt.
+ */
+(function initSwUpdatePrompt() {
+  if (!('serviceWorker' in navigator)) return;
+  var hadController = !!navigator.serviceWorker.controller;
+  var shown = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (!hadController || shown) return;   // initial claim, not an update
+    shown = true;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'br-update-banner';
+    b.innerHTML = '<span>New version ready</span><span class="br-update-cta">Tap to refresh</span>';
+    b.addEventListener('click', function () { window.location.reload(); });
+    document.body.appendChild(b);
+  });
+})();
+
+/**
  * Apply a fade-in animation to a container after async content loads.
  * Usage: fadeInCard(el)
  */

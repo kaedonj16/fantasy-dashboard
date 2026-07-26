@@ -4216,6 +4216,7 @@
     drafted[String(p.id)] = true;
     justPick = pn;
     state.current++;
+    if (window.brHaptic) window.brHaptic(14);   // tactile confirm on a pick
     skipFilledPicks();    // step over picks already spent on keepers
     paintCell(pn);        // fill just-picked cell (incremental)
     // Reveal the just-made pick with a pop + accent ring (CPU picks are ~700ms
