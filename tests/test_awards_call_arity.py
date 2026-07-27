@@ -11,9 +11,14 @@ import ast
 import inspect
 import os
 
-import pandas as pd
+import pytest
 
-from dashboard_services.awards import compute_awards_season
+# awards.py (and these tests) need pandas; the lint-only CI job installs just
+# pytest, so skip cleanly there like the other pandas-backed suites.
+pytest.importorskip("pandas")
+import pandas as pd  # noqa: E402
+
+from dashboard_services.awards import compute_awards_season  # noqa: E402
 
 _APP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app.py")
 
