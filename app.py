@@ -1244,12 +1244,24 @@ BASE_HTML = """
     </div>
     <script>
       (function(){{
+        var s=document.getElementById('appSplash');
         function hide(){{
-          var s=document.getElementById('appSplash');
           if(!s)return;
           s.classList.add('app-splash-hide');
           setTimeout(function(){{ if(s.parentNode) s.parentNode.removeChild(s); }},400);
         }}
+        // The white splash is for the cold PWA launch only. On any in-app
+        // navigation within the same session (e.g. tapping the mobile dock)
+        // remove it immediately so pages don't flash a white loading screen.
+        try {{
+          if (sessionStorage.getItem('br_warm')) {{
+            if (s && s.parentNode) s.parentNode.removeChild(s);
+            s = null;
+          }} else {{
+            sessionStorage.setItem('br_warm','1');
+          }}
+        }} catch(e){{}}
+        if(!s) return;
         // Reveal the (already server-rendered) content as soon as the DOM is
         // parsed — waiting for window 'load' gated LCP behind every image and
         // deferred script (measured LCP was ~14.6s on mobile).
@@ -1729,13 +1741,18 @@ _DOCK_LABELS = {
 def _nav_show_keeper(platform, league_id, season) -> bool:
     """Should the offseason dock surface a Keeper tab?
 
-    True for keeper/dynasty leagues that have an actual keeper decision to make;
-    False for redraft leagues and for true dynasty leagues (you keep your whole
-    roster, so there is no keeper step and the tool is hidden). Reads the cached
-    league settings, so it costs nothing extra at render time."""
+    Only for keeper leagues: Sleeper type 1 (keeper), or any league with a keeper
+    limit configured. Dynasty leagues (type 2) keep their whole roster, so there
+    is no keeper decision and the dock never shows Keeper for them even when
+    Sleeper reports a max_keepers value; pure redraft (type 0, no limit) does not
+    either. Reads the cached league settings, so it costs nothing extra to check
+    at render time. The Keeper Assistant still lives in the More sheet regardless."""
+    settings = {}
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
-        settings = (ctx.get("league") or {}).get("settings") or {}
+        settings = (ctx.get("league_settings")
+                    or (ctx.get("league") or {}).get("settings")
+                    or ctx.get("settings") or {})
     except Exception:
         settings = {}
     def _i(v):
@@ -1745,8 +1762,9 @@ def _nav_show_keeper(platform, league_id, season) -> bool:
             return None
     type_code = _i(settings.get("type"))
     max_keepers = _i(settings.get("max_keepers")) or 0
-    true_dynasty = (type_code == 2 and max_keepers == 0)
-    return ((type_code in (1, 2)) or max_keepers > 0) and not true_dynasty
+    if type_code == 2:               # dynasty: whole-roster keep, no dock tab
+        return False
+    return type_code == 1 or max_keepers > 0
 
 
 def _mobile_nav(active: str, league_id, platform, season) -> str:
@@ -1801,10 +1819,13 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         dock_keys = ["dashboard"] + middle
 
     items = ""
-    for key in dock_keys:
+    active_index = -1
+    for i, key in enumerate(dock_keys):
         icon, ep, suffix = _NAV_PAGE_META[key]
         label = _DOCK_LABELS.get(key, key.title())
         on = key == active_norm
+        if on:
+            active_index = i
         cls = "br-tabbar-item" + (" active" if on else "")
         aria = " aria-current='page'" if on else ""
         items += (
@@ -1816,7 +1837,16 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         "aria-label='More' aria-haspopup='true' aria-expanded='false'>"
         f"{_nav_icon('more', size=22)}<span class='br-tabbar-lbl'>More</span></button>"
     )
-    dock = f"<nav class='br-tabbar' aria-label='Primary'>{items}</nav>"
+    # Sliding active-pill indicator: --n tabs wide, sitting at slot --i. Rendered
+    # at the active slot so it rests correctly with no flash; app.js animates a
+    # change of --i on dock navigation so it glides between tabs.
+    n_tabs = len(dock_keys) + 1
+    ind_hidden = "" if active_index >= 0 else " data-hidden='1'"
+    indicator = (
+        f"<span class='br-tabbar-ind'{ind_hidden} aria-hidden='true' "
+        f"style='--n:{n_tabs};--i:{max(active_index, 0)}'></span>"
+    )
+    dock = f"<nav class='br-tabbar' aria-label='Primary'>{indicator}{items}</nav>"
 
     # ── More sheet ────────────────────────────────────────────────────────────
     def _sl(key, label, pro=False):
@@ -1830,16 +1860,20 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         )
 
     def _sec(title, rows):
-        return f"<h3 class='br-sheet-h'>{title}</h3>" + "".join(rows)
+        return (f"<h3 class='br-sheet-h'>{title}</h3>"
+                f"<div class='br-sheet-group'>{''.join(rows)}</div>")
 
-    # Search box is relocated into #brSheetFind by app.js (it keeps its handlers);
-    # Watchlist is a plain link to the full watchlist page (robust, no popover to
-    # reposition inside the sheet).
+    # Search is a row like the others; tapping it opens the full-screen search
+    # screen (app.js moves the real search widget into it). Watchlist is a plain
+    # link to the full watchlist page.
     find_html = (
         "<h3 class='br-sheet-h'>Find</h3>"
-        "<div class='br-sheet-mount' id='brSheetFind'></div>"
+        "<div class='br-sheet-group'>"
+        "<button type='button' class='br-sheet-link' id='brSheetSearchRow'>"
+        f"{_nav_icon('search', size=20)}<span>Search players</span></button>"
         f"<a class='br-sheet-link' href='/watchlist'>{_nav_icon('star', size=20)}"
         "<span>Watchlist</span></a>"
+        "</div>"
     )
 
     weekly_html = ""
@@ -1890,8 +1924,10 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         )
     account_html = (
         "<h3 class='br-sheet-h'>Account</h3>"
+        "<div class='br-sheet-group'>"
         f"{portfolio_link}"
         "<div class='br-sheet-mount' id='brSheetAccount'></div>"
+        "</div>"
     )
 
     sheet = (
@@ -1902,7 +1938,18 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         f"  {trades_html}{stats_html}{account_html}"
         "</nav>"
     )
-    return dock + sheet
+
+    # Full-screen search: the Search row opens this; app.js relocates the real
+    # player-search widget (input + results) into the mount so its handlers work.
+    search_screen = (
+        "<div class='br-search-screen' id='brSearchScreen' aria-hidden='true'>"
+        "  <div class='br-search-bar'>"
+        "    <div class='br-search-mount' id='brSearchMount'></div>"
+        "    <button type='button' class='br-search-cancel' id='brSearchCancel'>Cancel</button>"
+        "  </div>"
+        "</div>"
+    )
+    return dock + sheet + search_screen
 
 
 def _nav_icon(name: str, cls: str = "", style: str = "", size: int = 16) -> str:

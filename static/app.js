@@ -505,10 +505,10 @@ window.brHaptic = function (pattern) {
     var scrim = document.getElementById('brSheetScrim');
     if (!tab || !sheet || !scrim) return;   // not a league page
 
-    var findMount = document.getElementById('brSheetFind');
-    var acctMount = document.getElementById('brSheetAccount');
-    var search    = document.getElementById('navSearchWrapper');
-    var settings  = document.getElementById('settingsDropdown');
+    var searchMount = document.getElementById('brSearchMount');
+    var acctMount   = document.getElementById('brSheetAccount');
+    var search      = document.getElementById('navSearchWrapper');
+    var settings    = document.getElementById('settingsDropdown');
     // The changelog dropdown is toggled by the "Notifications" row inside the
     // settings menu; it lives in the (hidden-on-mobile) top nav, so relocate it
     // too or notifications would open into nothing.
@@ -521,7 +521,8 @@ window.brHaptic = function (pattern) {
     remember(search); remember(settings); remember(changelog);
 
     function moveIn() {
-      if (search && findMount && search.parentNode !== findMount) findMount.appendChild(search);
+      // Search lives in the full-screen search screen, not the sheet.
+      if (search && searchMount && search.parentNode !== searchMount) searchMount.appendChild(search);
       if (settings && acctMount && settings.parentNode !== acctMount) acctMount.appendChild(settings);
       if (changelog && acctMount && changelog.parentNode !== acctMount) acctMount.appendChild(changelog);
     }
@@ -554,14 +555,103 @@ window.brHaptic = function (pattern) {
 
     tab.addEventListener('click', function () { setOpen(!open); });
     scrim.addEventListener('click', function () { setOpen(false); });
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && open) setOpen(false);
+
+    // Sliding dock indicator. The pill rests at the active slot (server sets its
+    // --i). On dock navigation we remember the slot we left from; the next page
+    // starts the pill there and animates it to the new active slot, so it glides
+    // across the dock instead of jumping.
+    var dock = tab.closest('.br-tabbar');
+    var ind = dock && dock.querySelector('.br-tabbar-ind');
+    if (ind) {
+      var to = parseInt(ind.style.getPropertyValue('--i'), 10);
+      var from = parseInt(sessionStorage.getItem('br_dock_from'), 10);
+      try { sessionStorage.removeItem('br_dock_from'); } catch (_) {}
+      if (!isNaN(from) && from >= 0 && from !== to && !isNaN(to)) {
+        ind.style.transition = 'none';
+        ind.style.setProperty('--i', String(from));
+        ind.getBoundingClientRect();                       // commit the start position
+        requestAnimationFrame(function () {
+          ind.style.transition = '';
+          ind.style.setProperty('--i', String(to));         // glide to the active slot
+        });
+      }
+    }
+    if (dock) dock.addEventListener('click', function (e) {
+      if (!e.target.closest('a.br-tabbar-item') || !ind) return;
+      try { sessionStorage.setItem('br_dock_from', ind.style.getPropertyValue('--i').trim()); } catch (_) {}
     });
-    // Tapping a page link or a search result dismisses the sheet (the league
-    // switcher <select> and the dark-mode toggle deliberately keep it open).
+
+    // Full-screen search screen: the Search row opens it, Cancel/Escape close it,
+    // and picking a result (which opens the player modal) dismisses it too.
+    var searchScreen = document.getElementById('brSearchScreen');
+    function openSearch() {
+      if (!searchScreen) return;
+      searchScreen.classList.add('open');
+      searchScreen.setAttribute('aria-hidden', 'false');
+      setTimeout(function () {
+        var i = document.getElementById('navPlayerSearch');
+        if (i) i.focus();
+      }, 260);
+    }
+    function closeSearch() {
+      if (!searchScreen) return;
+      searchScreen.classList.remove('open');
+      searchScreen.setAttribute('aria-hidden', 'true');
+      var i = document.getElementById('navPlayerSearch');
+      if (i) i.blur();
+    }
+    var cancelBtn = document.getElementById('brSearchCancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', closeSearch);
+    if (searchScreen) searchScreen.addEventListener('click', function (e) {
+      if (e.target.closest('.nav-search-result')) closeSearch();
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape') return;
+      if (searchScreen && searchScreen.classList.contains('open')) { closeSearch(); return; }
+      if (open) setOpen(false);
+    });
+    // Tapping the Search row opens the search screen; other links and search
+    // results dismiss the sheet (the league switcher and dark-mode toggle keep
+    // it open).
     sheet.addEventListener('click', function (e) {
+      if (e.target.closest('#brSheetSearchRow')) { setOpen(false); openSearch(); return; }
       if (e.target.closest('.br-sheet-link, .nav-search-result')) setOpen(false);
     });
+
+    // Swipe down to dismiss. Only engages when the sheet is scrolled to the top
+    // and the finger moves down, so scrolling the list still works normally.
+    var tsY = 0, tDelta = 0, tDrag = false, tracking = false;
+    sheet.addEventListener('touchstart', function (e) {
+      if (!open || e.touches.length !== 1) { tracking = false; return; }
+      tracking = true; tsY = e.touches[0].clientY; tDelta = 0; tDrag = false;
+    }, { passive: true });
+    sheet.addEventListener('touchmove', function (e) {
+      if (!tracking) return;
+      var dy = e.touches[0].clientY - tsY;
+      if (!tDrag) {
+        if (dy > 6 && sheet.scrollTop <= 0) { tDrag = true; sheet.style.transition = 'none'; }
+        else if (dy < 0 || sheet.scrollTop > 0) { tracking = false; return; }
+        else return;
+      }
+      tDelta = Math.max(0, dy);
+      if (e.cancelable) e.preventDefault();     // stop the list from rubber-banding
+      sheet.style.transform = 'translateY(' + tDelta + 'px)';
+      if (scrim) scrim.style.opacity = String(Math.max(0, 1 - tDelta / 420));
+    }, { passive: false });
+    function endDrag() {
+      if (!tracking) return;
+      tracking = false;
+      if (tDrag) {
+        sheet.style.transition = '';
+        sheet.style.transform = '';
+        if (scrim) scrim.style.opacity = '';
+        if (tDelta > 90) setOpen(false);        // past the threshold: dismiss
+      }
+      tDrag = false; tDelta = 0;
+    }
+    sheet.addEventListener('touchend', endDrag);
+    sheet.addEventListener('touchcancel', endDrag);
   }
   if (document.readyState !== 'loading') setup();
   else document.addEventListener('DOMContentLoaded', setup);
