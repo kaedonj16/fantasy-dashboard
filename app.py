@@ -13140,10 +13140,14 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             '<div id="prList"></div>',
             f'<div id="prList">{_ssr_rows}</div>',
         )
-        # Hide the spinner and reveal the header/count for the pre-JS SSR view.
+        # Hide the skeleton and reveal the header/count for the pre-JS SSR view.
+        # Must match the current #prLoading markup exactly: it's a .sk-list
+        # skeleton (display:flex), so an inline display:none is required to beat
+        # the class — the old spinner-markup target silently no-op'd and left the
+        # skeleton stranded above the SSR table.
         body_html = body_html.replace(
-            '<div id="prLoading" style="text-align:center;padding:40px;color:var(--text-muted);">',
-            '<div id="prLoading" style="display:none;text-align:center;padding:40px;color:var(--text-muted);">',
+            '<div id="prLoading" class="sk-list" aria-hidden="true" style="margin-top:8px;">',
+            '<div id="prLoading" class="sk-list" aria-hidden="true" style="margin-top:8px;display:none;">',
         )
         body_html = body_html.replace(
             '<div id="prTableHeader" style="display:none;',
