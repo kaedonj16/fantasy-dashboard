@@ -9481,7 +9481,7 @@ select:focus {
   text-align: right;
 }
 
-git ad.page-sidebar {
+.page-sidebar {
   display: flex;
   flex-direction: column;
   position: sticky;
