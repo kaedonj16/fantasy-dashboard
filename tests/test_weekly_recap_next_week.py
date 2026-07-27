@@ -165,7 +165,10 @@ def test_playoff_week_uses_the_round_label_as_the_why():
     assert preview["game_of_the_week"]["why"] == "Semifinal"
 
 
-def test_render_shows_why_badge_winbar_and_availability():
+def test_render_shows_matchup_availability_and_blurb():
+    # The card is a banner header + matchup + AI blurb + availability chips.
+    # (The standalone WHY badge was removed in the #695 polish pass; the reason
+    # now lives in the blurb, so this asserts the surviving structure.)
     df = pd.DataFrame([_fin_row(1, 1, "1", 100, 90), _fin_row(1, 1, "2", 90, 100)])
     storylines = {"1": _storyline(1, "Alpha", 1), "2": _storyline(2, "Bravo", 2)}
     b = [_starter("b1", "Bijan", nfl="ATL")]
@@ -174,13 +177,12 @@ def test_render_shows_why_badge_winbar_and_availability():
     preview = _build_next_week_preview(
         df, storylines, selected_week=6, playoff_start=14, playoff_teams=6, num_teams=10, nctx=nctx,
     )
-    import html as _html
     out = _render_next_week_html(preview, "Top two teams in the league, going at it.")
-    assert "GAME OF THE WEEK" in out
-    assert _html.escape(preview["game_of_the_week"]["why"]) in out   # the WHY badge text
-    assert "Bijan (OUT)" in out
-    assert "availability as of Tue Nov 04" in out
-    assert "Top two teams in the league, going at it." in out
+    assert "Game of the Week" in out                      # banner title
+    assert "Alpha" in out and "Bravo" in out              # the matchup sides
+    assert "Bijan (OUT)" in out                           # availability chip
+    assert "availability as of Tue Nov 04" in out         # freshness stamp
+    assert "Top two teams in the league, going at it." in out   # AI blurb
 
 
 def test_no_matchups_yields_no_preview():
