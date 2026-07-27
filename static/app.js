@@ -492,6 +492,82 @@ window.brHaptic = function (pattern) {
 })();
 
 /**
+ * Mobile "More" sheet. On phones the bottom dock is the primary nav; the More
+ * tab opens this sheet, which holds every other page plus the player search box
+ * and the settings menu (league switcher, dark mode, sign out). Those two widgets
+ * are relocated here from the top bar so their existing handlers keep working;
+ * on desktop, where the top nav is shown, we move them back.
+ */
+(function initMoreSheet() {
+  function setup() {
+    var tab   = document.getElementById('brMoreTab');
+    var sheet = document.getElementById('brMoreSheet');
+    var scrim = document.getElementById('brSheetScrim');
+    if (!tab || !sheet || !scrim) return;   // not a league page
+
+    var findMount = document.getElementById('brSheetFind');
+    var acctMount = document.getElementById('brSheetAccount');
+    var search    = document.getElementById('navSearchWrapper');
+    var settings  = document.getElementById('settingsDropdown');
+    // The changelog dropdown is toggled by the "Notifications" row inside the
+    // settings menu; it lives in the (hidden-on-mobile) top nav, so relocate it
+    // too or notifications would open into nothing.
+    var changelog = document.getElementById('changelogDropdown');
+
+    // Remember each relocated node's original home so it can go back on desktop.
+    function remember(node) {
+      if (node && !node._brHome) node._brHome = { parent: node.parentNode, next: node.nextSibling };
+    }
+    remember(search); remember(settings); remember(changelog);
+
+    function moveIn() {
+      if (search && findMount && search.parentNode !== findMount) findMount.appendChild(search);
+      if (settings && acctMount && settings.parentNode !== acctMount) acctMount.appendChild(settings);
+      if (changelog && acctMount && changelog.parentNode !== acctMount) acctMount.appendChild(changelog);
+    }
+    function restore() {
+      [search, settings, changelog].forEach(function (n) {
+        if (n && n._brHome && n.parentNode !== n._brHome.parent) {
+          n._brHome.parent.insertBefore(n, n._brHome.next);
+        }
+      });
+      if (settings) settings.style.display = 'none';    // back to its gear-toggled default
+      if (changelog) changelog.style.display = 'none';
+    }
+
+    var mq = window.matchMedia('(max-width: 768px)');
+    function apply() { if (mq.matches) moveIn(); else restore(); }
+    apply();
+    if (mq.addEventListener) mq.addEventListener('change', apply);
+    else if (mq.addListener) mq.addListener(apply);
+
+    var open = false;
+    function setOpen(o) {
+      open = o;
+      sheet.classList.toggle('open', o);
+      scrim.classList.toggle('open', o);
+      sheet.setAttribute('aria-hidden', o ? 'false' : 'true');
+      tab.setAttribute('aria-expanded', o ? 'true' : 'false');
+      tab.classList.toggle('active', o);
+      if (o && window.brHaptic) window.brHaptic(10);
+    }
+
+    tab.addEventListener('click', function () { setOpen(!open); });
+    scrim.addEventListener('click', function () { setOpen(false); });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && open) setOpen(false);
+    });
+    // Tapping a page link or a search result dismisses the sheet (the league
+    // switcher <select> and the dark-mode toggle deliberately keep it open).
+    sheet.addEventListener('click', function (e) {
+      if (e.target.closest('.br-sheet-link, .nav-search-result')) setOpen(false);
+    });
+  }
+  if (document.readyState !== 'loading') setup();
+  else document.addEventListener('DOMContentLoaded', setup);
+})();
+
+/**
  * Apply a fade-in animation to a container after async content loads.
  * Usage: fadeInCard(el)
  */
