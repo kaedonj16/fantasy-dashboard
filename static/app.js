@@ -556,6 +556,15 @@ window.brHaptic = function (pattern) {
     tab.addEventListener('click', function () { setOpen(!open); });
     scrim.addEventListener('click', function () { setOpen(false); });
 
+    // Tapping a dock destination flags the next page to slide its content in,
+    // so dock navigation feels like a native push. Navigation proceeds normally.
+    var dock = tab.closest('.br-tabbar');
+    if (dock) dock.addEventListener('click', function (e) {
+      if (e.target.closest('a.br-tabbar-item')) {
+        try { sessionStorage.setItem('br_nav_slide', '1'); } catch (_) {}
+      }
+    });
+
     // Full-screen search screen: the Search row opens it, Cancel/Escape close it,
     // and picking a result (which opens the player modal) dismisses it too.
     var searchScreen = document.getElementById('brSearchScreen');

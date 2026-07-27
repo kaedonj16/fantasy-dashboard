@@ -1244,12 +1244,30 @@ BASE_HTML = """
     </div>
     <script>
       (function(){{
+        var s=document.getElementById('appSplash');
         function hide(){{
-          var s=document.getElementById('appSplash');
           if(!s)return;
           s.classList.add('app-splash-hide');
           setTimeout(function(){{ if(s.parentNode) s.parentNode.removeChild(s); }},400);
         }}
+        // The white splash is for the cold PWA launch only. On any in-app
+        // navigation within the same session (e.g. tapping the mobile dock)
+        // remove it immediately so pages don't flash a white loading screen.
+        // A dock tap also sets br_nav_slide so the next page slides its content
+        // in; apply that class now, before content paints, to avoid a jump.
+        try {{
+          if (sessionStorage.getItem('br_nav_slide')) {{
+            sessionStorage.removeItem('br_nav_slide');
+            document.documentElement.classList.add('br-slide');
+          }}
+          if (sessionStorage.getItem('br_warm')) {{
+            if (s && s.parentNode) s.parentNode.removeChild(s);
+            s = null;
+          }} else {{
+            sessionStorage.setItem('br_warm','1');
+          }}
+        }} catch(e){{}}
+        if(!s) return;
         // Reveal the (already server-rendered) content as soon as the DOM is
         // parsed — waiting for window 'load' gated LCP behind every image and
         // deferred script (measured LCP was ~14.6s on mobile).

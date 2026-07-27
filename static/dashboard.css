@@ -22823,6 +22823,7 @@ a, button, [role="button"], [role="tab"], summary, label,
     box-shadow: 0 -1px 0 rgba(0, 0, 0, .04);
   }
   .br-tabbar-item {
+    position: relative;
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -22838,26 +22839,39 @@ a, button, [role="button"], [role="tab"], summary, label,
     -webkit-tap-highlight-color: transparent;
     transition: color .12s ease, transform .08s ease;
   }
-  /* The icon sits in a lozenge that fills with the accent tint when active, so
-     the current tab reads at a glance rather than just changing color. The
-     lozenge box is always present (transparent when inactive) so nothing shifts. */
-  .br-tabbar-item .nav-svg-icon {
-    display: block; box-sizing: content-box;
-    padding: 3px 14px; border-radius: 999px;
-    transition: background .16s ease, color .12s ease;
+  .br-tabbar-item .nav-svg-icon { display: block; transition: color .12s ease; }
+  /* Active pill sits behind the whole tab (icon and label), tinted with the
+     accent so the current tab reads at a glance. color-mix adapts to the theme
+     (a translucent navy in light, cyan in dark); accent-soft is the fallback. */
+  .br-tabbar-item.active::before {
+    content: ""; position: absolute; z-index: 0;
+    top: 6px; bottom: 6px; left: 10px; right: 10px;
+    border-radius: 16px;
+    background: var(--accent-soft);
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
   }
+  .br-tabbar-item > * { position: relative; z-index: 1; }
   .br-tabbar-item.active { color: var(--accent); }
-  .br-tabbar-item.active .nav-svg-icon { background: var(--accent-soft); }
   .br-tabbar-item.active .br-tabbar-lbl { font-weight: 700; }
   .br-tabbar-item:active { transform: scale(0.94); }
   .br-tabbar-lbl { line-height: 1; }
 
   /* Reserve space so the fixed bar never covers the last of the content. */
   .has-tabbar { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
+
+  /* Tapping a dock tab slides the next page's content in (a flag is set on tap
+     and read on the next page's first paint), so navigation feels like a native
+     push instead of a hard cut. */
+  html.br-slide .has-tabbar { animation: brDockSlide .28s cubic-bezier(.32, .72, 0, 1) both; }
+}
+@keyframes brDockSlide {
+  from { transform: translateX(24px); opacity: 0; }
+  to   { transform: none; opacity: 1; }
 }
 @media (max-width: 768px) and (prefers-reduced-motion: reduce) {
   .br-tabbar-item { transition: color .12s ease; }
   .br-tabbar-item:active { transform: none; }
+  html.br-slide .has-tabbar { animation: none; }
 }
 
 /* ============================================
