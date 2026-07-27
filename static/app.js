@@ -687,14 +687,21 @@ window.brHaptic = function (pattern) {
   function sameOrigin(u) {
     try { return new URL(u, location.href).origin === location.origin; } catch (e) { return false; }
   }
-  // DOMParser/innerHTML never runs <script>; re-create inline ones so page data
-  // bootstraps still execute after the swap.
-  function reexecInlineScripts(container) {
+  // External page scripts that are written to be safe to re-run on a swap (they
+  // rebind to fresh page elements and guard any document-level listeners). Any
+  // page whose page-root pulls in a script NOT on this list is full-navigated.
+  var SOFT_OK_SCRIPTS = ['teams.js', 'rankings.js'];
+  function scriptReRunnable(src) {
+    return SOFT_OK_SCRIPTS.some(function (n) { return src.indexOf('/' + n) !== -1; });
+  }
+  // DOMParser/innerHTML never runs <script>; re-create each one (inline and the
+  // allow-listed external ones) so page data bootstraps and page modules execute
+  // after the swap. Order is preserved, so an inline cfg runs before its module.
+  function reexecScripts(container) {
     container.querySelectorAll('script').forEach(function (old) {
-      if (old.src) return;
       var s = document.createElement('script');
-      if (old.type) s.type = old.type;
-      s.textContent = old.textContent;
+      for (var i = 0; i < old.attributes.length; i++) s.setAttribute(old.attributes[i].name, old.attributes[i].value);
+      if (!old.src) s.textContent = old.textContent;
       old.parentNode.replaceChild(s, old);
     });
   }
@@ -723,15 +730,18 @@ window.brHaptic = function (pattern) {
         var doc = new DOMParser().parseFromString(html, 'text/html');
         var newRoot = doc.getElementById('page-root');
         if (!newRoot) throw new Error('no page-root');
-        // Pages that load their own external scripts can't be re-orchestrated by
-        // a swap; let them navigate normally.
-        if (newRoot.querySelector('script[src]')) throw new Error('has external scripts');
+        // Full-navigate any page that pulls in an external script we don't know
+        // is safe to re-run on a swap (draft room, graphs, ...).
+        var ext = newRoot.querySelectorAll('script[src]');
+        for (var i = 0; i < ext.length; i++) {
+          if (!scriptReRunnable(ext[i].getAttribute('src') || '')) throw new Error('unhandled external script');
+        }
 
         // Evacuate the relocated widgets so the swap doesn't destroy them.
         if (window.brEvacuateMobileNav) window.brEvacuateMobileNav();
         curRoot.innerHTML = newRoot.innerHTML;
         if (newRoot.dataset.premium != null) curRoot.dataset.premium = newRoot.dataset.premium;
-        reexecInlineScripts(curRoot);
+        reexecScripts(curRoot);
         if (doc.title) document.title = doc.title;
         if (!isPop) history.pushState({ brSoft: 1 }, '', url);
         window.scrollTo(0, 0);
