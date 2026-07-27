@@ -298,6 +298,16 @@
   min-height: 0;
 }
 
+/* The dock wrapper wraps every page's content. When #page-root is a flex row
+   (e.g. the dashboard's .overview-layout), a plain block child would collapse to
+   its content width and sit left-aligned, leaving a large blank gap on wide
+   screens. Let it grow to fill the row so the page's own layout (e.g. the
+   os-layout grid's flexible centre column) spans the full width as intended. */
+.has-tabbar {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 #page-root, .page-shell {
   min-width: 0;
 }
@@ -558,8 +568,11 @@ ul {
 
 .os-layout {
   width: 100%;
-  max-width: 100%;
-  margin: 0;
+  /* Cap the width and centre it on wide screens: filling edge-to-edge stretched
+     the centre column (and its rows) too far, and leaving it uncapped left it
+     pinned to the left with a big gap on the right. */
+  max-width: 1500px;
+  margin: 0 auto;
   display: grid;
   grid-template-columns: 340px minmax(0, 1fr) 340px;
   gap: 16px;
