@@ -829,10 +829,7 @@ ul {
   top: 100%;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--card);            /* fallback where color-mix is unsupported */
-  background: var(--chrome-glass);
-  -webkit-backdrop-filter: var(--chrome-blur);
-  backdrop-filter: var(--chrome-blur);
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.15);
@@ -1208,9 +1205,6 @@ ul {
   width: 264px;
   max-width: calc(100vw - 24px);
   background: var(--card);
-  background: var(--chrome-glass);
-  -webkit-backdrop-filter: var(--chrome-blur);
-  backdrop-filter: var(--chrome-blur);
   border: 0.5px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.15);
@@ -17411,9 +17405,6 @@ tr.team-clickable {
   max-height: 320px;
   overflow-y: auto;
   background: var(--card);
-  background: var(--chrome-glass);
-  -webkit-backdrop-filter: var(--chrome-blur);
-  backdrop-filter: var(--chrome-blur);
   border: 0.5px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(15,23,42,.15);
