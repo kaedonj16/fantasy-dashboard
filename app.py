@@ -2132,6 +2132,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         pills_html = ''.join(pills)
         home_pills_container = (
             "<div class='nav-pills-container'>"
+            "  <span class='nav-pill-ind' aria-hidden='true'></span>"
             f"  {pills_html}"
             "</div>"
         )
@@ -2399,6 +2400,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     pills_html = ''.join(nav_pills)
     pills_container = (
         "<div class='nav-pills-container'>"
+        "  <span class='nav-pill-ind' aria-hidden='true'></span>"
         f"  {pills_html}"
         "</div>"
     )
@@ -13377,7 +13379,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
       </div>
       <div class="card-body">
         <!-- Position Filter -->
-        <div style="display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap;">
+        <div class="breakout-filters">
           <button class="breakout-filter-btn active" data-position="ALL" onclick="filterBreakouts('ALL')">All Positions</button>
           <button class="breakout-filter-btn" data-position="QB" onclick="filterBreakouts('QB')">QB</button>
           <button class="breakout-filter-btn" data-position="RB" onclick="filterBreakouts('RB')">RB</button>

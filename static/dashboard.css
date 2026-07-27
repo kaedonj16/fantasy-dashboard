@@ -682,24 +682,36 @@ ul {
    NAVIGATION
    ============================================ */
 .nav-pill {
+  /* Quiet, ghosted pills: only text by default. The active item is marked by
+     the gliding .nav-pill-ind pill behind it (mirrors the mobile dock), so the
+     pills themselves carry no fill and the bar reads calm instead of a row of
+     colored chips. position/z-index keep the label above the sliding pill. */
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-height: 36px;
-  padding: 6px 12px;
-  border-radius: 999px;
+  padding: 6px 14px;
+  border-radius: 12px;
   text-decoration: none;
   font-size: 13px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-weight: 700;
-  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 600;
+  transition: background 0.15s ease, color 0.15s ease;
   white-space: nowrap;
 }
 
 .nav-pill.active {
-  background: var(--accent);
-  color: #ffffff;
+  background: transparent;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.nav-pill:not(.active):hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
 }
 
 .nav-pill.logout-pill {
@@ -711,9 +723,29 @@ ul {
   background: #b91c1c;
 }
 
-.nav-pill:hover {
-  transform: translateY(-1px);
+/* The gliding active-pill indicator, positioned by JS behind the active pill
+   and animated between pills on navigation. color-mix gives the same tinted
+   fill as the dock; --accent-soft is the fallback for older engines. */
+.nav-pill-ind {
+  position: absolute;
+  left: 0;
+  /* Vertically centered in the (center-aligned) row via CSS, so only the stable
+     horizontal position + width come from JS — the row's height can settle after
+     first paint without ever knocking the indicator off vertically. */
+  top: 50%;
+  z-index: 0;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform .28s cubic-bezier(.32, .72, 0, 1),
+              width .28s cubic-bezier(.32, .72, 0, 1),
+              height .28s cubic-bezier(.32, .72, 0, 1),
+              opacity .2s ease;
 }
+@media (max-width: 768px) { .nav-pill-ind { display: none; } }
+@media (prefers-reduced-motion: reduce) { .nav-pill-ind { transition: none; } }
 
 /* ---- Players nav dropdown ---- */
 .nav-pill-dropdown-wrapper {
@@ -1051,6 +1083,13 @@ ul {
 }
 
 /* Breakout Candidates Page */
+.breakout-filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
 .breakout-filter-btn {
   padding: 8px 16px;
   border-radius: 10px;
@@ -1059,15 +1098,25 @@ ul {
   color: var(--text);
   font-size: 13px;
   font-weight: 500;
+  white-space: nowrap;   /* labels like "All Positions" never wrap/clip */
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 @media (max-width: 768px) {
+  /* A single-line, edge-to-edge scrollable chip strip instead of squeezing five
+     equal-width segments (which clipped the long "All Positions" label). */
+  .breakout-filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;              /* Firefox: hide the scrollbar */
+    padding-bottom: 2px;
+  }
+  .breakout-filters::-webkit-scrollbar { display: none; }
   .breakout-filter-btn {
+    flex: 0 0 auto;                     /* size to content, no equal-width squeeze */
     padding: 10px 16px;
-    flex: 1;
-    min-width: 60px;
     text-align: center;
   }
 }
@@ -1449,6 +1498,18 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
   z-index: 100;
 }
 
+/* Frosted, translucent app-bar: content scrolls softly under it like a native
+   PWA. Falls back to the opaque background above where backdrop-filter or
+   color-mix isn't supported. */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .top-nav {
+    background: color-mix(in srgb, var(--bg) 78%, transparent);
+    -webkit-backdrop-filter: saturate(180%) blur(18px);
+    backdrop-filter: saturate(180%) blur(18px);
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  }
+}
+
 .nav-left {
   display: flex;
   align-items: center;
@@ -1490,11 +1551,12 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
 }
 
 .nav-pills-container {
+  position: relative;   /* anchors the absolutely-positioned .nav-pill-ind */
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
-  align-items: flex-end;
+  align-items: center;  /* center pills so the CSS-centered indicator aligns regardless of row height */
 }
 
 .nav-pills-bottom {

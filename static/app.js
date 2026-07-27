@@ -9152,6 +9152,127 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Generic nav dropdown toggle (works for Players, Stats, or any future dropdown)
+/**
+ * Sliding active indicator for the desktop top-nav pills — the .nav-pill-ind
+ * pill glides to sit behind the active item, mirroring the mobile dock. The top
+ * bar is identical on every page, so we remember where the indicator last sat
+ * (sessionStorage) and glide it from there to the new active pill on load; on
+ * the very first visit it just appears under the active pill with no glide.
+ */
+(function initNavIndicator() {
+  var MQ = window.matchMedia('(min-width: 769px)');
+
+  function els() {
+    var container = document.querySelector('.top-nav .nav-pills-container');
+    if (!container) return null;
+    return {
+      container: container,
+      ind: container.querySelector('.nav-pill-ind'),
+      active: container.querySelector('.nav-pill.active'),
+    };
+  }
+  // Position + size relative to the container (getBoundingClientRect sidesteps
+  // offsetParent nesting from the dropdown wrappers). `vy` is the active pill's
+  // vertical-center offset from the container's center: it stays 0 for a normal
+  // single row (so the base top:50% centering — robust to the row settling after
+  // first paint — is used), and only becomes non-zero when the pills wrap, to
+  // drop the indicator onto the active pill's row.
+  function rectOf(el, container) {
+    var er = el.getBoundingClientRect(), cr = container.getBoundingClientRect();
+    // Only offset vertically when the pills actually wrapped (row is taller than
+    // one pill). For a single row the pill is centered in the row, so CSS's
+    // top:50% centering is exact — and, unlike a measured offset, it can't be
+    // thrown off by a transient reflow during a cold page load.
+    var wrapped = cr.height > er.height * 1.6;
+    return {
+      x: Math.round(er.left - cr.left),
+      w: Math.round(er.width),
+      h: Math.round(er.height),
+      vy: wrapped ? Math.round((er.top + er.height / 2) - (cr.top + cr.height / 2)) : 0,
+    };
+  }
+  var glideUntil = 0;    // timestamp through which a glide is animating
+  var revealed = false;  // opacity is only shown once we've settled on a real spot
+  // Position/size only — opacity is controlled separately by reveal(), so the
+  // ResizeObserver can quietly re-snap the indicator while it's still hidden
+  // during the cold-load settle without flashing it at a transient position.
+  function place(ind, r, animate) {
+    ind.style.transition = animate ? '' : 'none';
+    ind.style.transform = 'translate(' + r.x + 'px, calc(-50% + ' + r.vy + 'px))';
+    ind.style.width = r.w + 'px';
+    ind.style.height = r.h + 'px';
+    if (revealed) ind.style.opacity = '1';
+    if (animate) glideUntil = Date.now() + 340;
+    else { void ind.offsetWidth; ind.style.transition = ''; }   // commit, then re-enable
+  }
+  function reveal(ind) { revealed = true; ind.style.opacity = '1'; }
+
+  function eq(a, b) { return a && b && a.x === b.x && a.w === b.w && a.h === b.h && a.vy === b.vy; }
+
+  function setup() {
+    var e = els();
+    if (!e || !e.ind) return;
+    if (!e.active || !MQ.matches) { e.ind.style.opacity = '0'; return; }
+    var to = rectOf(e.active, e.container);
+    var from = null;
+    try { from = JSON.parse(sessionStorage.getItem('br_nav_ind') || 'null'); } catch (_) {}
+    if (from && !eq(from, to)) {
+      reveal(e.ind);
+      place(e.ind, from, false);                                        // start where we left off
+      requestAnimationFrame(function () { place(e.ind, to, true); });   // glide to the new pill
+      try { sessionStorage.setItem('br_nav_ind', JSON.stringify(to)); } catch (_) {}
+    } else if (from) {
+      reveal(e.ind);
+      place(e.ind, to, false);                                          // same slot, warm nav: show now
+      try { sessionStorage.setItem('br_nav_ind', JSON.stringify(to)); } catch (_) {}
+    } else {
+      // First load of the session: the utility icons/logo can rewrap the pills to
+      // a second row for a while until they finish loading, and that can outlast
+      // even the load event. Fade the indicator in only once the nav layout has
+      // been quiet (no reflow) for 250ms, so it never lands on a transient wrap.
+      var quiet, ro;
+      var doReveal = function () {
+        var x = els();
+        if (!x || !x.ind || !x.active || !MQ.matches) return;
+        var r = rectOf(x.active, x.container);
+        reveal(x.ind);
+        place(x.ind, r, false);
+        try { sessionStorage.setItem('br_nav_ind', JSON.stringify(r)); } catch (_) {}
+        if (ro) ro.disconnect();
+      };
+      var arm = function () { clearTimeout(quiet); quiet = setTimeout(doReveal, 250); };
+      if (window.ResizeObserver) { ro = new ResizeObserver(arm); ro.observe(e.container); }
+      arm();   // covers the already-stable case (no further reflows)
+    }
+  }
+
+  function reposition() {
+    if (Date.now() < glideUntil) return;   // never stomp an in-flight glide
+    var e = els();
+    if (!e || !e.ind) return;
+    if (!e.active || !MQ.matches) { e.ind.style.opacity = '0'; return; }
+    var to = rectOf(e.active, e.container);
+    place(e.ind, to, false);
+    try { sessionStorage.setItem('br_nav_ind', JSON.stringify(to)); } catch (_) {}
+  }
+
+  // Attach a ResizeObserver EARLY (before the cold-load reflow) so any later
+  // settle of the nav's side columns — which can transiently rewrap the pills —
+  // re-snaps the indicator. It fires on the row's own size changes, never on the
+  // indicator's transform, so it doesn't interrupt a warm-load glide; its initial
+  // synchronous callback is skipped so it doesn't stomp the first placement.
+  function attachRO() {
+    var c = document.querySelector('.top-nav .nav-pills-container');
+    if (!c || !window.ResizeObserver) return;
+    new ResizeObserver(function () { reposition(); }).observe(c);   // reposition self-guards against glides
+  }
+  function boot() { attachRO(); setup(); }
+  if (document.readyState !== 'loading') boot();
+  else document.addEventListener('DOMContentLoaded', boot);
+  var rt;
+  window.addEventListener('resize', function () { clearTimeout(rt); rt = setTimeout(reposition, 100); });
+})();
+
 function toggleNavDropdown(e, wrapperId) {
   e.stopPropagation();
   const wrapper = document.getElementById(wrapperId);
