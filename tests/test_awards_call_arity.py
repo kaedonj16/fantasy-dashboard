@@ -11,6 +11,8 @@ import ast
 import inspect
 import os
 
+import pandas as pd
+
 from dashboard_services.awards import compute_awards_season
 
 _APP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app.py")
@@ -39,3 +41,14 @@ def test_dashboard_calls_awards_with_enough_args():
             f"args but the function requires {n_required} — the dashboard would "
             f"500 with a TypeError"
         )
+
+
+def test_awards_empty_offseason_df_returns_no_data():
+    """Offseason (no finalized games) -> empty df; must not raise on idxmax()."""
+    cols = ["owner", "week", "points", "points_against"]
+    assert compute_awards_season(pd.DataFrame(columns=cols), {}, "L", "sleeper", "2026", [], []) == {}
+    # Missing the points column entirely.
+    assert compute_awards_season(pd.DataFrame({"owner": ["a"]}), {}, "L", "sleeper", "2026", [], []) == {}
+    # A row exists but points are all NaN (nothing finalized).
+    nan_df = pd.DataFrame({"owner": ["a"], "week": [1], "points": [float("nan")], "points_against": [0]})
+    assert compute_awards_season(nan_df, {}, "L", "sleeper", "2026", [], []) == {}

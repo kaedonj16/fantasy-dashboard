@@ -115,6 +115,14 @@ def compute_awards_season(df_weekly: pd.DataFrame, players_map: dict, league_id:
     """
     d = {}
 
+    # No finalized games yet (offseason / week 0) means there's nothing to award.
+    # idxmax() on the empty (or all-NaN) points column raises, so bail early to a
+    # "No data" awards card instead of 500'ing the whole dashboard.
+    if (df_weekly is None or df_weekly.empty
+            or "points" not in df_weekly.columns
+            or not df_weekly["points"].notna().any()):
+        return {}
+
     # Single-week extremes
     idx_hi = df_weekly["points"].idxmax()
     idx_lo = df_weekly["points"].idxmin()
