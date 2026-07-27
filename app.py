@@ -1770,7 +1770,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         active_norm = _tab
 
     nfl_state = get_nfl_state() or {}
-    offseason = ((nfl_state.get("season_type") or "").lower() == "off") and (
+    offseason = ((nfl_state.get("season_type") or "").lower() in ("off", "pre")) and (
         int(nfl_state.get("season") or datetime.now().year) == int(season or 0)
     )
     draft_ended = has_draft_ended(league_id, platform, season)
@@ -1955,7 +1955,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         active = _tab_param
 
     nfl_state = get_nfl_state() or {}
-    offseason_mode = ((nfl_state.get("season_type") or "").lower() == "off") and (
+    offseason_mode = ((nfl_state.get("season_type") or "").lower() in ("off", "pre")) and (
             int(nfl_state.get("season") or datetime.now().year) == int(season or 0)
     )
     # Exposed for client code (e.g. the player-modal Redzone tab, which hides in
@@ -3106,7 +3106,10 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     # IMPORTANT:
     # Offseason mode should only apply to the current upcoming season,
     # not to old historical seasons.
-    offseason_mode = (season == current_season and season_type == "off")
+    # Preseason ("pre", ~August) has no regular-season games either, so treat it
+    # like the offseason — show the offseason hub, not an empty in-season view
+    # (which also has no finalized data to render).
+    offseason_mode = (season == current_season and season_type in ("off", "pre"))
     mode = "offseason" if offseason_mode else "in_season"
 
     if offseason_mode:

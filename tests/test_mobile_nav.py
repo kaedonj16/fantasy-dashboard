@@ -103,6 +103,19 @@ def test_dynasty_offseason_dock_has_no_keeper(monkeypatch):
     assert "Keeper" not in labels
 
 
+def test_preseason_is_treated_as_offseason(monkeypatch):
+    """Preseason ("pre", ~August) has no fantasy games, so it gets the same
+    offseason dock as "off" — not the empty in-season layout."""
+    import app, re
+    monkeypatch.setattr(app, "get_league_ctx_from_cache",
+                        lambda *a, **k: {"league_settings": {"type": 2, "max_keepers": 20}})
+    monkeypatch.setattr(app, "get_nfl_state", lambda: {"season": "2026", "season_type": "pre"})
+    monkeypatch.setattr(app, "has_draft_ended", lambda *a, **k: False)
+    with app.app.test_request_context("/x"):
+        labels = re.findall(r"br-tabbar-lbl'>([^<]+)<", app._mobile_nav("dashboard", "L", "sleeper", 2026))
+    assert labels == ["Home", "Draft", "Rankings", "Teams", "More"]
+
+
 @pytest.mark.parametrize("settings,shown", [
     ({"type": 1, "max_keepers": 2}, True),   # keeper league
     ({"type": 0, "max_keepers": 3}, True),   # redraft with a keeper limit
