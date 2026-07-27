@@ -69,6 +69,22 @@ def build_trade_calculator_body(
         breakouts_link_class = "otc-view-all-link"
         players_url = f"/{platform_val}/{season_val}/{league_val}/players"
 
+    # Breakouts header: for logged-in users the section title itself is the link
+    # to the breakouts page (no redundant "View All" button). Guests instead get
+    # a distinct sign-in prompt, so keep the plain title + that CTA for them.
+    if is_guest:
+        breakouts_header_html = (
+            '<div style="display:flex;justify-content:space-between;align-items:center;">'
+            '<div class="otc-mini-section-title">Breakouts</div>'
+            f'<a href="{breakouts_url}" class="{breakouts_link_class}">{breakouts_link_text}</a>'
+            '</div>'
+        )
+    else:
+        breakouts_header_html = (
+            f'<a href="{breakouts_url}" class="otc-mini-section-title otc-mini-section-title-link">'
+            'Breakouts <span class="otc-title-arrow" aria-hidden="true">&rarr;</span></a>'
+        )
+
     # ----------------------------------------------------------------
     # Pre-compute all conditional HTML blocks outside the f-string
     # to avoid nested triple-quote SyntaxErrors
@@ -1028,10 +1044,7 @@ def build_trade_calculator_body(
 
             <div id="moversTabContent" class="otc-tab-content is-active">
               <div class="otc-mini-section">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                  <div class="otc-mini-section-title">Top Risers</div>
-                  <a href="/top-movers" class="otc-view-all-link">View All &rarr;</a>
-                </div>
+                <a href="/top-movers" class="otc-mini-section-title otc-mini-section-title-link">Top Risers <span class="otc-title-arrow" aria-hidden="true">&rarr;</span></a>
                 <div id="otcRisersList" class="otc-mini-list">
                   <div class="otc-movers-empty">Loading movers...</div>
                 </div>
@@ -1047,10 +1060,7 @@ def build_trade_calculator_body(
 
             <div id="breakoutsTabContent" class="otc-tab-content">
               <div class="otc-mini-section">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                  <div class="otc-mini-section-title">Breakouts</div>
-                  <a href="{breakouts_url}" class="{breakouts_link_class}">{breakouts_link_text}</a>
-                </div>
+                {breakouts_header_html}
                 <div id="otcBreakoutsList" class="otc-mini-list">
                   <div class="otc-movers-empty">Loading breakouts...</div>
                 </div>
@@ -1072,10 +1082,9 @@ def build_trade_calculator_body(
             <div class="otc-side-head">
               <div class="otc-side-title-row">
                 <div>
-                  <h2 class="otc-side-title">Player Values</h2>
+                  <h2 class="otc-side-title"><a href="{players_url}" class="otc-side-title-link">Player Values <span class="otc-title-arrow" aria-hidden="true">&rarr;</span></a></h2>
                   <div class="otc-side-sub">Filter by position</div>
                 </div>
-                <a href="{players_url}" class="otc-view-all-link">View All Players →</a>
               </div>
             </div>
 

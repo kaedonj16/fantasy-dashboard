@@ -3673,6 +3673,34 @@ strong + .player-badge,
   letter-spacing: 0.04em;
 }
 
+/* Section titles that link to their full page (no separate 'View all' button).
+   The title keeps its look; an accent arrow cues that it's clickable. */
+.otc-mini-section-title-link,
+.otc-side-title-link {
+  color: inherit;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+}
+.otc-mini-section-title-link:hover,
+.otc-mini-section-title-link:focus-visible,
+.otc-side-title-link:hover,
+.otc-side-title-link:focus-visible {
+  color: var(--accent);
+}
+.otc-title-arrow {
+  color: var(--accent);
+  font-weight: 700;
+  transition: transform .15s ease;
+}
+.otc-mini-section-title-link:hover .otc-title-arrow,
+.otc-mini-section-title-link:focus-visible .otc-title-arrow,
+.otc-side-title-link:hover .otc-title-arrow,
+.otc-side-title-link:focus-visible .otc-title-arrow {
+  transform: translateX(3px);
+}
+
 .otc-mini-sub {
   margin-top: 4px;
   font-size: 10px;
