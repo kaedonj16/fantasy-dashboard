@@ -871,10 +871,14 @@ window.brHaptic = function (pattern) {
   // Prospects, Trade, Compare, Metrics — loads its own scripts, so we let the
   // browser navigate to it natively (a single load) rather than fetch it here
   // only to bail to a full load anyway.
+  // Pages whose inline scripts initialise on DOMContentLoaded (waivers,
+  // graphs) or run a self-contained bootstrap (schedule) don't survive an
+  // in-place swap — DOMContentLoaded has already fired, so their data never
+  // loads and the page "struggles to load". Like Draft/Keeper/etc. they load
+  // their own scripts, so let the browser navigate to them natively.
   var SOFT_NAV_PAGES = {
-    dashboard: 1, standings: 1, teams: 1, activity: 1, weekly: 1, graphs: 1,
+    dashboard: 1, standings: 1, teams: 1, activity: 1, weekly: 1,
     recap: 1, awards: 1, history: 1, commissioner: 1, players: 1, breakouts: 1,
-    waivers: 1, schedule: 1,
   };
   function softNavigable(href) {
     var path;
