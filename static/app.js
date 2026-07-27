@@ -502,67 +502,83 @@ window.brHaptic = function (pattern) {
  * on desktop, where the top nav is shown, we move them back.
  */
 (function initMoreSheet() {
+  var docBound = false, mqBound = false;
+  var mq = window.matchMedia('(max-width: 768px)');
+
+  function remember(node) {
+    if (node && !node._brHome) node._brHome = { parent: node.parentNode, next: node.nextSibling };
+  }
+  // Relocate the shared widgets (search box, settings menu, changelog) into the
+  // sheet / search screen on mobile, or back to the top nav on desktop. Queried
+  // fresh so it still works after a soft-nav swaps in a brand-new dock + sheet.
+  function relocate() {
+    var searchMount = document.getElementById('brSearchMount');
+    var acctMount   = document.getElementById('brSheetAccount');
+    var search      = document.getElementById('navSearchWrapper');
+    var settings    = document.getElementById('settingsDropdown');
+    var changelog   = document.getElementById('changelogDropdown');
+    remember(search); remember(settings); remember(changelog);
+    if (mq.matches) {
+      if (search && searchMount && search.parentNode !== searchMount) searchMount.appendChild(search);
+      if (settings && acctMount && settings.parentNode !== acctMount) acctMount.appendChild(settings);
+      if (changelog && acctMount && changelog.parentNode !== acctMount) acctMount.appendChild(changelog);
+    } else {
+      [search, settings, changelog].forEach(function (n) {
+        if (n && n._brHome && n.parentNode !== n._brHome.parent) n._brHome.parent.insertBefore(n, n._brHome.next);
+      });
+      if (settings) settings.style.display = 'none';
+      if (changelog) changelog.style.display = 'none';
+    }
+  }
+  // Move the relocated widgets back to the top nav BEFORE a soft-nav swaps out
+  // #page-root, so they aren't destroyed with the old sheet; relocate() puts
+  // them back into the new sheet afterward.
+  window.brEvacuateMobileNav = function () {
+    ['navSearchWrapper', 'settingsDropdown', 'changelogDropdown'].forEach(function (id) {
+      var n = document.getElementById(id);
+      if (n && n._brHome && n.parentNode !== n._brHome.parent) n._brHome.parent.insertBefore(n, n._brHome.next);
+    });
+  };
+
+  function sheetOpen() { var s = document.getElementById('brMoreSheet'); return !!(s && s.classList.contains('open')); }
+  function setOpen(o) {
+    var sheet = document.getElementById('brMoreSheet');
+    var scrim = document.getElementById('brSheetScrim');
+    var tab   = document.getElementById('brMoreTab');
+    if (!sheet) return;
+    sheet.classList.toggle('open', o);
+    if (scrim) scrim.classList.toggle('open', o);
+    sheet.setAttribute('aria-hidden', o ? 'false' : 'true');
+    if (tab) { tab.setAttribute('aria-expanded', o ? 'true' : 'false'); tab.classList.toggle('active', o); }
+    if (o && window.brHaptic) window.brHaptic(10);
+  }
+  function openSearch() {
+    var ss = document.getElementById('brSearchScreen'); if (!ss) return;
+    ss.classList.add('open'); ss.setAttribute('aria-hidden', 'false');
+    setTimeout(function () { var i = document.getElementById('navPlayerSearch'); if (i) i.focus(); }, 260);
+  }
+  function closeSearch() {
+    var ss = document.getElementById('brSearchScreen'); if (!ss) return;
+    ss.classList.remove('open'); ss.setAttribute('aria-hidden', 'true');
+    var i = document.getElementById('navPlayerSearch'); if (i) i.blur();
+  }
+
+  // Re-runnable: safe to call again after a content swap. Element-level handlers
+  // bind to the fresh (post-swap) nodes; document/media listeners bind once and
+  // re-query their targets at event time so they never go stale.
   function setup() {
     var tab   = document.getElementById('brMoreTab');
     var sheet = document.getElementById('brMoreSheet');
     var scrim = document.getElementById('brSheetScrim');
     if (!tab || !sheet || !scrim) return;   // not a league page
+    relocate();
 
-    var searchMount = document.getElementById('brSearchMount');
-    var acctMount   = document.getElementById('brSheetAccount');
-    var search      = document.getElementById('navSearchWrapper');
-    var settings    = document.getElementById('settingsDropdown');
-    // The changelog dropdown is toggled by the "Notifications" row inside the
-    // settings menu; it lives in the (hidden-on-mobile) top nav, so relocate it
-    // too or notifications would open into nothing.
-    var changelog = document.getElementById('changelogDropdown');
-
-    // Remember each relocated node's original home so it can go back on desktop.
-    function remember(node) {
-      if (node && !node._brHome) node._brHome = { parent: node.parentNode, next: node.nextSibling };
-    }
-    remember(search); remember(settings); remember(changelog);
-
-    function moveIn() {
-      // Search lives in the full-screen search screen, not the sheet.
-      if (search && searchMount && search.parentNode !== searchMount) searchMount.appendChild(search);
-      if (settings && acctMount && settings.parentNode !== acctMount) acctMount.appendChild(settings);
-      if (changelog && acctMount && changelog.parentNode !== acctMount) acctMount.appendChild(changelog);
-    }
-    function restore() {
-      [search, settings, changelog].forEach(function (n) {
-        if (n && n._brHome && n.parentNode !== n._brHome.parent) {
-          n._brHome.parent.insertBefore(n, n._brHome.next);
-        }
-      });
-      if (settings) settings.style.display = 'none';    // back to its gear-toggled default
-      if (changelog) changelog.style.display = 'none';
-    }
-
-    var mq = window.matchMedia('(max-width: 768px)');
-    function apply() { if (mq.matches) moveIn(); else restore(); }
-    apply();
-    if (mq.addEventListener) mq.addEventListener('change', apply);
-    else if (mq.addListener) mq.addListener(apply);
-
-    var open = false;
-    function setOpen(o) {
-      open = o;
-      sheet.classList.toggle('open', o);
-      scrim.classList.toggle('open', o);
-      sheet.setAttribute('aria-hidden', o ? 'false' : 'true');
-      tab.setAttribute('aria-expanded', o ? 'true' : 'false');
-      tab.classList.toggle('active', o);
-      if (o && window.brHaptic) window.brHaptic(10);
-    }
-
-    tab.addEventListener('click', function () { setOpen(!open); });
+    tab.addEventListener('click', function () { setOpen(!sheetOpen()); });
     scrim.addEventListener('click', function () { setOpen(false); });
 
-    // Sliding dock indicator. The pill rests at the active slot (server sets its
-    // --i). On dock navigation we remember the slot we left from; the next page
-    // starts the pill there and animates it to the new active slot, so it glides
-    // across the dock instead of jumping.
+    // Sliding dock indicator: rest at the active slot (server --i); animate from
+    // the slot we left (br_dock_from), set on the outgoing tap. Works for both a
+    // full page load and a soft-nav (the new dock is re-inited here either way).
     var dock = tab.closest('.br-tabbar');
     var ind = dock && dock.querySelector('.br-tabbar-ind');
     if (ind) {
@@ -572,10 +588,10 @@ window.brHaptic = function (pattern) {
       if (!isNaN(from) && from >= 0 && from !== to && !isNaN(to)) {
         ind.style.transition = 'none';
         ind.style.setProperty('--i', String(from));
-        ind.getBoundingClientRect();                       // commit the start position
+        ind.getBoundingClientRect();
         requestAnimationFrame(function () {
           ind.style.transition = '';
-          ind.style.setProperty('--i', String(to));         // glide to the active slot
+          ind.style.setProperty('--i', String(to));
         });
       }
     }
@@ -584,49 +600,22 @@ window.brHaptic = function (pattern) {
       try { sessionStorage.setItem('br_dock_from', ind.style.getPropertyValue('--i').trim()); } catch (_) {}
     });
 
-    // Full-screen search screen: the Search row opens it, Cancel/Escape close it,
-    // and picking a result (which opens the player modal) dismisses it too.
-    var searchScreen = document.getElementById('brSearchScreen');
-    function openSearch() {
-      if (!searchScreen) return;
-      searchScreen.classList.add('open');
-      searchScreen.setAttribute('aria-hidden', 'false');
-      setTimeout(function () {
-        var i = document.getElementById('navPlayerSearch');
-        if (i) i.focus();
-      }, 260);
-    }
-    function closeSearch() {
-      if (!searchScreen) return;
-      searchScreen.classList.remove('open');
-      searchScreen.setAttribute('aria-hidden', 'true');
-      var i = document.getElementById('navPlayerSearch');
-      if (i) i.blur();
-    }
     var cancelBtn = document.getElementById('brSearchCancel');
     if (cancelBtn) cancelBtn.addEventListener('click', closeSearch);
+    var searchScreen = document.getElementById('brSearchScreen');
     if (searchScreen) searchScreen.addEventListener('click', function (e) {
       if (e.target.closest('.nav-search-result')) closeSearch();
     });
 
-    document.addEventListener('keydown', function (e) {
-      if (e.key !== 'Escape') return;
-      if (searchScreen && searchScreen.classList.contains('open')) { closeSearch(); return; }
-      if (open) setOpen(false);
-    });
-    // Tapping the Search row opens the search screen; other links and search
-    // results dismiss the sheet (the league switcher and dark-mode toggle keep
-    // it open).
     sheet.addEventListener('click', function (e) {
       if (e.target.closest('#brSheetSearchRow')) { setOpen(false); openSearch(); return; }
       if (e.target.closest('.br-sheet-link, .nav-search-result')) setOpen(false);
     });
 
-    // Swipe down to dismiss. Only engages when the sheet is scrolled to the top
-    // and the finger moves down, so scrolling the list still works normally.
+    // Swipe down to dismiss.
     var tsY = 0, tDelta = 0, tDrag = false, tracking = false;
     sheet.addEventListener('touchstart', function (e) {
-      if (!open || e.touches.length !== 1) { tracking = false; return; }
+      if (!sheetOpen() || e.touches.length !== 1) { tracking = false; return; }
       tracking = true; tsY = e.touches[0].clientY; tDelta = 0; tDrag = false;
     }, { passive: true });
     sheet.addEventListener('touchmove', function (e) {
@@ -638,7 +627,7 @@ window.brHaptic = function (pattern) {
         else return;
       }
       tDelta = Math.max(0, dy);
-      if (e.cancelable) e.preventDefault();     // stop the list from rubber-banding
+      if (e.cancelable) e.preventDefault();
       sheet.style.transform = 'translateY(' + tDelta + 'px)';
       if (scrim) scrim.style.opacity = String(Math.max(0, 1 - tDelta / 420));
     }, { passive: false });
@@ -646,18 +635,128 @@ window.brHaptic = function (pattern) {
       if (!tracking) return;
       tracking = false;
       if (tDrag) {
-        sheet.style.transition = '';
-        sheet.style.transform = '';
+        sheet.style.transition = ''; sheet.style.transform = '';
         if (scrim) scrim.style.opacity = '';
-        if (tDelta > 90) setOpen(false);        // past the threshold: dismiss
+        if (tDelta > 90) setOpen(false);
       }
       tDrag = false; tDelta = 0;
     }
     sheet.addEventListener('touchend', endDrag);
     sheet.addEventListener('touchcancel', endDrag);
+
+    if (!docBound) {
+      document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape') return;
+        var ss = document.getElementById('brSearchScreen');
+        if (ss && ss.classList.contains('open')) { closeSearch(); return; }
+        if (sheetOpen()) setOpen(false);
+      });
+      docBound = true;
+    }
+    if (!mqBound) {
+      if (mq.addEventListener) mq.addEventListener('change', relocate);
+      else if (mq.addListener) mq.addListener(relocate);
+      mqBound = true;
+    }
   }
-  if (document.readyState !== 'loading') setup();
-  else document.addEventListener('DOMContentLoaded', setup);
+
+  // Exposed so initPageRoot runs it on load and re-runs it after a soft-nav /
+  // refresh swap (the dock lives inside #page-root and is replaced on swap).
+  // initPageRoot fires on DOMContentLoaded, so no separate self-invoke here (a
+  // second call on the same nodes would double-bind the element handlers).
+  window.brInitMobileNav = setup;
+})();
+
+/**
+ * SPA-style soft navigation for the mobile dock and More-sheet page links.
+ *
+ * Fetches the next page, swaps #page-root, and updates history without a full
+ * document load, so switching pages is seamless (no browser blank between
+ * documents) - the same swap-and-initPageRoot mechanism the Refresh button uses.
+ *
+ * It only ever soft-navigates pages it can handle: if the target page pulls in
+ * its own <script src> (Draft Room, Rankings, Graphs, Redzone, Trade), or
+ * anything unexpected happens, it falls back to a normal full navigation. So it
+ * can never leave a page half-initialized - worst case is today's behavior.
+ * Mobile only; desktop keeps normal navigation.
+ */
+(function initSoftNav() {
+  if (!window.history || !window.fetch || !window.DOMParser) return;
+  var mq = window.matchMedia('(max-width: 768px)');
+
+  function sameOrigin(u) {
+    try { return new URL(u, location.href).origin === location.origin; } catch (e) { return false; }
+  }
+  // DOMParser/innerHTML never runs <script>; re-create inline ones so page data
+  // bootstraps still execute after the swap.
+  function reexecInlineScripts(container) {
+    container.querySelectorAll('script').forEach(function (old) {
+      if (old.src) return;
+      var s = document.createElement('script');
+      if (old.type) s.type = old.type;
+      s.textContent = old.textContent;
+      old.parentNode.replaceChild(s, old);
+    });
+  }
+
+  var token = 0;
+  function softNav(url, isPop) {
+    var mine = ++token;
+    var curRoot = document.getElementById('page-root');
+    if (!curRoot) { location.href = url; return; }
+    fetch(url, { headers: { 'X-Soft-Nav': '1' }, credentials: 'same-origin' })
+      .then(function (resp) {
+        var ct = resp.headers.get('content-type') || '';
+        if (!resp.ok || ct.indexOf('text/html') === -1) throw new Error('bad response');
+        // A redirect to a different path (login, etc.): hand off to the browser.
+        if (resp.redirected) {
+          try {
+            if (new URL(resp.url).pathname !== new URL(url, location.href).pathname) {
+              location.href = resp.url; throw new Error('redirected');
+            }
+          } catch (e) { location.href = url; throw e; }
+        }
+        return resp.text();
+      })
+      .then(function (html) {
+        if (mine !== token) return;   // a newer tap superseded this one
+        var doc = new DOMParser().parseFromString(html, 'text/html');
+        var newRoot = doc.getElementById('page-root');
+        if (!newRoot) throw new Error('no page-root');
+        // Pages that load their own external scripts can't be re-orchestrated by
+        // a swap; let them navigate normally.
+        if (newRoot.querySelector('script[src]')) throw new Error('has external scripts');
+
+        // Evacuate the relocated widgets so the swap doesn't destroy them.
+        if (window.brEvacuateMobileNav) window.brEvacuateMobileNav();
+        curRoot.innerHTML = newRoot.innerHTML;
+        if (newRoot.dataset.premium != null) curRoot.dataset.premium = newRoot.dataset.premium;
+        reexecInlineScripts(curRoot);
+        if (doc.title) document.title = doc.title;
+        if (!isPop) history.pushState({ brSoft: 1 }, '', url);
+        window.scrollTo(0, 0);
+        if (window.initPageRoot) window.initPageRoot(curRoot);
+      })
+      .catch(function () {
+        if (mine === token) location.href = url;   // safe fallback: full navigation
+      });
+  }
+
+  document.addEventListener('click', function (e) {
+    if (!mq.matches) return;                                   // mobile only
+    if (e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    var a = e.target.closest('a.br-tabbar-item, .br-sheet a.br-sheet-link');
+    if (!a) return;
+    var href = a.getAttribute('href');
+    if (!href || href.charAt(0) === '#' || a.target === '_blank' || !sameOrigin(href)) return;
+    if (new URL(href, location.href).href === location.href) { e.preventDefault(); return; }
+    e.preventDefault();
+    softNav(href, false);
+  }, true);   // capture: run before the nav-overlay / other click handlers
+
+  window.addEventListener('popstate', function () {
+    if (mq.matches) softNav(location.href, true);
+  });
 })();
 
 /**
@@ -8045,6 +8144,10 @@ window.initPageRoot = function initPageRoot(root = document) {
 
   // Full watchlist page (fires on in-app nav too).
   if (typeof initWatchlistPage === 'function' && root.querySelector('#wlPageTable')) initWatchlistPage();
+
+  // (Re)bind the mobile dock / More sheet / search. The dock lives inside
+  // #page-root, so a soft-nav or refresh swap replaces it and it must re-init.
+  if (typeof window.brInitMobileNav === 'function') window.brInitMobileNav();
 };
 
 function showDashboardLoadingOverlay(text, subtext) {
