@@ -1253,13 +1253,7 @@ BASE_HTML = """
         // The white splash is for the cold PWA launch only. On any in-app
         // navigation within the same session (e.g. tapping the mobile dock)
         // remove it immediately so pages don't flash a white loading screen.
-        // A dock tap also sets br_nav_slide so the next page slides its content
-        // in; apply that class now, before content paints, to avoid a jump.
         try {{
-          if (sessionStorage.getItem('br_nav_slide')) {{
-            sessionStorage.removeItem('br_nav_slide');
-            document.documentElement.classList.add('br-slide');
-          }}
           if (sessionStorage.getItem('br_warm')) {{
             if (s && s.parentNode) s.parentNode.removeChild(s);
             s = null;
@@ -1825,10 +1819,13 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         dock_keys = ["dashboard"] + middle
 
     items = ""
-    for key in dock_keys:
+    active_index = -1
+    for i, key in enumerate(dock_keys):
         icon, ep, suffix = _NAV_PAGE_META[key]
         label = _DOCK_LABELS.get(key, key.title())
         on = key == active_norm
+        if on:
+            active_index = i
         cls = "br-tabbar-item" + (" active" if on else "")
         aria = " aria-current='page'" if on else ""
         items += (
@@ -1840,7 +1837,16 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         "aria-label='More' aria-haspopup='true' aria-expanded='false'>"
         f"{_nav_icon('more', size=22)}<span class='br-tabbar-lbl'>More</span></button>"
     )
-    dock = f"<nav class='br-tabbar' aria-label='Primary'>{items}</nav>"
+    # Sliding active-pill indicator: --n tabs wide, sitting at slot --i. Rendered
+    # at the active slot so it rests correctly with no flash; app.js animates a
+    # change of --i on dock navigation so it glides between tabs.
+    n_tabs = len(dock_keys) + 1
+    ind_hidden = "" if active_index >= 0 else " data-hidden='1'"
+    indicator = (
+        f"<span class='br-tabbar-ind'{ind_hidden} aria-hidden='true' "
+        f"style='--n:{n_tabs};--i:{max(active_index, 0)}'></span>"
+    )
+    dock = f"<nav class='br-tabbar' aria-label='Primary'>{indicator}{items}</nav>"
 
     # ── More sheet ────────────────────────────────────────────────────────────
     def _sl(key, label, pro=False):

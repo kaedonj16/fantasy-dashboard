@@ -556,13 +556,29 @@ window.brHaptic = function (pattern) {
     tab.addEventListener('click', function () { setOpen(!open); });
     scrim.addEventListener('click', function () { setOpen(false); });
 
-    // Tapping a dock destination flags the next page to slide its content in,
-    // so dock navigation feels like a native push. Navigation proceeds normally.
+    // Sliding dock indicator. The pill rests at the active slot (server sets its
+    // --i). On dock navigation we remember the slot we left from; the next page
+    // starts the pill there and animates it to the new active slot, so it glides
+    // across the dock instead of jumping.
     var dock = tab.closest('.br-tabbar');
-    if (dock) dock.addEventListener('click', function (e) {
-      if (e.target.closest('a.br-tabbar-item')) {
-        try { sessionStorage.setItem('br_nav_slide', '1'); } catch (_) {}
+    var ind = dock && dock.querySelector('.br-tabbar-ind');
+    if (ind) {
+      var to = parseInt(ind.style.getPropertyValue('--i'), 10);
+      var from = parseInt(sessionStorage.getItem('br_dock_from'), 10);
+      try { sessionStorage.removeItem('br_dock_from'); } catch (_) {}
+      if (!isNaN(from) && from >= 0 && from !== to && !isNaN(to)) {
+        ind.style.transition = 'none';
+        ind.style.setProperty('--i', String(from));
+        ind.getBoundingClientRect();                       // commit the start position
+        requestAnimationFrame(function () {
+          ind.style.transition = '';
+          ind.style.setProperty('--i', String(to));         // glide to the active slot
+        });
       }
+    }
+    if (dock) dock.addEventListener('click', function (e) {
+      if (!e.target.closest('a.br-tabbar-item') || !ind) return;
+      try { sessionStorage.setItem('br_dock_from', ind.style.getPropertyValue('--i').trim()); } catch (_) {}
     });
 
     // Full-screen search screen: the Search row opens it, Cancel/Escape close it,
