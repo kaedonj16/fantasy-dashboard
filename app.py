@@ -63,7 +63,7 @@ from dashboard_services.api import (
 )
 from dashboard_services.awards import compute_awards_season, render_awards_section
 from dashboard_services.changelog import CHANGELOG
-from dashboard_services.injuries import build_injury_report, render_injury_accordion
+from dashboard_services.injuries import build_injury_report, render_injury_accordion, render_injury_watch
 from dashboard_services.matchups import (
     compute_team_projections_for_weeks,
     compute_win_prob,
@@ -8878,7 +8878,7 @@ def build_activity_body(ctx: dict) -> str:
 
     injury_html = ""
     if injury_df is not None and not injury_df.empty:
-        injury_html = render_injury_accordion(injury_df)
+        injury_html = render_injury_watch(injury_df)
     else:
         injury_html = (
             "<div class='card'>"
@@ -8982,6 +8982,23 @@ def build_activity_body(ctx: dict) -> str:
       .act-pulse details[open] .act-caret {{ transform: rotate(180deg); }}
       .act-pulse .act-trade-body {{ padding: 2px 10px 12px; }}
       @media (prefers-reduced-motion: reduce) {{ .act-pulse .act-caret {{ transition: none; }} }}
+
+      /* Injury watch (rail) */
+      .act-injwatch-list {{ display: flex; flex-direction: column; padding: 4px 6px 8px; }}
+      .act-injrow {{ display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 8px; }}
+      .act-injrow + .act-injrow {{ border-top: 1px solid var(--border); }}
+      .act-injrow-l {{ min-width: 0; }}
+      .act-injteam {{ font-size: 12.5px; font-weight: 700; color: var(--text); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+      .act-injmeter {{ height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; margin-top: 6px; }}
+      .act-injmeter i {{ display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--orange, #f59e0b), var(--loss, #b91c1c)); }}
+      .act-injrow-r {{ display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }}
+      .act-injdots {{ display: inline-flex; gap: 3px; flex-wrap: wrap; max-width: 72px; justify-content: flex-end; }}
+      .act-injdot {{ width: 7px; height: 7px; border-radius: 50%; display: block; background: var(--text-muted); }}
+      .act-injdot.ir {{ background: var(--loss, #b91c1c); }}
+      .act-injdot.out {{ background: var(--orange, #f59e0b); }}
+      .act-injdot.dbt {{ background: #d97706; }}
+      .act-injdot.q {{ background: var(--rookie, #3b82f6); }}
+      .act-injcount {{ font-size: 12px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; min-width: 16px; text-align: right; }}
     </style>
     <div class="page-layout activity-page act-pulse">
       <main class="page-main act-pulse-main">
