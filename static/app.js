@@ -593,6 +593,40 @@ window.brHaptic = function (pattern) {
       if (e.target.closest('#brSheetSearchRow')) { setOpen(false); openSearch(); return; }
       if (e.target.closest('.br-sheet-link, .nav-search-result')) setOpen(false);
     });
+
+    // Swipe down to dismiss. Only engages when the sheet is scrolled to the top
+    // and the finger moves down, so scrolling the list still works normally.
+    var tsY = 0, tDelta = 0, tDrag = false, tracking = false;
+    sheet.addEventListener('touchstart', function (e) {
+      if (!open || e.touches.length !== 1) { tracking = false; return; }
+      tracking = true; tsY = e.touches[0].clientY; tDelta = 0; tDrag = false;
+    }, { passive: true });
+    sheet.addEventListener('touchmove', function (e) {
+      if (!tracking) return;
+      var dy = e.touches[0].clientY - tsY;
+      if (!tDrag) {
+        if (dy > 6 && sheet.scrollTop <= 0) { tDrag = true; sheet.style.transition = 'none'; }
+        else if (dy < 0 || sheet.scrollTop > 0) { tracking = false; return; }
+        else return;
+      }
+      tDelta = Math.max(0, dy);
+      if (e.cancelable) e.preventDefault();     // stop the list from rubber-banding
+      sheet.style.transform = 'translateY(' + tDelta + 'px)';
+      if (scrim) scrim.style.opacity = String(Math.max(0, 1 - tDelta / 420));
+    }, { passive: false });
+    function endDrag() {
+      if (!tracking) return;
+      tracking = false;
+      if (tDrag) {
+        sheet.style.transition = '';
+        sheet.style.transform = '';
+        if (scrim) scrim.style.opacity = '';
+        if (tDelta > 90) setOpen(false);        // past the threshold: dismiss
+      }
+      tDrag = false; tDelta = 0;
+    }
+    sheet.addEventListener('touchend', endDrag);
+    sheet.addEventListener('touchcancel', endDrag);
   }
   if (document.readyState !== 'loading') setup();
   else document.addEventListener('DOMContentLoaded', setup);
