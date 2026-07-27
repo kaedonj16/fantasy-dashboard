@@ -772,7 +772,7 @@ Use the h2h and season_weeks data where it adds something real to the story - re
 Next week's game of the week (already picked for you). The "why" field is the single biggest reason it was chosen (playoff stakes, a projected coin-flip, two top teams, a rivalry rematch, a missing star, or momentum); "reasons" lists the supporting angles; out_a/out_b/maybe_a/maybe_b/bye_a/bye_b are missing, questionable, and on-bye starters with their projections:
 {json.dumps(payload.get('next_week_preview'))}
 
-For "looking_ahead": if next_week_preview is null, return an empty string. Otherwise write 2-3 sentences on that game_of_the_week in the SAME low-key group-chat voice as the recap paragraphs - like you're texting the group about the game you're most looking forward to next week. A separate badge already spells out the official reason, so do NOT write an explainer opener like "It's the game of the week because..." or "This is the game of the week..." - just talk about the matchup the way a friend would. The reason it matters (the "why" - playoff stakes, a coin-flip, two top teams, a rivalry rematch, a missing star, momentum) should still come through, but woven in naturally, not announced. Lead with whatever's actually interesting. Ground it in the records, ranks, streaks, h2h, or the specific missing starter (name + status), but do NOT restate every number. Only mention the other games if it's natural.
+For "looking_ahead": if next_week_preview is null, return an empty string. Otherwise write 2-3 sentences on that game_of_the_week in the SAME low-key group-chat voice as the recap paragraphs - like you're texting the group about the game you're most looking forward to next week. Don't open with a clunky explainer like "It's the game of the week because..." or "This is the game of the week..." - just talk about the matchup the way a friend would. But the reason it matters (the "why" - playoff stakes, a coin-flip, two top teams, a rivalry rematch, a missing star, momentum) MUST come through, woven in naturally rather than announced - this blurb is the only place that reason is spelled out for the reader. Lead with whatever's actually interesting. Ground it in the records, ranks, streaks, h2h, or the specific missing starter (name + status), but do NOT restate every number. Only mention the other games if it's natural.
 """.strip()
 
     resp = client.responses.create(
@@ -812,11 +812,11 @@ def _render_recap_html(result: dict) -> str:
 
 
 def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
-    """Render the 'Game of the Week' look-ahead card: the eyebrow, a prominent
-    WHY badge (the reason it was chosen), the matchup with a projected win-prob
-    bar, the AI blurb, availability chips (out / questionable / bye) with a
-    freshness stamp, and an also-worth-watching row. Returns '' when there's
-    nothing to show."""
+    """Render the 'Game of the Week' look-ahead card: a banner header, the
+    matchup (with a projected win-prob bar when projections are available), the
+    AI blurb (which carries the reason it was picked), availability chips (out /
+    questionable / bye) with a freshness stamp, and an also-worth-watching row.
+    Returns '' when there's nothing to show."""
     if not preview or not preview.get("game_of_the_week"):
         return ""
 
