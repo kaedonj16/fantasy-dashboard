@@ -1320,11 +1320,6 @@ BASE_HTML = """
     </footer>
 
     <!-- Page navigation loading overlay -->
-    <div id="navLoadingOverlay" class="fullscreen-loading-overlay" role="status" aria-live="polite" aria-label="Loading page" style="display:none;">
-      <div class="loading-spinner" aria-hidden="true"></div>
-      <div class="fullscreen-loading-text">Loading&hellip;</div>
-    </div>
-
     <!-- Toast notifications -->
     <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
@@ -1334,43 +1329,6 @@ BASE_HTML = """
     <script src="/static/paywall.js?v={paywall_js_v}"></script>
     <script>
       {adsense_init}
-
-      // Page navigation loading spinner
-      (function() {{
-        var overlay = document.getElementById('navLoadingOverlay');
-        if (!overlay) return;
-        var shown = false;
-        function showOverlay() {{
-          if (shown) return;
-          // On phones the bottom dock is the primary nav and pages are largely
-          // served from the offline cache, so a full-screen spinner on every tap
-          // just reads as a jarring loading screen. Skip it there; desktop keeps
-          // the overlay for slower multi-second page builds.
-          if (window.matchMedia && window.matchMedia('(max-width: 768px)').matches) return;
-          shown = true;
-          overlay.style.display = '';
-        }}
-        document.addEventListener('click', function(e) {{
-          var a = e.target.closest('a[href]');
-          if (!a) return;
-          var href = a.getAttribute('href');
-          if (!href || href.startsWith('#') || href.startsWith('javascript') || href.startsWith('mailto')) return;
-          if (a.target === '_blank') return;
-          var url;
-          try {{ url = new URL(href, window.location.href); }} catch(err) {{ return; }}
-          if (url.origin !== window.location.origin) return;
-          if (url.pathname === window.location.pathname && url.search === window.location.search) return;
-          showOverlay();
-        }});
-        window.addEventListener('popstate', function() {{
-          shown = false;
-          overlay.style.display = 'none';
-        }});
-        window.addEventListener('pageshow', function() {{
-          shown = false;
-          overlay.style.display = 'none';
-        }});
-      }})();
 
       // Dynamic copyright year
       (function() {{
