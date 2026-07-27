@@ -424,7 +424,9 @@ function prReloadAdpSource() {
     .finally(() => { prAdpReloading = false; });
 }
 
-const PR_SORT_META = {
+// var (not const) so this module can re-execute on a mobile soft-nav without a
+// "PR_SORT_META has already been declared" error (const globals can't redeclare).
+var PR_SORT_META = {
   rank:      { label: 'Value',    cell: p => prFormatValue(prGetValue(p)) },
   value:     { label: 'Value',    cell: p => prFormatValue(prGetValue(p)) },
   age:       { label: 'Age',      cell: p => p.age != null ? Number(p.age).toFixed(1) : '–' },
@@ -786,27 +788,35 @@ function prExportCSV() {
   if (window.showToast) showToast('Player rankings downloaded!');
 }
 
-// '/' focuses search from anywhere on the page
-document.addEventListener('keydown', function(e) {
-  if (e.key === '/' && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) {
-    e.preventDefault();
-    const inp = document.getElementById('prSearch');
-    if (inp) { inp.focus(); inp.select(); }
-  }
-});
+// Document-level listeners: bound once. This module re-executes on a mobile
+// soft-nav (the dock swaps #page-root and re-runs the page script), so guard
+// these so they don't stack a new listener on every navigation. They re-query
+// their targets at event time, so a single binding stays correct across swaps.
+if (!window.__prDocBound) {
+  window.__prDocBound = true;
 
-// Close settings panel when clicking outside
-document.addEventListener('click', function(e) {
-  const panel = document.getElementById('prSettingsPanel');
-  const btn = document.getElementById('prSettingsBtn');
-
-  if (panel && btn && panel.style.display === 'block') {
-    if (!panel.contains(e.target) && !btn.contains(e.target)) {
-      panel.style.display = 'none';
-      btn.classList.remove('active');
+  // '/' focuses search from anywhere on the page
+  document.addEventListener('keydown', function(e) {
+    if (e.key === '/' && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) {
+      e.preventDefault();
+      const inp = document.getElementById('prSearch');
+      if (inp) { inp.focus(); inp.select(); }
     }
-  }
-});
+  });
+
+  // Close settings panel when clicking outside
+  document.addEventListener('click', function(e) {
+    const panel = document.getElementById('prSettingsPanel');
+    const btn = document.getElementById('prSettingsBtn');
+
+    if (panel && btn && panel.style.display === 'block') {
+      if (!panel.contains(e.target) && !btn.contains(e.target)) {
+        panel.style.display = 'none';
+        btn.classList.remove('active');
+      }
+    }
+  });
+}
 
 var prTierThresholds = {};
 
