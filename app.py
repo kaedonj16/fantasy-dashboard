@@ -5112,7 +5112,7 @@ def build_dashboard_body(ctx: dict) -> str:
         active_week=current_week,
     )
 
-    awards = compute_awards_season(finalized_df, players_map, league_id)
+    awards = compute_awards_season(finalized_df, players_map, league_id, platform, season, users, rosters)
     awards_html = render_awards_section(awards)
 
     teams_ctx = build_teams_overview(
