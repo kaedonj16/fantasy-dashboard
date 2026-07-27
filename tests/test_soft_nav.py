@@ -53,12 +53,16 @@ _CASES = [
     ("/sleeper/2026/abc/standings", True),
     ("/sleeper/2026/abc/teams", True),
     ("/sleeper/2026/abc/breakouts", True),
-    ("/sleeper/2026/abc/waivers", True),
-    ("/sleeper/2026/abc/schedule/", True),   # trailing slash still matches
     ("standings", True),                     # relative href resolves off the base
+    ("/sleeper/2026/abc/activity", True),
     ("/sleeper/2026/abc/draft", False),      # draft loads its own scripts
     ("/sleeper/2026/abc/draft/history", False),
     ("/sleeper/2026/abc/keeper", False),     # not on the allowlist
+    # Script-driven pages that init on DOMContentLoaded / a bootstrap don't
+    # survive an in-place swap, so they navigate natively.
+    ("/sleeper/2026/abc/waivers", False),
+    ("/sleeper/2026/abc/schedule/", False),
+    ("/sleeper/2026/abc/graphs", False),
     ("/sleeper/2026/abc/redzone", False),
     ("/sleeper/2026/abc/trade", False),
     ("/sleeper/2026/abc/compare", False),
