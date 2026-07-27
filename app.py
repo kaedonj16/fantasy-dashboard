@@ -1342,6 +1342,11 @@ BASE_HTML = """
         var shown = false;
         function showOverlay() {{
           if (shown) return;
+          // On phones the bottom dock is the primary nav and pages are largely
+          // served from the offline cache, so a full-screen spinner on every tap
+          // just reads as a jarring loading screen. Skip it there; desktop keeps
+          // the overlay for slower multi-second page builds.
+          if (window.matchMedia && window.matchMedia('(max-width: 768px)').matches) return;
           shown = true;
           overlay.style.display = '';
         }}
@@ -13820,11 +13825,23 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
                 num_rounds_startup = len(_draftable)
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
+    # Hide the Keeper draft type + keeper options + the keeper banner entirely
+    # for dynasty and plain redraft (non-keeper) leagues. A dynasty league can
+    # still carry a max_keepers value, which is why this gates on _nav_show_keeper
+    # (type 2 is never a keeper league) rather than the raw keeper limit. Guests
+    # (no league) keep it available.
+    show_keeper = True
+    if league_id:
+        try:
+            show_keeper = _nav_show_keeper(platform, league_id, season)
+        except Exception:
+            show_keeper = True
     # League keepers: surface them in the draft room either when the league is a
     # real keeper league, or when the user explicitly came from the keeper tool
-    # (?keepers=1). Never for plain redraft leagues, so the board is unchanged.
+    # (?keepers=1). Never for dynasty / plain redraft leagues, so the board is
+    # unchanged there.
     keepers_payload = None
-    if league_id:
+    if league_id and show_keeper:
         try:
             from dashboard_services.pages.keeper_page import compute_league_keepers, league_keeper_limit
             _ctx = get_league_ctx_from_cache(platform, league_id, season)
@@ -13852,14 +13869,6 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
                 )
         except Exception:
             logger.debug("[draft-room] keeper compute skipped", exc_info=True)
-    # Hide the Keeper draft type + keeper options entirely for dynasty and plain
-    # redraft (non-keeper) leagues. Guests (no league) keep it available.
-    show_keeper = True
-    if league_id:
-        try:
-            show_keeper = _nav_show_keeper(platform, league_id, season)
-        except Exception:
-            show_keeper = True
     body = build_draft_room_body(
         league_id, season, platform,
         is_guest=is_guest, num_teams=num_teams, is_superflex=is_sf,

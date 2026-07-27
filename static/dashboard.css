@@ -23014,9 +23014,13 @@ a, button, [role="button"], [role="tab"], summary, label,
              max(14px, env(safe-area-inset-right)) 0
              max(14px, env(safe-area-inset-left));
     transform: translateX(100%);
-    transition: transform .26s cubic-bezier(.32, .72, 0, 1);
+    /* visibility:hidden guarantees it can never flash on a page load or during a
+       navigation even if the transform hasn't computed yet; it is only shown
+       when actually opened. */
+    visibility: hidden;
+    transition: transform .26s cubic-bezier(.32, .72, 0, 1), visibility .26s;
   }
-  .br-search-screen.open { transform: none; }
+  .br-search-screen.open { transform: none; visibility: visible; }
 
   .br-search-bar { display: flex; align-items: center; gap: 12px; padding: 4px 0 12px; }
   .br-search-mount { flex: 1; min-width: 0; }
