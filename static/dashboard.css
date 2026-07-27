@@ -1051,6 +1051,13 @@ ul {
 }
 
 /* Breakout Candidates Page */
+.breakout-filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
 .breakout-filter-btn {
   padding: 8px 16px;
   border-radius: 10px;
@@ -1059,15 +1066,25 @@ ul {
   color: var(--text);
   font-size: 13px;
   font-weight: 500;
+  white-space: nowrap;   /* labels like "All Positions" never wrap/clip */
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 @media (max-width: 768px) {
+  /* A single-line, edge-to-edge scrollable chip strip instead of squeezing five
+     equal-width segments (which clipped the long "All Positions" label). */
+  .breakout-filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;              /* Firefox: hide the scrollbar */
+    padding-bottom: 2px;
+  }
+  .breakout-filters::-webkit-scrollbar { display: none; }
   .breakout-filter-btn {
+    flex: 0 0 auto;                     /* size to content, no equal-width squeeze */
     padding: 10px 16px;
-    flex: 1;
-    min-width: 60px;
     text-align: center;
   }
 }

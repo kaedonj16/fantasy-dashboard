@@ -13377,7 +13377,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
       </div>
       <div class="card-body">
         <!-- Position Filter -->
-        <div style="display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap;">
+        <div class="breakout-filters">
           <button class="breakout-filter-btn active" data-position="ALL" onclick="filterBreakouts('ALL')">All Positions</button>
           <button class="breakout-filter-btn" data-position="QB" onclick="filterBreakouts('QB')">QB</button>
           <button class="breakout-filter-btn" data-position="RB" onclick="filterBreakouts('RB')">RB</button>
