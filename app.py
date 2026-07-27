@@ -1836,17 +1836,20 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         )
 
     def _sec(title, rows):
-        return f"<h3 class='br-sheet-h'>{title}</h3>" + "".join(rows)
+        return (f"<h3 class='br-sheet-h'>{title}</h3>"
+                f"<div class='br-sheet-group'>{''.join(rows)}</div>")
 
     # Search is a row like the others; tapping it opens the full-screen search
     # screen (app.js moves the real search widget into it). Watchlist is a plain
     # link to the full watchlist page.
     find_html = (
         "<h3 class='br-sheet-h'>Find</h3>"
+        "<div class='br-sheet-group'>"
         "<button type='button' class='br-sheet-link' id='brSheetSearchRow'>"
         f"{_nav_icon('search', size=20)}<span>Search players</span></button>"
         f"<a class='br-sheet-link' href='/watchlist'>{_nav_icon('star', size=20)}"
         "<span>Watchlist</span></a>"
+        "</div>"
     )
 
     weekly_html = ""
@@ -1897,8 +1900,10 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         )
     account_html = (
         "<h3 class='br-sheet-h'>Account</h3>"
+        "<div class='br-sheet-group'>"
         f"{portfolio_link}"
         "<div class='br-sheet-mount' id='brSheetAccount'></div>"
+        "</div>"
     )
 
     sheet = (

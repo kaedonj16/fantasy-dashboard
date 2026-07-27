@@ -22892,14 +22892,15 @@ a, button, [role="button"], [role="tab"], summary, label,
   .br-sheet {
     position: fixed; left: 0; right: 0; bottom: 0;
     z-index: var(--z-chrome);
-    background: var(--bg);
+    /* Tinted ground so the grouped cards read as raised panels (iOS Settings). */
+    background: var(--bg-alt);
     border-radius: 20px 20px 0 0;
     border-top: 1px solid var(--border);
     box-shadow: 0 -8px 30px -12px rgba(0, 0, 0, .4);
     transform: translateY(103%);
     transition: transform .28s cubic-bezier(.32, .72, 0, 1);
     max-height: 86vh; overflow-y: auto;
-    padding: 0 0 calc(16px + env(safe-area-inset-bottom));
+    padding: 0 0 calc(20px + env(safe-area-inset-bottom));
     -webkit-overflow-scrolling: touch;
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
@@ -22907,19 +22908,34 @@ a, button, [role="button"], [role="tab"], summary, label,
   .br-sheet.open { transform: translateY(0); }
 
   .br-sheet-grip {
-    width: 38px; height: 4px; border-radius: 999px;
-    background: var(--border); margin: 9px auto 2px;
+    width: 38px; height: 5px; border-radius: 999px;
+    background: var(--border); margin: 10px auto 4px;
   }
   .br-sheet-h {
-    font-size: 11px; font-weight: 800; letter-spacing: .09em;
+    font-size: 11px; font-weight: 800; letter-spacing: .08em;
     text-transform: uppercase; color: var(--text-muted);
-    margin: 14px 18px 6px;
+    margin: 18px 28px 7px;
+  }
+  /* Each section is a rounded, inset card; rows inside are split by hairlines. */
+  .br-sheet-group {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    margin: 0 14px;
+    overflow: hidden;
   }
   .br-sheet-link {
-    display: flex; align-items: center; gap: 13px;
-    padding: 11px 18px; color: var(--text);
+    display: flex; align-items: center; gap: 14px;
+    padding: 13px 16px; color: var(--text);
     text-decoration: none; font-size: 15px; font-weight: 600;
     -webkit-tap-highlight-color: transparent;
+  }
+  .br-sheet-group > .br-sheet-link + .br-sheet-link,
+  .br-sheet-group > .br-sheet-mount > * + *,
+  .br-sheet-group > .br-sheet-link + .br-sheet-mount,
+  .br-sheet-group > .br-sheet-mount .settings-menu-item,
+  .br-sheet-group > .br-sheet-mount .settings-menu-logout {
+    border-top: 1px solid var(--border);
   }
   .br-sheet-link .nav-svg-icon { color: var(--text-muted); flex: 0 0 auto; }
   .br-sheet-link:active { background: var(--accent-soft); }
