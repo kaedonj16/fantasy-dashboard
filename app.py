@@ -2496,7 +2496,7 @@ def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
      flex-direction:column;gap:12px;">
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
     <div style="display:flex;align-items:center;gap:8px;">
-      <i class="fa-solid fa-newspaper" style="font-size:15px;color:var(--accent);margin-top:1px;"></i>
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;color:var(--accent);margin-top:1px;flex:none;"><path d="M4 5h13v13a2 2 0 0 0 2 2H6a2 2 0 0 1-2-2V5Z"/><path d="M17 8h3v10a2 2 0 0 1-2 2"/><path d="M8 9h6M8 13h6M8 17h4"/></svg>
       <span style="font-size:14px;font-weight:700;color:var(--text);">Recap is ready</span>
     </div>
     <button id="recapReadyClose"
@@ -8778,7 +8778,7 @@ def build_activity_body(ctx: dict) -> str:
             "<div class='card'>"
             "  <div class='card-body'>"
             "    <div class='bract-empty-state'>"
-            "      <div class='bract-empty-icon'><i class='fa-solid fa-shield-halved' style='font-size:28px;color:var(--muted);opacity:.5;'></i></div>"
+            "      <div class='bract-empty-icon'><svg aria-hidden='true' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' style='width:28px;height:28px;color:var(--muted);opacity:.5;'><path d='M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6l7-3Z'/><path d='M12 3v18'/></svg></div>"
             "      <div class='bract-empty-title'>No injury updates right now</div>"
             "      <div class='bract-empty-copy'>Either the feed is quiet or there are no currently tracked injury updates for this view.</div>"
             "    </div>"
@@ -8791,7 +8791,7 @@ def build_activity_body(ctx: dict) -> str:
             "<div class='card'>"
             "  <div class='card-body'>"
             "    <div class='bract-empty-state'>"
-            "      <div class='bract-empty-icon'><i class='fa-solid fa-arrows-rotate' style='font-size:28px;color:var(--muted);opacity:.5;'></i></div>"
+            "      <div class='bract-empty-icon'><svg aria-hidden='true' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' style='width:28px;height:28px;color:var(--muted);opacity:.5;'><path d='M4 12a8 8 0 0 1 13.7-5.6L20 8'/><path d='M20 4v4h-4'/><path d='M20 12a8 8 0 0 1-13.7 5.6L4 16'/><path d='M4 20v-4h4'/></svg></div>"
             "      <div class='bract-empty-title'>No recent activity yet</div>"
             "      <div class='bract-empty-copy'>When trades and waiver claims come through, they'll show up here with value context and team-by-team breakdowns.</div>"
             "    </div>"
@@ -15956,7 +15956,7 @@ def build_schedule_body(ctx):
             <button class="sched-rank-pos" data-pos="K">K</button>
           </div>
           <button class="sched-sort-btn" id="schedRankSort">
-            Easiest First <i class="fa-solid fa-arrow-up-short-wide" aria-hidden="true"></i>
+            Easiest First <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:1em;height:1em;vertical-align:-.125em"><path d="M6 5v14"/><path d="M3 8l3-3 3 3"/><path d="M12 6h3M12 11h6M12 16h9"/></svg>
           </button>
         </div>
       </div>
@@ -16378,8 +16378,8 @@ def build_schedule_body(ctx):
       document.getElementById('schedRankSort').addEventListener('click', function() {
         rankHardFirst = !rankHardFirst;
         this.innerHTML = rankHardFirst
-          ? 'Hardest First <i class="fa-solid fa-arrow-down-short-wide" aria-hidden="true"></i>'
-          : 'Easiest First <i class="fa-solid fa-arrow-up-short-wide" aria-hidden="true"></i>';
+          ? 'Hardest First <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:1em;height:1em;vertical-align:-.125em"><path d="M6 5v14"/><path d="M3 16l3 3 3-3"/><path d="M12 6h3M12 11h6M12 16h9"/></svg>'
+          : 'Easiest First <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:1em;height:1em;vertical-align:-.125em"><path d="M6 5v14"/><path d="M3 8l3-3 3 3"/><path d="M12 6h3M12 11h6M12 16h9"/></svg>';
         rankPage = 0;
         if (rankingsCache) buildRankingsTable(rankingsCache);
       });
@@ -16417,8 +16417,11 @@ def build_schedule_body(ctx):
                     return " ".join(
                         f'<span class="sbo-tag">{n} {p}</span>' for p, n in items
                     )
-                _warn = ('<i class="fa-solid fa-triangle-exclamation sbo-warn" '
-                         'aria-hidden="true"></i>')
+                _warn = ('<svg class="sbo-warn" aria-hidden="true" viewBox="0 0 24 24" '
+                         'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+                         'stroke-linejoin="round" style="width:1em;height:1em;vertical-align:-.125em">'
+                         '<path d="M10.3 4.3 2.5 18a2 2 0 0 0 1.7 3h15.6a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0Z"/>'
+                         '<path d="M12 9v4.5"/><circle cx="12" cy="17" r=".7" fill="currentColor" stroke="none"/></svg>')
                 def _chip(w):
                     cr = w["crunch"]
                     return (
