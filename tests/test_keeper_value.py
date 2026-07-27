@@ -2,7 +2,7 @@
 from utils.keeper_value import (
     KeeperRules, KeeperCandidate, market_round, keeper_cost_round, verdict,
     analyze, evaluate, total_surplus, project_league_keepers, cost_collisions,
-    KEEP, TOSS, PASS,
+    resolve_cost_collisions, KEEP, TOSS, PASS,
 )
 
 
@@ -195,3 +195,61 @@ def test_years_kept_escalation_changes_cost_via_evaluate():
     analyze(c0, _rules(escalation=1)); analyze(c2, _rules(escalation=1))
     assert c0.cost_round == 10 and c0.surplus == 6
     assert c2.cost_round == 8 and c2.surplus == 4
+
+
+# ── resolve_cost_collisions / one_per_round ──────────────────────────────────
+
+def test_resolve_bumps_weaker_claim_to_earlier_open_round():
+    # Both cost R5. A has more surplus (market R1 -> +4) than B (market R2 -> +3),
+    # so A holds R5 and B bumps earlier to R4 (costlier) -> surplus drops +3 -> +2.
+    cands = [
+        KeeperCandidate("a", "A", "RB", 5, 0, 4, 900),    # cost R5, market R1
+        KeeperCandidate("b", "B", "WR", 5, 0, 18, 800),   # cost R5, market R2
+    ]
+    ranked = evaluate(cands, _rules(one_per_round=True), limit=2)
+    by_id = {c.player_id: c for c in ranked}
+    assert by_id["a"].cost_round == 5 and by_id["a"].surplus == 4
+    assert by_id["b"].cost_round == 4 and by_id["b"].surplus == 2
+    assert cost_collisions(ranked) == {}          # no shared round remains
+    assert total_surplus(ranked) == 6             # honest total (was 7 before resolve)
+
+
+def test_resolve_no_op_without_flag():
+    # Same clash, but one_per_round off: greedy keeps both at R5 (legacy behavior).
+    cands = [
+        KeeperCandidate("a", "A", "RB", 5, 0, 4, 900),
+        KeeperCandidate("b", "B", "WR", 5, 0, 18, 800),
+    ]
+    ranked = evaluate(cands, _rules(), limit=2)
+    assert {c.cost_round for c in ranked if c.keep} == {5}
+    assert cost_collisions(ranked) == {5: ["a", "b"]}
+
+
+def test_resolve_falls_back_to_later_round_when_no_earlier_slot():
+    # Three kept players all pinned at R1 (no earlier round exists): the strongest
+    # holds R1, the others must bump *later* to R2 and R3. Staged directly because
+    # evaluate() never keeps a R1-cost player (its surplus can't exceed 0).
+    def _kept(pid, val):
+        c = KeeperCandidate(pid, pid, "RB", 1, 0, 12, val)
+        c.cost_round, c.market_round, c.surplus, c.keep = 1, 1, 0, True
+        return c
+    cands = [_kept("a", 900), _kept("b", 800), _kept("c", 700)]
+    resolve_cost_collisions(cands, _rules(one_per_round=True))
+    by_id = {c.player_id: c for c in cands}
+    assert by_id["a"].cost_round == 1            # strongest holds the round
+    assert sorted(c.cost_round for c in cands) == [1, 2, 3]
+    assert cost_collisions(cands) == {}
+    # Bumped players are re-priced from their new (cheaper, later) round.
+    assert by_id["b"].surplus == by_id["b"].cost_round - 1
+
+
+def test_resolve_only_touches_kept_players():
+    cands = [
+        KeeperCandidate("a", "A", "RB", 5, 0, 4, 900),    # kept, cost R5
+        KeeperCandidate("b", "B", "WR", 5, 0, 4, 800),    # kept, cost R5 -> bumps
+        KeeperCandidate("d", "D", "WR", 5, 0, 200, 100),  # NOT kept (off-board-ish), cost R5 untouched
+    ]
+    ranked = evaluate(cands, _rules(one_per_round=True), limit=2)
+    by_id = {c.player_id: c for c in ranked}
+    assert by_id["d"].cost_round == 5            # unkept player keeps its raw cost
+    assert not by_id["d"].keep

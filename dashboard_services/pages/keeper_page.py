@@ -18,7 +18,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from utils.keeper_value import (
-    KeeperRules, KeeperCandidate, evaluate, analyze, project_league_keepers,
+    KeeperRules, KeeperCandidate, evaluate, project_league_keepers,
 )
 
 logger = logging.getLogger(__name__)
@@ -380,12 +380,16 @@ def compute_league_keepers(
             return default
         return max(lo, min(hi, v))
 
+    # one_per_round defaults on (matches the keeper page); the handoff can turn it
+    # off for leagues that let two keepers share a round.
+    _opr = _ro.get("one_per_round", True) if _ro else True
     rules = KeeperRules(
         league_size=league_size,
         num_rounds=num_rounds,
         round_offset=_rule_int("round_offset", -5, 5, 0) or 0,
         escalation=_rule_int("escalation", 0, 5, 1) if _ro else 1,
         undrafted_round=_rule_int("undrafted_round", 1, num_rounds),
+        one_per_round=bool(_opr),
     )
 
     per_team: Dict[str, List[KeeperCandidate]] = {}
@@ -407,7 +411,10 @@ def compute_league_keepers(
             c = cand_by_id.get(pid)
             if not c:
                 continue
-            analyze(c, rules)
+            # cost_round is already final here: project_league_keepers ran the
+            # optimizer (which analyzes every candidate and, under one_per_round,
+            # resolves cost collisions) over these same objects in place. Re-running
+            # analyze would recompute the raw cost and undo any collision bump.
             kept.append({
                 "id": pid, "name": c.name, "pos": c.position,
                 "rosterId": rid, "costRound": c.cost_round,
@@ -479,7 +486,7 @@ def build_keeper_body(
     player_ids = [str(p) for p in (roster.get("players") or [])]
 
     candidates = _candidates_for_ids(player_ids, players_index, values, adp, drafted, value_rank)
-    rules = KeeperRules(league_size=league_size, num_rounds=num_rounds)
+    rules = KeeperRules(league_size=league_size, num_rounds=num_rounds, one_per_round=True)
     ranked = evaluate(candidates, rules, limit=max_keepers)
 
     _plat = (platform or "sleeper").lower()
@@ -498,6 +505,7 @@ def build_keeper_body(
         "numRounds": num_rounds,
         "maxKeepers": max_keepers,
         "isSuperflex": is_sf,
+        "onePerRound": True,          # default: no two keepers share a cost round
         "autoDraft": bool(drafted),   # did we auto-detect draft rounds?
         "platform": _plat,
         "leagueId": str(league_id or ""),
