@@ -706,11 +706,63 @@ window.brHaptic = function (pattern) {
     });
   }
 
+  // Thin top progress bar so a soft-nav gives immediate feedback while the next
+  // page is fetched (a same-document swap otherwise looks like nothing happened
+  // on a slow page). It only appears if the fetch runs past ~180ms, so quick
+  // navigations never flash it.
+  var progressEl, progressTimer, progressOn = false;
+  function progressBar() {
+    if (!progressEl) {
+      progressEl = document.createElement('div');
+      progressEl.className = 'br-nav-progress';
+      progressEl.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(progressEl);
+    }
+    return progressEl;
+  }
+  function startProgress() {
+    clearTimeout(progressTimer);
+    progressTimer = setTimeout(function () {
+      var el = progressBar();
+      progressOn = true;
+      el.style.transition = 'none';
+      el.style.opacity = '1';
+      el.style.transform = 'scaleX(0)';
+      void el.offsetWidth;                                     // commit the reset
+      el.style.transition = 'transform 8s cubic-bezier(0,.6,.35,1)';
+      el.style.transform = 'scaleX(0.9)';                      // creep toward the end
+    }, 180);
+  }
+  function endProgress() {
+    clearTimeout(progressTimer);
+    if (!progressOn) return;
+    progressOn = false;
+    var el = progressBar();
+    el.style.transition = 'transform .2s ease, opacity .3s ease .15s';
+    el.style.transform = 'scaleX(1)';
+    el.style.opacity = '0';
+  }
+
+  // Per-URL scroll memory so Back/Forward returns to where you were instead of
+  // the top. A throttled listener keeps the current page's position current;
+  // scrollRestoration is set to manual so the browser doesn't also fight us.
+  var scrollByUrl = {}, scrollTimer;
+  if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+  // This app scrolls the <body>, not the window, so target every candidate:
+  // reads take whichever is non-zero, writes set all (the non-scrollers no-op).
+  function getScroll() { return window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0; }
+  function setScroll(y) { try { window.scrollTo(0, y); } catch (_) {} document.documentElement.scrollTop = y; document.body.scrollTop = y; }
+  window.addEventListener('scroll', function () {
+    if (scrollTimer) return;
+    scrollTimer = setTimeout(function () { scrollTimer = null; scrollByUrl[location.href] = getScroll(); }, 150);
+  }, { passive: true, capture: true });   // capture so a body-scroller's event is seen
+
   var token = 0;
   function softNav(url, isPop) {
     var mine = ++token;
     var curRoot = document.getElementById('page-root');
     if (!curRoot) { location.href = url; return; }
+    startProgress();
     fetch(url, { headers: { 'X-Soft-Nav': '1' }, credentials: 'same-origin' })
       .then(function (resp) {
         var ct = resp.headers.get('content-type') || '';
@@ -744,14 +796,16 @@ window.brHaptic = function (pattern) {
         reexecScripts(curRoot);
         if (doc.title) document.title = doc.title;
         if (!isPop) history.pushState({ brSoft: 1 }, '', url);
-        window.scrollTo(0, 0);
+        // Back/forward returns to the remembered position; a forward nav starts at the top.
+        setScroll(isPop ? (scrollByUrl[location.href] || 0) : 0);
         if (window.initPageRoot) window.initPageRoot(curRoot);
         // Desktop: the top nav lives outside #page-root, so move its active
         // state to the new page's and glide the indicator across.
         if (!mq.matches) syncDesktopNav(doc);
+        endProgress();
       })
       .catch(function () {
-        if (mine === token) location.href = url;   // safe fallback: full navigation
+        if (mine === token) { endProgress(); location.href = url; }   // safe fallback: full navigation
       });
   }
 
