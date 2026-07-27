@@ -32,10 +32,12 @@ def _seo_origin() -> str:
 
 
 def _render(title: str, league_id: Optional[str], active: str, body: str,
-            platform: Optional[str] = None, season: Optional[int] = None) -> str:
+            platform: Optional[str] = None, season: Optional[int] = None,
+            description: str = "", canonical: Optional[str] = None) -> str:
     # Late import avoids circular dependency at module load time.
     from app import render_page
-    return render_page(title, league_id, active, body, platform, season)
+    return render_page(title, league_id, active, body, platform, season,
+                       description=description, canonical=canonical)
 
 
 # ── Service worker ────────────────────────────────────────────────────────────
@@ -106,6 +108,7 @@ def sitemap_xml():
         ("/about", "0.4", "monthly"),
         ("/terms", "0.3", "monthly"),
         ("/guides", "0.7", "monthly"),
+        ("/glossary", "0.6", "monthly"),
     ]
 
     # Guide articles (original long-form content)
@@ -303,143 +306,138 @@ def support_page(platform: Optional[str] = None, season: Optional[int] = None,
 
 # ── FAQ ───────────────────────────────────────────────────────────────────────
 
+# FAQ content lives in one data structure so the on-page accordion and the
+# FAQPage structured data are always generated from the same source (no drift).
+# Answers may contain inline links; the JSON-LD uses a plain-text version.
+FAQ_SECTIONS = [
+    ("General", [
+        ("What is the BR Fantasy Dashboard?",
+         "It's a custom fantasy football dashboard that pulls in your Sleeper league "
+         "data and turns it into power rankings, weekly summaries, matchup previews, "
+         "graphs, and more &mdash; all in one place."),
+        ("What do I need to use it?",
+         "All you need is your Sleeper or ESPN league ID. Paste it into the home screen, "
+         "and the dashboard will fetch public data for that league."),
+        ("Does this change anything in my fantasy league?",
+         "No. The dashboard is read-only. It just reads public data from your league's "
+         "API and never modifies your league, rosters, or settings."),
+    ]),
+    ("Rankings &amp; Values", [
+        ("How are dynasty trade values calculated?",
+         "Values come from a hybrid model that blends consensus market data with recent "
+         "production, age curves, and opportunity metrics, recalculated daily. For a full "
+         'breakdown, read <a href="/guides/dynasty-trade-value">How Dynasty Trade Value '
+         'Works</a>, or browse the live <a href="/rankings/dynasty">dynasty rankings</a>.'),
+        ("Do values change for Superflex leagues?",
+         "Yes, significantly. Quarterbacks are far more valuable in Superflex. The "
+         'rankings and <a href="/trade">trade calculator</a> adjust to your format, and '
+         '<a href="/guides/superflex-vs-1qb">this guide</a> explains why the same player can '
+         "have two very different values."),
+        ("How often are rankings updated?",
+         "Player values and rankings are recalculated daily so they reflect the latest "
+         'usage, injuries, and market movement. The <a href="/top-movers">top movers</a> '
+         "page highlights the biggest risers and fallers."),
+        ("What do the fantasy terms on the site mean?",
+         'Every abbreviation and strategy term &mdash; ADP, Superflex, TE Premium, Zero-RB, '
+         'and more &mdash; is defined in plain English in the <a href="/glossary">fantasy '
+         "football glossary</a>."),
+    ]),
+    ("Data &amp; Privacy", [
+        ("What data do you store?",
+         "Some league data may be cached temporarily so pages load quickly "
+         "(rosters, users, scores, projections, etc.). We do not store your "
+         "password or payment information. See the Privacy Policy for more details."),
+        ("Can I have my league data removed?",
+         "Yes. Use the Contact page to send your Sleeper league ID and request "
+         "removal. We'll clear cached data for that league."),
+    ]),
+    ("Premium / Ads / Support", [
+        ("Is there a premium or ad-free mode?",
+         "Yes &mdash; league and personal subscriptions are available. See the Pricing page "
+         "for details on what's included."),
+        ("How can I support the site?",
+         "You can support the project through a premium subscription, donations, "
+         "or by sharing the site with your league mates. "
+         "Visit the Support page for options."),
+    ]),
+    ("Issues &amp; Feedback", [
+        ("The numbers look wrong &mdash; what should I do?",
+         "First, hit the refresh button on the nav to clear cached data for your "
+         "league. If something still looks off, send a message via the Contact "
+         "page with your league ID and a short description of the issue."),
+        ("Can I request new features?",
+         "Absolutely. This project is built for fantasy degenerates. "
+         "Drop your ideas on the Contact page and they might make it onto the roadmap."),
+    ]),
+]
+
+
+def _faq_plain(html_answer: str) -> str:
+    """Strip inline tags/entities for the JSON-LD acceptedAnswer text."""
+    import re
+    txt = re.sub(r"<[^>]+>", "", html_answer)
+    txt = (txt.replace("&mdash;", "—").replace("&amp;", "&")
+              .replace("&lt;", "<").replace("&gt;", ">"))
+    return re.sub(r"\s+", " ", txt).strip()
+
+
 @public_bp.route("/faq")
 @public_bp.route("/<platform>/<int:season>/<league_id>/faq")
 def faq_page(platform: Optional[str] = None, season: Optional[int] = None,
              league_id: Optional[str] = None):
-    body = """
-        <div class="static-page">
-          <div class="static-card-page">
-            <h1 class="static-hero-title">FAQ</h1>
+    import json
 
-            <div class="static-section">
-              <div class="static-section-title">General</div>
+    sections_html = []
+    first = True
+    for section, items in FAQ_SECTIONS:
+        rows = []
+        for q, a in items:
+            open_attr = " open" if first else ""
+            first = False
+            rows.append(
+                f'<details class="faq-item"{open_attr}>'
+                f'<summary>{q}</summary><p>{a}</p></details>'
+            )
+        sections_html.append(
+            '<div class="static-section">'
+            f'<div class="static-section-title">{section}</div>'
+            + "".join(rows) + "</div>"
+        )
 
-              <details class="faq-item" open>
-                <summary>What is the BR Fantasy Dashboard?</summary>
-                <p>
-                  It's a custom fantasy football dashboard that pulls in your Sleeper league
-                  data and turns it into power rankings, weekly summaries, matchup previews,
-                  graphs, and more-all in one place.
-                </p>
-              </details>
+    # FAQPage structured data, built from the same source as the accordion so it
+    # can never drift from what's on the page. Escape '<' so an answer's link can
+    # never break out of the <script> block.
+    faq_ld = {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": _faq_plain(q),
+                "acceptedAnswer": {"@type": "Answer", "text": _faq_plain(a)},
+            }
+            for _section, items in FAQ_SECTIONS for q, a in items
+        ],
+    }
+    jsonld = (
+        '<script type="application/ld+json">'
+        + json.dumps(faq_ld, separators=(",", ":")).replace("<", "\\u003c")
+        + "</script>"
+    )
 
-              <details class="faq-item">
-                <summary>What do I need to use it?</summary>
-                <p>
-                  All you need is your Sleeper or ESPN league ID. Paste it into the home screen,
-                  and the dashboard will fetch public data for that league.
-                </p>
-              </details>
-
-              <details class="faq-item">
-                <summary>Does this change anything in my Fantasy league?</summary>
-                <p>
-                  No. The dashboard is read-only. It just reads public data from your league's
-                  API and never modifies your league, rosters, or settings.
-                </p>
-              </details>
-            </div>
-
-            <div class="static-section">
-              <div class="static-section-title">Rankings & Values</div>
-
-              <details class="faq-item">
-                <summary>How are dynasty trade values calculated?</summary>
-                <p>
-                  Values come from a hybrid model that blends consensus market data with recent
-                  production, age curves, and opportunity metrics, recalculated daily. For a full
-                  breakdown, read <a href="/guides/dynasty-trade-value">How Dynasty Trade Value
-                  Works</a>, or browse the live <a href="/rankings/dynasty">dynasty rankings</a>.
-                </p>
-              </details>
-
-              <details class="faq-item">
-                <summary>Do values change for Superflex leagues?</summary>
-                <p>
-                  Yes, significantly. Quarterbacks are far more valuable in Superflex. The
-                  rankings and <a href="/trade">trade calculator</a> adjust to your format, and
-                  <a href="/guides/superflex-vs-1qb">this guide</a> explains why the same player can
-                  have two very different values.
-                </p>
-              </details>
-
-              <details class="faq-item">
-                <summary>How often are rankings updated?</summary>
-                <p>
-                  Player values and rankings are recalculated daily so they reflect the latest
-                  usage, injuries, and market movement. The <a href="/top-movers">top movers</a>
-                  page highlights the biggest risers and fallers.
-                </p>
-              </details>
-            </div>
-
-            <div class="static-section">
-              <div class="static-section-title">Data & Privacy</div>
-
-              <details class="faq-item">
-                <summary>What data do you store?</summary>
-                <p>
-                  Some league data may be cached temporarily so pages load quickly
-                  (rosters, users, scores, projections, etc.). We do not store your
-                  password or payment information. See the Privacy Policy for more details.
-                </p>
-              </details>
-
-              <details class="faq-item">
-                <summary>Can I have my league data removed?</summary>
-                <p>
-                  Yes. Use the Contact page to send your Sleeper league ID and request
-                  removal. We'll clear cached data for that league.
-                </p>
-              </details>
-            </div>
-
-            <div class="static-section">
-              <div class="static-section-title">Premium / Ads / Support</div>
-
-              <details class="faq-item">
-                <summary>Is there a premium or ad-free mode?</summary>
-                <p>
-                  Yes - league and personal subscriptions are available. See the Pricing page
-                  for details on what's included.
-                </p>
-              </details>
-
-              <details class="faq-item">
-                <summary>How can I support the site?</summary>
-                <p>
-                  You can support the project through a premium subscription, donations,
-                  or by sharing the site with your league mates.
-                  Visit the Support page for options.
-                </p>
-              </details>
-            </div>
-
-            <div class="static-section">
-              <div class="static-section-title">Issues & Feedback</div>
-
-              <details class="faq-item">
-                <summary>The numbers look wrong-what should I do?</summary>
-                <p>
-                  First, hit the refresh button on the nav to clear cached data for your
-                  league. If something still looks off, send a message via the Contact
-                  page with your league ID and a short description of the issue.
-                </p>
-              </details>
-
-              <details class="faq-item">
-                <summary>Can I request new features?</summary>
-                <p>
-                  Absolutely. This project is built for fantasy degenerates.
-                  Drop your ideas on the Contact page and they might make it onto the roadmap.
-                </p>
-              </details>
-            </div>
-          </div>
-        </div>
-        """
-    return _render("BR Fantasy FAQ", league_id or None, "faq", body, platform, season)
+    body = (
+        '<div class="static-page"><div class="static-card-page">'
+        '<h1 class="static-hero-title">FAQ</h1>'
+        + "".join(sections_html)
+        + jsonld
+        + "</div></div>"
+    )
+    return _render(
+        "BR Fantasy FAQ", league_id or None, "faq", body, platform, season,
+        description="Answers to common questions about BR Fantasy Football: how "
+                    "dynasty trade values are calculated, Superflex scoring, data "
+                    "privacy, and more.",
+    )
 
 
 # ── Contact ───────────────────────────────────────────────────────────────────
@@ -1060,7 +1058,8 @@ def guides_index(platform: Optional[str] = None, season: Optional[int] = None,
                 Free, in-depth guides to dynasty strategy, how trade values work, how to read
                 advanced metrics, rookie-draft strategy, and how to win trades. Pair them with our
                 live <a href="{base}/rankings/dynasty">dynasty rankings</a> and
-                <a href="{base}/trade">trade calculator</a> to put the ideas into practice.
+                <a href="{base}/trade">trade calculator</a> to put the ideas into practice, and
+                keep the <a href="{base}/glossary">glossary</a> handy for any unfamiliar terms.
               </p>
             </div>
             <div class="static-section">
@@ -1115,3 +1114,167 @@ def guide_page(slug: str, platform: Optional[str] = None, season: Optional[int] 
         </div>
     """
     return _render(f"{g['title']} | BR Fantasy", league_id or None, "guides", body, platform, season)
+
+
+# ── Glossary ─────────────────────────────────────────────────────────────────
+# Plain-English definitions for the dynasty/redraft vocabulary used across the
+# site. Each term is unique crawlable content and a long-tail search magnet
+# ("what is superflex", "te premium meaning"), and links back into the tools.
+
+GLOSSARY = [
+    ("Average Draft Position", "ADP",
+     "The average slot a player is taken across many drafts. It's a quick read on "
+     "consensus value and tells you roughly when you'll have to reach to get a player."),
+    ("Superflex", "SF",
+     'A lineup with a flex spot that can start a quarterback, so most teams start two '
+     'QBs. It makes passers dramatically more valuable than in 1QB leagues &mdash; see '
+     '<a href="/guides/superflex-vs-1qb">Superflex vs 1QB</a>.'),
+    ("TE Premium", "TEP",
+     "Scoring that gives tight ends extra points per reception (often +0.5 PPR). It "
+     "lifts every TE's value and widens the gap between the elite tier and everyone else."),
+    ("Points Per Reception", "PPR",
+     "A scoring format that awards points for each catch (1.0 in full PPR, 0.5 in half). "
+     "It boosts high-volume receivers and pass-catching running backs."),
+    ("Value Over Replacement", "VOR",
+     "How much better a player is than a freely available replacement at his position. "
+     "It's the idea behind why scarce positions are drafted earlier than raw points suggest."),
+    ("Taxi Squad", None,
+     "A reserve area for rookies and young players that keeps them off your active roster "
+     "without exposing them to waivers &mdash; a dynasty tool for stashing developmental talent."),
+    ("Zero-RB", None,
+     "A draft strategy that intentionally fades running back early to load up on receivers, "
+     "then attacks RB value later in the draft and on the waiver wire."),
+    ("Hero-RB", None,
+     "A middle-ground strategy: take one elite running back early, then pivot to receivers "
+     "and fill the rest of the backfield with upside later."),
+    ("Handcuff", None,
+     "The backup who would inherit a starter's workload if he got hurt. Handcuffing your "
+     "own bell-cow RB insures his weekly volume against injury."),
+    ("Bell-Cow", None,
+     "A running back who dominates his team's touches &mdash; carries, goal-line work, and "
+     "passing-down snaps. The most valuable and rarest RB archetype."),
+    ("Startup Draft", None,
+     "The initial draft that stocks a brand-new dynasty league from the entire player pool, "
+     "veterans and rookies together, before any rookie-only drafts happen."),
+    ("Rookie Draft", None,
+     'A dynasty-only draft held each offseason for that year\'s incoming rookies. See '
+     '<a href="/guides/rookie-draft-strategy">rookie draft strategy</a>.'),
+    ("Target Share", None,
+     "The percentage of a team's passing targets that go to one player. It's one of the "
+     "stickiest signals of real receiving opportunity and future production."),
+    ("Snap Share", None,
+     "The percentage of a team's offensive snaps a player is on the field for. High snap "
+     "share signals a secure role even when the box score is quiet."),
+    ("Air Yards", None,
+     "The total downfield distance of the passes thrown a receiver's way, whether caught or "
+     "not. It measures how a player is used and hints at scoring upside."),
+    ("Red Zone", "RZ",
+     "The area inside an opponent's 20-yard line, where touchdowns are scored. Red-zone "
+     "targets and carries are premium opportunities that drive fantasy points."),
+    ("Consistency", None,
+     "How reliably a player hits his projection week to week. A consistent floor is worth "
+     "more to a contender than a boom-or-bust profile with the same average."),
+    ("Buy Low / Sell High", None,
+     'Trading for a player when his value dips below his true worth, or dealing one away '
+     'while the market overrates him. See <a href="/guides/buy-low-sell-high">buy low, '
+     "sell high</a>."),
+    ("Contending vs Rebuilding", None,
+     "The two dynasty modes: a contender trades youth and picks for win-now production; a "
+     "rebuilder does the opposite, banking young players and draft capital for later."),
+    ("Draft Capital", None,
+     "The rookie picks a team controls, treated as a tradeable asset. Future first-round "
+     "picks are dynasty currency for both rebuilds and win-now upgrades."),
+    ("Dynasty", None,
+     "A league format where you keep your entire roster year over year, drafting only "
+     "rookies each offseason. It rewards long-term roster building over single-season luck."),
+    ("Redraft", None,
+     "The classic format where every team drafts a brand-new roster from scratch each season. "
+     "Nothing carries over, so only this year's production matters."),
+    ("Keeper", None,
+     "A hybrid format where you retain a small number of players between seasons, usually at "
+     "a draft-pick cost, then redraft the rest."),
+    ("Waiver Wire", None,
+     "The pool of unrostered players and the rules for claiming them. Waiver priority or a "
+     "FAAB budget decides who wins contested adds."),
+    ("Free Agent Acquisition Budget", "FAAB",
+     "A season-long budget you bid against to claim waiver players, instead of a simple "
+     "priority order. Spending it well is a real in-season edge."),
+    ("Strength of Schedule", "SOS",
+     "How hard a player's or team's upcoming matchups are. It matters most for streaming "
+     "decisions and for playoff-week planning."),
+    ("Regression", None,
+     "The tendency for unsustainable stats (like an extreme touchdown rate) to drift back "
+     "toward the norm. Spotting it early is how you sell high before the market catches on."),
+    ("Ceiling / Floor", None,
+     "A player's best realistic week (ceiling) and worst (floor). Tournaments reward ceiling; "
+     "cash and must-win weeks reward a high floor."),
+    ("Breakout", None,
+     'A young player poised to leap to a new tier of production. Our '
+     '<a href="/breakouts">breakouts</a> model flags candidates before the market does.'),
+    ("Sleeper", None,
+     "A player being drafted well below his upside &mdash; low cost, high potential payoff. "
+     "(Not to be confused with the Sleeper league platform.)"),
+]
+
+
+@public_bp.route("/glossary")
+@public_bp.route("/<platform>/<int:season>/<league_id>/glossary")
+def glossary_page(platform: Optional[str] = None, season: Optional[int] = None,
+                  league_id: Optional[str] = None):
+    import json
+
+    terms = sorted(GLOSSARY, key=lambda t: t[0].lower())
+
+    cards = []
+    for term, abbr, definition in terms:
+        abbr_html = f'<span class="gloss-abbr">{abbr}</span>' if abbr else ""
+        cards.append(
+            '<div class="gloss-term">'
+            f'<h2 class="gloss-name">{term}{abbr_html}</h2>'
+            f'<p class="gloss-def">{definition}</p>'
+            "</div>"
+        )
+
+    # DefinedTermSet structured data — each entry is a DefinedTerm. Plain-text
+    # descriptions; escape '<' so a definition's link can't break the <script>.
+    def _plain(s: str) -> str:
+        import re
+        s = re.sub(r"<[^>]+>", "", s).replace("&mdash;", "—").replace("&amp;", "&")
+        return re.sub(r"\s+", " ", s).strip()
+
+    term_set = {
+        "@context": "https://schema.org",
+        "@type": "DefinedTermSet",
+        "name": "Fantasy Football Glossary",
+        "hasDefinedTerm": [
+            {"@type": "DefinedTerm", "name": (f"{t} ({a})" if a else t),
+             "description": _plain(d)}
+            for t, a, d in terms
+        ],
+    }
+    jsonld = (
+        '<script type="application/ld+json">'
+        + json.dumps(term_set, separators=(",", ":")).replace("<", "\\u003c")
+        + "</script>"
+    )
+
+    body = (
+        '<div class="static-page"><div class="static-card-page">'
+        '<h1 class="static-hero-title">Fantasy Football Glossary</h1>'
+        '<div class="static-section">'
+        '<p>Plain-English definitions for the dynasty and redraft terms you\'ll see '
+        'across the site. New to a concept? Pair these with our free '
+        '<a href="/guides">strategy guides</a> and live '
+        '<a href="/rankings/dynasty">dynasty rankings</a>.</p>'
+        "</div>"
+        f'<div class="gloss-grid">{"".join(cards)}</div>'
+        + jsonld
+        + "</div></div>"
+    )
+    return _render(
+        "Fantasy Football Glossary | BR Fantasy", league_id or None, "glossary",
+        body, platform, season,
+        description="Plain-English definitions of dynasty and redraft fantasy "
+                    "football terms — ADP, Superflex, TE Premium, Zero-RB, FAAB, "
+                    "target share, and more.",
+    )

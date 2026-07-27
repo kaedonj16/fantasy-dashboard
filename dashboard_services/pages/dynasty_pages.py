@@ -368,6 +368,7 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
 <div class="rf-page">
   <div class="rf-hero">
     <h1 class="rf-title">Dynasty Fantasy Football Top Movers</h1>
+    <p class="rf-updated"><span class="rf-updated-dot"></span>Updated {html.escape(date_str)} · refreshed daily</p>
     <p class="rf-subtitle">
       Biggest dynasty trade value movers this week, {range_note}.
       Use the <a href="/trade">Trade Calculator</a> to act on these moves.
@@ -404,6 +405,97 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
   </div>
 </div>
 """
+
+
+# ── Position analysis ─────────────────────────────────────────────────────────
+# Unique editorial copy per position so /rankings/dynasty-{qb,rb,wr,te} are not
+# near-duplicate templates (a thin-content signal). Rendered above the table.
+# Evergreen framing — no player names or numbers that would age out.
+
+_POSITION_ANALYSIS = {
+    "QB": (
+        "How to read dynasty QB value",
+        "<p>Quarterback is the position where your league format matters most. In "
+        "<strong>Superflex and 2QB leagues</strong>, where you can start two passers, "
+        "quality quarterbacks are the most valuable assets in dynasty &mdash; the "
+        "position is scarce and the points are enormous. In standard "
+        "<strong>1QB leagues</strong> the calculus flips: you only need one, streaming is "
+        "viable, and paying a premium for an elite passer is often a luxury rather than a "
+        "necessity.</p>"
+        "<p>Age curves are also gentler here than anywhere else on the field. Quarterbacks "
+        "routinely produce into their mid-30s, so a proven starter holds dynasty value for "
+        "far longer than a running back of the same age. That durability is why young, "
+        "ascending quarterbacks with rushing upside command the highest prices: rushing "
+        "production raises their weekly floor and stacks on top of passing points. When you "
+        "read the values below, weight the format toggle first, then reward mobility and a "
+        "secure starting job.</p>"
+    ),
+    "RB": (
+        "How to read dynasty RB value",
+        "<p>Running back is the most volatile asset in dynasty, because the position ages "
+        "out first. Most backs peak in their early-to-mid 20s and can fall off sharply by "
+        "their late 20s, so you're renting production rather than banking it. That's why the "
+        "market pays enormous premiums for young, three-down workhorses who project to hold "
+        "a bell-cow role &mdash; volume is king, and secure volume is rare.</p>"
+        "<p>Receiving work is the tell that separates a durable dynasty RB from a "
+        "replaceable one. A back who catches passes keeps scoring even when his team trails "
+        "and the game turns pass-heavy &mdash; exactly the script in which a pure early-down "
+        "runner disappears. The classic trap is the aging veteran coming off a monster year: "
+        "his redraft rank looks great, but his dynasty window is short and the committee "
+        "behind him is one draft pick away. If you're rebuilding, that veteran is your sell.</p>"
+    ),
+    "WR": (
+        "How to read dynasty WR value",
+        "<p>Wide receiver is the backbone of most dynasty rosters. Receivers take a year or "
+        "two to develop but then hold value longer than any skill position except "
+        "quarterback, often producing into their early 30s. That combination &mdash; long "
+        "shelf life plus every-week target volume &mdash; makes ascending young receivers the "
+        "safest premium assets in the format.</p>"
+        "<p>The signal to trust is opportunity: target share and air yards tell you how "
+        "central a receiver is to his offense, and they stabilize faster than touchdowns, "
+        "which bounce around year to year. A young wideout locked into a heavy target role is "
+        "worth more than an older one with a gaudy but touchdown-driven stat line. When you "
+        "scan the values below, favor secure volume and a clear path to the ball over last "
+        "season's scoring, which often regresses.</p>"
+    ),
+    "TE": (
+        "How to read dynasty TE value",
+        "<p>Tight end is the position of scarcity. A small handful of every-week difference-"
+        "makers sit far above a long, replaceable middle, so the value curve is steep at the "
+        "top and flat thereafter. In <strong>TE Premium</strong> scoring, which awards extra "
+        "points per reception, that top tier is worth even more and the gap widens further.</p>"
+        "<p>Tight ends are also the slowest to develop &mdash; many don't break out until "
+        "their third season &mdash; but the elite ones then hold value for years. That makes "
+        "the position a patience game: if you don't roster one of the difference-makers, "
+        "chasing the muddled middle rarely pays, and streaming is often the smarter play. When "
+        "you read the values below, decide first whether you're buying into the scarce top "
+        "tier or punting the position, because the middle offers little edge either way.</p>"
+    ),
+    None: (
+        "How dynasty rankings work",
+        "<p>These rankings estimate <strong>trade value</strong>: what the rest of your "
+        "league would give up to acquire a player, not how many points he'll score this week. "
+        "That's why they never match a redraft list &mdash; dynasty prices in age, long-term "
+        "outlook, and the runway a player has left. A younger ascending player will often "
+        "out-rank an older one who scores more today.</p>"
+        "<p>Values blend consensus market data from real dynasty trades with recent usage, "
+        "the positional aging curve, and each player's situation, and they refresh daily. Use "
+        'the position tabs above for a deeper read on each spot, keep the '
+        '<a href="/guides/dynasty-trade-value">trade-value guide</a> handy, and take any deal '
+        'to the free <a href="/trade">trade calculator</a> to see the net value.</p>'
+    ),
+}
+
+
+def _position_analysis_html(pos_filter: str | None) -> str:
+    entry = _POSITION_ANALYSIS.get(pos_filter) or _POSITION_ANALYSIS.get(None)
+    heading, prose = entry
+    return (
+        '<section class="rnk-analysis">'
+        f'<h2 class="rnk-analysis-title">{html.escape(heading)}</h2>'
+        f'{prose}'
+        "</section>"
+    )
 
 
 # ── Rankings Hub ──────────────────────────────────────────────────────────────
@@ -492,6 +584,8 @@ def build_rankings_hub_body(
   </div>
 
   <div class="rnk-pos-nav">{nav_html}</div>
+
+  {_position_analysis_html(pos_filter)}
 
   <div class="rnk-table-wrap">
     <table class="rnk-table">
