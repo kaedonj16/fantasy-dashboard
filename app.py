@@ -1163,7 +1163,7 @@ BASE_HTML = """
          first paint (app.js is deferred, too late), or every page flashes white
          on load and the browser's inter-page gap is white too. Set data-theme
          and the <html> background up front so switching pages stays dark. -->
-    <style>html[data-theme="dark"]{{background:#020617}}</style>
+    <style>html{{background:#f4f6f8}}html[data-theme="dark"]{{background:#020617}}</style>
     <script>(function(){{try{{if(localStorage.getItem('theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}}catch(e){{}}}})();</script>
     <meta name="google-adsense-account" content="ca-pub-9164153092633845">
     <meta name="google-site-verification" content="zuH_tCWKG_L4hm4eRDFit3xfMi-ZPFXwK2s9eap20FA">
