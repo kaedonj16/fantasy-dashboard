@@ -67,3 +67,34 @@ def test_more_sheet_lists_core_pages(offline_client):
         assert f"br-sheet-h'>{section}<" in html
     # Watchlist is a plain link to the full page (no popover to reposition).
     assert "href='/watchlist'" in html
+
+
+@pytest.mark.parametrize("settings,expected", [
+    ({"type": 1},                    True),   # keeper league
+    ({"type": 0, "max_keepers": 3},  True),   # redraft with a keeper limit
+    ({"type": 0, "max_keepers": 0},  False),  # pure redraft
+    ({"type": 2, "max_keepers": 0},  False),  # true dynasty
+    ({"type": 2, "max_keepers": 20}, False),  # dynasty that still reports a limit
+    ({},                             False),  # unknown / non-Sleeper, no limit
+])
+def test_nav_show_keeper_rules(monkeypatch, settings, expected):
+    """Dynasty (type 2) never shows a Keeper dock tab, even with a max_keepers
+    value; keeper leagues and configured keeper limits do."""
+    import app
+    monkeypatch.setattr(app, "get_league_ctx_from_cache",
+                        lambda *a, **k: {"league_settings": settings})
+    assert app._nav_show_keeper("sleeper", "L", 2026) is expected
+
+
+def test_dynasty_offseason_dock_has_no_keeper(monkeypatch):
+    """A dynasty league in the offseason gets the redraft dock layout
+    (Draft, Rankings, Teams) rather than a Keeper tab."""
+    import app, re
+    monkeypatch.setattr(app, "get_league_ctx_from_cache",
+                        lambda *a, **k: {"league_settings": {"type": 2, "max_keepers": 20}})
+    monkeypatch.setattr(app, "get_nfl_state", lambda: {"season": "2026", "season_type": "off"})
+    monkeypatch.setattr(app, "has_draft_ended", lambda *a, **k: False)
+    with app.app.test_request_context("/x"):
+        labels = re.findall(r"br-tabbar-lbl'>([^<]+)<", app._mobile_nav("dashboard", "L", "sleeper", 2026))
+    assert labels == ["Home", "Draft", "Rankings", "Teams", "More"]
+    assert "Keeper" not in labels

@@ -22870,7 +22870,13 @@ a, button, [role="button"], [role="tab"], summary, label,
      logo; every other league page hides it and hands the height to content. */
   .top-nav.br-mnav .nav-center,
   .top-nav.br-mnav .nav-right { display: none; }
-  .top-nav.br-mnav { grid-template-columns: 1fr; justify-items: center; }
+  .top-nav.br-mnav {
+    grid-template-columns: 1fr; justify-items: center;
+    /* The mobile .top-nav override drops the base safe-area padding, so the
+       logo lands under the notch / Dynamic Island in a standalone PWA. Restore
+       it here so the logo always clears the status bar. */
+    padding-top: max(10px, env(safe-area-inset-top));
+  }
   .top-nav.br-mnav:not(.br-mnav-home) { display: none; }
 
   /* Scrim + sheet sit just above the dock (both at --z-chrome); DOM order puts
@@ -22929,11 +22935,25 @@ a, button, [role="button"], [role="tab"], summary, label,
   /* Widgets relocated into the sheet by app.js keep their own handlers; here we
      flatten their absolutely-positioned dropdowns into static, full-width
      content so they read as ordinary sheet rows. */
-  .br-sheet .nav-search-wrapper { width: 100%; position: static; padding: 4px 18px 2px; }
-  .br-sheet .nav-search-inner { width: 100%; }
+  .br-sheet .nav-search-wrapper { width: 100%; position: static; padding: 2px 16px 4px; }
+  /* The nav search collapses to a 38px circle until focused; in the sheet it
+     should always be a full search field, so pin the expanded look. */
+  .br-sheet .nav-search-inner {
+    width: 100%; height: auto; border-radius: 12px;
+    padding: 11px 13px; gap: 10px; justify-content: flex-start;
+    background: var(--card-soft); border: 1px solid var(--border);
+    cursor: text; overflow: visible; transform: none;
+  }
+  .br-sheet .nav-search-icon {
+    position: relative; left: auto; top: auto; transform: none;
+    width: 18px; height: 18px; flex-shrink: 0; color: var(--text-muted);
+  }
+  .br-sheet .nav-search-input {
+    width: 100%; opacity: 1; pointer-events: auto; font-size: 15px;
+  }
   .br-sheet .nav-search-dropdown {
-    position: static; width: 100%; margin-top: 6px;
-    box-shadow: none; border: 0; max-height: 46vh;
+    position: static; width: 100%; margin-top: 8px;
+    box-shadow: none; border: 0; max-height: 46vh; border-radius: 12px;
   }
   .br-sheet #settingsDropdown {
     position: static !important; display: block !important;

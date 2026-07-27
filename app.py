@@ -1729,13 +1729,18 @@ _DOCK_LABELS = {
 def _nav_show_keeper(platform, league_id, season) -> bool:
     """Should the offseason dock surface a Keeper tab?
 
-    True for keeper/dynasty leagues that have an actual keeper decision to make;
-    False for redraft leagues and for true dynasty leagues (you keep your whole
-    roster, so there is no keeper step and the tool is hidden). Reads the cached
-    league settings, so it costs nothing extra at render time."""
+    Only for keeper leagues: Sleeper type 1 (keeper), or any league with a keeper
+    limit configured. Dynasty leagues (type 2) keep their whole roster, so there
+    is no keeper decision and the dock never shows Keeper for them even when
+    Sleeper reports a max_keepers value; pure redraft (type 0, no limit) does not
+    either. Reads the cached league settings, so it costs nothing extra to check
+    at render time. The Keeper Assistant still lives in the More sheet regardless."""
+    settings = {}
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
-        settings = (ctx.get("league") or {}).get("settings") or {}
+        settings = (ctx.get("league_settings")
+                    or (ctx.get("league") or {}).get("settings")
+                    or ctx.get("settings") or {})
     except Exception:
         settings = {}
     def _i(v):
@@ -1745,8 +1750,9 @@ def _nav_show_keeper(platform, league_id, season) -> bool:
             return None
     type_code = _i(settings.get("type"))
     max_keepers = _i(settings.get("max_keepers")) or 0
-    true_dynasty = (type_code == 2 and max_keepers == 0)
-    return ((type_code in (1, 2)) or max_keepers > 0) and not true_dynasty
+    if type_code == 2:               # dynasty: whole-roster keep, no dock tab
+        return False
+    return type_code == 1 or max_keepers > 0
 
 
 def _mobile_nav(active: str, league_id, platform, season) -> str:
