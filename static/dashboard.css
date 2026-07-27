@@ -22931,30 +22931,10 @@ a, button, [role="button"], [role="tab"], summary, label,
     padding: 1px 5px; border-radius: 5px;
   }
   .br-sheet-mount { display: flex; flex-direction: column; }
+  button.br-sheet-link { background: none; border: 0; width: 100%; font: inherit; cursor: pointer; text-align: left; }
 
-  /* Widgets relocated into the sheet by app.js keep their own handlers; here we
-     flatten their absolutely-positioned dropdowns into static, full-width
-     content so they read as ordinary sheet rows. */
-  .br-sheet .nav-search-wrapper { width: 100%; position: static; padding: 2px 16px 4px; }
-  /* The nav search collapses to a 38px circle until focused; in the sheet it
-     should always be a full search field, so pin the expanded look. */
-  .br-sheet .nav-search-inner {
-    width: 100%; height: auto; border-radius: 12px;
-    padding: 11px 13px; gap: 10px; justify-content: flex-start;
-    background: var(--card-soft); border: 1px solid var(--border);
-    cursor: text; overflow: visible; transform: none;
-  }
-  .br-sheet .nav-search-icon {
-    position: relative; left: auto; top: auto; transform: none;
-    width: 18px; height: 18px; flex-shrink: 0; color: var(--text-muted);
-  }
-  .br-sheet .nav-search-input {
-    width: 100%; opacity: 1; pointer-events: auto; font-size: 15px;
-  }
-  .br-sheet .nav-search-dropdown {
-    position: static; width: 100%; margin-top: 8px;
-    box-shadow: none; border: 0; max-height: 46vh; border-radius: 12px;
-  }
+  /* The settings menu is relocated into the sheet by app.js; flatten its
+     absolutely-positioned dropdown into static, full-width content. */
   .br-sheet #settingsDropdown {
     position: static !important; display: block !important;
     box-shadow: none; border: 0; width: 100%;
@@ -22966,6 +22946,76 @@ a, button, [role="button"], [role="tab"], summary, label,
     position: static !important; width: 100% !important;
     box-shadow: none; border: 0; margin: 4px 0 0; max-height: 46vh;
   }
+}
+
+/* ============================================
+   FULL-SCREEN PLAYER SEARCH (mobile)
+   ============================================
+   The More sheet's Search row opens this. app.js relocates the real nav-search
+   widget (input + results) into .br-search-mount, so its handlers keep working;
+   here we present it as a full-screen search view that slides in from the side. */
+.br-search-screen { display: none; }
+
+@media (max-width: 768px) {
+  .br-search-screen {
+    display: flex; flex-direction: column;
+    position: fixed; inset: 0; z-index: var(--z-chrome);
+    background: var(--bg);
+    padding: calc(env(safe-area-inset-top) + 8px)
+             max(14px, env(safe-area-inset-right)) 0
+             max(14px, env(safe-area-inset-left));
+    transform: translateX(100%);
+    transition: transform .26s cubic-bezier(.32, .72, 0, 1);
+  }
+  .br-search-screen.open { transform: none; }
+
+  .br-search-bar { display: flex; align-items: center; gap: 12px; padding: 4px 0 12px; }
+  .br-search-mount { flex: 1; min-width: 0; }
+  .br-search-cancel {
+    background: none; border: 0; padding: 6px 2px;
+    color: var(--accent); font: inherit; font-size: 15px; font-weight: 600;
+    cursor: pointer; flex: 0 0 auto; -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Pin the nav search to its full, always-open state (it collapses to a circle
+     otherwise) and let its results fill the screen below the search bar. */
+  .br-search-screen .nav-search-wrapper { width: 100%; position: static; }
+  .br-search-screen .nav-search-inner {
+    width: 100%; height: auto; border-radius: 12px;
+    padding: 11px 13px; gap: 10px; justify-content: flex-start;
+    background: var(--card-soft); border: 1px solid var(--border);
+    cursor: text; overflow: visible; transform: none; box-shadow: none;
+  }
+  .br-search-screen .nav-search-icon {
+    position: relative; left: auto; top: auto; transform: none;
+    width: 18px; height: 18px; flex-shrink: 0; color: var(--text-muted);
+  }
+  /* The input carries its own focus border, ring and keyboard outline (global
+     input styles), which read as a distracting box-inside-a-box. Strip all of
+     it from the input; the field container below shows the single focus state. */
+  .br-search-screen .nav-search-input,
+  .br-search-screen .nav-search-input:focus,
+  .br-search-screen .nav-search-input:focus-visible {
+    width: 100%; opacity: 1; pointer-events: auto; font-size: 16px;
+    border: 0; box-shadow: none; border-radius: 0; background: none;
+    outline: none !important;   /* beats the global !important focus ring */
+  }
+  /* The base widget shrinks to a 240px pill on focus; keep it full width and
+     give the container the one clean focus affordance (accent border + ring). */
+  .br-search-screen .nav-search-wrapper:focus-within .nav-search-inner {
+    width: 100%; height: auto; border-radius: 12px; padding: 11px 13px;
+    border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  .br-search-screen .nav-search-dropdown {
+    position: absolute; left: max(14px, env(safe-area-inset-left));
+    right: max(14px, env(safe-area-inset-right));
+    top: calc(env(safe-area-inset-top) + 64px);
+    bottom: 0; width: auto; max-height: none;
+    border: 0; box-shadow: none; border-radius: 0; overflow-y: auto;
+  }
+}
+@media (max-width: 768px) and (prefers-reduced-motion: reduce) {
+  .br-search-screen { transition: none; }
 }
 @media (max-width: 768px) and (prefers-reduced-motion: reduce) {
   .br-sheet { transition: none; }

@@ -36,8 +36,11 @@ def test_dock_and_sheet_present(offline_client):
     assert "class='br-tabbar'" in html
     assert "id='brMoreTab'" in html
     assert "id='brMoreSheet'" in html
-    # Mount points app.js relocates Search and the settings menu into.
-    assert "id='brSheetFind'" in html
+    # Search is a row that opens the full-screen search screen; the settings
+    # menu is relocated into the Account mount.
+    assert "id='brSheetSearchRow'" in html
+    assert "id='brSearchScreen'" in html
+    assert "id='brSearchMount'" in html
     assert "id='brSheetAccount'" in html
     # The widgets that get relocated must exist in the server HTML.
     assert "id='navSearchWrapper'" in html

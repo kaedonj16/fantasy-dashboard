@@ -1838,12 +1838,13 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     def _sec(title, rows):
         return f"<h3 class='br-sheet-h'>{title}</h3>" + "".join(rows)
 
-    # Search box is relocated into #brSheetFind by app.js (it keeps its handlers);
-    # Watchlist is a plain link to the full watchlist page (robust, no popover to
-    # reposition inside the sheet).
+    # Search is a row like the others; tapping it opens the full-screen search
+    # screen (app.js moves the real search widget into it). Watchlist is a plain
+    # link to the full watchlist page.
     find_html = (
         "<h3 class='br-sheet-h'>Find</h3>"
-        "<div class='br-sheet-mount' id='brSheetFind'></div>"
+        "<button type='button' class='br-sheet-link' id='brSheetSearchRow'>"
+        f"{_nav_icon('search', size=20)}<span>Search players</span></button>"
         f"<a class='br-sheet-link' href='/watchlist'>{_nav_icon('star', size=20)}"
         "<span>Watchlist</span></a>"
     )
@@ -1908,7 +1909,18 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         f"  {trades_html}{stats_html}{account_html}"
         "</nav>"
     )
-    return dock + sheet
+
+    # Full-screen search: the Search row opens this; app.js relocates the real
+    # player-search widget (input + results) into the mount so its handlers work.
+    search_screen = (
+        "<div class='br-search-screen' id='brSearchScreen' aria-hidden='true'>"
+        "  <div class='br-search-bar'>"
+        "    <div class='br-search-mount' id='brSearchMount'></div>"
+        "    <button type='button' class='br-search-cancel' id='brSearchCancel'>Cancel</button>"
+        "  </div>"
+        "</div>"
+    )
+    return dock + sheet + search_screen
 
 
 def _nav_icon(name: str, cls: str = "", style: str = "", size: int = 16) -> str:
