@@ -8347,6 +8347,7 @@ def build_activity_body(ctx: dict) -> str:
     biggest_trade_delta = 0.0
 
     activity_html = ""
+    snapshot_html = ""
     if activity_df is not None and not activity_df.empty:
 
         def html_trade(txrow):
@@ -8731,40 +8732,82 @@ def build_activity_body(ctx: dict) -> str:
                 "</div>"
             )
 
-        cards = []
+        def _day_label(ts) -> str:
+            """Human day header for the timeline: Today / Yesterday / weekday / date."""
+            try:
+                if pd.isna(ts):
+                    return "Earlier"
+                d = pd.Timestamp(ts)
+            except Exception:
+                return "Earlier"
+            try:
+                if d.tzinfo is not None:
+                    d = d.tz_localize(None)
+            except Exception:
+                pass
+            days = (pd.Timestamp.now().normalize() - d.normalize()).days
+            if days <= 0:
+                return "Today"
+            if days == 1:
+                return "Yesterday"
+            if days < 7:
+                return d.strftime("%A")
+            return d.strftime("%b %d").replace(" 0", " ")
+
+        def _ts_key(ts) -> int:
+            try:
+                if pd.isna(ts):
+                    return -1
+                return int(pd.Timestamp(ts).value)
+            except Exception:
+                return -1
+
+        # Merge trades + waivers into one stream, newest first, grouped under day
+        # headers so the feed reads as a chronological timeline (League Pulse).
+        dated_cards = []
         for _, row in activity_df.iterrows():
-            cards.append(html_trade(row) if row["kind"] == "trade" else html_waiver(row))
+            _card = html_trade(row) if row["kind"] == "trade" else html_waiver(row)
+            dated_cards.append((row.get("ts"), _card))
+        dated_cards.sort(key=lambda it: _ts_key(it[0]), reverse=True)
+
+        _day_groups: list = []
+        for _ts, _card in dated_cards:
+            _lbl = _day_label(_ts)
+            if not _day_groups or _day_groups[-1][0] != _lbl:
+                _day_groups.append((_lbl, []))
+            _day_groups[-1][1].append(_card)
+        cards_html = "".join(
+            f"<div class='act-daygroup'><div class='act-dayhdr'>{html.escape(lbl)}</div>{''.join(cs)}</div>"
+            for lbl, cs in _day_groups
+        )
 
         most_active_team = max(most_active_counts.items(), key=lambda x: x[1])[0] if most_active_counts else "None"
         most_moved_asset = max(traded_asset_counts.items(), key=lambda x: x[1])[0] if traded_asset_counts else "None"
 
-        summary_html = (
-            "<div class='bract-summary-grid'>"
-            f"  <div class='bract-summary-card'><div class='bract-summary-label'>Trades</div><div class='bract-summary-value'>{trade_count}</div></div>"
-            f"  <div class='bract-summary-card'><div class='bract-summary-label'>Waivers</div><div class='bract-summary-value'>{waiver_count}</div></div>"
-            f"  <div class='bract-summary-card'><div class='bract-summary-label'>Most Active</div><div class='bract-summary-value bract-summary-text'>{most_active_team}</div></div>"
-            f"  <div class='bract-summary-card'><div class='bract-summary-label'>Most Moved Asset</div><div class='bract-summary-value bract-summary-text'>{most_moved_asset}</div></div>"
-            "</div>"
-        )
-
-        trade_spotlight = (
-            "<div class='bract-spotlight'>"
-            "  <div class='bract-spotlight-title'>Recent activity snapshot</div>"
-            f"  <div class='bract-spotlight-copy'>Biggest recent trade: <strong>{biggest_trade_label}</strong>"
-            f"  {'(' + str(round(biggest_trade_delta, 1)) + ' value swing)' if biggest_trade_delta > 0 else ''}</div>"
+        # The four big stat tiles + spotlight banner collapse into one compact
+        # rail card, so the timeline is the first thing you see.
+        _swing = f" · {round(biggest_trade_delta, 1)}" if biggest_trade_delta > 0 else ""
+        snapshot_html = (
+            "<div class='card small act-snapshot'>"
+            "  <div class='card-header'><h3>Snapshot</h3></div>"
+            "  <div class='act-snap-body'>"
+            f"    <div class='act-snap-stat'><span class='act-snap-n'>{trade_count}</span><span class='act-snap-l'>Trades</span></div>"
+            f"    <div class='act-snap-stat'><span class='act-snap-n'>{waiver_count}</span><span class='act-snap-l'>Waivers</span></div>"
+            "  </div>"
+            f"  <div class='act-snap-line'><span>Biggest swing</span><strong>{html.escape(biggest_trade_label)}{_swing}</strong></div>"
+            f"  <div class='act-snap-line'><span>Most active</span><strong>{html.escape(most_active_team)}</strong></div>"
+            f"  <div class='act-snap-line'><span>Most-moved asset</span><strong>{html.escape(most_moved_asset)}</strong></div>"
             "</div>"
         )
 
         activity_html = (
             "<div class='card activity-card' data-section='activity'>"
             "  <div class='card-header-row'>"
-            "    <h2>Trades & Waiver Claims</h2>"
+            "    <h2>League activity</h2>"
             "  </div>"
-            f"  {summary_html}"
-            f"  {trade_spotlight}"
             "  <div class='scroll-box'>"
             "    <div class='feed'>"
-            f"      {''.join(cards)}"
+            f"      {cards_html}"
             "    </div>"
             "  </div>"
             "</div>"
@@ -8800,40 +8843,65 @@ def build_activity_body(ctx: dict) -> str:
         )
 
     return f"""
-    <div class="page-layout activity-page">
-      <main class="page-main activity-main">
-        <div class="activity-col">
-          {activity_html}
+    <style>
+      .activity-page.act-pulse.page-layout {{ grid-template-columns: minmax(0, 1fr) 320px; }}
+      @media (max-width: 900px) {{
+        .activity-page.act-pulse.page-layout {{ grid-template-columns: 1fr; }}
+      }}
+      .act-filterbar {{
+        display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center;
+        padding: 10px 14px; background: var(--card); border: 1px solid var(--border);
+        border-radius: 12px; margin-bottom: 12px;
+      }}
+      .act-seg {{ display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }}
+      .act-seg-label {{
+        font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+        color: var(--text-muted); margin-right: 2px;
+      }}
+      .act-pulse .act-daygroup + .act-daygroup {{ margin-top: 2px; }}
+      .act-pulse .act-dayhdr {{
+        font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase;
+        color: var(--text-muted); padding: 14px 2px 8px; display: flex; align-items: center; gap: 10px;
+      }}
+      .act-pulse .act-dayhdr::after {{ content: ""; flex: 1; height: 1px; background: var(--border); opacity: .6; }}
+      .act-pulse-rail {{ gap: 12px; }}
+      .act-snapshot .act-snap-body {{ display: flex; gap: 10px; padding: 4px 14px 10px; }}
+      .act-snap-stat {{
+        flex: 1; background: var(--card-soft, var(--bg-alt)); border: 1px solid var(--border);
+        border-radius: 10px; padding: 9px 11px; display: flex; flex-direction: column;
+      }}
+      .act-snap-n {{ font-size: 22px; font-weight: 800; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; }}
+      .act-snap-l {{ font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); margin-top: 4px; }}
+      .act-snap-line {{
+        display: flex; justify-content: space-between; gap: 12px; font-size: 12px;
+        padding: 8px 14px; border-top: 1px solid var(--border);
+      }}
+      .act-snap-line span {{ color: var(--text-muted); flex: 0 0 auto; }}
+      .act-snap-line strong {{ color: var(--text); font-weight: 700; text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+    </style>
+    <div class="page-layout activity-page act-pulse">
+      <main class="page-main act-pulse-main">
+        <div class="act-filterbar">
+          <div class="act-seg">
+            <span class="act-seg-label">Show</span>
+            <button class="pill-toggle act-toggle active" data-kind="trade" type="button">Trades</button>
+            <button class="pill-toggle act-toggle active" data-kind="waiver" type="button">Waivers</button>
+          </div>
+          <div class="act-seg">
+            <span class="act-seg-label">Injuries</span>
+            <button class="pill-toggle inj-toggle active" data-status="all" type="button">All</button>
+            <button class="pill-toggle inj-toggle" data-status="IR" type="button">IR</button>
+            <button class="pill-toggle inj-toggle" data-status="OUT" type="button">Out</button>
+            <button class="pill-toggle inj-toggle" data-status="QUESTIONABLE" type="button">Q</button>
+          </div>
         </div>
-        <div class="injury-col">
-          {injury_html}
-        </div>
+        {activity_html}
       </main>
 
-      <aside class="page-sidebar">
-        <div class="card small">
-          <div class="card-header">
-            <h3>Filters</h3>
-          </div>
-          <div class="card-body">
-            <label class="mini-label">Activity Types</label>
-            <div class="pill-row">
-              <button class="pill-toggle act-toggle active" data-kind="waiver">Waivers</button>
-              <button class="pill-toggle act-toggle active" data-kind="trade">Trades</button>
-            </div>
-
-            <label class="mini-label" style="margin-top:12px;">Injury Status</label>
-            <div class="pill-row">
-              <button class="pill-toggle inj-toggle active" data-status="all">All</button>
-              <button class="pill-toggle inj-toggle" data-status="IR">IR</button>
-              <button class="pill-toggle inj-toggle" data-status="OUT">Out</button>
-              <button class="pill-toggle inj-toggle" data-status="QUESTIONABLE">Q</button>
-            </div>
-          </div>
-        </div>
-
-
-        <div class="card small" id="nflNewsCard" style="margin-top:12px;">
+      <aside class="page-sidebar act-pulse-rail">
+        {snapshot_html}
+        {injury_html}
+        <div class="card small" id="nflNewsCard">
           <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
             <h3>NFL News</h3>
             <span style="font-size:10px;color:var(--text-muted);font-weight:500;">via ESPN</span>
