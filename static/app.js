@@ -746,26 +746,63 @@ window.brHaptic = function (pattern) {
         if (!isPop) history.pushState({ brSoft: 1 }, '', url);
         window.scrollTo(0, 0);
         if (window.initPageRoot) window.initPageRoot(curRoot);
+        // Desktop: the top nav lives outside #page-root, so move its active
+        // state to the new page's and glide the indicator across.
+        if (!mq.matches) syncDesktopNav(doc);
       })
       .catch(function () {
         if (mine === token) location.href = url;   // safe fallback: full navigation
       });
   }
 
+  // Copy the active-pill / active-dropdown-item state from the fetched page's
+  // top nav onto the live one (the nav is identical across pages, so index-zip
+  // is safe; a length mismatch on a rare per-page difference just skips), then
+  // glide the indicator to the new active pill.
+  function syncDesktopNav(doc) {
+    var curNav = document.querySelector('.top-nav');
+    var newNav = doc.querySelector('.top-nav');
+    if (!curNav || !newNav) return;
+    function copyActive(sel) {
+      var cur = curNav.querySelectorAll(sel), nu = newNav.querySelectorAll(sel);
+      if (cur.length !== nu.length) return;
+      for (var i = 0; i < cur.length; i++) {
+        var on = nu[i].classList.contains('active');
+        cur[i].classList.toggle('active', on);
+        if (nu[i].getAttribute('aria-current')) cur[i].setAttribute('aria-current', 'page');
+        else cur[i].removeAttribute('aria-current');
+      }
+    }
+    copyActive('.nav-pill');
+    copyActive('.nav-pill-dropdown-item');
+    if (window.brNavGlide) window.brNavGlide();
+  }
+
   document.addEventListener('click', function (e) {
-    if (!mq.matches) return;                                   // mobile only
     if (e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-    var a = e.target.closest('a.br-tabbar-item, .br-sheet a.br-sheet-link');
+    // Mobile navigates from the dock + sheet; desktop from the top nav pills,
+    // dropdown items and the logo.
+    var a = mq.matches
+      ? e.target.closest('a.br-tabbar-item, .br-sheet a.br-sheet-link')
+      : e.target.closest('.top-nav a.nav-pill, .top-nav a.nav-pill-dropdown-item, .top-nav .nav-left > a');
     if (!a) return;
     var href = a.getAttribute('href');
     if (!href || href.charAt(0) === '#' || a.target === '_blank' || !sameOrigin(href)) return;
     if (new URL(href, location.href).href === location.href) { e.preventDefault(); return; }
     e.preventDefault();
+    // Close any open desktop dropdown so it doesn't linger after the soft-nav.
+    if (!mq.matches) {
+      document.querySelectorAll('.nav-pill-dropdown-wrapper.open').forEach(function (w) {
+        w.classList.remove('open');
+        var b = w.querySelector('[aria-expanded]');
+        if (b) b.setAttribute('aria-expanded', 'false');
+      });
+    }
     softNav(href, false);
   }, true);   // capture: run before the nav-overlay / other click handlers
 
   window.addEventListener('popstate', function () {
-    if (mq.matches) softNav(location.href, true);
+    softNav(location.href, true);
   });
 })();
 
@@ -2658,7 +2695,9 @@ function initStandingsSort(root = document) {
   const marker = root.querySelector('[data-page="standings"]');
   if (!marker) return;
 
-  const tbl = root.getElementById("stats") || root.querySelector("#stats");
+  // querySelector works whether root is the document or a page-root element (a
+  // soft-nav / refresh swap passes the element, which has no getElementById).
+  const tbl = root.querySelector("#stats");
   if (!tbl || !tbl.tHead || !tbl.tBodies?.length) return;
 
   if (tbl.__sortInited) return;
@@ -9255,6 +9294,16 @@ document.addEventListener('DOMContentLoaded', function() {
     place(e.ind, to, false);
     try { sessionStorage.setItem('br_nav_ind', JSON.stringify(to)); } catch (_) {}
   }
+
+  // Animate the indicator to the currently-active pill — used after a desktop
+  // soft-navigation swaps the active state in without a full page load.
+  window.brNavGlide = function () {
+    var e = els();
+    if (!e || !e.ind || !e.active || !MQ.matches) return;
+    reveal(e.ind);
+    place(e.ind, rectOf(e.active, e.container), true);
+    try { sessionStorage.setItem('br_nav_ind', JSON.stringify(rectOf(e.active, e.container))); } catch (_) {}
+  };
 
   // Attach a ResizeObserver EARLY (before the cold-load reflow) so any later
   // settle of the nav's side columns — which can transiently rewrap the pills —
