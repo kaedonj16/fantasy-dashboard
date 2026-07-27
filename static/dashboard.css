@@ -196,6 +196,8 @@
   --grid: #e5e7eb;
   --accent: #122d4b;
   --accent-color: #122d4b;
+  /* Readable text/icon color to sit ON an --accent fill (navy in light mode). */
+  --on-accent: #ffffff;
   --accent-soft: #e9eef5;
   --accent-soft-2: #eef4fb;
   --accent-strong: #0f2747;
@@ -237,6 +239,18 @@
   --shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.05);
   --shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
   --shadow-lg: 0 16px 36px rgba(15, 23, 42, 0.12);
+  /* Motion — one small vocabulary so the whole site moves like one object.
+     --ease-out for most hovers/fades, --ease-glide for panels/indicators that
+     slide (matches the dock/nav), --ease-spring for playful pop-ins. */
+  --ease-out: cubic-bezier(.2, .8, .3, 1);
+  --ease-glide: cubic-bezier(.32, .72, 0, 1);
+  --ease-spring: cubic-bezier(.2, 1.4, .4, 1);
+  --dur-fast: .15s;
+  --dur-med: .28s;
+  --dur-slow: .4s;
+  /* Frosted chrome (popovers, sheets, toasts) — translucent card over blur. */
+  --chrome-glass: color-mix(in srgb, var(--card) 82%, transparent);
+  --chrome-blur: saturate(180%) blur(18px);
   --max-content: 1400px;
   --weakest: #fef2f2;
   --strongest: #ecfdf3;
@@ -261,6 +275,8 @@
   --grid: #1f2937;
   --accent: #38bdf8;
   --accent-color: #38bdf8;
+  /* Dark accent (sky) is light, so it wants dark ink on top. */
+  --on-accent: #0f172a;
   --accent-soft: #162032;
   --accent-soft-2: #152235;
   --accent-strong: #0b1220;
@@ -760,9 +776,9 @@ ul {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   opacity: 0;
   pointer-events: none;
-  transition: transform .28s cubic-bezier(.32, .72, 0, 1),
-              width .28s cubic-bezier(.32, .72, 0, 1),
-              height .28s cubic-bezier(.32, .72, 0, 1),
+  transition: transform .28s var(--ease-glide),
+              width .28s var(--ease-glide),
+              height .28s var(--ease-glide),
               opacity .2s ease;
 }
 @media (max-width: 768px) { .nav-pill-ind { display: none; } }
@@ -813,7 +829,10 @@ ul {
   top: 100%;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--card);
+  background: var(--card);            /* fallback where color-mix is unsupported */
+  background: var(--chrome-glass);
+  -webkit-backdrop-filter: var(--chrome-blur);
+  backdrop-filter: var(--chrome-blur);
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.15);
@@ -1189,6 +1208,9 @@ ul {
   width: 264px;
   max-width: calc(100vw - 24px);
   background: var(--card);
+  background: var(--chrome-glass);
+  -webkit-backdrop-filter: var(--chrome-blur);
+  backdrop-filter: var(--chrome-blur);
   border: 0.5px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.15);
@@ -1334,9 +1356,12 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
 }
 
 .breakout-filter-btn.active {
-  background: var(--accent);
-  color: white;
-  border-color: var(--accent);
+  /* Soft-accent active state, matching the nav indicator and .card tabs, instead
+     of a solid fill — so "selected" reads the same across the site. */
+  background: var(--accent-soft);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  color: var(--accent);
+  border-color: transparent;
 }
 
 .breakout-grid {
@@ -2351,12 +2376,16 @@ label {
 button {
   border-radius: 10px;
   border: none;
-  background: #38bdf8;
-  color: #0f172a;
+  /* Use the theme accent (navy in light, sky in dark) with matching ink, instead
+     of a hardcoded sky fill + Arial. font-family:inherit pulls the brand font;
+     the global margin-top:4px is dropped — it only nudged buttons out of line
+     with their neighbours (components that want spacing set it themselves). */
+  background: var(--accent);
+  color: var(--on-accent);
+  font-family: inherit;
   font-weight: 600;
   cursor: pointer;
   font-size: 14px;
-  margin-top: 4px;
   transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -17382,6 +17411,9 @@ tr.team-clickable {
   max-height: 320px;
   overflow-y: auto;
   background: var(--card);
+  background: var(--chrome-glass);
+  -webkit-backdrop-filter: var(--chrome-blur);
+  backdrop-filter: var(--chrome-blur);
   border: 0.5px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(15,23,42,.15);
@@ -22976,7 +23008,7 @@ a, button, [role="button"], [role="tab"], summary, label,
     top: 0; bottom: env(safe-area-inset-bottom);
     width: calc(100% / var(--n, 5));
     transform: translateX(calc(var(--i, 0) * 100%));
-    transition: transform .28s cubic-bezier(.32, .72, 0, 1);
+    transition: transform .28s var(--ease-glide);
     padding: 6px 10px; box-sizing: border-box; pointer-events: none;
   }
   .br-tabbar-ind[data-hidden] { opacity: 0; }
@@ -23050,7 +23082,7 @@ a, button, [role="button"], [role="tab"], summary, label,
     /* visibility:hidden keeps it off-screen even before the transform computes,
        so the sheet never flashes on a page load or navigation. */
     visibility: hidden;
-    transition: transform .28s cubic-bezier(.32, .72, 0, 1), visibility .28s;
+    transition: transform .28s var(--ease-glide), visibility .28s;
     max-height: 86vh; overflow-y: auto;
     padding: 0 0 calc(20px + env(safe-area-inset-bottom));
     -webkit-overflow-scrolling: touch;
@@ -23138,7 +23170,7 @@ a, button, [role="button"], [role="tab"], summary, label,
        navigation even if the transform hasn't computed yet; it is only shown
        when actually opened. */
     visibility: hidden;
-    transition: transform .26s cubic-bezier(.32, .72, 0, 1), visibility .26s;
+    transition: transform .26s var(--ease-glide), visibility .26s;
   }
   .br-search-screen.open { transform: none; visibility: visible; }
 
