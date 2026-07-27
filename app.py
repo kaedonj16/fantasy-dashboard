@@ -1159,6 +1159,12 @@ BASE_HTML = """
 <html lang="en">
   <head>
     <meta charset="utf-8">
+    <!-- No-flash theme boot: a dark-mode user's theme must be applied BEFORE
+         first paint (app.js is deferred, too late), or every page flashes white
+         on load and the browser's inter-page gap is white too. Set data-theme
+         and the <html> background up front so switching pages stays dark. -->
+    <style>html[data-theme="dark"]{{background:#020617}}</style>
+    <script>(function(){{try{{if(localStorage.getItem('theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}}catch(e){{}}}})();</script>
     <meta name="google-adsense-account" content="ca-pub-9164153092633845">
     <meta name="google-site-verification" content="zuH_tCWKG_L4hm4eRDFit3xfMi-ZPFXwK2s9eap20FA">
     <meta name="google-site-verification" content="I_Fkx1dlwJvI96dzPkbM1TkUzT4Nw8DdCtSLvm7MlD4">
@@ -1209,6 +1215,7 @@ BASE_HTML = """
     <!-- Instant branded splash (covers the PWA/first-paint white screen) -->
     <style>
       #appSplash{{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:#ffffff;transition:opacity .35s ease;}}
+      html[data-theme="dark"] #appSplash{{background:#020617;}}
       #appSplash img{{width:170px;max-width:56%;height:auto;animation:appSplashPulse 1.5s ease-in-out infinite;}}
       #appSplash.app-splash-hide{{opacity:0;pointer-events:none;}}
       @keyframes appSplashPulse{{0%,100%{{opacity:.5}}50%{{opacity:1}}}}
@@ -1253,14 +1260,19 @@ BASE_HTML = """
         // The white splash is for the cold PWA launch only. On any in-app
         // navigation within the same session (e.g. tapping the mobile dock)
         // remove it immediately so pages don't flash a white loading screen.
+        // __brWarmLaunch also tells app.js not to auto-reload a warm navigation
+        // (that stale-shell reload is only wanted on the cold launch).
+        var _warm = false;
         try {{
-          if (sessionStorage.getItem('br_warm')) {{
+          _warm = !!sessionStorage.getItem('br_warm');
+          if (_warm) {{
             if (s && s.parentNode) s.parentNode.removeChild(s);
             s = null;
           }} else {{
             sessionStorage.setItem('br_warm','1');
           }}
         }} catch(e){{}}
+        window.__brWarmLaunch = _warm;
         if(!s) return;
         // Reveal the (already server-rendered) content as soon as the DOM is
         // parsed — waiting for window 'load' gated LCP behind every image and
@@ -1804,9 +1816,10 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         return url_for(ep, platform=platform, season=season, league_id=league_id) + suffix
 
     # ── Dynamic dock ──────────────────────────────────────────────────────────
+    show_keeper = _nav_show_keeper(platform, league_id, season)
     if not offseason:
         middle = ["weekly", "teams", "players"]
-    elif _nav_show_keeper(platform, league_id, season):
+    elif show_keeper:
         middle = ["draft", "keeper", "players"]
     else:
         middle = ["draft", "players", "teams"]
@@ -1906,10 +1919,11 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         _sl("breakouts", "Breakout Engine", pro=True), _sl("prospects", "Prospect Rankings"),
     ])
 
-    draft_html = _sec("Draft", [
-        _sl("draft", "Draft Room"), _sl("keeper", "Keeper Assistant"),
-        _sl("draft-history", "Draft History"),
-    ])
+    _draft_rows = [_sl("draft", "Draft Room")]
+    if show_keeper:                                   # keeper leagues only
+        _draft_rows.append(_sl("keeper", "Keeper Assistant"))
+    _draft_rows.append(_sl("draft-history", "Draft History"))
+    draft_html = _sec("Draft", _draft_rows)
 
     stats_html = _sec("Stats", [
         _sl("awards", "Awards"), _sl("graphs", "Graphs"), _sl("history", "History"),
@@ -2242,11 +2256,14 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
     ], ["players", "prospects", "breakouts", "top-movers", "compare"], "playersNavDropdown"))
-    nav_pills.append(nav_pill_dropdown("Draft", [
-        ("Draft Room",       "page_draft_room",    "draft",         False),
-        ("Keeper Assistant", "page_keeper",        "keeper",        False),
-        ("Draft History",    "page_draft_history", "draft-history", False),
-    ], ["draft", "draft-history", "keeper"], "draftNavDropdown"))
+    # Keeper Assistant only applies to keeper leagues; hide it for dynasty and
+    # plain redraft leagues.
+    _draft_items = [("Draft Room", "page_draft_room", "draft", False)]
+    if _nav_show_keeper(platform, league_id, season):
+        _draft_items.append(("Keeper Assistant", "page_keeper", "keeper", False))
+    _draft_items.append(("Draft History", "page_draft_history", "draft-history", False))
+    nav_pills.append(nav_pill_dropdown("Draft", _draft_items,
+        ["draft", "draft-history", "keeper"], "draftNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",   "page_awards",   "awards",   False),
         ("Graphs",   "page_graphs",   "graphs",   False),
@@ -13835,6 +13852,14 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
                 )
         except Exception:
             logger.debug("[draft-room] keeper compute skipped", exc_info=True)
+    # Hide the Keeper draft type + keeper options entirely for dynasty and plain
+    # redraft (non-keeper) leagues. Guests (no league) keep it available.
+    show_keeper = True
+    if league_id:
+        try:
+            show_keeper = _nav_show_keeper(platform, league_id, season)
+        except Exception:
+            show_keeper = True
     body = build_draft_room_body(
         league_id, season, platform,
         is_guest=is_guest, num_teams=num_teams, is_superflex=is_sf,
@@ -13843,6 +13868,7 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
         num_rounds_rookie=num_rounds_rookie,
         num_rounds_startup=num_rounds_startup,
         keepers=keepers_payload,
+        show_keeper=show_keeper,
     )
     return render_page(
         "Draft Room | BR Fantasy", league_id, "draft", body, platform, season,
@@ -13909,6 +13935,39 @@ def page_draft_history(platform: str = None, season: int = None, league_id: str 
 
 
 # ── Live draft sync (P5, Sleeper) ────────────────────────────────────────────
+# A synced draft's type never changes, so memoize it per draft_id to keep the
+# hot poll path from re-fetching the league on every poll.
+_LIVE_DRAFT_TYPE_CACHE: dict = {}
+
+
+def _live_draft_type(rounds_val: int, platform: str, league_id, season, cache_key=None) -> str:
+    """High-level draft type for a synced Sleeper draft: rookie / redraft / startup.
+
+    Round count separates a short rookie draft from a long one. A long draft is a
+    dynasty *startup* only for true dynasty leagues; redraft and keeper leagues
+    (Sleeper settings.type 0 and 1) run a full draft every year, so they must be
+    graded on redraft ADP and redraft values, not dynasty. Getting this wrong made
+    keeper live drafts use dynasty ADP."""
+    if cache_key and cache_key in _LIVE_DRAFT_TYPE_CACHE:
+        return _LIVE_DRAFT_TYPE_CACHE[cache_key]
+    if 0 < rounds_val <= 5:
+        dt = "rookie"
+    else:
+        dt = "startup"
+        try:
+            if platform == "sleeper" and league_id:
+                _lt = ((get_league(platform, league_id, season) or {}).get("settings") or {}).get("type")
+                if _lt is not None and int(_lt) in (0, 1):   # 0 redraft, 1 keeper
+                    dt = "redraft"
+        except Exception:
+            logger.debug("suppressed exception", exc_info=True)
+    if cache_key:
+        if len(_LIVE_DRAFT_TYPE_CACHE) > 2000:
+            _LIVE_DRAFT_TYPE_CACHE.clear()
+        _LIVE_DRAFT_TYPE_CACHE[cache_key] = dt
+    return dt
+
+
 def _order_from_sleeper(draft: dict) -> str:
     """Map a Sleeper draft's type + reversal_round to our order_format."""
     dtype = str((draft or {}).get("type") or "snake").lower()
@@ -13962,7 +14021,10 @@ def api_draft_detect():
                 seen_ids.add(did)
                 settings = d.get("settings") or {}
                 rounds_val = int(settings.get("rounds") or 15)
-                draft_type = "rookie" if 0 < rounds_val <= 5 else "startup"
+                draft_type = _live_draft_type(
+                    rounds_val, platform, d.get("league_id") or lid,
+                    int(d.get("season") or season), cache_key=did,
+                )
                 out.append({
                     "draft_id": did,
                     "status": d.get("status"),
@@ -14011,9 +14073,13 @@ def api_draft_live():
         })
 
     rounds_val = int(settings.get("rounds") or 15)
-    # Derive high-level draft type from round count: Sleeper rookie drafts are
-    # always short (1-5 rounds); anything longer is a startup/dynasty draft.
-    draft_type = "rookie" if 0 < rounds_val <= 5 else "startup"
+    # Rookie drafts are short (1-5 rounds); a long draft is a dynasty startup only
+    # for true dynasty leagues. Redraft and keeper leagues run a full draft each
+    # year, so they resolve to 'redraft' (redraft ADP + values), not dynasty.
+    draft_type = _live_draft_type(
+        rounds_val, platform, draft.get("league_id"),
+        int(draft.get("season") or datetime.now().year), cache_key=draft_id,
+    )
     pick_timer = int(settings.get("pick_timer") or 0)
 
     # Light poll: the board hits this every few seconds and only needs the things
@@ -24244,15 +24310,15 @@ def api_draft_grades():
         else:
             _draft_type = "rookie"  # safe default
 
-        # Redraft leagues (Sleeper settings.type == 0) run a full draft every
-        # year, so a long draft there is a redraft - NOT a dynasty startup.
-        # Grade those on redraft values + a redraft-value ADP rank instead.
+        # Redraft and keeper leagues (Sleeper settings.type 0 and 1) run a full
+        # draft every year, so a long draft there is a redraft - NOT a dynasty
+        # startup. Grade those on redraft values + a redraft-value ADP rank.
         redraft_val_by_id: dict[str, float] = {}
         if _draft_type == "startup" and platform == "sleeper":
             try:
                 _lg = get_league(platform, league_id, season) or {}
                 _lt_num = (_lg.get("settings") or {}).get("type")
-                if _lt_num is not None and int(_lt_num) == 0:
+                if _lt_num is not None and int(_lt_num) in (0, 1):
                     _draft_type = "redraft"
             except Exception as _e_lt:
                 logger.info("[draft-grades] league type check skipped: %s", _e_lt)
