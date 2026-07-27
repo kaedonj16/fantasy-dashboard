@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import logging
 from datetime import datetime
 from typing import Dict, List
@@ -275,3 +276,67 @@ def render_injury_accordion(df_inj: pd.DataFrame) -> str:
 
     parts.append("</div></div>")
     return "".join(parts)
+
+
+# Injury-status -> (dot color class, filter keyword the Activity injury filter
+# matches on). PUP/NFI/SUSP read as out-for-a-while, so they group under IR.
+_INJ_CAT = {
+    "IR": "ir", "PUP": "ir", "NFI": "ir", "SUSP": "ir",
+    "OUT": "out", "DOUBTFUL": "dbt", "QUESTIONABLE": "q",
+}
+_INJ_CAT_RANK = {"ir": 0, "out": 1, "dbt": 2, "q": 3, "note": 4}
+_INJ_CAT_FILTER = {"ir": "IR", "out": "OUT", "q": "QUESTIONABLE"}
+
+
+def render_injury_watch(df_inj: pd.DataFrame) -> str:
+    """Compact per-team injury watch for the Activity rail (League Pulse).
+
+    One row per team, ranked by injury load: the team, a severity-colored dot
+    per injured player, a load bar, and the count. Each row also carries hidden
+    ``.chip`` status keywords so the Activity injury filter (All / IR / Out / Q)
+    shows only the teams that have a matching injury."""
+    if df_inj is None or df_inj.empty:
+        return ""
+
+    def _cat(status) -> str:
+        return _INJ_CAT.get(str(status or "").strip().upper(), "note")
+
+    rows = []
+    for team, g in df_inj.groupby("Team"):
+        cats = [_cat(r.get("Injury") or r.get("Status")) for _, r in g.iterrows()]
+        cats.sort(key=lambda c: _INJ_CAT_RANK.get(c, 9))
+        count = len(g)
+        worst = min((_INJ_CAT_RANK.get(c, 9) for c in cats), default=9)
+        dots = "".join(f"<span class='act-injdot {c}'></span>" for c in cats[:8])
+        keys = "".join(
+            f"<span class='chip'>{w}</span>"
+            for w in sorted({_INJ_CAT_FILTER[c] for c in cats if c in _INJ_CAT_FILTER})
+        )
+        rows.append((count, worst, str(team), dots, keys))
+
+    max_count = max((r[0] for r in rows), default=1) or 1
+    rows.sort(key=lambda r: (-r[0], r[1], r[2].lower()))
+
+    items = []
+    for count, _worst, team, dots, keys in rows:
+        pct = max(16, round(count / max_count * 100))
+        items.append(
+            "<div class='inj-row act-injrow'>"
+            "  <div class='act-injrow-l'>"
+            f"    <span class='act-injteam'>{html.escape(team)}</span>"
+            f"    <div class='act-injmeter'><i style='width:{pct}%'></i></div>"
+            "  </div>"
+            "  <div class='act-injrow-r'>"
+            f"    <span class='act-injdots' aria-hidden='true'>{dots}</span>"
+            f"    <span class='act-injcount'>{count}</span>"
+            "  </div>"
+            f"  <span class='act-injkeys' hidden>{keys}</span>"
+            "</div>"
+        )
+
+    return (
+        "<div class='card small act-injwatch' data-section='activity'>"
+        "  <div class='card-header'><h3>Injury watch</h3></div>"
+        f"  <div class='act-injwatch-list'>{''.join(items)}</div>"
+        "</div>"
+    )
