@@ -5122,6 +5122,7 @@ def build_dashboard_body(ctx: dict) -> str:
         players=players_map,
         players_index=players_index,
         teams_index=teams_index,
+        platform=platform,
     )
     teams_sidebar_html = render_teams_sidebar(teams_ctx)
 
