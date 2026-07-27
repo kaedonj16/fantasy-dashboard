@@ -108,11 +108,21 @@ def render_keeper_html(seed: dict) -> str:
             "u.searchParams.set('adp_source',this.value);window.location.href=u.toString();\">"
             + _opt_html + "</select></div>"
         )
+    # Undrafted-cost picker: "Last round" (blank = the client uses num_rounds) plus
+    # an explicit round for leagues that price waiver/FA adds at a fixed round.
+    try:
+        _nr = int(seed.get("numRounds") or 15)
+    except (TypeError, ValueError):
+        _nr = 15
+    _nr = max(1, min(_nr, 30))
+    undrafted_opts = '<option value="" selected>Last round</option>' + "".join(
+        f'<option value="{r}">Round {r}</option>' for r in range(_nr, 0, -1)
+    )
     return f"""
 <style>
   .kpr-wrap{{max-width:960px;margin:0 auto;}}
   .kpr-draft-btn{{display:inline-flex;align-items:center;gap:7px;font:inherit;font-size:13px;font-weight:700;
-    color:#fff;background:var(--accent);border:0;border-radius:10px;padding:9px 15px;cursor:pointer;white-space:nowrap;}}
+    color:var(--on-accent);background:var(--accent);border:0;border-radius:10px;padding:9px 15px;cursor:pointer;white-space:nowrap;}}
   .kpr-draft-btn:hover{{filter:brightness(1.06);}}
   /* Config row: label-over-control fields all sit on one baseline, so the
      badge and the view toggle line up with the inputs instead of floating. */
@@ -140,6 +150,14 @@ def render_keeper_html(seed: dict) -> str:
   .kpr-rule select:hover,.kpr-rule input:hover{{border-color:var(--accent);}}
   .kpr-rule select:focus,.kpr-rule input:focus{{outline:none;border-color:var(--accent);
     box-shadow:0 0 0 3px var(--accent-soft);}}
+  /* Checkbox rule: a normal-case label with the box inline, not the boxed control. */
+  .kpr-rule-check{{justify-content:flex-end;}}
+  .kpr-rule-check label{{display:flex;align-items:center;gap:7px;font-size:12px;
+    letter-spacing:normal;text-transform:none;font-weight:600;color:var(--text);
+    cursor:pointer;min-height:36px;}}
+  .kpr-rule-check input{{width:16px;height:16px;min-height:0;padding:0;margin:0;
+    accent-color:var(--accent);cursor:pointer;}}
+  .kpr-rule-check input:hover{{border-color:var(--border);}}
   /* View switch lives in the card header next to the draft button: it toggles
      the whole card, and keeping it out of the config row stops it stranding on
      a line of its own once the rule fields fill the width. */
@@ -301,7 +319,13 @@ def render_keeper_html(seed: dict) -> str:
       </div>
       <div class="kpr-rule">
         <label for="kpr-undr">Undrafted cost</label>
-        <input id="kpr-undr" type="number" min="1" inputmode="numeric" placeholder="last">
+        <select id="kpr-undr">{undrafted_opts}</select>
+      </div>
+      <div class="kpr-rule kpr-rule-check">
+        <label for="kpr-opr" title="No two keepers may cost the same draft round; a duplicate bumps to the nearest open round.">
+          <input id="kpr-opr" type="checkbox" checked>
+          One keeper per round
+        </label>
       </div>
       </div>
     </div>

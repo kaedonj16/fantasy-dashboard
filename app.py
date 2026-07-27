@@ -13822,6 +13822,11 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
                     ("round_offset",    _karg("koff")),
                     ("escalation",      _karg("kesc")),
                 ) if v is not None}
+                # One-pick-per-round flag (kopr=0/1); only apply when explicitly
+                # sent so rival projections match the rule the user is playing by.
+                _kopr = request.args.get("kopr")
+                if _kopr in ("0", "1"):
+                    _krules["one_per_round"] = (_kopr == "1")
                 keepers_payload = compute_league_keepers(
                     _ctx, platform=platform, league_id=league_id,
                     viewer_roster_id=session.get("viewer_roster_id"),

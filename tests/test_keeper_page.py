@@ -152,12 +152,15 @@ def test_undrafted_cost_override_repricing(monkeypatch):
     page's "Undrafted cost" now rides along so the user can reprice them."""
     ctx = _league_ctx_for_limits(monkeypatch)
     monkeypatch.setattr(kp, "_draft_context", lambda plat, lid, season: ({}, 23))
+    # one_per_round off here so this isolates the undrafted repricing (otherwise
+    # the three undrafted keepers would bump to unique rounds).
     default = kp.compute_league_keepers(ctx, platform="sleeper", league_id="L",
-                                        viewer_roster_id="1", limit_override=3)
+                                        viewer_roster_id="1", limit_override=3,
+                                        rules_override={"one_per_round": False})
     assert {k["costRound"] for k in default["kept"]} == {23}
     tuned = kp.compute_league_keepers(ctx, platform="sleeper", league_id="L",
                                       viewer_roster_id="1", limit_override=3,
-                                      rules_override={"undrafted_round": 15})
+                                      rules_override={"undrafted_round": 15, "one_per_round": False})
     assert {k["costRound"] for k in tuned["kept"]} == {15}
 
 
@@ -168,7 +171,7 @@ def test_rules_override_is_bounded_to_real_rounds(monkeypatch):
     monkeypatch.setattr(kp, "_draft_context", lambda plat, lid, season: ({}, 20))
     out = kp.compute_league_keepers(ctx, platform="sleeper", league_id="L",
                                     viewer_roster_id="1", limit_override=3,
-                                    rules_override={"undrafted_round": 999})
+                                    rules_override={"undrafted_round": 999, "one_per_round": False})
     assert {k["costRound"] for k in out["kept"]} == {20}
 
 
@@ -313,3 +316,39 @@ def test_best_draft_falls_back_when_none_complete():
     drafts = [{"draft_id": "x", "status": "pre_draft", "settings": {"rounds": 12}}]
     assert kp._best_draft(drafts)["draft_id"] == "x"
     assert kp._best_draft([]) is None
+
+
+# ── One keeper per round + new controls ──────────────────────────────────────
+
+def test_body_renders_undrafted_dropdown_and_one_per_round_toggle(monkeypatch):
+    _stub_body_deps(monkeypatch)
+    html = kp.build_keeper_body(dict(_BODY_CTX), viewer_roster_id="1",
+                                platform="sleeper", league_id="L123", season=2026)
+    # Undrafted cost is a dropdown (was a bare number input) with a "Last round"
+    # default and explicit rounds.
+    assert '<select id="kpr-undr">' in html
+    assert ">Last round<" in html
+    # One-keeper-per-round toggle, on by default (in the UI and the seed).
+    assert 'id="kpr-opr"' in html and "checked" in html
+    assert '"onePerRound":true' in html.replace(" ", "")
+
+
+def test_one_per_round_resolves_collisions_in_projection(monkeypatch):
+    """Two viewer keepers drafted in the same round collide; with one-per-round
+    (default) the projection bumps the weaker to a neighbouring round so no two
+    share a cost round. Turning it off leaves the raw duplicate."""
+    ctx = _league_ctx_for_limits(monkeypatch)
+    # a & b both drafted R5 (a is the higher-value, so it holds R5); c at R9.
+    monkeypatch.setattr(kp, "_draft_context",
+                        lambda plat, lid, season: ({"a": 5, "b": 5, "c": 9}, 15))
+
+    def _viewer_cost_rounds(rules_override):
+        out = kp.compute_league_keepers(ctx, platform="sleeper", league_id="L",
+                                        viewer_roster_id="1", limit_override=3,
+                                        rules_override=rules_override)
+        return sorted(k["costRound"] for k in out["kept"] if str(k["rosterId"]) == "1")
+
+    # Default (no override) -> one_per_round on -> unique rounds, weaker bumped earlier.
+    assert _viewer_cost_rounds(None) == [4, 5, 9]
+    # Explicitly off -> the raw collision remains (two at R5).
+    assert _viewer_cost_rounds({"one_per_round": False}) == [5, 5, 9]

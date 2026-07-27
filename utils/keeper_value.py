@@ -48,6 +48,10 @@ class KeeperRules:
     undrafted_round: keeper cost for a player who wasn't drafted (waiver/FA add).
                      Defaults to the last round.
     keep_at / pass_at: surplus thresholds for the KEEP / PASS verdict tiers.
+    one_per_round:   when True, no two kept players may share a cost round (the
+                     common "you only own one pick per round" rule); the optimizer
+                     bumps duplicates to the nearest open round and re-prices, so
+                     the surplus total reflects the real, legal cost.
     """
     league_size: int = 12
     num_rounds: int = 15
@@ -56,6 +60,7 @@ class KeeperRules:
     undrafted_round: Optional[int] = None
     keep_at: int = 2      # surplus >= keep_at  -> KEEP
     pass_at: int = 0      # surplus <  pass_at  -> PASS  (between the two -> TOSS)
+    one_per_round: bool = False
 
 
 def market_round(adp_overall: Optional[float], league_size: int) -> Optional[int]:
@@ -158,6 +163,10 @@ def evaluate(
         # Only positive-surplus players are ever auto-selected: keeping a
         # negative-surplus player is strictly worse than re-drafting him.
         c.keep = i < n and (c.surplus is not None and c.surplus > 0)
+    # Under one-pick-per-round, re-price the selected set so two keepers never
+    # share a cost round (and the surplus total stays honest).
+    if rules.one_per_round:
+        resolve_cost_collisions(ranked, rules)
     return ranked
 
 
@@ -178,6 +187,50 @@ def cost_collisions(candidates: Sequence[KeeperCandidate]) -> dict:
         if c.keep:
             by_round.setdefault(c.cost_round, []).append(c.player_id)
     return {rd: ids for rd, ids in by_round.items() if len(ids) > 1}
+
+
+def resolve_cost_collisions(candidates: Sequence[KeeperCandidate], rules: KeeperRules) -> List[KeeperCandidate]:
+    """Give every *kept* candidate a unique cost round (one pick per round).
+
+    Greedy selection can land two keepers on the same cost round; leagues that
+    enforce one-pick-per-round bump a duplicate to a neighbouring round. This
+    keeps the strongest claim (highest surplus, then value) on the contested
+    round and bumps the others to the nearest open round — **earlier (costlier)
+    preferred** on a tie, since a bumped keeper should never get *cheaper* (that
+    would inflate the surplus the tool is trying to price honestly). Each bumped
+    candidate's ``cost_round``, ``surplus`` and ``verdict`` are recomputed from
+    the resolved round, in place. Returns the same list.
+
+    This re-prices the selected set; it does not re-optimise which players are
+    kept (a rare case where a bump turns a marginal keep negative is surfaced by
+    the now-accurate surplus rather than silently reshuffled)."""
+    last = max(1, int(rules.num_rounds))
+    kept = [c for c in candidates if c.keep]
+    # Strongest claim first, so it holds its natural round and weaker ones move.
+    order = sorted(kept, key=lambda c: (-(c.surplus if c.surplus is not None else -9999),
+                                        -(c.value or 0.0)))
+    taken: set = set()
+    for c in order:
+        r = c.cost_round
+        if 1 <= r <= last and r not in taken:
+            taken.add(r)
+            continue
+        placed = None
+        for d in range(1, last):
+            for cand in (r - d, r + d):   # earlier first, then later, widening out
+                if 1 <= cand <= last and cand not in taken:
+                    placed = cand
+                    break
+            if placed is not None:
+                break
+        if placed is None:
+            placed = r   # degenerate: more keepers than rounds — leave it clashing
+        c.cost_round = placed
+        taken.add(placed)
+        if c.market_round is not None:
+            c.surplus = c.cost_round - c.market_round
+            c.verdict = verdict(c.surplus, rules)
+    return list(candidates)
 
 
 def project_league_keepers(

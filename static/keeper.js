@@ -19,6 +19,7 @@
   var elLim = $("kpr-lim"), elLimN = $("kpr-limn"), elTot = $("kpr-tot"),
       elList = $("kpr-list"), elTbody = $("kpr-tbody"),
       elCost = $("kpr-cost"), elEsc = $("kpr-esc"), elUndr = $("kpr-undr"),
+      elOpr = $("kpr-opr"),
       elOpt = $("kpr-optimizer"), elTbl = $("kpr-table"),
       elViewOpt = $("kpr-view-opt"), elViewTbl = $("kpr-view-tbl");
 
@@ -32,6 +33,7 @@
       roundOffset: parseInt(elCost && elCost.value, 10) || 0,
       escalation: parseInt(elEsc && elEsc.value, 10) || 0,
       undraftedRound: (undr > 0 ? undr : numRounds),
+      onePerRound: elOpr ? !!elOpr.checked : (seed.onePerRound !== false),
       keepAt: 2, passAt: 0
     };
   }
@@ -55,6 +57,35 @@
     if (s < r.passAt) return "pass";
     return "toss";
   }
+  // Mirror of utils.keeper_value.resolve_cost_collisions: give every kept row a
+  // unique cost round (one pick per round), bumping duplicates to the nearest
+  // open round — earlier (costlier) preferred — and re-pricing surplus/verdict.
+  // Records what moved (for the heads-up note). Mutates the kept rows in place.
+  var lastBumps = [];
+  function resolveCollisions(rows, r) {
+    lastBumps = [];
+    var kept = rows.filter(function (row) { return row.keep; });
+    kept.sort(function (a, b) {
+      var sa = a.surplus == null ? -9999 : a.surplus, sb = b.surplus == null ? -9999 : b.surplus;
+      return (sb - sa) || ((b.p.value || 0) - (a.p.value || 0));
+    });
+    var taken = {};
+    kept.forEach(function (row) {
+      var c = row.cost;
+      if (c >= 1 && c <= numRounds && !taken[c]) { taken[c] = 1; return; }
+      var placed = null;
+      for (var d = 1; d < numRounds && placed == null; d++) {
+        var earlier = c - d, later = c + d;
+        if (earlier >= 1 && earlier <= numRounds && !taken[earlier]) placed = earlier;
+        else if (later >= 1 && later <= numRounds && !taken[later]) placed = later;
+      }
+      if (placed == null) placed = c;   // degenerate: more keepers than rounds
+      if (placed !== c) lastBumps.push({ name: row.p.name, from: c, to: placed });
+      row.cost = placed;
+      taken[placed] = 1;
+      if (row.mkt != null) { row.surplus = row.cost - row.mkt; row.verdict = verdict(row.surplus, r); }
+    });
+  }
   function fmt(n) { return (n > 0 ? "+" : n < 0 ? "−" : "") + Math.abs(n) + " rd"; }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
 
@@ -72,6 +103,8 @@
     });
     var limit = parseInt(elLim && elLim.value, 10); if (isNaN(limit)) limit = 0;
     rows.forEach(function (row, i) { row.keep = i < limit && row.surplus != null && row.surplus > 0; });
+    if (r.onePerRound) resolveCollisions(rows, r);
+    else lastBumps = [];
     return rows;
   }
 
@@ -80,6 +113,15 @@
   }
 
   function collisionWarning(rows) {
+    // With one-per-round on, collisions are resolved (not just warned): show what
+    // got bumped so the manager sees why a cost moved.
+    if (rules().onePerRound) {
+      if (!lastBumps.length) return "";
+      var moved = lastBumps.map(function (b) {
+        return esc(b.name) + " → R" + b.to + " (from R" + b.from + ")";
+      });
+      return '<div class="kpr-warn">One keeper per round: bumped ' + moved.join("; ") + ".</div>";
+    }
     var byRound = {};
     rows.forEach(function (r) { if (r.keep) { (byRound[r.cost] = byRound[r.cost] || []).push(r); } });
     var clashes = Object.keys(byRound).filter(function (rd) { return byRound[rd].length > 1; });
@@ -110,50 +152,80 @@
     if (elLimN) elLimN.textContent = elLim ? elLim.value : "0";
   }
 
+  // Derived-cell builders, shared by the full render and the in-place patch so
+  // an inline edit updates the numbers without rebuilding (and thus locking or
+  // blurring) the round / years-kept inputs the manager is typing in.
+  function mktCell(row) {
+    return row.mkt == null ? '<span style="color:var(--text-muted)">-</span>'
+      : ("Round " + row.mkt + ' <span style="color:var(--text-muted)">· ' + Math.round(row.p.value || 0) + "</span>");
+  }
+  function surpCell(row, mx) {
+    var w = Math.round(Math.abs(row.surplus || 0) / mx * 100);
+    var sColor = "var(--text-muted)";
+    if (row.verdict === "keep") sColor = "var(--win,#15803d)";
+    else if (row.verdict === "toss") sColor = "var(--inj-q,#ca8a04)";
+    var sval = row.surplus == null ? "-" : fmt(row.surplus);
+    return '<span class="kpr-bar"><i style="width:' + w + "%;background:" + sColor + '"></i></span>' +
+      '<b style="color:' + sColor + '">' + sval + "</b>";
+  }
+  function verdictCell(row) {
+    var vlabel = { keep: "KEEP", toss: "TOSS-UP", pass: "PASS" }[row.verdict];
+    return '<span class="kpr-verdict ' + row.verdict + '"><span class="d"></span>' + vlabel + "</span>";
+  }
+
   function renderTable(rows) {
     var mx = maxAbs(rows);
     elTbody.innerHTML = rows.map(function (row) {
       var pos = (row.p.pos || "").toUpperCase();
-      var draftedTxt = (row.p.draftedRound == null || row.p.draftedRound === "")
-        ? '<input class="kpr-drnd" type="number" min="1" data-id="' + esc(row.p.id) +
-          '" placeholder="R?" value="" aria-label="Drafted round">'
-        : ('<span class="kpr-drafted">Drafted R' + row.p.draftedRound + "</span>");
+      var did = (row.p.draftedRound == null || row.p.draftedRound === "") ? "" : String(row.p.draftedRound);
+      // Always an editable input (even for an auto-detected round) so a wrong
+      // value can always be corrected — it never locks into static text.
+      var draftedTxt = '<input class="kpr-drnd" type="number" min="1" data-id="' + esc(row.p.id) +
+        '" placeholder="R?" value="' + esc(did) + '" aria-label="Drafted round">';
       draftedTxt += '<span class="kpr-dot">·</span>kept <input class="kpr-yrs" type="number" min="0" max="15" data-id="' +
         esc(row.p.id) + '" value="' + (row.p.yearsKept || 0) + '" aria-label="Years kept"> yr';
-      var mkt = row.mkt == null ? '<span style="color:var(--text-muted)">-</span>'
-        : ("Round " + row.mkt + ' <span style="color:var(--text-muted)">· ' + Math.round(row.p.value || 0) + "</span>");
-      var w = Math.round(Math.abs(row.surplus || 0) / mx * 100);
-      var sColor = "var(--text-muted)";
-      if (row.verdict === "keep") sColor = "var(--win,#15803d)";
-      else if (row.verdict === "toss") sColor = "var(--inj-q,#ca8a04)";
-      var sval = row.surplus == null ? "-" : fmt(row.surplus);
-      var vlabel = { keep: "KEEP", toss: "TOSS-UP", pass: "PASS" }[row.verdict];
-      return "<tr>" +
+      return '<tr data-pid="' + esc(row.p.id) + '">' +
         '<td><div class="kpr-nm-line"><span class="kpr-pos ' + esc(pos) + '">' + (esc(pos) || "-") + "</span>" +
         '<span class="kpr-nm">' + esc(row.p.name) + '</span></div><div class="kpr-sub">' + draftedTxt + "</div></td>" +
-        '<td class="r">Round ' + row.cost + "</td>" +
-        '<td class="r">' + mkt + "</td>" +
-        '<td class="r"><span class="kpr-bar"><i style="width:' + w + "%;background:" + sColor + '"></i></span>' +
-        '<b style="color:' + sColor + '">' + sval + "</b></td>" +
-        '<td class="r"><span class="kpr-verdict ' + row.verdict + '"><span class="d"></span>' + vlabel + "</span></td>" +
+        '<td class="r kpr-c-cost">Round ' + row.cost + "</td>" +
+        '<td class="r kpr-c-mkt">' + mktCell(row) + "</td>" +
+        '<td class="r kpr-c-surp">' + surpCell(row, mx) + "</td>" +
+        '<td class="r kpr-c-verd">' + verdictCell(row) + "</td>" +
         "</tr>";
     }).join("");
-    // Wire per-player drafted-round inputs (for undrafted / non-Sleeper players).
-    Array.prototype.forEach.call(elTbody.querySelectorAll(".kpr-drnd"), function (inp) {
-      inp.addEventListener("change", function () {
-        var pid = inp.getAttribute("data-id");
-        var v = parseInt(inp.value, 10);
-        var pl = players.filter(function (p) { return String(p.id) === String(pid); })[0];
-        if (pl) { pl.draftedRound = (v > 0 ? v : null); render(); }
-      });
+    bindInlineInput(".kpr-drnd", function (pl, v) { var n = parseInt(v, 10); pl.draftedRound = (n > 0 ? n : null); });
+    bindInlineInput(".kpr-yrs", function (pl, v) { var n = parseInt(v, 10); pl.yearsKept = (n > 0 ? n : 0); });
+  }
+
+  // Patch the derived columns of every row in place (matched by player id, so a
+  // changed sort order doesn't matter) without touching the input cells. The
+  // table keeps its current row order while you edit — it re-sorts on the next
+  // full render (limit / rule change) so a row doesn't jump under your cursor.
+  function patchTable(rows) {
+    var mx = maxAbs(rows);
+    var byPid = {};
+    Array.prototype.forEach.call(elTbody.children, function (tr) { byPid[tr.getAttribute("data-pid")] = tr; });
+    rows.forEach(function (row) {
+      var tr = byPid[String(row.p.id)];
+      if (!tr) return;
+      var c = tr.querySelector(".kpr-c-cost"); if (c) c.textContent = "Round " + row.cost;
+      var m = tr.querySelector(".kpr-c-mkt"); if (m) m.innerHTML = mktCell(row);
+      var s = tr.querySelector(".kpr-c-surp"); if (s) s.innerHTML = surpCell(row, mx);
+      var v = tr.querySelector(".kpr-c-verd"); if (v) v.innerHTML = verdictCell(row);
     });
-    // Wire per-player years-kept inputs (drives the escalation rule).
-    Array.prototype.forEach.call(elTbody.querySelectorAll(".kpr-yrs"), function (inp) {
-      inp.addEventListener("change", function () {
-        var pid = inp.getAttribute("data-id");
-        var v = parseInt(inp.value, 10);
-        var pl = players.filter(function (p) { return String(p.id) === String(pid); })[0];
-        if (pl) { pl.yearsKept = (v > 0 ? v : 0); render(); }
+  }
+
+  // Live inline edit: update the model on every keystroke and re-price without
+  // rebuilding the field, so nothing locks and a mistyped number is easy to fix.
+  function bindInlineInput(sel, apply) {
+    Array.prototype.forEach.call(elTbody.querySelectorAll(sel), function (inp) {
+      inp.addEventListener("input", function () {
+        var pl = players.filter(function (p) { return String(p.id) === String(inp.getAttribute("data-id")); })[0];
+        if (!pl) return;
+        apply(pl, inp.value);
+        var rows = compute();
+        patchTable(rows);
+        renderOptimizer(rows);
       });
     });
   }
@@ -173,6 +245,7 @@
   }
 
   [elLim, elCost, elEsc, elUndr].forEach(function (el) { if (el) el.addEventListener("input", render); });
+  if (elOpr) elOpr.addEventListener("change", render);
   if (elViewOpt) elViewOpt.addEventListener("click", function () { showView("opt"); });
   if (elViewTbl) elViewTbl.addEventListener("click", function () { showView("tbl"); });
 
@@ -182,13 +255,21 @@
   var elToDraft = $("kpr-to-draft");
   if (elToDraft && seed.draftUrl) {
     elToDraft.addEventListener("click", function () {
-      var kept = compute().filter(function (r) { return r.keep; }).map(function (r) { return String(r.p.id); });
+      var keptRows = compute().filter(function (r) { return r.keep; });
+      var kept = keptRows.map(function (r) { return String(r.p.id); });
+      // Carry each keeper's *resolved* cost round (after escalation + collision
+      // bumps) so the draft room spends the right pick — the server recomputes
+      // rival projections but can't know the per-player years-kept you entered.
+      var keptDetail = keptRows.map(function (r) {
+        return { id: String(r.p.id), costRound: r.cost, name: r.p.name, pos: r.p.pos };
+      });
       var lim = parseInt(elLim && elLim.value, 10) || kept.length || 1;
       try {
         sessionStorage.setItem("brKeeperOverride", JSON.stringify({
           leagueId: String(seed.leagueId || ""),
           rosterId: String(seed.viewerRoster || ""),
-          ids: kept
+          ids: kept,
+          players: keptDetail
         }));
       } catch (e) { /* private mode: draft room still shows projections */ }
       // Carry the keeper rules so the other teams' projections use the same
@@ -199,7 +280,8 @@
       var qs = "klimit=" + encodeURIComponent(lim) +
                "&kundr=" + encodeURIComponent(r.undraftedRound) +
                "&koff="  + encodeURIComponent(r.roundOffset) +
-               "&kesc="  + encodeURIComponent(r.escalation);
+               "&kesc="  + encodeURIComponent(r.escalation) +
+               "&kopr="  + (r.onePerRound ? "1" : "0");
       window.location.href = seed.draftUrl +
         (seed.draftUrl.indexOf("?") >= 0 ? "&" : "?") + qs;
     });

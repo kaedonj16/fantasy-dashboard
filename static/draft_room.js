@@ -670,7 +670,11 @@
         // league-wide projection.
         var vr = String((kp.viewerRoster != null ? kp.viewerRoster : ov && ov.rosterId) || '');
         if (ov && String(ov.leagueId) === String(cfg.leagueId) && vr){
-          keeperOverride = { rosterId: vr, ids: (ov.ids || []).map(String) };
+          // players[] carries each keeper's resolved cost round (escalation +
+          // collision bumps) from the keeper page; keyed by id for lookup.
+          var detail = {};
+          (ov.players || []).forEach(function(p){ if (p && p.id != null) detail[String(p.id)] = p; });
+          keeperOverride = { rosterId: vr, ids: (ov.ids || []).map(String), detail: detail };
         }
       }
     } catch (e) { /* ignore malformed override */ }
@@ -691,8 +695,19 @@
       var vr = keeperOverride.rosterId;
       var meta = {};
       out.forEach(function(k){ if (String(k.rosterId) === vr) meta[String(k.id)] = k; });
+      var detail = keeperOverride.detail || {};
       var mine = keeperOverride.ids.map(function(id){
-        return meta[String(id)] || { id: String(id), rosterId: vr, projected: false };
+        var base = meta[String(id)] || { id: String(id), rosterId: vr, projected: false };
+        var d = detail[String(id)];
+        if (d){
+          // Prefer the keeper page's resolved cost/name/pos (it knows the
+          // per-player years-kept the server projection can't).
+          base = { id: String(id), rosterId: vr, projected: false,
+                   costRound: d.costRound != null ? d.costRound : base.costRound,
+                   name: d.name != null ? d.name : base.name,
+                   pos: d.pos != null ? d.pos : base.pos };
+        }
+        return base;
       });
       mine.forEach(function(m){ m.projected = false; });
       out = out.filter(function(k){ return String(k.rosterId) !== vr; }).concat(mine);
