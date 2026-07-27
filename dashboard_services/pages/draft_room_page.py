@@ -59,6 +59,7 @@ def build_draft_room_body(
     num_rounds_rookie: Optional[int] = None,
     num_rounds_startup: Optional[int] = None,
     keepers: Optional[dict] = None,
+    show_keeper: bool = True,
 ) -> str:
     cfg = {
         "leagueId": league_id or "",
@@ -74,6 +75,10 @@ def build_draft_room_body(
         # League keepers (from the keeper tool) to drop from the board. Omitted /
         # empty for non-keeper leagues, where the draft room behaves exactly as before.
         "keepers": keepers or None,
+        # Whether to offer the Keeper draft type at all. False for dynasty and
+        # plain redraft leagues, where keepers do not apply; draft_room.js then
+        # removes the Keeper option and its fields.
+        "showKeeper": bool(show_keeper),
     }
     cfg_json = json.dumps(cfg)
     # cfg is a plain inline script so it runs during parse, before the deferred

@@ -22855,7 +22855,10 @@ a, button, [role="button"], [role="tab"], summary, label,
      change of --i on dock navigation so the pill slides across the dock. The
      inner ::before is the inset, rounded, theme-tinted fill. */
   .br-tabbar-ind {
-    position: absolute; top: 0; left: 0; height: 100%; z-index: 0;
+    position: absolute; left: 0; z-index: 0;
+    /* Span only the tab row, not the safe-area padding below it, so the pill
+       hugs the icon and label instead of stretching to the very bottom. */
+    top: 0; bottom: env(safe-area-inset-bottom);
     width: calc(100% / var(--n, 5));
     transform: translateX(calc(var(--i, 0) * 100%));
     transition: transform .28s cubic-bezier(.32, .72, 0, 1);

@@ -101,3 +101,31 @@ def test_dynasty_offseason_dock_has_no_keeper(monkeypatch):
         labels = re.findall(r"br-tabbar-lbl'>([^<]+)<", app._mobile_nav("dashboard", "L", "sleeper", 2026))
     assert labels == ["Home", "Draft", "Rankings", "Teams", "More"]
     assert "Keeper" not in labels
+
+
+@pytest.mark.parametrize("settings,shown", [
+    ({"type": 1, "max_keepers": 2}, True),   # keeper league
+    ({"type": 0, "max_keepers": 3}, True),   # redraft with a keeper limit
+    ({"type": 2, "max_keepers": 0}, False),  # dynasty
+    ({"type": 0, "max_keepers": 0}, False),  # plain redraft
+])
+def test_keeper_assistant_gated_everywhere(monkeypatch, settings, shown):
+    """Keeper Assistant appears in the mobile sheet and the desktop Draft
+    dropdown only for keeper leagues, hidden for dynasty and plain redraft."""
+    import app
+    monkeypatch.setattr(app, "get_league_ctx_from_cache",
+                        lambda *a, **k: {"league_settings": settings})
+    monkeypatch.setattr(app, "get_nfl_state", lambda: {"season": "2026", "season_type": "off"})
+    monkeypatch.setattr(app, "has_draft_ended", lambda *a, **k: False)
+    with app.app.test_request_context("/x"):
+        sheet = app._mobile_nav("draft", "L", "sleeper", 2026)
+        nav = app.build_nav("L", "draft", "sleeper", 2026)
+    assert ("Keeper Assistant" in sheet) is shown
+    assert ("Keeper Assistant" in nav) is shown
+
+
+def test_draft_room_cfg_show_keeper():
+    """The draft room only offers the Keeper draft type when show_keeper is set."""
+    from dashboard_services.pages.draft_room_page import build_draft_room_body
+    assert '"showKeeper": false' in build_draft_room_body("L", 2026, "sleeper", show_keeper=False)
+    assert '"showKeeper": true' in build_draft_room_body("L", 2026, "sleeper", show_keeper=True)

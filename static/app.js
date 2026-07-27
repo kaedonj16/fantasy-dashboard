@@ -52,6 +52,9 @@
       if (d.url && d.url !== location.href) return;
       if (document.visibilityState !== 'visible') return;
       if (Date.now() - loadedAt > 20000) return;
+      // Only auto-reload the stale shell on a cold launch. On a warm in-app
+      // navigation the extra reload just looks like the page loading twice.
+      if (window.__brWarmLaunch) return;
       reloadOnce();
     });
   }

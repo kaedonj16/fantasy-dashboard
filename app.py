@@ -1253,14 +1253,19 @@ BASE_HTML = """
         // The white splash is for the cold PWA launch only. On any in-app
         // navigation within the same session (e.g. tapping the mobile dock)
         // remove it immediately so pages don't flash a white loading screen.
+        // __brWarmLaunch also tells app.js not to auto-reload a warm navigation
+        // (that stale-shell reload is only wanted on the cold launch).
+        var _warm = false;
         try {{
-          if (sessionStorage.getItem('br_warm')) {{
+          _warm = !!sessionStorage.getItem('br_warm');
+          if (_warm) {{
             if (s && s.parentNode) s.parentNode.removeChild(s);
             s = null;
           }} else {{
             sessionStorage.setItem('br_warm','1');
           }}
         }} catch(e){{}}
+        window.__brWarmLaunch = _warm;
         if(!s) return;
         // Reveal the (already server-rendered) content as soon as the DOM is
         // parsed — waiting for window 'load' gated LCP behind every image and
@@ -1804,9 +1809,10 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         return url_for(ep, platform=platform, season=season, league_id=league_id) + suffix
 
     # ── Dynamic dock ──────────────────────────────────────────────────────────
+    show_keeper = _nav_show_keeper(platform, league_id, season)
     if not offseason:
         middle = ["weekly", "teams", "players"]
-    elif _nav_show_keeper(platform, league_id, season):
+    elif show_keeper:
         middle = ["draft", "keeper", "players"]
     else:
         middle = ["draft", "players", "teams"]
@@ -1906,10 +1912,11 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         _sl("breakouts", "Breakout Engine", pro=True), _sl("prospects", "Prospect Rankings"),
     ])
 
-    draft_html = _sec("Draft", [
-        _sl("draft", "Draft Room"), _sl("keeper", "Keeper Assistant"),
-        _sl("draft-history", "Draft History"),
-    ])
+    _draft_rows = [_sl("draft", "Draft Room")]
+    if show_keeper:                                   # keeper leagues only
+        _draft_rows.append(_sl("keeper", "Keeper Assistant"))
+    _draft_rows.append(_sl("draft-history", "Draft History"))
+    draft_html = _sec("Draft", _draft_rows)
 
     stats_html = _sec("Stats", [
         _sl("awards", "Awards"), _sl("graphs", "Graphs"), _sl("history", "History"),
@@ -2242,11 +2249,14 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
     ], ["players", "prospects", "breakouts", "top-movers", "compare"], "playersNavDropdown"))
-    nav_pills.append(nav_pill_dropdown("Draft", [
-        ("Draft Room",       "page_draft_room",    "draft",         False),
-        ("Keeper Assistant", "page_keeper",        "keeper",        False),
-        ("Draft History",    "page_draft_history", "draft-history", False),
-    ], ["draft", "draft-history", "keeper"], "draftNavDropdown"))
+    # Keeper Assistant only applies to keeper leagues; hide it for dynasty and
+    # plain redraft leagues.
+    _draft_items = [("Draft Room", "page_draft_room", "draft", False)]
+    if _nav_show_keeper(platform, league_id, season):
+        _draft_items.append(("Keeper Assistant", "page_keeper", "keeper", False))
+    _draft_items.append(("Draft History", "page_draft_history", "draft-history", False))
+    nav_pills.append(nav_pill_dropdown("Draft", _draft_items,
+        ["draft", "draft-history", "keeper"], "draftNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",   "page_awards",   "awards",   False),
         ("Graphs",   "page_graphs",   "graphs",   False),
@@ -13835,6 +13845,14 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
                 )
         except Exception:
             logger.debug("[draft-room] keeper compute skipped", exc_info=True)
+    # Hide the Keeper draft type + keeper options entirely for dynasty and plain
+    # redraft (non-keeper) leagues. Guests (no league) keep it available.
+    show_keeper = True
+    if league_id:
+        try:
+            show_keeper = _nav_show_keeper(platform, league_id, season)
+        except Exception:
+            show_keeper = True
     body = build_draft_room_body(
         league_id, season, platform,
         is_guest=is_guest, num_teams=num_teams, is_superflex=is_sf,
@@ -13843,6 +13861,7 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
         num_rounds_rookie=num_rounds_rookie,
         num_rounds_startup=num_rounds_startup,
         keepers=keepers_payload,
+        show_keeper=show_keeper,
     )
     return render_page(
         "Draft Room | BR Fantasy", league_id, "draft", body, platform, season,

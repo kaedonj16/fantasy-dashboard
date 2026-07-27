@@ -4717,6 +4717,13 @@
   });
 
   applyCfgDefaults();
+  // Dynasty / non-keeper leagues: drop the Keeper draft type and its fields
+  // entirely so keepers never appear where they don't apply.
+  if (cfg.showKeeper === false) {
+    var _kOpt = document.querySelector('#drType option[value="keeper"]');
+    if (_kOpt) _kOpt.remove();
+    Array.prototype.forEach.call(document.querySelectorAll('.dr-keeper-only'), function (el) { el.remove(); });
+  }
   renderSetupRoster();
   renderSetupCapital();
   document.getElementById('drSf').addEventListener('change', function(){ _rosterMode = 'auto'; _setupRoster = null; renderSetupRoster(); });
