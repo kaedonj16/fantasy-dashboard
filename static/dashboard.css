@@ -196,6 +196,8 @@
   --grid: #e5e7eb;
   --accent: #122d4b;
   --accent-color: #122d4b;
+  /* Readable text/icon color to sit ON an --accent fill (navy in light mode). */
+  --on-accent: #ffffff;
   --accent-soft: #e9eef5;
   --accent-soft-2: #eef4fb;
   --accent-strong: #0f2747;
@@ -261,6 +263,8 @@
   --grid: #1f2937;
   --accent: #38bdf8;
   --accent-color: #38bdf8;
+  /* Dark accent (sky) is light, so it wants dark ink on top. */
+  --on-accent: #0f172a;
   --accent-soft: #162032;
   --accent-soft-2: #152235;
   --accent-strong: #0b1220;
@@ -2351,12 +2355,16 @@ label {
 button {
   border-radius: 10px;
   border: none;
-  background: #38bdf8;
-  color: #0f172a;
+  /* Use the theme accent (navy in light, sky in dark) with matching ink, instead
+     of a hardcoded sky fill + Arial. font-family:inherit pulls the brand font;
+     the global margin-top:4px is dropped — it only nudged buttons out of line
+     with their neighbours (components that want spacing set it themselves). */
+  background: var(--accent);
+  color: var(--on-accent);
+  font-family: inherit;
   font-weight: 600;
   cursor: pointer;
   font-size: 14px;
-  margin-top: 4px;
   transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 
