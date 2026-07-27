@@ -687,6 +687,7 @@ def build_advanced_metrics_body(
         background:var(--card); border:1px solid var(--border); border-radius:12px;
         box-shadow:0 8px 32px rgba(0,0,0,.18);
         min-width:220px; width:max-content; max-width:min(320px,90vw); max-height:300px; overflow-y:auto;
+        overscroll-behavior:contain;
         padding:6px 0;
       }
       .am-sp-group { border-bottom:1px solid var(--border); padding:4px 0; }
@@ -4086,7 +4087,14 @@ _AM_JS = r"""
     document.addEventListener('click', closePanel);
     // A fixed panel would detach from the button on scroll/resize; close it.
     window.addEventListener('resize', function() { if (wrap.classList.contains('open')) closePanel(); });
-    window.addEventListener('scroll', function() { if (wrap.classList.contains('open')) closePanel(); }, true);
+    window.addEventListener('scroll', function(e) {
+      if (!wrap.classList.contains('open')) return;
+      // Ignore the panel's own internal scroll (it has overflow-y:auto), or the
+      // capture-phase listener would dismiss the dropdown the moment you scroll
+      // the list. Only a real page/ancestor scroll detaches the fixed panel.
+      if (e.target && e.target.nodeType === 1 && (e.target === panel || panel.contains(e.target))) return;
+      closePanel();
+    }, true);
 
     // Keep label in sync when metric changes via other code (e.g. amLoadPreset)
     metricSel.addEventListener('change', syncLabel);
