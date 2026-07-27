@@ -832,6 +832,24 @@ window.brHaptic = function (pattern) {
     if (window.brNavGlide) window.brNavGlide();
   }
 
+  // Pages that can be swapped in place (script-free, or their page script is on
+  // the re-runnable allow-list). Everything else — Draft, Keeper, Redzone,
+  // Prospects, Trade, Compare, Metrics — loads its own scripts, so we let the
+  // browser navigate to it natively (a single load) rather than fetch it here
+  // only to bail to a full load anyway.
+  var SOFT_NAV_PAGES = {
+    dashboard: 1, standings: 1, teams: 1, activity: 1, weekly: 1, graphs: 1,
+    recap: 1, awards: 1, history: 1, commissioner: 1, players: 1, breakouts: 1,
+    waivers: 1, schedule: 1,
+  };
+  function softNavigable(href) {
+    var path;
+    try { path = new URL(href, location.href).pathname; } catch (e) { return false; }
+    if (path.indexOf('/draft') !== -1) return false;   // draft + draft history load their own scripts
+    var seg = path.replace(/\/+$/, '').split('/').pop();
+    return SOFT_NAV_PAGES[seg] === 1;
+  }
+
   document.addEventListener('click', function (e) {
     if (e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     // Mobile navigates from the dock + sheet; desktop from the top nav pills,
@@ -843,6 +861,7 @@ window.brHaptic = function (pattern) {
     var href = a.getAttribute('href');
     if (!href || href.charAt(0) === '#' || a.target === '_blank' || !sameOrigin(href)) return;
     if (new URL(href, location.href).href === location.href) { e.preventDefault(); return; }
+    if (!softNavigable(href)) return;   // heavy pages navigate natively, in a single load
     e.preventDefault();
     // Close any open desktop dropdown so it doesn't linger after the soft-nav.
     if (!mq.matches) {
