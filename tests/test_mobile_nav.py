@@ -48,8 +48,8 @@ def test_dock_and_sheet_present(offline_client):
 
 
 def test_top_bar_marker_off_dashboard(offline_client):
-    # Graphs is not the dashboard: the bar is marked present-but-not-home, so the
-    # CSS hides it entirely on phones.
+    # The bar carries the br-mnav marker on every league page (CSS slims it to a
+    # logo-only bar on phones); br-mnav-home marks only the dashboard.
     html = _html(offline_client, GRAPHS)
     assert "top-nav br-mnav" in html
     assert "br-mnav-home" not in html

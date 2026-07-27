@@ -22845,13 +22845,6 @@ a, button, [role="button"], [role="tab"], summary, label,
 
   /* Reserve space so the fixed bar never covers the last of the content. */
   .has-tabbar { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
-
-  /* Every league page except the dashboard hides the top bar, so content would
-     run straight under the notch / Dynamic Island. Add a safe-area top buffer.
-     The dashboard is excluded because its logo bar already provides the inset. */
-  .has-tabbar:not([data-active="dashboard"]) {
-    padding-top: max(10px, env(safe-area-inset-top));
-  }
 }
 @media (max-width: 768px) and (prefers-reduced-motion: reduce) {
   .br-tabbar-item { transition: color .12s ease; }
@@ -22875,16 +22868,18 @@ a, button, [role="button"], [role="tab"], summary, label,
 
   /* Top bar yields to the dock. It stays only on the dashboard, and only as the
      logo; every other league page hides it and hands the height to content. */
+  /* The dock is the primary nav on phones, so the top bar drops its pills and
+     utilities and keeps just the logo (top-left) on every league page, so the
+     top-left is never an odd empty gap. */
   .top-nav.br-mnav .nav-center,
   .top-nav.br-mnav .nav-right { display: none; }
   .top-nav.br-mnav {
-    grid-template-columns: 1fr; justify-items: center;
+    grid-template-columns: 1fr; justify-items: start;
     /* The mobile .top-nav override drops the base safe-area padding, so the
        logo lands under the notch / Dynamic Island in a standalone PWA. Restore
        it here so the logo always clears the status bar. */
     padding-top: max(10px, env(safe-area-inset-top));
   }
-  .top-nav.br-mnav:not(.br-mnav-home) { display: none; }
 
   /* Scrim + sheet sit just above the dock (both at --z-chrome); DOM order puts
      them over it. Player/team modals live at --z-modal and still win. */
