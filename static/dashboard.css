@@ -22869,6 +22869,12 @@ a, button, [role="button"], [role="tab"], summary, label,
    A thumb-reachable dock to the five core league sections. Hidden on desktop
    (the top nav covers it) and only present on league pages. */
 .br-tabbar { display: none; }
+/* The dock, the More sheet + its scrim, and the search screen are mobile-only.
+   Each must be hidden on desktop; without this base rule the sheet/scrim (which
+   are otherwise styled only inside the max-width:768px block) render in-flow on
+   desktop and spill every nav link onto the page. The mobile media query below
+   re-shows them. */
+.br-sheet-scrim, .br-sheet { display: none; }
 
 @media (max-width: 768px) {
   .br-tabbar {
@@ -22976,6 +22982,7 @@ a, button, [role="button"], [role="tab"], summary, label,
   /* Scrim + sheet sit just above the dock (both at --z-chrome); DOM order puts
      them over it. Player/team modals live at --z-modal and still win. */
   .br-sheet-scrim {
+    display: block;
     position: fixed; inset: 0; z-index: var(--z-chrome);
     background: rgba(4, 8, 17, .5);
     opacity: 0; pointer-events: none;
@@ -22984,6 +22991,7 @@ a, button, [role="button"], [role="tab"], summary, label,
   .br-sheet-scrim.open { opacity: 1; pointer-events: auto; }
 
   .br-sheet {
+    display: block;
     position: fixed; left: 0; right: 0; bottom: 0;
     z-index: var(--z-chrome);
     /* Tinted ground so the grouped cards read as raised panels (iOS Settings). */
