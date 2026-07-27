@@ -9246,6 +9246,11 @@ select:focus {
   overflow-x: auto;
   scrollbar-width: none;
   align-items: center;
+  /* overflow-x:auto forces overflow-y to auto (not visible), so the active
+     pill's box-shadow and rounded edges get clipped top/bottom. Pad the scroll
+     box to give them room; negative margin keeps the row's outer height put. */
+  padding: 8px 2px;
+  margin: -8px -2px;
 }
 
 .manager-pills-row::-webkit-scrollbar {
