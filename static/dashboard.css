@@ -6931,6 +6931,29 @@ select:focus {
   font-weight: 800;
 }
 
+/* The section title is itself the link to its full page (no separate button).
+   It keeps the title's look, with an accent arrow that cues it's clickable. */
+.os-section-title-link {
+  color: inherit;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+}
+.os-section-title-link:hover,
+.os-section-title-link:focus-visible {
+  color: var(--accent, #3b82f6);
+}
+.os-section-title-arrow {
+  color: var(--accent, #3b82f6);
+  font-weight: 700;
+  transition: transform .15s ease;
+}
+.os-section-title-link:hover .os-section-title-arrow,
+.os-section-title-link:focus-visible .os-section-title-arrow {
+  transform: translateX(3px);
+}
+
 .os-snapshot-bottom {
   margin-top: 10px;
 }
