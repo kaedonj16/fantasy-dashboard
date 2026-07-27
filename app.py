@@ -1647,39 +1647,262 @@ _NAV_ICON_PATHS = {
                   "<path d='M12 11h4'/><path d='M12 16h4'/><path d='M8 11h.01'/><path d='M8 16h.01'/>"),
     "users": ("<path d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'/><circle cx='9' cy='7' r='4'/>"
               "<path d='M22 21v-2a4 4 0 0 0-3-3.87'/><path d='M16 3.13a4 4 0 0 1 0 7.75'/>"),
+    "more": "<circle cx='5' cy='12' r='1.6'/><circle cx='12' cy='12' r='1.6'/><circle cx='19' cy='12' r='1.6'/>",
+    "shield": ("<path d='M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6"
+               "a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5"
+               "a1 1 0 0 1 1 1z'/>"),
+    "swords": ("<path d='M14.5 17.5 3 6V3h3l11.5 11.5'/><path d='M13 19l6-6'/><path d='M16 16l4 4'/>"
+               "<path d='M19 21l2-2'/><path d='M9.5 17.5 21 6V3h-3L6.5 14.5'/><path d='M5 14l-2 2'/>"
+               "<path d='M3 19l2 2'/>"),
+    "trophy": ("<path d='M6 9H4.5a2.5 2.5 0 0 1 0-5H6'/><path d='M18 9h1.5a2.5 2.5 0 0 0 0-5H18'/>"
+               "<path d='M4 22h16'/><path d='M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22'/>"
+               "<path d='M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22'/>"
+               "<path d='M18 2H6v7a6 6 0 0 0 12 0z'/>"),
+    "bars2": "<path d='M3 3v18h18'/><path d='m19 9-5 5-4-4-3 3'/>",
+    "news": ("<path d='M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2"
+             "Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2'/><path d='M18 14h-8'/><path d='M15 18h-5'/>"
+             "<path d='M10 6h8v4h-8z'/>"),
+    "activity": "<path d='M22 12h-4l-3 9L9 3l-3 9H2'/>",
+    "pulse": "<path d='M3.5 13H6l2-6 4 12 2-6h2.5'/><path d='M20.5 13a5 5 0 0 0-8.5-4'/>",
+    "award": "<circle cx='12' cy='8' r='6'/><path d='M15.477 12.89 17 22l-5-3-5 3 1.523-9.11'/>",
+    "history": "<path d='M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8'/><path d='M3 3v5h5'/><path d='M12 7v5l4 2'/>",
+    "list": ("<path d='M8 6h13'/><path d='M8 12h13'/><path d='M8 18h13'/><path d='M3 6h.01'/>"
+             "<path d='M3 12h.01'/><path d='M3 18h.01'/>"),
+    "radar": ("<path d='M19.07 4.93A10 10 0 0 0 6.99 3.34'/><path d='M4 6h.01'/>"
+              "<path d='M2.29 9.62A10 10 0 1 0 21.31 8.35'/><path d='M16.24 7.76A6 6 0 1 0 8.23 16.67'/>"
+              "<path d='M12 18h.01'/><path d='M17.99 11.66A6 6 0 0 1 15.77 16.67'/>"
+              "<circle cx='12' cy='12' r='2'/><path d='m13.41 10.59 5.66-5.66'/>"),
+    "star": ("<path d='M11.5 3.2a.6.6 0 0 1 1 0l2.1 4.3 4.8.7a.6.6 0 0 1 .3 1L16.5 16l.8 4.8"
+             "a.6.6 0 0 1-.9.6L12 19.1l-4.3 2.3a.6.6 0 0 1-.9-.6l.8-4.8-3.5-3.4a.6.6 0 0 1 .3-1l4.8-.7z'/>"),
 }
 
 
-def _bottom_nav(active: str, league_id, platform, season) -> str:
-    """Mobile bottom tab bar for the five core league destinations.
+# Every league page the mobile dock can point at: key -> (icon, endpoint, suffix).
+# The key matches the `active` string build_nav() sets, so the dock, the top nav
+# and the More sheet all agree on where you are. Any page here can be pulled into
+# the dock's last slot when you're on it (see _mobile_nav), so the bar never shows
+# a page with no active tab.
+_NAV_PAGE_META = {
+    "dashboard":         ("home",      "page_dashboard",            ""),
+    "players":           ("bars",      "page_players",              ""),
+    "weekly":            ("swords",    "page_weekly",               ""),
+    "teams":             ("users",     "page_teams",                ""),
+    "draft":             ("clipboard", "page_draft_room",           ""),
+    "keeper":            ("shield",    "page_keeper",               ""),
+    "standings":         ("trophy",    "page_standings",            ""),
+    "activity":          ("activity",  "page_activity",             ""),
+    "league_health":     ("pulse",     "page_commissioner",         ""),
+    "recap":             ("news",      "page_recap",                ""),
+    "scout":             ("swords",    "page_weekly",               "?tab=scout"),
+    "optimal":           ("bars2",     "page_weekly",               "?tab=optimal"),
+    "redzone":           ("pulse",     "page_redzone",              ""),
+    "waivers":           ("list",      "page_waivers",              ""),
+    "schedule":          ("list",      "page_schedule",             ""),
+    "trade":             ("swap",      "trade.page_trade",          ""),
+    "trade-suggestions": ("swap",      "trade.page_trade",          "?tab=suggestions"),
+    "trade-database":    ("swap",      "trade.page_trade_database", ""),
+    "trade-intel":       ("radar",     "trade.page_trade_intel",    ""),
+    "compare":           ("bars",      "page_compare",              ""),
+    "top-movers":        ("bars2",     "top_movers_page",           ""),
+    "advanced-metrics":  ("bars2",     "page_advanced_metrics",     ""),
+    "breakouts":         ("radar",     "page_breakouts",            ""),
+    "prospects":         ("award",     "page_prospects",            ""),
+    "draft-history":     ("history",   "page_draft_history",        ""),
+    "awards":            ("award",     "page_awards",               ""),
+    "graphs":            ("bars2",     "page_graphs",               ""),
+    "history":           ("history",   "page_history",              ""),
+}
 
-    A thumb-reachable dock is the change that most reads as "this is an app"
-    rather than a website. Only rendered inside a league (needs league context)
-    and only shown on phones (CSS); desktop keeps the top nav. Active state
-    reuses the same key build_nav() sets, so the top nav and the dock always
-    agree on where you are."""
+# Short labels for the dock (the sheet uses full labels at each call site).
+_DOCK_LABELS = {
+    "dashboard": "Home", "players": "Rankings", "weekly": "Matchups", "teams": "Teams",
+    "draft": "Draft", "keeper": "Keeper", "standings": "Standings", "activity": "Activity",
+    "league_health": "Health", "recap": "Recap", "scout": "Scout", "optimal": "Lineup",
+    "redzone": "Redzone", "waivers": "Waivers", "schedule": "Schedule", "trade": "Trades",
+    "trade-suggestions": "Trades", "trade-database": "Trades", "trade-intel": "Intel",
+    "compare": "Compare", "top-movers": "Movers", "advanced-metrics": "Metrics",
+    "breakouts": "Breakouts", "prospects": "Prospects", "draft-history": "History",
+    "awards": "Awards", "graphs": "Graphs", "history": "History",
+}
+
+
+def _nav_show_keeper(platform, league_id, season) -> bool:
+    """Should the offseason dock surface a Keeper tab?
+
+    True for keeper/dynasty leagues that have an actual keeper decision to make;
+    False for redraft leagues and for true dynasty leagues (you keep your whole
+    roster, so there is no keeper step and the tool is hidden). Reads the cached
+    league settings, so it costs nothing extra at render time."""
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
+        settings = (ctx.get("league") or {}).get("settings") or {}
+    except Exception:
+        settings = {}
+    def _i(v):
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return None
+    type_code = _i(settings.get("type"))
+    max_keepers = _i(settings.get("max_keepers")) or 0
+    true_dynasty = (type_code == 2 and max_keepers == 0)
+    return ((type_code in (1, 2)) or max_keepers > 0) and not true_dynasty
+
+
+def _mobile_nav(active: str, league_id, platform, season) -> str:
+    """Mobile navigation: a dynamic bottom dock plus a full "More" sheet.
+
+    On phones this replaces the top nav entirely (CSS slims the top bar to the
+    logo on the dashboard and hides it everywhere else). The dock keeps Home and
+    More fixed; the three middle slots change with the season and with the page
+    you are on:
+      - In season:       Matchups, Teams, Rankings.
+      - Offseason keeper: Draft, Keeper, Rankings.
+      - Offseason other:  Draft, Rankings, Teams.
+    Whatever page you open takes the last middle slot if it is not already a tab,
+    so the active state is never lost. Everything else (every page, plus Search,
+    Watchlist, the league switcher and Settings) lives in the More sheet. The
+    interactive widgets are relocated into the sheet by app.js, so their existing
+    handlers keep working; here we render their mount points."""
     if not (league_id and platform and season):
         return ""
-    def _u(ep):
-        return url_for(ep, platform=platform, season=season, league_id=league_id)
-    tabs = [
-        ("Home",    "home",      _u("page_dashboard"),  {"dashboard"}),
-        ("Players", "bars",      _u("page_players"),    {"players"}),
-        ("Trades",  "swap",      _u("trade.page_trade"),
-            {"trade", "trade-suggestions", "trade-database", "trade-intel"}),
-        ("Draft",   "clipboard", _u("page_draft_room"), {"draft"}),
-        ("Teams",   "users",     _u("page_teams"),      {"teams"}),
-    ]
+
+    # Normalize active exactly as build_nav does so the dock/sheet highlight the
+    # right item on ?tab= sub-pages.
+    active_norm = active
+    _tab = request.args.get("tab", "")
+    if active == "trade" and _tab == "suggestions":
+        active_norm = "trade-suggestions"
+    if active == "weekly" and _tab in ("scout", "optimal"):
+        active_norm = _tab
+
+    nfl_state = get_nfl_state() or {}
+    offseason = ((nfl_state.get("season_type") or "").lower() == "off") and (
+        int(nfl_state.get("season") or datetime.now().year) == int(season or 0)
+    )
+    draft_ended = has_draft_ended(league_id, platform, season)
+
+    def _href(ep, suffix):
+        return url_for(ep, platform=platform, season=season, league_id=league_id) + suffix
+
+    # ── Dynamic dock ──────────────────────────────────────────────────────────
+    if not offseason:
+        middle = ["weekly", "teams", "players"]
+    elif _nav_show_keeper(platform, league_id, season):
+        middle = ["draft", "keeper", "players"]
+    else:
+        middle = ["draft", "players", "teams"]
+
+    dock_keys = ["dashboard"] + middle
+    # The page you're on always earns a tab: if it's a real page and not already
+    # in the dock, it takes over the last middle slot.
+    if active_norm in _NAV_PAGE_META and active_norm != "dashboard" and active_norm not in dock_keys:
+        middle = middle[:-1] + [active_norm]
+        dock_keys = ["dashboard"] + middle
+
     items = ""
-    for label, icon, href, keys in tabs:
-        on = active in keys
+    for key in dock_keys:
+        icon, ep, suffix = _NAV_PAGE_META[key]
+        label = _DOCK_LABELS.get(key, key.title())
+        on = key == active_norm
         cls = "br-tabbar-item" + (" active" if on else "")
         aria = " aria-current='page'" if on else ""
         items += (
-            f"<a class='{cls}'{aria} href='{href}'>"
+            f"<a class='{cls}'{aria} href='{_href(ep, suffix)}'>"
             f"{_nav_icon(icon, size=22)}<span class='br-tabbar-lbl'>{label}</span></a>"
         )
-    return f"<nav class='br-tabbar' aria-label='Primary'>{items}</nav>"
+    items += (
+        "<button type='button' class='br-tabbar-item br-more-tab' id='brMoreTab' "
+        "aria-label='More' aria-haspopup='true' aria-expanded='false'>"
+        f"{_nav_icon('more', size=22)}<span class='br-tabbar-lbl'>More</span></button>"
+    )
+    dock = f"<nav class='br-tabbar' aria-label='Primary'>{items}</nav>"
+
+    # ── More sheet ────────────────────────────────────────────────────────────
+    def _sl(key, label, pro=False):
+        icon, ep, suffix = _NAV_PAGE_META[key]
+        on = " active" if key == active_norm else ""
+        aria = " aria-current='page'" if key == active_norm else ""
+        pro_html = "<span class='br-sheet-pro'>PRO</span>" if pro else ""
+        return (
+            f"<a class='br-sheet-link{on}'{aria} href='{_href(ep, suffix)}'>"
+            f"{_nav_icon(icon, size=20)}<span>{label}</span>{pro_html}</a>"
+        )
+
+    def _sec(title, rows):
+        return f"<h3 class='br-sheet-h'>{title}</h3>" + "".join(rows)
+
+    # Search box is relocated into #brSheetFind by app.js (it keeps its handlers);
+    # Watchlist is a plain link to the full watchlist page (robust, no popover to
+    # reposition inside the sheet).
+    find_html = (
+        "<h3 class='br-sheet-h'>Find</h3>"
+        "<div class='br-sheet-mount' id='brSheetFind'></div>"
+        f"<a class='br-sheet-link' href='/watchlist'>{_nav_icon('star', size=20)}"
+        "<span>Watchlist</span></a>"
+    )
+
+    weekly_html = ""
+    if draft_ended or not offseason:
+        rows = [
+            _sl("weekly", "Matchups"), _sl("recap", "Weekly Recap"),
+            _sl("scout", "Opponent Scout"), _sl("optimal", "Lineup Efficiency"),
+            _sl("waivers", "Waivers & Start/Sit"), _sl("schedule", "Schedule Assistant"),
+        ]
+        if platform == "sleeper" and not offseason:
+            rows.append(_sl("redzone", "Redzone"))
+        weekly_html = _sec("Weekly", rows)
+
+    league_html = _sec("League", [
+        _sl("standings", "Standings"), _sl("teams", "Teams"),
+        _sl("activity", "Activity"), _sl("league_health", "League Health"),
+    ])
+
+    trade_rows = [
+        _sl("trade", "Trade Calculator"), _sl("trade-suggestions", "Suggestions", pro=True),
+        _sl("trade-database", "Trade Database"),
+    ]
+    if platform != "espn":
+        trade_rows.append(_sl("trade-intel", "Trade Intel", pro=True))
+    trades_html = _sec("Trades", trade_rows)
+
+    players_html = _sec("Players", [
+        _sl("players", "Player Rankings"), _sl("compare", "Compare Players"),
+        _sl("top-movers", "Top Movers"), _sl("advanced-metrics", "Advanced Metrics"),
+        _sl("breakouts", "Breakout Engine", pro=True), _sl("prospects", "Prospect Rankings"),
+    ])
+
+    draft_html = _sec("Draft", [
+        _sl("draft", "Draft Room"), _sl("keeper", "Keeper Assistant"),
+        _sl("draft-history", "Draft History"),
+    ])
+
+    stats_html = _sec("Stats", [
+        _sl("awards", "Awards"), _sl("graphs", "Graphs"), _sl("history", "History"),
+    ])
+
+    portfolio_link = ""
+    if session.get("viewer_username"):
+        portfolio_link = (
+            f"<a class='br-sheet-link' "
+            f"href='/portfolio?from_league={league_id}&platform={platform}&season={season}'>"
+            f"{_nav_icon('users', size=20)}<span>My Leagues</span></a>"
+        )
+    account_html = (
+        "<h3 class='br-sheet-h'>Account</h3>"
+        f"{portfolio_link}"
+        "<div class='br-sheet-mount' id='brSheetAccount'></div>"
+    )
+
+    sheet = (
+        "<div class='br-sheet-scrim' id='brSheetScrim'></div>"
+        "<nav class='br-sheet' id='brMoreSheet' aria-label='More' aria-hidden='true'>"
+        "  <div class='br-sheet-grip' aria-hidden='true'></div>"
+        f"  {find_html}{weekly_html}{draft_html}{league_html}{players_html}"
+        f"  {trades_html}{stats_html}{account_html}"
+        "</nav>"
+    )
+    return dock + sheet
 
 
 def _nav_icon(name: str, cls: str = "", style: str = "", size: int = 16) -> str:
@@ -2135,8 +2358,13 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         f"</div>"
     )
 
+    # On phones the mobile dock (_mobile_nav) is the primary nav, so this top bar
+    # is slimmed to the logo on the dashboard and hidden on every other league
+    # page. `br-mnav` marks "the dock is present"; `br-mnav-home` marks the one
+    # page that keeps a (logo-only) top bar.
+    _mnav_cls = "top-nav br-mnav" + (" br-mnav-home" if active == "dashboard" else "")
     return (
-        "<nav class='top-nav' aria-label='Main navigation'>"
+        f"<nav class='{_mnav_cls}' aria-label='Main navigation'>"
         "  <div class='nav-left'>"
         f"    <a href='{dashboard_url}' aria-label='BR Fantasy dashboard'>"
         "      <img src='/static/Website_Logo.png' alt='BR Fantasy' class='site-logo'/>"
@@ -2651,11 +2879,13 @@ def render_page(
         )
 
     wrapped_body = f"<div class='page-shell' data-page='{active}'>{body_html}</div>"
-    # Mobile bottom tab bar (phones only, league pages only). Appended as a
-    # fixed sibling; CSS reserves space so it never overlaps content.
-    _bottom = _bottom_nav(active, _nav_lid, _nav_platform, _nav_season)
+    # Mobile navigation: dynamic bottom dock + full "More" sheet (phones only,
+    # league pages only). Appended as fixed siblings; CSS reserves space so the
+    # dock never overlaps content. `.has-tabbar` also carries the active key so
+    # CSS can keep the top bar (logo only) on the dashboard and hide it elsewhere.
+    _bottom = _mobile_nav(active, _nav_lid, _nav_platform, _nav_season)
     if _bottom:
-        wrapped_body = f"<div class='has-tabbar'>{wrapped_body}</div>{_bottom}"
+        wrapped_body = f"<div class='has-tabbar' data-active='{active}'>{wrapped_body}</div>{_bottom}"
 
     user_id = session.get("viewer_username")
     is_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform or "sleeper", season)

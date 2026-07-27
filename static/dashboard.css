@@ -22850,3 +22850,104 @@ a, button, [role="button"], [role="tab"], summary, label,
   .br-tabbar-item { transition: color .12s ease; }
   .br-tabbar-item:active { transform: none; }
 }
+
+/* ============================================
+   MOBILE "MORE" SHEET + TOP-BAR HANDOFF (PWA)
+   ============================================
+   On phones the dock above is the primary nav, so the top bar steps aside and a
+   full "More" sheet holds every other page plus Search, Watchlist, the league
+   switcher and Settings. Desktop is untouched. */
+@media (max-width: 768px) {
+  /* The More tab is a <button>; strip native chrome so it matches the <a> items. */
+  .br-more-tab {
+    flex: 1; background: none; border: 0; margin: 0;
+    font: inherit; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .br-more-tab.active { color: var(--accent); }
+
+  /* Top bar yields to the dock. It stays only on the dashboard, and only as the
+     logo; every other league page hides it and hands the height to content. */
+  .top-nav.br-mnav .nav-center,
+  .top-nav.br-mnav .nav-right { display: none; }
+  .top-nav.br-mnav { grid-template-columns: 1fr; justify-items: center; }
+  .top-nav.br-mnav:not(.br-mnav-home) { display: none; }
+
+  /* Scrim + sheet sit just above the dock (both at --z-chrome); DOM order puts
+     them over it. Player/team modals live at --z-modal and still win. */
+  .br-sheet-scrim {
+    position: fixed; inset: 0; z-index: var(--z-chrome);
+    background: rgba(4, 8, 17, .5);
+    opacity: 0; pointer-events: none;
+    transition: opacity .22s ease;
+  }
+  .br-sheet-scrim.open { opacity: 1; pointer-events: auto; }
+
+  .br-sheet {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    z-index: var(--z-chrome);
+    background: var(--bg);
+    border-radius: 20px 20px 0 0;
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -8px 30px -12px rgba(0, 0, 0, .4);
+    transform: translateY(103%);
+    transition: transform .28s cubic-bezier(.32, .72, 0, 1);
+    max-height: 86vh; overflow-y: auto;
+    padding: 0 0 calc(16px + env(safe-area-inset-bottom));
+    -webkit-overflow-scrolling: touch;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+  .br-sheet.open { transform: translateY(0); }
+
+  .br-sheet-grip {
+    width: 38px; height: 4px; border-radius: 999px;
+    background: var(--border); margin: 9px auto 2px;
+  }
+  .br-sheet-h {
+    font-size: 11px; font-weight: 800; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--text-muted);
+    margin: 14px 18px 6px;
+  }
+  .br-sheet-link {
+    display: flex; align-items: center; gap: 13px;
+    padding: 11px 18px; color: var(--text);
+    text-decoration: none; font-size: 15px; font-weight: 600;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .br-sheet-link .nav-svg-icon { color: var(--text-muted); flex: 0 0 auto; }
+  .br-sheet-link:active { background: var(--accent-soft); }
+  .br-sheet-link.active { color: var(--accent); }
+  .br-sheet-link.active .nav-svg-icon { color: var(--accent); }
+  .br-sheet-pro {
+    margin-left: 6px; font-size: 9.5px; font-weight: 800; letter-spacing: .04em;
+    color: var(--accent); border: 1px solid var(--accent);
+    padding: 1px 5px; border-radius: 5px;
+  }
+  .br-sheet-mount { display: flex; flex-direction: column; }
+
+  /* Widgets relocated into the sheet by app.js keep their own handlers; here we
+     flatten their absolutely-positioned dropdowns into static, full-width
+     content so they read as ordinary sheet rows. */
+  .br-sheet .nav-search-wrapper { width: 100%; position: static; padding: 4px 18px 2px; }
+  .br-sheet .nav-search-inner { width: 100%; }
+  .br-sheet .nav-search-dropdown {
+    position: static; width: 100%; margin-top: 6px;
+    box-shadow: none; border: 0; max-height: 46vh;
+  }
+  .br-sheet #settingsDropdown {
+    position: static !important; display: block !important;
+    box-shadow: none; border: 0; width: 100%;
+    min-width: 0; padding: 0; margin: 0;
+  }
+  /* The changelog dropdown stays hidden until the Notifications row opens it,
+     then renders inline (its toggle sets display), full width, no popover chrome. */
+  .br-sheet #changelogDropdown {
+    position: static !important; width: 100% !important;
+    box-shadow: none; border: 0; margin: 4px 0 0; max-height: 46vh;
+  }
+}
+@media (max-width: 768px) and (prefers-reduced-motion: reduce) {
+  .br-sheet { transition: none; }
+  .br-sheet-scrim { transition: none; }
+}
