@@ -1449,7 +1449,7 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
 
 .bo-page-btn.active {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   border-color: var(--accent);
 }
 
@@ -1991,7 +1991,7 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
 
 .card .tab-btn:hover {
   background: var(--accent);
-  color: #ffffff;
+  color: var(--on-accent);
 }
 
 .card .tab-panel {
@@ -2364,7 +2364,7 @@ label {
 .pill-toggle.active {
   background: var(--accent);
   border-color: var(--accent);
-  color: #ffffff;
+  color: var(--on-accent);
 }
 
 button {
@@ -2863,7 +2863,7 @@ thead th {
   padding: 8px 16px;
   border-radius: 10px;
   background: var(--accent, #38bdf8);
-  color: #fff;
+  color: var(--on-accent);
   font-size: 12px;
   font-weight: 600;
   text-decoration: none;
@@ -3492,7 +3492,7 @@ strong + .player-badge,
 
 .otc-day-filter.active {
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
   border-color: var(--accent);
 }
 
@@ -4455,7 +4455,7 @@ strong + .player-badge,
 .otc-sugg-pkg-load-btn:hover {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 /* Real-trade example cards */
@@ -6171,6 +6171,16 @@ select:focus {
   position: relative;
 }
 
+/* The light header is a white→pale-blue gradient; mirror it on the dark ground
+   with the dark surface tokens + the sky accent so it doesn't stay white. */
+[data-theme="dark"] .history-header {
+  border-color: var(--border);
+  background:
+    radial-gradient(circle at top left, rgba(56, 189, 248, 0.12), transparent 34%),
+    linear-gradient(135deg, var(--card) 0%, var(--card-soft) 100%);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.35);
+}
+
 .history-kicker {
   font-size: 0.78rem;
   font-weight: 900;
@@ -6268,7 +6278,7 @@ select:focus {
   padding: 10px 20px;
   font-size: 13px;
   font-weight: 600;
-  color: white;
+  color: var(--on-accent);
   border: none;
   border-radius: 10px;
   cursor: pointer;
@@ -6534,7 +6544,7 @@ select:focus {
 .da-filter:hover {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 .da-layout {
   display: flex;
@@ -6620,7 +6630,7 @@ select:focus {
 }
 .da-draft-btn {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   border: none;
   border-radius: 6px;
   padding: 5px 10px;
@@ -6656,7 +6666,7 @@ select:focus {
   width: 100%;
   padding: 10px;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   border: none;
   border-radius: 10px;
   font-size: 13px;
@@ -7464,7 +7474,7 @@ select:focus {
 .pm-wt-tabs { display: flex; gap: 4px; }
 .pm-wt-tab { padding: 3px 10px; font-size: 11px; font-weight: 600; border: 1px solid var(--border); border-radius: 18px; background: transparent; color: var(--text-muted); cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s; }
 .pm-wt-tab:hover { background: var(--bg-alt); color: var(--text); }
-.pm-wt-tab.pm-wt-tab-active { background: var(--accent, #3b82f6); border-color: var(--accent, #3b82f6); color: #fff; }
+.pm-wt-tab.pm-wt-tab-active { background: var(--accent, #3b82f6); border-color: var(--accent, #3b82f6); color: var(--on-accent); }
 .pm-wt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; padding-top: 8px; }
 @media (max-width: 600px) { .pm-wt-grid { grid-template-columns: 1fr; } }
 .pm-wt-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -7935,7 +7945,9 @@ select:focus {
   height: 40px;
   border-radius: 50%;
   object-fit: cover;
-  box-shadow: 0 0 0 2px #fff, 0 1px 6px rgba(0, 0, 0, 0.15);
+  /* Ring matches the surface the avatar sits on (white in light, dark card in
+     dark) instead of a fixed white halo that glows on the dark ground. */
+  box-shadow: 0 0 0 2px var(--card), 0 1px 6px rgba(0, 0, 0, 0.15);
 }
 
 .avatar.sm {
@@ -8006,7 +8018,7 @@ select:focus {
 .filter-pill.active {
   background: var(--accent);
   border-color: var(--accent);
-  color: #ffffff;
+  color: var(--on-accent);
   box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
 }
 
@@ -9207,7 +9219,7 @@ select:focus {
 
 .manager-pill.active {
   background: var(--accent);
-  color: #ffffff;
+  color: var(--on-accent);
   box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
@@ -10192,7 +10204,7 @@ html[data-theme="dark"] .contact-social-pill img {
   transition: background 0.15s, color 0.15s;
 }
 .teams-sort-btn:hover { background: var(--surface2); color: var(--text); }
-.teams-sort-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.teams-sort-btn.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 
 .teams-grid {
   display: grid;
@@ -10252,7 +10264,7 @@ html[data-theme="dark"] .contact-social-pill img {
   font-weight: 900;
   font-size: 12px;
   letter-spacing: 0.02em;
-  color: #ffffff;
+  color: var(--on-accent);
   padding: 4px 8px;
   border: 1px solid var(--grid);
   border-radius: 10px;
@@ -13035,7 +13047,7 @@ img, svg, canvas {
   border: none;
   border-radius: 6px;
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
   cursor: pointer;
   transition: opacity 0.2s;
 }
@@ -13696,7 +13708,7 @@ img, svg, canvas {
 .pvc-range-btn.is-active {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .player-modal-loading {
@@ -14596,7 +14608,7 @@ img, svg, canvas {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
+  color: var(--on-accent);
   font-size: 24px;
   font-weight: 700;
   border: 2px solid var(--border);
@@ -14786,7 +14798,7 @@ img, svg, canvas {
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--accent, #3b82f6);
-  color: #fff;
+  color: var(--on-accent);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -15328,7 +15340,7 @@ tr.team-clickable {
 .members-toggle-btn:hover { color: var(--text); }
 .members-toggle-btn.active {
   background: var(--accent, #6366f1);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 600;
 }
 
@@ -16722,7 +16734,7 @@ tr.team-clickable {
 }
 .draft-view-tab.active {
   background: var(--accent, #3b82f6);
-  color: #fff;
+  color: var(--on-accent);
   border-color: transparent;
 }
 .draft-view-tab:hover:not(.active) { background: var(--hover, rgba(0,0,0,0.05)); }
@@ -16797,7 +16809,7 @@ tr.team-clickable {
 }
 .btm-pill.active {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   border-color: var(--accent);
 }
 
@@ -18712,7 +18724,7 @@ button:disabled {
   border-radius: 10px;
   border: none;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -18795,7 +18807,7 @@ button:disabled {
   border-radius: 10px;
   border: none;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 700;
   font-size: 14px;
   cursor: pointer;
@@ -19006,7 +19018,7 @@ button:disabled {
 }
 .pwa-btn-install {
   background: var(--accent, #38bdf8);
-  color: #fff;
+  color: var(--on-accent);
 }
 .pwa-btn-install:hover { opacity: .9; }
 .pwa-btn-dismiss {
@@ -19227,7 +19239,7 @@ button:disabled {
 }
 .opt-tab.active {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 .opt-tab:not(.active):hover {
   background: var(--surface2);
@@ -19296,7 +19308,7 @@ button:disabled {
 .sched-preset-btn.active {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 .sched-preset-btn:disabled { opacity: .45; cursor: not-allowed; }
 
@@ -19633,7 +19645,7 @@ button:disabled {
   z-index: var(--z-chrome);
   padding: 8px 16px;
   background: var(--accent, #3b82f6);
-  color: #fff;
+  color: var(--on-accent);
   font-size: 13px;
   font-weight: 600;
   border-radius: 6px;
@@ -19701,7 +19713,7 @@ button:disabled {
 }
 .sched-view-btn.active {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 600;
 }
 
@@ -19725,7 +19737,7 @@ button:disabled {
   cursor: pointer;
   transition: all 0.12s;
 }
-.sched-rank-pos.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.sched-rank-pos.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .sched-sort-btn {
   margin-left: auto;
   padding: 6px 12px;
@@ -20087,7 +20099,7 @@ button:disabled {
 .home-step-item.active .home-step-num {
   border-color: var(--accent, #38bdf8);
   background: var(--accent, #38bdf8);
-  color: #fff;
+  color: var(--on-accent);
   box-shadow: 0 0 0 3px rgba(56,189,248,.15);
 }
 .home-step-item.active .home-step-label {
@@ -22928,7 +22940,7 @@ a, button, [role="button"], [role="tab"], summary, label,
   font: inherit;
   font-size: 13px;
   font-weight: 700;
-  color: #fff;
+  color: var(--on-accent);
   background: var(--accent, #1e3a5f);
   border: 0;
   border-radius: 999px;
