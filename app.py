@@ -1290,7 +1290,7 @@ BASE_HTML = """
       {ad_top}
 
       <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js};</script>
-      <main id="page-root" role="main" class="overview-layout" data-cache-ts="{cache_ts}" data-premium="{user_premium}">
+      <main id="page-root" role="main" tabindex="-1" class="overview-layout" data-cache-ts="{cache_ts}" data-premium="{user_premium}">
         {body}
       </main>
 
