@@ -13909,6 +13909,39 @@ def page_draft_history(platform: str = None, season: int = None, league_id: str 
 
 
 # ── Live draft sync (P5, Sleeper) ────────────────────────────────────────────
+# A synced draft's type never changes, so memoize it per draft_id to keep the
+# hot poll path from re-fetching the league on every poll.
+_LIVE_DRAFT_TYPE_CACHE: dict = {}
+
+
+def _live_draft_type(rounds_val: int, platform: str, league_id, season, cache_key=None) -> str:
+    """High-level draft type for a synced Sleeper draft: rookie / redraft / startup.
+
+    Round count separates a short rookie draft from a long one. A long draft is a
+    dynasty *startup* only for true dynasty leagues; redraft and keeper leagues
+    (Sleeper settings.type 0 and 1) run a full draft every year, so they must be
+    graded on redraft ADP and redraft values, not dynasty. Getting this wrong made
+    keeper live drafts use dynasty ADP."""
+    if cache_key and cache_key in _LIVE_DRAFT_TYPE_CACHE:
+        return _LIVE_DRAFT_TYPE_CACHE[cache_key]
+    if 0 < rounds_val <= 5:
+        dt = "rookie"
+    else:
+        dt = "startup"
+        try:
+            if platform == "sleeper" and league_id:
+                _lt = ((get_league(platform, league_id, season) or {}).get("settings") or {}).get("type")
+                if _lt is not None and int(_lt) in (0, 1):   # 0 redraft, 1 keeper
+                    dt = "redraft"
+        except Exception:
+            logger.debug("suppressed exception", exc_info=True)
+    if cache_key:
+        if len(_LIVE_DRAFT_TYPE_CACHE) > 2000:
+            _LIVE_DRAFT_TYPE_CACHE.clear()
+        _LIVE_DRAFT_TYPE_CACHE[cache_key] = dt
+    return dt
+
+
 def _order_from_sleeper(draft: dict) -> str:
     """Map a Sleeper draft's type + reversal_round to our order_format."""
     dtype = str((draft or {}).get("type") or "snake").lower()
@@ -13962,7 +13995,10 @@ def api_draft_detect():
                 seen_ids.add(did)
                 settings = d.get("settings") or {}
                 rounds_val = int(settings.get("rounds") or 15)
-                draft_type = "rookie" if 0 < rounds_val <= 5 else "startup"
+                draft_type = _live_draft_type(
+                    rounds_val, platform, d.get("league_id") or lid,
+                    int(d.get("season") or season), cache_key=did,
+                )
                 out.append({
                     "draft_id": did,
                     "status": d.get("status"),
@@ -14011,9 +14047,13 @@ def api_draft_live():
         })
 
     rounds_val = int(settings.get("rounds") or 15)
-    # Derive high-level draft type from round count: Sleeper rookie drafts are
-    # always short (1-5 rounds); anything longer is a startup/dynasty draft.
-    draft_type = "rookie" if 0 < rounds_val <= 5 else "startup"
+    # Rookie drafts are short (1-5 rounds); a long draft is a dynasty startup only
+    # for true dynasty leagues. Redraft and keeper leagues run a full draft each
+    # year, so they resolve to 'redraft' (redraft ADP + values), not dynasty.
+    draft_type = _live_draft_type(
+        rounds_val, platform, draft.get("league_id"),
+        int(draft.get("season") or datetime.now().year), cache_key=draft_id,
+    )
     pick_timer = int(settings.get("pick_timer") or 0)
 
     # Light poll: the board hits this every few seconds and only needs the things
@@ -24244,15 +24284,15 @@ def api_draft_grades():
         else:
             _draft_type = "rookie"  # safe default
 
-        # Redraft leagues (Sleeper settings.type == 0) run a full draft every
-        # year, so a long draft there is a redraft - NOT a dynasty startup.
-        # Grade those on redraft values + a redraft-value ADP rank instead.
+        # Redraft and keeper leagues (Sleeper settings.type 0 and 1) run a full
+        # draft every year, so a long draft there is a redraft - NOT a dynasty
+        # startup. Grade those on redraft values + a redraft-value ADP rank.
         redraft_val_by_id: dict[str, float] = {}
         if _draft_type == "startup" and platform == "sleeper":
             try:
                 _lg = get_league(platform, league_id, season) or {}
                 _lt_num = (_lg.get("settings") or {}).get("type")
-                if _lt_num is not None and int(_lt_num) == 0:
+                if _lt_num is not None and int(_lt_num) in (0, 1):
                     _draft_type = "redraft"
             except Exception as _e_lt:
                 logger.info("[draft-grades] league type check skipped: %s", _e_lt)
