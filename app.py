@@ -8350,6 +8350,45 @@ def build_activity_body(ctx: dict) -> str:
     snapshot_html = ""
     if activity_df is not None and not activity_df.empty:
 
+        # ---- League Pulse compact-row helpers -------------------------------
+        def _pos_cls(p) -> tuple:
+            raw = str(p.get("pos") or p.get("position") or "").strip().upper()
+            for cand in ("QB", "RB", "WR", "TE"):
+                if raw.startswith(cand):
+                    return cand, cand.lower()
+            if raw.startswith("K"):
+                return "K", "pk"
+            if "DEF" in raw or raw.startswith("DST"):
+                return "DEF", "pk"
+            return (raw[:3] or "FLX"), "pk"
+
+        def _player_chip(p, io) -> str:
+            name = html.escape(str(p.get("name") or "").strip())
+            if not name:
+                return ""
+            pos_txt, pos_cls = _pos_cls(p)
+            sign = "+" if io == "add" else "−"
+            drop = "" if io == "add" else " act-chip-drop"
+            return (
+                f"<span class='act-chip{drop}'><span class='act-sign'>{sign}</span>"
+                f"<span class='act-pos {pos_cls}'>{html.escape(pos_txt)}</span>{name}</span>"
+            )
+
+        def _tm_img(tm) -> str:
+            av = tm.get("avatar") or ""
+            return (
+                f"<img class='avatar' src='{av}' alt='' loading='lazy' decoding='async' "
+                "onerror=\"this.style.display='none'\">"
+                if av else ""
+            )
+
+        def _av_disc(name, img_html) -> str:
+            if img_html:
+                return f"<span class='act-av'>{img_html}</span>"
+            initials = "".join(w[0] for w in str(name or "").split()[:2]).upper() or "?"
+            hue = sum(ord(c) for c in str(name or "")) % 360   # deterministic per team
+            return f"<span class='act-av act-av-ph' style='--h:{hue}'>{html.escape(initials)}</span>"
+
         def html_trade(txrow):
             nonlocal trade_count, biggest_trade_label, biggest_trade_delta, season
 
@@ -8675,12 +8714,40 @@ def build_activity_body(ctx: dict) -> str:
                 f"onclick='checkTradeOutcome(this)'>Check Outcome</button>"
             )
             outcome_result_id = f"outcome_{trade_count}"
+
+            # Compact League Pulse summary row (expands to the full breakdown).
+            swing_html = ""
+            if len(net_values) == 2:
+                _sd = abs(net_values[0][1] - net_values[1][1])
+                if _sd > 0:
+                    swing_html = f"<span class='act-swing'>Δ {_sd:.0f}</span>"
+            team_a = teams[0] if teams else {}
+            team_b = teams[1] if len(teams) > 1 else {}
+            a_gets = "".join(_player_chip(p, "add") for p in (team_a.get("gets") or []))
+            a_sends = "".join(_player_chip(p, "drop") for p in (team_a.get("sends") or []))
+            _sep = "<span class='act-arrow'>⇄</span>" if (a_gets and a_sends) else ""
+            trade_chips = a_gets + _sep + a_sends
+            name_a = html.escape(str(team_a.get("name") or "Team A"))
+            name_b = html.escape(str(team_b.get("name") or "Team B"))
             return (
-                "<div class='tx trade-card activity-item' data-kind='trade'>"
-                f"  <div class='meta'>{pill('Trade completed')} • {when}{outcome_btn}</div>"
-                f"  <div class='teams'>{''.join(cols)}</div>"
-                f"  <div id='{outcome_result_id}' class='trade-outcome-result' style='display:none;'></div>"
-                "</div>"
+                "<details class='tx activity-item act-row act-trade' data-kind='trade'>"
+                "  <summary class='act-trade-sum'>"
+                f"    {_av_disc(team_a.get('name'), _tm_img(team_a))}"
+                "    <div class='act-rmain'>"
+                "      <div class='act-rtop'>"
+                "        <span class='act-kindtag trade'>Trade</span>"
+                f"        <span class='act-tm'>{name_a}</span><span class='act-verb trade'>⇄</span><span class='act-tm'>{name_b}</span>"
+                "      </div>"
+                f"      <div class='act-chips'>{trade_chips}</div>"
+                "    </div>"
+                f"    <div class='act-rend'>{swing_html}<span class='act-caret'>▾</span></div>"
+                "  </summary>"
+                "  <div class='act-trade-body'>"
+                f"    <div class='meta'>{pill('Trade completed')} • {when}{outcome_btn}</div>"
+                f"    <div class='teams'>{''.join(cols)}</div>"
+                f"    <div id='{outcome_result_id}' class='trade-outcome-result' style='display:none;'></div>"
+                "  </div>"
+                "</details>"
             )
 
         def html_waiver(txrow):
@@ -8698,37 +8765,33 @@ def build_activity_body(ctx: dict) -> str:
                 "onerror=\"this.style.display='none'\">"
                 if avatar else ""
             )
-            adds_parts = []
+            chip_parts = []
+            total_val = 0.0
             for p in d.get("adds", []):
                 name = str(p.get("name") or "").strip()
                 if name:
                     traded_asset_counts[name] = traded_asset_counts.get(name, 0) + 1
+                val, _lbl = player_value(p)
+                total_val += val
+                chip_parts.append(_player_chip(p, "add"))
+            chips = "".join(c for c in chip_parts if c) or "<span class='act-chip'>No adds recorded</span>"
+            val_txt = f"{total_val:.1f}" if total_val > 0 else ""
+            val_html = f"<span class='act-val'>{val_txt}</span>" if val_txt else ""
 
-                val, pos_rank_label = player_value(p)
-                val_txt = f"{val:.1f}" if val > 0 else ""
-                val_html = f'<div class="player-trade-value">{val_txt}</div>' if val_txt else ""
-                adds_parts.append(
-                    "<div class='player-activity'>"
-                    "<div style='gap: 10px;display: flex;align-items: center;'>"
-                    "<span class='io add'>+</span>"
-                    "<div>"
-                    f"  <div style='font-weight:600'>{name}</div>"
-                    f"  <div style='color:#64748b;font-size:12px'>{pos_rank_label} • {p.get('team','')}</div>"
-                    "</div></div>"
-                    f"{val_html}</div>"
-                )
-            adds = "".join(adds_parts) or "<div class='bract-empty-mini'>No adds recorded</div>"
-
-            when = _rel_time(txrow["ts"]) if pd.notna(txrow["ts"]) else ""
             esc_wv_name = html.escape(team_name)
             esc_wv_name_attr = html.escape(team_name, quote=True)
             return (
-                "<div class='tx activity-item' data-kind='waiver'>"
-                f"  <div class='meta'>{pill('Waiver')} • {when}</div>"
-                "  <div class='team-col'>"
-                f"    <header>{img}<div class='team-name team-clickable' style='cursor:pointer;' data-roster-id='{roster_id}' data-team-name='{esc_wv_name_attr}'>{esc_wv_name}</div></header>"
-                f"    <div class='plist'>{adds}</div>"
+                "<div class='tx activity-item act-row' data-kind='waiver'>"
+                f"  {_av_disc(team_name, img)}"
+                "  <div class='act-rmain'>"
+                "    <div class='act-rtop'>"
+                "      <span class='act-kindtag waiver'>Waiver</span>"
+                f"      <span class='act-tm team-clickable' style='cursor:pointer;' data-roster-id='{roster_id}' data-team-name='{esc_wv_name_attr}'>{esc_wv_name}</span>"
+                "      <span class='act-verb'>claimed</span>"
+                "    </div>"
+                f"    <div class='act-chips'>{chips}</div>"
                 "  </div>"
+                f"  <div class='act-rend'>{val_html}</div>"
                 "</div>"
             )
 
@@ -8878,6 +8941,47 @@ def build_activity_body(ctx: dict) -> str:
       }}
       .act-snap-line span {{ color: var(--text-muted); flex: 0 0 auto; }}
       .act-snap-line strong {{ color: var(--text); font-weight: 700; text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+
+      /* Compact timeline rows */
+      .act-pulse .act-row {{ display: grid; grid-template-columns: auto 1fr auto; gap: 11px; align-items: center; padding: 9px 10px; border-radius: 10px; }}
+      .act-pulse .act-daygroup .act-row + .act-row {{ border-top: 1px solid var(--border); }}
+      .act-pulse .act-row:hover {{ background: var(--row, var(--bg-alt)); }}
+      .act-pulse .act-av {{ width: 30px; height: 30px; border-radius: 9px; flex: 0 0 auto; display: grid; place-items: center; overflow: hidden; font-size: 11px; font-weight: 800; }}
+      .act-pulse .act-av img {{ width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }}
+      .act-pulse .act-av-ph {{ color: #fff; background: hsl(var(--h, 210), 42%, 46%); }}
+      .act-pulse .act-rmain {{ min-width: 0; }}
+      .act-pulse .act-rtop {{ display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font-size: 12.5px; }}
+      .act-pulse .act-tm {{ font-weight: 700; color: var(--text); }}
+      .act-pulse .act-tm.team-clickable:hover {{ color: var(--accent); text-decoration: underline; }}
+      .act-pulse .act-verb {{ color: var(--text-muted); font-weight: 600; }}
+      .act-pulse .act-verb.trade {{ color: var(--accent); }}
+      .act-pulse .act-kindtag {{ font-size: 9.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; padding: 2px 6px; border-radius: 5px; }}
+      .act-pulse .act-kindtag.waiver {{ color: var(--accent); background: var(--accent-soft); }}
+      .act-pulse .act-kindtag.trade {{ color: var(--orange, #b45309); background: color-mix(in srgb, var(--orange, #f59e0b) 15%, transparent); }}
+      .act-pulse .act-chips {{ display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }}
+      .act-pulse .act-chip {{ display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 3px 8px; border-radius: 7px; background: var(--card-soft, var(--bg-alt)); border: 1px solid var(--border); color: var(--text); white-space: nowrap; max-width: 100%; }}
+      .act-pulse .act-chip-drop {{ opacity: .72; }}
+      .act-pulse .act-sign {{ font-weight: 800; color: var(--win, #15803d); }}
+      .act-pulse .act-chip-drop .act-sign {{ color: var(--loss, #b91c1c); }}
+      .act-pulse .act-pos {{ font-size: 9px; font-weight: 800; letter-spacing: .03em; padding: 1px 4px; border-radius: 4px; color: #fff; }}
+      .act-pulse .act-pos.qb {{ background: #3b82f6; }}
+      .act-pulse .act-pos.rb {{ background: #22c55e; }}
+      .act-pulse .act-pos.wr {{ background: #f59e0b; }}
+      .act-pulse .act-pos.te {{ background: #8b5cf6; }}
+      .act-pulse .act-pos.pk {{ background: #64748b; }}
+      .act-pulse .act-arrow {{ color: var(--text-subtle, var(--text-muted)); font-weight: 700; padding: 0 1px; }}
+      .act-pulse .act-rend {{ display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }}
+      .act-pulse .act-val {{ font-size: 12.5px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }}
+      .act-pulse .act-swing {{ font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 999px; color: var(--win, #15803d); background: color-mix(in srgb, var(--win, #16a34a) 14%, transparent); font-variant-numeric: tabular-nums; }}
+      /* Trade rows expand to the full breakdown via native <details> */
+      .act-pulse details.act-trade {{ display: block; padding: 0; }}
+      .act-pulse .act-trade-sum {{ display: grid; grid-template-columns: auto 1fr auto; gap: 11px; align-items: center; padding: 9px 10px; border-radius: 10px; cursor: pointer; list-style: none; }}
+      .act-pulse .act-trade-sum::-webkit-details-marker {{ display: none; }}
+      .act-pulse .act-trade-sum:hover {{ background: var(--row, var(--bg-alt)); }}
+      .act-pulse .act-caret {{ color: var(--text-muted); font-size: 11px; transition: transform .15s ease; }}
+      .act-pulse details[open] .act-caret {{ transform: rotate(180deg); }}
+      .act-pulse .act-trade-body {{ padding: 2px 10px 12px; }}
+      @media (prefers-reduced-motion: reduce) {{ .act-pulse .act-caret {{ transition: none; }} }}
     </style>
     <div class="page-layout activity-page act-pulse">
       <main class="page-main act-pulse-main">
