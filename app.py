@@ -12785,6 +12785,86 @@ def _rankings_ssr_content(limit: int = 150):
     return "".join(rows), jsonld
 
 
+# Methodology + FAQ copy for the public rankings / trade-value-chart pages.
+# One source builds both the on-page accordion and the FAQPage structured data,
+# so they can't drift. Answers are plain text (schema-safe); the display markup
+# is generated from the same list.
+_RANKINGS_FAQ = [
+    ("How are dynasty trade values calculated?",
+     "They blend consensus market data from real dynasty trades with recent on-field "
+     "usage, the positional aging curve, and each player's situation. The result "
+     "estimates what your league would give up to acquire him — weighted for long-term "
+     "outlook, not just this week's projection. Values refresh daily."),
+    ("Why is a younger player valued above an older one who scores more?",
+     "Dynasty rosters are held for years, so value prices in the runway a player has "
+     "left. A 23-year-old ascending receiver can out-value a 30-year-old running back "
+     "who scores more today, because the market pays for future production — and "
+     "running backs decline earlier than receivers."),
+    ("Should I use 1QB or Superflex values?",
+     "Match your league. In Superflex you can start two quarterbacks, so passers are "
+     "worth far more. Toggle the format in the settings; reading 1QB values in a "
+     "Superflex league is the most common way people misprice a quarterback."),
+    ("What's the difference between dynasty and redraft values?",
+     "Redraft values only care about this season's expected points, so productive "
+     "veterans rank higher. Dynasty values look years ahead and reward youth. Use the "
+     "scoring toggle to switch between the two."),
+    ("How often is the chart updated?",
+     "Daily. Fresh market data and the latest usage roll in every day, and major news "
+     "— injuries, trades, depth-chart moves — is reflected within a day."),
+]
+
+
+def _rankings_methodology_faq() -> str:
+    """Methodology prose + FAQ accordion (with FAQPage schema) for public pages."""
+    details = "".join(
+        f'<details class="faq-item"><summary>{q}</summary><p>{a}</p></details>'
+        for q, a in _RANKINGS_FAQ
+    )
+    faq_ld = {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {"@type": "Question", "name": q,
+             "acceptedAnswer": {"@type": "Answer", "text": a}}
+            for q, a in _RANKINGS_FAQ
+        ],
+    }
+    jsonld = (
+        '<script type="application/ld+json">'
+        + json.dumps(faq_ld, separators=(",", ":")).replace("<", "\\u003c")
+        + "</script>"
+    )
+    return (
+        '<div class="static-section" style="max-width:860px;margin:22px auto 0;">'
+        '<div class="static-section-title">How these dynasty values are built</div>'
+        '<p style="color:var(--text-muted);font-size:14px;line-height:1.75;">'
+        "Every number here estimates one thing: <strong>what the rest of your league would "
+        "actually give up to acquire a player</strong> — not how many points he'll score this "
+        "week. That's what separates a dynasty value from a redraft ranking, and it's why the "
+        "two lists never match. Each value blends four inputs: <strong>consensus market data</strong> "
+        "from thousands of real dynasty trades, <strong>recent usage and efficiency</strong>, the "
+        "<strong>positional aging curve</strong> (running backs are discounted early; receivers and "
+        "quarterbacks hold value longer), and each player's <strong>situation</strong> — target share, "
+        "depth-chart competition, and offensive context.</p>"
+        '<div class="static-section-title">How to use the chart</div>'
+        '<ul style="color:var(--text-muted);font-size:14px;line-height:1.8;margin-left:20px;">'
+        "<li><strong>Start from the number, then adjust</strong> for your roster's timeline and needs — "
+        "a value is a market estimate, not a law.</li>"
+        "<li><strong>Match the format toggle to your league.</strong> Superflex makes quarterbacks far "
+        "more valuable; reading 1QB values in a Superflex league under-rates every QB.</li>"
+        "<li><strong>Compare across positions, not just within one</strong> — the single scale is what "
+        'makes "two mid-WRs for one stud RB" a question you can actually answer.</li>'
+        "</ul>"
+        '<p style="color:var(--text-muted);font-size:14px;line-height:1.75;">New to dynasty values? Start '
+        'with <a href="/guides/dynasty-trade-value">How Dynasty Trade Value Works</a>, keep the '
+        '<a href="/glossary">glossary</a> handy, then bring a deal to the free '
+        '<a href="/trade">Trade Calculator</a>.</p>'
+        '<div class="static-section-title">Frequently asked questions</div>'
+        + details + jsonld +
+        "</div>"
+    )
+
+
 @app.route("/players")
 @app.route("/<platform>/<int:season>/<league_id>/players")
 def page_players(platform: str = None, season: int = None, league_id: str = None,
@@ -13377,7 +13457,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       </p>
     </div>
     """
-        body_html = _intro + body_html
+        body_html = _intro + body_html + _rankings_methodology_faq()
 
     # Auto-apply the league's TE premium (from its scoring settings) to the
     # rankings, so TE-premium leagues see boosted TE values without toggling.
