@@ -743,6 +743,36 @@ window.brHaptic = function (pattern) {
     el.style.opacity = '0';
   }
 
+  // A soft-nav swaps #page-root in place, so sighted users see the new page but
+  // assistive tech gets no navigation signal. A polite live region announces the
+  // new page (its <title>), and after each swap we move focus into #page-root so
+  // keyboard / screen-reader users start reading from the new content rather than
+  // being stranded on the nav element they clicked.
+  var announceEl;
+  function announcer() {
+    if (!announceEl) {
+      announceEl = document.createElement('div');
+      announceEl.className = 'sr-only';
+      announceEl.setAttribute('role', 'status');
+      announceEl.setAttribute('aria-live', 'polite');
+      announceEl.setAttribute('aria-atomic', 'true');
+      document.body.appendChild(announceEl);
+    }
+    return announceEl;
+  }
+  function announce(title) {
+    var el = announcer();
+    // Strip a trailing " - Site" suffix so the announcement is just the page.
+    var name = (title || document.title || 'Page').split(/\s[|–—-]\s/)[0].trim();
+    // Re-set to the same string won't re-announce; clear first so repeats speak.
+    el.textContent = '';
+    setTimeout(function () { el.textContent = name + ' loaded'; }, 50);
+  }
+  function focusMain(root) {
+    if (!root || typeof root.focus !== 'function') return;
+    try { root.focus({ preventScroll: true }); } catch (e) { root.focus(); }
+  }
+
   // Per-URL scroll memory so Back/Forward returns to where you were instead of
   // the top. A throttled listener keeps the current page's position current;
   // scrollRestoration is set to manual so the browser doesn't also fight us.
@@ -802,6 +832,10 @@ window.brHaptic = function (pattern) {
         // Desktop: the top nav lives outside #page-root, so move its active
         // state to the new page's and glide the indicator across.
         if (!mq.matches) syncDesktopNav(doc);
+        // Tell assistive tech the route changed, and move focus into the new
+        // content so keyboard / screen-reader users aren't left on the old nav.
+        announce(doc.title);
+        focusMain(curRoot);
         endProgress();
       })
       .catch(function () {

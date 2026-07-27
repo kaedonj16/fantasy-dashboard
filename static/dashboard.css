@@ -19610,6 +19610,22 @@ button:disabled {
 }
 
 /* ── Skip link (accessibility) ─────────────────────────────────── */
+/* Visually hidden but exposed to assistive tech (aria-live announcer, etc.). */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* #page-root receives focus programmatically after a soft-nav (and via the
+   skip link) so screen-reader / keyboard users land in the new content. It's a
+   container, not a control, so suppress the focus ring the moved focus draws. */
+#page-root:focus { outline: none; }
+
 .skip-link {
   position: absolute;
   left: -9999px;
