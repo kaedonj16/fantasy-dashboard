@@ -22838,8 +22838,17 @@ a, button, [role="button"], [role="tab"], summary, label,
     -webkit-tap-highlight-color: transparent;
     transition: color .12s ease, transform .08s ease;
   }
-  .br-tabbar-item .nav-svg-icon { display: block; }
+  /* The icon sits in a lozenge that fills with the accent tint when active, so
+     the current tab reads at a glance rather than just changing color. The
+     lozenge box is always present (transparent when inactive) so nothing shifts. */
+  .br-tabbar-item .nav-svg-icon {
+    display: block; box-sizing: content-box;
+    padding: 3px 14px; border-radius: 999px;
+    transition: background .16s ease, color .12s ease;
+  }
   .br-tabbar-item.active { color: var(--accent); }
+  .br-tabbar-item.active .nav-svg-icon { background: var(--accent-soft); }
+  .br-tabbar-item.active .br-tabbar-lbl { font-weight: 700; }
   .br-tabbar-item:active { transform: scale(0.94); }
   .br-tabbar-lbl { line-height: 1; }
 
