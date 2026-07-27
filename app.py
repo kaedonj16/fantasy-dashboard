@@ -8928,6 +8928,12 @@ def build_activity_body(ctx: dict) -> str:
       }}
       .act-pulse .act-dayhdr::after {{ content: ""; flex: 1; height: 1px; background: var(--border); opacity: .6; }}
       .act-pulse-rail {{ gap: 12px; }}
+      /* The rail is sticky; when its content (a long injury watch + news) is
+         taller than the viewport, let it scroll internally so the news card at
+         the bottom stays reachable instead of being pinned off-screen. */
+      @media (min-width: 901px) {{
+        .act-pulse-rail {{ max-height: calc(100vh - 110px); overflow-y: auto; overscroll-behavior: contain; }}
+      }}
       .act-snapshot .act-snap-body {{ display: flex; gap: 10px; padding: 4px 14px 10px; }}
       .act-snap-stat {{
         flex: 1; background: var(--card-soft, var(--bg-alt)); border: 1px solid var(--border);
