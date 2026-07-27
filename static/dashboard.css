@@ -705,10 +705,18 @@ ul {
   align-items: center;
   justify-content: center;
   min-height: 36px;
+  /* Cancel the global `button { margin-top: 4px }`, which pushed the dropdown
+     (<button>) pills a few px below the plain <a> pills. */
+  margin: 0;
   padding: 6px 14px;
   border-radius: 12px;
   text-decoration: none;
+  /* The dropdown pills are <button>s, which otherwise fall back to the UA font
+     (Arial) and sit a pixel off from the <a> pills. Inherit the font and pin the
+     line-height so every item matches and lines up. */
+  font-family: inherit;
   font-size: 13px;
+  line-height: 1;
   background: transparent;
   color: var(--text-muted);
   font-weight: 600;
@@ -7067,6 +7075,18 @@ select:focus {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* A team name (the value leader) can be long, so let it wrap to two lines at a
+   slightly smaller size instead of truncating to "Caleb's Ca…". */
+.os-stat-value-name {
+  font-size: 18px;
+  white-space: normal;
+  line-height: 1.15;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .os-waiver-main {

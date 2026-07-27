@@ -7003,8 +7003,8 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
               <div class="os-stat-sub" id="osDraftCdSub">{draft_text}</div>
             </div>
             <div class="os-stat-card">
-              <div class="os-stat-label">League leader</div>
-              <div class="os-stat-value">{roster_leader}</div>
+              <div class="os-stat-label">Value leader</div>
+              <div class="os-stat-value os-stat-value-name">{roster_leader}</div>
               <div class="os-stat-sub">{highest_roster_value} roster value</div>
             </div>
             <div class="os-stat-card">
