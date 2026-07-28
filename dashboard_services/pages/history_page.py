@@ -1300,7 +1300,9 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
                 f"<span class='wrapped-row-n'>{_esc(str(h.get('n', '')))}</span>"
                 + (f"<span class='wrapped-row-v'>{_esc(str(h.get('v', '')))}</span>" if h.get('v') not in (None, "") else "")
                 + "</div></div>"
-                for h in (rd.get("highlights") or [])
+                # Cap at 4 on the slide (the Share card still draws up to 5) so a
+                # champion block + rows never overflow a small phone's story slide.
+                for h in (rd.get("highlights") or [])[:4]
             )
             body = kicker + champ_html + f"<div class='wrapped-rows'>{hl}</div>" + sub
         elif s.get("rows"):
@@ -1417,7 +1419,7 @@ def render_history_wrapped_overlay(history_ctx: dict, selected_history_season) -
         slides.append({
             "kind": "recap", "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
             "eyebrow": f"{_season_txt} RECAP".strip() or "SEASON RECAP",
-            "sub": "The whole season on one card — hit Share to send it to the group chat",
+            "sub": "Tap Share to send it to the group chat",
             "bgword": "RECAP", "recap": share_data,
         })
     return _wrapped_overlay_markup(slides, share_data, season=selected_history_season)
