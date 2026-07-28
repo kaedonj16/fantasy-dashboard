@@ -40,6 +40,11 @@
 .fa-registered-solid  { background-image: url('images/registered-solid.png'); filter: brightness(0) saturate(100%) invert(29%) sepia(91%) saturate(1165%) hue-rotate(211deg) brightness(94%) contrast(87%); }
 .fa-seedling          { background-image: url('images/seedling-solid.png'); filter: brightness(0) saturate(100%) invert(34%) sepia(72%) saturate(500%) hue-rotate(87deg) brightness(98%) contrast(89%); }
 .fa-star              { background-image: url('images/star-solid.png'); filter: brightness(0) saturate(100%) invert(72%) sepia(78%) saturate(865%) hue-rotate(354deg) brightness(101%) contrast(105%); }
+/* Collision-free star for badges: the FA webfont ships a `.fa-star:before`
+   glyph (\f005) that can win over the PNG on some engines (iOS Safari), leaving
+   the ELITE badge iconless. This class shares no name with any FA glyph, so it
+   behaves like the ® rookie mark and always renders via the PNG mask. */
+.fa-star-solid        { background-image: url('images/star-solid.png'); filter: brightness(0) saturate(100%) invert(72%) sepia(78%) saturate(865%) hue-rotate(354deg) brightness(101%) contrast(105%); }
 .fa-gear              { background-image: url('gear.png'); filter: brightness(0) saturate(100%) invert(48%); }
 .fa-cog               { background-image: url('gear.png'); filter: brightness(0) saturate(100%) invert(48%); }
 .fa-trophy            { background-image: url('images/trophy-solid.png'); filter: brightness(0) saturate(100%) invert(72%) sepia(78%) saturate(865%) hue-rotate(354deg) brightness(101%) contrast(105%); }
