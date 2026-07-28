@@ -10,6 +10,11 @@ var prSparklines = {};
 var prLeagueType   = '1qb';
 var prLeagueSize   = 10;
 var prScoringType  = 'dynasty';  // 'dynasty' | 'redraft'
+// Positional rank (1-based, per position) for the ACTIVE view, keyed by player
+// id. Recomputed each render from prGetValue() so it tracks the redraft/dynasty
+// x 1qb/sf x size toggles instead of the dynasty-only precomputed *_pos_rank
+// fields (e.g. an aging back is RB5 in redraft but RB12 in dynasty).
+var prPosRankMap   = {};
 // Default to the league's TE premium (injected from its scoring settings)
 // and fall back to Off for the public/no-league view.
 var prTePremium    = (typeof window.__leagueTePremium === 'number') ? window.__leagueTePremium : 0;
@@ -171,6 +176,17 @@ function prGetValue(p) {
 function prFormatValue(v) {
   if (!v || v <= 0) return '-';
   return v.toFixed(1);
+}
+
+// POS-cell label for the active view. Uses the per-render prPosRankMap (ranked by
+// prGetValue) so it reflects the redraft/dynasty x 1qb/sf x size toggles; falls
+// back to the dynasty precomputed labels only before the first render populates it.
+function prPosRankLabel(p) {
+  const n = prPosRankMap[String(p.id)];
+  if (n) return (p.position || '') + n;
+  return prLeagueType === 'sf'
+    ? (p.sf_pos_rank_label || p.pos_rank_label || p.position)
+    : (p.pos_rank_label || p.position);
 }
 
 function prIsRookie(id) {
@@ -430,9 +446,7 @@ var PR_SORT_META = {
   rank:      { label: 'Value',    cell: p => prFormatValue(prGetValue(p)) },
   value:     { label: 'Value',    cell: p => prFormatValue(prGetValue(p)) },
   age:       { label: 'Age',      cell: p => p.age != null ? Number(p.age).toFixed(1) : '–' },
-  pos_rank:  { label: 'Pos Rank', cell: p => prLeagueType === 'sf'
-    ? (p.sf_pos_rank_label || p.pos_rank_label || p.position)
-    : (p.pos_rank_label || p.position) },
+  pos_rank:  { label: 'Pos Rank', cell: p => prPosRankLabel(p) },
   ppg:       { label: 'PPG',       cell: p => p.ppg != null ? p.ppg.toFixed(1) : '–' },
   total_pts: { label: 'Total Pts', cell: p => p.total_pts != null ? p.total_pts.toFixed(1) : '–' },
   adp:       { label: 'ADP',       cell: p => prFormatAdp(p) },
@@ -469,6 +483,25 @@ function prRender() {
 
   let players = prAllPlayers.slice();
 
+  // Positional rank for the ACTIVE view: rank every real player within his
+  // position by the same value the VALUE column shows (prGetValue), so the POS
+  // cell agrees with the ordering on screen. Computed over the full pool (not the
+  // filtered/searched subset) so ranks are stable regardless of what's visible.
+  prPosRankMap = {};
+  {
+    const _byPos = {};
+    prAllPlayers.forEach(p => {
+      if (p.position === 'PICK') return;
+      if (p.is_rookie && !(p.team && p.team !== 'FA')) return;  // skip undrafted rookies
+      if (!(prGetValue(p) > 0)) return;                          // no value in this view
+      (_byPos[p.position] = _byPos[p.position] || []).push(p);
+    });
+    Object.keys(_byPos).forEach(pos => {
+      _byPos[pos].sort((a, b) => prGetValue(b) - prGetValue(a));
+      _byPos[pos].forEach((p, i) => { prPosRankMap[String(p.id)] = i + 1; });
+    });
+  }
+
   // In redraft mode exclude picks and rookies (no redraft value), and
   // only show players who actually have a redraft value.
   if (prScoringType === 'redraft') {
@@ -495,7 +528,7 @@ function prRender() {
   // This keeps rank #s stable - e.g. searching for a player still shows #47, not #1.
   const _sortedForRank = players.slice().sort((a, b) => {
     if (sortBy === 'age')       return (a.age != null ? a.age : 99) - (b.age != null ? b.age : 99);
-    if (sortBy === 'pos_rank')  { const rA = prLeagueType==='sf'?(a.sf_pos_rank||a.pos_rank||9999):(a.pos_rank||9999); const rB = prLeagueType==='sf'?(b.sf_pos_rank||b.pos_rank||9999):(b.pos_rank||9999); return rA - rB; }
+    if (sortBy === 'pos_rank')  { const rA = prPosRankMap[String(a.id)] || 9999; const rB = prPosRankMap[String(b.id)] || 9999; return rA - rB; }
     if (sortBy === 'ppg')       return (b.ppg != null ? b.ppg : -1) - (a.ppg != null ? a.ppg : -1);
     if (sortBy === 'total_pts') return (b.total_pts != null ? b.total_pts : -1) - (a.total_pts != null ? a.total_pts : -1);
     return prGetValue(b) - prGetValue(a);
@@ -529,8 +562,8 @@ function prRender() {
       } else if (sortBy === 'age') {
         return (a.age != null ? a.age : 99) - (b.age != null ? b.age : 99);
       } else if (sortBy === 'pos_rank') {
-        const rA = prLeagueType === 'sf' ? (a.sf_pos_rank || a.pos_rank || 9999) : (a.pos_rank || 9999);
-        const rB = prLeagueType === 'sf' ? (b.sf_pos_rank || b.pos_rank || 9999) : (b.pos_rank || 9999);
+        const rA = prPosRankMap[String(a.id)] || 9999;
+        const rB = prPosRankMap[String(b.id)] || 9999;
         return rA - rB;
       } else if (sortBy === 'ppg') {
         return (b.ppg != null ? b.ppg : -1) - (a.ppg != null ? a.ppg : -1);
@@ -610,9 +643,7 @@ function prRender() {
 
     const _drafted = p.is_rookie && p.team && p.team !== 'FA';
     const displayRank = (p.position === 'PICK' || (p.is_rookie && !_drafted)) ? '' : (_rankMap.get(String(p.id)) ?? (start + i + 1));
-    const posRank = prLeagueType === 'sf'
-      ? (p.sf_pos_rank_label || p.pos_rank_label || p.position)
-      : (p.pos_rank_label || p.position);
+    const posRank = prPosRankLabel(p);
     const age = p.age != null ? Number(p.age).toFixed(1) : '–';
     const val = prGetValue(p);
 
