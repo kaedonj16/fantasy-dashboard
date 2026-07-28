@@ -694,6 +694,17 @@ def resolve_league_id_for_season(
     if platform != "sleeper":
         return str(league_id).strip()
 
+    season_map = build_league_history_map(platform, league_id, current_season)
+
+    # An explicit historical target that the league chain actually contains wins
+    # outright. The offseason "-1" heuristic below only exists to resolve the
+    # *current* view before its own league has any played data yet; it must never
+    # rewrite an exact hit on a completed season the caller explicitly asked for.
+    # (In the offseason, requesting last season's Wrapped would otherwise shift to
+    # the season before it and pull the wrong year's boxscores.)
+    if target_season in season_map:
+        return season_map[target_season]
+
     # Check if we're in offseason and should use previous season logic
     try:
         from dashboard_services.api import get_nfl_state
@@ -714,8 +725,6 @@ def resolve_league_id_for_season(
             effective_season = target_season - 1
     except Exception:
         effective_season = target_season
-
-    season_map = build_league_history_map(platform, league_id, current_season)
 
     # exact match with effective season
     if effective_season in season_map:
