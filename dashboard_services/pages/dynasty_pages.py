@@ -302,7 +302,12 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
         sign   = "+" if change >= 0 else ""
         accent = _pc(pos)
         delta_color = "var(--win)" if direction == "riser" else "var(--loss)"
-        pct = abs(change / val * 100) if val else 0
+        # Percent change is measured against the pre-move (baseline) value, not the
+        # post-move value - dividing by the new value understates a rise and
+        # overstates a drop. Use old_value when present, else back it out (new - delta).
+        _old = p.get("old_value")
+        baseline = float(_old) if _old not in (None, "") else (val - change)
+        pct = abs(change / baseline * 100) if baseline else 0
         pct_str = f"{pct:.0f}%" if pct >= 1 else ""
         # Real players (not draft picks) carry data-player-id so the in-app player
         # modal opens for signed-in users; logged-out visitors follow the href to
