@@ -19736,8 +19736,14 @@ button:disabled {
 
 /* #page-root receives focus programmatically after a soft-nav (and via the
    skip link) so screen-reader / keyboard users land in the new content. It's a
-   container, not a control, so suppress the focus ring the moved focus draws. */
-#page-root:focus { outline: none; }
+   container, not a control, so suppress the focus ring the moved focus draws.
+   Must match :focus-visible too and carry !important: iOS Safari flags the
+   post-tap programmatic focus as focus-visible, and the global
+   `[tabindex]:focus-visible` ring is !important — without this the whole content
+   area shows a 2px navy outline after every soft-nav. The ID selector (1,1,0)
+   outranks `[tabindex]:focus-visible` (0,2,0) so this wins among !important. */
+#page-root:focus,
+#page-root:focus-visible { outline: none !important; }
 
 .skip-link {
   position: absolute;
