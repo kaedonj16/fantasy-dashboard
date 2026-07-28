@@ -1294,6 +1294,8 @@ BASE_HTML = """
         {body}
       </main>
 
+      {bottom_nav}
+
       {ad_bottom}
     </div>
 
@@ -2912,9 +2914,13 @@ def render_page(
     # league pages only). Appended as fixed siblings; CSS reserves space so the
     # dock never overlaps content. `.has-tabbar` also carries the active key so
     # CSS can keep the top bar (logo only) on the dashboard and hide it elsewhere.
+    # The dock renders OUTSIDE #page-root (in the {bottom_nav} slot) so a soft-nav
+    # swap of #page-root never destroys and repaints it - the JS reconciles its
+    # active tab in place instead (mirrors how the desktop top nav persists). The
+    # .has-tabbar wrapper stays inside page-root to reserve space for the fixed dock.
     _bottom = _mobile_nav(active, _nav_lid, _nav_platform, _nav_season)
     if _bottom:
-        wrapped_body = f"<div class='has-tabbar' data-active='{active}'>{wrapped_body}</div>{_bottom}"
+        wrapped_body = f"<div class='has-tabbar' data-active='{active}'>{wrapped_body}</div>"
 
     user_id = session.get("viewer_username")
     is_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform or "sleeper", season)
@@ -2932,6 +2938,7 @@ def render_page(
         nav=nav_html,
         recap_banner=banner_html,
         body=wrapped_body,
+        bottom_nav=_bottom,
         cache_ts=int(time.time() * 1000),
         user_premium="true" if is_premium else "false",
         adsense_script="" if is_premium else _AD_SCRIPT,

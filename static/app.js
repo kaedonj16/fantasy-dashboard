@@ -502,7 +502,7 @@ window.brHaptic = function (pattern) {
  * on desktop, where the top nav is shown, we move them back.
  */
 (function initMoreSheet() {
-  var docBound = false, mqBound = false;
+  var docBound = false, mqBound = false, handlersBound = false;
   var mq = window.matchMedia('(max-width: 768px)');
 
   function remember(node) {
@@ -571,15 +571,29 @@ window.brHaptic = function (pattern) {
     var sheet = document.getElementById('brMoreSheet');
     var scrim = document.getElementById('brSheetScrim');
     if (!tab || !sheet || !scrim) return;   // not a league page
-    relocate();
+    relocate();                              // re-home the relocated widgets each call
+    // The dock now lives OUTSIDE #page-root, so it survives a soft-nav swap and
+    // its handlers must bind exactly once (a second bind on the same persistent
+    // nodes would double-fire). syncMobileDock() updates the active tab per nav.
+    if (handlersBound) return;
+    handlersBound = true;
 
-    tab.addEventListener('click', function () { setOpen(!sheetOpen()); });
+    var dock = tab.closest('.br-tabbar');
+
+    // Delegated on the persistent dock wrapper so the More button and the
+    // tab-slide origin keep working even after syncMobileDock() re-renders the
+    // dock's inner tabs (when the current page earns a different tab).
+    if (dock) dock.addEventListener('click', function (e) {
+      if (e.target.closest('#brMoreTab')) { setOpen(!sheetOpen()); return; }
+      if (!e.target.closest('a.br-tabbar-item')) return;
+      var ind = dock.querySelector('.br-tabbar-ind');
+      if (ind) { try { sessionStorage.setItem('br_dock_from', ind.style.getPropertyValue('--i').trim()); } catch (_) {} }
+    });
     scrim.addEventListener('click', function () { setOpen(false); });
 
-    // Sliding dock indicator: rest at the active slot (server --i); animate from
-    // the slot we left (br_dock_from), set on the outgoing tap. Works for both a
-    // full page load and a soft-nav (the new dock is re-inited here either way).
-    var dock = tab.closest('.br-tabbar');
+    // Sliding dock indicator on a full page load: rest at the active slot (server
+    // --i); animate from the slot we left (br_dock_from, set on the outgoing tap).
+    // Soft-navs animate via syncMobileDock() setting --i on the persistent dock.
     var ind = dock && dock.querySelector('.br-tabbar-ind');
     if (ind) {
       var to = parseInt(ind.style.getPropertyValue('--i'), 10);
@@ -595,10 +609,6 @@ window.brHaptic = function (pattern) {
         });
       }
     }
-    if (dock) dock.addEventListener('click', function (e) {
-      if (!e.target.closest('a.br-tabbar-item') || !ind) return;
-      try { sessionStorage.setItem('br_dock_from', ind.style.getPropertyValue('--i').trim()); } catch (_) {}
-    });
 
     var cancelBtn = document.getElementById('brSearchCancel');
     if (cancelBtn) cancelBtn.addEventListener('click', closeSearch);
@@ -829,9 +839,11 @@ window.brHaptic = function (pattern) {
         // Back/forward returns to the remembered position; a forward nav starts at the top.
         setScroll(isPop ? (scrollByUrl[location.href] || 0) : 0);
         if (window.initPageRoot) window.initPageRoot(curRoot);
-        // Desktop: the top nav lives outside #page-root, so move its active
-        // state to the new page's and glide the indicator across.
+        // The top nav (desktop) and the bottom dock (mobile) both live outside
+        // #page-root now, so the swap doesn't touch them - copy the new page's
+        // active state onto the persistent one and glide the indicator across.
         if (!mq.matches) syncDesktopNav(doc);
+        else syncMobileDock(doc);
         // Tell assistive tech the route changed, and move focus into the new
         // content so keyboard / screen-reader users aren't left on the old nav.
         announce(doc.title);
@@ -864,6 +876,45 @@ window.brHaptic = function (pattern) {
     copyActive('.nav-pill');
     copyActive('.nav-pill-dropdown-item');
     if (window.brNavGlide) window.brNavGlide();
+  }
+
+  // Mobile: the bottom dock persists across a soft-nav (it's outside #page-root),
+  // so reconcile it from the fetched page instead of letting the swap rebuild it.
+  // Same tab set -> just move the active class + slide the indicator (no repaint).
+  // Different set (the current page earns a tab) -> update the dock's inner tabs;
+  // the wrapper element still stays, so the fixed bar never blinks out.
+  function dockSig(dock) {
+    return Array.prototype.map.call(dock.querySelectorAll('.br-tabbar-item'), function (t) {
+      var lbl = t.querySelector('.br-tabbar-lbl');
+      return (t.getAttribute('href') || t.id || '') + ':' + (lbl ? lbl.textContent : '');
+    }).join('|');
+  }
+  function syncMobileDock(doc) {
+    try {
+      var live = document.querySelector('.br-tabbar');
+      var next = doc.querySelector('.br-tabbar');
+      if (!live || !next) return;
+      if (dockSig(live) === dockSig(next)) {
+        var li = live.querySelectorAll('.br-tabbar-item');
+        var ni = next.querySelectorAll('.br-tabbar-item');
+        for (var i = 0; i < li.length && i < ni.length; i++) {
+          li[i].classList.toggle('active', ni[i].classList.contains('active'));
+        }
+        var lInd = live.querySelector('.br-tabbar-ind');
+        var nInd = next.querySelector('.br-tabbar-ind');
+        if (lInd && nInd) {
+          var v = nInd.style.getPropertyValue('--i');
+          if (v !== '') lInd.style.setProperty('--i', v.trim());
+          if (nInd.hasAttribute('data-hidden')) lInd.setAttribute('data-hidden', '');
+          else lInd.removeAttribute('data-hidden');
+        }
+      } else {
+        // Tab set changed: refresh the inner tabs (the persistent wrapper keeps
+        // its delegated click handler, so the More button still works).
+        live.innerHTML = next.innerHTML;
+      }
+      try { sessionStorage.removeItem('br_dock_from'); } catch (_) {}
+    } catch (e) { /* leave the dock as-is; the next full load renders it fresh */ }
   }
 
   // Pages that can be swapped in place (script-free, or their page script is on
