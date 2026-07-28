@@ -18591,6 +18591,15 @@ tr.team-clickable {
   z-index: 50;
 }
 
+/* On phones the bottom dock (.br-tabbar, 56px + safe-area, fixed to bottom:0)
+   sits on top of the pills at bottom:14px and hides them. Lift the pills above
+   the dock so the Refresh and Discord buttons stay reachable. */
+@media (max-width: 768px) {
+  #floating-pill-group {
+    bottom: calc(56px + env(safe-area-inset-bottom) + 12px);
+  }
+}
+
 .fp-pill {
   display: inline-flex;
   align-items: center;
