@@ -15375,6 +15375,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
 # league context but the multi-season aggregation, so there's no "warm ctx ->
 # build inline" shortcut - a cold page-HTML cache always goes to the background.
 _PAGE_BG_BUILDING: set = set()
+_PAGE_BG_FAILED: set = set()   # build_keys whose last background build raised
 _PAGE_BG_LOCK = threading.Lock()
 
 
@@ -15389,9 +15390,15 @@ def _bg_build_page(build_key, platform, season, league_id, cache_key, build_fn) 
         with app.test_request_context():
             body = build_fn()
         store_page_html(platform, season, league_id, cache_key, body)
+        with _PAGE_BG_LOCK:
+            _PAGE_BG_FAILED.discard(build_key)
         _log.getLogger(__name__).info("Page %s built in %.1fs", cache_key, time.time() - t0)
     except Exception as exc:  # noqa: BLE001
+        # Mark the build failed so the poll can stop and show a retry instead of
+        # shimmering forever. A fresh request clears the flag and re-attempts.
         _log.getLogger(__name__).error("Background build of %s failed: %s", cache_key, exc, exc_info=True)
+        with _PAGE_BG_LOCK:
+            _PAGE_BG_FAILED.add(build_key)
     finally:
         with _PAGE_BG_LOCK:
             _PAGE_BG_BUILDING.discard(build_key)
@@ -15408,7 +15415,7 @@ def _page_skeleton(platform, season, league_id, cache_key, label) -> str:
     )
     return f"""
     <div class="page-main">
-      <div class="teams-loading-indicator" style="margin-bottom:14px;">
+      <div class="teams-loading-indicator" id="brPageLoad" style="margin-bottom:14px;">
         <div class="loading-spinner" style="width:14px;height:14px;"></div>
         <span>{html.escape(label)}&hellip;</span>
       </div>
@@ -15416,16 +15423,24 @@ def _page_skeleton(platform, season, league_id, cache_key, label) -> str:
     </div>
     <script>
     (function() {{
-      var polls = 0;
+      var polls = 0, MAX = 28;   // stop after ~60s and offer a manual retry
+      function stop(msg) {{
+        var el = document.getElementById('brPageLoad');
+        if (!el) return;
+        el.innerHTML = '<span>' + msg + '</span>' +
+          '<button type="button" onclick="location.reload()" style="margin-left:10px;padding:5px 12px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);cursor:pointer;font-weight:600;">Try again</button>';
+      }}
       function check() {{
         polls++;
         fetch('/api/page-ready?{q}')
           .then(function(r) {{ return r.json(); }})
           .then(function(d) {{
-            if (d.ready) {{ window.location.href = window.location.pathname + window.location.search; }}
-            else {{ setTimeout(check, polls < 10 ? 1500 : 2500); }}
+            if (d.ready) {{ window.location.href = window.location.pathname + window.location.search; return; }}
+            if (d.failed) {{ stop('This page failed to load.'); return; }}
+            if (polls >= MAX) {{ stop('This is taking longer than usual.'); return; }}
+            setTimeout(check, polls < 10 ? 1500 : 2500);
           }})
-          .catch(function() {{ setTimeout(check, 3000); }});
+          .catch(function() {{ if (polls >= MAX) {{ stop('Could not reach the server.'); }} else {{ setTimeout(check, 3000); }} }});
       }}
       setTimeout(check, 1500);
     }})();
@@ -15443,7 +15458,14 @@ def api_page_ready():
     except (TypeError, ValueError):
         season = datetime.now().year
     ready = bool(page) and bool(get_page_html_from_cache(platform, season, league_id, page))
-    return jsonify({"ready": ready})
+    if ready:
+        return jsonify({"ready": True})
+    # Not cached yet: tell the poller whether the background build failed (so it
+    # can show a retry) or is still running.
+    build_key = f"{page}:{platform}:{season}:{league_id}"
+    with _PAGE_BG_LOCK:
+        failed = build_key in _PAGE_BG_FAILED
+    return jsonify({"ready": False, "failed": failed})
 
 
 def _serve_cached_or_background(platform, season, league_id, cache_key,
@@ -15457,6 +15479,7 @@ def _serve_cached_or_background(platform, season, league_id, cache_key,
     with _PAGE_BG_LOCK:
         if build_key not in _PAGE_BG_BUILDING:
             _PAGE_BG_BUILDING.add(build_key)
+            _PAGE_BG_FAILED.discard(build_key)   # a fresh request re-attempts
             threading.Thread(
                 target=_bg_build_page,
                 args=(build_key, platform, season, league_id, cache_key, build_fn),
