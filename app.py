@@ -12543,30 +12543,15 @@ def _build_tour_mock_history_ctx() -> dict:
     }
 
 
-@app.route("/<platform>/<int:season>/<league_id>/graphs")
-def page_graphs(platform: str, season: int, league_id: str):
-    # Tour preview: render with mock data, bypass real league fetch
-    if request.args.get("tour"):
-        try:
-            mock_ctx = _build_tour_mock_graphs_ctx()
-            body_html = build_graphs_body(mock_ctx)
-        except Exception as exc:
-            body_html = (
-                f"<div class='card central'><div class='card-body'>"
-                f"<p>Graphs preview unavailable: {exc}</p></div></div>"
-            )
-        return render_page("BR Fantasy Graphs", league_id, "graphs", body_html, platform, season)
-
+def _render_graphs_html(platform: str, season: int, league_id: str, view: str, members: str) -> str:
+    """Build the graphs page body for a given view ("career" or a season) and
+    member filter. Pure of request args (view/members are passed in) so the
+    heavy career view - which aggregates every past season - can build in a
+    background thread on a cold cache."""
     ctx = get_league_ctx_from_cache(platform, league_id, season)
     offseason = bool(ctx.get("offseason_mode"))
     available_seasons = get_available_history_seasons(platform, league_id, season)
 
-    # Default view: career during offseason, current season in-season
-    default_view = "career" if offseason else str(season)
-    view = request.args.get("view", default_view)
-
-    # Current-vs-all-time members toggle (defaults to current members only).
-    members = "all" if str(request.args.get("members", "current")).lower() == "all" else "current"
     # Current members = current rosters' owner names. roster_map is populated even
     # in the offseason (team_stats can be empty then), so prefer it; the career
     # aggregate is keyed by these same owner names.
@@ -12695,7 +12680,42 @@ def page_graphs(platform: str, season: int, league_id: str):
         else:
             charts_html = build_graphs_body(season_ctx)
 
-    body_html = season_selector_html + charts_html
+    return season_selector_html + charts_html
+
+
+@app.route("/<platform>/<int:season>/<league_id>/graphs")
+def page_graphs(platform: str, season: int, league_id: str):
+    # Tour preview: render with mock data, bypass real league fetch
+    if request.args.get("tour"):
+        try:
+            mock_ctx = _build_tour_mock_graphs_ctx()
+            body_html = build_graphs_body(mock_ctx)
+        except Exception as exc:
+            body_html = (
+                f"<div class='card central'><div class='card-body'>"
+                f"<p>Graphs preview unavailable: {exc}</p></div></div>"
+            )
+        return render_page("BR Fantasy Graphs", league_id, "graphs", body_html, platform, season)
+
+    # Determining the default view needs the (shared) league context; the heavy,
+    # graphs-specific work is the career aggregation, deferred below.
+    ctx = get_league_ctx_from_cache(platform, league_id, season)
+    default_view = "career" if bool(ctx.get("offseason_mode")) else str(season)
+    view = request.args.get("view", default_view)
+    members = "all" if str(request.args.get("members", "current")).lower() == "all" else "current"
+
+    # Career view aggregates every past season (slow on a cold cache) -> build in
+    # the background and show a skeleton. Season views are a single, light league
+    # context, so render them inline.
+    if view == "career":
+        return _serve_cached_or_background(
+            platform, season, league_id, f"graphs:career:{members}",
+            "BR Fantasy Graphs", "graphs",
+            lambda: _render_graphs_html(platform, season, league_id, "career", members),
+            "Building career graphs",
+        )
+
+    body_html = _render_graphs_html(platform, season, league_id, view, members)
     return render_page("BR Fantasy Graphs", league_id, "graphs", body_html, platform, season)
 
 
