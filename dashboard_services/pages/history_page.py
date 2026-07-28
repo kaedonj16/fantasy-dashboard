@@ -1279,6 +1279,32 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
                 + f"<div class='wrapped-cname'>{_esc(str(s['big']))}</div>"
                 + record_html + sub
             )
+        elif kind == "recap":
+            # The shareable summary card, as a slide: champion block on top, then
+            # the same highlight rows the Share card draws.
+            rd = s.get("recap") or {}
+            champ_html = ""
+            if rd.get("champion"):
+                rec = str(rd.get("champion_record") or "")
+                champ_html = (
+                    "<div class='wrapped-recap-champ'>"
+                    "<i class='fa-solid fa-crown wrapped-recap-crown' aria-hidden='true'></i>"
+                    f"<span class='wrapped-recap-champ-name'>{_esc(str(rd['champion']))}</span>"
+                    + (f"<span class='wrapped-record-badge'>{_esc(rec)}</span>" if rec else "")
+                    + "<span class='wrapped-recap-champ-lbl'>Champion</span></div>"
+                )
+            hl = "".join(
+                "<div class='wrapped-row'>"
+                f"<div class='wrapped-row-k'>{_esc(str(h.get('k', '')))}</div>"
+                "<div class='wrapped-row-m'>"
+                f"<span class='wrapped-row-n'>{_esc(str(h.get('n', '')))}</span>"
+                + (f"<span class='wrapped-row-v'>{_esc(str(h.get('v', '')))}</span>" if h.get('v') not in (None, "") else "")
+                + "</div></div>"
+                # Cap at 4 on the slide (the Share card still draws up to 5) so a
+                # champion block + rows never overflow a small phone's story slide.
+                for h in (rd.get("highlights") or [])[:4]
+            )
+            body = kicker + champ_html + f"<div class='wrapped-rows'>{hl}</div>" + sub
         elif s.get("rows"):
             rows = "".join(
                 "<div class='wrapped-row'>"
@@ -1386,6 +1412,16 @@ def render_history_wrapped_overlay(history_ctx: dict, selected_history_season) -
     summary = history_ctx.get("summary") or _build_summary(history_ctx)
     slides = _build_wrapped_slides(history_ctx, summary, league_name, selected_history_season)
     share_data = _wrapped_share_data(slides, summary, league_name, selected_history_season)
+    # Finale: the shareable recap card as a slide in the deck itself, so the deck
+    # ends on the same one-card summary you get from the Share button.
+    if share_data.get("highlights") or share_data.get("champion"):
+        _season_txt = str(selected_history_season) if selected_history_season not in (None, "") else ""
+        slides.append({
+            "kind": "recap", "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
+            "eyebrow": f"{_season_txt} RECAP".strip() or "SEASON RECAP",
+            "sub": "Tap Share to send it to the group chat",
+            "bgword": "RECAP", "recap": share_data,
+        })
     return _wrapped_overlay_markup(slides, share_data, season=selected_history_season)
 
 
