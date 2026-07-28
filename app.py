@@ -1294,6 +1294,8 @@ BASE_HTML = """
         {body}
       </main>
 
+      {bottom_nav}
+
       {ad_bottom}
     </div>
 
@@ -1661,6 +1663,7 @@ _NAV_ICON_PATHS = {
               "<circle cx='12' cy='12' r='2'/><path d='m13.41 10.59 5.66-5.66'/>"),
     "star": ("<path d='M11.5 3.2a.6.6 0 0 1 1 0l2.1 4.3 4.8.7a.6.6 0 0 1 .3 1L16.5 16l.8 4.8"
              "a.6.6 0 0 1-.9.6L12 19.1l-4.3 2.3a.6.6 0 0 1-.9-.6l.8-4.8-3.5-3.4a.6.6 0 0 1 .3-1l4.8-.7z'/>"),
+    "refresh": "<path d='M21 12a9 9 0 1 1-2.64-6.36'/><path d='M21 3v6h-6'/>",
 }
 
 
@@ -1899,10 +1902,24 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
             f"href='/portfolio?from_league={league_id}&platform={platform}&season={season}'>"
             f"{_nav_icon('users', size=20)}<span>My Leagues</span></a>"
         )
+    # Refresh + Discord live in the sheet on mobile (they're floating pills only
+    # on desktop, where there's no bottom dock to crowd). The freshness time is
+    # filled in by app.js from the page's cache timestamp.
+    refresh_row = (
+        "<button type='button' class='br-sheet-link' id='brSheetRefresh'>"
+        f"{_nav_icon('refresh', size=20)}<span>Refresh data</span>"
+        "<span class='br-sheet-time' id='brSheetRefreshTime' aria-hidden='true'></span></button>"
+    )
+    discord_row = (
+        "<a class='br-sheet-link' href='https://discord.gg/7aZrs7qfur' target='_blank' rel='noopener noreferrer'>"
+        "<img src='/static/images/discord-brands-solid.png' alt='' class='br-sheet-icon-img'>"
+        "<span>Join the Discord</span></a>"
+    )
     account_html = (
         "<h3 class='br-sheet-h'>Account</h3>"
         "<div class='br-sheet-group'>"
         f"{portfolio_link}"
+        f"{refresh_row}{discord_row}"
         "<div class='br-sheet-mount' id='brSheetAccount'></div>"
         "</div>"
     )
@@ -2912,9 +2929,13 @@ def render_page(
     # league pages only). Appended as fixed siblings; CSS reserves space so the
     # dock never overlaps content. `.has-tabbar` also carries the active key so
     # CSS can keep the top bar (logo only) on the dashboard and hide it elsewhere.
+    # The dock renders OUTSIDE #page-root (in the {bottom_nav} slot) so a soft-nav
+    # swap of #page-root never destroys and repaints it - the JS reconciles its
+    # active tab in place instead (mirrors how the desktop top nav persists). The
+    # .has-tabbar wrapper stays inside page-root to reserve space for the fixed dock.
     _bottom = _mobile_nav(active, _nav_lid, _nav_platform, _nav_season)
     if _bottom:
-        wrapped_body = f"<div class='has-tabbar' data-active='{active}'>{wrapped_body}</div>{_bottom}"
+        wrapped_body = f"<div class='has-tabbar' data-active='{active}'>{wrapped_body}</div>"
 
     user_id = session.get("viewer_username")
     is_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform or "sleeper", season)
@@ -2932,6 +2953,7 @@ def render_page(
         nav=nav_html,
         recap_banner=banner_html,
         body=wrapped_body,
+        bottom_nav=_bottom,
         cache_ts=int(time.time() * 1000),
         user_premium="true" if is_premium else "false",
         adsense_script="" if is_premium else _AD_SCRIPT,
