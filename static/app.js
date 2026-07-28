@@ -10270,14 +10270,16 @@ function openPlayerModal(playerId, playerName, opts) {
         TE: { label: 'Receiving', preset: 'Receiving' },
       };
       const _posSet = _posSets[_metricsPos];
-      const _setLink = _posSet
-        ? `<a href="${_metricsBase}?pos=${encodeURIComponent(_metricsPos)}&preset=${_posSet.preset}${_srch}" class="pm-section-link" title="Open ${_posSet.label} leaderboard">View in Adv Metrics &rarr;</a>`
-        : '';
+      // The section title itself links to the filtered Adv Metrics leaderboard
+      // (no separate "View in Adv Metrics" button). The info icon stays a
+      // separate control - it can't be nested inside the title's link.
+      const _advTitle = _posSet
+        ? `<a href="${_metricsBase}?pos=${encodeURIComponent(_metricsPos)}&preset=${_posSet.preset}${_srch}" class="pm-section-label-link" title="Open ${_posSet.label} leaderboard">Advanced Metrics</a>`
+        : 'Advanced Metrics';
       const metricsHTML = hasMetrics ? `
         <div id="advancedMetricsSection">
           <div class="pm-section-header">
-            <span class="pm-section-label">Advanced Metrics <span id="advMetricsSeasonLabel" style="font-size:12px;opacity:.6;"></span><span class="adv-info-icon" onclick="advShowInfoTip(event)" aria-label="About metric tooltips">ⓘ</span></span>
-            ${_setLink}
+            <span class="pm-section-label">${_advTitle} <span id="advMetricsSeasonLabel" style="font-size:12px;opacity:.6;"></span><span class="adv-info-icon" onclick="advShowInfoTip(event)" aria-label="About metric tooltips">ⓘ</span></span>
           </div>
           <div id="advMetricsPills"></div>
           <div id="advancedMetricsContent">
