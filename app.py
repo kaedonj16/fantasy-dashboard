@@ -12384,14 +12384,19 @@ def _background_build_activity(platform: str, league_id: str, season: int) -> No
     import logging as _log
     _logger = _log.getLogger(__name__)
     build_key = f"{platform}:{season}:{league_id}"
+    fail_key = f"activity:{platform}:{season}:{league_id}"
     try:
         t0 = time.time()
         ctx = get_league_ctx_from_cache(platform, league_id, season)
         body_html = build_activity_body(ctx)
         store_page_html(platform, season, league_id, "activity", body_html)
+        with _PAGE_BG_LOCK:
+            _PAGE_BG_FAILED.discard(fail_key)
         _logger.info("Activity build complete in %.1fs", time.time() - t0)
     except Exception as exc:  # noqa: BLE001
         _logger.error("Background activity build failed: %s", exc, exc_info=True)
+        with _PAGE_BG_LOCK:
+            _PAGE_BG_FAILED.add(fail_key)
     finally:
         with _ACTIVITY_BUILDING_LOCK:
             _ACTIVITY_BUILDING.discard(build_key)
@@ -12414,32 +12419,15 @@ def _build_activity_skeleton(platform: str, season: int, league_id: str) -> str:
     rows = "".join(_row() for _ in range(6))
     return f"""
     <div class="activity-page">
-      <div class="teams-loading-indicator" style="margin-bottom:14px;">
+      <div class="teams-loading-indicator" id="brPageLoad" style="margin-bottom:14px;">
         <div class="loading-spinner" style="width:14px;height:14px;"></div>
         <span>Loading league activity&hellip;</span>
       </div>
       {rows}
     </div>
-    <script>
-    (function() {{
-      var polls = 0;
-      function check() {{
-        polls++;
-        fetch('/api/activity-ready?platform={platform}&league_id={league_id}&season={season}')
-          .then(function(r) {{ return r.json(); }})
-          .then(function(d) {{
-            if (d.ready) {{
-              window.location.href = window.location.pathname + '?_r=' + Date.now();
-            }} else {{
-              setTimeout(check, polls < 10 ? 1500 : 2500);
-            }}
-          }})
-          .catch(function() {{ setTimeout(check, 3000); }});
-      }}
-      setTimeout(check, 1500);
-    }})();
-    </script>
-    """
+    """ + _bg_poll_script(
+        f"/api/activity-ready?platform={platform}&league_id={league_id}&season={season}"
+    )
 
 
 @app.route("/api/activity-ready")
@@ -12450,8 +12438,11 @@ def api_activity_ready():
         season = int(request.args.get("season", datetime.now().year))
     except (TypeError, ValueError):
         season = datetime.now().year
-    ready = bool(get_page_html_from_cache(platform, season, league_id, "activity"))
-    return jsonify({"ready": ready})
+    if get_page_html_from_cache(platform, season, league_id, "activity"):
+        return jsonify({"ready": True})
+    with _PAGE_BG_LOCK:
+        failed = f"activity:{platform}:{season}:{league_id}" in _PAGE_BG_FAILED
+    return jsonify({"ready": False, "failed": failed})
 
 
 @app.route("/<platform>/<int:season>/<league_id>/activity")
@@ -12477,6 +12468,8 @@ def page_activity(platform: str, season: int, league_id: str):
     with _ACTIVITY_BUILDING_LOCK:
         if build_key not in _ACTIVITY_BUILDING:
             _ACTIVITY_BUILDING.add(build_key)
+            with _PAGE_BG_LOCK:
+                _PAGE_BG_FAILED.discard(f"activity:{platform}:{season}:{league_id}")
             threading.Thread(
                 target=_background_build_activity,
                 args=(platform, league_id, season),
@@ -14579,15 +14572,22 @@ def _background_build_teams(platform: str, league_id: str, season: int) -> None:
     import logging as _log
     _logger = _log.getLogger(__name__)
     build_key = f"{platform}:{season}:{league_id}"
+    fail_key = f"teams:{platform}:{season}:{league_id}"
     try:
         t0 = time.time()
         ctx = get_league_ctx_from_cache(platform, league_id, season)
         _logger.info("Teams context ready in %.1fs, building HTML", time.time() - t0)
         body_html = build_teams_body(ctx)
         store_page_html(platform, season, league_id, "teams", body_html)
+        with _PAGE_BG_LOCK:
+            _PAGE_BG_FAILED.discard(fail_key)
         _logger.info("Teams build complete in %.1fs", time.time() - t0)
     except Exception as exc:  # noqa: BLE001
-        _log.getLogger(__name__).error("Background teams build failed: %s", exc, exc_info=True)
+        # Flag the failure so the skeleton poll can stop and show a retry rather
+        # than shimmering forever.
+        _logger.error("Background teams build failed: %s", exc, exc_info=True)
+        with _PAGE_BG_LOCK:
+            _PAGE_BG_FAILED.add(fail_key)
     finally:
         with _TEAMS_BUILDING_LOCK:
             _TEAMS_BUILDING.discard(build_key)
@@ -14667,27 +14667,10 @@ def _build_teams_skeleton(platform: str, season: int, league_id: str, num_teams:
         </div>
       </main>
     </div>
-    <script>
-    (function() {{
-      var polls = 0;
-      var indicator = document.getElementById('teams-sk-status');
-      function check() {{
-        polls++;
-        fetch('/api/teams-ready?platform={platform}&league_id={league_id}&season={season}')
-          .then(function(r) {{ return r.json(); }})
-          .then(function(d) {{
-            if (d.ready) {{
-              window.location.href = window.location.pathname + '?_r=' + Date.now();
-            }} else {{
-              setTimeout(check, polls < 10 ? 1500 : 2500);
-            }}
-          }})
-          .catch(function() {{ setTimeout(check, 3000); }});
-      }}
-      setTimeout(check, 1500);
-    }})();
-    </script>
-    """
+    """ + _bg_poll_script(
+        f"/api/teams-ready?platform={platform}&league_id={league_id}&season={season}",
+        "teams-sk-status",
+    )
 
 
 @app.route("/api/teams-ready")
@@ -14698,8 +14681,11 @@ def api_teams_ready():
         season = int(request.args.get("season", datetime.now().year))
     except (TypeError, ValueError):
         season = datetime.now().year
-    ready = bool(get_page_html_from_cache(platform, season, league_id, "teams"))
-    return jsonify({"ready": ready})
+    if get_page_html_from_cache(platform, season, league_id, "teams"):
+        return jsonify({"ready": True})
+    with _PAGE_BG_LOCK:
+        failed = f"teams:{platform}:{season}:{league_id}" in _PAGE_BG_FAILED
+    return jsonify({"ready": False, "failed": failed})
 
 
 @app.route("/<platform>/<int:season>/<league_id>/teams")
@@ -14727,6 +14713,8 @@ def page_teams(platform: str, season: int, league_id: str):
     with _TEAMS_BUILDING_LOCK:
         if build_key not in _TEAMS_BUILDING:
             _TEAMS_BUILDING.add(build_key)
+            with _PAGE_BG_LOCK:
+                _PAGE_BG_FAILED.discard(f"teams:{platform}:{season}:{league_id}")
             threading.Thread(
                 target=_background_build_teams,
                 args=(platform, league_id, season),
@@ -15404,6 +15392,42 @@ def _bg_build_page(build_key, platform, season, league_id, cache_key, build_fn) 
             _PAGE_BG_BUILDING.discard(build_key)
 
 
+def _bg_poll_script(ready_url: str, status_id: str = "brPageLoad") -> str:
+    """Shared skeleton poll for the background-build pages.
+
+    Reloads when the build is ready; stops and shows a Try-again button if the
+    build failed or after ~60s (a hung/slow build), so a skeleton can never spin
+    forever. `ready_url` must return {ready, failed}; status messages replace the
+    element with id `status_id`.
+    """
+    return f"""
+    <script>
+    (function() {{
+      var polls = 0, MAX = 28;
+      function stop(msg) {{
+        var el = document.getElementById('{status_id}');
+        if (!el) return;
+        el.innerHTML = '<span>' + msg + '</span>' +
+          '<button type="button" onclick="location.reload()" style="margin-left:10px;padding:5px 12px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);cursor:pointer;font-weight:600;">Try again</button>';
+      }}
+      function check() {{
+        polls++;
+        fetch('{ready_url}')
+          .then(function(r) {{ return r.json(); }})
+          .then(function(d) {{
+            if (d.ready) {{ window.location.href = window.location.pathname + window.location.search; return; }}
+            if (d.failed) {{ stop('This page failed to load.'); return; }}
+            if (polls >= MAX) {{ stop('This is taking longer than usual.'); return; }}
+            setTimeout(check, polls < 10 ? 1500 : 2500);
+          }})
+          .catch(function() {{ if (polls >= MAX) {{ stop('Could not reach the server.'); }} else {{ setTimeout(check, 3000); }} }});
+      }}
+      setTimeout(check, 1500);
+    }})();
+    </script>
+    """
+
+
 def _page_skeleton(platform, season, league_id, cache_key, label) -> str:
     from urllib.parse import quote
     q = (f"page={quote(cache_key)}&platform={quote(str(platform))}"
@@ -15421,31 +15445,7 @@ def _page_skeleton(platform, season, league_id, cache_key, label) -> str:
       </div>
       {row * 4}
     </div>
-    <script>
-    (function() {{
-      var polls = 0, MAX = 28;   // stop after ~60s and offer a manual retry
-      function stop(msg) {{
-        var el = document.getElementById('brPageLoad');
-        if (!el) return;
-        el.innerHTML = '<span>' + msg + '</span>' +
-          '<button type="button" onclick="location.reload()" style="margin-left:10px;padding:5px 12px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);cursor:pointer;font-weight:600;">Try again</button>';
-      }}
-      function check() {{
-        polls++;
-        fetch('/api/page-ready?{q}')
-          .then(function(r) {{ return r.json(); }})
-          .then(function(d) {{
-            if (d.ready) {{ window.location.href = window.location.pathname + window.location.search; return; }}
-            if (d.failed) {{ stop('This page failed to load.'); return; }}
-            if (polls >= MAX) {{ stop('This is taking longer than usual.'); return; }}
-            setTimeout(check, polls < 10 ? 1500 : 2500);
-          }})
-          .catch(function() {{ if (polls >= MAX) {{ stop('Could not reach the server.'); }} else {{ setTimeout(check, 3000); }} }});
-      }}
-      setTimeout(check, 1500);
-    }})();
-    </script>
-    """
+    """ + _bg_poll_script(f"/api/page-ready?{q}")
 
 
 @app.route("/api/page-ready")

@@ -48,3 +48,21 @@ def test_successful_build_clears_failure_and_is_ready(offline_client):
         "/api/page-ready?page=history&platform=sleeper&league_id=LBG2&season=2026"
     ).get_json()
     assert d["ready"] is True
+
+
+def test_teams_and_activity_ready_report_failure(offline_client):
+    """The teams/activity pages have their own builders + ready endpoints; they
+    surface a failed build the same way so their skeletons don't hang either."""
+    import app
+    with app._PAGE_BG_LOCK:
+        app._PAGE_BG_FAILED.add("teams:sleeper:2026:LT")
+        app._PAGE_BG_FAILED.add("activity:sleeper:2026:LA")
+    try:
+        t = offline_client.get("/api/teams-ready?platform=sleeper&league_id=LT&season=2026").get_json()
+        a = offline_client.get("/api/activity-ready?platform=sleeper&league_id=LA&season=2026").get_json()
+        assert t == {"ready": False, "failed": True}
+        assert a == {"ready": False, "failed": True}
+    finally:
+        with app._PAGE_BG_LOCK:
+            app._PAGE_BG_FAILED.discard("teams:sleeper:2026:LT")
+            app._PAGE_BG_FAILED.discard("activity:sleeper:2026:LA")
