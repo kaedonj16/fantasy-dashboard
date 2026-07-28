@@ -3295,6 +3295,7 @@ thead th {
    to .player-badge so the same PNGs keep their standalone colors elsewhere (the
    premium star, draft-room fire, streak chips, etc.). */
 .player-badge .fa-star,
+.player-badge .fa-crown,
 .player-badge .fa-registered-solid,
 .player-badge .fa-fire,
 .player-badge .fa-seedling {
@@ -3311,6 +3312,10 @@ thead th {
 .player-badge .fa-star {
   -webkit-mask-image: url('images/star-solid.png');
           mask-image: url('images/star-solid.png');
+}
+.player-badge .fa-crown {
+  -webkit-mask-image: url('images/crown-solid.png');
+          mask-image: url('images/crown-solid.png');
 }
 .player-badge .fa-registered-solid {
   -webkit-mask-image: url('images/registered-solid.png');
