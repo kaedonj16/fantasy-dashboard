@@ -8979,7 +8979,7 @@ def build_activity_body(ctx: dict) -> str:
 
       /* Compact timeline rows */
       .act-pulse .act-row {{ display: grid; grid-template-columns: auto 1fr auto; gap: 11px; align-items: center; padding: 9px 10px; border-radius: 10px; }}
-      .act-pulse .act-daygroup .act-row + .act-row {{ border-top: 1px solid var(--border); }}
+      .act-pulse .act-daygroup .act-row + .act-row {{ margin-top: 6px; }}
       .act-pulse .act-row:hover {{ background: var(--row, var(--bg-alt)); }}
       .act-pulse .act-av {{ width: 30px; height: 30px; border-radius: 9px; flex: 0 0 auto; display: grid; place-items: center; overflow: hidden; font-size: 11px; font-weight: 800; }}
       .act-pulse .act-av img {{ width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }}
