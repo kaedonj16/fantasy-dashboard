@@ -22939,6 +22939,21 @@ button:disabled {
   background: linear-gradient(120deg, #f5c451, #e8a41f); padding: 5px 12px; border-radius: 6px;
 }
 .wrapped-record-txt { font-size: 15px; font-weight: 700; color: rgba(255,255,255,.66); }
+
+/* Recap finale: the shareable summary card rendered as a story slide - a
+   champion block over the same highlight rows the Share card draws. */
+.wrapped-recap-champ { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 14px; }
+.wrapped-recap-crown { color: var(--wa); font-size: 22px; flex: 0 0 auto;
+  filter: drop-shadow(0 4px 14px color-mix(in srgb, var(--wa) 60%, transparent)); }
+.wrapped-recap-champ-name { font-family: "InterVariable", "Archivo", sans-serif; font-weight: 900;
+  font-size: clamp(24px, 7vw, 38px); letter-spacing: -.02em; line-height: 1.05; overflow-wrap: anywhere; }
+.wrapped-recap-champ-lbl { font-size: 12px; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; color: rgba(255,255,255,.55); }
+/* Compact the rows so champion + up to five highlights fit one slide. */
+.wrapped-slide[data-kind="recap"] .wrapped-row { padding: 11px 0; }
+.wrapped-slide[data-kind="recap"] .wrapped-row-k { font-size: 10.5px; margin-bottom: 4px; }
+.wrapped-slide[data-kind="recap"] .wrapped-row-n { font-size: 18px; }
+.wrapped-slide[data-kind="recap"] .wrapped-row-v { font-size: 20px; }
 .wrapped-rays {
   position: absolute; z-index: 0; left: 62%; top: 40%; width: 820px; height: 820px;
   transform: translate(-50%,-50%); pointer-events: none; opacity: .1;
