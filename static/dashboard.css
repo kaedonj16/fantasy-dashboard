@@ -22792,7 +22792,8 @@ button:disabled {
 .wrapped-share-busy i, .wrapped-share-busy svg { animation: wrapLaunchSpin .8s linear infinite; }
 @media (min-width: 768px) {
   .wrapped-share {
-    top: calc((100vh - var(--wrap-h)) / 2 + 14px);
+    /* Clear the progress bar (at +6px, ~35px tall) so the pill doesn't sit on it. */
+    top: calc((100vh - var(--wrap-h)) / 2 + 44px);
     left: calc((100vw - var(--wrap-w)) / 2 + 14px);
   }
 }
@@ -22817,7 +22818,7 @@ button:disabled {
     top: calc((100vh - var(--wrap-h)) / 2 + 6px);
   }
   .wrapped-close {
-    top: calc((100vh - var(--wrap-h)) / 2 + 14px);
+    top: calc((100vh - var(--wrap-h)) / 2 + 44px);
     right: calc((100vw - var(--wrap-w)) / 2 + 14px);
   }
 }
