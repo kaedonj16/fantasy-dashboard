@@ -2286,12 +2286,58 @@ function showLoginGate(target, opts) {
   }
 }
 
-// ── Floating action pills (Discord + Data Freshness) ─────────────────────────
+// ── Discord + data-freshness ─────────────────────────────────────────────────
+// On desktop (and mobile pages with no bottom dock) these are floating pills. On
+// mobile LEAGUE pages the dock owns the bottom of the screen, so they live as
+// rows in the More sheet instead (server-rendered #brSheetRefresh + a Discord
+// link); there we just wire the refresh button and keep its freshness label.
 (function () {
   var STALE_MS = 6 * 60 * 60 * 1000;
+  var mq = window.matchMedia('(max-width: 768px)');
 
-  function initFreshness() {
-    // Create or reuse the shared pill group container
+  function fmtAge(ts) {
+    var mins = Math.floor((Date.now() - ts) / 60000);
+    return mins < 1 ? 'now' : mins < 60 ? mins + 'm' : Math.floor(mins / 60) + 'h';
+  }
+  function cacheTs() {
+    var main = document.getElementById('page-root');
+    return main ? parseInt(main.dataset.cacheTs || '0', 10) : 0;
+  }
+  function doRefresh() {
+    var parts = window.location.pathname.split('/').filter(Boolean);
+    if (parts.length < 3) { window.location.reload(); return; }
+    fetch('/api/refresh-league', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform: parts[0], season: parseInt(parts[1], 10), league_id: parts[2] })
+    }).then(function () { window.location.reload(); })
+      .catch(function () { window.location.reload(); });
+  }
+
+  // Mobile More-sheet Refresh row (persists across soft-navs, so wire once).
+  function wireSheetRefresh() {
+    var btn = document.getElementById('brSheetRefresh');
+    if (btn && !btn._brWired) {
+      btn._brWired = true;
+      btn.addEventListener('click', function () {
+        var t = document.getElementById('brSheetRefreshTime');
+        if (t) t.textContent = '…';
+        doRefresh();
+      });
+    }
+  }
+  function updateSheetTime() {
+    var t = document.getElementById('brSheetRefreshTime');
+    if (!t) return;
+    var ts = cacheTs();
+    t.textContent = ts ? fmtAge(ts) : '';
+    t.classList.toggle('cf-stale', !!ts && (Date.now() - ts > STALE_MS));
+  }
+
+  // Desktop, and any mobile page without the dock: floating Discord + freshness.
+  function initPills() {
+    if (mq.matches && document.getElementById('brMoreSheet')) return;   // sheet owns it
+
     var group = document.getElementById('floating-pill-group');
     if (!group) {
       group = document.createElement('div');
@@ -2299,7 +2345,6 @@ function showLoginGate(target, opts) {
       document.body.appendChild(group);
     }
 
-    // Discord pill - always visible
     if (!document.getElementById('discord-pill')) {
       var dp = document.createElement('a');
       dp.id = 'discord-pill';
@@ -2314,12 +2359,7 @@ function showLoginGate(target, opts) {
       group.appendChild(dp);
     }
 
-    // Refresh pill - only when a cache timestamp is available (league pages)
-    var main = document.getElementById('page-root');
-    if (!main) return;
-    var ts = parseInt(main.dataset.cacheTs || '0', 10);
-    if (!ts) return;
-
+    if (!cacheTs()) return;   // freshness pill only on league pages
     var chip = document.getElementById('cache-freshness');
     if (!chip) {
       chip = document.createElement('div');
@@ -2332,40 +2372,28 @@ function showLoginGate(target, opts) {
         '<span class="fp-pill-icon"><span class="fp-pill-time">…</span></span>' +
         '<span class="fp-pill-label">Refresh</span>';
       group.appendChild(chip);
+      chip.addEventListener('click', function () {
+        var el = chip.querySelector('.fp-pill-time'); if (el) el.textContent = '…';
+        chip.style.opacity = '0.6';
+        doRefresh();
+      });
+      chip.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); chip.click(); }
+      });
     }
-
-    function update() {
-      var diff = Date.now() - ts;
-      var mins = Math.floor(diff / 60000);
-      var timeStr = mins < 1 ? 'now' : mins < 60 ? mins + 'm' : Math.floor(mins / 60) + 'h';
-      var timeEl = chip.querySelector('.fp-pill-time');
-      if (timeEl) timeEl.textContent = timeStr;
-      chip.classList.toggle('cf-stale', diff > STALE_MS);
+    function updateChip() {
+      var t = cacheTs();
+      var el = chip.querySelector('.fp-pill-time');
+      if (el) el.textContent = t ? fmtAge(t) : '…';
+      chip.classList.toggle('cf-stale', !!t && (Date.now() - t > STALE_MS));
     }
-    update();
-    setInterval(update, 60000);
-
-    function doRefresh() {
-      var parts = window.location.pathname.split('/').filter(Boolean);
-      if (parts.length < 3) { window.location.reload(); return; }
-      var timeEl = chip.querySelector('.fp-pill-time');
-      if (timeEl) timeEl.textContent = '…';
-      chip.style.opacity = '0.6';
-      fetch('/api/refresh-league', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform: parts[0], season: parseInt(parts[1], 10), league_id: parts[2] })
-      }).then(function () { window.location.reload(); })
-        .catch(function () { window.location.reload(); });
-    }
-
-    chip.addEventListener('click', doRefresh);
-    chip.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); doRefresh(); }
-    });
+    updateChip();
+    if (!chip._brTick) { chip._brTick = true; setInterval(updateChip, 60000); }
   }
 
-  document.addEventListener('DOMContentLoaded', initFreshness);
+  function init() { wireSheetRefresh(); updateSheetTime(); initPills(); }
+  document.addEventListener('DOMContentLoaded', init);
+  setInterval(updateSheetTime, 60000);
 })();
 
 window.addEventListener('beforeunload', function() {

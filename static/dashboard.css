@@ -18591,14 +18591,6 @@ tr.team-clickable {
   z-index: 50;
 }
 
-/* On phones the bottom dock (.br-tabbar, 56px + safe-area, fixed to bottom:0)
-   sits on top of the pills at bottom:14px and hides them. Lift the pills above
-   the dock so the Refresh and Discord buttons stay reachable. */
-@media (max-width: 768px) {
-  #floating-pill-group {
-    bottom: calc(56px + env(safe-area-inset-bottom) + 12px);
-  }
-}
 
 .fp-pill {
   display: inline-flex;
@@ -23263,6 +23255,14 @@ a, button, [role="button"], [role="tab"], summary, label,
   .br-sheet-link:active { background: var(--accent-soft); }
   .br-sheet-link.active { color: var(--accent); }
   .br-sheet-link.active .nav-svg-icon { color: var(--accent); }
+  /* The Discord PNG (matches the 20px nav-svg icons) and the freshness time on
+     the Refresh row (right-aligned, quiet). */
+  .br-sheet-icon-img { width: 20px; height: 20px; flex: 0 0 auto; opacity: .85; }
+  .br-sheet-time {
+    margin-left: auto; font-size: 13px; font-weight: 600;
+    color: var(--text-muted); font-variant-numeric: tabular-nums;
+  }
+  .br-sheet-time.cf-stale { color: var(--orange, #f59e0b); }
   .br-sheet-pro {
     margin-left: 6px; font-size: 9.5px; font-weight: 800; letter-spacing: .04em;
     text-transform: uppercase; color: #fff;
