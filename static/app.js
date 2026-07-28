@@ -3757,7 +3757,7 @@ window.initTradePage = function initTradePage(root = document) {
       metaBits.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>');
     }
     if (isElite(p.id)) {
-        metaBits.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-crown" aria-hidden="true"></i></span>');
+        metaBits.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i></span>');
     }
 
 
@@ -4444,7 +4444,7 @@ window.initTradePage = function initTradePage(root = document) {
         );
       }
       if (isElite(p.id)) {
-        badges.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-crown" aria-hidden="true"></i></span>');
+        badges.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i></span>');
       }
       if (isBreakout(p.id)) {
         badges.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i></span>');
@@ -10004,7 +10004,7 @@ function openPlayerModal(playerId, playerName, opts) {
       const isRookieWithoutGameLogs = !hasGameLogs && data.prospect_data && data.prospect_data.prospect_score != null;
 
       if (isElite(pid)) {
-        badges += '<span class="player-badge player-badge-elite"><i class="fa-solid fa-crown" aria-hidden="true"></i> ELITE</span>';
+        badges += '<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i> ELITE</span>';
       }
       // Rookie (drafted / year-0) gets the ROOKIE mark; a pre-draft prospect
       // gets the PROSPECT seedling instead.
@@ -15716,7 +15716,7 @@ function addBreakoutBadgesToTeamsPage() {
       const isRookie = yearsExp !== null && yearsExp !== '' && parseInt(yearsExp) === 0;
       
       if (isElite) {
-        badges.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-crown" aria-hidden="true"></i> ELITE</span>');
+        badges.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i> ELITE</span>');
       }
       if (isRookie) {
         badges.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
@@ -16367,7 +16367,7 @@ function renderTeamDetails(data) {
       const isBreakoutPlayer = !isElite && isBreakout(player.player_id);
 
       if (isElite) {
-        badges += '<span class="player-badge player-badge-elite"><i class="fa-solid fa-crown" aria-hidden="true"></i> ELITE</span>';
+        badges += '<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i> ELITE</span>';
       }
       if (isRookie) {
         badges += '<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>';
