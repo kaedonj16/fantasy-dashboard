@@ -4423,17 +4423,24 @@ def render_standings(team_stats, length, all_play: dict = None,
     """
 
 
-def _section_page_link(label: str, endpoint: str, platform, season, league_id) -> str:
-    """A small 'view the full page' link for an excerpt card's section header.
+def _section_title_link(title: str, endpoint: str, platform, season, league_id) -> str:
+    """Render a collapsible section's <h2> title as the link to its full page.
 
-    Renders nothing (safely) if the URL can't be built, so callers can drop it
-    into any os-section-head without guarding.
+    Replaces the older pattern of a plain title plus a separate 'view the full
+    page' link in the header: the title itself is now the single, larger click
+    target, so there's no redundant button. Falls back to a plain (unlinked)
+    title if the URL can't be built, so callers can use it without guarding.
     """
+    safe_title = html.escape(title)
     try:
         href = url_for(endpoint, platform=platform, season=season, league_id=str(league_id))
     except Exception:
-        return ""
-    return f"<a class='os-section-link' href='{html.escape(href)}'>{html.escape(label)} &rarr;</a>"
+        return f'<h2 class="os-section-title">{safe_title}</h2>'
+    return (
+        '<h2 class="os-section-title">'
+        f'<a class="os-section-title-link" href="{html.escape(href)}">{safe_title}'
+        ' <span class="os-section-title-arrow" aria-hidden="true">&rarr;</span></a></h2>'
+    )
 
 
 def _standings_movement(df_weekly) -> dict:
@@ -5072,11 +5079,10 @@ def build_dashboard_body(ctx: dict) -> str:
         <section class="os-card os-col-fill">
           <div class="os-section-head">
             <div class="os-section-head-content">
-              <h2 class="os-section-title">Waiver Wire Targets</h2>
+              {_section_title_link("Waiver Wire Targets", "page_waivers", platform, season, league_id)}
               <div class="os-section-subtitle">Smart pickups based on value + trend + breakout potential</div>
             </div>
             <div class="os-section-head-actions">
-              {_section_page_link("Waivers & Start/Sit", "page_waivers", platform, season, league_id)}
               <button type="button" class="card-collapse-toggle" aria-label="Toggle section" aria-expanded="true" data-target="dash-waiver-body">&#9660;</button>
             </div>
           </div>
@@ -5241,11 +5247,10 @@ def build_dashboard_body(ctx: dict) -> str:
         <section class="os-card os-col-fill">
           <div class="os-section-head">
             <div class="os-section-head-content">
-              <h2 class="os-section-title">Standings</h2>
+              {_section_title_link("Standings", "page_standings", platform, season, league_id)}
               <div class="os-section-subtitle">Where every team sits right now</div>
             </div>
             <div class="os-section-head-actions">
-              {_section_page_link("Full standings", "page_standings", platform, season, league_id)}
               <button type="button" class="card-collapse-toggle" aria-label="Toggle section" aria-expanded="true" data-target="dash-standings-body">&#9660;</button>
             </div>
           </div>
@@ -6974,11 +6979,10 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         <section class="os-card os-card-soft os-col-fill">
           <div class="os-section-head">
             <div class="os-section-head-content">
-              <h2 class="os-section-title">Offseason Team Snapshot</h2>
+              {_section_title_link("Offseason Team Snapshot", "page_teams", platform, season, ctx.get("league_id"))}
               <div class="os-section-subtitle">Roster value and future capital across the league</div>
             </div>
             <div class="os-section-head-actions">
-              {_section_page_link("All teams", "page_teams", platform, season, ctx.get("league_id"))}
               <button type="button" class="card-collapse-toggle" aria-label="Toggle section" aria-expanded="true" data-target="team-snapshot-body">▼</button>
             </div>
           </div>
@@ -7122,11 +7126,10 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         <section class="os-card os-col-fill">
           <div class="os-section-head">
             <div class="os-section-head-content">
-              <h2 class="os-section-title">Waiver Wire Targets</h2>
+              {_section_title_link("Waiver Wire Targets", "page_waivers", platform, season, ctx.get("league_id"))}
               <div class="os-section-subtitle">Smart pickups based on value + trend + breakout potential</div>
             </div>
             <div class="os-section-head-actions">
-              {_section_page_link("Waivers & Start/Sit", "page_waivers", platform, season, ctx.get("league_id"))}
               <button type="button" class="card-collapse-toggle" aria-label="Toggle section" aria-expanded="true" data-target="waiver-assets-body">▼</button>
             </div>
           </div>
@@ -12345,16 +12348,123 @@ def api_redzone_player(platform: str, season: int, league_id: str):
         return jsonify({}), 500
 
 
+_ACTIVITY_BUILDING: set = set()
+_ACTIVITY_BUILDING_LOCK = threading.Lock()
+
+
+def _background_build_activity(platform: str, league_id: str, season: int) -> None:
+    """Build the activity page HTML off the request thread and cache it.
+
+    Labeling traded draft picks pulls prior-season league contexts and playoff
+    brackets, which can be slow on a cold cache; doing it here lets the request
+    return a skeleton immediately (same pattern as the teams page).
+    """
+    import logging as _log
+    _logger = _log.getLogger(__name__)
+    build_key = f"{platform}:{season}:{league_id}"
+    try:
+        t0 = time.time()
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        body_html = build_activity_body(ctx)
+        store_page_html(platform, season, league_id, "activity", body_html)
+        _logger.info("Activity build complete in %.1fs", time.time() - t0)
+    except Exception as exc:  # noqa: BLE001
+        _logger.error("Background activity build failed: %s", exc, exc_info=True)
+    finally:
+        with _ACTIVITY_BUILDING_LOCK:
+            _ACTIVITY_BUILDING.discard(build_key)
+
+
+def _build_activity_skeleton(platform: str, season: int, league_id: str) -> str:
+    """Lightweight shimmer placeholder shown while the feed builds in the background."""
+    def _row() -> str:
+        return (
+            "<div class='card' style='padding:14px 16px;margin-bottom:10px;'>"
+            "<div style='display:flex;align-items:center;gap:10px;'>"
+            "<div class='sk-shimmer' style='width:34px;height:34px;border-radius:50%;flex-shrink:0;'></div>"
+            "<div style='flex:1;min-width:0;'>"
+            "<div class='sk-shimmer' style='width:45%;height:13px;border-radius:4px;margin-bottom:7px;'></div>"
+            "<div class='sk-shimmer' style='width:70%;height:11px;border-radius:4px;opacity:.7;'></div>"
+            "</div>"
+            "<div class='sk-shimmer' style='width:52px;height:22px;border-radius:6px;flex-shrink:0;'></div>"
+            "</div></div>"
+        )
+    rows = "".join(_row() for _ in range(6))
+    return f"""
+    <div class="activity-page">
+      <div class="teams-loading-indicator" style="margin-bottom:14px;">
+        <div class="loading-spinner" style="width:14px;height:14px;"></div>
+        <span>Loading league activity&hellip;</span>
+      </div>
+      {rows}
+    </div>
+    <script>
+    (function() {{
+      var polls = 0;
+      function check() {{
+        polls++;
+        fetch('/api/activity-ready?platform={platform}&league_id={league_id}&season={season}')
+          .then(function(r) {{ return r.json(); }})
+          .then(function(d) {{
+            if (d.ready) {{
+              window.location.href = window.location.pathname + '?_r=' + Date.now();
+            }} else {{
+              setTimeout(check, polls < 10 ? 1500 : 2500);
+            }}
+          }})
+          .catch(function() {{ setTimeout(check, 3000); }});
+      }}
+      setTimeout(check, 1500);
+    }})();
+    </script>
+    """
+
+
+@app.route("/api/activity-ready")
+def api_activity_ready():
+    platform  = request.args.get("platform", "sleeper")
+    league_id = request.args.get("league_id", "")
+    try:
+        season = int(request.args.get("season", datetime.now().year))
+    except (TypeError, ValueError):
+        season = datetime.now().year
+    ready = bool(get_page_html_from_cache(platform, season, league_id, "activity"))
+    return jsonify({"ready": ready})
+
+
 @app.route("/<platform>/<int:season>/<league_id>/activity")
 def page_activity(platform: str, season: int, league_id: str):
     cached = get_page_html_from_cache(platform, season, league_id, "activity")
     if cached:
         return render_page("BR Fantasy Activity", league_id, "activity", cached, platform, season)
 
-    ctx = get_league_ctx_from_cache(platform, league_id, season)
-    body = build_activity_body(ctx)
-    store_page_html(platform, season, league_id, "activity", body)
-    return render_page("BR Fantasy Activity", league_id, "activity", body, platform, season)
+    # If the league context is already warm (user came from another page), build
+    # synchronously - it's quick once the ctx is cached and avoids the poll round-trip.
+    ctx_entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
+    if ctx_entry and (time.time() - ctx_entry.get("ts", 0) <= CACHE_TTL):
+        try:
+            body = build_activity_body(ctx_entry["ctx"])
+            store_page_html(platform, season, league_id, "activity", body)
+            return render_page("BR Fantasy Activity", league_id, "activity", body, platform, season)
+        except Exception as exc:  # noqa: BLE001
+            import logging as _log
+            _log.getLogger(__name__).error("Sync activity build failed: %s", exc, exc_info=True)
+
+    # Cold load - kick off a background build and show a skeleton while it runs.
+    build_key = f"{platform}:{season}:{league_id}"
+    with _ACTIVITY_BUILDING_LOCK:
+        if build_key not in _ACTIVITY_BUILDING:
+            _ACTIVITY_BUILDING.add(build_key)
+            threading.Thread(
+                target=_background_build_activity,
+                args=(platform, league_id, season),
+                daemon=True,
+            ).start()
+
+    skeleton = _build_activity_skeleton(platform, season, league_id)
+    resp = make_response(render_page("BR Fantasy Activity", league_id, "activity", skeleton, platform, season))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 # ── Tour mock data helpers ─────────────────────────────────────────────────
