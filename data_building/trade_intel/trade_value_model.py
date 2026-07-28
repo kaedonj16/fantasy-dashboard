@@ -658,6 +658,22 @@ def _detect_season() -> int:
     return int(row["s"]) if row and row["s"] else 2025
 
 
+def _market_faithful_sf(cal_1qb: float, market_ratio: "float | None",
+                        lo: float = 0.5, hi: float = 2.5) -> "float | None":
+    """Non-QB Superflex value = calibrated 1QB × the player's OBSERVED market
+    SF/1QB ratio (decay-weighted median of real trades). Returns None when there's
+    no market ratio or no 1QB base, signalling the caller to fall back to the WLS
+    blend. The ratio is clamped to [lo, hi] to guard a pathological median; real
+    non-QB ratios sit ~0.8–1.2 so the clamp only ever catches garbage.
+
+    This replaces the raw SF WLS solve for non-QBs: the solve chases outlier
+    overpays (a depth player "solo for a 1st") and overshoots, while the median is
+    the robust price the player actually clears at."""
+    if market_ratio is None or cal_1qb <= 0:
+        return None
+    return float(cal_1qb) * min(max(float(market_ratio), lo), hi)
+
+
 def run_trade_value_model(
     season: int | None = None,
     lambda_reg: float  = LAMBDA_REG,
@@ -844,15 +860,44 @@ def run_trade_value_model(
     # SF_BLEND_K = SF trade weight at which the SF solve gets 50% of the blend.
     # Tied to lambda_reg so it tracks the same "data vs prior" scale the solve uses.
     SF_BLEND_K = max(lambda_reg, 1.0)
+
+    # Observed market SF/1QB ratio per player (decay-weighted trade medians). The
+    # SF WLS solve overshoots non-QBs — a depth WR packaged/soloed with QBs picks
+    # up outlier value the least-squares fit chases but the median ignores. For
+    # non-QBs we take the market-faithful value (cal_1qb × their real SF/1QB ratio)
+    # instead, which tracks what they actually clear at in SF leagues. QBs keep
+    # their WLS SF solve; non-QBs with too little SF trade data fall back to the
+    # old blend. Ratios preserved as-is (no re-anchor), so board ordering reflects
+    # the real market — elite skill can sit above QBs when the trades say so.
+    _SF_MKT_MIN_TRADES = 20  # mirrors market_calibration.MIN_TRADES_FOR_SIGNAL
+    _sf_mkt_ratio: dict[str, float] = {}
+    try:
+        with get_conn() as _c:
+            for _r in _c.execute(
+                "SELECT player_id, weighted_market_value_1qb m1, weighted_market_value_sf ms, "
+                "trade_count tc FROM trade_intel_player_stats WHERE season = %s",
+                (season,),
+            ).fetchall():
+                _m1, _ms, _tc = _r["m1"], _r["ms"], _r["tc"]
+                if _m1 and _ms and float(_m1) > 0 and (_tc or 0) >= _SF_MKT_MIN_TRADES:
+                    _sf_mkt_ratio[str(_r["player_id"])] = float(_ms) / float(_m1)
+    except Exception:
+        logger.debug("[trade_value_model] SF market-ratio load failed", exc_info=True)
+
     for i, pid in enumerate(player_ids):
         pos = player_prior[pid].get("position", "")
         if pos == "QB":
             continue  # QBs keep their WLS SF-solved value untouched
+        # Market-faithful SF for non-QBs when we have a reliable trade median.
+        _mkt_sf = _market_faithful_sf(v_1qb_norm[i], _sf_mkt_ratio.get(pid))
+        if _mkt_sf is not None:
+            v_sf_norm[i] = _mkt_sf
+            continue
+        # Fallback (thin SF trade data): blend the SF solve with the model-derived
+        # value by SF data confidence — rich history -> solve, thin -> derived.
         p1 = player_prior[pid]["value_1qb"]
         ps = player_prior[pid]["value_sf"]
         derived = v_1qb_norm[i] * (ps / p1) if (p1 > 0 and ps > 0) else v_1qb_norm[i]
-        # Blend the SF trade solve with the derived value by SF data confidence:
-        # rich SF trade history -> trust the SF solve; thin -> lean on derived.
         backing = float(sf_backing[i]) if i < len(sf_backing) else 0.0
         if backing > 0:
             w = backing / (backing + SF_BLEND_K)
