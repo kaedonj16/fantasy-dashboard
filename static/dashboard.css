@@ -8049,14 +8049,14 @@ select:focus {
    MISC COMPONENTS
    ============================================ */
 .faq-item {
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--border);
   padding: 12px 0;
 }
 
 .faq-item p {
   margin-top: 6px;
   font-size: 14px;
-  color: #555;
+  color: var(--text-muted);
 }
 
 .faq-item summary {

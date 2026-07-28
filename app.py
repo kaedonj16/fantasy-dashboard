@@ -12543,30 +12543,15 @@ def _build_tour_mock_history_ctx() -> dict:
     }
 
 
-@app.route("/<platform>/<int:season>/<league_id>/graphs")
-def page_graphs(platform: str, season: int, league_id: str):
-    # Tour preview: render with mock data, bypass real league fetch
-    if request.args.get("tour"):
-        try:
-            mock_ctx = _build_tour_mock_graphs_ctx()
-            body_html = build_graphs_body(mock_ctx)
-        except Exception as exc:
-            body_html = (
-                f"<div class='card central'><div class='card-body'>"
-                f"<p>Graphs preview unavailable: {exc}</p></div></div>"
-            )
-        return render_page("BR Fantasy Graphs", league_id, "graphs", body_html, platform, season)
-
+def _render_graphs_html(platform: str, season: int, league_id: str, view: str, members: str) -> str:
+    """Build the graphs page body for a given view ("career" or a season) and
+    member filter. Pure of request args (view/members are passed in) so the
+    heavy career view - which aggregates every past season - can build in a
+    background thread on a cold cache."""
     ctx = get_league_ctx_from_cache(platform, league_id, season)
     offseason = bool(ctx.get("offseason_mode"))
     available_seasons = get_available_history_seasons(platform, league_id, season)
 
-    # Default view: career during offseason, current season in-season
-    default_view = "career" if offseason else str(season)
-    view = request.args.get("view", default_view)
-
-    # Current-vs-all-time members toggle (defaults to current members only).
-    members = "all" if str(request.args.get("members", "current")).lower() == "all" else "current"
     # Current members = current rosters' owner names. roster_map is populated even
     # in the offseason (team_stats can be empty then), so prefer it; the career
     # aggregate is keyed by these same owner names.
@@ -12695,7 +12680,42 @@ def page_graphs(platform: str, season: int, league_id: str):
         else:
             charts_html = build_graphs_body(season_ctx)
 
-    body_html = season_selector_html + charts_html
+    return season_selector_html + charts_html
+
+
+@app.route("/<platform>/<int:season>/<league_id>/graphs")
+def page_graphs(platform: str, season: int, league_id: str):
+    # Tour preview: render with mock data, bypass real league fetch
+    if request.args.get("tour"):
+        try:
+            mock_ctx = _build_tour_mock_graphs_ctx()
+            body_html = build_graphs_body(mock_ctx)
+        except Exception as exc:
+            body_html = (
+                f"<div class='card central'><div class='card-body'>"
+                f"<p>Graphs preview unavailable: {exc}</p></div></div>"
+            )
+        return render_page("BR Fantasy Graphs", league_id, "graphs", body_html, platform, season)
+
+    # Determining the default view needs the (shared) league context; the heavy,
+    # graphs-specific work is the career aggregation, deferred below.
+    ctx = get_league_ctx_from_cache(platform, league_id, season)
+    default_view = "career" if bool(ctx.get("offseason_mode")) else str(season)
+    view = request.args.get("view", default_view)
+    members = "all" if str(request.args.get("members", "current")).lower() == "all" else "current"
+
+    # Career view aggregates every past season (slow on a cold cache) -> build in
+    # the background and show a skeleton. Season views are a single, light league
+    # context, so render them inline.
+    if view == "career":
+        return _serve_cached_or_background(
+            platform, season, league_id, f"graphs:career:{members}",
+            "BR Fantasy Graphs", "graphs",
+            lambda: _render_graphs_html(platform, season, league_id, "career", members),
+            "Building career graphs",
+        )
+
+    body_html = _render_graphs_html(platform, season, league_id, view, members)
     return render_page("BR Fantasy Graphs", league_id, "graphs", body_html, platform, season)
 
 
@@ -15325,31 +15345,133 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
     </div>"""
 
 
+# ── Background page builder (for pages whose own build is heavy) ──────────────
+# Some pages (awards, history) aggregate every past season on a cold load, which
+# blocks the request behind a blank screen. Like the teams/activity pages, serve
+# cached HTML if present, else build in the background and return a skeleton that
+# polls until the cached HTML is ready. Unlike those, the heavy work isn't the
+# league context but the multi-season aggregation, so there's no "warm ctx ->
+# build inline" shortcut - a cold page-HTML cache always goes to the background.
+_PAGE_BG_BUILDING: set = set()
+_PAGE_BG_LOCK = threading.Lock()
+
+
+def _bg_build_page(build_key, platform, season, league_id, cache_key, build_fn) -> None:
+    import logging as _log
+    try:
+        t0 = time.time()
+        # A background thread has no request context; push one so builders that
+        # call url_for() (e.g. history) work. Args/session are empty here, which
+        # is fine - the build must not depend on them (they're captured at the
+        # call site), matching the teams/activity background builders.
+        with app.test_request_context():
+            body = build_fn()
+        store_page_html(platform, season, league_id, cache_key, body)
+        _log.getLogger(__name__).info("Page %s built in %.1fs", cache_key, time.time() - t0)
+    except Exception as exc:  # noqa: BLE001
+        _log.getLogger(__name__).error("Background build of %s failed: %s", cache_key, exc, exc_info=True)
+    finally:
+        with _PAGE_BG_LOCK:
+            _PAGE_BG_BUILDING.discard(build_key)
+
+
+def _page_skeleton(platform, season, league_id, cache_key, label) -> str:
+    from urllib.parse import quote
+    q = (f"page={quote(cache_key)}&platform={quote(str(platform))}"
+         f"&league_id={quote(str(league_id))}&season={quote(str(season))}")
+    row = (
+        "<div class='card' style='padding:14px 16px;margin-bottom:10px;'>"
+        "<div class='sk-shimmer' style='width:40%;height:14px;border-radius:4px;margin-bottom:8px;'></div>"
+        "<div class='sk-shimmer' style='width:100%;height:70px;border-radius:6px;'></div></div>"
+    )
+    return f"""
+    <div class="page-main">
+      <div class="teams-loading-indicator" style="margin-bottom:14px;">
+        <div class="loading-spinner" style="width:14px;height:14px;"></div>
+        <span>{html.escape(label)}&hellip;</span>
+      </div>
+      {row * 4}
+    </div>
+    <script>
+    (function() {{
+      var polls = 0;
+      function check() {{
+        polls++;
+        fetch('/api/page-ready?{q}')
+          .then(function(r) {{ return r.json(); }})
+          .then(function(d) {{
+            if (d.ready) {{ window.location.href = window.location.pathname + window.location.search; }}
+            else {{ setTimeout(check, polls < 10 ? 1500 : 2500); }}
+          }})
+          .catch(function() {{ setTimeout(check, 3000); }});
+      }}
+      setTimeout(check, 1500);
+    }})();
+    </script>
+    """
+
+
+@app.route("/api/page-ready")
+def api_page_ready():
+    page      = request.args.get("page", "")
+    platform  = request.args.get("platform", "sleeper")
+    league_id = request.args.get("league_id", "")
+    try:
+        season = int(request.args.get("season", datetime.now().year))
+    except (TypeError, ValueError):
+        season = datetime.now().year
+    ready = bool(page) and bool(get_page_html_from_cache(platform, season, league_id, page))
+    return jsonify({"ready": ready})
+
+
+def _serve_cached_or_background(platform, season, league_id, cache_key,
+                               title, active, build_fn, label):
+    """Serve cached page HTML, or background-build it and return a polling skeleton."""
+    cached = get_page_html_from_cache(platform, season, league_id, cache_key)
+    if cached:
+        return render_page(title, league_id, active, cached, platform, season)
+
+    build_key = f"{cache_key}:{platform}:{season}:{league_id}"
+    with _PAGE_BG_LOCK:
+        if build_key not in _PAGE_BG_BUILDING:
+            _PAGE_BG_BUILDING.add(build_key)
+            threading.Thread(
+                target=_bg_build_page,
+                args=(build_key, platform, season, league_id, cache_key, build_fn),
+                daemon=True,
+            ).start()
+
+    skeleton = _page_skeleton(platform, season, league_id, cache_key, label)
+    resp = make_response(render_page(title, league_id, active, skeleton, platform, season))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @app.route("/<platform>/<int:season>/<league_id>/awards")
 def page_awards(platform: str, season: int, league_id: str):
     # Current-vs-all-time members toggle (defaults to current members only).
     members = "all" if str(request.args.get("members", "current")).lower() == "all" else "current"
     awards_cache_key = f"awards:{members}"
-    cached = get_page_html_from_cache(platform, season, league_id, awards_cache_key)
-    if cached:
-        return render_page("League Awards", league_id, "awards", cached, platform, season)
 
-    available, career_owners, championships, season_records, user_id_to_name = \
-        _collect_all_season_data(platform, league_id, season)
+    def _build() -> str:
+        # Aggregating every past season is the heavy part; it runs off the
+        # request thread (background) on a cold cache.
+        available, career_owners, championships, season_records, user_id_to_name = \
+            _collect_all_season_data(platform, league_id, season)
 
-    # Restrict the all-time standings/superlatives to current members when asked.
-    # Season records and championship banners stay intact (historical facts).
-    if members == "current" and career_owners:
-        try:
-            _cur_ctx = get_league_ctx_from_cache(platform, league_id, season)
-            _cur_ids = {str(r.get("owner_id")) for r in (_cur_ctx.get("rosters") or []) if r.get("owner_id") is not None}
-            if _cur_ids:
-                career_owners = {uid: d for uid, d in career_owners.items() if str(uid) in _cur_ids}
-        except Exception:
-            logger.debug("awards current-member filter failed", exc_info=True)
+        # Restrict the all-time standings/superlatives to current members when
+        # asked. Season records and championship banners stay intact (facts).
+        if members == "current" and career_owners:
+            try:
+                _cur_ctx = get_league_ctx_from_cache(platform, league_id, season)
+                _cur_ids = {str(r.get("owner_id")) for r in (_cur_ctx.get("rosters") or []) if r.get("owner_id") is not None}
+                if _cur_ids:
+                    career_owners = {uid: d for uid, d in career_owners.items() if str(uid) in _cur_ids}
+            except Exception:
+                logger.debug("awards current-member filter failed", exc_info=True)
 
-    if not available or not career_owners:
-        body_html = """
+        if not available or not career_owners:
+            return """
         <div class="card central">
           <div class="card-body">
             <div class="bract-empty-state">
@@ -15360,28 +15482,29 @@ def page_awards(platform: str, season: int, league_id: str):
             </div>
           </div>
         </div>"""
-        store_page_html(platform, season, league_id, awards_cache_key, body_html)
-        return render_page("League Awards", league_id, "awards", body_html, platform, season)
 
-    try:
-        ctx = get_league_ctx_from_cache(platform, league_id, season)
-        _league_name = (ctx.get("league") or {}).get("name") or ""
-    except Exception:
-        _league_name = ""
+        try:
+            ctx = get_league_ctx_from_cache(platform, league_id, season)
+            _league_name = (ctx.get("league") or {}).get("name") or ""
+        except Exception:
+            _league_name = ""
 
-    _awards_base = f"/{platform}/{season}/{league_id}/awards"
-    members_toggle_html = f"""
+        _awards_base = f"/{platform}/{season}/{league_id}/awards"
+        members_toggle_html = f"""
     <div class="members-toggle" role="group" aria-label="Member filter" style="justify-content:flex-end;margin-bottom:8px;">
       <a class="members-toggle-btn {'active' if members == 'current' else ''}" href="{_awards_base}?members=current">Current members</a>
       <a class="members-toggle-btn {'active' if members == 'all' else ''}" href="{_awards_base}?members=all">All-time</a>
     </div>"""
 
-    body_html = members_toggle_html + _build_awards_html(
-        career_owners, championships, season_records, user_id_to_name,
-        platform=platform, season=season, league_id=league_id, league_name=_league_name,
+        return members_toggle_html + _build_awards_html(
+            career_owners, championships, season_records, user_id_to_name,
+            platform=platform, season=season, league_id=league_id, league_name=_league_name,
+        )
+
+    return _serve_cached_or_background(
+        platform, season, league_id, awards_cache_key,
+        "League Awards", "awards", _build, "Building all-time awards",
     )
-    store_page_html(platform, season, league_id, awards_cache_key, body_html)
-    return render_page("League Awards", league_id, "awards", body_html, platform, season)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/history")
@@ -15403,17 +15526,16 @@ def page_history(platform: str, season: int, league_id: str):
             body_html = f"<div class='card central'><div class='card-body'><p>History preview unavailable: {exc}</p></div></div>"
         return render_page("League History", league_id, "history", body_html, platform, season)
 
+    # Captured here (request thread); the background build must not touch request.
     selected_history_season_param = request.args.get("history_season")
     page_cache_key = f"history:{selected_history_season_param}" if selected_history_season_param else "history"
-    cached = get_page_html_from_cache(platform, season, league_id, page_cache_key)
-    if cached:
-        return render_page("League History", league_id, "history", cached, platform, season)
 
-    available_seasons = get_available_history_seasons(platform, league_id, season)
+    def _build() -> str:
+        available_seasons = get_available_history_seasons(platform, league_id, season)
 
-    # Handle first-year league case
-    if not available_seasons:
-        body_html = """
+        # First-year league case
+        if not available_seasons:
+            return """
         <div class="card central">
           <div class="card-body">
             <div class="bract-empty-state">
@@ -15423,55 +15545,34 @@ def page_history(platform: str, season: int, league_id: str):
           </div>
         </div>
         """
-        return render_page(
-            "League History",
-            league_id,
-            "history",
-            body_html,
-            platform,
-            season,
+
+        default_history_season = get_default_history_season(available_seasons, season)
+        selected_history_season = int(selected_history_season_param or default_history_season)
+        if selected_history_season not in available_seasons:
+            selected_history_season = default_history_season
+
+        resolved_history_league_id = resolve_league_id_for_season(
+            platform=platform,
+            league_id=league_id,
+            current_season=season,
+            target_season=selected_history_season,
+        )
+        history_ctx = get_league_ctx_from_cache(
+            platform, resolved_history_league_id, selected_history_season,
+        )
+        return build_history_body(
+            history_ctx=history_ctx,
+            available_seasons=available_seasons,
+            base_platform=platform,
+            base_season=season,
+            base_league_id=league_id,
+            selected_history_season=selected_history_season,
+            resolved_history_league_id=resolved_history_league_id,
         )
 
-    default_history_season = get_default_history_season(available_seasons, season)
-
-    selected_history_season = int(
-        request.args.get("history_season") or default_history_season
-    )
-
-    if selected_history_season not in available_seasons:
-        selected_history_season = default_history_season
-
-    resolved_history_league_id = resolve_league_id_for_season(
-        platform=platform,
-        league_id=league_id,
-        current_season=season,
-        target_season=selected_history_season,
-    )
-
-    history_ctx = get_league_ctx_from_cache(
-        platform,
-        resolved_history_league_id,
-        selected_history_season,
-    )
-
-    body_html = build_history_body(
-        history_ctx=history_ctx,
-        available_seasons=available_seasons,
-        base_platform=platform,
-        base_season=season,
-        base_league_id=league_id,
-        selected_history_season=selected_history_season,
-        resolved_history_league_id=resolved_history_league_id,
-    )
-    store_page_html(platform, season, league_id, page_cache_key, body_html)
-
-    return render_page(
-        "League History",
-        league_id,
-        "history",
-        body_html,
-        platform,
-        season,
+    return _serve_cached_or_background(
+        platform, season, league_id, page_cache_key,
+        "League History", "history", _build, "Building league history",
     )
 
 

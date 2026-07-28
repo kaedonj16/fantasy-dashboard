@@ -16,8 +16,23 @@ import glob
 import os
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# Render functions with the cache-hides-the-bug exposure. Add more as needed.
-_CHECKED_FUNCS = ("build_dashboard_body",)
+# Render functions with the cache-hides-the-bug exposure: each builds a page
+# body that gets cached, none is unit-tested (they need a full ctx + DB), so a
+# call site that doesn't match a changed signature stays invisible until the
+# cache expires and the page 500s in prod. Guard the arity of all of them.
+_CHECKED_FUNCS = (
+    "build_dashboard_body",
+    "build_offseason_dashboard_body",
+    "build_standings_body",
+    "build_weekly_hub_body",
+    "build_activity_body",
+    "build_teams_body",
+    "build_recap_body",
+    "build_optimal_body",
+    "build_schedule_body",
+    "build_commissioner_body",
+    "build_scout_body",
+)
 
 
 def _collect_defs():

@@ -26,12 +26,16 @@ def test_activity_ready_endpoint_shape(offline_client):
 def test_cold_activity_returns_skeleton_not_blocking(offline_client):
     """With no warm context, the page returns the skeleton + poll immediately
     instead of building the feed synchronously on the request thread."""
+    import uuid
     import app
 
-    # Ensure the context and page caches are cold for this league.
+    # A unique league id guarantees a cold context + page-HTML cache (the
+    # background builder writes cached HTML to /tmp, which would otherwise
+    # persist across runs and make a fixed id serve cached HTML, not a skeleton).
     app.DASHBOARD_CACHE.clear()
+    league = f"cold-{uuid.uuid4().hex[:8]}"
 
-    r = offline_client.get("/sleeper/2026/coldleague/activity")
+    r = offline_client.get(f"/sleeper/2026/{league}/activity")
     assert r.status_code == 200
     html = r.get_data(as_text=True)
     # The skeleton polls the readiness endpoint and must not be cached.
