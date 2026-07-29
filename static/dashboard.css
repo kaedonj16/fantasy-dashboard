@@ -10534,6 +10534,35 @@ html[data-theme="dark"] .contact-social-pill img {
   display: block;
 }
 
+/* Weekly Hub is now a single full-width tab switcher (no right sidebar), so the
+   page-layout's default 230px sidebar track would only shove content left. */
+.page-layout.weekly-hub {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Week Leaders band inside the Scorers tab: the 4 highlight cards (Highest /
+   Lowest / Closest / Blowout) laid out as a compact 2x2 band above top scorers,
+   instead of a tall vertical stack. */
+.week-leaders-band {
+  margin-bottom: 14px;
+}
+.week-leaders-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.week-leaders-band .week-side-panel.active {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.week-leaders-band .whl-card {
+  margin-bottom: 0;
+}
+
 .who {
   min-width: 0;
   overflow: hidden;
@@ -10819,25 +10848,10 @@ img, svg, canvas {
   }
 }
 
-/* Weekly hub desktop: give the matchup column 2/3 of page-main so the full
-   6-column stat-stack layout fits. Scoped to min-width:961px so the normal
-   960px two-col collapse still fires on tablet/mobile. */
+/* Weekly hub desktop: keep the matchup stat rows readable at wider widths. */
 @media (min-width: 961px) {
-  .weekly-hub .standings-main.two-col-standings {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
-  }
   .weekly-hub .matchups-shell .m-row { column-gap: 6px; }
   .weekly-hub .matchups-shell .p .meta { font-size: 11px; }
-}
-
-/* Wide screens: widen the standings sidebar and rebalance inner columns */
-@media (min-width: 1400px) {
-  .weekly-hub {
-    grid-template-columns: minmax(0, 1fr) 300px;
-  }
-  .weekly-hub .standings-main.two-col-standings {
-    grid-template-columns: minmax(220px, 1fr) minmax(0, 1.6fr);
-  }
 }
 
 @media (max-width: 640px) {
@@ -18822,6 +18836,20 @@ button:disabled {
 }
 #weeklyLeftTabs .tab-panels {
   padding: 0;
+}
+/* Mobile: 4 tabs (Matchups / Scorers / Scout / Lineup) share the full width
+   instead of a fit-content row that would overflow a narrow phone. */
+@media (max-width: 640px) {
+  #weeklyLeftTabs .tab-bar {
+    width: auto;
+    margin: 12px 10px 8px;
+  }
+  #weeklyLeftTabs .tab-btn {
+    flex: 1 1 0;
+    padding: 7px 6px;
+    font-size: 12px;
+    text-align: center;
+  }
 }
 #weeklyLeftTabs .tab-panel {
   display: none;

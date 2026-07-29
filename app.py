@@ -7685,56 +7685,54 @@ def build_weekly_hub_body(ctx: dict) -> str:
           <a href="./redzone" class="weekly-rz-cta-link">Watch on Redzone →</a>
         </div>
 
-        <div class="standings-main two-col-standings">
-          <div class="standings-col">
-            <div class="card-tabs" id="weeklyLeftTabs">
-              <div class="tab-bar">
-                <button class="tab-btn active" data-tab="scorers">Scorers</button>
-                <button class="tab-btn" data-tab="scout">Scout</button>
-                <button class="tab-btn" data-tab="optimal">Lineup</button>
-              </div>
-              <div class="tab-panels">
-                <div class="tab-panel active" data-tab="scorers">
-                  <div class="week-main-panels">
-                    {main_panel_html}
+        <div class="card-tabs weekly-hub-tabs" id="weeklyLeftTabs">
+          <div class="tab-bar">
+            <button class="tab-btn active" data-tab="matchups">Matchups</button>
+            <button class="tab-btn" data-tab="scorers">Scorers</button>
+            <button class="tab-btn" data-tab="scout">Scout</button>
+            <button class="tab-btn" data-tab="optimal">Lineup</button>
+          </div>
+          <div class="tab-panels">
+            <div class="tab-panel active" data-tab="matchups">
+              <div class="matchups-shell">
+                <div id="weeklyMatchupsContainer">
+                  {matchup_html}
+                </div>
+                <div id="weeklyMatchupsLoading" class="matchups-loading hidden">
+                  <div class="matchups-loading-inner">
+                    <div class="matchups-spinner"></div>
                   </div>
-                </div>
-                <div class="tab-panel" data-tab="scout">
-                  {scout_panel_content}
-                </div>
-                <div class="tab-panel" data-tab="optimal">
-                  {optimal_panel_content}
                 </div>
               </div>
             </div>
-          </div>
-          <div class="standings-col">
-            <div class="matchups-shell">
-              <div id="weeklyMatchupsContainer">
-                {matchup_html}
-              </div>
-              <div id="weeklyMatchupsLoading" class="matchups-loading hidden">
-                <div class="matchups-loading-inner">
-                  <div class="matchups-spinner"></div>
+            <div class="tab-panel" data-tab="scorers">
+              <div class="week-leaders-band">
+                <div class="week-leaders-title">Week Leaders</div>
+                <div class="week-side-panels">
+                  {side_panel_html}
                 </div>
               </div>
+              <div class="week-main-panels">
+                {main_panel_html}
+              </div>
+            </div>
+            <div class="tab-panel" data-tab="scout">
+              {scout_panel_content}
+            </div>
+            <div class="tab-panel" data-tab="optimal">
+              {optimal_panel_content}
             </div>
           </div>
         </div>
       </main>
-
-      <aside class="page-sidebar" data-sidebar-label="Weekly Tools">
-        <div class="week-side-panels">
-          {side_panel_html}
-        </div>
-      </aside>
     </div>
 
 <script>
-// Mobile: keep #weeklyLeftTabs (Scorers / Scout / Lineup) in the main column as
-// primary content instead of relocating it into the "Weekly Tools" drawer, so the
-// tabs are surfaced rather than buried behind a dropdown. The tab-switch JS below
-// finds #weeklyLeftTabs by id regardless of where it sits, so nothing else changes.
+// Weekly Hub is a single one-section-at-a-time tab switcher: Matchups (default) /
+// Scorers / Scout / Lineup. The matchup cards live in the Matchups panel; the
+// Week Leaders band + top scorers live in the Scorers panel. The week-change JS
+// below finds .week-main-panels, .week-side-panels and #weeklyMatchupsContainer
+// by selector regardless of which panel holds them, so re-renders keep working.
 
 (function() {{
   var leagueId  = {league_js};
