@@ -13270,7 +13270,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
     <style>
       .pr-grid-row {
         display: grid;
-        grid-template-columns: 28px 42px 1fr 52px 46px 46px 60px;
+        grid-template-columns: 54px 42px 1fr 52px 46px 46px 60px;
         align-items: center;
         gap: 0;
       }
@@ -13297,6 +13297,15 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       }
       .pr-rank-arrow.up   { color: #22c55e; }
       .pr-rank-arrow.down { color: #ef4444; }
+      /* Overall rank movement shown beside the rank number. */
+      .pr-rank-delta {
+        font-size: 11px;
+        font-weight: 800;
+        line-height: 1;
+        white-space: nowrap;
+      }
+      .pr-rank-delta.up   { color: var(--win); }
+      .pr-rank-delta.down { color: var(--loss); }
       .pr-arrows {
         display: flex;
         justify-content: center;
@@ -13629,12 +13638,12 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           min-width: 0;
         }
         /* Table: hide Age on tablets - rank | arrow | name | pos | team | sort */
-        .pr-grid-row { grid-template-columns: 28px 42px 1fr 44px 42px 56px !important; }
+        .pr-grid-row { grid-template-columns: 50px 42px 1fr 44px 42px 56px !important; }
         .pr-age,  #prAgeHeader  { display: none !important; }
       }
       @media (max-width: 480px) {
         /* Phone: rank | arrow | name | sort - hide pos and team */
-        .pr-grid-row { grid-template-columns: 28px 42px 1fr 56px !important; }
+        .pr-grid-row { grid-template-columns: 50px 42px 1fr 56px !important; }
         .pr-pos-cell, #prTableHeader span:nth-child(4) { display: none !important; }
         .pr-team,     #prTableHeader span:nth-child(6) { display: none !important; }
       }
