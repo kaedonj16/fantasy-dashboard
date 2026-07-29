@@ -10321,19 +10321,35 @@ function openPlayerModal(playerId, playerName, opts) {
             ${rows}
           </div>` : '';
       };
-      // Inner grid for the ADP block, rebuilt whenever a new source lands.
+      // Inner grid for the ADP block, rebuilt once all sources are in.
       const _adpGridHTML = (sources) => {
         const dyn = _adpFmtCard(sources, 'Dynasty', 'dynasty');
         const rdr = _adpFmtCard(sources, 'Redraft', 'redraft');
         return (dyn || rdr) ? (dyn + rdr) : '';
       };
-      // Always render the block shell so lazy sources can populate it even when
-      // Sleeper had nothing for this player; hidden until it has content.
-      const _adpGridInner = _adpGridHTML(_adpSources);
+      // Skeleton shown while the market sources load, so all sources (Sleeper +
+      // BR Fantasy + Consensus) appear together rather than Sleeper first.
+      const _adpSkelCard = (fmtLabel) => `
+        <div class="pm-adp-card">
+          <div class="pm-adp-row pm-adp-head-row">
+            <span class="pm-adp-card-h">${fmtLabel}</span>
+            <span class="pm-adp-col-h${_c1}">1QB</span>
+            <span class="pm-adp-col-h${_cS}">SF</span>
+          </div>
+          ${[0, 1, 2].map(() => `
+            <div class="pm-adp-row">
+              <span class="skeleton skeleton-line" style="width:62px;height:11px;margin:2px 0;"></span>
+              <span class="skeleton skeleton-line" style="height:14px;margin:2px 0;"></span>
+              <span class="skeleton skeleton-line" style="height:14px;margin:2px 0;"></span>
+            </div>`).join('')}
+        </div>`;
+      const _adpSkeletonGrid = () => _adpSkelCard('Dynasty') + _adpSkelCard('Redraft');
+      // Render the block with a skeleton up front; the real grid replaces it once
+      // the market fetch settles (or falls back to what we have on timeout/error).
       const adpRow = `
-        <div class="pm-adp-block" id="pmAdpBlock" data-pid="${playerId}"${_adpGridInner ? '' : ' style="display:none;"'}>
+        <div class="pm-adp-block" id="pmAdpBlock" data-pid="${playerId}">
           <div class="pm-adp-head">ADP</div>
-          <div class="pm-adp-grid" id="pmAdpGrid">${_adpGridInner}</div>
+          <div class="pm-adp-grid" id="pmAdpGrid">${_adpSkeletonGrid()}</div>
         </div>`;
 
       const _heroCardCount = 2 + (ppgCard ? 1 : 0) + (totalCard ? 1 : 0);
@@ -10451,28 +10467,30 @@ function openPlayerModal(playerId, playerName, opts) {
         <div class="pm-panel" id="pm-panel-live"></div>
       `;
 
-      // ── Lazy-load market ADP (BR Fantasy + Consensus) ─────────────────────
-      // These need per-player draft-crawler DB queries, so they're fetched
-      // after the modal opens and merged into the ADP block as they land — the
-      // modal itself shows immediately on the inline Sleeper source.
+      // ── Load market ADP (BR Fantasy + Consensus), then reveal all at once ──
+      // These need per-player draft-crawler DB queries, so they're fetched after
+      // the modal opens. The block shows a skeleton until this settles, then
+      // Sleeper + market render together (rather than Sleeper appearing first).
       (function _loadMarketAdp() {
+        let _done = false;
+        const _reveal = (extra) => {
+          if (_done) return;
+          _done = true;
+          const block = document.getElementById('pmAdpBlock');
+          const grid = document.getElementById('pmAdpGrid');
+          // Bail if the modal was closed or a different player is now shown.
+          if (!block || !grid || block.dataset.pid !== String(playerId)) return;
+          const inner = _adpGridHTML(_adpSources.concat(extra || []));
+          if (inner) { grid.innerHTML = inner; block.style.display = ''; }
+          else { block.style.display = 'none'; }   // no ADP anywhere → drop it
+        };
+        // Safety net: if the request hangs, reveal what we have so the skeleton
+        // never sticks.
+        const _t = setTimeout(() => _reveal([]), 8000);
         fetch(`/api/player-adp/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}`)
           .then(r => r.ok ? r.json() : null)
-          .then(j => {
-            const extra = j && Array.isArray(j.sources) ? j.sources : [];
-            if (!extra.length) return;
-            const block = document.getElementById('pmAdpBlock');
-            const grid = document.getElementById('pmAdpGrid');
-            // Bail if the modal was closed or a different player is now shown.
-            if (!block || !grid || block.dataset.pid !== String(playerId)) return;
-            _adpSources = _adpSources.concat(extra);
-            const inner = _adpGridHTML(_adpSources);
-            if (inner) {
-              grid.innerHTML = inner;
-              block.style.display = '';
-            }
-          })
-          .catch(() => {});
+          .then(j => { clearTimeout(_t); _reveal(j && Array.isArray(j.sources) ? j.sources : []); })
+          .catch(() => { clearTimeout(_t); _reveal([]); });
       })();
 
       // ── Show tab bar and configure it ─────────────────────────────────────
