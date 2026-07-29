@@ -20585,22 +20585,31 @@ def _attach_adp_from_source(players, adp_season, source, league_id=None, token=N
     falls back per axis when a source has no data there, so a choice like
     "Yahoo" fills redraft from Yahoo and leaves dynasty/rookie on their best
     available feed. Returns adp_sources {mode: label}."""
-    from dashboard_services.adp_service import resolve_market_adp, ADP_SOURCE_LABELS
+    from dashboard_services.adp_service import (
+        resolve_market_adp, ADP_SOURCE_LABELS, ordinal_rank_adp,
+    )
 
     label = ADP_SOURCE_LABELS.get(source, source.title())
     # BR Fantasy's raw avg_pick can't reach 1 (the No. 1 player still goes 5th in
-    # some drafts, so the mean floats to ~3), so re-rank it (ordered by avg_pick)
-    # to a clean 1..N draft board that reads like ADP and tops out at 1.
-    as_rank = (source == "brfantasy")
+    # some drafts, so the mean floats to ~3), so we show it as a clean 1..N draft
+    # board. Rank it over the players WE actually list (this pool), not the whole
+    # crawl population — otherwise a crawl-only player nobody sees holds slot #1
+    # and the top player we show reads as #2.
+    _brf = (source == "brfantasy")
+    _pool_ids = {str(_p.get("id") or "") for _p in players}
     by_field = {}
     used = {"startup": False, "rookie": False, "redraft": False}
     for mode, scoring_type, is_sf, field in _ADP_MODE_AXES:
         try:
             m = resolve_market_adp(int(adp_season), is_sf, scoring_type=scoring_type,
                                    source=source, league_id=league_id, token=token,
-                                   as_rank=as_rank) or {}
+                                   as_rank=False) or {}
         except Exception:
             m = {}
+        if _brf and m:
+            # Re-rank to a contiguous board over just our listed players.
+            m = ordinal_rank_adp({_pid: _v for _pid, _v in m.items()
+                                  if _pid in _pool_ids})
         by_field[field] = m
         if m:
             used[mode] = True
