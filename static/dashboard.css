@@ -6923,6 +6923,12 @@ select:focus {
     color: var(--on-accent);
     border-color: var(--accent);
   }
+  /* One-at-a-time tab switching on mobile: show only the active jump target and
+     hide the others, so the jump bar behaves like the Matchups tabs rather than
+     just scrolling. Desktop keeps every section in its normal multi-column
+     layout (this whole block is mobile-only). */
+  .os-tab-panel { display: none !important; }
+  .os-tab-panel.os-tab-active { display: block !important; }
 }
 
 .os-hero-title {
@@ -18857,6 +18863,19 @@ button:disabled {
 #weeklyLeftTabs .tab-panel.active {
   display: block;
   padding: 10px 12px 12px;
+}
+
+/* On the Weekly Hub the matchup carousel sits inside the Matchups tab panel,
+   which is already inside the #weeklyLeftTabs card. Drop the carousel's own card
+   chrome so the whole preview isn't framed by a border-inside-a-border. The
+   inner scoreboard/row cards stay as they are. */
+#weeklyLeftTabs .tab-panel .matchup-carousel {
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
 }
 
 .pm-trade-card {

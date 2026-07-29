@@ -1641,8 +1641,8 @@ _NAV_ICON_PATHS = {
                "a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5"
                "a1 1 0 0 1 1 1z'/>"),
     "swords": ("<path d='M14.5 17.5 3 6V3h3l11.5 11.5'/><path d='M13 19l6-6'/><path d='M16 16l4 4'/>"
-               "<path d='M19 21l2-2'/><path d='M9.5 17.5 21 6V3h-3L6.5 14.5'/><path d='M5 14l-2 2'/>"
-               "<path d='M3 19l2 2'/>"),
+               "<path d='M19 21l2-2'/><path d='M14.5 6.5 18 3h3v3l-3.5 3.5'/><path d='M5 14l4 4'/>"
+               "<path d='M7 17l-3 3'/><path d='M3 19l2 2'/>"),
     "trophy": ("<path d='M6 9H4.5a2.5 2.5 0 0 1 0-5H6'/><path d='M18 9h1.5a2.5 2.5 0 0 0 0-5H18'/>"
                "<path d='M4 22h16'/><path d='M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22'/>"
                "<path d='M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22'/>"
@@ -5300,26 +5300,56 @@ def build_dashboard_body(ctx: dict) -> str:
           </div>
         </section>
 
+        <nav class="os-jump-nav" aria-label="Jump to section">
+          <button type="button" class="active" data-jump="os-jump-report">Report</button>
+          <button type="button" data-jump="os-jump-waivers">Waivers</button>
+          <button type="button" data-jump="os-jump-teams">Team Values</button>
+        </nav>
+
         <div id="sinceLastVisitCard" class="slv-wrap" data-slv-init="1"></div>
 
-        {lineup_alert_html}
-        {roster_moves_html}
-        {gm_card_html}
-        {trade_window_html}
-        {usage_movers_html}
+        <div id="os-jump-report" class="os-tab-panel os-tab-active">
+          {lineup_alert_html}
+          {roster_moves_html}
+          {gm_card_html}
+          {trade_window_html}
+          {usage_movers_html}
 
-        {matchup_html}
-        {bench_check_html}
-        {season_review_html}
-        {waiver_card_html}
+          {matchup_html}
+          {bench_check_html}
+          {season_review_html}
+        </div>
+
+        <div id="os-jump-waivers" class="os-tab-panel">
+          {waiver_card_html}
+        </div>
       </main>
 
-      <aside class="os-right-col">
+      <aside class="os-right-col os-tab-panel" id="os-jump-teams">
         <div class="os-sidebar-shell">
           {teams_sidebar_html}
         </div>
       </aside>
     </div>
+    <script>
+    (function(){{
+      var nav = document.querySelector('.os-jump-nav');
+      if (!nav) return;
+      var ids = Array.prototype.map.call(nav.querySelectorAll('[data-jump]'), function(b){{ return b.getAttribute('data-jump'); }});
+      function activate(id){{
+        ids.forEach(function(pid){{
+          var p = document.getElementById(pid);
+          if (p) p.classList.toggle('os-tab-active', pid === id);
+        }});
+        nav.querySelectorAll('button').forEach(function(x){{ x.classList.toggle('active', x.getAttribute('data-jump') === id); }});
+      }}
+      nav.querySelectorAll('[data-jump]').forEach(function(btn){{
+        btn.addEventListener('click', function(){{ activate(btn.getAttribute('data-jump')); }});
+      }});
+      var init = nav.querySelector('button.active') || nav.querySelector('button');
+      if (init) activate(init.getAttribute('data-jump'));
+    }})();
+    </script>
     <script>
     (function() {{
       var el = document.getElementById('dash-playoff-tile');
@@ -6110,7 +6140,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
       <button type="button" data-jump="os-std-power">Power &amp; Playoffs</button>
     </nav>
     <div class="standings-main two-col-standings">
-      <div class="standings-col" id="os-std-value">
+      <div class="standings-col os-tab-panel os-tab-active" id="os-std-value">
         <div class="card">
           <div class="card-tabs">
             <div class="tab-strip dynasty-value-strip">
@@ -6124,7 +6154,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
           </div>
         </div>
       </div>
-      <div class="standings-col" id="os-std-power">
+      <div class="standings-col os-tab-panel" id="os-std-power">
         {power_playoffs_html}
       </div>
     </div>
@@ -6132,14 +6162,19 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     (function(){{
       var nav = document.querySelector('.std-jump-nav');
       if (!nav) return;
-      nav.querySelectorAll('[data-jump]').forEach(function(btn){{
-        btn.addEventListener('click', function(){{
-          var t = document.getElementById(btn.getAttribute('data-jump'));
-          if (t) t.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
-          nav.querySelectorAll('button').forEach(function(x){{ x.classList.remove('active'); }});
-          btn.classList.add('active');
+      var ids = Array.prototype.map.call(nav.querySelectorAll('[data-jump]'), function(b){{ return b.getAttribute('data-jump'); }});
+      function activate(id){{
+        ids.forEach(function(pid){{
+          var p = document.getElementById(pid);
+          if (p) p.classList.toggle('os-tab-active', pid === id);
         }});
+        nav.querySelectorAll('button').forEach(function(x){{ x.classList.toggle('active', x.getAttribute('data-jump') === id); }});
+      }}
+      nav.querySelectorAll('[data-jump]').forEach(function(btn){{
+        btn.addEventListener('click', function(){{ activate(btn.getAttribute('data-jump')); }});
       }});
+      var init = nav.querySelector('button.active') || nav.querySelector('button');
+      if (init) activate(init.getAttribute('data-jump'));
     }})();
     </script>
     """
@@ -7166,13 +7201,13 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
         <div id="sinceLastVisitCard" class="slv-wrap" data-slv-init="1"></div>
 
-        <div id="os-jump-report">{gm_card_html}</div>
+        <div id="os-jump-report" class="os-tab-panel os-tab-active">
+          {gm_card_html}
+          {season_review_html}
+          {matchup_html}
+        </div>
 
-        {season_review_html}
-
-        {matchup_html}
-
-        <section class="os-card os-col-fill" id="os-jump-waivers">
+        <section class="os-card os-col-fill os-tab-panel" id="os-jump-waivers">
           <div class="os-section-head">
             <div class="os-section-head-content">
               {_section_title_link("Waiver Wire Targets", "page_waivers", platform, season, ctx.get("league_id"))}
@@ -7188,7 +7223,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         </section>
       </main>
 
-      <aside class="os-right-col" id="os-jump-teams">
+      <aside class="os-right-col os-tab-panel" id="os-jump-teams">
         <div class="os-sidebar-shell">
           {teams_sidebar_html}
         </div>
@@ -7198,14 +7233,19 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     (function(){{
       var nav = document.querySelector('.os-jump-nav');
       if (!nav) return;
-      nav.querySelectorAll('[data-jump]').forEach(function(btn){{
-        btn.addEventListener('click', function(){{
-          var t = document.getElementById(btn.getAttribute('data-jump'));
-          if (t) t.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
-          nav.querySelectorAll('button').forEach(function(x){{ x.classList.remove('active'); }});
-          btn.classList.add('active');
+      var ids = Array.prototype.map.call(nav.querySelectorAll('[data-jump]'), function(b){{ return b.getAttribute('data-jump'); }});
+      function activate(id){{
+        ids.forEach(function(pid){{
+          var p = document.getElementById(pid);
+          if (p) p.classList.toggle('os-tab-active', pid === id);
         }});
+        nav.querySelectorAll('button').forEach(function(x){{ x.classList.toggle('active', x.getAttribute('data-jump') === id); }});
+      }}
+      nav.querySelectorAll('[data-jump]').forEach(function(btn){{
+        btn.addEventListener('click', function(){{ activate(btn.getAttribute('data-jump')); }});
       }});
+      var init = nav.querySelector('button.active') || nav.querySelector('button');
+      if (init) activate(init.getAttribute('data-jump'));
     }})();
     </script>
     """
