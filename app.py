@@ -23111,12 +23111,12 @@ def api_player_details(player_id: str):
             # it's cheap per modal open, and empty/errors degrade to None.
             _mkt_cache: dict = {}
 
-            def _market_pick(_source, _is_sf):
-                _key = (_source, _is_sf)
+            def _market_pick(_source, _scoring, _is_sf):
+                _key = (_source, _scoring, _is_sf)
                 if _key not in _mkt_cache:
                     try:
                         _mkt_cache[_key] = resolve_market_adp(
-                            int(season), _is_sf, "dynasty", source=_source) or {}
+                            int(season), _is_sf, _scoring, source=_source) or {}
                     except Exception:
                         _mkt_cache[_key] = {}
                 _v = _mkt_cache[_key].get(str(player_id))
@@ -23133,16 +23133,16 @@ def api_player_details(player_id: str):
                     "redraft_sf":  _adp_pick("adp_2qb"),
                 },
                 "BR Fantasy": {
-                    "dynasty_1qb": _market_pick("brfantasy", False),
-                    "dynasty_sf":  _market_pick("brfantasy", True),
-                    "redraft_1qb": None,
-                    "redraft_sf":  None,
+                    "dynasty_1qb": _market_pick("brfantasy", "dynasty", False),
+                    "dynasty_sf":  _market_pick("brfantasy", "dynasty", True),
+                    "redraft_1qb": _market_pick("brfantasy", "redraft", False),
+                    "redraft_sf":  _market_pick("brfantasy", "redraft", True),
                 },
                 "Consensus": {
-                    "dynasty_1qb": _market_pick("consensus", False),
-                    "dynasty_sf":  _market_pick("consensus", True),
-                    "redraft_1qb": None,
-                    "redraft_sf":  None,
+                    "dynasty_1qb": _market_pick("consensus", "dynasty", False),
+                    "dynasty_sf":  _market_pick("consensus", "dynasty", True),
+                    "redraft_1qb": _market_pick("consensus", "redraft", False),
+                    "redraft_sf":  _market_pick("consensus", "redraft", True),
                 },
             }
             _sources = [

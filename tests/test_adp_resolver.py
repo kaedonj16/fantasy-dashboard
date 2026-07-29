@@ -170,12 +170,15 @@ def test_resolve_brfantasy_source_value(monkeypatch):
 
 # ── adp_source_options (selector menus) ──────────────────────────────────────
 
-def test_source_options_redraft_offers_yahoo_not_brfantasy():
+def test_source_options_redraft_offers_yahoo_and_brfantasy():
+    # The draft crawler now ingests keeper/redraft drafts, so BR Fantasy is a
+    # redraft source alongside Yahoo.
     opts = A.adp_source_options("redraft")
     values = [v for v, _label in opts]
     assert values[0] == "consensus"
-    assert "yahoo" in values and "brfantasy" not in values
+    assert "yahoo" in values and "brfantasy" in values
     assert dict(opts)["yahoo"] == "Yahoo"
+    assert dict(opts)["brfantasy"] == "BR Fantasy"
 
 
 def test_source_options_dynasty_offers_brfantasy_not_yahoo():
