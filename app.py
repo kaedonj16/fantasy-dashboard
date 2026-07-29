@@ -20566,9 +20566,10 @@ def _attach_adp_from_source(players, adp_season, source, league_id=None, token=N
     from dashboard_services.adp_service import resolve_market_adp, ADP_SOURCE_LABELS
 
     label = ADP_SOURCE_LABELS.get(source, source.title())
-    # Show BR Fantasy's actual average draft pick (avg_pick), not a re-ranked
-    # board, so it reads on the same scale as the other feeds.
-    as_rank = False
+    # BR Fantasy's raw avg_pick can't reach 1 (the No. 1 player still goes 5th in
+    # some drafts, so the mean floats to ~3), so re-rank it (ordered by avg_pick)
+    # to a clean 1..N draft board that reads like ADP and tops out at 1.
+    as_rank = (source == "brfantasy")
     by_field = {}
     used = {"startup": False, "rookie": False, "redraft": False}
     for mode, scoring_type, is_sf, field in _ADP_MODE_AXES:
@@ -23112,8 +23113,12 @@ def api_player_details(player_id: str):
                 _key = (_source, _scoring, _is_sf)
                 if _key not in _mkt_cache:
                     try:
+                        # Match the rankings page: re-rank BR Fantasy (ordered by
+                        # its raw avg_pick) to a clean 1..N board so it tops out at
+                        # 1 instead of the ~3 mean-pick floor.
                         _mkt_cache[_key] = resolve_market_adp(
-                            int(season), _is_sf, _scoring, source=_source) or {}
+                            int(season), _is_sf, _scoring, source=_source,
+                            as_rank=(_source == "brfantasy")) or {}
                     except Exception:
                         _mkt_cache[_key] = {}
                 _v = _mkt_cache[_key].get(str(player_id))
