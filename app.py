@@ -1752,9 +1752,9 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     logo on the dashboard and hides it everywhere else). The dock keeps Home and
     More fixed; the three middle slots change with the season and with the page
     you are on:
-      - In season:       Matchups, Teams, Rankings.
-      - Offseason keeper: Draft, Keeper, Rankings.
-      - Offseason other:  Draft, Rankings, Teams.
+      - In season:       Matchups, Trades, Teams.
+      - Offseason keeper: Draft, Trades, Keeper.
+      - Offseason other:  Draft, Trades, Teams.
     Whatever page you open takes the last middle slot if it is not already a tab,
     so the active state is never lost. Everything else (every page, plus Search,
     Watchlist, the league switcher and Settings) lives in the More sheet. The
@@ -1784,11 +1784,11 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     # ── Dynamic dock ──────────────────────────────────────────────────────────
     show_keeper = _nav_show_keeper(platform, league_id, season)
     if not offseason:
-        middle = ["weekly", "teams", "players"]
+        middle = ["weekly", "trade", "teams"]
     elif show_keeper:
-        middle = ["draft", "keeper", "players"]
+        middle = ["draft", "trade", "keeper"]
     else:
-        middle = ["draft", "players", "teams"]
+        middle = ["draft", "trade", "teams"]
 
     dock_keys = ["dashboard"] + middle
     # The page you're on always earns a tab: if it's a real page and not already
@@ -1924,12 +1924,15 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         "</div>"
     )
 
+    # Section order mirrors the desktop nav bar (Trades, Weekly, League, Players,
+    # Draft, Stats) so the two navs read the same. Find (search) and Account are
+    # mobile-only, so they bookend the list — Find on top, Account last.
     sheet = (
         "<div class='br-sheet-scrim' id='brSheetScrim'></div>"
         "<nav class='br-sheet' id='brMoreSheet' aria-label='More' aria-hidden='true'>"
         "  <div class='br-sheet-grip' aria-hidden='true'></div>"
-        f"  {find_html}{weekly_html}{draft_html}{league_html}{players_html}"
-        f"  {trades_html}{stats_html}{account_html}"
+        f"  {find_html}{trades_html}{weekly_html}{league_html}{players_html}"
+        f"  {draft_html}{stats_html}{account_html}"
         "</nav>"
     )
 

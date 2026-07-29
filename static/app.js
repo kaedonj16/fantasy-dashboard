@@ -17234,12 +17234,13 @@ function setupFunAwardsGrid() {
 }
 
 // Mobile sidebar: wrap sidebar content in a collapsible toggle drawer.
-// Handles both .page-sidebar (league pages, ≤1180px) and .otc-side (trade calc, ≤1200px).
-// Both default to CLOSED on mobile.
+// Handles .page-sidebar (league pages, ≤1180px), which defaults to CLOSED on mobile.
+// The trade calculator's .otc-side (Player Insights) is intentionally NOT collapsed
+// here: on mobile it flows below the calculator as a normal section (see the
+// `.otc-side { order: 1 }` rule) rather than sitting up top behind a dropdown.
 (function initMobileSidebar() {
   var configs = [
     { selector: '.page-sidebar', breakpoint: 1180, toggleClass: 'page-sidebar-toggle', bodyClass: 'page-sidebar-body', label: 'League Analytics' },
-    { selector: '.otc-side',     breakpoint: 1200, toggleClass: 'otc-side-toggle',     bodyClass: 'otc-side-body',     label: 'Player Insights' },
   ];
 
   function setupSidebar(sidebar, cfg) {

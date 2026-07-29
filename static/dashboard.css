@@ -10651,7 +10651,10 @@ img, svg, canvas {
 /* Shared mobile sidebar toggle styles - active at both breakpoints */
 @media (max-width: 1200px) {
   .otc-layout .otc-side {
-    order: -1;
+    /* Player Insights flows BELOW the calculator on mobile (was order:-1, which
+       floated it to the top behind a "Player Insights" dropdown). */
+    order: 1;
+    margin-top: 14px;
   }
 }
 @media (max-width: 1200px) {

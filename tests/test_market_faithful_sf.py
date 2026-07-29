@@ -8,6 +8,8 @@ observed SF/1QB trade ratio. This locks that contract, incl. the fallback signal
 """
 import pytest
 
+pytest.importorskip("numpy")  # trade_value_model imports numpy at load
+
 from data_building.trade_intel.trade_value_model import _market_faithful_sf
 
 
