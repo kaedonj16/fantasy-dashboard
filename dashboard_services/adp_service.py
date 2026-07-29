@@ -9,6 +9,14 @@ from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
+# Crawler ADP is an expensive GROUP BY over the whole draft_adp table and the
+# underlying data only changes once a day (nightly crawl). A player modal can
+# ask for it up to ~8x per open (BR Fantasy + Consensus x dynasty/redraft x
+# 1QB/SF), so cache each (season, is_sf, scoring_type, min_samples) result in
+# process for a short window to keep modals snappy.
+_CRAWLER_ADP_CACHE: Dict[tuple, tuple] = {}
+_CRAWLER_ADP_TTL = 600  # seconds
+
 
 def _atomic_json_write(path, data) -> None:
     """Write JSON to a temp file then rename - prevents partial reads on crash."""
@@ -320,6 +328,12 @@ def fetch_crawler_adp(season: int, is_sf: bool, scoring_type: str,
     draft_type = _CRAWLER_DRAFT_TYPE.get(scoring_type)
     if not draft_type:
         return {}
+
+    _ck = (int(season), bool(is_sf), scoring_type, int(min_samples))
+    _cached = _CRAWLER_ADP_CACHE.get(_ck)
+    if _cached is not None and (time.time() - _cached[0]) < _CRAWLER_ADP_TTL:
+        return _cached[1]
+
     try:
         from dashboard_services.db import get_conn
 
@@ -365,6 +379,7 @@ def fetch_crawler_adp(season: int, is_sf: bool, scoring_type: str,
                 out[str(r["player_id"])] = float(_ap)
             except (TypeError, ValueError):
                 continue
+        _CRAWLER_ADP_CACHE[_ck] = (time.time(), out)
         return out
     except Exception:
         logger.debug("adp_service: crawler ADP source failed", exc_info=True)
