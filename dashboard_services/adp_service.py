@@ -247,10 +247,10 @@ _SLEEPER_ADP_FIELDS = {
 
 # Which market sources are valid per scoring axis. Yahoo publishes redraft ADP
 # only (it is a seasonal platform), so it is offered for redraft alone. The
-# "brfantasy" source is our own draft-crawler feed, which only sees dynasty
-# startup and rookie drafts, so it is offered on those two axes.
+# "brfantasy" source is our own draft-crawler feed. It sees dynasty startup,
+# rookie, and keeper/redraft drafts, so it is offered on all three axes.
 ADP_SOURCES = {
-    "redraft": ("sleeper", "yahoo"),
+    "redraft": ("sleeper", "yahoo", "brfantasy"),
     "dynasty": ("sleeper", "brfantasy"),
     "rookie":  ("sleeper", "brfantasy"),
 }
@@ -264,7 +264,7 @@ ADP_SOURCE_LABELS = {
 }
 
 # resolver scoring axis -> draft_adp.draft_type produced by the BR Fantasy crawler.
-_CRAWLER_DRAFT_TYPE = {"dynasty": "startup", "rookie": "rookie"}
+_CRAWLER_DRAFT_TYPE = {"dynasty": "startup", "redraft": "redraft", "rookie": "rookie"}
 
 # Reference league size the crawler's size-normalized ADP is rescaled onto, so
 # the output reads as an overall pick in a standard 12-team draft.
@@ -316,9 +316,9 @@ def fetch_crawler_adp(season: int, is_sf: bool, scoring_type: str,
     rescaled to a reference 12-team draft. Formats stay separate: dynasty and
     rookie are distinct markets (and distinct axes), never blended together.
 
-    Only dynasty startup and rookie drafts are crawled, so ``redraft`` yields
-    nothing. Falls back to the latest season with data when the requested season
-    is empty (early in a season the startups are sparse). Empty on any failure."""
+    Dynasty startup, rookie, and keeper/redraft drafts are crawled. Falls back to
+    the latest season with data when the requested season is empty (early in a
+    season the startups are sparse). Empty on any failure."""
     draft_type = _CRAWLER_DRAFT_TYPE.get(scoring_type)
     if not draft_type:
         return {}
