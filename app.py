@@ -4269,7 +4269,8 @@ def _all_play_from_df_weekly(df_weekly) -> dict:
 
 
 def render_standings(team_stats, length, all_play: dict = None,
-                     playoff_spots: int = None, total_regular_weeks: int = None) -> str:
+                     playoff_spots: int = None, total_regular_weeks: int = None,
+                     movement: dict = None) -> str:
     if team_stats is None or team_stats.empty:
         return """
         <div class="card-body">
@@ -4389,9 +4390,19 @@ def render_standings(team_stats, length, all_play: dict = None,
         else:
             team_cell = f"{img} {html.escape(owner)}"
 
+        # Week-over-week seed movement (positive = climbed). Same arrows as the
+        # compact standings; blank when there's no prior week to compare.
+        _mv = (movement or {}).get(owner)
+        mv_html = ""
+        if _mv:
+            if _mv > 0:
+                mv_html = f"<span class='rank-move up' title='Up {_mv} since last week'>&#9650;{_mv}</span>"
+            elif _mv < 0:
+                mv_html = f"<span class='rank-move down' title='Down {abs(_mv)} since last week'>&#9660;{abs(_mv)}</span>"
+
         rows.append(f"""
             <tr class="{_trcls}"{_mo_attr} data-rk-key="{html.escape(owner, quote=True)}">
-              <td class="num rank-cell">{rank_mark(int(row['Rank']), size=28, ring_others=False)}</td>
+              <td class="num rank-cell">{rank_mark(int(row['Rank']), size=28, ring_others=False)}{mv_html}</td>
               <td class="{_tdcls}">{team_cell}</td>
               <td>{record}</td>
               <td>{row['PF']:.1f}</td>
@@ -6375,6 +6386,7 @@ def _standings_panels(ctx: dict, power_rankings=None) -> dict:
     standings_html = render_standings(
         team_stats, num_teams, all_play=_all_play,
         playoff_spots=_pp_spots, total_regular_weeks=_pp_weeks,
+        movement=_standings_movement(df_weekly),
     )
 
     if (
@@ -13187,9 +13199,14 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
               <span class="active-setting-tag">Dynasty</span>
               <span class="active-setting-tag" id="prTepTag" style="display:none;">TE+</span>
             </div>
-            <!-- Sort + ADP source: a paired control group (side by side on
-                 mobile; the ADP source only appears when sorting by ADP). -->
+            <!-- ADP source + Sort: a paired control group (side by side on
+                 mobile). The ADP source only appears when sorting by ADP, and
+                 sits to the LEFT so the Sort control stays on the far right. -->
             <div class="filter-sort-group">
+              <div class="filter-sort" id="prAdpSrcWrap" style="display:none;">
+                <label class="filter-label" for="prAdpSource">ADP source</label>
+                <select id="prAdpSource" onchange="prReloadAdpSource()"></select>
+              </div>
               <div class="filter-sort">
                 <label class="filter-label" for="prSort">Sort by</label>
                 <select id="prSort" onchange="prPage=1;prFlipRender()">
@@ -13200,10 +13217,6 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
                   <option value="ppg">PPG</option>
                   <option value="total_pts">Total Points</option>
                 </select>
-              </div>
-              <div class="filter-sort" id="prAdpSrcWrap" style="display:none;">
-                <label class="filter-label" for="prAdpSource">ADP source</label>
-                <select id="prAdpSource" onchange="prReloadAdpSource()"></select>
               </div>
             </div>
           </div>
@@ -13257,7 +13270,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
     <style>
       .pr-grid-row {
         display: grid;
-        grid-template-columns: 28px 42px 1fr 52px 46px 46px 60px;
+        grid-template-columns: 54px 42px 1fr 52px 46px 46px 60px;
         align-items: center;
         gap: 0;
       }
@@ -13284,6 +13297,15 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       }
       .pr-rank-arrow.up   { color: #22c55e; }
       .pr-rank-arrow.down { color: #ef4444; }
+      /* Overall rank movement shown beside the rank number. */
+      .pr-rank-delta {
+        font-size: 11px;
+        font-weight: 800;
+        line-height: 1;
+        white-space: nowrap;
+      }
+      .pr-rank-delta.up   { color: var(--win); }
+      .pr-rank-delta.down { color: var(--loss); }
       .pr-arrows {
         display: flex;
         justify-content: center;
@@ -13616,12 +13638,12 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           min-width: 0;
         }
         /* Table: hide Age on tablets - rank | arrow | name | pos | team | sort */
-        .pr-grid-row { grid-template-columns: 28px 42px 1fr 44px 42px 56px !important; }
+        .pr-grid-row { grid-template-columns: 50px 42px 1fr 44px 42px 56px !important; }
         .pr-age,  #prAgeHeader  { display: none !important; }
       }
       @media (max-width: 480px) {
         /* Phone: rank | arrow | name | sort - hide pos and team */
-        .pr-grid-row { grid-template-columns: 28px 42px 1fr 56px !important; }
+        .pr-grid-row { grid-template-columns: 50px 42px 1fr 56px !important; }
         .pr-pos-cell, #prTableHeader span:nth-child(4) { display: none !important; }
         .pr-team,     #prTableHeader span:nth-child(6) { display: none !important; }
       }
@@ -23613,6 +23635,169 @@ def api_player_game_logs(player_id: str):
 clean_nan_for_json = _sanitize_for_json
 
 
+def _spark_svg(values, width: int = 132, height: int = 36, up=None) -> str:
+    """Inline SVG sparkline from a list of numbers. ``up`` True=green, False=red,
+    None=accent. Returns '' with fewer than two points."""
+    pts = [float(v) for v in values if v is not None]
+    if len(pts) < 2:
+        return ""
+    lo, hi = min(pts), max(pts)
+    span = (hi - lo) or 1.0
+    n = len(pts)
+    pad = 3
+
+    def _x(i):
+        return pad + i * (width - 2 * pad) / (n - 1)
+
+    def _y(v):
+        return height - pad - (v - lo) / span * (height - 2 * pad)
+
+    line = " ".join(f"{'M' if i == 0 else 'L'}{_x(i):.1f} {_y(v):.1f}"
+                    for i, v in enumerate(pts))
+    area = f"{line} L{_x(n - 1):.1f} {height} L{_x(0):.1f} {height} Z"
+    cls = "up" if up is True else ("down" if up is False else "")
+    ex, ey = _x(n - 1), _y(pts[-1])
+    return (
+        f"<svg class='tm-spark {cls}' width='{width}' height='{height}' "
+        f"viewBox='0 0 {width} {height}' aria-hidden='true'>"
+        f"<path class='tm-spark-fill' d='{area}'/>"
+        f"<path class='tm-spark-line' d='{line}'/>"
+        f"<circle class='tm-spark-cap' cx='{ex:.1f}' cy='{ey:.1f}' r='2.6'/></svg>"
+    )
+
+
+def _luck_series_for(df_weekly, owner) -> list:
+    """[(week, cumulative luck_delta)] for one owner across finalized weeks."""
+    try:
+        fin = df_weekly[df_weekly["finalized"] == True]
+        if fin.empty:
+            return []
+        weeks = sorted(int(w) for w in fin["week"].unique())
+        from utils.all_play import all_play_analysis
+        out = []
+        for wk in weeks:
+            sub = fin[fin["week"] <= wk]
+            ws, aw = {}, {}
+            for _, r in sub.iterrows():
+                w = int(r["week"]); o = str(r["owner"])
+                ws.setdefault(w, {})[o] = float(r["points"] or 0)
+                aw[o] = aw.get(o, 0.0) + float(r["win"] or 0)
+            ap = all_play_analysis(ws, aw)
+            ld = (ap.get(str(owner)) or {}).get("luck_delta")
+            if ld is not None:
+                out.append((wk, float(ld)))
+        return out
+    except Exception:
+        logger.debug("[team-trends] luck series failed", exc_info=True)
+        return []
+
+
+def _tm_delta_chip(delta, unit: str = "", up_is_good: bool = True) -> str:
+    """Small ▲/▼ chip for a numeric week-over-week delta. '' when None/zero."""
+    if delta is None:
+        return ""
+    try:
+        d = float(delta)
+    except (TypeError, ValueError):
+        return ""
+    if abs(d) < 0.05:
+        return "<span class='tm-tr-chip flat'>&ndash;</span>"
+    good = (d > 0) if up_is_good else (d < 0)
+    cls = "up" if good else "down"
+    arrow = "&#9650;" if d > 0 else "&#9660;"
+    val = f"{abs(d):.1f}".rstrip("0").rstrip(".")
+    return f"<span class='tm-tr-chip {cls}'>{arrow}{val}{unit}</span>"
+
+
+def _build_team_trends_html(league_id, season, week, roster_id, owner,
+                            df_weekly, total_value) -> str:
+    """Trends block for the team modal's Graphs tab: seed movement this week,
+    playoff-odds trend, roster-value trend, and luck trend. Every tile is
+    independently best-effort and omitted when it has no data; returns '' when
+    nothing is available."""
+    tiles = []
+
+    # #3 — seed movement this week (from the weekly results df; no snapshot).
+    try:
+        seed_mv = _standings_movement(df_weekly).get(str(owner))
+        if seed_mv:
+            chip = _tm_delta_chip(seed_mv, unit="", up_is_good=True)
+            tiles.append(
+                "<div class='tm-trend-tile'>"
+                "<div class='tm-tr-label'>Seed this week</div>"
+                f"<div class='tm-tr-lead'>{'Climbed' if seed_mv > 0 else 'Slipped'} "
+                f"{abs(int(seed_mv))} {'spot' if abs(int(seed_mv)) == 1 else 'spots'} {chip}</div>"
+                "</div>"
+            )
+    except Exception:
+        logger.debug("[team-trends] seed movement failed", exc_info=True)
+
+    # #1 — playoff-odds trend (read the weekly snapshots we now record).
+    try:
+        from dashboard_services.playoff_odds_history import get_series as _po_series
+        po = _po_series(league_id, season, roster_id)
+        if po["series"]:
+            spark = _spark_svg([p["pct"] for p in po["series"]],
+                               up=(po["delta"] or 0) >= 0)
+            cur = po["current"]
+            chip = _tm_delta_chip(po["delta"], unit=" pts", up_is_good=True)
+            tiles.append(
+                "<div class='tm-trend-tile'>"
+                "<div class='tm-tr-label'>Playoff odds</div>"
+                f"<div class='tm-tr-big'>{cur:.0f}%{chip}</div>"
+                f"<div class='tm-tr-spark'>{spark}</div>"
+                "</div>"
+            )
+    except Exception:
+        logger.debug("[team-trends] playoff trend failed", exc_info=True)
+
+    # #4 — roster value over time (snapshot the current week, read the series).
+    try:
+        from dashboard_services.team_value_history import record_and_series
+        tv = record_and_series(league_id, season, week, roster_id,
+                               total_value, write=(int(week or 0) >= 1))
+        if tv["series"]:
+            spark = _spark_svg([s["value"] for s in tv["series"]],
+                               up=(tv["delta"] or 0) >= 0)
+            chip = _tm_delta_chip(tv["delta"], unit="", up_is_good=True)
+            tiles.append(
+                "<div class='tm-trend-tile'>"
+                "<div class='tm-tr-label'>Roster value</div>"
+                f"<div class='tm-tr-big'>{tv['current']:,.0f}{chip}</div>"
+                f"<div class='tm-tr-spark'>{spark}</div>"
+                "</div>"
+            )
+    except Exception:
+        logger.debug("[team-trends] value trend failed", exc_info=True)
+
+    # #5 — luck trend (cumulative actual-minus-expected wins, from the df).
+    try:
+        luck_pts = _luck_series_for(df_weekly, owner)
+        if len(luck_pts) >= 2:
+            vals = [v for _w, v in luck_pts]
+            spark = _spark_svg(vals, up=(vals[-1] >= 0))
+            cur = vals[-1]
+            sign = "+" if cur > 0 else ""
+            tiles.append(
+                "<div class='tm-trend-tile'>"
+                "<div class='tm-tr-label'>Luck</div>"
+                f"<div class='tm-tr-big'>{sign}{cur:.1f}<span class='tm-tr-unit'>wins</span></div>"
+                f"<div class='tm-tr-spark'>{spark}</div>"
+                "</div>"
+            )
+    except Exception:
+        logger.debug("[team-trends] luck trend failed", exc_info=True)
+
+    if not tiles:
+        return ""
+    return (
+        "<div class='team-modal-section tm-trends'>"
+        "<h3>Trends</h3>"
+        "<div class='tm-trend-grid'>" + "".join(tiles) + "</div>"
+        "</div>"
+    )
+
+
 @app.route("/api/team-details/<roster_id>")
 def api_team_details(roster_id: str):
     """Get comprehensive team details for modal display."""
@@ -24039,6 +24224,25 @@ def api_team_details(roster_id: str):
             traceback.print_exc()
             # Continue without graph data
 
+        # Team trends for the Graphs tab (seed movement, playoff odds, roster
+        # value, luck). Only in-season — when the graphs fell back to a prior
+        # season, "this week" movement isn't meaningful. Best-effort throughout.
+        trends_html = ""
+        try:
+            _dfw = locals().get("df_weekly")
+            _gseason = int(locals().get("graph_season", season) or season)
+            if _dfw is not None and not _dfw.empty and _gseason == int(season):
+                _tw = 0
+                if "finalized" in _dfw.columns:
+                    _ff = _dfw[_dfw["finalized"] == True]
+                    if not _ff.empty:
+                        _tw = int(_ff["week"].max())
+                trends_html = _build_team_trends_html(
+                    league_id, int(season), _tw, roster_id, team_name,
+                    _dfw, total_value)
+        except Exception:
+            logger.debug("[api_team_details] trends skipped", exc_info=True)
+
         response = {
             "roster_id": roster_id,
             "team_name": team_name,
@@ -24051,7 +24255,8 @@ def api_team_details(roster_id: str):
             "total_value": round(total_value, 1),
             "roster": roster_players,
             "picks": all_picks,
-            "graphs": graphs_data
+            "graphs": graphs_data,
+            "trends_html": trends_html,
         }
 
         # Clean NaN values before JSON serialization
@@ -24742,9 +24947,11 @@ def api_playoff_odds():
         _sim_cached2 = _PLAYOFF_SIM_CACHE.get(_sim_key2)
         if _sim_cached2 and time.time() - _sim_cached2["ts"] < _PLAYOFF_SIM_CACHE_TTL:
             odds = _sim_cached2["data"]
+            _fresh_sim = False
         else:
             odds = simulate_playoff_odds(ctx, platform=platform)
             _PLAYOFF_SIM_CACHE[_sim_key2] = {"data": odds, "ts": time.time()}
+            _fresh_sim = True
 
         settings           = ctx.get("league_settings") or {}
         playoff_week_start = int(settings.get("playoff_week_start") or 15)
@@ -24752,8 +24959,22 @@ def api_playoff_odds():
         current_week       = int(ctx.get("current_week") or 0)
         is_complete        = bool(odds and odds[0].get("is_complete"))
 
+        # Week-over-week movement in the odds ranking. Snapshot the current week
+        # only when we actually re-ran the sim (throttled by the 1h cache) so the
+        # table isn't written on every view; movement itself is a cheap read.
+        # Skipped for a finished season (the table shows Made/Missed, not ranks).
+        movement: dict = {}
+        if not is_complete and current_week >= 1:
+            try:
+                from dashboard_services.playoff_odds_history import record_and_movement
+                movement = record_and_movement(
+                    league_id, season, current_week, odds, write=_fresh_sim)
+            except Exception:
+                logger.debug("[playoff-odds] movement skipped", exc_info=True)
+
         return jsonify({
             "odds":                odds,
+            "movement":            movement,
             "season":              season,
             "current_week":        current_week,
             "playoff_week_start":  playoff_week_start,

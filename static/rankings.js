@@ -53,19 +53,45 @@ function _prReducedMotion() {
 
 // Stroke the polyline up to a fraction `progress` (0–1) of its length, so the
 // caller can sweep it on. Even x-spacing means progress maps cleanly to segments.
-function _prStrokeSpark(ctx2d, pts, w, h, progress) {
+function _prPaintSpark(ctx2d, pts, w, h, progress, col) {
   ctx2d.clearRect(0, 0, w, h);
-  ctx2d.beginPath();
-  ctx2d.moveTo(pts[0].x, pts[0].y);
-  const segs = pts.length - 1;
-  const t = progress * segs;
-  const full = Math.floor(t);
-  for (let i = 1; i <= Math.min(full, segs); i++) ctx2d.lineTo(pts[i].x, pts[i].y);
+  const n = pts.length, segs = n - 1;
+  const t = progress * segs, full = Math.floor(t);
+  // The polyline visible at this progress (for the reveal animation).
+  const line = [pts[0]];
+  for (let i = 1; i <= Math.min(full, segs); i++) line.push(pts[i]);
+  let tip;
   if (full < segs) {
     const frac = t - full, a = pts[full], b = pts[full + 1];
-    ctx2d.lineTo(a.x + (b.x - a.x) * frac, a.y + (b.y - a.y) * frac);
+    tip = { x: a.x + (b.x - a.x) * frac, y: a.y + (b.y - a.y) * frac };
+    line.push(tip);
+  } else {
+    tip = pts[n - 1];
   }
+  // Filled area under the line.
+  ctx2d.beginPath();
+  ctx2d.moveTo(line[0].x, h);
+  line.forEach(p => ctx2d.lineTo(p.x, p.y));
+  ctx2d.lineTo(line[line.length - 1].x, h);
+  ctx2d.closePath();
+  ctx2d.globalAlpha = 0.15;
+  ctx2d.fillStyle = col;
+  ctx2d.fill();
+  ctx2d.globalAlpha = 1;
+  // The line itself.
+  ctx2d.beginPath();
+  ctx2d.moveTo(line[0].x, line[0].y);
+  for (let i = 1; i < line.length; i++) ctx2d.lineTo(line[i].x, line[i].y);
+  ctx2d.strokeStyle = col;
+  ctx2d.lineWidth = 1.7;
+  ctx2d.lineJoin = 'round';
+  ctx2d.lineCap = 'round';
   ctx2d.stroke();
+  // Endpoint dot at the current tip.
+  ctx2d.beginPath();
+  ctx2d.arc(tip.x, tip.y, 2.1, 0, Math.PI * 2);
+  ctx2d.fillStyle = col;
+  ctx2d.fill();
 }
 
 function _prDrawSparkline(canvas, data, animate) {
@@ -82,26 +108,27 @@ function _prDrawSparkline(canvas, data, animate) {
   ctx2d.clearRect(0, 0, w, h);
   const min = Math.min(...data), max = Math.max(...data);
   const range = max - min || 1;
-  const pad = 2;
+  const pad = 3;   // room for the endpoint dot
   const pts = data.map((v, i) => ({
     x: pad + (i / (data.length - 1)) * (w - pad * 2),
     y: (h - pad) - ((v - min) / range) * (h - pad * 2)
   }));
-  const isUp = data[data.length - 1] >= data[0];
-  ctx2d.strokeStyle = isUp ? '#22c55e' : '#ef4444';
-  ctx2d.lineWidth = 1.5;
-  ctx2d.lineJoin = 'round';
-  ctx2d.lineCap = 'round';
+  // Trend color from the app's own win/loss tokens (so it tracks the theme and
+  // matches the rank arrows), green when the value is up over the window, red down.
+  const cs = getComputedStyle(document.documentElement);
+  const green = (cs.getPropertyValue('--win') || '#16a34a').trim();
+  const red   = (cs.getPropertyValue('--loss') || '#ef4444').trim();
+  const col = (data[data.length - 1] >= data[0]) ? green : red;
   if (animate && !_prReducedMotion()) {
     let start = null; const dur = 650;
     (function frame(now) {
       if (start === null) start = now;
       const p = Math.min(1, (now - start) / dur);
-      _prStrokeSpark(ctx2d, pts, w, h, 1 - Math.pow(1 - p, 3)); // easeOutCubic
+      _prPaintSpark(ctx2d, pts, w, h, 1 - Math.pow(1 - p, 3), col); // easeOutCubic
       if (p < 1) requestAnimationFrame(frame);
     })(performance.now());
   } else {
-    _prStrokeSpark(ctx2d, pts, w, h, 1);
+    _prPaintSpark(ctx2d, pts, w, h, 1, col);
   }
 }
 
@@ -533,6 +560,7 @@ function prRender() {
   // This keeps rank #s stable - e.g. searching for a player still shows #47, not #1.
   const _sortedForRank = players.slice().sort((a, b) => {
     if (sortBy === 'age')       return (a.age != null ? a.age : 99) - (b.age != null ? b.age : 99);
+    if (sortBy === 'adp')       { const aA = prGetAdp(a); const bA = prGetAdp(b); return (aA != null ? aA : 99999) - (bA != null ? bA : 99999); }
     if (sortBy === 'pos_rank')  { const rA = prPosRankMap[String(a.id)] || 9999; const rB = prPosRankMap[String(b.id)] || 9999; return rA - rB; }
     if (sortBy === 'ppg')       return (b.ppg != null ? b.ppg : -1) - (a.ppg != null ? a.ppg : -1);
     if (sortBy === 'total_pts') return (b.total_pts != null ? b.total_pts : -1) - (a.total_pts != null ? a.total_pts : -1);
@@ -665,14 +693,21 @@ function prRender() {
     // equals `val`. Preserves the 7-day shape; guarantees the endpoint matches.
     const sparkData = prAlignSpark(prGetSparkData(p.id), val);
 
-    // Arrow column: sparkline when data available, chevron otherwise
+    // Arrows column: the value-trend sparkline only. Rank movement now sits
+    // beside the rank number, so there's no chevron fallback here.
     let arrowCell = '';
     if (sparkData && sparkData.length >= 2) {
-      arrowCell = `<canvas class="pr-sparkline" data-pid="${p.id}" title="${rankChange != null && rankChange !== 0 ? Math.abs(rankChange) + ' spot' + (Math.abs(rankChange) !== 1 ? 's' : '') + ' in 7 days' : '7-day trend'}"></canvas>`;
-    } else if (rankChange != null && rankChange !== 0) {
-      const dir = rankChange > 0 ? 'up' : 'down';
-      const icon = rankChange > 0 ? 'fa-chevron-up' : 'fa-chevron-down';
-      arrowCell = `<span class="pr-rank-arrow ${dir}" title="${Math.abs(rankChange)} spot${Math.abs(rankChange)!==1?'s':''} in 7 days"><i class="fa-solid ${icon}" aria-hidden="true"></i></span>`;
+      arrowCell = `<canvas class="pr-sparkline" data-pid="${p.id}" title="7-day value trend"></canvas>`;
+    }
+
+    // Overall rank movement, shown next to the rank number. Only meaningful when
+    // the rank IS the overall value board (not the ADP / PPG / age / pos views).
+    let rankDeltaHTML = '';
+    const _rankIsOverall = (sortBy === 'value' || sortBy === 'rank');
+    if (displayRank && _rankIsOverall && rankChange != null && rankChange !== 0) {
+      const _up = rankChange > 0;
+      const _n = Math.abs(rankChange);
+      rankDeltaHTML = `<span class="pr-rank-delta ${_up ? 'up' : 'down'}" title="${_n} spot${_n !== 1 ? 's' : ''} overall in 7 days">${_up ? '▲' : '▼'}${_n}</span>`;
     }
 
     const sortDisplay = p.position === 'PICK' && sortBy === 'age' ? '–' : sortMeta.cell(p);
@@ -694,7 +729,7 @@ function prRender() {
     }
 
     row.innerHTML =
-      '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '–') + '</span>' +
+      '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '–') + rankDeltaHTML + '</span>' +
       '<span class="pr-arrows">' + arrowCell + '</span>' +
       '<span class="pr-name player-clickable">'  + (p.name || 'Unknown') + badges + '</span>' +
       '<span class="pr-pos-cell">' + posRank + '</span>' +
