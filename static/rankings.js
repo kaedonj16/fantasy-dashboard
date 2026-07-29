@@ -533,6 +533,7 @@ function prRender() {
   // This keeps rank #s stable - e.g. searching for a player still shows #47, not #1.
   const _sortedForRank = players.slice().sort((a, b) => {
     if (sortBy === 'age')       return (a.age != null ? a.age : 99) - (b.age != null ? b.age : 99);
+    if (sortBy === 'adp')       { const aA = prGetAdp(a); const bA = prGetAdp(b); return (aA != null ? aA : 99999) - (bA != null ? bA : 99999); }
     if (sortBy === 'pos_rank')  { const rA = prPosRankMap[String(a.id)] || 9999; const rB = prPosRankMap[String(b.id)] || 9999; return rA - rB; }
     if (sortBy === 'ppg')       return (b.ppg != null ? b.ppg : -1) - (a.ppg != null ? a.ppg : -1);
     if (sortBy === 'total_pts') return (b.total_pts != null ? b.total_pts : -1) - (a.total_pts != null ? a.total_pts : -1);

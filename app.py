@@ -13199,9 +13199,14 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
               <span class="active-setting-tag">Dynasty</span>
               <span class="active-setting-tag" id="prTepTag" style="display:none;">TE+</span>
             </div>
-            <!-- Sort + ADP source: a paired control group (side by side on
-                 mobile; the ADP source only appears when sorting by ADP). -->
+            <!-- ADP source + Sort: a paired control group (side by side on
+                 mobile). The ADP source only appears when sorting by ADP, and
+                 sits to the LEFT so the Sort control stays on the far right. -->
             <div class="filter-sort-group">
+              <div class="filter-sort" id="prAdpSrcWrap" style="display:none;">
+                <label class="filter-label" for="prAdpSource">ADP source</label>
+                <select id="prAdpSource" onchange="prReloadAdpSource()"></select>
+              </div>
               <div class="filter-sort">
                 <label class="filter-label" for="prSort">Sort by</label>
                 <select id="prSort" onchange="prPage=1;prFlipRender()">
@@ -13212,10 +13217,6 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
                   <option value="ppg">PPG</option>
                   <option value="total_pts">Total Points</option>
                 </select>
-              </div>
-              <div class="filter-sort" id="prAdpSrcWrap" style="display:none;">
-                <label class="filter-label" for="prAdpSource">ADP source</label>
-                <select id="prAdpSource" onchange="prReloadAdpSource()"></select>
               </div>
             </div>
           </div>
