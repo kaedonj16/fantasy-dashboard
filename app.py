@@ -10176,9 +10176,11 @@ def build_teams_body(ctx: dict) -> str:
         <div class="teams-topbar">
           <div class="teams-sort-bar">
             <span style="font-size:12px;color:var(--text-muted);margin-right:8px;">Sort by:</span>
-            <button class="teams-sort-btn" data-sort="posindex">Positional Index</button>
-            <button class="teams-sort-btn" data-sort="grade">Team Grade</button>
-            <button class="teams-sort-btn" data-sort="archetype">Archetype</button>
+            <div class="otc-main-tabs br-slide-tabs teams-sort-tabs" data-br-slide-tabs>
+              <button class="teams-sort-btn otc-main-tab" data-sort="posindex">Positional Index</button>
+              <button class="teams-sort-btn otc-main-tab" data-sort="grade">Team Grade</button>
+              <button class="teams-sort-btn otc-main-tab" data-sort="archetype">Archetype</button>
+            </div>
             <span id="teamsSortLabel" style="font-size:11px;color:var(--text-muted);margin-left:10px;opacity:0;transition:opacity .2s;"></span>
           </div>
           {_window_legend_html}
@@ -10236,6 +10238,7 @@ def build_teams_body(ctx: dict) -> str:
         cards.forEach(function(c) {{ grid.appendChild(c); }});
         floatViewer();
         document.querySelectorAll('.teams-sort-btn').forEach(function(btn) {{ btn.classList.remove('active'); }});
+        var _st0 = document.querySelector('.teams-sort-tabs'); if (_st0) _st0.classList.remove('has-active');
         _sortKey = '';
         _setSortLabel('');
       }}
@@ -10260,6 +10263,7 @@ def build_teams_body(ctx: dict) -> str:
         document.querySelectorAll('.teams-sort-btn').forEach(function(btn) {{
           btn.classList.toggle('active', btn.dataset.sort === key);
         }});
+        var _st1 = document.querySelector('.teams-sort-tabs'); if (_st1) _st1.classList.add('has-active');
         _setSortLabel(_sortKeyLabels[key] || key);
       }}
       document.querySelectorAll('.teams-sort-btn').forEach(function(btn) {{

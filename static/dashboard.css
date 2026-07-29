@@ -10307,6 +10307,18 @@ html[data-theme="dark"] .contact-social-pill img {
 .teams-sort-btn:hover { background: var(--surface2); color: var(--text); }
 .teams-sort-btn.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 
+/* "Sort by" rendered as the otc-main-tabs sliding-tab control. Neutralize the
+   old pill borders/fills inside the track so the sliding indicator carries the
+   active state, and hide the indicator until a sort is actually chosen (the
+   default is no sort — the viewer's card just floats to the top). */
+.teams-sort-bar .teams-sort-tabs { margin-bottom: 0; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.teams-sort-bar .teams-sort-tabs::-webkit-scrollbar { height: 0; }
+.teams-sort-bar .teams-sort-btn.otc-main-tab { border: none; background: transparent; border-radius: 9px; padding: 7px 13px; white-space: nowrap; }
+.teams-sort-bar .teams-sort-btn.otc-main-tab:hover { background: transparent; color: var(--text); }
+.teams-sort-bar .teams-sort-btn.otc-main-tab.active { background: transparent; color: var(--text); border-color: transparent; }
+.teams-sort-tabs .br-slide-ind { opacity: 0; transition: opacity .15s ease, left .2s cubic-bezier(.4,0,.2,1), width .2s cubic-bezier(.4,0,.2,1); }
+.teams-sort-tabs.has-active .br-slide-ind { opacity: 1; }
+
 .teams-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
