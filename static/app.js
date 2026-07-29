@@ -10291,17 +10291,19 @@ function openPlayerModal(playerId, playerName, opts) {
       const _adp = data.stats?.adp;
       const _adpIsSf = (typeof _leagueType !== 'undefined' && _leagueType === 'sf');
       const _adpV = v => (v != null ? v : '<span class="pm-adp-na">–</span>');
-      // Multi-source ADP (Sleeper / BR Fantasy / Consensus). Falls back to the
+      // Multi-source ADP (Sleeper / BR Fantasy / Consensus). The Sleeper source
+      // arrives inline; BR Fantasy + Consensus are lazy-loaded from
+      // /api/player-adp and merged in after the modal opens. Falls back to the
       // old flat single-source shape for backward compatibility.
-      const _adpSources = (_adp && Array.isArray(_adp.sources)) ? _adp.sources
+      let _adpSources = (_adp && Array.isArray(_adp.sources)) ? _adp.sources.slice()
         : (_adp ? [{ label: 'Sleeper', vals: _adp }] : []);
       // Highlight the value matching the viewer's league type.
       const _c1 = _adpIsSf ? '' : ' pm-adp-cur';
       const _cS = _adpIsSf ? ' pm-adp-cur' : '';
       // One compact card per format (Dynasty / Redraft); inside, a tight row per
       // source (Sleeper / BR Fantasy / Consensus) showing 1QB + SF.
-      const _adpFmtCard = (fmtLabel, key) => {
-        const rows = _adpSources
+      const _adpFmtCard = (sources, fmtLabel, key) => {
+        const rows = sources
           .filter(s => s.vals[key + '_1qb'] != null || s.vals[key + '_sf'] != null)
           .map(s => `
             <div class="pm-adp-row">
@@ -10319,13 +10321,20 @@ function openPlayerModal(playerId, playerName, opts) {
             ${rows}
           </div>` : '';
       };
-      const _dynCard = _adpFmtCard('Dynasty', 'dynasty');
-      const _rdrCard = _adpFmtCard('Redraft', 'redraft');
-      const adpRow = (_dynCard || _rdrCard) ? `
-        <div class="pm-adp-block">
+      // Inner grid for the ADP block, rebuilt whenever a new source lands.
+      const _adpGridHTML = (sources) => {
+        const dyn = _adpFmtCard(sources, 'Dynasty', 'dynasty');
+        const rdr = _adpFmtCard(sources, 'Redraft', 'redraft');
+        return (dyn || rdr) ? (dyn + rdr) : '';
+      };
+      // Always render the block shell so lazy sources can populate it even when
+      // Sleeper had nothing for this player; hidden until it has content.
+      const _adpGridInner = _adpGridHTML(_adpSources);
+      const adpRow = `
+        <div class="pm-adp-block" id="pmAdpBlock" data-pid="${playerId}"${_adpGridInner ? '' : ' style="display:none;"'}>
           <div class="pm-adp-head">ADP</div>
-          <div class="pm-adp-grid">${_dynCard}${_rdrCard}</div>
-        </div>` : '';
+          <div class="pm-adp-grid" id="pmAdpGrid">${_adpGridInner}</div>
+        </div>`;
 
       const _heroCardCount = 2 + (ppgCard ? 1 : 0) + (totalCard ? 1 : 0);
       const heroGridStyle = `style="grid-template-columns:repeat(${_heroCardCount},1fr);"`;
@@ -10441,6 +10450,30 @@ function openPlayerModal(playerId, playerName, opts) {
         <div class="pm-panel" id="pm-panel-trades">${tradesHTML}</div>
         <div class="pm-panel" id="pm-panel-live"></div>
       `;
+
+      // ── Lazy-load market ADP (BR Fantasy + Consensus) ─────────────────────
+      // These need per-player draft-crawler DB queries, so they're fetched
+      // after the modal opens and merged into the ADP block as they land — the
+      // modal itself shows immediately on the inline Sleeper source.
+      (function _loadMarketAdp() {
+        fetch(`/api/player-adp/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}`)
+          .then(r => r.ok ? r.json() : null)
+          .then(j => {
+            const extra = j && Array.isArray(j.sources) ? j.sources : [];
+            if (!extra.length) return;
+            const block = document.getElementById('pmAdpBlock');
+            const grid = document.getElementById('pmAdpGrid');
+            // Bail if the modal was closed or a different player is now shown.
+            if (!block || !grid || block.dataset.pid !== String(playerId)) return;
+            _adpSources = _adpSources.concat(extra);
+            const inner = _adpGridHTML(_adpSources);
+            if (inner) {
+              grid.innerHTML = inner;
+              block.style.display = '';
+            }
+          })
+          .catch(() => {});
+      })();
 
       // ── Show tab bar and configure it ─────────────────────────────────────
       const pmTabBar = document.getElementById('pmTabBar');
