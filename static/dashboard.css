@@ -11050,26 +11050,31 @@ img, svg, canvas {
 
   /* Mobile: collapse the three stat cards into one compact, divided panel
      instead of three tall stacked cards that swallow the whole screen. */
+  /* Compact 2-up stat band instead of a tall single-column stack: the four
+     offseason stats (kickoff, value leader, draft capital, playoff odds) read
+     at a glance in ~half the vertical space. */
   .os-hero-stats {
-    grid-template-columns: 1fr;
-    gap: 0;
-    border: 1px solid rgba(255,255,255,0.14);
-    border-radius: 14px;
-    overflow: hidden;
-    background: rgba(255,255,255,0.06);
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
   }
   .os-hero-stats .os-stat-card {
-    border: none;
-    border-radius: 0;
-    background: transparent;
-    padding: 12px 14px;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px;
+    background: rgba(255,255,255,0.06);
+    padding: 11px 12px;
+    min-width: 0;
   }
   .os-hero-stats .os-stat-card + .os-stat-card {
     border-top: 1px solid rgba(255,255,255,0.12);
   }
   .os-hero-stats .os-stat-value {
-    font-size: 19px;
-    margin-top: 5px;
+    font-size: 18px;
+    margin-top: 4px;
+  }
+  .os-hero-stats .os-stat-value-name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .os-hero-top {
@@ -12898,14 +12903,14 @@ img, svg, canvas {
 }
 
 @media (max-width: 600px) {
-  /* Keep the connected divided-panel treatment (see the wider mobile breakpoint). */
+  /* 2-up stat band (see the wider mobile breakpoint) rather than a tall stack. */
   .os-hero-stats {
-    grid-template-columns: 1fr;
-    gap: 0;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
   }
 
   .os-hero-stats .os-stat-card {
-    padding: 12px 14px;
+    padding: 11px 12px;
   }
 
   .os-hero-title {
