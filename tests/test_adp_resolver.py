@@ -138,6 +138,24 @@ def test_crawler_returns_avg_pick(monkeypatch):
     assert A.fetch_crawler_adp(2026, False, "dynasty") == {"1": 6.0, "2": 24.0}
 
 
+def test_crawler_caches_within_ttl(monkeypatch):
+    # The GROUP BY is expensive; a repeat call for the same key inside the TTL
+    # must be served from cache (a modal opens it several times, and concurrent
+    # opens would otherwise stampede the DB).
+    A._CRAWLER_ADP_CACHE.clear()
+    calls = {"n": 0}
+
+    def handler(sql, params):
+        calls["n"] += 1
+        return [{"player_id": "1", "avg_pick": 6.0, "n": 30}]
+    _install_fake_db(monkeypatch, handler)
+    first = A.fetch_crawler_adp(2099, False, "dynasty")
+    second = A.fetch_crawler_adp(2099, False, "dynasty")
+    assert first == second == {"1": 6.0}
+    assert calls["n"] == 1   # second call hit the cache, not the DB
+    A._CRAWLER_ADP_CACHE.clear()
+
+
 def test_crawler_falls_back_to_latest_season(monkeypatch):
     calls = {"seasons": []}
 
