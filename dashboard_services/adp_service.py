@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from typing import Dict, Optional
 
@@ -14,8 +15,15 @@ logger = logging.getLogger(__name__)
 # ask for it up to ~8x per open (BR Fantasy + Consensus x dynasty/redraft x
 # 1QB/SF), so cache each (season, is_sf, scoring_type, min_samples) result in
 # process for a short window to keep modals snappy.
+#
+# The lock makes the query single-flight: without it, several modals opening on
+# a cold cache each run the full GROUP BY at once (a stampede) — that both
+# starves the DB pool (unrelated queries, e.g. the modal's own player-details
+# lookups, start failing) and makes the crawler calls themselves time out. With
+# it, one caller computes while the rest wait and then read the fresh cache.
 _CRAWLER_ADP_CACHE: Dict[tuple, tuple] = {}
 _CRAWLER_ADP_TTL = 600  # seconds
+_CRAWLER_ADP_LOCK = threading.Lock()
 
 
 def _atomic_json_write(path, data) -> None:
@@ -334,56 +342,70 @@ def fetch_crawler_adp(season: int, is_sf: bool, scoring_type: str,
     if _cached is not None and (time.time() - _cached[0]) < _CRAWLER_ADP_TTL:
         return _cached[1]
 
+    # Single-flight the compute. If another thread is already running it and it
+    # takes a while, don't pile up (which would exhaust the worker's threads and
+    # make unrelated requests fail) — serve a stale entry if we have one, else
+    # empty so the caller falls back to Sleeper-only.
+    if not _CRAWLER_ADP_LOCK.acquire(timeout=3.0):
+        return _cached[1] if _cached is not None else {}
     try:
-        from dashboard_services.db import get_conn
+        # Re-check: another thread may have filled the cache while we waited.
+        _fresh = _CRAWLER_ADP_CACHE.get(_ck)
+        if _fresh is not None and (time.time() - _fresh[0]) < _CRAWLER_ADP_TTL:
+            return _fresh[1]
 
-        def _query(season_val: int):
-            with get_conn() as conn:
-                return conn.execute(
-                    """
-                    SELECT
-                        player_id,
-                        SUM(avg_pick * sample_size)
-                            / NULLIF(SUM(sample_size), 0) AS avg_pick,
-                        SUM(sample_size) AS n
-                    FROM draft_adp
-                    WHERE draft_type   = %s
-                      AND season       = %s
-                      AND is_superflex = %s
-                      AND num_teams BETWEEN 8 AND 18
-                    GROUP BY player_id
-                    HAVING SUM(sample_size) >= %s
-                    ORDER BY avg_pick ASC
-                    """,
-                    (draft_type, season_val, is_sf, min_samples),
-                ).fetchall()
+        try:
+            from dashboard_services.db import get_conn
 
-        rows = _query(int(season))
-        if not rows:
-            with get_conn() as conn:
-                latest = conn.execute(
-                    "SELECT MAX(season) AS s FROM draft_adp "
-                    "WHERE draft_type = %s AND is_superflex = %s",
-                    (draft_type, is_sf),
-                ).fetchone()
-            latest_season = latest and latest["s"]
-            if latest_season and int(latest_season) != int(season):
-                rows = _query(int(latest_season))
+            def _query(season_val: int):
+                with get_conn() as conn:
+                    return conn.execute(
+                        """
+                        SELECT
+                            player_id,
+                            SUM(avg_pick * sample_size)
+                                / NULLIF(SUM(sample_size), 0) AS avg_pick,
+                            SUM(sample_size) AS n
+                        FROM draft_adp
+                        WHERE draft_type   = %s
+                          AND season       = %s
+                          AND is_superflex = %s
+                          AND num_teams BETWEEN 8 AND 18
+                        GROUP BY player_id
+                        HAVING SUM(sample_size) >= %s
+                        ORDER BY avg_pick ASC
+                        """,
+                        (draft_type, season_val, is_sf, min_samples),
+                    ).fetchall()
 
-        out: Dict[str, float] = {}
-        for r in rows or []:
-            _ap = r["avg_pick"]
-            if _ap is None:
-                continue
-            try:
-                out[str(r["player_id"])] = float(_ap)
-            except (TypeError, ValueError):
-                continue
-        _CRAWLER_ADP_CACHE[_ck] = (time.time(), out)
-        return out
-    except Exception:
-        logger.debug("adp_service: crawler ADP source failed", exc_info=True)
-        return {}
+            rows = _query(int(season))
+            if not rows:
+                with get_conn() as conn:
+                    latest = conn.execute(
+                        "SELECT MAX(season) AS s FROM draft_adp "
+                        "WHERE draft_type = %s AND is_superflex = %s",
+                        (draft_type, is_sf),
+                    ).fetchone()
+                latest_season = latest and latest["s"]
+                if latest_season and int(latest_season) != int(season):
+                    rows = _query(int(latest_season))
+
+            out: Dict[str, float] = {}
+            for r in rows or []:
+                _ap = r["avg_pick"]
+                if _ap is None:
+                    continue
+                try:
+                    out[str(r["player_id"])] = float(_ap)
+                except (TypeError, ValueError):
+                    continue
+            _CRAWLER_ADP_CACHE[_ck] = (time.time(), out)
+            return out
+        except Exception:
+            logger.debug("adp_service: crawler ADP source failed", exc_info=True)
+            return {}
+    finally:
+        _CRAWLER_ADP_LOCK.release()
 
 
 def _crawler_adp_source(season: int, is_sf: bool, scoring_type: str) -> Dict[str, float]:
