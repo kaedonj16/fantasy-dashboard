@@ -1924,12 +1924,15 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         "</div>"
     )
 
+    # Section order mirrors the desktop nav bar (Trades, Weekly, League, Players,
+    # Draft, Stats) so the two navs read the same. Find (search) and Account are
+    # mobile-only, so they bookend the list — Find on top, Account last.
     sheet = (
         "<div class='br-sheet-scrim' id='brSheetScrim'></div>"
         "<nav class='br-sheet' id='brMoreSheet' aria-label='More' aria-hidden='true'>"
         "  <div class='br-sheet-grip' aria-hidden='true'></div>"
-        f"  {find_html}{weekly_html}{draft_html}{league_html}{players_html}"
-        f"  {trades_html}{stats_html}{account_html}"
+        f"  {find_html}{trades_html}{weekly_html}{league_html}{players_html}"
+        f"  {draft_html}{stats_html}{account_html}"
         "</nav>"
     )
 
