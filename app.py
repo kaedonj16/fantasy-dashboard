@@ -6105,8 +6105,12 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     """
 
     return f"""
+    <nav class="os-jump-nav std-jump-nav" aria-label="Jump to section">
+      <button type="button" class="active" data-jump="os-std-value">Value Rankings</button>
+      <button type="button" data-jump="os-std-power">Power &amp; Playoffs</button>
+    </nav>
     <div class="standings-main two-col-standings">
-      <div class="standings-col">
+      <div class="standings-col" id="os-std-value">
         <div class="card">
           <div class="card-tabs">
             <div class="tab-strip dynasty-value-strip">
@@ -6120,10 +6124,24 @@ def _build_offseason_standings_body(ctx: dict) -> str:
           </div>
         </div>
       </div>
-      <div class="standings-col">
+      <div class="standings-col" id="os-std-power">
         {power_playoffs_html}
       </div>
     </div>
+    <script>
+    (function(){{
+      var nav = document.querySelector('.std-jump-nav');
+      if (!nav) return;
+      nav.querySelectorAll('[data-jump]').forEach(function(btn){{
+        btn.addEventListener('click', function(){{
+          var t = document.getElementById(btn.getAttribute('data-jump'));
+          if (t) t.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+          nav.querySelectorAll('button').forEach(function(x){{ x.classList.remove('active'); }});
+          btn.classList.add('active');
+        }});
+      }});
+    }})();
+    </script>
     """
 
 
