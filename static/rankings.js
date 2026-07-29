@@ -538,11 +538,13 @@ function prRender() {
     });
   }
 
-  // In redraft mode exclude picks and rookies (no redraft value), and
-  // only show players who actually have a redraft value.
+  // In redraft mode exclude draft picks (not real players). Rookies stay —
+  // they play this season, so a rookie with a redraft value (e.g. a first-round
+  // RB) belongs on the board. The value check below drops any rookie the model
+  // has no redraft value for, so we only show ones that actually rank.
   if (prScoringType === 'redraft') {
     players = players.filter(p => {
-      if (p.position === 'PICK' || p.is_rookie) return false;
+      if (p.position === 'PICK') return false;
       const v = prLeagueType === 'sf'
         ? (p.redraft_value_sf ?? p.redraft_value_1qb)
         : p.redraft_value_1qb;
