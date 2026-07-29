@@ -8,6 +8,8 @@ before any offseason adjustment runs.
 """
 import pytest
 
+pytest.importorskip("requests")  # dashboard_services.api imports requests at load
+
 from dashboard_services import api as dsapi
 
 
