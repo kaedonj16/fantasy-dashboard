@@ -91,7 +91,7 @@ def test_nav_show_keeper_rules(monkeypatch, settings, expected):
 
 def test_dynasty_offseason_dock_has_no_keeper(monkeypatch):
     """A dynasty league in the offseason gets the redraft dock layout
-    (Draft, Rankings, Teams) rather than a Keeper tab."""
+    (Draft, Trades, Teams) rather than a Keeper tab."""
     import app, re
     monkeypatch.setattr(app, "get_league_ctx_from_cache",
                         lambda *a, **k: {"league_settings": {"type": 2, "max_keepers": 20}})
@@ -99,7 +99,7 @@ def test_dynasty_offseason_dock_has_no_keeper(monkeypatch):
     monkeypatch.setattr(app, "has_draft_ended", lambda *a, **k: False)
     with app.app.test_request_context("/x"):
         labels = re.findall(r"br-tabbar-lbl'>([^<]+)<", app._mobile_nav("dashboard", "L", "sleeper", 2026))
-    assert labels == ["Home", "Draft", "Rankings", "Teams", "More"]
+    assert labels == ["Home", "Draft", "Trades", "Teams", "More"]
     assert "Keeper" not in labels
 
 
@@ -113,7 +113,7 @@ def test_preseason_is_treated_as_offseason(monkeypatch):
     monkeypatch.setattr(app, "has_draft_ended", lambda *a, **k: False)
     with app.app.test_request_context("/x"):
         labels = re.findall(r"br-tabbar-lbl'>([^<]+)<", app._mobile_nav("dashboard", "L", "sleeper", 2026))
-    assert labels == ["Home", "Draft", "Rankings", "Teams", "More"]
+    assert labels == ["Home", "Draft", "Trades", "Teams", "More"]
 
 
 @pytest.mark.parametrize("settings,shown", [
