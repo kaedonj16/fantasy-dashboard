@@ -17203,10 +17203,32 @@ tr.team-clickable {
 .btm-vsavg-badge.btm-pos { background: color-mix(in srgb, var(--win) 13%, transparent); color: var(--win); }
 .btm-vsavg-badge.btm-neg { background: color-mix(in srgb, var(--loss) 12%, transparent); color: var(--loss); }
 
-/* Teams page is now a single tabbed card (Teams / Value / Roster Intel /
-   Schedule), no separate analytics sidebar, so it's one full-width column. */
+/* Desktop teams page: team-grade cards in the main column + League Analytics
+   (Value / Roster Intel / Schedule) in a right-hand sidebar, both visible at
+   once. Mobile collapses to a single tabbed card — see the max-width rule near
+   the end of this block. */
 .teams-page.page-layout {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 340px;
+}
+/* The "Teams" tab is only meaningful on mobile (where the grid is a tab panel);
+   on desktop the grid lives in the main column, so hide that tab button. */
+.teams-tab-mobile { display: none; }
+
+@media (max-width: 1180px) {
+  /* Single column: the analytics card (order:-1 via .page-sidebar) sits on top
+     as the tab strip; the main column (grid) sits below it. */
+  .teams-page.page-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .teams-tab-mobile { display: block; }
+  /* Tabbed behavior: "Teams" shows the grid and hides the analytics panels;
+     any other tab hides the grid/sort bar and shows its analytics panel. */
+  .teams-page[data-active-tab="teams"] .teams-analytics-card .tab-panels {
+    display: none;
+  }
+  .teams-page:not([data-active-tab="teams"]) .page-main {
+    display: none;
+  }
 }
 
 /* Slim (sidebar) variant */

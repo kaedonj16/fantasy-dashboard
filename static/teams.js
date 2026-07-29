@@ -30,7 +30,11 @@
         _loaded.btm = true;
         var panel = document.getElementById('btmPanel');
         if (!panel) return;
-        var slim = !!panel.closest('.teams-sidebar');
+        // Slim (narrow) rendering only in the desktop sidebar. On mobile the
+        // analytics panel spans the full width of the tabbed card, so render
+        // the rich full layout (with top movers) there.
+        var slim = !!panel.closest('.teams-sidebar') &&
+                   window.matchMedia('(min-width: 1181px)').matches;
 
         function fmtDate(isoStr) {
           if (!isoStr) return '';
@@ -637,18 +641,55 @@
         if (sosBtn && !_offseasonMode) sosBtn.style.display = '';
       })();
 
-      // Wire data-loading onto the tab buttons; visibility is handled by initCardTabs.
-      // "Teams" is the default tab (static grade cards), so nothing loads on init.
+      // Wire data-loading onto the tab buttons; the active-panel toggling itself
+      // is handled by initCardTabs (app.js). We also mirror the active tab onto
+      // the page container's data-active-tab so the mobile CSS knows whether to
+      // show the team grid ("teams") or an analytics panel.
+      function _setActiveTabAttr(tab) {
+        var layout = document.getElementById('teamsPageLayout');
+        if (layout) layout.dataset.activeTab = tab;
+      }
+
+      // Directly toggle the active tab/panel (mirrors initCardTabs) plus the
+      // data-active-tab attr and lazy load. Used for the viewport default so it
+      // doesn't depend on initCardTabs having bound yet (soft-nav ordering).
+      function _activateTab(tab, load) {
+        var strip = document.getElementById('teamsAnalyticsTabs');
+        var card  = document.getElementById('teamsAnalyticsCard');
+        if (strip) strip.querySelectorAll('.tab-btn').forEach(function(b) {
+          b.classList.toggle('active', b.dataset.tab === tab);
+        });
+        if (card) card.querySelectorAll('.tab-panel').forEach(function(p) {
+          p.classList.toggle('active', p.dataset.tab === tab);
+        });
+        _setActiveTabAttr(tab);
+        if (load) {
+          if (tab === 'btm')          loadBtm();
+          if (tab === 'roster-intel') loadRosterIntel();
+          if (tab === 'sos')          loadSos();
+        }
+      }
+
       function wireAnalyticsTabs() {
         var tabs = document.querySelectorAll('#teamsAnalyticsTabs > .tab-btn');
         tabs.forEach(function(btn) {
           btn.addEventListener('click', function() {
             var tab = btn.dataset.tab;
+            _setActiveTabAttr(tab);
             if (tab === 'btm')          loadBtm();
             if (tab === 'roster-intel') loadRosterIntel();
             if (tab === 'sos')          loadSos();
           });
         });
+
+        // Default tab depends on viewport. On desktop the team grid is always
+        // visible in the main column, so the sidebar defaults to "Value". On
+        // mobile the single tabbed card opens on "Teams" (the grid). The server
+        // renders with "Teams" active for the mobile-first default; promote to
+        // Value on desktop here.
+        if (window.matchMedia('(min-width: 1181px)').matches) {
+          _activateTab('btm', true);
+        }
       }
 
       // Auto-open a specific tab when navigated with a hash (e.g. #power-rankings from nav)
