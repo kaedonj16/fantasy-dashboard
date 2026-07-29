@@ -79,14 +79,14 @@ def _seed_league_ids(season: int) -> Set[str]:
     from whatever leagues are already stored (populated by manual inserts or
     previous discovery runs).  On a completely fresh DB the frontier will be
     empty; the user must insert at least one league_id manually to bootstrap.
-    Includes both dynasty (2) and redraft (1) leagues as BFS seeds.
+    Includes both dynasty (2) and true-redraft (0) leagues as BFS seeds.
     """
     with get_conn() as conn:
         rows = conn.execute(
             """
             SELECT league_id FROM trade_intel_leagues
             WHERE season IN (%s, %s)
-              AND league_type IN (1, 2)
+              AND league_type IN (0, 2)
             ORDER BY last_crawled_at ASC NULLS FIRST
             LIMIT 2000
             """,
@@ -306,7 +306,7 @@ def bootstrap_from_usernames(usernames: List[str], season: Optional[int] = None)
             if not meta:
                 continue
             league_type = meta.get("settings", {}).get("type")
-            if league_type not in (1, 2):
+            if league_type not in (0, 2):
                 continue
             lg_season = int(meta.get("season") or season)
             to_save.append({
@@ -352,7 +352,7 @@ def seed_user(user_id: str, username: Optional[str] = None, season: Optional[int
         if not meta:
             continue
         league_type = meta.get("settings", {}).get("type")
-        if league_type not in (1, 2):
+        if league_type not in (0, 2):
             continue
         lg_season = int(meta.get("season") or season)
         to_save.append({
@@ -415,7 +415,7 @@ def seed_from_stored_users(batch_size: int = 200, season: Optional[int] = None) 
             if not meta:
                 continue
             league_type = meta.get("settings", {}).get("type")
-            if league_type not in (1, 2):
+            if league_type not in (0, 2):
                 continue
             lg_season = int(meta.get("season") or season)
             to_save.append({
@@ -504,7 +504,7 @@ def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> i
                 return None, [], []
             
             league_type = meta.get("settings", {}).get("type")
-            if league_type not in (1, 2):
+            if league_type not in (0, 2):
                 return None, [], []
 
             lg_season = int(meta.get("season") or season)
