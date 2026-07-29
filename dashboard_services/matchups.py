@@ -1072,6 +1072,13 @@ def render_matchup_slide(
                 lookup_name,
             )
 
+        # Only surface a box-score line once the player's game has actually
+        # started. For an upcoming/not-yet-played matchup preview, week_stats can
+        # still carry a stale line, which reads as "stats before kickoff". Keep
+        # the schedule game_line; drop the stat line until the game is live/final.
+        if is_not_started or is_bye:
+            stats = None
+
         meta_content = f"&nbsp;{nfl}"
 
         # Add clickable attributes

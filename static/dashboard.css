@@ -18859,6 +18859,19 @@ button:disabled {
   padding: 10px 12px 12px;
 }
 
+/* On the Weekly Hub the matchup carousel sits inside the Matchups tab panel,
+   which is already inside the #weeklyLeftTabs card. Drop the carousel's own card
+   chrome so the whole preview isn't framed by a border-inside-a-border. The
+   inner scoreboard/row cards stay as they are. */
+#weeklyLeftTabs .tab-panel .matchup-carousel {
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+}
+
 .pm-trade-card {
   border: 1px solid var(--border);
   border-radius: 10px;
