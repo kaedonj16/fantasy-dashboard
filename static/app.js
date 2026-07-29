@@ -10291,21 +10291,32 @@ function openPlayerModal(playerId, playerName, opts) {
       const _adp = data.stats?.adp;
       const _adpIsSf = (typeof _leagueType !== 'undefined' && _leagueType === 'sf');
       const _adpV = v => (v != null ? v : '<span class="pm-adp-na">–</span>');
-      const _adpCard = (label, oneqb, sf) => `
-        <div class="pm-adp-card">
-          <div class="pm-adp-card-h">${label}</div>
-          <div class="pm-adp-kvs">
-            <div class="pm-adp-kv${_adpIsSf ? '' : ' pm-adp-cur'}"><span class="k">1QB</span><span class="v">${_adpV(oneqb)}</span></div>
-            <div class="pm-adp-kv${_adpIsSf ? ' pm-adp-cur' : ''}"><span class="k">SF</span><span class="v">${_adpV(sf)}</span></div>
-          </div>
-        </div>`;
-      const adpRow = (_adp && (_adp.dynasty_1qb != null || _adp.dynasty_sf != null || _adp.redraft_1qb != null || _adp.redraft_sf != null)) ? `
+      // Multi-source ADP (Sleeper / BR Fantasy / Consensus). Falls back to the
+      // old flat single-source shape for backward compatibility.
+      const _adpSources = (_adp && Array.isArray(_adp.sources)) ? _adp.sources
+        : (_adp ? [{ label: 'Sleeper', vals: _adp }] : []);
+      // Highlight the value matching the viewer's league type.
+      const _c1 = _adpIsSf ? '' : ' pm-adp-cur';
+      const _cS = _adpIsSf ? ' pm-adp-cur' : '';
+      // One compact card per format (Dynasty / Redraft); inside, a tight row per
+      // source (Sleeper / BR Fantasy / Consensus) showing 1QB + SF.
+      const _adpFmtCard = (fmtLabel, key) => {
+        const rows = _adpSources
+          .filter(s => s.vals[key + '_1qb'] != null || s.vals[key + '_sf'] != null)
+          .map(s => `
+            <div class="pm-adp-row">
+              <span class="pm-adp-row-src">${s.label}</span>
+              <span class="pm-adp-row-v${_c1}"><span class="k">1QB</span>${_adpV(s.vals[key + '_1qb'])}</span>
+              <span class="pm-adp-row-v${_cS}"><span class="k">SF</span>${_adpV(s.vals[key + '_sf'])}</span>
+            </div>`).join('');
+        return rows ? `<div class="pm-adp-card"><div class="pm-adp-card-h">${fmtLabel}</div>${rows}</div>` : '';
+      };
+      const _dynCard = _adpFmtCard('Dynasty', 'dynasty');
+      const _rdrCard = _adpFmtCard('Redraft', 'redraft');
+      const adpRow = (_dynCard || _rdrCard) ? `
         <div class="pm-adp-block">
-          <div class="pm-adp-head">Sleeper ADP</div>
-          <div class="pm-adp-grid">
-            ${_adpCard('Dynasty', _adp.dynasty_1qb, _adp.dynasty_sf)}
-            ${_adpCard('Redraft', _adp.redraft_1qb, _adp.redraft_sf)}
-          </div>
+          <div class="pm-adp-head">ADP</div>
+          <div class="pm-adp-grid">${_dynCard}${_rdrCard}</div>
         </div>` : '';
 
       const _heroCardCount = 2 + (ppgCard ? 1 : 0) + (totalCard ? 1 : 0);
