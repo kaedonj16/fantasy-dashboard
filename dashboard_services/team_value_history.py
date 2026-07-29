@@ -12,7 +12,13 @@ Mirrors dashboard_services.power_rank_history.
 """
 from typing import Dict, List, Optional
 
-from dashboard_services.db import get_conn
+
+def get_conn():
+    """Lazy DB handle: importing this module (e.g. under the pure test suite,
+    which has no psycopg) must not pull in the driver until a query runs."""
+    from dashboard_services.db import get_conn as _get_conn
+    return _get_conn()
+
 
 _TABLE_READY = False
 
