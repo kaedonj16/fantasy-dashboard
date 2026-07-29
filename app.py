@@ -23625,6 +23625,169 @@ def api_player_game_logs(player_id: str):
 clean_nan_for_json = _sanitize_for_json
 
 
+def _spark_svg(values, width: int = 132, height: int = 36, up=None) -> str:
+    """Inline SVG sparkline from a list of numbers. ``up`` True=green, False=red,
+    None=accent. Returns '' with fewer than two points."""
+    pts = [float(v) for v in values if v is not None]
+    if len(pts) < 2:
+        return ""
+    lo, hi = min(pts), max(pts)
+    span = (hi - lo) or 1.0
+    n = len(pts)
+    pad = 3
+
+    def _x(i):
+        return pad + i * (width - 2 * pad) / (n - 1)
+
+    def _y(v):
+        return height - pad - (v - lo) / span * (height - 2 * pad)
+
+    line = " ".join(f"{'M' if i == 0 else 'L'}{_x(i):.1f} {_y(v):.1f}"
+                    for i, v in enumerate(pts))
+    area = f"{line} L{_x(n - 1):.1f} {height} L{_x(0):.1f} {height} Z"
+    cls = "up" if up is True else ("down" if up is False else "")
+    ex, ey = _x(n - 1), _y(pts[-1])
+    return (
+        f"<svg class='tm-spark {cls}' width='{width}' height='{height}' "
+        f"viewBox='0 0 {width} {height}' aria-hidden='true'>"
+        f"<path class='tm-spark-fill' d='{area}'/>"
+        f"<path class='tm-spark-line' d='{line}'/>"
+        f"<circle class='tm-spark-cap' cx='{ex:.1f}' cy='{ey:.1f}' r='2.6'/></svg>"
+    )
+
+
+def _luck_series_for(df_weekly, owner) -> list:
+    """[(week, cumulative luck_delta)] for one owner across finalized weeks."""
+    try:
+        fin = df_weekly[df_weekly["finalized"] == True]
+        if fin.empty:
+            return []
+        weeks = sorted(int(w) for w in fin["week"].unique())
+        from utils.all_play import all_play_analysis
+        out = []
+        for wk in weeks:
+            sub = fin[fin["week"] <= wk]
+            ws, aw = {}, {}
+            for _, r in sub.iterrows():
+                w = int(r["week"]); o = str(r["owner"])
+                ws.setdefault(w, {})[o] = float(r["points"] or 0)
+                aw[o] = aw.get(o, 0.0) + float(r["win"] or 0)
+            ap = all_play_analysis(ws, aw)
+            ld = (ap.get(str(owner)) or {}).get("luck_delta")
+            if ld is not None:
+                out.append((wk, float(ld)))
+        return out
+    except Exception:
+        logger.debug("[team-trends] luck series failed", exc_info=True)
+        return []
+
+
+def _tm_delta_chip(delta, unit: str = "", up_is_good: bool = True) -> str:
+    """Small ▲/▼ chip for a numeric week-over-week delta. '' when None/zero."""
+    if delta is None:
+        return ""
+    try:
+        d = float(delta)
+    except (TypeError, ValueError):
+        return ""
+    if abs(d) < 0.05:
+        return "<span class='tm-tr-chip flat'>&ndash;</span>"
+    good = (d > 0) if up_is_good else (d < 0)
+    cls = "up" if good else "down"
+    arrow = "&#9650;" if d > 0 else "&#9660;"
+    val = f"{abs(d):.1f}".rstrip("0").rstrip(".")
+    return f"<span class='tm-tr-chip {cls}'>{arrow}{val}{unit}</span>"
+
+
+def _build_team_trends_html(league_id, season, week, roster_id, owner,
+                            df_weekly, total_value) -> str:
+    """Trends block for the team modal's Graphs tab: seed movement this week,
+    playoff-odds trend, roster-value trend, and luck trend. Every tile is
+    independently best-effort and omitted when it has no data; returns '' when
+    nothing is available."""
+    tiles = []
+
+    # #3 — seed movement this week (from the weekly results df; no snapshot).
+    try:
+        seed_mv = _standings_movement(df_weekly).get(str(owner))
+        if seed_mv:
+            chip = _tm_delta_chip(seed_mv, unit="", up_is_good=True)
+            tiles.append(
+                "<div class='tm-trend-tile'>"
+                "<div class='tm-tr-label'>Seed this week</div>"
+                f"<div class='tm-tr-lead'>{'Climbed' if seed_mv > 0 else 'Slipped'} "
+                f"{abs(int(seed_mv))} {'spot' if abs(int(seed_mv)) == 1 else 'spots'} {chip}</div>"
+                "</div>"
+            )
+    except Exception:
+        logger.debug("[team-trends] seed movement failed", exc_info=True)
+
+    # #1 — playoff-odds trend (read the weekly snapshots we now record).
+    try:
+        from dashboard_services.playoff_odds_history import get_series as _po_series
+        po = _po_series(league_id, season, roster_id)
+        if po["series"]:
+            spark = _spark_svg([p["pct"] for p in po["series"]],
+                               up=(po["delta"] or 0) >= 0)
+            cur = po["current"]
+            chip = _tm_delta_chip(po["delta"], unit=" pts", up_is_good=True)
+            tiles.append(
+                "<div class='tm-trend-tile'>"
+                "<div class='tm-tr-label'>Playoff odds</div>"
+                f"<div class='tm-tr-big'>{cur:.0f}%{chip}</div>"
+                f"<div class='tm-tr-spark'>{spark}</div>"
+                "</div>"
+            )
+    except Exception:
+        logger.debug("[team-trends] playoff trend failed", exc_info=True)
+
+    # #4 — roster value over time (snapshot the current week, read the series).
+    try:
+        from dashboard_services.team_value_history import record_and_series
+        tv = record_and_series(league_id, season, week, roster_id,
+                               total_value, write=(int(week or 0) >= 1))
+        if tv["series"]:
+            spark = _spark_svg([s["value"] for s in tv["series"]],
+                               up=(tv["delta"] or 0) >= 0)
+            chip = _tm_delta_chip(tv["delta"], unit="", up_is_good=True)
+            tiles.append(
+                "<div class='tm-trend-tile'>"
+                "<div class='tm-tr-label'>Roster value</div>"
+                f"<div class='tm-tr-big'>{tv['current']:,.0f}{chip}</div>"
+                f"<div class='tm-tr-spark'>{spark}</div>"
+                "</div>"
+            )
+    except Exception:
+        logger.debug("[team-trends] value trend failed", exc_info=True)
+
+    # #5 — luck trend (cumulative actual-minus-expected wins, from the df).
+    try:
+        luck_pts = _luck_series_for(df_weekly, owner)
+        if len(luck_pts) >= 2:
+            vals = [v for _w, v in luck_pts]
+            spark = _spark_svg(vals, up=(vals[-1] >= 0))
+            cur = vals[-1]
+            sign = "+" if cur > 0 else ""
+            tiles.append(
+                "<div class='tm-trend-tile'>"
+                "<div class='tm-tr-label'>Luck</div>"
+                f"<div class='tm-tr-big'>{sign}{cur:.1f}<span class='tm-tr-unit'>wins</span></div>"
+                f"<div class='tm-tr-spark'>{spark}</div>"
+                "</div>"
+            )
+    except Exception:
+        logger.debug("[team-trends] luck trend failed", exc_info=True)
+
+    if not tiles:
+        return ""
+    return (
+        "<div class='team-modal-section tm-trends'>"
+        "<h3>Trends</h3>"
+        "<div class='tm-trend-grid'>" + "".join(tiles) + "</div>"
+        "</div>"
+    )
+
+
 @app.route("/api/team-details/<roster_id>")
 def api_team_details(roster_id: str):
     """Get comprehensive team details for modal display."""
@@ -24051,6 +24214,25 @@ def api_team_details(roster_id: str):
             traceback.print_exc()
             # Continue without graph data
 
+        # Team trends for the Graphs tab (seed movement, playoff odds, roster
+        # value, luck). Only in-season — when the graphs fell back to a prior
+        # season, "this week" movement isn't meaningful. Best-effort throughout.
+        trends_html = ""
+        try:
+            _dfw = locals().get("df_weekly")
+            _gseason = int(locals().get("graph_season", season) or season)
+            if _dfw is not None and not _dfw.empty and _gseason == int(season):
+                _tw = 0
+                if "finalized" in _dfw.columns:
+                    _ff = _dfw[_dfw["finalized"] == True]
+                    if not _ff.empty:
+                        _tw = int(_ff["week"].max())
+                trends_html = _build_team_trends_html(
+                    league_id, int(season), _tw, roster_id, team_name,
+                    _dfw, total_value)
+        except Exception:
+            logger.debug("[api_team_details] trends skipped", exc_info=True)
+
         response = {
             "roster_id": roster_id,
             "team_name": team_name,
@@ -24063,7 +24245,8 @@ def api_team_details(roster_id: str):
             "total_value": round(total_value, 1),
             "roster": roster_players,
             "picks": all_picks,
-            "graphs": graphs_data
+            "graphs": graphs_data,
+            "trends_html": trends_html,
         }
 
         # Clean NaN values before JSON serialization

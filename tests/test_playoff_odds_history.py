@@ -88,6 +88,22 @@ def test_movement_vs_prior_week(monkeypatch):
     assert len(writes) == 2   # both teams snapshotted this week
 
 
+def test_get_series_returns_trend_and_delta(monkeypatch):
+    writes = []
+
+    def handler(sql, params):
+        if "SELECT week, playoff_probability" in sql:
+            return [{"week": 6, "playoff_probability": 40.0},
+                    {"week": 7, "playoff_probability": 52.0}]
+        return []
+    _install(monkeypatch, handler, writes)
+
+    out = H.get_series("L", 2026, 3)
+    assert out["series"] == [{"week": 6, "pct": 40.0}, {"week": 7, "pct": 52.0}]
+    assert out["current"] == 52.0
+    assert out["delta"] == 12.0
+
+
 def test_write_skipped_on_cache_hit(monkeypatch):
     writes = []
 

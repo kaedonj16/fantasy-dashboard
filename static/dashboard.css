@@ -14972,6 +14972,51 @@ img, svg, canvas {
 }
 .team-svg-chart { display: flex; justify-content: center; }
 
+/* Trends block on the Graphs tab: seed movement, playoff odds, roster value,
+   luck — a full-width row of stat tiles above the charts. */
+.tm-trends { flex: 1 1 100%; max-width: none; border-top: none; }
+.tm-trend-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+.tm-trend-tile {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--row, var(--surface-2, rgba(255,255,255,.02)));
+  padding: 11px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.tm-tr-label {
+  font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-muted);
+}
+.tm-tr-big {
+  font-size: 22px; font-weight: 800; letter-spacing: -.01em; line-height: 1.1;
+  color: var(--text); font-variant-numeric: tabular-nums;
+  display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap;
+}
+.tm-tr-unit { font-size: 11px; font-weight: 700; color: var(--text-muted); margin-left: 2px; }
+.tm-tr-lead { font-size: 14px; font-weight: 650; color: var(--text); display: flex; align-items: baseline; gap: 7px; }
+.tm-tr-chip { font-size: 11px; font-weight: 800; line-height: 1; white-space: nowrap; }
+.tm-tr-chip.up { color: var(--win); }
+.tm-tr-chip.down { color: var(--loss); }
+.tm-tr-chip.flat { color: var(--text-muted); }
+.tm-tr-spark { margin-top: 2px; }
+.tm-spark { display: block; width: 100%; height: auto; }
+.tm-spark-fill { fill: color-mix(in srgb, var(--accent, #3b82f6) 15%, transparent); }
+.tm-spark-line { fill: none; stroke: var(--accent, #3b82f6); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tm-spark-cap  { fill: var(--accent, #3b82f6); }
+.tm-spark.up .tm-spark-line, .tm-spark.up .tm-spark-cap { stroke: var(--win); }
+.tm-spark.up .tm-spark-cap { fill: var(--win); }
+.tm-spark.up .tm-spark-fill { fill: color-mix(in srgb, var(--win) 15%, transparent); }
+.tm-spark.down .tm-spark-line { stroke: var(--loss); }
+.tm-spark.down .tm-spark-cap { fill: var(--loss); }
+.tm-spark.down .tm-spark-fill { fill: color-mix(in srgb, var(--loss) 14%, transparent); }
+
 .team-modal-loading,
 .team-modal-error {
   display: flex;

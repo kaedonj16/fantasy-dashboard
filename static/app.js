@@ -16525,6 +16525,12 @@ function renderTeamDetails(data) {
   // Build graphs section - each chart in its own section for side-by-side layout
   let graphsHTML = '';
 
+  // Trends block (seed movement, playoff odds, roster value, luck) — server
+  // renders it as HTML+SVG so it drops straight in above the charts.
+  if (data.trends_html) {
+    graphsHTML += data.trends_html;
+  }
+
   if (data.graphs && (data.graphs.weekly_scores || data.graphs.radar)) {
     if (data.graphs.weekly_scores && data.graphs.weekly_scores.length > 0) {
       graphsHTML += '<div class="team-modal-section tm-chart-weekly"><h3>Weekly Scoring</h3><div class="team-chart-container" id="teamWeeklyChart"></div></div>';

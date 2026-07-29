@@ -60,6 +60,36 @@ def _rank(rows: List[dict]) -> Dict[str, int]:
     return {str(r["roster_id"]): i + 1 for i, r in enumerate(ordered)}
 
 
+def get_series(league_id: str, season: int, roster_id) -> Dict[str, object]:
+    """A team's playoff-probability across recorded weeks, for a trend sparkline.
+
+    Returns {"series": [{"week": w, "pct": p}], "current": p, "delta": Δpct}
+    (delta = this week's probability minus the previous recorded week's, in
+    points). Empty on any failure or when nothing has been recorded yet."""
+    empty = {"series": [], "current": None, "delta": None}
+    try:
+        _ensure_table()
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT week, playoff_probability FROM playoff_odds "
+                "WHERE league_id = %s AND season = %s AND roster_id = %s "
+                "ORDER BY week ASC",
+                (str(league_id), int(season), int(roster_id)),
+            ).fetchall()
+        series = [{"week": int(r["week"]), "pct": round(float(r["playoff_probability"]), 1)}
+                  for r in (rows or []) if r["playoff_probability"] is not None]
+        if not series:
+            return empty
+        current = series[-1]["pct"]
+        delta = round(current - series[-2]["pct"], 1) if len(series) >= 2 else None
+        return {"series": series, "current": current, "delta": delta}
+    except Exception:
+        import logging
+        logging.getLogger(__name__).debug(
+            "playoff_odds_history: get_series failed", exc_info=True)
+        return empty
+
+
 def record_and_movement(
     league_id: str,
     season: int,
