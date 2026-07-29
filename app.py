@@ -23088,9 +23088,13 @@ def api_player_details(player_id: str):
         # when it has at least one value, and _adp is None when nothing is found,
         # so the modal degrades cleanly. Yahoo is skipped here (needs a league
         # token the modal doesn't carry).
+        # Only the cheap Sleeper source is built inline (a dict lookup on a feed
+        # cached daily) so the modal opens fast. The BR Fantasy / Consensus
+        # sources need per-player draft-crawler DB queries, so the modal fetches
+        # those separately from /api/player-adp and merges them in as they land.
         _adp = None
         try:
-            from dashboard_services.adp_service import fetch_sleeper_adp, resolve_market_adp
+            from dashboard_services.adp_service import fetch_sleeper_adp
             _adp_row = (fetch_sleeper_adp(int(season)) or {}).get(str(player_id)) or {}
 
             def _adp_pick(*keys):
@@ -23103,60 +23107,17 @@ def api_player_details(player_id: str):
                             pass
                 return None
 
-            # Dynasty ADP from a market source (brfantasy crawler / consensus blend).
-            # resolve_market_adp returns the full player->ADP map for the source;
-            # we look up this player. Cached feeds + a single grouped DB query, so
-            # it's cheap per modal open, and empty/errors degrade to None.
-            _mkt_cache: dict = {}
-
-            def _market_pick(_source, _scoring, _is_sf):
-                _key = (_source, _scoring, _is_sf)
-                if _key not in _mkt_cache:
-                    try:
-                        # Match the rankings page: re-rank BR Fantasy (ordered by
-                        # its raw avg_pick) to a clean 1..N board so it tops out at
-                        # 1 instead of the ~3 mean-pick floor.
-                        _mkt_cache[_key] = resolve_market_adp(
-                            int(season), _is_sf, _scoring, source=_source,
-                            as_rank=(_source == "brfantasy")) or {}
-                    except Exception:
-                        _mkt_cache[_key] = {}
-                _v = _mkt_cache[_key].get(str(player_id))
-                try:
-                    return round(float(_v), 1) if _v is not None else None
-                except (TypeError, ValueError):
-                    return None
-
-            _adp_by_source = {
-                "Sleeper": {
-                    "dynasty_1qb": _adp_pick("adp_dynasty_ppr", "adp_dynasty_half_ppr", "adp_dynasty_std"),
-                    "dynasty_sf":  _adp_pick("adp_dynasty_2qb"),
-                    "redraft_1qb": _adp_pick("adp_ppr", "adp_half_ppr", "adp_std"),
-                    "redraft_sf":  _adp_pick("adp_2qb"),
-                },
-                "BR Fantasy": {
-                    "dynasty_1qb": _market_pick("brfantasy", "dynasty", False),
-                    "dynasty_sf":  _market_pick("brfantasy", "dynasty", True),
-                    "redraft_1qb": _market_pick("brfantasy", "redraft", False),
-                    "redraft_sf":  _market_pick("brfantasy", "redraft", True),
-                },
-                "Consensus": {
-                    "dynasty_1qb": _market_pick("consensus", "dynasty", False),
-                    "dynasty_sf":  _market_pick("consensus", "dynasty", True),
-                    "redraft_1qb": _market_pick("consensus", "redraft", False),
-                    "redraft_sf":  _market_pick("consensus", "redraft", True),
-                },
+            _sleeper_vals = {
+                "dynasty_1qb": _adp_pick("adp_dynasty_ppr", "adp_dynasty_half_ppr", "adp_dynasty_std"),
+                "dynasty_sf":  _adp_pick("adp_dynasty_2qb"),
+                "redraft_1qb": _adp_pick("adp_ppr", "adp_half_ppr", "adp_std"),
+                "redraft_sf":  _adp_pick("adp_2qb"),
             }
-            _sources = [
-                {"label": _label, "vals": _vals}
-                for _label, _vals in _adp_by_source.items()
-                if any(v is not None for v in _vals.values())
-            ]
-            if _sources:
+            if any(v is not None for v in _sleeper_vals.values()):
                 # Keep the flat Sleeper keys for backward compatibility, and add
                 # the multi-source list the modal renders from.
-                _adp = dict(_adp_by_source["Sleeper"])
-                _adp["sources"] = _sources
+                _adp = dict(_sleeper_vals)
+                _adp["sources"] = [{"label": "Sleeper", "vals": _sleeper_vals}]
         except Exception:
             logger.debug("[api_player_details] ADP lookup skipped", exc_info=True)
 
@@ -23242,6 +23203,64 @@ def api_player_details(player_id: str):
         import traceback
         traceback.print_exc()
         return _api_err("Request failed", e)
+
+
+@app.route("/api/player-adp/<player_id>")
+def api_player_adp(player_id: str):
+    """Market-source ADP (BR Fantasy + Consensus) for a single player.
+
+    Split out of /api/player-details so the modal can open immediately on the
+    cheap Sleeper feed and pull these in afterward — each source needs a
+    draft-crawler DB query (cached in adp_service), which we don't want on the
+    modal's critical path. Returns {"sources": [{label, vals}]}, only including
+    sources that have at least one value for this player."""
+    try:
+        from dashboard_services.adp_service import resolve_market_adp
+
+        season = int(request.args.get("season", datetime.now().year))
+        _mkt_cache: dict = {}
+
+        def _market_pick(_source, _scoring, _is_sf):
+            _key = (_source, _scoring, _is_sf)
+            if _key not in _mkt_cache:
+                try:
+                    # Match the rankings page: re-rank BR Fantasy (ordered by its
+                    # raw avg_pick) to a clean 1..N board so it tops out at 1
+                    # instead of the ~3 mean-pick floor.
+                    _mkt_cache[_key] = resolve_market_adp(
+                        int(season), _is_sf, _scoring, source=_source,
+                        as_rank=(_source == "brfantasy")) or {}
+                except Exception:
+                    _mkt_cache[_key] = {}
+            _v = _mkt_cache[_key].get(str(player_id))
+            try:
+                return round(float(_v), 1) if _v is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        _by_source = {
+            "BR Fantasy": {
+                "dynasty_1qb": _market_pick("brfantasy", "dynasty", False),
+                "dynasty_sf":  _market_pick("brfantasy", "dynasty", True),
+                "redraft_1qb": _market_pick("brfantasy", "redraft", False),
+                "redraft_sf":  _market_pick("brfantasy", "redraft", True),
+            },
+            "Consensus": {
+                "dynasty_1qb": _market_pick("consensus", "dynasty", False),
+                "dynasty_sf":  _market_pick("consensus", "dynasty", True),
+                "redraft_1qb": _market_pick("consensus", "redraft", False),
+                "redraft_sf":  _market_pick("consensus", "redraft", True),
+            },
+        }
+        _sources = [
+            {"label": _label, "vals": _vals}
+            for _label, _vals in _by_source.items()
+            if any(v is not None for v in _vals.values())
+        ]
+        return jsonify({"sources": _sources})
+    except Exception as e:
+        logger.debug("[api_player_adp] failed", exc_info=True)
+        return jsonify({"sources": []})
 
 
 # Short-TTL cache of computed game logs, keyed by player + season + scoring
