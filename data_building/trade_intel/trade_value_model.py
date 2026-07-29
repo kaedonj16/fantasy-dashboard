@@ -867,8 +867,10 @@ def run_trade_value_model(
     # non-QBs we take the market-faithful value (cal_1qb × their real SF/1QB ratio)
     # instead, which tracks what they actually clear at in SF leagues. QBs keep
     # their WLS SF solve; non-QBs with too little SF trade data fall back to the
-    # old blend. Ratios preserved as-is (no re-anchor), so board ordering reflects
-    # the real market — elite skill can sit above QBs when the trades say so.
+    # old blend. Market SF/1QB ratios are preserved, so board ordering reflects the
+    # real market — elite skill can sit above QBs when the trades say so. A single
+    # uniform top-5-mean re-anchor is applied afterward (see below) to bring the SF
+    # board's overall level back onto MAX_VALUE without disturbing those ratios.
     _SF_MKT_MIN_TRADES = 20  # mirrors market_calibration.MIN_TRADES_FOR_SIGNAL
     _sf_mkt_ratio: dict[str, float] = {}
     try:
@@ -904,6 +906,23 @@ def run_trade_value_model(
             v_sf_norm[i] = w * float(v_sf_norm[i]) + (1.0 - w) * derived
         else:
             v_sf_norm[i] = derived
+
+    # Final SF re-anchor. _normalize() set the SF top-5 MEAN to MAX_VALUE, but the
+    # non-QB re-derivation above (market-faithful ratios / blends) lifts the top of
+    # the SF board off that anchor, so the SF top-5 average drifts well above
+    # MAX_VALUE while 1QB stays on target. Re-anchor once more here — top-5 player
+    # MEAN -> MAX_VALUE — so the SF board matches 1QB's scale. This is a single
+    # uniform factor across every player and pick, so it preserves the market SF/1QB
+    # ratios and board ordering (elite skill can still sit above QBs); only the
+    # overall level is corrected.
+    _sf_players = v_sf_norm[:n_pl]
+    if n_pl > 0:
+        _sf_sorted = np.sort(_sf_players)[::-1]
+        _sf_k = min(ANCHOR_BASKET_N, len(_sf_sorted))
+        if _sf_k > 0:
+            _sf_basket_mean = float(_sf_sorted[:_sf_k].mean())
+            if _sf_basket_mean > 0:
+                v_sf_norm = np.clip(v_sf_norm / _sf_basket_mean * MAX_VALUE, 0.0, None)
 
     # --- Player output ---
     out_rows = []

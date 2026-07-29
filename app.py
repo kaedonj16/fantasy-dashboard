@@ -13275,6 +13275,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         display: flex;
         align-items: center;
         gap: 3px;
+        justify-content: flex-start;
       }
       .pr-rank-arrow {
         font-size: 16px;
@@ -23082,9 +23083,16 @@ def api_player_details(player_id: str):
         # dict lookup on modal open). Surface all four flavors (dynasty/redraft x
         # 1QB/SF); each is None when Sleeper has no value for it, and the whole
         # object is None when none are present, so the modal degrades cleanly.
+        # ADP from every source we can resolve for this player, so the modal can
+        # show more than one. Sleeper covers dynasty+redraft x 1QB/SF; the BR
+        # Fantasy draft-crawler covers dynasty only (redraft isn't crawled). Each
+        # cell is None when that source has no value; a source is only included
+        # when it has at least one value, and _adp is None when nothing is found,
+        # so the modal degrades cleanly. Yahoo is skipped here (needs a league
+        # token the modal doesn't carry).
         _adp = None
         try:
-            from dashboard_services.adp_service import fetch_sleeper_adp
+            from dashboard_services.adp_service import fetch_sleeper_adp, resolve_market_adp
             _adp_row = (fetch_sleeper_adp(int(season)) or {}).get(str(player_id)) or {}
 
             def _adp_pick(*keys):
@@ -23097,16 +23105,58 @@ def api_player_details(player_id: str):
                             pass
                 return None
 
-            _adp_all = {
-                "dynasty_1qb": _adp_pick("adp_dynasty_ppr", "adp_dynasty_half_ppr", "adp_dynasty_std"),
-                "dynasty_sf":  _adp_pick("adp_dynasty_2qb"),
-                "redraft_1qb": _adp_pick("adp_ppr", "adp_half_ppr", "adp_std"),
-                "redraft_sf":  _adp_pick("adp_2qb"),
+            # Dynasty ADP from a market source (brfantasy crawler / consensus blend).
+            # resolve_market_adp returns the full player->ADP map for the source;
+            # we look up this player. Cached feeds + a single grouped DB query, so
+            # it's cheap per modal open, and empty/errors degrade to None.
+            _mkt_cache: dict = {}
+
+            def _market_pick(_source, _is_sf):
+                _key = (_source, _is_sf)
+                if _key not in _mkt_cache:
+                    try:
+                        _mkt_cache[_key] = resolve_market_adp(
+                            int(season), _is_sf, "dynasty", source=_source) or {}
+                    except Exception:
+                        _mkt_cache[_key] = {}
+                _v = _mkt_cache[_key].get(str(player_id))
+                try:
+                    return round(float(_v), 1) if _v is not None else None
+                except (TypeError, ValueError):
+                    return None
+
+            _adp_by_source = {
+                "Sleeper": {
+                    "dynasty_1qb": _adp_pick("adp_dynasty_ppr", "adp_dynasty_half_ppr", "adp_dynasty_std"),
+                    "dynasty_sf":  _adp_pick("adp_dynasty_2qb"),
+                    "redraft_1qb": _adp_pick("adp_ppr", "adp_half_ppr", "adp_std"),
+                    "redraft_sf":  _adp_pick("adp_2qb"),
+                },
+                "BR Fantasy": {
+                    "dynasty_1qb": _market_pick("brfantasy", False),
+                    "dynasty_sf":  _market_pick("brfantasy", True),
+                    "redraft_1qb": None,
+                    "redraft_sf":  None,
+                },
+                "Consensus": {
+                    "dynasty_1qb": _market_pick("consensus", False),
+                    "dynasty_sf":  _market_pick("consensus", True),
+                    "redraft_1qb": None,
+                    "redraft_sf":  None,
+                },
             }
-            if any(v is not None for v in _adp_all.values()):
-                _adp = _adp_all
+            _sources = [
+                {"label": _label, "vals": _vals}
+                for _label, _vals in _adp_by_source.items()
+                if any(v is not None for v in _vals.values())
+            ]
+            if _sources:
+                # Keep the flat Sleeper keys for backward compatibility, and add
+                # the multi-source list the modal renders from.
+                _adp = dict(_adp_by_source["Sleeper"])
+                _adp["sources"] = _sources
         except Exception:
-            logger.debug("[api_player_details] Sleeper ADP lookup skipped", exc_info=True)
+            logger.debug("[api_player_details] ADP lookup skipped", exc_info=True)
 
         # ── Injury designation (from the full Sleeper players feed) ──────────
         # Injury fields live only on the full feed, not the compact index. Best

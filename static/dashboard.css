@@ -14478,33 +14478,30 @@ img, svg, canvas {
   font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
   color: var(--text-muted); margin-bottom: 8px;
 }
-.pm-adp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+/* Compact ADP cards: one card per format (Dynasty / Redraft), a tight row per
+   source (Sleeper / BR Fantasy / Consensus) inside. Smaller than the original
+   cards while keeping the card look and supporting multiple sources. */
+.pm-adp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: start; }
 .pm-adp-card {
-  padding: 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--row);
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--row);
 }
 .pm-adp-card-h {
   font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em;
-  color: var(--text-subtle); margin-bottom: 8px;
+  color: var(--text-subtle); margin-bottom: 4px;
 }
-.pm-adp-kvs { display: flex; gap: 8px; }
-.pm-adp-kv {
-  flex: 1; text-align: center; padding: 8px 4px; border-radius: 10px;
-  background: var(--bg-alt); border: 1px solid transparent;
+.pm-adp-row {
+  display: grid; grid-template-columns: 1fr auto auto; align-items: baseline; gap: 8px; padding: 4px 0;
 }
-.pm-adp-kv .k {
-  display: block; font-size: 10px; font-weight: 700; letter-spacing: .03em; color: var(--text-subtle);
+.pm-adp-row + .pm-adp-row { border-top: 1px solid var(--border); }
+.pm-adp-row-src { font-size: 11px; font-weight: 700; color: var(--text-muted); white-space: nowrap; }
+.pm-adp-row-v {
+  font-size: 14px; font-weight: 800; color: var(--text);
+  font-variant-numeric: tabular-nums; text-align: right; min-width: 40px;
 }
-.pm-adp-kv .v {
-  display: block; margin-top: 3px; font-size: 18px; font-weight: 800;
-  color: var(--text); font-variant-numeric: tabular-nums; line-height: 1.1;
-}
-/* Value matching the viewer's league type. */
-.pm-adp-kv.pm-adp-cur {
-  background: var(--accent-soft, rgba(56,189,248,.12));
-  border-color: var(--accent-soft-2, rgba(56,189,248,.25));
-}
-.pm-adp-kv.pm-adp-cur .v { color: var(--accent, #3b82f6); }
+.pm-adp-row-v .k { font-size: 9px; font-weight: 700; color: var(--text-subtle); margin-right: 3px; }
+.pm-adp-row-v.pm-adp-cur { color: var(--accent, #3b82f6); }
 .pm-adp-na { color: var(--text-subtle); font-weight: 700; }
+@media (max-width: 480px) { .pm-adp-grid { grid-template-columns: 1fr; } }
 .pm-section-divider {
   border: none;
   border-top: 1px solid var(--border);
