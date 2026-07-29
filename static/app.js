@@ -5436,6 +5436,12 @@ window.initTradePage = function initTradePage(root = document) {
       tabs.forEach(t => t.classList.toggle("is-active", t.dataset.tab === name));
       calcTab.style.display  = name === "calculator"   ? "" : "none";
       suggTab.style.display  = name === "suggestions"  ? "" : "none";
+      // On mobile the Player Insights sidebar is a peer "Insights" tab: a class
+      // on .otc-layout reveals it (CSS gates the reveal to <=1200px). Using a
+      // class rather than inline display avoids a stale value leaking into the
+      // always-on desktop sidebar across a resize.
+      const otcLayout = root.querySelector(".otc-layout");
+      if (otcLayout) otcLayout.classList.toggle("otc-show-insights", name === "insights");
       if (name === "suggestions" && !suggTargetsLoaded) {
         loadSuggTargets();
       }
@@ -17236,8 +17242,8 @@ function setupFunAwardsGrid() {
 // Mobile sidebar: wrap sidebar content in a collapsible toggle drawer.
 // Handles .page-sidebar (league pages, ≤1180px), which defaults to CLOSED on mobile.
 // The trade calculator's .otc-side (Player Insights) is intentionally NOT collapsed
-// here: on mobile it flows below the calculator as a normal section (see the
-// `.otc-side { order: 1 }` rule) rather than sitting up top behind a dropdown.
+// here: on mobile it's surfaced as a peer "Insights" tab in the otc-main-tabs (the
+// switchTab handler toggles the sidebar's display), not a dropdown.
 (function initMobileSidebar() {
   var configs = [
     { selector: '.page-sidebar', breakpoint: 1180, toggleClass: 'page-sidebar-toggle', bodyClass: 'page-sidebar-body', label: 'League Analytics' },

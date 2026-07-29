@@ -10648,14 +10648,19 @@ img, svg, canvas {
 
 }
 
-/* Shared mobile sidebar toggle styles - active at both breakpoints */
+/* Player Insights is a mobile-only "Insights" tab on the trade calc. The tab
+   button shows only on mobile; the sidebar is hidden until that tab is active
+   (app.js switchTab toggles its display). Desktop keeps the persistent sidebar
+   and hides the tab button. */
+.otc-tab-insights { display: none; }
 @media (max-width: 1200px) {
+  .otc-tab-insights { display: flex; }
   .otc-layout .otc-side {
-    /* Player Insights flows BELOW the calculator on mobile (was order:-1, which
-       floated it to the top behind a "Player Insights" dropdown). */
+    display: none;
     order: 1;
     margin-top: 14px;
   }
+  .otc-layout.otc-show-insights .otc-side { display: block; }
 }
 @media (max-width: 1200px) {
   .page-sidebar-toggle,
