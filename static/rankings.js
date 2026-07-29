@@ -56,7 +56,8 @@ function _prReducedMotion() {
 function _prPaintSpark(ctx2d, pts, w, h, progress, col) {
   ctx2d.clearRect(0, 0, w, h);
   const n = pts.length, segs = n - 1;
-  const t = progress * segs, full = Math.floor(t);
+  const t = progress * segs;
+  const full = Math.max(0, Math.min(segs, Math.floor(t)));  // never index out of range
   // The polyline visible at this progress (for the reveal animation).
   const line = [pts[0]];
   for (let i = 1; i <= Math.min(full, segs); i++) line.push(pts[i]);
@@ -123,7 +124,10 @@ function _prDrawSparkline(canvas, data, animate) {
     let start = null; const dur = 650;
     (function frame(now) {
       if (start === null) start = now;
-      const p = Math.min(1, (now - start) / dur);
+      // Clamp to [0,1]: the first rAF timestamp can be slightly earlier than the
+      // performance.now() that seeded `start`, which would make p (and progress)
+      // negative → a negative array index → a crash that blanks the sparkline.
+      const p = Math.min(1, Math.max(0, (now - start) / dur));
       _prPaintSpark(ctx2d, pts, w, h, 1 - Math.pow(1 - p, 3), col); // easeOutCubic
       if (p < 1) requestAnimationFrame(frame);
     })(performance.now());

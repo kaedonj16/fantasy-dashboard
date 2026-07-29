@@ -13241,7 +13241,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 
         <!-- Table header -->
         <div id="prTableHeader" style="display:none;
-             grid-template-columns:28px 42px 1fr 52px 46px 46px 60px;
+             grid-template-columns:54px 42px 1fr 52px 46px 46px 60px;
              gap:0;padding:6px 12px;border-radius:6px;
              background:var(--accent-soft);font-size:11px;
              font-weight:700;color:var(--accent);letter-spacing:0.04em;
