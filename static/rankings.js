@@ -431,7 +431,12 @@ function prSyncAdpSourceUI(sortBy) {
   // never claims a source the shown ADP didn't come from.
   const usedLabel = prAdpSources[mode];
   const autoLabel = usedLabel && usedLabel !== 'none' ? ('Auto (' + usedLabel + ')') : 'Auto';
-  const opts = [{ value: 'auto', label: autoLabel }].concat(prAdpSourceOptions[mode] || []);
+  let opts = [{ value: 'auto', label: autoLabel }].concat(prAdpSourceOptions[mode] || []);
+  // Yahoo ADP needs a connected Yahoo league (league id + token); hide it
+  // anywhere else so the menu never offers a source that can't return data here.
+  const yahooAvailable = (typeof window.__platform !== 'undefined'
+                          && window.__platform === 'yahoo' && !!window.__leagueId);
+  if (!yahooAvailable) opts = opts.filter(o => o.value !== 'yahoo');
   const want = sel.value || prAdpSource;
   sel.innerHTML = opts.map(o =>
     '<option value="' + o.value + '">' + o.label + '</option>').join('');
