@@ -1850,7 +1850,8 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         "<div class='br-sheet-group'>"
         "<button type='button' class='br-sheet-link' id='brSheetSearchRow'>"
         f"{_nav_icon('search', size=20)}<span>Search players</span></button>"
-        f"<a class='br-sheet-link' href='/watchlist'>{_nav_icon('star', size=20)}"
+        "<a class='br-sheet-link' href='/watchlist'>"
+        "<i class='fa-solid fa-star br-sheet-fa' aria-hidden='true'></i>"
         "<span>Watchlist</span></a>"
         "</div>"
     )
