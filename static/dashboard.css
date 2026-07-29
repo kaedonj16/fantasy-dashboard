@@ -3772,6 +3772,10 @@ strong + .player-badge,
 }
 
 #teamsAnalyticsTabs .tab-btn {
+  /* Grow to fill the strip width evenly instead of leaving empty space after
+     the last tab; still shrink to fit if labels ever get long. */
+  flex: 1 1 auto;
+  text-align: center;
   padding: 4px 10px;
   font-size: 10px;
   font-weight: 700;
@@ -11595,21 +11599,16 @@ img, svg, canvas {
   }
 
   #teamsAnalyticsTabs {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
     flex-wrap: nowrap;
     scrollbar-width: none;
-    /* Fade right edge to hint at scrollable overflow */
-    -webkit-mask-image: linear-gradient(to right, black 85%, transparent 100%);
-    mask-image: linear-gradient(to right, black 85%, transparent 100%);
-    padding-right: 20px;
   }
   #teamsAnalyticsTabs::-webkit-scrollbar {
     display: none;
   }
   #teamsAnalyticsTabs .tab-btn {
-    flex: 0 0 auto;
-    padding: 4px 8px;
+    /* Fill the row evenly on mobile too (no empty space after the last tab). */
+    flex: 1 1 0;
+    padding: 6px 6px;
     letter-spacing: 0;
   }
 }
@@ -17155,20 +17154,10 @@ tr.team-clickable {
 .btm-vsavg-badge.btm-pos { background: color-mix(in srgb, var(--win) 13%, transparent); color: var(--win); }
 .btm-vsavg-badge.btm-neg { background: color-mix(in srgb, var(--loss) 12%, transparent); color: var(--loss); }
 
-/* Teams sidebar sticky positioning - desktop only */
-@media (min-width: 1181px) {
-  .teams-page.page-layout {
-    grid-template-columns: minmax(0, 1fr) 340px;
-  }
-
-  .teams-sidebar {
-    position: sticky;
-    top: 90px;
-    max-height: calc(100vh - 110px);
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    align-self: flex-start;
-  }
+/* Teams page is now a single tabbed card (Teams / Value / Roster Intel /
+   Schedule), no separate analytics sidebar, so it's one full-width column. */
+.teams-page.page-layout {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 /* Slim (sidebar) variant */
@@ -23391,9 +23380,12 @@ a, button, [role="button"], [role="tab"], summary, label,
     border-top: 1px solid var(--border);
   }
   .br-sheet-link .nav-svg-icon { color: var(--text-muted); flex: 0 0 auto; }
+  /* FontAwesome glyph (e.g. watchlist star) sized to match the 20px nav icons. */
+  .br-sheet-link .br-sheet-fa { color: var(--text-muted); flex: 0 0 auto; width: 20px; text-align: center; font-size: 17px; }
   .br-sheet-link:active { background: var(--accent-soft); }
   .br-sheet-link.active { color: var(--accent); }
   .br-sheet-link.active .nav-svg-icon { color: var(--accent); }
+  .br-sheet-link.active .br-sheet-fa { color: var(--accent); }
   /* The Discord PNG (matches the 20px nav-svg icons) and the freshness time on
      the Refresh row (right-aligned, quiet). */
   .br-sheet-icon-img { width: 20px; height: 20px; flex: 0 0 auto; opacity: .85; }

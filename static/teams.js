@@ -630,30 +630,25 @@
           .catch(function() { panel.innerHTML = '<p class="analytics-empty">Could not load power rankings.</p>'; });
       }
 
-      // Show Schedule/Draft tabs conditionally
+      // Show the Schedule tab only in-season (Draft + Power Rankings tabs removed).
       (function() {
         var sosBtn = document.getElementById('sosTabBtn');
-        var draftBtn = document.getElementById('draftTabBtn');
         // Schedule: visible when not in pure offseason (in-season or preseason)
         if (sosBtn && !_offseasonMode) sosBtn.style.display = '';
-        // Draft: visible once the draft has occurred
-        if (draftBtn && _draftEnded) draftBtn.style.display = '';
       })();
 
-      // Wire data-loading onto the tab buttons; visibility is handled by initCardTabs
+      // Wire data-loading onto the tab buttons; visibility is handled by initCardTabs.
+      // "Teams" is the default tab (static grade cards), so nothing loads on init.
       function wireAnalyticsTabs() {
         var tabs = document.querySelectorAll('#teamsAnalyticsTabs > .tab-btn');
         tabs.forEach(function(btn) {
           btn.addEventListener('click', function() {
             var tab = btn.dataset.tab;
-            if (tab === 'btm')             loadBtm();
-            if (tab === 'roster-intel')    loadRosterIntel();
-            if (tab === 'power-rankings')  loadPowerRankings();
-            if (tab === 'sos')             loadSos();
-            if (tab === 'draft')           loadDraft();
+            if (tab === 'btm')          loadBtm();
+            if (tab === 'roster-intel') loadRosterIntel();
+            if (tab === 'sos')          loadSos();
           });
         });
-        loadBtm();  // load first tab immediately
       }
 
       // Auto-open a specific tab when navigated with a hash (e.g. #power-rankings from nav)

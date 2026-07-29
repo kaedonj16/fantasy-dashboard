@@ -17327,6 +17327,9 @@ function setupFunAwardsGrid() {
       _players = [];
     }
     _loading = false;
+    // If the user already typed while the list was loading, render now instead
+    // of leaving the dropdown stuck on "Loading…" until they type another key.
+    if (input.value.trim()) renderResults(input.value);
   }
 
   function headshot(id) {
@@ -17405,6 +17408,9 @@ function setupFunAwardsGrid() {
   input.addEventListener('input', () => {
     const val = input.value;
     clearBtn.style.display = val ? 'block' : 'none';
+    // Kick off the load on the first keystroke too (not just focus), so a fast
+    // typist who never fired focus first still gets results.
+    if (val.trim()) loadPlayers();
     clearTimeout(_debounce);
     _debounce = setTimeout(() => renderResults(val), 120);
   });
@@ -17454,6 +17460,14 @@ function setupFunAwardsGrid() {
       input.select();
     }
   });
+
+  // Warm the player list in the background so the first search is instant
+  // instead of blocking on the fetch the moment the user starts typing.
+  if (window.requestIdleCallback) {
+    requestIdleCallback(() => loadPlayers(), { timeout: 3000 });
+  } else {
+    setTimeout(loadPlayers, 1500);
+  }
   }
 
   if (document.readyState === 'loading') {
