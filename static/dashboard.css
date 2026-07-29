@@ -7446,6 +7446,7 @@ select:focus {
 .po-rec  { color: var(--text-muted); white-space: nowrap; }
 .po-odds { min-width: 120px; }
 .po-bye  { text-align: center; color: var(--text-muted); white-space: nowrap; }
+.po-top  { text-align: center; color: var(--text-muted); white-space: nowrap; }
 .po-proj { color: var(--text-muted); white-space: nowrap; font-size: 12px; }
 .po-bar-wrap {
   background: var(--border);

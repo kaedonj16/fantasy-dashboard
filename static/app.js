@@ -2782,6 +2782,13 @@ function _renderPlayoffOdds(data) {
         }</td>`
       : '';
 
+    // #1 (top) seed odds — the team with the best regular-season finish.
+    const topCell = `<td class="po-top">${
+      is_complete
+        ? (t.first_seed_pct === 100 ? '✓' : '')
+        : (t.first_seed_pct > 0 ? fmtProjPct(t.first_seed_pct) + '%' : '-')
+    }</td>`;
+
     const projCell = is_complete
       ? ''
       : `<td class="po-proj">${t.avg_final_wins.toFixed(1)}-${t.avg_final_losses.toFixed(1)}</td>`;
@@ -2793,11 +2800,12 @@ function _renderPlayoffOdds(data) {
       <td class="po-team">${t.team_name}</td>
       <td class="po-rec">${rec}</td>
       <td class="po-odds">${oddsCell}</td>
-      ${byeCell}${projCell}${simAvgCell}
+      ${byeCell}${topCell}${projCell}${simAvgCell}
     </tr>`;
   }).join('');
 
   const byeHdr    = showBye ? '<th class="po-bye">Bye</th>' : '';
+  const topHdr    = '<th class="po-top">Top Seed</th>';
   const projHdr   = is_complete ? '' : '<th class="po-proj">Proj W-L</th>';
   const simAvgHdr = '';
 
@@ -2808,7 +2816,7 @@ function _renderPlayoffOdds(data) {
         <th class="po-team">Team</th>
         <th class="po-rec">Record</th>
         <th class="po-odds">Playoff %</th>
-        ${byeHdr}${projHdr}${simAvgHdr}
+        ${byeHdr}${topHdr}${projHdr}${simAvgHdr}
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
