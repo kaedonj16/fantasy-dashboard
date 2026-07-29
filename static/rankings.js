@@ -364,9 +364,14 @@ function prBuildRankMap() {
 }
 
 // Map sort key → { header label, cell value function }
-// ADP (startup): use the SF or 1QB value depending on league type, matching
-// the prospects page. Null ADP renders as a dash and sorts to the end.
+// ADP for the current scoring mode (redraft vs dynasty/startup) and league type
+// (SF vs 1QB). The server attaches both a dynasty (avg_pick/sf_avg_pick) and a
+// redraft (redraft_avg_pick/sf_redraft_avg_pick) ADP per player; pick the pair
+// matching the Redraft/Dynasty toggle. Null ADP renders as a dash and sorts last.
 function prGetAdp(p) {
+  if (prScoringType === 'redraft') {
+    return prLeagueType === 'sf' ? p.sf_redraft_avg_pick : p.redraft_avg_pick;
+  }
   return prLeagueType === 'sf' ? p.sf_avg_pick : p.avg_pick;
 }
 function prFormatAdp(p) {
@@ -939,8 +944,12 @@ Promise.all([
         sf_value_14:      Number(p.sf_value_14 || p.sf_value || p.value || 0),
         redraft_value_1qb: p.redraft_value_1qb != null ? Number(p.redraft_value_1qb) : null,
         redraft_value_sf:  p.redraft_value_sf  != null ? Number(p.redraft_value_sf)  : null,
-        avg_pick:          p.avg_pick    != null ? Number(p.avg_pick)    : null,
-        sf_avg_pick:       p.sf_avg_pick != null ? Number(p.sf_avg_pick) : null,
+        avg_pick:            p.avg_pick            != null ? Number(p.avg_pick)            : null,
+        sf_avg_pick:         p.sf_avg_pick         != null ? Number(p.sf_avg_pick)         : null,
+        redraft_avg_pick:    p.redraft_avg_pick    != null ? Number(p.redraft_avg_pick)    : null,
+        sf_redraft_avg_pick: p.sf_redraft_avg_pick != null ? Number(p.sf_redraft_avg_pick) : null,
+        rookie_avg_pick:     p.rookie_avg_pick     != null ? Number(p.rookie_avg_pick)     : null,
+        sf_rookie_avg_pick:  p.sf_rookie_avg_pick  != null ? Number(p.sf_rookie_avg_pick)  : null,
         pos_rank_label:   p.pos_rank_label    || '',
         sf_pos_rank_label:p.sf_pos_rank_label || '',
         pos_rank:         Number(p.pos_rank    || 9999),
