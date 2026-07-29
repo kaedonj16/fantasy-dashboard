@@ -252,6 +252,10 @@ def build_trade_calculator_body(
             <button class="otc-main-tab" data-tab="suggestions">
               Suggestions <span class="nav-pro-badge">PRO</span>
             </button>
+            <!-- Insights tab only shows on mobile (CSS): it surfaces the Player
+                 Insights sidebar as a peer tab so the calc reads like other tabbed
+                 pages. On desktop the sidebar stays put and this button is hidden. -->
+            <button class="otc-main-tab otc-tab-insights" data-tab="insights">Insights</button>
           </div>
 
           <div id="otcCalcTab">
