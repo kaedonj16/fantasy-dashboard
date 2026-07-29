@@ -1,15 +1,17 @@
 """
 Draft ADP crawler for the Trade Intelligence Engine.
 
-For every dynasty (league_type 2) and keeper/redraft (league_type 1) league in
+For every dynasty (league_type 2) and true-redraft (league_type 0) league in
 trade_intel_leagues, fetches completed drafts from the Sleeper API and stores the
 raw pick data.  After each batch the aggregated ADP table (draft_adp) is
 recomputed via a single SQL upsert so callers always get up-to-date numbers.
 
-Classification (depends on league type - a redraft full draft looks like a
-dynasty startup by round count):
+Classification (depends on Sleeper league type - a redraft full draft looks like
+a dynasty startup by round count):
   - dynasty (type 2): rounds >= 10 -> 'startup', rounds 1-5 -> 'rookie'
-  - keeper/redraft (type 1): rounds >= 10 -> 'redraft'
+  - redraft (type 0): rounds >= 10 -> 'redraft'
+  - keeper (type 1) is NOT crawled: kept rosters skew its draft toward rookies,
+    so it does not represent redraft ADP.
   Ambiguous drafts (6-9 rounds, or short drafts in redraft leagues) are skipped.
 
 Idempotent: draft_adp_drafts.draft_id is a PRIMARY KEY, so re-running never
@@ -28,7 +30,12 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from dashboard_services.db import get_conn
+def get_conn():
+    """Lazy DB handle so importing this module (e.g. for the pure unit tests,
+    which have no psycopg) doesn't pull in the driver until a query runs."""
+    from dashboard_services.db import get_conn as _get_conn
+    return _get_conn()
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -67,27 +74,32 @@ def _get(path: str) -> list | dict | None:
 def _classify_draft(draft_meta: dict, league_type: int = 2) -> Optional[str]:
     """Return the draft_type, or None for ambiguous/unknown drafts.
 
-    Classification depends on the league type because a redraft/keeper full
-    draft looks identical (by round count) to a dynasty startup:
-      - dynasty (league_type 2): rounds >= 10 -> 'startup', 1-5 -> 'rookie'.
-      - keeper/redraft (league_type 1, treated as redraft everywhere else, see
-        league_discovery): a full-roster draft (rounds >= 10) is a 'redraft'
-        board. Short drafts in these leagues are ambiguous and skipped.
+    Classification depends on the Sleeper league type (settings.type: 0=redraft,
+    1=keeper, 2=dynasty) because a full draft looks identical by round count
+    across formats:
+      - dynasty (2): rounds >= 10 -> 'startup', 1-5 -> 'rookie'.
+      - redraft (0): a full-roster draft (rounds >= 10) is a 'redraft' board.
+      - keeper (1): NOT usable as redraft ADP — most veterans are kept, so the
+        draft pool is rookies + replacements and a top rookie goes ~1.01, which
+        badly skews "redraft" ADP. Skipped entirely.
+    Short drafts on the redraft axis are ambiguous and skipped.
     """
     rounds = (draft_meta.get("settings") or {}).get("rounds") or 0
     try:
         rounds = int(rounds)
     except (TypeError, ValueError):
         return None
-    if league_type == 2:
+    if league_type == 2:          # dynasty
         if rounds >= 10:
             return "startup"
         if 1 <= rounds <= 5:
             return "rookie"
         return None
-    # Keeper / redraft leagues.
-    if rounds >= 10:
-        return "redraft"
+    if league_type == 0:          # true redraft (no keepers)
+        if rounds >= 10:
+            return "redraft"
+        return None
+    # Keeper (1) or unknown: their drafts don't represent redraft ADP.
     return None
 
 
@@ -97,7 +109,7 @@ def crawl_league_drafts(league_id: str, is_superflex: bool, num_teams: int,
     Fetch completed drafts for one league and persist new picks.
 
     league_type drives draft classification (dynasty startup/rookie vs
-    keeper/redraft). Returns (new_picks, new_drafts).
+    true-redraft). Returns (new_picks, new_drafts).
     """
     drafts = _get(f"/league/{league_id}/drafts")
     if not drafts:
@@ -252,7 +264,7 @@ def _leagues_to_crawl(batch_size: int, crawl_mode: str = "both", recrawl_days: i
     """
     with get_conn() as conn:
         if crawl_mode == "new":
-            # Only uncrawled leagues (dynasty startup/rookie + keeper/redraft)
+            # Only uncrawled leagues (dynasty startup/rookie + true redraft)
             query = """
                 SELECT league_id,
                        COALESCE(num_teams, 12) AS num_teams,
@@ -260,7 +272,7 @@ def _leagues_to_crawl(batch_size: int, crawl_mode: str = "both", recrawl_days: i
                        COALESCE(league_type, 2) AS league_type
                 FROM trade_intel_leagues
                 WHERE crawl_enabled = TRUE
-                  AND league_type IN (1, 2)    -- 2=dynasty, 1=keeper/redraft
+                  AND league_type IN (0, 2)    -- 2=dynasty, 0=true redraft (keeper=1 excluded)
                   AND last_draft_adp_crawled_at IS NULL
                 ORDER BY discovered_at DESC
                 LIMIT %s
@@ -275,7 +287,7 @@ def _leagues_to_crawl(batch_size: int, crawl_mode: str = "both", recrawl_days: i
                        COALESCE(league_type, 2) AS league_type
                 FROM trade_intel_leagues
                 WHERE crawl_enabled = TRUE
-                  AND league_type IN (1, 2)    -- 2=dynasty, 1=keeper/redraft
+                  AND league_type IN (0, 2)    -- 2=dynasty, 0=true redraft (keeper=1 excluded)
                   AND last_draft_adp_crawled_at IS NOT NULL
                   AND last_draft_adp_crawled_at < NOW() - INTERVAL '%s days'
                 ORDER BY last_draft_adp_crawled_at DESC
@@ -289,7 +301,7 @@ def _leagues_to_crawl(batch_size: int, crawl_mode: str = "both", recrawl_days: i
                         COALESCE(league_type, 2) AS league_type, 1 as priority
                 FROM trade_intel_leagues
                 WHERE crawl_enabled = TRUE
-                  AND league_type IN (1, 2)
+                  AND league_type IN (0, 2)
                   AND last_draft_adp_crawled_at IS NULL
                 ORDER BY discovered_at DESC
                 LIMIT %s)
@@ -298,7 +310,7 @@ def _leagues_to_crawl(batch_size: int, crawl_mode: str = "both", recrawl_days: i
                         COALESCE(league_type, 2) AS league_type, 2 as priority
                 FROM trade_intel_leagues
                 WHERE crawl_enabled = TRUE
-                  AND league_type IN (1, 2)
+                  AND league_type IN (0, 2)
                   AND last_draft_adp_crawled_at IS NOT NULL
                   AND last_draft_adp_crawled_at < NOW() - INTERVAL '%s days'
                 ORDER BY last_draft_adp_crawled_at DESC
