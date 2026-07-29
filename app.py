@@ -6105,8 +6105,12 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     """
 
     return f"""
+    <nav class="os-jump-nav std-jump-nav" aria-label="Jump to section">
+      <button type="button" class="active" data-jump="os-std-value">Value Rankings</button>
+      <button type="button" data-jump="os-std-power">Power &amp; Playoffs</button>
+    </nav>
     <div class="standings-main two-col-standings">
-      <div class="standings-col">
+      <div class="standings-col" id="os-std-value">
         <div class="card">
           <div class="card-tabs">
             <div class="tab-strip dynasty-value-strip">
@@ -6120,10 +6124,24 @@ def _build_offseason_standings_body(ctx: dict) -> str:
           </div>
         </div>
       </div>
-      <div class="standings-col">
+      <div class="standings-col" id="os-std-power">
         {power_playoffs_html}
       </div>
     </div>
+    <script>
+    (function(){{
+      var nav = document.querySelector('.std-jump-nav');
+      if (!nav) return;
+      nav.querySelectorAll('[data-jump]').forEach(function(btn){{
+        btn.addEventListener('click', function(){{
+          var t = document.getElementById(btn.getAttribute('data-jump'));
+          if (t) t.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+          nav.querySelectorAll('button').forEach(function(x){{ x.classList.remove('active'); }});
+          btn.classList.add('active');
+        }});
+      }});
+    }})();
+    </script>
     """
 
 
@@ -7713,17 +7731,10 @@ def build_weekly_hub_body(ctx: dict) -> str:
     </div>
 
 <script>
-// On mobile/tablet: move #weeklyLeftTabs into the sidebar BEFORE initMobileSidebar wraps it,
-// so the real tab panel lives inside the Weekly Tools toggle.
-// Threshold matches the CSS @media (max-width: 1180px) breakpoint where page-layout
-// collapses to single-column and initMobileSidebar activates.
-(function() {{
-  if (window.innerWidth > 1180) return;
-  var tabs = document.getElementById('weeklyLeftTabs');
-  var sidePanels = document.querySelector('.week-side-panels');
-  if (!tabs || !sidePanels) return;
-  sidePanels.insertBefore(tabs, sidePanels.firstChild);
-}})();
+// Mobile: keep #weeklyLeftTabs (Scorers / Scout / Lineup) in the main column as
+// primary content instead of relocating it into the "Weekly Tools" drawer, so the
+// tabs are surfaced rather than buried behind a dropdown. The tab-switch JS below
+// finds #weeklyLeftTabs by id regardless of where it sits, so nothing else changes.
 
 (function() {{
   var leagueId  = {league_js};
