@@ -10306,10 +10306,18 @@ function openPlayerModal(playerId, playerName, opts) {
           .map(s => `
             <div class="pm-adp-row">
               <span class="pm-adp-row-src">${s.label}</span>
-              <span class="pm-adp-row-v${_c1}"><span class="k">1QB</span>${_adpV(s.vals[key + '_1qb'])}</span>
-              <span class="pm-adp-row-v${_cS}"><span class="k">SF</span>${_adpV(s.vals[key + '_sf'])}</span>
+              <span class="pm-adp-row-v${_c1}">${_adpV(s.vals[key + '_1qb'])}</span>
+              <span class="pm-adp-row-v${_cS}">${_adpV(s.vals[key + '_sf'])}</span>
             </div>`).join('');
-        return rows ? `<div class="pm-adp-card"><div class="pm-adp-card-h">${fmtLabel}</div>${rows}</div>` : '';
+        return rows ? `
+          <div class="pm-adp-card">
+            <div class="pm-adp-row pm-adp-head-row">
+              <span class="pm-adp-card-h">${fmtLabel}</span>
+              <span class="pm-adp-col-h${_c1}">1QB</span>
+              <span class="pm-adp-col-h${_cS}">SF</span>
+            </div>
+            ${rows}
+          </div>` : '';
       };
       const _dynCard = _adpFmtCard('Dynasty', 'dynasty');
       const _rdrCard = _adpFmtCard('Redraft', 'redraft');
