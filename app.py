@@ -7140,15 +7140,21 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         }})();
         </script>
 
+        <nav class="os-jump-nav" aria-label="Jump to section">
+          <button type="button" class="active" data-jump="os-jump-report">Report</button>
+          <button type="button" data-jump="os-jump-waivers">Waivers</button>
+          <button type="button" data-jump="os-jump-teams">Team Values</button>
+        </nav>
+
         <div id="sinceLastVisitCard" class="slv-wrap" data-slv-init="1"></div>
 
-        {gm_card_html}
+        <div id="os-jump-report">{gm_card_html}</div>
 
         {season_review_html}
 
         {matchup_html}
 
-        <section class="os-card os-col-fill">
+        <section class="os-card os-col-fill" id="os-jump-waivers">
           <div class="os-section-head">
             <div class="os-section-head-content">
               {_section_title_link("Waiver Wire Targets", "page_waivers", platform, season, ctx.get("league_id"))}
@@ -7164,12 +7170,26 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         </section>
       </main>
 
-      <aside class="os-right-col">
+      <aside class="os-right-col" id="os-jump-teams">
         <div class="os-sidebar-shell">
           {teams_sidebar_html}
         </div>
       </aside>
     </div>
+    <script>
+    (function(){{
+      var nav = document.querySelector('.os-jump-nav');
+      if (!nav) return;
+      nav.querySelectorAll('[data-jump]').forEach(function(btn){{
+        btn.addEventListener('click', function(){{
+          var t = document.getElementById(btn.getAttribute('data-jump'));
+          if (t) t.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+          nav.querySelectorAll('button').forEach(function(x){{ x.classList.remove('active'); }});
+          btn.classList.add('active');
+        }});
+      }});
+    }})();
+    </script>
     """
     return body
 

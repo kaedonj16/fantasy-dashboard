@@ -6887,6 +6887,44 @@ select:focus {
   margin-top: 18px;
 }
 
+/* Offseason dashboard "jump to section" nav: sticky sliding-tab bar on mobile so
+   the long sections (Report / Waivers / Team Values) are one tap away instead of
+   a long scroll. Hidden on desktop, where the two-column layout shows them side
+   by side. */
+.os-jump-nav { display: none; }
+@media (max-width: 1180px) {
+  .os-jump-nav {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    padding: 8px 0;
+    margin-bottom: 8px;
+    background: var(--bg);
+  }
+  .os-jump-nav::-webkit-scrollbar { height: 0; }
+  .os-jump-nav button {
+    flex: 0 0 auto;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text-muted);
+    font-weight: 700;
+    font-size: 12.5px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .os-jump-nav button.active {
+    background: var(--accent);
+    color: var(--on-accent);
+    border-color: var(--accent);
+  }
+}
+
 .os-hero-title {
   margin: 0;
   font-size: 30px;
