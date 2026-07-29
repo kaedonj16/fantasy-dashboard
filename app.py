@@ -20562,15 +20562,13 @@ def _attach_adp_from_source(players, adp_season, source, league_id=None, token=N
     its valid axis (Yahoo redraft-only, BR Fantasy dynasty/rookie only) and
     falls back per axis when a source has no data there, so a choice like
     "Yahoo" fills redraft from Yahoo and leaves dynasty/rookie on their best
-    available feed. Returns adp_sources {mode: label}.
-
-    BR Fantasy is drawn from real draft picks, so its averaged ADP never bottoms
-    out at 1.0 (the consensus No. 1 still goes third in some drafts). When it is
-    the chosen single source, re-rank to a contiguous 1..N board so it reads like
-    a draft board rather than showing a 5.3 floor."""
+    available feed. Returns adp_sources {mode: label}."""
     from dashboard_services.adp_service import resolve_market_adp, ADP_SOURCE_LABELS
 
     label = ADP_SOURCE_LABELS.get(source, source.title())
+    # BR Fantasy's raw avg_pick can't reach 1 (the No. 1 player still goes 5th in
+    # some drafts, so the mean floats to ~3), so re-rank it (ordered by avg_pick)
+    # to a clean 1..N draft board that reads like ADP and tops out at 1.
     as_rank = (source == "brfantasy")
     by_field = {}
     used = {"startup": False, "rookie": False, "redraft": False}
@@ -23115,8 +23113,12 @@ def api_player_details(player_id: str):
                 _key = (_source, _scoring, _is_sf)
                 if _key not in _mkt_cache:
                     try:
+                        # Match the rankings page: re-rank BR Fantasy (ordered by
+                        # its raw avg_pick) to a clean 1..N board so it tops out at
+                        # 1 instead of the ~3 mean-pick floor.
                         _mkt_cache[_key] = resolve_market_adp(
-                            int(season), _is_sf, _scoring, source=_source) or {}
+                            int(season), _is_sf, _scoring, source=_source,
+                            as_rank=(_source == "brfantasy")) or {}
                     except Exception:
                         _mkt_cache[_key] = {}
                 _v = _mkt_cache[_key].get(str(player_id))

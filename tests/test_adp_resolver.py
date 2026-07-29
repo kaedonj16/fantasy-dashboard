@@ -128,11 +128,12 @@ def test_crawler_redraft_yields_nothing():
     assert A.fetch_crawler_adp(2026, False, "redraft") == {}
 
 
-def test_crawler_scales_norm_round_to_ref_size(monkeypatch):
-    # SQL returns size-normalized round position; wrapper rescales to a 12-team pick.
+def test_crawler_returns_avg_pick(monkeypatch):
+    # SQL returns the sample-weighted average draft pick; the wrapper passes it
+    # through unchanged (no size-normalization / round rescaling).
     def handler(sql, params):
-        return [{"player_id": "1", "norm_round": 0.5, "n": 30},   # half a round in -> pick 6
-                {"player_id": "2", "norm_round": 2.0, "n": 30}]   # two rounds in -> pick 24
+        return [{"player_id": "1", "avg_pick": 6.0, "n": 30},
+                {"player_id": "2", "avg_pick": 24.0, "n": 30}]
     _install_fake_db(monkeypatch, handler)
     assert A.fetch_crawler_adp(2026, False, "dynasty") == {"1": 6.0, "2": 24.0}
 
@@ -147,7 +148,7 @@ def test_crawler_falls_back_to_latest_season(monkeypatch):
         calls["seasons"].append(season)
         if season == 2026:
             return []                       # requested season empty
-        return [{"player_id": "9", "norm_round": 1.0, "n": 50}]   # latest season has data
+        return [{"player_id": "9", "avg_pick": 12.0, "n": 50}]   # latest season has data
     _install_fake_db(monkeypatch, handler)
     out = A.fetch_crawler_adp(2026, True, "rookie")
     assert out == {"9": 12.0}
