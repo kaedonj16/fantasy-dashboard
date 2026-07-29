@@ -6923,6 +6923,12 @@ select:focus {
     color: var(--on-accent);
     border-color: var(--accent);
   }
+  /* One-at-a-time tab switching on mobile: show only the active jump target and
+     hide the others, so the jump bar behaves like the Matchups tabs rather than
+     just scrolling. Desktop keeps every section in its normal multi-column
+     layout (this whole block is mobile-only). */
+  .os-tab-panel { display: none !important; }
+  .os-tab-panel.os-tab-active { display: block !important; }
 }
 
 .os-hero-title {
