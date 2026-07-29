@@ -7713,17 +7713,10 @@ def build_weekly_hub_body(ctx: dict) -> str:
     </div>
 
 <script>
-// On mobile/tablet: move #weeklyLeftTabs into the sidebar BEFORE initMobileSidebar wraps it,
-// so the real tab panel lives inside the Weekly Tools toggle.
-// Threshold matches the CSS @media (max-width: 1180px) breakpoint where page-layout
-// collapses to single-column and initMobileSidebar activates.
-(function() {{
-  if (window.innerWidth > 1180) return;
-  var tabs = document.getElementById('weeklyLeftTabs');
-  var sidePanels = document.querySelector('.week-side-panels');
-  if (!tabs || !sidePanels) return;
-  sidePanels.insertBefore(tabs, sidePanels.firstChild);
-}})();
+// Mobile: keep #weeklyLeftTabs (Scorers / Scout / Lineup) in the main column as
+// primary content instead of relocating it into the "Weekly Tools" drawer, so the
+// tabs are surfaced rather than buried behind a dropdown. The tab-switch JS below
+// finds #weeklyLeftTabs by id regardless of where it sits, so nothing else changes.
 
 (function() {{
   var leagueId  = {league_js};
