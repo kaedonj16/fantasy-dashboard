@@ -13275,6 +13275,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         display: flex;
         align-items: center;
         gap: 3px;
+        justify-content: flex-start;
       }
       .pr-rank-arrow {
         font-size: 16px;
