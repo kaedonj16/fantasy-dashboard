@@ -26,10 +26,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Optional
 
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-
 def get_conn():
     """Lazy DB handle so importing this module (e.g. for the pure unit tests,
     which have no psycopg) doesn't pull in the driver until a query runs."""
@@ -42,13 +38,27 @@ logger.setLevel(logging.INFO)
 
 SLEEPER_BASE = "https://api.sleeper.app/v1"
 
-# Re-use a session with retry/backoff identical to trade_crawler
-_SESSION = requests.Session()
-_retry = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
-_adapter = HTTPAdapter(pool_connections=4, pool_maxsize=8, max_retries=_retry)
-_SESSION.mount("http://", _adapter)
-_SESSION.mount("https://", _adapter)
-_SESSION.headers.update({"User-Agent": "fantasy-draft-adp/1.0"})
+# HTTP session is built lazily (and `requests`/urllib3 imported only then) so
+# importing this module for the pure unit tests doesn't require those packages.
+_SESSION = None
+
+
+def _session():
+    global _SESSION
+    if _SESSION is None:
+        import requests
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
+        s = requests.Session()
+        retry = Retry(total=3, backoff_factor=1,
+                      status_forcelist=[429, 500, 502, 503, 504])
+        adapter = HTTPAdapter(pool_connections=4, pool_maxsize=8, max_retries=retry)
+        s.mount("http://", adapter)
+        s.mount("https://", adapter)
+        s.headers.update({"User-Agent": "fantasy-draft-adp/1.0"})
+        _SESSION = s
+    return _SESSION
+
 
 _RATE_LIMIT_BACKOFF = 60  # seconds to wait on 429
 
@@ -58,12 +68,13 @@ RECRAWL_DAYS = 30
 
 def _get(path: str) -> list | dict | None:
     url = f"{SLEEPER_BASE}{path}"
+    session = _session()
     try:
-        resp = _SESSION.get(url, timeout=10)
+        resp = session.get(url, timeout=10)
         if resp.status_code == 429:
             logger.warning("[draft_adp] Rate limited - sleeping %ds", _RATE_LIMIT_BACKOFF)
             time.sleep(_RATE_LIMIT_BACKOFF)
-            resp = _SESSION.get(url, timeout=10)
+            resp = session.get(url, timeout=10)
         resp.raise_for_status()
         return resp.json()
     except Exception as exc:
