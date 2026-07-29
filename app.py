@@ -7651,9 +7651,9 @@ def build_weekly_hub_body(ctx: dict) -> str:
           <div class="standings-col">
             <div class="card-tabs" id="weeklyLeftTabs">
               <div class="tab-bar">
-                <button class="tab-btn active" data-tab="scorers">Top Scorers</button>
-                <button class="tab-btn" data-tab="scout">Scout Report</button>
-                <button class="tab-btn" data-tab="optimal">Optimal Lineup</button>
+                <button class="tab-btn active" data-tab="scorers">Scorers</button>
+                <button class="tab-btn" data-tab="scout">Scout</button>
+                <button class="tab-btn" data-tab="optimal">Lineup</button>
               </div>
               <div class="tab-panels">
                 <div class="tab-panel active" data-tab="scorers">
