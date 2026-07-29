@@ -10173,35 +10173,15 @@ def build_teams_body(ctx: dict) -> str:
         "draftEnded": _draft_ended_js,
     })
 
-    analytics_html = f"""
-    <div class="card teams-analytics-card" id="teamsAnalyticsCard">
-      <div class="card-tabs">
-        <div class="tab-strip" id="teamsAnalyticsTabs">
-          <button class="tab-btn active" data-tab="btm">Value</button>
-          <button class="tab-btn" data-tab="roster-intel">Roster Intel</button>
-          <button class="tab-btn" data-tab="power-rankings">Power Rankings</button>
-          <button class="tab-btn" data-tab="sos" id="sosTabBtn" style="display:none">Schedule</button>
-          <button class="tab-btn" data-tab="draft" id="draftTabBtn" style="display:none">Draft</button>
-        </div>
-        <div class="tab-panels">
-          <div class="tab-panel active" data-tab="btm" id="btmPanel">
-            <div class="analytics-skeleton"><div class="sk-shimmer sk-line" style="width:60%"></div><div class="sk-shimmer sk-line sk-line--w75" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w50" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w60" style="margin-top:10px"></div></div>
-          </div>
-          <div class="tab-panel" data-tab="roster-intel" id="rosterIntelPanel">
-            <div class="analytics-skeleton"><div class="sk-shimmer sk-line" style="width:55%"></div><div class="sk-shimmer sk-line sk-line--w75" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w50" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w60" style="margin-top:10px"></div></div>
-          </div>
-          <div class="tab-panel" data-tab="power-rankings" id="powerRankingsPanel">
-            <div class="analytics-skeleton"><div class="sk-shimmer sk-line" style="width:70%"></div><div class="sk-shimmer sk-line sk-line--w75" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w50" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w60" style="margin-top:10px"></div></div>
-          </div>
-          <div class="tab-panel" data-tab="sos" id="sosPanel">
-            <div class="analytics-skeleton"><div class="sk-shimmer sk-line" style="width:65%"></div><div class="sk-shimmer sk-line sk-line--w75" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w50" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w60" style="margin-top:10px"></div></div>
-          </div>
-          <div class="tab-panel" data-tab="draft" id="draftPanel">
-            <div class="analytics-skeleton"><div class="sk-shimmer sk-line" style="width:60%"></div><div class="sk-shimmer sk-line sk-line--w75" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w50" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w60" style="margin-top:10px"></div></div>
-          </div>
-        </div>
-      </div>
-    </div>
+    # Skeleton markup reused by the lazy-loaded analytics panels.
+    _analytics_skeleton = (
+        '<div class="analytics-skeleton"><div class="sk-shimmer sk-line" style="width:60%"></div>'
+        '<div class="sk-shimmer sk-line sk-line--w75" style="margin-top:10px"></div>'
+        '<div class="sk-shimmer sk-line sk-line--w50" style="margin-top:10px"></div>'
+        '<div class="sk-shimmer sk-line sk-line--w60" style="margin-top:10px"></div></div>'
+    )
+
+    _teams_foot_scripts = f"""
     <script>window.__teamsCfg = {_teams_cfg_json};</script>
     <script src="/static/teams.js?v={_TEAMS_JS_V}" defer></script>
     """
@@ -10239,30 +10219,47 @@ def build_teams_body(ctx: dict) -> str:
     """
 
     # ---------- Page shell ----------
+    # Single tabbed card: "Teams" is the first/default tab (the team-grade cards
+    # + sort bar + legend); Value / Roster Intel / Schedule follow. Power Rankings
+    # and Draft tabs were removed. On desktop and mobile this is one column.
     return f"""
     <div class="page-layout teams-page">
       <main class="page-main">
-        <div class="teams-topbar">
-          <div class="teams-sort-bar">
-            <span style="font-size:12px;color:var(--text-muted);margin-right:8px;">Sort by:</span>
-            <div class="otc-main-tabs br-slide-tabs teams-sort-tabs" data-br-slide-tabs>
-              <button class="teams-sort-btn otc-main-tab" data-sort="posindex">Positional Index</button>
-              <button class="teams-sort-btn otc-main-tab" data-sort="grade">Team Grade</button>
-              <button class="teams-sort-btn otc-main-tab" data-sort="archetype">Archetype</button>
+        <div class="card teams-analytics-card" id="teamsAnalyticsCard">
+          <div class="card-tabs">
+            <div class="tab-strip" id="teamsAnalyticsTabs">
+              <button class="tab-btn active" data-tab="teams">Teams</button>
+              <button class="tab-btn" data-tab="btm">Value</button>
+              <button class="tab-btn" data-tab="roster-intel">Roster Intel</button>
+              <button class="tab-btn" data-tab="sos" id="sosTabBtn" style="display:none">Schedule</button>
             </div>
-            <span id="teamsSortLabel" style="font-size:11px;color:var(--text-muted);margin-left:10px;opacity:0;transition:opacity .2s;"></span>
+            <div class="tab-panels">
+              <div class="tab-panel active" data-tab="teams" id="teamsPanel">
+                <div class="teams-topbar">
+                  <div class="teams-sort-bar">
+                    <span style="font-size:12px;color:var(--text-muted);margin-right:8px;">Sort by:</span>
+                    <div class="otc-main-tabs br-slide-tabs teams-sort-tabs" data-br-slide-tabs>
+                      <button class="teams-sort-btn otc-main-tab" data-sort="posindex">Positional Index</button>
+                      <button class="teams-sort-btn otc-main-tab" data-sort="grade">Team Grade</button>
+                      <button class="teams-sort-btn otc-main-tab" data-sort="archetype">Archetype</button>
+                    </div>
+                    <span id="teamsSortLabel" style="font-size:11px;color:var(--text-muted);margin-left:10px;opacity:0;transition:opacity .2s;"></span>
+                  </div>
+                  {_window_legend_html}
+                </div>
+                <div class="teams-grid" id="teamsGrid">
+                  {all_cards_html}
+                </div>
+              </div>
+              <div class="tab-panel" data-tab="btm" id="btmPanel">{_analytics_skeleton}</div>
+              <div class="tab-panel" data-tab="roster-intel" id="rosterIntelPanel">{_analytics_skeleton}</div>
+              <div class="tab-panel" data-tab="sos" id="sosPanel">{_analytics_skeleton}</div>
+            </div>
           </div>
-          {_window_legend_html}
-        </div>
-        <div class="teams-grid" id="teamsGrid">
-          {all_cards_html}
         </div>
       </main>
-
-      <aside class="page-sidebar teams-sidebar">
-        {analytics_html}
-      </aside>
     </div>
+    {_teams_foot_scripts}
 
     <script>
     (function() {{

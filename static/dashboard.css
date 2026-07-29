@@ -17155,20 +17155,10 @@ tr.team-clickable {
 .btm-vsavg-badge.btm-pos { background: color-mix(in srgb, var(--win) 13%, transparent); color: var(--win); }
 .btm-vsavg-badge.btm-neg { background: color-mix(in srgb, var(--loss) 12%, transparent); color: var(--loss); }
 
-/* Teams sidebar sticky positioning - desktop only */
-@media (min-width: 1181px) {
-  .teams-page.page-layout {
-    grid-template-columns: minmax(0, 1fr) 340px;
-  }
-
-  .teams-sidebar {
-    position: sticky;
-    top: 90px;
-    max-height: calc(100vh - 110px);
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    align-self: flex-start;
-  }
+/* Teams page is now a single tabbed card (Teams / Value / Roster Intel /
+   Schedule), no separate analytics sidebar, so it's one full-width column. */
+.teams-page.page-layout {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 /* Slim (sidebar) variant */
