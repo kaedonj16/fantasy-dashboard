@@ -13291,8 +13291,8 @@ img, svg, canvas {
   opacity: .85;
 }
 
-/* Standings rank movement arrows (compact dashboard standings) */
-.standings-compact .rank-move {
+/* Rank movement arrows: compact + full standings, and the playoff-odds table */
+.rank-move {
   display: inline-block;
   margin-left: 4px;
   font-size: 10px;
@@ -13300,8 +13300,8 @@ img, svg, canvas {
   line-height: 1;
   vertical-align: middle;
 }
-.standings-compact .rank-move.up { color: var(--win); }
-.standings-compact .rank-move.down { color: var(--loss); }
+.rank-move.up { color: var(--win); }
+.rank-move.down { color: var(--loss); }
 
 /* Usage risers strip on the season hub */
 .usage-movers-card .usage-movers-list {

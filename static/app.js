@@ -2728,8 +2728,9 @@ function _calcPlayoffByes(N) {
 }
 
 function _renderPlayoffOdds(data) {
-  const { odds, is_complete, current_week, playoff_week_start, playoff_teams, playoff_byes } = data;
+  const { odds, movement, is_complete, current_week, playoff_week_start, playoff_teams, playoff_byes } = data;
   if (!odds || !odds.length) return '<p class="po-error">No data available.</p>';
+  const mv = movement || {};
 
   const sorted = [...odds].sort((a, b) =>
     b.playoff_pct - a.playoff_pct || b.avg_final_wins - a.avg_final_wins
@@ -2795,9 +2796,19 @@ function _renderPlayoffOdds(data) {
 
     const simAvgCell = '';
 
+    // Week-over-week movement in the odds ranking (positive = climbed). Hidden
+    // for a finished season, where rows read Made/Missed instead of a ranking.
+    const _mv = (!is_complete && t.roster_id != null) ? mv[String(t.roster_id)] : null;
+    let mvHtml = '';
+    if (_mv) {
+      mvHtml = _mv > 0
+        ? `<span class="rank-move up" title="Up ${_mv} since last week">&#9650;${_mv}</span>`
+        : `<span class="rank-move down" title="Down ${Math.abs(_mv)} since last week">&#9660;${Math.abs(_mv)}</span>`;
+    }
+
     const _ridAttr = t.roster_id != null ? ` data-roster-id="${t.roster_id}" data-team-name="${t.team_name}"` : '';
     return `<tr class="team-clickable"${_ridAttr}>
-      <td class="po-team">${t.team_name}</td>
+      <td class="po-team">${t.team_name}${mvHtml}</td>
       <td class="po-rec">${rec}</td>
       <td class="po-odds">${oddsCell}</td>
       ${byeCell}${topCell}${projCell}${simAvgCell}

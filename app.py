@@ -4269,7 +4269,8 @@ def _all_play_from_df_weekly(df_weekly) -> dict:
 
 
 def render_standings(team_stats, length, all_play: dict = None,
-                     playoff_spots: int = None, total_regular_weeks: int = None) -> str:
+                     playoff_spots: int = None, total_regular_weeks: int = None,
+                     movement: dict = None) -> str:
     if team_stats is None or team_stats.empty:
         return """
         <div class="card-body">
@@ -4389,9 +4390,19 @@ def render_standings(team_stats, length, all_play: dict = None,
         else:
             team_cell = f"{img} {html.escape(owner)}"
 
+        # Week-over-week seed movement (positive = climbed). Same arrows as the
+        # compact standings; blank when there's no prior week to compare.
+        _mv = (movement or {}).get(owner)
+        mv_html = ""
+        if _mv:
+            if _mv > 0:
+                mv_html = f"<span class='rank-move up' title='Up {_mv} since last week'>&#9650;{_mv}</span>"
+            elif _mv < 0:
+                mv_html = f"<span class='rank-move down' title='Down {abs(_mv)} since last week'>&#9660;{abs(_mv)}</span>"
+
         rows.append(f"""
             <tr class="{_trcls}"{_mo_attr} data-rk-key="{html.escape(owner, quote=True)}">
-              <td class="num rank-cell">{rank_mark(int(row['Rank']), size=28, ring_others=False)}</td>
+              <td class="num rank-cell">{rank_mark(int(row['Rank']), size=28, ring_others=False)}{mv_html}</td>
               <td class="{_tdcls}">{team_cell}</td>
               <td>{record}</td>
               <td>{row['PF']:.1f}</td>
@@ -6375,6 +6386,7 @@ def _standings_panels(ctx: dict, power_rankings=None) -> dict:
     standings_html = render_standings(
         team_stats, num_teams, all_play=_all_play,
         playoff_spots=_pp_spots, total_regular_weeks=_pp_weeks,
+        movement=_standings_movement(df_weekly),
     )
 
     if (
@@ -24742,9 +24754,11 @@ def api_playoff_odds():
         _sim_cached2 = _PLAYOFF_SIM_CACHE.get(_sim_key2)
         if _sim_cached2 and time.time() - _sim_cached2["ts"] < _PLAYOFF_SIM_CACHE_TTL:
             odds = _sim_cached2["data"]
+            _fresh_sim = False
         else:
             odds = simulate_playoff_odds(ctx, platform=platform)
             _PLAYOFF_SIM_CACHE[_sim_key2] = {"data": odds, "ts": time.time()}
+            _fresh_sim = True
 
         settings           = ctx.get("league_settings") or {}
         playoff_week_start = int(settings.get("playoff_week_start") or 15)
@@ -24752,8 +24766,22 @@ def api_playoff_odds():
         current_week       = int(ctx.get("current_week") or 0)
         is_complete        = bool(odds and odds[0].get("is_complete"))
 
+        # Week-over-week movement in the odds ranking. Snapshot the current week
+        # only when we actually re-ran the sim (throttled by the 1h cache) so the
+        # table isn't written on every view; movement itself is a cheap read.
+        # Skipped for a finished season (the table shows Made/Missed, not ranks).
+        movement: dict = {}
+        if not is_complete and current_week >= 1:
+            try:
+                from dashboard_services.playoff_odds_history import record_and_movement
+                movement = record_and_movement(
+                    league_id, season, current_week, odds, write=_fresh_sim)
+            except Exception:
+                logger.debug("[playoff-odds] movement skipped", exc_info=True)
+
         return jsonify({
             "odds":                odds,
+            "movement":            movement,
             "season":              season,
             "current_week":        current_week,
             "playoff_week_start":  playoff_week_start,
