@@ -8368,6 +8368,12 @@ window.initPageRoot = function initPageRoot(root = document) {
   initTeamTabs(root);
   initStandingsSort(root);
 
+  // Enhance native <select>s (e.g. the player-rankings "Sort by" / "ADP source")
+  // into the custom dropdown. initCustomSelects only auto-ran on DOMContentLoaded,
+  // so selects on soft-navigated pages stayed native until now. initOne is
+  // idempotent (guards on _csdDone), so re-running per page swap is safe.
+  if (window.initCustomSelects) window.initCustomSelects(root);
+
   bindGlobalCarouselHandlersOnce();
   window.resetMatchupCarousels?.(root);
 
