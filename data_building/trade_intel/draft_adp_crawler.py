@@ -454,14 +454,20 @@ if __name__ == "__main__":
     parser.add_argument("--hours", type=float, default=4.0, help="Hours to run (continuous mode)")
     parser.add_argument("--batch-size", type=int, default=2000, help="Leagues per batch")
     parser.add_argument("--workers", type=int, default=10, help="Concurrent workers")
+    parser.add_argument("--crawl-mode", choices=["new", "existing", "both"], default="new",
+                        help="'new' = only uncrawled leagues (default); 'existing' = re-crawl "
+                             "already-crawled ones; 'both' = a mix. Use existing/both to revisit "
+                             "leagues that were already stamped (e.g. to pick up new drafts).")
+    parser.add_argument("--recrawl-days", type=int, default=30,
+                        help="For existing/both: only re-crawl leagues not crawled in this many days")
     args = parser.parse_args()
-    
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(message)s",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
-    
+
     if args.continuous:
         result = run_draft_adp_crawl_continuous(
             batch_size=args.batch_size,
@@ -470,6 +476,7 @@ if __name__ == "__main__":
             hours=args.hours,
         )
     else:
-        result = run_draft_adp_crawl(batch_size=args.batch_size, workers=args.workers)
+        result = run_draft_adp_crawl(batch_size=args.batch_size, workers=args.workers,
+                                     crawl_mode=args.crawl_mode, recrawl_days=args.recrawl_days)
     
     print(result)

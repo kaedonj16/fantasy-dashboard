@@ -305,16 +305,14 @@ def _sleeper_adp_source(season: int, is_sf: bool, scoring_type: str) -> Dict[str
 
 def fetch_crawler_adp(season: int, is_sf: bool, scoring_type: str,
                       min_samples: int = 20) -> Dict[str, float]:
-    """canonical id -> size-combined ADP from the draft-crawler aggregate table.
+    """canonical id -> average draft pick from the draft-crawler aggregate table.
 
     The crawler stores one ``draft_adp`` row per
-    (player, draft_type, season, is_superflex, num_teams), so a player has a
-    separate average for 10-, 12-, 14-team drafts. Raw pick numbers are not
-    comparable across sizes (pick 24 is round 3 in a 10-team but round 2 in a
-    12-team), so each row is first converted to a size-independent round
-    position ``avg_pick / num_teams``, sample-size-weighted across sizes, then
-    rescaled to a reference 12-team draft. Formats stay separate: dynasty and
-    rookie are distinct markets (and distinct axes), never blended together.
+    (player, draft_type, season, is_superflex, num_teams). We report the raw
+    ``avg_pick`` (overall pick number), sample-size-weighted across the drafts a
+    player appears in, so it reads on the same scale as other ADP feeds. Formats
+    stay separate: dynasty and rookie are distinct markets (and distinct axes),
+    never blended together.
 
     Dynasty startup, rookie, and keeper/redraft drafts are crawled. Falls back to
     the latest season with data when the requested season is empty (early in a
@@ -331,8 +329,8 @@ def fetch_crawler_adp(season: int, is_sf: bool, scoring_type: str,
                     """
                     SELECT
                         player_id,
-                        SUM((avg_pick / num_teams) * sample_size)
-                            / NULLIF(SUM(sample_size), 0) AS norm_round,
+                        SUM(avg_pick * sample_size)
+                            / NULLIF(SUM(sample_size), 0) AS avg_pick,
                         SUM(sample_size) AS n
                     FROM draft_adp
                     WHERE draft_type   = %s
@@ -341,7 +339,7 @@ def fetch_crawler_adp(season: int, is_sf: bool, scoring_type: str,
                       AND num_teams BETWEEN 8 AND 18
                     GROUP BY player_id
                     HAVING SUM(sample_size) >= %s
-                    ORDER BY norm_round ASC
+                    ORDER BY avg_pick ASC
                     """,
                     (draft_type, season_val, is_sf, min_samples),
                 ).fetchall()
@@ -360,11 +358,11 @@ def fetch_crawler_adp(season: int, is_sf: bool, scoring_type: str,
 
         out: Dict[str, float] = {}
         for r in rows or []:
-            nr = r["norm_round"]
-            if nr is None:
+            _ap = r["avg_pick"]
+            if _ap is None:
                 continue
             try:
-                out[str(r["player_id"])] = float(nr) * _CRAWLER_REF_SIZE
+                out[str(r["player_id"])] = float(_ap)
             except (TypeError, ValueError):
                 continue
         return out

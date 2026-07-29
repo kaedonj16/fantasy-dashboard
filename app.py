@@ -20562,16 +20562,13 @@ def _attach_adp_from_source(players, adp_season, source, league_id=None, token=N
     its valid axis (Yahoo redraft-only, BR Fantasy dynasty/rookie only) and
     falls back per axis when a source has no data there, so a choice like
     "Yahoo" fills redraft from Yahoo and leaves dynasty/rookie on their best
-    available feed. Returns adp_sources {mode: label}.
-
-    BR Fantasy is drawn from real draft picks, so its averaged ADP never bottoms
-    out at 1.0 (the consensus No. 1 still goes third in some drafts). When it is
-    the chosen single source, re-rank to a contiguous 1..N board so it reads like
-    a draft board rather than showing a 5.3 floor."""
+    available feed. Returns adp_sources {mode: label}."""
     from dashboard_services.adp_service import resolve_market_adp, ADP_SOURCE_LABELS
 
     label = ADP_SOURCE_LABELS.get(source, source.title())
-    as_rank = (source == "brfantasy")
+    # Show BR Fantasy's actual average draft pick (avg_pick), not a re-ranked
+    # board, so it reads on the same scale as the other feeds.
+    as_rank = False
     by_field = {}
     used = {"startup": False, "rookie": False, "redraft": False}
     for mode, scoring_type, is_sf, field in _ADP_MODE_AXES:
