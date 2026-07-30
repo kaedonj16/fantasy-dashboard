@@ -2264,18 +2264,25 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # Single switcher for settings dropdown (works on both desktop and mobile)
     league_switcher_html = ""
     viewer_username = session.get("viewer_username")
-    if viewer_username and platform != "espn":
-        league_switcher_html = (
-            f"<div class='league-switcher-wrapper'>"
-            f"  <select id='leagueSwitcher' class='league-switcher' "
-            f"          data-current-league='{league_id}' "
-            f"          data-current-platform='{platform}' "
-            f"          data-current-season='{season}' "
-            f"          data-current-username='{viewer_username}'>"
-            f"    <option value=''>Loading leagues...</option>"
-            f"  </select>"
-            f"</div>"
-        )
+    # Show the full logged-in menu (incl. Sign Out) for anyone with a resolved
+    # viewer, and for every ESPN league page: ESPN "sign-in" is entering the
+    # league itself (team-name matching is optional, so viewer_username is often
+    # unset), so there's no separate logged-in flag to key off. The league
+    # switcher stays gated to non-ESPN viewers below.
+    if viewer_username or platform == "espn":
+        # ESPN has no username-based league list, so it gets no league switcher.
+        if viewer_username and platform != "espn":
+            league_switcher_html = (
+                f"<div class='league-switcher-wrapper'>"
+                f"  <select id='leagueSwitcher' class='league-switcher' "
+                f"          data-current-league='{league_id}' "
+                f"          data-current-platform='{platform}' "
+                f"          data-current-season='{season}' "
+                f"          data-current-username='{viewer_username}'>"
+                f"    <option value=''>Loading leagues...</option>"
+                f"  </select>"
+                f"</div>"
+            )
 
         # Update settings dropdown content for logged-in users with full menu
         settings_content = (
