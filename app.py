@@ -20557,6 +20557,7 @@ def api_trade_eval():
                     viewer_roster, model_value_lookup, sending, receiving,
                     roster_positions=ctx.get("roster_positions") or [],
                     num_teams=len(rosters) or 12,
+                    is_sf=_ctx_is_sf(ctx),
                 )
         except Exception as e:
             logger.info(f"[trade-ai] skipped: {e}")
