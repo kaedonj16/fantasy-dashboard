@@ -20508,13 +20508,20 @@ def api_trade_eval():
         FAIR_PCT = 0.10
     fair_band = max(baseline * FAIR_PCT, 25.0)
 
+    # With the roster filter on, the client sends the actual team names (Side A is
+    # the viewer's team, Side B the chosen opponent) so the verdict can name them
+    # ("hoodiekj1 is favored by…"). Filter off -> names are blank -> "Team 1/2".
+    _rf_on = bool(payload.get("roster_filter_on"))
+    _t1_label = (str(payload.get("t1_team_name") or "").strip() if _rf_on else "") or "Team 1"
+    _t2_label = (str(payload.get("t2_team_name") or "").strip() if _rf_on else "") or "Team 2"
+
     if abs_diff <= fair_band:
         pct = (abs_diff / baseline) * 100.0
         verdict = f"This trade looks very fair (about {pct:.1f}% apart)."
     elif diff > 0:
-        verdict = f"Team 1 is favored by about {abs_diff:.1f} value."
+        verdict = f"{_t1_label} is favored by about {abs_diff:.1f} value."
     else:
-        verdict = f"Team 2 is favored by about {abs_diff:.1f} value."
+        verdict = f"{_t2_label} is favored by about {abs_diff:.1f} value."
 
     analysis_html = ""
     depth_warnings = {}
