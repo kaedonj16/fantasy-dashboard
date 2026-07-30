@@ -66,6 +66,28 @@ def test_resolve_empty_when_no_sources(monkeypatch):
     assert A.resolve_market_adp(2026, False, "redraft", "consensus") == {}
 
 
+def test_resolve_sleeper_skips_999_undrafted_sentinel(monkeypatch):
+    # Sleeper reports 999 for players it hasn't priced (common for rookies).
+    # That sentinel must not surface as a real ADP.
+    monkeypatch.setattr(A, "fetch_sleeper_adp",
+                        lambda season: {"real": {"adp_dynasty_rookie": 4.0},
+                                        "undrafted": {"adp_dynasty_rookie": 999.0}})
+    monkeypatch.setattr(A, "_crawler_adp_source", lambda *a, **k: {})
+    out = A.resolve_market_adp(2026, False, "rookie", "sleeper")
+    assert out == {"real": 4.0}   # the 999 player is dropped, not shown as ADP 999
+
+
+def test_consensus_rookie_ignores_sleeper_999(monkeypatch):
+    # In a rookie draft Sleeper often has no ADP (all 999). Consensus must then
+    # reflect BR Fantasy alone, not rank-blend real ranks against a wall of 999s.
+    monkeypatch.setattr(A, "fetch_sleeper_adp",
+                        lambda season: {"a": {"adp_dynasty_rookie": 999.0},
+                                        "b": {"adp_dynasty_rookie": 999.0}})
+    monkeypatch.setattr(A, "_crawler_adp_source", lambda season, is_sf, st: {"a": 1.1, "b": 2.6})
+    c = A.resolve_market_adp(2026, False, "rookie", "consensus")
+    assert c == {"a": 1.1, "b": 2.6}   # single live source kept raw, no 999 skew
+
+
 # ── ordinal_rank_adp (option 2 display transform) ────────────────────────────
 
 def test_ordinal_rank_makes_contiguous_board():

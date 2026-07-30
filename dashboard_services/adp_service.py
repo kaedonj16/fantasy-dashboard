@@ -298,11 +298,19 @@ def adp_source_options(scoring_type: str):
     return [(v, ADP_SOURCE_LABELS.get(v, v.title())) for v in values]
 
 
+# Sleeper's projection ADP fields report 999 for players it has no draft data
+# for (undrafted / no ADP). It is a sentinel, not a real pick, so treat anything
+# at or above it as missing - otherwise every rookie without a Sleeper ADP shows
+# a literal "ADP 999.0", and consensus rank-blends those identical 999s against
+# real sources and produces nonsense.
+_SLEEPER_UNDRAFTED_ADP = 999.0
+
+
 def _adp_overall_from_row(row: dict, fields) -> Optional[float]:
     for f in fields:
         v = (row or {}).get(f)
         try:
-            if v is not None and float(v) > 0:
+            if v is not None and 0 < float(v) < _SLEEPER_UNDRAFTED_ADP:
                 return float(v)
         except (TypeError, ValueError):
             continue

@@ -21069,8 +21069,8 @@ def _attach_adp_to_players(players, adp_season, clear_first=False, sleeper_only=
         def _crawl_adp(is_sf: bool, draft_type: str, min_s: int) -> dict:
             return _norm_adp(_fl_adp(is_sf, adp_season, draft_type, min_samples=min_s) or {})
 
-        # DraftCrawl maps (fallback). Skipped for historical views (sleeper_only),
-        # which use Sleeper's own season ADP - never the current-season crawl.
+        # BR Fantasy crawl maps (fallback). Skipped for historical views
+        # (sleeper_only), which use Sleeper's own season ADP - never the crawl.
         if sleeper_only:
             _c_su1 = _c_susf = _c_rk1 = _c_rksf = {}
         else:
@@ -21083,8 +21083,12 @@ def _attach_adp_to_players(players, adp_season, clear_first=False, sleeper_only=
         def _sa_pick(_pid, *keys):
             _r = _sa.get(_pid) or {}
             for _k in keys:
-                if _r.get(_k) is not None:
-                    return _r[_k]
+                _v = _r.get(_k)
+                # Sleeper reports 999 for "undrafted / no ADP"; treat as missing
+                # so it never surfaces as a literal "ADP 999.0" (common for rookies
+                # Sleeper hasn't priced yet).
+                if _v is not None and 0 < _v < 999:
+                    return _v
             return None
 
         _used = {"startup": False, "rookie": False, "redraft": False}
@@ -21120,14 +21124,17 @@ def _attach_adp_to_players(players, adp_season, clear_first=False, sleeper_only=
                 _p["sf_redraft_avg_pick"] = _rsf; _used["redraft"] = True
 
         for _mode in ("startup", "rookie", "redraft"):
+            # The draft crawler is branded "BR Fantasy" everywhere else (the
+            # explicit source selector, the per-source ADP columns), so the
+            # auto-source label must match - never the internal "DraftCrawl" name.
             if _mode == "rookie" and _rookie_from_crawl:
-                _adp_sources[_mode] = "DraftCrawl"
+                _adp_sources[_mode] = "BR Fantasy"
             elif _used[_mode]:
                 _adp_sources[_mode] = "Sleeper"
             elif _mode == "startup" and (_c_su1 or _c_susf):
-                _adp_sources[_mode] = "Community"
+                _adp_sources[_mode] = "BR Fantasy"
             elif _mode == "rookie" and (_c_rk1 or _c_rksf):
-                _adp_sources[_mode] = "DraftCrawl"
+                _adp_sources[_mode] = "BR Fantasy"
     except Exception as _e_adp:
         logger.info("[api/league-players] ADP attach skipped: %s", _e_adp)
     return _adp_sources
