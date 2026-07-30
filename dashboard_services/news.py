@@ -154,13 +154,52 @@ async def _async_batch_athletes(espn_ids: list[str]) -> dict[str, list]:
     return dict(pairs)
 
 
-async def _async_fetch_reddit(client, player_name: str, limit: int = 8) -> list:
-    """Community-vetted Reddit posts mentioning the player. Never raises.
+def _parse_reddit_children(children: list, require_substr: Optional[str] = None) -> list:
+    """Apply the "verified, not just random people" filter to Reddit listing
+    children and map them into news items (sorted newest-first).
 
     Keeps only external *link* posts (real articles) that clear an upvote floor,
-    dropping self/text posts and reddit-hosted media — the "verified, not just
-    random people" filter.
+    dropping self/text posts and reddit-hosted media. When ``require_substr`` is
+    given (the player's last name), the post title must contain it.
     """
+    items = []
+    for ch in children:
+        d = ch.get("data") or {}
+        if d.get("is_self") or d.get("stickied") or d.get("over_18"):
+            continue
+        if int(d.get("score") or 0) < _REDDIT_MIN_SCORE:
+            continue
+        title = (d.get("title") or "").strip()
+        if require_substr and require_substr not in title.lower():
+            continue
+        ext = d.get("url_overridden_by_dest") or d.get("url") or ""
+        dom = (d.get("domain") or "").lower()
+        if not ext.startswith("http") or dom.startswith("self."):
+            continue
+        if any(bad in dom for bad in _REDDIT_EXCLUDE_DOMAINS):
+            continue
+        created = d.get("created_utc")
+        published = (
+            datetime.fromtimestamp(created, timezone.utc)
+            .isoformat().replace("+00:00", "Z")
+            if created else ""
+        )
+        sub = d.get("subreddit") or ""
+        src = f"{dom} · r/{sub}" if dom and sub else (f"r/{sub}" if sub else "Reddit")
+        items.append({
+            "headline":    title,
+            "description": "",
+            "published":   published,
+            "age":         _age_label(published) if published else "",
+            "url":         ext,
+            "source":      src,
+        })
+    items.sort(key=lambda it: it["published"], reverse=True)
+    return items
+
+
+async def _async_fetch_reddit(client, player_name: str, limit: int = 8) -> list:
+    """Community-vetted Reddit posts mentioning a specific player. Never raises."""
     if not player_name:
         return []
     now = time.time()
@@ -181,40 +220,32 @@ async def _async_fetch_reddit(client, player_name: str, limit: int = 8) -> list:
             return []
         children = ((r.json() or {}).get("data") or {}).get("children") or []
         last = player_name.lower().split()[-1] if player_name.split() else ""
-        items = []
-        for ch in children:
-            d = ch.get("data") or {}
-            if d.get("is_self") or d.get("stickied") or d.get("over_18"):
-                continue
-            if int(d.get("score") or 0) < _REDDIT_MIN_SCORE:
-                continue
-            title = (d.get("title") or "").strip()
-            if last and last not in title.lower():
-                continue
-            ext = d.get("url_overridden_by_dest") or d.get("url") or ""
-            dom = (d.get("domain") or "").lower()
-            if not ext.startswith("http") or dom.startswith("self."):
-                continue
-            if any(bad in dom for bad in _REDDIT_EXCLUDE_DOMAINS):
-                continue
-            created = d.get("created_utc")
-            published = (
-                datetime.fromtimestamp(created, timezone.utc)
-                .isoformat().replace("+00:00", "Z")
-                if created else ""
-            )
-            sub = d.get("subreddit") or ""
-            src = f"{dom} · r/{sub}" if dom and sub else (f"r/{sub}" if sub else "Reddit")
-            items.append({
-                "headline":    title,
-                "description": "",
-                "published":   published,
-                "age":         _age_label(published) if published else "",
-                "url":         ext,
-                "source":      src,
-            })
-        items.sort(key=lambda it: it["published"], reverse=True)
-        items = items[:limit]
+        items = _parse_reddit_children(children, require_substr=last)[:limit]
+        _CACHE[key] = (now, items)
+        return items
+    except Exception:
+        return []
+
+
+async def _async_fetch_reddit_hot(client, limit: int = 12) -> list:
+    """Top community-vetted Reddit link posts of the day across r/nfl +
+    r/fantasyfootball (no player filter) — for the general activity feed. Never
+    raises."""
+    now = time.time()
+    key = f"reddit_hot_{_REDDIT_SUBS}"
+    cached = _CACHE.get(key)
+    if cached and now - cached[0] < _REDDIT_TTL:
+        return cached[1]
+    try:
+        r = await client.get(
+            f"https://www.reddit.com/r/{_REDDIT_SUBS}/top.json",
+            params={"t": "day", "limit": 25, "raw_json": 1},
+            headers=_HEADERS, timeout=_TIMEOUT,
+        )
+        if not r.is_success:
+            return []
+        children = ((r.json() or {}).get("data") or {}).get("children") or []
+        items = _parse_reddit_children(children)[:limit]
         _CACHE[key] = (now, items)
         return items
     except Exception:
@@ -289,6 +320,18 @@ async def _async_player_news(player_name: str, espn_id: Optional[str], limit: in
     return _blend_dedupe(espn_items, reddit_items, limit)
 
 
+async def _async_general_news(limit: int) -> list:
+    """General activity-feed news: ESPN headlines blended with the day's top
+    community-vetted Reddit link posts, deduped and sorted by recency. ESPN is
+    the primary source (kept on any dedupe tie)."""
+    import httpx
+    async with httpx.AsyncClient() as client:
+        general, reddit_items = await asyncio.gather(
+            _async_fetch_general(), _async_fetch_reddit_hot(client)
+        )
+    return _blend_dedupe(general, reddit_items, limit)
+
+
 def _run(coro):
     """Run a coroutine from sync context, handling already-running loops."""
     try:
@@ -323,5 +366,8 @@ def get_player_news(player_name: str, espn_headshot: str = "", limit: int = 4) -
 
 
 def get_nfl_news(limit: int = 20) -> list:
-    """Return recent general NFL news headlines (for activity feed)."""
-    return _run(_async_fetch_general())[:limit]
+    """Return recent general NFL news headlines for the activity feed: ESPN
+    headlines blended with the day's top community-vetted Reddit link posts
+    (r/fantasyfootball + r/nfl), deduped and sorted by recency. Reddit failures
+    degrade to ESPN-only."""
+    return _run(_async_general_news(limit))

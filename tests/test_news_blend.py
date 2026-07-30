@@ -3,7 +3,28 @@
 These are pure-Python (no network, no httpx) — news.py imports httpx lazily so
 it can be imported in the CI test environment.
 """
-from dashboard_services.news import _blend_dedupe, _norm_url, _norm_title
+from dashboard_services.news import (
+    _blend_dedupe,
+    _norm_url,
+    _norm_title,
+    _parse_reddit_children,
+)
+
+
+def _child(**data):
+    # Sensible defaults for a "good" vetted link post; override per test.
+    base = {
+        "title": "Reporter: Player X is active",
+        "score": 100,
+        "is_self": False,
+        "stickied": False,
+        "over_18": False,
+        "url": "https://espn.com/story/1",
+        "domain": "espn.com",
+        "created_utc": 1_800_000_000,
+    }
+    base.update(data)
+    return {"data": base}
 
 
 def _item(headline, url, published, source="ESPN"):
@@ -56,3 +77,48 @@ def test_missing_url_still_deduped_by_title_and_kept():
     b = [_item("Beta", "", "2026-07-30T09:00:00Z", "r/nfl")]
     out = _blend_dedupe(a, b, limit=10)
     assert len(out) == 2
+
+
+# ── Reddit "verified, not random people" filter ───────────────────────────────
+
+def test_reddit_keeps_vetted_link_post():
+    out = _parse_reddit_children([_child(subreddit="nfl")])
+    assert len(out) == 1
+    assert out[0]["source"] == "espn.com · r/nfl"
+    assert out[0]["url"] == "https://espn.com/story/1"
+
+
+def test_reddit_drops_self_post():
+    assert _parse_reddit_children([_child(is_self=True)]) == []
+
+
+def test_reddit_drops_low_score():
+    assert _parse_reddit_children([_child(score=5)]) == []
+
+
+def test_reddit_drops_stickied_and_nsfw():
+    assert _parse_reddit_children([_child(stickied=True)]) == []
+    assert _parse_reddit_children([_child(over_18=True)]) == []
+
+
+def test_reddit_drops_reddit_hosted_media():
+    assert _parse_reddit_children([_child(domain="i.redd.it", url="https://i.redd.it/x.jpg")]) == []
+    assert _parse_reddit_children([_child(domain="v.redd.it", url="https://v.redd.it/x")]) == []
+
+
+def test_reddit_require_substr_filters_by_title():
+    posts = [
+        _child(title="Bijan Robinson dominates", url="https://espn.com/a"),
+        _child(title="Some other RB news", url="https://espn.com/b"),
+    ]
+    out = _parse_reddit_children(posts, require_substr="robinson")
+    assert [p["headline"] for p in out] == ["Bijan Robinson dominates"]
+
+
+def test_reddit_uses_url_overridden_by_dest_when_present():
+    out = _parse_reddit_children([
+        _child(url="https://reddit.com/r/nfl/comments/x",
+               url_overridden_by_dest="https://nfl.com/real-article",
+               domain="nfl.com")
+    ])
+    assert out[0]["url"] == "https://nfl.com/real-article"
