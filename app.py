@@ -19448,6 +19448,34 @@ def _touch_value_cache_bust():
     except OSError:
         logger.debug("[value-cache] bust marker touch failed", exc_info=True)
 
+
+def _external_market_sets():
+    """(FantasyCalc sleeper-ids, DynastyProcess normalized names) -- the players
+    some external dynasty market actually prices. Anything in neither has no
+    market value: the rankings treat it as 0 rather than surface the ML index's
+    guess for it (that guess is the "leak" the presence filter removes, and it's
+    also what rookie_value re-imports because the pipeline seeds rookie_value
+    from the pre-filter model board -- e.g. an untracked deep prospect showing a
+    startable ~548)."""
+    fc: set = set()
+    dp: set = set()
+    try:
+        from data_building.external_data.external_values_scraper import (
+            load_fantasycalc_api_values, load_dynastyprocess_values,
+        )
+        from utils.utils import normalize_name as _nn
+        for _r in (load_fantasycalc_api_values() or []):
+            _sid = str(_r.get("sleeper_id") or "").strip()
+            if _sid:
+                fc.add(_sid)
+        for _r in (load_dynastyprocess_values() or []):
+            _nm = str(_r.get("player") or "").strip()
+            if _nm:
+                dp.add(_nn(_nm))
+    except Exception:
+        logger.debug("[external-market] set load failed", exc_info=True)
+    return fc, dp
+
 # Caches for advanced-metrics endpoints (10-minute TTL)
 _ROLE_PLAYERS_CACHE: dict = {}
 _ROLE_PLAYERS_CACHE_TS: dict = {}
@@ -19591,17 +19619,21 @@ def get_model_value_table_cached():
             # duplicate, so the two disagreed (e.g. Carsen Ryan showing a value on
             # the rankings page but none in his modal).
             _by_id = {str(p.get("id") or ""): p for p in tbl if p.get("id")}
-            # Players DynastyProcess tracks. The presence filter above only zeroes on
-            # FantasyCalc membership, so a DP-tracked (but not FC-listed) rookie is
-            # zeroed yet still has a legitimate, market-backed DB value worth keeping.
-            # For everyone else the pre-zero number is just the ML index's guess for
-            # an untracked player -- the exact leak the filter removes -- so we use
-            # the rookie pipeline's own ranking value instead of resurrecting it.
+            # A rookie only carries a dynasty value if an external market prices
+            # him (FantasyCalc by sleeper-id, or DynastyProcess by name). The
+            # presence filter above only zeroes on FantasyCalc, so a DP-tracked
+            # (but not FC-listed) rookie is zeroed yet still has a legitimate,
+            # market-backed value we recover. Anything in NEITHER market is left
+            # at 0 and never injected: rookie_value can't stand in for it because
+            # the pipeline seeds rookie_value from the pre-filter model board, so
+            # it just re-imports the same ML leak the filter exists to remove
+            # (e.g. Carsen Ryan -- no FC/DP entry -- showing a startable ~548).
             try:
-                _dp_ok = _dp_names          # set by the FC/DP presence filter above
+                _fc_ok = _fc_sids           # set by the FC/DP presence filter above
+                _dp_ok = _dp_names
                 _nn_fn = _nn
             except NameError:
-                _dp_ok, _nn_fn = set(), None
+                _fc_ok, _dp_ok, _nn_fn = set(), set(), None
             for r in rk_rows:
                 sid  = str(r.get("sleeper_id")) if r.get("sleeper_id") else None
                 name = r.get("name") or ""
@@ -19609,19 +19641,17 @@ def get_model_value_table_cached():
                 # Skip if already showing with a real value
                 if str(_rid) in _existing_ids:
                     continue
+                _tracked = bool(
+                    (sid and sid in _fc_ok)
+                    or (_nn_fn and name and _nn_fn(name) in _dp_ok)
+                )
+                if not _tracked:
+                    continue  # no external market -> dynasty value stays 0
                 _idx_team = _mvc_idx.get(sid, {}).get("team", "") if sid else ""
                 _team = r.get("actual_nfl_team") or _idx_team or r.get("team") or "FA"
                 _pv = _pv_raw.get(sid or "") if sid else None
-                _dp_tracked = bool(_nn_fn and name and _nn_fn(name) in _dp_ok)
-                if _dp_tracked and _pv:
-                    # DP-backed: recover the real DB value the FC-only filter zeroed.
-                    _v1  = float(_pv.get("value") or 0) or float(r.get("rookie_value") or 0)
-                    _vsf = float(_pv.get("sf_value") or 0) or float(r.get("rookie_sf_value") or r.get("rookie_value") or 0)
-                else:
-                    # Untracked prospect: use the rookie pipeline's ranking value,
-                    # never the pre-zero ML guess.
-                    _v1  = float(r.get("rookie_value") or 0)
-                    _vsf = float(r.get("rookie_sf_value") or r.get("rookie_value") or 0)
+                _v1  = float((_pv or {}).get("value") or 0) or float(r.get("rookie_value") or 0)
+                _vsf = float((_pv or {}).get("sf_value") or 0) or float(r.get("rookie_sf_value") or r.get("rookie_value") or 0)
                 _existing = _by_id.get(str(_rid))
                 if _existing is not None:
                     _existing["value"]     = _v1
@@ -21273,10 +21303,18 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
             if norm:
                 name_to_idx[norm] = i
 
+        # Only rookies an external dynasty market prices carry a value here too --
+        # rookie_value is seeded from the pre-filter model board, so injecting it
+        # for an untracked prospect re-imports the ML leak (the same reason the
+        # cached table skips them). Untracked rookies keep their rookie flag and
+        # prospect grade (for the Draft Room) but no dynasty value.
+        _fc_ok, _dp_ok = _external_market_sets()
+
         for r in get_rookie_rankings_from_db(draft_year):
             name = r.get("name") or ""
             norm = _nn(name)
             sid  = str(r.get("sleeper_id") or "")
+            _mkt_tracked = bool((sid and sid in _fc_ok) or (norm and norm in _dp_ok))
             # Pull NFL team from players_index (Sleeper) as the most reliable source
             _idx_team = _pl_idx.get(sid, {}).get("team", "") if sid else ""
             _team = r.get("actual_nfl_team") or _idx_team or r.get("team") or "FA"
@@ -21317,23 +21355,24 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
                 existing["prospect_tier"]  = rookie_entry["prospect_tier"]
                 if _team and _team != "FA":
                     existing["team"] = _team
-                if not float(existing.get("value") or 0):
-                    existing["value"]    = rookie_entry["value"]
-                if not float(existing.get("sf_value") or 0):
-                    existing["sf_value"] = rookie_entry["sf_value"]
-                if not float(existing.get("value_8") or 0):
-                    existing["value_8"]    = rookie_entry["value_8"]
-                if not float(existing.get("value_12") or 0):
-                    existing["value_12"]   = rookie_entry["value_12"]
-                if not float(existing.get("value_14") or 0):
-                    existing["value_14"]   = rookie_entry["value_14"]
-                if not float(existing.get("sf_value_8") or 0):
-                    existing["sf_value_8"] = rookie_entry["sf_value_8"]
-                if not float(existing.get("sf_value_12") or 0):
-                    existing["sf_value_12"]= rookie_entry["sf_value_12"]
-                if not float(existing.get("sf_value_14") or 0):
-                    existing["sf_value_14"]= rookie_entry["sf_value_14"]
-            else:
+                if _mkt_tracked:
+                    if not float(existing.get("value") or 0):
+                        existing["value"]    = rookie_entry["value"]
+                    if not float(existing.get("sf_value") or 0):
+                        existing["sf_value"] = rookie_entry["sf_value"]
+                    if not float(existing.get("value_8") or 0):
+                        existing["value_8"]    = rookie_entry["value_8"]
+                    if not float(existing.get("value_12") or 0):
+                        existing["value_12"]   = rookie_entry["value_12"]
+                    if not float(existing.get("value_14") or 0):
+                        existing["value_14"]   = rookie_entry["value_14"]
+                    if not float(existing.get("sf_value_8") or 0):
+                        existing["sf_value_8"] = rookie_entry["sf_value_8"]
+                    if not float(existing.get("sf_value_12") or 0):
+                        existing["sf_value_12"]= rookie_entry["sf_value_12"]
+                    if not float(existing.get("sf_value_14") or 0):
+                        existing["sf_value_14"]= rookie_entry["sf_value_14"]
+            elif _mkt_tracked:
                 model_value_table.append(rookie_entry)
 
     except Exception as _e:
