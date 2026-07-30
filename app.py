@@ -19414,6 +19414,40 @@ _MODEL_VALUE_CACHE = None
 _MODEL_VALUE_CACHE_TS = 0
 _MODEL_VALUE_TTL = 60 * 15  # 15 minutes (short enough to reflect daily cron updates promptly)
 
+# Cross-worker cache-bust marker. Each gunicorn worker (we run 3) keeps its own
+# in-memory _MODEL_VALUE_CACHE, so a /api/flush-value-cache POST only clears the
+# ONE worker that happens to handle it -- the others kept serving the pre-flush
+# value until their 15-min TTL expired, which is exactly how the rankings page
+# (fresh worker) and a player modal (stale worker) could disagree after a cron
+# run. The flush endpoint now touches this file; every worker cheaply stats it
+# on each cache read (all workers share the container filesystem) and busts its
+# own in-memory copy when the marker is newer than its cache timestamp.
+def _value_cache_bust_path():
+    try:
+        from utils.utils import CACHE_DIR as _cd
+        return os.path.join(_cd, ".value_cache_bust")
+    except Exception:
+        return os.path.join("cache", ".value_cache_bust")
+
+
+def _value_cache_bust_mtime():
+    try:
+        return os.stat(_value_cache_bust_path()).st_mtime
+    except OSError:
+        return 0.0
+
+
+def _touch_value_cache_bust():
+    """Bump the shared marker so sibling workers refresh on their next read."""
+    try:
+        _p = _value_cache_bust_path()
+        os.makedirs(os.path.dirname(_p), exist_ok=True)
+        with open(_p, "a"):
+            pass
+        os.utime(_p, None)
+    except OSError:
+        logger.debug("[value-cache] bust marker touch failed", exc_info=True)
+
 # Caches for advanced-metrics endpoints (10-minute TTL)
 _ROLE_PLAYERS_CACHE: dict = {}
 _ROLE_PLAYERS_CACHE_TS: dict = {}
@@ -19472,7 +19506,9 @@ from utils.utils import CACHE_DIR  # noqa: E402  # absolute cache root (see rela
 def get_model_value_table_cached():
     global _MODEL_VALUE_CACHE, _MODEL_VALUE_CACHE_TS
     now = time.time()
-    if _MODEL_VALUE_CACHE is not None and now - _MODEL_VALUE_CACHE_TS < _MODEL_VALUE_TTL:
+    if (_MODEL_VALUE_CACHE is not None
+            and now - _MODEL_VALUE_CACHE_TS < _MODEL_VALUE_TTL
+            and _value_cache_bust_mtime() <= _MODEL_VALUE_CACHE_TS):
         return _MODEL_VALUE_CACHE
     # Prefer DB (player_values table) so all endpoints use the same source.
     tbl = None
@@ -19548,6 +19584,24 @@ def get_model_value_table_cached():
             _mvc_idx = _mvc_lpi() or {}
             # IDs already present in player_values with a real value after FC zeroing
             _existing_ids = {str(p.get("id") or "") for p in tbl if float(p.get("value") or 0) > 0}
+            # id -> the row already in the table (possibly FC-zeroed). A rookie that
+            # also lives in player_values must update that row IN PLACE rather than
+            # get a second, duplicate entry: the modal reads the first id match (the
+            # zeroed row -> no value) while the rankings surfaced the valued
+            # duplicate, so the two disagreed (e.g. Carsen Ryan showing a value on
+            # the rankings page but none in his modal).
+            _by_id = {str(p.get("id") or ""): p for p in tbl if p.get("id")}
+            # Players DynastyProcess tracks. The presence filter above only zeroes on
+            # FantasyCalc membership, so a DP-tracked (but not FC-listed) rookie is
+            # zeroed yet still has a legitimate, market-backed DB value worth keeping.
+            # For everyone else the pre-zero number is just the ML index's guess for
+            # an untracked player -- the exact leak the filter removes -- so we use
+            # the rookie pipeline's own ranking value instead of resurrecting it.
+            try:
+                _dp_ok = _dp_names          # set by the FC/DP presence filter above
+                _nn_fn = _nn
+            except NameError:
+                _dp_ok, _nn_fn = set(), None
             for r in rk_rows:
                 sid  = str(r.get("sleeper_id")) if r.get("sleeper_id") else None
                 name = r.get("name") or ""
@@ -19557,21 +19611,35 @@ def get_model_value_table_cached():
                     continue
                 _idx_team = _mvc_idx.get(sid, {}).get("team", "") if sid else ""
                 _team = r.get("actual_nfl_team") or _idx_team or r.get("team") or "FA"
-                # Prefer raw player_values (may have been zeroed by FC filter but
-                # the DB value is still correct). Fall back to rookie_value.
                 _pv = _pv_raw.get(sid or "") if sid else None
-                _v1  = float((_pv or {}).get("value") or 0) or float(r.get("rookie_value") or 0)
-                _vsf = float((_pv or {}).get("sf_value") or 0) or float(r.get("rookie_sf_value") or r.get("rookie_value") or 0)
-                tbl.append({
-                    "id":        _rid,
-                    "name":      name,
-                    "team":      _team,
-                    "position":  r.get("position") or "UNK",
-                    "age":       r.get("age"),
-                    "value":     _v1,
-                    "sf_value":  _vsf,
-                    "is_rookie": True,
-                })
+                _dp_tracked = bool(_nn_fn and name and _nn_fn(name) in _dp_ok)
+                if _dp_tracked and _pv:
+                    # DP-backed: recover the real DB value the FC-only filter zeroed.
+                    _v1  = float(_pv.get("value") or 0) or float(r.get("rookie_value") or 0)
+                    _vsf = float(_pv.get("sf_value") or 0) or float(r.get("rookie_sf_value") or r.get("rookie_value") or 0)
+                else:
+                    # Untracked prospect: use the rookie pipeline's ranking value,
+                    # never the pre-zero ML guess.
+                    _v1  = float(r.get("rookie_value") or 0)
+                    _vsf = float(r.get("rookie_sf_value") or r.get("rookie_value") or 0)
+                _existing = _by_id.get(str(_rid))
+                if _existing is not None:
+                    _existing["value"]     = _v1
+                    _existing["sf_value"]  = _vsf
+                    _existing["is_rookie"] = True
+                    if _team and _team != "FA":
+                        _existing["team"] = _team
+                else:
+                    tbl.append({
+                        "id":        _rid,
+                        "name":      name,
+                        "team":      _team,
+                        "position":  r.get("position") or "UNK",
+                        "age":       r.get("age"),
+                        "value":     _v1,
+                        "sf_value":  _vsf,
+                        "is_rookie": True,
+                    })
     except Exception as e:
         logger.info(f"[model-value-cache] rookies skipped: {e}")
 
@@ -19617,6 +19685,11 @@ def api_flush_value_cache():
     global _MODEL_VALUE_CACHE, _MODEL_VALUE_CACHE_TS
     _MODEL_VALUE_CACHE    = None
     _MODEL_VALUE_CACHE_TS = 0
+    # Bump the shared marker so the OTHER gunicorn workers (which each hold their
+    # own in-memory copy) also bust on their next read -- otherwise this POST only
+    # clears the single worker that handled it and the rest serve stale values
+    # until their 15-min TTL lapses.
+    _touch_value_cache_bust()
     # Drop the memoized DB current-values table too so trade eval/suggestions and
     # rookie rankings reload fresh values instead of waiting out its TTL.
     try:
@@ -19679,6 +19752,8 @@ def api_run_daily_cron():
             global _MODEL_VALUE_CACHE, _MODEL_VALUE_CACHE_TS
             _MODEL_VALUE_CACHE    = None
             _MODEL_VALUE_CACHE_TS = 0
+            # Also bust the sibling workers (see /api/flush-value-cache).
+            _touch_value_cache_bust()
             try:
                 from dashboard_services.player_value_history import clear_current_values_cache
                 clear_current_values_cache()
