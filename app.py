@@ -20952,16 +20952,25 @@ def _attach_adp_from_source(players, adp_season, source, league_id=None, token=N
     # and the top player we show reads as #2.
     _brf = (source == "brfantasy")
     _pool_ids = {str(_p.get("id") or "") for _p in players}
+    # Rookie-draft pool: rank the rookie axis among these alone so any source
+    # becomes a clean 1..N rookie board (Sleeper has no rookie-specific ADP and
+    # falls back to overall dynasty ADP, which would otherwise read as pick 200).
+    _rookie_ids = {str(_p.get("id") or "") for _p in players if _p.get("is_rookie")}
     by_field = {}
     used = {"startup": False, "rookie": False, "redraft": False}
     for mode, scoring_type, is_sf, field in _ADP_MODE_AXES:
         try:
-            m = resolve_market_adp(int(adp_season), is_sf, scoring_type=scoring_type,
-                                   source=source, league_id=league_id, token=token,
-                                   as_rank=False) or {}
+            if scoring_type == "rookie":
+                m = resolve_market_adp(int(adp_season), is_sf, scoring_type=scoring_type,
+                                       source=source, league_id=league_id, token=token,
+                                       as_rank=True, restrict_ids=_rookie_ids) or {}
+            else:
+                m = resolve_market_adp(int(adp_season), is_sf, scoring_type=scoring_type,
+                                       source=source, league_id=league_id, token=token,
+                                       as_rank=False) or {}
         except Exception:
             m = {}
-        if _brf and m:
+        if _brf and m and scoring_type != "rookie":
             # Re-rank to a contiguous board over just our listed players.
             m = ordinal_rank_adp({_pid: _v for _pid, _v in m.items()
                                   if _pid in _pool_ids})
