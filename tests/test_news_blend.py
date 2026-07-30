@@ -5,9 +5,11 @@ it can be imported in the CI test environment.
 """
 from dashboard_services.news import (
     _blend_dedupe,
+    _blend_sources,
     _norm_url,
     _norm_title,
     _parse_reddit_children,
+    _parse_gnews_xml,
 )
 
 
@@ -122,3 +124,52 @@ def test_reddit_uses_url_overridden_by_dest_when_present():
                domain="nfl.com")
     ])
     assert out[0]["url"] == "https://nfl.com/real-article"
+
+
+# ── Google News RSS parsing ───────────────────────────────────────────────────
+
+_GNEWS_RSS = """<?xml version="1.0"?>
+<rss version="2.0"><channel>
+  <item>
+    <title>Parker Washington impresses at Jaguars camp - Jaguars Wire</title>
+    <link>https://news.google.com/rss/articles/AAA</link>
+    <pubDate>Wed, 29 Jul 2026 15:00:00 GMT</pubDate>
+    <source url="https://jaguarswire.usatoday.com">Jaguars Wire</source>
+  </item>
+  <item>
+    <title>Some unrelated headline about another team - ESPN</title>
+    <link>https://news.google.com/rss/articles/BBB</link>
+    <pubDate>Wed, 29 Jul 2026 12:00:00 GMT</pubDate>
+    <source url="https://espn.com">ESPN</source>
+  </item>
+</channel></rss>"""
+
+
+def test_gnews_parses_and_strips_source_suffix():
+    items = _parse_gnews_xml(_GNEWS_RSS)
+    assert len(items) == 2
+    top = items[0]
+    assert top["headline"] == "Parker Washington impresses at Jaguars camp"  # " - Source" stripped
+    assert top["source"] == "Jaguars Wire"
+    assert top["url"] == "https://news.google.com/rss/articles/AAA"
+    assert top["published"].startswith("2026-07-29")
+
+
+def test_gnews_require_substr_filters_by_headline():
+    items = _parse_gnews_xml(_GNEWS_RSS, require_substr="washington")
+    assert [i["source"] for i in items] == ["Jaguars Wire"]
+
+
+def test_gnews_bad_xml_returns_empty():
+    assert _parse_gnews_xml("not xml at all") == []
+
+
+def test_blend_sources_three_way_priority_and_dedupe():
+    espn = [_item("Shared Story", "https://espn.com/x", "2026-07-30T10:00:00Z", "ESPN")]
+    gnews = [_item("shared story", "https://gnews/x", "2026-07-30T11:00:00Z", "Jaguars Wire")]
+    reddit = [_item("Fresh take", "https://nfl.com/y", "2026-07-30T12:00:00Z", "r/nfl")]
+    out = _blend_sources([espn, gnews, reddit], limit=10)
+    # Dupe collapses to the ESPN copy (earlier list wins); two items remain.
+    assert len(out) == 2
+    assert any(i["source"] == "ESPN" for i in out)
+    assert not any(i["source"] == "Jaguars Wire" for i in out)

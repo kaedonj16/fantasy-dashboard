@@ -1,6 +1,7 @@
 """
-Player news feed via ESPN's free public API, blended with community-vetted
-Reddit posts (r/fantasyfootball + r/nfl).
+Player news feed via ESPN's free public API, blended with beat-writer / local
+coverage from Google News RSS and community-vetted Reddit posts
+(r/fantasyfootball + r/nfl).
 
 Caches results for 15 minutes. Supports concurrent batch fetching via httpx
 AsyncClient, and single-player or name-based fallback for individual lookups.
@@ -37,6 +38,14 @@ _REDDIT_TTL = 900               # 15 min per player+subs
 _REDDIT_SUBS = "fantasyfootball+nfl"
 _REDDIT_MIN_SCORE = 25          # upvote floor: filters low-signal / unvetted posts
 _REDDIT_EXCLUDE_DOMAINS = ("redd.it", "reddit.com", "imgur", "i.redd", "v.redd")
+
+# ── Google News source ────────────────────────────────────────────────────────
+# Google News RSS aggregates beat-writer / local coverage (Jaguars Wire, The
+# Athletic, PFF, …) — the same reporting behind insider tweets, as linkable
+# articles. Free, no API key. Parsed from RSS (stdlib XML), blended like Reddit.
+_GNEWS_TTL = 900                # 15 min per player
+_GNEWS_BASE = "https://news.google.com/rss/search"
+_GNEWS_PARAMS = {"hl": "en-US", "gl": "US", "ceid": "US:en"}
 
 
 def _espn_id(headshot_url: str) -> Optional[str]:
@@ -252,6 +261,118 @@ async def _async_fetch_reddit_hot(client, limit: int = 12) -> list:
         return []
 
 
+def _parse_gnews_item(item_el) -> dict:
+    """Map one Google News RSS <item> into a news dict.
+
+    Google News titles read "Headline - Source Name" and carry a <source>
+    element; strip that suffix so the headline is clean and the source is named.
+    """
+    def _txt(tag):
+        el = item_el.find(tag)
+        return (el.text or "").strip() if el is not None and el.text else ""
+
+    title = _txt("title")
+    link = _txt("link")
+    pub = _txt("pubDate")
+    src_el = item_el.find("source")
+    source = (src_el.text or "").strip() if src_el is not None and src_el.text else ""
+
+    if source and title.endswith(" - " + source):
+        title = title[: -(len(source) + 3)].strip()
+
+    published = ""
+    if pub:
+        try:
+            from email.utils import parsedate_to_datetime
+            dt = parsedate_to_datetime(pub)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            published = dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        except Exception:
+            published = ""
+
+    return {
+        "headline":    title,
+        "description": "",
+        "published":   published,
+        "age":         _age_label(published) if published else "",
+        "url":         link,
+        "source":      source or "Google News",
+    }
+
+
+def _parse_gnews_xml(xml_text: str, require_substr: Optional[str] = None) -> list:
+    """Parse a Google News RSS body into news items (newest-first). When
+    ``require_substr`` is given (a player's last name) the headline must contain
+    it — the same precision guard the Reddit source uses."""
+    import xml.etree.ElementTree as ET
+    try:
+        root = ET.fromstring(xml_text)
+    except Exception:
+        return []
+    items = []
+    for item_el in root.iter("item"):
+        it = _parse_gnews_item(item_el)
+        if not it["headline"]:
+            continue
+        if require_substr and require_substr not in it["headline"].lower():
+            continue
+        items.append(it)
+    items.sort(key=lambda x: x["published"], reverse=True)
+    return items
+
+
+async def _async_fetch_gnews(client, player_name: str, limit: int = 6) -> list:
+    """Beat-writer / local coverage for a specific player via Google News RSS.
+    Never raises."""
+    if not player_name:
+        return []
+    now = time.time()
+    key = f"gnews_{player_name.lower()}"
+    cached = _CACHE.get(key)
+    if cached and now - cached[0] < _GNEWS_TTL:
+        return cached[1]
+    try:
+        r = await client.get(
+            _GNEWS_BASE,
+            params={"q": f'"{player_name}" NFL', **_GNEWS_PARAMS},
+            headers=_HEADERS, timeout=_TIMEOUT,
+        )
+        if not r.is_success:
+            return []
+        last = player_name.lower().split()[-1] if player_name.split() else ""
+        items = _parse_gnews_xml(r.text, require_substr=last)[:limit]
+        _CACHE[key] = (now, items)
+        return items
+    except Exception:
+        return []
+
+
+async def _async_fetch_gnews_general(limit: int = 12) -> list:
+    """Recent general NFL coverage via Google News RSS — for the activity feed.
+    Never raises."""
+    import httpx
+    now = time.time()
+    key = "gnews_general"
+    cached = _CACHE.get(key)
+    if cached and now - cached[0] < _GENERAL_TTL:
+        return cached[1]
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(
+                _GNEWS_BASE,
+                params={"q": "NFL when:2d", **_GNEWS_PARAMS},
+                headers=_HEADERS, timeout=_TIMEOUT,
+            )
+        if not r.is_success:
+            return []
+        items = _parse_gnews_xml(r.text)[:limit]
+        _CACHE[key] = (now, items)
+        return items
+    except Exception:
+        return []
+
+
 def _norm_url(u: str) -> str:
     """Canonical form for dedupe: drop scheme, www, query, fragment, trailing /."""
     if not u:
@@ -264,24 +385,31 @@ def _norm_title(t: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", (t or "").lower()).strip()
 
 
-def _blend_dedupe(primary: list, secondary: list, limit: int) -> list:
-    """Merge two news lists, dedupe by destination URL and by headline, sort by
-    recency. `primary` wins ties (its item is kept, the duplicate dropped)."""
+def _blend_sources(sources: list, limit: int) -> list:
+    """Merge N news lists in priority order, dedupe by destination URL and by
+    headline, sort by recency. Earlier lists win ties (their item is kept, the
+    duplicate dropped)."""
     out: list = []
     seen_urls: set = set()
     seen_titles: set = set()
-    for item in list(primary) + list(secondary):
-        nu = _norm_url(item.get("url", ""))
-        nt = _norm_title(item.get("headline", ""))
-        if (nu and nu in seen_urls) or (nt and nt in seen_titles):
-            continue
-        if nu:
-            seen_urls.add(nu)
-        if nt:
-            seen_titles.add(nt)
-        out.append(item)
+    for lst in sources:
+        for item in list(lst or []):
+            nu = _norm_url(item.get("url", ""))
+            nt = _norm_title(item.get("headline", ""))
+            if (nu and nu in seen_urls) or (nt and nt in seen_titles):
+                continue
+            if nu:
+                seen_urls.add(nu)
+            if nt:
+                seen_titles.add(nt)
+            out.append(item)
     out.sort(key=lambda it: it.get("published") or "", reverse=True)
     return out[:limit]
+
+
+def _blend_dedupe(primary: list, secondary: list, limit: int) -> list:
+    """Two-source form of _blend_sources (primary wins ties)."""
+    return _blend_sources([primary, secondary], limit)
 
 
 def _name_match(general: list, player_name: str, limit: int) -> list:
@@ -302,34 +430,38 @@ def _name_match(general: list, player_name: str, limit: int) -> list:
 
 
 async def _async_player_news(player_name: str, espn_id: Optional[str], limit: int) -> list:
-    """Fetch ESPN + Reddit concurrently, then blend/dedupe. ESPN items are the
-    primary source (kept on any dedupe tie)."""
+    """Fetch ESPN + Google News + Reddit concurrently, then blend/dedupe. ESPN is
+    the primary source (kept on any dedupe tie), then Google News (beat-writer
+    articles), then Reddit."""
     import httpx
     async with httpx.AsyncClient() as client:
         reddit_coro = _async_fetch_reddit(client, player_name)
+        gnews_coro = _async_fetch_gnews(client, player_name)
         if espn_id:
-            (_eid, espn_items), reddit_items = await asyncio.gather(
-                _async_fetch_athlete(client, espn_id), reddit_coro
+            (_eid, espn_items), gnews_items, reddit_items = await asyncio.gather(
+                _async_fetch_athlete(client, espn_id), gnews_coro, reddit_coro
             )
         else:
             espn_items = []
-            reddit_items = await reddit_coro
+            gnews_items, reddit_items = await asyncio.gather(gnews_coro, reddit_coro)
     # ESPN name-based fallback when the per-athlete feed is empty.
     if not espn_items and player_name:
         espn_items = _name_match(await _async_fetch_general(), player_name, limit)
-    return _blend_dedupe(espn_items, reddit_items, limit)
+    return _blend_sources([espn_items, gnews_items, reddit_items], limit)
 
 
 async def _async_general_news(limit: int) -> list:
-    """General activity-feed news: ESPN headlines blended with the day's top
-    community-vetted Reddit link posts, deduped and sorted by recency. ESPN is
-    the primary source (kept on any dedupe tie)."""
+    """General activity-feed news: ESPN headlines blended with recent Google News
+    NFL coverage and the day's top community-vetted Reddit link posts, deduped
+    and sorted by recency. ESPN is the primary source (kept on any dedupe tie)."""
     import httpx
     async with httpx.AsyncClient() as client:
-        general, reddit_items = await asyncio.gather(
-            _async_fetch_general(), _async_fetch_reddit_hot(client)
+        general, gnews_items, reddit_items = await asyncio.gather(
+            _async_fetch_general(),
+            _async_fetch_gnews_general(),
+            _async_fetch_reddit_hot(client),
         )
-    return _blend_dedupe(general, reddit_items, limit)
+    return _blend_sources([general, gnews_items, reddit_items], limit)
 
 
 def _run(coro):
@@ -356,10 +488,12 @@ def get_player_news(player_name: str, espn_headshot: str = "", limit: int = 4) -
     Return up to `limit` recent news items for a player, blended from:
       1. ESPN — the per-athlete feed (ID derived from the headshot URL), or a
          name-match against the general NFL feed when the athlete feed is empty.
-      2. Reddit — community-vetted link posts from r/fantasyfootball + r/nfl.
+      2. Google News RSS — beat-writer / local coverage for the player.
+      3. Reddit — community-vetted link posts from r/fantasyfootball + r/nfl.
 
-    The two are merged, deduped (by destination URL and headline), and sorted by
-    recency. ESPN wins dedupe ties. Reddit failures degrade to ESPN-only.
+    All three are merged, deduped (by destination URL and headline), and sorted
+    by recency. ESPN wins dedupe ties, then Google News, then Reddit. Any source
+    failing degrades gracefully to the others.
     """
     eid = _espn_id(espn_headshot)
     return _run(_async_player_news(player_name, eid, limit))
@@ -367,7 +501,7 @@ def get_player_news(player_name: str, espn_headshot: str = "", limit: int = 4) -
 
 def get_nfl_news(limit: int = 20) -> list:
     """Return recent general NFL news headlines for the activity feed: ESPN
-    headlines blended with the day's top community-vetted Reddit link posts
-    (r/fantasyfootball + r/nfl), deduped and sorted by recency. Reddit failures
-    degrade to ESPN-only."""
+    headlines blended with recent Google News NFL coverage and the day's top
+    community-vetted Reddit link posts (r/fantasyfootball + r/nfl), deduped and
+    sorted by recency. Any source failing degrades gracefully to the others."""
     return _run(_async_general_news(limit))
