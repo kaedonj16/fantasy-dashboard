@@ -51,11 +51,16 @@ logger = logging.getLogger(__name__)
 
 LAMBDA_REG         = 20.0  # regularization strength (higher = stronger pull toward model prior when trade data is thin)
 MAX_VALUE          = 999.9
-MAX_LIFT           = 1.25  # player values capped at 125% of prior; picks float freely
+MAX_LIFT           = 1.40  # trade market may lift a player up to +40% vs the prior
+MIN_LIFT           = 0.60  # ...and cut down to -40%. Symmetric ±40% band around the
+                           # consensus-anchored model prior: keeps the shown value within
+                           # a sane distance of the external market (FantasyCalc/DP feed the
+                           # prior) AND lets a sold-off player actually drop (the old
+                           # floor-at-prior meant the market could only ever add value).
 ANCHOR_BASKET_N    = 5     # anchor the top-N basket MEAN (not a single #1) to MAX_VALUE so
                            # one player's day-to-day WLS solve can't drag the whole board
 TRADES_LOOKBACK_DAYS = 120 # only load trades from the last N days; >60d = weight 0.08
-DAILY_MOVE_CAP     = 0.10  # max fractional day-over-day change in a calibrated value.
+DAILY_MOVE_CAP     = 0.05  # max fractional day-over-day change in a calibrated value.
                            # The displayed value is COALESCE(calibrated, raw) - i.e. the
                            # calibrated track is what shows whenever it exists - so capping
                            # the calibrated daily move directly bounds how far a player's
@@ -804,15 +809,16 @@ def run_trade_value_model(
     sf_backing = np.diag(AtWA_sf)[:n_pl].copy()
     del AtWA_sf, AtWb_sf; gc.collect()
 
-    # Players: floor at prior, cap at MAX_LIFT × prior
+    # Players: band the trade solve to ±40% of the prior (MIN_LIFT..MAX_LIFT),
+    # symmetric so the market can mark a player down as well as up.
     v_1qb_pos = np.clip(v_1qb, 0.0, None)
     v_sf_pos  = np.clip(v_sf,  0.0, None)
     for i in range(n_pl):
         if prior_1qb[i] > 0:
-            v_1qb_pos[i] = max(v_1qb_pos[i], prior_1qb[i])
+            v_1qb_pos[i] = max(v_1qb_pos[i], prior_1qb[i] * MIN_LIFT)
             v_1qb_pos[i] = min(v_1qb_pos[i], prior_1qb[i] * MAX_LIFT)
         if prior_sf[i] > 0:
-            v_sf_pos[i]  = max(v_sf_pos[i],  prior_sf[i])
+            v_sf_pos[i]  = max(v_sf_pos[i],  prior_sf[i]  * MIN_LIFT)
             v_sf_pos[i]  = min(v_sf_pos[i],  prior_sf[i]  * MAX_LIFT)
     # Picks: floor at 0, let trade data determine the value freely
     v_1qb_pos[n_pl:] = np.clip(v_1qb[n_pl:], 0.0, None)
