@@ -164,22 +164,28 @@ def test_guest_dock_groups_subpages_under_parent_tab():
     assert active == ["Rankings"]
 
 
-def test_guest_dock_absent_on_landing():
-    """The landing page keeps its own layout - no dock there."""
-    import app
+def test_guest_dock_present_on_landing():
+    """The landing page gets the dock too (Home tab active)."""
+    import app, re
     with app.app.test_request_context("/"):
-        assert app._mobile_nav_guest("home") == ""
+        html = app._mobile_nav_guest("home")
+    assert "class='br-tabbar'" in html
+    labels = re.findall(r"br-tabbar-lbl'>([^<]+)<", html)
+    assert labels == ["Home", "Trades", "Rankings", "Draft", "More"]
+    # Home lights up its own tab.
+    active = re.findall(r"br-tabbar-item active'[^>]*>.*?br-tabbar-lbl'>([^<]+)<", html)
+    assert active == ["Home"]
 
 
-def test_guest_nav_yields_to_dock_off_landing(monkeypatch):
-    """The guest top bar carries br-mnav on public pages (CSS slims it to a logo)
-    but not on the landing page."""
+def test_guest_nav_yields_to_dock_everywhere(monkeypatch):
+    """The guest top bar carries br-mnav on every public page (CSS slims it to a
+    logo so the dock is the primary nav) - including the landing page."""
     import app
     monkeypatch.setattr(app, "get_nfl_state", lambda: {"season": "2026", "season_type": "off"})
     with app.app.test_request_context("/players"):
         assert "top-nav br-mnav" in app.build_nav(None, "players", "sleeper", 2026)
     with app.app.test_request_context("/"):
-        assert "br-mnav" not in app.build_nav(None, "home", "sleeper", 2026)
+        assert "top-nav br-mnav" in app.build_nav(None, "home", "sleeper", 2026)
 
 
 def test_draft_room_cfg_show_keeper():
