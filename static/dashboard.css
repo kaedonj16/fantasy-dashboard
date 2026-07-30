@@ -23577,6 +23577,30 @@ a, button, [role="button"], [role="tab"], summary, label,
     position: static !important; width: 100% !important;
     box-shadow: none; border: 0; margin: 4px 0 0; max-height: 46vh;
   }
+
+  /* The relocated settings menu (Notifications, Dark Mode, Site Tour, Sign Out,
+     league switcher) ships with its own popover typography (14px/500 weight,
+     accent icons). Inside the Account card it sat next to the native sheet links
+     (15px/600, muted icons), so the rows read as two different styles. Normalize
+     the relocated rows to the sheet-link look so the whole card is uniform. */
+  .br-sheet-mount .settings-menu-item,
+  .br-sheet-mount .league-switcher-wrapper {
+    gap: 14px;
+    padding: 13px 16px;
+    font-size: 15px;
+    font-weight: 600;
+    border-radius: 0;
+    border-bottom: 0;   /* hairlines come from the .br-sheet-group rules above */
+  }
+  .br-sheet-mount .settings-menu-icon {
+    color: var(--text-muted);
+    width: 20px;
+    font-size: 18px;
+  }
+  .br-sheet-mount svg.settings-menu-icon { width: 20px; height: 20px; }
+  /* Sign Out stays red; its icon follows the label color. */
+  .br-sheet-mount .settings-menu-logout,
+  .br-sheet-mount .settings-menu-logout .settings-menu-icon { color: #dc2626; }
 }
 
 /* ============================================
