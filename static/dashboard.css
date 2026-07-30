@@ -23562,7 +23562,14 @@ a, button, [role="button"], [role="tab"], summary, label,
     padding: 2px 6px; border-radius: 5px;
   }
   .br-sheet-mount { display: flex; flex-direction: column; }
-  button.br-sheet-link { background: none; border: 0; width: 100%; font: inherit; cursor: pointer; text-align: left; }
+  /* Inherit the family (buttons default to the UA font) but NOT the weight/size:
+     the bare `font: inherit` shorthand reset font-weight to normal, so button
+     rows (Refresh data, Search) rendered lighter than the anchor rows next to
+     them. Re-assert the sheet-link size/weight after. */
+  button.br-sheet-link {
+    background: none; border: 0; width: 100%; cursor: pointer; text-align: left;
+    font: inherit; font-size: 15px; font-weight: 600;
+  }
 
   /* The settings menu is relocated into the sheet by app.js; flatten its
      absolutely-positioned dropdown into static, full-width content. */
