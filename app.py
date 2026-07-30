@@ -6784,6 +6784,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     # tile and the post-draft countdown alike).
     _week1_delta = None
     _week1_date_txt = ""
+    _week1_ts_ms = None
     try:
         _ssd = (get_nfl_state() or {}).get("season_start_date")
         if _ssd:
@@ -6791,6 +6792,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             _week1_dt = parser.parse(_ssd).replace(tzinfo=EASTERN)
             _week1_delta = (_week1_dt.date() - datetime.now(EASTERN).date()).days
             _week1_date_txt = _week1_dt.strftime("%b %d, %Y")
+            _week1_ts_ms = int(_week1_dt.timestamp() * 1000)
     except Exception as e:
         logger.info(f"[offseason] Failed to parse season_start_date: {e}")
 
@@ -6802,32 +6804,50 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     if draft_ts_ms is None:
         draft_ts_ms = _safe_int(league.get("draft_day"))
 
+    # The timestamp the card counts down to: the draft while it's upcoming, then
+    # NFL Week 1 kickoff once the draft is done. JS mirrors this (see below).
+    _target_ts_ms = draft_ts_ms or 0
+    _draft_status = (
+        str((latest_draft or {}).get("status") or "").lower()
+        if isinstance(latest_draft, dict) else ""
+    )
+
     if draft_ts_ms:
         try:
             draft_dt = datetime.fromtimestamp(draft_ts_ms / 1000, tz=EASTERN)
             now_dt = datetime.now(EASTERN)
             delta_days = (draft_dt.date() - now_dt.date()).days
+            # "Done" = the draft is complete, or its scheduled time is in the past.
+            draft_done = _draft_status == "complete" or delta_days < 0
 
-            draft_text = draft_dt.strftime("%b %d, %Y at %I:%M %p %Z")
-
-            if delta_days >= 0:
-                # Draft hasn't happened yet
-                countdown_text = f"{delta_days} days"
+            if not draft_done:
+                # Draft hasn't happened yet — count down to it.
+                countdown_label = "Draft countdown"
+                countdown_text = "Today!" if delta_days == 0 else f"{delta_days} days"
+                draft_text = draft_dt.strftime("%b %d, %Y at %I:%M %p %Z")
                 draft_subtext = "Countdown to your next league draft."
+                _target_ts_ms = draft_ts_ms
             else:
-                # Draft has passed - show Week 1 countdown
+                # Draft is finished — count down to NFL Week 1 kickoff, and show
+                # the Week 1 date (not the stale draft date) as the sub-line.
+                countdown_label = "Season kickoff"
+                _target_ts_ms = _week1_ts_ms or 0
                 if _week1_delta is not None:
                     if _week1_delta > 0:
                         countdown_text = f"{_week1_delta} days"
+                        draft_text = f"Week 1 kicks off {_week1_date_txt}"
                         draft_subtext = "Countdown to Week 1 kickoff."
                     elif _week1_delta == 0:
                         countdown_text = "Today!"
+                        draft_text = "Week 1 starts today"
                         draft_subtext = "Week 1 starts today!"
                     else:
                         countdown_text = "Season started"
+                        draft_text = f"Week 1 kicked off {_week1_date_txt}"
                         draft_subtext = "Week 1 is underway!"
                 else:
-                    countdown_text = "Draft passed"
+                    countdown_text = "Draft complete"
+                    draft_text = "Draft has finished"
                     draft_subtext = "Awaiting season start date."
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
@@ -6835,6 +6855,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         # No draft on the calendar: count down to the season itself instead of
         # sitting on a dead "TBD" tile all summer.
         countdown_label = "Season kickoff"
+        _target_ts_ms = _week1_ts_ms or 0
         if _week1_delta == 0:
             countdown_text = "Today!"
             draft_text = "Week 1 starts today"
@@ -7103,8 +7124,8 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
           </div>
 
           <div class="os-hero-stats">
-            <div class="os-stat-card" id="osDraftCdCard" data-draft-ts="{draft_ts_ms or 0}" data-detect-url="/api/draft/detect?platform={platform}&league_id={ctx.get('league_id','')}&season={season}">
-              <div class="os-stat-label">{countdown_label}</div>
+            <div class="os-stat-card" id="osDraftCdCard" data-draft-ts="{draft_ts_ms or 0}" data-week1-ts="{_week1_ts_ms or 0}" data-target-ts="{_target_ts_ms or 0}" data-detect-url="/api/draft/detect?platform={platform}&league_id={ctx.get('league_id','')}&season={season}">
+              <div class="os-stat-label" id="osDraftCdLabel">{countdown_label}</div>
               <div class="os-stat-value" id="osDraftCdVal">{countdown_text}</div>
               <div class="os-stat-sub" id="osDraftCdSub">{draft_text}</div>
             </div>
@@ -7129,8 +7150,10 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         (function(){{
           var card = document.getElementById('osDraftCdCard');
           if (!card) return;
-          var draftTs = parseInt(card.getAttribute('data-draft-ts') || '0', 10);
+          var week1Ts  = parseInt(card.getAttribute('data-week1-ts')  || '0', 10);
+          var targetTs = parseInt(card.getAttribute('data-target-ts') || card.getAttribute('data-draft-ts') || '0', 10);
           var detectUrl = card.getAttribute('data-detect-url');
+          var labelEl = document.getElementById('osDraftCdLabel');
           var valEl = document.getElementById('osDraftCdVal');
           var subEl = document.getElementById('osDraftCdSub');
           var subtextEl = document.getElementById('osDraftSubtext');
@@ -7145,24 +7168,39 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             return 'Starting now';
           }}
           function tick(){{
-            if (!draftTs) return;
-            var remaining = draftTs - Date.now();
+            if (!targetTs) return;
+            var remaining = targetTs - Date.now();
             if (remaining > 0 && valEl) valEl.textContent = fmtDays(remaining);
           }}
+          function showDraft(ts){{
+            targetTs = ts;
+            if (labelEl) labelEl.textContent = 'Draft countdown';
+            if (subEl) subEl.textContent = new Date(ts).toLocaleString('en-US', {{ month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit', timeZoneName:'short' }});
+            if (subtextEl) subtextEl.textContent = 'Countdown to your next league draft.';
+            tick();
+          }}
+          function showWeek1(){{
+            targetTs = week1Ts;
+            if (labelEl) labelEl.textContent = 'Season kickoff';
+            if (week1Ts && subEl) subEl.textContent = 'Week 1 kicks off ' + new Date(week1Ts).toLocaleDateString('en-US', {{ month:'short', day:'numeric', year:'numeric' }});
+            if (subtextEl) subtextEl.textContent = 'Countdown to Week 1 kickoff.';
+            tick();
+          }}
+          // Only an UPCOMING, not-yet-complete draft resets the target to the
+          // draft. Once every detected draft is complete/past, count to Week 1.
           function applyDrafts(drafts){{
-            if (!Array.isArray(drafts) || !drafts.length) return;
+            if (!Array.isArray(drafts)) return;
+            var now = Date.now();
             var best = null;
             drafts.forEach(function(d){{
               var st = parseInt(d.start_time || 0, 10);
-              if (st > 0 && (!best || st < best.st)) best = {{ id: d.draft_id, st: st }};
+              var done = String(d.status || '').toLowerCase() === 'complete';
+              if (st > now && !done && (best === null || st < best)) best = st;
             }});
-            if (!best) return;
-            if (best.st !== draftTs){{
-              draftTs = best.st;
-              tick();
-              var dt = new Date(draftTs);
-              if (subEl) subEl.textContent = dt.toLocaleString('en-US', {{ month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit', timeZoneName:'short' }});
-              if (subtextEl) subtextEl.textContent = 'Countdown to your next league draft.';
+            if (best !== null){{
+              if (best !== targetTs) showDraft(best);
+            }} else if (week1Ts && targetTs !== week1Ts){{
+              showWeek1();
             }}
           }}
           function refresh(){{
