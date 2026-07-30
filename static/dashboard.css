@@ -3288,6 +3288,16 @@ thead th {
   border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
 }
 
+/* On phones the player name + these role chips share a tight row (next to the
+   ADP columns), so the labels get clipped. Collapse "collapsible" chips
+   (ROOKIE / PROSPECT / BREAKOUT) to just their icon; the title attr keeps the
+   full meaning on long-press. Chips without a wrapped label (e.g. injuries) are
+   untouched. */
+@media (max-width: 480px) {
+  .player-badge-collapsible .player-badge-label { display: none; }
+  .player-badge-collapsible { gap: 0; padding: 3px 5px; }
+}
+
 /* Badge icons inherit the badge's own color. The role glyphs (star / ® / fire /
    seedling) ship as pre-tinted PNGs whose baked-in filter color can't match the
    label — e.g. the ® rendered indigo next to navy ROOKIE text. Re-drawing them as

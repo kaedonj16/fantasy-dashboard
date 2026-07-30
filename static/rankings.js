@@ -804,9 +804,9 @@ function prRender() {
     const val = prGetValue(p);
 
     let badges = '';
-    if (prIsRookie(p.id) || p.is_rookie) badges += '<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>';
-    else if (prIsProspect(p.id)) badges += '<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>';
-    if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
+    if (prIsRookie(p.id) || p.is_rookie) badges += '<span class="player-badge player-badge-rookie player-badge-collapsible" title="Rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> <span class="player-badge-label">ROOKIE</span></span>';
+    else if (prIsProspect(p.id)) badges += '<span class="player-badge player-badge-prospect player-badge-collapsible" title="Prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> <span class="player-badge-label">PROSPECT</span></span>';
+    if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout player-badge-collapsible" title="Breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> <span class="player-badge-label">BREAKOUT</span></span>';
 
     // Movement must match the ordering of the current view. We only track
     // dynasty value history, so:
