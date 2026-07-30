@@ -1977,11 +1977,7 @@ def _mobile_nav_guest(active: str) -> str:
     Reuses the exact markup, ids and CSS of the league dock (`_mobile_nav`) so
     guests get the same thumb-reachable bottom dock and slide-up More sheet on the
     public pages, and the shared app.js/public.js controller wires it up unchanged.
-    Links are the global (league-less) routes. The landing page keeps its own
-    layout, so no dock there."""
-    if active == "home":
-        return ""
-
+    Links are the global (league-less) routes, including the landing page (Home)."""
     parent = _GUEST_ACTIVE_PARENT.get(active)
 
     # ── Dock ────────────────────────────────────────────────────────────────
@@ -2261,12 +2257,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         )
 
         # On phones the guest dock (_mobile_nav_guest) is the primary nav on every
-        # public page except the landing page, so slim this bar to the logo there
-        # too (br-mnav), exactly as the league nav does. Search/settings still live
+        # public page (including the landing page), so slim this bar to the logo
+        # (br-mnav), exactly as the league nav does. Search/settings still live
         # here in the DOM; app.js relocates them into the dock's More sheet.
-        _guest_mnav = "" if active == "home" else " br-mnav"
         return (
-            f"<nav class='top-nav{_guest_mnav}' aria-label='Main navigation'>"
+            "<nav class='top-nav br-mnav' aria-label='Main navigation'>"
             "  <div class='nav-left'>"
             "    <a href='/' aria-label='BR Fantasy home'>"
             "      <img src='/static/Website_Logo.png' alt='BR Fantasy' class='site-logo'/>"
@@ -3052,12 +3047,23 @@ def render_page(
         session["last_platform"] = platform
         session["last_season"] = season
     # For public pages (no league context), inherit the session's last league so
-    # logged-in users see their league nav rather than the guest nav.
+    # SIGNED-IN visitors keep their league nav. A logged-out visitor gets the
+    # guest nav even if the session still remembers a league from a public/shared
+    # view — otherwise a one-time league peek sticks them with league chrome.
     _nav_lid      = league_id or session.get("last_league_id") or None
     _nav_platform = platform  or session.get("last_platform")  or None
     _nav_season_raw = session.get("last_season") if not season else None
     _nav_season   = season or (int(_nav_season_raw) if _nav_season_raw else None)
-    nav_html = build_nav(_nav_lid, active, _nav_platform, _nav_season)
+    _signed_in    = bool(session.get("viewer_username"))
+    # League chrome (top nav + bottom dock) on real league pages, and on public
+    # pages only for signed-in users with a remembered league. Everyone logged out
+    # gets the guest chrome so the top nav and the dock always agree.
+    _league_chrome = bool(
+        _nav_lid and _nav_platform and _nav_season and (bool(league_id) or _signed_in)
+    )
+    nav_html = (build_nav(_nav_lid, active, _nav_platform, _nav_season)
+                if _league_chrome
+                else build_nav(None, active, _nav_platform, _nav_season))
 
     # Lightweight public pages (lite_js=True) serve the slim public.js to
     # logged-out visitors to cut mobile parse/Total-Blocking-Time. Logged-in
@@ -3093,10 +3099,10 @@ def render_page(
     # swap of #page-root never destroys and repaints it - the JS reconciles its
     # active tab in place instead (mirrors how the desktop top nav persists). The
     # .has-tabbar wrapper stays inside page-root to reserve space for the fixed dock.
-    _bottom = _mobile_nav(active, _nav_lid, _nav_platform, _nav_season)
-    # True guests (no league in session) get the league-less dock instead, so the
-    # public pages have the same bottom nav on phones as the league pages do.
-    if not _bottom and not _nav_lid:
+    _bottom = _mobile_nav(active, _nav_lid, _nav_platform, _nav_season) if _league_chrome else ""
+    # Logged-out visitors get the league-less dock (incl. the landing page), so
+    # every public page has the same bottom nav on phones as the league pages do.
+    if not _bottom:
         _bottom = _mobile_nav_guest(active)
     if _bottom:
         wrapped_body = f"<div class='has-tabbar' data-active='{active}'>{wrapped_body}</div>"
