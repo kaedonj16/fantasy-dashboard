@@ -19589,12 +19589,18 @@ def get_model_value_table_cached():
                     if _pos == "PICK":
                         continue  # picks have no FC entry, always keep
                     if _pid in _fc_sids:
-                        continue  # tracked by FC - keep DB value as-is
+                        continue  # tracked by FantasyCalc - keep DB value as-is
+                    # ...or by DynastyProcess (matched by name, since DP has no
+                    # sleeper-id). A player either market prices has a real value;
+                    # only players NO market tracks are zeroed.
+                    _nm = _nn(_pid_to_name.get(_pid, "") or _p.get("name") or "")
+                    if _nm and _nm in _dp_names:
+                        continue  # tracked by DynastyProcess - keep
                     _p["value"]    = 0
                     _p["sf_value"] = 0
                     _zeroed += 1
                 if _zeroed:
-                    logger.info(f"[model-value-cache] zeroed {_zeroed} players not in FC")
+                    logger.info(f"[model-value-cache] zeroed {_zeroed} players not in FC/DP")
         except Exception as _e:
             logger.info(f"[model-value-cache] FC/DP presence filter skipped: {_e}")
 
