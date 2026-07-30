@@ -19449,14 +19449,24 @@ def _touch_value_cache_bust():
         logger.debug("[value-cache] bust marker touch failed", exc_info=True)
 
 
+# DynastyProcess lists ~787 players, but its long tail is priced at essentially
+# nothing (median value ~8 on a 0-10000 scale), so bare membership means very
+# little -- a deep prospect like Carsen Ryan sits in DP at value 3 (82nd TE).
+# Require a DP value above this floor before treating a player as "DP-tracked",
+# so that tail can't shield the ML index's guess from the presence filter.
+# ~25 keeps roughly the top ~300 (rosterable) DP players; tune if needed.
+_DP_MIN_VALUE = 25.0
+
+
 def _external_market_sets():
     """(FantasyCalc sleeper-ids, DynastyProcess normalized names) -- the players
-    some external dynasty market actually prices. Anything in neither has no
-    market value: the rankings treat it as 0 rather than surface the ML index's
-    guess for it (that guess is the "leak" the presence filter removes, and it's
-    also what rookie_value re-imports because the pipeline seeds rookie_value
-    from the pre-filter model board -- e.g. an untracked deep prospect showing a
-    startable ~548)."""
+    some external dynasty market actually prices with a MEANINGFUL value.
+    Anything in neither has no market value: the rankings treat it as 0 rather
+    than surface the ML index's guess for it (that guess is the "leak" the
+    presence filter removes, and it's also what rookie_value re-imports because
+    the pipeline seeds rookie_value from the pre-filter model board -- e.g. an
+    untracked deep prospect showing a startable ~548). DP membership alone isn't
+    enough; the player must clear _DP_MIN_VALUE (see above)."""
     fc: set = set()
     dp: set = set()
     try:
@@ -19470,7 +19480,13 @@ def _external_market_sets():
                 fc.add(_sid)
         for _r in (load_dynastyprocess_values() or []):
             _nm = str(_r.get("player") or "").strip()
-            if _nm:
+            if not _nm:
+                continue
+            try:
+                _dv = float(_r.get("value_1qb") or _r.get("value_2qb") or 0)
+            except (TypeError, ValueError):
+                _dv = 0.0
+            if _dv >= _DP_MIN_VALUE:
                 dp.add(_nn(_nm))
     except Exception:
         logger.debug("[external-market] set load failed", exc_info=True)
@@ -19558,22 +19574,12 @@ def get_model_value_table_cached():
     # We only do the presence check - DB values for tracked players are untouched.
     if tbl:
         try:
-            from data_building.external_data.external_values_scraper import (
-                load_fantasycalc_api_values, load_dynastyprocess_values,
-            )
             from utils.utils import normalize_name as _nn
 
-            _fc_sids: set = set()
-            for _r in (load_fantasycalc_api_values() or []):
-                _sid = str(_r.get("sleeper_id") or "").strip()
-                if _sid:
-                    _fc_sids.add(_sid)
-
-            _dp_names: set = set()
-            for _r in (load_dynastyprocess_values() or []):
-                _nm = str(_r.get("player") or "").strip()
-                if _nm:
-                    _dp_names.add(_nn(_nm))
+            # Single source of truth for market membership (FC ids + DP names that
+            # clear _DP_MIN_VALUE), so the veteran filter and the rookie gates all
+            # agree on who is "tracked".
+            _fc_sids, _dp_names = _external_market_sets()
 
             if _fc_sids or _dp_names:
                 try:
