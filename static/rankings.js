@@ -43,7 +43,7 @@ var prAdpSource = 'auto';       // currently selected ADP source ('auto' = serve
 var prAdpReloading = false;     // guards concurrent source re-fetches
 var prAdpColumns = [];          // [{value,label}] per-source ADP columns for the sort-by-ADP view
 var prAdpSortSource = '';       // which source column the ADP view is sorted by ('' = default)
-var PR_ADP_COL_W = 84;          // px width of each ADP source column (fits the "BR FANTASY" header)
+var PR_ADP_COL_W = 96;          // px width of each ADP source column (fits "BR FANTASY"/"CONSENSUS" without colliding)
 
 var PR_SPARK_W = 38, PR_SPARK_H = 26;  // logical (CSS) px
 // Set true for the one render pass right after sparkline data first loads, so
