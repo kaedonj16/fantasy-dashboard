@@ -15569,9 +15569,9 @@ function _compareBodyHTML(p1, p2, opts) {
     <div class="compare-body">
       <div class="pm-tab-bar compare-tab-bar" role="tablist">
         <button type="button" class="pm-tab active" data-cmptab="overview" role="tab" aria-selected="true" onclick="cmpSwitchTab('overview')">Overview</button>
+        <button type="button" class="pm-tab" data-cmptab="logs" role="tab" aria-selected="false" onclick="cmpSwitchTab('logs')">Stats</button>
         <button type="button" class="pm-tab" data-cmptab="metrics" role="tab" aria-selected="false" onclick="cmpSwitchTab('metrics')">Advanced Metrics</button>
         <button type="button" class="pm-tab" data-cmptab="usage" role="tab" aria-selected="false" onclick="cmpSwitchTab('usage')">Usage</button>
-        <button type="button" class="pm-tab" data-cmptab="logs" role="tab" aria-selected="false" onclick="cmpSwitchTab('logs')">Game Logs</button>
       </div>
 
       <div class="compare-tab-panel" data-cmppanel="overview">
@@ -15631,10 +15631,42 @@ function cmpSwitchTab(tab) {
     p.hidden = (p.dataset.cmppanel !== tab);
   });
   if (window._cmpSlideTabs) window._cmpSlideTabs.sync(true);
-  if (tab === 'overview') {
+  // Lazy-load each tab's data on first open (see _compareWireView). Stats =
+  // game logs; both Advanced Metrics and Usage are populated by the same
+  // per-side metrics load.
+  if (tab === 'logs') _cmpEnsureStats();
+  else if (tab === 'metrics' || tab === 'usage') _cmpEnsureMetrics();
+  else if (tab === 'overview') {
     const c = document.getElementById('compareValueChart');
     if (c && window.Plotly && c.data) { try { Plotly.Plots.resize(c); } catch (_) {} }
   }
+}
+
+// Load the Stats (game-logs) columns for both sides, once. Tier-average sides
+// have no logs, so they show a note instead of firing a 404 lookup.
+function _cmpEnsureStats() {
+  const c = window._cmpLazy;
+  if (!c || c.statsDone) return;
+  c.statsDone = true;
+  const bnote = 'Not available for tier averages.';
+  if (c.b1) { const el = document.getElementById('compareGameLogs1'); if (el) el.innerHTML = '<div class="compare-pick-empty">' + bnote + '</div>'; }
+  else _cmpLoadGameLogs(c.p1.player_id, c.p1.position, 'compareGameLogs1');
+  if (c.b2) { const el = document.getElementById('compareGameLogs2'); if (el) el.innerHTML = '<div class="compare-pick-empty">' + bnote + '</div>'; }
+  else _cmpLoadGameLogs(c.p2.player_id, c.p2.position, 'compareGameLogs2');
+}
+
+// Load per-side advanced metrics (which also fills the Usage weekly panel), once.
+function _cmpEnsureMetrics() {
+  const c = window._cmpLazy;
+  if (!c || c.metricsDone) return;
+  c.metricsDone = true;
+  fetch('/api/nfl-state').then(r => r.json()).catch(() => ({}))
+    .then(function (nflState) {
+      const isOffseason = (nflState.season_type || '').toLowerCase() === 'off';
+      const currentSeason = nflState.season || new Date().getFullYear();
+      const defaultSeason = isOffseason ? null : currentSeason;
+      loadCompareMetrics(c.p1.player_id, c.p2.player_id, defaultSeason, defaultSeason);
+    });
 }
 
 // Post-render wiring shared by both compare surfaces: lazy game logs, metrics
@@ -15652,28 +15684,18 @@ function _compareWireView(p1, p2) {
   // "avg-POS-tier" id.
   const _isB = pid => String(pid || '').startsWith('avg-');
   const b1 = _isB(p1.player_id), b2 = _isB(p2.player_id);
-  const _bnote = 'Not available for tier averages.';
-
-  if (b1) { const el = document.getElementById('compareGameLogs1'); if (el) el.innerHTML = '<div class="compare-pick-empty">' + _bnote + '</div>'; }
-  else _cmpLoadGameLogs(p1.player_id, p1.position, 'compareGameLogs1');
-  if (b2) { const el = document.getElementById('compareGameLogs2'); if (el) el.innerHTML = '<div class="compare-pick-empty">' + _bnote + '</div>'; }
-  else _cmpLoadGameLogs(p2.player_id, p2.position, 'compareGameLogs2');
 
   _comparePlayerNames[p1.player_id] = p1.name || p1.full_name || 'Player 1';
   _comparePlayerNames[p2.player_id] = p2.name || p2.full_name || 'Player 2';
   _cmpSides[1].position = (p1.position || '').toUpperCase();
   _cmpSides[2].position = (p2.position || '').toUpperCase();
 
-  // Advanced Metrics tab loads for baselines too - a baseline side serves its
-  // precomputed tier-average metrics (see _cmpFetchSide), a real side loads
-  // normally. The weekly-usage sub-panel self-guards per side (cmpRenderWeekly).
-  fetch('/api/nfl-state').then(r => r.json()).catch(() => ({}))
-    .then(nflState => {
-      const isOffseason = (nflState.season_type || '').toLowerCase() === 'off';
-      const currentSeason = nflState.season || new Date().getFullYear();
-      const defaultSeason = isOffseason ? null : currentSeason;
-      loadCompareMetrics(p1.player_id, p2.player_id, defaultSeason, defaultSeason);
-    });
+  // The Stats (game logs) and Advanced Metrics tabs used to fetch for BOTH
+  // players the instant the compare view opened, even though they start hidden —
+  // 4+ blocking requests behind a spinner. Defer them until the user actually
+  // opens each tab (loaded once), so Overview paints immediately. cmpSwitchTab
+  // calls _cmpEnsureStats / _cmpEnsureMetrics on first visit.
+  window._cmpLazy = { p1: p1, p2: p2, b1: b1, b2: b2, statsDone: false, metricsDone: false };
 
   const chartDiv = document.getElementById('compareValueChart');
   if (chartDiv) {
