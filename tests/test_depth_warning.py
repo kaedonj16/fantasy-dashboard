@@ -10,9 +10,10 @@ Guards the pieces that were previously broken or missing:
     position you were already thin at.
 """
 from dashboard_services.ai.context_builders import calculate_roster_depth_warning
-from utils.roster_strength import derive_league_thresholds
+from utils.roster_strength import derive_league_thresholds, dedicated_starter_counts
 
 _SF_LINEUP = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "SUPER_FLEX"]
+_STD_LINEUP = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"]
 
 
 def _lookup(te_dynasty, te_redraft):
@@ -55,10 +56,57 @@ def test_borderline_does_not_invent_no_starter_alert():
     assert _trade_away_te(_lookup(te_dynasty=360, te_redraft=360)) == {}
 
 
+def test_flex_is_fungible_lateral_swap_is_quiet():
+    # Nico + CeeDee + London, trade Nico for a startable RB. Two WR left cover
+    # the two dedicated WR slots, so no WR alert (the FLEX can be the new RB).
+    lookup = {
+        "nico": {"position": "WR", "value": 700, "redraft_value_1qb": 800},
+        "ceedee": {"position": "WR", "value": 800, "redraft_value_1qb": 850},
+        "london": {"position": "WR", "value": 650, "redraft_value_1qb": 700},
+        "rbIn": {"position": "RB", "value": 600, "redraft_value_1qb": 650, "name": "RB-in"},
+    }
+    res = calculate_roster_depth_warning(
+        {"players": ["nico", "ceedee", "london"]},
+        lookup,
+        sending_assets=[{"id": "nico", "position": "WR"}],
+        receiving_assets=[{"id": "rbIn", "position": "RB"}],
+        roster_positions=_STD_LINEUP,
+        num_teams=12,
+        is_sf=False,
+    )
+    assert res == {}
+
+
+def test_dropping_below_dedicated_slots_warns():
+    # Only two startable WR, trade one away -> 1 left for 2 dedicated WR slots.
+    lookup = {
+        "wr1": {"position": "WR", "value": 800, "redraft_value_1qb": 800},
+        "wr2": {"position": "WR", "value": 700, "redraft_value_1qb": 700},
+        "rbIn": {"position": "RB", "value": 600, "redraft_value_1qb": 650, "name": "RB-in"},
+    }
+    res = calculate_roster_depth_warning(
+        {"players": ["wr1", "wr2"]},
+        lookup,
+        sending_assets=[{"id": "wr1", "position": "WR"}],
+        receiving_assets=[{"id": "rbIn", "position": "RB"}],
+        roster_positions=_STD_LINEUP,
+        num_teams=12,
+        is_sf=False,
+    )
+    assert "WR" in res and res["WR"]["after"] == 1 and res["WR"]["need"] == 2
+
+
+def test_dedicated_counts_treat_flex_as_fungible():
+    d = dedicated_starter_counts(_STD_LINEUP)
+    assert d == {"QB": 1, "RB": 2, "WR": 2, "TE": 1}   # FLEX not attributed
+    d_sf = dedicated_starter_counts(_SF_LINEUP)
+    assert d_sf["QB"] == 2                              # superflex -> QB need
+
+
 def test_superflex_raises_qb_floor():
-    thr, floor = derive_league_thresholds(_SF_LINEUP, 12, is_sf=True)
-    assert floor["QB"] == 2                     # 1 QB slot + 1 superflex
-    assert thr["QB"] > 500                      # SF QB bar lifted above 1QB
+    thr, _ = derive_league_thresholds(_SF_LINEUP, 12, is_sf=True)
+    assert dedicated_starter_counts(_SF_LINEUP)["QB"] == 2   # 1 QB slot + 1 superflex
+    assert thr["QB"] > 500                                   # SF QB bar lifted above 1QB
     # Trading QB2 in SF should warn you're under the 2-QB floor.
     lookup = {
         "qb1": {"position": "QB", "value": 900, "redraft_value_sf": 950},
@@ -75,7 +123,7 @@ def test_superflex_raises_qb_floor():
         num_teams=12,
         is_sf=True,
     )
-    assert "QB" in res and "need 2" in res["QB"]["warning"]
+    assert "QB" in res and res["QB"]["need"] == 2 and "2 starting slots" in res["QB"]["warning"]
 
 
 def test_league_size_scales_thresholds():
