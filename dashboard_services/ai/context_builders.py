@@ -526,9 +526,9 @@ def calculate_roster_grade(
 # consolidate/distribute engine so they can't drift). Aliased here to keep the
 # existing private names below unchanged.
 from utils.roster_strength import (  # noqa: E402
-    DEPTH_FLOOR as _DEPTH_FLOOR,
     STARTER_THRESHOLD as _STARTER_THRESHOLD,
     derive_league_thresholds as _derive_league_thresholds,
+    dedicated_starter_counts as _dedicated_starter_counts,
 )
 
 
@@ -579,16 +579,27 @@ def calculate_roster_depth_warning(
     rookie with no role doesn't. Falls back to dynasty value only if the roster
     has no redraft coverage at all (e.g. before the redraft feed populates).
 
-    Returns {pos: {before, after, warning, severity}} only for positions
-    where the trade reduces depth enough to matter. severity: 'danger' | 'caution'
+    Only warns when the trade both reduces depth at a position AND leaves you
+    unable to fill your DEDICATED starting slots there (FLEX is fungible, so a
+    WR-rich -> RB swap that still covers your WR slots stays quiet).
+
+    Returns {pos: {before, after, need, warning, severity}} for the positions
+    that trip that bar. severity: 'danger' | 'caution'
     """
     # Derive league-specific thresholds (league size + superflex aware). These
     # were previously computed and then ignored in favour of the 12-team 1QB
     # defaults; now they actually drive the counts.
     if roster_positions:
-        starter_threshold, depth_floor = _derive_league_thresholds(roster_positions, num_teams, is_sf=is_sf)
+        starter_threshold, _ = _derive_league_thresholds(roster_positions, num_teams, is_sf=is_sf)
     else:
-        starter_threshold, depth_floor = dict(_STARTER_THRESHOLD), dict(_DEPTH_FLOOR)
+        starter_threshold = dict(_STARTER_THRESHOLD)
+
+    # How many startable bodies you must field at each position to fill your
+    # DEDICATED (position-locked) slots. FLEX is fungible and deliberately not
+    # attributed here, so a lateral swap -- e.g. trading a surplus WR for an RB
+    # you'll start -- stays quiet as long as you can still fill your locked WR
+    # slots. Superflex counts toward QB.
+    dedicated_need = _dedicated_starter_counts(roster_positions or [])
 
     _rd_field = "redraft_value_sf" if is_sf else "redraft_value_1qb"
 
@@ -645,7 +656,7 @@ def calculate_roster_depth_warning(
     result: dict[str, dict] = {}
     for pos in touched_positions:
         threshold = starter_threshold[pos]
-        floor = depth_floor[pos]
+        need = dedicated_need.get(pos, 0)
 
         # Soft starter counts (fractional near the threshold)
         before = sum(
@@ -668,39 +679,40 @@ def calculate_roster_depth_warning(
         )
 
         # Only warn when THIS trade actually reduces depth at the position.
-        # Acquiring (or not touching) a position never triggers a depth warning,
-        # even if it's already thin - that's a pre-existing condition, not caused
-        # by this trade. Prevents "low RB depth" alerts when you're receiving an RB.
+        # Acquiring (or not touching) a position never triggers a depth warning.
         if after >= before - 1e-9:
+            continue
+
+        # ...and only when you can no longer fill your DEDICATED starting slots
+        # at that position. If you still have enough startable bodies to cover
+        # your locked slots (e.g. 2 WR left for 2 WR slots after moving a third),
+        # the trade is a lateral position swap, not a depth loss -- stay quiet.
+        # The FLEX that would otherwise inflate the need is fungible and can be
+        # filled by the player you acquired.
+        if need <= 0 or after >= need:
             continue
 
         before_n = int(round(before))
         after_n = int(round(after))
 
-        # You can't lose starter depth you didn't have. If you had less than one
-        # starter-caliber body here to begin with, that's pre-existing thinness,
-        # not a loss this trade causes -- stay quiet (same principle as not
-        # warning when you're the one acquiring at a position).
+        # Pre-existing thinness isn't this trade's fault: if you didn't have a
+        # full starter-caliber body here to begin with, trading the marginal one
+        # away (usually for value) shouldn't raise a depth alarm.
         if before_n <= 0:
             continue
 
+        _slots = "slot" if need == 1 else "slots"
         if after_n <= 0:
-            warning = f"You'll have no starter-caliber {pos} after this trade"
+            warning = f"You'll have no starter-caliber {pos} for {need} starting {_slots}"
             severity = "danger"
-        elif after < floor:
-            warning = f"Leaves you with only {after_n} starter-caliber {pos} (need {floor})"
-            severity = "caution"
-        elif after_n < before_n:
-            warning = f"{pos} depth drops from {before_n} to {after_n} starters"
-            severity = "caution"
         else:
-            # Real but sub-integer reduction that still clears the floor -- not
-            # worth alarming the user over.
-            continue
+            warning = f"Leaves you only {after_n} starter-caliber {pos} for {need} starting {_slots}"
+            severity = "caution"
 
         result[pos] = {
             "before": before_n,
             "after": after_n,
+            "need": need,
             "warning": warning,
             "severity": severity,
         }

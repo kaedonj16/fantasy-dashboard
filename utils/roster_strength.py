@@ -136,3 +136,31 @@ def derive_league_thresholds(
         "TE": round(STARTER_THRESHOLD["TE"] * scale),
     }
     return threshold, floor
+
+
+def dedicated_starter_counts(roster_positions: List[str]) -> "Dict[str, int]":
+    """How many players a manager must field at each position to fill their
+    position-LOCKED starting slots.
+
+    Standard FLEX (RB/WR/TE) is deliberately excluded: it's fungible, so trading
+    a surplus WR for an RB you'll start doesn't reduce your ability to fill your
+    dedicated WR slots. Superflex IS counted toward QB, since SF managers field a
+    second quarterback there.
+
+    Used by the depth warning so a lateral position swap (WR-rich -> RB) stays
+    quiet as long as you can still fill your locked slots. Falls back to a
+    standard 1QB/2RB/2WR/1TE lineup when league settings are unknown.
+    """
+    if not roster_positions:
+        return {"QB": 1, "RB": 2, "WR": 2, "TE": 1}
+    counts: Dict[str, int] = {"QB": 0, "RB": 0, "WR": 0, "TE": 0}
+    superflex = 0
+    for slot in roster_positions:
+        s = str(slot).upper()
+        if s in counts:
+            counts[s] += 1
+        elif s in _SUPERFLEX_SLOT_NAMES:
+            superflex += 1
+        # standard flex slots intentionally ignored (fungible)
+    counts["QB"] += superflex
+    return counts
