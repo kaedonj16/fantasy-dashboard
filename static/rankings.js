@@ -1034,7 +1034,16 @@ Promise.all([
   // Fail loud on a non-2xx: the server can return a 500 whose body is still
   // valid JSON (the _api_err shape), which would otherwise parse into an empty
   // players list and render a blank table with no error shown.
-  fetch('/api/league-players', { cache: 'no-store' }).then(r => {
+  // Pass league context so the server can add a Yahoo ADP column for Yahoo
+  // leagues (Yahoo ADP needs a league id + token).
+  (function () {
+    let _u = '/api/league-players';
+    const _q = [];
+    if (window.__leagueId) _q.push('league_id=' + encodeURIComponent(window.__leagueId));
+    if (window.__platform) _q.push('platform=' + encodeURIComponent(window.__platform));
+    if (_q.length) _u += '?' + _q.join('&');
+    return fetch(_u, { cache: 'no-store' });
+  })().then(r => {
     if (!r.ok) throw new Error('league-players HTTP ' + r.status);
     return r.json();
   }),

@@ -21777,6 +21777,36 @@ def api_league_players():
         resp.headers["Cache-Control"] = "no-store"  # source-specific, not the shared pool
         return resp
 
+    # Yahoo ADP column (redraft-only): only for a viewer in a Yahoo league, since
+    # Yahoo ADP needs a league id + token. Overlaid on a copy so it never leaks
+    # into the shared memoized payload, and inserted BEFORE consensus so consensus
+    # stays the last column.
+    _lg = (request.args.get("league_id") or session.get("last_league_id") or "").strip()
+    _plat = (request.args.get("platform") or session.get("last_platform") or "").strip().lower()
+    if _plat == "yahoo" and _lg and payload.get("adp_columns"):
+        try:
+            from dashboard_services.providers.yahoo_api import get_league_token
+            _ytok = get_league_token(_lg, _cur_season)
+        except Exception:
+            _ytok = None
+        if _ytok:
+            # Copy players AND their adp_by_source dict so attaching Yahoo doesn't
+            # mutate the shared cache (only a new 'yahoo' key is added to the copy).
+            _players = [{**_p, "adp_by_source": dict(_p.get("adp_by_source") or {})}
+                        for _p in (payload.get("players") or [])]
+            _ycols = _attach_all_adp_sources(_players, _cur_season, ["yahoo"],
+                                             league_id=_lg, token=_ytok)
+            if _ycols:
+                _cols = list(payload.get("adp_columns") or [])
+                _cons = [c for c in _cols if c.get("value") == "consensus"]
+                _rest = [c for c in _cols if c.get("value") != "consensus"]
+                payload = dict(payload)
+                payload["players"] = _players
+                payload["adp_columns"] = _rest + _ycols + _cons
+                resp = jsonify(_sanitize_for_json(payload))
+                resp.headers["Cache-Control"] = "no-store"
+                return resp
+
     resp = jsonify(_sanitize_for_json(payload))
     # Payload is global (varies only by kdef) and refreshes at most every ~15 min,
     # so a short shared cache is safe and trims repeat loads. The Draft Room still
