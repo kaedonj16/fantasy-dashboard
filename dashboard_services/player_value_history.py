@@ -400,6 +400,8 @@ def load_current_values_from_db() -> list[dict]:
                         last_updated,
                         rank_change_7d,
                         pos_rank_change_7d,
+                        sf_rank_change_7d,
+                        sf_pos_rank_change_7d,
                         redraft_value_1qb,
                         redraft_value_sf
                     FROM player_values

@@ -128,7 +128,7 @@ def _load_historical_ranks(target_date: date) -> Dict[str, Dict[str, int]]:
 
                 cur.execute(
                     """
-                    SELECT player_id, position, value
+                    SELECT player_id, position, value, sf_value
                     FROM player_value_history
                     WHERE as_of_date = %s AND source = 'model'
                       AND position IN ('QB', 'RB', 'WR', 'TE')
@@ -143,7 +143,7 @@ def _load_historical_ranks(target_date: date) -> Dict[str, Dict[str, int]]:
         if isinstance(rows[0], dict):
             hist = pd.DataFrame(rows)
         else:
-            hist = pd.DataFrame(rows, columns=["player_id", "position", "value"])
+            hist = pd.DataFrame(rows, columns=["player_id", "position", "value", "sf_value"])
 
         hist["value"] = pd.to_numeric(hist["value"], errors="coerce").fillna(0)
         hist["overall_rank"] = hist["value"].rank(ascending=False, method="min").astype(int)
@@ -152,11 +152,25 @@ def _load_historical_ranks(target_date: date) -> Dict[str, Dict[str, int]]:
             .rank(ascending=False, method="min")
             .astype(int)
         )
+        # SF-ordered ranks from the SF values already stored historically. When a
+        # snapshot predates the sf_value column it falls back to the 1QB value so
+        # ranks are still populated (rather than all-tied at 0).
+        if "sf_value" not in hist.columns:
+            hist["sf_value"] = hist["value"]
+        hist["sf_value"] = pd.to_numeric(hist["sf_value"], errors="coerce").fillna(hist["value"])
+        hist["sf_overall_rank"] = hist["sf_value"].rank(ascending=False, method="min").astype(int)
+        hist["sf_pos_rank"] = (
+            hist.groupby("position")["sf_value"]
+            .rank(ascending=False, method="min")
+            .astype(int)
+        )
 
         return {
             str(r["player_id"]): {
                 "overall_rank": int(r["overall_rank"]),
                 "pos_rank": int(r["pos_rank"]),
+                "sf_overall_rank": int(r["sf_overall_rank"]),
+                "sf_pos_rank": int(r["sf_pos_rank"]),
             }
             for _, r in hist.iterrows()
         }
@@ -190,6 +204,9 @@ def update_player_values_with_rankings() -> int:
     # player-vs-player movement, not pool composition changes.
     _player_mask = df['position'].isin({'QB', 'RB', 'WR', 'TE'})
     df['player_rank'] = df['value'].where(_player_mask).rank(ascending=False, method='min')
+    # SF overall player-only rank, ordered by SF value (QBs rise a lot here) —
+    # drives sf_rank_change_7d so Superflex movement arrows are SF-correct.
+    df['sf_player_rank'] = df['sf_value'].where(_player_mask).rank(ascending=False, method='min')
     # Load calibration overrides to get calibrated values for ranking
     try:
         from dashboard_services.player_value_history import load_calibration_overrides
@@ -235,10 +252,17 @@ def update_player_values_with_rankings() -> int:
         cur_sf_pos     = int(row.get('sf_pos_rank', cur_pos))
         _pr = row.get('player_rank')
         cur_player_rank = int(_pr) if (_pr is not None and not pd.isna(_pr)) else None
+        _spr = row.get('sf_player_rank')
+        cur_sf_player_rank = int(_spr) if (_spr is not None and not pd.isna(_spr)) else None
 
         hist = hist_ranks.get(pid)
         rank_change_7d     = (hist['overall_rank'] - cur_player_rank) if (hist and cur_player_rank is not None) else None
         pos_rank_change_7d = (hist['pos_rank'] - cur_pos) if hist else None
+        # SF movement: SF-ordered rank now vs 7 days ago (same shape as 1QB above).
+        _sf_hist_overall = hist.get('sf_overall_rank') if hist else None
+        _sf_hist_pos     = hist.get('sf_pos_rank') if hist else None
+        sf_rank_change_7d     = (_sf_hist_overall - cur_sf_player_rank) if (_sf_hist_overall is not None and cur_sf_player_rank is not None) else None
+        sf_pos_rank_change_7d = (_sf_hist_pos - cur_sf_pos) if (_sf_hist_pos is not None) else None
 
         rd_1qb, rd_sf_raw = fc_redraft.get(pid, (None, None))
 
@@ -272,6 +296,8 @@ def update_player_values_with_rankings() -> int:
             'search_name': row.get('search_name', ''),
             'rank_change_7d': rank_change_7d,
             'pos_rank_change_7d': pos_rank_change_7d,
+            'sf_rank_change_7d': sf_rank_change_7d,
+            'sf_pos_rank_change_7d': sf_pos_rank_change_7d,
         })
     
     # Picks come from model_values.json exclusively; don't persist them in the DB
