@@ -13446,6 +13446,26 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         font-weight: 700;
         color: var(--accent);
       }
+      /* Per-source ADP columns (sort-by-ADP view) */
+      .pr-adp-head {
+        text-align: right;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        user-select: none;
+        transition: color 0.12s ease;
+      }
+      .pr-adp-head:hover { color: var(--text); }
+      .pr-adp-head-active { color: var(--accent); }
+      .pr-adp-sort-caret { font-size: 9px; }
+      .pr-adp-cell {
+        text-align: right;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .pr-adp-cell-active { color: var(--accent); font-weight: 700; }
       /* Sticky table header */
       #prTableHeader {
         position: sticky;
@@ -13739,15 +13759,17 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           width: 100%;
           min-width: 0;
         }
-        /* Table: hide Age on tablets - rank | arrow | name | pos | team | sort */
-        .pr-grid-row { grid-template-columns: 50px 42px 1fr 44px 42px 56px !important; }
+        /* Table: hide Age on tablets - rank | arrow | name | pos | team | sort.
+           The ADP-source view (.pr-adp-mode) manages its own columns inline, so
+           exclude it from these fixed overrides. */
+        .pr-grid-row:not(.pr-adp-mode) { grid-template-columns: 50px 42px 1fr 44px 42px 56px !important; }
         .pr-age,  #prAgeHeader  { display: none !important; }
       }
       @media (max-width: 480px) {
         /* Phone: rank | arrow | name | sort - hide pos and team */
-        .pr-grid-row { grid-template-columns: 50px 42px 1fr 56px !important; }
-        .pr-pos-cell, #prTableHeader span:nth-child(4) { display: none !important; }
-        .pr-team,     #prTableHeader span:nth-child(6) { display: none !important; }
+        .pr-grid-row:not(.pr-adp-mode) { grid-template-columns: 50px 42px 1fr 56px !important; }
+        .pr-pos-cell, #prTableHeader:not(.pr-adp-mode) span:nth-child(4) { display: none !important; }
+        .pr-team,     #prTableHeader:not(.pr-adp-mode) span:nth-child(6) { display: none !important; }
       }
     </style>
 
@@ -20940,6 +20962,57 @@ def _attach_adp_from_source(players, adp_season, source, league_id=None, token=N
     return {mode: (label if used[mode] else "none") for mode in used}
 
 
+# The four axes the rankings ADP columns can show (dynasty/redraft x 1QB/SF);
+# the client picks the one matching the Dynasty/Redraft + 1QB/SF toggles.
+_ADP_COLUMN_AXES = (
+    ("dynasty", False, "avg_pick"),
+    ("dynasty", True,  "sf_avg_pick"),
+    ("redraft", False, "redraft_avg_pick"),
+    ("redraft", True,  "sf_redraft_avg_pick"),
+)
+
+
+def _attach_all_adp_sources(players, adp_season, sources, league_id=None, token=None):
+    """Attach EACH source's ADP separately so the rankings ADP view can show one
+    sortable column per source.
+
+    Writes ``p['adp_by_source'][src] = {avg_pick, sf_avg_pick, redraft_avg_pick,
+    sf_redraft_avg_pick}`` and returns the ordered list of sources that actually
+    have data: ``[{'value','label'}]``. Uses fallback=False so each column shows
+    only that source's own numbers (BR Fantasy never borrows Sleeper's)."""
+    from dashboard_services.adp_service import (
+        resolve_market_adp, ADP_SOURCE_LABELS, ordinal_rank_adp,
+    )
+    _pool_ids = {str(_p.get("id") or "") for _p in players}
+    columns = []
+    for source in sources:
+        _brf = (source == "brfantasy")
+        by_field = {}
+        has_any = False
+        for scoring_type, is_sf, field in _ADP_COLUMN_AXES:
+            try:
+                m = resolve_market_adp(int(adp_season), is_sf, scoring_type=scoring_type,
+                                       source=source, league_id=league_id, token=token,
+                                       as_rank=False, fallback=False) or {}
+            except Exception:
+                m = {}
+            if _brf and m:
+                # BR Fantasy's mean-of-picks never bottoms out at 1, so present it
+                # as a clean 1..N board over just the players we list.
+                m = ordinal_rank_adp({k: v for k, v in m.items() if k in _pool_ids})
+            by_field[field] = m
+            if m:
+                has_any = True
+        if not has_any:
+            continue
+        for _p in players:
+            _pid = str(_p.get("id") or "")
+            dest = _p.setdefault("adp_by_source", {})
+            dest[source] = {f: by_field[f].get(_pid) for f in by_field}
+        columns.append({"value": source, "label": ADP_SOURCE_LABELS.get(source, source.title())})
+    return columns
+
+
 def _attach_adp_to_players(players, adp_season, clear_first=False, sleeper_only=False):
     """Attach per-player ADP for ``adp_season`` onto each player dict; return
     adp_sources {mode: label}.
@@ -21549,6 +21622,15 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
     # CURRENT season. The route overlays a historical season's ADP on request.
     _adp_season = int((get_nfl_state() or {}).get("season") or datetime.now().year)
     _adp_sources = _attach_adp_to_players(model_value_table, _adp_season)
+    # Per-source ADP for the rankings "sort by ADP" view (one column per source).
+    # League-agnostic sources only (Yahoo needs a token and is overlaid per-request
+    # in the route); attached here so the memoized payload carries them.
+    try:
+        _adp_columns = _attach_all_adp_sources(
+            model_value_table, _adp_season, ["sleeper", "brfantasy", "consensus"])
+    except Exception as _e_adpcols:
+        logger.info("[api/league-players] per-source ADP skipped: %s", _e_adpcols)
+        _adp_columns = []
 
     # Attach NFL bye week per player (by team) when real schedule data exists.
     # No fabricated byes: if the season schedule is not loaded this is a no-op.
@@ -21635,6 +21717,7 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
         "tier_thresholds": _tier_thresholds_all,
         "adp_sources": _adp_sources,
         "adp_source_options": _adp_source_options,
+        "adp_columns": _adp_columns,
     }
 
 

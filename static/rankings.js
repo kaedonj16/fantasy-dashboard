@@ -41,6 +41,8 @@ var prAdpSourceOptions = {};    // {startup|rookie|redraft: [{value,label}]} fro
 var prAdpSources = {};          // {startup|rookie|redraft: 'Sleeper'|...} label the server used
 var prAdpSource = 'auto';       // currently selected ADP source ('auto' = server default)
 var prAdpReloading = false;     // guards concurrent source re-fetches
+var prAdpColumns = [];          // [{value,label}] per-source ADP columns for the sort-by-ADP view
+var prAdpSortSource = '';       // which source column the ADP view is sorted by ('' = default)
 
 var PR_SPARK_W = 38, PR_SPARK_H = 26;  // logical (CSS) px
 // Set true for the one render pass right after sparkline data first loads, so
@@ -415,6 +417,42 @@ function prAdpMode() {
   return prScoringType === 'redraft' ? 'redraft' : 'startup';
 }
 
+// ── Per-source ADP columns (the "sort by ADP" view) ─────────────────────────
+// The ADP field on a player object for the current Dynasty/Redraft + 1QB/SF axis.
+function prAdpField() {
+  if (prScoringType === 'redraft') return prLeagueType === 'sf' ? 'sf_redraft_avg_pick' : 'redraft_avg_pick';
+  return prLeagueType === 'sf' ? 'sf_avg_pick' : 'avg_pick';
+}
+// One source's ADP for a player on the current axis (null when that source has none).
+function prAdpSourceVal(p, src) {
+  const bs = p.adp_by_source && p.adp_by_source[src];
+  if (!bs) return null;
+  const v = bs[prAdpField()];
+  return (v != null) ? Number(v) : null;
+}
+// Whether we have per-source columns to show (server sent them for this pool).
+function prHasAdpColumns() { return Array.isArray(prAdpColumns) && prAdpColumns.length > 0; }
+// The source the ADP view is currently sorted by (defaults to Consensus, else first).
+function prActiveAdpSource() {
+  if (!prHasAdpColumns()) return '';
+  if (prAdpSortSource && prAdpColumns.some(c => c.value === prAdpSortSource)) return prAdpSortSource;
+  const cons = prAdpColumns.find(c => c.value === 'consensus');
+  return cons ? cons.value : prAdpColumns[0].value;
+}
+// ADP value used for sorting rows: the active source's when columns exist,
+// otherwise the legacy single-source field.
+function prGetAdpSortVal(p) {
+  if (prHasAdpColumns()) return prAdpSourceVal(p, prActiveAdpSource());
+  return prGetAdp(p);
+}
+// Header click: sort the ADP view by a chosen source column.
+function prSortByAdpSource(src) {
+  prAdpSortSource = src;
+  prPage = 1;
+  if (typeof prFlipRender === 'function') prFlipRender(); else prRender();
+}
+window.prSortByAdpSource = prSortByAdpSource;
+
 // Show the ADP-source dropdown only while sorting by ADP, and populate it with
 // the sources valid for the current scoring mode (Yahoo redraft-only, BR
 // Fantasy dynasty/rookie only). Preserves the current selection when possible.
@@ -422,7 +460,9 @@ function prSyncAdpSourceUI(sortBy) {
   const wrap = document.getElementById('prAdpSrcWrap');
   const sel = document.getElementById('prAdpSource');
   if (!wrap || !sel) return;
-  const show = sortBy === 'adp';
+  // The per-source columns replace the single-source dropdown entirely; only
+  // fall back to the dropdown when the server didn't send columns.
+  const show = sortBy === 'adp' && !prHasAdpColumns();
   wrap.style.display = show ? '' : 'none';
   if (!show) return;
   const mode = prAdpMode();
@@ -443,6 +483,38 @@ function prSyncAdpSourceUI(sortBy) {
   const has = opts.some(o => o.value === want);
   sel.value = has ? want : 'auto';
   prAdpSource = sel.value;
+}
+
+// Swap the table header between the normal columns and the ADP-source columns.
+// Caches the default header once so it can be restored when leaving the ADP view.
+function prSetupAdpHeader(adpView, cols, active, gridCols) {
+  const header = document.getElementById('prTableHeader');
+  if (!header) return;
+  if (header._prDefaultHTML == null) {
+    header._prDefaultHTML = header.innerHTML;
+    header._prDefaultCols = header.style.gridTemplateColumns;
+  }
+  header.classList.toggle('pr-adp-mode', !!adpView);
+  if (adpView) {
+    header.style.gridTemplateColumns = gridCols;
+    header.innerHTML =
+      '<span>#</span>' +
+      '<span>Player</span>' +
+      cols.map(function (c) {
+        const on = c.value === active;
+        return '<span class="pr-adp-head' + (on ? ' pr-adp-head-active' : '') + '"' +
+          ' role="button" tabindex="0" title="Sort by ' + c.label + ' ADP"' +
+          ' onclick="prSortByAdpSource(\'' + c.value + '\')"' +
+          ' onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();prSortByAdpSource(\'' + c.value + '\');}">' +
+          c.label + (on ? ' <span class="pr-adp-sort-caret">▲</span>' : '') +
+          '</span>';
+      }).join('');
+    header.dataset.adpMode = '1';
+  } else if (header.dataset.adpMode === '1') {
+    header.innerHTML = header._prDefaultHTML;
+    header.style.gridTemplateColumns = header._prDefaultCols || '';
+    header.dataset.adpMode = '0';
+  }
 }
 
 // Re-fetch the pool with the chosen ADP source and merge only the ADP fields
@@ -508,19 +580,33 @@ function prRender() {
   const sortBy = document.getElementById('prSort').value;
   prSyncAdpSourceUI(sortBy);
 
-  // On mobile (≤768px) the Age column is hidden, so switch the sort column
-  // to show whatever is being sorted. On desktop all columns are visible.
+  // "Sort by ADP" with per-source columns is a distinct view: the right-side
+  // columns (Value/Age/Team/Pos) are swapped out for one column per ADP source.
+  const adpView = (sortBy === 'adp') && prHasAdpColumns();
+  const adpCols = adpView ? prAdpColumns : [];
+  const adpActive = adpView ? prActiveAdpSource() : '';
+  const ADP_GRID = adpView
+    ? ('54px minmax(0,1fr) ' + adpCols.map(() => 'minmax(48px,1fr)').join(' '))
+    : '';
+  prSetupAdpHeader(adpView, adpCols, adpActive, ADP_GRID);
+
   const isMobile = window.innerWidth <= 768;
+  if (!adpView) {
+    // On mobile (≤768px) the Age column is hidden, so switch the sort column
+    // to show whatever is being sorted. On desktop all columns are visible.
+    const _alwaysShowSort = sortBy === 'ppg' || sortBy === 'total_pts' || sortBy === 'adp';
+    const sortMeta0 = (isMobile || _alwaysShowSort) ? (PR_SORT_META[sortBy] || PR_SORT_META.rank) : PR_SORT_META.rank;
+    const sortHeaderEl = document.getElementById('prSortHeader');
+    if (sortHeaderEl) sortHeaderEl.textContent = sortMeta0.label;
+    // Hide age col only on mobile when sort=age (shown in sort col instead)
+    const ageHeaderEl = document.getElementById('prAgeHeader');
+    if (isMobile && ageHeaderEl) ageHeaderEl.style.visibility = sortBy === 'age' ? 'hidden' : '';
+    const ageColEls = document.querySelectorAll('.pr-age');
+    if (isMobile) ageColEls.forEach(el => el.style.visibility = sortBy === 'age' ? 'hidden' : '');
+    else ageColEls.forEach(el => el.style.visibility = '');
+  }
   const _alwaysShowSort = sortBy === 'ppg' || sortBy === 'total_pts' || sortBy === 'adp';
   const sortMeta = (isMobile || _alwaysShowSort) ? (PR_SORT_META[sortBy] || PR_SORT_META.rank) : PR_SORT_META.rank;
-  const sortHeaderEl = document.getElementById('prSortHeader');
-  if (sortHeaderEl) sortHeaderEl.textContent = sortMeta.label;
-  // Hide age col only on mobile when sort=age (shown in sort col instead)
-  const ageHeaderEl = document.getElementById('prAgeHeader');
-  if (isMobile && ageHeaderEl) ageHeaderEl.style.visibility = sortBy === 'age' ? 'hidden' : '';
-  const ageColEls = document.querySelectorAll('.pr-age');
-  if (isMobile) ageColEls.forEach(el => el.style.visibility = sortBy === 'age' ? 'hidden' : '');
-  else ageColEls.forEach(el => el.style.visibility = '');
 
   let players = prAllPlayers.slice();
 
@@ -566,7 +652,7 @@ function prRender() {
   // measures, so the two line up — and #s stay stable under search too.
   const _rankSort = (a, b) => {
     if (sortBy === 'age')       return (a.age != null ? a.age : 99) - (b.age != null ? b.age : 99);
-    if (sortBy === 'adp')       { const aA = prGetAdp(a); const bA = prGetAdp(b); return (aA != null ? aA : 99999) - (bA != null ? bA : 99999); }
+    if (sortBy === 'adp')       { const aA = prGetAdpSortVal(a); const bA = prGetAdpSortVal(b); return (aA != null ? aA : 99999) - (bA != null ? bA : 99999); }
     if (sortBy === 'pos_rank')  { const rA = prPosRankMap[String(a.id)] || 9999; const rB = prPosRankMap[String(b.id)] || 9999; return rA - rB; }
     if (sortBy === 'ppg')       return (b.ppg != null ? b.ppg : -1) - (a.ppg != null ? a.ppg : -1);
     if (sortBy === 'total_pts') return (b.total_pts != null ? b.total_pts : -1) - (a.total_pts != null ? a.total_pts : -1);
@@ -607,7 +693,7 @@ function prRender() {
       if (sortBy === 'value') {
         return prGetValue(b) - prGetValue(a);
       } else if (sortBy === 'adp') {
-        const aA = prGetAdp(a); const bA = prGetAdp(b);
+        const aA = prGetAdpSortVal(a); const bA = prGetAdpSortVal(b);
         return (aA != null ? aA : 99999) - (bA != null ? bA : 99999);
       } else if (sortBy === 'age') {
         return (a.age != null ? a.age : 99) - (b.age != null ? b.age : 99);
@@ -753,18 +839,33 @@ function prRender() {
       sortDisplayHTML = sortDisplay;
     }
 
-    row.innerHTML =
-      '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '–') + rankDeltaHTML + '</span>' +
-      '<span class="pr-arrows">' + arrowCell + '</span>' +
-      '<span class="pr-name player-clickable">'  + (p.name || 'Unknown') + badges + '</span>' +
-      '<span class="pr-pos-cell">' + posRank + '</span>' +
-      '<span class="pr-age">'   + (p.position === 'PICK' ? '–' : age) + '</span>' +
-      '<span class="pr-team">'  + (p.team || '–') + '</span>' +
-      '<span class="pr-value">' + sortDisplayHTML + '</span>';
+    if (adpView) {
+      // ADP view: # | Player | one ADP cell per source (active source highlighted).
+      row.classList.add('pr-adp-mode');
+      row.style.gridTemplateColumns = ADP_GRID;
+      row.innerHTML =
+        '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '–') + '</span>' +
+        '<span class="pr-name player-clickable">'  + (p.name || 'Unknown') + badges + '</span>' +
+        adpCols.map(function (c) {
+          const v = prAdpSourceVal(p, c.value);
+          const on = c.value === adpActive;
+          return '<span class="pr-adp-cell' + (on ? ' pr-adp-cell-active' : '') + '">' +
+            (v != null ? v.toFixed(1) : '–') + '</span>';
+        }).join('');
+    } else {
+      row.innerHTML =
+        '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '–') + rankDeltaHTML + '</span>' +
+        '<span class="pr-arrows">' + arrowCell + '</span>' +
+        '<span class="pr-name player-clickable">'  + (p.name || 'Unknown') + badges + '</span>' +
+        '<span class="pr-pos-cell">' + posRank + '</span>' +
+        '<span class="pr-age">'   + (p.position === 'PICK' ? '–' : age) + '</span>' +
+        '<span class="pr-team">'  + (p.team || '–') + '</span>' +
+        '<span class="pr-value">' + sortDisplayHTML + '</span>';
 
-    if (sparkData && sparkData.length >= 2) {
-      const cnv = row.querySelector('.pr-sparkline');
-      if (cnv) _prDrawSparkline(cnv, sparkData, _prSparkAnimate);
+      if (sparkData && sparkData.length >= 2) {
+        const cnv = row.querySelector('.pr-sparkline');
+        if (cnv) _prDrawSparkline(cnv, sparkData, _prSparkAnimate);
+      }
     }
 
     list.appendChild(row);
@@ -946,6 +1047,7 @@ Promise.all([
   prTierThresholds = (!Array.isArray(resp) && resp.tier_thresholds) ? resp.tier_thresholds : {};
   prAdpSourceOptions = (!Array.isArray(resp) && resp.adp_source_options) ? resp.adp_source_options : {};
   prAdpSources = (!Array.isArray(resp) && resp.adp_sources) ? resp.adp_sources : {};
+  prAdpColumns = (!Array.isArray(resp) && Array.isArray(resp.adp_columns)) ? resp.adp_columns : [];
 
   // Helper function to calculate precise age from birthday
   function calculateAgeFromBirthday(bDay) {
