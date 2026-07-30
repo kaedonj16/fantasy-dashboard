@@ -13676,8 +13676,11 @@ img, svg, canvas {
     width: 100%;
   }
 
-  /* Tighter table grid on mobile: hide Team column */
-  .pr-grid-row {
+  /* Tighter table grid on mobile: hide Team column. Exclude the ADP-source view
+     (.pr-adp-mode), which sets its own inline grid with one column per source —
+     otherwise this !important rule forces a 4-col grid and the extra ADP cell
+     wraps under the rank, and the source headers past #5 get hidden. */
+  .pr-grid-row:not(.pr-adp-mode) {
     grid-template-columns: 38px 1fr 54px 44px 54px !important;
   }
 
@@ -13685,7 +13688,7 @@ img, svg, canvas {
     display: none;
   }
 
-  #prTableHeader span:nth-child(5) {
+  #prTableHeader:not(.pr-adp-mode) span:nth-child(5) {
     display: none;
   }
 
@@ -13699,8 +13702,9 @@ img, svg, canvas {
 }
 
 @media (max-width: 480px) {
-  /* Even tighter: also hide Age column */
-  .pr-grid-row {
+  /* Even tighter: also hide Age column. Again exclude .pr-adp-mode so the ADP
+     source columns keep their inline grid and every source header shows. */
+  .pr-grid-row:not(.pr-adp-mode) {
     grid-template-columns: 34px 1fr 52px 52px !important;
   }
 
@@ -13708,7 +13712,7 @@ img, svg, canvas {
     display: none;
   }
 
-  #prTableHeader span:nth-child(4) {
+  #prTableHeader:not(.pr-adp-mode) span:nth-child(4) {
     display: none;
   }
 }
