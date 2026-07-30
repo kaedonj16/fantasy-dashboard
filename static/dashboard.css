@@ -9035,6 +9035,10 @@ select:focus {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  /* Cap the injury list so a long roster of banged-up teams doesn't push the
+     rest of the rail (NFL News) far down the page — it scrolls within the card. */
+  max-height: 360px;
+  overflow-y: auto;
 }
 
 .inj-acc {

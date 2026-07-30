@@ -9238,7 +9238,6 @@ def build_activity_body(ctx: dict) -> str:
 
       <aside class="page-sidebar act-pulse-rail">
         {snapshot_html}
-        {injury_html}
         <div class="card small" id="nflNewsCard">
           <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
             <h3>NFL News</h3>
@@ -9248,6 +9247,7 @@ def build_activity_body(ctx: dict) -> str:
             <div style="padding:16px 14px;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-muted);"><div class="loading-spinner" style="width:14px;height:14px;margin:0;flex-shrink:0;"></div>Loading…</div>
           </div>
         </div>
+        {injury_html}
       </aside>
     </div>
 
