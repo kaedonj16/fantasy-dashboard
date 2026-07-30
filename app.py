@@ -13448,7 +13448,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       }
       /* Per-source ADP columns (sort-by-ADP view) */
       .pr-adp-head {
-        text-align: right;
+        text-align: center;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -13459,7 +13459,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       .pr-adp-head-active { color: var(--accent); }
       .pr-adp-sort-caret { font-size: 9px; }
       .pr-adp-cell {
-        text-align: right;
+        text-align: center;
         font-size: 13px;
         font-weight: 600;
         color: var(--text-muted);
