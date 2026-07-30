@@ -6749,6 +6749,59 @@ def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 
     return "".join(waiver_html)
 
 
+_WEEK1_KICKOFF_CACHE: dict = {}      # season -> (fetched_at, ts_ms | None)
+_WEEK1_KICKOFF_TTL = 6 * 3600        # 6h — the schedule is static once published
+
+
+def _nfl_regular_season_kickoff_ms(season: int):
+    """Epoch-ms kickoff of the FIRST NFL *regular-season* game of `season`.
+
+    Reads the app's schedule data (Tank01 Week 1, seasonType='reg') and takes the
+    earliest game start, so the countdown targets the real Week 1 opener — never a
+    preseason game. Falls back to the Thursday-after-Labor-Day opener (~8:20 PM
+    ET) if the schedule isn't published yet. Cached (6h) and fail-soft.
+    """
+    import time as _t
+    now = _t.time()
+    hit = _WEEK1_KICKOFF_CACHE.get(season)
+    if hit and now - hit[0] < _WEEK1_KICKOFF_TTL:
+        return hit[1]
+
+    ts_ms = None
+    try:
+        from dashboard_services.api import get_nfl_games_for_week_raw
+        games = get_nfl_games_for_week_raw(1, int(season), "reg") or []
+        epochs = []
+        for g in games:
+            if not isinstance(g, dict):
+                continue
+            _e = g.get("gameTime_epoch") or g.get("gameTimeEpoch")
+            try:
+                ev = float(_e)
+            except (TypeError, ValueError):
+                continue
+            if ev > 0:
+                epochs.append(ev)
+        if epochs:
+            ts_ms = int(min(epochs) * 1000)
+    except Exception:
+        logger.debug("[offseason] week 1 schedule fetch failed", exc_info=True)
+
+    if ts_ms is None:
+        # Deterministic opener: the Thursday after Labor Day (first Monday of Sep).
+        try:
+            _sep1 = date(int(season), 9, 1)
+            _labor = _sep1 + timedelta(days=(0 - _sep1.weekday()) % 7)
+            _kick = _labor + timedelta(days=3)
+            ts_ms = int(datetime(_kick.year, _kick.month, _kick.day, 20, 20,
+                                 tzinfo=EASTERN).timestamp() * 1000)
+        except Exception:
+            ts_ms = None
+
+    _WEEK1_KICKOFF_CACHE[season] = (now, ts_ms)
+    return ts_ms
+
+
 def build_offseason_dashboard_body(ctx: dict) -> str:
     league = ctx["league"]
     platform = ctx["platform"]
@@ -6780,21 +6833,19 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     countdown_text = "TBD"
     draft_subtext = "Set once your league schedules the draft."
 
-    # Week 1 kickoff, from Sleeper's NFL state (used for the no-draft-scheduled
-    # tile and the post-draft countdown alike).
+    # First NFL regular-season game kickoff (from the app's schedule), not the
+    # preseason — used for the no-draft-scheduled tile and the post-draft
+    # countdown alike. See _nfl_regular_season_kickoff_ms.
     _week1_delta = None
     _week1_date_txt = ""
-    _week1_ts_ms = None
-    try:
-        _ssd = (get_nfl_state() or {}).get("season_start_date")
-        if _ssd:
-            from dateutil import parser
-            _week1_dt = parser.parse(_ssd).replace(tzinfo=EASTERN)
+    _week1_ts_ms = _nfl_regular_season_kickoff_ms(int(season))
+    if _week1_ts_ms:
+        try:
+            _week1_dt = datetime.fromtimestamp(_week1_ts_ms / 1000, tz=EASTERN)
             _week1_delta = (_week1_dt.date() - datetime.now(EASTERN).date()).days
             _week1_date_txt = _week1_dt.strftime("%b %d, %Y")
-            _week1_ts_ms = int(_week1_dt.timestamp() * 1000)
-    except Exception as e:
-        logger.info(f"[offseason] Failed to parse season_start_date: {e}")
+        except Exception as e:
+            logger.info(f"[offseason] kickoff parse failed: {e}")
 
     draft_ts_ms = None
 
@@ -7157,20 +7208,21 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
           var valEl = document.getElementById('osDraftCdVal');
           var subEl = document.getElementById('osDraftCdSub');
           var subtextEl = document.getElementById('osDraftSubtext');
-          function fmtDays(ms){{
-            var d = Math.floor(ms / 86400000);
-            var h = Math.floor((ms % 86400000) / 3600000);
-            var m = Math.floor((ms % 3600000) / 60000);
-            if (d > 1) return d + ' days';
-            if (d === 1) return '1 day ' + h + 'h';
-            if (h > 0) return h + 'h ' + m + 'm';
-            if (m > 0) return m + 'm';
-            return 'Starting now';
+          function fmtCountdown(ms){{
+            if (ms <= 0) return 'Kickoff!';
+            var t = Math.floor(ms / 1000);
+            var d = Math.floor(t / 86400);
+            var h = Math.floor((t % 86400) / 3600);
+            var m = Math.floor((t % 3600) / 60);
+            var s = t % 60;
+            var pad = function(n){{ return (n < 10 ? '0' : '') + n; }};
+            var clock = pad(h) + ':' + pad(m) + ':' + pad(s);
+            return d > 0 ? (d + 'd ' + clock) : clock;
           }}
           function tick(){{
             if (!targetTs) return;
             var remaining = targetTs - Date.now();
-            if (remaining > 0 && valEl) valEl.textContent = fmtDays(remaining);
+            if (remaining > 0 && valEl) valEl.textContent = fmtCountdown(remaining);
           }}
           function showDraft(ts){{
             targetTs = ts;
@@ -7210,7 +7262,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             }}).catch(function(){{}});
           }}
           tick();
-          setInterval(tick, 60000);
+          setInterval(tick, 1000);
           setInterval(refresh, 30000);
           refresh();
         }})();
