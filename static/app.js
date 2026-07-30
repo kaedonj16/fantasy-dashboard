@@ -15506,7 +15506,17 @@ function cmpRenderMetrics() {
   // it's clear something is loading (the fetch can take a moment).
   const selectors = () => '<div class="compare-season-selectors">' + _cmpSideSelector(1) + _cmpSideSelector(2) + '</div>';
   const spinner = '<div class="compare-metrics-loading"><div class="loading-spinner" style="width:16px;height:16px;margin:0;flex-shrink:0;"></div><span>Loading metrics…</span></div>';
-  metricsDiv.innerHTML = selectors() + '<div id="compareMetricsRows">' + spinner + '</div>';
+  // Keep the current rows on screen while re-fetching so changing ONE side's
+  // season/week doesn't blank BOTH columns (the other side is cached and won't
+  // change). Only show the full spinner on the very first load. The kept rows
+  // dim slightly to signal an update is in flight.
+  const _existingRows = document.getElementById('compareMetricsRows');
+  const _hadRows = !!(_existingRows
+    && !_existingRows.querySelector('.compare-metrics-loading')
+    && _existingRows.innerHTML.trim());
+  const _rowsInner = _hadRows ? _existingRows.innerHTML : spinner;
+  const _rowsAttr = _hadRows ? ' style="opacity:0.5;transition:opacity .15s ease;"' : '';
+  metricsDiv.innerHTML = selectors() + '<div id="compareMetricsRows"' + _rowsAttr + '>' + _rowsInner + '</div>';
   _cmpInitWkBars();
   const token = ++_cmpRenderToken;
   Promise.all([_cmpFetchSide(_cmpSides[1]), _cmpFetchSide(_cmpSides[2]), _ensureAdvMetricsCfg()]).then(([r1, r2, cfg]) => {
@@ -15699,9 +15709,12 @@ function _cmpEnsureMetrics() {
   c.metricsDone = true;
   fetch('/api/nfl-state').then(r => r.json()).catch(() => ({}))
     .then(function (nflState) {
-      const isOffseason = (nflState.season_type || '').toLowerCase() === 'off';
-      const currentSeason = nflState.season || new Date().getFullYear();
-      const defaultSeason = isOffseason ? null : currentSeason;
+      const st = (nflState.season_type || '').toLowerCase();
+      const currentSeason = Number(nflState.season) || new Date().getFullYear();
+      // Default to the current season once it's underway (regular/postseason),
+      // otherwise the most recent COMPLETED season (offseason/preseason) rather
+      // than Career -- e.g. in the 2026 offseason this defaults to 2025.
+      const defaultSeason = (st === 'regular' || st === 'post') ? currentSeason : (currentSeason - 1);
       loadCompareMetrics(c.p1.player_id, c.p2.player_id, defaultSeason, defaultSeason);
     });
 }

@@ -43,6 +43,7 @@ var prAdpSource = 'auto';       // currently selected ADP source ('auto' = serve
 var prAdpReloading = false;     // guards concurrent source re-fetches
 var prAdpColumns = [];          // [{value,label}] per-source ADP columns for the sort-by-ADP view
 var prAdpSortSource = '';       // which source column the ADP view is sorted by ('' = default)
+var PR_ADP_COL_W = 84;          // px width of each ADP source column (fits the "BR FANTASY" header)
 
 var PR_SPARK_W = 38, PR_SPARK_H = 26;  // logical (CSS) px
 // Set true for the one render pass right after sparkline data first loads, so
@@ -593,7 +594,11 @@ function prRender() {
   // On desktop keep the Pos / Age / Team columns (compact) alongside the source
   // columns; on mobile drop them so the source columns fit.
   const adpExtra = adpView && !isMobile;
-  const _adpSrcTracks = adpCols.map(() => 'minmax(48px,1fr)').join(' ');
+  // Fixed-width source columns (slim, like Pos/Age/Team) instead of 1fr, so they
+  // don't stretch across the row -- the Player column absorbs the slack. Wide
+  // enough to fit the "BR FANTASY" header without truncating.
+  const _adpColW = PR_ADP_COL_W + 'px';
+  const _adpSrcTracks = adpCols.map(() => _adpColW).join(' ');
   const ADP_GRID = adpView
     ? (adpExtra
         ? ('54px minmax(0,1fr) 40px 42px 46px ' + _adpSrcTracks)
