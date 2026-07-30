@@ -44,6 +44,7 @@ var prAdpReloading = false;     // guards concurrent source re-fetches
 var prAdpColumns = [];          // [{value,label}] per-source ADP columns for the sort-by-ADP view
 var prAdpSortSource = '';       // which source column the ADP view is sorted by ('' = default)
 var PR_ADP_COL_W = 96;          // px width of each ADP source column (fits "BR FANTASY"/"CONSENSUS" without colliding)
+var PR_ADP_COL_W_MOBILE = 58;   // narrower on phones so all sources fit without overflowing the viewport (CSS shrinks the header font to match)
 
 var PR_SPARK_W = 38, PR_SPARK_H = 26;  // logical (CSS) px
 // Set true for the one render pass right after sparkline data first loads, so
@@ -596,13 +597,18 @@ function prRender() {
   const adpExtra = adpView && !isMobile;
   // Fixed-width source columns (slim, like Pos/Age/Team) instead of 1fr, so they
   // don't stretch across the row -- the Player column absorbs the slack. Wide
-  // enough to fit the "BR FANTASY" header without truncating.
-  const _adpColW = PR_ADP_COL_W + 'px';
+  // enough to fit the "BR FANTASY" header without truncating. On phones the
+  // columns (and the rank col) shrink so all sources fit instead of overflowing
+  // the viewport and clipping the last column / truncating the headers.
+  // Only true phones overflow with 96px columns; tablets (481-768) have room.
+  const _isPhone = window.innerWidth <= 480;
+  const _adpColW = (_isPhone ? PR_ADP_COL_W_MOBILE : PR_ADP_COL_W) + 'px';
+  const _adpRankW = _isPhone ? '38px' : '54px';
   const _adpSrcTracks = adpCols.map(() => _adpColW).join(' ');
   const ADP_GRID = adpView
     ? (adpExtra
         ? ('54px minmax(0,1fr) 40px 42px 46px ' + _adpSrcTracks)
-        : ('54px minmax(0,1fr) ' + _adpSrcTracks))
+        : (_adpRankW + ' minmax(0,1fr) ' + _adpSrcTracks))
     : '';
   prSetupAdpHeader(adpView, adpCols, adpActive, ADP_GRID, adpExtra);
   if (!adpView) {

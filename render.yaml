@@ -67,7 +67,10 @@ services:
       - key: YAHOO_CLIENT_SECRET
         sync: false
       - key: YAHOO_REDIRECT_URI
-        value: https://brfantasy.onrender.com/auth/yahoo/callback
+        # Must match the Redirect URI registered on the Yahoo app EXACTLY, and be
+        # on the primary domain (the onrender.com host 301-redirects here, which
+        # would break the OAuth round-trip). See PRIMARY_DOMAIN above.
+        value: https://brfantasyfootball.com/auth/yahoo/callback
       # Stripe payments
       - key: STRIPE_SECRET_KEY
         sync: false
