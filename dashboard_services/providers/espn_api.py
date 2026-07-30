@@ -25,11 +25,43 @@ class ESPNError(Exception):
 # Env + helpers
 # ============================================================
 
+def _clean_secret(raw: str) -> str:
+    """Strip whitespace and one layer of matching surrounding quotes.
+
+    Pasting a cookie into a hosting dashboard (Render, etc.) often wraps it in
+    quotes (ESPN_S2="AEB...") or leaves a trailing newline; those characters ride
+    along into os.getenv and silently break ESPN auth. Normalize them away.
+    """
+    s = (raw or "").strip()
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in ("'", '"'):
+        s = s[1:-1].strip()
+    return s
+
+
 def _normalize_swid(swid: str) -> str:
-    swid = (swid or "").strip()
+    swid = _clean_secret(swid)
     if swid and not (swid.startswith("{") and swid.endswith("}")):
         swid = "{" + swid.strip("{}") + "}"
     return swid
+
+
+def _espn_creds() -> Tuple[Optional[str], Optional[str]]:
+    """(espn_s2, swid) from the environment, cleaned. Either may be None."""
+    espn_s2 = _clean_secret(os.getenv("ESPN_S2", "")) or None
+    swid = _normalize_swid(os.getenv("ESPN_SWID", "")) or None
+    return espn_s2, swid
+
+
+def espn_diagnostics() -> Dict[str, Any]:
+    """Non-secret view of the configured ESPN credentials, for debugging a
+    'my private league won't load' report. Never returns the actual values."""
+    espn_s2, swid = _espn_creds()
+    return {
+        "espn_s2_present": bool(espn_s2),
+        "espn_s2_len": len(espn_s2) if espn_s2 else 0,
+        "espn_swid_present": bool(swid),
+        "espn_swid_braced": bool(swid and swid.startswith("{") and swid.endswith("}")),
+    }
 
 
 def safe_float(x: Any, default: float = 0.0) -> float:
@@ -71,8 +103,7 @@ def _streak_from_outcomes(outcomes: Any) -> str:
 def _league_cached(season: int, league_id: str) -> League:
     # Credentials are optional - public leagues work without them;
     # private leagues require ESPN_S2 + ESPN_SWID in the environment.
-    espn_s2 = (os.getenv("ESPN_S2") or "").strip() or None
-    swid = _normalize_swid(os.getenv("ESPN_SWID", "")) or None
+    espn_s2, swid = _espn_creds()
     return League(
         league_id=int(league_id),
         year=int(season),
@@ -144,7 +175,8 @@ def get_league(season: int, league_id: str) -> Dict[str, Any]:
 
 def get_users(season: int, league_id: str) -> List[Dict[str, Any]]:
     lg = _league(season, league_id)
-    swid = _normalize_swid(os.getenv("ESPN_SWID", ""))
+    _, swid = _espn_creds()
+    swid = swid or ""
 
     out: List[Dict[str, Any]] = []
     seen: set[str] = set()
