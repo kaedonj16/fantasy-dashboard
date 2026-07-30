@@ -24629,10 +24629,66 @@ def api_espn_validate_league():
             },
         })
     except Exception as e:
-        msg = str(e)
-        if "Missing required env var" in msg:
-            return jsonify({"ok": False, "error": "Server not configured for ESPN (missing ESPN_S2/ESPN_SWID)."}), 503
-        return jsonify({"ok": False, "error": f"Could not load ESPN league: {msg}"}), 500
+        # Map the espn_api library's typed errors to clear, actionable messages.
+        # ESPNAccessDenied = 401 (private league + missing/wrong/expired cookies);
+        # ESPNInvalidLeague = 404 (league id or season not found).
+        from dashboard_services.providers.espn_api import espn_diagnostics
+        diag = espn_diagnostics()
+        creds_present = diag["espn_s2_present"] and diag["espn_swid_present"]
+        name = type(e).__name__
+
+        if name == "ESPNAccessDenied":
+            if not creds_present:
+                err = ("This is a private ESPN league, but the server has no "
+                       "ESPN_S2 / ESPN_SWID set. Add them as environment variables "
+                       "and redeploy.")
+            else:
+                err = ("ESPN rejected the ESPN_S2 / ESPN_SWID cookies. They may be "
+                       "for a different ESPN account, expired, or copied with extra "
+                       "characters — re-copy both from espn.com and update the env "
+                       "vars.")
+            return jsonify({"ok": False, "error": err, "diagnostics": diag}), 403
+
+        if name == "ESPNInvalidLeague":
+            err = (f"ESPN couldn't find league {league_id} for {season}. Check the "
+                   f"league ID, and that the {season} season exists for this league "
+                   f"(it may not have rolled over yet).")
+            return jsonify({"ok": False, "error": err, "diagnostics": diag}), 404
+
+        return jsonify({
+            "ok": False,
+            "error": f"Could not load ESPN league: {e}",
+            "diagnostics": diag,
+        }), 500
+
+
+@app.route("/api/espn-debug")
+def api_espn_debug():
+    """Read-only diagnostics for a 'my private ESPN league won't load' report.
+
+    Reports whether the server can see ESPN_S2 / ESPN_SWID (presence + length
+    only — never the values) and, if a league_id is given, the exact result of
+    trying to load it. Hit /api/espn-debug?league_id=<id>[&season=<yr>].
+    """
+    from dashboard_services.providers.espn_api import espn_diagnostics
+    out = {"diagnostics": espn_diagnostics()}
+
+    league_id = (request.args.get("league_id") or "").strip()
+    if league_id.isdigit():
+        nfl_state = get_nfl_state() or {}
+        season = int(request.args.get("season") or nfl_state.get("season") or datetime.now().year)
+        try:
+            from dashboard_services.providers.espn_api import get_league as espn_get_league
+            info = espn_get_league(season, league_id)
+            out["league_load"] = {"ok": True, "season": season, "name": info.get("name")}
+        except Exception as e:
+            out["league_load"] = {
+                "ok": False,
+                "season": season,
+                "error_type": type(e).__name__,
+                "error": str(e)[:300],
+            }
+    return jsonify(out)
 
 
 @app.route("/api/beat-the-market")
