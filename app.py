@@ -1950,6 +1950,150 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     return dock + sheet + search_screen
 
 
+# Guest (no-league) dock: the four global sections a logged-out visitor browses.
+# (key, icon, href, short label). Mirrors the league dock's Home + middle slots.
+_GUEST_DOCK_TABS = (
+    ("home",    "home",      "/",        "Home"),
+    ("trade",   "swap",      "/trade",   "Trades"),
+    ("players", "bars",      "/players", "Rankings"),
+    ("draft",   "clipboard", "/draft",   "Draft"),
+)
+
+# Sub-page active key -> which guest dock tab lights up (so e.g. Prospects or
+# Compare keep the Players tab active, matching how the desktop dropdowns group).
+_GUEST_ACTIVE_PARENT = {
+    "home": "home",
+    "trade": "trade", "trade-suggestions": "trade",
+    "trade-database": "trade", "trade-intel": "trade",
+    "players": "players", "compare": "players", "top-movers": "players",
+    "advanced-metrics": "players", "breakouts": "players", "prospects": "players",
+    "draft": "draft", "draft-history": "draft",
+}
+
+
+def _mobile_nav_guest(active: str) -> str:
+    """Mobile bottom dock + More sheet for logged-out (no-league) visitors.
+
+    Reuses the exact markup, ids and CSS of the league dock (`_mobile_nav`) so
+    guests get the same thumb-reachable bottom dock and slide-up More sheet on the
+    public pages, and the shared app.js/public.js controller wires it up unchanged.
+    Links are the global (league-less) routes. The landing page keeps its own
+    layout, so no dock there."""
+    if active == "home":
+        return ""
+
+    parent = _GUEST_ACTIVE_PARENT.get(active)
+
+    # ── Dock ────────────────────────────────────────────────────────────────
+    items = ""
+    active_index = -1
+    for i, (key, icon, href, label) in enumerate(_GUEST_DOCK_TABS):
+        on = key == parent
+        if on:
+            active_index = i
+        cls = "br-tabbar-item" + (" active" if on else "")
+        aria = " aria-current='page'" if on else ""
+        items += (
+            f"<a class='{cls}'{aria} href='{href}'>"
+            f"{_nav_icon(icon, size=22)}<span class='br-tabbar-lbl'>{label}</span></a>"
+        )
+    items += (
+        "<button type='button' class='br-tabbar-item br-more-tab' id='brMoreTab' "
+        "aria-label='More' aria-haspopup='true' aria-expanded='false'>"
+        f"{_nav_icon('more', size=22)}<span class='br-tabbar-lbl'>More</span></button>"
+    )
+    n_tabs = len(_GUEST_DOCK_TABS) + 1
+    ind_hidden = "" if active_index >= 0 else " data-hidden='1'"
+    indicator = (
+        f"<span class='br-tabbar-ind'{ind_hidden} aria-hidden='true' "
+        f"style='--n:{n_tabs};--i:{max(active_index, 0)}'></span>"
+    )
+    dock = f"<nav class='br-tabbar' aria-label='Primary'>{indicator}{items}</nav>"
+
+    # ── More sheet ──────────────────────────────────────────────────────────
+    def _gl(href, label, key, pro=False):
+        icon = _NAV_PAGE_META.get(key, ("bars", "", ""))[0]
+        on = " active" if key == active else ""
+        aria = " aria-current='page'" if key == active else ""
+        pro_html = "<span class='br-sheet-pro'>PRO</span>" if pro else ""
+        return (
+            f"<a class='br-sheet-link{on}'{aria} href='{href}'>"
+            f"{_nav_icon(icon, size=20)}<span>{label}</span>{pro_html}</a>"
+        )
+
+    def _sec(title, rows):
+        return (f"<h3 class='br-sheet-h'>{title}</h3>"
+                f"<div class='br-sheet-group'>{''.join(rows)}</div>")
+
+    find_html = (
+        "<h3 class='br-sheet-h'>Find</h3>"
+        "<div class='br-sheet-group'>"
+        "<button type='button' class='br-sheet-link' id='brSheetSearchRow'>"
+        f"{_nav_icon('search', size=20)}<span>Search players</span></button>"
+        "<a class='br-sheet-link' href='/watchlist'>"
+        "<i class='fa-solid fa-star br-sheet-fa' aria-hidden='true'></i>"
+        "<span>Watchlist</span></a>"
+        "</div>"
+    )
+
+    trades_html = _sec("Trades", [
+        _gl("/trade", "Trade Calculator", "trade"),
+        _gl("/trade?tab=suggestions", "Suggestions", "trade-suggestions", pro=True),
+        _gl("/trade-database", "Trade Database", "trade-database"),
+        _gl("/trade-intel", "Trade Intel", "trade-intel", pro=True),
+    ])
+    players_html = _sec("Players", [
+        _gl("/players", "Player Rankings", "players"),
+        _gl("/compare", "Compare Players", "compare"),
+        _gl("/top-movers", "Top Movers", "top-movers"),
+        _gl("/metrics", "Advanced Metrics", "advanced-metrics"),
+        _gl("/breakouts", "Breakout Engine", "breakouts", pro=True),
+        _gl("/prospects", "Prospect Rankings", "prospects"),
+    ])
+    draft_html = _sec("Draft", [
+        _gl("/draft", "Draft Room", "draft"),
+        _gl("/draft/history", "Draft History", "draft-history"),
+    ])
+
+    portfolio_link = ""
+    if session.get("viewer_username"):
+        portfolio_link = (
+            "<a class='br-sheet-link' href='/portfolio'>"
+            f"{_nav_icon('users', size=20)}<span>My Leagues</span></a>"
+        )
+    discord_row = (
+        "<a class='br-sheet-link' href='https://discord.gg/7aZrs7qfur' target='_blank' rel='noopener noreferrer'>"
+        "<img src='/static/images/discord-brands-solid.png' alt='' class='br-sheet-icon-img'>"
+        "<span>Join the Discord</span></a>"
+    )
+    # brSheetAccount is the mount app.js relocates the settings menu (dark mode
+    # etc.) into on mobile, exactly as the league sheet does.
+    account_html = (
+        "<h3 class='br-sheet-h'>Account</h3>"
+        "<div class='br-sheet-group'>"
+        f"{portfolio_link}{discord_row}"
+        "<div class='br-sheet-mount' id='brSheetAccount'></div>"
+        "</div>"
+    )
+
+    sheet = (
+        "<div class='br-sheet-scrim' id='brSheetScrim'></div>"
+        "<nav class='br-sheet' id='brMoreSheet' aria-label='More' aria-hidden='true'>"
+        "  <div class='br-sheet-grip' aria-hidden='true'></div>"
+        f"  {find_html}{trades_html}{players_html}{draft_html}{account_html}"
+        "</nav>"
+    )
+    search_screen = (
+        "<div class='br-search-screen' id='brSearchScreen' aria-hidden='true'>"
+        "  <div class='br-search-bar'>"
+        "    <div class='br-search-mount' id='brSearchMount'></div>"
+        "    <button type='button' class='br-search-cancel' id='brSearchCancel'>Cancel</button>"
+        "  </div>"
+        "</div>"
+    )
+    return dock + sheet + search_screen
+
+
 def _nav_icon(name: str, cls: str = "", style: str = "", size: int = 16) -> str:
     body = _NAV_ICON_PATHS.get(name, "")
     cls_attr = f" {cls}" if cls else ""
@@ -2116,8 +2260,13 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "</div>"
         )
 
+        # On phones the guest dock (_mobile_nav_guest) is the primary nav on every
+        # public page except the landing page, so slim this bar to the logo there
+        # too (br-mnav), exactly as the league nav does. Search/settings still live
+        # here in the DOM; app.js relocates them into the dock's More sheet.
+        _guest_mnav = "" if active == "home" else " br-mnav"
         return (
-            "<nav class='top-nav' aria-label='Main navigation'>"
+            f"<nav class='top-nav{_guest_mnav}' aria-label='Main navigation'>"
             "  <div class='nav-left'>"
             "    <a href='/' aria-label='BR Fantasy home'>"
             "      <img src='/static/Website_Logo.png' alt='BR Fantasy' class='site-logo'/>"
@@ -2945,6 +3094,10 @@ def render_page(
     # active tab in place instead (mirrors how the desktop top nav persists). The
     # .has-tabbar wrapper stays inside page-root to reserve space for the fixed dock.
     _bottom = _mobile_nav(active, _nav_lid, _nav_platform, _nav_season)
+    # True guests (no league in session) get the league-less dock instead, so the
+    # public pages have the same bottom nav on phones as the league pages do.
+    if not _bottom and not _nav_lid:
+        _bottom = _mobile_nav_guest(active)
     if _bottom:
         wrapped_body = f"<div class='has-tabbar' data-active='{active}'>{wrapped_body}</div>"
 

@@ -137,6 +137,51 @@ def test_keeper_assistant_gated_everywhere(monkeypatch, settings, shown):
     assert ("Keeper Assistant" in nav) is shown
 
 
+def test_guest_dock_present_on_public_pages():
+    """Logged-out visitors get the same bottom dock + More sheet on public pages,
+    reusing the ids the shared app.js/public.js controller wires up."""
+    import app, re
+    with app.app.test_request_context("/players"):
+        html = app._mobile_nav_guest("players")
+    assert "class='br-tabbar'" in html
+    for _id in ("brMoreTab", "brMoreSheet", "brSheetSearchRow",
+                "brSearchScreen", "brSearchMount", "brSheetAccount"):
+        assert f"id='{_id}'" in html
+    labels = re.findall(r"br-tabbar-lbl'>([^<]+)<", html)
+    assert labels == ["Home", "Trades", "Rankings", "Draft", "More"]
+    # The page you're on lights up its parent tab.
+    assert "br-tabbar-item active" in html
+
+
+def test_guest_dock_groups_subpages_under_parent_tab():
+    """Prospects (a Players sub-page) keeps the Rankings tab active, matching how
+    the desktop Players dropdown groups it."""
+    import app, re
+    with app.app.test_request_context("/prospects"):
+        html = app._mobile_nav_guest("prospects")
+    # Only one active tab, and it's Rankings (the Players parent).
+    active = re.findall(r"br-tabbar-item active'[^>]*>.*?br-tabbar-lbl'>([^<]+)<", html)
+    assert active == ["Rankings"]
+
+
+def test_guest_dock_absent_on_landing():
+    """The landing page keeps its own layout - no dock there."""
+    import app
+    with app.app.test_request_context("/"):
+        assert app._mobile_nav_guest("home") == ""
+
+
+def test_guest_nav_yields_to_dock_off_landing(monkeypatch):
+    """The guest top bar carries br-mnav on public pages (CSS slims it to a logo)
+    but not on the landing page."""
+    import app
+    monkeypatch.setattr(app, "get_nfl_state", lambda: {"season": "2026", "season_type": "off"})
+    with app.app.test_request_context("/players"):
+        assert "top-nav br-mnav" in app.build_nav(None, "players", "sleeper", 2026)
+    with app.app.test_request_context("/"):
+        assert "br-mnav" not in app.build_nav(None, "home", "sleeper", 2026)
+
+
 def test_draft_room_cfg_show_keeper():
     """The draft room only offers the Keeper draft type when show_keeper is set."""
     from dashboard_services.pages.draft_room_page import build_draft_room_body
