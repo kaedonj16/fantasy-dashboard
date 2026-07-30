@@ -13937,6 +13937,25 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         .pr-grid-row:not(.pr-adp-mode) { grid-template-columns: 50px 42px 1fr 56px !important; }
         .pr-pos-cell, #prTableHeader:not(.pr-adp-mode) span:nth-child(4) { display: none !important; }
         .pr-team,     #prTableHeader:not(.pr-adp-mode) span:nth-child(6) { display: none !important; }
+        /* ADP-source view on phones: the JS shrinks each source column (and the
+           rank column) so all sources fit; shrink the header labels to match so
+           "Sleeper" / "BR Fantasy" / "Consensus" read in full instead of
+           truncating to "SLEEP…", and keep the numbers tidy. */
+        #prTableHeader.pr-adp-mode .pr-adp-head {
+          font-size: 9px;
+          letter-spacing: 0;
+          padding: 0 1px;
+        }
+        #prTableHeader.pr-adp-mode .pr-adp-sort-caret { font-size: 7px; }
+        .pr-adp-mode .pr-adp-cell { font-size: 12px; }
+        /* Name shares a tighter row now: clip to one line rather than wrapping
+           to a second line that misaligns the numbers. */
+        .pr-adp-mode .pr-name {
+          flex-wrap: nowrap;
+          min-width: 0;
+          overflow: hidden;
+          white-space: nowrap;
+        }
       }
     </style>
 
