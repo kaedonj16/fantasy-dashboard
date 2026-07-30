@@ -36,7 +36,11 @@ logger = logging.getLogger(__name__)
 YAHOO_AUTH_URL  = "https://api.login.yahoo.com/oauth2/request_auth"
 YAHOO_TOKEN_URL = "https://api.login.yahoo.com/oauth2/get_token"
 YAHOO_API_BASE  = "https://fantasysports.yahooapis.com/fantasy/v2"
-YAHOO_SCOPE     = "openid fspt-r"
+# Fantasy Sports read. NOT "openid fspt-r": the openid scope turns this into an
+# OpenID Connect request, which Yahoo rejects with its generic "uh oh" page right
+# after login unless the app has OpenID Connect Permissions enabled. The guid we
+# need comes back as xoauth_yahoo_guid on the token response with fspt-r alone.
+YAHOO_SCOPE     = "fspt-r"
 
 # Only NFL for now; extend as needed.
 _GAME_CODE = "nfl"
