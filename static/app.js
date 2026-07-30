@@ -4714,6 +4714,13 @@ window.initTradePage = function initTradePage(root = document) {
       return;
     }
 
+    // When the roster filter is on, Side A is always the viewer's team and Side B
+    // the chosen opponent, so name them in the verdict ("hoodiekj1 is favored…")
+    // instead of the generic "Team 1 / Team 2". Names stay empty when the filter
+    // is off, and the backend falls back to "Team 1 / Team 2" then.
+    const _rfActive = (typeof rosterFilterActive === "function") ? rosterFilterActive() : false;
+    const _t1Name = (_rfActive && rosterFilter.viewerRid && rosterFilter.teamName[rosterFilter.viewerRid]) || "";
+    const _t2Name = (_rfActive && rosterFilter.sideBRid && rosterFilter.teamName[rosterFilter.sideBRid]) || "";
     const payload = {
       league_id: root.querySelector("#leagueIdInput")?.value || "",
       season: root.querySelector("#seasonInput")?.value || "",
@@ -4726,6 +4733,9 @@ window.initTradePage = function initTradePage(root = document) {
       side_b_players: sideBIds,
       side_a_picks: sideAPickIds,
       side_b_picks: sideBPickIds,
+      roster_filter_on: _rfActive,
+      t1_team_name: _t1Name,
+      t2_team_name: _t2Name,
     };
 
     try {
@@ -7153,6 +7163,10 @@ window.initTradePage = function initTradePage(root = document) {
       side_b_picks: sideBPickIds,
       viewer_roster_id: selectedTeamRosterId,
       viewer_team_name: selectedTeamName,
+      // Name the sides in the verdict when the roster filter is on (see recompute).
+      roster_filter_on: (typeof rosterFilterActive === "function") ? rosterFilterActive() : false,
+      t1_team_name: ((typeof rosterFilterActive === "function" && rosterFilterActive()) && rosterFilter.viewerRid && rosterFilter.teamName[rosterFilter.viewerRid]) || "",
+      t2_team_name: ((typeof rosterFilterActive === "function" && rosterFilterActive()) && rosterFilter.sideBRid && rosterFilter.teamName[rosterFilter.sideBRid]) || "",
       // The opponent bound in the UI (auto from acquired players' owner, or the
       // Side B team dropdown). Lets the analyst name the partner even when the
       // return is picks-only or platform ids don't match the calculator's.
