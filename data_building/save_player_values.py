@@ -95,6 +95,8 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                     years_exp = row.get("years_exp")
                     rank_change_7d = row.get("rank_change_7d")
                     pos_rank_change_7d = row.get("pos_rank_change_7d")
+                    sf_rank_change_7d = row.get("sf_rank_change_7d")
+                    sf_pos_rank_change_7d = row.get("sf_pos_rank_change_7d")
 
                     # League-size specific values (already model-normalized; clamp only)
                     value_8    = _clamp(row.get("value_8"))
@@ -130,8 +132,10 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                             team,
                             years_exp,
                             rank_change_7d,
-                            pos_rank_change_7d
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            pos_rank_change_7d,
+                            sf_rank_change_7d,
+                            sf_pos_rank_change_7d
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (player_id)
                         DO UPDATE SET
                             last_updated = EXCLUDED.last_updated,
@@ -154,7 +158,9 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                             team = EXCLUDED.team,
                             years_exp = EXCLUDED.years_exp,
                             rank_change_7d = EXCLUDED.rank_change_7d,
-                            pos_rank_change_7d = EXCLUDED.pos_rank_change_7d
+                            pos_rank_change_7d = EXCLUDED.pos_rank_change_7d,
+                            sf_rank_change_7d = EXCLUDED.sf_rank_change_7d,
+                            sf_pos_rank_change_7d = EXCLUDED.sf_pos_rank_change_7d
                         """,
                         (
                             str(player_id),
@@ -179,6 +185,8 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                             _safe_int(years_exp),
                             _safe_int(rank_change_7d),
                             _safe_int(pos_rank_change_7d),
+                            _safe_int(sf_rank_change_7d),
+                            _safe_int(sf_pos_rank_change_7d),
                         ),
                     )
                     saved_count += 1

@@ -696,7 +696,12 @@ function prRender() {
     else if (prIsProspect(p.id)) badges += '<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>';
     if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
 
-    const rankChange = p.rank_change_7d;
+    // Movement must match the ranking the row is ordered by: SF view uses the
+    // SF-ordered delta (QBs move very differently in Superflex), 1QB uses the
+    // 1QB delta. Falls back to the 1QB delta only if SF movement is absent.
+    const rankChange = (prLeagueType === 'sf' && p.sf_rank_change_7d != null)
+      ? p.sf_rank_change_7d
+      : (prLeagueType === 'sf' ? null : p.rank_change_7d);
     // Align the sparkline to the value actually displayed in this row. The
     // /api/sparklines series ends at the calibrated base value (no TE premium,
     // base league size), while `val` = prGetValue(p) applies the TE premium and

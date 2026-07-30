@@ -20941,12 +20941,25 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
         )
         _cur_rank_map = {str(p.get("id") or ""): idx + 1 for idx, p in enumerate(_player_rows)}
 
+        # Superflex current rank: same pool ordered by SF value (QBs rise sharply),
+        # paired with the SF historical rank so SF movement arrows are SF-correct.
+        _sf_player_rows = sorted(
+            [p for p in model_value_table
+             if isinstance(p, dict) and str(p.get("position", "")).upper() in _PLAYER_POSITIONS],
+            key=lambda p: float(p.get("sf_value") or p.get("value") or 0),
+            reverse=True,
+        )
+        _cur_sf_rank_map = {str(p.get("id") or ""): idx + 1 for idx, p in enumerate(_sf_player_rows)}
+
         for _p in model_value_table:
             _pid = str(_p.get("id") or "")
             _cur = _cur_rank_map.get(_pid)
             _hist = _hist_ranks.get(_pid)
             if _cur is not None and _hist:
                 _p["rank_change_7d"] = _hist["overall_rank"] - _cur
+            _sf_cur = _cur_sf_rank_map.get(_pid)
+            if _sf_cur is not None and _hist and _hist.get("sf_overall_rank") is not None:
+                _p["sf_rank_change_7d"] = _hist["sf_overall_rank"] - _sf_cur
             # leave rank_change_7d as-is (None or from JSON) for non-player-pos entries
     except Exception:
         # Fall back to DB-stored values if recomputation fails
@@ -20954,13 +20967,17 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
             from dashboard_services.db import get_conn as _gc
             with _gc() as _rc:
                 _rk_rows = _rc.execute(
-                    "SELECT player_id, rank_change_7d FROM player_values WHERE rank_change_7d IS NOT NULL"
+                    "SELECT player_id, rank_change_7d, sf_rank_change_7d FROM player_values "
+                    "WHERE rank_change_7d IS NOT NULL OR sf_rank_change_7d IS NOT NULL"
                 ).fetchall()
-            _rk_map = {str(r["player_id"]): r["rank_change_7d"] for r in _rk_rows}
+            _rk_map = {str(r["player_id"]): r for r in _rk_rows}
             for _p in model_value_table:
-                _pid = str(_p.get("id") or "")
-                if _pid in _rk_map:
-                    _p["rank_change_7d"] = _rk_map[_pid]
+                _row = _rk_map.get(str(_p.get("id") or ""))
+                if _row:
+                    if _row["rank_change_7d"] is not None:
+                        _p["rank_change_7d"] = _row["rank_change_7d"]
+                    if _row["sf_rank_change_7d"] is not None:
+                        _p["sf_rank_change_7d"] = _row["sf_rank_change_7d"]
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
 
@@ -21025,6 +21042,7 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
                 "search_name": norm,
                 "is_rookie": True,
                 "rank_change_7d": r.get("rank_change_7d"),
+                "sf_rank_change_7d": r.get("sf_rank_change_7d"),
                 # Rookie-class prospect grade (0-100) and its derived tier, straight
                 # from the prospects page model. Used by the Draft Room for rookie
                 # drafts so tiers reflect the rookie pool, not all-player dynasty value.
