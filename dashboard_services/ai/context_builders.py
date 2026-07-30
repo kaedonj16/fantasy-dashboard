@@ -532,6 +532,30 @@ from utils.roster_strength import (  # noqa: E402
 )
 
 
+# Fraction of the starter threshold at which a player's "starter weight" ramps
+# from 0 up to 1. 0.80 => a player at 80% of the bar counts as nothing, at 100%
+# counts fully, linear in between (see _starter_weight).
+_STARTER_RAMP_FLOOR = 0.80
+
+
+def _starter_weight(val: float, threshold: float) -> float:
+    """Soft 'is this a starter?' membership in [0, 1] instead of a hard cutoff.
+
+    A player at/above the threshold counts as a full starter (1.0); one within
+    the ramp band just below it counts partially; below the band, 0. This keeps
+    a player one point under the line from silently counting as nothing (the old
+    hard >= cliff), so borderline rosters don't get jarringly binary warnings.
+    """
+    if threshold <= 0:
+        return 1.0 if val > 0 else 0.0
+    soft = threshold * _STARTER_RAMP_FLOOR
+    if val >= threshold:
+        return 1.0
+    if val <= soft:
+        return 0.0
+    return (val - soft) / (threshold - soft)
+
+
 def calculate_roster_depth_warning(
         viewer_roster: dict,
         model_value_lookup: dict[str, dict],
@@ -539,6 +563,7 @@ def calculate_roster_depth_warning(
         receiving_assets: list[dict],
         roster_positions: list[str] | None = None,
         num_teams: int = 12,
+        is_sf: bool = False,
 ) -> dict[str, dict]:
     """
     Warn when a trade leaves the viewer dangerously thin at a position.
@@ -546,23 +571,50 @@ def calculate_roster_depth_warning(
     Simulates the post-trade roster: removes sent players, adds received players,
     then counts starter-caliber players at each affected position.
 
+    "Starter-caliber" is judged by REDRAFT value, not dynasty value: dynasty
+    value bakes in future outlook (rookie hype up, aging vets down), which is the
+    wrong yardstick for "can this player start and score THIS season". Redraft
+    value sits on the same 0-999.9 scale and already folds in projected points +
+    role, so a productive vet counts even with low dynasty value, and a hype
+    rookie with no role doesn't. Falls back to dynasty value only if the roster
+    has no redraft coverage at all (e.g. before the redraft feed populates).
+
     Returns {pos: {before, after, warning, severity}} only for positions
-    where the trade changes depth or triggers a warning.
-    severity: 'danger' | 'caution' | None
+    where the trade reduces depth enough to matter. severity: 'danger' | 'caution'
     """
-    # Derive league-specific thresholds
+    # Derive league-specific thresholds (league size + superflex aware). These
+    # were previously computed and then ignored in favour of the 12-team 1QB
+    # defaults; now they actually drive the counts.
     if roster_positions:
-        starter_threshold, depth_floor = _derive_league_thresholds(roster_positions, num_teams)
+        starter_threshold, depth_floor = _derive_league_thresholds(roster_positions, num_teams, is_sf=is_sf)
     else:
-        starter_threshold, depth_floor = _STARTER_THRESHOLD, _DEPTH_FLOOR
+        starter_threshold, depth_floor = dict(_STARTER_THRESHOLD), dict(_DEPTH_FLOOR)
+
+    _rd_field = "redraft_value_sf" if is_sf else "redraft_value_1qb"
+
+    # Use redraft value when the roster has any redraft coverage; otherwise the
+    # feed isn't populated, so degrade to dynasty value rather than flag the whole
+    # roster as having zero startable players.
+    _roster_pids = [str(p) for p in (viewer_roster.get("players") or [])]
+    _use_redraft = any(
+        _safe_float((model_value_lookup.get(p) or {}).get(_rd_field)) > 0
+        for p in _roster_pids
+    )
+
+    def _startable_val(mv: dict) -> float:
+        if _use_redraft:
+            rv = _safe_float(mv.get(_rd_field))
+            if rv > 0:
+                return rv
+            return 0.0  # tracked roster, but this player has no redraft market
+        return _safe_float(mv.get("value") or mv.get("model_value") or mv.get("trade_value"))
 
     # Build current roster value map
     roster_values: dict[str, dict] = {}
-    for pid in viewer_roster.get("players") or []:
-        spid = str(pid)
+    for spid in _roster_pids:
         mv = model_value_lookup.get(spid) or {}
         pos = str(mv.get("position") or "").upper()
-        val = _safe_float(mv.get("value") or mv.get("model_value") or mv.get("trade_value"))
+        val = _startable_val(mv)
         if pos in starter_threshold and val > 0:
             roster_values[spid] = {"pos": pos, "val": val, "name": str(mv.get("name") or spid)}
 
@@ -571,30 +623,34 @@ def calculate_roster_depth_warning(
     for a in receiving_assets:
         pid = str(a.get("id") or "")
         pos = str(a.get("position") or "").upper()
-        val = _safe_float(a.get("value"))
-        if pid and pos in _STARTER_THRESHOLD and val > 0:
+        # Value the incoming player from the same redraft source as the roster so
+        # both sides of the swap are measured on one scale; fall back to the
+        # payload's value only when the player isn't in the lookup.
+        mv = model_value_lookup.get(pid)
+        val = _startable_val(mv) if mv else _safe_float(a.get("value"))
+        if pid and pos in starter_threshold and val > 0:
             receiving_map[pid] = {"pos": pos, "val": val, "name": str(a.get("name") or pid)}
 
     # Identify positions actually touched by this trade
     touched_positions: set[str] = set()
     for a in sending_assets:
         pos = str(a.get("position") or "").upper()
-        if pos in _STARTER_THRESHOLD:
+        if pos in starter_threshold:
             touched_positions.add(pos)
     for a in receiving_assets:
         pos = str(a.get("position") or "").upper()
-        if pos in _STARTER_THRESHOLD:
+        if pos in starter_threshold:
             touched_positions.add(pos)
 
     result: dict[str, dict] = {}
     for pos in touched_positions:
-        threshold = _STARTER_THRESHOLD[pos]
-        floor = _DEPTH_FLOOR[pos]
+        threshold = starter_threshold[pos]
+        floor = depth_floor[pos]
 
-        # Count before
+        # Soft starter counts (fractional near the threshold)
         before = sum(
-            1 for pid, info in roster_values.items()
-            if info["pos"] == pos and info["val"] >= threshold
+            _starter_weight(info["val"], threshold)
+            for info in roster_values.values() if info["pos"] == pos
         )
 
         # Simulate: remove sent, add received
@@ -606,28 +662,45 @@ def calculate_roster_depth_warning(
             if info["pos"] == pos:
                 post_roster[pid] = info
 
-        after = sum(1 for info in post_roster.values() if info["pos"] == pos and info["val"] >= threshold)
+        after = sum(
+            _starter_weight(info["val"], threshold)
+            for info in post_roster.values() if info["pos"] == pos
+        )
 
         # Only warn when THIS trade actually reduces depth at the position.
         # Acquiring (or not touching) a position never triggers a depth warning,
         # even if it's already thin - that's a pre-existing condition, not caused
         # by this trade. Prevents "low RB depth" alerts when you're receiving an RB.
-        if after >= before:
+        if after >= before - 1e-9:
             continue
 
-        if after == 0:
+        before_n = int(round(before))
+        after_n = int(round(after))
+
+        # You can't lose starter depth you didn't have. If you had less than one
+        # starter-caliber body here to begin with, that's pre-existing thinness,
+        # not a loss this trade causes -- stay quiet (same principle as not
+        # warning when you're the one acquiring at a position).
+        if before_n <= 0:
+            continue
+
+        if after_n <= 0:
             warning = f"You'll have no starter-caliber {pos} after this trade"
             severity = "danger"
         elif after < floor:
-            warning = f"Leaves you with only {after} starter-caliber {pos} (need {floor})"
+            warning = f"Leaves you with only {after_n} starter-caliber {pos} (need {floor})"
+            severity = "caution"
+        elif after_n < before_n:
+            warning = f"{pos} depth drops from {before_n} to {after_n} starters"
             severity = "caution"
         else:
-            warning = f"{pos} depth drops from {before} to {after} starters"
-            severity = "caution"
+            # Real but sub-integer reduction that still clears the floor -- not
+            # worth alarming the user over.
+            continue
 
         result[pos] = {
-            "before": before,
-            "after": after,
+            "before": before_n,
+            "after": after_n,
             "warning": warning,
             "severity": severity,
         }

@@ -76,41 +76,61 @@ STARTER_THRESHOLD = {"QB": 500, "RB": 350, "WR": 350, "TE": 400}
 DEPTH_FLOOR = {"QB": 1, "RB": 2, "WR": 3, "TE": 1}
 
 _FLEX_SLOT_NAMES = {"FLEX", "RB_WR_FLEX", "RB_WR_TE", "WR_RB", "WR_TE", "RB_WR"}
+# Superflex / "OP" (offensive player) slots are QB-eligible, so they raise the
+# expected number of startable QBs by one. Kept separate from _FLEX_SLOT_NAMES
+# because those never take a QB.
+_SUPERFLEX_SLOT_NAMES = {"SUPER_FLEX", "SUPERFLEX", "SUPER FLEX", "SFLEX", "OP", "QB_RB_WR_TE", "Q_RB_WR_TE"}
+
+# In superflex, QB values sit on the same 0-999.9 scale but are lifted well above
+# their 1QB level (the scale is anchored to non-QB skill players), so the 1QB
+# starter threshold would wave through almost every rostered QB. Lift the QB bar
+# by roughly the SF premium so only genuinely startable SF QBs clear it.
+_SF_QB_THRESHOLD_MULT = 1.6
 
 
 def derive_league_thresholds(
     roster_positions: List[str],
     num_teams: int,
+    is_sf: bool = False,
 ) -> "tuple[Dict[str, int], Dict[str, int]]":
     """Derive starter-caliber value thresholds and depth floors from actual
     league settings.
 
     Depth floor  = number of that position in the starting lineup (including
-                   FLEX, split evenly across RB/WR).
+                   FLEX split evenly across RB/WR, and superflex as +1 QB).
     Value threshold scales down with league size: larger leagues spread talent
-    thinner, so a lower absolute value still constitutes a starter.
+    thinner, so a lower absolute value still constitutes a starter. In superflex
+    the QB threshold is lifted (see _SF_QB_THRESHOLD_MULT).
     """
     pos_counts: Dict[str, int] = {}
     flex_count = 0
+    superflex_count = 0
     for slot in roster_positions:
         s = str(slot).upper()
         if s in ("QB", "RB", "WR", "TE"):
             pos_counts[s] = pos_counts.get(s, 0) + 1
+        elif s in _SUPERFLEX_SLOT_NAMES:
+            superflex_count += 1
         elif s in _FLEX_SLOT_NAMES:
             flex_count += 1
+
+    # A league with a superflex slot is a superflex league even if the caller
+    # didn't flag it (and vice-versa) — treat either signal as SF.
+    sf = bool(is_sf or superflex_count)
 
     rb_flex = flex_count // 2
     wr_flex = flex_count - rb_flex
     floor: Dict[str, int] = {
-        "QB": max(1, pos_counts.get("QB", 1)),
+        "QB": max(1, pos_counts.get("QB", 1) + superflex_count),
         "RB": max(1, pos_counts.get("RB", 1) + rb_flex),
         "WR": max(1, pos_counts.get("WR", 1) + wr_flex),
         "TE": max(1, pos_counts.get("TE", 1)),
     }
 
     scale = 12 / max(num_teams, 6)
+    qb_mult = _SF_QB_THRESHOLD_MULT if sf else 1.0
     threshold: Dict[str, int] = {
-        "QB": round(STARTER_THRESHOLD["QB"] * scale),
+        "QB": round(STARTER_THRESHOLD["QB"] * scale * qb_mult),
         "RB": round(STARTER_THRESHOLD["RB"] * scale),
         "WR": round(STARTER_THRESHOLD["WR"] * scale),
         "TE": round(STARTER_THRESHOLD["TE"] * scale),
