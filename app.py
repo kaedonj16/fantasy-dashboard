@@ -13466,6 +13466,20 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         font-variant-numeric: tabular-nums;
       }
       .pr-adp-cell-active { color: var(--accent); font-weight: 700; }
+      /* Compact Pos/Age/Team columns kept in the ADP view on desktop */
+      .pr-adp-meta-h {
+        text-align: center;
+        font-size: 10px;
+        opacity: 0.85;
+      }
+      .pr-adp-meta {
+        text-align: center;
+        font-size: 11px;
+        color: var(--text-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
       /* Sticky table header */
       #prTableHeader {
         position: sticky;

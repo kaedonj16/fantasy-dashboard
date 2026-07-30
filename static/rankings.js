@@ -487,7 +487,7 @@ function prSyncAdpSourceUI(sortBy) {
 
 // Swap the table header between the normal columns and the ADP-source columns.
 // Caches the default header once so it can be restored when leaving the ADP view.
-function prSetupAdpHeader(adpView, cols, active, gridCols) {
+function prSetupAdpHeader(adpView, cols, active, gridCols, extra) {
   const header = document.getElementById('prTableHeader');
   if (!header) return;
   if (header._prDefaultHTML == null) {
@@ -497,9 +497,13 @@ function prSetupAdpHeader(adpView, cols, active, gridCols) {
   header.classList.toggle('pr-adp-mode', !!adpView);
   if (adpView) {
     header.style.gridTemplateColumns = gridCols;
+    const metaHead = extra
+      ? '<span class="pr-adp-meta-h">Pos</span><span class="pr-adp-meta-h">Age</span><span class="pr-adp-meta-h">Team</span>'
+      : '';
     header.innerHTML =
       '<span>#</span>' +
       '<span>Player</span>' +
+      metaHead +
       cols.map(function (c) {
         const on = c.value === active;
         return '<span class="pr-adp-head' + (on ? ' pr-adp-head-active' : '') + '"' +
@@ -582,15 +586,20 @@ function prRender() {
 
   // "Sort by ADP" with per-source columns is a distinct view: the right-side
   // columns (Value/Age/Team/Pos) are swapped out for one column per ADP source.
+  const isMobile = window.innerWidth <= 768;
   const adpView = (sortBy === 'adp') && prHasAdpColumns();
   const adpCols = adpView ? prAdpColumns : [];
   const adpActive = adpView ? prActiveAdpSource() : '';
+  // On desktop keep the Pos / Age / Team columns (compact) alongside the source
+  // columns; on mobile drop them so the source columns fit.
+  const adpExtra = adpView && !isMobile;
+  const _adpSrcTracks = adpCols.map(() => 'minmax(48px,1fr)').join(' ');
   const ADP_GRID = adpView
-    ? ('54px minmax(0,1fr) ' + adpCols.map(() => 'minmax(48px,1fr)').join(' '))
+    ? (adpExtra
+        ? ('54px minmax(0,1fr) 40px 42px 46px ' + _adpSrcTracks)
+        : ('54px minmax(0,1fr) ' + _adpSrcTracks))
     : '';
-  prSetupAdpHeader(adpView, adpCols, adpActive, ADP_GRID);
-
-  const isMobile = window.innerWidth <= 768;
+  prSetupAdpHeader(adpView, adpCols, adpActive, ADP_GRID, adpExtra);
   if (!adpView) {
     // On mobile (≤768px) the Age column is hidden, so switch the sort column
     // to show whatever is being sorted. On desktop all columns are visible.
@@ -840,12 +849,19 @@ function prRender() {
     }
 
     if (adpView) {
-      // ADP view: # | Player | one ADP cell per source (active source highlighted).
+      // ADP view: # | Player | (Pos | Age | Team on desktop) | one ADP cell per
+      // source (active source highlighted).
       row.classList.add('pr-adp-mode');
       row.style.gridTemplateColumns = ADP_GRID;
+      const metaCells = adpExtra
+        ? ('<span class="pr-adp-meta">' + posRank + '</span>' +
+           '<span class="pr-adp-meta">' + (p.position === 'PICK' ? '–' : age) + '</span>' +
+           '<span class="pr-adp-meta">' + (p.team || '–') + '</span>')
+        : '';
       row.innerHTML =
         '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '–') + '</span>' +
         '<span class="pr-name player-clickable">'  + (p.name || 'Unknown') + badges + '</span>' +
+        metaCells +
         adpCols.map(function (c) {
           const v = prAdpSourceVal(p, c.value);
           const on = c.value === adpActive;
@@ -1121,6 +1137,11 @@ Promise.all([
         sf_redraft_avg_pick: p.sf_redraft_avg_pick != null ? Number(p.sf_redraft_avg_pick) : null,
         rookie_avg_pick:     p.rookie_avg_pick     != null ? Number(p.rookie_avg_pick)     : null,
         sf_rookie_avg_pick:  p.sf_rookie_avg_pick  != null ? Number(p.sf_rookie_avg_pick)  : null,
+        // Per-source ADP for the sort-by-ADP columns. This whitelist map drops
+        // any field not named here, so it must be carried through explicitly or
+        // every source cell renders as a dash.
+        adp_by_source:       (p.adp_by_source && typeof p.adp_by_source === 'object') ? p.adp_by_source : null,
+        sf_rank_change_7d:   p.sf_rank_change_7d != null ? Number(p.sf_rank_change_7d) : null,
         pos_rank_label:   p.pos_rank_label    || '',
         sf_pos_rank_label:p.sf_pos_rank_label || '',
         pos_rank:         Number(p.pos_rank    || 9999),
