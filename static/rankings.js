@@ -557,8 +557,32 @@ function prRender() {
     });
   }
 
-  // Position filter (multi-select)
   const isDrafted = p => p.is_rookie && p.team && p.team !== 'FA';
+
+  // Rank numbers ("#") are OVERALL ranks, computed from the full eligible pool
+  // BEFORE the position filter (using the current sort). So filtering to a
+  // position keeps each player on their overall rank (e.g. TE McBride shows his
+  // overall #, not #1) — which is what the overall movement arrow beside the #
+  // measures, so the two line up — and #s stay stable under search too.
+  const _rankSort = (a, b) => {
+    if (sortBy === 'age')       return (a.age != null ? a.age : 99) - (b.age != null ? b.age : 99);
+    if (sortBy === 'adp')       { const aA = prGetAdp(a); const bA = prGetAdp(b); return (aA != null ? aA : 99999) - (bA != null ? bA : 99999); }
+    if (sortBy === 'pos_rank')  { const rA = prPosRankMap[String(a.id)] || 9999; const rB = prPosRankMap[String(b.id)] || 9999; return rA - rB; }
+    if (sortBy === 'ppg')       return (b.ppg != null ? b.ppg : -1) - (a.ppg != null ? a.ppg : -1);
+    if (sortBy === 'total_pts') return (b.total_pts != null ? b.total_pts : -1) - (a.total_pts != null ? a.total_pts : -1);
+    return prGetValue(b) - prGetValue(a);
+  };
+  const _rankMap = new Map();
+  {
+    let _rankIdx = 0;
+    players.slice()
+      .filter(p => p.position !== 'PICK' && !(p.is_rookie && !isDrafted(p)))
+      .sort(_rankSort)
+      .forEach(p => { _rankMap.set(String(p.id), ++_rankIdx); });
+  }
+
+  // Position filter (multi-select) — narrows which rows show, but each keeps the
+  // overall rank number computed above.
   if (prPosFilters.has('ROOKIE')) {
     players = players.filter(p => p.is_rookie);
   } else if (prPosFilters.size > 0) {
@@ -566,24 +590,6 @@ function prRender() {
   } else {
     players = players.filter(p => !p.is_rookie || isDrafted(p));
   }
-
-  // Compute rank numbers from the full sorted list BEFORE applying search.
-  // This keeps rank #s stable - e.g. searching for a player still shows #47, not #1.
-  const _sortedForRank = players.slice().sort((a, b) => {
-    if (sortBy === 'age')       return (a.age != null ? a.age : 99) - (b.age != null ? b.age : 99);
-    if (sortBy === 'adp')       { const aA = prGetAdp(a); const bA = prGetAdp(b); return (aA != null ? aA : 99999) - (bA != null ? bA : 99999); }
-    if (sortBy === 'pos_rank')  { const rA = prPosRankMap[String(a.id)] || 9999; const rB = prPosRankMap[String(b.id)] || 9999; return rA - rB; }
-    if (sortBy === 'ppg')       return (b.ppg != null ? b.ppg : -1) - (a.ppg != null ? a.ppg : -1);
-    if (sortBy === 'total_pts') return (b.total_pts != null ? b.total_pts : -1) - (a.total_pts != null ? a.total_pts : -1);
-    return prGetValue(b) - prGetValue(a);
-  });
-  const _rankMap = new Map();
-  let _rankIdx = 0;
-  _sortedForRank.forEach(p => {
-    if (p.position !== 'PICK' && !(p.is_rookie && !(p.team && p.team !== 'FA'))) {
-      _rankMap.set(String(p.id), ++_rankIdx);
-    }
-  });
 
   // Search filter - fuzzy match, sort by score when query present
   if (prSearchQuery.length > 0) {
