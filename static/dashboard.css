@@ -8470,32 +8470,34 @@ select:focus {
 /* Primary CTAs on the onboarding card (Find My League(s) / Connect Yahoo /
    Generate Dashboard). Without an explicit fill they inherited a near-invisible
    default button look on the dark card, so give them a solid, high-contrast
-   accent fill. (Platform pills and the dismiss button style themselves.) */
+   fill from the theme. The card is a fixed navy, so use --rookie (a theme blue
+   that stays vivid in both light and dark: #2563eb / #60a5fa) with --on-accent
+   ink (white in light, dark in dark) so the label reads well in both modes.
+   (Platform pills and the dismiss button style themselves.) */
 #lookupBtn,
 #espnSubmitBtn,
 #yahooConnectBtn,
 #generateWrap button {
   margin-top: 2px;
-  background: #3b82f6;
-  color: #ffffff;
-  border: 1px solid #3b82f6;
+  background: var(--rookie);
+  color: var(--on-accent);
+  border: 1px solid var(--rookie);
   border-radius: 10px;
   font-size: 14px;
   font-weight: 700;
   letter-spacing: 0.01em;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
-  transition: background 0.18s ease, border-color 0.18s ease,
-              box-shadow 0.18s ease, opacity 0.18s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+  transition: filter 0.18s ease, box-shadow 0.18s ease,
+              opacity 0.18s ease, transform 0.05s ease;
 }
 
 #lookupBtn:hover,
 #espnSubmitBtn:hover,
 #yahooConnectBtn:hover,
 #generateWrap button:hover {
-  background: #2563eb;
-  border-color: #2563eb;
-  box-shadow: 0 3px 12px rgba(37, 99, 235, 0.45);
+  filter: brightness(1.08);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.34);
 }
 
 #lookupBtn:active,
@@ -8503,7 +8505,8 @@ select:focus {
 #yahooConnectBtn:active,
 #generateWrap button:active {
   transform: translateY(1px);
-  box-shadow: 0 1px 5px rgba(37, 99, 235, 0.4);
+  filter: brightness(0.96);
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.3);
 }
 
 /* JS disables these while a lookup is in flight ("Validating…"). */
