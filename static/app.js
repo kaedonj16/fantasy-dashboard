@@ -15165,8 +15165,19 @@ var _cmpSides = {
 };
 var _cmpWeeklyCache = {};  // `${pid}_${season}` -> weeks[]
 var _cmpAdvCache = {};     // `${pid}_${seasonParam}` -> advanced-metrics payload
+var _cmpRanksCache = {};   // `${pid}|${season}|${ws}|${we}` -> {ranks,counts,bounds}
+var _cmpSideResultCache = {}; // side-signature -> full computed side result
 var _cmpBaselineStore = {}; // `avg-POS-tier` -> { metrics, position, season, label }
 var _cmpRenderToken = 0;   // guards against out-of-order responses from rapid clicks
+
+// Signature of a side's state: two renders with the same signature produce the
+// same result, so an unchanged side is served from cache and never re-fetched
+// (this is what makes changing one side reload only THAT side).
+function _cmpSideSig(side) {
+  const wk = (side.season != null && side.range && side.range !== 'full')
+    ? ((side.wkStart || '') + '-' + (side.wkEnd || '')) : 'full';
+  return [side.pid, side.season, side.range, wk].join('|');
+}
 
 function _cmpIsBaseline(pid) { return String(pid || '').startsWith('avg-'); }
 
@@ -15305,18 +15316,34 @@ function _cmpRangeBounds(side, weeks) {
 // rank context, so it returns no ranks.
 async function _cmpFetchRanks(pid, season, ws, we) {
   if (season == null) return { ranks: {}, counts: {}, bounds: {} };
+  const _rk = [pid, season, ws == null ? '' : ws, we == null ? '' : we].join('|');
+  if (_cmpRanksCache[_rk]) return _cmpRanksCache[_rk];
   const _lid = (window.__brctx || {}).leagueId;
   let url = `/api/player-metric-ranks/${pid}?season=${season}`;
   if (_lid && _lid !== 'None') url += `&league_id=${encodeURIComponent(_lid)}`;
   if (ws != null && we != null) url += `&week_start=${ws}&week_end=${we}`;
   try {
     const rd = await _advFetch(url, 12000).then(r => r.ok ? r.json() : null);
-    return { ranks: (rd && rd.ranks) || {}, counts: (rd && rd.counts) || {}, bounds: (rd && rd.bounds) || {} };
+    if (!rd) return { ranks: {}, counts: {}, bounds: {} };  // don't cache a failure
+    const out = { ranks: rd.ranks || {}, counts: rd.counts || {}, bounds: rd.bounds || {} };
+    _cmpRanksCache[_rk] = out;
+    return out;
   } catch (_) { return { ranks: {}, counts: {}, bounds: {} }; }
 }
 
 // Fetch one side's metrics for display (season-level, or week-range aggregate).
 async function _cmpFetchSide(side) {
+  // Memoize the whole per-side result by its state signature, so re-rendering
+  // after the OTHER side changes never re-fetches this (unchanged) side.
+  const sig = _cmpSideSig(side);
+  const cached = _cmpSideResultCache[sig];
+  if (cached) return cached;
+  const res = await _cmpFetchSideUncached(side);
+  _cmpSideResultCache[sig] = res;
+  return res;
+}
+
+async function _cmpFetchSideUncached(side) {
   // Tier averages carry their metrics precomputed (averaged across the tier's
   // players); serve those instead of a per-player lookup. No ranks/bounds - an
   // average has no positional rank - so bars fall back to the value scale.
@@ -15329,23 +15356,33 @@ async function _cmpFetchSide(side) {
   }
   const seasonParam = side.season === null ? 'career' : side.season;
   const advKey = side.pid + '_' + seasonParam;
+  const _lid = (window.__brctx || {}).leagueId;
+  const _lp = (_lid && _lid !== 'None') ? `&league_id=${encodeURIComponent(_lid)}` : '';
+
+  // Full season or career: metrics come from the season-level leaderboard, and
+  // ranks are independent of them, so fetch both CONCURRENTLY (was sequential).
+  if (side.season === null || side.range === 'full') {
+    const advP = _cmpAdvCache[advKey]
+      ? Promise.resolve(_cmpAdvCache[advKey])
+      : _advFetch(`/api/player-advanced-metrics/${side.pid}?season=${seasonParam}${_lp}`, 12000)
+          .then(r => r.json()).catch(() => ({}));
+    const [advData, rk] = await Promise.all([
+      advP, _cmpFetchRanks(side.pid, side.season, null, null),
+    ]);
+    _cmpAdvCache[advKey] = advData || {};
+    side.seasons = (advData && advData.available_seasons) || side.seasons || [];
+    if (side.position === '' && advData && advData.position) side.position = advData.position;
+    side.rangeMeta = null;
+    return { metrics: (advData && advData.metrics) || {}, ref: null, ranks: rk.ranks, counts: rk.counts, bounds: rk.bounds };
+  }
+
   let advData = _cmpAdvCache[advKey];
   if (!advData) {
-    const _lid = (window.__brctx || {}).leagueId;
-    const _lp = (_lid && _lid !== 'None') ? `&league_id=${encodeURIComponent(_lid)}` : '';
     try { advData = await _advFetch(`/api/player-advanced-metrics/${side.pid}?season=${seasonParam}${_lp}`, 12000).then(r => r.json()); } catch (_) { advData = {}; }
     _cmpAdvCache[advKey] = advData;
   }
   side.seasons = advData.available_seasons || side.seasons || [];
   if (side.position === '' && advData.position) side.position = advData.position;
-
-  // Full season or career: the leaderboard values are authoritative (they come
-  // from the season-level metrics pipeline). Clear any stale range metadata.
-  if (side.season === null || side.range === 'full') {
-    side.rangeMeta = null;
-    const { ranks, counts, bounds } = await _cmpFetchRanks(side.pid, side.season, null, null);
-    return { metrics: advData.metrics || {}, ref: null, ranks, counts, bounds };
-  }
   // Week-range mode: aggregate the per-week series for the selected weeks.
   const cacheKey = side.pid + '_' + side.season;
   let weeks = _cmpWeeklyCache[cacheKey];
