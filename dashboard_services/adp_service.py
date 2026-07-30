@@ -257,8 +257,14 @@ _SLEEPER_ADP_FIELDS = {
     ("redraft", True):  ("adp_2qb", "adp_ppr", "adp_half_ppr", "adp_std"),
     ("dynasty", False): ("adp_dynasty_ppr", "adp_dynasty_half_ppr", "adp_dynasty_std"),
     ("dynasty", True):  ("adp_dynasty_2qb", "adp_dynasty_ppr", "adp_dynasty_half_ppr", "adp_dynasty_std"),
-    ("rookie", False):  ("adp_dynasty_rookie", "adp_rookie"),
-    ("rookie", True):   ("adp_dynasty_rookie", "adp_rookie"),
+    # Most classes have no rookie-specific Sleeper ADP, but Sleeper does price the
+    # rookies in its overall dynasty startup ADP. Fall back to that so the rookie
+    # board isn't empty; the caller ranks the rookies among themselves (restrict_ids
+    # + as_rank) to turn those overall picks into a clean 1..N rookie board.
+    ("rookie", False):  ("adp_dynasty_rookie", "adp_rookie",
+                         "adp_dynasty_ppr", "adp_dynasty_half_ppr", "adp_dynasty_std"),
+    ("rookie", True):   ("adp_dynasty_rookie", "adp_rookie",
+                         "adp_dynasty_2qb", "adp_dynasty_ppr", "adp_dynasty_half_ppr", "adp_dynasty_std"),
 }
 
 # Which market sources are valid per scoring axis. Yahoo publishes redraft ADP
@@ -298,11 +304,19 @@ def adp_source_options(scoring_type: str):
     return [(v, ADP_SOURCE_LABELS.get(v, v.title())) for v in values]
 
 
+# Sleeper's projection ADP fields report 999 for players it has no draft data
+# for (undrafted / no ADP). It is a sentinel, not a real pick, so treat anything
+# at or above it as missing - otherwise every rookie without a Sleeper ADP shows
+# a literal "ADP 999.0", and consensus rank-blends those identical 999s against
+# real sources and produces nonsense.
+_SLEEPER_UNDRAFTED_ADP = 999.0
+
+
 def _adp_overall_from_row(row: dict, fields) -> Optional[float]:
     for f in fields:
         v = (row or {}).get(f)
         try:
-            if v is not None and float(v) > 0:
+            if v is not None and 0 < float(v) < _SLEEPER_UNDRAFTED_ADP:
                 return float(v)
         except (TypeError, ValueError):
             continue
@@ -478,7 +492,8 @@ def ordinal_rank_adp(adp_map) -> Dict[str, float]:
 
 def resolve_market_adp(season: int, is_sf: bool, scoring_type: str = "redraft",
                        source: str = "consensus", league_id=None, token=None,
-                       as_rank: bool = False, fallback: bool = True) -> Dict[str, float]:
+                       as_rank: bool = False, fallback: bool = True,
+                       restrict_ids=None) -> Dict[str, float]:
     """canonical player_id -> overall market ADP for a scoring axis and source.
 
     scoring_type: ``redraft`` | ``dynasty`` | ``rookie``.
@@ -488,17 +503,26 @@ def resolve_market_adp(season: int, is_sf: bool, scoring_type: str = "redraft",
                   resolver falls back. Empty result means no data (the caller can
                   apply its own fallback, e.g. value rank).
     as_rank:      when True the result is re-ranked to contiguous 1..N draft
-                  order (see ``ordinal_rank_adp``) for a clean board display."""
+                  order (see ``ordinal_rank_adp``) for a clean board display.
+    restrict_ids: when given, each source is filtered to just these ids BEFORE
+                  ranking/blending. For a rookie board pass the rookie pool so a
+                  source's overall ADP (e.g. Sleeper's dynasty fallback) is ranked
+                  among the rookies alone, and consensus blends rookie-only ranks
+                  rather than mixing a rookie's overall rank with its rookie rank."""
     scoring_type = scoring_type if scoring_type in ("redraft", "dynasty", "rookie") else "redraft"
     valid = ADP_SOURCES.get(scoring_type, ("sleeper",))
+    _restrict = set(restrict_ids) if restrict_ids is not None else None
+
+    def _clip(m: Dict[str, float]) -> Dict[str, float]:
+        return {k: v for k, v in m.items() if k in _restrict} if _restrict is not None else m
 
     def _src(name: str) -> Dict[str, float]:
         if name == "sleeper":
-            return _sleeper_adp_source(season, is_sf, scoring_type)
+            return _clip(_sleeper_adp_source(season, is_sf, scoring_type))
         if name == "brfantasy":
-            return _crawler_adp_source(season, is_sf, scoring_type)
+            return _clip(_crawler_adp_source(season, is_sf, scoring_type))
         if name == "yahoo":
-            return _yahoo_adp_source(season, is_sf, scoring_type, league_id, token)
+            return _clip(_yahoo_adp_source(season, is_sf, scoring_type, league_id, token))
         return {}
 
     def _finish(m: Dict[str, float]) -> Dict[str, float]:
@@ -518,6 +542,6 @@ def resolve_market_adp(season: int, is_sf: bool, scoring_type: str = "redraft",
     if not fallback:
         return {}
     # Fallback: sleeper, then the BR Fantasy crawler (dynasty/rookie).
-    fallback_m = (_sleeper_adp_source(season, is_sf, scoring_type)
-                  or _crawler_adp_source(season, is_sf, scoring_type))
+    fallback_m = (_clip(_sleeper_adp_source(season, is_sf, scoring_type))
+                  or _clip(_crawler_adp_source(season, is_sf, scoring_type)))
     return _finish(fallback_m)

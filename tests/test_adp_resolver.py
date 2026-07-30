@@ -66,6 +66,70 @@ def test_resolve_empty_when_no_sources(monkeypatch):
     assert A.resolve_market_adp(2026, False, "redraft", "consensus") == {}
 
 
+def test_resolve_sleeper_skips_999_undrafted_sentinel(monkeypatch):
+    # Sleeper reports 999 for players it hasn't priced (common for rookies).
+    # That sentinel must not surface as a real ADP.
+    monkeypatch.setattr(A, "fetch_sleeper_adp",
+                        lambda season: {"real": {"adp_dynasty_rookie": 4.0},
+                                        "undrafted": {"adp_dynasty_rookie": 999.0}})
+    monkeypatch.setattr(A, "_crawler_adp_source", lambda *a, **k: {})
+    out = A.resolve_market_adp(2026, False, "rookie", "sleeper")
+    assert out == {"real": 4.0}   # the 999 player is dropped, not shown as ADP 999
+
+
+def test_consensus_rookie_ignores_sleeper_999(monkeypatch):
+    # In a rookie draft Sleeper often has no ADP (all 999). Consensus must then
+    # reflect BR Fantasy alone, not rank-blend real ranks against a wall of 999s.
+    monkeypatch.setattr(A, "fetch_sleeper_adp",
+                        lambda season: {"a": {"adp_dynasty_rookie": 999.0},
+                                        "b": {"adp_dynasty_rookie": 999.0}})
+    monkeypatch.setattr(A, "_crawler_adp_source", lambda season, is_sf, st: {"a": 1.1, "b": 2.6})
+    c = A.resolve_market_adp(2026, False, "rookie", "consensus")
+    assert c == {"a": 1.1, "b": 2.6}   # single live source kept raw, no 999 skew
+
+
+def test_rookie_sleeper_falls_back_to_dynasty_adp(monkeypatch):
+    # No rookie-specific Sleeper ADP, but Sleeper prices the rookies in its
+    # overall dynasty ADP. The rookie axis must surface that fallback.
+    monkeypatch.setattr(A, "fetch_sleeper_adp",
+                        lambda season: {"a": {"adp_dynasty_ppr": 16.3},
+                                        "b": {"adp_dynasty_ppr": 40.0}})
+    monkeypatch.setattr(A, "_crawler_adp_source", lambda *a, **k: {})
+    out = A.resolve_market_adp(2026, False, "rookie", "sleeper")
+    assert out == {"a": 16.3, "b": 40.0}
+
+
+def test_rookie_board_ranks_within_pool(monkeypatch):
+    # Sleeper's dynasty fallback gives overall picks (16.3, 40, 200). Restricting
+    # to the rookie pool and ranking turns them into a clean 1..N rookie board -
+    # a rookie priced at overall 200 is still rookie pick 3, not pick 200.
+    monkeypatch.setattr(A, "fetch_sleeper_adp",
+                        lambda season: {"a": {"adp_dynasty_ppr": 16.3},
+                                        "b": {"adp_dynasty_ppr": 200.0},
+                                        "c": {"adp_dynasty_ppr": 40.0},
+                                        "vet": {"adp_dynasty_ppr": 5.0}})
+    monkeypatch.setattr(A, "_crawler_adp_source", lambda *a, **k: {})
+    out = A.resolve_market_adp(2026, False, "rookie", "sleeper",
+                               restrict_ids={"a", "b", "c"}, as_rank=True)
+    # vet excluded; rookies ranked among themselves by their overall ADP.
+    assert out == {"a": 1.0, "c": 2.0, "b": 3.0}
+
+
+def test_rookie_consensus_blends_on_axis_within_pool(monkeypatch):
+    # Consensus must blend rookie-only ranks from each source, not a rookie's
+    # overall Sleeper rank against its BR Fantasy rookie rank.
+    monkeypatch.setattr(A, "fetch_sleeper_adp",
+                        lambda season: {"a": {"adp_dynasty_ppr": 16.3},
+                                        "b": {"adp_dynasty_ppr": 40.0},
+                                        "vet": {"adp_dynasty_ppr": 5.0}})
+    # BR Fantasy disagrees: b ahead of a.
+    monkeypatch.setattr(A, "_crawler_adp_source", lambda season, is_sf, st: {"a": 2.6, "b": 1.1})
+    c = A.resolve_market_adp(2026, False, "rookie", "consensus",
+                             restrict_ids={"a", "b"}, as_rank=True)
+    # sleeper a<b, brfantasy b<a -> tie -> ordinal board breaks ties by id.
+    assert c == {"a": 1.0, "b": 2.0}
+
+
 # ── ordinal_rank_adp (option 2 display transform) ────────────────────────────
 
 def test_ordinal_rank_makes_contiguous_board():
