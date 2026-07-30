@@ -478,7 +478,7 @@ def ordinal_rank_adp(adp_map) -> Dict[str, float]:
 
 def resolve_market_adp(season: int, is_sf: bool, scoring_type: str = "redraft",
                        source: str = "consensus", league_id=None, token=None,
-                       as_rank: bool = False) -> Dict[str, float]:
+                       as_rank: bool = False, fallback: bool = True) -> Dict[str, float]:
     """canonical player_id -> overall market ADP for a scoring axis and source.
 
     scoring_type: ``redraft`` | ``dynasty`` | ``rookie``.
@@ -512,7 +512,12 @@ def resolve_market_adp(season: int, is_sf: bool, scoring_type: str = "redraft",
         got = _src(source)
         if got:
             return _finish(got)
+    # No cross-source fallback when the caller wants THIS source's own data only
+    # (e.g. the per-source ADP columns, where "BR Fantasy" must not silently show
+    # Sleeper's numbers on an axis BR Fantasy doesn't cover).
+    if not fallback:
+        return {}
     # Fallback: sleeper, then the BR Fantasy crawler (dynasty/rookie).
-    fallback = (_sleeper_adp_source(season, is_sf, scoring_type)
-                or _crawler_adp_source(season, is_sf, scoring_type))
-    return _finish(fallback)
+    fallback_m = (_sleeper_adp_source(season, is_sf, scoring_type)
+                  or _crawler_adp_source(season, is_sf, scoring_type))
+    return _finish(fallback_m)
