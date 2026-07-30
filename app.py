@@ -19705,24 +19705,126 @@ def api_run_daily_cron():
 @limiter.limit("30 per minute")
 def api_debug_values():
     """
-    Diagnostic endpoint: returns DB values vs calibrated values for the top 10
-    players by value_1qb. Useful for confirming whether WLS calibration is
-    actually being written to the DB and whether values are changing.
+    Diagnostic endpoint for value provenance.
+
+    Default: the top-20 players by value_1qb with their WLS/calibration columns,
+    so you can confirm whether the WLS trade calibration is landing in the DB
+    (calibration_backing = trade weight behind WLS; a weight near 0 means WLS is
+    effectively off and the value is the vendor/engine blend).
+
+    ?player=<sleeper_id or name>: full provenance for one player — the
+    player_values row (incl. calibration_backing), the FantasyCalc /
+    DynastyProcess vendor values, and the last 14 daily history points.
     """
+    _COLS = (
+        "player_id, position, value_1qb, value_sf, "
+        "calibrated_value_1qb, calibrated_value_sf, "
+        "calibration_backing, calibration_backing_sf, "
+        "calibration_source, calibration_weight, last_updated"
+    )
+
+    def _num(v):
+        return float(v) if v is not None else None
+
+    def _row_dict(r):
+        return {
+            "player_id":              str(r["player_id"]),
+            "position":               str(r["position"] or ""),
+            "value_1qb":              _num(r["value_1qb"]),
+            "value_sf":               _num(r["value_sf"]),
+            "calibrated_value_1qb":   _num(r["calibrated_value_1qb"]),
+            "calibrated_value_sf":    _num(r["calibrated_value_sf"]),
+            "calibration_backing":    _num(r["calibration_backing"]),
+            "calibration_backing_sf": _num(r["calibration_backing_sf"]),
+            "calibration_source":     str(r["calibration_source"] or ""),
+            "calibration_weight":     _num(r["calibration_weight"]),
+            "last_updated":           r["last_updated"].isoformat() if r["last_updated"] else None,
+            "coalesce_gives":         (_num(r["calibrated_value_1qb"]) if r["calibrated_value_1qb"] is not None else _num(r["value_1qb"])),
+        }
+
     try:
         from dashboard_services.db import get_conn as _gc
+
+        # ── Optional single-player provenance (?player=id|name) ──────────────
+        _player = (request.args.get("player") or "").strip()
+        lookup = None
+        if _player:
+            from utils.utils import load_players_index as _lpi, normalize_name as _nn
+            _idx = _lpi() or {}
+            _ids: list = []
+            if _player.isdigit() and _player in _idx:
+                _ids = [_player]
+            else:
+                _q = _nn(_player)
+                for _pid, _meta in _idx.items():
+                    _nm = _nn((_meta or {}).get("name") or (_meta or {}).get("full_name") or "")
+                    if _nm and (_nm == _q or (_q and _q in _nm)):
+                        _ids.append(str(_pid))
+                _ids = _ids[:5]
+
+            entries = []
+            if _ids:
+                _ph = ",".join(["%s"] * len(_ids))
+                with _gc() as _conn:
+                    _prows = _conn.execute(
+                        f"SELECT {_COLS} FROM player_values WHERE player_id IN ({_ph})",
+                        tuple(_ids),
+                    ).fetchall()
+                    _pv = {str(r["player_id"]): _row_dict(r) for r in _prows}
+                    _hist: dict = {}
+                    _hrows = _conn.execute(
+                        f"SELECT player_id, as_of_date, value, sf_value "
+                        f"FROM player_value_history "
+                        f"WHERE player_id IN ({_ph}) AND source = 'model' "
+                        f"ORDER BY as_of_date DESC LIMIT 400",
+                        tuple(_ids),
+                    ).fetchall()
+                    for _hr in _hrows:
+                        _hid = str(_hr["player_id"])
+                        _bucket = _hist.setdefault(_hid, [])
+                        if len(_bucket) < 14:
+                            _bucket.append({
+                                "as_of_date": str(_hr["as_of_date"]),
+                                "value":    _num(_hr["value"]),
+                                "sf_value": _num(_hr["sf_value"]),
+                            })
+
+                # Vendor values (best-effort) for side-by-side comparison.
+                _fc: dict = {}
+                _dp_by_name: dict = {}
+                try:
+                    from data_building.external_data.external_values_scraper import (
+                        load_fantasycalc_api_values, load_dynastyprocess_values,
+                    )
+                    for _r in (load_fantasycalc_api_values() or []):
+                        _sid = str(_r.get("sleeper_id") or "").strip()
+                        if _sid:
+                            _fc[_sid] = _r.get("value")
+                    for _r in (load_dynastyprocess_values() or []):
+                        _nm = _nn(str(_r.get("player") or _r.get("name") or ""))
+                        if _nm:
+                            _dp_by_name[_nm] = (_r.get("value") or _r.get("value_1qb")
+                                                or _r.get("dynasty_value"))
+                except Exception:
+                    logger.debug("[debug-values] vendor load skipped", exc_info=True)
+
+                for _id in _ids:
+                    _meta = _idx.get(_id) or {}
+                    _nmk = _nn(_meta.get("name") or _meta.get("full_name") or "")
+                    entries.append({
+                        "player_id":            _id,
+                        "name":                 _meta.get("name") or _meta.get("full_name") or "",
+                        "player_values":        _pv.get(_id),
+                        "fantasycalc_value":    _fc.get(_id),
+                        "dynastyprocess_value": _dp_by_name.get(_nmk),
+                        "history":              _hist.get(_id, []),
+                    })
+            lookup = {"query": _player, "matched": entries}
+
         with _gc() as _conn:
             rows = _conn.execute(
-                """
-                SELECT
-                    player_id,
-                    position,
-                    value_1qb,
-                    calibrated_value_1qb,
-                    calibrated_value_sf,
-                    calibration_source,
-                    calibration_weight,
-                    last_updated
+                f"""
+                SELECT {_COLS}
                 FROM player_values
                 WHERE value_1qb IS NOT NULL AND value_1qb > 0
                   AND (position IS NULL OR position != 'PICK')
@@ -19747,7 +19849,7 @@ def api_debug_values():
             _headroom_state = _load_state(_HEADROOM_STATE_KEY)
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
-        return jsonify({
+        _resp = {
             "model_values_json_mtime": _mv_mtime,
             "in_memory_cache_age_seconds": _cache_age,
             "in_memory_cache_size": len(_MODEL_VALUE_CACHE) if _MODEL_VALUE_CACHE else 0,
@@ -19756,21 +19858,11 @@ def api_debug_values():
                 "headroom_1qb": _headroom_state,
                 "note": "basket near 999.9 means _1qb_scale≈1.0 → top players capped at 999.9; reset via POST /api/run-daily-cron with force:true",
             },
-            "top_players": [
-                {
-                    "player_id":              str(r["player_id"]),
-                    "position":               str(r["position"] or ""),
-                    "value_1qb":              float(r["value_1qb"] or 0),
-                    "calibrated_value_1qb":   float(r["calibrated_value_1qb"]) if r["calibrated_value_1qb"] is not None else None,
-                    "calibrated_value_sf":    float(r["calibrated_value_sf"])  if r["calibrated_value_sf"]  is not None else None,
-                    "calibration_source":     str(r["calibration_source"] or ""),
-                    "calibration_weight":     float(r["calibration_weight"]) if r["calibration_weight"] is not None else None,
-                    "last_updated":           r["last_updated"].isoformat() if r["last_updated"] else None,
-                    "coalesce_gives":         float(r["calibrated_value_1qb"] if r["calibrated_value_1qb"] is not None else r["value_1qb"] or 0),
-                }
-                for r in rows
-            ],
-        })
+            "top_players": [_row_dict(r) for r in rows],
+        }
+        if lookup is not None:
+            _resp["lookup"] = lookup
+        return jsonify(_resp)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
