@@ -11725,6 +11725,90 @@ def api_waiver_candidates():
     return jsonify({"candidates": result, "total": len(result), "faab_enabled": _faab_enabled})
 
 
+_TRENDING_ADDS_CACHE: dict = {}
+_TRENDING_ADDS_TTL = 1800  # 30 min; a league-wide signal shared by all viewers
+
+
+def _sleeper_trending_adds(limit: int = 25, lookback_hours: int = 48) -> list:
+    """Sleeper's league-wide most-added players (add count over a lookback
+    window). Cached 30 min; this is a global signal, not per-league, so every
+    viewer shares one fetch. Best-effort: any failure returns []."""
+    key = (limit, lookback_hours)
+    hit = _TRENDING_ADDS_CACHE.get(key)
+    if hit and (time.time() - hit[0]) < _TRENDING_ADDS_TTL:
+        return hit[1]
+    try:
+        from dashboard_services.api import fetch_json
+        data = fetch_json(
+            f"/players/nfl/trending/add?lookback_hours={lookback_hours}&limit={limit}"
+        )
+        result = data if isinstance(data, list) else []
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+        result = []
+    if result:
+        _TRENDING_ADDS_CACHE[key] = (time.time(), result)
+    return result
+
+
+@app.route("/api/trending-adds")
+def api_trending_adds():
+    """Trending waiver adds across all Sleeper leagues, filtered to players the
+    viewer's league can still add (not already rostered), with our value + pos
+    rank joined on. Feeds the 'Trending across leagues' strip on Waivers."""
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    league_id = (request.args.get("league_id") or "").strip()
+    season = int(request.args.get("season") or datetime.now().year)
+    if not league_id:
+        return jsonify({"trending": []})
+
+    # Trending is a Sleeper signal; other platforms just get an empty strip.
+    if platform != "sleeper":
+        return jsonify({"trending": []})
+
+    trend = _sleeper_trending_adds()
+    if not trend:
+        return jsonify({"trending": []})
+
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+    except Exception:
+        ctx = {}
+    rostered_ids = {
+        str(pid)
+        for r in (ctx.get("rosters") or [])
+        for pid in (r.get("players") or [])
+    }
+    players_index = ctx.get("players_index") or get_players_index_global() or {}
+    _mvt = {str(r.get("id")): r for r in (get_model_value_table_cached() or [])
+            if isinstance(r, dict) and r.get("id")}
+
+    out = []
+    for row in trend:
+        pid = str(row.get("player_id") or "")
+        if not pid or pid in rostered_ids:
+            continue                              # can't add what you already own
+        meta = players_index.get(pid) or {}
+        val_row = _mvt.get(pid) or {}
+        pos = str(val_row.get("position") or meta.get("pos") or "").upper()
+        if pos == "DEF":
+            name = f"{(meta.get('team') or pid)} D/ST"
+        else:
+            name = val_row.get("name") or meta.get("name") or f"Player {pid}"
+        out.append({
+            "player_id": pid,
+            "name": name,
+            "position": pos,
+            "team": (val_row.get("team") or meta.get("team") or "").upper(),
+            "value": round(float(val_row.get("value") or 0)),
+            "pos_rank_label": val_row.get("pos_rank_label") or "",
+            "adds": int(row.get("count") or 0),
+        })
+        if len(out) >= 12:
+            break
+    return jsonify({"trending": out})
+
+
 _WEEKLY_PTS_CACHE: dict = {}
 _WEEKLY_PTS_TTL = 900  # 15 min; weekly stat files change at most once a week
 

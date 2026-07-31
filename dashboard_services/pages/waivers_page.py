@@ -95,6 +95,28 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 }
 .wv-drop-pos { font-weight: 700; color: var(--text); }
 
+/* Trending-across-leagues strip: a horizontal, scrollable row of the most-added
+   players Sleeper-wide that this league can still claim. */
+.wv-trending-title { display: flex; align-items: center; gap: 6px; }
+.wv-trending-title i { color: #f97316; }
+.wv-trending-strip {
+  display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 18px;
+  -webkit-overflow-scrolling: touch; scrollbar-width: thin;
+}
+.wv-trend-chip {
+  flex: 0 0 auto; display: flex; flex-direction: column; gap: 2px; text-align: left;
+  padding: 8px 12px; border-radius: 10px; background: var(--card);
+  border: 1px solid var(--border); cursor: pointer; min-width: 120px;
+  transition: border-color .12s;
+}
+.wv-trend-chip:hover { border-color: var(--accent); }
+.wv-trend-adds {
+  font-size: 11px; font-weight: 800; color: #f97316;
+  display: flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums;
+}
+.wv-trend-name { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; }
+.wv-trend-sub { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+
 /* Start/Sit player cards */
 .wv-ss-pos-group { margin-bottom: 16px; }
 .wv-ss-pos-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
@@ -285,6 +307,12 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
   <div class="wv-layout">
     <!-- Left: Waiver Wire -->
     <div class="wv-section wv-tab-active" id="wvSectionWaivers">
+      <div id="wvTrendingWrap" hidden>
+        <div class="wv-section-title wv-trending-title">
+          <i class="fa-solid fa-fire" aria-hidden="true"></i> Trending across leagues
+        </div>
+        <div id="wvTrendingStrip" class="wv-trending-strip"></div>
+      </div>
       <div class="wv-section-title">Waiver Wire</div>
       <div id="wvWaiverList">
         {wv_skel}
@@ -451,6 +479,11 @@ function wvLoad() {{
     .then(d => {{ wvWaiverData = d.candidates || []; window.wvFaabEnabled = d.faab_enabled !== false; wvRenderWaivers(); }})
     .catch(() => {{ window.brErrorState('wvWaiverList', 'Unable to load waiver data.', wvLoad); }});
 
+  fetch(`/api/trending-adds?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
+    .then(r => r.json())
+    .then(d => wvRenderTrending(d.trending || []))
+    .catch(() => {{}});   // strip is a bonus; stay silent on failure
+
   fetch(`/api/start-sit-options?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
     .then(r => r.json())
     .then(d => {{
@@ -508,6 +541,30 @@ function wvRenderWaivers() {{
     </div>
   `;
   }}).join('');
+}}
+
+// ── Trending across leagues (Sleeper league-wide add counts) ───────────────────
+function wvFmtAdds(n) {{
+  n = +n || 0;
+  return n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\\.0$/, '') + 'k' : String(n);
+}}
+function wvRenderTrending(items) {{
+  const wrap = document.getElementById('wvTrendingWrap');
+  const strip = document.getElementById('wvTrendingStrip');
+  if (!wrap || !strip || !items.length) {{ if (wrap) wrap.hidden = true; return; }}
+  strip.innerHTML = items.map(p => {{
+    const pos = p.position || '';
+    const sub = [pos, p.team].filter(Boolean).join(' · ');
+    const nm = (p.name || '').replace(/'/g, "\\\\'");
+    return `
+      <button type="button" class="wv-trend-chip" onclick="openPlayerModal('${{p.player_id}}', '${{nm}}')"
+              title="${{wvFmtAdds(p.adds)}} adds across Sleeper leagues">
+        <span class="wv-trend-adds"><i class="fa-solid fa-fire" aria-hidden="true"></i> ${{wvFmtAdds(p.adds)}}</span>
+        <span class="wv-trend-name">${{p.name || ''}}</span>
+        <span class="wv-trend-sub">${{sub}}</span>
+      </button>`;
+  }}).join('');
+  wrap.hidden = false;
 }}
 
 // ── Compare slot management ───────────────────────────────────────────────────
