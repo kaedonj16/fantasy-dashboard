@@ -973,8 +973,22 @@ def _wrapped_player_leaders(history_ctx: dict) -> dict:
         from concurrent.futures import ThreadPoolExecutor
         from dashboard_services.platform_api import get_matchups
 
-        po_start = _playoff_start_week(history_ctx.get("league") or {})
-        weeks = list(range(1, max(2, po_start)))
+        # Sum the FULL season the league played, not just the fantasy regular
+        # season. "Top producer of the year" should match the player card's
+        # season total, which includes the fantasy-playoff weeks — stopping at
+        # playoff-start made a full-PPR total read like standard scoring (e.g. a
+        # 24.5-PPG back showing ~344 over 14 weeks instead of ~416 over 17).
+        # Bound by the last week the league actually has matchup data so we don't
+        # fetch dead weeks.
+        _df_w = history_ctx.get("df_weekly")
+        try:
+            _last_wk = int(_df_w["week"].max()) if _df_w is not None and not _df_w.empty else 0
+        except Exception:
+            _last_wk = 0
+        if _last_wk < 2:
+            _po = _playoff_start_week(history_ctx.get("league") or {}) or 15
+            _last_wk = min(18, _po + 2)
+        weeks = list(range(1, _last_wk + 1))
 
         def _fetch(w):
             try:
