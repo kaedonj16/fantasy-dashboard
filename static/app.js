@@ -15951,6 +15951,7 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
     + '.cmp3-rowlbl{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;padding:10px;white-space:nowrap;}'
     + '.cmp3-cell{text-align:center;padding:10px 8px;font-weight:700;font-size:15px;font-variant-numeric:tabular-nums;border-top:1px solid var(--border);color:var(--text);}'
     + '.cmp3-best{color:var(--win);background:color-mix(in srgb,var(--win) 12%,transparent);}'
+    + '.cmp3-colhead{display:flex;flex-direction:column;align-items:center;gap:5px;}'
     + '.cmp3-cat td{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);padding:14px 10px 4px;text-align:left;border-top:none;}'
     + '.cmp3-sub{display:block;font-size:10px;color:var(--muted);font-weight:600;margin-top:2px;}'
     + '.cmp3-trend{font-size:10px;font-weight:800;margin-left:5px;}'
@@ -16111,8 +16112,10 @@ function _cmp3MetricTable(players, datas, cfg) {
   const cats = CAT_ORDER.filter(function (c) { return groups[c]; }).concat(order.filter(function (c) { return CAT_ORDER.indexOf(c) < 0; }));
 
   const headCells = players.map(function (p, i) {
-    return '<th class="cmp3-col"><span class="cmp3-name">' + esc(p.name) + '</span>'
-      + '<span class="cmp3-accent" style="display:inline-block;background:' + _CMP3_COLORS[i] + ';"></span></th>';
+    return '<th class="cmp3-col"><span class="cmp3-colhead">'
+      + '<span class="cmp3-name">' + esc(p.name) + '</span>'
+      + '<span class="cmp3-accent" style="background:' + _CMP3_COLORS[i] + ';"></span>'
+      + '</span></th>';
   }).join('');
 
   let body = '';
@@ -16196,8 +16199,10 @@ function _cmp3UsageTable(players, weeksArr) {
     { label: 'PPR Pts', get: w => w.ppr_pts },
   ];
   const headCells = players.map(function (p, i) {
-    return '<th class="cmp3-col"><span class="cmp3-name">' + esc(p.name) + '</span>'
-      + '<span class="cmp3-accent" style="display:inline-block;background:' + _CMP3_COLORS[i] + ';"></span></th>';
+    return '<th class="cmp3-col"><span class="cmp3-colhead">'
+      + '<span class="cmp3-name">' + esc(p.name) + '</span>'
+      + '<span class="cmp3-accent" style="background:' + _CMP3_COLORS[i] + ';"></span>'
+      + '</span></th>';
   }).join('');
 
   let body = '';
