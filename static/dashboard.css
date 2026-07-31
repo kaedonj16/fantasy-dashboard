@@ -5475,6 +5475,50 @@ a.otc-value-name:hover { text-decoration: underline; }
   color: #2e9fff;
 }
 
+/* Trade balancer — "even it out" add-on suggestions under the verdict. */
+.otc-balancer {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+.otc-balancer-head {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-align: center;
+  margin-bottom: 10px;
+}
+.otc-balancer-head i { color: var(--accent); margin-right: 4px; }
+.otc-balancer-head strong { color: var(--text); }
+.otc-balancer-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+.otc-balancer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.otc-balancer-chip:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
+.otc-balancer-name { font-weight: 600; }
+.otc-balancer-val {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
 .otc-viewer-toggle {
   display: inline-flex;
   align-items: center;
