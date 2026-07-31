@@ -373,6 +373,7 @@ const WV_SEASON = {season};
 const WV_LEAGUE_ID = '{league_id}';
 let wvCurrentPos = 'ALL';
 let wvWaiverData = [];
+let wvTrendingData = [];
 let wvStartSitData = {{}};
 let wvCompare = [null, null]; // [playerA, playerB]
 
@@ -392,6 +393,7 @@ function wvSetPos(pos) {{
   document.querySelectorAll('.wv-pos-btn').forEach(b => b.classList.toggle('active', b.textContent === pos));
   wvRenderWaivers();
   wvRenderStartSit();
+  wvRenderTrending(wvTrendingData);
 }}
 
 // ── Matchup chip helper ───────────────────────────────────────────────────────
@@ -510,12 +512,12 @@ function wvLoad() {{
   const _wvRid = window._viewerRid ? ('&rid=' + encodeURIComponent(window._viewerRid)) : '';
   fetch(`/api/waiver-candidates?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}${{_wvRid}}`)
     .then(r => r.json())
-    .then(d => {{ wvWaiverData = d.candidates || []; window.wvFaabEnabled = d.faab_enabled !== false; wvRenderWaivers(); }})
+    .then(d => {{ wvWaiverData = d.candidates || []; window.wvFaabEnabled = d.faab_enabled === true; wvRenderWaivers(); }})
     .catch(() => {{ window.brErrorState('wvWaiverList', 'Unable to load waiver data.', wvLoad); }});
 
   fetch(`/api/trending-adds?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
     .then(r => r.json())
-    .then(d => wvRenderTrending(d.trending || []))
+    .then(d => {{ wvTrendingData = d.trending || []; wvRenderTrending(wvTrendingData); }})
     .catch(() => {{}});   // strip is a bonus; stay silent on failure
 
   fetch(`/api/streaming-options?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
@@ -590,10 +592,16 @@ function wvFmtAdds(n) {{
 function wvRenderTrending(items) {{
   const wrap = document.getElementById('wvTrendingWrap');
   const strip = document.getElementById('wvTrendingStrip');
-  if (!wrap || !strip || !items.length) {{ if (wrap) wrap.hidden = true; return; }}
+  items = items || [];
+  // Mirror the active position filter so the strip only shows players the rest
+  // of the page is scoped to (ALL shows everything).
+  const shown = (wvCurrentPos && wvCurrentPos !== 'ALL')
+    ? items.filter(p => (p.position || '').toUpperCase() === wvCurrentPos)
+    : items;
+  if (!wrap || !strip || !shown.length) {{ if (wrap) wrap.hidden = true; return; }}
   // Cap the strip so a long league-wide add list can't dominate the page; the
   // strip scrolls horizontally, so a small set keeps it a glanceable accent.
-  strip.innerHTML = items.slice(0, 8).map(p => {{
+  strip.innerHTML = shown.slice(0, 8).map(p => {{
     const pos = p.position || '';
     const sub = [pos, p.team].filter(Boolean).join(' · ');
     const nm = (p.name || '').replace(/'/g, "\\\\'");

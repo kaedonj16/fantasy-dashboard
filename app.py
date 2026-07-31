@@ -11683,6 +11683,12 @@ def api_waiver_candidates():
             pos = str(row.get("position") or meta.get("pos") or "").upper()
             name = row.get("name") or meta.get("name") or f"Player {pid}"
             _pos_counts[pos] = _pos_counts.get(pos, 0) + 1
+            # Never suggest cutting a current-class rookie — those are usually
+            # deliberate stashes (dynasty picks / upside bench holds), not spare
+            # parts. Keep them in the position counts (they do take a roster spot)
+            # but out of the droppable pool.
+            if pid in _rookie_sids_wv:
+                continue
             _drop_pool.append({"player_id": pid, "name": name, "position": pos,
                                "value": _roster_val(pid)})
         _drop_pool.sort(key=lambda d: d["value"])   # weakest first
@@ -11808,6 +11814,11 @@ def api_trending_adds():
             continue                              # can't add what you already own
         meta = players_index.get(pid) or {}
         val_row = _mvt.get(pid) or {}
+        # Skip players we can't resolve in our index anywhere (neither the league
+        # players index nor the value table). These render as a nameless
+        # "Player 12345" card, which is noise — drop them entirely.
+        if not meta and not val_row:
+            continue
         pos = str(val_row.get("position") or meta.get("pos") or "").upper()
         if pos == "DEF":
             name = f"{(meta.get('team') or pid)} D/ST"
