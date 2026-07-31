@@ -11634,6 +11634,55 @@ def api_waiver_candidates():
         _center *= 1.0 + min(max((_c.get("need_mult") or 1.0) - 1.0, 0.0), 0.35)  # fills your need → bid up
         return max(0, int(round(_center * 0.78))), min(70, int(round(_center * 1.12)) + 1)
 
+    # ── Add/drop pairing: for each target, the best player on the viewer's own
+    # roster to cut to make room. Prefer thinning a position where the viewer is
+    # deep (esp. the add's own position); only ever suggest a drop that's a value
+    # downgrade from the add, so the pairing is always a genuine upgrade. Needs
+    # the viewer's roster, passed as ?rid= (the shared page cache means the client
+    # supplies it, matching the window._viewerRid personalization pattern).
+    _rid = (request.args.get("rid") or "").strip()
+    _mvt_by_id = {str(r.get("id")): r for r in model_value_table
+                  if isinstance(r, dict) and r.get("id")}
+    _KEEP = {"QB": 2, "RB": 5, "WR": 6, "TE": 2}   # keep-depth before a spot is "spare"
+
+    def _roster_val(pid: str) -> float:
+        row = _mvt_by_id.get(pid) or {}
+        try:
+            return apply_te_premium(
+                float(row.get(_vf_wv) or row.get("value") or 0.0),
+                str(row.get("position") or "").upper(), _tep_wv)
+        except Exception:
+            return 0.0
+
+    _drop_pool: list = []
+    _pos_counts: dict = {}
+    _viewer_roster = next((r for r in rosters if str(r.get("roster_id")) == _rid), None) if _rid else None
+    if _viewer_roster:
+        for pid in (_viewer_roster.get("players") or []):
+            pid = str(pid)
+            row = _mvt_by_id.get(pid) or {}
+            meta = players_index.get(pid, {})
+            pos = str(row.get("position") or meta.get("pos") or "").upper()
+            name = row.get("name") or meta.get("name") or f"Player {pid}"
+            _pos_counts[pos] = _pos_counts.get(pos, 0) + 1
+            _drop_pool.append({"player_id": pid, "name": name, "position": pos,
+                               "value": _roster_val(pid)})
+        _drop_pool.sort(key=lambda d: d["value"])   # weakest first
+
+    def _drop_for(_c):
+        if not _drop_pool:
+            return None
+        add_val = _c.get("value") or 0.0
+        add_pos = _c.get("position") or ""
+        elig = [d for d in _drop_pool if d["value"] < add_val]
+        if not elig:
+            return None   # everyone you'd cut is worth more than the add — hold
+        same_pos = [d for d in elig
+                    if d["position"] == add_pos and _pos_counts.get(add_pos, 0) > _KEEP.get(add_pos, 3)]
+        deep = [d for d in elig if _pos_counts.get(d["position"], 0) > _KEEP.get(d["position"], 3)]
+        pick = (same_pos or deep or elig)[0]
+        return {"name": pick["name"], "position": pick["position"], "value": round(pick["value"])}
+
     for c in _shown:
         try:
             sig_cls, sig_label = _waiver_signal(
@@ -11667,6 +11716,7 @@ def api_waiver_candidates():
                 "schedule_ease_rank": c.get("schedule_ease_rank"),
                 "faab_low": _flo,
                 "faab_high": _fhi,
+                "drop": _drop_for(c),
             })
         except Exception:
             logger.exception("[waiver-candidates] result row failed for %s", c.get("player_id"))

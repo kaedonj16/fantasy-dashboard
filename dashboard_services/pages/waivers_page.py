@@ -82,6 +82,18 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
   display: inline-block; font-size: 10px; font-weight: 700; color: var(--win);
   margin-left: 6px; white-space: nowrap;
 }
+/* Add/drop pairing: the suggested cut to make room for this target. Muted so it
+   reads as a secondary hint under the player, with a small position tag. */
+.wv-drop-hint {
+  font-size: 11px; color: var(--text-muted); margin-top: 3px;
+  display: flex; align-items: center; gap: 5px;
+}
+.wv-drop-lbl {
+  font-size: 9px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--loss); background: color-mix(in srgb, var(--loss) 13%, transparent);
+  padding: 1px 5px; border-radius: 4px;
+}
+.wv-drop-pos { font-weight: 700; color: var(--text); }
 
 /* Start/Sit player cards */
 .wv-ss-pos-group { margin-bottom: 16px; }
@@ -433,7 +445,8 @@ function wvStatsRow(p) {{
 
 // ── Load ──────────────────────────────────────────────────────────────────────
 function wvLoad() {{
-  fetch(`/api/waiver-candidates?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
+  const _wvRid = window._viewerRid ? ('&rid=' + encodeURIComponent(window._viewerRid)) : '';
+  fetch(`/api/waiver-candidates?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}${{_wvRid}}`)
     .then(r => r.json())
     .then(d => {{ wvWaiverData = d.candidates || []; window.wvFaabEnabled = d.faab_enabled !== false; wvRenderWaivers(); }})
     .catch(() => {{ window.brErrorState('wvWaiverList', 'Unable to load waiver data.', wvLoad); }});
@@ -474,11 +487,18 @@ function wvRenderWaivers() {{
       const bid = p.faab_low ? (p.faab_low + '&ndash;' + p.faab_high) : ('&le;' + p.faab_high);
       faabChip = `<span class="wv-faab" title="Suggested FAAB bid &mdash; % of your waiver budget">${{bid}}%</span>`;
     }}
+    let dropHint = '';
+    if (p.drop && p.drop.name) {{
+      dropHint = `<div class="wv-drop-hint" title="Suggested drop to make room &mdash; your weakest spare player below this target's value">`
+        + `<span class="wv-drop-lbl">Drop</span> `
+        + `<span class="wv-drop-pos">${{p.drop.position}}</span> ${{p.drop.name}}</div>`;
+    }}
     return `
     <div class="wv-player-row" onclick="openPlayerModal('${{p.player_id}}', '${{p.name.replace(/'/g,"\\'")}}')">
       <div>
         <div class="wv-player-name">${{p.name}}</div>
         <div class="wv-player-sub">${{[p.position, p.team, p.pos_rank_label, p.age ? 'Age ' + parseFloat(p.age).toFixed(1) : ''].filter(Boolean).join(' · ')}}${{usageChip}}</div>
+        ${{dropHint}}
       </div>
       <div class="wv-right">
         <span class="chip chip--sm ${{p.signal_class}}">${{p.signal}}</span>
