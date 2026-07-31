@@ -997,7 +997,10 @@ def _wrapped_player_leaders(history_ctx: dict) -> dict:
                 return []
 
         totals: dict[str, list] = {}  # pid -> [points, games_played]
-        with ThreadPoolExecutor(max_workers=min(len(weeks), 8)) as pool:
+        # Fetch every week's boxscore in a single concurrent batch (capped at 16)
+        # so covering the full season instead of just the regular season doesn't
+        # add a round-trip of latency to this once-per-league-season build.
+        with ThreadPoolExecutor(max_workers=min(len(weeks), 16)) as pool:
             for mus in pool.map(_fetch, weeks):
                 for m in mus:
                     for pid, pts in (m.get("players_points") or {}).items():
