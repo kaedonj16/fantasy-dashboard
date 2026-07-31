@@ -15951,6 +15951,9 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
     + '.cmp3-rowlbl{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;padding:10px;white-space:nowrap;}'
     + '.cmp3-cell{text-align:center;padding:10px 8px;font-weight:700;font-size:15px;font-variant-numeric:tabular-nums;border-top:1px solid var(--border);color:var(--text);}'
     + '.cmp3-best{color:var(--win);background:color-mix(in srgb,var(--win) 12%,transparent);}'
+    + '.cmp3-cat td{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);padding:14px 10px 4px;text-align:left;border-top:none;}'
+    + '.cmp3-sub{display:block;font-size:10px;color:var(--muted);font-weight:600;margin-top:2px;}'
+    + '.cmp3-trend{font-size:10px;font-weight:800;margin-left:5px;}'
     + '.cmp3-tabs{margin-bottom:14px;}'
     + '.cmp3-cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}'
     + '@media(max-width:720px){.cmp3-cols{grid-template-columns:1fr;}}'
@@ -15968,8 +15971,8 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
     + '</div>'
     + '<div class="compare-tab-panel" data-cmp3panel="overview">' + overviewHTML + '</div>'
     + '<div class="compare-tab-panel" data-cmp3panel="logs" hidden>' + _cols('cmp3Logs') + '</div>'
-    + '<div class="compare-tab-panel" data-cmp3panel="metrics" hidden>' + _cols('cmp3Adv') + '</div>'
-    + '<div class="compare-tab-panel" data-cmp3panel="usage" hidden>' + _cols('cmp3Wk') + '</div>';
+    + '<div class="compare-tab-panel" data-cmp3panel="metrics" hidden><div id="cmp3MetricsPanel"><div class="cmp3-colp-load">Loading&hellip;</div></div></div>'
+    + '<div class="compare-tab-panel" data-cmp3panel="usage" hidden><div id="cmp3UsagePanel"><div class="cmp3-colp-load">Loading&hellip;</div></div></div>';
 
   hostEl.querySelectorAll('.cmp3-head').forEach(b => {
     b.addEventListener('click', () => {
@@ -16014,64 +16017,211 @@ function cmp3EnsureStats() {
   });
 }
 
-// Advanced Metrics tab: three columns, each the single-player metrics view
-// (buildAdvancedMetricsHTML) fed by the same per-player endpoints + shared config.
+// Advanced Metrics tab: ONE unified table — a metric per row with three aligned,
+// best-in-row-highlighted value columns (mirrors the Overview table and the
+// two-player compare) instead of three cramped single-player panels. Fetches all
+// three players up front and renders once, so no column can get stuck "Loading".
 function cmp3EnsureMetrics() {
   const c = window._cmp3;
   if (!c || c.metricsDone) return;
   c.metricsDone = true;
+  const host = document.getElementById('cmp3MetricsPanel');
+  if (!host) return;
   const cfgP = (typeof _ensureAdvMetricsCfg === 'function') ? _ensureAdvMetricsCfg() : Promise.resolve({});
-  c.players.forEach(function (p, i) { _cmp3LoadMetrics(p, 'cmp3Adv' + i, cfgP); });
-}
-
-function _cmp3LoadMetrics(p, containerId, cfgP) {
-  const el = document.getElementById(containerId);
-  if (!el) return;
-  const season = _cmp3Season(p);
   const lid = (window.__brctx || {}).leagueId;
   const lp = (lid && lid !== 'None') ? '&league_id=' + encodeURIComponent(lid) : '';
-  Promise.all([
-    cfgP,
-    fetch('/api/player-advanced-metrics/' + encodeURIComponent(p.player_id) + '?season=' + season + lp).then(function (r) { return r.ok ? r.json() : {}; }).catch(function () { return {}; }),
-    fetch('/api/player-metric-ranks/' + encodeURIComponent(p.player_id) + '?season=' + season + lp).then(function (r) { return r.ok ? r.json() : {}; }).catch(function () { return {}; }),
-  ]).then(function (res) {
-    if (!el.isConnected) return;
-    const cfg = res[0] || {}, adv = res[1] || {}, rk = res[2] || {};
-    if (adv.premium_required) { el.innerHTML = '<div class="compare-pick-empty">Advanced metrics are a PRO feature.</div>'; return; }
-    const metrics = adv.metrics || {};
-    if (!Object.keys(metrics).length) { el.innerHTML = '<div class="compare-pick-empty">No advanced metrics available.</div>'; return; }
-    // buildAdvancedMetricsHTML reads metricsData.metrics / metricsData.position
-    // off its first arg, so it must get the FULL response object, not adv.metrics
-    // (passing the inner map left metricsData.metrics undefined → rendered nothing).
-    el.innerHTML = (typeof buildAdvancedMetricsHTML === 'function')
-      ? buildAdvancedMetricsHTML(adv, rk.ranks || {}, cfg, false, rk.counts || {}, rk.bounds || {})
-      : '<div class="compare-pick-empty">Metrics unavailable.</div>';
+  const fetchOne = function (p) {
+    const season = _cmp3Season(p);
+    return Promise.all([
+      fetch('/api/player-advanced-metrics/' + encodeURIComponent(p.player_id) + '?season=' + season + lp).then(function (r) { return r.ok ? r.json() : {}; }).catch(function () { return {}; }),
+      fetch('/api/player-metric-ranks/' + encodeURIComponent(p.player_id) + '?season=' + season + lp).then(function (r) { return r.ok ? r.json() : {}; }).catch(function () { return {}; }),
+    ]).then(function (res) {
+      const adv = res[0] || {}, rk = res[1] || {};
+      return {
+        metrics: adv.metrics || {}, premium: !!adv.premium_required,
+        ranks: rk.ranks || {}, counts: rk.counts || {}, bounds: rk.bounds || {},
+      };
+    });
+  };
+  Promise.all([cfgP].concat(c.players.map(fetchOne))).then(function (res) {
+    if (!host.isConnected) return;
+    const cfg = res[0] || {};
+    const datas = res.slice(1);
+    if (datas.every(function (d) { return d.premium; })) { host.innerHTML = '<div class="compare-pick-empty">Advanced metrics are a PRO feature.</div>'; return; }
+    if (datas.every(function (d) { return !Object.keys(d.metrics).length; })) { host.innerHTML = '<div class="compare-pick-empty">No advanced metrics available for this season.</div>'; return; }
+    host.innerHTML = _cmp3MetricTable(c.players, datas, cfg);
   }).catch(function () {
-    if (el.isConnected) el.innerHTML = '<div class="compare-pick-empty">Could not load advanced metrics.</div>';
+    if (host.isConnected) host.innerHTML = '<div class="compare-pick-empty">Could not load advanced metrics.</div>';
   });
 }
 
-// Usage tab: three columns of weekly trends, reusing buildWeeklyTrendRows.
+// Build the unified 3-player advanced-metrics table. Reuses the two-player
+// compare's config-driven, position-aware metric selection and category grouping.
+function _cmp3MetricTable(players, datas, cfg) {
+  const esc = (typeof _wlEsc === 'function') ? _wlEsc : (s => String(s == null ? '' : s));
+  const metricsArr = datas.map(function (d) { return d.metrics || {}; });
+  const positions = players.map(function (p) { return String(p.position || '').toUpperCase(); }).filter(Boolean);
+  const _FALLBACK = {
+    vorp: 'VORP', war: 'WAR', role_score: 'Role Score', snap_share: 'Snap Share',
+    opportunity_share: 'Opportunity Share', red_zone_usage: 'Red Zone Usage',
+    total_tds: 'Total TDs', total_rush_tds: 'Rush TDs', total_rec_tds: 'Rec TDs',
+    total_carries: 'Carries', total_targets: 'Targets', total_receptions: 'Receptions',
+    total_touches: 'Touches', catch_rate: 'Catch Rate', yards_per_carry: 'Yards/Carry',
+    yards_per_touch: 'Yards/Touch', yards_per_target: 'Yards/Target',
+  };
+  const cfgLabel = {};
+  let displayKeys = [];
+  if (cfg && Object.keys(cfg).length) {
+    for (const key of Object.keys(cfg)) {
+      const spec = cfg[key] || {};
+      if (metricsArr.every(function (m) { return m[key] == null; })) continue;
+      if (spec.positions && spec.positions.length && !positions.some(function (p) { return spec.positions.includes(p); })) continue;
+      cfgLabel[key] = spec.label || _FALLBACK[key] || key;
+      displayKeys.push(key);
+    }
+  }
+  if (!displayKeys.length) {
+    const all = new Set();
+    metricsArr.forEach(function (m) { Object.keys(m).forEach(function (k) { all.add(k); }); });
+    displayKeys = Array.from(all);
+  }
+  displayKeys = Array.from(new Set(displayKeys));
+  const label = function (k) { return cfgLabel[k] || _FALLBACK[k] || k; };
+  const fmt = function (v, spec) {
+    if (v == null) return '&ndash;';
+    if (spec) {
+      if (spec.integer) return String(Math.round(v));
+      if (spec.pct_frac) return (v * 100).toFixed(1) + '%';
+      if (spec.pct) return v.toFixed(1) + '%';
+      return Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2);
+    }
+    if (Number.isInteger(v)) return String(v);
+    return Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2);
+  };
+
+  // Category grouping — same order as the two-player compare / player modal.
+  const CAT_ORDER = ['Value', 'General', 'Passing', 'Rushing', 'Receiving', 'Volume'];
+  const groups = {}; const order = [];
+  for (const key of displayKeys) {
+    const cat = (cfg && cfg[key] && cfg[key].category) || 'Other';
+    if (!groups[cat]) { groups[cat] = []; order.push(cat); }
+    groups[cat].push(key);
+  }
+  Object.keys(groups).forEach(function (cat) { groups[cat].sort(function (a, b) { return label(a).localeCompare(label(b)); }); });
+  const cats = CAT_ORDER.filter(function (c) { return groups[c]; }).concat(order.filter(function (c) { return CAT_ORDER.indexOf(c) < 0; }));
+
+  const headCells = players.map(function (p, i) {
+    return '<th class="cmp3-col"><span class="cmp3-name">' + esc(p.name) + '</span>'
+      + '<span class="cmp3-accent" style="display:inline-block;background:' + _CMP3_COLORS[i] + ';"></span></th>';
+  }).join('');
+
+  let body = '';
+  for (const cat of cats) {
+    const keys = groups[cat];
+    const rowsHtml = [];
+    for (const key of keys) {
+      const spec = (cfg && cfg[key]) || null;
+      const vals = metricsArr.map(function (m) { return m[key]; });
+      if (vals.every(function (v) { return v == null; })) continue;
+      const lowerBetter = spec ? !!spec.lower_better : false;
+      const valid = vals.filter(function (v) { return v != null; });
+      let best = null;
+      if (valid.length > 1) best = lowerBetter ? Math.min.apply(null, valid) : Math.max.apply(null, valid);
+      const cells = vals.map(function (v, i) {
+        const isBest = best != null && v != null && v === best && valid.length > 1 && new Set(valid).size > 1;
+        const rank = datas[i].ranks[key];
+        const sub = (rank != null) ? '<span class="cmp3-sub">#' + rank + '</span>' : '';
+        return '<td class="cmp3-cell' + (isBest ? ' cmp3-best' : '') + '">' + fmt(v, spec) + sub + '</td>';
+      }).join('');
+      rowsHtml.push('<tr><th class="cmp3-rowlbl">' + esc(label(key)) + '</th>' + cells + '</tr>');
+    }
+    if (!rowsHtml.length) continue;
+    if (cat !== 'Other') body += '<tr class="cmp3-cat"><td colspan="' + (players.length + 1) + '">' + esc(cat) + '</td></tr>';
+    body += rowsHtml.join('');
+  }
+  if (!body) return '<div class="compare-pick-empty">No shared metrics available.</div>';
+  return '<div class="cmp3-wrap"><table class="cmp3-table"><thead><tr>'
+    + '<th class="cmp3-rowlbl" aria-hidden="true"></th>' + headCells
+    + '</tr></thead><tbody>' + body + '</tbody></table>'
+    + '<div class="cmp3-meta" style="text-align:right;padding:8px 4px 0;">#N = rank among qualified players</div></div>';
+}
+
+// Usage tab: ONE unified table of season-average usage stats (snaps, volume,
+// efficiency), three aligned columns with a 3-week trend arrow per player and
+// best-in-row highlighting. Fetches all three up front, renders once.
 function cmp3EnsureUsage() {
   const c = window._cmp3;
   if (!c || c.usageDone) return;
   c.usageDone = true;
-  c.players.forEach(function (p, i) { _cmp3LoadUsage(p, 'cmp3Wk' + i); });
+  const host = document.getElementById('cmp3UsagePanel');
+  if (!host) return;
+  const fetchOne = function (p) {
+    const season = _cmp3Season(p);
+    return fetch('/api/player-weekly-metrics/' + encodeURIComponent(p.player_id) + '?season=' + season)
+      .then(function (r) { return r.ok ? r.json() : {}; }).catch(function () { return {}; })
+      .then(function (d) { return (d && d.weeks) || []; });
+  };
+  Promise.all(c.players.map(fetchOne)).then(function (weeksArr) {
+    if (!host.isConnected) return;
+    if (weeksArr.every(function (w) { return !w.length; })) { host.innerHTML = '<div class="compare-pick-empty">No weekly data for this season.</div>'; return; }
+    host.innerHTML = _cmp3UsageTable(c.players, weeksArr);
+  }).catch(function () {
+    if (host.isConnected) host.innerHTML = '<div class="compare-pick-empty">Could not load weekly data.</div>';
+  });
 }
 
-function _cmp3LoadUsage(p, containerId) {
-  const el = document.getElementById(containerId);
-  if (!el) return;
-  const season = _cmp3Season(p);
-  fetch('/api/player-weekly-metrics/' + encodeURIComponent(p.player_id) + '?season=' + season)
-    .then(function (r) { return r.json(); })
-    .then(function (d) {
-      if (!el.isConnected) return;
-      const weeks = d.weeks || [];
-      if (!weeks.length) { el.innerHTML = '<div class="compare-pick-empty">No weekly data for this season.</div>'; return; }
-      el.innerHTML = (typeof buildWeeklyTrendRows === 'function') ? buildWeeklyTrendRows(weeks, p.position || '') : '';
-    })
-    .catch(function () { if (el.isConnected) el.innerHTML = '<div class="compare-pick-empty">Could not load weekly data.</div>'; });
+function _cmp3UsageTable(players, weeksArr) {
+  const esc = (typeof _wlEsc === 'function') ? _wlEsc : (s => String(s == null ? '' : s));
+  const avg = function (arr) { return arr.length ? arr.reduce(function (s, v) { return s + v; }, 0) / arr.length : null; };
+  // Per-player season average + 3-week-vs-season trend for a stat accessor.
+  const stat = function (weeks, get) {
+    if (!weeks.length) return { avg: null, trend: 0 };
+    const series = weeks.map(get).map(function (v) { return Number(v || 0); });
+    if (!series.some(function (v) { return v > 0; })) return { avg: null, trend: 0 };
+    const seasonAvg = avg(series);
+    const r3 = series.slice(-3);
+    const delta = avg(r3) - seasonAvg;
+    return { avg: seasonAvg, trend: delta };
+  };
+  const DEFS = [
+    { label: 'Snap %', get: w => w.snap_pct, suffix: '%' },
+    { label: 'Targets', get: w => w.targets },
+    { label: 'Touches', get: w => w.touches },
+    { label: 'Carries', get: w => w.carries },
+    { label: 'Rush Yds', get: w => w.rush_yards },
+    { label: 'Receptions', get: w => w.receptions },
+    { label: 'Rec Yds', get: w => w.rec_yards },
+    { label: 'Yds/Carry', get: w => (Number(w.carries || 0) > 0 ? Number(w.rush_yards || 0) / Number(w.carries) : 0) },
+    { label: 'Catch %', get: w => (Number(w.targets || 0) > 0 ? Number(w.receptions || 0) / Number(w.targets) * 100 : 0), suffix: '%' },
+    { label: 'PPR Pts', get: w => w.ppr_pts },
+  ];
+  const headCells = players.map(function (p, i) {
+    return '<th class="cmp3-col"><span class="cmp3-name">' + esc(p.name) + '</span>'
+      + '<span class="cmp3-accent" style="display:inline-block;background:' + _CMP3_COLORS[i] + ';"></span></th>';
+  }).join('');
+
+  let body = '';
+  DEFS.forEach(function (def) {
+    const cells = players.map(function (_, i) { return stat(weeksArr[i], def.get); });
+    if (cells.every(function (c) { return c.avg == null; })) return;  // drop stat nobody uses
+    const nums = cells.map(function (c) { return c.avg; });
+    const valid = nums.filter(function (v) { return v != null; });
+    const best = valid.length > 1 && new Set(valid).size > 1 ? Math.max.apply(null, valid) : null;
+    const tds = cells.map(function (c) {
+      if (c.avg == null) return '<td class="cmp3-cell">&ndash;</td>';
+      let arrow = '';
+      if (c.trend >= 0.5) arrow = '<span class="cmp3-trend" style="color:#10b981">&#9650;</span>';
+      else if (c.trend <= -0.5) arrow = '<span class="cmp3-trend" style="color:#ef4444">&#9660;</span>';
+      const isBest = best != null && c.avg === best;
+      return '<td class="cmp3-cell' + (isBest ? ' cmp3-best' : '') + '">' + c.avg.toFixed(1) + (def.suffix || '') + arrow + '</td>';
+    }).join('');
+    body += '<tr><th class="cmp3-rowlbl">' + esc(def.label) + '</th>' + tds + '</tr>';
+  });
+  if (!body) return '<div class="compare-pick-empty">No weekly data for this season.</div>';
+  return '<div class="cmp3-wrap"><table class="cmp3-table"><thead><tr>'
+    + '<th class="cmp3-rowlbl" aria-hidden="true"></th>' + headCells
+    + '</tr></thead><tbody>' + body + '</tbody></table>'
+    + '<div class="cmp3-meta" style="text-align:right;padding:8px 4px 0;">Season avg &middot; &#9650;&#9660; = last-3-wk trend</div></div>';
 }
 
 // Three-line value-history chart for the 3-way compare. Mirrors the two-player
