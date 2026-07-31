@@ -30885,79 +30885,6 @@ def build_scout_body(ctx: dict) -> str:
             f"</div>"
         )
 
-    # ── "Your edge this week" — viewer vs opponent, top-N value per position ────
-    # Roster-strength comparison (top-N by position on each full roster) rather
-    # than lineup-based, so it holds even before either lineup is locked.
-    def _roster_pos_topn(pids: list) -> dict:
-        out = {}
-        for pos, top_n in _STARTER_COUNTS.items():
-            vals = sorted(
-                [float((values_by_id.get(p) or {}).get("value") or 0) for p in pids
-                 if (values_by_id.get(p) or {}).get("position", "").upper() == pos],
-                reverse=True,
-            )
-            out[pos] = sum(vals[:top_n])
-        return out
-
-    viewer_roster = next((r for r in rosters if str(r.get("roster_id")) == viewer_roster_id), None)
-    edge_html = ""
-    if viewer_roster:
-        viewer_pids = [str(p) for p in (viewer_roster.get("players") or [])]
-        you_pos = _roster_pos_topn(viewer_pids)
-        opp_pos = _roster_pos_topn(all_pids)
-        deltas = []  # (pos, delta) where delta > 0 means viewer is stronger
-        for pos in ["QB", "RB", "WR", "TE"]:
-            deltas.append((pos, (you_pos.get(pos) or 0) - (opp_pos.get(pos) or 0)))
-        net = sum(d for _, d in deltas)
-        best = max(deltas, key=lambda x: x[1])
-        worst = min(deltas, key=lambda x: x[1])
-        # Only call a position an "edge"/"soft spot" if the gap is meaningful.
-        _THRESH = 0.06  # ~6% of a starter's value
-        best_pos, best_d = best
-        worst_pos, worst_d = worst
-        avg_starter = (sum((you_pos.get(p) or 0) + (opp_pos.get(p) or 0) for p in ["QB", "RB", "WR", "TE"]) / 8) or 1
-        if net > avg_starter * _THRESH:
-            lead = ("You hold the roster edge this week", "var(--color-win)")
-        elif net < -avg_starter * _THRESH:
-            lead = ("They hold the roster edge this week", "var(--color-loss)")
-        else:
-            lead = ("Even matchup on paper", "var(--muted)")
-        parts = []
-        if best_d > avg_starter * _THRESH:
-            parts.append(f"lean on your <strong>{best_pos}</strong>")
-        if worst_d < -avg_starter * _THRESH:
-            parts.append(f"they're stronger at <strong>{worst_pos}</strong>")
-        tip = (" — " + ", ".join(parts) + ".") if parts else "."
-
-        def _mm_row(pos, d):
-            you_v = you_pos.get(pos) or 0
-            opp_v = opp_pos.get(pos) or 0
-            pc = _POS_CLS.get(pos, "pos-k")
-            if d > avg_starter * _THRESH:
-                arrow, ac = "&#9664;", "var(--color-win)"      # advantage viewer (left)
-            elif d < -avg_starter * _THRESH:
-                arrow, ac = "&#9654;", "var(--color-loss)"     # advantage opp (right)
-            else:
-                arrow, ac = "&#8776;", "var(--muted)"          # even
-            return (
-                f"<div class='scout-mm-row'>"
-                f"<span class='scout-mm-you'>{you_v:.0f}</span>"
-                f"<span class='pos-badge {pc}'>{pos}</span>"
-                f"<span class='scout-mm-arrow' style='color:{ac};'>{arrow}</span>"
-                f"<span class='scout-mm-opp'>{opp_v:.0f}</span>"
-                f"</div>"
-            )
-
-        mm_rows = "".join(_mm_row(pos, d) for pos, d in deltas)
-        edge_html = (
-            f"<div class='card scout-edge' style='margin-bottom:14px;'>"
-            f"<div class='scout-edge-lead' style='color:{lead[1]};'>{lead[0]}{tip}</div>"
-            f"<div class='scout-mm-head'><span>You</span><span></span><span></span>"
-            f"<span>{opp_name}</span></div>"
-            f"<div class='scout-mm'>{mm_rows}</div>"
-            f"</div>"
-        )
-
     proj_html = ""
     if opp_proj is not None:
         proj_html = f"<span class='scout-proj'>Proj: <strong>{opp_proj:.1f}</strong></span>"
@@ -30989,18 +30916,6 @@ def build_scout_body(ctx: dict) -> str:
         f".inj-q{{background:#fef08a;color:#713f12;}}"
         f".inj-d{{background:#fed7aa;color:#7c2d12;}}"
         f".inj-o{{background:#fecaca;color:#7f1d1d;}}"
-        f".scout-edge{{padding:14px 16px;}}"
-        f".scout-edge-lead{{font-size:0.98em;font-weight:600;margin-bottom:10px;}}"
-        f".scout-mm-head{{display:grid;grid-template-columns:1fr auto auto 1fr;gap:8px;font-size:0.68em;"
-        f"text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:2px;}}"
-        f".scout-mm-head span:last-child{{text-align:right;}}"
-        f".scout-mm{{display:flex;flex-direction:column;gap:4px;}}"
-        f".scout-mm-row{{display:grid;grid-template-columns:1fr auto auto 1fr;gap:8px;align-items:center;"
-        f"padding:4px 0;border-bottom:1px solid var(--border);}}"
-        f".scout-mm-row:last-child{{border-bottom:none;}}"
-        f".scout-mm-you{{font-weight:700;font-variant-numeric:tabular-nums;}}"
-        f".scout-mm-opp{{font-weight:700;text-align:right;font-variant-numeric:tabular-nums;}}"
-        f".scout-mm-arrow{{font-size:0.9em;text-align:center;min-width:16px;}}"
         f"</style>"
         f"<div class='scout-header-row'>"
         f"<span class='scout-opp-name'>{opp_name}</span>"
@@ -31011,7 +30926,6 @@ def build_scout_body(ctx: dict) -> str:
         f"<div class='scout-stat'><span class='scout-stat-lbl'>Points For</span><span class='scout-stat-val'>{opp_pf:.1f}</span></div>"
         f"<div class='scout-stat'><span class='scout-stat-lbl'>Points Against</span><span class='scout-stat-val'>{opp_pa:.1f}</span></div>"
         f"</div>"
-        f"{edge_html}"
         f"{sw_html}"
         f"<div class='main-two-col'>"
         f"<div class='card'>"
