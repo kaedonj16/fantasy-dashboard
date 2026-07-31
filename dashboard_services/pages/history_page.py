@@ -1743,7 +1743,7 @@ _WRAPPED_BOOTSTRAP_JS = r"""
           var canvas;
           try { canvas = paintWrappedCard(data, logo); } catch (e) { done(); return; }
           if (window.brShareCanvas) {
-            window.brShareCanvas(canvas, 'season-wrapped.png', (data.league || 'League') + ' — Season Wrapped').then(done, done);
+            window.brShareCanvas(canvas, 'season-wrapped.png', (data.league || 'League') + ' - Season Wrapped').then(done, done);
           } else {
             try { window.open(canvas.toDataURL('image/png'), '_blank'); } catch (e) {}
             done();

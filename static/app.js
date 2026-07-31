@@ -1807,7 +1807,7 @@ window.emptyState = emptyState;
     banner.id = 'push-notif-banner';
     banner.innerHTML =
       '<div class="pwa-banner-left">' +
-        '<span class="push-bell-icon">&#128276;</span>' +
+        '<i class="fa-solid fa-bell push-bell-icon" aria-hidden="true"></i>' +
         '<div>' +
           '<div class="pwa-banner-title">Dynasty alerts</div>' +
           '<div class="pwa-banner-sub">Weekly risers, fallers &amp; trade tips</div>' +
@@ -2112,7 +2112,7 @@ window.emptyState = emptyState;
           var canvas;
           try { canvas = paintRecapCard(d, logo); } catch (e) { done(); return; }
           window.brShareCanvas(canvas, 'week-' + (d.week || '') + '-recap.png',
-            (d.league || 'League') + ' — Week ' + (d.week || '') + ' Recap').then(done, done);
+            (d.league || 'League') + ' - Week ' + (d.week || '') + ' Recap').then(done, done);
         });
       });
     }
@@ -13643,7 +13643,7 @@ async function initWatchlistPage() {
 
   await _wlServerSyncOnce();
   const list = _getWatchlist();
-  if (noteEl) noteEl.textContent = _wlSignedIn() ? 'Synced to your account' : 'Saved on this device — sign in to sync across devices';
+  if (noteEl) noteEl.textContent = _wlSignedIn() ? 'Synced to your account' : 'Saved on this device - sign in to sync across devices';
 
   function draw(rows) {
     if (countEl) {
@@ -18106,7 +18106,7 @@ window._rzBuildLiveHtml = function(pid, state, feed) {
             + (r.pts !== null ? '<span class="rz-pm-spts ' + (r.pts >= 0 ? 'pos' : 'neg') + '">' + (r.pts >= 0 ? '+' : '') + r.pts + '</span>' : '<span class="rz-pm-spts"></span>')
             + '</div>';
         }).join('')
-        + '<div class="rz-pm-stotal"><span>Fantasy Total</span><span>' + (total > 0 ? total : (fantasyPts !== null ? fantasyPts : '—')) + ' pts</span></div>'
+        + '<div class="rz-pm-stotal"><span>Fantasy Total</span><span>' + (total > 0 ? total : (fantasyPts !== null ? fantasyPts : '-')) + ' pts</span></div>'
         + '</div>';
     }
   }

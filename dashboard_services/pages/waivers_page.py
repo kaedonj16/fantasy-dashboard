@@ -485,11 +485,11 @@ function wvRenderWaivers() {{
     let faabChip = '';
     if (window.wvFaabEnabled && p.faab_high) {{
       const bid = p.faab_low ? (p.faab_low + '&ndash;' + p.faab_high) : ('&le;' + p.faab_high);
-      faabChip = `<span class="wv-faab" title="Suggested FAAB bid &mdash; % of your waiver budget">${{bid}}%</span>`;
+      faabChip = `<span class="wv-faab" title="Suggested FAAB bid - % of your waiver budget">${{bid}}%</span>`;
     }}
     let dropHint = '';
     if (p.drop && p.drop.name) {{
-      dropHint = `<div class="wv-drop-hint" title="Suggested drop to make room &mdash; your weakest spare player below this target's value">`
+      dropHint = `<div class="wv-drop-hint" title="Suggested drop to make room - your weakest spare player below this target's value">`
         + `<span class="wv-drop-lbl">Drop</span> `
         + `<span class="wv-drop-pos">${{p.drop.position}}</span> ${{p.drop.name}}</div>`;
     }}
@@ -657,7 +657,7 @@ function wvRenderCompare() {{
     verdictHtml =
       '<div class="wv-cmp-verdict toss">' +
         '<span class="wv-cmp-verdict-pill">TOSS-UP</span>' +
-        '<span class="wv-cmp-verdict-why">Nearly identical outlook — go with your gut.</span>' +
+        '<span class="wv-cmp-verdict-why">Nearly identical outlook - go with your gut.</span>' +
       '</div>';
   }}
 

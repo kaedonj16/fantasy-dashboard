@@ -5454,7 +5454,7 @@ def build_dashboard_body(ctx: dict) -> str:
               data-season="{html.escape(str(season))}"
               data-roster="{html.escape(str(viewer_roster_id))}">
               <div class="os-stat-label">Playoff odds</div>
-              <div class="os-stat-value" id="dash-playoff-val">&mdash;</div>
+              <div class="os-stat-value" id="dash-playoff-val">-</div>
               <div class="os-stat-sub" id="dash-playoff-sub">Simulating&hellip;</div>
             </div>"""
         # Slot right after the first (record) tile so it reads prominently.
@@ -7097,7 +7097,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         else:
             countdown_text = f"{_week1_delta} days"
             draft_text = f"Week 1 kicks off {_week1_date_txt}"
-        draft_subtext = "Draft date not set — schedule it before kickoff."
+        draft_subtext = "Draft date not set - schedule it before kickoff."
 
     teams_ctx = build_teams_overview(
         rosters=rosters,
@@ -7323,7 +7323,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
               data-season="{html.escape(str(season))}"
               data-roster="{html.escape(str(viewer_roster_id))}">
               <div class="os-stat-label">Projected playoff odds</div>
-              <div class="os-stat-value" id="os-playoff-val">&mdash;</div>
+              <div class="os-stat-value" id="os-playoff-val">-</div>
               <div class="os-stat-sub" id="os-playoff-sub">Projecting&hellip;</div>
             </div>"""
 
@@ -12769,7 +12769,7 @@ def page_redzone(platform: str, season: int, league_id: str):
             "<h2 style='margin:0 0 8px;'>Redzone is Sleeper-only for now</h2>"
             "<p style='color:var(--text-muted);font-size:14px;line-height:1.6;margin:0;'>"
             "Live Redzone tracking uses Sleeper's real-time player feed, which isn't "
-            "available for ESPN or Yahoo leagues yet. Everything else — your matchups, "
+            "available for ESPN or Yahoo leagues yet. Everything else - your matchups, "
             "scores, and the rest of the tools — works normally on this platform."
             "</p></div></div>"
         )
@@ -14164,7 +14164,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         These are <strong>dynasty fantasy football trade values</strong> for every relevant
         player, refreshed daily from real league-to-league market data and our value model.
         Each number estimates what the rest of your league would give up to acquire a player,
-        weighing recent production, age, and long-term outlook &mdash; not just this week's box
+        weighing recent production, age, and long-term outlook - not just this week's box
         score. Use the filters to switch between <strong>1QB and Superflex</strong>, change
         league size, or toggle redraft scoring, then take any player into the free
         <a href="/trade">Trade Calculator</a>. New to dynasty values? Start with

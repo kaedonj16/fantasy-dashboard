@@ -314,7 +314,7 @@ FAQ_SECTIONS = [
         ("What is the BR Fantasy Dashboard?",
          "It's a custom fantasy football dashboard that pulls in your Sleeper league "
          "data and turns it into power rankings, weekly summaries, matchup previews, "
-         "graphs, and more &mdash; all in one place."),
+         "graphs, and more - all in one place."),
         ("What do I need to use it?",
          "All you need is your Sleeper or ESPN league ID. Paste it into the home screen, "
          "and the dashboard will fetch public data for that league."),
@@ -338,8 +338,8 @@ FAQ_SECTIONS = [
          'usage, injuries, and market movement. The <a href="/top-movers">top movers</a> '
          "page highlights the biggest risers and fallers."),
         ("What do the fantasy terms on the site mean?",
-         'Every abbreviation and strategy term &mdash; ADP, Superflex, TE Premium, Zero-RB, '
-         'and more &mdash; is defined in plain English in the <a href="/glossary">fantasy '
+         'Every abbreviation and strategy term - ADP, Superflex, TE Premium, Zero-RB, '
+         'and more - is defined in plain English in the <a href="/glossary">fantasy '
          "football glossary</a>."),
     ]),
     ("Data &amp; Privacy", [
@@ -353,7 +353,7 @@ FAQ_SECTIONS = [
     ]),
     ("Premium / Ads / Support", [
         ("Is there a premium or ad-free mode?",
-         "Yes &mdash; league and personal subscriptions are available. See the Pricing page "
+         "Yes - league and personal subscriptions are available. See the Pricing page "
          "for details on what's included."),
         ("How can I support the site?",
          "You can support the project through a premium subscription, donations, "
@@ -361,7 +361,7 @@ FAQ_SECTIONS = [
          "Visit the Support page for options."),
     ]),
     ("Issues &amp; Feedback", [
-        ("The numbers look wrong &mdash; what should I do?",
+        ("The numbers look wrong - what should I do?",
          "First, hit the refresh button on the nav to clear cached data for your "
          "league. If something still looks off, send a message via the Contact "
          "page with your league ID and a short description of the issue."),
@@ -376,7 +376,7 @@ def _faq_plain(html_answer: str) -> str:
     """Strip inline tags/entities for the JSON-LD acceptedAnswer text."""
     import re
     txt = re.sub(r"<[^>]+>", "", html_answer)
-    txt = (txt.replace("&mdash;", "—").replace("&amp;", "&")
+    txt = (txt.replace("&mdash;", "-").replace("&amp;", "&")
               .replace("&lt;", "<").replace("&gt;", ">"))
     return re.sub(r"\s+", " ", txt).strip()
 
@@ -1127,7 +1127,7 @@ GLOSSARY = [
      "consensus value and tells you roughly when you'll have to reach to get a player."),
     ("Superflex", "SF",
      'A lineup with a flex spot that can start a quarterback, so most teams start two '
-     'QBs. It makes passers dramatically more valuable than in 1QB leagues &mdash; see '
+     'QBs. It makes passers dramatically more valuable than in 1QB leagues - see '
      '<a href="/guides/superflex-vs-1qb">Superflex vs 1QB</a>.'),
     ("TE Premium", "TEP",
      "Scoring that gives tight ends extra points per reception (often +0.5 PPR). It "
@@ -1140,7 +1140,7 @@ GLOSSARY = [
      "It's the idea behind why scarce positions are drafted earlier than raw points suggest."),
     ("Taxi Squad", None,
      "A reserve area for rookies and young players that keeps them off your active roster "
-     "without exposing them to waivers &mdash; a dynasty tool for stashing developmental talent."),
+     "without exposing them to waivers - a dynasty tool for stashing developmental talent."),
     ("Zero-RB", None,
      "A draft strategy that intentionally fades running back early to load up on receivers, "
      "then attacks RB value later in the draft and on the waiver wire."),
@@ -1151,7 +1151,7 @@ GLOSSARY = [
      "The backup who would inherit a starter's workload if he got hurt. Handcuffing your "
      "own bell-cow RB insures his weekly volume against injury."),
     ("Bell-Cow", None,
-     "A running back who dominates his team's touches &mdash; carries, goal-line work, and "
+     "A running back who dominates his team's touches - carries, goal-line work, and "
      "passing-down snaps. The most valuable and rarest RB archetype."),
     ("Startup Draft", None,
      "The initial draft that stocks a brand-new dynasty league from the entire player pool, "
@@ -1212,7 +1212,7 @@ GLOSSARY = [
      'A young player poised to leap to a new tier of production. Our '
      '<a href="/breakouts">breakouts</a> model flags candidates before the market does.'),
     ("Sleeper", None,
-     "A player being drafted well below his upside &mdash; low cost, high potential payoff. "
+     "A player being drafted well below his upside - low cost, high potential payoff. "
      "(Not to be confused with the Sleeper league platform.)"),
 ]
 
@@ -1239,7 +1239,7 @@ def glossary_page(platform: Optional[str] = None, season: Optional[int] = None,
     # descriptions; escape '<' so a definition's link can't break the <script>.
     def _plain(s: str) -> str:
         import re
-        s = re.sub(r"<[^>]+>", "", s).replace("&mdash;", "—").replace("&amp;", "&")
+        s = re.sub(r"<[^>]+>", "", s).replace("&mdash;", "-").replace("&amp;", "&")
         return re.sub(r"\s+", " ", s).strip()
 
     term_set = {
@@ -1275,6 +1275,6 @@ def glossary_page(platform: Optional[str] = None, season: Optional[int] = None,
         "Fantasy Football Glossary | BR Fantasy", league_id or None, "glossary",
         body, platform, season,
         description="Plain-English definitions of dynasty and redraft fantasy "
-                    "football terms — ADP, Superflex, TE Premium, Zero-RB, FAAB, "
+                    "football terms - ADP, Superflex, TE Premium, Zero-RB, FAAB, "
                     "target share, and more.",
     )
