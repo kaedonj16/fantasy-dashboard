@@ -15851,25 +15851,36 @@ function renderCompareInline(p1, p2, hostEl) {
   _compareWireView(p1, p2);
 }
 
-// Three-player shortlist / tie-break view. Deliberately a compact metric table
-// (players as columns, best-in-row highlighted) rather than the pairwise radar +
-// percentile layout, which only reads cleanly head-to-head. Leaves the two-player
-// path untouched: this only runs when a third player is selected.
+// Colors for the 3-way value-history lines (blue / amber / green), reused for
+// the header accent so a player's row of numbers ties to its trend line.
+const _CMP3_COLORS = ['#3b82f6', '#f59e0b', '#22c55e'];
+
+// Three-player shortlist / tie-break view. A metric table (players as columns,
+// best-in-row highlighted) instead of the pairwise radar + percentile layout,
+// which only reads head-to-head - but it still carries the two-player view's
+// headshot headers, the same value/PPG/total stats, and the value-history chart,
+// so little is lost. Leaves the two-player path untouched: only runs with a 3rd.
 function renderCompareTriple(d1, d2, d3, hostEl) {
   if (!hostEl) return;
   const players = [d1, d2, d3];
   const esc = (typeof _wlEsc === 'function') ? _wlEsc : (s => String(s == null ? '' : s));
   const num = v => (v == null || v === '' || isNaN(parseFloat(v))) ? null : parseFloat(v);
-  const season = players.map(p => (typeof _computeSeasonStats === 'function')
-    ? _computeSeasonStats(p) : { ppg: null, total: null, games: 0, season: null });
-  const seasonLabel = (season.find(s => s.season) || {}).season || '';
+  const st = p => (p && p.stats) || {};
+  const ppgSeason = st(d1).ppg_season || st(d2).ppg_season || st(d3).ppg_season || '';
 
-  const headCells = players.map(p => {
+  const headCells = players.map((p, i) => {
     const pos = String(p.position || '').toUpperCase();
+    const age = parseFloat(p.age);
+    const meta = [pos, p.team, isNaN(age) ? '' : age.toFixed(1) + ' yrs'].filter(Boolean).join(' · ');
+    const hs = p.espnHeadshot || '';
     return '<th class="cmp3-col">'
-      + '<button type="button" class="cmp3-name" data-pid="' + esc(p.player_id) + '" data-name="' + esc(p.name) + '">' + esc(p.name) + '</button>'
-      + '<div class="cmp3-meta"><span class="cmp3-pos pos-' + esc(pos) + '">' + esc(pos) + '</span>'
-      + (p.team ? ' · ' + esc(p.team) : '') + '</div></th>';
+      + '<button type="button" class="cmp3-head" data-pid="' + esc(p.player_id) + '" data-name="' + esc(p.name) + '">'
+      + (hs ? '<img class="cmp3-hs" src="' + esc(hs) + '" alt="" loading="lazy" onerror="this.style.visibility=\'hidden\'"/>'
+            : '<span class="cmp3-hs cmp3-hs-blank"></span>')
+      + '<span class="cmp3-name">' + esc(p.name) + '</span>'
+      + '<span class="cmp3-accent" style="background:' + _CMP3_COLORS[i] + ';"></span>'
+      + '<span class="cmp3-meta">' + esc(meta) + '</span>'
+      + '</button></th>';
   }).join('');
 
   // dir: 'max' (higher wins) | 'min' (lower wins) | null (display only, no winner).
@@ -15889,37 +15900,82 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
   }
 
   const rows = [
-    row('Dynasty Value', players.map(p => p.stats && p.stats.value), 'max', v => v == null ? '&ndash;' : Math.round(v)),
-    row('Overall Rank', players.map(p => p.stats && p.stats.value_ovr_rank), 'min', v => v == null ? '&ndash;' : ('#' + v)),
-    row('Position Rank', players.map(p => (p.pos_rank_label || (p.stats && p.stats.pos_rank_label))), null, v => v || '&ndash;'),
+    row('Dynasty Value (1QB)', players.map(p => st(p).value), 'max', v => v == null ? '&ndash;' : Math.round(v)),
+    row('Superflex Value', players.map(p => st(p).sf_value), 'max', v => v == null ? '&ndash;' : Math.round(v)),
+    row('Overall Rank', players.map(p => st(p).value_ovr_rank), 'min', v => v == null ? '&ndash;' : ('#' + v)),
+    row('Position Rank', players.map(p => (p.pos_rank_label || st(p).pos_rank_label)), null, v => v || '&ndash;'),
     row('Age', players.map(p => p.age), 'min', v => v == null ? '&ndash;' : (Math.round(v * 10) / 10)),
-    row((seasonLabel ? seasonLabel + ' ' : '') + 'PPG', season.map(s => s.ppg), 'max', v => v == null ? '&ndash;' : v),
-    row('Total Pts', season.map(s => s.total), 'max', v => v == null ? '&ndash;' : v),
-    row('Games', season.map(s => s.games), null, v => v ? v : '&ndash;'),
+    row((ppgSeason ? ppgSeason + ' ' : '') + 'PPG', players.map(p => st(p).ppg), 'max', v => v == null ? '&ndash;' : v),
+    row('Total Pts', players.map(p => st(p).total_pts), 'max', v => v == null ? '&ndash;' : v),
+    row('Games', players.map(p => st(p).ppg_games), null, v => (v == null || v === '') ? '&ndash;' : v),
   ].join('');
+
+  const anyHistory = players.some(p => (p.value_history || []).length > 0);
+  const chartBlock = anyHistory
+    ? '<hr class="pm-section-divider">'
+      + '<div class="pm-section-header"><span class="pm-section-label">Value History</span></div>'
+      + '<div id="compareTripleChart" class="player-modal-chart-container" style="min-height:240px;"></div>'
+    : '';
 
   hostEl.innerHTML =
     '<style>'
     + '.cmp3-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}'
-    + '.cmp3-table{width:100%;border-collapse:collapse;min-width:340px;}'
-    + '.cmp3-col{text-align:center;padding:6px 8px 12px;vertical-align:bottom;}'
-    + '.cmp3-name{background:none;border:none;padding:0;cursor:pointer;font-weight:800;font-size:14px;color:var(--text);line-height:1.2;}'
-    + '.cmp3-name:hover{text-decoration:underline;}'
-    + '.cmp3-meta{font-size:11px;color:var(--muted);margin-top:3px;}'
-    + '.cmp3-pos{font-weight:700;}'
-    + '.cmp3-rowlbl{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;padding:9px 10px;white-space:nowrap;}'
-    + '.cmp3-cell{text-align:center;padding:9px 8px;font-weight:700;font-variant-numeric:tabular-nums;border-top:1px solid var(--border);color:var(--text);}'
+    + '.cmp3-table{width:100%;border-collapse:collapse;min-width:360px;}'
+    + '.cmp3-col{text-align:center;padding:4px 8px 12px;vertical-align:bottom;width:26%;}'
+    + '.cmp3-head{display:flex;flex-direction:column;align-items:center;gap:5px;background:none;border:none;padding:0;width:100%;cursor:pointer;}'
+    + '.cmp3-hs{width:52px;height:52px;border-radius:50%;object-fit:cover;background:var(--surface2,rgba(127,127,127,.12));}'
+    + '.cmp3-hs-blank{display:inline-block;}'
+    + '.cmp3-name{font-weight:800;font-size:14px;color:var(--text);line-height:1.15;text-align:center;}'
+    + '.cmp3-head:hover .cmp3-name{text-decoration:underline;}'
+    + '.cmp3-accent{width:26px;height:3px;border-radius:2px;}'
+    + '.cmp3-meta{font-size:11px;color:var(--muted);text-align:center;}'
+    + '.cmp3-rowlbl{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;padding:10px;white-space:nowrap;}'
+    + '.cmp3-cell{text-align:center;padding:10px 8px;font-weight:700;font-size:15px;font-variant-numeric:tabular-nums;border-top:1px solid var(--border);color:var(--text);}'
     + '.cmp3-best{color:var(--win);background:color-mix(in srgb,var(--win) 12%,transparent);}'
     + '</style>'
     + '<div class="cmp3-wrap"><table class="cmp3-table"><thead><tr>'
     + '<th class="cmp3-rowlbl" aria-hidden="true"></th>' + headCells
-    + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+    + '</tr></thead><tbody>' + rows + '</tbody></table></div>'
+    + chartBlock;
 
-  hostEl.querySelectorAll('.cmp3-name').forEach(b => {
+  hostEl.querySelectorAll('.cmp3-head').forEach(b => {
     b.addEventListener('click', () => {
       if (typeof openPlayerModal === 'function') openPlayerModal(b.getAttribute('data-pid'), b.getAttribute('data-name'));
     });
   });
+
+  if (anyHistory) _renderTripleValueChart(players);
+}
+
+// Three-line value-history chart for the 3-way compare. Mirrors the two-player
+// #compareValueChart (same Plotly theming + hover), one line per player.
+function _renderTripleValueChart(players) {
+  const chartDiv = document.getElementById('compareTripleChart');
+  if (!chartDiv) return;
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const _ct = window.brandPlotlyTheme ? window.brandPlotlyTheme() : {};
+  const gridColor = _ct.grid || (isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)');
+  const textColor = _ct.text || (isDark ? '#9ca3af' : '#6b7280');
+  const traces = players.map((p, i) => ({
+    x: (p.value_history || []).map(h => h.as_of_date || h.date),
+    y: (p.value_history || []).map(h => h.value),
+    mode: 'lines', name: p.name,
+    line: { color: _CMP3_COLORS[i], width: 2.5 },
+    hovertemplate: '<b>' + (p.name || '') + '</b><br>%{x}<br>Value: %{y}<extra></extra>',
+  }));
+  const layout = {
+    paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+    font: { family: window.brandPlotlyFont, color: textColor },
+    margin: { t: 10, r: 16, b: 40, l: 46 },
+    xaxis: { showgrid: false, tickfont: { size: 11, color: textColor }, zeroline: false },
+    yaxis: { showgrid: true, gridcolor: gridColor, tickfont: { size: 11, color: textColor }, zeroline: false },
+    legend: { font: { size: 12, color: textColor }, bgcolor: 'transparent', orientation: 'h', x: 0, y: 1.1 },
+    hoverlabel: { font: { family: window.brandPlotlyFont, size: 12 }, bgcolor: _ct.hoverBg, bordercolor: _ct.hoverBorder },
+    hovermode: 'x unified', showlegend: true,
+  };
+  if (window.ensurePlotly) window.ensurePlotly().then(function () {
+    Plotly.newPlot(chartDiv, traces, layout, { responsive: true, displayModeBar: false });
+  }).catch(function () {});
 }
 
 function openComparisonView(p1, p2) {
