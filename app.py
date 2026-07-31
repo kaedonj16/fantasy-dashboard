@@ -19494,28 +19494,48 @@ def build_commissioner_body(ctx):
     score_color = "#22c55e" if activity_score >= 80 else ("#f59e0b" if activity_score >= 60 else "#ef4444")
     score_label = "Healthy" if activity_score >= 80 else ("Watch" if activity_score >= 60 else "At Risk")
 
+    # Composite card matching the Multi-Season Health treatment below: one card
+    # with a bold uppercase header + muted subtitle and the stats as nested,
+    # bordered/rounded tiles, instead of five separate floating cards.
     health_html = f"""
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:20px;">
-  <div class="card" style="padding:16px;text-align:center;">
-    <div style="font-size:28px;font-weight:700;color:{score_color};">{int(activity_score)}</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">HEALTH SCORE</div>
-    <div style="font-size:13px;font-weight:600;color:{score_color};">{score_label}</div>
+<style>
+  .lh-card {{ padding:20px; margin-bottom:20px; }}
+  .lh-head {{ display:flex; align-items:baseline; gap:8px; margin-bottom:18px; }}
+  .lh-head-title {{ font-size:12px; font-weight:800; letter-spacing:.06em; color:var(--text); text-transform:uppercase; }}
+  .lh-head-sub {{ font-size:12px; color:var(--muted); }}
+  .lh-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; }}
+  .lh-stat {{ border:1px solid var(--border); border-radius:14px; padding:16px; background:var(--row,rgba(127,127,127,.03)); text-align:center; }}
+  .lh-stat-num {{ font-size:28px; font-weight:800; line-height:1; }}
+  .lh-stat-label {{ font-size:11px; font-weight:700; letter-spacing:.04em; color:var(--muted); text-transform:uppercase; margin-top:6px; }}
+  .lh-stat-sub {{ font-size:13px; font-weight:600; margin-top:3px; }}
+</style>
+<div class="card lh-card">
+  <div class="lh-head">
+    <span class="lh-head-title">League Health</span>
+    <span class="lh-head-sub">this season</span>
   </div>
-  <div class="card" style="padding:16px;text-align:center;">
-    <div style="font-size:28px;font-weight:700;color:{'#ef4444' if inactive_count else '#22c55e'};">{inactive_count}</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">INACTIVE TEAMS</div>
-  </div>
-  <div class="card" style="padding:16px;text-align:center;">
-    <div style="font-size:28px;font-weight:700;color:var(--text);">{total_trades}</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">TRADES THIS SEASON</div>
-  </div>
-  <div class="card" style="padding:16px;text-align:center;">
-    <div style="font-size:28px;font-weight:700;color:{'#f59e0b' if lopsided_count else '#22c55e'};">{lopsided_count}</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">LOPSIDED TRADES</div>
-  </div>
-  <div class="card" style="padding:16px;text-align:center;">
-    <div style="font-size:28px;font-weight:700;color:var(--text);">{total_txns}</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">TOTAL MOVES</div>
+  <div class="lh-grid">
+    <div class="lh-stat">
+      <div class="lh-stat-num" style="color:{score_color};">{int(activity_score)}</div>
+      <div class="lh-stat-label">Health Score</div>
+      <div class="lh-stat-sub" style="color:{score_color};">{score_label}</div>
+    </div>
+    <div class="lh-stat">
+      <div class="lh-stat-num" style="color:{'#ef4444' if inactive_count else '#22c55e'};">{inactive_count}</div>
+      <div class="lh-stat-label">Inactive Teams</div>
+    </div>
+    <div class="lh-stat">
+      <div class="lh-stat-num" style="color:var(--text);">{total_trades}</div>
+      <div class="lh-stat-label">Trades This Season</div>
+    </div>
+    <div class="lh-stat">
+      <div class="lh-stat-num" style="color:{'#f59e0b' if lopsided_count else '#22c55e'};">{lopsided_count}</div>
+      <div class="lh-stat-label">Lopsided Trades</div>
+    </div>
+    <div class="lh-stat">
+      <div class="lh-stat-num" style="color:var(--text);">{total_txns}</div>
+      <div class="lh-stat-label">Total Moves</div>
+    </div>
   </div>
 </div>"""
 
