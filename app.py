@@ -540,6 +540,31 @@ _CSS_V = _static_hash(_CSS_FILE)
 _FA_V = _static_hash("font-awesome.css")
 _ICONS_V = _static_hash("icons.css")
 
+# When this worker booted — a cheap "did the deploy actually restart me?" signal
+# alongside the bundle hashes in /healthz/version.
+_PROCESS_STARTED_AT = datetime.now(timezone.utc).isoformat()
+
+
+@app.route("/healthz/version")
+def healthz_version():
+    """Deploy smoke-check: the content hashes of the bundles this process is
+    actually serving, plus the git SHA when available. After a deploy, hit this
+    and confirm the hashes changed / match the built files — so "is it live yet?"
+    is a one-request answer instead of guessing at a stale cache. Cache-busting
+    headers so an intermediary can never hand back a previous deploy's answer."""
+    resp = jsonify({
+        "app_js":       _APP_JS_V,
+        "public_js":    _PUBLIC_JS_V,
+        "rankings_js":  _RANKINGS_JS_V,
+        "teams_js":     _TEAMS_JS_V,
+        "redzone_js":   _REDZONE_JS_V,
+        "css":          _CSS_V,
+        "git_sha":      os.environ.get("RENDER_GIT_COMMIT") or os.environ.get("GIT_SHA") or "",
+        "started_at":   _PROCESS_STARTED_AT,
+    })
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    return resp
+
 
 @app.before_request
 def _perf_start():
