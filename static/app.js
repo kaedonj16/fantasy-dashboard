@@ -15957,6 +15957,10 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
     + '.cmp3-colp{min-width:0;}'
     + '.cmp3-colp-name{font-weight:800;font-size:13px;color:var(--text);text-align:center;padding:8px 0;border-bottom:1px solid var(--border);margin-bottom:10px;}'
     + '.cmp3-colp-load{padding:16px 0;text-align:center;color:var(--muted);font-size:12px;}'
+    // The weekly-usage grid is 2-up by default and only collapses below a 600px
+    // *viewport*; inside a ~1/3-width compare column that never fires, so the two
+    // stat rows overlap. Force a single column within the 3-way columns.
+    + '.cmp3-colp .pm-wt-grid{grid-template-columns:1fr;}'
     + '</style>'
     + '<div class="pm-tab-bar compare-tab-bar cmp3-tabs" role="tablist">'
     + _tab('overview', 'Overview', true) + _tab('logs', 'Stats', false)
@@ -16036,8 +16040,11 @@ function _cmp3LoadMetrics(p, containerId, cfgP) {
     if (adv.premium_required) { el.innerHTML = '<div class="compare-pick-empty">Advanced metrics are a PRO feature.</div>'; return; }
     const metrics = adv.metrics || {};
     if (!Object.keys(metrics).length) { el.innerHTML = '<div class="compare-pick-empty">No advanced metrics available.</div>'; return; }
+    // buildAdvancedMetricsHTML reads metricsData.metrics / metricsData.position
+    // off its first arg, so it must get the FULL response object, not adv.metrics
+    // (passing the inner map left metricsData.metrics undefined → rendered nothing).
     el.innerHTML = (typeof buildAdvancedMetricsHTML === 'function')
-      ? buildAdvancedMetricsHTML(metrics, rk.ranks || {}, cfg, false, rk.counts || {}, rk.bounds || {})
+      ? buildAdvancedMetricsHTML(adv, rk.ranks || {}, cfg, false, rk.counts || {}, rk.bounds || {})
       : '<div class="compare-pick-empty">Metrics unavailable.</div>';
   }).catch(function () {
     if (el.isConnected) el.innerHTML = '<div class="compare-pick-empty">Could not load advanced metrics.</div>';
