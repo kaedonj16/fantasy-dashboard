@@ -1,3 +1,4 @@
+import html
 import json
 from typing import Dict
 
@@ -72,6 +73,76 @@ def _luck_and_value_age_cards(ctx: dict, df_weekly_finalized, owner_colors: dict
               </div>
             </div>"""
     return cards
+
+
+def _consistency_card(team_stats, owner_colors: dict) -> str:
+    """Boom/bust consistency ranking from each team's weekly scoring spread.
+
+    Uses the coefficient of variation (STD / AVG): a lower ratio means a team
+    posts a similar score every week (steady), a higher ratio means big swings
+    (boom/bust). Teams are split into thirds by that ratio so the Steady /
+    Balanced / Boom-Bust label is percentile-ranked within the league rather
+    than tied to absolute thresholds that vary by scoring format."""
+    rows = []
+    for _, r in team_stats.iterrows():
+        try:
+            owner = r["owner"]
+            avg = float(r.get("AVG") or 0)
+            std = float(r.get("STD") or 0)
+        except Exception:
+            continue
+        if avg <= 0:
+            continue
+        rows.append((owner, avg, std, std / avg))
+    if len(rows) < 2:
+        return ""
+    rows.sort(key=lambda x: x[3])              # steadiest (lowest CV) first
+    cvs = [x[3] for x in rows]
+    lo, hi = min(cvs), max(cvs)
+    rng = (hi - lo) or 1.0
+    n = len(rows)
+
+    def _band(i: int):
+        # Percentile terciles: steadiest third, middle third, most volatile third.
+        if i < n / 3:
+            return "Steady", "#22c55e"
+        if i < 2 * n / 3:
+            return "Balanced", "#f59e0b"
+        return "Boom / Bust", "#ef4444"
+
+    body = ""
+    for i, (owner, avg, std, cv) in enumerate(rows):
+        label, col = _band(i)
+        dot = owner_colors.get(owner, "#9ca3af")
+        bar_w = 10 + (cv - lo) / rng * 90      # 10..100% of the track
+        body += (
+            f"<div class='cons-row'>"
+            f"<span class='cons-dot' style='background:{dot};'></span>"
+            f"<span class='cons-name'>{html.escape(str(owner))}</span>"
+            f"<span class='cons-track'><span class='cons-fill' style='width:{bar_w:.0f}%;background:{col};'></span></span>"
+            f"<span class='cons-vol' title='Week-to-week volatility (std / avg)'>{cv * 100:.0f}%</span>"
+            f"<span class='cons-band' style='color:{col};background:{col}1a;'>{label}</span>"
+            f"</div>"
+        )
+    return f"""
+    <div class="card">
+      <div class="card-header-row"><h2>Consistency (Boom / Bust)</h2></div>
+      <div class="card-body">
+        <div class="svg-graph-note">Week-to-week scoring volatility (standard deviation as a share of a team's average). Lower is steadier; higher swings between booms and busts. Ranked steadiest to most volatile.</div>
+        <style>
+          .cons-row {{ display:grid; grid-template-columns:12px minmax(90px,1.4fr) 3fr auto auto; align-items:center; gap:10px; padding:7px 2px; border-bottom:1px solid var(--border); }}
+          .cons-row:last-child {{ border-bottom:none; }}
+          .cons-dot {{ width:10px; height:10px; border-radius:50%; flex-shrink:0; }}
+          .cons-name {{ font-weight:600; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+          .cons-track {{ height:8px; border-radius:5px; background:var(--row,rgba(127,127,127,.12)); overflow:hidden; }}
+          .cons-fill {{ display:block; height:100%; border-radius:5px; }}
+          .cons-vol {{ font-size:12px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--muted); min-width:34px; text-align:right; }}
+          .cons-band {{ font-size:10.5px; font-weight:800; letter-spacing:.03em; padding:2px 8px; border-radius:999px; white-space:nowrap; }}
+          @media (max-width:520px) {{ .cons-row {{ grid-template-columns:10px minmax(70px,1fr) 2fr auto; }} .cons-vol {{ display:none; }} }}
+        </style>
+        {body}
+      </div>
+    </div>"""
 
 
 def build_graphs_body(ctx: dict) -> str:
@@ -260,6 +331,7 @@ def build_graphs_body(ctx: dict) -> str:
 
     # League-wide SVG scatters (luck quadrant + dynasty value vs age).
     svg_cards_html = _luck_and_value_age_cards(ctx, df_weekly, owner_colors)
+    consistency_html = _consistency_card(team_stats, owner_colors)
 
     # ---------- Sidebar: top teams + metrics + unified legend ----------
     top_rows = []
@@ -450,6 +522,8 @@ def build_graphs_body(ctx: dict) -> str:
                 <div id="chart-box" style="width:100%;min-height:350px;"></div>
               </div>
             </div>
+
+            {consistency_html}
 
             {svg_cards_html}
 
