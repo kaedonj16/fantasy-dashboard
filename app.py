@@ -16213,6 +16213,61 @@ def _opt_pos_breakdown(weeks_data: list) -> str:
     )
 
 
+def _opt_recurring_mistakes(weeks_data: list) -> str:
+    """Repeat offenders: individual players the viewer left on the bench in a
+    week where the optimal lineup would have started them. A player benched more
+    than once is a pattern worth naming ("you've benched Player X 3x"), so this
+    ranks by times-benched then points forfeited. Single one-off misses are
+    already covered by the week-by-week table, so require >= 2 occurrences."""
+    from collections import defaultdict
+    agg: dict = defaultdict(lambda: {"name": "", "pos": "", "weeks": [], "pts": 0.0})
+    for wd in weeks_data:
+        wk = wd.get("week")
+        for p in wd["players"]:
+            if p["optimal_start"] and not p["actual_start"]:
+                rec = agg[p["pid"]]
+                rec["name"] = p["name"]
+                rec["pos"] = p["pos"]
+                rec["weeks"].append(wk)
+                rec["pts"] += p["pts"]
+    repeats = [r for r in agg.values() if len(r["weeks"]) >= 2]
+    if not repeats:
+        return ""
+    repeats.sort(key=lambda r: (-len(r["weeks"]), -r["pts"]))
+    rows_html = ""
+    for r in repeats[:8]:
+        n = len(r["weeks"])
+        pos_color = _OPT_POS_COLORS.get(r["pos"], "#6b7280")
+        wk_list = ", ".join(f"W{w}" for w in sorted(w for w in r["weeks"] if w))
+        rows_html += (
+            f"<tr style='border-bottom:1px solid var(--border);'>"
+            f"<td style='padding:9px 12px;'>"
+            f"<span style='font-weight:700;color:{pos_color};margin-right:6px;'>{r['pos']}</span>"
+            f"<span style='font-weight:600;'>{html.escape(r['name'])}</span></td>"
+            f"<td style='padding:9px 12px;font-weight:700;'>{n}&times;</td>"
+            f"<td style='padding:9px 12px;color:#ef4444;font-weight:600;'>+{round(r['pts'],1)}</td>"
+            f"<td style='padding:9px 12px;color:var(--muted);font-size:12px;'>{wk_list}</td>"
+            f"</tr>"
+        )
+    return (
+        "<div class='card' style='margin-top:16px;overflow:auto;'>"
+        "<div class='card-header'><h3>Recurring Mistakes</h3></div>"
+        "<div style='padding:0 12px 4px;font-size:12px;color:var(--muted);'>"
+        "Players you benched in a week the optimal lineup would have started them, "
+        "twice or more this season.</div>"
+        "<table style='width:100%;min-width:420px;border-collapse:collapse;'>"
+        "<thead><tr style='border-bottom:1px solid var(--border);'>"
+        "<th style='padding:8px 12px;text-align:left;font-size:11px;color:var(--muted);'>PLAYER</th>"
+        "<th style='padding:8px 12px;text-align:left;font-size:11px;color:var(--muted);'>BENCHED</th>"
+        "<th style='padding:8px 12px;text-align:left;font-size:11px;color:var(--muted);'>PTS LOST</th>"
+        "<th style='padding:8px 12px;text-align:left;font-size:11px;color:var(--muted);'>WEEKS</th>"
+        "</tr></thead>"
+        f"<tbody>{rows_html}</tbody>"
+        "</table>"
+        "</div>"
+    )
+
+
 def build_optimal_body(ctx):
     from dashboard_services.platform_api import get_matchups as _gm
 
@@ -16549,8 +16604,9 @@ def build_optimal_body(ctx):
     )
 
     pos_html = _opt_pos_breakdown(weeks_data)
+    recurring_html = _opt_recurring_mistakes(weeks_data)
 
-    return nav_html + summary_html + table_html + pos_html
+    return nav_html + summary_html + table_html + pos_html + recurring_html
 
 
 @app.route("/<platform>/<int:season>/<league_id>/optimal")
