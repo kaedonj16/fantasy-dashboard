@@ -146,6 +146,24 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-stream-imp-bad  { background: color-mix(in srgb, var(--loss) 14%, transparent); color: var(--loss); }
 .wv-stream-imp-mid  { background: rgba(148,163,184,.16); color: var(--text-muted); }
 
+/* Lineup advice banner — points left on the bench + suggested swaps */
+.wv-ss-advice { border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; border: 1px solid var(--border); }
+.wv-ss-advice-ok { background: color-mix(in srgb, var(--win) 8%, transparent); border-color: color-mix(in srgb, var(--win) 30%, var(--border)); color: var(--text); font-size: 13px; font-weight: 600; }
+.wv-ss-advice-ok i { color: var(--win); margin-right: 6px; }
+.wv-ss-advice-warn { background: color-mix(in srgb, var(--accent) 7%, transparent); border-color: color-mix(in srgb, var(--accent) 30%, var(--border)); }
+.wv-ss-advice-head { font-size: 14px; font-weight: 700; color: var(--text); }
+.wv-ss-advice-head i { color: var(--accent); margin-right: 6px; }
+.wv-ss-advice-head strong { color: var(--accent); }
+.wv-ss-advice-sub { font-size: 11px; color: var(--text-muted); margin: 3px 0 10px; }
+.wv-ss-swap { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 5px 0; border-top: 1px solid var(--border); }
+.wv-ss-swap-in { font-weight: 700; color: var(--win); }
+.wv-ss-swap-arrow { font-size: 11px; color: var(--text-muted); }
+.wv-ss-swap-out { font-weight: 600; color: var(--text-muted); text-decoration: line-through; }
+.wv-ss-swap-gain { margin-left: auto; font-weight: 800; font-size: 12px; color: var(--win); font-variant-numeric: tabular-nums; }
+.wv-ss-winprob { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.wv-ss-winprob strong { color: var(--win); font-variant-numeric: tabular-nums; }
+.wv-ss-demote { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 5px; background: color-mix(in srgb, var(--loss) 12%, transparent); color: var(--loss); margin-left: 6px; }
+
 /* Start/Sit player cards */
 .wv-ss-pos-group { margin-bottom: 16px; }
 .wv-ss-pos-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
@@ -869,6 +887,13 @@ function wvRenderStartSit() {{
       const injBadge = wvInjBadge(p.injury_status);
       const cmpCls   = isSelected ? 'selected' : '';
       const statsRow = wvStatsRow(p);
+      const demoteNote = (p.demotion === 'low_total')
+        ? '<span class="wv-ss-demote">Low team total</span>' : '';
+      // Win-probability on the marginal start/sit call (last starter vs first
+      // benched). Only the server-flagged close call carries this.
+      const wpChip = (isStart && p.close_call && p.close_call.win_prob != null)
+        ? `<div class="wv-ss-winprob"><strong>${{Math.round(p.close_call.win_prob*100)}}%</strong> to outscore ${{p.close_call.vs_name}}</div>`
+        : '';
 
       return `
         <div class="wv-ss-player ${{isStart ? 'wv-ss-start' : ''}} ${{isBye ? 'wv-ss-bye' : ''}} ${{isSelected ? 'wv-ss-selected' : ''}}">
@@ -877,6 +902,7 @@ function wvRenderStartSit() {{
               <span class="wv-player-name">${{p.name}}</span>
               ${{injBadge}}
               ${{badge}}
+              ${{demoteNote}}
             </div>
             <div class="wv-ss-actions">
               <button class="wv-cmp-btn ${{isSelected ? 'selected' : ''}}"
@@ -886,6 +912,7 @@ function wvRenderStartSit() {{
             </div>
           </div>
           ${{statsRow}}
+          ${{wpChip}}
         </div>`;
     }}).join('');
 
@@ -893,8 +920,36 @@ function wvRenderStartSit() {{
     return `<div class="wv-ss-pos-group"><div class="wv-ss-pos-label">${{pos}} <span style="font-size:10px;font-weight:500;color:var(--text-muted);">(${{slotCount}} starter${{slotCount > 1 ? 's' : ''}})</span></div>${{rows}}</div>`;
   }}).join('');
 
-  if (sections) {{ el.innerHTML = sections; }}
+  // Lineup advice banner only makes sense across the whole lineup, so show it
+  // when no single position is filtered.
+  const advice = (wvCurrentPos === 'ALL') ? wvLineupAdvice() : '';
+  if (sections) {{ el.innerHTML = advice + sections; }}
+  else if (advice) {{ el.innerHTML = advice; }}
   else {{ window.brEmptyState(el, {{ icon: 'search', title: 'No roster data', message: 'We couldn’t find a lineup to analyze for this position.' }}); }}
+}}
+
+// Optimal-lineup verdict: the points left on the bench vs the viewer's current
+// starters, plus the specific swaps to fix it. Empty when the lineup is already
+// optimal or the viewer has no starters set.
+function wvLineupAdvice() {{
+  const a = wvStartSitData.lineup_advice;
+  if (!a || !a.has_current) return '';
+  const esc = s => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  if (!a.swaps.length || a.delta < 1) {{
+    return `<div class="wv-ss-advice wv-ss-advice-ok"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Your lineup is optimal — projected ${{a.optimal_pts}} pts (QB/RB/WR/TE).</div>`;
+  }}
+  const swaps = a.swaps.slice(0, 4).map(s => `
+    <div class="wv-ss-swap">
+      <span class="wv-ss-swap-in">${{esc(s.start.name)}}</span>
+      <span class="wv-ss-swap-arrow">over</span>
+      <span class="wv-ss-swap-out">${{esc(s.sit.name)}}</span>
+      <span class="wv-ss-swap-gain">+${{(s.gain || 0).toFixed(1)}}</span>
+    </div>`).join('');
+  return `<div class="wv-ss-advice wv-ss-advice-warn">
+    <div class="wv-ss-advice-head"><i class="fa-solid fa-arrow-trend-up" aria-hidden="true"></i> You're leaving <strong>${{a.delta.toFixed(1)}} pts</strong> on the bench</div>
+    <div class="wv-ss-advice-sub">${{a.optimal_pts}} optimal vs ${{a.current_pts}} current lineup</div>
+    ${{swaps}}
+  </div>`;
 }}
 
 document.addEventListener('DOMContentLoaded', wvLoad);
