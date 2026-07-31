@@ -11555,6 +11555,28 @@ def api_waiver_candidates():
     # Badge trend relative to the shown set so the (trend-sorted) list doesn't
     # read "Rising Fast" on every row.
     _fast_thr, _up_thr = _adaptive_trend_thresholds([c.get("rank_change_7d") for c in _shown])
+
+    # Suggested FAAB bid band (% of budget). Only the top targets warrant real
+    # money; a player who fills the viewer's own roster need is nudged up. A band
+    # rather than a number because league budgets differ ($100 / $1000 / rolling);
+    # the % reads the same regardless. Gated client-side on the league using FAAB.
+    _wv_settings = (ctx.get("league") or {}).get("settings") or {}
+    _faab_enabled = (
+        _safe_int(_wv_settings.get("waiver_type"), -1) == 2          # Sleeper FAAB
+        or bool(_wv_settings.get("waiver_budget"))                    # Sleeper budget set
+        or bool(_wv_settings.get("acquisition_budget"))              # ESPN
+        or not _wv_settings                                          # unknown → show; label is explicit
+    )
+    _wv_scores = [_safe_pickup_score(c) for c in _shown]
+    _wv_smin = min(_wv_scores) if _wv_scores else 0.0
+    _wv_srng = ((max(_wv_scores) - _wv_smin) if _wv_scores else 1.0) or 1.0
+
+    def _faab_band(_c):
+        _t = (_safe_pickup_score(_c) - _wv_smin) / _wv_srng          # 0..1 within shown set
+        _center = 1.0 + (_t ** 1.7) * 34.0                           # top target ~35%, tapers fast
+        _center *= 1.0 + min(max((_c.get("need_mult") or 1.0) - 1.0, 0.0), 0.35)  # fills your need → bid up
+        return max(0, int(round(_center * 0.78))), min(70, int(round(_center * 1.12)) + 1)
+
     for c in _shown:
         try:
             sig_cls, sig_label = _waiver_signal(
@@ -11563,6 +11585,7 @@ def api_waiver_candidates():
             )
             bscore = waiver_breakout.get(c["player_id"], 0.0)
             ut = usage_trends.get(c["player_id"]) or {}
+            _flo, _fhi = _faab_band(c)
             result.append({
                 "player_id": c["player_id"],
                 "name": c["name"],
@@ -11585,12 +11608,14 @@ def api_waiver_candidates():
                 "roster_need": round((c.get("need_mult") or 1.0) - 1.0, 3),
                 "scarcity": round((c.get("scarcity_mult") or 1.0) - 1.0, 3),
                 "schedule_ease_rank": c.get("schedule_ease_rank"),
+                "faab_low": _flo,
+                "faab_high": _fhi,
             })
         except Exception:
             logger.exception("[waiver-candidates] result row failed for %s", c.get("player_id"))
             continue
 
-    return jsonify({"candidates": result, "total": len(result)})
+    return jsonify({"candidates": result, "total": len(result), "faab_enabled": _faab_enabled})
 
 
 _WEEKLY_PTS_CACHE: dict = {}

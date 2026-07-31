@@ -68,6 +68,13 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-player-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 .wv-right { display: flex; align-items: center; gap: 10px; }
 .wv-value { font-size: 13px; font-weight: 700; color: var(--text); }
+/* Suggested FAAB bid band (% of budget). Accent-tinted so it reads as advice,
+   not a stat; tabular figures keep the range aligned row-to-row. */
+.wv-faab {
+  font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
 /* Waiver signal chips use the site's canonical `.chip .chip--sm` + a .signal-*
    colour alias (all defined once in dashboard.css). Nothing chip-related is
    overridden here. */
@@ -428,7 +435,7 @@ function wvStatsRow(p) {{
 function wvLoad() {{
   fetch(`/api/waiver-candidates?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
     .then(r => r.json())
-    .then(d => {{ wvWaiverData = d.candidates || []; wvRenderWaivers(); }})
+    .then(d => {{ wvWaiverData = d.candidates || []; window.wvFaabEnabled = d.faab_enabled !== false; wvRenderWaivers(); }})
     .catch(() => {{ window.brErrorState('wvWaiverList', 'Unable to load waiver data.', wvLoad); }});
 
   fetch(`/api/start-sit-options?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
@@ -462,6 +469,11 @@ function wvRenderWaivers() {{
       const statLbl = p.usage_stat === 'snap_pct' ? 'snap%' : (p.usage_stat === 'touches' ? 'touches' : 'targets');
       usageChip = `<span class="wv-usage-chip" title="Last-3-week avg vs season avg">&#9650; +${{p.usage_delta}} ${{statLbl}}</span>`;
     }}
+    let faabChip = '';
+    if (window.wvFaabEnabled && p.faab_high) {{
+      const bid = p.faab_low ? (p.faab_low + '&ndash;' + p.faab_high) : ('&le;' + p.faab_high);
+      faabChip = `<span class="wv-faab" title="Suggested FAAB bid &mdash; % of your waiver budget">${{bid}}%</span>`;
+    }}
     return `
     <div class="wv-player-row" onclick="openPlayerModal('${{p.player_id}}', '${{p.name.replace(/'/g,"\\'")}}')">
       <div>
@@ -470,6 +482,7 @@ function wvRenderWaivers() {{
       </div>
       <div class="wv-right">
         <span class="chip chip--sm ${{p.signal_class}}">${{p.signal}}</span>
+        ${{faabChip}}
         <span class="wv-value">${{Math.round(p.value)}}</span>
       </div>
     </div>
