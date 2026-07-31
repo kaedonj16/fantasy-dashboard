@@ -22528,6 +22528,27 @@ button:disabled {
   background: rgba(59,130,246,.15); color: #3b82f6;
 }
 
+/* ── Redzone: narrow-phone (≤430px) pass ──────────────────────────────────────
+   The sticky app bar packs the brand, week pill, live chip, refresh timer and
+   (in demo) the demo pill + exit into one non-wrapping row. Below ~430px that
+   overflowed the viewport. Tighten the paddings/gaps, let the brand truncate
+   before it pushes the status cluster off-screen, and keep the functional
+   right-hand controls intact. */
+@media (max-width: 430px) {
+  .rz-header { padding: 11px 12px; gap: 8px; }
+  .rz-brand { gap: 7px; min-width: 0; flex: 1 1 auto; }
+  .rz-brand-name {
+    font-size: 13px; letter-spacing: .06em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+  }
+  .rz-brand-week { padding: 2px 6px; }
+  .rz-header-right { gap: 6px; flex: 0 0 auto; }
+  .rz-live-chip { padding: 3px 8px; letter-spacing: .05em; }
+  .rz-refresh-timer { padding: 4px 8px; font-size: 10px; }
+  .rz-demo-pill { padding: 2px 5px; }
+  .rz-demo-exit { padding: 3px 8px; font-size: 9px; }
+}
+
 /* ── Global reduced-motion safeguard ──────────────────────────────────────────
    Honors the OS "reduce motion" setting across all animated UI (fire/ice
    pulses, spinners, transitions, smooth scrolling). Near-instant (0.01ms)
