@@ -276,13 +276,16 @@ def build_dynasty_value_chart_body(value_table: list[dict], as_of_date: str | No
 # ── Risers & Fallers ──────────────────────────────────────────────────────────
 
 def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
-                              signed_in: bool = False) -> str:
+                              signed_in: bool = False, days: int = 7) -> str:
     """Weekly risers and fallers page.
 
     signed_in: when True, player names render as clickable spans that open the
     in-app player modal (via the global [data-player-id] handler) instead of
     anchors that navigate to the public player page. Guests keep the crawlable
     <a> link for SEO.
+
+    days: active timeframe window (7/30/90). Drives the timeframe toggle so the
+    selected range is highlighted; each option is a crawlable ?days= link.
     """
     from dashboard_services.pages.player_page import slugify
 
@@ -369,15 +372,27 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
         if comp_date and latest_date else html.escape(date_str)
     )
 
+    _win_word = {7: "this week", 30: "over the last 30 days", 90: "over the last 90 days"}.get(days, "this week")
+
+    def _tf_opt(d: int, lbl: str) -> str:
+        active = d == days
+        cls = "rf-tf-opt is-active" if active else "rf-tf-opt"
+        aria = ' aria-current="true"' if active else ""
+        return f'<a class="{cls}" href="/top-movers?days={d}"{aria}>{lbl}</a>'
+
+    _toggle = "".join(_tf_opt(d, lbl) for d, lbl in ((7, "7d"), (30, "30d"), (90, "90d")))
+    toggle_html = f'<div class="rf-timeframe" role="group" aria-label="Timeframe">{_toggle}</div>'
+
     return f"""
 <div class="rf-page">
   <div class="rf-hero">
     <h1 class="rf-title">Dynasty Fantasy Football Top Movers</h1>
     <p class="rf-updated"><span class="rf-updated-dot"></span>Updated {html.escape(date_str)} · refreshed daily</p>
     <p class="rf-subtitle">
-      Biggest dynasty trade value movers this week, {range_note}.
+      Biggest dynasty trade value movers {_win_word}, {range_note}.
       Use the <a href="/trade">Trade Calculator</a> to act on these moves.
     </p>
+    {toggle_html}
   </div>
 
   <div class="rf-grid">

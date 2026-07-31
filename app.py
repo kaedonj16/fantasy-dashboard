@@ -31695,8 +31695,16 @@ def top_movers_page():
     """Weekly dynasty risers and fallers — freshness content for SEO."""
     from dashboard_services.pages.dynasty_pages import build_risers_fallers_body
     from data_building.player_value_history import get_top_movers
+    # Timeframe toggle: 7 / 30 / 90 days. Clamp to the supported set so a hand-
+    # typed ?days= can't push an unbounded window into the query.
     try:
-        movers = get_top_movers(days=7, limit=20, min_baseline_value=5,
+        days = int(request.args.get("days", 7))
+    except (ValueError, TypeError):
+        days = 7
+    if days not in (7, 30, 90):
+        days = 7
+    try:
+        movers = get_top_movers(days=days, limit=20, min_baseline_value=5,
                                 min_current_value=20.0,
                                 current_values=_displayed_value_map("1qb"))
     except Exception:
@@ -31705,14 +31713,17 @@ def top_movers_page():
     from datetime import datetime as _dt
     date_label = _dt.now().strftime("%B %d, %Y")
     body = build_risers_fallers_body(movers, as_of_date=date_label,
-                                     signed_in=bool(session.get("viewer_username")))
+                                     signed_in=bool(session.get("viewer_username")),
+                                     days=days)
 
+    _win_label = {7: "week", 30: "30 days", 90: "90 days"}[days]
     return render_page(
         f"Top Movers: {date_label} | BR Fantasy",
         None, "top-movers", body,
         description=(
-            f"Dynasty fantasy football risers and fallers for the week of {date_label}. "
-            f"Biggest trade value movers, act fast with the BR Fantasy Trade Calculator."
+            f"Dynasty fantasy football risers and fallers over the last {_win_label} "
+            f"({date_label}). Biggest trade value movers, act fast with the BR Fantasy "
+            f"Trade Calculator."
         ),
     )
 
