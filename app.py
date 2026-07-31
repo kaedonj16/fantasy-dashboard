@@ -32006,7 +32006,7 @@ def build_compare_page_body(popular_html: str = "") -> str:
           <header class="compare-page-head">
             <span class="compare-page-eyebrow"><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i> Head to head</span>
             <h1 class="compare-page-title">Compare Players</h1>
-            <p class="compare-page-sub">Put any two players side by side and see who comes out ahead. Type a tier like <strong>WR1</strong> or <strong>RB2</strong> to compare against the average of those top players.</p>
+            <p class="compare-page-sub">Put two players side by side and see who comes out ahead, or add a third for a shortlist. Type a tier like <strong>WR1</strong> or <strong>RB2</strong> to compare against the average of those top players.</p>
           </header>
           <div class="compare-pickers">
             <div class="compare-picker">
@@ -32027,6 +32027,16 @@ def build_compare_page_body(popular_html: str = "") -> str:
                 <div class="compare-pick-results" id="cmpResults2" role="listbox"></div>
               </div>
               <div class="compare-tier-suggest" id="cmpSuggest2" hidden></div>
+            </div>
+            <div class="compare-vs compare-vs-opt" aria-hidden="true">VS</div>
+            <div class="compare-picker compare-picker-opt">
+              <label class="compare-pick-label">Player 3 <span class="compare-pick-opt">optional</span></label>
+              <div class="compare-pick-field">
+                <input type="text" class="compare-pick-input" id="cmpPick3" placeholder="Add a third…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="cmpResults3" aria-autocomplete="list" aria-label="Search player 3">
+                <button type="button" class="compare-pick-clear" id="cmpClear3" aria-label="Clear player 3" hidden>&times;</button>
+                <div class="compare-pick-results" id="cmpResults3" role="listbox"></div>
+              </div>
+              <div class="compare-tier-suggest" id="cmpSuggest3" hidden></div>
             </div>
           </div>
           <div class="compare-actions" id="cmpActions" hidden>
