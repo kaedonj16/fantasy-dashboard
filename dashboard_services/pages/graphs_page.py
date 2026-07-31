@@ -169,10 +169,13 @@ def build_graphs_body(ctx: dict) -> str:
     owners = team_stats["owner"].tolist()
 
     # ---------- ONE shared color map ----------
+    # Validated categorical palette (dataviz skill): worst adjacent CVD ΔE 9.1,
+    # normal-vision ΔE 19.6; the lighter hues' sub-3:1 surface contrast is relieved
+    # by the direct team labels + legend every chart carries. Leagues past 8 teams
+    # cycle - no 10+ hue set can stay CVD-distinct, so 8 validated beats 10 raw.
     COLOR_CYCLE = [
-        "#636EFA", "#EF553B", "#00CC96", "#AB63FA",
-        "#FFA15A", "#19D3F3", "#FF6692",
-        "#B6E880", "#FF97FF", "#FECB52",
+        "#2a78d6", "#eb6834", "#1baf7a", "#eda100",
+        "#e87ba4", "#008300", "#4a3aa7", "#e34948",
     ]
     owner_colors: Dict[str, str] = {}
     for idx, o in enumerate(owners):
@@ -756,8 +759,9 @@ def build_career_graphs_body(career_ctx: dict) -> str:
       </div>{js_career}"""
 
 
+# Validated categorical palette (dataviz skill) - shared by the career graphs.
+# Same set as build_graphs_body so a team keeps one color across season/career.
 COLOR_CYCLE = [
-    "#636EFA", "#EF553B", "#00CC96", "#AB63FA",
-    "#FFA15A", "#19D3F3", "#FF6692",
-    "#B6E880", "#FF97FF", "#FECB52",
+    "#2a78d6", "#eb6834", "#1baf7a", "#eda100",
+    "#e87ba4", "#008300", "#4a3aa7", "#e34948",
 ]
