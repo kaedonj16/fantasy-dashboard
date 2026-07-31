@@ -11140,6 +11140,21 @@ def page_portfolio():
             })
     holdings.sort(key=lambda x: (-x["shares"], -x["value"]))
 
+    # Join 7-day value-rank movement from the in-memory value table (no DB round
+    # trip) so the Portfolio Movers digest works even when the per-league player
+    # blobs don't carry it. Only fill when missing so a real per-league value wins.
+    try:
+        _pf_rc = {str(r.get("id")): r.get("rank_change_7d")
+                  for r in (get_model_value_table_cached() or [])
+                  if isinstance(r, dict) and r.get("id")}
+        for _h in holdings:
+            if _h.get("rank_change_7d") in (None, 0):
+                _rc = _pf_rc.get(str(_h.get("pid")))
+                if _rc is not None:
+                    _h["rank_change_7d"] = _rc
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+
     body = build_portfolio_body(
         viewer_username, valid_leagues, leagues_data, season,
         holdings, num_leagues, nfl_exposure, cross_pos,
@@ -30462,6 +30477,74 @@ def api_trade_ideas_for_target():
 _POS_CLS_MAP = {"QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE"}
 
 
+def _portfolio_movers_card(holdings: list, pos_colors: dict) -> str:
+    """Cross-league movers digest: the biggest 7-day value-rank swings among the
+    players you own anywhere, split into risers and fallers. rank_change_7d is
+    (older rank - current rank), so a positive value means the player climbed."""
+    movers = [h for h in (holdings or []) if h.get("rank_change_7d") not in (None, 0)]
+    risers = sorted([h for h in movers if (h.get("rank_change_7d") or 0) > 0],
+                    key=lambda h: -(h.get("rank_change_7d") or 0))[:6]
+    fallers = sorted([h for h in movers if (h.get("rank_change_7d") or 0) < 0],
+                     key=lambda h: (h.get("rank_change_7d") or 0))[:6]
+    if not risers and not fallers:
+        return ""
+
+    def _row(h, up):
+        rc = abs(int(h.get("rank_change_7d") or 0))
+        pos = str(h.get("position") or "").upper()
+        col = pos_colors.get(pos, "#6b7280")
+        val = int(round(float(h.get("value") or 0)))
+        shares = int(h.get("shares") or len(h.get("in_leagues") or []) or 1)
+        sh = (f"<span class='pfm-sh' title='Held in {shares} of your leagues'>{shares}L</span>"
+              if shares > 1 else "")
+        dc = "var(--win)" if up else "var(--loss)"
+        ar = "&#9650;" if up else "&#9660;"
+        pid = html.escape(str(h.get("pid") or ""), quote=True)
+        nm = html.escape(str(h.get("name") or ""))
+        return (
+            f"<div class='pfm-row player-clickable' role='button' tabindex='0' "
+            f"data-player-id='{pid}' data-player-name='{nm}'>"
+            f"<span class='pfm-pos' style='color:{col};'>{pos}</span>"
+            f"<span class='pfm-name'>{nm}</span>{sh}"
+            f"<span class='pfm-val'>{val}</span>"
+            f"<span class='pfm-delta' style='color:{dc};'>{ar} {rc}</span>"
+            f"</div>"
+        )
+
+    def _col(title, rows, empty):
+        inner = "".join(rows) if rows else f"<div class='pfm-empty'>{empty}</div>"
+        return f"<div class='pfm-col'><div class='pfm-col-h'>{title}</div>{inner}</div>"
+
+    risers_html = _col("Risers", [_row(h, True) for h in risers], "No risers this week")
+    fallers_html = _col("Fallers", [_row(h, False) for h in fallers], "No fallers this week")
+    return (
+        "<style>"
+        ".pfm-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 22px;padding:4px 16px 14px;}"
+        "@media(max-width:640px){.pfm-grid{grid-template-columns:1fr;gap:0;}}"
+        ".pfm-col-h{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;"
+        "color:var(--text-muted);padding:8px 0 6px;border-bottom:1px solid var(--grid,var(--border));}"
+        ".pfm-row{display:flex;align-items:center;gap:8px;padding:7px 2px;"
+        "border-bottom:1px solid var(--grid,var(--border));cursor:pointer;}"
+        ".pfm-row:last-child{border-bottom:none;}"
+        ".pfm-row:hover{background:var(--row,rgba(127,127,127,.05));}"
+        ".pfm-pos{font-weight:800;font-size:11px;min-width:26px;}"
+        ".pfm-name{flex:1;font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}"
+        ".pfm-sh{font-size:10px;font-weight:700;color:var(--text-subtle);"
+        "background:var(--row,rgba(127,127,127,.1));padding:1px 5px;border-radius:5px;}"
+        ".pfm-val{font-size:12px;font-weight:700;color:var(--text-muted);font-variant-numeric:tabular-nums;min-width:34px;text-align:right;}"
+        ".pfm-delta{font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;min-width:40px;text-align:right;}"
+        ".pfm-empty{font-size:12px;color:var(--text-subtle);padding:12px 0;}"
+        "</style>"
+        "<div class='card' style='margin-bottom:14px;'>"
+        "<div class='card-header' style='display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;'>"
+        "<h3>Portfolio Movers</h3>"
+        "<span style='font-size:12px;color:var(--text-muted);'>Value-rank swings across your leagues &middot; last 7 days</span>"
+        "</div>"
+        f"<div class='pfm-grid'>{risers_html}{fallers_html}</div>"
+        "</div>"
+    )
+
+
 def build_portfolio_body(
     username: str,
     valid_leagues: list,
@@ -30889,11 +30972,13 @@ def build_portfolio_body(
 
     two_col = f"<div class='pf-grid'>{league_card}{pos_card}</div>" if pos_card else league_card
 
+    movers_html = _portfolio_movers_card(holdings, _POS_COLORS)
+
     if nfl_html and holdings_html:
         bottom_row = f"<div class='pf-grid-2'>{nfl_html}{holdings_html}</div>"
     else:
         bottom_row = nfl_html + holdings_html
-    return css + top_strip + two_col + bottom_row
+    return css + top_strip + two_col + movers_html + bottom_row
 
 
 def build_scout_body(ctx: dict) -> str:
