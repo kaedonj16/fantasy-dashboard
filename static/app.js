@@ -15917,6 +15917,25 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
       + '<div id="compareTripleChart" class="player-modal-chart-container" style="min-height:240px;"></div>'
     : '';
 
+  const overviewHTML =
+    '<div class="cmp3-wrap"><table class="cmp3-table"><thead><tr>'
+    + '<th class="cmp3-rowlbl" aria-hidden="true"></th>' + headCells
+    + '</tr></thead><tbody>' + rows + '</tbody></table></div>'
+    + chartBlock;
+
+  // Stats / Advanced Metrics / Usage are three side-by-side single-player views,
+  // lazy-loaded on first tab open (below), reusing the same renderers the player
+  // modal uses so they never drift from the head-to-head view.
+  const _col = (prefix, i, p) =>
+    '<div class="cmp3-colp"><div class="cmp3-colp-name">' + esc(p.name) + '</div>'
+    + '<div id="' + prefix + i + '"><div class="cmp3-colp-load">Loading&hellip;</div></div></div>';
+  const _cols = prefix => '<div class="cmp3-cols">' + players.map((p, i) => _col(prefix, i, p)).join('') + '</div>';
+  const _tab = (id, label, active) =>
+    '<button type="button" class="pm-tab' + (active ? ' active' : '') + '" data-cmp3tab="' + id + '"'
+    + ' role="tab" aria-selected="' + (active ? 'true' : 'false') + '" onclick="cmp3SwitchTab(\'' + id + '\')">' + label + '</button>';
+
+  window._cmp3 = { players: players, statsDone: false, metricsDone: false, usageDone: false };
+
   hostEl.innerHTML =
     '<style>'
     + '.cmp3-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}'
@@ -15932,11 +15951,21 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
     + '.cmp3-rowlbl{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;padding:10px;white-space:nowrap;}'
     + '.cmp3-cell{text-align:center;padding:10px 8px;font-weight:700;font-size:15px;font-variant-numeric:tabular-nums;border-top:1px solid var(--border);color:var(--text);}'
     + '.cmp3-best{color:var(--win);background:color-mix(in srgb,var(--win) 12%,transparent);}'
+    + '.cmp3-tabs{margin-bottom:14px;}'
+    + '.cmp3-cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}'
+    + '@media(max-width:720px){.cmp3-cols{grid-template-columns:1fr;}}'
+    + '.cmp3-colp{min-width:0;}'
+    + '.cmp3-colp-name{font-weight:800;font-size:13px;color:var(--text);text-align:center;padding:8px 0;border-bottom:1px solid var(--border);margin-bottom:10px;}'
+    + '.cmp3-colp-load{padding:16px 0;text-align:center;color:var(--muted);font-size:12px;}'
     + '</style>'
-    + '<div class="cmp3-wrap"><table class="cmp3-table"><thead><tr>'
-    + '<th class="cmp3-rowlbl" aria-hidden="true"></th>' + headCells
-    + '</tr></thead><tbody>' + rows + '</tbody></table></div>'
-    + chartBlock;
+    + '<div class="pm-tab-bar compare-tab-bar cmp3-tabs" role="tablist">'
+    + _tab('overview', 'Overview', true) + _tab('logs', 'Stats', false)
+    + _tab('metrics', 'Advanced Metrics', false) + _tab('usage', 'Usage', false)
+    + '</div>'
+    + '<div class="compare-tab-panel" data-cmp3panel="overview">' + overviewHTML + '</div>'
+    + '<div class="compare-tab-panel" data-cmp3panel="logs" hidden>' + _cols('cmp3Logs') + '</div>'
+    + '<div class="compare-tab-panel" data-cmp3panel="metrics" hidden>' + _cols('cmp3Adv') + '</div>'
+    + '<div class="compare-tab-panel" data-cmp3panel="usage" hidden>' + _cols('cmp3Wk') + '</div>';
 
   hostEl.querySelectorAll('.cmp3-head').forEach(b => {
     b.addEventListener('click', () => {
@@ -15945,6 +15974,97 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
   });
 
   if (anyHistory) _renderTripleValueChart(players);
+}
+
+// Tab switching for the 3-way compare. Lazy-loads each tab's per-player content
+// on first open (mirrors the two-player cmpSwitchTab).
+function cmp3SwitchTab(tab) {
+  document.querySelectorAll('.cmp3-tabs [data-cmp3tab]').forEach(function (b) {
+    const on = b.getAttribute('data-cmp3tab') === tab;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  document.querySelectorAll('[data-cmp3panel]').forEach(function (p) {
+    p.hidden = (p.getAttribute('data-cmp3panel') !== tab);
+  });
+  if (tab === 'logs') cmp3EnsureStats();
+  else if (tab === 'metrics') cmp3EnsureMetrics();
+  else if (tab === 'usage') cmp3EnsureUsage();
+  else if (tab === 'overview') {
+    const c = document.getElementById('compareTripleChart');
+    if (c && window.Plotly && c.data) { try { Plotly.Plots.resize(c); } catch (_) {} }
+  }
+}
+
+function _cmp3Season(p) {
+  return (p.stats && p.stats.ppg_season) || new Date().getFullYear();
+}
+
+// Stats tab: three columns of game logs, reusing the modal's per-player loader.
+function cmp3EnsureStats() {
+  const c = window._cmp3;
+  if (!c || c.statsDone) return;
+  c.statsDone = true;
+  c.players.forEach(function (p, i) {
+    if (typeof _cmpLoadGameLogs === 'function') _cmpLoadGameLogs(p.player_id, p.position, 'cmp3Logs' + i);
+  });
+}
+
+// Advanced Metrics tab: three columns, each the single-player metrics view
+// (buildAdvancedMetricsHTML) fed by the same per-player endpoints + shared config.
+function cmp3EnsureMetrics() {
+  const c = window._cmp3;
+  if (!c || c.metricsDone) return;
+  c.metricsDone = true;
+  const cfgP = (typeof _ensureAdvMetricsCfg === 'function') ? _ensureAdvMetricsCfg() : Promise.resolve({});
+  c.players.forEach(function (p, i) { _cmp3LoadMetrics(p, 'cmp3Adv' + i, cfgP); });
+}
+
+function _cmp3LoadMetrics(p, containerId, cfgP) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const season = _cmp3Season(p);
+  const lid = (window.__brctx || {}).leagueId;
+  const lp = (lid && lid !== 'None') ? '&league_id=' + encodeURIComponent(lid) : '';
+  Promise.all([
+    cfgP,
+    fetch('/api/player-advanced-metrics/' + encodeURIComponent(p.player_id) + '?season=' + season + lp).then(function (r) { return r.ok ? r.json() : {}; }).catch(function () { return {}; }),
+    fetch('/api/player-metric-ranks/' + encodeURIComponent(p.player_id) + '?season=' + season + lp).then(function (r) { return r.ok ? r.json() : {}; }).catch(function () { return {}; }),
+  ]).then(function (res) {
+    if (!el.isConnected) return;
+    const cfg = res[0] || {}, adv = res[1] || {}, rk = res[2] || {};
+    if (adv.premium_required) { el.innerHTML = '<div class="compare-pick-empty">Advanced metrics are a PRO feature.</div>'; return; }
+    const metrics = adv.metrics || {};
+    if (!Object.keys(metrics).length) { el.innerHTML = '<div class="compare-pick-empty">No advanced metrics available.</div>'; return; }
+    el.innerHTML = (typeof buildAdvancedMetricsHTML === 'function')
+      ? buildAdvancedMetricsHTML(metrics, rk.ranks || {}, cfg, false, rk.counts || {}, rk.bounds || {})
+      : '<div class="compare-pick-empty">Metrics unavailable.</div>';
+  }).catch(function () {
+    if (el.isConnected) el.innerHTML = '<div class="compare-pick-empty">Could not load advanced metrics.</div>';
+  });
+}
+
+// Usage tab: three columns of weekly trends, reusing buildWeeklyTrendRows.
+function cmp3EnsureUsage() {
+  const c = window._cmp3;
+  if (!c || c.usageDone) return;
+  c.usageDone = true;
+  c.players.forEach(function (p, i) { _cmp3LoadUsage(p, 'cmp3Wk' + i); });
+}
+
+function _cmp3LoadUsage(p, containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const season = _cmp3Season(p);
+  fetch('/api/player-weekly-metrics/' + encodeURIComponent(p.player_id) + '?season=' + season)
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (!el.isConnected) return;
+      const weeks = d.weeks || [];
+      if (!weeks.length) { el.innerHTML = '<div class="compare-pick-empty">No weekly data for this season.</div>'; return; }
+      el.innerHTML = (typeof buildWeeklyTrendRows === 'function') ? buildWeeklyTrendRows(weeks, p.position || '') : '';
+    })
+    .catch(function () { if (el.isConnected) el.innerHTML = '<div class="compare-pick-empty">Could not load weekly data.</div>'; });
 }
 
 // Three-line value-history chart for the 3-way compare. Mirrors the two-player
