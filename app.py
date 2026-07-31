@@ -8559,6 +8559,52 @@ def format_pick_display_label(
 from utils.value_helpers import apply_te_premium, te_premium_from_settings
 
 
+def _activity_your_players_block(roster_pids: dict) -> str:
+    """Cache-safe "your injured players first" enhancement for the activity page.
+
+    The activity HTML is cached per-league (shared by every viewer), so it can't
+    be personalized server-side. Instead we emit the league-generic roster→player
+    map (identical for all viewers, safe to cache) and let a tiny client script
+    pick the viewer's own players via window._viewerRid, badge them, and float them
+    to the top of the Injury Watch. Injury rows already carry data-player-id, so
+    the match is exact (no name fuzzing). No-op for logged-out viewers."""
+    import json as _json
+    data = _json.dumps({str(k): [str(p) for p in (v or [])]
+                        for k, v in (roster_pids or {}).items()})
+    return (
+        "<style>"
+        ".inj-yours{background:color-mix(in srgb,var(--accent) 8%,transparent);"
+        "box-shadow:inset 3px 0 0 var(--accent);}"
+        ".inj-yours-badge{display:inline-block;margin-left:6px;font-size:9px;font-weight:800;"
+        "letter-spacing:.04em;padding:1px 5px;border-radius:4px;background:var(--accent);"
+        "color:#fff;vertical-align:middle;}"
+        "</style>"
+        "<script>(function(){"
+        "var ROST=" + data + ";"
+        "function run(){"
+        "var rid=String(window._viewerRid||'');var mine=ROST[rid];"
+        "if(!mine||!mine.length)return;"
+        "var set={};mine.forEach(function(p){set[String(p)]=1;});"
+        "var rows=[].slice.call(document.querySelectorAll('.inj-row'));"
+        "if(!rows.length)return;var first=rows[0];var mineRows=[];"
+        "rows.forEach(function(row){"
+        "if(row.dataset.yrsDone)return;"
+        "var el=row.querySelector('[data-player-id]');"
+        "var pid=el?String(el.getAttribute('data-player-id')||''):'';"
+        "if(!pid||!set[pid])return;"
+        "row.dataset.yrsDone='1';row.classList.add('inj-yours');"
+        "var b=document.createElement('span');b.className='inj-yours-badge';b.textContent='YOURS';"
+        "(el||row).appendChild(b);mineRows.push(row);"
+        "});"
+        "mineRows.forEach(function(r){if(first&&r!==first&&first.parentNode)"
+        "first.parentNode.insertBefore(r,first);});"
+        "}"
+        "if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',run);else run();"
+        "var _ipr=window.initPageRoot;window.initPageRoot=function(x){if(_ipr)_ipr(x);try{run();}catch(e){}};"
+        "})();</script>"
+    )
+
+
 def build_activity_body(ctx: dict) -> str:
     league_id = ctx["league_id"]
     resolved_league_id = ctx.get("resolved_league_id", league_id)
@@ -9274,6 +9320,17 @@ def build_activity_body(ctx: dict) -> str:
     injury_html = ""
     if injury_df is not None and not injury_df.empty:
         injury_html = render_injury_watch(injury_df)
+        # Float the signed-in viewer's own injured players to the top with a badge
+        # (client-side, cache-safe — see helper). Skipped silently on any issue.
+        try:
+            _act_roster_pids = {
+                str(r.get("roster_id")): [str(p) for p in (r.get("players") or [])]
+                for r in (ctx.get("rosters") or [])
+            }
+            if _act_roster_pids:
+                injury_html += _activity_your_players_block(_act_roster_pids)
+        except Exception:
+            logger.debug("activity your-players block skipped", exc_info=True)
     else:
         injury_html = (
             "<div class='card'>"
