@@ -68,6 +68,13 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-player-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 .wv-right { display: flex; align-items: center; gap: 10px; }
 .wv-value { font-size: 13px; font-weight: 700; color: var(--text); }
+/* Suggested FAAB bid band (% of budget). Accent-tinted so it reads as advice,
+   not a stat; tabular figures keep the range aligned row-to-row. */
+.wv-faab {
+  font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
 /* Waiver signal chips use the site's canonical `.chip .chip--sm` + a .signal-*
    colour alias (all defined once in dashboard.css). Nothing chip-related is
    overridden here. */
@@ -75,6 +82,64 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
   display: inline-block; font-size: 10px; font-weight: 700; color: var(--win);
   margin-left: 6px; white-space: nowrap;
 }
+/* Add/drop pairing: the suggested cut to make room for this target. Muted so it
+   reads as a secondary hint under the player, with a small position tag. */
+.wv-drop-hint {
+  font-size: 11px; color: var(--text-muted); margin-top: 3px;
+  display: flex; align-items: center; gap: 5px;
+}
+.wv-drop-lbl {
+  font-size: 9px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--loss); background: color-mix(in srgb, var(--loss) 13%, transparent);
+  padding: 1px 5px; border-radius: 4px;
+}
+.wv-drop-pos { font-weight: 700; color: var(--text); }
+
+/* Trending-across-leagues strip: a horizontal, scrollable row of the most-added
+   players Sleeper-wide that this league can still claim. */
+.wv-trending-title { display: flex; align-items: center; gap: 6px; }
+.wv-trending-title i { color: #f97316; }
+.wv-trending-strip {
+  display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 18px;
+  -webkit-overflow-scrolling: touch; scrollbar-width: thin;
+}
+.wv-trend-chip {
+  flex: 0 0 auto; display: flex; flex-direction: column; gap: 2px; text-align: left;
+  padding: 8px 12px; border-radius: 10px; background: var(--card);
+  border: 1px solid var(--border); cursor: pointer; min-width: 120px;
+  transition: border-color .12s;
+}
+.wv-trend-chip:hover { border-color: var(--accent); }
+.wv-trend-adds {
+  font-size: 11px; font-weight: 800; color: #f97316;
+  display: flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums;
+}
+.wv-trend-name { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; }
+.wv-trend-sub { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+
+/* Streaming this week: matchup-ranked D/ST and K, shown under the waiver list
+   only in season. Implied-total chip is green for a good spot, red for a dud
+   (meaning is inverted for defenses, where a low opponent total is good). */
+.wv-stream-head { margin-top: 22px; }
+.wv-stream-group { margin-bottom: 10px; }
+.wv-stream-sub {
+  font-size: 10px; font-weight: 700; color: var(--text-subtle, var(--text-muted));
+  text-transform: uppercase; letter-spacing: .05em; margin: 4px 2px 6px;
+}
+.wv-stream-row {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin-bottom: 6px;
+  border-radius: 8px; background: var(--card); border: 1px solid var(--border); cursor: pointer;
+}
+.wv-stream-row:hover { border-color: var(--accent); }
+.wv-stream-name { font-weight: 700; font-size: 13px; color: var(--text); }
+.wv-stream-matchup { font-size: 12px; color: var(--text-muted); flex: 1; }
+.wv-stream-imp {
+  font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 999px;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.wv-stream-imp-good { background: color-mix(in srgb, var(--win) 16%, transparent); color: var(--win); }
+.wv-stream-imp-bad  { background: color-mix(in srgb, var(--loss) 14%, transparent); color: var(--loss); }
+.wv-stream-imp-mid  { background: rgba(148,163,184,.16); color: var(--text-muted); }
 
 /* Start/Sit player cards */
 .wv-ss-pos-group { margin-bottom: 16px; }
@@ -266,9 +331,20 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
   <div class="wv-layout">
     <!-- Left: Waiver Wire -->
     <div class="wv-section wv-tab-active" id="wvSectionWaivers">
+      <div id="wvTrendingWrap" hidden>
+        <div class="wv-section-title wv-trending-title">
+          <i class="fa-solid fa-fire" aria-hidden="true"></i> Trending across leagues
+        </div>
+        <div id="wvTrendingStrip" class="wv-trending-strip"></div>
+      </div>
       <div class="wv-section-title">Waiver Wire</div>
       <div id="wvWaiverList">
         {wv_skel}
+      </div>
+      <div id="wvStreamWrap" hidden>
+        <div class="wv-section-title wv-stream-head">Streaming this week</div>
+        <div id="wvStreamDef" class="wv-stream-group"></div>
+        <div id="wvStreamK" class="wv-stream-group"></div>
       </div>
     </div>
 
@@ -426,10 +502,21 @@ function wvStatsRow(p) {{
 
 // ── Load ──────────────────────────────────────────────────────────────────────
 function wvLoad() {{
-  fetch(`/api/waiver-candidates?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
+  const _wvRid = window._viewerRid ? ('&rid=' + encodeURIComponent(window._viewerRid)) : '';
+  fetch(`/api/waiver-candidates?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}${{_wvRid}}`)
     .then(r => r.json())
-    .then(d => {{ wvWaiverData = d.candidates || []; wvRenderWaivers(); }})
+    .then(d => {{ wvWaiverData = d.candidates || []; window.wvFaabEnabled = d.faab_enabled !== false; wvRenderWaivers(); }})
     .catch(() => {{ window.brErrorState('wvWaiverList', 'Unable to load waiver data.', wvLoad); }});
+
+  fetch(`/api/trending-adds?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
+    .then(r => r.json())
+    .then(d => wvRenderTrending(d.trending || []))
+    .catch(() => {{}});   // strip is a bonus; stay silent on failure
+
+  fetch(`/api/streaming-options?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
+    .then(r => r.json())
+    .then(d => wvRenderStreaming(d))
+    .catch(() => {{}});   // in-season only; silent otherwise
 
   fetch(`/api/start-sit-options?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
     .then(r => r.json())
@@ -462,19 +549,95 @@ function wvRenderWaivers() {{
       const statLbl = p.usage_stat === 'snap_pct' ? 'snap%' : (p.usage_stat === 'touches' ? 'touches' : 'targets');
       usageChip = `<span class="wv-usage-chip" title="Last-3-week avg vs season avg">&#9650; +${{p.usage_delta}} ${{statLbl}}</span>`;
     }}
+    let faabChip = '';
+    if (window.wvFaabEnabled && p.faab_high) {{
+      const bid = p.faab_low ? (p.faab_low + '&ndash;' + p.faab_high) : ('&le;' + p.faab_high);
+      faabChip = `<span class="wv-faab" title="Suggested FAAB bid - % of your waiver budget">${{bid}}%</span>`;
+    }}
+    let dropHint = '';
+    if (p.drop && p.drop.name) {{
+      dropHint = `<div class="wv-drop-hint" title="Suggested drop to make room - your weakest spare player below this target's value">`
+        + `<span class="wv-drop-lbl">Drop</span> `
+        + `<span class="wv-drop-pos">${{p.drop.position}}</span> ${{p.drop.name}}</div>`;
+    }}
     return `
     <div class="wv-player-row" onclick="openPlayerModal('${{p.player_id}}', '${{p.name.replace(/'/g,"\\'")}}')">
       <div>
         <div class="wv-player-name">${{p.name}}</div>
         <div class="wv-player-sub">${{[p.position, p.team, p.pos_rank_label, p.age ? 'Age ' + parseFloat(p.age).toFixed(1) : ''].filter(Boolean).join(' · ')}}${{usageChip}}</div>
+        ${{dropHint}}
       </div>
       <div class="wv-right">
         <span class="chip chip--sm ${{p.signal_class}}">${{p.signal}}</span>
+        ${{faabChip}}
         <span class="wv-value">${{Math.round(p.value)}}</span>
       </div>
     </div>
   `;
   }}).join('');
+}}
+
+// ── Trending across leagues (Sleeper league-wide add counts) ───────────────────
+function wvFmtAdds(n) {{
+  n = +n || 0;
+  return n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\\.0$/, '') + 'k' : String(n);
+}}
+function wvRenderTrending(items) {{
+  const wrap = document.getElementById('wvTrendingWrap');
+  const strip = document.getElementById('wvTrendingStrip');
+  if (!wrap || !strip || !items.length) {{ if (wrap) wrap.hidden = true; return; }}
+  strip.innerHTML = items.map(p => {{
+    const pos = p.position || '';
+    const sub = [pos, p.team].filter(Boolean).join(' · ');
+    const nm = (p.name || '').replace(/'/g, "\\\\'");
+    return `
+      <button type="button" class="wv-trend-chip" onclick="openPlayerModal('${{p.player_id}}', '${{nm}}')"
+              title="${{wvFmtAdds(p.adds)}} adds across Sleeper leagues">
+        <span class="wv-trend-adds"><i class="fa-solid fa-fire" aria-hidden="true"></i> ${{wvFmtAdds(p.adds)}}</span>
+        <span class="wv-trend-name">${{p.name || ''}}</span>
+        <span class="wv-trend-sub">${{sub}}</span>
+      </button>`;
+  }}).join('');
+  wrap.hidden = false;
+}}
+
+// ── Streaming this week (matchup-based D/ST + K) ───────────────────────────────
+function wvStreamRow(p, implied, isDef) {{
+  const nm = (p.name || '').replace(/'/g, "\\\\'");
+  const impNum = implied != null ? +implied : null;
+  let impCls = 'mid';
+  if (impNum != null) impCls = impNum >= 26 ? 'high' : (impNum <= 18 ? 'low' : 'mid');
+  // For a defense a LOW opponent total is good, so invert the color meaning.
+  const good = isDef ? (impNum != null && impNum <= 18) : (impNum != null && impNum >= 26);
+  const bad  = isDef ? (impNum != null && impNum >= 26) : (impNum != null && impNum <= 18);
+  const impCls2 = good ? 'good' : (bad ? 'bad' : 'mid');
+  const impLabel = impNum != null
+    ? (isDef ? (impNum.toFixed(0) + ' opp') : (impNum.toFixed(0) + ' impl'))
+    : '';
+  const impChip = impLabel
+    ? `<span class="wv-stream-imp wv-stream-imp-${{impCls2}}" title="Vegas implied team total">${{impLabel}}</span>`
+    : '';
+  return `
+    <div class="wv-stream-row" onclick="openPlayerModal('${{p.player_id}}', '${{nm}}')">
+      <span class="wv-stream-name">${{p.name || ''}}</span>
+      <span class="wv-stream-matchup">${{p.matchup || ''}}</span>
+      ${{impChip}}
+    </div>`;
+}}
+function wvRenderStreaming(d) {{
+  const wrap = document.getElementById('wvStreamWrap');
+  const defEl = document.getElementById('wvStreamDef');
+  const kEl = document.getElementById('wvStreamK');
+  if (!wrap || !d || !d.in_season) {{ if (wrap) wrap.hidden = true; return; }}
+  const defs = d.defense || [], ks = d.kicker || [];
+  if (!defs.length && !ks.length) {{ wrap.hidden = true; return; }}
+  defEl.innerHTML = defs.length
+    ? '<div class="wv-stream-sub">Defense</div>' + defs.slice(0, 5).map(p => wvStreamRow(p, p.opp_implied, true)).join('')
+    : '';
+  kEl.innerHTML = ks.length
+    ? '<div class="wv-stream-sub">Kicker</div>' + ks.slice(0, 5).map(p => wvStreamRow(p, p.own_implied, false)).join('')
+    : '';
+  wrap.hidden = false;
 }}
 
 // ── Compare slot management ───────────────────────────────────────────────────
@@ -624,7 +787,7 @@ function wvRenderCompare() {{
     verdictHtml =
       '<div class="wv-cmp-verdict toss">' +
         '<span class="wv-cmp-verdict-pill">TOSS-UP</span>' +
-        '<span class="wv-cmp-verdict-why">Nearly identical outlook — go with your gut.</span>' +
+        '<span class="wv-cmp-verdict-why">Nearly identical outlook - go with your gut.</span>' +
       '</div>';
   }}
 

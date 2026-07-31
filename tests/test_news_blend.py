@@ -173,3 +173,74 @@ def test_blend_sources_three_way_priority_and_dedupe():
     assert len(out) == 2
     assert any(i["source"] == "ESPN" for i in out)
     assert not any(i["source"] == "Jaguars Wire" for i in out)
+
+
+# ── Wire-syndication clustering (same event, different outlets/wording) ────────
+
+def test_blend_collapses_reworded_wire_syndication():
+    # The Deebo case: one signing, six outlets, no two URLs or exact titles match.
+    # Distinct-URL/distinct-title items must still collapse via story signature.
+    items = [
+        _item("Deebo Samuel returning to 49ers on 1-year deal",
+              "https://espn.com/1", "2026-07-30T10:00:00Z", "ESPN"),
+        _item("Report: Deebo Samuel is returning to the 49ers on a one-year deal",
+              "https://nbc.com/2", "2026-07-30T09:00:00Z", "NBC Sports"),
+        _item("Sources say Deebo Samuel returning to 49ers on 1-year contract",
+              "https://cbs.com/3", "2026-07-30T08:00:00Z", "CBS Sports"),
+    ]
+    out = _blend_sources([items], limit=10)
+    assert len(out) == 1
+    assert out[0]["source"] == "ESPN"  # earliest list / highest priority kept
+
+
+def test_blend_keeps_genuinely_distinct_stories_about_same_player():
+    # Same player, different events -> both survive (signatures don't overlap).
+    items = [
+        _item("Deebo Samuel returning to 49ers on 1-year deal",
+              "https://espn.com/1", "2026-07-30T10:00:00Z", "ESPN"),
+        _item("Deebo Samuel leaves practice early with hamstring tightness",
+              "https://espn.com/2", "2026-07-30T09:00:00Z", "ESPN"),
+    ]
+    out = _blend_sources([items], limit=10)
+    assert len(out) == 2
+
+
+def test_blend_drops_foreign_edition_syndication():
+    items = [
+        _item("Deebo Samuel returning to 49ers", "https://espn.com/1",
+              "2026-07-30T10:00:00Z", "ESPN"),
+        _item("Deebo Samuel Sr. back in San Francisco", "https://espn.com/ph",
+              "2026-07-30T09:00:00Z", "ESPN Philippines"),
+    ]
+    out = _blend_sources([items], limit=10)
+    assert [i["source"] for i in out] == ["ESPN"]
+
+
+def test_blend_caps_items_per_source():
+    # Five genuinely distinct ESPN stories -> capped to _MAX_PER_SOURCE.
+    flood = [
+        _item("Deebo Samuel signs 49ers extension", "https://espn.com/1",
+              "2026-07-31T10:00:00Z", "ESPN"),
+        _item("Brock Purdy throws four touchdown passes", "https://espn.com/2",
+              "2026-07-30T10:00:00Z", "ESPN"),
+        _item("Christian McCaffrey returns from calf injury", "https://espn.com/3",
+              "2026-07-29T10:00:00Z", "ESPN"),
+        _item("George Kittle questionable with hamstring tightness", "https://espn.com/4",
+              "2026-07-28T10:00:00Z", "ESPN"),
+        _item("Nick Bosa records three sacks in scrimmage", "https://espn.com/5",
+              "2026-07-27T10:00:00Z", "ESPN"),
+    ]
+    out = _blend_sources([flood], limit=20)
+    assert len(out) == 3  # _MAX_PER_SOURCE
+
+
+def test_blend_thin_headlines_not_over_merged():
+    # Two short headlines sharing only a name must NOT be treated as one story.
+    items = [
+        _item("Deebo Samuel active", "https://espn.com/1",
+              "2026-07-30T10:00:00Z", "ESPN"),
+        _item("Deebo Samuel questionable", "https://nbc.com/2",
+              "2026-07-30T09:00:00Z", "NBC Sports"),
+    ]
+    out = _blend_sources([items], limit=10)
+    assert len(out) == 2

@@ -1108,7 +1108,7 @@
     });
     var tiles = positions.map(function(pos) {
       var ldr = leaders[pos];
-      if (!ldr) return '<div class="rz-pl-tile rz-pl-empty"><div class="rz-pl-pos">' + pos + '</div><div class="rz-pl-name">—</div><div class="rz-pl-pts">—</div></div>';
+      if (!ldr) return '<div class="rz-pl-tile rz-pl-empty"><div class="rz-pl-pos">' + pos + '</div><div class="rz-pl-name">-</div><div class="rz-pl-pts">-</div></div>';
       var p = (_state.player_info || {})[ldr.pid] || {};
       var mine = myStarters.has(ldr.pid) || _isMyRid(ldr.roster_id);
       return (
@@ -1657,7 +1657,7 @@
     var demoLink = !_isDemo ? '<a href="?demo=1" class="rz-demo-btn">Demo</a>' : '';
     var exitBtn  = _isDemo ? '<button class="rz-demo-exit" id="rz-demo-exit">Exit Demo</button>' : '';
     var staleChip = _lastPollFailed ? '<span class="rz-stale-badge">⚠ Stale</span>' : '';
-    var timerLabel = _lastPollFailed ? '?' : (idle ? '—' : _fmtTimer(_countdown));
+    var timerLabel = _lastPollFailed ? '?' : (idle ? '-' : _fmtTimer(_countdown));
     var notifCta = (!_notifDismissed && 'Notification' in window && Notification.permission === 'default')
       ? '<div class="rz-notif-cta" id="rz-notif-cta"><span>Enable TD alerts</span><button class="rz-notif-cta-btn" id="rz-notif-enable">Enable</button><button class="rz-notif-cta-x" id="rz-notif-dismiss">✕</button></div>'
       : '';
@@ -1897,7 +1897,7 @@
     if (!_isDemo && !_isGameDay()) {
       _countdown = 3600;
       var elIdle = document.getElementById('rz-timer');
-      if (elIdle && elIdle.textContent !== '—') elIdle.textContent = '—';
+      if (elIdle && elIdle.textContent !== '-') elIdle.textContent = '-';
       return;
     }
     _countdown--;

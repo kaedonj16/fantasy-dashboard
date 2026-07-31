@@ -64,7 +64,7 @@ def _pc(pos: str) -> str:
 
 def _rank_arrow(change: int | None) -> str:
     if not change:
-        return '<span class="dvt-change dvt-change-flat">&#8212;</span>'
+        return '<span class="dvt-change dvt-change-flat">-</span>'
     if change > 0:
         return f'<span class="dvt-change dvt-change-up">&#9650; {change}</span>'
     return f'<span class="dvt-change dvt-change-down">&#9660; {abs(change)}</span>'
@@ -155,7 +155,7 @@ def build_dynasty_value_chart_body(value_table: list[dict], as_of_date: str | No
             f'<td class="dvt-val" style="color:{val_color};">{val:.0f}</td>'
             f'<td class="dvt-val dvt-sf" style="color:{sf_color};">{sf_val:.0f}</td>'
             f'<td class="dvt-pos-rank">{html.escape(plabel)}</td>'
-            f'<td class="dvt-age">{age or "&#8212;"}</td>'
+            f'<td class="dvt-age">{age or "-"}</td>'
             f'<td>{_rank_arrow(change)}</td>'
             f'</tr>'
         )
@@ -276,13 +276,16 @@ def build_dynasty_value_chart_body(value_table: list[dict], as_of_date: str | No
 # ── Risers & Fallers ──────────────────────────────────────────────────────────
 
 def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
-                              signed_in: bool = False) -> str:
+                              signed_in: bool = False, days: int = 7) -> str:
     """Weekly risers and fallers page.
 
     signed_in: when True, player names render as clickable spans that open the
     in-app player modal (via the global [data-player-id] handler) instead of
     anchors that navigate to the public player page. Guests keep the crawlable
     <a> link for SEO.
+
+    days: active timeframe window (7/30/90). Drives the timeframe toggle so the
+    selected range is highlighted; each option is a crawlable ?days= link.
     """
     from dashboard_services.pages.player_page import slugify
 
@@ -356,7 +359,7 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
         '<span class="empty-state-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '
         'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"/>'
         '<path d="M4 19h16"/><path d="m7 14 3-3 3 2 4-5"/></svg></span>'
-        '<p class="empty-state-msg">No movement to show yet — check back once values shift.</p>'
+        '<p class="empty-state-msg">No movement to show yet - check back once values shift.</p>'
         '</div>'
     )
     if not risers_html:
@@ -369,15 +372,27 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
         if comp_date and latest_date else html.escape(date_str)
     )
 
+    _win_word = {7: "this week", 30: "over the last 30 days", 90: "over the last 90 days"}.get(days, "this week")
+
+    def _tf_opt(d: int, lbl: str) -> str:
+        active = d == days
+        cls = "rf-tf-opt is-active" if active else "rf-tf-opt"
+        aria = ' aria-current="true"' if active else ""
+        return f'<a class="{cls}" href="/top-movers?days={d}"{aria}>{lbl}</a>'
+
+    _toggle = "".join(_tf_opt(d, lbl) for d, lbl in ((7, "7d"), (30, "30d"), (90, "90d")))
+    toggle_html = f'<div class="rf-timeframe" role="group" aria-label="Timeframe">{_toggle}</div>'
+
     return f"""
 <div class="rf-page">
   <div class="rf-hero">
     <h1 class="rf-title">Dynasty Fantasy Football Top Movers</h1>
     <p class="rf-updated"><span class="rf-updated-dot"></span>Updated {html.escape(date_str)} · refreshed daily</p>
     <p class="rf-subtitle">
-      Biggest dynasty trade value movers this week, {range_note}.
+      Biggest dynasty trade value movers {_win_word}, {range_note}.
       Use the <a href="/trade">Trade Calculator</a> to act on these moves.
     </p>
+    {toggle_html}
   </div>
 
   <div class="rf-grid">
@@ -422,7 +437,7 @@ _POSITION_ANALYSIS = {
         "How to read dynasty QB value",
         "<p>Quarterback is the position where your league format matters most. In "
         "<strong>Superflex and 2QB leagues</strong>, where you can start two passers, "
-        "quality quarterbacks are the most valuable assets in dynasty &mdash; the "
+        "quality quarterbacks are the most valuable assets in dynasty - the "
         "position is scarce and the points are enormous. In standard "
         "<strong>1QB leagues</strong> the calculus flips: you only need one, streaming is "
         "viable, and paying a premium for an elite passer is often a luxury rather than a "
@@ -441,10 +456,10 @@ _POSITION_ANALYSIS = {
         "out first. Most backs peak in their early-to-mid 20s and can fall off sharply by "
         "their late 20s, so you're renting production rather than banking it. That's why the "
         "market pays enormous premiums for young, three-down workhorses who project to hold "
-        "a bell-cow role &mdash; volume is king, and secure volume is rare.</p>"
+        "a bell-cow role - volume is king, and secure volume is rare.</p>"
         "<p>Receiving work is the tell that separates a durable dynasty RB from a "
         "replaceable one. A back who catches passes keeps scoring even when his team trails "
-        "and the game turns pass-heavy &mdash; exactly the script in which a pure early-down "
+        "and the game turns pass-heavy - exactly the script in which a pure early-down "
         "runner disappears. The classic trap is the aging veteran coming off a monster year: "
         "his redraft rank looks great, but his dynasty window is short and the committee "
         "behind him is one draft pick away. If you're rebuilding, that veteran is your sell.</p>"
@@ -453,8 +468,8 @@ _POSITION_ANALYSIS = {
         "How to read dynasty WR value",
         "<p>Wide receiver is the backbone of most dynasty rosters. Receivers take a year or "
         "two to develop but then hold value longer than any skill position except "
-        "quarterback, often producing into their early 30s. That combination &mdash; long "
-        "shelf life plus every-week target volume &mdash; makes ascending young receivers the "
+        "quarterback, often producing into their early 30s. That combination - long "
+        "shelf life plus every-week target volume - makes ascending young receivers the "
         "safest premium assets in the format.</p>"
         "<p>The signal to trust is opportunity: target share and air yards tell you how "
         "central a receiver is to his offense, and they stabilize faster than touchdowns, "
@@ -469,8 +484,8 @@ _POSITION_ANALYSIS = {
         "makers sit far above a long, replaceable middle, so the value curve is steep at the "
         "top and flat thereafter. In <strong>TE Premium</strong> scoring, which awards extra "
         "points per reception, that top tier is worth even more and the gap widens further.</p>"
-        "<p>Tight ends are also the slowest to develop &mdash; many don't break out until "
-        "their third season &mdash; but the elite ones then hold value for years. That makes "
+        "<p>Tight ends are also the slowest to develop - many don't break out until "
+        "their third season - but the elite ones then hold value for years. That makes "
         "the position a patience game: if you don't roster one of the difference-makers, "
         "chasing the muddled middle rarely pays, and streaming is often the smarter play. When "
         "you read the values below, decide first whether you're buying into the scarce top "
@@ -480,7 +495,7 @@ _POSITION_ANALYSIS = {
         "How dynasty rankings work",
         "<p>These rankings estimate <strong>trade value</strong>: what the rest of your "
         "league would give up to acquire a player, not how many points he'll score this week. "
-        "That's why they never match a redraft list &mdash; dynasty prices in age, long-term "
+        "That's why they never match a redraft list - dynasty prices in age, long-term "
         "outlook, and the runway a player has left. A younger ascending player will often "
         "out-rank an older one who scores more today.</p>"
         "<p>Values blend consensus market data from real dynasty trades with recent usage, "
@@ -576,7 +591,7 @@ def build_rankings_hub_body(
             f'</td>'
             f'<td class="rnk-val" style="color:{_val_color(val)};">{val:.0f}</td>'
             f'<td class="rnk-val" style="color:{_val_color(sf_val)};">{sf_val:.0f}</td>'
-            f'<td class="rnk-age">{age or "&#8212;"}</td>'
+            f'<td class="rnk-age">{age or "-"}</td>'
             f'<td>{_rank_arrow(change)}</td>'
             f'</tr>'
         )

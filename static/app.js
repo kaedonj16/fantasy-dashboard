@@ -1807,7 +1807,7 @@ window.emptyState = emptyState;
     banner.id = 'push-notif-banner';
     banner.innerHTML =
       '<div class="pwa-banner-left">' +
-        '<span class="push-bell-icon">&#128276;</span>' +
+        '<i class="fa-solid fa-bell push-bell-icon" aria-hidden="true"></i>' +
         '<div>' +
           '<div class="pwa-banner-title">Dynasty alerts</div>' +
           '<div class="pwa-banner-sub">Weekly risers, fallers &amp; trade tips</div>' +
@@ -2112,7 +2112,7 @@ window.emptyState = emptyState;
           var canvas;
           try { canvas = paintRecapCard(d, logo); } catch (e) { done(); return; }
           window.brShareCanvas(canvas, 'week-' + (d.week || '') + '-recap.png',
-            (d.league || 'League') + ' — Week ' + (d.week || '') + ' Recap').then(done, done);
+            (d.league || 'League') + ' - Week ' + (d.week || '') + ' Recap').then(done, done);
         });
       });
     }
@@ -13643,7 +13643,7 @@ async function initWatchlistPage() {
 
   await _wlServerSyncOnce();
   const list = _getWatchlist();
-  if (noteEl) noteEl.textContent = _wlSignedIn() ? 'Synced to your account' : 'Saved on this device — sign in to sync across devices';
+  if (noteEl) noteEl.textContent = _wlSignedIn() ? 'Synced to your account' : 'Saved on this device - sign in to sync across devices';
 
   function draw(rows) {
     if (countEl) {
@@ -14189,7 +14189,7 @@ const _CMP_RECENT_KEY = 'brfantasy_recent_compares';
 function initComparePage() {
   const root = document.querySelector('[data-page="compare"]');
   if (!root) return;
-  const chosen = { 1: null, 2: null };
+  const chosen = { 1: null, 2: null, 3: null };
   const emptyEl = document.getElementById('cmpEmptyState');
   const actionsEl = document.getElementById('cmpActions');
   const resultEl = document.getElementById('comparePageResult');
@@ -14276,16 +14276,29 @@ function initComparePage() {
     });
   }
 
+  function _openForTriple(d1, d2, d3) {
+    if (emptyEl) emptyEl.hidden = true;
+    if (actionsEl) actionsEl.hidden = false;
+    // The trade calculator is strictly two-sided, so its link has no meaning
+    // with three players selected.
+    const tradeLink = document.getElementById('cmpTradeLink');
+    if (tradeLink) tradeLink.style.display = 'none';
+    if (typeof renderCompareTriple === 'function') renderCompareTriple(d1, d2, d3, resultEl);
+  }
+
   function _maybeCompare() {
     if (!chosen[1] || !chosen[2]) return;
+    const triple = !!chosen[3];
     try {
       const u = new URL(window.location.href);
       u.searchParams.set('p1', chosen[1].player_id);
       u.searchParams.set('p2', chosen[2].player_id);
+      if (triple) u.searchParams.set('p3', chosen[3].player_id); else u.searchParams.delete('p3');
       history.replaceState(null, '', u);
     } catch (_) {}
-    Promise.all([_fetchDetails(chosen[1].player_id), _fetchDetails(chosen[2].player_id)])
-      .then(([d1, d2]) => _openFor(d1, d2))
+    const picks = triple ? [chosen[1], chosen[2], chosen[3]] : [chosen[1], chosen[2]];
+    Promise.all(picks.map(c => _fetchDetails(c.player_id)))
+      .then(ds => { triple ? _openForTriple(ds[0], ds[1], ds[2]) : _openFor(ds[0], ds[1]); })
       .catch(() => { if (resultEl) resultEl.innerHTML = '<div class="compare-pick-empty">Could not load one of the players. Try again.</div>'; });
   }
 
@@ -14308,7 +14321,7 @@ function initComparePage() {
         if (navigator.clipboard) navigator.clipboard.writeText(window.location.href).then(done).catch(done);
         else done();
       } else if (act === 'watch') {
-        [chosen[1], chosen[2]].forEach(p => {
+        [chosen[1], chosen[2], chosen[3]].forEach(p => {
           if (p && !_isBaseline(p.player_id) && typeof _isWatched === 'function' && !_isWatched(p.player_id) && typeof _toggleWatchlist === 'function') {
             _toggleWatchlist({ player_id: String(p.player_id), name: p.name || '', position: p.position || '', team: p.team || '' });
           }
@@ -14321,7 +14334,7 @@ function initComparePage() {
   _renderRecent();
 
   function _syncClears() {
-    [1, 2].forEach(s => {
+    [1, 2, 3].forEach(s => {
       const inp = document.getElementById('cmpPick' + s);
       const clr = document.getElementById('cmpClear' + s);
       if (inp && clr) clr.hidden = !inp.value;
@@ -14336,12 +14349,19 @@ function initComparePage() {
     if (inp) { inp.value = ''; inp.setAttribute('aria-expanded', 'false'); }
     if (res) res.innerHTML = '';
     if (clr) clr.hidden = true;
-    // The pair is now incomplete, so tear the comparison back down to the
-    // empty state rather than leaving a stale result under empty inputs.
-    if (resultEl) resultEl.innerHTML = '';
-    if (actionsEl) actionsEl.hidden = true;
-    if (emptyEl) emptyEl.hidden = false;
-    _renderSuggestions();
+    if (chosen[1] && chosen[2]) {
+      // Still a valid comparison (e.g. the optional third was removed): fall
+      // back to it rather than tearing everything down.
+      _renderSuggestions();
+      _maybeCompare();
+    } else {
+      // The pair is now incomplete, so tear the comparison back down to the
+      // empty state rather than leaving a stale result under empty inputs.
+      if (resultEl) resultEl.innerHTML = '';
+      if (actionsEl) actionsEl.hidden = true;
+      if (emptyEl) emptyEl.hidden = false;
+      _renderSuggestions();
+    }
     if (focus && inp) inp.focus();
   }
 
@@ -14379,11 +14399,13 @@ function initComparePage() {
     }
     function render(list, q) {
       const players = Array.isArray(list) ? list : (list.players || []);
-      const other = chosen[slot === 1 ? 2 : 1];
+      // Every already-chosen player in another slot is excluded from this slot's
+      // results so the same player can't fill two columns.
+      const others = [1, 2, 3].filter(s => s !== slot).map(s => chosen[s]).filter(Boolean);
       // Tier-average opponents matching the query come first, tagged so they read
       // as baselines rather than players.
       const merged = _matchBaselines(q).concat(players);
-      const filtered = merged.filter(p => !other || String(p.player_id) !== String(other.player_id));
+      const filtered = merged.filter(p => !others.some(o => String(o.player_id) === String(p.player_id)));
       activeIdx = -1;
       if (!filtered.length) { results.innerHTML = '<div class="compare-pick-empty">No players found</div>'; input.setAttribute('aria-expanded', 'false'); return; }
       results.innerHTML = filtered.slice(0, 12).map(p => {
@@ -14447,6 +14469,7 @@ function initComparePage() {
 
   _bindPicker(1);
   _bindPicker(2);
+  _bindPicker(3);
 
   // Put a baseline into a specific slot and compare (used by the tier suggestions).
   function _pickIntoSlot(slot, obj) {
@@ -14514,18 +14537,21 @@ function initComparePage() {
     if (first) { try { first.focus(); } catch (_) {} }
   })();
 
-  // Deep link: ?p1=&p2= prefills both pickers and opens the comparison.
+  // Deep link: ?p1=&p2= prefills both pickers (and optional ?p3=) and opens the
+  // comparison.
   try {
     const params = new URLSearchParams(window.location.search);
-    const q1 = params.get('p1'), q2 = params.get('p2');
+    const q1 = params.get('p1'), q2 = params.get('p2'), q3 = params.get('p3');
     if (q1 && q2) {
-      Promise.all([_fetchDetails(q1), _fetchDetails(q2)]).then(([d1, d2]) => {
-        chosen[1] = { player_id: String(d1.player_id || q1), name: d1.name || d1.full_name || '', position: d1.position || '', team: d1.team || '' };
-        chosen[2] = { player_id: String(d2.player_id || q2), name: d2.name || d2.full_name || '', position: d2.position || '', team: d2.team || '' };
-        const i1 = document.getElementById('cmpPick1'); if (i1) i1.value = chosen[1].name;
-        const i2 = document.getElementById('cmpPick2'); if (i2) i2.value = chosen[2].name;
+      const qs = q3 ? [q1, q2, q3] : [q1, q2];
+      Promise.all(qs.map(q => _fetchDetails(q))).then(ds => {
+        ds.forEach((d, i) => {
+          const slot = i + 1;
+          chosen[slot] = { player_id: String(d.player_id || qs[i]), name: d.name || d.full_name || '', position: d.position || '', team: d.team || '' };
+          const inp = document.getElementById('cmpPick' + slot); if (inp) inp.value = chosen[slot].name;
+        });
         _syncClears();
-        _openFor(d1, d2);
+        if (q3) _openForTriple(ds[0], ds[1], ds[2]); else _openFor(ds[0], ds[1]);
       }).catch(() => { if (resultEl) resultEl.innerHTML = '<div class="compare-pick-empty">Could not load that comparison. Search to pick players.</div>'; });
     }
   } catch (_) {}
@@ -15823,6 +15849,77 @@ function renderCompareInline(p1, p2, hostEl) {
     '</div>' +
     _compareBodyHTML(p1, p2, { nav: false });
   _compareWireView(p1, p2);
+}
+
+// Three-player shortlist / tie-break view. Deliberately a compact metric table
+// (players as columns, best-in-row highlighted) rather than the pairwise radar +
+// percentile layout, which only reads cleanly head-to-head. Leaves the two-player
+// path untouched: this only runs when a third player is selected.
+function renderCompareTriple(d1, d2, d3, hostEl) {
+  if (!hostEl) return;
+  const players = [d1, d2, d3];
+  const esc = (typeof _wlEsc === 'function') ? _wlEsc : (s => String(s == null ? '' : s));
+  const num = v => (v == null || v === '' || isNaN(parseFloat(v))) ? null : parseFloat(v);
+  const season = players.map(p => (typeof _computeSeasonStats === 'function')
+    ? _computeSeasonStats(p) : { ppg: null, total: null, games: 0, season: null });
+  const seasonLabel = (season.find(s => s.season) || {}).season || '';
+
+  const headCells = players.map(p => {
+    const pos = String(p.position || '').toUpperCase();
+    return '<th class="cmp3-col">'
+      + '<button type="button" class="cmp3-name" data-pid="' + esc(p.player_id) + '" data-name="' + esc(p.name) + '">' + esc(p.name) + '</button>'
+      + '<div class="cmp3-meta"><span class="cmp3-pos pos-' + esc(pos) + '">' + esc(pos) + '</span>'
+      + (p.team ? ' · ' + esc(p.team) : '') + '</div></th>';
+  }).join('');
+
+  // dir: 'max' (higher wins) | 'min' (lower wins) | null (display only, no winner).
+  function row(label, vals, dir, fmt) {
+    const nums = vals.map(num);
+    let best = null;
+    if (dir) {
+      const valid = nums.filter(v => v != null);
+      if (valid.length) best = dir === 'max' ? Math.max.apply(null, valid) : Math.min.apply(null, valid);
+    }
+    const cells = vals.map((v, i) => {
+      const isBest = dir && best != null && nums[i] != null && nums[i] === best;
+      const disp = fmt ? fmt(v) : (v == null || v === '' ? '&ndash;' : esc(v));
+      return '<td class="cmp3-cell' + (isBest ? ' cmp3-best' : '') + '">' + disp + '</td>';
+    }).join('');
+    return '<tr><th class="cmp3-rowlbl">' + esc(label) + '</th>' + cells + '</tr>';
+  }
+
+  const rows = [
+    row('Dynasty Value', players.map(p => p.stats && p.stats.value), 'max', v => v == null ? '&ndash;' : Math.round(v)),
+    row('Overall Rank', players.map(p => p.stats && p.stats.value_ovr_rank), 'min', v => v == null ? '&ndash;' : ('#' + v)),
+    row('Position Rank', players.map(p => (p.pos_rank_label || (p.stats && p.stats.pos_rank_label))), null, v => v || '&ndash;'),
+    row('Age', players.map(p => p.age), 'min', v => v == null ? '&ndash;' : (Math.round(v * 10) / 10)),
+    row((seasonLabel ? seasonLabel + ' ' : '') + 'PPG', season.map(s => s.ppg), 'max', v => v == null ? '&ndash;' : v),
+    row('Total Pts', season.map(s => s.total), 'max', v => v == null ? '&ndash;' : v),
+    row('Games', season.map(s => s.games), null, v => v ? v : '&ndash;'),
+  ].join('');
+
+  hostEl.innerHTML =
+    '<style>'
+    + '.cmp3-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}'
+    + '.cmp3-table{width:100%;border-collapse:collapse;min-width:340px;}'
+    + '.cmp3-col{text-align:center;padding:6px 8px 12px;vertical-align:bottom;}'
+    + '.cmp3-name{background:none;border:none;padding:0;cursor:pointer;font-weight:800;font-size:14px;color:var(--text);line-height:1.2;}'
+    + '.cmp3-name:hover{text-decoration:underline;}'
+    + '.cmp3-meta{font-size:11px;color:var(--muted);margin-top:3px;}'
+    + '.cmp3-pos{font-weight:700;}'
+    + '.cmp3-rowlbl{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;padding:9px 10px;white-space:nowrap;}'
+    + '.cmp3-cell{text-align:center;padding:9px 8px;font-weight:700;font-variant-numeric:tabular-nums;border-top:1px solid var(--border);color:var(--text);}'
+    + '.cmp3-best{color:var(--win);background:color-mix(in srgb,var(--win) 12%,transparent);}'
+    + '</style>'
+    + '<div class="cmp3-wrap"><table class="cmp3-table"><thead><tr>'
+    + '<th class="cmp3-rowlbl" aria-hidden="true"></th>' + headCells
+    + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+
+  hostEl.querySelectorAll('.cmp3-name').forEach(b => {
+    b.addEventListener('click', () => {
+      if (typeof openPlayerModal === 'function') openPlayerModal(b.getAttribute('data-pid'), b.getAttribute('data-name'));
+    });
+  });
 }
 
 function openComparisonView(p1, p2) {
@@ -18106,7 +18203,7 @@ window._rzBuildLiveHtml = function(pid, state, feed) {
             + (r.pts !== null ? '<span class="rz-pm-spts ' + (r.pts >= 0 ? 'pos' : 'neg') + '">' + (r.pts >= 0 ? '+' : '') + r.pts + '</span>' : '<span class="rz-pm-spts"></span>')
             + '</div>';
         }).join('')
-        + '<div class="rz-pm-stotal"><span>Fantasy Total</span><span>' + (total > 0 ? total : (fantasyPts !== null ? fantasyPts : '—')) + ' pts</span></div>'
+        + '<div class="rz-pm-stotal"><span>Fantasy Total</span><span>' + (total > 0 ? total : (fantasyPts !== null ? fantasyPts : '-')) + ' pts</span></div>'
         + '</div>';
     }
   }

@@ -385,23 +385,96 @@ def _norm_title(t: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", (t or "").lower()).strip()
 
 
+# ── Near-duplicate detection (wire-story syndication) ────────────────────────
+# The same event ("Player re-signs with X") is republished by dozens of outlets
+# with different URLs and slightly reworded headlines, so exact url/title dedup
+# can't catch it. We reduce each headline to a "story signature" — significant
+# tokens, minus attribution boilerplate, lightly stemmed — and treat two items as
+# the same story when their signatures overlap past a threshold.
+_NEWS_STOP = {
+    "the", "a", "an", "to", "on", "in", "of", "for", "and", "or", "is", "are",
+    "was", "were", "be", "been", "at", "by", "with", "as", "his", "her", "he",
+    "she", "it", "its", "that", "this", "from", "up", "out", "off", "not", "no",
+    "new", "now", "will", "has", "have", "back",
+    # attribution / wire boilerplate — not part of the story itself
+    "say", "says", "said", "source", "sources", "report", "reports", "reported",
+    "per", "via", "amid", "after", "before", "who", "what", "how", "why",
+    "espn", "ap", "pff", "nfl", "update", "news", "sr", "jr",
+}
+
+# Foreign ESPN editions (and the like) that just re-run US NFL wire copy. Dropped
+# outright — they never add reporting the US feeds don't already carry.
+_LOW_SIGNAL_SRC = re.compile(
+    r"espn\s+(deportes|philippines|africa|uk|australia|brasil|brazil|india|"
+    r"mexico|argentina|colombia|chile|nederland)",
+    re.I,
+)
+_MAX_PER_SOURCE = 3   # one outlet can't flood the list even across distinct stories
+
+
+def _light_stem(w: str) -> str:
+    for suf in ("ing", "ed", "es", "s"):
+        if w.endswith(suf) and len(w) - len(suf) >= 3:
+            return w[: -len(suf)]
+    return w
+
+
+def _story_sig(headline: str) -> frozenset:
+    toks = set()
+    for w in re.sub(r"[^a-z0-9]+", " ", (headline or "").lower()).split():
+        if len(w) <= 1 or w in _NEWS_STOP:
+            continue
+        toks.add(_light_stem(w))
+    return frozenset(toks)
+
+
+def _same_story(a: frozenset, b: frozenset) -> bool:
+    """True when two story signatures describe the same event. Guards against
+    over-merging: an item with too little signal (shared player name only) never
+    trips the threshold."""
+    if len(a) < 3 or len(b) < 3:
+        return False   # too little signal — leave it to exact dedup
+    inter = len(a & b)
+    if inter < 3:
+        return False   # sharing only a name (2 tokens) is not "the same story"
+    jaccard = inter / len(a | b)
+    overlap = inter / min(len(a), len(b))
+    return jaccard >= 0.5 or overlap >= 0.75
+
+
 def _blend_sources(sources: list, limit: int) -> list:
-    """Merge N news lists in priority order, dedupe by destination URL and by
-    headline, sort by recency. Earlier lists win ties (their item is kept, the
-    duplicate dropped)."""
+    """Merge N news lists in priority order and drop duplicates. Beyond exact
+    url/title matches, collapse wire-story syndication (same event, reworded
+    headline) via story-signature overlap, cap items per source so one outlet
+    can't flood the list, and drop obvious foreign-edition syndication. Earlier
+    lists win ties (their item is kept), then results sort by recency."""
     out: list = []
     seen_urls: set = set()
     seen_titles: set = set()
+    accepted_sigs: list = []
+    per_source: dict = {}
     for lst in sources:
         for item in list(lst or []):
+            src = str(item.get("source") or "").strip()
+            if src and _LOW_SIGNAL_SRC.search(src):
+                continue
             nu = _norm_url(item.get("url", ""))
             nt = _norm_title(item.get("headline", ""))
             if (nu and nu in seen_urls) or (nt and nt in seen_titles):
+                continue
+            sig = _story_sig(item.get("headline", ""))
+            if any(_same_story(sig, s) for s in accepted_sigs):
+                continue
+            skey = src.lower()
+            if per_source.get(skey, 0) >= _MAX_PER_SOURCE:
                 continue
             if nu:
                 seen_urls.add(nu)
             if nt:
                 seen_titles.add(nt)
+            if sig:
+                accepted_sigs.append(sig)
+            per_source[skey] = per_source.get(skey, 0) + 1
             out.append(item)
     out.sort(key=lambda it: it.get("published") or "", reverse=True)
     return out[:limit]

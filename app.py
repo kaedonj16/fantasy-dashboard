@@ -540,6 +540,31 @@ _CSS_V = _static_hash(_CSS_FILE)
 _FA_V = _static_hash("font-awesome.css")
 _ICONS_V = _static_hash("icons.css")
 
+# When this worker booted — a cheap "did the deploy actually restart me?" signal
+# alongside the bundle hashes in /healthz/version.
+_PROCESS_STARTED_AT = datetime.now(timezone.utc).isoformat()
+
+
+@app.route("/healthz/version")
+def healthz_version():
+    """Deploy smoke-check: the content hashes of the bundles this process is
+    actually serving, plus the git SHA when available. After a deploy, hit this
+    and confirm the hashes changed / match the built files — so "is it live yet?"
+    is a one-request answer instead of guessing at a stale cache. Cache-busting
+    headers so an intermediary can never hand back a previous deploy's answer."""
+    resp = jsonify({
+        "app_js":       _APP_JS_V,
+        "public_js":    _PUBLIC_JS_V,
+        "rankings_js":  _RANKINGS_JS_V,
+        "teams_js":     _TEAMS_JS_V,
+        "redzone_js":   _REDZONE_JS_V,
+        "css":          _CSS_V,
+        "git_sha":      os.environ.get("RENDER_GIT_COMMIT") or os.environ.get("GIT_SHA") or "",
+        "started_at":   _PROCESS_STARTED_AT,
+    })
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    return resp
+
 
 @app.before_request
 def _perf_start():
@@ -5429,7 +5454,7 @@ def build_dashboard_body(ctx: dict) -> str:
               data-season="{html.escape(str(season))}"
               data-roster="{html.escape(str(viewer_roster_id))}">
               <div class="os-stat-label">Playoff odds</div>
-              <div class="os-stat-value" id="dash-playoff-val">&mdash;</div>
+              <div class="os-stat-value" id="dash-playoff-val">-</div>
               <div class="os-stat-sub" id="dash-playoff-sub">Simulating&hellip;</div>
             </div>"""
         # Slot right after the first (record) tile so it reads prominently.
@@ -7072,7 +7097,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         else:
             countdown_text = f"{_week1_delta} days"
             draft_text = f"Week 1 kicks off {_week1_date_txt}"
-        draft_subtext = "Draft date not set — schedule it before kickoff."
+        draft_subtext = "Draft date not set - schedule it before kickoff."
 
     teams_ctx = build_teams_overview(
         rosters=rosters,
@@ -7298,7 +7323,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
               data-season="{html.escape(str(season))}"
               data-roster="{html.escape(str(viewer_roster_id))}">
               <div class="os-stat-label">Projected playoff odds</div>
-              <div class="os-stat-value" id="os-playoff-val">&mdash;</div>
+              <div class="os-stat-value" id="os-playoff-val">-</div>
               <div class="os-stat-sub" id="os-playoff-sub">Projecting&hellip;</div>
             </div>"""
 
@@ -8534,6 +8559,52 @@ def format_pick_display_label(
 from utils.value_helpers import apply_te_premium, te_premium_from_settings
 
 
+def _activity_your_players_block(roster_pids: dict) -> str:
+    """Cache-safe "your injured players first" enhancement for the activity page.
+
+    The activity HTML is cached per-league (shared by every viewer), so it can't
+    be personalized server-side. Instead we emit the league-generic roster→player
+    map (identical for all viewers, safe to cache) and let a tiny client script
+    pick the viewer's own players via window._viewerRid, badge them, and float them
+    to the top of the Injury Watch. Injury rows already carry data-player-id, so
+    the match is exact (no name fuzzing). No-op for logged-out viewers."""
+    import json as _json
+    data = _json.dumps({str(k): [str(p) for p in (v or [])]
+                        for k, v in (roster_pids or {}).items()})
+    return (
+        "<style>"
+        ".inj-yours{background:color-mix(in srgb,var(--accent) 8%,transparent);"
+        "box-shadow:inset 3px 0 0 var(--accent);}"
+        ".inj-yours-badge{display:inline-block;margin-left:6px;font-size:9px;font-weight:800;"
+        "letter-spacing:.04em;padding:1px 5px;border-radius:4px;background:var(--accent);"
+        "color:#fff;vertical-align:middle;}"
+        "</style>"
+        "<script>(function(){"
+        "var ROST=" + data + ";"
+        "function run(){"
+        "var rid=String(window._viewerRid||'');var mine=ROST[rid];"
+        "if(!mine||!mine.length)return;"
+        "var set={};mine.forEach(function(p){set[String(p)]=1;});"
+        "var rows=[].slice.call(document.querySelectorAll('.inj-row'));"
+        "if(!rows.length)return;var first=rows[0];var mineRows=[];"
+        "rows.forEach(function(row){"
+        "if(row.dataset.yrsDone)return;"
+        "var el=row.querySelector('[data-player-id]');"
+        "var pid=el?String(el.getAttribute('data-player-id')||''):'';"
+        "if(!pid||!set[pid])return;"
+        "row.dataset.yrsDone='1';row.classList.add('inj-yours');"
+        "var b=document.createElement('span');b.className='inj-yours-badge';b.textContent='YOURS';"
+        "(el||row).appendChild(b);mineRows.push(row);"
+        "});"
+        "mineRows.forEach(function(r){if(first&&r!==first&&first.parentNode)"
+        "first.parentNode.insertBefore(r,first);});"
+        "}"
+        "if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',run);else run();"
+        "var _ipr=window.initPageRoot;window.initPageRoot=function(x){if(_ipr)_ipr(x);try{run();}catch(e){}};"
+        "})();</script>"
+    )
+
+
 def build_activity_body(ctx: dict) -> str:
     league_id = ctx["league_id"]
     resolved_league_id = ctx.get("resolved_league_id", league_id)
@@ -9249,6 +9320,17 @@ def build_activity_body(ctx: dict) -> str:
     injury_html = ""
     if injury_df is not None and not injury_df.empty:
         injury_html = render_injury_watch(injury_df)
+        # Float the signed-in viewer's own injured players to the top with a badge
+        # (client-side, cache-safe — see helper). Skipped silently on any issue.
+        try:
+            _act_roster_pids = {
+                str(r.get("roster_id")): [str(p) for p in (r.get("players") or [])]
+                for r in (ctx.get("rosters") or [])
+            }
+            if _act_roster_pids:
+                injury_html += _activity_your_players_block(_act_roster_pids)
+        except Exception:
+            logger.debug("activity your-players block skipped", exc_info=True)
     else:
         injury_html = (
             "<div class='card'>"
@@ -11058,6 +11140,21 @@ def page_portfolio():
             })
     holdings.sort(key=lambda x: (-x["shares"], -x["value"]))
 
+    # Join 7-day value-rank movement from the in-memory value table (no DB round
+    # trip) so the Portfolio Movers digest works even when the per-league player
+    # blobs don't carry it. Only fill when missing so a real per-league value wins.
+    try:
+        _pf_rc = {str(r.get("id")): r.get("rank_change_7d")
+                  for r in (get_model_value_table_cached() or [])
+                  if isinstance(r, dict) and r.get("id")}
+        for _h in holdings:
+            if _h.get("rank_change_7d") in (None, 0):
+                _rc = _pf_rc.get(str(_h.get("pid")))
+                if _rc is not None:
+                    _h["rank_change_7d"] = _rc
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+
     body = build_portfolio_body(
         viewer_username, valid_leagues, leagues_data, season,
         holdings, num_leagues, nfl_exposure, cross_pos,
@@ -11530,6 +11627,77 @@ def api_waiver_candidates():
     # Badge trend relative to the shown set so the (trend-sorted) list doesn't
     # read "Rising Fast" on every row.
     _fast_thr, _up_thr = _adaptive_trend_thresholds([c.get("rank_change_7d") for c in _shown])
+
+    # Suggested FAAB bid band (% of budget). Only the top targets warrant real
+    # money; a player who fills the viewer's own roster need is nudged up. A band
+    # rather than a number because league budgets differ ($100 / $1000 / rolling);
+    # the % reads the same regardless. Gated client-side on the league using FAAB.
+    _wv_settings = (ctx.get("league") or {}).get("settings") or {}
+    _faab_enabled = (
+        _safe_int(_wv_settings.get("waiver_type"), -1) == 2          # Sleeper FAAB
+        or bool(_wv_settings.get("waiver_budget"))                    # Sleeper budget set
+        or bool(_wv_settings.get("acquisition_budget"))              # ESPN
+        or not _wv_settings                                          # unknown → show; label is explicit
+    )
+    _wv_scores = [_safe_pickup_score(c) for c in _shown]
+    _wv_smin = min(_wv_scores) if _wv_scores else 0.0
+    _wv_srng = ((max(_wv_scores) - _wv_smin) if _wv_scores else 1.0) or 1.0
+
+    def _faab_band(_c):
+        _t = (_safe_pickup_score(_c) - _wv_smin) / _wv_srng          # 0..1 within shown set
+        _center = 1.0 + (_t ** 1.7) * 34.0                           # top target ~35%, tapers fast
+        _center *= 1.0 + min(max((_c.get("need_mult") or 1.0) - 1.0, 0.0), 0.35)  # fills your need → bid up
+        return max(0, int(round(_center * 0.78))), min(70, int(round(_center * 1.12)) + 1)
+
+    # ── Add/drop pairing: for each target, the best player on the viewer's own
+    # roster to cut to make room. Prefer thinning a position where the viewer is
+    # deep (esp. the add's own position); only ever suggest a drop that's a value
+    # downgrade from the add, so the pairing is always a genuine upgrade. Needs
+    # the viewer's roster, passed as ?rid= (the shared page cache means the client
+    # supplies it, matching the window._viewerRid personalization pattern).
+    _rid = (request.args.get("rid") or "").strip()
+    _mvt_by_id = {str(r.get("id")): r for r in model_value_table
+                  if isinstance(r, dict) and r.get("id")}
+    _KEEP = {"QB": 2, "RB": 5, "WR": 6, "TE": 2}   # keep-depth before a spot is "spare"
+
+    def _roster_val(pid: str) -> float:
+        row = _mvt_by_id.get(pid) or {}
+        try:
+            return apply_te_premium(
+                float(row.get(_vf_wv) or row.get("value") or 0.0),
+                str(row.get("position") or "").upper(), _tep_wv)
+        except Exception:
+            return 0.0
+
+    _drop_pool: list = []
+    _pos_counts: dict = {}
+    _viewer_roster = next((r for r in rosters if str(r.get("roster_id")) == _rid), None) if _rid else None
+    if _viewer_roster:
+        for pid in (_viewer_roster.get("players") or []):
+            pid = str(pid)
+            row = _mvt_by_id.get(pid) or {}
+            meta = players_index.get(pid, {})
+            pos = str(row.get("position") or meta.get("pos") or "").upper()
+            name = row.get("name") or meta.get("name") or f"Player {pid}"
+            _pos_counts[pos] = _pos_counts.get(pos, 0) + 1
+            _drop_pool.append({"player_id": pid, "name": name, "position": pos,
+                               "value": _roster_val(pid)})
+        _drop_pool.sort(key=lambda d: d["value"])   # weakest first
+
+    def _drop_for(_c):
+        if not _drop_pool:
+            return None
+        add_val = _c.get("value") or 0.0
+        add_pos = _c.get("position") or ""
+        elig = [d for d in _drop_pool if d["value"] < add_val]
+        if not elig:
+            return None   # everyone you'd cut is worth more than the add — hold
+        same_pos = [d for d in elig
+                    if d["position"] == add_pos and _pos_counts.get(add_pos, 0) > _KEEP.get(add_pos, 3)]
+        deep = [d for d in elig if _pos_counts.get(d["position"], 0) > _KEEP.get(d["position"], 3)]
+        pick = (same_pos or deep or elig)[0]
+        return {"name": pick["name"], "position": pick["position"], "value": round(pick["value"])}
+
     for c in _shown:
         try:
             sig_cls, sig_label = _waiver_signal(
@@ -11538,6 +11706,7 @@ def api_waiver_candidates():
             )
             bscore = waiver_breakout.get(c["player_id"], 0.0)
             ut = usage_trends.get(c["player_id"]) or {}
+            _flo, _fhi = _faab_band(c)
             result.append({
                 "player_id": c["player_id"],
                 "name": c["name"],
@@ -11560,12 +11729,223 @@ def api_waiver_candidates():
                 "roster_need": round((c.get("need_mult") or 1.0) - 1.0, 3),
                 "scarcity": round((c.get("scarcity_mult") or 1.0) - 1.0, 3),
                 "schedule_ease_rank": c.get("schedule_ease_rank"),
+                "faab_low": _flo,
+                "faab_high": _fhi,
+                "drop": _drop_for(c),
             })
         except Exception:
             logger.exception("[waiver-candidates] result row failed for %s", c.get("player_id"))
             continue
 
-    return jsonify({"candidates": result, "total": len(result)})
+    return jsonify({"candidates": result, "total": len(result), "faab_enabled": _faab_enabled})
+
+
+_TRENDING_ADDS_CACHE: dict = {}
+_TRENDING_ADDS_TTL = 1800  # 30 min; a league-wide signal shared by all viewers
+
+
+def _sleeper_trending_adds(limit: int = 25, lookback_hours: int = 48) -> list:
+    """Sleeper's league-wide most-added players (add count over a lookback
+    window). Cached 30 min; this is a global signal, not per-league, so every
+    viewer shares one fetch. Best-effort: any failure returns []."""
+    key = (limit, lookback_hours)
+    hit = _TRENDING_ADDS_CACHE.get(key)
+    if hit and (time.time() - hit[0]) < _TRENDING_ADDS_TTL:
+        return hit[1]
+    try:
+        from dashboard_services.api import fetch_json
+        data = fetch_json(
+            f"/players/nfl/trending/add?lookback_hours={lookback_hours}&limit={limit}"
+        )
+        result = data if isinstance(data, list) else []
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+        result = []
+    if result:
+        _TRENDING_ADDS_CACHE[key] = (time.time(), result)
+    return result
+
+
+@app.route("/api/trending-adds")
+def api_trending_adds():
+    """Trending waiver adds across all Sleeper leagues, filtered to players the
+    viewer's league can still add (not already rostered), with our value + pos
+    rank joined on. Feeds the 'Trending across leagues' strip on Waivers."""
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    league_id = (request.args.get("league_id") or "").strip()
+    season = int(request.args.get("season") or datetime.now().year)
+    if not league_id:
+        return jsonify({"trending": []})
+
+    # Trending is a Sleeper signal; other platforms just get an empty strip.
+    if platform != "sleeper":
+        return jsonify({"trending": []})
+
+    trend = _sleeper_trending_adds()
+    if not trend:
+        return jsonify({"trending": []})
+
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+    except Exception:
+        ctx = {}
+    rostered_ids = {
+        str(pid)
+        for r in (ctx.get("rosters") or [])
+        for pid in (r.get("players") or [])
+    }
+    players_index = ctx.get("players_index") or get_players_index_global() or {}
+    _mvt = {str(r.get("id")): r for r in (get_model_value_table_cached() or [])
+            if isinstance(r, dict) and r.get("id")}
+
+    out = []
+    for row in trend:
+        pid = str(row.get("player_id") or "")
+        if not pid or pid in rostered_ids:
+            continue                              # can't add what you already own
+        meta = players_index.get(pid) or {}
+        val_row = _mvt.get(pid) or {}
+        pos = str(val_row.get("position") or meta.get("pos") or "").upper()
+        if pos == "DEF":
+            name = f"{(meta.get('team') or pid)} D/ST"
+        else:
+            name = val_row.get("name") or meta.get("name") or f"Player {pid}"
+        out.append({
+            "player_id": pid,
+            "name": name,
+            "position": pos,
+            "team": (val_row.get("team") or meta.get("team") or "").upper(),
+            "value": round(float(val_row.get("value") or 0)),
+            "pos_rank_label": val_row.get("pos_rank_label") or "",
+            "adds": int(row.get("count") or 0),
+        })
+        if len(out) >= 12:
+            break
+    return jsonify({"trending": out})
+
+
+@app.route("/api/streaming-options")
+def api_streaming_options():
+    """Matchup-based streaming targets for D/ST and K: free-agent defenses ranked
+    by how weak the offense they face is (opponent Vegas implied total), and
+    free-agent kickers ranked by their own team's implied total. Reuses the same
+    schedule + Vegas plumbing as Start/Sit. Empty in the offseason and gated to
+    the positions the league actually starts."""
+    _empty = {"defense": [], "kicker": [], "in_season": False}
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    league_id = (request.args.get("league_id") or "").strip()
+    season = int(request.args.get("season") or datetime.now().year)
+    if not league_id:
+        return jsonify(_empty)
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+    except Exception:
+        return jsonify(_empty)
+
+    current_week = int(ctx.get("current_week") or 0)
+    if current_week < 1 or ctx.get("offseason_mode"):
+        return jsonify(_empty)
+
+    # League's started positions gate which streamers are relevant at all.
+    rpos = [str(s).upper() for s in (ctx.get("roster_positions") or [])]
+    uses_def = any(s in ("DEF", "DST", "D/ST") for s in rpos)
+    uses_k = "K" in rpos
+    if not (uses_def or uses_k):
+        return jsonify({"defense": [], "kicker": [], "in_season": True})
+
+    # ── Schedule → opponent map + games for the Vegas lookup ──────────────────
+    opponent_map: dict = {}
+    week_games: list = []
+    teams: set = set()
+    try:
+        from utils.utils import load_week_sched
+        for g in (load_week_sched(season, current_week) or []):
+            home = str(g.get("home") or "").upper()
+            away = str(g.get("away") or "").upper()
+            if home and away:
+                opponent_map[home] = away
+                opponent_map[away] = home
+                week_games.append((home, away, str(g.get("gameDate") or "")))
+                teams.add(home)
+                teams.add(away)
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+    if not teams:
+        return jsonify({"defense": [], "kicker": [], "in_season": True})
+
+    conditions: dict = {}
+    try:
+        from utils.game_conditions import build_week_conditions
+        conditions = build_week_conditions(season, current_week, week_games) or {}
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+
+    def _implied(team):
+        v = (conditions.get(team) or {}).get("implied_total")
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def _matchup(team):
+        opp = opponent_map.get(team)
+        if not opp:
+            return "", None
+        # home_team_of not tracked here; label as "vs OPP" (venue is secondary).
+        return f"vs {opp}", opp
+
+    rostered = {
+        str(pid)
+        for r in (ctx.get("rosters") or [])
+        for pid in (r.get("players") or [])
+    }
+    players_index = ctx.get("players_index") or get_players_index_global() or {}
+
+    # ── Defenses: one per team, pid == team abbr in Sleeper. Best matchup is the
+    # weakest opposing offense (lowest opponent implied total). ────────────────
+    defense = []
+    if uses_def:
+        rows = []
+        for t in teams:
+            if t in rostered:
+                continue
+            label, opp = _matchup(t)
+            rows.append({
+                "player_id": t, "name": f"{t} D/ST", "position": "DEF", "team": t,
+                "opponent": opp, "matchup": label, "opp_implied": _implied(opp),
+            })
+        rows.sort(key=lambda d: (d["opp_implied"] is None,
+                                 d["opp_implied"] if d["opp_implied"] is not None else 99.0))
+        defense = rows[:8]
+
+    # ── Kickers: free-agent Ks on teams playing this week, ranked by their own
+    # implied total (more team scoring → more FGs/XPs). One per team. ──────────
+    kicker = []
+    if uses_k:
+        cand = []
+        for pid, meta in players_index.items():
+            if str(meta.get("pos") or "").upper() != "K":
+                continue
+            pid = str(pid)
+            t = str(meta.get("team") or "").upper()
+            if not t or t not in teams or pid in rostered:
+                continue
+            cand.append((pid, meta.get("name") or f"Player {pid}", t, _implied(t)))
+        cand.sort(key=lambda x: (x[3] is None, -(x[3] if x[3] is not None else 0.0)))
+        seen_team = set()
+        for pid, name, t, imp in cand:
+            if t in seen_team:
+                continue
+            seen_team.add(t)
+            label, opp = _matchup(t)
+            kicker.append({
+                "player_id": pid, "name": name, "position": "K", "team": t,
+                "opponent": opp, "matchup": label, "own_implied": imp,
+            })
+            if len(kicker) >= 8:
+                break
+
+    return jsonify({"defense": defense, "kicker": kicker, "in_season": True})
 
 
 _WEEKLY_PTS_CACHE: dict = {}
@@ -12612,7 +12992,7 @@ def page_redzone(platform: str, season: int, league_id: str):
             "<h2 style='margin:0 0 8px;'>Redzone is Sleeper-only for now</h2>"
             "<p style='color:var(--text-muted);font-size:14px;line-height:1.6;margin:0;'>"
             "Live Redzone tracking uses Sleeper's real-time player feed, which isn't "
-            "available for ESPN or Yahoo leagues yet. Everything else — your matchups, "
+            "available for ESPN or Yahoo leagues yet. Everything else - your matchups, "
             "scores, and the rest of the tools — works normally on this platform."
             "</p></div></div>"
         )
@@ -14007,7 +14387,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         These are <strong>dynasty fantasy football trade values</strong> for every relevant
         player, refreshed daily from real league-to-league market data and our value model.
         Each number estimates what the rest of your league would give up to acquire a player,
-        weighing recent production, age, and long-term outlook &mdash; not just this week's box
+        weighing recent production, age, and long-term outlook - not just this week's box
         score. Use the filters to switch between <strong>1QB and Superflex</strong>, change
         league size, or toggle redraft scoring, then take any player into the free
         <a href="/trade">Trade Calculator</a>. New to dynasty values? Start with
@@ -16106,6 +16486,61 @@ def _opt_pos_breakdown(weeks_data: list) -> str:
     )
 
 
+def _opt_recurring_mistakes(weeks_data: list) -> str:
+    """Repeat offenders: individual players the viewer left on the bench in a
+    week where the optimal lineup would have started them. A player benched more
+    than once is a pattern worth naming ("you've benched Player X 3x"), so this
+    ranks by times-benched then points forfeited. Single one-off misses are
+    already covered by the week-by-week table, so require >= 2 occurrences."""
+    from collections import defaultdict
+    agg: dict = defaultdict(lambda: {"name": "", "pos": "", "weeks": [], "pts": 0.0})
+    for wd in weeks_data:
+        wk = wd.get("week")
+        for p in wd["players"]:
+            if p["optimal_start"] and not p["actual_start"]:
+                rec = agg[p["pid"]]
+                rec["name"] = p["name"]
+                rec["pos"] = p["pos"]
+                rec["weeks"].append(wk)
+                rec["pts"] += p["pts"]
+    repeats = [r for r in agg.values() if len(r["weeks"]) >= 2]
+    if not repeats:
+        return ""
+    repeats.sort(key=lambda r: (-len(r["weeks"]), -r["pts"]))
+    rows_html = ""
+    for r in repeats[:8]:
+        n = len(r["weeks"])
+        pos_color = _OPT_POS_COLORS.get(r["pos"], "#6b7280")
+        wk_list = ", ".join(f"W{w}" for w in sorted(w for w in r["weeks"] if w))
+        rows_html += (
+            f"<tr style='border-bottom:1px solid var(--border);'>"
+            f"<td style='padding:9px 12px;'>"
+            f"<span style='font-weight:700;color:{pos_color};margin-right:6px;'>{r['pos']}</span>"
+            f"<span style='font-weight:600;'>{html.escape(r['name'])}</span></td>"
+            f"<td style='padding:9px 12px;font-weight:700;'>{n}&times;</td>"
+            f"<td style='padding:9px 12px;color:#ef4444;font-weight:600;'>+{round(r['pts'],1)}</td>"
+            f"<td style='padding:9px 12px;color:var(--muted);font-size:12px;'>{wk_list}</td>"
+            f"</tr>"
+        )
+    return (
+        "<div class='card' style='margin-top:16px;overflow:auto;'>"
+        "<div class='card-header'><h3>Recurring Mistakes</h3></div>"
+        "<div style='padding:0 12px 4px;font-size:12px;color:var(--muted);'>"
+        "Players you benched in a week the optimal lineup would have started them, "
+        "twice or more this season.</div>"
+        "<table style='width:100%;min-width:420px;border-collapse:collapse;'>"
+        "<thead><tr style='border-bottom:1px solid var(--border);'>"
+        "<th style='padding:8px 12px;text-align:left;font-size:11px;color:var(--muted);'>PLAYER</th>"
+        "<th style='padding:8px 12px;text-align:left;font-size:11px;color:var(--muted);'>BENCHED</th>"
+        "<th style='padding:8px 12px;text-align:left;font-size:11px;color:var(--muted);'>PTS LOST</th>"
+        "<th style='padding:8px 12px;text-align:left;font-size:11px;color:var(--muted);'>WEEKS</th>"
+        "</tr></thead>"
+        f"<tbody>{rows_html}</tbody>"
+        "</table>"
+        "</div>"
+    )
+
+
 def build_optimal_body(ctx):
     from dashboard_services.platform_api import get_matchups as _gm
 
@@ -16442,8 +16877,9 @@ def build_optimal_body(ctx):
     )
 
     pos_html = _opt_pos_breakdown(weeks_data)
+    recurring_html = _opt_recurring_mistakes(weeks_data)
 
-    return nav_html + summary_html + table_html + pos_html
+    return nav_html + summary_html + table_html + pos_html + recurring_html
 
 
 @app.route("/<platform>/<int:season>/<league_id>/optimal")
@@ -19073,28 +19509,48 @@ def build_commissioner_body(ctx):
     score_color = "#22c55e" if activity_score >= 80 else ("#f59e0b" if activity_score >= 60 else "#ef4444")
     score_label = "Healthy" if activity_score >= 80 else ("Watch" if activity_score >= 60 else "At Risk")
 
+    # Composite card matching the Multi-Season Health treatment below: one card
+    # with a bold uppercase header + muted subtitle and the stats as nested,
+    # bordered/rounded tiles, instead of five separate floating cards.
     health_html = f"""
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:20px;">
-  <div class="card" style="padding:16px;text-align:center;">
-    <div style="font-size:28px;font-weight:700;color:{score_color};">{int(activity_score)}</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">HEALTH SCORE</div>
-    <div style="font-size:13px;font-weight:600;color:{score_color};">{score_label}</div>
+<style>
+  .lh-card {{ padding:20px; margin-bottom:20px; }}
+  .lh-head {{ display:flex; align-items:baseline; gap:8px; margin-bottom:18px; }}
+  .lh-head-title {{ font-size:12px; font-weight:800; letter-spacing:.06em; color:var(--text); text-transform:uppercase; }}
+  .lh-head-sub {{ font-size:12px; color:var(--muted); }}
+  .lh-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; }}
+  .lh-stat {{ border:1px solid var(--border); border-radius:14px; padding:16px; background:var(--row,rgba(127,127,127,.03)); text-align:center; }}
+  .lh-stat-num {{ font-size:28px; font-weight:800; line-height:1; }}
+  .lh-stat-label {{ font-size:11px; font-weight:700; letter-spacing:.04em; color:var(--muted); text-transform:uppercase; margin-top:6px; }}
+  .lh-stat-sub {{ font-size:13px; font-weight:600; margin-top:3px; }}
+</style>
+<div class="card lh-card">
+  <div class="lh-head">
+    <span class="lh-head-title">League Health</span>
+    <span class="lh-head-sub">this season</span>
   </div>
-  <div class="card" style="padding:16px;text-align:center;">
-    <div style="font-size:28px;font-weight:700;color:{'#ef4444' if inactive_count else '#22c55e'};">{inactive_count}</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">INACTIVE TEAMS</div>
-  </div>
-  <div class="card" style="padding:16px;text-align:center;">
-    <div style="font-size:28px;font-weight:700;color:var(--text);">{total_trades}</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">TRADES THIS SEASON</div>
-  </div>
-  <div class="card" style="padding:16px;text-align:center;">
-    <div style="font-size:28px;font-weight:700;color:{'#f59e0b' if lopsided_count else '#22c55e'};">{lopsided_count}</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">LOPSIDED TRADES</div>
-  </div>
-  <div class="card" style="padding:16px;text-align:center;">
-    <div style="font-size:28px;font-weight:700;color:var(--text);">{total_txns}</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">TOTAL MOVES</div>
+  <div class="lh-grid">
+    <div class="lh-stat">
+      <div class="lh-stat-num" style="color:{score_color};">{int(activity_score)}</div>
+      <div class="lh-stat-label">Health Score</div>
+      <div class="lh-stat-sub" style="color:{score_color};">{score_label}</div>
+    </div>
+    <div class="lh-stat">
+      <div class="lh-stat-num" style="color:{'#ef4444' if inactive_count else '#22c55e'};">{inactive_count}</div>
+      <div class="lh-stat-label">Inactive Teams</div>
+    </div>
+    <div class="lh-stat">
+      <div class="lh-stat-num" style="color:var(--text);">{total_trades}</div>
+      <div class="lh-stat-label">Trades This Season</div>
+    </div>
+    <div class="lh-stat">
+      <div class="lh-stat-num" style="color:{'#f59e0b' if lopsided_count else '#22c55e'};">{lopsided_count}</div>
+      <div class="lh-stat-label">Lopsided Trades</div>
+    </div>
+    <div class="lh-stat">
+      <div class="lh-stat-num" style="color:var(--text);">{total_txns}</div>
+      <div class="lh-stat-label">Total Moves</div>
+    </div>
   </div>
 </div>"""
 
@@ -30021,6 +30477,74 @@ def api_trade_ideas_for_target():
 _POS_CLS_MAP = {"QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE"}
 
 
+def _portfolio_movers_card(holdings: list, pos_colors: dict) -> str:
+    """Cross-league movers digest: the biggest 7-day value-rank swings among the
+    players you own anywhere, split into risers and fallers. rank_change_7d is
+    (older rank - current rank), so a positive value means the player climbed."""
+    movers = [h for h in (holdings or []) if h.get("rank_change_7d") not in (None, 0)]
+    risers = sorted([h for h in movers if (h.get("rank_change_7d") or 0) > 0],
+                    key=lambda h: -(h.get("rank_change_7d") or 0))[:6]
+    fallers = sorted([h for h in movers if (h.get("rank_change_7d") or 0) < 0],
+                     key=lambda h: (h.get("rank_change_7d") or 0))[:6]
+    if not risers and not fallers:
+        return ""
+
+    def _row(h, up):
+        rc = abs(int(h.get("rank_change_7d") or 0))
+        pos = str(h.get("position") or "").upper()
+        col = pos_colors.get(pos, "#6b7280")
+        val = int(round(float(h.get("value") or 0)))
+        shares = int(h.get("shares") or len(h.get("in_leagues") or []) or 1)
+        sh = (f"<span class='pfm-sh' title='Held in {shares} of your leagues'>{shares}L</span>"
+              if shares > 1 else "")
+        dc = "var(--win)" if up else "var(--loss)"
+        ar = "&#9650;" if up else "&#9660;"
+        pid = html.escape(str(h.get("pid") or ""), quote=True)
+        nm = html.escape(str(h.get("name") or ""))
+        return (
+            f"<div class='pfm-row player-clickable' role='button' tabindex='0' "
+            f"data-player-id='{pid}' data-player-name='{nm}'>"
+            f"<span class='pfm-pos' style='color:{col};'>{pos}</span>"
+            f"<span class='pfm-name'>{nm}</span>{sh}"
+            f"<span class='pfm-val'>{val}</span>"
+            f"<span class='pfm-delta' style='color:{dc};'>{ar} {rc}</span>"
+            f"</div>"
+        )
+
+    def _col(title, rows, empty):
+        inner = "".join(rows) if rows else f"<div class='pfm-empty'>{empty}</div>"
+        return f"<div class='pfm-col'><div class='pfm-col-h'>{title}</div>{inner}</div>"
+
+    risers_html = _col("Risers", [_row(h, True) for h in risers], "No risers this week")
+    fallers_html = _col("Fallers", [_row(h, False) for h in fallers], "No fallers this week")
+    return (
+        "<style>"
+        ".pfm-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 22px;padding:4px 16px 14px;}"
+        "@media(max-width:640px){.pfm-grid{grid-template-columns:1fr;gap:0;}}"
+        ".pfm-col-h{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;"
+        "color:var(--text-muted);padding:8px 0 6px;border-bottom:1px solid var(--grid,var(--border));}"
+        ".pfm-row{display:flex;align-items:center;gap:8px;padding:7px 2px;"
+        "border-bottom:1px solid var(--grid,var(--border));cursor:pointer;}"
+        ".pfm-row:last-child{border-bottom:none;}"
+        ".pfm-row:hover{background:var(--row,rgba(127,127,127,.05));}"
+        ".pfm-pos{font-weight:800;font-size:11px;min-width:26px;}"
+        ".pfm-name{flex:1;font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}"
+        ".pfm-sh{font-size:10px;font-weight:700;color:var(--text-subtle);"
+        "background:var(--row,rgba(127,127,127,.1));padding:1px 5px;border-radius:5px;}"
+        ".pfm-val{font-size:12px;font-weight:700;color:var(--text-muted);font-variant-numeric:tabular-nums;min-width:34px;text-align:right;}"
+        ".pfm-delta{font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;min-width:40px;text-align:right;}"
+        ".pfm-empty{font-size:12px;color:var(--text-subtle);padding:12px 0;}"
+        "</style>"
+        "<div class='card' style='margin-bottom:14px;'>"
+        "<div class='card-header' style='display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;'>"
+        "<h3>Portfolio Movers</h3>"
+        "<span style='font-size:12px;color:var(--text-muted);'>Value-rank swings across your leagues &middot; last 7 days</span>"
+        "</div>"
+        f"<div class='pfm-grid'>{risers_html}{fallers_html}</div>"
+        "</div>"
+    )
+
+
 def build_portfolio_body(
     username: str,
     valid_leagues: list,
@@ -30448,11 +30972,13 @@ def build_portfolio_body(
 
     two_col = f"<div class='pf-grid'>{league_card}{pos_card}</div>" if pos_card else league_card
 
+    movers_html = _portfolio_movers_card(holdings, _POS_COLORS)
+
     if nfl_html and holdings_html:
         bottom_row = f"<div class='pf-grid-2'>{nfl_html}{holdings_html}</div>"
     else:
         bottom_row = nfl_html + holdings_html
-    return css + top_strip + two_col + bottom_row
+    return css + top_strip + two_col + movers_html + bottom_row
 
 
 def build_scout_body(ctx: dict) -> str:
@@ -31446,8 +31972,16 @@ def top_movers_page():
     """Weekly dynasty risers and fallers — freshness content for SEO."""
     from dashboard_services.pages.dynasty_pages import build_risers_fallers_body
     from data_building.player_value_history import get_top_movers
+    # Timeframe toggle: 7 / 30 / 90 days. Clamp to the supported set so a hand-
+    # typed ?days= can't push an unbounded window into the query.
     try:
-        movers = get_top_movers(days=7, limit=20, min_baseline_value=5,
+        days = int(request.args.get("days", 7))
+    except (ValueError, TypeError):
+        days = 7
+    if days not in (7, 30, 90):
+        days = 7
+    try:
+        movers = get_top_movers(days=days, limit=20, min_baseline_value=5,
                                 min_current_value=20.0,
                                 current_values=_displayed_value_map("1qb"))
     except Exception:
@@ -31456,14 +31990,17 @@ def top_movers_page():
     from datetime import datetime as _dt
     date_label = _dt.now().strftime("%B %d, %Y")
     body = build_risers_fallers_body(movers, as_of_date=date_label,
-                                     signed_in=bool(session.get("viewer_username")))
+                                     signed_in=bool(session.get("viewer_username")),
+                                     days=days)
 
+    _win_label = {7: "week", 30: "30 days", 90: "90 days"}[days]
     return render_page(
         f"Top Movers: {date_label} | BR Fantasy",
         None, "top-movers", body,
         description=(
-            f"Dynasty fantasy football risers and fallers for the week of {date_label}. "
-            f"Biggest trade value movers, act fast with the BR Fantasy Trade Calculator."
+            f"Dynasty fantasy football risers and fallers over the last {_win_label} "
+            f"({date_label}). Biggest trade value movers, act fast with the BR Fantasy "
+            f"Trade Calculator."
         ),
     )
 
@@ -31554,7 +32091,7 @@ def build_compare_page_body(popular_html: str = "") -> str:
           <header class="compare-page-head">
             <span class="compare-page-eyebrow"><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i> Head to head</span>
             <h1 class="compare-page-title">Compare Players</h1>
-            <p class="compare-page-sub">Put any two players side by side and see who comes out ahead. Type a tier like <strong>WR1</strong> or <strong>RB2</strong> to compare against the average of those top players.</p>
+            <p class="compare-page-sub">Put two players side by side and see who comes out ahead, or add a third for a shortlist. Type a tier like <strong>WR1</strong> or <strong>RB2</strong> to compare against the average of those top players.</p>
           </header>
           <div class="compare-pickers">
             <div class="compare-picker">
@@ -31575,6 +32112,16 @@ def build_compare_page_body(popular_html: str = "") -> str:
                 <div class="compare-pick-results" id="cmpResults2" role="listbox"></div>
               </div>
               <div class="compare-tier-suggest" id="cmpSuggest2" hidden></div>
+            </div>
+            <div class="compare-vs compare-vs-opt" aria-hidden="true">VS</div>
+            <div class="compare-picker compare-picker-opt">
+              <label class="compare-pick-label">Player 3 <span class="compare-pick-opt">optional</span></label>
+              <div class="compare-pick-field">
+                <input type="text" class="compare-pick-input" id="cmpPick3" placeholder="Add a third…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="cmpResults3" aria-autocomplete="list" aria-label="Search player 3">
+                <button type="button" class="compare-pick-clear" id="cmpClear3" aria-label="Clear player 3" hidden>&times;</button>
+                <div class="compare-pick-results" id="cmpResults3" role="listbox"></div>
+              </div>
+              <div class="compare-tier-suggest" id="cmpSuggest3" hidden></div>
             </div>
           </div>
           <div class="compare-actions" id="cmpActions" hidden>

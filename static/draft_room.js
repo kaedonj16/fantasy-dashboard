@@ -3433,7 +3433,7 @@
     }
     el.classList.remove('is-syncing');
     var lagSuffix = _pickLagMsg ? (' <span style="color:#f59e0b">' + _pickLagMsg + '</span>') : '';
-    el.innerHTML = '<span class="dr-poll-dot"></span>' + (_fmtAgo(_pollLastAt) || '&mdash;') + lagSuffix;
+    el.innerHTML = '<span class="dr-poll-dot"></span>' + (_fmtAgo(_pollLastAt) || '-') + lagSuffix;
   }
   // In-page draft banner. Two states: a countdown when a connected draft is within
   // 15 min of its scheduled start, and a "live now" bar while it's drafting. Both
@@ -4173,7 +4173,7 @@
       var tot = 0;
       var rows = nums.map(function(pn){
         var v = pickNumValue(pn);
-        if (!v) return '<div class="dr-pt-row">#' + pn + ' — n/a</div>';
+        if (!v) return '<div class="dr-pt-row">#' + pn + ' - n/a</div>';
         tot += v.value;
         return '<div class="dr-pt-row">#' + pn + ' &asymp; <b>' + v.value + '</b>'
           + ' <span class="dr-pt-proxy">(' + esc(v.proxy.name) + ')</span></div>';
