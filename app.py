@@ -12283,12 +12283,22 @@ def api_start_sit_options():
         else:
             def_rank, def_total = None, 32
 
-        # ── Start/sit score: projection × form × matchup × usage ─────────────
+        full_player  = players_full.get(pid) or {}
+        raw_status   = str(full_player.get("injury_status") or full_player.get("status") or "").strip()
+        injury_status = None if raw_status in {"", "active", "Active", "ACT"} else raw_status
+        _imp_ss = (game_conditions.get(team) or {}).get("implied_total") if not on_bye else None
+
+        # ── Start/sit score: projection × form × matchup × usage × availability ──
         # Projection is the dominant signal. Form (±10%), matchup (±10%), and
         # usage trend (±5%) influence close calls but can't flip a meaningful
-        # projection gap (e.g. 12.8 vs 9.8 stays the same regardless).
+        # projection gap (e.g. 12.8 vs 9.8 stays the same regardless). Availability
+        # can, and should: an OUT/IR/Doubtful player must never win a start, a
+        # Questionable one takes a haircut, and a game's Vegas implied total fades
+        # (low) or nudges (high) everyone in it — turning context chips into an
+        # actual recommendation instead of decoration.
         _ut_ss = _ss_usage_trends.get(pid) or {}
         usage_delta = _ut_ss.get("delta")
+        demotion = None
         if on_bye:
             score = 0.0
         else:
@@ -12311,11 +12321,23 @@ def api_start_sit_options():
                 _rel = usage_delta / max(float(_ut_ss["season_avg"]), 1.0)
                 _ug = min(1.05, max(0.95, 1.0 + _rel * 0.25))
 
-            score = proj_pts * _form * _mu * _ug
+            # Availability + game-environment.
+            _avail = 1.0
+            _st_up = (injury_status or "").upper()
+            if any(k in _st_up for k in ("OUT", "IR", "SUSP", "DOUBT", "PUP", "DNP")):
+                _avail = 0.0
+                demotion = "out"
+            elif "QUESTION" in _st_up or _st_up in ("GTD", "Q"):
+                _avail = 0.85
+                demotion = "questionable"
+            if _imp_ss is not None:
+                if _imp_ss <= 17:
+                    _avail *= 0.94
+                    demotion = demotion or "low_total"
+                elif _imp_ss >= 27:
+                    _avail *= 1.04
 
-        full_player  = players_full.get(pid) or {}
-        raw_status   = str(full_player.get("injury_status") or full_player.get("status") or "").strip()
-        injury_status = None if raw_status in {"", "active", "Active", "ACT"} else raw_status
+            score = proj_pts * _form * _mu * _ug * _avail
 
         positions_out[pos].append({
             "player_id":     pid,
@@ -12335,9 +12357,10 @@ def api_start_sit_options():
             "usage_delta":   usage_delta,
             "usage_stat":    _ut_ss.get("stat"),
             "game_env":      _ss_game_env(home_team_of.get(team), current_week) if not on_bye else None,
-            "implied_total": (game_conditions.get(team) or {}).get("implied_total") if not on_bye else None,
+            "implied_total": _imp_ss,
             "weather":       (game_conditions.get(team) or {}).get("weather") if not on_bye else None,
             "consistency":   _resolve_consistency(pid, pos),
+            "demotion":      demotion,
             "_score":        score,
         })
 
@@ -12372,6 +12395,76 @@ def api_start_sit_options():
             p["start"] = True
             p["flex_start"] = True
 
+    # ── Win-probability on the closest call at each position ─────────────────
+    # The real start/sit tension is the marginal pair: the last player in a
+    # starting slot vs the first one on the bench. Model each as Normal(proj, σ)
+    # — σ from the player's own boom/bust std when we have it, else a CV-based
+    # fallback — and report P(starter outscores the guy you'd bench). Surfaced
+    # only when it's genuinely close, so a blowout call isn't dressed up as a
+    # coin flip.
+    import math as _math_ss
+
+    def _phi(z):
+        return 0.5 * (1.0 + _math_ss.erf(z / _math_ss.sqrt(2.0)))
+
+    def _sigma_of(p):
+        c = p.get("consistency") or {}
+        s = c.get("std")
+        if s and float(s) > 0:
+            return float(s)
+        return max(float(p.get("proj_pts") or 0.0) * 0.5, 4.0)
+
+    def _win_prob(a, b):
+        ma = float(a.get("proj_pts") or 0.0)
+        mb = float(b.get("proj_pts") or 0.0)
+        sa, sb = _sigma_of(a), _sigma_of(b)
+        denom = _math_ss.sqrt(sa * sa + sb * sb) or 1.0
+        return round(_phi((ma - mb) / denom), 2)
+
+    for _pos in ("QB", "RB", "WR", "TE"):
+        _arr = [p for p in positions_out[_pos] if not p["on_bye"]]
+        _ns = lineup_requirements.get(_pos, 1)
+        if _ns >= 1 and len(_arr) > _ns:
+            _starter, _bench = _arr[_ns - 1], _arr[_ns]
+            _starter["close_call"] = {
+                "vs_name": _bench["name"],
+                "vs_player_id": _bench["player_id"],
+                "win_prob": _win_prob(_starter, _bench),
+            }
+
+    # ── Optimal-lineup advice: compare the auto-optimal skill lineup to the
+    # viewer's actual current starters — the points left on the bench, plus the
+    # specific swaps to fix it. Covers the QB/RB/WR/TE we model. ───────────────
+    _proj_by_pid, _name_by_pid, _pos_by_pid = {}, {}, {}
+    for _pos in positions_out:
+        for _p in positions_out[_pos]:
+            _proj_by_pid[_p["player_id"]] = _p["proj_pts"]
+            _name_by_pid[_p["player_id"]] = _p["name"]
+            _pos_by_pid[_p["player_id"]] = _pos
+    _optimal_ids = {_p["player_id"] for _pos in positions_out for _p in positions_out[_pos] if _p.get("start")}
+    _current_ids = {str(x) for x in (viewer_roster.get("starters") or []) if str(x) not in ("0", "")}
+    _current_skill = {pid for pid in _current_ids if pid in _proj_by_pid}
+    _optimal_pts = round(sum(_proj_by_pid.get(pid, 0.0) for pid in _optimal_ids), 1)
+    _current_pts = round(sum(_proj_by_pid.get(pid, 0.0) for pid in _current_skill), 1)
+    _to_start = sorted(_optimal_ids - _current_ids, key=lambda pid: _proj_by_pid.get(pid, 0.0), reverse=True)
+    _to_sit = sorted(_current_skill - _optimal_ids, key=lambda pid: _proj_by_pid.get(pid, 0.0))
+    _swaps = []
+    for _in_pid, _out_pid in zip(_to_start, _to_sit):
+        _swaps.append({
+            "start": {"player_id": _in_pid, "name": _name_by_pid.get(_in_pid),
+                      "position": _pos_by_pid.get(_in_pid), "proj": _proj_by_pid.get(_in_pid)},
+            "sit": {"player_id": _out_pid, "name": _name_by_pid.get(_out_pid),
+                    "position": _pos_by_pid.get(_out_pid), "proj": _proj_by_pid.get(_out_pid)},
+            "gain": round(_proj_by_pid.get(_in_pid, 0.0) - _proj_by_pid.get(_out_pid, 0.0), 1),
+        })
+    lineup_advice = {
+        "has_current": bool(_current_skill),
+        "optimal_pts": _optimal_pts,
+        "current_pts": _current_pts,
+        "delta": round(_optimal_pts - _current_pts, 1),
+        "swaps": _swaps,
+    }
+
     for pos in positions_out:
         for p in positions_out[pos]:
             del p["_score"]
@@ -12382,6 +12475,7 @@ def api_start_sit_options():
         "flex_slots": flex_slots,
         "sflex_slots": sflex_slots,
         "current_week": current_week,
+        "lineup_advice": lineup_advice,
     })
 
 

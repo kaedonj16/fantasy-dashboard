@@ -4668,6 +4668,85 @@ window.initTradePage = function initTradePage(root = document) {
 
   }
 
+  // ── Trade balancer ──────────────────────────────────────────────────────────
+  // When a two-sided trade is lopsided beyond the fair band, suggest a player to
+  // ADD to the lighter side so the values even out. Works on either side: the
+  // candidate pool is that side's allowed roster (opponent's players for Side A =
+  // what you receive; your players for Side B = what you send), falling back to
+  // the full pool when no roster filter is bound. Clicking a suggestion adds it
+  // and re-evaluates, exactly like picking from search.
+  function renderTradeBalancer(data) {
+    const verdictEl = root.querySelector("#tradeVerdict");
+    if (!verdictEl) return;
+    let box = root.querySelector("#tradeBalancer");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "tradeBalancer";
+      box.className = "otc-balancer";
+      verdictEl.parentNode.insertBefore(box, verdictEl.nextSibling);
+    }
+    const hide = () => { box.innerHTML = ""; box.style.display = "none"; };
+
+    const aEff = data && data.side_a ? Number(data.side_a.effective_total) || 0 : 0;
+    const bEff = data && data.side_b ? Number(data.side_b.effective_total) || 0 : 0;
+    const aHas = state.sideAPlayers.length + state.sideAPicks.length > 0;
+    const bHas = state.sideBPlayers.length + state.sideBPicks.length > 0;
+    const ft = Number(data && data.fair_threshold) || 0;
+    const gap = Math.abs(aEff - bEff);
+    // Only a real, two-sided, out-of-band trade gets a suggestion.
+    if (!aHas || !bHas || gap <= ft || gap < 1) return hide();
+
+    const lightSide = aEff < bEff ? "A" : "B";
+    let poolSet = (typeof _allowedSetForSide === "function")
+      ? _allowedSetForSide(lightSide, rosterFilter.byRid) : null;
+    const inTrade = new Set([...state.sideAPlayers, ...state.sideBPlayers].map(p => String(p.id)));
+    const poolIds = (poolSet && poolSet.size)
+      ? [...poolSet]
+      : allPlayers.filter(p => (p.position || "") !== "PICK").map(p => String(p.id));
+
+    const cands = [];
+    for (const id of poolIds) {
+      const sid = String(id);
+      if (inTrade.has(sid)) continue;
+      const obj = allPlayers.find(p => String(p.id) === sid && (p.position || "") !== "PICK");
+      if (!obj) continue;
+      const val = getPlayerValue(obj);
+      if (val > 0) cands.push({ obj, val });
+    }
+    if (!cands.length) return hide();
+    // Closest to the gap, with a mild penalty for overshooting it.
+    const _cost = c => Math.abs(c.val - gap) + (c.val > gap ? (c.val - gap) * 0.15 : 0);
+    cands.sort((x, y) => _cost(x) - _cost(y));
+    const top = cands.slice(0, 3);
+
+    const rfActive = (typeof rosterFilterActive === "function") ? rosterFilterActive() : false;
+    let who = "This side";
+    if (rfActive) {
+      const rid = lightSide === "A" ? rosterFilter.sideBRid : rosterFilter.viewerRid;
+      if (rid && rosterFilter.teamName[rid]) who = rosterFilter.teamName[rid];
+    }
+    const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+    box.style.display = "";
+    box.innerHTML =
+      '<div class="otc-balancer-head"><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i> Even it out'
+      + ' &middot; <strong>' + esc(who) + '</strong> is light by ~' + Math.round(gap) + '</div>'
+      + '<div class="otc-balancer-chips">'
+      + top.map((c, i) => '<button type="button" class="otc-balancer-chip" data-bi="' + i + '">'
+          + '<span class="otc-balancer-name">' + esc(c.obj.name) + '</span>'
+          + '<span class="otc-balancer-val">' + formatValue(c.val) + '</span></button>').join('')
+      + '</div>';
+    box.querySelectorAll(".otc-balancer-chip").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const c = top[+btn.getAttribute("data-bi")];
+        if (!c) return;
+        getSidePlayers(lightSide).push(c.obj);
+        saveState();
+        renderChips(lightSide);
+        recomputeTrade();
+      });
+    });
+  }
+
   async function recomputeTrade() {
     const gen = ++_tradeGeneration;   // capture this call's generation
 
@@ -4708,6 +4787,8 @@ window.initTradePage = function initTradePage(root = document) {
       }
       const stlSec = root.querySelector("#similarTradesSection");
       if (stlSec) stlSec.style.display = "none";
+      const balBox = root.querySelector("#tradeBalancer");
+      if (balBox) { balBox.innerHTML = ""; balBox.style.display = "none"; }
       // Reset the Playoff Impact card back to its default state instead of
       // leaving the last trade's simulated numbers on screen.
       fetchPlayoffImpact();
@@ -4814,6 +4895,7 @@ window.initTradePage = function initTradePage(root = document) {
       }
 
       _applyTierBadges(data);
+      renderTradeBalancer(data);
 
       Promise.all([fetchTradeIntel(), fetchSimilarTrades(), fetchPlayoffImpact()]).catch(() => {});
     } catch (err) {
