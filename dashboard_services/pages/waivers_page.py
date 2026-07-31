@@ -117,6 +117,30 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-trend-name { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; }
 .wv-trend-sub { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
 
+/* Streaming this week: matchup-ranked D/ST and K, shown under the waiver list
+   only in season. Implied-total chip is green for a good spot, red for a dud
+   (meaning is inverted for defenses, where a low opponent total is good). */
+.wv-stream-head { margin-top: 22px; }
+.wv-stream-group { margin-bottom: 10px; }
+.wv-stream-sub {
+  font-size: 10px; font-weight: 700; color: var(--text-subtle, var(--text-muted));
+  text-transform: uppercase; letter-spacing: .05em; margin: 4px 2px 6px;
+}
+.wv-stream-row {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin-bottom: 6px;
+  border-radius: 8px; background: var(--card); border: 1px solid var(--border); cursor: pointer;
+}
+.wv-stream-row:hover { border-color: var(--accent); }
+.wv-stream-name { font-weight: 700; font-size: 13px; color: var(--text); }
+.wv-stream-matchup { font-size: 12px; color: var(--text-muted); flex: 1; }
+.wv-stream-imp {
+  font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 999px;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.wv-stream-imp-good { background: color-mix(in srgb, var(--win) 16%, transparent); color: var(--win); }
+.wv-stream-imp-bad  { background: color-mix(in srgb, var(--loss) 14%, transparent); color: var(--loss); }
+.wv-stream-imp-mid  { background: rgba(148,163,184,.16); color: var(--text-muted); }
+
 /* Start/Sit player cards */
 .wv-ss-pos-group { margin-bottom: 16px; }
 .wv-ss-pos-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
@@ -317,6 +341,11 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
       <div id="wvWaiverList">
         {wv_skel}
       </div>
+      <div id="wvStreamWrap" hidden>
+        <div class="wv-section-title wv-stream-head">Streaming this week</div>
+        <div id="wvStreamDef" class="wv-stream-group"></div>
+        <div id="wvStreamK" class="wv-stream-group"></div>
+      </div>
     </div>
 
     <!-- Right: Start/Sit -->
@@ -484,6 +513,11 @@ function wvLoad() {{
     .then(d => wvRenderTrending(d.trending || []))
     .catch(() => {{}});   // strip is a bonus; stay silent on failure
 
+  fetch(`/api/streaming-options?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
+    .then(r => r.json())
+    .then(d => wvRenderStreaming(d))
+    .catch(() => {{}});   // in-season only; silent otherwise
+
   fetch(`/api/start-sit-options?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
     .then(r => r.json())
     .then(d => {{
@@ -564,6 +598,45 @@ function wvRenderTrending(items) {{
         <span class="wv-trend-sub">${{sub}}</span>
       </button>`;
   }}).join('');
+  wrap.hidden = false;
+}}
+
+// ── Streaming this week (matchup-based D/ST + K) ───────────────────────────────
+function wvStreamRow(p, implied, isDef) {{
+  const nm = (p.name || '').replace(/'/g, "\\\\'");
+  const impNum = implied != null ? +implied : null;
+  let impCls = 'mid';
+  if (impNum != null) impCls = impNum >= 26 ? 'high' : (impNum <= 18 ? 'low' : 'mid');
+  // For a defense a LOW opponent total is good, so invert the color meaning.
+  const good = isDef ? (impNum != null && impNum <= 18) : (impNum != null && impNum >= 26);
+  const bad  = isDef ? (impNum != null && impNum >= 26) : (impNum != null && impNum <= 18);
+  const impCls2 = good ? 'good' : (bad ? 'bad' : 'mid');
+  const impLabel = impNum != null
+    ? (isDef ? (impNum.toFixed(0) + ' opp') : (impNum.toFixed(0) + ' impl'))
+    : '';
+  const impChip = impLabel
+    ? `<span class="wv-stream-imp wv-stream-imp-${{impCls2}}" title="Vegas implied team total">${{impLabel}}</span>`
+    : '';
+  return `
+    <div class="wv-stream-row" onclick="openPlayerModal('${{p.player_id}}', '${{nm}}')">
+      <span class="wv-stream-name">${{p.name || ''}}</span>
+      <span class="wv-stream-matchup">${{p.matchup || ''}}</span>
+      ${{impChip}}
+    </div>`;
+}}
+function wvRenderStreaming(d) {{
+  const wrap = document.getElementById('wvStreamWrap');
+  const defEl = document.getElementById('wvStreamDef');
+  const kEl = document.getElementById('wvStreamK');
+  if (!wrap || !d || !d.in_season) {{ if (wrap) wrap.hidden = true; return; }}
+  const defs = d.defense || [], ks = d.kicker || [];
+  if (!defs.length && !ks.length) {{ wrap.hidden = true; return; }}
+  defEl.innerHTML = defs.length
+    ? '<div class="wv-stream-sub">Defense</div>' + defs.slice(0, 5).map(p => wvStreamRow(p, p.opp_implied, true)).join('')
+    : '';
+  kEl.innerHTML = ks.length
+    ? '<div class="wv-stream-sub">Kicker</div>' + ks.slice(0, 5).map(p => wvStreamRow(p, p.own_implied, false)).join('')
+    : '';
   wrap.hidden = false;
 }}
 

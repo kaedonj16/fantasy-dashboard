@@ -11809,6 +11809,130 @@ def api_trending_adds():
     return jsonify({"trending": out})
 
 
+@app.route("/api/streaming-options")
+def api_streaming_options():
+    """Matchup-based streaming targets for D/ST and K: free-agent defenses ranked
+    by how weak the offense they face is (opponent Vegas implied total), and
+    free-agent kickers ranked by their own team's implied total. Reuses the same
+    schedule + Vegas plumbing as Start/Sit. Empty in the offseason and gated to
+    the positions the league actually starts."""
+    _empty = {"defense": [], "kicker": [], "in_season": False}
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    league_id = (request.args.get("league_id") or "").strip()
+    season = int(request.args.get("season") or datetime.now().year)
+    if not league_id:
+        return jsonify(_empty)
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+    except Exception:
+        return jsonify(_empty)
+
+    current_week = int(ctx.get("current_week") or 0)
+    if current_week < 1 or ctx.get("offseason_mode"):
+        return jsonify(_empty)
+
+    # League's started positions gate which streamers are relevant at all.
+    rpos = [str(s).upper() for s in (ctx.get("roster_positions") or [])]
+    uses_def = any(s in ("DEF", "DST", "D/ST") for s in rpos)
+    uses_k = "K" in rpos
+    if not (uses_def or uses_k):
+        return jsonify({"defense": [], "kicker": [], "in_season": True})
+
+    # ── Schedule → opponent map + games for the Vegas lookup ──────────────────
+    opponent_map: dict = {}
+    week_games: list = []
+    teams: set = set()
+    try:
+        from utils.utils import load_week_sched
+        for g in (load_week_sched(season, current_week) or []):
+            home = str(g.get("home") or "").upper()
+            away = str(g.get("away") or "").upper()
+            if home and away:
+                opponent_map[home] = away
+                opponent_map[away] = home
+                week_games.append((home, away, str(g.get("gameDate") or "")))
+                teams.add(home)
+                teams.add(away)
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+    if not teams:
+        return jsonify({"defense": [], "kicker": [], "in_season": True})
+
+    conditions: dict = {}
+    try:
+        from utils.game_conditions import build_week_conditions
+        conditions = build_week_conditions(season, current_week, week_games) or {}
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+
+    def _implied(team):
+        v = (conditions.get(team) or {}).get("implied_total")
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def _matchup(team):
+        opp = opponent_map.get(team)
+        if not opp:
+            return "", None
+        # home_team_of not tracked here; label as "vs OPP" (venue is secondary).
+        return f"vs {opp}", opp
+
+    rostered = {
+        str(pid)
+        for r in (ctx.get("rosters") or [])
+        for pid in (r.get("players") or [])
+    }
+    players_index = ctx.get("players_index") or get_players_index_global() or {}
+
+    # ── Defenses: one per team, pid == team abbr in Sleeper. Best matchup is the
+    # weakest opposing offense (lowest opponent implied total). ────────────────
+    defense = []
+    if uses_def:
+        rows = []
+        for t in teams:
+            if t in rostered:
+                continue
+            label, opp = _matchup(t)
+            rows.append({
+                "player_id": t, "name": f"{t} D/ST", "position": "DEF", "team": t,
+                "opponent": opp, "matchup": label, "opp_implied": _implied(opp),
+            })
+        rows.sort(key=lambda d: (d["opp_implied"] is None,
+                                 d["opp_implied"] if d["opp_implied"] is not None else 99.0))
+        defense = rows[:8]
+
+    # ── Kickers: free-agent Ks on teams playing this week, ranked by their own
+    # implied total (more team scoring → more FGs/XPs). One per team. ──────────
+    kicker = []
+    if uses_k:
+        cand = []
+        for pid, meta in players_index.items():
+            if str(meta.get("pos") or "").upper() != "K":
+                continue
+            pid = str(pid)
+            t = str(meta.get("team") or "").upper()
+            if not t or t not in teams or pid in rostered:
+                continue
+            cand.append((pid, meta.get("name") or f"Player {pid}", t, _implied(t)))
+        cand.sort(key=lambda x: (x[3] is None, -(x[3] if x[3] is not None else 0.0)))
+        seen_team = set()
+        for pid, name, t, imp in cand:
+            if t in seen_team:
+                continue
+            seen_team.add(t)
+            label, opp = _matchup(t)
+            kicker.append({
+                "player_id": pid, "name": name, "position": "K", "team": t,
+                "opponent": opp, "matchup": label, "own_implied": imp,
+            })
+            if len(kicker) >= 8:
+                break
+
+    return jsonify({"defense": defense, "kicker": kicker, "in_season": True})
+
+
 _WEEKLY_PTS_CACHE: dict = {}
 _WEEKLY_PTS_TTL = 900  # 15 min; weekly stat files change at most once a week
 
