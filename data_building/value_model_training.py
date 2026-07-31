@@ -797,10 +797,13 @@ def rewrite_value_table_with_model() -> Path:
     # player). A player simply missing from a source counts as a low signal.
     _OVERMARKET_TRIGGER = 2.5    # model must be >= 2.5x the external consensus to act
     _OVERMARKET_MIN_GAP = 100.0  # ...and at least this many points above it (skip low-stakes)
-    # Max day-over-day move per player (the only smoothing). 0.05 = ±5%/day.
+    # Max day-over-day move per player (the only smoothing). 0.02 = ±2%/day,
+    # which caps a player mid-re-rating at ~+15%/week instead of the ~+40%/week
+    # that ±5%/day allowed - real dynasty values don't swing that fast. Only binds
+    # on players the model is re-rating hard; normal day-to-day moves are smaller.
     # Kept in lock-step with trade_value_model.DAILY_MOVE_CAP so the model board
     # and the served calibrated track move at the same rate.
-    _MAX_DAILY_MOVE = 0.05
+    _MAX_DAILY_MOVE = 0.02
 
     # CRITICAL FIX: Load vendor values to use directly when available
     fc_df = load_fantasycalc_df()

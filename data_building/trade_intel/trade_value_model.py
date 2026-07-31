@@ -60,14 +60,16 @@ MIN_LIFT           = 0.60  # ...and cut down to -40%. Symmetric ±40% band aroun
 ANCHOR_BASKET_N    = 5     # anchor the top-N basket MEAN (not a single #1) to MAX_VALUE so
                            # one player's day-to-day WLS solve can't drag the whole board
 TRADES_LOOKBACK_DAYS = 120 # only load trades from the last N days; >60d = weight 0.08
-DAILY_MOVE_CAP     = 0.05  # max fractional day-over-day change in a calibrated value.
+DAILY_MOVE_CAP     = 0.02  # max fractional day-over-day change in a calibrated value.
+                           # 0.02 = ±2%/day, so a player mid-re-rating tops out near
+                           # +15%/week instead of the ~+40%/week ±5%/day allowed.
                            # The displayed value is COALESCE(calibrated, raw) - i.e. the
                            # calibrated track is what shows whenever it exists - so capping
                            # the calibrated daily move directly bounds how far a player's
                            # shown value can swing per run. Kept in lock-step with the model
-                           # board's _MAX_DAILY_MOVE (value_model_training, 0.10): the two
+                           # board's _MAX_DAILY_MOVE (value_model_training, 0.02): the two
                            # tracks must share one cap or the looser one (this) governs the
-                           # shown value and lets it drift ~200 pts over a few days.
+                           # shown value and lets it drift too far over a few days.
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 

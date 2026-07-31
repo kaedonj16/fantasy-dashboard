@@ -11632,12 +11632,15 @@ def api_waiver_candidates():
     # money; a player who fills the viewer's own roster need is nudged up. A band
     # rather than a number because league budgets differ ($100 / $1000 / rolling);
     # the % reads the same regardless. Gated client-side on the league using FAAB.
+    # Strict FAAB detection. Sleeper defaults waiver_budget to 100 even for
+    # rolling / reverse-priority leagues, so a budget alone is a false positive -
+    # the only reliable Sleeper FAAB signal is waiver_type == 2. ESPN uses an
+    # explicit acquisition budget. Fail closed when FAAB can't be confirmed so a
+    # non-FAAB league never sees a bid % it can't use.
     _wv_settings = (ctx.get("league") or {}).get("settings") or {}
     _faab_enabled = (
         _safe_int(_wv_settings.get("waiver_type"), -1) == 2          # Sleeper FAAB
-        or bool(_wv_settings.get("waiver_budget"))                    # Sleeper budget set
-        or bool(_wv_settings.get("acquisition_budget"))              # ESPN
-        or not _wv_settings                                          # unknown → show; label is explicit
+        or _safe_int(_wv_settings.get("acquisition_budget"), 0) > 0  # ESPN FAAB
     )
     _wv_scores = [_safe_pickup_score(c) for c in _shown]
     _wv_smin = min(_wv_scores) if _wv_scores else 0.0
