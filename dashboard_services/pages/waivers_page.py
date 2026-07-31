@@ -44,6 +44,11 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 }
 
 .wv-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+/* Grid items default to min-width:auto, so a wide flex child (the horizontally
+   scrolling trending strip) would force its column — and the whole 2-column
+   layout — to expand past the viewport instead of scrolling. min-width:0 lets
+   the column stay at its 1fr track and the strip scroll inside it. */
+.wv-section { min-width: 0; }
 @media(min-width: 769px) { .wv-section { display: block !important; } }
 .wv-section-title { font-size: 14px; font-weight: 700; margin-bottom: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
 .wv-loading { display: flex; justify-content: center; padding: 40px; }
@@ -586,7 +591,9 @@ function wvRenderTrending(items) {{
   const wrap = document.getElementById('wvTrendingWrap');
   const strip = document.getElementById('wvTrendingStrip');
   if (!wrap || !strip || !items.length) {{ if (wrap) wrap.hidden = true; return; }}
-  strip.innerHTML = items.map(p => {{
+  // Cap the strip so a long league-wide add list can't dominate the page; the
+  // strip scrolls horizontally, so a small set keeps it a glanceable accent.
+  strip.innerHTML = items.slice(0, 8).map(p => {{
     const pos = p.position || '';
     const sub = [pos, p.team].filter(Boolean).join(' · ');
     const nm = (p.name || '').replace(/'/g, "\\\\'");
