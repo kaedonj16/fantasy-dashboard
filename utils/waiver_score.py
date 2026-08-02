@@ -34,6 +34,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from utils.draft_grade import clamp01 as _clamp01
+
 # Age past which each position starts losing the age bonus (peak dynasty window).
 WAIVER_PRIME_MAX = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
 
@@ -137,10 +139,6 @@ class WaiverWeights:
 
 
 WEIGHTS = WaiverWeights()
-
-
-def _clamp01(x: float) -> float:
-    return 0.0 if x < 0 else 1.0 if x > 1 else x
 
 
 def _pos_depth(c: dict):

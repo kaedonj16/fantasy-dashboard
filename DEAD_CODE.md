@@ -204,6 +204,33 @@ after normalizing names — consolidating into one shared helper removes ~12 cop
 >   is deleting one file once the canonical entry point is confirmed — a file-deletion
 >   decision, not a function merge.
 
+> **UPDATE (2026-08-02): fresh AST re-scan + two more consolidations.** Re-ran an
+> exact-body duplicate scan (blank the def name, strip docstrings, group by
+> normalized AST) across the whole tree. After the June work, only a handful of
+> non-trivial duplicate groups survive, and most are intentional:
+> - **`_departure_verb` / `_get_departure_verb`** (breakout_engine explainability
+>   + transactions) — the last genuinely-safe Section 2 item. The shared 5-entry
+>   mapping now lives in the new dependency-free leaf
+>   `data_building/breakout_engine/_verbs.py::departure_verb`; both methods delegate
+>   to it, so the mapping has a single source of truth. Verified byte-identical
+>   before the merge and behavior-parity after.
+> - **`clamp01` / `_clamp01`** — `utils/waiver_score.py` and
+>   `data_building/run_draft_backtest.py` now `import clamp01 as _clamp01` from the
+>   pure leaf `utils/draft_grade.py` (no cycle: draft_grade imports only
+>   `math`/`typing`). Call sites untouched via the alias; the 126 waiver/draft-grade
+>   tests still pass.
+>
+> **Confirmed intentional / still-deferred (left as-is on purpose):**
+> - `get_conn()` ×3 (playoff_odds_history, team_value_history, draft_adp_crawler) —
+>   these are **deliberate lazy-import shims**, each documented, that keep `psycopg`
+>   out of the pure test suite until a query actually runs. Not harmful duplication;
+>   consolidating would only add a module and a dependency for no behavioral gain.
+> - `_lineup_score` / `_reb_lineup_score` (archetype_engine) — still nested closures
+>   capturing different enclosing scope; unchanged from the June assessment.
+> - `_safe` / `_safe_float` (rookie_pipeline/ingestion vs rookie_api) — cross-package,
+>   and `rookie_api._safe_float`'s `default=None` semantics were deliberately kept in
+>   the Section 3b work; not a like-for-like merge.
+
 
 - **3 copies** (4 stmts, same name)
   - `data_building/trade_intel/analytics.py:40` — `_decay_weight()`

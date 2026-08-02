@@ -238,10 +238,5 @@ class ExplainabilityEngine:
 
     def _departure_verb(self, change_type: str) -> str:
         """Convert change_type to past tense verb."""
-        verbs = {
-            'retirement': 'retired',
-            'free_agent': 'left in FA',
-            'trade': 'traded away',
-            'cut': 'released'
-        }
-        return verbs.get(change_type, 'departed')
+        from data_building.breakout_engine._verbs import departure_verb
+        return departure_verb(change_type)
