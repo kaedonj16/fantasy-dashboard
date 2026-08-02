@@ -6,22 +6,28 @@ Routes:
     /top-movers
     /compare
     /rankings/dynasty[-qb|-rb|-wr|-te]
+    /player/<slug>[/trade-value]
+    /breakouts   (guest)
+    /prospects   (guest)
 
 Extracted from app.py to reduce monolith size. These are all public, GET-only
 marketing/landing pages that render via app.render_page.
 
 Dependencies on app.py internals (render_page, page_players,
-get_model_value_table_cached, _displayed_value_map) are resolved through the
-lazy shims below rather than a top-level ``from app import ...`` so importing
-this module during app start-up does not trigger a circular import — the real
-functions are only fetched when a request is actually served.
+get_model_value_table_cached, _displayed_value_map, get_player_slug_index,
+get_nfl_state, get_player_value_history, age_from_bday, page_breakouts,
+page_prospects) are resolved through the lazy shims below rather than a top-level
+``from app import ...`` so importing this module during app start-up does not
+trigger a circular import — the real functions are only fetched when a request
+is actually served.
 """
 from __future__ import annotations
 
 import html
 import logging
+from datetime import datetime
 
-from flask import Blueprint, request, session
+from flask import Blueprint, redirect, request, session
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +53,36 @@ def get_model_value_table_cached(*args, **kwargs):
 
 def _displayed_value_map(*args, **kwargs):
     from app import _displayed_value_map as _fn
+    return _fn(*args, **kwargs)
+
+
+def get_player_slug_index(*args, **kwargs):
+    from app import get_player_slug_index as _fn
+    return _fn(*args, **kwargs)
+
+
+def get_nfl_state(*args, **kwargs):
+    from app import get_nfl_state as _fn
+    return _fn(*args, **kwargs)
+
+
+def get_player_value_history(*args, **kwargs):
+    from app import get_player_value_history as _fn
+    return _fn(*args, **kwargs)
+
+
+def age_from_bday(*args, **kwargs):
+    from app import age_from_bday as _fn
+    return _fn(*args, **kwargs)
+
+
+def page_breakouts(*args, **kwargs):
+    from app import page_breakouts as _fn
+    return _fn(*args, **kwargs)
+
+
+def page_prospects(*args, **kwargs):
+    from app import page_prospects as _fn
     return _fn(*args, **kwargs)
 
 
@@ -329,3 +365,141 @@ def rankings_dynasty_wr():
 @seo_pages_bp.route("/rankings/dynasty-te")
 def rankings_dynasty_te():
     return _rankings_page("TE")
+
+
+# ── Player value pages + guest breakouts/prospects ───────────────────────────
+
+@seo_pages_bp.route("/player/<slug>")
+@seo_pages_bp.route("/player/<slug>/trade-value")
+def page_player_trade_value(slug: str):
+    from dashboard_services.pages.player_page import build_player_page_body, slugify
+    from utils.utils import load_relevant_index, load_players_index
+
+    slug_norm = slugify(slug)
+    idx = get_player_slug_index()
+    pid = idx.get(slug_norm)
+    if not pid:
+        # Stale/unknown slug (player renamed, retired, or fell out of the value
+        # table): consolidate to the rankings hub rather than 404 - these were
+        # showing up as Not Found errors in Search Console after slug churn.
+        return redirect("/players", code=301)
+
+    # Canonical-slug redirect: if the requested slug isn't the normalized one,
+    # or it's the bare /player/<slug> form, send 301 to /player/<slug>/trade-value.
+    canonical_path = f"/player/{slug_norm}/trade-value"
+    if request.path != canonical_path:
+        return redirect(canonical_path, code=301)
+
+    try:
+        nfl_state = get_nfl_state() or {}
+        season = int(nfl_state.get("season") or datetime.now().year)
+
+        players_index = load_relevant_index() or {}
+        meta = players_index.get(pid)
+        if not meta:
+            meta = (load_players_index() or {}).get(pid) or {}
+
+        table = get_model_value_table_cached() or []
+        pv = next((p for p in table if str(p.get("id")) == str(pid)), {})
+
+        # Single sorted ranking by 1QB value, reused for overall rank + neighbors.
+        ranked_1qb = sorted(
+            [x for x in table
+             if x.get("position") not in ("K", "DEF", "PICK") and float(x.get("value") or 0) > 0],
+            key=lambda x: float(x.get("value") or 0), reverse=True,
+        )
+        my_idx = next((i for i, p in enumerate(ranked_1qb) if str(p.get("id")) == str(pid)), None)
+        ovr_rank = (my_idx + 1) if my_idx is not None else None
+
+        ranked_sf = sorted(
+            [x for x in table
+             if x.get("position") not in ("K", "DEF", "PICK") and float(x.get("sf_value") or 0) > 0],
+            key=lambda x: float(x.get("sf_value") or 0), reverse=True,
+        )
+        sf_ovr_rank = next((i + 1 for i, p in enumerate(ranked_sf) if str(p.get("id")) == str(pid)), None)
+
+        # Players with the nearest 1QB value (internal links / discovery)
+        from dashboard_services.pages.player_page import slugify as _slugify
+        similar_players = []
+        if my_idx is not None:
+            lo = max(0, my_idx - 3)
+            neighbors = ranked_1qb[lo:my_idx] + ranked_1qb[my_idx + 1:my_idx + 4]
+            for sp in neighbors:
+                sp_name = sp.get("name") or ""
+                sp_slug = _slugify(sp_name)
+                if sp_slug:
+                    similar_players.append({
+                        "name": sp_name,
+                        "slug": sp_slug,
+                        "value": sp.get("value"),
+                        "pos_rank_label": sp.get("pos_rank_label"),
+                    })
+
+        try:
+            history = get_player_value_history(pid, days=365, league_type="1qb", league_size=10)
+        except Exception:
+            history = []
+
+        name = meta.get("name") or pv.get("name") or "Player"
+        pos = str(meta.get("pos") or pv.get("position") or "").upper()
+        team = meta.get("team")
+        age = age_from_bday(meta.get("bDay")) or pv.get("age") or meta.get("age")
+
+        body = build_player_page_body(
+            player_id=pid, name=name, position=pos, team=team, age=age,
+            headshot=meta.get("espnHeadshot"),
+            value_1qb=pv.get("value"), sf_value=pv.get("sf_value"),
+            pos_rank_label=pv.get("pos_rank_label"), ovr_rank=ovr_rank,
+            sf_pos_rank_label=pv.get("sf_pos_rank_label"), sf_ovr_rank=sf_ovr_rank,
+            ppg=None, value_history=history, season=season,
+            similar_players=similar_players,
+        )
+
+        _val = pv.get("value")
+        _pos_phrase = f"{pos} " if pos else ""
+        title = f"{name} Dynasty Trade Value {season} - {_pos_phrase}Rankings | BR Fantasy"
+        desc_val = f" Current value: {int(_val)}." if _val else ""
+        description = (
+            f"{name} {season} fantasy football trade value for dynasty and redraft leagues."
+            f"{desc_val} See {name}'s value history chart, positional rank, and recent real "
+            f"trades, then run the deal through the trade calculator."
+        )
+        _img = meta.get("espnHeadshot") or ""
+        og_tags = (
+            f"<meta property='og:title' content='{html.escape(title)}'>"
+            f"<meta property='og:description' content='{html.escape(description)}'>"
+            f"<meta property='og:type' content='profile'>"
+            + (f"<meta property='og:image' content='{html.escape(_img)}'>" if _img else "")
+            + "<meta name='twitter:card' content='summary'>"
+        )
+
+        return render_page(title, None, "players", body,
+                           description=description, og_tags=og_tags)
+    except Exception:
+        logger.exception("[player-page] render failed for slug=%s pid=%s", slug, pid)
+        # Never 5xx a public page for Googlebot/users: return a valid minimal
+        # page (keeps the URL alive for when data returns) instead of a 500.
+        _fb_name = html.escape((slug or 'Player').replace('-', ' ').title())
+        return render_page(
+            f"{_fb_name} Trade Value | BR Fantasy", None, "players",
+            f"<div class='static-page'><div class='static-card-page'>"
+            f"<h1>{_fb_name}</h1><p>Trade value details are temporarily unavailable. "
+            f"<a href='/players'>Browse all player values</a> or "
+            f"<a href='/trade'>open the trade calculator</a>.</p></div></div>",
+            description=f"{_fb_name} dynasty and redraft trade value.",
+        )
+
+
+
+@seo_pages_bp.route("/breakouts")
+def page_breakouts_guest():
+    nfl_state = get_nfl_state() or {}
+    current_season = int(nfl_state.get("season") or datetime.now().year)
+    return page_breakouts(platform="sleeper", season=current_season, league_id=None)
+
+
+@seo_pages_bp.route("/prospects")
+def page_prospects_guest():
+    nfl_state = get_nfl_state() or {}
+    current_season = int(nfl_state.get("season") or datetime.now().year)
+    return page_prospects(platform="sleeper", season=current_season, league_id=None)
