@@ -12736,12 +12736,6 @@ img, svg, canvas {
   }
 }
 
-@media (max-width: 1020px) {
-  .history-top-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
 @media (max-width: 720px) {
   .history-header {
     flex-direction: column;

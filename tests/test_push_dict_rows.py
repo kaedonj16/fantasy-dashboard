@@ -49,6 +49,15 @@ def test_lineup_lock_sends_bench_points_push():
     """An owner with a legal lineup but a better bench option gets the
     'Points on your bench' push (start Strong RB over Weak RB); an already-
     optimal owner gets only the generic reminder."""
+    import pytest
+    # Unlike the pure _filter_prefs tests above, this one drives the full
+    # lineup-lock broadcast, which patches (and therefore imports) utils.utils
+    # and dashboard_services.db. Those pull in bs4 / psycopg, so skip cleanly
+    # when the full stack isn't installed — matching how the rest of the suite
+    # gates its integration tests (see tests/conftest.py).
+    pytest.importorskip("utils.utils")
+    pytest.importorskip("dashboard_services.db")
+
     import sys
     import time
     import types
