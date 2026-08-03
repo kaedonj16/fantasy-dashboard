@@ -499,6 +499,15 @@ def load_usage_stats(
                 "trend_factor":  _trend,
             }
 
+        # The raw weekly frames and the H1/H2 intermediates are no longer needed
+        # once the per-season aggregate (agg) and the lookups are built. Free them
+        # before the snap-count fetch and the per-player loop so their memory
+        # doesn't stack on top of the snap data — this is the build's peak, which
+        # OOM'd the 512Mi cron.
+        del weekly_raw, weekly, _h1_agg, _h2_agg, _h1_lookup
+        import gc as _gc
+        _gc.collect()
+
         snap_seasons = [s for s in nfl_seasons if s in SNAP_COUNT_SEASONS]
         snap_by_pfr_season: dict[tuple, float] = {}
         if snap_seasons:
@@ -542,6 +551,8 @@ def load_usage_stats(
                 )
                 for _, row in snaps_agg.iterrows():
                     snap_by_pfr_season[(str(row["pfr_player_id"]), int(row["season"]))] = float(_safe(row["offense_pct"], 0))
+                del snaps, snaps_agg
+                _gc.collect()
 
         team_targets_by_season: dict[tuple, float] = {}
         for _, row in agg.iterrows():

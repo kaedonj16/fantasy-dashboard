@@ -427,6 +427,8 @@ def notify_value_drops():
             try:
                 rosters = get_rosters(platform, league_id, season) or []
                 for roster in rosters:
+                    if not isinstance(roster, dict):
+                        continue  # skip empty/None roster slots (unclaimed teams)
                     owner_id   = roster.get("owner_id") or ""
                     roster_ids = set(roster.get("players") or [])
                     drops = [
@@ -704,6 +706,8 @@ def notify_breakout_roster():
             try:
                 rosters = get_rosters(platform, league_id, season) or []
                 for roster in rosters:
+                    if not isinstance(roster, dict):
+                        continue  # skip empty/None roster slots (unclaimed teams)
                     owner_id   = roster.get("owner_id") or ""
                     roster_ids = set(roster.get("players") or [])
                     my = sorted(
@@ -976,6 +980,8 @@ def notify_standings_update():
                     prev_pos = {}
 
                 for roster in rosters:
+                    if not isinstance(roster, dict):
+                        continue  # skip empty/None roster slots (unclaimed teams)
                     rid      = str(roster.get("roster_id"))
                     owner_id = roster.get("owner_id") or ""
                     cp       = curr_pos.get(rid)
@@ -1230,6 +1236,8 @@ def notify_injury_alert():
             try:
                 rosters = get_rosters(league_id) or []
                 for roster in rosters:
+                    if not isinstance(roster, dict):
+                        continue  # skip empty/None roster slots (unclaimed teams)
                     owner_id = roster.get("owner_id") or ""
                     starters = roster.get("starters") or []
                     for pid in starters:
