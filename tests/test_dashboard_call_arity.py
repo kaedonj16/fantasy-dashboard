@@ -66,7 +66,7 @@ def _collect_defs():
     return defs
 
 
-def _mismatches_in(func_node, defs):
+def _mismatches_in(func_node, defs, where):
     out = []
     for c in ast.walk(func_node):
         if not (isinstance(c, ast.Call) and isinstance(c.func, ast.Name)):
@@ -83,23 +83,43 @@ def _mismatches_in(func_node, defs):
         missing = [p for p in spec["required_pos"] if p not in supplied]
         missing += [p for p in spec["required_kwonly"] if p not in {k.arg for k in c.keywords}]
         if missing:
-            out.append(f"app.py:{c.lineno}  {c.func.id}()  missing: {missing}")
+            out.append(f"{where}:{c.lineno}  {c.func.id}()  missing: {missing}")
     return out
 
 
+def _find_checked_func_nodes():
+    """Locate each _CHECKED_FUNCS render function across the first-party tree.
+
+    They used to all live in app.py; several page builders (build_teams_body,
+    graphs/history/players, ...) have since moved into dashboard_services/pages/*,
+    so search app.py + the service/route/util modules, not just app.py."""
+    found = {}  # name -> (relpath, node)
+    files = (
+        [os.path.join(_ROOT, "app.py")]
+        + glob.glob(os.path.join(_ROOT, "dashboard_services", "**", "*.py"), recursive=True)
+        + glob.glob(os.path.join(_ROOT, "routes", "**", "*.py"), recursive=True)
+    )
+    for fp in files:
+        try:
+            tree = ast.parse(open(fp, encoding="utf-8").read())
+        except Exception:
+            continue
+        rel = os.path.relpath(fp, _ROOT)
+        for n in ast.walk(tree):
+            if isinstance(n, ast.FunctionDef) and n.name in _CHECKED_FUNCS and n.name not in found:
+                found[n.name] = (rel, n)
+    return found
+
+
 def test_dashboard_render_calls_match_signatures():
-    app_tree = ast.parse(open(os.path.join(_ROOT, "app.py"), encoding="utf-8").read())
     defs = _collect_defs()
-    funcs = {
-        n.name: n for n in ast.walk(app_tree)
-        if isinstance(n, ast.FunctionDef) and n.name in _CHECKED_FUNCS
-    }
+    funcs = _find_checked_func_nodes()
     for name in _CHECKED_FUNCS:
-        assert name in funcs, f"{name} not found in app.py"
+        assert name in funcs, f"{name} not found in app.py or dashboard_services/routes"
     problems = []
-    for name, node in funcs.items():
-        problems += _mismatches_in(node, defs)
+    for name, (where, node) in funcs.items():
+        problems += _mismatches_in(node, defs, where)
     assert not problems, (
-        "call site(s) pass too few args (dashboard would 500 with a TypeError):\n  "
+        "call site(s) pass too few args (page would 500 with a TypeError):\n  "
         + "\n  ".join(problems)
     )
