@@ -68,6 +68,18 @@ for _mod in ("openai", "openai.types", "openai.types.chat"):
 
 POSITIONS = ("QB", "RB", "WR", "TE")
 
+# Only the columns the weekly aggregation actually reads. import_weekly_data
+# returns ~50 columns; loading all six seasons of the full frame at once is the
+# breakout build's memory peak (it OOM'd the 512Mi cron). Restricting the read
+# to these 19 columns roughly halves the raw frame with zero logic change.
+_WEEKLY_COLS = [
+    "player_id", "player_name", "position", "recent_team", "season",
+    "season_type", "week", "targets", "carries", "receptions",
+    "receiving_yards", "receiving_tds", "rushing_yards", "rushing_tds",
+    "attempts", "passing_yards", "passing_tds", "interceptions",
+    "fantasy_points_ppr",
+]
+
 
 def load_archetype_cache(season: int) -> dict[str, dict]:
     """Load PFF-style archetype profiles for a season, keyed by sleeper_id.
@@ -399,14 +411,14 @@ def load_usage_stats(
 
     print(f"  Loading weekly data for {nfl_seasons}...")
     try:
-        weekly_raw = nfl.import_weekly_data(nfl_seasons)
+        weekly_raw = nfl.import_weekly_data(nfl_seasons, columns=_WEEKLY_COLS)
     except Exception:
         # Find the unavailable season(s) by probing individually
         ok: list[int] = []
         fail: list[int] = []
         for s in nfl_seasons:
             try:
-                nfl.import_weekly_data([s])
+                nfl.import_weekly_data([s], columns=_WEEKLY_COLS)
                 ok.append(s)
             except Exception:
                 fail.append(s)
@@ -414,7 +426,7 @@ def load_usage_stats(
         nfl_seasons = ok
         if fail:
             print(f"  nfl_data_py unavailable for seasons {fail}; loading those from local cache")
-        weekly_raw = nfl.import_weekly_data(nfl_seasons) if nfl_seasons else None
+        weekly_raw = nfl.import_weekly_data(nfl_seasons, columns=_WEEKLY_COLS) if nfl_seasons else None
 
     # ── 2. Aggregate nfl_data_py weekly data ─────────────────────────────────
     usage_by_season: dict[int, dict] = {}
