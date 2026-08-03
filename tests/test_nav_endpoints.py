@@ -58,6 +58,32 @@ def _route_endpoints() -> set[str]:
     return eps
 
 
+def _url_for_literal_refs() -> set[str]:
+    """Endpoint literals passed to url_for("ep", ...) and _section_title_link(
+    label, "ep", ...) across app.py and the blueprints. These are just as prone
+    to breaking on a route move as the nav tables — and _section_title_link in
+    particular swallows a BuildError and silently drops the link, so a stale ref
+    wouldn't even 500. Only string literals are checked (dynamic endpoints are
+    skipped)."""
+    import glob
+    refs: set[str] = set()
+    files = [os.path.join(_ROOT, "app.py")] + glob.glob(os.path.join(_ROOT, "routes", "*.py"))
+    for f in files:
+        tree = ast.parse(open(f, encoding="utf-8").read())
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+                continue
+            if (node.func.id == "url_for" and node.args
+                    and isinstance(node.args[0], ast.Constant)
+                    and isinstance(node.args[0].value, str)):
+                refs.add(node.args[0].value)
+            if (node.func.id == "_section_title_link" and len(node.args) >= 2
+                    and isinstance(node.args[1], ast.Constant)
+                    and isinstance(node.args[1].value, str)):
+                refs.add(node.args[1].value)
+    return {r for r in refs if r}
+
+
 def _nav_endpoint_refs() -> set[str]:
     """Endpoint strings build_nav hands to url_for: the _NAV_PAGE_META values and
     the item tuples passed to nav_pill_dropdown(...)."""
@@ -83,7 +109,7 @@ def _nav_endpoint_refs() -> set[str]:
 
 def test_nav_endpoints_all_resolve():
     endpoints = _route_endpoints()
-    refs = _nav_endpoint_refs()
+    refs = _nav_endpoint_refs() | _url_for_literal_refs()
     # Sanity: we actually found the tables (guards against the AST scan silently
     # matching nothing if build_nav is refactored).
     assert len(refs) >= 20, f"expected to find the nav endpoint tables, got {len(refs)}"
