@@ -24,9 +24,16 @@ jobs:
         run: pip install ruff
 
       - name: Lint for real bugs (syntax errors, undefined names)
-        # Scoped to the high-signal pyflakes/pycodestyle-error rules so CI flags
-        # genuine bugs without failing on the existing code's style choices.
-        run: ruff check --select E9,F63,F7,F82 --output-format=github .
+        # Scoped to high-signal pyflakes/pycodestyle-error rules so CI flags
+        # genuine bugs without failing on the existing code's style choices. On
+        # top of the syntax/undefined-name core (E9,F63,F7,F82) this also catches:
+        #   E711/E713/E714  bad None / membership / identity comparisons
+        #   F404            late __future__ import
+        #   F50*,F52*       %- and str.format() argument mismatches
+        #   F811            redefinition of an unused name (dup import / shadow)
+        #   W605            invalid escape sequence (e.g. an unescaped regex)
+        # The whole set is at zero violations today; it only guards the future.
+        run: ruff check --select E9,E711,E713,E714,F63,F7,F82,F404,F50,F52,F811,W605 --output-format=github .
 
       - name: Compile all Python (syntax check)
         run: python -m compileall -q app.py dashboard_services data_building routes models utils scripts

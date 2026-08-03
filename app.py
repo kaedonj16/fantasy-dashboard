@@ -905,7 +905,6 @@ except Exception as e:
 
 def generate_recent_updates_html(limit=5):
     """Generate HTML for recent changelog updates."""
-    from dashboard_services.changelog import CHANGELOG
 
     recent = CHANGELOG[:limit]
     if not recent:
@@ -1589,6 +1588,12 @@ def get_players_index_global():
 
 def run_daily_data_async(season: int, week: int) -> None:
     """Start daily data build in a background thread."""
+    # Never kick off the real daily build under tests: build_daily_data scrapes
+    # vendor CSVs and hits external value APIs (FantasyCalc, etc.), which would
+    # make the suite non-hermetic and reach out to the network in CI. Both the
+    # offline_client fixture and test_season_readiness run with TESTING set.
+    if app.testing:
+        return
     thread = threading.Thread(
         target=build_daily_data,
         args=(season, week),
@@ -25255,7 +25260,6 @@ def api_beat_the_market():
             latest_date_obj = _date.fromisoformat(str(latest_date))
 
         # Find the closest baseline date within the requested window
-        from dashboard_services.db import get_conn
         baseline_date = None
         with get_conn() as conn:
             for candidate_days in range(days, 0, -1):

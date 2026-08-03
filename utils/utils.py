@@ -1184,7 +1184,6 @@ def pinfo_for_pid(
     }
 
 
-from typing import List, Dict
 
 
 def build_teams_overview(
