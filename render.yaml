@@ -84,7 +84,12 @@ services:
     name: daily-job
     runtime: python
     schedule: 0 8 * * *
-    plan: starter
+    # standard (2GB) — the breakout historical-scores step peaks above the
+    # starter 512Mi limit even after the column-restriction + early-free memory
+    # work. Crons bill per-second of runtime, so a once-daily ~10-15min job on
+    # standard costs cents/month over starter. Revert to starter if the memory
+    # work later brings the peak comfortably under 512Mi.
+    plan: standard
     buildCommand: pip install --no-cache-dir -r requirements.txt && python -m playwright install chromium
     startCommand: python cron_daily.py
     envVars:
