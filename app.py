@@ -1758,7 +1758,7 @@ _NAV_PAGE_META = {
     "draft-history":     ("history",   "tool_pages.page_draft_history", ""),
     "awards":            ("award",     "page_awards",               ""),
     "graphs":            ("bars2",     "league_pages.page_graphs",  ""),
-    "history":           ("history",   "page_history",              ""),
+    "history":           ("history",   "league_pages.page_history", ""),
 }
 
 # Short labels for the dock (the sheet uses full labels at each call site).
@@ -2454,7 +2454,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",   "page_awards",   "awards",   False),
         ("Graphs",   "league_pages.page_graphs",   "graphs",   False),
-        ("History",  "page_history",  "history",  False),
+        ("History",  "league_pages.page_history",  "history",  False),
     ], ["awards", "graphs", "history"], "statsNavDropdown"))
     if session.get("viewer_username"):
         _portfolio_cls = "nav-pill active" if active == "portfolio" else "nav-pill"
@@ -13004,25 +13004,8 @@ def _build_tour_mock_df_weekly() -> pd.DataFrame:
 # render_graphs_html, build_career_graphs_ctx). page_graphs below is a thin route.
 
 
-def _build_tour_mock_history_ctx() -> dict:
-    """Minimal history context for build_history_body."""
-    df = _build_tour_mock_df_weekly()
-    return {
-        "platform": "sleeper",
-        "season": 2024,
-        "league_id": "tour_mock",
-        "resolved_league_id": "tour_mock",
-        "league": {
-            "name": "Demo League",
-            "league_id": "tour_mock",
-            "settings": {"playoff_week_start": 14},
-        },
-        "df_weekly": df,
-        "roster_map": {},
-        "users": {},
-        "rosters": [],
-        "offseason_mode": False,
-    }
+# _build_tour_mock_history_ctx moved to dashboard_services/pages/history_page.py
+# as build_tour_mock_history_ctx(df_weekly).
 
 
 
@@ -15476,73 +15459,8 @@ def page_awards(platform: str, season: int, league_id: str):
     )
 
 
-@app.route("/<platform>/<int:season>/<league_id>/history")
-def page_history(platform: str, season: int, league_id: str):
-    # Tour preview: render with mock data, bypass real league fetch
-    if request.args.get("tour"):
-        try:
-            mock_ctx = _build_tour_mock_history_ctx()
-            body_html = build_history_body(
-                history_ctx=mock_ctx,
-                available_seasons=[datetime.now().year - 1],
-                base_platform=platform,
-                base_season=season,
-                base_league_id=league_id,
-                selected_history_season=datetime.now().year - 1,
-                resolved_history_league_id="tour_mock",
-            )
-        except Exception as exc:
-            body_html = f"<div class='card central'><div class='card-body'><p>History preview unavailable: {exc}</p></div></div>"
-        return render_page("League History", league_id, "history", body_html, platform, season)
-
-    # Captured here (request thread); the background build must not touch request.
-    selected_history_season_param = request.args.get("history_season")
-    page_cache_key = f"history:{selected_history_season_param}" if selected_history_season_param else "history"
-
-    def _build() -> str:
-        available_seasons = get_available_history_seasons(platform, league_id, season)
-
-        # First-year league case
-        if not available_seasons:
-            return """
-        <div class="card central">
-          <div class="card-body">
-            <div class="bract-empty-state">
-              <div class="bract-empty-title">Welcome to Your First Season!</div>
-              <div class="bract-empty-copy">This is the first year of your league. Historical season data, AI-powered recaps, and year-over-year comparisons will appear here after your current season completes. Check back after championship week!</div>
-            </div>
-          </div>
-        </div>
-        """
-
-        default_history_season = get_default_history_season(available_seasons, season)
-        selected_history_season = int(selected_history_season_param or default_history_season)
-        if selected_history_season not in available_seasons:
-            selected_history_season = default_history_season
-
-        resolved_history_league_id = resolve_league_id_for_season(
-            platform=platform,
-            league_id=league_id,
-            current_season=season,
-            target_season=selected_history_season,
-        )
-        history_ctx = get_league_ctx_from_cache(
-            platform, resolved_history_league_id, selected_history_season,
-        )
-        return build_history_body(
-            history_ctx=history_ctx,
-            available_seasons=available_seasons,
-            base_platform=platform,
-            base_season=season,
-            base_league_id=league_id,
-            selected_history_season=selected_history_season,
-            resolved_history_league_id=resolved_history_league_id,
-        )
-
-    return _serve_cached_or_background(
-        platform, season, league_id, page_cache_key,
-        "League History", "history", _build, "Building league history",
-    )
+# /<...>/history is served by routes/league_pages_bp.py (build_history_body and
+# build_tour_mock_history_ctx live in dashboard_services/pages/history_page.py).
 
 
 # ══════════════════════════════════════════════════════════════════════════════

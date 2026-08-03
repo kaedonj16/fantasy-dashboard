@@ -60,14 +60,20 @@ def _route_endpoints() -> set[str]:
 
 def _url_for_literal_refs() -> set[str]:
     """Endpoint literals passed to url_for("ep", ...) and _section_title_link(
-    label, "ep", ...) across app.py and the blueprints. These are just as prone
-    to breaking on a route move as the nav tables — and _section_title_link in
-    particular swallows a BuildError and silently drops the link, so a stale ref
-    wouldn't even 500. Only string literals are checked (dynamic endpoints are
+    label, "ep", ...) across app.py, the blueprints, and the page builders. These
+    are just as prone to breaking on a route move as the nav tables — and
+    _section_title_link in particular swallows a BuildError and silently drops the
+    link, so a stale ref wouldn't even 500. The service page builders
+    (dashboard_services/) also call url_for (e.g. the history season selector), so
+    they're scanned too. Only string literals are checked (dynamic endpoints are
     skipped)."""
     import glob
+    files = (
+        [os.path.join(_ROOT, "app.py")]
+        + glob.glob(os.path.join(_ROOT, "routes", "*.py"))
+        + glob.glob(os.path.join(_ROOT, "dashboard_services", "**", "*.py"), recursive=True)
+    )
     refs: set[str] = set()
-    files = [os.path.join(_ROOT, "app.py")] + glob.glob(os.path.join(_ROOT, "routes", "*.py"))
     for f in files:
         tree = ast.parse(open(f, encoding="utf-8").read())
         for node in ast.walk(tree):
