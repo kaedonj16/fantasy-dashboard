@@ -1734,7 +1734,7 @@ _NAV_PAGE_META = {
     "keeper":            ("shield",    "tool_pages.page_keeper",    ""),
     "standings":         ("trophy",    "league_pages.page_standings",            ""),
     "activity":          ("activity",  "page_activity",             ""),
-    "league_health":     ("pulse",     "page_commissioner",         ""),
+    "league_health":     ("pulse",     "league_pages.page_commissioner", ""),
     "recap":             ("news",      "league_pages.page_recap",    ""),
     "scout":             ("swords",    "page_weekly",               "?tab=scout"),
     "optimal":           ("bars2",     "page_weekly",               "?tab=optimal"),
@@ -1747,7 +1747,7 @@ _NAV_PAGE_META = {
     "trade-intel":       ("radar",     "trade.page_trade_intel",    ""),
     "compare":           ("bars",      "seo_pages.page_compare",    ""),
     "top-movers":        ("bars2",     "seo_pages.top_movers_page", ""),
-    "advanced-metrics":  ("bars2",     "page_advanced_metrics",     ""),
+    "advanced-metrics":  ("bars2",     "league_pages.page_advanced_metrics", ""),
     "breakouts":         ("radar",     "page_breakouts",            ""),
     "prospects":         ("award",     "page_prospects",            ""),
     "draft-history":     ("history",   "tool_pages.page_draft_history", ""),
@@ -2428,13 +2428,13 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Standings",       "league_pages.page_standings",    "standings",    False),
         ("Teams",           "page_teams",        "teams",        False),
         ("Activity",        "page_activity",     "activity",     False),
-        ("League Health",   "page_commissioner", "league_health", False),
+        ("League Health",   "league_pages.page_commissioner", "league_health", False),
     ], ["standings", "teams", "activity", "league_health"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
         ("Compare Players", "seo_pages.page_compare", "compare", False),
         ("Top Movers", "seo_pages.top_movers_page", "top-movers", False),
-        ("Advanced Metrics", "page_advanced_metrics", "advanced-metrics", False),
+        ("Advanced Metrics", "league_pages.page_advanced_metrics", "advanced-metrics", False),
         ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
     ], ["players", "prospects", "breakouts", "top-movers", "compare"], "playersNavDropdown"))
@@ -14208,52 +14208,7 @@ def page_prospects(platform: str, season: int, league_id: str):
     return render_page("Prospect Rankings", league_id, "prospects", body_html, platform, season)
 
 
-@app.route("/metrics")
-@app.route("/<platform>/<int:season>/<league_id>/metrics")
-def page_advanced_metrics(platform: str = None, season: int = None, league_id: str = None):
-    """Premium Advanced Metrics leaderboard page."""
-    from dashboard_services.pages.advanced_metrics_page import build_advanced_metrics_body
-    from data_building.advanced_metrics import LEADERBOARD_METRICS
-    user_id = session.get("viewer_username")
-    body = build_advanced_metrics_body(
-        True, LEADERBOARD_METRICS, league_id, season, platform
-    )
-    # When a shared graph link is opened (?graph=1&gx=&gy=...), give it a rich
-    # social preview whose image is a server-rendered screenshot of that graph.
-    og_tags = ""
-    if request.args.get("graph") == "1":
-        gx = request.args.get("gx") or ""
-        gy = request.args.get("gy") or ""
-        def _mlabel(k):
-            m = LEADERBOARD_METRICS.get(k) or {}
-            return m.get("label") or k
-        if gx and gy:
-            origin = request.host_url.rstrip("/")
-            from urllib.parse import urlencode as _ue
-            _og_qs = {k: request.args.get(k) for k in ("gx", "gy", "gz", "gn", "season", "metric", "pos", "minvol")
-                      if request.args.get(k)}
-            og_img = f"{origin}/{platform}/{season}/{league_id}/metrics/og.png?{_ue(_og_qs)}"
-            og_title = f"{_mlabel(gy)} vs {_mlabel(gx)} | BR Fantasy"
-            og_desc = "Advanced metrics scatter: compare efficiency and opportunity across the league."
-            t = html.escape(og_title, quote=True)
-            d = html.escape(og_desc, quote=True)
-            img = html.escape(og_img, quote=True)
-            url = html.escape(request.url, quote=True)
-            og_tags = (
-                f"<meta property=\"og:site_name\" content=\"BR Fantasy\">"
-                f"<meta property=\"og:type\" content=\"website\">"
-                f"<meta property=\"og:title\" content=\"{t}\">"
-                f"<meta property=\"og:description\" content=\"{d}\">"
-                f"<meta property=\"og:url\" content=\"{url}\">"
-                f"<meta property=\"og:image\" content=\"{img}\">"
-                f"<meta property=\"og:image:width\" content=\"1200\">"
-                f"<meta property=\"og:image:height\" content=\"630\">"
-                f"<meta name=\"twitter:card\" content=\"summary_large_image\">"
-                f"<meta name=\"twitter:title\" content=\"{t}\">"
-                f"<meta name=\"twitter:description\" content=\"{d}\">"
-                f"<meta name=\"twitter:image\" content=\"{img}\">"
-            )
-    return render_page("Advanced Metrics", league_id, "advanced-metrics", body, platform, season, og_tags=og_tags)
+# /metrics is served by routes/league_pages_bp.py (its /metrics/og.png route stays below).
 
 
 @app.route("/<platform>/<int:season>/<league_id>/metrics/og.png")
@@ -16351,14 +16306,7 @@ def build_optimal_body(ctx):
     return nav_html + summary_html + table_html + pos_html + recurring_html
 
 
-@app.route("/<platform>/<int:season>/<league_id>/optimal")
-def page_optimal(platform: str, season: int, league_id: str):
-    # Optimal Lineup lives as a tab on the Matchups page, not its own page.
-    # Redirect (keeps old links/bookmarks working) to that tab.
-    return redirect(
-        url_for("page_weekly", platform=platform, season=season, league_id=league_id)
-        + "?tab=optimal"
-    )
+# /<...>/optimal (redirect) is served by routes/league_pages_bp.py.
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -19101,12 +19049,7 @@ def build_commissioner_body(ctx):
     return health_html + history_panel + roster_table + trade_card
 
 
-@app.route("/<platform>/<int:season>/<league_id>/league_health")
-@app.route("/<platform>/<int:season>/<league_id>/commissioner")  # legacy redirect
-def page_commissioner(platform: str, season: int, league_id: str):
-    ctx = get_league_ctx_from_cache(platform, league_id, season)
-    body = build_commissioner_body(ctx)
-    return render_page("League Health", league_id, "league_health", body, platform, season)
+# /<...>/league_health and /<...>/commissioner are served by routes/league_pages_bp.py.
 
 
 @app.before_request
