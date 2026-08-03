@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import html
 import logging
+from datetime import datetime
 
 from flask import Blueprint, jsonify, redirect, request, session, url_for
 
@@ -295,3 +296,78 @@ def page_graphs(platform: str, season: int, league_id: str):
 
     body_html = _render(view, members)
     return render_page("BR Fantasy Graphs", league_id, "graphs", body_html, platform, season)
+
+
+# ── League history ────────────────────────────────────────────────────────────
+
+@league_pages_bp.route("/<platform>/<int:season>/<league_id>/history")
+def page_history(platform: str, season: int, league_id: str):
+    from dashboard_services.pages.history_page import (
+        build_history_body, build_tour_mock_history_ctx)
+    from dashboard_services.api import resolve_league_id_for_season
+    from utils.history_seasons import get_default_history_season
+    # Tour preview: render with mock data, bypass real league fetch
+    if request.args.get("tour"):
+        try:
+            mock_ctx = build_tour_mock_history_ctx(_build_tour_mock_df_weekly())
+            body_html = build_history_body(
+                history_ctx=mock_ctx,
+                available_seasons=[datetime.now().year - 1],
+                base_platform=platform,
+                base_season=season,
+                base_league_id=league_id,
+                selected_history_season=datetime.now().year - 1,
+                resolved_history_league_id="tour_mock",
+            )
+        except Exception as exc:
+            body_html = f"<div class='card central'><div class='card-body'><p>History preview unavailable: {exc}</p></div></div>"
+        return render_page("League History", league_id, "history", body_html, platform, season)
+
+    # Captured here (request thread); the background build must not touch request.
+    selected_history_season_param = request.args.get("history_season")
+    page_cache_key = f"history:{selected_history_season_param}" if selected_history_season_param else "history"
+
+    def _build() -> str:
+        available_seasons = get_available_history_seasons(platform, league_id, season)
+
+        # First-year league case
+        if not available_seasons:
+            return """
+        <div class="card central">
+          <div class="card-body">
+            <div class="bract-empty-state">
+              <div class="bract-empty-title">Welcome to Your First Season!</div>
+              <div class="bract-empty-copy">This is the first year of your league. Historical season data, AI-powered recaps, and year-over-year comparisons will appear here after your current season completes. Check back after championship week!</div>
+            </div>
+          </div>
+        </div>
+        """
+
+        default_history_season = get_default_history_season(available_seasons, season)
+        selected_history_season = int(selected_history_season_param or default_history_season)
+        if selected_history_season not in available_seasons:
+            selected_history_season = default_history_season
+
+        resolved_history_league_id = resolve_league_id_for_season(
+            platform=platform,
+            league_id=league_id,
+            current_season=season,
+            target_season=selected_history_season,
+        )
+        history_ctx = get_league_ctx_from_cache(
+            platform, resolved_history_league_id, selected_history_season,
+        )
+        return build_history_body(
+            history_ctx=history_ctx,
+            available_seasons=available_seasons,
+            base_platform=platform,
+            base_season=season,
+            base_league_id=league_id,
+            selected_history_season=selected_history_season,
+            resolved_history_league_id=resolved_history_league_id,
+        )
+
+    return _serve_cached_or_background(
+        platform, season, league_id, page_cache_key,
+        "League History", "history", _build, "Building league history",
+    )

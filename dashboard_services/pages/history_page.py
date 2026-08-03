@@ -1818,7 +1818,7 @@ def build_history_body(
     options_html = []
     for yr in available_seasons:
         href = url_for(
-            "page_history",
+            "league_pages.page_history",
             platform=base_platform,
             season=base_season,
             league_id=base_league_id,
@@ -1975,3 +1975,26 @@ def build_history_body(
     </div>
     {_wrapped_overlay}
     """
+
+
+def build_tour_mock_history_ctx(df_weekly) -> dict:
+    """History context for the tour/demo, from a pre-built mock weekly frame.
+
+    Extracted from app.py so the /history route can stay a thin blueprint handler;
+    the caller supplies the mock weekly DataFrame (app._build_tour_mock_df_weekly)."""
+    return {
+        "platform": "sleeper",
+        "season": 2024,
+        "league_id": "tour_mock",
+        "resolved_league_id": "tour_mock",
+        "league": {
+            "name": "Demo League",
+            "league_id": "tour_mock",
+            "settings": {"playoff_week_start": 14},
+        },
+        "df_weekly": df_weekly,
+        "roster_map": {},
+        "users": {},
+        "rosters": [],
+        "offseason_mode": False,
+    }
