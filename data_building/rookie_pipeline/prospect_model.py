@@ -1290,7 +1290,7 @@ for pos, weights in POSITION_WEIGHTS.items():
 # Enhanced evaluation functions
 # 
 
-from typing import Dict, Tuple
+from typing import Tuple
 
 def calc_loaded_roster_adjustment(
     team: str,

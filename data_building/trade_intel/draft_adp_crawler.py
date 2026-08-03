@@ -409,7 +409,7 @@ def run_draft_adp_crawl_continuous(
     
     Returns summary dict with cumulative results.
     """
-    from datetime import datetime, timedelta
+    from datetime import timedelta
     
     deadline = datetime.now() + timedelta(hours=hours)
     logger.info("Starting continuous draft ADP crawl. Deadline: %s", deadline.strftime("%H:%M:%S"))

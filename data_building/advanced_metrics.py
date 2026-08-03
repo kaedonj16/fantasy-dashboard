@@ -442,7 +442,6 @@ def calculate_usage_metrics(usage: Dict[str, float], position: str) -> Dict[str,
     }
 
 
-from typing import Dict, Optional
 
 
 def _clip(value: float, low: float = 0.0, high: float = 1.0) -> float:
