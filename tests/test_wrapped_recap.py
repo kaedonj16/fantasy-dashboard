@@ -16,7 +16,7 @@ def test_wrapped_deck_ends_with_recap_card(offline_client):
     import app
     from dashboard_services.pages import history_page as H
 
-    ctx = app._build_tour_mock_history_ctx()
+    ctx = H.build_tour_mock_history_ctx(app._build_tour_mock_df_weekly())
     ctx["summary"] = {
         "top_scorer_value": 1720.4, "top_scorer_team": "Rebuild from Hell", "top_scorer_avg": 122.9,
         "biggest_blowout_margin": 84.2, "biggest_blowout": "Butter Boys",
