@@ -894,6 +894,13 @@ try:
 except Exception as e:
     logger.warning("[user-pages-bp] skipped: %s", e)
 
+try:
+    from routes.league_pages_bp import league_pages_bp
+    app.register_blueprint(league_pages_bp)
+    logger.info("[league-pages-bp] registered")
+except Exception as e:
+    logger.warning("[league-pages-bp] skipped: %s", e)
+
 
 
 def generate_recent_updates_html(limit=5):
@@ -1725,14 +1732,14 @@ _NAV_PAGE_META = {
     "teams":             ("users",     "page_teams",                ""),
     "draft":             ("clipboard", "tool_pages.page_draft_room", ""),
     "keeper":            ("shield",    "tool_pages.page_keeper",    ""),
-    "standings":         ("trophy",    "page_standings",            ""),
+    "standings":         ("trophy",    "league_pages.page_standings",            ""),
     "activity":          ("activity",  "page_activity",             ""),
     "league_health":     ("pulse",     "page_commissioner",         ""),
     "recap":             ("news",      "page_recap",                ""),
     "scout":             ("swords",    "page_weekly",               "?tab=scout"),
     "optimal":           ("bars2",     "page_weekly",               "?tab=optimal"),
     "redzone":           ("pulse",     "page_redzone",              ""),
-    "waivers":           ("list",      "page_waivers",              ""),
+    "waivers":           ("list",      "league_pages.page_waivers",              ""),
     "schedule":          ("list",      "page_schedule",             ""),
     "trade":             ("swap",      "trade.page_trade",          ""),
     "trade-suggestions": ("swap",      "trade.page_trade",          "?tab=suggestions"),
@@ -2390,7 +2397,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             ("Opponent Scout", "page_weekly", "scout", False, "?tab=scout"),
             ("Lineup Efficiency", "page_weekly", "optimal", False, "?tab=optimal"),
             # Roster/lineup tools live with the other weekly tools, not Players.
-            ("Waivers & Start/Sit", "page_waivers", "waivers", False),
+            ("Waivers & Start/Sit", "league_pages.page_waivers", "waivers", False),
             ("Schedule Assistant",  "page_schedule", "schedule", False),
         ]
         # Redzone lives inside the Weekly dropdown. When a game is actually
@@ -2418,7 +2425,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "weeklyNavDropdown", btn_extra_cls=_rz_pulse,
         ))
     nav_pills.append(nav_pill_dropdown("League", [
-        ("Standings",       "page_standings",    "standings",    False),
+        ("Standings",       "league_pages.page_standings",    "standings",    False),
         ("Teams",           "page_teams",        "teams",        False),
         ("Activity",        "page_activity",     "activity",     False),
         ("League Health",   "page_commissioner", "league_health", False),
@@ -4903,7 +4910,7 @@ def _viewer_lineup_alert_html(ctx: dict, viewer_roster_id) -> str:
         platform = ctx.get("platform", "sleeper")
         league_id = ctx.get("league_id", "")
         fix_url = url_for(
-            "page_waivers", platform=platform, season=season, league_id=league_id
+            "league_pages.page_waivers", platform=platform, season=season, league_id=league_id
         ) + "?tab=startsit"
         n = len(issues)
         title = f"{n} lineup issue" + ("s" if n > 1 else "")
@@ -5328,7 +5335,7 @@ def build_dashboard_body(ctx: dict) -> str:
         <section class="os-card os-col-fill">
           <div class="os-section-head">
             <div class="os-section-head-content">
-              {_section_title_link("Waiver Wire Targets", "page_waivers", platform, season, league_id)}
+              {_section_title_link("Waiver Wire Targets", "league_pages.page_waivers", platform, season, league_id)}
               <div class="os-section-subtitle">Smart pickups based on value + trend + breakout potential</div>
             </div>
             <div class="os-section-head-actions">
@@ -5496,7 +5503,7 @@ def build_dashboard_body(ctx: dict) -> str:
         <section class="os-card os-col-fill">
           <div class="os-section-head">
             <div class="os-section-head-content">
-              {_section_title_link("Standings", "page_standings", platform, season, league_id)}
+              {_section_title_link("Standings", "league_pages.page_standings", platform, season, league_id)}
               <div class="os-section-subtitle">Where every team sits right now</div>
             </div>
             <div class="os-section-head-actions">
@@ -7525,7 +7532,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         <section class="os-card os-col-fill os-tab-panel" id="os-jump-waivers">
           <div class="os-section-head">
             <div class="os-section-head-content">
-              {_section_title_link("Waiver Wire Targets", "page_waivers", platform, season, ctx.get("league_id"))}
+              {_section_title_link("Waiver Wire Targets", "league_pages.page_waivers", platform, season, ctx.get("league_id"))}
               <div class="os-section-subtitle">Smart pickups based on value + trend + breakout potential</div>
             </div>
             <div class="os-section-head-actions">
@@ -10861,63 +10868,9 @@ def page_dashboard(platform: str, season: int, league_id: str):
     return render_page("BR Fantasy Dashboard", league_id, "dashboard", body, platform, season)
 
 
-@app.route("/<platform>/<int:season>/<league_id>/standings")
-def page_standings(platform: str, season: int, league_id: str):
-    ctx = get_league_ctx_from_cache(platform, league_id, season)
-
-    if ctx.get("offseason_mode"):
-        body = _build_offseason_standings_body(ctx)
-    else:
-        body = build_standings_body(ctx)
-
-    return render_page("BR Fantasy Standings", league_id, "standings", body, platform, season)
-
-
-@app.route("/api/standings-week")
-def api_standings_week():
-    """Re-render the standings/power/sidebar panels as they stood through a
-    chosen finalized week, for the standings page week-selector."""
-    platform = request.args.get("platform", "sleeper")
-    league_id = request.args.get("league_id", "")
-    try:
-        season = int(request.args.get("season", 0))
-        week = int(request.args.get("week", 0))
-    except (TypeError, ValueError):
-        return jsonify({"ok": False, "error": "bad params"}), 400
-    if not league_id or week <= 0:
-        return jsonify({"ok": False, "error": "missing params"}), 400
-    try:
-        ctx = get_league_ctx_from_cache(platform, league_id, season)
-        capped = build_standings_as_of_week(ctx, week)
-        panels = _standings_panels(capped, power_rankings=None)
-        return jsonify({
-            "ok": True,
-            "week": week,
-            "standings_html": panels["standings"],
-            "details_html": panels["details"],
-            "power_html": panels["power"],
-            "sidebar_html": panels["sidebar"],
-        })
-    except Exception as e:
-        logger.warning("[standings-week] render failed: %s", e, exc_info=True)
-        return jsonify({"ok": False, "error": "render failed"}), 500
-
-
-@app.route("/<platform>/<int:season>/<league_id>/waivers")
-def page_waivers(platform: str, season: int, league_id: str):
-    ctx = get_league_ctx_from_cache(platform, league_id, season)
-    body = build_waivers_body(platform, season, league_id, ctx)
-    return render_page("BR Fantasy Waivers", league_id, "waivers", body, platform, season)
-
-
-@app.route("/<platform>/<int:season>/<league_id>/scout")
-def page_scout(platform: str, season: int, league_id: str):
-    # Scout Report lives as a tab on the Matchups page, not its own page.
-    # Redirect (keeps old links/bookmarks working) to that tab.
-    return redirect(
-        url_for("page_weekly", platform=platform, season=season, league_id=league_id)
-        + "?tab=scout"
-    )
+# ── League info pages (standings / waivers / scout) ───────────────────────────
+# /<...>/standings, /api/standings-week, /<...>/waivers and /<...>/scout are
+# served by routes/league_pages_bp.py.
 
 
 # ── User account hub pages ────────────────────────────────────────────────────
