@@ -873,6 +873,34 @@ try:
 except Exception as e:
     logger.warning("[history-bp] skipped: %s", e)
 
+try:
+    from routes.seo_pages_bp import seo_pages_bp
+    app.register_blueprint(seo_pages_bp)
+    logger.info("[seo-pages-bp] registered")
+except Exception as e:
+    logger.warning("[seo-pages-bp] skipped: %s", e)
+
+try:
+    from routes.tool_pages_bp import tool_pages_bp
+    app.register_blueprint(tool_pages_bp)
+    logger.info("[tool-pages-bp] registered")
+except Exception as e:
+    logger.warning("[tool-pages-bp] skipped: %s", e)
+
+try:
+    from routes.user_pages_bp import user_pages_bp
+    app.register_blueprint(user_pages_bp)
+    logger.info("[user-pages-bp] registered")
+except Exception as e:
+    logger.warning("[user-pages-bp] skipped: %s", e)
+
+try:
+    from routes.league_pages_bp import league_pages_bp
+    app.register_blueprint(league_pages_bp)
+    logger.info("[league-pages-bp] registered")
+except Exception as e:
+    logger.warning("[league-pages-bp] skipped: %s", e)
+
 
 
 def generate_recent_updates_html(limit=5):
@@ -1702,27 +1730,27 @@ _NAV_PAGE_META = {
     "players":           ("bars",      "page_players",              ""),
     "weekly":            ("swords",    "page_weekly",               ""),
     "teams":             ("users",     "page_teams",                ""),
-    "draft":             ("clipboard", "page_draft_room",           ""),
-    "keeper":            ("shield",    "page_keeper",               ""),
-    "standings":         ("trophy",    "page_standings",            ""),
+    "draft":             ("clipboard", "tool_pages.page_draft_room", ""),
+    "keeper":            ("shield",    "tool_pages.page_keeper",    ""),
+    "standings":         ("trophy",    "league_pages.page_standings",            ""),
     "activity":          ("activity",  "page_activity",             ""),
-    "league_health":     ("pulse",     "page_commissioner",         ""),
-    "recap":             ("news",      "page_recap",                ""),
+    "league_health":     ("pulse",     "league_pages.page_commissioner", ""),
+    "recap":             ("news",      "league_pages.page_recap",    ""),
     "scout":             ("swords",    "page_weekly",               "?tab=scout"),
     "optimal":           ("bars2",     "page_weekly",               "?tab=optimal"),
     "redzone":           ("pulse",     "page_redzone",              ""),
-    "waivers":           ("list",      "page_waivers",              ""),
+    "waivers":           ("list",      "league_pages.page_waivers",              ""),
     "schedule":          ("list",      "page_schedule",             ""),
     "trade":             ("swap",      "trade.page_trade",          ""),
     "trade-suggestions": ("swap",      "trade.page_trade",          "?tab=suggestions"),
     "trade-database":    ("swap",      "trade.page_trade_database", ""),
     "trade-intel":       ("radar",     "trade.page_trade_intel",    ""),
-    "compare":           ("bars",      "page_compare",              ""),
-    "top-movers":        ("bars2",     "top_movers_page",           ""),
-    "advanced-metrics":  ("bars2",     "page_advanced_metrics",     ""),
+    "compare":           ("bars",      "seo_pages.page_compare",    ""),
+    "top-movers":        ("bars2",     "seo_pages.top_movers_page", ""),
+    "advanced-metrics":  ("bars2",     "league_pages.page_advanced_metrics", ""),
     "breakouts":         ("radar",     "page_breakouts",            ""),
     "prospects":         ("award",     "page_prospects",            ""),
-    "draft-history":     ("history",   "page_draft_history",        ""),
+    "draft-history":     ("history",   "tool_pages.page_draft_history", ""),
     "awards":            ("award",     "page_awards",               ""),
     "graphs":            ("bars2",     "page_graphs",               ""),
     "history":           ("history",   "page_history",              ""),
@@ -2365,11 +2393,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     if draft_ended or not offseason_mode:
         _weekly_items = [
             ("Matchups",     "page_weekly", "weekly", False),
-            ("Weekly Recap", "page_recap",  "recap",  False),
+            ("Weekly Recap", "league_pages.page_recap",  "recap",  False),
             ("Opponent Scout", "page_weekly", "scout", False, "?tab=scout"),
             ("Lineup Efficiency", "page_weekly", "optimal", False, "?tab=optimal"),
             # Roster/lineup tools live with the other weekly tools, not Players.
-            ("Waivers & Start/Sit", "page_waivers", "waivers", False),
+            ("Waivers & Start/Sit", "league_pages.page_waivers", "waivers", False),
             ("Schedule Assistant",  "page_schedule", "schedule", False),
         ]
         # Redzone lives inside the Weekly dropdown. When a game is actually
@@ -2397,25 +2425,25 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "weeklyNavDropdown", btn_extra_cls=_rz_pulse,
         ))
     nav_pills.append(nav_pill_dropdown("League", [
-        ("Standings",       "page_standings",    "standings",    False),
+        ("Standings",       "league_pages.page_standings",    "standings",    False),
         ("Teams",           "page_teams",        "teams",        False),
         ("Activity",        "page_activity",     "activity",     False),
-        ("League Health",   "page_commissioner", "league_health", False),
+        ("League Health",   "league_pages.page_commissioner", "league_health", False),
     ], ["standings", "teams", "activity", "league_health"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
-        ("Compare Players", "page_compare", "compare", False),
-        ("Top Movers", "top_movers_page", "top-movers", False),
-        ("Advanced Metrics", "page_advanced_metrics", "advanced-metrics", False),
+        ("Compare Players", "seo_pages.page_compare", "compare", False),
+        ("Top Movers", "seo_pages.top_movers_page", "top-movers", False),
+        ("Advanced Metrics", "league_pages.page_advanced_metrics", "advanced-metrics", False),
         ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
     ], ["players", "prospects", "breakouts", "top-movers", "compare"], "playersNavDropdown"))
     # Keeper Assistant only applies to keeper leagues; hide it for dynasty and
     # plain redraft leagues.
-    _draft_items = [("Draft Room", "page_draft_room", "draft", False)]
+    _draft_items = [("Draft Room", "tool_pages.page_draft_room", "draft", False)]
     if _nav_show_keeper(platform, league_id, season):
-        _draft_items.append(("Keeper Assistant", "page_keeper", "keeper", False))
-    _draft_items.append(("Draft History", "page_draft_history", "draft-history", False))
+        _draft_items.append(("Keeper Assistant", "tool_pages.page_keeper", "keeper", False))
+    _draft_items.append(("Draft History", "tool_pages.page_draft_history", "draft-history", False))
     nav_pills.append(nav_pill_dropdown("Draft", _draft_items,
         ["draft", "draft-history", "keeper"], "draftNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
@@ -4882,7 +4910,7 @@ def _viewer_lineup_alert_html(ctx: dict, viewer_roster_id) -> str:
         platform = ctx.get("platform", "sleeper")
         league_id = ctx.get("league_id", "")
         fix_url = url_for(
-            "page_waivers", platform=platform, season=season, league_id=league_id
+            "league_pages.page_waivers", platform=platform, season=season, league_id=league_id
         ) + "?tab=startsit"
         n = len(issues)
         title = f"{n} lineup issue" + ("s" if n > 1 else "")
@@ -5307,7 +5335,7 @@ def build_dashboard_body(ctx: dict) -> str:
         <section class="os-card os-col-fill">
           <div class="os-section-head">
             <div class="os-section-head-content">
-              {_section_title_link("Waiver Wire Targets", "page_waivers", platform, season, league_id)}
+              {_section_title_link("Waiver Wire Targets", "league_pages.page_waivers", platform, season, league_id)}
               <div class="os-section-subtitle">Smart pickups based on value + trend + breakout potential</div>
             </div>
             <div class="os-section-head-actions">
@@ -5475,7 +5503,7 @@ def build_dashboard_body(ctx: dict) -> str:
         <section class="os-card os-col-fill">
           <div class="os-section-head">
             <div class="os-section-head-content">
-              {_section_title_link("Standings", "page_standings", platform, season, league_id)}
+              {_section_title_link("Standings", "league_pages.page_standings", platform, season, league_id)}
               <div class="os-section-subtitle">Where every team sits right now</div>
             </div>
             <div class="os-section-head-actions">
@@ -7504,7 +7532,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         <section class="os-card os-col-fill os-tab-panel" id="os-jump-waivers">
           <div class="os-section-head">
             <div class="os-section-head-content">
-              {_section_title_link("Waiver Wire Targets", "page_waivers", platform, season, ctx.get("league_id"))}
+              {_section_title_link("Waiver Wire Targets", "league_pages.page_waivers", platform, season, ctx.get("league_id"))}
               <div class="os-section-subtitle">Smart pickups based on value + trend + breakout potential</div>
             </div>
             <div class="os-section-head-actions">
@@ -10840,396 +10868,13 @@ def page_dashboard(platform: str, season: int, league_id: str):
     return render_page("BR Fantasy Dashboard", league_id, "dashboard", body, platform, season)
 
 
-@app.route("/<platform>/<int:season>/<league_id>/standings")
-def page_standings(platform: str, season: int, league_id: str):
-    ctx = get_league_ctx_from_cache(platform, league_id, season)
-
-    if ctx.get("offseason_mode"):
-        body = _build_offseason_standings_body(ctx)
-    else:
-        body = build_standings_body(ctx)
-
-    return render_page("BR Fantasy Standings", league_id, "standings", body, platform, season)
+# ── League info pages (standings / waivers / scout) ───────────────────────────
+# /<...>/standings, /api/standings-week, /<...>/waivers and /<...>/scout are
+# served by routes/league_pages_bp.py.
 
 
-@app.route("/api/standings-week")
-def api_standings_week():
-    """Re-render the standings/power/sidebar panels as they stood through a
-    chosen finalized week, for the standings page week-selector."""
-    platform = request.args.get("platform", "sleeper")
-    league_id = request.args.get("league_id", "")
-    try:
-        season = int(request.args.get("season", 0))
-        week = int(request.args.get("week", 0))
-    except (TypeError, ValueError):
-        return jsonify({"ok": False, "error": "bad params"}), 400
-    if not league_id or week <= 0:
-        return jsonify({"ok": False, "error": "missing params"}), 400
-    try:
-        ctx = get_league_ctx_from_cache(platform, league_id, season)
-        capped = build_standings_as_of_week(ctx, week)
-        panels = _standings_panels(capped, power_rankings=None)
-        return jsonify({
-            "ok": True,
-            "week": week,
-            "standings_html": panels["standings"],
-            "details_html": panels["details"],
-            "power_html": panels["power"],
-            "sidebar_html": panels["sidebar"],
-        })
-    except Exception as e:
-        logger.warning("[standings-week] render failed: %s", e, exc_info=True)
-        return jsonify({"ok": False, "error": "render failed"}), 500
-
-
-@app.route("/<platform>/<int:season>/<league_id>/waivers")
-def page_waivers(platform: str, season: int, league_id: str):
-    ctx = get_league_ctx_from_cache(platform, league_id, season)
-    body = build_waivers_body(platform, season, league_id, ctx)
-    return render_page("BR Fantasy Waivers", league_id, "waivers", body, platform, season)
-
-
-@app.route("/<platform>/<int:season>/<league_id>/scout")
-def page_scout(platform: str, season: int, league_id: str):
-    # Scout Report lives as a tab on the Matchups page, not its own page.
-    # Redirect (keeps old links/bookmarks working) to that tab.
-    return redirect(
-        url_for("page_weekly", platform=platform, season=season, league_id=league_id)
-        + "?tab=scout"
-    )
-
-
-@app.route("/portfolio")
-def page_portfolio():
-    viewer_username = session.get("viewer_username")
-    viewer_user_id = session.get("viewer_user_id")
-    if not viewer_username or not viewer_user_id:
-        return redirect(url_for("index"))
-    # Use league nav context from query param, falling back to last visited league
-    from_league = request.args.get("from_league", "").strip() or session.get("last_league_id") or None
-    from_platform = request.args.get("platform", "").strip() or session.get("last_platform") or "sleeper"
-    from_season_raw = request.args.get("season", "")
-    try:
-        from_season = int(from_season_raw) if from_season_raw else int(session.get("last_season") or 0) or None
-    except ValueError:
-        from_season = None
-    nfl_state = get_nfl_state() or {}
-    season = int(nfl_state.get("season") or datetime.now().year)
-    try:
-        raw_leagues = get_sleeper_user_leagues(viewer_user_id, season) or []
-    except Exception:
-        raw_leagues = []
-    # If no leagues found for the NFL-reported season, try the previous year
-    if not raw_leagues:
-        try:
-            raw_leagues = get_sleeper_user_leagues(viewer_user_id, season - 1) or []
-            if raw_leagues:
-                season = season - 1
-        except Exception:
-            raw_leagues = []
-    def _league_summary(lg):
-        lid = str(lg.get("league_id") or "")
-        if not lid:
-            return None
-        lg_season = int(lg.get("season") or season)
-        try:
-            lctx = get_league_ctx_from_cache("sleeper", lid, lg_season)
-        except Exception:
-            return {"league_id": lid, "name": lg.get("name", "Unknown"), "error": True}
-        rosters = lctx.get("rosters") or []
-        roster_map = lctx.get("roster_map") or {}
-        standings_map = lctx.get("standings_map") or {}
-        model_value_table = lctx.get("model_value_table") or []
-        players_index = lctx.get("players_index") or {}
-        values_by_id = {str(r.get("id") or ""): r for r in model_value_table if r.get("id")}
-        viewer_roster = next(
-            (r for r in rosters if str(r.get("owner_id")) == str(viewer_user_id)), None
-        )
-        if not viewer_roster:
-            return {"league_id": lid, "name": lg.get("name", "Unknown"), "not_in_league": True}
-        rid = str(viewer_roster.get("roster_id"))
-        std = standings_map.get(rid) or {}
-        wins = int(std.get("wins") or 0)
-        losses = int(std.get("losses") or 0)
-        ties = int(std.get("ties") or 0)
-        pf = float(std.get("pf") or 0)
-        all_std = sorted(standings_map.items(), key=lambda x: (-int(x[1].get("wins") or 0), -float(x[1].get("pf") or 0)))
-        rank = next((i + 1 for i, (k, _) in enumerate(all_std) if k == rid), "?")
-        total_teams = int(lctx.get("total_rosters") or len(rosters) or 12)
-        player_ids = [str(p) for p in (viewer_roster.get("players") or [])]
-        all_players = {}
-        total_value = 0.0
-        _pos_buckets = {"QB": [], "RB": [], "WR": [], "TE": []}
-        for pid in player_ids:
-            v = values_by_id.get(pid) or {}
-            val = float(v.get("value") or 0)
-            total_value += val
-            meta = players_index.get(pid) or {}
-            pos = (v.get("position") or meta.get("pos") or "").upper()
-            nfl_team = (v.get("team") or meta.get("team") or "").upper()
-            all_players[pid] = {
-                "name": v.get("name") or meta.get("name") or f"Player {pid}",
-                "position": pos,
-                "value": val,
-                "pos_rank": v.get("pos_rank_label") or "",
-                "nfl_team": nfl_team,
-            }
-            if val > 0 and pos in _pos_buckets:
-                _pos_buckets[pos].append(val)
-        _top_n = {"QB": 1, "RB": 2, "WR": 3, "TE": 1}
-        pos_user_vals = {p: sum(sorted(_pos_buckets[p], reverse=True)[:n]) for p, n in _top_n.items()}
-        pos_league_avgs = {}
-        for pos, top_n in _top_n.items():
-            r_sums = []
-            for r in rosters:
-                r_pids = [str(p) for p in (r.get("players") or [])]
-                r_pos_vals = sorted(
-                    [float((values_by_id.get(p) or {}).get("value") or 0)
-                     for p in r_pids if (values_by_id.get(p) or {}).get("position", "").upper() == pos],
-                    reverse=True,
-                )
-                r_sums.append(sum(r_pos_vals[:top_n]))
-            pos_league_avgs[pos] = (sum(r_sums) / len(r_sums)) if r_sums else 1
-        # Positional rank within league using same weighted-strength + z-score as teams page
-        roster_positions = lctx.get("roster_positions") or []
-        try:
-            slot_counts = count_roster_positions(roster_positions)
-        except Exception:
-            slot_counts = {"QB": 1, "RB": 2, "WR": 3, "TE": 1, "FLEX": 1}
-        pos_user_rank = {}
-        for pos in ["QB", "RB", "WR", "TE"]:
-            all_strengths = []
-            user_strength = 0.0
-            for r in rosters:
-                r_pids = [str(p) for p in (r.get("players") or [])]
-                r_vals = sorted(
-                    [float((values_by_id.get(p) or {}).get("value") or 0)
-                     for p in r_pids if (values_by_id.get(p) or {}).get("position", "").upper() == pos],
-                    reverse=True,
-                )
-                strength = _weighted_pos_strength(r_vals, pos, slot_counts)
-                all_strengths.append((str(r.get("roster_id")), strength))
-                if str(r.get("roster_id")) == rid:
-                    user_strength = strength
-            if len(all_strengths) > 1:
-                vals_only = [s for _, s in all_strengths]
-                mu = sum(vals_only) / len(vals_only)
-                sigma = (sum((v - mu) ** 2 for v in vals_only) / len(vals_only)) ** 0.5
-                user_z = (user_strength - mu) / sigma if sigma > 0 else 0.0
-                ranked = sorted(all_strengths, key=lambda x: -x[1])
-                pos_user_rank[pos] = next((i + 1 for i, (r_id, _) in enumerate(ranked) if r_id == rid), "?")
-            else:
-                pos_user_rank[pos] = 1
-        # Recent streak from df_weekly (last 3 finalized weeks for this roster)
-        streak = []
-        try:
-            df_w = lctx.get("df_weekly")
-            if df_w is not None and not df_w.empty and "finalized" in df_w.columns:
-                my_rows = df_w[(df_w["roster_id"].astype(str) == rid) & (df_w["finalized"] == True)]
-                if not my_rows.empty and "week" in my_rows.columns:
-                    my_rows = my_rows.sort_values("week", ascending=False).head(3)
-                    for _, row in my_rows.iterrows():
-                        pts = float(row.get("pts") or row.get("PF") or 0)
-                        opp = float(row.get("opp_pts") or row.get("PA") or 0)
-                        streak.append("W" if pts > opp else "L")
-        except Exception:
-            logger.debug("suppressed exception", exc_info=True)
-        league_obj = lctx.get("league") or {}
-        # Urgency score: lower = needs more attention
-        urgency = wins - losses + (rank if isinstance(rank, int) else 0) * -0.1
-        return {
-            "league_id": lid,
-            "name": league_obj.get("name") or lg.get("name") or "Unknown",
-            "platform": "sleeper",
-            "season": season,
-            "wins": wins, "losses": losses, "ties": ties,
-            "record": f"{wins}-{losses}" + (f"-{ties}" if ties else ""),
-            "rank": rank, "total_teams": total_teams,
-            "pf": round(pf, 1),
-            "total_value": round(total_value, 1),
-            "all_players": all_players,
-            "streak": streak,
-            "urgency": urgency,
-            "pos_user_vals": pos_user_vals,
-            "pos_league_avgs": pos_league_avgs,
-            "pos_user_rank": pos_user_rank,
-            "offseason": lctx.get("offseason_mode", False),
-        }
-
-    leagues_data = []
-    for _lg in raw_leagues:
-        _result = _league_summary(_lg)
-        if _result:
-            leagues_data.append(_result)
-    leagues_data.sort(key=lambda x: x.get("name", ""))
-
-    valid_leagues = [lg for lg in leagues_data if not lg.get("error") and not lg.get("not_in_league")]
-    num_leagues = len(leagues_data)
-    total_wins = sum(lg.get("wins", 0) for lg in valid_leagues)
-    total_losses = sum(lg.get("losses", 0) for lg in valid_leagues)
-    total_ties = sum(lg.get("ties", 0) for lg in valid_leagues)
-
-    # Cross-league avg positional value vs league average
-    cross_pos = {}
-    for pos in ["QB", "RB", "WR", "TE"]:
-        ratios = []
-        for lg in valid_leagues:
-            u = (lg.get("pos_user_vals") or {}).get(pos, 0)
-            a = (lg.get("pos_league_avgs") or {}).get(pos) or 1
-            ratios.append(u / a)
-        cross_pos[pos] = round((sum(ratios) / len(ratios)) if ratios else 1.0, 2)
-
-    # Sort valid leagues by urgency: losing records and low standings first
-    valid_leagues.sort(key=lambda lg: (
-        lg.get("wins", 0) - lg.get("losses", 0),
-        -(lg.get("rank") if isinstance(lg.get("rank"), int) else 999),
-    ))
-
-    # NFL team concentration: group all player holdings by their NFL team
-    nfl_team_data: dict = {}  # team -> {player_list: [...], league_ids: set}
-    pid_meta: dict = {}
-    pid_leagues: dict = {}  # pid -> [league_name_abbrev]
-    for lg in valid_leagues:
-        lg_abbrev = (lg.get("name") or "?")[:14]
-        for pid, p in (lg.get("all_players") or {}).items():
-            if not p.get("value"):
-                continue
-            nfl = p.get("nfl_team") or ""
-            if nfl and nfl not in ("", "FA", "N/A"):
-                if nfl not in nfl_team_data:
-                    nfl_team_data[nfl] = {"player_list": [], "league_ids": set()}
-                nfl_team_data[nfl]["player_list"].append({
-                    "pid": pid,
-                    "name": p.get("name", ""),
-                    "position": p.get("position", ""),
-                    "value": p.get("value", 0),
-                    "pos_rank": p.get("pos_rank", ""),
-                    "league": lg_abbrev,
-                })
-                nfl_team_data[nfl]["league_ids"].add(lg.get("league_id", ""))
-            if pid not in pid_meta or p.get("value", 0) > pid_meta[pid].get("value", 0):
-                pid_meta[pid] = p
-            pid_leagues.setdefault(pid, []).append(lg_abbrev)
-
-    # Top NFL teams by player count - deduplicate players, sort by value
-    nfl_exposure = []
-    for t, d in nfl_team_data.items():
-        seen_pids: set = set()
-        unique_players = []
-        for pl in sorted(d["player_list"], key=lambda x: -x["value"]):
-            if pl["pid"] not in seen_pids:
-                seen_pids.add(pl["pid"])
-                unique_players.append(pl)
-        nfl_exposure.append({
-            "team": t,
-            "count": len(unique_players),
-            "leagues": len(d["league_ids"]),
-            "players": unique_players,
-        })
-    nfl_exposure.sort(key=lambda x: (-x["count"], -x["leagues"]))
-    nfl_exposure = nfl_exposure[:12]
-
-    # Player holdings across leagues
-    holdings = []
-    for pid, p in pid_meta.items():
-        if p.get("value", 0) > 0:
-            holdings.append({
-                **p, "pid": pid,
-                "shares": len(pid_leagues.get(pid, [])),
-                "in_leagues": pid_leagues.get(pid, []),
-            })
-    holdings.sort(key=lambda x: (-x["shares"], -x["value"]))
-
-    # Join 7-day value-rank movement from the in-memory value table (no DB round
-    # trip) so the Portfolio Movers digest works even when the per-league player
-    # blobs don't carry it. Only fill when missing so a real per-league value wins.
-    try:
-        _pf_rc = {str(r.get("id")): r.get("rank_change_7d")
-                  for r in (get_model_value_table_cached() or [])
-                  if isinstance(r, dict) and r.get("id")}
-        for _h in holdings:
-            if _h.get("rank_change_7d") in (None, 0):
-                _rc = _pf_rc.get(str(_h.get("pid")))
-                if _rc is not None:
-                    _h["rank_change_7d"] = _rc
-    except Exception:
-        logger.debug("suppressed exception", exc_info=True)
-
-    body = build_portfolio_body(
-        viewer_username, valid_leagues, leagues_data, season,
-        holdings, num_leagues, nfl_exposure, cross_pos,
-        total_wins, total_losses, total_ties,
-    )
-    # Always render with a league nav context - fall back to first valid league
-    nav_league_id = from_league
-    nav_platform = from_platform
-    nav_season = from_season or season
-    if not nav_league_id and valid_leagues:
-        first = valid_leagues[0]
-        nav_league_id = first.get("league_id")
-        nav_platform = first.get("platform") or "sleeper"
-        nav_season = first.get("season") or season
-    return render_page("My Leagues – BR Fantasy", nav_league_id, "portfolio", body, nav_platform, nav_season)
-
-
-def build_watchlist_page_body() -> str:
-    """Shell for the full watchlist page. Client-driven: static/app.js's
-    initWatchlistPage reads the (synced/local) watchlist, fetches per-player
-    value/mover/injury data, and renders the sortable table + value-vs-age chart."""
-    return """
-    <div class="page-layout" data-page="watchlist">
-      <main class="page-main">
-        <div class="wl-page">
-          <header class="wl-page-head">
-            <div class="wl-head-title">
-              <h1 class="wl-page-title">Watchlist</h1>
-              <span id="wlPageCount" class="wl-count-pill" hidden></span>
-            </div>
-            <label class="wl-page-sort">Sort
-              <select id="wlPageSort" class="search">
-                <option value="value">Value (high to low)</option>
-                <option value="mover">Biggest 7-day move</option>
-                <option value="age">Age (young to old)</option>
-                <option value="name">Name (A to Z)</option>
-                <option value="added">Recently added</option>
-              </select>
-            </label>
-          </header>
-          <div id="wlPageSyncNote" class="wl-sync-note"></div>
-
-          <div id="wlPageStats" class="wl-stats"></div>
-          <div id="wlPageAlerts" class="wl-alerts-wrap"></div>
-
-          <div class="card wl-page-card">
-            <div class="wl-card-head">
-              <h3>Value vs Age</h3>
-              <span class="wl-card-hint">Younger &amp; higher is better</span>
-            </div>
-            <div class="card-body"><div id="wlPageScatter" class="wl-page-scatter"></div></div>
-          </div>
-          <div class="card wl-page-card">
-            <div class="wl-card-head"><h3>Watched Players</h3></div>
-            <div class="card-body"><div id="wlPageTable" class="wl-page-table"></div></div>
-          </div>
-        </div>
-      </main>
-    </div>
-    """
-
-
-@app.route("/watchlist")
-def page_watchlist():
-    body = build_watchlist_page_body()
-    nav_lid = session.get("last_league_id")
-    nav_platform = session.get("last_platform")
-    try:
-        nav_season = int(session.get("last_season")) if session.get("last_season") else None
-    except (TypeError, ValueError):
-        nav_season = None
-    return render_page(
-        "Watchlist – BR Fantasy", nav_lid, "watchlist", body, nav_platform, nav_season,
-        description="Your dynasty player watchlist with values, 7-day movers and injuries.",
-    )
+# ── User account hub pages ────────────────────────────────────────────────────
+# /portfolio and /watchlist are served by routes/user_pages_bp.py.
 
 
 @app.route("/api/waiver-candidates")
@@ -14563,52 +14208,7 @@ def page_prospects(platform: str, season: int, league_id: str):
     return render_page("Prospect Rankings", league_id, "prospects", body_html, platform, season)
 
 
-@app.route("/metrics")
-@app.route("/<platform>/<int:season>/<league_id>/metrics")
-def page_advanced_metrics(platform: str = None, season: int = None, league_id: str = None):
-    """Premium Advanced Metrics leaderboard page."""
-    from dashboard_services.pages.advanced_metrics_page import build_advanced_metrics_body
-    from data_building.advanced_metrics import LEADERBOARD_METRICS
-    user_id = session.get("viewer_username")
-    body = build_advanced_metrics_body(
-        True, LEADERBOARD_METRICS, league_id, season, platform
-    )
-    # When a shared graph link is opened (?graph=1&gx=&gy=...), give it a rich
-    # social preview whose image is a server-rendered screenshot of that graph.
-    og_tags = ""
-    if request.args.get("graph") == "1":
-        gx = request.args.get("gx") or ""
-        gy = request.args.get("gy") or ""
-        def _mlabel(k):
-            m = LEADERBOARD_METRICS.get(k) or {}
-            return m.get("label") or k
-        if gx and gy:
-            origin = request.host_url.rstrip("/")
-            from urllib.parse import urlencode as _ue
-            _og_qs = {k: request.args.get(k) for k in ("gx", "gy", "gz", "gn", "season", "metric", "pos", "minvol")
-                      if request.args.get(k)}
-            og_img = f"{origin}/{platform}/{season}/{league_id}/metrics/og.png?{_ue(_og_qs)}"
-            og_title = f"{_mlabel(gy)} vs {_mlabel(gx)} | BR Fantasy"
-            og_desc = "Advanced metrics scatter: compare efficiency and opportunity across the league."
-            t = html.escape(og_title, quote=True)
-            d = html.escape(og_desc, quote=True)
-            img = html.escape(og_img, quote=True)
-            url = html.escape(request.url, quote=True)
-            og_tags = (
-                f"<meta property=\"og:site_name\" content=\"BR Fantasy\">"
-                f"<meta property=\"og:type\" content=\"website\">"
-                f"<meta property=\"og:title\" content=\"{t}\">"
-                f"<meta property=\"og:description\" content=\"{d}\">"
-                f"<meta property=\"og:url\" content=\"{url}\">"
-                f"<meta property=\"og:image\" content=\"{img}\">"
-                f"<meta property=\"og:image:width\" content=\"1200\">"
-                f"<meta property=\"og:image:height\" content=\"630\">"
-                f"<meta name=\"twitter:card\" content=\"summary_large_image\">"
-                f"<meta name=\"twitter:title\" content=\"{t}\">"
-                f"<meta name=\"twitter:description\" content=\"{d}\">"
-                f"<meta name=\"twitter:image\" content=\"{img}\">"
-            )
-    return render_page("Advanced Metrics", league_id, "advanced-metrics", body, platform, season, og_tags=og_tags)
+# /metrics is served by routes/league_pages_bp.py (its /metrics/og.png route stays below).
 
 
 @app.route("/<platform>/<int:season>/<league_id>/metrics/og.png")
@@ -14943,298 +14543,14 @@ def get_top_player_slugs(limit: int = 300) -> list:
     return sorted(build_slug_index(tbl[: max(1, int(limit))]).keys())
 
 
-@app.route("/player/<slug>")
-@app.route("/player/<slug>/trade-value")
-def page_player_trade_value(slug: str):
-    from dashboard_services.pages.player_page import build_player_page_body, slugify
-    from utils.utils import load_relevant_index, load_players_index
-
-    slug_norm = slugify(slug)
-    idx = get_player_slug_index()
-    pid = idx.get(slug_norm)
-    if not pid:
-        # Stale/unknown slug (player renamed, retired, or fell out of the value
-        # table): consolidate to the rankings hub rather than 404 - these were
-        # showing up as Not Found errors in Search Console after slug churn.
-        return redirect("/players", code=301)
-
-    # Canonical-slug redirect: if the requested slug isn't the normalized one,
-    # or it's the bare /player/<slug> form, send 301 to /player/<slug>/trade-value.
-    canonical_path = f"/player/{slug_norm}/trade-value"
-    if request.path != canonical_path:
-        return redirect(canonical_path, code=301)
-
-    try:
-        nfl_state = get_nfl_state() or {}
-        season = int(nfl_state.get("season") or datetime.now().year)
-
-        players_index = load_relevant_index() or {}
-        meta = players_index.get(pid)
-        if not meta:
-            meta = (load_players_index() or {}).get(pid) or {}
-
-        table = get_model_value_table_cached() or []
-        pv = next((p for p in table if str(p.get("id")) == str(pid)), {})
-
-        # Single sorted ranking by 1QB value, reused for overall rank + neighbors.
-        ranked_1qb = sorted(
-            [x for x in table
-             if x.get("position") not in ("K", "DEF", "PICK") and float(x.get("value") or 0) > 0],
-            key=lambda x: float(x.get("value") or 0), reverse=True,
-        )
-        my_idx = next((i for i, p in enumerate(ranked_1qb) if str(p.get("id")) == str(pid)), None)
-        ovr_rank = (my_idx + 1) if my_idx is not None else None
-
-        ranked_sf = sorted(
-            [x for x in table
-             if x.get("position") not in ("K", "DEF", "PICK") and float(x.get("sf_value") or 0) > 0],
-            key=lambda x: float(x.get("sf_value") or 0), reverse=True,
-        )
-        sf_ovr_rank = next((i + 1 for i, p in enumerate(ranked_sf) if str(p.get("id")) == str(pid)), None)
-
-        # Players with the nearest 1QB value (internal links / discovery)
-        from dashboard_services.pages.player_page import slugify as _slugify
-        similar_players = []
-        if my_idx is not None:
-            lo = max(0, my_idx - 3)
-            neighbors = ranked_1qb[lo:my_idx] + ranked_1qb[my_idx + 1:my_idx + 4]
-            for sp in neighbors:
-                sp_name = sp.get("name") or ""
-                sp_slug = _slugify(sp_name)
-                if sp_slug:
-                    similar_players.append({
-                        "name": sp_name,
-                        "slug": sp_slug,
-                        "value": sp.get("value"),
-                        "pos_rank_label": sp.get("pos_rank_label"),
-                    })
-
-        try:
-            history = get_player_value_history(pid, days=365, league_type="1qb", league_size=10)
-        except Exception:
-            history = []
-
-        name = meta.get("name") or pv.get("name") or "Player"
-        pos = str(meta.get("pos") or pv.get("position") or "").upper()
-        team = meta.get("team")
-        age = age_from_bday(meta.get("bDay")) or pv.get("age") or meta.get("age")
-
-        body = build_player_page_body(
-            player_id=pid, name=name, position=pos, team=team, age=age,
-            headshot=meta.get("espnHeadshot"),
-            value_1qb=pv.get("value"), sf_value=pv.get("sf_value"),
-            pos_rank_label=pv.get("pos_rank_label"), ovr_rank=ovr_rank,
-            sf_pos_rank_label=pv.get("sf_pos_rank_label"), sf_ovr_rank=sf_ovr_rank,
-            ppg=None, value_history=history, season=season,
-            similar_players=similar_players,
-        )
-
-        _val = pv.get("value")
-        _pos_phrase = f"{pos} " if pos else ""
-        title = f"{name} Dynasty Trade Value {season} - {_pos_phrase}Rankings | BR Fantasy"
-        desc_val = f" Current value: {int(_val)}." if _val else ""
-        description = (
-            f"{name} {season} fantasy football trade value for dynasty and redraft leagues."
-            f"{desc_val} See {name}'s value history chart, positional rank, and recent real "
-            f"trades, then run the deal through the trade calculator."
-        )
-        _img = meta.get("espnHeadshot") or ""
-        og_tags = (
-            f"<meta property='og:title' content='{html.escape(title)}'>"
-            f"<meta property='og:description' content='{html.escape(description)}'>"
-            f"<meta property='og:type' content='profile'>"
-            + (f"<meta property='og:image' content='{html.escape(_img)}'>" if _img else "")
-            + "<meta name='twitter:card' content='summary'>"
-        )
-
-        return render_page(title, None, "players", body,
-                           description=description, og_tags=og_tags)
-    except Exception:
-        logger.exception("[player-page] render failed for slug=%s pid=%s", slug, pid)
-        # Never 5xx a public page for Googlebot/users: return a valid minimal
-        # page (keeps the URL alive for when data returns) instead of a 500.
-        _fb_name = html.escape((slug or 'Player').replace('-', ' ').title())
-        return render_page(
-            f"{_fb_name} Trade Value | BR Fantasy", None, "players",
-            f"<div class='static-page'><div class='static-card-page'>"
-            f"<h1>{_fb_name}</h1><p>Trade value details are temporarily unavailable. "
-            f"<a href='/players'>Browse all player values</a> or "
-            f"<a href='/trade'>open the trade calculator</a>.</p></div></div>",
-            description=f"{_fb_name} dynasty and redraft trade value.",
-        )
+# ── Player value pages + guest breakouts/prospects ───────────────────────────
+# /player/<slug>[/trade-value], /breakouts and /prospects (guest) are served by
+# routes/seo_pages_bp.py.
 
 
-
-@app.route("/breakouts")
-def page_breakouts_guest():
-    nfl_state = get_nfl_state() or {}
-    current_season = int(nfl_state.get("season") or datetime.now().year)
-    return page_breakouts(platform="sleeper", season=current_season, league_id=None)
-
-
-@app.route("/prospects")
-def page_prospects_guest():
-    nfl_state = get_nfl_state() or {}
-    current_season = int(nfl_state.get("season") or datetime.now().year)
-    return page_prospects(platform="sleeper", season=current_season, league_id=None)
-
-
-@app.route("/draft")
-@app.route("/<platform>/<int:season>/<league_id>/draft")
-def page_draft_room(platform: str = None, season: int = None, league_id: str = None):
-    """Standalone Draft Room / draft board."""
-    from dashboard_services.pages.draft_room_page import build_draft_room_body
-    is_guest = not league_id
-    num_teams = None
-    is_sf = False
-    roster_positions = None
-    if league_id:
-        try:
-            ctx = get_league_ctx_from_cache(platform, league_id, season)
-            num_teams = ctx.get("total_rosters") or None
-            _rp = ctx.get("roster_positions") or []
-            if hasattr(_rp, "tolist"):
-                _rp = _rp.tolist()
-            roster_positions = [str(s) for s in _rp] if _rp else None
-            is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp)
-            league_id = ctx.get("league_id") or league_id
-            season = int(ctx.get("season") or season or datetime.now().year)
-        except Exception as _e:
-            logger.info("[draft-room] league ctx load failed: %s", _e)
-    num_rounds_rookie = None
-    num_rounds_startup = None
-    if league_id and roster_positions:
-        try:
-            _ls = get_league_ctx_from_cache(platform, league_id, season).get("league_settings") or {}
-            _rr = int(_ls.get("draft_rounds") or 0)
-            if _rr:
-                num_rounds_rookie = _rr
-            _draftable = [p for p in roster_positions if str(p).upper() not in ("TAXI", "IR")]
-            if _draftable:
-                num_rounds_startup = len(_draftable)
-        except Exception:
-            logger.debug("suppressed exception", exc_info=True)
-    # Hide the Keeper draft type + keeper options + the keeper banner entirely
-    # for dynasty and plain redraft (non-keeper) leagues. A dynasty league can
-    # still carry a max_keepers value, which is why this gates on _nav_show_keeper
-    # (type 2 is never a keeper league) rather than the raw keeper limit. Guests
-    # (no league) keep it available.
-    show_keeper = True
-    if league_id:
-        try:
-            show_keeper = _nav_show_keeper(platform, league_id, season)
-        except Exception:
-            show_keeper = True
-    # League keepers: surface them in the draft room either when the league is a
-    # real keeper league, or when the user explicitly came from the keeper tool
-    # (?keepers=1). Never for dynasty / plain redraft leagues, so the board is
-    # unchanged there.
-    keepers_payload = None
-    if league_id and show_keeper:
-        try:
-            from dashboard_services.pages.keeper_page import compute_league_keepers, league_keeper_limit
-            _ctx = get_league_ctx_from_cache(platform, league_id, season)
-            if request.args.get("keepers") or league_keeper_limit(_ctx) > 0:
-                # The keeper tool hands off the limit and cost rules the user is
-                # playing by so rival projections use the same ones, instead of
-                # the server defaults (which price every undrafted player at the
-                # last round).
-                def _karg(name):
-                    try:
-                        raw = request.args.get(name)
-                        return int(raw) if raw not in (None, "") else None
-                    except (TypeError, ValueError):
-                        return None
-                _klimit = _karg("klimit") or None
-                _krules = {k: v for k, v in (
-                    ("undrafted_round", _karg("kundr")),
-                    ("round_offset",    _karg("koff")),
-                    ("escalation",      _karg("kesc")),
-                ) if v is not None}
-                # One-pick-per-round flag (kopr=0/1); only apply when explicitly
-                # sent so rival projections match the rule the user is playing by.
-                _kopr = request.args.get("kopr")
-                if _kopr in ("0", "1"):
-                    _krules["one_per_round"] = (_kopr == "1")
-                keepers_payload = compute_league_keepers(
-                    _ctx, platform=platform, league_id=league_id,
-                    viewer_roster_id=session.get("viewer_roster_id"),
-                    limit_override=_klimit, rules_override=_krules or None,
-                )
-        except Exception:
-            logger.debug("[draft-room] keeper compute skipped", exc_info=True)
-    body = build_draft_room_body(
-        league_id, season, platform,
-        is_guest=is_guest, num_teams=num_teams, is_superflex=is_sf,
-        roster_positions=roster_positions,
-        viewer_user_id=session.get("viewer_user_id"),
-        num_rounds_rookie=num_rounds_rookie,
-        num_rounds_startup=num_rounds_startup,
-        keepers=keepers_payload,
-        show_keeper=show_keeper,
-    )
-    return render_page(
-        "Draft Room | BR Fantasy", league_id, "draft", body, platform, season,
-        description=(
-            "Fantasy football draft assistant and draft board with best-available, "
-            "ADP, and snake / linear / third-round-reversal support for Sleeper, ESPN, and Yahoo."
-        ),
-    )
-
-
-@app.route("/keeper")
-@app.route("/<platform>/<int:season>/<league_id>/keeper")
-def page_keeper(platform: str = None, season: int = None, league_id: str = None):
-    """Keeper Assistant: decide who to keep next season."""
-    from dashboard_services.pages.keeper_page import build_keeper_body
-    if not league_id:
-        body = (
-            "<div class='card central' style='text-align:center;padding:44px 16px;'>"
-            "<h2>Keeper Assistant</h2>"
-            "<p style='color:var(--text-muted);max-width:54ch;margin:10px auto 0;line-height:1.6;'>"
-            "Open one of your leagues to see keeper recommendations: who returns the most "
-            "draft-capital value at their keeper cost, and the optimal set to keep under your "
-            "league limit.</p></div>"
-        )
-        return render_page(
-            "Keeper Assistant | BR Fantasy", None, "keeper", body,
-            description="Fantasy football keeper tool: decide who to keep with surplus-value scoring and an optimal-set optimizer.",
-        )
-    ctx = {}
-    try:
-        ctx = get_league_ctx_from_cache(platform, league_id, season)
-        league_id = ctx.get("league_id") or league_id
-        season = int(ctx.get("season") or season or datetime.now().year)
-    except Exception as _e:
-        logger.info("[keeper] league ctx load failed: %s", _e)
-    viewer_roster_id = session.get("viewer_roster_id") or None
-    from dashboard_services.adp_service import ADP_SOURCE_LABELS as _ADP_LABELS
-    _kadp_src = (request.args.get("adp_source") or "consensus").strip().lower()
-    if _kadp_src not in _ADP_LABELS:
-        _kadp_src = "consensus"
-    body = build_keeper_body(
-        ctx or {}, viewer_roster_id=viewer_roster_id,
-        platform=(platform or "sleeper"), league_id=league_id,
-        adp_source=_kadp_src, season=season,
-        force=bool(request.args.get("show")),
-    )
-    return render_page(
-        "Keeper Assistant | BR Fantasy", league_id, "keeper", body, platform, season,
-        description=("Keeper league tool: rank your roster by keeper surplus and pick the optimal "
-                     "set to keep under your league's limit, from redraft values and market ADP."),
-    )
-
-
-@app.route("/draft/history")
-@app.route("/<platform>/<int:season>/<league_id>/draft/history")
-def page_draft_history(platform: str = None, season: int = None, league_id: str = None):
-    """Draft history: the league's real drafts (from Sleeper), openable to review."""
-    from dashboard_services.pages.draft_room_page import build_draft_history_body
-    body = build_draft_history_body(league_id, season, platform)
-    return render_page(
-        "Draft History | BR Fantasy", league_id, "draft", body, platform, season,
-        description="Review your league's past and live fantasy football drafts pick-by-pick.",
-    )
+# ── Draft Room / Keeper / Draft History pages ────────────────────────────────
+# /draft, /keeper and /draft/history (and their league-context variants) are
+# served by routes/tool_pages_bp.py.
 
 
 # ── Live draft sync (P5, Sleeper) ────────────────────────────────────────────
@@ -16990,14 +16306,7 @@ def build_optimal_body(ctx):
     return nav_html + summary_html + table_html + pos_html + recurring_html
 
 
-@app.route("/<platform>/<int:season>/<league_id>/optimal")
-def page_optimal(platform: str, season: int, league_id: str):
-    # Optimal Lineup lives as a tab on the Matchups page, not its own page.
-    # Redirect (keeps old links/bookmarks working) to that tab.
-    return redirect(
-        url_for("page_weekly", platform=platform, season=season, league_id=league_id)
-        + "?tab=optimal"
-    )
+# /<...>/optimal (redirect) is served by routes/league_pages_bp.py.
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -18953,34 +18262,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
             + scoreboard_and_recap + (next_week_html or "") + lineup_html + standings_html)
 
 
-@app.route("/<platform>/<int:season>/<league_id>/recap")
-def page_recap(platform: str, season: int, league_id: str):
-    ctx = get_league_ctx_from_cache(platform, league_id, season)
-    try:
-        week = int(request.args.get("week") or 0) or None
-    except (ValueError, TypeError):
-        week = None
-    body = build_recap_body(ctx, selected_week=week)
-    league_name = html.escape((ctx.get("league") or {}).get("name") or "Fantasy League")
-    week_label = f"Week {week} Recap" if week else "Weekly Recap"
-    page_url = request.url
-    base_url = request.host_url.rstrip("/")
-    week_param = f"?week={week}" if week else ""
-    og_image = f"{base_url}/{platform}/{season}/{league_id}/recap/og.png{week_param}"
-    og_tags = (
-        f"<meta property='og:title' content='{week_label} - {league_name} | BR Fantasy'>"
-        f"<meta property='og:description' content='Weekly fantasy football recap: scoreboard, highlights, and AI analysis.'>"
-        f"<meta property='og:image' content='{og_image}'>"
-        f"<meta property='og:image:width' content='1200'>"
-        f"<meta property='og:image:height' content='630'>"
-        f"<meta property='og:type' content='website'>"
-        f"<meta property='og:url' content='{html.escape(page_url)}'>"
-        f"<meta name='twitter:card' content='summary_large_image'>"
-        f"<meta name='twitter:title' content='{week_label} - {league_name} | BR Fantasy'>"
-        f"<meta name='twitter:description' content='Weekly fantasy football recap: scoreboard, highlights, and AI analysis.'>"
-        f"<meta name='twitter:image' content='{og_image}'>"
-    )
-    return render_page("Weekly Recap", league_id, "recap", body, platform, season, og_tags=og_tags)
+# /<...>/recap is served by routes/league_pages_bp.py (its /recap/og.png image route stays below).
 
 
 @app.route("/<platform>/<int:season>/<league_id>/recap/og.png")
@@ -19767,12 +19049,7 @@ def build_commissioner_body(ctx):
     return health_html + history_panel + roster_table + trade_card
 
 
-@app.route("/<platform>/<int:season>/<league_id>/league_health")
-@app.route("/<platform>/<int:season>/<league_id>/commissioner")  # legacy redirect
-def page_commissioner(platform: str, season: int, league_id: str):
-    ctx = get_league_ctx_from_cache(platform, league_id, season)
-    body = build_commissioner_body(ctx)
-    return render_page("League Health", league_id, "league_health", body, platform, season)
+# /<...>/league_health and /<...>/commissioner are served by routes/league_pages_bp.py.
 
 
 @app.before_request
@@ -32053,285 +31330,9 @@ def api_live_draft_suggest():
 # robots.txt / sitemap.xml are served by routes/public_bp.py.
 
 
-# ── Dynasty Trade Value Chart ─────────────────────────────────────────────────
-
-@app.route("/dynasty-trade-value-chart")
-def dynasty_trade_value_chart():
-    """Public dynasty trade value chart — same UI as player rankings, with SEO-optimised metadata."""
-    from datetime import datetime as _dt
-    as_of = _dt.now().strftime("%B %Y")
-    year  = _dt.now().year
-    return page_players(
-        _title=f"Dynasty Fantasy Football Trade Value Chart {year} | BR Fantasy",
-        _desc=(
-            f"Updated {as_of}: real dynasty trade values for 1QB and Superflex leagues. "
-            f"Sortable by position, age, and value. Use with the free Trade Calculator."
-        ),
-        _canonical="/dynasty-trade-value-chart",
-    )
-
-
-# ── Top Movers (was Risers & Fallers) ─────────────────────────────────────────
-
-# /risers-fallers extracted to routes/misc_api_bp.py
-
-@app.route("/top-movers")
-def top_movers_page():
-    """Weekly dynasty risers and fallers — freshness content for SEO."""
-    from dashboard_services.pages.dynasty_pages import build_risers_fallers_body
-    from data_building.player_value_history import get_top_movers
-    # Timeframe toggle: 7 / 30 / 90 days. Clamp to the supported set so a hand-
-    # typed ?days= can't push an unbounded window into the query.
-    try:
-        days = int(request.args.get("days", 7))
-    except (ValueError, TypeError):
-        days = 7
-    if days not in (7, 30, 90):
-        days = 7
-    try:
-        movers = get_top_movers(days=days, limit=20, min_baseline_value=5,
-                                min_current_value=20.0,
-                                current_values=_displayed_value_map("1qb"))
-    except Exception:
-        movers = {"risers": [], "fallers": []}
-
-    from datetime import datetime as _dt
-    date_label = _dt.now().strftime("%B %d, %Y")
-    body = build_risers_fallers_body(movers, as_of_date=date_label,
-                                     signed_in=bool(session.get("viewer_username")),
-                                     days=days)
-
-    _win_label = {7: "week", 30: "30 days", 90: "90 days"}[days]
-    return render_page(
-        f"Top Movers: {date_label} | BR Fantasy",
-        None, "top-movers", body,
-        description=(
-            f"Dynasty fantasy football risers and fallers over the last {_win_label} "
-            f"({date_label}). Biggest trade value movers, act fast with the BR Fantasy "
-            f"Trade Calculator."
-        ),
-    )
-
-
-# ── Player Comparison ─────────────────────────────────────────────────────────
-
-def _compare_name_for_id(pid: str | None) -> str | None:
-    """Resolve a player display name from an id via the cached value table."""
-    if not pid:
-        return None
-    pid = str(pid).strip()
-    try:
-        for r in (get_model_value_table_cached() or []):
-            if str(r.get("id")) == pid:
-                return r.get("name")
-    except Exception:
-        pass
-    return None
-
-
-def _compare_popular_matchups(n_pairs: int = 5) -> str:
-    """A few marquee matchups for the empty state.
-
-    Pairs same-position, adjacent-in-value players (RB1 vs RB2, WR1 vs WR2, ...)
-    rather than pairing the top players sequentially by overall value. Adjacent
-    same-position players are the real "who's better" debates - same role,
-    similar value - whereas a positional-blind 1st-vs-2nd-overall pairing can put
-    a QB next to a WR, which is not a meaningful comparison.
-    """
-    try:
-        table = get_model_value_table_cached() or []
-    except Exception:
-        table = []
-
-    from collections import defaultdict
-    by_pos: dict = defaultdict(list)
-    for r in sorted(
-        (x for x in table if x.get("id") and x.get("name") and (x.get("value") or 0) > 0),
-        key=lambda r: float(r.get("value") or 0), reverse=True,
-    ):
-        pos = str(r.get("position") or "").upper()
-        if pos in ("QB", "RB", "WR", "TE"):
-            by_pos[pos].append(r)
-
-    # Adjacent pairs within each position: (1,2), (3,4), (5,6) - the top few.
-    pos_pairs: dict = {}
-    for pos, players in by_pos.items():
-        pos_pairs[pos] = [(players[i], players[i + 1])
-                          for i in range(0, min(len(players) - 1, 6), 2)]
-
-    # Interleave across positions so the row is varied (a RB debate, a WR debate,
-    # a QB debate, a TE debate, then the next tier) instead of all one position.
-    order = ["RB", "WR", "QB", "TE"]
-    chips: list = []
-    round_i = 0
-    while len(chips) < n_pairs:
-        added = False
-        for pos in order:
-            plist = pos_pairs.get(pos) or []
-            if round_i < len(plist):
-                a, b = plist[round_i]
-                href = f"/compare?p1={a['id']}&p2={b['id']}"
-                _cpos = html.escape(pos)
-                chips.append(
-                    f"<a class='compare-chip' href='{href}'>"
-                    f"<span class='compare-chip-pos pos-{_cpos}'>{_cpos}</span>"
-                    f"<span class='compare-chip-name'>{html.escape(str(a['name']))}</span>"
-                    f"<span class='compare-chip-vs'>vs</span>"
-                    f"<span class='compare-chip-name'>{html.escape(str(b['name']))}</span></a>"
-                )
-                added = True
-                if len(chips) >= n_pairs:
-                    break
-        if not added:
-            break
-        round_i += 1
-    return "".join(chips)
-
-
-def build_compare_page_body(popular_html: str = "") -> str:
-    """Shell for the standalone compare page. Client-driven: static/app.js's
-    initComparePage wires the two pickers, reads any ?p1=&p2= deep link, and
-    renders the comparison inline via renderCompareInline."""
-    return f"""
-    <div class="page-layout" data-page="compare">
-      <main class="page-main">
-        <div class="compare-page">
-          <header class="compare-page-head">
-            <span class="compare-page-eyebrow"><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i> Head to head</span>
-            <h1 class="compare-page-title">Compare Players</h1>
-            <p class="compare-page-sub">Put two players side by side and see who comes out ahead, or add a third for a shortlist. Type a tier like <strong>WR1</strong> or <strong>RB2</strong> to compare against the average of those top players.</p>
-          </header>
-          <div class="compare-pickers">
-            <div class="compare-picker">
-              <label class="compare-pick-label">Player 1</label>
-              <div class="compare-pick-field">
-                <input type="text" class="compare-pick-input" id="cmpPick1" placeholder="Search a player or type WR1…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="cmpResults1" aria-autocomplete="list" aria-label="Search player 1">
-                <button type="button" class="compare-pick-clear" id="cmpClear1" aria-label="Clear player 1" hidden>&times;</button>
-                <div class="compare-pick-results" id="cmpResults1" role="listbox"></div>
-              </div>
-              <div class="compare-tier-suggest" id="cmpSuggest1" hidden></div>
-            </div>
-            <div class="compare-vs" aria-hidden="true">VS</div>
-            <div class="compare-picker">
-              <label class="compare-pick-label">Player 2</label>
-              <div class="compare-pick-field">
-                <input type="text" class="compare-pick-input" id="cmpPick2" placeholder="Search a player or type WR1…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="cmpResults2" aria-autocomplete="list" aria-label="Search player 2">
-                <button type="button" class="compare-pick-clear" id="cmpClear2" aria-label="Clear player 2" hidden>&times;</button>
-                <div class="compare-pick-results" id="cmpResults2" role="listbox"></div>
-              </div>
-              <div class="compare-tier-suggest" id="cmpSuggest2" hidden></div>
-            </div>
-            <div class="compare-vs compare-vs-opt" aria-hidden="true">VS</div>
-            <div class="compare-picker compare-picker-opt">
-              <label class="compare-pick-label">Player 3 <span class="compare-pick-opt">optional</span></label>
-              <div class="compare-pick-field">
-                <input type="text" class="compare-pick-input" id="cmpPick3" placeholder="Add a third…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="cmpResults3" aria-autocomplete="list" aria-label="Search player 3">
-                <button type="button" class="compare-pick-clear" id="cmpClear3" aria-label="Clear player 3" hidden>&times;</button>
-                <div class="compare-pick-results" id="cmpResults3" role="listbox"></div>
-              </div>
-              <div class="compare-tier-suggest" id="cmpSuggest3" hidden></div>
-            </div>
-          </div>
-          <div class="compare-actions" id="cmpActions" hidden>
-            <button type="button" class="compare-action-btn" data-cmp-action="swap" title="Swap the two players">&#8646; Swap sides</button>
-            <button type="button" class="compare-action-btn" data-cmp-action="copy" title="Copy a shareable link">Copy link</button>
-            <button type="button" class="compare-action-btn" data-cmp-action="watch" title="Add both players to your watchlist">&#9734; Watch both</button>
-            <a class="compare-action-btn" id="cmpTradeLink" href="/trade" title="Load these two into the trade calculator">Trade calculator &#8599;</a>
-          </div>
-          <div class="compare-empty" id="cmpEmptyState">
-            <div class="compare-features">
-              <div class="compare-feature"><span class="cf-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 17 9 11 13 15 21 6"></polyline><polyline points="15 6 21 6 21 12"></polyline></svg></span><span>Dynasty value</span></div>
-              <div class="compare-feature"><span class="cf-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6" y1="20" x2="6" y2="11"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="18" y1="20" x2="18" y2="14"></line></svg></span><span>Advanced metrics</span></div>
-              <div class="compare-feature"><span class="cf-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="16" y1="2" x2="16" y2="6"></line></svg></span><span>Weekly usage</span></div>
-              <div class="compare-feature"><span class="cf-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="9" y1="6" x2="21" y2="6"></line><line x1="9" y1="12" x2="21" y2="12"></line><line x1="9" y1="18" x2="21" y2="18"></line><line x1="4" y1="6" x2="4.01" y2="6"></line><line x1="4" y1="12" x2="4.01" y2="12"></line><line x1="4" y1="18" x2="4.01" y2="18"></line></svg></span><span>Game logs</span></div>
-            </div>
-            <div class="compare-empty-block" id="cmpRecent" hidden>
-              <div class="compare-empty-title">Recently compared</div>
-              <div class="compare-chip-row" id="cmpRecentChips"></div>
-            </div>
-            <div class="compare-empty-block">
-              <div class="compare-empty-title">Popular matchups</div>
-              <div class="compare-chip-row" id="cmpPopularChips">{popular_html}</div>
-            </div>
-          </div>
-          <div id="comparePageResult" class="compare-page-result"></div>
-        </div>
-      </main>
-    </div>
-    """
-
-
-@app.route("/compare")
-def page_compare():
-    p1 = request.args.get("p1")
-    p2 = request.args.get("p2")
-    n1 = _compare_name_for_id(p1)
-    n2 = _compare_name_for_id(p2)
-    if n1 and n2:
-        title = f"{n1} vs {n2} Dynasty Comparison | BR Fantasy"
-        desc = (f"Compare {n1} and {n2}: dynasty fantasy football trade value, advanced "
-                f"metrics, weekly usage, and game logs side by side.")
-    else:
-        title = "Compare Players | BR Fantasy"
-        desc = ("Put any two dynasty fantasy football players side by side: trade value, "
-                "advanced metrics, weekly usage, and game logs.")
-    body = build_compare_page_body(_compare_popular_matchups())
-    nav_lid = session.get("last_league_id")
-    nav_platform = session.get("last_platform")
-    try:
-        nav_season = int(session.get("last_season")) if session.get("last_season") else None
-    except (TypeError, ValueError):
-        nav_season = None
-    return render_page(title, nav_lid, "compare", body, nav_platform, nav_season, description=desc)
-
-
-# ── Rankings Hub ──────────────────────────────────────────────────────────────
-
-def _rankings_page(position: str | None = None):
-    from dashboard_services.pages.dynasty_pages import build_rankings_hub_body
-    # Use the shared 15-min cache (it already loads from the DB and applies the
-    # same FC-zeroing / rookie processing other pages use). Calling
-    # load_current_values_from_db() directly here bypassed the cache on all five
-    # ranking routes and could show raw, inconsistent values.
-    try:
-        value_table = get_model_value_table_cached() or []
-    except Exception:
-        value_table = []
-
-    from datetime import datetime as _dt
-    as_of  = _dt.now().strftime("%B %Y")
-    year   = _dt.now().year
-    body   = build_rankings_hub_body(value_table, position=position, as_of_date=as_of)
-    pos_lbl = f" {position}" if position else ""
-    return render_page(
-        f"Dynasty{pos_lbl} Rankings {year} | BR Fantasy",
-        None, "players", body,
-        description=(
-            f"Dynasty fantasy football{pos_lbl.lower()} rankings updated {as_of}. "
-            f"Real trade values for 1QB and Superflex leagues."
-        ),
-    )
-
-
-@app.route("/rankings/dynasty")
-def rankings_dynasty():
-    return _rankings_page(None)
-
-@app.route("/rankings/dynasty-qb")
-def rankings_dynasty_qb():
-    return _rankings_page("QB")
-
-@app.route("/rankings/dynasty-rb")
-def rankings_dynasty_rb():
-    return _rankings_page("RB")
-
-@app.route("/rankings/dynasty-wr")
-def rankings_dynasty_wr():
-    return _rankings_page("WR")
-
-@app.route("/rankings/dynasty-te")
-def rankings_dynasty_te():
-    return _rankings_page("TE")
+# ── Public SEO / landing pages ────────────────────────────────────────────────
+# /dynasty-trade-value-chart, /top-movers, /compare and /rankings/dynasty* are
+# served by routes/seo_pages_bp.py.
 
 
 # ── Shareable trade short URLs (/t/<share_id>) ────────────────────────────────

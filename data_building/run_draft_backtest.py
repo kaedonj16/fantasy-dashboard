@@ -32,6 +32,7 @@ import argparse
 import sys
 from typing import Optional
 
+from utils.draft_grade import clamp01 as _clamp01
 from utils.pick_score import PS_WEIGHTS, ps_tier_of
 from utils.tier_thresholds import compute_tier_thresholds
 from data_building.draft_grade_backtest import (
@@ -89,10 +90,6 @@ def _report_group(title: str, samples, method: str, seed_type=None, top: int = 8
             bar = "#" * int(round(R["score_mean"] / 4))
             print(f"       R{R['round']:>2} (n={R['n']:>4}): {R['score_mean']:5.1f}  {bar}")
     print()
-
-
-def _clamp01(x: float) -> float:
-    return 0.0 if x < 0 else 1.0 if x > 1 else x
 
 
 def build_value_fn(draft_type: str, is_sf: bool, num_teams: int):

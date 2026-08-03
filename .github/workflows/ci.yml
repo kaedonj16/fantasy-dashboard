@@ -40,6 +40,41 @@ jobs:
           pip install pytest
           python -m pytest tests/ -q
 
+  integration:
+    name: Integration tests (full stack)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        # The web app and its page-render tests need the full Flask + scientific
+        # stack, so unlike the lint job we install requirements.txt here. Two
+        # pinned sdists (pywebpush, requests-html) fail to build on some
+        # toolchains and aren't needed to import or test the web app, so they're
+        # excluded — mirrors scripts/dev_setup.sh. The single test that needs
+        # pywebpush importorskips itself.
+        run: |
+          python -m pip install -U pip
+          grep -viE '^(pywebpush|requests-html)' requirements.txt > /tmp/req-ci.txt
+          pip install -r /tmp/req-ci.txt pytest
+
+      - name: Run full test suite (incl. integration pages)
+        # No DATABASE_URL and no network: the offline_client fixture mocks the
+        # Sleeper API and the pages degrade gracefully, so the page-render tests
+        # run offline. This is the job that catches url_for / BuildError-class
+        # regressions from route extraction that the pure-Python lint job cannot.
+        env:
+          FLASK_SECRET_KEY: dev
+        run: python -m pytest tests/ -q
+
   javascript:
     name: JavaScript syntax
     runs-on: ubuntu-latest
