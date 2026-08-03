@@ -346,10 +346,16 @@ def _validate_usage_table(players_out: List[dict], usage_by_pid: Dict[str, dict]
             f"(expected 500+). Sleeper API may have failed."
         )
 
-    # Check if we're in offseason - if so, 0 games is expected
+    # Check if we're before Week 1 - if so, 0 games is expected. This covers both
+    # the true offseason ("off") AND the preseason ("pre"): in August no regular-
+    # season games have been played, so every player legitimately has 0 games.
+    # Treating "pre" as in-season made the strict check below reject the (correct)
+    # all-zero-games table, which stopped usage_table.json from being written and
+    # cascaded into rewrite_value_table_with_model failing — freezing player
+    # values on the last good model_values.json until Week 1.
     nfl_state = get_nfl_state() or {}
     season_type = str(nfl_state.get("season_type", "")).lower().strip()
-    offseason_mode = season_type == "off"
+    offseason_mode = season_type in ("off", "pre")
 
     # Check for players with zero games
     zero_games = sum(1 for p in players_out if p.get("usage", {}).get("games", 0) == 0)
