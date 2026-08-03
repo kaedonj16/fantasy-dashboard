@@ -1735,7 +1735,7 @@ _NAV_PAGE_META = {
     "standings":         ("trophy",    "league_pages.page_standings",            ""),
     "activity":          ("activity",  "page_activity",             ""),
     "league_health":     ("pulse",     "page_commissioner",         ""),
-    "recap":             ("news",      "page_recap",                ""),
+    "recap":             ("news",      "league_pages.page_recap",    ""),
     "scout":             ("swords",    "page_weekly",               "?tab=scout"),
     "optimal":           ("bars2",     "page_weekly",               "?tab=optimal"),
     "redzone":           ("pulse",     "page_redzone",              ""),
@@ -2393,7 +2393,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     if draft_ended or not offseason_mode:
         _weekly_items = [
             ("Matchups",     "page_weekly", "weekly", False),
-            ("Weekly Recap", "page_recap",  "recap",  False),
+            ("Weekly Recap", "league_pages.page_recap",  "recap",  False),
             ("Opponent Scout", "page_weekly", "scout", False, "?tab=scout"),
             ("Lineup Efficiency", "page_weekly", "optimal", False, "?tab=optimal"),
             # Roster/lineup tools live with the other weekly tools, not Players.
@@ -18314,34 +18314,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
             + scoreboard_and_recap + (next_week_html or "") + lineup_html + standings_html)
 
 
-@app.route("/<platform>/<int:season>/<league_id>/recap")
-def page_recap(platform: str, season: int, league_id: str):
-    ctx = get_league_ctx_from_cache(platform, league_id, season)
-    try:
-        week = int(request.args.get("week") or 0) or None
-    except (ValueError, TypeError):
-        week = None
-    body = build_recap_body(ctx, selected_week=week)
-    league_name = html.escape((ctx.get("league") or {}).get("name") or "Fantasy League")
-    week_label = f"Week {week} Recap" if week else "Weekly Recap"
-    page_url = request.url
-    base_url = request.host_url.rstrip("/")
-    week_param = f"?week={week}" if week else ""
-    og_image = f"{base_url}/{platform}/{season}/{league_id}/recap/og.png{week_param}"
-    og_tags = (
-        f"<meta property='og:title' content='{week_label} - {league_name} | BR Fantasy'>"
-        f"<meta property='og:description' content='Weekly fantasy football recap: scoreboard, highlights, and AI analysis.'>"
-        f"<meta property='og:image' content='{og_image}'>"
-        f"<meta property='og:image:width' content='1200'>"
-        f"<meta property='og:image:height' content='630'>"
-        f"<meta property='og:type' content='website'>"
-        f"<meta property='og:url' content='{html.escape(page_url)}'>"
-        f"<meta name='twitter:card' content='summary_large_image'>"
-        f"<meta name='twitter:title' content='{week_label} - {league_name} | BR Fantasy'>"
-        f"<meta name='twitter:description' content='Weekly fantasy football recap: scoreboard, highlights, and AI analysis.'>"
-        f"<meta name='twitter:image' content='{og_image}'>"
-    )
-    return render_page("Weekly Recap", league_id, "recap", body, platform, season, og_tags=og_tags)
+# /<...>/recap is served by routes/league_pages_bp.py (its /recap/og.png image route stays below).
 
 
 @app.route("/<platform>/<int:season>/<league_id>/recap/og.png")

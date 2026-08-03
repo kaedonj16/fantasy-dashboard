@@ -1,10 +1,11 @@
 """
-League info pages: standings, waivers, and the scout redirect.
+League info pages: standings, waivers, weekly recap, and the scout redirect.
 
 Routes:
     /<platform>/<season>/<league_id>/standings   (page_standings)
     /api/standings-week                           (api_standings_week)
     /<platform>/<season>/<league_id>/waivers      (page_waivers)
+    /<platform>/<season>/<league_id>/recap        (page_recap)
     /<platform>/<season>/<league_id>/scout        (redirect to the Matchups scout tab)
 
 Extracted from app.py to reduce monolith size. App.py internals are reached via
@@ -13,6 +14,7 @@ circular import — the real functions are only fetched when a request is served
 """
 from __future__ import annotations
 
+import html
 import logging
 
 from flask import Blueprint, jsonify, redirect, request, url_for
@@ -30,6 +32,10 @@ def render_page(*args, **kwargs):
 
 def get_league_ctx_from_cache(*args, **kwargs):
     from app import get_league_ctx_from_cache as _fn
+    return _fn(*args, **kwargs)
+
+def build_recap_body(*args, **kwargs):
+    from app import build_recap_body as _fn
     return _fn(*args, **kwargs)
 
 def _build_offseason_standings_body(*args, **kwargs):
@@ -110,3 +116,35 @@ def page_scout(platform: str, season: int, league_id: str):
         url_for("page_weekly", platform=platform, season=season, league_id=league_id)
         + "?tab=scout"
     )
+
+
+# ── Weekly recap ──────────────────────────────────────────────────────────────
+
+@league_pages_bp.route("/<platform>/<int:season>/<league_id>/recap")
+def page_recap(platform: str, season: int, league_id: str):
+    ctx = get_league_ctx_from_cache(platform, league_id, season)
+    try:
+        week = int(request.args.get("week") or 0) or None
+    except (ValueError, TypeError):
+        week = None
+    body = build_recap_body(ctx, selected_week=week)
+    league_name = html.escape((ctx.get("league") or {}).get("name") or "Fantasy League")
+    week_label = f"Week {week} Recap" if week else "Weekly Recap"
+    page_url = request.url
+    base_url = request.host_url.rstrip("/")
+    week_param = f"?week={week}" if week else ""
+    og_image = f"{base_url}/{platform}/{season}/{league_id}/recap/og.png{week_param}"
+    og_tags = (
+        f"<meta property='og:title' content='{week_label} - {league_name} | BR Fantasy'>"
+        f"<meta property='og:description' content='Weekly fantasy football recap: scoreboard, highlights, and AI analysis.'>"
+        f"<meta property='og:image' content='{og_image}'>"
+        f"<meta property='og:image:width' content='1200'>"
+        f"<meta property='og:image:height' content='630'>"
+        f"<meta property='og:type' content='website'>"
+        f"<meta property='og:url' content='{html.escape(page_url)}'>"
+        f"<meta name='twitter:card' content='summary_large_image'>"
+        f"<meta name='twitter:title' content='{week_label} - {league_name} | BR Fantasy'>"
+        f"<meta name='twitter:description' content='Weekly fantasy football recap: scoreboard, highlights, and AI analysis.'>"
+        f"<meta name='twitter:image' content='{og_image}'>"
+    )
+    return render_page("Weekly Recap", league_id, "recap", body, platform, season, og_tags=og_tags)
