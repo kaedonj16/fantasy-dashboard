@@ -1757,7 +1757,7 @@ _NAV_PAGE_META = {
     "prospects":         ("award",     "page_prospects",            ""),
     "draft-history":     ("history",   "tool_pages.page_draft_history", ""),
     "awards":            ("award",     "page_awards",               ""),
-    "graphs":            ("bars2",     "page_graphs",               ""),
+    "graphs":            ("bars2",     "league_pages.page_graphs",  ""),
     "history":           ("history",   "page_history",              ""),
 }
 
@@ -2453,7 +2453,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ["draft", "draft-history", "keeper"], "draftNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",   "page_awards",   "awards",   False),
-        ("Graphs",   "page_graphs",   "graphs",   False),
+        ("Graphs",   "league_pages.page_graphs",   "graphs",   False),
         ("History",  "page_history",  "history",  False),
     ], ["awards", "graphs", "history"], "statsNavDropdown"))
     if session.get("viewer_username"):
@@ -12999,27 +12999,9 @@ def _build_tour_mock_df_weekly() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _build_tour_mock_graphs_ctx() -> dict:
-    """Minimal ctx for build_graphs_body with pre-computed team_stats."""
-    df = _build_tour_mock_df_weekly()
-    mock_league: dict = {"settings": {"playoff_week_start": 14}}
-    team_stats = build_regular_season_team_stats(df, mock_league)
-    team_stats = sort_team_stats(team_stats)
-
-    if not team_stats.empty and "PF" in team_stats.columns:
-        pf_z = (team_stats["PF"] - team_stats["PF"].mean()) / max(float(team_stats["PF"].std()), 1.0)
-        win_z = (team_stats["Win%"] - team_stats["Win%"].mean()) / max(float(team_stats["Win%"].std()), 1.0)
-        avg_z = (team_stats["AVG"] - team_stats["AVG"].mean()) / max(float(team_stats["AVG"].std()), 1.0)
-        team_stats["PowerScore"] = 0.30 * pf_z + 0.40 * win_z + 0.30 * avg_z
-        # Z-score columns required by z_better_outward
-        for col in ["PF", "PA", "MAX", "MIN", "AVG", "STD"]:
-            zc = f"Z_{col}"
-            if col in team_stats.columns:
-                col_vals = team_stats[col]
-                std_val = float(col_vals.std())
-                team_stats[zc] = (col_vals - col_vals.mean()) / max(std_val, 1.0)
-
-    return {"team_stats": team_stats, "df_weekly": df}
+# _build_tour_mock_graphs_ctx, _render_graphs_html and _build_career_graphs_ctx_live
+# now live in dashboard_services/pages/graphs_page.py (build_tour_mock_graphs_ctx,
+# render_graphs_html, build_career_graphs_ctx). page_graphs below is a thin route.
 
 
 def _build_tour_mock_history_ctx() -> dict:
@@ -13043,292 +13025,12 @@ def _build_tour_mock_history_ctx() -> dict:
     }
 
 
-def _render_graphs_html(platform: str, season: int, league_id: str, view: str, members: str) -> str:
-    """Build the graphs page body for a given view ("career" or a season) and
-    member filter. Pure of request args (view/members are passed in) so the
-    heavy career view - which aggregates every past season - can build in a
-    background thread on a cold cache."""
-    ctx = get_league_ctx_from_cache(platform, league_id, season)
-    offseason = bool(ctx.get("offseason_mode"))
-    available_seasons = get_available_history_seasons(platform, league_id, season)
-
-    # Current members = current rosters' owner names. roster_map is populated even
-    # in the offseason (team_stats can be empty then), so prefer it; the career
-    # aggregate is keyed by these same owner names.
-    current_owners = set()
-    _rmap = ctx.get("roster_map") or {}
-    if _rmap:
-        current_owners = {str(v) for v in _rmap.values() if v}
-    if not current_owners:
-        _cur_ts = ctx.get("team_stats")
-        if _cur_ts is not None and not _cur_ts.empty and "owner" in _cur_ts.columns:
-            current_owners = {str(o) for o in _cur_ts["owner"].tolist()}
-
-    # Build the season-selector dropdown (navigate via URL query param)
-    graphs_base_url = url_for("page_graphs", platform=platform, season=season, league_id=league_id)
-    selector_opts = []
-    selector_opts.append(
-        f"<option value='{graphs_base_url}?view=career' "
-        f"{'selected' if view == 'career' else ''}>Career (all seasons)</option>"
-    )
-    if not offseason:
-        selector_opts.append(
-            f"<option value='{graphs_base_url}?view={season}' "
-            f"{'selected' if view == str(season) else ''}>{season} (current)</option>"
-        )
-    for s in available_seasons:
-        selector_opts.append(
-            f"<option value='{graphs_base_url}?view={s}' "
-            f"{'selected' if view == str(s) else ''}>{s}</option>"
-        )
-
-    # Current-vs-all-time member toggle (only meaningful for the career view,
-    # where former members would otherwise appear across every chart).
-    members_toggle_html = ""
-    if view == "career":
-        _cur_url = f"{graphs_base_url}?view=career&members=current"
-        _all_url = f"{graphs_base_url}?view=career&members=all"
-        members_toggle_html = f"""
-        <div class="members-toggle" role="group" aria-label="Member filter">
-          <a class="members-toggle-btn {'active' if members == 'current' else ''}" href="{_cur_url}">Current members</a>
-          <a class="members-toggle-btn {'active' if members == 'all' else ''}" href="{_all_url}">All-time</a>
-        </div>"""
-
-    season_selector_html = f"""
-    <div class="graphs-season-selector">
-      <label class="graphs-season-label">View:</label>
-      <select class="graphs-season-select" onchange="window.location.href=this.value">
-        {"".join(selector_opts)}
-      </select>
-      {members_toggle_html}
-    </div>"""
-
-    # ── Render the appropriate graphs ──────────────────────────────────────
-    if view == "career":
-        if not available_seasons:
-            charts_html = """
-            <div class="card central">
-              <div class="card-body">
-                <p style="color:var(--text-muted);">
-                  Career graphs appear after your first completed season.
-                </p>
-              </div>
-            </div>"""
-        else:
-            try:
-                # Build career ctx from all available seasons
-                career_ctx = _build_career_graphs_ctx_live(
-                    platform, league_id, season, available_seasons,
-                    only_owners=(current_owners if members == "current" else None),
-                )
-                charts_html = build_career_graphs_body(career_ctx)
-
-                # The luck + value/age scatters aren't season-aggregates, so the
-                # career builder doesn't emit them. Inject them here: value/age
-                # from the current rosters, luck from the most recent completed
-                # season's weekly results.
-                try:
-                    from dashboard_services.pages.graphs_page import _luck_and_value_age_cards, owner_color_map
-                    _co = None
-                    _cts = career_ctx.get("team_stats")
-                    if _cts is not None and not _cts.empty and "owner" in _cts.columns:
-                        _co = owner_color_map(_cts["owner"].tolist())
-                    _luck_df = None
-                    _latest = max(available_seasons)
-                    _lrid = resolve_league_id_for_season(platform, league_id, season, _latest)
-                    _lctx = get_league_ctx_from_cache(platform, _lrid, _latest)
-                    _ldf = _lctx.get("df_weekly")
-                    if _ldf is not None and not _ldf.empty and "finalized" in _ldf.columns:
-                        _luck_df = _ldf[_ldf["finalized"] == True]
-                        if members == "current" and current_owners and "owner" in _luck_df.columns:
-                            _luck_df = _luck_df[_luck_df["owner"].astype(str).isin(current_owners)]
-                    # Use the live value table (the ctx copy can be stale/empty),
-                    # so the dynasty-value-vs-age scatter always has real values.
-                    _val_ctx = {**ctx, "model_value_table": (get_model_value_table_cached() or ctx.get("model_value_table") or [])}
-                    _svg_cards = _luck_and_value_age_cards(_val_ctx, _luck_df, _co)
-                    if _svg_cards and '<div class="graphs-page">' in charts_html:
-                        charts_html = charts_html.replace(
-                            '<div class="graphs-page">',
-                            '<div class="graphs-page">' + _svg_cards, 1,
-                        )
-                except Exception:
-                    logger.debug("career graphs scatter injection failed", exc_info=True)
-            except Exception as exc:
-                import traceback; traceback.print_exc()
-                charts_html = (
-                    f"<div class='card central'><div class='card-body'>"
-                    f"<p>Career graphs unavailable: {exc}</p></div></div>"
-                )
-    else:
-        target_season = int(view) if view.isdigit() else season
-        if target_season == season and not offseason:
-            season_ctx = ctx
-        else:
-            rid = resolve_league_id_for_season(platform, league_id, season, target_season)
-            season_ctx = get_league_ctx_from_cache(platform, rid, target_season)
-
-        if season_ctx.get("offseason_mode") or season_ctx.get("df_weekly", pd.DataFrame()).empty:
-            charts_html = f"""
-            <div class="card central">
-              <div class="card-body">
-                <p style="color:var(--text-muted);">
-                  No weekly data available for {target_season}.
-                  Select another season or choose Career view.
-                </p>
-              </div>
-            </div>"""
-        else:
-            charts_html = build_graphs_body(season_ctx)
-
-    return season_selector_html + charts_html
 
 
-@app.route("/<platform>/<int:season>/<league_id>/graphs")
-def page_graphs(platform: str, season: int, league_id: str):
-    # Tour preview: render with mock data, bypass real league fetch
-    if request.args.get("tour"):
-        try:
-            mock_ctx = _build_tour_mock_graphs_ctx()
-            body_html = build_graphs_body(mock_ctx)
-        except Exception as exc:
-            body_html = (
-                f"<div class='card central'><div class='card-body'>"
-                f"<p>Graphs preview unavailable: {exc}</p></div></div>"
-            )
-        return render_page("BR Fantasy Graphs", league_id, "graphs", body_html, platform, season)
-
-    # Determining the default view needs the (shared) league context; the heavy,
-    # graphs-specific work is the career aggregation, deferred below.
-    ctx = get_league_ctx_from_cache(platform, league_id, season)
-    default_view = "career" if bool(ctx.get("offseason_mode")) else str(season)
-    view = request.args.get("view", default_view)
-    members = "all" if str(request.args.get("members", "current")).lower() == "all" else "current"
-
-    # Career view aggregates every past season (slow on a cold cache) -> build in
-    # the background and show a skeleton. Season views are a single, light league
-    # context, so render them inline.
-    if view == "career":
-        return _serve_cached_or_background(
-            platform, season, league_id, f"graphs:career:{members}",
-            "BR Fantasy Graphs", "graphs",
-            lambda: _render_graphs_html(platform, season, league_id, "career", members),
-            "Building career graphs",
-        )
-
-    body_html = _render_graphs_html(platform, season, league_id, view, members)
-    return render_page("BR Fantasy Graphs", league_id, "graphs", body_html, platform, season)
+# /<...>/graphs is served by routes/league_pages_bp.py (its page-building logic
+# lives in dashboard_services/pages/graphs_page.py).
 
 
-def _build_career_graphs_ctx_live(
-    platform: str, league_id: str, season: int, available_seasons: list,
-    only_owners: set = None,
-) -> dict:
-    """Aggregate team_stats and df_weekly across all completed seasons for career
-    graphs. When ``only_owners`` is a non-empty set of owner names, the career
-    aggregate is restricted to those members (used by the current-vs-all-time
-    toggle to drop owners no longer in the league)."""
-    career: dict = {}  # owner -> {Wins, Losses, Ties, PF, PA, weekly_pts, season_pf}
-    season_pf_rows: list = []  # rows for per-season bar chart: {season, owner, pf}
-
-    for hist_s in available_seasons:
-        rid = resolve_league_id_for_season(platform, league_id, season, hist_s)
-        try:
-            hctx = get_league_ctx_from_cache(platform, rid, hist_s)
-        except Exception:
-            continue
-
-        df = hctx.get("df_weekly", pd.DataFrame())
-        if df.empty or "owner" not in df.columns:
-            continue
-
-        mock_lg = hctx.get("league") or {}
-        ts = build_regular_season_team_stats(df, mock_lg)
-
-        for _, row in ts.iterrows():
-            owner = str(row.get("owner", "?"))
-            if owner not in career:
-                career[owner] = {
-                    "Wins": 0, "Losses": 0, "Ties": 0,
-                    "PF": 0.0, "PA": 0.0, "weekly_pts": [],
-                }
-            career[owner]["Wins"]   += int(row.get("Wins", 0))
-            career[owner]["Losses"] += int(row.get("Losses", 0))
-            career[owner]["Ties"]   += int(row.get("Ties", 0))
-            career[owner]["PF"]     += float(row.get("PF", 0))
-            career[owner]["PA"]     += float(row.get("PA", 0))
-            season_pf_rows.append({"season": hist_s, "owner": owner, "pf": float(row.get("PF", 0))})
-
-        sub = df[df["finalized"] == True] if "finalized" in df.columns else df
-        for owner, grp in sub.groupby("owner"):
-            career.setdefault(str(owner), {
-                "Wins": 0, "Losses": 0, "Ties": 0, "PF": 0.0, "PA": 0.0, "weekly_pts": [],
-            })["weekly_pts"].extend(grp["points"].tolist() if "points" in grp else [])
-
-    # Build career team_stats DataFrame
-    stat_rows = []
-    for owner, d in career.items():
-        pts = d["weekly_pts"]
-        games = d["Wins"] + d["Losses"] + d["Ties"]
-        stat_rows.append({
-            "owner": owner,
-            "Wins": d["Wins"],
-            "Losses": d["Losses"],
-            "Ties": d["Ties"],
-            "PF": d["PF"],
-            "PA": d["PA"],
-            "AVG": d["PF"] / games if games > 0 else 0.0,
-            "Win%": d["Wins"] / games if games > 0 else 0.0,
-            "MAX": max(pts) if pts else 0.0,
-            "MIN": min(pts) if pts else 0.0,
-            "STD": float(pd.Series(pts).std()) if len(pts) > 1 else 0.0,
-        })
-
-    team_stats = pd.DataFrame(stat_rows) if stat_rows else pd.DataFrame()
-
-    if not team_stats.empty and "PF" in team_stats.columns:
-        # Approximate PowerScore for career (win% + avg PF rank)
-        pf_z  = (team_stats["PF"]  - team_stats["PF"].mean())  / max(float(team_stats["PF"].std()),  1.0)
-        win_z = (team_stats["Win%"]- team_stats["Win%"].mean()) / max(float(team_stats["Win%"].std()), 1.0)
-        avg_z = (team_stats["AVG"] - team_stats["AVG"].mean())  / max(float(team_stats["AVG"].std()),  1.0)
-        team_stats["PowerScore"] = 0.30 * pf_z + 0.40 * win_z + 0.30 * avg_z
-        for col in ["PF", "PA", "MAX", "MIN", "AVG", "STD"]:
-            if col in team_stats.columns:
-                cv = team_stats[col]
-                sd = max(float(cv.std()), 1.0)
-                team_stats[f"Z_{col}"] = (cv - cv.mean()) / sd
-
-    # Combined df_weekly (with season column) for box/line charts
-    combined_dfs = []
-    for hist_s in available_seasons:
-        rid = resolve_league_id_for_season(platform, league_id, season, hist_s)
-        try:
-            hctx = get_league_ctx_from_cache(platform, rid, hist_s)
-            df = hctx.get("df_weekly", pd.DataFrame()).copy()
-            if not df.empty and "owner" in df.columns:
-                df["season"] = hist_s
-                combined_dfs.append(df)
-        except Exception:
-            continue
-
-    df_combined = pd.concat(combined_dfs, ignore_index=True) if combined_dfs else pd.DataFrame()
-    season_pf_df = pd.DataFrame(season_pf_rows) if season_pf_rows else pd.DataFrame()
-
-    # Restrict to current members when the toggle asks for it.
-    if only_owners:
-        _keep = {str(o) for o in only_owners}
-        if not team_stats.empty and "owner" in team_stats.columns:
-            team_stats = team_stats[team_stats["owner"].astype(str).isin(_keep)].reset_index(drop=True)
-        if not df_combined.empty and "owner" in df_combined.columns:
-            df_combined = df_combined[df_combined["owner"].astype(str).isin(_keep)].reset_index(drop=True)
-        if not season_pf_df.empty and "owner" in season_pf_df.columns:
-            season_pf_df = season_pf_df[season_pf_df["owner"].astype(str).isin(_keep)].reset_index(drop=True)
-
-    return {
-        "team_stats": team_stats,
-        "df_weekly": df_combined,
-        "season_pf_df": season_pf_df,
-        "is_career": True,
-    }
 
 
 

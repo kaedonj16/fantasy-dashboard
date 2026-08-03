@@ -42,6 +42,22 @@ def build_commissioner_body(*args, **kwargs):
     from app import build_commissioner_body as _fn
     return _fn(*args, **kwargs)
 
+def get_available_history_seasons(*args, **kwargs):
+    from app import get_available_history_seasons as _fn
+    return _fn(*args, **kwargs)
+
+def get_model_value_table_cached(*args, **kwargs):
+    from app import get_model_value_table_cached as _fn
+    return _fn(*args, **kwargs)
+
+def _serve_cached_or_background(*args, **kwargs):
+    from app import _serve_cached_or_background as _fn
+    return _fn(*args, **kwargs)
+
+def _build_tour_mock_df_weekly(*args, **kwargs):
+    from app import _build_tour_mock_df_weekly as _fn
+    return _fn(*args, **kwargs)
+
 def _build_offseason_standings_body(*args, **kwargs):
     from app import _build_offseason_standings_body as _fn
     return _fn(*args, **kwargs)
@@ -222,3 +238,60 @@ def page_commissioner(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
     body = build_commissioner_body(ctx)
     return render_page("League Health", league_id, "league_health", body, platform, season)
+
+
+# ── Graphs (league value/performance charts) ──────────────────────────────────
+
+@league_pages_bp.route("/<platform>/<int:season>/<league_id>/graphs")
+def page_graphs(platform: str, season: int, league_id: str):
+    from dashboard_services.pages.graphs_page import (
+        build_graphs_body, build_tour_mock_graphs_ctx, render_graphs_html)
+
+    # Tour preview: render with mock data, bypass real league fetch
+    if request.args.get("tour"):
+        try:
+            mock_ctx = build_tour_mock_graphs_ctx(_build_tour_mock_df_weekly())
+            body_html = build_graphs_body(mock_ctx)
+        except Exception as exc:
+            body_html = (
+                f"<div class='card central'><div class='card-body'>"
+                f"<p>Graphs preview unavailable: {exc}</p></div></div>"
+            )
+        return render_page("BR Fantasy Graphs", league_id, "graphs", body_html, platform, season)
+
+    # Determining the default view needs the (shared) league context; the heavy,
+    # graphs-specific work is the career aggregation, deferred below.
+    ctx = get_league_ctx_from_cache(platform, league_id, season)
+    default_view = "career" if bool(ctx.get("offseason_mode")) else str(season)
+    view = request.args.get("view", default_view)
+    members = "all" if str(request.args.get("members", "current")).lower() == "all" else "current"
+
+    # Resolve the /graphs URL here, in the request context, so the career
+    # background build never has to call url_for off the request thread. The page
+    # body is built by dashboard_services.pages.graphs_page, which takes every
+    # app-level accessor as a parameter (see render_graphs_html).
+    graphs_base_url = url_for("league_pages.page_graphs", platform=platform, season=season, league_id=league_id)
+
+    def _render(v: str, m: str) -> str:
+        return render_graphs_html(
+            platform, season, league_id, v, m,
+            ctx=get_league_ctx_from_cache(platform, league_id, season),
+            available_seasons=get_available_history_seasons(platform, league_id, season),
+            get_ctx=get_league_ctx_from_cache,
+            model_value_table=get_model_value_table_cached() or [],
+            graphs_base_url=graphs_base_url,
+        )
+
+    # Career view aggregates every past season (slow on a cold cache) -> build in
+    # the background and show a skeleton. Season views are a single, light league
+    # context, so render them inline.
+    if view == "career":
+        return _serve_cached_or_background(
+            platform, season, league_id, f"graphs:career:{members}",
+            "BR Fantasy Graphs", "graphs",
+            lambda: _render("career", members),
+            "Building career graphs",
+        )
+
+    body_html = _render(view, members)
+    return render_page("BR Fantasy Graphs", league_id, "graphs", body_html, platform, season)
