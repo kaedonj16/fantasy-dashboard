@@ -1724,8 +1724,8 @@ _NAV_PAGE_META = {
     "trade-suggestions": ("swap",      "trade.page_trade",          "?tab=suggestions"),
     "trade-database":    ("swap",      "trade.page_trade_database", ""),
     "trade-intel":       ("radar",     "trade.page_trade_intel",    ""),
-    "compare":           ("bars",      "page_compare",              ""),
-    "top-movers":        ("bars2",     "top_movers_page",           ""),
+    "compare":           ("bars",      "seo_pages.page_compare",    ""),
+    "top-movers":        ("bars2",     "seo_pages.top_movers_page", ""),
     "advanced-metrics":  ("bars2",     "page_advanced_metrics",     ""),
     "breakouts":         ("radar",     "page_breakouts",            ""),
     "prospects":         ("award",     "page_prospects",            ""),
@@ -2411,8 +2411,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     ], ["standings", "teams", "activity", "league_health"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
-        ("Compare Players", "page_compare", "compare", False),
-        ("Top Movers", "top_movers_page", "top-movers", False),
+        ("Compare Players", "seo_pages.page_compare", "compare", False),
+        ("Top Movers", "seo_pages.top_movers_page", "top-movers", False),
         ("Advanced Metrics", "page_advanced_metrics", "advanced-metrics", False),
         ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
