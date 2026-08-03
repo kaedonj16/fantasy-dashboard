@@ -772,7 +772,7 @@ Use the h2h and season_weeks data where it adds something real to the story - re
 Next week's game of the week (already picked for you). The "why" field is the single biggest reason it was chosen (playoff stakes, a projected coin-flip, two top teams, a rivalry rematch, a missing star, or momentum); "reasons" lists the supporting angles; out_a/out_b/maybe_a/maybe_b/bye_a/bye_b are missing, questionable, and on-bye starters with their projections:
 {json.dumps(payload.get('next_week_preview'))}
 
-For "looking_ahead": if next_week_preview is null, return an empty string. Otherwise write 2-3 sentences on that game_of_the_week in the SAME low-key group-chat voice as the recap paragraphs - like you're texting the group about the game you're most looking forward to next week. Don't open with a clunky explainer like "It's the game of the week because..." or "This is the game of the week..." - just talk about the matchup the way a friend would. But the reason it matters (the "why" - playoff stakes, a coin-flip, two top teams, a rivalry rematch, a missing star, momentum) MUST come through, woven in naturally rather than announced - this blurb is the only place that reason is spelled out for the reader. Lead with whatever's actually interesting. Ground it in the records, ranks, streaks, h2h, or the specific missing starter (name + status), but do NOT restate every number. Only mention the other games if it's natural.
+For "looking_ahead": if next_week_preview is null, return an empty string. Otherwise write 2-3 sentences on that game_of_the_week in the SAME low-key group-chat voice as the recap paragraphs - like you're texting the group about the game you're most looking forward to next week. Jump straight into the matchup - the teams, the records, the stakes. Never announce or label the pick: the card already shows a "Game of the Week" banner, so any opener that names it as the game of the week (or "the marquee matchup", "the one to watch", etc.), or that spells out the reason as a because-clause, reads as copy-paste filler. Instead let the reason it matters (playoff stakes, a coin-flip, two top teams, a rivalry rematch, a missing star, momentum) come through inside what you say about the teams - this blurb is the only place that reason reaches the reader, so it has to land, just woven in rather than declared. Lead with whatever's actually interesting. Ground it in the records, ranks, streaks, h2h, or the specific missing starter (name + status), but do NOT restate every number. Only mention the other games if it's natural.
 """.strip()
 
     resp = client.responses.create(
@@ -1042,7 +1042,8 @@ def get_weekly_ai_recap_preview() -> tuple[str, str]:
                  "why": "Dead heat on paper (51-49)"},
             ],
         },
-        "It's the game of the week because it's the top two teams in the league going at it, and it lands with Blitz Brigade down Bijan Robinson (OUT). "
-        "Dynasty Kings won the first meeting and haven't lost since. Blitz has to find points somewhere or the gap at the top gets real.",
+        "Top two teams next week, and Dynasty Kings already have the head-to-head after taking the first one. "
+        "Blitz Brigade draws it without Bijan Robinson (OUT), so they're hunting for points somewhere. "
+        "Kings haven't lost since that first meeting, and if Blitz can't cover the gap the top of the standings starts to run away.",
     )
     return recap_html, next_html
