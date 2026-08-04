@@ -7,6 +7,65 @@
 // - Plotly: resize + relayout + redraw + viewport hooks (better with page zoom/layout shifts)
 // ============================================================
 
+// ── Lazy feature-bundle loader ───────────────────────────────────────────────
+// Guests on the landing page get the slim public.js (fast paint). The feature
+// half (player modal, nav player-search, compare, adv metrics — everything below
+// the @public-js:core-end marker) lives in app-features.js and is loaded on
+// demand. window.__FEATURES_JS is the bundle URL (set by the page ONLY on lite
+// pages); on the full app.js it's null, so ensureFeatures no-ops.
+//
+// _deferInit runs an init fn at the right time whether the code loads normally
+// (register for DOMContentLoaded) or LATE via the lazy bundle after the DOM is
+// already parsed (defer to a macrotask so the whole feature script finishes
+// defining its globals first — mimics DOMContentLoaded's "after parse" timing
+// without re-firing the core's already-run DOMContentLoaded listeners).
+function _deferInit(fn) {
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn);
+  else setTimeout(fn, 0);
+}
+var __featuresState = 0;   // 0=not loaded, 1=loading, 2=loaded
+var __featuresCbs = [];
+function ensureFeatures(cb) {
+  // Already present (full app.js bundle, or features finished loading).
+  if (typeof openPlayerModal === 'function' && !openPlayerModal.__stub) { if (cb) cb(); return; }
+  if (!window.__FEATURES_JS) { if (cb) cb(); return; }  // no lazy bundle → nothing to load
+  if (cb) __featuresCbs.push(cb);
+  if (__featuresState) return;   // already loading
+  __featuresState = 1;
+  var s = document.createElement('script');
+  s.src = window.__FEATURES_JS;
+  s.onload = function () {
+    __featuresState = 2;
+    var cbs = __featuresCbs; __featuresCbs = [];
+    cbs.forEach(function (f) { try { f(); } catch (e) { console.error(e); } });
+  };
+  s.onerror = function () {
+    __featuresState = 0;   // allow a retry on the next interaction
+    console.error('[features] failed to load', window.__FEATURES_JS);
+  };
+  document.head.appendChild(s);
+}
+// Stub so the many guarded `if (typeof openPlayerModal === 'function')` call sites
+// in the core fire the lazy load. The real openPlayerModal (a hoisted function in
+// the features bundle) overwrites this the moment that bundle executes.
+if (typeof window.openPlayerModal === 'undefined') {
+  window.openPlayerModal = function (id, name, opts) {
+    ensureFeatures(function () {
+      if (typeof window.openPlayerModal === 'function' && !window.openPlayerModal.__stub) {
+        window.openPlayerModal(id, name, opts);
+      }
+    });
+  };
+  window.openPlayerModal.__stub = true;
+}
+// Prefetch the feature bundle once the page is idle so the first real interaction
+// is instant (no-op when there's no lazy bundle, i.e. the full app.js is loaded).
+if (window.__FEATURES_JS) {
+  var _pf = function () { ensureFeatures(); };
+  if ('requestIdleCallback' in window) requestIdleCallback(_pf, { timeout: 4000 });
+  else setTimeout(_pf, 2500);
+}
+
 
 // ── Stale-page auto-refresh (PWA resume + cached-shell launch) ───────────────
 // Reopening the installed app resumes a frozen page from the last session, and
@@ -554,6 +613,9 @@ window.brHaptic = function (pattern) {
   }
   function openSearch() {
     var ss = document.getElementById('brSearchScreen'); if (!ss) return;
+    // On lite pages the nav-search wiring (initNavSearch) lives in the lazy
+    // feature bundle — pull it in so typing actually returns results.
+    if (typeof ensureFeatures === 'function') ensureFeatures();
     ss.classList.add('open'); ss.setAttribute('aria-hidden', 'false');
     setTimeout(function () { var i = document.getElementById('navPlayerSearch'); if (i) i.focus(); }, 260);
   }
@@ -13564,7 +13626,7 @@ async function initSinceLastVisit() {
     });
   } catch (_) {}
 }
-document.addEventListener('DOMContentLoaded', initSinceLastVisit);
+_deferInit(initSinceLastVisit);
 
 window.addEventListener('watchlist-updated', _refreshWatchlistNav);
 document.addEventListener('click', function(e) {
@@ -13574,9 +13636,9 @@ document.addEventListener('click', function(e) {
     if (panel) panel.style.display = 'none';
   }
 });
-document.addEventListener('DOMContentLoaded', _refreshWatchlistNav);
+_deferInit(_refreshWatchlistNav);
 // Pull the account's synced watchlist on load (signed-in only), then refresh.
-document.addEventListener('DOMContentLoaded', function () { _wlServerSyncOnce().then(_refreshWatchlistNav); });
+_deferInit(function () { _wlServerSyncOnce().then(_refreshWatchlistNav); });
 
 // ── Full watchlist page (/watchlist) ────────────────────────────────────────
 function _wlSortRows(rows, mode) {
@@ -13822,7 +13884,7 @@ document.addEventListener('click', function (e) {
     openPlayerModal(row.getAttribute('data-pid'), row.getAttribute('data-name') || '', { force: true });
   }
 });
-document.addEventListener('DOMContentLoaded', function () {
+_deferInit(function () {
   if (document.getElementById('wlPageTable')) initWatchlistPage();
 });
 
@@ -13851,7 +13913,7 @@ document.addEventListener('DOMContentLoaded', function () {
   window.addEventListener('online', _update);
   window.addEventListener('offline', _update);
   if (document.readyState !== 'loading') _update();
-  else document.addEventListener('DOMContentLoaded', _update);
+  else _deferInit(_update);
 })();
 
 // Create rkModal structure and CSS if they don't exist (for pages other than rookies page)
@@ -14668,7 +14730,7 @@ function initComparePage() {
     }
   } catch (_) {}
 }
-document.addEventListener('DOMContentLoaded', function () {
+_deferInit(function () {
   if (document.querySelector('[data-page="compare"]')) initComparePage();
 });
 
@@ -16416,7 +16478,7 @@ document.addEventListener('keydown', (e) => {
   if (typeof closeTeamModal === 'function' && document.getElementById('teamModal')) { closeTeamModal(); return; }
 });
 // Make player modal work site-wide
-document.addEventListener('DOMContentLoaded', function() {
+_deferInit(function() {
   initGlobalPlayerModals();
   loadGlobalPlayerIndicators();
   addBreakoutBadgesToTeamsPage();
@@ -17883,7 +17945,7 @@ document.addEventListener('click', (e) => {
     startTour(0);
   };
 
-  document.addEventListener('DOMContentLoaded', function () {
+  _deferInit(function () {
     var tourBtn = document.getElementById('settingsTourBtn');
     if (tourBtn) tourBtn.addEventListener('click', function () { window.startSiteTour(); });
     initTour();
@@ -18018,7 +18080,7 @@ function setupFunAwardsGrid() {
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', setup);
+    _deferInit(setup);
   } else {
     setup();
   }
@@ -18205,7 +18267,7 @@ function setupFunAwardsGrid() {
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', setup);
+    _deferInit(setup);
   } else {
     setup();
   }

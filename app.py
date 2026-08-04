@@ -499,6 +499,58 @@ def _ensure_public_js() -> str:
         return _APP_JS_FILE
 
 
+def _ensure_features_js() -> str:
+    """Build app-features.min.js — the below-the-marker feature half of app.js
+    (player modal, nav player-search, compare, advanced metrics, ...).
+
+    This is the complement of public.js: public.js is everything ABOVE the
+    @public-js:core-end marker, this is everything BELOW it. It's lazy-loaded on
+    demand for logged-out visitors served the slim public.js, so search / player
+    modals work without shipping the full bundle up front. The two bundles never
+    overlap, so loading this after public.js adds the feature code without
+    re-running (and double-binding) the core.
+
+    Returns "" on any problem, which tells render_page to fall back to serving the
+    full app.js (so the site never breaks)."""
+    static_dir = Path(__file__).parent / "static"
+    src = static_dir / "app.js"
+    out = static_dir / "app-features.js"
+    out_min = static_dir / "app-features.min.js"
+    meta = static_dir / "app-features.min.js.src"
+    marker = "/ @public-js:core-end"
+    try:
+        full = src.read_text(encoding="utf-8")
+        src_hash = hashlib.md5(full.encode("utf-8")).hexdigest()
+    except OSError:
+        return ""
+    if marker not in full:
+        return ""
+    try:
+        if out_min.exists() and meta.exists() and meta.read_text().strip() == src_hash:
+            return "app-features.min.js"
+        # Everything after the marker LINE (not just the marker token — the token
+        # sits inside a `//` comment, so splitting on it alone would leave a bare
+        # comment fragment starting the bundle). Drop through the line's newline.
+        _mi = full.find(marker)
+        _line_end = full.find("\n", _mi)
+        feat_src = full[_line_end + 1:] if _line_end != -1 else full.split(marker, 1)[1]
+        out.write_text(feat_src, encoding="utf-8")
+        try:
+            import rjsmin
+            minified = rjsmin.jsmin(feat_src)
+            if minified and len(minified) > 200:
+                out_min.write_text(minified, encoding="utf-8")
+                meta.write_text(src_hash, encoding="utf-8")
+                logger.info("[app-features.js] built: %d KB min", len(minified) // 1024)
+                return "app-features.min.js"
+        except Exception as _e:
+            logger.info("[app-features.js] minify unavailable: %s", _e)
+        return "app-features.js"
+    except Exception as _e:
+        logger.warning("[app-features.js] build failed: %s", _e)
+        return ""
+
+
 def _ensure_minified_css() -> str:
     """Minify dashboard.css → dashboard.min.css at startup (regenerated when the
     source changes, via a hash sidecar). Falls back to the unminified file if
@@ -530,6 +582,10 @@ _APP_JS_FILE = _ensure_minified_appjs()
 _APP_JS_V = _static_hash(_APP_JS_FILE)
 _PUBLIC_JS_FILE = _ensure_public_js()
 _PUBLIC_JS_V = _static_hash(_PUBLIC_JS_FILE)
+# Lazy-loaded feature half of app.js (see _ensure_features_js). Empty string when
+# it couldn't be built — render_page then serves the full app.js instead of lite.
+_FEATURES_JS_FILE = _ensure_features_js()
+_FEATURES_JS_V = _static_hash(_FEATURES_JS_FILE) if _FEATURES_JS_FILE else ""
 _PAYWALL_JS_V = _static_hash("paywall.js")
 _REDZONE_JS_V = _static_hash("redzone.js")
 _RANKINGS_JS_V = _static_hash("rankings.js")
@@ -1341,7 +1397,7 @@ BASE_HTML = """
 
       {ad_top}
 
-      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js};</script>
+      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window.__FEATURES_JS = {features_js_js};</script>
       <main id="page-root" role="main" tabindex="-1" class="overview-layout" data-cache-ts="{cache_ts}" data-premium="{user_premium}">
         {body}
       </main>
@@ -3123,16 +3179,24 @@ def render_page(
                 if _league_chrome
                 else build_nav(None, active, _nav_platform, _nav_season))
 
-    # The slim public.js (served to logged-out visitors on lite_js pages to cut
-    # mobile parse time) excludes everything below the @public-js:core-end marker —
-    # including the nav player-search wiring (initNavSearch) and the player modal
-    # (openPlayerModal). That left guests on the landing page unable to search
-    # players or open player cards. Serve the full app.js to everyone so those work;
-    # logged-in users already got it. (Revisit with a lazy-load if landing-page TBT
-    # becomes a concern — the public.js machinery is left in place for that.)
-    _use_lite = False
-    _page_js_file = _APP_JS_FILE
-    _page_js_v = _APP_JS_V
+    # Logged-out visitors on lite_js pages (the landing page) get the slim
+    # public.js for a fast first paint. public.js omits everything below the
+    # @public-js:core-end marker — the nav player-search and player modal included
+    # — so the feature half (app-features.js) is lazy-loaded on demand: prefetched
+    # on idle and force-loaded the moment a guest opens search or a player card
+    # (see the ensureFeatures loader in app.js). Only go lite when that features
+    # bundle actually built; otherwise serve the full app.js so nothing breaks.
+    _use_lite = (bool(kwargs.get("lite_js"))
+                 and not session.get("viewer_username")
+                 and bool(_FEATURES_JS_FILE))
+    _page_js_file = _PUBLIC_JS_FILE if _use_lite else _APP_JS_FILE
+    _page_js_v = _PUBLIC_JS_V if _use_lite else _APP_JS_V
+    # Tell the lazy-loader where the feature bundle lives (only on lite pages;
+    # on full pages the features are already present so the loader no-ops).
+    _features_js_js = (
+        json.dumps(f"/static/{_FEATURES_JS_FILE}?v={_FEATURES_JS_V}")
+        if _use_lite else "null"
+    )
 
     meta_tags = _build_seo_meta_tags(
         description, canonical, noindex,
@@ -3212,6 +3276,7 @@ def render_page(
         viewer_roster_id_js=_json.dumps(str(viewer_roster_id)),
         viewer_user_id_js=_json.dumps(str(viewer_user_id)),
         signed_in_js="true" if session.get("viewer_username") else "false",
+        features_js_js=_features_js_js,
     )
     resp = make_response(html)
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
