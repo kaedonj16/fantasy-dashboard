@@ -132,8 +132,34 @@ def _index_position_map() -> dict:
         return {}
 
 
-def assemble(seasons, scores_json):
-    """Return rows of {position, feats..., y} across all source seasons."""
+def _breakout_hits(outcomes: dict, prior: dict, growth: float,
+                   min_ppg: float, scratch_ppg: float) -> set:
+    """Relative 'breakout' hits: a meaningful PPG jump over the player's OWN prior
+    season (≥10 games in the outcome season). Configurable growth multiple + PPG
+    floor (the floor stops tiny baselines like 2→5 PPG counting as breakouts).
+    Players with no real prior must clear scratch_ppg on their own."""
+    hits = set()
+    for pid, o in outcomes.items():
+        if o["games"] < 10:
+            continue
+        actual = o["ppr_ppg"]
+        pr = prior.get(pid, {})
+        p_ppg, p_games = float(pr.get("ppr_ppg") or 0), int(pr.get("games") or 0)
+        if p_games >= 6 and p_ppg >= 4.0:
+            if actual >= p_ppg * growth and actual >= min_ppg:
+                hits.add(pid)
+        elif actual >= scratch_ppg:
+            hits.add(pid)
+    return hits
+
+
+def assemble(seasons, scores_json, target="top_n", growth=1.15,
+             min_ppg=7.0, scratch_ppg=10.0):
+    """Return rows of {position, feats..., y} across all source seasons.
+
+    target: 'top_n'    -> label = top-12 RB/WR, top-6 QB/TE finish (absolute)
+            'breakout' -> label = >=`growth`x prior PPG (+min_ppg floor), relative
+    """
     data = []
     _pos_idx = _index_position_map()
     for s in seasons:
@@ -153,7 +179,11 @@ def assemble(seasons, scores_json):
         # (merged with any build_historical_scores position file if present).
         pos_map = dict(_pos_idx)
         pos_map.update(load_position_map(s + 1, scores_json) or {})
-        top = get_top12_pids(outcomes, pos_map)
+        if target == "breakout":
+            prior = load_outcomes_parquet(s)  # the candidate's own prior season
+            top = _breakout_hits(outcomes, prior, growth, min_ppg, scratch_ppg)
+        else:
+            top = get_top12_pids(outcomes, pos_map)
         n0 = len(data)
         for r in scores:
             pid = str(r.get("player_id") or r.get("id") or "")
@@ -234,13 +264,28 @@ def main():
     ap.add_argument("--out", default=str(MODEL_PATH))
     ap.add_argument("--write", action="store_true",
                     help="write the model JSON (otherwise dry-run: report only)")
+    ap.add_argument("--target", choices=("top_n", "breakout"), default="top_n",
+                    help="label: 'top_n' (top-12 RB/WR, top-6 QB/TE, absolute) or "
+                         "'breakout' (relative PPG growth)")
+    ap.add_argument("--growth", type=float, default=1.15,
+                    help="breakout target: min PPG multiple over prior season (default 1.15 = +15%%)")
+    ap.add_argument("--min-ppg", type=float, default=7.0,
+                    help="breakout target: absolute PPG floor for a hit (default 7.0)")
+    ap.add_argument("--scratch-ppg", type=float, default=10.0,
+                    help="breakout target: PPG bar for players with no real prior (default 10.0)")
     args = ap.parse_args()
 
-    rows = assemble(args.seasons, args.scores_json)
+    rows = assemble(args.seasons, args.scores_json, target=args.target,
+                    growth=args.growth, min_ppg=args.min_ppg, scratch_ppg=args.scratch_ppg)
     if not rows:
         print("[train] no data assembled — check --seasons / DB / --scores-json")
         return
-    print(f"[train] total: {len(rows)} candidate-seasons, {sum(r['y'] for r in rows)} hits\n")
+    _hit_def = ("top-6 QB/TE, top-12 RB/WR by total PPR, >=10 games" if args.target == "top_n"
+                else f">= {args.growth:g}x prior PPG and >= {args.min_ppg:g} PPG "
+                     f"(or >= {args.scratch_ppg:g} from scratch), >=10 games")
+    print(f"[train] target={args.target}  ({_hit_def})")
+    print(f"[train] total: {len(rows)} candidate-seasons, {sum(r['y'] for r in rows)} hits "
+          f"({100*sum(r['y'] for r in rows)/max(len(rows),1):.1f}% hit rate)\n")
 
     positions = {}
     for pos in ("QB", "RB", "WR", "TE"):
@@ -263,7 +308,8 @@ def main():
         "trained_at": date.today().isoformat(),
         "seasons": args.seasons,
         "features": FEATURES,
-        "hit_def": "top-6 QB/TE, top-12 RB/WR by total PPR, >=10 games",
+        "target": args.target,
+        "hit_def": _hit_def,
         "positions": positions,
     }
     if args.write:
