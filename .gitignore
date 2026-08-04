@@ -65,3 +65,6 @@ static/dashboard.min.css.src
 static/public.js
 static/public.min.js
 static/public.min.js.src
+
+# Read-only output from scripts/value_model_experiment.py
+value_experiment_output/
