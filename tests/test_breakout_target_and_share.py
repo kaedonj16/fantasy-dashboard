@@ -66,6 +66,28 @@ def test_bounded_fit_clamps_negative_coef_to_zero():
     assert w_free[0] < 0  # unconstrained really does want it negative
 
 
+def test_partial_season_claim_not_inflated():
+    # Regression: a 4-game player (targets projected to a full 17-game season
+    # upstream) must not out-claim a full-season higher-usage player. Real rates:
+    # McMillan 3.75/g (4 games), Egbuka 7.47/g (17 games) -> Egbuka claims more.
+    mcmillan = {"last_season_targets": 64, "last_season_games": 4}   # 15 proj-> ~64
+    egbuka = {"last_season_targets": 127, "last_season_games": 17}
+    c_mcmillan = comp._competitor_claim("WR", mcmillan)
+    c_egbuka = comp._competitor_claim("WR", egbuka)
+    assert c_egbuka > c_mcmillan          # higher real usage claims more
+    assert c_mcmillan < 5.0               # ~3.76/g, not the buggy 16/g
+
+
+def test_partial_season_share_flows_to_higher_usage():
+    incumbents = {("TB", "WR"): [
+        {"player_id": "mcmillan", "last_season_targets": 64, "last_season_games": 4},
+        {"player_id": "egbuka", "last_season_targets": 127, "last_season_games": 17},
+    ]}
+    s_egbuka, _ = comp._opportunity_share("egbuka", "TB", "WR", incumbents, {})
+    s_mcmillan, _ = comp._opportunity_share("mcmillan", "TB", "WR", incumbents, {})
+    assert s_egbuka > s_mcmillan  # vacated targets flow to the real volume earner
+
+
 def test_opportunity_share_full_when_no_usage():
     # Nobody has prior usage -> don't dilute; scored player gets the full share.
     incumbents = {("IND", "WR"): [{"player_id": "rook", "last_season_targets": 0,
