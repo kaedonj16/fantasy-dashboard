@@ -291,21 +291,30 @@ def main():
     print(f"[train] total: {len(rows)} candidate-seasons, {sum(r['y'] for r in rows)} hits "
           f"({100*sum(r['y'] for r in rows)/max(len(rows),1):.1f}% hit rate)\n")
 
-    positions = {}
-    for pos in ("QB", "RB", "WR", "TE"):
-        blk = _fit_block([r for r in rows if r["position"] == pos])
-        if blk:
-            positions[pos] = blk
     g = _fit_block(rows)
+    positions = {}
     if g:
         positions["_global"] = g
+    # Keep a per-position block ONLY when it actually beats the pooled global
+    # model on out-of-fold AUC. Thin positions (few hits) otherwise fit noise and
+    # would drag their group below the global fallback, which inference prefers.
+    g_auc = (g or {}).get("auc", 0.0)
+    dropped = []
+    for pos in ("QB", "RB", "WR", "TE"):
+        blk = _fit_block([r for r in rows if r["position"] == pos])
+        if blk and blk["auc"] > g_auc:
+            positions[pos] = blk
+        elif blk:
+            dropped.append(f"{pos}(AUC {blk['auc']:.3f}<=global {g_auc:.3f}, hits={blk['hits']})")
 
     base_auc, base_brier = _curve_metrics(rows)
-    print("  Model vs current curve (higher AUC / lower Brier = better):")
+    print("  Kept blocks vs current curve (higher AUC / lower Brier = better):")
     print(f"    {'block':<8} {'n':>5} {'hits':>5} {'AUC':>7} {'Brier':>7}")
     for k, b in positions.items():
         print(f"    {k:<8} {b['n']:>5} {b['hits']:>5} {b['auc']:>7} {b['brier']:>7}")
     print(f"    {'curve':<8} {len(rows):>5} {sum(r['y'] for r in rows):>5} {base_auc:>7} {base_brier:>7}  (baseline)")
+    if dropped:
+        print(f"  dropped (fall back to _global): {', '.join(dropped)}")
 
     model = {
         "version": 1,
