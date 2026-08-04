@@ -206,16 +206,51 @@ def assemble(seasons, scores_json, target="top_n", growth=1.40,
     return data
 
 
-def _fit_block(rows, C=0.3):
+# Components where a higher score can only HELP breakout odds — their fitted
+# coefficients are constrained to be >= 0 so the model can't learn football-nonsense
+# (e.g. "more vacated opportunity lowers the probability"), which is otherwise an
+# artifact of collinearity + small samples. confidence is left unconstrained (a very
+# "certain" projection can genuinely be a known quantity that's less likely to leap).
+_NONNEG_FEATURES = ("opportunity_opened_score", "competition_removed_score",
+                    "team_environment_score", "player_readiness_score",
+                    "role_trajectory_score")
+
+
+def _fit_logit_bounded(Xs, y, C, nonneg_mask):
+    """L2-regularized logistic fit matching sklearn's objective (0.5||w||^2 + C*
+    logloss) but with per-coefficient lower bounds: 0 for the non-negative features,
+    unbounded otherwise. Returns (coef_array, intercept)."""
+    import numpy as np
+    from scipy.optimize import minimize
+
+    d = Xs.shape[1]
+
+    def obj(p):
+        b0, w = p[0], p[1:]
+        z = np.clip(b0 + Xs @ w, -60.0, 60.0)
+        logloss = float(np.sum(np.logaddexp(0.0, z) - y * z))
+        val = 0.5 * float(np.dot(w, w)) + C * logloss
+        pr = 1.0 / (1.0 + np.exp(-z))
+        g_b0 = C * float(np.sum(pr - y))
+        g_w = w + C * (Xs.T @ (pr - y))
+        return val, np.concatenate([[g_b0], g_w])
+
+    bounds = [(None, None)] + [((0.0, None) if m else (None, None)) for m in nonneg_mask]
+    res = minimize(obj, np.zeros(d + 1), jac=True, method="L-BFGS-B",
+                   bounds=bounds, options={"maxiter": 2000})
+    return res.x[1:], float(res.x[0])
+
+
+def _fit_block(rows, C=0.3, nonneg=True):
     """Fit a standardized logistic on `rows`; return the JSON block + metrics.
 
     C is the inverse regularization strength — lower = stronger shrinkage toward
-    the base rate, which tames thin-data overfit (a single high-score candidate in
-    a small position group otherwise pulls its own prediction to an extreme)."""
+    the base rate, which tames thin-data overfit. When nonneg=True the opportunity/
+    readiness/trajectory coefficients are constrained to be >= 0 so the model's
+    orderings agree with football sense (more opportunity never lowers the odds)."""
     import numpy as np
-    from sklearn.linear_model import LogisticRegression
     from sklearn.preprocessing import StandardScaler
-    from sklearn.model_selection import cross_val_predict
+    from sklearn.model_selection import StratifiedKFold
     from sklearn.metrics import roc_auc_score, brier_score_loss
 
     X = np.array([[r[f] for f in FEATURES] for r in rows], dtype=float)
@@ -226,22 +261,28 @@ def _fit_block(rows, C=0.3):
     Xs = scaler.transform(X)
     # NOTE: no class_weight balancing. The displayed value is a *probability*, so
     # calibration matters as much as ranking; balancing upweights the rare
-    # positives and pushes probs toward ~0.5 (great AUC, terrible Brier / wildly
-    # overstated on-screen %). Plain logistic keeps the base rate honest.
-    clf = LogisticRegression(C=C, max_iter=1000)
-    # Honest metrics via out-of-fold predictions.
+    # positives and pushes probs toward ~0.5 (great AUC, terrible Brier).
+    nonneg_mask = [f in _NONNEG_FEATURES for f in FEATURES] if nonneg else [False] * Xs.shape[1]
+
+    # Honest metrics via out-of-fold predictions, using the SAME (constrained) fit.
     try:
-        oof = cross_val_predict(clf, Xs, y, cv=5, method="predict_proba")[:, 1]
+        oof = np.zeros(len(y))
+        skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)
+        for tr, te in skf.split(Xs, y):
+            w, b = _fit_logit_bounded(Xs[tr], y[tr], C, nonneg_mask)
+            z = np.clip(b + Xs[te] @ w, -60.0, 60.0)
+            oof[te] = 1.0 / (1.0 + np.exp(-z))
         auc = float(roc_auc_score(y, oof))
         brier = float(brier_score_loss(y, oof))
     except Exception:
         auc = brier = float("nan")
-    clf.fit(Xs, y)
+
+    coef, intercept = _fit_logit_bounded(Xs, y, C, nonneg_mask)
     return {
         "mean": scaler.mean_.tolist(),
         "std": scaler.scale_.tolist(),
-        "coef": clf.coef_[0].tolist(),
-        "intercept": float(clf.intercept_[0]),
+        "coef": coef.tolist(),
+        "intercept": intercept,
         "n": int(len(y)), "hits": int(y.sum()),
         "auc": round(auc, 4), "brier": round(brier, 4),
     }
@@ -409,6 +450,10 @@ def main():
     ap.add_argument("--min-hits", type=int, default=15,
                     help="a position with no own block and fewer than this many hits "
                          "keeps the empirical curve instead of borrowing _global (default 15)")
+    ap.add_argument("--allow-negative", action="store_true",
+                    help="allow negative coefficients on opportunity/readiness features "
+                         "(default: constrain them >=0 so more opportunity never lowers "
+                         "the predicted breakout probability)")
     ap.add_argument("--preview-season", type=int, default=None,
                     help="after fitting, show this season's candidates ranked with "
                          "curve vs new-model hit prob (read-only; e.g. 2026 for current)")
@@ -432,7 +477,8 @@ def main():
     print(f"[train] total: {len(rows)} candidate-seasons, {sum(r['y'] for r in rows)} hits "
           f"({100*sum(r['y'] for r in rows)/max(len(rows),1):.1f}% hit rate)\n")
 
-    g = _fit_block(rows, C=args.C)
+    _nonneg = not args.allow_negative
+    g = _fit_block(rows, C=args.C, nonneg=_nonneg)
     positions = {}
     if g:
         positions["_global"] = g
@@ -445,7 +491,7 @@ def main():
     for pos in ("QB", "RB", "WR", "TE"):
         pos_rows = [r for r in rows if r["position"] == pos]
         pos_hits = sum(r["y"] for r in pos_rows)
-        blk = _fit_block(pos_rows, C=args.C)
+        blk = _fit_block(pos_rows, C=args.C, nonneg=_nonneg)
         if blk and blk["auc"] > g_auc:
             positions[pos] = blk
         elif blk:

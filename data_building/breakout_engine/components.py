@@ -252,8 +252,15 @@ def _competitor_claim(position: str, entry: Dict) -> float:
     volume = (carries + targets * 1.5) if position == "RB" else targets
 
     if volume > 0:
-        # Per game when we know games played; else approximate from a full slate.
-        return volume / games if games >= 1 else volume / 17.0
+        # Per-game rate. last_season_targets/carries are normalized to a full
+        # 17-game projection for PARTIAL seasons (games < 14) upstream, so dividing
+        # that projected total by the small actual games double-counts the
+        # projection — e.g. a 4-game player (15 targets → projected 64) would read
+        # as 16 targets/game, a league-leading role, and vacuum up vacated work he
+        # never earned. Divide by the projection basis (17) for partial seasons and
+        # by actual games for (near-)full seasons.
+        denom = games if games >= 14 else 17.0
+        return volume / denom
 
     # No measured usage — infer expected role from draft capital. An undrafted
     # player who never produced isn't a real competitor for vacated work, so they
