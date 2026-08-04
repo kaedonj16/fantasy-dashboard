@@ -66,5 +66,10 @@ static/public.js
 static/public.min.js
 static/public.min.js.src
 
+# Generated at startup by _ensure_features_js() (lazy-loaded feature half)
+static/app-features.js
+static/app-features.min.js
+static/app-features.min.js.src
+
 # Read-only output from scripts/value_model_experiment.py
 value_experiment_output/
