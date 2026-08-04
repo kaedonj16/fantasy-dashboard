@@ -199,8 +199,12 @@ def assemble(seasons, scores_json, target="top_n", growth=1.15,
     return data
 
 
-def _fit_block(rows):
-    """Fit a standardized logistic on `rows`; return the JSON block + metrics."""
+def _fit_block(rows, C=0.3):
+    """Fit a standardized logistic on `rows`; return the JSON block + metrics.
+
+    C is the inverse regularization strength — lower = stronger shrinkage toward
+    the base rate, which tames thin-data overfit (a single high-score candidate in
+    a small position group otherwise pulls its own prediction to an extreme)."""
     import numpy as np
     from sklearn.linear_model import LogisticRegression
     from sklearn.preprocessing import StandardScaler
@@ -217,7 +221,7 @@ def _fit_block(rows):
     # calibration matters as much as ranking; balancing upweights the rare
     # positives and pushes probs toward ~0.5 (great AUC, terrible Brier / wildly
     # overstated on-screen %). Plain logistic keeps the base rate honest.
-    clf = LogisticRegression(C=0.5, max_iter=1000)
+    clf = LogisticRegression(C=C, max_iter=1000)
     # Honest metrics via out-of-fold predictions.
     try:
         oof = cross_val_predict(clf, Xs, y, cv=5, method="predict_proba")[:, 1]
@@ -307,7 +311,12 @@ def _preview_candidates(model, season, scores_json, top):
 
 
 def _hit_prob_from_model_local(model, pos, feats):
-    """Same logistic eval as inference, using the in-memory model (dependency-free)."""
+    """Same logistic eval as inference, using the in-memory model (dependency-free).
+
+    Returns None for curve_positions (too thin to fit) so the preview shows their
+    curve value — mirroring what inference does at runtime."""
+    if pos in (model.get("curve_positions") or []):
+        return None
     blk = model["positions"].get(pos) or model["positions"].get("_global")
     if not blk:
         return None
@@ -338,6 +347,12 @@ def main():
                     help="breakout target: absolute PPG floor for a hit (default 7.0)")
     ap.add_argument("--scratch-ppg", type=float, default=10.0,
                     help="breakout target: PPG bar for players with no real prior (default 10.0)")
+    ap.add_argument("--C", type=float, default=0.3,
+                    help="inverse regularization strength (lower = stronger shrinkage "
+                         "toward the base rate; default 0.3)")
+    ap.add_argument("--min-hits", type=int, default=15,
+                    help="a position with no own block and fewer than this many hits "
+                         "keeps the empirical curve instead of borrowing _global (default 15)")
     ap.add_argument("--preview-season", type=int, default=None,
                     help="after fitting, show this season's candidates ranked with "
                          "curve vs new-model hit prob (read-only; e.g. 2026 for current)")
@@ -356,7 +371,7 @@ def main():
     print(f"[train] total: {len(rows)} candidate-seasons, {sum(r['y'] for r in rows)} hits "
           f"({100*sum(r['y'] for r in rows)/max(len(rows),1):.1f}% hit rate)\n")
 
-    g = _fit_block(rows)
+    g = _fit_block(rows, C=args.C)
     positions = {}
     if g:
         positions["_global"] = g
@@ -365,12 +380,19 @@ def main():
     # would drag their group below the global fallback, which inference prefers.
     g_auc = (g or {}).get("auc", 0.0)
     dropped = []
+    curve_positions = []  # too thin to fit -> keep the empirical curve, don't borrow _global
     for pos in ("QB", "RB", "WR", "TE"):
-        blk = _fit_block([r for r in rows if r["position"] == pos])
+        pos_rows = [r for r in rows if r["position"] == pos]
+        pos_hits = sum(r["y"] for r in pos_rows)
+        blk = _fit_block(pos_rows, C=args.C)
         if blk and blk["auc"] > g_auc:
             positions[pos] = blk
         elif blk:
             dropped.append(f"{pos}(AUC {blk['auc']:.3f}<=global {g_auc:.3f}, hits={blk['hits']})")
+        # No usable own block AND too few hits to trust the skill-heavy _global
+        # block for this position (e.g. QB) -> fall back to the curve at inference.
+        if pos not in positions and pos_hits < args.min_hits:
+            curve_positions.append(pos)
 
     base_auc, base_brier = _curve_metrics(rows)
     print("  Kept blocks vs current curve (higher AUC / lower Brier = better):")
@@ -380,6 +402,8 @@ def main():
     print(f"    {'curve':<8} {len(rows):>5} {sum(r['y'] for r in rows):>5} {base_auc:>7} {base_brier:>7}  (baseline)")
     if dropped:
         print(f"  dropped (fall back to _global): {', '.join(dropped)}")
+    if curve_positions:
+        print(f"  curve positions (too thin, keep empirical curve): {', '.join(curve_positions)}")
 
     model = {
         "version": 1,
@@ -388,7 +412,9 @@ def main():
         "features": FEATURES,
         "target": args.target,
         "hit_def": _hit_def,
+        "reg_C": args.C,
         "positions": positions,
+        "curve_positions": curve_positions,
     }
 
     # Preview: apply the just-fitted model to a season's actual candidates and show
