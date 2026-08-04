@@ -11,6 +11,10 @@ interpretable and consistent with the existing rule-based scoring engine.
 """
 from __future__ import annotations
 
+import functools
+import json
+import math
+import os
 from typing import Optional
 
 # Base breakout hit rates calibrated specifically for the NON-ESTABLISHED
@@ -132,6 +136,45 @@ def _estimate_season_ppr(
     return base * 0.5 * uplift  # thin data → conservative estimate
 
 
+# Fitted hit-probability model (per-position logistic on z-scored component
+# scores), produced by train_hit_probability.py. Absent until trained + committed,
+# in which case calculate_hit_probability falls back to the empirical curve below.
+_HIT_MODEL_PATH = os.path.join(os.path.dirname(__file__), "hit_probability_model.json")
+_HIT_MODEL_FEATURES = ("breakout_score", "readiness_score", "confidence_score",
+                       "opportunity_score", "role_trajectory_score")
+
+
+@functools.lru_cache(maxsize=1)
+def _load_hit_model():
+    """Load the fitted model, or None if it hasn't been trained/committed yet."""
+    try:
+        with open(_HIT_MODEL_PATH, encoding="utf-8") as f:
+            m = json.load(f)
+        return m if isinstance(m, dict) and m.get("positions") else None
+    except (OSError, ValueError):
+        return None
+
+
+def _hit_prob_from_model(model, pos: str, feats: dict) -> Optional[float]:
+    """P(hit) from the fitted logistic for `pos` (falls back to the _global block).
+    Returns None when no usable block/params, so the caller uses the curve."""
+    blk = model.get("positions", {}).get(pos) or model.get("positions", {}).get("_global")
+    if not blk:
+        return None
+    order = model.get("features") or list(_HIT_MODEL_FEATURES)
+    mean, std, coef, intercept = blk.get("mean"), blk.get("std"), blk.get("coef"), blk.get("intercept")
+    if not (mean and std and coef) or intercept is None:
+        return None
+    try:
+        logit = float(intercept)
+        for i, name in enumerate(order):
+            denom = float(std[i]) or 1.0
+            logit += float(coef[i]) * ((float(feats.get(name, 0.0)) - float(mean[i])) / denom)
+        return 1.0 / (1.0 + math.exp(-max(-60.0, min(60.0, logit))))
+    except (IndexError, TypeError, ValueError):
+        return None
+
+
 def calculate_hit_probability(
     breakout_score: float,
     readiness_score: float,
@@ -141,12 +184,28 @@ def calculate_hit_probability(
     role_trajectory_score: float = 0.0,
 ) -> float:
     """
-    P(player finishes top-12 at position next season).
+    P(player finishes top-12 (top-6 QB/TE) at position next season).
 
-    Calibrated from 2022-2024 backtest data (639 paired player-seasons).
-    Uses piecewise linear interpolation over empirical hit rates by score
-    bucket, then applies opportunity and trajectory modifiers.
+    Prefers the fitted per-position logistic (hit_probability_model.json) when it's
+    been trained + committed; otherwise falls back to the piecewise-linear empirical
+    curve below (2022-2024 backtest) plus its opportunity/trajectory modifiers.
     """
+    pos = (position or "WR").upper()
+
+    # ── Fitted model (preferred) ──────────────────────────────────────────────
+    _model = _load_hit_model()
+    if _model is not None:
+        _p = _hit_prob_from_model(_model, pos, {
+            "breakout_score": breakout_score,
+            "readiness_score": readiness_score,
+            "confidence_score": confidence_score,
+            "opportunity_score": opportunity_score,
+            "role_trajectory_score": role_trajectory_score,
+        })
+        if _p is not None:
+            return round(min(max(_p, 0.01), 0.95), 3)
+
+    # ── Fallback: empirical curve + modifiers ─────────────────────────────────
     # Empirical hit rates by score bucket (from 2022-2024 backtest):
     # breakout_score → p(top-12 finish at position)
     # Smoothed to enforce monotonicity; small-sample high buckets capped conservatively.
