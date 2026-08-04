@@ -407,6 +407,18 @@ def load_usage_stats(
     import nfl_data_py as nfl
 
     sleeper_to_gsis: dict[str, str] = {v: k for k, v in (gsis_to_sleeper or {}).items()}
+    # The roster-derived crosswalk above can miss or mis-map players — notably
+    # duplicate surnames (two McMillans), where a cache player's usage gets
+    # attributed to the wrong GSIS and a 4-game season reads as a full one. Prefer
+    # the authoritative nfl_data_py import_ids crosswalk, which resolves sleeper IDs
+    # cleanly; it wins over the roster-derived entries.
+    try:
+        from data_building.external_data.nflverse_metrics import _gsis_to_sleeper
+        _authoritative = {v: k for k, v in (_gsis_to_sleeper() or {}).items()}
+        if _authoritative:
+            sleeper_to_gsis = {**sleeper_to_gsis, **_authoritative}
+    except Exception as _e:
+        print(f"  [load_usage_stats] import_ids crosswalk unavailable ({_e}); using roster crosswalk")
 
     # ── 1. Determine which seasons are available on nfl_data_py ──────────────
     nfl_seasons   = list(sorted(seasons))
