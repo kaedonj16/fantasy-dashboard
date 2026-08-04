@@ -64,6 +64,57 @@ def _gsis_to_sleeper() -> Dict[str, str]:
     return mapping
 
 
+def season_team_by_sleeper(season: int) -> Dict[str, str]:
+    """{sleeper_id: team} for the team each player was ROSTERED on in `season`,
+    from nfl_data_py seasonal rosters (weekly rosters as a fallback).
+
+    Used to stamp the correct HISTORICAL team on a season's usage rows, instead of
+    the player's current players_index team — otherwise a trade rewrites the past
+    (a player's prior-season row shows their new team) and breaks vacated-opportunity
+    detection. Returns {} when nfl_data_py or the data is unavailable, so callers can
+    fall back to the current-team behavior.
+    """
+    xwalk = _gsis_to_sleeper()
+    if not xwalk:
+        return {}
+    out: Dict[str, str] = {}
+    try:
+        import nfl_data_py as nfl  # optional dependency
+        df = None
+        for fn in ("import_seasonal_rosters", "import_weekly_rosters", "import_rosters"):
+            f = getattr(nfl, fn, None)
+            if f is None:
+                continue
+            try:
+                df = f([season])
+            except Exception:
+                df = None
+            if df is not None and not df.empty:
+                break
+        if df is None or df.empty:
+            return {}
+        # Weekly rosters carry a week column — keep the latest week per player so a
+        # mid-season move resolves to the team they finished the year on.
+        if "week" in df.columns:
+            df = df.sort_values("week").groupby("player_id", as_index=False).last()
+        for _, row in df.iterrows():
+            gsis = row.get("player_id")
+            if gsis is None:
+                gsis = row.get("gsis_id")
+            team = row.get("team")
+            if gsis is None or team is None:
+                continue
+            sid = xwalk.get(str(gsis).strip())
+            if not sid:
+                continue
+            t = str(team).strip()
+            if t and t.lower() != "nan":
+                out[sid] = t
+    except Exception as e:
+        print(f"[nflverse_metrics] season roster teams unavailable ({e})")
+    return out
+
+
 def _f(v) -> Optional[float]:
     """Coerce to float, treating NaN/None/blank as None."""
     if v is None:

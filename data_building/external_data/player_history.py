@@ -330,6 +330,15 @@ def build_usage_rows_for_season(
     rz_map = fetch_season_redzone_stats(season) or {}
     ts_map = fetch_league_target_share(season) or {}
     players_index = load_players_index() or {}
+    # Team the player actually played for THIS season (historical), so a later trade
+    # doesn't rewrite their past. Falls back to the current players_index team below
+    # when nfl_data_py rosters can't resolve a player (e.g. very recent rookies).
+    try:
+        from data_building.external_data.nflverse_metrics import season_team_by_sleeper
+        season_team_map = season_team_by_sleeper(int(season)) or {}
+    except Exception as e:
+        print(f"[player_history] season team map unavailable for {season}: {e}")
+        season_team_map = {}
 
     accum: dict[str, dict[str, float]] = {}
     weekly_tracking: dict[str, list[dict[str, float]]] = {}  # Track week-by-week for rolling windows
@@ -520,10 +529,13 @@ def build_usage_rows_for_season(
                 "ppg_acceleration": rolling_windows["ppg_acceleration"],
             }
 
+        # Historical team for THIS season (nfl_data_py roster); fall back to the
+        # current players_index team only when the season roster can't resolve it.
+        _hist_team = season_team_map.get(str(pid)) or meta.get("team")
         usage_rows.append({
             "id": pid,
             "name": meta.get("name"),
-            "team": canon_team(meta.get("team")) if meta.get("team") else None,
+            "team": canon_team(_hist_team) if _hist_team else None,
             "position": meta.get("position"),
             "age": meta.get("age"),
             "season": int(season),
