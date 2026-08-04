@@ -689,7 +689,15 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
         filtered.append(c)
     candidates = filtered
 
-    candidates.sort(key=lambda x: float(x['breakout_opportunity_score']), reverse=True)
+    # Rank by breakout probability (the model's prediction) so the board's order
+    # matches the headline number — highest probability = best candidate. The
+    # aggregate breakout_opportunity_score is the tie-break (and still the
+    # candidacy gate via the min_score WHERE clause above).
+    candidates.sort(
+        key=lambda x: (float(x.get('hit_probability') or 0),
+                       float(x.get('breakout_opportunity_score') or 0)),
+        reverse=True,
+    )
 
     # Top-N cap: show only the strongest breakouts, not everyone above the floor.
     if limit and limit > 0:
@@ -756,6 +764,45 @@ def get_breakout_candidates_by_position(
         'candidates': candidates,
         'count': len(candidates)
     }
+
+
+def _breakout_ranks(season: int) -> Dict[str, Dict]:
+    """Rank every stored candidate for `season` by breakout probability so the modal
+    can show 'TE #2 · #14 overall'. Latest row per player; ranks by hit_probability
+    desc (breakout_opportunity_score as the tie-break), overall and within position."""
+    query = """
+        SELECT DISTINCT ON (player_id)
+            player_id, position, hit_probability, breakout_opportunity_score
+        FROM breakout_opportunity_scores
+        WHERE season = %s
+        ORDER BY player_id, as_of_date DESC, calculated_at DESC
+    """
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(query, [season])
+                rows = [dict(r) for r in cursor.fetchall()]
+    except Exception:
+        logger.warning("breakout_api: rank query failed for season %s", season, exc_info=True)
+        return {}
+
+    def _key(r):
+        return (float(r.get("hit_probability") or 0), float(r.get("breakout_opportunity_score") or 0))
+
+    ranks: Dict[str, Dict] = {}
+    overall = sorted(rows, key=_key, reverse=True)
+    n_overall = len(overall)
+    for i, r in enumerate(overall, 1):
+        ranks[str(r["player_id"])] = {"overall": i, "overall_total": n_overall}
+    by_pos: Dict[str, List] = {}
+    for r in rows:
+        by_pos.setdefault((r.get("position") or "").upper(), []).append(r)
+    for pos, prows in by_pos.items():
+        prows.sort(key=_key, reverse=True)
+        for i, r in enumerate(prows, 1):
+            ranks.setdefault(str(r["player_id"]), {})
+            ranks[str(r["player_id"])].update({"pos": i, "pos_total": len(prows), "position": pos})
+    return ranks
 
 
 def get_breakout_candidate_detail(player_id: str, season: Optional[int] = None) -> Dict:
@@ -857,6 +904,33 @@ def get_breakout_candidate_detail(player_id: str, season: Optional[int] = None) 
         candidate.get('position', 'WR'), opp_score, prior_ppg,
         player_id=str(player_id),
     )
+
+    # ── Model-driven fields for the reworked modal ────────────────────────────
+    # Per-component contribution to the fitted hit-probability (what drove the %),
+    # and this player's breakout rank among the season's candidates. Both degrade
+    # gracefully: contributions is None when no model is committed (modal shows the
+    # raw component bars instead), and rank is omitted if the query fails.
+    try:
+        from data_building.breakout_engine.multitask_predictions import (
+            hit_probability_contributions, _HIT_MODEL_FEATURES,
+        )
+        feats = {
+            "opportunity_opened_score":  float(candidate.get('opportunity_opened_score') or 0),
+            "competition_removed_score": float(candidate.get('competition_removed_score') or 0),
+            "team_environment_score":    float(candidate.get('team_environment_score') or 0),
+            "player_readiness_score":    float(candidate.get('player_readiness_score') or 0),
+            "role_trajectory_score":     float(candidate.get('role_trajectory_score') or 0),
+            "confidence_score":          float(candidate.get('confidence_score') or 0),
+        }
+        candidate['hit_contributions'] = hit_probability_contributions(
+            candidate.get('position', 'WR'), feats)
+    except Exception:
+        logger.warning("breakout_api: contributions failed for %s", player_id, exc_info=True)
+        candidate['hit_contributions'] = None
+
+    rank = _breakout_ranks(season).get(str(player_id))
+    if rank:
+        candidate['breakout_rank'] = rank
 
     return candidate
 

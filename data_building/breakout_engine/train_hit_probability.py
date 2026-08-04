@@ -56,13 +56,17 @@ from data_building.breakout_engine import multitask_predictions as MP  # noqa: E
 
 MODEL_PATH = Path(__file__).resolve().parent / "hit_probability_model.json"
 
-# Score-row key -> model feature name. Mirrors what calculate_hit_probability reads.
+# Feature name -> score-row key(s) to read it from. The model fits on the six RAW
+# component scores (MP._HIT_MODEL_FEATURES); breakout_score is kept here too because
+# the curve fallback/baseline still keys off the aggregate.
 _FEATURE_KEYS = {
-    "breakout_score":        ("breakout_opportunity_score", "breakout_score"),
-    "readiness_score":       ("player_readiness_score", "readiness_score"),
-    "confidence_score":      ("confidence_score",),
-    "opportunity_score":     ("opportunity_opened_score", "opportunity_score"),
-    "role_trajectory_score": ("role_trajectory_score",),
+    "opportunity_opened_score":  ("opportunity_opened_score", "opportunity_score"),
+    "competition_removed_score": ("competition_removed_score",),
+    "team_environment_score":    ("team_environment_score",),
+    "player_readiness_score":    ("player_readiness_score", "readiness_score"),
+    "role_trajectory_score":     ("role_trajectory_score",),
+    "confidence_score":          ("confidence_score",),
+    "breakout_score":            ("breakout_opportunity_score", "breakout_score"),
 }
 FEATURES = list(MP._HIT_MODEL_FEATURES)
 
@@ -193,6 +197,7 @@ def assemble(seasons, scores_json, target="top_n", growth=1.15,
             row = {"position": pos, "y": 1 if pid in top else 0}
             for f in FEATURES:
                 row[f] = _feat(r, f)
+            row["breakout_score"] = _feat(r, "breakout_score")  # curve baseline only
             data.append(row)
         print(f"[train] season {s}->{s+1}: {len(data)-n0} candidates, "
               f"{sum(1 for d in data[n0:] if d['y'])} hits")
@@ -251,8 +256,8 @@ def _curve_metrics(rows):
         preds, ys = [], []
         for r in rows:
             preds.append(MP.calculate_hit_probability(
-                r["breakout_score"], r["readiness_score"], r["confidence_score"],
-                r["position"], r["opportunity_score"], r["role_trajectory_score"]))
+                r["breakout_score"], r["player_readiness_score"], r["confidence_score"],
+                r["position"], r["opportunity_opened_score"], r["role_trajectory_score"]))
             ys.append(r["y"])
     finally:
         MP._load_hit_model = _orig
@@ -270,10 +275,10 @@ def _curve_prob(row) -> float:
     MP._load_hit_model = lambda: None
     try:
         return MP.calculate_hit_probability(
-            _feat(row, "breakout_score"), _feat(row, "readiness_score"),
+            _feat(row, "breakout_score"), _feat(row, "player_readiness_score"),
             _feat(row, "confidence_score"),
             str(row.get("position") or "").upper(),
-            _feat(row, "opportunity_score"), _feat(row, "role_trajectory_score"))
+            _feat(row, "opportunity_opened_score"), _feat(row, "role_trajectory_score"))
     finally:
         MP._load_hit_model = _orig
         MP._load_hit_model.cache_clear()

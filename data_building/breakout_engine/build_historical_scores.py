@@ -1342,6 +1342,8 @@ def score_one_player(
             age=age,
             competition_threat=competition_threat,
             opportunity_score=component_scores["opportunity_opened"],
+            competition_removed_score=component_scores["competition_removed"],
+            team_environment_score=component_scores["team_environment"],
         )
 
     # Blend model projection 70% / prior-season PPG 30% — mirrors the playoff
