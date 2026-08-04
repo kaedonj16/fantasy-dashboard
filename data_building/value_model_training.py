@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import json
+import os
 import re
 from datetime import date, timedelta
 from pathlib import Path
@@ -802,7 +803,12 @@ def rewrite_value_table_with_model() -> Path:
     # on players the model is re-rating hard; normal day-to-day moves are smaller.
     # Kept in lock-step with trade_value_model.DAILY_MOVE_CAP so the model board
     # and the served calibrated track move at the same rate.
-    _MAX_DAILY_MOVE = 0.02
+    #
+    # VALUE_MOVE_CAP_OVERRIDE lets a one-off run bypass the clamp so an intentional
+    # model change lands immediately instead of easing in at 2%/day over ~weeks.
+    # Set it (e.g. "50" ≈ unclamped) for a single reset run, then unset it so the
+    # normal 2%/day smoothing resumes. Same var gates the WLS calibrated track.
+    _MAX_DAILY_MOVE = float(os.environ.get("VALUE_MOVE_CAP_OVERRIDE", "0.02"))
 
     # CRITICAL FIX: Load vendor values to use directly when available
     fc_df = load_fantasycalc_df()
