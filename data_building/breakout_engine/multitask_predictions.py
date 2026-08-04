@@ -193,8 +193,10 @@ def calculate_hit_probability(
     pos = (position or "WR").upper()
 
     # ── Fitted model (preferred) ──────────────────────────────────────────────
+    # Positions the trainer flagged as too thin to fit reliably (e.g. QB) fall
+    # through to the empirical curve rather than borrow the skill-heavy _global block.
     _model = _load_hit_model()
-    if _model is not None:
+    if _model is not None and pos not in (_model.get("curve_positions") or []):
         _p = _hit_prob_from_model(_model, pos, {
             "breakout_score": breakout_score,
             "readiness_score": readiness_score,

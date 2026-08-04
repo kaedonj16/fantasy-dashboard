@@ -56,6 +56,23 @@ def test_model_used_when_present(monkeypatch):
     assert p == 0.95  # clamped high end, proving the model path ran
 
 
+def test_curve_position_skips_model(monkeypatch):
+    # QB is flagged as a curve position -> the fitted model is bypassed and the
+    # empirical curve drives the output, even though a _global block exists.
+    model = {
+        "features": list(mp._HIT_MODEL_FEATURES),
+        "curve_positions": ["QB"],
+        "positions": {"_global": {"mean": [0]*5, "std": [1]*5,
+                                  "coef": [0]*5, "intercept": 3.0}},  # would clamp to 0.95
+    }
+    monkeypatch.setattr(mp, "_load_hit_model", lambda: model)
+    p = mp.calculate_hit_probability(10, 10, 10, "QB")
+    assert p != 0.95  # model path skipped for QB; low score -> low curve prob
+    assert 0.01 <= p <= 0.95
+    # A non-curve position still uses the model (clamped high).
+    assert mp.calculate_hit_probability(10, 10, 10, "WR") == 0.95
+
+
 def test_global_block_fallback_for_unknown_position(monkeypatch):
     model = {
         "features": list(mp._HIT_MODEL_FEATURES),
