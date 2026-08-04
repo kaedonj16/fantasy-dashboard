@@ -243,15 +243,19 @@ def fit_weights_simplex(df: pd.DataFrame, sources, target: str, step: float = 0.
 # ---------------------------------------------------------------------------
 # Board build (1QB)
 # ---------------------------------------------------------------------------
-def build_board(players: pd.DataFrame, engine: dict, normalizer, weights_by_pos):
+def build_board(players: pd.DataFrame, engine: dict, normalizer, weights_by_pos,
+                exclude_te_dp: bool = True):
     """Return a per-player blended 1QB value using the given normalizer and
     per-position weights. `weights_by_pos` maps position -> {source: weight};
-    positions absent from it fall back to the production 40/40/20."""
+    positions absent from it fall back to the production 40/40/20.
+
+    exclude_te_dp: the OLD board dropped DP for TEs; the shipped market-only board
+    includes it (pass False) so the drop-engine preview matches production."""
     df = players.copy()
     df["fc_norm"] = normalizer(df["fc_value"].fillna(0.0))
     df["dp_norm"] = normalizer(df["dp_value_1qb"].fillna(0.0))
-    # DP undervalues TEs vs market — production excludes DP for TE.
-    df.loc[df["position"] == "TE", "dp_norm"] = 0.0
+    if exclude_te_dp:
+        df.loc[df["position"] == "TE", "dp_norm"] = 0.0
     df["eng"] = df["sleeper_id"].map(lambda p: engine.get(str(p)))
 
     default_w = {"fc_norm": W_VENDOR, "eng": W_ENGINE, "dp_norm": W_DP}
@@ -429,7 +433,8 @@ def preview_drop_engine(players, engine, fc_sf, live, out: Path):
     have_live = bool(live)
 
     # ---- 1QB: with vs without engine --------------------------------------
-    without_1qb = build_board(players, {}, minmax_norm, {})["board_value"]
+    # The shipped market-only board includes DP for TEs, so match that here.
+    without_1qb = build_board(players, {}, minmax_norm, {}, exclude_te_dp=False)["board_value"]
     df = players[["sleeper_id", "name", "position", "team"]].copy()
     df["without_engine_1qb"] = without_1qb.values
     if have_engine:

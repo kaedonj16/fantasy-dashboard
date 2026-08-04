@@ -17,6 +17,12 @@ DYNASTYPROCESS_VALUES_URL = (
     "https://raw.githubusercontent.com/dynastyprocess/data/master/files/values.csv"
 )
 
+# Per-league-size FantasyCalc values (1QB + SF), one row per player. Powers the
+# market-based league-size curve in the value model (value_n = base * FC@n / FC@10),
+# replacing the retired usage-engine size ratios.
+FANTASYCALC_SIZE_VALUES_PATH = DATA_DIR / "fantasycalc_size_values.csv"
+FANTASYCALC_LEAGUE_SIZES = (8, 10, 12, 14)
+
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -154,6 +160,63 @@ def load_fantasycalc_sf_api_values(
         return list(reader)
 
 
+def write_fantasycalc_size_values(
+        sizes=FANTASYCALC_LEAGUE_SIZES,
+        out_csv: Path = FANTASYCALC_SIZE_VALUES_PATH,
+        *,
+        is_dynasty: bool = True,
+        ppr: float = 1.0,
+) -> int:
+    """Fetch FantasyCalc values at several league sizes (1QB + SF) and write one
+    row per player: sleeper_id, value_{n}, sf_value_{n} for each size.
+
+    This is the market source for the value model's league-size curve — the ratio
+    FC@n / FC@10 (per player) is how a player's value scales with league size,
+    derived from FantasyCalc's own trade-market values rather than the old engine.
+    """
+    out_csv = Path(out_csv)
+    per: Dict[str, dict] = {}
+
+    for n in sizes:
+        for num_qbs, prefix in ((1, "value"), (2, "sf_value")):
+            try:
+                data = fetch_fantasycalc_api_values(
+                    is_dynasty=is_dynasty, num_qbs=num_qbs, num_teams=n, ppr=ppr)
+            except Exception as e:
+                print(f"[FC size] fetch failed numQbs={num_qbs} numTeams={n}: {e}")
+                continue
+            for entry in data:
+                sid = (entry.get("player") or {}).get("sleeperId")
+                val = entry.get("value")
+                if sid is None or val is None:
+                    continue
+                per.setdefault(str(sid), {})[f"{prefix}_{n}"] = val
+
+    fieldnames = ["sleeper_id"]
+    for n in sizes:
+        fieldnames += [f"value_{n}", f"sf_value_{n}"]
+    print(f"[FC size] Writing {len(per)} players × {len(sizes)} sizes to {out_csv}")
+    with out_csv.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for sid, cols in per.items():
+            row = {"sleeper_id": sid}
+            row.update({k: cols.get(k) for k in fieldnames if k != "sleeper_id"})
+            writer.writerow(row)
+    return len(per)
+
+
+def load_fantasycalc_size_values(
+        csv_path: Path = FANTASYCALC_SIZE_VALUES_PATH,
+) -> Optional[List[dict]]:
+    """Load the per-league-size FantasyCalc CSV, or None if it doesn't exist."""
+    csv_path = Path(csv_path)
+    if not csv_path.exists():
+        return None
+    with csv_path.open("r", newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
 def download_dynastyprocess_values_csv(
         out_csv: Path = path_dynastyprocess_values(),
 ) -> None:
@@ -244,6 +307,13 @@ def scrape_all_vendor_values(
         print(f"[external_values] FC SF: {len(fc_sf_data)} players saved.")
     except Exception as _e:
         print(f"[external_values] FC SF fetch failed (non-fatal): {_e}")
+
+    print("[external_values] Fetching FantasyCalc per-league-size values (8/10/12/14, 1QB+SF)…")
+    try:
+        n_size = write_fantasycalc_size_values(is_dynasty=is_dynasty, ppr=ppr)
+        print(f"[external_values] FC size values: {n_size} players saved.")
+    except Exception as _e:
+        print(f"[external_values] FC size-values fetch failed (non-fatal): {_e}")
 
     print("[external_values] Downloading DynastyProcess values.csv…")
     download_dynastyprocess_values_csv(out_csv=path_dynastyprocess_values())
