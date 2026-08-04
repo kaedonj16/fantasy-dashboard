@@ -9428,6 +9428,36 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             leagueSwitcher.appendChild(option);
           });
+
+          // Prewarm the OTHER leagues' server-side context on idle so switching
+          // to one renders without the cold Sleeper fetch (build_league_context
+          // is the dominant switch latency). Sequential + throttled so we never
+          // hammer the API; same-season leagues first (most likely to switch to),
+          // current league skipped, and capped.
+          try {
+            const others = data.leagues.filter(
+              l => l.league_id && l.league_id !== currentLeagueId
+            );
+            others.sort((a, b) =>
+              (String(b.season) === String(currentSeason)) -
+              (String(a.season) === String(currentSeason))
+            );
+            const warmList = others.slice(0, 6);
+            let wi = 0;
+            const warmNext = () => {
+              if (wi >= warmList.length) return;
+              const l = warmList[wi++];
+              const season = l.season || currentSeason;
+              fetch('/api/prewarm-league?platform=' + encodeURIComponent(currentPlatform) +
+                    '&season=' + encodeURIComponent(season) +
+                    '&league_id=' + encodeURIComponent(l.league_id),
+                    { credentials: 'same-origin' })
+                .catch(() => {})
+                .finally(() => setTimeout(warmNext, 400));
+            };
+            if ('requestIdleCallback' in window) requestIdleCallback(warmNext, { timeout: 3000 });
+            else setTimeout(warmNext, 1500);
+          } catch (_) { /* prewarm is best-effort */ }
         } else {
           const wrapper = leagueSwitcher.closest('.league-switcher-wrapper');
           if (wrapper) wrapper.style.display = 'none';

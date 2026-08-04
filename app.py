@@ -9857,6 +9857,39 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
         return ctx
 
 
+@app.route("/api/prewarm-league")
+@limiter.limit("60 per minute")
+def api_prewarm_league():
+    """Warm a league's context cache so a later switch to it renders without the
+    cold Sleeper fetch (build_league_context is the dominant switch latency).
+
+    The league switcher calls this in the background for the viewer's other
+    leagues after a page loads. It only builds the shared context that any page
+    render for that league would build anyway — no per-viewer data is returned
+    (just ok/cached), so it's safe to call speculatively. Returns immediately
+    when the context is already warm.
+    """
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    league_id = (request.args.get("league_id") or "").strip()
+    try:
+        season = int(request.args.get("season") or datetime.now().year)
+    except (TypeError, ValueError):
+        season = datetime.now().year
+    if not league_id:
+        return jsonify({"ok": False, "error": "league_id required"}), 400
+
+    key = _cache_key(platform, season, league_id)
+    entry = DASHBOARD_CACHE.get(key)
+    if entry and (time.time() - entry.get("ts", 0) <= CACHE_TTL):
+        return jsonify({"ok": True, "cached": True})
+    try:
+        get_league_ctx_from_cache(platform, league_id, season)
+    except Exception:
+        logger.debug("prewarm-league failed", exc_info=True)
+        return jsonify({"ok": False}), 200
+    return jsonify({"ok": True, "cached": False})
+
+
 # /api/trade-count extracted to routes/misc_api_bp.py
 
 

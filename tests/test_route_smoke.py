@@ -46,3 +46,11 @@ def test_public_route_renders(offline_client, path):
 def test_league_route_renders(offline_client, path):
     r = offline_client.get(path)
     assert r.status_code == 200, f"{path} -> {r.status_code}"
+
+
+def test_prewarm_league_requires_league_id(offline_client):
+    # The switcher's background prewarm endpoint must exist and reject a call
+    # with no league_id (rather than 404/500), so the route stays wired up.
+    r = offline_client.get("/api/prewarm-league")
+    assert r.status_code == 400, r.status_code
+    assert r.get_json().get("ok") is False
