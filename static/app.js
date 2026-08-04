@@ -11242,14 +11242,24 @@ function pmPrefetchTabs() {
 
 // ── Breakout tab HTML builder (returns HTML string, no DOM side effects) ─────
 function _buildBkTabHTML(data, scoreColor) {
-  const score = parseFloat(data.breakout_opportunity_score || 0);
-  const scoreStr = score.toFixed(1);
-  if (!scoreColor) {
-    scoreColor = '#10b981';
-    if (score < 50) scoreColor = '#3b82f6';
-    if (score < 40) scoreColor = '#f59e0b';
-    if (score < 30) scoreColor = '#6b7280';
+  // Breakout probability is now the single headline number: the model's predicted
+  // chance this player breaks out. The old 0-100 "score" and separate "hit
+  // probability" collapsed into this one honest likelihood (no player is ever
+  // "100" — a guaranteed breakout doesn't exist).
+  const prob    = data.hit_probability != null ? parseFloat(data.hit_probability) : null;
+  const probPct = prob != null ? Math.round(prob * 100) : null;
+  // Tier + color from probability. Cutoffs match the candidate distribution:
+  // realistic top-outs are ~50-60%, so Elite starts at 45%.
+  let tier = 'Low', probColor = '#6b7280';
+  if (prob != null) {
+    if (prob >= 0.45)      { tier = 'Elite';    probColor = '#10b981'; }
+    else if (prob >= 0.30) { tier = 'High';     probColor = '#3b82f6'; }
+    else if (prob >= 0.18) { tier = 'Moderate'; probColor = '#f59e0b'; }
+    else                   { tier = 'Low';      probColor = '#6b7280'; }
   }
+  // Drive the whole modal's accent off the probability so the PPG tile, headline
+  // and bars agree. Fall back to the passed color only when there's no probability.
+  scoreColor = prob != null ? probColor : (scoreColor || '#3b82f6');
 
   const reasons = (data.key_reasons || '').split('\n')
     .map(r => r.replace(/^[•\-]\s*/, '').trim())
@@ -11306,11 +11316,11 @@ function _buildBkTabHTML(data, scoreColor) {
     };
   }
 
-  const hitProb = data.hit_probability != null
-    ? Math.round(parseFloat(data.hit_probability) * 100) + '%'
-    : null;
+  const hitProb = probPct != null ? probPct + '%' : null;
+  // Breakout rank among this season's candidates: "TE #2 · #14 overall".
+  const rank = data.breakout_rank || null;
 
-  // ── Hero: 2-column layout - PPG Range left, Score + Hit Prob stacked right ─
+  // ── Hero: 2-column layout - PPG Range left, Probability + Rank stacked right ─
   // Fixed 2-col avoids the orphaned-score problem on mobile (3-item grids wrap).
   let html = `<div style="display:grid;grid-template-columns:1.5fr 1fr;gap:8px;margin-bottom:6px;align-items:stretch;">`;
 
@@ -11334,22 +11344,26 @@ function _buildBkTabHTML(data, scoreColor) {
   } else {
     html += `
       <div class="pm-hero-stat" style="background:${scoreColor}1a;border-color:${scoreColor}33;">
-        <div class="pm-hero-label" style="color:${scoreColor};">Breakout Score</div>
-        <div class="pm-hero-val" style="color:${scoreColor};">${scoreStr}</div>
+        <div class="pm-hero-label" style="color:${scoreColor};">Breakout Probability</div>
+        <div class="pm-hero-val" style="color:${scoreColor};">${hitProb || '—'}</div>
       </div>`;
   }
 
-  // Right column: Score on top, Hit Prob below (or just Score if no hit prob)
+  // Right column: Breakout Probability headline, Rank below (single honest number —
+  // no separate "score", since the score WAS the probability).
   html += `<div style="display:flex;flex-direction:column;gap:8px;">
     <div class="pm-hero-stat">
-      <div class="pm-hero-label">Score</div>
-      <div class="pm-hero-val" style="color:${scoreColor};">${scoreStr}</div>
+      <div class="pm-hero-label">Breakout Probability</div>
+      <div class="pm-hero-val" style="color:${scoreColor};">${hitProb || '—'}</div>
+      ${prob != null ? `<div style="font-size:11px;font-weight:700;color:${scoreColor};text-transform:uppercase;letter-spacing:0.03em;margin-top:1px;">${tier}</div>` : ''}
     </div>`;
-  if (hitProb) {
+  if (rank && rank.overall) {
+    const posLabel = rank.position && rank.pos ? `${rank.position} #${rank.pos}` : null;
     html += `
     <div class="pm-hero-stat">
-      <div class="pm-hero-label">Hit Probability</div>
-      <div class="pm-hero-val" style="color:${scoreColor};">${hitProb}</div>
+      <div class="pm-hero-label">Breakout Rank</div>
+      <div class="pm-hero-val" style="color:${scoreColor};">${posLabel || ('#' + rank.overall)}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:1px;">#${rank.overall} of ${rank.overall_total} overall</div>
     </div>`;
   }
   html += `</div></div>`;
@@ -11389,27 +11403,60 @@ function _buildBkTabHTML(data, scoreColor) {
     { label: 'Role Trajectory', val: data.role_trajectory_score,     color: null      },
     { label: 'Confidence',      val: data.confidence_score,          color: '#6b7280' },
   ];
+  // Contribution view: what each component added to / subtracted from the
+  // probability (coef × z-score from the fitted model). Present only once the
+  // model is committed; otherwise we fall back to the raw component bars.
+  const contribs = Array.isArray(data.hit_contributions) && data.hit_contributions.length
+    ? data.hit_contributions.slice().sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution))
+    : null;
 
   html += `<div class='pm-two-column'>`;
 
   // ── Component breakdown (left on desktop, below on mobile) ─────────────────
   html += `<div class='pm-left-column pm-bk-comp-col'>`;
   html += `<hr class="pm-section-divider">`;
-  html += `<div class="pm-section-header"><span class="pm-section-label">Component Breakdown</span></div>`;
-  html += '<div class="pm-comp-list-bo">';
-  components.forEach(c => {
-    const v    = parseFloat(c.val || 0);
-    const fill = Math.min(100, Math.max(0, v));
-    const color = c.color || (v >= 60 ? '#10b981' : v >= 35 ? '#3b82f6' : '#f59e0b');
-    const disp = c.suffix ? v.toFixed(0) + c.suffix : v.toFixed(1);
-    html += `
-      <div class="pm-comp-row">
-        <span class="pm-comp-label">${c.label}</span>
-        <div class="pm-comp-bar-wrap"><div class="pm-comp-bar" style="width:${fill.toFixed(1)}%;background:${color};"></div></div>
-        <span class="pm-comp-val" style="color:${color};">${disp}</span>
-      </div>`;
-  });
-  html += '</div></div>';
+  if (contribs) {
+    const maxAbs = Math.max(0.0001, ...contribs.map(c => Math.abs(c.contribution)));
+    const up = '#10b981', down = '#ef4444';
+    html += `<div class="pm-section-header"><span class="pm-section-label">What's Driving It</span></div>`;
+    html += `<div style="font-size:11px;color:var(--text-muted);margin:-2px 0 6px;">Each component's push on the breakout probability vs an average candidate.</div>`;
+    html += '<div class="pm-comp-list-bo">';
+    contribs.forEach(c => {
+      const val = parseFloat(c.contribution || 0);
+      const w   = Math.min(50, Math.abs(val) / maxAbs * 50);  // half-width diverging bar
+      const pos = val >= 0;
+      const color = pos ? up : down;
+      const barStyle = pos
+        ? `left:50%;width:${w.toFixed(1)}%;background:${color};`
+        : `left:${(50 - w).toFixed(1)}%;width:${w.toFixed(1)}%;background:${color};`;
+      html += `
+        <div class="pm-comp-row" title="Raw score: ${Number(c.value).toFixed(1)}">
+          <span class="pm-comp-label">${c.label}</span>
+          <div class="pm-comp-bar-wrap" style="position:relative;">
+            <div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--surface-2,rgba(255,255,255,0.15));"></div>
+            <div class="pm-comp-bar" style="position:absolute;top:0;bottom:0;border-radius:3px;${barStyle}"></div>
+          </div>
+          <span class="pm-comp-val" style="color:${color};">${pos ? '+' : '−'}${Math.abs(val).toFixed(2)}</span>
+        </div>`;
+    });
+    html += '</div></div>';
+  } else {
+    html += `<div class="pm-section-header"><span class="pm-section-label">Component Breakdown</span></div>`;
+    html += '<div class="pm-comp-list-bo">';
+    components.forEach(c => {
+      const v    = parseFloat(c.val || 0);
+      const fill = Math.min(100, Math.max(0, v));
+      const color = c.color || (v >= 60 ? '#10b981' : v >= 35 ? '#3b82f6' : '#f59e0b');
+      const disp = c.suffix ? v.toFixed(0) + c.suffix : v.toFixed(1);
+      html += `
+        <div class="pm-comp-row">
+          <span class="pm-comp-label">${c.label}</span>
+          <div class="pm-comp-bar-wrap"><div class="pm-comp-bar" style="width:${fill.toFixed(1)}%;background:${color};"></div></div>
+          <span class="pm-comp-val" style="color:${color};">${disp}</span>
+        </div>`;
+    });
+    html += '</div></div>';
+  }
 
   // ── Key factors (right on desktop, above on mobile) ────────────────────────
   if (reasons.length || roleFitItem) {

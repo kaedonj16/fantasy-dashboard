@@ -140,8 +140,23 @@ def _estimate_season_ppr(
 # scores), produced by train_hit_probability.py. Absent until trained + committed,
 # in which case calculate_hit_probability falls back to the empirical curve below.
 _HIT_MODEL_PATH = os.path.join(os.path.dirname(__file__), "hit_probability_model.json")
-_HIT_MODEL_FEATURES = ("breakout_score", "readiness_score", "confidence_score",
-                       "opportunity_score", "role_trajectory_score")
+# The model is fit on the six RAW component scores (not the aggregate breakout_score),
+# so each feature maps 1:1 to a component-breakdown bar and there's no collinearity
+# between the aggregate and its own parts. Order must match the trainer + model JSON.
+_HIT_MODEL_FEATURES = ("opportunity_opened_score", "competition_removed_score",
+                       "team_environment_score", "player_readiness_score",
+                       "role_trajectory_score", "confidence_score")
+
+# Human labels for the component bars, in feature order — used by the contribution
+# view so the UI and the model speak the same language.
+_HIT_FEATURE_LABELS = {
+    "opportunity_opened_score": "Opportunity",
+    "competition_removed_score": "Competition",
+    "team_environment_score": "Team Env.",
+    "player_readiness_score": "Readiness",
+    "role_trajectory_score": "Role Trajectory",
+    "confidence_score": "Confidence",
+}
 
 
 @functools.lru_cache(maxsize=1)
@@ -175,6 +190,53 @@ def _hit_prob_from_model(model, pos: str, feats: dict) -> Optional[float]:
         return None
 
 
+def _model_feats(opportunity_score, competition_removed_score, team_environment_score,
+                 readiness_score, role_trajectory_score, confidence_score) -> dict:
+    """Assemble the six raw component scores into the model's feature dict."""
+    return {
+        "opportunity_opened_score": opportunity_score,
+        "competition_removed_score": competition_removed_score,
+        "team_environment_score": team_environment_score,
+        "player_readiness_score": readiness_score,
+        "role_trajectory_score": role_trajectory_score,
+        "confidence_score": confidence_score,
+    }
+
+
+def hit_probability_contributions(pos: str, feats: dict) -> Optional[dict]:
+    """Per-component contribution to the fitted logit (coef * z-score) for `pos`,
+    so the UI can show WHAT drove the probability: positive pushes it up, negative
+    down, ~0 = league-average on that component. Returns an ordered list of
+    {feature, label, value, contribution} or None (no model / curve position)."""
+    model = _load_hit_model()
+    if model is None:
+        return None
+    pos = (pos or "WR").upper()
+    if pos in (model.get("curve_positions") or []):
+        return None
+    blk = model.get("positions", {}).get(pos) or model.get("positions", {}).get("_global")
+    if not blk:
+        return None
+    order = model.get("features") or list(_HIT_MODEL_FEATURES)
+    mean, std, coef = blk.get("mean"), blk.get("std"), blk.get("coef")
+    if not (mean and std and coef):
+        return None
+    out = []
+    try:
+        for i, name in enumerate(order):
+            denom = float(std[i]) or 1.0
+            contrib = float(coef[i]) * ((float(feats.get(name, 0.0)) - float(mean[i])) / denom)
+            out.append({
+                "feature": name,
+                "label": _HIT_FEATURE_LABELS.get(name, name),
+                "value": round(float(feats.get(name, 0.0)), 1),
+                "contribution": round(contrib, 4),
+            })
+    except (IndexError, TypeError, ValueError):
+        return None
+    return out
+
+
 def calculate_hit_probability(
     breakout_score: float,
     readiness_score: float,
@@ -182,13 +244,17 @@ def calculate_hit_probability(
     position: str,
     opportunity_score: float = 0.0,
     role_trajectory_score: float = 0.0,
+    competition_removed_score: float = 0.0,
+    team_environment_score: float = 0.0,
 ) -> float:
     """
-    P(player finishes top-12 (top-6 QB/TE) at position next season).
+    P(player breaks out at position next season).
 
-    Prefers the fitted per-position logistic (hit_probability_model.json) when it's
-    been trained + committed; otherwise falls back to the piecewise-linear empirical
-    curve below (2022-2024 backtest) plus its opportunity/trajectory modifiers.
+    Prefers the fitted per-position logistic (hit_probability_model.json) — now fit
+    on the six RAW component scores — when it's been trained + committed; otherwise
+    falls back to the piecewise-linear empirical curve below (2022-2024 backtest)
+    plus its opportunity/trajectory modifiers. The curve still keys off the aggregate
+    breakout_score, so that argument stays required for the fallback path.
     """
     pos = (position or "WR").upper()
 
@@ -197,13 +263,9 @@ def calculate_hit_probability(
     # through to the empirical curve rather than borrow the skill-heavy _global block.
     _model = _load_hit_model()
     if _model is not None and pos not in (_model.get("curve_positions") or []):
-        _p = _hit_prob_from_model(_model, pos, {
-            "breakout_score": breakout_score,
-            "readiness_score": readiness_score,
-            "confidence_score": confidence_score,
-            "opportunity_score": opportunity_score,
-            "role_trajectory_score": role_trajectory_score,
-        })
+        _p = _hit_prob_from_model(_model, pos, _model_feats(
+            opportunity_score, competition_removed_score, team_environment_score,
+            readiness_score, role_trajectory_score, confidence_score))
         if _p is not None:
             return round(min(max(_p, 0.01), 0.95), 3)
 
@@ -323,6 +385,8 @@ def compute_multitask_predictions(
     age: Optional[float],
     competition_threat: float = 0.0,
     opportunity_score: float = 0.0,
+    competition_removed_score: float = 0.0,
+    team_environment_score: float = 0.0,
 ) -> dict:
     """
     Compute all three multitask predictions in one call.
@@ -333,6 +397,8 @@ def compute_multitask_predictions(
         breakout_score, readiness_score, confidence_score, position,
         opportunity_score=opportunity_score,
         role_trajectory_score=role_trajectory_score,
+        competition_removed_score=competition_removed_score,
+        team_environment_score=team_environment_score,
     )
     cum_ppr = calculate_cumulative_ppr(
         position, projected_usage, efficiency_metrics, prev_usage, readiness_score, age

@@ -432,6 +432,9 @@ class BreakoutEngine:
                 efficiency_metrics=efficiency_metrics,
                 prev_usage=prev_usage,
                 age=player_metadata.get('age'),
+                opportunity_score=component_scores['opportunity_opened'],
+                competition_removed_score=component_scores['competition_removed'],
+                team_environment_score=component_scores['team_environment'],
             )
 
         # Persist projection values so the API and UI can derive PPG ranges
