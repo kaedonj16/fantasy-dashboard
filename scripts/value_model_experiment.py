@@ -84,6 +84,27 @@ def load_dp(path: Path) -> pd.DataFrame:
     return out
 
 
+def load_fc_sf(path: Path) -> pd.DataFrame:
+    """FantasyCalc Superflex (numQbs=2) values, keyed by sleeper_id."""
+    if not path.exists():
+        return pd.DataFrame(columns=["sleeper_id", "fc_sf_value"])
+    df = pd.read_csv(path)
+    out = df[["sleeper_id", "value"]].copy().rename(columns={"value": "fc_sf_value"})
+    out["sleeper_id"] = (out["sleeper_id"].astype(str)
+                         .str.replace(r"\.0$", "", regex=True).str.strip())
+    return out.drop_duplicates("sleeper_id")
+
+
+def load_live_board(path: Path) -> dict[str, dict]:
+    """The current live board (model_values.json), keyed by sleeper id. This is
+    the real 'with engine' reference for the drop-engine preview."""
+    if not path.exists():
+        return {}
+    data = json.loads(path.read_text())
+    rows = data if isinstance(data, list) else list(data.values())
+    return {str(r.get("id")): r for r in rows if isinstance(r, dict) and r.get("id") is not None}
+
+
 def load_engine(path: Path) -> dict[str, float]:
     """engine_value_10 per sleeper_id, or {} when the CSV isn't present."""
     if not path.exists():
@@ -249,6 +270,8 @@ def main():
                     help="output folder (created if missing); never data/ or the DB")
     ap.add_argument("--fit", default="", choices=["", "engine", "wls", "dp"],
                     help="fit per-position weights to this target (default: keep production weights)")
+    ap.add_argument("--drop-engine", action="store_true",
+                    help="preview REMOVING the engine from the board (1QB + SF + size columns)")
     ap.add_argument("--data", default=str(DATA_DIR), help="data dir with the vendor CSVs")
     args = ap.parse_args()
 
@@ -274,6 +297,13 @@ def main():
     have_engine = bool(engine)
     print(f"[experiment] players={len(players)}  FC={players['fc_value'].gt(0).sum()}  "
           f"DP={players['dp_value_1qb'].gt(0).sum()}  engine={'yes' if have_engine else 'MISSING'}")
+
+    # ---- Drop-engine preview (separate, self-contained report) ------------
+    if args.drop_engine:
+        fc_sf = load_fc_sf(data / "fantasycalc_sf_api_values.csv")
+        live = load_live_board(data / "model_values.json")
+        preview_drop_engine(players, engine, fc_sf, live, out)
+        return
 
     # ---- Optional weight fitting ------------------------------------------
     fitted = {}
@@ -367,6 +397,153 @@ def main():
           f"winsor={topheavy['experimental']}  rank={topheavy['rank_variant']}")
     print(f"[experiment] biggest positional-rank mover: {top_movers.iloc[0]['name']} "
           f"({top_movers.iloc[0]['position']}) {int(top_movers.iloc[0]['posrank_change']):+d} spots")
+
+
+def _vendor_sf_board(players: pd.DataFrame, fc_sf: pd.DataFrame) -> pd.Series:
+    """The SF board WITHOUT the engine: vendor SF blend only (FC-SF 50%, DP-2QB
+    30%, renormalized since the 20% SF-engine term is gone), min-max normalized —
+    mirrors production's sf_vendor_values path."""
+    df = players.merge(fc_sf, on="sleeper_id", how="left")
+    fc_sf_norm = minmax_norm(df["fc_sf_value"].fillna(0.0))
+    dp2_norm = minmax_norm(df["value_2qb"].fillna(0.0))
+    W_FCSF, W_DP2 = 0.50, 0.30
+    out = []
+    for i in range(len(df)):
+        wsum = wtot = 0.0
+        if fc_sf_norm.iloc[i] > 0:
+            wsum += W_FCSF * fc_sf_norm.iloc[i]; wtot += W_FCSF
+        if dp2_norm.iloc[i] > 0:
+            wsum += W_DP2 * dp2_norm.iloc[i]; wtot += W_DP2
+        out.append(round(wsum / wtot, 1) if wtot > 0 else 0.0)
+    return pd.Series(out, index=df.index)
+
+
+def preview_drop_engine(players, engine, fc_sf, live, out: Path):
+    """Preview removing the engine from the board. Compares 1QB + SF boards
+    with-vs-without the engine and quantifies the league-size collapse.
+
+    'With engine' side: the clean production blend when engine_values.csv is
+    present; otherwise the actual live board (model_values.json), clearly noted."""
+    have_engine = bool(engine)
+    have_live = bool(live)
+
+    # ---- 1QB: with vs without engine --------------------------------------
+    without_1qb = build_board(players, {}, minmax_norm, {})["board_value"]
+    df = players[["sleeper_id", "name", "position", "team"]].copy()
+    df["without_engine_1qb"] = without_1qb.values
+    if have_engine:
+        with_1qb = build_board(players, engine, minmax_norm, {})["board_value"]
+        df["with_engine_1qb"] = with_1qb.values
+        with_label = "clean production blend (FC + engine + DP)"
+    elif have_live:
+        df["with_engine_1qb"] = df["sleeper_id"].map(
+            lambda p: float((live.get(p) or {}).get("value") or 0.0))
+        with_label = "current LIVE board (model_values.json — incl. engine + WLS/overlays)"
+    else:
+        df["with_engine_1qb"] = np.nan
+        with_label = "unavailable"
+    df["delta_1qb"] = (df["without_engine_1qb"] - df["with_engine_1qb"]).round(1)
+
+    # ---- SF: with vs without engine ---------------------------------------
+    df["without_engine_sf"] = _vendor_sf_board(players, fc_sf).values
+    if have_live:
+        df["with_engine_sf"] = df["sleeper_id"].map(
+            lambda p: float((live.get(p) or {}).get("sf_value") or 0.0))
+    else:
+        df["with_engine_sf"] = np.nan
+    df["delta_sf"] = (df["without_engine_sf"] - df["with_engine_sf"]).round(1)
+
+    df = df[(df["with_engine_1qb"] > 0) | (df["without_engine_1qb"] > 0)].copy()
+    df.sort_values("with_engine_1qb", ascending=False).to_csv(out / "drop_engine_board.csv", index=False)
+
+    # ---- League-size collapse (structurally certain) ----------------------
+    # Without the engine, value_{8,10,12,14} all equal value_10 (ratio → 1.0).
+    # Measure how much they currently spread on the live board — that spread is
+    # exactly what you'd lose.
+    size_rows = []
+    if have_live:
+        for pid, r in live.items():
+            base = float(r.get("value") or 0.0)
+            if base <= 0:
+                continue
+            sizes = [float(r.get(k) or 0.0) for k in ("value_8", "value", "value_12", "value_14")]
+            sizes = [s for s in sizes if s > 0]
+            if len(sizes) >= 2:
+                size_rows.append({
+                    "name": r.get("name"), "position": r.get("position"),
+                    "value_10": base, "size_spread": round(max(sizes) - min(sizes), 1),
+                    "spread_pct": round((max(sizes) - min(sizes)) / base * 100, 1),
+                })
+    size_df = pd.DataFrame(size_rows)
+    if not size_df.empty:
+        size_df.sort_values("size_spread", ascending=False).to_csv(
+            out / "drop_engine_size_collapse.csv", index=False)
+
+    # ---- Report -----------------------------------------------------------
+    md = ["# Drop-the-engine preview — read-only\n",
+          "_No live data was modified. Shows what removing the engine from the board would do._\n"]
+    md.append(f"**'With engine' reference:** {with_label}.\n")
+    if not have_engine and have_live:
+        md.append("> ⚠️ `engine_values.csv` isn't in this environment, so the 'with engine' side is "
+                  "your **live** board (which also carries WLS + guardrail overlays). The 1QB/SF "
+                  "deltas below therefore mix 'engine removal' with those overlays — directional, "
+                  "not exact. Run this where `engine_values.csv` exists for a clean engine-only diff. "
+                  "**The league-size collapse below is exact regardless.**\n")
+
+    # 1QB movers
+    up = df.reindex(df["delta_1qb"].sort_values(ascending=False).index).head(12)
+    dn = df.reindex(df["delta_1qb"].sort_values().index).head(12)
+    md.append("## 1QB board: who rises / falls without the engine\n")
+    md.append("_Positive = the engine was holding them DOWN (removing it lifts them — watch for "
+              "hype players with thin real usage). Negative = the engine was propping them up._\n")
+    md.append("| Rises most | Pos | with | without | Δ |")
+    md.append("|---|---|--:|--:|--:|")
+    for _, r in up.iterrows():
+        md.append(f"| {r['name']} | {r['position']} | {r['with_engine_1qb']:.0f} | "
+                  f"{r['without_engine_1qb']:.0f} | {r['delta_1qb']:+.0f} |")
+    md.append("\n| Falls most | Pos | with | without | Δ |")
+    md.append("|---|---|--:|--:|--:|")
+    for _, r in dn.iterrows():
+        md.append(f"| {r['name']} | {r['position']} | {r['with_engine_1qb']:.0f} | "
+                  f"{r['without_engine_1qb']:.0f} | {r['delta_1qb']:+.0f} |")
+
+    # SF flip
+    if have_live:
+        sf_mv = df.reindex(df["delta_sf"].abs().sort_values(ascending=False).index).head(12)
+        md.append("\n## Superflex board: the engine is the PRIMARY source today\n")
+        md.append("_Without it, SF flips entirely to the vendor SF blend (FC-SF + DP-2QB). Biggest shifts:_\n")
+        md.append("| Player | Pos | SF with | SF without | Δ |")
+        md.append("|---|---|--:|--:|--:|")
+        for _, r in sf_mv.iterrows():
+            md.append(f"| {r['name']} | {r['position']} | {r['with_engine_sf']:.0f} | "
+                      f"{r['without_engine_sf']:.0f} | {r['delta_sf']:+.0f} |")
+
+    # Size collapse
+    md.append("\n## League-size columns collapse (exact)\n")
+    if not size_df.empty:
+        spread_only = size_df[size_df["size_spread"] > 0]
+        n_spread = len(spread_only)
+        med_pct = spread_only["spread_pct"].median() if n_spread else 0.0
+        md.append(f"- Players whose 8/10/12/14-team values currently differ: **{n_spread}** "
+                  f"of {len(size_df)} — **all** of these flatten to a single value without the engine "
+                  "(mostly your premium players; low-value players are already flat).")
+        md.append(f"- Among those, median size differentiation lost: **{med_pct:.0f}%** of the player's "
+                  "value (up to ~17% for the top players below).")
+        md.append("- Biggest size-differentiation you'd lose:\n")
+        md.append("| Player | Pos | value_10 | size spread | % |")
+        md.append("|---|---|--:|--:|--:|")
+        for _, r in size_df.sort_values("size_spread", ascending=False).head(10).iterrows():
+            md.append(f"| {r['name']} | {r['position']} | {r['value_10']:.0f} | "
+                      f"{r['size_spread']:.0f} | {r['spread_pct']:.0f}% |")
+    else:
+        md.append("_(no live board available to measure size spread)_")
+    md.append("\n## Files\n- `drop_engine_board.csv` — 1QB + SF, with vs without engine, per player")
+    md.append("- `drop_engine_size_collapse.csv` — the per-player size differentiation that would be lost")
+    (out / "DROP_ENGINE_REPORT.md").write_text("\n".join(md), encoding="utf-8")
+    print(f"[drop-engine] wrote preview to {out}/DROP_ENGINE_REPORT.md")
+    if not size_df.empty:
+        print(f"[drop-engine] size columns collapse for "
+              f"{int((size_df['size_spread'] > 0).sum())} players")
 
 
 def _market_diagnostic(cmp: pd.DataFrame, out: Path) -> str:
