@@ -27,7 +27,6 @@ from utils.coerce import safe_int as _safe_int
 
 DYNASTYPROCESS_VALUES_PATH = DATA_DIR / "dynastyprocess_values.csv"
 FANTASYCALC_VALUES_PATH    = DATA_DIR / "fantasycalc_api_values.csv"
-ENGINE_VALUES_PATH         = DATA_DIR / "engine_values.csv"
 
 # Cache file that persists the smoothed 1QB normalization scale across runs.
 # NOTE: Render's web/cron services run on an ephemeral filesystem (no persistent
@@ -851,51 +850,40 @@ def rewrite_value_table_with_model() -> Path:
     except Exception as _e:
         print(f"[rewrite_value_table] FC SF load failed: {_e}")
 
-    # Build Superflex vendor value lookup using sf_engine_value + value_2qb
+    # Build Superflex vendor value lookup from FC SF + DP 2QB (market sources only)
     sf_vendor_values: dict[str, float] = {}
 
-    # Load engine_values CSV (contains both 1QB + SF values for all league sizes)
-    engine_values_path = DATA_DIR / "engine_values.csv"
-    sf_engine_map: dict[str, float] = {}
-    # Per-league-size engine maps: {size: {pid: value}}
-    engine_size_map: dict[int, dict[str, float]] = {}
-    sf_engine_size_map: dict[int, dict[str, float]] = {}
+    # Per-league-size FantasyCalc values drive the market-based league-size curve
+    # (value_n = base * FC@n / FC@10), replacing the retired usage engine. These
+    # come from data/fantasycalc_size_values.csv (written by the vendor scrape).
+    # {size: {sleeper_id: fc_value_at_that_size}} for 1QB and SF.
     LEAGUE_SIZES = [8, 10, 12, 14]
-    for n in LEAGUE_SIZES:
-        engine_size_map[n] = {}
-        sf_engine_size_map[n] = {}
-    if engine_values_path.exists():
-        try:
-            engine_df = pd.read_csv(engine_values_path)
-            for _, row in engine_df.iterrows():
-                pid = str(row.get("player_id"))
-                if not pid:
+    fc_size_map: dict[int, dict[str, float]] = {n: {} for n in LEAGUE_SIZES}
+    fc_sf_size_map: dict[int, dict[str, float]] = {n: {} for n in LEAGUE_SIZES}
+    try:
+        from data_building.external_data.external_values_scraper import (
+            FANTASYCALC_SIZE_VALUES_PATH as _FC_SIZE_PATH,
+        )
+        if _FC_SIZE_PATH.exists():
+            _fc_size_df = pd.read_csv(_FC_SIZE_PATH)
+            for _, row in _fc_size_df.iterrows():
+                pid = str(row.get("sleeper_id"))
+                if not pid or pid == "nan":
                     continue
-                sf_eng_val = row.get("sf_engine_value")
-                if pd.notna(sf_eng_val):
-                    sf_engine_map[pid] = float(sf_eng_val)
                 for n in LEAGUE_SIZES:
-                    col_1qb = f"engine_value_{n}"
-                    col_sf = f"sf_engine_value_{n}"
-                    if col_1qb in engine_df.columns and pd.notna(row.get(col_1qb)):
-                        engine_size_map[n][pid] = float(row[col_1qb])
-                    if col_sf in engine_df.columns and pd.notna(row.get(col_sf)):
-                        sf_engine_size_map[n][pid] = float(row[col_sf])
-        except Exception as e:
-            print(f"[ERROR] Failed to load engine_values: {e}")
-
-    # Load base 10-team engine values for blending with FC vendor values (1QB)
-    engine_1qb_map: dict[str, float] = {}
-    if engine_values_path.exists():
-        try:
-            engine_df_base = pd.read_csv(engine_values_path)
-            for _, row in engine_df_base.iterrows():
-                pid = str(row.get("player_id"))
-                eng_val = row.get("engine_value_10")
-                if pid and pd.notna(eng_val):
-                    engine_1qb_map[pid] = float(eng_val)
-        except Exception as e:
-            print(f"[ERROR] Failed to load engine_1qb_map: {e}")
+                    v1 = row.get(f"value_{n}")
+                    vsf = row.get(f"sf_value_{n}")
+                    if pd.notna(v1) and float(v1) > 0:
+                        fc_size_map[n][pid] = float(v1)
+                    if pd.notna(vsf) and float(vsf) > 0:
+                        fc_sf_size_map[n][pid] = float(vsf)
+            print(f"[rewrite_value_table] Loaded FC size values for "
+                  f"{len(fc_size_map[10])} players (1QB@10)")
+        else:
+            print("[rewrite_value_table] fantasycalc_size_values.csv missing — "
+                  "league-size columns will fall back to the base value (ratio 1.0)")
+    except Exception as e:
+        print(f"[ERROR] Failed to load FantasyCalc size values: {e}")
 
     # Load value_2qb from dynastyprocess (need to match by name+team)
     dp_2qb_map: dict[tuple[str, str], float] = {}  # (name, team) -> value_2qb
@@ -930,8 +918,8 @@ def rewrite_value_table_with_model() -> Path:
     except Exception as e:
         print(f"[ERROR] Failed to load value_2qb from dynastyprocess: {e}")
 
-    # Calculate Superflex vendor values: blend FC SF (50%), DP 2QB (30%), SF Engine (20%).
-    # Min-max normalize DP 2QB to 0-999.9 so it shares the scale of the other sources.
+    # Calculate Superflex vendor values: blend FC SF (50%) + DP 2QB (30%), renormalized.
+    # Min-max normalize DP 2QB to 0-999.9 so it shares the scale of the other source.
     _dp_2qb_vals = [v for v in dp_2qb_map.values() if v > 0]
     dp_2qb_max = max(_dp_2qb_vals) if _dp_2qb_vals else 1.0
     dp_2qb_min = min(_dp_2qb_vals) if _dp_2qb_vals else 0.0
@@ -944,31 +932,27 @@ def rewrite_value_table_with_model() -> Path:
         name = meta.get("name", "").strip()
         team = meta.get("team", "").strip()
 
-        # Use FC SF (numQbs=2) as the vendor signal for SF blending.
+        # Use FC SF (numQbs=2) as the primary vendor signal for SF blending.
         # Falls back to 1QB FC only when SF CSV is unavailable.
         fc_sf_norm = fc_sf_by_sid.get(pid, 0.0)
         fc_for_sf  = fc_sf_norm if fc_sf_norm > 0 else vendor_values.get(pid, 0.0)
-
-        # Get SF engine value
-        sf_eng_val = sf_engine_map.get(pid, 0.0)
 
         # Get DP 2QB value (min-max normalized to 0-999.9)
         dp_2qb_raw = dp_2qb_map.get((name, team), 0.0)
         dp_2qb_norm = ((dp_2qb_raw - dp_2qb_min) / dp_2qb_range * 999.9) if dp_2qb_raw > 0 else 0.0
 
-        # Superflex blend: 50% FC SF, 30% DP 2QB, 20% SF engine.
-        # FC SF (numQbs=2) is now the primary signal — it directly encodes QB scarcity.
-        # Renormalize when a source is missing so values aren't deflated.
-        if fc_for_sf > 0 or sf_eng_val > 0 or dp_2qb_norm > 0:
-            SF_W_VENDOR, SF_W_DP, SF_W_ENGINE = 0.50, 0.30, 0.20
+        # Superflex blend: FC SF (numQbs=2) + DP 2QB, weighted 50/30 and
+        # renormalized over the present sources (the usage engine's former 20% SF
+        # term was removed — SF is now purely market-derived). FC SF directly
+        # encodes QB scarcity, so it stays the primary signal.
+        if fc_for_sf > 0 or dp_2qb_norm > 0:
+            SF_W_VENDOR, SF_W_DP = 0.50, 0.30
             sf_wsum = 0.0
             sf_wtot = 0.0
             if fc_for_sf > 0:
                 sf_wsum += SF_W_VENDOR * fc_for_sf; sf_wtot += SF_W_VENDOR
             if dp_2qb_norm > 0:
                 sf_wsum += SF_W_DP * dp_2qb_norm;   sf_wtot += SF_W_DP
-            if sf_eng_val > 0:
-                sf_wsum += SF_W_ENGINE * sf_eng_val; sf_wtot += SF_W_ENGINE
             sf_value = sf_wsum / sf_wtot if sf_wtot > 0 else 0.0
 
             sf_vendor_values[pid] = sf_value
@@ -1008,26 +992,22 @@ def rewrite_value_table_with_model() -> Path:
         dp_norm = ((dp_val_raw - DP_1QB_MIN) / DP_1QB_RANGE * 999.9) if dp_val_raw > 0 else 0.0
 
         fc_val  = vendor_values.get(pid, 0.0)
-        # DP undervalues TEs vs market consensus; exclude for that position.
-        dp_val  = dp_norm if (dp_norm > 0 and player_position != "TE") else 0.0
-        # Use None to distinguish "no data" (rookie/prospect) from "0 production" (known bad).
-        # Players in the engine table with 0 production should have that zero count against them.
-        eng_val = float(engine_1qb_map[pid]) if pid in engine_1qb_map else None
+        # DP is now included for every position (including TE). What looked like
+        # "DP undervalues TEs" was a min-max normalization artifact that lowers DP
+        # across all positions, plus DP's aggressive age-discounting on veteran TEs;
+        # it's a legitimate second market source, so TEs get it too.
+        dp_val  = dp_norm if dp_norm > 0 else 0.0
 
-        # Fixed weights: 40% vendor (FantasyCalc), 40% engine, 20% DP.
-        # DP and FC are dropped (renormalized) when missing - they may simply not cover a player.
-        # Engine is dropped only when the player has NO engine record (pure prospect with no NFL data).
-        # If a player IS in the engine table with 0 production, that zero is included in the blend
-        # so FC hype can't inflate them past what their usage actually supports.
-        W_VENDOR, W_ENGINE, W_DP = 0.40, 0.40, 0.20
+        # Market-consensus blend: FantasyCalc + DynastyProcess, weighted 2:1 and
+        # renormalized over the present sources (the usage engine's former 40% term
+        # was removed — the board is now purely market-derived). A source is dropped
+        # only when it doesn't cover the player.
+        W_VENDOR, W_DP = 0.40, 0.20
         weighted_sum = 0.0
         total_weight = 0.0
         if fc_val > 0:
             weighted_sum += W_VENDOR * fc_val
             total_weight += W_VENDOR
-        if eng_val is not None:
-            weighted_sum += W_ENGINE * eng_val
-            total_weight += W_ENGINE
         if dp_val > 0:
             weighted_sum += W_DP * dp_val
             total_weight += W_DP
@@ -1035,14 +1015,12 @@ def rewrite_value_table_with_model() -> Path:
         if total_weight > 0:
             final_value = weighted_sum / total_weight
         else:
-            # No vendor (FC/DP) and no engine record for this player — there's no
-            # signal to value them, so leave them at 0 (previously a rarely-used
-            # ML fallback).
+            # Neither market source covers this player — no signal to value them.
             final_value = 0.0
 
         # Confidence-weighted WLS blend (1QB): lean on the trade market in
         # proportion to how much trade history backs this player. Heavy backing →
-        # ~pure WLS; thin/none → keep the vendor/engine blend.
+        # ~pure WLS; thin/none → keep the vendor blend.
         _wls1 = wls_1qb_values.get(pid)
         if _wls1 is not None and _wls1 > 0:
             _b1 = wls_backing.get(pid, 0.0)
@@ -1050,21 +1028,16 @@ def rewrite_value_table_with_model() -> Path:
             final_value = (_conf1 * _wls1 + (1.0 - _conf1) * final_value) if final_value > 0 else _wls1
 
         # Over-market guardrail (1QB). Reuses the same trusted external reads the
-        # blend uses: fc_val (normalized FC) and dp_val (normalized DP, already 0
-        # for TEs which DP misvalues). See data_building/value_guardrails.py.
+        # blend uses: fc_val (normalized FC) and dp_val (normalized DP, now included
+        # for all positions). See data_building/value_guardrails.py.
         if player_position != "PICK":
             final_value = overmarket_capped(
                 final_value, fc_val, dp_val,
                 trigger=_OVERMARKET_TRIGGER, min_gap=_OVERMARKET_MIN_GAP)
 
-        # Calculate Superflex value - use engine values as primary source
-        if pid in sf_engine_map:
-            sf_value = sf_engine_map[pid]
-        elif pid in sf_vendor_values:
-            sf_value = sf_vendor_values[pid]
-        else:
-            # No SF engine value and no SF vendor blend → no SF signal.
-            sf_value = 0.0
+        # Superflex value: the market vendor blend (FC SF + DP 2QB). The usage
+        # engine's former SF-primary role was removed — SF is now purely market-derived.
+        sf_value = sf_vendor_values.get(pid, 0.0)
 
         position = player.get("position")
         # Confidence-weighted WLS blend (SF): same idea as the 1QB blend, using the
@@ -1095,23 +1068,24 @@ def rewrite_value_table_with_model() -> Path:
 
         name = player.get("name")
 
-        # Per-league-size values: scale the blended model value by the ratio
-        # of engine values between the target size and the default 10-team size.
-        # This preserves vendor-consensus anchoring while adjusting for scarcity.
-        eng_base = engine_size_map[10].get(pid) or 0.0
-        sf_eng_base = sf_engine_size_map[10].get(pid) or 0.0
+        # Per-league-size values (market-based curve): scale the blended value by
+        # the ratio of FantasyCalc's own values between the target size and the
+        # default 10-team size. This replaces the retired engine's size ratios with
+        # a pure-market scarcity adjustment (FC computes values per numTeams).
+        fc_base = fc_size_map[10].get(pid) or 0.0
+        sf_fc_base = fc_sf_size_map[10].get(pid) or 0.0
         size_values: dict[str, float] = {}
         sf_size_values: dict[str, float] = {}
         for n in LEAGUE_SIZES:
             if n == 10:
                 continue
-            eng_n = engine_size_map[n].get(pid) or 0.0
-            sf_eng_n = sf_engine_size_map[n].get(pid) or 0.0
-            # A missing size-specific engine value means "no scarcity data," which
+            fc_n = fc_size_map[n].get(pid) or 0.0
+            sf_fc_n = fc_sf_size_map[n].get(pid) or 0.0
+            # A missing size-specific FC value means "no scarcity data," which
             # should leave the player unadjusted (ratio 1.0) — not zero them out.
-            # Guard the numerator too, else eng_n == 0 collapses value_{n} to 0.
-            ratio = (eng_n / eng_base) if (eng_base > 0 and eng_n > 0) else 1.0
-            sf_ratio = (sf_eng_n / sf_eng_base) if (sf_eng_base > 0 and sf_eng_n > 0) else 1.0
+            # Guard the numerator too, else fc_n == 0 collapses value_{n} to 0.
+            ratio = (fc_n / fc_base) if (fc_base > 0 and fc_n > 0) else 1.0
+            sf_ratio = (sf_fc_n / sf_fc_base) if (sf_fc_base > 0 and sf_fc_n > 0) else 1.0
             # No 999.9 cap here — the top-5 anchor below sets the ceiling and lets
             # the very top float above 999.9.
             size_values[f"value_{n}"] = round(float(final_value) * ratio, 1)
