@@ -283,9 +283,12 @@ def _load_usage_season_from_cache(
 
         result[gsis_id] = {
             "gsis_id": gsis_id,
-            "name": r.get("name", ""),
-            "team": r.get("team", ""),
-            "position": r.get("position", ""),
+            # `or ""` (not a .get default) because these keys exist with a null
+            # value for players missing from players_index — a bare default only
+            # fires on absent keys, leaving None to crash the .lower() below.
+            "name": r.get("name") or "",
+            "team": r.get("team") or "",
+            "position": r.get("position") or "",
             "season": season,
             "games": games,
             "targets": targets,
@@ -312,7 +315,7 @@ def _load_usage_season_from_cache(
     # Enrich with intra-season H1/H2 split for trend detection
     split_by_team_name = _load_weekly_split_stats(season)
     for gsis_id, entry in result.items():
-        key = (entry.get("team", ""), entry.get("name", "").lower())
+        key = (entry.get("team") or "", (entry.get("name") or "").lower())
         split = split_by_team_name.get(key)
         if split:
             entry.update(split)
