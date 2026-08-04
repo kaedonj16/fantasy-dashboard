@@ -213,7 +213,11 @@ def _fit_block(rows):
         return None
     scaler = StandardScaler().fit(X)
     Xs = scaler.transform(X)
-    clf = LogisticRegression(C=0.5, class_weight="balanced", max_iter=1000)
+    # NOTE: no class_weight balancing. The displayed value is a *probability*, so
+    # calibration matters as much as ranking; balancing upweights the rare
+    # positives and pushes probs toward ~0.5 (great AUC, terrible Brier / wildly
+    # overstated on-screen %). Plain logistic keeps the base rate honest.
+    clf = LogisticRegression(C=0.5, max_iter=1000)
     # Honest metrics via out-of-fold predictions.
     try:
         oof = cross_val_predict(clf, Xs, y, cv=5, method="predict_proba")[:, 1]
