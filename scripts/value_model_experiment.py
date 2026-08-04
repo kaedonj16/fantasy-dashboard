@@ -385,8 +385,7 @@ def main():
         "server with the trade DB to see the effect on the values shown on the site)_"
     if os.environ.get("DATABASE_URL"):
         try:
-            market_section = _db_effect(
-                dict(zip(cmp["sleeper_id"].astype(str), cmp["experimental"])), out, "norm")
+            market_section = _db_effect(cmp, "experimental", out, "norm")
         except Exception as e:  # never fatal — read-only diagnostic
             market_section = f"_(site-value diagnostic failed: {e})_"
 
@@ -544,9 +543,7 @@ def preview_drop_engine(players, engine, fc_sf, live, out: Path):
     md.append("\n## Effect on the values SHOWN ON THE SITE (COALESCE(calibrated, model))\n")
     if os.environ.get("DATABASE_URL"):
         try:
-            md.append(_db_effect(
-                dict(zip(df["sleeper_id"].astype(str), df["without_engine_1qb"])),
-                out, "drop_engine"))
+            md.append(_db_effect(df, "without_engine_1qb", out, "drop_engine"))
         except Exception as e:
             md.append(f"_(site-value diagnostic failed: {e})_")
     else:
@@ -564,12 +561,14 @@ def preview_drop_engine(players, engine, fc_sf, live, out: Path):
               f"{int((size_df['size_spread'] > 0).sum())} players")
 
 
-def _db_effect(new_board: dict[str, float], out: Path, prefix: str) -> str:
+def _db_effect(board_df: pd.DataFrame, board_col: str, out: Path, prefix: str) -> str:
     """Estimate how the SITE-SHOWN value moves under a new board. READ-ONLY (SELECT).
 
     The site value is COALESCE(calibrated_value_1qb, value_1qb) — calibrated (WLS)
-    where trade data exists, the model board otherwise. `new_board` maps
-    sleeper_id -> the proposed new 1QB board value.
+    where trade data exists, the model board otherwise. `board_df` carries
+    sleeper_id + name + position + `board_col` (the proposed new 1QB board value);
+    names/positions come from the board frame, NOT the DB (player_values has no
+    name column).
 
     - Untracked/untraded players (no calibration): site value IS the board, so the
       effect is the full board change.
@@ -585,9 +584,13 @@ def _db_effect(new_board: dict[str, float], out: Path, prefix: str) -> str:
     _K = 6.0        # WLS blend half-weight (value_model_training._WLS_BLEND_K)
     MAX_LIFT = 1.40  # market may sit up to +40% above prior (trade_value_model)
 
+    new_board = dict(zip(board_df["sleeper_id"].astype(str), board_df[board_col]))
+    meta = {str(r["sleeper_id"]): (r.get("name"), r.get("position"))
+            for _, r in board_df.iterrows()}
+
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT player_id, name, position, calibrated_value_1qb, value_1qb, "
+            "SELECT player_id, calibrated_value_1qb, value_1qb, "
             "calibration_backing FROM player_values "
             "WHERE value_1qb IS NOT NULL AND value_1qb > 0"
         ).fetchall()
@@ -614,8 +617,9 @@ def _db_effect(new_board: dict[str, float], out: Path, prefix: str) -> str:
             current_site = old_model
             new_site = round(newb, 1)
             track = "model"
+        _name, _pos = meta.get(pid, (None, None))
         recs.append({
-            "sleeper_id": pid, "name": r["name"], "position": r["position"],
+            "sleeper_id": pid, "name": _name, "position": _pos,
             "track": track, "current_site": round(current_site, 1),
             "new_site": new_site, "delta_site": round(new_site - current_site, 1),
         })
