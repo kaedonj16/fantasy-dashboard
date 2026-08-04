@@ -3123,12 +3123,16 @@ def render_page(
                 if _league_chrome
                 else build_nav(None, active, _nav_platform, _nav_season))
 
-    # Lightweight public pages (lite_js=True) serve the slim public.js to
-    # logged-out visitors to cut mobile parse/Total-Blocking-Time. Logged-in
-    # users always get the full app.js (they need modals, trade tools, etc.).
-    _use_lite = bool(kwargs.get("lite_js")) and not session.get("viewer_username")
-    _page_js_file = _PUBLIC_JS_FILE if _use_lite else _APP_JS_FILE
-    _page_js_v = _PUBLIC_JS_V if _use_lite else _APP_JS_V
+    # The slim public.js (served to logged-out visitors on lite_js pages to cut
+    # mobile parse time) excludes everything below the @public-js:core-end marker —
+    # including the nav player-search wiring (initNavSearch) and the player modal
+    # (openPlayerModal). That left guests on the landing page unable to search
+    # players or open player cards. Serve the full app.js to everyone so those work;
+    # logged-in users already got it. (Revisit with a lazy-load if landing-page TBT
+    # becomes a concern — the public.js machinery is left in place for that.)
+    _use_lite = False
+    _page_js_file = _APP_JS_FILE
+    _page_js_v = _APP_JS_V
 
     meta_tags = _build_seo_meta_tags(
         description, canonical, noindex,
