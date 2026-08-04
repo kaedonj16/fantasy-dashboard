@@ -45,6 +45,27 @@ def test_opportunity_share_concentrates_on_top_claimant():
     assert competitors == 8
 
 
+def test_bounded_fit_clamps_negative_coef_to_zero():
+    np = pytest.importorskip("numpy")
+    pytest.importorskip("scipy")
+    rng = np.random.default_rng(0)
+    n = 400
+    X = rng.normal(0, 1, (n, 6))
+    # Opportunity (feat 0) is NEGATIVELY associated with y in the raw data, so an
+    # unconstrained fit would give it a negative coefficient; readiness (feat 3)
+    # helps. The constraint must clamp opportunity to ~0 and keep readiness positive.
+    logit = -1.0 - 0.8 * X[:, 0] + 1.2 * X[:, 3]
+    y = (rng.random(n) < 1.0 / (1.0 + np.exp(-logit))).astype(int)
+    mask = [True, True, True, True, True, False]  # confidence (feat 5) free
+    w, _ = T._fit_logit_bounded(X, y, C=0.3, nonneg_mask=mask)
+    assert all(c >= -1e-6 for c, m in zip(w, mask) if m)  # no negative constrained coefs
+    assert w[0] <= 1e-6   # opportunity clamped (would be negative unconstrained)
+    assert w[3] > 0.0     # readiness stays positive
+
+    w_free, _ = T._fit_logit_bounded(X, y, C=0.3, nonneg_mask=[False] * 6)
+    assert w_free[0] < 0  # unconstrained really does want it negative
+
+
 def test_opportunity_share_full_when_no_usage():
     # Nobody has prior usage -> don't dilute; scored player gets the full share.
     incumbents = {("IND", "WR"): [{"player_id": "rook", "last_season_targets": 0,
