@@ -211,6 +211,19 @@ def main():
     if force_rebuild:
         print("[cron] CRON_FORCE_REBUILD set — vendor scrape + model rebuild will not be skipped")
 
+    # VALUE_HARD_RESET: apply an intentional model change in ONE run instead of
+    # letting it ease in over ~weeks. It bypasses all three value throttles —
+    # the ±%/day clamp (via VALUE_MOVE_CAP_OVERRIDE, propagated to subprocesses),
+    # the EMA blend (ema_alpha=1.0, no blending), and the same-day freshness guards
+    # on the DB-write + WLS steps — so the new board lands on the site immediately.
+    # Set it for a single reset run, then unset it to resume normal smoothing.
+    hard_reset = os.environ.get("VALUE_HARD_RESET", "").strip().lower() in ("1", "true", "yes")
+    if hard_reset:
+        os.environ.setdefault("VALUE_MOVE_CAP_OVERRIDE", "50")  # subprocesses inherit this
+        print("[cron] VALUE_HARD_RESET set — bypassing daily clamp, EMA blend, and "
+              "value freshness guards for a one-time board reset")
+    _ema_alpha = 1.0 if hard_reset else 0.35
+
     print(f"[cron] Daily run starting - Season {season}, Week {week}")
 
     n_cleaned = cleanup_dated_files()
@@ -534,13 +547,13 @@ build_daily_model_values()
     # skips rows whose values haven't moved, so double-running on model- #
     # rebuild days is safe.                                               #
     # ------------------------------------------------------------------ #
-    _run_step("""
+    _run_step(f"""
 from dotenv import load_dotenv; load_dotenv()
 from utils.utils import load_model_value_table
 from data_building.player_value_history import record_model_value_snapshot
 tbl = load_model_value_table(apply_calibration=False) or []
-n = record_model_value_snapshot(tbl)
-print(f"[cron] EMA snapshot wrote {n} rows (value + sf_value + size variants)")
+n = record_model_value_snapshot(tbl, ema_alpha={_ema_alpha})
+print(f"[cron] EMA snapshot wrote {{n}} rows (value + sf_value + size variants)")
 """, "record_model_value_snapshot")
 
     _run_step("""
@@ -577,7 +590,7 @@ print("[cron] Recap/matchup/standings notifications dispatched")
     # ------------------------------------------------------------------ #
     # Step 4: Save player values to DB                                   #
     # ------------------------------------------------------------------ #
-    if _player_values_fresh():
+    if not hard_reset and _player_values_fresh():
         print("[cron] Player values already saved to DB today, skipping")
     else:
         _run_step("""
@@ -714,7 +727,7 @@ print(f"[cron] Draft ADP: {result}")
     # Step 9: WLS calibration - one subprocess per combo so numpy        #
     # matrices and trade data are fully released between runs.            #
     # ------------------------------------------------------------------ #
-    if _wls_fresh():
+    if not hard_reset and _wls_fresh():
         print("[cron] WLS calibration already ran today, skipping")
     else:
         for _lt, _lt_name, _sz in [
