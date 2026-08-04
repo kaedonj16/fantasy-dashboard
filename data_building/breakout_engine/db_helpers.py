@@ -498,6 +498,16 @@ def save_breakout_scores(scores: List[Dict]) -> int:
 
     with get_conn() as conn:
         with conn.cursor() as cur:
+            # Replace the whole candidate set for each (season, as_of_date) being
+            # written: delete first, then insert. Without this, a player who drops
+            # off the list between rebuilds (e.g. once his inflated score is fixed)
+            # keeps a stale row at the same as_of_date — the upsert only touches
+            # players still in the list — and it still surfaces on the board.
+            for _season, _as_of in {(s["season"], s["as_of_date"]) for s in scores}:
+                cur.execute(
+                    f"DELETE FROM {BREAKOUT_SCORES_TABLE} WHERE season = %s AND as_of_date = %s",
+                    (_season, _as_of),
+                )
             cur.executemany(query, scores)
             return cur.rowcount
 
