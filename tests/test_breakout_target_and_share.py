@@ -88,6 +88,21 @@ def test_partial_season_share_flows_to_higher_usage():
     assert s_egbuka > s_mcmillan  # vacated targets flow to the real volume earner
 
 
+def test_readiness_discounts_small_sample_efficiency():
+    # Identical elite efficiency, but a 4-game sample must score lower than a full
+    # season — the projected-volume confidence used to let a hot 4 games count at
+    # full weight (McMillan 92 readiness off 4 games). Games-based cap fixes it.
+    meta = {"age": 24, "years_exp": 2}
+    hot4 = {"yards_per_target": 11.0, "catch_rate": 0.72, "targets": 64, "games": 4}
+    full17 = {"yards_per_target": 11.0, "catch_rate": 0.72, "targets": 127, "games": 17}
+    s4, d4 = comp.calculate_player_readiness_score("x", "WR", 2025, meta, hot4)
+    s17, d17 = comp.calculate_player_readiness_score("y", "WR", 2025, meta, full17)
+    assert s4 < s17
+    assert d4["efficiency_sample_multiplier"] < 1.0   # small sample discounted
+    assert d4["skill_lift"] == 0.0                    # skill lift gated on real games
+    assert d17["efficiency_sample_multiplier"] == 1.0  # full season unaffected
+
+
 def test_opportunity_share_full_when_no_usage():
     # Nobody has prior usage -> don't dilute; scored player gets the full share.
     incumbents = {("IND", "WR"): [{"player_id": "rook", "last_season_targets": 0,

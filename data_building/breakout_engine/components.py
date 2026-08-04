@@ -1272,6 +1272,15 @@ def calculate_player_readiness_score(
     wr_fp_penalty = 0.0
     skill_lift = 0.0
 
+    # Games-based sample confidence. The per-volume confidence below keys off
+    # targets/carries/attempts, but those are PROJECTED to a full 17-game season
+    # for partial years (games<14) upstream — so a 4-game player's projected volume
+    # clears the threshold and his hot small-sample efficiency reads at full weight.
+    # Cap every position's efficiency confidence by ACTUAL games (the un-projected
+    # sample size), and gate the skill-lift bonus on a real games sample.
+    prev_games = _safe_float(prev_usage.get("games", 0))
+    games_conf = _sample_confidence(prev_games, full_confidence=14, min_confidence=0.35)
+
     if position == "WR":
         yards_per_target = _safe_float(prev_usage.get("yards_per_target", 0))
         catch_rate = _safe_float(prev_usage.get("catch_rate", 0))
@@ -1296,7 +1305,9 @@ def calculate_player_readiness_score(
             cr_score = 0
 
         raw_efficiency_score = ypt_score + cr_score
-        sample_multiplier = _sample_confidence(prev_targets, full_confidence=50, min_confidence=0.35)
+        sample_multiplier = min(
+            _sample_confidence(prev_targets, full_confidence=50, min_confidence=0.35),
+            games_conf)
         efficiency_score = raw_efficiency_score * sample_multiplier
 
         # ── WR false-positive penalty: contested-catch profiles ─────────────
@@ -1319,6 +1330,7 @@ def calculate_player_readiness_score(
         # Captures Kupp/Nacua archetypes that routinely beat their draft slot
         if (
             not is_drafted_rookie
+            and prev_games >= 10
             and prev_targets >= WR_SKILL_LIFT_MIN_TARGETS
             and yards_per_target >= WR_SKILL_LIFT_YPT_THRESHOLD
             and catch_rate >= WR_SKILL_LIFT_CATCH_THRESHOLD
@@ -1359,9 +1371,9 @@ def calculate_player_readiness_score(
 
         raw_efficiency_score = ypt_score + cr_score
         # Higher min_confidence shrinks TE scores toward mean - stabilizes outliers
-        sample_multiplier = _sample_confidence(
-            prev_targets, full_confidence=50, min_confidence=TE_SAMPLE_MIN_CONFIDENCE
-        )
+        sample_multiplier = min(
+            _sample_confidence(prev_targets, full_confidence=50, min_confidence=TE_SAMPLE_MIN_CONFIDENCE),
+            games_conf)
         efficiency_score = raw_efficiency_score * sample_multiplier
 
     elif position == "RB":
@@ -1391,12 +1403,15 @@ def calculate_player_readiness_score(
         raw_efficiency_score = ypc_score + rec_score
         carry_multiplier = _sample_confidence(prev_carries, full_confidence=80, min_confidence=0.35)
         target_multiplier = _sample_confidence(prev_targets, full_confidence=25, min_confidence=0.35)
-        sample_multiplier = _weighted_average([(carry_multiplier, 0.7), (target_multiplier, 0.3)])
+        sample_multiplier = min(
+            _weighted_average([(carry_multiplier, 0.7), (target_multiplier, 0.3)]),
+            games_conf)
         efficiency_score = raw_efficiency_score * sample_multiplier
 
         # ── Skill-over-draft lift: Day-2/3 RBs with elite efficiency ────────
         if (
             not is_drafted_rookie
+            and prev_games >= 10
             and prev_carries >= RB_SKILL_LIFT_MIN_CARRIES
             and yards_per_carry >= RB_SKILL_LIFT_YPC_THRESHOLD
         ):
@@ -1423,7 +1438,9 @@ def calculate_player_readiness_score(
         )
 
         raw_efficiency_score = ypa_score + td_rate_score
-        sample_multiplier = _sample_confidence(pass_attempts, full_confidence=250, min_confidence=0.40)
+        sample_multiplier = min(
+            _sample_confidence(pass_attempts, full_confidence=250, min_confidence=0.40),
+            games_conf)
         efficiency_score = raw_efficiency_score * sample_multiplier
 
     if is_drafted_rookie and draft_capital:
