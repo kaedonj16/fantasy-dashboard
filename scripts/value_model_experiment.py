@@ -20,15 +20,17 @@ Improvements under test
    (the trade-market / WLS values, engine, or DP consensus), this fits
    non-negative simplex weights per position that best reproduce the target.
 
-Market-vs-board diagnostic (needs the DB)
------------------------------------------
-When a database is reachable, it also reports, for the *market-heavy* players
-(high trade backing, where the WLS solution is market-driven rather than
-prior-driven), how far the trade market disagrees with the consensus board —
-and a first-order estimate of how much the shown WLS value would move under the
-improved board (since the board is the WLS regularization prior).
+Effect on the values shown on the site (needs the DB)
+-----------------------------------------------------
+The site shows COALESCE(calibrated_value_1qb, value_1qb) — the WLS-calibrated
+value where trade data exists, the model board otherwise. When a database is
+reachable (DATABASE_URL set), the report includes a per-player estimate of how
+each SHOWN value would move under the change: untraded players take the full
+board move; calibrated players move ~(1 - confidence) of it (market-pinned
+players barely budge). READ-ONLY — it only runs SELECTs.
 
-Nothing here is written back. Run it, read the report, decide.
+Nothing here is written back (no DB writes, no data/ writes — output folder only).
+Run it, read the report, decide.
 
 Usage
 -----
@@ -378,15 +380,15 @@ def main():
     # 99th pct clips the true elite together — this counts how many lose separation.
     ceiling = {t: int((cmp[t] >= 990).sum()) for t in ("baseline", "experimental", "rank_variant")}
 
-    # ---- Market-vs-board diagnostic (DB-gated) ----------------------------
+    # ---- Site-value effect (DB-gated, read-only) --------------------------
     market_section = "_(skipped — no DATABASE_URL in this environment; run on the "\
-        "server with the trade DB to populate this section)_"
-    db_url = os.environ.get("DATABASE_URL")
-    if db_url:
+        "server with the trade DB to see the effect on the values shown on the site)_"
+    if os.environ.get("DATABASE_URL"):
         try:
-            market_section = _market_diagnostic(cmp, out)
-        except Exception as e:  # never fatal — this is a read-only diagnostic
-            market_section = f"_(market diagnostic failed: {e})_"
+            market_section = _db_effect(
+                dict(zip(cmp["sleeper_id"].astype(str), cmp["experimental"])), out, "norm")
+        except Exception as e:  # never fatal — read-only diagnostic
+            market_section = f"_(site-value diagnostic failed: {e})_"
 
     # ---- Write the report -------------------------------------------------
     _write_report(out, cmp, corr, corr_rank, topheavy, ceiling, top_movers, fitted, fit_note,
@@ -537,8 +539,24 @@ def preview_drop_engine(players, engine, fc_sf, live, out: Path):
                       f"{r['size_spread']:.0f} | {r['spread_pct']:.0f}% |")
     else:
         md.append("_(no live board available to measure size spread)_")
+    # Effect on the values SHOWN ON THE SITE (DB-gated, read-only). The engine-less
+    # 1QB board becomes the new prior; the shown value is COALESCE(calibrated, model).
+    md.append("\n## Effect on the values SHOWN ON THE SITE (COALESCE(calibrated, model))\n")
+    if os.environ.get("DATABASE_URL"):
+        try:
+            md.append(_db_effect(
+                dict(zip(df["sleeper_id"].astype(str), df["without_engine_1qb"])),
+                out, "drop_engine"))
+        except Exception as e:
+            md.append(f"_(site-value diagnostic failed: {e})_")
+    else:
+        md.append("_(skipped — no DATABASE_URL here; run on the server to see the effect on "
+                  "the shown values. Untraded players would take the full 1QB drop above; "
+                  "calibrated players move less, damped by their trade backing.)_")
+
     md.append("\n## Files\n- `drop_engine_board.csv` — 1QB + SF, with vs without engine, per player")
     md.append("- `drop_engine_size_collapse.csv` — the per-player size differentiation that would be lost")
+    md.append("- `drop_engine_site_value_effect.csv` — per-player move in the shown value (DB runs only)")
     (out / "DROP_ENGINE_REPORT.md").write_text("\n".join(md), encoding="utf-8")
     print(f"[drop-engine] wrote preview to {out}/DROP_ENGINE_REPORT.md")
     if not size_df.empty:
@@ -546,56 +564,92 @@ def preview_drop_engine(players, engine, fc_sf, live, out: Path):
               f"{int((size_df['size_spread'] > 0).sum())} players")
 
 
-def _market_diagnostic(cmp: pd.DataFrame, out: Path) -> str:
-    """Read player_values (calibrated WLS + backing) and report market-vs-board gaps
-    plus a first-order estimate of the WLS shift under the experimental board.
-    Read-only: SELECT only."""
-    import psycopg
-    from psycopg.rows import dict_row
+def _db_effect(new_board: dict[str, float], out: Path, prefix: str) -> str:
+    """Estimate how the SITE-SHOWN value moves under a new board. READ-ONLY (SELECT).
 
-    _WLS_BLEND_K = 6.0  # mirrors value_model_training._WLS_BLEND_K
-    rows = []
-    with psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row) as conn:
+    The site value is COALESCE(calibrated_value_1qb, value_1qb) — calibrated (WLS)
+    where trade data exists, the model board otherwise. `new_board` maps
+    sleeper_id -> the proposed new 1QB board value.
+
+    - Untracked/untraded players (no calibration): site value IS the board, so the
+      effect is the full board change.
+    - Calibrated players: the board is the WLS prior, so the calibrated value moves
+      ~(1 - confidence) of the prior change (market-pinned players barely move),
+      capped by the +40% MAX_LIFT band. First-order estimate — the exact number
+      comes from the next WLS solve.
+    """
+    # Reuse the app's own connection helper so we connect exactly like production
+    # (same DATABASE_URL, SSL, pooling, dict_row). READ-ONLY: this issues one SELECT.
+    from dashboard_services.db import get_conn
+
+    _K = 6.0        # WLS blend half-weight (value_model_training._WLS_BLEND_K)
+    MAX_LIFT = 1.40  # market may sit up to +40% above prior (trade_value_model)
+
+    with get_conn() as conn:
         rows = conn.execute(
-            "SELECT player_id, calibrated_value_1qb, calibration_backing "
-            "FROM player_values"
+            "SELECT player_id, name, position, calibrated_value_1qb, value_1qb, "
+            "calibration_backing FROM player_values "
+            "WHERE value_1qb IS NOT NULL AND value_1qb > 0"
         ).fetchall()
-    wls = {str(r["player_id"]): r for r in rows}
-    df = cmp.copy()
-    df["calibrated"] = df["sleeper_id"].map(lambda p: (wls.get(p) or {}).get("calibrated_value_1qb"))
-    df["backing"] = df["sleeper_id"].map(lambda p: (wls.get(p) or {}).get("calibration_backing") or 0.0)
-    df = df[df["calibrated"].notna() & (df["calibrated"] > 0)].copy()
-    df["conf"] = df["backing"] / (df["backing"] + _WLS_BLEND_K)
 
-    # Market-vs-board gap: how far the calibrated (market) value sits from the
-    # baseline board prior, for the market-heavy players (conf >= 0.5).
-    heavy = df[df["conf"] >= 0.5].copy()
-    heavy["market_minus_board"] = (heavy["calibrated"] - heavy["baseline"]).round(1)
-    heavy = heavy.reindex(heavy["market_minus_board"].abs().sort_values(ascending=False).index)
-    heavy.head(40).to_csv(out / "market_vs_board.csv", index=False)
+    recs = []
+    for r in rows:
+        pid = str(r["player_id"])
+        newb = new_board.get(pid)
+        if newb is None:
+            continue
+        old_model = float(r["value_1qb"] or 0.0)
+        cal = r["calibrated_value_1qb"]
+        backing = float(r["calibration_backing"] or 0.0)
+        newb = float(newb)
+        if cal is not None and float(cal) > 0:
+            current_site = float(cal)
+            conf = backing / (backing + _K) if backing > 0 else 0.0
+            est = current_site + (1.0 - conf) * (newb - old_model)
+            if newb > 0:
+                est = min(est, newb * MAX_LIFT)  # respect the +40% market band
+            new_site = round(est, 1)
+            track = "calibrated"
+        else:
+            current_site = old_model
+            new_site = round(newb, 1)
+            track = "model"
+        recs.append({
+            "sleeper_id": pid, "name": r["name"], "position": r["position"],
+            "track": track, "current_site": round(current_site, 1),
+            "new_site": new_site, "delta_site": round(new_site - current_site, 1),
+        })
 
-    # First-order WLS shift under the experimental board: the WLS value is pulled
-    # toward the prior with strength (1 - conf), so Δcalibrated ≈ (1-conf)·Δprior.
-    df["est_wls_shift"] = ((1.0 - df["conf"]) * (df["experimental"] - df["baseline"])).round(1)
-    shift = df.reindex(df["est_wls_shift"].abs().sort_values(ascending=False).index)
-    shift[["sleeper_id", "name", "position", "baseline", "experimental",
-           "calibrated", "backing", "conf", "est_wls_shift"]].head(40).to_csv(
-        out / "estimated_wls_shift.csv", index=False)
+    df = pd.DataFrame(recs)
+    if df.empty:
+        return "_(no overlapping players between the new board and player_values)_"
+    df = df.reindex(df["delta_site"].abs().sort_values(ascending=False).index)
+    df.to_csv(out / f"{prefix}_site_value_effect.csv", index=False)
 
-    lines = []
-    lines.append(f"- Market-heavy players (conf ≥ 0.5): **{len(heavy)}**")
-    lines.append(f"- Median |market − board| among them: **{heavy['market_minus_board'].abs().median():.0f}** pts")
-    lines.append(f"- Median estimated WLS shift under the improved board: "
-                 f"**{df['est_wls_shift'].abs().median():.1f}** pts "
-                 f"(thin-data players move most; market-pinned players least)")
-    lines.append("")
-    lines.append("Biggest market-vs-board disagreements (market-heavy):")
-    lines.append("")
-    lines.append("| Player | Pos | Board | Market (WLS) | Market − Board |")
-    lines.append("|---|---|--:|--:|--:|")
-    for _, r in heavy.head(15).iterrows():
-        lines.append(f"| {r['name']} | {r['position']} | {r['baseline']:.0f} | "
-                     f"{r['calibrated']:.0f} | {r['market_minus_board']:+.0f} |")
+    n_cal = int((df["track"] == "calibrated").sum())
+    n_mod = int((df["track"] == "model").sum())
+    big = df[df["delta_site"].abs() >= 25]
+    lines = [
+        f"- Players scored: **{len(df)}**  (calibrated track: {n_cal}, model-fallback track: {n_mod})",
+        f"- Site values moving ≥25 pts: **{len(big)}**  "
+        f"(calibrated: {int((big['track'] == 'calibrated').sum())}, "
+        f"model-fallback: {int((big['track'] == 'model').sum())})",
+        f"- Median |move| — calibrated players: "
+        f"**{df[df['track'] == 'calibrated']['delta_site'].abs().median():.1f}** pts; "
+        f"model-fallback players: "
+        f"**{df[df['track'] == 'model']['delta_site'].abs().median():.1f}** pts",
+        "",
+        "Biggest **site-value** moves (what users would actually see):",
+        "",
+        "| Player | Pos | Track | Shown now | Shown after | Δ |",
+        "|---|---|---|--:|--:|--:|",
+    ]
+    for _, r in df.head(20).iterrows():
+        lines.append(f"| {r['name']} | {r['position']} | {r['track']} | "
+                     f"{r['current_site']:.0f} | {r['new_site']:.0f} | {r['delta_site']:+.0f} |")
+    lines.append(f"\n_Full per-player detail: `{prefix}_site_value_effect.csv`. Calibrated moves are "
+                 "first-order estimates; the exact values come from the next WLS solve. Eased in "
+                 "±2%/day live._")
     return "\n".join(lines)
 
 
@@ -653,13 +707,12 @@ def _write_report(out, cmp, corr, corr_rank, topheavy, ceiling, top_movers, fitt
                   f"{r['experimental_posrank']} | {int(r['posrank_change']):+d} | "
                   f"{r['baseline']:.0f} | {r['experimental']:.0f} |")
     md.append("")
-    md.append("## Market vs. board (trade-market diagnostic)\n")
+    md.append("## Effect on the values SHOWN ON THE SITE (COALESCE(calibrated, model))\n")
     md.append(market_section)
     md.append("")
     md.append("## Files\n")
-    md.append("- `board_comparison.csv` — every player, both tracks, rank deltas")
-    md.append("- `market_vs_board.csv` — biggest market disagreements (DB runs only)")
-    md.append("- `estimated_wls_shift.csv` — first-order WLS move per player (DB runs only)")
+    md.append("- `board_comparison.csv` — every player, both board tracks, rank deltas")
+    md.append("- `norm_site_value_effect.csv` — per-player move in the shown value (DB runs only)")
     (out / "REPORT.md").write_text("\n".join(md), encoding="utf-8")
 
 
