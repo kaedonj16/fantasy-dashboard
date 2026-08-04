@@ -84,17 +84,75 @@ def _load_scores(season: int, scores_json: str | None) -> list[dict]:
     return load_breakout_scores_from_db(season)
 
 
+def load_outcomes_parquet(season: int) -> dict:
+    """Clean per-player outcomes for `season` from the committed player_history
+    parquets (sleeper_id, position, games, ppr_ppg) — the usage_rows JSONs are in
+    inconsistent formats (2023 has no position/ppr), which silently zeroed labels.
+    Returns {} if no parquet covers the season, so assemble() can fall back."""
+    import pandas as pd
+    candidates = [
+        Path("cache/player_history") / f"player_history_{season}.parquet",
+        Path("cache/player_history") / "player_history_all.parquet",
+    ]
+    for path in candidates:
+        if not path.exists():
+            continue
+        df = pd.read_parquet(path)
+        if "season" in df.columns:
+            df = df[df["season"] == season]
+        if df.empty:
+            continue
+        out = {}
+        for _, r in df.iterrows():
+            pid = str(r.get("sleeper_id") or "")
+            if not pid or pid == "nan":
+                continue
+            games = int(r.get("games") or 0)
+            ppg = float(r.get("ppr_ppg") or 0)
+            out[pid] = {
+                "total_ppr": round(ppg * games, 1), "ppr_ppg": ppg, "games": games,
+                "position": str(r.get("position") or ""), "name": r.get("name", ""),
+            }
+        if out:
+            return out
+    return {}
+
+
+def _index_position_map() -> dict:
+    """sleeper_id -> position from the players index. The committed outcome files
+    (usage_rows JSON and player_history parquet) have no position column, so
+    get_top12_pids needs this to bucket finishers by position."""
+    try:
+        from utils.utils import load_players_index
+        idx = load_players_index() or {}
+        return {str(k): str((v or {}).get("pos") or (v or {}).get("position") or "").upper()
+                for k, v in idx.items()}
+    except Exception as e:
+        print(f"[train] players-index position map unavailable: {e}")
+        return {}
+
+
 def assemble(seasons, scores_json):
     """Return rows of {position, feats..., y} across all source seasons."""
     data = []
+    _pos_idx = _index_position_map()
     for s in seasons:
         try:
             scores = _load_scores(s, scores_json)
         except Exception as e:
             print(f"[train] season {s}: no scores ({e}) — skipping")
             continue
-        outcomes = load_actual_outcomes(s + 1)
-        pos_map = load_position_map(s + 1, scores_json)
+        outcomes = load_outcomes_parquet(s + 1)
+        if not outcomes:
+            try:
+                outcomes = load_actual_outcomes(s + 1)  # JSON fallback
+            except FileNotFoundError:
+                print(f"[train] season {s+1}: no outcomes (parquet or JSON) — skipping")
+                continue
+        # Outcome files carry no position — bucket finishers via the players index
+        # (merged with any build_historical_scores position file if present).
+        pos_map = dict(_pos_idx)
+        pos_map.update(load_position_map(s + 1, scores_json) or {})
         top = get_top12_pids(outcomes, pos_map)
         n0 = len(data)
         for r in scores:
