@@ -1743,8 +1743,12 @@ if __name__ == "__main__":
     group.add_argument("--season", type=int, help="Single prediction season (e.g. 2023)")
     group.add_argument("--seasons", type=int, nargs="+", default=[2022, 2023],
                        help="One or more prediction seasons (default: 2022 2023)")
-    parser.add_argument("--min-score", type=float, default=30.0,
-                        help="Minimum breakout score to save (default: 30)")
+    parser.add_argument("--min-score", type=float, default=0.0,
+                        help="Minimum breakout score to save (default: 0 = the full "
+                             "candidate pool). This table is a backtest/training source, "
+                             "so save every scored candidate; consumers filter at read "
+                             "time (e.g. the site uses score>=60). A stray higher cutoff "
+                             "on one season's backfill is what truncated the 2024 data.")
     parser.add_argument("--dry-run", action="store_true",
                         help="Compute scores but do not write")
     parser.add_argument("--output-json", metavar="DIR", default=None,
