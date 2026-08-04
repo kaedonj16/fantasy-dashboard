@@ -310,6 +310,52 @@ def _preview_candidates(model, season, scores_json, top):
               f"{cp:>6.0%} {mp_:>6.0%} {d:>+6.0%}")
 
 
+def _final_prob(model, r):
+    """The hit probability inference would actually use for this candidate: the
+    fitted model when it applies, else the empirical curve (QB / thin positions).
+    This is the single source of truth the Option 2 board ranks and scores by."""
+    pos = str(r.get("position") or "").upper()
+    feats = {f: _feat(r, f) for f in FEATURES}
+    m = _hit_prob_from_model_local(model, pos, feats)
+    return m if m is not None else _curve_prob(r)
+
+
+def _rescore_preview(model, season, scores_json, top):
+    """Option 2: rank the board by the MODEL, and set the 0-100 breakout score to
+    the model's ABSOLUTE breakout probability (score = round(100 * prob)).
+
+    Absolute, not relative-to-best: a candidate the model gives a 55% breakout
+    chance scores 55, and nobody hits 100 unless the model predicts near-certainty
+    (it never does — realistic top-outs are ~50-60%). So the number is an honest
+    likelihood, and highest score = best candidate still holds by construction.
+    old score shown alongside so you can see what moved."""
+    try:
+        cands = _load_scores(season, scores_json)
+    except Exception as e:
+        print(f"\n[rescore] could not load candidates for {season}: {e}")
+        return
+    if not cands:
+        print(f"\n[rescore] no candidates found for season {season}")
+        return
+    rows = []
+    for r in cands:
+        prob = _final_prob(model, r)
+        rows.append((
+            r.get("player_name") or r.get("player_id"),
+            str(r.get("position") or "").upper(),
+            _feat(r, "breakout_score"), prob,
+            round(100.0 * prob, 0),  # new 0-100 score == absolute probability
+        ))
+    rows.sort(key=lambda x: -x[3])  # rank by the model probability
+    print(f"\n[rescore] season {season} — Option 2 board ranked by the MODEL, "
+          f"breakout_score = absolute breakout probability "
+          f"(top {min(top, len(rows))} of {len(rows)}):")
+    print(f"    {'rank':>4} {'player':<24} {'pos':<3} {'oldScore':>8} {'prob':>6} {'NEWscore':>8}")
+    for i, (name, pos, old, prob, new) in enumerate(rows[:top], 1):
+        print(f"    {i:>4} {str(name)[:24]:<24} {pos:<3} {old:>8.0f} "
+              f"{prob:>5.0%} {new:>8.0f}")
+
+
 def _hit_prob_from_model_local(model, pos, feats):
     """Same logistic eval as inference, using the in-memory model (dependency-free).
 
@@ -357,6 +403,10 @@ def main():
                     help="after fitting, show this season's candidates ranked with "
                          "curve vs new-model hit prob (read-only; e.g. 2026 for current)")
     ap.add_argument("--top", type=int, default=30, help="rows to show in the preview")
+    ap.add_argument("--rescore", action="store_true",
+                    help="with --preview-season: show the Option 2 board ranked by the "
+                         "model, with breakout_score = absolute breakout probability "
+                         "(score 55 = 55%% chance; highest = best)")
     args = ap.parse_args()
 
     rows = assemble(args.seasons, args.scores_json, target=args.target,
@@ -421,7 +471,10 @@ def main():
     # them ranked, with the current curve vs the new model's hit prob side by side.
     # Read-only — nothing is written or committed.
     if args.preview_season:
-        _preview_candidates(model, args.preview_season, args.scores_json, args.top)
+        if args.rescore:
+            _rescore_preview(model, args.preview_season, args.scores_json, args.top)
+        else:
+            _preview_candidates(model, args.preview_season, args.scores_json, args.top)
 
     if args.write:
         Path(args.out).write_text(json.dumps(model, indent=2), encoding="utf-8")
