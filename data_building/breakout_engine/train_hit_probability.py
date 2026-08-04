@@ -137,11 +137,12 @@ def _index_position_map() -> dict:
 
 
 def _breakout_hits(outcomes: dict, prior: dict, growth: float,
-                   min_ppg: float, scratch_ppg: float) -> set:
+                   min_ppg: float, scratch_ppg: float, min_delta: float) -> set:
     """Relative 'breakout' hits: a meaningful PPG jump over the player's OWN prior
-    season (≥10 games in the outcome season). Configurable growth multiple + PPG
-    floor (the floor stops tiny baselines like 2→5 PPG counting as breakouts).
-    Players with no real prior must clear scratch_ppg on their own."""
+    season (≥10 games in the outcome season). A hit must clear BOTH a growth
+    multiple AND an absolute PPG gain, so it stays meaningful at any baseline
+    (8→9.2 is +15% but only +1.2 PPG — not a breakout; 8→11.5 is). Plus a result
+    floor (min_ppg). Players with no real prior must clear scratch_ppg on their own."""
     hits = set()
     for pid, o in outcomes.items():
         if o["games"] < 10:
@@ -150,15 +151,16 @@ def _breakout_hits(outcomes: dict, prior: dict, growth: float,
         pr = prior.get(pid, {})
         p_ppg, p_games = float(pr.get("ppr_ppg") or 0), int(pr.get("games") or 0)
         if p_games >= 6 and p_ppg >= 4.0:
-            if actual >= p_ppg * growth and actual >= min_ppg:
+            if (actual >= p_ppg * growth and (actual - p_ppg) >= min_delta
+                    and actual >= min_ppg):
                 hits.add(pid)
         elif actual >= scratch_ppg:
             hits.add(pid)
     return hits
 
 
-def assemble(seasons, scores_json, target="top_n", growth=1.15,
-             min_ppg=7.0, scratch_ppg=10.0):
+def assemble(seasons, scores_json, target="top_n", growth=1.40,
+             min_ppg=7.0, scratch_ppg=10.0, min_delta=3.5):
     """Return rows of {position, feats..., y} across all source seasons.
 
     target: 'top_n'    -> label = top-12 RB/WR, top-6 QB/TE finish (absolute)
@@ -185,7 +187,7 @@ def assemble(seasons, scores_json, target="top_n", growth=1.15,
         pos_map.update(load_position_map(s + 1, scores_json) or {})
         if target == "breakout":
             prior = load_outcomes_parquet(s)  # the candidate's own prior season
-            top = _breakout_hits(outcomes, prior, growth, min_ppg, scratch_ppg)
+            top = _breakout_hits(outcomes, prior, growth, min_ppg, scratch_ppg, min_delta)
         else:
             top = get_top12_pids(outcomes, pos_map)
         n0 = len(data)
@@ -392,8 +394,11 @@ def main():
     ap.add_argument("--target", choices=("top_n", "breakout"), default="top_n",
                     help="label: 'top_n' (top-12 RB/WR, top-6 QB/TE, absolute) or "
                          "'breakout' (relative PPG growth)")
-    ap.add_argument("--growth", type=float, default=1.15,
-                    help="breakout target: min PPG multiple over prior season (default 1.15 = +15%%)")
+    ap.add_argument("--growth", type=float, default=1.40,
+                    help="breakout target: min PPG multiple over prior season (default 1.40 = +40%%)")
+    ap.add_argument("--min-delta", type=float, default=3.5,
+                    help="breakout target: min ABSOLUTE PPG gain over prior season, required "
+                         "in addition to --growth so trivial jumps don't count (default 3.5)")
     ap.add_argument("--min-ppg", type=float, default=7.0,
                     help="breakout target: absolute PPG floor for a hit (default 7.0)")
     ap.add_argument("--scratch-ppg", type=float, default=10.0,
@@ -415,13 +420,14 @@ def main():
     args = ap.parse_args()
 
     rows = assemble(args.seasons, args.scores_json, target=args.target,
-                    growth=args.growth, min_ppg=args.min_ppg, scratch_ppg=args.scratch_ppg)
+                    growth=args.growth, min_ppg=args.min_ppg, scratch_ppg=args.scratch_ppg,
+                    min_delta=args.min_delta)
     if not rows:
         print("[train] no data assembled — check --seasons / DB / --scores-json")
         return
     _hit_def = ("top-6 QB/TE, top-12 RB/WR by total PPR, >=10 games" if args.target == "top_n"
-                else f">= {args.growth:g}x prior PPG and >= {args.min_ppg:g} PPG "
-                     f"(or >= {args.scratch_ppg:g} from scratch), >=10 games")
+                else f">= {args.growth:g}x prior PPG AND >= +{args.min_delta:g} PPG and "
+                     f">= {args.min_ppg:g} PPG (or >= {args.scratch_ppg:g} from scratch), >=10 games")
     print(f"[train] target={args.target}  ({_hit_def})")
     print(f"[train] total: {len(rows)} candidate-seasons, {sum(r['y'] for r in rows)} hits "
           f"({100*sum(r['y'] for r in rows)/max(len(rows),1):.1f}% hit rate)\n")
