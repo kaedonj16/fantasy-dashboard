@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Optional
 
@@ -32,8 +33,44 @@ def combined_history_csv_path() -> Path:
     return PLAYER_HISTORY_DIR / "player_history_all.csv"
 
 
-def save_usage_rows_for_season(rows: list[dict[str, Any]], season: int) -> Path:
+def _target_share_coverage(rows: list[dict[str, Any]]) -> int:
+    """How many rows carry a real (>0) target_share — the field that silently
+    goes to zero when nfl_data_py play-by-play is unavailable for the season."""
+    n = 0
+    for r in rows:
+        try:
+            if float((r.get("usage") or {}).get("target_share") or 0) > 0:
+                n += 1
+        except (TypeError, ValueError):
+            pass
+    return n
+
+
+def save_usage_rows_for_season(rows: list[dict[str, Any]], season: int,
+                               force: bool = False) -> Path:
+    """Write usage_rows_{season}.json, but REFUSE to clobber a good file with
+    target_share-starved data.
+
+    target_share comes from nfl_data_py play-by-play; when that source is down the
+    rebuilt rows carry target_share=0 across the board, which feeds
+    opportunity/competition/trajectory scoring and silently tanks every breakout
+    score. If an existing file has materially more target_share coverage than the
+    new rows, keep the existing file and skip the write — unless force=True or
+    FORCE_USAGE_OVERWRITE=1 (for a deliberate rebuild when the source is healthy)."""
     path = usage_rows_json_path_for_season(season)
+    force = force or os.environ.get("FORCE_USAGE_OVERWRITE") == "1"
+    if path.exists() and not force:
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+            old_nz, new_nz = _target_share_coverage(existing), _target_share_coverage(rows)
+            if old_nz > 0 and new_nz < old_nz * 0.5:
+                print(f"[player_history] REFUSING to overwrite usage_rows_{season}.json: "
+                      f"new target_share coverage {new_nz} << existing {old_nz} — the "
+                      f"play-by-play source is likely unavailable for {season}. Keeping the "
+                      f"existing file. Set FORCE_USAGE_OVERWRITE=1 to override.")
+                return path
+        except Exception as e:
+            print(f"[player_history] overwrite-guard check failed ({e}); writing anyway")
     with path.open("w", encoding="utf-8") as f:
         json.dump(rows, f, ensure_ascii=False, indent=2)
     return path

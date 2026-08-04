@@ -206,6 +206,14 @@ PER_COMPETITOR_TARGETS_WR_TE = 90    # ~90 vacated targets to one player = max
 PER_COMPETITOR_CARRIES_RB = 170      # ~170 vacated carries to one RB = max (primary)
 PER_COMPETITOR_TARGETS_RB = 55       # secondary receiving work for an RB
 
+# Vacated work concentrates on the biggest incumbents, not evenly across the room:
+# when a WR1 leaves, the WR2 inherits far more than the 5th WR. We split the vacancy
+# by each competitor's claim raised to this power, so higher-usage players get a
+# disproportionately larger share (1.0 = pure proportional; higher = more
+# winner-take-most). Fixes 111 vacated targets being diluted ~evenly across a
+# 12-man room into a tiny per-player share.
+OPPORTUNITY_SHARE_CONCENTRATION = 1.6
+
 # QB thresholds
 QB_STARTER_SNAP_THRESHOLD = 0.70   # 70%+ snap share = starter left
 QB_STARTER_GAMES_MIN      = 10     # ≥10 games started = incumbent starter

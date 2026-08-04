@@ -289,11 +289,18 @@ def _opportunity_share(
     claims = {pid: _competitor_claim(position, e) for pid, e in entries.items()}
     claims.setdefault(player_id, 0.0)  # scored player always shares the room
 
-    total = sum(claims.values())
     competitors = max(sum(1 for v in claims.values() if v > 0), 1)
+
+    # Concentrate the vacated work on the biggest incumbents rather than splitting
+    # it ~evenly across the whole room: raise each claim to a power > 1 so a WR2
+    # inherits far more of a departed WR1 than the 5th WR does. Without this, a
+    # 12-man room dilutes 111 vacated targets into a tiny per-player share.
+    power = OPPORTUNITY_SHARE_CONCENTRATION
+    weighted = {pid: (c ** power if c > 0 else 0.0) for pid, c in claims.items()}
+    total = sum(weighted.values())
     if total <= 0:
         return 1.0, competitors  # no one had prior usage — don't dilute
-    return claims[player_id] / total, competitors
+    return weighted[player_id] / total, competitors
 
 
 def _pooled_list(cache, db_fn, team: str, position: str, season: int) -> List[Dict]:

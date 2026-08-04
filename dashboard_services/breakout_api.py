@@ -767,41 +767,32 @@ def get_breakout_candidates_by_position(
 
 
 def _breakout_ranks(season: int) -> Dict[str, Dict]:
-    """Rank every stored candidate for `season` by breakout probability so the modal
-    can show 'TE #2 · #14 overall'. Latest row per player; ranks by hit_probability
-    desc (breakout_opportunity_score as the tie-break), overall and within position."""
-    query = """
-        SELECT DISTINCT ON (player_id)
-            player_id, position, hit_probability, breakout_opportunity_score
-        FROM breakout_opportunity_scores
-        WHERE season = %s
-        ORDER BY player_id, as_of_date DESC, calculated_at DESC
-    """
+    """Rank the candidates the modal shows 'TE #2 · #14 overall' against.
+
+    Ranks off the EXACT set the board renders — get_breakout_candidates already
+    pins a single as_of_date, applies the same exclusions, and sorts by
+    (hit_probability, breakout_opportunity_score) desc — so the modal rank and the
+    on-page order can never diverge. (The old version ranked each player's latest
+    row independently, which could pick rows from different dates and reorder two
+    players relative to the board.)"""
     try:
-        with get_conn() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(query, [season])
-                rows = [dict(r) for r in cursor.fetchall()]
+        result = get_breakout_candidates(season, min_score=0.0, limit=None) or {}
+        cands = result.get("candidates") or []
     except Exception:
-        logger.warning("breakout_api: rank query failed for season %s", season, exc_info=True)
+        logger.warning("breakout_api: rank build failed for season %s", season, exc_info=True)
         return {}
 
-    def _key(r):
-        return (float(r.get("hit_probability") or 0), float(r.get("breakout_opportunity_score") or 0))
-
     ranks: Dict[str, Dict] = {}
-    overall = sorted(rows, key=_key, reverse=True)
-    n_overall = len(overall)
-    for i, r in enumerate(overall, 1):
-        ranks[str(r["player_id"])] = {"overall": i, "overall_total": n_overall}
+    n_overall = len(cands)
+    for i, c in enumerate(cands, 1):  # already in board order
+        ranks[str(c.get("player_id"))] = {"overall": i, "overall_total": n_overall}
     by_pos: Dict[str, List] = {}
-    for r in rows:
-        by_pos.setdefault((r.get("position") or "").upper(), []).append(r)
+    for c in cands:
+        by_pos.setdefault((c.get("position") or "").upper(), []).append(c)
     for pos, prows in by_pos.items():
-        prows.sort(key=_key, reverse=True)
-        for i, r in enumerate(prows, 1):
-            ranks.setdefault(str(r["player_id"]), {})
-            ranks[str(r["player_id"])].update({"pos": i, "pos_total": len(prows), "position": pos})
+        for i, c in enumerate(prows, 1):  # board order preserved within position
+            ranks.setdefault(str(c.get("player_id")), {}).update(
+                {"pos": i, "pos_total": len(prows), "position": pos})
     return ranks
 
 

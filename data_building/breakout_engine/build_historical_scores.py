@@ -1150,6 +1150,28 @@ def _generate_key_reasons(
     return "\n".join(reasons[:4])
 
 
+# Minimum vacated volume that counts as a "real inherited role" for the age
+# exception — a departed WR1/high-WR2 target load or a lead-back carry load.
+AGE_EXCEPTION_MIN_VACATED_TARGETS = 70
+AGE_EXCEPTION_MIN_VACATED_CARRIES = 120
+
+
+def _inherited_real_opportunity(team, position, gsis_id, vacated_cache, arrivals_cache) -> bool:
+    """True if this player's team/position group just lost a real role (a WR1's
+    targets, a lead back's carries, a starting QB job) — a genuine breakout path
+    that justifies keeping an otherwise age/experience-capped player. Uses the same
+    WR+TE pooling as the opportunity score, so a TE benefits from a departed WR."""
+    from data_building.breakout_engine.components import _pooled_vacated
+    vac = _pooled_vacated(vacated_cache, team, position, 0) or {}
+    if position in ("WR", "TE"):
+        return float(vac.get("targets") or 0) >= AGE_EXCEPTION_MIN_VACATED_TARGETS
+    if position == "RB":
+        return float(vac.get("carries") or 0) >= AGE_EXCEPTION_MIN_VACATED_CARRIES
+    if position == "QB":
+        return float(vac.get("snap_share") or 0) >= 0.5
+    return False
+
+
 def score_one_player(
     gsis_id: str,
     roster_entry: dict,
@@ -1526,13 +1548,26 @@ def build_season(
         if age is None:
             continue
         # Positional age ceiling AND experience cap: a player who hasn't broken
-        # out by these ages, or who is already in their 3rd+ NFL season, is
-        # unlikely to be a true breakout — exclude to keep the list fresh talent.
-        _MAX_AGE = {"RB": 26, "WR": 25, "TE": 26, "QB": 27}
+        # out by these ages, or who is already in their 3rd+ NFL season, is usually
+        # not a fresh breakout — exclude to keep the list young talent.
+        #
+        # Opportunity exception: an older / more-experienced player who just
+        # inherited a REAL vacated role (a WR1's targets left, a lead back's carries
+        # opened) still has a genuine breakout path — keep them, unless they're past
+        # a hard ceiling. Already-elite producers are dropped by the established /
+        # PPG-ceiling filters below, so this only surfaces ascending, not-yet-broken
+        # players (e.g. a 27-yo WR2 stepping into a vacated WR1 role).
+        _MAX_AGE = {"RB": 27, "WR": 27, "TE": 28, "QB": 28}
+        _HARD_MAX_AGE = {"RB": 29, "WR": 29, "TE": 30, "QB": 31}
         _years_exp = int(roster_entry.get("years_exp") or 0)
-        if age > _MAX_AGE.get(roster_entry["position"], 99) or _years_exp >= 3:
-            skipped_age += 1
-            continue
+        _pos = roster_entry["position"]
+        _team = roster_entry["team"]
+        if age > _MAX_AGE.get(_pos, 99) or _years_exp >= 3:
+            _inherited = _inherited_real_opportunity(
+                _team, _pos, gsis_id, vacated_cache, arrivals_cache)
+            if age > _HARD_MAX_AGE.get(_pos, 99) or not _inherited:
+                skipped_age += 1
+                continue
         if gsis_id in established_gsis:
             skipped_established += 1
             continue
