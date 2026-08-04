@@ -259,6 +259,67 @@ def _curve_metrics(rows):
         return float("nan"), float("nan")
 
 
+def _curve_prob(row) -> float:
+    """The current curve's hit prob for a candidate row (model forced off)."""
+    MP._load_hit_model.cache_clear()
+    _orig = MP._load_hit_model
+    MP._load_hit_model = lambda: None
+    try:
+        return MP.calculate_hit_probability(
+            _feat(row, "breakout_score"), _feat(row, "readiness_score"),
+            _feat(row, "confidence_score"),
+            str(row.get("position") or "").upper(),
+            _feat(row, "opportunity_score"), _feat(row, "role_trajectory_score"))
+    finally:
+        MP._load_hit_model = _orig
+        MP._load_hit_model.cache_clear()
+
+
+def _preview_candidates(model, season, scores_json, top):
+    """Show `season`'s candidates ranked by breakout score, with curve vs new-model
+    hit prob — so you can see the new breakouts before committing the model."""
+    try:
+        cands = _load_scores(season, scores_json)
+    except Exception as e:
+        print(f"\n[preview] could not load candidates for {season}: {e}")
+        return
+    if not cands:
+        print(f"\n[preview] no candidates found for season {season}")
+        return
+    rows = []
+    for r in cands:
+        pos = str(r.get("position") or "").upper()
+        feats = {f: _feat(r, f) for f in FEATURES}
+        m = _hit_prob_from_model_local(model, pos, feats)
+        rows.append((
+            r.get("player_name") or r.get("player_id"), pos,
+            _feat(r, "breakout_score"), _curve_prob(r),
+            m if m is not None else float("nan"),
+        ))
+    rows.sort(key=lambda x: -x[2])
+    print(f"\n[preview] season {season} candidates — curve vs NEW model hit prob "
+          f"(top {min(top, len(rows))} of {len(rows)}):")
+    print(f"    {'player':<24} {'pos':<3} {'score':>6} {'curve':>7} {'model':>7} {'Δ':>7}")
+    for name, pos, score, cp, mp_ in rows[:top]:
+        d = (mp_ - cp) if mp_ == mp_ else float("nan")  # nan-safe
+        print(f"    {str(name)[:24]:<24} {pos:<3} {score:>6.0f} "
+              f"{cp:>6.0%} {mp_:>6.0%} {d:>+6.0%}")
+
+
+def _hit_prob_from_model_local(model, pos, feats):
+    """Same logistic eval as inference, using the in-memory model (dependency-free)."""
+    blk = model["positions"].get(pos) or model["positions"].get("_global")
+    if not blk:
+        return None
+    order = model["features"]
+    z = float(blk["intercept"])
+    for i, name in enumerate(order):
+        denom = float(blk["std"][i]) or 1.0
+        z += float(blk["coef"][i]) * ((float(feats.get(name, 0.0)) - float(blk["mean"][i])) / denom)
+    import math as _m
+    return min(max(1.0 / (1.0 + _m.exp(-max(-60.0, min(60.0, z)))), 0.01), 0.95)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--seasons", type=int, nargs="+", required=True,
@@ -277,6 +338,10 @@ def main():
                     help="breakout target: absolute PPG floor for a hit (default 7.0)")
     ap.add_argument("--scratch-ppg", type=float, default=10.0,
                     help="breakout target: PPG bar for players with no real prior (default 10.0)")
+    ap.add_argument("--preview-season", type=int, default=None,
+                    help="after fitting, show this season's candidates ranked with "
+                         "curve vs new-model hit prob (read-only; e.g. 2026 for current)")
+    ap.add_argument("--top", type=int, default=30, help="rows to show in the preview")
     args = ap.parse_args()
 
     rows = assemble(args.seasons, args.scores_json, target=args.target,
@@ -325,6 +390,13 @@ def main():
         "hit_def": _hit_def,
         "positions": positions,
     }
+
+    # Preview: apply the just-fitted model to a season's actual candidates and show
+    # them ranked, with the current curve vs the new model's hit prob side by side.
+    # Read-only — nothing is written or committed.
+    if args.preview_season:
+        _preview_candidates(model, args.preview_season, args.scores_json, args.top)
+
     if args.write:
         Path(args.out).write_text(json.dumps(model, indent=2), encoding="utf-8")
         print(f"\n[train] wrote {args.out} — review the AUC/Brier above, then commit it.")
