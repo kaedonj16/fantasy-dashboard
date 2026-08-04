@@ -220,8 +220,12 @@ def main():
     hard_reset = os.environ.get("VALUE_HARD_RESET", "").strip().lower() in ("1", "true", "yes")
     if hard_reset:
         os.environ.setdefault("VALUE_MOVE_CAP_OVERRIDE", "50")  # subprocesses inherit this
-        print("[cron] VALUE_HARD_RESET set — bypassing daily clamp, EMA blend, and "
-              "value freshness guards for a one-time board reset")
+        # A hard reset must regenerate the board itself, so it also implies
+        # force_rebuild (the vendor scrape + model rebuild guards key off that).
+        # Otherwise steps 4/9 just re-save the stale model_values.json.
+        force_rebuild = True
+        print("[cron] VALUE_HARD_RESET set — forcing vendor scrape + board rebuild and "
+              "bypassing the daily clamp, EMA blend, and value freshness guards")
     _ema_alpha = 1.0 if hard_reset else 0.35
 
     print(f"[cron] Daily run starting - Season {season}, Week {week}")
