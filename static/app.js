@@ -11419,48 +11419,21 @@ function _buildBkTabHTML(data, scoreColor) {
   // ── Component breakdown (left on desktop, below on mobile) ─────────────────
   html += `<div class='pm-left-column pm-bk-comp-col'>`;
   html += `<hr class="pm-section-divider">`;
-  if (contribs) {
-    const maxAbs = Math.max(0.0001, ...contribs.map(c => Math.abs(c.contribution)));
-    const up = '#10b981', down = '#ef4444';
-    html += `<div class="pm-section-header"><span class="pm-section-label">What's Driving It</span></div>`;
-    html += `<div style="font-size:11px;color:var(--text-muted);margin:-2px 0 6px;">Each component's push on the breakout probability vs an average candidate.</div>`;
-    html += '<div class="pm-comp-list-bo">';
-    contribs.forEach(c => {
-      const val = parseFloat(c.contribution || 0);
-      const w   = Math.min(50, Math.abs(val) / maxAbs * 50);  // half-width diverging bar
-      const pos = val >= 0;
-      const color = pos ? up : down;
-      const barStyle = pos
-        ? `left:50%;width:${w.toFixed(1)}%;background:${color};`
-        : `left:${(50 - w).toFixed(1)}%;width:${w.toFixed(1)}%;background:${color};`;
-      html += `
-        <div class="pm-comp-row" title="Raw score: ${Number(c.value).toFixed(1)}">
-          <span class="pm-comp-label">${c.label}</span>
-          <div class="pm-comp-bar-wrap" style="position:relative;">
-            <div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--surface-2,rgba(255,255,255,0.15));"></div>
-            <div class="pm-comp-bar" style="position:absolute;top:0;bottom:0;border-radius:3px;${barStyle}"></div>
-          </div>
-          <span class="pm-comp-val" style="color:${color};">${pos ? '+' : '−'}${Math.abs(val).toFixed(2)}</span>
-        </div>`;
-    });
-    html += '</div></div>';
-  } else {
-    html += `<div class="pm-section-header"><span class="pm-section-label">Component Breakdown</span></div>`;
-    html += '<div class="pm-comp-list-bo">';
-    components.forEach(c => {
-      const v    = parseFloat(c.val || 0);
-      const fill = Math.min(100, Math.max(0, v));
-      const color = c.color || (v >= 60 ? '#10b981' : v >= 35 ? '#3b82f6' : '#f59e0b');
-      const disp = c.suffix ? v.toFixed(0) + c.suffix : v.toFixed(1);
-      html += `
-        <div class="pm-comp-row">
-          <span class="pm-comp-label">${c.label}</span>
-          <div class="pm-comp-bar-wrap"><div class="pm-comp-bar" style="width:${fill.toFixed(1)}%;background:${color};"></div></div>
-          <span class="pm-comp-val" style="color:${color};">${disp}</span>
-        </div>`;
-    });
-    html += '</div></div>';
-  }
+  // Plain, uniform bars — magnitude only, one accent color, no per-strength coloring.
+  html += `<div class="pm-section-header"><span class="pm-section-label">Component Breakdown</span></div>`;
+  html += '<div class="pm-comp-list-bo">';
+  components.forEach(c => {
+    const v    = parseFloat(c.val || 0);
+    const fill = Math.min(100, Math.max(0, v));
+    const disp = c.suffix ? v.toFixed(0) + c.suffix : v.toFixed(1);
+    html += `
+      <div class="pm-comp-row">
+        <span class="pm-comp-label">${c.label}</span>
+        <div class="pm-comp-bar-wrap"><div class="pm-comp-bar" style="width:${fill.toFixed(1)}%;background:${scoreColor};"></div></div>
+        <span class="pm-comp-val" style="color:var(--text-muted);">${disp}</span>
+      </div>`;
+  });
+  html += '</div></div>';
 
   // ── Key factors (right on desktop, above on mobile) ────────────────────────
   if (reasons.length || roleFitItem) {
