@@ -12711,9 +12711,12 @@ def page_breakouts(platform: str, season: int, league_id: str):
           return `
             <div class="` + cardCls + `"` + moAttr + ` style="cursor:pointer;" onclick="openPlayerModal('` + pid + `', '` + name + `', {{tab:'breakout'}})">
               <div class="breakout-card-header">
-                <div>
-                  <div class="breakout-player-name">` + name + `</div>
-                  <div class="breakout-player-meta" style="font-size:12px;color:var(--text-muted);margin-top:2px;">${{age}} yr • ${{team}} • ${{pos}}</div>
+                <div class="breakout-id">
+                  <div class="breakout-headshot">${{(name[0] || '?').toUpperCase()}}<img src="https://sleepercdn.com/content/nfl/players/thumb/` + pid + `.jpg" alt="" loading="lazy" decoding="async" onerror="this.remove()"></div>
+                  <div>
+                    <div class="breakout-player-name">` + name + `</div>
+                    <div class="breakout-player-meta" style="font-size:12px;color:var(--text-muted);margin-top:2px;">${{age}} yr • ${{team}} • ${{pos}}</div>
+                  </div>
                 </div>
                 <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
                   <div class="breakout-score-badge" style="background:${{scoreColor}};color:#fff;font-size:13px;font-weight:700;padding:3px 9px;border-radius:6px;">${{score}}</div>
