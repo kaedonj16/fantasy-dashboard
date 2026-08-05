@@ -196,7 +196,9 @@ def main():
                     help="prediction seasons to evaluate (labels come from season+1)")
     ap.add_argument("--scores-json", default=None,
                     help="dir of breakout_scores_{S}.json (else read the DB)")
-    ap.add_argument("--min-score", type=float, default=30.0)
+    ap.add_argument("--min-score", type=float, default=45.0,
+                    help="min breakout score to include (default 45 ~ the board-quality "
+                         "pool users actually see; lower to evaluate the wider pool)")
     ap.add_argument("--model", default=None,
                     help="score under this model JSON instead of the shipped prob "
                          "(for comparing a candidate model)")
