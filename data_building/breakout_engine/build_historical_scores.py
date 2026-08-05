@@ -1053,12 +1053,12 @@ def _compute_projected_usage(
             else:
                 reduction = 0.0
         else:  # WR / TE
-            if total_threat >= 0.50:
-                reduction = 0.22   # Clear starter arriving (e.g. established TE traded in)
-            elif total_threat >= 0.35:
-                reduction = 0.14   # Real role competitor
-            else:
-                reduction = 0.0
+            # Proportional to summed threat (no hard cliff): slope 0.44 reproduces
+            # the old steps (0.35 -> 0.15, 0.50 -> 0.22) while letting smaller,
+            # cross-position-discounted threats still take a real bite. Capped at
+            # 0.22 so a clear starter arriving (e.g. a traded-in TE) is the ceiling.
+            # Example: two early WRs vs a TE (~0.23 summed) -> ~10% cut, not zero.
+            reduction = min(0.22, total_threat * 0.44)
 
         if reduction > 0:
             proj_targets = proj_targets * (1 - reduction)
