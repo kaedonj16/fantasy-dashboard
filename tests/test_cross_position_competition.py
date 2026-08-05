@@ -63,13 +63,26 @@ def test_cross_position_penalty_much_smaller_than_same_position():
     assert wr_pen < te_pen * 0.4  # WR arrival hurts a TE far less than a TE would
 
 
-def test_two_drafted_wrs_do_not_trigger_te_volume_cut():
-    # The projected-usage reduction fires when summed threat >= 0.35 (WR/TE).
-    # Two early WRs, discounted, must stay below that so they don't gut a TE's
-    # projected targets the way two incoming TEs would.
-    _, det = _run("TE", [
+def _wr_te_reduction(total_threat):
+    # Mirrors the proportional WR/TE projected-target reduction in
+    # build_historical_scores._compute_projected_usage.
+    return min(0.22, total_threat * 0.44)
+
+
+def test_two_drafted_wrs_still_cut_te_volume_but_less_than_two_tes():
+    # The projected-target reduction is proportional (no cliff): two early WRs,
+    # discounted, must still take a real bite out of a TE's projected volume, but
+    # far less than two same-position TEs would.
+    _, wr_det = _run("TE", [
         _rookie("wr1", "Rookie WR1", "WR", 1, 2),
         _rookie("wr2", "Rookie WR2", "WR", 2, 35),
     ])
-    total_threat = sum(t["threat_score"] for t in det["threats_added"])
-    assert total_threat < 0.35
+    _, te_det = _run("TE", [
+        _rookie("te1", "Rookie TE1", "TE", 1, 10),
+        _rookie("te2", "Rookie TE2", "TE", 2, 40),
+    ])
+    wr_cut = _wr_te_reduction(sum(t["threat_score"] for t in wr_det["threats_added"]))
+    te_cut = _wr_te_reduction(sum(t["threat_score"] for t in te_det["threats_added"]))
+    assert wr_cut > 0.0                 # two WRs still hurt a TE's targets
+    assert te_cut == pytest.approx(0.22)  # two TEs hit the ceiling
+    assert wr_cut < te_cut * 0.6        # but the WRs' impact is much smaller
