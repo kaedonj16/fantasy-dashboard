@@ -435,6 +435,7 @@ class BreakoutEngine:
                 opportunity_score=component_scores['opportunity_opened'],
                 competition_removed_score=component_scores['competition_removed'],
                 team_environment_score=component_scores['team_environment'],
+                projected_season_ppr=(projection.get('fantasy_points', {}) or {}).get('ppr_total'),
             )
 
         # Persist projection values so the API and UI can derive PPG ranges

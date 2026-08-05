@@ -1383,14 +1383,14 @@ def score_one_player(
             team_environment_score=component_scores["team_environment"],
         )
 
-    # Blend model projection 70% / prior-season PPG 30% — mirrors the playoff
-    # odds simulator's _blend_weekly_projections anchor to prior performance.
-    # This prevents extreme model outputs and keeps breakout PPG ranges
-    # consistent with the projections used elsewhere in the app.
+    # Blend model projection 80% / prior-season PPG 20% — anchors lightly to
+    # prior performance to tame extreme model outputs, while leaning on the
+    # (now efficiency-aware) projection so breakout upside isn't over-damped
+    # by a low prior-year baseline.
     prev_ppr_ppg = float(prev_usage.get("ppr_ppg") or 0)
     raw_s1 = multitask.get("season1_ppr")
     if raw_s1 is not None and prev_ppr_ppg > 0:
-        blended_s1 = round(0.70 * raw_s1 + 0.30 * prev_ppr_ppg * 17, 1)
+        blended_s1 = round(0.80 * raw_s1 + 0.20 * prev_ppr_ppg * 17, 1)
         multitask["season1_ppr"] = blended_s1
 
     component_details["projections"] = {
