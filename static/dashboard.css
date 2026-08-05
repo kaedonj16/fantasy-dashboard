@@ -1394,9 +1394,15 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
    block stays top-aligned next to it. */
 .breakout-id {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 11px;
   min-width: 0;
+}
+
+/* Nudge the name/meta block down slightly so it centers on the headshot's
+   visual height (the tile's -12px bottom margin shifts its box up by 6px). */
+.breakout-id > div:last-child {
+  margin-top: 6px;
 }
 
 .breakout-headshot {
