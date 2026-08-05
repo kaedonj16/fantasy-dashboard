@@ -3516,6 +3516,24 @@ strong + .player-badge,
   color: var(--text);
 }
 
+/* Value + owner @handle stacked on the right of a Side A dropdown row. */
+.otc-dropdown-value-wrap {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+.otc-dropdown-owner {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .otc-filter-chip {
   padding: 4px 8px;
   border-radius: 999px;

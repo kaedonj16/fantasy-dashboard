@@ -270,6 +270,11 @@ def build_players_shell() -> str:
         font-variant-numeric: tabular-nums;
       }
       .pr-adp-cell-active { color: var(--accent); font-weight: 700; }
+      /* Comparison arrow vs the sorted ADP source: green ▲ when this source ranks
+         the player higher (earlier pick), red ▼ when lower (later pick). */
+      .pr-adp-arrow { font-size: 8px; margin-left: 3px; vertical-align: 1px; }
+      .pr-adp-arrow.up   { color: var(--win); }
+      .pr-adp-arrow.down { color: var(--loss); }
       /* Compact Pos/Age/Team columns kept in the ADP view on desktop */
       .pr-adp-meta-h {
         text-align: center;
