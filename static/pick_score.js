@@ -19,11 +19,13 @@
 
   // Rookie momentum down-weighted 0.06 -> 0.03 (freed weight to value/adp) after
   // a 509-team backtest showed a 7-day ranking blip hurts rookie-season
-  // prediction. Keep in lockstep with PS_WEIGHTS in utils/pick_score.py.
+  // prediction. Rookie & startup youth trimmed / tier & ppg raised after a
+  // 1,378-team multi-year backtest (youth-down + tier/ppg-up were the top nudges
+  // in all three views). Keep in lockstep with PS_WEIGHTS in utils/pick_score.py.
   var WEIGHTS = {
-    rookie:  { vor: 0.06, value: 0.20, adp: 0.30, tier: 0.12, need: 0.05, youth: 0.24, mom: 0.03, ppg: 0.05 },
+    rookie:  { vor: 0.06, value: 0.20, adp: 0.30, tier: 0.14, need: 0.05, youth: 0.20, mom: 0.03, ppg: 0.07 },
     redraft: { vor: 0.10, value: 0.24, adp: 0.33, tier: 0.08, need: 0.07, youth: 0.00, mom: 0.03, ppg: 0.18 },
-    startup: { vor: 0.07, value: 0.24, adp: 0.30, tier: 0.12, need: 0.09, youth: 0.10, mom: 0.03, ppg: 0.10 },
+    startup: { vor: 0.07, value: 0.24, adp: 0.30, tier: 0.14, need: 0.09, youth: 0.07, mom: 0.03, ppg: 0.11 },
   };
   var AGE_PEAKS = { RB: 24, WR: 27, TE: 27, QB: 29 };
   var CORE = { QB: 1, RB: 1, WR: 1, TE: 1 };
