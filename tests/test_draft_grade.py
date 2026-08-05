@@ -12,6 +12,7 @@ from utils.draft_grade import (
     dr_letter_to_score,
     dr_lineup_score,
     dr_optimal_lineup,
+    dr_rookie_team_score,
     dr_slot_eligible,
     dr_team_grade_score,
 )
@@ -41,6 +42,33 @@ def test_letter_to_score_known_and_default():
     assert dr_letter_to_score("A+") == 92
     assert dr_letter_to_score("F") == 20
     assert dr_letter_to_score("???") == 55
+
+
+# ---- dr_rookie_team_score (smooth 0-100 rookie grade) ---------------------
+
+def test_rookie_team_score_none_when_empty():
+    assert dr_rookie_team_score([]) is None
+    assert dr_rookie_team_score(["N/A", "N/A"]) is None
+
+
+def test_rookie_team_score_anchored_to_uniform_class():
+    # An all-B class still scores exactly B's canonical value (70) — same anchor
+    # as the old coarse path, so uniform classes don't shift.
+    assert dr_rookie_team_score(["B", "B", "B"]) == pytest.approx(70.0)
+    assert dr_rookie_team_score(["A", "A"]) == pytest.approx(87.0)
+
+
+def test_rookie_team_score_is_continuous_for_mixed_class():
+    # The whole point of #4: a mixed [A, B] class averages to 78.5 (B+), instead
+    # of the old letter-bucketing rounding it up to a full A (87).
+    v = dr_rookie_team_score(["A", "B"])
+    assert v == pytest.approx((87 + 70) / 2)   # 78.5
+    assert dr_grade_letter(v) == "B+"          # not "A"
+
+
+def test_rookie_team_score_ignores_na_picks():
+    # N/A picks (no ADP) drop out; the mean is over the gradeable ones only.
+    assert dr_rookie_team_score(["A", "N/A", "A"]) == pytest.approx(87.0)
 
 
 # ---- dr_slot_eligible -----------------------------------------------------

@@ -37,6 +37,27 @@ def dr_letter_to_score(letter: str) -> int:
     return {"A+": 92, "A": 87, "B": 70, "C": 55, "D": 43, "F": 20, "N/A": 55}.get(letter, 55)
 
 
+def dr_rookie_team_score(pick_letters: "list[str]") -> Optional[float]:
+    """Smooth 0-100 rookie team score: the MEAN of each pick's canonical letter
+    score, instead of averaging letters into a single coarse team letter and then
+    bucketing that back to a score.
+
+    The old path (average letter -> letterToScore) snapped whole classes to a
+    handful of values (A=87, B=70, ...) and rounded mixed classes up — an [A, B]
+    class scored a full A (87). Averaging the per-pick canonical scores keeps the
+    same anchors (an all-B class is still 70) but grades mixed classes on a
+    continuous scale ([A, B] -> 78.5 -> B+), so real differences in a rookie haul
+    read through. Per-pick letters still come from the BPA/ADP-diff grader.
+
+    Mirrored in static/draft_room.js (rookie branch of gradePicks); keep the two
+    in lock-step. Returns None when there are no gradeable picks.
+    """
+    scores = [dr_letter_to_score(L) for L in pick_letters if L and L != "N/A"]
+    if not scores:
+        return None
+    return sum(scores) / len(scores)
+
+
 def dr_slot_eligible(slot: str, pos: str) -> bool:
     pos = (pos or "").upper()
     if slot == "FLEX": return pos in ("RB", "WR", "TE")

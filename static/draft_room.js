@@ -2727,8 +2727,13 @@
         if (letter !== 'N/A') _letters.push(letter);
         if (_rCounts[pos] != null) _rCounts[pos]++;
       });
-      var teamLetter = teamLetterFromPicks(_letters);
-      var rv = letterToScore(teamLetter);
+      // Smooth 0-100: MEAN of each pick's canonical letter score, not the coarse
+      // team-letter bucket (mirrors utils.draft_grade.dr_rookie_team_score; keep
+      // the two in lock-step). An [A, B] class -> 78.5 (B+), not a rounded-up A.
+      var _rk = _letters.filter(function(L){ return L && L !== 'N/A'; })
+                        .map(function(L){ return letterToScore(L); });
+      var rv = _rk.length ? _rk.reduce(function(a, b){ return a + b; }, 0) / _rk.length
+                          : letterToScore(teamLetterFromPicks(_letters));
       return { score: rv, value: avgPs != null ? Math.round(avgPs) : 50,
         balance: 0, tier: 0, count: mine.length,
         avgPs: avgPs ? Math.round(avgPs) : null, window: null };
