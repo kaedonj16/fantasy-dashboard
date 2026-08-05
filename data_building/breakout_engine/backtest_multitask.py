@@ -206,6 +206,7 @@ def load_breakout_scores_from_db(season: int, min_score: float = 0.0) -> list[di
             SELECT DISTINCT ON (player_id)
                 player_id, player_name, position, team,
                 breakout_opportunity_score,
+                hit_probability,
                 player_readiness_score,
                 confidence_score,
                 role_trajectory_score,
