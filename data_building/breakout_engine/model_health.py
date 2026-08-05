@@ -25,7 +25,7 @@ from typing import Callable, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from data_building.breakout_engine import backtest_multitask as _bt
-from data_building.breakout_engine.multitask_predictions import _hit_prob_from_model
+from data_building.breakout_engine.multitask_predictions import _hit_prob_from_model, _load_hit_model
 
 FEATURES = ("opportunity_opened_score", "competition_removed_score",
             "team_environment_score", "player_readiness_score",
@@ -42,18 +42,32 @@ def load_eval_rows(season: int, scores_json: Optional[str], min_score: float = 3
     outcomes = _bt.load_actual_outcomes(season + 1)
     source = _bt.load_source_stats(season)
     breakouts = _bt.get_breakout_pids(outcomes, source)
+    committed = _load_hit_model()   # for rows that don't carry a stored prob (e.g. DB path)
 
     rows: list[dict] = []
     for c in cands:
         pid = c.get("player_id")
         if pid not in outcomes:            # only players we can grade
             continue
+        pos = c.get("position") or "WR"
+        feats = {f: float(c.get(f) or 0) for f in FEATURES}
+        # Prefer the stored hit_probability; if a row doesn't carry one (some DB
+        # rows / older exports), compute it from the committed model so the
+        # "shipped prob" report reflects the real model, not zeros.
+        raw = c.get("hit_probability")
+        if raw is not None:
+            prob = float(raw)
+        elif committed is not None:
+            p = _hit_prob_from_model(committed, pos, feats)
+            prob = float(p) if p is not None else 0.0
+        else:
+            prob = 0.0
         rows.append({
             "pid": pid,
-            "pos": c.get("position") or "WR",
-            "feats": {f: float(c.get(f) or 0) for f in FEATURES},
+            "pos": pos,
+            "feats": feats,
             "score": float(c.get("breakout_opportunity_score") or 0) / 100.0,
-            "prob": float(c.get("hit_probability") or 0),
+            "prob": prob,
             "hit": 1 if pid in breakouts else 0,
             "prev_ppg": float(source.get(pid, {}).get("ppr_ppg") or 0),
             "actual_ppg": float(outcomes[pid]["ppr_ppg"]),
