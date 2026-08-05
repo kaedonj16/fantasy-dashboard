@@ -924,6 +924,8 @@ def _compute_projected_usage(
     reflect role expansion, not just historical volume.
 
     Additional signals applied here:
+    - Large-vacancy heir: an already-rotational player inheriting an unusually
+      large vacated target/carry load absorbs a bigger opp_share of it
     - H2 progression: if trend_factor ≥ 1.20 and ≥4 H2 games, project from H2 rate
     - Better situation: RB escaping split backfield (snap<0.55) → starter opp_share
     - Age succession: credit a fraction of aging incumbent's opportunity
@@ -957,6 +959,17 @@ def _compute_projected_usage(
             opp_share = 0.16
     else:
         opp_share = 0.25
+
+    # Large-vacancy heir boost: the baseline opp_share assumes a typical opening.
+    # When an unusually large target/carry load is vacated, an already-rotational
+    # candidate (prev_snap gate — not a deep backup) absorbs a bigger slice of it.
+    # This is what turns "inherited a WR1 role" into a visible projected-volume
+    # jump instead of a marginal bump over prior usage. The _MAX_SEASON_PPR
+    # ceiling and the modal display cap still guard against runaway projections.
+    if position in ("WR", "TE") and prev_snap >= 0.35 and vac_targets >= 60:
+        opp_share = min(opp_share + (vac_targets - 60.0) / 400.0, 0.55)
+    elif position == "RB" and prev_snap >= 0.30 and vac_carries >= 80:
+        opp_share = min(opp_share + (vac_carries - 80.0) / 500.0, 0.60)
 
     prev_targets    = float((prev_usage or {}).get("targets", 0))
     prev_carries    = float((prev_usage or {}).get("carries", 0))
