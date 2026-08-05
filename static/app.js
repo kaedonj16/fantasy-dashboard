@@ -11406,12 +11406,13 @@ function _buildBkTabHTML(data, scoreColor) {
     { label: 'Role Trajectory', val: data.role_trajectory_score,     color: null      },
     { label: 'Confidence',      val: data.confidence_score,          color: '#6b7280' },
   ];
-  // Contribution view: what each component added to / subtracted from the
-  // probability (coef × z-score from the fitted model). Present only once the
-  // model is committed; otherwise we fall back to the raw component bars.
-  const contribs = Array.isArray(data.hit_contributions) && data.hit_contributions.length
-    ? data.hit_contributions.slice().sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution))
-    : null;
+  // Always show the raw component breakdown (consistent across every position).
+  // The old "what's driving it" contribution view reflected the fitted model's
+  // coefficients — but the headline Breakout Score is now an opportunity-weighted
+  // blend, and the model's opportunity coefficient is 0, so the contribution view
+  // contradicted the headline (and only existed for WR/RB, not curve QB/TE). The
+  // raw 0-100 component scores are consistent with the blended score.
+  const contribs = null;
 
   html += `<div class='pm-two-column'>`;
 
