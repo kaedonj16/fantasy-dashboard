@@ -17,10 +17,19 @@ from utils.draft_grade import clamp01
 # grade-vs-rookie-season correlation monotonically (r +0.220 -> +0.233), i.e. a
 # 7-day ranking blip is noise for predicting a full season. The freed 0.03 went
 # to value/adp, the levers that held up in the same sweep.
+#
+# Rookie & startup youth trimmed / tier & ppg raised after a 1,378-team backtest
+# (60 leagues, multi-year outcomes): youth-down and tier-up/ppg-up were the top
+# nudges in ALL THREE views (rookie year-1, rookie multi-year, startup
+# multi-year). Youth appears to double-count — a young player already carries
+# high dynasty value — while tier (scarcity) and ppg (production) predict
+# success and were under-weighted. Effects are individually within noise, so the
+# moves are deliberately modest and lean on the cross-view consistency.
+# Redraft is unchanged: the sampled leagues were all dynasty (no redraft data).
 PS_WEIGHTS = {
-    "rookie":  {"vor": 0.06, "value": 0.20, "adp": 0.30, "tier": 0.12, "need": 0.05, "youth": 0.24, "mom": 0.03, "ppg": 0.05},
+    "rookie":  {"vor": 0.06, "value": 0.20, "adp": 0.30, "tier": 0.14, "need": 0.05, "youth": 0.20, "mom": 0.03, "ppg": 0.07},
     "redraft": {"vor": 0.10, "value": 0.24, "adp": 0.33, "tier": 0.08, "need": 0.07, "youth": 0.00, "mom": 0.03, "ppg": 0.18},
-    "startup": {"vor": 0.07, "value": 0.24, "adp": 0.30, "tier": 0.12, "need": 0.09, "youth": 0.10, "mom": 0.03, "ppg": 0.10},
+    "startup": {"vor": 0.07, "value": 0.24, "adp": 0.30, "tier": 0.14, "need": 0.09, "youth": 0.07, "mom": 0.03, "ppg": 0.11},
 }
 PS_AGE_PEAKS = {"RB": 24, "WR": 27, "TE": 27, "QB": 29}
 
