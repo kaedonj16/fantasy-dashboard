@@ -40,6 +40,17 @@ _BASE_SEASON_PPR: dict[str, float] = {
     "TE":  145.0,
 }
 
+# Believability ceiling on a single-season projection (~an elite, top-1-3 season
+# per position). A breakout projection can be aggressive, but it should never read
+# as an all-time outlier — this hard-caps the season total so the PPG range stays
+# plausible even with efficiency-aware inputs and lighter prior-anchoring.
+_MAX_SEASON_PPR: dict[str, float] = {
+    "QB":  460.0,   # ~27 PPG
+    "RB":  390.0,   # ~23 PPG
+    "WR":  370.0,   # ~22 PPG
+    "TE":  290.0,   # ~17 PPG
+}
+
 # PPR points per target/carry — fitted from 2024 season actuals
 # (players with ≥8 games; rushing pts isolated from receiving for RBs).
 # WR: 1.73 | TE: 1.76 | RB targets: 1.56 | RB carries: 0.61
@@ -77,6 +88,25 @@ _SEASON_PPR_UPLIFT: dict[str, float] = {
     "WR": 1.00,
     "TE": 1.00,
 }
+
+
+# League-average efficiency used as fallbacks when a player's own metric is
+# missing, with clamp ranges so a small-sample outlier can't inflate a projection.
+_LEAGUE_YPT = {"WR": 8.2, "TE": 7.6, "RB": 6.5}          # yards per target
+_LEAGUE_CR = {"WR": 0.63, "TE": 0.66, "RB": 0.74}        # catch rate
+_REC_TD_PER_TGT = {"WR": 0.050, "TE": 0.055, "RB": 0.030}
+_RUSH_TD_PER_CARRY = {"RB": 0.028, "WR": 0.020, "TE": 0.0}
+
+
+def _eff(value, default: float, lo: float, hi: float) -> float:
+    """A player's efficiency metric, clamped to a sane band; default when missing."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return default
+    if v <= 0:
+        return default
+    return min(max(v, lo), hi)
 
 
 def _estimate_season_ppr(
@@ -118,16 +148,21 @@ def _estimate_season_ppr(
         return base * 0.5 * uplift
 
     if proj_targets > 0 or proj_carries > 0:
-        ppr = (
-            proj_targets * _TARGET_PPR_RATE.get(pos, 7.0)
-            + proj_carries * _CARRY_PPR_RATE.get(pos, 1.8)
-        )
-        # Efficiency multiplier: above-average efficiency gets a 10% boost
-        if efficiency_metrics:
-            ypt = float(efficiency_metrics.get("yards_per_target") or 0)
-            ypc = float(efficiency_metrics.get("yards_per_carry") or 0)
-            if (pos in ("WR", "TE") and ypt >= 9.0) or (pos == "RB" and ypc >= 4.8):
-                ppr *= 1.10
+        # Efficiency-aware PPR: build points from the player's own yards/target,
+        # catch rate, and yards/carry (falling back to league averages, clamped
+        # so a small-sample outlier can't inflate a projection). PPR scoring:
+        # 1 pt/reception + 0.1 pt/yard + 6 pts/TD.
+        em = efficiency_metrics or {}
+        ypt = _eff(em.get("yards_per_target"), _LEAGUE_YPT.get(pos, 8.0), 4.0, 13.0)
+        cr = _eff(em.get("catch_rate") or em.get("catch_pct"),
+                  _LEAGUE_CR.get(pos, 0.64), 0.45, 0.80)
+        ypc = _eff(em.get("yards_per_carry"), 4.3, 3.0, 6.0)
+        rec_td = _REC_TD_PER_TGT.get(pos, 0.045)
+        rush_td = _RUSH_TD_PER_CARRY.get(pos, 0.020)
+
+        rec_ppr = proj_targets * (ypt * 0.1 + cr * 1.0 + rec_td * 6.0)
+        rush_ppr = proj_carries * (ypc * 0.1 + rush_td * 6.0)
+        ppr = rec_ppr + rush_ppr
         return max(ppr, base * 0.4) * uplift
 
     if proj_snaps > 0:
@@ -319,6 +354,7 @@ def calculate_cumulative_ppr(
     prev_usage: Optional[dict],
     readiness_score: float,
     age: Optional[float],
+    projected_season_ppr: Optional[float] = None,
 ) -> float:
     """
     Expected PPR fantasy points over the next 2 seasons.
@@ -327,14 +363,25 @@ def calculate_cumulative_ppr(
     age-based factor (young players develop, veterans decline).
     A readiness discount is applied to players with low readiness scores
     to account for the risk of not capturing projected opportunity.
+
+    projected_season_ppr: efficiency-aware season PPR from project_player_stats
+    (targets/carries × the player's OWN yards-per-target, catch rate and TD rates).
+    Preferred when available; the flat-rate _estimate_season_ppr is the fallback.
     """
-    season1 = _estimate_season_ppr(position, projected_usage, efficiency_metrics, prev_usage)
+    pos = (position or "WR").upper()
+    if projected_season_ppr and projected_season_ppr > 0:
+        season1 = float(projected_season_ppr)
+    else:
+        season1 = _estimate_season_ppr(position, projected_usage, efficiency_metrics, prev_usage)
 
     # Readiness discount: low readiness means the player may not capitalise.
     # Floor raised to 0.75 — even low-readiness candidates have plausible usage
     # and the 0.60 floor caused systematic PPG underprediction in backtests.
     readiness_factor = 0.75 + (readiness_score / 100.0) * 0.25  # range [0.75, 1.00]
     season1 *= readiness_factor
+
+    # Believability ceiling: never project an all-time-outlier season.
+    season1 = min(season1, _MAX_SEASON_PPR.get(pos, 400.0))
 
     age_f = float(age or 24)
     if age_f < 23:
@@ -387,6 +434,7 @@ def compute_multitask_predictions(
     opportunity_score: float = 0.0,
     competition_removed_score: float = 0.0,
     team_environment_score: float = 0.0,
+    projected_season_ppr: Optional[float] = None,
 ) -> dict:
     """
     Compute all three multitask predictions in one call.
@@ -401,7 +449,8 @@ def compute_multitask_predictions(
         team_environment_score=team_environment_score,
     )
     cum_ppr = calculate_cumulative_ppr(
-        position, projected_usage, efficiency_metrics, prev_usage, readiness_score, age
+        position, projected_usage, efficiency_metrics, prev_usage, readiness_score, age,
+        projected_season_ppr=projected_season_ppr,
     )
     peak = calculate_peak_ppr(cum_ppr, role_trajectory_score, readiness_score)
 
