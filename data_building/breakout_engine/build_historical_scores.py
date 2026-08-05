@@ -48,6 +48,7 @@ import logging
 import argparse
 import json
 import math
+import os
 import sys
 from datetime import date
 from pathlib import Path
@@ -1675,13 +1676,24 @@ def build_season(
         print("  Nothing to save.")
         return 0
 
-    scored.sort(key=lambda x: -x["breakout_opportunity_score"])
+    # Rank exactly the way the site's board does: by the score/hit-probability
+    # blend (dashboard_services.breakout_api._breakout_blend), not by raw score.
+    # The env var mirrors that module's BREAKOUT_RANK_BLEND_WEIGHT default.
+    blend_w = min(1.0, max(0.0, float(os.environ.get("BREAKOUT_RANK_BLEND_WEIGHT", "0.5"))))
 
-    print(f"  Top candidates:")
+    def _blend(r: dict) -> float:
+        score = float(r.get("breakout_opportunity_score") or 0) / 100.0
+        prob = float(r.get("hit_probability") or 0)
+        return blend_w * score + (1.0 - blend_w) * prob
+
+    scored.sort(key=lambda x: -_blend(x))
+
+    print(f"  Top candidates (ranked by site blend, weight={blend_w:.2f}):")
     for r in scored[:10]:
         suffix = f"hit_prob={r['hit_probability']:.0%}" if r["hit_probability"] is not None else "no pred"
         print(f"    {r['player_name']:<22} {r['position']} {r['team']:<4} "
-              f"score={r['breakout_opportunity_score']:.0f}  {suffix}")
+              f"score={r['breakout_opportunity_score']:.0f}  {suffix}  "
+              f"blend={_blend(r):.2f}")
 
     if dry_run:
         print(f"  [dry-run] Would save {len(scored)} rows")
