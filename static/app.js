@@ -11304,9 +11304,14 @@ function _buildBkTabHTML(data, scoreColor) {
     const conf = Math.min(100, Math.max(30, parseFloat(data.confidence_score || 70)));
     // halfSpread: ±4% at conf=90, ±7% at conf=70, ±12% at conf=30
     const halfSpread = 0.04 + (0.12 - 0.04) * (90 - conf) / 60;
+    // Upside cap: a sanity ceiling on the projection vs last season. The old 1.25x
+    // capped the range BELOW the breakout definition itself (>=1.4x), so it hid the
+    // very jump this board exists to show. Allow up to +85% and let a genuinely
+    // projected breakout read through; still clips absurd outputs.
+    const UPSIDE_CAP = 1.85;
     const highRaw  = modelPpg * (1 + halfSpread);
-    const high     = (prevPpg > 0 && highRaw > prevPpg * 1.25) ? prevPpg * 1.25 : highRaw;
-    const isCapped = prevPpg > 0 && highRaw > prevPpg * 1.25;
+    const high     = (prevPpg > 0 && highRaw > prevPpg * UPSIDE_CAP) ? prevPpg * UPSIDE_CAP : highRaw;
+    const isCapped = prevPpg > 0 && highRaw > prevPpg * UPSIDE_CAP;
     const rawLow   = isCapped ? high * (1 - halfSpread) : modelPpg * (1 - halfSpread * 0.8);
     const lowFloor = (prevPpg > 0 && rawLow < prevPpg) ? prevPpg : rawLow;
     const low      = Math.min(lowFloor, high);  // never let low exceed high
