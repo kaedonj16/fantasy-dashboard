@@ -200,6 +200,25 @@ def _opportunity_group_keys(team: str, position: str) -> List[Tuple[str, str]]:
     return [(team, position)]
 
 
+# How much a competitor at a DIFFERENT pass-catcher position threatens the
+# candidate's role. WRs and TEs share the QB's target pool, but they are not
+# interchangeable — a rookie WR mostly eats the WR room's perimeter targets, not
+# the seam/red-zone looks a TE lives on. These mirror the vacated-opportunity
+# spillover weights so credit (a WR leaving) and penalty (a WR arriving) are
+# symmetric. Same-position competition is always full strength (1.0).
+_CROSS_POSITION_THREAT_WEIGHT = {
+    ("TE", "WR"): 0.15,   # an incoming WR threatens a TE at ~15%
+    ("WR", "TE"): 0.08,   # an incoming TE threatens a WR at ~8%
+}
+
+
+def _cross_position_threat_weight(candidate_pos: str, arrival_pos: str) -> float:
+    """Discount for a competitor arriving at a different position than the candidate."""
+    if candidate_pos == arrival_pos:
+        return 1.0
+    return _CROSS_POSITION_THREAT_WEIGHT.get((candidate_pos, arrival_pos), 1.0)
+
+
 def _pooled_vacated(vacated_cache, team: str, position: str, season: int):
     """Merge vacated opportunity across the player's opportunity group.
 
@@ -895,10 +914,21 @@ def calculate_competition_added_penalty(
     """
     # OPTIMIZED: Use cache if provided, otherwise fall back to DB query.
     # WR/TE pool pass-catcher arrivals so an incoming WR counts as added
-    # competition for a TE (and vice versa); RB/QB unchanged.
-    arrivals = _pooled_list(
-        arrivals_cache, get_arrivals_by_team_position, team, position, season
-    )
+    # competition for a TE (and vice versa); RB/QB unchanged. Each arrival is
+    # tagged with the position it arrived AT (_src_pos) so a cross-position
+    # threat can be discounted to the real WR/TE overlap below.
+    arrivals: List[Dict] = []
+    seen_ids: set = set()
+    for _t, _p in _opportunity_group_keys(team, position):
+        items = (arrivals_cache.get((_t, _p), []) if arrivals_cache is not None
+                 else get_arrivals_by_team_position(_t, _p, season))
+        for it in items or []:
+            pid = it.get("player_id")
+            if pid is not None and pid in seen_ids:
+                continue
+            if pid is not None:
+                seen_ids.add(pid)
+            arrivals.append({**it, "_src_pos": _p})
 
     if not arrivals:
         return 0.0, {
@@ -923,6 +953,13 @@ def calculate_competition_added_penalty(
         if threat_score <= 0:
             continue
 
+        # Cross-position discount: a WR only partially competes with a TE (and
+        # vice versa). Same-position competitors keep full weight.
+        xpos_weight = _cross_position_threat_weight(position, arrival.get("_src_pos", position))
+        threat_score *= xpos_weight
+        if threat_score <= 0:
+            continue
+
         penalty_value, threat_level = _threat_score_to_penalty(threat_score, position)
         raw_penalty_total += penalty_value
 
@@ -932,6 +969,8 @@ def calculate_competition_added_penalty(
             "threat_score": round(threat_score, 3),
             "threat_level": threat_level,
             "penalty": penalty_value,
+            "cross_position_weight": round(xpos_weight, 2),
+            "competitor_position": arrival.get("_src_pos", position),
             **threat_details,
         })
 
