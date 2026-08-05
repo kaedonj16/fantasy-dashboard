@@ -78,7 +78,9 @@ def main():
                     help="seasons to judge champion vs challenger on (default: --seasons)")
     ap.add_argument("--scores-json", default=None,
                     help="dir of breakout_scores_{S}.json (else read the DB)")
-    ap.add_argument("--min-score", type=float, default=30.0)
+    ap.add_argument("--min-score", type=float, default=45.0,
+                    help="min breakout score for the eval pool (default 45 ~ board-quality; "
+                         "champion vs challenger is judged on the pool users see)")
     ap.add_argument("--margin", type=float, default=0.005,
                     help="challenger must beat the champion's gate metric by at least "
                          "this much to be adopted (default 0.005, avoids churn on noise)")
