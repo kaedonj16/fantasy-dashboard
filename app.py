@@ -12663,18 +12663,19 @@ def page_breakouts(platform: str, season: int, league_id: str):
           const pos = candidate.position || '?';
           const age = candidate.age ? parseFloat(candidate.age).toFixed(0) : '-';
           const pid = candidate.player_id || '';
-          // Breakout probability is the single headline (score = probability now).
+          // Headline = blended 0-100 breakout score (opportunity + model probability);
+          // the model's raw hit chance is shown as a secondary chip.
           const prob = candidate.hit_probability != null ? parseFloat(candidate.hit_probability) : null;
           const hitProb = prob != null ? Math.round(prob * 100) : null;
-          const score = hitProb != null ? hitProb : 0;  // legacy var reused for card logic
+          const blend = candidate.breakout_blend != null ? parseFloat(candidate.breakout_blend)
+                      : (prob != null ? prob : 0);
+          const score = Math.round(blend * 100);  // 0-100 headline
 
           let scoreColor = '#6b7280', tier = 'Low';
-          if (prob != null) {{
-            if (prob >= 0.45) {{ scoreColor = '#10b981'; tier = 'Elite'; }}
-            else if (prob >= 0.30) {{ scoreColor = '#3b82f6'; tier = 'High'; }}
-            else if (prob >= 0.18) {{ scoreColor = '#f59e0b'; tier = 'Moderate'; }}
-            else {{ scoreColor = '#6b7280'; tier = 'Low'; }}
-          }}
+          if (score >= 60) {{ scoreColor = '#10b981'; tier = 'Elite'; }}
+          else if (score >= 45) {{ scoreColor = '#3b82f6'; tier = 'High'; }}
+          else if (score >= 30) {{ scoreColor = '#f59e0b'; tier = 'Moderate'; }}
+          else {{ scoreColor = '#6b7280'; tier = 'Low'; }}
 
           const range = _boPpgRange(candidate);
           const topComp = _boTopComponent(candidate);
@@ -12697,14 +12698,14 @@ def page_breakouts(platform: str, season: int, league_id: str):
 
           const hitHtml = prob != null
             ? `<div style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;background:${{scoreColor}}22;border:1px solid ${{scoreColor}}44;font-size:11px;font-weight:700;color:${{scoreColor}};text-transform:uppercase;letter-spacing:0.03em;">
-                 ${{tier}}
+                 ${{tier}} · ${{hitProb}}% hit
                </div>`
             : '';
 
           const barFill = Math.min(100, Math.max(0, topComp.val));
           // Elite-tier candidates "ignite": the card catches fire (glow + score
           // badge pop) the first time it scrolls into view.
-          const isElite = prob != null && prob >= 0.45;
+          const isElite = score >= 60;
           const cardCls = isElite ? 'breakout-card br-brk' : 'breakout-card';
           const moAttr = isElite ? ' data-br-moment="breakout"' : '';
           return `
@@ -12715,7 +12716,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
                   <div class="breakout-player-meta" style="font-size:12px;color:var(--text-muted);margin-top:2px;">${{age}} yr • ${{team}} • ${{pos}}</div>
                 </div>
                 <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
-                  <div class="breakout-score-badge" style="background:${{scoreColor}};color:#fff;font-size:13px;font-weight:700;padding:3px 9px;border-radius:6px;">${{hitProb != null ? hitProb + '%' : '—'}}</div>
+                  <div class="breakout-score-badge" style="background:${{scoreColor}};color:#fff;font-size:13px;font-weight:700;padding:3px 9px;border-radius:6px;">${{score}}</div>
                   ${{hitHtml}}
                 </div>
               </div>

@@ -6,6 +6,7 @@ Includes detailed breakout type classification (readiness vs opportunity driven)
 """
 
 import logging
+import os
 from datetime import date
 from typing import Dict, List, Optional
 
@@ -15,6 +16,24 @@ from dashboard_services.db import get_conn
 from dashboard_services.subscriptions import premium_required
 
 logger = logging.getLogger(__name__)
+
+# Board ranking blend. The fitted model can't weight opportunity for WRs (too few
+# labeled breakouts in existence — the coef clamps to 0), so opportunity-rich WRs
+# rank low despite obvious situations (a vacated WR1 role). Rank instead by a blend
+# of the opportunity-weighted aggregate breakout_score and the model's hit
+# probability, so opportunity counts while the model's readiness signal still
+# matters. Weight = share on the aggregate score (0..1); tune via env without a deploy.
+BREAKOUT_RANK_BLEND_WEIGHT = min(1.0, max(0.0, float(
+    os.environ.get("BREAKOUT_RANK_BLEND_WEIGHT", "0.5"))))
+
+
+def _breakout_blend(candidate: dict) -> float:
+    """0..1 ranking value: BREAKOUT_RANK_BLEND_WEIGHT on the aggregate breakout
+    score (0-100, opportunity-weighted) + the remainder on the model hit probability."""
+    score = float(candidate.get("breakout_opportunity_score") or 0) / 100.0
+    prob = float(candidate.get("hit_probability") or 0)
+    w = BREAKOUT_RANK_BLEND_WEIGHT
+    return round(w * score + (1.0 - w) * prob, 4)
 
 # Create Blueprint for breakout routes
 breakout_bp = Blueprint('breakout', __name__, url_prefix='/api/breakout')
@@ -689,13 +708,14 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
         filtered.append(c)
     candidates = filtered
 
-    # Rank by breakout probability (the model's prediction) so the board's order
-    # matches the headline number — highest probability = best candidate. The
-    # aggregate breakout_opportunity_score is the tie-break (and still the
-    # candidacy gate via the min_score WHERE clause above).
+    # Rank by the opportunity+probability blend so the board's order matches the
+    # headline, and opportunity-rich candidates aren't buried by the model's
+    # readiness-only WR view. hit_probability is the tie-break.
+    for c in candidates:
+        c['breakout_blend'] = _breakout_blend(c)
     candidates.sort(
-        key=lambda x: (float(x.get('hit_probability') or 0),
-                       float(x.get('breakout_opportunity_score') or 0)),
+        key=lambda x: (x.get('breakout_blend') or 0,
+                       float(x.get('hit_probability') or 0)),
         reverse=True,
     )
 
@@ -922,6 +942,8 @@ def get_breakout_candidate_detail(player_id: str, season: Optional[int] = None) 
     rank = _breakout_ranks(season).get(str(player_id))
     if rank:
         candidate['breakout_rank'] = rank
+
+    candidate['breakout_blend'] = _breakout_blend(candidate)
 
     return candidate
 

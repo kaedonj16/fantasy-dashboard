@@ -11242,24 +11242,27 @@ function pmPrefetchTabs() {
 
 // ── Breakout tab HTML builder (returns HTML string, no DOM side effects) ─────
 function _buildBkTabHTML(data, scoreColor) {
-  // Breakout probability is now the single headline number: the model's predicted
-  // chance this player breaks out. The old 0-100 "score" and separate "hit
-  // probability" collapsed into this one honest likelihood (no player is ever
-  // "100" — a guaranteed breakout doesn't exist).
+  // Headline = the 0-100 breakout SCORE: a blend of the opportunity-weighted
+  // aggregate score and the model's hit probability (server-computed breakout_blend).
+  // The fitted model can't weight opportunity (collinear with readiness + tiny
+  // samples), so ranking on probability alone buried opportunity-rich players; the
+  // blend puts opportunity back in. The model's raw hit chance is shown below it.
   const prob    = data.hit_probability != null ? parseFloat(data.hit_probability) : null;
   const probPct = prob != null ? Math.round(prob * 100) : null;
-  // Tier + color from probability. Cutoffs match the candidate distribution:
-  // realistic top-outs are ~50-60%, so Elite starts at 45%.
+  const blend   = data.breakout_blend != null ? parseFloat(data.breakout_blend)
+                : (prob != null ? prob : null);           // fallback: probability
+  const score   = blend != null ? Math.round(blend * 100) : null;   // 0-100 headline
+  // Tier + color from the blended score.
   let tier = 'Low', probColor = '#6b7280';
-  if (prob != null) {
-    if (prob >= 0.45)      { tier = 'Elite';    probColor = '#10b981'; }
-    else if (prob >= 0.30) { tier = 'High';     probColor = '#3b82f6'; }
-    else if (prob >= 0.18) { tier = 'Moderate'; probColor = '#f59e0b'; }
-    else                   { tier = 'Low';      probColor = '#6b7280'; }
+  if (score != null) {
+    if (score >= 60)      { tier = 'Elite';    probColor = '#10b981'; }
+    else if (score >= 45) { tier = 'High';     probColor = '#3b82f6'; }
+    else if (score >= 30) { tier = 'Moderate'; probColor = '#f59e0b'; }
+    else                  { tier = 'Low';      probColor = '#6b7280'; }
   }
-  // Drive the whole modal's accent off the probability so the PPG tile, headline
-  // and bars agree. Fall back to the passed color only when there's no probability.
-  scoreColor = prob != null ? probColor : (scoreColor || '#3b82f6');
+  // Drive the whole modal's accent off the headline so the PPG tile, score and bars
+  // agree. Fall back to the passed color when there's no score.
+  scoreColor = score != null ? probColor : (scoreColor || '#3b82f6');
 
   const reasons = (data.key_reasons || '').split('\n')
     .map(r => r.replace(/^[•\-]\s*/, '').trim())
@@ -11344,18 +11347,18 @@ function _buildBkTabHTML(data, scoreColor) {
   } else {
     html += `
       <div class="pm-hero-stat" style="background:${scoreColor}1a;border-color:${scoreColor}33;">
-        <div class="pm-hero-label" style="color:${scoreColor};">Breakout Probability</div>
-        <div class="pm-hero-val" style="color:${scoreColor};">${hitProb || '—'}</div>
+        <div class="pm-hero-label" style="color:${scoreColor};">Breakout Score</div>
+        <div class="pm-hero-val" style="color:${scoreColor};">${score != null ? score : '—'}</div>
       </div>`;
   }
 
-  // Right column: Breakout Probability headline, Rank below (single honest number —
-  // no separate "score", since the score WAS the probability).
+  // Right column: Breakout Score headline (opportunity + model blend), with the
+  // model's raw hit chance below it, then Rank.
   html += `<div style="display:flex;flex-direction:column;gap:8px;">
     <div class="pm-hero-stat">
-      <div class="pm-hero-label">Breakout Probability</div>
-      <div class="pm-hero-val" style="color:${scoreColor};">${hitProb || '—'}</div>
-      ${prob != null ? `<div style="font-size:11px;font-weight:700;color:${scoreColor};text-transform:uppercase;letter-spacing:0.03em;margin-top:1px;">${tier}</div>` : ''}
+      <div class="pm-hero-label">Breakout Score</div>
+      <div class="pm-hero-val" style="color:${scoreColor};">${score != null ? score : '—'}</div>
+      ${score != null ? `<div style="font-size:11px;font-weight:700;color:${scoreColor};text-transform:uppercase;letter-spacing:0.03em;margin-top:1px;">${tier}${hitProb ? ` · ${hitProb} hit` : ''}</div>` : ''}
     </div>`;
   if (rank && rank.overall) {
     const posLabel = rank.position && rank.pos ? `${rank.position} #${rank.pos}` : null;
