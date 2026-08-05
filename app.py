@@ -23859,6 +23859,7 @@ from utils.draft_grade import (  # noqa: E402
     dr_letter_to_score as _dr_letter_to_score,
     dr_lineup_score as _dr_lineup_score,
     dr_optimal_lineup as _dr_optimal_lineup,
+    dr_rookie_team_score as _dr_rookie_team_score,
     dr_slot_eligible as _dr_slot_eligible,
     dr_team_grade_score as _dr_team_grade_score,
 )
@@ -24551,12 +24552,14 @@ def api_draft_grades():
             avg_pick_score = int(round(sum(_ps_vals) / len(_ps_vals))) if _ps_vals else None
 
             # Draft-Room-aligned raw team-grade composite (curved after the loop).
-            # Rookie: letterToScore(BPA/ADP-diff team letter), uncurved. Startup/
-            # redraft: Value/Starters/Construction composite (needs pick-score inputs).
+            # Rookie: smooth MEAN of each pick's canonical letter score (continuous,
+            # not the coarse team-letter bucket), uncurved. Startup/redraft:
+            # Value/Starters/Construction composite (needs pick-score inputs).
             _dr_raw = None
             if _draft_type == "rookie":
-                if tgrade != "N/A":
-                    _dr_raw = float(_dr_letter_to_score(tgrade))
+                _dr_raw = _dr_rookie_team_score(
+                    [p["grade"] for p in team_picks if p["grade"] != "N/A"]
+                )
             elif ps_ready and _dr_slots:
                 _picks_info = []
                 for p in team_picks:
