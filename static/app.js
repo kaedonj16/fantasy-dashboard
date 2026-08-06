@@ -18330,10 +18330,6 @@ function setupFunAwardsGrid() {
   }
 })();
 
-// ── Rookie Draft Assistant ────────────────────────────────────────────────────
-// Extracted to static/draft_assistant.js (loaded only on the Prospects page).
-
-
 // ════════════════════════════════════════════════════════════════════════════
 // NEW FEATURES JS
 // ════════════════════════════════════════════════════════════════════════════
