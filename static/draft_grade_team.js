@@ -96,7 +96,7 @@
     } else {
       strengthRatio = ppgRatio != null ? ppgRatio : (valueRatio != null ? valueRatio : 0.80);
     }
-    var starterPts = rnd(clamp01((strengthRatio - 0.80) / 0.40) * 30);
+    var starterPts = rnd(clamp01((strengthRatio - 0.80) / 0.40) * 25);
 
     // 3) Construction: coverage + balance + efficiency.
     var counts = { QB: 0, RB: 0, WR: 0, TE: 0 };
@@ -114,7 +114,7 @@
     var efficiency = gradedPicks > 0 ? usefulPicks / gradedPicks : 1;
     var constructionRaw = clamp01(0.45 * coverage + 0.30 * (bsum / 4) + 0.25 * efficiency);
     var ramp = Math.min(1, picks.length / 8);
-    var balancePts = rnd(((1 - ramp) * 0.85 + ramp * constructionRaw) * 35);
+    var balancePts = rnd(((1 - ramp) * 0.85 + ramp * constructionRaw) * 40);
 
     return {
       total: valuePts + starterPts + balancePts,
