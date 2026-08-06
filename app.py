@@ -27537,11 +27537,19 @@ def api_trade_intel_player_send_packages(player_id: str):
         options: list = []
         seen_shapes: set = set()
 
+        # Roster objects carry only owner_id; the team/display name lives on the
+        # user record (same resolution as /api/league-rosters). Without this the
+        # label always fell through to "Team {rid}".
+        users_by_id = {u.get("user_id"): u for u in (ctx.get("users") or [])}
+
         for r in rosters:
             rid = str(r.get("roster_id"))
             if rid == viewer_roster_id:
                 continue
-            team_name = r.get("display_name") or r.get("owner_name") or f"Team {rid}"
+            _owner = users_by_id.get(r.get("owner_id"))
+            team_name = (
+                (_owner.get("team_name") or _owner.get("display_name")) if _owner else None
+            ) or r.get("display_name") or r.get("owner_name") or f"Team {rid}"
 
             team_players = sorted(
                 [

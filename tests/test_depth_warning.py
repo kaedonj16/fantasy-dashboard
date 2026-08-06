@@ -39,21 +39,22 @@ def _trade_away_te(lookup):
 
 def test_productive_vet_counts_as_starter():
     # Low dynasty (outlook) but high redraft (producing now) -> losing him is a
-    # real starter loss. Dynasty value (300 < 400) would have missed this.
-    res = _trade_away_te(_lookup(te_dynasty=300, te_redraft=700))
+    # real starter loss. Dynasty value (150 < 200) would have missed this.
+    res = _trade_away_te(_lookup(te_dynasty=150, te_redraft=700))
     assert "TE" in res and res["TE"]["severity"] == "danger"
     assert res["TE"]["before"] == 1 and res["TE"]["after"] == 0
 
 
 def test_hype_rookie_is_not_a_starter():
     # High dynasty (outlook) but low redraft (no role yet) -> trading him is a
-    # non-event. Dynasty value (800 >= 400) would have wrongly flagged it.
+    # non-event. Dynasty value (800 >= 200) would have wrongly flagged it.
     assert _trade_away_te(_lookup(te_dynasty=800, te_redraft=120)) == {}
 
 
 def test_borderline_does_not_invent_no_starter_alert():
     # Only a sub-threshold TE to begin with -> pre-existing thinness, stay quiet.
-    assert _trade_away_te(_lookup(te_dynasty=360, te_redraft=360)) == {}
+    # (Well under the TE starter bar of 200 so it never counted as a starter.)
+    assert _trade_away_te(_lookup(te_dynasty=150, te_redraft=150)) == {}
 
 
 def test_flex_is_fungible_lateral_swap_is_quiet():
