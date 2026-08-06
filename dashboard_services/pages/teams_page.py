@@ -853,6 +853,15 @@ def build_teams_body(ctx: dict) -> str:
           <div class="wl-row"><span class="wl-dot" style="background:#f97316;"></span><strong class="wl-label">Retooling</strong><span class="wl-desc">Selling aging core, accumulating capital to reset for the future</span></div>
           <div class="wl-row"><span class="wl-dot" style="background:#ef4444;"></span><strong class="wl-label">Rebuilding</strong><span class="wl-desc">Below-average dynasty + redraft, active rebuild in progress</span></div>
           <div class="wl-row"><span class="wl-dot" style="background:#dc2626;"></span><strong class="wl-label">Full Rebuild</strong><span class="wl-desc">Stacked with picks, very low current value, all-in on the future</span></div>
+          <div class="wl-section-label" style="margin-top:10px;">Roster Shapes</div>
+          <div class="wl-grade-note" style="margin-top:0;">How a roster's value is built by position &mdash; descriptive, not part of the grade.</div>
+          <div class="wl-row"><span class="wl-shape">WR Factory</span><span class="wl-desc">Value concentrated at WR &mdash; a deep, WR-dominant roster</span></div>
+          <div class="wl-row"><span class="wl-shape">Robust RB</span><span class="wl-desc">RB-heavy build with a strong, deep backfield</span></div>
+          <div class="wl-row"><span class="wl-shape">Hero RB</span><span class="wl-desc">One elite back anchoring a thin RB room, with a WR-forward rest</span></div>
+          <div class="wl-row"><span class="wl-shape">Zero RB</span><span class="wl-desc">Minimal RB value, loaded at WR</span></div>
+          <div class="wl-row"><span class="wl-shape">TE Premium</span><span class="wl-desc">Heavy investment at TE &mdash; an elite tight end anchors the build</span></div>
+          <div class="wl-row"><span class="wl-shape">Konami Code</span><span class="wl-desc">Superflex build with two-plus premium QBs soaking up roster value</span></div>
+          <div class="wl-row"><span class="wl-shape">Balanced</span><span class="wl-desc">No single position dominates &mdash; value spread evenly</span></div>
         </div>
       </div>
     </div>
