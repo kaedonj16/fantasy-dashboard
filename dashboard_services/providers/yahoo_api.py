@@ -55,11 +55,29 @@ _API_CACHE_TTL = 300  # 5 minutes
 # OAuth helpers
 # ---------------------------------------------------------------------------
 
+def _env_clean(key: str) -> str:
+    """Read an OAuth env var, trimming surrounding whitespace/newlines.
+
+    Credentials pasted into a hosting dashboard often pick up a trailing newline
+    or stray space; an un-trimmed client_id / redirect_uri then no longer matches
+    what's registered on the Yahoo app, and Yahoo answers the authorization
+    request with its generic "uh-oh" page instead of redirecting back."""
+    return (os.environ.get(key) or "").strip()
+
+
 def get_authorization_url(state: str) -> str:
     """Return the Yahoo OAuth 2.0 authorization URL the user should be redirected to."""
+    client_id    = _env_clean("YAHOO_CLIENT_ID")
+    redirect_uri = _env_clean("YAHOO_REDIRECT_URI")
+    # Log the exact values we send (not the secret) so an "uh-oh" from a
+    # mismatch is diagnosable: compare these against the Yahoo app registration.
+    logger.info(
+        "[yahoo-auth] building auth request: client_id=%s… redirect_uri=%r scope=%r",
+        client_id[:10], redirect_uri, YAHOO_SCOPE,
+    )
     params = {
-        "client_id":     os.environ["YAHOO_CLIENT_ID"],
-        "redirect_uri":  os.environ["YAHOO_REDIRECT_URI"],
+        "client_id":     client_id,
+        "redirect_uri":  redirect_uri,
         "response_type": "code",
         "scope":         YAHOO_SCOPE,
         "state":         state,
@@ -72,9 +90,9 @@ def exchange_code_for_tokens(code: str) -> Dict[str, Any]:
     Exchange an authorization code for access + refresh tokens.
     Returns the full token response dict including xoauth_yahoo_guid.
     """
-    client_id     = os.environ["YAHOO_CLIENT_ID"]
-    client_secret = os.environ["YAHOO_CLIENT_SECRET"]
-    redirect_uri  = os.environ["YAHOO_REDIRECT_URI"]
+    client_id     = _env_clean("YAHOO_CLIENT_ID")
+    client_secret = _env_clean("YAHOO_CLIENT_SECRET")
+    redirect_uri  = _env_clean("YAHOO_REDIRECT_URI")
 
     credentials = base64.b64encode(
         f"{client_id}:{client_secret}".encode()
@@ -99,8 +117,8 @@ def exchange_code_for_tokens(code: str) -> Dict[str, Any]:
 
 def refresh_access_token(refresh_token: str) -> Dict[str, Any]:
     """Refresh an expired access token using the stored refresh token."""
-    client_id     = os.environ["YAHOO_CLIENT_ID"]
-    client_secret = os.environ["YAHOO_CLIENT_SECRET"]
+    client_id     = _env_clean("YAHOO_CLIENT_ID")
+    client_secret = _env_clean("YAHOO_CLIENT_SECRET")
 
     credentials = base64.b64encode(
         f"{client_id}:{client_secret}".encode()
