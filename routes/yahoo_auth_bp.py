@@ -41,14 +41,12 @@ def yahoo_auth_start():
 
     from dashboard_services.providers.yahoo_api import get_authorization_url
 
-    # The registered redirect_uri lives on the apex host, so Yahoo always returns
-    # the user there. Start the flow on that same host too — otherwise the session
-    # cookie set here (e.g. on www.) isn't sent to the apex callback and state
-    # validation fails. Bounce to the canonical host first, preserving the query.
-    from urllib.parse import urlparse
-    canonical_host = urlparse(os.environ.get("YAHOO_REDIRECT_URI") or "").netloc
-    if canonical_host and request.host and request.host != canonical_host:
-        return redirect(f"https://{canonical_host}{request.full_path}")
+    # NOTE: don't try to force the request onto the redirect_uri's apex host here.
+    # The site canonicalizes the other way (apex -> www at the edge), so redirecting
+    # www -> apex just ping-pongs against that and yields ERR_TOO_MANY_REDIRECTS.
+    # Yahoo returns to the apex callback, the edge bounces it to www (query intact),
+    # and the state cookie set here on www is present there — so the flow completes
+    # on one host without any redirect of our own.
 
     league_id = (request.args.get("league_id") or "").strip()
     next_url  = (request.args.get("next") or "/").strip()
