@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 
 from flask import Blueprint, jsonify, request
 
@@ -286,8 +287,19 @@ def api_push_broadcast():
     body  = data.get("body",  "Your weekly dynasty risers and fallers are ready!")
     url   = data.get("url",   "/top-movers")
     tag   = data.get("tag",   "weekly-update")
-    body_dict, status = _push_broadcast(title=title, body=body, url=url, tag=tag)
-    return jsonify(body_dict), status
+    # Sending is a per-device network round-trip, so a real audience takes tens of
+    # seconds — longer than an HTTP client (or the gunicorn worker) will wait,
+    # which surfaces as a timeout and can kill the worker mid-blast. Fail fast on
+    # a misconfigured server, then run the send loop on a background thread and
+    # acknowledge immediately; the loop keeps going after the response returns.
+    if not _get_vapid_keys():
+        return jsonify({"error": "Push not configured"}), 503
+    threading.Thread(
+        target=_push_broadcast,
+        kwargs={"title": title, "body": body, "url": url, "tag": tag},
+        daemon=True,
+    ).start()
+    return jsonify({"ok": True, "queued": True}), 202
 
 
 @push_bp.route("/api/cron/notifications", methods=["POST"])
