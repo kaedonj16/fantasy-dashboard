@@ -2885,7 +2885,7 @@
   // startup/redraft weights pick value, starting-lineup strength, and construction.
   function gradeMax(){
     return (state.type === 'rookie') ? { value:100, balance:0, tier:0 }
-                                     : { value:35, balance:30, tier:35 };
+                                     : { value:35, balance:40, tier:25 };
   }
   function gradeBars(g){
     var m = gradeMax();
