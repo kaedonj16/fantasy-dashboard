@@ -30292,10 +30292,22 @@ def _notify_changelog_on_startup():
         tag  = latest.get("tag", "update")
         text = latest.get("text", "")
         link = latest.get("link", "/")
+        # Title: prefer the entry's own headline (the short label before the first
+        # colon, e.g. "Even It Out") over a generic tag word. iOS already shows
+        # "… from BR Fantasy" under the app name, so the title must NOT repeat it —
+        # the old "BR Fantasy: New" rendered as "BR Fantasy: New from BR Fantasy".
+        tag_labels = {"feature": "New feature", "new": "What's new", "fix": "Fix", "update": "Update"}
+        title = tag_labels.get(tag, "Update")
+        if ":" in text:
+            head, rest = text.split(":", 1)
+            head = head.strip()
+            # A real headline is short and not itself a full sentence.
+            if 0 < len(head) <= 40 and not any(p in head for p in ".!?"):
+                title = head
+                text = rest.strip()
+                text = text[:1].upper() + text[1:]   # body reads as its own sentence
         # Trim long text to a push-friendly length
         body = text if len(text) <= 120 else text[:117] + "…"
-        tag_labels = {"feature": "New feature", "new": "New", "fix": "Fix", "update": "Update"}
-        title = f"BR Fantasy: {tag_labels.get(tag, 'Update')}"
 
         from routes.push_bp import _push_broadcast
         # _push_broadcast returns a plain (dict, status) tuple, so this is safe to
