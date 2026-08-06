@@ -168,18 +168,21 @@ _CORR = {"pearson": pearson, "spearman": spearman}
 # --------------------------------------------------------------------------- #
 # Grading a team from its picks
 # --------------------------------------------------------------------------- #
-def team_avg_ps(sample: TeamSample, weights: Optional[dict] = None) -> Optional[float]:
+def team_avg_ps(sample: TeamSample, weights: Optional[dict] = None,
+                depth_slope: Optional[float] = None) -> Optional[float]:
     """Mean pick score across a team's picks under ``weights`` (None = shipped).
 
     A deliberately simple team grade: the average per-pick score. The full
     dr_team_grade_score composite (lineup strength, construction) layers league
     context on top; for a weight *sweep* the mean pick score isolates the effect
-    of the weights themselves, which is what we want to tune.
+    of the weights themselves, which is what we want to tune. ``depth_slope``
+    overrides the depth-normalization slope (None = shipped 0.44) so the same
+    harness can tune the by-round flatness.
     """
     scores = []
     for pk in sample.picks:
         try:
-            scores.append(compute_pick_score(weights=weights, **pk))
+            scores.append(compute_pick_score(weights=weights, depth_slope=depth_slope, **pk))
         except Exception:
             continue
     if not scores:
@@ -189,6 +192,7 @@ def team_avg_ps(sample: TeamSample, weights: Optional[dict] = None) -> Optional[
 
 def pick_score_by_round(
     samples: Sequence[TeamSample], weights: Optional[dict] = None,
+    depth_slope: Optional[float] = None,
 ) -> List[dict]:
     """Mean pick score per draft ROUND across every pick in ``samples``.
 
@@ -208,7 +212,7 @@ def pick_score_by_round(
                 if pick_no <= 0:
                     continue
                 rnd = (pick_no - 1) // teams + 1
-                score = compute_pick_score(weights=weights, **pk)
+                score = compute_pick_score(weights=weights, depth_slope=depth_slope, **pk)
             except Exception:
                 continue
             row = agg.setdefault(rnd, [0.0, 0.0])  # [count, sum]
@@ -221,12 +225,13 @@ def pick_score_by_round(
 
 
 def grades_and_outcomes(
-    samples: Sequence[TeamSample], weights: Optional[dict] = None
+    samples: Sequence[TeamSample], weights: Optional[dict] = None,
+    depth_slope: Optional[float] = None,
 ) -> Tuple[List[float], List[float]]:
     """Paired (grade, outcome) lists over samples that grade successfully."""
     gs, os_ = [], []
     for s in samples:
-        g = team_avg_ps(s, weights)
+        g = team_avg_ps(s, weights, depth_slope=depth_slope)
         if g is None:
             continue
         gs.append(g)
@@ -238,14 +243,34 @@ def correlate_grades_to_finish(
     samples: Sequence[TeamSample],
     weights: Optional[dict] = None,
     method: str = "spearman",
+    depth_slope: Optional[float] = None,
 ) -> Optional[float]:
     """Correlation between team grade and outcome (higher-is-better outcome, so a
     good weight table gives a positive coefficient). Returns None if undefined."""
     corr = _CORR.get(method)
     if corr is None:
         raise ValueError(f"unknown method: {method!r}")
-    gs, os_ = grades_and_outcomes(samples, weights)
+    gs, os_ = grades_and_outcomes(samples, weights, depth_slope=depth_slope)
     return corr(gs, os_)
+
+
+def sweep_depth(
+    samples: Sequence[TeamSample],
+    slopes: Sequence[float],
+    weights: Optional[dict] = None,
+    method: str = "spearman",
+) -> List[Tuple[float, Optional[float]]]:
+    """Rank depth-normalization slopes by predictive power (higher corr = better).
+
+    The shipped slope is 0.44; a steeper slope boosts later picks more, flattening
+    the by-round pick-score curve. Returns [(slope, corr), ...] best-first so we
+    can pick the depth calibration that best tracks real success rather than
+    eyeballing flatness. Undefined correlations sort last.
+    """
+    out = [(sl, correlate_grades_to_finish(samples, weights, method=method, depth_slope=sl))
+           for sl in slopes]
+    out.sort(key=lambda t: (t[1] is not None, t[1] if t[1] is not None else 0.0), reverse=True)
+    return out
 
 
 def sweep(
