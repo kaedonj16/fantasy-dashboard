@@ -24,7 +24,7 @@
   // with PS_WEIGHTS in utils/pick_score.py.
   var WEIGHTS = {
     rookie:  { vor: 0.06, value: 0.20, adp: 0.30, tier: 0.15, need: 0.05, youth: 0.16, mom: 0.03, ppg: 0.10 },
-    redraft: { vor: 0.10, value: 0.24, adp: 0.33, tier: 0.08, need: 0.07, youth: 0.00, mom: 0.03, ppg: 0.18 },
+    redraft: { vor: 0.10, value: 0.24, adp: 0.30, tier: 0.10, need: 0.07, youth: 0.00, mom: 0.03, ppg: 0.20 },
     startup: { vor: 0.07, value: 0.24, adp: 0.30, tier: 0.15, need: 0.09, youth: 0.05, mom: 0.03, ppg: 0.12 },
   };
   var AGE_PEAKS = { RB: 24, WR: 27, TE: 27, QB: 29 };
