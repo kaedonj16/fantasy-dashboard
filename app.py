@@ -589,7 +589,6 @@ _FEATURES_JS_V = _static_hash(_FEATURES_JS_FILE) if _FEATURES_JS_FILE else ""
 _PAYWALL_JS_V = _static_hash("paywall.js")
 _REDZONE_JS_V = _static_hash("redzone.js")
 _RANKINGS_JS_V = _static_hash("rankings.js")
-_DRAFT_ASSISTANT_JS_V = _static_hash("draft_assistant.js")
 _TEAMS_JS_V = _static_hash("teams.js")
 _CSS_FILE = _ensure_minified_css()
 _CSS_V = _static_hash(_CSS_FILE)
@@ -12417,7 +12416,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 @app.route("/<platform>/<int:season>/<league_id>/prospects")
 def page_prospects(platform: str, season: int, league_id: str):
     """Rookie prospect rankings page - active class auto-detected."""
-    # Draft Assistant moved to its own standalone page; redirect the legacy tab.
+    # The Draft Room is its own standalone page; redirect the legacy ?tab=draft link.
     if request.args.get("tab") == "draft":
         if platform and season and league_id:
             return redirect(f"/{platform}/{season}/{league_id}/draft")
@@ -12425,9 +12424,6 @@ def page_prospects(platform: str, season: int, league_id: str):
     from dashboard_services.pages.rookies_page import build_prospects_body
     from dashboard_services.admin_auth import is_admin
     body_html = build_prospects_body(is_admin=is_admin())
-    # The Draft Assistant module is split out of app.js so it only loads here.
-    # `defer` runs it after the page's app.js, so getCurrentRosterId etc. exist.
-    body_html += f'\n<script src="/static/draft_assistant.js?v={_DRAFT_ASSISTANT_JS_V}" defer></script>'
     return render_page("Prospect Rankings", league_id, "prospects", body_html, platform, season)
 
 

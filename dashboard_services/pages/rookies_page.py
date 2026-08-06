@@ -19,9 +19,8 @@ def build_prospects_body(is_admin: bool = False) -> str:
         Dynasty prospect rankings - production, athleticism, and draft capital combined
       </div>
     </div>
-    <!-- Draft Board is now its own page (see the "Draft" nav entry). The Prospects
-         page is rankings-only; the dormant draft panel/JS below is left in place to
-         avoid breaking the rkPageTab handlers but is no longer surfaced. -->
+    <!-- The full draft board is its own page (the "Draft" nav entry / Draft Room).
+         The Prospects page is rankings-only. -->
   </div>
 
   <!-- Rankings panel -->
@@ -152,41 +151,6 @@ def build_prospects_body(is_admin: bool = False) -> str:
 
   </div><!-- end rk-panel-rankings -->
 
-  <!-- Draft Board panel -->
-  <div id="rk-panel-draft" style="display:none;" class="card-body" style="padding-top:0;">
-    <div class="da-toolbar">
-      <button class="da-filter active" data-pos="ALL" onclick="daFilterPos('ALL')">All</button>
-      <button class="da-filter" data-pos="QB"  onclick="daFilterPos('QB')">QB</button>
-      <button class="da-filter" data-pos="RB"  onclick="daFilterPos('RB')">RB</button>
-      <button class="da-filter" data-pos="WR"  onclick="daFilterPos('WR')">WR</button>
-      <button class="da-filter" data-pos="TE"  onclick="daFilterPos('TE')">TE</button>
-      <button class="da-info-btn" onclick="window._da.showHelp()" title="How to use">?</button>
-      <button class="da-reset-btn" onclick="daReset()">Reset Board</button>
-    </div>
-    <div class="da-layout">
-      <div class="da-board">
-        <!-- Available / Drafted sub-tabs -->
-        <div class="da-sub-tabs">
-          <button class="da-sub-tab active" data-sub="available" onclick="daSubTab('available')">Available</button>
-          <button class="da-sub-tab" data-sub="drafted" onclick="daSubTab('drafted')">Drafted <span id="daDraftedCount"></span></button>
-        </div>
-        <div class="da-board-header">
-          <span>#</span><span>Prospect</span><span>Pos</span><span></span><span class="da-col-right">Value</span><span></span>
-        </div>
-        <div class="da-board-list" id="daBoardList">
-          <div class="da-loading">
-            <div class="loading-spinner" style="width:24px;height:24px;flex-shrink:0;"></div>
-            <span>Loading prospects…</span>
-          </div>
-        </div>
-      </div>
-      <aside class="da-needs" id="daNeedsPanel">
-        <div class="da-needs-title">My Roster Needs</div>
-        <div class="da-loading" style="padding:12px 0;"><div class="loading-spinner" style="width:18px;height:18px;flex-shrink:0;"></div></div>
-      </aside>
-    </div>
-  </div>
-
 </div>
 
 <!-- Prospect detail modal -->
@@ -217,66 +181,6 @@ def build_prospects_body(is_admin: bool = False) -> str:
       align-items: flex-start;
       gap: 10px;
     }
-    .rk-page-tabs { margin: 0; }
-  }
-
-  /* Page-level tabs (Rankings / Draft Board) - OTC pill style */
-  .rk-page-tabs {
-    display: flex;
-    gap: 4px;
-    background: var(--row);
-    padding: 3px;
-    border-radius: 10px;
-    margin: 16px 0 0;
-    width: fit-content;
-  }
-  .rk-page-tab {
-    padding: 7px 16px;
-    font-size: 13px;
-    font-weight: 700;
-    border: none;
-    background: transparent;
-    color: var(--text-muted);
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background 0.15s, color 0.15s;
-    white-space: nowrap;
-  }
-  .rk-page-tab:hover { color: var(--text); background: var(--border); }
-  .rk-page-tab.active { background: var(--card); color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,.12); }
-
-  /* DA sub-tabs (Available / Drafted) - OTC pill style, smaller */
-  .da-sub-tabs {
-    display: flex;
-    gap: 4px;
-    background: var(--row);
-    padding: 3px;
-    border-radius: 8px;
-    margin-bottom: 12px;
-    width: fit-content;
-  }
-  .da-sub-tab {
-    padding: 5px 14px;
-    font-size: 12px;
-    font-weight: 700;
-    border: none;
-    background: transparent;
-    color: var(--text-muted);
-    border-radius: 6px;
-    cursor: pointer;
-    transition: background 0.15s, color 0.15s;
-    white-space: nowrap;
-  }
-  .da-sub-tab:hover { color: var(--text); background: var(--border); }
-  .da-sub-tab.active { background: var(--card); color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,.12); }
-  .da-sub-tab span {
-    font-size: 11px;
-    background: var(--accent-soft, rgba(59,130,246,.15));
-    color: var(--accent, #3b82f6);
-    border-radius: 10px;
-    padding: 1px 6px;
-    margin-left: 4px;
-    font-weight: 700;
   }
 
   /* Filter Controls */
