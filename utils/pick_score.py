@@ -26,11 +26,17 @@ from utils.draft_grade import clamp01
 # (a young player already carries high dynasty value), while tier (scarcity) and
 # ppg (production) predict multi-year success and were under-weighted. Weights
 # now firmed toward the validated youth-0.10 winner (the 60-league pass went only
-# halfway). Redraft is well-calibrated as-is (600-league same-season base r
-# +0.336) and left unchanged.
+# halfway).
+#
+# Redraft tuned on a 1,573-team same-season backtest (base r +0.150): adp-down,
+# ppg-up, tier-up were the top nudges, all monotonic. ADP-steal chasing was
+# over-weighted (0.33 was the biggest lever) while projected points (ppg) — what
+# actually wins a win-now format — was under-weighted. Modest, direction-
+# consistent move (single sample, per-lever effects ~0.5 SE): adp 0.33->0.30,
+# ppg 0.18->0.20, tier 0.08->0.10.
 PS_WEIGHTS = {
     "rookie":  {"vor": 0.06, "value": 0.20, "adp": 0.30, "tier": 0.15, "need": 0.05, "youth": 0.16, "mom": 0.03, "ppg": 0.10},
-    "redraft": {"vor": 0.10, "value": 0.24, "adp": 0.33, "tier": 0.08, "need": 0.07, "youth": 0.00, "mom": 0.03, "ppg": 0.18},
+    "redraft": {"vor": 0.10, "value": 0.24, "adp": 0.30, "tier": 0.10, "need": 0.07, "youth": 0.00, "mom": 0.03, "ppg": 0.20},
     "startup": {"vor": 0.07, "value": 0.24, "adp": 0.30, "tier": 0.15, "need": 0.09, "youth": 0.05, "mom": 0.03, "ppg": 0.12},
 }
 PS_AGE_PEAKS = {"RB": 24, "WR": 27, "TE": 27, "QB": 29}
@@ -205,11 +211,14 @@ def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
     # Depth normalization: re-anchor the 0-100 scale to what's achievable at this
     # pick slot so late-round picks aren't unfairly buried (mirrors the Draft Room).
     # slope/floor default to the shipped 0.44/0.40; the backtest can override them
-    # (compute_pick_score is the sweep target) to tune the by-round flatness — a
-    # diagnostic showed an at-ADP "par" pick still declines ~35 pts across a draft,
-    # i.e. the shipped slope under-corrects the value decay. Overrides are grading/
-    # analysis-only; the JS mirror uses the shipped 0.44/0.40, so parity holds when
-    # they're left as defaults.
+    # (compute_pick_score is the sweep target) to tune the by-round flatness. A
+    # diagnostic showed an at-ADP "par" pick declines ~35 pts across a draft, so
+    # the by-round curve isn't flat — BUT the depth-slope sweep on 1,573 redraft
+    # teams found 0.44 is the OPTIMAL slope (correlation-vs-outcome falls
+    # monotonically as the slope steepens: .44 +0.150 -> .80 +0.119). The dip is
+    # real signal (mid-round picks ARE lower value); flattening it only adds noise.
+    # So 0.44 stays. Overrides are grading/analysis-only; the JS mirror uses the
+    # shipped 0.44/0.40, so parity holds when they're left as defaults.
     if total_picks and total_picks > 1 and pick_no:
         _slope = 0.44 if depth_slope is None else float(depth_slope)
         _floor = 0.40 if depth_floor is None else float(depth_floor)
