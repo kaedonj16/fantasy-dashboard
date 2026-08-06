@@ -3277,6 +3277,7 @@ window.initTradePage = function initTradePage(root = document) {
     pickRoundsByRid: {},  // roster_id -> Set("YYYY_R") owned picks w/o a resolved slot
     pickRoundCountsByRid: {}, // roster_id -> {"YYYY_R": count} of round-level owned picks
     teamName: {},         // roster_id -> team name
+    username: {},         // roster_id -> owner username (for @handle on Side A rows)
     viewerRid: "",        // Side A (locked) team
     sideBRid: "",         // Side B bound opponent ("" = unbound / any team)
     sideBAuto: false,     // true when sideBRid was auto-bound (not explicitly chosen)
@@ -3800,7 +3801,7 @@ window.initTradePage = function initTradePage(root = document) {
     return row;
   }
 
-  function buildDropdownItem(p, overallRank) {
+  function buildDropdownItem(p, overallRank, ownerHandle) {
     const item = document.createElement("div");
     item.className = "dropdown-item otc-dropdown-item";
     item.setAttribute("data-position", p.position || "");
@@ -3852,7 +3853,21 @@ window.initTradePage = function initTradePage(root = document) {
     value.textContent = formatValue(getPlayerValue(p));
 
     item.appendChild(left);
-    item.appendChild(value);
+    // When browsing an unbound opponent's side with the roster filter on, stack
+    // the owner's @handle under the value so it's clear which team owns each
+    // player before an opponent is locked in.
+    if (ownerHandle) {
+      const valWrap = document.createElement("div");
+      valWrap.className = "otc-dropdown-value-wrap";
+      valWrap.appendChild(value);
+      const owner = document.createElement("div");
+      owner.className = "otc-dropdown-owner";
+      owner.textContent = "@" + ownerHandle;
+      valWrap.appendChild(owner);
+      item.appendChild(valWrap);
+    } else {
+      item.appendChild(value);
+    }
 
     return item;
   }
@@ -7487,6 +7502,7 @@ window.initTradePage = function initTradePage(root = document) {
       rosterFilter.pickRoundsByRid = {};
       rosterFilter.pickRoundCountsByRid = {};
       rosterFilter.teamName = {};
+      rosterFilter.username = {};
       teams.forEach(t => {
         const rid = String(t.roster_id);
         const set = new Set((t.player_ids || []).map(String));
@@ -7496,6 +7512,7 @@ window.initTradePage = function initTradePage(root = document) {
         rosterFilter.pickRoundCountsByRid[rid] = counts;
         rosterFilter.pickRoundsByRid[rid] = new Set(Object.keys(counts));
         rosterFilter.teamName[rid] = t.team_name;
+        rosterFilter.username[rid] = t.username || "";
         set.forEach(pid => { rosterFilter.pidToRid[pid] = rid; });
       });
       rosterFilter.viewerRid = String(getCurrentRosterId() || data.viewer_roster_id || "");
@@ -7671,9 +7688,20 @@ window.initTradePage = function initTradePage(root = document) {
       if (!matches.length) return;
       const overallRankMap = buildOverallRankMap(allPlayers);
 
+      // Show each player's owner @handle only on Side A ("{you} gets…") while the
+      // opponent is still unbound - that's when the pool spans every other team, so
+      // the handle tells you whose roster a player is from. Once an opponent binds
+      // (a player added or a team chosen) the pool is one team and the handle drops.
+      const showOwners = side === "A" && rosterFilterActive() && !rosterFilter.sideBRid;
+
       matches.forEach(p => {
         const overallRank = overallRankMap.get(String(p.id));
-        const item = buildDropdownItem(p, overallRank);
+        let ownerHandle = "";
+        if (showOwners && p.position !== "PICK") {
+          const rid = rosterFilter.pidToRid[String(p.id)];
+          if (rid) ownerHandle = rosterFilter.username[rid] || "";
+        }
+        const item = buildDropdownItem(p, overallRank, ownerHandle);
 
         item.addEventListener("click", () => {
           if (!selected.find(x => String(x.id) === String(p.id))) {

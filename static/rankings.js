@@ -869,6 +869,9 @@ function prRender() {
            '<span class="pr-adp-meta">' + (p.position === 'PICK' ? '–' : age) + '</span>' +
            '<span class="pr-adp-meta">' + (p.team || '–') + '</span>')
         : '';
+      // The ADP the row is sorted by (the highlighted source's), used as the
+      // baseline the other sources' arrows compare against for this player.
+      const _activeAdp = prAdpSourceVal(p, adpActive);
       row.innerHTML =
         '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '–') + '</span>' +
         '<span class="pr-name player-clickable">'  + (p.name || 'Unknown') + badges + '</span>' +
@@ -876,8 +879,18 @@ function prRender() {
         adpCols.map(function (c) {
           const v = prAdpSourceVal(p, c.value);
           const on = c.value === adpActive;
+          // Arrow vs the sorted source: a lower ADP (earlier pick) means this
+          // source ranks the player HIGHER than the sorted one → green ▲; a
+          // higher ADP (later pick) ranks him LOWER → red ▼. The sorted source
+          // itself is the baseline, and equal/missing values get no arrow.
+          let arrow = '';
+          if (!on && v != null && _activeAdp != null && v !== _activeAdp) {
+            const _higher = v < _activeAdp;
+            arrow = '<span class="pr-adp-arrow ' + (_higher ? 'up' : 'down') +
+              '" aria-hidden="true">' + (_higher ? '▲' : '▼') + '</span>';
+          }
           return '<span class="pr-adp-cell' + (on ? ' pr-adp-cell-active' : '') + '">' +
-            (v != null ? v.toFixed(1) : '–') + '</span>';
+            (v != null ? v.toFixed(1) : '–') + arrow + '</span>';
         }).join('');
     } else {
       row.innerHTML =
