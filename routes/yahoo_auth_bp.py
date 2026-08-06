@@ -107,18 +107,26 @@ def yahoo_auth_callback():
     refresh_token = tok.get("refresh_token") or ""
     expires_in    = int(tok.get("expires_in") or 3600)
 
-    # Yahoo doesn't always return xoauth_yahoo_guid on the token response with the
-    # fspt-r scope; when it's absent but we have a token, resolve the guid from the
-    # API instead of failing the whole login.
-    if access_token and not guid:
-        guid = get_login_guid(access_token)
-
-    if not guid or not access_token:
+    # The access token is the only thing we truly can't proceed without.
+    if not access_token:
         logger.error(
-            "[yahoo_auth] Missing guid or access_token in token response (keys=%s, have_token=%s, have_guid=%s)",
-            sorted(tok.keys()), bool(access_token), bool(guid),
+            "[yahoo_auth] No access_token in token response (keys=%s)", sorted(tok.keys()),
         )
         return redirect("/?yahoo_error=invalid_token_response")
+
+    # Yahoo's fspt-r token response usually omits xoauth_yahoo_guid, and the token
+    # is forbidden from the user-identity resource, so resolve the guid from the
+    # league instead. If even that fails, fall back to a stable synthetic id
+    # derived from the token so login still completes and the token store /
+    # league-owner mapping keep working (the guid is only an identifier).
+    if not guid:
+        guid = get_login_guid(access_token, league_id)
+    if not guid:
+        import hashlib
+        guid = "ytok_" + hashlib.sha256(
+            (refresh_token or access_token).encode("utf-8")
+        ).hexdigest()[:32]
+        logger.warning("[yahoo_auth] no guid from Yahoo; using synthetic id")
 
     save_tokens(guid, access_token, refresh_token, expires_in)
 
