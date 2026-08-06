@@ -4,6 +4,23 @@
 // Loaded deferred, after app.js and after the inline window.__leagueTePremium
 // injection, so both are available when this runs.
 
+// Dock the sticky rankings header just beneath the sticky top-nav. The nav's
+// height changes with the viewport and PWA safe-area insets (and shrinks to just
+// the logo on phones), so measure it rather than hardcode an offset.
+(function prStickyOffset() {
+  function setOffset() {
+    var nav = document.querySelector('.top-nav');
+    var h = nav ? Math.round(nav.getBoundingClientRect().height) : 56;
+    document.documentElement.style.setProperty('--pr-sticky-top', h + 'px');
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setOffset);
+  } else {
+    setOffset();
+  }
+  window.addEventListener('resize', setOffset);
+})();
+
 var prAllPlayers = [];
 var prIndicators = {};
 var prSparklines = {};

@@ -3034,7 +3034,19 @@ _AM_JS = r"""
     }
     const dx = niceDomain(Math.min.apply(null, xs), Math.max.apply(null, xs), L.ntX);
     const dy = niceDomain(Math.min.apply(null, ys), Math.max.apply(null, ys), L.ntY);
-    const xmin = dx.lo, xmax = dx.hi, ymin = dy.lo, ymax = dy.hi;
+    // Zoom the view out a touch beyond the nice tick domain so the data cloud
+    // never hugs the frame — the crammed upper-right cluster (and its stacked
+    // labels) was the readability problem. Pad the *positioning* domain by a
+    // fraction of the data span; ticks stay on the same nice values, they just
+    // sit inside a roomier frame. min()/max() guarantee we only ever zoom out
+    // relative to the old snapped domain, never in.
+    const _gpad = 0.15;
+    const _xlo = Math.min.apply(null, xs), _xhi = Math.max.apply(null, xs);
+    const _ylo = Math.min.apply(null, ys), _yhi = Math.max.apply(null, ys);
+    const _xp = ((_xhi - _xlo) || dx.step) * _gpad;
+    const _yp = ((_yhi - _ylo) || dy.step) * _gpad;
+    const xmin = Math.min(dx.lo, _xlo - _xp), xmax = Math.max(dx.hi, _xhi + _xp);
+    const ymin = Math.min(dy.lo, _ylo - _yp), ymax = Math.max(dy.hi, _yhi + _yp);
     const px = function(v) { return padL + ((v - xmin) / (xmax - xmin)) * (W - padL - padR); };
     const py = function(v) { return H - padB - ((v - ymin) / (ymax - ymin)) * (H - padT - padB); };
     let rOf = function() { return isNarrow ? 6 : 5; };
@@ -3074,12 +3086,12 @@ _AM_JS = r"""
     const sub = (ctx ? ctx + ' · ' : '') + (zk ? 'bubble = ' + cfg.metrics[zk].label : '');
     if (sub) s += txt(padL, 76, _amEsc(sub), L.fSub, TH.muted, 500, 'start');
     // Grid: hairlines at round ticks; a single baseline instead of a hard frame.
-    for (let xv = xmin; xv <= xmax + 1e-9; xv += dx.step) {
+    for (let xv = Math.ceil(xmin / dx.step - 1e-9) * dx.step; xv <= xmax + 1e-9; xv += dx.step) {
       const xx = px(xv);
       s += '<line x1="' + xx.toFixed(1) + '" y1="' + padT + '" x2="' + xx.toFixed(1) + '" y2="' + (H - padB) + '" stroke="' + TH.grid + '"/>';
       s += txt(xx.toFixed(1), (H - padB + 16), fmtTick(xv, dx.step), L.fTick, TH.muted, 600, 'middle');
     }
-    for (let yv = ymin; yv <= ymax + 1e-9; yv += dy.step) {
+    for (let yv = Math.ceil(ymin / dy.step - 1e-9) * dy.step; yv <= ymax + 1e-9; yv += dy.step) {
       const yy = py(yv);
       s += '<line x1="' + padL + '" y1="' + yy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + yy.toFixed(1) + '" stroke="' + TH.grid + '"/>';
       s += txt((padL - 8), (yy + 3.5).toFixed(1), fmtTick(yv, dy.step), L.fTick, TH.muted, 600, 'end');
@@ -3128,8 +3140,12 @@ _AM_JS = r"""
     // Emphasis: the top-ranked players carry the story — full-strength dots and
     // bold "Name 23.6" labels; the rest of the pool becomes a muted field with a
     // few quiet labels. pts is pre-sorted best-first, so index = rank.
-    const starCut = Math.min(8, Math.max(4, Math.round(pts.length * 0.3)));
-    const showCut = Math.min(pts.length, starCut + (pts.length > 50 ? 14 : 10));
+    // Phones can't fit as many labels as the wide desktop chart, so cap them
+    // tighter there — a crammed stack of overlapping names reads as noise. Every
+    // dot stays tappable for its full detail card, so fewer printed labels loses
+    // no information, it just keeps the ones that print legible.
+    const starCut = Math.min(isNarrow ? 6 : 8, Math.max(4, Math.round(pts.length * 0.3)));
+    const showCut = Math.min(pts.length, starCut + (isNarrow ? 3 : (pts.length > 50 ? 14 : 10)));
     const lblSize = L.fLbl;
     const ptData = pts.map(function(p, idx) {
       const cx = px(p.x), cy = py(p.y), r = rOf(p), col = posColor(p.position);
