@@ -3155,8 +3155,10 @@ _AM_JS = r"""
       return { p: p, idx: idx, cx: cx, cy: cy, r: r, col: col, info: info, star: idx < starCut };
     });
     // Pass 1 — field dots first (muted), then stars on top, largest-first within
-    // each group so small dots stay clickable.
-    const fieldOp = TH.dark ? 0.3 : 0.24;
+    // each group so small dots stay clickable. The field is kept quieter than the
+    // stars but visible enough to read the shape of the distribution — at the old
+    // 0.24 the non-highlighted dots all but vanished on a bright phone screen.
+    const fieldOp = TH.dark ? 0.42 : 0.36;
     ptData.filter(function(d) { return !d.star; }).sort(function(a, b) { return b.r - a.r; }).forEach(function(d) {
       s += '<circle class="am-graph-dot" cx="' + d.cx.toFixed(1) + '" cy="' + d.cy.toFixed(1) + '" r="' + d.r.toFixed(1)
         + '" fill="' + d.col + '" fill-opacity="' + fieldOp + '" stroke="' + TH.bg + '" stroke-width="1.4"'
@@ -3223,6 +3225,21 @@ _AM_JS = r"""
         chosen = best; placed.push(bestBox);
       }
       const lblFill = isStar ? TH.text : TH.muted;
+      // Leader line: when a crowded cluster pushed this name to a stacked anchor
+      // away from its dot, draw a thin connector so you can tell which label
+      // belongs to which point. Near labels (touching their dot) skip it — the
+      // line would just be noise. Runs dot-edge → just short of the label, tinted
+      // to the point colour for stars so the pairing reads at a glance.
+      const _lx = chosen.x, _ly = chosen.y - fs * 0.32;
+      const _ldx = _lx - d.cx, _ldy = _ly - d.cy;
+      const _ldist = Math.sqrt(_ldx * _ldx + _ldy * _ldy);
+      if (_ldist > d.r + 7) {
+        const _ux = _ldx / _ldist, _uy = _ldy / _ldist;
+        s += '<line x1="' + (d.cx + _ux * d.r).toFixed(1) + '" y1="' + (d.cy + _uy * d.r).toFixed(1)
+          + '" x2="' + (_lx - _ux * 2).toFixed(1) + '" y2="' + (_ly - _uy * 2).toFixed(1)
+          + '" stroke="' + (isStar ? d.col : TH.muted) + '" stroke-width="1"'
+          + ' opacity="' + (isStar ? 0.5 : 0.32) + '" stroke-linecap="round"/>';
+      }
       s += '<text x="' + chosen.x.toFixed(1) + '" y="' + chosen.y.toFixed(1) + '"'
         + (chosen.anchor === 'end' ? ' text-anchor="end"' : '')
         + ' font-size="' + fs + '" font-weight="' + (isStar ? 800 : 500) + '"'
