@@ -231,8 +231,27 @@ def logout():
     # Return a tiny page that strips sensitive fields from saved_viewer in
     # localStorage (so auto-restore can't silently re-login) while keeping just
     # the username so the "Continue as X" banner still shows on the home page.
+    #
+    # The page must never strand the user on a blank screen if its JS stalls, so
+    # it carries a visible message and a <meta refresh> fallback that navigates
+    # home even when scripting fails; the cache purge is also time-boxed so a
+    # hung caches.delete() can't block the redirect.
     return """<!doctype html><html><head><meta charset="utf-8">
-<title>Signing out…</title></head><body>
+<meta http-equiv="refresh" content="3;url=/">
+<title>Signing out…</title>
+<style>
+  html,body{height:100%;margin:0}
+  body{display:flex;align-items:center;justify-content:center;
+       font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+       color:#334155;background:#f8fafc}
+  @media (prefers-color-scheme: dark){body{color:#cbd5e1;background:#0f172a}}
+  .so-wrap{text-align:center}
+  .so-spin{width:26px;height:26px;margin:0 auto 12px;border-radius:50%;
+           border:3px solid rgba(148,163,184,.35);border-top-color:#3b82f6;
+           animation:so-spin 1s linear infinite}
+  @keyframes so-spin{to{transform:rotate(360deg)}}
+</style></head><body>
+<div class="so-wrap"><div class="so-spin"></div><div>Signing out…</div></div>
 <script>
 try {
   var sv = JSON.parse(localStorage.getItem('saved_viewer') || 'null');
@@ -254,8 +273,12 @@ try {
 // In the installed PWA the service worker caches navigations, so without this a
 // logged-in page could be served from cache after logout. Purge all caches,
 // then go home so every later navigation re-fetches a fresh, logged-out page.
-function _go(){ window.location.replace('/'); }
+// Guard so the meta-refresh fallback and JS can't double-fire oddly, and time-box
+// the purge so a slow/hung caches.delete() never leaves the user on this screen.
+var _went = false;
+function _go(){ if (_went) return; _went = true; window.location.replace('/'); }
 if (window.caches && caches.keys) {
+  setTimeout(_go, 1200);  // hard cap: redirect even if the purge stalls
   caches.keys()
     .then(function(ks){ return Promise.all(ks.map(function(k){ return caches.delete(k); })); })
     .then(_go, _go);
