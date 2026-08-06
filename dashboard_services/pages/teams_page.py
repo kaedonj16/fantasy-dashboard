@@ -15,6 +15,43 @@ from typing import Dict, List, Optional, Union
 
 logger = logging.getLogger(__name__)
 
+
+def roster_shape_label(pos_vals: Dict[str, List[float]], is_sf: bool) -> str:
+    """Descriptive roster-construction archetype from positional value shares.
+
+    The draft room labels a *draft* by pick order; a standing roster has no
+    draft order, so this classifies the same recognizable shapes (WR Factory,
+    Hero RB, Zero RB, ...) from where a team's dynasty value actually sits.
+    Purely descriptive - it names the build, it does not grade it.
+    """
+    rb = sorted(pos_vals.get("RB", []), reverse=True)
+    qbv = sum(pos_vals.get("QB", []))
+    rbv = sum(rb)
+    wrv = sum(pos_vals.get("WR", []))
+    tev = sum(pos_vals.get("TE", []))
+    total = qbv + rbv + wrv + tev
+    if total <= 0:
+        return ""
+    qs, rs, ws, ts = qbv / total, rbv / total, wrv / total, tev / total
+    top_rb_share = (rb[0] / rbv) if rbv > 0 and rb else 0.0   # concentration in the RB room
+    top_rb_of_total = (rb[0] / total) if rb else 0.0          # is that back an elite anchor
+    # Ordered specific -> generic; first match wins.
+    if is_sf and qs >= 0.28:
+        return "Konami Code"
+    if ts >= 0.15:
+        return "TE Premium"
+    if rs <= 0.15 and ws >= 0.38:
+        return "Zero RB"
+    # Hero RB: one elite back carries a thin RB room, with a WR-forward rest.
+    if top_rb_share >= 0.55 and top_rb_of_total >= 0.24 and ws >= rs:
+        return "Hero RB"
+    if ws >= 0.45:
+        return "WR Factory"
+    if rs >= 0.38:
+        return "Robust RB"
+    return "Balanced"
+
+
 def build_teams_body(ctx: dict) -> str:
     """
     Teams page:
@@ -691,14 +728,19 @@ def build_teams_body(ctx: dict) -> str:
             "Full Rebuild":     "wt-full-rebuild",
         }.get(_win_window, "wt-holding")
         _pos_idx = team_pos_index[rid]
+        _shape = roster_shape_label(team_pos_values[rid], _is_sf)
+        _shape_html = (
+            f"<span class='tc-shape'>{html.escape(_shape)}</span>"
+            "<span class='tc-shape-sep'> &bull; </span>"
+            if _shape else ""
+        )
 
         _is_viewer = str(rid) == str(viewer_roster_id or "")
         card_html = (
             f"<div class='card team-strength-card {_window_cls}' data-br-moment='draftgrade' data-sort-grade='{_grade_num}' data-sort-posindex='{_pos_idx:.4f}' data-sort-archetype='{_archetype_num}' data-roster-id='{rid}' data-original-index='{_card_idx}'" + (" data-viewer='1'" if _is_viewer else "") + ">"
             "  <div class='card-header-row'>"
             f"    <div style='display:flex;align-items:center;gap:8px;min-width:0;flex:1;'>{img_html}<h2 class='team-clickable' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'>{name}</h2>"
-            f"<div class='mini-label' style='flex-shrink:0;'><span class='grade-window-label'>{_win_window}</span>"
-            f"<span class='tc-pi-text'> &bull; <span class='tc-pi-num'>{team_pos_index[rid]:+.2f}</span></span></div></div>"
+            f"<div class='mini-label' style='flex-shrink:0;'>{_shape_html}<span class='grade-window-label'>{_win_window}</span></div></div>"
             "    <div style='display:flex;align-items:center;gap:6px;flex-shrink:0;'>"
             f"      {_grade_badge}"
             + f"      <button class='share-report-btn' title='Share team report card' "
@@ -714,6 +756,10 @@ def build_teams_body(ctx: dict) -> str:
             "  </div>"
             "  <div class='card-body'>"
             f"    {_chart_html}"
+            f"    <div class='tc-posindex-row' title='Positional Index: how far this team&apos;s starting-lineup strength sits above or below the league average, in standard deviations.'>"
+            f"      <span class='tc-posindex-lbl'>Positional Index</span>"
+            f"      <span class='tc-pi-num'>{_pos_idx:+.2f}</span>"
+            f"    </div>"
             "    <div class='pos-table-wrap'>"
             "    <table class='pos-strength-table'>"
             "      <thead>"
@@ -807,6 +853,15 @@ def build_teams_body(ctx: dict) -> str:
           <div class="wl-row"><span class="wl-dot" style="background:#f97316;"></span><strong class="wl-label">Retooling</strong><span class="wl-desc">Selling aging core, accumulating capital to reset for the future</span></div>
           <div class="wl-row"><span class="wl-dot" style="background:#ef4444;"></span><strong class="wl-label">Rebuilding</strong><span class="wl-desc">Below-average dynasty + redraft, active rebuild in progress</span></div>
           <div class="wl-row"><span class="wl-dot" style="background:#dc2626;"></span><strong class="wl-label">Full Rebuild</strong><span class="wl-desc">Stacked with picks, very low current value, all-in on the future</span></div>
+          <div class="wl-section-label" style="margin-top:10px;">Roster Shapes</div>
+          <div class="wl-grade-note" style="margin-top:0;">How a roster's value is built by position &mdash; descriptive, not part of the grade.</div>
+          <div class="wl-row"><span class="wl-shape">WR Factory</span><span class="wl-desc">Value concentrated at WR &mdash; a deep, WR-dominant roster</span></div>
+          <div class="wl-row"><span class="wl-shape">Robust RB</span><span class="wl-desc">RB-heavy build with a strong, deep backfield</span></div>
+          <div class="wl-row"><span class="wl-shape">Hero RB</span><span class="wl-desc">One elite back anchoring a thin RB room, with a WR-forward rest</span></div>
+          <div class="wl-row"><span class="wl-shape">Zero RB</span><span class="wl-desc">Minimal RB value, loaded at WR</span></div>
+          <div class="wl-row"><span class="wl-shape">TE Premium</span><span class="wl-desc">Heavy investment at TE &mdash; an elite tight end anchors the build</span></div>
+          <div class="wl-row"><span class="wl-shape">Konami Code</span><span class="wl-desc">Superflex build with two-plus premium QBs soaking up roster value</span></div>
+          <div class="wl-row"><span class="wl-shape">Balanced</span><span class="wl-desc">No single position dominates &mdash; value spread evenly</span></div>
         </div>
       </div>
     </div>

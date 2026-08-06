@@ -2885,7 +2885,7 @@
   // startup/redraft weights pick value, starting-lineup strength, and construction.
   function gradeMax(){
     return (state.type === 'rookie') ? { value:100, balance:0, tier:0 }
-                                     : { value:35, balance:30, tier:35 };
+                                     : { value:35, balance:40, tier:25 };
   }
   function gradeBars(g){
     var m = gradeMax();
@@ -4056,9 +4056,15 @@
       var _arch = teamArchetype(), _win = g && g.window;
       if (_arch || _win){
         var _aSections = [];
-        if (_arch) _aSections.push('<div class="dr-sum-arch-item"><div class="dr-sum-arch-tag">Archetype</div><div class="dr-sum-arch-label">' + esc(_arch.label) + '</div></div>');
+        // Combined descriptive profile, e.g. "Hero RB · Win-Now" (archetype +
+        // competitive window). Purely descriptive of the draft's shape.
+        var _profileLabel = _arch ? (_arch.label + (_win ? ' \xb7 ' + _win.label : ''))
+                                  : (_win ? _win.label : '');
+        if (_profileLabel){
+          var _winCls = _win ? (' dr-win-' + _win.label.toLowerCase().replace('-','')) : '';
+          _aSections.push('<div class="dr-sum-arch-item"><div class="dr-sum-arch-tag">Draft Profile</div><div class="dr-sum-arch-label' + _winCls + '">' + esc(_profileLabel) + '</div></div>');
+        }
         if (_win){
-          _aSections.push('<div class="dr-sum-arch-item"><div class="dr-sum-arch-tag">Window</div><span class="dr-sum-win dr-win-' + _win.label.toLowerCase().replace('-','') + '">' + esc(_win.label) + '</span></div>');
           _aSections.push('<div class="dr-sum-arch-item"><div class="dr-sum-arch-tag">Avg Age</div><div class="dr-sum-arch-label" style="color:var(--text)">' + _win.avgAge.toFixed(1) + '</div></div>');
         }
         archHtml = '<div class="dr-sum-arch">' + _aSections.join('<div class="dr-sum-arch-div"></div>') + '</div>';

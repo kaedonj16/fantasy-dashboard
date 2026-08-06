@@ -20175,6 +20175,21 @@ button:disabled {
 }
 .wl-desc { color: var(--text-muted); }
 
+/* Roster-shape chips in the legend (mirror the .tc-shape card label) */
+.wl-shape {
+  min-width: 90px;
+  flex-shrink: 0;
+  align-self: flex-start;
+  padding: 1px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--bg-subtle, rgba(148, 163, 184, 0.14));
+  border: 1px solid var(--border);
+  text-align: center;
+}
+
 .wl-section-label {
   grid-column: 1 / -1;
   font-size: 10px;
@@ -20250,12 +20265,21 @@ button:disabled {
 .wt-rebuilding       { border-left-color: #ef4444; }
 .wt-full-rebuild     { border-left-color: #dc2626; }
 
-/* Positional index inline text in card header */
-.tc-pi-text { color: var(--text-subtle); font-weight: 500; font-size: 11px; text-transform: none; letter-spacing: 0; }
+/* Positional index number (shown in the card body above the strength table) */
 .tc-pi-num  { font-weight: 700; color: var(--text-muted); }
-@media (max-width: 768px) {
-  .tc-pi-text { display: none; }
+
+/* Roster-shape (construction archetype) label in card sub-header */
+.tc-shape { font-size: 11px; font-weight: 700; color: var(--text); text-transform: none; letter-spacing: 0; }
+.tc-shape-sep { color: var(--text-subtle); font-size: 11px; }
+
+/* Positional index, relocated into the card body above the strength table */
+.tc-posindex-row {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 8px; margin: 2px 2px 8px; padding: 0 2px;
+  font-size: 11px; color: var(--text-subtle);
 }
+.tc-posindex-lbl { text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+.tc-posindex-row .tc-pi-num { font-size: 12px; }
 
 /* Colored window label text */
 .grade-window-label { font-size: 11px; font-weight: 700; font-style: normal; letter-spacing: 0.04em; text-transform: uppercase; }
