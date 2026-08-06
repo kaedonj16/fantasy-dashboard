@@ -38,13 +38,23 @@ from utils.tier_thresholds import compute_tier_thresholds
 from data_building.draft_grade_backtest import (
     calibration_bins,
     candidate_grid,
+    correlate_composite_to_finish,
     correlate_grades_to_finish,
     letter_calibration,
     load_sleeper_samples,
     load_multiyear_samples,
     pick_score_by_round,
     sweep,
+    sweep_composite_split,
     sweep_depth,
+)
+
+# Value/Starters/Construction splits to sweep for the headline composite grade.
+# Shipped is (35, 35, 30). We check whether a different split tracks outcomes
+# better than avg-pick-score alone.
+_COMPOSITE_SPLITS = (
+    (35, 35, 30), (45, 35, 20), (25, 45, 30), (45, 25, 30), (30, 45, 25),
+    (25, 55, 20), (35, 45, 20), (45, 40, 15), (30, 55, 15), (35, 25, 40),
 )
 
 # Depth-normalization slopes to sweep. Shipped is 0.44; steeper boosts later
@@ -112,6 +122,20 @@ def _report_group(title: str, samples, method: str, seed_type=None, top: int = 8
             print(f"     by-round under best slope {best_slope:.2f}: "
                   f"R1={rb[0]['score_mean']:.1f} .. R{rb[-1]['round']}={rb[-1]['score_mean']:.1f} "
                   f"(shipped: R1={rounds[0]['score_mean']:.1f} .. R{rounds[-1]['round']}={rounds[-1]['score_mean']:.1f})")
+
+    # Headline COMPOSITE grade (Value/Starters/Construction) vs outcome, and a
+    # sweep of the 35/35/30 split. This is the number users actually read as their
+    # grade -- distinct from the avg-pick-score baseline above. Rookie uses a
+    # different (letter) system, so skip it there.
+    if seed_type != "rookie":
+        comp_r = correlate_composite_to_finish(samples, method=method)
+        print(f"     composite grade (Value/Starters/Construction) vs outcome: {_fmt(comp_r)} "
+              f"[avg-pick-score baseline: {_fmt(base_r)}]")
+        csweep = sweep_composite_split(samples, _COMPOSITE_SPLITS, method=method)
+        print("     composite split sweep (value/starter/balance; 35/35/30 = shipped):")
+        for sp, r in csweep[:top]:
+            tag = " <- shipped" if sp == (35, 35, 30) else ""
+            print(f"       {sp[0]:>2}/{sp[1]:>2}/{sp[2]:>2}: {_fmt(r)}{tag}")
     print()
 
 
