@@ -361,7 +361,7 @@ async def _async_fetch_gnews_general(limit: int = 12) -> list:
         async with httpx.AsyncClient() as client:
             r = await client.get(
                 _GNEWS_BASE,
-                params={"q": "NFL when:2d", **_GNEWS_PARAMS},
+                params={"q": "NFL fantasy football when:3d", **_GNEWS_PARAMS},
                 headers=_HEADERS, timeout=_TIMEOUT,
             )
         if not r.is_success:
@@ -485,6 +485,59 @@ def _blend_dedupe(primary: list, secondary: list, limit: int) -> list:
     return _blend_sources([primary, secondary], limit)
 
 
+# ── Fantasy relevance (activity-feed news only) ──────────────────────────────
+# The general ESPN NFL feed carries plenty that doesn't move a fantasy roster
+# (legal/off-field, business, officiating). For the activity-page news rail we
+# want the fantasy-actionable stuff up top and the pure off-field noise dropped.
+_FANTASY_RE = re.compile(
+    r"\b(fantasy|waiver|start[\s/]*sit|sit[\s/]*start|sleeper|breakout|bust|"
+    r"snap count|snap share|target share|targets?|touches|carries|workload|"
+    r"usage|depth chart|backfield|red[\s-]?zone|committee|handcuff|adp|ppr|"
+    r"dynasty|ranking|projection|rest[\s-]?of[\s-]?season|rb\d|wr\d|te\d|qb\d|"
+    r"dfs|draftkings|fanduel|lineup|value play|showdown|cash game|"
+    r"flex|starter|benched?|injur|questionable|doubtful|out for|ruled out|"
+    r"returns?|activated|designated to return|placed on ir|reserve/injured|"
+    r"dnp|limited practice|full practice|suspend|holdout|hold[\s-]?in|"
+    r"re[\s-]?sign|signs?|signed|trade[ds]?|acquire|claimed off|waived|"
+    r"released|promoted|first[\s-]?team|reps|rookie|touchdown|snaps)\b",
+    re.I,
+)
+_NOISE_RE = re.compile(
+    r"\b(arrest|lawsuit|sued|dui|reckless|court|police|charged|indict|"
+    r"allegation|alleged|divorce|custody|nightclub|assault|domestic|"
+    r"stadium|ownership|for sale|referee|officiating|anthem|obituary|"
+    r"dies|death|funeral|retire[sd]? from|hall of fame)\b",
+    re.I,
+)
+
+
+def _fantasy_score(item: dict) -> int:
+    """Positive = fantasy-actionable; negative = pure off-field noise."""
+    text = ((item.get("headline") or "") + " " + (item.get("description") or "")).lower()
+    fant = len(_FANTASY_RE.findall(text))
+    noise = len(_NOISE_RE.findall(text))
+    score = min(fant, 4)
+    if noise and fant == 0:
+        score -= 3          # off-field story with no fantasy angle
+    return score
+
+
+def _fantasy_rank_general(items: list, limit: int) -> list:
+    """Rerank the blended general feed for fantasy relevance: drop pure off-field
+    noise, float fantasy-actionable items to the top, and keep recency ordering
+    within each tier. Degrades to plain recency if nothing scores."""
+    kept, neutral = [], []
+    for it in items:
+        s = _fantasy_score(it)
+        if s <= -1:
+            continue                       # off-field noise, no fantasy angle
+        (kept if s >= 1 else neutral).append(it)
+    kept.sort(key=lambda it: it.get("published") or "", reverse=True)
+    neutral.sort(key=lambda it: it.get("published") or "", reverse=True)
+    ranked = kept + neutral
+    return (ranked or items)[:limit]
+
+
 def _name_match(general: list, player_name: str, limit: int) -> list:
     """ESPN name-based fallback: general headlines mentioning first + last name."""
     if not general or not player_name:
@@ -534,7 +587,10 @@ async def _async_general_news(limit: int) -> list:
             _async_fetch_gnews_general(),
             _async_fetch_reddit_hot(client),
         )
-    return _blend_sources([general, gnews_items, reddit_items], limit)
+    # Blend a generous pool first (so fantasy items aren't truncated away), then
+    # rerank for fantasy relevance and trim to the requested size.
+    pool = _blend_sources([general, gnews_items, reddit_items], max(limit * 3, 40))
+    return _fantasy_rank_general(pool, limit)
 
 
 def _run(coro):

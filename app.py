@@ -9548,20 +9548,61 @@ def build_activity_body(ctx: dict) -> str:
 
     return f"""
     <style>
-      .activity-page.act-pulse.page-layout {{ grid-template-columns: minmax(0, 1fr) 320px; }}
-      @media (max-width: 900px) {{
+      /* Three columns like the Dashboard: NFL News · feed · Snapshot+Injuries. */
+      .activity-page.act-pulse.page-layout {{ grid-template-columns: 300px minmax(0, 1fr) 320px; gap: 20px; align-items: start; }}
+      @media (max-width: 1100px) {{
+        /* Drop the news rail below the feed; keep feed + right rail side by side. */
+        .activity-page.act-pulse.page-layout {{ grid-template-columns: minmax(0, 1fr) 300px; }}
+        .act-news-col {{ grid-column: 1 / -1; order: 3; }}
+        .act-pulse-main {{ order: 1; }}
+        .act-pulse-rail {{ order: 2; }}
+      }}
+      @media (max-width: 760px) {{
         .activity-page.act-pulse.page-layout {{ grid-template-columns: 1fr; }}
       }}
-      .act-filterbar {{
-        display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center;
-        padding: 10px 14px; background: var(--card); border: 1px solid var(--border);
-        border-radius: 12px; margin-bottom: 12px;
+      /* Left news rail — sticky, own scroll, like the dashboard's snapshot rail. */
+      @media (min-width: 1101px) {{
+        .act-news-col {{ position: sticky; top: 90px; }}
       }}
-      .act-seg {{ display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }}
-      .act-seg-label {{
-        font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
-        color: var(--text-muted); margin-right: 2px;
+      .act-news-col .card-body {{ max-height: calc(100vh - 190px); overflow-y: auto; overscroll-behavior: contain; }}
+
+      /* ── Filter toolbar ─────────────────────────────────────────────── */
+      .act-toolbar {{
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+        padding: 12px 14px; background: var(--card); border: 1px solid var(--border);
+        border-radius: 12px; margin-bottom: 14px;
       }}
+      .act-tb-label {{
+        font-size: 10px; font-weight: 800; letter-spacing: .11em; text-transform: uppercase;
+        color: var(--text-subtle, var(--text-muted));
+      }}
+      .act-tb-div {{ width: 1px; align-self: stretch; background: var(--border); margin: 2px 0; }}
+      /* Show: filled multi-select toggles with icon + count */
+      .act-tgl {{
+        display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border);
+        background: var(--card); color: var(--text-muted); font-weight: 700; font-size: 13px;
+        padding: 7px 12px 7px 11px; border-radius: 10px; cursor: pointer;
+        transition: background .15s, border-color .15s, color .15s, box-shadow .15s;
+      }}
+      .act-tgl:hover {{ border-color: var(--accent); color: var(--text); }}
+      .act-tgl svg {{ width: 15px; height: 15px; flex: 0 0 auto; }}
+      .act-tgl .act-tgl-cnt {{
+        font-size: 11px; font-weight: 800; background: var(--accent-soft); color: var(--text-muted);
+        border-radius: 999px; padding: 1px 7px; font-variant-numeric: tabular-nums; line-height: 1.5;
+      }}
+      .act-tgl.active {{ background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 3px 10px rgba(18,45,75,.20); }}
+      .act-tgl.active .act-tgl-cnt {{ background: rgba(255,255,255,.22); color: #fff; }}
+      /* Injuries: connected segmented control */
+      .act-segctrl {{ display: inline-flex; background: var(--accent-soft); border: 1px solid var(--border); border-radius: 11px; padding: 3px; gap: 2px; }}
+      .act-segctrl button {{
+        border: 0; background: transparent; color: var(--text-muted); font-weight: 700; font-size: 12.5px;
+        padding: 6px 11px; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+        transition: background .15s, color .15s, box-shadow .15s;
+      }}
+      .act-segctrl button:hover {{ color: var(--text); }}
+      .act-segctrl button.active {{ background: var(--card); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.10); }}
+      .act-segctrl .act-sdot {{ width: 8px; height: 8px; border-radius: 50%; }}
+      .act-tb-count {{ margin-left: auto; font-size: 12px; color: var(--text-subtle, var(--text-muted)); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }}
       .act-pulse .act-daygroup + .act-daygroup {{ margin-top: 2px; }}
       .act-pulse .act-dayhdr {{
         font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase;
@@ -9648,35 +9689,47 @@ def build_activity_body(ctx: dict) -> str:
       .act-injcount {{ font-size: 12px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; min-width: 16px; text-align: right; }}
     </style>
     <div class="page-layout activity-page act-pulse">
+      <aside class="page-sidebar act-news-col">
+        <div class="card small" id="nflNewsCard">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <h3>Fantasy News</h3>
+            <span style="font-size:10px;color:var(--text-muted);font-weight:500;">via ESPN &amp; more</span>
+          </div>
+          <div id="nflNewsList" class="card-body" style="padding:0;">
+            <div style="padding:16px 14px;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-muted);"><div class="loading-spinner" style="width:14px;height:14px;margin:0;flex-shrink:0;"></div>Loading…</div>
+          </div>
+        </div>
+      </aside>
+
       <main class="page-main act-pulse-main">
-        <div class="act-filterbar">
-          <div class="act-seg">
-            <span class="act-seg-label">Show</span>
-            <button class="pill-toggle act-toggle active" data-kind="trade" type="button">Trades</button>
-            <button class="pill-toggle act-toggle active" data-kind="waiver" type="button">Waivers</button>
+        <div class="act-toolbar">
+          <span class="act-tb-label">Show</span>
+          <button class="act-tgl act-toggle active" data-kind="trade" type="button" aria-pressed="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3l4 4-4 4"/><path d="M21 7H3"/><path d="M7 21l-4-4 4-4"/><path d="M3 17h18"/></svg>
+            Trades <span class="act-tgl-cnt">{trade_count}</span>
+          </button>
+          <button class="act-tgl act-toggle active" data-kind="waiver" type="button" aria-pressed="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            Waivers <span class="act-tgl-cnt">{waiver_count}</span>
+          </button>
+
+          <span class="act-tb-div"></span>
+
+          <span class="act-tb-label">Injuries</span>
+          <div class="act-segctrl" role="tablist">
+            <button class="inj-toggle active" data-status="all" type="button" role="tab" aria-selected="true">All</button>
+            <button class="inj-toggle" data-status="IR" type="button" role="tab" aria-selected="false"><span class="act-sdot" style="background:var(--loss,#b91c1c)"></span>IR</button>
+            <button class="inj-toggle" data-status="OUT" type="button" role="tab" aria-selected="false"><span class="act-sdot" style="background:var(--orange,#f59e0b)"></span>Out</button>
+            <button class="inj-toggle" data-status="QUESTIONABLE" type="button" role="tab" aria-selected="false"><span class="act-sdot" style="background:var(--rookie,#3b82f6)"></span>Q</button>
           </div>
-          <div class="act-seg">
-            <span class="act-seg-label">Injuries</span>
-            <button class="pill-toggle inj-toggle active" data-status="all" type="button">All</button>
-            <button class="pill-toggle inj-toggle" data-status="IR" type="button">IR</button>
-            <button class="pill-toggle inj-toggle" data-status="OUT" type="button">Out</button>
-            <button class="pill-toggle inj-toggle" data-status="QUESTIONABLE" type="button">Q</button>
-          </div>
+
+          <span class="act-tb-count">{trade_count + waiver_count} events</span>
         </div>
         {activity_html}
       </main>
 
       <aside class="page-sidebar act-pulse-rail">
         {snapshot_html}
-        <div class="card small" id="nflNewsCard">
-          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-            <h3>NFL News</h3>
-            <span style="font-size:10px;color:var(--text-muted);font-weight:500;">via ESPN</span>
-          </div>
-          <div id="nflNewsList" class="card-body" style="padding:0;max-height:340px;overflow-y:auto;">
-            <div style="padding:16px 14px;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-muted);"><div class="loading-spinner" style="width:14px;height:14px;margin:0;flex-shrink:0;"></div>Loading…</div>
-          </div>
-        </div>
         {injury_html}
       </aside>
     </div>
