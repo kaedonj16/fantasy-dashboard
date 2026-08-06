@@ -110,9 +110,15 @@ def dr_avg_top_n(arr: "list[float]", n: int) -> float:
 def dr_team_grade_score(
     picks: "list[dict]", *, slots: "list[str]", targets: dict, num_teams: int,
     draft_type: str, league_ppg_list: "list[float]", league_val_list: "list[float]",
+    value_weight: float = 35.0, starter_weight: float = 35.0, balance_weight: float = 30.0,
 ) -> Optional[float]:
     """Mirror gradePicks() (startup/redraft branch) -> raw 0-100 composite.
-    `picks` items: {id, pos, ps, pn, val, ppg}. Returns None if not gradeable."""
+    `picks` items: {id, pos, ps, pn, val, ppg}. Returns None if not gradeable.
+
+    value/starter/balance_weight are the point caps for the three components
+    (default 35/35/30 = the shipped split). The backtest overrides them to check
+    whether a different split predicts success better; the JS mirror uses the
+    shipped split, so parity holds when they're left as defaults."""
     if not picks:
         return None
     starter_ids = dr_optimal_lineup(picks, slots)
@@ -132,7 +138,8 @@ def dr_team_grade_score(
         w_tot += wt
     starter_avg_ps = (w_sum / w_tot) if w_tot > 0 else avg_ps
     # Half-up rounding (floor(x+0.5)) to match the JS shared composite exactly.
-    value_pts = math.floor(clamp01((starter_avg_ps or 0) / 100) * 35 + 0.5) if starter_avg_ps is not None else 17
+    value_pts = (math.floor(clamp01((starter_avg_ps or 0) / 100) * value_weight + 0.5)
+                 if starter_avg_ps is not None else math.floor(value_weight / 2))
 
     # 2) Starting-lineup strength vs a league-average team.
     starter_arr = [p for p in picks if str(p.get("id")) in starter_ids]
@@ -154,7 +161,7 @@ def dr_team_grade_score(
             strength_ratio = 0.6 * ppg_ratio + 0.4 * value_ratio
         else:
             strength_ratio = ppg_ratio if ppg_ratio is not None else (value_ratio if value_ratio is not None else 0.80)
-    starter_pts = math.floor(clamp01((strength_ratio - 0.80) / 0.40) * 35 + 0.5)
+    starter_pts = math.floor(clamp01((strength_ratio - 0.80) / 0.40) * starter_weight + 0.5)
 
     # 3) Construction: coverage + balance + efficiency.
     counts = {"QB": 0, "RB": 0, "WR": 0, "TE": 0}
@@ -172,7 +179,7 @@ def dr_team_grade_score(
     efficiency = (useful_picks / graded_picks) if graded_picks > 0 else 1.0
     construction_raw = clamp01(0.45 * coverage + 0.30 * (bsum / 4) + 0.25 * efficiency)
     ramp = min(1.0, len(picks) / 8)
-    balance_pts = math.floor(((1 - ramp) * 0.85 + ramp * construction_raw) * 30 + 0.5)
+    balance_pts = math.floor(((1 - ramp) * 0.85 + ramp * construction_raw) * balance_weight + 0.5)
 
     return float(value_pts + starter_pts + balance_pts)
 

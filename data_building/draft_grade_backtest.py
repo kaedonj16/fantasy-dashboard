@@ -340,7 +340,8 @@ _TARGETS_SF = {"QB": 3, "RB": 5, "WR": 5, "TE": 2}
 
 
 def _team_composite(sample: TeamSample, league_val_list, league_ppg_list,
-                    weights: Optional[dict] = None) -> Optional[float]:
+                    weights: Optional[dict] = None,
+                    split: Optional[Tuple[float, float, float]] = None) -> Optional[float]:
     """Reconstruct the shipped Value/Starters/Construction composite
     (dr_team_grade_score, 0-100) for one team from its pick-score inputs — the
     same raw score the Draft Room / Teams page feed to the field curve. Uses the
@@ -367,9 +368,13 @@ def _team_composite(sample: TeamSample, league_val_list, league_ppg_list,
     slots = _SLOTS_SF if is_sf else _SLOTS_1QB
     targets = _TARGETS_SF if is_sf else _TARGETS_1QB
     dtype = "redraft" if (sample.meta.get("draft_type") == "redraft") else "startup"
+    kw = {}
+    if split is not None:
+        kw = {"value_weight": split[0], "starter_weight": split[1], "balance_weight": split[2]}
     return dr_team_grade_score(
         picks, slots=slots, targets=targets, num_teams=teams, draft_type=dtype,
         league_ppg_list=list(league_ppg_list), league_val_list=list(league_val_list),
+        **kw,
     )
 
 
@@ -427,6 +432,61 @@ def letter_calibration(
         for L in _LETTER_ORDER if L in agg
     ]
 
+
+
+def composite_grades_and_outcomes(
+    samples: Sequence[TeamSample], weights: Optional[dict] = None,
+    split: Optional[Tuple[float, float, float]] = None,
+    include_types=("startup", "redraft"),
+) -> Tuple[List[float], List[float]]:
+    """Paired (composite grade, outcome) lists. The composite (Value/Starters/
+    Construction, dr_team_grade_score) is the headline grade users see — unlike
+    team_avg_ps which is just the mean pick score. Grouped by league so the
+    'vs a league-average team' component uses that league's own value/ppg field.
+    Rookie drafts use a different (letter) grade, so only startup/redraft here."""
+    by_league: Dict[object, List[TeamSample]] = {}
+    for s in samples:
+        if include_types and (s.meta.get("draft_type") or "startup") not in include_types:
+            continue
+        by_league.setdefault(s.meta.get("league_id"), []).append(s)
+    gs, os_ = [], []
+    for _lg, members in by_league.items():
+        lvl = [pk.get("value") for s in members for pk in s.picks if pk.get("value") is not None]
+        lpl = [pk.get("ppg_norm") for s in members for pk in s.picks if pk.get("ppg_norm") is not None]
+        for s in members:
+            g = _team_composite(s, lvl, lpl, weights, split=split)
+            if g is None:
+                continue
+            gs.append(g)
+            os_.append(float(s.outcome))
+    return gs, os_
+
+
+def correlate_composite_to_finish(
+    samples: Sequence[TeamSample], weights: Optional[dict] = None,
+    split: Optional[Tuple[float, float, float]] = None,
+    method: str = "spearman", include_types=("startup", "redraft"),
+) -> Optional[float]:
+    """Correlation between the headline COMPOSITE grade and outcome."""
+    corr = _CORR.get(method)
+    if corr is None:
+        raise ValueError(f"unknown method: {method!r}")
+    gs, os_ = composite_grades_and_outcomes(samples, weights, split, include_types)
+    return corr(gs, os_)
+
+
+def sweep_composite_split(
+    samples: Sequence[TeamSample],
+    splits: Sequence[Tuple[float, float, float]],
+    weights: Optional[dict] = None, method: str = "spearman",
+    include_types=("startup", "redraft"),
+) -> List[Tuple[Tuple[float, float, float], Optional[float]]]:
+    """Rank Value/Starters/Construction splits by how well the composite tracks
+    outcomes. The shipped split is (35, 35, 30). Best-first; undefined last."""
+    out = [(sp, correlate_composite_to_finish(samples, weights, sp, method, include_types))
+           for sp in splits]
+    out.sort(key=lambda t: (t[1] is not None, t[1] if t[1] is not None else 0.0), reverse=True)
+    return out
 
 
 def _perturb(base: dict, key: str, delta: float) -> dict:

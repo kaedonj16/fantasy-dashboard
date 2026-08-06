@@ -171,3 +171,34 @@ def test_team_grade_returns_bounded_number():
     )
     assert isinstance(score, float)
     assert 0.0 <= score <= 100.0
+
+
+# ---- dr_team_grade_score split weights (composite tuning) ------------------
+
+_GRADE_KW = dict(
+    slots=["QB", "RB", "RB", "WR", "WR", "WR", "TE", "FLEX"],
+    targets={"QB": 2, "RB": 5, "WR": 6, "TE": 2},
+    num_teams=12, draft_type="redraft",
+    league_ppg_list=[0.9, 0.7, 0.5, 0.4, 0.3] * 20,
+    league_val_list=[9000, 6000, 4000, 2000, 1000] * 20,
+)
+_GRADE_PICKS = [
+    {"id": 1, "pos": "RB", "ps": 70, "pn": 1,  "val": 8000, "ppg": 0.8},
+    {"id": 2, "pos": "WR", "ps": 60, "pn": 13, "val": 5000, "ppg": 0.6},
+    {"id": 3, "pos": "WR", "ps": 55, "pn": 25, "val": 3000, "ppg": 0.5},
+    {"id": 4, "pos": "TE", "ps": 40, "pn": 37, "val": 1500, "ppg": 0.3},
+]
+
+
+def test_team_grade_default_split_matches_explicit_35_35_30():
+    a = dr_team_grade_score(_GRADE_PICKS, **_GRADE_KW)
+    b = dr_team_grade_score(_GRADE_PICKS, value_weight=35, starter_weight=35,
+                            balance_weight=30, **_GRADE_KW)
+    assert a == b  # default is the shipped split -> keeps JS parity valid
+
+
+def test_team_grade_split_reweights_composite():
+    base = dr_team_grade_score(_GRADE_PICKS, **_GRADE_KW)
+    alt = dr_team_grade_score(_GRADE_PICKS, value_weight=25, starter_weight=55,
+                              balance_weight=20, **_GRADE_KW)
+    assert alt != base  # a different split must change the headline composite
