@@ -3140,8 +3140,12 @@ _AM_JS = r"""
     // Emphasis: the top-ranked players carry the story — full-strength dots and
     // bold "Name 23.6" labels; the rest of the pool becomes a muted field with a
     // few quiet labels. pts is pre-sorted best-first, so index = rank.
-    const starCut = Math.min(8, Math.max(4, Math.round(pts.length * 0.3)));
-    const showCut = Math.min(pts.length, starCut + (pts.length > 50 ? 14 : 10));
+    // Phones can't fit as many labels as the wide desktop chart, so cap them
+    // tighter there — a crammed stack of overlapping names reads as noise. Every
+    // dot stays tappable for its full detail card, so fewer printed labels loses
+    // no information, it just keeps the ones that print legible.
+    const starCut = Math.min(isNarrow ? 6 : 8, Math.max(4, Math.round(pts.length * 0.3)));
+    const showCut = Math.min(pts.length, starCut + (isNarrow ? 3 : (pts.length > 50 ? 14 : 10)));
     const lblSize = L.fLbl;
     const ptData = pts.map(function(p, idx) {
       const cx = px(p.x), cy = py(p.y), r = rOf(p), col = posColor(p.position);
