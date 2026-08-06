@@ -11763,8 +11763,17 @@ img, svg, canvas {
     padding-bottom: 4px;
   }
 
+  /* Drop the archetype · window meta onto its own line beneath the team name so
+     the name gets the full width instead of being squeezed to "Caleb's C…".
+     The inner block (avatar + name + meta) wraps; the meta takes a full row so
+     it lands below, while the grade badge / share / chevron stay to the right. */
+  .team-strength-card .card-header-row > div:first-child {
+    flex-wrap: wrap;
+    row-gap: 3px;
+  }
   .team-strength-card .card-header-row .mini-label {
     font-size: 10px;
+    flex-basis: 100%;
   }
 
   .teams-sort-bar {
