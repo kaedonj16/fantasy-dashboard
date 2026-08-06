@@ -4474,7 +4474,43 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     return ctx
 
 
-def render_standings_compact(team_stats, length=None, movement=None) -> str:
+def _owner_to_rid_map(roster_map=None, df_weekly=None) -> Dict[str, str]:
+    """owner-name -> roster_id, so standings team names can open the team modal.
+    Prefer df_weekly (authoritative owner<->roster_id pairing); otherwise invert
+    the roster_map (roster_id -> name)."""
+    try:
+        if (df_weekly is not None and not df_weekly.empty
+                and "roster_id" in df_weekly.columns and "owner" in df_weekly.columns):
+            return (df_weekly[["owner", "roster_id"]]
+                    .drop_duplicates("owner")
+                    .set_index("owner")["roster_id"]
+                    .astype(str).to_dict())
+    except Exception:
+        pass
+    if roster_map:
+        return {v: k for k, v in roster_map.items()}
+    return {}
+
+
+def _clickable_team_name(owner, owner_to_rid=None, *, inner=None, cls="") -> str:
+    """Wrap a team (owner) name so the global .team-clickable handler opens its
+    modal. Falls back to plain text (or a plain span with `cls`) when the roster
+    id can't be resolved. `inner` overrides the visible content, which defaults to
+    the escaped owner name."""
+    esc = html.escape(str(owner))
+    body = esc if inner is None else inner
+    rid = (owner_to_rid or {}).get(str(owner)) if owner_to_rid else None
+    if rid:
+        classes = ("team-clickable " + cls).strip()
+        return (f"<span class='{classes}' style='cursor:pointer;' "
+                f"data-roster-id='{html.escape(str(rid), quote=True)}' "
+                f"data-team-name='{html.escape(str(owner), quote=True)}'>{body}</span>")
+    if cls:
+        return f"<span class='{cls}'>{body}</span>"
+    return body
+
+
+def render_standings_compact(team_stats, length=None, movement=None, owner_to_rid=None) -> str:
     """Narrow standings for the dashboard left rail: Rank · Team · Record · PF.
 
     The full render_standings table has 8 columns and is too wide for a 340px
@@ -4510,7 +4546,7 @@ def render_standings_compact(team_stats, length=None, movement=None) -> str:
         rows.append(f"""
             <tr>
               <td class="num">{int(row['Rank'])}{mv_html}</td>
-              <td class="team">{img} {html.escape(str(row['owner']))}</td>
+              <td class="team">{img} {_clickable_team_name(row['owner'], owner_to_rid)}</td>
               <td>{record}</td>
               <td>{row['PF']:.0f}</td>
             </tr>""")
@@ -4562,7 +4598,7 @@ def _all_play_from_df_weekly(df_weekly) -> dict:
 
 def render_standings(team_stats, length, all_play: dict = None,
                      playoff_spots: int = None, total_regular_weeks: int = None,
-                     movement: dict = None) -> str:
+                     movement: dict = None, owner_to_rid: dict = None) -> str:
     if team_stats is None or team_stats.empty:
         return """
         <div class="card-body">
@@ -4677,10 +4713,10 @@ def render_standings(team_stats, length, all_play: dict = None,
             # under the name on very tight widths rather than getting cut off).
             team_cell = (
                 f"<div class='pp-teamline'>{img}"
-                f"<span class='pp-team-name'>{html.escape(owner)}</span>{_tag}</div>"
+                f"{_clickable_team_name(owner, owner_to_rid, cls='pp-team-name')}{_tag}</div>"
             )
         else:
-            team_cell = f"{img} {html.escape(owner)}"
+            team_cell = f"{img} {_clickable_team_name(owner, owner_to_rid)}"
 
         # Week-over-week seed movement (positive = climbed). Same arrows as the
         # compact standings; blank when there's no prior week to compare.
@@ -5381,7 +5417,8 @@ def build_dashboard_body(ctx: dict) -> str:
             logger.debug("dashboard: gm memo failed", exc_info=True)
 
     standings_html = render_standings_compact(
-        team_stats, movement=_standings_movement(df_weekly)
+        team_stats, movement=_standings_movement(df_weekly),
+        owner_to_rid=_owner_to_rid_map(roster_map=ctx.get("roster_map"), df_weekly=df_weekly),
     )
     usage_movers_html = _render_usage_movers(ctx, viewer_roster_id)
     lineup_alert_html = _viewer_lineup_alert_html(ctx, viewer_roster_id)
@@ -5723,6 +5760,7 @@ def render_power_and_playoffs(
         return ""
 
     team_stats = team_stats.copy()
+    _o2r = _owner_to_rid_map(roster_map=roster_map)
 
     # ---- Align with the Teams page Power Rankings tab when provided ----
     # Override PowerScore (and therefore ordering) using the canonical
@@ -5866,7 +5904,7 @@ def render_power_and_playoffs(
                 <h3>#{rank} {move_arrow(name)}</h3>
                 {avatar_html}
               </div>
-              <div class="name">{name}</div>
+              <div class="name">{_clickable_team_name(name, _o2r)}</div>
               <div class="rec">{rec}</div>
               <div class="bar"><div style="width:{w:.1f}%"></div></div>
               {chips_html}
@@ -5936,7 +5974,7 @@ def render_power_and_playoffs(
             f"<span class='pos'>#{pos}</span>"
             f"{move_arrow(team)}"
             f"{img}"
-            f"<span class='name'>{team}</span>"
+            f"{_clickable_team_name(team, _o2r, cls='name')}"
             f"<div class='bar'><div style='width:{bar_w:.1f}%'></div></div>"
             f"<div class='chips'>{chips_html}</div>"
             f"<span class='rec'>{record}</span>"
@@ -6004,7 +6042,7 @@ def render_power_and_playoffs(
     return podium_card
 
 
-def render_standings_sidebar(team_stats) -> str:
+def render_standings_sidebar(team_stats, owner_to_rid=None) -> str:
     if team_stats is None or team_stats.empty:
         return ""
 
@@ -6046,7 +6084,7 @@ def render_standings_sidebar(team_stats) -> str:
             <div class="highlight-game-card">
               <div class="hg-row">
                 <div class="hg-team">
-                  <span class="hg-name">{best_off['owner']}</span>
+                  {_clickable_team_name(best_off['owner'], owner_to_rid, cls='hg-name')}
                 </div>
               </div>
             </div>
@@ -6068,7 +6106,7 @@ def render_standings_sidebar(team_stats) -> str:
             <div class="highlight-game-card">
               <div class="hg-row">
                 <div class="hg-team">
-                  <span class="hg-name">{best_def['owner']}</span>
+                  {_clickable_team_name(best_def['owner'], owner_to_rid, cls='hg-name')}
                 </div>
               </div>
             </div>
@@ -6090,7 +6128,7 @@ def render_standings_sidebar(team_stats) -> str:
             <div class="highlight-game-card">
               <div class="hg-row">
                 <div class="hg-team">
-                  <span class="hg-name">{hottest['owner']}</span>
+                  {_clickable_team_name(hottest['owner'], owner_to_rid, cls='hg-name')}
                 </div>
               </div>
             </div>
@@ -6112,7 +6150,7 @@ def render_standings_sidebar(team_stats) -> str:
             <div class="highlight-game-card">
               <div class="hg-row">
                 <div class="hg-team">
-                  <span class="hg-name">{coldest['owner']}</span>
+                  {_clickable_team_name(coldest['owner'], owner_to_rid, cls='hg-name')}
                 </div>
               </div>
             </div>
@@ -6123,7 +6161,7 @@ def render_standings_sidebar(team_stats) -> str:
     return "".join(cards)
 
 
-def render_team_stats(team_stats, df_weekly) -> str:
+def render_team_stats(team_stats, df_weekly, owner_to_rid=None) -> str:
     if team_stats is None or team_stats.empty or df_weekly is None or df_weekly.empty:
         return """
         <div class="card-body">
@@ -6155,7 +6193,7 @@ def render_team_stats(team_stats, df_weekly) -> str:
             if avatar else ""
         )
         body_rows.append("<tr>" + "".join([
-            f"<td class='team'>{img} {r['Team']}</td>",
+            f"<td class='team'>{img} {_clickable_team_name(r['Team'], owner_to_rid)}</td>",
             f"<td class='num'>{r['Win %']:.3f}</td>",
             f"<td class='num'>{float(r['PF']):.2f}</td>",
             f"<td class='num'>{float(r['PA']):.2f}</td>",
@@ -6402,7 +6440,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         table_rows_html += (
             f"<tr{tr_cls}>"
             f"<td class='num'><span class='dyn-rank{rank_cls}'>{i}</span></td>"
-            f"<td class='team'>{img} {row['name']}</td>"
+            f"<td class='team'>{img} {_clickable_team_name(row['name'], {str(row['name']): str(row['rid'])})}</td>"
             f"<td class='num dyn-val-cell'><span class='dyn-val'>{row['total']:.0f}</span>"
             f"<span class='dyn-bar'><span style='width:{bar_pct}%'></span></span></td>"
             f"<td class='num'>{row['player_v']:.0f}</td>"
@@ -6571,7 +6609,7 @@ def render_share_rankings(ctx: dict) -> str:
 
         prod_pct  = prod_val / proj_total  * 100
         value_pct = rval     / league_value_total * 100
-        rows_data.append({"owner": owner, "prod_val": prod_val, "roster_value": rval,
+        rows_data.append({"owner": owner, "rid": rid, "prod_val": prod_val, "roster_value": rval,
                           "prod_pct": prod_pct, "value_pct": value_pct})
 
     rows_data.sort(key=lambda x: -x["value_pct"])
@@ -6589,7 +6627,7 @@ def render_share_rankings(ctx: dict) -> str:
         rows_html += f"""
         <tr>
           <td style="width:24px;color:var(--text-muted);font-size:11px;text-align:center;">{i+1}</td>
-          <td style="font-weight:600;font-size:13px;">{d['owner']}</td>
+          <td style="font-weight:600;font-size:13px;">{_clickable_team_name(d['owner'], owner_to_rid)}</td>
           <td>
             <div style="display:flex;align-items:center;gap:8px;">
               {bar(d['value_pct'])}
@@ -6674,11 +6712,12 @@ def _standings_panels(ctx: dict, power_rankings=None) -> dict:
 
     _all_play = _all_play_from_df_weekly(df_weekly)
     _pp_spots, _pp_weeks = _standings_playoff_params(ctx, team_stats)
+    _o2r = _owner_to_rid_map(roster_map=roster_map, df_weekly=df_weekly)
 
     standings_html = render_standings(
         team_stats, num_teams, all_play=_all_play,
         playoff_spots=_pp_spots, total_regular_weeks=_pp_weeks,
-        movement=_standings_movement(df_weekly),
+        movement=_standings_movement(df_weekly), owner_to_rid=_o2r,
     )
 
     if (
@@ -6689,7 +6728,7 @@ def _standings_panels(ctx: dict, power_rankings=None) -> dict:
         detailed_df = df_weekly[df_weekly["finalized"] == True].copy()
     else:
         detailed_df = pd.DataFrame()
-    details_html = render_team_stats(team_stats, detailed_df)
+    details_html = render_team_stats(team_stats, detailed_df, owner_to_rid=_o2r)
 
     power_html = render_power_and_playoffs(
         team_stats,
@@ -6699,7 +6738,7 @@ def _standings_panels(ctx: dict, power_rankings=None) -> dict:
         ctx["season"],
         power_rankings=power_rankings,
     )
-    sidebar_html = render_standings_sidebar(team_stats)
+    sidebar_html = render_standings_sidebar(team_stats, owner_to_rid=_o2r)
     return {
         "standings": standings_html,
         "details": details_html,
