@@ -495,6 +495,11 @@ window.showToast = (function () {
     if (!container) {
       container = document.createElement('div');
       container.id = 'toast-container';
+      // Announce toasts to assistive tech. Without this, screen-reader users
+      // never hear "Link copied!", "Saved", error messages, etc.
+      container.setAttribute('role', 'status');
+      container.setAttribute('aria-live', 'polite');
+      container.setAttribute('aria-atomic', 'true');
       document.body.appendChild(container);
     }
     return container;
@@ -9623,13 +9628,22 @@ document.addEventListener('DOMContentLoaded', function() {
       navToggle.innerHTML = navPillsContainer.classList.contains('nav-open')
         ? '<img src="/static/images/xmark-solid.png" style="width:16px;height:16px;" alt="">'
         : '<img src="/static/images/bars-solid.png" style="width:16px;height:16px;" alt="">';
+      syncNavExpanded();
     });
+
+    // Keep aria-expanded in sync with the open/closed state so screen readers
+    // announce whether the menu is expanded.
+    function syncNavExpanded() {
+      navToggle.setAttribute('aria-expanded',
+        navPillsContainer.classList.contains('nav-open') ? 'true' : 'false');
+    }
 
     // Close menu when clicking outside
     document.addEventListener('click', function(e) {
       if (!navToggle.contains(e.target) && !navPillsContainer.contains(e.target)) {
         navPillsContainer.classList.remove('nav-open');
         navToggle.innerHTML = '<img src="/static/images/bars-solid.png" style="width:16px;height:16px;" alt="">';
+        syncNavExpanded();
       }
     });
 
@@ -9639,6 +9653,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (pill.closest('.nav-pill-dropdown-wrapper')) return;  // dropdown trigger - keep hamburger open
         navPillsContainer.classList.remove('nav-open');
         navToggle.innerHTML = '<img src="/static/images/bars-solid.png" style="width:16px;height:16px;" alt="">';
+        syncNavExpanded();
       });
     });
 
@@ -9647,6 +9662,7 @@ document.addEventListener('DOMContentLoaded', function() {
       item.addEventListener('click', function() {
         navPillsContainer.classList.remove('nav-open');
         navToggle.innerHTML = '<img src="/static/images/bars-solid.png" style="width:16px;height:16px;" alt="">';
+        syncNavExpanded();
         const wrapper = document.getElementById('playersNavDropdown');
         if (wrapper) wrapper.classList.remove('open');
       });

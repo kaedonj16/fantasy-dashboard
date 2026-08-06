@@ -2354,7 +2354,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             f"  {player_search_html}"
             f"  {changelog_bell}"
             f"  {settings_gear}"
-            "  <button class='nav-hamburger utility-icon-btn' id='navToggle' aria-label='Menu'>"
+            "  <button class='nav-hamburger utility-icon-btn' id='navToggle' aria-label='Menu' aria-expanded='false' aria-controls='navPills'>"
             "    " + _nav_icon("menu") +
             "  </button>"
             "</div>"
@@ -2363,7 +2363,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         # Build pills container
         pills_html = ''.join(pills)
         home_pills_container = (
-            "<div class='nav-pills-container'>"
+            "<div class='nav-pills-container' id='navPills'>"
             "  <span class='nav-pill-ind' aria-hidden='true'></span>"
             f"  {pills_html}"
             "</div>"
@@ -2633,7 +2633,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         f"  {watchlist_btn}"
         f"  {changelog_bell}"
         f"  {settings_gear}"
-        "  <button class='nav-hamburger utility-icon-btn' id='navToggle' aria-label='Menu'>"
+        "  <button class='nav-hamburger utility-icon-btn' id='navToggle' aria-label='Menu' aria-expanded='false' aria-controls='navPills'>"
         "    " + _nav_icon("menu") +
         "  </button>"
         "</div>"
@@ -2642,7 +2642,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # Build pills container (includes league switcher and logout for mobile menu)
     pills_html = ''.join(nav_pills)
     pills_container = (
-        "<div class='nav-pills-container'>"
+        "<div class='nav-pills-container' id='navPills'>"
         "  <span class='nav-pill-ind' aria-hidden='true'></span>"
         f"  {pills_html}"
         "</div>"

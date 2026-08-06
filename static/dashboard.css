@@ -206,6 +206,7 @@
   --loss: #ef4444;
   --warning: #f59e0b;
   --info: #38bdf8;
+  --toast-bg: #1e293b;   /* neutral dark slate for toasts in both themes */
   --gold: #ca8a04;   /* elite badge — vibrant gold, kept close to the dark-mode gold */
   --orange: #ea580c; /* doubtful / mid-severity, between warning and loss */
   --inj-q: #ca8a04;  /* questionable: a distinct yellow so it doesn't read as orange next to doubtful */
@@ -282,6 +283,7 @@
   --accent-strong: #0b1220;
   --win: #4ade80;
   --loss: #f87171;
+  --toast-bg: #0f1a2b;   /* a touch deeper so toasts read as raised above dark cards */
   --gold: #fbbf24;   /* brighter on the dark ground */
   --orange: #fb923c;
   --inj-q: #facc15;  /* brighter yellow on the dark ground */
@@ -420,6 +422,20 @@ table, .standings-table, .mini-value, .mini-stat, .sr-stat-value,
               box-shadow .15s ease, transform .15s ease;
 }
 :where(button):active { transform: scale(.985); }
+
+/* Instant press feedback on the primary interactive chrome so taps feel
+   responsive before any navigation/network settles. Kills the grey iOS/Android
+   tap-highlight flash and gives a subtle press-in on touch. */
+.utility-icon-btn,
+.nav-pill,
+.br-sheet-link { -webkit-tap-highlight-color: transparent; }
+.utility-icon-btn:active,
+.nav-pill:active { transform: scale(.94); }
+.br-sheet-link:active { background: var(--accent-soft); }
+@media (prefers-reduced-motion: reduce) {
+  .utility-icon-btn:active,
+  .nav-pill:active { transform: none; }
+}
 
 /* Honor reduced-motion preferences globally. */
 @media (prefers-reduced-motion: reduce) {
@@ -19166,6 +19182,16 @@ button:disabled {
   align-items: center;
   gap: 8px;
   pointer-events: none;
+  /* Keep clear of the home-indicator on notched phones even when the mobile
+     dock isn't present. */
+  bottom: max(24px, env(safe-area-inset-bottom));
+}
+/* On phones the fixed bottom dock (.br-mnav, 56px + safe-area) owns the bottom
+   edge, so float toasts above it instead of behind it. */
+@media (max-width: 768px) {
+  #toast-container {
+    bottom: calc(56px + env(safe-area-inset-bottom) + 14px);
+  }
 }
 
 .toast {
@@ -19174,14 +19200,18 @@ button:disabled {
   font-size: 13px;
   font-weight: 600;
   color: #fff;
-  background: #1e293b;
+  background: var(--toast-bg);
   box-shadow: 0 4px 20px rgba(0,0,0,.3);
   opacity: 0;
   transform: translateY(10px);
   transition: opacity .22s ease, transform .22s ease;
   pointer-events: auto;
-  white-space: nowrap;
-  max-width: 90vw;
+  /* Long messages (e.g. the multi-sentence Yahoo OAuth errors) must wrap
+     instead of overflowing off-screen on a phone. */
+  white-space: normal;
+  text-align: center;
+  line-height: 1.35;
+  max-width: min(90vw, 440px);
 }
 .toast.toast-visible {
   opacity: 1;
@@ -19189,7 +19219,7 @@ button:disabled {
 }
 .toast.toast-success { background: var(--win); }
 .toast.toast-error   { background: var(--loss); }
-.toast.toast-info    { background: #0ea5e9; }
+.toast.toast-info    { background: var(--info); }
 
 /* ── Async card fade-in ───────────────────────────────────────────────────── */
 @keyframes cardFadeIn {
