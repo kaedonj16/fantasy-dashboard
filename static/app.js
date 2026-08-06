@@ -518,6 +518,33 @@ window.showToast = (function () {
   };
 })();
 
+// Surface a friendly message when a Yahoo OAuth attempt bounced back with
+// ?yahoo_error=..., then strip the param so a refresh doesn't repeat it. Without
+// this the user just lands on the home page with a cryptic URL and no feedback.
+(function () {
+  try {
+    var params = new URLSearchParams(window.location.search);
+    var err = params.get('yahoo_error');
+    if (!err) return;
+    var MESSAGES = {
+      league_access_denied: "Yahoo connected, but that account can't access that league. Double-check the league ID and that you signed in with the Yahoo account that's in the league.",
+      state_mismatch:       'Yahoo sign-in expired or was interrupted. Please try connecting again.',
+      token_exchange_failed:'Yahoo sign-in failed while exchanging the login. Please try again.',
+      invalid_token_response:'Yahoo sign-in didn’t return a usable session. Please try again.',
+      access_denied:        'Yahoo access was declined. Connect again and approve access to continue.',
+    };
+    var msg = MESSAGES[err] || ('Yahoo connection error: ' + err);
+    var show = function () {
+      if (window.showToast) window.showToast(msg, 'error', 7000);
+      else setTimeout(show, 200);
+    };
+    show();
+    params.delete('yahoo_error');
+    var qs = params.toString();
+    window.history.replaceState({}, '', window.location.pathname + (qs ? '?' + qs : '') + window.location.hash);
+  } catch (_) {}
+})();
+
 /**
  * Light haptic feedback for a confirmed action (draft pick, trade submit).
  * A no-op where the Vibration API is unavailable (notably iOS Safari), so it's
