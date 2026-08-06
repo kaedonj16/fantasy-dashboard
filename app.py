@@ -4474,7 +4474,43 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     return ctx
 
 
-def render_standings_compact(team_stats, length=None, movement=None) -> str:
+def _owner_to_rid_map(roster_map=None, df_weekly=None) -> Dict[str, str]:
+    """owner-name -> roster_id, so standings team names can open the team modal.
+    Prefer df_weekly (authoritative owner<->roster_id pairing); otherwise invert
+    the roster_map (roster_id -> name)."""
+    try:
+        if (df_weekly is not None and not df_weekly.empty
+                and "roster_id" in df_weekly.columns and "owner" in df_weekly.columns):
+            return (df_weekly[["owner", "roster_id"]]
+                    .drop_duplicates("owner")
+                    .set_index("owner")["roster_id"]
+                    .astype(str).to_dict())
+    except Exception:
+        pass
+    if roster_map:
+        return {v: k for k, v in roster_map.items()}
+    return {}
+
+
+def _clickable_team_name(owner, owner_to_rid=None, *, inner=None, cls="") -> str:
+    """Wrap a team (owner) name so the global .team-clickable handler opens its
+    modal. Falls back to plain text (or a plain span with `cls`) when the roster
+    id can't be resolved. `inner` overrides the visible content, which defaults to
+    the escaped owner name."""
+    esc = html.escape(str(owner))
+    body = esc if inner is None else inner
+    rid = (owner_to_rid or {}).get(str(owner)) if owner_to_rid else None
+    if rid:
+        classes = ("team-clickable " + cls).strip()
+        return (f"<span class='{classes}' style='cursor:pointer;' "
+                f"data-roster-id='{html.escape(str(rid), quote=True)}' "
+                f"data-team-name='{html.escape(str(owner), quote=True)}'>{body}</span>")
+    if cls:
+        return f"<span class='{cls}'>{body}</span>"
+    return body
+
+
+def render_standings_compact(team_stats, length=None, movement=None, owner_to_rid=None) -> str:
     """Narrow standings for the dashboard left rail: Rank · Team · Record · PF.
 
     The full render_standings table has 8 columns and is too wide for a 340px
@@ -4510,7 +4546,7 @@ def render_standings_compact(team_stats, length=None, movement=None) -> str:
         rows.append(f"""
             <tr>
               <td class="num">{int(row['Rank'])}{mv_html}</td>
-              <td class="team">{img} {html.escape(str(row['owner']))}</td>
+              <td class="team">{img} {_clickable_team_name(row['owner'], owner_to_rid)}</td>
               <td>{record}</td>
               <td>{row['PF']:.0f}</td>
             </tr>""")
@@ -4562,7 +4598,7 @@ def _all_play_from_df_weekly(df_weekly) -> dict:
 
 def render_standings(team_stats, length, all_play: dict = None,
                      playoff_spots: int = None, total_regular_weeks: int = None,
-                     movement: dict = None) -> str:
+                     movement: dict = None, owner_to_rid: dict = None) -> str:
     if team_stats is None or team_stats.empty:
         return """
         <div class="card-body">
@@ -4677,10 +4713,10 @@ def render_standings(team_stats, length, all_play: dict = None,
             # under the name on very tight widths rather than getting cut off).
             team_cell = (
                 f"<div class='pp-teamline'>{img}"
-                f"<span class='pp-team-name'>{html.escape(owner)}</span>{_tag}</div>"
+                f"{_clickable_team_name(owner, owner_to_rid, cls='pp-team-name')}{_tag}</div>"
             )
         else:
-            team_cell = f"{img} {html.escape(owner)}"
+            team_cell = f"{img} {_clickable_team_name(owner, owner_to_rid)}"
 
         # Week-over-week seed movement (positive = climbed). Same arrows as the
         # compact standings; blank when there's no prior week to compare.
@@ -5381,7 +5417,8 @@ def build_dashboard_body(ctx: dict) -> str:
             logger.debug("dashboard: gm memo failed", exc_info=True)
 
     standings_html = render_standings_compact(
-        team_stats, movement=_standings_movement(df_weekly)
+        team_stats, movement=_standings_movement(df_weekly),
+        owner_to_rid=_owner_to_rid_map(roster_map=ctx.get("roster_map"), df_weekly=df_weekly),
     )
     usage_movers_html = _render_usage_movers(ctx, viewer_roster_id)
     lineup_alert_html = _viewer_lineup_alert_html(ctx, viewer_roster_id)
@@ -5723,6 +5760,7 @@ def render_power_and_playoffs(
         return ""
 
     team_stats = team_stats.copy()
+    _o2r = _owner_to_rid_map(roster_map=roster_map)
 
     # ---- Align with the Teams page Power Rankings tab when provided ----
     # Override PowerScore (and therefore ordering) using the canonical
@@ -5866,7 +5904,7 @@ def render_power_and_playoffs(
                 <h3>#{rank} {move_arrow(name)}</h3>
                 {avatar_html}
               </div>
-              <div class="name">{name}</div>
+              <div class="name">{_clickable_team_name(name, _o2r)}</div>
               <div class="rec">{rec}</div>
               <div class="bar"><div style="width:{w:.1f}%"></div></div>
               {chips_html}
@@ -5936,7 +5974,7 @@ def render_power_and_playoffs(
             f"<span class='pos'>#{pos}</span>"
             f"{move_arrow(team)}"
             f"{img}"
-            f"<span class='name'>{team}</span>"
+            f"{_clickable_team_name(team, _o2r, cls='name')}"
             f"<div class='bar'><div style='width:{bar_w:.1f}%'></div></div>"
             f"<div class='chips'>{chips_html}</div>"
             f"<span class='rec'>{record}</span>"
@@ -6004,7 +6042,7 @@ def render_power_and_playoffs(
     return podium_card
 
 
-def render_standings_sidebar(team_stats) -> str:
+def render_standings_sidebar(team_stats, owner_to_rid=None) -> str:
     if team_stats is None or team_stats.empty:
         return ""
 
@@ -6046,7 +6084,7 @@ def render_standings_sidebar(team_stats) -> str:
             <div class="highlight-game-card">
               <div class="hg-row">
                 <div class="hg-team">
-                  <span class="hg-name">{best_off['owner']}</span>
+                  {_clickable_team_name(best_off['owner'], owner_to_rid, cls='hg-name')}
                 </div>
               </div>
             </div>
@@ -6068,7 +6106,7 @@ def render_standings_sidebar(team_stats) -> str:
             <div class="highlight-game-card">
               <div class="hg-row">
                 <div class="hg-team">
-                  <span class="hg-name">{best_def['owner']}</span>
+                  {_clickable_team_name(best_def['owner'], owner_to_rid, cls='hg-name')}
                 </div>
               </div>
             </div>
@@ -6090,7 +6128,7 @@ def render_standings_sidebar(team_stats) -> str:
             <div class="highlight-game-card">
               <div class="hg-row">
                 <div class="hg-team">
-                  <span class="hg-name">{hottest['owner']}</span>
+                  {_clickable_team_name(hottest['owner'], owner_to_rid, cls='hg-name')}
                 </div>
               </div>
             </div>
@@ -6112,7 +6150,7 @@ def render_standings_sidebar(team_stats) -> str:
             <div class="highlight-game-card">
               <div class="hg-row">
                 <div class="hg-team">
-                  <span class="hg-name">{coldest['owner']}</span>
+                  {_clickable_team_name(coldest['owner'], owner_to_rid, cls='hg-name')}
                 </div>
               </div>
             </div>
@@ -6123,7 +6161,7 @@ def render_standings_sidebar(team_stats) -> str:
     return "".join(cards)
 
 
-def render_team_stats(team_stats, df_weekly) -> str:
+def render_team_stats(team_stats, df_weekly, owner_to_rid=None) -> str:
     if team_stats is None or team_stats.empty or df_weekly is None or df_weekly.empty:
         return """
         <div class="card-body">
@@ -6155,7 +6193,7 @@ def render_team_stats(team_stats, df_weekly) -> str:
             if avatar else ""
         )
         body_rows.append("<tr>" + "".join([
-            f"<td class='team'>{img} {r['Team']}</td>",
+            f"<td class='team'>{img} {_clickable_team_name(r['Team'], owner_to_rid)}</td>",
             f"<td class='num'>{r['Win %']:.3f}</td>",
             f"<td class='num'>{float(r['PF']):.2f}</td>",
             f"<td class='num'>{float(r['PA']):.2f}</td>",
@@ -6402,7 +6440,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         table_rows_html += (
             f"<tr{tr_cls}>"
             f"<td class='num'><span class='dyn-rank{rank_cls}'>{i}</span></td>"
-            f"<td class='team'>{img} {row['name']}</td>"
+            f"<td class='team'>{img} {_clickable_team_name(row['name'], {str(row['name']): str(row['rid'])})}</td>"
             f"<td class='num dyn-val-cell'><span class='dyn-val'>{row['total']:.0f}</span>"
             f"<span class='dyn-bar'><span style='width:{bar_pct}%'></span></span></td>"
             f"<td class='num'>{row['player_v']:.0f}</td>"
@@ -6571,7 +6609,7 @@ def render_share_rankings(ctx: dict) -> str:
 
         prod_pct  = prod_val / proj_total  * 100
         value_pct = rval     / league_value_total * 100
-        rows_data.append({"owner": owner, "prod_val": prod_val, "roster_value": rval,
+        rows_data.append({"owner": owner, "rid": rid, "prod_val": prod_val, "roster_value": rval,
                           "prod_pct": prod_pct, "value_pct": value_pct})
 
     rows_data.sort(key=lambda x: -x["value_pct"])
@@ -6589,7 +6627,7 @@ def render_share_rankings(ctx: dict) -> str:
         rows_html += f"""
         <tr>
           <td style="width:24px;color:var(--text-muted);font-size:11px;text-align:center;">{i+1}</td>
-          <td style="font-weight:600;font-size:13px;">{d['owner']}</td>
+          <td style="font-weight:600;font-size:13px;">{_clickable_team_name(d['owner'], owner_to_rid)}</td>
           <td>
             <div style="display:flex;align-items:center;gap:8px;">
               {bar(d['value_pct'])}
@@ -6674,11 +6712,12 @@ def _standings_panels(ctx: dict, power_rankings=None) -> dict:
 
     _all_play = _all_play_from_df_weekly(df_weekly)
     _pp_spots, _pp_weeks = _standings_playoff_params(ctx, team_stats)
+    _o2r = _owner_to_rid_map(roster_map=roster_map, df_weekly=df_weekly)
 
     standings_html = render_standings(
         team_stats, num_teams, all_play=_all_play,
         playoff_spots=_pp_spots, total_regular_weeks=_pp_weeks,
-        movement=_standings_movement(df_weekly),
+        movement=_standings_movement(df_weekly), owner_to_rid=_o2r,
     )
 
     if (
@@ -6689,7 +6728,7 @@ def _standings_panels(ctx: dict, power_rankings=None) -> dict:
         detailed_df = df_weekly[df_weekly["finalized"] == True].copy()
     else:
         detailed_df = pd.DataFrame()
-    details_html = render_team_stats(team_stats, detailed_df)
+    details_html = render_team_stats(team_stats, detailed_df, owner_to_rid=_o2r)
 
     power_html = render_power_and_playoffs(
         team_stats,
@@ -6699,7 +6738,7 @@ def _standings_panels(ctx: dict, power_rankings=None) -> dict:
         ctx["season"],
         power_rankings=power_rankings,
     )
-    sidebar_html = render_standings_sidebar(team_stats)
+    sidebar_html = render_standings_sidebar(team_stats, owner_to_rid=_o2r)
     return {
         "standings": standings_html,
         "details": details_html,
@@ -8885,6 +8924,10 @@ def build_activity_body(ctx: dict) -> str:
     waiver_count = 0
     most_active_counts: Dict[str, int] = {}
     traded_asset_counts: Dict[str, int] = {}
+    # Parallel maps so the Snapshot leaders (most-active team, most-moved asset)
+    # can be made clickable, same as every other name on the page.
+    most_active_rid: Dict[str, str] = {}
+    traded_asset_pid: Dict[str, str] = {}
     biggest_trade_label = "No trade data"
     biggest_trade_delta = 0.0
 
@@ -8911,8 +8954,18 @@ def build_activity_body(ctx: dict) -> str:
             pos_txt, pos_cls = _pos_cls(p)
             sign = "+" if io == "add" else "−"
             drop = "" if io == "add" else " act-chip-drop"
+            # Make the chip open the player modal (same delegated handler as every
+            # other player name on the site). pid is always present for real
+            # players; draft-pick chips have none, so they stay non-clickable.
+            pid = str(p.get("pid") or p.get("player_id") or "").strip()
+            click_cls = " player-clickable" if pid else ""
+            click_attrs = (
+                f" style='cursor:pointer;'"
+                f" data-player-id='{html.escape(pid, quote=True)}' data-player-name='{name}'"
+                if pid else ""
+            )
             return (
-                f"<span class='act-chip{drop}'><span class='act-sign'>{sign}</span>"
+                f"<span class='act-chip{drop}{click_cls}'{click_attrs}><span class='act-sign'>{sign}</span>"
                 f"<span class='act-pos {pos_cls}'>{html.escape(pos_txt)}</span>{name}</span>"
             )
 
@@ -8945,6 +8998,8 @@ def build_activity_body(ctx: dict) -> str:
                     rid_to_name[rid] = tm.get("name") or f"Team {rid}"
                 team_name = tm.get("name") or f"Team {rid}"
                 most_active_counts[team_name] = most_active_counts.get(team_name, 0) + 1
+                if rid is not None:
+                    most_active_rid.setdefault(team_name, str(rid))
 
             trade_count += 1
 
@@ -8952,6 +9007,9 @@ def build_activity_body(ctx: dict) -> str:
                 name = str(p.get("name") or "").strip()
                 if name:
                     traded_asset_counts[name] = traded_asset_counts.get(name, 0) + 1
+                    _rp_pid = str(p.get("pid") or p.get("player_id") or "").strip()
+                    if _rp_pid:
+                        traded_asset_pid.setdefault(name, _rp_pid)
 
                 val, pos_rank_label = player_value(p)
                 val_txt = f"{val:.1f}" if val > 0 else ""
@@ -9297,8 +9355,12 @@ def build_activity_body(ctx: dict) -> str:
 
             d = txrow["data"]
             team_name = d.get("name") or "Unknown Team"
-            roster_id = d.get("roster_id", "")
+            # Waiver rows carry the roster id under "rid" (trades use "roster_id");
+            # fall back so the team name actually opens the team modal.
+            roster_id = d.get("roster_id") or d.get("rid") or ""
             most_active_counts[team_name] = most_active_counts.get(team_name, 0) + 1
+            if roster_id != "":
+                most_active_rid.setdefault(team_name, str(roster_id))
             waiver_count += 1
 
             avatar = d.get("avatar") or ""
@@ -9313,6 +9375,9 @@ def build_activity_body(ctx: dict) -> str:
                 name = str(p.get("name") or "").strip()
                 if name:
                     traded_asset_counts[name] = traded_asset_counts.get(name, 0) + 1
+                    _wp_pid = str(p.get("pid") or p.get("player_id") or "").strip()
+                    if _wp_pid:
+                        traded_asset_pid.setdefault(name, _wp_pid)
                 val, _lbl = player_value(p)
                 total_val += val
                 chip_parts.append(_player_chip(p, "add"))
@@ -9389,6 +9454,29 @@ def build_activity_body(ctx: dict) -> str:
         most_active_team = max(most_active_counts.items(), key=lambda x: x[1])[0] if most_active_counts else "None"
         most_moved_asset = max(traded_asset_counts.items(), key=lambda x: x[1])[0] if traded_asset_counts else "None"
 
+        # Make the two Snapshot leaders open their modals, same as the feed.
+        def _snap_team_html(nm: str) -> str:
+            rid = most_active_rid.get(nm)
+            esc = html.escape(nm)
+            if not rid or nm == "None":
+                return esc
+            return (
+                f"<span class='team-clickable' style='cursor:pointer;' "
+                f"data-roster-id='{html.escape(str(rid), quote=True)}' "
+                f"data-team-name='{html.escape(nm, quote=True)}'>{esc}</span>"
+            )
+
+        def _snap_player_html(nm: str) -> str:
+            pid = traded_asset_pid.get(nm)
+            esc = html.escape(nm)
+            if not pid or nm in ("None", "Draft Pick"):
+                return esc
+            return (
+                f"<span class='player-clickable' style='cursor:pointer;' "
+                f"data-player-id='{html.escape(str(pid), quote=True)}' "
+                f"data-player-name='{html.escape(nm, quote=True)}'>{esc}</span>"
+            )
+
         # The four big stat tiles + spotlight banner collapse into one compact
         # rail card, so the timeline is the first thing you see.
         _swing = f" · {round(biggest_trade_delta, 1)}" if biggest_trade_delta > 0 else ""
@@ -9400,8 +9488,8 @@ def build_activity_body(ctx: dict) -> str:
             f"    <div class='act-snap-stat'><span class='act-snap-n'>{waiver_count}</span><span class='act-snap-l'>Waivers</span></div>"
             "  </div>"
             f"  <div class='act-snap-line'><span>Biggest swing</span><strong>{html.escape(biggest_trade_label)}{_swing}</strong></div>"
-            f"  <div class='act-snap-line'><span>Most active</span><strong>{html.escape(most_active_team)}</strong></div>"
-            f"  <div class='act-snap-line'><span>Most-moved asset</span><strong>{html.escape(most_moved_asset)}</strong></div>"
+            f"  <div class='act-snap-line'><span>Most active</span><strong>{_snap_team_html(most_active_team)}</strong></div>"
+            f"  <div class='act-snap-line'><span>Most-moved asset</span><strong>{_snap_player_html(most_moved_asset)}</strong></div>"
             "</div>"
         )
 
@@ -9460,20 +9548,61 @@ def build_activity_body(ctx: dict) -> str:
 
     return f"""
     <style>
-      .activity-page.act-pulse.page-layout {{ grid-template-columns: minmax(0, 1fr) 320px; }}
-      @media (max-width: 900px) {{
+      /* Three columns like the Dashboard: NFL News · feed · Snapshot+Injuries. */
+      .activity-page.act-pulse.page-layout {{ grid-template-columns: 300px minmax(0, 1fr) 320px; gap: 20px; align-items: start; }}
+      @media (max-width: 1100px) {{
+        /* Drop the news rail below the feed; keep feed + right rail side by side. */
+        .activity-page.act-pulse.page-layout {{ grid-template-columns: minmax(0, 1fr) 300px; }}
+        .act-news-col {{ grid-column: 1 / -1; order: 3; }}
+        .act-pulse-main {{ order: 1; }}
+        .act-pulse-rail {{ order: 2; }}
+      }}
+      @media (max-width: 760px) {{
         .activity-page.act-pulse.page-layout {{ grid-template-columns: 1fr; }}
       }}
-      .act-filterbar {{
-        display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center;
-        padding: 10px 14px; background: var(--card); border: 1px solid var(--border);
-        border-radius: 12px; margin-bottom: 12px;
+      /* Left news rail — sticky, own scroll, like the dashboard's snapshot rail. */
+      @media (min-width: 1101px) {{
+        .act-news-col {{ position: sticky; top: 90px; }}
       }}
-      .act-seg {{ display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }}
-      .act-seg-label {{
-        font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
-        color: var(--text-muted); margin-right: 2px;
+      .act-news-col .card-body {{ max-height: calc(100vh - 190px); overflow-y: auto; overscroll-behavior: contain; }}
+
+      /* ── Filter toolbar ─────────────────────────────────────────────── */
+      .act-toolbar {{
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+        padding: 12px 14px; background: var(--card); border: 1px solid var(--border);
+        border-radius: 12px; margin-bottom: 14px;
       }}
+      .act-tb-label {{
+        font-size: 10px; font-weight: 800; letter-spacing: .11em; text-transform: uppercase;
+        color: var(--text-subtle, var(--text-muted));
+      }}
+      .act-tb-div {{ width: 1px; align-self: stretch; background: var(--border); margin: 2px 0; }}
+      /* Show: filled multi-select toggles with icon + count */
+      .act-tgl {{
+        display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border);
+        background: var(--card); color: var(--text-muted); font-weight: 700; font-size: 13px;
+        padding: 7px 12px 7px 11px; border-radius: 10px; cursor: pointer;
+        transition: background .15s, border-color .15s, color .15s, box-shadow .15s;
+      }}
+      .act-tgl:hover {{ border-color: var(--accent); color: var(--text); }}
+      .act-tgl svg {{ width: 15px; height: 15px; flex: 0 0 auto; }}
+      .act-tgl .act-tgl-cnt {{
+        font-size: 11px; font-weight: 800; background: var(--accent-soft); color: var(--text-muted);
+        border-radius: 999px; padding: 1px 7px; font-variant-numeric: tabular-nums; line-height: 1.5;
+      }}
+      .act-tgl.active {{ background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 3px 10px rgba(18,45,75,.20); }}
+      .act-tgl.active .act-tgl-cnt {{ background: rgba(255,255,255,.22); color: #fff; }}
+      /* Injuries: connected segmented control */
+      .act-segctrl {{ display: inline-flex; background: var(--accent-soft); border: 1px solid var(--border); border-radius: 11px; padding: 3px; gap: 2px; }}
+      .act-segctrl button {{
+        border: 0; background: transparent; color: var(--text-muted); font-weight: 700; font-size: 12.5px;
+        padding: 6px 11px; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+        transition: background .15s, color .15s, box-shadow .15s;
+      }}
+      .act-segctrl button:hover {{ color: var(--text); }}
+      .act-segctrl button.active {{ background: var(--card); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.10); }}
+      .act-segctrl .act-sdot {{ width: 8px; height: 8px; border-radius: 50%; }}
+      .act-tb-count {{ margin-left: auto; font-size: 12px; color: var(--text-subtle, var(--text-muted)); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }}
       .act-pulse .act-daygroup + .act-daygroup {{ margin-top: 2px; }}
       .act-pulse .act-dayhdr {{
         font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase;
@@ -9560,35 +9689,47 @@ def build_activity_body(ctx: dict) -> str:
       .act-injcount {{ font-size: 12px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; min-width: 16px; text-align: right; }}
     </style>
     <div class="page-layout activity-page act-pulse">
+      <aside class="page-sidebar act-news-col">
+        <div class="card small" id="nflNewsCard">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <h3>Fantasy News</h3>
+            <span style="font-size:10px;color:var(--text-muted);font-weight:500;">via ESPN &amp; more</span>
+          </div>
+          <div id="nflNewsList" class="card-body" style="padding:0;">
+            <div style="padding:16px 14px;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-muted);"><div class="loading-spinner" style="width:14px;height:14px;margin:0;flex-shrink:0;"></div>Loading…</div>
+          </div>
+        </div>
+      </aside>
+
       <main class="page-main act-pulse-main">
-        <div class="act-filterbar">
-          <div class="act-seg">
-            <span class="act-seg-label">Show</span>
-            <button class="pill-toggle act-toggle active" data-kind="trade" type="button">Trades</button>
-            <button class="pill-toggle act-toggle active" data-kind="waiver" type="button">Waivers</button>
+        <div class="act-toolbar">
+          <span class="act-tb-label">Show</span>
+          <button class="act-tgl act-toggle active" data-kind="trade" type="button" aria-pressed="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3l4 4-4 4"/><path d="M21 7H3"/><path d="M7 21l-4-4 4-4"/><path d="M3 17h18"/></svg>
+            Trades <span class="act-tgl-cnt">{trade_count}</span>
+          </button>
+          <button class="act-tgl act-toggle active" data-kind="waiver" type="button" aria-pressed="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            Waivers <span class="act-tgl-cnt">{waiver_count}</span>
+          </button>
+
+          <span class="act-tb-div"></span>
+
+          <span class="act-tb-label">Injuries</span>
+          <div class="act-segctrl" role="tablist">
+            <button class="inj-toggle active" data-status="all" type="button" role="tab" aria-selected="true">All</button>
+            <button class="inj-toggle" data-status="IR" type="button" role="tab" aria-selected="false"><span class="act-sdot" style="background:var(--loss,#b91c1c)"></span>IR</button>
+            <button class="inj-toggle" data-status="OUT" type="button" role="tab" aria-selected="false"><span class="act-sdot" style="background:var(--orange,#f59e0b)"></span>Out</button>
+            <button class="inj-toggle" data-status="QUESTIONABLE" type="button" role="tab" aria-selected="false"><span class="act-sdot" style="background:var(--rookie,#3b82f6)"></span>Q</button>
           </div>
-          <div class="act-seg">
-            <span class="act-seg-label">Injuries</span>
-            <button class="pill-toggle inj-toggle active" data-status="all" type="button">All</button>
-            <button class="pill-toggle inj-toggle" data-status="IR" type="button">IR</button>
-            <button class="pill-toggle inj-toggle" data-status="OUT" type="button">Out</button>
-            <button class="pill-toggle inj-toggle" data-status="QUESTIONABLE" type="button">Q</button>
-          </div>
+
+          <span class="act-tb-count">{trade_count + waiver_count} events</span>
         </div>
         {activity_html}
       </main>
 
       <aside class="page-sidebar act-pulse-rail">
         {snapshot_html}
-        <div class="card small" id="nflNewsCard">
-          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-            <h3>NFL News</h3>
-            <span style="font-size:10px;color:var(--text-muted);font-weight:500;">via ESPN</span>
-          </div>
-          <div id="nflNewsList" class="card-body" style="padding:0;max-height:340px;overflow-y:auto;">
-            <div style="padding:16px 14px;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-muted);"><div class="loading-spinner" style="width:14px;height:14px;margin:0;flex-shrink:0;"></div>Loading…</div>
-          </div>
-        </div>
         {injury_html}
       </aside>
     </div>
@@ -22767,6 +22908,39 @@ def api_team_details(roster_id: str):
                 if df_weekly is not None and not df_weekly.empty:
                     logger.info(f"[api_team_details] Fallback df_weekly shape: {df_weekly.shape}")
 
+            # Roster-based charts first: the Dynasty Value vs Age scatter needs
+            # only the current rosters + value table, not completed game data, so
+            # it must render even in the offseason (before the season starts) or
+            # for a brand-new league that has no finalized weekly scores yet.
+            # Otherwise the modal falls through to "No chart data available".
+            _rmap = ctx.get("roster_map") or {}
+            _oc = {}
+            try:
+                from dashboard_services.pages.graphs_page import owner_color_map
+                _oc = owner_color_map([
+                    str(_rmap.get(str(r.get("roster_id"))) or f"Roster {r.get('roster_id')}")
+                    for r in rosters
+                ])
+            except Exception:
+                pass
+
+            try:
+                from utils.standings_viz import value_age_svg
+                from dashboard_services.ai.context_builders import team_value_age_rows
+                _val_ctx = {
+                    "rosters": rosters,
+                    "roster_map": _rmap,
+                    "model_value_table": get_model_value_table_cached() or ctx.get("model_value_table") or [],
+                    "players_index": ctx.get("players_index") or (get_players_index_global() or {}),
+                    "players_map": ctx.get("players_map") or {},
+                    "roster_positions": ctx.get("roster_positions") or (league or {}).get("roster_positions") or [],
+                }
+                _value_age_svg = value_age_svg(team_value_age_rows(_val_ctx), team_name or "", _oc)
+                if _value_age_svg:
+                    graphs_data["value_age_svg"] = _value_age_svg
+            except Exception:
+                logger.warning("team-modal value/age scatter failed", exc_info=True)
+
             # Remove debug prints for cleaner logs
             if team_stats is not None and df_weekly is not None and not df_weekly.empty:
                 # Filter to finalized weeks only (if finalized column exists)
@@ -22794,24 +22968,10 @@ def api_team_details(roster_id: str):
                             "points": round(float(row["points"]), 1)
                         })
 
-                    # League-wide SVG scatters (same renderers as the Graphs
-                    # page), highlighting this team. Server-rendered so the modal
-                    # can inject them directly without loading Plotly.
+                    # Luck scatter needs completed game data, so it stays inside
+                    # this gate (the roster-based value/age scatter is built above,
+                    # regardless of weekly data). Reuses the shared color map _oc.
                     league_luck_svg = ""
-                    league_value_age_svg = ""
-                    # Shared per-team colors so the two modal scatters agree.
-                    _oc = {}
-                    try:
-                        from dashboard_services.pages.graphs_page import owner_color_map
-                        _rmap = ctx.get("roster_map") or {}
-                        _oc = owner_color_map([
-                            str(_rmap.get(str(r.get("roster_id"))) or f"Roster {r.get('roster_id')}")
-                            for r in rosters
-                        ])
-                    except Exception:
-                        _rmap = ctx.get("roster_map") or {}
-
-                    # Luck: from the resolved season's finalized weeks.
                     try:
                         from utils.standings_viz import luck_quadrant_svg
                         from utils.all_play import all_play_analysis
@@ -22825,23 +22985,6 @@ def api_team_details(roster_id: str):
                         league_luck_svg = luck_quadrant_svg(all_play_analysis(_ws, _aw), team_name or "", _oc)
                     except Exception:
                         logger.warning("team-modal luck scatter failed", exc_info=True)
-
-                    # Value/age: current rosters + live value table (the graph
-                    # season's ctx can carry a stale or empty value table).
-                    try:
-                        from utils.standings_viz import value_age_svg
-                        from dashboard_services.ai.context_builders import team_value_age_rows
-                        _val_ctx = {
-                            "rosters": rosters,
-                            "roster_map": _rmap,
-                            "model_value_table": get_model_value_table_cached() or ctx.get("model_value_table") or [],
-                            "players_index": ctx.get("players_index") or (get_players_index_global() or {}),
-                            "players_map": ctx.get("players_map") or {},
-                            "roster_positions": ctx.get("roster_positions") or (league or {}).get("roster_positions") or [],
-                        }
-                        league_value_age_svg = value_age_svg(team_value_age_rows(_val_ctx), team_name or "", _oc)
-                    except Exception:
-                        logger.warning("team-modal value/age scatter failed", exc_info=True)
 
                     # Get z-scores for radar chart
                     metrics = ["PF", "PA", "MAX", "MIN", "AVG", "STD"]
@@ -22879,7 +23022,9 @@ def api_team_details(roster_id: str):
                         for metric in metrics:
                             raw_stats[metric] = round(float(team_row[metric].iloc[0]), 1)
 
-                        graphs_data = {
+                        # Merge (don't overwrite): value_age_svg was already set
+                        # above and must survive when weekly data is present too.
+                        graphs_data.update({
                             "weekly_scores": weekly_scores,
                             "league_avg_scores": league_avg_scores,
                             "radar": {
@@ -22888,9 +23033,8 @@ def api_team_details(roster_id: str):
                                 "raw_stats": raw_stats
                             },
                             "luck_svg": league_luck_svg,
-                            "value_age_svg": league_value_age_svg,
                             "season_used": graph_season  # Add info about which season data was used
-                        }
+                        })
                     else:
                         logger.info(f"[api_team_details] No graphs generated - team_row is empty for team_name='{team_name}'") if team_name is not None else logger.info("[api_team_details] No graphs generated - team_row is empty for team_name='None'")
                 else:
@@ -30148,10 +30292,22 @@ def _notify_changelog_on_startup():
         tag  = latest.get("tag", "update")
         text = latest.get("text", "")
         link = latest.get("link", "/")
+        # Title: prefer the entry's own headline (the short label before the first
+        # colon, e.g. "Even It Out") over a generic tag word. iOS already shows
+        # "… from BR Fantasy" under the app name, so the title must NOT repeat it —
+        # the old "BR Fantasy: New" rendered as "BR Fantasy: New from BR Fantasy".
+        tag_labels = {"feature": "New feature", "new": "What's new", "fix": "Fix", "update": "Update"}
+        title = tag_labels.get(tag, "Update")
+        if ":" in text:
+            head, rest = text.split(":", 1)
+            head = head.strip()
+            # A real headline is short and not itself a full sentence.
+            if 0 < len(head) <= 40 and not any(p in head for p in ".!?"):
+                title = head
+                text = rest.strip()
+                text = text[:1].upper() + text[1:]   # body reads as its own sentence
         # Trim long text to a push-friendly length
         body = text if len(text) <= 120 else text[:117] + "…"
-        tag_labels = {"feature": "New feature", "new": "New", "fix": "Fix", "update": "Update"}
-        title = f"BR Fantasy: {tag_labels.get(tag, 'Update')}"
 
         from routes.push_bp import _push_broadcast
         # _push_broadcast returns a plain (dict, status) tuple, so this is safe to

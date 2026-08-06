@@ -104,6 +104,7 @@ def build_injury_report(
         if include_free_agents and not rids:
             rows.append(
                 {
+                    "RosterID": "",
                     "Team": "Free Agent",
                     "Player": name,
                     "Pos": pos,
@@ -122,6 +123,7 @@ def build_injury_report(
         for rid in sorted(rids):
             rows.append(
                 {
+                    "RosterID": str(rid),
                     "Team": roster_map.get(rid, f"Roster {rid}"),
                     "PlayerID": pid_s,
                     "Player": name,
@@ -139,6 +141,7 @@ def build_injury_report(
     if not df.empty:
         df = df[
             [
+                "RosterID",
                 "Team",
                 "PlayerID",
                 "Player",
@@ -301,6 +304,7 @@ def render_injury_watch(df_inj: pd.DataFrame) -> str:
     def _cat(status) -> str:
         return _INJ_CAT.get(str(status or "").strip().upper(), "note")
 
+    _has_rid = "RosterID" in df_inj.columns
     rows = []
     for team, g in df_inj.groupby("Team"):
         cats = [_cat(r.get("Injury") or r.get("Status")) for _, r in g.iterrows()]
@@ -312,18 +316,29 @@ def render_injury_watch(df_inj: pd.DataFrame) -> str:
             f"<span class='chip'>{w}</span>"
             for w in sorted({_INJ_CAT_FILTER[c] for c in cats if c in _INJ_CAT_FILTER})
         )
-        rows.append((count, worst, str(team), dots, keys))
+        rid = str(g["RosterID"].iloc[0]) if _has_rid and not g.empty else ""
+        rows.append((count, worst, str(team), dots, keys, rid))
 
     max_count = max((r[0] for r in rows), default=1) or 1
     rows.sort(key=lambda r: (-r[0], r[1], r[2].lower()))
 
     items = []
-    for count, _worst, team, dots, keys in rows:
+    for count, _worst, team, dots, keys, rid in rows:
         pct = max(16, round(count / max_count * 100))
+        # Open the team modal like every other team name (skip free agents,
+        # which have no roster).
+        if rid and team != "Free Agent":
+            team_html = (
+                f"<span class='act-injteam team-clickable' style='cursor:pointer;' "
+                f"data-roster-id='{html.escape(rid, quote=True)}' "
+                f"data-team-name='{html.escape(team, quote=True)}'>{html.escape(team)}</span>"
+            )
+        else:
+            team_html = f"<span class='act-injteam'>{html.escape(team)}</span>"
         items.append(
             "<div class='inj-row act-injrow'>"
             "  <div class='act-injrow-l'>"
-            f"    <span class='act-injteam'>{html.escape(team)}</span>"
+            f"    {team_html}"
             f"    <div class='act-injmeter'><i style='width:{pct}%'></i></div>"
             "  </div>"
             "  <div class='act-injrow-r'>"

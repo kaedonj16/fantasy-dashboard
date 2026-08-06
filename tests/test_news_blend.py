@@ -6,11 +6,50 @@ it can be imported in the CI test environment.
 from dashboard_services.news import (
     _blend_dedupe,
     _blend_sources,
+    _fantasy_rank_general,
+    _fantasy_score,
     _norm_url,
     _norm_title,
     _parse_reddit_children,
     _parse_gnews_xml,
 )
+
+
+def _news(headline, published="2026-08-06T12:00:00Z"):
+    return {"headline": headline, "description": "", "published": published,
+            "age": "", "url": "https://x.com/" + headline[:8], "source": "ESPN"}
+
+
+# ── fantasy relevance (activity-feed news) ──────────────────────────────────
+
+def test_fantasy_score_rewards_actionable_and_penalizes_offfield():
+    assert _fantasy_score(_news("RB traded to Bears, projected to lead backfield touches")) >= 2
+    assert _fantasy_score(_news("Puka Nacua questionable, limited practice")) >= 1
+    # pure off-field with no fantasy angle scores negative (gets dropped)
+    assert _fantasy_score(_news("Player arrested on reckless driving charge")) <= -1
+
+
+def test_fantasy_score_keeps_dfs_content():
+    # DFS/DraftKings is fantasy-relevant even when an off-field word co-occurs.
+    assert _fantasy_score(_news("Hall of Fame Game DraftKings DFS picks and lineup")) >= 1
+
+
+def test_fantasy_rank_drops_noise_and_floats_actionable():
+    items = [
+        _news("Team unveils new stadium naming-rights deal"),   # noise -> dropped
+        _news("General NFL preseason recap"),                    # neutral
+        _news("WR1 ruled out, backfield committee shifts targets"),  # actionable
+    ]
+    ranked = _fantasy_rank_general(items, limit=10)
+    heads = [i["headline"] for i in ranked]
+    assert "Team unveils new stadium naming-rights deal" not in heads   # noise gone
+    assert heads[0].startswith("WR1 ruled out")                         # actionable first
+
+
+def test_fantasy_rank_falls_back_when_all_neutral():
+    items = [_news("General NFL preseason recap"), _news("Coach speaks to media")]
+    ranked = _fantasy_rank_general(items, limit=10)
+    assert len(ranked) == 2   # nothing scored high, but nothing pure-noise -> keep all
 
 
 def _child(**data):
