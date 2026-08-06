@@ -34,7 +34,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
-from utils.pick_score import PS_WEIGHTS, compute_pick_score
+from utils.pick_score import PS_AGE_PEAKS, PS_WEIGHTS, compute_pick_score
 
 
 # --------------------------------------------------------------------------- #
@@ -487,6 +487,116 @@ def sweep_composite_split(
            for sp in splits]
     out.sort(key=lambda t: (t[1] is not None, t[1] if t[1] is not None else 0.0), reverse=True)
     return out
+
+
+def _facet_youth(pos, age) -> float:
+    """Youth score for a pick: 1.0 well before positional peak, 0 well after.
+    Mirrors compute_pick_score's youth term. 0.5 when age/pos unknown."""
+    try:
+        a = float(age)
+    except (TypeError, ValueError):
+        return 0.5
+    p = str(pos or "").upper()
+    if p not in ("QB", "RB", "WR", "TE"):
+        return 0.5
+    peak = PS_AGE_PEAKS.get(p, 27)
+    return _clamp01_local((peak - a + 4) / 8)
+
+
+def _clamp01_local(x: float) -> float:
+    return 0.0 if x < 0 else 1.0 if x > 1 else x
+
+
+def team_facet_scores(sample: TeamSample) -> Dict[str, Optional[float]]:
+    """Three dynasty draft facets from a team's picks, each 0..1:
+
+      win_now: round-weighted mean of projected-PPG strength (ppg_norm) — how
+               much the haul helps THIS season (validate vs same-season finish).
+      future : mean of youth x dynasty-value — a young, valuable core (validate
+               vs multi-year finish).
+      depth  : roster construction (coverage + balance + efficiency), the
+               composite's construction sub-score.
+
+    The question these answer: do win_now and future DIVERGE and each predict
+    their own horizon? If both just track overall roster quality, facet grades
+    are cosmetic. Uses current pool values as a proxy for draft-era ones (same
+    limitation as the rest of the harness), so read the horizons comparatively.
+    """
+    from utils.draft_grade import dr_optimal_lineup
+
+    picks = sample.picks
+    if not picks:
+        return {"win_now": None, "future": None, "depth": None}
+    try:
+        teams = int(picks[0].get("num_teams") or 12) or 12
+    except Exception:
+        teams = 12
+
+    # win_now: round-weighted (starters matter most) mean of ppg_norm.
+    wn_sum = wn_w = 0.0
+    fut_vals = []
+    for pk in picks:
+        pn = pk.get("pick_no") or 1
+        rnd = max(1, math.ceil(pn / max(teams, 1)))
+        wt = 1.0 / (rnd ** 0.60)
+        ppgn = pk.get("ppg_norm")
+        if ppgn is not None:
+            wn_sum += float(ppgn) * wt
+            wn_w += wt
+        mv = float(pk.get("max_val") or 0) or 1.0
+        vnorm = _clamp01_local(float(pk.get("value") or 0) / mv)
+        fut_vals.append(_facet_youth(pk.get("pos"), pk.get("age")) * vnorm)
+
+    win_now = (wn_sum / wn_w) if wn_w > 0 else None
+    future = (sum(fut_vals) / len(fut_vals)) if fut_vals else None
+
+    # depth: construction_raw (coverage + balance + efficiency), same as the
+    # composite's third component.
+    is_sf = bool(sample.meta.get("is_sf"))
+    slots = _SLOTS_SF if is_sf else _SLOTS_1QB
+    targets = _TARGETS_SF if is_sf else _TARGETS_1QB
+    lin_picks = [{"id": i, "pos": pk.get("pos"), "ps": 50, "pn": pk.get("pick_no"),
+                  "val": pk.get("value"), "ppg": pk.get("ppg_norm")}
+                 for i, pk in enumerate(picks)]
+    starter_ids = dr_optimal_lineup(lin_picks, slots)
+    coverage = (len(starter_ids) / len(slots)) if slots else 0.0
+    counts = {"QB": 0, "RB": 0, "WR": 0, "TE": 0}
+    for p in lin_picks:
+        pos = str(p.get("pos") or "").upper()
+        if pos in counts:
+            counts[pos] += 1
+    bsum = useful = graded = 0.0
+    for pos in ("QB", "RB", "WR", "TE"):
+        t = targets.get(pos, 0) or 0
+        bsum += (min(counts[pos], t) / t) if t else 0.0
+        useful += min(counts[pos], t + 1)
+        graded += counts[pos]
+    eff = (useful / graded) if graded > 0 else 1.0
+    depth = _clamp01_local(0.45 * coverage + 0.30 * (bsum / 4) + 0.25 * eff)
+
+    return {"win_now": win_now, "future": future, "depth": depth}
+
+
+def correlate_facet_to_finish(
+    samples: Sequence[TeamSample], facet: str, method: str = "spearman",
+    include_types=None,
+) -> Optional[float]:
+    """Correlation between one facet score and this run's outcome. Run once with
+    a same-season outcome and once with multi-year, then compare: win_now should
+    lead on same-season, future on multi-year, if the facets are real."""
+    corr = _CORR.get(method)
+    if corr is None:
+        raise ValueError(f"unknown method: {method!r}")
+    gs, os_ = [], []
+    for s in samples:
+        if include_types and (s.meta.get("draft_type") or "startup") not in include_types:
+            continue
+        f = team_facet_scores(s).get(facet)
+        if f is None:
+            continue
+        gs.append(f)
+        os_.append(float(s.outcome))
+    return corr(gs, os_)
 
 
 def _perturb(base: dict, key: str, delta: float) -> dict:

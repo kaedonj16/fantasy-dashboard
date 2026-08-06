@@ -27,6 +27,7 @@ from data_building.draft_grade_backtest import (
     spearman,
     sweep,
     team_avg_ps,
+    team_facet_scores,
 )
 
 
@@ -162,6 +163,38 @@ def test_team_avg_ps_is_mean_of_picks():
     s = TeamSample(picks=[_pick(value=9000, vor=5000), _pick(value=1000, vor=200)], outcome=1.0)
     g = team_avg_ps(s)
     assert g is not None and 0 <= g <= 100
+
+
+# ---- facet scores (win_now / future / depth) ------------------------------
+
+def test_team_facet_scores_returns_three_bounded_facets():
+    s = TeamSample(picks=[_pick(ppg_norm=0.6), _pick(ppg_norm=0.4)], outcome=1.0)
+    f = team_facet_scores(s)
+    assert set(f) == {"win_now", "future", "depth"}
+    for v in f.values():
+        assert v is None or 0.0 <= v <= 1.0
+
+
+def test_facets_diverge_young_vs_old_haul():
+    # A young, valuable, low-ppg haul should score high on future / low on
+    # win_now; an old, high-ppg haul the reverse. If they didn't diverge, the
+    # facets would be redundant.
+    young = TeamSample(
+        picks=[_pick(pos="WR", age=22, value=8000, ppg_norm=0.4),
+               _pick(pos="WR", age=23, value=6000, ppg_norm=0.3)],
+        outcome=0.6, meta={"is_sf": False})
+    old = TeamSample(
+        picks=[_pick(pos="WR", age=30, value=8000, ppg_norm=0.9),
+               _pick(pos="WR", age=31, value=6000, ppg_norm=0.85)],
+        outcome=0.6, meta={"is_sf": False})
+    fy, fo = team_facet_scores(young), team_facet_scores(old)
+    assert fy["future"] > fo["future"]     # young core -> better future
+    assert fo["win_now"] > fy["win_now"]   # high-ppg vets -> better win-now
+
+
+def test_team_facet_scores_none_for_empty():
+    f = team_facet_scores(TeamSample(picks=[], outcome=0.0))
+    assert f == {"win_now": None, "future": None, "depth": None}
 
 
 def test_team_avg_ps_none_when_no_picks():

@@ -39,6 +39,7 @@ from data_building.draft_grade_backtest import (
     calibration_bins,
     candidate_grid,
     correlate_composite_to_finish,
+    correlate_facet_to_finish,
     correlate_grades_to_finish,
     letter_calibration,
     load_sleeper_samples,
@@ -132,10 +133,19 @@ def _report_group(title: str, samples, method: str, seed_type=None, top: int = 8
         print(f"     composite grade (Value/Starters/Construction) vs outcome: {_fmt(comp_r)} "
               f"[avg-pick-score baseline: {_fmt(base_r)}]")
         csweep = sweep_composite_split(samples, _COMPOSITE_SPLITS, method=method)
-        print("     composite split sweep (value/starter/balance; 35/35/30 = shipped):")
+        print("     composite split sweep (value/starter/balance; 35/25/40 = shipped):")
         for sp, r in csweep[:top]:
-            tag = " <- shipped" if sp == (35, 35, 30) else ""
+            tag = " <- shipped" if sp == (35, 25, 40) else ""
             print(f"       {sp[0]:>2}/{sp[1]:>2}/{sp[2]:>2}: {_fmt(r)}{tag}")
+
+    # Facet grades vs THIS run's outcome. Compare across a same-season run and a
+    # multi-year run: win_now should lead on same-season, future on multi-year,
+    # if the facets carry distinct signal (else they're cosmetic).
+    print("     facet grades vs this run's outcome (win_now->same-season, "
+          "future->multi-year expected):")
+    for facet in ("win_now", "future", "depth"):
+        fr = correlate_facet_to_finish(samples, facet, method=method)
+        print(f"       {facet:<8}: {_fmt(fr)}")
     print()
 
 
