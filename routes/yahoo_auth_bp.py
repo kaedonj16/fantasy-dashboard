@@ -9,7 +9,6 @@ Flow:
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 import secrets
@@ -42,20 +41,32 @@ def yahoo_auth_start():
 
     from dashboard_services.providers.yahoo_api import get_authorization_url
 
+    # The registered redirect_uri lives on the apex host, so Yahoo always returns
+    # the user there. Start the flow on that same host too — otherwise the session
+    # cookie set here (e.g. on www.) isn't sent to the apex callback and state
+    # validation fails. Bounce to the canonical host first, preserving the query.
+    from urllib.parse import urlparse
+    canonical_host = urlparse(os.environ.get("YAHOO_REDIRECT_URI") or "").netloc
+    if canonical_host and request.host and request.host != canonical_host:
+        return redirect(f"https://{canonical_host}{request.full_path}")
+
     league_id = (request.args.get("league_id") or "").strip()
     next_url  = (request.args.get("next") or "/").strip()
     team_name = (request.args.get("team_name") or "").strip()
 
-    # Encode context into state so the callback knows where to send the user
-    state_payload = json.dumps({
-        "nonce":     secrets.token_hex(16),
+    # Send Yahoo only a short, opaque state token. A JSON blob (braces, quotes,
+    # spaces) in the `state` parameter trips Yahoo's authorization endpoint and
+    # bounces the user to its generic "uh-oh" page, so keep the real context in
+    # the server session keyed to that token and hand Yahoo just the nonce.
+    state = secrets.token_urlsafe(24)
+    session["yahoo_oauth_state"] = state
+    session["yahoo_oauth_ctx"]   = {
         "league_id": league_id,
         "next":      next_url,
         "team_name": team_name,
-    })
-    session["yahoo_oauth_state"] = state_payload
+    }
 
-    auth_url = get_authorization_url(state=state_payload)
+    auth_url = get_authorization_url(state=state)
     logger.info("[yahoo-auth] redirecting to: %s", auth_url)
     return redirect(auth_url)
 
@@ -75,20 +86,17 @@ def yahoo_auth_callback():
     code     = request.args.get("code") or ""
     state    = request.args.get("state") or ""
 
-    # Verify state matches what we stored
+    # Verify the opaque state matches what we stored, then recover the context
+    # from the session (it was never sent to Yahoo).
     stored_state = session.pop("yahoo_oauth_state", None)
     if not stored_state or stored_state != state:
         logger.warning("[yahoo_auth] State mismatch - possible CSRF")
         return redirect("/?yahoo_error=state_mismatch")
 
-    try:
-        state_data = json.loads(state)
-    except Exception:
-        state_data = {}
-
-    league_id = state_data.get("league_id") or ""
-    next_url  = state_data.get("next") or "/"
-    team_name = state_data.get("team_name") or ""
+    ctx_data  = session.pop("yahoo_oauth_ctx", {}) or {}
+    league_id = ctx_data.get("league_id") or ""
+    next_url  = ctx_data.get("next") or "/"
+    team_name = ctx_data.get("team_name") or ""
 
     try:
         tok = exchange_code_for_tokens(code)
