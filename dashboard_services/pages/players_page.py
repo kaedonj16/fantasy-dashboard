@@ -613,6 +613,20 @@ def build_players_shell() -> str:
           white-space: nowrap;
         }
       }
+
+      /* Sticky column header — keep the # / Player / Value labels visible while
+         scrolling a long list (mock #3, annotation "Sticky header"). .card.central
+         sets overflow:hidden, which would trap position:sticky, so this page opts
+         its own card back into overflow:visible (nothing here needs the clip).
+         --pr-sticky-top is measured from the sticky top-nav in rankings.js so the
+         header docks right under it across desktop, mobile and PWA safe-areas. */
+      .card.central { overflow: visible; }
+      #prTableHeader {
+        position: sticky;
+        top: var(--pr-sticky-top, 56px);
+        z-index: 20;
+        box-shadow: 0 8px 12px -10px rgba(0, 0, 0, 0.28);
+      }
     </style>
 
     <!-- Player Rankings JS lives in static/rankings.js (injected below, deferred) -->
