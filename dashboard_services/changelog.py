@@ -7,7 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-08-06",
         "tag": "new",
-        "text": "Even It Out: When a deal is lopsided, the Trade Calculator now helps you balance it. It reads which side is light and by how much, then suggests up to three players whose value best closes the gap - click one to drop it straight onto that side. With the Roster Filter on, suggestions come from that team's actual roster.",
+        "text": "Even It Out: When a deal is lopsided, the Trade Calculator now suggests up to three players whose value best closes the gap. Click one to drop it onto the light side.",
         "link": "/trade"
     },
     {
