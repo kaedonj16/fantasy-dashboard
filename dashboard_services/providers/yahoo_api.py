@@ -115,27 +115,53 @@ def exchange_code_for_tokens(code: str) -> Dict[str, Any]:
     return resp.json()
 
 
-def get_login_guid(access_token: str) -> str:
+def get_login_guid(access_token: str, league_id: str = "") -> str:
     """Return the logged-in user's Yahoo GUID via the Fantasy API.
 
     Fallback for when the OAuth token response omits ``xoauth_yahoo_guid`` (it is
-    not guaranteed with the ``fspt-r`` scope). Queries the ``users;use_login=1``
-    resource and digs the ``guid`` out of Yahoo's nested list/dict shape. Empty
-    string on any failure so the caller can surface a clean error."""
-    try:
-        raw   = _yahoo_get(access_token, "users;use_login=1")
-        users = (raw.get("fantasy_content", {}) or {}).get("users", {}) or {}
-        user  = (users.get("0", {}) or {}).get("user", []) or []
-        # Yahoo nests this as [ {guid: ...}, ... ] or [ [ {guid: ...} ], ... ].
-        stack = list(user)
+    not guaranteed with the ``fspt-r`` scope). Tries two sources and returns "" if
+    both fail:
+
+      1. ``users;use_login=1`` — direct, but the fspt-r token is often forbidden
+         (403) from the user-identity resource.
+      2. the league's teams (when ``league_id`` is given) — Yahoo flags the
+         authenticated user's own team manager with ``is_current_login=1``, which
+         carries the real guid and only needs the league read fspt-r does allow.
+    """
+    def _dig_guid(container) -> str:
+        stack = list(container) if isinstance(container, (list, tuple)) else [container]
         while stack:
             part = stack.pop(0)
             if isinstance(part, dict) and part.get("guid"):
                 return str(part["guid"])
             if isinstance(part, list):
                 stack.extend(part)
+        return ""
+
+    try:
+        raw   = _yahoo_get(access_token, "users;use_login=1")
+        users = (raw.get("fantasy_content", {}) or {}).get("users", {}) or {}
+        user  = (users.get("0", {}) or {}).get("user", []) or []
+        guid  = _dig_guid(user)
+        if guid:
+            return guid
     except Exception as exc:
-        logger.warning("[yahoo] get_login_guid failed: %s", exc)
+        logger.warning("[yahoo] get_login_guid (users) failed: %s", exc)
+
+    if league_id:
+        try:
+            raw   = _yahoo_get(access_token, f"league/{_league_key(league_id)}/teams")
+            for t in _extract_teams(raw):
+                managers = _team_attr(t, "managers") or []
+                if isinstance(managers, dict):
+                    managers = [managers]
+                for m in managers:
+                    mgr = (m or {}).get("manager") or {}
+                    if str(mgr.get("is_current_login")) == "1" and mgr.get("guid"):
+                        return str(mgr["guid"])
+        except Exception as exc:
+            logger.warning("[yahoo] get_login_guid (league teams) failed: %s", exc)
+
     return ""
 
 
