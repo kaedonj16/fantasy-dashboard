@@ -115,6 +115,30 @@ def exchange_code_for_tokens(code: str) -> Dict[str, Any]:
     return resp.json()
 
 
+def get_login_guid(access_token: str) -> str:
+    """Return the logged-in user's Yahoo GUID via the Fantasy API.
+
+    Fallback for when the OAuth token response omits ``xoauth_yahoo_guid`` (it is
+    not guaranteed with the ``fspt-r`` scope). Queries the ``users;use_login=1``
+    resource and digs the ``guid`` out of Yahoo's nested list/dict shape. Empty
+    string on any failure so the caller can surface a clean error."""
+    try:
+        raw   = _yahoo_get(access_token, "users;use_login=1")
+        users = (raw.get("fantasy_content", {}) or {}).get("users", {}) or {}
+        user  = (users.get("0", {}) or {}).get("user", []) or []
+        # Yahoo nests this as [ {guid: ...}, ... ] or [ [ {guid: ...} ], ... ].
+        stack = list(user)
+        while stack:
+            part = stack.pop(0)
+            if isinstance(part, dict) and part.get("guid"):
+                return str(part["guid"])
+            if isinstance(part, list):
+                stack.extend(part)
+    except Exception as exc:
+        logger.warning("[yahoo] get_login_guid failed: %s", exc)
+    return ""
+
+
 def refresh_access_token(refresh_token: str) -> Dict[str, Any]:
     """Refresh an expired access token using the stored refresh token."""
     client_id     = _env_clean("YAHOO_CLIENT_ID")

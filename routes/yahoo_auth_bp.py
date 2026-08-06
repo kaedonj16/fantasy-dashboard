@@ -73,7 +73,7 @@ def yahoo_auth_start():
 def yahoo_auth_callback():
     """Handle Yahoo OAuth callback, exchange code for tokens."""
     from dashboard_services.providers.yahoo_api import (
-        exchange_code_for_tokens, save_tokens, save_league_owner,
+        exchange_code_for_tokens, save_tokens, save_league_owner, get_login_guid,
     )
 
     error = request.args.get("error")
@@ -107,8 +107,17 @@ def yahoo_auth_callback():
     refresh_token = tok.get("refresh_token") or ""
     expires_in    = int(tok.get("expires_in") or 3600)
 
+    # Yahoo doesn't always return xoauth_yahoo_guid on the token response with the
+    # fspt-r scope; when it's absent but we have a token, resolve the guid from the
+    # API instead of failing the whole login.
+    if access_token and not guid:
+        guid = get_login_guid(access_token)
+
     if not guid or not access_token:
-        logger.error("[yahoo_auth] Missing guid or access_token in token response")
+        logger.error(
+            "[yahoo_auth] Missing guid or access_token in token response (keys=%s, have_token=%s, have_guid=%s)",
+            sorted(tok.keys()), bool(access_token), bool(guid),
+        )
         return redirect("/?yahoo_error=invalid_token_response")
 
     save_tokens(guid, access_token, refresh_token, expires_in)
