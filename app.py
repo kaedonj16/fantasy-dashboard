@@ -9560,6 +9560,37 @@ def build_activity_body(ctx: dict) -> str:
       @media (max-width: 760px) {{
         .activity-page.act-pulse.page-layout {{ grid-template-columns: 1fr; }}
       }}
+      /* Injury filter now sits with its list (was in the feed toolbar). */
+      .act-injfilter {{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 2px 2px 10px; }}
+      /* ── Mobile tab switcher: Activity / News / League ─────────────────────
+         On phones the three columns stacked (news landed on top); instead show a
+         segmented tab bar and reveal one section at a time. Desktop is untouched. */
+      .act-mtabs {{ display: none; }}
+      @media (max-width: 760px) {{
+        .act-mtabs {{
+          display: flex; gap: 4px; padding: 4px; margin: 0 0 14px;
+          background: var(--accent-soft); border: 1px solid var(--border); border-radius: 12px;
+        }}
+        .act-mtab {{
+          flex: 1; border: 0; background: transparent; color: var(--text-muted);
+          font-weight: 700; font-size: 13.5px; padding: 9px 8px; border-radius: 9px; cursor: pointer;
+          -webkit-tap-highlight-color: transparent;
+          transition: background .15s, color .15s, box-shadow .15s;
+        }}
+        .act-mtab:active {{ transform: scale(.97); }}
+        .act-mtab.active {{ background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.12); }}
+        /* Reveal only the active tab's section. */
+        .act-pulse[data-mtab="feed"]   .act-news-col,
+        .act-pulse[data-mtab="feed"]   .act-pulse-rail,
+        .act-pulse[data-mtab="news"]   .act-pulse-main,
+        .act-pulse[data-mtab="news"]   .act-pulse-rail,
+        .act-pulse[data-mtab="league"] .act-pulse-main,
+        .act-pulse[data-mtab="league"] .act-news-col {{ display: none; }}
+        /* Drop the desktop sticky/own-scroll rail behaviour on phones. */
+        .act-news-col, .act-pulse-rail {{ position: static; max-height: none; overflow: visible; }}
+        .act-news-col .card-body {{ max-height: none; overflow: visible; }}
+      }}
+      @media (prefers-reduced-motion: reduce) {{ .act-mtab:active {{ transform: none; }} }}
       /* Left news rail — sticky, own scroll, like the dashboard's snapshot rail. */
       @media (min-width: 1101px) {{
         .act-news-col {{ position: sticky; top: 90px; }}
@@ -9688,7 +9719,12 @@ def build_activity_body(ctx: dict) -> str:
       .act-injdot.q {{ background: var(--rookie, #3b82f6); }}
       .act-injcount {{ font-size: 12px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; min-width: 16px; text-align: right; }}
     </style>
-    <div class="page-layout activity-page act-pulse">
+    <div class="page-layout activity-page act-pulse" data-mtab="feed">
+      <div class="act-mtabs" role="tablist" aria-label="Activity sections">
+        <button type="button" class="act-mtab active" data-mtab="feed" role="tab" aria-selected="true">Activity</button>
+        <button type="button" class="act-mtab" data-mtab="news" role="tab" aria-selected="false">News</button>
+        <button type="button" class="act-mtab" data-mtab="league" role="tab" aria-selected="false">League</button>
+      </div>
       <aside class="page-sidebar act-news-col">
         <div class="card small" id="nflNewsCard">
           <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
@@ -9713,16 +9749,6 @@ def build_activity_body(ctx: dict) -> str:
             Waivers <span class="act-tgl-cnt">{waiver_count}</span>
           </button>
 
-          <span class="act-tb-div"></span>
-
-          <span class="act-tb-label">Injuries</span>
-          <div class="act-segctrl" role="tablist">
-            <button class="inj-toggle active" data-status="all" type="button" role="tab" aria-selected="true">All</button>
-            <button class="inj-toggle" data-status="IR" type="button" role="tab" aria-selected="false"><span class="act-sdot" style="background:var(--loss,#b91c1c)"></span>IR</button>
-            <button class="inj-toggle" data-status="OUT" type="button" role="tab" aria-selected="false"><span class="act-sdot" style="background:var(--orange,#f59e0b)"></span>Out</button>
-            <button class="inj-toggle" data-status="QUESTIONABLE" type="button" role="tab" aria-selected="false"><span class="act-sdot" style="background:var(--rookie,#3b82f6)"></span>Q</button>
-          </div>
-
           <span class="act-tb-count">{trade_count + waiver_count} events</span>
         </div>
         {activity_html}
@@ -9730,6 +9756,15 @@ def build_activity_body(ctx: dict) -> str:
 
       <aside class="page-sidebar act-pulse-rail">
         {snapshot_html}
+        <div class="act-injfilter">
+          <span class="act-tb-label">Injuries</span>
+          <div class="act-segctrl" role="tablist">
+            <button class="inj-toggle active" data-status="all" type="button" role="tab" aria-selected="true">All</button>
+            <button class="inj-toggle" data-status="IR" type="button" role="tab" aria-selected="false"><span class="act-sdot" style="background:var(--loss,#b91c1c)"></span>IR</button>
+            <button class="inj-toggle" data-status="OUT" type="button" role="tab" aria-selected="false"><span class="act-sdot" style="background:var(--orange,#f59e0b)"></span>Out</button>
+            <button class="inj-toggle" data-status="QUESTIONABLE" type="button" role="tab" aria-selected="false"><span class="act-sdot" style="background:var(--rookie,#3b82f6)"></span>Q</button>
+          </div>
+        </div>
         {injury_html}
       </aside>
     </div>
@@ -9922,6 +9957,23 @@ def build_activity_body(ctx: dict) -> str:
 
     <script>
     (function() {{
+      // Mobile tab switcher: flip the container's data-mtab so the CSS reveals
+      // the chosen section (Activity / News / League). No-op on desktop, where
+      // the tab bar is hidden and all three columns show at once.
+      document.querySelectorAll('.act-mtab').forEach(function(btn) {{
+        btn.addEventListener('click', function() {{
+          var tab = btn.getAttribute('data-mtab');
+          var container = document.querySelector('.act-pulse');
+          if (container) container.setAttribute('data-mtab', tab);
+          document.querySelectorAll('.act-mtab').forEach(function(b) {{
+            var on = b === btn;
+            b.classList.toggle('active', on);
+            b.setAttribute('aria-selected', on ? 'true' : 'false');
+          }});
+          window.scrollTo(0, 0);
+        }});
+      }});
+
       document.querySelectorAll('.act-toggle').forEach(function(btn) {{
         btn.addEventListener('click', function() {{
           this.classList.toggle('active');
