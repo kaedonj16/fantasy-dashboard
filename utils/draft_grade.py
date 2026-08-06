@@ -110,19 +110,19 @@ def dr_avg_top_n(arr: "list[float]", n: int) -> float:
 def dr_team_grade_score(
     picks: "list[dict]", *, slots: "list[str]", targets: dict, num_teams: int,
     draft_type: str, league_ppg_list: "list[float]", league_val_list: "list[float]",
-    value_weight: float = 35.0, starter_weight: float = 30.0, balance_weight: float = 35.0,
+    value_weight: float = 35.0, starter_weight: float = 25.0, balance_weight: float = 40.0,
 ) -> Optional[float]:
     """Mirror gradePicks() (startup/redraft branch) -> raw 0-100 composite.
     `picks` items: {id, pos, ps, pn, val, ppg}. Returns None if not gradeable.
 
     value/starter/balance_weight are the point caps for the three components
-    (default 35/30/35 = the shipped split). Backtest on 1,573 redraft teams:
-    starter-strength (a noisy same-season proxy) was over-weighted and roster
-    construction under-weighted — shifting 5 pts starter->construction improved
-    the composite's correlation with real finish; 35/25/40 tested best but this
-    is a conservative half-step on a single sample. The backtest overrides these
-    to sweep further; the JS mirror uses the same split, so parity holds when
-    they're left as defaults."""
+    (default 35/25/40 = the shipped split). Two independent redraft backtests
+    (1,573 and 1,623 teams) both ranked 35/25/40 #1 by the same margin (+0.214 vs
+    35/35/30's +0.193): starter-strength (a noisy same-season proxy) was
+    over-weighted and roster construction under-weighted. The composite also
+    beats raw avg pick score (+0.202 vs +0.166). The backtest overrides these to
+    sweep further; the JS mirror uses the same split, so parity holds when they're
+    left as defaults."""
     if not picks:
         return None
     starter_ids = dr_optimal_lineup(picks, slots)

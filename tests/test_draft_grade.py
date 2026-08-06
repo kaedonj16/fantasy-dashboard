@@ -190,13 +190,13 @@ _GRADE_PICKS = [
 ]
 
 
-def test_team_grade_default_split_matches_shipped_35_30_35():
-    # The shipped split is 35/30/35 (starter trimmed, construction raised after
-    # the composite backtest). The default must equal it explicitly, which is what
-    # keeps the JS<->Python parity test valid.
+def test_team_grade_default_split_matches_shipped_35_25_40():
+    # The shipped split is 35/25/40 (starter trimmed, construction raised —
+    # 35/25/40 was #1 on two independent redraft backtests). The default must
+    # equal it explicitly, which is what keeps the JS<->Python parity test valid.
     a = dr_team_grade_score(_GRADE_PICKS, **_GRADE_KW)
-    b = dr_team_grade_score(_GRADE_PICKS, value_weight=35, starter_weight=30,
-                            balance_weight=35, **_GRADE_KW)
+    b = dr_team_grade_score(_GRADE_PICKS, value_weight=35, starter_weight=25,
+                            balance_weight=40, **_GRADE_KW)
     assert a == b
 
 
