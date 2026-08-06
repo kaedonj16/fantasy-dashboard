@@ -38,7 +38,11 @@ def roster_shape_label(pos_vals: Dict[str, List[float]], is_sf: bool) -> str:
     # Ordered specific -> generic; first match wins.
     if is_sf and qs >= 0.28:
         return "Konami Code"
-    if ts >= 0.15:
+    # TE Premium: TE isn't merely present, it's a genuine strength — the TE room
+    # holds a high share of value AND at least matches the RB room. This stops an
+    # RB-heavy team that happens to own one elite TE (e.g. Bowers) from reading as
+    # "TE Premium" when it's really a Robust RB build.
+    if ts >= 0.18 and ts >= rs:
         return "TE Premium"
     if rs <= 0.15 and ws >= 0.38:
         return "Zero RB"
