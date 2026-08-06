@@ -8885,6 +8885,10 @@ def build_activity_body(ctx: dict) -> str:
     waiver_count = 0
     most_active_counts: Dict[str, int] = {}
     traded_asset_counts: Dict[str, int] = {}
+    # Parallel maps so the Snapshot leaders (most-active team, most-moved asset)
+    # can be made clickable, same as every other name on the page.
+    most_active_rid: Dict[str, str] = {}
+    traded_asset_pid: Dict[str, str] = {}
     biggest_trade_label = "No trade data"
     biggest_trade_delta = 0.0
 
@@ -8911,8 +8915,18 @@ def build_activity_body(ctx: dict) -> str:
             pos_txt, pos_cls = _pos_cls(p)
             sign = "+" if io == "add" else "−"
             drop = "" if io == "add" else " act-chip-drop"
+            # Make the chip open the player modal (same delegated handler as every
+            # other player name on the site). pid is always present for real
+            # players; draft-pick chips have none, so they stay non-clickable.
+            pid = str(p.get("pid") or p.get("player_id") or "").strip()
+            click_cls = " player-clickable" if pid else ""
+            click_attrs = (
+                f" style='cursor:pointer;'"
+                f" data-player-id='{html.escape(pid, quote=True)}' data-player-name='{name}'"
+                if pid else ""
+            )
             return (
-                f"<span class='act-chip{drop}'><span class='act-sign'>{sign}</span>"
+                f"<span class='act-chip{drop}{click_cls}'{click_attrs}><span class='act-sign'>{sign}</span>"
                 f"<span class='act-pos {pos_cls}'>{html.escape(pos_txt)}</span>{name}</span>"
             )
 
@@ -8945,6 +8959,8 @@ def build_activity_body(ctx: dict) -> str:
                     rid_to_name[rid] = tm.get("name") or f"Team {rid}"
                 team_name = tm.get("name") or f"Team {rid}"
                 most_active_counts[team_name] = most_active_counts.get(team_name, 0) + 1
+                if rid is not None:
+                    most_active_rid.setdefault(team_name, str(rid))
 
             trade_count += 1
 
@@ -8952,6 +8968,9 @@ def build_activity_body(ctx: dict) -> str:
                 name = str(p.get("name") or "").strip()
                 if name:
                     traded_asset_counts[name] = traded_asset_counts.get(name, 0) + 1
+                    _rp_pid = str(p.get("pid") or p.get("player_id") or "").strip()
+                    if _rp_pid:
+                        traded_asset_pid.setdefault(name, _rp_pid)
 
                 val, pos_rank_label = player_value(p)
                 val_txt = f"{val:.1f}" if val > 0 else ""
@@ -9297,8 +9316,12 @@ def build_activity_body(ctx: dict) -> str:
 
             d = txrow["data"]
             team_name = d.get("name") or "Unknown Team"
-            roster_id = d.get("roster_id", "")
+            # Waiver rows carry the roster id under "rid" (trades use "roster_id");
+            # fall back so the team name actually opens the team modal.
+            roster_id = d.get("roster_id") or d.get("rid") or ""
             most_active_counts[team_name] = most_active_counts.get(team_name, 0) + 1
+            if roster_id != "":
+                most_active_rid.setdefault(team_name, str(roster_id))
             waiver_count += 1
 
             avatar = d.get("avatar") or ""
@@ -9313,6 +9336,9 @@ def build_activity_body(ctx: dict) -> str:
                 name = str(p.get("name") or "").strip()
                 if name:
                     traded_asset_counts[name] = traded_asset_counts.get(name, 0) + 1
+                    _wp_pid = str(p.get("pid") or p.get("player_id") or "").strip()
+                    if _wp_pid:
+                        traded_asset_pid.setdefault(name, _wp_pid)
                 val, _lbl = player_value(p)
                 total_val += val
                 chip_parts.append(_player_chip(p, "add"))
@@ -9389,6 +9415,29 @@ def build_activity_body(ctx: dict) -> str:
         most_active_team = max(most_active_counts.items(), key=lambda x: x[1])[0] if most_active_counts else "None"
         most_moved_asset = max(traded_asset_counts.items(), key=lambda x: x[1])[0] if traded_asset_counts else "None"
 
+        # Make the two Snapshot leaders open their modals, same as the feed.
+        def _snap_team_html(nm: str) -> str:
+            rid = most_active_rid.get(nm)
+            esc = html.escape(nm)
+            if not rid or nm == "None":
+                return esc
+            return (
+                f"<span class='team-clickable' style='cursor:pointer;' "
+                f"data-roster-id='{html.escape(str(rid), quote=True)}' "
+                f"data-team-name='{html.escape(nm, quote=True)}'>{esc}</span>"
+            )
+
+        def _snap_player_html(nm: str) -> str:
+            pid = traded_asset_pid.get(nm)
+            esc = html.escape(nm)
+            if not pid or nm in ("None", "Draft Pick"):
+                return esc
+            return (
+                f"<span class='player-clickable' style='cursor:pointer;' "
+                f"data-player-id='{html.escape(str(pid), quote=True)}' "
+                f"data-player-name='{html.escape(nm, quote=True)}'>{esc}</span>"
+            )
+
         # The four big stat tiles + spotlight banner collapse into one compact
         # rail card, so the timeline is the first thing you see.
         _swing = f" · {round(biggest_trade_delta, 1)}" if biggest_trade_delta > 0 else ""
@@ -9400,8 +9449,8 @@ def build_activity_body(ctx: dict) -> str:
             f"    <div class='act-snap-stat'><span class='act-snap-n'>{waiver_count}</span><span class='act-snap-l'>Waivers</span></div>"
             "  </div>"
             f"  <div class='act-snap-line'><span>Biggest swing</span><strong>{html.escape(biggest_trade_label)}{_swing}</strong></div>"
-            f"  <div class='act-snap-line'><span>Most active</span><strong>{html.escape(most_active_team)}</strong></div>"
-            f"  <div class='act-snap-line'><span>Most-moved asset</span><strong>{html.escape(most_moved_asset)}</strong></div>"
+            f"  <div class='act-snap-line'><span>Most active</span><strong>{_snap_team_html(most_active_team)}</strong></div>"
+            f"  <div class='act-snap-line'><span>Most-moved asset</span><strong>{_snap_player_html(most_moved_asset)}</strong></div>"
             "</div>"
         )
 
