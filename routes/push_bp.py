@@ -294,6 +294,7 @@ def api_push_broadcast():
     # acknowledge immediately; the loop keeps going after the response returns.
     if not _get_vapid_keys():
         return jsonify({"error": "Push not configured"}), 503
+    logger.info("[push] broadcast queued: title=%r tag=%r url=%r", title, tag, url)
     threading.Thread(
         target=_push_broadcast,
         kwargs={"title": title, "body": body, "url": url, "tag": tag},
@@ -401,6 +402,10 @@ def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
 
+    # Log the outcome so a background (fire-and-forget) broadcast still leaves a
+    # visible record in the app logs — the HTTP caller only gets a 202 and never
+    # sees these totals.
+    logger.info("[push] broadcast complete: sent=%d failed=%d pruned=%d", sent, failed, len(stale))
     return {"ok": True, "sent": sent, "failed": failed}, 200
 
 
