@@ -407,9 +407,6 @@ def build_prospects_body(is_admin: bool = False) -> str:
   .rk-row:first-child { border-top: none; }
 
   .rk-rank { font-size: 12px; font-weight: 700; color: var(--text-muted); display: flex; flex-direction: column; align-items: center; gap: 1px; }
-  .rk-rank-arrow { font-size: 9px; line-height: 1; }
-  .rk-rank-arrow.up   { color: var(--win); }
-  .rk-rank-arrow.down { color: var(--loss); }
   .rk-name-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .rk-name { font-size: 13px; font-weight: 600; color: var(--text); }
   .rk-name:hover { text-decoration: underline; }
@@ -855,16 +852,8 @@ def build_prospects_body(is_admin: bool = False) -> str:
       var earlyTag = r.early_declare ? '<span style="font-size:10px;color:var(--text-muted);margin-left:4px;">Early</span>' : '';
       var scoreColor = rkScoreColor(score);
 
-      var rankChg = r.rank_change_7d;
-      var rankArrowHtml = '';
-      if (rankChg != null && rankChg !== 0) {
-        var arrowDir = rankChg > 0 ? 'up' : 'down';
-        var arrowIcon = rankChg > 0 ? 'fa-arrow-up' : 'fa-arrow-down';
-        rankArrowHtml = '<span class="rk-rank-arrow ' + arrowDir + '" title="' + Math.abs(rankChg) + ' spot' + (Math.abs(rankChg) !== 1 ? 's' : '') + ' in 7 days"><i class="fa-solid ' + arrowIcon + '" aria-hidden="true"></i></span>';
-      }
-
       row.innerHTML =
-        '<span class="rk-rank">' + (r.overall_rank ? '#' + r.overall_rank : offset+idx+1) + rankArrowHtml + '</span>' +
+        '<span class="rk-rank">' + (r.overall_rank ? '#' + r.overall_rank : offset+idx+1) + '</span>' +
         '<div class="rk-name-cell">' +
           '<div class="rk-name">' + (r.name||'Unknown') + tierHtml + earlyTag + '</div>' +
           '<div class="rk-meta">' + (r.school||'') + (r.school && r.position ? ' • ' : '') + (posRk||'') + '</div>' +
