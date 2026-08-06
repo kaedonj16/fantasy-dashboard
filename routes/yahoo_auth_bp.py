@@ -142,8 +142,21 @@ def yahoo_auth_callback():
     if league_id:
         from datetime import datetime
         from dashboard_services.api import get_nfl_state
+        from dashboard_services.providers.yahoo_api import get_league
         nfl_state  = get_nfl_state() or {}
         season     = int(nfl_state.get("season") or datetime.now().year)
+
+        # Confirm this token can actually read the league before dropping the user
+        # on the dashboard. Yahoo returns 403 when the authorized account isn't a
+        # member of the league (or the id/season doesn't resolve to one it can
+        # see); without this check the dashboard build hits that 403 uncaught and
+        # 500s. Send them back with a clear reason instead.
+        try:
+            get_league(season, league_id, access_token)
+        except Exception as exc:
+            logger.warning("[yahoo_auth] league %s not accessible for this token: %s", league_id, exc)
+            return redirect("/?yahoo_error=league_access_denied")
+
         try:
             save_league_owner(league_id, season, guid)
         except Exception:
