@@ -71,7 +71,8 @@ def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
                        avg_pick, pick_no, max_val, draft_type, is_sf,
                        need_raw, qb_count, total_picks=None, num_teams=None,
                        ppg_norm=None, ppr=1.0, tep=0.0, is_tier_cliff=False,
-                       survival_adj=0.0, handcuff=False, weights=None) -> int:
+                       survival_adj=0.0, handcuff=False, weights=None,
+                       depth_slope=None, depth_floor=None) -> int:
     """Mirror of static/pick_score.js `computePickScore`; the two are pinned
     identical by tests/test_pick_score_parity.py. ``survival_adj`` and
     ``handcuff`` are the live-draft-only timing terms (default off); the grade
@@ -203,9 +204,17 @@ def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
 
     # Depth normalization: re-anchor the 0-100 scale to what's achievable at this
     # pick slot so late-round picks aren't unfairly buried (mirrors the Draft Room).
+    # slope/floor default to the shipped 0.44/0.40; the backtest can override them
+    # (compute_pick_score is the sweep target) to tune the by-round flatness — a
+    # diagnostic showed an at-ADP "par" pick still declines ~35 pts across a draft,
+    # i.e. the shipped slope under-corrects the value decay. Overrides are grading/
+    # analysis-only; the JS mirror uses the shipped 0.44/0.40, so parity holds when
+    # they're left as defaults.
     if total_picks and total_picks > 1 and pick_no:
+        _slope = 0.44 if depth_slope is None else float(depth_slope)
+        _floor = 0.40 if depth_floor is None else float(depth_floor)
         _depth = min(0.98, (float(pick_no) - 1) / float(total_picks))
-        _par = max(0.40, 1.0 - _depth * 0.44)
+        _par = max(_floor, 1.0 - _depth * _slope)
         s = s / _par
 
     return int(math.floor(clamp01(s) * 100 + 0.5))  # round-half-up, matching JS

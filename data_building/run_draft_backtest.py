@@ -44,7 +44,13 @@ from data_building.draft_grade_backtest import (
     load_multiyear_samples,
     pick_score_by_round,
     sweep,
+    sweep_depth,
 )
+
+# Depth-normalization slopes to sweep. Shipped is 0.44; steeper boosts later
+# picks more, flattening the by-round curve (a "par" at-ADP pick otherwise
+# declines ~35 pts across a draft). We pick the slope that best tracks outcomes.
+_DEPTH_SLOPES = (0.44, 0.55, 0.62, 0.70, 0.80)
 
 
 def _fmt(r) -> str:
@@ -89,6 +95,23 @@ def _report_group(title: str, samples, method: str, seed_type=None, top: int = 8
         for R in rounds:
             bar = "#" * int(round(R["score_mean"] / 4))
             print(f"       R{R['round']:>2} (n={R['n']:>4}): {R['score_mean']:5.1f}  {bar}")
+
+    # Depth-slope sweep: which depth-normalization slope best tracks outcomes?
+    # (0.44 = shipped.) A winner that beats shipped is a real depth calibration
+    # to fold into compute_pick_score AND static/pick_score.js.
+    dsweep = sweep_depth(samples, _DEPTH_SLOPES, method=method)
+    print("     depth-slope sweep (corr vs outcome; 0.44 = shipped):")
+    for sl, r in dsweep:
+        tag = " <- shipped" if abs(sl - 0.44) < 1e-9 else ""
+        print(f"       slope {sl:.2f}: {_fmt(r)}{tag}")
+    # First/last round mean under the best-correlating slope, to see the flattening.
+    best_slope = dsweep[0][0]
+    if best_slope != 0.44:
+        rb = pick_score_by_round(samples, depth_slope=best_slope)
+        if rb:
+            print(f"     by-round under best slope {best_slope:.2f}: "
+                  f"R1={rb[0]['score_mean']:.1f} .. R{rb[-1]['round']}={rb[-1]['score_mean']:.1f} "
+                  f"(shipped: R1={rounds[0]['score_mean']:.1f} .. R{rounds[-1]['round']}={rounds[-1]['score_mean']:.1f})")
     print()
 
 

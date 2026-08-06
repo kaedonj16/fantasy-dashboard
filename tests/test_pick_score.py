@@ -110,3 +110,32 @@ def test_rookie_momentum_is_down_weighted():
     # a rookie's season, so rookie momentum stays low (was 0.06, cut to 0.03).
     # Don't restore it without re-running data_building/run_draft_backtest.py.
     assert PS_WEIGHTS["rookie"]["mom"] <= 0.03
+
+
+# ---- depth_slope override (tunable depth normalization) --------------------
+
+def _late_pick(**over):
+    base = dict(pos="WR", value=3000, vor=1000, tier=4, age=25, rank_change_7d=0,
+                avg_pick=120, pick_no=120, max_val=10000, draft_type="startup",
+                is_sf=False, need_raw=0.5, qb_count=0, total_picks=180, num_teams=12,
+                ppg_norm=0.4)
+    base.update(over)
+    return compute_pick_score(**base)
+
+
+def test_depth_slope_default_matches_shipped():
+    # None (default) must equal the shipped 0.44 slope exactly — this is what
+    # keeps the JS<->Python parity test valid.
+    assert _late_pick() == _late_pick(depth_slope=0.44)
+
+
+def test_depth_slope_steeper_lifts_late_picks():
+    # A steeper slope boosts later picks more (the fix direction for the mid/late
+    # round dip). Shipped 0.44 < steeper 0.70 for a deep pick.
+    assert _late_pick(depth_slope=0.70) > _late_pick()
+
+
+def test_depth_slope_leaves_first_pick_unchanged():
+    # At pick 1 depth is ~0, so par is ~1.0 regardless of slope.
+    assert _late_pick(pick_no=1, avg_pick=1, depth_slope=0.70) == \
+           _late_pick(pick_no=1, avg_pick=1)
