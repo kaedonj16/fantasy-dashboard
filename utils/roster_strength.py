@@ -72,7 +72,13 @@ def weighted_pos_strength(vals: List[float], pos: str, slot_counts: Dict[str, in
 # the number of that position a team is expected to start. Single source of
 # truth for the depth-warning system AND the consolidate/distribute engine, so
 # they never disagree on who is startable.
-STARTER_THRESHOLD = {"QB": 500, "RB": 350, "WR": 350, "TE": 400}
+#
+# TE sits well below RB/WR because tight-end values are compressed: only ~2-3 TEs
+# clear 400, yet a 1-TE league starts one per team (~10-14 startable TEs, down to
+# ~215 in value). A 200 bar captures that real starter pool (and, after the
+# small-league x1.2 scale, still keeps clear starters like a TE5 above the line)
+# instead of flagging every non-elite TE as un-startable.
+STARTER_THRESHOLD = {"QB": 500, "RB": 350, "WR": 350, "TE": 200}
 DEPTH_FLOOR = {"QB": 1, "RB": 2, "WR": 3, "TE": 1}
 
 _FLEX_SLOT_NAMES = {"FLEX", "RB_WR_FLEX", "RB_WR_TE", "WR_RB", "WR_TE", "RB_WR"}

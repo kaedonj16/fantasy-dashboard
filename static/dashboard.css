@@ -5585,6 +5585,27 @@ a.otc-value-name:hover { text-decoration: underline; }
   color: var(--accent);
 }
 
+/* Even it out on phones: the auto-width pills wrap raggedly and read as a messy
+   centered cluster. Stack them into a clean full-width list instead, with the
+   name left-aligned (ellipsized if long) and the value pinned to the right. */
+@media (max-width: 600px) {
+  .otc-balancer { padding: 12px 10px; }
+  .otc-balancer-head { margin-bottom: 8px; }
+  .otc-balancer-chips { flex-direction: column; gap: 6px; }
+  .otc-balancer-chip {
+    width: 100%;
+    justify-content: space-between;
+    padding: 11px 14px;
+  }
+  .otc-balancer-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .otc-balancer-val { flex-shrink: 0; }
+}
+
 .otc-viewer-toggle {
   display: inline-flex;
   align-items: center;
