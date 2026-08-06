@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-08-06",
+        "tag": "new",
+        "text": "Even It Out: When a deal is lopsided, the Trade Calculator now helps you balance it. It reads which side is light and by how much, then suggests up to three players whose value best closes the gap - click one to drop it straight onto that side. With the Roster Filter on, suggestions come from that team's actual roster.",
+        "link": "/trade"
+    },
+    {
         "date": "2026-07-13",
         "tag": "new",
         "text": "Start/Sit Advisor: every player now shows a boom-or-bust profile, with a floor-to-ceiling scoring range and a Steady, Balanced, Volatile, or Boom-or-bust read built from their weekly game-by-game scores (last season blends in until this year's sample fills out). Rows also surface live game conditions: the Vegas implied team total and a weather or venue chip (dome, cold, wind, rain). And the head-to-head Compare was rebuilt with one shared label per stat plus all of the new signals.",
