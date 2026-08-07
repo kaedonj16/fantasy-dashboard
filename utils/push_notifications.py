@@ -1286,6 +1286,12 @@ def run_all_daily():
     notify_recap_ready()
     notify_matchup_preview()
     notify_standings_update()
+    # Daily ranking snapshots (value / power / playoff-odds movement arrows).
+    try:
+        from dashboard_services.ranking_seed import snapshot_all_rankings
+        snapshot_all_rankings()
+    except Exception:
+        logger.warning("[ranking-seed] daily snapshot failed", exc_info=True)
 
 
 def run_hourly():
