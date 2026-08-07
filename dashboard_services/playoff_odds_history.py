@@ -54,6 +54,117 @@ def _ensure_table() -> None:
     _TABLE_READY = True
 
 
+_DAILY_TABLE_READY = False
+
+
+def _ensure_daily_table() -> None:
+    """Daily playoff-odds snapshots — the basis for the movement arrows. Keyed by
+    calendar date (not week) so movement works year-round: a trade in the
+    offseason moves a team's odds and the next day's snapshot reflects it, exactly
+    like a week-over-week shift does in-season."""
+    global _DAILY_TABLE_READY
+    if _DAILY_TABLE_READY:
+        return
+    with get_conn() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS playoff_odds_daily (
+                league_id           TEXT        NOT NULL,
+                season              INTEGER     NOT NULL,
+                snap_date           DATE        NOT NULL,
+                roster_id           INTEGER     NOT NULL,
+                playoff_probability DECIMAL(5,2),
+                avg_final_wins      DECIMAL(5,2),
+                calculated_at       TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (league_id, season, snap_date, roster_id)
+            )
+            """
+        )
+    _DAILY_TABLE_READY = True
+
+
+def record_daily_and_movement(
+    league_id: str,
+    season: int,
+    odds: List[dict],
+    write: bool = True,
+) -> Dict[str, float]:
+    """Snapshot today's playoff odds (once per day per team) and return each
+    team's probability movement vs the most recent *earlier* daily snapshot.
+
+    Returns {roster_id: delta_pct} where delta is this projection's playoff
+    probability minus the previous snapshot's, in points (positive = improved).
+    Works in-season and in the offseason, so a roster move (e.g. a trade) shows a
+    ▲/▼ once the next day's snapshot is taken. Returns {} when there's no earlier
+    snapshot to compare against yet. Writes are best-effort and only taken when
+    ``write`` is True (the caller passes True on a fresh sim, False on a cache hit
+    so the table isn't hammered on every view)."""
+    if not odds:
+        return {}
+    try:
+        from datetime import date, timezone, datetime
+        _ensure_daily_table()
+        today = datetime.now(timezone.utc).date().isoformat()
+
+        cur = {
+            str(o["roster_id"]): float(o.get("playoff_pct") or 0.0)
+            for o in odds
+            if o.get("roster_id") is not None
+        }
+        if not cur:
+            return {}
+
+        with get_conn() as conn:
+            if write:
+                for o in odds:
+                    if o.get("roster_id") is None:
+                        continue
+                    conn.execute(
+                        """
+                        INSERT INTO playoff_odds_daily (
+                            league_id, season, snap_date, roster_id,
+                            playoff_probability, avg_final_wins, calculated_at
+                        ) VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                        ON CONFLICT (league_id, season, snap_date, roster_id)
+                        DO UPDATE SET
+                            playoff_probability = EXCLUDED.playoff_probability,
+                            avg_final_wins = EXCLUDED.avg_final_wins,
+                            calculated_at = CURRENT_TIMESTAMP
+                        """,
+                        (
+                            str(league_id), int(season), today, int(o["roster_id"]),
+                            o.get("playoff_pct"), o.get("avg_final_wins"),
+                        ),
+                    )
+
+            prev = conn.execute(
+                "SELECT MAX(snap_date) AS d FROM playoff_odds_daily "
+                "WHERE league_id = %s AND season = %s AND snap_date < %s",
+                (str(league_id), int(season), today),
+            ).fetchone()
+            prev_date = prev and prev["d"]
+            if not prev_date:
+                return {}
+
+            prev_rows = conn.execute(
+                "SELECT roster_id, playoff_probability FROM playoff_odds_daily "
+                "WHERE league_id = %s AND season = %s AND snap_date = %s",
+                (str(league_id), int(season), prev_date),
+            ).fetchall()
+
+        prev_map = {
+            str(r["roster_id"]): float(r["playoff_probability"] or 0.0)
+            for r in (prev_rows or [])
+        }
+        return {rid: round(cur[rid] - prev_map[rid], 1)
+                for rid in cur if rid in prev_map}
+    except Exception:
+        import logging
+        logging.getLogger(__name__).debug(
+            "playoff_odds_history: daily movement failed", exc_info=True)
+        return {}
+
+
 def _rank(rows: List[dict]) -> Dict[str, int]:
     """roster_id -> 1..N rank by (playoff prob desc, avg final wins desc)."""
     ordered = sorted(
