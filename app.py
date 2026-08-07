@@ -23838,18 +23838,28 @@ def api_playoff_odds():
         current_week       = int(ctx.get("current_week") or 0)
         is_complete        = bool(odds and odds[0].get("is_complete"))
 
-        # Week-over-week movement in the odds ranking. Snapshot the current week
-        # only when we actually re-ran the sim (throttled by the 1h cache) so the
-        # table isn't written on every view; movement itself is a cheap read.
-        # Skipped for a finished season (the table shows Made/Missed, not ranks).
+        # Movement arrows: each team's playoff-probability change (in points) vs
+        # the most recent earlier daily snapshot. Date-based, so it works in the
+        # offseason too — a trade that shifts the odds shows a ▲/▼ the next day.
+        # Snapshot only on a fresh sim (throttled by the 1h cache) so the table
+        # isn't written on every view. Skipped for a finished season (rows read
+        # Made/Missed, not a probability).
         movement: dict = {}
-        if not is_complete and current_week >= 1:
+        if not is_complete:
             try:
-                from dashboard_services.playoff_odds_history import record_and_movement
-                movement = record_and_movement(
-                    league_id, season, current_week, odds, write=_fresh_sim)
+                from dashboard_services.playoff_odds_history import record_daily_and_movement
+                movement = record_daily_and_movement(
+                    league_id, season, odds, write=_fresh_sim)
             except Exception:
                 logger.debug("[playoff-odds] movement skipped", exc_info=True)
+        # Keep the weekly snapshot table populated in-season — it feeds the
+        # team-modal playoff-odds sparkline (get_series), which is week-based.
+        if not is_complete and current_week >= 1 and _fresh_sim:
+            try:
+                from dashboard_services.playoff_odds_history import record_and_movement
+                record_and_movement(league_id, season, current_week, odds, write=True)
+            except Exception:
+                logger.debug("[playoff-odds] weekly snapshot skipped", exc_info=True)
 
         return jsonify({
             "odds":                odds,

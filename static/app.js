@@ -2885,14 +2885,16 @@ function _renderPlayoffOdds(data) {
 
     const simAvgCell = '';
 
-    // Week-over-week movement in the odds ranking (positive = climbed). Hidden
-    // for a finished season, where rows read Made/Missed instead of a ranking.
+    // Movement: change in playoff probability (points) vs the last daily
+    // snapshot — so a trade that shifts the odds shows a ▲/▼. Hidden for a
+    // finished season (rows read Made/Missed) and for sub-0.1pt noise.
     const _mv = (!is_complete && t.roster_id != null) ? mv[String(t.roster_id)] : null;
     let mvHtml = '';
-    if (_mv) {
+    if (_mv != null && Math.abs(_mv) >= 0.1) {
+      const _amt = Math.abs(_mv).toFixed(1);
       mvHtml = _mv > 0
-        ? `<span class="rank-move up" title="Up ${_mv} since last week">&#9650;${_mv}</span>`
-        : `<span class="rank-move down" title="Down ${Math.abs(_mv)} since last week">&#9660;${Math.abs(_mv)}</span>`;
+        ? `<span class="rank-move up" title="Playoff odds up ${_amt} pts recently">&#9650;${_amt}%</span>`
+        : `<span class="rank-move down" title="Playoff odds down ${_amt} pts recently">&#9660;${_amt}%</span>`;
     }
 
     const _ridAttr = t.roster_id != null ? ` data-roster-id="${t.roster_id}" data-team-name="${t.team_name}"` : '';

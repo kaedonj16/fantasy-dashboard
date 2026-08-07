@@ -53,7 +53,8 @@ class _FakeConn:
 
 
 def _install(monkeypatch, handler, writes):
-    monkeypatch.setattr(H, "_TABLE_READY", True)   # skip CREATE TABLE
+    monkeypatch.setattr(H, "_TABLE_READY", True)         # skip weekly CREATE TABLE
+    monkeypatch.setattr(H, "_DAILY_TABLE_READY", True)   # skip daily CREATE TABLE
     monkeypatch.setattr(H, "get_conn", lambda: _FakeConn(handler, writes))
 
 
@@ -115,4 +116,57 @@ def test_write_skipped_on_cache_hit(monkeypatch):
 
     H.record_and_movement("L", 2026, 5,
                           [{"roster_id": 1, "playoff_pct": 50.0}], write=False)
+    assert writes == []   # cache hit → no write
+
+
+# ── record_daily_and_movement (faked DB) ─────────────────────────────────────
+
+def test_daily_no_movement_without_prior_snapshot(monkeypatch):
+    writes = []
+
+    def handler(sql, params):
+        if "MAX(snap_date)" in sql:
+            return [{"d": None}]     # nothing recorded on an earlier day yet
+        return []
+    _install(monkeypatch, handler, writes)
+
+    mv = H.record_daily_and_movement("L", 2026, [{"roster_id": 1, "playoff_pct": 50.0}])
+    assert mv == {}
+    assert len(writes) == 1   # today's snapshot still written
+
+
+def test_daily_movement_is_probability_delta(monkeypatch):
+    writes = []
+
+    # Yesterday: team 1 at 50%, team 2 at 60%.
+    def handler(sql, params):
+        if "MAX(snap_date)" in sql:
+            return [{"d": "2026-08-06"}]
+        if "SELECT roster_id, playoff_probability" in sql:
+            return [
+                {"roster_id": 1, "playoff_probability": 50.0},
+                {"roster_id": 2, "playoff_probability": 60.0},
+            ]
+        return []
+    _install(monkeypatch, handler, writes)
+
+    odds = [
+        {"roster_id": 1, "playoff_pct": 55.0},   # +5.0 (e.g. after a trade)
+        {"roster_id": 2, "playoff_pct": 52.0},   # -8.0
+    ]
+    mv = H.record_daily_and_movement("L", 2026, odds, write=True)
+    assert mv == {"1": 5.0, "2": -8.0}
+
+
+def test_daily_write_skipped_on_cache_hit(monkeypatch):
+    writes = []
+
+    def handler(sql, params):
+        if "MAX(snap_date)" in sql:
+            return [{"d": None}]
+        return []
+    _install(monkeypatch, handler, writes)
+
+    H.record_daily_and_movement("L", 2026,
+                                [{"roster_id": 1, "playoff_pct": 50.0}], write=False)
     assert writes == []   # cache hit → no write
