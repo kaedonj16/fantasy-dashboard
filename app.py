@@ -4508,6 +4508,34 @@ def _owner_to_rid_map(roster_map=None, df_weekly=None) -> Dict[str, str]:
     return {}
 
 
+def _rank_move_html(delta) -> str:
+    """▲/▼ position-movement chip for a team ranking (value / snapshot lists).
+    delta > 0 means the team climbed since the previous daily snapshot; blank for
+    no data or no change. Shares the .rank-move styling used by the standings."""
+    try:
+        d = int(delta)
+    except (TypeError, ValueError):
+        return ""
+    if d > 0:
+        return f"<span class='rank-move up' title='Up {d} since yesterday'>&#9650;{d}</span>"
+    if d < 0:
+        return f"<span class='rank-move down' title='Down {abs(d)} since yesterday'>&#9660;{abs(d)}</span>"
+    return ""
+
+
+def _ranking_movement(league_id, season, kind, ordered_roster_ids) -> dict:
+    """Thin wrapper around ranking_movement.record_daily_and_movement — returns
+    {roster_id: rank_delta} for a ranked list, or {} on any failure."""
+    try:
+        from dashboard_services.ranking_movement import record_daily_and_movement
+        return record_daily_and_movement(
+            str(league_id or ""), _safe_int(season, 0), kind,
+            list(ordered_roster_ids or []))
+    except Exception:
+        logger.debug("[ranking-movement] %s failed", kind, exc_info=True)
+        return {}
+
+
 def _clickable_team_name(owner, owner_to_rid=None, *, inner=None, cls="") -> str:
     """Wrap a team (owner) name so the global .team-clickable handler opens its
     modal. Falls back to plain text (or a plain span with `cls`) when the roster
@@ -5814,31 +5842,22 @@ def render_power_and_playoffs(
 
     top3 = pr_sorted.head(3)
 
-    # ---- Weekly movement arrows (vs the previous week's snapshot) ----
-    movement: Dict[str, Optional[int]] = {}
-    try:
-        from dashboard_services.power_rank_history import record_and_movement
-        _nfl_state = get_nfl_state() or {}
-        _wk = int(_nfl_state.get("week") or 0)
-        _is_current_season = str(_nfl_state.get("season") or "") == str(season)
-        if _wk > 0 and _is_current_season:
-            _ranks = {
-                str(row.get("owner", "")): i + 1
-                for i, (_, row) in enumerate(pr_sorted.iterrows())
-            }
-            movement = record_and_movement(str(league_id), int(season), _wk, _ranks)
-    except Exception:
-        movement = {}
+    # ---- Movement arrows: day-over-day change in power-ranking position ----
+    # Daily (date-keyed) so a trade that reshuffles the ranking shows a ▲/▼ the
+    # next day, in the offseason too — not just week-over-week during the season.
+    _pr_order_rids = [_o2r.get(str(row.get("owner", "")))
+                      for _, row in pr_sorted.iterrows()]
+    movement: Dict[str, Optional[int]] = _ranking_movement(
+        league_id, season, "power", _pr_order_rids)
 
     def move_arrow(owner_name) -> str:
-        delta = movement.get(str(owner_name))
-        if delta is None:
-            return ""
+        rid = _o2r.get(str(owner_name))
+        delta = movement.get(str(rid)) if rid is not None else None
+        if not delta:
+            return ""   # no prior snapshot yet, or no change
         if delta > 0:
-            return f"<span class='pr-move pr-move-up' title='Up {delta} from last week'>&#9650;{delta}</span>"
-        if delta < 0:
-            return f"<span class='pr-move pr-move-down' title='Down {abs(delta)} from last week'>&#9660;{abs(delta)}</span>"
-        return "<span class='pr-move pr-move-flat' title='No change from last week'>&ndash;</span>"
+            return f"<span class='pr-move pr-move-up' title='Up {delta} since yesterday'>&#9650;{delta}</span>"
+        return f"<span class='pr-move pr-move-down' title='Down {abs(delta)} since yesterday'>&#9660;{abs(delta)}</span>"
 
     # width scaling based on PowerScore range
     if has_power:
@@ -6289,6 +6308,10 @@ def _build_offseason_standings_body(ctx: dict) -> str:
 
     team_rows.sort(key=lambda x: x["total"], reverse=True)
 
+    # Day-over-day movement in the dynasty value ranking (▲/▼ spots).
+    _valtbl_mv = _ranking_movement(
+        league_id_str, season, "value", [r.get("rid") for r in team_rows])
+
     # ── Compute value share and projected production share ─────────────────────
     league_value_total = sum(r["total"] for r in team_rows) or 1.0
     # Projected scoring using same Sleeper-first PPG source as playoff odds page
@@ -6457,7 +6480,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         bar_pct = max(4, min(100, round(row["total"] / _max_total * 100)))
         table_rows_html += (
             f"<tr{tr_cls}>"
-            f"<td class='num'><span class='dyn-rank{rank_cls}'>{i}</span></td>"
+            f"<td class='num'><span class='dyn-rank{rank_cls}'>{i}</span>{_rank_move_html(_valtbl_mv.get(str(row.get('rid'))))}</td>"
             f"<td class='team'>{img} {_clickable_team_name(row['name'], {str(row['name']): str(row['rid'])})}</td>"
             f"<td class='num dyn-val-cell'><span class='dyn-val'>{row['total']:.0f}</span>"
             f"<span class='dyn-bar'><span style='width:{bar_pct}%'></span></span></td>"
@@ -7326,6 +7349,13 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
     roster_cards.sort(key=lambda x: x["roster_value"], reverse=True)
 
+    # Day-over-day movement in the value ranking (▲/▼ spots), so a trade shows up.
+    # Its own kind: this leaderboard's value math is computed here, independently
+    # of the standings value table, so they must not share a daily snapshot.
+    _snap_mv = _ranking_movement(
+        ctx.get("league_id"), season, "dash_value",
+        [c["roster_id"] for c in roster_cards])
+
     # Value leaderboard: rank medallion (gold/silver/bronze for the top 3), a bar
     # scaled to the leader so magnitudes read at a glance, and canonical chips.
     max_value = roster_cards[0]["roster_value"] if roster_cards and roster_cards[0]["roster_value"] > 0 else 1
@@ -7345,7 +7375,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         ranked_snapshot_html.append(
             f"""
             <div class="os-snap-row {medal_cls} team-clickable" style="cursor:pointer;" data-roster-id="{card['roster_id']}" data-team-name="{card['team_name']}">
-              <div class="os-snap-medal">{idx}</div>
+              <div class="os-snap-medal">{idx}{_rank_move_html(_snap_mv.get(str(card['roster_id'])))}</div>
               <div class="os-snap-body">
                 <div class="os-snap-head">
                   <div class="os-snap-name">{card['team_name']}</div>
