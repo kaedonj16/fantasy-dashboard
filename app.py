@@ -10106,6 +10106,70 @@ from dashboard_services.pages.teams_page import build_teams_body  # noqa: E402
 
 
 
+_LEAGUE_FRESH_CHECK: dict = {}          # cache key -> last roster-freshness poll ts
+_LEAGUE_FRESH_BUILDING: set = set()
+_LEAGUE_FRESH_LOCK = threading.Lock()
+_LEAGUE_FRESH_INTERVAL = 90             # min seconds between background polls per league
+
+
+def _maybe_check_roster_freshness(platform: str, league_id: str, season: int,
+                                  key, cur_sig: str) -> None:
+    """Non-blocking guard against the 12h context TTL hiding a roster change.
+
+    On a cached-context read, kick a throttled background poll (≤ once / 90s per
+    league) that does a cheap /rosters fetch and compares the roster signature to
+    the cached context. If it changed — a trade or waiver landed — expire the
+    context so the next request rebuilds it from source (and the signature-keyed
+    playoff-sim cache then re-runs on its own). Only the current season can
+    change, so past-season views are skipped. Never blocks the caller."""
+    try:
+        if int(season) < datetime.now().year:
+            return
+    except (TypeError, ValueError):
+        return
+    now = time.time()
+    with _LEAGUE_FRESH_LOCK:
+        if now - _LEAGUE_FRESH_CHECK.get(key, 0.0) < _LEAGUE_FRESH_INTERVAL:
+            return
+        if key in _LEAGUE_FRESH_BUILDING:
+            return
+        _LEAGUE_FRESH_CHECK[key] = now
+        _LEAGUE_FRESH_BUILDING.add(key)
+
+    def _run():
+        try:
+            fresh = get_rosters(platform, league_id, season) or []
+            if not fresh:
+                return  # a failed/empty fetch must never expire a good context
+            if _roster_sig({"rosters": fresh}) == cur_sig:
+                return  # unchanged — nothing to do
+            entry = DASHBOARD_CACHE.get(key)
+            if entry:
+                entry["ts"] = 0            # expire context; next read rebuilds
+                entry["page_html"] = {}
+            for page in ("dashboard", "activity", "teams", "graphs", "standings", "weekly"):
+                try:
+                    p = _page_html_tmp_path(platform, season, league_id, page)
+                    if os.path.exists(p):
+                        os.remove(p)
+                except Exception:
+                    pass
+            try:
+                from dashboard_services.archetype_engine import invalidate_league_caches
+                invalidate_league_caches(platform, league_id, season)
+            except Exception:
+                pass
+            logger.info("[freshness] rosters changed for %s/%s/%s — context expired",
+                        platform, season, league_id)
+        except Exception:
+            logger.debug("[freshness] roster check failed", exc_info=True)
+        finally:
+            with _LEAGUE_FRESH_LOCK:
+                _LEAGUE_FRESH_BUILDING.discard(key)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dict:
     key = _cache_key(platform, season, league_id)
     entry = DASHBOARD_CACHE.get(key)
@@ -10114,6 +10178,7 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
         ctx["viewer"] = get_viewer_session_for_league(
             ctx.get("users") or [], ctx.get("rosters") or []
         )
+        _maybe_check_roster_freshness(platform, league_id, season, key, _roster_sig(ctx))
         return ctx
 
     with _CTX_LOCKS_LOCK:
