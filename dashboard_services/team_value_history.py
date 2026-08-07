@@ -8,7 +8,7 @@ going forward, keyed by (league, season, week, roster). The team modal both
 records the current week (throttled to one row via upsert) and reads the series.
 Best-effort: a failure returns an empty series and never breaks the modal.
 
-Mirrors dashboard_services.power_rank_history.
+Mirrors dashboard_services.playoff_odds_history (the weekly-snapshot pattern).
 """
 from typing import Dict, List, Optional
 
