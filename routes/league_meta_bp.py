@@ -4,6 +4,9 @@ import logging
 from datetime import datetime
 import pandas as pd
 from flask import Blueprint, jsonify, request, session
+
+from dashboard_services.api import get_sleeper_user_leagues
+
 logger = logging.getLogger(__name__)
 
 league_meta_bp = Blueprint("league_meta_bp", __name__)
@@ -48,10 +51,6 @@ def get_rosters(*a, **k):
 
 def get_sleeper_user_by_username(*a, **k):
     from app import get_sleeper_user_by_username as _fn
-    return _fn(*a, **k)
-
-def get_sleeper_user_leagues(*a, **k):
-    from app import get_sleeper_user_leagues as _fn
     return _fn(*a, **k)
 
 def resolve_league_id_for_season(*a, **k):

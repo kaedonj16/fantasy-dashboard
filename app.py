@@ -56,7 +56,6 @@ from dashboard_services.api import (
     get_nfl_state,
     get_roster_positions,
     get_sleeper_user_by_username,
-    get_sleeper_user_leagues,
     get_total_rosters,
     resolve_league_id_for_season,
     avatar_url
