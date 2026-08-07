@@ -302,6 +302,19 @@ _PLAYOFF_SIM_BUILDING: set = set()
 _PLAYOFF_SIM_BUILDING_LOCK = threading.Lock()
 
 
+def _roster_sig(ctx: dict) -> str:
+    """A stable fingerprint of who's on each roster, so the playoff-odds sim
+    cache invalidates the moment a roster changes (a trade or waiver) instead of
+    serving a stale simulation until the 1h TTL lapses. Keyed on each team's
+    sorted player ids; order-independent across teams."""
+    import hashlib
+    parts = []
+    for r in sorted((ctx.get("rosters") or []), key=lambda r: str(r.get("roster_id"))):
+        pids = ",".join(sorted(str(p) for p in (r.get("players") or [])))
+        parts.append(f"{r.get('roster_id')}:{pids}")
+    return hashlib.md5("|".join(parts).encode("utf-8")).hexdigest()  # noqa: S324 (non-crypto)
+
+
 def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
     """simulate_playoff_odds behind the module TTL cache (shared by the odds
     API, standings seeding, the trade-window card, and draft capital).
@@ -318,15 +331,18 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
             str(ctx.get("league_id") or ""),
             int(ctx.get("season") or ctx.get("current_season") or 0),
         )
+        sig = _roster_sig(ctx)
         hit = _PLAYOFF_SIM_CACHE.get(key)
-        if hit and time.time() - hit["ts"] < _PLAYOFF_SIM_CACHE_TTL:
+        # Serve the cache only while it's fresh AND built on the current rosters —
+        # a trade changes the signature and forces a re-sim right away.
+        if hit and time.time() - hit["ts"] < _PLAYOFF_SIM_CACHE_TTL and hit.get("sig") == sig:
             return hit["data"] or []
 
-        def _run(snapshot=dict(ctx)):
+        def _run(snapshot=dict(ctx), snap_sig=sig):
             try:
                 odds = simulate_playoff_odds(snapshot, platform=platform) or []
                 _prune_ttl_cache(_PLAYOFF_SIM_CACHE, _PLAYOFF_SIM_CACHE_MAX)
-                _PLAYOFF_SIM_CACHE[key] = {"data": odds, "ts": time.time()}
+                _PLAYOFF_SIM_CACHE[key] = {"data": odds, "ts": time.time(), "sig": snap_sig}
             except Exception:
                 logger.debug("background playoff sim failed", exc_info=True)
             finally:
@@ -343,7 +359,7 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
 
         odds = simulate_playoff_odds(ctx, platform=platform) or []
         _prune_ttl_cache(_PLAYOFF_SIM_CACHE, _PLAYOFF_SIM_CACHE_MAX)
-        _PLAYOFF_SIM_CACHE[key] = {"data": odds, "ts": time.time()}
+        _PLAYOFF_SIM_CACHE[key] = {"data": odds, "ts": time.time(), "sig": sig}
         return odds
     except Exception:
         logger.debug("playoff sim failed", exc_info=True)
@@ -6325,12 +6341,14 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     try:
         from data_building.simulate_playoff_odds import simulate_playoff_odds
         _sim_key = (platform, str(ctx.get("league_id") or ""), int(ctx.get("season") or 0))
+        _sim_sig = _roster_sig(ctx)
         _sim_cached = _PLAYOFF_SIM_CACHE.get(_sim_key)
-        if _sim_cached and time.time() - _sim_cached["ts"] < _PLAYOFF_SIM_CACHE_TTL:
+        if (_sim_cached and time.time() - _sim_cached["ts"] < _PLAYOFF_SIM_CACHE_TTL
+                and _sim_cached.get("sig") == _sim_sig):
             odds_list = _sim_cached["data"]
         else:
             odds_list = simulate_playoff_odds(ctx, platform=platform) or []
-            _PLAYOFF_SIM_CACHE[_sim_key] = {"data": odds_list, "ts": time.time()}
+            _PLAYOFF_SIM_CACHE[_sim_key] = {"data": odds_list, "ts": time.time(), "sig": _sim_sig}
     except Exception:
         odds_list = []
 
@@ -10088,6 +10106,70 @@ from dashboard_services.pages.teams_page import build_teams_body  # noqa: E402
 
 
 
+_LEAGUE_FRESH_CHECK: dict = {}          # cache key -> last roster-freshness poll ts
+_LEAGUE_FRESH_BUILDING: set = set()
+_LEAGUE_FRESH_LOCK = threading.Lock()
+_LEAGUE_FRESH_INTERVAL = 90             # min seconds between background polls per league
+
+
+def _maybe_check_roster_freshness(platform: str, league_id: str, season: int,
+                                  key, cur_sig: str) -> None:
+    """Non-blocking guard against the 12h context TTL hiding a roster change.
+
+    On a cached-context read, kick a throttled background poll (≤ once / 90s per
+    league) that does a cheap /rosters fetch and compares the roster signature to
+    the cached context. If it changed — a trade or waiver landed — expire the
+    context so the next request rebuilds it from source (and the signature-keyed
+    playoff-sim cache then re-runs on its own). Only the current season can
+    change, so past-season views are skipped. Never blocks the caller."""
+    try:
+        if int(season) < datetime.now().year:
+            return
+    except (TypeError, ValueError):
+        return
+    now = time.time()
+    with _LEAGUE_FRESH_LOCK:
+        if now - _LEAGUE_FRESH_CHECK.get(key, 0.0) < _LEAGUE_FRESH_INTERVAL:
+            return
+        if key in _LEAGUE_FRESH_BUILDING:
+            return
+        _LEAGUE_FRESH_CHECK[key] = now
+        _LEAGUE_FRESH_BUILDING.add(key)
+
+    def _run():
+        try:
+            fresh = get_rosters(platform, league_id, season) or []
+            if not fresh:
+                return  # a failed/empty fetch must never expire a good context
+            if _roster_sig({"rosters": fresh}) == cur_sig:
+                return  # unchanged — nothing to do
+            entry = DASHBOARD_CACHE.get(key)
+            if entry:
+                entry["ts"] = 0            # expire context; next read rebuilds
+                entry["page_html"] = {}
+            for page in ("dashboard", "activity", "teams", "graphs", "standings", "weekly"):
+                try:
+                    p = _page_html_tmp_path(platform, season, league_id, page)
+                    if os.path.exists(p):
+                        os.remove(p)
+                except Exception:
+                    pass
+            try:
+                from dashboard_services.archetype_engine import invalidate_league_caches
+                invalidate_league_caches(platform, league_id, season)
+            except Exception:
+                pass
+            logger.info("[freshness] rosters changed for %s/%s/%s — context expired",
+                        platform, season, league_id)
+        except Exception:
+            logger.debug("[freshness] roster check failed", exc_info=True)
+        finally:
+            with _LEAGUE_FRESH_LOCK:
+                _LEAGUE_FRESH_BUILDING.discard(key)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dict:
     key = _cache_key(platform, season, league_id)
     entry = DASHBOARD_CACHE.get(key)
@@ -10096,6 +10178,7 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
         ctx["viewer"] = get_viewer_session_for_league(
             ctx.get("users") or [], ctx.get("rosters") or []
         )
+        _maybe_check_roster_freshness(platform, league_id, season, key, _roster_sig(ctx))
         return ctx
 
     with _CTX_LOCKS_LOCK:
@@ -23875,13 +23958,15 @@ def api_playoff_odds():
 
         from data_building.simulate_playoff_odds import simulate_playoff_odds
         _sim_key2 = (platform, str(league_id), season)
+        _sim_sig2 = _roster_sig(ctx)
         _sim_cached2 = _PLAYOFF_SIM_CACHE.get(_sim_key2)
-        if _sim_cached2 and time.time() - _sim_cached2["ts"] < _PLAYOFF_SIM_CACHE_TTL:
+        if (_sim_cached2 and time.time() - _sim_cached2["ts"] < _PLAYOFF_SIM_CACHE_TTL
+                and _sim_cached2.get("sig") == _sim_sig2):
             odds = _sim_cached2["data"]
             _fresh_sim = False
         else:
             odds = simulate_playoff_odds(ctx, platform=platform)
-            _PLAYOFF_SIM_CACHE[_sim_key2] = {"data": odds, "ts": time.time()}
+            _PLAYOFF_SIM_CACHE[_sim_key2] = {"data": odds, "ts": time.time(), "sig": _sim_sig2}
             _fresh_sim = True
 
         settings           = ctx.get("league_settings") or {}
