@@ -46,6 +46,72 @@ def _ensure_table() -> None:
     _TABLE_READY = True
 
 
+def has_snapshot(league_id: str, season: int, kind: str, snap_date: str) -> bool:
+    """True if a snapshot already exists for this (league, season, kind, date).
+    Lets the seeder skip the expensive reconstruction once a baseline exists."""
+    try:
+        _ensure_table()
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM ranking_movement "
+                "WHERE league_id = %s AND season = %s AND kind = %s AND snap_date = %s "
+                "LIMIT 1",
+                (str(league_id), int(season), str(kind), str(snap_date)),
+            ).fetchone()
+        return bool(row)
+    except Exception:
+        return False
+
+
+def record_ranks_for_date(
+    league_id: str,
+    season: int,
+    kind: str,
+    ordered_roster_ids: List,
+    snap_date: str,
+    overwrite: bool = False,
+) -> bool:
+    """Write a ranking snapshot for a specific date (roster ids in ranked order).
+
+    Used by the daily seeder to lay down today's snapshot and to backfill a
+    *reconstructed* earlier-day baseline. With ``overwrite`` False (the default)
+    it writes only when no snapshot exists yet for that (league, season, kind,
+    date) — so a reconstructed baseline never clobbers a genuine one already
+    recorded. Returns True if it wrote. Best-effort."""
+    ordered = [str(r) for r in (ordered_roster_ids or []) if r is not None]
+    if not ordered:
+        return False
+    try:
+        _ensure_table()
+        with get_conn() as conn:
+            if not overwrite:
+                existing = conn.execute(
+                    "SELECT 1 FROM ranking_movement "
+                    "WHERE league_id = %s AND season = %s AND kind = %s AND snap_date = %s "
+                    "LIMIT 1",
+                    (str(league_id), int(season), str(kind), str(snap_date)),
+                ).fetchone()
+                if existing:
+                    return False
+            for rid, rk in ((r, i + 1) for i, r in enumerate(ordered)):
+                conn.execute(
+                    """
+                    INSERT INTO ranking_movement
+                        (league_id, season, kind, snap_date, roster_id, rank)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (league_id, season, kind, snap_date, roster_id)
+                    DO UPDATE SET rank = EXCLUDED.rank, created_at = NOW()
+                    """,
+                    (str(league_id), int(season), str(kind), str(snap_date), int(rid), int(rk)),
+                )
+        return True
+    except Exception:
+        import logging
+        logging.getLogger(__name__).debug(
+            "ranking_movement: record_ranks_for_date failed", exc_info=True)
+        return False
+
+
 def record_daily_and_movement(
     league_id: str,
     season: int,

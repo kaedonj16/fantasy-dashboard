@@ -191,6 +191,50 @@ def get_latest_snapshot_date(source: str = "model") -> Optional[str]:
     return str(row["latest_date"]) if row and row["latest_date"] else None
 
 
+def get_values_as_of(
+        as_of_date: str,
+        *,
+        source: str = "model",
+        league_type: str = "1qb",
+        league_size: int = 10,
+) -> dict:
+    """{player_id: value} from the most recent daily snapshot on or before
+    ``as_of_date`` — i.e. what every player was worth as of that date. Used to
+    value a reconstructed past roster with the values that actually applied then.
+    Returns {} when no snapshot exists at/*before* the date."""
+    try:
+        init_value_history_db()
+        col = _value_col(league_type, league_size)
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT MAX(as_of_date) AS d FROM player_value_history "
+                "WHERE source = %s AND as_of_date <= %s",
+                (source, as_of_date),
+            ).fetchone()
+            snap = row and row["d"]
+            if not snap:
+                return {}
+            rows = conn.execute(
+                f"SELECT player_id, COALESCE({col}, value) AS value "
+                f"FROM player_value_history WHERE source = %s AND as_of_date = %s",
+                (source, str(snap)),
+            ).fetchall()
+        out: dict = {}
+        for r in (rows or []):
+            try:
+                v = float(r["value"])
+            except (TypeError, ValueError):
+                continue
+            if v > 0:
+                out[str(r["player_id"])] = v
+        return out
+    except Exception:
+        import logging
+        logging.getLogger(__name__).debug(
+            "player_value_history: get_values_as_of failed", exc_info=True)
+        return {}
+
+
 def get_player_value_history(
         player_id: str,
         *,
