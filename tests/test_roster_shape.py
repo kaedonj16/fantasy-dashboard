@@ -38,8 +38,16 @@ def test_hero_rb_one_elite_back_then_wr():
 
 
 def test_te_premium_when_te_invested():
-    v = _pv(qb=[1200], rb=[2500, 1500], wr=[2500, 1500], te=[3000])
+    # TE is a genuine strength: high TE share AND at least matching the RB room
+    # (the tightened rule stops an RB-heavy team with one good TE from qualifying).
+    v = _pv(qb=[1200], rb=[1500], wr=[2500, 1500], te=[3000])
     assert roster_shape_label(v, is_sf=False) == "TE Premium"
+
+
+def test_rb_heavy_with_one_elite_te_is_not_te_premium():
+    # RB share exceeds TE share -> Robust RB build, not "TE Premium".
+    v = _pv(qb=[1000], rb=[3500, 2500], wr=[2000, 1500], te=[2800])
+    assert roster_shape_label(v, is_sf=False) == "Robust RB"
 
 
 def test_konami_code_only_in_superflex():

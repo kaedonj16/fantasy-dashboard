@@ -10,11 +10,23 @@ from contextlib import contextmanager
 from decimal import Decimal
 from typing import Iterator
 
-import psycopg
-
 logger = logging.getLogger(__name__)
-from psycopg.rows import dict_row
-from psycopg.types.json import set_json_dumps
+
+# psycopg is required to actually talk to the DB, but importing this module must
+# not fail without it — many pure-logic modules (and the CI base test suite)
+# import things that transitively pull in db.py without ever opening a
+# connection, and a hard import here would abort pytest collection for the whole
+# suite. Degrade to None; any real query path raises clearly at call time.
+try:
+    import psycopg
+    from psycopg.rows import dict_row
+    from psycopg.types.json import set_json_dumps
+    _PSYCOPG_AVAILABLE = True
+except Exception:  # pragma: no cover - driver missing (pure test / CI base env)
+    psycopg = None  # type: ignore
+    dict_row = None  # type: ignore
+    set_json_dumps = None  # type: ignore
+    _PSYCOPG_AVAILABLE = False
 
 # Connection pooling. A fresh psycopg.connect() per call pays TCP+TLS+auth +
 # an isolation-level round-trip to the remote Postgres on every query; with a
@@ -60,7 +72,8 @@ def _safe_json_dumps(obj) -> str:
 
 
 # Register globally so every Json() call in the application uses this encoder.
-set_json_dumps(_safe_json_dumps)
+if set_json_dumps is not None:
+    set_json_dumps(_safe_json_dumps)
 
 
 def get_database_url() -> str:
