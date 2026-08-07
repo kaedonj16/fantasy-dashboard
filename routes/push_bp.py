@@ -339,11 +339,19 @@ def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
         from pywebpush import webpush, WebPushException
         from dashboard_services.db import get_conn
         with get_conn() as _pconn:
-            # DISTINCT ON (endpoint): a device may have several league rows, but a
-            # global broadcast should reach each device only once.
+            # One send per person, not per subscription row. A user accumulates
+            # several endpoints on the same phone (Safari vs installed PWA,
+            # re-granting notifications, etc.) plus a row per league — all of
+            # which would each receive a copy. Collapse by owner_id (the
+            # signed-in user) so a global broadcast lands once; anonymous rows
+            # with no owner still de-dupe per endpoint. Newest row (id DESC) wins,
+            # so we send to the user's most recent subscription.
             rows = _pconn.execute(
-                "SELECT DISTINCT ON (endpoint) endpoint, p256dh, auth "
-                "FROM push_subscriptions ORDER BY endpoint"
+                "SELECT DISTINCT ON (dedupe_key) endpoint, p256dh, auth FROM ("
+                "  SELECT endpoint, p256dh, auth, id, "
+                "         COALESCE(NULLIF(owner_id, ''), 'ep:' || endpoint) AS dedupe_key "
+                "  FROM push_subscriptions"
+                ") s ORDER BY dedupe_key, id DESC"
             ).fetchall()
     except Exception as exc:
         logger.warning("[push] broadcast query failed: %s", exc)
