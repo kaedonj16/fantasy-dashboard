@@ -1594,6 +1594,7 @@
     lastLivePicks = null;
     _poServer = null; _poServerSig = null; _poFetching = false;   // drop cached playoff odds
     _poMcCache = null; _poMcSig = null;
+    _relCache = { sig: null, map: {} };   // drop reconstructed pool-relative scores
   }
   function toggleSim(){
     simPaused = !simPaused;
@@ -1944,6 +1945,69 @@
     if (!_psPoolMax || _psPoolMax <= 0) return ps;
     var d = Math.round(97 * ps / _psPoolMax);
     return d > 99 ? 99 : (d < 1 ? 1 : d);
+  }
+
+  // ── Pool-relative score for ALREADY-MADE picks (report card) ────────────────
+  // Mock/manual picks capture psRel at commit time. Synced (live) picks don't go
+  // through commitPick, so reconstruct each pick's "vs best available then" score
+  // from the draft order: for each pick, rebuild the pool as it stood (minus every
+  // player taken before it) and rank the pick's raw score against the best pick
+  // available at that slot. Computed once and cached per pick-set; anchored to the
+  // top players by value so it stays cheap on a full board.
+  var _relCache = { sig: null, map: {} };
+  function _relSig(){
+    var n = 0; Object.keys(state.picks).forEach(function(k){ if (state.picks[k]) n++; });
+    return n + '@' + state.current + '@' + (state.mode || '') + '@' + players.length;
+  }
+  function _pnOf(pl){
+    if (!pl || pl.id == null) return 0;
+    var found = 0;
+    Object.keys(state.picks).forEach(function(k){
+      if (state.picks[k] && String(state.picks[k].id) === String(pl.id)) found = parseInt(k, 10);
+    });
+    return found;
+  }
+  function _ensureRelScores(){
+    var sig = _relSig();
+    if (_relCache.sig === sig) return _relCache.map;
+    var map = {};
+    if (players.length){
+      var K = 60;   // anchor candidates: the best pick score is among top-value names
+      var byVal = players.slice().sort(function(a, b){ return valOf(b) - valOf(a); });
+      var order = Object.keys(state.picks).filter(function(k){ return state.picks[k]; })
+        .map(function(k){ return parseInt(k, 10); }).sort(function(a, b){ return a - b; });
+      var taken = {};
+      order.forEach(function(pn){
+        var pk = state.picks[pn];
+        var pkFull = playersById[String(pk.id)];
+        var cand = [], maxV = 0;
+        for (var i = 0; i < byVal.length && cand.length < K; i++){
+          var q = byVal[i]; if (taken[String(q.id)]) continue;
+          if (!cand.length) maxV = valOf(q);
+          cand.push(q);
+        }
+        if (pkFull && !cand.some(function(c){ return String(c.id) === String(pk.id); })) cand.push(pkFull);
+        var best = 0, mine = 0;
+        for (var j = 0; j < cand.length; j++){
+          var s = pickScore(cand[j], maxV, {}, { grading: true, pickNo: pn });
+          if (s != null){ if (s > best) best = s; if (String(cand[j].id) === String(pk.id)) mine = s; }
+        }
+        if (best > 0 && mine > 0){ var d = Math.round(97 * mine / best); map[pn] = d > 99 ? 99 : (d < 1 ? 1 : d); }
+        else if (pk.psRel != null){ map[pn] = pk.psRel; }
+        taken[String(pk.id)] = true;
+      });
+    }
+    _relCache = { sig: sig, map: map };
+    return map;
+  }
+  // Pool-relative score for a made pick: the commit-time capture (mock), else the
+  // reconstruction (synced), else the absolute score as a last resort.
+  function relPS(pl, pn){
+    if (pl && pl.psRel != null) return pl.psRel;
+    if (!pn) pn = _pnOf(pl);
+    var m = _ensureRelScores();
+    if (m[pn] != null) return m[pn];
+    return pl ? storedPickScore(pn, pl) : null;
   }
 
   // Per-render pickScore context: posTargets() and my above-replacement counts by
@@ -2630,7 +2694,7 @@
   }
   function slotRow(slot, p){
     if (p){
-      var _rsps = (p.psRel != null ? p.psRel : p.ps);
+      var _rsps = relPS(p);
       var psBadge = (_rsps != null) ? '<span class="dr-rslot-ps" style="color:' + psColor(_rsps) + '">' + _rsps + '</span>' : '';
       var pickLbl = pickNoStr(p);
       var _isDefSlot = String(p.position || '').toUpperCase() === 'DEF';
@@ -3345,7 +3409,7 @@
           }
           function _ldtlRow(slotLabel, p, pn){
             var pickRx = _pickRx(pn);
-            var _ps = (p && p.psRel != null) ? p.psRel : storedPickScore(pn, p);
+            var _ps = relPS(p, pn);
             var psRx = _ps != null ? '<span class="dr-sum-ldtl-ps" style="color:' + psColor(_ps) + '">' + _ps + '</span>' : '';
             return '<div class="dr-sum-ldtl-row">'
               + '<span class="dr-sum-ldtl-slot" style="background:' + slotColor(slotLabel) + '">' + esc(slotLabel) + '</span>'
@@ -3986,7 +4050,7 @@
     if (_own) h += '<span class="dr-cell-owner">' + esc(_own) + '</span>';
     if (pl){
       if (_cellShowPs) {
-        var _cvps = (pl.psRel != null) ? pl.psRel : storedPickScore(pn, pl);
+        var _cvps = relPS(pl, pn);
         if (_cvps != null) h += '<span class="dr-cell-val" style="color:' + psColor(_cvps) + '">' + _cvps + '</span>';
       } else {
         if (pl.val != null) h += '<span class="dr-cell-val">' + Math.round(pl.val) + '</span>';
@@ -4225,7 +4289,7 @@
         if (_ppgv != null){ sumProjTotal += _ppgv; sumProjCount++; }
         var _fp = playersById[String(p.id)] || p;
         var _t = tierOf(_fp); if (_t != null && _t <= 2) sumT12++;
-        var _psShown = (p.psRel != null ? p.psRel : p.ps);
+        var _psShown = relPS(p);
         if (_psShown != null){ sumAllPsTotal += _psShown; sumAllPsCount++; }
         if (_ssSet[String(p.id)] && _psShown != null){ sumStarterPsTotal += _psShown; sumStarterPsCount++; }
       });
@@ -4279,7 +4343,7 @@
       if (!p) return '<div class="dr-sum-row"><span class="dr-sum-slot-badge" style="background:' + slotColor(slot) + '">' + slot + '</span><span class="dr-sum-empty">open</span></div>';
       var _pn = (Object.keys(state.picks).filter(function(k){ return state.picks[k] && state.picks[k].id === p.id; }).map(function(k){ return parseInt(k,10); })[0]) || 0;
       var pickStr = _pn ? (function(){ var _rd = Math.ceil(_pn/state.teams); var _pp = _pn - (_rd-1)*state.teams; return 'Pick ' + _rd + '.' + (_pp < 10 ? '0'+_pp : String(_pp)); })() : '';
-      var _rowps = (p.psRel != null ? p.psRel : p.ps);
+      var _rowps = relPS(p, _pn);
       var psStr = (_rowps != null) ? '<span class="dr-sum-ps" style="color:' + psColor(_rowps) + '">' + _rowps + '</span>' : '';
       return '<div class="dr-sum-row">'
         + '<span class="dr-sum-slot-badge" style="background:' + slotColor(slot) + '">' + slot + '</span>'
