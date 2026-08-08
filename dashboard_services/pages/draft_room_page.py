@@ -285,15 +285,16 @@ _DRAFT_ROOM_HTML = r"""
                  mis-anchors inside the transformed mobile sheet). data-val holds
                  the current sort; renderBA reads it. -->
             <div class="dr-sortsel" id="drBaSortUI">
-              <button type="button" class="dr-sortsel-btn" id="drBaSortBtn" data-val="adp" aria-haspopup="listbox" aria-expanded="false">
-                <span id="drBaSortLbl">ADP</span>
+              <button type="button" class="dr-sortsel-btn" id="drBaSortBtn" data-val="ps" aria-haspopup="listbox" aria-expanded="false">
+                <span id="drBaSortLbl">Pick Score</span>
                 <svg class="dr-sortsel-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
               </button>
               <div class="dr-sortsel-menu" id="drBaSortMenu" role="listbox" hidden>
+                <button type="button" class="dr-sortsel-opt" role="option" data-val="ps">Pick Score</button>
                 <button type="button" class="dr-sortsel-opt" role="option" data-val="value">Value</button>
+                <button type="button" class="dr-sortsel-opt" role="option" data-val="ppg">Proj PPG</button>
                 <button type="button" class="dr-sortsel-opt" role="option" data-val="adp">ADP</button>
                 <button type="button" class="dr-sortsel-opt" role="option" data-val="steals">Steals</button>
-                <button type="button" class="dr-sortsel-opt" role="option" data-val="ps">Pick Score</button>
               </div>
             </div>
             <input id="drSearch" type="search" placeholder="Search…" autocomplete="off">

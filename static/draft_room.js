@@ -4194,7 +4194,7 @@
   function renderBA(){
     syncAdpSourceSelector();
     var _sortEl = document.getElementById('drBaSortBtn');
-    var sortBy = (_sortEl && _sortEl.getAttribute('data-val')) || 'adp';
+    var sortBy = (_sortEl && _sortEl.getAttribute('data-val')) || 'ps';
     var q = (document.getElementById('drSearch').value || '').trim().toLowerCase();
     var pool = availablePool().filter(function(p){
       if (posFilter !== 'ALL' && String(p.position||'').toUpperCase() !== posFilter) return false;
@@ -4217,6 +4217,7 @@
       }
       if (sortBy === 'steals'){ return steal(b) - steal(a); }
       if (sortBy === 'ps'){ return (b._ps || 0) - (a._ps || 0); }
+      if (sortBy === 'ppg'){ return (ppgOf(b) || 0) - (ppgOf(a) || 0); }
       return valOf(b) - valOf(a);
     });
     if (!pool.length){ listInto('<div class="dr-empty-note">No players match.</div>'); return; }
@@ -4227,6 +4228,28 @@
     var _isKD = function(p){ var pos = String(p.position||'').toUpperCase(); return pos === 'K' || pos === 'DEF'; };
     var mainPool = (posFilter === 'ALL' && wantsKDef()) ? pool.filter(function(p){ return !_isKD(p); }) : pool;
     var kdPool  = (posFilter === 'ALL' && wantsKDef()) ? pool.filter(_isKD) : [];
+    // Late-round K/DEF nudge: K/DEF are ungraded and normally sit at the very
+    // bottom, so they'd never read as a suggestion. Once a required K/DEF slot
+    // must be filled soon (few picks left, or the last few rounds), surface the
+    // best available one at the TOP with a reason so it actually gets drafted.
+    var _promoted = [];
+    if (posFilter === 'ALL' && wantsKDef() && kdPool.length && hasOwned()){
+      var _rs = (state && state.roster) || defaultRoster();
+      var _mc = myPosCounts();
+      var _needK = Math.max(0, (_rs.K || 0) - (_mc.K || 0));
+      var _needDef = Math.max(0, (_rs.DEF || 0) - (_mc.DEF || 0));
+      var _remainPicks = upcomingOwnedPicks().length;
+      var _remainRds = (state.rounds || 0) - Math.floor((state.current - 1) / (state.teams || 12));
+      var _kdefTime = (_needK + _needDef) > 0 && (_remainPicks <= (_needK + _needDef) + 2 || _remainRds <= 3);
+      if (_kdefTime){
+        if (_needK > 0){ var _bk = kdPool.filter(function(p){ return String(p.position).toUpperCase() === 'K'; })[0]; if (_bk) _promoted.push(_bk); }
+        if (_needDef > 0){ var _bd = kdPool.filter(function(p){ return String(p.position).toUpperCase() === 'DEF'; })[0]; if (_bd) _promoted.push(_bd); }
+        kdPool = kdPool.filter(function(p){ return _promoted.indexOf(p) < 0; });
+      }
+    }
+    _promoted.forEach(function(p){
+      html += playerRowHtml(p, { reason: 'Fill your ' + String(p.position || '').toUpperCase() + ' slot before the draft ends' });
+    });
     for (var i = 0; i < Math.min(mainPool.length, 200); i++){
       var p = mainPool[i];
       var opts = {};
@@ -5009,9 +5032,9 @@
     var menu = document.getElementById('drBaSortMenu');
     var lbl = document.getElementById('drBaSortLbl');
     if (!ui || !btn || !menu || !lbl) return;
-    var LABELS = { value: 'Value', adp: 'ADP', steals: 'Steals', ps: 'Pick Score' };
+    var LABELS = { value: 'Value', adp: 'ADP', steals: 'Steals', ps: 'Pick Score', ppg: 'Proj PPG' };
     var opts = menu.querySelectorAll('.dr-sortsel-opt');
-    var cur = btn.getAttribute('data-val') || 'adp';
+    var cur = btn.getAttribute('data-val') || 'ps';
     function apply(v){
       cur = v;
       btn.setAttribute('data-val', v);
