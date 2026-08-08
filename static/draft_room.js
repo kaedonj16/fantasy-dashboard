@@ -1592,6 +1592,9 @@
     _boardSig = null;
     _summaryShown = false;
     lastLivePicks = null;
+    _poServer = null; _poServerSig = null; _poFetching = false;   // drop cached playoff odds
+    _poMcCache = null; _poMcSig = null;
+    _relCache = { sig: null, map: {} };   // drop reconstructed pool-relative scores
   }
   function toggleSim(){
     simPaused = !simPaused;
@@ -1913,6 +1916,100 @@
     return clamp01((v - sc.repl) / span);
   }
 
+  // ── Board Pick Score display scale ──────────────────────────────────────────
+  // The board shows Pick Score RELATIVE to the best pick currently AVAILABLE, not
+  // on the whole-draft absolute scale. So a strong pick late in the draft reads
+  // well (the best remaining option anchors near the top) instead of being buried
+  // just because the board is picked over. This is display-only: the report-card
+  // grade keeps the absolute, round-weighted score (it recomputes with
+  // grading:true), so grades stay accurate and comparable across the draft.
+  var _psPoolMax = 0;   // best raw pick score currently available; refreshed each render
+  // Recompute p._ps for every available player (one shared pass) and return the
+  // highest, which anchors the display scale.
+  function refreshPsPool(){
+    var pool = availablePool();
+    var counts = myPosCounts();
+    var maxV = 0; pool.forEach(function(p){ var v = valOf(p); if (v > maxV) maxV = v; });
+    var mx = 0;
+    pool.forEach(function(p){
+      var s = pickScore(p, maxV, counts);
+      p._ps = s;
+      if (s != null && s > mx) mx = s;
+    });
+    _psPoolMax = mx;
+    return mx;
+  }
+  // Map a raw pick score onto the pool-relative display scale (best available -> ~97).
+  function psDisplay(ps){
+    if (ps == null) return null;
+    if (!_psPoolMax || _psPoolMax <= 0) return ps;
+    var d = Math.round(97 * ps / _psPoolMax);
+    return d > 99 ? 99 : (d < 1 ? 1 : d);
+  }
+
+  // ── Pool-relative score for ALREADY-MADE picks (report card) ────────────────
+  // Mock/manual picks capture psRel at commit time. Synced (live) picks don't go
+  // through commitPick, so reconstruct each pick's "vs best available then" score
+  // from the draft order: for each pick, rebuild the pool as it stood (minus every
+  // player taken before it) and rank the pick's raw score against the best pick
+  // available at that slot. Computed once and cached per pick-set; anchored to the
+  // top players by value so it stays cheap on a full board.
+  var _relCache = { sig: null, map: {} };
+  function _relSig(){
+    var n = 0; Object.keys(state.picks).forEach(function(k){ if (state.picks[k]) n++; });
+    return n + '@' + state.current + '@' + (state.mode || '') + '@' + players.length;
+  }
+  function _pnOf(pl){
+    if (!pl || pl.id == null) return 0;
+    var found = 0;
+    Object.keys(state.picks).forEach(function(k){
+      if (state.picks[k] && String(state.picks[k].id) === String(pl.id)) found = parseInt(k, 10);
+    });
+    return found;
+  }
+  function _ensureRelScores(){
+    var sig = _relSig();
+    if (_relCache.sig === sig) return _relCache.map;
+    var map = {};
+    if (players.length){
+      var K = 60;   // anchor candidates: the best pick score is among top-value names
+      var byVal = players.slice().sort(function(a, b){ return valOf(b) - valOf(a); });
+      var order = Object.keys(state.picks).filter(function(k){ return state.picks[k]; })
+        .map(function(k){ return parseInt(k, 10); }).sort(function(a, b){ return a - b; });
+      var taken = {};
+      order.forEach(function(pn){
+        var pk = state.picks[pn];
+        var pkFull = playersById[String(pk.id)];
+        var cand = [], maxV = 0;
+        for (var i = 0; i < byVal.length && cand.length < K; i++){
+          var q = byVal[i]; if (taken[String(q.id)]) continue;
+          if (!cand.length) maxV = valOf(q);
+          cand.push(q);
+        }
+        if (pkFull && !cand.some(function(c){ return String(c.id) === String(pk.id); })) cand.push(pkFull);
+        var best = 0, mine = 0;
+        for (var j = 0; j < cand.length; j++){
+          var s = pickScore(cand[j], maxV, {}, { grading: true, pickNo: pn });
+          if (s != null){ if (s > best) best = s; if (String(cand[j].id) === String(pk.id)) mine = s; }
+        }
+        if (best > 0 && mine > 0){ var d = Math.round(97 * mine / best); map[pn] = d > 99 ? 99 : (d < 1 ? 1 : d); }
+        else if (pk.psRel != null){ map[pn] = pk.psRel; }
+        taken[String(pk.id)] = true;
+      });
+    }
+    _relCache = { sig: sig, map: map };
+    return map;
+  }
+  // Pool-relative score for a made pick: the commit-time capture (mock), else the
+  // reconstruction (synced), else the absolute score as a last resort.
+  function relPS(pl, pn){
+    if (pl && pl.psRel != null) return pl.psRel;
+    if (!pn) pn = _pnOf(pl);
+    var m = _ensureRelScores();
+    if (m[pn] != null) return m[pn];
+    return pl ? storedPickScore(pn, pl) : null;
+  }
+
   // Per-render pickScore context: posTargets() and my above-replacement counts by
   // position are identical for every player scored in a pass, so compute them once
   // instead of re-running posTargets() + a full myPicksList() scan inside pickScore
@@ -2155,7 +2252,8 @@
       var vor = p.vorp != null ? Number(p.vorp) : vorOf(p);
       var ovor = other.vorp != null ? Number(other.vorp) : vorOf(other);
       var vorLbl = (p.vorp != null || other.vorp != null) ? 'VORP' : 'VOR';
-      var ps = pickScoreFor(p), ops = pickScoreFor(other);
+      var ps = psDisplay(p._ps != null ? p._ps : pickScoreFor(p));
+      var ops = psDisplay(other._ps != null ? other._ps : pickScoreFor(other));
       var v = valOf(p), ov = valOf(other);
       var t = tierOf(p), ot = tierOf(other);
       var ppg = p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null);
@@ -2330,7 +2428,9 @@
   function playerRowHtml(p, opts){
     opts = opts || {};
     var adp = adpOf(p);
-    var ps = pickScoreFor(p);
+    // Pool-relative display score (best available -> ~97). Uses the shared per-
+    // render p._ps when present (refreshPsPool), else computes on the fly.
+    var ps = psDisplay(p._ps != null ? p._ps : pickScoreFor(p));
     var sub = adp != null ? 'ADP ' + Number(adp).toFixed(1) : '';
     var reasonLine = opts.reason ? '<div class="dr-ba-reason">' + esc(opts.reason) + '</div>' : '';
     var waitLine = opts.wait
@@ -2410,6 +2510,7 @@
     _ppgScale = computePpgScale(players);
     psCtxInvalidate();
     draftModelInvalidate();   // re-learn reach/slide/run tendencies from the latest board
+    refreshPsPool();          // anchor the pool-relative Pick Score display scale
     var kdef = wantsKDef();
     var kbtns = document.querySelectorAll('.dr-pos-kdef');
     for (var i = 0; i < kbtns.length; i++){ kbtns[i].style.display = kdef ? '' : 'none'; }
@@ -2593,7 +2694,8 @@
   }
   function slotRow(slot, p){
     if (p){
-      var psBadge = (p.ps != null) ? '<span class="dr-rslot-ps" style="color:' + psColor(p.ps) + '">' + p.ps + '</span>' : '';
+      var _rsps = relPS(p);
+      var psBadge = (_rsps != null) ? '<span class="dr-rslot-ps" style="color:' + psColor(_rsps) + '">' + _rsps + '</span>' : '';
       var pickLbl = pickNoStr(p);
       var _isDefSlot = String(p.position || '').toUpperCase() === 'DEF';
       return '<div class="dr-rslot">'
@@ -2614,6 +2716,112 @@
   // ── Draft grade / roster strength ───────────────────────────────────────────
   // Projected PPG (upcoming season) preferred; last-season actual as fallback.
   function ppgOf(p){ return (p && p.proj_ppg != null) ? Number(p.proj_ppg) : ((p && p.ppg != null) ? Number(p.ppg) : null); }
+
+  // ── Projected playoff odds (completed draft only) ───────────────────────────
+  // Once every team has a full roster we can project each team's season from its
+  // drafted strength. Team strength = projected points of its optimal starting
+  // lineup; a light Monte Carlo plays random weekly matchups (score ~ Normal(
+  // strength, week-to-week sigma)), ranks by record (points break ties), and
+  // counts how often each team lands in a playoff seed. It's a rough projection,
+  // not a real season sim (there's no schedule in a draft), so it's labeled as
+  // odds and only shown when the draft is over.
+  function _gauss(){
+    var u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+  function _teamStrengthPPG(picksList){
+    var ol = optimalLineup(picksList);
+    var s = 0;
+    ol.starters.forEach(function(x){ if (x.p){ var v = lineupScore(x.p); if (isFinite(v) && v > 0) s += v; } });
+    return s;
+  }
+  var _poMcCache = null, _poMcSig = null;
+  // allTeams: gradeAllTeams() output; each entry has .slot and .picks[{pn,p}].
+  // Returns { slot: oddsPct }.
+  function playoffOddsBySlot(allTeams){
+    var sig = allTeams.map(function(t){ return t.slot + ':' + (t.picks ? t.picks.length : 0); }).join('|') + '@' + state.current;
+    if (_poMcCache && _poMcSig === sig) return _poMcCache;
+    var teams = allTeams.map(function(t){
+      var picks = (t.picks || []).map(function(x){ return x.p; }).filter(Boolean);
+      return { slot: t.slot, S: _teamStrengthPPG(picks) };
+    });
+    var n = teams.length;
+    var odds = {};
+    teams.forEach(function(t){ odds[t.slot] = 0; });
+    if (n >= 2){
+      var spots = n <= 8 ? 4 : 6;
+      if (spots >= n) spots = Math.max(1, n - 1);
+      var W = 14, N = 2500, sigma = 27;
+      for (var s = 0; s < N; s++){
+        var wins = [], pts = [];
+        for (var t = 0; t < n; t++){ wins[t] = 0; pts[t] = 0; }
+        for (var w = 0; w < W; w++){
+          var idx = []; for (var q = 0; q < n; q++) idx[q] = q;
+          for (var i = idx.length - 1; i > 0; i--){ var j = (Math.random() * (i + 1)) | 0; var tmp = idx[i]; idx[i] = idx[j]; idx[j] = tmp; }
+          for (var k = 0; k + 1 < idx.length; k += 2){
+            var a = idx[k], b = idx[k + 1];
+            var sa = teams[a].S + _gauss() * sigma;
+            var sb = teams[b].S + _gauss() * sigma;
+            pts[a] += sa; pts[b] += sb;
+            if (sa >= sb) wins[a]++; else wins[b]++;
+          }
+        }
+        var ord = []; for (var o = 0; o < n; o++) ord[o] = o;
+        ord.sort(function(x, y){ return (wins[y] - wins[x]) || (pts[y] - pts[x]); });
+        for (var r = 0; r < spots; r++){ odds[teams[ord[r]].slot] += 1; }
+      }
+      teams.forEach(function(t){ odds[t.slot] = Math.round(odds[t.slot] / N * 100); });
+    }
+    _poMcCache = odds; _poMcSig = sig;
+    return odds;
+  }
+  function _poColor(po){ return po >= 60 ? '#22c55e' : po >= 35 ? '#f59e0b' : '#ef4444'; }
+  function _draftComplete(){ return !!state && (!!state.isComplete || state.current > (state.teams || 12) * (state.rounds || 0)); }
+
+  // Server-computed playoff odds - the SAME engine the standings page uses
+  // (simulate_playoff_odds, preseason mode). Populated asynchronously once the
+  // draft is complete; playoffOddsBySlot() above is the instant fallback shown
+  // until this returns (or if the call fails).
+  var _poServer = null, _poServerSig = null, _poFetching = false;
+  function _poSig(allTeams){ return allTeams.map(function(t){ return t.slot + ':' + (t.picks ? t.picks.length : 0); }).join('|') + '@' + state.current; }
+  function refreshServerPlayoffOdds(allTeams){
+    if (!_draftComplete() || !allTeams || allTeams.length < 2) return;
+    var sig = _poSig(allTeams);
+    if (_poFetching || (_poServer && _poServerSig === sig)) return;
+    _poFetching = true;
+    var _sc = scoringCfg();
+    var payload = {
+      season: state.season || 0,
+      ppr: (_sc && _sc.ppr != null) ? _sc.ppr : 1,
+      roster: (state && state.roster) || defaultRoster(),
+      playoff_teams: (state.teams && state.teams <= 8) ? 4 : 6,
+      teams: allTeams.map(function(t){
+        return { slot: t.slot, name: t.name,
+          players: (t.picks || []).map(function(x){ return (x.p && x.p.id != null) ? String(x.p.id) : null; }).filter(Boolean) };
+      })
+    };
+    fetch('/api/draft-playoff-odds', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      .then(function(r){ return r.json(); })
+      .then(function(resp){
+        _poFetching = false;
+        if (resp && resp.odds && resp.odds.length){
+          var m = {};
+          resp.odds.forEach(function(o){ if (o.slot != null) m[o.slot] = Math.round(o.playoff_pct); });
+          _poServer = m; _poServerSig = sig;
+          if (sideTab === 'league') renderSide();   // repaint the league tab with the thorough odds
+        }
+      })
+      .catch(function(){ _poFetching = false; });
+  }
+  // Odds source for display: the server engine when it's ready for this exact
+  // board, else the instant JS estimate (and kick off the server fetch).
+  function playoffOddsSource(allTeams){
+    refreshServerPlayoffOdds(allTeams);
+    if (_poServer && _poServerSig === _poSig(allTeams)) return _poServer;
+    return playoffOddsBySlot(allTeams);
+  }
   function gradeTeam(){
     if (!hasOwned()) return null;
     // Pull "your" grade from the full field so the relative-to-league curve matches
@@ -3134,6 +3342,9 @@
       return;
     }
     var _rc = ['gold','silver','bronze'];
+    // Projected playoff odds per team - only once the draft is complete.
+    var _leagueDone = _draftComplete();
+    var _poOdds = _leagueDone ? playoffOddsSource(allTeams) : {};
     var html = '<div class="dr-league-body">' + _draftRecapHtml(allTeams)
       + '<p class="dr-recap-h dr-recap-grades-h">' + _RECAP_IC.trophy + 'Draft grades</p><div class="dr-sum-league">';
     allTeams.forEach(function(t, i){
@@ -3155,10 +3366,16 @@
         var _sl = stratLabel(state.simStrats[t.slot]);
         if (_sl) stratTag = '<span class="dr-strat-tag">' + _sl + '</span>';
       }
+      var poTag = '';
+      if (_leagueDone && _poOdds[t.slot] != null){
+        poTag = '<span class="dr-sum-lpo" style="color:' + _poColor(_poOdds[t.slot]) + '" title="Projected playoff odds">'
+          + _poOdds[t.slot] + '%</span>';
+      }
       html += '<div class="dr-sum-lrow' + (t.isMe ? ' is-me' : '') + '" data-legslot="' + t.slot + '">'
         + rankCell
         + '<span class="dr-sum-lname">' + esc(t.name) + stratTag + '</span>'
         + winTag
+        + poTag
         + '<span class="dr-sum-lgrade" style="color:' + tCol + '">' + gradeLetter(t.grade.score) + '</span>'
         + '<span class="dr-sum-lchev">&#9660;</span>'
         + '</div>'
@@ -3192,7 +3409,7 @@
           }
           function _ldtlRow(slotLabel, p, pn){
             var pickRx = _pickRx(pn);
-            var _ps = storedPickScore(pn, p);
+            var _ps = relPS(p, pn);
             var psRx = _ps != null ? '<span class="dr-sum-ldtl-ps" style="color:' + psColor(_ps) + '">' + _ps + '</span>' : '';
             return '<div class="dr-sum-ldtl-row">'
               + '<span class="dr-sum-ldtl-slot" style="background:' + slotColor(slotLabel) + '">' + esc(slotLabel) + '</span>'
@@ -3833,7 +4050,7 @@
     if (_own) h += '<span class="dr-cell-owner">' + esc(_own) + '</span>';
     if (pl){
       if (_cellShowPs) {
-        var _cvps = storedPickScore(pn, pl);
+        var _cvps = relPS(pl, pn);
         if (_cvps != null) h += '<span class="dr-cell-val" style="color:' + psColor(_cvps) + '">' + _cvps + '</span>';
       } else {
         if (pl.val != null) h += '<span class="dr-cell-val">' + Math.round(pl.val) + '</span>';
@@ -3939,11 +4156,9 @@
       return true;
     });
     function steal(p){ var a = adpOf(p); return (a != null) ? (state.current - a) : -99999; }
-    if (sortBy === 'ps'){
-      var _pcounts = myPosCounts();
-      var _pmaxV = 0; pool.forEach(function(p){ var v = valOf(p); if (v > _pmaxV) _pmaxV = v; });
-      pool.forEach(function(p){ p._ps = pickScore(p, _pmaxV, _pcounts); });
-    }
+    // p._ps + the pool-relative scale are refreshed in renderSide; ensure they
+    // exist for any path that reaches renderBA directly (search/sort handlers).
+    if (_psPoolMax <= 0) refreshPsPool();
     pool.sort(function(a, b){
       // K/DEF have no value/ADP/PS - order them among themselves by projected PPG
       // so the best kicker/defense still surfaces first regardless of sort mode.
@@ -3994,7 +4209,7 @@
   // ── Glossary / inline term explainers ───────────────────────────────────────
   // Single source of truth so the inline ⓘ tooltips and the help popover agree.
   var _GLOSSARY = [
-    { term: 'Pick Score (PS)', def: 'A 0-100 grade of how good this pick is at this exact slot. Blends the player’s value, how far they fell vs ADP, positional tier, your roster needs, age, and projected points. Late-round scores are re-scaled so a strong slider isn’t buried. Kickers and defenses aren’t scored.' },
+    { term: 'Pick Score (PS)', def: 'A 0-100 grade of how good this pick is relative to what’s still available right now — the best remaining option anchors near the top, so a strong pick reads well even late in the draft. Blends the player’s value, how far they fell vs ADP, positional tier, your roster needs, age, and projected points. Your report-card grade uses the absolute, round-weighted version, so it can differ from the board number. Kickers and defenses aren’t scored.' },
     { term: 'Value', def: 'The player’s trade value as an asset on a 0-999 scale - dynasty value for startup/rookie drafts, redraft value for redraft.' },
     { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a replacement-level starter at their position (a fixed, preseason-style baseline). VORP uses real fantasy points; VOR uses dynasty value.' },
     { term: 'ADP', def: 'Average Draft Position - the typical overall pick a player goes at in real drafts. If it’s below your current pick, they’ve fallen and may be a value.' },
@@ -4074,8 +4289,9 @@
         if (_ppgv != null){ sumProjTotal += _ppgv; sumProjCount++; }
         var _fp = playersById[String(p.id)] || p;
         var _t = tierOf(_fp); if (_t != null && _t <= 2) sumT12++;
-        if (p.ps != null){ sumAllPsTotal += p.ps; sumAllPsCount++; }
-        if (_ssSet[String(p.id)] && p.ps != null){ sumStarterPsTotal += p.ps; sumStarterPsCount++; }
+        var _psShown = relPS(p);
+        if (_psShown != null){ sumAllPsTotal += _psShown; sumAllPsCount++; }
+        if (_ssSet[String(p.id)] && _psShown != null){ sumStarterPsTotal += _psShown; sumStarterPsCount++; }
       });
       var _sits = [];
       if (sumProjCount >= 2) _sits.push({ v: sumProjTotal.toFixed(1), l: 'Proj PPG' });
@@ -4084,6 +4300,15 @@
         if (sumAllPsCount >= 1) _sits.push({ v: Math.round(sumAllPsTotal / sumAllPsCount), l: 'Avg PS' });
       } else {
         if (sumStarterPsCount >= 2) _sits.push({ v: Math.round(sumStarterPsTotal / sumStarterPsCount), l: 'Starter PS' });
+      }
+      // Projected playoff odds for this team - only once the draft is complete.
+      if (_draftComplete()){
+        var _allT = gradeAllTeams(), _meT = null;
+        for (var _ti = 0; _ti < _allT.length; _ti++){ if (_allT[_ti].isMe){ _meT = _allT[_ti]; break; } }
+        if (_meT){
+          var _myOdds = playoffOddsSource(_allT)[_meT.slot];
+          if (_myOdds != null) _sits.push({ v: _myOdds + '%', l: 'Playoff Odds' });
+        }
       }
       if (_sits.length){
         statsHtml = '<div class="dr-sum-stats">';
@@ -4118,7 +4343,8 @@
       if (!p) return '<div class="dr-sum-row"><span class="dr-sum-slot-badge" style="background:' + slotColor(slot) + '">' + slot + '</span><span class="dr-sum-empty">open</span></div>';
       var _pn = (Object.keys(state.picks).filter(function(k){ return state.picks[k] && state.picks[k].id === p.id; }).map(function(k){ return parseInt(k,10); })[0]) || 0;
       var pickStr = _pn ? (function(){ var _rd = Math.ceil(_pn/state.teams); var _pp = _pn - (_rd-1)*state.teams; return 'Pick ' + _rd + '.' + (_pp < 10 ? '0'+_pp : String(_pp)); })() : '';
-      var psStr = (p.ps != null) ? '<span class="dr-sum-ps" style="color:' + psColor(p.ps) + '">' + p.ps + '</span>' : '';
+      var _rowps = relPS(p, _pn);
+      var psStr = (_rowps != null) ? '<span class="dr-sum-ps" style="color:' + psColor(_rowps) + '">' + _rowps + '</span>' : '';
       return '<div class="dr-sum-row">'
         + '<span class="dr-sum-slot-badge" style="background:' + slotColor(slot) + '">' + slot + '</span>'
         + '<img class="dr-sum-hs" src="' + playerImgUrl(p) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
@@ -4283,9 +4509,15 @@
     // draft never freezes. Score/reason are cosmetic and default to empty.
     var ps = null;
     try { ps = pickScoreFor(p); } catch (e){ _simError('score pick', e); }
+    // Pool-relative score captured at the moment of the pick (the pool then = what
+    // was still on the board), so the report card can show each pick "vs the best
+    // still available" - the same scale as the live board. Absolute ps is kept for
+    // the round-weighted grade.
+    var psRel = null;
+    try { psRel = psDisplay(ps); } catch (e){ psRel = null; }
     var reason = '';
     try { reason = pickReason(p, myPosCounts()); } catch (e){ reason = ''; }
-    state.picks[pn] = { id: p.id, name: p.name, position: p.position, team: p.team, val: Math.round(valOf(p)), ps: ps, reason: reason };
+    state.picks[pn] = { id: p.id, name: p.name, position: p.position, team: p.team, val: Math.round(valOf(p)), ps: ps, psRel: psRel, reason: reason };
     drafted[String(p.id)] = true;
     justPick = pn;
     state.current++;
@@ -4495,7 +4727,7 @@
   }
   function openPreview(id){
     var p = playersById[String(id)]; if (!p) return;
-    var adp = adpOf(p), t = tierOf(p), ps = pickScoreFor(p);
+    var adp = adpOf(p), t = tierOf(p), ps = psDisplay(p._ps != null ? p._ps : pickScoreFor(p));
     var posRank = state.sf ? (p.sf_pos_rank_label || '') : (p.pos_rank_label || '');
     var adpGap = (adp != null) ? (state.current - adp) : null;
     var vsAdp = adpGap != null ? (adpGap >= 0 ? ('+' + Math.round(adpGap)) : String(Math.round(adpGap))) : '-';
