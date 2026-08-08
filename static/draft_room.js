@@ -1913,6 +1913,37 @@
     return clamp01((v - sc.repl) / span);
   }
 
+  // ── Board Pick Score display scale ──────────────────────────────────────────
+  // The board shows Pick Score RELATIVE to the best pick currently AVAILABLE, not
+  // on the whole-draft absolute scale. So a strong pick late in the draft reads
+  // well (the best remaining option anchors near the top) instead of being buried
+  // just because the board is picked over. This is display-only: the report-card
+  // grade keeps the absolute, round-weighted score (it recomputes with
+  // grading:true), so grades stay accurate and comparable across the draft.
+  var _psPoolMax = 0;   // best raw pick score currently available; refreshed each render
+  // Recompute p._ps for every available player (one shared pass) and return the
+  // highest, which anchors the display scale.
+  function refreshPsPool(){
+    var pool = availablePool();
+    var counts = myPosCounts();
+    var maxV = 0; pool.forEach(function(p){ var v = valOf(p); if (v > maxV) maxV = v; });
+    var mx = 0;
+    pool.forEach(function(p){
+      var s = pickScore(p, maxV, counts);
+      p._ps = s;
+      if (s != null && s > mx) mx = s;
+    });
+    _psPoolMax = mx;
+    return mx;
+  }
+  // Map a raw pick score onto the pool-relative display scale (best available -> ~97).
+  function psDisplay(ps){
+    if (ps == null) return null;
+    if (!_psPoolMax || _psPoolMax <= 0) return ps;
+    var d = Math.round(97 * ps / _psPoolMax);
+    return d > 99 ? 99 : (d < 1 ? 1 : d);
+  }
+
   // Per-render pickScore context: posTargets() and my above-replacement counts by
   // position are identical for every player scored in a pass, so compute them once
   // instead of re-running posTargets() + a full myPicksList() scan inside pickScore
@@ -2155,7 +2186,8 @@
       var vor = p.vorp != null ? Number(p.vorp) : vorOf(p);
       var ovor = other.vorp != null ? Number(other.vorp) : vorOf(other);
       var vorLbl = (p.vorp != null || other.vorp != null) ? 'VORP' : 'VOR';
-      var ps = pickScoreFor(p), ops = pickScoreFor(other);
+      var ps = psDisplay(p._ps != null ? p._ps : pickScoreFor(p));
+      var ops = psDisplay(other._ps != null ? other._ps : pickScoreFor(other));
       var v = valOf(p), ov = valOf(other);
       var t = tierOf(p), ot = tierOf(other);
       var ppg = p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null);
@@ -2330,7 +2362,9 @@
   function playerRowHtml(p, opts){
     opts = opts || {};
     var adp = adpOf(p);
-    var ps = pickScoreFor(p);
+    // Pool-relative display score (best available -> ~97). Uses the shared per-
+    // render p._ps when present (refreshPsPool), else computes on the fly.
+    var ps = psDisplay(p._ps != null ? p._ps : pickScoreFor(p));
     var sub = adp != null ? 'ADP ' + Number(adp).toFixed(1) : '';
     var reasonLine = opts.reason ? '<div class="dr-ba-reason">' + esc(opts.reason) + '</div>' : '';
     var waitLine = opts.wait
@@ -2410,6 +2444,7 @@
     _ppgScale = computePpgScale(players);
     psCtxInvalidate();
     draftModelInvalidate();   // re-learn reach/slide/run tendencies from the latest board
+    refreshPsPool();          // anchor the pool-relative Pick Score display scale
     var kdef = wantsKDef();
     var kbtns = document.querySelectorAll('.dr-pos-kdef');
     for (var i = 0; i < kbtns.length; i++){ kbtns[i].style.display = kdef ? '' : 'none'; }
@@ -3939,11 +3974,9 @@
       return true;
     });
     function steal(p){ var a = adpOf(p); return (a != null) ? (state.current - a) : -99999; }
-    if (sortBy === 'ps'){
-      var _pcounts = myPosCounts();
-      var _pmaxV = 0; pool.forEach(function(p){ var v = valOf(p); if (v > _pmaxV) _pmaxV = v; });
-      pool.forEach(function(p){ p._ps = pickScore(p, _pmaxV, _pcounts); });
-    }
+    // p._ps + the pool-relative scale are refreshed in renderSide; ensure they
+    // exist for any path that reaches renderBA directly (search/sort handlers).
+    if (_psPoolMax <= 0) refreshPsPool();
     pool.sort(function(a, b){
       // K/DEF have no value/ADP/PS - order them among themselves by projected PPG
       // so the best kicker/defense still surfaces first regardless of sort mode.
@@ -3994,7 +4027,7 @@
   // ── Glossary / inline term explainers ───────────────────────────────────────
   // Single source of truth so the inline ⓘ tooltips and the help popover agree.
   var _GLOSSARY = [
-    { term: 'Pick Score (PS)', def: 'A 0-100 grade of how good this pick is at this exact slot. Blends the player’s value, how far they fell vs ADP, positional tier, your roster needs, age, and projected points. Late-round scores are re-scaled so a strong slider isn’t buried. Kickers and defenses aren’t scored.' },
+    { term: 'Pick Score (PS)', def: 'A 0-100 grade of how good this pick is relative to what’s still available right now — the best remaining option anchors near the top, so a strong pick reads well even late in the draft. Blends the player’s value, how far they fell vs ADP, positional tier, your roster needs, age, and projected points. Your report-card grade uses the absolute, round-weighted version, so it can differ from the board number. Kickers and defenses aren’t scored.' },
     { term: 'Value', def: 'The player’s trade value as an asset on a 0-999 scale - dynasty value for startup/rookie drafts, redraft value for redraft.' },
     { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a replacement-level starter at their position (a fixed, preseason-style baseline). VORP uses real fantasy points; VOR uses dynasty value.' },
     { term: 'ADP', def: 'Average Draft Position - the typical overall pick a player goes at in real drafts. If it’s below your current pick, they’ve fallen and may be a value.' },
@@ -4495,7 +4528,7 @@
   }
   function openPreview(id){
     var p = playersById[String(id)]; if (!p) return;
-    var adp = adpOf(p), t = tierOf(p), ps = pickScoreFor(p);
+    var adp = adpOf(p), t = tierOf(p), ps = psDisplay(p._ps != null ? p._ps : pickScoreFor(p));
     var posRank = state.sf ? (p.sf_pos_rank_label || '') : (p.pos_rank_label || '');
     var adpGap = (adp != null) ? (state.current - adp) : null;
     var vsAdp = adpGap != null ? (adpGap >= 0 ? ('+' + Math.round(adpGap)) : String(Math.round(adpGap))) : '-';
