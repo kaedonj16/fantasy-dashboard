@@ -244,7 +244,6 @@ _DRAFT_ROOM_HTML = r"""
         <button class="dr-sheet-handle" id="drSheetHandle" aria-label="Resize panel"><span class="dr-sheet-grip"></span></button>
         <div class="otc-main-tabs dr-side-tabs" id="drSideTabs">
           <button class="otc-main-tab is-active" data-stab="best">Players</button>
-          <button class="otc-main-tab" data-stab="rec">Recs</button>
           <button class="otc-main-tab" data-stab="queue">Queue</button>
           <button class="otc-main-tab" data-stab="needs">Team</button>
           <button class="otc-main-tab" data-stab="league">League</button>
@@ -735,6 +734,15 @@ _DRAFT_ROOM_HTML = r"""
   .dr-prev-avail-pick { display: inline-flex; align-items: baseline; gap: 4px; padding: 5px 10px; border-radius: 8px; }
   .dr-prev-avail-pn { font-size: 10px; font-weight: 600; color: var(--text-muted); }
   .dr-loading { display: flex; align-items: center; gap: 10px; padding: 24px; color: var(--text-muted); font-size: 13px; justify-content: center; }
+  @media (max-width: 768px) {
+    /* The global mobile tab bar (56px, fixed at the bottom) overlaps the draft
+       sheet. Pad the scrollable list so its content always clears the bar; when
+       the sheet is dragged to full, hide the bar so the sheet uses the whole
+       screen (per the "full covers the bar" behavior). */
+    .dr-side .dr-ba-list { padding-bottom: calc(56px + env(safe-area-inset-bottom) + 6px); }
+    body.dr-sheet-expanded .br-tabbar { display: none; }
+    body.dr-sheet-expanded .dr-side .dr-ba-list { padding-bottom: calc(env(safe-area-inset-bottom) + 6px); }
+  }
   @media (max-width: 900px) {
     .dr-cols { grid-template-columns: 1fr; padding-bottom: 52vh; }
     .dr-statusbar { top: 0; }

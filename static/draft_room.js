@@ -1982,7 +1982,7 @@
   function renderBestChips(){
     var el = document.getElementById('drBestChips');
     if (!el) return;
-    if (sideTab !== 'best' && sideTab !== 'rec'){ el.style.display = 'none'; return; }
+    if (sideTab !== 'best'){ el.style.display = 'none'; return; }
     var pool = availablePool();
     if (!pool.length){ el.style.display = 'none'; return; }
     var isDynasty = (state.type !== 'redraft');
@@ -2372,7 +2372,6 @@
     for (var i = 0; i < kbtns.length; i++){ kbtns[i].style.display = kdef ? '' : 'none'; }
     var bc = document.getElementById('drBestControls');
     if (bc) bc.style.display = (sideTab === 'best') ? '' : 'none';
-    if (sideTab === 'rec')    return renderRec();
     if (sideTab === 'queue')  return renderQueue();
     if (sideTab === 'needs')  return renderNeeds();
     if (sideTab === 'league') return renderLeague();
@@ -5001,6 +5000,9 @@
       var pts = snaps();
       snapIdx = Math.max(0, Math.min(pts.length - 1, idx));
       sheet.classList.remove('dragging');
+      // Fully-expanded sheet covers the global mobile tab bar; every other snap
+      // (and desktop) leaves it visible below the sheet.
+      document.body.classList.toggle('dr-sheet-expanded', mq.matches && snapIdx === 0);
       applyT(pts[snapIdx]);
     }
     function pointY(e){ return e.touches ? e.touches[0].clientY : e.clientY; }
@@ -5043,8 +5045,10 @@
     });
     function applyMode(){
       if (mq.matches){ snapTo(snapIdx); }
-      else { sheet.style.transform = ''; sheet.classList.remove('dragging'); }
+      else { sheet.style.transform = ''; sheet.classList.remove('dragging'); document.body.classList.remove('dr-sheet-expanded'); }
     }
+    // Safety: never leave the tab bar hidden if the page is navigated away from.
+    window.addEventListener('pagehide', function(){ document.body.classList.remove('dr-sheet-expanded'); });
     if (mq.addEventListener) mq.addEventListener('change', applyMode); else mq.addListener(applyMode);
     window.addEventListener('resize', function(){ if (mq.matches) snapTo(snapIdx); });
     applyMode();
