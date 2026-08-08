@@ -29,7 +29,19 @@
   var state = null;        // { type, teams, rounds, sf, slot, order, picks:{}, current }
   var players = [];        // best-available pool
   var drafted = {};        // id -> true
-  var posFilter = 'ALL';
+  var posFilter = {};      // multi-select set of positions ({} = All)
+  function _posIsAll(){ for (var _k in posFilter){ if (posFilter.hasOwnProperty(_k)) return false; } return true; }
+  function _posMatches(pos){ return _posIsAll() || !!posFilter[String(pos || '').toUpperCase()]; }
+  // Reflect the posFilter set on the pills: each selected position gets .active,
+  // and "All" is active only when nothing is selected.
+  function _syncPosPills(){
+    var all = _posIsAll();
+    var host = document.getElementById('drPosFilters'); if (!host) return;
+    host.querySelectorAll('.dr-pos').forEach(function(x){
+      var p = x.getAttribute('data-pos');
+      x.classList.toggle('active', p === 'ALL' ? all : !!posFilter[String(p).toUpperCase()]);
+    });
+  }
   var justPick = null;     // pick # filled this render (for the pop-in animation)
   var playersById = {};    // id -> player (value lookup for live picks)
   var lastLivePicks = null;// last picks payload from the live feed
@@ -1586,7 +1598,7 @@
     endSim();
     simPaused = false; simStarted = false; simAutoDraft = false;
     players = []; drafted = {};
-    posFilter = 'ALL';
+    posFilter = {}; _syncPosPills();
     justPick = null;
     _liveSig = null; _pickLagMsg = null;
     _pollCount = 0; _pollLastAt = 0; _pollNextAt = 0;
@@ -4187,7 +4199,7 @@
     var sortBy = (_sortEl && _sortEl.getAttribute('data-val')) || 'ps';
     var q = (document.getElementById('drSearch').value || '').trim().toLowerCase();
     var pool = availablePool().filter(function(p){
-      if (posFilter !== 'ALL' && String(p.position||'').toUpperCase() !== posFilter) return false;
+      if (!_posMatches(p.position)) return false;
       if (q && String(p.name||'').toLowerCase().indexOf(q) < 0) return false;
       return true;
     });
@@ -4216,14 +4228,14 @@
     // K/DEF have no startup ADP so they sort to the very end and fall past the
     // 200-player cap. Separate them out so they always render after skill players.
     var _isKD = function(p){ var pos = String(p.position||'').toUpperCase(); return pos === 'K' || pos === 'DEF'; };
-    var mainPool = (posFilter === 'ALL' && wantsKDef()) ? pool.filter(function(p){ return !_isKD(p); }) : pool;
-    var kdPool  = (posFilter === 'ALL' && wantsKDef()) ? pool.filter(_isKD) : [];
+    var mainPool = (_posIsAll() && wantsKDef()) ? pool.filter(function(p){ return !_isKD(p); }) : pool;
+    var kdPool  = (_posIsAll() && wantsKDef()) ? pool.filter(_isKD) : [];
     // Late-round K/DEF nudge: K/DEF are ungraded and normally sit at the very
     // bottom, so they'd never read as a suggestion. Once a required K/DEF slot
     // must be filled soon (few picks left, or the last few rounds), surface the
     // best available one at the TOP with a reason so it actually gets drafted.
     var _promoted = [];
-    if (posFilter === 'ALL' && wantsKDef() && kdPool.length && hasOwned()){
+    if (_posIsAll() && wantsKDef() && kdPool.length && hasOwned()){
       var _rs = (state && state.roster) || defaultRoster();
       var _mc = myPosCounts();
       var _needK = Math.max(0, (_rs.K || 0) - (_mc.K || 0));
@@ -5068,9 +5080,8 @@
     var sp = e.target.closest('[data-scarpos]');
     if (sp){
       var pos = sp.getAttribute('data-scarpos');
-      posFilter = pos;
-      var btns = document.querySelectorAll('#drPosFilters .dr-pos');
-      btns.forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-pos') === pos); });
+      posFilter = {}; posFilter[String(pos).toUpperCase()] = true;   // focus this position
+      _syncPosPills();
       renderBA();
     }
   });
@@ -5115,8 +5126,14 @@
   });
   document.getElementById('drPosFilters').addEventListener('click', function(e){
     var b = e.target.closest('.dr-pos'); if (!b) return;
-    posFilter = b.getAttribute('data-pos');
-    this.querySelectorAll('.dr-pos').forEach(function(x){ x.classList.toggle('active', x === b); });
+    var pos = b.getAttribute('data-pos');
+    if (pos === 'ALL'){
+      posFilter = {};                       // clear the set -> show everything
+    } else {
+      var key = String(pos).toUpperCase();
+      if (posFilter[key]) delete posFilter[key]; else posFilter[key] = true;  // toggle
+    }
+    _syncPosPills();
     renderBA();
   });
 
