@@ -5035,8 +5035,10 @@
     var mq = window.matchMedia('(max-width: 900px)');
     var dragging = false, startY = 0, startT = 0, curT = 0, snapIdx = 1;
     function ih(){ return window.innerHeight; }
-    // translateY offsets (px): full (whole 92vh sheet shows), mid (~36vh), peek (~12vh)
-    function snaps(){ return [0, ih() * 0.42, ih() * 0.80]; }
+    // translateY offsets (px): full (whole 85vh sheet shows, top stops below the
+    // header + status bar), mid (~43vh visible), peek (~13vh visible - enough for
+    // the handle + tabs). Peek accounts for the 85vh sheet sitting ~15vh down.
+    function snaps(){ return [0, ih() * 0.42, ih() * 0.72]; }
     function applyT(t){ curT = t; sheet.style.transform = 'translateY(' + t + 'px)'; }
     function snapTo(idx){
       var pts = snaps();
@@ -5057,7 +5059,7 @@
     function onMove(e){
       if (!dragging) return;
       var dy = pointY(e) - startY;
-      var t = Math.max(0, Math.min(ih() * 0.86, startT + dy));
+      var t = Math.max(0, Math.min(ih() * 0.74, startT + dy));
       applyT(t);
       if (e.cancelable) e.preventDefault();
     }
