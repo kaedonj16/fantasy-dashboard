@@ -4580,6 +4580,15 @@
       stopPolling(); stopPickTimer();
       _resetTransient();
       try { sessionStorage.removeItem(sessKey); } catch(e){}
+      // Strip ?connect / ?live so a reload or Back doesn't auto-reconnect to the
+      // draft we just exited (that's what re-loaded the board after Exit Board).
+      try {
+        var _u = new URL(location.href);
+        if (_u.searchParams.has('connect') || _u.searchParams.has('live')){
+          _u.searchParams.delete('connect'); _u.searchParams.delete('live');
+          history.replaceState(null, '', _u.pathname + _u.search + _u.hash);
+        }
+      } catch(e){}
       state = null;
       showSetup();
     }
