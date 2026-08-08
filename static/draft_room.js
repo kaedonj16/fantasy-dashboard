@@ -186,6 +186,9 @@
     return '15';
   }
   function applyCfgDefaults(){
+    // Point the hero's Draft History link at the league-scoped page when available.
+    var _hl = document.getElementById('drToHistory');
+    if (_hl && cfg.historyUrl) _hl.setAttribute('href', cfg.historyUrl);
     if (cfg.numTeams) {
       var t = document.getElementById('drTeams');
       var want = String(Math.min(14, Math.max(8, cfg.numTeams)));
