@@ -876,8 +876,10 @@ _DRAFT_ROOM_HTML = r"""
   }
   /* Summary overlay */
   .dr-summary-overlay { position:fixed; inset:0; z-index:1001; background:rgba(0,0,0,.6);
-    display:flex; align-items:flex-start; justify-content:center; padding:20px 16px; overflow-y:auto; }
-  .dr-summary-card { position:relative; width:100%; max-width:500px; margin:auto; background:var(--card);
+    display:flex; align-items:flex-start; justify-content:center; overflow-y:auto;
+    /* Clear the status bar / dynamic island at the top and the home indicator at the bottom. */
+    padding:calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 20px); }
+  .dr-summary-card { position:relative; width:100%; max-width:500px; margin:0 auto; background:var(--card);
     border:1px solid var(--border); border-radius:20px; overflow:hidden;
     box-shadow:0 24px 80px rgba(0,0,0,.5); }
   /* Grade ring + bars header */
