@@ -1736,14 +1736,20 @@
     // run 20+ rounds) shouldn't imply you "need" 8 RBs or 10 WRs, so the bench
     // contribution is capped and each position is held to a realistic ceiling.
     var benchEff = Math.min(bn, 7);
+    var tep = scoringCfg().tep;
     var t = {
       QB: (rs.QB||0) + sf        + Math.round(benchEff * 0.10),
       RB: (rs.RB||0) + flex      + Math.round(benchEff * 0.35),
       WR: (rs.WR||0)             + Math.round(benchEff * 0.40),
-      TE: (rs.TE||0)             + Math.round(benchEff * 0.15)
+      // Single-start TE with no TE-premium: target just the starter, so a second
+      // TE reads as low-priority depth and the redundancy penalty suppresses it
+      // until the very late rounds (where a backup TE is normal). Padding the TE
+      // target with a bench share made it 2, which kept "TE need" alive after the
+      // starter was filled and let a 2nd TE grade as a top pick. TE Premium
+      // restores backup-TE depth via the bench share plus the +1 below.
+      TE: (rs.TE||0)             + (tep > 0 ? Math.round(benchEff * 0.15) : 0)
     };
     // TE Premium scoring nudges the build toward a second startable TE.
-    var tep = scoringCfg().tep;
     if (tep > 0) t.TE += 1;
     // Sane ceilings so the assistant never frames an absurd amount of depth as a need.
     // (1QB backup-QB timing is handled per-team in the sim, relative to when each
