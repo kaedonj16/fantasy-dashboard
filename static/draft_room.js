@@ -4193,7 +4193,8 @@
 
   function renderBA(){
     syncAdpSourceSelector();
-    var sortBy = document.getElementById('drBaSort').value;
+    var _sortEl = document.getElementById('drBaSortBtn');
+    var sortBy = (_sortEl && _sortEl.getAttribute('data-val')) || 'adp';
     var q = (document.getElementById('drSearch').value || '').trim().toLowerCase();
     var pool = availablePool().filter(function(p){
       if (posFilter !== 'ALL' && String(p.position||'').toUpperCase() !== posFilter) return false;
@@ -4999,28 +5000,23 @@
     else if (mq.addListener) mq.addListener(placeWrap);
     placeWrap();
   })();
-  document.getElementById('drBaSort').addEventListener('change', renderBA);
-  // Custom sort dropdown: the visible control drives the hidden #drBaSort
-  // <select> (still the state source, so renderBA's 'change' handler above keeps
-  // working). Built in-page because the native select popup mis-anchors inside
-  // the transformed mobile sheet.
+  // Custom sort dropdown — the only sort control (the native <select> popup
+  // mis-anchors inside the transformed mobile sheet). The current sort lives in
+  // the button's data-val, which renderBA reads.
   (function initSortSelect(){
-    var sel = document.getElementById('drBaSort');
     var ui = document.getElementById('drBaSortUI');
     var btn = document.getElementById('drBaSortBtn');
     var menu = document.getElementById('drBaSortMenu');
     var lbl = document.getElementById('drBaSortLbl');
-    if (!sel || !ui || !btn || !menu || !lbl) return;
+    if (!ui || !btn || !menu || !lbl) return;
+    var LABELS = { value: 'Value', adp: 'ADP', steals: 'Steals', ps: 'Pick Score' };
     var opts = menu.querySelectorAll('.dr-sortsel-opt');
-    function labelFor(v){
-      for (var i = 0; i < sel.options.length; i++){ if (sel.options[i].value === v) return sel.options[i].text; }
-      return v;
-    }
-    function sync(){
-      lbl.textContent = labelFor(sel.value);
-      for (var i = 0; i < opts.length; i++){
-        opts[i].classList.toggle('is-active', opts[i].getAttribute('data-val') === sel.value);
-      }
+    var cur = btn.getAttribute('data-val') || 'adp';
+    function apply(v){
+      cur = v;
+      btn.setAttribute('data-val', v);
+      lbl.textContent = LABELS[v] || v;
+      for (var i = 0; i < opts.length; i++){ opts[i].classList.toggle('is-active', opts[i].getAttribute('data-val') === v); }
     }
     function open(){ menu.hidden = false; btn.setAttribute('aria-expanded', 'true'); }
     function close(){ menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
@@ -5030,19 +5026,11 @@
       var opt = e.target.closest('.dr-sortsel-opt'); if (!opt) return;
       e.stopPropagation();
       var v = opt.getAttribute('data-val');
-      if (v !== sel.value){
-        sel.value = v;
-        var ev;
-        try { ev = new Event('change', { bubbles: true }); }
-        catch (_e){ ev = document.createEvent('Event'); ev.initEvent('change', true, false); }
-        sel.dispatchEvent(ev);   // fires renderBA + sync
-      }
-      sync();
+      if (v !== cur){ apply(v); renderBA(); }
       close();
     });
     document.addEventListener('click', function(e){ if (isOpen() && !ui.contains(e.target)) close(); });
-    sel.addEventListener('change', sync);   // keep the label in step if code sets .value directly
-    sync();
+    apply(cur);
   })();
   document.getElementById('drSearch').addEventListener('input', renderBA);
   document.getElementById('drBaList').addEventListener('click', function(e){

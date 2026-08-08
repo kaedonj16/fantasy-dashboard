@@ -281,18 +281,11 @@ _DRAFT_ROOM_HTML = r"""
         </div>
         <div class="dr-side-head" id="drBestControls">
           <div class="dr-side-controls">
-            <!-- Hidden native <select> kept as the state source of truth (renderBA
-                 reads .value, a 'change' event drives re-render). The visible
-                 control is a custom dropdown below, because the native popup
-                 mis-anchors inside the transformed mobile sheet. -->
-            <select id="drBaSort" class="dr-sortsel-native" tabindex="-1" aria-hidden="true">
-              <option value="value">Value</option>
-              <option value="adp" selected>ADP</option>
-              <option value="steals">Steals</option>
-              <option value="ps">Pick Score</option>
-            </select>
+            <!-- Sort control: a custom dropdown (the native <select> popup
+                 mis-anchors inside the transformed mobile sheet). data-val holds
+                 the current sort; renderBA reads it. -->
             <div class="dr-sortsel" id="drBaSortUI">
-              <button type="button" class="dr-sortsel-btn" id="drBaSortBtn" aria-haspopup="listbox" aria-expanded="false">
+              <button type="button" class="dr-sortsel-btn" id="drBaSortBtn" data-val="adp" aria-haspopup="listbox" aria-expanded="false">
                 <span id="drBaSortLbl">ADP</span>
                 <svg class="dr-sortsel-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
               </button>
@@ -732,7 +725,6 @@ _DRAFT_ROOM_HTML = r"""
   .dr-side-controls select { padding: 7px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; flex-shrink: 0; max-width: 110px; }
   /* Custom sort dropdown (replaces the native <select> popup, which mis-anchors
      inside the transformed mobile sheet). */
-  .dr-sortsel-native { display: none; }
   .dr-sortsel { position: relative; flex-shrink: 0; }
   .dr-sortsel-btn {
     display: flex; align-items: center; gap: 6px; width: 100%;
