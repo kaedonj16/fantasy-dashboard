@@ -2176,7 +2176,7 @@
       var p = byPos[pos]; if (!p) return;
       hasAny = true;
       var adp = adpOf(p);
-      var sub = adp != null ? 'ADP ' + adpBoard(adp) : 'Val ' + Math.round(valOf(p));
+      var sub = adp != null ? 'ADP ' + Number(adp).toFixed(1) : 'Val ' + Math.round(valOf(p));
       var lastName = p.name.split(' ').slice(1).join(' ') || p.name;
       bchipsInner += '<div class="dr-bchip" data-bchip="' + esc(String(p.id)) + '">'
         + '<img class="dr-bchip-img" src="' + playerImgUrl(p) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
@@ -2296,7 +2296,7 @@
         + statRow('Value', v, ov, true, function(x){ return x != null ? Math.round(x) : '-'; })
         + statRow(ppgRowLbl, ppg, oppg, true, function(x){ return x != null ? x.toFixed(1) : 'N/A'; })
         + statRow(vorLbl, vor, ovor, true, function(x){ return x != null ? (x >= 0 ? '+' + (Number.isInteger(x) ? x : x.toFixed(1)) : (x.toFixed ? x.toFixed(1) : String(x))) : '-'; })
-        + statRow('ADP', adp, oadp, false, function(x){ return x != null ? adpBoard(x) : 'N/A'; })
+        + statRow('ADP', adp, oadp, false, function(x){ return x != null ? Number(x).toFixed(1) : 'N/A'; })
         + (state.type !== 'redraft' ? statRow('Tier', t, ot, false, function(x){ return x != null ? 'T' + x : '-'; }) : '')
         + statRow('Age', age, oage, false, function(x){ return x != null ? x.toFixed(0) : '-'; })
         + '</div></div>';
@@ -2446,7 +2446,7 @@
     // Pool-relative display score (best available -> ~97). Uses the shared per-
     // render p._ps when present (refreshPsPool), else computes on the fly.
     var ps = psDisplay(p._ps != null ? p._ps : pickScoreFor(p));
-    var sub = adp != null ? 'ADP ' + adpBoard(adp) : '';
+    var sub = adp != null ? 'ADP ' + Number(adp).toFixed(1) : '';
     var reasonLine = opts.reason ? '<div class="dr-ba-reason">' + esc(opts.reason) + '</div>' : '';
     var waitLine = opts.wait
       ? '<div class="dr-ba-wait">Can wait: ' + opts.wait.prob + '% there at #' + opts.wait.pn + '</div>'
@@ -4069,12 +4069,6 @@
     var pk = pn - (rd - 1) * teams;
     return rd + '.' + (pk < 10 ? '0' + pk : String(pk));
   }
-  // ADP shown in the board's round.pick format (so the list lines up with the
-  // board grid) using THIS draft's team count. Overall ADP -> "2.01".
-  function adpBoard(adp){
-    if (adp == null) return null;
-    return roundPickStr(Math.max(1, Math.round(Number(adp))));
-  }
   function cellInner(pn){
     var pl = state.picks[pn];
     // Empty cell: show the round.pick centered so the grid reads as a real board
@@ -4289,7 +4283,7 @@
     { term: 'Pick Score (PS)', def: 'A 0-100 grade of how good this pick is relative to what’s still available right now — the best remaining option anchors near the top, so a strong pick reads well even late in the draft. Blends the player’s value, how far they fell vs ADP, positional tier, your roster needs, age, and projected points. Your report-card grade uses the absolute, round-weighted version, so it can differ from the board number. Kickers and defenses aren’t scored.' },
     { term: 'Value', def: 'The player’s trade value as an asset on a 0-999 scale - dynasty value for startup/rookie drafts, redraft value for redraft.' },
     { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a replacement-level starter at their position (a fixed, preseason-style baseline). VORP uses real fantasy points; VOR uses dynasty value.' },
-    { term: 'ADP', def: 'Average Draft Position - the typical draft slot a player goes at in real drafts, shown as round.pick (e.g. 2.01) on this league’s team count so it lines up with the board. If it’s past the current pick, they’ve fallen and may be a value.' },
+    { term: 'ADP', def: 'Average Draft Position - the typical overall pick a player goes at in real drafts. If it’s below your current pick, they’ve fallen and may be a value.' },
     { term: 'Tier', def: 'Players grouped by talent gaps (Tier 1 = elite). A tier “cliff” means only a couple of players remain before a real drop-off at that position.' },
     { term: 'Steals (sort)', def: 'Orders the board by who has fallen the furthest past their ADP - the biggest available bargains.' },
     { term: 'PPG', def: 'Points per game - projected for the upcoming season, or last season’s actual when that’s shown.' },
@@ -4851,7 +4845,7 @@
       + '<div class="dr-prev-stats">'
       + statBox('Value', Math.round(valOf(p)), null, 'Trade value as an asset on a 0-999 scale (dynasty value, or redraft value in redraft).')
       + statBox(vorpLbl, vorStr, null, 'Value Over Replacement: how much better than a freely-available starter at this position. ' + (vorpLbl === 'VORP' ? 'Based on real fantasy points.' : 'Based on dynasty value.'))
-      + statBox('ADP', adp != null ? adpBoard(adp) : '-', null, 'Average Draft Position - the typical draft slot (round.pick) this player goes at in real drafts, on this league\'s team count.')
+      + statBox('ADP', adp != null ? Number(adp).toFixed(1) : '-', null, 'Average Draft Position - the typical overall pick this player goes at in real drafts.')
       + statBox('vs ADP', vsAdp, null, 'How far this player has fallen past their ADP at the current pick. Positive = a value.')
       + (ppg != null ? statBox(ppgLbl, ppg.toFixed(1), ppgSub, 'Points per game' + (ppgLbl === 'Proj PPG' ? ', projected for the upcoming season.' : ', last season actual.')) : statBox('Pos Rank', posRank || '-'))
       + statBox(pos + ' T1-2 left', scarce, null, 'How many Tier 1-2 (elite) players remain available at this position - a scarcity signal.')
