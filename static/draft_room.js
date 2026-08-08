@@ -29,7 +29,19 @@
   var state = null;        // { type, teams, rounds, sf, slot, order, picks:{}, current }
   var players = [];        // best-available pool
   var drafted = {};        // id -> true
-  var posFilter = 'ALL';
+  var posFilter = {};      // multi-select set of positions ({} = All)
+  function _posIsAll(){ for (var _k in posFilter){ if (posFilter.hasOwnProperty(_k)) return false; } return true; }
+  function _posMatches(pos){ return _posIsAll() || !!posFilter[String(pos || '').toUpperCase()]; }
+  // Reflect the posFilter set on the pills: each selected position gets .active,
+  // and "All" is active only when nothing is selected.
+  function _syncPosPills(){
+    var all = _posIsAll();
+    var host = document.getElementById('drPosFilters'); if (!host) return;
+    host.querySelectorAll('.dr-pos').forEach(function(x){
+      var p = x.getAttribute('data-pos');
+      x.classList.toggle('active', p === 'ALL' ? all : !!posFilter[String(p).toUpperCase()]);
+    });
+  }
   var justPick = null;     // pick # filled this render (for the pop-in animation)
   var playersById = {};    // id -> player (value lookup for live picks)
   var lastLivePicks = null;// last picks payload from the live feed
@@ -1586,7 +1598,7 @@
     endSim();
     simPaused = false; simStarted = false; simAutoDraft = false;
     players = []; drafted = {};
-    posFilter = 'ALL';
+    posFilter = {}; _syncPosPills();
     justPick = null;
     _liveSig = null; _pickLagMsg = null;
     _pollCount = 0; _pollLastAt = 0; _pollNextAt = 0;
@@ -3070,25 +3082,15 @@
     out.sort(function(a, b){ return b.grade.score - a.grade.score; });
     return out;
   }
-  // Curve grades relative to the actual field so real differences between teams span
-  // a meaningful range instead of all clustering in one letter band. This does NOT
-  // fabricate gaps: each team's adjustment is proportional to how far its real
-  // composite score sits from the field mean, normalized by the field's own spread.
-  // A genuinely even field (low variance) stays tight; a field with real separation
-  // spreads out. The raw score is preserved on grade.rawScore.
+  // Absolute grading: the team letter reflects the team's OWN composite (starter
+  // quality + lineup strength vs league + construction), not its rank within the
+  // field - so a genuinely elite draft earns an A even when the whole room drafted
+  // well, and a weak one earns a C even in a weak room. (Previously the field was
+  // curved to a B centre, which clustered strong mocks all at B.) rawScore is kept
+  // in sync for any consumer that reads it.
   function _applyFieldCurve(out){
-    if (!state || state.type === 'rookie') return;  // rookie grades are absolute (Teams-page letters), not curved
-    if (!out || out.length < 3) return;             // need a real field to curve against
-    // Curve math lives in static/draft_grade_curve.js (shared with the Python
-    // server grade via a parity test) so both surfaces stay identical.
-    var _teams = state.teams || 12;
-    var roundsDone = Math.floor(((state.current || 1) - 1) / _teams);
-    var raws = out.map(function(t){ return t.grade.score; });
-    var curved = BRDraftGrade.curveFieldScores(raws, roundsDone);
-    out.forEach(function(t, i){
-      t.grade.rawScore = t.grade.score;
-      t.grade.score = curved[i];
-    });
+    if (!out) return;
+    out.forEach(function(t){ if (t && t.grade) t.grade.rawScore = t.grade.score; });
   }
   // Classify a startup/redraft build into a recognizable draft archetype based on
   // positional emphasis, weighting the early picks where strategy is actually set.
@@ -4076,7 +4078,7 @@
       if (isMyPick(pn)) eh += '<span class="dr-cell-mineflag">YOU</span>';
       var _eown = tradedOwnerLabel(pn);
       if (_eown) eh += '<span class="dr-cell-owner">' + esc(_eown) + '</span>';
-      eh += '<span class="dr-cell-rp">' + roundPickStr(pn) + '</span>';
+      eh += '<span class="dr-cell-rp">' + roundPickStr(pn) + '<small class="dr-cell-rp-ov">' + pn + '</small></span>';
       return eh;
     }
     var h = '<span class="dr-cell-num">' + pn + '</span>';
@@ -4193,10 +4195,11 @@
 
   function renderBA(){
     syncAdpSourceSelector();
-    var sortBy = document.getElementById('drBaSort').value;
+    var _sortEl = document.getElementById('drBaSortBtn');
+    var sortBy = (_sortEl && _sortEl.getAttribute('data-val')) || 'ps';
     var q = (document.getElementById('drSearch').value || '').trim().toLowerCase();
     var pool = availablePool().filter(function(p){
-      if (posFilter !== 'ALL' && String(p.position||'').toUpperCase() !== posFilter) return false;
+      if (!_posMatches(p.position)) return false;
       if (q && String(p.name||'').toLowerCase().indexOf(q) < 0) return false;
       return true;
     });
@@ -4216,6 +4219,7 @@
       }
       if (sortBy === 'steals'){ return steal(b) - steal(a); }
       if (sortBy === 'ps'){ return (b._ps || 0) - (a._ps || 0); }
+      if (sortBy === 'ppg'){ return (ppgOf(b) || 0) - (ppgOf(a) || 0); }
       return valOf(b) - valOf(a);
     });
     if (!pool.length){ listInto('<div class="dr-empty-note">No players match.</div>'); return; }
@@ -4224,8 +4228,30 @@
     // K/DEF have no startup ADP so they sort to the very end and fall past the
     // 200-player cap. Separate them out so they always render after skill players.
     var _isKD = function(p){ var pos = String(p.position||'').toUpperCase(); return pos === 'K' || pos === 'DEF'; };
-    var mainPool = (posFilter === 'ALL' && wantsKDef()) ? pool.filter(function(p){ return !_isKD(p); }) : pool;
-    var kdPool  = (posFilter === 'ALL' && wantsKDef()) ? pool.filter(_isKD) : [];
+    var mainPool = (_posIsAll() && wantsKDef()) ? pool.filter(function(p){ return !_isKD(p); }) : pool;
+    var kdPool  = (_posIsAll() && wantsKDef()) ? pool.filter(_isKD) : [];
+    // Late-round K/DEF nudge: K/DEF are ungraded and normally sit at the very
+    // bottom, so they'd never read as a suggestion. Once a required K/DEF slot
+    // must be filled soon (few picks left, or the last few rounds), surface the
+    // best available one at the TOP with a reason so it actually gets drafted.
+    var _promoted = [];
+    if (_posIsAll() && wantsKDef() && kdPool.length && hasOwned()){
+      var _rs = (state && state.roster) || defaultRoster();
+      var _mc = myPosCounts();
+      var _needK = Math.max(0, (_rs.K || 0) - (_mc.K || 0));
+      var _needDef = Math.max(0, (_rs.DEF || 0) - (_mc.DEF || 0));
+      var _remainPicks = upcomingOwnedPicks().length;
+      var _remainRds = (state.rounds || 0) - Math.floor((state.current - 1) / (state.teams || 12));
+      var _kdefTime = (_needK + _needDef) > 0 && (_remainPicks <= (_needK + _needDef) + 2 || _remainRds <= 3);
+      if (_kdefTime){
+        if (_needK > 0){ var _bk = kdPool.filter(function(p){ return String(p.position).toUpperCase() === 'K'; })[0]; if (_bk) _promoted.push(_bk); }
+        if (_needDef > 0){ var _bd = kdPool.filter(function(p){ return String(p.position).toUpperCase() === 'DEF'; })[0]; if (_bd) _promoted.push(_bd); }
+        kdPool = kdPool.filter(function(p){ return _promoted.indexOf(p) < 0; });
+      }
+    }
+    _promoted.forEach(function(p){
+      html += playerRowHtml(p, { reason: 'Fill your ' + String(p.position || '').toUpperCase() + ' slot before the draft ends' });
+    });
     for (var i = 0; i < Math.min(mainPool.length, 200); i++){
       var p = mainPool[i];
       var opts = {};
@@ -4999,28 +5025,23 @@
     else if (mq.addListener) mq.addListener(placeWrap);
     placeWrap();
   })();
-  document.getElementById('drBaSort').addEventListener('change', renderBA);
-  // Custom sort dropdown: the visible control drives the hidden #drBaSort
-  // <select> (still the state source, so renderBA's 'change' handler above keeps
-  // working). Built in-page because the native select popup mis-anchors inside
-  // the transformed mobile sheet.
+  // Custom sort dropdown — the only sort control (the native <select> popup
+  // mis-anchors inside the transformed mobile sheet). The current sort lives in
+  // the button's data-val, which renderBA reads.
   (function initSortSelect(){
-    var sel = document.getElementById('drBaSort');
     var ui = document.getElementById('drBaSortUI');
     var btn = document.getElementById('drBaSortBtn');
     var menu = document.getElementById('drBaSortMenu');
     var lbl = document.getElementById('drBaSortLbl');
-    if (!sel || !ui || !btn || !menu || !lbl) return;
+    if (!ui || !btn || !menu || !lbl) return;
+    var LABELS = { value: 'Value', adp: 'ADP', steals: 'Steals', ps: 'Pick Score', ppg: 'Proj PPG' };
     var opts = menu.querySelectorAll('.dr-sortsel-opt');
-    function labelFor(v){
-      for (var i = 0; i < sel.options.length; i++){ if (sel.options[i].value === v) return sel.options[i].text; }
-      return v;
-    }
-    function sync(){
-      lbl.textContent = labelFor(sel.value);
-      for (var i = 0; i < opts.length; i++){
-        opts[i].classList.toggle('is-active', opts[i].getAttribute('data-val') === sel.value);
-      }
+    var cur = btn.getAttribute('data-val') || 'ps';
+    function apply(v){
+      cur = v;
+      btn.setAttribute('data-val', v);
+      lbl.textContent = LABELS[v] || v;
+      for (var i = 0; i < opts.length; i++){ opts[i].classList.toggle('is-active', opts[i].getAttribute('data-val') === v); }
     }
     function open(){ menu.hidden = false; btn.setAttribute('aria-expanded', 'true'); }
     function close(){ menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
@@ -5030,19 +5051,11 @@
       var opt = e.target.closest('.dr-sortsel-opt'); if (!opt) return;
       e.stopPropagation();
       var v = opt.getAttribute('data-val');
-      if (v !== sel.value){
-        sel.value = v;
-        var ev;
-        try { ev = new Event('change', { bubbles: true }); }
-        catch (_e){ ev = document.createEvent('Event'); ev.initEvent('change', true, false); }
-        sel.dispatchEvent(ev);   // fires renderBA + sync
-      }
-      sync();
+      if (v !== cur){ apply(v); renderBA(); }
       close();
     });
     document.addEventListener('click', function(e){ if (isOpen() && !ui.contains(e.target)) close(); });
-    sel.addEventListener('change', sync);   // keep the label in step if code sets .value directly
-    sync();
+    apply(cur);
   })();
   document.getElementById('drSearch').addEventListener('input', renderBA);
   document.getElementById('drBaList').addEventListener('click', function(e){
@@ -5067,9 +5080,8 @@
     var sp = e.target.closest('[data-scarpos]');
     if (sp){
       var pos = sp.getAttribute('data-scarpos');
-      posFilter = pos;
-      var btns = document.querySelectorAll('#drPosFilters .dr-pos');
-      btns.forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-pos') === pos); });
+      posFilter = {}; posFilter[String(pos).toUpperCase()] = true;   // focus this position
+      _syncPosPills();
       renderBA();
     }
   });
@@ -5114,8 +5126,14 @@
   });
   document.getElementById('drPosFilters').addEventListener('click', function(e){
     var b = e.target.closest('.dr-pos'); if (!b) return;
-    posFilter = b.getAttribute('data-pos');
-    this.querySelectorAll('.dr-pos').forEach(function(x){ x.classList.toggle('active', x === b); });
+    var pos = b.getAttribute('data-pos');
+    if (pos === 'ALL'){
+      posFilter = {};                       // clear the set -> show everything
+    } else {
+      var key = String(pos).toUpperCase();
+      if (posFilter[key]) delete posFilter[key]; else posFilter[key] = true;  // toggle
+    }
+    _syncPosPills();
     renderBA();
   });
 

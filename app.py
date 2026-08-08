@@ -22376,7 +22376,6 @@ from utils.pick_score import starter_counts as _ps_starter_counts  # noqa: E402
 # letter system for rookie drafts. Keeps the two surfaces in lock-step.
 
 from utils.draft_grade import (  # noqa: E402
-    dr_apply_field_curve as _dr_apply_field_curve,
     dr_avg_top_n as _dr_avg_top_n,
     dr_grade_letter as _dr_grade_letter,
     dr_letter_to_score as _dr_letter_to_score,
@@ -23111,16 +23110,12 @@ def api_draft_grades():
                 "picks":           team_picks,
             })
 
-        # Curve the Draft-Room composites against the field (startup/redraft only;
-        # rookie grades are absolute), then attach the aligned score + letter.
-        _curveable = [t for t in results if t["_dr_raw"] is not None and _draft_type != "rookie"]
-        if _curveable:
-            _curved = _dr_apply_field_curve([t["_dr_raw"] for t in _curveable])
-            for _t, _cs in zip(_curveable, _curved):
-                _t["_dr_curved"] = _cs
+        # Absolute grading: the team letter reflects each team's OWN composite,
+        # not its rank within the field (matches the Draft Room, which no longer
+        # curves). A strong draft earns an A even when the whole room drafted well.
         for t in results:
             _raw = t.pop("_dr_raw", None)
-            _score = t.pop("_dr_curved", _raw)  # rookie/uncurved keep their raw score
+            _score = _raw
             if _score is not None:
                 t["team_grade_score"] = int(round(_score))
                 t["team_grade_letter"] = _dr_grade_letter(_score)
