@@ -2630,7 +2630,8 @@
   }
   function slotRow(slot, p){
     if (p){
-      var psBadge = (p.ps != null) ? '<span class="dr-rslot-ps" style="color:' + psColor(p.ps) + '">' + p.ps + '</span>' : '';
+      var _rsps = (p.psRel != null ? p.psRel : p.ps);
+      var psBadge = (_rsps != null) ? '<span class="dr-rslot-ps" style="color:' + psColor(_rsps) + '">' + _rsps + '</span>' : '';
       var pickLbl = pickNoStr(p);
       var _isDefSlot = String(p.position || '').toUpperCase() === 'DEF';
       return '<div class="dr-rslot">'
@@ -3344,7 +3345,7 @@
           }
           function _ldtlRow(slotLabel, p, pn){
             var pickRx = _pickRx(pn);
-            var _ps = storedPickScore(pn, p);
+            var _ps = (p && p.psRel != null) ? p.psRel : storedPickScore(pn, p);
             var psRx = _ps != null ? '<span class="dr-sum-ldtl-ps" style="color:' + psColor(_ps) + '">' + _ps + '</span>' : '';
             return '<div class="dr-sum-ldtl-row">'
               + '<span class="dr-sum-ldtl-slot" style="background:' + slotColor(slotLabel) + '">' + esc(slotLabel) + '</span>'
@@ -3985,7 +3986,7 @@
     if (_own) h += '<span class="dr-cell-owner">' + esc(_own) + '</span>';
     if (pl){
       if (_cellShowPs) {
-        var _cvps = storedPickScore(pn, pl);
+        var _cvps = (pl.psRel != null) ? pl.psRel : storedPickScore(pn, pl);
         if (_cvps != null) h += '<span class="dr-cell-val" style="color:' + psColor(_cvps) + '">' + _cvps + '</span>';
       } else {
         if (pl.val != null) h += '<span class="dr-cell-val">' + Math.round(pl.val) + '</span>';
@@ -4224,8 +4225,9 @@
         if (_ppgv != null){ sumProjTotal += _ppgv; sumProjCount++; }
         var _fp = playersById[String(p.id)] || p;
         var _t = tierOf(_fp); if (_t != null && _t <= 2) sumT12++;
-        if (p.ps != null){ sumAllPsTotal += p.ps; sumAllPsCount++; }
-        if (_ssSet[String(p.id)] && p.ps != null){ sumStarterPsTotal += p.ps; sumStarterPsCount++; }
+        var _psShown = (p.psRel != null ? p.psRel : p.ps);
+        if (_psShown != null){ sumAllPsTotal += _psShown; sumAllPsCount++; }
+        if (_ssSet[String(p.id)] && _psShown != null){ sumStarterPsTotal += _psShown; sumStarterPsCount++; }
       });
       var _sits = [];
       if (sumProjCount >= 2) _sits.push({ v: sumProjTotal.toFixed(1), l: 'Proj PPG' });
@@ -4277,7 +4279,8 @@
       if (!p) return '<div class="dr-sum-row"><span class="dr-sum-slot-badge" style="background:' + slotColor(slot) + '">' + slot + '</span><span class="dr-sum-empty">open</span></div>';
       var _pn = (Object.keys(state.picks).filter(function(k){ return state.picks[k] && state.picks[k].id === p.id; }).map(function(k){ return parseInt(k,10); })[0]) || 0;
       var pickStr = _pn ? (function(){ var _rd = Math.ceil(_pn/state.teams); var _pp = _pn - (_rd-1)*state.teams; return 'Pick ' + _rd + '.' + (_pp < 10 ? '0'+_pp : String(_pp)); })() : '';
-      var psStr = (p.ps != null) ? '<span class="dr-sum-ps" style="color:' + psColor(p.ps) + '">' + p.ps + '</span>' : '';
+      var _rowps = (p.psRel != null ? p.psRel : p.ps);
+      var psStr = (_rowps != null) ? '<span class="dr-sum-ps" style="color:' + psColor(_rowps) + '">' + _rowps + '</span>' : '';
       return '<div class="dr-sum-row">'
         + '<span class="dr-sum-slot-badge" style="background:' + slotColor(slot) + '">' + slot + '</span>'
         + '<img class="dr-sum-hs" src="' + playerImgUrl(p) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
@@ -4442,9 +4445,15 @@
     // draft never freezes. Score/reason are cosmetic and default to empty.
     var ps = null;
     try { ps = pickScoreFor(p); } catch (e){ _simError('score pick', e); }
+    // Pool-relative score captured at the moment of the pick (the pool then = what
+    // was still on the board), so the report card can show each pick "vs the best
+    // still available" - the same scale as the live board. Absolute ps is kept for
+    // the round-weighted grade.
+    var psRel = null;
+    try { psRel = psDisplay(ps); } catch (e){ psRel = null; }
     var reason = '';
     try { reason = pickReason(p, myPosCounts()); } catch (e){ reason = ''; }
-    state.picks[pn] = { id: p.id, name: p.name, position: p.position, team: p.team, val: Math.round(valOf(p)), ps: ps, reason: reason };
+    state.picks[pn] = { id: p.id, name: p.name, position: p.position, team: p.team, val: Math.round(valOf(p)), ps: ps, psRel: psRel, reason: reason };
     drafted[String(p.id)] = true;
     justPick = pn;
     state.current++;
