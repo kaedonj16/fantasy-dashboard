@@ -244,7 +244,6 @@ _DRAFT_ROOM_HTML = r"""
         <button class="dr-sheet-handle" id="drSheetHandle" aria-label="Resize panel"><span class="dr-sheet-grip"></span></button>
         <div class="otc-main-tabs dr-side-tabs" id="drSideTabs">
           <button class="otc-main-tab is-active" data-stab="best">Players</button>
-          <button class="otc-main-tab" data-stab="rec">Recs</button>
           <button class="otc-main-tab" data-stab="queue">Queue</button>
           <button class="otc-main-tab" data-stab="needs">Team</button>
           <button class="otc-main-tab" data-stab="league">League</button>
@@ -422,6 +421,17 @@ _DRAFT_ROOM_HTML = r"""
   .dr-opts-panel .dr-sim-speed { width: 100%; margin: 2px 0; padding: 6px 8px; border-radius: 8px;
     border: 1px solid var(--border, #333); background: var(--bg, #0f0f0f); color: var(--text, #fff); font-size: 13px; }
   .dr-btn-danger { color: var(--loss); border-color: color-mix(in srgb, var(--loss) 40%, transparent); }
+  .dr-sim-error {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin-bottom: 12px; padding: 10px 14px; border-radius: 10px;
+    border: 1px solid rgba(239, 68, 68, .45); background: rgba(239, 68, 68, .12);
+    color: var(--text); font-size: 13px; line-height: 1.4;
+  }
+  .dr-sim-error b { color: #ef4444; }
+  .dr-sim-error-x {
+    margin-left: auto; background: none; border: none; cursor: pointer;
+    color: var(--text-muted); font-size: 20px; line-height: 1; padding: 0 4px;
+  }
   .dr-statusbar {
     position: relative;
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -735,6 +745,15 @@ _DRAFT_ROOM_HTML = r"""
   .dr-prev-avail-pick { display: inline-flex; align-items: baseline; gap: 4px; padding: 5px 10px; border-radius: 8px; }
   .dr-prev-avail-pn { font-size: 10px; font-weight: 600; color: var(--text-muted); }
   .dr-loading { display: flex; align-items: center; gap: 10px; padding: 24px; color: var(--text-muted); font-size: 13px; justify-content: center; }
+  @media (max-width: 768px) {
+    /* The global mobile tab bar (56px, fixed at the bottom) overlaps the draft
+       sheet. Pad the scrollable list so its content always clears the bar; when
+       the sheet is dragged to full, hide the bar so the sheet uses the whole
+       screen (per the "full covers the bar" behavior). */
+    .dr-side .dr-ba-list { padding-bottom: calc(56px + env(safe-area-inset-bottom) + 6px); }
+    body.dr-sheet-expanded .br-tabbar { display: none; }
+    body.dr-sheet-expanded .dr-side .dr-ba-list { padding-bottom: calc(env(safe-area-inset-bottom) + 6px); }
+  }
   @media (max-width: 900px) {
     .dr-cols { grid-template-columns: 1fr; padding-bottom: 52vh; }
     .dr-statusbar { top: 0; }

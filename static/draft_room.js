@@ -1514,9 +1514,33 @@
     cands.sort(function(a, b){ return lineupScore(b) - lineupScore(a); });
     return cands[0];
   }
+  // Surface an unexpected error in the mock-sim pick path instead of letting the
+  // draft freeze silently (a throw inside a setTimeout callback is otherwise
+  // swallowed and the sim just stops making picks). Logs the full stack for
+  // debugging and shows a dismissible banner so the failure is reportable.
+  function _simError(where, e){
+    try { console.error('[draft-room] ' + where + ' failed:', e); } catch (_e){}
+    var msg = (e && e.message) ? e.message : String(e);
+    var box = document.getElementById('drSimError');
+    if (!box){
+      box = document.createElement('div');
+      box.id = 'drSimError';
+      box.className = 'dr-sim-error';
+      var host = document.getElementById('drMain') || document.body;
+      host.insertBefore(box, host.firstChild);
+    }
+    box.innerHTML = '<b>Mock draft hit an error</b> (' + esc(where) + '): ' + esc(msg)
+      + ' &mdash; please screenshot this so it can be fixed.'
+      + ' <button type="button" class="dr-sim-error-x" aria-label="Dismiss">&times;</button>';
+    box.style.display = '';
+    var x = box.querySelector('.dr-sim-error-x');
+    if (x) x.addEventListener('click', function(){ box.style.display = 'none'; });
+  }
   function _doAutoPick(){
-    var ap = autoPick();
-    if (ap){ commitPick(ap); render(); scheduleSim(); }
+    try {
+      var ap = autoPick();
+      if (ap){ commitPick(ap); render(); scheduleSim(); }
+    } catch (e){ _simError('auto pick', e); endSim(); render(); }
   }
   function scheduleSim(){
     if (!sim || simPaused || !simStarted) return;
@@ -1537,9 +1561,20 @@
       if (simAutoDraft){ clearTimeout(simTimer); simTimer = setTimeout(_doAutoPick, simSpeed); return; }
       render(); return; // your turn - wait for manual pick
     }
-    var p = simPick();
+    var p;
+    try {
+      p = simPick();
+    } catch (e){
+      // A bad scoring pass shouldn't freeze the draft: log it, then fall back to
+      // plain best-available-by-value so the CPU still makes a pick.
+      _simError('CPU pick', e);
+      var _pool = availablePool();
+      if (_pool.length){ _pool.sort(function(a, b){ return valOf(b) - valOf(a); }); p = _pool[0]; }
+    }
     if (!p){ endSim(); render(); return; } // pool exhausted - stop, don't spin forever
-    commitPick(p); render();
+    try {
+      commitPick(p); render();
+    } catch (e){ _simError('commit pick', e); endSim(); render(); return; }
     scheduleSim();
   }
   function endSim(){
@@ -1614,8 +1649,10 @@
     if (state) state.simStarted = true;
     save();
     syncSimControls();
-    renderSide();
-    scheduleSim();
+    try {
+      renderSide();
+      scheduleSim();
+    } catch (e){ _simError('start draft', e); }
   }
   function startMock(){
     _resetTransient();
@@ -1982,7 +2019,7 @@
   function renderBestChips(){
     var el = document.getElementById('drBestChips');
     if (!el) return;
-    if (sideTab !== 'best' && sideTab !== 'rec'){ el.style.display = 'none'; return; }
+    if (sideTab !== 'best'){ el.style.display = 'none'; return; }
     var pool = availablePool();
     if (!pool.length){ el.style.display = 'none'; return; }
     var isDynasty = (state.type !== 'redraft');
@@ -2372,7 +2409,6 @@
     for (var i = 0; i < kbtns.length; i++){ kbtns[i].style.display = kdef ? '' : 'none'; }
     var bc = document.getElementById('drBestControls');
     if (bc) bc.style.display = (sideTab === 'best') ? '' : 'none';
-    if (sideTab === 'rec')    return renderRec();
     if (sideTab === 'queue')  return renderQueue();
     if (sideTab === 'needs')  return renderNeeds();
     if (sideTab === 'league') return renderLeague();
@@ -4236,8 +4272,13 @@
   // ── Actions ──────────────────────────────────────────────────────────────
   function commitPick(p){
     var pn = state.current;
-    var ps = pickScoreFor(p);
-    var reason = pickReason(p, myPosCounts());
+    // Pick scoring leans on the external BRPickScore module + a lot of board
+    // context; if any of that throws, the pick itself must still commit so the
+    // draft never freezes. Score/reason are cosmetic and default to empty.
+    var ps = null;
+    try { ps = pickScoreFor(p); } catch (e){ _simError('score pick', e); }
+    var reason = '';
+    try { reason = pickReason(p, myPosCounts()); } catch (e){ reason = ''; }
     state.picks[pn] = { id: p.id, name: p.name, position: p.position, team: p.team, val: Math.round(valOf(p)), ps: ps, reason: reason };
     drafted[String(p.id)] = true;
     justPick = pn;
@@ -5001,6 +5042,9 @@
       var pts = snaps();
       snapIdx = Math.max(0, Math.min(pts.length - 1, idx));
       sheet.classList.remove('dragging');
+      // Fully-expanded sheet covers the global mobile tab bar; every other snap
+      // (and desktop) leaves it visible below the sheet.
+      document.body.classList.toggle('dr-sheet-expanded', mq.matches && snapIdx === 0);
       applyT(pts[snapIdx]);
     }
     function pointY(e){ return e.touches ? e.touches[0].clientY : e.clientY; }
@@ -5043,8 +5087,10 @@
     });
     function applyMode(){
       if (mq.matches){ snapTo(snapIdx); }
-      else { sheet.style.transform = ''; sheet.classList.remove('dragging'); }
+      else { sheet.style.transform = ''; sheet.classList.remove('dragging'); document.body.classList.remove('dr-sheet-expanded'); }
     }
+    // Safety: never leave the tab bar hidden if the page is navigated away from.
+    window.addEventListener('pagehide', function(){ document.body.classList.remove('dr-sheet-expanded'); });
     if (mq.addEventListener) mq.addEventListener('change', applyMode); else mq.addListener(applyMode);
     window.addEventListener('resize', function(){ if (mq.matches) snapTo(snapIdx); });
     applyMode();
