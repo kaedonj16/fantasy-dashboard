@@ -521,8 +521,16 @@ _DRAFT_ROOM_HTML = r"""
     background: var(--bg); display: flex; align-items: flex-end; gap: 6px; position: relative; overflow: hidden;
   }
   .dr-cell-body { padding: 5px; }
-  .dr-cell-empty { opacity: .45; }
-  .dr-cell-filled { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 5%, transparent), var(--bg)); }
+  /* Empty slot: reads as an open board cell with its round.pick centered, rather
+     than a washed-out box. */
+  .dr-cell-empty { background: var(--card); border-style: dashed; }
+  .dr-cell-rp { position: absolute; inset: 0; display: grid; place-items: center; font-size: 11px;
+    font-weight: 700; color: var(--text-muted); opacity: .7; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+  /* Filled pick: tint the whole cell by its POSITION colour (--pos, set per-cell)
+     with a matching left stripe, so a column reads as a roster shape at a glance.
+     The ownership (.dr-cell-mine) and current-pick rules below still win their stripe/ring. */
+  .dr-cell-filled { background: color-mix(in srgb, var(--pos, var(--accent)) 14%, var(--bg));
+    box-shadow: inset 3px 0 0 var(--pos, var(--accent)); }
   .dr-cell-current { box-shadow: inset 0 0 0 2px var(--accent,#38bdf8); animation: drPulse 1.6s ease-in-out infinite; }
   @keyframes drPulse { 0%,100% { box-shadow: inset 0 0 0 2px var(--accent,#38bdf8); } 50% { box-shadow: inset 0 0 0 2px var(--accent,#38bdf8), 0 0 10px color-mix(in srgb, var(--accent) 20%, transparent); } }
   .dr-cell-mine { box-shadow: inset 3px 0 0 var(--accent,#38bdf8); opacity: 1; }
@@ -544,7 +552,8 @@ _DRAFT_ROOM_HTML = r"""
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
   .dr-cell-just { animation: drPop .35s ease; }
   @keyframes drPop { 0% { transform: scale(.92); opacity: .3; } 100% { transform: scale(1); opacity: 1; } }
-  .dr-cell-val { position: absolute; bottom: 2px; right: 5px; font-size: 9px; font-weight: 800; color: var(--accent,#38bdf8); }
+  .dr-cell-val { position: absolute; bottom: 3px; right: 4px; font-size: 9px; font-weight: 800; color: var(--accent,#38bdf8);
+    background: color-mix(in srgb, var(--card) 70%, transparent); padding: 0 4px; border-radius: 5px; font-variant-numeric: tabular-nums; }
   .dr-cell-num { position: absolute; top: 2px; left: 5px; font-size: 9px; font-weight: 700; color: var(--text-muted); }
   .dr-board-toolbar { display: flex; align-items: center; justify-content: flex-end; padding: 4px 6px 2px; }
   .dr-cell-toggle { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; font-size: 10px; font-weight: 700; }

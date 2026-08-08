@@ -4060,8 +4060,25 @@
     pl.gps = ps;   // memoize the grade score (matches gradePicks / the server)
     return ps;
   }
+  // "3.06" round.pick label for a given overall pick number.
+  function roundPickStr(pn){
+    var teams = state.teams || 12;
+    var rd = Math.ceil(pn / teams);
+    var pk = pn - (rd - 1) * teams;
+    return rd + '.' + (pk < 10 ? '0' + pk : String(pk));
+  }
   function cellInner(pn){
     var pl = state.picks[pn];
+    // Empty cell: show the round.pick centered so the grid reads as a real board
+    // (keeper/YOU/traded flags still render); filled cell keeps the overall # top-left.
+    if (!pl){
+      var eh = '';
+      if (isMyPick(pn)) eh += '<span class="dr-cell-mineflag">YOU</span>';
+      var _eown = tradedOwnerLabel(pn);
+      if (_eown) eh += '<span class="dr-cell-owner">' + esc(_eown) + '</span>';
+      eh += '<span class="dr-cell-rp">' + roundPickStr(pn) + '</span>';
+      return eh;
+    }
     var h = '<span class="dr-cell-num">' + pn + '</span>';
     if (pl && pl.keeper) h += '<span class="dr-cell-keepflag">KEEP</span>';
     else if (isMyPick(pn)) h += '<span class="dr-cell-mineflag">YOU</span>';
@@ -4098,17 +4115,26 @@
       html += '<div class="dr-colhead dr-rowhead">R' + rnd + '</div>';
       for (var slot = 1; slot <= teams; slot++){
         var pn = pickNum(rnd, slot, teams, state.order);
-        html += '<div class="' + cellClass(pn) + '" id="dc' + pn + '" data-pn="' + pn + '">' + cellInner(pn) + '</div>';
+        html += '<div class="' + cellClass(pn) + '" id="dc' + pn + '" data-pn="' + pn + '" style="' + cellPosVar(pn) + '">' + cellInner(pn) + '</div>';
       }
     }
     board.innerHTML = html;
     _boardSig = boardSig();
     refreshCurrent();
   }
+  // Per-cell CSS var carrying the pick's position colour, so .dr-cell-filled can
+  // tint the whole cell by position instead of a uniform accent wash.
+  function cellPosVar(pn){
+    var pl = state.picks[pn];
+    if (!pl) return '';
+    var c = posColor(pl.position);
+    return c ? ('--pos:' + c) : '';
+  }
   function paintCell(pn){
     var el = document.getElementById('dc' + pn);
     if (!el) return;
     el.className = cellClass(pn);
+    el.style.cssText = cellPosVar(pn);
     el.innerHTML = cellInner(pn);
   }
   function refreshCurrent(){
