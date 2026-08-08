@@ -4714,6 +4714,50 @@
     placeWrap();
   })();
   document.getElementById('drBaSort').addEventListener('change', renderBA);
+  // Custom sort dropdown: the visible control drives the hidden #drBaSort
+  // <select> (still the state source, so renderBA's 'change' handler above keeps
+  // working). Built in-page because the native select popup mis-anchors inside
+  // the transformed mobile sheet.
+  (function initSortSelect(){
+    var sel = document.getElementById('drBaSort');
+    var ui = document.getElementById('drBaSortUI');
+    var btn = document.getElementById('drBaSortBtn');
+    var menu = document.getElementById('drBaSortMenu');
+    var lbl = document.getElementById('drBaSortLbl');
+    if (!sel || !ui || !btn || !menu || !lbl) return;
+    var opts = menu.querySelectorAll('.dr-sortsel-opt');
+    function labelFor(v){
+      for (var i = 0; i < sel.options.length; i++){ if (sel.options[i].value === v) return sel.options[i].text; }
+      return v;
+    }
+    function sync(){
+      lbl.textContent = labelFor(sel.value);
+      for (var i = 0; i < opts.length; i++){
+        opts[i].classList.toggle('is-active', opts[i].getAttribute('data-val') === sel.value);
+      }
+    }
+    function open(){ menu.hidden = false; btn.setAttribute('aria-expanded', 'true'); }
+    function close(){ menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
+    function isOpen(){ return !menu.hidden; }
+    btn.addEventListener('click', function(e){ e.stopPropagation(); if (isOpen()) close(); else open(); });
+    menu.addEventListener('click', function(e){
+      var opt = e.target.closest('.dr-sortsel-opt'); if (!opt) return;
+      e.stopPropagation();
+      var v = opt.getAttribute('data-val');
+      if (v !== sel.value){
+        sel.value = v;
+        var ev;
+        try { ev = new Event('change', { bubbles: true }); }
+        catch (_e){ ev = document.createEvent('Event'); ev.initEvent('change', true, false); }
+        sel.dispatchEvent(ev);   // fires renderBA + sync
+      }
+      sync();
+      close();
+    });
+    document.addEventListener('click', function(e){ if (isOpen() && !ui.contains(e.target)) close(); });
+    sel.addEventListener('change', sync);   // keep the label in step if code sets .value directly
+    sync();
+  })();
   document.getElementById('drSearch').addEventListener('input', renderBA);
   document.getElementById('drBaList').addEventListener('click', function(e){
     var cmp = e.target.closest('[data-cmp]');

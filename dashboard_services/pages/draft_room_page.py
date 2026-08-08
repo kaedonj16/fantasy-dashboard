@@ -281,12 +281,28 @@ _DRAFT_ROOM_HTML = r"""
         </div>
         <div class="dr-side-head" id="drBestControls">
           <div class="dr-side-controls">
-            <select id="drBaSort">
+            <!-- Hidden native <select> kept as the state source of truth (renderBA
+                 reads .value, a 'change' event drives re-render). The visible
+                 control is a custom dropdown below, because the native popup
+                 mis-anchors inside the transformed mobile sheet. -->
+            <select id="drBaSort" class="dr-sortsel-native" tabindex="-1" aria-hidden="true">
               <option value="value">Value</option>
               <option value="adp" selected>ADP</option>
               <option value="steals">Steals</option>
               <option value="ps">Pick Score</option>
             </select>
+            <div class="dr-sortsel" id="drBaSortUI">
+              <button type="button" class="dr-sortsel-btn" id="drBaSortBtn" aria-haspopup="listbox" aria-expanded="false">
+                <span id="drBaSortLbl">ADP</span>
+                <svg class="dr-sortsel-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <div class="dr-sortsel-menu" id="drBaSortMenu" role="listbox" hidden>
+                <button type="button" class="dr-sortsel-opt" role="option" data-val="value">Value</button>
+                <button type="button" class="dr-sortsel-opt" role="option" data-val="adp">ADP</button>
+                <button type="button" class="dr-sortsel-opt" role="option" data-val="steals">Steals</button>
+                <button type="button" class="dr-sortsel-opt" role="option" data-val="ps">Pick Score</button>
+              </div>
+            </div>
             <input id="drSearch" type="search" placeholder="Search…" autocomplete="off">
             <button class="dr-help-btn" id="drHelpBtn" type="button" aria-label="What do these terms mean?" title="What do these terms mean?">?</button>
           </div>
@@ -705,6 +721,32 @@ _DRAFT_ROOM_HTML = r"""
   .dr-side-controls { display: flex; gap: 6px; }
   .dr-side-controls input { flex: 1; min-width: 0; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; }
   .dr-side-controls select { padding: 7px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; flex-shrink: 0; max-width: 110px; }
+  /* Custom sort dropdown (replaces the native <select> popup, which mis-anchors
+     inside the transformed mobile sheet). */
+  .dr-sortsel-native { display: none; }
+  .dr-sortsel { position: relative; flex-shrink: 0; }
+  .dr-sortsel-btn {
+    display: flex; align-items: center; gap: 6px; width: 100%;
+    padding: 7px 9px; border-radius: 7px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text); font-size: 12px; font-weight: 600;
+    cursor: pointer; white-space: nowrap; line-height: 1;
+  }
+  .dr-sortsel-caret { color: var(--text-muted); transition: transform .15s; flex-shrink: 0; }
+  .dr-sortsel-btn[aria-expanded="true"] .dr-sortsel-caret { transform: rotate(180deg); }
+  .dr-sortsel-menu {
+    position: absolute; top: calc(100% + 4px); left: 0; z-index: 60;
+    min-width: 100%; width: max-content; padding: 4px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 9px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.22); display: flex; flex-direction: column; gap: 2px;
+  }
+  .dr-sortsel-menu[hidden] { display: none; }
+  .dr-sortsel-opt {
+    display: block; width: 100%; text-align: left; padding: 8px 12px; border: none;
+    border-radius: 6px; background: none; color: var(--text); font-size: 13px;
+    font-weight: 600; cursor: pointer; white-space: nowrap;
+  }
+  .dr-sortsel-opt:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .dr-sortsel-opt.is-active { background: var(--accent,#38bdf8); color: #fff; }
   .dr-pos-filters { display: flex; gap: 4px; flex-wrap: wrap; }
   .dr-pos { font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg); color: var(--text-muted); cursor: pointer; }
   .dr-pos.active { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: #fff; }
