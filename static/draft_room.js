@@ -1736,14 +1736,20 @@
     // run 20+ rounds) shouldn't imply you "need" 8 RBs or 10 WRs, so the bench
     // contribution is capped and each position is held to a realistic ceiling.
     var benchEff = Math.min(bn, 7);
+    var tep = scoringCfg().tep;
     var t = {
       QB: (rs.QB||0) + sf        + Math.round(benchEff * 0.10),
       RB: (rs.RB||0) + flex      + Math.round(benchEff * 0.35),
       WR: (rs.WR||0)             + Math.round(benchEff * 0.40),
-      TE: (rs.TE||0)             + Math.round(benchEff * 0.15)
+      // Single-start TE with no TE-premium: target just the starter, so a second
+      // TE reads as low-priority depth and the redundancy penalty suppresses it
+      // until the very late rounds (where a backup TE is normal). Padding the TE
+      // target with a bench share made it 2, which kept "TE need" alive after the
+      // starter was filled and let a 2nd TE grade as a top pick. TE Premium
+      // restores backup-TE depth via the bench share plus the +1 below.
+      TE: (rs.TE||0)             + (tep > 0 ? Math.round(benchEff * 0.15) : 0)
     };
     // TE Premium scoring nudges the build toward a second startable TE.
-    var tep = scoringCfg().tep;
     if (tep > 0) t.TE += 1;
     // Sane ceilings so the assistant never frames an absurd amount of depth as a need.
     // (1QB backup-QB timing is handled per-team in the sim, relative to when each
@@ -4708,6 +4714,50 @@
     placeWrap();
   })();
   document.getElementById('drBaSort').addEventListener('change', renderBA);
+  // Custom sort dropdown: the visible control drives the hidden #drBaSort
+  // <select> (still the state source, so renderBA's 'change' handler above keeps
+  // working). Built in-page because the native select popup mis-anchors inside
+  // the transformed mobile sheet.
+  (function initSortSelect(){
+    var sel = document.getElementById('drBaSort');
+    var ui = document.getElementById('drBaSortUI');
+    var btn = document.getElementById('drBaSortBtn');
+    var menu = document.getElementById('drBaSortMenu');
+    var lbl = document.getElementById('drBaSortLbl');
+    if (!sel || !ui || !btn || !menu || !lbl) return;
+    var opts = menu.querySelectorAll('.dr-sortsel-opt');
+    function labelFor(v){
+      for (var i = 0; i < sel.options.length; i++){ if (sel.options[i].value === v) return sel.options[i].text; }
+      return v;
+    }
+    function sync(){
+      lbl.textContent = labelFor(sel.value);
+      for (var i = 0; i < opts.length; i++){
+        opts[i].classList.toggle('is-active', opts[i].getAttribute('data-val') === sel.value);
+      }
+    }
+    function open(){ menu.hidden = false; btn.setAttribute('aria-expanded', 'true'); }
+    function close(){ menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
+    function isOpen(){ return !menu.hidden; }
+    btn.addEventListener('click', function(e){ e.stopPropagation(); if (isOpen()) close(); else open(); });
+    menu.addEventListener('click', function(e){
+      var opt = e.target.closest('.dr-sortsel-opt'); if (!opt) return;
+      e.stopPropagation();
+      var v = opt.getAttribute('data-val');
+      if (v !== sel.value){
+        sel.value = v;
+        var ev;
+        try { ev = new Event('change', { bubbles: true }); }
+        catch (_e){ ev = document.createEvent('Event'); ev.initEvent('change', true, false); }
+        sel.dispatchEvent(ev);   // fires renderBA + sync
+      }
+      sync();
+      close();
+    });
+    document.addEventListener('click', function(e){ if (isOpen() && !ui.contains(e.target)) close(); });
+    sel.addEventListener('change', sync);   // keep the label in step if code sets .value directly
+    sync();
+  })();
   document.getElementById('drSearch').addEventListener('input', renderBA);
   document.getElementById('drBaList').addEventListener('click', function(e){
     var cmp = e.target.closest('[data-cmp]');
