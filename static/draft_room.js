@@ -2649,6 +2649,69 @@
   // ── Draft grade / roster strength ───────────────────────────────────────────
   // Projected PPG (upcoming season) preferred; last-season actual as fallback.
   function ppgOf(p){ return (p && p.proj_ppg != null) ? Number(p.proj_ppg) : ((p && p.ppg != null) ? Number(p.ppg) : null); }
+
+  // ── Projected playoff odds (completed draft only) ───────────────────────────
+  // Once every team has a full roster we can project each team's season from its
+  // drafted strength. Team strength = projected points of its optimal starting
+  // lineup; a light Monte Carlo plays random weekly matchups (score ~ Normal(
+  // strength, week-to-week sigma)), ranks by record (points break ties), and
+  // counts how often each team lands in a playoff seed. It's a rough projection,
+  // not a real season sim (there's no schedule in a draft), so it's labeled as
+  // odds and only shown when the draft is over.
+  function _gauss(){
+    var u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+  function _teamStrengthPPG(picksList){
+    var ol = optimalLineup(picksList);
+    var s = 0;
+    ol.starters.forEach(function(x){ if (x.p){ var v = lineupScore(x.p); if (isFinite(v) && v > 0) s += v; } });
+    return s;
+  }
+  var _poCache = null, _poSig = null;
+  // allTeams: gradeAllTeams() output; each entry has .slot and .picks[{pn,p}].
+  // Returns { slot: oddsPct }.
+  function playoffOddsBySlot(allTeams){
+    var sig = allTeams.map(function(t){ return t.slot + ':' + (t.picks ? t.picks.length : 0); }).join('|') + '@' + state.current;
+    if (_poCache && _poSig === sig) return _poCache;
+    var teams = allTeams.map(function(t){
+      var picks = (t.picks || []).map(function(x){ return x.p; }).filter(Boolean);
+      return { slot: t.slot, S: _teamStrengthPPG(picks) };
+    });
+    var n = teams.length;
+    var odds = {};
+    teams.forEach(function(t){ odds[t.slot] = 0; });
+    if (n >= 2){
+      var spots = n <= 8 ? 4 : 6;
+      if (spots >= n) spots = Math.max(1, n - 1);
+      var W = 14, N = 2500, sigma = 27;
+      for (var s = 0; s < N; s++){
+        var wins = [], pts = [];
+        for (var t = 0; t < n; t++){ wins[t] = 0; pts[t] = 0; }
+        for (var w = 0; w < W; w++){
+          var idx = []; for (var q = 0; q < n; q++) idx[q] = q;
+          for (var i = idx.length - 1; i > 0; i--){ var j = (Math.random() * (i + 1)) | 0; var tmp = idx[i]; idx[i] = idx[j]; idx[j] = tmp; }
+          for (var k = 0; k + 1 < idx.length; k += 2){
+            var a = idx[k], b = idx[k + 1];
+            var sa = teams[a].S + _gauss() * sigma;
+            var sb = teams[b].S + _gauss() * sigma;
+            pts[a] += sa; pts[b] += sb;
+            if (sa >= sb) wins[a]++; else wins[b]++;
+          }
+        }
+        var ord = []; for (var o = 0; o < n; o++) ord[o] = o;
+        ord.sort(function(x, y){ return (wins[y] - wins[x]) || (pts[y] - pts[x]); });
+        for (var r = 0; r < spots; r++){ odds[teams[ord[r]].slot] += 1; }
+      }
+      teams.forEach(function(t){ odds[t.slot] = Math.round(odds[t.slot] / N * 100); });
+    }
+    _poCache = odds; _poSig = sig;
+    return odds;
+  }
+  function _poColor(po){ return po >= 60 ? '#22c55e' : po >= 35 ? '#f59e0b' : '#ef4444'; }
+  function _draftComplete(){ return !!state && (!!state.isComplete || state.current > (state.teams || 12) * (state.rounds || 0)); }
   function gradeTeam(){
     if (!hasOwned()) return null;
     // Pull "your" grade from the full field so the relative-to-league curve matches
@@ -3169,6 +3232,9 @@
       return;
     }
     var _rc = ['gold','silver','bronze'];
+    // Projected playoff odds per team - only once the draft is complete.
+    var _leagueDone = _draftComplete();
+    var _poOdds = _leagueDone ? playoffOddsBySlot(allTeams) : {};
     var html = '<div class="dr-league-body">' + _draftRecapHtml(allTeams)
       + '<p class="dr-recap-h dr-recap-grades-h">' + _RECAP_IC.trophy + 'Draft grades</p><div class="dr-sum-league">';
     allTeams.forEach(function(t, i){
@@ -3190,10 +3256,16 @@
         var _sl = stratLabel(state.simStrats[t.slot]);
         if (_sl) stratTag = '<span class="dr-strat-tag">' + _sl + '</span>';
       }
+      var poTag = '';
+      if (_leagueDone && _poOdds[t.slot] != null){
+        poTag = '<span class="dr-sum-lpo" style="color:' + _poColor(_poOdds[t.slot]) + '" title="Projected playoff odds">'
+          + _poOdds[t.slot] + '%</span>';
+      }
       html += '<div class="dr-sum-lrow' + (t.isMe ? ' is-me' : '') + '" data-legslot="' + t.slot + '">'
         + rankCell
         + '<span class="dr-sum-lname">' + esc(t.name) + stratTag + '</span>'
         + winTag
+        + poTag
         + '<span class="dr-sum-lgrade" style="color:' + tCol + '">' + gradeLetter(t.grade.score) + '</span>'
         + '<span class="dr-sum-lchev">&#9660;</span>'
         + '</div>'
@@ -4117,6 +4189,15 @@
         if (sumAllPsCount >= 1) _sits.push({ v: Math.round(sumAllPsTotal / sumAllPsCount), l: 'Avg PS' });
       } else {
         if (sumStarterPsCount >= 2) _sits.push({ v: Math.round(sumStarterPsTotal / sumStarterPsCount), l: 'Starter PS' });
+      }
+      // Projected playoff odds for this team - only once the draft is complete.
+      if (_draftComplete()){
+        var _allT = gradeAllTeams(), _meT = null;
+        for (var _ti = 0; _ti < _allT.length; _ti++){ if (_allT[_ti].isMe){ _meT = _allT[_ti]; break; } }
+        if (_meT){
+          var _myOdds = playoffOddsBySlot(_allT)[_meT.slot];
+          if (_myOdds != null) _sits.push({ v: _myOdds + '%', l: 'Playoff Odds' });
+        }
       }
       if (_sits.length){
         statsHtml = '<div class="dr-sum-stats">';

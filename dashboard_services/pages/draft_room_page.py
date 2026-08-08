@@ -1140,6 +1140,8 @@ _DRAFT_ROOM_HTML = r"""
   .dr-sum-lrow.is-me .dr-sum-lname { color: var(--accent,#38bdf8); }
   .dr-sum-lwin { font-size: 9.5px; font-weight: 800; padding: 2px 7px; border-radius: 999px; white-space: nowrap; flex-shrink: 0; }
   .dr-sum-lgrade { font-size: 18px; font-weight: 900; flex-shrink: 0; width: 32px; text-align: right; }
+  /* Projected playoff-odds chip (completed draft only) */
+  .dr-sum-lpo { font-size: 11px; font-weight: 800; flex-shrink: 0; width: 38px; text-align: right; font-variant-numeric: tabular-nums; }
   .dr-sum-lchev { font-size: 9px; color: var(--text-muted); flex-shrink: 0; transition: transform .2s; }
   .dr-sum-lrow.is-open .dr-sum-lchev { transform: rotate(180deg); }
   /* Expandable team starter detail */
