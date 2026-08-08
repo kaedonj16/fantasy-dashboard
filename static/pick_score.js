@@ -94,11 +94,24 @@
     // Live-draft timing term (survival to next pick). Grading passes 0.
     if (o.survivalAdj) s += o.survivalAdj;
 
-    if (!o.isSf && pos === 'QB' && (o.qbCount || 0) >= 1) {
+    if (!o.isSf && pos === 'QB') {
       var teams = o.numTeams ? +o.numTeams : 12;
       var round = pickNo ? Math.floor((pickNo - 1) / Math.max(teams, 1)) + 1 : 1;
-      var pen = round <= 3 ? 0.30 : (round <= 6 ? 0.60 : (round <= 9 ? 0.85 : 1.0));
-      if ((o.qbCount || 0) >= 2) pen *= 0.7;
+      var qc = o.qbCount || 0;
+      var pen = 1.0;
+      if (qc >= 1) {
+        // Overfill: a 2nd+ QB in 1QB only carries real opportunity cost early;
+        // by the late rounds a backup QB is a normal pick, so it tapers out.
+        pen = round <= 3 ? 0.30 : (round <= 6 ? 0.60 : (round <= 9 ? 0.85 : 1.0));
+        if (qc >= 2) pen *= 0.7;
+      } else if (o.draftType === 'redraft') {
+        // First QB, redraft only: QB is streamable in 1QB, so a startable QB
+        // shouldn't leapfrog clear starters / ADP-fallers in the early-mid
+        // rounds. Tapers to none by the late rounds (grabbing a QB is fine
+        // then). Dynasty/startup keep full QB value - young QBs are long-term
+        // assets, not a streamable weekly slot.
+        pen = round <= 3 ? 0.82 : (round <= 6 ? 0.90 : (round <= 9 ? 0.97 : 1.0));
+      }
       s *= pen;
     }
 

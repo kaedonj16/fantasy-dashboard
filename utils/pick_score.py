@@ -159,19 +159,38 @@ def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
     # QB overfill (1QB only): a second QB only carries real opportunity cost in
     # the early rounds. By the late rounds a backup QB is a normal pick, so the
     # penalty tapers out (mirrors the Draft Room).
-    if not is_sf and pos == "QB" and qb_count >= 1:
+    if not is_sf and pos == "QB":
         _teams = int(num_teams) if num_teams else 12
         _round = (int(pick_no) - 1) // max(_teams, 1) + 1 if pick_no else 1
-        if _round <= 3:
-            _pen = 0.30
-        elif _round <= 6:
-            _pen = 0.60
-        elif _round <= 9:
-            _pen = 0.85
-        else:
-            _pen = 1.0
-        if qb_count >= 2:
-            _pen *= 0.7
+        _qc = qb_count or 0
+        _pen = 1.0
+        if _qc >= 1:
+            # Overfill: a 2nd+ QB in 1QB only carries real opportunity cost early;
+            # by the late rounds a backup QB is a normal pick, so it tapers out.
+            if _round <= 3:
+                _pen = 0.30
+            elif _round <= 6:
+                _pen = 0.60
+            elif _round <= 9:
+                _pen = 0.85
+            else:
+                _pen = 1.0
+            if _qc >= 2:
+                _pen *= 0.7
+        elif draft_type == "redraft":
+            # First QB, redraft only: QB is streamable in 1QB, so a startable QB
+            # shouldn't leapfrog clear starters / ADP-fallers in the early-mid
+            # rounds. Tapers to none by the late rounds (grabbing a QB is fine
+            # then). Dynasty/startup keep full QB value - young QBs are long-term
+            # assets, not a streamable weekly slot.
+            if _round <= 3:
+                _pen = 0.82
+            elif _round <= 6:
+                _pen = 0.90
+            elif _round <= 9:
+                _pen = 0.97
+            else:
+                _pen = 1.0
         s *= _pen
 
     # Redundancy: a pick at a skill position already stocked to its realistic
