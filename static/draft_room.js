@@ -509,6 +509,7 @@
     state = readSetup();
     state.owned = _setupOwned || defaultOwned();
     save();
+    resetSideTabs();   // clear any leftover completed-draft sidebar state
     showMain();
     loadPlayers();
   }
@@ -1669,6 +1670,7 @@
     syncSimControls();
     _setUpcomingMode(false);
     save();
+    resetSideTabs();   // clear any leftover completed-draft sidebar state
     showMain();
     loadPlayers();
   }
@@ -1716,6 +1718,7 @@
       syncSimControls();
       _setUpcomingMode(false);
       save();
+      resetSideTabs();   // clear any leftover completed-draft sidebar state
       showMain();
       loadPlayers();
     });
@@ -2536,6 +2539,22 @@
     sideTab = 'needs';
     document.getElementById('drCompleteBar').style.display = '';
     renderSide();
+  }
+
+  // Undo showCompleteSidebar(): a fresh mock/manual draft started after viewing a
+  // finished draft must get the full tab set back (Players/Queue were hidden and
+  // the Team tab pinned), the complete bar hidden, and the default tab restored.
+  function resetSideTabs(){
+    var tabs = document.querySelectorAll('#drSideTabs .otc-main-tab');
+    for (var i = 0; i < tabs.length; i++){
+      tabs[i].style.display = '';
+      tabs[i].classList.toggle('is-active', tabs[i].getAttribute('data-stab') === 'best');
+    }
+    sideTab = 'best';
+    var cbar = document.getElementById('drCompleteBar');
+    if (cbar) cbar.style.display = 'none';
+    var side = document.getElementById('drSide');
+    if (side) side.style.display = '';
   }
 
   // Positional-run alert banner (folded into Recs): fires when 3+ of the last 5
