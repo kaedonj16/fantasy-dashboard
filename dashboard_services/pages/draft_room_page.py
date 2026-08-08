@@ -421,6 +421,17 @@ _DRAFT_ROOM_HTML = r"""
   .dr-opts-panel .dr-sim-speed { width: 100%; margin: 2px 0; padding: 6px 8px; border-radius: 8px;
     border: 1px solid var(--border, #333); background: var(--bg, #0f0f0f); color: var(--text, #fff); font-size: 13px; }
   .dr-btn-danger { color: var(--loss); border-color: color-mix(in srgb, var(--loss) 40%, transparent); }
+  .dr-sim-error {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin-bottom: 12px; padding: 10px 14px; border-radius: 10px;
+    border: 1px solid rgba(239, 68, 68, .45); background: rgba(239, 68, 68, .12);
+    color: var(--text); font-size: 13px; line-height: 1.4;
+  }
+  .dr-sim-error b { color: #ef4444; }
+  .dr-sim-error-x {
+    margin-left: auto; background: none; border: none; cursor: pointer;
+    color: var(--text-muted); font-size: 20px; line-height: 1; padding: 0 4px;
+  }
   .dr-statusbar {
     position: relative;
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
