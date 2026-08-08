@@ -759,11 +759,15 @@ _DRAFT_ROOM_HTML = r"""
     .dr-statusbar { top: 0; }
     /* The side panel becomes a draggable bottom sheet */
     .dr-side {
+      /* Anchored to the bottom so a full sheet still covers the tab bar. Height
+         is capped below full-viewport so the top of a fully-raised sheet stops
+         under the page header + draft status bar (whose-pick / pick number)
+         instead of covering them. */
       position: fixed; left: 0; right: 0; bottom: 0; top: auto;
-      width: 100%; height: 92vh; max-height: 92vh; align-self: auto; order: 0;
+      width: 100%; height: 85vh; max-height: 85vh; align-self: auto; order: 0;
       border-radius: 18px 18px 0 0; border-bottom: none;
       box-shadow: 0 -10px 40px rgba(0,0,0,.28); z-index: 50;
-      transform: translateY(42vh);          /* default: ~50vh visible (mid snap) */
+      transform: translateY(42vh);          /* default: ~43vh visible (mid snap) */
       transition: transform .3s cubic-bezier(.32,.72,0,1);
     }
     .dr-side.dragging { transition: none; }
