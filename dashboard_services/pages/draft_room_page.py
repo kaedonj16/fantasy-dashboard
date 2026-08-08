@@ -61,10 +61,16 @@ def build_draft_room_body(
     keepers: Optional[dict] = None,
     show_keeper: bool = True,
 ) -> str:
+    _dr_has_league = bool(league_id and platform and season)
     cfg = {
         "leagueId": league_id or "",
         "season": int(season) if season else None,
         "platform": platform or "sleeper",
+        # Link target for the Draft History page (league-scoped when available).
+        "historyUrl": (
+            f"/{platform}/{int(season)}/{league_id}/draft/history"
+            if _dr_has_league else "/draft/history"
+        ),
         "isGuest": bool(is_guest),
         "numTeams": int(num_teams) if num_teams else None,
         "isSuperflex": bool(is_superflex),
@@ -100,6 +106,7 @@ _DRAFT_ROOM_HTML = r"""
   <div class="dr-hero" id="drHero">
     <h1 class="dr-title">Draft Room</h1>
     <p class="dr-sub">Mock against CPU teams, draft manually, or sync a live Sleeper draft. Best-available, tiers, and a live draft grade.</p>
+    <a class="dr-hero-link" id="drToHistory" href="/draft/history">Draft History &rarr;</a>
   </div>
 
   <!-- Setup -->
@@ -386,6 +393,9 @@ _DRAFT_ROOM_HTML = r"""
   .dr-hero { margin: 4px 0 16px; text-align: center; }
   .dr-title { font-size: clamp(22px,4vw,30px); font-weight: 800; color: var(--text); margin: 0 0 6px; }
   .dr-sub { font-size: 14px; color: var(--text-muted); margin: 0 auto; max-width: 560px; line-height: 1.5; }
+  .dr-hero-link { display: inline-block; margin-top: 10px; font-size: 13px; font-weight: 700;
+    color: var(--accent,#38bdf8); text-decoration: none; }
+  .dr-hero-link:hover { text-decoration: underline; }
   /* ── Setup (redesigned) ── */
   .dr-setup { display: flex; justify-content: center; padding: 0 0 8px; }
   .dr-setup-card { width: 100%; max-width: 720px; background: var(--card); border: 1px solid var(--border);
@@ -866,8 +876,10 @@ _DRAFT_ROOM_HTML = r"""
   }
   /* Summary overlay */
   .dr-summary-overlay { position:fixed; inset:0; z-index:1001; background:rgba(0,0,0,.6);
-    display:flex; align-items:flex-start; justify-content:center; padding:20px 16px; overflow-y:auto; }
-  .dr-summary-card { position:relative; width:100%; max-width:500px; margin:auto; background:var(--card);
+    display:flex; align-items:flex-start; justify-content:center; overflow-y:auto;
+    /* Clear the status bar / dynamic island at the top and the home indicator at the bottom. */
+    padding:calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 20px); }
+  .dr-summary-card { position:relative; width:100%; max-width:500px; margin:0 auto; background:var(--card);
     border:1px solid var(--border); border-radius:20px; overflow:hidden;
     box-shadow:0 24px 80px rgba(0,0,0,.5); }
   /* Grade ring + bars header */
@@ -1191,6 +1203,7 @@ _DRAFT_HISTORY_HTML = r"""
   <div class="dr-hero">
     <h1 class="dr-title">Draft History</h1>
     <p class="dr-sub">Every draft in your league's history. Open any board to review the picks pick-by-pick.</p>
+    <a class="dr-hero-link" id="drHistToRoom" href="/draft">&larr; Draft Room</a>
   </div>
   <div id="drHistList" class="dr-hist-list">
     <div class="dr-loading"><div class="loading-spinner" style="width:22px;height:22px;"></div><span>Loading…</span></div>
@@ -1202,6 +1215,9 @@ _DRAFT_HISTORY_HTML = r"""
   .dr-hero { margin-bottom: 14px; }
   .dr-title { font-size: clamp(20px,4vw,28px); font-weight: 800; color: var(--text); margin: 0 0 4px; }
   .dr-sub { font-size: 14px; color: var(--text-muted); margin: 0; }
+  .dr-hero-link { display: inline-block; margin-top: 8px; font-size: 13px; font-weight: 700;
+    color: var(--accent,#38bdf8); text-decoration: none; }
+  .dr-hero-link:hover { text-decoration: underline; }
   .dr-hist-list { display: flex; flex-direction: column; gap: 10px; }
   .dr-hist-card { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--border);
     border-radius: 10px; background: var(--card); }
@@ -1225,6 +1241,9 @@ _DRAFT_HISTORY_HTML = r"""
 (function(){
   var cfg = window.__draftHistCfg || { base: '/draft', hasLeague: false };
   var listEl = document.getElementById('drHistList');
+  // Point the hero's Draft Room link at the league-scoped board when available.
+  var _toRoom = document.getElementById('drHistToRoom');
+  if (_toRoom && cfg.base) _toRoom.setAttribute('href', cfg.base);
 
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){
     return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }

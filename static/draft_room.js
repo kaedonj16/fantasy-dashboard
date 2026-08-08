@@ -186,6 +186,9 @@
     return '15';
   }
   function applyCfgDefaults(){
+    // Point the hero's Draft History link at the league-scoped page when available.
+    var _hl = document.getElementById('drToHistory');
+    if (_hl && cfg.historyUrl) _hl.setAttribute('href', cfg.historyUrl);
     if (cfg.numTeams) {
       var t = document.getElementById('drTeams');
       var want = String(Math.min(14, Math.max(8, cfg.numTeams)));
@@ -5390,9 +5393,9 @@
     var dragging = false, startY = 0, startT = 0, curT = 0, snapIdx = 1;
     function ih(){ return window.innerHeight; }
     // translateY offsets (px): full (whole 85vh sheet shows, top stops below the
-    // header + status bar), mid (~43vh visible), peek (~13vh visible - enough for
-    // the handle + tabs). Peek accounts for the 85vh sheet sitting ~15vh down.
-    function snaps(){ return [0, ih() * 0.42, ih() * 0.72]; }
+    // header + status bar), mid (~43vh visible), peek (~19vh visible - the handle,
+    // tabs, and a couple of rows). Peek accounts for the 85vh sheet sitting ~15vh down.
+    function snaps(){ return [0, ih() * 0.42, ih() * 0.66]; }
     function applyT(t){ curT = t; sheet.style.transform = 'translateY(' + t + 'px)'; }
     function snapTo(idx){
       var pts = snaps();
