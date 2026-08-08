@@ -4078,7 +4078,7 @@
       if (isMyPick(pn)) eh += '<span class="dr-cell-mineflag">YOU</span>';
       var _eown = tradedOwnerLabel(pn);
       if (_eown) eh += '<span class="dr-cell-owner">' + esc(_eown) + '</span>';
-      eh += '<span class="dr-cell-rp">' + roundPickStr(pn) + '</span>';
+      eh += '<span class="dr-cell-rp">' + roundPickStr(pn) + '<small class="dr-cell-rp-ov">' + pn + '</small></span>';
       return eh;
     }
     var h = '<span class="dr-cell-num">' + pn + '</span>';

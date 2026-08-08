@@ -518,8 +518,10 @@ _DRAFT_ROOM_HTML = r"""
   /* Empty slot: reads as an open board cell with its round.pick centered, rather
      than a washed-out box. */
   .dr-cell-empty { background: var(--card); border-style: dashed; }
-  .dr-cell-rp { position: absolute; inset: 0; display: grid; place-items: center; font-size: 11px;
-    font-weight: 700; color: var(--text-muted); opacity: .7; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+  .dr-cell-rp { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; line-height: 1.05; font-size: 11px; font-weight: 700; color: var(--text-muted);
+    font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+  .dr-cell-rp-ov { font-size: 8px; font-weight: 600; opacity: .55; margin-top: 1px; }
   /* Filled pick: tint the whole cell by its POSITION colour (--pos, set per-cell)
      with a matching left stripe, so a column reads as a roster shape at a glance.
      The ownership (.dr-cell-mine) and current-pick rules below still win their stripe/ring. */
