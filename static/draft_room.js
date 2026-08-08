@@ -1592,6 +1592,8 @@
     _boardSig = null;
     _summaryShown = false;
     lastLivePicks = null;
+    _poServer = null; _poServerSig = null; _poFetching = false;   // drop cached playoff odds
+    _poMcCache = null; _poMcSig = null;
   }
   function toggleSim(){
     simPaused = !simPaused;
@@ -2670,12 +2672,12 @@
     ol.starters.forEach(function(x){ if (x.p){ var v = lineupScore(x.p); if (isFinite(v) && v > 0) s += v; } });
     return s;
   }
-  var _poCache = null, _poSig = null;
+  var _poMcCache = null, _poMcSig = null;
   // allTeams: gradeAllTeams() output; each entry has .slot and .picks[{pn,p}].
   // Returns { slot: oddsPct }.
   function playoffOddsBySlot(allTeams){
     var sig = allTeams.map(function(t){ return t.slot + ':' + (t.picks ? t.picks.length : 0); }).join('|') + '@' + state.current;
-    if (_poCache && _poSig === sig) return _poCache;
+    if (_poMcCache && _poMcSig === sig) return _poMcCache;
     var teams = allTeams.map(function(t){
       var picks = (t.picks || []).map(function(x){ return x.p; }).filter(Boolean);
       return { slot: t.slot, S: _teamStrengthPPG(picks) };
@@ -2707,11 +2709,54 @@
       }
       teams.forEach(function(t){ odds[t.slot] = Math.round(odds[t.slot] / N * 100); });
     }
-    _poCache = odds; _poSig = sig;
+    _poMcCache = odds; _poMcSig = sig;
     return odds;
   }
   function _poColor(po){ return po >= 60 ? '#22c55e' : po >= 35 ? '#f59e0b' : '#ef4444'; }
   function _draftComplete(){ return !!state && (!!state.isComplete || state.current > (state.teams || 12) * (state.rounds || 0)); }
+
+  // Server-computed playoff odds - the SAME engine the standings page uses
+  // (simulate_playoff_odds, preseason mode). Populated asynchronously once the
+  // draft is complete; playoffOddsBySlot() above is the instant fallback shown
+  // until this returns (or if the call fails).
+  var _poServer = null, _poServerSig = null, _poFetching = false;
+  function _poSig(allTeams){ return allTeams.map(function(t){ return t.slot + ':' + (t.picks ? t.picks.length : 0); }).join('|') + '@' + state.current; }
+  function refreshServerPlayoffOdds(allTeams){
+    if (!_draftComplete() || !allTeams || allTeams.length < 2) return;
+    var sig = _poSig(allTeams);
+    if (_poFetching || (_poServer && _poServerSig === sig)) return;
+    _poFetching = true;
+    var _sc = scoringCfg();
+    var payload = {
+      season: state.season || 0,
+      ppr: (_sc && _sc.ppr != null) ? _sc.ppr : 1,
+      roster: (state && state.roster) || defaultRoster(),
+      playoff_teams: (state.teams && state.teams <= 8) ? 4 : 6,
+      teams: allTeams.map(function(t){
+        return { slot: t.slot, name: t.name,
+          players: (t.picks || []).map(function(x){ return (x.p && x.p.id != null) ? String(x.p.id) : null; }).filter(Boolean) };
+      })
+    };
+    fetch('/api/draft-playoff-odds', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      .then(function(r){ return r.json(); })
+      .then(function(resp){
+        _poFetching = false;
+        if (resp && resp.odds && resp.odds.length){
+          var m = {};
+          resp.odds.forEach(function(o){ if (o.slot != null) m[o.slot] = Math.round(o.playoff_pct); });
+          _poServer = m; _poServerSig = sig;
+          if (sideTab === 'league') renderSide();   // repaint the league tab with the thorough odds
+        }
+      })
+      .catch(function(){ _poFetching = false; });
+  }
+  // Odds source for display: the server engine when it's ready for this exact
+  // board, else the instant JS estimate (and kick off the server fetch).
+  function playoffOddsSource(allTeams){
+    refreshServerPlayoffOdds(allTeams);
+    if (_poServer && _poServerSig === _poSig(allTeams)) return _poServer;
+    return playoffOddsBySlot(allTeams);
+  }
   function gradeTeam(){
     if (!hasOwned()) return null;
     // Pull "your" grade from the full field so the relative-to-league curve matches
@@ -3234,7 +3279,7 @@
     var _rc = ['gold','silver','bronze'];
     // Projected playoff odds per team - only once the draft is complete.
     var _leagueDone = _draftComplete();
-    var _poOdds = _leagueDone ? playoffOddsBySlot(allTeams) : {};
+    var _poOdds = _leagueDone ? playoffOddsSource(allTeams) : {};
     var html = '<div class="dr-league-body">' + _draftRecapHtml(allTeams)
       + '<p class="dr-recap-h dr-recap-grades-h">' + _RECAP_IC.trophy + 'Draft grades</p><div class="dr-sum-league">';
     allTeams.forEach(function(t, i){
@@ -4195,7 +4240,7 @@
         var _allT = gradeAllTeams(), _meT = null;
         for (var _ti = 0; _ti < _allT.length; _ti++){ if (_allT[_ti].isMe){ _meT = _allT[_ti]; break; } }
         if (_meT){
-          var _myOdds = playoffOddsBySlot(_allT)[_meT.slot];
+          var _myOdds = playoffOddsSource(_allT)[_meT.slot];
           if (_myOdds != null) _sits.push({ v: _myOdds + '%', l: 'Playoff Odds' });
         }
       }

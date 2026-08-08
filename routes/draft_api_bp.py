@@ -217,3 +217,106 @@ def api_draft_live():
         "traded_picks": traded_picks_out,
         "user_roster_map": user_roster_map,
     })
+
+
+# Draft "roster slot" names -> the slot strings simulate_playoff_odds expects.
+_DRAFT_SLOT_TO_ENGINE = {"SF": "SUPER_FLEX"}
+
+
+def _draft_roster_positions(roster: dict) -> list:
+    """Flatten the draft's roster-slot counts into the ordered position list the
+    playoff simulator reads (starting slots first, bench last). SF -> SUPER_FLEX
+    so the engine treats it as a QB-eligible flex."""
+    out: list = []
+    for slot in ("QB", "SF", "RB", "WR", "TE", "FLEX", "K", "DEF"):
+        n = int(roster.get(slot) or 0)
+        eng = _DRAFT_SLOT_TO_ENGINE.get(slot, slot)
+        out.extend([eng] * n)
+    out.extend(["BN"] * int(roster.get("BN") or 0))
+    return out
+
+
+@draft_api_bp.route("/api/draft-playoff-odds", methods=["POST"])
+def api_draft_playoff_odds():
+    """Projected playoff odds for a COMPLETED draft's teams.
+
+    Runs the same Monte Carlo the standings page uses (``simulate_playoff_odds``
+    in its preseason mode: project each roster's strength from Sleeper/FP player
+    projections, simulate a full season with skew-normal weekly scoring over a
+    balanced round-robin schedule). The draft room posts the drafted rosters and
+    renders the returned ``playoff_pct`` per team; it falls back to a light
+    client-side estimate if this call fails.
+    """
+    data = request.get_json(silent=True) or {}
+    teams_in = data.get("teams") or []
+    if not isinstance(teams_in, list) or len(teams_in) < 2:
+        return jsonify({"error": "need_two_teams"}), 400
+    if len(teams_in) > 32:
+        return jsonify({"error": "too_many_teams"}), 400
+
+    roster = data.get("roster") or {}
+    season = int(data.get("season") or 0) or datetime.now().year
+    try:
+        rec_pts = float(data.get("ppr"))
+    except (TypeError, ValueError):
+        rec_pts = 1.0
+
+    roster_positions = _draft_roster_positions(roster)
+    rosters = []
+    roster_map = {}
+    for t in teams_in:
+        try:
+            rid = int(t.get("slot"))
+        except (TypeError, ValueError):
+            continue
+        pids = [str(x) for x in (t.get("players") or []) if x not in (None, "")]
+        rosters.append({"roster_id": rid, "players": pids})
+        roster_map[str(rid)] = str(t.get("name") or ("Team " + str(rid)))
+    if len(rosters) < 2:
+        return jsonify({"error": "need_two_teams"}), 400
+
+    try:
+        playoff_teams = int(data.get("playoff_teams") or 0)
+    except (TypeError, ValueError):
+        playoff_teams = 0
+    if playoff_teams <= 0:
+        playoff_teams = 4 if len(rosters) <= 8 else 6
+    playoff_teams = max(1, min(playoff_teams, len(rosters) - 1))
+
+    ctx = {
+        "season": season,
+        "current_week": 0,          # preseason path (no games yet)
+        "league_id": "",            # no real league -> round-robin fallback schedule
+        "scoring_settings": {"rec": rec_pts},
+        "raw_scoring_settings": {},
+        "roster_positions": roster_positions,
+        "rosters": rosters,
+        "roster_map": roster_map,
+        "team_stats": None,
+        "league_settings": {
+            "playoff_teams": playoff_teams,
+            "playoff_week_start": 15,
+            "divisions": 0,
+        },
+    }
+    try:
+        from data_building.simulate_playoff_odds import simulate_playoff_odds
+        # Deterministic per-board seed so odds don't drift on re-open for the same
+        # rosters. n_sims trimmed from the 10k default for snappier response.
+        res = simulate_playoff_odds(ctx, platform="sleeper", n_sims=5000, seed=1234)
+    except Exception as exc:
+        logger.warning("[draft-playoff-odds] sim failed: %s", exc)
+        return jsonify({"error": "sim_failed"}), 502
+
+    odds = [
+        {
+            "slot": r.get("roster_id"),
+            "playoff_pct": round(float(r.get("playoff_pct") or 0), 1),
+            "bye_pct": round(float(r.get("bye_pct") or 0), 1),
+            "first_seed_pct": round(float(r.get("first_seed_pct") or 0), 1),
+            "avg_final_wins": round(float(r.get("avg_final_wins") or 0), 1),
+            "avg_final_losses": round(float(r.get("avg_final_losses") or 0), 1),
+        }
+        for r in (res or [])
+    ]
+    return jsonify({"odds": odds, "playoff_teams": playoff_teams})
