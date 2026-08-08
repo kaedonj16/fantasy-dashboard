@@ -3070,25 +3070,15 @@
     out.sort(function(a, b){ return b.grade.score - a.grade.score; });
     return out;
   }
-  // Curve grades relative to the actual field so real differences between teams span
-  // a meaningful range instead of all clustering in one letter band. This does NOT
-  // fabricate gaps: each team's adjustment is proportional to how far its real
-  // composite score sits from the field mean, normalized by the field's own spread.
-  // A genuinely even field (low variance) stays tight; a field with real separation
-  // spreads out. The raw score is preserved on grade.rawScore.
+  // Absolute grading: the team letter reflects the team's OWN composite (starter
+  // quality + lineup strength vs league + construction), not its rank within the
+  // field - so a genuinely elite draft earns an A even when the whole room drafted
+  // well, and a weak one earns a C even in a weak room. (Previously the field was
+  // curved to a B centre, which clustered strong mocks all at B.) rawScore is kept
+  // in sync for any consumer that reads it.
   function _applyFieldCurve(out){
-    if (!state || state.type === 'rookie') return;  // rookie grades are absolute (Teams-page letters), not curved
-    if (!out || out.length < 3) return;             // need a real field to curve against
-    // Curve math lives in static/draft_grade_curve.js (shared with the Python
-    // server grade via a parity test) so both surfaces stay identical.
-    var _teams = state.teams || 12;
-    var roundsDone = Math.floor(((state.current || 1) - 1) / _teams);
-    var raws = out.map(function(t){ return t.grade.score; });
-    var curved = BRDraftGrade.curveFieldScores(raws, roundsDone);
-    out.forEach(function(t, i){
-      t.grade.rawScore = t.grade.score;
-      t.grade.score = curved[i];
-    });
+    if (!out) return;
+    out.forEach(function(t){ if (t && t.grade) t.grade.rawScore = t.grade.score; });
   }
   // Classify a startup/redraft build into a recognizable draft archetype based on
   // positional emphasis, weighting the early picks where strategy is actually set.
