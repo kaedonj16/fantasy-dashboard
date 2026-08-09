@@ -41,7 +41,7 @@ def build_advanced_metrics_body(
         if _vs:
             _weekly_vol_map[_k] = _vs
     # Group metrics into <optgroup>s by category (General / Passing / Rushing / Receiving).
-    _CAT_ORDER = ["Value", "General", "Passing", "Rushing", "Receiving", "Volume"]
+    _CAT_ORDER = ["Value", "General", "Passing", "Rushing", "Receiving"]
     groups: dict = {}
     for key, spec in metrics_spec.items():
         if spec.get("hidden"):
@@ -1361,7 +1361,7 @@ _AM_JS = r"""
     }
 
     // Category display order: primary category first, then General, then others
-    const _CAT_ORDER = ['Value', 'Passing', 'Rushing', 'Receiving', 'Volume', 'General'];
+    const _CAT_ORDER = ['Value', 'Passing', 'Rushing', 'Receiving', 'General'];
     const catOrder = [];
     if (primaryCat !== 'General' && groups[primaryCat]) catOrder.push(primaryCat);
     if (groups['General']) catOrder.push('General');
@@ -1395,7 +1395,7 @@ _AM_JS = r"""
     }
 
     if (primaryCat !== 'General') {
-      const otherCats = ['Passing', 'Rushing', 'Receiving', 'Volume'].filter(c => c !== primaryCat);
+      const otherCats = ['Passing', 'Rushing', 'Receiving'].filter(c => c !== primaryCat);
       if (otherCats.length) {
         html += '<div class="am-sp-cat-note">To compare ' + otherCats.join(' or ') + ' stats, switch the Primary Metric</div>';
       }
@@ -1462,7 +1462,7 @@ _AM_JS = r"""
   };
 
   function _orderByCategory(keys) {
-    const CAT_ORDER = ['General', 'Passing', 'Rushing', 'Receiving', 'Volume'];
+    const CAT_ORDER = ['General', 'Passing', 'Rushing', 'Receiving'];
     const groups = {};
     for (const key of keys) {
       const spec = cfg.metrics[key];
@@ -2742,7 +2742,7 @@ _AM_JS = r"""
       const c = m.category || 'Other';
       (cats[c] = cats[c] || []).push([k, m.label]);
     });
-    const order = ['Value', 'General', 'Passing', 'Rushing', 'Receiving', 'Volume'];
+    const order = ['Value', 'General', 'Passing', 'Rushing', 'Receiving'];
     const catKeys = Object.keys(cats).sort(function(a, b) {
       const ia = order.indexOf(a), ib = order.indexOf(b);
       return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
@@ -3641,6 +3641,8 @@ _AM_JS = r"""
 
       // Position-aware ordered filter keys: volume counts → per-game rates → usage rates.
       const _FILTER_ORDER = [
+        // Passing
+        'total_pass_yards',
         // Rushing
         'total_carries', 'carries_per_game', 'total_rush_yards', 'rush_yards_per_game',
         // Receiving
@@ -3665,17 +3667,6 @@ _AM_JS = r"""
         volOpts.push({ value: key, label: spec.label });
         added.add(key);
       });
-      // Catch any remaining Volume-category metrics not in the explicit list.
-      Object.entries(cfg.metrics).forEach(function([key, spec]) {
-        if (added.has(key)) return;
-        if ((spec.category || '') !== 'Volume') return;
-        const mpos = new Set(spec.positions || []);
-        const relevant = [...primaryPositions].some(function(p) { return mpos.has(p); });
-        if (!relevant) return;
-        volOpts.push({ value: key, label: spec.label });
-        added.add(key);
-      });
-
       // Order: Age/Exp → volume/rates → primary metric → extra metrics
       const opts = [{ value: 'age', label: 'Age' }, { value: 'exp', label: 'Years Exp' }];
       volOpts.forEach(function(o) { opts.push(o); });
