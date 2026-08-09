@@ -4083,13 +4083,16 @@ _AM_JS = r"""
     // height to the space below the button so it scrolls internally.
     function positionPanel() {
       const r = btn.getBoundingClientRect();
-      const avail = window.innerHeight - r.bottom - 16;
+      // Leave room for the fixed mobile bottom nav (~56px + safe area) so the
+      // list scrolls internally instead of running under it and off-screen.
+      const bottomGap = window.matchMedia('(max-width:768px)').matches ? 78 : 16;
+      const avail = window.innerHeight - r.bottom - bottomGap;
       panel.style.position = 'fixed';
       panel.style.top = (r.bottom + 6) + 'px';
       panel.style.left = r.left + 'px';
       panel.style.right = 'auto';
       panel.style.zIndex = '900';
-      panel.style.maxHeight = Math.max(180, Math.min(560, avail)) + 'px';
+      panel.style.maxHeight = Math.max(160, Math.min(560, avail)) + 'px';
     }
     function clearPosition() {
       panel.style.position = '';
