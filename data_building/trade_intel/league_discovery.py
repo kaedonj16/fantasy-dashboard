@@ -119,12 +119,21 @@ def _roster_owner_ids(league_id: str) -> List[str]:
 
 
 def _already_known(season: int) -> Set[str]:
+    # Stream through a server-side cursor and fold straight into the set. This set
+    # scales with the whole season's league pool and is rebuilt every run, so
+    # avoid also materializing a full fetchall() list beside it (that doubled the
+    # peak of the largest allocation in discovery as the pool grew).
+    known: Set[str] = set()
     with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT league_id FROM trade_intel_leagues WHERE season = %s",
-            (season,)
-        ).fetchall()
-    return {r["league_id"] for r in rows}
+        with conn.cursor(name="ti_already_known") as cur:
+            cur.itersize = 10000
+            cur.execute(
+                "SELECT league_id FROM trade_intel_leagues WHERE season = %s",
+                (season,),
+            )
+            for r in cur:
+                known.add(r["league_id"])
+    return known
 
 
 def _save_users(user_ids: List[str], source: str = "bfs", usernames: Optional[Dict[str, str]] = None) -> None:

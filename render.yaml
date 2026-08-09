@@ -156,7 +156,7 @@ services:
     schedule: 0 */4 * * *
     plan: starter
     buildCommand: pip install --no-cache-dir -r requirements.txt && python -m playwright install chromium
-    startCommand: python scripts/refresh_trade_intel.py --discover-target 500 --batch-size 2000 --workers 4 --crawl-mode both --recrawl-days 2 --analytics
+    startCommand: python scripts/refresh_trade_intel.py --discover-target 250 --batch-size 1000 --workers 4 --crawl-mode both --recrawl-days 2 --analytics
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9

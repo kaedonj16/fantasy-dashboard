@@ -396,29 +396,44 @@ def run_crawl(batch_size: int = 500, workers: int = 10, crawl_mode: str = "new",
     print(f"[crawler] Crawling {len(leagues)} leagues with {workers} workers, week={current_week}")
 
     completed_count = 0
+    # Bound the number of futures alive at once instead of submitting the whole
+    # batch up front. With a large batch this keeps only ~in_flight_cap task
+    # objects (and their pending HTTP responses) resident, replenishing as each
+    # league finishes — the all-at-once submit grew peak memory with batch_size.
+    in_flight_cap = max(workers * 4, workers)
+    league_iter = iter(leagues)
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {
-            executor.submit(_crawl_one, row, current_week, start_week_override): row["league_id"]
-            for row in leagues
-        }
-        
-        for future in as_completed(futures):
-            completed_count += 1
-            league_id, n, league_type = future.result()
-            mark_batch.append((current_week, league_id))
-            
-            if n > 0:
-                if league_type == 2:  # dynasty
-                    dynasty_trades += n
-                    dynasty_leagues += 1
-                else:  # redraft
-                    redraft_trades += n
-                    redraft_leagues += 1
+        futures = {}
+        for row in league_iter:
+            futures[executor.submit(_crawl_one, row, current_week, start_week_override)] = row["league_id"]
+            if len(futures) >= in_flight_cap:
+                break
 
-            # Flush mark batch every 50 to avoid holding too many updates
-            if len(mark_batch) >= 50:
-                _mark_crawled_batch(mark_batch)
-                mark_batch = []
+        while futures:
+            done, _ = wait(futures, return_when=FIRST_COMPLETED)
+            for future in done:
+                futures.pop(future, None)
+                completed_count += 1
+                league_id, n, league_type = future.result()
+                mark_batch.append((current_week, league_id))
+
+                if n > 0:
+                    if league_type == 2:  # dynasty
+                        dynasty_trades += n
+                        dynasty_leagues += 1
+                    else:  # redraft
+                        redraft_trades += n
+                        redraft_leagues += 1
+
+                # Flush mark batch every 50 to avoid holding too many updates
+                if len(mark_batch) >= 50:
+                    _mark_crawled_batch(mark_batch)
+                    mark_batch = []
+
+                # Top up the in-flight set with the next queued league.
+                next_row = next(league_iter, None)
+                if next_row is not None:
+                    futures[executor.submit(_crawl_one, next_row, current_week, start_week_override)] = next_row["league_id"]
 
     if mark_batch:
         _mark_crawled_batch(mark_batch)

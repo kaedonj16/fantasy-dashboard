@@ -57,10 +57,16 @@ def main() -> int:
                         help="Refresh trade analytics after crawling.")
     args = parser.parse_args()
 
+    import gc
+
     from dotenv import load_dotenv
     load_dotenv()
 
     from data_building.trade_intel.trade_crawler import run_crawl
+
+    # The three stages run in one 512Mi cron process. They don't share data, so
+    # collect between them to release each stage's peak (discovery's known-league
+    # set, the crawl's futures) before the next stage allocates.
 
     # ── 1. Discovery (expansion) ───────────────────────────────────────────
     if not args.no_discovery and args.discover_target > 0:
@@ -71,6 +77,8 @@ def main() -> int:
             logger.info("Discovery: %d new leagues added.", discovered)
         except Exception as e:
             logger.warning("Discovery failed (non-fatal): %s", e)
+        finally:
+            gc.collect()
     else:
         logger.info("Discovery skipped.")
 
@@ -89,6 +97,7 @@ def main() -> int:
         "Crawl done: %d trades from %d leagues",
         result.get("new_trades", 0), result.get("leagues_crawled", 0),
     )
+    gc.collect()
 
     # ── 3. Analytics ───────────────────────────────────────────────────────
     if args.analytics:
