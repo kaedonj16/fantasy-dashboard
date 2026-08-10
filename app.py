@@ -8442,16 +8442,14 @@ def build_weekly_hub_body(ctx: dict) -> str:
   }}, 60000);
 }})();
 
-// Activate a weekly left-tab by name and switch its panel. Scoped to the tab
-// bar / tab-panels so it never clears the matchup panel, which on desktop is
-// relocated out of .tab-panels into its own always-visible column.
+// Activate a weekly left-tab by name and switch its panel
 function wkActivateTab(tab) {{
   var container = document.getElementById('weeklyLeftTabs');
   if (!container) return;
-  container.querySelectorAll('.tab-bar .tab-btn').forEach(function(b) {{ b.classList.remove('active'); }});
-  container.querySelectorAll('.tab-panels .tab-panel').forEach(function(p) {{ p.classList.remove('active'); }});
-  var btn   = container.querySelector('.tab-bar .tab-btn[data-tab="' + tab + '"]');
-  var panel = container.querySelector('.tab-panels .tab-panel[data-tab="' + tab + '"]');
+  container.querySelectorAll('.tab-btn').forEach(function(b) {{ b.classList.remove('active'); }});
+  container.querySelectorAll('.tab-panel').forEach(function(p) {{ p.classList.remove('active'); }});
+  var btn   = container.querySelector('.tab-btn[data-tab="' + tab + '"]');
+  var panel = container.querySelector('.tab-panel[data-tab="' + tab + '"]');
   if (btn)   btn.classList.add('active');
   if (panel) panel.classList.add('active');
 }}
@@ -8462,78 +8460,13 @@ function wkActivateTab(tab) {{
   if (!tabParam) return;
   var container = document.getElementById('weeklyLeftTabs');
   if (!container) return;
-  var btn = container.querySelector('.tab-bar .tab-btn[data-tab="' + tabParam + '"]');
-  if (!btn || btn.style.display === 'none') return;  // matchups tab is hidden on desktop
-  container.querySelectorAll('.tab-bar .tab-btn').forEach(function(b) {{ b.classList.remove('active'); }});
-  container.querySelectorAll('.tab-panels .tab-panel').forEach(function(p) {{ p.classList.remove('active'); }});
+  var btn = container.querySelector('.tab-btn[data-tab="' + tabParam + '"]');
+  if (!btn) return;
+  container.querySelectorAll('.tab-btn').forEach(function(b) {{ b.classList.remove('active'); }});
+  container.querySelectorAll('.tab-panel').forEach(function(p) {{ p.classList.remove('active'); }});
   btn.classList.add('active');
-  var panel = container.querySelector('.tab-panels .tab-panel[data-tab="' + tabParam + '"]');
+  var panel = container.querySelector('.tab-panel[data-tab="' + tabParam + '"]');
   if (panel) panel.classList.add('active');
-}})();
-
-// Desktop reflow: on wide screens the matchup preview becomes a centered main
-// section with the Scorers/Scout/Lineup card as a sidebar beside it. On phones
-// it stays the original single card with a Matchups tab. Move nodes rather than
-// duplicate them so the week-change / live-refresh JS keeps working, and undo
-// cleanly on resize so mobile is byte-for-byte the original layout.
-(function() {{
-  var tabs = document.getElementById('weeklyLeftTabs');
-  if (!tabs || tabs.__wkReflow) return;
-  tabs.__wkReflow = true;
-  var mq = window.matchMedia('(min-width: 1100px)');
-  var mode = null;
-
-  function toDesktop() {{
-    var bar    = tabs.querySelector('.tab-bar');
-    var panels = tabs.querySelector('.tab-panels');
-    var mPanel = tabs.querySelector('.tab-panel[data-tab="matchups"]');
-    var mBtn   = tabs.querySelector('.tab-bar .tab-btn[data-tab="matchups"]');
-    if (!bar || !panels || !mPanel) return;
-    var mainCol = document.createElement('div');
-    mainCol.className = 'wk-matchup-col';
-    mainCol.appendChild(mPanel);           // pull matchup out of the tab rotation
-    mPanel.classList.add('active');         // always shown in its own column
-    var sideCol = document.createElement('div');
-    sideCol.className = 'wk-side-col';
-    sideCol.appendChild(bar);
-    sideCol.appendChild(panels);
-    tabs.appendChild(mainCol);
-    tabs.appendChild(sideCol);
-    if (mBtn) mBtn.style.display = 'none';
-    // ensure a sidebar tab is active (matchups was the SSR default)
-    if (!bar.querySelector('.tab-btn.active:not([data-tab="matchups"])')) {{
-      wkActivateTab('scorers');
-    }}
-    tabs.classList.add('wk-desktop');
-  }}
-
-  function toMobile() {{
-    var mainCol = tabs.querySelector('.wk-matchup-col');
-    var sideCol = tabs.querySelector('.wk-side-col');
-    var bar    = tabs.querySelector('.tab-bar');
-    var panels = tabs.querySelector('.tab-panels');
-    var mPanel = tabs.querySelector('.tab-panel[data-tab="matchups"]');
-    var mBtn   = tabs.querySelector('.tab-bar .tab-btn[data-tab="matchups"]');
-    if (bar)    tabs.insertBefore(bar, tabs.firstChild);
-    if (panels) tabs.insertBefore(panels, bar ? bar.nextSibling : tabs.firstChild);
-    if (mPanel && panels) panels.insertBefore(mPanel, panels.firstChild);
-    if (mainCol && mainCol.parentNode) mainCol.parentNode.removeChild(mainCol);
-    if (sideCol && sideCol.parentNode) sideCol.parentNode.removeChild(sideCol);
-    if (mBtn) mBtn.style.display = '';
-    tabs.classList.remove('wk-desktop');
-  }}
-
-  function apply(initial) {{
-    var want = mq.matches ? 'desktop' : 'mobile';
-    if (want === mode) return;
-    var prev = mode;
-    mode = want;
-    if (want === 'desktop') toDesktop();
-    else if (!(initial && prev === null)) toMobile();  // SSR is already mobile
-  }}
-  apply(true);
-  if (mq.addEventListener) mq.addEventListener('change', function() {{ apply(false); }});
-  else if (mq.addListener) mq.addListener(function() {{ apply(false); }});
 }})();
 </script>
 """
