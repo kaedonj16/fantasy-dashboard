@@ -51,6 +51,8 @@
           var avgDelta = data.league_avg_delta || 0;
           var avgSign = avgDelta >= 0 ? '+' : '';
           var avgFmt = avgSign + Math.round(avgDelta).toLocaleString();
+          // Largest deviation from the league average — scales the diverging bars.
+          var maxAbsVs = rows.reduce(function(m, r) { return Math.max(m, Math.abs(r.vs_avg || 0)); }, 0) || 1;
           var html = '';
 
           // Header: title + window pills (full mode only)
@@ -112,6 +114,11 @@
               moversHtml += '</div>';
             }
 
+            // Diverging bar: fills from the center (league avg) outward — right/green
+            // for above-average rosters, left/red for below — scaled to the widest gap.
+            var barPct   = Math.min(50, Math.round(Math.abs(r.vs_avg || 0) / maxAbsVs * 50));
+            var barStyle = (pos ? 'left:50%;' : 'right:50%;') + 'width:' + barPct + '%;';
+
             html += '<div class="btm-row ' + cls + (slim ? ' btm-slim' : '') + '">' +
               '<div class="btm-rank-cell">' + rankHtml + '</div>' +
               '<div class="btm-team-cell">' +
@@ -124,6 +131,7 @@
               '<div class="btm-vsavg-cell">' +
                 '<span class="btm-vsavg-badge ' + cls + '">' + vsSign + Math.round(r.vs_avg).toLocaleString() + '</span>' +
               '</div>' +
+              '<div class="btm-bar-track"><span class="btm-bar-fill ' + cls + '" style="' + barStyle + '"></span></div>' +
             '</div>';
           });
           html += '</div>';

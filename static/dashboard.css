@@ -17209,6 +17209,36 @@ tr.team-clickable {
 .btm-vsavg-badge.btm-pos { background: color-mix(in srgb, var(--win) 13%, transparent); color: var(--win); }
 .btm-vsavg-badge.btm-neg { background: color-mix(in srgb, var(--loss) 12%, transparent); color: var(--loss); }
 
+/* Diverging bar (spans the full row width, on its own grid line) — center = the
+   league average; fills right/green above avg, left/red below. */
+.btm-bar-track {
+  grid-column: 1 / -1;
+  position: relative;
+  height: 5px;
+  margin-top: 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+}
+.btm-bar-track::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: color-mix(in srgb, var(--text-muted) 45%, transparent);
+}
+.btm-bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 2px;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+.btm-bar-fill.btm-pos { background: var(--win); }
+.btm-bar-fill.btm-neg { background: var(--loss); }
+
 /* Desktop teams page: team-grade cards in the main column + League Analytics
    (Value / Roster Intel / Schedule) in a right-hand sidebar, both visible at
    once. Mobile collapses to a single tabbed card — see the max-width rule near
