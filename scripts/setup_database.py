@@ -291,6 +291,7 @@ def create_breakout_tables():
                 last_season_team_target_pct NUMERIC,
                 last_season_team_carry_pct NUMERIC,
                 draft_metadata JSONB,
+                contract_metadata JSONB,
                 created_at TIMESTAMP DEFAULT NOW(),
                 UNIQUE(player_id, old_team, new_team, season)
             );

@@ -23,6 +23,28 @@ from .config import (
     BREAKOUT_SCORES_TABLE
 )
 
+_ROSTER_CHANGES_COLUMNS_ENSURED = False
+
+
+def _ensure_roster_changes_columns(conn) -> None:
+    """Idempotently add newer optional columns to roster_changes so SELECTs that
+    reference them don't fail on databases created before those columns existed
+    (which, inside the batch loader's try/except, would otherwise zero out every
+    competition signal). Runs at most once per process."""
+    global _ROSTER_CHANGES_COLUMNS_ENSURED
+    if _ROSTER_CHANGES_COLUMNS_ENSURED:
+        return
+    try:
+        conn.execute(
+            f"ALTER TABLE {ROSTER_CHANGES_TABLE} "
+            f"ADD COLUMN IF NOT EXISTS contract_metadata JSONB"
+        )
+        conn.commit()
+    except Exception:
+        logging.getLogger(__name__).debug(
+            "ensure roster_changes columns failed", exc_info=True)
+    _ROSTER_CHANGES_COLUMNS_ENSURED = True
+
 
 def get_vacated_opportunity(team: str, position: str, season: int) -> Optional[Dict]:
     """
@@ -155,7 +177,9 @@ def get_arrivals_by_team_position(
             last_season_targets,
             last_season_carries,
             last_season_snap_share,
-            draft_metadata
+            last_season_opportunity_share,
+            draft_metadata,
+            contract_metadata
         FROM {ROSTER_CHANGES_TABLE}
         WHERE new_team = %s
           AND position = %s
@@ -171,6 +195,7 @@ def get_arrivals_by_team_position(
 
     try:
         with get_conn() as conn:
+            _ensure_roster_changes_columns(conn)
             with conn.cursor() as cur:
                 cur.execute(query, (team, position, season))
                 rows = cur.fetchall()
@@ -857,6 +882,7 @@ def batch_load_all_breakout_data(season: int) -> Dict[str, Dict]:
 
     try:
         with get_conn() as conn:
+            _ensure_roster_changes_columns(conn)
             # Query 1: All vacated opportunity (~128 rows: 32 teams × 4 positions)
             vacated_rows = conn.execute(f"""
                 SELECT team, position, total_targets_vacated,
@@ -882,7 +908,8 @@ def batch_load_all_breakout_data(season: int) -> Dict[str, Dict]:
             arrival_rows = conn.execute(f"""
                 SELECT new_team, position, player_id, player_name,
                        change_type, draft_metadata, last_season_targets,
-                       last_season_carries
+                       last_season_carries, last_season_snap_share,
+                       last_season_opportunity_share, contract_metadata
                 FROM {ROSTER_CHANGES_TABLE}
                 WHERE season = %s
                   AND change_type IN ('free_agent', 'trade', 'draft')

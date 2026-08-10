@@ -267,7 +267,8 @@ class BreakoutEngine:
         # 3. Competition Added Penalty (with cache)
         score, details = calculate_competition_added_penalty(
             player_id, team, position, self.season,
-            arrivals_cache=self.db_cache['arrivals']
+            arrivals_cache=self.db_cache['arrivals'],
+            vacated_cache=self.db_cache['vacated']
         )
         component_scores['competition_added_penalty'] = score
         component_details['competition_added_penalty'] = details
