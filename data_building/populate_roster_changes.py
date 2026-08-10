@@ -15,6 +15,53 @@ from data_building.offseason_opportunity import track_roster_change, calculate_v
 from utils.utils import load_players_index, DATA_DIR
 
 
+def _load_contract_map() -> Dict[str, Dict]:
+    """Map Sleeper player_id -> {apy, guaranteed, years} from the OverTheCap
+    contracts snapshot (data_building/external_data/player_investment.py).
+
+    This feeds the breakout engine's competition-added penalty: a veteran signed
+    to a starter contract should threaten an incumbent even when his prior-team
+    box score was thin (e.g. a backup signed to start). Best-effort — returns {}
+    if the snapshot is missing or unreadable so population never breaks on it.
+    """
+    try:
+        from data_building.external_data.player_investment import (
+            CONTRACTS_LATEST_PATH,
+        )
+        import pandas as pd
+        if not CONTRACTS_LATEST_PATH.exists():
+            print("[contracts] no contracts snapshot found; skipping enrichment")
+            return {}
+        df = pd.read_parquet(CONTRACTS_LATEST_PATH)
+    except Exception as e:
+        print(f"[contracts] could not load contracts snapshot: {e}")
+        return {}
+
+    out: Dict[str, Dict] = {}
+    for row in df.to_dict(orient="records"):
+        pid = row.get("sleeper_id")
+        if pid is None or (isinstance(pid, float) and pd.isna(pid)):
+            continue
+        pid = str(int(pid)) if isinstance(pid, float) else str(pid)
+
+        def _num(*keys):
+            for k in keys:
+                v = row.get(k)
+                if v is not None and not (isinstance(v, float) and pd.isna(v)) and float(v) > 0:
+                    return float(v)
+            return 0.0
+
+        apy = _num("contract_apy")
+        guaranteed = _num("fully_guaranteed_money", "guaranteed_money")
+        years = _num("contract_years")
+        if apy <= 0 and guaranteed <= 0:
+            continue  # nothing useful to store
+        out[pid] = {"apy": apy, "guaranteed": guaranteed, "years": years}
+
+    print(f"[contracts] loaded contract terms for {len(out)} players")
+    return out
+
+
 def load_usage_table_for_season(season: int) -> List[Dict]:
     """
     Load usage table for a specific season.
@@ -199,8 +246,11 @@ def populate_offseason_data(season: int):
     print("STEP 1: Detecting roster changes...")
     changes = detect_roster_changes_between_seasons(season)
 
-    # Step 2: Track roster changes in database
+    # Step 2: Track roster changes in database (enriched with contract terms so a
+    # veteran signed to start properly threatens the incumbent, even if his
+    # prior-team usage was thin).
     print("\nSTEP 2: Saving roster changes to database...")
+    contract_map = _load_contract_map()
     for change in changes:
         track_roster_change(
             player_id=change["player_id"],
@@ -211,7 +261,8 @@ def populate_offseason_data(season: int):
             change_type=change["change_type"],
             change_date=date(season, 3, 1),  # Approximate offseason date
             season=season,
-            last_season_stats=change["stats"]
+            last_season_stats=change["stats"],
+            contract_metadata=contract_map.get(str(change["player_id"]))
         )
 
     # Step 3: Calculate vacated opportunity

@@ -804,7 +804,32 @@ def _get_draft_signal(arrival: Dict) -> Tuple[float, Dict]:
     }
 
 
-def _calculate_arrival_role_threat(position: str, arrival: Dict) -> Tuple[float, Dict]:
+def _get_projected_role_signal(position: str, vacated: Optional[Dict]) -> float:
+    """B-signal: the size of the role actually available to an arrival on the NEW
+    team, from the opportunity vacated at that position (team-relative).
+
+    A signing into a room that just lost its starter is stepping into a real role;
+    one into a crowded room isn't. Returns 0 when there's no vacated-opportunity
+    data. This is deliberately just the *size* of the opening — how much of it a
+    given arrival is credible to claim is applied by the caller.
+    """
+    if not vacated:
+        return 0.0
+    tgt = _safe_float(vacated.get("targets", 0))
+    car = _safe_float(vacated.get("carries", 0))
+    snp = _safe_float(vacated.get("snap_share", 0))
+    if position in ("WR", "TE"):
+        return _clamp(_normalize_to_one(tgt, 110) * 0.70 + _normalize_to_one(snp, 0.80) * 0.30, 0.0, 1.0)
+    if position == "RB":
+        return _clamp(_normalize_to_one(car, 220) * 0.60 + _normalize_to_one(snp, 0.70) * 0.40, 0.0, 1.0)
+    if position == "QB":
+        return _clamp(_normalize_to_one(snp, 0.85), 0.0, 1.0)
+    return 0.0
+
+
+def _calculate_arrival_role_threat(
+        position: str, arrival: Dict, vacated: Optional[Dict] = None
+) -> Tuple[float, Dict]:
     prev_targets = _safe_float(arrival.get("last_season_targets", 0))
     prev_carries = _safe_float(arrival.get("last_season_carries", 0))
     prev_routes = _safe_float(arrival.get("last_season_routes", 0))
@@ -840,16 +865,30 @@ def _calculate_arrival_role_threat(position: str, arrival: Dict) -> Tuple[float,
         primary_usage = 0.0
 
     change_type = arrival.get("change_type")
+    role_signal = 0.0
 
     if change_type == "draft":
         draft_signal, draft_info = _get_draft_signal(arrival)
         contract_signal = 0.0
         threat_score = usage_signal * 0.15 + draft_signal * 0.85
     elif change_type in ["free_agent", "trade"]:
-        contract_signal = _get_contract_signal(arrival)
+        # A veteran's threat is NOT just his old-team box score — a backup signed
+        # to start (thin prior usage) is a real threat. Two proxies for the role
+        # he was brought in to fill should coalign: A) the contract the market
+        # gave him, and B) the size of the starting job that opened on his new
+        # team. Either one, on its own, implies a real role; prior usage is kept
+        # as a floor so a proven producer never scores below his own track record.
+        contract_signal = _get_contract_signal(arrival)                 # A
+        role_signal = _get_projected_role_signal(position, vacated)      # B
         draft_signal = 0.0
         draft_info = {}
-        threat_score = usage_signal * 0.72 + contract_signal * 0.28
+        # The room's opening (B) only counts to the extent this player is credible
+        # to claim it — otherwise a vacated starting job would over-threaten from
+        # every depth signing. Credibility comes from the contract or prior usage.
+        credibility = max(contract_signal, usage_signal)
+        threat_score = max(usage_signal, contract_signal, role_signal * credibility)
+        # Small bump when the contract and the opening agree (higher confidence).
+        threat_score += 0.10 * min(contract_signal, role_signal)
     else:
         draft_signal = 0.0
         contract_signal = 0.0
@@ -861,6 +900,7 @@ def _calculate_arrival_role_threat(position: str, arrival: Dict) -> Tuple[float,
         "usage_signal": round(usage_signal, 3),
         "draft_signal": round(draft_signal, 3),
         "contract_signal": round(contract_signal, 3),
+        "role_signal": round(role_signal, 3),
         "primary_usage": round(primary_usage, 1),
         "prev_targets": round(prev_targets, 1),
         "prev_carries": round(prev_carries, 1),
@@ -903,7 +943,8 @@ def calculate_competition_added_penalty(
         team: str,
         position: str,
         season: int,
-        arrivals_cache: Optional[Dict] = None
+        arrivals_cache: Optional[Dict] = None,
+        vacated_cache: Optional[Dict] = None
 ) -> Tuple[float, Dict]:
     """
     Negative score for added same-position competition.
@@ -911,7 +952,16 @@ def calculate_competition_added_penalty(
     Args:
         arrivals_cache: Optional dict mapping (team, position) to list of arrivals.
                        If provided, uses O(1) cache lookup instead of DB query.
+        vacated_cache: Optional dict mapping (team, position) to vacated
+                       opportunity. Lets an arrival's threat scale with the size
+                       of the starting job that opened on the new team (the B
+                       signal), not just his prior-team usage.
     """
+    # Size of the opening in this room (pooled across WR/TE for a pass-catcher),
+    # shared by every arrival — how much of it each one claims is gated per-player
+    # in _calculate_arrival_role_threat by contract/usage credibility.
+    vac = (_pooled_vacated(vacated_cache, team, position, season)
+           if vacated_cache is not None else None)
     # OPTIMIZED: Use cache if provided, otherwise fall back to DB query.
     # WR/TE pool pass-catcher arrivals so an incoming WR counts as added
     # competition for a TE (and vice versa); RB/QB unchanged. Each arrival is
@@ -949,7 +999,7 @@ def calculate_competition_added_penalty(
     for arrival in arrivals:
         if arrival.get("player_id") == player_id:
             continue  # Don't count the player as their own competitor
-        threat_score, threat_details = _calculate_arrival_role_threat(position, arrival)
+        threat_score, threat_details = _calculate_arrival_role_threat(position, arrival, vac)
         if threat_score <= 0:
             continue
 

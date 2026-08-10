@@ -223,7 +223,8 @@ def track_roster_change(
         change_date: date,
         season: int,
         last_season_stats: Optional[Dict[str, Any]] = None,
-        draft_metadata: Optional[Dict[str, Any]] = None
+        draft_metadata: Optional[Dict[str, Any]] = None,
+        contract_metadata: Optional[Dict[str, Any]] = None
 ):
     """
     Record a roster change (departure, signing, trade, retirement, draft).
@@ -246,10 +247,18 @@ def track_roster_change(
 
     stats = last_season_stats or {}
 
-    # Convert draft_metadata to JSON string if provided
+    # Convert JSONB payloads to JSON strings if provided
     draft_meta_json = json.dumps(draft_metadata) if draft_metadata else None
+    contract_meta_json = json.dumps(contract_metadata) if contract_metadata else None
 
     with get_conn() as conn:
+        # Self-heal: contract_metadata was added after the table's first schema,
+        # so ensure it exists before inserting into it (idempotent, cheap).
+        try:
+            conn.execute("ALTER TABLE roster_changes "
+                         "ADD COLUMN IF NOT EXISTS contract_metadata JSONB")
+        except Exception:
+            pass
         conn.execute("""
             INSERT INTO roster_changes (
                 player_id, player_name, position, old_team, new_team,
@@ -257,8 +266,8 @@ def track_roster_change(
                 last_season_targets, last_season_carries,
                 last_season_snap_share, last_season_opportunity_share,
                 last_season_team_target_pct, last_season_team_carry_pct,
-                draft_metadata
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                draft_metadata, contract_metadata
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (player_id, old_team, new_team, season)
             DO UPDATE SET
                 change_date = EXCLUDED.change_date,
@@ -268,7 +277,8 @@ def track_roster_change(
                 last_season_opportunity_share = EXCLUDED.last_season_opportunity_share,
                 last_season_team_target_pct = EXCLUDED.last_season_team_target_pct,
                 last_season_team_carry_pct = EXCLUDED.last_season_team_carry_pct,
-                draft_metadata = EXCLUDED.draft_metadata
+                draft_metadata = EXCLUDED.draft_metadata,
+                contract_metadata = COALESCE(EXCLUDED.contract_metadata, roster_changes.contract_metadata)
         """, (
             player_id, player_name, position, old_team, new_team,
             change_type, change_date, season,
@@ -278,7 +288,8 @@ def track_roster_change(
             stats.get("opportunity_share"),
             stats.get("team_target_pct"),
             stats.get("team_carry_pct"),
-            draft_meta_json
+            draft_meta_json,
+            contract_meta_json
         ))
         conn.commit()
 
