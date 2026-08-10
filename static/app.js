@@ -10708,6 +10708,11 @@ function openPlayerModal(playerId, playerName, opts) {
               onclick="pmToggleWeeklyTrends('${playerId}')">Weekly trends &#9662;</button>
             <div id="pmWeeklyTrendsBody" style="display:none;"></div>
           </div>
+          <div id="pmSeasonTrendWrap" data-player-id="${playerId}" style="display:none;">
+            <button type="button" id="pmSeasonTrendBtn" class="pm-weekly-toggle"
+              onclick="pmToggleSeasonTrend('${playerId}')">Season trend &#9662;</button>
+            <div id="pmSeasonTrendBody" style="display:none;"></div>
+          </div>
         </div>
       ` : '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">Advanced metrics not available for this player.</div></div>';
 
@@ -12156,6 +12161,20 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
           pmToggleWeeklyTrends(playerId);
         }
       }
+
+      // Season-trend panel: only meaningful with 2+ seasons of data. It charts a
+      // single metric across seasons (value + positional rank), independent of
+      // the active-season pill, so it's left collapsed until the user opens it.
+      const stWrap = document.getElementById('pmSeasonTrendWrap');
+      if (stWrap) {
+        if (availableSeasons.length >= 2) {
+          stWrap.style.display = '';
+          stWrap.dataset.playerId = playerId;
+          stWrap.dataset.position = metricsData.position || '';
+        } else {
+          stWrap.style.display = 'none';
+        }
+      }
     })
     .catch(err => {
       console.error('Error loading advanced metrics:', err);
@@ -12174,6 +12193,166 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
         loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd);
       });
     });
+}
+
+// ── Player modal: season-over-season metric trend ────────────────────────────
+var _pmSeasonTrendCache = {};   // key: playerId + '|' + metric  → API payload
+var _pmSeasonTrendState = {};   // playerId → { options: [...] }
+
+function pmToggleSeasonTrend(playerId) {
+  var body = document.getElementById('pmSeasonTrendBody');
+  var btn  = document.getElementById('pmSeasonTrendBtn');
+  var wrap = document.getElementById('pmSeasonTrendWrap');
+  if (!body) return;
+  var open = body.style.display !== 'none';
+  if (open) {
+    body.style.display = 'none';
+    if (btn) btn.innerHTML = 'Season trend &#9662;';
+    return;
+  }
+  body.style.display = '';
+  if (btn) btn.innerHTML = 'Season trend &#9652;';
+  if (!wrap || !wrap.dataset.loaded) pmSeasonTrendInit(playerId);
+}
+
+function pmSeasonTrendFetch(playerId, metric) {
+  var ck = playerId + '|' + (metric || '');
+  if (_pmSeasonTrendCache[ck]) return Promise.resolve(_pmSeasonTrendCache[ck]);
+  var url = '/api/player-advanced-metrics-trend/' + encodeURIComponent(playerId);
+  if (metric) url += '?metrics=' + encodeURIComponent(metric);
+  return fetch(url).then(function(r) { return r.ok ? r.json() : null; }).then(function(d) {
+    if (d) _pmSeasonTrendCache[ck] = d;
+    return d;
+  });
+}
+
+function pmSeasonTrendInit(playerId) {
+  var body = document.getElementById('pmSeasonTrendBody');
+  if (!body) return;
+  body.innerHTML = '<div style="padding:12px 0;font-size:12px;color:var(--text-muted);">Loading trend…</div>';
+  pmSeasonTrendFetch(playerId, null).then(function(data) {
+    if (!data || !data.options || !data.options.length) {
+      body.innerHTML = '<div style="padding:10px 0;font-size:12px;color:var(--text-muted);">No multi-season metrics available for this player.</div>';
+      return;
+    }
+    var wrap = document.getElementById('pmSeasonTrendWrap');
+    if (wrap) wrap.dataset.loaded = '1';
+    _pmSeasonTrendState[playerId] = { options: data.options };
+    var defMetric = (data.requested && data.requested[0]) || data.options[0].key;
+
+    var byCat = {};
+    data.options.forEach(function(o) { (byCat[o.category] = byCat[o.category] || []).push(o); });
+    var sel = '<select id="pmSeasonTrendSelect" class="pm-st-select" onchange="pmSeasonTrendPick(\'' + playerId + '\', this.value)">';
+    Object.keys(byCat).forEach(function(cat) {
+      sel += '<optgroup label="' + (cat || 'Other') + '">';
+      byCat[cat].forEach(function(o) {
+        sel += '<option value="' + o.key + '"' + (o.key === defMetric ? ' selected' : '') + '>' + o.label + '</option>';
+      });
+      sel += '</optgroup>';
+    });
+    sel += '</select>';
+    body.innerHTML = '<div class="pm-st-controls">' + sel + '</div><div id="pmSeasonTrendChart"></div>';
+    pmSeasonTrendRender(playerId, defMetric, data);
+  }).catch(function() {
+    body.innerHTML = '<div style="padding:10px 0;font-size:12px;color:var(--text-muted);">Couldn’t load season trend.</div>';
+  });
+}
+
+function pmSeasonTrendPick(playerId, metric) {
+  pmSeasonTrendRender(playerId, metric, null);
+}
+
+function pmSeasonTrendRender(playerId, metric, preData) {
+  var chart = document.getElementById('pmSeasonTrendChart');
+  if (!chart) return;
+  var opts = (_pmSeasonTrendState[playerId] || {}).options || [];
+  var opt = opts.filter(function(o) { return o.key === metric; })[0] || { key: metric, label: metric };
+  var done = function(data) {
+    if (!data || !data.series || !data.series[metric]) {
+      chart.innerHTML = '<div style="padding:10px 0;font-size:12px;color:var(--text-muted);">No data for this metric.</div>';
+      return;
+    }
+    chart.innerHTML = pmSeasonTrendChartHTML(data.series[metric], opt, data.position);
+  };
+  if (preData && preData.series && preData.series[metric]) { done(preData); return; }
+  chart.innerHTML = '<div style="padding:10px 0;font-size:12px;color:var(--text-muted);">Loading…</div>';
+  pmSeasonTrendFetch(playerId, metric).then(done).catch(function() {
+    chart.innerHTML = '<div style="padding:10px 0;font-size:12px;color:var(--text-muted);">Couldn’t load metric.</div>';
+  });
+}
+
+function pmStFmt(v, opt) {
+  if (v == null) return '—';
+  opt = opt || {};
+  if (opt.pct) { var p = opt.pct_frac ? v * 100 : v; return (Math.round(p * 10) / 10) + '%'; }
+  if (opt.integer) return Math.round(v).toLocaleString();
+  return String(Math.round(v * 100) / 100);
+}
+
+// Line chart of one metric across seasons. Value drives the line; each point is
+// annotated with the season and that season's positional rank, and the line is
+// colored by whether the metric improved (respecting lower-is-better metrics).
+function pmSeasonTrendChartHTML(points, opt, position) {
+  opt = opt || {};
+  var pos = (position || '').toUpperCase();
+  var withVal = points.filter(function(p) { return p.value != null; });
+  if (!withVal.length) return '<div style="padding:10px 0;font-size:12px;color:var(--text-muted);">No data for this metric.</div>';
+
+  var vals = withVal.map(function(p) { return p.value; });
+  var vmin = Math.min.apply(null, vals), vmax = Math.max.apply(null, vals);
+  var span = (vmax - vmin) || Math.abs(vmax) || 1;
+  var padV = span * 0.15;
+  var lo = vmin - padV, hi = vmax + padV;
+
+  var W = 320, H = 152, padL = 12, padR = 12, padTop = 24, padBot = 40;
+  var innerW = W - padL - padR, innerH = H - padTop - padBot;
+  var n = points.length;
+  function xAt(i) { return n === 1 ? padL + innerW / 2 : padL + (i / (n - 1)) * innerW; }
+  function yAt(v) { return padTop + innerH - ((v - lo) / ((hi - lo) || 1)) * innerH; }
+
+  var first = withVal[0], last = withVal[withVal.length - 1];
+  var improved = null;
+  if (withVal.length >= 2 && last.value !== first.value) {
+    improved = opt.lower_better ? (last.value < first.value) : (last.value > first.value);
+  }
+  var accent = ((getComputedStyle(document.documentElement).getPropertyValue('--accent') || '').trim()) || '#3b82f6';
+  var col = improved === true ? '#22c55e' : (improved === false ? '#ef4444' : accent);
+
+  var linePts = [];
+  points.forEach(function(p, i) { if (p.value != null) linePts.push(xAt(i).toFixed(1) + ',' + yAt(p.value).toFixed(1)); });
+
+  var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="pm-st-svg" preserveAspectRatio="xMidYMid meet">';
+  if (linePts.length >= 2) {
+    var fx = linePts[0].split(',')[0], lx = linePts[linePts.length - 1].split(',')[0];
+    var baseY = (padTop + innerH).toFixed(1);
+    svg += '<path d="M' + fx + ',' + baseY + ' L' + linePts.join(' L') + ' L' + lx + ',' + baseY + ' Z" fill="' + col + '" opacity="0.10"/>';
+    svg += '<polyline fill="none" stroke="' + col + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="' + linePts.join(' ') + '"/>';
+  }
+  points.forEach(function(p, i) {
+    var x = xAt(i);
+    svg += '<text x="' + x.toFixed(1) + '" y="' + (H - 24) + '" text-anchor="middle" class="pm-st-x">' + p.season + '</text>';
+    var rankTxt = (p.rank != null) ? (pos + p.rank + (p.count ? '/' + p.count : '')) : '—';
+    svg += '<text x="' + x.toFixed(1) + '" y="' + (H - 10) + '" text-anchor="middle" class="pm-st-rank">' + rankTxt + '</text>';
+    if (p.value == null) return;
+    var y = yAt(p.value);
+    svg += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="3.2" fill="' + col + '"/>';
+    svg += '<text x="' + x.toFixed(1) + '" y="' + (y - 8).toFixed(1) + '" text-anchor="middle" class="pm-st-val">' + pmStFmt(p.value, opt) + '</text>';
+  });
+  svg += '</svg>';
+
+  var cap;
+  if (withVal.length >= 2) {
+    var arrow = improved === true ? '▲' : (improved === false ? '▼' : '▬');
+    var word  = improved === true ? 'improving' : (improved === false ? 'declining' : 'flat');
+    cap = '<div class="pm-st-caption"><b>' + pmStFmt(first.value, opt) + '</b> → <b>' + pmStFmt(last.value, opt) + '</b> '
+        + '<span style="color:' + col + ';font-weight:700;">' + arrow + ' ' + word + '</span>';
+    if (first.rank != null && last.rank != null) cap += ' · rank ' + pos + first.rank + ' → ' + pos + last.rank;
+    cap += '</div>';
+  } else {
+    cap = '<div class="pm-st-caption">Only one season of data.</div>';
+  }
+  if (opt.lower_better) cap += '<div class="pm-st-note">Lower is better — the line is green when it drops.</div>';
+  return cap + svg;
 }
 
 // ── Player modal: weekly usage trends ────────────────────────────────────────

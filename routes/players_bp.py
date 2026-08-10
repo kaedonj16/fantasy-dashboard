@@ -283,6 +283,130 @@ def api_player_advanced_metrics(player_id: str):
         }), 500
 
 
+# ── /api/player-advanced-metrics-trend/<player_id> ────────────────────────────
+
+@players_bp.route("/api/player-advanced-metrics-trend/<player_id>")
+def api_player_advanced_metrics_trend(player_id: str):
+    """Season-over-season trend for one or more advanced metrics.
+
+    For every season the player has data, returns the metric's value plus that
+    season's position-relative rank (and the size of the ranked pool), so the
+    client can chart growth/decay both in absolute terms and vs. peers.
+
+    Query params:
+        metrics: comma-separated metric keys (e.g. yards_per_target,target_share).
+                 Defaults to the first available metric for the player's position.
+    """
+    try:
+        from data_building.advanced_metrics import (
+            LEADERBOARD_METRICS,
+            PREMIUM_METRICS,
+            get_available_seasons_for_player,
+            get_player_metrics_by_season,
+            get_player_metric_ranks,
+            strip_premium_metrics,
+            premium_metrics_exposed,
+            _normalize_position,
+        )
+
+        seasons = sorted(get_available_seasons_for_player(str(player_id)))
+        if not seasons:
+            return jsonify({"player_id": str(player_id), "position": None,
+                            "seasons": [], "options": [], "requested": [], "series": {}})
+
+        # Merged metrics per season (raw stored columns, premium stripped).
+        per_season: dict = {}
+        position = None
+        for yr in seasons:
+            row = get_player_metrics_by_season(str(player_id), yr)
+            if not row:
+                continue
+            if not position:
+                position = _normalize_position(row.get("position"))
+            per_season[yr] = strip_premium_metrics(dict(row)) or {}
+
+        # Metrics trendable for THIS player: catalog entries that are stored as
+        # real columns (exclude computed_sql leaderboard metrics so every point
+        # is a genuine stored value) and carry data in at least one season.
+        col_keys: set = set()
+        for row in per_season.values():
+            for k, v in row.items():
+                if v is not None:
+                    col_keys.add(k)
+
+        expose_premium = premium_metrics_exposed()
+        options = []
+        for key, spec in LEADERBOARD_METRICS.items():
+            if spec.get("hidden") or spec.get("computed_sql"):
+                continue
+            if key not in col_keys:
+                continue
+            if not expose_premium and key in PREMIUM_METRICS:
+                continue
+            _pos = spec.get("positions") or []
+            if position and _pos and position not in _pos:
+                continue
+            options.append({
+                "key": key,
+                "label": spec.get("label", key),
+                "category": spec.get("category", ""),
+                "pct": bool(spec.get("pct")),
+                "pct_frac": bool(spec.get("pct_frac")),
+                "integer": bool(spec.get("integer")),
+                "lower_better": bool(spec.get("lower_better")),
+                "desc": spec.get("desc", ""),
+            })
+        options.sort(key=lambda o: (o["category"], o["label"]))
+
+        valid_keys = {o["key"] for o in options}
+        requested = [m.strip() for m in (request.args.get("metrics") or "").split(",") if m.strip()]
+        requested = [m for m in requested if m in valid_keys]
+        if not requested and options:
+            requested = [options[0]["key"]]
+
+        # Ranks per season (cached per position/season server-side).
+        ranks_by_season: dict = {}
+        for yr in per_season:
+            try:
+                ranks_by_season[yr] = get_player_metric_ranks(str(player_id), season=yr) or {}
+            except Exception:
+                ranks_by_season[yr] = {}
+
+        series: dict = {}
+        for key in requested:
+            pts = []
+            for yr in seasons:
+                row = per_season.get(yr)
+                if row is None:
+                    continue
+                val = row.get(key)
+                rr = ranks_by_season.get(yr) or {}
+                rank = (rr.get("ranks") or {}).get(key)
+                count = (rr.get("counts") or {}).get(key)
+                pts.append({
+                    "season": yr,
+                    "value": float(val) if val is not None else None,
+                    "rank": int(rank) if rank is not None else None,
+                    "count": int(count) if count is not None else None,
+                })
+            series[key] = pts
+
+        resp = jsonify({
+            "player_id": str(player_id),
+            "position": position,
+            "seasons": list(per_season.keys()),
+            "options": options,
+            "requested": requested,
+            "series": series,
+        })
+        resp.headers["Cache-Control"] = "private, max-age=300"
+        return resp
+    except Exception:
+        logger.exception("[player-advanced-metrics-trend] Error for %s", player_id)
+        return jsonify({"player_id": str(player_id), "position": None,
+                        "seasons": [], "options": [], "requested": [], "series": {}}), 500
+
+
 # ── /api/player-metric-ranks/<player_id> ──────────────────────────────────────
 
 @players_bp.route("/api/player-metric-ranks/<player_id>")
