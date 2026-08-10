@@ -10703,15 +10703,10 @@ function openPlayerModal(playerId, playerName, opts) {
               <span style="font-size:13px;color:var(--text-muted);">Loading...</span>
             </div>
           </div>
-          <div id="pmWeeklyTrendsWrap" data-position="${pos || ''}">
+          <div id="pmWeeklyTrendsWrap" data-position="${pos || ''}" data-pid="${playerId}">
             <button type="button" id="pmWeeklyTrendsBtn" class="pm-weekly-toggle"
-              onclick="pmToggleWeeklyTrends('${playerId}')">Weekly trends &#9662;</button>
+              onclick="pmToggleWeeklyTrends('${playerId}')">Trends &#9662;</button>
             <div id="pmWeeklyTrendsBody" style="display:none;"></div>
-          </div>
-          <div id="pmSeasonTrendWrap" data-pid="${playerId}" style="display:none;">
-            <button type="button" id="pmSeasonTrendBtn" class="pm-weekly-toggle"
-              onclick="pmToggleSeasonTrend('${playerId}')">Season trend &#9662;</button>
-            <div id="pmSeasonTrendBody" style="display:none;"></div>
           </div>
         </div>
       ` : '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">Advanced metrics not available for this player.</div></div>';
@@ -12147,7 +12142,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
           const wtBody = document.getElementById('pmWeeklyTrendsBody');
           if (wtBody) { wtBody.style.display = 'none'; wtBody.innerHTML = ''; }
           const wtBtn = document.getElementById('pmWeeklyTrendsBtn');
-          if (wtBtn) wtBtn.innerHTML = 'Weekly trends &#9662;';
+          if (wtBtn) wtBtn.innerHTML = 'Trends &#9662;';
         } else if (wtWrap.dataset.loaded) {
           // Panel already loaded — re-render with updated week range filter.
           const wtBody = document.getElementById('pmWeeklyTrendsBody');
@@ -12162,18 +12157,12 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
         }
       }
 
-      // Season-trend panel: only meaningful with 2+ seasons of data. It charts a
-      // single metric across seasons (value + positional rank), independent of
-      // the active-season pill, so it's left collapsed until the user opens it.
-      const stWrap = document.getElementById('pmSeasonTrendWrap');
-      if (stWrap) {
-        if (availableSeasons.length >= 2) {
-          stWrap.style.display = '';
-          stWrap.dataset.pid = playerId;
-          stWrap.dataset.position = metricsData.position || '';
-        } else {
-          stWrap.style.display = 'none';
-        }
+      // Tell the Trends panel whether a season-over-season view is available
+      // (2+ seasons of data) so it can offer the Weekly/Season toggle.
+      const trendsWrap = document.getElementById('pmWeeklyTrendsWrap');
+      if (trendsWrap) {
+        trendsWrap.dataset.multiseason = (availableSeasons.length >= 2) ? '1' : '';
+        trendsWrap.dataset.pid = playerId;
       }
     })
     .catch(err => {
@@ -12197,22 +12186,50 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
 
 // ── Player modal: season-over-season metric trend ────────────────────────────
 var _pmSeasonTrendCache = {};   // key: playerId + '|' + metric  → API payload
-var _pmSeasonTrendState = {};   // playerId → { options: [...] }
 
-function pmToggleSeasonTrend(playerId) {
-  var body = document.getElementById('pmSeasonTrendBody');
-  var btn  = document.getElementById('pmSeasonTrendBtn');
-  var wrap = document.getElementById('pmSeasonTrendWrap');
-  if (!body) return;
-  var open = body.style.display !== 'none';
-  if (open) {
-    body.style.display = 'none';
-    if (btn) btn.innerHTML = 'Season trend &#9662;';
-    return;
+// Switch the Trends panel between the Weekly sparklines and the Season line
+// charts. Season loads lazily on first switch.
+function pmTrendsSetMode(playerId, mode) {
+  var weeklyEl = document.getElementById('pmWtWeekly');
+  var seasonEl = document.getElementById('pmWtSeason');
+  if (!weeklyEl || !seasonEl) return;
+  if (mode === 'season') {
+    weeklyEl.style.display = 'none';
+    seasonEl.style.display = '';
+    if (!seasonEl.dataset.loaded) pmLoadSeasonAll(playerId, seasonEl);
+  } else {
+    seasonEl.style.display = 'none';
+    weeklyEl.style.display = '';
   }
-  body.style.display = '';
-  if (btn) btn.innerHTML = 'Season trend &#9652;';
-  if (!wrap || !wrap.dataset.loaded) pmSeasonTrendInit(playerId);
+}
+
+// Season mode: render a line chart for EVERY available metric at once (no
+// picker), mirroring how weekly trends shows all stats.
+function pmLoadSeasonAll(playerId, host) {
+  host.innerHTML = '<div style="padding:10px 0;font-size:12px;color:var(--text-muted);">Loading season trends…</div>';
+  var fail = function() { host.innerHTML = '<div style="padding:10px 0;font-size:12px;color:var(--text-muted);">Couldn’t load season trends.</div>'; };
+  // First call (no metrics) returns the full list of available metrics; then
+  // request them all in one shot.
+  pmSeasonTrendFetch(playerId, null).then(function(meta) {
+    if (!meta || !meta.options || !meta.options.length) {
+      host.innerHTML = '<div style="padding:10px 0;font-size:12px;color:var(--text-muted);">No multi-season data for this player.</div>';
+      return;
+    }
+    host.dataset.loaded = '1';
+    var keys = meta.options.map(function(o) { return o.key; });
+    pmSeasonTrendFetch(playerId, keys.join(',')).then(function(data) {
+      if (!data || !data.series) { fail(); return; }
+      var html = '<div class="pm-st-grid">';
+      meta.options.forEach(function(o) {
+        var pts = data.series[o.key];
+        if (!pts || !pts.some(function(p) { return p.value != null; })) return;
+        html += '<div class="pm-st-block"><div class="pm-st-head"><span class="pm-st-title">' + o.label + '</span></div>'
+          + pmSeasonTrendChartHTML(pts, o, data.position) + '</div>';
+      });
+      html += '</div>';
+      host.innerHTML = html;
+    }).catch(fail);
+  }).catch(fail);
 }
 
 function pmSeasonTrendFetch(playerId, metric) {
@@ -12223,90 +12240,6 @@ function pmSeasonTrendFetch(playerId, metric) {
   return fetch(url).then(function(r) { return r.ok ? r.json() : null; }).then(function(d) {
     if (d) _pmSeasonTrendCache[ck] = d;
     return d;
-  });
-}
-
-var PM_ST_MAX = 4;   // most metrics that can be compared at once
-
-function pmSeasonTrendInit(playerId) {
-  var body = document.getElementById('pmSeasonTrendBody');
-  if (!body) return;
-  body.innerHTML = '<div style="padding:12px 0;font-size:12px;color:var(--text-muted);">Loading trend…</div>';
-  pmSeasonTrendFetch(playerId, null).then(function(data) {
-    if (!data || !data.options || !data.options.length) {
-      body.innerHTML = '<div style="padding:10px 0;font-size:12px;color:var(--text-muted);">No multi-season metrics available for this player.</div>';
-      return;
-    }
-    var wrap = document.getElementById('pmSeasonTrendWrap');
-    if (wrap) wrap.dataset.loaded = '1';
-    var defMetric = (data.requested && data.requested[0]) || data.options[0].key;
-    _pmSeasonTrendState[playerId] = { options: data.options, position: data.position || '', active: [defMetric] };
-
-    var byCat = {};
-    data.options.forEach(function(o) { (byCat[o.category] = byCat[o.category] || []).push(o); });
-    var sel = '<select id="pmSeasonTrendSelect" class="pm-st-select" onchange="pmSeasonTrendAdd(\'' + playerId + '\', this.value); this.selectedIndex=0;">';
-    sel += '<option value="">+ Add metric…</option>';
-    Object.keys(byCat).forEach(function(cat) {
-      sel += '<optgroup label="' + (cat || 'Other') + '">';
-      byCat[cat].forEach(function(o) { sel += '<option value="' + o.key + '">' + o.label + '</option>'; });
-      sel += '</optgroup>';
-    });
-    sel += '</select>';
-    body.innerHTML = '<div class="pm-st-controls">' + sel +
-      '<div class="pm-st-hint">Add up to ' + PM_ST_MAX + ' metrics to compare trajectories.</div></div>' +
-      '<div id="pmSeasonTrendCharts"></div>';
-    // Upgrade the native <select> to the site's custom dropdown (CSD) so it
-    // matches every other dropdown; CSD keeps the native select in the DOM and
-    // still fires change events, so the inline onchange keeps working.
-    if (typeof window.initCustomSelects === 'function') {
-      window.initCustomSelects(body);
-    }
-    pmSeasonTrendRenderAll(playerId);
-  }).catch(function() {
-    body.innerHTML = '<div style="padding:10px 0;font-size:12px;color:var(--text-muted);">Couldn’t load season trend.</div>';
-  });
-}
-
-function pmSeasonTrendAdd(playerId, metric) {
-  if (!metric) return;
-  var st = _pmSeasonTrendState[playerId];
-  if (!st || st.active.indexOf(metric) !== -1 || st.active.length >= PM_ST_MAX) return;
-  st.active.push(metric);
-  pmSeasonTrendRenderAll(playerId);
-}
-
-function pmSeasonTrendRemove(playerId, metric) {
-  var st = _pmSeasonTrendState[playerId];
-  if (!st || st.active.length <= 1) return;   // keep at least one chart
-  st.active = st.active.filter(function(m) { return m !== metric; });
-  pmSeasonTrendRenderAll(playerId);
-}
-
-// Small-multiples: one mini line chart per active metric, each with its own
-// scale so metrics on very different ranges stay readable side by side.
-function pmSeasonTrendRenderAll(playerId) {
-  var host = document.getElementById('pmSeasonTrendCharts');
-  var st = _pmSeasonTrendState[playerId];
-  if (!host || !st) return;
-  host.innerHTML = '<div style="padding:10px 0;font-size:12px;color:var(--text-muted);">Loading…</div>';
-  var metrics = st.active.slice();
-  Promise.all(metrics.map(function(m) { return pmSeasonTrendFetch(playerId, m); })).then(function(results) {
-    var html = '';
-    metrics.forEach(function(m, idx) {
-      var data = results[idx];
-      var opt = st.options.filter(function(o) { return o.key === m; })[0] || { key: m, label: m };
-      var chart = (data && data.series && data.series[m])
-        ? pmSeasonTrendChartHTML(data.series[m], opt, (data && data.position) || st.position)
-        : '<div style="padding:8px 0;font-size:12px;color:var(--text-muted);">No data for this metric.</div>';
-      var canRemove = metrics.length > 1;
-      html += '<div class="pm-st-block">'
-        + '<div class="pm-st-head"><span class="pm-st-title">' + opt.label + '</span>'
-        + (canRemove ? '<button type="button" class="pm-st-remove" title="Remove" onclick="pmSeasonTrendRemove(\'' + playerId + '\',\'' + m + '\')">&times;</button>' : '')
-        + '</div>' + chart + '</div>';
-    });
-    host.innerHTML = html;
-  }).catch(function() {
-    host.innerHTML = '<div style="padding:10px 0;font-size:12px;color:var(--text-muted);">Couldn’t load metrics.</div>';
   });
 }
 
@@ -12636,23 +12569,33 @@ function pmToggleWeeklyTrends(playerId) {
   var open = body.style.display !== 'none';
   if (open) {
     body.style.display = 'none';
-    btn.innerHTML = 'Weekly trends &#9662;';
+    btn.innerHTML = 'Trends &#9662;';
     return;
   }
   body.style.display = '';
-  btn.innerHTML = 'Weekly trends &#9652;';
+  btn.innerHTML = 'Trends &#9652;';
   if (wrap.dataset.loaded) return;
   wrap.dataset.loaded = '1';
 
-  body.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Loading weekly data…</div>';
+  body.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Loading trends…</div>';
   var seasonParam = wrap.dataset.season ? ('?season=' + wrap.dataset.season) : '';
   var wrapPosition = wrap.dataset.position || '';
   fetch('/api/player-weekly-metrics/' + encodeURIComponent(playerId) + seasonParam)
     .then(function(r) { return r.json(); })
     .then(function(d) {
       wrap._weeklyData = d.weeks || [];
-      body.innerHTML =
-        '<div class="pm-wt-filter-bar">'
+      // Weekly ↔ Season mode toggle. Season is only offered when the player has
+      // 2+ seasons of data (set by loadAdvancedMetrics on the wrap).
+      var hasSeason = wrap.dataset.multiseason === '1';
+      var modeBar = hasSeason
+        ? '<div class="pm-trends-mode br-chip-pop">'
+          + '<button type="button" class="pm-trends-mode-btn is-active" data-mode="weekly">Weekly</button>'
+          + '<button type="button" class="pm-trends-mode-btn" data-mode="season">Season</button>'
+          + '</div>'
+        : '';
+      body.innerHTML = modeBar
+        + '<div id="pmWtWeekly">'
+        + '<div class="pm-wt-filter-bar">'
         + '<div class="pm-wt-tabs br-chip-pop">'
         + '<button class="pm-wt-tab" data-n="">All</button>'
         + '<button class="pm-wt-tab" data-n="4">L4</button>'
@@ -12660,7 +12603,9 @@ function pmToggleWeeklyTrends(playerId) {
         + '<button class="pm-wt-tab" data-n="12">L12</button>'
         + '</div>'
         + '</div>'
-        + '<div id="pmWtContent"></div>';
+        + '<div id="pmWtContent"></div>'
+        + '</div>'
+        + '<div id="pmWtSeason" style="display:none;"></div>';
       var tabs = body.querySelectorAll('.pm-wt-tab');
       tabs.forEach(function(tab) {
         tab.addEventListener('click', function() {
@@ -12669,10 +12614,17 @@ function pmToggleWeeklyTrends(playerId) {
           pmWtRender(wrap, wrapPosition);
         });
       });
+      body.querySelectorAll('.pm-trends-mode-btn').forEach(function(mb) {
+        mb.addEventListener('click', function() {
+          body.querySelectorAll('.pm-trends-mode-btn').forEach(function(b) { b.classList.remove('is-active'); });
+          mb.classList.add('is-active');
+          pmTrendsSetMode(playerId, mb.dataset.mode);
+        });
+      });
       pmWtRender(wrap, wrapPosition);
     })
     .catch(function() {
-      window.brErrorState(body, 'Could not load weekly data.', null, { compact: true });
+      window.brErrorState(body, 'Could not load trends.', null, { compact: true });
     });
 }
 
