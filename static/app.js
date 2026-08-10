@@ -10708,7 +10708,7 @@ function openPlayerModal(playerId, playerName, opts) {
               onclick="pmToggleWeeklyTrends('${playerId}')">Weekly trends &#9662;</button>
             <div id="pmWeeklyTrendsBody" style="display:none;"></div>
           </div>
-          <div id="pmSeasonTrendWrap" data-player-id="${playerId}" style="display:none;">
+          <div id="pmSeasonTrendWrap" data-pid="${playerId}" style="display:none;">
             <button type="button" id="pmSeasonTrendBtn" class="pm-weekly-toggle"
               onclick="pmToggleSeasonTrend('${playerId}')">Season trend &#9662;</button>
             <div id="pmSeasonTrendBody" style="display:none;"></div>
@@ -12169,7 +12169,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
       if (stWrap) {
         if (availableSeasons.length >= 2) {
           stWrap.style.display = '';
-          stWrap.dataset.playerId = playerId;
+          stWrap.dataset.pid = playerId;
           stWrap.dataset.position = metricsData.position || '';
         } else {
           stWrap.style.display = 'none';
