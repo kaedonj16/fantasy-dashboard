@@ -270,6 +270,7 @@ def depth_analysis(candidate_order, teammates) -> dict:
     injured_pids: list = []
     vacated: list = []
     healthy_ahead = 0
+    healthy_pairs: list = []   # (depth_order, pid) of will-play blockers ahead
     for t in teammates:
         o = t.get("depth_order") or 99
         if o >= mine:
@@ -282,11 +283,17 @@ def depth_analysis(candidate_order, teammates) -> dict:
                 injured_pids.append(t.get("pid"))
         if _will_play(st):
             healthy_ahead += 1
+            if t.get("pid") is not None:
+                healthy_pairs.append((o, t.get("pid")))
+    # pids of healthy blockers ahead, nearest first — [0] is the starter this
+    # candidate directly backs up (handcuff-upside lookup, #8).
+    healthy_pids_ahead = [pid for _o, pid in sorted(healthy_pairs, key=lambda p: p[0])]
     return {
         "injured_ahead": injured,          # statuses (badge / severity)
         "injured_pids_ahead": injured_pids,
         "vacated": vacated,                # [{status, pid, proj_ppg}] for scoring
         "healthy_ahead": healthy_ahead,
+        "healthy_pids_ahead": healthy_pids_ahead,
     }
 
 
@@ -297,7 +304,8 @@ def depth_analysis_for_player(pid, full_players: dict, depth_index: dict) -> dic
     team = str(p.get("team") or "").upper()
     pos = str(p.get("position") or "").upper()
     if not team or not pos:
-        return {"injured_ahead": [], "injured_pids_ahead": [], "vacated": [], "healthy_ahead": 0}
+        return {"injured_ahead": [], "injured_pids_ahead": [], "vacated": [],
+                "healthy_ahead": 0, "healthy_pids_ahead": []}
     group = (depth_index or {}).get((team, pos)) or []
     teammates = [g for g in group if g.get("pid") != str(pid)]
     return depth_analysis(p.get("depth_chart_order"), teammates)
