@@ -548,25 +548,82 @@
               'Hold':      'var(--text-muted)',
               'Cut':       '#94a3b8',
             };
+            var sigDesc = {
+              'Core':      'Elite, in-prime asset — a keeper.',
+              'Sell High': 'Aging or market-hyped — sell while the value is high.',
+              'Breakout':  'On the Breakout Engine board — hold for the leap.',
+              'Sleeper':   'Valued above the dynasty market — buy or hold.',
+              'Monitor':   'Sharp recent drop — watch before value erodes.',
+              'Hold':      'No action needed right now.',
+              'Cut':       'Low value / past prime — drop candidate.',
+            };
             var healthColor = {
               'Strong':  '#22c55e',
               'Average': 'var(--text-muted)',
               'Thin':    '#f59e0b',
               'Aging':   '#ef4444',
             };
+            var healthDesc = {
+              'Strong':  'Top third of the league at this position.',
+              'Average': 'Middle of the pack for the league.',
+              'Thin':    'Fewer than two starter-grade assets.',
+              'Aging':   'Most of this group is past prime.',
+            };
+            var posColor = { QB: '#3b82f6', RB: '#22c55e', WR: '#f59e0b', TE: '#8b5cf6' };
             var POS_ORDER = ['QB', 'RB', 'WR', 'TE'];
+            var esc = function(s) { return (s || '').replace(/"/g, '&quot;'); };
+            var names = function(arr) { return arr.map(function(p) { return p.name; }).join(', '); };
 
             var html = '';
             teams.forEach(function(t) {
               var positions = t.positions || {};
+
+              // ── Action summary: pull the flagged players + thin/aging spots to the top ──
+              var buckets = { 'Sell High': [], 'Cut': [], 'Breakout': [], 'Sleeper': [], 'Monitor': [] };
+              var needs = [];
+              POS_ORDER.forEach(function(pos) {
+                var pd = positions[pos];
+                if (!pd || !pd.players.length) return;
+                pd.players.forEach(function(p) { if (buckets[p.signal]) buckets[p.signal].push(p); });
+                if (pd.health === 'Thin' || pd.health === 'Aging') needs.push({ pos: pos, health: pd.health });
+              });
+              var moves = [];
+              var addMove = function(tag, color, body) {
+                moves.push('<div class="ri-move"><span class="ri-move-tag" style="background:' + color + '">' + tag +
+                  '</span><span class="ri-move-body">' + body + '</span></div>');
+              };
+              if (buckets['Sell High'].length) addMove('Sell high', sigColor['Sell High'], '<b>' + names(buckets['Sell High']) + '</b> <span class="why">— sell while the value is high.</span>');
+              if (buckets['Cut'].length)       addMove('Cut', '#64748b', '<b>' + names(buckets['Cut']) + '</b> <span class="why">— low value; free the bench spot' + (buckets['Cut'].length > 1 ? 's' : '') + '.</span>');
+              if (buckets['Breakout'].length)  addMove('Breakout', sigColor['Breakout'], '<b>' + names(buckets['Breakout']) + '</b> <span class="why">— breakout upside; hold for the leap.</span>');
+              if (buckets['Sleeper'].length)   addMove('Buy / hold', sigColor['Sleeper'], '<b>' + names(buckets['Sleeper']) + '</b> <span class="why">— valued above the market.</span>');
+              if (buckets['Monitor'].length)   addMove('Monitor', sigColor['Monitor'], '<b>' + names(buckets['Monitor']) + '</b> <span class="why">— slipping; watch closely.</span>');
+              if (needs.length) {
+                var needStr = needs.map(function(n) { return '<b>' + n.pos + '</b> is ' + n.health.toLowerCase(); }).join(', ');
+                addMove('Target', healthColor['Thin'], needStr + ' <span class="why">— shop for an upgrade.</span>');
+              }
+              html += '<div class="ri-summary"><div class="ri-summary-eyebrow">Suggested moves</div>' +
+                (moves.length ? moves.join('') : '<div class="ri-summary-stable">Roster looks stable — no moves flagged.</div>') +
+                '</div>';
+
+              // ── Legend for the signal chips ──
+              html += '<div class="ri-legend">' + ['Core', 'Sell High', 'Breakout', 'Sleeper', 'Monitor', 'Cut'].map(function(k) {
+                return '<span class="ri-legend-item" title="' + esc(sigDesc[k]) + '"><span class="ri-legend-dot" style="background:' + sigColor[k] + '"></span>' + k + '</span>';
+              }).join('') + '</div>';
+
               POS_ORDER.forEach(function(pos) {
                 var pd = positions[pos];
                 if (!pd || !pd.players.length) return;
 
                 var rankStr = pd.league_rank ? (pd.league_rank + '/' + pd.num_teams) : '';
                 var hc = healthColor[pd.health] || 'var(--text-muted)';
+                var maxVal = pd.players.reduce(function(m, p) { return Math.max(m, p.value || 0); }, 0) || 1;
+                var holdCount = pd.players.filter(function(p) { return p.signal === 'Hold'; }).length;
+                // Hide Holds by default so the flagged players stand out — unless the
+                // whole group is Holds, which would leave an empty section.
+                var hideHolds = holdCount > 0 && holdCount < pd.players.length;
+                var pc = posColor[pos] || 'var(--text-muted)';
 
-                html += '<div class="ri-pos-section">' +
+                html += '<div class="ri-pos-section' + (hideHolds ? ' holds-hidden' : '') + '">' +
                   '<div class="ri-pos-header">' +
                     '<span class="ri-pos-label">' + pos + '</span>' +
                     '<div class="ri-pos-stats">' +
@@ -574,7 +631,7 @@
                       (pd.avg_age ? '<span>Avg ' + pd.avg_age + ' yrs</span>' : '') +
                       (rankStr ? '<span>Rank ' + rankStr + '</span>' : '') +
                     '</div>' +
-                    '<span class="ri-health-badge" style="color:' + hc + ';">' + pd.health + '</span>' +
+                    '<span class="ri-health-badge" style="color:' + hc + ';" title="' + esc(healthDesc[pd.health] || '') + '">' + pd.health + '</span>' +
                   '</div>';
 
                 pd.players.forEach(function(p) {
@@ -590,24 +647,40 @@
                   if (p.pos_rank_label) metaParts.push(p.pos_rank_label);
                   if (p.age) metaParts.push('Age ' + parseFloat(p.age).toFixed(1));
                   if (p.fc_pos_rank) metaParts.push('FC ' + pos + p.fc_pos_rank);
-                  var safeName = (p.name || '').replace(/"/g, '&quot;');
-                  html += '<div class="ri-player-row">' +
+                  var safeName = esc(p.name);
+                  var barPct = Math.max(4, Math.round((p.value || 0) / maxVal * 100));
+                  var holdCls = p.signal === 'Hold' ? ' is-hold' : '';
+                  html += '<div class="ri-player-row' + holdCls + '">' +
                     '<div class="ri-player-info">' +
                       '<span class="ri-player-name player-clickable" style="cursor:pointer;" data-player-id="' + (p.player_id || '') + '" data-player-name="' + safeName + '">' + p.name + mktNote + '</span>' +
                       '<span class="ri-player-meta">' + metaParts.join(' · ') + '</span>' +
                     '</div>' +
                     '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
-                      '<span class="ri-signal" style="color:' + sc + ';background:' + sc + '18;">' + p.signal + '</span>' +
-                      '<span style="font-size:11px;color:var(--text-muted);font-weight:600;min-width:34px;text-align:right;">' + (p.value || 0) + '</span>' +
+                      '<span class="ri-signal" style="color:' + sc + ';background:color-mix(in srgb,' + sc + ' 15%,transparent);" title="' + esc(sigDesc[p.signal] || '') + '">' + p.signal + '</span>' +
+                      '<span class="ri-val"><span class="ri-val-bar" style="width:' + barPct + '%;background:' + pc + ';"></span><span class="ri-val-num">' + (p.value || 0) + '</span></span>' +
                     '</div>' +
                   '</div>';
                 });
+
+                if (hideHolds) {
+                  html += '<button type="button" class="ri-hold-toggle" data-holds="' + holdCount + '">Show ' + holdCount + ' hold' + (holdCount !== 1 ? 's' : '') + '</button>';
+                }
 
                 html += '</div>';
               });
             });
 
             panel.innerHTML = html || '<p class="analytics-empty">Roster looks stable - no actions flagged.</p>';
+
+            // Hold toggles: reveal/hide the quieted Hold rows per position.
+            panel.querySelectorAll('.ri-hold-toggle').forEach(function(btn) {
+              btn.addEventListener('click', function() {
+                var sec = btn.closest('.ri-pos-section');
+                var n = parseInt(btn.getAttribute('data-holds'), 10) || 0;
+                var hidden = sec.classList.toggle('holds-hidden');
+                btn.textContent = (hidden ? 'Show ' : 'Hide ') + n + ' hold' + (n !== 1 ? 's' : '');
+              });
+            });
           })
           .catch(function(err) {
             console.warn('[roster-intel]', err);
