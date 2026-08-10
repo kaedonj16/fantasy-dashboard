@@ -10529,6 +10529,25 @@ html[data-theme="dark"] .contact-social-pill img {
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* Desktop (>=1100px): JS reflows the Weekly Hub into the pre-tab-switcher
+   layout — Scorers/Scout/Lineup tabs (left) + matchup preview (wide right) in a
+   two-col main, plus a Week Leaders aside. These selectors only match the nodes
+   that reflow creates at desktop width, so the mobile 4-tab card is untouched. */
+@media (min-width: 1100px) {
+  .page-layout.weekly-hub { grid-template-columns: minmax(0, 1fr) 300px; }
+  .weekly-hub .standings-main.two-col-standings {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  }
+  /* Week Leaders stack in the narrow aside instead of the 2x2 band. */
+  .page-sidebar .week-leaders-band .week-side-panel.active { grid-template-columns: 1fr; }
+  .page-sidebar .week-leaders-band { margin-bottom: 0; }
+}
+@media (min-width: 1400px) {
+  .weekly-hub .standings-main.two-col-standings {
+    grid-template-columns: minmax(220px, 1fr) minmax(0, 1.6fr);
+  }
+}
+
 /* Week Leaders band inside the Scorers tab: the 4 highlight cards (Highest /
    Lowest / Closest / Blowout) laid out as a compact 2x2 band above top scorers,
    instead of a tall vertical stack. */
@@ -18868,33 +18887,6 @@ button:disabled {
   border-radius: 10px;
   border: 1px solid var(--border);
   overflow: hidden;
-}
-/* Desktop reflow (JS adds .wk-desktop at >=1100px): the matchup preview becomes
-   a centered main section with the Scorers/Scout/Lineup card as a sidebar beside
-   it. Below 1100px .wk-desktop is absent, so this is the original single tabbed
-   card — mobile is unchanged. */
-@media (min-width: 1100px) {
-  #weeklyLeftTabs.wk-desktop {
-    display: grid;
-    grid-template-columns: minmax(0, 820px) minmax(300px, 360px);
-    gap: 20px;
-    align-items: start;
-    justify-content: center;
-    background: transparent;
-    border: none;
-    border-radius: 0;
-    overflow: visible;
-  }
-  #weeklyLeftTabs.wk-desktop .wk-matchup-col { min-width: 0; }
-  #weeklyLeftTabs.wk-desktop .wk-side-col {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    overflow: hidden;
-    min-width: 0;
-    position: sticky;
-    top: 16px;
-  }
 }
 #weeklyLeftTabs .tab-bar {
   display: flex;
