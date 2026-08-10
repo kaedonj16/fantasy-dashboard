@@ -51,6 +51,8 @@
           var avgDelta = data.league_avg_delta || 0;
           var avgSign = avgDelta >= 0 ? '+' : '';
           var avgFmt = avgSign + Math.round(avgDelta).toLocaleString();
+          // Largest deviation from the league average — scales the diverging bars.
+          var maxAbsVs = rows.reduce(function(m, r) { return Math.max(m, Math.abs(r.vs_avg || 0)); }, 0) || 1;
           var html = '';
 
           // Header: title + window pills (full mode only)
@@ -112,6 +114,11 @@
               moversHtml += '</div>';
             }
 
+            // Diverging bar: fills from the center (league avg) outward — right/green
+            // for above-average rosters, left/red for below — scaled to the widest gap.
+            var barPct   = Math.min(50, Math.round(Math.abs(r.vs_avg || 0) / maxAbsVs * 50));
+            var barStyle = (pos ? 'left:50%;' : 'right:50%;') + 'width:' + barPct + '%;';
+
             html += '<div class="btm-row ' + cls + (slim ? ' btm-slim' : '') + '">' +
               '<div class="btm-rank-cell">' + rankHtml + '</div>' +
               '<div class="btm-team-cell">' +
@@ -124,6 +131,7 @@
               '<div class="btm-vsavg-cell">' +
                 '<span class="btm-vsavg-badge ' + cls + '">' + vsSign + Math.round(r.vs_avg).toLocaleString() + '</span>' +
               '</div>' +
+              '<div class="btm-bar-track"><span class="btm-bar-fill ' + cls + '" style="' + barStyle + '"></span></div>' +
             '</div>';
           });
           html += '</div>';
@@ -545,6 +553,7 @@
               'Breakout':  '#8b5cf6',
               'Sleeper':   '#06b6d4',
               'Monitor':   '#f59e0b',
+              'Stash':     '#0d9488',
               'Hold':      'var(--text-muted)',
               'Cut':       '#94a3b8',
             };
@@ -554,8 +563,9 @@
               'Breakout':  'On the Breakout Engine board — hold for the leap.',
               'Sleeper':   'Valued above the dynasty market — buy or hold.',
               'Monitor':   'Sharp recent drop — watch before value erodes.',
+              'Stash':     'Young/rookie upside below rosterable depth — hold for later.',
               'Hold':      'No action needed right now.',
-              'Cut':       'Low value / past prime — drop candidate.',
+              'Cut':       'Below rosterable depth or past prime — drop candidate.',
             };
             var healthColor = {
               'Strong':  '#22c55e',
@@ -579,7 +589,7 @@
               var positions = t.positions || {};
 
               // ── Action summary: pull the flagged players + thin/aging spots to the top ──
-              var buckets = { 'Sell High': [], 'Cut': [], 'Breakout': [], 'Sleeper': [], 'Monitor': [] };
+              var buckets = { 'Sell High': [], 'Cut': [], 'Breakout': [], 'Sleeper': [], 'Stash': [], 'Monitor': [] };
               var needs = [];
               POS_ORDER.forEach(function(pos) {
                 var pd = positions[pos];
@@ -596,6 +606,7 @@
               if (buckets['Cut'].length)       addMove('Cut', '#64748b', '<b>' + names(buckets['Cut']) + '</b> <span class="why">— low value; free the bench spot' + (buckets['Cut'].length > 1 ? 's' : '') + '.</span>');
               if (buckets['Breakout'].length)  addMove('Breakout', sigColor['Breakout'], '<b>' + names(buckets['Breakout']) + '</b> <span class="why">— breakout upside; hold for the leap.</span>');
               if (buckets['Sleeper'].length)   addMove('Buy / hold', sigColor['Sleeper'], '<b>' + names(buckets['Sleeper']) + '</b> <span class="why">— valued above the market.</span>');
+              if (buckets['Stash'].length)     addMove('Stash', sigColor['Stash'], '<b>' + names(buckets['Stash']) + '</b> <span class="why">— young upside; stash for later.</span>');
               if (buckets['Monitor'].length)   addMove('Monitor', sigColor['Monitor'], '<b>' + names(buckets['Monitor']) + '</b> <span class="why">— slipping; watch closely.</span>');
               if (needs.length) {
                 var needStr = needs.map(function(n) { return '<b>' + n.pos + '</b> is ' + n.health.toLowerCase(); }).join(', ');
@@ -606,7 +617,7 @@
                 '</div>';
 
               // ── Legend for the signal chips ──
-              html += '<div class="ri-legend">' + ['Core', 'Sell High', 'Breakout', 'Sleeper', 'Monitor', 'Cut'].map(function(k) {
+              html += '<div class="ri-legend">' + ['Core', 'Sell High', 'Breakout', 'Sleeper', 'Stash', 'Monitor', 'Cut'].map(function(k) {
                 return '<span class="ri-legend-item" title="' + esc(sigDesc[k]) + '"><span class="ri-legend-dot" style="background:' + sigColor[k] + '"></span>' + k + '</span>';
               }).join('') + '</div>';
 
@@ -617,13 +628,9 @@
                 var rankStr = pd.league_rank ? (pd.league_rank + '/' + pd.num_teams) : '';
                 var hc = healthColor[pd.health] || 'var(--text-muted)';
                 var maxVal = pd.players.reduce(function(m, p) { return Math.max(m, p.value || 0); }, 0) || 1;
-                var holdCount = pd.players.filter(function(p) { return p.signal === 'Hold'; }).length;
-                // Hide Holds by default so the flagged players stand out — unless the
-                // whole group is Holds, which would leave an empty section.
-                var hideHolds = holdCount > 0 && holdCount < pd.players.length;
                 var pc = posColor[pos] || 'var(--text-muted)';
 
-                html += '<div class="ri-pos-section' + (hideHolds ? ' holds-hidden' : '') + '">' +
+                html += '<div class="ri-pos-section">' +
                   '<div class="ri-pos-header">' +
                     '<span class="ri-pos-label">' + pos + '</span>' +
                     '<div class="ri-pos-stats">' +
@@ -649,8 +656,7 @@
                   if (p.fc_pos_rank) metaParts.push('FC ' + pos + p.fc_pos_rank);
                   var safeName = esc(p.name);
                   var barPct = Math.max(4, Math.round((p.value || 0) / maxVal * 100));
-                  var holdCls = p.signal === 'Hold' ? ' is-hold' : '';
-                  html += '<div class="ri-player-row' + holdCls + '">' +
+                  html += '<div class="ri-player-row">' +
                     '<div class="ri-player-info">' +
                       '<span class="ri-player-name player-clickable" style="cursor:pointer;" data-player-id="' + (p.player_id || '') + '" data-player-name="' + safeName + '">' + p.name + mktNote + '</span>' +
                       '<span class="ri-player-meta">' + metaParts.join(' · ') + '</span>' +
@@ -662,25 +668,11 @@
                   '</div>';
                 });
 
-                if (hideHolds) {
-                  html += '<button type="button" class="ri-hold-toggle" data-holds="' + holdCount + '">Show ' + holdCount + ' hold' + (holdCount !== 1 ? 's' : '') + '</button>';
-                }
-
                 html += '</div>';
               });
             });
 
             panel.innerHTML = html || '<p class="analytics-empty">Roster looks stable - no actions flagged.</p>';
-
-            // Hold toggles: reveal/hide the quieted Hold rows per position.
-            panel.querySelectorAll('.ri-hold-toggle').forEach(function(btn) {
-              btn.addEventListener('click', function() {
-                var sec = btn.closest('.ri-pos-section');
-                var n = parseInt(btn.getAttribute('data-holds'), 10) || 0;
-                var hidden = sec.classList.toggle('holds-hidden');
-                btn.textContent = (hidden ? 'Show ' : 'Hide ') + n + ' hold' + (n !== 1 ? 's' : '');
-              });
-            });
           })
           .catch(function(err) {
             console.warn('[roster-intel]', err);

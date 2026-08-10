@@ -3083,7 +3083,7 @@ _AM_JS = r"""
     s += txt(padL, 56, _amEsc(cfg.metrics[yk].label) + ' vs ' + _amEsc(cfg.metrics[xk].label), L.fTitle, TH.text, 800, 'start');
     const noteEl = document.getElementById('amGraphCtxNote');
     const ctx = noteEl ? noteEl.textContent : '';
-    const sub = (ctx ? ctx + ' · ' : '') + (zk ? 'bubble = ' + cfg.metrics[zk].label : '');
+    const sub = [ctx, (zk ? 'bubble = ' + cfg.metrics[zk].label : '')].filter(Boolean).join(' · ');
     if (sub) s += txt(padL, 76, _amEsc(sub), L.fSub, TH.muted, 500, 'start');
     // Grid: hairlines at round ticks; a single baseline instead of a hard frame.
     for (let xv = Math.ceil(xmin / dx.step - 1e-9) * dx.step; xv <= xmax + 1e-9; xv += dx.step) {
