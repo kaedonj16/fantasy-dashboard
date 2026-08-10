@@ -24241,6 +24241,10 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
         prime     = prime_max.get(pos, 28)
         past_prime = (not redraft) and age > prime
         young     = age > 0 and age <= 24
+        # A dynasty "stash" is a young/rookie upside player you keep on the bench
+        # rather than cut — so below-replacement depth should never auto-cut them.
+        rookie    = int(years_exp_map.get(pid) or 99) <= 1
+        stashable = (not redraft) and (young or rookie)
         prk       = int(info.get("pos_rank") or 999)
         elite     = elite_n.get(pos, 5)
         startable = startable_lg.get(pos, 24)
@@ -24250,14 +24254,19 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
         # Positive = market (FC) ranks him ahead of our model; negative = we rank him higher.
         mkt_gap = (prk - fc_prk) if (prk < 999 and fc_prk < 999) else None
 
-        # Unknown positional rank (unranked / very deep): fall back to a raw floor.
+        # Unknown positional rank (unranked / very deep): fall back to a raw floor,
+        # but keep young dynasty stashes rather than dumping them.
         if prk >= 999:
+            if stashable:
+                return "Stash"
             return "Cut" if val < 60 else "Hold"
 
-        # Release candidates — buried beyond rosterable depth, or an aging body
-        # outside the startable tier (dynasty only).
+        # Below replacement level in this league. In dynasty a young/rookie player
+        # here is a stash to keep, not a cut; everyone else (and all of redraft) is
+        # a drop candidate.
         if prk > depth:
-            return "Cut"
+            return "Stash" if stashable else "Cut"
+        # Aging body outside the startable tier (dynasty only) — no future, drop.
         if past_prime and prk > startable:
             return "Cut"
 
@@ -24329,9 +24338,19 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
             base += float(slot_counts.get("SUPER_FLEX", 0) or slot_counts.get("SUPERFLEX", 0) or 0)
         return base
 
+    # Rosterable depth anchored to what's ACTUALLY rostered at each position in
+    # this specific league (not a fixed multiple of starting slots). A player who
+    # ranks worse than the deepest rostered player at his position is below
+    # replacement level; anything at or above that line is rosterable here. This
+    # self-adjusts to shallow redraft vs. deep-bench dynasty leagues.
+    rostered_ct: dict = {p: 0 for p in POSITIONS}
+    for _pmap in pos_vals.values():
+        for _pos in POSITIONS:
+            rostered_ct[_pos] += len(_pmap.get(_pos, []))
+
     startable_lg: dict = {}   # leaguewide startable count per position
     elite_n:      dict = {}   # top "untouchable" tier
-    depth_n:      dict = {}   # rosterable depth; beyond this is a cut
+    depth_n:      dict = {}   # rosterable depth; beyond this is below replacement
     need_perteam: dict = {}   # per-team starters (slot-aware health)
     for _pos in POSITIONS:
         _spt = _startable_perteam(_pos)
@@ -24339,7 +24358,9 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
         _s = max(1, round(_spt * num_teams))
         startable_lg[_pos] = _s
         elite_n[_pos] = max(3, round(_s * 0.30))
-        depth_n[_pos] = max(_s + num_teams, round(_s * 1.6))
+        # Below replacement = worse than the deepest rostered player in the
+        # league (never tighter than one bench round past the startable tier).
+        depth_n[_pos] = max(_s + num_teams, rostered_ct.get(_pos, 0))
 
     # Rank teams per position by weighted strength (1 = best), matching teams page
     pos_ranks: dict = {}    # {rid: {pos: rank}}

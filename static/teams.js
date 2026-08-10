@@ -545,6 +545,7 @@
               'Breakout':  '#8b5cf6',
               'Sleeper':   '#06b6d4',
               'Monitor':   '#f59e0b',
+              'Stash':     '#0d9488',
               'Hold':      'var(--text-muted)',
               'Cut':       '#94a3b8',
             };
@@ -554,8 +555,9 @@
               'Breakout':  'On the Breakout Engine board — hold for the leap.',
               'Sleeper':   'Valued above the dynasty market — buy or hold.',
               'Monitor':   'Sharp recent drop — watch before value erodes.',
+              'Stash':     'Young/rookie upside below rosterable depth — hold for later.',
               'Hold':      'No action needed right now.',
-              'Cut':       'Low value / past prime — drop candidate.',
+              'Cut':       'Below rosterable depth or past prime — drop candidate.',
             };
             var healthColor = {
               'Strong':  '#22c55e',
@@ -579,7 +581,7 @@
               var positions = t.positions || {};
 
               // ── Action summary: pull the flagged players + thin/aging spots to the top ──
-              var buckets = { 'Sell High': [], 'Cut': [], 'Breakout': [], 'Sleeper': [], 'Monitor': [] };
+              var buckets = { 'Sell High': [], 'Cut': [], 'Breakout': [], 'Sleeper': [], 'Stash': [], 'Monitor': [] };
               var needs = [];
               POS_ORDER.forEach(function(pos) {
                 var pd = positions[pos];
@@ -596,6 +598,7 @@
               if (buckets['Cut'].length)       addMove('Cut', '#64748b', '<b>' + names(buckets['Cut']) + '</b> <span class="why">— low value; free the bench spot' + (buckets['Cut'].length > 1 ? 's' : '') + '.</span>');
               if (buckets['Breakout'].length)  addMove('Breakout', sigColor['Breakout'], '<b>' + names(buckets['Breakout']) + '</b> <span class="why">— breakout upside; hold for the leap.</span>');
               if (buckets['Sleeper'].length)   addMove('Buy / hold', sigColor['Sleeper'], '<b>' + names(buckets['Sleeper']) + '</b> <span class="why">— valued above the market.</span>');
+              if (buckets['Stash'].length)     addMove('Stash', sigColor['Stash'], '<b>' + names(buckets['Stash']) + '</b> <span class="why">— young upside; stash for later.</span>');
               if (buckets['Monitor'].length)   addMove('Monitor', sigColor['Monitor'], '<b>' + names(buckets['Monitor']) + '</b> <span class="why">— slipping; watch closely.</span>');
               if (needs.length) {
                 var needStr = needs.map(function(n) { return '<b>' + n.pos + '</b> is ' + n.health.toLowerCase(); }).join(', ');
@@ -606,7 +609,7 @@
                 '</div>';
 
               // ── Legend for the signal chips ──
-              html += '<div class="ri-legend">' + ['Core', 'Sell High', 'Breakout', 'Sleeper', 'Monitor', 'Cut'].map(function(k) {
+              html += '<div class="ri-legend">' + ['Core', 'Sell High', 'Breakout', 'Sleeper', 'Stash', 'Monitor', 'Cut'].map(function(k) {
                 return '<span class="ri-legend-item" title="' + esc(sigDesc[k]) + '"><span class="ri-legend-dot" style="background:' + sigColor[k] + '"></span>' + k + '</span>';
               }).join('') + '</div>';
 
