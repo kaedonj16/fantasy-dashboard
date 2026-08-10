@@ -8468,6 +8468,83 @@ function wkActivateTab(tab) {{
   var panel = container.querySelector('.tab-panel[data-tab="' + tabParam + '"]');
   if (panel) panel.classList.add('active');
 }})();
+
+// Desktop layout (>=1100px): restore the pre-tab-switcher arrangement — the
+// Scorers/Scout/Lineup tabs in a left column, the matchup preview as the wide
+// right column, and Week Leaders in a right-hand "Weekly Tools" aside. Below
+// 1100px it stays the single 4-tab card (the mobile layout). Nodes are moved,
+// not duplicated, so the week-change / live-refresh JS keeps finding them.
+(function() {{
+  var tabs = document.getElementById('weeklyLeftTabs');
+  if (!tabs || tabs.__wkReflow) return;
+  tabs.__wkReflow = true;
+  var pageLayout = tabs.closest('.page-layout');
+  var main = tabs.closest('.page-main');
+  if (!pageLayout || !main) return;
+  var mq = window.matchMedia('(min-width: 1100px)');
+
+  function toDesktop() {{
+    if (tabs.__mode === 'desktop') return;
+    var bar   = tabs.querySelector('.tab-bar');
+    var mPanel = tabs.querySelector('.tab-panel[data-tab="matchups"]');
+    var mcEl  = document.getElementById('weeklyMatchupsContainer');
+    var shell = mcEl ? mcEl.closest('.matchups-shell') : null;
+    var band  = document.querySelector('.week-leaders-band');
+    if (!bar || !shell) return;
+    var two = document.createElement('div');
+    two.className = 'standings-main two-col-standings wk-desktop-two';
+    var leftCol = document.createElement('div');  leftCol.className = 'standings-col';
+    var rightCol = document.createElement('div'); rightCol.className = 'standings-col';
+    main.insertBefore(two, tabs);
+    leftCol.appendChild(tabs);          // tabs card -> left column
+    rightCol.appendChild(shell);        // matchup preview -> wide right column
+    two.appendChild(leftCol);
+    two.appendChild(rightCol);
+    if (band) {{
+      var aside = document.createElement('aside');
+      aside.className = 'page-sidebar wk-desktop-aside';
+      aside.setAttribute('data-sidebar-label', 'Weekly Tools');
+      aside.appendChild(band);          // Week Leaders -> right aside
+      pageLayout.appendChild(aside);
+    }}
+    var mBtn = bar.querySelector('.tab-btn[data-tab="matchups"]');
+    if (mBtn) mBtn.style.display = 'none';
+    wkActivateTab('scorers');
+    tabs.classList.add('wk-desktop');
+    tabs.__mode = 'desktop';
+  }}
+
+  function toMobile() {{
+    if (tabs.__mode === 'mobile') return;
+    var bar    = tabs.querySelector('.tab-bar');
+    var mPanel = tabs.querySelector('.tab-panel[data-tab="matchups"]');
+    var sPanel = tabs.querySelector('.tab-panel[data-tab="scorers"]');
+    var mcEl   = document.getElementById('weeklyMatchupsContainer');
+    var shell  = mcEl ? mcEl.closest('.matchups-shell') : null;
+    var band   = document.querySelector('.week-leaders-band');
+    if (shell && mPanel) mPanel.appendChild(shell);           // matchup -> back in its tab
+    if (band && sPanel) {{
+      var wmp = sPanel.querySelector('.week-main-panels');
+      if (wmp) sPanel.insertBefore(band, wmp); else sPanel.appendChild(band);
+    }}
+    var two = main.querySelector('.wk-desktop-two');
+    if (two) {{ main.insertBefore(tabs, two); main.removeChild(two); }}
+    var aside = pageLayout.querySelector('.wk-desktop-aside');
+    if (aside) pageLayout.removeChild(aside);
+    if (bar) {{
+      var mBtn = bar.querySelector('.tab-btn[data-tab="matchups"]');
+      if (mBtn) mBtn.style.display = '';
+    }}
+    wkActivateTab('matchups');
+    tabs.classList.remove('wk-desktop');
+    tabs.__mode = 'mobile';
+  }}
+
+  function apply() {{ if (mq.matches) toDesktop(); else toMobile(); }}
+  apply();
+  if (mq.addEventListener) mq.addEventListener('change', apply);
+  else if (mq.addListener) mq.addListener(apply);
+}})();
 </script>
 """
 
