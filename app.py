@@ -10617,6 +10617,7 @@ def api_waiver_candidates():
         c.setdefault("schedule_ease_rank", None)
         c.setdefault("schedule_total", 0)
         c.setdefault("scarcity_mult", 1.0)
+        c.setdefault("handcuff_upside", 0.0)
         try:
             ut = usage_trends.get(c["player_id"]) or {}
             c["usage_delta"] = ut.get("delta")
@@ -10626,6 +10627,25 @@ def api_waiver_candidates():
             _inj_pids = _da.get("injured_pids_ahead") or []
             c["injured_ahead"] = _da.get("injured_ahead") or []
             c["healthy_ahead"] = _da.get("healthy_ahead") or 0
+
+            # Handcuff upside (#8): the immediate backup to a healthy, high-usage
+            # starter is a valuable stash — if that starter goes down the role, and
+            # the fantasy points, transfer wholesale. Only the direct #2 (exactly
+            # one healthy body ahead) to an elite lead back earns it, scaled by that
+            # starter's ROS production. RB-only: no other position concentrates a
+            # role into a single handcuff the way a bell-cow backfield does.
+            _hc = 0.0
+            if c["position"] == "RB" and c["healthy_ahead"] == 1:
+                _sp = (_da.get("healthy_pids_ahead") or [None])[0]
+                if _sp is not None:
+                    _sppg = _forward_ppg_wv(_sp) or _ppg_by_pid_wv.get(_sp) or 0.0
+                    try:
+                        _sppg = float(_sppg or 0.0)
+                    except (TypeError, ValueError):
+                        _sppg = 0.0
+                    # ~14 ppg lead back → starts earning; ~19+ ppg bell-cow → full.
+                    _hc = max(0.0, min(1.0, (_sppg - 14.0) / 5.0))
+            c["handcuff_upside"] = _hc
             # Value each vacancy from the injured player's role production (healthy
             # season projected ppg, else recent ppg) and, crucially, from how long
             # they're projected to be out (leading zero-run in the weekly
@@ -10683,14 +10703,17 @@ def api_waiver_candidates():
     # money; a player who fills the viewer's own roster need is nudged up. A band
     # rather than a number because league budgets differ ($100 / $1000 / rolling);
     # the % reads the same regardless. Gated client-side on the league using FAAB.
-    # Strict FAAB detection. Sleeper defaults waiver_budget to 100 even for
-    # rolling / reverse-priority leagues, so a budget alone is a false positive -
-    # the only reliable Sleeper FAAB signal is waiver_type == 2. ESPN uses an
-    # explicit acquisition budget. Fail closed when FAAB can't be confirmed so a
-    # non-FAAB league never sees a bid % it can't use.
+    # FAAB detection. Sleeper's waiver_type == 2 is NOT sufficient on its own —
+    # rolling / waiver-priority leagues report the same code, so keying on it alone
+    # showed a bid % to non-FAAB leagues. A genuine FAAB league always carries a
+    # positive waiver_budget, so require both. ESPN uses an explicit acquisition
+    # budget. Fail closed when FAAB can't be confirmed so a non-FAAB league never
+    # sees a bid % it can't use.
     _wv_settings = (ctx.get("league") or {}).get("settings") or {}
     _faab_enabled = (
-        _safe_int(_wv_settings.get("waiver_type"), -1) == 2          # Sleeper FAAB
+        # Sleeper FAAB: waiver_type flagged AND a real budget to spend.
+        (_safe_int(_wv_settings.get("waiver_type"), -1) == 2
+         and _safe_int(_wv_settings.get("waiver_budget"), 0) > 0)
         or _safe_int(_wv_settings.get("acquisition_budget"), 0) > 0  # ESPN FAAB
     )
     _wv_scores = [_safe_pickup_score(c) for c in _shown]
@@ -10698,10 +10721,17 @@ def api_waiver_candidates():
     _wv_srng = ((max(_wv_scores) - _wv_smin) if _wv_scores else 1.0) or 1.0
 
     def _faab_band(_c):
+        # Waiver-wire targets, not premium trade pieces — keep bids modest so the
+        # single best add tops out around the low-20s% and typical adds sit in the
+        # low single digits, matching how much of a budget these fliers are worth.
         _t = (_safe_pickup_score(_c) - _wv_smin) / _wv_srng          # 0..1 within shown set
-        _center = 1.0 + (_t ** 1.7) * 34.0                           # top target ~35%, tapers fast
-        _center *= 1.0 + min(max((_c.get("need_mult") or 1.0) - 1.0, 0.0), 0.35)  # fills your need → bid up
-        return max(0, int(round(_center * 0.78))), min(70, int(round(_center * 1.12)) + 1)
+        _center = 1.0 + (_t ** 1.7) * 16.0                           # top target ~17%, tapers fast
+        _center *= 1.0 + min(max((_c.get("need_mult") or 1.0) - 1.0, 0.0), 0.25)  # fills your need → bid up
+        # Elite-handcuff premium: the direct backup to a healthy stud starter is
+        # worth a real speculative bid beyond his standalone score — a top bell-cow
+        # handcuff lands ~10-18% even with a low pickup score of his own.
+        _center += float(_c.get("handcuff_upside") or 0.0) * 13.0
+        return max(0, int(round(_center * 0.72))), min(50, int(round(_center * 1.12)) + 1)
 
     # ── Add/drop pairing: for each target, the best player on the viewer's own
     # roster to cut to make room. Prefer thinning a position where the viewer is
