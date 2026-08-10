@@ -44,7 +44,10 @@ def get_nfl_state(*args, **kwargs):
     return _fn(*args, **kwargs)
 
 def get_sleeper_user_leagues(*args, **kwargs):
-    from app import get_sleeper_user_leagues as _fn
+    # Lives in dashboard_services.api; app.py only imports it locally, so it is
+    # NOT an attribute of the app module — importing it from `app` raised and got
+    # swallowed by the caller's except, making My Leagues always show empty.
+    from dashboard_services.api import get_sleeper_user_leagues as _fn
     return _fn(*args, **kwargs)
 
 def count_roster_positions(*args, **kwargs):
