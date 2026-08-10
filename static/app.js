@@ -11419,7 +11419,7 @@ function _buildBkTabHTML(data, scoreColor) {
         </div>
         ${ppgRange.prevStr ? `
         <div style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;justify-content:center;gap:5px;margin-top:2px;">
-          <span>vs ${ppgRange.prevStr} last szn</span>${deltaHtml}
+          <span>vs ${ppgRange.prevStr} last season</span>${deltaHtml}
         </div>` : ''}
       </div>`;
   } else {
