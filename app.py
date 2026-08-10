@@ -24170,6 +24170,13 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
     roster_map        = ctx.get("roster_map") or {}
     model_value_table = ctx.get("model_value_table") or []
 
+    # Sleeper league type: 0 = redraft, 1 = keeper, 2 = dynasty. Only pure redraft
+    # turns off the age-based (dynasty) rules and the dynasty-ADP market signals;
+    # keeper is treated like dynasty. Non-Sleeper leagues have no type here and
+    # default to dynasty behavior.
+    _lg_settings = (ctx.get("league") or {}).get("settings") or {}
+    is_redraft = _safe_int(_lg_settings.get("type"), -1) == 0
+
     # Build value lookup keyed by player_id
     val_key = "sf_value" if league_type == "sf" else "value"
     values_by_id: dict = {}
@@ -24222,52 +24229,60 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
     POSITIONS = ["QB", "RB", "WR", "TE"]
     prime_max = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
 
-    def _signal(pid: str, info: dict) -> str:
-        val             = info["value"]
-        age             = float(info["age"] or 0)
-        pos             = info["position"]
-        rank_chg        = info["pos_rank_change_7d"] or info["rank_change_7d"] or 0
-        prime           = prime_max.get(pos, 28)
-        past_prime      = age > prime
-        young           = age > 0 and age <= 24
-        internal_pos_rk = int(info.get("pos_rank") or 999)
-        fc_pos_rk       = int((fc_adp.get(pid) or {}).get("pos_rank") or 999)
-        # Positive = market (FC) overvalues vs our model; negative = we value more than market.
-        mkt_gap = internal_pos_rk - fc_pos_rk
+    def _signal(pid: str, info: dict, redraft: bool = False) -> str:
+        # Signal off positional RANK (position-relative, scale-free) rather than
+        # flat value cutoffs, using the per-position tiers derived below from the
+        # league's starting slots + team count. In redraft, age is irrelevant and
+        # the dynasty-ADP market comparison is meaningless, so both are disabled.
+        val       = info["value"]
+        age       = float(info["age"] or 0)
+        pos       = info["position"]
+        rank_chg  = info["pos_rank_change_7d"] or info["rank_change_7d"] or 0
+        prime     = prime_max.get(pos, 28)
+        past_prime = (not redraft) and age > prime
+        young     = age > 0 and age <= 24
+        prk       = int(info.get("pos_rank") or 999)
+        elite     = elite_n.get(pos, 5)
+        startable = startable_lg.get(pos, 24)
+        depth     = depth_n.get(pos, 48)
+        fc_prk    = int((fc_adp.get(pid) or {}).get("pos_rank") or 999)
+        market_on = not redraft
+        # Positive = market (FC) ranks him ahead of our model; negative = we rank him higher.
+        mkt_gap = (prk - fc_prk) if (prk < 999 and fc_prk < 999) else None
 
-        # Release candidates
-        if val < 80:
+        # Unknown positional rank (unranked / very deep): fall back to a raw floor.
+        if prk >= 999:
+            return "Cut" if val < 60 else "Hold"
+
+        # Release candidates — buried beyond rosterable depth, or an aging body
+        # outside the startable tier (dynasty only).
+        if prk > depth:
             return "Cut"
-        if past_prime and val < 175:
+        if past_prime and prk > startable:
             return "Cut"
 
-        # Sell windows - aging players still holding value
-        if past_prime and val >= 350:
-            return "Sell High"
-        # Market overvalues vs our model - sell into the hype.
-        # Exclude young ascending players (≤24) - market premium on youth is justified.
-        if mkt_gap >= 5 and val >= 250 and not past_prime and not young:
-            return "Sell High"
-        # Severe 7-day rank jump for a prime player - sell into momentum
-        if not past_prime and not young and val >= 450 and rank_chg >= 10:
-            return "Sell High"
-
-        # Elite untouchable asset
-        if not past_prime and val >= 700:
+        # Elite, in-window starter — a keeper.
+        if prk <= elite and not past_prime:
             return "Core"
 
-        # Breakout - only if the player appears on the actual Breakout Engine page
-        if not past_prime and pid in breakout_pids and val >= 80:
+        # Sell windows
+        if past_prime and prk <= startable:
+            return "Sell High"                    # aging starter still holding value
+        if market_on and mkt_gap is not None and mkt_gap >= 5 and prk <= startable and not young:
+            return "Sell High"                    # market over ours — sell the hype
+        if not past_prime and not young and prk <= elite and rank_chg >= 10:
+            return "Sell High"                    # stud spiking — sell into momentum
+
+        # Breakout — only if the player appears on the actual Breakout Engine page.
+        if not past_prime and pid in breakout_pids and prk <= depth:
             return "Breakout"
 
-        # Sleeper - our model values significantly more than the dynasty market.
-        # Only applies to mid-tier players; top-tier players are never "sleepers".
-        _sleeper_rank_floor = {"QB": 10, "RB": 14, "WR": 16, "TE": 6}.get(pos, 16)
-        if mkt_gap <= -5 and val >= 200 and not past_prime and internal_pos_rk >= _sleeper_rank_floor:
+        # Sleeper — our model well above the dynasty market; mid-tier only.
+        if market_on and mkt_gap is not None and mkt_gap <= -5 and elite < prk <= depth and not past_prime:
             return "Sleeper"
 
-        # Severe 7-day drop - consider selling before value erodes further
-        if not past_prime and rank_chg <= -10 and val >= 175:
+        # Sharp recent slide for a startable player.
+        if not past_prime and rank_chg <= -10 and prk <= startable:
             return "Monitor"
 
         return "Hold"
@@ -24294,6 +24309,29 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
         }
 
     num_teams = len(rosters)
+
+    # Position tiers, derived from the league's starting requirements so the signal
+    # cutoffs are position-relative and scale with league size (rather than flat
+    # value numbers). FLEX is split across RB/WR/TE; SUPER_FLEX feeds QB.
+    def _startable_perteam(pos: str) -> float:
+        base = float(slot_counts.get(pos, 0) or 0)
+        if pos in ("RB", "WR", "TE"):
+            base += float(slot_counts.get("FLEX", 0) or 0) / 3.0
+        if pos == "QB":
+            base += float(slot_counts.get("SUPER_FLEX", 0) or slot_counts.get("SUPERFLEX", 0) or 0)
+        return base
+
+    startable_lg: dict = {}   # leaguewide startable count per position
+    elite_n:      dict = {}   # top "untouchable" tier
+    depth_n:      dict = {}   # rosterable depth; beyond this is a cut
+    need_perteam: dict = {}   # per-team starters (slot-aware health)
+    for _pos in POSITIONS:
+        _spt = _startable_perteam(_pos)
+        need_perteam[_pos] = max(1, round(_spt))
+        _s = max(1, round(_spt * num_teams))
+        startable_lg[_pos] = _s
+        elite_n[_pos] = max(3, round(_s * 0.30))
+        depth_n[_pos] = max(_s + num_teams, round(_s * 1.6))
 
     # Rank teams per position by weighted strength (1 = best), matching teams page
     pos_ranks: dict = {}    # {rid: {pos: rank}}
@@ -24325,16 +24363,21 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
                 if not info or info["position"] != pos:
                     continue
                 name = info["name"] or (players_index.get(pid) or {}).get("name") or f"Player {pid}"
-                sig  = _signal(pid, info)
+                sig  = _signal(pid, info, is_redraft)
                 _fc  = fc_adp.get(pid) or {}
-                _fc_pos_rk = _fc.get("pos_rank")
                 _int_pos_rk = info.get("pos_rank")
-                _mkt_gap = (int(_int_pos_rk or 999) - int(_fc_pos_rk or 999)) if (_int_pos_rk and _fc_pos_rk) else None
+                # The FC feed the client sends is dynasty ADP, so drop the market
+                # context entirely in redraft (it would be misleading there).
+                _fc_pos_rk = None if is_redraft else _fc.get("pos_rank")
+                _mkt_gap = None if is_redraft else (
+                    (int(_int_pos_rk or 999) - int(_fc_pos_rk or 999)) if (_int_pos_rk and _fc_pos_rk) else None
+                )
                 pos_players.append({
                     "player_id":         pid,
                     "name":              name,
                     "age":               info["age"],
                     "value":             round(info["value"], 0),
+                    "pos_rank":          _int_pos_rk,
                     "pos_rank_label":    info["pos_rank_label"],
                     "rank_change_7d":    info["pos_rank_change_7d"] or info["rank_change_7d"],
                     "fc_pos_rank":       _fc_pos_rk,
@@ -24354,16 +24397,20 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
             league_rank = pos_ranks.get(rid, {}).get(pos, 0)
             prime       = prime_max.get(pos, 28)
 
-            # Position health label
-            past_prime_count = sum(1 for p in pos_players if p["age"] and float(p["age"]) > prime)
-            strong_count     = sum(1 for p in pos_players if (p["value"] or 0) >= 200)
+            # Position health label. "Thin" is slot-aware: it counts how many of
+            # your rostered players clear the leaguewide startable tier and compares
+            # that to what your lineup actually starts (so one QB in 1QB isn't Thin).
             total_count      = len(pos_players)
+            _need            = need_perteam.get(pos, 1)
+            _startable_cut   = startable_lg.get(pos, 24)
+            startable_have   = sum(1 for p in pos_players if int(p.get("pos_rank") or 999) <= _startable_cut)
+            past_prime_count = 0 if is_redraft else sum(1 for p in pos_players if p["age"] and float(p["age"]) > prime)
 
-            if total_count > 0 and past_prime_count / total_count >= 0.6:
+            if not is_redraft and total_count > 0 and past_prime_count / total_count >= 0.6:
                 health = "Aging"
-            elif strong_count < 2:
+            elif startable_have < _need:
                 health = "Thin"
-            elif league_rank <= max(1, round(num_teams * 0.3)):
+            elif league_rank and league_rank <= max(1, round(num_teams * 0.3)):
                 health = "Strong"
             else:
                 health = "Average"
