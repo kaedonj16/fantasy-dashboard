@@ -12255,6 +12255,12 @@ function pmSeasonTrendInit(playerId) {
     body.innerHTML = '<div class="pm-st-controls">' + sel +
       '<div class="pm-st-hint">Add up to ' + PM_ST_MAX + ' metrics to compare trajectories.</div></div>' +
       '<div id="pmSeasonTrendCharts"></div>';
+    // Upgrade the native <select> to the site's custom dropdown (CSD) so it
+    // matches every other dropdown; CSD keeps the native select in the DOM and
+    // still fires change events, so the inline onchange keeps working.
+    if (typeof window.initCustomSelects === 'function') {
+      window.initCustomSelects(body);
+    }
     pmSeasonTrendRenderAll(playerId);
   }).catch(function() {
     body.innerHTML = '<div style="padding:10px 0;font-size:12px;color:var(--text-muted);">Couldn’t load season trend.</div>';
@@ -12327,13 +12333,18 @@ function pmSeasonTrendChartHTML(points, opt, position) {
   var padV = span * 0.15;
   var lo = vmin - padV, hi = vmax + padV;
 
-  var W = 320, H = 152, padL = 12, padR = 12, padTop = 24, padBot = 40;
+  var W = 320, H = 152, padL = 22, padR = 22, padTop = 24, padBot = 40;
   var innerW = W - padL - padR, innerH = H - padTop - padBot;
   var n = points.length;
   function xAt(i) { return n === 1 ? padL + innerW / 2 : padL + (i / (n - 1)) * innerW; }
   function yAt(v) { return padTop + innerH - ((v - lo) / ((hi - lo) || 1)) * innerH; }
+  // Anchor edge labels inward so the first/last season + rank text can't clip
+  // against the SVG bounds (which was chopping "RB33/95" → "B33/95", etc.).
+  function anchorAt(i) { return (n > 1 && i === 0) ? 'start' : (n > 1 && i === n - 1) ? 'end' : 'middle'; }
 
   var first = withVal[0], last = withVal[withVal.length - 1];
+  var lastIdx = -1;
+  points.forEach(function(p, i) { if (p.value != null) lastIdx = i; });  // most-recent point with data
   var improved = null;
   if (withVal.length >= 2 && last.value !== first.value) {
     improved = opt.lower_better ? (last.value < first.value) : (last.value > first.value);
@@ -12353,13 +12364,21 @@ function pmSeasonTrendChartHTML(points, opt, position) {
   }
   points.forEach(function(p, i) {
     var x = xAt(i);
-    svg += '<text x="' + x.toFixed(1) + '" y="' + (H - 24) + '" text-anchor="middle" class="pm-st-x">' + p.season + '</text>';
+    var anchor = anchorAt(i);
+    svg += '<text x="' + x.toFixed(1) + '" y="' + (H - 24) + '" text-anchor="' + anchor + '" class="pm-st-x">' + p.season + '</text>';
     var rankTxt = (p.rank != null) ? (pos + p.rank + (p.count ? '/' + p.count : '')) : '—';
-    svg += '<text x="' + x.toFixed(1) + '" y="' + (H - 10) + '" text-anchor="middle" class="pm-st-rank">' + rankTxt + '</text>';
+    svg += '<text x="' + x.toFixed(1) + '" y="' + (H - 10) + '" text-anchor="' + anchor + '" class="pm-st-rank">' + rankTxt + '</text>';
     if (p.value == null) return;
     var y = yAt(p.value);
-    svg += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="3.2" fill="' + col + '"/>';
-    svg += '<text x="' + x.toFixed(1) + '" y="' + (y - 8).toFixed(1) + '" text-anchor="middle" class="pm-st-val">' + pmStFmt(p.value, opt) + '</text>';
+    var isLast = (i === lastIdx);
+    // Emphasize the most-recent point (haloed, larger) so the current value pops.
+    if (isLast) {
+      svg += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="5.5" fill="' + col + '" opacity="0.20"/>';
+      svg += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="3.8" fill="' + col + '"/>';
+    } else {
+      svg += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="3.0" fill="' + col + '"/>';
+    }
+    svg += '<text x="' + x.toFixed(1) + '" y="' + (y - 9).toFixed(1) + '" text-anchor="' + anchor + '" class="pm-st-val' + (isLast ? ' pm-st-val-last' : '') + '">' + pmStFmt(p.value, opt) + '</text>';
   });
   svg += '</svg>';
 

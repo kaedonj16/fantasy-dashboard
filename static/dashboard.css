@@ -7540,6 +7540,7 @@ select:focus {
 .pm-st-note { font-size: 10px; color: var(--text-muted); padding-bottom: 4px; }
 .pm-st-svg { width: 100%; height: auto; max-height: 190px; display: block; }
 .pm-st-svg .pm-st-val  { fill: var(--text); font-size: 10px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.pm-st-svg .pm-st-val-last { font-size: 11.5px; }
 .pm-st-svg .pm-st-x    { fill: var(--text-muted); font-size: 10px; font-weight: 700; }
 .pm-st-svg .pm-st-rank { fill: var(--text-muted); font-size: 9px; }
 
