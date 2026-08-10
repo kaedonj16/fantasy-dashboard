@@ -17243,6 +17243,18 @@ tr.team-clickable {
 .teams-sidebar .btm-meta { padding: 6px 12px 8px; }
 .teams-sidebar .teams-analytics-card { margin: 0; }
 
+/* Desktop only (the sticky-sidebar layout): cap the analytics panels to the
+   viewport so a long list (Roster Intel, Value) scrolls inside the sidebar
+   instead of forcing you to scroll the whole teams page. 95px = sidebar sticky
+   top; the rest covers the tab strip + card padding + a little breathing room.
+   Mobile (<=1180px) is a full-width tab, so it scrolls with the page as normal. */
+@media (min-width: 1181px) {
+  .teams-sidebar .teams-analytics-card .tab-panels {
+    max-height: calc(100vh - 140px);
+    overflow-y: auto;
+  }
+}
+
 /* ── Roster Intel ─────────────────────────────────────── */
 .ri-pos-section {
   padding: 12px 0;
