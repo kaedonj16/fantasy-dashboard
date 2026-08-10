@@ -24289,7 +24289,15 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
 
     # ── Compute per-position strength for ALL teams using the same weighted
     #    formula as the teams page cards so ranks match exactly.
-    slot_counts = count_roster_positions(get_roster_positions())
+    # Pull the starting lineup from the cached league ctx (the request-scoped
+    # get_roster_positions() global isn't populated on this API path). Without
+    # real starting slots the depth tiers below collapse and every player past
+    # ~RB11/WR11 looks like a "Cut", so fall back to a standard lineup if the
+    # roster-position list is empty (non-Sleeper leagues, cache miss, etc.).
+    _rp_list = ctx.get("roster_positions") or get_roster_positions() or []
+    slot_counts = count_roster_positions(_rp_list)
+    if not any(slot_counts.get(p) for p in ("QB", "RB", "WR", "TE", "FLEX")):
+        slot_counts = {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 1}
     pos_vals: dict = {}   # {rid: {pos: [value, ...]}}
     for roster in rosters:
         rid = str(roster.get("roster_id"))

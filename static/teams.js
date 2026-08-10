@@ -617,13 +617,9 @@
                 var rankStr = pd.league_rank ? (pd.league_rank + '/' + pd.num_teams) : '';
                 var hc = healthColor[pd.health] || 'var(--text-muted)';
                 var maxVal = pd.players.reduce(function(m, p) { return Math.max(m, p.value || 0); }, 0) || 1;
-                var holdCount = pd.players.filter(function(p) { return p.signal === 'Hold'; }).length;
-                // Hide Holds by default so the flagged players stand out — unless the
-                // whole group is Holds, which would leave an empty section.
-                var hideHolds = holdCount > 0 && holdCount < pd.players.length;
                 var pc = posColor[pos] || 'var(--text-muted)';
 
-                html += '<div class="ri-pos-section' + (hideHolds ? ' holds-hidden' : '') + '">' +
+                html += '<div class="ri-pos-section">' +
                   '<div class="ri-pos-header">' +
                     '<span class="ri-pos-label">' + pos + '</span>' +
                     '<div class="ri-pos-stats">' +
@@ -649,8 +645,7 @@
                   if (p.fc_pos_rank) metaParts.push('FC ' + pos + p.fc_pos_rank);
                   var safeName = esc(p.name);
                   var barPct = Math.max(4, Math.round((p.value || 0) / maxVal * 100));
-                  var holdCls = p.signal === 'Hold' ? ' is-hold' : '';
-                  html += '<div class="ri-player-row' + holdCls + '">' +
+                  html += '<div class="ri-player-row">' +
                     '<div class="ri-player-info">' +
                       '<span class="ri-player-name player-clickable" style="cursor:pointer;" data-player-id="' + (p.player_id || '') + '" data-player-name="' + safeName + '">' + p.name + mktNote + '</span>' +
                       '<span class="ri-player-meta">' + metaParts.join(' · ') + '</span>' +
@@ -662,25 +657,11 @@
                   '</div>';
                 });
 
-                if (hideHolds) {
-                  html += '<button type="button" class="ri-hold-toggle" data-holds="' + holdCount + '">Show ' + holdCount + ' hold' + (holdCount !== 1 ? 's' : '') + '</button>';
-                }
-
                 html += '</div>';
               });
             });
 
             panel.innerHTML = html || '<p class="analytics-empty">Roster looks stable - no actions flagged.</p>';
-
-            // Hold toggles: reveal/hide the quieted Hold rows per position.
-            panel.querySelectorAll('.ri-hold-toggle').forEach(function(btn) {
-              btn.addEventListener('click', function() {
-                var sec = btn.closest('.ri-pos-section');
-                var n = parseInt(btn.getAttribute('data-holds'), 10) || 0;
-                var hidden = sec.classList.toggle('holds-hidden');
-                btn.textContent = (hidden ? 'Show ' : 'Hide ') + n + ' hold' + (n !== 1 ? 's' : '');
-              });
-            });
           })
           .catch(function(err) {
             console.warn('[roster-intel]', err);
