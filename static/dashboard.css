@@ -7520,6 +7520,21 @@ select:focus {
   border-radius: 8px; background: var(--card); color: var(--text);
   font-size: 12px; font-weight: 600; cursor: pointer;
 }
+.pm-st-hint { font-size: 10px; color: var(--text-muted); padding: 4px 2px 0; }
+#pmSeasonTrendCharts {
+  display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 6px;
+}
+@media (min-width: 560px) {
+  #pmSeasonTrendCharts { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+}
+.pm-st-block { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+.pm-st-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pm-st-title { font-size: 12px; font-weight: 800; color: var(--text); }
+.pm-st-remove {
+  border: none; background: transparent; color: var(--text-muted);
+  font-size: 16px; line-height: 1; cursor: pointer; padding: 0 2px; border-radius: 6px;
+}
+.pm-st-remove:hover { color: var(--loss, #ef4444); }
 .pm-st-caption { font-size: 12px; color: var(--text-muted); padding: 2px 0 4px; }
 .pm-st-caption b { color: var(--text); font-variant-numeric: tabular-nums; }
 .pm-st-note { font-size: 10px; color: var(--text-muted); padding-bottom: 4px; }

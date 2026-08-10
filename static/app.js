@@ -12226,6 +12226,8 @@ function pmSeasonTrendFetch(playerId, metric) {
   });
 }
 
+var PM_ST_MAX = 4;   // most metrics that can be compared at once
+
 function pmSeasonTrendInit(playerId) {
   var body = document.getElementById('pmSeasonTrendBody');
   if (!body) return;
@@ -12237,47 +12239,68 @@ function pmSeasonTrendInit(playerId) {
     }
     var wrap = document.getElementById('pmSeasonTrendWrap');
     if (wrap) wrap.dataset.loaded = '1';
-    _pmSeasonTrendState[playerId] = { options: data.options };
     var defMetric = (data.requested && data.requested[0]) || data.options[0].key;
+    _pmSeasonTrendState[playerId] = { options: data.options, position: data.position || '', active: [defMetric] };
 
     var byCat = {};
     data.options.forEach(function(o) { (byCat[o.category] = byCat[o.category] || []).push(o); });
-    var sel = '<select id="pmSeasonTrendSelect" class="pm-st-select" onchange="pmSeasonTrendPick(\'' + playerId + '\', this.value)">';
+    var sel = '<select id="pmSeasonTrendSelect" class="pm-st-select" onchange="pmSeasonTrendAdd(\'' + playerId + '\', this.value); this.selectedIndex=0;">';
+    sel += '<option value="">+ Add metric…</option>';
     Object.keys(byCat).forEach(function(cat) {
       sel += '<optgroup label="' + (cat || 'Other') + '">';
-      byCat[cat].forEach(function(o) {
-        sel += '<option value="' + o.key + '"' + (o.key === defMetric ? ' selected' : '') + '>' + o.label + '</option>';
-      });
+      byCat[cat].forEach(function(o) { sel += '<option value="' + o.key + '">' + o.label + '</option>'; });
       sel += '</optgroup>';
     });
     sel += '</select>';
-    body.innerHTML = '<div class="pm-st-controls">' + sel + '</div><div id="pmSeasonTrendChart"></div>';
-    pmSeasonTrendRender(playerId, defMetric, data);
+    body.innerHTML = '<div class="pm-st-controls">' + sel +
+      '<div class="pm-st-hint">Add up to ' + PM_ST_MAX + ' metrics to compare trajectories.</div></div>' +
+      '<div id="pmSeasonTrendCharts"></div>';
+    pmSeasonTrendRenderAll(playerId);
   }).catch(function() {
     body.innerHTML = '<div style="padding:10px 0;font-size:12px;color:var(--text-muted);">Couldn’t load season trend.</div>';
   });
 }
 
-function pmSeasonTrendPick(playerId, metric) {
-  pmSeasonTrendRender(playerId, metric, null);
+function pmSeasonTrendAdd(playerId, metric) {
+  if (!metric) return;
+  var st = _pmSeasonTrendState[playerId];
+  if (!st || st.active.indexOf(metric) !== -1 || st.active.length >= PM_ST_MAX) return;
+  st.active.push(metric);
+  pmSeasonTrendRenderAll(playerId);
 }
 
-function pmSeasonTrendRender(playerId, metric, preData) {
-  var chart = document.getElementById('pmSeasonTrendChart');
-  if (!chart) return;
-  var opts = (_pmSeasonTrendState[playerId] || {}).options || [];
-  var opt = opts.filter(function(o) { return o.key === metric; })[0] || { key: metric, label: metric };
-  var done = function(data) {
-    if (!data || !data.series || !data.series[metric]) {
-      chart.innerHTML = '<div style="padding:10px 0;font-size:12px;color:var(--text-muted);">No data for this metric.</div>';
-      return;
-    }
-    chart.innerHTML = pmSeasonTrendChartHTML(data.series[metric], opt, data.position);
-  };
-  if (preData && preData.series && preData.series[metric]) { done(preData); return; }
-  chart.innerHTML = '<div style="padding:10px 0;font-size:12px;color:var(--text-muted);">Loading…</div>';
-  pmSeasonTrendFetch(playerId, metric).then(done).catch(function() {
-    chart.innerHTML = '<div style="padding:10px 0;font-size:12px;color:var(--text-muted);">Couldn’t load metric.</div>';
+function pmSeasonTrendRemove(playerId, metric) {
+  var st = _pmSeasonTrendState[playerId];
+  if (!st || st.active.length <= 1) return;   // keep at least one chart
+  st.active = st.active.filter(function(m) { return m !== metric; });
+  pmSeasonTrendRenderAll(playerId);
+}
+
+// Small-multiples: one mini line chart per active metric, each with its own
+// scale so metrics on very different ranges stay readable side by side.
+function pmSeasonTrendRenderAll(playerId) {
+  var host = document.getElementById('pmSeasonTrendCharts');
+  var st = _pmSeasonTrendState[playerId];
+  if (!host || !st) return;
+  host.innerHTML = '<div style="padding:10px 0;font-size:12px;color:var(--text-muted);">Loading…</div>';
+  var metrics = st.active.slice();
+  Promise.all(metrics.map(function(m) { return pmSeasonTrendFetch(playerId, m); })).then(function(results) {
+    var html = '';
+    metrics.forEach(function(m, idx) {
+      var data = results[idx];
+      var opt = st.options.filter(function(o) { return o.key === m; })[0] || { key: m, label: m };
+      var chart = (data && data.series && data.series[m])
+        ? pmSeasonTrendChartHTML(data.series[m], opt, (data && data.position) || st.position)
+        : '<div style="padding:8px 0;font-size:12px;color:var(--text-muted);">No data for this metric.</div>';
+      var canRemove = metrics.length > 1;
+      html += '<div class="pm-st-block">'
+        + '<div class="pm-st-head"><span class="pm-st-title">' + opt.label + '</span>'
+        + (canRemove ? '<button type="button" class="pm-st-remove" title="Remove" onclick="pmSeasonTrendRemove(\'' + playerId + '\',\'' + m + '\')">&times;</button>' : '')
+        + '</div>' + chart + '</div>';
+    });
+    host.innerHTML = html;
+  }).catch(function() {
+    host.innerHTML = '<div style="padding:10px 0;font-size:12px;color:var(--text-muted);">Couldn’t load metrics.</div>';
   });
 }
 
