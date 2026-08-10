@@ -1,6 +1,7 @@
 (function(){
   var cfg = window.__draftCfg || {};
-  var POS_COLOR = { QB:'#f59e0b', RB:'#22c55e', WR:'#3b82f6', TE:'#8b5cf6', K:'#94a3b8', DEF:'#64748b' };
+  // Match the site-wide position palette (see .nav-search-pos-* in dashboard.css).
+  var POS_COLOR = { QB:'#3b82f6', RB:'#22c55e', WR:'#f59e0b', TE:'#8b5cf6', K:'#c92c68', DEF:'#475569' };
   var posColor = function(p){ return POS_COLOR[(p||'').toUpperCase()] || '#94a3b8'; };
   var hsUrl = function(id){ return 'https://sleepercdn.com/content/nfl/players/' + id + '.jpg'; };
   // DEF players: prefer locally cached logo (after running download_team_logos.py),
@@ -4683,7 +4684,7 @@
     _olShare.starters.forEach(function(s){ rows.push({ slot: s.slot, p: s.p }); });
     _olShare.bench.forEach(function(p){ rows.push({ slot: 'BN', p: p }); });
     var clr = _readThemeVars(dark);
-    var POSC = { QB:'#f59e0b', RB:'#22c55e', WR:'#3b82f6', TE:'#8b5cf6', K:'#94a3b8', DEF:'#64748b', FLEX:'#14b8a6', SF:'#a78bfa', BN:'#64748b' };
+    var POSC = { QB:'#3b82f6', RB:'#22c55e', WR:'#f59e0b', TE:'#8b5cf6', K:'#c92c68', DEF:'#475569', FLEX:'#14b8a6', SF:'#a78bfa', BN:'#64748b' };
     var W = 720, pad = 30, lineH = 44, headerH = 130;
     var H = headerH + rows.length * lineH + pad;
     var c = document.createElement('canvas'); c.width = W; c.height = H;
