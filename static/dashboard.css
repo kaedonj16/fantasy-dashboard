@@ -17250,7 +17250,7 @@ tr.team-clickable {
    Mobile (<=1180px) is a full-width tab, so it scrolls with the page as normal. */
 @media (min-width: 1181px) {
   .teams-sidebar .teams-analytics-card .tab-panels {
-    max-height: calc(100vh - 140px);
+    max-height: calc(100vh - 170px);
     overflow-y: auto;
   }
 }
