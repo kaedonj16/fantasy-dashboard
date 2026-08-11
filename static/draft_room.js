@@ -5384,7 +5384,7 @@
 
   // ── Mobile bottom-sheet drag behavior ───────────────────────────────────────
   // Below 900px the side panel is a draggable sheet with three snap points:
-  // peek (~14vh), mid (~38vh, default), and full (~92vh). Drag the grip handle
+  // peek (~14vh), mid (~44vh, default), and full (~92vh). Drag the grip handle
   // up/down; on release it snaps to the nearest point.
   (function initSheet(){
     var sheet = document.getElementById('drSide');
@@ -5394,9 +5394,9 @@
     var dragging = false, startY = 0, startT = 0, curT = 0, snapIdx = 1;
     function ih(){ return window.innerHeight; }
     // translateY offsets (px): full (whole 85vh sheet shows, top stops below the
-    // header + status bar), mid (~43vh visible), peek (~19vh visible - the handle,
+    // header + status bar), mid (~49vh visible), peek (~19vh visible - the handle,
     // tabs, and a couple of rows). Peek accounts for the 85vh sheet sitting ~15vh down.
-    function snaps(){ return [0, ih() * 0.42, ih() * 0.66]; }
+    function snaps(){ return [0, ih() * 0.36, ih() * 0.66]; }
     function applyT(t){ curT = t; sheet.style.transform = 'translateY(' + t + 'px)'; }
     function snapTo(idx){
       var pts = snaps();
