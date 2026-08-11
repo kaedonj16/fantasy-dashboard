@@ -114,6 +114,9 @@ def link_pending():
         "season": season,
         "team_id": (str(data.get("team_id")).strip() or None) if data.get("team_id") else None,
         "name": (str(data.get("name")).strip() or None) if data.get("name") else None,
+        # Sleeper: the username the user typed, so the callback can resolve their
+        # team and set the viewer identity (personalizes the dashboard).
+        "username": (str(data.get("username")).strip() or None) if data.get("username") else None,
     }
     return jsonify({"ok": True, "auth_url": "/auth/google?next=/"})
 

@@ -9015,11 +9015,14 @@ if (!platformBtns.length) return;
       const name = opt ? opt.textContent : "";
       const seasonEl = document.querySelector('#leagueSelectForm input[name="season"]');
       const season = seasonEl && seasonEl.value ? Number(seasonEl.value) : null;
+      // Sleeper: pass the username so the callback can set the viewer identity.
+      const uEl = document.getElementById("username") || document.getElementById("formUsername");
+      const username = uEl && uEl.value ? uEl.value.trim() : "";
       googleContinueBtn.disabled = true;
       googleContinueBtn.textContent = "Continuing…";
       fetch("/api/link/pending", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform, league_id: leagueId, season, name }),
+        body: JSON.stringify({ platform, league_id: leagueId, season, name, username }),
       }).then(r => r.json()).then(d => {
         window.location.href = (d && d.auth_url) || "/auth/google";
       }).catch(() => { window.location.href = "/auth/google"; });
