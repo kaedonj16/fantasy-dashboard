@@ -51,23 +51,34 @@ def premium_required(fn):
     return _wrapper
 
 
-def has_premium_access(user_id: Optional[str], league_id: Optional[str], platform: str = "sleeper") -> bool:
+def has_premium_access(
+    user_id: Optional[str],
+    league_id: Optional[str],
+    platform: str = "sleeper",
+    account_id: Optional[int] = None,
+) -> bool:
     """
     Check if a user has premium access for a specific league.
 
-    Premium access is granted if EITHER:
+    Premium access is granted if ANY of:
     1. The league has an active subscription (league-based)
     2. The user has an active subscription (user-based, covers all leagues)
+    3. account_id is given and any platform identity linked to that account has
+       an active user subscription (account-based, spans platforms)
+
+    (3) is strictly additive: it only ever grants access, never removes it, and
+    defaults off (account_id=None), so existing callers are unchanged.
 
     Args:
         user_id: Sleeper username or user ID
         league_id: League ID
         platform: Platform name (default: 'sleeper')
+        account_id: Standalone account id (optional; enables the account-based check)
 
     Returns:
         True if user has premium access, False otherwise
     """
-    if not user_id and not league_id:
+    if not user_id and not league_id and not account_id:
         return False
 
     now = datetime.now(timezone.utc)
@@ -99,6 +110,24 @@ def has_premium_access(user_id: Optional[str], league_id: Optional[str], platfor
                           AND expires_at > %s
                         LIMIT 1
                     """, (user_id, platform, now))
+
+                    if cur.fetchone():
+                        return True
+
+                # Account-based (additive): premium on any linked platform
+                # identity covers the whole account, across platforms.
+                if account_id:
+                    cur.execute("""
+                        SELECT 1
+                        FROM user_subscriptions us
+                        JOIN account_identities ai
+                          ON ai.platform = us.platform
+                         AND ai.platform_user_id = us.user_id
+                        WHERE ai.account_id = %s
+                          AND us.subscription_status = 'active'
+                          AND us.expires_at > %s
+                        LIMIT 1
+                    """, (account_id, now))
 
                     if cur.fetchone():
                         return True
@@ -195,6 +224,18 @@ def has_premium_for_viewer(
     elif league_id and has_premium_access(None, league_id, platform) \
             and viewer_is_league_member(viewer_user_id, league_id, platform, season):
         result = True
+
+    # Account-based (additive, cross-platform): if the viewer is signed into an
+    # account, a subscription on any of the account's linked identities grants
+    # access everywhere. Only ever grants, never removes.
+    if not result:
+        try:
+            from flask import session as _session, has_request_context as _hrc
+            _acct = _session.get("account_id") if _hrc() else None
+        except Exception:
+            _acct = None
+        if _acct and has_premium_access(None, None, platform, account_id=_acct):
+            result = True
 
     if _cache is not None:
         _cache[_key] = result
