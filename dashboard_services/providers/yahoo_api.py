@@ -424,22 +424,59 @@ def _league_key(league_id: str) -> str:
     return f"{_GAME_CODE}.l.{lid}"
 
 
+def _nfl_game_keys(access_token: str) -> List[tuple]:
+    """Return [(season:int, game_key:str), ...] for recent NFL seasons, newest
+    first. Yahoo's game key changes every season and a league key is
+    "<game_key>.l.<id>", so we need the actual keys to reach a specific season's
+    league. This reads the games collection (not the user resource, so fspt-r is
+    fine) for the last several seasons. Returns [] if it can't be read."""
+    from datetime import datetime
+    yr = datetime.now().year
+    seasons = [yr - i for i in range(0, 8)]
+    try:
+        raw = _yahoo_get(
+            access_token,
+            "games;game_codes=nfl;seasons=" + ",".join(str(s) for s in seasons),
+        )
+    except Exception as exc:
+        logger.warning("[yahoo] _nfl_game_keys failed: %s", exc)
+        return []
+    keys: Dict[str, int] = {}
+
+    def _walk(node):
+        if isinstance(node, dict):
+            gk, se = node.get("game_key"), node.get("season")
+            if gk and se is not None:
+                try:
+                    keys[str(gk)] = int(se)
+                except (TypeError, ValueError):
+                    pass
+            for v in node.values():
+                _walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                _walk(v)
+
+    _walk(raw)
+    return sorted(((s, gk) for gk, s in keys.items()), reverse=True)
+
+
 def resolve_league_key(access_token: str, league_id: str) -> Dict[str, Any]:
-    """Find the real, season-specific league key for a bare numeric league_id by
-    listing the leagues the authenticated account actually belongs to.
+    """Find the real, season-specific league key for a bare numeric league_id.
 
     Yahoo's "nfl" shortcut only ever points at the current season's game, so a
     league from a prior (or not-yet-current) season can't be reached as
-    "nfl.l.<id>" — the request 403s even for a member. This walks the user's own
-    NFL leagues across seasons, matches the entered id, and caches the full key so
-    all downstream calls use it.
+    "nfl.l.<id>" — the request 403s even for a member. This looks up the actual
+    NFL game keys for recent seasons and probes "<game_key>.l.<id>" newest-first
+    until one resolves (a league the account can read), then caches that full key
+    so every downstream call uses it.
 
     Returns a status dict so callers can tell a genuine wrong-account from a
     can't-check (which must NOT be treated as denial, or a current-season league
     that works today would start being wrongly rejected):
       {"status": "found", "league_key", "league_id", "season", "name"}
-      {"status": "absent"}   listing succeeded, no league with that id -> wrong account/id
-      {"status": "unknown"}  listing couldn't be read -> caller falls back to a direct fetch
+      {"status": "absent"}   game keys enumerated, no season had that id -> wrong account/id
+      {"status": "unknown"}  couldn't enumerate game keys -> caller falls back to nfl.l.<id>
     """
     lid = str(league_id).strip()
     if not lid:
@@ -451,49 +488,31 @@ def resolve_league_key(access_token: str, league_id: str) -> Dict[str, Any]:
             _league_key_map[bare] = lid
         return {"status": "found", "league_key": lid, "league_id": bare,
                 "season": None, "name": None}
-    try:
-        raw = _yahoo_get(access_token, "users;use_login=1/games;game_codes=nfl/leagues")
-    except Exception as exc:
-        logger.warning("[yahoo] resolve_league_key list failed: %s", exc)
+
+    game_keys = _nfl_game_keys(access_token)
+    if not game_keys:
         return {"status": "unknown"}
 
-    # Yahoo nests leagues several levels deep and inconsistently (dict-with-index
-    # vs list). Rather than track the exact shape, walk the whole tree and collect
-    # every object that carries a league_key — each one has the id/season we need.
-    found: List[Dict[str, Any]] = []
-
-    def _walk(node):
-        if isinstance(node, dict):
-            if node.get("league_key") and node.get("league_id") is not None:
-                found.append(node)
-            for v in node.values():
-                _walk(v)
-        elif isinstance(node, list):
-            for v in node:
-                _walk(v)
-
-    _walk(raw)
-
-    matches = [lg for lg in found if str(lg.get("league_id")) == lid]
-    if not matches:
-        return {"status": "absent"}
-    # If the same numeric id exists in more than one season, prefer the newest.
-    def _season_of(lg):
+    for season, gk in game_keys:
+        full_key = f"{gk}.l.{lid}"
         try:
-            return int(lg.get("season") or 0)
-        except (TypeError, ValueError):
-            return 0
-    best = sorted(matches, key=_season_of, reverse=True)[0]
-    full_key = str(best.get("league_key"))
-    with _league_key_lock:
-        _league_key_map[lid] = full_key
-    return {
-        "status":     "found",
-        "league_key": full_key,
-        "league_id":  lid,
-        "season":     _season_of(best) or None,
-        "name":       best.get("name"),
-    }
+            raw  = _yahoo_get(access_token, f"league/{full_key}")
+            meta = _extract_league_meta(raw)
+        except Exception:
+            # 403/404 for a season the account isn't in with this id — keep probing.
+            continue
+        if meta:
+            with _league_key_lock:
+                _league_key_map[lid] = full_key
+            logger.info("[yahoo] resolved league %s -> %s (season %s)", lid, full_key, season)
+            return {
+                "status":     "found",
+                "league_key": full_key,
+                "league_id":  lid,
+                "season":     int(season) or None,
+                "name":       meta.get("name"),
+            }
+    return {"status": "absent"}
 
 
 # ---------------------------------------------------------------------------
