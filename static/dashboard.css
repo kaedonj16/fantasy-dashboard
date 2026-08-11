@@ -7104,6 +7104,36 @@ select:focus {
 .os-snap-row.is-3 .os-snap-bar > span { background: linear-gradient(90deg, #eabb92, #c2803f); }
 .os-snap-chips { display: flex; gap: 6px; flex-wrap: wrap; }
 
+/* Rank-movement indicator: a small pill tucked at the medallion's corner instead
+   of crammed inline next to the number (which overflowed the 40px badge). Scoped
+   to .os-snap-medal so the standings table / playoff tile chips are untouched. */
+.os-snap-medal { position: relative; overflow: visible; }
+.os-snap-medal .rank-move {
+  position: absolute;
+  right: -7px;
+  bottom: -7px;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 999px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.16);
+}
+.os-snap-medal .rank-move.up {
+  color: var(--win);
+  border-color: color-mix(in srgb, var(--win) 45%, var(--border));
+}
+.os-snap-medal .rank-move.down {
+  color: var(--loss);
+  border-color: color-mix(in srgb, var(--loss) 45%, var(--border));
+}
+
 .os-stat-card {
   border-radius: 14px;
   padding: 14px 16px;
