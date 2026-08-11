@@ -126,8 +126,22 @@ def page_portfolio():
                 (r for r in rosters if str(r.get("roster_id")) == _tid), None
             ) if _tid else None
         if not viewer_roster:
-            return {"league_id": lid, "name": lg.get("name", "Unknown"),
-                    "platform": lg_platform, "not_in_league": True}
+            # The league loaded but there's no roster for you yet. Most often that's
+            # a linked league whose draft hasn't happened (no rosters populated) —
+            # a normal pending state, not an error. Distinguish it from a genuine
+            # wrong-team link so the card can read "Draft not started" instead of a
+            # scary "unavailable".
+            _status = str(((lctx.get("league") or {}).get("status")) or "").lower()
+            _predraft = (_status in ("pre_draft", "drafting", "predraft")) or not rosters
+            return {
+                "league_id": lid,
+                "name": lg.get("name", "Unknown"),
+                "platform": lg_platform,
+                "season": lg_season,
+                "pending": True,
+                "predraft": _predraft,
+                "reason": "Draft not started" if _predraft else "Team not linked yet",
+            }
         rid = str(viewer_roster.get("roster_id"))
         std = standings_map.get(rid) or {}
         wins = int(std.get("wins") or 0)
@@ -263,7 +277,8 @@ def page_portfolio():
             leagues_data.append(_result)
     leagues_data.sort(key=lambda x: x.get("name", ""))
 
-    valid_leagues = [lg for lg in leagues_data if not lg.get("error") and not lg.get("not_in_league")]
+    valid_leagues = [lg for lg in leagues_data
+                     if not lg.get("error") and not lg.get("not_in_league") and not lg.get("pending")]
     num_leagues = len(leagues_data)
     total_wins = sum(lg.get("wins", 0) for lg in valid_leagues)
     total_losses = sum(lg.get("losses", 0) for lg in valid_leagues)

@@ -10172,6 +10172,46 @@ html[data-theme="dark"] .podium .bar {
   text-decoration: underline;
 }
 
+/* Pending (linked-but-not-drafted) league row on My Leagues. */
+.pf-league-pending td {
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+.pf-pending-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.pf-pending-name {
+  font-weight: 700;
+}
+.pf-pending-spacer {
+  flex: 1 1 auto;
+}
+.pf-status-pill {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 2px 9px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  white-space: nowrap;
+}
+.pf-pending-cta {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.pf-pending-cta:hover {
+  text-decoration: underline;
+}
+
 /* Unlink (×) button on My Leagues cards for account-linked leagues. */
 .pf-unlink {
   margin-left: 8px;

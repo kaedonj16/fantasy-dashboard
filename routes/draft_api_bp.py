@@ -47,6 +47,22 @@ def api_draft_detect():
     season = int(request.args.get("season") or datetime.now().year)
     if not league_id:
         return jsonify({"drafts": [], "error": "league_required"})
+    # ESPN: return the minimal draft record (start_time + status) so the dashboard
+    # countdown card can tick to the real draft date. Live-draft connect (order /
+    # rounds enrichment below) stays Sleeper-only.
+    if platform == "espn":
+        try:
+            _drafts = get_drafts("espn", league_id, season) or []
+        except Exception as exc:
+            logger.warning("[draft-detect] espn error: %s", exc)
+            _drafts = []
+        return jsonify({"drafts": [{
+            "draft_id": d.get("draft_id"),
+            "status": d.get("status"),
+            "type": d.get("type"),
+            "season": d.get("season"),
+            "start_time": d.get("start_time"),
+        } for d in _drafts]})
     if platform != "sleeper":
         return jsonify({"drafts": [], "unsupported": True})
     # The draft-history page wants every season's draft; the dashboard countdown
