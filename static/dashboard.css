@@ -7544,13 +7544,22 @@ select:focus {
 }
 
 /* ── Player modal: season-over-season trend line charts ──────────────────── */
+/* Two-up small-multiples so each chart stays compact — like the weekly rows —
+   instead of one giant full-width card per metric on phones. */
 .pm-st-grid {
-  display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 6px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px; margin-top: 6px;
 }
 @media (min-width: 560px) {
   .pm-st-grid { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
 }
 .pm-st-block { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+@media (max-width: 559px) {
+  .pm-st-block { padding: 6px 8px; }
+  .pm-st-title { font-size: 11px; }
+  .pm-st-caption { font-size: 10.5px; }
+  .pm-st-svg { max-height: 132px; }
+}
 .pm-st-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .pm-st-title { font-size: 12px; font-weight: 800; color: var(--text); }
 .pm-st-caption { font-size: 12px; color: var(--text-muted); padding: 2px 0 4px; }
