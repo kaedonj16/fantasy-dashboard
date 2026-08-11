@@ -521,9 +521,35 @@
   }
 
   function startDraft(){
+    var prev = state;
     _resetTransient();
     state = readSetup();
     state.owned = _setupOwned || defaultOwned();
+    // Editing the setup mid-draft (e.g. fixing the round count) shouldn't wipe
+    // the board. When the pick numbering is unchanged (same teams / order /
+    // slot), carry over the picks already made that still fit the new board and
+    // resume at the first empty slot. A Reset nulls state first, so a genuine
+    // fresh start still begins empty; a change that renumbers picks also starts
+    // fresh (carrying by pick number would misplace them).
+    if (prev && prev.picks && prev.teams === state.teams &&
+        prev.order === state.order && prev.slot === state.slot) {
+      var tot = (state.teams || 0) * (state.rounds || 0);
+      var carried = {};
+      Object.keys(prev.picks).forEach(function(pn){
+        var n = parseInt(pn, 10);
+        var pk = prev.picks[pn];
+        if (n >= 1 && n <= tot && pk) {
+          carried[n] = pk;
+          if (pk.id) drafted[String(pk.id)] = true;
+        }
+      });
+      if (Object.keys(carried).length) {
+        state.picks = carried;
+        var next = tot + 1;
+        for (var i = 1; i <= tot; i++){ if (!carried[i]){ next = i; break; } }
+        state.current = next;
+      }
+    }
     save();
     resetSideTabs();   // clear any leftover completed-draft sidebar state
     showMain();
