@@ -18,10 +18,40 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+import json
+import os
+
 from dashboard_services.db import get_conn
 from data_building.external_data.sleeper_bulk_stats import fetch_week_stats
 from data_building.external_data.player_team_history import team_for_week, canon_team
-from utils.utils import load_players_index
+from utils.utils import load_players_index, path_week_schedule
+
+_OPP_MAP_CACHE: Dict[tuple, Dict[str, str]] = {}
+
+
+def week_opponent_map(season: int, week: int) -> Dict[str, str]:
+    """{team_abbr: opponent_abbr} for a season/week from the cached nflverse
+    schedule files (see external_data/nflverse_schedules.py). Both directions are
+    mapped (home↔away). Empty when the schedule file is missing/unreadable."""
+    key = (int(season), int(week))
+    cached = _OPP_MAP_CACHE.get(key)
+    if cached is not None:
+        return cached
+    out: Dict[str, str] = {}
+    try:
+        path = path_week_schedule(int(season), int(week))
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                games = json.load(f)
+            for g in games or []:
+                home, away = g.get("home"), g.get("away")
+                if home and away:
+                    out[home] = away
+                    out[away] = home
+    except Exception:
+        pass
+    _OPP_MAP_CACHE[key] = out
+    return out
 
 _POSITIONS = {"QB", "RB", "WR", "TE"}
 _TABLE_READY = False

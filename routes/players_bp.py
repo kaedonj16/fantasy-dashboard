@@ -67,6 +67,30 @@ def api_player_weekly_metrics(player_id: str):
             weeks.sort(key=lambda w: int(w.get("week") or 0))
     except Exception as exc:
         logger.warning("[player-weekly-metrics] adv merge %s failed: %s", player_id, exc)
+    # Attach the opponent faced each week (from the player's team THAT week + the
+    # week's schedule) so the weekly trend charts can show "78 yds vs NYG" on hover.
+    try:
+        from data_building.external_data.player_team_history import team_for_week
+        from data_building.weekly_metrics import week_opponent_map
+        _omap: dict = {}
+        for w in weeks:
+            wk = w.get("week")
+            if wk is None:
+                continue
+            wk = int(wk)
+            team = team_for_week(str(player_id), season, wk)
+            if not team:
+                continue
+            w["team"] = team
+            omap = _omap.get(wk)
+            if omap is None:
+                omap = week_opponent_map(season, wk)
+                _omap[wk] = omap
+            opp = omap.get(team)
+            if opp:
+                w["opponent"] = opp
+    except Exception as exc:
+        logger.debug("[player-weekly-metrics] opponent merge %s failed: %s", player_id, exc)
     return jsonify({"player_id": str(player_id), "season": season, "weeks": weeks})
 
 

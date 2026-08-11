@@ -12276,8 +12276,12 @@ function pmSeasonTrendChartHTML(points, opt, position) {
   function anchorAt(i) { return (n > 1 && i === 0) ? 'start' : (n > 1 && i === n - 1) ? 'end' : 'middle'; }
 
   var first = withVal[0], last = withVal[withVal.length - 1];
-  var lastIdx = -1;
-  points.forEach(function(p, i) { if (p.value != null) lastIdx = i; });  // most-recent point with data
+  var lastIdx = -1, maxIdx = -1;
+  points.forEach(function(p, i) {
+    if (p.value == null) return;
+    lastIdx = i;                                                   // most-recent point with data
+    if (maxIdx < 0 || p.value > points[maxIdx].value) maxIdx = i;  // season high
+  });
   var improved = null;
   if (withVal.length >= 2 && last.value !== first.value) {
     improved = opt.lower_better ? (last.value < first.value) : (last.value > first.value);
@@ -12304,14 +12308,19 @@ function pmSeasonTrendChartHTML(points, opt, position) {
     if (p.value == null) return;
     var y = yAt(p.value);
     var isLast = (i === lastIdx);
-    // Emphasize the most-recent point (haloed, larger) so the current value pops.
-    if (isLast) {
+    var isMax  = (i === maxIdx);
+    // Emphasize the most-recent point AND the season high (haloed, larger dot).
+    if (isLast || isMax) {
       svg += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="5.5" fill="' + col + '" opacity="0.20"/>';
       svg += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="3.8" fill="' + col + '"/>';
     } else {
       svg += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="3.0" fill="' + col + '"/>';
     }
-    svg += '<text x="' + x.toFixed(1) + '" y="' + (y - 9).toFixed(1) + '" text-anchor="' + anchor + '" class="pm-st-val' + (isLast ? ' pm-st-val-last' : '') + '">' + pmStFmt(p.value, opt) + '</text>';
+    // Season high: mark the value with a ▲ in the line color so it reads even
+    // when it coincides with the most-recent point.
+    var valTxt = pmStFmt(p.value, opt) + (isMax ? ' ▲' : '');
+    var valStyle = isMax ? ' style="fill:' + col + ';font-weight:900;"' : '';
+    svg += '<text x="' + x.toFixed(1) + '" y="' + (y - 9).toFixed(1) + '" text-anchor="' + anchor + '" class="pm-st-val' + (isLast ? ' pm-st-val-last' : '') + '"' + valStyle + '>' + valTxt + '</text>';
   });
   svg += '</svg>';
 
@@ -12331,25 +12340,67 @@ function pmSeasonTrendChartHTML(points, opt, position) {
 }
 
 // ── Player modal: weekly usage trends ────────────────────────────────────────
-function pmSparkline(series, color) {
+var _pmSparkId = 0;
+function pmSparkline(series, color, tips) {
   if (!series || series.length < 2) return '<div class="pm-wt-spark"></div>';
-  const REF = 100, h = 26;
-  const max = Math.max.apply(null, series.concat([1]));
-  const step = REF / (series.length - 1);
-  const toY = function(v) { return (h - 2 - (v / max) * (h - 6)).toFixed(1); };
-  const pts = series.map(function(v, i) {
-    return (i * step).toFixed(1) + ',' + toY(v);
-  }).join(' ');
-  const avg = series.reduce(function(s, v) { return s + v; }, 0) / series.length;
-  const avgY = toY(avg);
-  const lastX = ((series.length - 1) * step).toFixed(1);
-  const lastY = toY(series[series.length - 1]);
-  return '<div class="pm-wt-spark"><svg width="100%" height="' + h + '" viewBox="0 0 ' + REF + ' ' + h + '" preserveAspectRatio="none" style="display:block;">'
-    + '<line x1="0" y1="' + avgY + '" x2="' + REF + '" y2="' + avgY + '" stroke="' + color + '" stroke-width="1" stroke-dasharray="3,3" opacity="0.4"/>'
-    + '<polyline fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round" points="' + pts + '"/>'
-    + '<circle cx="' + lastX + '" cy="' + lastY + '" r="2.5" fill="' + color + '"/>'
-    + '</svg></div>';
+  var W = 240, H = 40, padX = 8, padTop = 8, padBot = 8;
+  var iw = W - padX * 2, ih = H - padTop - padBot;
+  var lo = Math.min.apply(null, series), hi = Math.max.apply(null, series);
+  var span = (hi - lo) || Math.abs(hi) || 1, pad = span * 0.18;
+  lo -= pad; hi += pad;
+  var n = series.length;
+  var x = function(i) { return padX + (i / (n - 1)) * iw; };
+  var y = function(v) { return padTop + ih - ((v - lo) / ((hi - lo) || 1)) * ih; };
+  var id = 'pmspk' + (++_pmSparkId);
+  var pts = series.map(function(v, i) { return x(i).toFixed(1) + ',' + y(v).toFixed(1); });
+  var baseY = (padTop + ih).toFixed(1);
+  var avg = series.reduce(function(s, v) { return s + v; }, 0) / n;
+  var s = '<div class="pm-wt-spark"><svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" style="width:100%;height:auto;display:block;">';
+  s += '<defs><linearGradient id="' + id + '" x1="0" x2="0" y1="0" y2="1">'
+    + '<stop offset="0" stop-color="' + color + '" stop-opacity="0.24"/>'
+    + '<stop offset="1" stop-color="' + color + '" stop-opacity="0.02"/></linearGradient></defs>';
+  s += '<path d="M' + pts[0].split(',')[0] + ',' + baseY + ' L' + pts.join(' L') + ' L'
+    + pts[pts.length - 1].split(',')[0] + ',' + baseY + ' Z" fill="url(#' + id + ')"/>';
+  s += '<line x1="' + padX + '" x2="' + (W - padX) + '" y1="' + y(avg).toFixed(1) + '" y2="' + y(avg).toFixed(1)
+    + '" stroke="' + color + '" stroke-width="1" stroke-dasharray="3 3" opacity="0.35"/>';
+  s += '<polyline fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="' + pts.join(' ') + '"/>';
+  // solid dot on every point (emphasize the latest); + invisible hover target
+  series.forEach(function(v, i) {
+    var last = i === n - 1, cx = x(i).toFixed(1), cy = y(v).toFixed(1);
+    if (last) s += '<circle cx="' + cx + '" cy="' + cy + '" r="4.5" fill="' + color + '" opacity="0.20"/>';
+    s += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (last ? 3 : 2.2) + '" fill="' + color + '" stroke="var(--card,#fff)" stroke-width="1"/>';
+    if (tips && tips[i]) {
+      s += '<circle class="wk-dot" cx="' + cx + '" cy="' + cy + '" r="9" fill="transparent" '
+        + 'style="pointer-events:all;cursor:pointer" data-tip="' + String(tips[i]).replace(/"/g, '&quot;') + '"/>';
+    }
+  });
+  s += '</svg></div>';
+  return s;
 }
+
+// Weekly datapoint hover tooltip: shows "value + opponent" for the hovered
+// point (delegated once, works for every .wk-dot the sparklines render).
+(function () {
+  if (typeof document === 'undefined') return;
+  var tip = null;
+  function ensureTip() {
+    if (!tip) { tip = document.createElement('div'); tip.className = 'wk-tip'; document.body.appendChild(tip); }
+    return tip;
+  }
+  function place(e) { tip.style.left = e.clientX + 'px'; tip.style.top = e.clientY + 'px'; }
+  document.addEventListener('pointerover', function (e) {
+    var d = e.target && e.target.closest && e.target.closest('.wk-dot');
+    if (!d) return;
+    ensureTip(); tip.textContent = d.getAttribute('data-tip') || ''; place(e); tip.classList.add('show');
+  });
+  document.addEventListener('pointermove', function (e) {
+    if (tip && tip.classList.contains('show')) place(e);
+  });
+  document.addEventListener('pointerout', function (e) {
+    var d = e.target && e.target.closest && e.target.closest('.wk-dot');
+    if (d && tip) tip.classList.remove('show');
+  });
+})();
 
 // Shared renderer: sparkline rows for a player's weekly usage series.
 function buildWeeklyTrendRows(weeks, position) {
@@ -12357,6 +12408,18 @@ function buildWeeklyTrendRows(weeks, position) {
     return '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Not enough weekly data for this season.</div>';
   }
   var pos = (position || '').toUpperCase();
+  // Short unit word for the hover tooltip ("78 yds vs NYG"). Rates and % rows
+  // carry no unit word (the % suffix / row label already says it).
+  function _unitFor(label) {
+    if (/%/.test(label) || /\//.test(label)) return '';
+    if (/Yds/.test(label)) return 'yds';
+    if (/Targets/.test(label)) return 'tgt';
+    if (/Touches/.test(label)) return 'tch';
+    if (/Carries/.test(label)) return 'car';
+    if (/Receptions/.test(label)) return 'rec';
+    if (/PPR/.test(label)) return 'pts';
+    return '';
+  }
   function _wt_row(label, series, color, suffix) {
     if (!series.some(function(v) { return v > 0; })) return '';
     var seasonAvg = series.reduce(function(s, v) { return s + v; }, 0) / series.length;
@@ -12367,9 +12430,19 @@ function buildWeeklyTrendRows(weeks, position) {
     if (delta >= 0.5) deltaHtml = '<span class="pm-wt-delta" style="color:#10b981">&#9650; +' + delta.toFixed(1) + '</span>';
     else if (delta <= -0.5) deltaHtml = '<span class="pm-wt-delta" style="color:#ef4444">&#9660; ' + delta.toFixed(1) + '</span>';
     var lastWk = series[series.length - 1];
+    // Per-week hover tooltip: "78 yds vs NYG" (opponent from the API), falling
+    // back to "Wk 12 · 78 yds" when the opponent isn't known.
+    var unit = _unitFor(label);
+    var tips = series.map(function(val, i) {
+      var w = weeks[i] || {};
+      var num = Math.round(val * 10) / 10;
+      var vTxt = (suffix === '%') ? (num + '%') : (num + (unit ? ' ' + unit : ''));
+      return w.opponent ? (vTxt + ' vs ' + w.opponent)
+                        : ('Wk ' + (w.week != null ? w.week : (i + 1)) + ' · ' + vTxt);
+    });
     return '<div class="pm-wt-row">'
       + '<div class="pm-wt-label">' + label + '</div>'
-      + pmSparkline(series, color)
+      + pmSparkline(series, color, tips)
       + '<div class="pm-wt-stats">'
       + '<div class="pm-wt-stats-top">'
       + '<span class="pm-wt-last">' + seasonAvg.toFixed(1) + (suffix || '') + '</span>'
