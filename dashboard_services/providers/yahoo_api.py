@@ -36,11 +36,13 @@ logger = logging.getLogger(__name__)
 YAHOO_AUTH_URL  = "https://api.login.yahoo.com/oauth2/request_auth"
 YAHOO_TOKEN_URL = "https://api.login.yahoo.com/oauth2/get_token"
 YAHOO_API_BASE  = "https://fantasysports.yahooapis.com/fantasy/v2"
-# Fantasy Sports read. NOT "openid fspt-r": the openid scope turns this into an
-# OpenID Connect request, which Yahoo rejects with its generic "uh oh" page right
-# after login unless the app has OpenID Connect Permissions enabled. The guid we
-# need comes back as xoauth_yahoo_guid on the token response with fspt-r alone.
-YAHOO_SCOPE     = "fspt-r"
+# Historical note: Yahoo Fantasy read used to be requested as the OAuth 1.0a
+# permission "fspt-r". Under OAuth 2.0 that is NOT a request scope — Fantasy
+# access comes from the app's API Permissions (Fantasy Sports - Read). Sending
+# scope=fspt-r produced a token with no Fantasy permission (403 "not authorized"
+# on every call), so the authorize request now sends no scope at all. Kept only
+# for reference; get_authorization_url no longer uses it.
+YAHOO_SCOPE     = "fspt-r"  # unused; see get_authorization_url
 
 # Only NFL for now; extend as needed.
 _GAME_CODE = "nfl"
@@ -84,17 +86,21 @@ def get_authorization_url(state: str, force_login: bool = False) -> str:
     """
     client_id    = _env_clean("YAHOO_CLIENT_ID")
     redirect_uri = _env_clean("YAHOO_REDIRECT_URI")
-    # Log the exact values we send (not the secret) so an "uh-oh" from a
-    # mismatch is diagnosable: compare these against the Yahoo app registration.
+    # NOTE: do NOT send a `scope` parameter. "fspt-r" is Yahoo's OAuth 1.0a
+    # permission name; in OAuth 2.0 Yahoo grants Fantasy access from the app's
+    # API Permissions (Fantasy Sports - Read), not from a request scope. Passing
+    # scope=fspt-r made Yahoo mint a token with NO Fantasy permission, so every
+    # Fantasy API call came back 403 "This application is not authorized to
+    # perform this action" and the token response omitted xoauth_yahoo_guid.
+    # Omitting scope lets the app's permission govern (the working OAuth2 flow).
     logger.info(
-        "[yahoo-auth] building auth request: client_id=%s… redirect_uri=%r scope=%r force_login=%s",
-        client_id[:10], redirect_uri, YAHOO_SCOPE, force_login,
+        "[yahoo-auth] building auth request: client_id=%s… redirect_uri=%r force_login=%s",
+        client_id[:10], redirect_uri, force_login,
     )
     params = {
         "client_id":     client_id,
         "redirect_uri":  redirect_uri,
         "response_type": "code",
-        "scope":         YAHOO_SCOPE,
         "state":         state,
     }
     if force_login:
