@@ -69,7 +69,20 @@ def link_yahoo_preview():
         return jsonify({"ok": False, "needs_oauth": True, "auth_url": "/auth/yahoo?next=/portfolio"}), 401
     season = int(request.args.get("season") or _default_season())
     try:
-        from dashboard_services.providers.yahoo_api import get_league, get_users
+        from dashboard_services.providers.yahoo_api import get_league, get_users, resolve_league_key
+        # Resolve the real, season-specific league key first. Yahoo's "nfl" game
+        # code only reaches the current season, so a prior-season league 403s even
+        # for a member without this. "absent" => account isn't in that league;
+        # "unknown" => couldn't list, so fall through to a direct fetch.
+        resolved = resolve_league_key(access_token, league_id)
+        if resolved.get("status") == "absent":
+            return jsonify({
+                "ok": False, "needs_oauth": True, "auth_url": "/auth/yahoo?reauth=1&next=/portfolio",
+                "error": ("That Yahoo account isn't in any league with ID " + league_id +
+                          ". Check the ID, or reconnect with the account that's in it."),
+            }), 401
+        if resolved.get("season"):
+            season = int(resolved["season"])
         league = get_league(season, league_id, access_token)
         users = get_users(season, league_id, access_token)
     except Exception as exc:

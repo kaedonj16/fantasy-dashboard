@@ -146,20 +146,32 @@ def yahoo_auth_callback():
     if league_id:
         from datetime import datetime
         from dashboard_services.api import get_nfl_state
-        from dashboard_services.providers.yahoo_api import get_league
+        from dashboard_services.providers.yahoo_api import resolve_league_key, get_league
         nfl_state  = get_nfl_state() or {}
         season     = int(nfl_state.get("season") or datetime.now().year)
 
-        # Confirm this token can actually read the league before dropping the user
-        # on the dashboard. Yahoo returns 403 when the authorized account isn't a
-        # member of the league (or the id/season doesn't resolve to one it can
-        # see); without this check the dashboard build hits that 403 uncaught and
-        # 500s. Send them back with a clear reason instead.
-        try:
-            get_league(season, league_id, access_token)
-        except Exception as exc:
-            logger.warning("[yahoo_auth] league %s not accessible for this token: %s", league_id, exc)
+        # Resolve the league's real, season-specific key from the leagues this
+        # account actually belongs to. This both (a) confirms access before we
+        # drop the user on the dashboard (a build against an inaccessible league
+        # 500s on an uncaught 403) and (b) finds the correct season, since Yahoo's
+        # "nfl" game code only ever points at the current season's game — a league
+        # from any other season would otherwise fail even for a real member.
+        resolved = resolve_league_key(access_token, league_id)
+        status = resolved.get("status")
+        if status == "found":
+            if resolved.get("season"):
+                season = int(resolved["season"])
+        elif status == "absent":
+            logger.warning("[yahoo_auth] league %s not in this account's leagues", league_id)
             return redirect("/?yahoo_error=league_access_denied")
+        else:
+            # Couldn't list the account's leagues — fall back to a direct fetch so
+            # a current-season league (which resolves as nfl.l.<id>) still works.
+            try:
+                get_league(season, league_id, access_token)
+            except Exception as exc:
+                logger.warning("[yahoo_auth] league %s not accessible for this token: %s", league_id, exc)
+                return redirect("/?yahoo_error=league_access_denied")
 
         try:
             save_league_owner(league_id, season, guid)
@@ -186,13 +198,30 @@ def api_yahoo_validate_league():
         return jsonify({"ok": False, "needs_oauth": True}), 401
 
     try:
-        from dashboard_services.providers.yahoo_api import get_league
+        from dashboard_services.providers.yahoo_api import get_league, resolve_league_key
         from datetime import datetime
         from dashboard_services.api import get_nfl_state
         nfl_state = get_nfl_state() or {}
         season    = int(nfl_state.get("season") or datetime.now().year)
-        league    = get_league(season, league_id, access_token)
-        return jsonify({"ok": True, "league": {"name": league.get("name")}})
+        # Resolve the real season-specific key first: Yahoo's "nfl" code only
+        # reaches the current season, so a prior-season league would 403 for a
+        # real member without this. "absent" => account genuinely isn't in it;
+        # "unknown" => couldn't list, so fall through to a direct fetch.
+        resolved = resolve_league_key(access_token, league_id)
+        if resolved.get("status") == "absent":
+            return jsonify({
+                "ok": False, "needs_oauth": True,
+                "auth_url": "/auth/yahoo?reauth=1",
+                "error": ("That Yahoo account isn't in any league with ID " + league_id +
+                          ". Check the league ID, or reconnect with the account that's in it."),
+            }), 401
+        if resolved.get("season"):
+            season = int(resolved["season"])
+        name   = resolved.get("name")
+        if not name:
+            league = get_league(season, league_id, access_token)
+            name   = league.get("name")
+        return jsonify({"ok": True, "league": {"name": name, "season": season}})
     except Exception as exc:
         msg = str(exc)
         logger.warning("[yahoo] validate league %s failed: %s", league_id, msg)
