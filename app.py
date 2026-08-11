@@ -5676,7 +5676,7 @@ def build_dashboard_body(ctx: dict) -> str:
 
     body = f"""
     <div class="os-layout">
-      <aside class="os-left-col">
+      <aside class="os-left-col os-tab-panel" id="os-jump-standings">
         <section class="os-card os-col-fill">
           <div class="os-section-head">
             <div class="os-section-head-content">
@@ -5710,6 +5710,7 @@ def build_dashboard_body(ctx: dict) -> str:
 
         <nav class="os-jump-nav" aria-label="Jump to section">
           <button type="button" class="active" data-jump="os-jump-report">Report</button>
+          <button type="button" data-jump="os-jump-standings">Standings</button>
           <button type="button" data-jump="os-jump-waivers">Waivers</button>
           <button type="button" data-jump="os-jump-teams">Team Values</button>
         </nav>
@@ -7540,7 +7541,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
     body = f"""
     <div class="os-layout">
-      <aside class="os-left-col">
+      <aside class="os-left-col os-tab-panel" id="os-jump-roster">
         <section class="os-card os-card-soft os-col-fill">
           <div class="os-section-head">
             <div class="os-section-head-content">
@@ -7700,6 +7701,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
         <nav class="os-jump-nav" aria-label="Jump to section">
           <button type="button" class="active" data-jump="os-jump-report">Report</button>
+          <button type="button" data-jump="os-jump-roster">Roster</button>
           <button type="button" data-jump="os-jump-waivers">Waivers</button>
           <button type="button" data-jump="os-jump-teams">Team Values</button>
         </nav>
