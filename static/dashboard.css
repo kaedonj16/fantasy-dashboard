@@ -2645,6 +2645,19 @@ button:hover {
 .dyn-rank.rank-1 { background: linear-gradient(135deg, #fcd34d, #f59e0b); color: #3f2d03; }
 .dyn-rank.rank-2 { background: linear-gradient(135deg, #eef2f7, #a9b6c7); color: #27303d; }
 .dyn-rank.rank-3 { background: linear-gradient(135deg, #eabb92, #c2803f); color: #3a2408; }
+/* Keep the rank number centered in its column regardless of the ▲/▼ movement
+   chip: center the number alone and float the chip out of flow just to its
+   right, so a row with movement lines up with rows without it. */
+.dynasty-table td:first-child { position: relative; text-align: center; }
+.dynasty-table td:first-child .rank-move {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(13px, -50%);
+  margin: 0;
+  font-size: 9px;
+  white-space: nowrap;
+}
 .dyn-val { display: block; font-weight: 800; font-variant-numeric: tabular-nums; }
 .dyn-bar { display: block; height: 3px; margin: 5px auto 0; width: 80%; max-width: 68px; border-radius: 999px; background: var(--row); overflow: hidden; }
 .dyn-bar > span { display: block; height: 100%; border-radius: 999px; background: color-mix(in srgb, var(--accent) 55%, var(--border)); }
