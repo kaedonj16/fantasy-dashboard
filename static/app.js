@@ -12633,18 +12633,27 @@ function pmSparkline(series, color, tips) {
     return tip;
   }
   function place(e) { tip.style.left = e.clientX + 'px'; tip.style.top = e.clientY + 'px'; }
+  function show(d, e) { ensureTip(); tip.textContent = d.getAttribute('data-tip') || ''; place(e); tip.classList.add('show'); }
   document.addEventListener('pointerover', function (e) {
+    if (e.pointerType && e.pointerType !== 'mouse') return;   // touch handled on pointerdown
     var d = e.target && e.target.closest && e.target.closest('.wk-dot');
-    if (!d) return;
-    ensureTip(); tip.textContent = d.getAttribute('data-tip') || ''; place(e); tip.classList.add('show');
+    if (d) show(d, e);
   });
   document.addEventListener('pointermove', function (e) {
-    if (tip && tip.classList.contains('show')) place(e);
+    if (tip && tip.classList.contains('show') && (!e.pointerType || e.pointerType === 'mouse')) place(e);
   });
   document.addEventListener('pointerout', function (e) {
+    if (e.pointerType && e.pointerType !== 'mouse') return;   // don't yank the tip on touch-end
     var d = e.target && e.target.closest && e.target.closest('.wk-dot');
     if (d && tip) tip.classList.remove('show');
   });
+  // Touch: tap a point to show its data; it stays until you tap elsewhere (a
+  // plain pointerout on touch-end would flash it away instantly).
+  document.addEventListener('pointerdown', function (e) {
+    var d = e.target && e.target.closest && e.target.closest('.wk-dot');
+    if (d) { show(d, e); e.preventDefault(); }
+    else if (tip) { tip.classList.remove('show'); }
+  }, true);
 })();
 
 // Shared renderer: sparkline rows for a player's weekly usage series.
