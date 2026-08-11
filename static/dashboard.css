@@ -7513,15 +7513,34 @@ select:focus {
 .pm-wt-footer { font-size: 10px; color: var(--text-muted); margin-top: 6px; }
 
 /* ── Player modal: Trends panel — Weekly/Season mode toggle ──────────────── */
-.pm-trends-mode { display: inline-flex; gap: 4px; padding: 8px 0 6px; }
-.pm-trends-mode-btn {
-  padding: 4px 12px; font-size: 11px; font-weight: 700; cursor: pointer;
-  border: 1px solid var(--border); border-radius: 18px; background: transparent;
-  color: var(--text-muted); transition: background 0.12s, color 0.12s, border-color 0.12s;
+.pm-trends-mode {
+  display: inline-flex; gap: 2px; padding: 3px; margin: 8px 0 8px;
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+  border-radius: 12px;
 }
-.pm-trends-mode-btn:hover { background: var(--bg-alt); color: var(--text); }
+.pm-trends-mode-btn {
+  padding: 6px 16px; font-size: 12px; font-weight: 700; cursor: pointer;
+  border: 0; border-radius: 9px; background: transparent; color: var(--text-muted);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.pm-trends-mode-btn:hover { color: var(--text); }
 .pm-trends-mode-btn.is-active {
-  background: var(--accent, #3b82f6); border-color: var(--accent, #3b82f6); color: var(--on-accent);
+  background: var(--accent, #3b82f6); color: var(--on-accent, #fff);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+/* Weekly datapoint hover tooltip */
+.wk-tip {
+  position: fixed; z-index: 60; pointer-events: none; white-space: nowrap;
+  background: var(--text); color: var(--card);
+  font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+  padding: 5px 9px; border-radius: 8px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  transform: translate(-50%, calc(-100% - 10px)); opacity: 0; transition: opacity 0.1s ease;
+}
+.wk-tip.show { opacity: 1; }
+.wk-tip::after {
+  content: ""; position: absolute; left: 50%; top: 100%; transform: translateX(-50%);
+  border: 5px solid transparent; border-top-color: var(--text);
 }
 
 /* ── Player modal: season-over-season trend line charts ──────────────────── */
