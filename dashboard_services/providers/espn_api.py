@@ -212,6 +212,33 @@ def get_users(season: int, league_id: str) -> List[Dict[str, Any]]:
     return out
 
 
+def get_teams(season: int, league_id: str) -> List[Dict[str, Any]]:
+    """Lightweight team list for the "which team is yours?" link picker.
+
+    ESPN membership isn't tied to our identity, so linking an ESPN league means
+    the user selects their team by hand; this returns the choices as
+    ``{team_id, name}``. ``is_mine`` is set when the server's SWID owns the team
+    (only useful when server-level cookies happen to be the user's).
+    """
+    lg = _league(season, league_id)
+    _, swid = _espn_creds()
+    swid = (swid or "").strip()
+    out: List[Dict[str, Any]] = []
+    for t in lg.teams or []:
+        tid = _safe_int(getattr(t, "team_id", None) or getattr(t, "id", None))
+        if tid is None:
+            continue
+        name = getattr(t, "team_name", None) or getattr(t, "name", None) or f"Team {tid}"
+        owners = getattr(t, "owners", None) or []
+        owner_ids = {str(o.get("id") or "").strip() for o in owners if isinstance(o, dict)}
+        out.append({
+            "team_id": str(tid),
+            "name": str(name),
+            "is_mine": bool(swid and swid in owner_ids),
+        })
+    return out
+
+
 def get_rosters(season: int, league_id: str) -> List[Dict[str, Any]]:
     lg = _league(season, league_id)
     espn_to_canon = _espn_to_canon_cached()

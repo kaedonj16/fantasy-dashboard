@@ -916,6 +916,13 @@ except Exception as e:
     logger.warning("[google-auth-bp] skipped: %s", e)
 
 try:
+    from routes.link_bp import link_bp
+    app.register_blueprint(link_bp)
+    logger.info("[link-bp] registered")
+except Exception as e:
+    logger.warning("[link-bp] skipped: %s", e)
+
+try:
     from routes.misc_api_bp import misc_api_bp
     app.register_blueprint(misc_api_bp)
     logger.info("[misc-api-bp] registered")
@@ -1140,8 +1147,27 @@ FORM_BODY = """
             </select>
           </div>
 
-          <div class="row" id="generateWrap" style="display:none;">
-            <button type="submit">Generate Dashboard</button>
+          <div class="row" id="generateWrap" style="display:none;flex-direction:column;gap:0;align-items:stretch;">
+            <button type="button" id="googleContinueBtn"
+                    style="display:flex;flex-direction:column;align-items:center;gap:3px;width:100%;
+                           background:#fff;color:#1f2937;border:1px solid #dadce0;border-radius:10px;
+                           padding:10px 14px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.12);">
+              <span style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:700;">
+                <svg width="16" height="16" viewBox="0 0 48 48" aria-hidden="true" style="flex:0 0 auto;"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+                Continue with Google
+              </span>
+              <span style="font-size:11px;font-weight:500;color:#5f6368;">Save your leagues &amp; settings, synced across devices</span>
+            </button>
+            <div style="display:flex;align-items:center;gap:10px;margin:12px 0;color:var(--text-muted);font-size:10.5px;font-weight:800;letter-spacing:.08em;">
+              <span style="flex:1;height:1px;background:var(--border);"></span>OR<span style="flex:1;height:1px;background:var(--border);"></span>
+            </div>
+            <button type="submit"
+                    style="display:flex;flex-direction:column;align-items:center;gap:2px;width:100%;
+                           background:transparent;color:var(--text-muted);border:1px solid var(--border);
+                           border-radius:10px;padding:9px 14px;cursor:pointer;">
+              <span style="font-size:13.5px;font-weight:700;color:var(--text);">Continue without account</span>
+              <span style="font-size:11px;font-weight:500;">Quick view on this device &middot; nothing saved</span>
+            </button>
           </div>
 
           <div id="lookupError" class="error-message" style="display:none;"></div>
@@ -1442,7 +1468,7 @@ BASE_HTML = """
 
       {ad_top}
 
-      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window.__FEATURES_JS = {features_js_js};</script>
+      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window.__FEATURES_JS = {features_js_js};</script>
       <main id="page-root" role="main" tabindex="-1" class="overview-layout" data-cache-ts="{cache_ts}" data-premium="{user_premium}">
         {body}
       </main>
@@ -2260,6 +2286,182 @@ def _nav_icon(name: str, cls: str = "", style: str = "", size: int = 16) -> str:
     )
 
 
+def _link_modal_html() -> str:
+    """Self-contained "Link a league" modal (Sleeper / ESPN / Yahoo).
+
+    Sleeper links by username (auto-discovers leagues); ESPN by league id + a
+    team pick (no per-user discovery); Yahoo by league id after OAuth, with the
+    user's team auto-detected. All three POST to /api/link/add, which writes to
+    the signed-in account's user_leagues, so linked leagues show in the switcher.
+    """
+    return """
+    <div id="linkModal" class="link-ov" style="display:none;" onclick="if(event.target===this)closeLinkModal()">
+      <div class="link-card" role="dialog" aria-label="Link a league">
+        <div class="link-head"><span>Link a league</span>
+          <button type="button" class="link-x" onclick="closeLinkModal()" aria-label="Close">&times;</button></div>
+        <div id="linkAccountGate" style="display:none;padding:18px 4px;text-align:center;">
+          <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px;">Sign in to link leagues across platforms and keep them together.</p>
+          <a id="linkGoogleBtn" class="link-go" href="/auth/google">Sign in with Google</a>
+        </div>
+        <div id="linkBody">
+          <div class="link-tabs" role="tablist">
+            <button type="button" class="link-tab active" data-lp="sleeper" onclick="linkTab('sleeper')">Sleeper</button>
+            <button type="button" class="link-tab" data-lp="espn" onclick="linkTab('espn')">ESPN</button>
+            <button type="button" class="link-tab" data-lp="yahoo" onclick="linkTab('yahoo')">Yahoo</button>
+          </div>
+          <div class="link-pane" data-lp="sleeper">
+            <label class="link-lb">Sleeper username</label>
+            <div class="link-row"><input id="linkSleeperUser" class="link-inp" placeholder="username" autocomplete="off">
+              <button type="button" class="link-btn" onclick="linkSleeperLookup()">Find</button></div>
+            <div id="linkSleeperList" class="link-list"></div>
+          </div>
+          <div class="link-pane" data-lp="espn" style="display:none;">
+            <label class="link-lb">ESPN league ID</label>
+            <div class="link-row"><input id="linkEspnId" class="link-inp" inputmode="numeric" placeholder="e.g. 123456">
+              <input id="linkEspnSeason" class="link-inp link-sm" inputmode="numeric" placeholder="season">
+              <button type="button" class="link-btn" onclick="linkEspnPreview()">Next</button></div>
+            <div id="linkEspnResult" class="link-list"></div>
+          </div>
+          <div class="link-pane" data-lp="yahoo" style="display:none;">
+            <label class="link-lb">Yahoo league ID</label>
+            <div class="link-row"><input id="linkYahooId" class="link-inp" placeholder="e.g. 123456">
+              <button type="button" class="link-btn" onclick="linkYahooPreview()">Next</button></div>
+            <div id="linkYahooResult" class="link-list"></div>
+          </div>
+          <div id="linkMsg" class="link-msg"></div>
+        </div>
+      </div>
+    </div>
+    <style>
+      .link-ov{position:fixed;inset:0;z-index:var(--z-modal,10000);background:rgba(4,8,17,.5);
+        display:flex;align-items:center;justify-content:center;padding:16px;}
+      .link-card{background:var(--card);border:1px solid var(--border);border-radius:16px;
+        width:100%;max-width:420px;max-height:88vh;overflow-y:auto;padding:16px 18px;box-shadow:0 24px 60px -20px rgba(0,0,0,.5);}
+      .link-head{display:flex;justify-content:space-between;align-items:center;font-size:16px;font-weight:800;margin-bottom:12px;}
+      .link-x{border:0;background:none;font-size:24px;line-height:1;cursor:pointer;color:var(--text-muted);padding:0 4px;}
+      .link-go{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-weight:700;
+        font-size:13px;padding:9px 18px;border-radius:10px;}
+      .link-tabs{display:flex;gap:4px;padding:4px;background:var(--accent-soft);border:1px solid var(--border);
+        border-radius:11px;margin-bottom:14px;}
+      .link-tab{flex:1;border:0;background:none;color:var(--text-muted);font-weight:700;font-size:13px;
+        padding:8px;border-radius:8px;cursor:pointer;}
+      .link-tab.active{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.12);}
+      .link-lb{display:block;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+        color:var(--text-muted);margin-bottom:6px;}
+      .link-row{display:flex;gap:8px;}
+      .link-inp{flex:1;min-width:0;border:1px solid var(--border);background:var(--bg-alt);color:var(--text);
+        border-radius:9px;padding:9px 11px;font-size:14px;}
+      .link-inp.link-sm{max-width:88px;flex:0 0 auto;}
+      .link-btn{border:0;background:var(--accent);color:#fff;font-weight:700;font-size:13px;padding:9px 14px;
+        border-radius:9px;cursor:pointer;flex:0 0 auto;}
+      .link-list{margin-top:10px;display:flex;flex-direction:column;gap:6px;}
+      .link-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 11px;
+        border:1px solid var(--border);border-radius:10px;font-size:13px;}
+      .link-add{border:0;background:var(--accent-soft);color:var(--accent);font-weight:800;font-size:12px;
+        padding:6px 12px;border-radius:8px;cursor:pointer;}
+      .link-add[disabled]{opacity:.6;cursor:default;}
+      .link-sel{width:100%;border:1px solid var(--border);background:var(--bg-alt);color:var(--text);
+        border-radius:9px;padding:9px 11px;font-size:14px;margin-top:8px;}
+      .link-msg{margin-top:12px;font-size:12.5px;font-weight:600;min-height:16px;}
+      .link-msg.ok{color:var(--win);} .link-msg.err{color:var(--loss);}
+    </style>
+    <script>
+    (function(){
+      window.openLinkModal=function(){
+        var m=document.getElementById('linkModal'); if(!m)return; m.style.display='flex';
+        // Select-league-then-login: everyone picks a league first; the Google
+        // sign-in happens on Add (see linkAdd) if there's no account yet.
+        var gate=document.getElementById('linkAccountGate'), body=document.getElementById('linkBody');
+        if(gate) gate.style.display='none';
+        if(body) body.style.display='block';
+      };
+      window.closeLinkModal=function(){ var m=document.getElementById('linkModal'); if(m)m.style.display='none'; };
+      document.addEventListener('keydown',function(e){ if(e.key==='Escape')window.closeLinkModal&&window.closeLinkModal(); });
+      window.linkTab=function(p){
+        document.querySelectorAll('.link-tab').forEach(function(b){ b.classList.toggle('active',b.dataset.lp===p); });
+        document.querySelectorAll('.link-pane').forEach(function(pane){ pane.style.display=pane.dataset.lp===p?'block':'none'; });
+        linkSetMsg('','');
+      };
+      function linkSetMsg(t,kind){ var el=document.getElementById('linkMsg'); if(!el)return; el.textContent=t||''; el.className='link-msg'+(kind?' '+kind:''); }
+      function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+      function linkAdd(platform,league_id,season,team_id,name,btn){
+        var hasAcct=!!window._hasAccount;
+        if(btn){ btn.disabled=true; btn.textContent=hasAcct?'Adding…':'Continuing…'; }
+        // With an account: save straight away. Without: stash the pick and send
+        // the user to Google; the callback attaches it and lands them in-league.
+        fetch(hasAcct?'/api/link/add':'/api/link/pending',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({platform:platform,league_id:league_id,season:season,team_id:team_id,name:name})})
+          .then(function(r){return r.json();}).then(function(d){
+            if(d.ok){
+              if(hasAcct){ linkSetMsg('Added '+(name||'league')+'. Refreshing…','ok');
+                if(btn){ btn.textContent='Added ✓'; } setTimeout(function(){ location.reload(); },900); }
+              else { linkSetMsg('Saved. Signing you in with Google…','ok');
+                location.href=d.auth_url||'/auth/google'; }
+            }
+            else { linkSetMsg(d.error||'Could not add that league.','err'); if(btn){ btn.disabled=false; btn.textContent='Add'; } }
+          }).catch(function(){ linkSetMsg('Network error.','err'); if(btn){ btn.disabled=false; btn.textContent='Add'; } });
+      }
+      window.linkSleeperLookup=function(){
+        var u=(document.getElementById('linkSleeperUser').value||'').trim();
+        var box=document.getElementById('linkSleeperList');
+        if(!u){ linkSetMsg('Enter your Sleeper username.','err'); return; }
+        linkSetMsg('Looking up…',''); box.innerHTML='';
+        fetch('/api/sleeper-user-leagues?username='+encodeURIComponent(u)).then(function(r){return r.json();}).then(function(d){
+          if(!d.ok||!(d.leagues||[]).length){ linkSetMsg(d.error||'No leagues found for that username.','err'); return; }
+          linkSetMsg('','');
+          box.innerHTML=d.leagues.map(function(l){
+            return '<div class="link-item"><span>'+esc(l.label||l.name)+'</span>'+
+              '<button type="button" class="link-add" data-lid="'+esc(l.league_id)+'" data-season="'+esc(l.season||'')+'" data-name="'+esc(l.name||l.label)+'">Add</button></div>';
+          }).join('');
+          box.querySelectorAll('.link-add').forEach(function(b){ b.addEventListener('click',function(){
+            linkAdd('sleeper', b.dataset.lid, b.dataset.season?Number(b.dataset.season):null, null, b.dataset.name, b); }); });
+        }).catch(function(){ linkSetMsg('Network error.','err'); });
+      };
+      function renderTeamPick(box, platform, league_id, season, name, teams, myId){
+        var opts=teams.map(function(t){ return '<option value="'+esc(t.team_id)+'"'+(String(t.team_id)===String(myId)?' selected':'')+'>'+esc(t.name)+'</option>'; }).join('');
+        box.innerHTML='<div class="link-item"><span>'+esc(name)+'</span></div>'+
+          (teams.length?'<select class="link-sel" id="linkTeamSel">'+opts+'</select>':'')+
+          '<div style="margin-top:10px;text-align:right;"><button type="button" class="link-btn" id="linkConfirm">Add league</button></div>';
+        document.getElementById('linkConfirm').addEventListener('click',function(){
+          var sel=document.getElementById('linkTeamSel');
+          linkAdd(platform, league_id, season, sel?sel.value:null, name, this);
+        });
+      }
+      window.linkEspnPreview=function(){
+        var id=(document.getElementById('linkEspnId').value||'').trim();
+        var yr=(document.getElementById('linkEspnSeason').value||'').trim();
+        var box=document.getElementById('linkEspnResult');
+        if(!id){ linkSetMsg('Enter the ESPN league ID.','err'); return; }
+        linkSetMsg('Loading…',''); box.innerHTML='';
+        fetch('/api/link/espn/preview?league_id='+encodeURIComponent(id)+(yr?'&season='+encodeURIComponent(yr):'')).then(function(r){return r.json();}).then(function(d){
+          if(!d.ok){ linkSetMsg(d.error||'Could not load that league.','err'); return; }
+          linkSetMsg('','');
+          var myId=(d.teams||[]).filter(function(t){return t.is_mine;}).map(function(t){return t.team_id;})[0];
+          renderTeamPick(box,'espn',d.league_id,d.season,d.name,d.teams||[],myId);
+        }).catch(function(){ linkSetMsg('Network error.','err'); });
+      };
+      window.linkYahooPreview=function(){
+        var id=(document.getElementById('linkYahooId').value||'').trim();
+        var box=document.getElementById('linkYahooResult');
+        if(!id){ linkSetMsg('Enter the Yahoo league ID.','err'); return; }
+        linkSetMsg('Loading…',''); box.innerHTML='';
+        fetch('/api/link/yahoo/preview?league_id='+encodeURIComponent(id)).then(function(r){
+          return r.json().then(function(d){ return {status:r.status,d:d}; }); }).then(function(res){
+          var d=res.d;
+          if(res.status===401&&d.needs_oauth){
+            box.innerHTML='<a class="link-go" href="'+esc(d.auth_url||'/auth/yahoo')+'">Connect Yahoo</a>'+
+              '<div style="font-size:11.5px;color:var(--text-muted);margin-top:8px;">Connect Yahoo, then come back and try again.</div>';
+            linkSetMsg('',''); return;
+          }
+          if(!d.ok){ linkSetMsg(d.error||'Could not load that league.','err'); return; }
+          linkSetMsg('',''); renderTeamPick(box,'yahoo',d.league_id,d.season,d.name,d.teams||[],d.my_team_id);
+        }).catch(function(){ linkSetMsg('Network error.','err'); });
+      };
+    })();
+    </script>
+    """
+
+
 def build_nav(league_id: Optional[str], active: str, platform: str, season: int) -> str:
     """
     active (league pages): 'dashboard','standings','power','weekly','teams','activity','injuries','trade','graphs'
@@ -2597,13 +2799,20 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             f"{dark_mode_toggle_html}"
             f"{tour_menu_item}"
             f"{league_switcher_html}"
+            "<button type='button' class='settings-menu-item' id='settingsLinkBtn' onclick='openLinkModal()'>"
+            "  <svg class='settings-menu-icon' viewBox='0 0 24 24' fill='none' stroke='currentColor' "
+            "       stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 5v14M5 12h14'/></svg>"
+            "  <span class='settings-menu-label'>Link a league</span>"
+            "</button>"
             "<a href='/logout' class='settings-menu-item settings-menu-logout'>"
             "  " + _nav_icon("logout", cls="settings-menu-icon") +
             "  <span class='settings-menu-label'>Sign Out</span>"
             "</a>"
         )
 
-        # Rebuild settings gear with updated content
+        # Rebuild settings gear with updated content. (The link-a-league modal is
+        # injected once per page in render_page, not here — this gear renders
+        # twice, desktop + mobile, and the modal needs unique DOM ids.)
         settings_gear = (
             "<div class='settings-gear-wrapper'>"
             "  <button type='button' id='settingsGearBtn' class='utility-icon-btn' "
@@ -2625,7 +2834,14 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "  <span class='settings-menu-label'>Sign In</span>"
             "</button>"
         )
-        settings_content = signin_item + dark_mode_toggle_html + tour_menu_item
+        link_item = (
+            "<button type='button' class='settings-menu-item' id='settingsLinkBtn' onclick='openLinkModal()'>"
+            "  <svg class='settings-menu-icon' viewBox='0 0 24 24' fill='none' stroke='currentColor' "
+            "       stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 5v14M5 12h14'/></svg>"
+            "  <span class='settings-menu-label'>Link a league</span>"
+            "</button>"
+        )
+        settings_content = signin_item + link_item + dark_mode_toggle_html + tour_menu_item
         settings_gear = (
             "<div class='settings-gear-wrapper'>"
             "  <button type='button' id='settingsGearBtn' class='utility-icon-btn' "
@@ -3224,6 +3440,13 @@ def render_page(
                 if _league_chrome
                 else build_nav(None, active, _nav_platform, _nav_season))
 
+    # Inject the "Link a league" modal once per page (hidden until opened).
+    # Available to logged-out visitors too, so they can select a league and then
+    # get signed in via Google (select-league-then-login). nav_html is placed a
+    # single time, so appending here keeps the modal's element ids unique even
+    # though the settings gear itself renders twice.
+    nav_html = nav_html + _link_modal_html()
+
     # Logged-out visitors on lite_js pages (the landing page) get the slim
     # public.js for a fast first paint. public.js omits everything below the
     # @public-js:core-end marker — the nav player-search and player modal included
@@ -3321,6 +3544,7 @@ def render_page(
         viewer_roster_id_js=_json.dumps(str(viewer_roster_id)),
         viewer_user_id_js=_json.dumps(str(viewer_user_id)),
         signed_in_js="true" if session.get("viewer_username") else "false",
+        has_account_js="true" if session.get("account_id") else "false",
         features_js_js=_features_js_js,
     )
     resp = make_response(html)

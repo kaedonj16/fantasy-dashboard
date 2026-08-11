@@ -134,6 +134,22 @@ def google_auth_callback():
         except Exception:
             logger.warning("[google_auth] sleeper bridge failed", exc_info=True)
 
+    # Select-league-then-login: if the user picked a league before signing in,
+    # attach it now and drop them straight into it.
+    pending = session.pop("pending_link", None)
+    if isinstance(pending, dict) and pending.get("platform") and pending.get("league_id"):
+        try:
+            add_user_league(
+                account_id, pending["platform"], pending["league_id"],
+                season=pending.get("season"), team_id=pending.get("team_id"),
+                name=pending.get("name"),
+            )
+            return redirect(
+                f"/{pending['platform']}/{pending.get('season') or ''}/{pending['league_id']}/dashboard"
+            )
+        except Exception:
+            logger.warning("[google_auth] pending link attach failed", exc_info=True)
+
     return redirect(next_url)
 
 

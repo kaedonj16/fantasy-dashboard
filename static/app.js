@@ -8983,7 +8983,13 @@ if (!platformBtns.length) return;
           }));
         }
 
-        document.getElementById("leagueSelectForm")?.submit();
+        // Reveal the choice — Generate Dashboard (quick session) or Continue
+        // with Google (save to an account) — instead of jumping straight in, so
+        // ESPN gets the same select-league-then-login option as Sleeper.
+        if (leagueSelectWrap) leagueSelectWrap.style.display = "block";
+        if (generateWrap) generateWrap.style.display = "block";
+        espnSubmitBtn.disabled = false;
+        espnSubmitBtn.textContent = "Find My League";
       } catch (err) {
         if (espnErrorBox) {
           espnErrorBox.textContent = err.message || "Unable to load ESPN league.";
@@ -8992,6 +8998,31 @@ if (!platformBtns.length) return;
         espnSubmitBtn.disabled = false;
         espnSubmitBtn.textContent = "Find My League";
       }
+    });
+  }
+
+  // "Continue with Google" on the home card: take the league the user just
+  // selected and sign them in with Google, so instead of a throwaway session
+  // they land in that league with a durable account (select-league-then-login).
+  const googleContinueBtn = document.getElementById("googleContinueBtn");
+  if (googleContinueBtn) {
+    googleContinueBtn.addEventListener("click", () => {
+      const platform = (formPlatform && formPlatform.value) || "sleeper";
+      const sel = document.getElementById("league");
+      const leagueId = sel && sel.value;
+      if (!leagueId) { window.location.href = "/auth/google?next=/"; return; }
+      const opt = sel.options[sel.selectedIndex];
+      const name = opt ? opt.textContent : "";
+      const seasonEl = document.querySelector('#leagueSelectForm input[name="season"]');
+      const season = seasonEl && seasonEl.value ? Number(seasonEl.value) : null;
+      googleContinueBtn.disabled = true;
+      googleContinueBtn.textContent = "Continuing…";
+      fetch("/api/link/pending", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform, league_id: leagueId, season, name }),
+      }).then(r => r.json()).then(d => {
+        window.location.href = (d && d.auth_url) || "/auth/google";
+      }).catch(() => { window.location.href = "/auth/google"; });
     });
   }
 
