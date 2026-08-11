@@ -9675,6 +9675,34 @@ document.addEventListener('DOMContentLoaded', function() {
             leagueSwitcher.appendChild(option);
           });
 
+          // Mobile: render the same leagues as tappable rows (the native <select>
+          // popup floats/mis-anchors inside the sliding sheet). CSS shows the list
+          // on phones and the <select> on desktop.
+          const listEl = document.getElementById('leagueSwitcherList');
+          if (listEl) {
+            listEl.innerHTML = '';
+            const hdr = document.createElement('div');
+            hdr.className = 'ls-head';
+            hdr.textContent = 'Switch league';
+            listEl.appendChild(hdr);
+            leagues.forEach(league => {
+              const isCur = String(league.league_id) === String(currentLeagueId);
+              const row = document.createElement('button');
+              row.type = 'button';
+              row.className = 'ls-item' + (isCur ? ' is-current' : '');
+              row.setAttribute('role', 'option');
+              if (isCur) row.setAttribute('aria-current', 'true');
+              row.dataset.league = league.league_id;
+              row.dataset.season = league.season || currentSeason;
+              row.dataset.platform = league.platform || currentPlatform;
+              row.textContent = league.label;
+              row.addEventListener('click', function () {
+                navigateToLeague(this.dataset.league, this.dataset.platform, this.dataset.season);
+              });
+              listEl.appendChild(row);
+            });
+          }
+
           // Prewarm the OTHER leagues' server-side context on idle so switching
           // to one renders without the cold Sleeper fetch (build_league_context
           // is the dominant switch latency). Sequential + throttled so we never
@@ -9714,28 +9742,24 @@ document.addEventListener('DOMContentLoaded', function() {
         leagueSwitcher.innerHTML = '<option value="">Error loading leagues</option>';
       });
 
-    // Handle league change
+    // Shared navigation for both the desktop <select> and the mobile list rows.
+    // Uses the target league's OWN season/platform (not the current page's) so
+    // switching to an ESPN/Yahoo league lands on the right route, and keeps the
+    // current per-league page.
+    function navigateToLeague(leagueId, platform, season) {
+      if (!leagueId || String(leagueId) === String(currentLeagueId)) return;
+      showFullscreenLoading('Switching leagues...');
+      const leaguePages = new Set(['dashboard','standings','weekly','teams','activity','graphs','waivers','trade','players','prospects','breakouts','awards','history','schedule','commissioner','league_health','optimal','scout']);
+      const pathParts = window.location.pathname.split('/');
+      const lastSegment = pathParts[pathParts.length - 1] || '';
+      const currentPage = leaguePages.has(lastSegment) ? lastSegment : 'dashboard';
+      window.location.href = `/${platform || currentPlatform}/${season || currentSeason}/${leagueId}/${currentPage}`;
+    }
+
+    // Handle league change (desktop <select>)
     leagueSwitcher.addEventListener('change', function() {
-      const selectedLeagueId = this.value;
-      if (selectedLeagueId && selectedLeagueId !== currentLeagueId) {
-        // Show full-screen loading overlay
-        showFullscreenLoading('Switching leagues...');
-
-        // Get current page from URL - only use it if it's a valid per-league route
-        const leaguePages = new Set(['dashboard','standings','weekly','teams','activity','graphs','waivers','trade','players','prospects','breakouts','awards','history','schedule','commissioner','league_health','optimal','scout']);
-        const pathParts = window.location.pathname.split('/');
-        const lastSegment = pathParts[pathParts.length - 1] || '';
-        const currentPage = leaguePages.has(lastSegment) ? lastSegment : 'dashboard';
-
-        // Use the selected league's own season and platform (not the current
-        // page's), so switching to an ESPN/Yahoo league lands on the right route.
-        const selectedOption = this.options[this.selectedIndex];
-        const selectedSeason = selectedOption.dataset.season || currentSeason;
-        const selectedPlatform = selectedOption.dataset.platform || currentPlatform;
-
-        // Redirect to new league with same page
-        window.location.href = `/${selectedPlatform}/${selectedSeason}/${selectedLeagueId}/${currentPage}`;
-      }
+      const opt = this.options[this.selectedIndex];
+      navigateToLeague(this.value, opt && opt.dataset.platform, opt && opt.dataset.season);
     });
   }
 });

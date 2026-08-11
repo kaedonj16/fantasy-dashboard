@@ -1952,6 +1952,29 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
+/* Mobile league switcher: tappable rows instead of the native <select>, whose
+   option popup floats/mis-anchors inside the sliding More sheet (a fixed,
+   transformed container). Hidden on desktop, where the <select> works fine. */
+.ls-list { display: none; }
+.ls-head {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-muted); padding: 6px 4px 4px;
+}
+.ls-item {
+  display: block; width: 100%; text-align: left;
+  background: none; border: 0; font: inherit; color: var(--text);
+  padding: 11px 12px; border-radius: 10px; cursor: pointer;
+  font-size: 14px; font-weight: 600;
+  -webkit-tap-highlight-color: transparent;
+}
+.ls-item:active { background: var(--accent-soft); }
+.ls-item.is-current { color: var(--accent); font-weight: 800; }
+.ls-item.is-current::after { content: '\2713'; float: right; font-weight: 800; }
+@media (max-width: 768px) {
+  .league-switcher-wrapper .league-switcher { display: none !important; }
+  .league-switcher-wrapper .ls-list { display: flex; flex-direction: column; }
+}
+
 .nav-header-main .site-logo {
   width: 180px;
   height: auto;

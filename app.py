@@ -2844,6 +2844,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 f"          data-current-username='{viewer_username or ''}'>"
                 f"    <option value=''>Loading leagues...</option>"
                 f"  </select>"
+                # Mobile renders the leagues as tappable rows instead of the native
+                # <select>: inside the sliding sheet (a transformed, fixed container)
+                # the native option popup mis-anchors and floats away from the tap.
+                f"  <div id='leagueSwitcherList' class='ls-list' role='listbox' aria-label='Switch league'></div>"
                 f"</div>"
             )
 
