@@ -1157,6 +1157,7 @@ FORM_BODY = """
                 Continue with Google
               </span>
               <span style="font-size:11px;font-weight:500;color:#5f6368;">Save your leagues &amp; settings, synced across devices</span>
+              <span style="font-size:10px;font-weight:600;color:#80868b;">Free &middot; no password</span>
             </button>
             <div style="display:flex;align-items:center;gap:10px;margin:14px 0;color:rgba(255,255,255,.5);font-size:10.5px;font-weight:800;letter-spacing:.1em;">
               <span style="flex:1;height:1px;background:rgba(255,255,255,.18);"></span>OR<span style="flex:1;height:1px;background:rgba(255,255,255,.18);"></span>
@@ -1180,7 +1181,7 @@ FORM_BODY = """
         </form>
 
         <p class="hint" id="sleeperHint">
-          Enter your Sleeper username, choose one of your leagues, and unlock advanced analytics.
+          Pick a league, then <strong>Continue with Google</strong> to save it across devices &mdash; or continue without an account for a quick look.
         </p>
       </div>
     </div>

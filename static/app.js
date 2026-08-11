@@ -8948,7 +8948,19 @@ if (!platformBtns.length) return;
         generateWrap.style.display = "none";
       } finally {
         lookupBtn.disabled = false;
-        lookupBtn.textContent = "Find My Leagues";
+        // Once leagues are loaded, step "Find My Leagues" down to a quiet
+        // "Refresh" so the real decision (Continue with Google / without) leads.
+        if (generateWrap && generateWrap.style.display === "block") {
+          lookupBtn.textContent = "↻ Refresh leagues";
+          lookupBtn.style.background = "transparent";
+          lookupBtn.style.color = "rgba(255,255,255,.72)";
+          lookupBtn.style.border = "1px solid rgba(255,255,255,.25)";
+          lookupBtn.style.fontWeight = "600";
+          lookupBtn.style.fontSize = "12.5px";
+          lookupBtn.style.padding = "7px 12px";
+        } else {
+          lookupBtn.textContent = "Find My Leagues";
+        }
       }
     });
   }
