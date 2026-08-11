@@ -7620,6 +7620,15 @@ select:focus {
 .pm-wt-avg { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
 .pm-wt-delta { font-size: 10px; font-weight: 700; white-space: nowrap; }
 .pm-wt-footer { font-size: 10px; color: var(--text-muted); margin-top: 6px; }
+/* Season trends reuse the slim weekly rows, but their metric names are longer
+   (e.g. "Opportunity Share") — let the label wrap to two lines instead of
+   truncating, with a touch more width. */
+.pm-st-rows .pm-wt-label {
+  flex-basis: 82px;
+  white-space: normal;
+  line-height: 1.15;
+  overflow: visible;
+}
 
 /* ── Player modal: Trends panel — Weekly/Season mode toggle ──────────────── */
 .pm-trends-mode {

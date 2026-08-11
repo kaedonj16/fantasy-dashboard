@@ -12429,17 +12429,52 @@ function pmLoadSeasonAll(playerId, host) {
     var keys = meta.options.map(function(o) { return o.key; });
     pmSeasonTrendFetch(playerId, keys.join(',')).then(function(data) {
       if (!data || !data.series) { fail(); return; }
-      var html = '<div class="pm-st-grid">';
-      meta.options.forEach(function(o) {
-        var pts = data.series[o.key];
-        if (!pts || !pts.some(function(p) { return p.value != null; })) return;
-        html += '<div class="pm-st-block"><div class="pm-st-head"><span class="pm-st-title">' + o.label + '</span></div>'
-          + pmSeasonTrendChartHTML(pts, o, data.position) + '</div>';
-      });
-      html += '</div>';
-      host.innerHTML = html;
+      host.innerHTML = buildSeasonTrendRows(meta.options, data.series, data.position);
     }).catch(fail);
   }).catch(fail);
+}
+
+// Season trends in the SAME slim two-column row format as the weekly trends:
+// label + season sparkline + latest value / first→latest delta / current rank.
+function buildSeasonTrendRows(options, series, position) {
+  var pos = (position || '').toUpperCase();
+  var accent = ((getComputedStyle(document.documentElement).getPropertyValue('--accent') || '').trim()) || '#3b82f6';
+  var rows = '', minYr = null, maxYr = null;
+  (options || []).forEach(function(o) {
+    var pts = (series || {})[o.key];
+    if (!pts) return;
+    var withVal = pts.filter(function(p) { return p.value != null; });
+    if (withVal.length < 2) return;   // need 2+ seasons for a trend
+    var vals = withVal.map(function(p) { return p.value; });
+    var first = withVal[0], last = withVal[withVal.length - 1];
+    if (minYr == null || first.season < minYr) minYr = first.season;
+    if (maxYr == null || last.season > maxYr) maxYr = last.season;
+    var improved = (last.value !== first.value)
+      ? (o.lower_better ? last.value < first.value : last.value > first.value) : null;
+    var color = improved === true ? '#22c55e' : (improved === false ? '#ef4444' : accent);
+    var deltaTxt = pmStFmt(Math.abs(last.value - first.value), o);
+    var deltaHtml = '';
+    if (improved === true) deltaHtml = '<span class="pm-wt-delta" style="color:#10b981">&#9650; +' + deltaTxt + '</span>';
+    else if (improved === false) deltaHtml = '<span class="pm-wt-delta" style="color:#ef4444">&#9660; -' + deltaTxt + '</span>';
+    var tips = withVal.map(function(p) {
+      return p.season + ' · ' + pmStFmt(p.value, o) + (p.rank != null ? ' (' + pos + p.rank + ')' : '');
+    });
+    var rankTxt = (last.rank != null) ? (pos + last.rank) : '';
+    rows += '<div class="pm-wt-row">'
+      + '<div class="pm-wt-label">' + o.label + '</div>'
+      + pmSparkline(vals, color, tips)
+      + '<div class="pm-wt-stats">'
+      + '<div class="pm-wt-stats-top">'
+      + '<span class="pm-wt-last">' + pmStFmt(last.value, o) + '</span>'
+      + deltaHtml
+      + '</div>'
+      + (rankTxt ? '<span class="pm-wt-avg">' + rankTxt + '</span>' : '')
+      + '</div></div>';
+  });
+  if (!rows) return '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Not enough multi-season data.</div>';
+  return '<div class="pm-wt-grid pm-st-rows">' + rows + '</div>'
+    + '<div class="pm-wt-footer">' + (minYr && maxYr ? (minYr + '&ndash;' + maxYr + ' &middot; ') : '')
+    + '&#9650;&#9660; = first&rarr;latest season</div>';
 }
 
 function pmSeasonTrendFetch(playerId, metric) {
