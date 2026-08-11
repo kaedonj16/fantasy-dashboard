@@ -7591,6 +7591,10 @@ select:focus {
 .compare-weekly-name {
   font-size: 12px; font-weight: 800; color: var(--text); margin-bottom: 6px;
 }
+/* Each side is already only half the width, so keep its trend rows in ONE column
+   (the player modal's two-up grid would make the sparklines tiny here). This
+   gives each sparkline the full column width. */
+.compare-weekly-col .pm-wt-grid { grid-template-columns: 1fr; }
 @media (max-width: 600px) {
   .compare-weekly-section { grid-template-columns: 1fr; }
 }
@@ -18513,6 +18517,9 @@ tr.team-clickable {
   color: var(--text-subtle, var(--text-muted)); margin-left: 4px;
 }
 .compare-vs-opt { opacity: .6; }
+/* The optional third slot / its VS use the `hidden` attribute; .compare-vs sets
+   display:flex which would otherwise win over [hidden], so force it. */
+.compare-pickers [hidden] { display: none !important; }
 .compare-pick-label {
   display: block; font-size: 12px; font-weight: 700; text-transform: uppercase;
   letter-spacing: .04em; color: var(--text-muted); margin-bottom: 6px;
