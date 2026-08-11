@@ -2697,7 +2697,7 @@ button:hover {
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(13px, -50%);
+  transform: translate(calc(-100% - 13px), -50%);   /* just left of the centered number */
   margin: 0;
   font-size: 9px;
   white-space: nowrap;
@@ -7843,7 +7843,14 @@ select:focus {
 .pr-move-up   { color: var(--win); }
 .pr-move-down { color: var(--loss); }
 .pr-move-flat { color: var(--text-muted); opacity: 0.6; }
-.podium .podium-header h3 .pr-move { font-size: 11px; vertical-align: 2px; margin-left: 2px; }
+.podium .podium-header h3 .pr-move { font-size: 11px; vertical-align: 2px; margin-right: 3px; }
+/* Movement arrow sits in a fixed cell to the LEFT of the rank number, so the
+   #N column stays aligned whether or not a row has movement. */
+.rank-item .pr-move-cell {
+  flex: 0 0 auto; min-width: 16px;
+  display: inline-flex; align-items: center; justify-content: flex-end;
+  margin-right: -4px;
+}
 
 .rank-item > .avatar {
   flex: 0 0 26px;

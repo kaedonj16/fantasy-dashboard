@@ -6268,7 +6268,7 @@ def render_power_and_playoffs(
           <div class="slot {base_cls} {streak_frame_cls}" data-rk-key="{html.escape(str(name), quote=True)}">
             <div class="wrap">
               <div class='podium-header'>
-                <h3>#{rank} {move_arrow(name)}</h3>
+                <h3>{move_arrow(name)}#{rank}</h3>
                 {avatar_html}
               </div>
               <div class="name">{_clickable_team_name(name, _o2r)}</div>
@@ -6338,8 +6338,8 @@ def render_power_and_playoffs(
 
         rank_cards.append(
             f"<div class='rank-item {css_cls}' data-rk-key='{html.escape(str(team), quote=True)}'>"
+            f"<span class='pr-move-cell'>{move_arrow(team)}</span>"
             f"<span class='pos'>#{pos}</span>"
-            f"{move_arrow(team)}"
             f"{img}"
             f"{_clickable_team_name(team, _o2r, cls='name')}"
             f"<div class='bar'><div style='width:{bar_w:.1f}%'></div></div>"
