@@ -909,6 +909,13 @@ except Exception as e:
     logger.warning("[yahoo-auth-bp] skipped: %s", e)
 
 try:
+    from routes.google_auth_bp import google_auth_bp
+    app.register_blueprint(google_auth_bp)
+    logger.info("[google-auth-bp] registered")
+except Exception as e:
+    logger.warning("[google-auth-bp] skipped: %s", e)
+
+try:
     from routes.misc_api_bp import misc_api_bp
     app.register_blueprint(misc_api_bp)
     logger.info("[misc-api-bp] registered")
