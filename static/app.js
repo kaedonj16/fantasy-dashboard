@@ -15078,6 +15078,20 @@ function initComparePage() {
       .catch(() => { if (resultEl) resultEl.innerHTML = '<div class="compare-pick-empty">Could not load one of the players. Try again.</div>'; });
   }
 
+  // The optional third slot stays hidden until the user asks for it (via the
+  // "Add third" action, which only appears once two players are compared).
+  function _revealThird(focus) {
+    root.querySelectorAll('.compare-vs-opt, .compare-picker-opt').forEach(el => { el.hidden = false; });
+    const g = root.querySelector('.compare-pickers'); if (g) g.classList.add('has-third');
+    const b = document.getElementById('cmpAddThird'); if (b) b.hidden = true;
+    if (focus) { const i3 = document.getElementById('cmpPick3'); if (i3) i3.focus(); }
+  }
+  function _hideThird() {
+    root.querySelectorAll('.compare-vs-opt, .compare-picker-opt').forEach(el => { el.hidden = true; });
+    const g = root.querySelector('.compare-pickers'); if (g) g.classList.remove('has-third');
+    const b = document.getElementById('cmpAddThird'); if (b) b.hidden = false;
+  }
+
   // Swap / copy-link / watch-both actions.
   if (actionsEl && !actionsEl._cmpBound) {
     actionsEl._cmpBound = true;
@@ -15085,6 +15099,10 @@ function initComparePage() {
       const btn = e.target.closest && e.target.closest('[data-cmp-action]');
       if (!btn) return;
       const act = btn.getAttribute('data-cmp-action');
+      if (act === 'addthird') {
+        _revealThird(true);
+        return;
+      }
       if (act === 'swap') {
         if (!chosen[1] || !chosen[2]) return;
         const t = chosen[1]; chosen[1] = chosen[2]; chosen[2] = t;
@@ -15125,6 +15143,8 @@ function initComparePage() {
     if (inp) { inp.value = ''; inp.setAttribute('aria-expanded', 'false'); }
     if (res) res.innerHTML = '';
     if (clr) clr.hidden = true;
+    // Removing the third player collapses the slot again and re-offers "Add third".
+    if (slot === 3) _hideThird();
     if (chosen[1] && chosen[2]) {
       // Still a valid comparison (e.g. the optional third was removed): fall
       // back to it rather than tearing everything down.
@@ -15334,7 +15354,7 @@ function initComparePage() {
           const inp = document.getElementById('cmpPick' + slot); if (inp) inp.value = chosen[slot].name;
         });
         _syncClears();
-        if (q3) _openForTriple(ds[0], ds[1], ds[2]); else _openFor(ds[0], ds[1]);
+        if (q3) { _revealThird(false); _openForTriple(ds[0], ds[1], ds[2]); } else _openFor(ds[0], ds[1]);
       }).catch(() => { if (resultEl) resultEl.innerHTML = '<div class="compare-pick-empty">Could not load that comparison. Search to pick players.</div>'; });
     }
   } catch (_) {}
