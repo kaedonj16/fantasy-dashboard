@@ -520,8 +520,10 @@ def build_advanced_metrics_body(
       .am-roster-toggle { flex-shrink:0; }
       .am-filters-btn { display:none; }
       /* Mobile-only add-filter button living inside the Filters panel; on
-         desktop the standalone + Filter chip covers this. */
-      .am-add-filter-m { display:none; }
+         desktop the standalone + Filter chip covers this. Needs the extra class
+         specificity so it beats .am-add-stat-btn's display (defined later), which
+         was leaking a second "+ Filter" onto desktop. */
+      .am-add-stat-btn.am-add-filter-m { display:none; }
       /* Mobile: metric 2/3 + season 1/3 on the first row, search full width,
          Team/Min/Sort collapsed behind a Filters button beside the position
          pills, toggles wrap underneath. Desktop keeps one aligned row. */
