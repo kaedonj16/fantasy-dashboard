@@ -2836,7 +2836,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                     _cur_name = ""
             league_switcher_html = (
                 f"<div class='league-switcher-wrapper'>"
-                f"  <select id='leagueSwitcher' class='league-switcher' "
+                # data-no-custom opts this out of the custom-select (CSD) enhancer:
+                # the CSD's floating list mis-positions inside the mobile sheet. On
+                # desktop the plain native <select> is used; on mobile the ls-list
+                # below replaces it entirely.
+                f"  <select id='leagueSwitcher' class='league-switcher' data-no-custom "
                 f"          data-current-league='{league_id}' "
                 f"          data-current-platform='{platform}' "
                 f"          data-current-season='{season}' "
