@@ -73,7 +73,19 @@ def link_yahoo_preview():
         league = get_league(season, league_id, access_token)
         users = get_users(season, league_id, access_token)
     except Exception as exc:
-        logger.warning("[link/yahoo] preview failed: %s", exc)
+        msg = str(exc)
+        logger.warning("[link/yahoo] preview failed: %s", msg)
+        # 403 = valid token but the authorized account can't see this league.
+        # Drop the stale token and re-offer OAuth so they can reconnect with the
+        # right Yahoo account instead of dead-ending on the error.
+        if "403" in msg or "Forbidden" in msg:
+            session.pop("yahoo_access_token", None)
+            session.pop("yahoo_guid", None)
+            return jsonify({
+                "ok": False, "needs_oauth": True, "auth_url": "/auth/yahoo?next=/portfolio",
+                "error": ("That Yahoo account can't access league " + league_id +
+                          ". Reconnect with the account that's in this league."),
+            }), 401
         return jsonify({"ok": False, "error": "Could not load that Yahoo league (check the ID)."}), 400
     my_guid = session.get("yahoo_guid") or ""
     teams, my_team_id = [], None
