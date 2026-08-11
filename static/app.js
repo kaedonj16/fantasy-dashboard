@@ -9077,8 +9077,15 @@ if (!platformBtns.length) return;
 
         if (res.status === 401 && data.needs_oauth) {
           const teamName = yahooTeamName?.value.trim() || "";
-          const params = new URLSearchParams({ league_id: leagueId, team_name: teamName });
-          window.location.href = `/auth/yahoo?${params}`;
+          // Start from the server's auth_url when it sends one — a 403 recovery
+          // returns /auth/yahoo?reauth=1 so Yahoo shows its account chooser
+          // instead of silently re-authorizing the same wrong account. Then
+          // carry the league_id/team_name we already have on the form.
+          const base = (data.auth_url && data.auth_url.startsWith("/auth/yahoo")) ? data.auth_url : "/auth/yahoo";
+          const url = new URL(base, window.location.origin);
+          url.searchParams.set("league_id", leagueId);
+          url.searchParams.set("team_name", teamName);
+          window.location.href = url.pathname + url.search;
           return;
         }
 

@@ -2452,8 +2452,9 @@ def _link_modal_html() -> str:
           return r.json().then(function(d){ return {status:r.status,d:d}; }); }).then(function(res){
           var d=res.d;
           if(res.status===401&&d.needs_oauth){
+            var hint=d.error||'Connect Yahoo, then come back and try again.';
             box.innerHTML='<a class="link-go" href="'+esc(d.auth_url||'/auth/yahoo')+'">Connect Yahoo</a>'+
-              '<div style="font-size:11.5px;color:var(--text-muted);margin-top:8px;">Connect Yahoo, then come back and try again.</div>';
+              '<div style="font-size:11.5px;color:var(--text-muted);margin-top:8px;">'+esc(hint)+'</div>';
             linkSetMsg('',''); return;
           }
           if(!d.ok){ linkSetMsg(d.error||'Could not load that league.','err'); return; }
