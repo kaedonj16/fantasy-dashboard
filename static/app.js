@@ -12633,18 +12633,27 @@ function pmSparkline(series, color, tips) {
     return tip;
   }
   function place(e) { tip.style.left = e.clientX + 'px'; tip.style.top = e.clientY + 'px'; }
+  function show(d, e) { ensureTip(); tip.textContent = d.getAttribute('data-tip') || ''; place(e); tip.classList.add('show'); }
   document.addEventListener('pointerover', function (e) {
+    if (e.pointerType && e.pointerType !== 'mouse') return;   // touch handled on pointerdown
     var d = e.target && e.target.closest && e.target.closest('.wk-dot');
-    if (!d) return;
-    ensureTip(); tip.textContent = d.getAttribute('data-tip') || ''; place(e); tip.classList.add('show');
+    if (d) show(d, e);
   });
   document.addEventListener('pointermove', function (e) {
-    if (tip && tip.classList.contains('show')) place(e);
+    if (tip && tip.classList.contains('show') && (!e.pointerType || e.pointerType === 'mouse')) place(e);
   });
   document.addEventListener('pointerout', function (e) {
+    if (e.pointerType && e.pointerType !== 'mouse') return;   // don't yank the tip on touch-end
     var d = e.target && e.target.closest && e.target.closest('.wk-dot');
     if (d && tip) tip.classList.remove('show');
   });
+  // Touch: tap a point to show its data; it stays until you tap elsewhere (a
+  // plain pointerout on touch-end would flash it away instantly).
+  document.addEventListener('pointerdown', function (e) {
+    var d = e.target && e.target.closest && e.target.closest('.wk-dot');
+    if (d) { show(d, e); e.preventDefault(); }
+    else if (tip) { tip.classList.remove('show'); }
+  }, true);
 })();
 
 // Shared renderer: sparkline rows for a player's weekly usage series.
@@ -15069,6 +15078,20 @@ function initComparePage() {
       .catch(() => { if (resultEl) resultEl.innerHTML = '<div class="compare-pick-empty">Could not load one of the players. Try again.</div>'; });
   }
 
+  // The optional third slot stays hidden until the user asks for it (via the
+  // "Add third" action, which only appears once two players are compared).
+  function _revealThird(focus) {
+    root.querySelectorAll('.compare-vs-opt, .compare-picker-opt').forEach(el => { el.hidden = false; });
+    const g = root.querySelector('.compare-pickers'); if (g) g.classList.add('has-third');
+    const b = document.getElementById('cmpAddThird'); if (b) b.hidden = true;
+    if (focus) { const i3 = document.getElementById('cmpPick3'); if (i3) i3.focus(); }
+  }
+  function _hideThird() {
+    root.querySelectorAll('.compare-vs-opt, .compare-picker-opt').forEach(el => { el.hidden = true; });
+    const g = root.querySelector('.compare-pickers'); if (g) g.classList.remove('has-third');
+    const b = document.getElementById('cmpAddThird'); if (b) b.hidden = false;
+  }
+
   // Swap / copy-link / watch-both actions.
   if (actionsEl && !actionsEl._cmpBound) {
     actionsEl._cmpBound = true;
@@ -15076,6 +15099,10 @@ function initComparePage() {
       const btn = e.target.closest && e.target.closest('[data-cmp-action]');
       if (!btn) return;
       const act = btn.getAttribute('data-cmp-action');
+      if (act === 'addthird') {
+        _revealThird(true);
+        return;
+      }
       if (act === 'swap') {
         if (!chosen[1] || !chosen[2]) return;
         const t = chosen[1]; chosen[1] = chosen[2]; chosen[2] = t;
@@ -15116,6 +15143,8 @@ function initComparePage() {
     if (inp) { inp.value = ''; inp.setAttribute('aria-expanded', 'false'); }
     if (res) res.innerHTML = '';
     if (clr) clr.hidden = true;
+    // Removing the third player collapses the slot again and re-offers "Add third".
+    if (slot === 3) _hideThird();
     if (chosen[1] && chosen[2]) {
       // Still a valid comparison (e.g. the optional third was removed): fall
       // back to it rather than tearing everything down.
@@ -15180,10 +15209,17 @@ function initComparePage() {
         const meta = isB
           ? ((p.tier_range || p.position) + ' · PPR 12-team avg')
           : ((p.position || '') + (p.team ? ' · ' + p.team : ''));
+        const posU = (p.position || '').toUpperCase().replace(/[^A-Z]/g, '');
+        const badge = posU
+          ? '<span class="compare-chip-pos pos-' + posU + '">' + posU + '</span>'
+          : '<span class="compare-chip-pos">–</span>';
         return '<button type="button" class="compare-pick-result' + (isB ? ' compare-pick-baseline' : '') + '" role="option" aria-selected="false" data-pid="' + _wlEsc(p.player_id) + '" data-name="' + _wlEsc(p.name) +
           '" data-pos="' + _wlEsc(p.position || '') + '" data-team="' + _wlEsc(p.team || '') + '">' +
-          '<span class="compare-pick-rname">' + _wlEsc(p.name) + (isB ? '<span class="compare-pick-tag">TIER AVG</span>' : '') + '</span>' +
-          '<span class="compare-pick-rmeta">' + _wlEsc(meta) + '</span></button>';
+          badge +
+          '<span class="compare-pick-rtext">' +
+            '<span class="compare-pick-rname">' + _wlEsc(p.name) + (isB ? '<span class="compare-pick-tag">TIER AVG</span>' : '') + '</span>' +
+            '<span class="compare-pick-rmeta">' + _wlEsc(meta) + '</span>' +
+          '</span></button>';
       }).join('');
       input.setAttribute('aria-expanded', 'true');
     }
@@ -15318,7 +15354,7 @@ function initComparePage() {
           const inp = document.getElementById('cmpPick' + slot); if (inp) inp.value = chosen[slot].name;
         });
         _syncClears();
-        if (q3) _openForTriple(ds[0], ds[1], ds[2]); else _openFor(ds[0], ds[1]);
+        if (q3) { _revealThird(false); _openForTriple(ds[0], ds[1], ds[2]); } else _openFor(ds[0], ds[1]);
       }).catch(() => { if (resultEl) resultEl.innerHTML = '<div class="compare-pick-empty">Could not load that comparison. Search to pick players.</div>'; });
     }
   } catch (_) {}
@@ -15957,6 +15993,7 @@ var _cmpSides = {
   2: { pid: null, position: '', season: null, range: 'full', wkStart: null, wkEnd: null, seasons: [] }
 };
 var _cmpWeeklyCache = {};  // `${pid}_${season}` -> weeks[]
+var _cmpTrendMode = 'weekly';  // 'weekly' | 'season' — usage-panel trend view
 var _cmpAdvCache = {};     // `${pid}_${seasonParam}` -> advanced-metrics payload
 var _cmpRanksCache = {};   // `${pid}|${season}|${ws}|${we}` -> {ranks,counts,bounds}
 var _cmpSideResultCache = {}; // side-signature -> full computed side result
@@ -16317,9 +16354,9 @@ function cmpRenderMetrics() {
     const rows = renderCompareMetricRows(r1.metrics, r2.metrics, { position: _cmpSides[1].position }, { position: _cmpSides[2].position }, cfg, r1.ranks, r2.ranks, r1.counts, r2.counts, r1.bounds, r2.bounds);
     metricsDiv.innerHTML = selectors() + '<div id="compareMetricsRows">' + rows + '</div>';
     _cmpInitWkBars();
-    // #6: keep the weekly-trends section in sync with each side's season/range.
-    cmpRenderWeekly(1);
-    cmpRenderWeekly(2);
+    // #6: keep the trends section in sync with each side (Weekly or Season).
+    cmpRenderTrends(1);
+    cmpRenderTrends(2);
   }).catch(() => {
     if (token !== _cmpRenderToken) return;
     metricsDiv.innerHTML = selectors() + '<div id="compareMetricsRows"></div>';
@@ -16354,6 +16391,52 @@ async function cmpRenderWeekly(which) {
     shown = weeks.filter(w => { const wk = Number(w.week); return wk >= a && wk <= b; });
   }
   el.innerHTML = buildWeeklyTrendRows(shown, side.position);
+}
+
+// One side's SEASON (multi-year) trends, in the same slim rows as the player
+// modal's season view. Mirrors cmpRenderWeekly but pulls the season series.
+async function cmpRenderSeason(which) {
+  const el = document.getElementById('compareWeekly' + which);
+  if (!el) return;
+  const side = _cmpSides[which];
+  if (_cmpIsBaseline(side.pid)) {
+    el.innerHTML = '<div class="compare-pick-empty">Season trends aren\'t shown for tier averages.</div>';
+    return;
+  }
+  el.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Loading…</div>';
+  try {
+    const meta = await pmSeasonTrendFetch(side.pid, null);
+    if (!meta || !meta.options || !meta.options.length) {
+      el.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">No multi-season data.</div>';
+      return;
+    }
+    const keys = meta.options.map(o => o.key);
+    const data = await pmSeasonTrendFetch(side.pid, keys.join(','));
+    if (!data || !data.series) { el.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Couldn\'t load season trends.</div>'; return; }
+    el.innerHTML = buildSeasonTrendRows(meta.options, data.series, data.position);
+  } catch (_) {
+    el.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Couldn\'t load season trends.</div>';
+  }
+}
+
+// Render the active trend view (Weekly or Season) for one side.
+function cmpRenderTrends(which) {
+  if (_cmpTrendMode === 'season') cmpRenderSeason(which); else cmpRenderWeekly(which);
+}
+
+// Weekly/Season toggle in the compare usage panel (delegated once).
+if (typeof document !== 'undefined') {
+  document.addEventListener('click', function (e) {
+    const b = e.target && e.target.closest && e.target.closest('.compare-trends-mode-btn');
+    if (!b) return;
+    const mode = b.getAttribute('data-cmpmode') || 'weekly';
+    if (mode === _cmpTrendMode) return;
+    _cmpTrendMode = mode;
+    const wrap = b.closest('.compare-trends-mode');
+    if (wrap) wrap.querySelectorAll('.compare-trends-mode-btn').forEach(x => x.classList.toggle('is-active', x === b));
+    cmpRenderTrends(1);
+    cmpRenderTrends(2);
+  });
 }
 
 // Back-compat entry: set per-side seasons (full range) and render.
@@ -16436,6 +16519,10 @@ function _compareBodyHTML(p1, p2, opts) {
       </div>
 
       <div class="compare-tab-panel" data-cmppanel="usage" hidden>
+        <div class="compare-trends-mode">
+          <button type="button" class="compare-trends-mode-btn${_cmpTrendMode === 'season' ? '' : ' is-active'}" data-cmpmode="weekly">Weekly</button>
+          <button type="button" class="compare-trends-mode-btn${_cmpTrendMode === 'season' ? ' is-active' : ''}" data-cmpmode="season">Season</button>
+        </div>
         <div class="compare-weekly-section">
           <div class="compare-weekly-col">
             <div class="compare-weekly-name">${p1.name || ''}</div>

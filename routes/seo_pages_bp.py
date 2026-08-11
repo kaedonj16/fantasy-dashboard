@@ -254,8 +254,8 @@ def build_compare_page_body(popular_html: str = "") -> str:
               </div>
               <div class="compare-tier-suggest" id="cmpSuggest2" hidden></div>
             </div>
-            <div class="compare-vs compare-vs-opt" aria-hidden="true">VS</div>
-            <div class="compare-picker compare-picker-opt">
+            <div class="compare-vs compare-vs-opt" aria-hidden="true" hidden>VS</div>
+            <div class="compare-picker compare-picker-opt" hidden>
               <label class="compare-pick-label">Player 3 <span class="compare-pick-opt">optional</span></label>
               <div class="compare-pick-field">
                 <input type="text" class="compare-pick-input" id="cmpPick3" placeholder="Add a third…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="cmpResults3" aria-autocomplete="list" aria-label="Search player 3">
@@ -266,6 +266,7 @@ def build_compare_page_body(popular_html: str = "") -> str:
             </div>
           </div>
           <div class="compare-actions" id="cmpActions" hidden>
+            <button type="button" class="compare-action-btn compare-add-third" id="cmpAddThird" data-cmp-action="addthird" title="Add a third player to the comparison">&#43; Add third</button>
             <button type="button" class="compare-action-btn" data-cmp-action="swap" title="Swap the two players">&#8646; Swap sides</button>
             <button type="button" class="compare-action-btn" data-cmp-action="copy" title="Copy a shareable link">Copy link</button>
             <button type="button" class="compare-action-btn" data-cmp-action="watch" title="Add both players to your watchlist">&#9734; Watch both</button>

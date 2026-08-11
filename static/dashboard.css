@@ -7647,6 +7647,23 @@ select:focus {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
 }
 
+/* Weekly/Season toggle in the compare usage panel (mirrors .pm-trends-mode). */
+.compare-trends-mode {
+  display: inline-flex; gap: 2px; padding: 3px; margin: 0 0 12px;
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+  border-radius: 12px;
+}
+.compare-trends-mode-btn {
+  padding: 6px 16px; font-size: 12px; font-weight: 700; cursor: pointer;
+  border: 0; border-radius: 9px; background: transparent; color: var(--text-muted);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.compare-trends-mode-btn:hover { color: var(--text); }
+.compare-trends-mode-btn.is-active {
+  background: var(--accent, #3b82f6); color: var(--on-accent, #fff);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
 /* Weekly datapoint hover tooltip */
 .wk-tip {
   position: fixed; z-index: 60; pointer-events: none; white-space: nowrap;
@@ -18480,11 +18497,14 @@ tr.team-clickable {
 .compare-page-title::after { display: none; }
 .compare-page-sub { margin: 8px 0 0; color: var(--text-muted); font-size: 15px; }
 .compare-pickers {
-  display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; gap: 16px; align-items: start;
+  display: grid; grid-template-columns: 1fr auto 1fr; gap: 16px; align-items: start;
   background: var(--card); border: 1px solid var(--border);
   border-radius: var(--radius-lg, 18px); padding: 18px 20px;
   box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, .04));
 }
+/* The third slot is revealed on demand; only then do we widen to 5 columns so a
+   hidden third doesn't leave an empty track. */
+.compare-pickers.has-third { grid-template-columns: 1fr auto 1fr auto 1fr; }
 .compare-picker { min-width: 0; }
 /* The third player is optional (shortlist / tie-break); tag its label and keep
    the "VS" before it visually lighter than the required head-to-head divider. */
@@ -18535,14 +18555,18 @@ tr.team-clickable {
 }
 .compare-pick-results:empty { display: none; }
 .compare-pick-result {
-  width: 100%; display: flex; flex-direction: column; gap: 1px; align-items: flex-start;
-  padding: 9px 12px; background: none; border: none; border-bottom: 0.5px solid var(--border);
-  cursor: pointer; text-align: left;
+  width: 100%; display: flex; flex-direction: row; gap: 10px; align-items: center;
+  padding: 8px 12px; background: none; border: none; border-bottom: 0.5px solid var(--border);
+  cursor: pointer; text-align: left; transition: background 0.12s ease;
 }
 .compare-pick-result:last-child { border-bottom: none; }
 .compare-pick-result:hover,
 .compare-pick-result.active { background: var(--bg-alt); }
-.compare-pick-rname { font-weight: 600; color: var(--text); font-size: 14px; display: flex; align-items: center; gap: 7px; }
+.compare-pick-result .compare-chip-pos {
+  width: 30px; text-align: center; padding: 3px 0; flex: 0 0 30px;
+}
+.compare-pick-rtext { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.compare-pick-rname { font-weight: 600; color: var(--text); font-size: 14px; display: flex; align-items: center; gap: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .compare-pick-rmeta { font-size: 11px; color: var(--text-muted); }
 .compare-pick-empty { padding: 12px; text-align: center; color: var(--text-muted); font-size: 13px; }
 /* Tier-average rows in the picker read as baselines, not players. */
@@ -18567,6 +18591,13 @@ tr.team-clickable {
   transition: border-color .15s ease, background .15s ease, transform .1s ease;
 }
 .compare-action-btn:hover { border-color: var(--accent); color: var(--accent); }
+/* "Add third" reads as an additive action (dashed, accent-tinted). */
+.compare-add-third {
+  border-style: dashed; color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+.compare-add-third:hover { background: color-mix(in srgb, var(--accent) 9%, transparent); border-color: var(--accent); }
+.compare-add-third[hidden] { display: none !important; }
 .compare-action-btn:active { transform: translateY(1px); }
 
 /* Empty state: feature strip + recent + popular quick-start matchups. */
