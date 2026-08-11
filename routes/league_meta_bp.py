@@ -217,12 +217,23 @@ def api_my_leagues():
     switcher can navigate cross-platform."""
     out = []
     account_id = session.get("account_id")
+    try:
+        _cur_season = int((get_nfl_state() or {}).get("season") or 0) or None
+    except Exception:
+        _cur_season = None
     if account_id:
         try:
             from dashboard_services.accounts import list_user_leagues
             for m in list_user_leagues(account_id):
                 plat = m.get("platform") or "sleeper"
                 season = m.get("season")
+                # ESPN league IDs persist across seasons, so a league linked in a
+                # prior year should still open the CURRENT season (the portfolio
+                # already navigates ESPN links this way — keep the switcher in
+                # step). Yahoo keys are season-specific, so its season is left as
+                # stored; Sleeper account rows likewise keep their season.
+                if plat == "espn" and _cur_season and season and int(season) < _cur_season:
+                    season = _cur_season
                 name = m.get("name") or f"{plat.title()} League"
                 label = f"{name} · {season}" if season else name
                 out.append({

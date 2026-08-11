@@ -2786,12 +2786,25 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         # linked ESPN league, stranding the user with no way back. The switcher
         # hides itself client-side when there are 0-1 leagues to switch between.
         if viewer_username or account_id:
+            # Current league's display name, read straight from the warm dashboard
+            # cache (the page already built it — no extra fetch). Lets the switcher
+            # show the league you're on even when it isn't one of your linked/account
+            # leagues, so the dropdown never mislabels a different league as current.
+            _cur_name = ""
+            if league_id and platform and season:
+                try:
+                    _entry = DASHBOARD_CACHE.get(_cache_key(platform, int(season), str(league_id)))
+                    if _entry:
+                        _cur_name = ((_entry.get("ctx") or {}).get("league") or {}).get("name") or ""
+                except Exception:
+                    _cur_name = ""
             league_switcher_html = (
                 f"<div class='league-switcher-wrapper'>"
                 f"  <select id='leagueSwitcher' class='league-switcher' "
                 f"          data-current-league='{league_id}' "
                 f"          data-current-platform='{platform}' "
                 f"          data-current-season='{season}' "
+                f"          data-current-name='{html.escape(_cur_name, quote=True)}' "
                 f"          data-current-username='{viewer_username or ''}'>"
                 f"    <option value=''>Loading leagues...</option>"
                 f"  </select>"
@@ -27092,9 +27105,11 @@ def build_portfolio_body(
     }
 
     if not all_leagues_data:
+        _who = html.escape(username) if username else "your account"
         return (
             "<div class='card' style='text-align:center;padding:40px;'>"
-            f"<p>No leagues found for <strong>{html.escape(username)}</strong> in {season}.</p>"
+            f"<p>No leagues found for <strong>{_who}</strong> in {season}. "
+            "Use <strong>Link a league</strong> in the menu to add one.</p>"
             "</div>"
         )
 
@@ -27225,6 +27240,17 @@ def build_portfolio_body(
 
     # ── League list - standings-table ─────────────────────────────────────
     league_rows = ""
+    # Unlink control: only for account-linked ESPN/Yahoo leagues (Sleeper leagues
+    # come from live discovery, not the account, so there's nothing to unlink).
+    _can_unlink = bool(session.get("account_id"))
+    def _unlink_btn(_plat, _lid):
+        if not (_can_unlink and _plat in ("espn", "yahoo") and _lid):
+            return ""
+        return (
+            f"<button type='button' class='pf-unlink' data-platform='{_plat}' "
+            f"data-league='{_lid}' title='Unlink this league' aria-label='Unlink league'>&times;</button>"
+        )
+
     all_rows = valid_leagues + [lg for lg in all_leagues_data if lg.get("error") or lg.get("not_in_league")]
     for lg in all_rows:
         lid  = lg.get("league_id") or ""
@@ -27239,6 +27265,7 @@ def build_portfolio_body(
                 f"<div style='display:flex;align-items:center;gap:8px;'>"
                 f"<span style='flex:1;color:var(--text-muted);font-weight:600;'>{name}</span>"
                 f"<span style='color:var(--text-subtle);font-size:12px;'>unavailable</span>"
+                f"{_unlink_btn(plat, lid)}"
                 f"</div>"
                 f"</td>"
                 f"</tr>"
@@ -27292,7 +27319,7 @@ def build_portfolio_body(
         league_rows += (
             f"<tr class='pf-league-row'>"
             f"<td class='pf-league-name-cell'>"
-            f"<a href='{href}' class='pf-league-link'>{name}</a>{off_note}"
+            f"<a href='{href}' class='pf-league-link'>{name}</a>{off_note}{_unlink_btn(plat, lid)}"
             f"{badges_div}"
             f"</td>"
             f"<td class='pf-league-stat' data-label='Record'><span class='{rec_cls2}'>{rec}</span></td>"
