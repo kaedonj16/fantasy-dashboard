@@ -7932,9 +7932,9 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
         <nav class="os-jump-nav" aria-label="Jump to section">
           <button type="button" class="active" data-jump="os-jump-report">Report</button>
-          <button type="button" data-jump="os-jump-roster">Roster</button>
+          <button type="button" data-jump="os-jump-roster">Team Values</button>
           <button type="button" data-jump="os-jump-waivers">Waivers</button>
-          <button type="button" data-jump="os-jump-teams">Team Values</button>
+          <button type="button" data-jump="os-jump-teams">Roster</button>
         </nav>
 
         <div id="sinceLastVisitCard" class="slv-wrap" data-slv-init="1"></div>
