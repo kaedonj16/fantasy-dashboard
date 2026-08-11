@@ -50,6 +50,15 @@ _api_cache: Dict[str, tuple[float, Any]] = {}
 _api_cache_lock = threading.Lock()
 _API_CACHE_TTL = 300  # 5 minutes
 
+# Per-process map of a bare numeric league_id -> its full Yahoo league key
+# (e.g. "461.l.123456"). Yahoo's "nfl" game code only resolves to the CURRENT
+# season, so a league from any other season needs its real, season-specific game
+# key. resolve_league_key() looks the user's leagues up and fills this in; once
+# set, every _league_key() call for that id uses the correct key. The mapping is
+# permanent per league so it's safe to cache for the life of the process.
+_league_key_map: Dict[str, str] = {}
+_league_key_lock = threading.Lock()
+
 
 # ---------------------------------------------------------------------------
 # OAuth helpers
@@ -402,7 +411,89 @@ def _yahoo_get(access_token: str, path: str, params: Optional[Dict] = None) -> A
 
 
 def _league_key(league_id: str) -> str:
-    return f"{_GAME_CODE}.l.{league_id}"
+    # If the entered id already looks like a full key ("461.l.123456"), trust it.
+    lid = str(league_id)
+    if ".l." in lid:
+        return lid
+    with _league_key_lock:
+        full = _league_key_map.get(lid)
+    if full:
+        return full
+    # Fall back to the current-season game code. Correct when the league IS this
+    # season's; resolve_league_key() supplies the right key for any other season.
+    return f"{_GAME_CODE}.l.{lid}"
+
+
+def resolve_league_key(access_token: str, league_id: str) -> Dict[str, Any]:
+    """Find the real, season-specific league key for a bare numeric league_id by
+    listing the leagues the authenticated account actually belongs to.
+
+    Yahoo's "nfl" shortcut only ever points at the current season's game, so a
+    league from a prior (or not-yet-current) season can't be reached as
+    "nfl.l.<id>" — the request 403s even for a member. This walks the user's own
+    NFL leagues across seasons, matches the entered id, and caches the full key so
+    all downstream calls use it.
+
+    Returns a status dict so callers can tell a genuine wrong-account from a
+    can't-check (which must NOT be treated as denial, or a current-season league
+    that works today would start being wrongly rejected):
+      {"status": "found", "league_key", "league_id", "season", "name"}
+      {"status": "absent"}   listing succeeded, no league with that id -> wrong account/id
+      {"status": "unknown"}  listing couldn't be read -> caller falls back to a direct fetch
+    """
+    lid = str(league_id).strip()
+    if not lid:
+        return {"status": "absent"}
+    # A full key was pasted directly — accept and cache it.
+    if ".l." in lid:
+        bare = lid.split(".l.")[-1]
+        with _league_key_lock:
+            _league_key_map[bare] = lid
+        return {"status": "found", "league_key": lid, "league_id": bare,
+                "season": None, "name": None}
+    try:
+        raw = _yahoo_get(access_token, "users;use_login=1/games;game_codes=nfl/leagues")
+    except Exception as exc:
+        logger.warning("[yahoo] resolve_league_key list failed: %s", exc)
+        return {"status": "unknown"}
+
+    # Yahoo nests leagues several levels deep and inconsistently (dict-with-index
+    # vs list). Rather than track the exact shape, walk the whole tree and collect
+    # every object that carries a league_key — each one has the id/season we need.
+    found: List[Dict[str, Any]] = []
+
+    def _walk(node):
+        if isinstance(node, dict):
+            if node.get("league_key") and node.get("league_id") is not None:
+                found.append(node)
+            for v in node.values():
+                _walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                _walk(v)
+
+    _walk(raw)
+
+    matches = [lg for lg in found if str(lg.get("league_id")) == lid]
+    if not matches:
+        return {"status": "absent"}
+    # If the same numeric id exists in more than one season, prefer the newest.
+    def _season_of(lg):
+        try:
+            return int(lg.get("season") or 0)
+        except (TypeError, ValueError):
+            return 0
+    best = sorted(matches, key=_season_of, reverse=True)[0]
+    full_key = str(best.get("league_key"))
+    with _league_key_lock:
+        _league_key_map[lid] = full_key
+    return {
+        "status":     "found",
+        "league_key": full_key,
+        "league_id":  lid,
+        "season":     _season_of(best) or None,
+        "name":       best.get("name"),
+    }
 
 
 # ---------------------------------------------------------------------------
