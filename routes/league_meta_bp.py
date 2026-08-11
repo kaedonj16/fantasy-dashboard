@@ -208,6 +208,50 @@ def api_sleeper_user_leagues():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@league_meta_bp.route("/api/my-leagues")
+def api_my_leagues():
+    """Every league linked to the signed-in account, across platforms, from the
+    account's user_leagues rows (independent of push subscriptions). Falls back to
+    live Sleeper discovery for a signed-in Sleeper user who has no account yet, so
+    the switcher never regresses. Each entry carries its own platform so the
+    switcher can navigate cross-platform."""
+    out = []
+    account_id = session.get("account_id")
+    if account_id:
+        try:
+            from dashboard_services.accounts import list_user_leagues
+            for m in list_user_leagues(account_id):
+                plat = m.get("platform") or "sleeper"
+                season = m.get("season")
+                name = m.get("name") or f"{plat.title()} League"
+                label = f"{name} · {season}" if season else name
+                out.append({
+                    "platform": plat,
+                    "league_id": m.get("league_id"),
+                    "season": season,
+                    "name": name,
+                    "label": label,
+                })
+        except Exception as exc:
+            logger.warning("[my-leagues] account read failed: %s", exc)
+
+    if not out:
+        viewer_uid = session.get("viewer_user_id")
+        if viewer_uid:
+            try:
+                season = int(get_nfl_state().get("season") or 0)
+                for lg in (get_sleeper_user_leagues(viewer_uid, season) or []):
+                    if not lg.get("league_id"):
+                        continue
+                    opt = format_sleeper_league_option(lg)
+                    opt["platform"] = "sleeper"
+                    out.append(opt)
+            except Exception as exc:
+                logger.warning("[my-leagues] sleeper fallback failed: %s", exc)
+
+    return jsonify({"ok": True, "leagues": out})
+
+
 @league_meta_bp.route("/api/weekly-trends")
 def api_weekly_trends():
     """Bulk per-player usage trend map (last-6-week series + recent-vs-season

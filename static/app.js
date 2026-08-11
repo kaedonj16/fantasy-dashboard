@@ -9536,8 +9536,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const currentSeason = leagueSwitcher.getAttribute('data-current-season');
     const username = leagueSwitcher.getAttribute('data-current-username');
 
-    // Fetch user leagues
-    fetch('/api/sleeper-user-leagues?username=' + username)
+    // Fetch user leagues (account-scoped, cross-platform; falls back to Sleeper
+    // discovery server-side for users without an account yet).
+    fetch('/api/my-leagues')
       .then(res => res.json())
       .then(data => {
         // Handle error response
@@ -9555,6 +9556,7 @@ document.addEventListener('DOMContentLoaded', function() {
             option.value = league.league_id;
             option.textContent = league.label;
             option.dataset.season = league.season || currentSeason;
+            option.dataset.platform = league.platform || currentPlatform;
             if (league.league_id === currentLeagueId) {
               option.selected = true;
             }
@@ -9580,7 +9582,7 @@ document.addEventListener('DOMContentLoaded', function() {
               if (wi >= warmList.length) return;
               const l = warmList[wi++];
               const season = l.season || currentSeason;
-              fetch('/api/prewarm-league?platform=' + encodeURIComponent(currentPlatform) +
+              fetch('/api/prewarm-league?platform=' + encodeURIComponent(l.platform || currentPlatform) +
                     '&season=' + encodeURIComponent(season) +
                     '&league_id=' + encodeURIComponent(l.league_id),
                     { credentials: 'same-origin' })
@@ -9613,12 +9615,14 @@ document.addEventListener('DOMContentLoaded', function() {
         const lastSegment = pathParts[pathParts.length - 1] || '';
         const currentPage = leaguePages.has(lastSegment) ? lastSegment : 'dashboard';
 
-        // Use the selected league's own season (not the current page's season)
+        // Use the selected league's own season and platform (not the current
+        // page's), so switching to an ESPN/Yahoo league lands on the right route.
         const selectedOption = this.options[this.selectedIndex];
         const selectedSeason = selectedOption.dataset.season || currentSeason;
+        const selectedPlatform = selectedOption.dataset.platform || currentPlatform;
 
         // Redirect to new league with same page
-        window.location.href = `/${currentPlatform}/${selectedSeason}/${selectedLeagueId}/${currentPage}`;
+        window.location.href = `/${selectedPlatform}/${selectedSeason}/${selectedLeagueId}/${currentPage}`;
       }
     });
   }
