@@ -7550,11 +7550,11 @@ select:focus {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 8px; margin-top: 6px;
 }
-@media (min-width: 560px) {
+@media (min-width: 601px) {
   .pm-st-grid { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
 }
 .pm-st-block { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
-@media (max-width: 559px) {
+@media (max-width: 600px) {
   .pm-st-block { padding: 6px 8px; }
   .pm-st-title { font-size: 11px; }
   .pm-st-caption { font-size: 10.5px; }
