@@ -1165,8 +1165,8 @@ FORM_BODY = """
                     style="display:flex;flex-direction:column;align-items:center;gap:2px;width:100%;
                            background:transparent;color:var(--text-muted);border:1px solid var(--border);
                            border-radius:10px;padding:9px 14px;cursor:pointer;">
-              <span style="font-size:13.5px;font-weight:700;color:var(--text);">Just show the dashboard</span>
-              <span style="font-size:11px;font-weight:500;">Quick view on this device &middot; no account</span>
+              <span style="font-size:13.5px;font-weight:700;color:var(--text);">Continue without account</span>
+              <span style="font-size:11px;font-weight:500;">Quick view on this device &middot; nothing saved</span>
             </button>
           </div>
 
