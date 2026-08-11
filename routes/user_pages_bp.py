@@ -15,6 +15,7 @@ fetched when a request is actually served.
 """
 from __future__ import annotations
 
+import html
 import logging
 from datetime import datetime
 
@@ -324,6 +325,44 @@ def page_portfolio():
         holdings, num_leagues, nfl_exposure, cross_pos,
         total_wins, total_losses, total_ties,
     )
+
+    # Cross-platform: surface leagues linked from ESPN / Yahoo (the account's
+    # user_leagues) as simple cards above the Sleeper analytics, so linked
+    # leagues show in My Leagues regardless of platform. Full per-platform
+    # analytics for those is a later step.
+    try:
+        acct_id = session.get("account_id")
+        if acct_id:
+            from dashboard_services.accounts import list_user_leagues
+            others = [m for m in list_user_leagues(acct_id) if (m.get("platform") or "") != "sleeper"]
+            if others:
+                _badge = {"espn": ("ESPN", "#d50a0a"), "yahoo": ("Yahoo", "#6001d2")}
+                cards = []
+                for m in others:
+                    plat = m.get("platform") or ""
+                    lid = m.get("league_id")
+                    szn = m.get("season") or season
+                    label, color = _badge.get(plat, (plat.title() or "League", "#6b7280"))
+                    nm = html.escape(m.get("name") or f"{label} League")
+                    cards.append(
+                        f"<a href='/{plat}/{szn}/{lid}/dashboard' style='display:flex;align-items:center;"
+                        f"justify-content:space-between;gap:10px;padding:12px 14px;border:1px solid var(--border);"
+                        f"border-radius:12px;text-decoration:none;color:var(--text);background:var(--card);'>"
+                        f"<span style='display:flex;align-items:center;gap:10px;min-width:0;'>"
+                        f"<span style='font-size:10px;font-weight:800;color:#fff;background:{color};"
+                        f"padding:2px 7px;border-radius:6px;flex:0 0 auto;'>{label}</span>"
+                        f"<span style='font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>{nm}</span>"
+                        f"</span><span style='color:var(--text-muted);font-size:18px;'>&rsaquo;</span></a>"
+                    )
+                body = (
+                    "<div class='card' style='margin-bottom:14px;'>"
+                    "<div class='card-header'><h3 style='margin:0;'>Linked from other platforms</h3></div>"
+                    "<div class='card-body' style='display:flex;flex-direction:column;gap:8px;'>"
+                    + "".join(cards) +
+                    "</div></div>"
+                ) + body
+    except Exception:
+        logger.debug("portfolio cross-platform section failed", exc_info=True)
     # Always render with a league nav context - fall back to first valid league
     nav_league_id = from_league
     nav_platform = from_platform
