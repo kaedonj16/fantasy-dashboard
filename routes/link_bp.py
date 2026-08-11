@@ -121,6 +121,31 @@ def link_pending():
     return jsonify({"ok": True, "auth_url": "/auth/google?next=/"})
 
 
+@link_bp.route("/api/link/remove", methods=["POST"])
+def link_remove():
+    """Unlink a league from the signed-in account."""
+    account_id = session.get("account_id")
+    if not account_id:
+        return jsonify({"ok": False, "error": "Not signed in."}), 401
+    data = request.get_json(force=True) or {}
+    platform = (data.get("platform") or "").strip().lower()
+    league_id = str(data.get("league_id") or "").strip()
+    if not platform or not league_id:
+        return jsonify({"ok": False, "error": "Missing platform or league_id."}), 400
+    season = data.get("season")
+    try:
+        season = int(season) if season else None
+    except (TypeError, ValueError):
+        season = None
+    try:
+        from dashboard_services.accounts import remove_user_league
+        remove_user_league(account_id, platform, league_id, season=season)
+    except Exception as exc:
+        logger.warning("[link/remove] failed: %s", exc)
+        return jsonify({"ok": False, "error": "Could not remove that league."}), 500
+    return jsonify({"ok": True})
+
+
 @link_bp.route("/api/link/add", methods=["POST"])
 def link_add():
     account_id = session.get("account_id")

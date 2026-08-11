@@ -345,7 +345,8 @@ def page_portfolio():
                     label, color = _badge.get(plat, (plat.title() or "League", "#6b7280"))
                     nm = html.escape(m.get("name") or f"{label} League")
                     cards.append(
-                        f"<a href='/{plat}/{szn}/{lid}/dashboard' style='display:flex;align-items:center;"
+                        "<div style='display:flex;align-items:center;gap:8px;'>"
+                        f"<a href='/{plat}/{szn}/{lid}/dashboard' style='flex:1;min-width:0;display:flex;align-items:center;"
                         f"justify-content:space-between;gap:10px;padding:12px 14px;border:1px solid var(--border);"
                         f"border-radius:12px;text-decoration:none;color:var(--text);background:var(--card);'>"
                         f"<span style='display:flex;align-items:center;gap:10px;min-width:0;'>"
@@ -353,6 +354,11 @@ def page_portfolio():
                         f"padding:2px 7px;border-radius:6px;flex:0 0 auto;'>{label}</span>"
                         f"<span style='font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>{nm}</span>"
                         f"</span><span style='color:var(--text-muted);font-size:18px;'>&rsaquo;</span></a>"
+                        f"<button type='button' class='pf-unlink' data-plat='{plat}' data-lid='{lid}' data-season='{szn}' "
+                        "title='Unlink league' aria-label='Unlink league' style='flex:0 0 auto;width:34px;height:34px;"
+                        "border:1px solid var(--border);background:var(--card);color:var(--text-muted);border-radius:9px;"
+                        "cursor:pointer;font-size:16px;line-height:1;'>&times;</button>"
+                        "</div>"
                     )
                 body = (
                     "<div class='card' style='margin-bottom:14px;'>"
@@ -360,6 +366,17 @@ def page_portfolio():
                     "<div class='card-body' style='display:flex;flex-direction:column;gap:8px;'>"
                     + "".join(cards) +
                     "</div></div>"
+                    "<script>(function(){"
+                    "document.querySelectorAll('.pf-unlink').forEach(function(b){"
+                    "b.addEventListener('click',function(){"
+                    "if(!confirm('Unlink this league from your account?'))return;"
+                    "b.disabled=true;"
+                    "fetch('/api/link/remove',{method:'POST',headers:{'Content-Type':'application/json'},"
+                    "body:JSON.stringify({platform:b.dataset.plat,league_id:b.dataset.lid,"
+                    "season:b.dataset.season?Number(b.dataset.season):null})})"
+                    ".then(function(r){return r.json();}).then(function(d){"
+                    "if(d.ok){location.reload();}else{b.disabled=false;alert(d.error||'Could not unlink.');}})"
+                    ".catch(function(){b.disabled=false;});});});})();</script>"
                 ) + body
     except Exception:
         logger.debug("portfolio cross-platform section failed", exc_info=True)
