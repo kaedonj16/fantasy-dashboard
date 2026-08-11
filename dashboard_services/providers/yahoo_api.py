@@ -65,15 +65,21 @@ def _env_clean(key: str) -> str:
     return (os.environ.get(key) or "").strip()
 
 
-def get_authorization_url(state: str) -> str:
-    """Return the Yahoo OAuth 2.0 authorization URL the user should be redirected to."""
+def get_authorization_url(state: str, force_login: bool = False) -> str:
+    """Return the Yahoo OAuth 2.0 authorization URL the user should be redirected to.
+
+    force_login=True adds prompt=login so Yahoo shows its account chooser instead of
+    silently re-authorizing whatever account is already signed into the browser. Use
+    it when recovering from a 403 (wrong account) — otherwise the user loops back to
+    the same wrong account. Leave it off for normal sign-in to keep that one-tap.
+    """
     client_id    = _env_clean("YAHOO_CLIENT_ID")
     redirect_uri = _env_clean("YAHOO_REDIRECT_URI")
     # Log the exact values we send (not the secret) so an "uh-oh" from a
     # mismatch is diagnosable: compare these against the Yahoo app registration.
     logger.info(
-        "[yahoo-auth] building auth request: client_id=%s… redirect_uri=%r scope=%r",
-        client_id[:10], redirect_uri, YAHOO_SCOPE,
+        "[yahoo-auth] building auth request: client_id=%s… redirect_uri=%r scope=%r force_login=%s",
+        client_id[:10], redirect_uri, YAHOO_SCOPE, force_login,
     )
     params = {
         "client_id":     client_id,
@@ -82,6 +88,8 @@ def get_authorization_url(state: str) -> str:
         "scope":         YAHOO_SCOPE,
         "state":         state,
     }
+    if force_login:
+        params["prompt"] = "login"
     return f"{YAHOO_AUTH_URL}?{urlencode(params)}"
 
 

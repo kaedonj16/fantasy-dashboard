@@ -51,6 +51,10 @@ def yahoo_auth_start():
     league_id = (request.args.get("league_id") or "").strip()
     next_url  = (request.args.get("next") or "/").strip()
     team_name = (request.args.get("team_name") or "").strip()
+    # reauth=1 means we're recovering from a 403 (wrong account) — force Yahoo's
+    # account chooser so the user can pick a different account instead of being
+    # silently re-authorized as the same one and hitting the same 403.
+    force_login = (request.args.get("reauth") or "").strip() in ("1", "true", "yes")
 
     # Send Yahoo only a short, opaque state token. A JSON blob (braces, quotes,
     # spaces) in the `state` parameter trips Yahoo's authorization endpoint and
@@ -64,7 +68,7 @@ def yahoo_auth_start():
         "team_name": team_name,
     }
 
-    auth_url = get_authorization_url(state=state)
+    auth_url = get_authorization_url(state=state, force_login=force_login)
     logger.info("[yahoo-auth] redirecting to: %s", auth_url)
     return redirect(auth_url)
 
@@ -201,6 +205,7 @@ def api_yahoo_validate_league():
             session.pop("yahoo_guid", None)
             return jsonify({
                 "ok": False, "needs_oauth": True,
+                "auth_url": "/auth/yahoo?reauth=1",
                 "error": ("That Yahoo account can't access league " + league_id +
                           ". Reconnect with the Yahoo account that's in this league."),
             }), 401

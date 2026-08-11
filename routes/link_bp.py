@@ -82,7 +82,7 @@ def link_yahoo_preview():
             session.pop("yahoo_access_token", None)
             session.pop("yahoo_guid", None)
             return jsonify({
-                "ok": False, "needs_oauth": True, "auth_url": "/auth/yahoo?next=/portfolio",
+                "ok": False, "needs_oauth": True, "auth_url": "/auth/yahoo?reauth=1&next=/portfolio",
                 "error": ("That Yahoo account can't access league " + league_id +
                           ". Reconnect with the account that's in this league."),
             }), 401
