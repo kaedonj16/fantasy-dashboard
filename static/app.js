@@ -8788,6 +8788,24 @@ if (!platformBtns.length) return;
 
   let currentPlatform = "sleeper";
 
+  // No sign-in until a league is actually selected. Gate both continue buttons
+  // ("Continue with Google" and "Continue without account") on the league <select>
+  // having a value — greyed + not-clickable until the user picks one.
+  const googleBtnEl = document.getElementById("googleContinueBtn");
+  const guestSubmitEl = generateWrap ? generateWrap.querySelector('button[type="submit"]') : null;
+  function syncHomeContinueState() {
+    const hasLeague = !!(leagueSelect && leagueSelect.value);
+    [googleBtnEl, guestSubmitEl].forEach(function (btn) {
+      if (!btn) return;
+      btn.disabled = !hasLeague;
+      btn.style.opacity = hasLeague ? "" : "0.5";
+      btn.style.cursor = hasLeague ? "pointer" : "not-allowed";
+      btn.title = hasLeague ? "" : "Select a league first";
+    });
+  }
+  if (leagueSelect) leagueSelect.addEventListener("change", syncHomeContinueState);
+  syncHomeContinueState();
+
   function switchPlatform(platform) {
     currentPlatform = platform;
     platformBtns.forEach(b => b.classList.remove("active"));
@@ -8941,6 +8959,7 @@ if (!platformBtns.length) return;
 
         leagueSelectWrap.style.display = "block";
         generateWrap.style.display = "block";
+        syncHomeContinueState();
       } catch (err) {
         errorBox.textContent = err.message || "Unable to load leagues.";
         errorBox.style.display = "block";
@@ -9016,6 +9035,7 @@ if (!platformBtns.length) return;
         // ESPN gets the same select-league-then-login option as Sleeper.
         if (leagueSelectWrap) leagueSelectWrap.style.display = "block";
         if (generateWrap) generateWrap.style.display = "block";
+        syncHomeContinueState();
         espnSubmitBtn.disabled = false;
         espnSubmitBtn.textContent = "Find My League";
       } catch (err) {
@@ -9038,7 +9058,10 @@ if (!platformBtns.length) return;
       const platform = (formPlatform && formPlatform.value) || "sleeper";
       const sel = document.getElementById("league");
       const leagueId = sel && sel.value;
-      if (!leagueId) { window.location.href = "/auth/google?next=/"; return; }
+      // Require a selected league before signing in — no throwaway "sign in with
+      // no league" path. The button is disabled until then; this guards clicks
+      // that slip through (keyboard, etc.).
+      if (!leagueId) { syncHomeContinueState(); if (window.brShake) window.brShake(sel); return; }
       const opt = sel.options[sel.selectedIndex];
       const name = opt ? opt.textContent : "";
       const seasonEl = document.querySelector('#leagueSelectForm input[name="season"]');
