@@ -2764,7 +2764,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Graphs",   "league_pages.page_graphs",   "graphs",   False),
         ("History",  "league_pages.page_history",  "history",  False),
     ], ["awards", "graphs", "history"], "statsNavDropdown"))
-    if session.get("viewer_username"):
+    if session.get("viewer_username") or session.get("account_id"):
         _portfolio_cls = "nav-pill active" if active == "portfolio" else "nav-pill"
         _portfolio_href = f"/portfolio?from_league={league_id}&platform={platform}&season={season}"
         nav_pills.append(f"<a class='{_portfolio_cls}' href='{_portfolio_href}'>My Leagues</a>")
