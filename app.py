@@ -2086,7 +2086,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     ])
 
     portfolio_link = ""
-    if session.get("viewer_username"):
+    if session.get("viewer_username") or session.get("account_id"):
         portfolio_link = (
             f"<a class='br-sheet-link' "
             f"href='/portfolio?from_league={league_id}&platform={platform}&season={season}'>"
@@ -2774,21 +2774,25 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # Single switcher for settings dropdown (works on both desktop and mobile)
     league_switcher_html = ""
     viewer_username = session.get("viewer_username")
+    account_id = session.get("account_id")
     # Show the full logged-in menu (incl. Sign Out) for anyone with a resolved
-    # viewer, and for every ESPN league page: ESPN "sign-in" is entering the
-    # league itself (team-name matching is optional, so viewer_username is often
-    # unset), so there's no separate logged-in flag to key off. The league
-    # switcher stays gated to non-ESPN viewers below.
-    if viewer_username or platform == "espn":
-        # ESPN has no username-based league list, so it gets no league switcher.
-        if viewer_username and platform != "espn":
+    # viewer, for every ESPN league page (ESPN "sign-in" is entering the league
+    # itself, so viewer_username is often unset), and for any signed-in account.
+    if viewer_username or platform == "espn" or account_id:
+        # Build the league switcher whenever there's a viewer OR a linked account.
+        # It's populated from /api/my-leagues, which merges the account's leagues
+        # across ALL platforms (Sleeper/ESPN/Yahoo), so it works on ESPN and Yahoo
+        # league pages too — earlier it was gated to non-ESPN and vanished on a
+        # linked ESPN league, stranding the user with no way back. The switcher
+        # hides itself client-side when there are 0-1 leagues to switch between.
+        if viewer_username or account_id:
             league_switcher_html = (
                 f"<div class='league-switcher-wrapper'>"
                 f"  <select id='leagueSwitcher' class='league-switcher' "
                 f"          data-current-league='{league_id}' "
                 f"          data-current-platform='{platform}' "
                 f"          data-current-season='{season}' "
-                f"          data-current-username='{viewer_username}'>"
+                f"          data-current-username='{viewer_username or ''}'>"
                 f"    <option value=''>Loading leagues...</option>"
                 f"  </select>"
                 f"</div>"
