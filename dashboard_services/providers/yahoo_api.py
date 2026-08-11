@@ -129,7 +129,19 @@ def exchange_code_for_tokens(code: str) -> Dict[str, Any]:
         timeout=15,
     )
     resp.raise_for_status()
-    return resp.json()
+    tok = resp.json()
+    # Non-sensitive diagnostics: which fields Yahoo returned and any granted scope.
+    # A missing xoauth_yahoo_guid and/or a scope that isn't fspt-r is the tell for
+    # a token that authenticated but carries no Fantasy permission.
+    try:
+        logger.info(
+            "[yahoo] token exchange ok: keys=%s token_type=%s expires_in=%s scope=%r guid_present=%s",
+            sorted(tok.keys()), tok.get("token_type"), tok.get("expires_in"),
+            tok.get("scope"), bool(tok.get("xoauth_yahoo_guid")),
+        )
+    except Exception:
+        pass
+    return tok
 
 
 def get_login_guid(access_token: str, league_id: str = "") -> str:
@@ -401,6 +413,13 @@ def _yahoo_get(access_token: str, path: str, params: Optional[Dict] = None) -> A
         headers={"Authorization": f"Bearer {access_token}"},
         timeout=15,
     )
+    if resp.status_code >= 400:
+        # Yahoo puts the real reason in the body (e.g. "token_expired",
+        # "insufficient scope", "not in this league"). raise_for_status() drops
+        # it, so surface it here — this is what tells a scope/permission problem
+        # apart from a genuine league-membership 403.
+        body = (resp.text or "")[:500].replace("\n", " ")
+        logger.warning("[yahoo] %s %s -> %s body=%s", "GET", path, resp.status_code, body)
     resp.raise_for_status()
     data = resp.json()
 
