@@ -68,7 +68,11 @@ def build_portfolio_body(*args, **kwargs):
 def page_portfolio():
     viewer_username = session.get("viewer_username")
     viewer_user_id = session.get("viewer_user_id")
-    if not viewer_username or not viewer_user_id:
+    # Allow account users through even without a Sleeper viewer identity: a user
+    # who linked only ESPN/Yahoo leagues via a Google account has an account_id but
+    # no viewer_username/viewer_user_id, and their leagues are merged in below from
+    # the account. Without this they'd be bounced home from their own My Leagues.
+    if (not viewer_username or not viewer_user_id) and not session.get("account_id"):
         return redirect(url_for("index"))
     # Use league nav context from query param, falling back to last visited league
     from_league = request.args.get("from_league", "").strip() or session.get("last_league_id") or None

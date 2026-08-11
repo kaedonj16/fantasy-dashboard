@@ -10150,6 +10150,30 @@ html[data-theme="dark"] .podium .bar {
   text-decoration: underline;
 }
 
+/* Unlink (×) button on My Leagues cards for account-linked leagues. */
+.pf-unlink {
+  margin-left: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-subtle);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 5px;
+  border-radius: 5px;
+  opacity: 0.55;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+.pf-unlink:hover {
+  opacity: 1;
+  color: var(--loss);
+  background: rgba(127, 127, 127, 0.14);
+}
+.pf-unlink:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
 .sorted-asc::after {
   content: " ▲";
   color: var(--accent);

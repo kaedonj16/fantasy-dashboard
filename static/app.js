@@ -8788,6 +8788,24 @@ if (!platformBtns.length) return;
 
   let currentPlatform = "sleeper";
 
+  // No sign-in until a league is actually selected. Gate both continue buttons
+  // ("Continue with Google" and "Continue without account") on the league <select>
+  // having a value — greyed + not-clickable until the user picks one.
+  const googleBtnEl = document.getElementById("googleContinueBtn");
+  const guestSubmitEl = generateWrap ? generateWrap.querySelector('button[type="submit"]') : null;
+  function syncHomeContinueState() {
+    const hasLeague = !!(leagueSelect && leagueSelect.value);
+    [googleBtnEl, guestSubmitEl].forEach(function (btn) {
+      if (!btn) return;
+      btn.disabled = !hasLeague;
+      btn.style.opacity = hasLeague ? "" : "0.5";
+      btn.style.cursor = hasLeague ? "pointer" : "not-allowed";
+      btn.title = hasLeague ? "" : "Select a league first";
+    });
+  }
+  if (leagueSelect) leagueSelect.addEventListener("change", syncHomeContinueState);
+  syncHomeContinueState();
+
   function switchPlatform(platform) {
     currentPlatform = platform;
     platformBtns.forEach(b => b.classList.remove("active"));
@@ -8941,6 +8959,7 @@ if (!platformBtns.length) return;
 
         leagueSelectWrap.style.display = "block";
         generateWrap.style.display = "block";
+        syncHomeContinueState();
       } catch (err) {
         errorBox.textContent = err.message || "Unable to load leagues.";
         errorBox.style.display = "block";
@@ -9016,6 +9035,7 @@ if (!platformBtns.length) return;
         // ESPN gets the same select-league-then-login option as Sleeper.
         if (leagueSelectWrap) leagueSelectWrap.style.display = "block";
         if (generateWrap) generateWrap.style.display = "block";
+        syncHomeContinueState();
         espnSubmitBtn.disabled = false;
         espnSubmitBtn.textContent = "Find My League";
       } catch (err) {
@@ -9038,7 +9058,10 @@ if (!platformBtns.length) return;
       const platform = (formPlatform && formPlatform.value) || "sleeper";
       const sel = document.getElementById("league");
       const leagueId = sel && sel.value;
-      if (!leagueId) { window.location.href = "/auth/google?next=/"; return; }
+      // Require a selected league before signing in — no throwaway "sign in with
+      // no league" path. The button is disabled until then; this guards clicks
+      // that slip through (keyboard, etc.).
+      if (!leagueId) { syncHomeContinueState(); if (window.brShake) window.brShake(sel); return; }
       const opt = sel.options[sel.selectedIndex];
       const name = opt ? opt.textContent : "";
       const seasonEl = document.querySelector('#leagueSelectForm input[name="season"]');
@@ -9619,16 +9642,33 @@ document.addEventListener('DOMContentLoaded', function() {
           return;
         }
 
-        // Handle success
-        if (data.leagues && data.leagues.length > 1) {
+        // Handle success. Make sure the league you're viewing is always in the
+        // list: if it isn't one of your account/linked leagues, inject it (marked
+        // current) so the dropdown reflects where you actually are instead of
+        // showing some other league as selected — and so a single linked league
+        // still gives you something to switch between.
+        const leagues = Array.isArray(data.leagues) ? data.leagues.slice() : [];
+        const hasCurrent = leagues.some(l => String(l.league_id) === String(currentLeagueId));
+        if (!hasCurrent && currentLeagueId) {
+          const curName = leagueSwitcher.getAttribute('data-current-name') || 'Current league';
+          leagues.unshift({
+            league_id: currentLeagueId,
+            platform: currentPlatform,
+            season: currentSeason,
+            name: curName,
+            label: currentSeason ? (curName + ' · ' + currentSeason) : curName,
+          });
+        }
+
+        if (leagues.length > 1) {
           leagueSwitcher.innerHTML = '';
-          data.leagues.forEach(league => {
+          leagues.forEach(league => {
             const option = document.createElement('option');
             option.value = league.league_id;
             option.textContent = league.label;
             option.dataset.season = league.season || currentSeason;
             option.dataset.platform = league.platform || currentPlatform;
-            if (league.league_id === currentLeagueId) {
+            if (String(league.league_id) === String(currentLeagueId)) {
               option.selected = true;
             }
             leagueSwitcher.appendChild(option);
@@ -9640,8 +9680,8 @@ document.addEventListener('DOMContentLoaded', function() {
           // hammer the API; same-season leagues first (most likely to switch to),
           // current league skipped, and capped.
           try {
-            const others = data.leagues.filter(
-              l => l.league_id && l.league_id !== currentLeagueId
+            const others = leagues.filter(
+              l => l.league_id && String(l.league_id) !== String(currentLeagueId)
             );
             others.sort((a, b) =>
               (String(b.season) === String(currentSeason)) -
@@ -9697,6 +9737,34 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
   }
+});
+
+// Unlink a linked league from the My Leagues page (delegated so it works for any
+// row). Removes the account's user_leagues row, then reloads the list.
+document.addEventListener('click', function (e) {
+  const btn = e.target.closest && e.target.closest('.pf-unlink');
+  if (!btn) return;
+  e.preventDefault();
+  const platform = btn.getAttribute('data-platform');
+  const leagueId = btn.getAttribute('data-league');
+  if (!platform || !leagueId) return;
+  if (!window.confirm('Remove this linked league from your account?')) return;
+  btn.disabled = true;
+  fetch('/api/link/remove', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ platform: platform, league_id: leagueId }),
+  })
+    .then(r => r.json())
+    .then(d => {
+      if (d && d.ok) { window.location.reload(); return; }
+      btn.disabled = false;
+      if (window.showToast) showToast((d && d.error) || 'Could not remove that league.');
+    })
+    .catch(() => {
+      btn.disabled = false;
+      if (window.showToast) showToast('Network error removing league.');
+    });
 });
 
 // Mobile nav toggle functionality
