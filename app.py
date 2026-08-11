@@ -1500,6 +1500,7 @@ BASE_HTML = """
         <div class="site-footer-note">
           © <span id="footer-year"></span> BR Fantasy. All rights reserved.
         </div>
+        {yahoo_attribution}
       </div>
     </footer>
 
@@ -3512,9 +3513,19 @@ def render_page(
     viewer_roster_id = session.get("viewer_roster_id") or ""
     viewer_user_id   = session.get("viewer_user_id") or ""
 
+    # Yahoo Fantasy API terms require a "Fantasy data provided by Yahoo Fantasy"
+    # attribution with a link back on any view that shows Yahoo data. Render it in
+    # the footer only on Yahoo-platform pages (harmless no-op everywhere else).
+    _yahoo_attribution = (
+        '<div class="site-footer-note yahoo-attribution">Fantasy data provided by '
+        '<a href="https://football.fantasysports.yahoo.com/" target="_blank" rel="noopener">'
+        'Yahoo Fantasy</a>.</div>'
+    ) if platform == "yahoo" else ""
+
     import json as _json
     html = BASE_HTML.format(
         title=title,
+        yahoo_attribution=_yahoo_attribution,
         meta_tags=meta_tags,
         og_tags=og_tags,
         json_ld=json_ld,
