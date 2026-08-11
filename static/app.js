@@ -342,13 +342,21 @@ document.body.scrollTop = 0;
     function positionList() {
       var rect    = trigger.getBoundingClientRect();
       var vp      = window.innerHeight;
+      var vw      = window.innerWidth;
       var spaceBelow = vp - rect.bottom - 8;
       var spaceAbove = rect.top - 8;
       var maxH    = 280;
 
-      // Match the trigger width as a floor; let long options grow it wider.
+      // Match the trigger width as a floor; let long options grow it wider, but
+      // never wider than the viewport.
       list.style.minWidth = rect.width + 'px';
-      list.style.left     = rect.left + 'px';
+      list.style.maxWidth = (vw - 16) + 'px';
+      // Clamp horizontally so the list can't run off either edge — it's
+      // position:fixed and lives inside the right-aligned settings menu on
+      // mobile, which pushed the league switcher's list off-screen.
+      var lw   = list.offsetWidth || rect.width;
+      var left = Math.min(rect.left, vw - lw - 8);
+      list.style.left = Math.max(8, left) + 'px';
 
       if (spaceBelow >= Math.min(maxH, 120)) {
         // Enough room below - standard position
