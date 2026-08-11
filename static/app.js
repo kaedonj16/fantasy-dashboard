@@ -9689,6 +9689,12 @@ document.addEventListener('DOMContentLoaded', function() {
             toggle.type = 'button';
             toggle.className = 'ls-toggle';
             toggle.setAttribute('aria-expanded', 'false');
+            // Swap icon so the row lines up with the other icon+label sheet rows.
+            const tIcon = document.createElement('span');
+            tIcon.className = 'ls-toggle-icon';
+            tIcon.setAttribute('aria-hidden', 'true');
+            tIcon.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>';
+            toggle.appendChild(tIcon);
             const tLabel = document.createElement('span');
             tLabel.className = 'ls-toggle-label';
             tLabel.textContent = 'Switch league';
