@@ -603,13 +603,72 @@ def get_transactions(season: int, league_id: str, week: int) -> List[Dict[str, A
     return _all_transactions_cached(season, league_id).get(week, [])
 
 
-def get_drafts(season: int, league_id: str) -> List[Dict[str, Any]]:
+_draft_meta_cache: Dict[Tuple[int, str], Tuple[float, Tuple[Optional[int], Optional[bool]]]] = {}
+_draft_meta_lock = threading.Lock()
+_DRAFT_META_TTL = 300  # 5 minutes — the scheduled draft date barely changes.
+
+
+def _espn_draft_meta(season: int, league_id: str) -> Tuple[Optional[int], Optional[bool]]:
+    """Return (scheduled_draft_date_ms, drafted_bool) from ESPN, or (None, None).
+
+    ESPN carries the scheduled draft time at settings.draftSettings.date (epoch
+    ms) and whether it has happened at draftDetail.drafted. Reading these lets the
+    dashboard show a real pre-draft countdown instead of assuming the draft is
+    already done. Cached briefly so the 30s countdown poll doesn't hammer ESPN.
     """
-    Return a minimal draft record so has_draft_ended() works correctly.
-    ESPN seasons always have a completed draft; we use Aug 1 of the season
-    year as a conservative start_time so the draft is always treated as ended.
+    key = (int(season), str(league_id))
+    now = time.time()
+    with _draft_meta_lock:
+        hit = _draft_meta_cache.get(key)
+        if hit and (now - hit[0]) < _DRAFT_META_TTL:
+            return hit[1]
+    try:
+        lg = _league(season, league_id)
+        data = lg.espn_request.league_get(params={"view": "mSettings"})
+    except Exception as e:
+        print(f"[espn] draft meta fetch failed: {e}")
+        return None, None
+    date_ms: Optional[int] = None
+    drafted: Optional[bool] = None
+    if isinstance(data, dict):
+        try:
+            _d = ((data.get("settings") or {}).get("draftSettings") or {}).get("date")
+            date_ms = int(_d) if _d else None
+        except (TypeError, ValueError):
+            date_ms = None
+        _dd = data.get("draftDetail")
+        if isinstance(_dd, dict) and "drafted" in _dd:
+            drafted = bool(_dd.get("drafted"))
+    with _draft_meta_lock:
+        _draft_meta_cache[key] = (now, (date_ms, drafted))
+    return date_ms, drafted
+
+
+def get_drafts(season: int, league_id: str) -> List[Dict[str, Any]]:
+    """Return a single draft record for the league.
+
+    Uses ESPN's real scheduled draft date + drafted flag when available, so an
+    upcoming ESPN draft counts down correctly and a completed one reads as done.
+    Falls back to a conservative Aug-1 "complete" record when ESPN doesn't report
+    a date, preserving has_draft_ended() behavior for historical seasons.
     """
     from datetime import datetime
+    date_ms, drafted = _espn_draft_meta(season, league_id)
+    if date_ms:
+        if drafted is None:
+            # No explicit flag — infer from whether the scheduled time has passed.
+            drafted = date_ms <= int(datetime.now().timestamp() * 1000)
+        return [{
+            "draft_id": f"espn_{league_id}_{season}",
+            "league_id": str(league_id),
+            "season": int(season),
+            "season_type": "regular",
+            "start_time": date_ms,
+            "status": "complete" if drafted else "pre_draft",
+            "type": "snake",
+        }]
+    # Fallback: no date from ESPN — treat as a completed draft (Aug 1) so
+    # has_draft_ended() and historical seasons behave as before.
     start_ts_ms = int(datetime(int(season), 8, 1).timestamp() * 1000)
     return [{
         "draft_id": f"espn_{league_id}_{season}",
