@@ -2402,6 +2402,18 @@ def _link_modal_html() -> str:
         document.querySelectorAll('.link-pane').forEach(function(pane){ pane.style.display=pane.dataset.lp===p?'block':'none'; });
         linkSetMsg('','');
       };
+      // Open the link modal already pointed at a specific league's team picker, so
+      // "Link my team" on a not-yet-linked league is one click (no re-typing the
+      // id, right season preserved). Currently ESPN only.
+      window.linkMyTeam=function(platform, leagueId, season){
+        if(window.openLinkModal) window.openLinkModal();
+        if(window.linkTab) window.linkTab(platform);
+        if(platform==='espn'){
+          var idEl=document.getElementById('linkEspnId'); if(idEl) idEl.value=leagueId||'';
+          var seEl=document.getElementById('linkEspnSeason'); if(seEl && season) seEl.value=season;
+          if(window.linkEspnPreview) window.linkEspnPreview();
+        }
+      };
       function linkSetMsg(t,kind){ var el=document.getElementById('linkMsg'); if(!el)return; el.textContent=t||''; el.className='link-msg'+(kind?' '+kind:''); }
       function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
       function linkAdd(platform,league_id,season,team_id,name,btn){
@@ -27295,11 +27307,19 @@ def build_portfolio_body(
         if lg.get("pending"):
             reason = html.escape(lg.get("reason") or "Not drafted yet")
             _predraft = bool(lg.get("predraft"))
-            action = (
-                f"<a href='/{plat}/{season}/{lid}/draft' class='pf-pending-cta'>Mock draft →</a>"
-                if _predraft else
-                f"<a href='{href}' class='pf-pending-cta'>Open league →</a>"
-            )
+            _lg_season = lg.get("season") or season
+            if _predraft:
+                action = f"<a href='/{plat}/{season}/{lid}/draft' class='pf-pending-cta'>Mock draft →</a>"
+            elif plat == "espn":
+                # "Team not linked yet" — open the link modal pointed at this ESPN
+                # league's team picker so the user can set their team in one click
+                # (no re-typing the league id, and the right season is preserved).
+                action = (
+                    f"<button type='button' class='pf-pending-cta' "
+                    f"onclick=\"linkMyTeam('espn','{lid}','{_lg_season}')\">Link my team →</button>"
+                )
+            else:
+                action = f"<a href='{href}' class='pf-pending-cta'>Open league →</a>"
             league_rows += (
                 f"<tr class='pf-league-row pf-league-pending'>"
                 f"<td colspan='5' style='flex-basis:100%;'>"
