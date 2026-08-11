@@ -521,9 +521,35 @@
   }
 
   function startDraft(){
+    var prev = state;
     _resetTransient();
     state = readSetup();
     state.owned = _setupOwned || defaultOwned();
+    // Editing the setup mid-draft (e.g. fixing the round count) shouldn't wipe
+    // the board. When the pick numbering is unchanged (same teams / order /
+    // slot), carry over the picks already made that still fit the new board and
+    // resume at the first empty slot. A Reset nulls state first, so a genuine
+    // fresh start still begins empty; a change that renumbers picks also starts
+    // fresh (carrying by pick number would misplace them).
+    if (prev && prev.picks && prev.teams === state.teams &&
+        prev.order === state.order && prev.slot === state.slot) {
+      var tot = (state.teams || 0) * (state.rounds || 0);
+      var carried = {};
+      Object.keys(prev.picks).forEach(function(pn){
+        var n = parseInt(pn, 10);
+        var pk = prev.picks[pn];
+        if (n >= 1 && n <= tot && pk) {
+          carried[n] = pk;
+          if (pk.id) drafted[String(pk.id)] = true;
+        }
+      });
+      if (Object.keys(carried).length) {
+        state.picks = carried;
+        var next = tot + 1;
+        for (var i = 1; i <= tot; i++){ if (!carried[i]){ next = i; break; } }
+        state.current = next;
+      }
+    }
     save();
     resetSideTabs();   // clear any leftover completed-draft sidebar state
     showMain();
@@ -5384,7 +5410,7 @@
 
   // ── Mobile bottom-sheet drag behavior ───────────────────────────────────────
   // Below 900px the side panel is a draggable sheet with three snap points:
-  // peek (~14vh), mid (~38vh, default), and full (~92vh). Drag the grip handle
+  // peek (~14vh), mid (~44vh, default), and full (~92vh). Drag the grip handle
   // up/down; on release it snaps to the nearest point.
   (function initSheet(){
     var sheet = document.getElementById('drSide');
@@ -5394,9 +5420,9 @@
     var dragging = false, startY = 0, startT = 0, curT = 0, snapIdx = 1;
     function ih(){ return window.innerHeight; }
     // translateY offsets (px): full (whole 85vh sheet shows, top stops below the
-    // header + status bar), mid (~43vh visible), peek (~19vh visible - the handle,
+    // header + status bar), mid (~49vh visible), peek (~19vh visible - the handle,
     // tabs, and a couple of rows). Peek accounts for the 85vh sheet sitting ~15vh down.
-    function snaps(){ return [0, ih() * 0.42, ih() * 0.66]; }
+    function snaps(){ return [0, ih() * 0.36, ih() * 0.66]; }
     function applyT(t){ curT = t; sheet.style.transform = 'translateY(' + t + 'px)'; }
     function snapTo(idx){
       var pts = snaps();
