@@ -2350,11 +2350,11 @@ def _link_modal_html() -> str:
     (function(){
       window.openLinkModal=function(){
         var m=document.getElementById('linkModal'); if(!m)return; m.style.display='flex';
+        // Select-league-then-login: everyone picks a league first; the Google
+        // sign-in happens on Add (see linkAdd) if there's no account yet.
         var gate=document.getElementById('linkAccountGate'), body=document.getElementById('linkBody');
-        if(!window._hasAccount){ gate.style.display='block'; body.style.display='none';
-          var g=document.getElementById('linkGoogleBtn');
-          if(g) g.href='/auth/google?next='+encodeURIComponent(location.pathname); }
-        else { gate.style.display='none'; body.style.display='block'; }
+        if(gate) gate.style.display='none';
+        if(body) body.style.display='block';
       };
       window.closeLinkModal=function(){ var m=document.getElementById('linkModal'); if(m)m.style.display='none'; };
       document.addEventListener('keydown',function(e){ if(e.key==='Escape')window.closeLinkModal&&window.closeLinkModal(); });
@@ -2366,13 +2366,19 @@ def _link_modal_html() -> str:
       function linkSetMsg(t,kind){ var el=document.getElementById('linkMsg'); if(!el)return; el.textContent=t||''; el.className='link-msg'+(kind?' '+kind:''); }
       function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
       function linkAdd(platform,league_id,season,team_id,name,btn){
-        if(btn){ btn.disabled=true; btn.textContent='Adding…'; }
-        fetch('/api/link/add',{method:'POST',headers:{'Content-Type':'application/json'},
+        var hasAcct=!!window._hasAccount;
+        if(btn){ btn.disabled=true; btn.textContent=hasAcct?'Adding…':'Continuing…'; }
+        // With an account: save straight away. Without: stash the pick and send
+        // the user to Google; the callback attaches it and lands them in-league.
+        fetch(hasAcct?'/api/link/add':'/api/link/pending',{method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({platform:platform,league_id:league_id,season:season,team_id:team_id,name:name})})
           .then(function(r){return r.json();}).then(function(d){
-            if(d.ok){ linkSetMsg('Added '+(name||'league')+'. Refreshing…','ok');
-              if(btn){ btn.textContent='Added ✓'; }
-              setTimeout(function(){ location.reload(); },900); }
+            if(d.ok){
+              if(hasAcct){ linkSetMsg('Added '+(name||'league')+'. Refreshing…','ok');
+                if(btn){ btn.textContent='Added ✓'; } setTimeout(function(){ location.reload(); },900); }
+              else { linkSetMsg('Saved. Signing you in with Google…','ok');
+                location.href=d.auth_url||'/auth/google'; }
+            }
             else { linkSetMsg(d.error||'Could not add that league.','err'); if(btn){ btn.disabled=false; btn.textContent='Add'; } }
           }).catch(function(){ linkSetMsg('Network error.','err'); if(btn){ btn.disabled=false; btn.textContent='Add'; } });
       }
@@ -2809,7 +2815,14 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "  <span class='settings-menu-label'>Sign In</span>"
             "</button>"
         )
-        settings_content = signin_item + dark_mode_toggle_html + tour_menu_item
+        link_item = (
+            "<button type='button' class='settings-menu-item' id='settingsLinkBtn' onclick='openLinkModal()'>"
+            "  <svg class='settings-menu-icon' viewBox='0 0 24 24' fill='none' stroke='currentColor' "
+            "       stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 5v14M5 12h14'/></svg>"
+            "  <span class='settings-menu-label'>Link a league</span>"
+            "</button>"
+        )
+        settings_content = signin_item + link_item + dark_mode_toggle_html + tour_menu_item
         settings_gear = (
             "<div class='settings-gear-wrapper'>"
             "  <button type='button' id='settingsGearBtn' class='utility-icon-btn' "
@@ -3408,11 +3421,12 @@ def render_page(
                 if _league_chrome
                 else build_nav(None, active, _nav_platform, _nav_season))
 
-    # Inject the "Link a league" modal once per page, wherever the settings menu
-    # (and its trigger) renders. nav_html is placed a single time, so appending
-    # here keeps the modal's element ids unique even though the gear renders twice.
-    if session.get("account_id") or session.get("viewer_username") or _nav_platform == "espn":
-        nav_html = nav_html + _link_modal_html()
+    # Inject the "Link a league" modal once per page (hidden until opened).
+    # Available to logged-out visitors too, so they can select a league and then
+    # get signed in via Google (select-league-then-login). nav_html is placed a
+    # single time, so appending here keeps the modal's element ids unique even
+    # though the settings gear itself renders twice.
+    nav_html = nav_html + _link_modal_html()
 
     # Logged-out visitors on lite_js pages (the landing page) get the slim
     # public.js for a fast first paint. public.js omits everything below the

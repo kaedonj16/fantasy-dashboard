@@ -94,6 +94,30 @@ def link_yahoo_preview():
     })
 
 
+@link_bp.route("/api/link/pending", methods=["POST"])
+def link_pending():
+    """Stash a league the user selected *before* signing in, then send them to
+    Google. The callback attaches it to the new account and drops them into it —
+    the select-league-then-login onboarding order."""
+    data = request.get_json(force=True) or {}
+    platform = (data.get("platform") or "").strip().lower()
+    league_id = str(data.get("league_id") or "").strip()
+    if platform not in ("espn", "yahoo", "sleeper") or not league_id:
+        return jsonify({"ok": False, "error": "Missing platform or league_id."}), 400
+    try:
+        season = int(data.get("season")) if data.get("season") else _default_season()
+    except (TypeError, ValueError):
+        season = _default_season()
+    session["pending_link"] = {
+        "platform": platform,
+        "league_id": league_id,
+        "season": season,
+        "team_id": (str(data.get("team_id")).strip() or None) if data.get("team_id") else None,
+        "name": (str(data.get("name")).strip() or None) if data.get("name") else None,
+    }
+    return jsonify({"ok": True, "auth_url": "/auth/google?next=/"})
+
+
 @link_bp.route("/api/link/add", methods=["POST"])
 def link_add():
     account_id = session.get("account_id")
