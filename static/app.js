@@ -9681,10 +9681,31 @@ document.addEventListener('DOMContentLoaded', function() {
           const listEl = document.getElementById('leagueSwitcherList');
           if (listEl) {
             listEl.innerHTML = '';
-            const hdr = document.createElement('div');
-            hdr.className = 'ls-head';
-            hdr.textContent = 'Switch league';
-            listEl.appendChild(hdr);
+            listEl.classList.remove('open');   // default collapsed
+
+            // Collapsible header: shows the current league; tap to reveal the rest.
+            const curLeague = leagues.find(l => String(l.league_id) === String(currentLeagueId));
+            const toggle = document.createElement('button');
+            toggle.type = 'button';
+            toggle.className = 'ls-toggle';
+            toggle.setAttribute('aria-expanded', 'false');
+            const tLabel = document.createElement('span');
+            tLabel.className = 'ls-toggle-label';
+            tLabel.textContent = 'Switch league';
+            const tCur = document.createElement('span');
+            tCur.className = 'ls-toggle-cur';
+            tCur.textContent = curLeague ? curLeague.label : '';
+            const tChev = document.createElement('span');
+            tChev.className = 'ls-toggle-chev';
+            tChev.setAttribute('aria-hidden', 'true');
+            tChev.textContent = '▾';   // ▾
+            toggle.appendChild(tLabel);
+            toggle.appendChild(tCur);
+            toggle.appendChild(tChev);
+            listEl.appendChild(toggle);
+
+            const items = document.createElement('div');
+            items.className = 'ls-items';
             leagues.forEach(league => {
               const isCur = String(league.league_id) === String(currentLeagueId);
               const row = document.createElement('button');
@@ -9699,7 +9720,14 @@ document.addEventListener('DOMContentLoaded', function() {
               row.addEventListener('click', function () {
                 navigateToLeague(this.dataset.league, this.dataset.platform, this.dataset.season);
               });
-              listEl.appendChild(row);
+              items.appendChild(row);
+            });
+            listEl.appendChild(items);
+
+            toggle.addEventListener('click', function (e) {
+              e.stopPropagation();
+              const open = listEl.classList.toggle('open');
+              toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
             });
           }
 
