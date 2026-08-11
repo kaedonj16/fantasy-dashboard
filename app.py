@@ -27278,12 +27278,42 @@ def build_portfolio_body(
             f"data-league='{_lid}' title='Unlink this league' aria-label='Unlink league'>&times;</button>"
         )
 
-    all_rows = valid_leagues + [lg for lg in all_leagues_data if lg.get("error") or lg.get("not_in_league")]
+    all_rows = valid_leagues + [
+        lg for lg in all_leagues_data
+        if lg.get("error") or lg.get("not_in_league") or lg.get("pending")
+    ]
     for lg in all_rows:
         lid  = lg.get("league_id") or ""
         plat = lg.get("platform") or "sleeper"
         href = f"/{plat}/{season}/{lid}/dashboard"
         name = html.escape(lg.get("name") or "?")
+
+        # Linked-but-not-drafted (or team-not-yet-linked) league: a normal pending
+        # state, so give it a proper row — name link, a soft status pill, a
+        # "practice in the Draft Room" nudge for pre-draft — instead of a bare
+        # "unavailable" bar.
+        if lg.get("pending"):
+            reason = html.escape(lg.get("reason") or "Not drafted yet")
+            _predraft = bool(lg.get("predraft"))
+            action = (
+                f"<a href='/{plat}/{season}/{lid}/draft' class='pf-pending-cta'>Mock draft →</a>"
+                if _predraft else
+                f"<a href='{href}' class='pf-pending-cta'>Open league →</a>"
+            )
+            league_rows += (
+                f"<tr class='pf-league-row pf-league-pending'>"
+                f"<td colspan='5' style='flex-basis:100%;'>"
+                f"<div class='pf-pending-wrap'>"
+                f"<a href='{href}' class='pf-league-link pf-pending-name'>{name}</a>"
+                f"<span class='pf-status-pill'>{reason}</span>"
+                f"<span class='pf-pending-spacer'></span>"
+                f"{action}"
+                f"{_unlink_btn(plat, lid)}"
+                f"</div>"
+                f"</td>"
+                f"</tr>"
+            )
+            continue
 
         if lg.get("error") or lg.get("not_in_league"):
             league_rows += (
@@ -27291,7 +27321,7 @@ def build_portfolio_body(
                 f"<td colspan='5' style='flex-basis:100%;'>"
                 f"<div style='display:flex;align-items:center;gap:8px;'>"
                 f"<span style='flex:1;color:var(--text-muted);font-weight:600;'>{name}</span>"
-                f"<span style='color:var(--text-subtle);font-size:12px;'>unavailable</span>"
+                f"<span style='color:var(--text-subtle);font-size:12px;'>couldn’t load</span>"
                 f"{_unlink_btn(plat, lid)}"
                 f"</div>"
                 f"</td>"
