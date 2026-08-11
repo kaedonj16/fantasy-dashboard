@@ -2283,6 +2283,28 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
   background: linear-gradient(180deg, rgba(28,28,28,1), rgba(14,14,14,1));
 }
 
+/* Temporarily disabled platform (e.g. Yahoo while API access is pending). */
+.platform-btn-disabled,
+.platform-btn-disabled:hover {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  border-color: rgba(255,255,255,0.06);
+  background: linear-gradient(180deg, rgba(20,20,20,1), rgba(10,10,10,1));
+}
+.platform-soon {
+  font-size: 0.62em;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  margin-left: 4px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.75);
+}
+
 .platform-toggle input:checked + .platform-btn {
   color: #ffffff;
   background: linear-gradient(180deg, rgba(30,41,59,1), rgba(15,23,42,1));

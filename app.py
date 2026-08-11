@@ -1037,6 +1037,13 @@ def generate_recent_updates_html(limit=5):
 from utils.nfl_teams import get_team_full_name  # noqa: E402
 
 
+def _yahoo_ui_enabled() -> bool:
+    """Whether to offer Yahoo connect in the UI. Off by default while the Yahoo
+    Fantasy API access request is pending (every call 403s until approved). Set
+    YAHOO_ENABLED=1 on the host to re-enable once granted."""
+    return (os.environ.get("YAHOO_ENABLED") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
 FORM_BODY = """
 <div class="home-page">
   <section class="home-hero">
@@ -1080,7 +1087,12 @@ FORM_BODY = """
           <div class="platform-selector">
             <button type="button" class="platform-btn active" data-platform="sleeper">Sleeper</button>
             <button type="button" class="platform-btn" data-platform="espn">ESPN</button>
+            {% if yahoo_enabled %}
             <button type="button" class="platform-btn" data-platform="yahoo">Yahoo</button>
+            {% else %}
+            <button type="button" class="platform-btn platform-btn-disabled" disabled
+                    title="Yahoo is temporarily unavailable while we finish Yahoo API setup.">Yahoo <span class="platform-soon">Soon</span></button>
+            {% endif %}
           </div>
         </div>
 
@@ -1116,6 +1128,7 @@ FORM_BODY = """
         </div>
 
         <!-- Yahoo Flow -->
+        {% if yahoo_enabled %}
         <div id="yahooFlow" style="display:none;">
           <div class="row">
             <label for="yahooLeagueIdInput">Yahoo League ID</label>
@@ -1133,6 +1146,7 @@ FORM_BODY = """
             You'll be redirected to Yahoo to authorize access, then returned here.
           </p>
         </div>
+        {% endif %}
 
 <form method="post" id="leagueSelectForm">
           <input type="hidden" name="platform" id="formPlatform" value="sleeper">
@@ -2297,8 +2311,10 @@ def _link_modal_html() -> str:
     team pick (no per-user discovery); Yahoo by league id after OAuth, with the
     user's team auto-detected. All three POST to /api/link/add, which writes to
     the signed-in account's user_leagues, so linked leagues show in the switcher.
+
+    Yahoo is hidden while YAHOO_ENABLED is off (Yahoo Fantasy API access pending).
     """
-    return """
+    _modal = """
     <div id="linkModal" class="link-ov" style="display:none;" onclick="if(event.target===this)closeLinkModal()">
       <div class="link-card" role="dialog" aria-label="Link a league">
         <div class="link-head"><span>Link a league</span>
@@ -2326,12 +2342,12 @@ def _link_modal_html() -> str:
               <button type="button" class="link-btn" onclick="linkEspnPreview()">Next</button></div>
             <div id="linkEspnResult" class="link-list"></div>
           </div>
-          <div class="link-pane" data-lp="yahoo" style="display:none;">
+          <!--YAHOO_PANE_START--><div class="link-pane" data-lp="yahoo" style="display:none;">
             <label class="link-lb">Yahoo league ID</label>
             <div class="link-row"><input id="linkYahooId" class="link-inp" placeholder="e.g. 123456">
               <button type="button" class="link-btn" onclick="linkYahooPreview()">Next</button></div>
             <div id="linkYahooResult" class="link-list"></div>
-          </div>
+          </div><!--YAHOO_PANE_END-->
           <div id="linkMsg" class="link-msg"></div>
         </div>
       </div>
@@ -2465,6 +2481,14 @@ def _link_modal_html() -> str:
     })();
     </script>
     """
+    if not _yahoo_ui_enabled():
+        import re as _re
+        _modal = _modal.replace(
+            "<button type=\"button\" class=\"link-tab\" data-lp=\"yahoo\" onclick=\"linkTab('yahoo')\">Yahoo</button>",
+            "",
+        )
+        _modal = _re.sub(r"<!--YAHOO_PANE_START-->.*?<!--YAHOO_PANE_END-->", "", _modal, flags=_re.S)
+    return _modal
 
 
 def build_nav(league_id: Optional[str], active: str, platform: str, season: int) -> str:
@@ -17506,6 +17530,7 @@ def index():
                 viewed_season=viewed_season,
                 error=err,
                 recent_updates=generate_recent_updates_html(),
+                yahoo_enabled=_yahoo_ui_enabled(),
             )
             return render_page("BR Fantasy Dashboard", None, "home", body_html, lite_js=True)
 
@@ -17528,6 +17553,7 @@ def index():
                         viewed_season=viewed_season,
                         error="Could not match that username to a team in this league.",
                         recent_updates=generate_recent_updates_html(),
+                        yahoo_enabled=_yahoo_ui_enabled(),
                     )
                     return render_page("BR Fantasy Dashboard", None, "home", body_html, lite_js=True)
 
@@ -17602,6 +17628,7 @@ def index():
         error=None,
         next_url=next_url,
         recent_updates=generate_recent_updates_html(),
+        yahoo_enabled=_yahoo_ui_enabled(),
     )
     return render_page(
         "BR Fantasy - Free Fantasy Football Trade Calculator & Dynasty Tools",

@@ -558,6 +558,7 @@ window.showToast = (function () {
       token_exchange_failed:'Yahoo sign-in failed while exchanging the login. Please try again.',
       invalid_token_response:'Yahoo sign-in didn’t return a usable session. Please try again.',
       access_denied:        'Yahoo access was declined. Connect again and approve access to continue.',
+      unavailable:          'Yahoo connections are temporarily unavailable while we finish Yahoo API setup. Sleeper and ESPN work as usual.',
     };
     var msg = MESSAGES[err] || ('Yahoo connection error: ' + err);
     var show = function () {

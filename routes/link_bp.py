@@ -60,6 +60,9 @@ def link_espn_preview():
 
 @link_bp.route("/api/link/yahoo/preview")
 def link_yahoo_preview():
+    from dashboard_services.providers.yahoo_api import yahoo_enabled
+    if not yahoo_enabled():
+        return jsonify({"ok": False, "error": "Yahoo connections are temporarily unavailable."}), 503
     league_id = (request.args.get("league_id") or "").strip()
     if not league_id:
         return jsonify({"ok": False, "error": "Yahoo league ID required."}), 400

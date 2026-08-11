@@ -62,6 +62,18 @@ _league_key_map: Dict[str, str] = {}
 _league_key_lock = threading.Lock()
 
 
+def yahoo_enabled() -> bool:
+    """Whether the Yahoo connect flow is offered to users.
+
+    Gated OFF by default while the Yahoo Fantasy API access request is pending:
+    without approval every Fantasy call 403s "application not authorized", so
+    presenting Yahoo just walks users into a dead end. Set YAHOO_ENABLED=1 (or
+    true/yes/on) on the host once access is granted to turn it back on — no code
+    change needed.
+    """
+    return (os.environ.get("YAHOO_ENABLED") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
 # ---------------------------------------------------------------------------
 # OAuth helpers
 # ---------------------------------------------------------------------------

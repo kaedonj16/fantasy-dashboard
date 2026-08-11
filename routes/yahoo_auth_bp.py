@@ -32,6 +32,11 @@ def _yahoo_configured() -> bool:
 @yahoo_auth_bp.route("/auth/yahoo")
 def yahoo_auth_start():
     """Begin Yahoo OAuth flow.  Redirects to Yahoo consent page."""
+    from dashboard_services.providers.yahoo_api import yahoo_enabled
+    if not yahoo_enabled():
+        # Yahoo is turned off (Fantasy API access pending) — don't walk the user
+        # into the "application not authorized" wall.
+        return redirect("/?yahoo_error=unavailable")
     if not _yahoo_configured():
         return (
             "<p>Yahoo OAuth is not configured on this server. "
@@ -187,6 +192,10 @@ def api_yahoo_validate_league():
     """Validate a Yahoo league ID and return its name.
     Requires the user to have already completed OAuth (yahoo_access_token in session).
     """
+    from dashboard_services.providers.yahoo_api import yahoo_enabled
+    if not yahoo_enabled():
+        return jsonify({"ok": False, "error": "Yahoo connections are temporarily unavailable."}), 503
+
     league_id    = (request.args.get("league_id") or "").strip()
     access_token = session.get("yahoo_access_token") or ""
 
