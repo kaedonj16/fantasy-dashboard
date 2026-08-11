@@ -20,7 +20,7 @@ import logging
 import os
 import threading
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session
 
 from extensions import limiter
 
@@ -138,7 +138,11 @@ def api_push_subscribe():
     p256dh    = (data.get("keys") or {}).get("p256dh", "").strip()
     auth      = (data.get("keys") or {}).get("auth",   "").strip()
     platform  = (data.get("platform")  or "sleeper").strip()
-    owner_id  = (data.get("owner_id")  or "").strip() or None
+    # Prefer the signed-in account as the owner so notifications key off the
+    # durable account (one person = one owner) instead of a per-platform id;
+    # fall back to the client-supplied owner for users without an account.
+    owner_id  = (str(session.get("account_id") or "").strip()
+                 or (data.get("owner_id") or "").strip() or None)
     # Accept either a single league_id or a league_ids[] array (register the
     # device for every league at once — the default-to-all subscribe path).
     raw_leagues = data.get("league_ids")
