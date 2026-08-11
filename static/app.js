@@ -181,6 +181,19 @@ if (window.__FEATURES_JS) {
   }
 })();
 
+// Remember (per-browser) that this account has signed in here, so the home
+// "Continue as" CTA can offer a durable, cross-device sign-back-in via Google
+// even after the server session expires. Cleared on logout.
+(function () {
+  try {
+    if (window._hasAccount) {
+      localStorage.setItem("saved_account", JSON.stringify({
+        email: window._accountEmail || "", ts: Date.now(),
+      }));
+    }
+  } catch (_) {}
+})();
+
 // ------------------------------------------------------------
 // Prevent scroll restoration on navigation (mobile fix)
 // ------------------------------------------------------------
@@ -8838,52 +8851,55 @@ if (!platformBtns.length) return;
     });
   }
 
-  // Show "Continue as X" CTA for returning users
+  // Returning-user "Welcome back" CTA. Prefer a durable account (cross-device,
+  // via Google) when this browser has signed in before; otherwise fall back to
+  // the per-device saved_viewer session restore.
+  const savedAccount = (function () {
+    try { return JSON.parse(localStorage.getItem("saved_account") || "null"); } catch (_) { return null; }
+  })();
   const saved = JSON.parse(localStorage.getItem("saved_viewer") || "null");
-  if (saved?.league_id && saved?.username) {
+  const homeCardEl = document.querySelector(".home-card");
+
+  function mountReturnCta(labelHtml, onContinue, onDismiss) {
+    if (!homeCardEl) return;
+    const cta = document.createElement("div");
+    cta.className = "saved-viewer-cta";
+    cta.innerHTML =
+      '<div class="saved-viewer-info"><span class="saved-viewer-label">Welcome back!</span>' +
+      '<button type="button" class="saved-viewer-btn" id="continueAsBtn">' + labelHtml + '</button></div>' +
+      '<button type="button" class="saved-viewer-dismiss" aria-label="Dismiss">×</button>';
+    homeCardEl.insertAdjacentElement("afterbegin", cta);
+    cta.querySelector(".saved-viewer-dismiss")?.addEventListener("click", () => { onDismiss(); cta.remove(); });
+    document.getElementById("continueAsBtn")?.addEventListener("click", onContinue);
+  }
+
+  if (!window._hasAccount && savedAccount) {
+    // Account holder whose session lapsed / new device: one tap back into the
+    // account via Google, which lands them on their leagues.
+    const who = savedAccount.email || "your account";
+    mountReturnCta("Continue as <strong>" + who + "</strong>",
+      function () { this.disabled = true; window.location.href = "/auth/google?next=" + encodeURIComponent(location.pathname); },
+      function () { try { localStorage.removeItem("saved_account"); } catch (_) {} });
+  } else if (saved?.league_id && saved?.username) {
     const platform = saved.platform || "sleeper";
     const season = saved.season || new Date().getFullYear();
     const dashboardUrl = `/${platform}/${season}/${saved.league_id}/dashboard`;
-
-    const cta = document.createElement("div");
-    cta.className = "saved-viewer-cta";
-    cta.innerHTML = `
-      <div class="saved-viewer-info">
-        <span class="saved-viewer-label">Welcome back!</span>
-        <button type="button" class="saved-viewer-btn" id="continueAsBtn">Continue as <strong>${saved.username}</strong></button>
-      </div>
-      <button type="button" class="saved-viewer-dismiss" aria-label="Dismiss">×</button>
-    `;
-
-    const homeCard = document.querySelector(".home-card");
-    if (homeCard) homeCard.insertAdjacentElement("afterbegin", cta);
-
-    cta.querySelector(".saved-viewer-dismiss")?.addEventListener("click", () => {
-      localStorage.removeItem("saved_viewer");
-      cta.remove();
-    });
-
-    document.getElementById("continueAsBtn")?.addEventListener("click", async function() {
-      // Show loading overlay immediately - before any network request
-      showDashboardLoadingOverlay("Loading your dashboard…", "Picking up where you left off");
-      this.disabled = true;
-
-      try {
-        // Fast session set - no league context fetch on server side
-        await fetch("/api/quick-set-viewer", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            username:  saved.username,
-            roster_id: saved.roster_id || "",
-            user_id:   saved.user_id   || "",
-            team_name: saved.team_name || "",
-          }),
-        });
-      } catch (_) { /* session set is best-effort; navigate anyway */ }
-
-      window.location.href = dashboardUrl;
-    });
+    mountReturnCta("Continue as <strong>" + saved.username + "</strong>",
+      async function () {
+        showDashboardLoadingOverlay("Loading your dashboard…", "Picking up where you left off");
+        this.disabled = true;
+        try {
+          await fetch("/api/quick-set-viewer", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              username: saved.username, roster_id: saved.roster_id || "",
+              user_id: saved.user_id || "", team_name: saved.team_name || "",
+            }),
+          });
+        } catch (_) { /* best-effort; navigate anyway */ }
+        window.location.href = dashboardUrl;
+      },
+      function () { try { localStorage.removeItem("saved_viewer"); } catch (_) {} });
   }
 
   // Sleeper lookup
@@ -9531,11 +9547,13 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Clear saved viewer on logout so the "Continue as X" CTA doesn't reappear
+  // Clear saved viewer + account marker on logout so "Continue as X" and the
+  // account sign-back-in CTA don't reappear.
   const logoutLink = dropdown?.querySelector('a[href="/logout"]');
   if (logoutLink) {
     logoutLink.addEventListener("click", () => {
       localStorage.removeItem("saved_viewer");
+      localStorage.removeItem("saved_account");
     });
   }
 });

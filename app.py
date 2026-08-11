@@ -1158,15 +1158,17 @@ FORM_BODY = """
               </span>
               <span style="font-size:11px;font-weight:500;color:#5f6368;">Save your leagues &amp; settings, synced across devices</span>
             </button>
-            <div style="display:flex;align-items:center;gap:10px;margin:12px 0;color:var(--text-muted);font-size:10.5px;font-weight:800;letter-spacing:.08em;">
-              <span style="flex:1;height:1px;background:var(--border);"></span>OR<span style="flex:1;height:1px;background:var(--border);"></span>
+            <div style="display:flex;align-items:center;gap:10px;margin:14px 0;color:rgba(255,255,255,.5);font-size:10.5px;font-weight:800;letter-spacing:.1em;">
+              <span style="flex:1;height:1px;background:rgba(255,255,255,.18);"></span>OR<span style="flex:1;height:1px;background:rgba(255,255,255,.18);"></span>
             </div>
             <button type="submit"
-                    style="display:flex;flex-direction:column;align-items:center;gap:2px;width:100%;
-                           background:transparent;color:var(--text-muted);border:1px solid var(--border);
-                           border-radius:10px;padding:9px 14px;cursor:pointer;">
-              <span style="font-size:13.5px;font-weight:700;color:var(--text);">Continue without account</span>
-              <span style="font-size:11px;font-weight:500;">Quick view on this device &middot; nothing saved</span>
+                    style="display:flex;flex-direction:column;align-items:center;gap:3px;width:100%;
+                           background:rgba(255,255,255,.06);color:#e5e7eb;border:1px solid rgba(255,255,255,.28);
+                           border-radius:10px;padding:11px 14px;cursor:pointer;transition:background .15s,border-color .15s;"
+                    onmouseover="this.style.background='rgba(255,255,255,.11)';this.style.borderColor='rgba(255,255,255,.42)';"
+                    onmouseout="this.style.background='rgba(255,255,255,.06)';this.style.borderColor='rgba(255,255,255,.28)';">
+              <span style="font-size:13.5px;font-weight:700;color:#fff;">Continue without account</span>
+              <span style="font-size:11px;font-weight:500;color:rgba(255,255,255,.62);">Quick view on this device &middot; nothing saved</span>
             </button>
           </div>
 
@@ -1468,7 +1470,7 @@ BASE_HTML = """
 
       {ad_top}
 
-      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window.__FEATURES_JS = {features_js_js};</script>
+      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__FEATURES_JS = {features_js_js};</script>
       <main id="page-root" role="main" tabindex="-1" class="overview-layout" data-cache-ts="{cache_ts}" data-premium="{user_premium}">
         {body}
       </main>
@@ -3545,6 +3547,7 @@ def render_page(
         viewer_user_id_js=_json.dumps(str(viewer_user_id)),
         signed_in_js="true" if session.get("viewer_username") else "false",
         has_account_js="true" if session.get("account_id") else "false",
+        account_email_js=_json.dumps(session.get("account_email") or ""),
         features_js_js=_features_js_js,
     )
     resp = make_response(html)
