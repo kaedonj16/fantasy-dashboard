@@ -1149,6 +1149,10 @@ FORM_BODY = """
 
           <div class="row" id="generateWrap" style="display:none;">
             <button type="submit">Generate Dashboard</button>
+            <button type="button" id="googleContinueBtn" class="home-google-btn"
+                    style="margin-top:8px;background:var(--card);color:var(--text);border:1px solid var(--border);font-weight:700;">
+              Save to my account &middot; Continue with Google
+            </button>
           </div>
 
           <div id="lookupError" class="error-message" style="display:none;"></div>
