@@ -245,4 +245,16 @@ def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
         _par = max(_floor, 1.0 - _depth * _slope)
         s = s / _par
 
-    return int(math.floor(clamp01(s) * 100 + 0.5))  # round-half-up, matching JS
+    # Display relabel (monotonic): everything above is the backtested ranking and
+    # is left untouched. This only stretches the near-ceiling band so the best
+    # pick's 0-100 number differentiates instead of clustering at ~97. Scores
+    # under the knee (~85) are unchanged; above it the curve is steeper than 1:1,
+    # so a truly elite pick pulls toward 100 while a merely-good "best available"
+    # reads lower. Monotonic => never changes ranking, only the label. Keep
+    # identical to static/pick_score.js.
+    d = clamp01(s)
+    _knee = 0.85
+    if d > _knee:
+        _t = (d - _knee) / (1.0 - _knee)
+        d = _knee + _t * _t * (1.0 - _knee)
+    return int(math.floor(d * 100 + 0.5))  # round-half-up, matching JS

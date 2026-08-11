@@ -144,7 +144,20 @@
       s = s / par;
     }
 
-    return Math.floor(clamp01(s) * 100 + 0.5);
+    // Display relabel (monotonic): everything above is the backtested ranking
+    // and is left untouched. This only stretches the near-ceiling band so the
+    // best pick's 0-100 number differentiates instead of clustering at ~97.
+    // Scores under the knee (~85) are unchanged; above it the curve is steeper
+    // than 1:1, so a truly elite pick pulls toward 100 while a merely-good "best
+    // available" reads lower. Monotonic => it never changes which pick ranks
+    // higher, only the label. Keep identical to utils/pick_score.py.
+    var d = clamp01(s);
+    var _knee = 0.85;
+    if (d > _knee) {
+      var _t = (d - _knee) / (1 - _knee);
+      d = _knee + _t * _t * (1 - _knee);
+    }
+    return Math.floor(d * 100 + 0.5);
   }
 
   // Effective starters per position from a league's roster slot counts, used to
