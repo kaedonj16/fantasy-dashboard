@@ -10141,6 +10141,15 @@ html[data-theme="dark"] .podium .bar {
   margin-top: 4px;
 }
 
+/* Yahoo Fantasy API required attribution (shown only on Yahoo pages). */
+.yahoo-attribution {
+  opacity: 0.85;
+}
+.yahoo-attribution a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 .sorted-asc::after {
   content: " ▲";
   color: var(--accent);
