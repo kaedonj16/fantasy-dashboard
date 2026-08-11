@@ -916,6 +916,13 @@ except Exception as e:
     logger.warning("[google-auth-bp] skipped: %s", e)
 
 try:
+    from routes.link_bp import link_bp
+    app.register_blueprint(link_bp)
+    logger.info("[link-bp] registered")
+except Exception as e:
+    logger.warning("[link-bp] skipped: %s", e)
+
+try:
     from routes.misc_api_bp import misc_api_bp
     app.register_blueprint(misc_api_bp)
     logger.info("[misc-api-bp] registered")
