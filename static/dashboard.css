@@ -1956,10 +1956,23 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
    option popup floats/mis-anchors inside the sliding More sheet (a fixed,
    transformed container). Hidden on desktop, where the <select> works fine. */
 .ls-list { display: none; }
-.ls-head {
-  font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--text-muted); padding: 6px 4px 4px;
+/* Collapsible header row: "Switch league" + current league + chevron. */
+.ls-toggle {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  background: none; border: 0; font: inherit; color: var(--text);
+  padding: 11px 12px; border-radius: 10px; cursor: pointer; text-align: left;
+  -webkit-tap-highlight-color: transparent;
 }
+.ls-toggle:active { background: var(--accent-soft); }
+.ls-toggle-label { font-size: 14px; font-weight: 700; flex: 0 0 auto; }
+.ls-toggle-cur {
+  margin-left: auto; font-size: 13px; font-weight: 600; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 58%;
+}
+.ls-toggle-chev { flex: 0 0 auto; color: var(--text-muted); font-size: 11px; transition: transform 0.18s ease; }
+.ls-list.open .ls-toggle-chev { transform: rotate(180deg); }
+.ls-items { display: none; padding-left: 6px; }
+.ls-list.open .ls-items { display: flex; flex-direction: column; }
 .ls-item {
   display: block; width: 100%; text-align: left;
   background: none; border: 0; font: inherit; color: var(--text);
