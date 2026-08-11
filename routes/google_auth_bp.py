@@ -144,6 +144,25 @@ def google_auth_callback():
                 season=pending.get("season"), team_id=pending.get("team_id"),
                 name=pending.get("name"),
             )
+            # Sleeper: resolve the typed username to a team and set the viewer
+            # identity, so the dashboard is personalized (and their other Sleeper
+            # leagues get bridged too) — the home flow never set a viewer session.
+            uname = pending.get("username")
+            if pending["platform"] == "sleeper" and uname and not session.get("viewer_user_id"):
+                try:
+                    from app import (
+                        get_league_ctx_from_cache, resolve_viewer_for_league, save_viewer_session,
+                    )
+                    lctx = get_league_ctx_from_cache("sleeper", pending["league_id"], pending.get("season"))
+                    viewer = resolve_viewer_for_league(lctx.get("users"), lctx.get("rosters"), uname)
+                    if viewer:
+                        save_viewer_session(viewer)
+                        vuid = viewer.get("viewer_user_id")
+                        if vuid:
+                            link_platform_identity(account_id, "sleeper", str(vuid), uname)
+                            _backfill_sleeper_leagues(account_id, str(vuid))
+                except Exception:
+                    logger.warning("[google_auth] sleeper viewer resolve failed", exc_info=True)
             return redirect(
                 f"/{pending['platform']}/{pending.get('season') or ''}/{pending['league_id']}/dashboard"
             )
