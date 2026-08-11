@@ -96,22 +96,34 @@ def page_portfolio():
         lid = str(lg.get("league_id") or "")
         if not lid:
             return None
+        lg_platform = (lg.get("platform") or "sleeper").lower()
         lg_season = int(lg.get("season") or season)
         try:
-            lctx = get_league_ctx_from_cache("sleeper", lid, lg_season)
+            lctx = get_league_ctx_from_cache(lg_platform, lid, lg_season)
         except Exception:
-            return {"league_id": lid, "name": lg.get("name", "Unknown"), "error": True}
+            return {"league_id": lid, "name": lg.get("name", "Unknown"),
+                    "platform": lg_platform, "error": True}
         rosters = lctx.get("rosters") or []
         roster_map = lctx.get("roster_map") or {}
         standings_map = lctx.get("standings_map") or {}
         model_value_table = lctx.get("model_value_table") or []
         players_index = lctx.get("players_index") or {}
         values_by_id = {str(r.get("id") or ""): r for r in model_value_table if r.get("id")}
-        viewer_roster = next(
-            (r for r in rosters if str(r.get("owner_id")) == str(viewer_user_id)), None
-        )
+        # Which roster is "yours": Sleeper matches the viewer's user id; ESPN/Yahoo
+        # have no shared identity, so use the team_id captured when the league was
+        # linked.
+        if lg_platform == "sleeper":
+            viewer_roster = next(
+                (r for r in rosters if str(r.get("owner_id")) == str(viewer_user_id)), None
+            )
+        else:
+            _tid = str(lg.get("team_id") or "")
+            viewer_roster = next(
+                (r for r in rosters if str(r.get("roster_id")) == _tid), None
+            ) if _tid else None
         if not viewer_roster:
-            return {"league_id": lid, "name": lg.get("name", "Unknown"), "not_in_league": True}
+            return {"league_id": lid, "name": lg.get("name", "Unknown"),
+                    "platform": lg_platform, "not_in_league": True}
         rid = str(viewer_roster.get("roster_id"))
         std = standings_map.get(rid) or {}
         wins = int(std.get("wins") or 0)
@@ -205,8 +217,8 @@ def page_portfolio():
         return {
             "league_id": lid,
             "name": league_obj.get("name") or lg.get("name") or "Unknown",
-            "platform": "sleeper",
-            "season": season,
+            "platform": lg_platform,
+            "season": lg_season,
             "wins": wins, "losses": losses, "ties": ties,
             "record": f"{wins}-{losses}" + (f"-{ties}" if ties else ""),
             "rank": rank, "total_teams": total_teams,
@@ -221,8 +233,27 @@ def page_portfolio():
             "offseason": lctx.get("offseason_mode", False),
         }
 
+    # Integrate leagues linked from other platforms (ESPN / Yahoo) into the same
+    # list as the Sleeper leagues, so My Leagues is one unified set of cards.
+    league_inputs = [dict(lg, platform="sleeper") for lg in raw_leagues]
+    try:
+        acct_id = session.get("account_id")
+        if acct_id:
+            from dashboard_services.accounts import list_user_leagues
+            for m in list_user_leagues(acct_id):
+                if (m.get("platform") or "sleeper") != "sleeper":
+                    league_inputs.append({
+                        "league_id": m.get("league_id"),
+                        "name": m.get("name"),
+                        "season": m.get("season") or season,
+                        "platform": m.get("platform"),
+                        "team_id": m.get("team_id"),
+                    })
+    except Exception:
+        logger.debug("portfolio: cross-platform league merge failed", exc_info=True)
+
     leagues_data = []
-    for _lg in raw_leagues:
+    for _lg in league_inputs:
         _result = _league_summary(_lg)
         if _result:
             leagues_data.append(_result)
@@ -326,60 +357,6 @@ def page_portfolio():
         total_wins, total_losses, total_ties,
     )
 
-    # Cross-platform: surface leagues linked from ESPN / Yahoo (the account's
-    # user_leagues) as simple cards above the Sleeper analytics, so linked
-    # leagues show in My Leagues regardless of platform. Full per-platform
-    # analytics for those is a later step.
-    try:
-        acct_id = session.get("account_id")
-        if acct_id:
-            from dashboard_services.accounts import list_user_leagues
-            others = [m for m in list_user_leagues(acct_id) if (m.get("platform") or "") != "sleeper"]
-            if others:
-                _badge = {"espn": ("ESPN", "#d50a0a"), "yahoo": ("Yahoo", "#6001d2")}
-                cards = []
-                for m in others:
-                    plat = m.get("platform") or ""
-                    lid = m.get("league_id")
-                    szn = m.get("season") or season
-                    label, color = _badge.get(plat, (plat.title() or "League", "#6b7280"))
-                    nm = html.escape(m.get("name") or f"{label} League")
-                    cards.append(
-                        "<div style='display:flex;align-items:center;gap:8px;'>"
-                        f"<a href='/{plat}/{szn}/{lid}/dashboard' style='flex:1;min-width:0;display:flex;align-items:center;"
-                        f"justify-content:space-between;gap:10px;padding:12px 14px;border:1px solid var(--border);"
-                        f"border-radius:12px;text-decoration:none;color:var(--text);background:var(--card);'>"
-                        f"<span style='display:flex;align-items:center;gap:10px;min-width:0;'>"
-                        f"<span style='font-size:10px;font-weight:800;color:#fff;background:{color};"
-                        f"padding:2px 7px;border-radius:6px;flex:0 0 auto;'>{label}</span>"
-                        f"<span style='font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>{nm}</span>"
-                        f"</span><span style='color:var(--text-muted);font-size:18px;'>&rsaquo;</span></a>"
-                        f"<button type='button' class='pf-unlink' data-plat='{plat}' data-lid='{lid}' data-season='{szn}' "
-                        "title='Unlink league' aria-label='Unlink league' style='flex:0 0 auto;width:34px;height:34px;"
-                        "border:1px solid var(--border);background:var(--card);color:var(--text-muted);border-radius:9px;"
-                        "cursor:pointer;font-size:16px;line-height:1;'>&times;</button>"
-                        "</div>"
-                    )
-                body = (
-                    "<div class='card' style='margin-bottom:14px;'>"
-                    "<div class='card-header'><h3 style='margin:0;'>Linked from other platforms</h3></div>"
-                    "<div class='card-body' style='display:flex;flex-direction:column;gap:8px;'>"
-                    + "".join(cards) +
-                    "</div></div>"
-                    "<script>(function(){"
-                    "document.querySelectorAll('.pf-unlink').forEach(function(b){"
-                    "b.addEventListener('click',function(){"
-                    "if(!confirm('Unlink this league from your account?'))return;"
-                    "b.disabled=true;"
-                    "fetch('/api/link/remove',{method:'POST',headers:{'Content-Type':'application/json'},"
-                    "body:JSON.stringify({platform:b.dataset.plat,league_id:b.dataset.lid,"
-                    "season:b.dataset.season?Number(b.dataset.season):null})})"
-                    ".then(function(r){return r.json();}).then(function(d){"
-                    "if(d.ok){location.reload();}else{b.disabled=false;alert(d.error||'Could not unlink.');}})"
-                    ".catch(function(){b.disabled=false;});});});})();</script>"
-                ) + body
-    except Exception:
-        logger.debug("portfolio cross-platform section failed", exc_info=True)
     # Always render with a league nav context - fall back to first valid league
     nav_league_id = from_league
     nav_platform = from_platform
