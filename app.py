@@ -1449,7 +1449,7 @@ BASE_HTML = """
 
       {ad_top}
 
-      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window.__FEATURES_JS = {features_js_js};</script>
+      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window.__FEATURES_JS = {features_js_js};</script>
       <main id="page-root" role="main" tabindex="-1" class="overview-layout" data-cache-ts="{cache_ts}" data-premium="{user_premium}">
         {body}
       </main>
@@ -2267,6 +2267,176 @@ def _nav_icon(name: str, cls: str = "", style: str = "", size: int = 16) -> str:
     )
 
 
+def _link_modal_html() -> str:
+    """Self-contained "Link a league" modal (Sleeper / ESPN / Yahoo).
+
+    Sleeper links by username (auto-discovers leagues); ESPN by league id + a
+    team pick (no per-user discovery); Yahoo by league id after OAuth, with the
+    user's team auto-detected. All three POST to /api/link/add, which writes to
+    the signed-in account's user_leagues, so linked leagues show in the switcher.
+    """
+    return """
+    <div id="linkModal" class="link-ov" style="display:none;" onclick="if(event.target===this)closeLinkModal()">
+      <div class="link-card" role="dialog" aria-label="Link a league">
+        <div class="link-head"><span>Link a league</span>
+          <button type="button" class="link-x" onclick="closeLinkModal()" aria-label="Close">&times;</button></div>
+        <div id="linkAccountGate" style="display:none;padding:18px 4px;text-align:center;">
+          <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px;">Sign in to link leagues across platforms and keep them together.</p>
+          <a id="linkGoogleBtn" class="link-go" href="/auth/google">Sign in with Google</a>
+        </div>
+        <div id="linkBody">
+          <div class="link-tabs" role="tablist">
+            <button type="button" class="link-tab active" data-lp="sleeper" onclick="linkTab('sleeper')">Sleeper</button>
+            <button type="button" class="link-tab" data-lp="espn" onclick="linkTab('espn')">ESPN</button>
+            <button type="button" class="link-tab" data-lp="yahoo" onclick="linkTab('yahoo')">Yahoo</button>
+          </div>
+          <div class="link-pane" data-lp="sleeper">
+            <label class="link-lb">Sleeper username</label>
+            <div class="link-row"><input id="linkSleeperUser" class="link-inp" placeholder="username" autocomplete="off">
+              <button type="button" class="link-btn" onclick="linkSleeperLookup()">Find</button></div>
+            <div id="linkSleeperList" class="link-list"></div>
+          </div>
+          <div class="link-pane" data-lp="espn" style="display:none;">
+            <label class="link-lb">ESPN league ID</label>
+            <div class="link-row"><input id="linkEspnId" class="link-inp" inputmode="numeric" placeholder="e.g. 123456">
+              <input id="linkEspnSeason" class="link-inp link-sm" inputmode="numeric" placeholder="season">
+              <button type="button" class="link-btn" onclick="linkEspnPreview()">Next</button></div>
+            <div id="linkEspnResult" class="link-list"></div>
+          </div>
+          <div class="link-pane" data-lp="yahoo" style="display:none;">
+            <label class="link-lb">Yahoo league ID</label>
+            <div class="link-row"><input id="linkYahooId" class="link-inp" placeholder="e.g. 123456">
+              <button type="button" class="link-btn" onclick="linkYahooPreview()">Next</button></div>
+            <div id="linkYahooResult" class="link-list"></div>
+          </div>
+          <div id="linkMsg" class="link-msg"></div>
+        </div>
+      </div>
+    </div>
+    <style>
+      .link-ov{position:fixed;inset:0;z-index:var(--z-modal,10000);background:rgba(4,8,17,.5);
+        display:flex;align-items:center;justify-content:center;padding:16px;}
+      .link-card{background:var(--card);border:1px solid var(--border);border-radius:16px;
+        width:100%;max-width:420px;max-height:88vh;overflow-y:auto;padding:16px 18px;box-shadow:0 24px 60px -20px rgba(0,0,0,.5);}
+      .link-head{display:flex;justify-content:space-between;align-items:center;font-size:16px;font-weight:800;margin-bottom:12px;}
+      .link-x{border:0;background:none;font-size:24px;line-height:1;cursor:pointer;color:var(--text-muted);padding:0 4px;}
+      .link-go{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-weight:700;
+        font-size:13px;padding:9px 18px;border-radius:10px;}
+      .link-tabs{display:flex;gap:4px;padding:4px;background:var(--accent-soft);border:1px solid var(--border);
+        border-radius:11px;margin-bottom:14px;}
+      .link-tab{flex:1;border:0;background:none;color:var(--text-muted);font-weight:700;font-size:13px;
+        padding:8px;border-radius:8px;cursor:pointer;}
+      .link-tab.active{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.12);}
+      .link-lb{display:block;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+        color:var(--text-muted);margin-bottom:6px;}
+      .link-row{display:flex;gap:8px;}
+      .link-inp{flex:1;min-width:0;border:1px solid var(--border);background:var(--bg-alt);color:var(--text);
+        border-radius:9px;padding:9px 11px;font-size:14px;}
+      .link-inp.link-sm{max-width:88px;flex:0 0 auto;}
+      .link-btn{border:0;background:var(--accent);color:#fff;font-weight:700;font-size:13px;padding:9px 14px;
+        border-radius:9px;cursor:pointer;flex:0 0 auto;}
+      .link-list{margin-top:10px;display:flex;flex-direction:column;gap:6px;}
+      .link-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 11px;
+        border:1px solid var(--border);border-radius:10px;font-size:13px;}
+      .link-add{border:0;background:var(--accent-soft);color:var(--accent);font-weight:800;font-size:12px;
+        padding:6px 12px;border-radius:8px;cursor:pointer;}
+      .link-add[disabled]{opacity:.6;cursor:default;}
+      .link-sel{width:100%;border:1px solid var(--border);background:var(--bg-alt);color:var(--text);
+        border-radius:9px;padding:9px 11px;font-size:14px;margin-top:8px;}
+      .link-msg{margin-top:12px;font-size:12.5px;font-weight:600;min-height:16px;}
+      .link-msg.ok{color:var(--win);} .link-msg.err{color:var(--loss);}
+    </style>
+    <script>
+    (function(){
+      window.openLinkModal=function(){
+        var m=document.getElementById('linkModal'); if(!m)return; m.style.display='flex';
+        var gate=document.getElementById('linkAccountGate'), body=document.getElementById('linkBody');
+        if(!window._hasAccount){ gate.style.display='block'; body.style.display='none';
+          var g=document.getElementById('linkGoogleBtn');
+          if(g) g.href='/auth/google?next='+encodeURIComponent(location.pathname); }
+        else { gate.style.display='none'; body.style.display='block'; }
+      };
+      window.closeLinkModal=function(){ var m=document.getElementById('linkModal'); if(m)m.style.display='none'; };
+      document.addEventListener('keydown',function(e){ if(e.key==='Escape')window.closeLinkModal&&window.closeLinkModal(); });
+      window.linkTab=function(p){
+        document.querySelectorAll('.link-tab').forEach(function(b){ b.classList.toggle('active',b.dataset.lp===p); });
+        document.querySelectorAll('.link-pane').forEach(function(pane){ pane.style.display=pane.dataset.lp===p?'block':'none'; });
+        linkSetMsg('','');
+      };
+      function linkSetMsg(t,kind){ var el=document.getElementById('linkMsg'); if(!el)return; el.textContent=t||''; el.className='link-msg'+(kind?' '+kind:''); }
+      function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+      function linkAdd(platform,league_id,season,team_id,name,btn){
+        if(btn){ btn.disabled=true; btn.textContent='Adding…'; }
+        fetch('/api/link/add',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({platform:platform,league_id:league_id,season:season,team_id:team_id,name:name})})
+          .then(function(r){return r.json();}).then(function(d){
+            if(d.ok){ linkSetMsg('Added '+(name||'league')+'. Refreshing…','ok');
+              if(btn){ btn.textContent='Added ✓'; }
+              setTimeout(function(){ location.reload(); },900); }
+            else { linkSetMsg(d.error||'Could not add that league.','err'); if(btn){ btn.disabled=false; btn.textContent='Add'; } }
+          }).catch(function(){ linkSetMsg('Network error.','err'); if(btn){ btn.disabled=false; btn.textContent='Add'; } });
+      }
+      window.linkSleeperLookup=function(){
+        var u=(document.getElementById('linkSleeperUser').value||'').trim();
+        var box=document.getElementById('linkSleeperList');
+        if(!u){ linkSetMsg('Enter your Sleeper username.','err'); return; }
+        linkSetMsg('Looking up…',''); box.innerHTML='';
+        fetch('/api/sleeper-user-leagues?username='+encodeURIComponent(u)).then(function(r){return r.json();}).then(function(d){
+          if(!d.ok||!(d.leagues||[]).length){ linkSetMsg(d.error||'No leagues found for that username.','err'); return; }
+          linkSetMsg('','');
+          box.innerHTML=d.leagues.map(function(l){
+            return '<div class="link-item"><span>'+esc(l.label||l.name)+'</span>'+
+              '<button type="button" class="link-add" data-lid="'+esc(l.league_id)+'" data-season="'+esc(l.season||'')+'" data-name="'+esc(l.name||l.label)+'">Add</button></div>';
+          }).join('');
+          box.querySelectorAll('.link-add').forEach(function(b){ b.addEventListener('click',function(){
+            linkAdd('sleeper', b.dataset.lid, b.dataset.season?Number(b.dataset.season):null, null, b.dataset.name, b); }); });
+        }).catch(function(){ linkSetMsg('Network error.','err'); });
+      };
+      function renderTeamPick(box, platform, league_id, season, name, teams, myId){
+        var opts=teams.map(function(t){ return '<option value="'+esc(t.team_id)+'"'+(String(t.team_id)===String(myId)?' selected':'')+'>'+esc(t.name)+'</option>'; }).join('');
+        box.innerHTML='<div class="link-item"><span>'+esc(name)+'</span></div>'+
+          (teams.length?'<select class="link-sel" id="linkTeamSel">'+opts+'</select>':'')+
+          '<div style="margin-top:10px;text-align:right;"><button type="button" class="link-btn" id="linkConfirm">Add league</button></div>';
+        document.getElementById('linkConfirm').addEventListener('click',function(){
+          var sel=document.getElementById('linkTeamSel');
+          linkAdd(platform, league_id, season, sel?sel.value:null, name, this);
+        });
+      }
+      window.linkEspnPreview=function(){
+        var id=(document.getElementById('linkEspnId').value||'').trim();
+        var yr=(document.getElementById('linkEspnSeason').value||'').trim();
+        var box=document.getElementById('linkEspnResult');
+        if(!id){ linkSetMsg('Enter the ESPN league ID.','err'); return; }
+        linkSetMsg('Loading…',''); box.innerHTML='';
+        fetch('/api/link/espn/preview?league_id='+encodeURIComponent(id)+(yr?'&season='+encodeURIComponent(yr):'')).then(function(r){return r.json();}).then(function(d){
+          if(!d.ok){ linkSetMsg(d.error||'Could not load that league.','err'); return; }
+          linkSetMsg('','');
+          var myId=(d.teams||[]).filter(function(t){return t.is_mine;}).map(function(t){return t.team_id;})[0];
+          renderTeamPick(box,'espn',d.league_id,d.season,d.name,d.teams||[],myId);
+        }).catch(function(){ linkSetMsg('Network error.','err'); });
+      };
+      window.linkYahooPreview=function(){
+        var id=(document.getElementById('linkYahooId').value||'').trim();
+        var box=document.getElementById('linkYahooResult');
+        if(!id){ linkSetMsg('Enter the Yahoo league ID.','err'); return; }
+        linkSetMsg('Loading…',''); box.innerHTML='';
+        fetch('/api/link/yahoo/preview?league_id='+encodeURIComponent(id)).then(function(r){
+          return r.json().then(function(d){ return {status:r.status,d:d}; }); }).then(function(res){
+          var d=res.d;
+          if(res.status===401&&d.needs_oauth){
+            box.innerHTML='<a class="link-go" href="'+esc(d.auth_url||'/auth/yahoo')+'">Connect Yahoo</a>'+
+              '<div style="font-size:11.5px;color:var(--text-muted);margin-top:8px;">Connect Yahoo, then come back and try again.</div>';
+            linkSetMsg('',''); return;
+          }
+          if(!d.ok){ linkSetMsg(d.error||'Could not load that league.','err'); return; }
+          linkSetMsg('',''); renderTeamPick(box,'yahoo',d.league_id,d.season,d.name,d.teams||[],d.my_team_id);
+        }).catch(function(){ linkSetMsg('Network error.','err'); });
+      };
+    })();
+    </script>
+    """
+
+
 def build_nav(league_id: Optional[str], active: str, platform: str, season: int) -> str:
     """
     active (league pages): 'dashboard','standings','power','weekly','teams','activity','injuries','trade','graphs'
@@ -2604,13 +2774,20 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             f"{dark_mode_toggle_html}"
             f"{tour_menu_item}"
             f"{league_switcher_html}"
+            "<button type='button' class='settings-menu-item' id='settingsLinkBtn' onclick='openLinkModal()'>"
+            "  <svg class='settings-menu-icon' viewBox='0 0 24 24' fill='none' stroke='currentColor' "
+            "       stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 5v14M5 12h14'/></svg>"
+            "  <span class='settings-menu-label'>Link a league</span>"
+            "</button>"
             "<a href='/logout' class='settings-menu-item settings-menu-logout'>"
             "  " + _nav_icon("logout", cls="settings-menu-icon") +
             "  <span class='settings-menu-label'>Sign Out</span>"
             "</a>"
         )
 
-        # Rebuild settings gear with updated content
+        # Rebuild settings gear with updated content. (The link-a-league modal is
+        # injected once per page in render_page, not here — this gear renders
+        # twice, desktop + mobile, and the modal needs unique DOM ids.)
         settings_gear = (
             "<div class='settings-gear-wrapper'>"
             "  <button type='button' id='settingsGearBtn' class='utility-icon-btn' "
@@ -3231,6 +3408,12 @@ def render_page(
                 if _league_chrome
                 else build_nav(None, active, _nav_platform, _nav_season))
 
+    # Inject the "Link a league" modal once per page, wherever the settings menu
+    # (and its trigger) renders. nav_html is placed a single time, so appending
+    # here keeps the modal's element ids unique even though the gear renders twice.
+    if session.get("account_id") or session.get("viewer_username") or _nav_platform == "espn":
+        nav_html = nav_html + _link_modal_html()
+
     # Logged-out visitors on lite_js pages (the landing page) get the slim
     # public.js for a fast first paint. public.js omits everything below the
     # @public-js:core-end marker — the nav player-search and player modal included
@@ -3328,6 +3511,7 @@ def render_page(
         viewer_roster_id_js=_json.dumps(str(viewer_roster_id)),
         viewer_user_id_js=_json.dumps(str(viewer_user_id)),
         signed_in_js="true" if session.get("viewer_username") else "false",
+        has_account_js="true" if session.get("account_id") else "false",
         features_js_js=_features_js_js,
     )
     resp = make_response(html)
