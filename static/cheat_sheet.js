@@ -227,6 +227,9 @@
     $('csValBtn').textContent = dyn ? 'Ascenders only' : 'Values only';
     var hd = $('csHideDrafted'); if (hd) { hd.style.display = draftedIds ? '' : 'none'; hd.setAttribute('aria-pressed', String(state.hideDrafted)); }
     var nb = $('csNeedsBtn'); if (nb) { nb.style.display = myCounts ? '' : 'none'; nb.setAttribute('aria-pressed', String(state.needsFilter)); }
+    // Show a Clear button once the user has hand-marked players as gone, so they
+    // can wipe those marks in one tap. Live/mock drafted ids are not touched.
+    var cb = $('csClearBtn'); if (cb) cb.style.display = state.done.size ? '' : 'none';
     renderNeedsBar();
 
     if (!players.length) {
@@ -497,7 +500,9 @@
       var qDrafted = qp.get('drafted');
       if (qDrafted) {
         draftedIds = new Set(qDrafted.split(',').map(function (s) { return s.trim(); }).filter(Boolean));
-        _embeddedMock = true;
+        // A mock has no live feed, so freeze on this snapshot. A live draft passes
+        // live=1: seed the board now, but let live detection keep it current.
+        if (qp.get('live') !== '1') _embeddedMock = true;
       }
     } catch (e) { /* no URL state */ }
     // Mode switch changes the scoring axis (redraft <-> dynasty), so a source
@@ -526,6 +531,12 @@
     if (nb) nb.addEventListener('click', function () {
       state.needsFilter = !state.needsFilter; this.setAttribute('aria-pressed', String(state.needsFilter));
       document.querySelectorAll('.cs-board').forEach(function (b) { b.classList.toggle('needson', state.needsFilter); });
+    });
+    var clearBtn = $('csClearBtn');
+    if (clearBtn) clearBtn.addEventListener('click', function () {
+      if (!state.done.size) return;
+      state.done.clear();
+      render();
     });
     var csvBtn = $('csCsvBtn'); if (csvBtn) csvBtn.addEventListener('click', exportCsv);
     $('csPrintBtn').addEventListener('click', function () { window.print(); });

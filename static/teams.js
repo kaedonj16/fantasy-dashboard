@@ -558,14 +558,14 @@
               'Cut':       '#94a3b8',
             };
             var sigDesc = {
-              'Core':      'Elite, in-prime asset — a keeper.',
-              'Sell High': 'Aging or market-hyped — sell while the value is high.',
-              'Breakout':  'On the Breakout Engine board — hold for the leap.',
-              'Sleeper':   'Valued above the dynasty market — buy or hold.',
-              'Monitor':   'Sharp recent drop — watch before value erodes.',
-              'Stash':     'Young/rookie upside below rosterable depth — hold for later.',
+              'Core':      'Elite, in-prime asset: a keeper.',
+              'Sell High': 'Aging or market-hyped: sell while the value is high.',
+              'Breakout':  'On the Breakout Engine board: hold for the leap.',
+              'Sleeper':   'Valued above the dynasty market: buy or hold.',
+              'Monitor':   'Sharp recent drop: watch before value erodes.',
+              'Stash':     'Young/rookie upside below rosterable depth: hold for later.',
               'Hold':      'No action needed right now.',
-              'Cut':       'Below rosterable depth or past prime — drop candidate.',
+              'Cut':       'Below rosterable depth or past prime: drop candidate.',
             };
             var healthColor = {
               'Strong':  '#22c55e',
@@ -595,25 +595,38 @@
                 var pd = positions[pos];
                 if (!pd || !pd.players.length) return;
                 pd.players.forEach(function(p) { if (buckets[p.signal]) buckets[p.signal].push(p); });
-                if (pd.health === 'Thin' || pd.health === 'Aging') needs.push({ pos: pos, health: pd.health });
+                if (pd.health === 'Thin' || pd.health === 'Aging') {
+                  // A thin spot that already has a strong anchor (a Core/keeper, or
+                  // a top-third league rank at the position) needs depth behind it,
+                  // not an upgrade. Only a thin spot with no anchor wants an upgrade.
+                  var anchored = (pd.players || []).some(function(p) { return p.signal === 'Core'; })
+                    || (!!pd.league_rank && pd.league_rank <= Math.max(1, Math.round((pd.num_teams || 10) * 0.3)));
+                  needs.push({ pos: pos, health: pd.health, anchored: anchored });
+                }
               });
               var moves = [];
               var addMove = function(tag, color, body) {
                 moves.push('<div class="ri-move"><span class="ri-move-tag" style="background:' + color + '">' + tag +
                   '</span><span class="ri-move-body">' + body + '</span></div>');
               };
-              if (buckets['Sell High'].length) addMove('Sell high', sigColor['Sell High'], '<b>' + names(buckets['Sell High']) + '</b> <span class="why">— sell while the value is high.</span>');
-              if (buckets['Cut'].length)       addMove('Cut', '#64748b', '<b>' + names(buckets['Cut']) + '</b> <span class="why">— low value; free the bench spot' + (buckets['Cut'].length > 1 ? 's' : '') + '.</span>');
-              if (buckets['Breakout'].length)  addMove('Breakout', sigColor['Breakout'], '<b>' + names(buckets['Breakout']) + '</b> <span class="why">— breakout upside; hold for the leap.</span>');
-              if (buckets['Sleeper'].length)   addMove('Buy / hold', sigColor['Sleeper'], '<b>' + names(buckets['Sleeper']) + '</b> <span class="why">— valued above the market.</span>');
-              if (buckets['Stash'].length)     addMove('Stash', sigColor['Stash'], '<b>' + names(buckets['Stash']) + '</b> <span class="why">— young upside; stash for later.</span>');
-              if (buckets['Monitor'].length)   addMove('Monitor', sigColor['Monitor'], '<b>' + names(buckets['Monitor']) + '</b> <span class="why">— slipping; watch closely.</span>');
+              if (buckets['Sell High'].length) addMove('Sell high', sigColor['Sell High'], '<b>' + names(buckets['Sell High']) + '</b><span class="why">: sell while the value is high.</span>');
+              if (buckets['Cut'].length)       addMove('Cut', '#64748b', '<b>' + names(buckets['Cut']) + '</b><span class="why">: low value; free the bench spot' + (buckets['Cut'].length > 1 ? 's' : '') + '.</span>');
+              if (buckets['Breakout'].length)  addMove('Breakout', sigColor['Breakout'], '<b>' + names(buckets['Breakout']) + '</b><span class="why">: breakout upside; hold for the leap.</span>');
+              if (buckets['Sleeper'].length)   addMove('Buy / hold', sigColor['Sleeper'], '<b>' + names(buckets['Sleeper']) + '</b><span class="why">: valued above the market.</span>');
+              if (buckets['Stash'].length)     addMove('Stash', sigColor['Stash'], '<b>' + names(buckets['Stash']) + '</b><span class="why">: young upside; stash for later.</span>');
+              if (buckets['Monitor'].length)   addMove('Monitor', sigColor['Monitor'], '<b>' + names(buckets['Monitor']) + '</b><span class="why">: slipping; watch closely.</span>');
               if (needs.length) {
-                var needStr = needs.map(function(n) { return '<b>' + n.pos + '</b> is ' + n.health.toLowerCase(); }).join(', ');
-                addMove('Target', healthColor['Thin'], needStr + ' <span class="why">— shop for an upgrade.</span>');
+                // Aging -> get younger; thin with an anchor -> add a backup; thin
+                // with no anchor -> shop for an upgrade.
+                var needStr = needs.map(function(n) {
+                  var advice = n.health === 'Aging' ? 'get younger'
+                    : (n.anchored ? 'add a backup' : 'shop for an upgrade');
+                  return '<b>' + n.pos + '</b> is ' + n.health.toLowerCase() + '<span class="why">, ' + advice + '</span>';
+                }).join('; ');
+                addMove('Target', healthColor['Thin'], needStr + '<span class="why">.</span>');
               }
               html += '<div class="ri-summary"><div class="ri-summary-eyebrow">Suggested moves</div>' +
-                (moves.length ? moves.join('') : '<div class="ri-summary-stable">Roster looks stable — no moves flagged.</div>') +
+                (moves.length ? moves.join('') : '<div class="ri-summary-stable">Roster looks stable, no moves flagged.</div>') +
                 '</div>';
 
               // ── Legend for the signal chips ──

@@ -2116,6 +2116,12 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
   display: block;
 }
 
+/* Clear the fixed floating pills (Discord + data freshness, bottom-right) so the
+   last analytics row (e.g. the roster-intel bottom) is never hidden behind them. */
+.tab-panels {
+  padding-bottom: 72px;
+}
+
 .card .tab-panels {
   margin-top: 4px;
   width: 100%;
