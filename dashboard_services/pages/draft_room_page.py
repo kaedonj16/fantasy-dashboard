@@ -75,6 +75,10 @@ def build_draft_room_body(
             f"/{platform}/{int(season)}/{league_id}/draft/cheat-sheet"
             if _dr_has_league else "/draft/cheat-sheet"
         ),
+        "cheatSheetEmbedUrl": (
+            f"/{platform}/{int(season)}/{league_id}/draft/cheat-sheet/embed"
+            if _dr_has_league else "/draft/cheat-sheet/embed"
+        ),
         "isGuest": bool(is_guest),
         "numTeams": int(num_teams) if num_teams else None,
         "isSuperflex": bool(is_superflex),
@@ -284,6 +288,7 @@ _DRAFT_ROOM_HTML = r"""
                 <option value="win_now">Age: Win now</option>
                 <option value="youth">Age: Youth</option>
               </select>
+              <a class="dr-btn dr-btn-ghost" id="drOptsCheatSheet" href="/draft/cheat-sheet" rel="noopener" title="Open your value board / cheat sheet (Cmd/Ctrl-click for a new tab)">Cheat Sheet</a>
               <button class="dr-btn dr-btn-ghost" id="drSummaryBtn" style="display:none;">Summary</button>
               <button class="dr-btn dr-btn-ghost" id="drShare"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px;margin-right:4px;"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>Share</button>
               <button class="dr-btn dr-btn-ghost" id="drUndo">Undo</button>
@@ -382,6 +387,18 @@ _DRAFT_ROOM_HTML = r"""
         <button class="dr-btn dr-btn-primary" id="drShareViewShare"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px;margin-right:4px;"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>Share</button>
         <button class="dr-btn" id="drShareViewDl">Download</button>
       </div>
+    </div>
+  </div>
+
+  <!-- In-draft cheat sheet (chrome-less iframe embed) -->
+  <div class="dr-cheat-overlay" id="drCheatSheet" style="display:none;">
+    <div class="dr-cheat-card">
+      <div class="dr-cheat-head">
+        <span class="dr-cheat-title">Cheat Sheet</span>
+        <a class="dr-cheat-pop" id="drCheatPop" href="/draft/cheat-sheet" target="_blank" rel="noopener" title="Open in a new tab">Open in tab &#8599;</a>
+        <button class="dr-cheat-close" id="drCheatClose" aria-label="Close">&times;</button>
+      </div>
+      <iframe class="dr-cheat-frame" id="drCheatFrame" title="Draft cheat sheet"></iframe>
     </div>
   </div>
 
@@ -660,6 +677,20 @@ _DRAFT_ROOM_HTML = r"""
   .dr-prev-score-lbl { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-top: 2px; }
   .dr-prev-score-reason { font-size: 12px; font-weight: 600; color: var(--text-muted); margin-top: 6px; }
   .dr-empty-note { padding: 22px 14px; font-size: 12px; color: var(--text-muted); text-align: center; }
+  /* In-draft cheat sheet overlay (iframes the chrome-less cheat sheet). */
+  .dr-cheat-overlay { position: fixed; inset: 0; z-index: 9998; background: rgba(0,0,0,.55);
+    display: flex; align-items: center; justify-content: center; padding: 18px; }
+  .dr-cheat-card { width: min(1180px, 96vw); height: min(90vh, 920px); background: var(--card);
+    border: 1px solid var(--border); border-radius: 14px; display: flex; flex-direction: column;
+    overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.4); }
+  .dr-cheat-head { display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+    border-bottom: 1px solid var(--border); flex: 0 0 auto; }
+  .dr-cheat-title { font-weight: 800; font-size: 15px; color: var(--text); }
+  .dr-cheat-pop { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--accent,#38bdf8); text-decoration: none; }
+  .dr-cheat-pop:hover { text-decoration: underline; }
+  .dr-cheat-close { background: none; border: 0; font-size: 24px; line-height: 1; color: var(--text-muted); cursor: pointer; padding: 0 4px; }
+  .dr-cheat-close:hover { color: var(--text); }
+  .dr-cheat-frame { flex: 1 1 auto; width: 100%; border: 0; background: var(--bg); }
   /* tiers */
   .dr-tier { font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 999px;
     background: rgba(127,127,127,.18); color: var(--text-muted); flex-shrink: 0; }

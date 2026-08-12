@@ -192,6 +192,36 @@
     if (_hl && cfg.historyUrl) _hl.setAttribute('href', cfg.historyUrl);
     var _cs = document.getElementById('drToCheatSheet');
     if (_cs && cfg.cheatSheetUrl) _cs.setAttribute('href', cfg.cheatSheetUrl);
+    // In-draft cheat sheet: the options-menu link opens the sheet in an overlay
+    // (iframe of the chrome-less embed) so you never leave the draft. Cmd/Ctrl/
+    // middle-click still opens the full page in a new tab.
+    var _cs2 = document.getElementById('drOptsCheatSheet');
+    if (_cs2 && cfg.cheatSheetUrl) _cs2.setAttribute('href', cfg.cheatSheetUrl);
+    var _csPop = document.getElementById('drCheatPop');
+    if (_csPop && cfg.cheatSheetUrl) _csPop.setAttribute('href', cfg.cheatSheetUrl);
+    var _csOverlay = document.getElementById('drCheatSheet');
+    var _csFrame = document.getElementById('drCheatFrame');
+    function openCheatSheet(){
+      if (!_csOverlay || !_csFrame) return;
+      _csFrame.src = cfg.cheatSheetEmbedUrl || '/draft/cheat-sheet/embed';  // (re)load -> re-syncs live draft
+      _csOverlay.style.display = 'flex';
+    }
+    function closeCheatSheet(){
+      if (!_csOverlay) return;
+      _csOverlay.style.display = 'none';
+      if (_csFrame) _csFrame.src = 'about:blank';   // stop the embed's poll loop
+    }
+    if (_cs2) _cs2.addEventListener('click', function(e){
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;  // let modified clicks open a tab
+      e.preventDefault();
+      openCheatSheet();
+    });
+    var _csClose = document.getElementById('drCheatClose');
+    if (_csClose) _csClose.addEventListener('click', closeCheatSheet);
+    if (_csOverlay) _csOverlay.addEventListener('click', function(e){ if (e.target === _csOverlay) closeCheatSheet(); });
+    document.addEventListener('keydown', function(e){
+      if (e.key === 'Escape' && _csOverlay && _csOverlay.style.display === 'flex') closeCheatSheet();
+    });
     if (cfg.numTeams) {
       var t = document.getElementById('drTeams');
       var want = String(Math.min(14, Math.max(8, cfg.numTeams)));
