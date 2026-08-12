@@ -127,8 +127,11 @@ _CHEAT_HTML = r"""
   .cs-backlink { font-size: 13px; font-weight: 700; color: var(--cs-accent); text-decoration: none; }
   .cs-backlink:hover { text-decoration: underline; }
 
-  .cs-controls { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
-  .cs-ctrl-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
+  /* The controls no longer fit beside the title, so they sit as a deliberate,
+     left-aligned toolbar on their own full-width row below the header text
+     rather than floating in a right-aligned wrap. */
+  .cs-controls { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; width: 100%; margin-top: 14px; }
+  .cs-ctrl-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; justify-content: flex-start; }
   .cs-cgroup { display: inline-flex; align-items: center; gap: 7px; }
   .cs-clabel { font-family: var(--cs-mono); font-size: 9.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--cs-ink-faint); }
   .cs-seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--cs-surface-2); border: 1px solid var(--cs-line); border-radius: 10px; }
@@ -140,10 +143,10 @@ _CHEAT_HTML = r"""
   .cs-btn[aria-pressed="true"] { border-color: var(--cs-good); color: var(--cs-good); background: var(--cs-good-soft); }
   .cs-src { font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; background: var(--cs-surface); color: var(--cs-ink-soft); border: 1px solid var(--cs-line); border-radius: 9px; padding: 7px 9px; }
   .cs-src:hover { border-color: var(--cs-accent); }
-  /* Clear marks sits on its own line below the controls so it never shoves the
-     row when it appears. The zero-height break forces the wrap. */
-  .cs-break { flex-basis: 100%; height: 0; margin: 0; padding: 0; }
-  .cs-btn-clear { margin-top: 4px; }
+  /* Reset actions (Clear marks / Reset board) are secondary: they flow inline at
+     the end of the controls, de-emphasized so a busy row still reads cleanly. */
+  .cs-btn-reset { color: var(--cs-ink-faint); }
+  .cs-btn-reset:hover { color: var(--cs-accent); border-color: var(--cs-accent); }
 
   /* ── Custom draft board (pro): overrides on top of the model board ────────── */
   /* The edit column is hidden until Edit board is on. */
@@ -344,13 +347,12 @@ _CHEAT_HTML = r"""
         <select class="cs-src" id="csAdpSrc" aria-label="ADP source" style="display:none;"></select>
         <button class="cs-btn" id="csNeedsBtn" aria-pressed="false" style="display:none;">Needs only</button>
         <button class="cs-btn" id="csHideDrafted" aria-pressed="false" style="display:none;">Hide drafted</button>
-        <button class="cs-btn" id="csEditBtn" aria-pressed="false" style="display:none;" title="Make this your board: bump, pin or mute players (Pro)">Edit board</button>
+        <button class="cs-btn" id="csEditBtn" aria-pressed="false" style="display:none;" title="Make this your board: reorder, pin or mute players (Pro)">Edit board</button>
         <button class="cs-btn" id="csValBtn" aria-pressed="false">Values only</button>
         <button class="cs-btn" id="csCsvBtn">CSV</button>
         <button class="cs-btn" id="csPrintBtn">Print</button>
-        <span class="cs-break" aria-hidden="true"></span>
-        <button class="cs-btn cs-btn-clear" id="csClearBtn" style="display:none;">Clear marks</button>
-        <button class="cs-btn cs-btn-clear" id="csResetBoardBtn" style="display:none;">Reset board</button>
+        <button class="cs-btn cs-btn-reset" id="csClearBtn" style="display:none;">Clear marks</button>
+        <button class="cs-btn cs-btn-reset" id="csResetBoardBtn" style="display:none;">Reset board</button>
       </div>
     </div>
   </header>

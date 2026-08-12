@@ -101,6 +101,12 @@
   }
   function hasOverrides() { return cfg.hasPremium && Object.keys(overrides).length > 0; }
   function boardBump(id, dir) {
+    // dir +1 = up one row, -1 = down one row. Don't record a phantom nudge when
+    // the player is already at the top/bottom of the board (nothing to pass).
+    var idx = -1;
+    for (var i = 0; i < players.length; i++) { if (players[i].id === id) { idx = i; break; } }
+    if (idx === 0 && dir > 0) return;
+    if (idx === players.length - 1 && dir < 0) return;
     var o = overrides[id] || {}; delete o.p; delete o.m; o.d = (o.d || 0) + dir; if (!o.d) delete o.d;
     overrides[id] = o; saveOverrides(); compute(); render();
   }
@@ -114,25 +120,39 @@
   }
   function boardReset() { overrides = {}; saveOverrides(); compute(); render(); }
 
-  // Assign each player a display group + label: pinned bucket, model/effective
-  // tier, or muted bucket. When custom overrides exist, reorder by that group
-  // (ties broken by model VOR rank) and renumber the RK column.
+  // Apply custom overrides on top of the model board. Pinned players float to the
+  // top, muted sink to the bottom; a nudge (o.d) moves a player up/down by that
+  // many rows. The effective sort key is the model index shifted by the nudge,
+  // offset half a row so a +1 nudge lands strictly above the neighbour it passes
+  // (an integer tie would otherwise leave it in place). After sorting we renumber
+  // the RK column and let each moved player adopt the tier it settled into, so the
+  // cliff headers stay monotonic instead of repeating.
   function applyOverrides() {
     var custom = hasOverrides();
-    var maxT = 1;
-    players.forEach(function (p) { if (p.dtier > maxT) maxT = p.dtier; });
     players.forEach(function (p, i) {
       p._mr = i;   // model (VOR) order index, captured before any reorder
       var o = custom ? overrides[p.id] : null;
-      if (o && o.p)      { p.grp = -1;  p.grpLabel = 'Pinned'; p.ov = 'pin';  p.ovN = 0; }
-      else if (o && o.m) { p.grp = 1e9; p.grpLabel = 'Muted';  p.ov = 'mute'; p.ovN = 0; }
-      else if (o && o.d) { var et = Math.min(maxT, Math.max(1, p.dtier - o.d)); p.grp = et; p.grpLabel = 'Tier ' + et; p.ov = (o.d > 0 ? 'up' : 'down'); p.ovN = Math.abs(o.d); }
-      else               { p.grp = p.dtier; p.grpLabel = 'Tier ' + p.dtier; p.ov = null; p.ovN = 0; }
+      if (o && o.p)      { p.bucket = -1; p.ov = 'pin';  p.ovN = 0; p._eff = i; }
+      else if (o && o.m) { p.bucket = 1;  p.ov = 'mute'; p.ovN = 0; p._eff = i; }
+      else if (o && o.d) { p.bucket = 0;  p.ov = (o.d > 0 ? 'up' : 'down'); p.ovN = Math.abs(o.d); p._eff = i - o.d - (o.d > 0 ? 0.5 : -0.5); }
+      else               { p.bucket = 0;  p.ov = null;   p.ovN = 0; p._eff = i; }
     });
-    if (custom) {
-      players.sort(function (a, b) { return a.grp - b.grp || a._mr - b._mr; });
-      players.forEach(function (x, i) { x.rk = i + 1; });
+    if (!custom) {
+      players.forEach(function (p) { p.grp = p.dtier; p.grpLabel = 'Tier ' + p.dtier; });
+      return;
     }
+    players.sort(function (a, b) {
+      if (a.bucket !== b.bucket) return a.bucket - b.bucket;
+      if (a.bucket === 0) return a._eff - b._eff || a._mr - b._mr;
+      return a._mr - b._mr;
+    });
+    var runTier = 1;
+    players.forEach(function (x, i) {
+      x.rk = i + 1;
+      if (x.bucket === -1)      { x.grp = -1;  x.grpLabel = 'Pinned'; }
+      else if (x.bucket === 1)  { x.grp = 1e9; x.grpLabel = 'Muted'; }
+      else { if (x.ov == null) runTier = x.dtier; x.grp = runTier; x.grpLabel = 'Tier ' + runTier; }
+    });
   }
 
   function scoringAxisKey() { return state.mode === 'dynasty' ? 'startup' : 'redraft'; }
@@ -370,8 +390,8 @@
       return '<button type="button" class="cs-ovbtn' + (on ? ' on' : '') + '" data-act="' + act + '" data-id="' + esc(x.id) + '" title="' + title + '" aria-label="' + title + '">' + glyph + '</button>';
     }
     return '<td class="cs-edit-cell"><span class="cs-ovbtns">'
-      + b('up', '&#9650;', x.ov === 'up', 'Bump up a tier')
-      + b('down', '&#9660;', x.ov === 'down', 'Bump down a tier')
+      + b('up', '&#9650;', x.ov === 'up', 'Move up a row')
+      + b('down', '&#9660;', x.ov === 'down', 'Move down a row')
       + b('pin', '&#9733;', x.ov === 'pin', 'Pin to the top')
       + b('mute', '&times;', x.ov === 'mute', 'Mute to the bottom')
       + '</span></td>';
