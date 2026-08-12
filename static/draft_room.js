@@ -192,6 +192,9 @@
     if (_hl && cfg.historyUrl) _hl.setAttribute('href', cfg.historyUrl);
     var _cs = document.getElementById('drToCheatSheet');
     if (_cs && cfg.cheatSheetUrl) _cs.setAttribute('href', cfg.cheatSheetUrl);
+    // Same target for the in-draft options-menu link (always reachable while drafting).
+    var _cs2 = document.getElementById('drOptsCheatSheet');
+    if (_cs2 && cfg.cheatSheetUrl) _cs2.setAttribute('href', cfg.cheatSheetUrl);
     if (cfg.numTeams) {
       var t = document.getElementById('drTeams');
       var want = String(Math.min(14, Math.max(8, cfg.numTeams)));

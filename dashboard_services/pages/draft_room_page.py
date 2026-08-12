@@ -284,6 +284,7 @@ _DRAFT_ROOM_HTML = r"""
                 <option value="win_now">Age: Win now</option>
                 <option value="youth">Age: Youth</option>
               </select>
+              <a class="dr-btn dr-btn-ghost" id="drOptsCheatSheet" href="/draft/cheat-sheet" target="_blank" rel="noopener" title="Open your value board / cheat sheet in a new tab">&#128203;&nbsp;Cheat Sheet &#8599;</a>
               <button class="dr-btn dr-btn-ghost" id="drSummaryBtn" style="display:none;">Summary</button>
               <button class="dr-btn dr-btn-ghost" id="drShare"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px;margin-right:4px;"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>Share</button>
               <button class="dr-btn dr-btn-ghost" id="drUndo">Undo</button>
