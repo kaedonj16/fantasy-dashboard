@@ -235,8 +235,7 @@
 
   function renderDraft(dyn) {
     var live = players.filter(function (x) { return !x.drafted; });
-    var n = Math.min(teams || 12, live.length);
-    var dh = live.slice(0, n).map(function (x, i) {
+    var dh = live.map(function (x, i) {
       var round = Math.ceil((i + 1) / (teams || 12));
       var run = x.lastInTier;
       return '<div class="cs-drow' + (run ? ' run' : '') + '">'
@@ -339,11 +338,11 @@
   function exportCsv() {
     if (!players.length) return;
     var dyn = state.mode === 'dynasty';
-    var head = ['Rank', 'Player', 'Pos', 'PosRank', 'Score', 'VOR', (dyn ? 'Age' : 'ADP'), (dyn ? 'Window' : 'Value'), 'Tier'];
+    var head = ['Rank', 'Player', 'Pos', 'PosRank', 'VOR', (dyn ? 'Age' : 'ADP'), (dyn ? 'Window' : 'Value'), 'Tier'];
     var rows = players.map(function (x) {
-      var c6 = dyn ? (x.age != null ? x.age : '') : (x.adp != null ? Math.round(x.adp) : '');
-      var c7 = dyn ? youthWindow(x.age)[0] : (x.value != null ? (x.value > 0 ? '+' + x.value : x.value) : '');
-      return [x.rk, x.name, x.pos, x.prk, x.score, x.vor, c6, c7, x.dtier];
+      var c5 = dyn ? (x.age != null ? x.age : '') : (x.adp != null ? Math.round(x.adp) : '');
+      var c6 = dyn ? youthWindow(x.age)[0] : (x.value != null ? (x.value > 0 ? '+' + x.value : x.value) : '');
+      return [x.rk, x.name, x.pos, x.prk, x.vor, c5, c6, x.dtier];
     });
     var csv = [head].concat(rows).map(function (r) {
       return r.map(function (v) { var s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(',');
@@ -369,7 +368,17 @@
 
   function init() {
     var back = $('csBack'); if (back && cfg.draftUrl) back.href = cfg.draftUrl;
-    wireSeg('csMode', function (b) { state.mode = b.getAttribute('data-mode'); });
+    // Mode switch changes the scoring axis (redraft <-> dynasty), so a source
+    // that's only valid on the old axis (e.g. Yahoo, redraft-only) must not carry
+    // over. Reset to the default source and refetch cleanly for the new axis.
+    document.querySelectorAll('#csMode button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('#csMode button').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+        state.mode = b.getAttribute('data-mode');
+        if (state.adpSource !== 'auto') { state.adpSource = 'auto'; loadPlayers(); }
+        else { renderAdpSources(); compute(); render(); }
+      });
+    });
     wireSeg('csQb', function (b) { state.sf = b.getAttribute('data-qb') === 'SF'; });
 
     $('csValBtn').addEventListener('click', function () {
