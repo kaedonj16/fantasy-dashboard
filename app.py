@@ -707,8 +707,10 @@ _CSP_POLICY = "; ".join([
     "connect-src 'self' https://*.sentry.io https://*.google.com "
     "https://*.googlesyndication.com https://*.doubleclick.net "
     "https://pagead2.googlesyndication.com https://cdn.jsdelivr.net",
-    # Ads render inside iframes served from the Google ad hosts.
-    "frame-src https://*.googlesyndication.com https://*.doubleclick.net "
+    # 'self' lets the app embed its own pages (the Draft Room's in-draft cheat
+    # sheet overlay iframes /draft/cheat-sheet/embed). Ads render inside iframes
+    # served from the Google ad hosts.
+    "frame-src 'self' https://*.googlesyndication.com https://*.doubleclick.net "
     "https://*.google.com",
     "object-src 'none'",
     "base-uri 'self'",

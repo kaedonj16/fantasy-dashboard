@@ -146,11 +146,9 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
     )
 
 
-@tool_pages_bp.route("/draft/cheat-sheet")
-@tool_pages_bp.route("/<platform>/<int:season>/<league_id>/draft/cheat-sheet")
-def page_cheat_sheet(platform: str = None, season: int = None, league_id: str = None):
-    """Printable Draft Cheat Sheet — the pre-draft view of the Draft Room board."""
-    from dashboard_services.pages.cheat_sheet_page import build_cheat_sheet_body
+def _cheat_sheet_kwargs(platform, season, league_id):
+    """Resolve league context into (league_id, season, kwargs) for the cheat
+    sheet builders. Shared by the full page and the iframe-embed routes."""
     num_teams = None
     is_sf = False
     roster_positions = None
@@ -181,12 +179,20 @@ def page_cheat_sheet(platform: str = None, season: int = None, league_id: str = 
     _qmode = (request.args.get("mode") or "").lower()
     if _qmode in ("redraft", "dynasty"):
         mode = _qmode
-    body = build_cheat_sheet_body(
-        league_id, season, platform,
-        num_teams=num_teams, is_superflex=is_sf,
-        roster_positions=roster_positions, mode=mode,
-        viewer_user_id=session.get("viewer_user_id"),
-    )
+    return league_id, season, {
+        "num_teams": num_teams, "is_superflex": is_sf,
+        "roster_positions": roster_positions, "mode": mode,
+        "viewer_user_id": session.get("viewer_user_id"),
+    }
+
+
+@tool_pages_bp.route("/draft/cheat-sheet")
+@tool_pages_bp.route("/<platform>/<int:season>/<league_id>/draft/cheat-sheet")
+def page_cheat_sheet(platform: str = None, season: int = None, league_id: str = None):
+    """Printable Draft Cheat Sheet — the pre-draft view of the Draft Room board."""
+    from dashboard_services.pages.cheat_sheet_page import build_cheat_sheet_body
+    league_id, season, kw = _cheat_sheet_kwargs(platform, season, league_id)
+    body = build_cheat_sheet_body(league_id, season, platform, **kw)
     return render_page(
         "Draft Cheat Sheet | BR Fantasy", league_id, "draft", body, platform, season,
         description=(
@@ -194,6 +200,15 @@ def page_cheat_sheet(platform: str = None, season: int = None, league_id: str = 
             "and Superflex / dynasty toggles, computed for your league scoring and roster."
         ),
     )
+
+
+@tool_pages_bp.route("/draft/cheat-sheet/embed")
+@tool_pages_bp.route("/<platform>/<int:season>/<league_id>/draft/cheat-sheet/embed")
+def page_cheat_sheet_embed(platform: str = None, season: int = None, league_id: str = None):
+    """Chrome-less cheat sheet for the Draft Room's in-draft iframe overlay."""
+    from dashboard_services.pages.cheat_sheet_page import build_cheat_sheet_embed_document
+    league_id, season, kw = _cheat_sheet_kwargs(platform, season, league_id)
+    return build_cheat_sheet_embed_document(league_id, season, platform, **kw)
 
 
 @tool_pages_bp.route("/keeper")

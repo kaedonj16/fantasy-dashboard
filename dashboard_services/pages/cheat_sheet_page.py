@@ -65,6 +65,28 @@ def build_cheat_sheet_body(
     )
 
 
+def build_cheat_sheet_embed_document(*args, **kwargs) -> str:
+    """A full, chrome-less HTML document that renders ONLY the cheat sheet, for
+    embedding in an iframe (the Draft Room's in-draft overlay). It links the site
+    stylesheet for the theme tokens and mirrors the parent's light/dark choice via
+    the shared same-origin localStorage, so it looks native inside the modal."""
+    body = build_cheat_sheet_body(*args, **kwargs)
+    css_v = _static_v("dashboard.css")
+    return (
+        "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<title>Draft Cheat Sheet</title>"
+        f"<link rel='stylesheet' href='/static/dashboard.css?v={css_v}'>"
+        # Match the parent tab's theme (same-origin iframe shares localStorage).
+        "<script>(function(){try{if(localStorage.getItem('theme')==='dark')"
+        "document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>"
+        "<style>html,body{margin:0;background:var(--bg,#eef1f7);}"
+        ".cs-wrap{padding-top:14px;}</style></head><body>"
+        + body +
+        "</body></html>"
+    )
+
+
 # Plain (non-f) string — safe to contain { } freely.
 _CHEAT_HTML = r"""
 <style>
@@ -212,9 +234,10 @@ _CHEAT_HTML = r"""
   .cs-posf button { font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-line); background: var(--cs-surface); color: var(--cs-ink-soft); padding: 8px 12px; border-radius: 9px; }
   .cs-posf button:hover { border-color: var(--cs-accent); color: var(--cs-accent); }
   .cs-posf button[aria-pressed="true"] { background: var(--cs-accent); color: #fff; border-color: var(--cs-accent); }
-  .cs-drow { display: grid; grid-template-columns: 58px 1fr; gap: 14px; align-items: center; padding: 11px 16px; border-bottom: 1px solid var(--cs-line); }
+  .cs-drow { display: flex; align-items: center; gap: 12px; padding: 11px 16px; border-bottom: 1px solid var(--cs-line); }
   .cs-drow:last-child { border-bottom: 0; }
   .cs-drow.run { background: var(--cs-accent-soft); }
+  .cs-dname { flex: 1 1 auto; min-width: 0; font-size: 14px; font-weight: 700; color: var(--cs-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cs-pick { font-family: var(--cs-mono); font-weight: 800; font-size: 13px; text-align: center; }
   .cs-pick small { display: block; font-size: 9px; font-weight: 600; color: var(--cs-ink-faint); letter-spacing: .06em; }
   .cs-dtiers { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

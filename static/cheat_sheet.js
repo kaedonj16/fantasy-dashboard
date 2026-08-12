@@ -33,6 +33,8 @@
   var adpSourceOptions = {};   // {redraft:[{value,label}], startup:[...], rookie:[...]}
   var draftedIds = null;       // Set of live-drafted player ids, or null if none
   var myCounts = null;         // {QB,RB,WR,TE} drafted by the viewer, or null
+  var liveDraftId = null;      // id of the live draft being polled, or null
+  var pollTimer = null;
   var maxVor = 1;
   var loading = false;
 
@@ -96,23 +98,34 @@
       x.drafted = draftedIds ? draftedIds.has(x.id) : false;
       x.posfull = myCounts ? ((needByPos[x.pos] && needByPos[x.pos].need) <= 0 && (needByPos[x.pos] && needByPos[x.pos].have) > 0) : false;
       pc[x.pos] = (pc[x.pos] || 0) + 1; x.prk = x.pos + pc[x.pos];
-      // Tiers are cliffs in the VOR curve, so they are monotonic with the rank:
-      // a lower tier can never appear above a higher one.
-      var r = x.vor / maxVor;
-      x.dtier = r >= 0.72 ? 1 : r >= 0.50 ? 2 : r >= 0.33 ? 3 : r >= 0.16 ? 4 : 5;
     });
-    // Renumber the VOR bands to contiguous 1..N in rank order, so a big cliff
-    // doesn't leave a gap (Tier 1 then Tier 3). Players are sorted by VOR, so the
-    // bands only ever increase down the board — this stays monotonic.
-    var tierRemap = {}, tnext = 0;
-    players.forEach(function (x) {
-      if (!(x.dtier in tierRemap)) { tnext++; tierRemap[x.dtier] = tnext; }
-      x.dtier = tierRemap[x.dtier];
-    });
+    assignTiers();
     var seen = {};
     for (var i = players.length - 1; i >= 0; i--) {
       var k = players[i].pos + '|' + players[i].dtier;
       if (!seen[k]) { seen[k] = 1; players[i].lastInTier = true; }
+    }
+  }
+
+  // Tier boundaries fall on the largest VOR gaps (real cliffs), so a boundary can
+  // never land on a smaller drop than one inside a tier. K (number of cliffs)
+  // scales with board size; a size cap breaks any long, gentle slope. Players are
+  // already sorted by VOR, so tiers come out contiguous and monotonic.
+  function assignTiers() {
+    var n = players.length;
+    if (!n) return;
+    var gaps = [];
+    for (var i = 1; i < n; i++) gaps.push(Math.max(0, players[i - 1].vor - players[i].vor));
+    var desc = gaps.slice().sort(function (a, b) { return b - a; });
+    var K = Math.max(4, Math.min(11, Math.round(n / 14)));   // ~K cliffs -> ~K+1 tiers
+    var thresh = desc.length ? (desc[Math.min(K, desc.length) - 1] || 0) : 0;
+    if (thresh < 1) thresh = 1;
+    var CAP = 18, tier = 1, size = 1;
+    players[0].dtier = 1;
+    for (var j = 1; j < n; j++) {
+      var gap = players[j - 1].vor - players[j].vor;
+      if (gap >= thresh || size >= CAP) { tier++; size = 0; }
+      players[j].dtier = tier; size++;
     }
   }
 
@@ -216,7 +229,7 @@
     var ri = 0;
     groups.forEach(function (g) {
       if (g.tierBreak) {
-        var counts = POS.map(function (pos) { var n = players.filter(function (y) { return y.dtier === g.tier && y.pos === pos; }).length; return n ? pos + ' ' + n : null; }).filter(Boolean).join(' &middot; ');
+        var counts = POS.map(function (pos) { var n = players.filter(function (y) { return y.dtier === g.tier && y.pos === pos && !state.done.has(y.name) && !y.drafted; }).length; return n ? pos + ' ' + n : null; }).filter(Boolean).join(' &middot; ');
         out += '<div class="cs-pgtier">Tier ' + g.tier + '<span class="cs-sc">' + counts + ' left</span></div>';
       }
       var byPos = { RB: [], WR: [], QB: [], TE: [] };
@@ -248,13 +261,13 @@
   function renderDraft(dyn) {
     var live = players.filter(function (x) { return !x.drafted && visiblePlayer(x); });
     var dh = live.map(function (x) {
-      var round = Math.ceil(x.rk / (teams || 12));   // true board round, filter-independent
       var run = x.lastInTier;
+      var win = dyn ? (' &middot; ' + youthWindow(x.age)[0]) : '';
+      // Name first, then a chip carrying rank (overall + positional), tier, window.
       return '<div class="cs-drow' + (run ? ' run' : '') + '">'
-        + '<span class="cs-pick">#' + x.rk + '<small>RD ' + round + '</small></span>'
-        + '<span class="cs-dtiers"><span class="cs-tchip cs-pos-' + x.pos + '">' + x.prk + '<span class="cs-ex">Tier ' + x.dtier + (dyn ? ' &middot; ' + youthWindow(x.age)[0] : '') + '</span></span>'
-        + '<span class="cs-pname" style="font-size:13px">' + esc(x.name) + '</span>'
-        + (run ? '<span class="cs-runflag">last ' + x.pos + ' in Tier ' + x.dtier + '</span>' : '') + '</span>'
+        + '<span class="cs-dname">' + esc(x.name) + '</span>'
+        + '<span class="cs-tchip cs-pos-' + x.pos + '">#' + x.rk + ' &middot; ' + x.prk + ' &middot; Tier ' + x.dtier + win + '</span>'
+        + (run ? '<span class="cs-runflag">last ' + x.pos + '</span>' : '')
         + '</div>';
     }).join('');
     $('csDboard').innerHTML = dh || '<div class="cs-empty" style="padding:22px;">Board is empty.</div>';
@@ -312,38 +325,55 @@
       .then(function (resp) {
         if (!resp || resp.unsupported) return;
         var all = resp.drafts || [];
-        // Prefer a live draft, then the most recent; a completed draft still tells
-        // us who is gone (useful if you open the sheet mid- or post-draft).
-        var live = all.filter(function (d) { return String(d.status) === 'drafting'; });
-        var pick = live[0] || all.filter(function (d) { return String(d.status) !== 'pre_draft'; })[0];
+        // Prefer a live (drafting) draft, then a pre-draft one about to start, then
+        // the most recent completed one (still tells us who is gone).
+        var pick = all.filter(function (d) { return String(d.status) === 'drafting'; })[0]
+          || all.filter(function (d) { return String(d.status) === 'pre_draft'; })[0]
+          || all[0];
         if (!pick || !pick.draft_id) return;
-        loadDraftPicks(pick.draft_id);
+        liveDraftId = pick.draft_id;
+        pollDraft();   // start the live loop
       })
       .catch(function () { /* no live draft; sheet stays static */ });
   }
-  function loadDraftPicks(draftId) {
-    fetch('/api/draft/live?platform=' + encodeURIComponent(cfg.platform) + '&draft_id=' + encodeURIComponent(draftId), { cache: 'no-store' })
+
+  // Poll the live draft so players auto-cross-off and the roster-need bar update
+  // in real time. Stops when the draft completes; backs off when the tab is
+  // hidden; re-fetches faster while actively drafting.
+  function schedulePoll(ms) {
+    if (pollTimer) clearTimeout(pollTimer);
+    if (liveDraftId) pollTimer = setTimeout(pollDraft, ms);
+  }
+  function pollDraft() {
+    if (!liveDraftId) return;
+    if (typeof document !== 'undefined' && document.hidden) { schedulePoll(10000); return; }
+    fetch('/api/draft/live?platform=' + encodeURIComponent(cfg.platform) + '&draft_id=' + encodeURIComponent(liveDraftId), { cache: 'no-store' })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        var picks = (d && d.picks) || [];
-        var s = new Set();
-        var mine = { QB: 0, RB: 0, WR: 0, TE: 0 };
-        var haveMine = false;
-        picks.forEach(function (pk) {
-          if (!pk || !pk.player_id) return;
-          s.add(String(pk.player_id));
-          // Picks made by the viewer build "my roster" for need shading.
-          if (cfg.viewerUserId && String(pk.picked_by || '') === String(cfg.viewerUserId)) {
-            var pos = String(pk.position || '').toUpperCase();
-            if (mine[pos] != null) { mine[pos]++; haveMine = true; }
-          }
-        });
-        if (!s.size) return;
-        draftedIds = s;
-        myCounts = haveMine ? mine : null;
-        compute(); render();
+        applyLiveDraft(d);
+        var status = d && String(d.status || '');
+        if (status === 'complete') { liveDraftId = null; return; }   // final state applied; stop
+        schedulePoll(status === 'drafting' ? 5000 : 12000);          // slower before it starts
       })
-      .catch(function () { /* ignore */ });
+      .catch(function () { schedulePoll(10000); });
+  }
+  function applyLiveDraft(d) {
+    var picks = (d && d.picks) || [];
+    if (!picks.length) return;   // pre-draft: nothing to cross off yet
+    var s = new Set();
+    var mine = { QB: 0, RB: 0, WR: 0, TE: 0 };
+    var haveMine = false;
+    picks.forEach(function (pk) {
+      if (!pk || !pk.player_id) return;
+      s.add(String(pk.player_id));
+      if (cfg.viewerUserId && String(pk.picked_by || '') === String(cfg.viewerUserId)) {
+        var pos = String(pk.position || '').toUpperCase();
+        if (mine[pos] != null) { mine[pos]++; haveMine = true; }
+      }
+    });
+    draftedIds = s;
+    if (haveMine) myCounts = mine;
+    compute(); render();
   }
 
   // ── CSV export ──────────────────────────────────────────────────────────────
@@ -426,8 +456,13 @@
       if (!el || !e.target.closest('#cs-panel-board, #cs-panel-pos')) return;
       var nm = el.getAttribute('data-name');
       if (state.done.has(nm)) state.done.delete(nm); else state.done.add(nm);
-      var q = (window.CSS && CSS.escape) ? CSS.escape(nm) : nm.replace(/"/g, '\\"');
-      document.querySelectorAll('[data-name="' + q + '"]').forEach(function (x) { x.classList.toggle('done', state.done.has(nm)); });
+      // Re-render so the By Position tier "N left" counts reflect the change
+      // (a crossed-off player drops out of the count). Preserve scroll position.
+      var sc = document.querySelector('#cs-panel-board:not(.cs-hidden) .cs-tbl-scroll, #cs-panel-pos:not(.cs-hidden) .cs-pgrid-scroll');
+      var top = sc ? sc.scrollTop : 0;
+      render();
+      var sc2 = document.querySelector('#cs-panel-board:not(.cs-hidden) .cs-tbl-scroll, #cs-panel-pos:not(.cs-hidden) .cs-pgrid-scroll');
+      if (sc2) sc2.scrollTop = top;
     });
 
     var tabs = document.querySelectorAll('.cs-tabs [role=tab]');
@@ -444,6 +479,12 @@
 
     document.querySelectorAll('#csMode button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-mode') === state.mode)); });
     document.querySelectorAll('#csQb button').forEach(function (b) { b.setAttribute('aria-pressed', String((b.getAttribute('data-qb') === 'SF') === state.sf)); });
+
+    // Re-sync the live draft immediately when the tab regains focus (the poll
+    // backs off to 10s while hidden, so this avoids a stale board on return).
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden && liveDraftId) { if (pollTimer) clearTimeout(pollTimer); pollDraft(); }
+    });
 
     loadPlayers().then(detectLiveDraft);
   }
