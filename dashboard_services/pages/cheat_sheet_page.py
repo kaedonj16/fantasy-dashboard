@@ -38,6 +38,7 @@ def build_cheat_sheet_body(
     is_superflex: bool = False,
     roster_positions: Optional[list] = None,
     mode: str = "redraft",
+    viewer_user_id: Optional[str] = None,
 ) -> str:
     _has_league = bool(league_id and platform and season)
     cfg = {
@@ -48,6 +49,7 @@ def build_cheat_sheet_body(
         "isSuperflex": bool(is_superflex),
         "rosterPositions": list(roster_positions) if roster_positions else None,
         "mode": "dynasty" if mode == "dynasty" else "redraft",
+        "viewerUserId": str(viewer_user_id) if viewer_user_id else "",
         "draftUrl": (
             f"/{platform}/{int(season)}/{league_id}/draft"
             if _has_league else "/draft"
@@ -172,6 +174,15 @@ _CHEAT_HTML = r"""
   .cs-pgc.drafted .cs-pgn { text-decoration: line-through; }
   .cs-board.hidedrafted .cs-pgc.drafted { display: none; }
   .cs-taken-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cs-bad); display: inline-block; opacity: .6; }
+  /* Roster-need shading: "Needs only" dims positions you have already filled. */
+  .cs-board.needson tbody tr.cs-p[data-posfull="1"] { opacity: .3; }
+  .cs-board.needson .cs-pgc[data-posfull="1"] { opacity: .3; }
+  .cs-needs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 14px 0 0; padding: 9px 14px; background: var(--cs-surface); border: 1px solid var(--cs-line); border-radius: 12px; font-size: 12.5px; }
+  .cs-need-lbl { font-family: var(--cs-mono); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--cs-ink-faint); }
+  .cs-need { font-family: var(--cs-mono); font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 7px; }
+  .cs-need-open { color: var(--cs-good); background: var(--cs-good-soft); }
+  .cs-need-full { color: var(--cs-ink-faint); background: var(--cs-surface-2); }
+  .cs-need-hint { margin-left: auto; font-family: var(--cs-mono); font-size: 10px; color: var(--cs-ink-faint); }
 
   .cs-pgrid-scroll { overflow-x: auto; background: var(--cs-surface); border: 1px solid var(--cs-line); border-radius: 14px; }
   .cs-pgrid { min-width: 460px; }
@@ -214,9 +225,19 @@ _CHEAT_HTML = r"""
   .cs-foot { margin-top: 22px; color: var(--cs-ink-faint); font-size: 12px; }
   @media (max-width: 640px) { .cs-controls { align-items: stretch; width: 100%; } .cs-ctrl-row { justify-content: flex-start; } }
   @media print {
-    .cs-controls, .cs-tabs, .cs-backlink, #csPrintBtn, #csValBtn { display: none !important; }
-    .cs-hidden { display: block !important; }
-    .cs-wrap { max-width: none; }
+    .cs-controls, .cs-tabs, .cs-backlink, .cs-needs, #csPrintBtn, #csValBtn { display: none !important; }
+    /* Only the active tab prints; the JS leaves the other panels .hidden. */
+    .cs-wrap { max-width: none; padding: 0; }
+    .cs-tbl-scroll, .cs-pgrid-scroll { overflow: visible; border: 0; }
+    /* Keep a tier heading with the rows under it, and don't split a row. */
+    .cs-wrap tr.cs-cliff { break-before: auto; break-after: avoid; }
+    .cs-wrap tbody tr { break-inside: avoid; }
+    .cs-pgtier { break-after: avoid; }
+    .cs-pgrow { break-inside: avoid; }
+    /* Score bars and the accent fills don't render well on paper. */
+    .cs-vorbar { display: none !important; }
+    .cs-vorwrap { gap: 0; }
+    .cs-legend { break-inside: avoid; }
   }
 </style>
 
@@ -245,8 +266,10 @@ _CHEAT_HTML = r"""
       </div>
       <div class="cs-ctrl-row">
         <select class="cs-src" id="csAdpSrc" aria-label="ADP source" style="display:none;"></select>
+        <button class="cs-btn" id="csNeedsBtn" aria-pressed="false" style="display:none;">Needs only</button>
         <button class="cs-btn" id="csHideDrafted" aria-pressed="false" style="display:none;">Hide drafted</button>
         <button class="cs-btn" id="csValBtn" aria-pressed="false">Values only</button>
+        <button class="cs-btn" id="csCsvBtn">CSV</button>
         <button class="cs-btn" id="csPrintBtn">Print</button>
       </div>
     </div>
@@ -259,6 +282,7 @@ _CHEAT_HTML = r"""
     <button role="tab" aria-selected="false" data-tab="logic">The Logic</button>
   </nav>
 
+  <div class="cs-needs" id="csNeeds" style="display:none;"></div>
   <div class="cs-legend" id="csLegend"></div>
 
   <section class="cs-board" id="cs-panel-board">

@@ -185,6 +185,7 @@ def page_cheat_sheet(platform: str = None, season: int = None, league_id: str = 
         league_id, season, platform,
         num_teams=num_teams, is_superflex=is_sf,
         roster_positions=roster_positions, mode=mode,
+        viewer_user_id=session.get("viewer_user_id"),
     )
     return render_page(
         "Draft Cheat Sheet | BR Fantasy", league_id, "draft", body, platform, season,

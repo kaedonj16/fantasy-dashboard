@@ -1890,6 +1890,10 @@
     // replacement to the same numbers (a hardcoded server guess was the main
     // cause of WR/RB grade mismatches).
     var starters = BRPickScore.starterCounts(rs);
+    // Shared kernel (static/draft_board_core.js): same value fn, same starters,
+    // same indexing as the fallback below — one implementation for the Draft Room
+    // and the Cheat Sheet. Fallback kept in case the core script fails to load.
+    if (window.DraftBoardCore) return DraftBoardCore.computeReplacement(pool, valOf, starters, teams);
     var byPos = { QB: [], RB: [], WR: [], TE: [] };
     pool.forEach(function(p){
       var pos = (p.position || '').toUpperCase();
@@ -1954,6 +1958,7 @@
     return out;
   }
   function ppgNormOf(p){
+    if (window.DraftBoardCore) return DraftBoardCore.ppgNorm(p, _ppgScale, ppgOf);
     var pos = (p.position || '').toUpperCase();
     var v = ppgOf(p);
     var sc = _ppgScale[pos];
@@ -2778,7 +2783,7 @@
   }
   // ── Draft grade / roster strength ───────────────────────────────────────────
   // Projected PPG (upcoming season) preferred; last-season actual as fallback.
-  function ppgOf(p){ return (p && p.proj_ppg != null) ? Number(p.proj_ppg) : ((p && p.ppg != null) ? Number(p.ppg) : null); }
+  function ppgOf(p){ if (window.DraftBoardCore) return DraftBoardCore.ppgOf(p); return (p && p.proj_ppg != null) ? Number(p.proj_ppg) : ((p && p.ppg != null) ? Number(p.ppg) : null); }
 
   // ── Projected playoff odds (completed draft only) ───────────────────────────
   // Once every team has a full roster we can project each team's season from its

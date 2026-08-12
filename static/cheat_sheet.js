@@ -19,6 +19,7 @@
     mode: cfg.mode === 'dynasty' ? 'dynasty' : 'redraft',
     sf: !!cfg.isSuperflex,
     filter: false,
+    needsFilter: false,
     hideDrafted: false,
     adpSource: 'auto',
     done: new Set(),
@@ -29,6 +30,7 @@
   var tierThresholds = {};
   var adpSourceOptions = {};   // {redraft:[{value,label}], startup:[...], rookie:[...]}
   var draftedIds = null;       // Set of live-drafted player ids, or null if none
+  var myCounts = null;         // {QB,RB,WR,TE} drafted by the viewer, or null
   var maxScore = 1, maxVor = 1;
   var loading = false;
 
@@ -51,9 +53,20 @@
     });
     if (!pool.length) { players = []; return; }
 
-    var repl = C.computeReplacement(pool, mode, sf, teams, cfg.rosterPositions);
-    var scale = C.computePpgScale(pool, teams, cfg.rosterPositions, sf);
+    var starters = C.startersFor(cfg.rosterPositions, sf);
+    var valFn = function (p) { return C.valOf(p, mode, sf); };
+    var repl = C.computeReplacement(pool, valFn, starters, teams);
+    var scale = C.computePpgScale(pool, C.ppgOf, starters, teams);
     var mv = C.maxVal(pool, mode, sf);
+    // Roster-need shading: targets from the league roster, "my" counts from live
+    // draft picks that are mine. Only meaningful once a live draft is connected.
+    var targets = C.posTargets(C.rosterCounts(cfg.rosterPositions, sf), 0);
+    var needByPos = {};
+    ['QB', 'RB', 'WR', 'TE'].forEach(function (pos) {
+      var have = (myCounts && myCounts[pos]) || 0;
+      needByPos[pos] = { target: targets[pos] || 0, have: have, need: Math.max(0, (targets[pos] || 0) - have) };
+    });
+    window.__csNeed = needByPos;
     var rounds = Number(cfg.rounds) || (mode === 'dynasty' ? 20 : 15);
     var totalPicks = teams * rounds;
 
@@ -83,7 +96,7 @@
         avgPick: adp, pickNo: pickNo, maxVal: mv,
         draftType: mode === 'dynasty' ? 'startup' : 'redraft', isSf: sf,
         needRaw: 0.5, qbCount: 0, totalPicks: totalPicks, numTeams: teams,
-        ppgNorm: C.ppgNorm(p, scale), ppr: 1.0, tep: 0, isTierCliff: cliff,
+        ppgNorm: C.ppgNorm(p, scale, C.ppgOf), ppr: 1.0, tep: 0, isTierCliff: cliff,
         survivalAdj: 0, handcuff: false,
       });
       return {
@@ -104,6 +117,7 @@
       x.value = (x.adp != null) ? Math.round(x.adp - x.rk) : null;
       x.good = state.mode === 'dynasty' ? (x.age != null && x.age <= 24 ? 1 : 0) : (x.value != null && x.value >= 5 ? 1 : 0);
       x.drafted = draftedIds ? draftedIds.has(x.id) : false;
+      x.posfull = myCounts ? ((needByPos[x.pos] && needByPos[x.pos].need) <= 0 && (needByPos[x.pos] && needByPos[x.pos].have) > 0) : false;
       pc[x.pos] = (pc[x.pos] || 0) + 1; x.prk = x.pos + pc[x.pos];
       // Display tier: dynasty uses the shared value tier (matches the room);
       // redraft has no value tier there, so the sheet shows its own VOR cliffs.
@@ -133,9 +147,11 @@
       ? 'Ranked by the same Pick Score the Draft Room uses, on dynasty value over replacement for your league roster. Age and career window replace ADP.'
       : 'Ranked by the same Pick Score the Draft Room uses, on value over replacement for your league scoring and roster. The board and the room agree on who is better.';
 
-    document.querySelectorAll('.cs-board').forEach(function (b) { b.classList.toggle('filteron', state.filter); b.classList.toggle('hidedrafted', state.hideDrafted); });
+    document.querySelectorAll('.cs-board').forEach(function (b) { b.classList.toggle('filteron', state.filter); b.classList.toggle('hidedrafted', state.hideDrafted); b.classList.toggle('needson', state.needsFilter); });
     $('csValBtn').textContent = dyn ? 'Ascenders only' : 'Values only';
     var hd = $('csHideDrafted'); if (hd) { hd.style.display = draftedIds ? '' : 'none'; hd.setAttribute('aria-pressed', String(state.hideDrafted)); }
+    var nb = $('csNeedsBtn'); if (nb) { nb.style.display = myCounts ? '' : 'none'; nb.setAttribute('aria-pressed', String(state.needsFilter)); }
+    renderNeedsBar();
 
     if (!players.length) {
       $('csBoardBody').innerHTML = '<tr><td colspan="7" class="cs-empty">' + (loading ? 'Loading players…' : 'No players for this format yet.') + '</td></tr>';
@@ -171,7 +187,7 @@
       var cls = 'cs-p' + (state.done.has(x.name) ? ' done' : '') + (x.drafted ? ' drafted' : '');
       var c6 = dyn ? '<td class="cs-num">' + (x.age != null ? x.age : '') + '</td>' : '<td class="cs-num">' + (x.adp != null ? Math.round(x.adp) : '') + '</td>';
       var c7 = dyn ? '<td>' + winChip(x.age) + '</td>' : '<td>' + valChip(x.value) + '</td>';
-      html += '<tr class="' + cls + '" data-good="' + x.good + '" data-name="' + esc(x.name) + '">'
+      html += '<tr class="' + cls + '" data-good="' + x.good + '" data-posfull="' + (x.posfull ? 1 : 0) + '" data-name="' + esc(x.name) + '">'
         + '<td class="cs-rk">' + x.rk + '</td>'
         + '<td><span class="cs-pcell">' + badge(x.pos) + '<span class="cs-pname">' + esc(x.name) + '</span></span></td>'
         + '<td>' + posrk(x) + '</td>'
@@ -200,7 +216,7 @@
     function nameChip(x) {
       var cls = 'cs-pgc cs-c-' + x.pos + (state.done.has(x.name) ? ' done' : '') + (x.drafted ? ' drafted' : '');
       var tail = dyn ? '' : smallVal(x.value);
-      return '<span class="' + cls + '" data-good="' + x.good + '" data-name="' + esc(x.name) + '"><span class="cs-pgn">' + esc(x.name) + tail + '</span></span>';
+      return '<span class="' + cls + '" data-good="' + x.good + '" data-posfull="' + (x.posfull ? 1 : 0) + '" data-name="' + esc(x.name) + '"><span class="cs-pgn">' + esc(x.name) + tail + '</span></span>';
     }
     var out = '<div class="cs-pgrid-head">' + POS.map(function (p) { return '<div>' + p + '</div>'; }).join('') + '</div>';
     var ri = 0;
@@ -219,6 +235,20 @@
     $('csPosFoot').textContent = dyn
       ? 'Read down a column for a position board, across a row for who else goes at that slot. Tap a name to cross it off.'
       : 'Read down a column for a position board, across a row for who else goes at that slot. Green is value over ADP. Tap a name to cross it off.';
+  }
+
+  function renderNeedsBar() {
+    var bar = $('csNeeds'); if (!bar) return;
+    if (!myCounts) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+    var need = window.__csNeed || {};
+    var chips = ['QB', 'RB', 'WR', 'TE'].map(function (pos) {
+      var n = need[pos] || { need: 0, have: 0, target: 0 };
+      if (n.need > 0) return '<span class="cs-need cs-need-open">' + pos + ' +' + n.need + '</span>';
+      return '<span class="cs-need cs-need-full">' + pos + ' full</span>';
+    }).join('');
+    bar.style.display = '';
+    bar.innerHTML = '<span class="cs-need-lbl">Your roster</span>' + chips
+      + '<span class="cs-need-hint">from your live picks</span>';
   }
 
   function renderDraft(dyn) {
@@ -304,12 +334,45 @@
       .then(function (d) {
         var picks = (d && d.picks) || [];
         var s = new Set();
-        picks.forEach(function (pk) { if (pk && pk.player_id) s.add(String(pk.player_id)); });
+        var mine = { QB: 0, RB: 0, WR: 0, TE: 0 };
+        var haveMine = false;
+        picks.forEach(function (pk) {
+          if (!pk || !pk.player_id) return;
+          s.add(String(pk.player_id));
+          // Picks made by the viewer build "my roster" for need shading.
+          if (cfg.viewerUserId && String(pk.picked_by || '') === String(cfg.viewerUserId)) {
+            var pos = String(pk.position || '').toUpperCase();
+            if (mine[pos] != null) { mine[pos]++; haveMine = true; }
+          }
+        });
         if (!s.size) return;
         draftedIds = s;
+        myCounts = haveMine ? mine : null;
         compute(); render();
       })
       .catch(function () { /* ignore */ });
+  }
+
+  // ── CSV export ──────────────────────────────────────────────────────────────
+  function exportCsv() {
+    if (!players.length) return;
+    var dyn = state.mode === 'dynasty';
+    var head = ['Rank', 'Player', 'Pos', 'PosRank', 'Score', 'VOR', (dyn ? 'Age' : 'ADP'), (dyn ? 'Window' : 'Value'), 'Tier'];
+    var rows = players.map(function (x) {
+      var c6 = dyn ? (x.age != null ? x.age : '') : (x.adp != null ? Math.round(x.adp) : '');
+      var c7 = dyn ? youthWindow(x.age)[0] : (x.value != null ? (x.value > 0 ? '+' + x.value : x.value) : '');
+      return [x.rk, x.name, x.pos, x.prk, x.score, x.vor, c6, c7, x.dtier];
+    });
+    var csv = [head].concat(rows).map(function (r) {
+      return r.map(function (v) { var s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(',');
+    }).join('\n');
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = (dyn ? 'dynasty' : 'redraft') + '-cheat-sheet-' + (state.sf ? 'sf' : '1qb') + '.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   }
 
   // ── interactions ────────────────────────────────────────────────────────────
@@ -336,6 +399,12 @@
       state.hideDrafted = !state.hideDrafted; this.setAttribute('aria-pressed', String(state.hideDrafted));
       document.querySelectorAll('.cs-board').forEach(function (b) { b.classList.toggle('hidedrafted', state.hideDrafted); });
     });
+    var nb = $('csNeedsBtn');
+    if (nb) nb.addEventListener('click', function () {
+      state.needsFilter = !state.needsFilter; this.setAttribute('aria-pressed', String(state.needsFilter));
+      document.querySelectorAll('.cs-board').forEach(function (b) { b.classList.toggle('needson', state.needsFilter); });
+    });
+    var csvBtn = $('csCsvBtn'); if (csvBtn) csvBtn.addEventListener('click', exportCsv);
     $('csPrintBtn').addEventListener('click', function () { window.print(); });
     var srcSel = $('csAdpSrc');
     if (srcSel) srcSel.addEventListener('change', function () { state.adpSource = this.value; loadPlayers(); });
