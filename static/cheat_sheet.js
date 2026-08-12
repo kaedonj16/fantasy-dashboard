@@ -107,23 +107,98 @@
     }
   }
 
-  // Tier boundaries fall on the largest VOR gaps (real cliffs), so a boundary can
-  // never land on a smaller drop than one inside a tier. K (number of cliffs)
-  // scales with board size; a size cap breaks any long, gentle slope. Players are
-  // already sorted by VOR, so tiers come out contiguous and monotonic.
+  // Same drop-based tiering the rankings page uses (utils/tier_thresholds.py):
+  // boundaries fall on natural value cliffs scored by *local* significance (a gap
+  // vs the median of nearby gaps), with two hard rules - no tier spans more than
+  // MAX_SPAN, and none is smaller than MIN_SIZE (the elite T1 may be as small as
+  // ELITE_MIN). Ported here to run on the VOR the board is sorted by, so redraft
+  // (which has no server value-tier table) is covered too and tiers stay
+  // contiguous and monotonic with the displayed order.
   function assignTiers() {
     var n = players.length;
     if (!n) return;
-    // Original tiering: fixed value-over-replacement bands as a share of the top
-    // player's VOR, contiguous-renumbered so a missing band never leaves a gap.
-    // Gives small tiers up top (elite players stand apart) and wider ones lower.
-    var mx = maxVor || 1;
-    players.forEach(function (x) {
-      var r = x.vor / mx;
-      x.dtier = r >= 0.72 ? 1 : r >= 0.50 ? 2 : r >= 0.33 ? 3 : r >= 0.16 ? 4 : 5;
-    });
-    var remap = {}, next = 0;
-    players.forEach(function (x) { if (!(x.dtier in remap)) { next++; remap[x.dtier] = next; } x.dtier = remap[x.dtier]; });
+    var vals = players.map(function (p) { return p.vor; });   // already sorted desc
+
+    var NUM_TIERS = 12, MIN_SIZE = 5, ELITE_MIN = 3, MAX_SPAN = 220, WINDOW = 10, SIG_MIN = 2.0;
+
+    // Too few players to derive meaningful drops: fall back to fixed VOR bands.
+    if (n < NUM_TIERS * 3) {
+      var mx = maxVor || 1;
+      players.forEach(function (x) {
+        var r = x.vor / mx;
+        x.dtier = r >= 0.72 ? 1 : r >= 0.50 ? 2 : r >= 0.33 ? 3 : r >= 0.16 ? 4 : 5;
+      });
+      var remap = {}, nx = 0;
+      players.forEach(function (x) { if (!(x.dtier in remap)) { nx++; remap[x.dtier] = nx; } x.dtier = remap[x.dtier]; });
+      return;
+    }
+
+    // Local significance of each gap: gap size vs the median of nearby gaps.
+    var score = [];
+    for (var i = 0; i < n - 1; i++) {
+      var gap = vals[i] - vals[i + 1];
+      var lo = Math.max(0, i - WINDOW), hi = Math.min(n - 1, i + WINDOW);
+      var nbrs = [];
+      for (var j = lo; j < hi; j++) { if (j !== i) nbrs.push(vals[j] - vals[j + 1]); }
+      nbrs.sort(function (a, b) { return a - b; });
+      var med = nbrs.length ? nbrs[Math.floor(nbrs.length / 2)] : 1.0;
+      score[i] = gap / Math.max(med, 0.5);
+    }
+
+    var bounds = [];   // boundary index i = split between player i and i+1
+    function segment(i) {
+      var lower = -1, upper = n - 1;
+      for (var k = 0; k < bounds.length; k++) {
+        var b = bounds[k];
+        if (b < i && b > lower) lower = b;
+        if (b > i && b < upper) upper = b;
+      }
+      return [lower, upper];
+    }
+    function valid(i) {
+      var s = segment(i);
+      var top = i - s[0], bot = s[1] - i;
+      var tmin = (s[0] === -1) ? ELITE_MIN : MIN_SIZE;
+      return top >= tmin && bot >= MIN_SIZE;
+    }
+
+    while (bounds.length < NUM_TIERS - 1) {
+      // 1) Mandatory: split the worst over-span segment at its biggest gap.
+      var prev = -1, worst = null, worstSpan = MAX_SPAN;
+      var seq = bounds.slice().sort(function (a, b) { return a - b; }); seq.push(n - 1);
+      for (var s2 = 0; s2 < seq.length; s2++) {
+        var bb = seq[s2], loS = prev + 1, hiS = bb; prev = bb;
+        var sp = vals[loS] - vals[hiS];
+        if (sp > worstSpan) { worstSpan = sp; worst = [loS, hiS]; }
+      }
+      var did = false;
+      if (worst) {
+        var loW = worst[0], hiW = worst[1], bestI = null, bestG = -1;
+        for (var jj = loW + MIN_SIZE - 1; jj < hiW - MIN_SIZE + 1; jj++) {
+          var g = vals[jj] - vals[jj + 1];
+          if (g > bestG) { bestG = g; bestI = jj; }
+        }
+        if (bestI !== null && valid(bestI)) { bounds.push(bestI); did = true; }
+      }
+      if (did) continue;
+
+      // 2) Discretionary: the most locally-significant remaining valid drop.
+      var cand = [];
+      for (var ii = 0; ii < n - 1; ii++) {
+        if (bounds.indexOf(ii) < 0 && score[ii] >= SIG_MIN && valid(ii)) cand.push([score[ii], ii]);
+      }
+      if (!cand.length) break;
+      cand.sort(function (a, b) { return b[0] - a[0]; });
+      bounds.push(cand[0][1]);
+    }
+
+    // Assign contiguous tiers from the sorted boundary indices.
+    bounds.sort(function (a, b) { return a - b; });
+    var tier = 1, bp = 0;
+    for (var t = 0; t < n; t++) {
+      players[t].dtier = tier;
+      if (bp < bounds.length && t === bounds[bp]) { tier++; bp++; }
+    }
   }
 
   // ── render ──────────────────────────────────────────────────────────────────
