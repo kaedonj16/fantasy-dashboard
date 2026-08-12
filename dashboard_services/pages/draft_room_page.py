@@ -682,6 +682,15 @@ _DRAFT_ROOM_HTML = r"""
   .dr-pt-chips-lbl { font-size: 11px; font-weight: 700; color: var(--text-muted); margin-right: 2px; }
   .dr-pt-chip { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; }
   .dr-pt-chip:hover { border-color: var(--accent,#38bdf8); color: var(--accent,#38bdf8); }
+  .dr-pt-picker { display: flex; gap: 6px; align-items: center; margin: 6px 0 4px; }
+  .dr-pt-sel { flex: 1 1 auto; min-width: 0; padding: 8px 9px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 13px; }
+  .dr-pt-add { flex: 0 0 auto; white-space: nowrap; padding: 8px 14px; }
+  .dr-pt-chiprow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 20px; margin: 2px 0; }
+  .dr-pt-tok { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; font-weight: 800;
+    padding: 3px 4px 3px 10px; border-radius: 999px; font-variant-numeric: tabular-nums;
+    background: color-mix(in srgb, var(--accent,#38bdf8) 15%, transparent); color: var(--accent,#38bdf8); }
+  .dr-pt-tokx { background: none; border: 0; cursor: pointer; color: inherit; font-size: 15px; line-height: 1; padding: 0 4px; opacity: .75; }
+  .dr-pt-tokx:hover { opacity: 1; }
   .dr-pt-bar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; margin: 14px 0 10px; background: var(--border); }
   .dr-pt-bar-g { background: color-mix(in srgb, var(--text-muted) 60%, transparent); }
   .dr-pt-bar-r { background: #22c55e; }

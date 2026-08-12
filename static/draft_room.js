@@ -4634,20 +4634,34 @@
   function drPickTradeOpen(){
     var m = document.getElementById('drModal');
     var msg = document.getElementById('drModalMsg');
-    // Quick-add chips for your own upcoming picks, so you don't have to type them.
+    var teams = state.teams || 12;
+    var rounds = Math.max(1, state.rounds || 15);
+    var give = [], get = [];   // overall pick numbers, built via the selectors
     var mine = upcomingOwnedPicks();
-    var chips = mine.length
-      ? '<div class="dr-pt-chips"><span class="dr-pt-chips-lbl">Add your picks</span>'
-        + mine.slice(0, 14).map(function(pn){ return '<button type="button" class="dr-pt-chip" data-pn="' + pn + '" data-side="give">' + pickLabel(pn) + '</button>'; }).join('')
+
+    function pickerHtml(id){
+      var ro = ''; for (var r = 1; r <= rounds; r++) ro += '<option value="' + r + '">Round ' + r + '</option>';
+      var po = ''; for (var p = 1; p <= teams; p++) po += '<option value="' + p + '">Pick ' + p + '</option>';
+      return '<div class="dr-pt-picker">'
+        + '<select class="dr-pt-sel" id="' + id + 'Rd">' + ro + '</select>'
+        + '<select class="dr-pt-sel" id="' + id + 'Pk">' + po + '</select>'
+        + '<button type="button" class="dr-btn dr-btn-primary dr-pt-add" data-target="' + id + '">Add</button>'
+        + '</div>';
+    }
+    var quick = mine.length
+      ? '<div class="dr-pt-chips"><span class="dr-pt-chips-lbl">Quick add your picks</span>'
+        + mine.slice(0, 14).map(function(pn){ return '<button type="button" class="dr-pt-chip" data-pn="' + pn + '">' + pickLabel(pn) + '</button>'; }).join('')
         + '</div>'
       : '';
     msg.innerHTML = '<div class="dr-pt-title">Pick trade evaluator</div>'
-      + '<div class="dr-pt-sub">Enter picks as overall ("22") or round.pick ("2.10"), separated by commas or spaces. Each is priced as the player likely on the board there, by ADP on this draft’s remaining pool.</div>'
+      + '<div class="dr-pt-sub">Pick a round and pick, then Add. Each pick is priced as the player likely on the board there, by ADP on this draft’s remaining pool.</div>'
       + '<label class="dr-pt-lbl">You give</label>'
-      + '<input id="drPtGive" class="dr-pt-input" autocomplete="off" placeholder="e.g. 14 or 1.07">'
-      + chips
+      + '<div class="dr-pt-chiprow" id="drPtGiveChips"></div>'
+      + pickerHtml('drPtG')
+      + quick
       + '<label class="dr-pt-lbl">You get</label>'
-      + '<input id="drPtGet" class="dr-pt-input" autocomplete="off" placeholder="e.g. 22, 27">'
+      + '<div class="dr-pt-chiprow" id="drPtGetChips"></div>'
+      + pickerHtml('drPtR')
       + '<div id="drPtResult" class="dr-pt-result"></div>';
     var btns = document.getElementById('drModalBtns');
     btns.innerHTML = '';
@@ -4656,11 +4670,19 @@
     close.addEventListener('click', function(){ m.style.display = 'none'; });
     btns.appendChild(close);
 
-    function sideRows(nums){
+    function renderChips(){
+      [['give', 'drPtGiveChips'], ['get', 'drPtGetChips']].forEach(function(pair){
+        var list = pair[0] === 'give' ? give : get;
+        var el = document.getElementById(pair[1]);
+        el.innerHTML = list.length
+          ? list.map(function(pn, i){ return '<span class="dr-pt-tok">' + pickLabel(pn) + '<button type="button" class="dr-pt-tokx" data-side="' + pair[0] + '" data-i="' + i + '" aria-label="Remove">&times;</button></span>'; }).join('')
+          : '<span class="dr-pt-empty">No picks yet</span>';
+      });
+    }
+    function sideRows(list){
       var tot = 0;
-      var rows = nums.map(function(pn){
-        var v = pickNumValue(pn);
-        var lbl = pickLabel(pn);
+      var rows = list.map(function(pn){
+        var v = pickNumValue(pn), lbl = pickLabel(pn);
         if (!v) return '<div class="dr-pt-row"><span class="dr-pt-pk">' + lbl + '</span><span class="dr-pt-nm dr-pt-empty">board empty</span></div>';
         tot += v.value;
         return '<div class="dr-pt-row"><span class="dr-pt-pk">' + lbl + '</span>'
@@ -4676,8 +4698,6 @@
       return '<div class="dr-pt-bar" title="Value split"><span class="dr-pt-bar-g" style="width:' + gp + '%"></span><span class="dr-pt-bar-r" style="width:' + (100 - gp) + '%"></span></div>';
     }
     function evalNow(){
-      var give = _parsePickNums(document.getElementById('drPtGive').value);
-      var get  = _parsePickNums(document.getElementById('drPtGet').value);
       var out = document.getElementById('drPtResult');
       if (!give.length && !get.length){ out.innerHTML = ''; return; }
       var g = sideRows(give), r = sideRows(get);
@@ -4699,17 +4719,33 @@
         + bar(g.tot, r.tot)
         + '<div class="dr-pt-verdict" style="color:' + col + '">' + label + detail + '</div>';
     }
-    // Quick-add chips append their pick to the "You give" box.
-    msg.querySelectorAll('.dr-pt-chip').forEach(function(c){
-      c.addEventListener('click', function(){
-        var inp = document.getElementById('drPtGive');
-        var cur = inp.value.trim().replace(/[,\s]+$/, '');
-        inp.value = cur ? (cur + ', ' + pickLabel(this.getAttribute('data-pn'))) : pickLabel(this.getAttribute('data-pn'));
-        evalNow();
+    function refresh(){ renderChips(); evalNow(); }
+
+    // Add a pick from a round/pick selector to its side.
+    msg.querySelectorAll('.dr-pt-add').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = this.getAttribute('data-target');
+        var rd = parseInt(document.getElementById(id + 'Rd').value, 10) || 1;
+        var pk = parseInt(document.getElementById(id + 'Pk').value, 10) || 1;
+        (id === 'drPtG' ? give : get).push((rd - 1) * teams + pk);
+        refresh();
       });
     });
-    msg.querySelector('#drPtGive').addEventListener('input', evalNow);
-    msg.querySelector('#drPtGet').addEventListener('input', evalNow);
+    // Quick-add your own picks to the give side.
+    msg.querySelectorAll('.dr-pt-chip').forEach(function(c){
+      c.addEventListener('click', function(){ give.push(parseInt(this.getAttribute('data-pn'), 10)); refresh(); });
+    });
+    // Remove a token (delegated on each freshly-created chip row).
+    [['give', 'drPtGiveChips'], ['get', 'drPtGetChips']].forEach(function(pair){
+      document.getElementById(pair[1]).addEventListener('click', function(e){
+        var x = e.target.closest && e.target.closest('.dr-pt-tokx');
+        if (!x) return;
+        (pair[0] === 'give' ? give : get).splice(parseInt(x.getAttribute('data-i'), 10), 1);
+        refresh();
+      });
+    });
+
+    refresh();
     m.style.display = 'flex';
   }
   (function(){
