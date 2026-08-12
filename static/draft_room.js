@@ -614,21 +614,51 @@
     document.getElementById('drMain').style.display = 'none';
     document.getElementById('drSetup').style.display = '';
     var hero = document.getElementById('drHero'); if (hero) hero.style.display = '';
-    // Reflect the active draft's scoring in the setup controls when editing.
-    if (state && state.scoring){
-      var pprEl = document.getElementById('drPpr'); if (pprEl) pprEl.value = String(state.scoring.ppr != null ? state.scoring.ppr : 1);
-      var tepEl = document.getElementById('drTep'); if (tepEl) tepEl.value = String(state.scoring.tep != null ? state.scoring.tep : 0);
+
+    // Editing a STARTED draft: reflect all of its settings in the setup controls
+    // and seed the roster / draft-capital editors from it, so Edit truly edits the
+    // current draft. With everything matching, starting again with no changes reads
+    // back the same teams/order/slot and the picks carry over (see startMock /
+    // startDraft). Skipped for the initial setup (no active draft yet).
+    if (state && state.teams){
+      var tEl = document.getElementById('drType');
+      if (tEl) tEl.value = state.keeper ? 'keeper' : (state.type || tEl.value);
+      var sfEl = document.getElementById('drSf'); if (sfEl && state.sf != null) sfEl.value = state.sf ? '1' : '0';
+      var teamsEl = document.getElementById('drTeams'), wt = String(state.teams);
+      for (var ti = 0; ti < teamsEl.options.length; ti++){ if (teamsEl.options[ti].value === wt || teamsEl.options[ti].text === wt){ teamsEl.selectedIndex = ti; break; } }
+      var ordEl = document.getElementById('drOrder'); if (ordEl && state.order) ordEl.value = state.order;
+      var rEl = document.getElementById('drRounds'); if (rEl && state.rounds) rEl.value = String(state.rounds);
+      fillSlotOptions(state.teams);   // slot options depend on team count
+      var slotEl = document.getElementById('drSlot'); if (slotEl && state.slot) slotEl.value = String(state.slot);
+      if (state.scoring){
+        var pprEl = document.getElementById('drPpr'); if (pprEl) pprEl.value = String(state.scoring.ppr != null ? state.scoring.ppr : 1);
+        var tepEl = document.getElementById('drTep'); if (tepEl) tepEl.value = String(state.scoring.tep != null ? state.scoring.tep : 0);
+      }
+      if (state.keeper){
+        var kcEl = document.getElementById('drKeeperCount'); if (kcEl && state.keeperCount != null){ kcEl.value = String(state.keeperCount); kcEl.dataset.touched = '1'; }
+        var ksEl = document.getElementById('drKeeperSource'); if (ksEl && state.keeperSource) ksEl.value = state.keeperSource;
+      }
+      // Roster editor: seed from the active draft in custom mode so it is not
+      // re-seeded from league/defaults. Match the sf/rd markers to the controls
+      // just set so renderSetupRoster does not reconcile it.
+      if (state.roster){
+        var rr = {}; Object.keys(state.roster).forEach(function(k){ rr[k] = state.roster[k]; });
+        rr._sf = document.getElementById('drSf').value === '1';
+        rr._rd = document.getElementById('drType').value === 'redraft';
+        _setupRoster = rr; _rosterMode = 'custom';
+      }
+      // Draft-capital editor: seed owned picks and match the signature so it is
+      // not reset to the slot's natural picks.
+      if (state.owned){
+        var ow = {}; Object.keys(state.owned).forEach(function(k){ if (state.owned[k]) ow[k] = true; });
+        _setupOwned = ow;
+        var _c = setupCtl(); _setupOwnedSig = [_c.teams, _c.rounds, _c.order, _c.slot].join('|');
+      }
     }
-    // A keeper draft is stored as type 'redraft' + keeper, so re-select the
-    // Keeper option (rather than plain Redraft) when editing one.
-    if (state && state.keeper){
-      var tEl = document.getElementById('drType'); if (tEl) tEl.value = 'keeper';
-      var kcEl = document.getElementById('drKeeperCount');
-      if (kcEl && state.keeperCount != null){ kcEl.value = String(state.keeperCount); kcEl.dataset.touched = '1'; }
-      var ksEl = document.getElementById('drKeeperSource');
-      if (ksEl && state.keeperSource) ksEl.value = state.keeperSource;
-    }
+
     syncKeeperSetupFields(document.getElementById('drType').value === 'keeper');
+    var _rf = document.getElementById('drRoundsField');
+    if (_rf) _rf.style.display = (document.getElementById('drType').value === 'rookie') ? '' : 'none';
     renderSetupRoster();
     renderSetupCapital();
   }
