@@ -71,6 +71,10 @@ def build_draft_room_body(
             f"/{platform}/{int(season)}/{league_id}/draft/history"
             if _dr_has_league else "/draft/history"
         ),
+        "cheatSheetUrl": (
+            f"/{platform}/{int(season)}/{league_id}/draft/cheat-sheet"
+            if _dr_has_league else "/draft/cheat-sheet"
+        ),
         "isGuest": bool(is_guest),
         "numTeams": int(num_teams) if num_teams else None,
         "isSuperflex": bool(is_superflex),
@@ -95,6 +99,7 @@ def build_draft_room_body(
         + _DRAFT_ROOM_HTML
         + f'\n<script src="/static/draft_grade_curve.js?v={_static_v("draft_grade_curve.js")}" defer></script>\n'
         + f'\n<script src="/static/pick_score.js?v={_static_v("pick_score.js")}" defer></script>\n'
+        + f'\n<script src="/static/draft_board_core.js?v={_static_v("draft_board_core.js")}" defer></script>\n'
         + f'\n<script src="/static/draft_grade_team.js?v={_static_v("draft_grade_team.js")}" defer></script>\n'
         + f'\n<script src="/static/draft_room.js?v={_draft_room_js_v()}" defer></script>\n'
     )
@@ -106,6 +111,7 @@ _DRAFT_ROOM_HTML = r"""
   <div class="dr-hero" id="drHero">
     <h1 class="dr-title">Draft Room</h1>
     <p class="dr-sub">Mock against CPU teams, draft manually, or sync a live Sleeper draft. Best-available, tiers, and a live draft grade.</p>
+    <a class="dr-hero-link" id="drToCheatSheet" href="/draft/cheat-sheet">Cheat Sheet &rarr;</a>
     <a class="dr-hero-link" id="drToHistory" href="/draft/history">Draft History &rarr;</a>
   </div>
 
