@@ -22,6 +22,8 @@
     needsFilter: false,
     hideDrafted: false,
     adpSource: 'auto',
+    search: '',
+    posFilter: 'ALL',
     done: new Set(),
   };
   var teams = Number(cfg.numTeams) || 12;
@@ -122,6 +124,12 @@
   function smallVal(v) { if (v == null) return ''; return v > 0 ? '<span class="cs-pgv cs-val g">+' + v + '</span>' : (v < 0 ? '<span class="cs-pgv cs-val b">' + v + '</span>' : ''); }
   function winChip(age) { var w = youthWindow(age); return w[0] ? '<span class="cs-winpill ' + w[1] + '">' + w[0] + '</span>' : ''; }
   function $(id) { return document.getElementById(id); }
+  // Search + position filters narrow which players are shown (they don't re-rank).
+  function visiblePlayer(x) {
+    if (state.posFilter !== 'ALL' && x.pos !== state.posFilter) return false;
+    if (state.search && x.name.toLowerCase().indexOf(state.search) < 0) return false;
+    return true;
+  }
 
   function render() {
     var dyn = state.mode === 'dynasty';
@@ -164,9 +172,11 @@
     var col5 = dyn ? 'Age' : 'ADP', col6 = dyn ? 'Window' : 'Value';
     $('csBoardHead').innerHTML =
       '<tr><th>Rk</th><th class="l">Player</th><th>Pos</th><th>VOR</th><th>' + col5 + '</th><th>' + col6 + '</th></tr>';
-    var lastT = 0, html = '';
+    var lastT = 0, html = '', shown = 0;
     players.forEach(function (x) {
+      if (!visiblePlayer(x)) return;
       if (x.dtier !== lastT) { lastT = x.dtier; html += '<tr class="cs-cliff"><td colspan="6"><div class="cs-cliffline">Tier ' + x.dtier + '</div></td></tr>'; }
+      shown++;
       var cls = 'cs-p' + (state.done.has(x.name) ? ' done' : '') + (x.drafted ? ' drafted' : '');
       var c5 = dyn ? '<td class="cs-num">' + (x.age != null ? x.age : '') + '</td>' : '<td class="cs-num">' + (x.adp != null ? Math.round(x.adp) : '') + '</td>';
       var c6 = dyn ? '<td>' + winChip(x.age) + '</td>' : '<td>' + valChip(x.value) + '</td>';
@@ -177,6 +187,7 @@
         + '<td><span class="cs-vorwrap"><span class="cs-num">' + x.vor + '</span><span class="cs-vorbar"><i style="width:' + Math.max(0, Math.round(x.vor / maxVor * 100)) + '%"></i></span></span></td>'
         + c5 + c6 + '</tr>';
     });
+    if (!shown) html = '<tr><td colspan="6" class="cs-empty">No players match this filter.</td></tr>';
     $('csBoardBody').innerHTML = html;
     $('csBoardFoot').textContent = dyn
       ? 'Ranked by value over replacement (dynasty value), youth-aware via the Window column. Tap a row to cross a player off.'
@@ -188,6 +199,7 @@
     var BAND = Math.max(1, maxVor * 0.045), CAP = 6;
     var groups = [], cur = null;
     players.forEach(function (x) {
+      if (!visiblePlayer(x)) return;
       var tierChanged = !cur || x.dtier !== cur.tier;
       if (!cur || tierChanged || x.vor < cur.lead - BAND || cur.items.length >= CAP) {
         cur = { tier: x.dtier, lead: x.vor, items: [], tierBreak: tierChanged };
@@ -234,9 +246,9 @@
   }
 
   function renderDraft(dyn) {
-    var live = players.filter(function (x) { return !x.drafted; });
-    var dh = live.map(function (x, i) {
-      var round = Math.ceil((i + 1) / (teams || 12));
+    var live = players.filter(function (x) { return !x.drafted && visiblePlayer(x); });
+    var dh = live.map(function (x) {
+      var round = Math.ceil(x.rk / (teams || 12));   // true board round, filter-independent
       var run = x.lastInTier;
       return '<div class="cs-drow' + (run ? ' run' : '') + '">'
         + '<span class="cs-pick">#' + x.rk + '<small>RD ' + round + '</small></span>'
@@ -400,6 +412,15 @@
     var srcSel = $('csAdpSrc');
     if (srcSel) srcSel.addEventListener('change', function () { state.adpSource = this.value; loadPlayers(); });
 
+    var searchEl = $('csSearch');
+    if (searchEl) searchEl.addEventListener('input', function () { state.search = this.value.toLowerCase().trim(); render(); });
+    document.querySelectorAll('#csPosF button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('#csPosF button').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+        state.posFilter = b.getAttribute('data-pos'); render();
+      });
+    });
+
     document.addEventListener('click', function (e) {
       var el = e.target.closest('[data-name]');
       if (!el || !e.target.closest('#cs-panel-board, #cs-panel-pos')) return;
@@ -415,7 +436,9 @@
       t.addEventListener('click', function () {
         tabs.forEach(function (x) { x.setAttribute('aria-selected', String(x === t)); });
         Object.keys(panels).forEach(function (k) { $(panels[k]).classList.toggle('cs-hidden', k !== t.getAttribute('data-tab')); });
-        $('csLegend').style.display = (t.getAttribute('data-tab') === 'logic') ? 'none' : '';
+        var onLogic = t.getAttribute('data-tab') === 'logic';
+        $('csLegend').style.display = onLogic ? 'none' : '';
+        var fb = $('csFilterbar'); if (fb) fb.style.display = onLogic ? 'none' : '';
       });
     });
 
