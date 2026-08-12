@@ -225,7 +225,7 @@ _CHEAT_HTML = r"""
   .cs-pgtier { display: flex; align-items: center; gap: 10px; font-family: var(--cs-mono); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--cs-ink-faint); background: var(--cs-surface-2); padding: 7px 12px; border-top: 1px solid var(--cs-line-strong); border-bottom: 1px solid var(--cs-line); }
   .cs-pgtier .cs-sc { font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--cs-ink-soft); }
 
-  .cs-dboard { background: var(--cs-surface); border: 1px solid var(--cs-line); border-radius: 14px; overflow: auto; max-height: calc(100vh - 230px); max-width: 720px; margin: 0 auto; }
+  .cs-dboard { background: var(--cs-surface); border: 1px solid var(--cs-line); border-radius: 14px; overflow: auto; max-height: calc(100vh - 230px); }
   /* Filter bar: instant name search + position filter over the whole board. */
   .cs-filterbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 14px 0 12px; }
   .cs-search { flex: 1 1 200px; min-width: 140px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--cs-line); background: var(--cs-surface); color: var(--cs-ink); font: inherit; font-size: 13px; outline: none; }
