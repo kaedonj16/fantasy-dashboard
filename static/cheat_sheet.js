@@ -229,7 +229,7 @@
     var nb = $('csNeedsBtn'); if (nb) { nb.style.display = myCounts ? '' : 'none'; nb.setAttribute('aria-pressed', String(state.needsFilter)); }
     // Show a Clear button once the user has hand-marked players as gone, so they
     // can wipe those marks in one tap. Live/mock drafted ids are not touched.
-    var cb = $('csClearBtn'); if (cb) cb.style.display = state.done.size ? '' : 'none';
+    var cb = $('csClearBtn'); if (cb) cb.style.display = (state.done.size || (draftedIds && draftedIds.size)) ? '' : 'none';
     renderNeedsBar();
 
     if (!players.length) {
@@ -253,7 +253,6 @@
 
     renderBoard(dyn);
     renderPos(dyn);
-    renderDraft(dyn);
   }
 
   function renderBoard(dyn) {
@@ -270,7 +269,7 @@
       var c6 = dyn ? '<td>' + winChip(x.age) + '</td>' : '<td>' + valChip(x.value) + '</td>';
       html += '<tr class="' + cls + '" data-good="' + x.good + '" data-posfull="' + (x.posfull ? 1 : 0) + '" data-name="' + esc(x.name) + '">'
         + '<td class="cs-rk">' + x.rk + '</td>'
-        + '<td><span class="cs-pcell">' + badge(x.pos) + '<span class="cs-pname">' + esc(x.name) + '</span></span></td>'
+        + '<td><span class="cs-pcell">' + badge(x.pos) + '<span class="cs-pname">' + esc(x.name) + '</span>' + (x.lastInTier ? '<span class="cs-runflag">last ' + x.pos + '</span>' : '') + '</span></td>'
         + '<td>' + posrk(x) + '</td>'
         + '<td><span class="cs-vorwrap"><span class="cs-num">' + x.vor + '</span><span class="cs-vorbar"><i style="width:' + Math.max(0, Math.round(x.vor / maxVor * 100)) + '%"></i></span></span></td>'
         + c5 + c6 + '</tr>';
@@ -278,8 +277,8 @@
     if (!shown) html = '<tr><td colspan="6" class="cs-empty">No players match this filter.</td></tr>';
     $('csBoardBody').innerHTML = html;
     $('csBoardFoot').textContent = dyn
-      ? 'Ranked by value over replacement (dynasty value), youth-aware via the Window column. Tap a row to cross a player off.'
-      : 'Ranked by value over replacement, so a scarce elite TE or QB can still outrank a higher-scoring skill player. Tap a row to cross a player off.';
+      ? 'Ranked by value over replacement (dynasty value), youth-aware via the Window column. A "last RB" flag marks the last starter-quality player at that position before its next tier. Tap a row to cross a player off.'
+      : 'Ranked by value over replacement, so a scarce elite TE or QB can still outrank a higher-scoring skill player. A "last RB" flag marks the last starter-quality player at that position before its next tier. Tap a row to cross a player off.';
   }
 
   function renderPos(dyn) {
@@ -331,25 +330,6 @@
     bar.style.display = '';
     bar.innerHTML = '<span class="cs-need-lbl">Your roster</span>' + chips
       + '<span class="cs-need-hint">from your live picks</span>';
-  }
-
-  function renderDraft(dyn) {
-    var live = players.filter(function (x) { return !x.drafted && visiblePlayer(x); });
-    var dh = live.map(function (x) {
-      var run = x.lastInTier;
-      // Overall rank, name, then a clean meta cluster: position rank, tier, window.
-      return '<div class="cs-drow' + (run ? ' run' : '') + '">'
-        + '<span class="cs-drk">' + x.rk + '</span>'
-        + '<span class="cs-dname">' + esc(x.name) + '</span>'
-        + (run ? '<span class="cs-runflag">last ' + x.pos + '</span>' : '')
-        + '<span class="cs-dmeta">'
-        + posrk(x)
-        + '<span class="cs-dtier">Tier ' + x.dtier + '</span>'
-        + (dyn ? winChip(x.age) : '')
-        + '</span>'
-        + '</div>';
-    }).join('');
-    $('csDboard').innerHTML = dh || '<div class="cs-empty" style="padding:22px;">Board is empty.</div>';
   }
 
   // ── ADP source selector ─────────────────────────────────────────────────────
@@ -537,8 +517,15 @@
     });
     var clearBtn = $('csClearBtn');
     if (clearBtn) clearBtn.addEventListener('click', function () {
-      if (!state.done.size) return;
+      var hadDrafted = draftedIds && draftedIds.size;
+      if (!state.done.size && !hadDrafted) return;
+      // Wipe both hand-marked players and the crossed-off drafted set (e.g. the
+      // snapshot carried over from a mock draft). A live draft re-syncs on its
+      // next poll; a static mock snapshot stays cleared.
       state.done.clear();
+      draftedIds = null;
+      myCounts = null;
+      compute();   // x.drafted is derived from draftedIds, so recompute the board
       render();
     });
     // CSV export is a pro feature; non-premium users get the upgrade prompt.
@@ -579,7 +566,7 @@
     });
 
     var tabs = document.querySelectorAll('.cs-tabs [role=tab]');
-    var panels = { board: 'cs-panel-board', pos: 'cs-panel-pos', draft: 'cs-panel-draft', logic: 'cs-panel-logic' };
+    var panels = { board: 'cs-panel-board', pos: 'cs-panel-pos', logic: 'cs-panel-logic' };
     tabs.forEach(function (t) {
       t.addEventListener('click', function () {
         tabs.forEach(function (x) { x.setAttribute('aria-selected', String(x === t)); });

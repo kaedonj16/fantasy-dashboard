@@ -140,6 +140,10 @@ _CHEAT_HTML = r"""
   .cs-btn[aria-pressed="true"] { border-color: var(--cs-good); color: var(--cs-good); background: var(--cs-good-soft); }
   .cs-src { font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; background: var(--cs-surface); color: var(--cs-ink-soft); border: 1px solid var(--cs-line); border-radius: 9px; padding: 7px 9px; }
   .cs-src:hover { border-color: var(--cs-accent); }
+  /* Clear marks sits on its own line below the controls so it never shoves the
+     row when it appears. The zero-height break forces the wrap. */
+  .cs-break { flex-basis: 100%; height: 0; margin: 0; padding: 0; }
+  .cs-btn-clear { margin-top: 4px; }
 
   .cs-tabs { display: flex; gap: 4px; margin: 20px 0 0; border-bottom: 1px solid var(--cs-line); flex-wrap: wrap; }
   .cs-tabs button { font: inherit; font-size: 13.5px; font-weight: 700; cursor: pointer; border: 0; background: none; color: var(--cs-ink-faint); padding: 11px 14px; position: relative; }
@@ -228,7 +232,6 @@ _CHEAT_HTML = r"""
   .cs-pgtier { display: flex; align-items: center; gap: 10px; font-family: var(--cs-mono); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--cs-ink-faint); background: var(--cs-surface-2); padding: 7px 12px; border-top: 1px solid var(--cs-line-strong); border-bottom: 1px solid var(--cs-line); }
   .cs-pgtier .cs-sc { font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--cs-ink-soft); }
 
-  .cs-dboard { background: var(--cs-surface); border: 1px solid var(--cs-line); border-radius: 14px; overflow: auto; max-height: calc(100vh - 230px); }
   /* Filter bar: instant name search + position filter over the whole board. */
   .cs-filterbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 14px 0 12px; }
   .cs-search { flex: 1 1 200px; min-width: 140px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--cs-line); background: var(--cs-surface); color: var(--cs-ink); font: inherit; font-size: 13px; outline: none; }
@@ -237,19 +240,12 @@ _CHEAT_HTML = r"""
   .cs-posf button { font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-line); background: var(--cs-surface); color: var(--cs-ink-soft); padding: 8px 12px; border-radius: 9px; }
   .cs-posf button:hover { border-color: var(--cs-accent); color: var(--cs-accent); }
   .cs-posf button[aria-pressed="true"] { background: var(--cs-accent); color: #fff; border-color: var(--cs-accent); }
-  .cs-drow { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--cs-line); }
-  .cs-drow:last-child { border-bottom: 0; }
-  .cs-drow.run { background: var(--cs-accent-soft); }
-  .cs-drk { flex: 0 0 auto; width: 26px; text-align: right; font-family: var(--cs-mono); font-size: 12px; font-weight: 700; color: var(--cs-ink-faint); }
-  .cs-dname { flex: 1 1 auto; min-width: 0; font-size: 14px; font-weight: 700; color: var(--cs-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .cs-dmeta { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; }
-  .cs-dtier { font-family: var(--cs-mono); font-size: 11px; font-weight: 700; color: var(--cs-ink-faint); }
   .cs-pick { font-family: var(--cs-mono); font-weight: 800; font-size: 13px; text-align: center; }
   .cs-pick small { display: block; font-size: 9px; font-weight: 600; color: var(--cs-ink-faint); letter-spacing: .06em; }
   .cs-dtiers { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .cs-tchip { font-family: var(--cs-mono); font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 7px; display: inline-flex; align-items: center; gap: 6px; }
   .cs-tchip .cs-ex { font-family: inherit; color: var(--cs-ink-soft); font-weight: 600; }
-  .cs-runflag { font-family: var(--cs-mono); font-size: 10px; color: var(--cs-accent); font-weight: 800; }
+  .cs-runflag { font-family: var(--cs-mono); font-size: 10px; color: var(--cs-accent); font-weight: 800; margin-left: 8px; white-space: nowrap; }
 
   .cs-prose { background: var(--cs-surface); border: 1px solid var(--cs-line); border-radius: 14px; }
   .cs-rule { display: grid; grid-template-columns: 112px 1fr; gap: 16px; padding: 16px 20px; border-bottom: 1px solid var(--cs-line); }
@@ -283,7 +279,7 @@ _CHEAT_HTML = r"""
     /* Only the active tab prints; the JS leaves the other panels .hidden. */
     .cs-wrap { max-width: none; padding: 0; }
     /* Undo the on-screen height cap so the whole board flows onto pages. */
-    .cs-tbl-scroll, .cs-pgrid-scroll, .cs-dboard { overflow: visible; border: 0; max-height: none; }
+    .cs-tbl-scroll, .cs-pgrid-scroll { overflow: visible; border: 0; max-height: none; }
     .cs-wrap thead th { position: static; }
     /* Keep a tier heading with the rows under it, and don't split a row. */
     .cs-wrap tr.cs-cliff { break-before: auto; break-after: avoid; }
@@ -323,10 +319,11 @@ _CHEAT_HTML = r"""
         <select class="cs-src" id="csAdpSrc" aria-label="ADP source" style="display:none;"></select>
         <button class="cs-btn" id="csNeedsBtn" aria-pressed="false" style="display:none;">Needs only</button>
         <button class="cs-btn" id="csHideDrafted" aria-pressed="false" style="display:none;">Hide drafted</button>
-        <button class="cs-btn" id="csClearBtn" style="display:none;">Clear marks</button>
         <button class="cs-btn" id="csValBtn" aria-pressed="false">Values only</button>
         <button class="cs-btn" id="csCsvBtn">CSV</button>
         <button class="cs-btn" id="csPrintBtn">Print</button>
+        <span class="cs-break" aria-hidden="true"></span>
+        <button class="cs-btn cs-btn-clear" id="csClearBtn" style="display:none;">Clear marks</button>
       </div>
     </div>
   </header>
@@ -334,7 +331,6 @@ _CHEAT_HTML = r"""
   <nav class="cs-tabs" role="tablist">
     <button role="tab" aria-selected="true" data-tab="board">Big Board</button>
     <button role="tab" aria-selected="false" data-tab="pos">By Position</button>
-    <button role="tab" aria-selected="false" data-tab="draft">Draft Order</button>
     <button role="tab" aria-selected="false" data-tab="logic">The Logic</button>
   </nav>
 
@@ -360,11 +356,6 @@ _CHEAT_HTML = r"""
   <section class="cs-board cs-hidden" id="cs-panel-pos">
     <div class="cs-pgrid-scroll"><div class="cs-pgrid" id="csPosGrid"></div></div>
     <p class="cs-foot" id="csPosFoot"></p>
-  </section>
-
-  <section class="cs-hidden" id="cs-panel-draft">
-    <div class="cs-dboard" id="csDboard"></div>
-    <p class="cs-foot">Two tiers on one pick means they grade out the same, so pick for your build. Highlighted rows are positional runs: the last starter-quality player at that position before a cliff.</p>
   </section>
 
   <section class="cs-hidden" id="cs-panel-logic">
