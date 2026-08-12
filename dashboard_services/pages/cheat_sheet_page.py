@@ -276,7 +276,7 @@ _CHEAT_HTML = r"""
     #csFmtNote { margin-left: 0; width: 100%; }
   }
   @media print {
-    .cs-controls, .cs-tabs, .cs-backlink, .cs-needs, .cs-filterbar, #csPrintBtn, #csValBtn { display: none !important; }
+    .cs-controls, .cs-tabs, .cs-backlink, .cs-needs, .cs-filterbar, #csPrintBtn, #csValBtn, #csClearBtn { display: none !important; }
     /* Only the active tab prints; the JS leaves the other panels .hidden. */
     .cs-wrap { max-width: none; padding: 0; }
     /* Undo the on-screen height cap so the whole board flows onto pages. */
@@ -321,6 +321,7 @@ _CHEAT_HTML = r"""
         <select class="cs-src" id="csAdpSrc" aria-label="ADP source" style="display:none;"></select>
         <button class="cs-btn" id="csNeedsBtn" aria-pressed="false" style="display:none;">Needs only</button>
         <button class="cs-btn" id="csHideDrafted" aria-pressed="false" style="display:none;">Hide drafted</button>
+        <button class="cs-btn" id="csClearBtn" style="display:none;">Clear marks</button>
         <button class="cs-btn" id="csValBtn" aria-pressed="false">Values only</button>
         <button class="cs-btn" id="csCsvBtn">CSV</button>
         <button class="cs-btn" id="csPrintBtn">Print</button>

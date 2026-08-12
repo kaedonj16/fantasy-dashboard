@@ -152,6 +152,9 @@
     $('csValBtn').textContent = dyn ? 'Ascenders only' : 'Values only';
     var hd = $('csHideDrafted'); if (hd) { hd.style.display = draftedIds ? '' : 'none'; hd.setAttribute('aria-pressed', String(state.hideDrafted)); }
     var nb = $('csNeedsBtn'); if (nb) { nb.style.display = myCounts ? '' : 'none'; nb.setAttribute('aria-pressed', String(state.needsFilter)); }
+    // Show a Clear button once the user has hand-marked players as gone, so they
+    // can wipe those marks in one tap. Live/mock drafted ids are not touched.
+    var cb = $('csClearBtn'); if (cb) cb.style.display = state.done.size ? '' : 'none';
     renderNeedsBar();
 
     if (!players.length) {
@@ -453,6 +456,12 @@
     if (nb) nb.addEventListener('click', function () {
       state.needsFilter = !state.needsFilter; this.setAttribute('aria-pressed', String(state.needsFilter));
       document.querySelectorAll('.cs-board').forEach(function (b) { b.classList.toggle('needson', state.needsFilter); });
+    });
+    var clearBtn = $('csClearBtn');
+    if (clearBtn) clearBtn.addEventListener('click', function () {
+      if (!state.done.size) return;
+      state.done.clear();
+      render();
     });
     var csvBtn = $('csCsvBtn'); if (csvBtn) csvBtn.addEventListener('click', exportCsv);
     $('csPrintBtn').addEventListener('click', function () { window.print(); });

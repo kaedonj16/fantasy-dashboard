@@ -24568,6 +24568,28 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
     POSITIONS = ["QB", "RB", "WR", "TE"]
     prime_max = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
 
+    # Redraft (weekly-production) positional rank for every player, so a "Cut" that
+    # fires purely on low DYNASTY value can be spared when the player still produces:
+    # a low dynasty asset who ranks as a rosterable starter in redraft value is kept
+    # for weekly production, not dropped.
+    _rdft_key = "redraft_value_sf" if league_type == "sf" else "redraft_value_1qb"
+    _rd_by_pos: dict = {}
+    for _row in model_value_table:
+        if not isinstance(_row, dict):
+            continue
+        _pid = str(_row.get("id") or "")
+        _pos = str(_row.get("position") or "").upper()
+        if not _pid or _pos not in POSITIONS:
+            continue
+        _rv = float(_row.get(_rdft_key) or _row.get("redraft_value_1qb") or 0)
+        if _rv > 0:
+            _rd_by_pos.setdefault(_pos, []).append((_pid, _rv))
+    redraft_prk_by_id: dict = {}
+    for _pos, _lst in _rd_by_pos.items():
+        _lst.sort(key=lambda t: -t[1])
+        for _i, (_pid, _rv) in enumerate(_lst, 1):
+            redraft_prk_by_id[_pid] = _i
+
     def _signal(pid: str, info: dict, redraft: bool = False) -> str:
         # Signal off positional RANK (position-relative, scale-free) rather than
         # flat value cutoffs, using the per-position tiers derived below from the
@@ -24588,26 +24610,37 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
         elite     = elite_n.get(pos, 5)
         startable = startable_lg.get(pos, 24)
         depth     = depth_n.get(pos, 48)
+        # Rosterable by weekly production: ranks within the league's rosterable
+        # depth on REDRAFT value even if dynasty value is thin. Such a player is a
+        # keep-for-production body, not a drop candidate.
+        rd_prk        = int(redraft_prk_by_id.get(pid) or 999)
+        productive    = rd_prk <= depth
         fc_prk    = int((fc_adp.get(pid) or {}).get("pos_rank") or 999)
         market_on = not redraft
         # Positive = market (FC) ranks him ahead of our model; negative = we rank him higher.
         mkt_gap = (prk - fc_prk) if (prk < 999 and fc_prk < 999) else None
 
         # Unknown positional rank (unranked / very deep): fall back to a raw floor,
-        # but keep young dynasty stashes rather than dumping them.
+        # but keep young dynasty stashes and weekly-production bodies rather than
+        # dumping them.
         if prk >= 999:
             if stashable:
                 return "Stash"
+            if productive:
+                return "Hold"
             return "Cut" if val < 60 else "Hold"
 
         # Below replacement level in this league. In dynasty a young/rookie player
-        # here is a stash to keep, not a cut; everyone else (and all of redraft) is
-        # a drop candidate.
+        # here is a stash to keep; a player who still produces in redraft is a
+        # keep-for-production body; everyone else is a drop candidate.
         if prk > depth:
-            return "Stash" if stashable else "Cut"
-        # Aging body outside the startable tier (dynasty only) — no future, drop.
+            if stashable:
+                return "Stash"
+            return "Hold" if productive else "Cut"
+        # Aging body outside the startable tier (dynasty only): no dynasty future,
+        # but keep him if he still produces weekly, otherwise drop.
         if past_prime and prk > startable:
-            return "Cut"
+            return "Hold" if productive else "Cut"
 
         # Elite, in-window starter — a keeper.
         if prk <= elite and not past_prime:
