@@ -140,6 +140,10 @@ _CHEAT_HTML = r"""
   .cs-btn[aria-pressed="true"] { border-color: var(--cs-good); color: var(--cs-good); background: var(--cs-good-soft); }
   .cs-src { font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; background: var(--cs-surface); color: var(--cs-ink-soft); border: 1px solid var(--cs-line); border-radius: 9px; padding: 7px 9px; }
   .cs-src:hover { border-color: var(--cs-accent); }
+  /* Clear marks sits on its own line below the controls so it never shoves the
+     row when it appears. The zero-height break forces the wrap. */
+  .cs-break { flex-basis: 100%; height: 0; margin: 0; padding: 0; }
+  .cs-btn-clear { margin-top: 4px; }
 
   .cs-tabs { display: flex; gap: 4px; margin: 20px 0 0; border-bottom: 1px solid var(--cs-line); flex-wrap: wrap; }
   .cs-tabs button { font: inherit; font-size: 13.5px; font-weight: 700; cursor: pointer; border: 0; background: none; color: var(--cs-ink-faint); padding: 11px 14px; position: relative; }
@@ -323,10 +327,11 @@ _CHEAT_HTML = r"""
         <select class="cs-src" id="csAdpSrc" aria-label="ADP source" style="display:none;"></select>
         <button class="cs-btn" id="csNeedsBtn" aria-pressed="false" style="display:none;">Needs only</button>
         <button class="cs-btn" id="csHideDrafted" aria-pressed="false" style="display:none;">Hide drafted</button>
-        <button class="cs-btn" id="csClearBtn" style="display:none;">Clear marks</button>
         <button class="cs-btn" id="csValBtn" aria-pressed="false">Values only</button>
         <button class="cs-btn" id="csCsvBtn">CSV</button>
         <button class="cs-btn" id="csPrintBtn">Print</button>
+        <span class="cs-break" aria-hidden="true"></span>
+        <button class="cs-btn cs-btn-clear" id="csClearBtn" style="display:none;">Clear marks</button>
       </div>
     </div>
   </header>

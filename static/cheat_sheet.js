@@ -229,7 +229,7 @@
     var nb = $('csNeedsBtn'); if (nb) { nb.style.display = myCounts ? '' : 'none'; nb.setAttribute('aria-pressed', String(state.needsFilter)); }
     // Show a Clear button once the user has hand-marked players as gone, so they
     // can wipe those marks in one tap. Live/mock drafted ids are not touched.
-    var cb = $('csClearBtn'); if (cb) cb.style.display = state.done.size ? '' : 'none';
+    var cb = $('csClearBtn'); if (cb) cb.style.display = (state.done.size || (draftedIds && draftedIds.size)) ? '' : 'none';
     renderNeedsBar();
 
     if (!players.length) {
@@ -537,8 +537,15 @@
     });
     var clearBtn = $('csClearBtn');
     if (clearBtn) clearBtn.addEventListener('click', function () {
-      if (!state.done.size) return;
+      var hadDrafted = draftedIds && draftedIds.size;
+      if (!state.done.size && !hadDrafted) return;
+      // Wipe both hand-marked players and the crossed-off drafted set (e.g. the
+      // snapshot carried over from a mock draft). A live draft re-syncs on its
+      // next poll; a static mock snapshot stays cleared.
       state.done.clear();
+      draftedIds = null;
+      myCounts = null;
+      compute();   // x.drafted is derived from draftedIds, so recompute the board
       render();
     });
     // CSV export is a pro feature; non-premium users get the upgrade prompt.
