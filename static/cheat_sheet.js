@@ -114,18 +114,30 @@
   function assignTiers() {
     var n = players.length;
     if (!n) return;
+    if (n <= 3) { players.forEach(function (p) { p.dtier = 1; }); return; }
+    // Boundaries fall on the largest VOR gaps (real cliffs), but no two boundaries
+    // sit closer than MIN players — so a tier is never a lone elite and never a
+    // sliver, while the biggest drops always divide tiers. Because the top of the
+    // board is naturally more spread out, this yields smaller tiers up top and
+    // chunkier ones lower, which is what a draft board wants. Tunables below.
+    var MIN = 3;
+    var target = Math.max(5, Math.min(14, Math.round(n / 10)));   // ~ number of tiers
     var gaps = [];
-    for (var i = 1; i < n; i++) gaps.push(Math.max(0, players[i - 1].vor - players[i].vor));
-    var desc = gaps.slice().sort(function (a, b) { return b - a; });
-    var K = Math.max(4, Math.min(11, Math.round(n / 14)));   // ~K cliffs -> ~K+1 tiers
-    var thresh = desc.length ? (desc[Math.min(K, desc.length) - 1] || 0) : 0;
-    if (thresh < 1) thresh = 1;
-    var CAP = 18, tier = 1, size = 1;
-    players[0].dtier = 1;
-    for (var j = 1; j < n; j++) {
-      var gap = players[j - 1].vor - players[j].vor;
-      if (gap >= thresh || size >= CAP) { tier++; size = 0; }
-      players[j].dtier = tier; size++;
+    for (var i = 1; i < n; i++) gaps.push({ at: i, g: players[i - 1].vor - players[i].vor });
+    gaps.sort(function (a, b) { return b.g - a.g; });             // largest drop first
+    var bounds = [0, n];       // sentinel boundaries at the ends
+    var picked = {};
+    for (var k = 0; k < gaps.length && bounds.length - 2 < target - 1; k++) {
+      if (gaps[k].g <= 0) break;
+      var pos = gaps[k].at, ok = true;
+      for (var b = 0; b < bounds.length; b++) { if (Math.abs(bounds[b] - pos) < MIN) { ok = false; break; } }
+      if (ok) { bounds.push(pos); picked[pos] = 1; }
+    }
+    var sortedB = Object.keys(picked).map(Number).sort(function (a, b) { return a - b; });
+    var tier = 1, bi = 0;
+    for (var j = 0; j < n; j++) {
+      if (bi < sortedB.length && j === sortedB[bi]) { tier++; bi++; }
+      players[j].dtier = tier;
     }
   }
 
@@ -230,7 +242,7 @@
     groups.forEach(function (g) {
       if (g.tierBreak) {
         var counts = POS.map(function (pos) { var n = players.filter(function (y) { return y.dtier === g.tier && y.pos === pos && !state.done.has(y.name) && !y.drafted; }).length; return n ? pos + ' ' + n : null; }).filter(Boolean).join(' &middot; ');
-        out += '<div class="cs-pgtier">Tier ' + g.tier + '<span class="cs-sc">' + counts + ' left</span></div>';
+        out += '<div class="cs-pgtier">Tier ' + g.tier + (counts ? '<span class="cs-sc">' + counts + ' left</span>' : '') + '</div>';
       }
       var byPos = { RB: [], WR: [], QB: [], TE: [] };
       g.items.forEach(function (x) { byPos[x.pos].push(x); });
