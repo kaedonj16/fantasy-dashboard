@@ -1952,10 +1952,16 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-/* Mobile league switcher: tappable rows instead of the native <select>, whose
-   option popup floats/mis-anchors inside the sliding More sheet (a fixed,
-   transformed container). Hidden on desktop, where the <select> works fine. */
-.ls-list { display: none; }
+/* League switcher: a custom tappable list on ALL breakpoints. The native
+   <select> popup looked out of place on desktop and mis-anchored inside the
+   sliding More sheet, so the styled list replaces it everywhere; the <select>
+   stays in the DOM (JS reads its data-* and it's a no-JS fallback) but hidden. */
+.ls-list { display: flex; flex-direction: column; }
+.league-switcher-wrapper .league-switcher { display: none; }
+/* Rows pad themselves, so drop the settings-panel wrapper's control padding and
+   let the list sit edge-to-edge like the other settings rows (keeps its divider). */
+.settings-dropdown .league-switcher-wrapper { padding: 0; }
+.settings-dropdown .ls-toggle { border-top: 0.5px solid var(--border); }
 /* Collapsible header row, styled to match the other icon+label sheet rows
    (.br-sheet-link): icon + "Switch league" + current league + chevron. */
 .ls-toggle {

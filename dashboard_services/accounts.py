@@ -185,6 +185,22 @@ def remove_user_league(
         conn.commit()
 
 
+def list_account_platform_ids(account_id: int, platform: str) -> list[str]:
+    """Platform user ids (e.g. Sleeper user_ids) linked to this account for a
+    platform. Used to validate stored leagues against the live platform list."""
+    if not (account_id and platform):
+        return []
+    init_accounts_tables()
+    from dashboard_services.db import get_conn
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT platform_user_id FROM account_identities "
+            "WHERE account_id = %s AND platform = %s",
+            (account_id, str(platform)),
+        ).fetchall()
+    return [str(r["platform_user_id"]) for r in rows if r.get("platform_user_id")]
+
+
 def list_user_leagues(account_id: int) -> list[dict]:
     """Every league linked to an account, across platforms. Newest first."""
     if not account_id:
