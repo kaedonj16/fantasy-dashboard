@@ -7,7 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-08-12",
         "tag": "new",
-        "text": "Draft Cheat Sheet: a printable, value-based draft board ranked by value over replacement for your exact league scoring, roster, and format (with Superflex and dynasty toggles). Players are grouped into tiers with an ADP value column, plus a By Position grid and a Draft Order plan. Search by name, filter by position, and export to CSV or print. Open it during a live Sleeper draft or a mock from the Draft Room and it crosses off who is already gone. Find it under Draft.",
+        "text": "Draft Cheat Sheet: a printable, value-based draft board tuned to your league scoring, roster, and format, with players grouped into tiers. Open it during a live Sleeper draft or a mock from the Draft Room and it crosses off who is already gone.",
         "link": "/draft/cheat-sheet"
     },
     {
