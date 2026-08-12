@@ -145,6 +145,29 @@ _CHEAT_HTML = r"""
   .cs-break { flex-basis: 100%; height: 0; margin: 0; padding: 0; }
   .cs-btn-clear { margin-top: 4px; }
 
+  /* ── Custom draft board (pro): overrides on top of the model board ────────── */
+  /* The edit column is hidden until Edit board is on. */
+  .cs-edit-th, .cs-edit-cell { display: none; }
+  .cs-board.editing .cs-edit-th, .cs-board.editing .cs-edit-cell { display: table-cell; }
+  .cs-edit-cell { text-align: right !important; white-space: nowrap; }
+  .cs-ovbtns { display: inline-flex; gap: 3px; }
+  .cs-ovbtn { font: inherit; font-size: 12px; line-height: 1; cursor: pointer; width: 24px; height: 24px;
+    display: inline-flex; align-items: center; justify-content: center; padding: 0; border-radius: 6px;
+    border: 1px solid var(--cs-line); background: var(--cs-surface); color: var(--cs-ink-soft); }
+  .cs-ovbtn:hover { border-color: var(--cs-accent); color: var(--cs-accent); }
+  .cs-ovbtn.on { background: var(--cs-accent); border-color: var(--cs-accent); color: #fff; }
+  /* The "muted" button lights up red-ish since it sinks the player. */
+  .cs-ovbtn[data-act="mute"].on { background: var(--cs-bad); border-color: var(--cs-bad); }
+  /* Override state chip next to the name. */
+  .cs-ovchip { font-family: var(--cs-mono); font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 999px; margin-left: 8px; white-space: nowrap; }
+  .cs-ovchip.bump { color: var(--cs-accent); background: var(--cs-accent-soft); }
+  .cs-ovchip.pin { color: var(--cs-good); background: var(--cs-good-soft); }
+  .cs-ovchip.mute { color: var(--cs-ink-faint); background: var(--cs-surface-2); }
+  .cs-wrap tbody tr.cs-muted td { opacity: .5; }
+  .cs-wrap tbody tr.cs-muted .cs-pname { color: var(--cs-ink-faint); }
+  /* A subtle accent rail on any row you have personally moved. */
+  .cs-wrap tbody tr.cs-ov td:first-child { box-shadow: inset 3px 0 0 var(--cs-accent); }
+
   .cs-tabs { display: flex; gap: 4px; margin: 20px 0 0; border-bottom: 1px solid var(--cs-line); flex-wrap: wrap; }
   .cs-tabs button { font: inherit; font-size: 13.5px; font-weight: 700; cursor: pointer; border: 0; background: none; color: var(--cs-ink-faint); padding: 11px 14px; position: relative; }
   .cs-tabs button[aria-selected="true"] { color: var(--cs-ink); }
@@ -275,7 +298,9 @@ _CHEAT_HTML = r"""
     #csFmtNote { margin-left: 0; width: 100%; }
   }
   @media print {
-    .cs-controls, .cs-tabs, .cs-backlink, .cs-needs, .cs-filterbar, #csPrintBtn, #csValBtn, #csClearBtn { display: none !important; }
+    .cs-controls, .cs-tabs, .cs-backlink, .cs-needs, .cs-filterbar, #csPrintBtn, #csValBtn, #csClearBtn, #csEditBtn, #csResetBoardBtn { display: none !important; }
+    /* Never print the edit column even if edit mode is left on. */
+    .cs-edit-th, .cs-board.editing .cs-edit-th, .cs-edit-cell, .cs-board.editing .cs-edit-cell { display: none !important; }
     /* Only the active tab prints; the JS leaves the other panels .hidden. */
     .cs-wrap { max-width: none; padding: 0; }
     /* Undo the on-screen height cap so the whole board flows onto pages. */
@@ -319,11 +344,13 @@ _CHEAT_HTML = r"""
         <select class="cs-src" id="csAdpSrc" aria-label="ADP source" style="display:none;"></select>
         <button class="cs-btn" id="csNeedsBtn" aria-pressed="false" style="display:none;">Needs only</button>
         <button class="cs-btn" id="csHideDrafted" aria-pressed="false" style="display:none;">Hide drafted</button>
+        <button class="cs-btn" id="csEditBtn" aria-pressed="false" style="display:none;" title="Make this your board: bump, pin or mute players (Pro)">Edit board</button>
         <button class="cs-btn" id="csValBtn" aria-pressed="false">Values only</button>
         <button class="cs-btn" id="csCsvBtn">CSV</button>
         <button class="cs-btn" id="csPrintBtn">Print</button>
         <span class="cs-break" aria-hidden="true"></span>
         <button class="cs-btn cs-btn-clear" id="csClearBtn" style="display:none;">Clear marks</button>
+        <button class="cs-btn cs-btn-clear" id="csResetBoardBtn" style="display:none;">Reset board</button>
       </div>
     </div>
   </header>

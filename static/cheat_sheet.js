@@ -38,6 +38,60 @@
   var maxVor = 1;
   var loading = false;
 
+  // ── Custom draft board (pro): per-player overrides on top of the model board.
+  // Intent, not absolute positions: {d: tier delta up(+)/down(-), p: pinned,
+  // m: muted}. Persisted per league + mode + format so a refresh of the model
+  // values keeps the user's intent. See docs/custom-draft-board.md.
+  var overrides = {};
+  var _ovKey = null;
+  var editBoard = false;   // whether per-row edit controls are shown
+  function ovKey() { return 'csboard:' + (cfg.leagueId || 'guest') + ':' + state.mode + ':' + (state.sf ? 'sf' : '1qb'); }
+  function loadOverrides() {
+    overrides = {};
+    if (!cfg.hasPremium) return;
+    try { overrides = JSON.parse(localStorage.getItem(ovKey()) || '{}') || {}; } catch (e) { overrides = {}; }
+  }
+  function ensureOverrides() { var k = ovKey(); if (k !== _ovKey) { _ovKey = k; loadOverrides(); } }
+  function saveOverrides() {
+    Object.keys(overrides).forEach(function (id) { var o = overrides[id]; if (!o || (!o.d && !o.p && !o.m)) delete overrides[id]; });
+    try { localStorage.setItem(ovKey(), JSON.stringify(overrides)); } catch (e) { /* storage full/blocked */ }
+  }
+  function hasOverrides() { return cfg.hasPremium && Object.keys(overrides).length > 0; }
+  function boardBump(id, dir) {
+    var o = overrides[id] || {}; delete o.p; delete o.m; o.d = (o.d || 0) + dir; if (!o.d) delete o.d;
+    overrides[id] = o; saveOverrides(); compute(); render();
+  }
+  function boardPin(id) {
+    var was = overrides[id] && overrides[id].p; var o = overrides[id] || {};
+    delete o.d; delete o.m; if (was) delete o.p; else o.p = true; overrides[id] = o; saveOverrides(); compute(); render();
+  }
+  function boardMute(id) {
+    var was = overrides[id] && overrides[id].m; var o = overrides[id] || {};
+    delete o.d; delete o.p; if (was) delete o.m; else o.m = true; overrides[id] = o; saveOverrides(); compute(); render();
+  }
+  function boardReset() { overrides = {}; saveOverrides(); compute(); render(); }
+
+  // Assign each player a display group + label: pinned bucket, model/effective
+  // tier, or muted bucket. When custom overrides exist, reorder by that group
+  // (ties broken by model VOR rank) and renumber the RK column.
+  function applyOverrides() {
+    var custom = hasOverrides();
+    var maxT = 1;
+    players.forEach(function (p) { if (p.dtier > maxT) maxT = p.dtier; });
+    players.forEach(function (p, i) {
+      p._mr = i;   // model (VOR) order index, captured before any reorder
+      var o = custom ? overrides[p.id] : null;
+      if (o && o.p)      { p.grp = -1;  p.grpLabel = 'Pinned'; p.ov = 'pin';  p.ovN = 0; }
+      else if (o && o.m) { p.grp = 1e9; p.grpLabel = 'Muted';  p.ov = 'mute'; p.ovN = 0; }
+      else if (o && o.d) { var et = Math.min(maxT, Math.max(1, p.dtier - o.d)); p.grp = et; p.grpLabel = 'Tier ' + et; p.ov = (o.d > 0 ? 'up' : 'down'); p.ovN = Math.abs(o.d); }
+      else               { p.grp = p.dtier; p.grpLabel = 'Tier ' + p.dtier; p.ov = null; p.ovN = 0; }
+    });
+    if (custom) {
+      players.sort(function (a, b) { return a.grp - b.grp || a._mr - b._mr; });
+      players.forEach(function (x, i) { x.rk = i + 1; });
+    }
+  }
+
   function scoringAxisKey() { return state.mode === 'dynasty' ? 'startup' : 'redraft'; }
 
   function youthWindow(age) {
@@ -47,6 +101,7 @@
   }
 
   function compute() {
+    ensureOverrides();
     var mode = state.mode, sf = state.sf;
     // Value-derived redraft ADP fallback (mirrors the draft room).
     allPlayers.slice().sort(function (a, b) { return C.redraftVal(b, sf) - C.redraftVal(a, sf); })
@@ -100,9 +155,12 @@
       pc[x.pos] = (pc[x.pos] || 0) + 1; x.prk = x.pos + pc[x.pos];
     });
     assignTiers();
+    applyOverrides();   // sets grp/grpLabel; reorders + renumbers when custom
+    // Run flags: the last player of each position within its display group.
     var seen = {};
+    players.forEach(function (x) { x.lastInTier = false; });
     for (var i = players.length - 1; i >= 0; i--) {
-      var k = players[i].pos + '|' + players[i].dtier;
+      var k = players[i].pos + '|' + players[i].grp;
       if (!seen[k]) { seen[k] = 1; players[i].lastInTier = true; }
     }
   }
@@ -230,6 +288,11 @@
     // Show a Clear button once the user has hand-marked players as gone, so they
     // can wipe those marks in one tap. Live/mock drafted ids are not touched.
     var cb = $('csClearBtn'); if (cb) cb.style.display = (state.done.size || (draftedIds && draftedIds.size)) ? '' : 'none';
+    // Custom board (pro): edit toggle always available; reset only with overrides.
+    var eb = $('csEditBtn');
+    if (eb) { eb.style.display = cfg.hasPremium ? '' : 'none'; eb.setAttribute('aria-pressed', String(editBoard)); eb.textContent = editBoard ? 'Done editing' : 'Edit board'; }
+    var rb = $('csResetBoardBtn'); if (rb) rb.style.display = hasOverrides() ? '' : 'none';
+    var bp = $('cs-panel-board'); if (bp) bp.classList.toggle('editing', editBoard && cfg.hasPremium);
     renderNeedsBar();
 
     if (!players.length) {
@@ -255,26 +318,51 @@
     renderPos(dyn);
   }
 
+  // Per-row custom-board controls (pro): bump up/down, pin, mute. Shown only in
+  // edit mode. Each is a .cs-ovbtn with data-act/data-id handled by a delegated
+  // capture listener so it never also toggles the row's crossed-off state.
+  function ovControls(x) {
+    if (!cfg.hasPremium) return '';
+    function b(act, glyph, on, title) {
+      return '<button type="button" class="cs-ovbtn' + (on ? ' on' : '') + '" data-act="' + act + '" data-id="' + esc(x.id) + '" title="' + title + '" aria-label="' + title + '">' + glyph + '</button>';
+    }
+    return '<td class="cs-edit-cell"><span class="cs-ovbtns">'
+      + b('up', '&#9650;', x.ov === 'up', 'Bump up a tier')
+      + b('down', '&#9660;', x.ov === 'down', 'Bump down a tier')
+      + b('pin', '&#9733;', x.ov === 'pin', 'Pin to the top')
+      + b('mute', '&times;', x.ov === 'mute', 'Mute to the bottom')
+      + '</span></td>';
+  }
+  // A small chip that shows how a row differs from the model board.
+  function ovChip(x) {
+    if (!x.ov) return '';
+    if (x.ov === 'pin')  return '<span class="cs-ovchip pin">pinned</span>';
+    if (x.ov === 'mute') return '<span class="cs-ovchip mute">muted</span>';
+    return '<span class="cs-ovchip bump">' + (x.ov === 'up' ? '&#9650;' : '&#9660;') + x.ovN + '</span>';
+  }
+
   function renderBoard(dyn) {
     var col5 = dyn ? 'Age' : 'ADP', col6 = dyn ? 'Window' : 'Value';
+    var editTh = cfg.hasPremium ? '<th class="cs-edit-th"></th>' : '';
     $('csBoardHead').innerHTML =
-      '<tr><th>Rk</th><th class="l">Player</th><th>Pos</th><th>VOR</th><th>' + col5 + '</th><th>' + col6 + '</th></tr>';
-    var lastT = 0, html = '', shown = 0;
+      '<tr><th>Rk</th><th class="l">Player</th><th>Pos</th><th>VOR</th><th>' + col5 + '</th><th>' + col6 + '</th>' + editTh + '</tr>';
+    var span = cfg.hasPremium ? 7 : 6;
+    var lastT = null, html = '', shown = 0;
     players.forEach(function (x) {
       if (!visiblePlayer(x)) return;
-      if (x.dtier !== lastT) { lastT = x.dtier; html += '<tr class="cs-cliff"><td colspan="6"><div class="cs-cliffline">Tier ' + x.dtier + '</div></td></tr>'; }
+      if (x.grp !== lastT) { lastT = x.grp; html += '<tr class="cs-cliff"><td colspan="' + span + '"><div class="cs-cliffline">' + x.grpLabel + '</div></td></tr>'; }
       shown++;
-      var cls = 'cs-p' + (state.done.has(x.name) ? ' done' : '') + (x.drafted ? ' drafted' : '');
+      var cls = 'cs-p' + (state.done.has(x.name) ? ' done' : '') + (x.drafted ? ' drafted' : '') + (x.ov === 'mute' ? ' cs-muted' : '') + (x.ov ? ' cs-ov' : '');
       var c5 = dyn ? '<td class="cs-num">' + (x.age != null ? x.age : '') + '</td>' : '<td class="cs-num">' + (x.adp != null ? Math.round(x.adp) : '') + '</td>';
       var c6 = dyn ? '<td>' + winChip(x.age) + '</td>' : '<td>' + valChip(x.value) + '</td>';
       html += '<tr class="' + cls + '" data-good="' + x.good + '" data-posfull="' + (x.posfull ? 1 : 0) + '" data-name="' + esc(x.name) + '">'
         + '<td class="cs-rk">' + x.rk + '</td>'
-        + '<td><span class="cs-pcell">' + badge(x.pos) + '<span class="cs-pname">' + esc(x.name) + '</span>' + (x.lastInTier ? '<span class="cs-runflag">last ' + x.pos + '</span>' : '') + '</span></td>'
+        + '<td><span class="cs-pcell">' + badge(x.pos) + '<span class="cs-pname">' + esc(x.name) + '</span>' + ovChip(x) + (x.lastInTier ? '<span class="cs-runflag">last ' + x.pos + '</span>' : '') + '</span></td>'
         + '<td>' + posrk(x) + '</td>'
         + '<td><span class="cs-vorwrap"><span class="cs-num">' + x.vor + '</span><span class="cs-vorbar"><i style="width:' + Math.max(0, Math.round(x.vor / maxVor * 100)) + '%"></i></span></span></td>'
-        + c5 + c6 + '</tr>';
+        + c5 + c6 + ovControls(x) + '</tr>';
     });
-    if (!shown) html = '<tr><td colspan="6" class="cs-empty">No players match this filter.</td></tr>';
+    if (!shown) html = '<tr><td colspan="' + span + '" class="cs-empty">No players match this filter.</td></tr>';
     $('csBoardBody').innerHTML = html;
     $('csBoardFoot').textContent = dyn
       ? 'Ranked by value over replacement (dynasty value), youth-aware via the Window column. A "last RB" flag marks the last starter-quality player at that position before its next tier. Tap a row to cross a player off.'
@@ -285,7 +373,10 @@
     var POS = ['RB', 'WR', 'QB', 'TE'];
     var BAND = Math.max(1, maxVor * 0.045), CAP = 6;
     var groups = [], cur = null;
-    players.forEach(function (x) {
+    // By Position stays the model view: iterate in model (VOR) order even when the
+    // Big Board has been custom-reordered, so its tier grouping stays contiguous.
+    var list = players.slice().sort(function (a, b) { return (a._mr || 0) - (b._mr || 0); });
+    list.forEach(function (x) {
       if (!visiblePlayer(x)) return;
       var tierChanged = !cur || x.dtier !== cur.tier;
       if (!cur || tierChanged || x.vor < cur.lead - BAND || cur.items.length >= CAP) {
@@ -528,6 +619,28 @@
       compute();   // x.drafted is derived from draftedIds, so recompute the board
       render();
     });
+    // Custom board (pro): toggle edit mode, reset the whole board, and the
+    // per-row bump / pin / mute controls (captured so they never cross a row off).
+    var editBtn = $('csEditBtn');
+    if (editBtn) editBtn.addEventListener('click', function () {
+      if (!cfg.hasPremium) { if (typeof window.showPaywall === 'function') window.showPaywall('draft-cheat-sheet'); return; }
+      editBoard = !editBoard; render();
+    });
+    var resetBoardBtn = $('csResetBoardBtn');
+    if (resetBoardBtn) resetBoardBtn.addEventListener('click', function () {
+      if (hasOverrides()) boardReset();
+    });
+    var boardPanel = $('cs-panel-board');
+    if (boardPanel) boardPanel.addEventListener('click', function (e) {
+      var b = e.target.closest('.cs-ovbtn'); if (!b) return;
+      e.stopPropagation(); e.preventDefault();
+      var id = b.getAttribute('data-id'), act = b.getAttribute('data-act');
+      if (act === 'up') boardBump(id, 1);
+      else if (act === 'down') boardBump(id, -1);
+      else if (act === 'pin') boardPin(id);
+      else if (act === 'mute') boardMute(id);
+    }, true);   // capture: run before the document row-click (cross-off) handler
+
     // CSV export is a pro feature; non-premium users get the upgrade prompt.
     var csvBtn = $('csCsvBtn');
     if (csvBtn && !cfg.hasPremium) csvBtn.textContent = 'CSV (Pro)';
