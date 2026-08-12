@@ -234,11 +234,13 @@ _CHEAT_HTML = r"""
   .cs-posf button { font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-line); background: var(--cs-surface); color: var(--cs-ink-soft); padding: 8px 12px; border-radius: 9px; }
   .cs-posf button:hover { border-color: var(--cs-accent); color: var(--cs-accent); }
   .cs-posf button[aria-pressed="true"] { background: var(--cs-accent); color: #fff; border-color: var(--cs-accent); }
-  .cs-drow { display: flex; align-items: center; gap: 12px; padding: 11px 16px; border-bottom: 1px solid var(--cs-line); }
+  .cs-drow { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--cs-line); }
   .cs-drow:last-child { border-bottom: 0; }
   .cs-drow.run { background: var(--cs-accent-soft); }
-  .cs-dname { flex: 0 1 auto; min-width: 0; font-size: 14px; font-weight: 700; color: var(--cs-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .cs-drow .cs-tchip { margin-left: auto; }
+  .cs-drk { flex: 0 0 auto; width: 26px; text-align: right; font-family: var(--cs-mono); font-size: 12px; font-weight: 700; color: var(--cs-ink-faint); }
+  .cs-dname { flex: 1 1 auto; min-width: 0; font-size: 14px; font-weight: 700; color: var(--cs-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cs-dmeta { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; }
+  .cs-dtier { font-family: var(--cs-mono); font-size: 11px; font-weight: 700; color: var(--cs-ink-faint); }
   .cs-pick { font-family: var(--cs-mono); font-weight: 800; font-size: 13px; text-align: center; }
   .cs-pick small { display: block; font-size: 9px; font-weight: 600; color: var(--cs-ink-faint); letter-spacing: .06em; }
   .cs-dtiers { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
