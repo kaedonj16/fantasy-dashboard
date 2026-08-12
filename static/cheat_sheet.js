@@ -22,6 +22,8 @@
     needsFilter: false,
     hideDrafted: false,
     adpSource: 'auto',
+    search: '',
+    posFilter: 'ALL',
     done: new Set(),
   };
   var teams = Number(cfg.numTeams) || 12;
@@ -31,7 +33,7 @@
   var adpSourceOptions = {};   // {redraft:[{value,label}], startup:[...], rookie:[...]}
   var draftedIds = null;       // Set of live-drafted player ids, or null if none
   var myCounts = null;         // {QB,RB,WR,TE} drafted by the viewer, or null
-  var maxScore = 1, maxVor = 1;
+  var maxVor = 1;
   var loading = false;
 
   function scoringAxisKey() { return state.mode === 'dynasty' ? 'startup' : 'redraft'; }
@@ -56,8 +58,6 @@
     var starters = C.startersFor(cfg.rosterPositions, sf);
     var valFn = function (p) { return C.valOf(p, mode, sf); };
     var repl = C.computeReplacement(pool, valFn, starters, teams);
-    var scale = C.computePpgScale(pool, C.ppgOf, starters, teams);
-    var mv = C.maxVal(pool, mode, sf);
     // Roster-need shading: targets from the league roster, "my" counts from live
     // draft picks that are mine. Only meaningful once a live draft is connected.
     var targets = C.posTargets(C.rosterCounts(cfg.rosterPositions, sf), 0);
@@ -67,49 +67,26 @@
       needByPos[pos] = { target: targets[pos] || 0, have: have, need: Math.max(0, (targets[pos] || 0) - have) };
     });
     window.__csNeed = needByPos;
-    var rounds = Number(cfg.rounds) || (mode === 'dynasty' ? 20 : 15);
-    var totalPicks = teams * rounds;
 
-    // Tier-bucket counts for the tier-cliff term (dynasty only; redraft tier=null).
-    var tcount = {};
-    pool.forEach(function (p) {
-      var t = C.tierOf(p, mode, sf, teams, tierThresholds); if (t == null) return;
-      var k = (p.position || '').toUpperCase() + '|' + t; tcount[k] = (tcount[k] || 0) + 1;
-    });
-
+    // Rank by VOR — cross-positional value over replacement. A cheat sheet is a
+    // value board, not a live-pick recommender. Ranking by the pick-independent
+    // Pick Score neutralized its ADP/need terms and let position-relative
+    // production float scarce TEs above much higher-value WRs; VOR is the honest
+    // cross-position value the board should sort on. The draft room's live Pick
+    // Score still owns the on-the-clock recommendation (with your roster + slot).
     var scored = pool.map(function (p) {
       var pos = (p.position || '').toUpperCase();
       var value = C.valOf(p, mode, sf);
-      var vor = Math.round(value - (repl[pos] || 0));
-      var tier = C.tierOf(p, mode, sf, teams, tierThresholds);
-      var adp = C.adpOf(p, mode, sf);
-      var pickNo = adp != null ? Math.round(adp) : totalPicks;   // grade each player at his own ADP
-      var cliff = tier != null && (tcount[pos + '|' + tier] || 0) <= 2;
-      // needRaw 0.5 + empty roster = a team-neutral board grade: no roster-need
-      // bias, no redundancy/overfill penalties (those need a filled roster). What
-      // survives is exactly the intrinsic Pick Score: value, VOR, production,
-      // tier, youth, and the QB streamability taper. This IS the draft room's
-      // grade of a pick with an empty roster.
-      var score = PS.computePickScore({
-        pos: pos, value: value, vor: vor, tier: tier,
-        age: (p.age != null ? Number(p.age) : null), rankChange7d: p.rank_change_7d,
-        avgPick: adp, pickNo: pickNo, maxVal: mv,
-        draftType: mode === 'dynasty' ? 'startup' : 'redraft', isSf: sf,
-        needRaw: 0.5, qbCount: 0, totalPicks: totalPicks, numTeams: teams,
-        ppgNorm: C.ppgNorm(p, scale, C.ppgOf), ppr: 1.0, tep: 0, isTierCliff: cliff,
-        survivalAdj: 0, handcuff: false,
-      });
       return {
         id: String(p.id), pos: pos, name: p.name || String(p.id),
         age: (p.age != null ? Number(p.age) : null),
         proj: (p.proj_pts != null ? Number(p.proj_pts) : (p.proj_ppg != null ? Number(p.proj_ppg) * 17 : null)),
-        adp: adp, vor: vor, tier: tier, score: score,
+        adp: C.adpOf(p, mode, sf), vor: Math.round(value - (repl[pos] || 0)),
       };
     });
-    scored.sort(function (a, b) { return b.score - a.score || b.vor - a.vor || ((a.adp || 9999) - (b.adp || 9999)); });
+    scored.sort(function (a, b) { return b.vor - a.vor || ((a.adp || 9999) - (b.adp || 9999)); });
     players = scored.slice(0, LIMIT);
 
-    maxScore = players.length ? Math.max(1, players[0].score) : 1;
     maxVor = players.length ? Math.max(1, players[0].vor) : 1;
     var pc = {};
     players.forEach(function (x, i) {
@@ -119,10 +96,18 @@
       x.drafted = draftedIds ? draftedIds.has(x.id) : false;
       x.posfull = myCounts ? ((needByPos[x.pos] && needByPos[x.pos].need) <= 0 && (needByPos[x.pos] && needByPos[x.pos].have) > 0) : false;
       pc[x.pos] = (pc[x.pos] || 0) + 1; x.prk = x.pos + pc[x.pos];
-      // Display tier: dynasty uses the shared value tier (matches the room);
-      // redraft has no value tier there, so the sheet shows its own VOR cliffs.
-      if (state.mode === 'dynasty') { x.dtier = x.tier || 1; }
-      else { var r = x.vor / maxVor; x.dtier = r >= 0.72 ? 1 : r >= 0.50 ? 2 : r >= 0.33 ? 3 : r >= 0.16 ? 4 : 5; }
+      // Tiers are cliffs in the VOR curve, so they are monotonic with the rank:
+      // a lower tier can never appear above a higher one.
+      var r = x.vor / maxVor;
+      x.dtier = r >= 0.72 ? 1 : r >= 0.50 ? 2 : r >= 0.33 ? 3 : r >= 0.16 ? 4 : 5;
+    });
+    // Renumber the VOR bands to contiguous 1..N in rank order, so a big cliff
+    // doesn't leave a gap (Tier 1 then Tier 3). Players are sorted by VOR, so the
+    // bands only ever increase down the board — this stays monotonic.
+    var tierRemap = {}, tnext = 0;
+    players.forEach(function (x) {
+      if (!(x.dtier in tierRemap)) { tnext++; tierRemap[x.dtier] = tnext; }
+      x.dtier = tierRemap[x.dtier];
     });
     var seen = {};
     for (var i = players.length - 1; i >= 0; i--) {
@@ -139,13 +124,19 @@
   function smallVal(v) { if (v == null) return ''; return v > 0 ? '<span class="cs-pgv cs-val g">+' + v + '</span>' : (v < 0 ? '<span class="cs-pgv cs-val b">' + v + '</span>' : ''); }
   function winChip(age) { var w = youthWindow(age); return w[0] ? '<span class="cs-winpill ' + w[1] + '">' + w[0] + '</span>' : ''; }
   function $(id) { return document.getElementById(id); }
+  // Search + position filters narrow which players are shown (they don't re-rank).
+  function visiblePlayer(x) {
+    if (state.posFilter !== 'ALL' && x.pos !== state.posFilter) return false;
+    if (state.search && x.name.toLowerCase().indexOf(state.search) < 0) return false;
+    return true;
+  }
 
   function render() {
     var dyn = state.mode === 'dynasty';
     $('csTitle').textContent = dyn ? 'Dynasty Cheat Sheet' : 'Redraft Cheat Sheet';
     $('csSub').textContent = dyn
-      ? 'Ranked by the same Pick Score the Draft Room uses, on dynasty value over replacement for your league roster. Age and career window replace ADP.'
-      : 'Ranked by the same Pick Score the Draft Room uses, on value over replacement for your league scoring and roster. The board and the room agree on who is better.';
+      ? 'Ranked by value over replacement on dynasty value, for your league roster. Tiers are cliffs in the value curve. Age and career window replace ADP.'
+      : 'Ranked by value over replacement for your league scoring and roster. Tiers are cliffs in the value curve. The Value column flags where the market disagrees.';
 
     document.querySelectorAll('.cs-board').forEach(function (b) { b.classList.toggle('filteron', state.filter); b.classList.toggle('hidedrafted', state.hideDrafted); b.classList.toggle('needson', state.needsFilter); });
     $('csValBtn').textContent = dyn ? 'Ascenders only' : 'Values only';
@@ -154,21 +145,21 @@
     renderNeedsBar();
 
     if (!players.length) {
-      $('csBoardBody').innerHTML = '<tr><td colspan="7" class="cs-empty">' + (loading ? 'Loading players…' : 'No players for this format yet.') + '</td></tr>';
+      $('csBoardBody').innerHTML = '<tr><td colspan="6" class="cs-empty">' + (loading ? 'Loading players…' : 'No players for this format yet.') + '</td></tr>';
       $('csLegend').innerHTML = '';
       return;
     }
 
     var draftedNote = draftedIds ? '<span class="cs-lg"><span class="cs-taken-dot"></span> already drafted</span>' : '';
     $('csLegend').innerHTML = dyn
-      ? '<span class="cs-lg"><b>Score</b> Pick Score, the ranking</span>'
-        + '<span class="cs-lg"><b>VOR</b> dynasty value over replacement</span>'
+      ? '<span class="cs-lg"><b>VOR</b> dynasty value over replacement, the ranking</span>'
+        + '<span class="cs-lg"><b>Age</b> drives the window</span>'
         + '<span class="cs-lg">' + winChip(23) + ' ascending</span>'
         + draftedNote
         + '<span class="cs-lg" id="csFmtNote">Dynasty ' + (state.sf ? 'Superflex' : '1QB') + ' &middot; ' + teams + '-team</span>'
-      : '<span class="cs-lg"><b>Score</b> Pick Score, the ranking</span>'
-        + '<span class="cs-lg"><b>VOR</b> value over replacement</span>'
+      : '<span class="cs-lg"><b>VOR</b> value over replacement, the ranking</span>'
         + '<span class="cs-lg"><span class="cs-val g">+7</span> above ADP, target it</span>'
+        + '<span class="cs-lg"><span class="cs-val b">-4</span> going early, let it fall</span>'
         + draftedNote
         + '<span class="cs-lg" id="csFmtNote">' + (state.sf ? 'Superflex' : '1QB') + ' &middot; ' + teams + '-team</span>';
 
@@ -178,27 +169,29 @@
   }
 
   function renderBoard(dyn) {
-    var col6 = dyn ? 'Age' : 'ADP', col7 = dyn ? 'Window' : 'Value';
+    var col5 = dyn ? 'Age' : 'ADP', col6 = dyn ? 'Window' : 'Value';
     $('csBoardHead').innerHTML =
-      '<tr><th>Rk</th><th class="l">Player</th><th>Pos</th><th>Score</th><th>VOR</th><th>' + col6 + '</th><th>' + col7 + '</th></tr>';
-    var lastT = 0, html = '';
+      '<tr><th>Rk</th><th class="l">Player</th><th>Pos</th><th>VOR</th><th>' + col5 + '</th><th>' + col6 + '</th></tr>';
+    var lastT = 0, html = '', shown = 0;
     players.forEach(function (x) {
-      if (x.dtier !== lastT) { lastT = x.dtier; html += '<tr class="cs-cliff"><td colspan="7"><div class="cs-cliffline">Tier ' + x.dtier + '</div></td></tr>'; }
+      if (!visiblePlayer(x)) return;
+      if (x.dtier !== lastT) { lastT = x.dtier; html += '<tr class="cs-cliff"><td colspan="6"><div class="cs-cliffline">Tier ' + x.dtier + '</div></td></tr>'; }
+      shown++;
       var cls = 'cs-p' + (state.done.has(x.name) ? ' done' : '') + (x.drafted ? ' drafted' : '');
-      var c6 = dyn ? '<td class="cs-num">' + (x.age != null ? x.age : '') + '</td>' : '<td class="cs-num">' + (x.adp != null ? Math.round(x.adp) : '') + '</td>';
-      var c7 = dyn ? '<td>' + winChip(x.age) + '</td>' : '<td>' + valChip(x.value) + '</td>';
+      var c5 = dyn ? '<td class="cs-num">' + (x.age != null ? x.age : '') + '</td>' : '<td class="cs-num">' + (x.adp != null ? Math.round(x.adp) : '') + '</td>';
+      var c6 = dyn ? '<td>' + winChip(x.age) + '</td>' : '<td>' + valChip(x.value) + '</td>';
       html += '<tr class="' + cls + '" data-good="' + x.good + '" data-posfull="' + (x.posfull ? 1 : 0) + '" data-name="' + esc(x.name) + '">'
         + '<td class="cs-rk">' + x.rk + '</td>'
         + '<td><span class="cs-pcell">' + badge(x.pos) + '<span class="cs-pname">' + esc(x.name) + '</span></span></td>'
         + '<td>' + posrk(x) + '</td>'
-        + '<td><span class="cs-vorwrap"><span class="cs-num">' + x.score + '</span><span class="cs-vorbar"><i style="width:' + Math.max(0, Math.round(x.score / maxScore * 100)) + '%"></i></span></span></td>'
-        + '<td class="cs-num">' + x.vor + '</td>'
-        + c6 + c7 + '</tr>';
+        + '<td><span class="cs-vorwrap"><span class="cs-num">' + x.vor + '</span><span class="cs-vorbar"><i style="width:' + Math.max(0, Math.round(x.vor / maxVor * 100)) + '%"></i></span></span></td>'
+        + c5 + c6 + '</tr>';
     });
+    if (!shown) html = '<tr><td colspan="6" class="cs-empty">No players match this filter.</td></tr>';
     $('csBoardBody').innerHTML = html;
     $('csBoardFoot').textContent = dyn
-      ? 'Ranked by Pick Score on youth-aware dynasty value. Tap a row to cross a player off.'
-      : 'Ranked by Pick Score, so a scarce elite TE or QB can outrank a higher-scoring skill player. Tap a row to cross a player off.';
+      ? 'Ranked by value over replacement (dynasty value), youth-aware via the Window column. Tap a row to cross a player off.'
+      : 'Ranked by value over replacement, so a scarce elite TE or QB can still outrank a higher-scoring skill player. Tap a row to cross a player off.';
   }
 
   function renderPos(dyn) {
@@ -206,6 +199,7 @@
     var BAND = Math.max(1, maxVor * 0.045), CAP = 6;
     var groups = [], cur = null;
     players.forEach(function (x) {
+      if (!visiblePlayer(x)) return;
       var tierChanged = !cur || x.dtier !== cur.tier;
       if (!cur || tierChanged || x.vor < cur.lead - BAND || cur.items.length >= CAP) {
         cur = { tier: x.dtier, lead: x.vor, items: [], tierBreak: tierChanged };
@@ -252,10 +246,9 @@
   }
 
   function renderDraft(dyn) {
-    var live = players.filter(function (x) { return !x.drafted; });
-    var n = Math.min(teams || 12, live.length);
-    var dh = live.slice(0, n).map(function (x, i) {
-      var round = Math.ceil((i + 1) / (teams || 12));
+    var live = players.filter(function (x) { return !x.drafted && visiblePlayer(x); });
+    var dh = live.map(function (x) {
+      var round = Math.ceil(x.rk / (teams || 12));   // true board round, filter-independent
       var run = x.lastInTier;
       return '<div class="cs-drow' + (run ? ' run' : '') + '">'
         + '<span class="cs-pick">#' + x.rk + '<small>RD ' + round + '</small></span>'
@@ -307,7 +300,7 @@
       })
       .catch(function () {
         loading = false;
-        $('csBoardBody').innerHTML = '<tr><td colspan="7" class="cs-empty">Could not load players. Refresh to retry.</td></tr>';
+        $('csBoardBody').innerHTML = '<tr><td colspan="6" class="cs-empty">Could not load players. Refresh to retry.</td></tr>';
       });
   }
 
@@ -357,11 +350,11 @@
   function exportCsv() {
     if (!players.length) return;
     var dyn = state.mode === 'dynasty';
-    var head = ['Rank', 'Player', 'Pos', 'PosRank', 'Score', 'VOR', (dyn ? 'Age' : 'ADP'), (dyn ? 'Window' : 'Value'), 'Tier'];
+    var head = ['Rank', 'Player', 'Pos', 'PosRank', 'VOR', (dyn ? 'Age' : 'ADP'), (dyn ? 'Window' : 'Value'), 'Tier'];
     var rows = players.map(function (x) {
-      var c6 = dyn ? (x.age != null ? x.age : '') : (x.adp != null ? Math.round(x.adp) : '');
-      var c7 = dyn ? youthWindow(x.age)[0] : (x.value != null ? (x.value > 0 ? '+' + x.value : x.value) : '');
-      return [x.rk, x.name, x.pos, x.prk, x.score, x.vor, c6, c7, x.dtier];
+      var c5 = dyn ? (x.age != null ? x.age : '') : (x.adp != null ? Math.round(x.adp) : '');
+      var c6 = dyn ? youthWindow(x.age)[0] : (x.value != null ? (x.value > 0 ? '+' + x.value : x.value) : '');
+      return [x.rk, x.name, x.pos, x.prk, x.vor, c5, c6, x.dtier];
     });
     var csv = [head].concat(rows).map(function (r) {
       return r.map(function (v) { var s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(',');
@@ -387,7 +380,17 @@
 
   function init() {
     var back = $('csBack'); if (back && cfg.draftUrl) back.href = cfg.draftUrl;
-    wireSeg('csMode', function (b) { state.mode = b.getAttribute('data-mode'); });
+    // Mode switch changes the scoring axis (redraft <-> dynasty), so a source
+    // that's only valid on the old axis (e.g. Yahoo, redraft-only) must not carry
+    // over. Reset to the default source and refetch cleanly for the new axis.
+    document.querySelectorAll('#csMode button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('#csMode button').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+        state.mode = b.getAttribute('data-mode');
+        if (state.adpSource !== 'auto') { state.adpSource = 'auto'; loadPlayers(); }
+        else { renderAdpSources(); compute(); render(); }
+      });
+    });
     wireSeg('csQb', function (b) { state.sf = b.getAttribute('data-qb') === 'SF'; });
 
     $('csValBtn').addEventListener('click', function () {
@@ -409,6 +412,15 @@
     var srcSel = $('csAdpSrc');
     if (srcSel) srcSel.addEventListener('change', function () { state.adpSource = this.value; loadPlayers(); });
 
+    var searchEl = $('csSearch');
+    if (searchEl) searchEl.addEventListener('input', function () { state.search = this.value.toLowerCase().trim(); render(); });
+    document.querySelectorAll('#csPosF button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('#csPosF button').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+        state.posFilter = b.getAttribute('data-pos'); render();
+      });
+    });
+
     document.addEventListener('click', function (e) {
       var el = e.target.closest('[data-name]');
       if (!el || !e.target.closest('#cs-panel-board, #cs-panel-pos')) return;
@@ -424,7 +436,9 @@
       t.addEventListener('click', function () {
         tabs.forEach(function (x) { x.setAttribute('aria-selected', String(x === t)); });
         Object.keys(panels).forEach(function (k) { $(panels[k]).classList.toggle('cs-hidden', k !== t.getAttribute('data-tab')); });
-        $('csLegend').style.display = (t.getAttribute('data-tab') === 'logic') ? 'none' : '';
+        var onLogic = t.getAttribute('data-tab') === 'logic';
+        $('csLegend').style.display = onLogic ? 'none' : '';
+        var fb = $('csFilterbar'); if (fb) fb.style.display = onLogic ? 'none' : '';
       });
     });
 

@@ -130,9 +130,9 @@ _CHEAT_HTML = r"""
   .cs-val.n { color: var(--cs-ink-faint); }
   #csFmtNote { margin-left: auto; font-family: var(--cs-mono); color: var(--cs-ink-faint); }
 
-  .cs-tbl-scroll { overflow-x: auto; background: var(--cs-surface); border: 1px solid var(--cs-line); border-radius: 14px; }
+  .cs-tbl-scroll { overflow: auto; max-height: calc(100vh - 250px); background: var(--cs-surface); border: 1px solid var(--cs-line); border-radius: 14px; }
   .cs-wrap table { border-collapse: collapse; width: 100%; min-width: 640px; }
-  .cs-wrap thead th { font-family: var(--cs-mono); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--cs-ink-faint); text-align: right; padding: 12px 14px 9px; border-bottom: 1px solid var(--cs-line); background: var(--cs-surface); }
+  .cs-wrap thead th { position: sticky; top: 0; z-index: 3; font-family: var(--cs-mono); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--cs-ink-faint); text-align: right; padding: 12px 14px 9px; border-bottom: 1px solid var(--cs-line); background: var(--cs-surface); }
   .cs-wrap thead th.l { text-align: left; }
   .cs-wrap tbody td { padding: 8px 14px; border-bottom: 1px solid var(--cs-line); font-size: 13.5px; text-align: right; vertical-align: middle; }
   .cs-wrap tbody tr:last-child td { border-bottom: 0; }
@@ -184,7 +184,7 @@ _CHEAT_HTML = r"""
   .cs-need-full { color: var(--cs-ink-faint); background: var(--cs-surface-2); }
   .cs-need-hint { margin-left: auto; font-family: var(--cs-mono); font-size: 10px; color: var(--cs-ink-faint); }
 
-  .cs-pgrid-scroll { overflow-x: auto; background: var(--cs-surface); border: 1px solid var(--cs-line); border-radius: 14px; }
+  .cs-pgrid-scroll { overflow: auto; max-height: calc(100vh - 250px); background: var(--cs-surface); border: 1px solid var(--cs-line); border-radius: 14px; }
   .cs-pgrid { min-width: 460px; }
   .cs-pgrid-head { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--cs-ink); position: sticky; top: 0; z-index: 2; }
   .cs-pgrid-head > div { text-align: center; padding: 10px 6px; font-family: var(--cs-mono); font-size: 12px; font-weight: 800; letter-spacing: .06em; color: var(--cs-surface); }
@@ -203,7 +203,15 @@ _CHEAT_HTML = r"""
   .cs-pgtier { display: flex; align-items: center; gap: 10px; font-family: var(--cs-mono); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--cs-ink-faint); background: var(--cs-surface-2); padding: 7px 12px; border-top: 1px solid var(--cs-line-strong); border-bottom: 1px solid var(--cs-line); }
   .cs-pgtier .cs-sc { font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--cs-ink-soft); }
 
-  .cs-dboard { background: var(--cs-surface); border: 1px solid var(--cs-line); border-radius: 14px; overflow: hidden; }
+  .cs-dboard { background: var(--cs-surface); border: 1px solid var(--cs-line); border-radius: 14px; overflow: auto; max-height: calc(100vh - 230px); }
+  /* Filter bar: instant name search + position filter over the whole board. */
+  .cs-filterbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 14px 0 12px; }
+  .cs-search { flex: 1 1 200px; min-width: 140px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--cs-line); background: var(--cs-surface); color: var(--cs-ink); font: inherit; font-size: 13px; outline: none; }
+  .cs-search:focus { border-color: var(--cs-accent); }
+  .cs-posf { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+  .cs-posf button { font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-line); background: var(--cs-surface); color: var(--cs-ink-soft); padding: 8px 12px; border-radius: 9px; }
+  .cs-posf button:hover { border-color: var(--cs-accent); color: var(--cs-accent); }
+  .cs-posf button[aria-pressed="true"] { background: var(--cs-accent); color: #fff; border-color: var(--cs-accent); }
   .cs-drow { display: grid; grid-template-columns: 58px 1fr; gap: 14px; align-items: center; padding: 11px 16px; border-bottom: 1px solid var(--cs-line); }
   .cs-drow:last-child { border-bottom: 0; }
   .cs-drow.run { background: var(--cs-accent-soft); }
@@ -225,10 +233,12 @@ _CHEAT_HTML = r"""
   .cs-foot { margin-top: 22px; color: var(--cs-ink-faint); font-size: 12px; }
   @media (max-width: 640px) { .cs-controls { align-items: stretch; width: 100%; } .cs-ctrl-row { justify-content: flex-start; } }
   @media print {
-    .cs-controls, .cs-tabs, .cs-backlink, .cs-needs, #csPrintBtn, #csValBtn { display: none !important; }
+    .cs-controls, .cs-tabs, .cs-backlink, .cs-needs, .cs-filterbar, #csPrintBtn, #csValBtn { display: none !important; }
     /* Only the active tab prints; the JS leaves the other panels .hidden. */
     .cs-wrap { max-width: none; padding: 0; }
-    .cs-tbl-scroll, .cs-pgrid-scroll { overflow: visible; border: 0; }
+    /* Undo the on-screen height cap so the whole board flows onto pages. */
+    .cs-tbl-scroll, .cs-pgrid-scroll, .cs-dboard { overflow: visible; border: 0; max-height: none; }
+    .cs-wrap thead th { position: static; }
     /* Keep a tier heading with the rows under it, and don't split a row. */
     .cs-wrap tr.cs-cliff { break-before: auto; break-after: avoid; }
     .cs-wrap tbody tr { break-inside: avoid; }
@@ -285,6 +295,17 @@ _CHEAT_HTML = r"""
   <div class="cs-needs" id="csNeeds" style="display:none;"></div>
   <div class="cs-legend" id="csLegend"></div>
 
+  <div class="cs-filterbar" id="csFilterbar">
+    <input type="search" class="cs-search" id="csSearch" placeholder="Search players&hellip;" autocomplete="off" aria-label="Search players">
+    <div class="cs-posf" id="csPosF" role="group" aria-label="Filter by position">
+      <button type="button" data-pos="ALL" aria-pressed="true">All</button>
+      <button type="button" data-pos="QB" aria-pressed="false">QB</button>
+      <button type="button" data-pos="RB" aria-pressed="false">RB</button>
+      <button type="button" data-pos="WR" aria-pressed="false">WR</button>
+      <button type="button" data-pos="TE" aria-pressed="false">TE</button>
+    </div>
+  </div>
+
   <section class="cs-board" id="cs-panel-board">
     <div class="cs-tbl-scroll"><table><thead id="csBoardHead"></thead><tbody id="csBoardBody"></tbody></table></div>
     <p class="cs-foot" id="csBoardFoot"></p>
@@ -302,8 +323,8 @@ _CHEAT_HTML = r"""
 
   <section class="cs-hidden" id="cs-panel-logic">
     <div class="cs-prose">
-      <div class="cs-rule"><span class="cs-k">Score</span><div><h3>Ranked by the Draft Room's Pick Score</h3><p>The board is ordered by Pick Score, the exact engine the Draft Room grades picks with. It blends value over replacement, projected production, tier and youth, and applies the same QB streamability taper. Because the sheet feeds that engine the same inputs the room does, the two rank players the same way.</p></div></div>
-      <div class="cs-rule"><span class="cs-k">VOR</span><div><h3>Value over replacement is the core driver</h3><p>VOR is a player's value minus the value of the last startable player at his position in your league. Each position is measured against its own replacement, so QB, RB, WR and TE compare fairly instead of by raw points. It is the largest input to the Score.</p></div></div>
+      <div class="cs-rule"><span class="cs-k">VOR</span><div><h3>Ranked by value over replacement</h3><p>The board is ordered by VOR: a player's value minus the value of the last startable player at his position in your league. Each position is measured against its own replacement, so QB, RB, WR and TE compare fairly on one board instead of by raw points. It is the honest cross-position value, which is what a draft board should sort on.</p></div></div>
+      <div class="cs-rule"><span class="cs-k">Pick Score</span><div><h3>The board vs the live recommendation</h3><p>The Draft Room's Pick Score answers a different question: given your roster and your exact pick, who should you take right now. It layers roster need, ADP timing and survival onto this same value. The cheat sheet is the value board; the Draft Room is the on-the-clock recommender. Both read the same underlying value, so they never disagree on who is more valuable, only on fit for your next pick.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Roster</span><div><h3>Your league sets the replacement line</h3><p>Replacement level comes from your roster slots and league size, the same starter counts the Draft Room uses. Superflex moves that line: up to twice as many QBs start, so the replacement QB is far weaker and every startable QB climbs. Nothing is added by hand, the baseline simply moves.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Tiers</span><div><h3>Tiers are value cliffs</h3><p>Players group where the drop-off is small inside the group and large to the next. Inside a tier, order barely matters, so take need or the falling price. Do not reach across a cliff.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Value</span><div><h3>Where "above ADP" comes from</h3><p>Our rank is this VOR board. ADP is the consensus average draft position from real drafts. Value is ADP minus our rank. A green plus means the room lets him fall later than he is worth, so wait a beat and take him. A red minus means he goes early.</p></div></div>

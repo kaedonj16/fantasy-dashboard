@@ -260,6 +260,48 @@ def api_my_leagues():
             except Exception as exc:
                 logger.warning("[my-leagues] sleeper fallback failed: %s", exc)
 
+    # Hide Sleeper leagues that no longer exist (e.g. deleted by the commissioner):
+    # the stored user_leagues row persists, but the league won't appear in the live
+    # per-season list for any Sleeper identity on this account. Fail OPEN — a season
+    # is filtered only when EVERY identity's live fetch for it succeeds — so a
+    # transient API error never hides a real league. Sleeper-only (ESPN/Yahoo have
+    # no cheap existence check). get_sleeper_user_leagues is ttl-cached (5 min).
+    if out and account_id:
+        try:
+            from dashboard_services.accounts import list_account_platform_ids
+            sleeper_ids = list_account_platform_ids(account_id, "sleeper")
+            _vuid = session.get("viewer_user_id")
+            if _vuid and str(_vuid) not in sleeper_ids:
+                sleeper_ids.append(str(_vuid))
+            if sleeper_ids:
+                seasons = {int(l["season"]) for l in out
+                           if l.get("platform") == "sleeper" and l.get("season")}
+                live_by_season = {}
+                for s in seasons:
+                    ids, ok = set(), True
+                    for uid in sleeper_ids:
+                        try:
+                            for g in (get_sleeper_user_leagues(uid, s) or []):
+                                if g.get("league_id"):
+                                    ids.add(str(g["league_id"]))
+                        except Exception:
+                            ok = False  # incomplete union -> don't filter this season
+                            logger.debug("[my-leagues] live check failed uid=%s season=%s",
+                                         uid, s, exc_info=True)
+                            break
+                    if ok:
+                        live_by_season[s] = ids
+
+                def _keep(l):
+                    if l.get("platform") != "sleeper" or not l.get("season"):
+                        return True
+                    live = live_by_season.get(int(l["season"]))
+                    return True if live is None else str(l.get("league_id")) in live
+
+                out = [l for l in out if _keep(l)]
+        except Exception as exc:
+            logger.warning("[my-leagues] deleted-league filter skipped: %s", exc)
+
     return jsonify({"ok": True, "leagues": out})
 
 
