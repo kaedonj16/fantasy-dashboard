@@ -405,8 +405,22 @@
     });
   }
 
+  var _embeddedMock = false;   // opened from the Draft Room with a mock's state
   function init() {
     var back = $('csBack'); if (back && cfg.draftUrl) back.href = cfg.draftUrl;
+    // Draft Room overlay can pass a local (mock/manual) draft's state so the sheet
+    // reflects THAT draft (no live feed exists for a mock). drafted = ids to cross
+    // off; mode / sf = the draft's format.
+    try {
+      var qp = new URLSearchParams(location.search);
+      var qMode = qp.get('mode'); if (qMode === 'redraft' || qMode === 'dynasty') state.mode = qMode;
+      var qSf = qp.get('sf'); if (qSf === '1' || qSf === '0') state.sf = qSf === '1';
+      var qDrafted = qp.get('drafted');
+      if (qDrafted) {
+        draftedIds = new Set(qDrafted.split(',').map(function (s) { return s.trim(); }).filter(Boolean));
+        _embeddedMock = true;
+      }
+    } catch (e) { /* no URL state */ }
     // Mode switch changes the scoring axis (redraft <-> dynasty), so a source
     // that's only valid on the old axis (e.g. Yahoo, redraft-only) must not carry
     // over. Reset to the default source and refetch cleanly for the new axis.
@@ -483,7 +497,8 @@
       if (!document.hidden && liveDraftId) { if (pollTimer) clearTimeout(pollTimer); pollDraft(); }
     });
 
-    loadPlayers().then(detectLiveDraft);
+    // A mock's drafted set was passed in; don't let live-draft detection override it.
+    loadPlayers().then(function () { if (!_embeddedMock) detectLiveDraft(); });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

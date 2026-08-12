@@ -203,7 +203,18 @@
     var _csFrame = document.getElementById('drCheatFrame');
     function openCheatSheet(){
       if (!_csOverlay || !_csFrame) return;
-      _csFrame.src = cfg.cheatSheetEmbedUrl || '/draft/cheat-sheet/embed';  // (re)load -> re-syncs live draft
+      var url = cfg.cheatSheetEmbedUrl || '/draft/cheat-sheet/embed';
+      // A mock (or manual) draft has no live feed for the sheet to detect, so pass
+      // this draft's state through the URL: the drafted player ids to cross off and
+      // the format (SF, redraft/dynasty) so the board matches the draft you're in.
+      if (state && state.picks && (state.mode === 'mock' || state.mode === 'manual')){
+        var ids = [];
+        Object.keys(state.picks).forEach(function(k){ var p = state.picks[k]; if (p && p.id) ids.push(p.id); });
+        var q = ['sf=' + (state.sf ? '1' : '0'), 'mode=' + (state.type === 'redraft' ? 'redraft' : 'dynasty')];
+        if (ids.length) q.push('drafted=' + encodeURIComponent(ids.join(',')));
+        url += (url.indexOf('?') >= 0 ? '&' : '?') + q.join('&');
+      }
+      _csFrame.src = url;   // (re)load -> re-syncs
       _csOverlay.style.display = 'flex';
     }
     function closeCheatSheet(){
