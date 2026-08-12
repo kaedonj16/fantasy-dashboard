@@ -257,7 +257,24 @@ _CHEAT_HTML = r"""
 
   .cs-hidden { display: none; }
   .cs-foot { margin-top: 22px; color: var(--cs-ink-faint); font-size: 12px; }
-  @media (max-width: 640px) { .cs-controls { align-items: stretch; width: 100%; } .cs-ctrl-row { justify-content: flex-start; } }
+  @media (max-width: 640px) {
+    .cs-controls { align-items: stretch; width: 100%; margin-top: 14px; }
+    .cs-ctrl-row { justify-content: flex-start; }
+    /* Mode and QB toggles share a clean two-column row, each filling its half. */
+    .cs-ctrl-row:first-child { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .cs-ctrl-row:first-child .cs-cgroup { display: flex; }
+    .cs-ctrl-row:first-child .cs-seg { flex: 1; }
+    .cs-ctrl-row:first-child .cs-seg button { flex: 1; }
+    /* Action buttons stretch to fill the row evenly instead of straggling. */
+    .cs-ctrl-row:last-child { display: flex; }
+    .cs-ctrl-row:last-child .cs-btn, .cs-ctrl-row:last-child .cs-src { flex: 1 1 auto; justify-content: center; }
+    /* Tabs scroll sideways rather than wrapping onto a second line. */
+    .cs-tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .cs-tabs::-webkit-scrollbar { display: none; }
+    .cs-tabs button { flex: 0 0 auto; white-space: nowrap; padding: 11px 12px; }
+    /* Format note drops to its own line, left aligned, not floated off to the side. */
+    #csFmtNote { margin-left: 0; width: 100%; }
+  }
   @media print {
     .cs-controls, .cs-tabs, .cs-backlink, .cs-needs, .cs-filterbar, #csPrintBtn, #csValBtn { display: none !important; }
     /* Only the active tab prints; the JS leaves the other panels .hidden. */
