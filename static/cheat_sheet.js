@@ -422,7 +422,9 @@
       var qDrafted = qp.get('drafted');
       if (qDrafted) {
         draftedIds = new Set(qDrafted.split(',').map(function (s) { return s.trim(); }).filter(Boolean));
-        _embeddedMock = true;
+        // A mock has no live feed, so freeze on this snapshot. A live draft passes
+        // live=1: seed the board now, but let live detection keep it current.
+        if (qp.get('live') !== '1') _embeddedMock = true;
       }
     } catch (e) { /* no URL state */ }
     // Mode switch changes the scoring axis (redraft <-> dynasty), so a source

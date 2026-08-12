@@ -191,16 +191,48 @@
     var _hl = document.getElementById('drToHistory');
     if (_hl && cfg.historyUrl) _hl.setAttribute('href', cfg.historyUrl);
     var _cs = document.getElementById('drToCheatSheet');
-    if (_cs && cfg.cheatSheetUrl) _cs.setAttribute('href', cfg.cheatSheetUrl);
     // In-draft cheat sheet: the options-menu link opens the sheet in an overlay
     // (iframe of the chrome-less embed) so you never leave the draft. Cmd/Ctrl/
     // middle-click still opens the full page in a new tab.
     var _cs2 = document.getElementById('drOptsCheatSheet');
-    if (_cs2 && cfg.cheatSheetUrl) _cs2.setAttribute('href', cfg.cheatSheetUrl);
     var _csPop = document.getElementById('drCheatPop');
-    if (_csPop && cfg.cheatSheetUrl) _csPop.setAttribute('href', cfg.cheatSheetUrl);
     var _csOverlay = document.getElementById('drCheatSheet');
     var _csFrame = document.getElementById('drCheatFrame');
+
+    // Carry this draft's context to the cheat sheet so it opens with who's already
+    // gone crossed off. Works for a mock/manual draft (no live feed, so the sheet
+    // freezes on this snapshot in its own format) and a live draft (seed now, then
+    // the standalone page's own live detection keeps it current).
+    function cheatCtxQuery(){
+      if (!(state && state.picks)) return '';
+      var ids = [];
+      Object.keys(state.picks).forEach(function(k){ var p = state.picks[k]; if (p && p.id) ids.push(p.id); });
+      var isLocal = (state.mode === 'mock' || state.mode === 'manual');
+      var q = [];
+      if (isLocal){
+        // A local mock uses its own setup, not the league's format.
+        q.push('sf=' + (state.sf ? '1' : '0'));
+        q.push('mode=' + (state.type === 'redraft' ? 'redraft' : 'dynasty'));
+      }
+      if (ids.length) q.push('drafted=' + encodeURIComponent(ids.join(',')));
+      if (!isLocal && ids.length) q.push('live=1');   // live: seed, then keep detecting
+      return q.join('&');
+    }
+    function cheatSheetFullUrl(){
+      var url = cfg.cheatSheetUrl || '/draft/cheat-sheet';
+      var q = cheatCtxQuery();
+      if (q) url += (url.indexOf('?') >= 0 ? '&' : '?') + q;
+      return url;
+    }
+    // Refresh the new-tab links just before the browser follows them (mousedown
+    // fires for left, Cmd/Ctrl and middle clicks), so the tab opens with the
+    // current picks rather than a stale snapshot from page load.
+    function refreshCheatHrefs(){
+      var u = cheatSheetFullUrl();
+      [_cs, _cs2, _csPop].forEach(function(a){ if (a) a.setAttribute('href', u); });
+    }
+    refreshCheatHrefs();
+    [_cs, _cs2, _csPop].forEach(function(a){ if (a) a.addEventListener('mousedown', refreshCheatHrefs); });
     function openCheatSheet(){
       if (!_csOverlay || !_csFrame) return;
       var url = cfg.cheatSheetEmbedUrl || '/draft/cheat-sheet/embed';
