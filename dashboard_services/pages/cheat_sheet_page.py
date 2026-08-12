@@ -58,6 +58,7 @@ def build_cheat_sheet_body(
         f"<script>window.__cheatCfg = {cfg_json};</script>\n"
         + _CHEAT_HTML
         + f'\n<script src="/static/pick_score.js?v={_static_v("pick_score.js")}" defer></script>\n'
+        + f'\n<script src="/static/draft_board_core.js?v={_static_v("draft_board_core.js")}" defer></script>\n'
         + f'\n<script src="/static/cheat_sheet.js?v={_static_v("cheat_sheet.js")}" defer></script>\n'
     )
 
@@ -110,6 +111,8 @@ _CHEAT_HTML = r"""
   .cs-btn { font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; background: var(--cs-surface); color: var(--cs-ink-soft); border: 1px solid var(--cs-line); border-radius: 9px; padding: 7px 11px; }
   .cs-btn:hover { border-color: var(--cs-accent); color: var(--cs-accent); }
   .cs-btn[aria-pressed="true"] { border-color: var(--cs-good); color: var(--cs-good); background: var(--cs-good-soft); }
+  .cs-src { font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; background: var(--cs-surface); color: var(--cs-ink-soft); border: 1px solid var(--cs-line); border-radius: 9px; padding: 7px 9px; }
+  .cs-src:hover { border-color: var(--cs-accent); }
 
   .cs-tabs { display: flex; gap: 4px; margin: 20px 0 0; border-bottom: 1px solid var(--cs-line); flex-wrap: wrap; }
   .cs-tabs button { font: inherit; font-size: 13.5px; font-weight: 700; cursor: pointer; border: 0; background: none; color: var(--cs-ink-faint); padding: 11px 14px; position: relative; }
@@ -160,6 +163,15 @@ _CHEAT_HTML = r"""
   .cs-cliffline::before, .cs-cliffline::after { content: ""; height: 1px; background: var(--cs-line); flex: 1; }
 
   .cs-board.filteron tbody tr.cs-p[data-good="0"] { opacity: .32; }
+  /* Live-draft: players already taken read as struck-through and dimmed; "Hide
+     drafted" removes them entirely. */
+  .cs-wrap tbody tr.cs-p.drafted td { opacity: .34; }
+  .cs-wrap tbody tr.cs-p.drafted .cs-pname { text-decoration: line-through; }
+  .cs-board.hidedrafted tbody tr.cs-p.drafted { display: none; }
+  .cs-pgc.drafted { opacity: .34; }
+  .cs-pgc.drafted .cs-pgn { text-decoration: line-through; }
+  .cs-board.hidedrafted .cs-pgc.drafted { display: none; }
+  .cs-taken-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cs-bad); display: inline-block; opacity: .6; }
 
   .cs-pgrid-scroll { overflow-x: auto; background: var(--cs-surface); border: 1px solid var(--cs-line); border-radius: 14px; }
   .cs-pgrid { min-width: 460px; }
@@ -232,6 +244,8 @@ _CHEAT_HTML = r"""
         </div>
       </div>
       <div class="cs-ctrl-row">
+        <select class="cs-src" id="csAdpSrc" aria-label="ADP source" style="display:none;"></select>
+        <button class="cs-btn" id="csHideDrafted" aria-pressed="false" style="display:none;">Hide drafted</button>
         <button class="cs-btn" id="csValBtn" aria-pressed="false">Values only</button>
         <button class="cs-btn" id="csPrintBtn">Print</button>
       </div>
@@ -264,11 +278,12 @@ _CHEAT_HTML = r"""
 
   <section class="cs-hidden" id="cs-panel-logic">
     <div class="cs-prose">
-      <div class="cs-rule"><span class="cs-k">VOR</span><div><h3>Projections are the ranking, not last season</h3><p>Every rank is value over replacement: a player's projected value minus the value of the last startable player at his position in your league. Projections drive the value, and each position is measured against its own replacement so QB, RB, WR and TE compare fairly instead of by raw points.</p></div></div>
+      <div class="cs-rule"><span class="cs-k">Score</span><div><h3>Ranked by the Draft Room's Pick Score</h3><p>The board is ordered by Pick Score, the exact engine the Draft Room grades picks with. It blends value over replacement, projected production, tier and youth, and applies the same QB streamability taper. Because the sheet feeds that engine the same inputs the room does, the two rank players the same way.</p></div></div>
+      <div class="cs-rule"><span class="cs-k">VOR</span><div><h3>Value over replacement is the core driver</h3><p>VOR is a player's value minus the value of the last startable player at his position in your league. Each position is measured against its own replacement, so QB, RB, WR and TE compare fairly instead of by raw points. It is the largest input to the Score.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Roster</span><div><h3>Your league sets the replacement line</h3><p>Replacement level comes from your roster slots and league size, the same starter counts the Draft Room uses. Superflex moves that line: up to twice as many QBs start, so the replacement QB is far weaker and every startable QB climbs. Nothing is added by hand, the baseline simply moves.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Tiers</span><div><h3>Tiers are value cliffs</h3><p>Players group where the drop-off is small inside the group and large to the next. Inside a tier, order barely matters, so take need or the falling price. Do not reach across a cliff.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Value</span><div><h3>Where "above ADP" comes from</h3><p>Our rank is this VOR board. ADP is the consensus average draft position from real drafts. Value is ADP minus our rank. A green plus means the room lets him fall later than he is worth, so wait a beat and take him. A red minus means he goes early.</p></div></div>
-      <div class="cs-rule"><span class="cs-k">Pick Score</span><div><h3>The board agrees with the Draft Room</h3><p>This board is computed from the same value and roster-based replacement your live Pick Score uses. The Draft Room adds your pick slot, roster need and ADP value once you are on the clock. They never disagree on who is better, only on which player fits your next pick.</p></div></div>
+      <div class="cs-rule"><span class="cs-k">Live</span><div><h3>It knows your live draft</h3><p>Open the sheet from your league during a draft and players already taken are struck through automatically, or hidden entirely with Hide drafted, so the board always shows who is actually still available. Everything else is the same board you would see in the Draft Room, minus your pick slot and roster need, which only apply once you are on the clock.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Dynasty</span><div><h3>Dynasty values the window, not just this year</h3><p>Dynasty mode ranks on dynasty value, which already weights youth and multi-year outlook, and swaps in Age and a career-window tag in place of ADP, because you are drafting the next several seasons.</p></div></div>
     </div>
   </section>
