@@ -669,9 +669,24 @@ _DRAFT_ROOM_HTML = r"""
   .dr-pt-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .dr-pt-side-h { font-size: 11px; font-weight: 700; text-transform: uppercase;
     letter-spacing: .05em; color: var(--text-muted); margin-bottom: 4px; }
-  .dr-pt-row { font-size: 13px; padding: 2px 0; }
+  .dr-pt-row { display: flex; align-items: center; gap: 7px; font-size: 13px; padding: 3px 0; }
+  .dr-pt-pk { font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; flex: 0 0 auto; min-width: 30px; }
+  .dr-pt-pos { font-size: 9px; font-weight: 800; color: #fff; border-radius: 4px; padding: 1px 5px; flex: 0 0 auto; }
+  .dr-pt-pos-QB { background: #e0483f; } .dr-pt-pos-RB { background: #199a4d; }
+  .dr-pt-pos-WR { background: #2f6df0; } .dr-pt-pos-TE { background: #b5730b; }
+  .dr-pt-nm { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-muted); }
+  .dr-pt-val { flex: 0 0 auto; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+  .dr-pt-empty { color: var(--text-muted); font-style: italic; }
   .dr-pt-proxy { font-size: 11px; color: var(--text-muted); }
-  .dr-pt-verdict { margin-top: 10px; font-size: 14px; font-weight: 800; }
+  .dr-pt-chips { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin: 7px 0 2px; }
+  .dr-pt-chips-lbl { font-size: 11px; font-weight: 700; color: var(--text-muted); margin-right: 2px; }
+  .dr-pt-chip { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; }
+  .dr-pt-chip:hover { border-color: var(--accent,#38bdf8); color: var(--accent,#38bdf8); }
+  .dr-pt-bar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; margin: 14px 0 10px; background: var(--border); }
+  .dr-pt-bar-g { background: color-mix(in srgb, var(--text-muted) 60%, transparent); }
+  .dr-pt-bar-r { background: #22c55e; }
+  .dr-pt-verdict { font-size: 14px; font-weight: 800; }
+  .dr-pt-vpct { font-size: 12px; font-weight: 700; opacity: .85; }
   .dr-prev-score-hero { border: 1px solid; border-radius: 10px; padding: 12px 10px 10px; margin-bottom: 12px; text-align: center; }
   .dr-prev-score-num { font-size: 44px; font-weight: 900; line-height: 1; }
   .dr-prev-score-lbl { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-top: 2px; }

@@ -114,18 +114,31 @@
   function assignTiers() {
     var n = players.length;
     if (!n) return;
-    var gaps = [];
-    for (var i = 1; i < n; i++) gaps.push(Math.max(0, players[i - 1].vor - players[i].vor));
-    var desc = gaps.slice().sort(function (a, b) { return b - a; });
-    var K = Math.max(4, Math.min(11, Math.round(n / 14)));   // ~K cliffs -> ~K+1 tiers
-    var thresh = desc.length ? (desc[Math.min(K, desc.length) - 1] || 0) : 0;
-    if (thresh < 1) thresh = 1;
-    var CAP = 18, tier = 1, size = 1;
-    players[0].dtier = 1;
-    for (var j = 1; j < n; j++) {
-      var gap = players[j - 1].vor - players[j].vor;
-      if (gap >= thresh || size >= CAP) { tier++; size = 0; }
-      players[j].dtier = tier; size++;
+    if (n <= 3) { players.forEach(function (p) { p.dtier = 1; }); return; }
+    // Roughly even tiers (the chunky, band-like look), but each boundary is snapped
+    // to the largest VOR gap within half a tier of its ideal spot. That keeps the
+    // tier sizes steady while making every boundary land on a real cliff, so a
+    // player just below a big drop falls to the next tier instead of hanging one
+    // tier too high. gapAt[k] is the drop from player k-1 to player k (a boundary
+    // at k means player k starts a new tier).
+    var gapAt = [];
+    for (var k = 1; k < n; k++) gapAt[k] = players[k - 1].vor - players[k].vor;
+    var target = Math.max(5, Math.min(12, Math.round(n / 12)));   // ~ tier count
+    var per = n / target;
+    var W = Math.max(1, Math.round(per * 0.5));                    // snap window: half a tier
+    var bounds = [], last = 0;
+    for (var t = 1; t < target; t++) {
+      var ideal = Math.round(t * per);
+      var lo = Math.max(last + 2, ideal - W), hi = Math.min(n - 1, ideal + W);
+      if (lo > hi) continue;
+      var bestPos = -1, bestGap = -Infinity;
+      for (var p = lo; p <= hi; p++) { if (gapAt[p] > bestGap) { bestGap = gapAt[p]; bestPos = p; } }
+      if (bestPos > last) { bounds.push(bestPos); last = bestPos; }
+    }
+    var tier = 1, bi = 0;
+    for (var j = 0; j < n; j++) {
+      if (bi < bounds.length && j === bounds[bi]) { tier++; bi++; }
+      players[j].dtier = tier;
     }
   }
 
@@ -230,7 +243,7 @@
     groups.forEach(function (g) {
       if (g.tierBreak) {
         var counts = POS.map(function (pos) { var n = players.filter(function (y) { return y.dtier === g.tier && y.pos === pos && !state.done.has(y.name) && !y.drafted; }).length; return n ? pos + ' ' + n : null; }).filter(Boolean).join(' &middot; ');
-        out += '<div class="cs-pgtier">Tier ' + g.tier + '<span class="cs-sc">' + counts + ' left</span></div>';
+        out += '<div class="cs-pgtier">Tier ' + g.tier + (counts ? '<span class="cs-sc">' + counts + ' left</span>' : '') + '</div>';
       }
       var byPos = { RB: [], WR: [], QB: [], TE: [] };
       g.items.forEach(function (x) { byPos[x.pos].push(x); });
