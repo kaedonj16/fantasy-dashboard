@@ -906,8 +906,11 @@ function prRender() {
             arrow = '<span class="pr-adp-arrow ' + (_higher ? 'up' : 'down') +
               '" aria-hidden="true">' + (_higher ? '▲' : '▼') + '</span>';
           }
+          // Wrap the number in its own box and hang the arrow off it (absolutely
+          // positioned in CSS), so the arrow adds no layout width and the number
+          // stays centered in the column whether or not an arrow is present.
           return '<span class="pr-adp-cell' + (on ? ' pr-adp-cell-active' : '') + '">' +
-            (v != null ? v.toFixed(1) : '–') + arrow + '</span>';
+            '<span class="pr-adp-num">' + (v != null ? v.toFixed(1) : '–') + arrow + '</span></span>';
         }).join('');
     } else {
       row.innerHTML =

@@ -270,9 +270,12 @@ def build_players_shell() -> str:
         font-variant-numeric: tabular-nums;
       }
       .pr-adp-cell-active { color: var(--accent); font-weight: 700; }
+      /* The number keeps its own centered box; the arrow hangs off its right edge
+         with absolute positioning so it never shifts the number off-center. */
+      .pr-adp-num { position: relative; display: inline-block; }
       /* Comparison arrow vs the sorted ADP source: green ▲ when this source ranks
          the player higher (earlier pick), red ▼ when lower (later pick). */
-      .pr-adp-arrow { font-size: 8px; margin-left: 3px; vertical-align: 1px; }
+      .pr-adp-arrow { position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: 3px; font-size: 8px; line-height: 1; }
       .pr-adp-arrow.up   { color: var(--win); }
       .pr-adp-arrow.down { color: var(--loss); }
       /* Compact Pos/Age/Team columns kept in the ADP view on desktop */
