@@ -44,17 +44,60 @@
   // values keeps the user's intent. See docs/custom-draft-board.md.
   var overrides = {};
   var _ovKey = null;
+  var _ovPush = null;      // debounce timer for the server save
   var editBoard = false;   // whether per-row edit controls are shown
-  function ovKey() { return 'csboard:' + (cfg.leagueId || 'guest') + ':' + state.mode + ':' + (state.sf ? 'sf' : '1qb'); }
+  function boardKey() { return state.mode + ':' + (state.sf ? 'sf' : '1qb'); }
+  function ovKey() { return 'csboard:' + (cfg.leagueId || 'guest') + ':' + boardKey(); }
   function loadOverrides() {
     overrides = {};
     if (!cfg.hasPremium) return;
     try { overrides = JSON.parse(localStorage.getItem(ovKey()) || '{}') || {}; } catch (e) { overrides = {}; }
   }
-  function ensureOverrides() { var k = ovKey(); if (k !== _ovKey) { _ovKey = k; loadOverrides(); } }
+  function ensureOverrides() {
+    var k = ovKey();
+    if (k !== _ovKey) {
+      _ovKey = k;
+      loadOverrides();                 // localStorage cache: instant
+      syncOverridesFromServer(k);      // durable, cross-device: async
+    }
+  }
+  // Pull the durable copy from the server (source of truth across devices) and
+  // adopt it if it differs from the local cache. Ignored if the user has since
+  // switched boards.
+  function syncOverridesFromServer(forKey) {
+    if (!cfg.hasPremium) return;
+    var p = ['board_key=' + encodeURIComponent(boardKey())];
+    if (cfg.leagueId) p.push('league_id=' + encodeURIComponent(cfg.leagueId));
+    if (cfg.platform) p.push('platform=' + encodeURIComponent(cfg.platform));
+    if (cfg.season) p.push('season=' + encodeURIComponent(cfg.season));
+    fetch('/api/draft-board/overrides?' + p.join('&'), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (resp) {
+        if (ovKey() !== forKey) return;   // switched boards; drop stale response
+        var srv = (resp && resp.overrides) || {};
+        if (JSON.stringify(srv) !== JSON.stringify(overrides)) {
+          overrides = srv;
+          try { localStorage.setItem(ovKey(), JSON.stringify(overrides)); } catch (e) { /* ignore */ }
+          compute(); render();
+        }
+      })
+      .catch(function () { /* offline: keep the local cache */ });
+  }
+  function pushOverridesToServer() {
+    if (!cfg.hasPremium) return;
+    if (_ovPush) clearTimeout(_ovPush);
+    var bk = boardKey(), snap = JSON.parse(JSON.stringify(overrides));
+    _ovPush = setTimeout(function () {
+      fetch('/api/draft-board/overrides', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform: cfg.platform, league_id: cfg.leagueId, season: cfg.season, board_key: bk, overrides: snap }),
+      }).catch(function () { /* best effort; localStorage still holds it */ });
+    }, 600);
+  }
   function saveOverrides() {
     Object.keys(overrides).forEach(function (id) { var o = overrides[id]; if (!o || (!o.d && !o.p && !o.m)) delete overrides[id]; });
     try { localStorage.setItem(ovKey(), JSON.stringify(overrides)); } catch (e) { /* storage full/blocked */ }
+    pushOverridesToServer();
   }
   function hasOverrides() { return cfg.hasPremium && Object.keys(overrides).length > 0; }
   function boardBump(id, dir) {

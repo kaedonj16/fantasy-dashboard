@@ -1,6 +1,7 @@
 # Custom Draft Board (personal ranking overrides)
 
-Status: prototype (client-side, cheat sheet only). Pro feature.
+Status: cheat sheet, with server persistence. Pro feature. Draft Room
+integration and drag-reorder still pending.
 
 ## Goal
 
@@ -54,13 +55,22 @@ last in that tier). Renumber the RK column to the resulting order. Tier
 dividers are driven by the bucket, so the sequence reads:
 `Pinned -> Tier 1 -> Tier 2 -> ... -> Muted`.
 
-## Persistence
+## Persistence (implemented)
 
-- Prototype: `localStorage`, keyed by `csboard:<leagueId>:<mode>:<sf>` so a
-  dynasty-SF board and a redraft-1QB board are independent.
-- Full version: server-side per (account, league, format) so it is cross-device
-  and can be read by the Draft Room. Migrate the localStorage blob on first
-  authenticated load.
+Two layers, local for speed and server for durability:
+
+- `localStorage`, keyed by `csboard:<leagueId>:<mode>:<sf>`, is the instant cache
+  and offline fallback. It backs the synchronous board compute.
+- Server table `draft_board_overrides`, keyed by
+  `(owner_key, platform, league_id, board_key)` where `owner_key` is
+  `acct:<accountId>` for a logged-in account or `sleeper:<viewerId>` otherwise,
+  and `board_key` is `<mode>:<1qb|sf>`. This makes the board cross-device.
+
+Flow: on opening a board, read localStorage immediately, then `GET
+/api/draft-board/overrides` and adopt the server copy if it differs (server is
+the source of truth across devices). On every edit, write localStorage
+synchronously and `POST` to the server debounced (~600ms). All endpoints are
+premium-gated; a free viewer never loads or writes overrides.
 
 ## Reset semantics
 
@@ -83,10 +93,13 @@ pro.
 
 ## Rollout phases
 
-1. (this prototype) Cheat-sheet overrides with localStorage, pin/mute/bump,
-   reset, pro-gated.
-2. Server persistence per (account, league, format); migrate localStorage.
-3. Draft Room best-available reads the same overrides.
+1. [done] Cheat-sheet overrides with localStorage, pin/mute/bump, reset,
+   pro-gated.
+2. [done] Server persistence per (owner, league, format); localStorage is now a
+   cache in front of it.
+3. [next] Draft Room best-available reads the same overrides (the API and
+   `board_key` scheme are already in place; `DraftBoardCore` applies the same
+   bucket/sort step after it ranks the pool).
 4. Optional: full drag-to-reorder, once the intent-based persistence across
    model refreshes is proven.
 
