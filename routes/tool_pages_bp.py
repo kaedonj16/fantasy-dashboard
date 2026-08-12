@@ -194,7 +194,7 @@ def page_cheat_sheet(platform: str = None, season: int = None, league_id: str = 
     league_id, season, kw = _cheat_sheet_kwargs(platform, season, league_id)
     body = build_cheat_sheet_body(league_id, season, platform, **kw)
     return render_page(
-        "Draft Cheat Sheet | BR Fantasy", league_id, "draft", body, platform, season,
+        "Draft Cheat Sheet | BR Fantasy", league_id, "draft-cheat-sheet", body, platform, season,
         description=(
             "Printable fantasy draft cheat sheet: value-over-replacement tiers, ADP value, "
             "and Superflex / dynasty toggles, computed for your league scoring and roster."
