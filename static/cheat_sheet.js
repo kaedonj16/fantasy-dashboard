@@ -115,28 +115,29 @@
     var n = players.length;
     if (!n) return;
     if (n <= 3) { players.forEach(function (p) { p.dtier = 1; }); return; }
-    // Boundaries fall on the largest VOR gaps (real cliffs), but no two boundaries
-    // sit closer than MIN players — so a tier is never a lone elite and never a
-    // sliver, while the biggest drops always divide tiers. Because the top of the
-    // board is naturally more spread out, this yields smaller tiers up top and
-    // chunkier ones lower, which is what a draft board wants. Tunables below.
-    var MIN = 3;
-    var target = Math.max(5, Math.min(14, Math.round(n / 10)));   // ~ number of tiers
-    var gaps = [];
-    for (var i = 1; i < n; i++) gaps.push({ at: i, g: players[i - 1].vor - players[i].vor });
-    gaps.sort(function (a, b) { return b.g - a.g; });             // largest drop first
-    var bounds = [0, n];       // sentinel boundaries at the ends
-    var picked = {};
-    for (var k = 0; k < gaps.length && bounds.length - 2 < target - 1; k++) {
-      if (gaps[k].g <= 0) break;
-      var pos = gaps[k].at, ok = true;
-      for (var b = 0; b < bounds.length; b++) { if (Math.abs(bounds[b] - pos) < MIN) { ok = false; break; } }
-      if (ok) { bounds.push(pos); picked[pos] = 1; }
+    // Roughly even tiers (the chunky, band-like look), but each boundary is snapped
+    // to the largest VOR gap within half a tier of its ideal spot. That keeps the
+    // tier sizes steady while making every boundary land on a real cliff, so a
+    // player just below a big drop falls to the next tier instead of hanging one
+    // tier too high. gapAt[k] is the drop from player k-1 to player k (a boundary
+    // at k means player k starts a new tier).
+    var gapAt = [];
+    for (var k = 1; k < n; k++) gapAt[k] = players[k - 1].vor - players[k].vor;
+    var target = Math.max(5, Math.min(12, Math.round(n / 12)));   // ~ tier count
+    var per = n / target;
+    var W = Math.max(1, Math.round(per * 0.5));                    // snap window: half a tier
+    var bounds = [], last = 0;
+    for (var t = 1; t < target; t++) {
+      var ideal = Math.round(t * per);
+      var lo = Math.max(last + 2, ideal - W), hi = Math.min(n - 1, ideal + W);
+      if (lo > hi) continue;
+      var bestPos = -1, bestGap = -Infinity;
+      for (var p = lo; p <= hi; p++) { if (gapAt[p] > bestGap) { bestGap = gapAt[p]; bestPos = p; } }
+      if (bestPos > last) { bounds.push(bestPos); last = bestPos; }
     }
-    var sortedB = Object.keys(picked).map(Number).sort(function (a, b) { return a - b; });
     var tier = 1, bi = 0;
     for (var j = 0; j < n; j++) {
-      if (bi < sortedB.length && j === sortedB[bi]) { tier++; bi++; }
+      if (bi < bounds.length && j === bounds[bi]) { tier++; bi++; }
       players[j].dtier = tier;
     }
   }
