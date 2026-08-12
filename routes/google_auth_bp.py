@@ -47,6 +47,20 @@ def google_auth_start():
             "GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REDIRECT_URI.</p>",
             503,
         )
+    # Diagnostic: the session cookie carrying `state` is host-scoped, so the host
+    # serving this request must be able to send that cookie to the callback host.
+    # Warn when the current host differs from GOOGLE_REDIRECT_URI's host, which is
+    # the usual cause of "sign-in doesn't stick" (state set here, missing there).
+    from urllib.parse import urlparse
+    cur_host = (request.host or "").split(":")[0].lower()
+    cb_host = (urlparse(os.environ.get("GOOGLE_REDIRECT_URI", "")).hostname or "").lower()
+    if cb_host and cur_host and cur_host != cb_host:
+        logger.warning(
+            "[google_auth] host mismatch: starting on %s but callback goes to %s; "
+            "the state cookie may not survive unless COOKIE_DOMAIN spans both.",
+            cur_host, cb_host,
+        )
+
     state = secrets.token_urlsafe(24)
     session["google_oauth_state"] = state
     session["google_oauth_next"] = (request.args.get("next") or "/").strip()
@@ -75,8 +89,21 @@ def google_auth_callback():
     stored_state = session.pop("google_oauth_state", None)
     next_url = session.pop("google_oauth_next", "/") or "/"
     if not stored_state or stored_state != state:
-        logger.warning("[google_auth] state mismatch - possible CSRF")
-        return redirect("/?google_error=state_mismatch")
+        # Distinguish the two failure modes so prod logs are actionable:
+        #  - stored_state is None with an otherwise empty session => the session
+        #    cookie set on /auth/google was NOT sent to this callback. That is
+        #    almost always a host/domain split (e.g. state set on www., callback
+        #    on the apex), which host-only cookies can't cross. Fix: set
+        #    COOKIE_DOMAIN so the cookie is shared across the domain, and make the
+        #    /auth/google host match GOOGLE_REDIRECT_URI's host.
+        #  - stored_state present but different => a genuine stale/replayed state.
+        cause = "cookie_lost" if stored_state is None else "state_replayed"
+        logger.warning(
+            "[google_auth] state check failed (%s): host=%s had_session_keys=%s referer=%s",
+            cause, (request.host or "").split(":")[0],
+            bool(list(session.keys())), request.headers.get("Referer", ""),
+        )
+        return redirect("/?google_error=state_mismatch&why=" + cause)
     if not code:
         return redirect("/?google_error=no_code")
 
