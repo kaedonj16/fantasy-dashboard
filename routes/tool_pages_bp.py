@@ -43,6 +43,20 @@ def _nav_show_keeper(*args, **kwargs):
     return _fn(*args, **kwargs)
 
 
+def _viewer_has_premium(league_id, platform, season) -> bool:
+    """Premium gate for the viewer, safe against league_id tampering. Drives the
+    pro-only cheat-sheet features (live Sleeper sync, the in-draft overlay, CSV)."""
+    try:
+        from dashboard_services.subscriptions import has_premium_for_viewer
+        return bool(has_premium_for_viewer(
+            session.get("viewer_username"), session.get("viewer_user_id"),
+            league_id, platform or "sleeper", season,
+        ))
+    except Exception:
+        logger.debug("[tool-pages] premium check failed", exc_info=True)
+        return False
+
+
 @tool_pages_bp.route("/draft")
 @tool_pages_bp.route("/<platform>/<int:season>/<league_id>/draft")
 def page_draft_room(platform: str = None, season: int = None, league_id: str = None):
@@ -136,6 +150,7 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
         num_rounds_startup=num_rounds_startup,
         keepers=keepers_payload,
         show_keeper=show_keeper,
+        has_premium=_viewer_has_premium(league_id, platform, season),
     )
     return render_page(
         "Draft Room | BR Fantasy", league_id, "draft", body, platform, season,
@@ -183,6 +198,7 @@ def _cheat_sheet_kwargs(platform, season, league_id):
         "num_teams": num_teams, "is_superflex": is_sf,
         "roster_positions": roster_positions, "mode": mode,
         "viewer_user_id": session.get("viewer_user_id"),
+        "has_premium": _viewer_has_premium(league_id, platform, season),
     }
 
 

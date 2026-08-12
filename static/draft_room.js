@@ -257,6 +257,13 @@
     if (_cs2) _cs2.addEventListener('click', function(e){
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;  // let modified clicks open a tab
       e.preventDefault();
+      // The in-draft cheat-sheet overlay (with live sync) is a pro feature. Free
+      // users get the upgrade prompt; the standalone board stays reachable from
+      // the nav and via a modified-click that opens it in a new tab.
+      if (!cfg.hasPremium){
+        if (typeof window.showPaywall === 'function') window.showPaywall('draft-cheat-sheet');
+        return;
+      }
       openCheatSheet();
     });
     var _csClose = document.getElementById('drCheatClose');

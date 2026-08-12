@@ -60,6 +60,7 @@ def build_draft_room_body(
     num_rounds_startup: Optional[int] = None,
     keepers: Optional[dict] = None,
     show_keeper: bool = True,
+    has_premium: bool = False,
 ) -> str:
     _dr_has_league = bool(league_id and platform and season)
     cfg = {
@@ -93,6 +94,9 @@ def build_draft_room_body(
         # plain redraft leagues, where keepers do not apply; draft_room.js then
         # removes the Keeper option and its fields.
         "showKeeper": bool(show_keeper),
+        # Pro gate: the in-draft cheat-sheet overlay (with live sync) is premium.
+        # Non-premium users still reach the free standalone cheat sheet in a new tab.
+        "hasPremium": bool(has_premium),
     }
     cfg_json = json.dumps(cfg)
     # cfg is a plain inline script so it runs during parse, before the deferred
