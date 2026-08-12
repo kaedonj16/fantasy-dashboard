@@ -1881,6 +1881,7 @@ _NAV_PAGE_META = {
     "weekly":            ("swords",    "page_weekly",               ""),
     "teams":             ("users",     "page_teams",                ""),
     "draft":             ("clipboard", "tool_pages.page_draft_room", ""),
+    "draft-cheat-sheet": ("clipboard", "tool_pages.page_cheat_sheet", ""),
     "keeper":            ("shield",    "tool_pages.page_keeper",    ""),
     "standings":         ("trophy",    "league_pages.page_standings",            ""),
     "activity":          ("activity",  "page_activity",             ""),
@@ -1915,6 +1916,7 @@ _DOCK_LABELS = {
     "trade-suggestions": "Trades", "trade-database": "Trades", "trade-intel": "Intel",
     "compare": "Compare", "top-movers": "Movers", "advanced-metrics": "Metrics",
     "breakouts": "Breakouts", "prospects": "Prospects", "draft-history": "History",
+    "draft-cheat-sheet": "Cheat Sheet",
     "awards": "Awards", "graphs": "Graphs", "history": "History",
 }
 
@@ -2089,7 +2091,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         _sl("breakouts", "Breakout Engine", pro=True), _sl("prospects", "Prospect Rankings"),
     ])
 
-    _draft_rows = [_sl("draft", "Draft Room")]
+    _draft_rows = [_sl("draft", "Draft Room"), _sl("draft-cheat-sheet", "Cheat Sheet")]
     if show_keeper:                                   # keeper leagues only
         _draft_rows.append(_sl("keeper", "Keeper Assistant"))
     _draft_rows.append(_sl("draft-history", "Draft History"))
@@ -2170,7 +2172,7 @@ _GUEST_ACTIVE_PARENT = {
     "trade-database": "trade", "trade-intel": "trade",
     "players": "players", "compare": "players", "top-movers": "players",
     "advanced-metrics": "players", "breakouts": "players", "prospects": "players",
-    "draft": "draft", "draft-history": "draft",
+    "draft": "draft", "draft-history": "draft", "draft-cheat-sheet": "draft",
 }
 
 
@@ -2251,6 +2253,7 @@ def _mobile_nav_guest(active: str) -> str:
     ])
     draft_html = _sec("Draft", [
         _gl("/draft", "Draft Room", "draft"),
+        _gl("/draft/cheat-sheet", "Cheat Sheet", "draft-cheat-sheet"),
         _gl("/draft/history", "Draft History", "draft-history"),
     ])
 
@@ -2616,9 +2619,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 ("Prospects",       "/prospects",   "prospects"),
             ], ["players", "prospects", "breakouts", "top-movers", "compare"], "playersNavDropdown"),
             simple_dropdown("Draft", [
-                ("Draft Room",    "/draft",         "draft"),
-                ("Draft History", "/draft/history", "draft-history"),
-            ], ["draft", "draft-history"], "draftNavDropdown"),
+                ("Draft Room",    "/draft",              "draft"),
+                ("Cheat Sheet",   "/draft/cheat-sheet",  "draft-cheat-sheet"),
+                ("Draft History", "/draft/history",      "draft-history"),
+            ], ["draft", "draft-cheat-sheet", "draft-history"], "draftNavDropdown"),
         ]
         # Portfolio was only reachable from inside a league's nav; signed-in
         # users should be able to get to their leagues from global pages too.
@@ -2789,12 +2793,15 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     ], ["players", "prospects", "breakouts", "top-movers", "compare"], "playersNavDropdown"))
     # Keeper Assistant only applies to keeper leagues; hide it for dynasty and
     # plain redraft leagues.
-    _draft_items = [("Draft Room", "tool_pages.page_draft_room", "draft", False)]
+    _draft_items = [
+        ("Draft Room", "tool_pages.page_draft_room", "draft", False),
+        ("Cheat Sheet", "tool_pages.page_cheat_sheet", "draft-cheat-sheet", False),
+    ]
     if _nav_show_keeper(platform, league_id, season):
         _draft_items.append(("Keeper Assistant", "tool_pages.page_keeper", "keeper", False))
     _draft_items.append(("Draft History", "tool_pages.page_draft_history", "draft-history", False))
     nav_pills.append(nav_pill_dropdown("Draft", _draft_items,
-        ["draft", "draft-history", "keeper"], "draftNavDropdown"))
+        ["draft", "draft-cheat-sheet", "draft-history", "keeper"], "draftNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",   "page_awards",   "awards",   False),
         ("Graphs",   "league_pages.page_graphs",   "graphs",   False),

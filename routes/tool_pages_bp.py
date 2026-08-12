@@ -146,6 +146,55 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
     )
 
 
+@tool_pages_bp.route("/draft/cheat-sheet")
+@tool_pages_bp.route("/<platform>/<int:season>/<league_id>/draft/cheat-sheet")
+def page_cheat_sheet(platform: str = None, season: int = None, league_id: str = None):
+    """Printable Draft Cheat Sheet — the pre-draft view of the Draft Room board."""
+    from dashboard_services.pages.cheat_sheet_page import build_cheat_sheet_body
+    num_teams = None
+    is_sf = False
+    roster_positions = None
+    mode = "redraft"
+    if league_id:
+        try:
+            ctx = get_league_ctx_from_cache(platform, league_id, season)
+            num_teams = ctx.get("total_rosters") or None
+            _rp = ctx.get("roster_positions") or []
+            if hasattr(_rp, "tolist"):
+                _rp = _rp.tolist()
+            roster_positions = [str(s) for s in _rp] if _rp else None
+            is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp)
+            league_id = ctx.get("league_id") or league_id
+            season = int(ctx.get("season") or season or datetime.now().year)
+            # Dynasty leagues default to the dynasty board; redraft/keeper to the
+            # redraft board. The user can still toggle either way. Only Sleeper
+            # publishes a league type; ESPN/Yahoo fall through to redraft.
+            try:
+                from dashboard_services.pages.keeper_page import _league_type_code
+                if _league_type_code(ctx) == 2:  # 2 = dynasty
+                    mode = "dynasty"
+            except Exception:
+                logger.debug("suppressed exception", exc_info=True)
+        except Exception as _e:
+            logger.info("[cheat-sheet] league ctx load failed: %s", _e)
+    # Allow ?mode= override for guests or explicit choice.
+    _qmode = (request.args.get("mode") or "").lower()
+    if _qmode in ("redraft", "dynasty"):
+        mode = _qmode
+    body = build_cheat_sheet_body(
+        league_id, season, platform,
+        num_teams=num_teams, is_superflex=is_sf,
+        roster_positions=roster_positions, mode=mode,
+    )
+    return render_page(
+        "Draft Cheat Sheet | BR Fantasy", league_id, "draft", body, platform, season,
+        description=(
+            "Printable fantasy draft cheat sheet: value-over-replacement tiers, ADP value, "
+            "and Superflex / dynasty toggles, computed for your league scoring and roster."
+        ),
+    )
+
+
 @tool_pages_bp.route("/keeper")
 @tool_pages_bp.route("/<platform>/<int:season>/<league_id>/keeper")
 def page_keeper(platform: str = None, season: int = None, league_id: str = None):
