@@ -1930,7 +1930,7 @@ _DOCK_LABELS = {
     "trade-suggestions": "Trades", "trade-database": "Trades", "trade-intel": "Intel",
     "compare": "Compare", "top-movers": "Movers", "advanced-metrics": "Metrics",
     "breakouts": "Breakouts", "prospects": "Prospects", "draft-history": "History",
-    "draft-cheat-sheet": "Cheat Sheet",
+    "draft-cheat-sheet": "Cheat",
     "awards": "Awards", "graphs": "Graphs", "history": "History",
 }
 
