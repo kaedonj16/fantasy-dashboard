@@ -257,6 +257,13 @@
     if (_cs2) _cs2.addEventListener('click', function(e){
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;  // let modified clicks open a tab
       e.preventDefault();
+      // The in-draft cheat-sheet overlay (with live sync) is a pro feature. Free
+      // users get the upgrade prompt; the standalone board stays reachable from
+      // the nav and via a modified-click that opens it in a new tab.
+      if (!cfg.hasPremium){
+        if (typeof window.showPaywall === 'function') window.showPaywall('draft-cheat-sheet');
+        return;
+      }
       openCheatSheet();
     });
     var _csClose = document.getElementById('drCheatClose');
@@ -1757,6 +1764,10 @@
     var ab = document.getElementById('drAutoBtn');
     var ready = sim && !simStarted;
     var running = sim && simStarted;
+    // The whole Auto-draft settings block (in the gear menu) only applies to a
+    // mock; hide it entirely for a live draft so the menu stays lean.
+    var autoWrap = document.getElementById('drAutoSettings');
+    if (autoWrap) autoWrap.style.display = (ready || running) ? '' : 'none';
     start.style.display = ready ? '' : 'none';
     tg.style.display = running ? '' : 'none';
     sp.style.display = (ready || running) ? '' : 'none';
@@ -5152,6 +5163,14 @@
   var _myLeanSel = document.getElementById('drMyAgeLean');
   if (_myLeanSel) _myLeanSel.addEventListener('change', function(){
     if (state){ state.myAgeLean = this.value || ''; save(); }
+  });
+  // Collapsible Auto-draft settings group in the gear menu.
+  var _autoTog = document.getElementById('drAutoSettingsToggle');
+  if (_autoTog) _autoTog.addEventListener('click', function(){
+    var body = document.getElementById('drAutoSettingsBody');
+    var open = this.getAttribute('aria-expanded') === 'true';
+    this.setAttribute('aria-expanded', String(!open));
+    if (body) body.hidden = open;
   });
   document.getElementById('drSideTabs').addEventListener('click', function(e){
     var b = e.target.closest('.otc-main-tab'); if (!b) return;

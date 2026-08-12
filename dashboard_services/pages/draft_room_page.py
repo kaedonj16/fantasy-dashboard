@@ -60,6 +60,7 @@ def build_draft_room_body(
     num_rounds_startup: Optional[int] = None,
     keepers: Optional[dict] = None,
     show_keeper: bool = True,
+    has_premium: bool = False,
 ) -> str:
     _dr_has_league = bool(league_id and platform and season)
     cfg = {
@@ -93,6 +94,9 @@ def build_draft_room_body(
         # plain redraft leagues, where keepers do not apply; draft_room.js then
         # removes the Keeper option and its fields.
         "showKeeper": bool(show_keeper),
+        # Pro gate: the in-draft cheat-sheet overlay (with live sync) is premium.
+        # Non-premium users still reach the free standalone cheat sheet in a new tab.
+        "hasPremium": bool(has_premium),
     }
     cfg_json = json.dumps(cfg)
     # cfg is a plain inline script so it runs during parse, before the deferred
@@ -265,35 +269,50 @@ _DRAFT_ROOM_HTML = r"""
           <button class="otc-main-tab" data-stab="needs">Team</button>
           <button class="otc-main-tab" data-stab="league">League</button>
           <div class="dr-side-opts">
+            <button class="dr-opts-trigger dr-undo-trigger" id="drUndo" aria-label="Undo last pick" title="Undo last pick"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
             <button class="dr-opts-trigger dr-pt-trigger" id="drPickTradeBtn" aria-label="Pick trade evaluator" title="Pick trade evaluator">Trade</button>
             <button class="dr-opts-trigger" id="drOptsBtn" aria-label="Settings" title="Settings"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
             <div class="dr-opts-panel" id="drOptsPanel">
-              <select class="dr-sim-speed" id="drSimSpeed" style="display:none;" title="Simulation speed">
-                <option value="1400">Slow</option>
-                <option value="700" selected>Normal</option>
-                <option value="300">Fast</option>
-                <option value="60">Instant</option>
-              </select>
-              <select class="dr-sim-speed" id="drMyStrat" style="display:none;" title="Strategy your auto-draft follows on your picks">
-                <option value="">Auto: Balanced</option>
-                <option value="rb_heavy">Auto: RB heavy</option>
-                <option value="wr_heavy">Auto: WR heavy</option>
-                <option value="zero_rb">Auto: Zero RB</option>
-                <option value="hero_rb">Auto: Hero RB</option>
-                <option value="elite_te">Auto: Elite TE</option>
-                <option value="early_qb">Auto: Early QB</option>
-              </select>
-              <select class="dr-sim-speed" id="drMyAgeLean" style="display:none;" title="Age lean your auto-draft follows on your picks">
-                <option value="">Age: Neutral</option>
-                <option value="win_now">Age: Win now</option>
-                <option value="youth">Age: Youth</option>
-              </select>
-              <a class="dr-btn dr-btn-ghost" id="drOptsCheatSheet" href="/draft/cheat-sheet" rel="noopener" title="Open your value board / cheat sheet (Cmd/Ctrl-click for a new tab)">Cheat Sheet</a>
-              <button class="dr-btn dr-btn-ghost" id="drSummaryBtn" style="display:none;">Summary</button>
-              <button class="dr-btn dr-btn-ghost" id="drShare"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px;margin-right:4px;"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>Share</button>
-              <button class="dr-btn dr-btn-ghost" id="drUndo">Undo</button>
-              <button class="dr-btn dr-btn-ghost" id="drEdit">Edit Setup</button>
-              <button class="dr-btn dr-btn-ghost dr-btn-danger" id="drReset">Reset</button>
+              <!-- Auto-draft settings: mocks only, collapsed by default so the
+                   menu is not cluttered by three selectors most people set once. -->
+              <div class="dr-opts-auto" id="drAutoSettings" style="display:none;">
+                <button type="button" class="dr-opts-expander" id="drAutoSettingsToggle" aria-expanded="false" aria-controls="drAutoSettingsBody">
+                  <span>Auto-draft settings</span>
+                  <svg class="dr-opts-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="dr-opts-auto-body" id="drAutoSettingsBody" hidden>
+                  <select class="dr-sim-speed" id="drSimSpeed" title="Simulation speed">
+                    <option value="1400">Speed: Slow</option>
+                    <option value="700" selected>Speed: Normal</option>
+                    <option value="300">Speed: Fast</option>
+                    <option value="60">Speed: Instant</option>
+                  </select>
+                  <select class="dr-sim-speed" id="drMyStrat" title="Strategy your auto-draft follows on your picks">
+                    <option value="">Auto: Balanced</option>
+                    <option value="rb_heavy">Auto: RB heavy</option>
+                    <option value="wr_heavy">Auto: WR heavy</option>
+                    <option value="zero_rb">Auto: Zero RB</option>
+                    <option value="hero_rb">Auto: Hero RB</option>
+                    <option value="elite_te">Auto: Elite TE</option>
+                    <option value="early_qb">Auto: Early QB</option>
+                  </select>
+                  <select class="dr-sim-speed" id="drMyAgeLean" title="Age lean your auto-draft follows on your picks">
+                    <option value="">Age: Neutral</option>
+                    <option value="win_now">Age: Win now</option>
+                    <option value="youth">Age: Youth</option>
+                  </select>
+                </div>
+              </div>
+              <div class="dr-opts-sec">
+                <div class="dr-opts-label">Board</div>
+                <a class="dr-btn dr-btn-ghost" id="drOptsCheatSheet" href="/draft/cheat-sheet" rel="noopener" title="Open your value board / cheat sheet (Cmd/Ctrl-click for a new tab)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h4"/></svg>Cheat Sheet</a>
+                <button class="dr-btn dr-btn-ghost" id="drSummaryBtn" style="display:none;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Summary</button>
+              </div>
+              <div class="dr-opts-sec">
+                <button class="dr-btn dr-btn-ghost" id="drShare"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>Share</button>
+                <button class="dr-btn dr-btn-ghost" id="drEdit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Edit Setup</button>
+                <button class="dr-btn dr-btn-ghost dr-btn-danger" id="drReset"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>Reset</button>
+              </div>
             </div>
           </div>
         </div>
@@ -459,10 +478,27 @@ _DRAFT_ROOM_HTML = r"""
     padding: 6px; z-index: 200; min-width: 155px;
     box-shadow: 0 8px 32px rgba(0,0,0,.3);
   }
-  .dr-opts-panel .dr-btn { width: 100%; text-align: left; padding: 9px 14px; border-radius: 8px; font-size: 13px;
+  .dr-opts-panel .dr-btn { width: 100%; display: flex; align-items: center; gap: 7px; text-align: left; padding: 9px 14px; border-radius: 8px; font-size: 13px;
     background: var(--bg, #0f0f0f); color: var(--text, #fff); border: 1px solid var(--border, #333); }
-  .dr-opts-panel .dr-sim-speed { width: 100%; margin: 2px 0; padding: 6px 8px; border-radius: 8px;
+  .dr-opts-panel .dr-btn svg { flex-shrink: 0; opacity: .8; }
+  .dr-opts-panel .dr-sim-speed { width: 100%; margin: 0; padding: 6px 8px; border-radius: 8px;
     border: 1px solid var(--border, #333); background: var(--bg, #0f0f0f); color: var(--text, #fff); font-size: 13px; }
+  /* Grouped sections: a labelled block per kind, with hairline dividers between. */
+  .dr-opts-sec { display: flex; flex-direction: column; gap: 2px; }
+  .dr-opts-sec + .dr-opts-sec { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border, #333); }
+  .dr-opts-label { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--text-muted); padding: 2px 14px 3px; }
+  /* Auto-draft settings: collapsible, with its own divider below when shown. */
+  .dr-opts-auto { display: flex; flex-direction: column; gap: 4px;
+    margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--border, #333); }
+  .dr-opts-expander { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    text-align: left; padding: 9px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+    background: var(--bg, #0f0f0f); color: var(--text, #fff); border: 1px solid var(--border, #333); }
+  .dr-opts-expander:hover { border-color: var(--accent, #38bdf8); color: var(--accent, #38bdf8); }
+  .dr-opts-chev { flex-shrink: 0; opacity: .75; transition: transform .15s ease; }
+  .dr-opts-expander[aria-expanded="true"] .dr-opts-chev { transform: rotate(180deg); }
+  .dr-opts-auto-body { display: flex; flex-direction: column; gap: 4px; padding-top: 4px; }
+  .dr-opts-auto-body[hidden] { display: none; }
   .dr-btn-danger { color: var(--loss); border-color: color-mix(in srgb, var(--loss) 40%, transparent); }
   .dr-sim-error {
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;

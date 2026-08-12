@@ -56,7 +56,8 @@ window.showPaywall = function showPaywall(feature) {
     'ai-insights': 'AI Insights',
     'trade-history': 'Trade Intelligence',
     'trade-suggestions': 'Roster-Based Trade Suggestions',
-    'auction-values': 'Auction Values'
+    'auction-values': 'Auction Values',
+    'draft-cheat-sheet': 'Live Draft Cheat Sheet'
   };
 
   const featureName = featureNames[feature] || 'Premium Feature';

@@ -39,6 +39,7 @@ def build_cheat_sheet_body(
     roster_positions: Optional[list] = None,
     mode: str = "redraft",
     viewer_user_id: Optional[str] = None,
+    has_premium: bool = False,
 ) -> str:
     _has_league = bool(league_id and platform and season)
     cfg = {
@@ -50,6 +51,8 @@ def build_cheat_sheet_body(
         "rosterPositions": list(roster_positions) if roster_positions else None,
         "mode": "dynasty" if mode == "dynasty" else "redraft",
         "viewerUserId": str(viewer_user_id) if viewer_user_id else "",
+        # Pro gate for live Sleeper sync and CSV export (the static board is free).
+        "hasPremium": bool(has_premium),
         "draftUrl": (
             f"/{platform}/{int(season)}/{league_id}/draft"
             if _has_league else "/draft"

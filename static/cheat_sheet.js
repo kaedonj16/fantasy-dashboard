@@ -398,6 +398,9 @@
 
   // ── live-draft cross-off ────────────────────────────────────────────────────
   function detectLiveDraft() {
+    // Live Sleeper draft sync (auto cross-off + real-time board) is a pro feature.
+    // Non-premium users keep the free static board (and any static mock snapshot).
+    if (!cfg.hasPremium) return;
     if (!cfg.leagueId || !cfg.platform) return;
     fetch('/api/draft/detect?platform=' + encodeURIComponent(cfg.platform) + '&league_id=' + encodeURIComponent(cfg.leagueId) + '&season=' + (cfg.season || ''))
       .then(function (r) { return r.json(); })
@@ -538,7 +541,16 @@
       state.done.clear();
       render();
     });
-    var csvBtn = $('csCsvBtn'); if (csvBtn) csvBtn.addEventListener('click', exportCsv);
+    // CSV export is a pro feature; non-premium users get the upgrade prompt.
+    var csvBtn = $('csCsvBtn');
+    if (csvBtn && !cfg.hasPremium) csvBtn.textContent = 'CSV (Pro)';
+    if (csvBtn) csvBtn.addEventListener('click', function () {
+      if (!cfg.hasPremium) {
+        if (typeof window.showPaywall === 'function') window.showPaywall('draft-cheat-sheet');
+        return;
+      }
+      exportCsv();
+    });
     $('csPrintBtn').addEventListener('click', function () { window.print(); });
     var srcSel = $('csAdpSrc');
     if (srcSel) srcSel.addEventListener('change', function () { state.adpSource = this.value; loadPlayers(); });
