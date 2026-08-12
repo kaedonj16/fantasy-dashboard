@@ -259,12 +259,16 @@
     var live = players.filter(function (x) { return !x.drafted && visiblePlayer(x); });
     var dh = live.map(function (x) {
       var run = x.lastInTier;
-      var win = dyn ? (' &middot; ' + youthWindow(x.age)[0]) : '';
-      // Name first, then a chip carrying rank (overall + positional), tier, window.
+      // Overall rank, name, then a clean meta cluster: position rank, tier, window.
       return '<div class="cs-drow' + (run ? ' run' : '') + '">'
+        + '<span class="cs-drk">' + x.rk + '</span>'
         + '<span class="cs-dname">' + esc(x.name) + '</span>'
-        + '<span class="cs-tchip cs-pos-' + x.pos + '">#' + x.rk + ' &middot; ' + x.prk + ' &middot; Tier ' + x.dtier + win + '</span>'
         + (run ? '<span class="cs-runflag">last ' + x.pos + '</span>' : '')
+        + '<span class="cs-dmeta">'
+        + posrk(x)
+        + '<span class="cs-dtier">Tier ' + x.dtier + '</span>'
+        + (dyn ? winChip(x.age) : '')
+        + '</span>'
         + '</div>';
     }).join('');
     $('csDboard').innerHTML = dh || '<div class="cs-empty" style="padding:22px;">Board is empty.</div>';

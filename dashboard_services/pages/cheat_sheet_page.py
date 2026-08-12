@@ -225,7 +225,7 @@ _CHEAT_HTML = r"""
   .cs-pgtier { display: flex; align-items: center; gap: 10px; font-family: var(--cs-mono); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--cs-ink-faint); background: var(--cs-surface-2); padding: 7px 12px; border-top: 1px solid var(--cs-line-strong); border-bottom: 1px solid var(--cs-line); }
   .cs-pgtier .cs-sc { font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--cs-ink-soft); }
 
-  .cs-dboard { background: var(--cs-surface); border: 1px solid var(--cs-line); border-radius: 14px; overflow: auto; max-height: calc(100vh - 230px); }
+  .cs-dboard { background: var(--cs-surface); border: 1px solid var(--cs-line); border-radius: 14px; overflow: auto; max-height: calc(100vh - 230px); max-width: 720px; margin: 0 auto; }
   /* Filter bar: instant name search + position filter over the whole board. */
   .cs-filterbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 14px 0 12px; }
   .cs-search { flex: 1 1 200px; min-width: 140px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--cs-line); background: var(--cs-surface); color: var(--cs-ink); font: inherit; font-size: 13px; outline: none; }
@@ -234,10 +234,13 @@ _CHEAT_HTML = r"""
   .cs-posf button { font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-line); background: var(--cs-surface); color: var(--cs-ink-soft); padding: 8px 12px; border-radius: 9px; }
   .cs-posf button:hover { border-color: var(--cs-accent); color: var(--cs-accent); }
   .cs-posf button[aria-pressed="true"] { background: var(--cs-accent); color: #fff; border-color: var(--cs-accent); }
-  .cs-drow { display: flex; align-items: center; gap: 12px; padding: 11px 16px; border-bottom: 1px solid var(--cs-line); }
+  .cs-drow { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--cs-line); }
   .cs-drow:last-child { border-bottom: 0; }
   .cs-drow.run { background: var(--cs-accent-soft); }
+  .cs-drk { flex: 0 0 auto; width: 26px; text-align: right; font-family: var(--cs-mono); font-size: 12px; font-weight: 700; color: var(--cs-ink-faint); }
   .cs-dname { flex: 1 1 auto; min-width: 0; font-size: 14px; font-weight: 700; color: var(--cs-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cs-dmeta { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; }
+  .cs-dtier { font-family: var(--cs-mono); font-size: 11px; font-weight: 700; color: var(--cs-ink-faint); }
   .cs-pick { font-family: var(--cs-mono); font-weight: 800; font-size: 13px; text-align: center; }
   .cs-pick small { display: block; font-size: 9px; font-weight: 600; color: var(--cs-ink-faint); letter-spacing: .06em; }
   .cs-dtiers { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -254,7 +257,24 @@ _CHEAT_HTML = r"""
 
   .cs-hidden { display: none; }
   .cs-foot { margin-top: 22px; color: var(--cs-ink-faint); font-size: 12px; }
-  @media (max-width: 640px) { .cs-controls { align-items: stretch; width: 100%; } .cs-ctrl-row { justify-content: flex-start; } }
+  @media (max-width: 640px) {
+    .cs-controls { align-items: stretch; width: 100%; margin-top: 14px; }
+    .cs-ctrl-row { justify-content: flex-start; }
+    /* Mode and QB toggles share a clean two-column row, each filling its half. */
+    .cs-ctrl-row:first-child { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .cs-ctrl-row:first-child .cs-cgroup { display: flex; }
+    .cs-ctrl-row:first-child .cs-seg { flex: 1; }
+    .cs-ctrl-row:first-child .cs-seg button { flex: 1; }
+    /* Action buttons stretch to fill the row evenly instead of straggling. */
+    .cs-ctrl-row:last-child { display: flex; }
+    .cs-ctrl-row:last-child .cs-btn, .cs-ctrl-row:last-child .cs-src { flex: 1 1 auto; justify-content: center; }
+    /* Tabs scroll sideways rather than wrapping onto a second line. */
+    .cs-tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .cs-tabs::-webkit-scrollbar { display: none; }
+    .cs-tabs button { flex: 0 0 auto; white-space: nowrap; padding: 11px 12px; }
+    /* Format note drops to its own line, left aligned, not floated off to the side. */
+    #csFmtNote { margin-left: 0; width: 100%; }
+  }
   @media print {
     .cs-controls, .cs-tabs, .cs-backlink, .cs-needs, .cs-filterbar, #csPrintBtn, #csValBtn { display: none !important; }
     /* Only the active tab prints; the JS leaves the other panels .hidden. */
