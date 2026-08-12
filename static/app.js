@@ -9394,11 +9394,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (!lastSeen || latestDate > lastSeen) {
         setChangelogDot(true);
-        // Only show the toast for signed-in users
+        // Only show the toast for signed-in users, and only once per new entry
+        // per device. Gate on localStorage (persists across logins) rather than
+        // sessionStorage, so a new login doesn't re-fire the same toast; the red
+        // dot still nags until they open the bell.
         if (isLoggedIn) {
-          const sessionKey = "changelog_toast_shown_" + latestDate;
-          if (!sessionStorage.getItem(sessionKey)) {
-            sessionStorage.setItem(sessionKey, "1");
+          if (localStorage.getItem("changelog_toast_last") !== latestDate) {
+            localStorage.setItem("changelog_toast_last", latestDate);
             _showNotifToast(changelogData[0]);
           }
         }
