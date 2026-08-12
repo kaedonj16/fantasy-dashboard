@@ -975,6 +975,13 @@ except Exception as e:
     logger.warning("[health-bp] skipped: %s", e)
 
 try:
+    from routes.draft_board_bp import draft_board_bp
+    app.register_blueprint(draft_board_bp)
+    logger.info("[draft-board-bp] registered")
+except Exception as e:
+    logger.warning("[draft-board-bp] skipped: %s", e)
+
+try:
     from routes.push_bp import push_bp
     app.register_blueprint(push_bp)
     logger.info("[push-bp] registered")
