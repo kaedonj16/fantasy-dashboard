@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-08-12",
+        "tag": "new",
+        "text": "Draft Cheat Sheet: a printable, value-based draft board ranked by value over replacement for your exact league scoring, roster, and format (with Superflex and dynasty toggles). Players are grouped into tiers with an ADP value column, plus a By Position grid and a Draft Order plan. Search by name, filter by position, and export to CSV or print. Open it during a live Sleeper draft or a mock from the Draft Room and it crosses off who is already gone. Find it under Draft.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
         "date": "2026-08-06",
         "tag": "new",
         "text": "Even It Out: When a deal favors one side, the Trade Calculator now suggests up to three players whose value best closes the gap. Click one to drop it onto the light side.",
