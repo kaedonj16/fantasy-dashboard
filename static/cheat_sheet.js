@@ -423,7 +423,7 @@
     tabs.forEach(function (t) {
       t.addEventListener('click', function () {
         tabs.forEach(function (x) { x.setAttribute('aria-selected', String(x === t)); });
-        Object.keys(panels).forEach(function (k) { $(panels[k]).classList.toggle('hidden', k !== t.getAttribute('data-tab')); });
+        Object.keys(panels).forEach(function (k) { $(panels[k]).classList.toggle('cs-hidden', k !== t.getAttribute('data-tab')); });
         $('csLegend').style.display = (t.getAttribute('data-tab') === 'logic') ? 'none' : '';
       });
     });

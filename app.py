@@ -814,6 +814,18 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(days=30),
 )
 
+# Share the session cookie across the apex and its subdomains (e.g. brfantasyfootball.com
+# AND www.brfantasyfootball.com). Without this the cookie is host-only, so a
+# session started on one host is invisible on the other — which silently breaks
+# OAuth sign-in when the flow crosses www<->apex (the state set on /auth/google
+# is missing on /auth/google/callback, so login never sticks). Opt-in: set
+# COOKIE_DOMAIN explicitly, or it derives from PRIMARY_DOMAIN when that is set.
+# Left unset (local dev, *.onrender.com) the cookie stays host-only as before.
+_cookie_domain = (os.environ.get("COOKIE_DOMAIN", "").strip().lower()
+                  or (PRIMARY_DOMAIN or ""))
+if _cookie_domain:
+    app.config["SESSION_COOKIE_DOMAIN"] = _cookie_domain
+
 # ── Rate limiting ─────────────────────────────────────────────────────────────
 # The limiter itself lives in extensions.py (unbound) so route blueprints can
 # import and use @limiter.limit without importing app.py; bind it here.
