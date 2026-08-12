@@ -39,13 +39,17 @@
   var loading = false;
 
   // ── Custom draft board (pro): per-player overrides on top of the model board.
-  // Intent, not absolute positions: {d: tier delta up(+)/down(-), p: pinned,
-  // m: muted}. Persisted per league + mode + format so a refresh of the model
-  // values keeps the user's intent. See docs/custom-draft-board.md.
+  // Intent, not absolute positions: {r: fractional rank on the model scale, p:
+  // pinned, m: muted}. A moved player's `r` sits between the model ranks of its
+  // chosen neighbours, so drag-drop and the arrows place it exactly and stay
+  // stable no matter how many others move. Persisted per league + mode + format
+  // so a refresh of the model values keeps the user's intent. See
+  // docs/custom-draft-board.md.
   var overrides = {};
   var _ovKey = null;
   var _ovPush = null;      // debounce timer for the server save
   var editBoard = false;   // whether per-row edit controls are shown
+  var _flashId = null;     // player row to flash after a move
   function boardKey() { return state.mode + ':' + (state.sf ? 'sf' : '1qb'); }
   function ovKey() { return 'csboard:' + (cfg.leagueId || 'guest') + ':' + boardKey(); }
   function loadOverrides() {
@@ -95,63 +99,158 @@
     }, 600);
   }
   function saveOverrides() {
-    Object.keys(overrides).forEach(function (id) { var o = overrides[id]; if (!o || (!o.d && !o.p && !o.m)) delete overrides[id]; });
+    Object.keys(overrides).forEach(function (id) { var o = overrides[id]; if (!o || (o.r == null && !o.p && !o.m)) delete overrides[id]; });
     try { localStorage.setItem(ovKey(), JSON.stringify(overrides)); } catch (e) { /* storage full/blocked */ }
     pushOverridesToServer();
   }
   function hasOverrides() { return cfg.hasPremium && Object.keys(overrides).length > 0; }
-  function boardBump(id, dir) {
-    // dir +1 = up one row, -1 = down one row. Don't record a phantom nudge when
-    // the player is already at the top/bottom of the board (nothing to pass).
-    var idx = -1;
-    for (var i = 0; i < players.length; i++) { if (players[i].id === id) { idx = i; break; } }
-    if (idx === 0 && dir > 0) return;
-    if (idx === players.length - 1 && dir < 0) return;
-    var o = overrides[id] || {}; delete o.p; delete o.m; o.d = (o.d || 0) + dir; if (!o.d) delete o.d;
-    overrides[id] = o; saveOverrides(); compute(); render();
+  // Effective rank a player sorts on: its custom fractional rank if moved, else
+  // its model (VOR) index.
+  function effRankOf(p) { var o = overrides[p.id]; return (o && o.r != null) ? o.r : p._mr; }
+  // Current display order of the normal (not pinned/muted) bucket.
+  function normOrder() { return players.filter(function (p) { return p.bucket === 0; }); }
+  // Write a fractional rank for `id` midway between two neighbour players (either
+  // may be null at the board ends). Neighbour-based so it's correct even when
+  // filters hide rows between the visible ones.
+  function boardPlaceBetween(id, above, below) {
+    var r;
+    if (above && below) r = (effRankOf(above) + effRankOf(below)) / 2;
+    else if (above)     r = effRankOf(above) + 0.5;
+    else if (below)     r = effRankOf(below) - 0.5;
+    else                r = 0;
+    var o = overrides[id] || {}; delete o.p; delete o.m; o.r = r;
+    overrides[id] = o; _flashId = id; saveOverrides(); compute(); render();
+  }
+  // Place player `id` at display index `pos` within the full normal bucket.
+  function boardMoveTo(id, pos) {
+    var others = normOrder().filter(function (p) { return p.id !== id; });
+    pos = Math.max(0, Math.min(others.length, pos));
+    boardPlaceBetween(id, pos > 0 ? others[pos - 1] : null, pos < others.length ? others[pos] : null);
+  }
+  // Arrow nudge: move one row up (dir +1) or down (dir -1) within the normal bucket.
+  function boardNudge(id, dir) {
+    var norm = normOrder(), idx = -1;
+    for (var i = 0; i < norm.length; i++) { if (norm[i].id === id) { idx = i; break; } }
+    if (idx < 0) return;                              // pinned/muted: not in this bucket
+    if (dir > 0 && idx === 0) return;                 // already at the top
+    if (dir < 0 && idx === norm.length - 1) return;   // already at the bottom
+    boardMoveTo(id, dir > 0 ? idx - 1 : idx + 1);
   }
   function boardPin(id) {
     var was = overrides[id] && overrides[id].p; var o = overrides[id] || {};
-    delete o.d; delete o.m; if (was) delete o.p; else o.p = true; overrides[id] = o; saveOverrides(); compute(); render();
+    delete o.r; delete o.m; if (was) delete o.p; else o.p = true; overrides[id] = o; _flashId = id; saveOverrides(); compute(); render();
   }
   function boardMute(id) {
     var was = overrides[id] && overrides[id].m; var o = overrides[id] || {};
-    delete o.d; delete o.p; if (was) delete o.m; else o.m = true; overrides[id] = o; saveOverrides(); compute(); render();
+    delete o.r; delete o.p; if (was) delete o.m; else o.m = true; overrides[id] = o; _flashId = id; saveOverrides(); compute(); render();
   }
+  // Revert a single player to its model spot (undo one override).
+  function boardRevert(id) { if (!overrides[id]) return; delete overrides[id]; _flashId = id; saveOverrides(); compute(); render(); }
   function boardReset() { overrides = {}; saveOverrides(); compute(); render(); }
 
+  // Pointer-based drag reorder (mouse + touch). The grip handle starts a drag; a
+  // drop line tracks the insertion point among the normal-bucket rows, and the
+  // release writes the player's new fractional rank via boardMoveTo.
+  function setupDragReorder(panel) {
+    var scroll = panel.querySelector('.cs-tbl-scroll') || panel;
+    var dragId = null, startY = 0, didMove = false, line = null;
+    function normRows() {
+      var byId = {}; players.forEach(function (p) { byId[p.id] = p; });
+      return Array.prototype.slice.call(panel.querySelectorAll('tbody tr.cs-p')).filter(function (tr) {
+        var p = byId[tr.getAttribute('data-id')];
+        return p && p.bucket === 0 && tr.offsetParent !== null;
+      });
+    }
+    // The neighbour players on either side of the drop point (from the visible
+    // rows), plus the content-space Y at which to draw the drop line.
+    function dropAt(clientY) {
+      var byId = {}; players.forEach(function (p) { byId[p.id] = p; });
+      var rows = normRows().filter(function (tr) { return tr.getAttribute('data-id') !== dragId; });
+      var pos = rows.length;
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i].getBoundingClientRect();
+        if (clientY < r.top + r.height / 2) { pos = i; break; }
+      }
+      var srect = scroll.getBoundingClientRect(), y = 0;
+      if (pos < rows.length) y = rows[pos].getBoundingClientRect().top - srect.top + scroll.scrollTop;
+      else if (rows.length) y = rows[rows.length - 1].getBoundingClientRect().bottom - srect.top + scroll.scrollTop;
+      return {
+        above: pos > 0 ? byId[rows[pos - 1].getAttribute('data-id')] : null,
+        below: pos < rows.length ? byId[rows[pos].getAttribute('data-id')] : null,
+        y: y,
+      };
+    }
+    function drawLine(y) {
+      if (!line) { line = document.createElement('div'); line.className = 'cs-drop-line'; scroll.appendChild(line); }
+      line.style.top = y + 'px';
+    }
+    function cleanup() {
+      if (line) { line.remove(); line = null; }
+      var dg = panel.querySelector('tr.cs-dragging'); if (dg) dg.classList.remove('cs-dragging');
+      dragId = null; didMove = false;
+    }
+    panel.addEventListener('pointerdown', function (e) {
+      var h = e.target.closest('.cs-drag'); if (!h) return;
+      e.preventDefault(); e.stopPropagation();
+      dragId = h.getAttribute('data-id'); startY = e.clientY; didMove = false;
+      try { h.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+    panel.addEventListener('pointermove', function (e) {
+      if (dragId == null) return;
+      if (!didMove) {
+        if (Math.abs(e.clientY - startY) < 4) return;   // ignore jitter / a plain tap
+        didMove = true;
+        var row = panel.querySelector('tr.cs-p[data-id="' + (window.CSS && CSS.escape ? CSS.escape(dragId) : dragId) + '"]');
+        if (row) row.classList.add('cs-dragging');
+      }
+      e.preventDefault();
+      var r = scroll.getBoundingClientRect(), M = 42;   // auto-scroll near the edges
+      if (e.clientY < r.top + M) scroll.scrollTop -= 10; else if (e.clientY > r.bottom - M) scroll.scrollTop += 10;
+      drawLine(dropAt(e.clientY).y);
+    });
+    panel.addEventListener('pointerup', function (e) {
+      if (dragId == null) return;
+      var id = dragId, moved = didMove, dr = dropAt(e.clientY);
+      cleanup();
+      if (moved) boardPlaceBetween(id, dr.above, dr.below);
+    });
+    panel.addEventListener('pointercancel', cleanup);
+  }
+
   // Apply custom overrides on top of the model board. Pinned players float to the
-  // top, muted sink to the bottom; a nudge (o.d) moves a player up/down by that
-  // many rows. The effective sort key is the model index shifted by the nudge,
-  // offset half a row so a +1 nudge lands strictly above the neighbour it passes
-  // (an integer tie would otherwise leave it in place). After sorting we renumber
-  // the RK column and let each moved player adopt the tier it settled into, so the
-  // cliff headers stay monotonic instead of repeating.
+  // top, muted sink to the bottom; a moved player sorts on its fractional rank
+  // (o.r), which sits between its chosen neighbours. After sorting we renumber the
+  // RK column, stamp each moved row's net move (spots up/down vs the model) for
+  // the chip, and let it adopt the tier it settled into so cliff headers stay
+  // monotonic instead of repeating.
   function applyOverrides() {
     var custom = hasOverrides();
     players.forEach(function (p, i) {
       p._mr = i;   // model (VOR) order index, captured before any reorder
       var o = custom ? overrides[p.id] : null;
-      if (o && o.p)      { p.bucket = -1; p.ov = 'pin';  p.ovN = 0; p._eff = i; }
-      else if (o && o.m) { p.bucket = 1;  p.ov = 'mute'; p.ovN = 0; p._eff = i; }
-      else if (o && o.d) { p.bucket = 0;  p.ov = (o.d > 0 ? 'up' : 'down'); p.ovN = Math.abs(o.d); p._eff = i - o.d - (o.d > 0 ? 0.5 : -0.5); }
-      else               { p.bucket = 0;  p.ov = null;   p.ovN = 0; p._eff = i; }
+      if (o && o.p)             { p.bucket = -1; p.moved = false; p._eff = i; }
+      else if (o && o.m)        { p.bucket = 1;  p.moved = false; p._eff = i; }
+      else if (o && o.r != null){ p.bucket = 0;  p.moved = true;  p._eff = o.r; }
+      else                      { p.bucket = 0;  p.moved = false; p._eff = i; }
     });
     if (!custom) {
-      players.forEach(function (p) { p.grp = p.dtier; p.grpLabel = 'Tier ' + p.dtier; });
+      players.forEach(function (p) { p.grp = p.dtier; p.grpLabel = 'Tier ' + p.dtier; p.ov = null; p.ovN = 0; });
       return;
     }
     players.sort(function (a, b) {
       if (a.bucket !== b.bucket) return a.bucket - b.bucket;
-      if (a.bucket === 0) return a._eff - b._eff || a._mr - b._mr;
-      return a._mr - b._mr;
+      return a._eff - b._eff || a._mr - b._mr;
     });
     var runTier = 1;
     players.forEach(function (x, i) {
       x.rk = i + 1;
-      if (x.bucket === -1)      { x.grp = -1;  x.grpLabel = 'Pinned'; }
-      else if (x.bucket === 1)  { x.grp = 1e9; x.grpLabel = 'Muted'; }
-      else { if (x.ov == null) runTier = x.dtier; x.grp = runTier; x.grpLabel = 'Tier ' + runTier; }
+      if (x.bucket === -1)      { x.grp = -1;  x.grpLabel = 'Pinned'; x.ov = 'pin';  x.ovN = 0; }
+      else if (x.bucket === 1)  { x.grp = 1e9; x.grpLabel = 'Muted';  x.ov = 'mute'; x.ovN = 0; }
+      else {
+        if (!x.moved) { runTier = x.dtier; x.ov = null; x.ovN = 0; }
+        else { var d = x._mr - i; x.ov = d > 0 ? 'up' : (d < 0 ? 'down' : null); x.ovN = Math.abs(d); }
+        x.grp = runTier; x.grpLabel = 'Tier ' + runTier;
+      }
     });
   }
 
@@ -219,13 +318,6 @@
     });
     assignTiers();
     applyOverrides();   // sets grp/grpLabel; reorders + renumbers when custom
-    // Run flags: the last player of each position within its display group.
-    var seen = {};
-    players.forEach(function (x) { x.lastInTier = false; });
-    for (var i = players.length - 1; i >= 0; i--) {
-      var k = players[i].pos + '|' + players[i].grp;
-      if (!seen[k]) { seen[k] = 1; players[i].lastInTier = true; }
-    }
   }
 
   // Same drop-based tiering the rankings page uses (utils/tier_thresholds.py):
@@ -379,29 +471,35 @@
 
     renderBoard(dyn);
     renderPos(dyn);
+    // The move-flash is a one-shot: clear the id so later renders don't replay it.
+    if (_flashId) setTimeout(function () { _flashId = null; }, 650);
   }
 
-  // Per-row custom-board controls (pro): bump up/down, pin, mute. Shown only in
-  // edit mode. Each is a .cs-ovbtn with data-act/data-id handled by a delegated
-  // capture listener so it never also toggles the row's crossed-off state.
+  // Per-row custom-board controls (pro): drag handle, move up/down, pin, mute, and
+  // (when the row is overridden) revert. Shown only in edit mode. Each is a
+  // .cs-ovbtn with data-act/data-id handled by a delegated capture listener so it
+  // never also toggles the row's crossed-off state; the drag handle is driven by
+  // pointer events instead.
   function ovControls(x) {
     if (!cfg.hasPremium) return '';
-    function b(act, glyph, on, title) {
-      return '<button type="button" class="cs-ovbtn' + (on ? ' on' : '') + '" data-act="' + act + '" data-id="' + esc(x.id) + '" title="' + title + '" aria-label="' + title + '">' + glyph + '</button>';
+    function b(act, glyph, on, title, extra) {
+      return '<button type="button" class="cs-ovbtn' + (on ? ' on' : '') + (extra || '') + '" data-act="' + act + '" data-id="' + esc(x.id) + '" title="' + title + '" aria-label="' + title + '">' + glyph + '</button>';
     }
     return '<td class="cs-edit-cell"><span class="cs-ovbtns">'
-      + b('up', '&#9650;', x.ov === 'up', 'Move up a row')
-      + b('down', '&#9660;', x.ov === 'down', 'Move down a row')
+      + b('drag', '&#8942;', false, 'Drag to reorder', ' cs-drag')
+      + b('up', '&#9650;', false, 'Move up a row')
+      + b('down', '&#9660;', false, 'Move down a row')
       + b('pin', '&#9733;', x.ov === 'pin', 'Pin to the top')
       + b('mute', '&times;', x.ov === 'mute', 'Mute to the bottom')
+      + (x.ov ? b('revert', '&#8630;', false, 'Reset to model spot', ' cs-revert') : '')
       + '</span></td>';
   }
   // A small chip that shows how a row differs from the model board.
   function ovChip(x) {
-    if (!x.ov) return '';
     if (x.ov === 'pin')  return '<span class="cs-ovchip pin">pinned</span>';
     if (x.ov === 'mute') return '<span class="cs-ovchip mute">muted</span>';
-    return '<span class="cs-ovchip bump">' + (x.ov === 'up' ? '&#9650;' : '&#9660;') + x.ovN + '</span>';
+    if (x.ov === 'up' || x.ov === 'down') return '<span class="cs-ovchip bump">' + (x.ov === 'up' ? '&#9650;' : '&#9660;') + x.ovN + '</span>';
+    return '';
   }
 
   function renderBoard(dyn) {
@@ -415,12 +513,12 @@
       if (!visiblePlayer(x)) return;
       if (x.grp !== lastT) { lastT = x.grp; html += '<tr class="cs-cliff"><td colspan="' + span + '"><div class="cs-cliffline">' + x.grpLabel + '</div></td></tr>'; }
       shown++;
-      var cls = 'cs-p' + (state.done.has(x.name) ? ' done' : '') + (x.drafted ? ' drafted' : '') + (x.ov === 'mute' ? ' cs-muted' : '') + (x.ov ? ' cs-ov' : '');
+      var cls = 'cs-p' + (state.done.has(x.name) ? ' done' : '') + (x.drafted ? ' drafted' : '') + (x.ov === 'mute' ? ' cs-muted' : '') + (x.ov ? ' cs-ov' : '') + (x.id === _flashId ? ' cs-flash' : '');
       var c5 = dyn ? '<td class="cs-num">' + (x.age != null ? x.age : '') + '</td>' : '<td class="cs-num">' + (x.adp != null ? Math.round(x.adp) : '') + '</td>';
       var c6 = dyn ? '<td>' + winChip(x.age) + '</td>' : '<td>' + valChip(x.value) + '</td>';
-      html += '<tr class="' + cls + '" data-good="' + x.good + '" data-posfull="' + (x.posfull ? 1 : 0) + '" data-name="' + esc(x.name) + '">'
+      html += '<tr class="' + cls + '" data-good="' + x.good + '" data-posfull="' + (x.posfull ? 1 : 0) + '" data-name="' + esc(x.name) + '" data-id="' + esc(x.id) + '">'
         + '<td class="cs-rk">' + x.rk + '</td>'
-        + '<td><span class="cs-pcell">' + badge(x.pos) + '<span class="cs-pname">' + esc(x.name) + '</span>' + ovChip(x) + (x.lastInTier ? '<span class="cs-runflag">last ' + x.pos + '</span>' : '') + '</span></td>'
+        + '<td><span class="cs-pcell">' + badge(x.pos) + '<span class="cs-pname">' + esc(x.name) + '</span>' + ovChip(x) + '</span></td>'
         + '<td>' + posrk(x) + '</td>'
         + '<td><span class="cs-vorwrap"><span class="cs-num">' + x.vor + '</span><span class="cs-vorbar"><i style="width:' + Math.max(0, Math.round(x.vor / maxVor * 100)) + '%"></i></span></span></td>'
         + c5 + c6 + ovControls(x) + '</tr>';
@@ -428,8 +526,8 @@
     if (!shown) html = '<tr><td colspan="' + span + '" class="cs-empty">No players match this filter.</td></tr>';
     $('csBoardBody').innerHTML = html;
     $('csBoardFoot').textContent = dyn
-      ? 'Ranked by value over replacement (dynasty value), youth-aware via the Window column. A "last RB" flag marks the last starter-quality player at that position before its next tier. Tap a row to cross a player off.'
-      : 'Ranked by value over replacement, so a scarce elite TE or QB can still outrank a higher-scoring skill player. A "last RB" flag marks the last starter-quality player at that position before its next tier. Tap a row to cross a player off.';
+      ? 'Ranked by value over replacement (dynasty value), youth-aware via the Window column. Tap a row to cross a player off.'
+      : 'Ranked by value over replacement, so a scarce elite TE or QB can still outrank a higher-scoring skill player. Tap a row to cross a player off.';
   }
 
   function renderPos(dyn) {
@@ -698,11 +796,14 @@
       var b = e.target.closest('.cs-ovbtn'); if (!b) return;
       e.stopPropagation(); e.preventDefault();
       var id = b.getAttribute('data-id'), act = b.getAttribute('data-act');
-      if (act === 'up') boardBump(id, 1);
-      else if (act === 'down') boardBump(id, -1);
+      if (act === 'up') boardNudge(id, 1);
+      else if (act === 'down') boardNudge(id, -1);
       else if (act === 'pin') boardPin(id);
       else if (act === 'mute') boardMute(id);
+      else if (act === 'revert') boardRevert(id);
+      // 'drag' is handled by the pointer-drag reorder below.
     }, true);   // capture: run before the document row-click (cross-off) handler
+    if (boardPanel) setupDragReorder(boardPanel);
 
     // CSV export is a pro feature; non-premium users get the upgrade prompt.
     var csvBtn = $('csCsvBtn');

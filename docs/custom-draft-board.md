@@ -1,59 +1,61 @@
 # Custom Draft Board (personal ranking overrides)
 
-Status: cheat sheet, with server persistence. Pro feature. Draft Room
-integration and drag-reorder still pending.
+Status: cheat sheet, with server persistence and drag-reorder. Pro feature.
+Draft Room integration still pending.
 
 ## Goal
 
 Let a manager bend the model's board to their own view without throwing away
 the work the model already did. The board still loads fully ranked by value
-over replacement (VOR); the user layers light overrides on top: bump a player up
-or down a tier, pin a player to the top, or mute a player to the bottom. Their
-edits persist per league and, in the full version, follow them into the live
-Draft Room.
+over replacement (VOR); the user layers light overrides on top: drag a player
+to a new spot (or nudge one row at a time with the arrows), pin a player to the
+top, or mute a player to the bottom. Their edits persist per league and, in the
+full version, follow them into the live Draft Room.
 
 ## Principles
 
 1. Start from the model, never a blank slate. Zero-setup value on first open;
    overrides are optional tweaks.
-2. Overrides are intent, not absolute positions. We store "up 2 tiers" or
-   "muted", not "rank 14", so a weekly value refresh that re-ranks the pool keeps
-   the user's intent instead of pinning stale numbers.
-3. The board stays tier-organized and monotonic. Overrides move a player between
-   tiers rather than inserting them mid-list, so tier dividers never go
-   non-monotonic.
-4. Always reversible. A per-player reset and a whole-board "Reset to model".
+2. Overrides ride the model scale, not stale absolute numbers. We store a
+   fractional rank between two neighbours ("halfway between the players the model
+   ranks 13th and 14th"), not "rank 14". A weekly value refresh that re-ranks the
+   pool re-anchors those neighbours, so the moved player stays put relative to
+   them instead of pinning a stale integer.
+3. The board stays tier-organized and monotonic. A moved player adopts the tier
+   it settles into, so the cliff dividers never repeat or go non-monotonic.
+4. Always reversible. A per-player revert and a whole-board "Reset board".
 
 ## Override model
 
-Per player, at most one bucket plus a fine delta:
+Per player, exactly one of: a fractional rank, pinned, or muted.
 
-| Action    | Stored              | Effect                                             |
-|-----------|---------------------|----------------------------------------------------|
-| Bump up   | `d += 1`            | effective tier = clamp(modelTier - d, 1..maxTier)  |
-| Bump down | `d -= 1`            | effective tier = clamp(modelTier - d, 1..maxTier)  |
-| Pin       | `p = true`          | floats to a "Pinned" bucket above Tier 1           |
-| Mute      | `m = true`          | sinks to a "Muted" bucket below every tier         |
+| Action     | Stored          | Effect                                              |
+|------------|-----------------|-----------------------------------------------------|
+| Move/drag  | `r = <float>`   | sorts at `r`, set midway between the chosen neighbours |
+| Pin        | `p = true`      | floats to a "Pinned" bucket above Tier 1            |
+| Mute       | `m = true`      | sinks to a "Muted" bucket below every tier          |
 
 Pin and mute are terminal buckets and are mutually exclusive; taking one clears
-the other. Bumping up/down clears pin/mute and edits the fine delta.
+the other. Moving (drag or arrow) clears pin/mute and writes a fresh `r`.
 
-Storage shape (per player id): `{ d?: int, p?: true, m?: true }`. Empty entries
-are pruned so an untouched board stores nothing.
+Storage shape (per player id): `{ r?: number, p?: true, m?: true }`. Empty
+entries are pruned so an untouched board stores nothing.
 
 ## Ordering
 
-For each player compute a sort bucket:
+For each player compute a sort bucket and an effective rank:
 
-- pinned  -> `-1`
-- muted   -> `+Infinity`
-- else    -> `effectiveTier = clamp(modelTier - d, 1, maxTier)`
+- pinned  -> bucket `-1`
+- muted   -> bucket `+1`
+- else    -> bucket `0`, effective rank = `r` if moved else the model index
 
-Sort by `(bucket asc, modelRank asc)`. A bumped-up player joins the target
-tier at the bottom (their VOR is genuinely lower than the natives, so they sit
-last in that tier). Renumber the RK column to the resulting order. Tier
-dividers are driven by the bucket, so the sequence reads:
-`Pinned -> Tier 1 -> Tier 2 -> ... -> Muted`.
+Sort by `(bucket asc, effectiveRank asc, modelRank asc)`. Because a move writes
+`r` midway between the two neighbours it was dropped between, a drop (or a
+one-row arrow nudge) lands exactly there and never ties into place. Renumber the
+RK column to the resulting order, and give each moved row the tier of the
+model-ranked player above it so the sequence reads
+`Pinned -> Tier 1 -> Tier 2 -> ... -> Muted`. The name chip shows the net move
+(`▲N` / `▼N`) versus where the model had the player.
 
 ## Persistence (implemented)
 
@@ -74,7 +76,8 @@ premium-gated; a free viewer never loads or writes overrides.
 
 ## Reset semantics
 
-- Per player: an active override chip on the row clears that player.
+- Per player: a revert (↶) control appears on any overridden row and clears that
+  player back to its model spot.
 - Whole board: a "Reset board" control wipes the current view's overrides.
 
 ## Draft Room integration (full version, not in the prototype)
@@ -97,14 +100,12 @@ pro.
    pro-gated.
 2. [done] Server persistence per (owner, league, format); localStorage is now a
    cache in front of it.
-3. [next] Draft Room best-available reads the same overrides (the API and
+3. [done] Full drag-to-reorder (pointer-based, mouse + touch) plus one-row arrow
+   nudges, on the fractional-rank model so drops stay refresh-safe.
+4. [next] Draft Room best-available reads the same overrides (the API and
    `board_key` scheme are already in place; `DraftBoardCore` applies the same
    bucket/sort step after it ranks the pool).
-4. Optional: full drag-to-reorder, once the intent-based persistence across
-   model refreshes is proven.
 
 ## Open questions
 
-- Drag reorder later: map a dropped position back to an intent (nearest tier +
-  delta) rather than an absolute rank, to stay refresh-safe.
 - Sharing/exporting a personal board (CSV already exports the current order).
