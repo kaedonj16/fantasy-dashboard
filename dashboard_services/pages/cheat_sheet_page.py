@@ -297,7 +297,6 @@ _CHEAT_HTML = r"""
 <div class="cs-wrap">
   <header class="cs-top">
     <div>
-      <span class="cs-eyebrow">Draft &middot; Cheat Sheet</span>
       <h1 id="csTitle">Redraft Cheat Sheet</h1>
       <p class="cs-sub" id="csSub">Ranked by value over replacement for your league scoring and roster.</p>
       <a class="cs-backlink" id="csBack" href="/draft">&larr; Open in Draft Room</a>
