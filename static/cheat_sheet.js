@@ -263,8 +263,8 @@
       // Name first, then a chip carrying rank (overall + positional), tier, window.
       return '<div class="cs-drow' + (run ? ' run' : '') + '">'
         + '<span class="cs-dname">' + esc(x.name) + '</span>'
-        + '<span class="cs-tchip cs-pos-' + x.pos + '">#' + x.rk + ' &middot; ' + x.prk + ' &middot; Tier ' + x.dtier + win + '</span>'
         + (run ? '<span class="cs-runflag">last ' + x.pos + '</span>' : '')
+        + '<span class="cs-tchip cs-pos-' + x.pos + '">#' + x.rk + ' &middot; ' + x.prk + ' &middot; Tier ' + x.dtier + win + '</span>'
         + '</div>';
     }).join('');
     $('csDboard').innerHTML = dh || '<div class="cs-empty" style="padding:22px;">Board is empty.</div>';
