@@ -1733,9 +1733,34 @@
     } catch (e){ _simError('start draft', e); }
   }
   function startMock(){
+    var prev = state;
     _resetTransient();
     state = readSetup();
     state.owned = _setupOwned || defaultOwned();
+    // Editing a mock's setup should not wipe the board. When the pick numbering is
+    // unchanged (same teams / order / slot), carry over the picks already made
+    // that still fit the board and resume at the first empty slot - the same
+    // behavior manual mode already has. A Reset nulls state first, so a genuine
+    // fresh mock still begins empty.
+    if (prev && prev.picks && prev.teams === state.teams &&
+        prev.order === state.order && prev.slot === state.slot) {
+      var tot = (state.teams || 0) * (state.rounds || 0);
+      var carried = {};
+      Object.keys(prev.picks).forEach(function(pn){
+        var n = parseInt(pn, 10);
+        var pk = prev.picks[pn];
+        if (n >= 1 && n <= tot && pk) {
+          carried[n] = pk;
+          if (pk.id) drafted[String(pk.id)] = true;
+        }
+      });
+      if (Object.keys(carried).length) {
+        state.picks = carried;
+        var next = tot + 1;
+        for (var i = 1; i <= tot; i++){ if (!carried[i]){ next = i; break; } }
+        state.current = next;
+      }
+    }
     state.mode = 'mock';
     state.simStarted = false;
     sim = true; simPaused = false; simStarted = false;
@@ -4549,7 +4574,13 @@
     });
     if (!pool.length) return null;
     var p = pool[Math.min(k, pool.length) - 1];
-    return { value: Math.round(valOf(p)), proxy: p };
+    return { value: Math.max(0, Math.round(valOf(p))), proxy: p, pos: (p.position || '').toUpperCase() };
+  }
+  // Round.pick label for an overall pick number (e.g. 22 -> "2.10").
+  function pickLabel(pn){
+    var teams = state.teams || 12;
+    var r = Math.floor((pn - 1) / teams) + 1, p = (pn - 1) % teams + 1;
+    return r + '.' + (p < 10 ? '0' : '') + p;
   }
   function _parsePickNums(s){
     // Accepts overall pick numbers ("22") and round.pick ("2.10"), separated
@@ -4573,10 +4604,18 @@
   function drPickTradeOpen(){
     var m = document.getElementById('drModal');
     var msg = document.getElementById('drModalMsg');
+    // Quick-add chips for your own upcoming picks, so you don't have to type them.
+    var mine = upcomingOwnedPicks();
+    var chips = mine.length
+      ? '<div class="dr-pt-chips"><span class="dr-pt-chips-lbl">Add your picks</span>'
+        + mine.slice(0, 14).map(function(pn){ return '<button type="button" class="dr-pt-chip" data-pn="' + pn + '" data-side="give">' + pickLabel(pn) + '</button>'; }).join('')
+        + '</div>'
+      : '';
     msg.innerHTML = '<div class="dr-pt-title">Pick trade evaluator</div>'
-      + '<div class="dr-pt-sub">Overall picks ("22") or round.pick ("2.10"), separated by commas or spaces. Each pick is priced as the player likely on the board there (by ADP on this draft’s remaining pool).</div>'
+      + '<div class="dr-pt-sub">Enter picks as overall ("22") or round.pick ("2.10"), separated by commas or spaces. Each is priced as the player likely on the board there, by ADP on this draft’s remaining pool.</div>'
       + '<label class="dr-pt-lbl">You give</label>'
       + '<input id="drPtGive" class="dr-pt-input" autocomplete="off" placeholder="e.g. 14 or 1.07">'
+      + chips
       + '<label class="dr-pt-lbl">You get</label>'
       + '<input id="drPtGet" class="dr-pt-input" autocomplete="off" placeholder="e.g. 22, 27">'
       + '<div id="drPtResult" class="dr-pt-result"></div>';
@@ -4586,34 +4625,59 @@
     close.className = 'dr-btn'; close.textContent = 'Close';
     close.addEventListener('click', function(){ m.style.display = 'none'; });
     btns.appendChild(close);
-    function sideHtml(nums){
+
+    function sideRows(nums){
       var tot = 0;
       var rows = nums.map(function(pn){
         var v = pickNumValue(pn);
-        if (!v) return '<div class="dr-pt-row">#' + pn + ' - n/a</div>';
+        var lbl = pickLabel(pn);
+        if (!v) return '<div class="dr-pt-row"><span class="dr-pt-pk">' + lbl + '</span><span class="dr-pt-nm dr-pt-empty">board empty</span></div>';
         tot += v.value;
-        return '<div class="dr-pt-row">#' + pn + ' &asymp; <b>' + v.value + '</b>'
-          + ' <span class="dr-pt-proxy">(' + esc(v.proxy.name) + ')</span></div>';
+        return '<div class="dr-pt-row"><span class="dr-pt-pk">' + lbl + '</span>'
+          + (v.pos ? '<span class="dr-pt-pos dr-pt-pos-' + v.pos + '">' + esc(v.pos) + '</span>' : '')
+          + '<span class="dr-pt-nm">' + esc(v.proxy.name) + '</span>'
+          + '<b class="dr-pt-val">' + v.value + '</b></div>';
       }).join('');
       return { html: rows, tot: tot };
+    }
+    function bar(gt, rt){
+      var t = gt + rt; if (t <= 0) return '';
+      var gp = Math.round(gt / t * 100);
+      return '<div class="dr-pt-bar" title="Value split"><span class="dr-pt-bar-g" style="width:' + gp + '%"></span><span class="dr-pt-bar-r" style="width:' + (100 - gp) + '%"></span></div>';
     }
     function evalNow(){
       var give = _parsePickNums(document.getElementById('drPtGive').value);
       var get  = _parsePickNums(document.getElementById('drPtGet').value);
       var out = document.getElementById('drPtResult');
-      if (!give.length || !get.length){ out.innerHTML = ''; return; }
-      var g = sideHtml(give), r = sideHtml(get);
+      if (!give.length && !get.length){ out.innerHTML = ''; return; }
+      var g = sideRows(give), r = sideRows(get);
       var diff = r.tot - g.tot;
-      var even = Math.abs(diff) <= Math.max(20, g.tot * 0.05);
-      var verdict = even ? 'Even trade'
-        : (diff > 0 ? 'You win by ~' + diff : 'You lose by ~' + (-diff));
-      var col = even ? 'var(--text-muted)' : (diff > 0 ? '#22c55e' : '#ef4444');
+      var base = Math.max(1, g.tot, r.tot);
+      var apct = Math.abs(diff) / base;
+      var label, col;
+      if (apct < 0.05){ label = 'Fair trade'; col = 'var(--text-muted)'; }
+      else {
+        var who = diff > 0 ? 'you' : 'them';
+        label = (apct < 0.15 ? 'Slight edge to ' : (apct < 0.30 ? 'Good value for ' : 'Clear win for ')) + who;
+        col = diff > 0 ? '#22c55e' : '#ef4444';
+      }
+      var detail = diff === 0 ? '' : ' <span class="dr-pt-vpct">' + (diff > 0 ? '+' : '-') + Math.round(apct * 100) + '%, ' + (diff > 0 ? '+' : '-') + Math.abs(diff) + ' value</span>';
       out.innerHTML = '<div class="dr-pt-cols">'
-        + '<div><div class="dr-pt-side-h">Give (' + g.tot + ')</div>' + g.html + '</div>'
-        + '<div><div class="dr-pt-side-h">Get (' + r.tot + ')</div>' + r.html + '</div>'
+        + '<div><div class="dr-pt-side-h">You give (' + g.tot + ')</div>' + (g.html || '<div class="dr-pt-row dr-pt-empty">none</div>') + '</div>'
+        + '<div><div class="dr-pt-side-h">You get (' + r.tot + ')</div>' + (r.html || '<div class="dr-pt-row dr-pt-empty">none</div>') + '</div>'
         + '</div>'
-        + '<div class="dr-pt-verdict" style="color:' + col + '">' + verdict + '</div>';
+        + bar(g.tot, r.tot)
+        + '<div class="dr-pt-verdict" style="color:' + col + '">' + label + detail + '</div>';
     }
+    // Quick-add chips append their pick to the "You give" box.
+    msg.querySelectorAll('.dr-pt-chip').forEach(function(c){
+      c.addEventListener('click', function(){
+        var inp = document.getElementById('drPtGive');
+        var cur = inp.value.trim().replace(/[,\s]+$/, '');
+        inp.value = cur ? (cur + ', ' + pickLabel(this.getAttribute('data-pn'))) : pickLabel(this.getAttribute('data-pn'));
+        evalNow();
+      });
+    });
     msg.querySelector('#drPtGive').addEventListener('input', evalNow);
     msg.querySelector('#drPtGet').addEventListener('input', evalNow);
     m.style.display = 'flex';
