@@ -8888,15 +8888,17 @@ function wkActivateTab(tab) {{
 
 
 def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dict = None):
-    from utils.utils import pick_proj_variant
     from statistics import median
+    from utils.fantasy_scoring import projection_points
+    _players_for_proj = load_players_index() or {}
 
-    variant = pick_proj_variant(raw_scoring_settings or {})
-
-    def _flat(multi: dict) -> Optional[float]:
+    def _flat(pid: str, multi: dict) -> Optional[float]:
         """Extract the chosen variant's value from a multi-variant player entry."""
         if isinstance(multi, dict):
-            return multi.get(variant) or multi.get("ppr")
+            return projection_points(
+                multi, raw_scoring_settings or {},
+                (_players_for_proj.get(str(pid)) or {}).get("pos", ""),
+            )
         if isinstance(multi, (int, float)):
             return float(multi)  # legacy flat file
         return None
@@ -8907,7 +8909,7 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
         multi_week = load_week_projection(season, w) or {}
         flat = {}
         for pid, val in multi_week.items():
-            v = _flat(val)
+            v = _flat(pid, val)
             if v is not None:
                 flat[pid] = v
         raw[w] = flat
@@ -8940,10 +8942,11 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
                 continue
             _rec_pts = _EST_REC[_pos]
             _non_rec = max(_ppg - _rec_pts, 0)
-            if variant in ("ppr", "tep", "6pt_ppr", "6pt_tep"):
+            _rec_rate = float((raw_scoring_settings or {}).get("rec", 1.0))
+            if _rec_rate >= 0.75:
                 _v = _ppg
-            elif variant in ("half_ppr", "6pt_half"):
-                _v = _non_rec + _rec_pts * 0.5
+            elif _rec_rate > 0:
+                _v = _non_rec + _rec_pts * _rec_rate
             else:
                 _v = _non_rec
             if _v > 0:
@@ -11110,6 +11113,7 @@ def api_waiver_candidates():
 
     result = []
     _shown = candidates[:30]
+    from utils.model_confidence import confidence_from_inputs
     # Badge trend relative to the shown set so the (trend-sorted) list doesn't
     # read "Rising Fast" on every row.
     _fast_thr, _up_thr = _adaptive_trend_thresholds([c.get("rank_change_7d") for c in _shown])
@@ -11212,6 +11216,15 @@ def api_waiver_candidates():
             bscore = waiver_breakout.get(c["player_id"], 0.0)
             ut = usage_trends.get(c["player_id"]) or {}
             _flo, _fhi = _faab_band(c)
+            _confidence_inputs = sum([
+                c.get("ros_ppg") is not None,
+                c.get("usage_delta") is not None,
+                c.get("schedule_ease_rank") is not None,
+                c.get("age") is not None,
+                bool(c.get("team")),
+                c.get("value") is not None,
+            ])
+            _confidence = confidence_from_inputs(_confidence_inputs, 6)
             result.append({
                 "player_id": c["player_id"],
                 "name": c["name"],
@@ -11237,6 +11250,7 @@ def api_waiver_candidates():
                 "faab_low": _flo,
                 "faab_high": _fhi,
                 "drop": _drop_for(c),
+                "confidence": _confidence,
             })
         except Exception:
             logger.exception("[waiver-candidates] result row failed for %s", c.get("player_id"))
@@ -11686,8 +11700,8 @@ def api_start_sit_options():
         )
 
     # ── Weekly projections - SAME source as the player modal & matchups page ───
-    # build_projections_by_week() returns Tank01 weekly values (variant-adjusted,
-    # with per-player median outlier correction) and FantasyPros season PPG as a
+    # build_projections_by_week() returns Sleeper weekly stat lines scored with
+    # the league's exact settings and FantasyPros season PPG as a
     # fallback for players with no weekly data. Reuse the cached ctx bundle when
     # present so start/sit shows the exact number the modal/matchups show.
     proj_by_week = ctx.get("proj_by_week")
@@ -11760,7 +11774,7 @@ def api_start_sit_options():
         s_ppg      = season_ppg.get(pid, 0.0)
         recent_ppg = recent_ppg_map.get(pid, 0.0)
         # Projection = exact value the player modal / matchups page show for this
-        # week (Tank01 weekly w/ median correction → FantasyPros season PPG).
+        # week (Sleeper weekly → FantasyPros season PPG fallback).
         proj_pts   = _lookup_proj(pid)
         if proj_pts <= 0 and s_ppg > 0:
             proj_pts = round(s_ppg, 1)
@@ -15276,7 +15290,9 @@ def _playoff_sos_for(season: int, team: str, pos: str):
                 for lk in week_lookups:
                     opp = lk.get(t)
                     if opp:
-                        eases.append(_matchup_cell_ease(rank_map.get(opp), total, info.get(opp, {})))
+                        ease = _matchup_cell_ease(rank_map.get(opp), total, info.get(opp, {}))
+                        if ease is not None:
+                            eases.append(ease)
                 if eases:
                     team_ease[t] = sum(eases) / len(eases)
             ranked = sorted(team_ease.items(), key=lambda x: -x[1])
@@ -15337,7 +15353,9 @@ def _compute_schedule_grid(season: int, pids, weeks):
                 if not game:
                     continue
                 r = rank_map.get(game["opp"])
-                eases.append(_matchup_cell_ease(r, total, info.get(game["opp"], {})))
+                ease = _matchup_cell_ease(r, total, info.get(game["opp"], {}))
+                if ease is not None:
+                    eases.append(ease)
             if eases:
                 team_ease[t] = sum(eases) / len(eases)
         ranked = sorted(team_ease.items(), key=lambda x: -x[1])
@@ -16273,7 +16291,7 @@ def _build_next_week_ctx(
     if not matchups:
         return None
 
-    # Next-week projections (Tank01 publishes upcoming weeks ahead of kickoff).
+    # Next-week projections from Sleeper's weekly projection feed.
     try:
         bundles = build_projections_by_week(int(season), next_week, ctx.get("raw_scoring_settings"))
         proj_by_pid = (bundles.get(next_week) or {}).get("projections") or {}
@@ -21592,7 +21610,7 @@ def api_player_game_logs(player_id: str):
                     if _fv > 0.5:
                         _proj_vals[_w] = round(_fv, 2)
 
-                # FP PPG fallback if no Tank01 weekly files
+                # FP PPG fallback if no Sleeper weekly files
                 if not _proj_vals:
                     _fp_path = os.path.join("cache", f"fp_projections_{_upcoming}_ppr.json")
                     try:
@@ -22818,6 +22836,7 @@ from utils.pick_score import ps_tier_of as _ps_tier_of  # noqa: E402
 
 from utils.pick_score import compute_pick_score as _compute_pick_score  # noqa: E402
 from utils.pick_score import starter_counts as _ps_starter_counts  # noqa: E402
+from utils.pick_score import empirical_slot_allocation as _ps_empirical_slots  # noqa: E402
 
 
 # ── Draft-Room-aligned TEAM grade ────────────────────────────────────────────
@@ -23168,8 +23187,10 @@ def api_draft_grades():
                 "SUPER_FLEX": "SF", "SFLEX": "SF",
             }
             _rp_counts = {"QB": 0, "SF": 0, "RB": 0, "WR": 0, "TE": 0, "FLEX": 0}
+            _rp_slots = []
             try:
-                for _s in ((get_league(platform, league_id, season) or {}).get("roster_positions") or []):
+                _rp_slots = ((get_league(platform, league_id, season) or {}).get("roster_positions") or [])
+                for _s in _rp_slots:
                     _k = _rp_norm.get(str(_s).upper())
                     if _k:
                         _rp_counts[_k] += 1
@@ -23196,12 +23217,21 @@ def api_draft_grades():
                     if _ct is not None:
                         _ck = f"{_pp}|{_ct}"
                         tier_remaining[_ck] = tier_remaining.get(_ck, 0) + 1
+            # Let the actual player pool decide how FLEX/SF are occupied;
+            # this supersedes the fixed half-QB/half-RB/half-WR heuristic.
+            _allocation_pool = [
+                {"position": _d.get("position"), "value": _eff_val(_pid, _d)}
+                for _pid, _d in val_by_id.items()
+                if _d.get("position") in CORE_POS
+                and (_draft_type != "rookie" or not eligible_sids or _pid in eligible_sids)
+            ]
+            _empirical = _ps_empirical_slots(_allocation_pool, _rp_slots, _num_teams)
             for _pp, _arr in _by_pos.items():
                 _arr.sort(reverse=True)
                 if not _arr:
                     repl_by_pos[_pp] = 0
                     continue
-                _idx = int(round(_num_teams * _starters.get(_pp, 1))) - 1
+                _idx = int(round(_num_teams * _empirical.get(_pp, _starters.get(_pp, 1)))) - 1
                 _idx = max(0, min(_idx, len(_arr) - 1))
                 repl_by_pos[_pp] = _arr[_idx]
             ps_pool_sorted.sort(key=lambda x: x[0], reverse=True)

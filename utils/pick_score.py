@@ -73,6 +73,51 @@ def starter_counts(counts: dict) -> dict:
     }
 
 
+def empirical_slot_allocation(players: list, slots: list, num_teams: int = 12,
+                              metric: str = "value") -> dict:
+    """Infer replacement demand by filling the league's actual starting field.
+
+    FLEX/SF shares are outcomes, not fixed 50/50 assumptions: the best available
+    eligible player fills each slot. Scarce dedicated slots are filled before
+    flexible ones, and the result is returned as starters per fantasy team.
+    """
+    aliases = {
+        "SUPER_FLEX": "SF", "SUPERFLEX": "SF", "SFLEX": "SF", "OP": "SF",
+        "QB_RB_WR_TE": "SF", "Q_RB_WR_TE": "SF",
+        "WRRB_FLEX": "FLEX", "REC_FLEX": "FLEX", "WRRBTE_FLEX": "FLEX",
+        "RB_WR_FLEX": "FLEX", "RB_WR_TE": "FLEX",
+    }
+    normalized = [aliases.get(str(slot).upper(), str(slot).upper()) for slot in (slots or [])]
+    if not normalized:
+        normalized = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"]
+    eligibility = {
+        "QB": {"QB"}, "RB": {"RB"}, "WR": {"WR"}, "TE": {"TE"},
+        "FLEX": {"RB", "WR", "TE"}, "SF": {"QB", "RB", "WR", "TE"},
+    }
+    pool = []
+    for i, player in enumerate(players or []):
+        pos = str(player.get("position") or player.get("pos") or "").upper()
+        try:
+            score = float(player.get(metric) or 0)
+        except (TypeError, ValueError):
+            continue
+        if pos in {"QB", "RB", "WR", "TE"}:
+            pool.append((score, i, pos))
+    # Dedicated slots first; SF last because it has the broadest eligibility.
+    slot_order = sorted(normalized * max(1, int(num_teams or 1)),
+                        key=lambda s: len(eligibility.get(s, set())))
+    used, selected = set(), {p: 0 for p in ("QB", "RB", "WR", "TE")}
+    for slot in slot_order:
+        allowed = eligibility.get(slot, set())
+        options = (item for item in pool if item[1] not in used and item[2] in allowed)
+        best = max(options, default=None)
+        if best is not None:
+            used.add(best[1])
+            selected[best[2]] += 1
+    teams = max(1, int(num_teams or 1))
+    return {pos: selected[pos] / teams for pos in selected}
+
+
 def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
                        avg_pick, pick_no, max_val, draft_type, is_sf,
                        need_raw, qb_count, total_picks=None, num_teams=None,
