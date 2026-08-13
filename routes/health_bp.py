@@ -9,6 +9,7 @@ extensions.limiter + utils monitors, no app.py internals.
 """
 from __future__ import annotations
 
+import hmac
 import os
 
 from flask import Blueprint, jsonify, request
@@ -17,12 +18,31 @@ from extensions import limiter
 
 health_bp = Blueprint("health", __name__)
 
+_DEFAULT_LIMIT = 100
+_MAX_LIMIT = 500
+
+
+@health_bp.after_request
+def _prevent_monitoring_cache(response):
+    """Monitoring payloads are process-specific and may contain error samples."""
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def _query_limit() -> int:
+    """Return a safe, bounded result limit from the current query string."""
+    try:
+        requested = int(request.args.get("limit", _DEFAULT_LIMIT))
+    except (TypeError, ValueError):
+        return _DEFAULT_LIMIT
+    return min(max(requested, 1), _MAX_LIMIT)
+
 
 def _forbidden_unless_admin():
     """Return a 403 response tuple when the admin secret is missing/wrong, else None."""
     secret = request.headers.get("X-Admin-Secret", "")
     admin_secret = os.environ.get("ADMIN_SECRET", "")
-    if not admin_secret or secret != admin_secret:
+    if not admin_secret or not hmac.compare_digest(secret, admin_secret):
         return jsonify({"error": "Forbidden"}), 403
     return None
 
@@ -39,11 +59,7 @@ def api_health_errors():
     if request.args.get("reset") == "1":
         error_monitor.reset()
         return jsonify({"ok": True, "reset": True})
-    try:
-        limit = int(request.args.get("limit") or 100)
-    except ValueError:
-        limit = 100
-    return jsonify(error_monitor.snapshot(limit=limit))
+    return jsonify(error_monitor.snapshot(limit=_query_limit()))
 
 
 @health_bp.route("/api/health/timing")
@@ -58,8 +74,9 @@ def api_health_timing():
     if request.args.get("reset") == "1":
         perf_monitor.reset()
         return jsonify({"ok": True, "reset": True})
-    try:
-        limit = int(request.args.get("limit") or 100)
-    except ValueError:
-        limit = 100
-    return jsonify(perf_monitor.snapshot(limit=limit, sort=request.args.get("sort", "total")))
+    return jsonify(
+        perf_monitor.snapshot(
+            limit=_query_limit(),
+            sort=request.args.get("sort", "total"),
+        )
+    )
