@@ -963,7 +963,7 @@ _DRAFT_ROOM_HTML = r"""
     .dr-status-pills { gap: 4px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; min-width: 0; flex: 1; }
     .dr-status-pills::-webkit-scrollbar { display: none; }
     .dr-ss-stat { font-size: 13px; }
-    .dr-pill { font-size: 10px; padding: 2px 7px; }
+    .dr-pill, .dr-roster-src-tag, .dr-cap-pill { font-size: 10px; padding: 2px 7px; }
     .dr-pick-timer { font-size: 12px; min-width: 32px; padding: 2px 6px; }
     .dr-progress, .dr-save { font-size: 10px; white-space: nowrap; }
     /* Row 2: buttons scroll */
