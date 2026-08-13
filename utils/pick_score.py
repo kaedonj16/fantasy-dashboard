@@ -76,7 +76,7 @@ def starter_counts(counts: dict) -> dict:
 def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
                        avg_pick, pick_no, max_val, draft_type, is_sf,
                        need_raw, qb_count, total_picks=None, num_teams=None,
-                       ppg_norm=None, ppr=1.0, tep=0.0, is_tier_cliff=False,
+                       ppg_norm=None, ppr=1.0, tep=0.0, pass_td=4.0, is_tier_cliff=False,
                        survival_adj=0.0, handcuff=False, weights=None,
                        depth_slope=None, depth_floor=None) -> int:
     """Mirror of static/pick_score.js `computePickScore`; the two are pinned
@@ -221,6 +221,8 @@ def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
     # rewards. Mirrors the Draft Room's scoringCfg() multipliers exactly.
     if tep and tep > 0 and pos == "TE":
         s *= (1 + 0.12 * tep)
+    if pos == "QB" and pass_td is not None and float(pass_td) >= 6:
+        s *= 1.06
     if pos in ("WR", "TE"):
         if ppr is not None and ppr >= 1:
             s *= 1.02

@@ -55,6 +55,7 @@ def build_draft_room_body(
     num_teams: Optional[int] = None,
     is_superflex: bool = False,
     roster_positions: Optional[list] = None,
+    scoring: Optional[dict] = None,
     viewer_user_id: Optional[str] = None,
     num_rounds_rookie: Optional[int] = None,
     num_rounds_startup: Optional[int] = None,
@@ -84,6 +85,7 @@ def build_draft_room_body(
         "numTeams": int(num_teams) if num_teams else None,
         "isSuperflex": bool(is_superflex),
         "rosterPositions": list(roster_positions) if roster_positions else None,
+        "scoring": scoring or None,
         "viewerUserId": str(viewer_user_id) if viewer_user_id else "",
         "numRoundsRookie":  int(num_rounds_rookie)  if num_rounds_rookie  else None,
         "numRoundsStartup": int(num_rounds_startup) if num_rounds_startup else None,
@@ -176,6 +178,12 @@ _DRAFT_ROOM_HTML = r"""
               <option value="0" selected>None</option>
               <option value="0.5">+0.5 PPR</option>
               <option value="1">+1.0 PPR</option>
+            </select>
+          </div>
+          <div class="dr-field"><span>Passing TDs</span>
+            <select id="drPassTd" aria-label="Points per passing touchdown" title="Adjusts quarterback recommendations and pick grades">
+              <option value="4" selected>4 points</option>
+              <option value="6">6 points</option>
             </select>
           </div>
         </div>
@@ -533,8 +541,12 @@ _DRAFT_ROOM_HTML = r"""
   .dr-onclock b { font-size: 15px; font-weight: 800; color: var(--text); white-space: nowrap; }
   .dr-onclock.dr-onclock-you { background: color-mix(in srgb, var(--win) 10%, transparent); border-color: color-mix(in srgb, var(--win) 40%, transparent); }
   .dr-onclock.dr-onclock-you b { color: var(--win); }
-  .dr-pill { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px;
-    background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent,#38bdf8); white-space: nowrap; }
+  /* Keep every compact status/source/pick label on the same pill foundation. */
+  .dr-pill, .dr-roster-src-tag, .dr-cap-pill {
+    display: inline-flex; align-items: center; font-size: 12px; font-weight: 700; line-height: normal;
+    padding: 3px 9px; border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent,#38bdf8); white-space: nowrap;
+  }
   .dr-pill-you { background: color-mix(in srgb, var(--win) 16%, transparent); color: var(--win); }
   .dr-pill-live { background: color-mix(in srgb, var(--loss) 16%, transparent); color: var(--loss); animation: drPulse 1.6s ease-in-out infinite; }
   .dr-pill-upcoming { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
@@ -954,7 +966,7 @@ _DRAFT_ROOM_HTML = r"""
     .dr-status-pills { gap: 4px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; min-width: 0; flex: 1; }
     .dr-status-pills::-webkit-scrollbar { display: none; }
     .dr-ss-stat { font-size: 13px; }
-    .dr-pill { font-size: 10px; padding: 2px 7px; }
+    .dr-pill, .dr-roster-src-tag, .dr-cap-pill { font-size: 10px; padding: 2px 7px; }
     .dr-pick-timer { font-size: 12px; min-width: 32px; padding: 2px 6px; }
     .dr-progress, .dr-save { font-size: 10px; white-space: nowrap; }
     /* Row 2: buttons scroll */
@@ -1058,9 +1070,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-step-val { font-size:14px; font-weight:800; color:var(--text); min-width:18px; text-align:center; }
   .dr-step-val-ro { font-size:14px; font-weight:800; color:var(--text-muted); min-width:18px; text-align:center; }
   .dr-roster-src { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
-  .dr-roster-src-tag { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.04em;
-    padding:2px 8px; border-radius:999px; background:color-mix(in srgb, var(--accent) 14%, transparent); color:var(--accent,#38bdf8); }
-  .dr-roster-src-custom { background:rgba(168,85,247,.14); color:#a855f7; }
+  .dr-roster-src-tag { text-transform:none; letter-spacing:normal; }
   .dr-roster-src-btn { font-size:11px; font-weight:700; color:var(--text-muted); background:none; border:1px solid var(--border);
     border-radius:6px; padding:2px 9px; cursor:pointer; line-height:1.6; }
   .dr-roster-src-btn:hover { color:var(--accent,#38bdf8); border-color:var(--accent,#38bdf8); }
@@ -1079,9 +1089,7 @@ _DRAFT_ROOM_HTML = r"""
     letter-spacing:.02em; }
   .dr-cap-rpicks { flex:1; min-width:0; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
   .dr-cap-none { font-size:11.5px; color:var(--text-muted); opacity:.6; }
-  .dr-cap-pill { display:inline-flex; align-items:center; gap:3px; font-size:12px; font-weight:700;
-    padding:4px 9px; border-radius:999px; background:color-mix(in srgb, var(--accent) 12%, transparent); color:var(--text);
-    cursor:pointer; transition:background .12s, color .12s; user-select:none; }
+  .dr-cap-pill { gap:3px; cursor:pointer; transition:background .12s, color .12s; user-select:none; }
   .dr-cap-pill:hover { background:var(--loss); color:#fff; }
   .dr-cap-pill-x { font-style:normal; font-size:13px; line-height:1; opacity:0; width:0; overflow:hidden;
     transition:opacity .12s, width .12s; }

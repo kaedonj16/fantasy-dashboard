@@ -63,6 +63,7 @@ def _build_cases():
             "ppgNorm": rng.choice([None, 0.0, 0.3, 0.7, 1.0]),
             "ppr": rng.choice([0.0, 0.5, 1.0]),
             "tep": rng.choice([0.0, 0.5, 1.0]),
+            "passTd": rng.choice([4.0, 6.0]),
             "isTierCliff": rng.choice([True, False]),
         }
         cases.append(c)
@@ -76,7 +77,7 @@ def _py_score(c):
         pick_no=c["pickNo"], max_val=c["maxVal"], draft_type=c["draftType"],
         is_sf=c["isSf"], need_raw=c["needRaw"], qb_count=c["qbCount"],
         total_picks=c["totalPicks"], num_teams=c["numTeams"], ppg_norm=c["ppgNorm"],
-        ppr=c["ppr"], tep=c["tep"], is_tier_cliff=c["isTierCliff"],
+        ppr=c["ppr"], tep=c["tep"], pass_td=c["passTd"], is_tier_cliff=c["isTierCliff"],
     )
 
 

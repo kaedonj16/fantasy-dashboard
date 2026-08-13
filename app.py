@@ -23056,14 +23056,15 @@ def api_draft_grades():
         adp_ps_by_id: dict[str, float] = {}
         # Tier-cliff lookup: (pos|tier) -> count still on the board after the draft.
         tier_remaining: dict[str, int] = {}
-        # League scoring (PPR / TE-premium) for the format multipliers; defaults
-        # to full PPR / no TEP, matching the Draft Room's setup defaults.
-        _ppr, _tep = 1.0, 0.0
+        # League scoring format multipliers; defaults match Draft Room setup.
+        _ppr, _tep, _pass_td = 1.0, 0.0, 4.0
         try:
             _lg_sc = (get_league(platform, league_id, season) or {}).get("scoring_settings") or {}
             if _lg_sc.get("rec") is not None:
                 _ppr = float(_lg_sc.get("rec") or 0)
             _tep = float(_lg_sc.get("bonus_rec_te") or 0)
+            if _lg_sc.get("pass_td") is not None:
+                _pass_td = float(_lg_sc.get("pass_td") or 0)
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
         try:
@@ -23444,7 +23445,7 @@ def api_draft_grades():
                         qb_count=ps_team_counts[rid].get("QB", 0),
                         total_picks=_num_teams * _draft_rounds,
                         num_teams=_num_teams, ppg_norm=_ppg_n,
-                        ppr=_ppr, tep=_tep, is_tier_cliff=_is_cliff,
+                        ppr=_ppr, tep=_tep, pass_td=_pass_td, is_tier_cliff=_is_cliff,
                     )
 
             picks_by_roster[rid].append({
@@ -23506,6 +23507,17 @@ def api_draft_grades():
             _dr_slots.extend([_s] * _dr_counts[_s])
         _dr_league_ppg = [v for v in ppg_by_id.values() if v is not None]
         _dr_league_val = [v for (v, _pid) in ps_pool_sorted]
+        _dr_league_players = []
+        for _pid, _d in val_by_id.items():
+            _pos = str(_d.get("position") or "").upper()
+            if _pos not in {"QB", "RB", "WR", "TE"}:
+                continue
+            _val = (float(redraft_val_by_id.get(_pid, 0) or 0)
+                    if _draft_type == "redraft"
+                    else float(_d.get("sf_value" if is_sf else "value") or 0))
+            _dr_league_players.append({
+                "pos": _pos, "ppg": ppg_by_id.get(_pid), "val": _val,
+            })
         _dr_targets = ps_targets or {"QB": 1.7, "RB": 5.45, "WR": 5.8, "TE": 2.05}
         _dr_vkey = "sf_value" if is_sf else "value"
 
@@ -23552,6 +23564,7 @@ def api_draft_grades():
                     _picks_info, slots=_dr_slots, targets=_dr_targets,
                     num_teams=_num_teams, draft_type=_draft_type,
                     league_ppg_list=_dr_league_ppg, league_val_list=_dr_league_val,
+                    league_players=_dr_league_players,
                 )
 
             results.append({

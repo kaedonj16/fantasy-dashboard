@@ -32,7 +32,7 @@
 
   // o: { pos, value, vor, tier, age, rankChange7d, avgPick, pickNo, maxVal,
   //      draftType, isSf, needRaw, qbCount, totalPicks, numTeams, ppgNorm,
-  //      ppr, tep, isTierCliff, survivalAdj, handcuff }
+  //      ppr, tep, passTd, isTierCliff, survivalAdj, handcuff }
   // Returns an integer 0-100.
   function computePickScore(o) {
     var pos = (o.pos || '').toUpperCase();
@@ -48,6 +48,7 @@
     var tier = o.tier;
     var ppr = o.ppr != null ? +o.ppr : 1.0;
     var tep = o.tep != null ? +o.tep : 0.0;
+    var passTd = o.passTd != null ? +o.passTd : 4.0;
 
     var dbValueNorm = (maxVal && maxVal > 0) ? clamp01(value / maxVal) : 0;
     var valueNorm;
@@ -135,6 +136,10 @@
     if (o.handcuff) s = Math.min(1, s + 0.15);
 
     if (tep && tep > 0 && pos === 'TE') s *= (1 + 0.12 * tep);
+    // Six-point passing TDs raise the weekly ceiling and replacement advantage
+    // of quarterbacks. Keep this modest in 1QB and let the existing SF/VOR logic
+    // handle format scarcity rather than double-counting it here.
+    if (pos === 'QB' && passTd >= 6) s *= 1.06;
     if (pos === 'WR' || pos === 'TE') { if (ppr != null && ppr >= 1) s *= 1.02; }
     else if (pos === 'RB' && ppr != null && ppr <= 0) s *= 1.03;
 
