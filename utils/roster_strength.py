@@ -12,6 +12,20 @@ from __future__ import annotations
 
 from typing import Dict, List
 
+from utils.model_confidence import confidence_from_inputs
+
+
+_FLEX_SLOT_NAMES = {"FLEX", "RB_WR_FLEX", "RB_WR_TE", "WR_RB", "WR_TE", "RB_WR"}
+_SUPERFLEX_SLOT_NAMES = {
+    "SUPER_FLEX", "SUPERFLEX", "SUPER FLEX", "SFLEX", "OP",
+    "QB_RB_WR_TE", "Q_RB_WR_TE",
+}
+
+
+def _slot_total(slot_counts: Dict[str, int], names: set[str]) -> int:
+    """Count equivalent lineup slots across provider-specific names."""
+    return sum(int(slot_counts.get(name) or 0) for name in names)
+
 
 def weighted_pos_strength(vals: List[float], pos: str, slot_counts: Dict[str, int]) -> float:
     """
@@ -29,10 +43,18 @@ def weighted_pos_strength(vals: List[float], pos: str, slot_counts: Dict[str, in
 
     vals = sorted((float(v or 0.0) for v in vals), reverse=True)
 
-    flex_slots = int(slot_counts.get("FLEX") or 0)
+    # Sleeper, ESPN, and Yahoo do not use one canonical name for FLEX/SF. A
+    # strength formula must read all of them or the same roster is graded
+    # differently depending on which platform supplied its settings.
+    flex_slots = _slot_total(slot_counts, _FLEX_SLOT_NAMES)
+    superflex_slots = _slot_total(slot_counts, _SUPERFLEX_SLOT_NAMES)
 
     if pos == "QB":
-        weights = [1.0, 0.20]
+        qb_starters = max(1, int(slot_counts.get("QB") or 0) + superflex_slots)
+        # In 1QB, QB2 is bench insurance. In superflex/2QB, QB2 is a weekly
+        # starter and must carry nearly the same weight as QB1; the old fixed
+        # 0.20 weight materially overrated teams with one elite QB and no QB2.
+        weights = [1.0] + [0.90] * (qb_starters - 1) + [0.20]
 
     elif pos == "RB":
         # RB1/RB2 matter most, then some flex/depth credit
@@ -67,6 +89,75 @@ def weighted_pos_strength(vals: List[float], pos: str, slot_counts: Dict[str, in
     return sum(v * w for v, w in zip(used, weights)) / denom
 
 
+# Holdout-oriented composite: starter utility is the primary outcome, while
+# depth and resilience remain independently visible instead of being hidden in
+# one hand-tuned average. Keep these centralized for future backtest promotion.
+ROSTER_COMPONENT_WEIGHTS = {"starter": 0.62, "depth": 0.23, "resilience": 0.15}
+
+
+def fit_roster_component_weights(samples: list, step: float = 0.05) -> dict:
+    """Fit non-negative component weights against realized roster outcomes.
+
+    ``samples`` contain starter/depth/resilience (all normalized to comparable
+    scales) plus ``outcome``. A deterministic simplex search is intentionally
+    dependency-free so seasonal calibration can run in the existing jobs.
+    """
+    if not samples:
+        return dict(ROSTER_COMPONENT_WEIGHTS)
+    units = max(1, round(1.0 / max(0.01, float(step))))
+    best = None
+    for starter_units in range(units + 1):
+        for depth_units in range(units - starter_units + 1):
+            resilience_units = units - starter_units - depth_units
+            weights = (starter_units / units, depth_units / units, resilience_units / units)
+            error = 0.0
+            for row in samples:
+                pred = (weights[0] * float(row.get("starter") or 0)
+                        + weights[1] * float(row.get("depth") or 0)
+                        + weights[2] * float(row.get("resilience") or 0))
+                error += (pred - float(row.get("outcome") or 0)) ** 2
+            candidate = (error / len(samples), weights)
+            if best is None or candidate < best:
+                best = candidate
+    w = best[1]
+    return {"starter": w[0], "depth": w[1], "resilience": w[2],
+            "mse": round(best[0], 6), "samples": len(samples)}
+
+
+def positional_strength_profile(vals: List[float], pos: str,
+                                slot_counts: Dict[str, int]) -> dict:
+    """Starter, bench and top-player-loss profile for one position group."""
+    clean = sorted((float(v or 0) for v in (vals or [])), reverse=True)
+    if not clean:
+        return {"starter": 0.0, "depth": 0.0, "resilience": 0.0,
+                "fragility": 1.0, "composite": 0.0,
+                "confidence": confidence_from_inputs(0, 1)}
+    flex = _slot_total(slot_counts or {}, _FLEX_SLOT_NAMES)
+    sf = _slot_total(slot_counts or {}, _SUPERFLEX_SLOT_NAMES)
+    dedicated = max(1, int((slot_counts or {}).get(pos) or (2 if pos in {"RB", "WR"} else 1)))
+    if pos == "QB":
+        starters = dedicated + sf
+    elif pos in {"RB", "WR"}:
+        starters = dedicated + flex // 2
+    else:
+        starters = dedicated
+    starter_vals = clean[:starters]
+    depth_vals = clean[starters:starters + max(1, starters)]
+    starter = sum(starter_vals) / starters  # missing required starters count as zero
+    depth = sum(depth_vals) / len(depth_vals) if depth_vals else 0.0
+    without_top = clean[1:starters + 1]
+    replacement = sum(without_top) / starters if without_top else 0.0
+    resilience = min(1.0, replacement / starter) if starter > 0 else 0.0
+    fragility = 1.0 - resilience
+    # Resilience is converted to the same value scale before blending.
+    composite = (ROSTER_COMPONENT_WEIGHTS["starter"] * starter
+                 + ROSTER_COMPONENT_WEIGHTS["depth"] * depth
+                 + ROSTER_COMPONENT_WEIGHTS["resilience"] * starter * resilience)
+    return {"starter": starter, "depth": depth, "resilience": resilience,
+            "fragility": fragility, "composite": composite,
+            "confidence": confidence_from_inputs(len(clean), starters * 2)}
+
+
 # ── Starter-caliber value thresholds ──────────────────────────────────────────
 # The value at/above which a player is a "pure starter" at each position, plus
 # the number of that position a team is expected to start. Single source of
@@ -81,11 +172,9 @@ def weighted_pos_strength(vals: List[float], pos: str, slot_counts: Dict[str, in
 STARTER_THRESHOLD = {"QB": 500, "RB": 350, "WR": 350, "TE": 200}
 DEPTH_FLOOR = {"QB": 1, "RB": 2, "WR": 3, "TE": 1}
 
-_FLEX_SLOT_NAMES = {"FLEX", "RB_WR_FLEX", "RB_WR_TE", "WR_RB", "WR_TE", "RB_WR"}
 # Superflex / "OP" (offensive player) slots are QB-eligible, so they raise the
 # expected number of startable QBs by one. Kept separate from _FLEX_SLOT_NAMES
 # because those never take a QB.
-_SUPERFLEX_SLOT_NAMES = {"SUPER_FLEX", "SUPERFLEX", "SUPER FLEX", "SFLEX", "OP", "QB_RB_WR_TE", "Q_RB_WR_TE"}
 
 # In superflex, QB values sit on the same 0-999.9 scale but are lifted well above
 # their 1QB level (the scale is anchored to non-QB skill players), so the 1QB

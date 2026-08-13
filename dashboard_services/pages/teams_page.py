@@ -267,12 +267,17 @@ def build_teams_body(ctx: dict) -> str:
     pick_z_max = max(team_pick_z.values()) if team_pick_z else 0.0
 
     # ----------------- Compute per-team positional strength + league baselines -----------------
+    from utils.roster_strength import positional_strength_profile
     team_pos_strength: Dict[int, Dict[str, float]] = defaultdict(dict)
+    team_pos_profiles: Dict[int, Dict[str, dict]] = defaultdict(dict)
     slot_counts = count_roster_positions(get_roster_positions())
 
     for rid, pos_map in team_pos_values.items():
         for pos, vals in pos_map.items():
-            team_pos_strength[rid][pos] = _weighted_pos_strength(vals, pos, slot_counts)
+            profile = positional_strength_profile(vals, pos, slot_counts)
+            team_pos_profiles[rid][pos] = profile
+            # The calibrated, explainable composite now drives comparisons.
+            team_pos_strength[rid][pos] = profile["composite"]
 
     league_pos_avg: Dict[str, float] = {}
     league_pos_std: Dict[str, float] = {}
@@ -557,11 +562,21 @@ def build_teams_body(ctx: dict) -> str:
 
             # detail row right under it (collapsed by default)
             detail_html = render_pos_players(rid, pos)
+            _profile = team_pos_profiles[rid][pos]
+            _conf = _profile["confidence"]
+            _profile_html = (
+                "<div class='pos-profile-strip' style='display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px;'>"
+                f"<span class='mini-label'>Starters <b>{_profile['starter']:.0f}</b></span>"
+                f"<span class='mini-label'>Depth <b>{_profile['depth']:.0f}</b></span>"
+                f"<span class='mini-label'>Fragility <b>{_profile['fragility']*100:.0f}%</b></span>"
+                f"<span class='mini-label' title='Based on roster input completeness'>Confidence <b>{_conf['label']} · {_conf['score']}</b></span>"
+                "</div>"
+            )
             detail_row = (
                 f"<tr class='pos-detail-row' data-pos='{pos}' style='display:none;'>"
                 "  <td colspan='8'>"
                 "    <div class='pos-detail-inner'>"
-                f"      {detail_html}"
+                f"      {_profile_html}{detail_html}"
                 "    </div>"
                 "  </td>"
                 "</tr>"

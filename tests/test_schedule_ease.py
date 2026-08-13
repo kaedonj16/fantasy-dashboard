@@ -53,5 +53,5 @@ class TestMatchupCellEase:
         assert matchup_cell_ease(17, 33, {}) == 50.0
 
     def test_no_data(self):
-        assert matchup_cell_ease(None, None, None) == 0.0
-        assert matchup_cell_ease(1, 1, None) == 0.0
+        assert matchup_cell_ease(None, None, None) is None
+        assert matchup_cell_ease(1, 1, None) is None
