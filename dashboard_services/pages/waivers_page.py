@@ -80,6 +80,12 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
   background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent);
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
+.wv-confidence {
+  font-size: 10px; font-weight: 700; color: var(--text-muted); white-space: nowrap;
+  padding: 2px 7px; border-radius: 999px; border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--card) 85%, var(--accent) 15%);
+}
+@media (max-width: 640px) { .wv-confidence { display: none; } }
 /* Waiver signal chips use the site's canonical `.chip .chip--sm` + a .signal-*
    colour alias (all defined once in dashboard.css). Nothing chip-related is
    overridden here. */
@@ -579,6 +585,10 @@ function wvRenderWaivers() {{
       const bid = p.faab_low ? (p.faab_low + '&ndash;' + p.faab_high) : ('&le;' + p.faab_high);
       faabChip = `<span class="wv-faab" title="Suggested FAAB bid - % of your waiver budget">${{bid}}%</span>`;
     }}
+    const conf = p.confidence || {{}};
+    const confChip = conf.label
+      ? `<span class="wv-confidence" title="Recommendation confidence from available projection, usage, schedule, age, team, and value inputs">${{conf.label}} · #${{p.rank_low}}–${{p.rank_high}}</span>`
+      : '';
     let dropHint = '';
     if (p.drop && p.drop.name) {{
       dropHint = `<div class="wv-drop-hint" title="Suggested drop to make room - your weakest spare player below this target's value">`
@@ -594,6 +604,7 @@ function wvRenderWaivers() {{
       </div>
       <div class="wv-right">
         <span class="chip chip--sm ${{p.signal_class}}">${{p.signal}}</span>
+        ${{confChip}}
         ${{faabChip}}
         <span class="wv-value">${{Math.round(p.value)}}</span>
       </div>
