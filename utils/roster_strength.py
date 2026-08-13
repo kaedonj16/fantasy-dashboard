@@ -13,6 +13,18 @@ from __future__ import annotations
 from typing import Dict, List
 
 
+_FLEX_SLOT_NAMES = {"FLEX", "RB_WR_FLEX", "RB_WR_TE", "WR_RB", "WR_TE", "RB_WR"}
+_SUPERFLEX_SLOT_NAMES = {
+    "SUPER_FLEX", "SUPERFLEX", "SUPER FLEX", "SFLEX", "OP",
+    "QB_RB_WR_TE", "Q_RB_WR_TE",
+}
+
+
+def _slot_total(slot_counts: Dict[str, int], names: set[str]) -> int:
+    """Count equivalent lineup slots across provider-specific names."""
+    return sum(int(slot_counts.get(name) or 0) for name in names)
+
+
 def weighted_pos_strength(vals: List[float], pos: str, slot_counts: Dict[str, int]) -> float:
     """
     Emphasize top-end talent over pure depth.
@@ -29,10 +41,18 @@ def weighted_pos_strength(vals: List[float], pos: str, slot_counts: Dict[str, in
 
     vals = sorted((float(v or 0.0) for v in vals), reverse=True)
 
-    flex_slots = int(slot_counts.get("FLEX") or 0)
+    # Sleeper, ESPN, and Yahoo do not use one canonical name for FLEX/SF. A
+    # strength formula must read all of them or the same roster is graded
+    # differently depending on which platform supplied its settings.
+    flex_slots = _slot_total(slot_counts, _FLEX_SLOT_NAMES)
+    superflex_slots = _slot_total(slot_counts, _SUPERFLEX_SLOT_NAMES)
 
     if pos == "QB":
-        weights = [1.0, 0.20]
+        qb_starters = max(1, int(slot_counts.get("QB") or 0) + superflex_slots)
+        # In 1QB, QB2 is bench insurance. In superflex/2QB, QB2 is a weekly
+        # starter and must carry nearly the same weight as QB1; the old fixed
+        # 0.20 weight materially overrated teams with one elite QB and no QB2.
+        weights = [1.0] + [0.90] * (qb_starters - 1) + [0.20]
 
     elif pos == "RB":
         # RB1/RB2 matter most, then some flex/depth credit
@@ -81,11 +101,9 @@ def weighted_pos_strength(vals: List[float], pos: str, slot_counts: Dict[str, in
 STARTER_THRESHOLD = {"QB": 500, "RB": 350, "WR": 350, "TE": 200}
 DEPTH_FLOOR = {"QB": 1, "RB": 2, "WR": 3, "TE": 1}
 
-_FLEX_SLOT_NAMES = {"FLEX", "RB_WR_FLEX", "RB_WR_TE", "WR_RB", "WR_TE", "RB_WR"}
 # Superflex / "OP" (offensive player) slots are QB-eligible, so they raise the
 # expected number of startable QBs by one. Kept separate from _FLEX_SLOT_NAMES
 # because those never take a QB.
-_SUPERFLEX_SLOT_NAMES = {"SUPER_FLEX", "SUPERFLEX", "SUPER FLEX", "SFLEX", "OP", "QB_RB_WR_TE", "Q_RB_WR_TE"}
 
 # In superflex, QB values sit on the same 0-999.9 scale but are lifted well above
 # their 1QB level (the scale is anchored to non-QB skill players), so the 1QB

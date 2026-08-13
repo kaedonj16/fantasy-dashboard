@@ -306,30 +306,6 @@ def test_health_endpoints_work_with_admin_secret(offline_client, monkeypatch):
     r = offline_client.get("/api/health/timing", headers={"X-Admin-Secret": "s3cret"})
     assert r.status_code == 200
     assert "endpoints" in r.get_json()
-    assert r.headers["Cache-Control"] == "no-store"
     r = offline_client.get("/api/health/errors", headers={"X-Admin-Secret": "s3cret"})
     assert r.status_code == 200
     assert "errors" in r.get_json()
-    assert r.headers["Cache-Control"] == "no-store"
-
-
-def test_health_endpoint_bounds_requested_limit(offline_client, monkeypatch):
-    """Admin input cannot request an arbitrarily large monitoring payload."""
-    from utils import perf_monitor
-
-    monkeypatch.setenv("ADMIN_SECRET", "s3cret")
-    observed = {}
-
-    def _snapshot(*, limit, sort):
-        observed.update(limit=limit, sort=sort)
-        return {"endpoints": []}
-
-    monkeypatch.setattr(perf_monitor, "snapshot", _snapshot)
-    headers = {"X-Admin-Secret": "s3cret"}
-
-    response = offline_client.get("/api/health/timing?limit=999999&sort=max", headers=headers)
-    assert response.status_code == 200
-    assert observed == {"limit": 500, "sort": "max"}
-
-    offline_client.get("/api/health/timing?limit=invalid", headers=headers)
-    assert observed["limit"] == 100

@@ -33,6 +33,29 @@ def test_qb_weighting_favors_starter():
     assert val == pytest.approx(100 / 1.2)
 
 
+def test_superflex_treats_qb2_as_a_starter():
+    vals = [100, 20]
+    one_qb = weighted_pos_strength(vals, "QB", {"QB": 1})
+    superflex = weighted_pos_strength(vals, "QB", {"QB": 1, "SUPER_FLEX": 1})
+
+    assert one_qb == pytest.approx((100 + 20 * 0.20) / 1.20)
+    assert superflex == pytest.approx((100 + 20 * 0.90) / 1.90)
+    assert superflex < one_qb
+
+
+@pytest.mark.parametrize("slot_name", ["SUPER_FLEX", "SFLEX", "OP", "QB_RB_WR_TE"])
+def test_superflex_provider_aliases_use_the_same_qb_formula(slot_name):
+    expected = weighted_pos_strength([100, 50], "QB", {"QB": 1, "SUPER_FLEX": 1})
+    actual = weighted_pos_strength([100, 50], "QB", {"QB": 1, slot_name: 1})
+    assert actual == pytest.approx(expected)
+
+
+def test_two_qb_lineup_treats_both_qbs_as_starters():
+    assert weighted_pos_strength([100, 50], "QB", {"QB": 2}) == pytest.approx(
+        (100 + 50 * 0.90) / 1.90
+    )
+
+
 def test_two_elite_beat_many_mediocre_rb():
     elite = weighted_pos_strength([100, 100], "RB", {})
     depth = weighted_pos_strength([40, 40, 40, 40, 40], "RB", {"FLEX": 2})
@@ -46,6 +69,13 @@ def test_flex_slots_add_depth_credit_for_rb():
     two_flex = weighted_pos_strength(vals, "RB", {"FLEX": 2})
     # More flex slots use more of the roster's depth -> distinct results.
     assert no_flex != one_flex != two_flex
+
+
+def test_flex_provider_alias_adds_the_same_depth_credit():
+    vals = [100, 90, 80, 70]
+    canonical = weighted_pos_strength(vals, "WR", {"FLEX": 1})
+    provider_alias = weighted_pos_strength(vals, "WR", {"RB_WR_FLEX": 1})
+    assert provider_alias == pytest.approx(canonical)
 
 
 def test_unknown_position_uses_top_player_only():
