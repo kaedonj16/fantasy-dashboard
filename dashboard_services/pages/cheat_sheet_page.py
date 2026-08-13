@@ -161,6 +161,15 @@ _CHEAT_HTML = r"""
   .cs-ovbtn.on { background: var(--cs-accent); border-color: var(--cs-accent); color: #fff; }
   /* The "muted" button lights up red-ish since it sinks the player. */
   .cs-ovbtn[data-act="mute"].on { background: var(--cs-bad); border-color: var(--cs-bad); }
+  /* Drag handle: grab cursor, and touch-action:none so a touch-drag reorders the
+     row instead of scrolling the list. */
+  .cs-drag { cursor: grab; touch-action: none; color: var(--cs-ink-faint); }
+  .cs-drag:active { cursor: grabbing; }
+  .cs-revert { color: var(--cs-ink-faint); }
+  .cs-wrap tbody tr.cs-dragging { opacity: .45; }
+  /* Insertion indicator that tracks the drop point during a drag. */
+  .cs-drop-line { position: absolute; left: 0; right: 0; height: 2px; margin-top: -1px; background: var(--cs-accent); pointer-events: none; z-index: 5; }
+  .cs-drop-line::before { content: ""; position: absolute; left: 0; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--cs-accent); }
   /* Override state chip next to the name. */
   .cs-ovchip { font-family: var(--cs-mono); font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 999px; margin-left: 8px; white-space: nowrap; }
   .cs-ovchip.bump { color: var(--cs-accent); background: var(--cs-accent-soft); }
@@ -170,6 +179,9 @@ _CHEAT_HTML = r"""
   .cs-wrap tbody tr.cs-muted .cs-pname { color: var(--cs-ink-faint); }
   /* A subtle accent rail on any row you have personally moved. */
   .cs-wrap tbody tr.cs-ov td:first-child { box-shadow: inset 3px 0 0 var(--cs-accent); }
+  /* One-shot highlight that confirms where a moved row landed. */
+  .cs-wrap tbody tr.cs-flash td { animation: csFlash .65s ease-out; }
+  @keyframes csFlash { 0% { background: var(--cs-accent-soft); } 100% { background: transparent; } }
 
   .cs-tabs { display: flex; gap: 4px; margin: 20px 0 0; border-bottom: 1px solid var(--cs-line); flex-wrap: wrap; }
   .cs-tabs button { font: inherit; font-size: 13.5px; font-weight: 700; cursor: pointer; border: 0; background: none; color: var(--cs-ink-faint); padding: 11px 14px; position: relative; }
@@ -185,7 +197,7 @@ _CHEAT_HTML = r"""
   .cs-val.n { color: var(--cs-ink-faint); }
   #csFmtNote { margin-left: auto; font-family: var(--cs-mono); color: var(--cs-ink-faint); }
 
-  .cs-tbl-scroll { overflow: auto; max-height: calc(100vh - 250px); background: var(--cs-surface); border: 1px solid var(--cs-line); border-radius: 14px; }
+  .cs-tbl-scroll { position: relative; overflow: auto; max-height: calc(100vh - 250px); background: var(--cs-surface); border: 1px solid var(--cs-line); border-radius: 14px; }
   .cs-wrap table { border-collapse: collapse; width: 100%; min-width: 640px; }
   .cs-wrap thead th { position: sticky; top: 0; z-index: 3; font-family: var(--cs-mono); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--cs-ink-faint); text-align: right; padding: 12px 14px 9px; border-bottom: 1px solid var(--cs-line); background: var(--cs-surface); }
   .cs-wrap thead th.l { text-align: left; }
@@ -271,7 +283,6 @@ _CHEAT_HTML = r"""
   .cs-dtiers { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .cs-tchip { font-family: var(--cs-mono); font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 7px; display: inline-flex; align-items: center; gap: 6px; }
   .cs-tchip .cs-ex { font-family: inherit; color: var(--cs-ink-soft); font-weight: 600; }
-  .cs-runflag { font-family: var(--cs-mono); font-size: 10px; color: var(--cs-accent); font-weight: 800; margin-left: 8px; white-space: nowrap; }
 
   .cs-prose { background: var(--cs-surface); border: 1px solid var(--cs-line); border-radius: 14px; }
   .cs-rule { display: grid; grid-template-columns: 112px 1fr; gap: 16px; padding: 16px 20px; border-bottom: 1px solid var(--cs-line); }
@@ -299,6 +310,9 @@ _CHEAT_HTML = r"""
     .cs-tabs button { flex: 0 0 auto; white-space: nowrap; padding: 11px 12px; }
     /* Format note drops to its own line, left aligned, not floated off to the side. */
     #csFmtNote { margin-left: 0; width: 100%; }
+    /* Bigger edit-board tap targets so the grip/arrows/pin are thumb-friendly. */
+    .cs-ovbtns { gap: 5px; }
+    .cs-ovbtn { width: 34px; height: 34px; font-size: 14px; border-radius: 8px; }
   }
   @media print {
     .cs-controls, .cs-tabs, .cs-backlink, .cs-needs, .cs-filterbar, #csPrintBtn, #csValBtn, #csClearBtn, #csEditBtn, #csResetBoardBtn { display: none !important; }
