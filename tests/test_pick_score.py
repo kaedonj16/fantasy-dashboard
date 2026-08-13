@@ -2,7 +2,7 @@
 
 Pure logic — no app / DB import — so these run anywhere pytest does.
 """
-from utils.pick_score import PS_WEIGHTS, compute_pick_score, ps_tier_of
+from utils.pick_score import PS_WEIGHTS, compute_pick_score, empirical_slot_allocation, ps_tier_of
 
 
 # ---- ps_tier_of -----------------------------------------------------------
@@ -119,6 +119,27 @@ def test_rookie_momentum_is_down_weighted():
     # a rookie's season, so rookie momentum stays low (was 0.06, cut to 0.03).
     # Don't restore it without re-running data_building/run_draft_backtest.py.
     assert PS_WEIGHTS["rookie"]["mom"] <= 0.03
+
+
+def test_empirical_superflex_is_filled_by_best_available_qb():
+    players = ([{"position": "QB", "value": 1000-i} for i in range(24)]
+               + [{"position": "WR", "value": 700-i} for i in range(40)]
+               + [{"position": "RB", "value": 650-i} for i in range(40)]
+               + [{"position": "TE", "value": 400-i} for i in range(20)])
+    allocation = empirical_slot_allocation(
+        players, ["QB", "RB", "RB", "WR", "WR", "TE", "SUPER_FLEX"], 12
+    )
+    assert allocation["QB"] == 2.0
+
+
+def test_empirical_flex_responds_to_player_pool_strength():
+    pool = ([{"position": "QB", "value": 500}] * 12
+            + [{"position": "RB", "value": 400}] * 24
+            + [{"position": "WR", "value": 900}] * 36
+            + [{"position": "TE", "value": 300}] * 12)
+    allocation = empirical_slot_allocation(pool, ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"], 12)
+    assert allocation["WR"] == 3.0
+    assert allocation["RB"] == 2.0
 
 
 # ---- depth_slope override (tunable depth normalization) --------------------

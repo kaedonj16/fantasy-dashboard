@@ -15276,7 +15276,9 @@ def _playoff_sos_for(season: int, team: str, pos: str):
                 for lk in week_lookups:
                     opp = lk.get(t)
                     if opp:
-                        eases.append(_matchup_cell_ease(rank_map.get(opp), total, info.get(opp, {})))
+                        ease = _matchup_cell_ease(rank_map.get(opp), total, info.get(opp, {}))
+                        if ease is not None:
+                            eases.append(ease)
                 if eases:
                     team_ease[t] = sum(eases) / len(eases)
             ranked = sorted(team_ease.items(), key=lambda x: -x[1])
@@ -15337,7 +15339,9 @@ def _compute_schedule_grid(season: int, pids, weeks):
                 if not game:
                     continue
                 r = rank_map.get(game["opp"])
-                eases.append(_matchup_cell_ease(r, total, info.get(game["opp"], {})))
+                ease = _matchup_cell_ease(r, total, info.get(game["opp"], {}))
+                if ease is not None:
+                    eases.append(ease)
             if eases:
                 team_ease[t] = sum(eases) / len(eases)
         ranked = sorted(team_ease.items(), key=lambda x: -x[1])
@@ -22818,6 +22822,7 @@ from utils.pick_score import ps_tier_of as _ps_tier_of  # noqa: E402
 
 from utils.pick_score import compute_pick_score as _compute_pick_score  # noqa: E402
 from utils.pick_score import starter_counts as _ps_starter_counts  # noqa: E402
+from utils.pick_score import empirical_slot_allocation as _ps_empirical_slots  # noqa: E402
 
 
 # ── Draft-Room-aligned TEAM grade ────────────────────────────────────────────
@@ -23168,8 +23173,10 @@ def api_draft_grades():
                 "SUPER_FLEX": "SF", "SFLEX": "SF",
             }
             _rp_counts = {"QB": 0, "SF": 0, "RB": 0, "WR": 0, "TE": 0, "FLEX": 0}
+            _rp_slots = []
             try:
-                for _s in ((get_league(platform, league_id, season) or {}).get("roster_positions") or []):
+                _rp_slots = ((get_league(platform, league_id, season) or {}).get("roster_positions") or [])
+                for _s in _rp_slots:
                     _k = _rp_norm.get(str(_s).upper())
                     if _k:
                         _rp_counts[_k] += 1
@@ -23196,12 +23203,21 @@ def api_draft_grades():
                     if _ct is not None:
                         _ck = f"{_pp}|{_ct}"
                         tier_remaining[_ck] = tier_remaining.get(_ck, 0) + 1
+            # Let the actual player pool decide how FLEX/SF are occupied;
+            # this supersedes the fixed half-QB/half-RB/half-WR heuristic.
+            _allocation_pool = [
+                {"position": _d.get("position"), "value": _eff_val(_pid, _d)}
+                for _pid, _d in val_by_id.items()
+                if _d.get("position") in CORE_POS
+                and (_draft_type != "rookie" or not eligible_sids or _pid in eligible_sids)
+            ]
+            _empirical = _ps_empirical_slots(_allocation_pool, _rp_slots, _num_teams)
             for _pp, _arr in _by_pos.items():
                 _arr.sort(reverse=True)
                 if not _arr:
                     repl_by_pos[_pp] = 0
                     continue
-                _idx = int(round(_num_teams * _starters.get(_pp, 1))) - 1
+                _idx = int(round(_num_teams * _empirical.get(_pp, _starters.get(_pp, 1)))) - 1
                 _idx = max(0, min(_idx, len(_arr) - 1))
                 repl_by_pos[_pp] = _arr[_idx]
             ps_pool_sorted.sort(key=lambda x: x[0], reverse=True)
