@@ -270,21 +270,29 @@ try {
   // Mark explicit logout so auto-restore skips this session.
   sessionStorage.setItem('_explicitLogout', '1');
 } catch(_) {}
-// In the installed PWA the service worker caches navigations, so without this a
-// logged-in page could be served from cache after logout. Purge all caches,
-// then go home so every later navigation re-fetches a fresh, logged-out page.
-// Guard so the meta-refresh fallback and JS can't double-fire oddly, and time-box
-// the purge so a slow/hung caches.delete() never leaves the user on this screen.
-// Land on a cache-busting URL so a stale, still-authenticated "/" that the
-// service worker cached before logout can't be served in place of the fresh,
-// logged-out home page.
+// The service worker caches navigations, so a logged-in page could otherwise be
+// served from cache after logout. Fully tear the worker down: UNREGISTER it (so it
+// can't control the next navigation) and purge all its caches, then land on a
+// cache-busting URL that has no cached copy to serve. Time-boxed so a hung
+// teardown can never strand the user on this screen.
 var _went = false;
-function _go(){ if (_went) return; _went = true; window.location.replace('/?signed_out=1'); }
-if (window.caches && caches.keys) {
-  setTimeout(_go, 1200);  // hard cap: redirect even if the purge stalls
-  caches.keys()
-    .then(function(ks){ return Promise.all(ks.map(function(k){ return caches.delete(k); })); })
-    .then(_go, _go);
-} else { _go(); }
+function _go(){ if (_went) return; _went = true; window.location.replace('/?signed_out=' + Date.now()); }
+setTimeout(_go, 1500);  // hard cap: redirect even if teardown stalls
+var _jobs = [];
+try {
+  if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+    _jobs.push(navigator.serviceWorker.getRegistrations().then(function(rs){
+      return Promise.all(rs.map(function(r){ return r.unregister(); }));
+    }));
+  }
+} catch(_) {}
+try {
+  if (window.caches && caches.keys) {
+    _jobs.push(caches.keys().then(function(ks){
+      return Promise.all(ks.map(function(k){ return caches.delete(k); }));
+    }));
+  }
+} catch(_) {}
+if (_jobs.length) { Promise.all(_jobs).then(_go, _go); } else { _go(); }
 </script>
 </body></html>"""
