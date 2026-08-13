@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from data_building.breakout_engine import backtest_multitask as _bt
 from data_building.breakout_engine.multitask_predictions import _hit_prob_from_model, _load_hit_model
+from utils.evaluation_metrics import brier_score, precision_at_k
 
 FEATURES = ("opportunity_opened_score", "competition_removed_score",
             "team_environment_score", "player_readiness_score",
@@ -88,10 +89,7 @@ def prob_under_model(row: dict, model: Optional[dict]) -> float:
 
 
 def _precision_at_k(scores, hits, k: int) -> float:
-    order = sorted(range(len(scores)), key=lambda i: -scores[i])[:k]
-    if not order:
-        return 0.0
-    return sum(hits[i] for i in order) / len(order)
+    return precision_at_k(scores, hits, k)
 
 
 def _auc(scores, hits) -> Optional[float]:
@@ -102,7 +100,7 @@ def _auc(scores, hits) -> Optional[float]:
 
 
 def _brier(probs, hits) -> float:
-    return sum((p - y) ** 2 for p, y in zip(probs, hits)) / max(1, len(hits))
+    return brier_score(probs, hits)
 
 
 def pooled_metrics(

@@ -4,7 +4,9 @@ Pure logic — no app / DB import — so these run anywhere pytest does.
 """
 import pytest
 
-from utils.roster_strength import weighted_pos_strength
+from utils.roster_strength import (
+    fit_roster_component_weights, positional_strength_profile, weighted_pos_strength,
+)
 
 
 def test_empty_values_return_zero():
@@ -97,3 +99,30 @@ def test_te_weighting_uses_flex_variant():
     # TE2/TE3 would separate them. Here confirm both stay at the starter value.
     assert no_flex == pytest.approx(100.0)
     assert with_flex == pytest.approx(100.0)
+
+
+def test_strength_profile_separates_starters_depth_and_fragility():
+    profile = positional_strength_profile([100, 80, 30, 20], "WR", {"WR": 2})
+    assert profile["starter"] == pytest.approx(90)
+    assert profile["depth"] == pytest.approx(25)
+    assert 0 < profile["fragility"] < 1
+    assert profile["confidence"]["label"] == "High"
+
+
+def test_strength_profile_penalizes_missing_required_starter():
+    thin = positional_strength_profile([100], "RB", {"RB": 2})
+    full = positional_strength_profile([100, 80], "RB", {"RB": 2})
+    assert thin["starter"] < full["starter"]
+    assert thin["fragility"] > full["fragility"]
+
+
+def test_component_weight_fitter_learns_outcome_signal():
+    samples = [
+        {"starter": 1, "depth": 0, "resilience": 0, "outcome": 1},
+        {"starter": .8, "depth": 1, "resilience": 1, "outcome": .8},
+        {"starter": 0, "depth": 1, "resilience": 1, "outcome": 0},
+    ]
+    fitted = fit_roster_component_weights(samples, step=.1)
+    assert fitted["starter"] > fitted["depth"]
+    assert fitted["starter"] > fitted["resilience"]
+    assert sum(fitted[k] for k in ("starter", "depth", "resilience")) == pytest.approx(1)
