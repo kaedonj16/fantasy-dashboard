@@ -130,7 +130,7 @@ _CHEAT_HTML = r"""
   /* The controls no longer fit beside the title, so they sit as a deliberate,
      left-aligned toolbar on their own full-width row below the header text
      rather than floating in a right-aligned wrap. */
-  .cs-controls { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; width: 100%; margin-top: 14px; }
+  .cs-controls { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; width: 50%; margin-top: 14px; }
   .cs-ctrl-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; justify-content: flex-start; }
   .cs-cgroup { display: inline-flex; align-items: center; gap: 7px; }
   .cs-clabel { font-family: var(--cs-mono); font-size: 9.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--cs-ink-faint); }
