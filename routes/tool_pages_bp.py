@@ -66,6 +66,7 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
     num_teams = None
     is_sf = False
     roster_positions = None
+    scoring = None
     if league_id:
         try:
             ctx = get_league_ctx_from_cache(platform, league_id, season)
@@ -77,6 +78,12 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
             is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp)
             league_id = ctx.get("league_id") or league_id
             season = int(ctx.get("season") or season or datetime.now().year)
+            _sc = ctx.get("scoring_settings") or {}
+            scoring = {
+                "ppr": float(_sc.get("rec", 1) if _sc.get("rec") is not None else 1),
+                "tep": float(_sc.get("bonus_rec_te") or 0),
+                "passTd": 6 if float(_sc.get("pass_td") or 4) >= 5.5 else 4,
+            }
         except Exception as _e:
             logger.info("[draft-room] league ctx load failed: %s", _e)
     num_rounds_rookie = None
@@ -145,6 +152,7 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
         league_id, season, platform,
         is_guest=is_guest, num_teams=num_teams, is_superflex=is_sf,
         roster_positions=roster_positions,
+        scoring=scoring,
         viewer_user_id=session.get("viewer_user_id"),
         num_rounds_rookie=num_rounds_rookie,
         num_rounds_startup=num_rounds_startup,
