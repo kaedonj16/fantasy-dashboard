@@ -7773,54 +7773,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     # Waiver card rows are shared with the in-season Season Hub.
     top_waiver_assets_html = _build_waiver_targets_rows(ctx, model_value_table)
 
-    # Build matchup carousel (even if offseason/preseason - show with 0 projections)
-    matchup_html = ""
-    try:
-        from dashboard_services.matchups import render_matchup_slide, render_matchup_carousel_weeks
-
-        matchups_by_week = ctx.get("matchups_by_week", {})
-        proj_by_week = ctx.get("proj_by_week", {})
-        statuses = ctx.get("statuses", {})
-        players_index = ctx.get("players_index", {})
-        teams_index = ctx.get("teams_index", {})
-        team_game_lookup = ctx.get("team_game_lookup", {})
-        current_week = ctx.get("current_week", 1)
-
-        # Generate slides for Week 1 (or current week)
-        week_to_show = current_week if current_week > 0 else 1
-        _os_vid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
-        matchups_for_week = sorted(
-            matchups_by_week.get(week_to_show, []),
-            key=lambda m: 0 if _os_vid and _os_vid in (str((m.get("left") or {}).get("roster_id", "")), str((m.get("right") or {}).get("roster_id", ""))) else 1,
-        )
-
-        if matchups_for_week:
-            _fpts_against_os = _compute_fpts_against(season)
-            slides = [
-                render_matchup_slide(
-                    season,
-                    m,
-                    week_to_show,
-                    week_to_show,
-                    status_by_pid=statuses.get(week_to_show, {}).get("statuses", {}),
-                    projections=proj_by_week,
-                    players=players_index,
-                    teams=teams_index,
-                    team_game_lookup=team_game_lookup,
-                    fpts_against=_fpts_against_os,
-                )
-                for m in matchups_for_week
-            ]
-            slides_by_week = {week_to_show: "".join(slides)}
-            matchup_html = render_matchup_carousel_weeks(
-                slides_by_week,
-                dashboard=True,
-                active_week=week_to_show,
-            )
-    except Exception as e:
-        logger.info(f"[offseason] Failed to generate matchup carousel: {e}")
-        matchup_html = ""
-
     gm_card_html = ""
     if viewer_roster_id:
         # Show button to generate GM memo instead of auto-generating
@@ -8047,7 +7999,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         <div id="os-jump-report" class="os-tab-panel os-tab-active">
           {gm_card_html}
           {season_review_html}
-          {matchup_html}
         </div>
 
         <section class="os-card os-col-fill os-tab-panel" id="os-jump-waivers">
@@ -20432,15 +20383,18 @@ def api_watchlist_alerts():
 def api_since_last_visit():
     """Powers the dashboard "Since your last visit" digest. Returns:
 
-      - trades/waivers/items: league activity newer than the client's ``since``
-        timestamp (ms); only computed when a real last-visit baseline exists.
+      - trades/waivers/items: league activity newer than the account's previous
+        visit (or the browser baseline for signed-out visitors).
       - roster: a snapshot of the viewer's roster (value + injury per player)
-        so the client can diff it against its own stored snapshot to surface
-        value moves and new injuries since the last visit.
+        so the client can surface value moves and new injuries since that visit.
 
-    The last-visit time and the roster snapshot are both tracked client-side in
-    localStorage, keeping this a true per-visit diff rather than a rolling feed."""
-    result = {"trades": 0, "waivers": 0, "items": [], "latest_ts": 0, "roster": []}
+    Google-account visits are consumed in the database, making the digest a
+    one-time, cross-device notification. Signed-out visitors retain the local
+    browser fallback."""
+    result = {
+        "trades": 0, "waivers": 0, "items": [], "latest_ts": 0,
+        "roster": [], "previous_roster": None, "account_scoped": False,
+    }
     platform = request.args.get("platform", "sleeper")
     league_id = request.args.get("league_id")
     if not league_id:
@@ -20462,45 +20416,8 @@ def api_since_last_visit():
         logger.debug("since-last-visit ctx failed", exc_info=True)
         return jsonify(result)
 
-    # Trades + waiver adds newer than the last visit (needs a real baseline).
-    if since_ms > 0:
-        try:
-            adf = ctx.get("activity_df")
-            if adf is not None and not adf.empty and "ts" in adf.columns:
-                rows = adf[adf["ts"].notna()].copy()
-                if not rows.empty:
-                    def _ms(ts):
-                        try:
-                            return int(ts.timestamp() * 1000)
-                        except Exception:
-                            return 0
-
-                    rows["ts_ms"] = rows["ts"].map(_ms)
-                    rows = rows[rows["ts_ms"] > since_ms]
-                    if not rows.empty:
-                        rows = rows.sort_values("ts_ms", ascending=False)
-                        result["trades"] = int((rows["kind"] == "trade").sum())
-                        result["waivers"] = int((rows["kind"] == "waiver").sum())
-                        result["latest_ts"] = int(rows["ts_ms"].iloc[0])
-                        for _, r in rows.head(8).iterrows():
-                            data = r["data"] or {}
-                            if r["kind"] == "trade":
-                                names = [str(t.get("name") or "?") for t in (data.get("teams") or [])]
-                                text = "Trade: " + " and ".join(names[:2]) + (" +more" if len(names) > 2 else "")
-                            else:
-                                nm = str(data.get("name") or "?")
-                                adds = data.get("adds") or []
-                                who = ", ".join(str(p.get("name") or "?") for p in adds[:2])
-                                if len(adds) > 2:
-                                    who += f" +{len(adds) - 2}"
-                                text = f"{nm} added {who}" if who else f"{nm} made a move"
-                            result["items"].append(
-                                {"kind": r["kind"], "text": text, "ts": int(r["ts_ms"]), "week": int(r["week"])}
-                            )
-        except Exception:
-            logger.debug("since-last-visit activity failed", exc_info=True)
-
-    # Viewer roster snapshot (value + injury) for the client to diff.
+    # Viewer roster snapshot (value + injury). Build this before consuming the
+    # visit so the account's new baseline is stored in the same request.
     if roster_id:
         try:
             roster = next(
@@ -20535,6 +20452,79 @@ def api_since_last_visit():
                 result["roster"] = snap
         except Exception:
             logger.debug("since-last-visit roster snapshot failed", exc_info=True)
+
+    account_id = session.get("account_id")
+    if account_id:
+        try:
+            from dashboard_services.accounts import consume_league_visit
+
+            previous = consume_league_visit(
+                int(account_id), platform, str(league_id), season, roster_id, result["roster"]
+            )
+            result["account_scoped"] = True
+            if previous:
+                previous_visit = previous.get("last_visit_at")
+                if previous_visit is not None:
+                    since_ms = int(previous_visit.timestamp() * 1000)
+                if str(previous.get("roster_id") or "") == roster_id:
+                    prior_roster = previous.get("roster_snapshot")
+                    if isinstance(prior_roster, str):
+                        prior_roster = json.loads(prior_roster)
+                    if isinstance(prior_roster, list):
+                        result["previous_roster"] = prior_roster
+        except Exception:
+            # Do not break the dashboard if persistence is temporarily
+            # unavailable; the browser baseline remains a safe fallback.
+            logger.debug("since-last-visit account state failed", exc_info=True)
+
+    # Trades + waiver adds newer than the last visit (needs a real baseline).
+    if since_ms > 0:
+        try:
+            adf = ctx.get("activity_df")
+            if adf is not None and not adf.empty and "ts" in adf.columns:
+                rows = adf[adf["ts"].notna()].copy()
+                if not rows.empty:
+                    def _ms(ts):
+                        try:
+                            return int(ts.timestamp() * 1000)
+                        except Exception:
+                            return 0
+
+                    rows["ts_ms"] = rows["ts"].map(_ms)
+                    rows = rows[rows["ts_ms"] > since_ms]
+                    if roster_id and not rows.empty:
+                        def _is_own_transaction(row):
+                            data = row.get("data") or {}
+                            if row.get("kind") == "waiver":
+                                return str(data.get("rid") or "") == roster_id
+                            return any(
+                                str(team.get("rid") or team.get("roster_id") or "") == roster_id
+                                for team in (data.get("teams") or [])
+                            )
+
+                        rows = rows[~rows.apply(_is_own_transaction, axis=1)]
+                    if not rows.empty:
+                        rows = rows.sort_values("ts_ms", ascending=False)
+                        result["trades"] = int((rows["kind"] == "trade").sum())
+                        result["waivers"] = int((rows["kind"] == "waiver").sum())
+                        result["latest_ts"] = int(rows["ts_ms"].iloc[0])
+                        for _, r in rows.head(8).iterrows():
+                            data = r["data"] or {}
+                            if r["kind"] == "trade":
+                                names = [str(t.get("name") or "?") for t in (data.get("teams") or [])]
+                                text = "Trade: " + " and ".join(names[:2]) + (" +more" if len(names) > 2 else "")
+                            else:
+                                nm = str(data.get("name") or "?")
+                                adds = data.get("adds") or []
+                                who = ", ".join(str(p.get("name") or "?") for p in adds[:2])
+                                if len(adds) > 2:
+                                    who += f" +{len(adds) - 2}"
+                                text = f"{nm} added {who}" if who else f"{nm} made a move"
+                            result["items"].append(
+                                {"kind": r["kind"], "text": text, "ts": int(r["ts_ms"]), "week": int(r["week"])}
+                            )
+        except Exception:
+            logger.debug("since-last-visit activity failed", exc_info=True)
 
     return jsonify(result)
 
