@@ -2,7 +2,7 @@
 // Caches static assets and key pages for offline/fast repeat loads.
 // Handles Web Push notifications.
 
-const CACHE_NAME = 'br-fantasy-v17';
+const CACHE_NAME = 'br-fantasy-v18';
 
 // How long to wait on the network for a page (when we already have a cached
 // copy) before painting the cached version. This is what kills the blank
@@ -55,6 +55,12 @@ self.addEventListener('fetch', event => {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/')) return;
+  // Auth-mutating navigation: must always hit the network so the server actually
+  // clears the session (and its Set-Cookie applies) as part of THIS navigation.
+  // Serving /logout from cache — or racing it against the cached-page timeout —
+  // let the redirect to "/" fire before the session was cleared, so the user
+  // landed back on their still-authenticated dashboard. Never cache/serve it.
+  if (url.pathname === '/logout') return;
 
   // Static assets: stale-while-revalidate
   if (url.pathname.startsWith('/static/')) {

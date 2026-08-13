@@ -237,7 +237,7 @@ def logout():
     # home even when scripting fails; the cache purge is also time-boxed so a
     # hung caches.delete() can't block the redirect.
     return """<!doctype html><html><head><meta charset="utf-8">
-<meta http-equiv="refresh" content="3;url=/">
+<meta http-equiv="refresh" content="3;url=/?signed_out=1">
 <title>Signing out…</title>
 <style>
   html,body{height:100%;margin:0}
@@ -275,8 +275,11 @@ try {
 // then go home so every later navigation re-fetches a fresh, logged-out page.
 // Guard so the meta-refresh fallback and JS can't double-fire oddly, and time-box
 // the purge so a slow/hung caches.delete() never leaves the user on this screen.
+// Land on a cache-busting URL so a stale, still-authenticated "/" that the
+// service worker cached before logout can't be served in place of the fresh,
+// logged-out home page.
 var _went = false;
-function _go(){ if (_went) return; _went = true; window.location.replace('/'); }
+function _go(){ if (_went) return; _went = true; window.location.replace('/?signed_out=1'); }
 if (window.caches && caches.keys) {
   setTimeout(_go, 1200);  // hard cap: redirect even if the purge stalls
   caches.keys()
