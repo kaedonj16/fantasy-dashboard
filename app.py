@@ -11110,6 +11110,7 @@ def api_waiver_candidates():
 
     result = []
     _shown = candidates[:30]
+    from utils.model_confidence import confidence_from_inputs, rank_interval
     # Badge trend relative to the shown set so the (trend-sorted) list doesn't
     # read "Rising Fast" on every row.
     _fast_thr, _up_thr = _adaptive_trend_thresholds([c.get("rank_change_7d") for c in _shown])
@@ -11203,7 +11204,7 @@ def api_waiver_candidates():
         pick = (same_pos or deep or elig)[0]
         return {"name": pick["name"], "position": pick["position"], "value": round(pick["value"])}
 
-    for c in _shown:
+    for _rank, c in enumerate(_shown, 1):
         try:
             sig_cls, sig_label = _waiver_signal(
                 c, waiver_breakout, _WAIVER_PRIME_MAX,
@@ -11212,6 +11213,16 @@ def api_waiver_candidates():
             bscore = waiver_breakout.get(c["player_id"], 0.0)
             ut = usage_trends.get(c["player_id"]) or {}
             _flo, _fhi = _faab_band(c)
+            _confidence_inputs = sum([
+                c.get("ros_ppg") is not None,
+                c.get("usage_delta") is not None,
+                c.get("schedule_ease_rank") is not None,
+                c.get("age") is not None,
+                bool(c.get("team")),
+                c.get("value") is not None,
+            ])
+            _confidence = confidence_from_inputs(_confidence_inputs, 6)
+            _rank_low, _rank_high = rank_interval(_rank, _confidence["score"], len(_shown))
             result.append({
                 "player_id": c["player_id"],
                 "name": c["name"],
@@ -11237,6 +11248,9 @@ def api_waiver_candidates():
                 "faab_low": _flo,
                 "faab_high": _fhi,
                 "drop": _drop_for(c),
+                "confidence": _confidence,
+                "rank_low": _rank_low,
+                "rank_high": _rank_high,
             })
         except Exception:
             logger.exception("[waiver-candidates] result row failed for %s", c.get("player_id"))
