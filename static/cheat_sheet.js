@@ -118,7 +118,13 @@
     if (below) o.b = below.id; else delete o.b;
     o.r = (above && below) ? (above._eff + below._eff) / 2 : (above ? above._eff + 0.5 : (below ? below._eff - 0.5 : 0));
     o.s = nextSeq();
-    overrides[id] = o; _flashId = id; saveOverrides(); compute(); render();
+    overrides[id] = o; saveOverrides(); compute();
+    // A drop that resolved to the player's own model spot (no net displacement)
+    // is a no-op: discard it silently rather than storing a marker-less override.
+    var pl = null; for (var i = 0; i < players.length; i++) { if (players[i].id === id) { pl = players[i]; break; } }
+    if (pl && pl.moved && !pl.ov) { delete overrides[id]; saveOverrides(); compute(); }
+    else { _flashId = id; }
+    render();
   }
   // Place player `id` at display index `pos` within the full normal bucket.
   function boardMoveTo(id, pos) {
@@ -330,7 +336,6 @@
       return {
         id: String(p.id), pos: pos, name: p.name || String(p.id),
         age: (p.age != null ? Number(p.age) : null),
-        proj: (p.proj_pts != null ? Number(p.proj_pts) : (p.proj_ppg != null ? Number(p.proj_ppg) * 17 : null)),
         adp: C.adpOf(p, mode, sf), vor: Math.round(value - (repl[pos] || 0)),
       };
     });
