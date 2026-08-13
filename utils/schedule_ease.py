@@ -31,11 +31,12 @@ def sched_rank_color(rank, total):
     return "#ef4444", "#ef444418"        # brutal (fewest pts allowed)
 
 
-def matchup_cell_ease(rank, total, info) -> float:
+def matchup_cell_ease(rank, total, info):
     """Per-cell ease (0-100). Prefer the z-derived ease from the precomputed
-    ratings table; fall back to rank percentile."""
+    ratings table; fall back to rank percentile. Missing data returns ``None``
+    so callers can exclude it rather than treating unknown as maximally hard."""
     if info and info.get("ease") is not None:
         return float(info["ease"])
     if rank and total and total > 1:
         return round((total - rank) / (total - 1) * 100, 1)
-    return 0.0
+    return None

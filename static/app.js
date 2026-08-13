@@ -14064,8 +14064,8 @@ function toggleWatchlistPanel() {
 }
 
 // ── "Since your last visit" digest ──────────────────────────────────────────
-// Last-visit time is tracked client-side (per league) in localStorage; the
-// server returns activity newer than it.
+// Signed-in accounts consume visit state on the server so the same digest is
+// not repeated on another device. localStorage remains the signed-out fallback.
 function _slvLeagueCtx() {
   const parts = window.location.pathname.split('/').filter(Boolean);
   if (parts.length >= 3 && !isNaN(parseInt(parts[1], 10))) {
@@ -14100,12 +14100,19 @@ function _slvSection(title, rowsHtml) {
 // Diff the server's current roster snapshot against the one stored at the last
 // visit to find value moves and newly-injured players. Also persists the fresh
 // snapshot. Returns { movers, injuries } (empty arrays on the first visit).
-function _slvRosterDiff(leagueId, rid, roster) {
+function _slvRosterDiff(leagueId, rid, roster, previousRoster, accountScoped) {
   const out = { movers: [], injuries: [] };
   if (!rid || !Array.isArray(roster) || !roster.length) return out;
   const snapKey = 'brfantasy_slv_snap_' + leagueId + '_' + rid;
   let snap = null;
-  try { snap = JSON.parse(localStorage.getItem(snapKey) || 'null'); } catch (_) {}
+  if (Array.isArray(previousRoster)) {
+    snap = { p: {} };
+    previousRoster.forEach(function (p) {
+      snap.p[p.pid] = { v: p.value, i: p.injury ? 1 : 0 };
+    });
+  } else if (!accountScoped) {
+    try { snap = JSON.parse(localStorage.getItem(snapKey) || 'null'); } catch (_) {}
+  }
 
   if (snap && snap.p) {
     roster.forEach(function (p) {
@@ -14121,10 +14128,12 @@ function _slvRosterDiff(leagueId, rid, roster) {
     out.injuries = out.injuries.slice(0, 5);
   }
 
-  // Save the new snapshot for next time.
-  const store = { ts: Date.now(), p: {} };
-  roster.forEach(function (p) { store.p[p.pid] = { v: p.value, i: p.injury ? 1 : 0 }; });
-  try { localStorage.setItem(snapKey, JSON.stringify(store)); } catch (_) {}
+  // The server persists account snapshots; anonymous visits stay local.
+  if (!accountScoped) {
+    const store = { ts: Date.now(), p: {} };
+    roster.forEach(function (p) { store.p[p.pid] = { v: p.value, i: p.injury ? 1 : 0 }; });
+    try { localStorage.setItem(snapKey, JSON.stringify(store)); } catch (_) {}
+  }
   return out;
 }
 
@@ -14154,7 +14163,10 @@ async function initSinceLastVisit() {
     const d = await res.json();
 
     const items = (d && d.items) || [];
-    const diff = _slvRosterDiff(ctx.leagueId, rid, (d && d.roster) || []);
+    const diff = _slvRosterDiff(
+      ctx.leagueId, rid, (d && d.roster) || [],
+      d && d.previous_roster, !!(d && d.account_scoped)
+    );
 
     // Event-type label: a neutral pill with a colored leading icon (event-feed
     // look), so the digest scans as a feed rather than a row of status alarms.

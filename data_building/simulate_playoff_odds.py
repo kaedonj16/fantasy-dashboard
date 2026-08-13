@@ -572,13 +572,13 @@ def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
     if season > 0:
         proj_week = current_week + 1 if current_week > 0 else 1
         try:
-            from utils.utils import fetch_week_projections, pick_proj_variant
+            from utils.utils import fetch_week_projections
             multi_map = fetch_week_projections(season, proj_week, _rss)
-            variant   = pick_proj_variant(_rss)
+            from utils.fantasy_scoring import projection_points
             for pid, variants in (multi_map or {}).items():
                 if not isinstance(variants, dict):
                     continue
-                pts = variants.get(variant) or variants.get("ppr") or 0.0
+                pts = projection_points(variants, _rss, pos_map.get(str(pid), ""))
                 if pts > 0:
                     ppg_map[str(pid)] = {
                         "ppg": float(pts),
@@ -1038,12 +1038,12 @@ def _build_week_ppg_maps(
     out: dict[int, dict] = {}
     try:
         from utils.utils import (
-            fetch_week_projections, get_week_projections_cached, pick_proj_variant,
+            fetch_week_projections, get_week_projections_cached,
         )
     except Exception:
         return {w: season_ppg_map for w in weeks}
 
-    variant = pick_proj_variant(raw_scoring_settings)
+    from utils.fantasy_scoring import projection_points
     for w in weeks:
         wk_map: dict = {}
         try:
@@ -1054,7 +1054,7 @@ def _build_week_ppg_maps(
             for pid, variants in multi.items():
                 if not isinstance(variants, dict):
                     continue
-                pts = variants.get(variant) or variants.get("ppr") or 0.0
+                pts = projection_points(variants, raw_scoring_settings, pos_map.get(str(pid), ""))
                 if pts > 0:
                     wk_map[str(pid)] = {"ppg": float(pts), "pos": pos_map.get(str(pid), "")}
         except Exception:
@@ -1265,7 +1265,7 @@ def _blend_weekly_projections(
     raw_ss = ctx.get("raw_scoring_settings") or {}
 
     try:
-        from utils.utils import fetch_week_projections, pick_proj_variant
+        from utils.utils import fetch_week_projections
         multi_map = fetch_week_projections(season, next_week, raw_ss)
     except Exception as exc:
         logger.warning("[playoff_odds] Sleeper weekly proj unavailable: %s", exc)
@@ -1274,7 +1274,7 @@ def _blend_weekly_projections(
     if not multi_map:
         return
 
-    variant = pick_proj_variant(raw_ss)
+    from utils.fantasy_scoring import projection_points
 
     roster_positions = ctx.get("roster_positions") or []
     # Build roster_id → player_ids lookup
@@ -1300,7 +1300,7 @@ def _blend_weekly_projections(
     for pid, variants in multi_map.items():
         if not isinstance(variants, dict):
             continue
-        pts = variants.get(variant) or variants.get("ppr") or 0.0
+        pts = projection_points(variants, raw_ss, pos_map.get(str(pid), ""))
         if pts > 0:
             week_ppg[pid] = {"ppg": pts, "pos": pos_map.get(pid, "")}
 
