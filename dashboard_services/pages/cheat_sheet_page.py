@@ -127,11 +127,11 @@ _CHEAT_HTML = r"""
   .cs-backlink { font-size: 13px; font-weight: 700; color: var(--cs-accent); text-decoration: none; }
   .cs-backlink:hover { text-decoration: underline; }
 
-  /* The controls no longer fit beside the title, so they sit as a deliberate,
-     left-aligned toolbar on their own full-width row below the header text
-     rather than floating in a right-aligned wrap. */
-  .cs-controls { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; width: 100%; margin-top: 14px; }
-  .cs-ctrl-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; justify-content: flex-start; }
+  /* Controls sit top-right, beside the title, using the empty space next to the
+     header text (space-between on .cs-top pushes them there). They stack mode/QB
+     over the action buttons and right-align. On mobile they drop full-width. */
+  .cs-controls { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+  .cs-ctrl-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
   .cs-cgroup { display: inline-flex; align-items: center; gap: 7px; }
   .cs-clabel { font-family: var(--cs-mono); font-size: 9.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--cs-ink-faint); }
   .cs-seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--cs-surface-2); border: 1px solid var(--cs-line); border-radius: 10px; }
