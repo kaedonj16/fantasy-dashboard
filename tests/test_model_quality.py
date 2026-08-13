@@ -15,3 +15,8 @@ def test_shared_decision_metrics():
     assert log_loss([0.9, 0.1], [1, 0]) < log_loss([0.6, 0.4], [1, 0])
     assert precision_at_k([.9, .8, .1], [1, 0, 0], 1) == 1.0
     assert decision_regret(75, 100) == 25
+
+
+def test_rank_interval_is_bounded_at_top_and_bottom():
+    assert rank_interval(1, 10, 20)[0] == 1
+    assert rank_interval(20, 10, 20)[1] == 20

@@ -8888,15 +8888,17 @@ function wkActivateTab(tab) {{
 
 
 def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dict = None):
-    from utils.utils import pick_proj_variant
     from statistics import median
+    from utils.fantasy_scoring import projection_points
+    _players_for_proj = load_players_index() or {}
 
-    variant = pick_proj_variant(raw_scoring_settings or {})
-
-    def _flat(multi: dict) -> Optional[float]:
+    def _flat(pid: str, multi: dict) -> Optional[float]:
         """Extract the chosen variant's value from a multi-variant player entry."""
         if isinstance(multi, dict):
-            return multi.get(variant) or multi.get("ppr")
+            return projection_points(
+                multi, raw_scoring_settings or {},
+                (_players_for_proj.get(str(pid)) or {}).get("pos", ""),
+            )
         if isinstance(multi, (int, float)):
             return float(multi)  # legacy flat file
         return None
@@ -8907,7 +8909,7 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
         multi_week = load_week_projection(season, w) or {}
         flat = {}
         for pid, val in multi_week.items():
-            v = _flat(val)
+            v = _flat(pid, val)
             if v is not None:
                 flat[pid] = v
         raw[w] = flat
@@ -8940,10 +8942,11 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
                 continue
             _rec_pts = _EST_REC[_pos]
             _non_rec = max(_ppg - _rec_pts, 0)
-            if variant in ("ppr", "tep", "6pt_ppr", "6pt_tep"):
+            _rec_rate = float((raw_scoring_settings or {}).get("rec", 1.0))
+            if _rec_rate >= 0.75:
                 _v = _ppg
-            elif variant in ("half_ppr", "6pt_half"):
-                _v = _non_rec + _rec_pts * 0.5
+            elif _rec_rate > 0:
+                _v = _non_rec + _rec_pts * _rec_rate
             else:
                 _v = _non_rec
             if _v > 0:
@@ -8999,7 +9002,7 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
         bundles[w] = {"projections": week_proj}
 
     if not any_projections:
-        logger.info(f"[projections] No projection data for season {season} (variant: {variant})")
+        logger.info("[projections] No Sleeper projection data for season %s", season)
     bundles["_available"] = any_projections
     return bundles
 
@@ -11110,7 +11113,7 @@ def api_waiver_candidates():
 
     result = []
     _shown = candidates[:30]
-    from utils.model_confidence import confidence_from_inputs, rank_interval
+    from utils.model_confidence import confidence_from_inputs
     # Badge trend relative to the shown set so the (trend-sorted) list doesn't
     # read "Rising Fast" on every row.
     _fast_thr, _up_thr = _adaptive_trend_thresholds([c.get("rank_change_7d") for c in _shown])
@@ -11204,7 +11207,7 @@ def api_waiver_candidates():
         pick = (same_pos or deep or elig)[0]
         return {"name": pick["name"], "position": pick["position"], "value": round(pick["value"])}
 
-    for _rank, c in enumerate(_shown, 1):
+    for c in _shown:
         try:
             sig_cls, sig_label = _waiver_signal(
                 c, waiver_breakout, _WAIVER_PRIME_MAX,
@@ -11222,7 +11225,6 @@ def api_waiver_candidates():
                 c.get("value") is not None,
             ])
             _confidence = confidence_from_inputs(_confidence_inputs, 6)
-            _rank_low, _rank_high = rank_interval(_rank, _confidence["score"], len(_shown))
             result.append({
                 "player_id": c["player_id"],
                 "name": c["name"],
@@ -11249,8 +11251,6 @@ def api_waiver_candidates():
                 "faab_high": _fhi,
                 "drop": _drop_for(c),
                 "confidence": _confidence,
-                "rank_low": _rank_low,
-                "rank_high": _rank_high,
             })
         except Exception:
             logger.exception("[waiver-candidates] result row failed for %s", c.get("player_id"))
@@ -11700,8 +11700,8 @@ def api_start_sit_options():
         )
 
     # ── Weekly projections - SAME source as the player modal & matchups page ───
-    # build_projections_by_week() returns Tank01 weekly values (variant-adjusted,
-    # with per-player median outlier correction) and FantasyPros season PPG as a
+    # build_projections_by_week() returns Sleeper weekly stat lines scored with
+    # the league's exact settings and FantasyPros season PPG as a
     # fallback for players with no weekly data. Reuse the cached ctx bundle when
     # present so start/sit shows the exact number the modal/matchups show.
     proj_by_week = ctx.get("proj_by_week")
@@ -11774,7 +11774,7 @@ def api_start_sit_options():
         s_ppg      = season_ppg.get(pid, 0.0)
         recent_ppg = recent_ppg_map.get(pid, 0.0)
         # Projection = exact value the player modal / matchups page show for this
-        # week (Tank01 weekly w/ median correction → FantasyPros season PPG).
+        # week (Sleeper weekly → FantasyPros season PPG fallback).
         proj_pts   = _lookup_proj(pid)
         if proj_pts <= 0 and s_ppg > 0:
             proj_pts = round(s_ppg, 1)
@@ -16291,7 +16291,7 @@ def _build_next_week_ctx(
     if not matchups:
         return None
 
-    # Next-week projections (Tank01 publishes upcoming weeks ahead of kickoff).
+    # Next-week projections from Sleeper's weekly projection feed.
     try:
         bundles = build_projections_by_week(int(season), next_week, ctx.get("raw_scoring_settings"))
         proj_by_pid = (bundles.get(next_week) or {}).get("projections") or {}
@@ -21610,7 +21610,7 @@ def api_player_game_logs(player_id: str):
                     if _fv > 0.5:
                         _proj_vals[_w] = round(_fv, 2)
 
-                # FP PPG fallback if no Tank01 weekly files
+                # FP PPG fallback if no Sleeper weekly files
                 if not _proj_vals:
                     _fp_path = os.path.join("cache", f"fp_projections_{_upcoming}_ppr.json")
                     try:
