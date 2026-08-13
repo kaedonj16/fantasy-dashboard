@@ -9,6 +9,7 @@ from utils.draft_grade import (
     dr_apply_field_curve,
     dr_avg_top_n,
     dr_grade_letter,
+    dr_league_lineup_avg,
     dr_letter_to_score,
     dr_lineup_score,
     dr_optimal_lineup,
@@ -116,6 +117,48 @@ def test_avg_top_n():
     assert dr_avg_top_n([1, 5, 3, 9], 2) == 7.0   # (9+5)/2
     assert dr_avg_top_n([], 3) == 0.0
     assert dr_avg_top_n([4, 2], 0) == 0.0
+
+
+def test_league_lineup_average_respects_positions():
+    # A position-blind top-4 average would select every QB (27.5). A valid
+    # two-team QB/RB field must also include the two RB starters (20.0 overall).
+    pool = [
+        {"pos": "QB", "ppg": 30}, {"pos": "QB", "ppg": 29},
+        {"pos": "QB", "ppg": 26}, {"pos": "QB", "ppg": 25},
+        {"pos": "RB", "ppg": 11}, {"pos": "RB", "ppg": 10},
+    ]
+    assert dr_league_lineup_avg(pool, ["QB", "RB"], 2, "ppg") == 20.0
+
+
+def test_team_grade_uses_position_aware_strength_baseline():
+    pool = [
+        {"pos": "QB", "ppg": 30, "val": 9000},
+        {"pos": "QB", "ppg": 29, "val": 8500},
+        {"pos": "QB", "ppg": 28, "val": 8000},
+        {"pos": "QB", "ppg": 27, "val": 7500},
+        {"pos": "RB", "ppg": 11, "val": 5000},
+        {"pos": "RB", "ppg": 10, "val": 4500},
+    ]
+    picks = [
+        {"id": "q", "pos": "QB", "ps": 70, "pn": 1, "val": 9000, "ppg": 30},
+        {"id": "r", "pos": "RB", "ps": 70, "pn": 2, "val": 5000, "ppg": 11},
+    ]
+    score = dr_team_grade_score(
+        picks, slots=["QB", "RB"], targets={"QB": 1, "RB": 1},
+        num_teams=2, draft_type="redraft",
+        league_ppg_list=[30, 29, 28, 27, 11, 10],
+        league_val_list=[9000, 8500, 8000, 7500, 5000, 4500],
+        league_players=pool,
+    )
+    position_blind = dr_team_grade_score(
+        picks, slots=["QB", "RB"], targets={"QB": 1, "RB": 1},
+        num_teams=2, draft_type="redraft",
+        league_ppg_list=[30, 29, 28, 27, 11, 10],
+        league_val_list=[9000, 8500, 8000, 7500, 5000, 4500],
+    )
+    # The valid QB/RB baseline recognizes this strong lineup; the old global
+    # top-N comparison wrongly benchmarks its RB against extra quarterbacks.
+    assert score > position_blind
 
 
 # ---- dr_apply_field_curve -------------------------------------------------

@@ -107,9 +107,37 @@ def dr_avg_top_n(arr: "list[float]", n: int) -> float:
     return sum(s) / len(s) if s else 0.0
 
 
+def dr_league_lineup_avg(
+    players: "list[dict]", slots: "list[str]", num_teams: int, metric: str,
+) -> Optional[float]:
+    """Average a metric across a roster-valid league-wide starting field.
+
+    A global ``top N`` baseline is position-blind: projected PPG, in particular,
+    fills most of that imaginary field with quarterbacks. Build ``num_teams``
+    copies of the real lineup instead, then optimize on the requested metric.
+    Players missing that metric are excluded rather than counted as zero.
+    """
+    eligible = []
+    for i, player in enumerate(players or []):
+        value = player.get(metric)
+        if value is None:
+            continue
+        eligible.append({
+            "id": f"league-{i}", "pos": player.get("pos"),
+            "ppg": float(value),
+        })
+    if not eligible or not slots:
+        return None
+    league_slots = list(slots) * max(int(num_teams or 1), 1)
+    selected = dr_optimal_lineup(eligible, league_slots)
+    values = [p["ppg"] for p in eligible if str(p["id"]) in selected]
+    return (sum(values) / len(values)) if values else None
+
+
 def dr_team_grade_score(
     picks: "list[dict]", *, slots: "list[str]", targets: dict, num_teams: int,
     draft_type: str, league_ppg_list: "list[float]", league_val_list: "list[float]",
+    league_players: Optional["list[dict]"] = None,
     value_weight: float = 35.0, starter_weight: float = 25.0, balance_weight: float = 40.0,
 ) -> Optional[float]:
     """Mirror gradePicks() (startup/redraft branch) -> raw 0-100 composite.
@@ -152,11 +180,17 @@ def dr_team_grade_score(
     ppg_ratio = None
     if len(my_ppgs) >= max(2, math.floor(len(starter_arr) * 0.5)):
         my_ppg_avg = sum(my_ppgs) / len(my_ppgs)
-        league_ppg_avg = dr_avg_top_n(league_ppg_list, n_start)
+        league_ppg_avg = dr_league_lineup_avg(league_players, slots, num_teams, "ppg")
+        if league_ppg_avg is None:
+            league_ppg_avg = dr_avg_top_n(league_ppg_list, n_start)
         if league_ppg_avg > 0:
             ppg_ratio = my_ppg_avg / league_ppg_avg
     my_val_avg = (sum((p.get("val") or 0) for p in starter_arr) / len(starter_arr)) if starter_arr else 0.0
-    league_val_avg = dr_avg_top_n(league_val_list, n_start)
+    # Prefer a position-aware starting field when the caller has the player pool.
+    # The list-only fallback preserves compatibility for offline backtests.
+    league_val_avg = dr_league_lineup_avg(league_players, slots, num_teams, "val")
+    if league_val_avg is None:
+        league_val_avg = dr_avg_top_n(league_val_list, n_start)
     value_ratio = (my_val_avg / league_val_avg) if league_val_avg > 0 else None
     if draft_type == "redraft":
         strength_ratio = ppg_ratio if ppg_ratio is not None else (value_ratio if value_ratio is not None else 0.80)

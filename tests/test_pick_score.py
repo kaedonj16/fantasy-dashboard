@@ -88,6 +88,15 @@ def test_te_premium_boosts_te():
     assert tep >= plain
 
 
+def test_six_point_passing_tds_boost_qb_only():
+    qb_four = compute_pick_score(**_base(pos="QB", pass_td=4))
+    qb_six = compute_pick_score(**_base(pos="QB", pass_td=6))
+    rb_four = compute_pick_score(**_base(pos="RB", pass_td=4))
+    rb_six = compute_pick_score(**_base(pos="RB", pass_td=6))
+    assert qb_six > qb_four
+    assert rb_six == rb_four
+
+
 def test_tier_cliff_boosts_score():
     flat = compute_pick_score(**_base(is_tier_cliff=False))
     cliff = compute_pick_score(**_base(is_tier_cliff=True))

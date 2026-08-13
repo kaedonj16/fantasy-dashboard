@@ -37,6 +37,9 @@
   var pollTimer = null;
   var maxVor = 1;
   var loading = false;
+  var loadError = '';
+  var playerRequest = 0;      // only the newest mode/source request may update the board
+  var playerAbort = null;
 
   // ── Custom draft board (pro): per-player overrides on top of the model board.
   // Intent, not absolute positions: {r: fractional rank on the model scale, p:
@@ -478,7 +481,7 @@
     var nb = $('csNeedsBtn'); if (nb) { nb.style.display = myCounts ? '' : 'none'; nb.setAttribute('aria-pressed', String(state.needsFilter)); }
     // Show a Clear button once the user has hand-marked players as gone, so they
     // can wipe those marks in one tap. Live/mock drafted ids are not touched.
-    var cb = $('csClearBtn'); if (cb) cb.style.display = (state.done.size || (draftedIds && draftedIds.size)) ? '' : 'none';
+    var cb = $('csClearBtn'); if (cb) cb.style.display = state.done.size ? '' : 'none';
     // Custom board (pro): edit toggle always available; reset only with overrides.
     var eb = $('csEditBtn');
     if (eb) { eb.style.display = cfg.hasPremium ? '' : 'none'; eb.setAttribute('aria-pressed', String(editBoard)); eb.textContent = editBoard ? 'Done editing' : 'Edit board'; }
@@ -487,7 +490,7 @@
     renderNeedsBar();
 
     if (!players.length) {
-      $('csBoardBody').innerHTML = '<tr><td colspan="6" class="cs-empty">' + (loading ? 'Loading players…' : 'No players for this format yet.') + '</td></tr>';
+      $('csBoardBody').innerHTML = '<tr><td colspan="6" class="cs-empty">' + (loading ? 'Loading players…' : (loadError || 'No players for this format yet.')) + '</td></tr>';
       $('csLegend').innerHTML = '';
       return;
     }
@@ -556,7 +559,7 @@
       if (!visiblePlayer(x)) return;
       if (x.grp !== lastT) { lastT = x.grp; html += '<tr class="cs-cliff"><td colspan="' + span + '"><div class="cs-cliffline">' + x.grpLabel + '</div></td></tr>'; }
       shown++;
-      var cls = 'cs-p' + (state.done.has(x.name) ? ' done' : '') + (x.drafted ? ' drafted' : '') + (x.ov === 'mute' ? ' cs-muted' : '') + (x.ov ? ' cs-ov' : '') + (x.id === _flashId ? ' cs-flash' : '');
+      var cls = 'cs-p' + (state.done.has(x.id) ? ' done' : '') + (x.drafted ? ' drafted' : '') + (x.ov === 'mute' ? ' cs-muted' : '') + (x.ov ? ' cs-ov' : '') + (x.id === _flashId ? ' cs-flash' : '');
       var c5 = dyn ? '<td class="cs-num">' + (x.age != null ? x.age : '') + '</td>' : '<td class="cs-num">' + (x.adp != null ? Math.round(x.adp) : '') + '</td>';
       var c6 = dyn ? '<td>' + winChip(x.age, x.pos) + '</td>' : '<td>' + valChip(x.value) + '</td>';
       html += '<tr class="' + cls + '" data-good="' + x.good + '" data-posfull="' + (x.posfull ? 1 : 0) + '" data-name="' + esc(x.name) + '" data-id="' + esc(x.id) + '">'
@@ -590,15 +593,15 @@
       cur.items.push(x);
     });
     function nameChip(x) {
-      var cls = 'cs-pgc cs-c-' + x.pos + (state.done.has(x.name) ? ' done' : '') + (x.drafted ? ' drafted' : '');
+      var cls = 'cs-pgc cs-c-' + x.pos + (state.done.has(x.id) ? ' done' : '') + (x.drafted ? ' drafted' : '');
       var tail = dyn ? '' : smallVal(x.value);
-      return '<span class="' + cls + '" data-good="' + x.good + '" data-posfull="' + (x.posfull ? 1 : 0) + '" data-name="' + esc(x.name) + '"><span class="cs-pgn">' + esc(x.name) + tail + '</span></span>';
+      return '<span class="' + cls + '" data-good="' + x.good + '" data-posfull="' + (x.posfull ? 1 : 0) + '" data-name="' + esc(x.name) + '" data-id="' + esc(x.id) + '"><span class="cs-pgn">' + esc(x.name) + tail + '</span></span>';
     }
     var out = '<div class="cs-pgrid-head">' + POS.map(function (p) { return '<div>' + p + '</div>'; }).join('') + '</div>';
     var ri = 0;
     groups.forEach(function (g) {
       if (g.tierBreak) {
-        var counts = POS.map(function (pos) { var n = players.filter(function (y) { return y.dtier === g.tier && y.pos === pos && !state.done.has(y.name) && !y.drafted; }).length; return n ? pos + ' ' + n : null; }).filter(Boolean).join(' &middot; ');
+        var counts = POS.map(function (pos) { var n = players.filter(function (y) { return y.dtier === g.tier && y.pos === pos && !state.done.has(y.id) && !y.drafted; }).length; return n ? pos + ' ' + n : null; }).filter(Boolean).join(' &middot; ');
         out += '<div class="cs-pgtier">Tier ' + g.tier + (counts ? '<span class="cs-sc">' + counts + ' left</span>' : '') + '</div>';
       }
       var byPos = { RB: [], WR: [], QB: [], TE: [] };
@@ -645,16 +648,24 @@
   }
 
   function loadPlayers() {
+    var requestId = ++playerRequest;
+    if (playerAbort) playerAbort.abort();
+    playerAbort = typeof AbortController !== 'undefined' ? new AbortController() : null;
     loading = true;
+    loadError = '';
     var params = [];
     if (state.adpSource && state.adpSource !== 'auto') {
       params.push('adp_source=' + encodeURIComponent(state.adpSource));
       params = params.concat(leagueParams());
     }
     var url = '/api/league-players' + (params.length ? ('?' + params.join('&')) : '');
-    return fetch(url, { cache: 'no-store' })
-      .then(function (r) { return r.json(); })
+    return fetch(url, { cache: 'no-store', signal: playerAbort ? playerAbort.signal : undefined })
+      .then(function (r) {
+        if (!r.ok) throw new Error('Players request failed (' + r.status + ')');
+        return r.json();
+      })
       .then(function (resp) {
+        if (requestId !== playerRequest) return;
         var raw = Array.isArray(resp) ? resp : (resp.players || []);
         if (!Array.isArray(resp)) {
           if (resp.tier_thresholds) tierThresholds = resp.tier_thresholds;
@@ -665,9 +676,14 @@
         renderAdpSources();
         compute(); render();
       })
-      .catch(function () {
+      .catch(function (err) {
+        if (requestId !== playerRequest || (err && err.name === 'AbortError')) return;
         loading = false;
-        $('csBoardBody').innerHTML = '<tr><td colspan="6" class="cs-empty">Could not load players. Refresh to retry.</td></tr>';
+        loadError = 'Could not load players. Refresh to retry.';
+        allPlayers = [];
+        players = [];
+        render();
+        $('csPosGrid').innerHTML = '<div class="cs-empty">' + loadError + '</div>';
       });
   }
 
@@ -716,20 +732,20 @@
   }
   function applyLiveDraft(d) {
     var picks = (d && d.picks) || [];
-    if (!picks.length) return;   // pre-draft: nothing to cross off yet
     var s = new Set();
     var mine = { QB: 0, RB: 0, WR: 0, TE: 0 };
-    var haveMine = false;
     picks.forEach(function (pk) {
       if (!pk || !pk.player_id) return;
       s.add(String(pk.player_id));
       if (cfg.viewerUserId && String(pk.picked_by || '') === String(cfg.viewerUserId)) {
         var pos = String(pk.position || '').toUpperCase();
-        if (mine[pos] != null) { mine[pos]++; haveMine = true; }
+        if (mine[pos] != null) mine[pos]++;
       }
     });
-    draftedIds = s;
-    if (haveMine) myCounts = mine;
+    // Every poll is an authoritative snapshot. This also clears stale marks if a
+    // commissioner rolls a pick back (including rolling the draft back to zero).
+    draftedIds = s.size ? s : null;
+    myCounts = cfg.viewerUserId ? mine : null;
     compute(); render();
   }
 
@@ -812,15 +828,10 @@
     });
     var clearBtn = $('csClearBtn');
     if (clearBtn) clearBtn.addEventListener('click', function () {
-      var hadDrafted = draftedIds && draftedIds.size;
-      if (!state.done.size && !hadDrafted) return;
-      // Wipe both hand-marked players and the crossed-off drafted set (e.g. the
-      // snapshot carried over from a mock draft). A live draft re-syncs on its
-      // next poll; a static mock snapshot stays cleared.
+      if (!state.done.size) return;
+      // Live/mock drafted players are authoritative draft state; this button only
+      // clears the viewer's hand marks. Hide drafted controls draft visibility.
       state.done.clear();
-      draftedIds = null;
-      myCounts = null;
-      compute();   // x.drafted is derived from draftedIds, so recompute the board
       render();
     });
     // Custom board (pro): toggle edit mode, reset the whole board, and the
@@ -874,8 +885,9 @@
     document.addEventListener('click', function (e) {
       var el = e.target.closest('[data-name]');
       if (!el || !e.target.closest('#cs-panel-board, #cs-panel-pos')) return;
-      var nm = el.getAttribute('data-name');
-      if (state.done.has(nm)) state.done.delete(nm); else state.done.add(nm);
+      var playerId = el.getAttribute('data-id');
+      if (!playerId) return;
+      if (state.done.has(playerId)) state.done.delete(playerId); else state.done.add(playerId);
       // Re-render so the By Position tier "N left" counts reflect the change
       // (a crossed-off player drops out of the count). Preserve scroll position.
       var sc = document.querySelector('#cs-panel-board:not(.cs-hidden) .cs-tbl-scroll, #cs-panel-pos:not(.cs-hidden) .cs-pgrid-scroll');

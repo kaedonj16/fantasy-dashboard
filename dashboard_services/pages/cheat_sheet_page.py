@@ -58,7 +58,14 @@ def build_cheat_sheet_body(
             if _has_league else "/draft"
         ),
     }
-    cfg_json = json.dumps(cfg)
+    # This JSON is embedded directly in a script element. Escape HTML-significant
+    # characters so a malformed/tampered route value cannot terminate the script.
+    cfg_json = (
+        json.dumps(cfg)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+    )
     return (
         f"<script>window.__cheatCfg = {cfg_json};</script>\n"
         + _CHEAT_HTML

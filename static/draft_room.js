@@ -278,6 +278,11 @@
       for (var i=0;i<t.options.length;i++){ if (t.options[i].value === want || t.options[i].text === want){ t.selectedIndex = i; break; } }
     }
     if (cfg.isSuperflex) document.getElementById('drSf').value = '1';
+    if (cfg.scoring) {
+      var cfgPpr = document.getElementById('drPpr'); if (cfgPpr) cfgPpr.value = String(cfg.scoring.ppr != null ? cfg.scoring.ppr : 1);
+      var cfgTep = document.getElementById('drTep'); if (cfgTep) cfgTep.value = String(cfg.scoring.tep != null ? cfg.scoring.tep : 0);
+      var cfgPassTd = document.getElementById('drPassTd'); if (cfgPassTd) cfgPassTd.value = String(cfg.scoring.passTd >= 6 ? 6 : 4);
+    }
     var typeVal = document.getElementById('drType').value;
     var isRookie = typeVal === 'rookie';
     var rf = document.getElementById('drRoundsField');
@@ -560,18 +565,22 @@
       queue:  []
     };
   }
-  // Scoring settings from setup (PPR weight + TE premium). These shift the
+  // Scoring settings from setup. These shift the
   // recommended roster build rather than recomputing raw player values.
   function readScoring(){
     var pprEl = document.getElementById('drPpr');
     var tepEl = document.getElementById('drTep');
+    var passTdEl = document.getElementById('drPassTd');
     var ppr = pprEl ? parseFloat(pprEl.value) : 1.0;
     var tep = tepEl ? parseFloat(tepEl.value) : 0;
-    return { ppr: isNaN(ppr) ? 1.0 : ppr, tep: isNaN(tep) ? 0 : tep };
+    var passTd = passTdEl ? parseFloat(passTdEl.value) : 4;
+    return { ppr: isNaN(ppr) ? 1.0 : ppr, tep: isNaN(tep) ? 0 : tep,
+      passTd: passTd >= 6 ? 6 : 4 };
   }
   function scoringCfg(){
     var s = (state && state.scoring) || {};
-    return { ppr: s.ppr != null ? s.ppr : 1.0, tep: s.tep != null ? s.tep : 0 };
+    return { ppr: s.ppr != null ? s.ppr : 1.0, tep: s.tep != null ? s.tep : 0,
+      passTd: s.passTd >= 6 ? 6 : 4 };
   }
   // Convert a Sleeper-style roster_positions array to the {QB:1, RB:2, ...} map
   // used by state.roster. Uses the same normalization as rosterFromLeague so the
@@ -683,6 +692,7 @@
       if (state.scoring){
         var pprEl = document.getElementById('drPpr'); if (pprEl) pprEl.value = String(state.scoring.ppr != null ? state.scoring.ppr : 1);
         var tepEl = document.getElementById('drTep'); if (tepEl) tepEl.value = String(state.scoring.tep != null ? state.scoring.tep : 0);
+        var passTdEl = document.getElementById('drPassTd'); if (passTdEl) passTdEl.value = String(state.scoring.passTd >= 6 ? 6 : 4);
       }
       if (state.keeper){
         var kcEl = document.getElementById('drKeeperCount'); if (kcEl && state.keeperCount != null){ kcEl.value = String(state.keeperCount); kcEl.dataset.touched = '1'; }
@@ -2557,7 +2567,7 @@
       draftType: state.type, isSf: state.sf, needRaw: needRaw,
       qbCount: counts['QB'] || 0, totalPicks: (state.teams || 12) * (state.rounds || 16),
       numTeams: state.teams || 12, ppgNorm: ppgN,
-      ppr: _sc.ppr, tep: _sc.tep, isTierCliff: isTierCliff(p),
+      ppr: _sc.ppr, tep: _sc.tep, passTd: _sc.passTd, isTierCliff: isTierCliff(p),
       survivalAdj: survivalAdj, handcuff: handcuff,
     });
   }
@@ -3196,15 +3206,19 @@
         avgPs: avgPs ? Math.round(avgPs) : null, window: null };
     }
 
-    // Startup / redraft composite (Value 35 / Starters 35 / Construction 30)
+    // Startup / redraft composite (Value 35 / Starters 25 / Construction 40)
     // lives in static/draft_grade_team.js (BRTeamGrade), shared with the Python
     // server grade and pinned by a parity test. K/DEF are excluded from grading.
     var _slots = lineupSlots().filter(function(s){ return s !== 'K' && s !== 'DEF'; });
     var _leaguePpg = [];
     players.forEach(function(q){ var v = ppgOf(q); if (v != null) _leaguePpg.push(v); });
     var _leagueVal = players.map(function(q){ return valOf(q); });
+    var _leaguePlayers = players.map(function(q){
+      return { pos: String(q.position || '').toUpperCase(), ppg: ppgOf(q), val: valOf(q) };
+    });
     var _comp = BRTeamGrade.teamGradeComposite(
-      picks, _slots, posTargets(), state.teams || 12, state.type, _leaguePpg, _leagueVal
+      picks, _slots, posTargets(), state.teams || 12, state.type,
+      _leaguePpg, _leagueVal, _leaguePlayers
     );
     if (!_comp){
       return { score: 0, value: 0, balance: 0, tier: 0, count: mine.length,
@@ -3841,7 +3855,8 @@
           startTime: parseInt(d.start_time) || 0,
           slotNames: d.slot_names || {}, queue: [],
           pickOwners: buildPickOwnersFromResponse(d, teams, rounds, order),
-          roster: _parseRosterPositions(d.roster_positions)
+          roster: _parseRosterPositions(d.roster_positions),
+          scoring: cfg.scoring || readScoring()
         };
         applyLivePicks(d.picks || []);
         // Completed draft: reload the pool against that season's ADP so grades
