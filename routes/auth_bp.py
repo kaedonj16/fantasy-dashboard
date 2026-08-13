@@ -9,8 +9,8 @@ import logging
 from datetime import datetime
 
 from flask import (
-    Blueprint, jsonify, redirect, render_template_string,
-    request, session, url_for,
+    Blueprint, current_app, jsonify, make_response, redirect,
+    render_template_string, request, session, url_for,
 )
 
 auth_bp = Blueprint("auth", __name__)
@@ -236,7 +236,7 @@ def logout():
     # it carries a visible message and a <meta refresh> fallback that navigates
     # home even when scripting fails; the cache purge is also time-boxed so a
     # hung caches.delete() can't block the redirect.
-    return """<!doctype html><html><head><meta charset="utf-8">
+    response = make_response("""<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="refresh" content="3;url=/?signed_out=1">
 <title>Signing out…</title>
 <style>
@@ -295,4 +295,21 @@ try {
 } catch(_) {}
 if (_jobs.length) { Promise.all(_jobs).then(_go, _go); } else { _go(); }
 </script>
-</body></html>"""
+</body></html>""")
+
+    # Google sign-in introduced a domain-scoped session cookie so OAuth survives
+    # an apex/www host change. Browsers can retain the older host-only cookie
+    # alongside it; Flask only expires the currently configured domain cookie,
+    # allowing that legacy cookie to restore the authenticated session on the
+    # next request. Explicitly expire the host-only variant as well. Flask's
+    # session interface will add the domain-scoped deletion after this response.
+    if current_app.config.get("SESSION_COOKIE_DOMAIN"):
+        response.delete_cookie(
+            current_app.config.get("SESSION_COOKIE_NAME", "session"),
+            path=current_app.config.get("SESSION_COOKIE_PATH") or "/",
+            secure=current_app.config.get("SESSION_COOKIE_SECURE", False),
+            httponly=current_app.config.get("SESSION_COOKIE_HTTPONLY", True),
+            samesite=current_app.config.get("SESSION_COOKIE_SAMESITE"),
+        )
+
+    return response
