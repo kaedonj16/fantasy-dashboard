@@ -22,11 +22,11 @@ def test_league_scoring_is_available_to_live_and_mock_drafts():
     assert json.loads(match.group(1))["scoring"] == {"ppr": 0.5, "tep": 0, "passTd": 6}
 
 
-def test_setup_source_and_draft_pick_pills_share_status_pill_styles():
+def test_setup_source_and_draft_pick_pills_match_canonical_chip_styles():
     body = build_draft_room_body(None, None, None, is_guest=True)
 
-    assert ".dr-pill, .dr-roster-src-tag, .dr-cap-pill {" in body
-    assert "font-size: 12px; font-weight: 700; line-height: normal;" in body
-    assert "padding: 3px 9px; border-radius: 999px;" in body
+    assert ".dr-roster-src-tag, .dr-cap-pill {" in body
+    assert "background:var(--row); border:1px solid var(--grid); border-radius:6px; padding:2px 8px;" in body
+    assert "color:var(--text-muted); font-size:11px; font-weight:700; line-height:1.45; white-space:nowrap;" in body
     assert ".dr-roster-src-tag { text-transform:none; letter-spacing:normal; }" in body
     assert "rgba(168,85,247,.14)" not in body

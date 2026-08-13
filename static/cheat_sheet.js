@@ -482,10 +482,16 @@
     // Show a Clear button once the user has hand-marked players as gone, so they
     // can wipe those marks in one tap. Live/mock drafted ids are not touched.
     var cb = $('csClearBtn'); if (cb) cb.style.display = state.done.size ? '' : 'none';
+    var liveBtn = $('csConnectLive');
+    if (liveBtn) {
+      liveBtn.style.display = (cfg.hasPremium && cfg.leagueId && cfg.platform) ? '' : 'none';
+      liveBtn.textContent = liveDraftId ? 'Disconnect live draft' : 'Connect live draft';
+    }
     // Custom board (pro): edit toggle always available; reset only with overrides.
     var eb = $('csEditBtn');
     if (eb) { eb.style.display = cfg.hasPremium ? '' : 'none'; eb.setAttribute('aria-pressed', String(editBoard)); eb.textContent = editBoard ? 'Done editing' : 'Edit board'; }
-    var rb = $('csResetBoardBtn'); if (rb) rb.style.display = hasOverrides() ? '' : 'none';
+    var rb = $('csResetBoardBtn');
+    if (rb) rb.style.display = (hasOverrides() || state.done.size || draftedIds) ? '' : 'none';
     var bp = $('cs-panel-board'); if (bp) bp.classList.toggle('editing', editBoard && cfg.hasPremium);
     renderNeedsBar();
 
@@ -691,23 +697,31 @@
   function detectLiveDraft() {
     // Live Sleeper draft sync (auto cross-off + real-time board) is a pro feature.
     // Non-premium users keep the free static board (and any static mock snapshot).
-    if (!cfg.hasPremium) return;
-    if (!cfg.leagueId || !cfg.platform) return;
-    fetch('/api/draft/detect?platform=' + encodeURIComponent(cfg.platform) + '&league_id=' + encodeURIComponent(cfg.leagueId) + '&season=' + (cfg.season || ''))
+    if (!cfg.hasPremium || !cfg.leagueId || !cfg.platform) return Promise.resolve(false);
+    return fetch('/api/draft/detect?platform=' + encodeURIComponent(cfg.platform) + '&league_id=' + encodeURIComponent(cfg.leagueId) + '&season=' + (cfg.season || ''))
       .then(function (r) { return r.json(); })
       .then(function (resp) {
         if (!resp || resp.unsupported) return;
         var all = resp.drafts || [];
-        // Prefer a live (drafting) draft, then a pre-draft one about to start, then
-        // the most recent completed one (still tells us who is gone).
+        // Only connect to a current/upcoming draft. Historical drafts should not
+        // unexpectedly replace a clean cheat sheet.
         var pick = all.filter(function (d) { return String(d.status) === 'drafting'; })[0]
-          || all.filter(function (d) { return String(d.status) === 'pre_draft'; })[0]
-          || all[0];
-        if (!pick || !pick.draft_id) return;
+          || all.filter(function (d) { return String(d.status) === 'pre_draft'; })[0];
+        if (!pick || !pick.draft_id) return false;
         liveDraftId = pick.draft_id;
         pollDraft();   // start the live loop
+        render();
+        return true;
       })
-      .catch(function () { /* no live draft; sheet stays static */ });
+      .catch(function () { return false; });
+  }
+
+  function disconnectLiveDraft() {
+    liveDraftId = null;
+    if (pollTimer) clearTimeout(pollTimer);
+    pollTimer = null;
+    draftedIds = null;
+    myCounts = null;
   }
 
   // Poll the live draft so players auto-cross-off and the roster-need bar update
@@ -720,15 +734,17 @@
   function pollDraft() {
     if (!liveDraftId) return;
     if (typeof document !== 'undefined' && document.hidden) { schedulePoll(10000); return; }
-    fetch('/api/draft/live?platform=' + encodeURIComponent(cfg.platform) + '&draft_id=' + encodeURIComponent(liveDraftId), { cache: 'no-store' })
+    var requestedDraftId = liveDraftId;
+    fetch('/api/draft/live?platform=' + encodeURIComponent(cfg.platform) + '&draft_id=' + encodeURIComponent(requestedDraftId), { cache: 'no-store' })
       .then(function (r) { return r.json(); })
       .then(function (d) {
+        if (liveDraftId !== requestedDraftId) return;
         applyLiveDraft(d);
         var status = d && String(d.status || '');
         if (status === 'complete') { liveDraftId = null; return; }   // final state applied; stop
         schedulePoll(status === 'drafting' ? 5000 : 12000);          // slower before it starts
       })
-      .catch(function () { schedulePoll(10000); });
+      .catch(function () { if (liveDraftId === requestedDraftId) schedulePoll(10000); });
   }
   function applyLiveDraft(d) {
     var picks = (d && d.picks) || [];
@@ -781,12 +797,10 @@
     });
   }
 
-  var _embeddedMock = false;   // opened from the Draft Room with a mock's state
   function init() {
     var back = $('csBack'); if (back && cfg.draftUrl) back.href = cfg.draftUrl;
-    // Draft Room overlay can pass a local (mock/manual) draft's state so the sheet
-    // reflects THAT draft (no live feed exists for a mock). drafted = ids to cross
-    // off; mode / sf = the draft's format.
+    // A Draft Room mock/live board can pass its current snapshot. drafted = ids
+    // to cross off; mode / sf = that draft's format.
     try {
       var qp = new URLSearchParams(location.search);
       var qMode = qp.get('mode'); if (qMode === 'redraft' || qMode === 'dynasty') state.mode = qMode;
@@ -794,9 +808,6 @@
       var qDrafted = qp.get('drafted');
       if (qDrafted) {
         draftedIds = new Set(qDrafted.split(',').map(function (s) { return s.trim(); }).filter(Boolean));
-        // A mock has no live feed, so freeze on this snapshot. A live draft passes
-        // live=1: seed the board now, but let live detection keep it current.
-        if (qp.get('live') !== '1') _embeddedMock = true;
       }
     } catch (e) { /* no URL state */ }
     // Mode switch changes the scoring axis (redraft <-> dynasty), so a source
@@ -834,6 +845,21 @@
       state.done.clear();
       render();
     });
+    var connectLiveBtn = $('csConnectLive');
+    if (connectLiveBtn) connectLiveBtn.addEventListener('click', function () {
+      if (liveDraftId) {
+        disconnectLiveDraft();
+        render();
+        return;
+      }
+      connectLiveBtn.disabled = true;
+      connectLiveBtn.textContent = 'Connecting…';
+      detectLiveDraft().then(function (connected) {
+        connectLiveBtn.disabled = false;
+        if (!connected) connectLiveBtn.textContent = 'No current draft found';
+        else render();
+      });
+    });
     // Custom board (pro): toggle edit mode, reset the whole board, and the
     // per-row bump / pin / mute controls (captured so they never cross a row off).
     var editBtn = $('csEditBtn');
@@ -843,7 +869,11 @@
     });
     var resetBoardBtn = $('csResetBoardBtn');
     if (resetBoardBtn) resetBoardBtn.addEventListener('click', function () {
-      if (hasOverrides()) boardReset();
+      disconnectLiveDraft();
+      state.done.clear();
+      state.hideDrafted = false;
+      state.needsFilter = false;
+      if (hasOverrides()) boardReset(); else render();
     });
     var boardPanel = $('cs-panel-board');
     if (boardPanel) boardPanel.addEventListener('click', function (e) {
@@ -918,8 +948,9 @@
       if (!document.hidden && liveDraftId) { if (pollTimer) clearTimeout(pollTimer); pollDraft(); }
     });
 
-    // A mock's drafted set was passed in; don't let live-draft detection override it.
-    loadPlayers().then(function () { if (!_embeddedMock) detectLiveDraft(); });
+    // Live sync is intentionally opt-in through "Connect live draft". A sheet
+    // opened from an active Draft Room may still start with that board's snapshot.
+    loadPlayers();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

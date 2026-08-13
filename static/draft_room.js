@@ -200,14 +200,18 @@
     var _csFrame = document.getElementById('drCheatFrame');
 
     // Carry this draft's context to the cheat sheet so it opens with who's already
-    // gone crossed off. Works for a mock/manual draft (no live feed, so the sheet
-    // freezes on this snapshot in its own format) and a live draft (seed now, then
-    // the standalone page's own live detection keeps it current).
+    // gone crossed off. Mock and live boards both open as snapshots; live polling
+    // remains an explicit choice on the cheat sheet itself.
     function cheatCtxQuery(){
-      if (!(state && state.picks)) return '';
+      // A restored draft can still exist in memory while Edit Setup is open. Do
+      // not leak that stale board into the setup-page Cheat Sheet link; context
+      // belongs only to a board the user is currently viewing.
+      var main = document.getElementById('drMain');
+      if (!(state && state.picks && (state.mode === 'mock' || state.mode === 'live')
+            && main && main.style.display !== 'none')) return '';
       var ids = [];
       Object.keys(state.picks).forEach(function(k){ var p = state.picks[k]; if (p && p.id) ids.push(p.id); });
-      var isLocal = (state.mode === 'mock' || state.mode === 'manual');
+      var isLocal = state.mode === 'mock';
       var q = [];
       if (isLocal){
         // A local mock uses its own setup, not the league's format.
@@ -215,7 +219,6 @@
         q.push('mode=' + (state.type === 'redraft' ? 'redraft' : 'dynasty'));
       }
       if (ids.length) q.push('drafted=' + encodeURIComponent(ids.join(',')));
-      if (!isLocal && ids.length) q.push('live=1');   // live: seed, then keep detecting
       return q.join('&');
     }
     function cheatSheetFullUrl(){
@@ -236,10 +239,11 @@
     function openCheatSheet(){
       if (!_csOverlay || !_csFrame) return;
       var url = cfg.cheatSheetEmbedUrl || '/draft/cheat-sheet/embed';
-      // A mock (or manual) draft has no live feed for the sheet to detect, so pass
-      // this draft's state through the URL: the drafted player ids to cross off and
-      // the format (SF, redraft/dynasty) so the board matches the draft you're in.
-      if (state && state.picks && (state.mode === 'mock' || state.mode === 'manual')){
+      // Pass the visible board as a snapshot. Even for a live board, continued
+      // polling is opt-in from the cheat sheet's Connect live draft control.
+      var main = document.getElementById('drMain');
+      if (state && state.picks && (state.mode === 'mock' || state.mode === 'live')
+          && main && main.style.display !== 'none'){
         var ids = [];
         Object.keys(state.picks).forEach(function(k){ var p = state.picks[k]; if (p && p.id) ids.push(p.id); });
         var q = ['sf=' + (state.sf ? '1' : '0'), 'mode=' + (state.type === 'redraft' ? 'redraft' : 'dynasty')];

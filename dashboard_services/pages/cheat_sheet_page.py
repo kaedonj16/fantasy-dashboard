@@ -368,6 +368,7 @@ _CHEAT_HTML = r"""
         <select class="cs-src" id="csAdpSrc" aria-label="ADP source" style="display:none;"></select>
         <button class="cs-btn" id="csNeedsBtn" aria-pressed="false" style="display:none;">Needs only</button>
         <button class="cs-btn" id="csHideDrafted" aria-pressed="false" style="display:none;">Hide drafted</button>
+        <button class="cs-btn" id="csConnectLive" style="display:none;">Connect live draft</button>
         <button class="cs-btn" id="csEditBtn" aria-pressed="false" style="display:none;" title="Make this your board: reorder, pin or mute players (Pro)">Edit board</button>
         <button class="cs-btn" id="csValBtn" aria-pressed="false">Values only</button>
         <button class="cs-btn" id="csCsvBtn">CSV</button>

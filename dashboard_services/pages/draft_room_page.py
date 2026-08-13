@@ -541,12 +541,9 @@ _DRAFT_ROOM_HTML = r"""
   .dr-onclock b { font-size: 15px; font-weight: 800; color: var(--text); white-space: nowrap; }
   .dr-onclock.dr-onclock-you { background: color-mix(in srgb, var(--win) 10%, transparent); border-color: color-mix(in srgb, var(--win) 40%, transparent); }
   .dr-onclock.dr-onclock-you b { color: var(--win); }
-  /* Keep every compact status/source/pick label on the same pill foundation. */
-  .dr-pill, .dr-roster-src-tag, .dr-cap-pill {
-    display: inline-flex; align-items: center; font-size: 12px; font-weight: 700; line-height: normal;
-    padding: 3px 9px; border-radius: 999px;
-    background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent,#38bdf8); white-space: nowrap;
-  }
+  .dr-pill { display:inline-flex; align-items:center; font-size:12px; font-weight:700; padding:3px 9px;
+    border-radius:999px; background:color-mix(in srgb, var(--accent) 14%, transparent);
+    color:var(--accent,#38bdf8); white-space:nowrap; }
   .dr-pill-you { background: color-mix(in srgb, var(--win) 16%, transparent); color: var(--win); }
   .dr-pill-live { background: color-mix(in srgb, var(--loss) 16%, transparent); color: var(--loss); animation: drPulse 1.6s ease-in-out infinite; }
   .dr-pill-upcoming { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
@@ -1070,6 +1067,10 @@ _DRAFT_ROOM_HTML = r"""
   .dr-step-val { font-size:14px; font-weight:800; color:var(--text); min-width:18px; text-align:center; }
   .dr-step-val-ro { font-size:14px; font-weight:800; color:var(--text-muted); min-width:18px; text-align:center; }
   .dr-roster-src { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  /* Setup source and draft-pick labels mirror the site's canonical .chip. */
+  .dr-roster-src-tag, .dr-cap-pill { display:inline-flex; align-items:center; gap:4px;
+    background:var(--row); border:1px solid var(--grid); border-radius:6px; padding:2px 8px;
+    color:var(--text-muted); font-size:11px; font-weight:700; line-height:1.45; white-space:nowrap; }
   .dr-roster-src-tag { text-transform:none; letter-spacing:normal; }
   .dr-roster-src-btn { font-size:11px; font-weight:700; color:var(--text-muted); background:none; border:1px solid var(--border);
     border-radius:6px; padding:2px 9px; cursor:pointer; line-height:1.6; }
@@ -1089,7 +1090,7 @@ _DRAFT_ROOM_HTML = r"""
     letter-spacing:.02em; }
   .dr-cap-rpicks { flex:1; min-width:0; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
   .dr-cap-none { font-size:11.5px; color:var(--text-muted); opacity:.6; }
-  .dr-cap-pill { gap:3px; cursor:pointer; transition:background .12s, color .12s; user-select:none; }
+  .dr-cap-pill { cursor:pointer; transition:background .12s, color .12s; user-select:none; }
   .dr-cap-pill:hover { background:var(--loss); color:#fff; }
   .dr-cap-pill-x { font-style:normal; font-size:13px; line-height:1; opacity:0; width:0; overflow:hidden;
     transition:opacity .12s, width .12s; }

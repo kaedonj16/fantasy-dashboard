@@ -2,6 +2,7 @@
 
 import json
 import re
+from pathlib import Path
 
 from dashboard_services.pages.cheat_sheet_page import build_cheat_sheet_body
 
@@ -41,3 +42,24 @@ def test_cheat_sheet_config_cannot_break_out_of_script_element():
     assert hostile_id not in config_prefix
     assert "\\u003c/script\\u003e" in config_prefix
     assert _embedded_config(body)["leagueId"] == hostile_id
+
+
+def test_live_sync_is_explicit_and_drafted_players_offer_board_reset():
+    body = build_cheat_sheet_body(
+        "league-123", 2026, "sleeper", has_premium=True,
+    )
+    script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
+
+    assert 'id="csConnectLive"' in body
+    assert 'id="csResetBoardBtn"' in body
+    assert "loadPlayers();" in script
+    assert "loadPlayers().then(function ()" not in script
+    assert "(hasOverrides() || state.done.size || draftedIds)" in script
+
+
+def test_draft_room_only_shares_context_from_a_visible_draft_board():
+    script = (Path(__file__).parents[1] / "static" / "draft_room.js").read_text()
+
+    assert "(state.mode === 'mock' || state.mode === 'live')" in script
+    assert "main && main.style.display !== 'none'" in script
+    assert "q.push('live=1')" not in script
