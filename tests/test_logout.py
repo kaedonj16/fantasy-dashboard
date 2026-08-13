@@ -1,4 +1,7 @@
-from flask import Flask, session
+import pytest
+
+flask = pytest.importorskip("flask")
+Flask = flask.Flask
 
 from routes.auth_bp import auth_bp
 
@@ -20,7 +23,10 @@ def test_logout_expires_domain_and_legacy_host_only_session_cookies():
     app = _logout_app("example.com")
 
     with app.test_client() as client:
-        with client.session_transaction() as signed_in:
+        # Match the configured cookie domain while creating the session. Newer
+        # Werkzeug clients correctly reject an example.com cookie created from
+        # their default localhost origin.
+        with client.session_transaction(base_url="https://example.com") as signed_in:
             signed_in["account_id"] = 42
             signed_in["account_email"] = "user@example.com"
 
@@ -31,7 +37,7 @@ def test_logout_expires_domain_and_legacy_host_only_session_cookies():
         assert any("Domain=example.com" in cookie and "Max-Age=0" in cookie for cookie in cookies)
         assert any("Domain=" not in cookie and "Max-Age=0" in cookie for cookie in cookies)
 
-        with client.session_transaction() as signed_out:
+        with client.session_transaction(base_url="https://example.com") as signed_out:
             assert "account_id" not in signed_out
             assert "account_email" not in signed_out
 
