@@ -41,7 +41,7 @@ def _js_totals(cases):
         "const cases = require(%s);\n"
         "const out = cases.map(c => {\n"
         "  const r = teamGradeComposite(c.picks, c.slots, c.targets, c.numTeams,"
-        " c.draftType, c.leaguePpg, c.leagueVal);\n"
+        " c.draftType, c.leaguePpg, c.leagueVal, c.leaguePlayers);\n"
         "  return r ? r.total : null;\n"
         "});\n"
         "process.stdout.write(JSON.stringify(out));\n"
@@ -74,11 +74,17 @@ def _build_cases():
             })
         league_ppg = [round(rng.uniform(0, 24), 1) for _ in range(rng.randint(0, 60))]
         league_val = [round(rng.uniform(0, 9000), 1) for _ in range(rng.randint(0, 120))]
+        league_players = [{
+            "pos": rng.choice(POS),
+            "ppg": rng.choice([None, round(rng.uniform(0, 24), 1)]),
+            "val": round(rng.uniform(0, 9000), 1),
+        } for _ in range(rng.randint(20, 160))]
         cases.append({
             "picks": picks, "slots": slots, "targets": TARGETS,
             "numTeams": rng.choice([10, 12, 14]),
             "draftType": rng.choice(["startup", "redraft"]),
             "leaguePpg": league_ppg, "leagueVal": league_val,
+            "leaguePlayers": league_players,
         })
     return cases
 
@@ -92,6 +98,7 @@ def test_team_grade_composites_match():
             c["picks"], slots=c["slots"], targets=c["targets"],
             num_teams=c["numTeams"], draft_type=c["draftType"],
             league_ppg_list=c["leaguePpg"], league_val_list=c["leagueVal"],
+            league_players=c["leaguePlayers"],
         )
         if (js is None) != (py is None):
             mismatches.append((js, py))

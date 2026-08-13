@@ -54,7 +54,24 @@
     return s.length ? s.reduce(function (a, b) { return a + b; }, 0) / s.length : 0;
   }
 
-  function teamGradeComposite(picks, slots, targets, numTeams, draftType, leaguePpg, leagueVal) {
+  // Build a roster-valid league-wide starting field. A global top-N baseline is
+  // position-blind and, for PPG, becomes an imaginary lineup dominated by QBs.
+  function leagueLineupAvg(players, slots, numTeams, metric) {
+    var eligible = [];
+    (players || []).forEach(function (p, i) {
+      if (p == null || p[metric] == null) return;
+      eligible.push({ id: 'league-' + i, pos: p.pos, ppg: +p[metric] });
+    });
+    if (!eligible.length || !slots.length) return null;
+    var leagueSlots = [];
+    for (var n = 0; n < Math.max(+numTeams || 1, 1); n++) leagueSlots = leagueSlots.concat(slots);
+    var selected = optimalLineupIds(eligible, leagueSlots);
+    var vals = eligible.filter(function (p) { return selected[String(p.id)]; })
+      .map(function (p) { return p.ppg; });
+    return vals.length ? vals.reduce(function (a, b) { return a + b; }, 0) / vals.length : null;
+  }
+
+  function teamGradeComposite(picks, slots, targets, numTeams, draftType, leaguePpg, leagueVal, leaguePlayers) {
     if (!picks || !picks.length) return null;
     var starterIds = optimalLineupIds(picks, slots);
     var nStartFilled = 0;
@@ -81,12 +98,14 @@
     var ppgRatio = null;
     if (myPpgs.length >= Math.max(2, Math.floor(starterArr.length * 0.5))) {
       var myPpgAvg = myPpgs.reduce(function (a, b) { return a + b; }, 0) / myPpgs.length;
-      var leaguePpgAvg = avgTopN(leaguePpg || [], nStart);
+      var leaguePpgAvg = leagueLineupAvg(leaguePlayers, slots, numTeams, 'ppg');
+      if (leaguePpgAvg == null) leaguePpgAvg = avgTopN(leaguePpg || [], nStart);
       if (leaguePpgAvg > 0) ppgRatio = myPpgAvg / leaguePpgAvg;
     }
     var myValAvg = starterArr.length
       ? starterArr.reduce(function (a, p) { return a + (+p.val || 0); }, 0) / starterArr.length : 0;
-    var leagueValAvg = avgTopN(leagueVal || [], nStart);
+    var leagueValAvg = leagueLineupAvg(leaguePlayers, slots, numTeams, 'val');
+    if (leagueValAvg == null) leagueValAvg = avgTopN(leagueVal || [], nStart);
     var valueRatio = leagueValAvg > 0 ? myValAvg / leagueValAvg : null;
     var strengthRatio;
     if (draftType === 'redraft') {
@@ -126,5 +145,6 @@
   return {
     teamGradeComposite: teamGradeComposite,
     optimalLineupIds: optimalLineupIds,
+    leagueLineupAvg: leagueLineupAvg,
   };
 });
