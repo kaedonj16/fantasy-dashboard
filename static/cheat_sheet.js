@@ -104,21 +104,20 @@
     pushOverridesToServer();
   }
   function hasOverrides() { return cfg.hasPremium && Object.keys(overrides).length > 0; }
-  // Effective rank a player sorts on: its custom fractional rank if moved, else
-  // its model (VOR) index.
-  function effRankOf(p) { var o = overrides[p.id]; return (o && o.r != null) ? o.r : p._mr; }
   // Current display order of the normal (not pinned/muted) bucket.
   function normOrder() { return players.filter(function (p) { return p.bucket === 0; }); }
-  // Write a fractional rank for `id` midway between two neighbour players (either
-  // may be null at the board ends). Neighbour-based so it's correct even when
-  // filters hide rows between the visible ones.
+  // A monotonic placement sequence so applyOverrides can re-anchor moves in the
+  // order they were made (keeps chains of moves stable across a model re-rank).
+  function nextSeq() { var mx = 0; Object.keys(overrides).forEach(function (id) { var s = overrides[id] && overrides[id].s; if (s > mx) mx = s; }); return mx + 1; }
+  // Move `id` between two neighbour players (either may be null at the board ends).
+  // We remember the neighbours' ids (a/b) so the move re-anchors to the same
+  // players after a value refresh, and keep `r` as an immediate/fallback rank.
   function boardPlaceBetween(id, above, below) {
-    var r;
-    if (above && below) r = (effRankOf(above) + effRankOf(below)) / 2;
-    else if (above)     r = effRankOf(above) + 0.5;
-    else if (below)     r = effRankOf(below) - 0.5;
-    else                r = 0;
-    var o = overrides[id] || {}; delete o.p; delete o.m; o.r = r;
+    var o = overrides[id] || {}; delete o.p; delete o.m;
+    if (above) o.a = above.id; else delete o.a;
+    if (below) o.b = below.id; else delete o.b;
+    o.r = (above && below) ? (above._eff + below._eff) / 2 : (above ? above._eff + 0.5 : (below ? below._eff - 0.5 : 0));
+    o.s = nextSeq();
     overrides[id] = o; _flashId = id; saveOverrides(); compute(); render();
   }
   // Place player `id` at display index `pos` within the full normal bucket.
@@ -138,11 +137,13 @@
   }
   function boardPin(id) {
     var was = overrides[id] && overrides[id].p; var o = overrides[id] || {};
-    delete o.r; delete o.m; if (was) delete o.p; else o.p = true; overrides[id] = o; _flashId = id; saveOverrides(); compute(); render();
+    delete o.r; delete o.a; delete o.b; delete o.s; delete o.m; if (was) delete o.p; else o.p = true;
+    overrides[id] = o; _flashId = id; saveOverrides(); compute(); render();
   }
   function boardMute(id) {
     var was = overrides[id] && overrides[id].m; var o = overrides[id] || {};
-    delete o.r; delete o.p; if (was) delete o.m; else o.m = true; overrides[id] = o; _flashId = id; saveOverrides(); compute(); render();
+    delete o.r; delete o.a; delete o.b; delete o.s; delete o.p; if (was) delete o.m; else o.m = true;
+    overrides[id] = o; _flashId = id; saveOverrides(); compute(); render();
   }
   // Revert a single player to its model spot (undo one override).
   function boardRevert(id) { if (!overrides[id]) return; delete overrides[id]; _flashId = id; saveOverrides(); compute(); render(); }
@@ -218,37 +219,55 @@
   }
 
   // Apply custom overrides on top of the model board. Pinned players float to the
-  // top, muted sink to the bottom; a moved player sorts on its fractional rank
-  // (o.r), which sits between its chosen neighbours. After sorting we renumber the
-  // RK column, stamp each moved row's net move (spots up/down vs the model) for
-  // the chip, and let it adopt the tier it settled into so cliff headers stay
-  // monotonic instead of repeating.
+  // top, muted sink to the bottom; a moved player is re-anchored between the
+  // neighbours it was dropped between (by id), so the move survives a model
+  // re-rank. After sorting we renumber the RK column, stamp each moved row's net
+  // move within the normal bucket for the chip, and let it adopt the tier it
+  // settled into so cliff headers stay monotonic instead of repeating.
   function applyOverrides() {
     var custom = hasOverrides();
-    players.forEach(function (p, i) {
-      p._mr = i;   // model (VOR) order index, captured before any reorder
+    var byId = {};
+    players.forEach(function (p, i) { p._mr = i; byId[p.id] = p; });   // model (VOR) order
+    players.forEach(function (p) {
       var o = custom ? overrides[p.id] : null;
-      if (o && o.p)             { p.bucket = -1; p.moved = false; p._eff = i; }
-      else if (o && o.m)        { p.bucket = 1;  p.moved = false; p._eff = i; }
-      else if (o && o.r != null){ p.bucket = 0;  p.moved = true;  p._eff = o.r; }
-      else                      { p.bucket = 0;  p.moved = false; p._eff = i; }
+      if (o && o.p)             { p.bucket = -1; p.moved = false; p._eff = p._mr; }
+      else if (o && o.m)        { p.bucket = 1;  p.moved = false; p._eff = p._mr; }
+      else if (o && o.r != null){ p.bucket = 0;  p.moved = true;  p._eff = o.r; }   // provisional
+      else                      { p.bucket = 0;  p.moved = false; p._eff = p._mr; }
     });
     if (!custom) {
       players.forEach(function (p) { p.grp = p.dtier; p.grpLabel = 'Tier ' + p.dtier; p.ov = null; p.ovN = 0; });
       return;
     }
+    // Re-anchor moved players against their neighbours' *current* effective rank,
+    // oldest placement first so a chain of moves resolves consistently.
+    players.filter(function (p) { return p.moved; })
+      .sort(function (a, b) { return (overrides[a.id].s || 0) - (overrides[b.id].s || 0); })
+      .forEach(function (p) {
+        var o = overrides[p.id], aP = o.a ? byId[o.a] : null, bP = o.b ? byId[o.b] : null;
+        if (aP && bP)  p._eff = (aP._eff + bP._eff) / 2;
+        else if (aP)   p._eff = aP._eff + 0.5;
+        else if (bP)   p._eff = bP._eff - 0.5;
+        // both anchors gone from the pool: keep the stored fallback rank (o.r)
+      });
     players.sort(function (a, b) {
       if (a.bucket !== b.bucket) return a.bucket - b.bucket;
       return a._eff - b._eff || a._mr - b._mr;
     });
-    var runTier = 1;
+    // Net-move chip is measured within the normal bucket only, so a player's own
+    // pins/mutes don't distort another player's displayed ▲/▼ count.
+    var modelNormPos = {}, mnp = 0;
+    players.slice().sort(function (a, b) { return a._mr - b._mr; })
+      .forEach(function (x) { if (x.bucket === 0) modelNormPos[x.id] = mnp++; });
+    var runTier = 1, np = 0;
     players.forEach(function (x, i) {
       x.rk = i + 1;
       if (x.bucket === -1)      { x.grp = -1;  x.grpLabel = 'Pinned'; x.ov = 'pin';  x.ovN = 0; }
       else if (x.bucket === 1)  { x.grp = 1e9; x.grpLabel = 'Muted';  x.ov = 'mute'; x.ovN = 0; }
       else {
+        var d = modelNormPos[x.id] - np; np++;
         if (!x.moved) { runTier = x.dtier; x.ov = null; x.ovN = 0; }
-        else { var d = x._mr - i; x.ov = d > 0 ? 'up' : (d < 0 ? 'down' : null); x.ovN = Math.abs(d); }
+        else { x.ov = d > 0 ? 'up' : (d < 0 ? 'down' : null); x.ovN = Math.abs(d); }
         x.grp = runTier; x.grpLabel = 'Tier ' + runTier;
       }
     });
@@ -256,10 +275,22 @@
 
   function scoringAxisKey() { return state.mode === 'dynasty' ? 'startup' : 'redraft'; }
 
-  function youthWindow(age) {
+  // Career window by age, position-aware: RBs peak and fade youngest, QBs latest,
+  // TEs are late-blooming and durable. Position-agnostic bands mislabeled, e.g.,
+  // a 31-year-old QB (still prime) as "Fading" like a 31-year-old RB.
+  function ageBands(pos) {
+    switch ((pos || '').toUpperCase()) {
+      case 'RB': return [23, 26, 28];
+      case 'QB': return [26, 31, 35];
+      case 'TE': return [25, 28, 31];
+      default:   return [24, 27, 30];   // WR
+    }
+  }
+  function youthWindow(age, pos) {
     if (age == null) return ['', ''];
-    if (age <= 24) return ['Ascending', 'win-asc']; if (age <= 27) return ['Prime', 'win-prime'];
-    if (age <= 30) return ['Win-now', 'win-now']; return ['Fading', 'win-fade'];
+    var b = ageBands(pos);
+    if (age <= b[0]) return ['Ascending', 'win-asc']; if (age <= b[1]) return ['Prime', 'win-prime'];
+    if (age <= b[2]) return ['Win-now', 'win-now']; return ['Fading', 'win-fade'];
   }
 
   function compute() {
@@ -311,7 +342,7 @@
     players.forEach(function (x, i) {
       x.rk = i + 1;
       x.value = (x.adp != null) ? Math.round(x.adp - x.rk) : null;
-      x.good = state.mode === 'dynasty' ? (x.age != null && x.age <= 24 ? 1 : 0) : (x.value != null && x.value >= 5 ? 1 : 0);
+      x.good = state.mode === 'dynasty' ? (youthWindow(x.age, x.pos)[1] === 'win-asc' ? 1 : 0) : (x.value != null && x.value >= 5 ? 1 : 0);
       x.drafted = draftedIds ? draftedIds.has(x.id) : false;
       x.posfull = myCounts ? ((needByPos[x.pos] && needByPos[x.pos].need) <= 0 && (needByPos[x.pos] && needByPos[x.pos].have) > 0) : false;
       pc[x.pos] = (pc[x.pos] || 0) + 1; x.prk = x.pos + pc[x.pos];
@@ -420,7 +451,7 @@
   function posrk(x) { return '<span class="cs-posrk cs-pos-' + x.pos + '">' + x.prk + '</span>'; }
   function valChip(v) { if (v == null) return ''; return v > 0 ? '<span class="cs-val g">+' + v + '</span>' : (v < 0 ? '<span class="cs-val b">' + v + '</span>' : '<span class="cs-val n">even</span>'); }
   function smallVal(v) { if (v == null) return ''; return v > 0 ? '<span class="cs-pgv cs-val g">+' + v + '</span>' : (v < 0 ? '<span class="cs-pgv cs-val b">' + v + '</span>' : ''); }
-  function winChip(age) { var w = youthWindow(age); return w[0] ? '<span class="cs-winpill ' + w[1] + '">' + w[0] + '</span>' : ''; }
+  function winChip(age, pos) { var w = youthWindow(age, pos); return w[0] ? '<span class="cs-winpill ' + w[1] + '">' + w[0] + '</span>' : ''; }
   function $(id) { return document.getElementById(id); }
   // Search + position filters narrow which players are shown (they don't re-rank).
   function visiblePlayer(x) {
@@ -485,10 +516,17 @@
     function b(act, glyph, on, title, extra) {
       return '<button type="button" class="cs-ovbtn' + (on ? ' on' : '') + (extra || '') + '" data-act="' + act + '" data-id="' + esc(x.id) + '" title="' + title + '" aria-label="' + title + '">' + glyph + '</button>';
     }
+    // Drag + arrows reorder within the ranked list, so they're hidden on pinned/
+    // muted rows (terminal buckets) — those are managed by the pin/mute toggles
+    // and revert. Keeps the arrows from looking clickable when they'd no-op.
+    var canMove = x.ov !== 'pin' && x.ov !== 'mute';
+    var move = canMove
+      ? b('drag', '&#8942;', false, 'Drag to reorder', ' cs-drag')
+        + b('up', '&#9650;', false, 'Move up a row')
+        + b('down', '&#9660;', false, 'Move down a row')
+      : '';
     return '<td class="cs-edit-cell"><span class="cs-ovbtns">'
-      + b('drag', '&#8942;', false, 'Drag to reorder', ' cs-drag')
-      + b('up', '&#9650;', false, 'Move up a row')
-      + b('down', '&#9660;', false, 'Move down a row')
+      + move
       + b('pin', '&#9733;', x.ov === 'pin', 'Pin to the top')
       + b('mute', '&times;', x.ov === 'mute', 'Mute to the bottom')
       + (x.ov ? b('revert', '&#8630;', false, 'Reset to model spot', ' cs-revert') : '')
@@ -515,7 +553,7 @@
       shown++;
       var cls = 'cs-p' + (state.done.has(x.name) ? ' done' : '') + (x.drafted ? ' drafted' : '') + (x.ov === 'mute' ? ' cs-muted' : '') + (x.ov ? ' cs-ov' : '') + (x.id === _flashId ? ' cs-flash' : '');
       var c5 = dyn ? '<td class="cs-num">' + (x.age != null ? x.age : '') + '</td>' : '<td class="cs-num">' + (x.adp != null ? Math.round(x.adp) : '') + '</td>';
-      var c6 = dyn ? '<td>' + winChip(x.age) + '</td>' : '<td>' + valChip(x.value) + '</td>';
+      var c6 = dyn ? '<td>' + winChip(x.age, x.pos) + '</td>' : '<td>' + valChip(x.value) + '</td>';
       html += '<tr class="' + cls + '" data-good="' + x.good + '" data-posfull="' + (x.posfull ? 1 : 0) + '" data-name="' + esc(x.name) + '" data-id="' + esc(x.id) + '">'
         + '<td class="cs-rk">' + x.rk + '</td>'
         + '<td><span class="cs-pcell">' + badge(x.pos) + '<span class="cs-pname">' + esc(x.name) + '</span>' + ovChip(x) + '</span></td>'
@@ -697,7 +735,7 @@
     var head = ['Rank', 'Player', 'Pos', 'PosRank', 'VOR', (dyn ? 'Age' : 'ADP'), (dyn ? 'Window' : 'Value'), 'Tier'];
     var rows = players.map(function (x) {
       var c5 = dyn ? (x.age != null ? x.age : '') : (x.adp != null ? Math.round(x.adp) : '');
-      var c6 = dyn ? youthWindow(x.age)[0] : (x.value != null ? (x.value > 0 ? '+' + x.value : x.value) : '');
+      var c6 = dyn ? youthWindow(x.age, x.pos)[0] : (x.value != null ? (x.value > 0 ? '+' + x.value : x.value) : '');
       return [x.rk, x.name, x.pos, x.prk, x.vor, c5, c6, x.dtier];
     });
     var csv = [head].concat(rows).map(function (r) {

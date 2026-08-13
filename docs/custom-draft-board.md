@@ -16,11 +16,11 @@ full version, follow them into the live Draft Room.
 
 1. Start from the model, never a blank slate. Zero-setup value on first open;
    overrides are optional tweaks.
-2. Overrides ride the model scale, not stale absolute numbers. We store a
-   fractional rank between two neighbours ("halfway between the players the model
-   ranks 13th and 14th"), not "rank 14". A weekly value refresh that re-ranks the
-   pool re-anchors those neighbours, so the moved player stays put relative to
-   them instead of pinning a stale integer.
+2. Overrides ride the model scale, not stale absolute numbers. A move stores the
+   neighbours it was dropped between (by id), not "rank 14". A weekly value
+   refresh that re-ranks the pool re-anchors the player to those same neighbours'
+   current positions, so it stays put relative to them instead of pinning a stale
+   integer.
 3. The board stays tier-organized and monotonic. A moved player adopts the tier
    it settles into, so the cliff dividers never repeat or go non-monotonic.
 4. Always reversible. A per-player revert and a whole-board "Reset board".
@@ -29,16 +29,25 @@ full version, follow them into the live Draft Room.
 
 Per player, exactly one of: a fractional rank, pinned, or muted.
 
-| Action     | Stored          | Effect                                              |
-|------------|-----------------|-----------------------------------------------------|
-| Move/drag  | `r = <float>`   | sorts at `r`, set midway between the chosen neighbours |
-| Pin        | `p = true`      | floats to a "Pinned" bucket above Tier 1            |
-| Mute       | `m = true`      | sinks to a "Muted" bucket below every tier          |
+| Action     | Stored                       | Effect                                     |
+|------------|------------------------------|--------------------------------------------|
+| Move/drag  | `r`, `a`, `b`, `s`           | re-anchored between neighbours `a`/`b`     |
+| Pin        | `p = true`                   | floats to a "Pinned" bucket above Tier 1   |
+| Mute       | `m = true`                   | sinks to a "Muted" bucket below every tier |
+
+A move stores the **ids of the neighbours it was dropped between** (`a` above,
+`b` below), a fractional fallback rank `r` (midway between their effective ranks
+at drop time), and a monotonic placement sequence `s`. On every board build a
+moved player is re-anchored to the *current* effective rank of `a`/`b`, so the
+move survives a model value refresh (the neighbours move, the player moves with
+them). Moves are resolved oldest-`s` first so a chain of moves (drop B next to a
+just-moved A) stays consistent after a re-rank. If both anchors leave the pool,
+the stored `r` is the fallback.
 
 Pin and mute are terminal buckets and are mutually exclusive; taking one clears
-the other. Moving (drag or arrow) clears pin/mute and writes a fresh `r`.
+the other and drops any `r`/`a`/`b`/`s`. Moving (drag or arrow) clears pin/mute.
 
-Storage shape (per player id): `{ r?: number, p?: true, m?: true }`. Empty
+Storage shape (per player id): `{ r?, a?, b?, s?, p?: true, m?: true }`. Empty
 entries are pruned so an untouched board stores nothing.
 
 ## Ordering
