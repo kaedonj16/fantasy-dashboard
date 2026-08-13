@@ -15276,7 +15276,9 @@ def _playoff_sos_for(season: int, team: str, pos: str):
                 for lk in week_lookups:
                     opp = lk.get(t)
                     if opp:
-                        eases.append(_matchup_cell_ease(rank_map.get(opp), total, info.get(opp, {})))
+                        ease = _matchup_cell_ease(rank_map.get(opp), total, info.get(opp, {}))
+                        if ease is not None:
+                            eases.append(ease)
                 if eases:
                     team_ease[t] = sum(eases) / len(eases)
             ranked = sorted(team_ease.items(), key=lambda x: -x[1])
@@ -15337,7 +15339,9 @@ def _compute_schedule_grid(season: int, pids, weeks):
                 if not game:
                     continue
                 r = rank_map.get(game["opp"])
-                eases.append(_matchup_cell_ease(r, total, info.get(game["opp"], {})))
+                ease = _matchup_cell_ease(r, total, info.get(game["opp"], {}))
+                if ease is not None:
+                    eases.append(ease)
             if eases:
                 team_ease[t] = sum(eases) / len(eases)
         ranked = sorted(team_ease.items(), key=lambda x: -x[1])

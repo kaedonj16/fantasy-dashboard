@@ -51,6 +51,12 @@
     if (!p.adpOverall || p.adpOverall <= 0) return null;
     return Math.ceil(p.adpOverall / leagueSize);
   }
+  function pickValue(overallPick) { return 100 / Math.sqrt(Math.max(Number(overallPick), 1)); }
+  function surplusValue(p, cost) {
+    if (!p.adpOverall || p.adpOverall <= 0) return null;
+    var costPick = (Math.max(parseInt(cost, 10), 1) - 0.5) * leagueSize + 0.5;
+    return pickValue(p.adpOverall) - pickValue(costPick);
+  }
   function verdict(s, r) {
     if (s == null) return "pass";
     if (s >= r.keepAt) return "keep";
@@ -89,22 +95,72 @@
   function fmt(n) { return (n > 0 ? "+" : n < 0 ? "−" : "") + Math.abs(n) + " rd"; }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
 
+  function optimizeUniqueRounds(rows, limit, r) {
+    // DP over selected count + occupied-round mask. Selection and collision
+    // pricing happen together, so a costly bump can promote the next-best player.
+    var states = { "0:0": { count: 0, mask: 0, score: 0, picks: [] } };
+    rows.forEach(function (row, idx) {
+      if (row.surplus == null || row.surplus <= 0) return;
+      var next = Object.assign({}, states);
+      Object.keys(states).forEach(function (key) {
+        var state = states[key];
+        if (state.count >= limit) return;
+        for (var rd = row.cost; rd >= 1; rd--) {
+          var bit = 1 << (rd - 1);
+          if (state.mask & bit) continue;
+          var gain = surplusValue(row.p, rd);
+          if (gain == null || gain <= 0) continue;
+          var ncount = state.count + 1, nmask = state.mask | bit;
+          var nkey = ncount + ":" + nmask, score = state.score + gain;
+          if (!next[nkey] || score > next[nkey].score) {
+            next[nkey] = { count: ncount, mask: nmask, score: score,
+              picks: state.picks.concat([{ idx: idx, round: rd }]) };
+          }
+        }
+      });
+      states = next;
+    });
+    var best = states["0:0"];
+    Object.keys(states).forEach(function (key) {
+      var s = states[key];
+      if (s.score > best.score || (s.score === best.score && s.count > best.count)) best = s;
+    });
+    rows.forEach(function (row) { row.keep = false; });
+    best.picks.forEach(function (pick) {
+      var row = rows[pick.idx];
+      row.keep = true; row.cost = pick.round;
+      row.surplus = row.cost - row.mkt;
+      row.surplusValue = surplusValue(row.p, row.cost);
+      row.verdict = verdict(row.surplus, r);
+    });
+  }
+
   function compute() {
     var r = rules();
     var rows = players.map(function (p) {
       var cost = costRound(p, r);
       var mkt = marketRound(p);
       var surplus = mkt == null ? null : (cost - mkt);
-      return { p: p, cost: cost, mkt: mkt, surplus: surplus, verdict: verdict(surplus, r) };
+      return { p: p, cost: cost, mkt: mkt, surplus: surplus,
+        surplusValue: surplusValue(p, cost), verdict: verdict(surplus, r) };
     });
     rows.sort(function (a, b) {
-      var sa = a.surplus == null ? -9999 : a.surplus, sb = b.surplus == null ? -9999 : b.surplus;
+      var ae = a.surplus != null && a.surplus > 0, be = b.surplus != null && b.surplus > 0;
+      if (ae !== be) return ae ? -1 : 1;
+      var sa = a.surplusValue == null ? -9999 : a.surplusValue;
+      var sb = b.surplusValue == null ? -9999 : b.surplusValue;
       return (sb - sa) || ((b.p.value || 0) - (a.p.value || 0));
     });
     var limit = parseInt(elLim && elLim.value, 10); if (isNaN(limit)) limit = 0;
-    rows.forEach(function (row, i) { row.keep = i < limit && row.surplus != null && row.surplus > 0; });
-    if (r.onePerRound) resolveCollisions(rows, r);
-    else lastBumps = [];
+    if (r.onePerRound) optimizeUniqueRounds(rows, limit, r);
+    else {
+      var remaining = limit;
+      rows.forEach(function (row) {
+        row.keep = remaining > 0 && row.surplus != null && row.surplus > 0;
+        if (row.keep) remaining--;
+      });
+    }
+    lastBumps = [];
     return rows;
   }
 
