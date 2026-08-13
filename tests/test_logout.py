@@ -1,7 +1,9 @@
 import pytest
 
-flask = pytest.importorskip("flask")
-Flask = flask.Flask
+# The lightweight CI job deliberately installs pytest without the web stack;
+# the integration job installs requirements.txt and runs these tests. Skip the
+# entire module during lightweight collection instead of importing Flask first.
+Flask = pytest.importorskip("flask", reason="logout tests require the Flask web stack").Flask
 
 from routes.auth_bp import auth_bp
 
