@@ -10093,75 +10093,101 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 
   // GM Memo generation functionality
-  const generateGmMemoBtn = document.getElementById('generateGmMemoBtn');
-  if (generateGmMemoBtn) {
-    generateGmMemoBtn.addEventListener('click', async function() {
-      const _isPremium = document.getElementById('page-root')?.dataset.premium === 'true';
-      if (!_isPremium) { showPaywall('gm-memo'); return; }
+  // The dashboard body can be replaced after a cold-cache background build.
+  // Delegate this click from document instead of binding only to the button
+  // that happened to exist at DOMContentLoaded time.
+  document.addEventListener('click', async function(event) {
+    const generateGmMemoBtn = event.target.closest('#generateGmMemoBtn');
+    if (!generateGmMemoBtn) return;
 
-      const leagueId = this.dataset.leagueId;
-      const season = this.dataset.season;
-      const platform = this.dataset.platform;
-      const viewerRosterId = this.dataset.viewerRosterId;
+    event.preventDefault();
+    if (generateGmMemoBtn.disabled) return;
 
-      const emptyState = document.getElementById('gm-memo-empty');
-      const loadingState = document.getElementById('gm-memo-loading');
-      const resultState = document.getElementById('gm-memo-result');
+    const _isPremium = document.getElementById('page-root')?.dataset.premium === 'true';
+    if (!_isPremium) {
+      if (typeof showPaywall === 'function') showPaywall('gm-memo');
+      return;
+    }
 
-      // Show loading, hide empty state
-      if (emptyState) emptyState.style.display = 'none';
-      if (loadingState) loadingState.style.display = 'block';
-      if (resultState) resultState.style.display = 'none';
+    const leagueId = generateGmMemoBtn.dataset.leagueId;
+    const season = generateGmMemoBtn.dataset.season;
+    const platform = generateGmMemoBtn.dataset.platform;
+    const viewerRosterId = generateGmMemoBtn.dataset.viewerRosterId;
 
-      try {
-        const response = await fetch('/api/gm-memo', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            league_id: leagueId,
-            season: parseInt(season),
-            platform: platform,
-            viewer_roster_id: viewerRosterId
-          })
-        });
+    const emptyState = document.getElementById('gm-memo-empty');
+    const loadingState = document.getElementById('gm-memo-loading');
+    const resultState = document.getElementById('gm-memo-result');
 
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
+    // Show loading, hide empty state
+    generateGmMemoBtn.disabled = true;
+    generateGmMemoBtn.setAttribute('aria-busy', 'true');
+    generateGmMemoBtn.textContent = 'Generating...';
+    if (emptyState) {
+      emptyState.style.display = 'none';
+      emptyState.querySelectorAll('.gm-memo-error').forEach(el => el.remove());
+    }
+    if (loadingState) loadingState.style.display = 'block';
+    if (resultState) resultState.style.display = 'none';
 
-        if (data.success) {
-          // Hide loading, show result
-          if (loadingState) loadingState.style.display = 'none';
-          if (resultState) {
-            resultState.style.display = 'block';
-            resultState.innerHTML = data.gm_memo_html;
-            if (window.brRevealText) window.brRevealText(resultState);
-          }
-        } else {
-          // Show error
-          if (loadingState) loadingState.style.display = 'none';
-          if (emptyState) {
-            emptyState.style.display = 'block';
-            const errorDiv = document.createElement('div');
-            errorDiv.className = 'gm-memo-error';
-            errorDiv.textContent = data.error || 'Failed to generate your Front Office Report. Please try again.';
-            emptyState.appendChild(errorDiv);
-          }
+    try {
+      const response = await fetch('/api/gm-memo', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          league_id: leagueId,
+          season: parseInt(season),
+          platform: platform,
+          viewer_roster_id: viewerRosterId
+        })
+      });
+
+      const data = await response.json();
+      if (response.status === 403 && data.paywall) {
+        if (loadingState) loadingState.style.display = 'none';
+        if (emptyState) emptyState.style.display = 'block';
+        if (typeof showPaywall === 'function') showPaywall('gm-memo');
+        return;
+      }
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+
+      if (data.success) {
+        // Hide loading, show result
+        if (loadingState) loadingState.style.display = 'none';
+        if (resultState) {
+          resultState.style.display = 'block';
+          resultState.innerHTML = data.gm_memo_html;
+          if (window.brRevealText) window.brRevealText(resultState);
         }
-      } catch (error) {
-        console.error('Error generating GM memo:', error);
+      } else {
+        // Show error
         if (loadingState) loadingState.style.display = 'none';
         if (emptyState) {
           emptyState.style.display = 'block';
           const errorDiv = document.createElement('div');
           errorDiv.className = 'gm-memo-error';
-          errorDiv.textContent = 'Network error. Please try again.';
+          errorDiv.textContent = data.error || 'Failed to generate your Front Office Report. Please try again.';
           emptyState.appendChild(errorDiv);
         }
       }
-    });
-  }
+    } catch (error) {
+      console.error('Error generating GM memo:', error);
+      if (loadingState) loadingState.style.display = 'none';
+      if (emptyState) {
+        emptyState.style.display = 'block';
+        emptyState.querySelectorAll('.gm-memo-error').forEach(el => el.remove());
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'gm-memo-error';
+        errorDiv.textContent = 'Network error. Please try again.';
+        emptyState.appendChild(errorDiv);
+      }
+    } finally {
+      generateGmMemoBtn.disabled = false;
+      generateGmMemoBtn.removeAttribute('aria-busy');
+      generateGmMemoBtn.textContent = 'Generate Report';
+    }
+  });
 
   // History page dynamic loading
   const historyPage = document.querySelector('.history-page');
