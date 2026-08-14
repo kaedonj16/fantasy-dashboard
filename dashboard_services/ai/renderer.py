@@ -446,7 +446,7 @@ def get_trade_ai_analysis(
     }
 
     # Build cache key for trade analysis
-    cache_key = build_ai_cache_key("trade_analysis", payload, "v5")
+    cache_key = build_ai_cache_key("trade_analysis", payload, "v7")
 
     # Try to get from cache first
     cached = load_cached_ai_text(cache_key)

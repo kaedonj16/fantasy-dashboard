@@ -3459,6 +3459,50 @@ window.initTradePage = function initTradePage(root = document) {
     }
   }
 
+  // Keep the roster filter and the analyst's selected viewer team on the same
+  // roster. The two controls load asynchronously, and changing #teamSelect used
+  // to update only the analyst context while leaving the filter bound to the
+  // previous roster. That made the cards look correctly labelled but populated
+  // them from the wrong owners.
+  function syncRosterFilterViewer(selectedRosterId) {
+    const newViewerRid = String(selectedRosterId || "");
+    if (!newViewerRid || !rosterFilter.loaded) return;
+
+    const changed = !!rosterFilter.viewerRid && rosterFilter.viewerRid !== newViewerRid;
+    rosterFilter.viewerRid = newViewerRid;
+
+    if (changed) {
+      state.sideAPlayers = [];
+      state.sideBPlayers = [];
+      state.sideAPicks = [];
+      state.sideBPicks = [];
+      rosterFilter.sideBRid = "";
+      rosterFilter.sideBAuto = false;
+      saveState();
+      renderChips("A");
+      renderChips("B");
+      syncEmptyState("A");
+      syncEmptyState("B");
+      recomputeTrade();
+    }
+
+    const opponentSelect = root.querySelector("#sideBTeamSelect");
+    if (opponentSelect) {
+      opponentSelect.innerHTML = '<option value="">Team 2</option>';
+      Object.entries(rosterFilter.teamName).forEach(([rid, teamName]) => {
+        if (rid === newViewerRid) return;
+        const option = document.createElement("option");
+        option.value = rid;
+        option.textContent = teamName;
+        opponentSelect.appendChild(option);
+      });
+      opponentSelect.value = rosterFilter.sideBRid;
+    }
+
+    updateSideTitles();
+    syncViewerSideLabels();
+  }
+
   // In-flight dedupe: these fire on init and again on league-type/size changes,
   // so collapse concurrent identical requests (keyed by params) into one.
   let _deltasInflight = null, _deltasKey = "";
@@ -7356,8 +7400,13 @@ window.initTradePage = function initTradePage(root = document) {
     // Yield to browser so the loading state actually paints before fetch starts
     await new Promise(resolve => requestAnimationFrame(resolve));
 
-    const viewerSide =
-      root.querySelector('input[name="viewerSide"]:checked')?.value || "a";
+    // Roster-filter mode has fixed semantics: Side A is the selected viewer
+    // team's return and Side B is what that team sends. Do not trust a stale
+    // radio selection left over from unrestricted mode while the async roster
+    // controls are initializing.
+    const viewerSide = rosterFilterActive()
+      ? "a"
+      : (root.querySelector('input[name="viewerSide"]:checked')?.value || "a");
     const teamSelector = root.querySelector("#teamSelect");
     const selectedTeamRosterId = teamSelector?.value || "";
     const selectedTeamName =
@@ -8166,6 +8215,8 @@ window.initTradePage = function initTradePage(root = document) {
             if (currentRosterId) selector.value = currentRosterId;
           }
 
+          syncRosterFilterViewer(selector.value);
+
           // When auto-selecting on sign-in, persist to session and refresh panels
           // so the PI card doesn't stay stuck on "Select your team".
           if (autoSelectedRosterId) {
@@ -8187,6 +8238,7 @@ window.initTradePage = function initTradePage(root = document) {
 
     bindOnce(selector, "teamSelectorChange", "change", () => {
       const selectedRosterId = selector.value;
+      syncRosterFilterViewer(selectedRosterId);
       if (selectedRosterId) {
         if (root.querySelector("#targetsTabContent.is-active")) loadTradeTargets();
         fetch("/api/set-viewer-roster", {
