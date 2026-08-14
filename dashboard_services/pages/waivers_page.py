@@ -144,7 +144,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-stream-name { font-weight: 700; font-size: 13px; color: var(--text); }
 .wv-stream-matchup { font-size: 12px; color: var(--text-muted); flex: 1; }
 .wv-stream-imp {
-  font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 12px;
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .wv-stream-imp-good { background: color-mix(in srgb, var(--win) 16%, transparent); color: var(--win); }
@@ -291,7 +291,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-cmp-a.wv-compare-win, .wv-cmp-b.wv-compare-win { color: var(--win); font-weight: 800; }
 .wv-compare-win .wv-cmp-v {
   background: color-mix(in srgb, var(--win) 14%, transparent);
-  padding: 2px 9px; border-radius: 999px;
+  padding: 2px 9px; border-radius: 12px;
 }
 .wv-compare-lose { color: var(--text); font-weight: 700; }
 .wv-cmp-hcol:first-child { text-align: right; }
@@ -301,12 +301,12 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-cmp-hcol:first-child .wv-cmp-headmeta { justify-content: flex-end; }
 .wv-cmp-poschip {
   font-size: 10px; font-weight: 800; letter-spacing: .02em;
-  padding: 1px 7px; border-radius: 999px; white-space: nowrap;
+  padding: 1px 7px; border-radius: 12px; white-space: nowrap;
 }
 .wv-cmp-vs {
   align-self: center; justify-self: center; font-size: 10px; font-weight: 800;
   color: var(--text-subtle); letter-spacing: .06em;
-  border: 1px solid var(--border); border-radius: 999px; padding: 3px 7px;
+  border: 1px solid var(--border); border-radius: 12px; padding: 3px 7px;
 }
 /* Verdict banner: the advisor's actual call, up top where it's read first. */
 .wv-cmp-verdict {

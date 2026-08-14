@@ -14,7 +14,7 @@ css = """
       .num{ text-align:center; font-variant-numeric: tabular-nums; }
       .sorted-asc::after{ content:" \\25B2"; color:var(--accent); }
       .sorted-desc::after{ content:" \\25BC"; color:var(--accent); }
-      .badge{ background:#eef2ff; color:#3730a3; font-weight:600; padding:2px 8px; border-radius:999px; }
+      .badge{ background:#eef2ff; color:#3730a3; font-weight:600; padding:2px 8px; border-radius:12px; }
       .footer{ margin-top:10px; color:#6b7280; font-size:12px; }
       .sorted-secondary { color: #122d4b; opacity: 0.6; }
     </style>
@@ -316,7 +316,7 @@ recap_css = """
     
       /* gradient bar under the row */
       .mu-bar{
-        margin-top:10px; height:8px; border-radius:999px; overflow:hidden;
+        margin-top:10px; height:8px; border-radius:12px; overflow:hidden;
         display:flex;
       }
       /* set widths inline in your HTML: style="width: 62%;" etc. */
@@ -330,7 +330,7 @@ recap_css = """
       /* small chips (optional, eg. records, win% prediction) */
       .mu-chip{
         display:inline-grid; place-items:center;
-        padding:2px 8px; border-radius:999px;
+        padding:2px 8px; border-radius:12px;
         font-size:12px; font-weight:700;
         background:#0b1220; border:1px solid var(--grid,#1f2937);
         color:#93c5fd;
@@ -481,7 +481,7 @@ logoCss = """
         .activity-list .time { color: #64748b; font-size: 12px; min-width: 120px; }
         .activity-list .pill {
           font-size: 11px; padding: 2px 8px;
-          border-radius: 999px; border: 1px solid #e5e7eb;
+          border-radius: 12px; border: 1px solid #e5e7eb;
           background: #f8fafc; color: #475569;
         }
         .activity-empty { color: #6b7280; font-size: 14px; }
@@ -503,7 +503,7 @@ logoCss = """
         }
         .scroll-box::-webkit-scrollbar-thumb {
           background-color: #cbd5e1;
-          border-radius: 999px;
+          border-radius: 12px;
         }
         .scroll-box::-webkit-scrollbar-track {
           background-color: #f8fafc;
@@ -524,7 +524,7 @@ logoCss = """
         }
         .chip {
           background: #f8fafc; border: 1px solid #e5e7eb;
-          padding: 2px 8px; border-radius: 999px;
+          padding: 2px 8px; border-radius: 12px;
           font-size: 12px; color: #475569; white-space: nowrap;
         }
         .chip.diff-pos { background: #dcfce7; border-color: #86efac; color: #166534; }
@@ -561,9 +561,9 @@ logoCss = """
         .podium .slot .badge { position: absolute; top: 8px; right: 10px; font-size: 18px; }
         .podium .bar {
           height: 10px; margin-top: 10px;
-          background: #ffffffaa; border: 1px solid #e5e7eb; border-radius: 999px; overflow: hidden;
+          background: #ffffffaa; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;
         }
-        .podium .bar > div { height: 100%; background: #122d4b; border-radius: 999px; }
+        .podium .bar > div { height: 100%; background: #122d4b; border-radius: 12px; }
         .podium .score { margin-top: 6px; font-size: 12px; color: #334155; font-variant-numeric: tabular-nums; }
         .podium .podium-header {
           display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 6px;
@@ -594,9 +594,9 @@ logoCss = """
         }
         .rank-item .bar {
           flex: 1; height: 5px; min-width: 140px; margin-top: 8px;
-          background: #e5e7eb; border-radius: 999px; overflow: hidden;
+          background: #e5e7eb; border-radius: 12px; overflow: hidden;
         }
-        .rank-item .bar > div { height: 100%; background: #122d4b; border-radius: 999px; }
+        .rank-item .bar > div { height: 100%; background: #122d4b; border-radius: 12px; }
         .rank-item .chips { display: grid; grid-template-columns: 1.5fr 1.5fr .5fr .5fr; gap: 6px; font-size: 11px; color: #475569; flex-shrink: 0; padding-left: 5px; }
         
         /* Footer */
@@ -661,7 +661,7 @@ logoCss = """
         .p:last-child{border-bottom:none}
         .p .slot{font-weight:700;color:#122d4b;min-width:28px;text-align:center}
         .p .meta{color:#64748b;font-size:12px}
-        .badge{background:#eef2ff;color:#3730a3;border:1px solid #e5e7eb;border-radius:999px;padding:2px 8px;font-size:11px}
+        .badge{background:#eef2ff;color:#3730a3;border:1px solid #e5e7eb;border-radius:12px;padding:2px 8px;font-size:11px}
         @media (min-width: 1400px) {
           .matchup-card {
                 grid-column: auto;   /* stops spanning 1 / -1 */
@@ -681,7 +681,7 @@ logoCss = """
 
         .m-team{ display:flex; align-items:center; gap:10px; justify-content:space-between; }
         .m-team .name{ font-weight:800; }
-        .m-team .badge{ margin-left:8px; font-size:12px; background:#eef2ff; border:1px solid #e5e7eb; padding:2px 8px; border-radius:999px; }
+        .m-team .badge{ margin-left:8px; font-size:12px; background:#eef2ff; border:1px solid #e5e7eb; padding:2px 8px; border-radius:12px; }
         .m-team .num{
           letter-spacing: 1px;
           font-size: 2rem;
@@ -895,14 +895,14 @@ logoCss = """
     
       /* gradient bar under the row */
       .mu-bar{
-        margin-top:10px; height:8px; border-radius:999px; overflow:hidden;
+        margin-top:10px; height:8px; border-radius:12px; overflow:hidden;
         display:flex;
       }
     
       /* small chips (optional, eg. records, win% prediction) */
       .mu-chip{
         display:inline-grid; place-items:center;
-        padding:2px 8px; border-radius:999px;
+        padding:2px 8px; border-radius:12px;
         font-size:12px; font-weight:700;
         background:#0b1220; border:1px solid var(--grid,#1f2937);
         color:#93c5fd;
@@ -1031,7 +1031,7 @@ logoCss = """
         /* little username chips at the top */
         .manager-pill {
           border: none;
-          border-radius: 999px;
+          border-radius: 12px;
           padding: 3px 8px;
           font-size: 0.7rem;
           background: rgba(255,255,255,0.06);
@@ -1067,7 +1067,7 @@ logoCss = """
         [data-section="teams-sidebar"] .avatar {
           width: 30px;
           height: 30px;
-          border-radius: 999px;
+          border-radius: 12px;
         }
         
         .team-name {
@@ -1217,7 +1217,7 @@ activity_css = """
       .team-name{font-weight:800}
       .plist{display:flex;flex-direction:column;gap:6px}
       .player{display:flex;align-items:center;gap:8px;padding:6px 8px;background:#fff;border:1px solid #e5e7eb;border-radius:10px}
-      .badge{font-size:11px;border:1px solid #e5e7eb;border-radius:999px;padding:2px 8px;background:#f1f5f9;color:#475569}
+      .badge{font-size:11px;border:1px solid #e5e7eb;border-radius:12px;padding:2px 8px;background:#f1f5f9;color:#475569}
       .io{width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
       .io.add{background:#dcfce7;color:#166534;border:1px solid #86efac}
       .io.drop{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5}
@@ -1269,7 +1269,7 @@ activity_css = """
         .activity-list .pill {
           font-size: 11px;
           padding: 2px 8px;
-          border-radius: 999px;
+          border-radius: 12px;
           border: 1px solid #e5e7eb;
           background: #f8fafc;
           color: #475569;
@@ -1281,7 +1281,7 @@ activity_css = """
         }
         .scroll-box::-webkit-scrollbar-thumb {
           background: #cbd5e1;
-          border-radius: 999px;
+          border-radius: 12px;
         }
         .scroll-box::-webkit-scrollbar-track {
           background: #f8fafc;
@@ -1331,11 +1331,11 @@ activity_css = """
         .card.activity-card .activity-list li:last-child { border-bottom: none; }
 
         .card.activity-card .time { color: #64748b; font-size: 12px; min-width: 100px; }
-        .card.activity-card .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid #e5e7eb; background: #f8fafc; color: #475569; }
+        .card.activity-card .pill { font-size: 11px; padding: 2px 8px; border-radius: 12px; border: 1px solid #e5e7eb; background: #f8fafc; color: #475569; }
 
         /* Nice scrollbar */
         .card.activity-card .scroll-box::-webkit-scrollbar { width: 8px; }
-        .card.activity-card .scroll-box::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+        .card.activity-card .scroll-box::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 12px; }
         .card.activity-card .scroll-box::-webkit-scrollbar-track { background: #f8fafc; }
 
         /* Ensure the grid doesn’t force equal heights that break overflow */
@@ -1354,7 +1354,7 @@ activity_css = """
           cursor: pointer;
           transition: all 0.15s ease;
         }
-        .card.activity-card .activity-pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid #e5e7eb; background: #f8fafc; color: #475569; }
+        .card.activity-card .activity-pill { font-size: 11px; padding: 2px 8px; border-radius: 12px; border: 1px solid #e5e7eb; background: #f8fafc; color: #475569; }
 
         
         .filter-pill.active {
@@ -1437,7 +1437,7 @@ activity_css = """
           background: #f8fafc;
           border: 1px solid #e5e7eb;
           padding: 2px 8px;
-          border-radius: 999px;
+          border-radius: 12px;
           font-size: 12px;
           color: #475569;
         }
@@ -1476,7 +1476,7 @@ activity_css = """
         .team-avatar {
           width: 28px;
           height: 28px;
-          border-radius: 999px;
+          border-radius: 12px;
           overflow: hidden;
           background: #122d4b;
           flex-shrink: 0;
@@ -1783,7 +1783,7 @@ NAV_CSS = """
       .brand{font-weight:900;letter-spacing:.4px}
       .nav-links{display:flex;gap:14px;align-items:center}
       .nav-btn{appearance:none;border:none;background:transparent;color:#e5e7eb;
-               padding:8px 12px;border-radius:999px;cursor:pointer;font-weight:600}
+               padding:8px 12px;border-radius:12px;cursor:pointer;font-weight:600}
       .nav-btn.active{background:#a1a7ae;color:#fff}
       .nav-spacer{height:6px}
     </style>
@@ -2018,7 +2018,7 @@ TRADE_HTML = """
         align-items: center;
         gap: 6px;
         padding: 4px 8px;
-        border-radius: 999px;
+        border-radius: 12px;
         background: #111827;
         border: 1px solid #374151;
         font-size: 0.8rem;
@@ -2042,7 +2042,7 @@ TRADE_HTML = """
         align-items: center;
         justify-content: center;
         padding: 9px 18px;
-        border-radius: 999px;
+        border-radius: 12px;
         border: none;
         background: #3b82f6;
         color: #f9fafb;
@@ -2063,7 +2063,7 @@ TRADE_HTML = """
         text-transform: uppercase;
         letter-spacing: 0.06em;
         padding: 2px 7px;
-        border-radius: 999px;
+        border-radius: 12px;
         background: #1f2937;
         color: #9ca3af;
         margin-left: 8px;

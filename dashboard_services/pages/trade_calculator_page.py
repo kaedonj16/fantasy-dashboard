@@ -647,7 +647,7 @@ def build_trade_calculator_body(
             .pi-chip-row {{ display:flex;flex-wrap:wrap;gap:5px;margin-top:7px; }}
             .pi-chip {{
               display:inline-flex;align-items:center;gap:4px;
-              padding:3px 8px;border-radius:999px;font-size:10.5px;font-weight:700;
+              padding:3px 8px;border-radius:12px;font-size:10.5px;font-weight:700;
             }}
             .pi-chip i {{ font-size:9.5px; }}
 

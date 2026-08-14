@@ -10059,7 +10059,7 @@ def build_activity_body(ctx: dict) -> str:
       .act-tgl svg {{ width: 15px; height: 15px; flex: 0 0 auto; }}
       .act-tgl .act-tgl-cnt {{
         font-size: 11px; font-weight: 800; background: var(--accent-soft); color: var(--text-muted);
-        border-radius: 999px; padding: 1px 7px; font-variant-numeric: tabular-nums; line-height: 1.5;
+        border-radius: 12px; padding: 1px 7px; font-variant-numeric: tabular-nums; line-height: 1.5;
       }}
       .act-tgl.active {{ background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 3px 10px rgba(18,45,75,.20); }}
       .act-tgl.active .act-tgl-cnt {{ background: rgba(255,255,255,.22); color: #fff; }}
@@ -10131,7 +10131,7 @@ def build_activity_body(ctx: dict) -> str:
       .act-pulse .act-arrow {{ color: var(--text-subtle, var(--text-muted)); font-weight: 700; padding: 0 1px; }}
       .act-pulse .act-rend {{ display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }}
       .act-pulse .act-val {{ font-size: 12.5px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }}
-      .act-pulse .act-swing {{ font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 999px; color: var(--win, #15803d); background: color-mix(in srgb, var(--win, #16a34a) 14%, transparent); font-variant-numeric: tabular-nums; }}
+      .act-pulse .act-swing {{ font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 12px; color: var(--win, #15803d); background: color-mix(in srgb, var(--win, #16a34a) 14%, transparent); font-variant-numeric: tabular-nums; }}
       /* Trade rows expand to the full breakdown via native <details> */
       .act-pulse details.act-trade {{ display: block; padding: 0; }}
       .act-pulse .act-trade-sum {{ display: grid; grid-template-columns: auto 1fr auto; gap: 11px; align-items: center; padding: 9px 10px; border-radius: 10px; cursor: pointer; list-style: none; }}
@@ -10344,7 +10344,7 @@ def build_activity_body(ctx: dict) -> str:
         align-items: center;
         margin-top: 8px;
         padding: 4px 8px;
-        border-radius: 999px;
+        border-radius: 12px;
         font-size: 12px;
         font-weight: 700;
       }}
@@ -17111,7 +17111,7 @@ def _render_commissioner_history(layer, current_season, current_moves, current_t
   .msh-stat {{ border:1px solid var(--border); border-radius:14px; padding:14px 16px; background:var(--row,rgba(127,127,127,.03)); }}
   .msh-stat-head {{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }}
   .msh-stat-label {{ font-size:11px; font-weight:700; letter-spacing:.04em; color:var(--muted); text-transform:uppercase; }}
-  .msh-trend {{ font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; white-space:nowrap; }}
+  .msh-trend {{ font-size:11px; font-weight:700; padding:3px 9px; border-radius:12px; white-space:nowrap; }}
   .msh-series {{ display:flex; align-items:center; flex-wrap:wrap; gap:2px; }}
   .msh-chip {{ display:inline-flex; flex-direction:column; align-items:center; gap:1px; padding:5px 11px; border-radius:10px; border:1px solid; line-height:1.1; }}
   .msh-chip-yr {{ font-size:10px; font-weight:600; opacity:.75; }}
@@ -29093,9 +29093,9 @@ def page_trade_card(share_id: str):
     .side-title{{font-size:9px;font-weight:700;letter-spacing:.08em;color:var(--tc-dim);text-transform:uppercase;margin-bottom:4px}}
     .side-total{{font-size:22px;font-weight:900;color:var(--tc-text2);margin-bottom:10px}}
     .bar-wrap{{padding:0 16px 14px}}
-    .bar-bg{{height:22px;background:var(--tc-bar);border-radius:999px;position:relative;overflow:hidden;border:1px solid var(--tc-border)}}
+    .bar-bg{{height:22px;background:var(--tc-bar);border-radius:12px;position:relative;overflow:hidden;border:1px solid var(--tc-border)}}
     .bar-fair-zone{{position:absolute;top:0;bottom:0;left:50%;transform:translateX(-50%);background:rgba(56,189,248,.12);border-left:1px solid rgba(56,189,248,.25);border-right:1px solid rgba(56,189,248,.25);pointer-events:none}}
-    .bar-indicator{{position:absolute;top:-3px;width:12px;height:28px;border-radius:999px;background:#38bdf8;transform:translateX(-50%);box-shadow:0 0 8px rgba(56,189,248,.5)}}
+    .bar-indicator{{position:absolute;top:-3px;width:12px;height:28px;border-radius:12px;background:#38bdf8;transform:translateX(-50%);box-shadow:0 0 8px rgba(56,189,248,.5)}}
     .bar-labels{{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:10px;color:var(--tc-dimmer);font-weight:600}}
     .bar-fair-label{{font-size:10px;color:var(--tc-dim);font-weight:600}}
     .pi-hdr-btn{{font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;border:1px solid rgba(74,222,128,.4);background:transparent;color:#4ade80;cursor:pointer;transition:background .15s}}

@@ -346,7 +346,7 @@ def build_players_shell() -> str:
       }
       .pos-pill {
         padding: 6px 12px;
-        border-radius: 999px;
+        border-radius: 12px;
         border: 1px solid var(--border);
         background: var(--card-bg);
         color: var(--text-muted);
@@ -438,7 +438,7 @@ def build_players_shell() -> str:
       }
       .active-setting-tag {
         padding: 4px 10px;
-        border-radius: 999px;
+        border-radius: 12px;
         background: var(--accent-soft);
         color: var(--accent);
         font-size: 11px;
