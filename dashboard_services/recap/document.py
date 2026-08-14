@@ -185,12 +185,45 @@ def build_recap_document(payload: dict) -> dict:
 
 
 def apply_ai_narrative(document: dict, result: dict) -> dict:
-    """Attach optional AI wording without allowing it to alter verified facts."""
+    """Attach AI wording only to story IDs selected from verified facts.
+
+    Unknown, duplicated, or omitted IDs cannot add, reorder, or remove factual
+    modules.  A missing AI story retains its deterministic title and body.
+    """
     updated = deepcopy(document)
     fallback = updated.get("narrative") or {}
-    paragraphs = [str(p).strip() for p in (result.get("paragraphs") or []) if str(p).strip()]
+    ai_by_id: dict[str, dict] = {}
+    for item in result.get("stories") or []:
+        if not isinstance(item, dict):
+            continue
+        story_id = str(item.get("id") or "")
+        if story_id and story_id not in ai_by_id:
+            ai_by_id[story_id] = item
+
+    paragraphs: list[str] = []
+    for story in updated.get("stories") or []:
+        overlay = ai_by_id.get(story["id"]) or {}
+        title = str(overlay.get("title") or story["title"]).strip()
+        body = str(overlay.get("body") or story["body"]).strip()
+        story["narrative"] = {
+            "source": "ai" if overlay else "deterministic",
+            "title": title,
+            "body": body,
+        }
+        if body:
+            paragraphs.append(body)
+
+    # Read old cached/test responses safely during the schema transition. New
+    # generation always returns per-story overlays.
+    if not ai_by_id and result.get("paragraphs"):
+        paragraphs = [
+            str(p).strip() for p in (result.get("paragraphs") or []) if str(p).strip()
+        ]
     updated["narrative"] = {
-        "source": "ai",
+        "source": "ai" if any(
+            story.get("narrative", {}).get("source") == "ai"
+            for story in updated.get("stories") or []
+        ) or bool(result.get("paragraphs")) else "deterministic",
         "headline": str(result.get("headline") or fallback.get("headline") or "Week Recap").strip(),
         "paragraphs": paragraphs or list(fallback.get("paragraphs") or []),
         "looking_ahead": str(result.get("looking_ahead") or "").strip(),

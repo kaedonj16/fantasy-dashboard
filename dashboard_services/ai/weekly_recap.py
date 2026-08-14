@@ -706,25 +706,35 @@ def build_weekly_recap_payload(
     }
 
 
-def _generate_ai_storyline(payload: dict) -> dict:
-    """Call OpenAI to generate the weekly recap column."""
+def _generate_ai_storyline(payload: dict, selected_stories: list[dict]) -> dict:
+    """Write copy for story modules already selected by deterministic logic."""
     client = get_ai_client()
+    story_ids = [story["id"] for story in selected_stories]
 
     schema = {
         "type": "object",
         "properties": {
             "headline": {"type": "string", "description": "Punchy headline (max 80 chars) for the week."},
-            "paragraphs": {
+            "stories": {
                 "type": "array",
-                "items": {"type": "string"},
-                "description": "2-4 paragraphs of league-wide storytelling. Each paragraph should be 2-4 sentences.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string", "enum": story_ids},
+                        "title": {"type": "string"},
+                        "body": {"type": "string"},
+                    },
+                    "required": ["id", "title", "body"],
+                    "additionalProperties": False,
+                },
+                "description": "One rewritten module for every supplied selected story, in the supplied order.",
             },
             "looking_ahead": {
                 "type": "string",
                 "description": "2-3 sentences on next week's game of the week (provided in next_week_preview), in the exact same group-chat voice as the recap paragraphs. Empty string if no preview data is given.",
             },
         },
-        "required": ["headline", "paragraphs", "looking_ahead"],
+        "required": ["headline", "stories", "looking_ahead"],
         "additionalProperties": False,
     }
 
@@ -739,7 +749,8 @@ Voice:
 - Use team names and specific numbers - scores, records, streaks. That's the substance.
 
 Hard rules:
-- 2-4 paragraphs, 2-4 sentences each.
+- Return exactly one story object for each supplied story ID, in the same order.
+- Keep every story body to 1-3 sentences.
 - DO NOT invent facts, scores, or players not in the data.
 - No em dashes (–). Use a comma, period, or just rewrite the sentence.
 - No markdown, bullets, or headers.
@@ -749,6 +760,10 @@ Hard rules:
 
     user_prompt = f"""
 Write a weekly recap column for {payload['league_name']}, Week {payload['week']}.
+
+These stories were selected and ranked by the application. You are not choosing
+topics. Rewrite each module using its exact ID and verified facts, in this order:
+{json.dumps(selected_stories, indent=2)}
 
 Weeks until playoffs: {payload['weeks_until_playoffs']} (playoffs start week {payload['week'] + payload['weeks_until_playoffs'] + 1 if payload['weeks_until_playoffs'] else payload['week']})
 
@@ -767,7 +782,9 @@ Cold streaks (2+ losses in a row): {json.dumps(payload['cold_streaks'])}
 Big movers (rank moved 2+ spots): {json.dumps(payload['big_movers'])}
 Playoff race: {json.dumps(payload['playoff_race'])}
 
-Use the h2h and season_weeks data where it adds something real to the story - rematches, revenge games, scoring trends, a team peaking or fading. Lead with the most compelling storyline.
+Use the h2h and season_weeks data only to add grounded context to the supplied
+stories. The first supplied story is the featured story and should drive the
+headline. Do not add a topic that is not represented by a supplied story ID.
 
 Next week's game of the week (already picked for you). The "why" field is the single biggest reason it was chosen (playoff stakes, a projected coin-flip, two top teams, a rivalry rematch, a missing star, or momentum); "reasons" lists the supporting angles; out_a/out_b/maybe_a/maybe_b/bye_a/bye_b are missing, questionable, and on-bye starters with their projections:
 {json.dumps(payload.get('next_week_preview'))}
@@ -970,7 +987,7 @@ def get_weekly_ai_recap(
     if df_weekly is None or df_weekly.empty:
         return empty
 
-    cache_key = f"weekly_recap_{league_id}_{season}_w{selected_week}_v11_document"
+    cache_key = f"weekly_recap_{league_id}_{season}_w{selected_week}_v12_story_overlay"
     try:
         payload = build_weekly_recap_payload(
             df_weekly, matchups_by_week, selected_week, team_by_rid, league,
@@ -1009,7 +1026,7 @@ def get_weekly_ai_recap(
         )
 
     try:
-        result = _generate_ai_storyline(payload)
+        result = _generate_ai_storyline(payload, document["stories"])
         document = apply_ai_narrative(document, result)
         narrative = document["narrative"]
         recap_html = _render_recap_html(narrative)

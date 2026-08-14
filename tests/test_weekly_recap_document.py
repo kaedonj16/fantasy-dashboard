@@ -92,7 +92,15 @@ def test_ai_narrative_cannot_mutate_verified_facts():
 
     updated = apply_ai_narrative(document, {
         "headline": "One yard decided the week",
-        "paragraphs": ["Fourth & Long escaped."],
+        "stories": [
+            {
+                "id": "closest_finish",
+                "title": "Fourth & Long escaped",
+                "body": "Fourth & Long survived by eight hundredths.",
+                "facts": {"winner": "Invented Team"},
+            },
+            {"id": "invented_story", "title": "Fake", "body": "This must not appear."},
+        ],
         "looking_ahead": "Next week is crowded at the cutline.",
         "facts": {"winner": "Invented Team"},
     })
@@ -101,6 +109,28 @@ def test_ai_narrative_cannot_mutate_verified_facts():
     assert document["narrative"]["source"] == "deterministic"
     assert updated["narrative"]["source"] == "ai"
     assert updated["narrative"]["headline"] == "One yard decided the week"
+    assert updated["stories"][0]["narrative"]["source"] == "ai"
+    assert updated["stories"][0]["narrative"]["title"] == "Fourth & Long escaped"
+    assert updated["narrative"]["paragraphs"][0] == "Fourth & Long survived by eight hundredths."
+    assert all(story["id"] != "invented_story" for story in updated["stories"])
+    assert "This must not appear." not in updated["narrative"]["paragraphs"]
+
+
+def test_missing_ai_story_keeps_deterministic_fallback_in_selected_order():
+    document = build_recap_document(_payload())
+    updated = apply_ai_narrative(document, {
+        "headline": "A close one",
+        "stories": [{
+            "id": document["stories"][0]["id"],
+            "title": "Custom lead",
+            "body": "Custom featured story.",
+        }],
+        "looking_ahead": "",
+    })
+
+    assert updated["narrative"]["paragraphs"][0] == "Custom featured story."
+    assert updated["narrative"]["paragraphs"][1] == document["stories"][1]["body"]
+    assert updated["stories"][1]["narrative"]["source"] == "deterministic"
 
 
 def test_document_json_round_trip_rejects_unknown_schema():
