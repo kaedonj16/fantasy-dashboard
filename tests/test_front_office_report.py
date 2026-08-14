@@ -30,9 +30,14 @@ def test_generate_report_restores_button_after_request():
     assert "generateGmMemoBtn.disabled = false" in report_code
 
 
-def test_offseason_hero_stats_keep_readable_minimum_width():
+def test_offseason_hero_stats_use_four_or_two_columns():
     source = DASHBOARD_CSS.read_text(encoding="utf-8")
     hero_rule = source[source.index(".os-hero-stats {"):]
     hero_rule = hero_rule[:hero_rule.index("}")]
 
-    assert "grid-template-columns: repeat(auto-fit, minmax(225px, 1fr));" in hero_rule
+    assert "grid-template-columns: repeat(4, minmax(0, 1fr));" in hero_rule
+
+    responsive_source = source[source.index("@media (max-width: 1180px)", source.index(".os-hero-stats {")):]
+    responsive_rule = responsive_source[responsive_source.index(".os-hero-stats {"):]
+    responsive_rule = responsive_rule[:responsive_rule.index("}")]
+    assert "grid-template-columns: 1fr 1fr;" in responsive_rule
