@@ -61,6 +61,15 @@ services:
         sync: false
       - key: ESPN_SWID
         sync: false
+      # Google account sign-in. The client credentials are secrets configured in
+      # Render; the callback is intentionally pinned to the canonical host so it
+      # exactly matches the URI registered in Google Cloud Console.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        value: https://brfantasyfootball.com/auth/google/callback
       # Yahoo OAuth
       - key: YAHOO_CLIENT_ID
         sync: false
