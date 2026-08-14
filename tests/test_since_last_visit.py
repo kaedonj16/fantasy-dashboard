@@ -18,6 +18,11 @@ def _activity_row(kind, minutes_ago, data):
 def test_since_last_visit_excludes_viewers_own_transactions(monkeypatch):
     import app as appmod
 
+    # Keep this endpoint test offline. The application's first-request hook
+    # otherwise starts the daily data job and may wait on the Sleeper API in CI.
+    monkeypatch.setattr(
+        appmod, "daily_completed", datetime.now(appmod.EASTERN).date(), raising=False
+    )
     ctx = {
         "rosters": [],
         "activity_df": pd.DataFrame([
@@ -44,6 +49,9 @@ def test_signed_in_visit_uses_account_baseline(monkeypatch):
     import app as appmod
     import dashboard_services.accounts as accounts
 
+    monkeypatch.setattr(
+        appmod, "daily_completed", datetime.now(appmod.EASTERN).date(), raising=False
+    )
     previous_visit = datetime.now(timezone.utc) - timedelta(minutes=5)
     ctx = {
         "rosters": [],
