@@ -77,27 +77,10 @@ def dr_lineup_score(p: dict) -> float:
 def dr_optimal_lineup(players: "list[dict]", slots: "list[str]") -> "set[str]":
     """Mirror optimalLineup(): fill the most restrictive slots first with the
     highest-lineupScore eligible player. Returns the set of starter player ids."""
-    flex = {"SF": 3, "FLEX": 2}
-    order = sorted(
-        [{"slot": s, "i": i} for i, s in enumerate(slots)],
-        key=lambda o: (flex.get(o["slot"], 1), o["i"]),
-    )
-    used: set = set()
-    starter_ids: set = set()
-    for o in order:
-        best, best_score = -1, float("-inf")
-        for j, pl in enumerate(players):
-            if j in used:
-                continue
-            if not dr_slot_eligible(o["slot"], str(pl.get("pos") or "")):
-                continue
-            sc = dr_lineup_score(pl)
-            if sc > best_score:
-                best_score, best = sc, j
-        if best >= 0:
-            used.add(best)
-            starter_ids.add(str(players[best].get("id")))
-    return starter_ids
+    from utils.optimal_lineup import compute_optimal_lineup
+    scores = {str(p.get("id")): dr_lineup_score(p) for p in players}
+    positions = {str(p.get("id")): p.get("positions") or p.get("pos") for p in players}
+    return compute_optimal_lineup(scores, positions, slots, scores)[0]
 
 
 def dr_avg_top_n(arr: "list[float]", n: int) -> float:

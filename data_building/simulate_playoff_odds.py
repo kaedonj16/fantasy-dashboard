@@ -773,86 +773,27 @@ def _position_aware_lineup(
     Returns (projected_avg, starters) where starters is a list of (pos, ppg)
     for each starting slot — used to estimate per-team std dev.
     """
-    # Tally starting slots by type
-    fixed_slots: dict[str, int] = {}
-    flex_slots  = 0
-    sflex_slots = 0
-    for slot in roster_positions:
-        s = str(slot).upper()
-        if s in _BENCH_SLOTS:
-            continue
-        if s in _SUPER_FLEX_POS:
-            sflex_slots += 1
-        elif s in _FLEX_POSITIONS:
-            flex_slots += 1
-        else:
-            fixed_slots[s] = fixed_slots.get(s, 0) + 1
-
-    # Per-position averages from real projections — used as fallback for
-    # players with no FP data (rookies, injured, newly signed).
-    _pos_totals: dict[str, list] = {}
-    for _info in ppg_map.values():
-        _p, _g = _info.get("pos", ""), _info.get("ppg", 0)
-        if _p and _g > 0:
-            if _p not in _pos_totals:
-                _pos_totals[_p] = [_g, 1]
-            else:
-                _pos_totals[_p][0] += _g
-                _pos_totals[_p][1] += 1
-    pos_fallback = {p: v[0] / v[1] for p, v in _pos_totals.items()}
-
-    # Resolve each player to (pos, ppg)
-    by_pos: dict[str, list[float]] = {}
+    from utils.optimal_lineup import compute_optimal_lineup
+    # Prefer roster/role cohorts over a global positional mean. A missing
+    # projection retains the conservative rookie/replacement prior and is
+    # represented by greater variance in _player_std downstream.
+    known: dict[str, list[float]] = {}
     for pid in pids:
-        info = ppg_map.get(str(pid))
-        if info:
-            pos = info["pos"]
-            ppg = info["ppg"] if info["ppg"] > 0 else (
-                pos_fallback.get(pos) or _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
-            )
-        else:
-            pos = pos_map.get(str(pid), "")
-            ppg = pos_fallback.get(pos) or _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
-        if pos:
-            by_pos.setdefault(pos, []).append(ppg)
-    for pos in by_pos:
-        by_pos[pos].sort(reverse=True)
-
-    used: dict[str, int] = {}
-    starters: list[tuple[str, float]] = []
-
-    # Fill fixed slots
-    for slot_pos, count in fixed_slots.items():
-        pool = by_pos.get(slot_pos, [])
-        for _ in range(count):
-            i = used.get(slot_pos, 0)
-            ppg = pool[i] if i < len(pool) else 0.0
-            starters.append((slot_pos, ppg))
-            used[slot_pos] = i + 1
-
-    # Fill FLEX (RB/WR/TE eligible)
-    flex_pool = sorted(
-        [(pos, ppg) for pos in _FLEX_ELIGIBLE
-         for ppg in by_pos.get(pos, [])[used.get(pos, 0):]],
-        key=lambda x: x[1], reverse=True,
-    )
-    for i in range(flex_slots):
-        if i < len(flex_pool):
-            starters.append(flex_pool[i])
-    remaining_after_flex = flex_pool[flex_slots:]
-
-    # Fill SuperFlex (QB/RB/WR/TE eligible)
-    sflex_pool = sorted(
-        [(("QB", ppg)) for ppg in by_pos.get("QB", [])[used.get("QB", 0):]]
-        + remaining_after_flex,
-        key=lambda x: x[1], reverse=True,
-    )
-    for i in range(sflex_slots):
-        if i < len(sflex_pool):
-            starters.append(sflex_pool[i])
-
-    total = sum(ppg for _, ppg in starters)
+        info = ppg_map.get(str(pid)) or {}
+        pos, value = str(info.get("pos") or pos_map.get(str(pid)) or "").upper(), float(info.get("ppg") or 0)
+        if pos and value > 0:
+            known.setdefault(pos, []).append(value)
+    cohort = {pos: sorted(values)[max(0, len(values) // 3)] for pos, values in known.items()}
+    scores, positions = {}, {}
+    for pid in pids:
+        info = ppg_map.get(str(pid)) or {}
+        pos = str(info.get("pos") or pos_map.get(str(pid)) or "").upper()
+        scores[pid] = float(info.get("ppg") or 0) or cohort.get(pos) or _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
+        positions[pid] = pos
+    selected, total = compute_optimal_lineup(scores, positions, roster_positions, pids)
+    starters = [(positions[pid], scores[pid]) for pid in selected]
     return total, starters
+
 
 
 def _lineup_with_replacements(

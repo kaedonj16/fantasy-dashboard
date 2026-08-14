@@ -44,19 +44,22 @@ def all_play_analysis(
     weeks_played = {t: 0 for t in teams}
 
     for wk in weekly_scores.values():
-        rows = [(t, s) for t, s in wk.items() if s is not None]
-        for t, s in rows:
-            weeks_played[t] += 1
-            for u, s2 in rows:
-                if u == t:
-                    continue
-                if s > s2:
-                    ap_wins[t] += 1.0
-                elif s < s2:
-                    ap_losses[t] += 1.0
-                else:  # tie: split
-                    ap_wins[t] += 0.5
-                    ap_losses[t] += 0.5
+        rows = sorted((float(s), t) for t, s in wk.items() if s is not None)
+        n = len(rows)
+        i = 0
+        while i < n:
+            j = i + 1
+            while j < n and rows[j][0] == rows[i][0]:
+                j += 1
+            # i lower scores are wins; n-j higher scores are losses; the other
+            # members of this equal-score group contribute half of each.
+            tied = j - i - 1
+            wins, losses = i + tied * 0.5, n - j + tied * 0.5
+            for _, team in rows[i:j]:
+                weeks_played[team] += 1
+                ap_wins[team] += wins
+                ap_losses[team] += losses
+            i = j
 
     out: Dict[str, dict] = {}
     for t in teams:

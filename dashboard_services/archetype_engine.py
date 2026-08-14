@@ -179,9 +179,10 @@ def _optimal_lineup_value(
     falling back to dynasty value if redraft is unavailable. Use this for
     win-probability calculations; dynasty value for trade window matching.
     """
-    slots = SLOTS_SF if league_type == "sf" else SLOTS_1QB
-
-    by_pos: Dict[str, List[float]] = {}
+    from utils.optimal_lineup import compute_optimal_lineup
+    slot_counts = SLOTS_SF if league_type == "sf" else SLOTS_1QB
+    slots = [slot for slot, count in slot_counts.items() for _ in range(count)]
+    scores, positions = {}, {}
     for pid in player_ids:
         info = values_by_id.get(pid)
         if not info:
@@ -192,32 +193,8 @@ def _optimal_lineup_value(
         else:
             val = _f(info.get("value"))
         if pos in SKILL_POS and val > 0:
-            by_pos.setdefault(pos, []).append(val)
-
-    for pos in by_pos:
-        by_pos[pos].sort(reverse=True)
-
-    total = 0.0
-    used: Dict[str, int] = {}
-
-    for pos, count in slots.items():
-        if pos == "FLEX":
-            continue
-        vals = by_pos.get(pos, [])
-        n = min(count, len(vals))
-        total += sum(vals[:n])
-        used[pos] = n
-
-    # Collect remaining values eligible for FLEX
-    flex_pool: List[float] = []
-    for pos in (SKILL_POS if league_type == "sf" else FLEX_POS):
-        already = used.get(pos, 0)
-        flex_pool.extend(by_pos.get(pos, [])[already:])
-
-    flex_pool.sort(reverse=True)
-    flex_count = slots.get("FLEX", 0)
-    total += sum(flex_pool[:flex_count])
-    return total
+            scores[pid], positions[pid] = val, pos
+    return compute_optimal_lineup(scores, positions, slots, player_ids)[1]
 
 
 _ROOKIE_PPG: Dict[str, float] = {"QB": 14.0, "RB": 7.5, "WR": 6.5, "TE": 4.5}
@@ -241,72 +218,24 @@ def _ppg_lineup(
     if not ppg_map:
         return 0.0
 
-    fixed_slots: Dict[str, int] = {}
-    flex_slots = sflex_slots = 0
-    for slot in roster_positions:
-        s = str(slot).upper()
-        if s in _BENCH_SLOTS:
-            continue
-        if s == "SUPER_FLEX":
-            sflex_slots += 1
-        elif s in {"FLEX", "WRRB_FLEX", "WRTE_FLEX", "RBWRTE", "RBWR"}:
-            flex_slots += 1
-        elif s in SKILL_POS:
-            fixed_slots[s] = fixed_slots.get(s, 0) + 1
-
-    # Position-average fallback (mirrors simulate_playoff_odds._position_aware_lineup)
-    _pos_totals: Dict[str, List] = {}
-    for _info in ppg_map.values():
-        _p, _g = str(_info.get("pos") or "").upper(), float(_info.get("ppg") or 0)
-        if _p and _g > 0:
-            _pos_totals.setdefault(_p, [0.0, 0])
-            _pos_totals[_p][0] += _g
-            _pos_totals[_p][1] += 1
-    pos_fallback = {p: v[0] / v[1] for p, v in _pos_totals.items() if v[1] > 0}
-
-    by_pos: Dict[str, List[float]] = {}
+    from utils.optimal_lineup import compute_optimal_lineup
+    scores, positions = {}, {}
+    # Cohort-aware fallback: use this roster's healthy projected peers before
+    # conservative rookie/replacement priors; never a league-wide global mean.
+    roster_cohorts: Dict[str, List[float]] = {}
     for pid in pids:
-        info = ppg_map.get(str(pid))
-        if info:
-            pos = str(info.get("pos") or "").upper()
-            ppg = float(info.get("ppg") or 0) or pos_fallback.get(pos) or _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
-        else:
-            pos = pos_map.get(str(pid), "")
-            ppg = pos_fallback.get(pos) or _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
-        if pos in SKILL_POS:
-            by_pos.setdefault(pos, []).append(ppg)
+        info = ppg_map.get(str(pid)) or {}
+        pos, val = str(info.get("pos") or pos_map.get(str(pid)) or "").upper(), float(info.get("ppg") or 0)
+        if pos and val > 0:
+            roster_cohorts.setdefault(pos, []).append(val)
+    cohort_fallback = {p: sorted(v)[max(0, len(v) // 3)] for p, v in roster_cohorts.items()}
+    for pid in pids:
+        info = ppg_map.get(str(pid)) or {}
+        pos = str(info.get("pos") or pos_map.get(str(pid)) or "").upper()
+        value = float(info.get("ppg") or 0) or cohort_fallback.get(pos) or _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
+        scores[pid], positions[pid] = value, pos
+    return compute_optimal_lineup(scores, positions, roster_positions, pids)[1]
 
-    for pos in by_pos:
-        by_pos[pos].sort(reverse=True)
-
-    used: Dict[str, int] = {}
-    total = 0.0
-
-    for slot_pos, count in fixed_slots.items():
-        pool = by_pos.get(slot_pos, [])
-        for _ in range(count):
-            i = used.get(slot_pos, 0)
-            total += pool[i] if i < len(pool) else 0.0
-            used[slot_pos] = i + 1
-
-    flex_pool = sorted(
-        [(pos, ppg) for pos in _FLEX_ELIGIBLE for ppg in by_pos.get(pos, [])[used.get(pos, 0):]],
-        key=lambda x: x[1], reverse=True,
-    )
-    for i in range(flex_slots):
-        if i < len(flex_pool):
-            total += flex_pool[i][1]
-    remaining = flex_pool[flex_slots:]
-
-    sflex_pool = sorted(
-        [("QB", ppg) for ppg in by_pos.get("QB", [])[used.get("QB", 0):]] + remaining,
-        key=lambda x: x[1], reverse=True,
-    )
-    for i in range(sflex_slots):
-        if i < len(sflex_pool):
-            total += sflex_pool[i][1]
-
-    return total
 
 
 # ── Win-probability model ─────────────────────────────────────────────────────

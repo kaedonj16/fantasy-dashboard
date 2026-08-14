@@ -1004,6 +1004,20 @@ def build_games_by_team(games: list[dict]) -> dict[str, dict]:
         home = g.get("home")  # e.g. "NE"
         away = g.get("away")  # e.g. "NYJ"
         norm_status = normalize_game_status_from_tank01(g)  # 'pre' | 'in' | 'post'
+        # Never let an exhibition game light up fantasy players. Providers use
+        # several keys/value spellings and have occasionally mixed preseason
+        # rows into a regular-week response. For an actively-running game,
+        # eligibility must be affirmative; missing/unknown metadata is treated
+        # as scheduled. Completed games remain completed (but never "live").
+        raw_type = next((g.get(k) for k in (
+            "seasonType", "season_type", "game_type", "gameType", "type"
+        ) if g.get(k) is not None), None)
+        season_type = str(raw_type or "").strip().lower().replace("_", "")
+        eligible = season_type in {
+            "reg", "regular", "regularseason", "post", "postseason", "playoff", "playoffs"
+        }
+        if norm_status == "in" and not eligible:
+            norm_status = "pre"
 
         if home:
             games_by_team[home] = {"status": norm_status, "game": g}

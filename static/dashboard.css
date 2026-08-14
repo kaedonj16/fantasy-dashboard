@@ -9333,6 +9333,12 @@ select:focus {
   border-radius: 999px;
   background: #ef4444;
   animation: liveBlink 1.5s infinite;
+  /* The pulse intentionally grows outside the glyph. Keep it in its own
+     unclipped paint layer rather than allowing row/card overflow to crop it. */
+  isolation: isolate;
+  overflow: visible;
+  flex: 0 0 8px;
+  vertical-align: middle;
 }
 
 .m-body {
@@ -9359,7 +9365,10 @@ select:focus {
 
 .m-carousel {
   position: relative;
-  overflow: hidden;
+  /* Slides are translated horizontally, but live pulse rings extend beyond
+     their text line. Clip only on the horizontal axis so the ring is intact. */
+  overflow-x: clip;
+  overflow-y: visible;
 }
 
 .m-combo {
@@ -23031,10 +23040,11 @@ button:disabled {
 
 /* -- Live pulse dot: expanding ring instead of a hard blink ----------------- */
 @keyframes brPulseRing { 0% { transform: scale(1); opacity: .55; } 100% { transform: scale(2.6); opacity: 0; } }
-.live-dot { position: relative; animation: none; }
+.live-dot { position: relative; animation: none; z-index: 1; }
 .live-dot::after {
   content: ""; position: absolute; inset: 0; border-radius: 999px;
   background: inherit; animation: brPulseRing 1.6s ease-out infinite;
+  pointer-events: none; z-index: -1;
 }
 
 /* -- Chip pop-in: filter/position chips spring in, staggered ---------------- */
