@@ -71,14 +71,19 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-player-row:hover { border-color: var(--accent); }
 .wv-player-name { font-weight: 600; font-size: 14px; color: var(--text); }
 .wv-player-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
-.wv-right { display: flex; align-items: center; gap: 10px; }
+.wv-right { display: flex; align-items: center; gap: 12px; }
+.wv-advice-metric { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 48px; }
+.wv-advice-label {
+  font-size: 8px; line-height: 1; font-weight: 800; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--text-muted); white-space: nowrap;
+}
 .wv-value { font-size: 13px; font-weight: 700; color: var(--text); }
-/* Suggested FAAB bid band (% of budget). Accent-tinted so it reads as advice,
-   not a stat; tabular figures keep the range aligned row-to-row. */
-.wv-faab {
-  font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent);
-  font-variant-numeric: tabular-nums; white-space: nowrap;
+.wv-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.wv-faab-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); cursor: pointer; }
+.wv-faab-toggle input { accent-color: var(--accent); width: 14px; height: 14px; margin: 0; }
+@media (max-width: 700px) {
+  .wv-right { gap: 7px; }
+  .wv-advice-metric { min-width: 40px; }
 }
 /* Waiver signal chips use the site's canonical `.chip .chip--sm` + a .signal-*
    colour alias (all defined once in dashboard.css). Nothing chip-related is
@@ -360,7 +365,13 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
         </div>
         <div id="wvTrendingStrip" class="wv-trending-strip"></div>
       </div>
-      <div class="wv-section-title">Waiver Wire</div>
+      <div class="wv-section-heading">
+        <div class="wv-section-title">Waiver Wire</div>
+        <label class="wv-faab-toggle" id="wvFaabToggle" hidden>
+          <input type="checkbox" id="wvShowFaab" checked onchange="wvToggleFaab(this.checked)">
+          <span>FAAB</span>
+        </label>
+      </div>
       <div id="wvWaiverList">
         {wv_skel}
       </div>
@@ -391,6 +402,7 @@ const WV_SEASON = {season};
 const WV_LEAGUE_ID = '{league_id}';
 let wvCurrentPos = 'ALL';
 let wvWaiverData = [];
+let wvShowFaab = true;
 let wvTrendingData = [];
 let wvStartSitData = {{}};
 let wvCompare = [null, null]; // [playerA, playerB]
@@ -412,6 +424,11 @@ function wvSetPos(pos) {{
   wvRenderWaivers();
   wvRenderStartSit();
   wvRenderTrending(wvTrendingData);
+}}
+
+function wvToggleFaab(show) {{
+  wvShowFaab = !!show;
+  wvRenderWaivers();
 }}
 
 // ── Matchup chip helper ───────────────────────────────────────────────────────
@@ -530,7 +547,13 @@ function wvLoad() {{
   const _wvRid = window._viewerRid ? ('&rid=' + encodeURIComponent(window._viewerRid)) : '';
   fetch(`/api/waiver-candidates?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}${{_wvRid}}`)
     .then(r => r.json())
-    .then(d => {{ wvWaiverData = d.candidates || []; window.wvFaabEnabled = d.faab_enabled === true; wvRenderWaivers(); }})
+    .then(d => {{
+      wvWaiverData = d.candidates || [];
+      window.wvFaabEnabled = d.faab_enabled === true;
+      const toggle = document.getElementById('wvFaabToggle');
+      if (toggle) toggle.hidden = !window.wvFaabEnabled;
+      wvRenderWaivers();
+    }})
     .catch(() => {{ window.brErrorState('wvWaiverList', 'Unable to load waiver data.', wvLoad); }});
 
   fetch(`/api/trending-adds?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
@@ -575,10 +598,14 @@ function wvRenderWaivers() {{
       usageChip = `<span class="wv-usage-chip" title="Last-3-week avg vs season avg">&#9650; +${{p.usage_delta}} ${{statLbl}}</span>`;
     }}
     let faabChip = '';
-    if (window.wvFaabEnabled && p.faab_high) {{
+    if (window.wvFaabEnabled && wvShowFaab && p.faab_high) {{
       const bid = p.faab_low ? (p.faab_low + '&ndash;' + p.faab_high) : ('&le;' + p.faab_high);
-      faabChip = `<span class="wv-faab" title="Suggested FAAB bid - % of your waiver budget">${{bid}}%</span>`;
+      faabChip = `<span class="wv-advice-metric"><span class="wv-advice-label">FAAB bid</span><span class="chip chip--sm chip--accent" title="Suggested percentage of your total FAAB budget">${{bid}}%</span></span>`;
     }}
+    const conf = p.confidence || {{}};
+    const confChip = conf.label
+      ? `<span class="wv-advice-metric"><span class="wv-advice-label">Data quality</span><span class="chip chip--sm chip--neutral" title="How complete the projection, usage, schedule, age, team, and value data is">${{conf.label}}</span></span>`
+      : '';
     let dropHint = '';
     if (p.drop && p.drop.name) {{
       dropHint = `<div class="wv-drop-hint" title="Suggested drop to make room - your weakest spare player below this target's value">`
@@ -593,9 +620,10 @@ function wvRenderWaivers() {{
         ${{dropHint}}
       </div>
       <div class="wv-right">
-        <span class="chip chip--sm ${{p.signal_class}}">${{p.signal}}</span>
+        <span class="wv-advice-metric"><span class="wv-advice-label">Why add</span><span class="chip chip--sm ${{p.signal_class}}">${{p.signal}}</span></span>
+        ${{confChip}}
         ${{faabChip}}
-        <span class="wv-value">${{Math.round(p.value)}}</span>
+        <span class="wv-advice-metric"><span class="wv-advice-label">Value</span><span class="wv-value">${{Math.round(p.value)}}</span></span>
       </div>
     </div>
   `;

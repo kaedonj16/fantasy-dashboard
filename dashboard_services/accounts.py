@@ -15,6 +15,7 @@ DB access mirrors the rest of the app: raw SQL through ``dashboard_services.db``
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import Optional
 
@@ -70,8 +71,69 @@ def init_accounts_tables() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS account_league_visits (
+                account_id     INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                platform       TEXT NOT NULL,
+                league_id      TEXT NOT NULL,
+                season         INTEGER NOT NULL,
+                roster_id      TEXT,
+                last_visit_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+                roster_snapshot JSONB NOT NULL DEFAULT '[]'::jsonb,
+                PRIMARY KEY (account_id, platform, league_id, season)
+            )
+            """
+        )
         conn.commit()
     _TABLES_READY = True
+
+
+def consume_league_visit(
+    account_id: int,
+    platform: str,
+    league_id: str,
+    season: int,
+    roster_id: Optional[str],
+    roster_snapshot: list[dict],
+) -> Optional[dict]:
+    """Atomically advance and return an account's prior league-visit state.
+
+    The row lock makes the digest account-scoped rather than browser-scoped: if
+    two signed-in devices visit in sequence, only the first can consume the same
+    activity window.  The roster snapshot travels with the timestamp so value
+    and injury changes follow the account across devices too.
+    """
+    if not (account_id and platform and league_id):
+        return None
+    init_accounts_tables()
+    from dashboard_services.db import get_conn
+
+    key = (account_id, str(platform), str(league_id), int(season))
+    with get_conn() as conn:
+        previous = conn.execute(
+            """
+            SELECT roster_id, last_visit_at, roster_snapshot
+            FROM account_league_visits
+            WHERE account_id = %s AND platform = %s AND league_id = %s AND season = %s
+            FOR UPDATE
+            """,
+            key,
+        ).fetchone()
+        conn.execute(
+            """
+            INSERT INTO account_league_visits
+                (account_id, platform, league_id, season, roster_id, last_visit_at, roster_snapshot)
+            VALUES (%s, %s, %s, %s, %s, now(), %s::jsonb)
+            ON CONFLICT (account_id, platform, league_id, season) DO UPDATE
+                SET roster_id = EXCLUDED.roster_id,
+                    last_visit_at = now(),
+                    roster_snapshot = EXCLUDED.roster_snapshot
+            """,
+            (*key, str(roster_id) if roster_id else None, json.dumps(roster_snapshot or [])),
+        )
+        conn.commit()
+    return dict(previous) if previous else None
 
 
 def upsert_google_account(google_sub: str, email: Optional[str]) -> Optional[int]:

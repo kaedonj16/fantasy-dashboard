@@ -670,7 +670,10 @@ def _sleeper_stats_to_variants(st: dict, pos: str, raw_scoring_settings: dict = 
     rec_td   = float(st.get("rec_td")   or 0)
     fum_lost = float(st.get("fum_lost") or 0)
 
-    if (pass_yd + pass_td + rush_yd + rush_td + rec + rec_yd + rec_td) == 0:
+    # Do not discard kickers, defenses, returners, or IDP projections merely
+    # because they have no offensive yardage. Keep any numeric projected stat
+    # that the league can score.
+    if not any(isinstance(v, (int, float)) and v != 0 for v in st.values()):
         return None
 
     # League-specific scoring rates (with standard defaults)
@@ -707,6 +710,10 @@ def _sleeper_stats_to_variants(st: dict, pos: str, raw_scoring_settings: dict = 
     td6 = pass_td * max(0.0, 6.0 - pass_td_rate)
 
     return {
+        # Preserve the source stat line in the shared cache. Each league can then
+        # apply its complete scoring settings at read time without cache pollution
+        # from whichever league happened to fetch this week first.
+        "raw_stats": dict(st),
         "ppr":      round(ppr, 2),
         "half_ppr": round(half, 2),
         "std":      round(std, 2),
@@ -721,7 +728,8 @@ def fetch_week_from_sleeper(season: int, week: int, raw_scoring_settings: dict =
     """
     Fetch Sleeper's own weekly projections, keyed by Sleeper player_id.
     The API returns projected stat lines; fantasy points are computed here
-    from those raw stats so they match Sleeper's own scoring exactly.
+    from those raw stats. The raw line is cached so each league applies its
+    complete scoring settings at read time.
     Returns {} on any failure so the caller can fall back to Tank01.
     """
     url = f"https://api.sleeper.app/v1/projections/nfl/regular/{season}/{week}"

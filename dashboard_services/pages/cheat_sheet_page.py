@@ -127,7 +127,8 @@ _CHEAT_HTML = r"""
   }
   .cs-wrap * { box-sizing: border-box; }
 
-  .cs-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+  .cs-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; flex-wrap: nowrap; }
+  .cs-top > :first-child { flex: 1 1 390px; min-width: 300px; }
   .cs-eyebrow { font-family: var(--cs-mono); font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--cs-accent); display: inline-flex; align-items: center; gap: 8px; }
   .cs-wrap h1 { font-size: clamp(23px, 4vw, 32px); line-height: 1.06; margin: 6px 0 4px; letter-spacing: -.02em; font-weight: 800; }
   .cs-sub { color: var(--cs-ink-soft); font-size: 14px; max-width: 64ch; margin: 0; line-height: 1.5; }
@@ -137,8 +138,8 @@ _CHEAT_HTML = r"""
   /* Controls sit top-right, beside the title, using the empty space next to the
      header text (space-between on .cs-top pushes them there). They stack mode/QB
      over the action buttons and right-align. On mobile they drop full-width. */
-  .cs-controls { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
-  .cs-ctrl-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
+  .cs-controls { display: flex; flex: 0 0 auto; flex-direction: column; gap: 8px; align-items: flex-end; }
+  .cs-ctrl-row { display: flex; align-items: center; gap: 9px; flex-wrap: nowrap; justify-content: flex-end; }
   .cs-cgroup { display: inline-flex; align-items: center; gap: 7px; }
   .cs-clabel { font-family: var(--cs-mono); font-size: 9.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--cs-ink-faint); }
   .cs-seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--cs-surface-2); border: 1px solid var(--cs-line); border-radius: 10px; }
@@ -301,6 +302,8 @@ _CHEAT_HTML = r"""
   .cs-hidden { display: none; }
   .cs-foot { margin-top: 22px; color: var(--cs-ink-faint); font-size: 12px; }
   @media (max-width: 640px) {
+    .cs-top { flex-direction: column; }
+    .cs-top > :first-child { min-width: 0; }
     .cs-controls { align-items: stretch; width: 100%; margin-top: 14px; }
     .cs-ctrl-row { justify-content: flex-start; }
     /* Mode and QB toggles share a clean two-column row, each filling its half. */

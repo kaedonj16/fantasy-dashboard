@@ -57,6 +57,14 @@ def test_live_sync_is_explicit_and_drafted_players_offer_board_reset():
     assert "(hasOverrides() || state.done.size || draftedIds)" in script
 
 
+def test_desktop_header_keeps_controls_beside_title_without_wrapping():
+    body = build_cheat_sheet_body("league-123", 2026, "sleeper")
+
+    assert ".cs-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; flex-wrap: nowrap; }" in body
+    assert ".cs-controls { display: flex; flex: 0 0 auto;" in body
+    assert ".cs-ctrl-row { display: flex; align-items: center; gap: 9px; flex-wrap: nowrap;" in body
+
+
 def test_draft_room_only_shares_context_from_a_visible_draft_board():
     script = (Path(__file__).parents[1] / "static" / "draft_room.js").read_text()
 

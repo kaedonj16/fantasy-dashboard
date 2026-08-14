@@ -4,7 +4,7 @@ Pure logic — no app / DB import — so these run anywhere pytest does.
 """
 import pytest
 
-from utils.fantasy_scoring import score_stats
+from utils.fantasy_scoring import projection_points, score_stats
 
 
 def test_empty_inputs_score_zero():
@@ -60,3 +60,36 @@ def test_combined_rush_rec_bonus():
 def test_missing_stat_keys_default_zero():
     # Only a TD present; everything else absent.
     assert score_stats({"rush_td": 1}, {}) == pytest.approx(6.0)
+
+
+def test_explicit_zero_overrides_standard_default():
+    assert score_stats({"pass_td": 2}, {"pass_td": 0}) == 0.0
+
+
+def test_matching_custom_categories_are_scored():
+    stats = {"pass_fd": 12, "rush_fd": 3, "two_pt": 1}
+    settings = {"pass_fd": 0.5, "rush_fd": 1.0, "two_pt": 2.0}
+    assert score_stats(stats, settings) == pytest.approx(11.0)
+
+
+def test_kicker_and_defense_categories_are_scored_generically():
+    stats = {"fgm_40_49": 2, "xpm": 3, "sack": 4, "int": 1}
+    settings = {"fgm_40_49": 4, "xpm": 1, "sack": 1, "int": 2}
+    assert score_stats(stats, settings) == 17.0
+
+
+def test_te_reception_premium_uses_exact_league_rate():
+    assert score_stats({"rec": 4}, {"rec": 0.5, "bonus_rec_te": 0.75}, "TE") == 5.0
+
+
+def test_cached_raw_stats_use_exact_custom_scoring():
+    entry = {
+        "raw_stats": {"rec": 8, "rec_yd": 100},
+        "ppr": 18.0, "half_ppr": 14.0,
+    }
+    assert projection_points(entry, {"rec": 0.75, "rec_yd": 0.1}, "WR") == 16.0
+
+
+def test_legacy_cache_without_raw_stats_still_uses_variant():
+    entry = {"ppr": 18.0, "half_ppr": 14.0}
+    assert projection_points(entry, {"rec": 0.5}, "WR") == 14.0

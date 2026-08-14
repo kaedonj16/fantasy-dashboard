@@ -10,7 +10,7 @@ Core idea — **surplus**:
     A keeper is worth it when the pick it costs is *later* than where the player
     would be drafted on the open market. Surplus is that gap, in rounds:
 
-        surplus = market_round - keeper_cost_round
+        surplus = keeper_cost_round - market_round
 
     A player who drafts in round 2 (market) but only costs a round-10 keeper
     slot is +8 rounds of surplus — a slam-dunk keep. A player who costs a round
@@ -18,14 +18,13 @@ Core idea — **surplus**:
     draft and take him (or someone better) there.
 
 Keeper cost is league-configurable (see ``KeeperRules``); market round comes
-from redraft ADP. The optimizer then picks the best set under the league's
-keeper limit — greedy by surplus, which is optimal when the only constraint is
-a count.
+from redraft ADP. Recommendations use a diminishing pick-value curve so equal
+round savings at the top and bottom of the draft are not treated as equivalent.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import ceil
+from math import ceil, sqrt
 from typing import List, Optional, Sequence
 
 # Verdict tiers, most-to-least keepable.
@@ -73,6 +72,29 @@ def market_round(adp_overall: Optional[float], league_size: int) -> Optional[int
     return ceil(float(adp_overall) / league_size)
 
 
+def pick_value(overall_pick: float) -> float:
+    """Relative value of a draft selection on a diminishing-return curve.
+
+    The exact unit is intentionally abstract; only differences are compared.
+    Unlike raw rounds, this recognizes that moving from pick 30 to pick 6 is
+    much more valuable than moving from pick 174 to pick 150.
+    """
+    return 100.0 / sqrt(max(float(overall_pick), 1.0))
+
+
+def keeper_surplus_value(adp_overall: Optional[float], cost_round: int,
+                         league_size: int) -> Optional[float]:
+    """Value gained by keeping a player at ``cost_round`` instead of ADP.
+
+    A round cost is represented by its midpoint because leagues do not expose
+    the manager's future slot when keeper decisions are made.
+    """
+    if not adp_overall or adp_overall <= 0 or league_size <= 0:
+        return None
+    cost_pick = (max(int(cost_round), 1) - 0.5) * league_size + 0.5
+    return pick_value(adp_overall) - pick_value(cost_pick)
+
+
 def keeper_cost_round(
     drafted_round: Optional[int],
     years_kept: int,
@@ -118,6 +140,7 @@ class KeeperCandidate:
     cost_round: int = 0
     market_round: Optional[int] = None
     surplus: Optional[int] = None
+    surplus_value: Optional[float] = None  # nonlinear value of the picks saved
     verdict: str = PASS
     keep: bool = False                # chosen by the optimizer
 
@@ -133,15 +156,68 @@ def analyze(candidate: KeeperCandidate, rules: KeeperRules) -> KeeperCandidate:
         candidate.surplus = None
     else:
         candidate.surplus = candidate.cost_round - candidate.market_round
+    candidate.surplus_value = keeper_surplus_value(
+        candidate.adp_overall, candidate.cost_round, rules.league_size
+    )
     candidate.verdict = verdict(candidate.surplus, rules)
     return candidate
 
 
 def _sort_key(c: KeeperCandidate):
-    # Highest surplus first; unknown-market players sink to the bottom; break
-    # ties by redraft value so the better player wins an equal-surplus tie.
-    s = c.surplus if c.surplus is not None else -9999
-    return (-s, -(c.value or 0.0))
+    # Rank by the value of picks saved, not raw round count. Early-round gains
+    # are materially more valuable than identical gains in the late rounds.
+    eligible = c.surplus is not None and c.surplus > 0
+    s = c.surplus_value if c.surplus_value is not None else -9999
+    return (not eligible, -s, -(c.value or 0.0))
+
+
+def _optimize_unique_rounds(candidates: Sequence[KeeperCandidate], rules: KeeperRules,
+                            limit: int) -> None:
+    """Jointly choose keepers and unique cost rounds via dynamic programming.
+
+    A duplicate keeper may move to an earlier (more expensive) unused round.
+    Considering selection and assignment together avoids the old failure mode
+    where a post-selection bump made a chosen keeper worse than an omitted one.
+    """
+    # (chosen count, occupied-round bitmask) -> (score, [(candidate index, round)])
+    states = {(0, 0): (0.0, [])}
+    for idx, candidate in enumerate(candidates):
+        if candidate.surplus is None or candidate.surplus <= 0:
+            continue
+        updated = dict(states)
+        for (count, mask), (score, assignments) in states.items():
+            if count >= limit:
+                continue
+            # A collision can only make a keeper costlier, never award a later
+            # pick. Consider every legal earlier round so the global optimum is
+            # not dependent on candidate iteration order.
+            for assigned_round in range(candidate.cost_round, 0, -1):
+                bit = 1 << (assigned_round - 1)
+                if mask & bit:
+                    continue
+                gain = keeper_surplus_value(
+                    candidate.adp_overall, assigned_round, rules.league_size
+                )
+                if gain is None or gain <= 0:
+                    continue
+                key = (count + 1, mask | bit)
+                proposed = score + gain
+                if key not in updated or proposed > updated[key][0]:
+                    updated[key] = (proposed, assignments + [(idx, assigned_round)])
+        states = updated
+
+    best = max(states.values(), key=lambda item: (item[0], len(item[1])))
+    chosen = {idx: assigned_round for idx, assigned_round in best[1]}
+    for idx, candidate in enumerate(candidates):
+        candidate.keep = idx in chosen
+        if not candidate.keep:
+            continue
+        candidate.cost_round = chosen[idx]
+        candidate.surplus = candidate.cost_round - candidate.market_round
+        candidate.surplus_value = keeper_surplus_value(
+            candidate.adp_overall, candidate.cost_round, rules.league_size
+        )
+        candidate.verdict = verdict(candidate.surplus, rules)
 
 
 def evaluate(
@@ -149,24 +225,21 @@ def evaluate(
     rules: KeeperRules,
     limit: Optional[int] = None,
 ) -> List[KeeperCandidate]:
-    """Analyze every candidate, rank by surplus, and mark the optimal ``limit``
-    keepers. Greedy-by-surplus is optimal here because each keeper is an
-    independent yes/no under a single count cap. Returns a new ranked list;
-    inputs are analyzed in place.
+    """Analyze candidates and mark the value-optimal ``limit`` keepers.
 
-    (Note: this v1 ignores the rare rule where two keepers can't occupy the same
-    cost round — those leagues bump duplicates to adjacent rounds. Surfaced in
-    the UI rather than silently resolved.)"""
+    With independent costs this ranks by nonlinear pick-value surplus. With
+    one-per-round enabled, dynamic programming jointly selects players and
+    assigns legal cost rounds. Returns a new ranked list; inputs are mutated.
+    """
     ranked = sorted((analyze(c, rules) for c in candidates), key=_sort_key)
     n = len(ranked) if limit is None else max(0, int(limit))
-    for i, c in enumerate(ranked):
-        # Only positive-surplus players are ever auto-selected: keeping a
-        # negative-surplus player is strictly worse than re-drafting him.
-        c.keep = i < n and (c.surplus is not None and c.surplus > 0)
-    # Under one-pick-per-round, re-price the selected set so two keepers never
-    # share a cost round (and the surplus total stays honest).
     if rules.one_per_round:
-        resolve_cost_collisions(ranked, rules)
+        _optimize_unique_rounds(ranked, rules, n)
+    else:
+        eligible = [c for c in ranked if c.surplus is not None and c.surplus > 0]
+        selected = {id(c) for c in eligible[:n]}
+        for c in ranked:
+            c.keep = id(c) in selected
     return ranked
 
 
@@ -229,6 +302,9 @@ def resolve_cost_collisions(candidates: Sequence[KeeperCandidate], rules: Keeper
         taken.add(placed)
         if c.market_round is not None:
             c.surplus = c.cost_round - c.market_round
+            c.surplus_value = keeper_surplus_value(
+                c.adp_overall, c.cost_round, rules.league_size
+            )
             c.verdict = verdict(c.surplus, rules)
     return list(candidates)
 
