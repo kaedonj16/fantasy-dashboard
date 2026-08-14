@@ -6881,7 +6881,7 @@ select:focus {
   display: grid;
   /* Share one row whether the hero has 3 or 4 tiles (the playoff-odds tile is
      conditional); tiles only wrap when the container is genuinely narrow. */
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(225px, 1fr));
   gap: 10px;
   margin-top: 18px;
 }
