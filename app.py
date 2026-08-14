@@ -16431,9 +16431,10 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         "closest": ({"team": closest["winner"], "margin": round(closest["margin"], 1)}
                     if closest else None),
     }
-    _recap_share_json = json.dumps(_recap_share).replace("</", "<\\/")
 
-    week_selector = f"""
+    def _render_recap_week_selector(share_payload: dict) -> str:
+        share_json = json.dumps(share_payload).replace("</", "<\\/")
+        return f"""
 <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
   <h2 style="margin:0;font-size:20px;">Week {selected_week} Recap</h2>
   <select onchange="window.location.search='?week='+this.value"
@@ -16447,7 +16448,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                  font-size:13px;cursor:pointer;font-weight:600;">
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg> Share
   </button>
-  <script type="application/json" id="recapShareData">{_recap_share_json}</script>
+  <script type="application/json" id="recapShareData">{share_json}</script>
 </div>"""
 
     # ── Headline cards ─────────────────────────────────────────────────────
@@ -16648,6 +16649,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     if preview_mode:
         from dashboard_services.ai.weekly_recap import get_weekly_ai_recap_preview
         ai_column_html, next_week_html = get_weekly_ai_recap_preview()
+        recap_document = None
     else:
         # Build a next-week preview only when this recap is for the latest
         # finalized week overall (so the "upcoming" game is genuinely upcoming and
@@ -16659,8 +16661,8 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                 ctx, next_week, playoff_start, _league_id, _season, _platform, team_by_rid,
             )
 
-        from dashboard_services.ai.weekly_recap import get_weekly_ai_recap
-        ai_column_html, next_week_html = get_weekly_ai_recap(
+        from dashboard_services.ai.weekly_recap import get_weekly_recap_bundle
+        ai_column_html, next_week_html, recap_document = get_weekly_recap_bundle(
             df_weekly=df_weekly,
             matchups_by_week=ctx.get("matchups_by_week") or {},
             selected_week=selected_week,
@@ -16670,6 +16672,15 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
             season=ctx.get("season") or "",
             next_week_ctx=next_week_ctx,
         )
+
+    # The existing canvas keys remain stable; richer delivery formats consume
+    # the same selected stories and wording as the on-page recap.
+    from dashboard_services.recap import augment_recap_share_payload
+    recap_url = f"/{_platform}/{_season}/{_league_id}/recap?week={selected_week}"
+    _recap_share = augment_recap_share_payload(
+        _recap_share, recap_document, canonical_url=recap_url,
+    )
+    week_selector = _render_recap_week_selector(_recap_share)
 
     # ── Lineup analysis: busts, sleepers, coaching mistakes ────────────────
     if preview_mode:

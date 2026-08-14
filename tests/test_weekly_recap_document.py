@@ -8,6 +8,7 @@ from dashboard_services.recap.document import (
     recap_document_from_json,
     recap_document_to_json,
 )
+from dashboard_services.recap.presenters import augment_recap_share_payload, build_recap_text
 
 
 def _payload() -> dict:
@@ -140,3 +141,49 @@ def test_document_json_round_trip_rejects_unknown_schema():
     assert loaded == document
     assert recap_document_from_json('{"schema_version":999}') is None
     assert recap_document_from_json("not json") is None
+
+
+def test_share_presenter_preserves_canvas_contract_and_adds_canonical_stories():
+    document = apply_ai_narrative(build_recap_document(_payload()), {
+        "headline": "One yard decided the week",
+        "stories": [{
+            "id": "closest_finish",
+            "title": "Fourth & Long escaped",
+            "body": "Fourth & Long survived by eight hundredths.",
+        }],
+        "looking_ahead": "",
+    })
+    base = {
+        "league": "Fourth and Long", "week": 6,
+        "games": [{"w": "Fourth & Long", "l": "Gridiron Guild", "ws": 127.5, "ls": 127.42}],
+        "top": {"team": "Sunday Scaries", "pts": 168.7},
+    }
+
+    payload = augment_recap_share_payload(base, document, "/sleeper/2026/123/recap?week=6")
+
+    assert payload["games"] == base["games"]
+    assert payload["top"] == base["top"]
+    assert payload["headline"] == "One yard decided the week"
+    assert payload["featured_story_id"] == "closest_finish"
+    assert payload["stories"][0]["title"] == "Fourth & Long escaped"
+    assert payload["url"] == "/sleeper/2026/123/recap?week=6"
+    assert "Fourth & Long survived by eight hundredths." in payload["text"]
+
+
+def test_text_digest_uses_selected_order_and_does_not_mutate_document():
+    document = build_recap_document(_payload())
+    before = deepcopy(document)
+
+    text = build_recap_text(document, "https://example.test/recap?week=6")
+
+    first_title = document["stories"][0]["title"]
+    second_title = document["stories"][1]["title"]
+    assert text.index(first_title) < text.index(second_title)
+    assert text.endswith("https://example.test/recap?week=6")
+    assert document == before
+
+
+def test_share_presenter_without_document_is_backward_compatible():
+    base = {"league": "League", "week": 1, "games": []}
+
+    assert augment_recap_share_payload(base, None) == base

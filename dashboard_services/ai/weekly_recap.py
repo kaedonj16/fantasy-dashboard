@@ -967,7 +967,7 @@ def _render_next_week_html(preview: dict, looking_ahead: str) -> str:
 """
 
 
-def get_weekly_ai_recap(
+def get_weekly_recap_bundle(
         df_weekly: pd.DataFrame,
         matchups_by_week: dict,
         selected_week: int,
@@ -976,14 +976,14 @@ def get_weekly_ai_recap(
         league_id: str,
         season,
         next_week_ctx: dict | None = None,
-) -> tuple[str, str]:
-    """Return (recap_column_html, next_week_card_html). Either may be ''.
+) -> tuple[str, str, dict | None]:
+    """Return rendered recap HTML plus its canonical document.
 
     Both render from one structured recap document.  Verified facts and selected
     stories live in that document independently of AI wording, which lets the
     recap degrade to deterministic copy and gives future share/delivery formats
     one canonical source."""
-    empty = ("", "")
+    empty = ("", "", None)
     if df_weekly is None or df_weekly.empty:
         return empty
 
@@ -1012,6 +1012,7 @@ def get_weekly_ai_recap(
                     cached_document["facts"].get("next_week_preview"),
                     narrative.get("looking_ahead") or "",
                 ),
+                cached_document,
             )
 
     if not ai_available():
@@ -1023,6 +1024,7 @@ def get_weekly_ai_recap(
         return (
             _render_recap_html(narrative),
             _render_next_week_html(payload.get("next_week_preview"), ""),
+            document,
         )
 
     try:
@@ -1034,13 +1036,14 @@ def get_weekly_ai_recap(
             payload.get("next_week_preview"), narrative.get("looking_ahead") or "",
         )
         save_cached_ai_text(cache_key, recap_document_to_json(document))
-        return recap_html, next_html
+        return recap_html, next_html, document
     except (AIRateLimitError, AIUnavailableError) as exc:
         logger.warning("[weekly-recap] AI unavailable: %s", exc)
         narrative = document["narrative"]
         return (
             _render_recap_html(narrative),
             _render_next_week_html(payload.get("next_week_preview"), ""),
+            document,
         )
     except Exception as exc:
         logger.warning("[weekly-recap] AI error: %s", exc)
@@ -1048,7 +1051,32 @@ def get_weekly_ai_recap(
         return (
             _render_recap_html(narrative),
             _render_next_week_html(payload.get("next_week_preview"), ""),
+            document,
         )
+
+
+def get_weekly_ai_recap(
+        df_weekly: pd.DataFrame,
+        matchups_by_week: dict,
+        selected_week: int,
+        team_by_rid: dict,
+        league: dict,
+        league_id: str,
+        season,
+        next_week_ctx: dict | None = None,
+) -> tuple[str, str]:
+    """Compatibility wrapper returning the two existing HTML fragments."""
+    recap_html, next_html, _document = get_weekly_recap_bundle(
+        df_weekly=df_weekly,
+        matchups_by_week=matchups_by_week,
+        selected_week=selected_week,
+        team_by_rid=team_by_rid,
+        league=league,
+        league_id=league_id,
+        season=season,
+        next_week_ctx=next_week_ctx,
+    )
+    return recap_html, next_html
 
 
 def get_weekly_ai_recap_preview() -> tuple[str, str]:
