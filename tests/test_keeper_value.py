@@ -2,7 +2,7 @@
 from utils.keeper_value import (
     KeeperRules, KeeperCandidate, market_round, keeper_cost_round, verdict,
     analyze, evaluate, total_surplus, project_league_keepers, cost_collisions,
-    resolve_cost_collisions, KEEP, TOSS, PASS,
+    resolve_cost_collisions, keeper_surplus_value, pick_value, KEEP, TOSS, PASS,
 )
 
 
@@ -24,6 +24,13 @@ def test_market_round_unknown_adp_is_none():
     assert market_round(None, 12) is None
     assert market_round(0, 12) is None
     assert market_round(50, 0) is None
+
+
+def test_pick_value_curve_rewards_early_round_savings_more():
+    assert pick_value(1) - pick_value(13) > pick_value(145) - pick_value(157)
+    # Six rounds saved on an elite player can be worth more than eight rounds
+    # saved on a later-market player.
+    assert keeper_surplus_value(4, 7, 12) > keeper_surplus_value(30, 11, 12)
 
 
 # ── keeper_cost_round ────────────────────────────────────────────────────────
@@ -110,21 +117,21 @@ def _roster():
     ]
 
 
-def test_evaluate_ranks_by_surplus_then_value():
+def test_evaluate_ranks_by_pick_value_surplus():
     ranked = evaluate(_roster(), _rules(), limit=0)
     names = [c.name for c in ranked]
-    # Bowers +8 first; then the two +6 (Nacua vs Gibbs) broken by value -> Gibbs (1340) > Nacua (1120)
-    assert names[0] == "Bowers"
-    assert names[1] == "Gibbs"
-    assert names[2] == "Nacua"
+    # Saving six rounds on an elite first-round player is worth more than saving
+    # eight rounds on a third-round player; equal raw-round gains are no longer
+    # treated as interchangeable.
+    assert names[:3] == ["Gibbs", "Nacua", "Bowers"]
     assert names[-1] == "Waddle"  # negative surplus sinks
 
 
 def test_evaluate_marks_top_n_positive_surplus():
     ranked = evaluate(_roster(), _rules(), limit=2)
     kept = [c.name for c in ranked if c.keep]
-    assert kept == ["Bowers", "Gibbs"]
-    assert total_surplus(ranked) == 8 + 6
+    assert kept == ["Gibbs", "Nacua"]
+    assert total_surplus(ranked) == 6 + 6
 
 
 def test_evaluate_never_keeps_nonpositive_surplus_even_with_room():
@@ -145,7 +152,7 @@ def test_evaluate_limit_zero_keeps_nothing():
 
 def test_project_league_keepers_picks_each_team_optimal_set():
     teams = {
-        "me": _roster(),  # optimal 2 = Bowers, Gibbs
+        "me": _roster(),  # pick-value optimal 2 = Gibbs, Nacua
         "rival": [
             KeeperCandidate("x", "Stud", "RB", 12, 0, 6, 900),   # market R1, cost R12 -> +11
             KeeperCandidate("y", "Mid", "WR", 4, 0, 40, 500),    # market R4, cost R4  -> 0 (not kept)
@@ -153,14 +160,14 @@ def test_project_league_keepers_picks_each_team_optimal_set():
         "empty": [],
     }
     projected = project_league_keepers(teams, _rules(), limit=2)
-    assert projected["me"] == ["a", "c"]        # Bowers, Gibbs (value tie-break)
+    assert projected["me"] == ["c", "b"]        # Gibbs, Nacua (pick-value order)
     assert projected["rival"] == ["x"]          # only the positive-surplus stud
     assert projected["empty"] == []
 
 
 def test_project_league_keepers_respects_limit():
     teams = {"me": _roster()}
-    assert project_league_keepers(teams, _rules(), limit=1)["me"] == ["a"]  # just Bowers
+    assert project_league_keepers(teams, _rules(), limit=1)["me"] == ["c"]  # just Gibbs
     assert project_league_keepers(teams, _rules(), limit=0)["me"] == []
 
 
@@ -253,3 +260,16 @@ def test_resolve_only_touches_kept_players():
     by_id = {c.player_id: c for c in ranked}
     assert by_id["d"].cost_round == 5            # unkept player keeps its raw cost
     assert not by_id["d"].keep
+
+
+def test_one_per_round_reoptimizes_selection_after_collision_cost():
+    # A and B both naturally cost R5. Moving B to R4 makes C (naturally R4)
+    # the better second keeper, so a post-selection bump would be suboptimal.
+    cands = [
+        KeeperCandidate("a", "A", "RB", 5, 0, 18, 900),
+        KeeperCandidate("b", "B", "WR", 5, 0, 25, 800),
+        KeeperCandidate("c", "C", "TE", 4, 0, 24, 700),
+    ]
+    ranked = evaluate(cands, _rules(one_per_round=True), limit=2)
+    kept = {c.player_id: c.cost_round for c in ranked if c.keep}
+    assert kept == {"a": 5, "c": 4}

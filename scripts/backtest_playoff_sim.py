@@ -22,7 +22,6 @@ calibration, not a true first-week-of-the-season forecast.
 from __future__ import annotations
 
 import argparse
-import math
 import os
 import sys
 from typing import List, Tuple
@@ -30,6 +29,8 @@ from typing import List, Tuple
 # Allow running as a plain script (python scripts/backtest_playoff_sim.py) by
 # putting the repo root on the path so `app` and `data_building` import.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from utils.evaluation_metrics import brier_score, log_loss  # noqa: E402
 
 
 def calibration_report(samples: List[Tuple[float, bool]], n_bins: int = 10) -> str:
@@ -42,12 +43,10 @@ def calibration_report(samples: List[Tuple[float, bool]], n_bins: int = 10) -> s
         b = min(n_bins - 1, max(0, int(prob * n_bins)))
         bins[b].append((prob, 1.0 if actual else 0.0))
 
-    brier = sum((p - a) ** 2 for p, a in samples) / len(samples)
-    eps = 1e-6
-    logloss = -sum(
-        a * math.log(min(1 - eps, max(eps, p))) + (1 - a) * math.log(min(1 - eps, max(eps, 1 - p)))
-        for p, a in ((p, 1.0 if a else 0.0) for p, a in samples)
-    ) / len(samples)
+    predictions = [p for p, _ in samples]
+    outcomes = [1.0 if actual else 0.0 for _, actual in samples]
+    brier = brier_score(predictions, outcomes)
+    logloss = log_loss(predictions, outcomes)
 
     lines = []
     lines.append(f"{'bucket':>10} {'n':>5} {'pred':>7} {'actual':>7} {'gap':>7}")

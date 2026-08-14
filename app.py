@@ -7773,54 +7773,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     # Waiver card rows are shared with the in-season Season Hub.
     top_waiver_assets_html = _build_waiver_targets_rows(ctx, model_value_table)
 
-    # Build matchup carousel (even if offseason/preseason - show with 0 projections)
-    matchup_html = ""
-    try:
-        from dashboard_services.matchups import render_matchup_slide, render_matchup_carousel_weeks
-
-        matchups_by_week = ctx.get("matchups_by_week", {})
-        proj_by_week = ctx.get("proj_by_week", {})
-        statuses = ctx.get("statuses", {})
-        players_index = ctx.get("players_index", {})
-        teams_index = ctx.get("teams_index", {})
-        team_game_lookup = ctx.get("team_game_lookup", {})
-        current_week = ctx.get("current_week", 1)
-
-        # Generate slides for Week 1 (or current week)
-        week_to_show = current_week if current_week > 0 else 1
-        _os_vid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
-        matchups_for_week = sorted(
-            matchups_by_week.get(week_to_show, []),
-            key=lambda m: 0 if _os_vid and _os_vid in (str((m.get("left") or {}).get("roster_id", "")), str((m.get("right") or {}).get("roster_id", ""))) else 1,
-        )
-
-        if matchups_for_week:
-            _fpts_against_os = _compute_fpts_against(season)
-            slides = [
-                render_matchup_slide(
-                    season,
-                    m,
-                    week_to_show,
-                    week_to_show,
-                    status_by_pid=statuses.get(week_to_show, {}).get("statuses", {}),
-                    projections=proj_by_week,
-                    players=players_index,
-                    teams=teams_index,
-                    team_game_lookup=team_game_lookup,
-                    fpts_against=_fpts_against_os,
-                )
-                for m in matchups_for_week
-            ]
-            slides_by_week = {week_to_show: "".join(slides)}
-            matchup_html = render_matchup_carousel_weeks(
-                slides_by_week,
-                dashboard=True,
-                active_week=week_to_show,
-            )
-    except Exception as e:
-        logger.info(f"[offseason] Failed to generate matchup carousel: {e}")
-        matchup_html = ""
-
     gm_card_html = ""
     if viewer_roster_id:
         # Show button to generate GM memo instead of auto-generating
@@ -8047,7 +7999,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         <div id="os-jump-report" class="os-tab-panel os-tab-active">
           {gm_card_html}
           {season_review_html}
-          {matchup_html}
         </div>
 
         <section class="os-card os-col-fill os-tab-panel" id="os-jump-waivers">
@@ -8888,15 +8839,17 @@ function wkActivateTab(tab) {{
 
 
 def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dict = None):
-    from utils.utils import pick_proj_variant
     from statistics import median
+    from utils.fantasy_scoring import projection_points
+    _players_for_proj = load_players_index() or {}
 
-    variant = pick_proj_variant(raw_scoring_settings or {})
-
-    def _flat(multi: dict) -> Optional[float]:
+    def _flat(pid: str, multi: dict) -> Optional[float]:
         """Extract the chosen variant's value from a multi-variant player entry."""
         if isinstance(multi, dict):
-            return multi.get(variant) or multi.get("ppr")
+            return projection_points(
+                multi, raw_scoring_settings or {},
+                (_players_for_proj.get(str(pid)) or {}).get("pos", ""),
+            )
         if isinstance(multi, (int, float)):
             return float(multi)  # legacy flat file
         return None
@@ -8907,7 +8860,7 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
         multi_week = load_week_projection(season, w) or {}
         flat = {}
         for pid, val in multi_week.items():
-            v = _flat(val)
+            v = _flat(pid, val)
             if v is not None:
                 flat[pid] = v
         raw[w] = flat
@@ -8940,10 +8893,11 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
                 continue
             _rec_pts = _EST_REC[_pos]
             _non_rec = max(_ppg - _rec_pts, 0)
-            if variant in ("ppr", "tep", "6pt_ppr", "6pt_tep"):
+            _rec_rate = float((raw_scoring_settings or {}).get("rec", 1.0))
+            if _rec_rate >= 0.75:
                 _v = _ppg
-            elif variant in ("half_ppr", "6pt_half"):
-                _v = _non_rec + _rec_pts * 0.5
+            elif _rec_rate > 0:
+                _v = _non_rec + _rec_pts * _rec_rate
             else:
                 _v = _non_rec
             if _v > 0:
@@ -8999,7 +8953,7 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
         bundles[w] = {"projections": week_proj}
 
     if not any_projections:
-        logger.info(f"[projections] No projection data for season {season} (variant: {variant})")
+        logger.info("[projections] No Sleeper projection data for season %s", season)
     bundles["_available"] = any_projections
     return bundles
 
@@ -11110,6 +11064,7 @@ def api_waiver_candidates():
 
     result = []
     _shown = candidates[:30]
+    from utils.model_confidence import confidence_from_inputs
     # Badge trend relative to the shown set so the (trend-sorted) list doesn't
     # read "Rising Fast" on every row.
     _fast_thr, _up_thr = _adaptive_trend_thresholds([c.get("rank_change_7d") for c in _shown])
@@ -11212,6 +11167,15 @@ def api_waiver_candidates():
             bscore = waiver_breakout.get(c["player_id"], 0.0)
             ut = usage_trends.get(c["player_id"]) or {}
             _flo, _fhi = _faab_band(c)
+            _confidence_inputs = sum([
+                c.get("ros_ppg") is not None,
+                c.get("usage_delta") is not None,
+                c.get("schedule_ease_rank") is not None,
+                c.get("age") is not None,
+                bool(c.get("team")),
+                c.get("value") is not None,
+            ])
+            _confidence = confidence_from_inputs(_confidence_inputs, 6)
             result.append({
                 "player_id": c["player_id"],
                 "name": c["name"],
@@ -11237,6 +11201,7 @@ def api_waiver_candidates():
                 "faab_low": _flo,
                 "faab_high": _fhi,
                 "drop": _drop_for(c),
+                "confidence": _confidence,
             })
         except Exception:
             logger.exception("[waiver-candidates] result row failed for %s", c.get("player_id"))
@@ -11686,8 +11651,8 @@ def api_start_sit_options():
         )
 
     # ── Weekly projections - SAME source as the player modal & matchups page ───
-    # build_projections_by_week() returns Tank01 weekly values (variant-adjusted,
-    # with per-player median outlier correction) and FantasyPros season PPG as a
+    # build_projections_by_week() returns Sleeper weekly stat lines scored with
+    # the league's exact settings and FantasyPros season PPG as a
     # fallback for players with no weekly data. Reuse the cached ctx bundle when
     # present so start/sit shows the exact number the modal/matchups show.
     proj_by_week = ctx.get("proj_by_week")
@@ -11760,7 +11725,7 @@ def api_start_sit_options():
         s_ppg      = season_ppg.get(pid, 0.0)
         recent_ppg = recent_ppg_map.get(pid, 0.0)
         # Projection = exact value the player modal / matchups page show for this
-        # week (Tank01 weekly w/ median correction → FantasyPros season PPG).
+        # week (Sleeper weekly → FantasyPros season PPG fallback).
         proj_pts   = _lookup_proj(pid)
         if proj_pts <= 0 and s_ppg > 0:
             proj_pts = round(s_ppg, 1)
@@ -15276,7 +15241,9 @@ def _playoff_sos_for(season: int, team: str, pos: str):
                 for lk in week_lookups:
                     opp = lk.get(t)
                     if opp:
-                        eases.append(_matchup_cell_ease(rank_map.get(opp), total, info.get(opp, {})))
+                        ease = _matchup_cell_ease(rank_map.get(opp), total, info.get(opp, {}))
+                        if ease is not None:
+                            eases.append(ease)
                 if eases:
                     team_ease[t] = sum(eases) / len(eases)
             ranked = sorted(team_ease.items(), key=lambda x: -x[1])
@@ -15337,7 +15304,9 @@ def _compute_schedule_grid(season: int, pids, weeks):
                 if not game:
                     continue
                 r = rank_map.get(game["opp"])
-                eases.append(_matchup_cell_ease(r, total, info.get(game["opp"], {})))
+                ease = _matchup_cell_ease(r, total, info.get(game["opp"], {}))
+                if ease is not None:
+                    eases.append(ease)
             if eases:
                 team_ease[t] = sum(eases) / len(eases)
         ranked = sorted(team_ease.items(), key=lambda x: -x[1])
@@ -16273,7 +16242,7 @@ def _build_next_week_ctx(
     if not matchups:
         return None
 
-    # Next-week projections (Tank01 publishes upcoming weeks ahead of kickoff).
+    # Next-week projections from Sleeper's weekly projection feed.
     try:
         bundles = build_projections_by_week(int(season), next_week, ctx.get("raw_scoring_settings"))
         proj_by_pid = (bundles.get(next_week) or {}).get("projections") or {}
@@ -20414,15 +20383,18 @@ def api_watchlist_alerts():
 def api_since_last_visit():
     """Powers the dashboard "Since your last visit" digest. Returns:
 
-      - trades/waivers/items: league activity newer than the client's ``since``
-        timestamp (ms); only computed when a real last-visit baseline exists.
+      - trades/waivers/items: league activity newer than the account's previous
+        visit (or the browser baseline for signed-out visitors).
       - roster: a snapshot of the viewer's roster (value + injury per player)
-        so the client can diff it against its own stored snapshot to surface
-        value moves and new injuries since the last visit.
+        so the client can surface value moves and new injuries since that visit.
 
-    The last-visit time and the roster snapshot are both tracked client-side in
-    localStorage, keeping this a true per-visit diff rather than a rolling feed."""
-    result = {"trades": 0, "waivers": 0, "items": [], "latest_ts": 0, "roster": []}
+    Google-account visits are consumed in the database, making the digest a
+    one-time, cross-device notification. Signed-out visitors retain the local
+    browser fallback."""
+    result = {
+        "trades": 0, "waivers": 0, "items": [], "latest_ts": 0,
+        "roster": [], "previous_roster": None, "account_scoped": False,
+    }
     platform = request.args.get("platform", "sleeper")
     league_id = request.args.get("league_id")
     if not league_id:
@@ -20444,45 +20416,8 @@ def api_since_last_visit():
         logger.debug("since-last-visit ctx failed", exc_info=True)
         return jsonify(result)
 
-    # Trades + waiver adds newer than the last visit (needs a real baseline).
-    if since_ms > 0:
-        try:
-            adf = ctx.get("activity_df")
-            if adf is not None and not adf.empty and "ts" in adf.columns:
-                rows = adf[adf["ts"].notna()].copy()
-                if not rows.empty:
-                    def _ms(ts):
-                        try:
-                            return int(ts.timestamp() * 1000)
-                        except Exception:
-                            return 0
-
-                    rows["ts_ms"] = rows["ts"].map(_ms)
-                    rows = rows[rows["ts_ms"] > since_ms]
-                    if not rows.empty:
-                        rows = rows.sort_values("ts_ms", ascending=False)
-                        result["trades"] = int((rows["kind"] == "trade").sum())
-                        result["waivers"] = int((rows["kind"] == "waiver").sum())
-                        result["latest_ts"] = int(rows["ts_ms"].iloc[0])
-                        for _, r in rows.head(8).iterrows():
-                            data = r["data"] or {}
-                            if r["kind"] == "trade":
-                                names = [str(t.get("name") or "?") for t in (data.get("teams") or [])]
-                                text = "Trade: " + " and ".join(names[:2]) + (" +more" if len(names) > 2 else "")
-                            else:
-                                nm = str(data.get("name") or "?")
-                                adds = data.get("adds") or []
-                                who = ", ".join(str(p.get("name") or "?") for p in adds[:2])
-                                if len(adds) > 2:
-                                    who += f" +{len(adds) - 2}"
-                                text = f"{nm} added {who}" if who else f"{nm} made a move"
-                            result["items"].append(
-                                {"kind": r["kind"], "text": text, "ts": int(r["ts_ms"]), "week": int(r["week"])}
-                            )
-        except Exception:
-            logger.debug("since-last-visit activity failed", exc_info=True)
-
-    # Viewer roster snapshot (value + injury) for the client to diff.
+    # Viewer roster snapshot (value + injury). Build this before consuming the
+    # visit so the account's new baseline is stored in the same request.
     if roster_id:
         try:
             roster = next(
@@ -20517,6 +20452,79 @@ def api_since_last_visit():
                 result["roster"] = snap
         except Exception:
             logger.debug("since-last-visit roster snapshot failed", exc_info=True)
+
+    account_id = session.get("account_id")
+    if account_id:
+        try:
+            from dashboard_services.accounts import consume_league_visit
+
+            previous = consume_league_visit(
+                int(account_id), platform, str(league_id), season, roster_id, result["roster"]
+            )
+            result["account_scoped"] = True
+            if previous:
+                previous_visit = previous.get("last_visit_at")
+                if previous_visit is not None:
+                    since_ms = int(previous_visit.timestamp() * 1000)
+                if str(previous.get("roster_id") or "") == roster_id:
+                    prior_roster = previous.get("roster_snapshot")
+                    if isinstance(prior_roster, str):
+                        prior_roster = json.loads(prior_roster)
+                    if isinstance(prior_roster, list):
+                        result["previous_roster"] = prior_roster
+        except Exception:
+            # Do not break the dashboard if persistence is temporarily
+            # unavailable; the browser baseline remains a safe fallback.
+            logger.debug("since-last-visit account state failed", exc_info=True)
+
+    # Trades + waiver adds newer than the last visit (needs a real baseline).
+    if since_ms > 0:
+        try:
+            adf = ctx.get("activity_df")
+            if adf is not None and not adf.empty and "ts" in adf.columns:
+                rows = adf[adf["ts"].notna()].copy()
+                if not rows.empty:
+                    def _ms(ts):
+                        try:
+                            return int(ts.timestamp() * 1000)
+                        except Exception:
+                            return 0
+
+                    rows["ts_ms"] = rows["ts"].map(_ms)
+                    rows = rows[rows["ts_ms"] > since_ms]
+                    if roster_id and not rows.empty:
+                        def _is_own_transaction(row):
+                            data = row.get("data") or {}
+                            if row.get("kind") == "waiver":
+                                return str(data.get("rid") or "") == roster_id
+                            return any(
+                                str(team.get("rid") or team.get("roster_id") or "") == roster_id
+                                for team in (data.get("teams") or [])
+                            )
+
+                        rows = rows[~rows.apply(_is_own_transaction, axis=1)]
+                    if not rows.empty:
+                        rows = rows.sort_values("ts_ms", ascending=False)
+                        result["trades"] = int((rows["kind"] == "trade").sum())
+                        result["waivers"] = int((rows["kind"] == "waiver").sum())
+                        result["latest_ts"] = int(rows["ts_ms"].iloc[0])
+                        for _, r in rows.head(8).iterrows():
+                            data = r["data"] or {}
+                            if r["kind"] == "trade":
+                                names = [str(t.get("name") or "?") for t in (data.get("teams") or [])]
+                                text = "Trade: " + " and ".join(names[:2]) + (" +more" if len(names) > 2 else "")
+                            else:
+                                nm = str(data.get("name") or "?")
+                                adds = data.get("adds") or []
+                                who = ", ".join(str(p.get("name") or "?") for p in adds[:2])
+                                if len(adds) > 2:
+                                    who += f" +{len(adds) - 2}"
+                                text = f"{nm} added {who}" if who else f"{nm} made a move"
+                            result["items"].append(
+                                {"kind": r["kind"], "text": text, "ts": int(r["ts_ms"]), "week": int(r["week"])}
+                            )
+        except Exception:
+            logger.debug("since-last-visit activity failed", exc_info=True)
 
     return jsonify(result)
 
@@ -21592,7 +21600,7 @@ def api_player_game_logs(player_id: str):
                     if _fv > 0.5:
                         _proj_vals[_w] = round(_fv, 2)
 
-                # FP PPG fallback if no Tank01 weekly files
+                # FP PPG fallback if no Sleeper weekly files
                 if not _proj_vals:
                     _fp_path = os.path.join("cache", f"fp_projections_{_upcoming}_ppr.json")
                     try:
@@ -22818,6 +22826,7 @@ from utils.pick_score import ps_tier_of as _ps_tier_of  # noqa: E402
 
 from utils.pick_score import compute_pick_score as _compute_pick_score  # noqa: E402
 from utils.pick_score import starter_counts as _ps_starter_counts  # noqa: E402
+from utils.pick_score import empirical_slot_allocation as _ps_empirical_slots  # noqa: E402
 
 
 # ── Draft-Room-aligned TEAM grade ────────────────────────────────────────────
@@ -23168,8 +23177,10 @@ def api_draft_grades():
                 "SUPER_FLEX": "SF", "SFLEX": "SF",
             }
             _rp_counts = {"QB": 0, "SF": 0, "RB": 0, "WR": 0, "TE": 0, "FLEX": 0}
+            _rp_slots = []
             try:
-                for _s in ((get_league(platform, league_id, season) or {}).get("roster_positions") or []):
+                _rp_slots = ((get_league(platform, league_id, season) or {}).get("roster_positions") or [])
+                for _s in _rp_slots:
                     _k = _rp_norm.get(str(_s).upper())
                     if _k:
                         _rp_counts[_k] += 1
@@ -23196,12 +23207,21 @@ def api_draft_grades():
                     if _ct is not None:
                         _ck = f"{_pp}|{_ct}"
                         tier_remaining[_ck] = tier_remaining.get(_ck, 0) + 1
+            # Let the actual player pool decide how FLEX/SF are occupied;
+            # this supersedes the fixed half-QB/half-RB/half-WR heuristic.
+            _allocation_pool = [
+                {"position": _d.get("position"), "value": _eff_val(_pid, _d)}
+                for _pid, _d in val_by_id.items()
+                if _d.get("position") in CORE_POS
+                and (_draft_type != "rookie" or not eligible_sids or _pid in eligible_sids)
+            ]
+            _empirical = _ps_empirical_slots(_allocation_pool, _rp_slots, _num_teams)
             for _pp, _arr in _by_pos.items():
                 _arr.sort(reverse=True)
                 if not _arr:
                     repl_by_pos[_pp] = 0
                     continue
-                _idx = int(round(_num_teams * _starters.get(_pp, 1))) - 1
+                _idx = int(round(_num_teams * _empirical.get(_pp, _starters.get(_pp, 1)))) - 1
                 _idx = max(0, min(_idx, len(_arr) - 1))
                 repl_by_pos[_pp] = _arr[_idx]
             ps_pool_sorted.sort(key=lambda x: x[0], reverse=True)
