@@ -283,7 +283,7 @@ def _playoff_odds(
 
 def _estimate_acceptance(send_val: float, receive_val: float, is_preferred: bool,
                          fit: int = 0) -> int:
-    """Estimate acceptance likelihood (5–90) from the partner team's perspective.
+    """Backward-compatible market-plausibility score.
 
     Partner receives send_val (viewer's assets) and gives up receive_val (their
     player). A higher send/receive ratio means the partner is getting the better
@@ -298,10 +298,10 @@ def _estimate_acceptance(send_val: float, receive_val: float, is_preferred: bool
     chiefly whether the package addresses a position the partner is thin at
     (positive) or piles onto one they are already deep at (negative).
     """
-    ratio = send_val / max(receive_val, 1.0)
-    base = 100.0 / (1.0 + math.exp(-7.0 * (ratio - 1.0)))
-    score = base + (8 if is_preferred else 0) + fit
-    return int(min(90, max(5, round(score))))
+    from utils.market_plausibility import market_plausibility
+    return market_plausibility(
+        send_val, receive_val, fit + (8 if is_preferred else 0)
+    )["score"]
 
 
 def _acceptance_fit(pkg: List[Dict], need: Optional[set], stacked: Optional[set]) -> int:
@@ -1283,6 +1283,7 @@ def _build_distribute(
                 "net_win_prob_delta":      round(net_wpd, 4),
                 "net_playoff_odds_delta":  round(net_pod, 4),
                 "acceptance_pct":     acpt,
+                "acceptance_label":   "market plausibility",
                 "direction":      "distribute",
                 "suggested_send": [{
                     "player_id": stud, "name": sname,
@@ -1569,6 +1570,7 @@ def _build_rebuilding(
                 "playoff_odds_delta":     round(departure_pod, 4),
                 "net_playoff_odds_delta": round(net_pod, 4),
                 "acceptance_pct":         acpt,
+                "acceptance_label":       "market plausibility",
                 "direction":              "acquire",
                 "suggested_send": [{
                     "player_id": vet, "name": vname,
@@ -2394,6 +2396,7 @@ def _get_archetype_suggestions_impl(
                 "net_win_prob_delta":      round(net_wpd_pkg, 4),
                 "net_playoff_odds_delta":  round(net_pod_pkg, 4),
                 "acceptance_pct":          acpt,
+                "acceptance_label":        "market plausibility",
                 "fit_note":                _fit_note(pkg, _p_need, pos,
                                                      _pmeta.get("pos_counts")),
                 "direction":               "acquire",

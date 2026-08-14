@@ -9365,10 +9365,12 @@ select:focus {
 
 .m-carousel {
   position: relative;
-  /* Slides are translated horizontally, but live pulse rings extend beyond
-     their text line. Clip only on the horizontal axis so the ring is intact. */
-  overflow-x: clip;
-  overflow-y: visible;
+  /* Keep slide clipping, but move its clipping edge eight pixels beyond the
+     original card box. The pulse grows ~6px past an 8px dot, so it now paints
+     fully without changing any row/card dimensions at any breakpoint. */
+  overflow: hidden;
+  padding: 8px;
+  margin: -8px;
 }
 
 .m-combo {

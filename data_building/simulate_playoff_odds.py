@@ -797,127 +797,41 @@ def _position_aware_lineup(
 
 
 def _lineup_with_replacements(
-    pids: list,
-    ppg_map: dict,
-    pos_map: dict,
-    roster_positions: list,
-) -> tuple[float, list[tuple[str, float]], list[float]]:
-    """Optimal lineup plus, for each starter, the best benched replacement.
+    pids: list, ppg_map: dict, pos_map: dict, roster_positions: list,
+) -> tuple[float, list[tuple[str, float]], "np.ndarray"]:
+    """Return the optimal lineup and exact loss for every injury subset.
 
-    Returns (total, starters, replacements) where:
-      - starters       — [(pos, ppg), …] for each starting slot
-      - replacements   — [replacement_ppg, …] aligned to starters: the projected
-                         points of the best healthy rostered player eligible for
-                         that slot if the starter is unavailable that week.
-
-    Used by the injury model so an injured starter is replaced by the next best
-    available player on the roster (the realistic loss = starter − replacement),
-    not a flat fraction. Replacements are computed independently per starter
-    (single-injury assumption), which slightly understates rare multi-injury
-    weeks at one position — an acceptable approximation.
+    The previous implementation chose a replacement independently for each
+    starter, allowing two injured starters to receive credit for the same bench
+    player. Here every unavailable subset removes all affected starters and then
+    re-optimizes once. The resulting table makes simulation lookup O(1).
     """
-    # Tally starting slots by type (mirrors _position_aware_lineup)
-    fixed_slots: dict[str, int] = {}
-    flex_slots  = 0
-    sflex_slots = 0
-    for slot in roster_positions:
-        s = str(slot).upper()
-        if s in _BENCH_SLOTS:
-            continue
-        if s in _SUPER_FLEX_POS:
-            sflex_slots += 1
-        elif s in _FLEX_POSITIONS:
-            flex_slots += 1
-        else:
-            fixed_slots[s] = fixed_slots.get(s, 0) + 1
-
-    # Per-position fallback averages for players lacking a projection
-    _pos_totals: dict[str, list] = {}
-    for _info in ppg_map.values():
-        _p, _g = _info.get("pos", ""), _info.get("ppg", 0)
-        if _p and _g > 0:
-            if _p not in _pos_totals:
-                _pos_totals[_p] = [_g, 1]
-            else:
-                _pos_totals[_p][0] += _g
-                _pos_totals[_p][1] += 1
-    pos_fallback = {p: v[0] / v[1] for p, v in _pos_totals.items()}
-
-    by_pos: dict[str, list[float]] = {}
+    from utils.optimal_lineup import compute_optimal_lineup
+    known: dict[str, list[float]] = {}
+    values, positions = {}, {}
     for pid in pids:
-        info = ppg_map.get(str(pid))
-        if info:
-            pos = info["pos"]
-            ppg = info["ppg"] if info["ppg"] > 0 else (
-                pos_fallback.get(pos) or _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
-            )
-        else:
-            pos = pos_map.get(str(pid), "")
-            ppg = pos_fallback.get(pos) or _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
-        if pos:
-            by_pos.setdefault(pos, []).append(ppg)
-    for pos in by_pos:
-        by_pos[pos].sort(reverse=True)
+        info = ppg_map.get(str(pid)) or {}
+        pos = str(info.get("pos") or pos_map.get(str(pid)) or "").upper()
+        value = float(info.get("ppg") or 0)
+        positions[pid] = pos
+        if value > 0:
+            known.setdefault(pos, []).append(value)
+            values[pid] = value
+    cohort = {pos: sorted(vals)[max(0, len(vals) // 3)] for pos, vals in known.items()}
+    for pid in pids:
+        pos = positions[pid]
+        values.setdefault(pid, cohort.get(pos) or _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT))
 
-    used: dict[str, int] = {}
-    # Each starter recorded as (pos, ppg, slot_type) so we can find its replacement
-    starters_full: list[tuple[str, float, str]] = []
-
-    for slot_pos, count in fixed_slots.items():
-        pool = by_pos.get(slot_pos, [])
-        for _ in range(count):
-            i = used.get(slot_pos, 0)
-            ppg = pool[i] if i < len(pool) else 0.0
-            starters_full.append((slot_pos, ppg, slot_pos))
-            used[slot_pos] = i + 1
-
-    flex_pool = sorted(
-        [(pos, ppg) for pos in _FLEX_ELIGIBLE
-         for ppg in by_pos.get(pos, [])[used.get(pos, 0):]],
-        key=lambda x: x[1], reverse=True,
-    )
-    for i in range(flex_slots):
-        if i < len(flex_pool):
-            pos, ppg = flex_pool[i]
-            starters_full.append((pos, ppg, "FLEX"))
-            used[pos] = used.get(pos, 0) + 1
-    remaining_after_flex = flex_pool[flex_slots:]
-
-    sflex_pool = sorted(
-        [("QB", ppg) for ppg in by_pos.get("QB", [])[used.get("QB", 0):]]
-        + remaining_after_flex,
-        key=lambda x: x[1], reverse=True,
-    )
-    for i in range(sflex_slots):
-        if i < len(sflex_pool):
-            pos, ppg = sflex_pool[i]
-            starters_full.append((pos, ppg, "SFLEX"))
-            used[pos] = used.get(pos, 0) + 1
-
-    # Best benched player per position (first beyond the starters already used)
-    def _best_bench(positions: set) -> float:
-        best = 0.0
-        for p in positions:
-            pool = by_pos.get(p, [])
-            i = used.get(p, 0)
-            if i < len(pool):
-                best = max(best, pool[i])
-        return best
-
-    starters: list[tuple[str, float]] = []
-    replacements: list[float] = []
-    for pos, ppg, slot_type in starters_full:
-        if slot_type == "FLEX":
-            repl = _best_bench(_FLEX_ELIGIBLE)
-        elif slot_type == "SFLEX":
-            repl = _best_bench({"QB"} | _FLEX_ELIGIBLE)
-        else:
-            repl = _best_bench({slot_type})
-        starters.append((pos, ppg))
-        replacements.append(repl)
-
-    total = sum(ppg for _, ppg in starters)
-    return total, starters, replacements
+    selected, total = compute_optimal_lineup(values, positions, roster_positions, pids)
+    starter_ids = sorted(selected, key=str)
+    starters = [(positions[pid], values[pid]) for pid in starter_ids]
+    losses = np.zeros(1 << len(starter_ids), dtype=np.float32)
+    for mask in range(1, len(losses)):
+        unavailable = {starter_ids[i] for i in range(len(starter_ids)) if mask & (1 << i)}
+        healthy = [pid for pid in pids if pid not in unavailable]
+        healthy_total = compute_optimal_lineup(values, positions, roster_positions, healthy)[1]
+        losses[mask] = max(total - healthy_total, 0.0)
+    return total, starters, losses
 
 
 def _team_week_profile(
@@ -941,7 +855,7 @@ def _team_week_profile(
     as the projection term (× blend), so a no-op stays a no-op and in-season
     injuries are discounted consistently with the projection's weight.
     """
-    proj, starters, repls = _lineup_with_replacements(
+    proj, starters, injury_loss_table = _lineup_with_replacements(
         pids, ppg_map, pos_map, roster_positions
     )
     mean = blend * proj + (1.0 - blend) * hist_avg
@@ -950,10 +864,7 @@ def _team_week_profile(
     else:
         std = max(_team_std_from_starters(starters), _MIN_STD)
     scale = blend
-    lost = np.array(
-        [max(s_ppg - r_ppg, 0.0) * scale for (_, s_ppg), r_ppg in zip(starters, repls)],
-        dtype=np.float32,
-    )
+    lost = injury_loss_table * np.float32(scale)
     haz = np.array(
         [_INJURY_HAZARD.get(str(pos).upper(), _INJURY_HAZARD_DEFAULT) for pos, _ in starters],
         dtype=np.float32,
@@ -1579,16 +1490,17 @@ def _apply_injuries(
     adjusted scores and the updated state. The rng is shared so before/after sims
     stay paired.
     """
-    if lost is None or state is None or lost.shape[0] == 0:
+    if lost is None or state is None or lost.shape[0] <= 1:
         return scores, state
-    k = lost.shape[0]
+    k = int(round(math.log2(lost.shape[0])))
     cur = state[:, :k]
     currently_out = cur > 0
     onset = (~currently_out) & (rng.random((n_sims, k), dtype=np.float32) < onset_haz)
     dur = _sample_injury_duration(rng, (n_sims, k))
     cur = np.where(onset, dur, cur)
     is_out = cur > 0
-    lost_pts = (is_out * lost).sum(axis=1)
+    masks = (is_out.astype(np.int64) * (1 << np.arange(k, dtype=np.int64))).sum(axis=1)
+    lost_pts = lost[masks]
     state[:, :k] = np.maximum(cur - 1, 0)   # decrement for next week
     return np.maximum(scores - lost_pts, 0).astype(np.float32), state
 
@@ -1630,7 +1542,9 @@ def _run_mc(
     kmax: dict = {}
     for wp in week_profiles.values():
         for rid, p in wp.items():
-            kmax[rid] = max(kmax.get(rid, 0), int(p["lost"].shape[0]))
+            table_size = int(p["lost"].shape[0])
+            starter_count = int(round(math.log2(table_size))) if table_size > 1 else 0
+            kmax[rid] = max(kmax.get(rid, 0), starter_count)
     inj_state = {
         rid: np.zeros((n_sims, k), dtype=np.int16) for rid, k in kmax.items() if k
     }
@@ -1678,9 +1592,15 @@ def _run_mc(
             pf[:, ia]   += sa
             pf[:, ib]   += sb
 
-    # Rank by wins desc, pf desc (wins dominate)
-    rank_key  = wins * 1e6 + pf
-    team_rank = np.argsort(np.argsort(-rank_key, axis=1), axis=1)  # 0 = best
+    # Exact lexicographic ranking: wins desc, then PF desc. Packing both into a
+    # float lets extreme PF overtake a win and introduces precision-dependent
+    # ties, which can change playoff and draft-slot projections.
+    order = np.lexsort((-pf, -wins), axis=1)
+    team_rank = np.empty_like(order)
+    np.put_along_axis(
+        team_rank, order,
+        np.broadcast_to(np.arange(n, dtype=order.dtype), order.shape), axis=1,
+    )
 
     in_playoffs = (team_rank < playoff_teams).mean(axis=0) * 100
     got_bye     = (team_rank < n_byes).mean(axis=0) * 100 if n_byes else np.zeros(n)

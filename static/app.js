@@ -6526,7 +6526,7 @@ window.initTradePage = function initTradePage(root = document) {
             const acceptHtml = _acceptProb != null
               ? `<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${_probColor}15;border:1px solid ${_probColor}30;color:${_probColor};white-space:nowrap;">
                    <span style="width:5px;height:5px;border-radius:50%;background:${_probColor};flex-shrink:0;"></span>
-                   ${_acceptProb}% accept
+                   ${_acceptProb}% market plausibility
                  </span>`
               : '';
 
@@ -7231,12 +7231,14 @@ window.initTradePage = function initTradePage(root = document) {
         }
         const gradeHtml = `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${gradeInfo.color}15;border:1px solid ${gradeInfo.color}30;color:${gradeInfo.color};white-space:nowrap;">${gradeInfo.label}</span>`;
 
-        // Acceptance badge
+        // Market-plausibility badge. Historical rejected-offer labels are not
+        // available, so this must not claim to be literal acceptance odds.
         const acpt = t.acceptance_pct != null ? t.acceptance_pct : null;
+        const acptLabel = t.acceptance_label || "market plausibility";
         const acptColor = acpt >= 70 ? "#10b981" : acpt >= 50 ? "#6366f1" : "#f59e0b";
         const acptHtml = acpt != null
           ? `<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${acptColor}15;border:1px solid ${acptColor}30;color:${acptColor};white-space:nowrap;">
-               <span style="width:5px;height:5px;border-radius:50%;background:${acptColor};flex-shrink:0;"></span>${acpt}% accept
+               <span style="width:5px;height:5px;border-radius:50%;background:${acptColor};flex-shrink:0;"></span>${acpt}% ${esc(acptLabel)}
              </span>`
           : "";
 
