@@ -507,7 +507,7 @@ def build_advanced_metrics_body(
       .am-quick-ranges { display:flex; gap:4px; }
       .am-qr {
         padding:2px 9px; font-size:11px; font-weight:600; cursor:pointer;
-        border:1px solid var(--border); border-radius:999px;
+        border:1px solid var(--border); border-radius:12px;
         background:var(--card); color:var(--text-muted);
       }
       .am-qr.active { background:var(--accent,#3b82f6); border-color:var(--accent,#3b82f6); color:#fff; }
