@@ -48,3 +48,59 @@ def test_wrapper_forwards_opponent_roster_id(offline_client, monkeypatch):
     )
     assert out == "<ai-take>"
     assert captured["opponent_roster_id"] == "7"
+
+
+@pytest.mark.parametrize(
+    ("viewer_side", "expected_gets", "expected_gives", "expected_delta"),
+    [
+        ("a", 2000.0, 1200.0, 800.0),
+        ("b", 1200.0, 2000.0, -800.0),
+    ],
+)
+def test_trade_ai_payload_uses_selected_side_as_assets_received(
+    offline_client,
+    monkeypatch,
+    viewer_side,
+    expected_gets,
+    expected_gives,
+    expected_delta,
+):
+    import dashboard_services.ai.renderer as rnd
+
+    captured = {}
+    monkeypatch.setattr(
+        rnd,
+        "build_team_gm_context",
+        lambda _ctx, _rid: {"team_name": "Viewer", "direction": "balanced"},
+    )
+    monkeypatch.setattr(rnd, "ai_available", lambda: True)
+    monkeypatch.setattr(rnd, "load_cached_ai_text", lambda _key: None)
+    monkeypatch.setattr(rnd, "save_cached_ai_text", lambda _key, _html: None)
+
+    def fake_generate(payload):
+        captured.update(payload)
+        return {
+            "verdict": "ACCEPT",
+            "summary": "Correct perspective.",
+            "helps": [],
+            "risks": [],
+            "counter": "",
+            "confidence": "high",
+        }
+
+    monkeypatch.setattr(rnd, "generate_trade_ai_result", fake_generate)
+
+    side_a = {"assets": [], "pick_ids": [], "effective_total": 2000.0}
+    side_b = {"assets": [], "pick_ids": [], "effective_total": 1200.0}
+    rnd.get_trade_ai_analysis(
+        ctx={"players": {}, "rosters": []},
+        viewer_roster_id="1",
+        viewer_side=viewer_side,
+        side_a=side_a,
+        side_b=side_b,
+    )
+
+    trade = captured["trade"]
+    assert trade["viewer_gets"]["effective_total"] == expected_gets
+    assert trade["viewer_gives"]["effective_total"] == expected_gives
+    assert trade["market_delta"] == expected_delta

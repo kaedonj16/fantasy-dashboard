@@ -3459,6 +3459,50 @@ window.initTradePage = function initTradePage(root = document) {
     }
   }
 
+  // Keep the roster filter and the analyst's selected viewer team on the same
+  // roster. The two controls load asynchronously, and changing #teamSelect used
+  // to update only the analyst context while leaving the filter bound to the
+  // previous roster. That made the cards look correctly labelled but populated
+  // them from the wrong owners.
+  function syncRosterFilterViewer(selectedRosterId) {
+    const newViewerRid = String(selectedRosterId || "");
+    if (!newViewerRid || !rosterFilter.loaded) return;
+
+    const changed = !!rosterFilter.viewerRid && rosterFilter.viewerRid !== newViewerRid;
+    rosterFilter.viewerRid = newViewerRid;
+
+    if (changed) {
+      state.sideAPlayers = [];
+      state.sideBPlayers = [];
+      state.sideAPicks = [];
+      state.sideBPicks = [];
+      rosterFilter.sideBRid = "";
+      rosterFilter.sideBAuto = false;
+      saveState();
+      renderChips("A");
+      renderChips("B");
+      syncEmptyState("A");
+      syncEmptyState("B");
+      recomputeTrade();
+    }
+
+    const opponentSelect = root.querySelector("#sideBTeamSelect");
+    if (opponentSelect) {
+      opponentSelect.innerHTML = '<option value="">Team 2</option>';
+      Object.entries(rosterFilter.teamName).forEach(([rid, teamName]) => {
+        if (rid === newViewerRid) return;
+        const option = document.createElement("option");
+        option.value = rid;
+        option.textContent = teamName;
+        opponentSelect.appendChild(option);
+      });
+      opponentSelect.value = rosterFilter.sideBRid;
+    }
+
+    updateSideTitles();
+    syncViewerSideLabels();
+  }
+
   // In-flight dedupe: these fire on init and again on league-type/size changes,
   // so collapse concurrent identical requests (keyed by params) into one.
   let _deltasInflight = null, _deltasKey = "";
@@ -7356,8 +7400,13 @@ window.initTradePage = function initTradePage(root = document) {
     // Yield to browser so the loading state actually paints before fetch starts
     await new Promise(resolve => requestAnimationFrame(resolve));
 
-    const viewerSide =
-      root.querySelector('input[name="viewerSide"]:checked')?.value || "a";
+    // Roster-filter mode has fixed semantics: Side A is the selected viewer
+    // team's return and Side B is what that team sends. Do not trust a stale
+    // radio selection left over from unrestricted mode while the async roster
+    // controls are initializing.
+    const viewerSide = rosterFilterActive()
+      ? "a"
+      : (root.querySelector('input[name="viewerSide"]:checked')?.value || "a");
     const teamSelector = root.querySelector("#teamSelect");
     const selectedTeamRosterId = teamSelector?.value || "";
     const selectedTeamName =
@@ -8166,6 +8215,8 @@ window.initTradePage = function initTradePage(root = document) {
             if (currentRosterId) selector.value = currentRosterId;
           }
 
+          syncRosterFilterViewer(selector.value);
+
           // When auto-selecting on sign-in, persist to session and refresh panels
           // so the PI card doesn't stay stuck on "Select your team".
           if (autoSelectedRosterId) {
@@ -8187,6 +8238,7 @@ window.initTradePage = function initTradePage(root = document) {
 
     bindOnce(selector, "teamSelectorChange", "change", () => {
       const selectedRosterId = selector.value;
+      syncRosterFilterViewer(selectedRosterId);
       if (selectedRosterId) {
         if (root.querySelector("#targetsTabContent.is-active")) loadTradeTargets();
         fetch("/api/set-viewer-roster", {
@@ -10093,75 +10145,101 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 
   // GM Memo generation functionality
-  const generateGmMemoBtn = document.getElementById('generateGmMemoBtn');
-  if (generateGmMemoBtn) {
-    generateGmMemoBtn.addEventListener('click', async function() {
-      const _isPremium = document.getElementById('page-root')?.dataset.premium === 'true';
-      if (!_isPremium) { showPaywall('gm-memo'); return; }
+  // The dashboard body can be replaced after a cold-cache background build.
+  // Delegate this click from document instead of binding only to the button
+  // that happened to exist at DOMContentLoaded time.
+  document.addEventListener('click', async function(event) {
+    const generateGmMemoBtn = event.target.closest('#generateGmMemoBtn');
+    if (!generateGmMemoBtn) return;
 
-      const leagueId = this.dataset.leagueId;
-      const season = this.dataset.season;
-      const platform = this.dataset.platform;
-      const viewerRosterId = this.dataset.viewerRosterId;
+    event.preventDefault();
+    if (generateGmMemoBtn.disabled) return;
 
-      const emptyState = document.getElementById('gm-memo-empty');
-      const loadingState = document.getElementById('gm-memo-loading');
-      const resultState = document.getElementById('gm-memo-result');
+    const _isPremium = document.getElementById('page-root')?.dataset.premium === 'true';
+    if (!_isPremium) {
+      if (typeof showPaywall === 'function') showPaywall('gm-memo');
+      return;
+    }
 
-      // Show loading, hide empty state
-      if (emptyState) emptyState.style.display = 'none';
-      if (loadingState) loadingState.style.display = 'block';
-      if (resultState) resultState.style.display = 'none';
+    const leagueId = generateGmMemoBtn.dataset.leagueId;
+    const season = generateGmMemoBtn.dataset.season;
+    const platform = generateGmMemoBtn.dataset.platform;
+    const viewerRosterId = generateGmMemoBtn.dataset.viewerRosterId;
 
-      try {
-        const response = await fetch('/api/gm-memo', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            league_id: leagueId,
-            season: parseInt(season),
-            platform: platform,
-            viewer_roster_id: viewerRosterId
-          })
-        });
+    const emptyState = document.getElementById('gm-memo-empty');
+    const loadingState = document.getElementById('gm-memo-loading');
+    const resultState = document.getElementById('gm-memo-result');
 
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
+    // Show loading, hide empty state
+    generateGmMemoBtn.disabled = true;
+    generateGmMemoBtn.setAttribute('aria-busy', 'true');
+    generateGmMemoBtn.textContent = 'Generating...';
+    if (emptyState) {
+      emptyState.style.display = 'none';
+      emptyState.querySelectorAll('.gm-memo-error').forEach(el => el.remove());
+    }
+    if (loadingState) loadingState.style.display = 'block';
+    if (resultState) resultState.style.display = 'none';
 
-        if (data.success) {
-          // Hide loading, show result
-          if (loadingState) loadingState.style.display = 'none';
-          if (resultState) {
-            resultState.style.display = 'block';
-            resultState.innerHTML = data.gm_memo_html;
-            if (window.brRevealText) window.brRevealText(resultState);
-          }
-        } else {
-          // Show error
-          if (loadingState) loadingState.style.display = 'none';
-          if (emptyState) {
-            emptyState.style.display = 'block';
-            const errorDiv = document.createElement('div');
-            errorDiv.className = 'gm-memo-error';
-            errorDiv.textContent = data.error || 'Failed to generate your Front Office Report. Please try again.';
-            emptyState.appendChild(errorDiv);
-          }
+    try {
+      const response = await fetch('/api/gm-memo', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          league_id: leagueId,
+          season: parseInt(season),
+          platform: platform,
+          viewer_roster_id: viewerRosterId
+        })
+      });
+
+      const data = await response.json();
+      if (response.status === 403 && data.paywall) {
+        if (loadingState) loadingState.style.display = 'none';
+        if (emptyState) emptyState.style.display = 'block';
+        if (typeof showPaywall === 'function') showPaywall('gm-memo');
+        return;
+      }
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+
+      if (data.success) {
+        // Hide loading, show result
+        if (loadingState) loadingState.style.display = 'none';
+        if (resultState) {
+          resultState.style.display = 'block';
+          resultState.innerHTML = data.gm_memo_html;
+          if (window.brRevealText) window.brRevealText(resultState);
         }
-      } catch (error) {
-        console.error('Error generating GM memo:', error);
+      } else {
+        // Show error
         if (loadingState) loadingState.style.display = 'none';
         if (emptyState) {
           emptyState.style.display = 'block';
           const errorDiv = document.createElement('div');
           errorDiv.className = 'gm-memo-error';
-          errorDiv.textContent = 'Network error. Please try again.';
+          errorDiv.textContent = data.error || 'Failed to generate your Front Office Report. Please try again.';
           emptyState.appendChild(errorDiv);
         }
       }
-    });
-  }
+    } catch (error) {
+      console.error('Error generating GM memo:', error);
+      if (loadingState) loadingState.style.display = 'none';
+      if (emptyState) {
+        emptyState.style.display = 'block';
+        emptyState.querySelectorAll('.gm-memo-error').forEach(el => el.remove());
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'gm-memo-error';
+        errorDiv.textContent = 'Network error. Please try again.';
+        emptyState.appendChild(errorDiv);
+      }
+    } finally {
+      generateGmMemoBtn.disabled = false;
+      generateGmMemoBtn.removeAttribute('aria-busy');
+      generateGmMemoBtn.textContent = 'Generate Report';
+    }
+  });
 
   // History page dynamic loading
   const historyPage = document.querySelector('.history-page');

@@ -6879,9 +6879,9 @@ select:focus {
 
 .os-hero-stats {
   display: grid;
-  /* Share one row whether the hero has 3 or 4 tiles (the playoff-odds tile is
-     conditional); tiles only wrap when the container is genuinely narrow. */
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  /* Keep the desktop layout on one four-tile row. The <=1180px rule below
+     switches directly to a balanced 2x2 layout, avoiding a 3+1 wrap. */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
   margin-top: 18px;
 }
