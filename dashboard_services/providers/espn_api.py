@@ -244,6 +244,23 @@ def _public_league_cached(season: int, league_id: str) -> League:
     return League(league_id=int(league_id), year=int(season))
 
 
+def _is_espn_access_denied(exc: Exception) -> bool:
+    """Recognize access denial, including espn-api 0.45's anonymous bug.
+
+    In espn-api 0.45.1, a 401/403 anonymous request enters the access-denied
+    formatter with ``self.cookies is None``. Its attempt to call
+    ``self.cookies.get(...)`` raises AttributeError before ESPNAccessDenied can
+    be constructed. This exact compatibility case should trigger our
+    credential retry; unrelated AttributeErrors must still propagate.
+    """
+    if type(exc).__name__ == "ESPNAccessDenied":
+        return True
+    return (
+        isinstance(exc, AttributeError)
+        and str(exc) == "'NoneType' object has no attribute 'get'"
+    )
+
+
 def _league_cached(season: int, league_id: str) -> League:
     """Load a league anonymously when possible, then fall back to credentials.
 
@@ -263,9 +280,16 @@ def _league_cached(season: int, league_id: str) -> League:
     except Exception as exc:
         # Do not hide invalid IDs, bad seasons, or network/library errors behind
         # a second request. Only an access denial can be fixed by authentication.
-        if type(exc).__name__ != "ESPNAccessDenied":
+        if not _is_espn_access_denied(exc):
             raise
-        access_denied = exc
+        # Do not retain the third-party exception: some espn-api versions put
+        # cookie values in ESPNAccessDenied messages. Keep all later logs safe.
+        access_denied = ESPNAccessDenied("ESPN denied anonymous access to this league.")
+        if isinstance(exc, AttributeError):
+            logger.info(
+                "[espn] treating espn-api anonymous None-cookies AttributeError as access denied league_id=%s season=%s",
+                league_id, season,
+            )
 
     espn_s2, swid = _espn_creds()
     try:
@@ -298,7 +322,7 @@ def _league_cached(season: int, league_id: str) -> League:
             swid=swid,
         )
     except Exception as exc:
-        if type(exc).__name__ == "ESPNAccessDenied":
+        if _is_espn_access_denied(exc):
             try:
                 from flask import has_request_context, session
                 if has_request_context() and session.get("account_id"):
@@ -309,6 +333,7 @@ def _league_cached(season: int, league_id: str) -> League:
                     )
             except Exception:
                 pass
+            raise ESPNAccessDenied("ESPN denied authenticated access to this league.") from None
         raise
 
 
