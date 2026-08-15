@@ -8534,7 +8534,10 @@ async function generateSeasonRecap() {
       }
     }
     
-    const url = `/api/history/ai-recap?league_id=${encodeURIComponent(resolvedLeagueId)}&season=${encodeURIComponent(historySeason)}&roster_id=${encodeURIComponent(selectedTeam)}&base_season=${encodeURIComponent(season)}`;
+    const selectedOption = teamDropdown?.selectedOptions?.[0];
+    const ownerId = selectedOption?.dataset?.ownerId || "";
+    const platform = root.querySelector("#platformInput")?.value || "sleeper";
+    const url = `/api/history/ai-recap?platform=${encodeURIComponent(platform)}&league_id=${encodeURIComponent(resolvedLeagueId)}&season=${encodeURIComponent(historySeason)}&roster_id=${encodeURIComponent(selectedTeam)}&owner_id=${encodeURIComponent(ownerId)}&base_season=${encodeURIComponent(season)}`;
 
     const res = await fetch(url, {
       method: "GET",
@@ -8617,7 +8620,8 @@ function bindRecapTeamSelector() {
   }
   
   if (resolvedLeagueId) {
-    const teamsUrl = `/api/teams?league_id=${encodeURIComponent(resolvedLeagueId)}&platform=sleeper&season=${encodeURIComponent(historySeason)}`;
+    const platform = root.querySelector("#platformInput")?.value || "sleeper";
+    const teamsUrl = `/api/teams?league_id=${encodeURIComponent(resolvedLeagueId)}&platform=${encodeURIComponent(platform)}&season=${encodeURIComponent(historySeason)}`;
 
     fetch(teamsUrl)
       .then(res => { if (!res.ok) throw new Error(res.status); return res.json(); })
@@ -8628,16 +8632,17 @@ function bindRecapTeamSelector() {
           const option = document.createElement("option");
           option.value = team.roster_id;
           option.textContent = team.team_name;
+          option.dataset.ownerId = team.owner_id || team.user_id || "";
           teamDropdown.appendChild(option);
         });
         
         // Auto-select current user's team if available
         const currentUsername = getCurrentUsername();
         if (currentUsername) {
-          const userTeam = teams.find(
-            team =>
-              team.username === currentUsername ||
-              team.team_name.toLowerCase().includes(currentUsername.toLowerCase())
+          const currentUserId = document.querySelector("#viewerUserIdInput")?.value || "";
+          const userTeam = teams.find(team =>
+            (currentUserId && String(team.owner_id || team.user_id) === String(currentUserId)) ||
+            team.username === currentUsername
           );
           if (userTeam) {
             teamDropdown.value = userTeam.roster_id;
@@ -8862,10 +8867,10 @@ if (!platformBtns.length) return;
       signedInLeagueList.innerHTML = leagues.map((league) => {
         const url = `/${encodeURIComponent(league.platform)}/${encodeURIComponent(league.season)}/${encodeURIComponent(league.league_id)}/dashboard`;
         const attention = league.needs_reconnect ? '<span class="connection-attention">Connection needs attention</span>' : "";
-        const action = league.needs_reconnect
-          ? `<button type="button" class="reconnect-home-espn" data-league="${safeHomeText(league.league_id)}">Reconnect ESPN</button>`
-          : `<a href="${url}">Open</a>`;
-        return `<div class="signed-home-league"><span>${safeHomeText(league.name || "Fantasy League")}${attention}</span>${action}</div>`;
+        if (league.needs_reconnect) {
+          return `<div class="signed-home-league signed-home-league-attention"><span class="signed-home-league-name">${safeHomeText(league.name || "Fantasy League")}${attention}</span><button type="button" class="reconnect-home-espn" data-league="${safeHomeText(league.league_id)}">Reconnect</button></div>`;
+        }
+        return `<a class="signed-home-league" href="${url}"><span class="signed-home-league-name">${safeHomeText(league.name || "Fantasy League")}</span><span class="signed-home-league-open">Open <span aria-hidden="true">→</span></span></a>`;
       }).join("");
       signedInLeagueList.querySelectorAll(".reconnect-home-espn").forEach((button) => {
         button.addEventListener("click", () => {
@@ -8880,8 +8885,14 @@ if (!platformBtns.length) return;
         });
       });
     }).catch(() => { signedInLeagueList.textContent = "Could not load saved leagues. Try again shortly."; });
-    document.getElementById("signedInAddLeague")?.addEventListener("click", () => {
-      document.querySelector(".platform-selector")?.scrollIntoView({ behavior: "smooth" });
+    document.getElementById("signedInAddLeague")?.addEventListener("click", (event) => {
+      const flow = document.getElementById("connectLeagueFlow");
+      if (!flow) return;
+      const willOpen = flow.hidden;
+      flow.hidden = !willOpen;
+      event.currentTarget.setAttribute("aria-expanded", String(willOpen));
+      event.currentTarget.textContent = willOpen ? "Cancel" : "Connect another league";
+      if (willOpen) flow.scrollIntoView({ behavior: "smooth", block: "nearest" });
     });
   }
 

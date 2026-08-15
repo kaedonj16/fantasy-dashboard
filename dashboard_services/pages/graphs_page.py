@@ -811,8 +811,11 @@ def build_career_graphs_ctx(
     from dashboard_services.api import resolve_league_id_for_season
     from dashboard_services.pages.history_page import build_regular_season_team_stats
 
-    career: dict = {}  # owner -> {Wins, Losses, Ties, PF, PA, weekly_pts, season_pf}
+    from dashboard_services.historical_identity import canonicalize_weekly_owners, season_owner_index
+    career: dict = {}  # stable owner id -> career totals
     season_pf_rows: list = []  # rows for per-season bar chart: {season, owner, pf}
+    season_frames: list = []
+    labels: dict[str, tuple[int, str]] = {}
 
     for hist_s in available_seasons:
         rid = resolve_league_id_for_season(platform, league_id, season, hist_s)
@@ -821,40 +824,52 @@ def build_career_graphs_ctx(
         except Exception:
             continue
 
-        df = hctx.get("df_weekly", pd.DataFrame())
+        df = canonicalize_weekly_owners(hctx.get("df_weekly", pd.DataFrame()), hctx)
         if df.empty or "owner" not in df.columns:
             continue
 
+        _, season_labels = season_owner_index(hctx)
+        for owner_id, label in season_labels.items():
+            if owner_id not in labels or int(hist_s) > labels[owner_id][0]:
+                labels[owner_id] = (int(hist_s), label)
+
         mock_lg = hctx.get("league") or {}
-        ts = build_regular_season_team_stats(df, mock_lg)
+        stats_df = df.copy()
+        stats_df["owner"] = stats_df["owner_key"]
+        ts = build_regular_season_team_stats(stats_df, mock_lg)
 
         for _, row in ts.iterrows():
-            owner = str(row.get("owner", "?"))
-            if owner not in career:
-                career[owner] = {
+            owner_id = str(row.get("owner", "?"))
+            owner = labels.get(owner_id, (0, owner_id))[1]
+            if owner_id not in career:
+                career[owner_id] = {
                     "Wins": 0, "Losses": 0, "Ties": 0,
                     "PF": 0.0, "PA": 0.0, "weekly_pts": [],
                 }
-            career[owner]["Wins"]   += int(row.get("Wins", 0))
-            career[owner]["Losses"] += int(row.get("Losses", 0))
-            career[owner]["Ties"]   += int(row.get("Ties", 0))
-            career[owner]["PF"]     += float(row.get("PF", 0))
-            career[owner]["PA"]     += float(row.get("PA", 0))
-            season_pf_rows.append({"season": hist_s, "owner": owner, "pf": float(row.get("PF", 0))})
+            career[owner_id]["Wins"] += int(row.get("Wins", 0))
+            career[owner_id]["Losses"] += int(row.get("Losses", 0))
+            career[owner_id]["Ties"] += int(row.get("Ties", 0))
+            career[owner_id]["PF"] += float(row.get("PF", 0))
+            career[owner_id]["PA"] += float(row.get("PA", 0))
+            season_pf_rows.append({"season": hist_s, "owner_key": owner_id, "owner": owner, "pf": float(row.get("PF", 0))})
 
         sub = df[df["finalized"] == True] if "finalized" in df.columns else df
-        for owner, grp in sub.groupby("owner"):
-            career.setdefault(str(owner), {
+        for owner_id, grp in sub.groupby("owner_key"):
+            career.setdefault(str(owner_id), {
                 "Wins": 0, "Losses": 0, "Ties": 0, "PF": 0.0, "PA": 0.0, "weekly_pts": [],
             })["weekly_pts"].extend(grp["points"].tolist() if "points" in grp else [])
+        df["season"] = hist_s
+        season_frames.append(df)
 
     # Build career team_stats DataFrame
     stat_rows = []
-    for owner, d in career.items():
+    for owner_id, d in career.items():
+        owner = labels.get(owner_id, (0, owner_id))[1]
         pts = d["weekly_pts"]
         games = d["Wins"] + d["Losses"] + d["Ties"]
         stat_rows.append({
             "owner": owner,
+            "owner_key": owner_id,
             "Wins": d["Wins"],
             "Losses": d["Losses"],
             "Ties": d["Ties"],
@@ -882,30 +897,27 @@ def build_career_graphs_ctx(
                 team_stats[f"Z_{col}"] = (cv - cv.mean()) / sd
 
     # Combined df_weekly (with season column) for box/line charts
-    combined_dfs = []
-    for hist_s in available_seasons:
-        rid = resolve_league_id_for_season(platform, league_id, season, hist_s)
-        try:
-            hctx = get_ctx(platform, rid, hist_s)
-            df = hctx.get("df_weekly", pd.DataFrame()).copy()
-            if not df.empty and "owner" in df.columns:
-                df["season"] = hist_s
-                combined_dfs.append(df)
-        except Exception:
-            continue
-
-    df_combined = pd.concat(combined_dfs, ignore_index=True) if combined_dfs else pd.DataFrame()
+    # Relabel every season with the newest known team name while retaining the
+    # stable owner key used by filters and aggregation.
+    for frame in season_frames:
+        frame["owner"] = frame["owner_key"].map(lambda key: labels.get(str(key), (0, str(key)))[1])
+    df_combined = pd.concat(season_frames, ignore_index=True) if season_frames else pd.DataFrame()
     season_pf_df = pd.DataFrame(season_pf_rows) if season_pf_rows else pd.DataFrame()
+    if not season_pf_df.empty:
+        season_pf_df["owner"] = season_pf_df["owner_key"].map(
+            lambda key: labels.get(str(key), (0, str(key)))[1]
+        )
 
     # Restrict to current members when the toggle asks for it.
     if only_owners:
         _keep = {str(o) for o in only_owners}
-        if not team_stats.empty and "owner" in team_stats.columns:
-            team_stats = team_stats[team_stats["owner"].astype(str).isin(_keep)].reset_index(drop=True)
-        if not df_combined.empty and "owner" in df_combined.columns:
-            df_combined = df_combined[df_combined["owner"].astype(str).isin(_keep)].reset_index(drop=True)
-        if not season_pf_df.empty and "owner" in season_pf_df.columns:
-            season_pf_df = season_pf_df[season_pf_df["owner"].astype(str).isin(_keep)].reset_index(drop=True)
+        key_col = "owner_key"
+        if not team_stats.empty:
+            team_stats = team_stats[team_stats[key_col].astype(str).isin(_keep)].reset_index(drop=True)
+        if not df_combined.empty:
+            df_combined = df_combined[df_combined[key_col].astype(str).isin(_keep)].reset_index(drop=True)
+        if not season_pf_df.empty:
+            season_pf_df = season_pf_df[season_pf_df[key_col].astype(str).isin(_keep)].reset_index(drop=True)
 
     return {
         "team_stats": team_stats,
@@ -936,13 +948,11 @@ def render_graphs_html(
 
     offseason = bool(ctx.get("offseason_mode"))
 
-    # Current members = current rosters' owner names. roster_map is populated even
-    # in the offseason (team_stats can be empty then), so prefer it; the career
-    # aggregate is keyed by these same owner names.
+    # Current members are stable provider owner ids, matching the career keys.
     current_owners = set()
     _rmap = ctx.get("roster_map") or {}
-    if _rmap:
-        current_owners = {str(v) for v in _rmap.values() if v}
+    if ctx.get("rosters"):
+        current_owners = {str(r.get("owner_id")) for r in ctx["rosters"] if r.get("owner_id") is not None}
     if not current_owners:
         _cur_ts = ctx.get("team_stats")
         if _cur_ts is not None and not _cur_ts.empty and "owner" in _cur_ts.columns:

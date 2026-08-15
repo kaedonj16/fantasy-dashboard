@@ -8674,7 +8674,17 @@ select:focus {
 .continue-without-account-btn:hover{background:rgba(255,255,255,.11);border-color:rgba(255,255,255,.42)}
 .link-public-choice{display:flex;flex-direction:column;gap:8px;margin-top:12px}.link-choice-or{text-align:center;color:var(--text-muted);font-size:10px;font-weight:800;letter-spacing:.1em}
 .provider-account-choice{display:flex;flex-direction:column;gap:8px;margin-top:12px}.provider-choice-or{text-align:center;color:rgba(255,255,255,.5);font-size:10.5px;font-weight:800;letter-spacing:.1em}.google-continue-btn span,.continue-without-account-btn span{font-size:11px;font-weight:500}.google-continue-btn small{font-size:10px;font-weight:600;color:#80868b}
-.signed-in-home h3{margin:0 0 5px}.signed-home-league{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid var(--border);padding:9px;border-radius:9px;font-size:12px}.connection-attention{color:var(--loss);font-weight:700}.signed-home-league a{color:var(--accent);font-weight:700;text-decoration:none}
+.signed-in-home{gap:12px}
+.signed-in-home-greeting{margin:0;color:rgba(255,255,255,.68);font-size:13px}
+#signedInLeagueList{display:flex;flex-direction:column;gap:8px}
+.signed-home-league{display:flex;justify-content:space-between;align-items:center;gap:14px;min-height:48px;box-sizing:border-box;border:1px solid rgba(255,255,255,.2);padding:11px 14px;border-radius:11px;color:#f8fafc;font-size:13px;font-weight:650;text-decoration:none;background:rgba(255,255,255,.045);transition:background .15s,border-color .15s,transform .15s}
+a.signed-home-league:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.38);transform:translateY(-1px)}
+.signed-home-league-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.signed-home-league-open{flex:0 0 auto;color:#bfdbfe;font-size:12px;font-weight:800}
+.signed-home-league-attention{align-items:flex-start}.connection-attention{display:block;margin-top:3px;color:#fca5a5;font-size:10px;font-weight:700}.reconnect-home-espn{flex:0 0 auto}
+#signedInAddLeague{margin-top:2px;background:transparent;border:1px solid rgba(255,255,255,.36);box-shadow:none}
+#signedInAddLeague:hover{background:rgba(255,255,255,.08)}
+#connectLeagueFlow[hidden]{display:none!important}
 
 .platform-selector {
   display: grid;
@@ -15559,14 +15569,16 @@ tr.team-clickable {
 /* Mobile responsive */
 @media (max-width: 768px) {
   /* Float centered like the player modal (not a bottom sheet). */
-  .team-modal-overlay { padding: 16px; }
+  .team-modal-overlay {
+    padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+             max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  }
   .team-modal {
     /* Fixed height so the sheet doesn't resize between the (short) loading
        state and the (tall) loaded roster — body scrolls internally instead. */
-    height: 88dvh;
-    height: 88vh;
-    max-height: 88dvh;
-    max-height: 88vh;
+    height: auto;
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - max(24px, env(safe-area-inset-top) + env(safe-area-inset-bottom)));
     border-radius: 18px;
     margin: 0;
     max-width: 100%;
@@ -19153,15 +19165,13 @@ tr.team-clickable {
 
 /* Team modal: float centered like the player modal on small phones */
 @media (max-width: 480px) {
-  .team-modal-overlay { align-items: center; padding: 16px 4px; }
+  .team-modal-overlay { align-items: center; }
   .team-modal {
     border-radius: 18px;
     margin: 0;
     width: 100%;
-    height: 88dvh;
-    height: 88vh;
-    max-height: 88dvh;
-    max-height: 88vh;
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - max(24px, env(safe-area-inset-top) + env(safe-area-inset-bottom)));
   }
 }
 

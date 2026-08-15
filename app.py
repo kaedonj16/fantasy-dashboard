@@ -1084,7 +1084,7 @@ FORM_BODY = """
 
     <div class="home-hero-right">
       <div class="home-card">
-        <h2 class="home-card-title">Get started</h2>
+        <h2 class="home-card-title">{% if session.get('account_id') %}Your leagues{% else %}Get started{% endif %}</h2>
 
         {% if not session.get('account_id') %}
         <div class="home-account-entry">
@@ -1096,12 +1096,13 @@ FORM_BODY = """
         </div>
         {% else %}
         <div id="signedInHome" class="signed-in-home">
-          <h3>Welcome{% if session.get('account_first_name') %}, {{ session.get('account_first_name')|e }}{% endif %}</h3>
+          <p class="signed-in-home-greeting">Welcome back{% if session.get('account_first_name') %}, {{ session.get('account_first_name')|e }}{% endif %}</p>
           <div id="signedInLeagueList">Loading your saved leagues…</div>
-          <button type="button" id="signedInAddLeague">Add League</button>
+          <button type="button" id="signedInAddLeague" aria-expanded="false" aria-controls="connectLeagueFlow">Connect another league</button>
         </div>
         {% endif %}
 
+        <div id="connectLeagueFlow"{% if session.get('account_id') %} hidden{% endif %}>
         <div class="home-steps-hint">
           <div class="home-step-item" id="hintStep1">
             <span class="home-step-num">1</span>
@@ -1247,6 +1248,7 @@ FORM_BODY = """
         <p class="hint" id="sleeperHint">
           Pick a league, then <strong>Continue with Google</strong> to save it across devices &mdash; or continue without an account for a quick look.
         </p>
+        </div>
       </div>
     </div>
   </section>
