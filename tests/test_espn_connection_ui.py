@@ -111,3 +111,11 @@ def test_home_espn_account_choices_are_visible_before_validation():
     assert 'if (platform === "espn") setHomeEspnMethod(homeEspnMethod)' in script
     assert 'espnRequestedAction = "google"' in script
     assert 'espnRequestedAction = "guest"' in script
+
+
+def test_every_google_action_gets_shared_google_logo():
+    css = Path("static/dashboard.css").read_text()
+    logo = Path("static/google-logo.svg").read_text()
+    assert ".google-continue-btn::before" in css
+    assert "url('/static/google-logo.svg')" in css
+    assert "#4285F4" in logo and "#34A853" in logo
