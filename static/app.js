@@ -8534,7 +8534,10 @@ async function generateSeasonRecap() {
       }
     }
     
-    const url = `/api/history/ai-recap?league_id=${encodeURIComponent(resolvedLeagueId)}&season=${encodeURIComponent(historySeason)}&roster_id=${encodeURIComponent(selectedTeam)}&base_season=${encodeURIComponent(season)}`;
+    const selectedOption = teamDropdown?.selectedOptions?.[0];
+    const ownerId = selectedOption?.dataset?.ownerId || "";
+    const platform = root.querySelector("#platformInput")?.value || "sleeper";
+    const url = `/api/history/ai-recap?platform=${encodeURIComponent(platform)}&league_id=${encodeURIComponent(resolvedLeagueId)}&season=${encodeURIComponent(historySeason)}&roster_id=${encodeURIComponent(selectedTeam)}&owner_id=${encodeURIComponent(ownerId)}&base_season=${encodeURIComponent(season)}`;
 
     const res = await fetch(url, {
       method: "GET",
@@ -8617,7 +8620,8 @@ function bindRecapTeamSelector() {
   }
   
   if (resolvedLeagueId) {
-    const teamsUrl = `/api/teams?league_id=${encodeURIComponent(resolvedLeagueId)}&platform=sleeper&season=${encodeURIComponent(historySeason)}`;
+    const platform = root.querySelector("#platformInput")?.value || "sleeper";
+    const teamsUrl = `/api/teams?league_id=${encodeURIComponent(resolvedLeagueId)}&platform=${encodeURIComponent(platform)}&season=${encodeURIComponent(historySeason)}`;
 
     fetch(teamsUrl)
       .then(res => { if (!res.ok) throw new Error(res.status); return res.json(); })
@@ -8628,16 +8632,17 @@ function bindRecapTeamSelector() {
           const option = document.createElement("option");
           option.value = team.roster_id;
           option.textContent = team.team_name;
+          option.dataset.ownerId = team.owner_id || team.user_id || "";
           teamDropdown.appendChild(option);
         });
         
         // Auto-select current user's team if available
         const currentUsername = getCurrentUsername();
         if (currentUsername) {
-          const userTeam = teams.find(
-            team =>
-              team.username === currentUsername ||
-              team.team_name.toLowerCase().includes(currentUsername.toLowerCase())
+          const currentUserId = document.querySelector("#viewerUserIdInput")?.value || "";
+          const userTeam = teams.find(team =>
+            (currentUserId && String(team.owner_id || team.user_id) === String(currentUserId)) ||
+            team.username === currentUsername
           );
           if (userTeam) {
             teamDropdown.value = userTeam.roster_id;

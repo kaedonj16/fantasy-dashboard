@@ -41,6 +41,7 @@ def history_ai_recap():
     league_id = request.args.get("league_id")
     season = request.args.get("season")
     roster_id = request.args.get("roster_id")
+    owner_id = request.args.get("owner_id")
 
     if not all([league_id, season, roster_id]):
         return jsonify({"error": "Missing required parameters"}), 400
@@ -63,8 +64,21 @@ def history_ai_recap():
         if not ctx:
             return jsonify({"error": "League context not found"}), 404
 
+        # Roster ids are season-local.  Resolve the requested stable provider
+        # owner in the selected season and never use a team name as identity.
+        if owner_id:
+            from dashboard_services.historical_identity import roster_id_for_owner
+            resolved_roster_id = roster_id_for_owner(ctx, owner_id)
+            if resolved_roster_id is None:
+                return jsonify({"error": "Owner is not a member of this season"}), 404
+            roster_id = resolved_roster_id
+        else:
+            valid_ids = {str(r.get("roster_id")) for r in (ctx.get("rosters") or [])}
+            if str(roster_id) not in valid_ids:
+                return jsonify({"error": "Team is not a member of this season"}), 404
+
         # Generate recap
-        recap_html = get_history_ai_recap(ctx, roster_id)
+        recap_html = get_history_ai_recap(ctx, str(roster_id))
 
         return jsonify({"html": recap_html})
 

@@ -15559,14 +15559,16 @@ tr.team-clickable {
 /* Mobile responsive */
 @media (max-width: 768px) {
   /* Float centered like the player modal (not a bottom sheet). */
-  .team-modal-overlay { padding: 16px; }
+  .team-modal-overlay {
+    padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+             max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  }
   .team-modal {
     /* Fixed height so the sheet doesn't resize between the (short) loading
        state and the (tall) loaded roster — body scrolls internally instead. */
-    height: 88dvh;
-    height: 88vh;
-    max-height: 88dvh;
-    max-height: 88vh;
+    height: auto;
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - max(24px, env(safe-area-inset-top) + env(safe-area-inset-bottom)));
     border-radius: 18px;
     margin: 0;
     max-width: 100%;
@@ -19153,15 +19155,13 @@ tr.team-clickable {
 
 /* Team modal: float centered like the player modal on small phones */
 @media (max-width: 480px) {
-  .team-modal-overlay { align-items: center; padding: 16px 4px; }
+  .team-modal-overlay { align-items: center; }
   .team-modal {
     border-radius: 18px;
     margin: 0;
     width: 100%;
-    height: 88dvh;
-    height: 88vh;
-    max-height: 88dvh;
-    max-height: 88vh;
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - max(24px, env(safe-area-inset-top) + env(safe-area-inset-bottom)));
   }
 }
 

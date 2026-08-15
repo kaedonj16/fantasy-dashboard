@@ -288,7 +288,9 @@ def page_graphs(platform: str, season: int, league_id: str):
     # context, so render them inline.
     if view == "career":
         return _serve_cached_or_background(
-            platform, season, league_id, f"graphs:career:{members}",
+            # v2 invalidates HTML built before career rows were keyed by stable
+            # provider owner ids rather than mutable team display names.
+            platform, season, league_id, f"graphs:career:v2:{members}",
             "BR Fantasy Graphs", "graphs",
             lambda: _render("career", members),
             "Building career graphs",

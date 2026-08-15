@@ -122,7 +122,7 @@ def has_premium_access(
                         FROM user_subscriptions us
                         JOIN account_identities ai
                           ON ai.platform = us.platform
-                         AND ai.platform_user_id = us.user_id
+                         AND (ai.platform_user_id = us.user_id OR ai.handle = us.user_id)
                         WHERE ai.account_id = %s
                           AND us.subscription_status = 'active'
                           AND us.expires_at > %s
@@ -218,7 +218,11 @@ def has_premium_for_viewer(
 
     result = False
     # Own subscription works everywhere.
-    if viewer_username and has_premium_access(viewer_username, None, platform):
+    # Stable provider id is canonical; the handle fallback keeps historical
+    # username-based subscription rows working during gradual normalization.
+    if viewer_user_id and has_premium_access(viewer_user_id, None, platform):
+        result = True
+    elif viewer_username and has_premium_access(viewer_username, None, platform):
         result = True
     # League subscription only for actual members.
     elif league_id and has_premium_access(None, league_id, platform) \

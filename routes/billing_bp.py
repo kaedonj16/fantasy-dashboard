@@ -87,6 +87,7 @@ def _try_grant_from_stripe_success() -> None:
         meta      = cs.metadata.to_dict() if cs.metadata else {}
         plan      = meta.get("plan")
         user_id   = meta.get("user_id")
+        platform  = meta.get("platform") or "sleeper"
         league_id = meta.get("league_id") or ""
         sub_id    = cs.subscription
         cust_id   = cs.customer
@@ -100,7 +101,7 @@ def _try_grant_from_stripe_success() -> None:
         if plan == "combo" and not league_id and not user_id:
             return
 
-        if has_premium_access(user_id or None, league_id or None, "sleeper"):
+        if has_premium_access(user_id or None, league_id or None, platform):
             return
 
         try:
@@ -117,12 +118,14 @@ def _try_grant_from_stripe_success() -> None:
                 league_id, user_id or "", expires_at,
                 stripe_subscription_id=sub_id,
                 stripe_customer_id=cust_id,
+                platform=platform,
             )
         if plan in ("user", "combo") and user_id:
             create_user_subscription(
                 user_id, expires_at,
                 stripe_subscription_id=sub_id,
                 stripe_customer_id=cust_id,
+                platform=platform,
             )
     except Exception:
         logger.exception("[stripe] success-page session verification failed")
@@ -352,7 +355,10 @@ def page_pricing_guest():
 
 @billing_bp.route("/api/create-checkout-session", methods=["POST"])
 def create_checkout_session():
-    user_id = session.get("viewer_username")
+    # New subscriptions use the immutable provider account id. Existing rows
+    # keyed by a username remain readable through the entitlement resolver.
+    user_id = session.get("viewer_user_id") or session.get("viewer_username")
+    platform = str(session.get("viewer_platform") or "sleeper").lower()
     logger.info("[checkout] Request from user: %s", user_id)
     if not user_id:
         return jsonify({"error": "Must be logged in to subscribe"}), 401
@@ -369,7 +375,7 @@ def create_checkout_session():
         return jsonify({"error": "Invalid plan"}), 400
 
     check_league = league_id if league_id else None
-    has_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), check_league, "sleeper")
+    has_premium = has_premium_for_viewer(session.get("viewer_username"), session.get("viewer_user_id"), check_league, platform)
     logger.info("[checkout] User premium status for league %s: %s", check_league, has_premium)
     if has_premium:
         return jsonify({"error": "You already have an active premium subscription."}), 400
@@ -398,7 +404,7 @@ def create_checkout_session():
             }],
             success_url=success_url,
             cancel_url=base_url + "/pricing?canceled=1",
-            metadata={"plan": plan, "user_id": user_id, "league_id": league_id},
+            metadata={"plan": plan, "user_id": user_id, "league_id": league_id, "platform": platform},
         )
         return jsonify({"url": checkout.url})
     except Exception as e:
@@ -432,6 +438,7 @@ def stripe_webhook():
         meta      = dict(s.metadata) if s.metadata else {}
         plan      = meta.get("plan")
         user_id   = meta.get("user_id")
+        platform  = meta.get("platform") or "sleeper"
         league_id = meta.get("league_id") or ""
         sub_id    = s.subscription
         cust_id   = s.customer
@@ -447,6 +454,7 @@ def stripe_webhook():
                 league_id, user_id or "", expires_at,
                 stripe_subscription_id=sub_id,
                 stripe_customer_id=cust_id,
+                platform=platform,
             )
             logger.info("[stripe] webhook league subscription %s for league=%s user=%s expires=%s",
                         "created" if ok else "FAILED", league_id, user_id, expires_at)
@@ -455,6 +463,7 @@ def stripe_webhook():
                 user_id, expires_at,
                 stripe_subscription_id=sub_id,
                 stripe_customer_id=cust_id,
+                platform=platform,
             )
             logger.info("[stripe] webhook user subscription %s for user=%s expires=%s",
                         "created" if ok else "FAILED", user_id, expires_at)
