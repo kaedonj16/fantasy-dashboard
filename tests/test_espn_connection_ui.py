@@ -33,7 +33,7 @@ def test_home_page_has_public_private_selector_and_conditional_credentials():
 
 def test_home_page_does_not_store_espn_credentials_in_local_storage():
     script = Path("static/app.js").read_text()
-    espn_flow = script[script.index("if (espnSubmitBtn)"):script.index("if (yahooConnectBtn)")]
+    espn_flow = script[script.index('espnSubmitBtn.addEventListener("click"'):script.index("if (yahooConnectBtn)")]
     assert "localStorage" not in espn_flow
 
 
@@ -48,3 +48,20 @@ def test_password_inputs_share_site_input_styles():
     css = Path("static/dashboard.css").read_text()
     assert '.search, select, input[type="text"], input[type="password"]' in css
     assert 'input[type="password"]:focus' in css
+
+
+def test_private_espn_flow_signs_in_before_collecting_credentials():
+    script = Path("static/app.js").read_text()
+    flow = script[script.index('espnSubmitBtn.addEventListener("click"'):script.index("if (yahooConnectBtn)")]
+    sign_in = flow.index('homeEspnMethod === "private" && !window._hasAccount')
+    read_swid = flow.index("const swid =")
+    assert sign_in < read_swid
+    assert 'window.location.href = "/auth/google?next="' in flow
+
+
+def test_link_modal_connects_unsigned_public_espn_through_google():
+    source = Path("app.py").read_text()
+    modal = source[source.index("window.linkEspnConnect=function()"):source.index("window.linkYahooPreview=function()")]
+    assert "if(!window._hasAccount)" in modal
+    assert "'/api/link/pending'" in modal
+    assert "location.href=d.auth_url||'/auth/google'" in modal

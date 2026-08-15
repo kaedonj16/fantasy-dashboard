@@ -8860,6 +8860,9 @@ if (!platformBtns.length) return;
     if (espnSwidInput) espnSwidInput.value = "";
     if (espnS2Input) espnS2Input.value = "";
     if (espnErrorBox) espnErrorBox.style.display = "none";
+    if (espnSubmitBtn) espnSubmitBtn.textContent = homeEspnMethod === "private" && !window._hasAccount
+      ? "Sign in with Google to Connect"
+      : "Connect League";
   }
   espnMethodBtns.forEach((btn) => btn.addEventListener("click", () => setHomeEspnMethod(btn.dataset.espnMethod)));
 
@@ -9076,6 +9079,12 @@ if (!platformBtns.length) return;
       }
 
       if (espnErrorBox) espnErrorBox.style.display = "none";
+      if (homeEspnMethod === "private" && !window._hasAccount) {
+        if (espnSwidInput) espnSwidInput.value = "";
+        if (espnS2Input) espnS2Input.value = "";
+        window.location.href = "/auth/google?next=" + encodeURIComponent("/");
+        return;
+      }
       const swid = espnSwidInput?.value.trim() || "";
       const espnS2 = espnS2Input?.value.trim() || "";
       if (homeEspnMethod === "private" && (!swid || !espnS2)) {
@@ -9088,9 +9097,6 @@ if (!platformBtns.length) return;
 
       try {
         if (homeEspnMethod === "private") {
-          if (!window._hasAccount) {
-            throw new Error("Sign in with Google before connecting a private ESPN league, then return here to enter your credentials.");
-          }
           const season = Number(document.querySelector('input[name="season"]')?.value || new Date().getFullYear());
           const privateRes = await fetch("/api/link/espn/private", {
             method: "POST", headers: { "Content-Type": "application/json" },
