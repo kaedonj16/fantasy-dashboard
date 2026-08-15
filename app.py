@@ -2513,6 +2513,14 @@ def _link_modal_html() -> str:
       };
       function linkSetMsg(t,kind){ var el=document.getElementById('linkMsg'); if(!el)return; el.textContent=t||''; el.className='link-msg'+(kind?' '+kind:''); }
       function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+      function readEspnJson(r){
+        return r.text().then(function(body){
+          try{return JSON.parse(body);}catch(e){
+            var status=r.status?' (HTTP '+r.status+')':'';
+            throw new Error('The server returned an invalid response'+status+'. Please try again; if this continues, refresh the page.');
+          }
+        });
+      }
       function linkAdd(platform,league_id,season,team_id,name,btn){
         var hasAcct=!!window._hasAccount;
         if(btn){ btn.disabled=true; btn.textContent=hasAcct?'Adding…':'Continuing…'; }
@@ -2576,7 +2584,7 @@ def _link_modal_html() -> str:
             if(!swid||!s2){linkSetMsg('Enter SWID and ESPN_S2 before continuing with Google.','err');return;}
             linkSetMsg('Validating ESPN before Google sign-in…','');
             fetch('/api/link/espn/private/pending',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({league_id:id,season:yr?Number(yr):null,swid:swid,espn_s2:s2})})
-              .then(function(r){return r.json().then(function(d){return {ok:r.ok,d:d};});}).then(function(result){
+              .then(function(r){return readEspnJson(r).then(function(d){return {ok:r.ok,d:d};});}).then(function(result){
                 document.getElementById('linkEspnSwid').value='';document.getElementById('linkEspnS2').value='';
                 if(!result.ok||!result.d.ok){linkSetMsg(result.d.error||'Could not validate ESPN credentials.','err');return;}
                 var pane=document.querySelector('.link-pane[data-lp="espn"]'),old=document.getElementById('linkEspnPrivateChoice');if(old)old.remove();
@@ -2587,9 +2595,9 @@ def _link_modal_html() -> str:
                 document.getElementById('linkEspnPrivateGoogle').addEventListener('click',function(){location.href=result.d.auth_url;});
                 document.getElementById('linkEspnPrivateGuest').addEventListener('click',function(){
                   fetch('/api/link/espn/private/guest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({league_id:result.d.league_id,season:result.d.season})})
-                    .then(function(r){return r.json();}).then(function(d){if(d.ok)location.href=d.redirect_url;else linkSetMsg(d.error||'Could not open private league.','err');});
+                    .then(readEspnJson).then(function(d){if(d.ok)location.href=d.redirect_url;else linkSetMsg(d.error||'Could not open private league.','err');});
                 });
-              }).catch(function(){linkSetMsg('Network error.','err');});return;
+              }).catch(function(err){linkSetMsg(err&&err.message||'Network error.','err');});return;
           }
           linkSetMsg('Validating league before Google sign-in…','');
           fetch('/api/espn-validate-league?league_id='+encodeURIComponent(id)+(yr?'&season='+encodeURIComponent(yr):''))
@@ -2618,11 +2626,11 @@ def _link_modal_html() -> str:
         if(espnMethod==='private'&&(!swid||!s2)){ linkSetMsg('SWID and ESPN_S2 are required for a private league.','err'); return; }
         var btn=document.getElementById('linkEspnConnect'), payload={league_id:id}; if(yr)payload.season=Number(yr);
         if(espnMethod==='private'){payload.swid=swid;payload.espn_s2=s2;} btn.disabled=true;btn.textContent='Connecting…';linkSetMsg('Validating with ESPN…','');
-        fetch('/api/link/espn/'+espnMethod,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(r){return r.json();}).then(function(d){
+        fetch('/api/link/espn/'+espnMethod,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(readEspnJson).then(function(d){
           document.getElementById('linkEspnSwid').value='';document.getElementById('linkEspnS2').value='';
           if(!d.ok){linkSetMsg(d.error||'Could not connect that league.','err');return;}
           linkSetMsg('League connected. Opening dashboard…','ok');location.href=d.redirect_url;
-        }).catch(function(){linkSetMsg('Network error.','err');}).finally(function(){btn.disabled=false;btn.textContent='Connect League';});
+        }).catch(function(err){linkSetMsg(err&&err.message||'Network error.','err');}).finally(function(){btn.disabled=false;btn.textContent='Connect League';});
       };
       window.linkYahooPreview=function(){
         var id=(document.getElementById('linkYahooId').value||'').trim();
