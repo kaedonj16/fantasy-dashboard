@@ -45,6 +45,29 @@ _STRIPE_PRICES = {
     "combo":  {"unit_amount": 1200, "product": _STRIPE_COMBO_PRODUCT},
 }
 
+_SUPPORTED_PLATFORMS = {"sleeper", "espn", "yahoo"}
+
+
+def _request_platform(payload=None) -> str:
+    """Resolve the provider without silently turning an ESPN flow into Sleeper."""
+    payload = payload if isinstance(payload, dict) else {}
+    return str(
+        payload.get("platform") or request.values.get("platform")
+        or session.get("viewer_platform") or session.get("last_platform")
+        or "sleeper"
+    ).strip().lower()
+
+
+def _safe_local_url(value: str, fallback: str) -> str:
+    """Allow same-site absolute/local redirects, rejecting protocol-relative URLs."""
+    value = str(value or "").strip()
+    base_url = request.host_url.rstrip("/")
+    if value.startswith("/") and not value.startswith("//"):
+        return value
+    if value.startswith(base_url + "/"):
+        return value
+    return fallback
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -101,9 +124,6 @@ def _try_grant_from_stripe_success() -> None:
         if plan == "combo" and not league_id and not user_id:
             return
 
-        if has_premium_access(user_id or None, league_id or None, platform):
-            return
-
         try:
             sub        = _stripe().Subscription.retrieve(sub_id) if sub_id else None
             expires_at = (
@@ -113,14 +133,16 @@ def _try_grant_from_stripe_success() -> None:
         except Exception:
             expires_at = datetime.now(timezone.utc) + timedelta(days=366)
 
-        if plan in ("league", "combo") and league_id:
+        if (plan in ("league", "combo") and league_id
+                and not has_premium_access(None, league_id, platform)):
             create_league_subscription(
                 league_id, user_id or "", expires_at,
                 stripe_subscription_id=sub_id,
                 stripe_customer_id=cust_id,
                 platform=platform,
             )
-        if plan in ("user", "combo") and user_id:
+        if (plan in ("user", "combo") and user_id
+                and not has_premium_access(user_id, None, platform)):
             create_user_subscription(
                 user_id, expires_at,
                 stripe_subscription_id=sub_id,
@@ -148,8 +170,9 @@ def _pricing_body() -> str:
                 meta = cs.metadata.to_dict() if cs.metadata else {}
                 league_id_meta = meta.get("league_id", "")
                 if league_id_meta:
-                    season = _dt.now().year
-                    return_to = f"/sleeper/{season}/{league_id_meta}/dashboard?new_subscriber=1"
+                    season = int(meta.get("season") or _dt.now().year)
+                    platform = meta.get("platform") or "sleeper"
+                    return_to = f"/{platform}/{season}/{league_id_meta}/dashboard?new_subscriber=1"
             except Exception:
                 logger.debug("suppressed exception", exc_info=True)
 
@@ -173,6 +196,7 @@ def _pricing_body() -> str:
     (function() {{
       var returnTo = {json.dumps(return_to)};
       var userId   = {json.dumps(viewer_user_id)};
+      var platform = {json.dumps(request.args.get("platform") or "")};
       var attempts = 0, maxAttempts = 8;
 
       var leagueId = '';
@@ -180,12 +204,14 @@ def _pricing_body() -> str:
         if (returnTo) {{
           var parts = new URL(returnTo, window.location.origin).pathname.split('/').filter(Boolean);
           if (parts.length >= 3) leagueId = parts[2];
+          if (parts.length >= 1) platform = parts[0];
         }}
       }} catch(e) {{}}
 
       var params = [];
       if (userId)   params.push('user_id='   + encodeURIComponent(userId));
       if (leagueId) params.push('league_id=' + encodeURIComponent(leagueId));
+      if (platform) params.push('platform=' + encodeURIComponent(platform));
       var statusUrl = '/api/subscription-status' + (params.length ? '?' + params.join('&') : '');
 
       function redirect() {{
@@ -348,7 +374,10 @@ def page_pricing_guest():
     nfl_state = get_nfl_state() or {}
     current_season = int(nfl_state.get("season") or datetime.now().year)
     body_html = _pricing_body()
-    return render_page("Pricing", None, None, body_html, "sleeper", current_season)
+    platform = _request_platform()
+    if platform not in _SUPPORTED_PLATFORMS:
+        platform = "sleeper"
+    return render_page("Pricing", None, None, body_html, platform, current_season)
 
 
 # ── Stripe API endpoints ──────────────────────────────────────────────────────
@@ -358,7 +387,6 @@ def create_checkout_session():
     # New subscriptions use the immutable provider account id. Existing rows
     # keyed by a username remain readable through the entitlement resolver.
     user_id = session.get("viewer_user_id") or session.get("viewer_username")
-    platform = str(session.get("viewer_platform") or "sleeper").lower()
     logger.info("[checkout] Request from user: %s", user_id)
     if not user_id:
         return jsonify({"error": "Must be logged in to subscribe"}), 401
@@ -367,28 +395,54 @@ def create_checkout_session():
     plan       = str(payload.get("plan") or "").strip()
     league_id  = str(payload.get("league_id") or "").strip()
     return_url = str(payload.get("return_url") or "").strip()
+    platform   = _request_platform(payload)
+    try:
+        season = int(payload.get("season") or datetime.now().year)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid season"}), 400
     
     logger.info("[checkout] Request payload: plan=%s, league_id=%s, return_url=%s", plan, league_id, return_url)
 
     if plan not in _STRIPE_PRICES:
         logger.info("[checkout] Invalid plan: %s, available plans: %s", plan, list(_STRIPE_PRICES.keys()))
         return jsonify({"error": "Invalid plan"}), 400
+    if platform not in _SUPPORTED_PLATFORMS:
+        return jsonify({"error": "Invalid platform"}), 400
+    if plan in ("league", "combo") and not league_id:
+        return jsonify({"error": "Choose a league before purchasing this plan."}), 400
 
-    check_league = league_id if league_id else None
-    has_premium = has_premium_for_viewer(session.get("viewer_username"), session.get("viewer_user_id"), check_league, platform)
-    logger.info("[checkout] User premium status for league %s: %s", check_league, has_premium)
-    if has_premium:
-        return jsonify({"error": "You already have an active premium subscription."}), 400
+    username = session.get("viewer_username")
+    stable_id = session.get("viewer_user_id")
+    account_id = session.get("account_id")
+    has_league = bool(league_id and has_premium_access(None, league_id, platform))
+    has_user = bool(
+        (stable_id and has_premium_access(stable_id, None, platform))
+        or (username and has_premium_access(username, None, platform))
+        or (account_id and has_premium_access(None, None, platform, account_id=account_id))
+    )
+    # A combo is its own Stripe subscription, not an in-place upgrade. Starting
+    # one while either component is active would double-bill the customer.
+    duplicate = ((plan == "league" and has_league)
+                 or (plan == "user" and has_user)
+                 or (plan == "combo" and (has_league or has_user)))
+    logger.info("[checkout] Existing components league=%s user=%s", has_league, has_user)
+    if duplicate:
+        return jsonify({"error": "You already have this premium subscription."}), 400
 
     price_spec = _STRIPE_PRICES[plan]
     base_url   = request.host_url.rstrip("/")
 
-    if return_url and not (return_url.startswith(base_url) or return_url.startswith("/")):
-        return_url = ""
+    return_url = _safe_local_url(return_url, "")
 
     success_url = base_url + "/pricing?success=1&session_id={CHECKOUT_SESSION_ID}"
     if return_url:
         success_url += "&return_to=" + urllib.parse.quote(return_url, safe="")
+    success_url += "&platform=" + urllib.parse.quote(platform, safe="")
+
+    if league_id:
+        cancel_url = f"{base_url}/{platform}/{season}/{urllib.parse.quote(league_id, safe='')}/pricing?canceled=1"
+    else:
+        cancel_url = base_url + "/pricing?canceled=1&platform=" + urllib.parse.quote(platform, safe="")
 
     try:
         checkout = _stripe().checkout.Session.create(
@@ -403,8 +457,9 @@ def create_checkout_session():
                 "quantity": 1,
             }],
             success_url=success_url,
-            cancel_url=base_url + "/pricing?canceled=1",
-            metadata={"plan": plan, "user_id": user_id, "league_id": league_id, "platform": platform},
+            cancel_url=cancel_url,
+            metadata={"plan": plan, "user_id": user_id, "league_id": league_id,
+                      "platform": platform, "season": str(season)},
         )
         return jsonify({"url": checkout.url})
     except Exception as e:
@@ -511,12 +566,36 @@ def api_subscription_status():
 
     # Identity is taken from the session, never from a client-supplied user_id,
     # so a caller cannot enumerate other users' subscription details.
-    user_id = session.get("viewer_username")
+    username = session.get("viewer_username")
+    stable_id = session.get("viewer_user_id")
     league_id = request.args.get("league_id")
-    platform = request.args.get("platform", "sleeper")
+    platform = _request_platform()
+
+    if platform not in _SUPPORTED_PLATFORMS:
+        return jsonify({"has_premium": False, "subscription_type": None,
+                        "error": "Invalid platform"}), 400
 
     try:
-        sub_info = get_subscription_info(user_id, league_id, platform)
+        # Current subscriptions use the immutable provider id. Check the legacy
+        # handle only when needed so older rows remain manageable and visible.
+        sub_info = get_subscription_info(stable_id or username, league_id, platform)
+        if username and stable_id and not sub_info.get("has_user_subscription"):
+            legacy = get_subscription_info(username, None, platform)
+            if legacy.get("has_user_subscription"):
+                sub_info["has_user_subscription"] = True
+                sub_info["has_premium"] = True
+                sub_info["subscription_type"] = (
+                    "combo" if sub_info.get("has_league_subscription") else "user"
+                )
+                sub_info["expires_at"] = sub_info.get("expires_at") or legacy.get("expires_at")
+                sub_info["stripe_customer_id"] = (
+                    sub_info.get("stripe_customer_id") or legacy.get("stripe_customer_id")
+                )
+        # Detailed league rows alone are not an entitlement for an unrelated
+        # Sleeper user; use the same membership/account-aware gate as pages.
+        sub_info["has_premium"] = has_premium_for_viewer(
+            username, stable_id, league_id, platform, request.args.get("season"),
+        )
         # Strip internal/PII fields - the client only needs entitlement flags.
         for _k in ("stripe_customer_id", "subscriber_user_id"):
             sub_info.pop(_k, None)
@@ -535,10 +614,14 @@ def api_create_portal_session():
 
     user_id   = session.get("viewer_user_id") or session.get("viewer_username")
     league_id = request.json.get("league_id") if request.is_json else request.form.get("league_id")
-    platform  = "sleeper"
+    payload = request.get_json(silent=True) if request.is_json else request.form
+    payload = payload or {}
+    platform = _request_platform(payload)
 
     if not user_id:
         return jsonify({"error": "Not logged in"}), 401
+    if platform not in _SUPPORTED_PLATFORMS:
+        return jsonify({"error": "Invalid platform"}), 400
 
     try:
         sub_info    = get_subscription_info(user_id, league_id, platform)
@@ -547,12 +630,17 @@ def api_create_portal_session():
         if not customer_id and league_id:
             user_sub    = get_subscription_info(user_id, None, platform)
             customer_id = user_sub.get("stripe_customer_id")
+        if not customer_id and session.get("viewer_username") and session.get("viewer_user_id"):
+            legacy_sub = get_subscription_info(session.get("viewer_username"), None, platform)
+            customer_id = legacy_sub.get("stripe_customer_id")
         if not customer_id:
             return jsonify({"error": "No Stripe customer found for your account. Contact support if you believe this is an error."}), 404
 
         return_url = request.json.get("return_url") if request.is_json else request.form.get("return_url")
-        if not return_url:
-            return_url = request.host_url.rstrip("/") + "/pricing"
+        return_url = _safe_local_url(
+            return_url,
+            request.host_url.rstrip("/") + f"/pricing?platform={urllib.parse.quote(platform, safe='')}",
+        )
 
         portal_session = _stripe().billing_portal.Session.create(
             customer=customer_id,

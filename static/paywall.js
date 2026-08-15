@@ -17,6 +17,10 @@ async function checkPremiumAccess(userId, leagueId) {
     const params = new URLSearchParams();
     if (userId) params.append('user_id', userId);
     if (leagueId) params.append('league_id', leagueId);
+    const platform = (window.__brctx || {}).platform;
+    if (platform) params.append('platform', platform);
+    const season = (window.__brctx || {}).season;
+    if (season) params.append('season', season);
 
     const response = await fetch(`/api/subscription-status?${params}`);
     const data = await response.json();
@@ -35,6 +39,10 @@ async function getSubscriptionInfo(userId, leagueId) {
     const params = new URLSearchParams();
     if (userId) params.append('user_id', userId);
     if (leagueId) params.append('league_id', leagueId);
+    const platform = (window.__brctx || {}).platform;
+    if (platform) params.append('platform', platform);
+    const season = (window.__brctx || {}).season;
+    if (season) params.append('season', season);
 
     const response = await fetch(`/api/subscription-status?${params}`);
     return await response.json();
@@ -129,7 +137,9 @@ window.showPaywall = function showPaywall(feature) {
 async function initiatePurchase(type, btn) {
   // Prompt login before hitting the API
   const ctx = window.__brctx || {};
-  if (!ctx.is_logged_in) {
+  // `_isSignedIn` is retained as a fallback for an older cached page shell.
+  // New shells provide __brctx, including the provider needed by checkout.
+  if (!(ctx.is_logged_in || window._isSignedIn)) {
     const navModal = document.getElementById('signinModal');
     if (navModal) {
       navModal.style.display = 'flex';
@@ -162,7 +172,8 @@ async function initiatePurchase(type, btn) {
     const res = await fetch('/api/create-checkout-session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plan: type, league_id: leagueId, return_url: returnUrl }),
+      body: JSON.stringify({ plan: type, league_id: leagueId, return_url: returnUrl,
+        platform: _platform, season: _season }),
     });
     const data = await res.json();
     if (data.url) {
@@ -370,7 +381,8 @@ async function _initiatePurchaseWithLeague(type, btn, leagueId) {
     const res = await fetch('/api/create-checkout-session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plan: type, league_id: leagueId, return_url: returnUrl }),
+      body: JSON.stringify({ plan: type, league_id: leagueId, return_url: returnUrl,
+        platform, season }),
     });
     const data = await res.json();
     if (data.url) {
