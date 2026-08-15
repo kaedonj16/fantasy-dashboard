@@ -1084,7 +1084,7 @@ FORM_BODY = """
 
     <div class="home-hero-right">
       <div class="home-card">
-        <h2 class="home-card-title">{% if session.get('account_id') %}Your leagues{% else %}Get started{% endif %}</h2>
+        <h2 class="home-card-title" id="homeCardTitle">{% if session.get('account_id') %}Your leagues{% else %}Get started{% endif %}</h2>
 
         {% if not session.get('account_id') %}
         <div class="home-account-entry">
@@ -1096,13 +1096,14 @@ FORM_BODY = """
         </div>
         {% else %}
         <div id="signedInHome" class="signed-in-home">
-          <p class="signed-in-home-greeting">Welcome back{% if session.get('account_first_name') %}, {{ session.get('account_first_name')|e }}{% endif %}</p>
+          <div class="signed-in-home-header"><p class="signed-in-home-greeting">Welcome back{% if session.get('account_first_name') %}, {{ session.get('account_first_name')|e }}{% endif %}</p><a class="home-reset-user" href="/reset-user">Not me?</a></div>
           <div id="signedInLeagueList">Loading your saved leagues…</div>
           <button type="button" id="signedInAddLeague" aria-expanded="false" aria-controls="connectLeagueFlow">Connect another league</button>
         </div>
         {% endif %}
 
         <div id="connectLeagueFlow"{% if session.get('account_id') %} hidden{% endif %}>
+        <button type="button" id="homeConnectBack" class="home-connect-back"{% if not session.get('account_id') %} hidden{% endif %}>← Back</button>
         <div class="home-steps-hint">
           <div class="home-step-item" id="hintStep1">
             <span class="home-step-num">1</span>
@@ -1246,7 +1247,7 @@ FORM_BODY = """
         </form>
 
         <p class="hint" id="sleeperHint">
-          Pick a league, then <strong>Continue with Google</strong> to save it across devices &mdash; or continue without an account for a quick look.
+          Pick a league, then <strong>Continue with Google</strong> to save it across devices, or continue without an account for a quick look.
         </p>
         </div>
       </div>
@@ -1647,8 +1648,28 @@ def _background_seed_user(user_id: str, username: Optional[str]) -> None:
     threading.Thread(target=_run, daemon=True).start()
 
 
-def get_viewer_session_for_league(users: List[Dict], rosters: List[Dict]) -> dict:
+def get_viewer_session_for_league(users: List[Dict], rosters: List[Dict],
+                                  platform: Optional[str] = None,
+                                  league_id: Optional[str] = None,
+                                  season: Optional[int] = None) -> dict:
     """Get viewer session resolved for the current league instead of stale session data."""
+    account_id = session.get("account_id")
+    if account_id and platform and league_id and season:
+        try:
+            from dashboard_services.accounts import resolve_account_viewer_for_league
+            account_viewer = resolve_account_viewer_for_league(
+                account_id, platform, league_id, season, users, rosters,
+            )
+            if account_viewer:
+                save_viewer_session(account_viewer)
+                return account_viewer
+            # Never let a roster selected in another league or platform leak into
+            # this account-scoped league.
+            for key in ("viewer_username", "viewer_user_id", "viewer_roster_id", "viewer_team_name"):
+                session.pop(key, None)
+            return get_viewer_session()
+        except Exception:
+            logger.warning("[viewer] account team resolution failed", exc_info=True)
     session_viewer = get_viewer_session()
     username = session_viewer.get("viewer_username")
 
@@ -4061,7 +4082,7 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
         "offseason_mode": offseason_mode,
         "drafts": drafts,
         "latest_draft": latest_draft,
-        "viewer": get_viewer_session_for_league(users, rosters),
+        "viewer": get_viewer_session_for_league(users, rosters, platform, league_id, season),
         "rookie_rankings": _load_rookie_rankings_for_ctx(),
     }
 
@@ -10713,7 +10734,7 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
     if entry and (time.time() - entry.get("ts", 0) <= CACHE_TTL):
         ctx = entry["ctx"]
         ctx["viewer"] = get_viewer_session_for_league(
-            ctx.get("users") or [], ctx.get("rosters") or []
+            ctx.get("users") or [], ctx.get("rosters") or [], platform, league_id, season
         )
         _maybe_check_roster_freshness(platform, league_id, season, key, _roster_sig(ctx))
         return ctx
@@ -10729,7 +10750,7 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
         if entry and (time.time() - entry.get("ts", 0) <= CACHE_TTL):
             ctx = entry["ctx"]
             ctx["viewer"] = get_viewer_session_for_league(
-                ctx.get("users") or [], ctx.get("rosters") or []
+                ctx.get("users") or [], ctx.get("rosters") or [], platform, league_id, season
             )
             return ctx
         ctx = build_league_context(platform, league_id, season)

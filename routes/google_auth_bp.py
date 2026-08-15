@@ -256,7 +256,7 @@ def _backfill_sleeper_leagues(account_id: int, viewer_user_id: str) -> None:
     """Copy the Sleeper user's leagues into user_leagues for this account."""
     from datetime import datetime
     from dashboard_services.accounts import add_user_league
-    from dashboard_services.api import get_sleeper_user_leagues, get_nfl_state
+    from dashboard_services.api import get_sleeper_user_leagues, get_nfl_state, get_rosters
     nfl_state = get_nfl_state() or {}
     season = int(nfl_state.get("season") or datetime.now().year)
     leagues = get_sleeper_user_leagues(viewer_user_id, season) or []
@@ -267,8 +267,15 @@ def _backfill_sleeper_leagues(account_id: int, viewer_user_id: str) -> None:
     for lg in leagues:
         lid = str(lg.get("league_id") or "")
         if lid:
+            team_id = None
+            try:
+                team_id = next((str(r.get("roster_id")) for r in (get_rosters(lid) or [])
+                                if str(r.get("owner_id") or "") == str(viewer_user_id)), None)
+            except Exception:
+                logger.debug("[google_auth] roster backfill failed for %s", lid, exc_info=True)
             add_user_league(
                 account_id, "sleeper", lid,
                 season=int(lg.get("season") or season),
+                team_id=team_id,
                 name=lg.get("name"),
             )

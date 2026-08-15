@@ -8528,7 +8528,9 @@ select:focus {
   padding: 22px 24px 20px;
   border-radius: 18px;
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.6);
-  min-width: 320px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   max-width: 380px;
   color: #e5e7eb;
 }
@@ -8579,23 +8581,8 @@ select:focus {
   background: #7dd3fc;
 }
 
-/* dismiss button - must override .home-card button { width: 100% } */
-.saved-viewer-cta .saved-viewer-dismiss {
-  width: auto !important;
-  padding: 0 4px !important;
-  background: none !important;
-  border: none !important;
-  box-shadow: none !important;
-  color: #9ca3af;
-  font-size: 20px;
-  line-height: 1;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.saved-viewer-cta .saved-viewer-dismiss:hover {
-  color: #e5e7eb;
-}
+.saved-viewer-reset,.home-reset-user{color:#bfdbfe;font-size:11px;font-weight:700;text-decoration:underline;text-underline-offset:2px;white-space:nowrap}
+.saved-viewer-reset:hover,.home-reset-user:hover{color:#fff}
 
 .home-card button {
   width: 100%;
@@ -8676,6 +8663,7 @@ select:focus {
 .provider-account-choice{display:flex;flex-direction:column;gap:8px;margin-top:12px}.provider-choice-or{text-align:center;color:rgba(255,255,255,.5);font-size:10.5px;font-weight:800;letter-spacing:.1em}.google-continue-btn span,.continue-without-account-btn span{font-size:11px;font-weight:500}.google-continue-btn small{font-size:10px;font-weight:600;color:#80868b}
 .signed-in-home{gap:12px}
 .signed-in-home-greeting{margin:0;color:rgba(255,255,255,.68);font-size:13px}
+.signed-in-home-header{display:flex;align-items:center;justify-content:space-between;gap:12px}
 #signedInLeagueList{display:flex;flex-direction:column;gap:8px}
 .signed-home-league{display:flex;justify-content:space-between;align-items:center;gap:14px;min-height:48px;box-sizing:border-box;border:1px solid rgba(255,255,255,.2);padding:11px 14px;border-radius:11px;color:#f8fafc;font-size:13px;font-weight:650;text-decoration:none;background:rgba(255,255,255,.045);transition:background .15s,border-color .15s,transform .15s}
 a.signed-home-league:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.38);transform:translateY(-1px)}
@@ -8684,6 +8672,12 @@ a.signed-home-league:hover{background:rgba(255,255,255,.1);border-color:rgba(255
 .signed-home-league-attention{align-items:flex-start}.connection-attention{display:block;margin-top:3px;color:#fca5a5;font-size:10px;font-weight:700}.reconnect-home-espn{flex:0 0 auto}
 #signedInAddLeague{margin-top:2px;background:transparent;border:1px solid rgba(255,255,255,.36);box-shadow:none}
 #signedInAddLeague:hover{background:rgba(255,255,255,.08)}
+.signed-home-pagination{display:flex;align-items:center;justify-content:center;gap:12px;color:rgba(255,255,255,.68);font-size:11px;font-weight:700}
+.signed-home-pagination button{width:34px!important;padding:5px!important;margin:0;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.22);box-shadow:none}
+.signed-home-pagination button:disabled{opacity:.35;cursor:default}
+.home-connect-back{width:auto!important;margin:0 0 12px;padding:4px 0!important;background:transparent;border:0;box-shadow:none;color:#bfdbfe;font-size:12px;font-weight:750;text-align:left;cursor:pointer}
+.home-connect-back:hover{color:#fff}
+.saved-viewer-connect{margin-top:2px;padding:5px 0!important;background:transparent;border:0;box-shadow:none;color:#bfdbfe;font-size:11px;font-weight:700;text-align:left;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
 #connectLeagueFlow[hidden]{display:none!important}
 
 .platform-selector {

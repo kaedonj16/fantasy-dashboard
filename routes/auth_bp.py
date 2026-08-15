@@ -226,11 +226,11 @@ def api_set_viewer_roster():
 # ── Logout ────────────────────────────────────────────────────────────────────
 
 @auth_bp.route("/logout")
+@auth_bp.route("/reset-user")
 def logout():
     session.clear()
-    # Return a tiny page that strips sensitive fields from saved_viewer in
-    # localStorage (so auto-restore can't silently re-login) while keeping just
-    # the username so the "Continue as X" banner still shows on the home page.
+    # One canonical local sign-out/reset path: discard both account and platform
+    # viewer markers without touching any database account or league records.
     #
     # The page must never strand the user on a blank screen if its JS stalls, so
     # it carries a visible message and a <meta refresh> fallback that navigates
@@ -254,21 +254,12 @@ def logout():
 <div class="so-wrap"><div class="so-spin"></div><div>Signing out…</div></div>
 <script>
 try {
-  var sv = JSON.parse(localStorage.getItem('saved_viewer') || 'null');
-  if (sv) {
-    // Keep only enough for "Continue as X" — strip everything that would
-    // allow auto-restore to silently re-authenticate.
-    localStorage.setItem('saved_viewer', JSON.stringify({
-      username:  sv.username  || '',
-      league_id: sv.league_id || '',
-      platform:  sv.platform  || 'sleeper',
-      season:    sv.season    || '',
-      team_name: sv.team_name || '',
-      // Intentionally omit: user_id, roster_id (prevent auto-restore auth)
-    }));
-  }
-  // Mark explicit logout so auto-restore skips this session.
-  sessionStorage.setItem('_explicitLogout', '1');
+  localStorage.removeItem('saved_viewer');
+  localStorage.removeItem('saved_account');
+  // Session storage contains transient navigation/team hand-offs. Clearing it
+  // prevents a second user inheriting a roster while preserving preferences
+  // such as theme, which live in localStorage under unrelated keys.
+  sessionStorage.clear();
 } catch(_) {}
 // The service worker caches navigations, so a logged-in page could otherwise be
 // served from cache after logout. Fully tear the worker down: UNREGISTER it (so it

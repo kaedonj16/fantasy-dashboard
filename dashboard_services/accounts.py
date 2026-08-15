@@ -520,6 +520,62 @@ def list_user_leagues(account_id: int) -> list[dict]:
     ]
 
 
+def resolve_account_viewer_for_league(
+    account_id: int, platform: str, league_id: str, season: int,
+    users: list[dict], rosters: list[dict],
+) -> Optional[dict]:
+    """Resolve an account's stable identity to its team in one saved league.
+
+    The league-scoped ``team_id`` wins when present. Otherwise a stable platform
+    user id is matched to the roster owner and the resulting team is persisted.
+    Display names are never used to establish ownership.
+    """
+    if not (account_id and platform and league_id and season):
+        return None
+    init_accounts_tables()
+    from dashboard_services.db import get_conn
+    key = (account_id, platform, str(league_id), int(season))
+    with get_conn() as conn:
+        membership = conn.execute(
+            """SELECT team_id FROM user_leagues WHERE account_id=%s AND platform=%s
+               AND league_id=%s AND season=%s""", key,
+        ).fetchone()
+        if not membership:
+            return None
+        identity_rows = conn.execute(
+            """SELECT platform_user_id,handle FROM account_identities
+               WHERE account_id=%s AND platform=%s""", (account_id, platform),
+        ).fetchall()
+
+    identities = {str(row["platform_user_id"]): row.get("handle") for row in identity_rows}
+    stored_team_id = str(membership.get("team_id") or "")
+    roster = next((r for r in rosters or []
+                   if stored_team_id and str(r.get("roster_id") or "") == stored_team_id), None)
+    if roster is None and identities:
+        roster = next((r for r in rosters or []
+                       if str(r.get("owner_id") or "") in identities), None)
+    if roster is None:
+        return None
+
+    roster_id = str(roster.get("roster_id") or "")
+    owner_id = str(roster.get("owner_id") or "")
+    user = next((u for u in users or []
+                 if str(u.get("user_id") or "") == owner_id), None) or {}
+    user_meta, roster_meta = user.get("metadata") or {}, roster.get("metadata") or {}
+    username = user.get("username") or identities.get(owner_id) or user.get("display_name") or owner_id
+    team_name = (roster_meta.get("team_name") or user_meta.get("team_name")
+                 or user.get("display_name") or username or f"Roster {roster_id}")
+    if roster_id and roster_id != stored_team_id:
+        with get_conn() as conn:
+            conn.execute(
+                """UPDATE user_leagues SET team_id=%s WHERE account_id=%s AND platform=%s
+                   AND league_id=%s AND season=%s""", (roster_id, *key),
+            )
+            conn.commit()
+    return {"viewer_username": username, "viewer_user_id": owner_id or None,
+            "viewer_roster_id": roster_id or None, "viewer_team_name": team_name}
+
+
 def set_last_active_league(account_id: int, platform: str, league_id: str, season: int) -> bool:
     """Record activity only for an account-owned saved league."""
     init_accounts_tables()
