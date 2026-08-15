@@ -1,3 +1,4 @@
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -128,6 +129,28 @@ def test_connection_rejects_empty_espn_response(monkeypatch):
     ))
     with pytest.raises(espn_api.ESPNMalformedResponse):
         espn_api.connect_league(2026, "123")
+
+
+def test_connection_logs_safe_upstream_response_metadata(monkeypatch, caplog):
+    caplog.set_level(logging.INFO, logger=espn_api.__name__)
+    response = SimpleNamespace(
+        status_code=200,
+        ok=True,
+        headers={"Content-Type": "text/html; charset=utf-8"},
+        content=b"<html>login</html>",
+        json=lambda: (_ for _ in ()).throw(ValueError("not json")),
+    )
+    monkeypatch.setattr(espn_api.requests, "get", lambda *a, **k: response)
+
+    with pytest.raises(espn_api.ESPNMalformedResponse) as caught:
+        espn_api.connect_league(2026, "123", swid="owner", espn_s2="super-secret")
+
+    assert caught.value.debug_reference
+    assert "outcome=json_decode_failed" in caplog.text
+    assert "content_type='text/html; charset=utf-8'" in caplog.text
+    assert "content_length=18" in caplog.text
+    assert "authenticated=True" in caplog.text
+    assert "super-secret" not in caplog.text
 
 
 @pytest.mark.parametrize("swid,espn_s2", [("x", None), (None, "x")])
