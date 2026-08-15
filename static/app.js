@@ -9173,6 +9173,20 @@ if (!platformBtns.length) return;
   }
 
   if (espnSubmitBtn) {
+    // API errors can be replaced by an HTML error page by a reverse proxy. Do
+    // not leak that page (or JSON.parse's "Unexpected token '<'") into the UI.
+    // Reading as text first lets us provide a stable, actionable message while
+    // still preserving JSON error details returned by our Flask endpoints.
+    const readEspnApiJson = async (response) => {
+      const body = await response.text();
+      try {
+        return JSON.parse(body);
+      } catch (_) {
+        const status = response.status ? ` (HTTP ${response.status})` : "";
+        throw new Error(`The server returned an invalid response${status}. Please try again; if this continues, refresh the page.`);
+      }
+    };
+
     espnSubmitBtn.addEventListener("click", async () => {
       const leagueId = espnLeagueIdInput?.value.trim();
       if (!leagueId || !/^\d+$/.test(leagueId)) {
@@ -9201,7 +9215,7 @@ if (!platformBtns.length) return;
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ league_id: leagueId, season, swid, espn_s2: espnS2 }),
           });
-          const pendingData = await pendingRes.json();
+          const pendingData = await readEspnApiJson(pendingRes);
           espnSwidInput.value = "";
           espnS2Input.value = "";
           if (!pendingRes.ok || !pendingData.ok) throw new Error(pendingData.error || "Unable to validate ESPN credentials.");
@@ -9210,7 +9224,7 @@ if (!platformBtns.length) return;
               method: "POST", headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ league_id: leagueId, season }),
             });
-            const guestData = await guestRes.json();
+            const guestData = await readEspnApiJson(guestRes);
             if (!guestRes.ok || !guestData.ok) throw new Error(guestData.error || "Unable to open private ESPN league.");
             window.location.href = guestData.redirect_url;
           } else {
@@ -9235,7 +9249,7 @@ if (!platformBtns.length) return;
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ league_id: leagueId, season }),
           });
-          const savedData = await savedRes.json();
+          const savedData = await readEspnApiJson(savedRes);
           if (savedRes.ok && savedData.ok) {
             await window.refreshHomeLeagues?.();
             setHomeCardState("connected");
@@ -9275,7 +9289,7 @@ if (!platformBtns.length) return;
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ league_id: leagueId, season, swid, espn_s2: espnS2 }),
           });
-          const privateData = await privateRes.json();
+          const privateData = await readEspnApiJson(privateRes);
           espnSwidInput.value = "";
           espnS2Input.value = "";
           if (espnPrivateFields) delete espnPrivateFields.dataset.reconnect;
@@ -9287,7 +9301,7 @@ if (!platformBtns.length) return;
           return;
         }
         const res = await fetch(`/api/espn-validate-league?league_id=${encodeURIComponent(leagueId)}`);
-        const data = await res.json();
+        const data = await readEspnApiJson(res);
 
         if (!res.ok || !data.ok) {
           throw new Error(data.error || "Unable to load ESPN league.");
@@ -9302,7 +9316,7 @@ if (!platformBtns.length) return;
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ platform: "espn", league_id: leagueId, season: data.league.season, name: data.league.name }),
           });
-          const pendingData = await pending.json();
+          const pendingData = await readEspnApiJson(pending);
           if (!pending.ok || !pendingData.ok) throw new Error(pendingData.error || "Could not save this league.");
           window.location.href = pendingData.auth_url || "/auth/google";
           return;
