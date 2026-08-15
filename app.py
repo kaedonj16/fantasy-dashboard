@@ -1088,10 +1088,10 @@ FORM_BODY = """
 
         {% if not session.get('account_id') %}
         <div class="home-account-entry">
-          <a class="google-continue-btn" href="/auth/google?intent=login&amp;next=/">Continue with Google</a>
+          <a class="google-continue-btn" href="/auth/google?intent=login&amp;next=/"><span class="google-button-title">Continue with Google</span></a>
           <span>Returning users can access their saved leagues.</span>
           <div class="home-account-new-label">New to BR Fantasy?</div>
-          <a class="google-continue-btn google-create-account-btn" href="/auth/google?intent=onboarding&amp;next=/">Create Account with Google</a>
+          <a class="google-continue-btn google-create-account-btn" href="/auth/google?intent=onboarding&amp;next=/"><span class="google-button-title">Create Account with Google</span></a>
           <span>Create an account and connect your first fantasy league.</span>
         </div>
         {% else %}
@@ -1176,7 +1176,7 @@ FORM_BODY = """
           <div id="espnError" class="error-message" style="display:none;"></div>
           <div id="espnPrivateChoice" class="provider-account-choice" style="display:none;">
             <button type="button" id="espnPrivateGoogle" class="google-continue-btn">
-              <strong>Continue with Google</strong>
+              <span class="google-button-title">Continue with Google</span>
               <span>Save your leagues &amp; settings, synced across devices</span>
               <small>Free &middot; no password</small>
             </button>
@@ -1224,7 +1224,7 @@ FORM_BODY = """
 
           <div class="row" id="generateWrap" style="display:none;flex-direction:column;gap:0;align-items:stretch;">
             <button type="button" id="googleContinueBtn" class="google-continue-btn">
-              <span style="font-size:14px;font-weight:700;">Continue with Google</span>
+              <span class="google-button-title">Continue with Google</span>
               <span style="font-size:11px;font-weight:500;color:#5f6368;">Save your leagues &amp; settings, synced across devices</span>
               <span style="font-size:10px;font-weight:600;color:#80868b;">Free &middot; no password</span>
             </button>
@@ -2558,7 +2558,7 @@ def _link_modal_html() -> str:
                 if(!result.ok||!result.d.ok){linkSetMsg(result.d.error||'Could not validate ESPN credentials.','err');return;}
                 var pane=document.querySelector('.link-pane[data-lp="espn"]'),old=document.getElementById('linkEspnPrivateChoice');if(old)old.remove();
                 var choice=document.createElement('div');choice.id='linkEspnPrivateChoice';choice.className='link-public-choice';
-                choice.innerHTML='<button type="button" class="google-continue-btn" id="linkEspnPrivateGoogle"><strong>Continue with Google</strong><span>Save your leagues &amp; settings, synced across devices</span><small>Free &middot; no password</small></button>'+
+                choice.innerHTML='<button type="button" class="google-continue-btn" id="linkEspnPrivateGoogle"><span class="google-button-title">Continue with Google</span><span>Save your leagues &amp; settings, synced across devices</span><small>Free &middot; no password</small></button>'+
                   '<div class="link-choice-or">OR</div><button type="button" class="continue-without-account-btn" id="linkEspnPrivateGuest"><strong>Continue without account</strong><span>Quick view on this device &middot; nothing saved</span></button>';
                 pane.appendChild(choice);
                 document.getElementById('linkEspnPrivateGoogle').addEventListener('click',function(){location.href=result.d.auth_url;});
@@ -2577,7 +2577,7 @@ def _link_modal_html() -> str:
               var old=document.getElementById('linkEspnPublicChoice');if(old)old.remove();
               var choice=document.createElement('div');choice.id='linkEspnPublicChoice';choice.className='link-public-choice';
               choice.innerHTML='<div class="link-item"><strong>'+esc(d.league.name||'ESPN League')+'</strong></div>'+
-                '<button type="button" class="google-continue-btn" id="linkEspnGoogle"><strong>Continue with Google</strong><span>Save your leagues &amp; settings, synced across devices</span><small>Free &middot; no password</small></button>'+
+                '<button type="button" class="google-continue-btn" id="linkEspnGoogle"><span class="google-button-title">Continue with Google</span><span>Save your leagues &amp; settings, synced across devices</span><small>Free &middot; no password</small></button>'+
                 '<div class="link-choice-or">OR</div>'+
                 '<button type="button" class="continue-without-account-btn" id="linkEspnGuest"><strong>Continue without account</strong><span>Quick view on this device &middot; nothing saved</span></button>';
               pane.appendChild(choice);

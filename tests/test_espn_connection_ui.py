@@ -79,7 +79,7 @@ def test_home_private_flow_tries_saved_google_account_connection_first():
 def test_public_espn_offers_google_and_guest_paths():
     source = Path("app.py").read_text()
     modal = source[source.index("window.linkEspnConnect=function()"):source.index("window.linkYahooPreview=function()")]
-    assert 'id="linkEspnGoogle"><strong>Continue with Google' in modal
+    assert 'id="linkEspnGoogle"><span class="google-button-title">Continue with Google' in modal
     assert 'id="linkEspnGuest"><strong>Continue without account' in modal
     assert "'/api/link/pending'" in modal
     assert "location.href='/espn/'" in modal
@@ -116,7 +116,7 @@ def test_home_espn_account_choices_are_visible_before_validation():
 def test_every_google_action_gets_shared_google_logo():
     css = Path("static/dashboard.css").read_text()
     logo = Path("static/google-logo.svg").read_text()
-    assert ".google-continue-btn::before" in css
+    assert ".google-button-title::before" in css
     assert "url('/static/google-logo.svg')" in css
-    assert "left:16px;top:12px" in css
+    assert "gap:9px" in css
     assert "#4285F4" in logo and "#34A853" in logo
