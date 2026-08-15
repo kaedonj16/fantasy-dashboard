@@ -53,6 +53,43 @@ def test_private_connection_succeeds_without_returning_secrets(client):
     assert "swid" not in response.json and "espn_s2" not in response.json
 
 
+def test_private_malformed_espn_response_is_reported_as_expired_session(client, monkeypatch, caplog):
+    import dashboard_services.providers.espn_api as espn
+
+    def malformed(*args, **kwargs):
+        raise espn.ESPNMalformedResponse("ESPN returned an invalid response.")
+
+    monkeypatch.setattr(espn, "connect_league", malformed)
+    response = client.post("/api/link/espn/private", json={
+        "league_id": "123", "season": 2026, "swid": "{owner}", "espn_s2": "secret",
+    })
+
+    assert response.status_code == 403
+    assert response.is_json
+    assert "Copy fresh SWID and espn_s2" in response.json["error"]
+    assert "Reference:" in response.json["error"]
+    assert "secret" not in response.get_data(as_text=True)
+    assert "error_type=ESPNMalformedResponse" in caplog.text
+    assert "message_fingerprint=" in caplog.text
+    assert "secret" not in caplog.text
+
+
+def test_public_malformed_espn_response_does_not_use_proxy_502(client, monkeypatch):
+    import dashboard_services.providers.espn_api as espn
+
+    def malformed(*args, **kwargs):
+        raise espn.ESPNMalformedResponse("ESPN returned an invalid response.")
+
+    monkeypatch.setattr(espn, "connect_league", malformed)
+    response = client.post("/api/link/espn/public", json={
+        "league_id": "123", "season": 2026,
+    })
+
+    assert response.status_code == 422
+    assert response.is_json
+    assert "incomplete league data" in response.json["error"]
+
+
 def test_connection_requires_account(monkeypatch):
     app = flask.Flask(__name__); app.secret_key = "test"; app.register_blueprint(link_bp)
     with app.test_client() as test_client:
@@ -100,7 +137,9 @@ def test_signed_out_private_connection_is_staged_before_google(monkeypatch):
     app = flask.Flask(__name__); app.secret_key = "test"; app.register_blueprint(link_bp)
     import dashboard_services.providers.espn_api as espn
     import dashboard_services.accounts as accounts
-    monkeypatch.setattr(espn, "connect_league", lambda *a, **k: {"name": "Private"})
+    monkeypatch.setattr(espn, "connect_league", lambda *a, **k: {
+        "name": "Private", "teams": [{"team_id": "7", "name": "My Team"}],
+    })
     monkeypatch.setattr(accounts, "stage_private_espn_connection", lambda *a: "opaque-token")
     with app.test_client() as test_client:
         response = test_client.post("/api/link/espn/private/pending", json={
@@ -112,13 +151,35 @@ def test_signed_out_private_connection_is_staged_before_google(monkeypatch):
             assert "espn_s2" not in sess["onboarding_progress"]
     assert response.status_code == 200
     assert response.json["auth_url"].startswith("/auth/google?intent=onboarding")
+    assert response.json["teams"] == [{"team_id": "7", "name": "My Team"}]
+
+
+def test_private_pending_reports_missing_encryption_configuration(monkeypatch):
+    app = flask.Flask(__name__); app.secret_key = "test"; app.register_blueprint(link_bp)
+    import dashboard_services.providers.espn_api as espn
+    import dashboard_services.accounts as accounts
+    monkeypatch.setattr(espn, "connect_league", lambda *a, **k: {"name": "Private"})
+    monkeypatch.setattr(
+        accounts,
+        "stage_private_espn_connection",
+        lambda *a: (_ for _ in ()).throw(accounts.ProviderCredentialConfigurationError()),
+    )
+    with app.test_client() as test_client:
+        response = test_client.post("/api/link/espn/private/pending", json={
+            "league_id": "123", "season": 2026,
+            "swid": "{owner}", "espn_s2": "secret",
+        })
+
+    assert response.status_code == 503
+    assert "server encryption key is not configured" in response.json["error"]
+    assert "Reference:" in response.json["error"]
 
 
 def test_staged_private_connection_can_continue_without_account(monkeypatch):
     app = flask.Flask(__name__); app.secret_key = "test"; app.register_blueprint(link_bp)
     import dashboard_services.accounts as accounts
     monkeypatch.setattr(accounts, "peek_private_espn_connection", lambda *a: {
-        "league_id": "123", "season": 2026,
+        "league_id": "123", "season": 2026, "team_id": "7",
     })
     with app.test_client() as test_client:
         with test_client.session_transaction() as sess:
@@ -128,3 +189,28 @@ def test_staged_private_connection_can_continue_without_account(monkeypatch):
         })
     assert response.status_code == 200
     assert response.json["redirect_url"] == "/espn/2026/123/dashboard"
+
+
+def test_private_team_selection_validates_and_saves_roster(monkeypatch):
+    app = flask.Flask(__name__); app.secret_key = "test"; app.register_blueprint(link_bp)
+    import dashboard_services.accounts as accounts
+    import dashboard_services.providers.espn_api as espn
+    monkeypatch.setattr(accounts, "peek_private_espn_connection", lambda *a: {
+        "league_id": "123", "season": 2026, "swid": "{owner}", "espn_s2": "secret",
+    })
+    selected = []
+    monkeypatch.setattr(accounts, "select_pending_private_espn_team", lambda *a: selected.append(a) or True)
+    monkeypatch.setattr(espn.ESPNFantasyClient, "get_league", lambda *a: {
+        "teams": [{"team_id": "7", "name": "My Team"}],
+    })
+    with app.test_client() as test_client:
+        with test_client.session_transaction() as sess:
+            sess["pending_provider_connection_token"] = "opaque-token"
+        response = test_client.post("/api/link/espn/private/select-team", json={
+            "league_id": "123", "season": 2026, "team_id": "7",
+        })
+        with test_client.session_transaction() as sess:
+            assert sess["viewer_roster_id"] == "7"
+            assert sess["viewer_team_name"] == "My Team"
+    assert response.status_code == 200
+    assert selected[0][-1] == "7"

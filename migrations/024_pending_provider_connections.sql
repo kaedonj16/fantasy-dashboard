@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS pending_provider_connections (
     league_id TEXT NOT NULL,
     season INTEGER NOT NULL,
     league_name TEXT,
+    team_id TEXT,
     encrypted_credentials TEXT NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now()

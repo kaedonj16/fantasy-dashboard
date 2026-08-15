@@ -463,7 +463,7 @@ def api_espn_validate_league():
                 "ok": False,
                 "error": ("ESPN returned incomplete league data. Check that the league "
                           "and current season are available, then try again."),
-            }), 502
+            }), 422
 
         return jsonify({
             "ok": False,

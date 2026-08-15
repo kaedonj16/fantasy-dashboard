@@ -26,6 +26,36 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 _TABLES_READY = False
+_ENCRYPTION_FALLBACK_LOGGED = False
+
+
+class ProviderCredentialConfigurationError(RuntimeError):
+    """Raised when the server has no stable secret for provider credentials."""
+
+
+def _provider_credential_secret() -> str:
+    """Return a stable credential-encryption secret without exposing its value.
+
+    ``PROVIDER_CREDENTIAL_ENCRYPTION_KEY`` keeps provider credentials isolated
+    when configured. Existing deployments already require a stable
+    ``FLASK_SECRET_KEY``, so use it as a backwards-compatible fallback rather
+    than failing anonymous private-league onboarding after ESPN validation.
+    """
+    global _ENCRYPTION_FALLBACK_LOGGED
+    secret = os.getenv("PROVIDER_CREDENTIAL_ENCRYPTION_KEY", "").strip()
+    if secret:
+        return secret
+    secret = os.getenv("FLASK_SECRET_KEY", "").strip()
+    if secret:
+        if not _ENCRYPTION_FALLBACK_LOGGED:
+            logger.warning(
+                "PROVIDER_CREDENTIAL_ENCRYPTION_KEY is unset; using the stable FLASK_SECRET_KEY fallback"
+            )
+            _ENCRYPTION_FALLBACK_LOGGED = True
+        return secret
+    raise ProviderCredentialConfigurationError(
+        "No provider credential encryption key is configured."
+    )
 
 
 def init_accounts_tables() -> None:
@@ -82,11 +112,13 @@ def init_accounts_tables() -> None:
                 league_id TEXT NOT NULL,
                 season INTEGER NOT NULL,
                 league_name TEXT,
+                team_id TEXT,
                 encrypted_credentials TEXT NOT NULL,
                 expires_at TIMESTAMPTZ NOT NULL,
                 created_at TIMESTAMPTZ DEFAULT now()
             )"""
         )
+        conn.execute("ALTER TABLE pending_provider_connections ADD COLUMN IF NOT EXISTS team_id TEXT")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS fantasy_provider_connections (
@@ -155,17 +187,16 @@ def init_accounts_tables() -> None:
 
 def _encrypt_provider_credentials(credentials: dict) -> str:
     """Encrypt provider secrets using a deployment-specific key."""
-    secret = os.getenv("PROVIDER_CREDENTIAL_ENCRYPTION_KEY", "").strip()
-    if not secret:
-        raise RuntimeError("Private provider connections are not configured.")
+    secret = _provider_credential_secret()
     from cryptography.fernet import Fernet
     key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
     return Fernet(key).encrypt(json.dumps(credentials).encode("utf-8")).decode("ascii")
 
 
 def _decrypt_provider_credentials(encrypted: str) -> Optional[dict]:
-    secret = os.getenv("PROVIDER_CREDENTIAL_ENCRYPTION_KEY", "").strip()
-    if not secret:
+    try:
+        secret = _provider_credential_secret()
+    except ProviderCredentialConfigurationError:
         return None
     from cryptography.fernet import Fernet, InvalidToken
     key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
@@ -228,7 +259,7 @@ def consume_private_espn_connection(token: str) -> Optional[dict]:
     with get_conn() as conn:
         row = conn.execute(
             """DELETE FROM pending_provider_connections WHERE token_hash=%s
-               AND expires_at >= now() RETURNING league_id,season,league_name,encrypted_credentials""",
+               AND expires_at >= now() RETURNING league_id,season,league_name,team_id,encrypted_credentials""",
             (token_hash,),
         ).fetchone()
         conn.commit()
@@ -239,7 +270,7 @@ def consume_private_espn_connection(token: str) -> Optional[dict]:
         return None
     return {
         "league_id": row["league_id"], "season": row["season"],
-        "name": row["league_name"], **credentials,
+        "name": row["league_name"], "team_id": row["team_id"], **credentials,
     }
 
 
@@ -252,7 +283,7 @@ def peek_private_espn_connection(token: str, league_id: str, season: int) -> Opt
     from dashboard_services.db import get_conn
     with get_conn() as conn:
         row = conn.execute(
-            """SELECT league_id,season,league_name,encrypted_credentials
+            """SELECT league_id,season,league_name,team_id,encrypted_credentials
                FROM pending_provider_connections WHERE token_hash=%s AND expires_at>=now()
                AND league_id=%s AND season=%s""",
             (token_hash, str(league_id), int(season)),
@@ -261,12 +292,31 @@ def peek_private_espn_connection(token: str, league_id: str, season: int) -> Opt
         return None
     credentials = _decrypt_provider_credentials(row["encrypted_credentials"])
     return ({"league_id": row["league_id"], "season": row["season"],
-             "name": row["league_name"], **credentials} if credentials else None)
+             "name": row["league_name"], "team_id": row["team_id"], **credentials} if credentials else None)
+
+
+def select_pending_private_espn_team(token: str, league_id: str, season: int, team_id: str) -> bool:
+    """Attach a verified roster choice to an unexpired staged connection."""
+    if not token or not team_id:
+        return False
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    init_accounts_tables()
+    from dashboard_services.db import get_conn
+    with get_conn() as conn:
+        row = conn.execute(
+            """UPDATE pending_provider_connections SET team_id=%s
+               WHERE token_hash=%s AND league_id=%s AND season=%s AND expires_at>=now()
+               RETURNING token_hash""",
+            (str(team_id), token_hash, str(league_id), int(season)),
+        ).fetchone()
+        conn.commit()
+    return bool(row)
 
 
 def add_espn_league_connection(
     account_id: int, league_id: str, season: int, name: str,
     connection_method: str, *, swid: Optional[str] = None, espn_s2: Optional[str] = None,
+    team_id: Optional[str] = None,
 ) -> None:
     """Atomically persist a validated ESPN league and optional encrypted auth."""
     if connection_method not in ("public", "private"):
@@ -294,12 +344,14 @@ def add_espn_league_connection(
             ).fetchone()["id"]
         conn.execute(
             """INSERT INTO user_leagues
-                   (account_id, platform, league_id, season, name, provider_connection_id)
-               VALUES (%s, 'espn', %s, %s, %s, %s)
+                   (account_id, platform, league_id, season, team_id, name, provider_connection_id)
+               VALUES (%s, 'espn', %s, %s, %s, %s, %s)
                ON CONFLICT (account_id, platform, league_id, season) DO UPDATE SET
+                   team_id = COALESCE(EXCLUDED.team_id, user_leagues.team_id),
                    name = EXCLUDED.name,
                    provider_connection_id = EXCLUDED.provider_connection_id""",
-            (account_id, str(league_id), int(season), name, connection_id),
+            (account_id, str(league_id), int(season),
+             str(team_id) if team_id is not None else None, name, connection_id),
         )
         conn.commit()
 

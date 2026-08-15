@@ -8839,6 +8839,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const espnSwidInput = document.getElementById("espnSwidInput");
   const espnS2Input = document.getElementById("espnS2Input");
   const espnSubmitBtn = document.getElementById("espnSubmitBtn");
+  const espnPrivateTeamWrap = document.getElementById("espnPrivateTeamWrap");
+  const espnPrivateTeamSelect = document.getElementById("espnPrivateTeamSelect");
   const espnSubmitRow = document.getElementById("espnSubmitRow");
   const espnErrorBox = document.getElementById("espnError");
   const espnPrivateChoice = document.getElementById("espnPrivateChoice");
@@ -8917,6 +8919,7 @@ if (!platformBtns.length) return;
   let currentPlatform = "sleeper";
   let homeEspnMethod = "public";
   let espnRequestedAction = "";
+  let espnPendingPrivate = null;
   let sleeperLookupUser = null;
 
   async function saveLeagueToSignedInAccount(details) {
@@ -8932,6 +8935,9 @@ if (!platformBtns.length) return;
 
   function setHomeEspnMethod(method) {
     homeEspnMethod = method === "private" ? "private" : "public";
+    espnPendingPrivate = null;
+    if (espnPrivateTeamWrap) espnPrivateTeamWrap.style.display = "none";
+    if (espnPrivateTeamSelect) espnPrivateTeamSelect.innerHTML = '<option value="">Choose your team</option>';
     espnMethodBtns.forEach((btn) => {
       const active = btn.dataset.espnMethod === homeEspnMethod;
       btn.classList.toggle("active", active);
@@ -9173,6 +9179,20 @@ if (!platformBtns.length) return;
   }
 
   if (espnSubmitBtn) {
+    // API errors can be replaced by an HTML error page by a reverse proxy. Do
+    // not leak that page (or JSON.parse's "Unexpected token '<'") into the UI.
+    // Reading as text first lets us provide a stable, actionable message while
+    // still preserving JSON error details returned by our Flask endpoints.
+    const readEspnApiJson = async (response) => {
+      const body = await response.text();
+      try {
+        return JSON.parse(body);
+      } catch (_) {
+        const status = response.status ? ` (HTTP ${response.status})` : "";
+        throw new Error(`The server returned an invalid response${status}. Please try again; if this continues, refresh the page.`);
+      }
+    };
+
     espnSubmitBtn.addEventListener("click", async () => {
       const leagueId = espnLeagueIdInput?.value.trim();
       if (!leagueId || !/^\d+$/.test(leagueId)) {
@@ -9185,6 +9205,35 @@ if (!platformBtns.length) return;
       }
 
       if (espnErrorBox) espnErrorBox.style.display = "none";
+      if (homeEspnMethod === "private" && !window._hasAccount && espnPendingPrivate) {
+        const teamId = espnPrivateTeamSelect?.value || "";
+        if (!teamId) {
+          espnErrorBox.textContent = "Choose your team.";
+          espnErrorBox.style.display = "block";
+          return;
+        }
+        try {
+          const selected = await fetch("/api/link/espn/private/select-team", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ league_id: espnPendingPrivate.league_id, season: espnPendingPrivate.season, team_id: teamId }),
+          });
+          const selectedData = await readEspnApiJson(selected);
+          if (!selected.ok || !selectedData.ok) throw new Error(selectedData.error || "Unable to save your team.");
+          if (espnRequestedAction === "guest") {
+            const guestRes = await fetch("/api/link/espn/private/guest", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ league_id: espnPendingPrivate.league_id, season: espnPendingPrivate.season }),
+            });
+            const guestData = await readEspnApiJson(guestRes);
+            if (!guestRes.ok || !guestData.ok) throw new Error(guestData.error || "Unable to open private ESPN league.");
+            window.location.href = guestData.redirect_url;
+          } else window.location.href = espnPendingPrivate.auth_url;
+        } catch (err) {
+          espnErrorBox.textContent = err.message || "Unable to save your team.";
+          espnErrorBox.style.display = "block";
+        }
+        return;
+      }
       const swid = espnSwidInput?.value.trim() || "";
       const espnS2 = espnS2Input?.value.trim() || "";
       if (homeEspnMethod === "private" && !window._hasAccount) {
@@ -9201,21 +9250,19 @@ if (!platformBtns.length) return;
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ league_id: leagueId, season, swid, espn_s2: espnS2 }),
           });
-          const pendingData = await pendingRes.json();
+          const pendingData = await readEspnApiJson(pendingRes);
           espnSwidInput.value = "";
           espnS2Input.value = "";
           if (!pendingRes.ok || !pendingData.ok) throw new Error(pendingData.error || "Unable to validate ESPN credentials.");
-          if (espnRequestedAction === "guest") {
-            const guestRes = await fetch("/api/link/espn/private/guest", {
-              method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ league_id: leagueId, season }),
-            });
-            const guestData = await guestRes.json();
-            if (!guestRes.ok || !guestData.ok) throw new Error(guestData.error || "Unable to open private ESPN league.");
-            window.location.href = guestData.redirect_url;
-          } else {
-            window.location.href = pendingData.auth_url;
-          }
+          if (!(pendingData.teams || []).length) throw new Error("ESPN did not return any teams for this league.");
+          espnPendingPrivate = pendingData;
+          espnPrivateTeamSelect.innerHTML = '<option value="">Choose your team</option>' + pendingData.teams.map((team) =>
+            `<option value="${String(team.team_id).replace(/"/g, "&quot;")}">${String(team.name || `Team ${team.team_id}`).replace(/[&<>]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))}</option>`
+          ).join("");
+          espnPrivateTeamWrap.style.display = "block";
+          espnSubmitBtn.disabled = false;
+          espnSubmitBtn.textContent = "Continue";
+          return;
         } catch (err) {
           espnSwidInput.value = "";
           espnS2Input.value = "";
@@ -9235,7 +9282,7 @@ if (!platformBtns.length) return;
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ league_id: leagueId, season }),
           });
-          const savedData = await savedRes.json();
+          const savedData = await readEspnApiJson(savedRes);
           if (savedRes.ok && savedData.ok) {
             await window.refreshHomeLeagues?.();
             setHomeCardState("connected");
@@ -9275,7 +9322,7 @@ if (!platformBtns.length) return;
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ league_id: leagueId, season, swid, espn_s2: espnS2 }),
           });
-          const privateData = await privateRes.json();
+          const privateData = await readEspnApiJson(privateRes);
           espnSwidInput.value = "";
           espnS2Input.value = "";
           if (espnPrivateFields) delete espnPrivateFields.dataset.reconnect;
@@ -9287,7 +9334,7 @@ if (!platformBtns.length) return;
           return;
         }
         const res = await fetch(`/api/espn-validate-league?league_id=${encodeURIComponent(leagueId)}`);
-        const data = await res.json();
+        const data = await readEspnApiJson(res);
 
         if (!res.ok || !data.ok) {
           throw new Error(data.error || "Unable to load ESPN league.");
@@ -9302,7 +9349,7 @@ if (!platformBtns.length) return;
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ platform: "espn", league_id: leagueId, season: data.league.season, name: data.league.name }),
           });
-          const pendingData = await pending.json();
+          const pendingData = await readEspnApiJson(pending);
           if (!pending.ok || !pendingData.ok) throw new Error(pendingData.error || "Could not save this league.");
           window.location.href = pendingData.auth_url || "/auth/google";
           return;

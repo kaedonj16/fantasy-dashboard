@@ -37,6 +37,19 @@ def test_home_page_does_not_store_espn_credentials_in_local_storage():
     assert "localStorage" not in espn_flow
 
 
+def test_espn_flows_handle_non_json_server_responses_without_parser_errors():
+    script = Path("static/app.js").read_text()
+    markup = Path("app.py").read_text()
+    home_flow = script[script.index("const readEspnApiJson"):script.index("if (yahooConnectBtn)")]
+    modal_flow = markup[markup.index("function readEspnJson"):markup.index("window.linkYahooPreview=function()")]
+    assert "const body = await response.text()" in home_flow
+    assert "await readEspnApiJson(privateRes)" in home_flow
+    assert "return r.text().then" in modal_flow
+    assert ".then(readEspnJson)" in modal_flow
+    assert "The server returned an invalid response" in home_flow
+    assert "The server returned an invalid response" in modal_flow
+
+
 def test_home_public_validation_uses_anonymous_connection_client():
     route = Path("routes/league_meta_bp.py").read_text()
     handler = route[route.index("def api_espn_validate_league"):route.index("def api_espn_debug")]
@@ -52,12 +65,15 @@ def test_password_inputs_share_site_input_styles():
 
 def test_private_espn_flow_collects_credentials_before_google_sign_in():
     script = Path("static/app.js").read_text()
+    markup = Path("app.py").read_text()
     flow = script[script.index('espnSubmitBtn.addEventListener("click"'):script.index("if (yahooConnectBtn)")]
     read_swid = flow.index("const swid =")
     stage = flow.index('fetch("/api/link/espn/private/pending"')
-    action = flow.index('if (espnRequestedAction === "guest")')
-    assert read_swid < stage < action
+    assert read_swid < stage
     assert '"Enter SWID and ESPN_S2 before continuing with Google."' in flow
+    assert 'id="espnPrivateTeamSelect"' in markup
+    assert 'fetch("/api/link/espn/private/select-team"' in flow
+    assert 'espnPrivateTeamWrap.style.display = "block"' in flow
 
 
 def test_link_modal_connects_unsigned_public_espn_through_google():

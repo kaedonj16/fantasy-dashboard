@@ -181,6 +181,7 @@ def google_auth_callback():
                     account_id, pending_provider["league_id"], pending_provider["season"],
                     pending_provider.get("name") or "ESPN League", "private",
                     swid=pending_provider["swid"], espn_s2=pending_provider["espn_s2"],
+                    team_id=pending_provider.get("team_id"),
                 )
                 session.pop("onboarding_progress", None)
                 return redirect(
