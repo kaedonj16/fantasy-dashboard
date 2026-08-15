@@ -2289,7 +2289,7 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
   border-bottom: none;
 }
 
-.home-card input[type="text"], .home-card input[type="number"] , .home-card input[type="email"], .home-card select {
+.home-card input[type="text"], .home-card input[type="password"], .home-card input[type="number"] , .home-card input[type="email"], .home-card select {
   width: 100%;
 }
 
@@ -2375,7 +2375,7 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
   width: 100px;
 }
 
-.search, select, input[type="text"], input[type="number"], input[type="email"] {
+.search, select, input[type="text"], input[type="password"], input[type="number"], input[type="email"] {
   padding: 8px 10px;
   border: 1px solid var(--grid);
   border-radius: 10px;
@@ -2408,7 +2408,7 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
   border-bottom-right-radius: 0;
 }
 
-.search:focus, select:focus, input[type="text"]:focus, input[type="number"]:focus, input[type="email"]:focus {
+.search:focus, select:focus, input[type="text"]:focus, input[type="password"]:focus, input[type="number"]:focus, input[type="email"]:focus {
   border-color: #8eb2e3;
   box-shadow: 0 0 0 4px rgba(56, 132, 255, 0.1);
 }
@@ -8665,6 +8665,16 @@ select:focus {
   margin: 0 0 12px;
   color: #f9fafb;
 }
+.home-account-entry,.signed-in-home{display:flex;flex-direction:column;gap:7px;margin-bottom:18px;padding-bottom:18px;border-bottom:1px solid rgba(255,255,255,.14)}
+.home-account-entry span{font-size:11px;color:var(--text-muted);margin-bottom:4px}
+.google-continue-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:100%;box-sizing:border-box;background:#fff!important;color:#1f2937!important;border:1px solid #dadce0!important;border-radius:10px;padding:10px 14px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.12);font-size:14px;font-weight:700;text-align:center;text-decoration:none}.google-button-title{display:inline-flex!important;align-items:center;justify-content:center;gap:9px!important;margin:0!important;font-size:14px!important;font-weight:700!important;color:inherit!important}.google-button-title::before{content:"";display:block;flex:0 0 19px;width:19px;height:19px;background:url('/static/google-logo.svg') center/contain no-repeat}
+.google-continue-btn:hover{background:#f8fafc!important;box-shadow:0 2px 6px rgba(0,0,0,.16)}
+.google-create-account-btn{background:transparent!important;color:#fff!important;border:1px solid rgba(255,255,255,.42)!important;box-shadow:none}.google-create-account-btn:hover{background:rgba(255,255,255,.09)!important}.home-account-new-label{margin-top:8px!important;margin-bottom:0!important;color:#fff!important;font-size:11px!important;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
+.continue-without-account-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);color:#e5e7eb;border:1px solid rgba(255,255,255,.28);border-radius:10px;padding:11px 14px;cursor:pointer;font-weight:700}
+.continue-without-account-btn:hover{background:rgba(255,255,255,.11);border-color:rgba(255,255,255,.42)}
+.link-public-choice{display:flex;flex-direction:column;gap:8px;margin-top:12px}.link-choice-or{text-align:center;color:var(--text-muted);font-size:10px;font-weight:800;letter-spacing:.1em}
+.provider-account-choice{display:flex;flex-direction:column;gap:8px;margin-top:12px}.provider-choice-or{text-align:center;color:rgba(255,255,255,.5);font-size:10.5px;font-weight:800;letter-spacing:.1em}.google-continue-btn span,.continue-without-account-btn span{font-size:11px;font-weight:500}.google-continue-btn small{font-size:10px;font-weight:600;color:#80868b}
+.signed-in-home h3{margin:0 0 5px}.signed-home-league{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid var(--border);padding:9px;border-radius:9px;font-size:12px}.connection-attention{color:var(--loss);font-weight:700}.signed-home-league a{color:var(--accent);font-weight:700;text-decoration:none}
 
 .platform-selector {
   display: grid;
@@ -8697,6 +8707,35 @@ select:focus {
   border-color: rgba(59, 130, 246, 0.5);
   color: #60a5fa;
 }
+
+.espn-home-methods {
+  display: flex;
+  gap: 5px;
+  padding: 4px;
+  margin: 4px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--accent-soft);
+}
+.espn-home-method {
+  flex: 1;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 700;
+  cursor: pointer;
+}
+.espn-home-method.active {
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .14);
+}
+.espn-home-description { margin: 0 0 14px; }
+.espn-home-help { margin: -2px 0 14px; color: var(--text-muted); font-size: 12px; }
+.espn-home-help summary { color: var(--accent); cursor: pointer; font-weight: 700; }
+.espn-home-help ol { padding-left: 20px; line-height: 1.5; }
 
 .home-card .platform-btn img {
   display: none;
@@ -11998,6 +12037,7 @@ img, svg, canvas {
   .search,
   select,
   input[type="text"],
+  input[type="password"],
   input[type="number"],
   input[type="email"] {
     padding: 6px 8px;
@@ -12393,6 +12433,7 @@ img, svg, canvas {
   .search,
   select,
   input[type="text"],
+  input[type="password"],
   input[type="number"],
   input[type="email"] {
     padding: 4px 6px;
@@ -12560,6 +12601,7 @@ img, svg, canvas {
   .search,
   select,
   input[type="text"],
+  input[type="password"],
   input[type="number"],
   input[type="email"] {
     padding: 4px 6px;
