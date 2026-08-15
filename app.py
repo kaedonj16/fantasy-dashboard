@@ -1131,21 +1131,33 @@ FORM_BODY = """
 
         <!-- ESPN Flow -->
         <div id="espnFlow" style="display:none;">
+          <div class="espn-home-methods" role="radiogroup" aria-label="ESPN league type">
+            <button type="button" class="espn-home-method active" data-espn-method="public" aria-pressed="true">Public League</button>
+            <button type="button" class="espn-home-method" data-espn-method="private" aria-pressed="false">Private League</button>
+          </div>
+          <p class="hint espn-home-description" id="espnHomeDescription">Connect a publicly accessible ESPN league using its League ID.</p>
           <div class="row">
-            <label for="espnLeagueIdInput">ESPN League ID</label>
+            <label for="espnLeagueIdInput">League ID</label>
             <input type="text" id="espnLeagueIdInput" placeholder="e.g. 336414" autocomplete="off">
           </div>
-          <div class="row">
-            <label for="espnTeamName">Your Team Name <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
-            <input type="text" id="espnTeamName" placeholder="e.g. Dynasty Monsters">
+          <div id="espnHomePrivateFields" style="display:none;">
+            <div class="row">
+              <label for="espnSwidInput">SWID</label>
+              <input type="password" id="espnSwidInput" autocomplete="off">
+            </div>
+            <div class="row">
+              <label for="espnS2Input">ESPN_S2</label>
+              <input type="password" id="espnS2Input" autocomplete="off">
+            </div>
+            <details class="espn-home-help"><summary>Where do I find these?</summary>
+              <ol><li>Log into ESPN and open your private fantasy league.</li><li>Open browser developer tools.</li><li>Go to Application → Cookies.</li><li>Locate SWID and espn_s2 and copy both values here.</li></ol>
+              <strong>Treat these session credentials like passwords.</strong>
+            </details>
           </div>
           <div class="row">
-            <button type="button" id="espnSubmitBtn">Find My League</button>
+            <button type="button" id="espnSubmitBtn">Connect League</button>
           </div>
           <div id="espnError" class="error-message" style="display:none;"></div>
-          <p class="hint" style="margin-top:6px;" id="espnHint">
-            Private leagues also need <code>ESPN_S2</code> and <code>ESPN_SWID</code> cookies set on the server.
-          </p>
         </div>
 
         <!-- Yahoo Flow -->

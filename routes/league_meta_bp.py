@@ -412,8 +412,9 @@ def api_espn_validate_league():
     season = int(request.args.get("season") or nfl_state.get("season") or datetime.now().year)
 
     try:
-        from dashboard_services.providers.espn_api import get_league as espn_get_league
-        info = espn_get_league(season, league_id)
+        # Public validation must never fall back to server/account cookies.
+        from dashboard_services.providers.espn_api import connect_league
+        info = connect_league(season, league_id)
         return jsonify({
             "ok": True,
             "league": {
@@ -428,19 +429,11 @@ def api_espn_validate_league():
         # ESPNInvalidLeague = 404 (league id or season not found).
         from dashboard_services.providers.espn_api import espn_diagnostics
         diag = espn_diagnostics()
-        creds_present = diag["espn_s2_present"] and diag["espn_swid_present"]
         name = type(e).__name__
 
         if name == "ESPNAccessDenied":
-            if not creds_present:
-                err = ("This is a private ESPN league, but the server has no "
-                       "ESPN_S2 / ESPN_SWID set. Add them as environment variables "
-                       "and redeploy.")
-            else:
-                err = ("ESPN rejected the ESPN_S2 / ESPN_SWID cookies. They may be "
-                       "for a different ESPN account, expired, or copied with extra "
-                       "characters — re-copy both from espn.com and update the env "
-                       "vars.")
+            err = ("This ESPN league could not be accessed publicly. If it is a "
+                   "private league, connect using the Private League option.")
             return jsonify({"ok": False, "error": err, "diagnostics": diag}), 403
 
         if name == "ESPNInvalidLeague":
