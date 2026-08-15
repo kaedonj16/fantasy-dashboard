@@ -346,7 +346,7 @@ def create_league_subscription(
                         subscription_status, stripe_subscription_id,
                         stripe_customer_id, expires_at
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (league_id) DO UPDATE SET
+                    ON CONFLICT (platform, league_id) DO UPDATE SET
                         subscriber_user_id = EXCLUDED.subscriber_user_id,
                         subscription_status = EXCLUDED.subscription_status,
                         stripe_subscription_id = EXCLUDED.stripe_subscription_id,

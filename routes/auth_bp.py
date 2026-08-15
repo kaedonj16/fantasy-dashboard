@@ -105,14 +105,20 @@ def set_viewer():
     viewer = resolve_viewer_for_league(ctx["users"], ctx["rosters"], username)
 
     if not viewer:
-        return render_template_string(
+        body_html = render_template_string(
             FORM_BODY,
+            username=username,
+            viewed_season=season,
             league=league_id,
             error="Could not match that username to a team in this league.",
             recent_updates=generate_recent_updates_html(),
+            yahoo_enabled=False,
         )
+        from app import render_page
+        return render_page("BR Fantasy Dashboard", None, "home", body_html, lite_js=True)
 
     save_viewer_session(viewer)
+    session["viewer_platform"] = platform
     if platform == "sleeper" and viewer.get("viewer_user_id"):
         _background_seed_user(viewer["viewer_user_id"], viewer.get("viewer_username"))
 
@@ -162,11 +168,13 @@ def api_sign_in_league():
             # ESPN doesn't have Sleeper-style usernames; a match is optional.
             session.permanent = True
             session["viewer_username"] = username or "ESPN Manager"
+            session["viewer_platform"] = "espn"
             return jsonify({"ok": True, "matched": False})
         return jsonify({"ok": False,
                         "error": "Could not match that username to a team in this league."}), 404
 
     save_viewer_session(viewer)
+    session["viewer_platform"] = platform
     if platform == "sleeper" and viewer.get("viewer_user_id"):
         _background_seed_user(viewer["viewer_user_id"], viewer.get("viewer_username"))
 
