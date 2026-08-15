@@ -68,11 +68,22 @@ def _espn_error(exc: Exception, method: str):
             return ("This ESPN league could not be accessed publicly. If it is a private "
                     "league, connect using the Private League option."), 403
         return "ESPN rejected these credentials or the session has expired.", 403
+    if name == "ESPNMalformedResponse":
+        # ESPN commonly answers with an HTML login/challenge page and HTTP 200
+        # when private-league cookies are expired or otherwise unusable. Treat
+        # that as an authentication failure rather than returning 502: besides
+        # being more accurate, some reverse proxies replace 502 JSON bodies with
+        # their own HTML page, which hides this actionable message from the UI.
+        if method == "private":
+            return ("ESPN did not accept this session. Copy fresh SWID and espn_s2 "
+                    "cookie values from an active ESPN login and try again."), 403
+        return ("ESPN returned incomplete league data. Check the league ID and "
+                "season, then try again."), 422
     if "429" in msg or "rate" in msg:
         return "ESPN is rate limiting requests. Please wait a moment and try again.", 429
     if "timeout" in msg or "500" in msg or "502" in msg or "503" in msg:
         return "ESPN is temporarily unavailable. Please try again later.", 503
-    return "ESPN returned an unexpected response. Please verify the details and try again.", 502
+    return "ESPN returned an unexpected response. Please verify the details and try again.", 422
 
 
 def _connect_espn(method: str):
