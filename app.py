@@ -3058,8 +3058,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 # user interaction or at idle, so it's off the initial render path. The ad <ins>
 # slots still reserve their fixed height, so deferring the fill causes no CLS.
 _AD_SCRIPT = ''
-_AD_TOP = """<div class="ad-container ad-top-banner"><ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins></div>"""
-_AD_BOTTOM = """<div class="ad-container ad-bottom-content"><ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins></div>"""
+_AD_TOP = """<aside class="ad-container ad-top-banner" aria-label="Advertisement"><span class="ad-disclosure">Advertisement</span><ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins></aside>"""
+_AD_BOTTOM = """<aside class="ad-container ad-bottom-content" aria-label="Advertisement"><span class="ad-disclosure">Advertisement</span><ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins></aside>"""
 _AD_INIT = """(function(){
   var loaded = false;
   function loadAds(){

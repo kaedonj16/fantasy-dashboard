@@ -8366,6 +8366,20 @@ select:focus {
   overflow: hidden;
 }
 
+/* Keep paid placements unmistakably separate from navigation and editorial
+   content. The visible label also remains useful while an ad is loading. */
+.ad-disclosure {
+  display: block;
+  margin: 0 auto 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  line-height: 1.2;
+  text-align: center;
+  text-transform: uppercase;
+}
+
 .adsbygoogle responsive {
   display: block;
   margin: 10px auto;

@@ -152,20 +152,26 @@ def privacy_page(platform: Optional[str] = None, season: Optional[int] = None,
           <div class="static-card-page">
 
             <h1 class="static-hero-title">Privacy Policy</h1>
+            <p class="static-page-meta">Last updated: August 14, 2026</p>
             <div class="static-section">
               <div class="static-section-title">What We Collect</div>
               <p>
-                We use your Sleeper league ID and public Sleeper data to build dashboards,
-                projections, and tools. No passwords, payment info, or sensitive personal data
-                is collected.
+                We process the league IDs, usernames, team names, rosters, scores, and other
+                league information you ask us to load from Sleeper, ESPN, or Yahoo. If you create
+                an account, we also process your email address, account identifier, linked leagues,
+                and subscription status. We do not receive your platform password or full payment
+                card number; authentication and payment details are handled by the relevant login
+                provider and payment processor.
               </p>
             </div>
 
             <div class="static-section">
-              <div class="static-section-title">What We Don't Collect</div>
+              <div class="static-section-title">How We Use Information</div>
               <p>
-                We don't store personal identifying information, sell data, or track you outside
-                of this site.
+                We use this information to provide and secure the service, remember your settings,
+                operate subscriptions, answer support requests, measure site performance, and
+                improve aggregate fantasy-football analytics. We do not sell your personal
+                information.
               </p>
             </div>
 
@@ -189,29 +195,50 @@ def privacy_page(platform: Optional[str] = None, season: Optional[int] = None,
             <div class="static-section">
               <div class="static-section-title">Advertising</div>
               <p>
-                This site displays advertisements through Google AdSense. Google uses cookies
-                to serve ads based on your prior visits to this site or other websites.
-                Google's use of advertising cookies enables it and its partners to serve ads
-                based on your visit to this site and/or other sites on the Internet.
+                This site displays advertisements through Google AdSense. Google and its partners
+                may use cookies, web beacons, IP addresses, or similar technologies to deliver,
+                limit, personalize, and measure ads. Google's use of advertising cookies may enable
+                it and its partners to serve ads based on your visits to this site and other sites.
               </p>
               <p style="margin-top:8px;">
-                You may opt out of personalized advertising by visiting
-                <a href="https://www.google.com/settings/ads" target="_blank" rel="noopener">
-                  Google's Ads Settings
-                </a> or
-                <a href="http://www.aboutads.info/choices/" target="_blank" rel="noopener">
-                  www.aboutads.info
-                </a>.
+                You can manage personalized advertising in
+                <a href="https://myadcenter.google.com/" target="_blank" rel="noopener noreferrer">Google's My Ad Center</a>
+                and learn how Google uses data on partner sites in
+                <a href="https://policies.google.com/technologies/partner-sites" target="_blank" rel="noopener noreferrer">Google's partner-sites policy</a>.
               </p>
             </div>
 
             <div class="static-section">
               <div class="static-section-title">Cookies</div>
               <p>
-                We use cookies to maintain your login session and improve your experience.
-                Third-party vendors, including Google, also use cookies to serve ads based
-                on your browsing activity. By using this site, you consent to the use of
-                cookies as described in this policy.
+                Essential cookies maintain your login session, subscription access, preferences,
+                and security. Where required, our consent banner lets you accept, reject, or manage
+                non-essential advertising cookies before they are used. You can also change your
+                choice through the privacy controls provided on the site or clear cookies in your
+                browser. Disabling essential cookies may prevent account features from working.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Service Providers &amp; Retention</div>
+              <p>
+                We share information only as needed with providers that host the site, authenticate
+                accounts, process payments, deliver notifications, monitor errors, and provide
+                advertising or analytics. They process information under their own terms and privacy
+                policies. We retain account and transaction records while needed to provide the
+                service and meet legal obligations; cached league data and logs are retained only as
+                long as reasonably needed for performance, security, and analytics.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Your Choices</div>
+              <p>
+                You may ask us to access, correct, or delete information associated with your
+                account or league. You may unlink a league, cancel a subscription, change cookie
+                choices, or opt out of personalized advertising. Requests can be made through the
+                <a href="/contact">Contact page</a>; we may need to verify that you control the
+                relevant account or league.
               </p>
             </div>
 
@@ -614,6 +641,22 @@ def about_page(platform: Optional[str] = None, season: Optional[int] = None,
                 Player projections and rankings are sourced from publicly available
                 fantasy football data providers. No private or proprietary data
                 is used without permission.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Editorial Standards &amp; Corrections</div>
+              <p>
+                Guides, explanations, rankings, and model commentary are created for BR Fantasy,
+                not copied or automatically republished from other sites. Analysis distinguishes
+                measured league data from projections and opinion, and methodology is explained
+                wherever a model-generated value is presented. Automated outputs are reviewed and
+                updated as source data changes; no ranking or projection is a guarantee.
+              </p>
+              <p style="margin-top:8px;">
+                If you spot an inaccurate statistic, broken source, or unclear recommendation,
+                report the page and issue through <a href="/contact">Contact</a>. Material errors
+                are corrected as soon as they can be verified.
               </p>
             </div>
 
