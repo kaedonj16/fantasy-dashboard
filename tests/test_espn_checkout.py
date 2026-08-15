@@ -3,6 +3,11 @@ import urllib.parse
 
 import pytest
 
+# The lightweight CI job intentionally installs pytest without the Flask stack;
+# app integration tests must skip during collection there, just like the other
+# offline_client tests. The full-stack CI job installs Flask and runs these.
+pytest.importorskip("flask")
+
 import routes.billing_bp as billing
 
 
