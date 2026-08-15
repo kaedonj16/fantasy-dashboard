@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import os
+import logging
 import threading
 import time
+import uuid
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -51,6 +53,7 @@ ESPN_FFL_LEAGUE_URL = (
     "seasons/{season}/segments/0/leagues/{league_id}"
 )
 ESPN_REQUEST_TIMEOUT = 12
+logger = logging.getLogger(__name__)
 
 
 class ESPNFantasyClient:
@@ -91,6 +94,7 @@ class ESPNFantasyClient:
         cookies = None
         if self.authenticated:
             cookies = {"SWID": self._swid, "espn_s2": self._espn_s2}
+        request_id = uuid.uuid4().hex[:12]
         try:
             response = requests.get(
                 ESPN_FFL_LEAGUE_URL.format(season=int(season), league_id=int(league_id)),
@@ -99,7 +103,18 @@ class ESPNFantasyClient:
                 timeout=ESPN_REQUEST_TIMEOUT,
             )
         except requests.RequestException as exc:
+            logger.warning(
+                "[espn-connect] ref=%s outcome=request_error error_type=%s authenticated=%s league_id=%s season=%s",
+                request_id, type(exc).__name__, self.authenticated, league_id, season,
+            )
             raise ESPNUnavailable("ESPN is temporarily unavailable.") from exc
+        content_type = response.headers.get("Content-Type", "") if hasattr(response, "headers") else ""
+        content_length = len(response.content) if hasattr(response, "content") else None
+        logger.info(
+            "[espn-connect] ref=%s outcome=response status=%s content_type=%r content_length=%s authenticated=%s league_id=%s season=%s",
+            request_id, response.status_code, content_type, content_length,
+            self.authenticated, league_id, season,
+        )
         if response.status_code in (401, 403):
             raise ESPNAccessDenied("ESPN denied access to this league.")
         if response.status_code == 404:
@@ -113,12 +128,32 @@ class ESPNFantasyClient:
         try:
             payload = response.json()
         except (ValueError, TypeError) as exc:
-            raise ESPNMalformedResponse("ESPN returned an invalid response.") from exc
+            logger.warning(
+                "[espn-connect] ref=%s outcome=json_decode_failed status=%s content_type=%r content_length=%s authenticated=%s league_id=%s season=%s",
+                request_id, response.status_code, content_type, content_length,
+                self.authenticated, league_id, season,
+            )
+            error = ESPNMalformedResponse("ESPN returned an invalid response.")
+            error.debug_reference = request_id
+            raise error from exc
         if not isinstance(payload, dict):
-            raise ESPNMalformedResponse("ESPN returned an empty response.")
+            logger.warning(
+                "[espn-connect] ref=%s outcome=invalid_payload payload_type=%s authenticated=%s league_id=%s season=%s",
+                request_id, type(payload).__name__, self.authenticated, league_id, season,
+            )
+            error = ESPNMalformedResponse("ESPN returned an empty response.")
+            error.debug_reference = request_id
+            raise error
         settings = payload.get("settings")
         if not isinstance(settings, dict):
-            raise ESPNMalformedResponse("ESPN returned incomplete league data.")
+            logger.warning(
+                "[espn-connect] ref=%s outcome=missing_settings top_level_keys=%s authenticated=%s league_id=%s season=%s",
+                request_id, sorted(str(key) for key in payload)[:30],
+                self.authenticated, league_id, season,
+            )
+            error = ESPNMalformedResponse("ESPN returned incomplete league data.")
+            error.debug_reference = request_id
+            raise error
         return {
             "league_id": str(payload.get("id") or league_id),
             "season": int(payload.get("seasonId") or season),
@@ -209,6 +244,23 @@ def _public_league_cached(season: int, league_id: str) -> League:
     return League(league_id=int(league_id), year=int(season))
 
 
+def _is_espn_access_denied(exc: Exception) -> bool:
+    """Recognize access denial, including espn-api 0.45's anonymous bug.
+
+    In espn-api 0.45.1, a 401/403 anonymous request enters the access-denied
+    formatter with ``self.cookies is None``. Its attempt to call
+    ``self.cookies.get(...)`` raises AttributeError before ESPNAccessDenied can
+    be constructed. This exact compatibility case should trigger our
+    credential retry; unrelated AttributeErrors must still propagate.
+    """
+    if type(exc).__name__ == "ESPNAccessDenied":
+        return True
+    return (
+        isinstance(exc, AttributeError)
+        and str(exc) == "'NoneType' object has no attribute 'get'"
+    )
+
+
 def _league_cached(season: int, league_id: str) -> League:
     """Load a league anonymously when possible, then fall back to credentials.
 
@@ -228,9 +280,16 @@ def _league_cached(season: int, league_id: str) -> League:
     except Exception as exc:
         # Do not hide invalid IDs, bad seasons, or network/library errors behind
         # a second request. Only an access denial can be fixed by authentication.
-        if type(exc).__name__ != "ESPNAccessDenied":
+        if not _is_espn_access_denied(exc):
             raise
-        access_denied = exc
+        # Do not retain the third-party exception: some espn-api versions put
+        # cookie values in ESPNAccessDenied messages. Keep all later logs safe.
+        access_denied = ESPNAccessDenied("ESPN denied anonymous access to this league.")
+        if isinstance(exc, AttributeError):
+            logger.info(
+                "[espn] treating espn-api anonymous None-cookies AttributeError as access denied league_id=%s season=%s",
+                league_id, season,
+            )
 
     espn_s2, swid = _espn_creds()
     try:
@@ -263,7 +322,7 @@ def _league_cached(season: int, league_id: str) -> League:
             swid=swid,
         )
     except Exception as exc:
-        if type(exc).__name__ == "ESPNAccessDenied":
+        if _is_espn_access_denied(exc):
             try:
                 from flask import has_request_context, session
                 if has_request_context() and session.get("account_id"):
@@ -274,6 +333,7 @@ def _league_cached(season: int, league_id: str) -> League:
                     )
             except Exception:
                 pass
+            raise ESPNAccessDenied("ESPN denied authenticated access to this league.") from None
         raise
 
 

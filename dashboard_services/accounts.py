@@ -26,6 +26,36 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 _TABLES_READY = False
+_ENCRYPTION_FALLBACK_LOGGED = False
+
+
+class ProviderCredentialConfigurationError(RuntimeError):
+    """Raised when the server has no stable secret for provider credentials."""
+
+
+def _provider_credential_secret() -> str:
+    """Return a stable credential-encryption secret without exposing its value.
+
+    ``PROVIDER_CREDENTIAL_ENCRYPTION_KEY`` keeps provider credentials isolated
+    when configured. Existing deployments already require a stable
+    ``FLASK_SECRET_KEY``, so use it as a backwards-compatible fallback rather
+    than failing anonymous private-league onboarding after ESPN validation.
+    """
+    global _ENCRYPTION_FALLBACK_LOGGED
+    secret = os.getenv("PROVIDER_CREDENTIAL_ENCRYPTION_KEY", "").strip()
+    if secret:
+        return secret
+    secret = os.getenv("FLASK_SECRET_KEY", "").strip()
+    if secret:
+        if not _ENCRYPTION_FALLBACK_LOGGED:
+            logger.warning(
+                "PROVIDER_CREDENTIAL_ENCRYPTION_KEY is unset; using the stable FLASK_SECRET_KEY fallback"
+            )
+            _ENCRYPTION_FALLBACK_LOGGED = True
+        return secret
+    raise ProviderCredentialConfigurationError(
+        "No provider credential encryption key is configured."
+    )
 
 
 def init_accounts_tables() -> None:
@@ -155,17 +185,16 @@ def init_accounts_tables() -> None:
 
 def _encrypt_provider_credentials(credentials: dict) -> str:
     """Encrypt provider secrets using a deployment-specific key."""
-    secret = os.getenv("PROVIDER_CREDENTIAL_ENCRYPTION_KEY", "").strip()
-    if not secret:
-        raise RuntimeError("Private provider connections are not configured.")
+    secret = _provider_credential_secret()
     from cryptography.fernet import Fernet
     key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
     return Fernet(key).encrypt(json.dumps(credentials).encode("utf-8")).decode("ascii")
 
 
 def _decrypt_provider_credentials(encrypted: str) -> Optional[dict]:
-    secret = os.getenv("PROVIDER_CREDENTIAL_ENCRYPTION_KEY", "").strip()
-    if not secret:
+    try:
+        secret = _provider_credential_secret()
+    except ProviderCredentialConfigurationError:
         return None
     from cryptography.fernet import Fernet, InvalidToken
     key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
