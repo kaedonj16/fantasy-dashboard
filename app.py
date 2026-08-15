@@ -1538,7 +1538,7 @@ BASE_HTML = """
 
       {ad_top}
 
-      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__FEATURES_JS = {features_js_js};</script>
+      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__FEATURES_JS = {features_js_js}; window.__brctx = {{is_logged_in:{signed_in_js},isPremium:{user_premium},platform:{platform_js},season:{season_js},leagueId:{league_id_js}}};</script>
       <main id="page-root" role="main" tabindex="-1" class="overview-layout" data-cache-ts="{cache_ts}" data-premium="{user_premium}">
         {body}
       </main>
@@ -3795,6 +3795,9 @@ def render_page(
         has_account_js="true" if session.get("account_id") else "false",
         account_email_js=_json.dumps(session.get("account_email") or ""),
         features_js_js=_features_js_js,
+        platform_js=_json.dumps(platform or "sleeper"),
+        season_js=_json.dumps(season),
+        league_id_js=_json.dumps(str(league_id or "")),
     )
     resp = make_response(html)
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'

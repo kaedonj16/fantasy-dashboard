@@ -129,7 +129,9 @@ window.showPaywall = function showPaywall(feature) {
 async function initiatePurchase(type, btn) {
   // Prompt login before hitting the API
   const ctx = window.__brctx || {};
-  if (!ctx.is_logged_in) {
+  // `_isSignedIn` is retained as a fallback for an older cached page shell.
+  // New shells provide __brctx, including the provider needed by checkout.
+  if (!(ctx.is_logged_in || window._isSignedIn)) {
     const navModal = document.getElementById('signinModal');
     if (navModal) {
       navModal.style.display = 'flex';
@@ -162,7 +164,7 @@ async function initiatePurchase(type, btn) {
     const res = await fetch('/api/create-checkout-session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plan: type, league_id: leagueId, return_url: returnUrl }),
+      body: JSON.stringify({ plan: type, league_id: leagueId, return_url: returnUrl, platform: _platform }),
     });
     const data = await res.json();
     if (data.url) {
@@ -370,7 +372,7 @@ async function _initiatePurchaseWithLeague(type, btn, leagueId) {
     const res = await fetch('/api/create-checkout-session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plan: type, league_id: leagueId, return_url: returnUrl }),
+      body: JSON.stringify({ plan: type, league_id: leagueId, return_url: returnUrl, platform }),
     });
     const data = await res.json();
     if (data.url) {

@@ -358,7 +358,6 @@ def create_checkout_session():
     # New subscriptions use the immutable provider account id. Existing rows
     # keyed by a username remain readable through the entitlement resolver.
     user_id = session.get("viewer_user_id") or session.get("viewer_username")
-    platform = str(session.get("viewer_platform") or "sleeper").lower()
     logger.info("[checkout] Request from user: %s", user_id)
     if not user_id:
         return jsonify({"error": "Must be logged in to subscribe"}), 401
@@ -367,12 +366,15 @@ def create_checkout_session():
     plan       = str(payload.get("plan") or "").strip()
     league_id  = str(payload.get("league_id") or "").strip()
     return_url = str(payload.get("return_url") or "").strip()
+    platform   = str(payload.get("platform") or session.get("viewer_platform") or "sleeper").strip().lower()
     
     logger.info("[checkout] Request payload: plan=%s, league_id=%s, return_url=%s", plan, league_id, return_url)
 
     if plan not in _STRIPE_PRICES:
         logger.info("[checkout] Invalid plan: %s, available plans: %s", plan, list(_STRIPE_PRICES.keys()))
         return jsonify({"error": "Invalid plan"}), 400
+    if platform not in ("sleeper", "espn", "yahoo"):
+        return jsonify({"error": "Invalid platform"}), 400
 
     check_league = league_id if league_id else None
     has_premium = has_premium_for_viewer(session.get("viewer_username"), session.get("viewer_user_id"), check_league, platform)
