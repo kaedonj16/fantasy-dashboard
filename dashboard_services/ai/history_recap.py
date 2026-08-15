@@ -23,7 +23,7 @@ def build_history_recap_payload(history_ctx: dict, roster_id: str) -> dict:
 
     if df_weekly is not None and not df_weekly.empty:
         # Filter for the specific roster_id
-        team_df = df_weekly[df_weekly["roster_id"] == roster_id]
+        team_df = df_weekly[df_weekly["roster_id"].astype(str) == str(roster_id)]
 
         if not team_df.empty:
             # Get team name from first row
@@ -187,7 +187,7 @@ def _get_actual_record(team_df, history_ctx: dict, roster_id: str) -> str:
         return "0-0"
 
     # Filter for this team
-    team_weekly = df_weekly[df_weekly["roster_id"] == roster_id]
+    team_weekly = df_weekly[df_weekly["roster_id"].astype(str) == str(roster_id)]
 
     if team_weekly.empty:
         return "0-0"
