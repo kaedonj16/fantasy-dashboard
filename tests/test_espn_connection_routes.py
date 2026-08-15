@@ -151,6 +151,27 @@ def test_signed_out_private_connection_is_staged_before_google(monkeypatch):
     assert response.json["auth_url"].startswith("/auth/google?intent=onboarding")
 
 
+def test_private_pending_reports_missing_encryption_configuration(monkeypatch):
+    app = flask.Flask(__name__); app.secret_key = "test"; app.register_blueprint(link_bp)
+    import dashboard_services.providers.espn_api as espn
+    import dashboard_services.accounts as accounts
+    monkeypatch.setattr(espn, "connect_league", lambda *a, **k: {"name": "Private"})
+    monkeypatch.setattr(
+        accounts,
+        "stage_private_espn_connection",
+        lambda *a: (_ for _ in ()).throw(accounts.ProviderCredentialConfigurationError()),
+    )
+    with app.test_client() as test_client:
+        response = test_client.post("/api/link/espn/private/pending", json={
+            "league_id": "123", "season": 2026,
+            "swid": "{owner}", "espn_s2": "secret",
+        })
+
+    assert response.status_code == 503
+    assert "server encryption key is not configured" in response.json["error"]
+    assert "Reference:" in response.json["error"]
+
+
 def test_staged_private_connection_can_continue_without_account(monkeypatch):
     app = flask.Flask(__name__); app.secret_key = "test"; app.register_blueprint(link_bp)
     import dashboard_services.accounts as accounts

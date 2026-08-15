@@ -92,6 +92,9 @@ def _espn_error(exc: Exception, method: str):
                                   "cookie values from an active ESPN login and try again."), 403
         return with_reference("ESPN returned incomplete league data. Check the league ID and "
                               "season, then try again."), 422
+    if name == "ProviderCredentialConfigurationError":
+        return with_reference("Private league connections are temporarily unavailable because "
+                              "the server encryption key is not configured."), 503
     if "429" in msg or "rate" in msg:
         return with_reference("ESPN is rate limiting requests. Please wait a moment and try again."), 429
     if "timeout" in msg or "500" in msg or "502" in msg or "503" in msg:

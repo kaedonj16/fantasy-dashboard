@@ -32,6 +32,11 @@ services:
         sync: false
       - key: FLASK_SECRET_KEY
         sync: false
+      # Encrypts user-supplied private provider cookies at rest. Render creates
+      # and retains this value; it must remain stable so saved connections can
+      # be decrypted after deploys/restarts.
+      - key: PROVIDER_CREDENTIAL_ENCRYPTION_KEY
+        generateValue: true
       # Gates admin-only data-management endpoints (rookie prospect writes,
       # sleeper linking, pipeline refresh). If unset, those endpoints are disabled.
       - key: ADMIN_KEY
