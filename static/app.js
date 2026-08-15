@@ -8902,9 +8902,11 @@ if (!platformBtns.length) return;
     if (espnSwidInput) espnSwidInput.value = "";
     if (espnS2Input) espnS2Input.value = "";
     if (espnErrorBox) espnErrorBox.style.display = "none";
-    if (espnSubmitBtn) espnSubmitBtn.textContent = homeEspnMethod === "private" && !window._hasAccount
-      ? "Sign in with Google to Connect"
-      : "Connect League";
+    if (espnSubmitBtn) {
+      const googleConnect = homeEspnMethod === "private" && !window._hasAccount;
+      espnSubmitBtn.textContent = googleConnect ? "Sign in with Google to Connect" : "Connect League";
+      espnSubmitBtn.classList.toggle("google-continue-btn", googleConnect);
+    }
   }
   espnMethodBtns.forEach((btn) => btn.addEventListener("click", () => setHomeEspnMethod(btn.dataset.espnMethod)));
   if (window._hasAccount) {

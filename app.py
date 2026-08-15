@@ -1088,9 +1088,9 @@ FORM_BODY = """
 
         {% if not session.get('account_id') %}
         <div class="home-account-entry">
-          <a class="home-google-action" href="/auth/google?intent=login&amp;next=/">Continue with Google</a>
+          <a class="google-continue-btn" href="/auth/google?intent=login&amp;next=/">Continue with Google</a>
           <span>Returning users can access their saved leagues.</span>
-          <a class="home-google-action secondary" href="/auth/google?intent=onboarding&amp;next=/">Create Account</a>
+          <a class="google-continue-btn" href="/auth/google?intent=onboarding&amp;next=/">Create Account with Google</a>
           <span>Create an account and connect your first fantasy league.</span>
         </div>
         {% else %}
@@ -1210,10 +1210,7 @@ FORM_BODY = """
           </div>
 
           <div class="row" id="generateWrap" style="display:none;flex-direction:column;gap:0;align-items:stretch;">
-            <button type="button" id="googleContinueBtn"
-                    style="display:flex;flex-direction:column;align-items:center;gap:3px;width:100%;
-                           background:#fff;color:#1f2937;border:1px solid #dadce0;border-radius:10px;
-                           padding:10px 14px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.12);">
+            <button type="button" id="googleContinueBtn" class="google-continue-btn">
               <span style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:700;">
                 <svg width="16" height="16" viewBox="0 0 48 48" aria-hidden="true" style="flex:0 0 auto;"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
                 Continue with Google
@@ -1224,12 +1221,7 @@ FORM_BODY = """
             <div style="display:flex;align-items:center;gap:10px;margin:14px 0;color:rgba(255,255,255,.5);font-size:10.5px;font-weight:800;letter-spacing:.1em;">
               <span style="flex:1;height:1px;background:rgba(255,255,255,.18);"></span>OR<span style="flex:1;height:1px;background:rgba(255,255,255,.18);"></span>
             </div>
-            <button type="submit"
-                    style="display:flex;flex-direction:column;align-items:center;gap:3px;width:100%;
-                           background:rgba(255,255,255,.06);color:#e5e7eb;border:1px solid rgba(255,255,255,.28);
-                           border-radius:10px;padding:11px 14px;cursor:pointer;transition:background .15s,border-color .15s;"
-                    onmouseover="this.style.background='rgba(255,255,255,.11)';this.style.borderColor='rgba(255,255,255,.42)';"
-                    onmouseout="this.style.background='rgba(255,255,255,.06)';this.style.borderColor='rgba(255,255,255,.28)';">
+            <button type="submit" class="continue-without-account-btn">
               <span style="font-size:13.5px;font-weight:700;color:#fff;">Continue without account</span>
               <span style="font-size:11px;font-weight:500;color:rgba(255,255,255,.62);">Quick view on this device &middot; nothing saved</span>
             </button>
@@ -2372,7 +2364,7 @@ def _link_modal_html() -> str:
           <button type="button" class="link-x" onclick="closeLinkModal()" aria-label="Close">&times;</button></div>
         <div id="linkAccountGate" style="display:none;padding:18px 4px;text-align:center;">
           <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px;">Sign in to link leagues across platforms and keep them together.</p>
-          <a id="linkGoogleBtn" class="link-go" href="/auth/google">Sign in with Google</a>
+          <a id="linkGoogleBtn" class="google-continue-btn" href="/auth/google">Sign in with Google</a>
         </div>
         <div id="linkBody">
           <div class="link-tabs" role="tablist">
@@ -2538,6 +2530,8 @@ def _link_modal_html() -> str:
         document.getElementById('espnPrivateFields').style.display=espnMethod==='private'?'block':'none';
         document.getElementById('espnMethodHelp').textContent=espnMethod==='private'?'Connect a private ESPN league using its League ID and ESPN session credentials.':'Connect a publicly accessible ESPN league using its League ID.';
         document.getElementById('linkEspnSwid').value=''; document.getElementById('linkEspnS2').value=''; linkSetMsg('','');
+        var connectBtn=document.getElementById('linkEspnConnect'),googleConnect=espnMethod==='private'&&!window._hasAccount;
+        connectBtn.textContent=googleConnect?'Sign in with Google to Connect':'Connect League';connectBtn.classList.toggle('google-continue-btn',googleConnect);
       };
       window.linkEspnConnect=function(){
         var id=(document.getElementById('linkEspnId').value||'').trim();
@@ -2559,8 +2553,24 @@ def _link_modal_html() -> str:
           fetch('/api/espn-validate-league?league_id='+encodeURIComponent(id)+(yr?'&season='+encodeURIComponent(yr):''))
             .then(function(r){return r.json();}).then(function(d){
               if(!d.ok){linkSetMsg(d.error||'Could not load that league.','err');return;}
-              return fetch('/api/link/pending',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({platform:'espn',league_id:id,season:d.league.season,name:d.league.name})});
-            }).then(function(r){return r&&r.json();}).then(function(d){if(d&&d.ok)location.href=d.auth_url||'/auth/google';})
+              linkSetMsg('','');
+              var pane=document.querySelector('.link-pane[data-lp="espn"]');
+              var old=document.getElementById('linkEspnPublicChoice');if(old)old.remove();
+              var choice=document.createElement('div');choice.id='linkEspnPublicChoice';choice.className='link-public-choice';
+              choice.innerHTML='<div class="link-item"><strong>'+esc(d.league.name||'ESPN League')+'</strong></div>'+
+                '<button type="button" class="google-continue-btn" id="linkEspnGoogle">Continue with Google</button>'+
+                '<div class="link-choice-or">OR</div>'+
+                '<button type="button" class="continue-without-account-btn" id="linkEspnGuest">Continue without account</button>';
+              pane.appendChild(choice);
+              document.getElementById('linkEspnGoogle').addEventListener('click',function(){
+                this.disabled=true;this.textContent='Continuing…';
+                fetch('/api/link/pending',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({platform:'espn',league_id:id,season:d.league.season,name:d.league.name})})
+                  .then(function(r){return r.json();}).then(function(saved){if(saved.ok)location.href=saved.auth_url||'/auth/google';else linkSetMsg(saved.error||'Could not save league.','err');});
+              });
+              document.getElementById('linkEspnGuest').addEventListener('click',function(){
+                location.href='/espn/'+encodeURIComponent(d.league.season)+'/'+encodeURIComponent(id)+'/dashboard';
+              });
+            })
             .catch(function(){linkSetMsg('Network error.','err');});return;
         }
         if(espnMethod==='private'&&(!swid||!s2)){ linkSetMsg('SWID and ESPN_S2 are required for a private league.','err'); return; }

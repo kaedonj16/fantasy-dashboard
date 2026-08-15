@@ -65,7 +65,7 @@ def test_link_modal_connects_unsigned_public_espn_through_google():
     modal = source[source.index("window.linkEspnConnect=function()"):source.index("window.linkYahooPreview=function()")]
     assert "if(!window._hasAccount)" in modal
     assert "'/api/link/pending'" in modal
-    assert "location.href=d.auth_url||'/auth/google'" in modal
+    assert "location.href=saved.auth_url||'/auth/google'" in modal
 
 
 def test_home_private_flow_tries_saved_google_account_connection_first():
@@ -74,3 +74,21 @@ def test_home_private_flow_tries_saved_google_account_connection_first():
     assert 'fetch("/api/link/espn/private/saved"' in flow
     assert 'espnPrivateFields.style.display = "block"' in flow
     assert flow.index('fetch("/api/link/espn/private/saved"') < flow.index('reconnecting ? "/api/link/espn/reconnect"')
+
+
+def test_public_espn_offers_google_and_guest_paths():
+    source = Path("app.py").read_text()
+    modal = source[source.index("window.linkEspnConnect=function()"):source.index("window.linkYahooPreview=function()")]
+    assert 'id="linkEspnGoogle">Continue with Google' in modal
+    assert 'id="linkEspnGuest">Continue without account' in modal
+    assert "'/api/link/pending'" in modal
+    assert "location.href='/espn/'" in modal
+
+
+def test_google_actions_share_google_continue_style():
+    markup = Path("app.py").read_text()
+    css = Path("static/dashboard.css").read_text()
+    assert 'id="googleContinueBtn" class="google-continue-btn"' in markup
+    assert 'class="google-continue-btn" href="/auth/google?intent=login' in markup
+    assert 'class="google-continue-btn" href="/auth/google?intent=onboarding' in markup
+    assert ".google-continue-btn{" in css
