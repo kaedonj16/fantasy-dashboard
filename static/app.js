@@ -8867,10 +8867,10 @@ if (!platformBtns.length) return;
       signedInLeagueList.innerHTML = leagues.map((league) => {
         const url = `/${encodeURIComponent(league.platform)}/${encodeURIComponent(league.season)}/${encodeURIComponent(league.league_id)}/dashboard`;
         const attention = league.needs_reconnect ? '<span class="connection-attention">Connection needs attention</span>' : "";
-        const action = league.needs_reconnect
-          ? `<button type="button" class="reconnect-home-espn" data-league="${safeHomeText(league.league_id)}">Reconnect ESPN</button>`
-          : `<a href="${url}">Open</a>`;
-        return `<div class="signed-home-league"><span>${safeHomeText(league.name || "Fantasy League")}${attention}</span>${action}</div>`;
+        if (league.needs_reconnect) {
+          return `<div class="signed-home-league signed-home-league-attention"><span class="signed-home-league-name">${safeHomeText(league.name || "Fantasy League")}${attention}</span><button type="button" class="reconnect-home-espn" data-league="${safeHomeText(league.league_id)}">Reconnect</button></div>`;
+        }
+        return `<a class="signed-home-league" href="${url}"><span class="signed-home-league-name">${safeHomeText(league.name || "Fantasy League")}</span><span class="signed-home-league-open">Open <span aria-hidden="true">→</span></span></a>`;
       }).join("");
       signedInLeagueList.querySelectorAll(".reconnect-home-espn").forEach((button) => {
         button.addEventListener("click", () => {
@@ -8885,8 +8885,14 @@ if (!platformBtns.length) return;
         });
       });
     }).catch(() => { signedInLeagueList.textContent = "Could not load saved leagues. Try again shortly."; });
-    document.getElementById("signedInAddLeague")?.addEventListener("click", () => {
-      document.querySelector(".platform-selector")?.scrollIntoView({ behavior: "smooth" });
+    document.getElementById("signedInAddLeague")?.addEventListener("click", (event) => {
+      const flow = document.getElementById("connectLeagueFlow");
+      if (!flow) return;
+      const willOpen = flow.hidden;
+      flow.hidden = !willOpen;
+      event.currentTarget.setAttribute("aria-expanded", String(willOpen));
+      event.currentTarget.textContent = willOpen ? "Cancel" : "Connect another league";
+      if (willOpen) flow.scrollIntoView({ behavior: "smooth", block: "nearest" });
     });
   }
 
