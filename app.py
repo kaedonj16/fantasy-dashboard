@@ -1131,21 +1131,33 @@ FORM_BODY = """
 
         <!-- ESPN Flow -->
         <div id="espnFlow" style="display:none;">
+          <div class="espn-home-methods" role="radiogroup" aria-label="ESPN league type">
+            <button type="button" class="espn-home-method active" data-espn-method="public" aria-pressed="true">Public League</button>
+            <button type="button" class="espn-home-method" data-espn-method="private" aria-pressed="false">Private League</button>
+          </div>
+          <p class="hint espn-home-description" id="espnHomeDescription">Connect a publicly accessible ESPN league using its League ID.</p>
           <div class="row">
-            <label for="espnLeagueIdInput">ESPN League ID</label>
+            <label for="espnLeagueIdInput">League ID</label>
             <input type="text" id="espnLeagueIdInput" placeholder="e.g. 336414" autocomplete="off">
           </div>
-          <div class="row">
-            <label for="espnTeamName">Your Team Name <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
-            <input type="text" id="espnTeamName" placeholder="e.g. Dynasty Monsters">
+          <div id="espnHomePrivateFields" style="display:none;">
+            <div class="row">
+              <label for="espnSwidInput">SWID</label>
+              <input type="password" id="espnSwidInput" autocomplete="off">
+            </div>
+            <div class="row">
+              <label for="espnS2Input">ESPN_S2</label>
+              <input type="password" id="espnS2Input" autocomplete="off">
+            </div>
+            <details class="espn-home-help"><summary>Where do I find these?</summary>
+              <ol><li>Log into ESPN and open your private fantasy league.</li><li>Open browser developer tools.</li><li>Go to Application → Cookies.</li><li>Locate SWID and espn_s2 and copy both values here.</li></ol>
+              <strong>Treat these session credentials like passwords.</strong>
+            </details>
           </div>
           <div class="row">
-            <button type="button" id="espnSubmitBtn">Find My League</button>
+            <button type="button" id="espnSubmitBtn">Connect League</button>
           </div>
           <div id="espnError" class="error-message" style="display:none;"></div>
-          <p class="hint" style="margin-top:6px;" id="espnHint">
-            Private leagues also need <code>ESPN_S2</code> and <code>ESPN_SWID</code> cookies set on the server.
-          </p>
         </div>
 
         <!-- Yahoo Flow -->
@@ -2360,11 +2372,26 @@ def _link_modal_html() -> str:
             <div id="linkSleeperList" class="link-list"></div>
           </div>
           <div class="link-pane" data-lp="espn" style="display:none;">
-            <label class="link-lb">ESPN league ID</label>
-            <div class="link-row"><input id="linkEspnId" class="link-inp" inputmode="numeric" placeholder="e.g. 123456">
-              <input id="linkEspnSeason" class="link-inp link-sm" inputmode="numeric" placeholder="season">
-              <button type="button" class="link-btn" onclick="linkEspnPreview()">Next</button></div>
-            <div id="linkEspnResult" class="link-list"></div>
+            <div class="espn-methods" role="radiogroup" aria-label="ESPN league type">
+              <button type="button" class="espn-method active" data-method="public" onclick="setEspnMethod('public')" aria-pressed="true">Public League</button>
+              <button type="button" class="espn-method" data-method="private" onclick="setEspnMethod('private')" aria-pressed="false">Private League</button>
+            </div>
+            <p id="espnMethodHelp" class="link-help">Connect a publicly accessible ESPN league using its League ID.</p>
+            <label class="link-lb" for="linkEspnId">League ID</label>
+            <input id="linkEspnId" class="link-inp link-full" inputmode="numeric" placeholder="e.g. 123456" autocomplete="off">
+            <label class="link-lb link-field" for="linkEspnSeason">Season</label>
+            <input id="linkEspnSeason" class="link-inp link-full" inputmode="numeric" placeholder="current season" autocomplete="off">
+            <div id="espnPrivateFields" style="display:none;">
+              <label class="link-lb link-field" for="linkEspnSwid">SWID</label>
+              <input id="linkEspnSwid" class="link-inp link-full" type="password" autocomplete="off">
+              <label class="link-lb link-field" for="linkEspnS2">ESPN_S2</label>
+              <input id="linkEspnS2" class="link-inp link-full" type="password" autocomplete="off">
+              <details class="espn-credential-help"><summary>Where do I find these?</summary>
+                <ol><li>Log into ESPN and open the private fantasy league.</li><li>Open browser developer tools.</li><li>Go to Application → Cookies.</li><li>Locate the cookies named SWID and espn_s2.</li><li>Copy both values into this form.</li></ol>
+                <strong>Treat these values like passwords: they authenticate access to your ESPN account.</strong>
+              </details>
+            </div>
+            <button type="button" id="linkEspnConnect" class="link-btn link-connect" onclick="linkEspnConnect()">Connect League</button>
           </div>
           <!--YAHOO_PANE_START--><div class="link-pane" data-lp="yahoo" style="display:none;">
             <label class="link-lb">Yahoo league ID</label>
@@ -2396,6 +2423,13 @@ def _link_modal_html() -> str:
       .link-inp{flex:1;min-width:0;border:1px solid var(--border);background:var(--bg-alt);color:var(--text);
         border-radius:9px;padding:9px 11px;font-size:14px;}
       .link-inp.link-sm{max-width:88px;flex:0 0 auto;}
+      .link-full{display:block;width:100%;box-sizing:border-box}.link-field{margin-top:12px}
+      .espn-methods{display:flex;gap:4px;padding:4px;background:var(--accent-soft);border:1px solid var(--border);border-radius:11px}
+      .espn-method{flex:1;border:0;background:none;color:var(--text-muted);font-weight:700;padding:8px;border-radius:8px;cursor:pointer}
+      .espn-method.active{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+      .link-help{font-size:12px;color:var(--text-muted);margin:8px 0 14px}.link-connect{width:100%;margin-top:14px}
+      .espn-credential-help{font-size:12px;color:var(--text-muted);margin-top:12px}.espn-credential-help summary{cursor:pointer;font-weight:700;color:var(--accent)}
+      .espn-credential-help ol{padding-left:20px;line-height:1.5}
       .link-btn{border:0;background:var(--accent);color:#fff;font-weight:700;font-size:13px;padding:9px 14px;
         border-radius:9px;cursor:pointer;flex:0 0 auto;}
       .link-list{margin-top:10px;display:flex;flex-direction:column;gap:6px;}
@@ -2435,7 +2469,6 @@ def _link_modal_html() -> str:
         if(platform==='espn'){
           var idEl=document.getElementById('linkEspnId'); if(idEl) idEl.value=leagueId||'';
           var seEl=document.getElementById('linkEspnSeason'); if(seEl && season) seEl.value=season;
-          if(window.linkEspnPreview) window.linkEspnPreview();
         }
       };
       function linkSetMsg(t,kind){ var el=document.getElementById('linkMsg'); if(!el)return; el.textContent=t||''; el.className='link-msg'+(kind?' '+kind:''); }
@@ -2483,18 +2516,27 @@ def _link_modal_html() -> str:
           linkAdd(platform, league_id, season, sel?sel.value:null, name, this);
         });
       }
-      window.linkEspnPreview=function(){
+      var espnMethod='public';
+      window.setEspnMethod=function(method){
+        espnMethod=method==='private'?'private':'public';
+        document.querySelectorAll('.espn-method').forEach(function(b){var on=b.dataset.method===espnMethod;b.classList.toggle('active',on);b.setAttribute('aria-pressed',on?'true':'false');});
+        document.getElementById('espnPrivateFields').style.display=espnMethod==='private'?'block':'none';
+        document.getElementById('espnMethodHelp').textContent=espnMethod==='private'?'Connect a private ESPN league using its League ID and ESPN session credentials.':'Connect a publicly accessible ESPN league using its League ID.';
+        document.getElementById('linkEspnSwid').value=''; document.getElementById('linkEspnS2').value=''; linkSetMsg('','');
+      };
+      window.linkEspnConnect=function(){
         var id=(document.getElementById('linkEspnId').value||'').trim();
         var yr=(document.getElementById('linkEspnSeason').value||'').trim();
-        var box=document.getElementById('linkEspnResult');
-        if(!id){ linkSetMsg('Enter the ESPN league ID.','err'); return; }
-        linkSetMsg('Loading…',''); box.innerHTML='';
-        fetch('/api/link/espn/preview?league_id='+encodeURIComponent(id)+(yr?'&season='+encodeURIComponent(yr):'')).then(function(r){return r.json();}).then(function(d){
-          if(!d.ok){ linkSetMsg(d.error||'Could not load that league.','err'); return; }
-          linkSetMsg('','');
-          var myId=(d.teams||[]).filter(function(t){return t.is_mine;}).map(function(t){return t.team_id;})[0];
-          renderTeamPick(box,'espn',d.league_id,d.season,d.name,d.teams||[],myId);
-        }).catch(function(){ linkSetMsg('Network error.','err'); });
+        var swid=(document.getElementById('linkEspnSwid').value||'').trim(), s2=(document.getElementById('linkEspnS2').value||'').trim();
+        if(!/^\\d+$/.test(id)){ linkSetMsg('Enter a valid numeric League ID.','err'); return; }
+        if(espnMethod==='private'&&(!swid||!s2)){ linkSetMsg('SWID and ESPN_S2 are required for a private league.','err'); return; }
+        var btn=document.getElementById('linkEspnConnect'), payload={league_id:id}; if(yr)payload.season=Number(yr);
+        if(espnMethod==='private'){payload.swid=swid;payload.espn_s2=s2;} btn.disabled=true;btn.textContent='Connecting…';linkSetMsg('Validating with ESPN…','');
+        fetch('/api/link/espn/'+espnMethod,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(r){return r.json();}).then(function(d){
+          document.getElementById('linkEspnSwid').value='';document.getElementById('linkEspnS2').value='';
+          if(!d.ok){linkSetMsg(d.error||'Could not connect that league.','err');return;}
+          linkSetMsg('League connected. Opening dashboard…','ok');location.href=d.redirect_url;
+        }).catch(function(){linkSetMsg('Network error.','err');}).finally(function(){btn.disabled=false;btn.textContent='Connect League';});
       };
       window.linkYahooPreview=function(){
         var id=(document.getElementById('linkYahooId').value||'').trim();

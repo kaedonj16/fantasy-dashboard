@@ -8828,7 +8828,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const formPlatform = document.getElementById("formPlatform");
 
   const espnLeagueIdInput = document.getElementById("espnLeagueIdInput");
-  const espnTeamName = document.getElementById("espnTeamName");
+  const espnMethodBtns = document.querySelectorAll(".espn-home-method");
+  const espnPrivateFields = document.getElementById("espnHomePrivateFields");
+  const espnDescription = document.getElementById("espnHomeDescription");
+  const espnSwidInput = document.getElementById("espnSwidInput");
+  const espnS2Input = document.getElementById("espnS2Input");
   const espnSubmitBtn = document.getElementById("espnSubmitBtn");
   const espnErrorBox = document.getElementById("espnError");
 
@@ -8840,6 +8844,24 @@ document.addEventListener("DOMContentLoaded", () => {
 if (!platformBtns.length) return;
 
   let currentPlatform = "sleeper";
+  let homeEspnMethod = "public";
+
+  function setHomeEspnMethod(method) {
+    homeEspnMethod = method === "private" ? "private" : "public";
+    espnMethodBtns.forEach((btn) => {
+      const active = btn.dataset.espnMethod === homeEspnMethod;
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+    if (espnPrivateFields) espnPrivateFields.style.display = homeEspnMethod === "private" ? "block" : "none";
+    if (espnDescription) espnDescription.textContent = homeEspnMethod === "private"
+      ? "Connect a private ESPN league using its League ID and ESPN session credentials."
+      : "Connect a publicly accessible ESPN league using its League ID.";
+    if (espnSwidInput) espnSwidInput.value = "";
+    if (espnS2Input) espnS2Input.value = "";
+    if (espnErrorBox) espnErrorBox.style.display = "none";
+  }
+  espnMethodBtns.forEach((btn) => btn.addEventListener("click", () => setHomeEspnMethod(btn.dataset.espnMethod)));
 
   // No sign-in until a league is actually selected. Gate both continue buttons
   // ("Continue with Google" and "Continue without account") on the league <select>
@@ -8876,6 +8898,10 @@ if (!platformBtns.length) return;
     if (espnFlow)    espnFlow.style.display    = platform === "espn"    ? "block" : "none";
     if (yahooFlow)   yahooFlow.style.display   = platform === "yahoo"   ? "block" : "none";
     if (sleeperHint) sleeperHint.style.display = platform === "sleeper" ? ""      : "none";
+    if (platform !== "espn") {
+      if (espnSwidInput) espnSwidInput.value = "";
+      if (espnS2Input) espnS2Input.value = "";
+    }
   }
 
   // Platform switching
@@ -9050,10 +9076,33 @@ if (!platformBtns.length) return;
       }
 
       if (espnErrorBox) espnErrorBox.style.display = "none";
+      const swid = espnSwidInput?.value.trim() || "";
+      const espnS2 = espnS2Input?.value.trim() || "";
+      if (homeEspnMethod === "private" && (!swid || !espnS2)) {
+        espnErrorBox.textContent = "SWID and ESPN_S2 are required for a private league.";
+        espnErrorBox.style.display = "block";
+        return;
+      }
       espnSubmitBtn.disabled = true;
       espnSubmitBtn.textContent = "Validating...";
 
       try {
+        if (homeEspnMethod === "private") {
+          if (!window._hasAccount) {
+            throw new Error("Sign in with Google before connecting a private ESPN league, then return here to enter your credentials.");
+          }
+          const season = Number(document.querySelector('input[name="season"]')?.value || new Date().getFullYear());
+          const privateRes = await fetch("/api/link/espn/private", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ league_id: leagueId, season, swid, espn_s2: espnS2 }),
+          });
+          const privateData = await privateRes.json();
+          espnSwidInput.value = "";
+          espnS2Input.value = "";
+          if (!privateRes.ok || !privateData.ok) throw new Error(privateData.error || "Unable to connect private ESPN league.");
+          window.location.href = privateData.redirect_url;
+          return;
+        }
         const res = await fetch(`/api/espn-validate-league?league_id=${encodeURIComponent(leagueId)}`);
         const data = await res.json();
 
@@ -9067,21 +9116,8 @@ if (!platformBtns.length) return;
         }
         if (formPlatform) formPlatform.value = "espn";
 
-        const teamName = espnTeamName?.value.trim() || "";
         const formUsername = document.getElementById("formUsername");
-        if (formUsername) formUsername.value = teamName;
-
-        // Save for the "Continue as" returning-user CTA
-        const seasonVal = document.querySelector('input[name="season"]')?.value || new Date().getFullYear();
-        if (teamName) {
-          localStorage.setItem("saved_viewer", JSON.stringify({
-            username: teamName,
-            league_id: leagueId,
-            platform: "espn",
-            season: seasonVal,
-            ts: Date.now(),
-          }));
-        }
+        if (formUsername) formUsername.value = "";
 
         // Reveal the choice — Generate Dashboard (quick session) or Continue
         // with Google (save to an account) — instead of jumping straight in, so
@@ -9090,14 +9126,18 @@ if (!platformBtns.length) return;
         if (generateWrap) generateWrap.style.display = "block";
         syncHomeContinueState();
         espnSubmitBtn.disabled = false;
-        espnSubmitBtn.textContent = "Find My League";
+        espnSubmitBtn.textContent = "Connect League";
       } catch (err) {
+        if (homeEspnMethod === "private") {
+          if (espnSwidInput) espnSwidInput.value = "";
+          if (espnS2Input) espnS2Input.value = "";
+        }
         if (espnErrorBox) {
           espnErrorBox.textContent = err.message || "Unable to load ESPN league.";
           espnErrorBox.style.display = "block";
         }
         espnSubmitBtn.disabled = false;
-        espnSubmitBtn.textContent = "Find My League";
+        espnSubmitBtn.textContent = "Connect League";
       }
     });
   }

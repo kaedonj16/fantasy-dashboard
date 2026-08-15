@@ -2289,7 +2289,7 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
   border-bottom: none;
 }
 
-.home-card input[type="text"], .home-card input[type="number"] , .home-card input[type="email"], .home-card select {
+.home-card input[type="text"], .home-card input[type="password"], .home-card input[type="number"] , .home-card input[type="email"], .home-card select {
   width: 100%;
 }
 
@@ -2375,7 +2375,7 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
   width: 100px;
 }
 
-.search, select, input[type="text"], input[type="number"], input[type="email"] {
+.search, select, input[type="text"], input[type="password"], input[type="number"], input[type="email"] {
   padding: 8px 10px;
   border: 1px solid var(--grid);
   border-radius: 10px;
@@ -2408,7 +2408,7 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
   border-bottom-right-radius: 0;
 }
 
-.search:focus, select:focus, input[type="text"]:focus, input[type="number"]:focus, input[type="email"]:focus {
+.search:focus, select:focus, input[type="text"]:focus, input[type="password"]:focus, input[type="number"]:focus, input[type="email"]:focus {
   border-color: #8eb2e3;
   box-shadow: 0 0 0 4px rgba(56, 132, 255, 0.1);
 }
@@ -8698,6 +8698,35 @@ select:focus {
   color: #60a5fa;
 }
 
+.espn-home-methods {
+  display: flex;
+  gap: 5px;
+  padding: 4px;
+  margin: 4px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--accent-soft);
+}
+.espn-home-method {
+  flex: 1;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 700;
+  cursor: pointer;
+}
+.espn-home-method.active {
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .14);
+}
+.espn-home-description { margin: 0 0 14px; }
+.espn-home-help { margin: -2px 0 14px; color: var(--text-muted); font-size: 12px; }
+.espn-home-help summary { color: var(--accent); cursor: pointer; font-weight: 700; }
+.espn-home-help ol { padding-left: 20px; line-height: 1.5; }
+
 .home-card .platform-btn img {
   display: none;
 }
@@ -11998,6 +12027,7 @@ img, svg, canvas {
   .search,
   select,
   input[type="text"],
+  input[type="password"],
   input[type="number"],
   input[type="email"] {
     padding: 6px 8px;
@@ -12393,6 +12423,7 @@ img, svg, canvas {
   .search,
   select,
   input[type="text"],
+  input[type="password"],
   input[type="number"],
   input[type="email"] {
     padding: 4px 6px;
@@ -12560,6 +12591,7 @@ img, svg, canvas {
   .search,
   select,
   input[type="text"],
+  input[type="password"],
   input[type="number"],
   input[type="email"] {
     padding: 4px 6px;
