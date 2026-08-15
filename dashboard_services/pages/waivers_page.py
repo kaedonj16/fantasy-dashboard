@@ -513,6 +513,13 @@ function wvStatsRow(p) {{
   const g1 = [];
   if (p.proj_pts > 0)   g1.push(chip('Proj PPG', p.proj_pts));
   if (p.recent_ppg > 0) g1.push(chip('L4 PPG', p.recent_ppg));
+  if (p.market_signal) {{
+    const d = p.market_signal.delta;
+    const cls = d > 0 ? 'signal-positive' : (d < 0 ? 'signal-negative' : 'muted');
+    g1.push(chip('Market vs Projection', (d > 0 ? '+' : '') + d.toFixed(1), cls));
+    g1.push('<span class="chip chip--sm chip--neutral" title="Market Confidence ' +
+      Math.round(p.market_signal.confidence * 100) + '%">' + p.market_signal.label + '</span>');
+  }}
 
   const g2 = [wvConsistencyChips(p)];
   if (p.usage_delta != null && Math.abs(p.usage_delta) >= 1) {{
@@ -606,6 +613,9 @@ function wvRenderWaivers() {{
     const confChip = conf.label
       ? `<span class="wv-advice-metric"><span class="wv-advice-label">Data quality</span><span class="chip chip--sm chip--neutral" title="How complete the projection, usage, schedule, age, team, and value data is">${{conf.label}}</span></span>`
       : '';
+    const marketChip = p.market_opportunity
+      ? `<span class="wv-advice-metric"><span class="wv-advice-label">Market Opportunity</span><span class="chip chip--sm chip--neutral" title="Market Projection ${{p.market_projection}}, difference ${{p.market_opportunity.delta > 0 ? '+' : ''}}${{p.market_opportunity.delta}}">${{p.market_opportunity.label}}</span></span>`
+      : '';
     let dropHint = '';
     if (p.drop && p.drop.name) {{
       dropHint = `<div class="wv-drop-hint" title="Suggested drop to make room - your weakest spare player below this target's value">`
@@ -622,6 +632,7 @@ function wvRenderWaivers() {{
       <div class="wv-right">
         <span class="wv-advice-metric"><span class="wv-advice-label">Why add</span><span class="chip chip--sm ${{p.signal_class}}">${{p.signal}}</span></span>
         ${{confChip}}
+        ${{marketChip}}
         ${{faabChip}}
         <span class="wv-advice-metric"><span class="wv-advice-label">Value</span><span class="wv-value">${{Math.round(p.value)}}</span></span>
       </div>

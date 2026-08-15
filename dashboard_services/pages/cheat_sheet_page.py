@@ -224,6 +224,7 @@ _CHEAT_HTML = r"""
   .cs-vorwrap { display: inline-flex; align-items: center; gap: 8px; justify-content: flex-end; }
   .cs-vorbar { width: 60px; height: 6px; border-radius: 12px; background: var(--cs-bar-track); overflow: hidden; flex-shrink: 0; }
   .cs-vorbar > i { display: block; height: 100%; background: var(--cs-bar); border-radius: 12px; }
+  @media (max-width: 720px) { .cs-market-col { display: none; } }
 
   .cs-pos-badge { font-family: var(--cs-mono); font-weight: 800; font-size: 11px; padding: 3px 7px; border-radius: 6px; flex-shrink: 0; }
   .cs-pos-QB { color: var(--cs-qb); background: var(--cs-qb-bg); } .cs-pos-RB { color: var(--cs-rb); background: var(--cs-rb-bg); }
