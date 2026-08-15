@@ -124,11 +124,33 @@ def test_unrelated_attribute_error_is_not_treated_as_access_denied(monkeypatch):
     assert caught.value is error
 
 
+def test_authenticated_access_denial_does_not_rethrow_cookie_bearing_message(monkeypatch):
+    calls = []
+
+    def fake_league(**kwargs):
+        calls.append(kwargs)
+        if "espn_s2" not in kwargs:
+            raise ESPNAccessDenied("anonymous")
+        raise ESPNAccessDenied("cannot access with espn_s2=super-secret and swid={owner}")
+
+    monkeypatch.setattr(espn_api, "League", fake_league)
+    monkeypatch.setattr(espn_api, "_espn_creds", lambda: ("super-secret", "{owner}"))
+
+    with pytest.raises(espn_api.ESPNAccessDenied) as caught:
+        espn_api._league_cached(2026, "456")
+
+    assert "super-secret" not in str(caught.value)
+    assert "{owner}" not in str(caught.value)
+    assert len(calls) == 2
+
+
 def test_private_espn_league_preserves_access_denied_without_cookies(monkeypatch):
     monkeypatch.setattr(espn_api, "League", lambda **kwargs: (_ for _ in ()).throw(ESPNAccessDenied()))
     monkeypatch.setattr(espn_api, "_espn_creds", lambda: (None, None))
 
-    with pytest.raises(ESPNAccessDenied):
+    # The provider deliberately replaces espn-api's exception because recent
+    # releases include cookie values in its message.
+    with pytest.raises(espn_api.ESPNAccessDenied, match="anonymous access"):
         espn_api._league_cached(2026, "789")
 
 
