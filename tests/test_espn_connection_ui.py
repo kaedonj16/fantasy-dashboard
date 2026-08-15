@@ -55,8 +55,8 @@ def test_private_espn_flow_collects_credentials_before_google_sign_in():
     flow = script[script.index('espnSubmitBtn.addEventListener("click"'):script.index("if (yahooConnectBtn)")]
     read_swid = flow.index("const swid =")
     stage = flow.index('fetch("/api/link/espn/private/pending"')
-    redirect = flow.index("window.location.href = pendingData.auth_url")
-    assert read_swid < stage < redirect
+    choice = flow.index("espnPrivateChoice.dataset.authUrl = pendingData.auth_url")
+    assert read_swid < stage < choice
     assert '"Enter SWID and ESPN_S2 before continuing with Google."' in flow
 
 
@@ -79,8 +79,8 @@ def test_home_private_flow_tries_saved_google_account_connection_first():
 def test_public_espn_offers_google_and_guest_paths():
     source = Path("app.py").read_text()
     modal = source[source.index("window.linkEspnConnect=function()"):source.index("window.linkYahooPreview=function()")]
-    assert 'id="linkEspnGoogle">Continue with Google' in modal
-    assert 'id="linkEspnGuest">Continue without account' in modal
+    assert 'id="linkEspnGoogle"><strong>Continue with Google' in modal
+    assert 'id="linkEspnGuest"><strong>Continue without account' in modal
     assert "'/api/link/pending'" in modal
     assert "location.href='/espn/'" in modal
 
@@ -92,3 +92,12 @@ def test_google_actions_share_google_continue_style():
     assert 'class="google-continue-btn" href="/auth/google?intent=login' in markup
     assert 'class="google-continue-btn" href="/auth/google?intent=onboarding' in markup
     assert ".google-continue-btn{" in css
+
+
+def test_both_espn_methods_use_full_account_choice_copy():
+    markup = Path("app.py").read_text()
+    assert markup.count("Save your leagues &amp; settings, synced across devices") >= 3
+    assert markup.count("Free &middot; no password") >= 3
+    assert markup.count("Continue without account") >= 3
+    assert markup.count("Quick view on this device &middot; nothing saved") >= 3
+    assert "/api/link/espn/private/guest" in markup

@@ -242,6 +242,13 @@ def _league_cached(season: int, league_id: str) -> League:
             # own saved league; never fall back to another account/server cookie.
             espn_s2 = stored.get("espn_s2")
             swid = stored.get("swid")
+        elif has_request_context() and session.get("pending_provider_connection_token"):
+            from dashboard_services.accounts import peek_private_espn_connection
+            staged = peek_private_espn_connection(
+                session["pending_provider_connection_token"], league_id, season,
+            ) or {}
+            espn_s2 = staged.get("espn_s2")
+            swid = staged.get("swid")
     except Exception:
         # Database/configuration trouble must not expose credentials and the
         # original ESPN access-denied result remains the useful outcome.

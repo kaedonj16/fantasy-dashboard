@@ -1173,6 +1173,18 @@ FORM_BODY = """
             <button type="button" id="espnSubmitBtn">Connect League</button>
           </div>
           <div id="espnError" class="error-message" style="display:none;"></div>
+          <div id="espnPrivateChoice" class="provider-account-choice" style="display:none;">
+            <button type="button" id="espnPrivateGoogle" class="google-continue-btn">
+              <strong>Continue with Google</strong>
+              <span>Save your leagues &amp; settings, synced across devices</span>
+              <small>Free &middot; no password</small>
+            </button>
+            <div class="provider-choice-or">OR</div>
+            <button type="button" id="espnPrivateGuest" class="continue-without-account-btn">
+              <strong>Continue without account</strong>
+              <span>Quick view on this device &middot; nothing saved</span>
+            </button>
+          </div>
         </div>
 
         <!-- Yahoo Flow -->
@@ -2546,7 +2558,16 @@ def _link_modal_html() -> str:
               .then(function(r){return r.json().then(function(d){return {ok:r.ok,d:d};});}).then(function(result){
                 document.getElementById('linkEspnSwid').value='';document.getElementById('linkEspnS2').value='';
                 if(!result.ok||!result.d.ok){linkSetMsg(result.d.error||'Could not validate ESPN credentials.','err');return;}
-                location.href=result.d.auth_url;
+                var pane=document.querySelector('.link-pane[data-lp="espn"]'),old=document.getElementById('linkEspnPrivateChoice');if(old)old.remove();
+                var choice=document.createElement('div');choice.id='linkEspnPrivateChoice';choice.className='link-public-choice';
+                choice.innerHTML='<button type="button" class="google-continue-btn" id="linkEspnPrivateGoogle"><strong>Continue with Google</strong><span>Save your leagues &amp; settings, synced across devices</span><small>Free &middot; no password</small></button>'+
+                  '<div class="link-choice-or">OR</div><button type="button" class="continue-without-account-btn" id="linkEspnPrivateGuest"><strong>Continue without account</strong><span>Quick view on this device &middot; nothing saved</span></button>';
+                pane.appendChild(choice);
+                document.getElementById('linkEspnPrivateGoogle').addEventListener('click',function(){location.href=result.d.auth_url;});
+                document.getElementById('linkEspnPrivateGuest').addEventListener('click',function(){
+                  fetch('/api/link/espn/private/guest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({league_id:result.d.league_id,season:result.d.season})})
+                    .then(function(r){return r.json();}).then(function(d){if(d.ok)location.href=d.redirect_url;else linkSetMsg(d.error||'Could not open private league.','err');});
+                });
               }).catch(function(){linkSetMsg('Network error.','err');});return;
           }
           linkSetMsg('Validating league before Google sign-in…','');
@@ -2558,9 +2579,9 @@ def _link_modal_html() -> str:
               var old=document.getElementById('linkEspnPublicChoice');if(old)old.remove();
               var choice=document.createElement('div');choice.id='linkEspnPublicChoice';choice.className='link-public-choice';
               choice.innerHTML='<div class="link-item"><strong>'+esc(d.league.name||'ESPN League')+'</strong></div>'+
-                '<button type="button" class="google-continue-btn" id="linkEspnGoogle">Continue with Google</button>'+
+                '<button type="button" class="google-continue-btn" id="linkEspnGoogle"><strong>Continue with Google</strong><span>Save your leagues &amp; settings, synced across devices</span><small>Free &middot; no password</small></button>'+
                 '<div class="link-choice-or">OR</div>'+
-                '<button type="button" class="continue-without-account-btn" id="linkEspnGuest">Continue without account</button>';
+                '<button type="button" class="continue-without-account-btn" id="linkEspnGuest"><strong>Continue without account</strong><span>Quick view on this device &middot; nothing saved</span></button>';
               pane.appendChild(choice);
               document.getElementById('linkEspnGoogle').addEventListener('click',function(){
                 this.disabled=true;this.textContent='Continuing…';

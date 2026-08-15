@@ -8835,6 +8835,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const espnS2Input = document.getElementById("espnS2Input");
   const espnSubmitBtn = document.getElementById("espnSubmitBtn");
   const espnErrorBox = document.getElementById("espnError");
+  const espnPrivateChoice = document.getElementById("espnPrivateChoice");
+  const espnPrivateGoogle = document.getElementById("espnPrivateGoogle");
+  const espnPrivateGuest = document.getElementById("espnPrivateGuest");
 
   const yahooLeagueIdInput = document.getElementById("yahooLeagueIdInput");
   const yahooTeamName = document.getElementById("yahooTeamName");
@@ -8902,6 +8905,7 @@ if (!platformBtns.length) return;
     if (espnSwidInput) espnSwidInput.value = "";
     if (espnS2Input) espnS2Input.value = "";
     if (espnErrorBox) espnErrorBox.style.display = "none";
+    if (espnPrivateChoice) espnPrivateChoice.style.display = "none";
     if (espnSubmitBtn) {
       const googleConnect = homeEspnMethod === "private" && !window._hasAccount;
       espnSubmitBtn.textContent = googleConnect ? "Sign in with Google to Connect" : "Connect League";
@@ -9153,7 +9157,14 @@ if (!platformBtns.length) return;
           espnSwidInput.value = "";
           espnS2Input.value = "";
           if (!pendingRes.ok || !pendingData.ok) throw new Error(pendingData.error || "Unable to validate ESPN credentials.");
-          window.location.href = pendingData.auth_url;
+          if (espnPrivateChoice) {
+            espnPrivateChoice.dataset.leagueId = leagueId;
+            espnPrivateChoice.dataset.season = String(season);
+            espnPrivateChoice.dataset.authUrl = pendingData.auth_url;
+            espnPrivateChoice.style.display = "flex";
+          }
+          espnSubmitBtn.disabled = false;
+          espnSubmitBtn.textContent = "Validate Again";
         } catch (err) {
           espnSwidInput.value = "";
           espnS2Input.value = "";
@@ -9256,6 +9267,30 @@ if (!platformBtns.length) return;
       }
     });
   }
+
+  espnPrivateGoogle?.addEventListener("click", () => {
+    espnPrivateGoogle.disabled = true;
+    window.location.href = espnPrivateChoice?.dataset.authUrl || "/auth/google?intent=onboarding&next=/";
+  });
+  espnPrivateGuest?.addEventListener("click", async () => {
+    espnPrivateGuest.disabled = true;
+    try {
+      const response = await fetch("/api/link/espn/private/guest", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          league_id: espnPrivateChoice?.dataset.leagueId,
+          season: Number(espnPrivateChoice?.dataset.season),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || "Unable to open private league.");
+      window.location.href = data.redirect_url;
+    } catch (err) {
+      espnPrivateGuest.disabled = false;
+      espnErrorBox.textContent = err.message || "Unable to open private league.";
+      espnErrorBox.style.display = "block";
+    }
+  });
 
   // "Continue with Google" on the home card: take the league the user just
   // selected and sign them in with Google, so instead of a throwaway session

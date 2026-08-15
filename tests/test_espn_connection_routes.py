@@ -112,3 +112,19 @@ def test_signed_out_private_connection_is_staged_before_google(monkeypatch):
             assert "espn_s2" not in sess["onboarding_progress"]
     assert response.status_code == 200
     assert response.json["auth_url"].startswith("/auth/google?intent=onboarding")
+
+
+def test_staged_private_connection_can_continue_without_account(monkeypatch):
+    app = flask.Flask(__name__); app.secret_key = "test"; app.register_blueprint(link_bp)
+    import dashboard_services.accounts as accounts
+    monkeypatch.setattr(accounts, "peek_private_espn_connection", lambda *a: {
+        "league_id": "123", "season": 2026,
+    })
+    with app.test_client() as test_client:
+        with test_client.session_transaction() as sess:
+            sess["pending_provider_connection_token"] = "opaque-token"
+        response = test_client.post("/api/link/espn/private/guest", json={
+            "league_id": "123", "season": 2026,
+        })
+    assert response.status_code == 200
+    assert response.json["redirect_url"] == "/espn/2026/123/dashboard"

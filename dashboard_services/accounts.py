@@ -243,6 +243,27 @@ def consume_private_espn_connection(token: str) -> Optional[dict]:
     }
 
 
+def peek_private_espn_connection(token: str, league_id: str, season: int) -> Optional[dict]:
+    """Read an unexpired staged connection for an anonymous dashboard session."""
+    if not token:
+        return None
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    init_accounts_tables()
+    from dashboard_services.db import get_conn
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT league_id,season,league_name,encrypted_credentials
+               FROM pending_provider_connections WHERE token_hash=%s AND expires_at>=now()
+               AND league_id=%s AND season=%s""",
+            (token_hash, str(league_id), int(season)),
+        ).fetchone()
+    if not row:
+        return None
+    credentials = _decrypt_provider_credentials(row["encrypted_credentials"])
+    return ({"league_id": row["league_id"], "season": row["season"],
+             "name": row["league_name"], **credentials} if credentials else None)
+
+
 def add_espn_league_connection(
     account_id: int, league_id: str, season: int, name: str,
     connection_method: str, *, swid: Optional[str] = None, espn_s2: Optional[str] = None,

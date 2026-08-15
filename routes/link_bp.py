@@ -160,7 +160,28 @@ def link_espn_private_pending():
         return jsonify({"ok": False, "error": error}), status
     return jsonify({
         "ok": True,
+        "league_id": league_id,
+        "season": season,
         "auth_url": "/auth/google?intent=onboarding&next=/",
+    })
+
+
+@link_bp.post("/api/link/espn/private/guest")
+def link_espn_private_guest():
+    """Open a staged private league without creating an application account."""
+    data = request.get_json(silent=True) or {}
+    league_id = str(data.get("league_id") or "").strip()
+    try:
+        season = int(data.get("season"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Invalid staged league."}), 400
+    token = session.get("pending_provider_connection_token")
+    from dashboard_services.accounts import peek_private_espn_connection
+    if not peek_private_espn_connection(token, league_id, season):
+        return jsonify({"ok": False, "error": "Private ESPN session expired. Validate it again."}), 401
+    return jsonify({
+        "ok": True,
+        "redirect_url": f"/espn/{season}/{league_id}/dashboard",
     })
 
 
