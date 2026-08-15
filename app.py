@@ -1090,7 +1090,8 @@ FORM_BODY = """
         <div class="home-account-entry">
           <a class="google-continue-btn" href="/auth/google?intent=login&amp;next=/">Continue with Google</a>
           <span>Returning users can access their saved leagues.</span>
-          <a class="google-continue-btn" href="/auth/google?intent=onboarding&amp;next=/">Create Account with Google</a>
+          <div class="home-account-new-label">New to BR Fantasy?</div>
+          <a class="google-continue-btn google-create-account-btn" href="/auth/google?intent=onboarding&amp;next=/">Create Account with Google</a>
           <span>Create an account and connect your first fantasy league.</span>
         </div>
         {% else %}
@@ -1169,7 +1170,7 @@ FORM_BODY = """
               <strong>Treat these session credentials like passwords.</strong>
             </details>
           </div>
-          <div class="row">
+          <div class="row" id="espnSubmitRow">
             <button type="button" id="espnSubmitBtn">Connect League</button>
           </div>
           <div id="espnError" class="error-message" style="display:none;"></div>

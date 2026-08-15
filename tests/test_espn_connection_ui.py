@@ -55,8 +55,8 @@ def test_private_espn_flow_collects_credentials_before_google_sign_in():
     flow = script[script.index('espnSubmitBtn.addEventListener("click"'):script.index("if (yahooConnectBtn)")]
     read_swid = flow.index("const swid =")
     stage = flow.index('fetch("/api/link/espn/private/pending"')
-    choice = flow.index("espnPrivateChoice.dataset.authUrl = pendingData.auth_url")
-    assert read_swid < stage < choice
+    action = flow.index('if (espnRequestedAction === "guest")')
+    assert read_swid < stage < action
     assert '"Enter SWID and ESPN_S2 before continuing with Google."' in flow
 
 
@@ -90,8 +90,10 @@ def test_google_actions_share_google_continue_style():
     css = Path("static/dashboard.css").read_text()
     assert 'id="googleContinueBtn" class="google-continue-btn"' in markup
     assert 'class="google-continue-btn" href="/auth/google?intent=login' in markup
-    assert 'class="google-continue-btn" href="/auth/google?intent=onboarding' in markup
+    assert 'class="google-continue-btn google-create-account-btn" href="/auth/google?intent=onboarding' in markup
     assert ".google-continue-btn{" in css
+    assert "google-create-account-btn" in markup
+    assert ".google-create-account-btn{" in css
 
 
 def test_both_espn_methods_use_full_account_choice_copy():
@@ -101,3 +103,11 @@ def test_both_espn_methods_use_full_account_choice_copy():
     assert markup.count("Continue without account") >= 3
     assert markup.count("Quick view on this device &middot; nothing saved") >= 3
     assert "/api/link/espn/private/guest" in markup
+
+
+def test_home_espn_account_choices_are_visible_before_validation():
+    script = Path("static/app.js").read_text()
+    assert 'espnPrivateChoice.style.display = !window._hasAccount ? "flex" : "none"' in script
+    assert 'if (platform === "espn") setHomeEspnMethod(homeEspnMethod)' in script
+    assert 'espnRequestedAction = "google"' in script
+    assert 'espnRequestedAction = "guest"' in script
