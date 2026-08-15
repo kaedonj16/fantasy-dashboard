@@ -17,6 +17,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import base64
+import hashlib
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -58,6 +61,22 @@ def init_accounts_tables() -> None:
         )
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS fantasy_provider_connections (
+                id                    SERIAL PRIMARY KEY,
+                account_id            INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                provider              TEXT NOT NULL,
+                connection_method     TEXT NOT NULL,
+                encrypted_credentials TEXT,
+                status                TEXT NOT NULL DEFAULT 'connected',
+                last_authenticated_at TIMESTAMPTZ,
+                created_at            TIMESTAMPTZ DEFAULT now(),
+                updated_at            TIMESTAMPTZ DEFAULT now(),
+                UNIQUE (account_id, provider, connection_method)
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS user_leagues (
                 id         SERIAL PRIMARY KEY,
                 account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -66,10 +85,16 @@ def init_accounts_tables() -> None:
                 season     INTEGER,
                 team_id    TEXT,
                 name       TEXT,
+                provider_connection_id INTEGER REFERENCES fantasy_provider_connections(id) ON DELETE SET NULL,
                 added_at   TIMESTAMPTZ DEFAULT now(),
                 UNIQUE (account_id, platform, league_id, season)
             )
             """
+        )
+        conn.execute(
+            """ALTER TABLE user_leagues ADD COLUMN IF NOT EXISTS
+               provider_connection_id INTEGER REFERENCES fantasy_provider_connections(id)
+               ON DELETE SET NULL"""
         )
         conn.execute(
             """
@@ -87,6 +112,83 @@ def init_accounts_tables() -> None:
         )
         conn.commit()
     _TABLES_READY = True
+
+
+def _encrypt_provider_credentials(credentials: dict) -> str:
+    """Encrypt provider secrets using a deployment-specific key."""
+    secret = os.getenv("PROVIDER_CREDENTIAL_ENCRYPTION_KEY", "").strip()
+    if not secret:
+        raise RuntimeError("Private provider connections are not configured.")
+    from cryptography.fernet import Fernet
+    key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
+    return Fernet(key).encrypt(json.dumps(credentials).encode("utf-8")).decode("ascii")
+
+
+def get_espn_league_credentials(account_id: int, league_id: str, season: int) -> Optional[dict]:
+    """Return decrypted credentials only to backend provider code."""
+    init_accounts_tables()
+    from dashboard_services.db import get_conn
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT c.encrypted_credentials FROM user_leagues l
+               JOIN fantasy_provider_connections c ON c.id = l.provider_connection_id
+               WHERE l.account_id = %s AND l.platform = 'espn' AND l.league_id = %s
+                 AND l.season = %s AND c.status = 'connected'""",
+            (account_id, str(league_id), int(season)),
+        ).fetchone()
+    if not row or not row["encrypted_credentials"]:
+        return None
+    secret = os.getenv("PROVIDER_CREDENTIAL_ENCRYPTION_KEY", "").strip()
+    if not secret:
+        return None
+    from cryptography.fernet import Fernet, InvalidToken
+    key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
+    try:
+        raw = Fernet(key).decrypt(row["encrypted_credentials"].encode("ascii"))
+        return json.loads(raw.decode("utf-8"))
+    except (InvalidToken, ValueError, TypeError, json.JSONDecodeError):
+        logger.warning("Unable to decrypt stored ESPN credentials for connection")
+        return None
+
+
+def add_espn_league_connection(
+    account_id: int, league_id: str, season: int, name: str,
+    connection_method: str, *, swid: Optional[str] = None, espn_s2: Optional[str] = None,
+) -> None:
+    """Atomically persist a validated ESPN league and optional encrypted auth."""
+    if connection_method not in ("public", "private"):
+        raise ValueError("Invalid ESPN connection method.")
+    encrypted = None
+    if connection_method == "private":
+        if not swid or not espn_s2:
+            raise ValueError("Private ESPN connections require both credentials.")
+        encrypted = _encrypt_provider_credentials({"swid": swid, "espn_s2": espn_s2})
+    init_accounts_tables()
+    from dashboard_services.db import get_conn
+    with get_conn() as conn:
+        connection_id = None
+        if connection_method == "private":
+            connection_id = conn.execute(
+                """INSERT INTO fantasy_provider_connections
+                       (account_id, provider, connection_method, encrypted_credentials,
+                        status, last_authenticated_at)
+                   VALUES (%s, 'espn', 'private', %s, 'connected', now())
+                   ON CONFLICT (account_id, provider, connection_method) DO UPDATE SET
+                       encrypted_credentials = EXCLUDED.encrypted_credentials,
+                       status = 'connected', last_authenticated_at = now(), updated_at = now()
+                   RETURNING id""",
+                (account_id, encrypted),
+            ).fetchone()["id"]
+        conn.execute(
+            """INSERT INTO user_leagues
+                   (account_id, platform, league_id, season, name, provider_connection_id)
+               VALUES (%s, 'espn', %s, %s, %s, %s)
+               ON CONFLICT (account_id, platform, league_id, season) DO UPDATE SET
+                   name = EXCLUDED.name,
+                   provider_connection_id = EXCLUDED.provider_connection_id""",
+            (account_id, str(league_id), int(season), name, connection_id),
+        )
+        conn.commit()
 
 
 def consume_league_visit(

@@ -21,6 +21,41 @@ class ESPNError(Exception):
     pass
 
 
+class ESPNRequestValidationError(ESPNError):
+    pass
+
+
+class ESPNFantasyClient:
+    """Small credential-scoped ESPN client used by connection endpoints.
+
+    Credentials are kept on this short-lived instance and are never included in
+    errors or responses.  The rest of the provider continues to consume the
+    normalized helpers below.
+    """
+
+    def __init__(self, swid: Optional[str] = None, espn_s2: Optional[str] = None):
+        if bool(swid) != bool(espn_s2):
+            raise ESPNRequestValidationError("Both SWID and ESPN_S2 are required.")
+        self._swid = _normalize_swid(swid or "") or None
+        self._espn_s2 = _clean_secret(espn_s2 or "") or None
+
+    @property
+    def authenticated(self) -> bool:
+        return bool(self._swid and self._espn_s2)
+
+    def get_league_client(self, league_id: str, season: int) -> League:
+        kwargs: Dict[str, Any] = {
+            "league_id": int(league_id),
+            "year": int(season),
+        }
+        if self.authenticated:
+            kwargs.update(swid=self._swid, espn_s2=self._espn_s2)
+        return League(**kwargs)
+
+    def get_league(self, league_id: str, season: int) -> Dict[str, Any]:
+        return _normalize_league(self.get_league_client(league_id, season), league_id, season)
+
+
 # ============================================================
 # Env + helpers
 # ============================================================
@@ -101,9 +136,42 @@ def _streak_from_outcomes(outcomes: Any) -> str:
 
 @lru_cache(maxsize=16)
 def _league_cached(season: int, league_id: str) -> League:
-    # Credentials are optional - public leagues work without them;
-    # private leagues require ESPN_S2 + ESPN_SWID in the environment.
+    """Load a league anonymously when possible, then fall back to credentials.
+
+    ESPN cookies identify one account.  Sending them on every request can make
+    ESPN scope the request to that account, which prevents otherwise-public
+    leagues belonging to other users from loading.  Anonymous-first therefore
+    supports every public league; the configured cookies remain a fallback for
+    private leagues that the configured account may access.
+
+    ESPN does not offer OAuth for this API.  Consequently, an arbitrary private
+    league still cannot be read unless its owner makes it public or supplies
+    credentials for an account that belongs to it.
+    """
+    access_denied: Optional[Exception] = None
+    try:
+        return League(league_id=int(league_id), year=int(season))
+    except Exception as exc:
+        # Do not hide invalid IDs, bad seasons, or network/library errors behind
+        # a second request. Only an access denial can be fixed by authentication.
+        if type(exc).__name__ != "ESPNAccessDenied":
+            raise
+        access_denied = exc
+
     espn_s2, swid = _espn_creds()
+    try:
+        from flask import has_request_context, session
+        if has_request_context() and session.get("account_id"):
+            from dashboard_services.accounts import get_espn_league_credentials
+            stored = get_espn_league_credentials(session["account_id"], league_id, season) or {}
+            espn_s2 = stored.get("espn_s2") or espn_s2
+            swid = stored.get("swid") or swid
+    except Exception:
+        # Database/configuration trouble must not expose credentials and the
+        # original ESPN access-denied result remains the useful outcome.
+        pass
+    if not (espn_s2 and swid):
+        raise access_denied
     return League(
         league_id=int(league_id),
         year=int(season),
@@ -114,6 +182,17 @@ def _league_cached(season: int, league_id: str) -> League:
 
 def _league(season: int, league_id: str) -> League:
     return _league_cached(season, league_id)
+
+
+def connect_league(
+    season: int,
+    league_id: str,
+    *,
+    swid: Optional[str] = None,
+    espn_s2: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Validate and normalize a public or explicitly authenticated league."""
+    return ESPNFantasyClient(swid=swid, espn_s2=espn_s2).get_league(league_id, season)
 
 
 @lru_cache(maxsize=1)
@@ -159,8 +238,7 @@ def _playoff_schedule_cached(season: int, league_id: str) -> List[Dict[str, Any]
 # Public API
 # ============================================================
 
-def get_league(season: int, league_id: str) -> Dict[str, Any]:
-    lg = _league(season, league_id)
+def _normalize_league(lg: League, league_id: str, season: int) -> Dict[str, Any]:
     name = (
             getattr(getattr(lg, "settings", None), "name", None)
             or getattr(lg, "name", None)
@@ -171,6 +249,10 @@ def get_league(season: int, league_id: str) -> Dict[str, Any]:
         "season": int(season),
         "name": name,
     }
+
+
+def get_league(season: int, league_id: str) -> Dict[str, Any]:
+    return _normalize_league(_league(season, league_id), league_id, season)
 
 
 def get_users(season: int, league_id: str) -> List[Dict[str, Any]]:
