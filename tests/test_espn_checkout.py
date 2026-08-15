@@ -49,7 +49,10 @@ def test_checkout_preserves_provider_at_every_plan_entry(
         "league_id": "123",
         "platform": platform,
         "season": 2026,
-        "return_url": f"/{platform}/2026/123/waivers?tab=startsit",
+        # paywall.js intentionally returns a completed purchase to the league
+        # dashboard (with the subscriber tour), even when checkout began from
+        # Start/Sit.
+        "return_url": f"/{platform}/2026/123/dashboard?new_subscriber=1",
     })
 
     assert response.status_code == 200
