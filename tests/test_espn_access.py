@@ -2,6 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
+pytest.importorskip("espn_api")
+
 from dashboard_services.providers import espn_api
 
 
