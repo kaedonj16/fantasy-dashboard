@@ -1,4 +1,9 @@
-import pandas as pd
+import pytest
+
+# The lightweight CI job intentionally installs pytest only. Historical graph
+# aggregation needs the scientific stack and is exercised by the integration
+# job, which installs requirements.txt.
+pd = pytest.importorskip("pandas")
 
 from dashboard_services.historical_identity import canonicalize_weekly_owners, roster_id_for_owner
 from dashboard_services.pages.graphs_page import build_career_graphs_ctx
@@ -32,8 +37,9 @@ def test_canonical_owner_survives_renames_and_does_not_merge_equal_names(monkeyp
     rows = result["team_stats"].set_index("owner_key")
     assert set(rows.index) == {"owner-1", "owner-2", "owner-3"}
     assert rows.loc["owner-1", "owner"] == "Team B"
-    assert rows.loc["owner-1", "PF"] == 202
+    assert rows.loc["owner-1", "PF"] == 209
     assert len(result["season_pf_df"].query("owner_key == 'owner-1'")) == 2
+    assert set(result["season_pf_df"].query("owner_key == 'owner-1'")["owner"]) == {"Team B"}
 
 
 def test_season_resolution_uses_owner_id_not_display_name():

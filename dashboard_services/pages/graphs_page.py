@@ -903,6 +903,10 @@ def build_career_graphs_ctx(
         frame["owner"] = frame["owner_key"].map(lambda key: labels.get(str(key), (0, str(key)))[1])
     df_combined = pd.concat(season_frames, ignore_index=True) if season_frames else pd.DataFrame()
     season_pf_df = pd.DataFrame(season_pf_rows) if season_pf_rows else pd.DataFrame()
+    if not season_pf_df.empty:
+        season_pf_df["owner"] = season_pf_df["owner_key"].map(
+            lambda key: labels.get(str(key), (0, str(key)))[1]
+        )
 
     # Restrict to current members when the toggle asks for it.
     if only_owners:
