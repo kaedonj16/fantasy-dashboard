@@ -14,6 +14,8 @@ shows up via /api/my-leagues (switcher + My Leagues).
 from __future__ import annotations
 
 import logging
+import hashlib
+import uuid
 from datetime import datetime
 
 from flask import Blueprint, jsonify, request, session
@@ -61,18 +63,40 @@ def _espn_error(exc: Exception, method: str):
     """Map ESPN failures without reflecting upstream bodies or credentials."""
     name = type(exc).__name__
     msg = str(exc).lower()
+    reference = getattr(exc, "debug_reference", None) or uuid.uuid4().hex[:12]
+    cause = type(exc.__cause__).__name__ if exc.__cause__ else None
+    message_fingerprint = hashlib.sha256(str(exc).encode("utf-8", "replace")).hexdigest()[:12]
+    logger.warning(
+        "[link/espn] ref=%s method=%s error_type=%s error_module=%s cause_type=%s message_fingerprint=%s",
+        reference, method, name, type(exc).__module__, cause, message_fingerprint,
+    )
+
+    def with_reference(message: str):
+        return f"{message} Reference: {reference}."
+
     if name == "ESPNInvalidLeague" or "404" in msg:
-        return "No ESPN league was found for that ID and season.", 404
+        return with_reference("No ESPN league was found for that ID and season."), 404
     if name == "ESPNAccessDenied" or "401" in msg or "403" in msg:
         if method == "public":
-            return ("This ESPN league could not be accessed publicly. If it is a private "
-                    "league, connect using the Private League option."), 403
-        return "ESPN rejected these credentials or the session has expired.", 403
+            return with_reference("This ESPN league could not be accessed publicly. If it is a private "
+                                  "league, connect using the Private League option."), 403
+        return with_reference("ESPN rejected these credentials or the session has expired."), 403
+    if name == "ESPNMalformedResponse":
+        # ESPN commonly answers with an HTML login/challenge page and HTTP 200
+        # when private-league cookies are expired or otherwise unusable. Treat
+        # that as an authentication failure rather than returning 502: besides
+        # being more accurate, some reverse proxies replace 502 JSON bodies with
+        # their own HTML page, which hides this actionable message from the UI.
+        if method == "private":
+            return with_reference("ESPN did not accept this session. Copy fresh SWID and espn_s2 "
+                                  "cookie values from an active ESPN login and try again."), 403
+        return with_reference("ESPN returned incomplete league data. Check the league ID and "
+                              "season, then try again."), 422
     if "429" in msg or "rate" in msg:
-        return "ESPN is rate limiting requests. Please wait a moment and try again.", 429
+        return with_reference("ESPN is rate limiting requests. Please wait a moment and try again."), 429
     if "timeout" in msg or "500" in msg or "502" in msg or "503" in msg:
-        return "ESPN is temporarily unavailable. Please try again later.", 503
-    return "ESPN returned an unexpected response. Please verify the details and try again.", 502
+        return with_reference("ESPN is temporarily unavailable. Please try again later."), 503
+    return with_reference("ESPN returned an unexpected response. Please verify the details and try again."), 422
 
 
 def _connect_espn(method: str):

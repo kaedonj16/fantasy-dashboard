@@ -37,6 +37,19 @@ def test_home_page_does_not_store_espn_credentials_in_local_storage():
     assert "localStorage" not in espn_flow
 
 
+def test_espn_flows_handle_non_json_server_responses_without_parser_errors():
+    script = Path("static/app.js").read_text()
+    markup = Path("app.py").read_text()
+    home_flow = script[script.index("const readEspnApiJson"):script.index("if (yahooConnectBtn)")]
+    modal_flow = markup[markup.index("function readEspnJson"):markup.index("window.linkYahooPreview=function()")]
+    assert "const body = await response.text()" in home_flow
+    assert "await readEspnApiJson(privateRes)" in home_flow
+    assert "return r.text().then" in modal_flow
+    assert ".then(readEspnJson)" in modal_flow
+    assert "The server returned an invalid response" in home_flow
+    assert "The server returned an invalid response" in modal_flow
+
+
 def test_home_public_validation_uses_anonymous_connection_client():
     route = Path("routes/league_meta_bp.py").read_text()
     handler = route[route.index("def api_espn_validate_league"):route.index("def api_espn_debug")]

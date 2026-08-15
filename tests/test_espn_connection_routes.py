@@ -53,6 +53,43 @@ def test_private_connection_succeeds_without_returning_secrets(client):
     assert "swid" not in response.json and "espn_s2" not in response.json
 
 
+def test_private_malformed_espn_response_is_reported_as_expired_session(client, monkeypatch, caplog):
+    import dashboard_services.providers.espn_api as espn
+
+    def malformed(*args, **kwargs):
+        raise espn.ESPNMalformedResponse("ESPN returned an invalid response.")
+
+    monkeypatch.setattr(espn, "connect_league", malformed)
+    response = client.post("/api/link/espn/private", json={
+        "league_id": "123", "season": 2026, "swid": "{owner}", "espn_s2": "secret",
+    })
+
+    assert response.status_code == 403
+    assert response.is_json
+    assert "Copy fresh SWID and espn_s2" in response.json["error"]
+    assert "Reference:" in response.json["error"]
+    assert "secret" not in response.get_data(as_text=True)
+    assert "error_type=ESPNMalformedResponse" in caplog.text
+    assert "message_fingerprint=" in caplog.text
+    assert "secret" not in caplog.text
+
+
+def test_public_malformed_espn_response_does_not_use_proxy_502(client, monkeypatch):
+    import dashboard_services.providers.espn_api as espn
+
+    def malformed(*args, **kwargs):
+        raise espn.ESPNMalformedResponse("ESPN returned an invalid response.")
+
+    monkeypatch.setattr(espn, "connect_league", malformed)
+    response = client.post("/api/link/espn/public", json={
+        "league_id": "123", "season": 2026,
+    })
+
+    assert response.status_code == 422
+    assert response.is_json
+    assert "incomplete league data" in response.json["error"]
+
+
 def test_connection_requires_account(monkeypatch):
     app = flask.Flask(__name__); app.secret_key = "test"; app.register_blueprint(link_bp)
     with app.test_client() as test_client:
