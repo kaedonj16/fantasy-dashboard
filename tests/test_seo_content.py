@@ -82,3 +82,18 @@ def test_top_movers_has_updated_stamp(offline_client):
     html = _html(offline_client, "/top-movers")
     assert "refreshed daily" in html
     assert 'class="rf-updated"' in html
+
+
+def test_publisher_transparency_pages_are_complete(offline_client):
+    privacy = _html(offline_client, "/privacy")
+    about = _html(offline_client, "/about")
+    assert "Last updated:" in privacy
+    assert "Google's partner-sites policy" in privacy
+    assert "Your Choices" in privacy
+    assert "Editorial Standards &amp; Corrections" in about
+
+
+def test_ad_placements_are_explicitly_disclosed(offline_client):
+    html = _html(offline_client, "/")
+    assert 'aria-label="Advertisement"' in html
+    assert 'class="ad-disclosure">Advertisement</span>' in html
