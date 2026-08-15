@@ -18,6 +18,9 @@ from __future__ import annotations
 import logging
 import os
 import secrets
+import base64
+import hashlib
+import threading
 from urllib.parse import urlencode
 
 from flask import Blueprint, redirect, request, session
@@ -27,7 +30,6 @@ logger = logging.getLogger(__name__)
 
 _AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 _TOKEN_URL = "https://oauth2.googleapis.com/token"
-_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
 
 
 def _google_configured() -> bool:
@@ -62,7 +64,13 @@ def google_auth_start():
         )
 
     state = secrets.token_urlsafe(24)
+    nonce = secrets.token_urlsafe(24)
+    verifier = secrets.token_urlsafe(64)
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
     session["google_oauth_state"] = state
+    session["google_oauth_nonce"] = nonce
+    session["google_pkce_verifier"] = verifier
+    session["google_auth_intent"] = "onboarding" if request.args.get("intent") == "onboarding" else "login"
     session["google_oauth_next"] = (request.args.get("next") or "/").strip()
     params = {
         "client_id": os.environ["GOOGLE_CLIENT_ID"],
@@ -70,6 +78,9 @@ def google_auth_start():
         "response_type": "code",
         "scope": "openid email profile",
         "state": state,
+        "nonce": nonce,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
         "access_type": "online",
         "prompt": "select_account",
     }
@@ -87,6 +98,8 @@ def google_auth_callback():
     code = request.args.get("code") or ""
     state = request.args.get("state") or ""
     stored_state = session.pop("google_oauth_state", None)
+    stored_nonce = session.pop("google_oauth_nonce", None)
+    verifier = session.pop("google_pkce_verifier", None)
     next_url = session.pop("google_oauth_next", "/") or "/"
     if not stored_state or stored_state != state:
         # Distinguish the two failure modes so prod logs are actionable:
@@ -116,20 +129,24 @@ def google_auth_callback():
                 "client_secret": os.environ["GOOGLE_CLIENT_SECRET"],
                 "redirect_uri": os.environ["GOOGLE_REDIRECT_URI"],
                 "grant_type": "authorization_code",
+                "code_verifier": verifier,
             },
             timeout=15,
         ).json()
-        access_token = tok.get("access_token")
-        if not access_token:
-            logger.error("[google_auth] no access_token (keys=%s)", sorted(tok.keys()))
+        raw_id_token = tok.get("id_token")
+        if not raw_id_token:
+            logger.error("[google_auth] no id_token (keys=%s)", sorted(tok.keys()))
             return redirect("/?google_error=token_exchange_failed")
-        info = requests.get(
-            _USERINFO_URL,
-            headers={"Authorization": f"Bearer {access_token}"},
-            timeout=15,
-        ).json()
+        from google.auth.transport import requests as google_requests
+        from google.oauth2 import id_token
+        info = id_token.verify_oauth2_token(
+            raw_id_token, google_requests.Request(), os.environ["GOOGLE_CLIENT_ID"],
+        )
+        if info.get("nonce") != stored_nonce:
+            logger.warning("[google_auth] nonce validation failed")
+            return redirect("/?google_error=invalid_nonce")
     except Exception as exc:
-        logger.error("[google_auth] token/userinfo failed: %s", exc)
+        logger.error("[google_auth] token verification failed (%s)", type(exc).__name__)
         return redirect("/?google_error=token_exchange_failed")
 
     sub = info.get("sub")
@@ -140,12 +157,13 @@ def google_auth_callback():
     from dashboard_services.accounts import (
         upsert_google_account, link_platform_identity, add_user_league,
     )
-    account_id = upsert_google_account(sub, email)
+    account_id = upsert_google_account(sub, email, info.get("given_name"))
     if not account_id:
         return redirect("/?google_error=account_error")
 
     session["account_id"] = account_id
     session["account_email"] = email
+    session["account_first_name"] = info.get("given_name") or ""
     session.permanent = True
 
     # Bridge an already-signed-in Sleeper session onto this account: attach the
@@ -157,7 +175,11 @@ def google_auth_callback():
             link_platform_identity(
                 account_id, "sleeper", str(viewer_user_id), session.get("viewer_username"),
             )
-            _backfill_sleeper_leagues(account_id, str(viewer_user_id))
+            threading.Thread(
+                target=_backfill_sleeper_leagues,
+                args=(account_id, str(viewer_user_id)),
+                daemon=True,
+            ).start()
         except Exception:
             logger.warning("[google_auth] sleeper bridge failed", exc_info=True)
 
@@ -196,7 +218,15 @@ def google_auth_callback():
         except Exception:
             logger.warning("[google_auth] pending link attach failed", exc_info=True)
 
-    return redirect(next_url)
+    # Login never waits on a fantasy provider. Choose from saved database
+    # metadata; provider refresh happens after the application has rendered.
+    try:
+        from dashboard_services.accounts import get_post_login_destination
+        destination = get_post_login_destination(account_id)
+    except Exception:
+        logger.warning("[google_auth] saved league destination unavailable", exc_info=True)
+        destination = None
+    return redirect(destination or next_url)
 
 
 def _backfill_sleeper_leagues(account_id: int, viewer_user_id: str) -> None:

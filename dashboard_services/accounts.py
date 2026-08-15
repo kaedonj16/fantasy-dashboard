@@ -17,6 +17,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import base64
+import hashlib
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -56,6 +59,47 @@ def init_accounts_tables() -> None:
             )
             """
         )
+        conn.execute("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS first_name TEXT")
+        conn.execute("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS last_active_platform TEXT")
+        conn.execute("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS last_active_league_id TEXT")
+        conn.execute("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS last_active_season INTEGER")
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS account_auth_identities (
+                id SERIAL PRIMARY KEY,
+                account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                auth_provider TEXT NOT NULL,
+                auth_provider_subject TEXT NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT now(),
+                UNIQUE (auth_provider, auth_provider_subject)
+            )"""
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS fantasy_provider_connections (
+                id                    SERIAL PRIMARY KEY,
+                account_id            INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                provider              TEXT NOT NULL,
+                connection_method     TEXT NOT NULL,
+                encrypted_credentials TEXT,
+                status                TEXT NOT NULL DEFAULT 'connected',
+                last_authenticated_at TIMESTAMPTZ,
+                created_at            TIMESTAMPTZ DEFAULT now(),
+                updated_at            TIMESTAMPTZ DEFAULT now(),
+                last_synced_at        TIMESTAMPTZ,
+                last_successful_sync_at TIMESTAMPTZ,
+                last_error_code       TEXT,
+                credential_expires_at TIMESTAMPTZ,
+                UNIQUE (account_id, provider, connection_method)
+            )
+            """
+        )
+        for col, defn in (
+            ("last_synced_at", "TIMESTAMPTZ"),
+            ("last_successful_sync_at", "TIMESTAMPTZ"),
+            ("last_error_code", "TEXT"),
+            ("credential_expires_at", "TIMESTAMPTZ"),
+        ):
+            conn.execute(f"ALTER TABLE fantasy_provider_connections ADD COLUMN IF NOT EXISTS {col} {defn}")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS user_leagues (
@@ -66,10 +110,16 @@ def init_accounts_tables() -> None:
                 season     INTEGER,
                 team_id    TEXT,
                 name       TEXT,
+                provider_connection_id INTEGER REFERENCES fantasy_provider_connections(id) ON DELETE SET NULL,
                 added_at   TIMESTAMPTZ DEFAULT now(),
                 UNIQUE (account_id, platform, league_id, season)
             )
             """
+        )
+        conn.execute(
+            """ALTER TABLE user_leagues ADD COLUMN IF NOT EXISTS
+               provider_connection_id INTEGER REFERENCES fantasy_provider_connections(id)
+               ON DELETE SET NULL"""
         )
         conn.execute(
             """
@@ -87,6 +137,83 @@ def init_accounts_tables() -> None:
         )
         conn.commit()
     _TABLES_READY = True
+
+
+def _encrypt_provider_credentials(credentials: dict) -> str:
+    """Encrypt provider secrets using a deployment-specific key."""
+    secret = os.getenv("PROVIDER_CREDENTIAL_ENCRYPTION_KEY", "").strip()
+    if not secret:
+        raise RuntimeError("Private provider connections are not configured.")
+    from cryptography.fernet import Fernet
+    key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
+    return Fernet(key).encrypt(json.dumps(credentials).encode("utf-8")).decode("ascii")
+
+
+def get_espn_league_credentials(account_id: int, league_id: str, season: int) -> Optional[dict]:
+    """Return decrypted credentials only to backend provider code."""
+    init_accounts_tables()
+    from dashboard_services.db import get_conn
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT c.encrypted_credentials FROM user_leagues l
+               JOIN fantasy_provider_connections c ON c.id = l.provider_connection_id
+               WHERE l.account_id = %s AND l.platform = 'espn' AND l.league_id = %s
+                 AND l.season = %s AND c.status = 'connected'""",
+            (account_id, str(league_id), int(season)),
+        ).fetchone()
+    if not row or not row["encrypted_credentials"]:
+        return None
+    secret = os.getenv("PROVIDER_CREDENTIAL_ENCRYPTION_KEY", "").strip()
+    if not secret:
+        return None
+    from cryptography.fernet import Fernet, InvalidToken
+    key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
+    try:
+        raw = Fernet(key).decrypt(row["encrypted_credentials"].encode("ascii"))
+        return json.loads(raw.decode("utf-8"))
+    except (InvalidToken, ValueError, TypeError, json.JSONDecodeError):
+        logger.warning("Unable to decrypt stored ESPN credentials for connection")
+        return None
+
+
+def add_espn_league_connection(
+    account_id: int, league_id: str, season: int, name: str,
+    connection_method: str, *, swid: Optional[str] = None, espn_s2: Optional[str] = None,
+) -> None:
+    """Atomically persist a validated ESPN league and optional encrypted auth."""
+    if connection_method not in ("public", "private"):
+        raise ValueError("Invalid ESPN connection method.")
+    encrypted = None
+    if connection_method == "private":
+        if not swid or not espn_s2:
+            raise ValueError("Private ESPN connections require both credentials.")
+        encrypted = _encrypt_provider_credentials({"swid": swid, "espn_s2": espn_s2})
+    init_accounts_tables()
+    from dashboard_services.db import get_conn
+    with get_conn() as conn:
+        connection_id = None
+        if connection_method == "private":
+            connection_id = conn.execute(
+                """INSERT INTO fantasy_provider_connections
+                       (account_id, provider, connection_method, encrypted_credentials,
+                        status, last_authenticated_at)
+                   VALUES (%s, 'espn', 'private', %s, 'connected', now())
+                   ON CONFLICT (account_id, provider, connection_method) DO UPDATE SET
+                       encrypted_credentials = EXCLUDED.encrypted_credentials,
+                       status = 'connected', last_authenticated_at = now(), updated_at = now()
+                   RETURNING id""",
+                (account_id, encrypted),
+            ).fetchone()["id"]
+        conn.execute(
+            """INSERT INTO user_leagues
+                   (account_id, platform, league_id, season, name, provider_connection_id)
+               VALUES (%s, 'espn', %s, %s, %s, %s)
+               ON CONFLICT (account_id, platform, league_id, season) DO UPDATE SET
+                   name = EXCLUDED.name,
+                   provider_connection_id = EXCLUDED.provider_connection_id""",
+            (account_id, str(league_id), int(season), name, connection_id),
+        )
+        conn.commit()
 
 
 def consume_league_visit(
@@ -136,40 +263,50 @@ def consume_league_visit(
     return dict(previous) if previous else None
 
 
-def upsert_google_account(google_sub: str, email: Optional[str]) -> Optional[int]:
-    """Find or create the account for a Google identity; return its id.
-
-    Matches on ``google_sub`` first, then falls back to ``email`` so a person who
-    already has an account (e.g. a future Apple sign-in with the same address)
-    isn't duplicated. Bumps ``last_login_at`` on every call.
-    """
+def upsert_google_account(
+    google_sub: str, email: Optional[str], first_name: Optional[str] = None,
+) -> Optional[int]:
+    """Resolve a Google subject to exactly one canonical application account."""
     if not google_sub:
         return None
     google_sub = str(google_sub).strip()
     email = (str(email).strip().lower() or None) if email else None
+    first_name = (str(first_name).strip() or None) if first_name else None
     init_accounts_tables()
     from dashboard_services.db import get_conn
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT id FROM accounts WHERE google_sub = %s", (google_sub,)
+            """SELECT a.id FROM accounts a JOIN account_auth_identities i ON i.account_id=a.id
+               WHERE i.auth_provider='google' AND i.auth_provider_subject=%s""",
+            (google_sub,),
         ).fetchone()
+        if not row:
+            row = conn.execute("SELECT id FROM accounts WHERE google_sub=%s", (google_sub,)).fetchone()
         if not row and email:
             row = conn.execute(
-                "SELECT id FROM accounts WHERE email = %s", (email,)
+                """SELECT a.id FROM accounts a WHERE a.email=%s AND NOT EXISTS (
+                   SELECT 1 FROM account_auth_identities i
+                   WHERE i.account_id=a.id AND i.auth_provider='google')""",
+                (email,),
             ).fetchone()
         if row:
             acct_id = row["id"]
             conn.execute(
-                "UPDATE accounts SET last_login_at = now(), "
-                "google_sub = COALESCE(google_sub, %s), "
-                "email = COALESCE(email, %s) WHERE id = %s",
-                (google_sub, email, acct_id),
+                """UPDATE accounts SET last_login_at=now(), google_sub=COALESCE(google_sub,%s),
+                   email=COALESCE(email,%s), first_name=COALESCE(%s,first_name) WHERE id=%s""",
+                (google_sub, email, first_name, acct_id),
             )
         else:
             acct_id = conn.execute(
-                "INSERT INTO accounts (email, google_sub) VALUES (%s, %s) RETURNING id",
-                (email, google_sub),
+                "INSERT INTO accounts (email,google_sub,first_name) VALUES (%s,%s,%s) RETURNING id",
+                (email, google_sub, first_name),
             ).fetchone()["id"]
+        conn.execute(
+            """INSERT INTO account_auth_identities
+               (account_id,auth_provider,auth_provider_subject) VALUES (%s,'google',%s)
+               ON CONFLICT (auth_provider,auth_provider_subject) DO NOTHING""",
+            (acct_id, google_sub),
+        )
         conn.commit()
         return acct_id
 
@@ -271,8 +408,12 @@ def list_user_leagues(account_id: int) -> list[dict]:
     from dashboard_services.db import get_conn
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT platform, league_id, season, team_id, name, added_at "
-            "FROM user_leagues WHERE account_id = %s ORDER BY added_at DESC",
+            """SELECT l.platform,l.league_id,l.season,l.team_id,l.name,l.added_at,
+                      c.status AS connection_status,c.last_synced_at,
+                      c.last_successful_sync_at,c.last_error_code
+               FROM user_leagues l LEFT JOIN fantasy_provider_connections c
+                 ON c.id=l.provider_connection_id
+               WHERE l.account_id=%s ORDER BY l.added_at DESC""",
             (account_id,),
         ).fetchall()
     return [
@@ -282,6 +423,105 @@ def list_user_leagues(account_id: int) -> list[dict]:
             "season": r["season"],
             "team_id": r["team_id"],
             "name": r["name"],
+            "connection_status": r.get("connection_status") or "connected",
+            "last_synced_at": r.get("last_synced_at"),
+            "last_successful_sync_at": r.get("last_successful_sync_at"),
+            "last_error_code": r.get("last_error_code"),
         }
         for r in rows
     ]
+
+
+def set_last_active_league(account_id: int, platform: str, league_id: str, season: int) -> bool:
+    """Record activity only for an account-owned saved league."""
+    init_accounts_tables()
+    from dashboard_services.db import get_conn
+    with get_conn() as conn:
+        owned = conn.execute(
+            """SELECT 1 FROM user_leagues WHERE account_id=%s AND platform=%s
+               AND league_id=%s AND season=%s""",
+            (account_id, platform, str(league_id), int(season)),
+        ).fetchone()
+        if not owned:
+            return False
+        conn.execute(
+            """UPDATE accounts SET last_active_platform=%s,last_active_league_id=%s,
+               last_active_season=%s WHERE id=%s""",
+            (platform, str(league_id), int(season), account_id),
+        )
+        conn.commit()
+    return True
+
+
+def get_post_login_destination(account_id: int) -> Optional[str]:
+    """Choose a saved destination using database metadata only."""
+    leagues = list_user_leagues(account_id)
+    if not leagues:
+        return None
+    from dashboard_services.db import get_conn
+    with get_conn() as conn:
+        account = conn.execute(
+            "SELECT last_active_platform,last_active_league_id,last_active_season FROM accounts WHERE id=%s",
+            (account_id,),
+        ).fetchone()
+    chosen = None
+    if account and account.get("last_active_league_id"):
+        chosen = next((league for league in leagues
+                       if league["platform"] == account["last_active_platform"]
+                       and str(league["league_id"]) == str(account["last_active_league_id"])
+                       and int(league["season"] or 0) == int(account["last_active_season"] or 0)), None)
+    if chosen is None and len(leagues) == 1:
+        chosen = leagues[0]
+    if chosen:
+        return f"/{chosen['platform']}/{chosen['season']}/{chosen['league_id']}/dashboard"
+    return "/portfolio"
+
+
+def mark_espn_connection_status(
+    account_id: int, league_id: str, season: int, status: str,
+    error_code: Optional[str] = None,
+) -> None:
+    """Update provider status through an account-owned league association."""
+    if status not in ("connected", "reauth_required", "sync_error", "disconnected"):
+        raise ValueError("Invalid provider connection status")
+    init_accounts_tables()
+    from dashboard_services.db import get_conn
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE fantasy_provider_connections c SET status=%s,last_error_code=%s,updated_at=now()
+               FROM user_leagues l WHERE l.provider_connection_id=c.id AND l.account_id=%s
+               AND l.platform='espn' AND l.league_id=%s AND l.season=%s""",
+            (status, (error_code or "")[:64] or None, account_id, str(league_id), int(season)),
+        )
+        conn.commit()
+
+
+def replace_espn_credentials(
+    account_id: int, league_id: str, season: int, swid: str, espn_s2: str,
+) -> bool:
+    """Replace credentials only through an account-owned league connection."""
+    encrypted = _encrypt_provider_credentials({"swid": swid, "espn_s2": espn_s2})
+    init_accounts_tables()
+    from dashboard_services.db import get_conn
+    with get_conn() as conn:
+        row = conn.execute(
+            """UPDATE fantasy_provider_connections c SET encrypted_credentials=%s,
+               status='connected',last_error_code=NULL,last_authenticated_at=now(),updated_at=now()
+               FROM user_leagues l WHERE l.provider_connection_id=c.id AND l.account_id=%s
+               AND l.platform='espn' AND l.league_id=%s AND l.season=%s RETURNING c.id""",
+            (encrypted, account_id, str(league_id), int(season)),
+        ).fetchone()
+        conn.commit()
+    return bool(row)
+
+
+def owns_user_league(account_id: int, platform: str, league_id: str, season: int) -> bool:
+    """Authorization primitive for authenticated league mutations."""
+    init_accounts_tables()
+    from dashboard_services.db import get_conn
+    with get_conn() as conn:
+        return bool(conn.execute(
+            """SELECT 1 FROM user_leagues WHERE account_id=%s AND platform=%s
+               AND league_id=%s AND season=%s""",
+            (account_id, platform, str(league_id), int(season)),
+        ).fetchone())

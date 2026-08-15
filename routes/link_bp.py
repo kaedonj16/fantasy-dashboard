@@ -21,6 +21,9 @@ from flask import Blueprint, jsonify, request, session
 link_bp = Blueprint("link", __name__)
 logger = logging.getLogger(__name__)
 
+_ESPN_PUBLIC_FIELDS = {"league_id", "season"}
+_ESPN_PRIVATE_FIELDS = {"league_id", "season", "swid", "espn_s2"}
+
 
 def _default_season() -> int:
     try:
@@ -28,6 +31,188 @@ def _default_season() -> int:
         return int((get_nfl_state() or {}).get("season") or datetime.now().year)
     except Exception:
         return datetime.now().year
+
+
+@link_bp.route("/api/link/onboarding", methods=["GET", "POST", "DELETE"])
+def link_onboarding_progress():
+    """Resume non-sensitive provider selection across Google authentication."""
+    if request.method == "GET":
+        return jsonify({"ok": True, "progress": session.get("onboarding_progress")})
+    if request.method == "DELETE":
+        session.pop("onboarding_progress", None)
+        return jsonify({"ok": True})
+    data = request.get_json(silent=True) or {}
+    allowed = {"provider", "connection_method", "league_id", "season", "step"}
+    if not isinstance(data, dict) or set(data) - allowed:
+        return jsonify({"ok": False, "error": "Invalid onboarding progress."}), 400
+    provider = str(data.get("provider") or "").lower()
+    method = str(data.get("connection_method") or "").lower()
+    league_id = str(data.get("league_id") or "").strip()
+    if provider not in ("espn", "sleeper", "yahoo") or method not in ("public", "private"):
+        return jsonify({"ok": False, "error": "Invalid onboarding selection."}), 400
+    session["onboarding_progress"] = {
+        "provider": provider, "connection_method": method, "league_id": league_id,
+        "season": data.get("season"), "step": str(data.get("step") or "league"),
+    }
+    return jsonify({"ok": True})
+
+
+def _espn_error(exc: Exception, method: str):
+    """Map ESPN failures without reflecting upstream bodies or credentials."""
+    name = type(exc).__name__
+    msg = str(exc).lower()
+    if name == "ESPNInvalidLeague" or "404" in msg:
+        return "No ESPN league was found for that ID and season.", 404
+    if name == "ESPNAccessDenied" or "401" in msg or "403" in msg:
+        if method == "public":
+            return ("This ESPN league could not be accessed publicly. If it is a private "
+                    "league, connect using the Private League option."), 403
+        return "ESPN rejected these credentials or the session has expired.", 403
+    if "429" in msg or "rate" in msg:
+        return "ESPN is rate limiting requests. Please wait a moment and try again.", 429
+    if "timeout" in msg or "500" in msg or "502" in msg or "503" in msg:
+        return "ESPN is temporarily unavailable. Please try again later.", 503
+    return "ESPN returned an unexpected response. Please verify the details and try again.", 502
+
+
+def _connect_espn(method: str):
+    account_id = session.get("account_id")
+    if not account_id:
+        return jsonify({"ok": False, "error": "Sign in with Google first to link leagues."}), 401
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"ok": False, "error": "A JSON request body is required."}), 400
+    allowed = _ESPN_PUBLIC_FIELDS if method == "public" else _ESPN_PRIVATE_FIELDS
+    unexpected = set(data) - allowed
+    if unexpected:
+        return jsonify({"ok": False, "error": "Unexpected fields for this connection method."}), 400
+    league_id = str(data.get("league_id") or "").strip()
+    if not league_id.isdigit():
+        return jsonify({"ok": False, "error": "League ID must contain numbers only."}), 400
+    try:
+        season = int(data.get("season") or _default_season())
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Season must be a valid year."}), 400
+    swid = str(data.get("swid") or "").strip() if method == "private" else None
+    espn_s2 = str(data.get("espn_s2") or "").strip() if method == "private" else None
+    if method == "private" and (not swid or not espn_s2):
+        return jsonify({"ok": False, "error": "SWID and ESPN_S2 are required."}), 400
+    try:
+        from dashboard_services.providers.espn_api import connect_league
+        info = connect_league(season, league_id, swid=swid, espn_s2=espn_s2)
+        from dashboard_services.accounts import add_espn_league_connection
+        add_espn_league_connection(
+            account_id, league_id, season,
+            info.get("name") or f"ESPN League {league_id}", method,
+            swid=swid, espn_s2=espn_s2,
+        )
+    except Exception as exc:
+        # Never log the submitted payload or exception text: third-party client
+        # exceptions can contain cookie-bearing request details.
+        logger.warning("[link/espn/%s] connection failed (%s)", method, type(exc).__name__)
+        error, status = _espn_error(exc, method)
+        return jsonify({"ok": False, "error": error}), status
+    return jsonify({
+        "ok": True, "platform": "espn", "connection_method": method,
+        "league_id": league_id, "season": season, "name": info.get("name"),
+        "redirect_url": f"/espn/{season}/{league_id}/dashboard",
+    })
+
+
+@link_bp.post("/api/link/espn/public")
+def link_espn_public():
+    return _connect_espn("public")
+
+
+@link_bp.post("/api/link/espn/private")
+def link_espn_private():
+    return _connect_espn("private")
+
+
+@link_bp.post("/api/link/espn/private/saved")
+def link_espn_private_saved():
+    """Open an already-linked private league using account-stored credentials."""
+    account_id = session.get("account_id")
+    if not account_id:
+        return jsonify({"ok": False, "error": "Sign in with Google first."}), 401
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or set(data) - _ESPN_PUBLIC_FIELDS:
+        return jsonify({"ok": False, "error": "Only league_id and season are allowed."}), 400
+    league_id = str(data.get("league_id") or "").strip()
+    if not league_id.isdigit():
+        return jsonify({"ok": False, "error": "League ID must contain numbers only."}), 400
+    try:
+        season = int(data.get("season") or _default_season())
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Season must be a valid year."}), 400
+    from dashboard_services.accounts import get_espn_league_credentials
+    credentials = get_espn_league_credentials(account_id, league_id, season) or {}
+    swid, espn_s2 = credentials.get("swid"), credentials.get("espn_s2")
+    if not swid or not espn_s2:
+        return jsonify({
+            "ok": False,
+            "needs_credentials": True,
+            "error": "Enter SWID and ESPN_S2 to connect this private league.",
+        }), 409
+    try:
+        from dashboard_services.providers.espn_api import connect_league
+        info = connect_league(season, league_id, swid=swid, espn_s2=espn_s2)
+    except Exception as exc:
+        logger.warning("[link/espn/private/saved] connection failed (%s)", type(exc).__name__)
+        error, status = _espn_error(exc, "private")
+        if status in (401, 403):
+            from dashboard_services.accounts import mark_espn_connection_status
+            mark_espn_connection_status(
+                account_id, league_id, season, "reauth_required", "espn_auth_rejected",
+            )
+        return jsonify({
+            "ok": False,
+            "needs_credentials": status in (401, 403),
+            "error": error,
+        }), status
+    return jsonify({
+        "ok": True,
+        "platform": "espn",
+        "connection_method": "private",
+        "league_id": league_id,
+        "season": season,
+        "name": info.get("name"),
+        "redirect_url": f"/espn/{season}/{league_id}/dashboard",
+    })
+
+
+@link_bp.post("/api/link/espn/reconnect")
+def link_espn_reconnect():
+    """Refresh credentials for an owned saved league without re-entering its ID in UI."""
+    account_id = session.get("account_id")
+    if not account_id:
+        return jsonify({"ok": False, "error": "Sign in with Google first."}), 401
+    data = request.get_json(silent=True) or {}
+    allowed = {"league_id", "season", "swid", "espn_s2"}
+    if not isinstance(data, dict) or set(data) - allowed:
+        return jsonify({"ok": False, "error": "Invalid reconnect request."}), 400
+    league_id = str(data.get("league_id") or "").strip()
+    swid, espn_s2 = str(data.get("swid") or "").strip(), str(data.get("espn_s2") or "").strip()
+    try:
+        season = int(data.get("season"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Invalid saved league."}), 400
+    if not league_id.isdigit() or not swid or not espn_s2:
+        return jsonify({"ok": False, "error": "SWID and ESPN_S2 are required."}), 400
+    from dashboard_services.accounts import owns_user_league
+    if not owns_user_league(account_id, "espn", league_id, season):
+        return jsonify({"ok": False, "error": "Saved league not found."}), 404
+    try:
+        from dashboard_services.providers.espn_api import connect_league
+        connect_league(season, league_id, swid=swid, espn_s2=espn_s2)
+        from dashboard_services.accounts import replace_espn_credentials
+        if not replace_espn_credentials(account_id, league_id, season, swid, espn_s2):
+            return jsonify({"ok": False, "error": "Saved league not found."}), 404
+    except Exception as exc:
+        logger.warning("[link/espn/reconnect] failed (%s)", type(exc).__name__)
+        error, status = _espn_error(exc, "private")
+        return jsonify({"ok": False, "error": error}), status
+    return jsonify({"ok": True, "redirect_url": f"/espn/{season}/{league_id}/dashboard"})
 
 
 @link_bp.route("/api/link/espn/preview")
