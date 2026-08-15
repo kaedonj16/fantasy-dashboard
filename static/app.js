@@ -8893,7 +8893,9 @@ if (!platformBtns.length) return;
     });
     // Try the signed-in account's saved ESPN connection first. Credential
     // fields are revealed only when this league has no usable saved session.
-    if (espnPrivateFields) espnPrivateFields.style.display = "none";
+    if (espnPrivateFields) {
+      espnPrivateFields.style.display = homeEspnMethod === "private" && !window._hasAccount ? "block" : "none";
+    }
     if (espnDescription) espnDescription.textContent = homeEspnMethod === "private"
       ? "Open a connected private ESPN league, or enter credentials when prompted."
       : "Connect a publicly accessible ESPN league using its League ID.";
@@ -9129,18 +9131,37 @@ if (!platformBtns.length) return;
       }
 
       if (espnErrorBox) espnErrorBox.style.display = "none";
-      if (homeEspnMethod === "private" && !window._hasAccount) {
-        if (espnSwidInput) espnSwidInput.value = "";
-        if (espnS2Input) espnS2Input.value = "";
-        await fetch("/api/link/onboarding", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider: "espn", connection_method: "private", league_id: leagueId, step: "credentials" }),
-        }).catch(() => null);
-        window.location.href = "/auth/google?intent=onboarding&next=" + encodeURIComponent("/");
-        return;
-      }
       const swid = espnSwidInput?.value.trim() || "";
       const espnS2 = espnS2Input?.value.trim() || "";
+      if (homeEspnMethod === "private" && !window._hasAccount) {
+        if (!swid || !espnS2) {
+          espnErrorBox.textContent = "Enter SWID and ESPN_S2 before continuing with Google.";
+          espnErrorBox.style.display = "block";
+          return;
+        }
+        espnSubmitBtn.disabled = true;
+        espnSubmitBtn.textContent = "Validating ESPN...";
+        try {
+          const season = Number(document.querySelector('input[name="season"]')?.value || new Date().getFullYear());
+          const pendingRes = await fetch("/api/link/espn/private/pending", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ league_id: leagueId, season, swid, espn_s2: espnS2 }),
+          });
+          const pendingData = await pendingRes.json();
+          espnSwidInput.value = "";
+          espnS2Input.value = "";
+          if (!pendingRes.ok || !pendingData.ok) throw new Error(pendingData.error || "Unable to validate ESPN credentials.");
+          window.location.href = pendingData.auth_url;
+        } catch (err) {
+          espnSwidInput.value = "";
+          espnS2Input.value = "";
+          espnErrorBox.textContent = err.message || "Unable to validate ESPN credentials.";
+          espnErrorBox.style.display = "block";
+          espnSubmitBtn.disabled = false;
+          espnSubmitBtn.textContent = "Sign in with Google to Connect";
+        }
+        return;
+      }
       if (homeEspnMethod === "private" && !swid && !espnS2) {
         espnSubmitBtn.disabled = true;
         espnSubmitBtn.textContent = "Checking saved connection...";

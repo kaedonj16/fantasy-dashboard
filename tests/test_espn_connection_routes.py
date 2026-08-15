@@ -94,3 +94,21 @@ def test_reconnect_checks_ownership_before_contacting_espn(client, monkeypatch):
     })
     assert response.status_code == 404
     assert contacted == []
+
+
+def test_signed_out_private_connection_is_staged_before_google(monkeypatch):
+    app = flask.Flask(__name__); app.secret_key = "test"; app.register_blueprint(link_bp)
+    import dashboard_services.providers.espn_api as espn
+    import dashboard_services.accounts as accounts
+    monkeypatch.setattr(espn, "connect_league", lambda *a, **k: {"name": "Private"})
+    monkeypatch.setattr(accounts, "stage_private_espn_connection", lambda *a: "opaque-token")
+    with app.test_client() as test_client:
+        response = test_client.post("/api/link/espn/private/pending", json={
+            "league_id": "123", "season": 2026, "swid": "{owner}", "espn_s2": "secret",
+        })
+        with test_client.session_transaction() as sess:
+            assert sess["pending_provider_connection_token"] == "opaque-token"
+            assert "swid" not in sess["onboarding_progress"]
+            assert "espn_s2" not in sess["onboarding_progress"]
+    assert response.status_code == 200
+    assert response.json["auth_url"].startswith("/auth/google?intent=onboarding")

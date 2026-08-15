@@ -129,6 +129,41 @@ def link_espn_private():
     return _connect_espn("private")
 
 
+@link_bp.post("/api/link/espn/private/pending")
+def link_espn_private_pending():
+    """Validate and stage private credentials before Google onboarding."""
+    if session.get("account_id"):
+        return jsonify({"ok": False, "error": "Account is already signed in."}), 409
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict) or set(data) - _ESPN_PRIVATE_FIELDS:
+        return jsonify({"ok": False, "error": "Invalid private ESPN request."}), 400
+    league_id = str(data.get("league_id") or "").strip()
+    swid, espn_s2 = str(data.get("swid") or "").strip(), str(data.get("espn_s2") or "").strip()
+    if not league_id.isdigit() or not swid or not espn_s2:
+        return jsonify({"ok": False, "error": "League ID, SWID, and ESPN_S2 are required."}), 400
+    try:
+        season = int(data.get("season") or _default_season())
+        from dashboard_services.providers.espn_api import connect_league
+        info = connect_league(season, league_id, swid=swid, espn_s2=espn_s2)
+        from dashboard_services.accounts import stage_private_espn_connection
+        token = stage_private_espn_connection(
+            league_id, season, info.get("name") or f"ESPN League {league_id}", swid, espn_s2,
+        )
+        session["pending_provider_connection_token"] = token
+        session["onboarding_progress"] = {
+            "provider": "espn", "connection_method": "private",
+            "league_id": league_id, "season": season, "step": "google",
+        }
+    except Exception as exc:
+        logger.warning("[link/espn/private/pending] failed (%s)", type(exc).__name__)
+        error, status = _espn_error(exc, "private")
+        return jsonify({"ok": False, "error": error}), status
+    return jsonify({
+        "ok": True,
+        "auth_url": "/auth/google?intent=onboarding&next=/",
+    })
+
+
 @link_bp.post("/api/link/espn/private/saved")
 def link_espn_private_saved():
     """Open an already-linked private league using account-stored credentials."""

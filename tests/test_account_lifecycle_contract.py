@@ -37,3 +37,13 @@ def test_last_active_destination_does_not_call_provider():
     body = source[source.index("def get_post_login_destination"):source.index("def mark_espn_connection_status")]
     assert "list_user_leagues" in body
     assert "get_league" not in body
+
+
+def test_pending_private_credentials_are_encrypted_server_side():
+    accounts = Path("dashboard_services/accounts.py").read_text()
+    migration = Path("migrations/024_pending_provider_connections.sql").read_text()
+    script = Path("static/app.js").read_text()
+    assert "_encrypt_provider_credentials" in accounts
+    assert "expires_at" in migration
+    assert 'fetch("/api/link/espn/private/pending"' in script
+    assert "pending_provider_connection_token" in Path("routes/google_auth_bp.py").read_text()

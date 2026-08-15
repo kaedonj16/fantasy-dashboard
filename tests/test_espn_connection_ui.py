@@ -50,13 +50,14 @@ def test_password_inputs_share_site_input_styles():
     assert 'input[type="password"]:focus' in css
 
 
-def test_private_espn_flow_signs_in_before_collecting_credentials():
+def test_private_espn_flow_collects_credentials_before_google_sign_in():
     script = Path("static/app.js").read_text()
     flow = script[script.index('espnSubmitBtn.addEventListener("click"'):script.index("if (yahooConnectBtn)")]
-    sign_in = flow.index('homeEspnMethod === "private" && !window._hasAccount')
     read_swid = flow.index("const swid =")
-    assert sign_in < read_swid
-    assert 'window.location.href = "/auth/google?intent=onboarding&next="' in flow
+    stage = flow.index('fetch("/api/link/espn/private/pending"')
+    redirect = flow.index("window.location.href = pendingData.auth_url")
+    assert read_swid < stage < redirect
+    assert '"Enter SWID and ESPN_S2 before continuing with Google."' in flow
 
 
 def test_link_modal_connects_unsigned_public_espn_through_google():

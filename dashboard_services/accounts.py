@@ -20,6 +20,7 @@ import logging
 import os
 import base64
 import hashlib
+import secrets
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,19 @@ def init_accounts_tables() -> None:
                 auth_provider_subject TEXT NOT NULL,
                 created_at TIMESTAMPTZ DEFAULT now(),
                 UNIQUE (auth_provider, auth_provider_subject)
+            )"""
+        )
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS pending_provider_connections (
+                token_hash TEXT PRIMARY KEY,
+                provider TEXT NOT NULL,
+                connection_method TEXT NOT NULL,
+                league_id TEXT NOT NULL,
+                season INTEGER NOT NULL,
+                league_name TEXT,
+                encrypted_credentials TEXT NOT NULL,
+                expires_at TIMESTAMPTZ NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT now()
             )"""
         )
         conn.execute(
@@ -149,6 +163,19 @@ def _encrypt_provider_credentials(credentials: dict) -> str:
     return Fernet(key).encrypt(json.dumps(credentials).encode("utf-8")).decode("ascii")
 
 
+def _decrypt_provider_credentials(encrypted: str) -> Optional[dict]:
+    secret = os.getenv("PROVIDER_CREDENTIAL_ENCRYPTION_KEY", "").strip()
+    if not secret:
+        return None
+    from cryptography.fernet import Fernet, InvalidToken
+    key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
+    try:
+        raw = Fernet(key).decrypt(encrypted.encode("ascii"))
+        return json.loads(raw.decode("utf-8"))
+    except (InvalidToken, ValueError, TypeError, json.JSONDecodeError):
+        return None
+
+
 def get_espn_league_credentials(account_id: int, league_id: str, season: int) -> Optional[dict]:
     """Return decrypted credentials only to backend provider code."""
     init_accounts_tables()
@@ -163,17 +190,57 @@ def get_espn_league_credentials(account_id: int, league_id: str, season: int) ->
         ).fetchone()
     if not row or not row["encrypted_credentials"]:
         return None
-    secret = os.getenv("PROVIDER_CREDENTIAL_ENCRYPTION_KEY", "").strip()
-    if not secret:
-        return None
-    from cryptography.fernet import Fernet, InvalidToken
-    key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
-    try:
-        raw = Fernet(key).decrypt(row["encrypted_credentials"].encode("ascii"))
-        return json.loads(raw.decode("utf-8"))
-    except (InvalidToken, ValueError, TypeError, json.JSONDecodeError):
+    credentials = _decrypt_provider_credentials(row["encrypted_credentials"])
+    if credentials is None:
         logger.warning("Unable to decrypt stored ESPN credentials for connection")
+    return credentials
+
+
+def stage_private_espn_connection(
+    league_id: str, season: int, name: str, swid: str, espn_s2: str,
+) -> str:
+    """Store validated onboarding secrets behind a short-lived opaque token."""
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    encrypted = _encrypt_provider_credentials({"swid": swid, "espn_s2": espn_s2})
+    init_accounts_tables()
+    from dashboard_services.db import get_conn
+    with get_conn() as conn:
+        conn.execute("DELETE FROM pending_provider_connections WHERE expires_at < now()")
+        conn.execute(
+            """INSERT INTO pending_provider_connections
+               (token_hash,provider,connection_method,league_id,season,league_name,
+                encrypted_credentials,expires_at)
+               VALUES (%s,'espn','private',%s,%s,%s,%s,now()+interval '15 minutes')""",
+            (token_hash, str(league_id), int(season), name, encrypted),
+        )
+        conn.commit()
+    return token
+
+
+def consume_private_espn_connection(token: str) -> Optional[dict]:
+    """Atomically consume one staged connection after Google authentication."""
+    if not token:
         return None
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    init_accounts_tables()
+    from dashboard_services.db import get_conn
+    with get_conn() as conn:
+        row = conn.execute(
+            """DELETE FROM pending_provider_connections WHERE token_hash=%s
+               AND expires_at >= now() RETURNING league_id,season,league_name,encrypted_credentials""",
+            (token_hash,),
+        ).fetchone()
+        conn.commit()
+    if not row:
+        return None
+    credentials = _decrypt_provider_credentials(row["encrypted_credentials"])
+    if not credentials:
+        return None
+    return {
+        "league_id": row["league_id"], "season": row["season"],
+        "name": row["league_name"], **credentials,
+    }
 
 
 def add_espn_league_connection(

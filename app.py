@@ -2545,10 +2545,15 @@ def _link_modal_html() -> str:
         var swid=(document.getElementById('linkEspnSwid').value||'').trim(), s2=(document.getElementById('linkEspnS2').value||'').trim();
         if(!/^\\d+$/.test(id)){ linkSetMsg('Enter a valid numeric League ID.','err'); return; }
         if(!window._hasAccount){
-          document.getElementById('linkEspnSwid').value='';document.getElementById('linkEspnS2').value='';
           if(espnMethod==='private'){
-            linkSetMsg('Sign in with Google first; then return to enter your ESPN credentials.','');
-            location.href='/auth/google?next='+encodeURIComponent(location.pathname);return;
+            if(!swid||!s2){linkSetMsg('Enter SWID and ESPN_S2 before continuing with Google.','err');return;}
+            linkSetMsg('Validating ESPN before Google sign-in…','');
+            fetch('/api/link/espn/private/pending',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({league_id:id,season:yr?Number(yr):null,swid:swid,espn_s2:s2})})
+              .then(function(r){return r.json().then(function(d){return {ok:r.ok,d:d};});}).then(function(result){
+                document.getElementById('linkEspnSwid').value='';document.getElementById('linkEspnS2').value='';
+                if(!result.ok||!result.d.ok){linkSetMsg(result.d.error||'Could not validate ESPN credentials.','err');return;}
+                location.href=result.d.auth_url;
+              }).catch(function(){linkSetMsg('Network error.','err');});return;
           }
           linkSetMsg('Validating league before Google sign-in…','');
           fetch('/api/espn-validate-league?league_id='+encodeURIComponent(id)+(yr?'&season='+encodeURIComponent(yr):''))

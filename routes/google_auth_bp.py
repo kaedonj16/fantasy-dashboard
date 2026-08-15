@@ -166,6 +166,29 @@ def google_auth_callback():
     session["account_first_name"] = info.get("given_name") or ""
     session.permanent = True
 
+    # Private ESPN onboarding is validated and encrypted before Google sign-in.
+    # The browser session carries only an opaque one-time token; consume it now
+    # and attach the league to the canonical Google account.
+    pending_provider_token = session.pop("pending_provider_connection_token", None)
+    if pending_provider_token:
+        try:
+            from dashboard_services.accounts import (
+                consume_private_espn_connection, add_espn_league_connection,
+            )
+            pending_provider = consume_private_espn_connection(pending_provider_token)
+            if pending_provider:
+                add_espn_league_connection(
+                    account_id, pending_provider["league_id"], pending_provider["season"],
+                    pending_provider.get("name") or "ESPN League", "private",
+                    swid=pending_provider["swid"], espn_s2=pending_provider["espn_s2"],
+                )
+                session.pop("onboarding_progress", None)
+                return redirect(
+                    f"/espn/{pending_provider['season']}/{pending_provider['league_id']}/dashboard"
+                )
+        except Exception:
+            logger.warning("[google_auth] pending ESPN attach failed", exc_info=True)
+
     # Bridge an already-signed-in Sleeper session onto this account: attach the
     # identity and backfill its leagues so they show up immediately. Best-effort
     # — a failure here must not block sign-in.
