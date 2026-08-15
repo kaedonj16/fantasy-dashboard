@@ -8854,51 +8854,81 @@ if (!platformBtns.length) return;
 
   const signedInHome = document.getElementById("signedInHome");
   const signedInLeagueList = document.getElementById("signedInLeagueList");
+  const connectLeagueFlow = document.getElementById("connectLeagueFlow");
+  const homeCardTitle = document.getElementById("homeCardTitle");
+  const homeConnectBack = document.getElementById("homeConnectBack");
+  const homeAccountEntry = document.querySelector(".home-account-entry");
+  let returningHomeCta = null;
   const safeHomeText = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   })[char]);
+  function setHomeCardState(state) {
+    const connected = state === "connected";
+    const returning = state === "returning";
+    if (signedInHome) signedInHome.hidden = !connected;
+    if (connectLeagueFlow) connectLeagueFlow.hidden = connected || returning;
+    if (homeAccountEntry) homeAccountEntry.hidden = connected || returning;
+    if (returningHomeCta) returningHomeCta.hidden = !returning;
+    if (homeConnectBack) homeConnectBack.hidden = state !== "connect" || (!window._hasAccount && !returningHomeCta);
+    if (homeCardTitle) homeCardTitle.textContent = connected ? "Your leagues" : returning ? "Welcome back" : "Get started";
+    document.querySelector(".home-card")?.setAttribute("data-home-state", state);
+  }
+
   if (signedInHome && signedInLeagueList) {
-    fetch("/api/my-leagues").then((response) => response.json()).then((data) => {
+    const loadSignedInLeagues = () => fetch("/api/my-leagues").then((response) => response.json()).then((data) => {
       const leagues = data.leagues || [];
       if (!leagues.length) {
         signedInLeagueList.textContent = "Connect your first fantasy league below.";
         return;
       }
-      signedInLeagueList.innerHTML = leagues.map((league) => {
-        const url = `/${encodeURIComponent(league.platform)}/${encodeURIComponent(league.season)}/${encodeURIComponent(league.league_id)}/dashboard`;
-        const attention = league.needs_reconnect ? '<span class="connection-attention">Connection needs attention</span>' : "";
-        if (league.needs_reconnect) {
-          return `<div class="signed-home-league signed-home-league-attention"><span class="signed-home-league-name">${safeHomeText(league.name || "Fantasy League")}${attention}</span><button type="button" class="reconnect-home-espn" data-league="${safeHomeText(league.league_id)}">Reconnect</button></div>`;
-        }
-        return `<a class="signed-home-league" href="${url}"><span class="signed-home-league-name">${safeHomeText(league.name || "Fantasy League")}</span><span class="signed-home-league-open">Open <span aria-hidden="true">→</span></span></a>`;
-      }).join("");
-      signedInLeagueList.querySelectorAll(".reconnect-home-espn").forEach((button) => {
-        button.addEventListener("click", () => {
-          document.querySelector('.platform-btn[data-platform="espn"]')?.click();
-          document.querySelector('.espn-home-method[data-espn-method="private"]')?.click();
-          if (espnLeagueIdInput) espnLeagueIdInput.value = button.dataset.league || "";
-          if (espnPrivateFields) {
-            espnPrivateFields.style.display = "block";
-            espnPrivateFields.dataset.reconnect = "true";
-          }
-          espnLeagueIdInput?.scrollIntoView({ behavior: "smooth", block: "center" });
-        });
-      });
+      const pageSize = 3;
+      let leaguePage = 0;
+      const renderLeaguePage = () => {
+        const pageCount = Math.max(1, Math.ceil(leagues.length / pageSize));
+        leaguePage = Math.min(leaguePage, pageCount - 1);
+        const items = leagues.slice(leaguePage * pageSize, (leaguePage + 1) * pageSize);
+        signedInLeagueList.innerHTML = items.map((league) => {
+          const url = `/${encodeURIComponent(league.platform)}/${encodeURIComponent(league.season)}/${encodeURIComponent(league.league_id)}/dashboard`;
+          const attention = league.needs_reconnect ? '<span class="connection-attention">Connection needs attention</span>' : "";
+          if (league.needs_reconnect) return `<div class="signed-home-league signed-home-league-attention"><span class="signed-home-league-name">${safeHomeText(league.name || "Fantasy League")}${attention}</span><button type="button" class="reconnect-home-espn" data-league="${safeHomeText(league.league_id)}">Reconnect</button></div>`;
+          return `<a class="signed-home-league" href="${url}"><span class="signed-home-league-name">${safeHomeText(league.name || "Fantasy League")}</span><span class="signed-home-league-open">Open <span aria-hidden="true">→</span></span></a>`;
+        }).join("") + (pageCount > 1 ? `<div class="signed-home-pagination"><button type="button" class="signed-home-page-prev" ${leaguePage === 0 ? "disabled" : ""} aria-label="Previous leagues">←</button><span>Page ${leaguePage + 1} of ${pageCount}</span><button type="button" class="signed-home-page-next" ${leaguePage === pageCount - 1 ? "disabled" : ""} aria-label="Next leagues">→</button></div>` : "");
+        signedInLeagueList.querySelector(".signed-home-page-prev")?.addEventListener("click", () => { leaguePage--; renderLeaguePage(); });
+        signedInLeagueList.querySelector(".signed-home-page-next")?.addEventListener("click", () => { leaguePage++; renderLeaguePage(); });
+        signedInLeagueList.querySelectorAll(".reconnect-home-espn").forEach((button) => button.addEventListener("click", () => {
+            document.querySelector('.platform-btn[data-platform="espn"]')?.click();
+            document.querySelector('.espn-home-method[data-espn-method="private"]')?.click();
+            if (espnLeagueIdInput) espnLeagueIdInput.value = button.dataset.league || "";
+            if (espnPrivateFields) { espnPrivateFields.style.display = "block"; espnPrivateFields.dataset.reconnect = "true"; }
+            espnLeagueIdInput?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }));
+      };
+      renderLeaguePage();
     }).catch(() => { signedInLeagueList.textContent = "Could not load saved leagues. Try again shortly."; });
+    window.refreshHomeLeagues = loadSignedInLeagues;
+    loadSignedInLeagues();
     document.getElementById("signedInAddLeague")?.addEventListener("click", (event) => {
-      const flow = document.getElementById("connectLeagueFlow");
-      if (!flow) return;
-      const willOpen = flow.hidden;
-      flow.hidden = !willOpen;
-      event.currentTarget.setAttribute("aria-expanded", String(willOpen));
-      event.currentTarget.textContent = willOpen ? "Cancel" : "Connect another league";
-      if (willOpen) flow.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      event.currentTarget.setAttribute("aria-expanded", "true");
+      setHomeCardState("connect");
     });
+    homeConnectBack?.addEventListener("click", () => setHomeCardState(window._hasAccount ? "connected" : "returning"));
   }
 
   let currentPlatform = "sleeper";
   let homeEspnMethod = "public";
   let espnRequestedAction = "";
+  let sleeperLookupUser = null;
+
+  async function saveLeagueToSignedInAccount(details) {
+    const response = await fetch("/api/link/add", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(details),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Could not save this league.");
+    await window.refreshHomeLeagues?.();
+    setHomeCardState("connected");
+  }
 
   function setHomeEspnMethod(method) {
     homeEspnMethod = method === "private" ? "private" : "public";
@@ -9033,17 +9063,20 @@ if (!platformBtns.length) return;
   const saved = JSON.parse(localStorage.getItem("saved_viewer") || "null");
   const homeCardEl = document.querySelector(".home-card");
 
-  function mountReturnCta(labelHtml, onContinue, onDismiss) {
+  function mountReturnCta(labelHtml, onContinue) {
     if (!homeCardEl) return;
     const cta = document.createElement("div");
     cta.className = "saved-viewer-cta";
     cta.innerHTML =
       '<div class="saved-viewer-info"><span class="saved-viewer-label">Welcome back!</span>' +
-      '<button type="button" class="saved-viewer-btn" id="continueAsBtn">' + labelHtml + '</button></div>' +
-      '<button type="button" class="saved-viewer-dismiss" aria-label="Dismiss">×</button>';
-    homeCardEl.insertAdjacentElement("afterbegin", cta);
-    cta.querySelector(".saved-viewer-dismiss")?.addEventListener("click", () => { onDismiss(); cta.remove(); });
+      '<button type="button" class="saved-viewer-btn" id="continueAsBtn">' + labelHtml + '</button>' +
+      '<button type="button" class="saved-viewer-connect">Connect another league</button></div>' +
+      '<a class="saved-viewer-reset" href="/reset-user">Not me?</a>';
+    homeCardTitle?.insertAdjacentElement("afterend", cta);
+    returningHomeCta = cta;
     document.getElementById("continueAsBtn")?.addEventListener("click", onContinue);
+    cta.querySelector(".saved-viewer-connect")?.addEventListener("click", () => setHomeCardState("connect"));
+    setHomeCardState("returning");
   }
 
   if (!window._hasAccount && savedAccount) {
@@ -9051,8 +9084,7 @@ if (!platformBtns.length) return;
     // account via Google, which lands them on their leagues.
     const who = savedAccount.email || "your account";
     mountReturnCta("Continue as <strong>" + who + "</strong>",
-      function () { this.disabled = true; window.location.href = "/auth/google?next=" + encodeURIComponent(location.pathname); },
-      function () { try { localStorage.removeItem("saved_account"); } catch (_) {} });
+      function () { this.disabled = true; window.location.href = "/auth/google?next=" + encodeURIComponent(location.pathname); });
   } else if (saved?.league_id && saved?.username) {
     const platform = saved.platform || "sleeper";
     const season = saved.season || new Date().getFullYear();
@@ -9071,8 +9103,7 @@ if (!platformBtns.length) return;
           });
         } catch (_) { /* best-effort; navigate anyway */ }
         window.location.href = dashboardUrl;
-      },
-      function () { try { localStorage.removeItem("saved_viewer"); } catch (_) {} });
+      });
   }
 
   // Sleeper lookup
@@ -9098,6 +9129,7 @@ if (!platformBtns.length) return;
         if (!res.ok || !data.ok) {
           throw new Error(data.error || "Unable to load leagues.");
         }
+        sleeperLookupUser = data.user || null;
 
         leagueSelect.innerHTML = `<option value="">Select a league</option>`;
 
@@ -9114,6 +9146,7 @@ if (!platformBtns.length) return;
 
         leagueSelectWrap.style.display = "block";
         generateWrap.style.display = "block";
+        if (window._hasAccount && googleBtnEl) googleBtnEl.innerHTML = "Save league to my account";
         syncHomeContinueState();
       } catch (err) {
         errorBox.textContent = err.message || "Unable to load leagues.";
@@ -9204,7 +9237,10 @@ if (!platformBtns.length) return;
           });
           const savedData = await savedRes.json();
           if (savedRes.ok && savedData.ok) {
-            window.location.href = savedData.redirect_url;
+            await window.refreshHomeLeagues?.();
+            setHomeCardState("connected");
+            espnSubmitBtn.disabled = false;
+            espnSubmitBtn.textContent = "Connect League";
             return;
           }
           if (savedData.needs_credentials) {
@@ -9244,7 +9280,10 @@ if (!platformBtns.length) return;
           espnS2Input.value = "";
           if (espnPrivateFields) delete espnPrivateFields.dataset.reconnect;
           if (!privateRes.ok || !privateData.ok) throw new Error(privateData.error || "Unable to connect private ESPN league.");
-          window.location.href = privateData.redirect_url;
+          await window.refreshHomeLeagues?.();
+          setHomeCardState("connected");
+          espnSubmitBtn.disabled = false;
+          espnSubmitBtn.textContent = "Connect League";
           return;
         }
         const res = await fetch(`/api/espn-validate-league?league_id=${encodeURIComponent(leagueId)}`);
@@ -9315,7 +9354,7 @@ if (!platformBtns.length) return;
   // they land in that league with a durable account (select-league-then-login).
   const googleContinueBtn = document.getElementById("googleContinueBtn");
   if (googleContinueBtn) {
-    googleContinueBtn.addEventListener("click", () => {
+    googleContinueBtn.addEventListener("click", async () => {
       const platform = (formPlatform && formPlatform.value) || "sleeper";
       const sel = document.getElementById("league");
       const leagueId = sel && sel.value;
@@ -9331,7 +9370,22 @@ if (!platformBtns.length) return;
       const uEl = document.getElementById("username") || document.getElementById("formUsername");
       const username = uEl && uEl.value ? uEl.value.trim() : "";
       googleContinueBtn.disabled = true;
-      googleContinueBtn.textContent = "Continuing…";
+      googleContinueBtn.textContent = window._hasAccount ? "Saving..." : "Continuing...";
+      if (window._hasAccount) {
+        try {
+          await saveLeagueToSignedInAccount({
+            platform, league_id: leagueId, season, name, username,
+            platform_user_id: sleeperLookupUser?.user_id || null,
+          });
+          googleContinueBtn.disabled = false;
+          googleContinueBtn.textContent = "Save league to my account";
+        } catch (error) {
+          googleContinueBtn.disabled = false;
+          googleContinueBtn.textContent = "Save league to my account";
+          if (errorBox) { errorBox.textContent = error.message; errorBox.style.display = "block"; }
+        }
+        return;
+      }
       fetch("/api/link/pending", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ platform, league_id: leagueId, season, name, username }),

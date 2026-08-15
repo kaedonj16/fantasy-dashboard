@@ -433,7 +433,23 @@ def link_add():
     team_id = (str(data.get("team_id")).strip() or None) if data.get("team_id") else None
     name = (str(data.get("name")).strip() or None) if data.get("name") else None
     try:
-        from dashboard_services.accounts import add_user_league
+        from dashboard_services.accounts import add_user_league, link_platform_identity
+        if platform == "sleeper":
+            from dashboard_services.api import (
+                get_rosters, get_sleeper_user_by_username, get_sleeper_user_leagues,
+            )
+            username = (str(data.get("username") or "").strip() or None)
+            sleeper_user = get_sleeper_user_by_username(username) if username else None
+            platform_user_id = str((sleeper_user or {}).get("user_id") or "").strip()
+            if not platform_user_id:
+                return jsonify({"ok": False, "error": "Could not verify that Sleeper user."}), 400
+            memberships = get_sleeper_user_leagues(platform_user_id, season) or []
+            if str(league_id) not in {str(lg.get("league_id")) for lg in memberships}:
+                return jsonify({"ok": False, "error": "That Sleeper user is not a member of this league."}), 400
+            team_id = next((str(roster.get("roster_id")) for roster in (get_rosters(league_id) or [])
+                            if str(roster.get("owner_id") or "") == platform_user_id), None)
+            link_platform_identity(account_id, "sleeper", platform_user_id,
+                                   (sleeper_user or {}).get("username") or username)
         add_user_league(account_id, platform, league_id, season=season, team_id=team_id, name=name)
     except Exception as exc:
         logger.warning("[link/add] failed: %s", exc)
