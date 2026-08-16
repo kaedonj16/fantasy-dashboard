@@ -17608,48 +17608,67 @@ def build_commissioner_body(ctx):
     score_color = "#22c55e" if activity_score >= 80 else ("#f59e0b" if activity_score >= 60 else "#ef4444")
     score_label = "Healthy" if activity_score >= 80 else ("Watch" if activity_score >= 60 else "At Risk")
 
-    # Composite card matching the Multi-Season Health treatment below: one card
-    # with a bold uppercase header + muted subtitle and the stats as nested,
-    # bordered/rounded tiles, instead of five separate floating cards.
+    # Composite card: the health score as a hero with a 0-100 track, then the
+    # four contributing factors as labelled horizontal bars beneath it. Each bar
+    # fill is meaningful and ties back to the score — inactive = share of teams
+    # dead, lopsided = share of trades lopsided, trades/moves = pace vs the
+    # league's own norm. Green fills read as the healthy direction, red/orange
+    # as the unhealthy one.
+    _GOOD, _WARN, _BAD = "#22c55e", "#f59e0b", "#ef4444"
+
+    def _lh_bar(label: str, value, fill_pct: float, fill_color: str, val_color: str) -> str:
+        fill_pct = max(0, min(100, round(fill_pct)))
+        return f"""
+    <div class="lh-bar-row">
+      <div class="lh-bar-top">
+        <span class="lh-bar-label">{label}</span>
+        <span class="lh-bar-val" style="color:{val_color};">{value}</span>
+      </div>
+      <div class="lh-bar-track"><div class="lh-bar-fill" style="width:{fill_pct}%;background:{fill_color};"></div></div>
+    </div>"""
+
+    _bars_html = "".join([
+        _lh_bar("Inactive Teams", inactive_count, inactive_count / n * 100,
+                _BAD, _BAD if inactive_count else _GOOD),
+        _lh_bar("Trades This Season", total_trades, min(1.0, trades_ratio) * 100,
+                _GOOD, "var(--text)"),
+        _lh_bar("Lopsided Trades", lopsided_count, lopsided_ratio * 100,
+                _WARN, _WARN if lopsided_count else _GOOD),
+        _lh_bar("Total Moves", total_txns, min(1.0, moves_ratio) * 100,
+                _GOOD, "var(--text)"),
+    ])
+
     health_html = f"""
 <style>
   .lh-card {{ padding:20px; margin-bottom:20px; }}
   .lh-head {{ display:flex; align-items:baseline; gap:8px; margin-bottom:18px; }}
   .lh-head-title {{ font-size:12px; font-weight:800; letter-spacing:.06em; color:var(--text); text-transform:uppercase; }}
   .lh-head-sub {{ font-size:12px; color:var(--muted); }}
-  .lh-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; }}
-  .lh-stat {{ border:1px solid var(--border); border-radius:14px; padding:16px; background:var(--row,rgba(127,127,127,.03)); text-align:center; }}
-  .lh-stat-num {{ font-size:28px; font-weight:800; line-height:1; }}
-  .lh-stat-label {{ font-size:11px; font-weight:700; letter-spacing:.04em; color:var(--muted); text-transform:uppercase; margin-top:6px; }}
-  .lh-stat-sub {{ font-size:13px; font-weight:600; margin-top:3px; }}
+  .lh-hero {{ text-align:center; padding:4px 0 20px; border-bottom:1px solid var(--border); margin-bottom:20px; }}
+  .lh-hero-num {{ font-size:64px; font-weight:800; line-height:1; }}
+  .lh-hero-label {{ font-size:11px; font-weight:700; letter-spacing:.06em; color:var(--muted); text-transform:uppercase; margin-top:10px; }}
+  .lh-hero-status {{ font-size:14px; font-weight:700; margin-top:4px; }}
+  .lh-hero-track {{ height:8px; border-radius:99px; background:var(--border); overflow:hidden; max-width:320px; margin:16px auto 0; }}
+  .lh-hero-track > div {{ height:100%; border-radius:99px; }}
+  .lh-bars {{ display:flex; flex-direction:column; gap:16px; }}
+  .lh-bar-top {{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:7px; }}
+  .lh-bar-label {{ font-size:12.5px; font-weight:600; color:var(--text); }}
+  .lh-bar-val {{ font-size:18px; font-weight:800; line-height:1; }}
+  .lh-bar-track {{ height:8px; border-radius:99px; background:var(--border); overflow:hidden; }}
+  .lh-bar-fill {{ height:100%; border-radius:99px; min-width:2px; transition:width .3s ease; }}
 </style>
 <div class="card lh-card">
   <div class="lh-head">
     <span class="lh-head-title">League Health</span>
     <span class="lh-head-sub">this season</span>
   </div>
-  <div class="lh-grid">
-    <div class="lh-stat">
-      <div class="lh-stat-num" style="color:{score_color};">{int(activity_score)}</div>
-      <div class="lh-stat-label">Health Score</div>
-      <div class="lh-stat-sub" style="color:{score_color};">{score_label}</div>
-    </div>
-    <div class="lh-stat">
-      <div class="lh-stat-num" style="color:{'#ef4444' if inactive_count else '#22c55e'};">{inactive_count}</div>
-      <div class="lh-stat-label">Inactive Teams</div>
-    </div>
-    <div class="lh-stat">
-      <div class="lh-stat-num" style="color:var(--text);">{total_trades}</div>
-      <div class="lh-stat-label">Trades This Season</div>
-    </div>
-    <div class="lh-stat">
-      <div class="lh-stat-num" style="color:{'#f59e0b' if lopsided_count else '#22c55e'};">{lopsided_count}</div>
-      <div class="lh-stat-label">Lopsided Trades</div>
-    </div>
-    <div class="lh-stat">
-      <div class="lh-stat-num" style="color:var(--text);">{total_txns}</div>
-      <div class="lh-stat-label">Total Moves</div>
-    </div>
+  <div class="lh-hero">
+    <div class="lh-hero-num" style="color:{score_color};">{int(activity_score)}</div>
+    <div class="lh-hero-label">Health Score</div>
+    <div class="lh-hero-status" style="color:{score_color};">{score_label}</div>
+    <div class="lh-hero-track"><div style="width:{int(activity_score)}%;background:{score_color};"></div></div>
+  </div>
+  <div class="lh-bars">{_bars_html}
   </div>
 </div>"""
 
