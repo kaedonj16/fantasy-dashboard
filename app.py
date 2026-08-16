@@ -20163,6 +20163,110 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
     }
 
 
+@app.route("/api/market-intel/health")
+def api_market_intel_health():
+    """Diagnostic for the Market vs ADP / market-intelligence pipeline.
+
+    Read-only. Reports whether the pipeline can run (DATABASE_URL, API key), the
+    row counts and freshness for each stage split by context (weekly vs season),
+    and the projection-cache coverage the expected-ADP curve needs. It ends with
+    a one-line ``diagnosis`` naming the first broken link, so an empty Market vs
+    ADP column can be traced without opening the database. No secrets are
+    returned — only whether each is configured."""
+    _season = int((get_nfl_state() or {}).get("season") or datetime.now().year)
+    out = {
+        "season": _season,
+        "database_url_set": bool(os.getenv("DATABASE_URL", "").strip()),
+        "sportsgameodds_api_key_set": False,
+        "tables": {},
+        "projection_cache": {},
+        "diagnosis": "",
+    }
+
+    try:
+        from dashboard_services.market_intelligence.client import SportsGameOddsClient
+        out["sportsgameodds_api_key_set"] = bool(SportsGameOddsClient().configured)
+    except Exception:
+        out["sportsgameodds_api_key_set"] = bool(os.getenv("SPORTSGAMEODDS_API_KEY", "").strip())
+
+    # Per-stage counts + freshness, split by context. Each stage carries its own
+    # timestamp column (snapshots log when observed; consensus/projections when
+    # computed).
+    _ts_col = {"market_snapshots": "observed_at",
+               "market_consensus": "calculated_at",
+               "market_projections": "calculated_at"}
+    if out["database_url_set"]:
+        try:
+            from dashboard_services.db import get_conn as _hc_conn
+            with _hc_conn() as _conn:
+                for _table, _ts in _ts_col.items():
+                    try:
+                        _rows = _conn.execute(
+                            f"SELECT context, count(*) AS n, max({_ts}) AS latest "
+                            f"FROM {_table} WHERE season = %s GROUP BY context", (_season,)
+                        ).fetchall()
+                        out["tables"][_table] = {
+                            str(r["context"]): {"count": int(r["n"]),
+                                                "latest": (str(r["latest"]) if r["latest"] else None)}
+                            for r in _rows
+                        }
+                    except Exception as _te:
+                        out["tables"][_table] = {"error": str(_te)}
+        except Exception as _de:
+            out["tables"] = {"error": str(_de)}
+
+    # Projection cache: expected_adp needs per-game PPG for the pool, sourced from
+    # the FantasyPros season-projection cache. Missing/empty here also empties the
+    # column even when market rows exist.
+    try:
+        _fp_year = date.today().year
+        _fp_path = os.path.join("cache", f"fp_projections_{_fp_year}_ppr.json")
+        _fp = read_json_cached(_fp_path) or {}
+        _with_ppg = sum(1 for v in _fp.values()
+                        if isinstance(v, dict) and float(v.get("ppg") or 0) > 0)
+        out["projection_cache"] = {"path": _fp_path, "exists": os.path.exists(_fp_path),
+                                   "players": len(_fp), "with_ppg": _with_ppg}
+    except Exception as _fe:
+        out["projection_cache"] = {"error": str(_fe)}
+
+    # First broken link wins the diagnosis.
+    def _stage_count(table, context):
+        node = (out["tables"].get(table) or {}).get(context) or {}
+        return int(node.get("count") or 0)
+
+    _season_proj = _stage_count("market_projections", "season")
+    _weekly_any = (_stage_count("market_snapshots", "weekly")
+                   + _stage_count("market_consensus", "weekly")
+                   + _stage_count("market_projections", "weekly"))
+    _season_snap = _stage_count("market_snapshots", "season")
+    _ppg_ok = int((out["projection_cache"] or {}).get("with_ppg") or 0) >= 2
+
+    if not out["database_url_set"]:
+        out["diagnosis"] = "DATABASE_URL is not set — market intelligence is fully disabled."
+    elif not out["sportsgameodds_api_key_set"]:
+        out["diagnosis"] = ("SPORTSGAMEODDS_API_KEY is not set — refresh_market_intelligence.py "
+                            "is a no-op, so no market data is ever ingested.")
+    elif _season_snap == 0 and _weekly_any == 0:
+        out["diagnosis"] = ("No market data at all for this season — the refresh cron likely "
+                            "hasn't run. Run scripts/refresh_market_intelligence.py.")
+    elif _season_snap == 0 and _weekly_any > 0:
+        out["diagnosis"] = ("Weekly market data exists but zero season-long snapshots — the feed "
+                            "isn't returning season futures, or normalize_event isn't classifying "
+                            "them as 'season' (see normalize.py context tokens).")
+    elif _season_proj == 0:
+        out["diagnosis"] = ("Season snapshots exist but no season projections were built — check "
+                            "build_season_market_projection (needs a FantasyPros season baseline).")
+    elif not _ppg_ok:
+        out["diagnosis"] = ("Season projections exist but the FantasyPros projection cache has no "
+                            "per-game PPG — expected_adp can't build its curve, so the column stays empty.")
+    else:
+        out["diagnosis"] = "Season market data and projections present — Market vs ADP should populate."
+
+    resp = jsonify(_sanitize_for_json(out))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @app.route("/api/league-players")
 def api_league_players():
     payload = _build_league_players_payload(kdef=bool(request.args.get("kdef")))
