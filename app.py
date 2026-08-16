@@ -11912,27 +11912,30 @@ def api_start_sit_options():
         injury_status = None if raw_status in {"", "active", "Active", "ACT"} else raw_status
         _imp_ss = (game_conditions.get(team) or {}).get("implied_total") if not on_bye else None
 
-        # ── Start/sit score: projection × form × matchup × usage × availability ──
-        # Projection is the dominant signal. Form (±10%), matchup (±10%), and
-        # usage trend (±5%) influence close calls but can't flip a meaningful
-        # projection gap (e.g. 12.8 vs 9.8 stays the same regardless). Availability
-        # can, and should: an OUT/IR/Doubtful player must never win a start, a
-        # Questionable one takes a haircut, and a game's Vegas implied total fades
-        # (low) or nudges (high) everyone in it — turning context chips into an
-        # actual recommendation instead of decoration.
+        # ── Start/sit score: one engine, six signals ────────────────────────────
+        # projection × form × matchup × usage × availability × vegas × floor.
+        # Projection is the base; every other signal is a capped multiplier so it
+        # can sway a close call but not overturn a meaningful projection gap. This
+        # is the SINGLE source of truth for the whole advisor: the START badges,
+        # the optimal-lineup banner, and the head-to-head Compare card all rank on
+        # this same score, so they can never contradict each other. The per-factor
+        # multipliers are published (score_factors) so the Compare card can explain
+        # which of the six signals decided the call.
         _ut_ss = _ss_usage_trends.get(pid) or {}
         usage_delta = _ut_ss.get("delta")
         demotion = None
+        # Consistency (floor/ceiling, boom/bust) is resolved here, not just in the
+        # payload below, so the floor signal can feed the score.
+        _cons = _resolve_consistency(pid, pos)
+        _form = _mu = _ug = _avail = _vg = _fl = 1.0
         if on_bye:
             score = 0.0
         else:
             # Recent form: capped ±10%
-            _form = 1.0
             if recent_ppg > 0 and s_ppg > 0:
                 _form = min(1.10, max(0.90, recent_ppg / s_ppg))
 
             # Matchup ease: rank 1=easiest → +10%, rank 32=hardest → -10%
-            _mu = 1.0
             if def_rank and def_total and def_total > 1:
                 _ease = (def_total - def_rank) / (def_total - 1)  # 0–1
                 _mu = 0.90 + _ease * 0.20  # 0.90–1.10
@@ -11940,13 +11943,12 @@ def api_start_sit_options():
             # Usage trend: last-3-week role vs season avg, capped ±5%. A rising
             # role means the trailing PPG (form) understates this week's
             # opportunity; a shrinking one means it overstates it.
-            _ug = 1.0
             if usage_delta is not None and _ut_ss.get("season_avg"):
                 _rel = usage_delta / max(float(_ut_ss["season_avg"]), 1.0)
                 _ug = min(1.05, max(0.95, 1.0 + _rel * 0.25))
 
-            # Availability + game-environment.
-            _avail = 1.0
+            # Availability: injury status only. An OUT/IR/Doubtful player must
+            # never win a start; a Questionable one takes a haircut.
             _st_up = (injury_status or "").upper()
             if any(k in _st_up for k in ("OUT", "IR", "SUSP", "DOUBT", "PUP", "DNP")):
                 _avail = 0.0
@@ -11954,14 +11956,26 @@ def api_start_sit_options():
             elif "QUESTION" in _st_up or _st_up in ("GTD", "Q"):
                 _avail = 0.85
                 demotion = "questionable"
+
+            # Vegas game environment: a low implied total fades everyone in the
+            # game, a high one nudges them up. Its own factor (split out of
+            # availability) so the Compare card and the score weigh it identically.
             if _imp_ss is not None:
                 if _imp_ss <= 17:
-                    _avail *= 0.94
+                    _vg = 0.94
                     demotion = demotion or "low_total"
                 elif _imp_ss >= 27:
-                    _avail *= 1.04
+                    _vg = 1.04
 
-            score = proj_pts * _form * _mu * _ug * _avail
+            # Floor safety: a player who rarely busts is a safer start. Mapped
+            # from the boom/bust bust-rate (0..1): no busts → +10%, always busts →
+            # -10%, coin-flip → neutral. Only when we have a real sample.
+            if _cons and not _cons.get("small_sample"):
+                _bust = _cons.get("bust_rate")
+                if _bust is not None:
+                    _fl = min(1.10, max(0.90, 1.0 + (0.5 - float(_bust)) * 0.4))
+
+            score = proj_pts * _form * _mu * _ug * _avail * _vg * _fl
 
         positions_out[pos].append({
             "player_id":     pid,
@@ -11983,8 +11997,17 @@ def api_start_sit_options():
             "game_env":      _ss_game_env(home_team_of.get(team), current_week) if not on_bye else None,
             "implied_total": _imp_ss,
             "weather":       (game_conditions.get(team) or {}).get("weather") if not on_bye else None,
-            "consistency":   _resolve_consistency(pid, pos),
+            "consistency":   _cons,
             "demotion":      demotion,
+            # Unified start/sit score (the single ranking used everywhere) plus the
+            # per-factor multipliers behind it, so the Compare card can name which
+            # of the six signals decided the verdict.
+            "start_score":   round(score, 2),
+            "score_factors": {
+                "proj": proj_pts, "form": round(_form, 3), "matchup": round(_mu, 3),
+                "usage": round(_ug, 3), "avail": round(_avail, 3),
+                "vegas": round(_vg, 3), "floor": round(_fl, 3),
+            },
             "_score":        score,
         })
 
@@ -12059,27 +12082,31 @@ def api_start_sit_options():
     # ── Optimal-lineup advice: compare the auto-optimal skill lineup to the
     # viewer's actual current starters — the points left on the bench, plus the
     # specific swaps to fix it. Covers the QB/RB/WR/TE we model. ───────────────
-    _proj_by_pid, _name_by_pid, _pos_by_pid = {}, {}, {}
+    # The optimal lineup is chosen by the unified start_score, so its point
+    # totals and per-swap gains are measured on that SAME score — not raw
+    # projection. Mixing the two (select by score, measure by projection) used to
+    # produce swaps with a negative "gain" that contradicted the banner.
+    _score_by_pid, _name_by_pid, _pos_by_pid = {}, {}, {}
     for _pos in positions_out:
         for _p in positions_out[_pos]:
-            _proj_by_pid[_p["player_id"]] = _p["proj_pts"]
+            _score_by_pid[_p["player_id"]] = _p["start_score"]
             _name_by_pid[_p["player_id"]] = _p["name"]
             _pos_by_pid[_p["player_id"]] = _pos
     _optimal_ids = {_p["player_id"] for _pos in positions_out for _p in positions_out[_pos] if _p.get("start")}
     _current_ids = {str(x) for x in (viewer_roster.get("starters") or []) if str(x) not in ("0", "")}
-    _current_skill = {pid for pid in _current_ids if pid in _proj_by_pid}
-    _optimal_pts = round(sum(_proj_by_pid.get(pid, 0.0) for pid in _optimal_ids), 1)
-    _current_pts = round(sum(_proj_by_pid.get(pid, 0.0) for pid in _current_skill), 1)
-    _to_start = sorted(_optimal_ids - _current_ids, key=lambda pid: _proj_by_pid.get(pid, 0.0), reverse=True)
-    _to_sit = sorted(_current_skill - _optimal_ids, key=lambda pid: _proj_by_pid.get(pid, 0.0))
+    _current_skill = {pid for pid in _current_ids if pid in _score_by_pid}
+    _optimal_pts = round(sum(_score_by_pid.get(pid, 0.0) for pid in _optimal_ids), 1)
+    _current_pts = round(sum(_score_by_pid.get(pid, 0.0) for pid in _current_skill), 1)
+    _to_start = sorted(_optimal_ids - _current_ids, key=lambda pid: _score_by_pid.get(pid, 0.0), reverse=True)
+    _to_sit = sorted(_current_skill - _optimal_ids, key=lambda pid: _score_by_pid.get(pid, 0.0))
     _swaps = []
     for _in_pid, _out_pid in zip(_to_start, _to_sit):
         _swaps.append({
             "start": {"player_id": _in_pid, "name": _name_by_pid.get(_in_pid),
-                      "position": _pos_by_pid.get(_in_pid), "proj": _proj_by_pid.get(_in_pid)},
+                      "position": _pos_by_pid.get(_in_pid), "proj": _score_by_pid.get(_in_pid)},
             "sit": {"player_id": _out_pid, "name": _name_by_pid.get(_out_pid),
-                    "position": _pos_by_pid.get(_out_pid), "proj": _proj_by_pid.get(_out_pid)},
-            "gain": round(_proj_by_pid.get(_in_pid, 0.0) - _proj_by_pid.get(_out_pid, 0.0), 1),
+                    "position": _pos_by_pid.get(_out_pid), "proj": _score_by_pid.get(_out_pid)},
+            "gain": round(_score_by_pid.get(_in_pid, 0.0) - _score_by_pid.get(_out_pid, 0.0), 1),
         })
     lineup_advice = {
         "has_current": bool(_current_skill),
