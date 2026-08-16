@@ -15,6 +15,12 @@
   var PS = window.BRPickScore;
   var LIMIT = 175;
 
+  // Market vs ADP is hidden until the season-context market-intelligence pipeline
+  // is populated (see /api/market-intel/health). Flip to true to restore the
+  // column once the data lands — all rendering below is already gated on this.
+  var SHOW_MARKET_VS_ADP = false;
+  var showMarket = function (dyn) { return !dyn && SHOW_MARKET_VS_ADP; };
+
   var state = {
     mode: cfg.mode === 'dynasty' ? 'dynasty' : 'redraft',
     sf: !!cfg.isSuperflex,
@@ -561,8 +567,8 @@
     var col5 = dyn ? 'Age' : 'ADP', col6 = dyn ? 'Window' : 'Value';
     var editTh = cfg.hasPremium ? '<th class="cs-edit-th"></th>' : '';
     $('csBoardHead').innerHTML =
-      '<tr><th>Rk</th><th class="l">Player</th><th>Pos</th><th class="cs-vor-col">VOR</th><th>' + col5 + '</th><th class="cs-value-col">' + col6 + '</th>' + (dyn ? '' : '<th class="cs-market-col">Market vs ADP</th>') + editTh + '</tr>';
-    var span = (cfg.hasPremium ? 7 : 6) + (dyn ? 0 : 1);
+      '<tr><th>Rk</th><th class="l">Player</th><th>Pos</th><th class="cs-vor-col">VOR</th><th>' + col5 + '</th><th class="cs-value-col">' + col6 + '</th>' + (showMarket(dyn) ? '<th class="cs-market-col">Market vs ADP</th>' : '') + editTh + '</tr>';
+    var span = (cfg.hasPremium ? 7 : 6) + (showMarket(dyn) ? 1 : 0);
     var lastT = null, html = '', shown = 0;
     players.forEach(function (x) {
       if (!visiblePlayer(x)) return;
@@ -572,7 +578,7 @@
       var c5 = dyn ? '<td class="cs-num">' + (x.age != null ? x.age : '') + '</td>' : '<td class="cs-num">' + (x.adp != null ? Math.round(x.adp) : '') + '</td>';
       var c6 = dyn ? '<td class="cs-value-col">' + winChip(x.age, x.pos) + '</td>' : '<td class="cs-value-col">' + valChip(x.value) + '</td>';
       var market = '';
-      if (!dyn) {
+      if (showMarket(dyn)) {
         if (x.marketVsAdp == null) market = '<td class="cs-num cs-market-col">&ndash;</td>';
         else {
           var mcls = x.marketVsAdp > 0 ? 'g' : (x.marketVsAdp < 0 ? 'b' : 'n');
@@ -781,11 +787,11 @@
   function exportCsv() {
     if (!players.length) return;
     var dyn = state.mode === 'dynasty';
-    var head = ['Rank', 'Player', 'Pos', 'PosRank', 'VOR', (dyn ? 'Age' : 'ADP'), (dyn ? 'Window' : 'Value')].concat(dyn ? [] : ['Market vs ADP']).concat(['Tier']);
+    var head = ['Rank', 'Player', 'Pos', 'PosRank', 'VOR', (dyn ? 'Age' : 'ADP'), (dyn ? 'Window' : 'Value')].concat(showMarket(dyn) ? ['Market vs ADP'] : []).concat(['Tier']);
     var rows = players.map(function (x) {
       var c5 = dyn ? (x.age != null ? x.age : '') : (x.adp != null ? Math.round(x.adp) : '');
       var c6 = dyn ? youthWindow(x.age, x.pos)[0] : (x.value != null ? (x.value > 0 ? '+' + x.value : x.value) : '');
-      return [x.rk, x.name, x.pos, x.prk, x.vor, c5, c6].concat(dyn ? [] : [x.marketVsAdp == null ? '' : x.marketVsAdp]).concat([x.dtier]);
+      return [x.rk, x.name, x.pos, x.prk, x.vor, c5, c6].concat(showMarket(dyn) ? [x.marketVsAdp == null ? '' : x.marketVsAdp] : []).concat([x.dtier]);
     });
     var csv = [head].concat(rows).map(function (r) {
       return r.map(function (v) { var s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(',');
