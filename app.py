@@ -11211,6 +11211,17 @@ def api_waiver_candidates():
 
     result = []
     _shown = candidates[:30]
+    # One bulk local read. SportsGameOdds ingestion is scheduled separately and
+    # never runs in this request path.
+    try:
+        from dashboard_services.market_intelligence.repository import attach_weekly_signals as _attach_mi_wv
+        from dashboard_services.market_intelligence.signals import market_opportunity as _mi_opp
+        _mi_state_wv = get_nfl_state() or {}
+        _mi_week_wv = int(_mi_state_wv.get("week") or _mi_state_wv.get("display_week") or 1)
+        _attach_mi_wv(_shown, int(_mi_state_wv.get("season") or season), _mi_week_wv,
+                      site_key="ros_ppg", scoring_settings=ctx.get("raw_scoring_settings") or {})
+    except Exception:
+        logger.debug("market intelligence unavailable for waivers", exc_info=True)
     from utils.model_confidence import confidence_from_inputs
     # Badge trend relative to the shown set so the (trend-sorted) list doesn't
     # read "Rising Fast" on every row.
@@ -11323,6 +11334,9 @@ def api_waiver_candidates():
                 c.get("value") is not None,
             ])
             _confidence = confidence_from_inputs(_confidence_inputs, 6)
+            _market_signal = c.get("market_signal") or {}
+            _market_opp = _mi_opp(c.get("market_projection"), c.get("ros_ppg"),
+                                  _market_signal.get("confidence"), c.get("rostered_pct") or 0) if _market_signal else None
             result.append({
                 "player_id": c["player_id"],
                 "name": c["name"],
@@ -11349,6 +11363,8 @@ def api_waiver_candidates():
                 "faab_high": _fhi,
                 "drop": _drop_for(c),
                 "confidence": _confidence,
+                "market_projection": c.get("market_projection"),
+                "market_opportunity": _market_opp,
             })
         except Exception:
             logger.exception("[waiver-candidates] result row failed for %s", c.get("player_id"))
@@ -12076,6 +12092,14 @@ def api_start_sit_options():
     for pos in positions_out:
         for p in positions_out[pos]:
             del p["_score"]
+
+    try:
+        from dashboard_services.market_intelligence.repository import attach_weekly_signals as _attach_mi_ss
+        _flat_mi_ss = [p for values in positions_out.values() for p in values]
+        _attach_mi_ss(_flat_mi_ss, season, current_week,
+                      scoring_settings=ctx.get("raw_scoring_settings") or {})
+    except Exception:
+        logger.debug("market intelligence unavailable for start/sit", exc_info=True)
 
     return jsonify({
         "positions": positions_out,
@@ -20090,6 +20114,22 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
 @app.route("/api/league-players")
 def api_league_players():
     payload = _build_league_players_payload(kdef=bool(request.args.get("kdef")))
+
+    # Season context only. Weekly props are deliberately never annualized for
+    # the Cheat Sheet. The copy keeps the shared cached player pool immutable.
+    try:
+        from dashboard_services.market_intelligence.adp import attach_market_vs_adp as _attach_mi_adp
+        from dashboard_services.market_intelligence.repository import load_market_projections as _load_mi_adp
+        _mi_season = int((get_nfl_state() or {}).get("season") or datetime.now().year)
+        _mi_players = [dict(p) for p in (payload.get("players") or [])]
+        _mi_proj = _load_mi_adp(_mi_season, None, context="season",
+                                player_ids=[str(p.get("id")) for p in _mi_players])
+        if _mi_proj:
+            _attach_mi_adp(_mi_players, _mi_proj)
+            payload = dict(payload)
+            payload["players"] = _mi_players
+    except Exception:
+        logger.debug("season market intelligence unavailable", exc_info=True)
 
     # Historical draft views pass ?season=<yr> so grades use the ADP OF THAT
     # SEASON (Sleeper's projections API is season-keyed; the crawl fallback too),

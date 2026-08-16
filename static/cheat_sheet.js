@@ -340,6 +340,9 @@
         id: String(p.id), pos: pos, name: p.name || String(p.id),
         age: (p.age != null ? Number(p.age) : null),
         adp: C.adpOf(p, mode, sf), vor: Math.round(value - (repl[pos] || 0)),
+        marketVsAdp: mode === 'redraft' && p.market_vs_adp != null ? Number(p.market_vs_adp) : null,
+        marketExpectedAdp: mode === 'redraft' && p.market_expected_adp != null ? Number(p.market_expected_adp) : null,
+        marketConfidence: mode === 'redraft' && p.market_confidence != null ? Number(p.market_confidence) : null,
       };
     });
     scored.sort(function (a, b) { return b.vor - a.vor || ((a.adp || 9999) - (b.adp || 9999)); });
@@ -558,8 +561,8 @@
     var col5 = dyn ? 'Age' : 'ADP', col6 = dyn ? 'Window' : 'Value';
     var editTh = cfg.hasPremium ? '<th class="cs-edit-th"></th>' : '';
     $('csBoardHead').innerHTML =
-      '<tr><th>Rk</th><th class="l">Player</th><th>Pos</th><th>VOR</th><th>' + col5 + '</th><th>' + col6 + '</th>' + editTh + '</tr>';
-    var span = cfg.hasPremium ? 7 : 6;
+      '<tr><th>Rk</th><th class="l">Player</th><th>Pos</th><th class="cs-vor-col">VOR</th><th>' + col5 + '</th><th class="cs-value-col">' + col6 + '</th>' + (dyn ? '' : '<th class="cs-market-col">Market vs ADP</th>') + editTh + '</tr>';
+    var span = (cfg.hasPremium ? 7 : 6) + (dyn ? 0 : 1);
     var lastT = null, html = '', shown = 0;
     players.forEach(function (x) {
       if (!visiblePlayer(x)) return;
@@ -567,13 +570,22 @@
       shown++;
       var cls = 'cs-p' + (state.done.has(x.id) ? ' done' : '') + (x.drafted ? ' drafted' : '') + (x.ov === 'mute' ? ' cs-muted' : '') + (x.ov ? ' cs-ov' : '') + (x.id === _flashId ? ' cs-flash' : '');
       var c5 = dyn ? '<td class="cs-num">' + (x.age != null ? x.age : '') + '</td>' : '<td class="cs-num">' + (x.adp != null ? Math.round(x.adp) : '') + '</td>';
-      var c6 = dyn ? '<td>' + winChip(x.age, x.pos) + '</td>' : '<td>' + valChip(x.value) + '</td>';
+      var c6 = dyn ? '<td class="cs-value-col">' + winChip(x.age, x.pos) + '</td>' : '<td class="cs-value-col">' + valChip(x.value) + '</td>';
+      var market = '';
+      if (!dyn) {
+        if (x.marketVsAdp == null) market = '<td class="cs-num cs-market-col">&ndash;</td>';
+        else {
+          var mcls = x.marketVsAdp > 0 ? 'g' : (x.marketVsAdp < 0 ? 'b' : 'n');
+          var mtip = 'Market-implied season production is consistent with a player typically drafted around Pick ' + Math.round(x.marketExpectedAdp) + ', compared with current ADP ' + Math.round(x.adp) + '. Market Confidence ' + Math.round((x.marketConfidence || 0) * 100) + '%.';
+          market = '<td class="cs-market-col"><span class="cs-val ' + mcls + '" title="' + esc(mtip) + '">' + (x.marketVsAdp > 0 ? '+' : '') + Math.round(x.marketVsAdp) + '</span></td>';
+        }
+      }
       html += '<tr class="' + cls + '" data-good="' + x.good + '" data-posfull="' + (x.posfull ? 1 : 0) + '" data-name="' + esc(x.name) + '" data-id="' + esc(x.id) + '">'
         + '<td class="cs-rk">' + x.rk + '</td>'
         + '<td><span class="cs-pcell">' + badge(x.pos) + '<span class="cs-pname">' + esc(x.name) + '</span>' + ovChip(x) + '</span></td>'
         + '<td>' + posrk(x) + '</td>'
-        + '<td><span class="cs-vorwrap"><span class="cs-num">' + x.vor + '</span><span class="cs-vorbar"><i style="width:' + Math.max(0, Math.round(x.vor / maxVor * 100)) + '%"></i></span></span></td>'
-        + c5 + c6 + ovControls(x) + '</tr>';
+        + '<td class="cs-vor-col"><span class="cs-vorwrap"><span class="cs-num">' + x.vor + '</span><span class="cs-vorbar"><i style="width:' + Math.max(0, Math.round(x.vor / maxVor * 100)) + '%"></i></span></span></td>'
+        + c5 + c6 + market + ovControls(x) + '</tr>';
     });
     if (!shown) html = '<tr><td colspan="' + span + '" class="cs-empty">No players match this filter.</td></tr>';
     $('csBoardBody').innerHTML = html;
@@ -769,11 +781,11 @@
   function exportCsv() {
     if (!players.length) return;
     var dyn = state.mode === 'dynasty';
-    var head = ['Rank', 'Player', 'Pos', 'PosRank', 'VOR', (dyn ? 'Age' : 'ADP'), (dyn ? 'Window' : 'Value'), 'Tier'];
+    var head = ['Rank', 'Player', 'Pos', 'PosRank', 'VOR', (dyn ? 'Age' : 'ADP'), (dyn ? 'Window' : 'Value')].concat(dyn ? [] : ['Market vs ADP']).concat(['Tier']);
     var rows = players.map(function (x) {
       var c5 = dyn ? (x.age != null ? x.age : '') : (x.adp != null ? Math.round(x.adp) : '');
       var c6 = dyn ? youthWindow(x.age, x.pos)[0] : (x.value != null ? (x.value > 0 ? '+' + x.value : x.value) : '');
-      return [x.rk, x.name, x.pos, x.prk, x.vor, c5, c6, x.dtier];
+      return [x.rk, x.name, x.pos, x.prk, x.vor, c5, c6].concat(dyn ? [] : [x.marketVsAdp == null ? '' : x.marketVsAdp]).concat([x.dtier]);
     });
     var csv = [head].concat(rows).map(function (r) {
       return r.map(function (v) { var s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(',');
