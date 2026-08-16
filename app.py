@@ -17208,6 +17208,35 @@ def _commissioner_history_layer(platform, league_id, season, lookback=3):
     return layer
 
 
+def _league_activity_targets(layer,
+                             fallback_moves_pt=5.0, fallback_trades_pt=1.5,
+                             floor_moves_pt=3.0, floor_trades_pt=0.5):
+    """Full-season, per-team activity the health score treats as "healthy" for
+    THIS league — derived from what it typically does, not a league-agnostic
+    constant. Takes the median of each prior season's moves-per-team and
+    trades-per-team (per-team so league-size changes don't skew it), floored so
+    a chronically dead league can't set an ultra-low bar for itself, and with no
+    upper cap so a hyperactive league is judged against its own high pace.
+
+    Returns (moves_per_team, trades_per_team, from_history). Falls back to fixed
+    defaults when there's no usable history (ESPN, a league's first season, or a
+    lookup failure), so the score degrades to a sensible league-agnostic bar.
+    """
+    import statistics
+    mv_pts, tr_pts = [], []
+    for s in (layer or {}).get("seasons") or []:
+        nt = s.get("n_teams") or 0
+        if nt <= 0:
+            continue
+        mv_pts.append((s.get("moves")  or 0) / nt)
+        tr_pts.append((s.get("trades") or 0) / nt)
+    if not mv_pts:
+        return fallback_moves_pt, fallback_trades_pt, False
+    return (max(floor_moves_pt,  statistics.median(mv_pts)),
+            max(floor_trades_pt, statistics.median(tr_pts)),
+            True)
+
+
 def _render_commissioner_history(layer, current_season, current_moves, current_trades, current_inactive_uids, current_week=0, playoff_start=14):
     """Render the multi-season 'Chronic / Trend' panel. Current season is the
     headline (computed elsewhere); this is diagnosis context, not a blended score."""
@@ -17537,15 +17566,32 @@ def build_commissioner_body(ctx):
     avg_txns        = total_txns / n
     trades_per_team = total_trades / n
 
+    # Activity targets are relative to THIS league's own norm, not a fixed bar:
+    # a hyperactive dynasty is held to its high pace, a casual league to its low
+    # one. Targets are full-season per-team figures from prior seasons; pro-rate
+    # them by how far the current season has run so a mid-season league isn't
+    # compared against a full year of history.
+    try:
+        _hist_layer = _commissioner_history_layer(platform, league_id, season)
+    except Exception:
+        _hist_layer = None
+    target_moves_pt, target_trades_pt, targets_from_history = _league_activity_targets(_hist_layer)
+    progress = min(1.0, current_week / playoff_start) if playoff_start else 1.0
+    progress = max(progress, 0.05)  # guard week 0 / preseason
+    exp_moves_pt  = target_moves_pt  * progress
+    exp_trades_pt = target_trades_pt * progress
+    moves_ratio   = (avg_txns        / exp_moves_pt)  if exp_moves_pt  else 1.0
+    trades_ratio  = (trades_per_team / exp_trades_pt) if exp_trades_pt else 1.0
+
     # Score: an *engaged* league is a healthy league. Build up from a baseline
-    # by rewarding activity (moves + trades), then dock only for genuine health
-    # problems — dead teams and a high *rate* of lopsided trades. Raw trade/move
-    # volume is never punished, so a busy trading league scores high, not low.
+    # by rewarding activity relative to the league's own pace, then dock only for
+    # genuine health problems — dead teams and a high *rate* of lopsided trades.
+    # Raw trade/move volume is never punished, so a busy league scores high.
     activity_score = 40
-    # Moves: full marks at an average of 5 moves per team.
-    activity_score += min(30, avg_txns * 6)
-    # Trades: full marks at ~1.5 trades per team across the season.
-    activity_score += min(30, trades_per_team * 20)
+    # Moves: full marks at (or above) the league's typical pace so far.
+    activity_score += min(30, moves_ratio * 30)
+    # Trades: full marks at (or above) the league's typical trade pace so far.
+    activity_score += min(30, trades_ratio * 30)
     # Inactive (dead) teams are a real health problem — dock per dead team.
     activity_score -= inactive_count / n * 40
     # Lopsided trades: penalise the *share* of trades that are lopsided, not the
