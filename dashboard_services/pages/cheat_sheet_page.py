@@ -224,7 +224,7 @@ _CHEAT_HTML = r"""
   .cs-vorwrap { display: inline-flex; align-items: center; gap: 8px; justify-content: flex-end; }
   .cs-vorbar { width: 60px; height: 6px; border-radius: 12px; background: var(--cs-bar-track); overflow: hidden; flex-shrink: 0; }
   .cs-vorbar > i { display: block; height: 100%; background: var(--cs-bar); border-radius: 12px; }
-  @media (max-width: 720px) { .cs-market-col { display: none; } }
+  /* Market vs ADP remains part of the same primary table as VOR and Value. */
 
   .cs-pos-badge { font-family: var(--cs-mono); font-weight: 800; font-size: 11px; padding: 3px 7px; border-radius: 6px; flex-shrink: 0; }
   .cs-pos-QB { color: var(--cs-qb); background: var(--cs-qb-bg); } .cs-pos-RB { color: var(--cs-rb); background: var(--cs-rb-bg); }
@@ -303,18 +303,29 @@ _CHEAT_HTML = r"""
   .cs-hidden { display: none; }
   .cs-foot { margin-top: 22px; color: var(--cs-ink-faint); font-size: 12px; }
   @media (max-width: 640px) {
-    .cs-top { flex-direction: column; }
-    .cs-top > :first-child { min-width: 0; }
-    .cs-controls { align-items: stretch; width: 100%; margin-top: 14px; }
+    .cs-wrap { padding-top: 0; }
+    .cs-top { flex-direction: column; gap: 12px; }
+    /* Reset the desktop flex-basis. In a column it becomes height, which was
+       creating a several-hundred-pixel blank gap above the controls. */
+    .cs-top > :first-child { flex: 0 0 auto; min-width: 0; width: 100%; }
+    .cs-controls { align-items: stretch; width: 100%; margin-top: 0; gap: 10px; }
     .cs-ctrl-row { justify-content: flex-start; }
     /* Mode and QB toggles share a clean two-column row, each filling its half. */
     .cs-ctrl-row:first-child { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .cs-ctrl-row:first-child .cs-cgroup { display: flex; }
     .cs-ctrl-row:first-child .cs-seg { flex: 1; }
     .cs-ctrl-row:first-child .cs-seg button { flex: 1; }
-    /* Action buttons stretch to fill the row evenly instead of straggling. */
-    .cs-ctrl-row:last-child { display: flex; }
-    .cs-ctrl-row:last-child .cs-btn, .cs-ctrl-row:last-child .cs-src { flex: 1 1 auto; justify-content: center; }
+    /* Actions wrap inside the viewport. The ADP selector gets a full row while
+       visible actions form balanced, thumb-friendly cells underneath. */
+    .cs-ctrl-row:last-child { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; width: 100%; }
+    .cs-ctrl-row:last-child .cs-src { grid-column: 1 / -1; width: 100%; min-width: 0; }
+    .cs-ctrl-row:last-child .cs-btn { min-width: 0; width: 100%; justify-content: center; white-space: normal; padding: 8px 6px; }
+    /* Keep every primary signal on mobile. The table scrolls horizontally, as
+       it did before Market vs ADP was added, rather than hiding VOR or Value. */
+    .cs-wrap table { min-width: 700px; }
+    .cs-wrap thead th, .cs-wrap tbody td { padding-left: 6px; padding-right: 6px; }
+    .cs-pcell { gap: 5px; min-width: 0; }
+    .cs-pname { overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
     /* Tabs scroll sideways rather than wrapping onto a second line. */
     .cs-tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
     .cs-tabs::-webkit-scrollbar { display: none; }

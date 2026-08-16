@@ -65,6 +65,26 @@ def test_desktop_header_keeps_controls_beside_title_without_wrapping():
     assert ".cs-ctrl-row { display: flex; align-items: center; gap: 9px; flex-wrap: nowrap;" in body
 
 
+def test_mobile_header_has_no_flex_basis_gap_and_controls_wrap():
+    body = build_cheat_sheet_body("league-123", 2026, "sleeper")
+
+    assert ".cs-top > :first-child { flex: 0 0 auto; min-width: 0; width: 100%; }" in body
+    assert "grid-template-columns: repeat(3, minmax(0, 1fr))" in body
+    assert ".cs-ctrl-row:last-child .cs-src { grid-column: 1 / -1;" in body
+
+
+def test_mobile_keeps_market_vs_adp_vor_and_value_columns():
+    body = build_cheat_sheet_body("league-123", 2026, "sleeper")
+    script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
+
+    assert ".cs-wrap table { min-width: 700px; }" in body
+    assert ".cs-vor-col, .cs-value-col { display: none; }" not in body
+    assert ".cs-market-col { display: none; }" not in body
+    assert '<th class="cs-market-col">Market vs ADP</th>' in script
+    assert 'class="cs-vor-col"' in script
+    assert 'class="cs-value-col"' in script
+
+
 def test_draft_room_only_shares_context_from_a_visible_draft_board():
     script = (Path(__file__).parents[1] / "static" / "draft_room.js").read_text()
 

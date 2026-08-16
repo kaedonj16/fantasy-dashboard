@@ -561,7 +561,7 @@
     var col5 = dyn ? 'Age' : 'ADP', col6 = dyn ? 'Window' : 'Value';
     var editTh = cfg.hasPremium ? '<th class="cs-edit-th"></th>' : '';
     $('csBoardHead').innerHTML =
-      '<tr><th>Rk</th><th class="l">Player</th><th>Pos</th><th>VOR</th><th>' + col5 + '</th><th>' + col6 + '</th>' + (dyn ? '' : '<th class="cs-market-col">Market vs ADP</th>') + editTh + '</tr>';
+      '<tr><th>Rk</th><th class="l">Player</th><th>Pos</th><th class="cs-vor-col">VOR</th><th>' + col5 + '</th><th class="cs-value-col">' + col6 + '</th>' + (dyn ? '' : '<th class="cs-market-col">Market vs ADP</th>') + editTh + '</tr>';
     var span = (cfg.hasPremium ? 7 : 6) + (dyn ? 0 : 1);
     var lastT = null, html = '', shown = 0;
     players.forEach(function (x) {
@@ -570,7 +570,7 @@
       shown++;
       var cls = 'cs-p' + (state.done.has(x.id) ? ' done' : '') + (x.drafted ? ' drafted' : '') + (x.ov === 'mute' ? ' cs-muted' : '') + (x.ov ? ' cs-ov' : '') + (x.id === _flashId ? ' cs-flash' : '');
       var c5 = dyn ? '<td class="cs-num">' + (x.age != null ? x.age : '') + '</td>' : '<td class="cs-num">' + (x.adp != null ? Math.round(x.adp) : '') + '</td>';
-      var c6 = dyn ? '<td>' + winChip(x.age, x.pos) + '</td>' : '<td>' + valChip(x.value) + '</td>';
+      var c6 = dyn ? '<td class="cs-value-col">' + winChip(x.age, x.pos) + '</td>' : '<td class="cs-value-col">' + valChip(x.value) + '</td>';
       var market = '';
       if (!dyn) {
         if (x.marketVsAdp == null) market = '<td class="cs-num cs-market-col">&ndash;</td>';
@@ -584,7 +584,7 @@
         + '<td class="cs-rk">' + x.rk + '</td>'
         + '<td><span class="cs-pcell">' + badge(x.pos) + '<span class="cs-pname">' + esc(x.name) + '</span>' + ovChip(x) + '</span></td>'
         + '<td>' + posrk(x) + '</td>'
-        + '<td><span class="cs-vorwrap"><span class="cs-num">' + x.vor + '</span><span class="cs-vorbar"><i style="width:' + Math.max(0, Math.round(x.vor / maxVor * 100)) + '%"></i></span></span></td>'
+        + '<td class="cs-vor-col"><span class="cs-vorwrap"><span class="cs-num">' + x.vor + '</span><span class="cs-vorbar"><i style="width:' + Math.max(0, Math.round(x.vor / maxVor * 100)) + '%"></i></span></span></td>'
         + c5 + c6 + market + ovControls(x) + '</tr>';
     });
     if (!shown) html = '<tr><td colspan="' + span + '" class="cs-empty">No players match this filter.</td></tr>';
