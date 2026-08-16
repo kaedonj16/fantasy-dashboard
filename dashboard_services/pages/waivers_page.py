@@ -82,8 +82,18 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-faab-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); cursor: pointer; }
 .wv-faab-toggle input { accent-color: var(--accent); width: 14px; height: 14px; margin: 0; }
 @media (max-width: 700px) {
-  .wv-right { gap: 7px; }
-  .wv-advice-metric { min-width: 40px; }
+  /* On phones the player info and the metric columns can't share one line: with
+     FAAB shown there are up to five columns, which overflowed the card (Value
+     fell off the right edge) and crushed the name into three lines. Drop the
+     metrics onto their own full-width row beneath the player instead, as an
+     evenly spread stat strip that wraps only as a last resort on tiny screens. */
+  .wv-player-row { flex-direction: column; align-items: stretch; gap: 10px; }
+  .wv-right {
+    width: 100%; gap: 8px 12px; flex-wrap: wrap;
+    justify-content: space-between;
+    padding-top: 9px; border-top: 1px solid var(--border);
+  }
+  .wv-advice-metric { min-width: 0; }
 }
 /* Waiver signal chips use the site's canonical `.chip .chip--sm` + a .signal-*
    colour alias (all defined once in dashboard.css). Nothing chip-related is

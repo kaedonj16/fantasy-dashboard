@@ -26,3 +26,12 @@ def test_advice_pills_use_canonical_chip_styles():
     body = build_waivers_body("sleeper", 2026, "league", {})
     assert 'chip chip--sm chip--accent' in body
     assert 'chip chip--sm chip--neutral' in body
+
+
+def test_mobile_stacks_metrics_below_player():
+    """On phones the metric columns (up to five with FAAB) drop onto their own
+    full-width row instead of crowding the player name off the card."""
+    body = build_waivers_body("sleeper", 2026, "league", {})
+    assert ".wv-player-row { flex-direction: column; align-items: stretch;" in body
+    # The metric strip spans the row and separates from the player above it.
+    assert "border-top: 1px solid var(--border);" in body
