@@ -17513,11 +17513,18 @@ def build_commissioner_body(ctx):
         if len(vals) >= 2:
             (r1, v1), (r2, v2) = vals[0], vals[1]
             diff = abs(v1 - v2)
+            # Lopsided is judged *relative to the trade's size*, not a flat cut:
+            # imbalance = gap / combined value (0 = even split, 1 = one side got
+            # everything). Flagged when the bigger side got ~1.9x the smaller
+            # (imbalance > 0.30). A small floor keeps trivial swaps from tripping it.
+            total_val  = v1 + v2
+            imbalance  = (diff / total_val) if total_val else 0
             trade_rows.append({
                 "team_a": roster_map.get(r1, f"Team {r1}"),
                 "team_b": roster_map.get(r2, f"Team {r2}"),
                 "val_a": round(v1, 0), "val_b": round(v2, 0),
-                "diff": round(diff, 0), "lopsided": diff > 75,
+                "diff": round(diff, 0),
+                "lopsided": imbalance > 0.30 and diff > 15,
             })
     trade_rows.sort(key=lambda x: -x["diff"])
 
