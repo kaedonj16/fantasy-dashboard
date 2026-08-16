@@ -88,13 +88,28 @@ def test_attach_market_vs_adp_uses_redraft_avg_pick():
         {"id": "1", "proj_ppg": 10, "redraft_avg_pick": 100},
         {"id": "2", "proj_ppg": 20, "redraft_avg_pick": 20},
     ]
-    projections = {"1": {"fantasy_points": 15, "confidence": 0.8}}
+    # fantasy_points is a SEASON total; 255 / 17 games = 15 ppg, which interpolates
+    # to pick 60 on the (10->100, 20->20) curve. Actual ADP is 100, so the market
+    # says this player is going ~40 picks later than production warrants.
+    projections = {"1": {"fantasy_points": 255, "confidence": 0.8}}
     attach_market_vs_adp(players, projections)
-    # Expected ADP for 15 proj_ppg interpolates to pick 60; actual ADP is 100,
-    # so the market says this player is going ~40 picks later than production warrants.
     assert players[0]["market_expected_adp"] == 60.0
     assert players[0]["market_vs_adp"] == 40.0
     assert players[0]["market_confidence"] == 0.8
+
+
+def test_attach_market_vs_adp_season_total_not_pinned_to_top_pick():
+    """A season-long market total must be scaled to per-game before mapping, or
+    every player pins to the top pick's ADP (season total >> per-game curve)."""
+    from dashboard_services.market_intelligence.adp import attach_market_vs_adp
+    pool = [
+        {"id": "1", "proj_ppg": 22, "redraft_avg_pick": 2},
+        {"id": "2", "proj_ppg": 14, "redraft_avg_pick": 25},
+        {"id": "3", "proj_ppg": 6, "redraft_avg_pick": 120},
+    ]
+    # ~250 season pts = ~14.7 ppg -> should land near the middle of the curve, not pick 2.
+    attach_market_vs_adp(pool, {"2": {"fantasy_points": 250, "confidence": 0.7}})
+    assert pool[1]["market_expected_adp"] > 5  # not pinned to the top-pick ADP
 
 
 def test_season_projection_uses_baseline_for_missing_components():

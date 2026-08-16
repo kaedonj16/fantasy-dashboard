@@ -50,15 +50,28 @@ def expected_adp(market_points: float, player_pool: list[dict]) -> float | None:
     return None
 
 
+# A fantasy season is 17 games. The season market projection is a full-season
+# point total, so divide by this to compare it against the per-game PPG curve.
+_GAMES_PER_SEASON = 17
+
+
 def attach_market_vs_adp(players: list[dict], projections: dict[str, dict]) -> None:
     for player in players:
         market = projections.get(str(player.get("id")))
         if not market:
             continue
-        implied = expected_adp(float(market["fantasy_points"]), players)
         actual = _resolve_adp(player)
         if actual is None:
             continue
+        try:
+            season_points = float(market["fantasy_points"])
+        except (TypeError, ValueError):
+            continue
+        # expected_adp's curve is built from per-game PPG, so bring the market's
+        # SEASON-long total onto the same per-game scale first. Passing the raw
+        # season total (~250) against a per-game curve (~5-25) pinned every player
+        # to the top pick's ADP.
+        implied = expected_adp(season_points / _GAMES_PER_SEASON, players)
         if implied is not None:
             player["market_expected_adp"] = round(implied, 1)
             player["market_vs_adp"] = round(actual - implied, 1)
