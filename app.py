@@ -17527,13 +17527,25 @@ def build_commissioner_body(ctx):
     lopsided_count = sum(1 for t in trade_rows if t["lopsided"])
     total_txns     = sum(r["txns"] for r in roster_infos)
     total_trades   = sum(r["trades"] for r in roster_infos) // 2  # each trade counted per team
-    avg_txns = total_txns / n
+    avg_txns        = total_txns / n
+    trades_per_team = total_trades / n
 
-    # Score: penalise inactive teams, lopsided trades; reward activity
-    activity_score = 100
+    # Score: an *engaged* league is a healthy league. Build up from a baseline
+    # by rewarding activity (moves + trades), then dock only for genuine health
+    # problems — dead teams and a high *rate* of lopsided trades. Raw trade/move
+    # volume is never punished, so a busy trading league scores high, not low.
+    activity_score = 40
+    # Moves: full marks at an average of 5 moves per team.
+    activity_score += min(30, avg_txns * 6)
+    # Trades: full marks at ~1.5 trades per team across the season.
+    activity_score += min(30, trades_per_team * 20)
+    # Inactive (dead) teams are a real health problem — dock per dead team.
     activity_score -= inactive_count / n * 40
-    activity_score -= lopsided_count * 4
-    activity_score -= max(0, 5 - avg_txns) * 5  # penalise low avg moves
+    # Lopsided trades: penalise the *share* of trades that are lopsided, not the
+    # count, so trading a lot doesn't cost points — only systematically unfair
+    # trading does (max 15-point hit if every trade is lopsided).
+    lopsided_ratio  = (lopsided_count / total_trades) if total_trades else 0
+    activity_score -= lopsided_ratio * 15
     activity_score  = round(max(0, min(100, activity_score)), 0)
     score_color = "#22c55e" if activity_score >= 80 else ("#f59e0b" if activity_score >= 60 else "#ef4444")
     score_label = "Healthy" if activity_score >= 80 else ("Watch" if activity_score >= 60 else "At Risk")
