@@ -25661,7 +25661,10 @@ def api_trade_intel_player_packages(player_id: str):
                                 "pos_rank_label": values_by_id[pid]["pos_rank_label"],
                             }
                             for pid in [str(p) for p in (viewer_roster_obj.get("players") or [])]
+                            # Never offer the focus player back to acquire itself
+                            # (mirrors the focus-pick guard below).
                             if pid in values_by_id and values_by_id[pid]["value"] >= 50
+                            and pid != str(player_id)
                         ],
                         key=lambda x: x["value"],
                         reverse=True,
@@ -25852,7 +25855,9 @@ def api_trade_intel_player_packages(player_id: str):
                             "pos_rank_label": values_by_id[_pid]["pos_rank_label"],
                         }
                         for _pid in [str(_pp) for _pp in (_rvo.get("players") or [])]
+                        # Never offer the focus player back to acquire itself.
                         if _pid in values_by_id and values_by_id[_pid]["value"] >= 50
+                        and _pid != str(player_id)
                     ],
                     key=lambda x: x["value"],
                     reverse=True,
@@ -26344,6 +26349,19 @@ def api_trade_intel_player_packages(player_id: str):
 
         for pkg in primary_pkgs:
             _enrich_pkg(pkg)
+
+        # Never suggest sending the very player being acquired. This is a
+        # defensive backstop across ALL package sources (historical, ML, and
+        # value-balanced) — a package that echoes the focus player on the give
+        # side is nonsensical (e.g. "get McConkey / give McConkey").
+        _focus_pid = str(player_id)
+        primary_pkgs = [
+            p for p in primary_pkgs
+            if not any(
+                (not a.get("is_pick")) and str(a.get("player_id") or "") == _focus_pid
+                for a in p.get("send", [])
+            )
+        ]
 
         # Drop packages where the viewer is sending more than 2× the target's value.
         # Real trades include extreme overpays - those are not useful suggestions.
