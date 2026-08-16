@@ -760,7 +760,15 @@ def role_opportunity_index(
         # jump-ball WR/TE), and goal-line rushing is already captured by the
         # designed-rush component. Rushing stays additive upside so pocket
         # passers are not penalised: pass + snap = 0.80.
-        pass_vol = _norm(_safe(usage.get("avg_pass_att")), 18, 42)
+        pass_att = _safe(usage.get("avg_pass_att"))
+        # Snap is a third of the QB index and QB has no "share" term to fall back
+        # on, so a missing snap value (frequently 0 in the usage feed) craters an
+        # elite QB's score — e.g. a QB1 landing at ~31. Any QB throwing real
+        # volume plays ~every snap, so treat missing snap as a full-snap starter.
+        # No-op when real snap data is present; backups (low volume) are excluded.
+        if snap < 0.5 and pass_att >= 15:
+            snap = 0.97
+        pass_vol = _norm(pass_att, 18, 42)
         rush_vol = _norm(_safe(usage.get("avg_carries")), 0, 9)
         comps = [(pass_vol, 0.47, False), (snap, 0.33, False), (rush_vol, 0.20, False)]
 
