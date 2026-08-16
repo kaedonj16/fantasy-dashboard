@@ -162,6 +162,25 @@ services:
         sync: false
 
   - type: cron
+    name: market-intelligence-refresh
+    runtime: python
+    schedule: 15 */4 * * *
+    plan: starter
+    buildCommand: pip install --no-cache-dir -r requirements.txt
+    startCommand: python scripts/refresh_market_intelligence.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DATABASE_URL
+        fromDatabase:
+          name: brfantasy-db
+          property: connectionString
+      - key: SPORTSGAMEODDS_API_KEY
+        sync: false
+      - key: PYTHON_ENV
+        value: production
+
+  - type: cron
     name: trade-recrawl
     runtime: python
     # Every 4 hours. Grows the league pool (discovery) AND re-crawls known
