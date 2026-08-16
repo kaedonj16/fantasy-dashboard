@@ -17542,10 +17542,15 @@ def build_commissioner_body(ctx):
         if len(vals) >= 2:
             (r1, v1), (r2, v2) = vals[0], vals[1]
             diff = abs(v1 - v2)
-            # Lopsided is judged by the *ratio* of the two sides, relative to the
-            # trade — the bigger haul divided by the smaller. Flagged when one
-            # side got at least 1.15x the other (15%+ more value). A small
+            # Lopsided is judged by the *ratio* of the two sides (bigger haul /
+            # smaller), against a band that TIGHTENS as the trade gets bigger: a
+            # 10% gap is trivial on a cheap swap but a real fleece on a
+            # blockbuster. The band shrinks linearly from 1.20 on small trades to
+            # 1.05 on big ones (calibrated so ~1000-for-900 trips it). A small
             # absolute floor keeps trivial swaps from tripping it.
+            total_val = v1 + v2
+            _t   = max(0.0, min(1.0, (total_val - 200.0) / (1800.0 - 200.0)))
+            band = 1.20 + (1.05 - 1.20) * _t   # 1.20 (small) → 1.05 (large)
             lo_val, hi_val = min(v1, v2), max(v1, v2)
             ratio = (hi_val / lo_val) if lo_val > 0 else float("inf")
             trade_rows.append({
@@ -17553,7 +17558,7 @@ def build_commissioner_body(ctx):
                 "team_b": roster_map.get(r2, f"Team {r2}"),
                 "val_a": round(v1, 0), "val_b": round(v2, 0),
                 "diff": round(diff, 0),
-                "lopsided": ratio >= 1.15 and diff > 15,
+                "lopsided": ratio >= band and diff > 15,
             })
     trade_rows.sort(key=lambda x: -x["diff"])
 
