@@ -20284,6 +20284,16 @@ def api_league_players():
             _attach_mi_adp(_mi_players, _mi_proj)
             payload = dict(payload)
             payload["players"] = _mi_players
+            # Coverage summary so the UI can show an honest state (e.g. hide the
+            # column, or note "N players priced") instead of a silent dash strip.
+            _mi_covered = sum(1 for _p in _mi_players if _p.get("market_vs_adp") is not None)
+            _mi_as_of = max((str(_r.get("calculated_at")) for _r in _mi_proj.values()
+                             if _r.get("calculated_at")), default=None)
+            payload["market_vs_adp_meta"] = {
+                "season_rows": len(_mi_proj),
+                "players_covered": _mi_covered,
+                "as_of": _mi_as_of,
+            }
     except Exception:
         logger.debug("season market intelligence unavailable", exc_info=True)
 

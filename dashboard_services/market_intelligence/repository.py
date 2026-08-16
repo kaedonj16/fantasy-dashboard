@@ -1,33 +1,64 @@
 from __future__ import annotations
 
 import os
+import time
+from datetime import datetime, timezone
+
+from .config import READ_CACHE_TTL, SEASON_MAX_AGE, WEEKLY_MAX_AGE
+
+# (season, week, context) -> (monotonic_expiry, {canonical_player_id: row}). One
+# process-local snapshot of the whole projection table per key; requests filter it
+# by player_ids in memory instead of hitting the DB each time.
+_TABLE_CACHE: dict[tuple, tuple[float, dict[str, dict]]] = {}
 
 
-def load_market_projections(season: int, week: int | None, context: str = "weekly",
-                            player_ids: list[str] | None = None) -> dict[str, dict]:
-    """Bulk local read. Page paths never contact SportsGameOdds."""
-    if not os.getenv("DATABASE_URL", "").strip():
-        return {}
+def _load_projection_table(season: int, week: int | None, context: str) -> dict[str, dict]:
+    """Full projection table for (season, week, context), stale rows dropped.
+
+    A row older than its context's max age is skipped, so a stalled refresh cron
+    can never surface an old line as current."""
     from dashboard_services.db import get_conn
-    params: list = [season, context]
-    where = "season = %s AND context = %s"
+    max_age = SEASON_MAX_AGE if context == "season" else WEEKLY_MAX_AGE
+    cutoff = datetime.now(timezone.utc) - max_age
+    params: list = [season, context, cutoff]
+    where = "season = %s AND context = %s AND calculated_at >= %s"
     if week is None:
         where += " AND week IS NULL"
     else:
         where += " AND week = %s"
         params.append(week)
-    if player_ids:
-        where += " AND canonical_player_id = ANY(%s)"
-        params.append([str(x) for x in player_ids])
-    try:
-        with get_conn() as conn:
-            rows = conn.execute(
-                f"SELECT canonical_player_id, fantasy_points, coverage, confidence, "
-                f"components, calculated_at FROM market_projections WHERE {where}", params
-            ).fetchall()
-        return {str(r["canonical_player_id"]): dict(r) for r in rows}
-    except Exception:
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"SELECT canonical_player_id, fantasy_points, coverage, confidence, "
+            f"components, calculated_at FROM market_projections WHERE {where}", params
+        ).fetchall()
+    return {str(r["canonical_player_id"]): dict(r) for r in rows}
+
+
+def load_market_projections(season: int, week: int | None, context: str = "weekly",
+                            player_ids: list[str] | None = None) -> dict[str, dict]:
+    """Bulk local read. Page paths never contact SportsGameOdds.
+
+    Stale rows are dropped (see _load_projection_table) and the full table is
+    cached in-process for a short TTL, then filtered by ``player_ids`` in memory,
+    so a hot endpoint issues one query per TTL rather than one per request."""
+    if not os.getenv("DATABASE_URL", "").strip():
         return {}
+    key = (int(season), week, context)
+    now = time.monotonic()
+    entry = _TABLE_CACHE.get(key)
+    if entry and entry[0] > now:
+        table = entry[1]
+    else:
+        try:
+            table = _load_projection_table(season, week, context)
+        except Exception:
+            return {}
+        _TABLE_CACHE[key] = (now + READ_CACHE_TTL.total_seconds(), table)
+    if player_ids:
+        want = {str(x) for x in player_ids}
+        return {pid: row for pid, row in table.items() if pid in want}
+    return dict(table)
 
 
 def attach_weekly_signals(rows: list[dict], season: int, week: int,

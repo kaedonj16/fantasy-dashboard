@@ -29,6 +29,27 @@ def _num(value):
         return None
 
 
+# SportsGameOdds labels season-long player futures differently from single-game
+# props. We match these tokens against the odd's period/market identifiers and the
+# event type. The exact provider labels still need confirming against a live
+# payload (the feed isn't reachable from CI) — keep the list centralized here so
+# pinning it down is a one-line change plus a fixture test once a real season
+# future is captured. Bare "season" is intentionally excluded (it also matches
+# "preseason"/"in-season").
+SEASON_CONTEXT_TOKENS = (
+    "regular season", "regularseason", "season total", "season-long",
+    "season_total", "seasonlong", "full_season", "fullseason", "futures",
+)
+
+
+def classify_context(odd: dict, event: dict) -> str:
+    """Return "season" for a season-long future, else "weekly" (single game)."""
+    text = " ".join(str(odd.get(key) or "") for key in
+                    ("periodID", "period", "marketName", "oddID", "statID")).lower()
+    text += " " + str(event.get("eventType") or event.get("type") or "").lower()
+    return "season" if any(tok in text for tok in SEASON_CONTEXT_TOKENS) else "weekly"
+
+
 def normalize_event(event: dict, observed_at: datetime | None = None) -> list[MarketRecord]:
     """Flatten SportsGameOdds' event odds map into provider-independent rows."""
     observed_at = observed_at or datetime.now(timezone.utc)
@@ -51,11 +72,7 @@ def normalize_event(event: dict, observed_at: datetime | None = None) -> list[Ma
         if not player_id or not book or not stat or line is None:
             continue
         status = str(odd.get("status") or "").lower()
-        context_text = " ".join(str(odd.get(key) or "") for key in
-                                ("periodID", "period", "marketName", "oddID", "statID")).lower()
-        context_text += " " + str(event.get("eventType") or event.get("type") or "").lower()
-        context = "season" if any(token in context_text for token in
-                                  ("regular season", "regularseason", "season total", "season-long", "futures")) else "weekly"
+        context = classify_context(odd, event)
         out.append(MarketRecord(
             event_id, player_id, book, raw_stat, stat,
             str(odd.get("periodID") or odd.get("period") or "game"), line, start, observed_at,
