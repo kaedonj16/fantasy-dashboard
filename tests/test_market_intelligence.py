@@ -75,6 +75,28 @@ def test_expected_adp_interpolates_instead_of_ranking():
     assert expected_adp(15, pool) == 60
 
 
+def test_expected_adp_reads_payload_redraft_field():
+    # The league-players payload carries redraft ADP as redraft_avg_pick, not adp.
+    pool = [{"proj_ppg": 10, "redraft_avg_pick": 100},
+            {"proj_ppg": 20, "redraft_avg_pick": 20}]
+    assert expected_adp(15, pool) == 60
+
+
+def test_attach_market_vs_adp_uses_redraft_avg_pick():
+    from dashboard_services.market_intelligence.adp import attach_market_vs_adp
+    players = [
+        {"id": "1", "proj_ppg": 10, "redraft_avg_pick": 100},
+        {"id": "2", "proj_ppg": 20, "redraft_avg_pick": 20},
+    ]
+    projections = {"1": {"fantasy_points": 15, "confidence": 0.8}}
+    attach_market_vs_adp(players, projections)
+    # Expected ADP for 15 proj_ppg interpolates to pick 60; actual ADP is 100,
+    # so the market says this player is going ~40 picks later than production warrants.
+    assert players[0]["market_expected_adp"] == 60.0
+    assert players[0]["market_vs_adp"] == 40.0
+    assert players[0]["market_confidence"] == 0.8
+
+
 def test_season_projection_uses_baseline_for_missing_components():
     markets = {
         "receiving_yards": {"line": 1200, "confidence": .9},
