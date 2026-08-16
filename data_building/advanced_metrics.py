@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
 from dashboard_services.api import get_nfl_state
 from dashboard_services.db import get_conn
+from data_building.external_data.pfr_snap_counts import estimate_snap_share_from_usage
 
 # Columns sourced from PFF (premium, license-restricted). These must not be
 # served on the public site. They stay in the DB for private/local use, but the
@@ -725,6 +726,32 @@ def role_opportunity_index(
 
     snap = _clip(_safe(usage.get("avg_off_snap_pct")), 0.0, 1.0)
 
+    # Recover a missing snap share from volume. Snap is a real slice of every
+    # position's index and the ENTIRE non-volume signal for QBs (which have no
+    # team-share term), and the elite anchors were calibrated with snap present —
+    # so a silently-zero snap (a common gap in the usage feed) craters real
+    # starters, e.g. a QB1 reading ~31 instead of ~100. This is a no-op whenever
+    # real snap data is present.
+    if snap < 0.01:
+        pass_att = _safe(usage.get("avg_pass_att"))
+        if position == "QB" and pass_att >= 15:
+            # A QB throwing real volume plays ~every snap; snap must NOT scale
+            # with attempts (that's already the pass-volume term), so use a flat
+            # starter floor rather than a volume estimate to avoid double-counting.
+            snap = 0.97
+        else:
+            # Skill positions (and relief QBs): estimate participation from
+            # touches the same way the usage pipeline does.
+            snap = _clip(
+                estimate_snap_share_from_usage(
+                    position,
+                    avg_targets=_safe(usage.get("avg_targets")),
+                    avg_carries=_safe(usage.get("avg_carries")),
+                    avg_pass_att=pass_att,
+                ),
+                0.0, 1.0,
+            )
+
     # Receiving share: prefer Footballguys target_share (true team share);
     # fall back to deriving it from the team aggregate.
     tshare = _safe(usage.get("target_share"))
@@ -760,15 +787,7 @@ def role_opportunity_index(
         # jump-ball WR/TE), and goal-line rushing is already captured by the
         # designed-rush component. Rushing stays additive upside so pocket
         # passers are not penalised: pass + snap = 0.80.
-        pass_att = _safe(usage.get("avg_pass_att"))
-        # Snap is a third of the QB index and QB has no "share" term to fall back
-        # on, so a missing snap value (frequently 0 in the usage feed) craters an
-        # elite QB's score — e.g. a QB1 landing at ~31. Any QB throwing real
-        # volume plays ~every snap, so treat missing snap as a full-snap starter.
-        # No-op when real snap data is present; backups (low volume) are excluded.
-        if snap < 0.5 and pass_att >= 15:
-            snap = 0.97
-        pass_vol = _norm(pass_att, 18, 42)
+        pass_vol = _norm(_safe(usage.get("avg_pass_att")), 18, 42)
         rush_vol = _norm(_safe(usage.get("avg_carries")), 0, 9)
         comps = [(pass_vol, 0.47, False), (snap, 0.33, False), (rush_vol, 0.20, False)]
 
