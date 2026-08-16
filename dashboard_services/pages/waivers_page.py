@@ -82,8 +82,18 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-faab-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); cursor: pointer; }
 .wv-faab-toggle input { accent-color: var(--accent); width: 14px; height: 14px; margin: 0; }
 @media (max-width: 700px) {
-  .wv-right { gap: 7px; }
-  .wv-advice-metric { min-width: 40px; }
+  /* On phones the player info and the metric columns can't share one line: with
+     FAAB shown there are up to five columns, which overflowed the card (Value
+     fell off the right edge) and crushed the name into three lines. Drop the
+     metrics onto their own full-width row beneath the player instead, as an
+     evenly spread stat strip that wraps only as a last resort on tiny screens. */
+  .wv-player-row { flex-direction: column; align-items: stretch; gap: 10px; }
+  .wv-right {
+    width: 100%; gap: 8px 12px; flex-wrap: wrap;
+    justify-content: space-between;
+    padding-top: 9px; border-top: 1px solid var(--border);
+  }
+  .wv-advice-metric { min-width: 0; }
 }
 /* Waiver signal chips use the site's canonical `.chip .chip--sm` + a .signal-*
    colour alias (all defined once in dashboard.css). Nothing chip-related is
@@ -609,10 +619,6 @@ function wvRenderWaivers() {{
       const bid = p.faab_low ? (p.faab_low + '&ndash;' + p.faab_high) : ('&le;' + p.faab_high);
       faabChip = `<span class="wv-advice-metric"><span class="wv-advice-label">FAAB bid</span><span class="chip chip--sm chip--accent" title="Suggested percentage of your total FAAB budget">${{bid}}%</span></span>`;
     }}
-    const conf = p.confidence || {{}};
-    const confChip = conf.label
-      ? `<span class="wv-advice-metric"><span class="wv-advice-label">Data quality</span><span class="chip chip--sm chip--neutral" title="How complete the projection, usage, schedule, age, team, and value data is">${{conf.label}}</span></span>`
-      : '';
     const marketChip = p.market_opportunity
       ? `<span class="wv-advice-metric"><span class="wv-advice-label">Market Opportunity</span><span class="chip chip--sm chip--neutral" title="Market Projection ${{p.market_projection}}, difference ${{p.market_opportunity.delta > 0 ? '+' : ''}}${{p.market_opportunity.delta}}">${{p.market_opportunity.label}}</span></span>`
       : '';
@@ -631,7 +637,6 @@ function wvRenderWaivers() {{
       </div>
       <div class="wv-right">
         <span class="wv-advice-metric"><span class="wv-advice-label">Why add</span><span class="chip chip--sm ${{p.signal_class}}">${{p.signal}}</span></span>
-        ${{confChip}}
         ${{marketChip}}
         ${{faabChip}}
         <span class="wv-advice-metric"><span class="wv-advice-label">Value</span><span class="wv-value">${{Math.round(p.value)}}</span></span>
@@ -783,31 +788,43 @@ function wvPosChip(p) {{
   return '<span class="wv-cmp-poschip" style="color:' + c + ';background:color-mix(in srgb,' + c + ' 15%,transparent);">' + lbl + '</span>';
 }}
 
-// The advisor's call: weigh projection (heaviest), floor, matchup and Vegas
-// total; whoever leads on the weighted tally is the start. Returns the winning
-// side plus the one or two edges that decided it, or a toss-up when it's level.
-function wvVerdict(a, b, da, db) {{
-  const edges = [];
-  if (da.proj != null && db.proj != null && da.proj !== db.proj) {{
-    const wi = da.proj > db.proj ? 0 : 1;
-    edges.push({{ idx: wi, w: 3, txt: 'higher projection (+' + Math.abs(da.proj - db.proj).toFixed(1) + ')' }});
+// Human-readable reasons the winner (side wi) beat the loser, drawn from the
+// same six-factor breakdown the score is built from, so the "why" always agrees
+// with the pick. Sorted by each factor's actual impact on the score.
+function wvVerdictReasons(a, b, wi) {{
+  const fw = (wi === 0 ? a : b).score_factors || {{}};
+  const fl = (wi === 0 ? b : a).score_factors || {{}};
+  const cand = [];
+  const projW = fw.proj || 0, projL = fl.proj || 0;
+  if (projW > projL) {{
+    cand.push({{ imp: projL > 0 ? projW / projL : 2, txt: 'higher projection (+' + (projW - projL).toFixed(1) + ')' }});
   }}
-  if (da.floorNum != null && db.floorNum != null && da.floorNum !== db.floorNum) {{
-    edges.push({{ idx: da.floorNum > db.floorNum ? 0 : 1, w: 2, txt: 'a safer floor' }});
-  }}
-  if (a.def_rank && b.def_rank && a.def_rank !== b.def_rank) {{
-    edges.push({{ idx: a.def_rank < b.def_rank ? 0 : 1, w: 2, txt: 'an easier matchup' }});
-  }}
-  if (da.vegasNum != null && db.vegasNum != null && da.vegasNum !== db.vegasNum) {{
-    edges.push({{ idx: da.vegasNum > db.vegasNum ? 0 : 1, w: 1, txt: 'a higher team total' }});
-  }}
-  if (!edges.length) return null;
-  let s0 = 0, s1 = 0;
-  edges.forEach(e => {{ if (e.idx === 0) s0 += e.w; else s1 += e.w; }});
-  if (s0 === s1) return {{ idx: null }};
-  const wi = s0 > s1 ? 0 : 1;
-  const reasons = edges.filter(e => e.idx === wi).sort((x, y) => y.w - x.w).slice(0, 2).map(e => e.txt);
-  return {{ idx: wi, reasons: reasons }};
+  const mult = [
+    ['matchup', 'an easier matchup'],
+    ['floor',   'a safer floor'],
+    ['form',    'better recent form'],
+    ['usage',   'a rising role'],
+    ['vegas',   'a higher team total'],
+    ['avail',   'fewer injury concerns'],
+  ];
+  mult.forEach(f => {{
+    const mw = fw[f[0]] != null ? fw[f[0]] : 1, ml = fl[f[0]] != null ? fl[f[0]] : 1;
+    if (mw > ml + 1e-9) cand.push({{ imp: ml > 0 ? mw / ml : 2, txt: f[1] }});
+  }});
+  cand.sort((x, y) => y.imp - x.imp);
+  return cand.slice(0, 2).map(c => c.txt);
+}}
+
+// The advisor's call: the single unified start_score decides it — the exact same
+// score behind the START badges and the optimal-lineup banner, so the three can
+// never contradict each other. Returns the winning side plus the one or two of
+// the six signals that most decided it, or a toss-up when the scores are level.
+function wvVerdict(a, b) {{
+  const sa = a.start_score, sb = b.start_score;
+  if (sa == null || sb == null) return null;
+  if (Math.abs(sa - sb) < 0.1) return {{ idx: null }};
+  const wi = sa > sb ? 0 : 1;
+  return {{ idx: wi, reasons: wvVerdictReasons(a, b, wi) }};
 }}
 
 function wvRenderCompare() {{
@@ -843,7 +860,7 @@ function wvRenderCompare() {{
   const sub = (p) => [p.team, p.opponent || (p.on_bye ? 'BYE' : '')].filter(Boolean).join(' · ');
 
   // Recommendation banner up top — the reason people opened the advisor.
-  const v = wvVerdict(a, b, da, db);
+  const v = wvVerdict(a, b);
   let verdictHtml = '';
   if (v && v.idx != null) {{
     const w = v.idx === 0 ? a : b;
