@@ -21,7 +21,6 @@ if TYPE_CHECKING:
 
 from dashboard_services.api import get_nfl_state
 from dashboard_services.db import get_conn
-from data_building.external_data.pfr_snap_counts import estimate_snap_share_from_usage
 
 # Columns sourced from PFF (premium, license-restricted). These must not be
 # served on the public site. They stay in the DB for private/local use, but the
@@ -656,20 +655,28 @@ def calculate_role_score(
 #            middling role reads as middling regardless of how strong the rest of
 #            the cohort is that season, and so scores are comparable across years.
 # Toggle with the ROLE_SCORE_V2 env var (default on); v1 stays reachable for A/B.
+#
+# Snap-free (v2d): snap share is not available in this data source, and an
+# estimated snap (derived from absolute touches) reintroduces the exact v1 bias
+# v2 set out to kill — an alpha on a run-heavy, low-volume passing team gets
+# under-credited despite a huge target *share*. So the index uses NO snap term.
+# The weight snap carried is redistributed onto the team-relative signals, and a
+# QB's snap (which was ~1.0 for every starter anyway) is replaced by a
+# volume-derived "starter base", keeping the QB anchor unchanged.
 
-# Index value that maps to 100 per position. Calibrated empirically against the
-# 2025 cohort's opportunity-index distribution so that only the genuine top 2-4
-# roles per position reach 100, with a smooth gradient below (elite tier ~88-100,
-# strong starters ~75-88, role players lower).
+# Index value that maps to 100 per position. Calibrated against the cohort's
+# snap-free opportunity-index distribution so only the genuine top 2-4 roles per
+# position reach 100, with a smooth gradient below (elite ~88-100, strong
+# starters ~75-88, role players lower).
 #
-# Calibration history (top WR / players at 100 across all positions):
-#   v2a  WR=0.48 TE=0.40 RB=0.70 QB=0.78  -> top WR ~75, only ~1 at 100 (too high)
-#   v2b  WR=0.40 TE=0.33 RB=0.58 QB=0.68  -> ~29 players at 100 (too low)
-#   v2c  WR=0.46 TE=0.35 RB=0.74 QB=0.77  -> ~8 players at 100 (this) ✓
+# Calibration history (anchors; players at 100 across all positions):
+#   v2c  WR=0.46 TE=0.35 RB=0.74 QB=0.77  (snap-based) -> ~8 at 100
+#   v2d  WR=0.315 TE=0.26 RB=0.68 QB=0.77 (snap-free)  -> anchors at ~p98 ✓
 #
-# Anchors sit near the 2025 p98-p99 index per position (RB/WR/QB show a clear
-# elite cluster then a gap; the anchor lands just below the cluster's top).
-_ROLE_ELITE_ANCHOR: Dict[str, float] = {"WR": 0.46, "TE": 0.35, "RB": 0.74, "QB": 0.77}
+# Anchors sit near each position's p98 index (a clear elite cluster then a gap;
+# the anchor lands just below the cluster's top). QB is unchanged because its
+# starter-base replacement mirrors the old ~1.0 snap term.
+_ROLE_ELITE_ANCHOR: Dict[str, float] = {"WR": 0.315, "TE": 0.26, "RB": 0.68, "QB": 0.77}
 # A player needs this many games to earn full sample confidence (small samples
 # shrink toward 0 so a 1-2 game fluke can't post an elite role score).
 _ROLE_FULL_SAMPLE_GAMES = 4.0
@@ -724,34 +731,6 @@ def role_opportunity_index(
     if games <= 0:
         return None
 
-    snap = _clip(_safe(usage.get("avg_off_snap_pct")), 0.0, 1.0)
-
-    # Recover a missing snap share from volume. Snap is a real slice of every
-    # position's index and the ENTIRE non-volume signal for QBs (which have no
-    # team-share term), and the elite anchors were calibrated with snap present —
-    # so a silently-zero snap (a common gap in the usage feed) craters real
-    # starters, e.g. a QB1 reading ~31 instead of ~100. This is a no-op whenever
-    # real snap data is present.
-    if snap < 0.01:
-        pass_att = _safe(usage.get("avg_pass_att"))
-        if position == "QB" and pass_att >= 15:
-            # A QB throwing real volume plays ~every snap; snap must NOT scale
-            # with attempts (that's already the pass-volume term), so use a flat
-            # starter floor rather than a volume estimate to avoid double-counting.
-            snap = 0.97
-        else:
-            # Skill positions (and relief QBs): estimate participation from
-            # touches the same way the usage pipeline does.
-            snap = _clip(
-                estimate_snap_share_from_usage(
-                    position,
-                    avg_targets=_safe(usage.get("avg_targets")),
-                    avg_carries=_safe(usage.get("avg_carries")),
-                    avg_pass_att=pass_att,
-                ),
-                0.0, 1.0,
-            )
-
     # Receiving share: prefer Footballguys target_share (true team share);
     # fall back to deriving it from the team aggregate.
     tshare = _safe(usage.get("target_share"))
@@ -762,34 +741,37 @@ def role_opportunity_index(
     rz_tgt_share  = _share(_safe(usage.get("rec_rz_tgt_pg")),  _safe(team_ctx.get("rz_tgt")))
     rz_rush_share = _share(_safe(usage.get("rush_rz_att_pg")), _safe(team_ctx.get("rz_rush")))
 
+    # No snap term (see the snap-free note above the anchors): snap share isn't
+    # in this data source, and estimating it from touches would re-bias against
+    # alphas on low-volume teams. Weight is on team-relative shares only.
     # Each component is (value, weight, is_red_zone).
     if position == "WR":
-        # Alpha / slot / deep / RZ specialist all reachable; snap keeps
-        # lower-target-share field-stretchers from cratering until air yards land.
-        comps = [(tshare, 0.50, False), (snap, 0.28, False), (rz_tgt_share, 0.22, True)]
+        # Alpha vs complementary is a target-share story; RZ targets add scoring role.
+        comps = [(tshare, 0.68, False), (rz_tgt_share, 0.32, True)]
 
     elif position == "TE":
-        # Snap deliberately low — TE snaps include blocking, not a fantasy role.
         # RZ involvement is a big slice of TE value (they are red-zone weapons).
-        comps = [(tshare, 0.55, False), (rz_tgt_share, 0.27, True), (snap, 0.18, False)]
+        comps = [(tshare, 0.67, False), (rz_tgt_share, 0.33, True)]
 
     elif position == "RB":
         # PPR-weighted dual role: the 1.7x target premium lets pass-catching
         # backs register, while rush + goal-line share reward early-down bellcows.
         rshare = _share(_safe(usage.get("avg_carries")), _safe(team_ctx.get("carries")))
         core   = _clip(rshare + 1.7 * tshare, 0.0, 1.0)
-        comps = [(core, 0.46, False), (rz_rush_share, 0.20, True),
-                 (snap, 0.18, False), (rz_tgt_share, 0.16, True)]
+        comps = [(core, 0.56, False), (rz_rush_share, 0.24, True), (rz_tgt_share, 0.20, True)]
 
     elif position == "QB":
         # No "share" at QB — workload + dual-threat, ranked. No red-zone term:
         # "RZ role" isn't a meaningful axis for a QB (unlike a goal-line RB or a
         # jump-ball WR/TE), and goal-line rushing is already captured by the
-        # designed-rush component. Rushing stays additive upside so pocket
-        # passers are not penalised: pass + snap = 0.80.
-        pass_vol = _norm(_safe(usage.get("avg_pass_att")), 18, 42)
-        rush_vol = _norm(_safe(usage.get("avg_carries")), 0, 9)
-        comps = [(pass_vol, 0.47, False), (snap, 0.33, False), (rush_vol, 0.20, False)]
+        # designed-rush component. The old snap term (~1.0 for every starter) is
+        # replaced by a volume-derived "starter base": full credit at 15+ att/g,
+        # ramping down for spot/relief QBs, so a real starter isn't penalised.
+        pass_att   = _safe(usage.get("avg_pass_att"))
+        pass_vol   = _norm(pass_att, 18, 42)
+        rush_vol   = _norm(_safe(usage.get("avg_carries")), 0, 9)
+        start_base = _clip((pass_att - 8.0) / 7.0, 0.0, 1.0)
+        comps = [(pass_vol, 0.47, False), (start_base, 0.33, False), (rush_vol, 0.20, False)]
 
     else:
         return None
@@ -1403,7 +1385,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "total_touches":        {"label": "Touches",             "category": "General", "positions": ["RB", "WR", "TE"], "integer": True, "desc": "Total carries plus receptions in the season."},
     "touches_per_game":     {"label": "Touches/G",           "category": "General", "positions": ["RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Carries plus receptions per game.", "computed_sql": "m.total_touches::float / NULLIF(m.games, 0)", "computed_null": "m.total_touches IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "yards_per_touch":      {"label": "Yards / Touch",       "category": "General", "positions": ["RB", "WR", "TE"], "efficiency": True, "min_vol": _V_TOUCHES, "desc": "Yards gained per combined carry and reception."},
-    "role_score":           {"label": "Role Score",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Overall opportunity score (0-100) blending snap share, touches, and red-zone usage relative to the player's position."},
+    "role_score":           {"label": "Role Score",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Overall opportunity score (0-100) from the player's share of team targets/carries, red-zone usage, and (QB) passing + rushing workload — 100 is an alpha/bellcow/QB1 role."},
     "snap_share":           {"label": "Snap Share",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Percent of the team's offensive snaps the player was on the field for."},
     "opportunity_share":    {"label": "Opportunity Share",   "category": "General", "positions": ["RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Share of the team's targets plus carries that went to this player."},
     "red_zone_usage":       {"label": "Red Zone Usage",      "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Targets and carries inside the opponent's 20-yard line per game; a proxy for scoring opportunity."},
