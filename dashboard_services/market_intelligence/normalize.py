@@ -51,6 +51,11 @@ def normalize_event(event: dict, observed_at: datetime | None = None) -> list[Ma
         if not player_id or not book or not stat or line is None:
             continue
         status = str(odd.get("status") or "").lower()
+        context_text = " ".join(str(odd.get(key) or "") for key in
+                                ("periodID", "period", "marketName", "oddID", "statID")).lower()
+        context_text += " " + str(event.get("eventType") or event.get("type") or "").lower()
+        context = "season" if any(token in context_text for token in
+                                  ("regular season", "regularseason", "season total", "season-long", "futures")) else "weekly"
         out.append(MarketRecord(
             event_id, player_id, book, raw_stat, stat,
             str(odd.get("periodID") or odd.get("period") or "game"), line, start, observed_at,
@@ -59,5 +64,6 @@ def normalize_event(event: dict, observed_at: datetime | None = None) -> list[Ma
             under_price=_num(odd.get("underOdds") or odd.get("bookUnderOdds")),
             source_updated_at=_dt(odd.get("lastUpdated") or odd.get("updatedAt")),
             suspended=bool(odd.get("suspended")) or status in {"suspended", "closed", "inactive"},
+            context=context,
         ))
     return out

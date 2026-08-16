@@ -14,11 +14,16 @@ normalized before any downstream calculation. The key is never returned to the
 browser or logged. With no key, refresh is a successful no-op and every existing
 feature continues without market fields.
 
+Successful SportsGameOdds response pages are cached on disk for one hour by
+request path and parameters. Repeated refreshes within that window reuse the
+cached response, including each cursor page, without contacting the provider.
+
 Run `python scripts/refresh_market_intelligence.py` every four hours during the
-NFL week. The request covers only upcoming NFL events for the next eight days.
-It ignores events after kickoff, so a live line cannot overwrite the latest
-pregame snapshot. Page requests make only bulk PostgreSQL reads and never call
-SportsGameOdds.
+NFL week. The request is restricted to NFL events with available odds and uses
+a season-length kickoff window so explicitly labelled player futures are not
+missed. It ignores events after kickoff, so a live line cannot overwrite the
+latest pregame snapshot. Page requests make only bulk PostgreSQL reads and never
+call SportsGameOdds.
 
 ## Storage and identity
 
@@ -59,7 +64,6 @@ confidence. Missing props therefore remain baseline components, never zero.
   or replace the waiver model.
 
 SportsGameOdds weekly player markets are kept separate from season context.
-Season-long NFL player coverage was not available for unauthenticated contract
-verification in the development environment. No weekly line is annualized. As a
-result, Market vs ADP remains unavailable until defensible season-context rows
-are ingested into `market_projections`.
+Only markets explicitly labelled as regular-season totals or futures can create
+season projections. No weekly line is annualized. Players without a supported
+season-long market continue to show the normal missing-data indicator.

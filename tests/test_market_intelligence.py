@@ -5,7 +5,7 @@ from dashboard_services.market_intelligence.consensus import build_consensus
 from dashboard_services.market_intelligence.identity import resolve_player
 from dashboard_services.market_intelligence.models import MarketRecord
 from dashboard_services.market_intelligence.odds import american_implied_probability, no_vig_over_probability
-from dashboard_services.market_intelligence.projection import build_market_projection
+from dashboard_services.market_intelligence.projection import build_market_projection, build_season_market_projection
 from dashboard_services.market_intelligence.signals import market_opportunity, market_vs_projection
 
 
@@ -73,3 +73,16 @@ def test_signals_and_availability():
 def test_expected_adp_interpolates_instead_of_ranking():
     pool = [{"proj_ppg": 10, "adp": 100}, {"proj_ppg": 20, "adp": 20}]
     assert expected_adp(15, pool) == 60
+
+
+def test_season_projection_uses_baseline_for_missing_components():
+    markets = {
+        "receiving_yards": {"line": 1200, "confidence": .9},
+        "receptions": {"line": 90, "confidence": .85},
+    }
+    result = build_season_market_projection(markets, 250, {"rec": 1, "rec_yd": .1}, "WR")
+
+    assert result is not None
+    assert result["coverage"] == .5
+    assert result["points"] > 250
+    assert result["baseline_points"] == 250
