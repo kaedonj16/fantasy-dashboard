@@ -5,8 +5,14 @@ from dashboard_services.pages.waivers_page import build_waivers_body
 
 def test_waiver_advice_metrics_have_visible_labels():
     body = build_waivers_body("sleeper", 2026, "league", {})
-    for label in ("Why add", "Data quality", "FAAB bid", "Value"):
+    for label in ("Why add", "FAAB bid", "Value"):
         assert label in body
+
+
+def test_data_quality_metric_removed():
+    body = build_waivers_body("sleeper", 2026, "league", {})
+    assert "Data quality" not in body
+    assert "confChip" not in body
 
 
 def test_unexplained_likely_rank_is_not_rendered():

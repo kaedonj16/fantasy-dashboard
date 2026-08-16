@@ -619,10 +619,6 @@ function wvRenderWaivers() {{
       const bid = p.faab_low ? (p.faab_low + '&ndash;' + p.faab_high) : ('&le;' + p.faab_high);
       faabChip = `<span class="wv-advice-metric"><span class="wv-advice-label">FAAB bid</span><span class="chip chip--sm chip--accent" title="Suggested percentage of your total FAAB budget">${{bid}}%</span></span>`;
     }}
-    const conf = p.confidence || {{}};
-    const confChip = conf.label
-      ? `<span class="wv-advice-metric"><span class="wv-advice-label">Data quality</span><span class="chip chip--sm chip--neutral" title="How complete the projection, usage, schedule, age, team, and value data is">${{conf.label}}</span></span>`
-      : '';
     const marketChip = p.market_opportunity
       ? `<span class="wv-advice-metric"><span class="wv-advice-label">Market Opportunity</span><span class="chip chip--sm chip--neutral" title="Market Projection ${{p.market_projection}}, difference ${{p.market_opportunity.delta > 0 ? '+' : ''}}${{p.market_opportunity.delta}}">${{p.market_opportunity.label}}</span></span>`
       : '';
@@ -641,7 +637,6 @@ function wvRenderWaivers() {{
       </div>
       <div class="wv-right">
         <span class="wv-advice-metric"><span class="wv-advice-label">Why add</span><span class="chip chip--sm ${{p.signal_class}}">${{p.signal}}</span></span>
-        ${{confChip}}
         ${{marketChip}}
         ${{faabChip}}
         <span class="wv-advice-metric"><span class="wv-advice-label">Value</span><span class="wv-value">${{Math.round(p.value)}}</span></span>
