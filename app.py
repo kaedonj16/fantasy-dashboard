@@ -2023,6 +2023,27 @@ def _nav_show_keeper(platform, league_id, season) -> bool:
     return type_code == 1 or max_keepers > 0
 
 
+def _nav_is_redraft(platform, league_id, season) -> bool:
+    """True only for a pure redraft league: Sleeper league type 0.
+
+    Matches the app's canonical redraft signal (see _api_roster_intel_compute).
+    Sleeper commonly reports a default ``max_keepers`` of 1 even on plain redraft
+    leagues, which makes ``_nav_show_keeper`` keeper-capable; the dock uses this
+    to keep the Teams slot for redraft leagues anyway. Non-Sleeper leagues publish
+    no type, so they are never treated as redraft here."""
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
+        settings = (ctx.get("league_settings")
+                    or (ctx.get("league") or {}).get("settings")
+                    or ctx.get("settings") or {})
+    except Exception:
+        settings = {}
+    try:
+        return int(settings.get("type")) == 0
+    except (TypeError, ValueError):
+        return False
+
+
 def _mobile_nav(active: str, league_id, platform, season) -> str:
     """Mobile navigation: a dynamic bottom dock plus a full "More" sheet.
 
@@ -2060,7 +2081,11 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         return url_for(ep, platform=platform, season=season, league_id=league_id) + suffix
 
     # ── Dynamic dock ──────────────────────────────────────────────────────────
-    show_keeper = _nav_show_keeper(platform, league_id, season)
+    # Redraft leagues (Sleeper type 0) keep the Teams slot even when Sleeper
+    # reports a default keeper limit; only real keeper leagues get the dock tab.
+    # The Keeper Assistant still lives in the More sheet either way.
+    show_keeper = _nav_show_keeper(platform, league_id, season) and not \
+        _nav_is_redraft(platform, league_id, season)
     if not offseason:
         middle = ["weekly", "trade", "teams"]
     elif show_keeper:
