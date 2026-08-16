@@ -141,11 +141,16 @@ def test_season_projection_uses_baseline_for_missing_components():
 
 
 def test_classify_context_distinguishes_season_from_weekly():
-    # A single-game prop -> weekly; a season-long future -> season.
-    weekly = {"periodID": "game", "statID": "passing_yards", "oddID": "passing_yards-JOSH-game-ou-over"}
-    assert classify_context(weekly, {"eventType": "game"}) == "weekly"
+    # A recognized single-game period is always weekly, whatever the market text.
+    weekly = {"periodID": "game", "oddID": "passing_yards-JOSH_ALLEN_1_NFL-game-ou-over"}
+    assert classify_context(weekly, {"eventType": "match"}) == "weekly"
+    # periodID falls back to segment 3 of the 5-part oddID when not given directly.
+    assert classify_context({"oddID": "rushing_yards-SAQUON-1h-ou-over"}, {}) == "weekly"
+    # Season-long futures: no game period, plus a season/futures signal.
     assert classify_context({"marketName": "Season Total Receiving Yards"}, {}) == "season"
     assert classify_context({"statID": "receiving_yards"}, {"eventType": "futures"}) == "season"
+    # A season-looking word on a single-game period stays weekly (guard wins).
+    assert classify_context({"periodID": "game", "marketName": "regular season"}, {}) == "weekly"
     # "preseason" must NOT be mistaken for a season future.
     assert classify_context({"marketName": "Preseason Week 1 Passing Yards"}, {}) == "weekly"
 
