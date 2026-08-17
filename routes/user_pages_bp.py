@@ -173,6 +173,26 @@ def page_portfolio():
                 _pos_buckets[pos].append(val)
         _top_n = {"QB": 1, "RB": 2, "WR": 3, "TE": 1}
         pos_user_vals = {p: sum(sorted(_pos_buckets[p], reverse=True)[:n]) for p, n in _top_n.items()}
+        # Resolve a player's position from the value table, falling back to the
+        # players index — so the user side and the league side bucket the same
+        # players (the user side already uses this same fallback above).
+        def _pos_of(p):
+            return ((values_by_id.get(p) or {}).get("position")
+                    or (players_index.get(p) or {}).get("pos") or "").upper()
+
+        def _median(xs):
+            s = sorted(xs)
+            n = len(s)
+            if not n:
+                return 0.0
+            m = n // 2
+            return s[m] if n % 2 else (s[m - 1] + s[m]) / 2
+
+        # Baseline against the league MEDIAN roster, not the mean. Top-N value
+        # sums are right-skewed — a few stacked teams inflate the average — so a
+        # mean baseline pushes most rosters below 1.0 and makes every middling
+        # team read as "negative" at every position (which looked broken). The
+        # median puts a typical roster at ~0% and keeps the bar symmetric.
         pos_league_avgs = {}
         for pos, top_n in _top_n.items():
             r_sums = []
@@ -180,11 +200,11 @@ def page_portfolio():
                 r_pids = [str(p) for p in (r.get("players") or [])]
                 r_pos_vals = sorted(
                     [float((values_by_id.get(p) or {}).get("value") or 0)
-                     for p in r_pids if (values_by_id.get(p) or {}).get("position", "").upper() == pos],
+                     for p in r_pids if _pos_of(p) == pos],
                     reverse=True,
                 )
                 r_sums.append(sum(r_pos_vals[:top_n]))
-            pos_league_avgs[pos] = (sum(r_sums) / len(r_sums)) if r_sums else 1
+            pos_league_avgs[pos] = _median(r_sums) or 1
         # Positional rank within league using same weighted-strength + z-score as teams page
         roster_positions = lctx.get("roster_positions") or []
         try:
@@ -199,7 +219,7 @@ def page_portfolio():
                 r_pids = [str(p) for p in (r.get("players") or [])]
                 r_vals = sorted(
                     [float((values_by_id.get(p) or {}).get("value") or 0)
-                     for p in r_pids if (values_by_id.get(p) or {}).get("position", "").upper() == pos],
+                     for p in r_pids if _pos_of(p) == pos],
                     reverse=True,
                 )
                 strength = _weighted_pos_strength(r_vals, pos, slot_counts)
