@@ -17783,7 +17783,7 @@ def build_commissioner_body(ctx):
                      f"{total_txns} move" + ("s" if total_txns != 1 else "") + " this season"]
     if inactive_count:
         _verdict_bits.append(f"{inactive_count} inactive team" + ("s" if inactive_count != 1 else ""))
-    _verdict = f"{score_label} — " + ", ".join(_verdict_bits) + "."
+    _verdict = f"{score_label} &middot; " + ", ".join(_verdict_bits) + "."
 
     health_html = f"""
 <style>
@@ -17798,9 +17798,10 @@ def build_commissioner_body(ctx):
   .lh-pill {{ display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:800; letter-spacing:.03em; padding:4px 10px; border-radius:999px; text-transform:uppercase; }}
   .lh-verdict {{ font-size:15px; color:var(--muted); margin-top:10px; max-width:48ch; }}
   .lh-verdict b {{ color:var(--text); }}
-  .lh-bars {{ display:flex; flex-direction:column; }}
-  .lh-bar-row {{ display:flex; flex-direction:column; gap:6px; padding:11px 0; border-top:1px solid var(--border); }}
-  .lh-bar-row:first-child {{ border-top:0; padding-top:2px; }}
+  .lh-wrap {{ max-width:1000px; margin:0 auto; }}
+  .lh-bars {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px 34px; }}
+  @media (max-width:640px) {{ .lh-bars {{ grid-template-columns:1fr; gap:15px; }} }}
+  .lh-bar-row {{ display:flex; flex-direction:column; gap:7px; }}
   .lh-bar-top {{ display:flex; justify-content:space-between; align-items:baseline; }}
   .lh-bar-label {{ font-size:13px; font-weight:600; color:var(--text); }}
   .lh-bar-val {{ font-size:16px; font-weight:800; line-height:1; }}
@@ -17965,7 +17966,7 @@ def build_commissioner_body(ctx):
     except Exception:
         history_panel = ""
 
-    return health_html + history_panel + roster_table + trade_card
+    return f'<div class="lh-wrap">{health_html}{history_panel}{roster_table}{trade_card}</div>'
 
 
 # /<...>/league_health and /<...>/commissioner are served by routes/league_pages_bp.py.
