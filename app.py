@@ -27952,7 +27952,12 @@ def build_portfolio_body(
         lid  = lg.get("league_id") or ""
         plat = lg.get("platform") or "sleeper"
         href = f"/{plat}/{season}/{lid}/dashboard"
-        name = html.escape(lg.get("name") or "?")
+        _raw_name = lg.get("name") or "?"
+        name = html.escape(_raw_name)
+        # Presentational crest for the league card: initials + a stable hue from
+        # the name (no new data — derived from the league name we already show).
+        _ini = html.escape("".join(w[0] for w in _raw_name.split()[:2]).upper() or "?")
+        _crest_hue = f"hsl({sum(ord(c) for c in _raw_name) % 360} 52% 46%)"
 
         # Linked-but-not-drafted (or team-not-yet-linked) league: a normal pending
         # state, so give it a proper row — name link, a soft status pill, a
@@ -27975,31 +27980,30 @@ def build_portfolio_body(
             else:
                 action = f"<a href='{href}' class='pf-pending-cta'>Open league →</a>"
             league_rows += (
-                f"<tr class='pf-league-row pf-league-pending'>"
-                f"<td colspan='5' style='flex-basis:100%;'>"
-                f"<div class='pf-pending-wrap'>"
-                f"<a href='{href}' class='pf-league-link pf-pending-name'>{name}</a>"
-                f"<span class='pf-status-pill'>{reason}</span>"
-                f"<span class='pf-pending-spacer'></span>"
-                f"{action}"
+                f"<div class='pf-lg-card pf-lg-pending'>"
+                f"<div class='pf-lg-top'>"
+                f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
+                f"<div class='pf-lg-id'><a href='{href}' class='pf-league-link pf-lg-name'>{name}</a></div>"
                 f"{_unlink_btn(plat, lid)}"
                 f"</div>"
-                f"</td>"
-                f"</tr>"
+                f"<div class='pf-lg-pending-row'>"
+                f"<span class='pf-status-pill'>{reason}</span>"
+                f"{action}"
+                f"</div>"
+                f"</div>"
             )
             continue
 
         if lg.get("error") or lg.get("not_in_league"):
             league_rows += (
-                f"<tr class='pf-league-row'>"
-                f"<td colspan='5' style='flex-basis:100%;'>"
-                f"<div style='display:flex;align-items:center;gap:8px;'>"
-                f"<span style='flex:1;color:var(--text-muted);font-weight:600;'>{name}</span>"
-                f"<span style='color:var(--text-subtle);font-size:12px;'>couldn’t load</span>"
+                f"<div class='pf-lg-card'>"
+                f"<div class='pf-lg-top'>"
+                f"<span class='pf-lg-crest' style='background:var(--border);color:var(--text-muted);'>{_ini}</span>"
+                f"<div class='pf-lg-id'><span class='pf-lg-name' style='color:var(--text-muted);'>{name}</span></div>"
                 f"{_unlink_btn(plat, lid)}"
                 f"</div>"
-                f"</td>"
-                f"</tr>"
+                f"<div class='pf-lg-err'>couldn’t load</div>"
+                f"</div>"
             )
             continue
 
@@ -28048,33 +28052,47 @@ def build_portfolio_body(
         )
 
         league_rows += (
-            f"<tr class='pf-league-row'>"
-            f"<td class='pf-league-name-cell'>"
-            f"<a href='{href}' class='pf-league-link'>{name}</a>{off_note}{_unlink_btn(plat, lid)}"
-            f"{badges_div}"
-            f"</td>"
-            f"<td class='pf-league-stat' data-label='Record'><span class='{rec_cls2}'>{rec}</span></td>"
-            f"<td class='pf-league-stat' data-label='Rank'>{rank}/{total}</td>"
-            f"<td class='pf-league-stat'><div class='pf-streak'>{dots}</div></td>"
-            f"<td class='pf-league-type'>{arch_badge}</td>"
-            f"</tr>"
+            f"<div class='pf-lg-card'>"
+            f"<div class='pf-lg-top'>"
+            f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
+            f"<div class='pf-lg-id'><a href='{href}' class='pf-league-link pf-lg-name'>{name}</a>{off_note}</div>"
+            f"{arch_badge}"
+            f"{_unlink_btn(plat, lid)}"
+            f"</div>"
+            f"<div class='pf-lg-mid'>"
+            f"<div><div class='pf-lg-v {rec_cls2}'>{rec}</div><div class='pf-lg-l'>Record</div></div>"
+            f"<div><div class='pf-lg-v'>{rank}/{total}</div><div class='pf-lg-l'>Rank</div></div>"
+            f"<div><div class='pf-streak'>{dots}</div><div class='pf-lg-l' style='margin-top:5px;'>Streak</div></div>"
+            f"</div>"
+            f"<div class='pf-lg-foot'>{badges_div}<a href='{href}' class='pf-lg-open'>Open &rarr;</a></div>"
+            f"</div>"
         )
 
     league_card = (
+        "<style>"
+        ".pf-lg-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px;}"
+        "@media(max-width:640px){.pf-lg-grid{grid-template-columns:1fr;}}"
+        ".pf-lg-card{background:var(--card);border:1px solid var(--grid);border-radius:12px;"
+        "padding:13px 14px;display:flex;flex-direction:column;gap:11px;}"
+        ".pf-lg-top{display:flex;align-items:center;gap:10px;}"
+        ".pf-lg-crest{width:34px;height:34px;border-radius:9px;flex:0 0 auto;display:grid;place-items:center;"
+        "color:#fff;font-weight:800;font-size:13px;}"
+        ".pf-lg-id{flex:1;min-width:0;}"
+        ".pf-lg-name{font-weight:800;font-size:14.5px;text-decoration:none;color:var(--text);"
+        "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-block;max-width:100%;vertical-align:bottom;}"
+        ".pf-lg-name:hover{color:var(--accent);}"
+        ".pf-lg-mid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center;}"
+        ".pf-lg-v{font-size:16px;font-weight:800;}"
+        ".pf-lg-l{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-subtle);margin-top:2px;}"
+        ".pf-lg-foot{display:flex;align-items:center;gap:12px;border-top:1px solid var(--grid);padding-top:10px;flex-wrap:wrap;}"
+        ".pf-lg-foot .pf-pos-chips{margin-top:0;}"
+        ".pf-lg-open{margin-left:auto;font-weight:800;font-size:12.5px;color:var(--accent);text-decoration:none;white-space:nowrap;}"
+        ".pf-lg-pending-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}"
+        ".pf-lg-err{font-size:12px;color:var(--text-subtle);}"
+        "</style>"
         f"<div class='card'>"
         f"<div class='card-header'><h2>My Leagues</h2></div>"
-        f"<div style='overflow-x:auto;'>"
-        f"<table class='standings-table pf-leagues-table'>"
-        f"<thead><tr>"
-        f"<th style='text-align:left;'>League</th>"
-        f"<th>Record</th>"
-        f"<th>Rank</th>"
-        f"<th>Streak</th>"
-        f"<th style='text-align:right;padding-right:8px;'>Type</th>"
-        f"</tr></thead>"
-        f"<tbody>{league_rows}</tbody>"
-        f"</table>"
-        f"</div>"
+        f"<div class='pf-lg-grid'>{league_rows}</div>"
         f"</div>"
     )
 
@@ -28248,15 +28266,23 @@ def build_portfolio_body(
             f"}})();</script>"
         )
 
-    two_col = f"<div class='pf-grid'>{league_card}{pos_card}</div>" if pos_card else league_card
-
     movers_html = _portfolio_movers_card(holdings, _POS_COLORS)
 
     if nfl_html and holdings_html:
         bottom_row = f"<div class='pf-grid-2'>{nfl_html}{holdings_html}</div>"
     else:
         bottom_row = nfl_html + holdings_html
-    return css + top_strip + two_col + movers_html + bottom_row
+
+    # Leagues lead the page full-width; the exposure/strength/holdings analytics
+    # move into a "Portfolio insights" band beneath (same cards, reordered).
+    insight_top = (f"<div class='pf-grid-2'>{pos_card}{movers_html}</div>"
+                   if (pos_card and movers_html) else (pos_card + movers_html))
+    insights_label = (
+        "<div style='font-size:11.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;"
+        "color:var(--text-subtle);margin:22px 2px 12px;'>Portfolio insights</div>"
+        if (pos_card or movers_html or nfl_html or holdings_html) else ""
+    )
+    return css + top_strip + league_card + insights_label + insight_top + bottom_row
 
 
 def build_scout_body(ctx: dict) -> str:
