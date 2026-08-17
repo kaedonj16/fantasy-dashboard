@@ -9084,7 +9084,13 @@ if (!platformBtns.length) return;
     // account via Google, which lands them on their leagues.
     const who = savedAccount.email || "your account";
     mountReturnCta("Continue as <strong>" + who + "</strong>",
-      function () { this.disabled = true; window.location.href = "/auth/google?next=" + encodeURIComponent(location.pathname); });
+      function () {
+        this.disabled = true;
+        // Same loader the saved-viewer continue uses, so returning sign-in doesn't
+        // look frozen through the Google round-trip back into the account.
+        showDashboardLoadingOverlay("Signing you back in…", "Loading your leagues");
+        window.location.href = "/auth/google?next=" + encodeURIComponent(location.pathname);
+      });
   } else if (saved?.league_id && saved?.username) {
     const platform = saved.platform || "sleeper";
     const season = saved.season || new Date().getFullYear();
@@ -9400,6 +9406,9 @@ if (!platformBtns.length) return;
         }
         return;
       }
+      // Loader so the sign-in + league handoff never looks frozen through the
+      // redirect to Google and the return to the league.
+      showDashboardLoadingOverlay("Signing you in…", "Loading " + (name || "your league"));
       fetch("/api/link/pending", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ platform, league_id: leagueId, season, name, username }),
