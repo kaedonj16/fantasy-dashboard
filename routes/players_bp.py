@@ -235,8 +235,10 @@ def api_player_advanced_metrics(player_id: str):
         }
 
         # Blend usage-based role score with PFF quality grades for a single
-        # evaluation signal used by the modal.
-        role = metrics_payload.get("role_score")
+        # evaluation signal used by the modal. Role score itself is an internal
+        # signal (feeds the breakout engine) and is NOT surfaced on the front
+        # end — read it from the raw metrics, then strip it from the payload.
+        role = metrics.get("role_score")
         off = metrics_payload.get("grades_offense")
         rush = metrics_payload.get("pff_rushing_grade")
         ppass = metrics_payload.get("pff_passing_grade")
@@ -248,6 +250,8 @@ def api_player_advanced_metrics(player_id: str):
             metrics_payload["player_evaluation_score"] = round(float(role), 1)
         elif quality is not None:
             metrics_payload["player_evaluation_score"] = round(float(quality), 1)
+
+        metrics_payload.pop("role_score", None)  # internal-only; never shown
 
         # Derive per-game rates from totals when not already present (season view)
         _g = metrics_payload.get('games')
