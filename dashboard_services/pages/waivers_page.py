@@ -378,7 +378,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
       <div class="wv-section-heading">
         <div class="wv-section-title">Waiver Wire</div>
         <label class="wv-faab-toggle" id="wvFaabToggle" hidden>
-          <input type="checkbox" id="wvShowFaab" checked onchange="wvToggleFaab(this.checked)">
+          <input type="checkbox" id="wvShowFaab" onchange="wvToggleFaab(this.checked)">
           <span>FAAB</span>
         </label>
       </div>
@@ -412,7 +412,7 @@ const WV_SEASON = {season};
 const WV_LEAGUE_ID = '{league_id}';
 let wvCurrentPos = 'ALL';
 let wvWaiverData = [];
-let wvShowFaab = true;
+let wvShowFaab = false;  // FAAB hidden by default; the toggle opts it in
 let wvTrendingData = [];
 let wvStartSitData = {{}};
 let wvCompare = [null, null]; // [playerA, playerB]
