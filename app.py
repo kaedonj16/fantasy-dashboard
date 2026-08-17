@@ -28073,10 +28073,11 @@ def build_portfolio_body(
             else:
                 action = f"<a href='{href}' class='pf-pending-cta'>Open league →</a>"
             league_rows += (
-                f"<div class='pf-lg-card pf-lg-pending'>"
+                f"<div class='pf-lg-card pf-lg-pending' data-lg-key='{plat}:{lid}'>"
                 f"<div class='pf-lg-top'>"
                 f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
                 f"<div class='pf-lg-id'><a href='{href}' class='pf-league-link pf-lg-name'>{name}</a></div>"
+                f"<button type='button' class='pf-lg-fav' aria-label='Favorite league' aria-pressed='false' title='Favorite'>&#9733;</button>"
                 f"{_unlink_btn(plat, lid)}"
                 f"</div>"
                 f"<div class='pf-lg-pending-row'>"
@@ -28089,10 +28090,11 @@ def build_portfolio_body(
 
         if lg.get("error") or lg.get("not_in_league"):
             league_rows += (
-                f"<div class='pf-lg-card'>"
+                f"<div class='pf-lg-card' data-lg-key='{plat}:{lid}'>"
                 f"<div class='pf-lg-top'>"
                 f"<span class='pf-lg-crest' style='background:var(--border);color:var(--text-muted);'>{_ini}</span>"
                 f"<div class='pf-lg-id'><span class='pf-lg-name' style='color:var(--text-muted);'>{name}</span></div>"
+                f"<button type='button' class='pf-lg-fav' aria-label='Favorite league' aria-pressed='false' title='Favorite'>&#9733;</button>"
                 f"{_unlink_btn(plat, lid)}"
                 f"</div>"
                 f"<div class='pf-lg-err'>couldn’t load</div>"
@@ -28145,10 +28147,11 @@ def build_portfolio_body(
         )
 
         league_rows += (
-            f"<div class='pf-lg-card'>"
+            f"<div class='pf-lg-card' data-lg-key='{plat}:{lid}'>"
             f"<div class='pf-lg-top'>"
             f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
             f"<div class='pf-lg-id'><a href='{href}' class='pf-league-link pf-lg-name'>{name}</a>{off_note}</div>"
+            f"<button type='button' class='pf-lg-fav' aria-label='Favorite league' aria-pressed='false' title='Favorite'>&#9733;</button>"
             f"{arch_badge}"
             f"{_unlink_btn(plat, lid)}"
             f"</div>"
@@ -28182,11 +28185,56 @@ def build_portfolio_body(
         ".pf-lg-open{margin-left:auto;font-weight:800;font-size:12.5px;color:var(--accent);text-decoration:none;white-space:nowrap;}"
         ".pf-lg-pending-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}"
         ".pf-lg-err{font-size:12px;color:var(--text-subtle);}"
+        ".pf-lg-fav{flex:0 0 auto;background:none;border:0;cursor:pointer;font-size:16px;line-height:1;"
+        "color:var(--text-subtle);padding:2px;opacity:.5;transition:opacity .12s,color .12s;}"
+        ".pf-lg-fav:hover{opacity:1;color:var(--gold,#ca8a04);}"
+        ".pf-lg-fav.on{opacity:1;color:var(--gold,#ca8a04);}"
+        ".pf-lg-pager{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:14px;}"
+        ".pf-lg-pager button{border:1px solid var(--grid);background:var(--card);color:var(--text);"
+        "border-radius:8px;padding:5px 12px;font-size:13px;font-weight:700;cursor:pointer;}"
+        ".pf-lg-pager button:disabled{opacity:.4;cursor:default;}"
+        ".pf-lg-pager-lbl{font-size:12.5px;color:var(--text-muted);font-weight:600;min-width:96px;text-align:center;}"
         "</style>"
         f"<div class='card'>"
         f"<div class='card-header'><h2>My Leagues</h2></div>"
         f"<div class='pf-lg-grid'>{league_rows}</div>"
-        f"</div>"
+        "<div class='pf-lg-pager' id='pfLgPager' hidden>"
+        "<button type='button' id='pfLgPrev'>&larr; Prev</button>"
+        "<span class='pf-lg-pager-lbl' id='pfLgPageLbl'></span>"
+        "<button type='button' id='pfLgNext'>Next &rarr;</button>"
+        "</div>"
+        "</div>"
+        # Favorites (localStorage) sort to the front; the list paginates 4 at a
+        # time. Operates on the server-rendered cards, so it needs no new data.
+        "<script>(function(){"
+        "var grid=document.querySelector('.pf-lg-grid');if(!grid)return;"
+        "var pager=document.getElementById('pfLgPager'),prev=document.getElementById('pfLgPrev'),"
+        "next=document.getElementById('pfLgNext'),lbl=document.getElementById('pfLgPageLbl');"
+        "var PAGE=4,KEY='pfFavLeagues';"
+        "var cards=[].slice.call(grid.querySelectorAll('.pf-lg-card'));"
+        "cards.forEach(function(c,i){c._ord=i;});"
+        "var page=0;"
+        "function favs(){try{return JSON.parse(localStorage.getItem(KEY))||[];}catch(e){return [];}}"
+        "function saveFavs(a){try{localStorage.setItem(KEY,JSON.stringify(a));}catch(e){}}"
+        "function keyOf(c){return c.getAttribute('data-lg-key')||'';}"
+        "function ordered(){var f=favs();return cards.slice().sort(function(a,b){"
+        "var ia=f.indexOf(keyOf(a)),ib=f.indexOf(keyOf(b));ia=ia<0?1e9:ia;ib=ib<0?1e9:ib;"
+        "return (ia-ib)||(a._ord-b._ord);});}"
+        "function render(){var ord=ordered(),f=favs();var pages=Math.max(1,Math.ceil(ord.length/PAGE));"
+        "if(page>=pages)page=pages-1;if(page<0)page=0;"
+        "ord.forEach(function(c,i){grid.appendChild(c);"
+        "c.style.display=(i>=page*PAGE&&i<(page+1)*PAGE)?'':'none';"
+        "var s=c.querySelector('.pf-lg-fav');if(s){var on=f.indexOf(keyOf(c))>=0;"
+        "s.classList.toggle('on',on);s.setAttribute('aria-pressed',on?'true':'false');}});"
+        "if(pager){pager.hidden=ord.length<=PAGE;if(lbl)lbl.textContent='Page '+(page+1)+' of '+pages;"
+        "if(prev)prev.disabled=page<=0;if(next)next.disabled=page>=pages-1;}}"
+        "grid.addEventListener('click',function(e){var s=e.target.closest('.pf-lg-fav');if(!s)return;"
+        "e.preventDefault();e.stopPropagation();var c=s.closest('.pf-lg-card');if(!c)return;"
+        "var k=keyOf(c);if(!k)return;var f=favs(),idx=f.indexOf(k);"
+        "if(idx>=0)f.splice(idx,1);else f.unshift(k);saveFavs(f);page=0;render();});"
+        "if(prev)prev.addEventListener('click',function(){if(page>0){page--;render();}});"
+        "if(next)next.addEventListener('click',function(){page++;render();});"
+        "render();})();</script>"
     )
 
     # ── Positional strength ───────────────────────────────────────────────
@@ -28375,7 +28423,10 @@ def build_portfolio_body(
         "color:var(--text-subtle);margin:22px 2px 12px;'>Portfolio insights</div>"
         if (pos_card or movers_html or nfl_html or holdings_html) else ""
     )
-    return css + top_strip + league_card + insights_label + insight_top + bottom_row
+    # Constrain to a centered column so the page doesn't stretch edge-to-edge on
+    # wide monitors (matches the League Health treatment).
+    return (css + '<div style="max-width:1040px;margin:0 auto;">'
+            + top_strip + league_card + insights_label + insight_top + bottom_row + '</div>')
 
 
 def build_scout_body(ctx: dict) -> str:
