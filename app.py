@@ -17677,36 +17677,63 @@ def build_commissioner_body(ctx):
                 _GOOD, "var(--text)"),
     ])
 
+    # Ring geometry + a one-line verdict, both from values already computed above
+    # (this is presentation only — no new metric is calculated).
+    import math as _math
+    _ring_r = 54
+    _ring_circ = 2 * _math.pi * _ring_r
+    _ring_off = _ring_circ * (1 - min(100, max(0, activity_score)) / 100)
+    _verdict_bits = [f"{total_trades} trade" + ("s" if total_trades != 1 else ""),
+                     f"{total_txns} move" + ("s" if total_txns != 1 else "") + " this season"]
+    if inactive_count:
+        _verdict_bits.append(f"{inactive_count} inactive team" + ("s" if inactive_count != 1 else ""))
+    _verdict = f"{score_label} — " + ", ".join(_verdict_bits) + "."
+
     health_html = f"""
 <style>
   .lh-card {{ padding:20px; margin-bottom:20px; }}
-  .lh-head {{ display:flex; align-items:baseline; gap:8px; margin-bottom:18px; }}
-  .lh-head-title {{ font-size:12px; font-weight:800; letter-spacing:.06em; color:var(--text); text-transform:uppercase; }}
-  .lh-head-sub {{ font-size:12px; color:var(--muted); }}
-  .lh-hero {{ text-align:center; padding:4px 0 20px; border-bottom:1px solid var(--border); margin-bottom:20px; }}
-  .lh-hero-num {{ font-size:64px; font-weight:800; line-height:1; }}
-  .lh-hero-label {{ font-size:11px; font-weight:700; letter-spacing:.06em; color:var(--muted); text-transform:uppercase; margin-top:10px; }}
-  .lh-hero-status {{ font-size:14px; font-weight:700; margin-top:4px; }}
-  .lh-hero-track {{ height:8px; border-radius:99px; background:var(--border); overflow:hidden; max-width:320px; margin:16px auto 0; }}
-  .lh-hero-track > div {{ height:100%; border-radius:99px; }}
-  .lh-bars {{ display:flex; flex-direction:column; gap:16px; }}
-  .lh-bar-top {{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:7px; }}
-  .lh-bar-label {{ font-size:12.5px; font-weight:600; color:var(--text); }}
-  .lh-bar-val {{ font-size:18px; font-weight:800; line-height:1; }}
+  .lh-hero2 {{ display:grid; grid-template-columns:auto 1fr; gap:22px; align-items:center; }}
+  @media (max-width:560px) {{ .lh-hero2 {{ grid-template-columns:1fr; text-align:center; justify-items:center; }} }}
+  .lh-ring {{ position:relative; width:128px; height:128px; flex-shrink:0; }}
+  .lh-ring svg {{ transform:rotate(-90deg); }}
+  .lh-ring-mid {{ position:absolute; inset:0; display:grid; place-content:center; text-align:center; }}
+  .lh-ring-num {{ font-size:40px; font-weight:800; line-height:1; }}
+  .lh-ring-cap {{ font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-top:3px; }}
+  .lh-pill {{ display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:800; letter-spacing:.03em; padding:4px 10px; border-radius:999px; text-transform:uppercase; }}
+  .lh-verdict {{ font-size:15px; color:var(--muted); margin-top:10px; max-width:48ch; }}
+  .lh-verdict b {{ color:var(--text); }}
+  .lh-bars {{ display:flex; flex-direction:column; }}
+  .lh-bar-row {{ display:flex; flex-direction:column; gap:6px; padding:11px 0; border-top:1px solid var(--border); }}
+  .lh-bar-row:first-child {{ border-top:0; padding-top:2px; }}
+  .lh-bar-top {{ display:flex; justify-content:space-between; align-items:baseline; }}
+  .lh-bar-label {{ font-size:13px; font-weight:600; color:var(--text); }}
+  .lh-bar-val {{ font-size:16px; font-weight:800; line-height:1; }}
   .lh-bar-track {{ height:8px; border-radius:99px; background:var(--border); overflow:hidden; }}
   .lh-bar-fill {{ height:100%; border-radius:99px; min-width:2px; transition:width .3s ease; }}
+  .lh-parity {{ position:relative; height:58px; margin:4px 4px 2px; }}
+  .lh-parity-axis {{ position:absolute; left:0; right:0; top:33px; height:2px; background:var(--border); border-radius:2px; }}
+  .lh-parity-fair {{ position:absolute; top:21px; bottom:6px; width:2px; background:var(--accent); opacity:.55; }}
+  .lh-parity-fair span {{ position:absolute; top:-15px; left:50%; transform:translateX(-50%); font-size:10px; font-weight:700; color:var(--muted); white-space:nowrap; }}
+  .lh-pdot {{ position:absolute; top:26px; width:14px; height:14px; border-radius:50%; transform:translateX(-50%); border:2px solid var(--card); box-shadow:0 1px 3px rgba(0,0,0,.28); }}
+  .lh-parity-scale {{ display:flex; justify-content:space-between; font-size:10.5px; color:var(--muted); margin:2px 4px 12px; }}
 </style>
 <div class="card lh-card">
-  <div class="lh-head">
-    <span class="lh-head-title">League Health</span>
-    <span class="lh-head-sub">this season</span>
+  <div class="lh-hero2">
+    <div class="lh-ring">
+      <svg width="128" height="128" viewBox="0 0 128 128" aria-hidden="true">
+        <circle cx="64" cy="64" r="{_ring_r}" fill="none" stroke="var(--border)" stroke-width="10"></circle>
+        <circle cx="64" cy="64" r="{_ring_r}" fill="none" stroke="{score_color}" stroke-width="10" stroke-linecap="round" stroke-dasharray="{_ring_circ:.1f}" stroke-dashoffset="{_ring_off:.1f}"></circle>
+      </svg>
+      <div class="lh-ring-mid"><div class="lh-ring-num" style="color:{score_color};">{int(activity_score)}</div><div class="lh-ring-cap">Health Score</div></div>
+    </div>
+    <div>
+      <span class="lh-pill" style="color:{score_color};background:color-mix(in srgb,{score_color} 15%,transparent);">{score_label}</span>
+      <div class="lh-verdict">{_verdict}</div>
+    </div>
   </div>
-  <div class="lh-hero">
-    <div class="lh-hero-num" style="color:{score_color};">{int(activity_score)}</div>
-    <div class="lh-hero-label">Health Score</div>
-    <div class="lh-hero-status" style="color:{score_color};">{score_label}</div>
-    <div class="lh-hero-track"><div style="width:{int(activity_score)}%;background:{score_color};"></div></div>
-  </div>
+</div>
+<div class="card" style="padding:18px 20px;margin-bottom:20px;">
+  <div class="card-header" style="margin-bottom:6px;"><h3>What's driving the score</h3></div>
   <div class="lh-bars">{_bars_html}
   </div>
 </div>"""
@@ -17733,9 +17760,38 @@ def build_commissioner_body(ctx):
   <td style="padding:10px;text-align:center;">{r['trades']}</td>
 </tr>"""
 
+    # Parity strip: plot each team's existing value_pct along a thin↔stacked axis
+    # with the fair share marked. Pure visualization of the same numbers — no new
+    # metric is computed.
+    _shares = [r["value_pct"] for r in roster_infos] or [fair_share]
+    _p_lo = min(min(_shares), fair_share)
+    _p_hi = max(max(_shares), fair_share)
+    _p_span = (_p_hi - _p_lo) or 1.0
+    _p_lo -= _p_span * 0.12
+    _p_hi += _p_span * 0.12
+    _p_span = (_p_hi - _p_lo) or 1.0
+
+    def _p_x(s):
+        return max(0.0, min(100.0, (s - _p_lo) / _p_span * 100))
+
+    _p_dots = ""
+    for r in roster_infos:
+        _pc = "#ef4444" if r["inactive"] else ("#22c55e" if abs(r["value_pct"] - fair_share) <= 2 else "#f59e0b")
+        _p_dots += (f'<div class="lh-pdot" title="{html.escape(r["name"])} &middot; {r["value_pct"]:.1f}%" '
+                    f'style="left:{_p_x(r["value_pct"]):.1f}%;background:{_pc};"></div>')
+    parity_html = (
+        f'<div style="padding:14px 16px 0;">'
+        f'<div class="lh-parity"><div class="lh-parity-axis"></div>'
+        f'<div class="lh-parity-fair" style="left:{_p_x(fair_share):.1f}%;"><span>fair {fair_share:.1f}%</span></div>'
+        f'{_p_dots}</div>'
+        f'<div class="lh-parity-scale"><span>Thin roster</span><span>Fair share</span><span>Stacked roster</span></div>'
+        f'</div>'
+    )
+
     roster_table = f"""
 <div class="card" style="overflow:auto;margin-bottom:20px;">
   <div class="card-header"><h3>Team Overview</h3></div>
+  {parity_html}
   <table style="width:100%;border-collapse:collapse;">
     <thead><tr style="border-bottom:2px solid var(--border);">
       <th style="padding:10px 14px;text-align:left;font-size:12px;color:var(--muted);">TEAM</th>
