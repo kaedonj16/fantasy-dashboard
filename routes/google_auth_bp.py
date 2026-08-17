@@ -232,7 +232,14 @@ def google_auth_callback():
                         vuid = viewer.get("viewer_user_id")
                         if vuid:
                             link_platform_identity(account_id, "sleeper", str(vuid), uname)
-                            _backfill_sleeper_leagues(account_id, str(vuid))
+                            # Backfill the user's OTHER leagues off the request path
+                            # — the dashboard for this league doesn't need them, so
+                            # don't make the post-login redirect wait on Sleeper.
+                            threading.Thread(
+                                target=_backfill_sleeper_leagues,
+                                args=(account_id, str(vuid)),
+                                daemon=True,
+                            ).start()
                 except Exception:
                     logger.warning("[google_auth] sleeper viewer resolve failed", exc_info=True)
             return redirect(

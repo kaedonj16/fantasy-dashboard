@@ -9400,6 +9400,15 @@ if (!platformBtns.length) return;
         }
         return;
       }
+      // Full-screen loader so the sign-in + league handoff never looks frozen:
+      // it stays up through the redirect to Google and the return to the league.
+      var _gOverlay = document.createElement("div");
+      _gOverlay.className = "fullscreen-loading-overlay";
+      _gOverlay.innerHTML = '<div class="loading-spinner"></div>'
+        + '<div class="fullscreen-loading-text">Signing you in…</div>'
+        + '<div class="fullscreen-loading-subtext"></div>';
+      _gOverlay.querySelector(".fullscreen-loading-subtext").textContent = "Loading " + (name || "your league");
+      document.body.appendChild(_gOverlay);
       fetch("/api/link/pending", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ platform, league_id: leagueId, season, name, username }),
