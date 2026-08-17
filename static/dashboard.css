@@ -7938,6 +7938,18 @@ select:focus {
   text-align: right;
 }
 
+/* Phones: the compact row can't fit the team name beside the bar + PF/PA/diff
+   chips, so the name collapsed to a single-letter ellipsis ("N…"). Give the name
+   its own top line (with the record), drop the decorative bar, and wrap the chips
+   onto a second line underneath. */
+@media (max-width: 600px) {
+  .rank-item { flex-wrap: wrap; column-gap: 8px; row-gap: 4px; }
+  .rank-item .name { order: 3; flex: 1 1 auto; }
+  .rank-item .rec { order: 4; }
+  .rank-item .bar { display: none; }
+  .rank-item .chips { order: 5; flex-basis: 100%; }
+}
+
 /* ============================================
    MATCHUPS & SCHEDULE
    ============================================ */

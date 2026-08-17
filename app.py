@@ -17426,11 +17426,22 @@ def build_commissioner_body(ctx):
                     txn_by_rid[rid] = txn_by_rid.get(rid, 0) + 1
 
     # ── 2. Roster values & activity ───────────────────────────────────────
+    # Roster value share must match the Standings value board exactly: it sums
+    # player value (model cache `value`) PLUS draft-pick value as a share of the
+    # league total. (val_by_pid stays SF-aware for the trade-fairness section.)
+    _share_val_by_pid = {str(p.get("id") or ""): float(p.get("value") or 0)
+                         for p in model_vals if p.get("id")}
+    _picks_by_roster = ctx.get("picks_by_roster") or {}
+    _pick_val_by_key = load_pick_value_table() or {}
+    _pv_league_id = str(ctx.get("resolved_league_id") or league_id or "")
     roster_infos = []
     for r in rosters:
         rid   = str(r.get("roster_id"))
         pids  = [str(p) for p in (r.get("players") or [])]
-        val   = sum(val_by_pid.get(pid, 0) for pid in pids)
+        _picks = _picks_by_roster.get(rid, []) if isinstance(_picks_by_roster, dict) else []
+        val   = (sum(_share_val_by_pid.get(pid, 0) for pid in pids)
+                 + _team_pick_value(_picks, _pick_val_by_key, platform=platform,
+                                    league_id=_pv_league_id, season=_safe_int(season, 0)))
         r_st  = r.get("settings") or {}
         wins  = r_st.get("wins", 0)
         losses = r_st.get("losses", 0)
