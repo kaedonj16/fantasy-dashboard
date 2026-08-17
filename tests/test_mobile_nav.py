@@ -103,6 +103,33 @@ def test_dynasty_offseason_dock_has_no_keeper(monkeypatch):
     assert "Keeper" not in labels
 
 
+def test_redraft_offseason_dock_shows_teams_not_keeper(monkeypatch):
+    """A redraft league (Sleeper type 0) keeps the Teams dock slot in the
+    offseason even when Sleeper reports a default keeper limit — only real
+    keeper leagues get the Keeper tab."""
+    import app, re
+    monkeypatch.setattr(app, "get_league_ctx_from_cache",
+                        lambda *a, **k: {"league_settings": {"type": 0, "max_keepers": 1}})
+    monkeypatch.setattr(app, "get_nfl_state", lambda: {"season": "2026", "season_type": "off"})
+    monkeypatch.setattr(app, "has_draft_ended", lambda *a, **k: False)
+    with app.app.test_request_context("/x"):
+        labels = re.findall(r"br-tabbar-lbl'>([^<]+)<", app._mobile_nav("dashboard", "L", "sleeper", 2026))
+    assert labels == ["Home", "Draft", "Trades", "Teams", "More"]
+    assert "Keeper" not in labels
+
+
+def test_keeper_offseason_dock_still_shows_keeper(monkeypatch):
+    """A real keeper league (Sleeper type 1) still gets the Keeper dock tab."""
+    import app, re
+    monkeypatch.setattr(app, "get_league_ctx_from_cache",
+                        lambda *a, **k: {"league_settings": {"type": 1, "max_keepers": 2}})
+    monkeypatch.setattr(app, "get_nfl_state", lambda: {"season": "2026", "season_type": "off"})
+    monkeypatch.setattr(app, "has_draft_ended", lambda *a, **k: False)
+    with app.app.test_request_context("/x"):
+        labels = re.findall(r"br-tabbar-lbl'>([^<]+)<", app._mobile_nav("dashboard", "L", "sleeper", 2026))
+    assert labels == ["Home", "Draft", "Trades", "Keeper", "More"]
+
+
 def test_preseason_is_treated_as_offseason(monkeypatch):
     """Preseason ("pre", ~August) has no fantasy games, so it gets the same
     offseason dock as "off" — not the empty in-season layout."""

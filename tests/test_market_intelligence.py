@@ -1,9 +1,10 @@
 from datetime import datetime, timedelta, timezone
 
-from dashboard_services.market_intelligence.adp import expected_adp
+from dashboard_services.market_intelligence.adp import build_adp_curve, expected_adp, interp_adp
 from dashboard_services.market_intelligence.consensus import build_consensus
 from dashboard_services.market_intelligence.identity import resolve_player
 from dashboard_services.market_intelligence.models import MarketRecord
+from dashboard_services.market_intelligence.normalize import classify_context
 from dashboard_services.market_intelligence.odds import american_implied_probability, no_vig_over_probability
 from dashboard_services.market_intelligence.projection import build_market_projection, build_season_market_projection
 from dashboard_services.market_intelligence.signals import market_opportunity, market_vs_projection
@@ -75,6 +76,20 @@ def test_expected_adp_interpolates_instead_of_ranking():
     assert expected_adp(15, pool) == 60
 
 
+def test_adp_curve_and_interp_match_expected_adp():
+    # attach builds the curve once and interpolates per player; the result must
+    # equal the single-shot expected_adp across boundary and interior targets.
+    pool = [{"proj_ppg": 6, "redraft_avg_pick": 120},
+            {"proj_ppg": 10, "redraft_avg_pick": 60},
+            {"proj_ppg": 22, "redraft_avg_pick": 2}]
+    curve = build_adp_curve(pool)
+    for target in (2, 6, 8, 10, 16, 22, 30):
+        assert interp_adp(curve, target) == expected_adp(target, pool)
+    assert interp_adp(curve, 0) == 120     # below min -> lowest-production ADP
+    assert interp_adp(curve, 999) == 2     # above max -> top ADP
+    assert interp_adp(([1.0], [5.0]), 1.0) is None  # <2 samples -> undefined
+
+
 def test_expected_adp_reads_payload_redraft_field():
     # The league-players payload carries redraft ADP as redraft_avg_pick, not adp.
     pool = [{"proj_ppg": 10, "redraft_avg_pick": 100},
@@ -88,13 +103,28 @@ def test_attach_market_vs_adp_uses_redraft_avg_pick():
         {"id": "1", "proj_ppg": 10, "redraft_avg_pick": 100},
         {"id": "2", "proj_ppg": 20, "redraft_avg_pick": 20},
     ]
-    projections = {"1": {"fantasy_points": 15, "confidence": 0.8}}
+    # fantasy_points is a SEASON total; 255 / 17 games = 15 ppg, which interpolates
+    # to pick 60 on the (10->100, 20->20) curve. Actual ADP is 100, so the market
+    # says this player is going ~40 picks later than production warrants.
+    projections = {"1": {"fantasy_points": 255, "confidence": 0.8}}
     attach_market_vs_adp(players, projections)
-    # Expected ADP for 15 proj_ppg interpolates to pick 60; actual ADP is 100,
-    # so the market says this player is going ~40 picks later than production warrants.
     assert players[0]["market_expected_adp"] == 60.0
     assert players[0]["market_vs_adp"] == 40.0
     assert players[0]["market_confidence"] == 0.8
+
+
+def test_attach_market_vs_adp_season_total_not_pinned_to_top_pick():
+    """A season-long market total must be scaled to per-game before mapping, or
+    every player pins to the top pick's ADP (season total >> per-game curve)."""
+    from dashboard_services.market_intelligence.adp import attach_market_vs_adp
+    pool = [
+        {"id": "1", "proj_ppg": 22, "redraft_avg_pick": 2},
+        {"id": "2", "proj_ppg": 14, "redraft_avg_pick": 25},
+        {"id": "3", "proj_ppg": 6, "redraft_avg_pick": 120},
+    ]
+    # ~250 season pts = ~14.7 ppg -> should land near the middle of the curve, not pick 2.
+    attach_market_vs_adp(pool, {"2": {"fantasy_points": 250, "confidence": 0.7}})
+    assert pool[1]["market_expected_adp"] > 5  # not pinned to the top-pick ADP
 
 
 def test_season_projection_uses_baseline_for_missing_components():
@@ -108,3 +138,44 @@ def test_season_projection_uses_baseline_for_missing_components():
     assert result["coverage"] == .5
     assert result["points"] > 250
     assert result["baseline_points"] == 250
+
+
+def test_classify_context_distinguishes_season_from_weekly():
+    # A recognized single-game period is always weekly, whatever the market text.
+    weekly = {"periodID": "game", "oddID": "passing_yards-JOSH_ALLEN_1_NFL-game-ou-over"}
+    assert classify_context(weekly, {"eventType": "match"}) == "weekly"
+    # periodID falls back to segment 3 of the 5-part oddID when not given directly.
+    assert classify_context({"oddID": "rushing_yards-SAQUON-1h-ou-over"}, {}) == "weekly"
+    # Season-long futures: no game period, plus a season/futures signal.
+    assert classify_context({"marketName": "Season Total Receiving Yards"}, {}) == "season"
+    assert classify_context({"statID": "receiving_yards"}, {"eventType": "futures"}) == "season"
+    # A season-looking word on a single-game period stays weekly (guard wins).
+    assert classify_context({"periodID": "game", "marketName": "regular season"}, {}) == "weekly"
+    # "preseason" must NOT be mistaken for a season future.
+    assert classify_context({"marketName": "Preseason Week 1 Passing Yards"}, {}) == "weekly"
+
+
+def test_load_market_projections_caches_and_filters(monkeypatch):
+    import dashboard_services.market_intelligence.repository as repo
+    monkeypatch.setenv("DATABASE_URL", "postgres://test")
+    repo._TABLE_CACHE.clear()
+    calls = {"n": 0}
+
+    def fake_table(season, week, context):
+        calls["n"] += 1
+        return {"1": {"canonical_player_id": "1", "fantasy_points": 200},
+                "2": {"canonical_player_id": "2", "fantasy_points": 150}}
+
+    monkeypatch.setattr(repo, "_load_projection_table", fake_table)
+
+    # First call queries; second (within TTL) is served from cache.
+    a = repo.load_market_projections(2026, None, "season", player_ids=["1"])
+    b = repo.load_market_projections(2026, None, "season", player_ids=["2"])
+    assert calls["n"] == 1                 # only one DB query for both reads
+    assert set(a) == {"1"} and set(b) == {"2"}  # player_ids filter applied in memory
+
+
+def test_load_market_projections_no_db_is_empty(monkeypatch):
+    import dashboard_services.market_intelligence.repository as repo
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    assert repo.load_market_projections(2026, None, "season") == {}

@@ -66,6 +66,29 @@ def refresh() -> int:
                     season, record_week, record.context, record.stat_type, record.market_type, record.period, record.sportsbook,
                     record.line, record.over_price, record.under_price, record.event_start_time,
                     record.observed_at, record.source_updated_at))
+        # DraftKings season-long player futures (free, unofficial; on by default
+        # with baked-in ids, DRAFTKINGS_SEASON_ENABLED=0 to disable). SGO has no
+        # season markets, so these are what power Market vs ADP. DK exposes only a
+        # player name, so resolution is name-only and fails closed on ambiguity.
+        try:
+            from dashboard_services.market_intelligence.draftkings import (
+                DraftKingsClient, season_records_from_payload,
+            )
+            _dk = DraftKingsClient()
+            if _dk.configured:
+                _dk_added = 0
+                for _stat_type, _payload in _dk.iter_season_markets():
+                    for _rec in season_records_from_payload(_payload, _stat_type, now):
+                        _name = _rec.provider_player_id.split(":", 1)[-1]
+                        _pid, _ = resolve_player(_rec.provider_player_id, _name, "", "", players, persisted)
+                        if not _pid:
+                            continue
+                        normalized.append(_rec.__class__(**{**_rec.__dict__, "canonical_player_id": _pid}))
+                        _dk_added += 1
+                print(f"[market] DraftKings season futures: {_dk_added} player lines")
+        except Exception as _dk_err:  # never let an optional source break the refresh
+            print(f"[market] DraftKings season futures skipped: {_dk_err}")
+
         grouped = defaultdict(list)
         for record in normalized:
             grouped[(record.context, record.canonical_player_id, record.stat_type)].append(record)
