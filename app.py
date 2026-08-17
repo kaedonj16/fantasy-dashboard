@@ -16778,14 +16778,13 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 
     def scorer_card(icon, label, name, pts, rid, sub, accent, opp=None, medal_rank=None):
         # The week's HIGH SCORER earns a gold medal (a weekly award); the other
-        # cards keep their semantic icon.
-        mark = (rank_mark(medal_rank, size=22, wrap=False)
-                if medal_rank else
-                f'<i class="{icon}" style="font-size:13px;color:{accent};width:16px;text-align:center;"></i>')
+        # cards keep their semantic icon. Icon/medal sits in an accent chip.
+        chip_inner = (rank_mark(medal_rank, size=15, wrap=False)
+                      if medal_rank else f'<i class="{icon}" aria-hidden="true"></i>')
         header = f"""
-  <div style="display:flex;align-items:center;gap:6px;">
-    {mark}
-    <span style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--muted);">{label}</span>
+  <div class="rc-award-h">
+    <span class="rc-award-chip">{chip_inner}</span>
+    <span class="rc-award-lbl">{label}</span>
   </div>"""
         if opp:
             diff = abs(pts - opp["pts"])
@@ -16793,68 +16792,68 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
             body = f"""
   <div style="display:flex;flex-direction:column;gap:8px;">
     <div style="display:flex;align-items:center;gap:10px;">
-      {ava_img(name, rid, 36)}
+      {ava_img(name, rid, 34)}
       <div style="flex:1;min-width:0;">
         <div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_name(name, rid)}</div>
       </div>
-      <div style="font-size:24px;font-weight:800;color:{accent};flex-shrink:0;letter-spacing:-.5px;font-variant-numeric:tabular-nums;">{pts:.2f}</div>
+      <div style="font-size:23px;font-weight:800;color:{accent};flex-shrink:0;letter-spacing:-.5px;font-variant-numeric:tabular-nums;">{pts:.2f}</div>
     </div>
     <div style="height:1px;background:var(--border);"></div>
-    <div style="display:flex;align-items:center;gap:10px;opacity:0.45;">
-      {ava_img(opp["owner"], opp["rid"], 36)}
+    <div style="display:flex;align-items:center;gap:10px;opacity:0.5;">
+      {ava_img(opp["owner"], opp["rid"], 34)}
       <div style="flex:1;min-width:0;">
         <div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_name(opp["owner"], opp["rid"])}</div>
       </div>
-      <div style="font-size:24px;font-weight:800;flex-shrink:0;letter-spacing:-.5px;font-variant-numeric:tabular-nums;">{opp["pts"]:.1f}</div>
+      <div style="font-size:23px;font-weight:800;flex-shrink:0;letter-spacing:-.5px;font-variant-numeric:tabular-nums;">{opp["pts"]:.1f}</div>
     </div>
   </div>
-  <div style="font-size:11px;color:var(--muted);font-weight:600;"><span style="color:{accent};">{html.escape(sub)}</span> &middot; {result}</div>"""
+  <div class="rc-award-foot"><span style="color:{accent};">{html.escape(sub)}</span> &middot; {result}</div>"""
         else:
             body = f"""
   <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
     <div style="display:flex;align-items:center;gap:10px;min-width:0;">
-      {ava_img(name, rid, 44)}
+      {ava_img(name, rid, 42)}
       <div style="min-width:0;">
         <div style="font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_name(name, rid)}</div>
         <div style="font-size:12px;color:var(--muted);">@{html.escape(name)}</div>
       </div>
     </div>
     <div style="text-align:right;flex-shrink:0;">
-      <div style="font-size:32px;font-weight:800;color:{accent};letter-spacing:-.5px;line-height:1;font-variant-numeric:tabular-nums;">{pts:.2f}</div>
+      <div style="font-size:30px;font-weight:800;color:{accent};letter-spacing:-.5px;line-height:1;font-variant-numeric:tabular-nums;">{pts:.2f}</div>
       <div style="font-size:11px;color:{accent};font-weight:600;margin-top:4px;">{html.escape(sub)}</div>
     </div>
   </div>"""
         return f"""
-<div class="card" style="padding:18px 20px;display:flex;flex-direction:column;gap:14px;min-width:0;">{header}{body}
+<div class="card rc-award" style="--rc-accent:{accent};">{header}{body}
 </div>"""
 
-    def matchup_card(icon, label, m):
+    def matchup_card(icon, label, m, accent="var(--accent)"):
         w_team = team_name(m["winner"], m["w_rid"])
         l_team = team_name(m["loser"],  m["l_rid"])
         return f"""
-<div class="card" style="padding:18px 20px;display:flex;flex-direction:column;gap:14px;min-width:0;">
-  <div style="display:flex;align-items:center;gap:6px;">
-    <i class="{icon}" style="font-size:13px;color:var(--accent);width:16px;text-align:center;"></i>
-    <span style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--muted);">{label}</span>
+<div class="card rc-award" style="--rc-accent:{accent};">
+  <div class="rc-award-h">
+    <span class="rc-award-chip"><i class="{icon}" aria-hidden="true"></i></span>
+    <span class="rc-award-lbl">{label}</span>
   </div>
   <div style="display:flex;flex-direction:column;gap:8px;">
     <div style="display:flex;align-items:center;gap:10px;">
-      {ava_img(m["winner"], m["w_rid"], 36)}
+      {ava_img(m["winner"], m["w_rid"], 34)}
       <div style="flex:1;min-width:0;">
         <div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{w_team}</div>
       </div>
-      <div style="font-size:24px;font-weight:800;color:var(--accent);flex-shrink:0;letter-spacing:-.5px;">{m['w_pts']:.1f}</div>
+      <div style="font-size:23px;font-weight:800;color:{accent};flex-shrink:0;letter-spacing:-.5px;">{m['w_pts']:.1f}</div>
     </div>
     <div style="height:1px;background:var(--border);"></div>
-    <div style="display:flex;align-items:center;gap:10px;opacity:0.45;">
-      {ava_img(m["loser"], m["l_rid"], 36)}
+    <div style="display:flex;align-items:center;gap:10px;opacity:0.5;">
+      {ava_img(m["loser"], m["l_rid"], 34)}
       <div style="flex:1;min-width:0;">
         <div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{l_team}</div>
       </div>
-      <div style="font-size:24px;font-weight:800;flex-shrink:0;letter-spacing:-.5px;">{m['l_pts']:.1f}</div>
+      <div style="font-size:23px;font-weight:800;flex-shrink:0;letter-spacing:-.5px;">{m['l_pts']:.1f}</div>
     </div>
   </div>
-  <div style="font-size:11px;color:var(--muted);font-weight:600;">margin {m['margin']:.1f}</div>
+  <div class="rc-award-foot">margin {m['margin']:.1f}</div>
 </div>"""
 
     high_sub = "Season high" if season_high else f"+{float(high_row['points']) - league_avg:.1f} vs avg"
@@ -16864,6 +16863,15 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 <style>
   .rc-awards {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-bottom:20px; }}
   @media (max-width:640px) {{ .rc-awards {{ grid-template-columns:1fr; }} }}
+  .rc-award {{ position:relative; overflow:hidden; padding:15px 17px 14px; display:flex;
+               flex-direction:column; gap:12px; min-width:0; }}
+  .rc-award::before {{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--rc-accent); }}
+  .rc-award-h {{ display:flex; align-items:center; gap:8px; }}
+  .rc-award-chip {{ width:24px; height:24px; border-radius:7px; display:grid; place-items:center;
+                    flex:0 0 auto; font-size:12px; color:var(--rc-accent);
+                    background:color-mix(in srgb, var(--rc-accent) 16%, transparent); }}
+  .rc-award-lbl {{ font-size:10px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); }}
+  .rc-award-foot {{ font-size:11px; font-weight:600; color:var(--muted); }}
 </style>
 <div class="rc-awards">
   {scorer_card("fa-solid fa-fire", "HIGH SCORER", high_row["owner"],
@@ -16872,8 +16880,8 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
   {scorer_card("fa-solid fa-arrow-trend-down", "LOW SCORER", low_row["owner"],
                float(low_row["points"]), str(low_row.get("roster_id","")),
                low_sub, "var(--loss)", _scorer_opp(low_row))}
-  {matchup_card("fa-solid fa-trophy", "BIGGEST WIN", blowout) if blowout else ""}
-  {matchup_card("fa-solid fa-bolt", "CLOSEST GAME", closest) if closest else ""}
+  {matchup_card("fa-solid fa-trophy", "BIGGEST WIN", blowout, "var(--accent)") if blowout else ""}
+  {matchup_card("fa-solid fa-bolt", "CLOSEST GAME", closest, "var(--warning)") if closest else ""}
 </div>"""
 
     # ── Scoreboard ─────────────────────────────────────────────────────────
