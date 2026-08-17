@@ -20727,10 +20727,15 @@ def api_league_rosters():
                 team_name = f"Team {roster_id}"
                 username = ""
             player_ids = [str(pid) for pid in (roster.get("players") or [])]
-            # Resolve each owned pick to its exact draft slot using whichever
-            # slot maps are already in HISTORICAL_PICK_SLOT_CACHE (built during
-            # normal dashboard loads). If a map isn't cached yet, fall back to
-            # round-level counts - never trigger a fresh historical API fetch here.
+            # Resolve each owned pick to the exact draft slot its original owner
+            # holds. A pick's slot is fixed by the standings of the season BEFORE
+            # the draft (p_season - 1); once that season has finished the order is
+            # known, so build (and cache) the slot map and pin the pick to e.g.
+            # 2026 2.04. Only do this when p_season <= season, i.e. the ordering
+            # season has completed - picks further out have an unknowable order and
+            # fall back to the round-level bucket the front end renders. The whole
+            # response is cached (see _ROSTER_API_CACHE) and slot maps are memoized
+            # in HISTORICAL_PICK_SLOT_CACHE, so this resolves at most once per TTL.
             pick_ids: list[str] = []
             pick_round_counts: dict[str, int] = {}
             for p in (picks_by_roster.get(roster_id) or []):
@@ -20740,17 +20745,20 @@ def api_league_rosters():
                     continue
                 slot = None
                 orig = p.get("original_owner")
-                if orig is not None:
-                    # Use cached slot map if available - no blocking fetch.
-                    source_season = p_season - 1
-                    cached_map = HISTORICAL_PICK_SLOT_CACHE.get(
-                        (str(platform).lower(), str(league_id), int(source_season))
-                    )
-                    if cached_map:
-                        try:
-                            slot = cached_map.get(int(orig))
-                        except (TypeError, ValueError):
-                            slot = None
+                if orig is not None and p_season <= season:
+                    try:
+                        slot_map = build_historical_pick_slot_map(
+                            platform=platform,
+                            root_league_id=league_id,
+                            current_season=season,
+                            source_season=p_season - 1,
+                        )
+                        slot = slot_map.get(int(orig))
+                    except (TypeError, ValueError):
+                        slot = None
+                    except Exception:
+                        logger.debug("suppressed exception", exc_info=True)
+                        slot = None
                 if slot:
                     pick_ids.append(f"{p_season}_{p_round}_{int(slot):02d}")
                 else:
@@ -27838,8 +27846,12 @@ def _portfolio_movers_card(holdings: list, pos_colors: dict) -> str:
     fallers_html = _col("Fallers", [_row(h, False) for h in fallers], "No fallers this week")
     return (
         "<style>"
-        ".pfm-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 22px;padding:4px 16px 14px;}"
+        # minmax(0,1fr) (not the default 1fr = minmax(auto,1fr)) lets each column
+        # shrink below its content's min width, so a long player name ellipsizes
+        # instead of forcing the row - and its delta - off the card's edge.
+        ".pfm-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 22px;padding:4px 16px 14px;}"
         "@media(max-width:640px){.pfm-grid{grid-template-columns:1fr;gap:0;}}"
+        ".pfm-col{min-width:0;}"
         ".pfm-col-h{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;"
         "color:var(--text-muted);padding:8px 0 6px;border-bottom:1px solid var(--grid,var(--border));}"
         ".pfm-row{display:flex;align-items:center;gap:8px;padding:7px 2px;"
@@ -27847,14 +27859,16 @@ def _portfolio_movers_card(holdings: list, pos_colors: dict) -> str:
         ".pfm-row:last-child{border-bottom:none;}"
         ".pfm-row:hover{background:var(--row,rgba(127,127,127,.05));}"
         ".pfm-pos{font-weight:800;font-size:11px;min-width:26px;}"
-        ".pfm-name{flex:1;font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}"
+        ".pfm-name{flex:1;min-width:0;font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}"
         ".pfm-sh{font-size:10px;font-weight:700;color:var(--text-subtle);"
         "background:var(--row,rgba(127,127,127,.1));padding:1px 5px;border-radius:5px;}"
         ".pfm-val{font-size:12px;font-weight:700;color:var(--text-muted);font-variant-numeric:tabular-nums;min-width:34px;text-align:right;}"
         ".pfm-delta{font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;min-width:40px;text-align:right;}"
         ".pfm-empty{font-size:12px;color:var(--text-subtle);padding:12px 0;}"
         "</style>"
-        "<div class='card' style='margin-bottom:14px;'>"
+        # No bottom margin: this card sits in the .pf-grid-2 grid, whose gap handles
+        # spacing. A stray margin would make it shorter than its stretched row-mate.
+        "<div class='card'>"
         "<div class='card-header' style='display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;'>"
         "<h3>Portfolio Movers</h3>"
         "<span style='font-size:12px;color:var(--text-muted);'>Value-rank swings across your leagues &middot; last 7 days</span>"
@@ -27904,7 +27918,12 @@ def build_portfolio_body(
         # only the bits not already in the global stylesheet
         ".pf-grid{display:grid;grid-template-columns:3fr 2fr;gap:14px;margin-bottom:14px;}"
         "@media(max-width:700px){.pf-grid{grid-template-columns:1fr;}}"
-        ".pf-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;align-items:start;}"
+        # Stretch paired cards to equal height so a short card (e.g. Positional
+        # Strength) fills its row instead of leaving a ragged gap beside its taller
+        # neighbor. The cards are flex columns so their bodies fill the extra height.
+        ".pf-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;align-items:stretch;}"
+        ".pf-grid-2>.card{display:flex;flex-direction:column;}"
+        ".pf-grid-2>.card>.card-body{flex:1;}"
         "@media(max-width:700px){.pf-grid-2{grid-template-columns:1fr;}}"
         # Summary header: title + a cohesive 3-up stat bar (Leagues/Record/Season)
         ".pf-summary{display:flex;flex-direction:column;gap:14px;}"
