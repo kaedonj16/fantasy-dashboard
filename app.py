@@ -27846,8 +27846,12 @@ def _portfolio_movers_card(holdings: list, pos_colors: dict) -> str:
     fallers_html = _col("Fallers", [_row(h, False) for h in fallers], "No fallers this week")
     return (
         "<style>"
-        ".pfm-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 22px;padding:4px 16px 14px;}"
+        # minmax(0,1fr) (not the default 1fr = minmax(auto,1fr)) lets each column
+        # shrink below its content's min width, so a long player name ellipsizes
+        # instead of forcing the row - and its delta - off the card's edge.
+        ".pfm-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 22px;padding:4px 16px 14px;}"
         "@media(max-width:640px){.pfm-grid{grid-template-columns:1fr;gap:0;}}"
+        ".pfm-col{min-width:0;}"
         ".pfm-col-h{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;"
         "color:var(--text-muted);padding:8px 0 6px;border-bottom:1px solid var(--grid,var(--border));}"
         ".pfm-row{display:flex;align-items:center;gap:8px;padding:7px 2px;"
@@ -27855,7 +27859,7 @@ def _portfolio_movers_card(holdings: list, pos_colors: dict) -> str:
         ".pfm-row:last-child{border-bottom:none;}"
         ".pfm-row:hover{background:var(--row,rgba(127,127,127,.05));}"
         ".pfm-pos{font-weight:800;font-size:11px;min-width:26px;}"
-        ".pfm-name{flex:1;font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}"
+        ".pfm-name{flex:1;min-width:0;font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}"
         ".pfm-sh{font-size:10px;font-weight:700;color:var(--text-subtle);"
         "background:var(--row,rgba(127,127,127,.1));padding:1px 5px;border-radius:5px;}"
         ".pfm-val{font-size:12px;font-weight:700;color:var(--text-muted);font-variant-numeric:tabular-nums;min-width:34px;text-align:right;}"
