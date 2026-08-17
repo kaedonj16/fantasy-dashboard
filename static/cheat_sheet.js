@@ -15,9 +15,11 @@
   var PS = window.BRPickScore;
   var LIMIT = 175;
 
-  // Market vs ADP is populated from the DraftKings season-long player futures
-  // (see draftkings.py + /api/market-intel/health). All rendering is gated here.
-  var SHOW_MARKET_VS_ADP = true;
+  // Market vs ADP needs a season-long player-props source that a datacenter can
+  // reach. DraftKings/FanDuel/BetMGM/Caesars all IP-block the Render server; the
+  // hunt for a reachable free source (Pinnacle) is unfinished, so the column is
+  // hidden for now. Flip this to true to re-enable once a source is wired.
+  var SHOW_MARKET_VS_ADP = false;
   var showMarket = function (dyn) { return !dyn && SHOW_MARKET_VS_ADP; };
 
   var state = {
