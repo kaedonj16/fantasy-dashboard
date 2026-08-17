@@ -7743,32 +7743,59 @@ window.initTradePage = function initTradePage(root = document) {
         });
 
       // Exact-slot picks are the team's precise picks (show each). Round-fallback
-      // picks (slot unknown, e.g. 2+ years out) collapse to one entry per round so a
-      // side shows just the team's picks, not every slot/bucket variant.
-      // Default to "mid" because we don't know where the pick will land.
+      // picks (slot unknown, e.g. 2+ years out) collapse to one representative per
+      // round so a side shows just the team's picks, not every slot/bucket variant.
       if (rosterFilterActive()) {
-        const midPick = new Map();
+        // Group each round's available variants: a real bucket asset (Early/Mid/
+        // Late) is the ideal representative because it stays non-slotted and
+        // multi-selectable. Some rounds — notably the current draft year — carry
+        // only numeric slot assets in the value table, with no bucket to fall back
+        // on. An unresolved pick there (e.g. an expansion team's pick that has no
+        // prior-season standing to set its slot) must NOT grab the first slot and
+        // masquerade as a precise x.01; use the round's MIDDLE slot for a fair
+        // representative value but relabel it "(Mid)" so it reads as a round bucket.
+        const byRound = new Map();  // roundKey -> { bucket, slots: [] }
         const kept = [];
         for (const p of pool) {
           if (p.position !== "PICK") { kept.push(p); continue; }
           if (allowedPickIds && allowedPickIds.has(String(p.id))) { kept.push(p); continue; }
           const k = pickRoundKey(p.id);
-          const parts = String(p.id).split("_");
-          const bucket = parts[2] || "";
-          // Prefer mid; only fall back to other buckets if mid isn't in the pool.
-          if (bucket === "mid" || !midPick.has(k)) midPick.set(k, p);
+          const third = String(p.id).split("_")[2] || "";
+          let rec = byRound.get(k);
+          if (!rec) { rec = { bucket: null, slots: [] }; byRound.set(k, rec); }
+          if (third === "mid") rec.bucket = p;                              // prefer exact Mid
+          else if (third === "early" || third === "late") { if (!rec.bucket) rec.bucket = p; }
+          else if (/^\d+$/.test(third)) rec.slots.push(p);
         }
         // Add one entry per pick the team still has available for that round
         // (cap - already selected), not just a single representative.
         const roundEntries = [];
-        for (const [k, p] of midPick) {
+        for (const [k, rec] of byRound) {
+          let rep = rec.bucket;
+          if (!rep) {
+            if (!rec.slots.length) continue;
+            rec.slots.sort((a, b) =>
+              parseInt(String(a.id).split("_")[2], 10) - parseInt(String(b.id).split("_")[2], 10));
+            const mid = rec.slots[Math.floor((rec.slots.length - 1) / 2)];
+            const parts = String(k).split("_");
+            const round = parseInt(parts[1], 10);
+            const suffix = { 1: "st", 2: "nd", 3: "rd" }[round] || "th";
+            // Keep the real slot id so the pick's value still resolves from
+            // allPlayers; only override the label to the round bucket.
+            rep = Object.assign({}, mid, { name: `${parts[0]} ${round}${suffix} (Mid)` });
+          }
           const cap = ownedRoundCount(side, k);
-          if (!isFinite(cap)) { roundEntries.push(p); continue; }
+          if (!isFinite(cap)) { roundEntries.push(rep); continue; }
+          // Count round-fallback picks already on this side for the round. A
+          // representative may be a non-slotted bucket OR a relabeled middle slot,
+          // so match on the round key and exclude only the team's exact resolved
+          // picks (shown and capped separately) rather than filtering by slotted-ness.
           const added = selectedPicks.filter(
-            x => !isSlottedPick(x.id) && pickRoundKey(String(x.id)) === k
+            x => pickRoundKey(String(x.id)) === k
+              && !(allowedPickIds && allowedPickIds.has(String(x.id)))
           ).length;
           const remaining = Math.max(0, cap - added);
-          for (let i = 0; i < remaining; i++) roundEntries.push(p);
+          for (let i = 0; i < remaining; i++) roundEntries.push(rep);
         }
         pool = kept.concat(roundEntries);
       }
