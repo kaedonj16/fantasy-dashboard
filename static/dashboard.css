@@ -3511,13 +3511,16 @@ strong + .player-badge,
   color: var(--warning);
 }
 
-/* Elite is a SOLID gold chip (dark text) so it reads as the premium tag and is
-   unmistakable next to the pale-amber "Questionable" injury pill, which shares
-   the same gold hue. Injury designations stay tinted, so form separates them. */
+/* Elite stays in the tinted badge family (so it doesn't read as a heavy block),
+   but earns a premium look with a soft gold gradient sheen and a stronger gold
+   border. That plus its star icon and "ELITE" label separates it in FORM from
+   the flat, hairline pale-amber "Questionable" injury pill, which shares its hue. */
 .player-badge-elite {
-  background: var(--gold);
-  color: #1a1204;
-  border-color: color-mix(in srgb, var(--gold) 62%, #000);
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--gold) 24%, transparent),
+    color-mix(in srgb, var(--gold) 12%, transparent));
+  color: var(--gold);
+  border-color: color-mix(in srgb, var(--gold) 45%, transparent);
 }
 
 .player-badge-prospect {

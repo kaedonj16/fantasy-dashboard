@@ -24594,7 +24594,7 @@ def api_trade_database():
             sf_param = True
         elif league_type == "1qb":
             sf_param = False
-        sf_clause = "AND l.is_superflex = %s" if sf_param is not None else ""
+        sf_clause = "AND l.is_superflex = %s " if sf_param is not None else ""
 
         # Build dynasty/redraft filter (league_type column: 2=dynasty, 1=redraft)
         lf_param = None
@@ -24602,7 +24602,7 @@ def api_trade_database():
             lf_param = 2
         elif league_format == "redraft":
             lf_param = 1
-        lf_clause = "AND l.league_type = %s" if lf_param is not None else ""
+        lf_clause = "AND l.league_type = %s " if lf_param is not None else ""
 
         # Build player filter clauses.
         # Always require both sides present so COUNT and rendered cards agree.
@@ -24793,14 +24793,14 @@ def api_trade_intel_player_trades(player_id: str):
             sf_param = True
         elif league_type == "1qb":
             sf_param = False
-        sf_clause = "AND l.is_superflex = %s" if sf_param is not None else ""
+        sf_clause = "AND l.is_superflex = %s " if sf_param is not None else ""
 
         lf_param = None
         if league_format == "dynasty":
             lf_param = 2
         elif league_format == "redraft":
             lf_param = 1
-        lf_clause = "AND l.league_type = %s" if lf_param is not None else ""
+        lf_clause = "AND l.league_type = %s " if lf_param is not None else ""
 
         from dashboard_services.db import get_conn
         from utils.utils import load_players_index
