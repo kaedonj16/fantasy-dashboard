@@ -16777,7 +16777,11 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     low_sub  = f"{float(low_row['points']) - league_avg:.1f} vs avg"
 
     cards_html = f"""
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px;">
+<style>
+  .rc-awards {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-bottom:20px; }}
+  @media (max-width:640px) {{ .rc-awards {{ grid-template-columns:1fr; }} }}
+</style>
+<div class="rc-awards">
   {scorer_card("fa-solid fa-fire", "HIGH SCORER", high_row["owner"],
                float(high_row["points"]), str(high_row.get("roster_id","")),
                high_sub, "var(--win)", _scorer_opp(high_row), medal_rank=1)}
@@ -17677,36 +17681,63 @@ def build_commissioner_body(ctx):
                 _GOOD, "var(--text)"),
     ])
 
+    # Ring geometry + a one-line verdict, both from values already computed above
+    # (this is presentation only — no new metric is calculated).
+    import math as _math
+    _ring_r = 54
+    _ring_circ = 2 * _math.pi * _ring_r
+    _ring_off = _ring_circ * (1 - min(100, max(0, activity_score)) / 100)
+    _verdict_bits = [f"{total_trades} trade" + ("s" if total_trades != 1 else ""),
+                     f"{total_txns} move" + ("s" if total_txns != 1 else "") + " this season"]
+    if inactive_count:
+        _verdict_bits.append(f"{inactive_count} inactive team" + ("s" if inactive_count != 1 else ""))
+    _verdict = f"{score_label} — " + ", ".join(_verdict_bits) + "."
+
     health_html = f"""
 <style>
   .lh-card {{ padding:20px; margin-bottom:20px; }}
-  .lh-head {{ display:flex; align-items:baseline; gap:8px; margin-bottom:18px; }}
-  .lh-head-title {{ font-size:12px; font-weight:800; letter-spacing:.06em; color:var(--text); text-transform:uppercase; }}
-  .lh-head-sub {{ font-size:12px; color:var(--muted); }}
-  .lh-hero {{ text-align:center; padding:4px 0 20px; border-bottom:1px solid var(--border); margin-bottom:20px; }}
-  .lh-hero-num {{ font-size:64px; font-weight:800; line-height:1; }}
-  .lh-hero-label {{ font-size:11px; font-weight:700; letter-spacing:.06em; color:var(--muted); text-transform:uppercase; margin-top:10px; }}
-  .lh-hero-status {{ font-size:14px; font-weight:700; margin-top:4px; }}
-  .lh-hero-track {{ height:8px; border-radius:99px; background:var(--border); overflow:hidden; max-width:320px; margin:16px auto 0; }}
-  .lh-hero-track > div {{ height:100%; border-radius:99px; }}
-  .lh-bars {{ display:flex; flex-direction:column; gap:16px; }}
-  .lh-bar-top {{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:7px; }}
-  .lh-bar-label {{ font-size:12.5px; font-weight:600; color:var(--text); }}
-  .lh-bar-val {{ font-size:18px; font-weight:800; line-height:1; }}
+  .lh-hero2 {{ display:grid; grid-template-columns:auto 1fr; gap:22px; align-items:center; }}
+  @media (max-width:560px) {{ .lh-hero2 {{ grid-template-columns:1fr; text-align:center; justify-items:center; }} }}
+  .lh-ring {{ position:relative; width:128px; height:128px; flex-shrink:0; }}
+  .lh-ring svg {{ transform:rotate(-90deg); }}
+  .lh-ring-mid {{ position:absolute; inset:0; display:grid; place-content:center; text-align:center; }}
+  .lh-ring-num {{ font-size:40px; font-weight:800; line-height:1; }}
+  .lh-ring-cap {{ font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-top:3px; }}
+  .lh-pill {{ display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:800; letter-spacing:.03em; padding:4px 10px; border-radius:999px; text-transform:uppercase; }}
+  .lh-verdict {{ font-size:15px; color:var(--muted); margin-top:10px; max-width:48ch; }}
+  .lh-verdict b {{ color:var(--text); }}
+  .lh-bars {{ display:flex; flex-direction:column; }}
+  .lh-bar-row {{ display:flex; flex-direction:column; gap:6px; padding:11px 0; border-top:1px solid var(--border); }}
+  .lh-bar-row:first-child {{ border-top:0; padding-top:2px; }}
+  .lh-bar-top {{ display:flex; justify-content:space-between; align-items:baseline; }}
+  .lh-bar-label {{ font-size:13px; font-weight:600; color:var(--text); }}
+  .lh-bar-val {{ font-size:16px; font-weight:800; line-height:1; }}
   .lh-bar-track {{ height:8px; border-radius:99px; background:var(--border); overflow:hidden; }}
   .lh-bar-fill {{ height:100%; border-radius:99px; min-width:2px; transition:width .3s ease; }}
+  .lh-parity {{ position:relative; height:58px; margin:4px 4px 2px; }}
+  .lh-parity-axis {{ position:absolute; left:0; right:0; top:33px; height:2px; background:var(--border); border-radius:2px; }}
+  .lh-parity-fair {{ position:absolute; top:21px; bottom:6px; width:2px; background:var(--accent); opacity:.55; }}
+  .lh-parity-fair span {{ position:absolute; top:-15px; left:50%; transform:translateX(-50%); font-size:10px; font-weight:700; color:var(--muted); white-space:nowrap; }}
+  .lh-pdot {{ position:absolute; top:26px; width:14px; height:14px; border-radius:50%; transform:translateX(-50%); border:2px solid var(--card); box-shadow:0 1px 3px rgba(0,0,0,.28); }}
+  .lh-parity-scale {{ display:flex; justify-content:space-between; font-size:10.5px; color:var(--muted); margin:2px 4px 12px; }}
 </style>
 <div class="card lh-card">
-  <div class="lh-head">
-    <span class="lh-head-title">League Health</span>
-    <span class="lh-head-sub">this season</span>
+  <div class="lh-hero2">
+    <div class="lh-ring">
+      <svg width="128" height="128" viewBox="0 0 128 128" aria-hidden="true">
+        <circle cx="64" cy="64" r="{_ring_r}" fill="none" stroke="var(--border)" stroke-width="10"></circle>
+        <circle cx="64" cy="64" r="{_ring_r}" fill="none" stroke="{score_color}" stroke-width="10" stroke-linecap="round" stroke-dasharray="{_ring_circ:.1f}" stroke-dashoffset="{_ring_off:.1f}"></circle>
+      </svg>
+      <div class="lh-ring-mid"><div class="lh-ring-num" style="color:{score_color};">{int(activity_score)}</div><div class="lh-ring-cap">Health Score</div></div>
+    </div>
+    <div>
+      <span class="lh-pill" style="color:{score_color};background:color-mix(in srgb,{score_color} 15%,transparent);">{score_label}</span>
+      <div class="lh-verdict">{_verdict}</div>
+    </div>
   </div>
-  <div class="lh-hero">
-    <div class="lh-hero-num" style="color:{score_color};">{int(activity_score)}</div>
-    <div class="lh-hero-label">Health Score</div>
-    <div class="lh-hero-status" style="color:{score_color};">{score_label}</div>
-    <div class="lh-hero-track"><div style="width:{int(activity_score)}%;background:{score_color};"></div></div>
-  </div>
+</div>
+<div class="card" style="padding:18px 20px;margin-bottom:20px;">
+  <div class="card-header" style="margin-bottom:6px;"><h3>What's driving the score</h3></div>
   <div class="lh-bars">{_bars_html}
   </div>
 </div>"""
@@ -17733,9 +17764,38 @@ def build_commissioner_body(ctx):
   <td style="padding:10px;text-align:center;">{r['trades']}</td>
 </tr>"""
 
+    # Parity strip: plot each team's existing value_pct along a thin↔stacked axis
+    # with the fair share marked. Pure visualization of the same numbers — no new
+    # metric is computed.
+    _shares = [r["value_pct"] for r in roster_infos] or [fair_share]
+    _p_lo = min(min(_shares), fair_share)
+    _p_hi = max(max(_shares), fair_share)
+    _p_span = (_p_hi - _p_lo) or 1.0
+    _p_lo -= _p_span * 0.12
+    _p_hi += _p_span * 0.12
+    _p_span = (_p_hi - _p_lo) or 1.0
+
+    def _p_x(s):
+        return max(0.0, min(100.0, (s - _p_lo) / _p_span * 100))
+
+    _p_dots = ""
+    for r in roster_infos:
+        _pc = "#ef4444" if r["inactive"] else ("#22c55e" if abs(r["value_pct"] - fair_share) <= 2 else "#f59e0b")
+        _p_dots += (f'<div class="lh-pdot" title="{html.escape(r["name"])} &middot; {r["value_pct"]:.1f}%" '
+                    f'style="left:{_p_x(r["value_pct"]):.1f}%;background:{_pc};"></div>')
+    parity_html = (
+        f'<div style="padding:14px 16px 0;">'
+        f'<div class="lh-parity"><div class="lh-parity-axis"></div>'
+        f'<div class="lh-parity-fair" style="left:{_p_x(fair_share):.1f}%;"><span>fair {fair_share:.1f}%</span></div>'
+        f'{_p_dots}</div>'
+        f'<div class="lh-parity-scale"><span>Thin roster</span><span>Fair share</span><span>Stacked roster</span></div>'
+        f'</div>'
+    )
+
     roster_table = f"""
 <div class="card" style="overflow:auto;margin-bottom:20px;">
   <div class="card-header"><h3>Team Overview</h3></div>
+  {parity_html}
   <table style="width:100%;border-collapse:collapse;">
     <thead><tr style="border-bottom:2px solid var(--border);">
       <th style="padding:10px 14px;text-align:left;font-size:12px;color:var(--muted);">TEAM</th>
@@ -27892,7 +27952,12 @@ def build_portfolio_body(
         lid  = lg.get("league_id") or ""
         plat = lg.get("platform") or "sleeper"
         href = f"/{plat}/{season}/{lid}/dashboard"
-        name = html.escape(lg.get("name") or "?")
+        _raw_name = lg.get("name") or "?"
+        name = html.escape(_raw_name)
+        # Presentational crest for the league card: initials + a stable hue from
+        # the name (no new data — derived from the league name we already show).
+        _ini = html.escape("".join(w[0] for w in _raw_name.split()[:2]).upper() or "?")
+        _crest_hue = f"hsl({sum(ord(c) for c in _raw_name) % 360} 52% 46%)"
 
         # Linked-but-not-drafted (or team-not-yet-linked) league: a normal pending
         # state, so give it a proper row — name link, a soft status pill, a
@@ -27915,31 +27980,30 @@ def build_portfolio_body(
             else:
                 action = f"<a href='{href}' class='pf-pending-cta'>Open league →</a>"
             league_rows += (
-                f"<tr class='pf-league-row pf-league-pending'>"
-                f"<td colspan='5' style='flex-basis:100%;'>"
-                f"<div class='pf-pending-wrap'>"
-                f"<a href='{href}' class='pf-league-link pf-pending-name'>{name}</a>"
-                f"<span class='pf-status-pill'>{reason}</span>"
-                f"<span class='pf-pending-spacer'></span>"
-                f"{action}"
+                f"<div class='pf-lg-card pf-lg-pending'>"
+                f"<div class='pf-lg-top'>"
+                f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
+                f"<div class='pf-lg-id'><a href='{href}' class='pf-league-link pf-lg-name'>{name}</a></div>"
                 f"{_unlink_btn(plat, lid)}"
                 f"</div>"
-                f"</td>"
-                f"</tr>"
+                f"<div class='pf-lg-pending-row'>"
+                f"<span class='pf-status-pill'>{reason}</span>"
+                f"{action}"
+                f"</div>"
+                f"</div>"
             )
             continue
 
         if lg.get("error") or lg.get("not_in_league"):
             league_rows += (
-                f"<tr class='pf-league-row'>"
-                f"<td colspan='5' style='flex-basis:100%;'>"
-                f"<div style='display:flex;align-items:center;gap:8px;'>"
-                f"<span style='flex:1;color:var(--text-muted);font-weight:600;'>{name}</span>"
-                f"<span style='color:var(--text-subtle);font-size:12px;'>couldn’t load</span>"
+                f"<div class='pf-lg-card'>"
+                f"<div class='pf-lg-top'>"
+                f"<span class='pf-lg-crest' style='background:var(--border);color:var(--text-muted);'>{_ini}</span>"
+                f"<div class='pf-lg-id'><span class='pf-lg-name' style='color:var(--text-muted);'>{name}</span></div>"
                 f"{_unlink_btn(plat, lid)}"
                 f"</div>"
-                f"</td>"
-                f"</tr>"
+                f"<div class='pf-lg-err'>couldn’t load</div>"
+                f"</div>"
             )
             continue
 
@@ -27988,33 +28052,47 @@ def build_portfolio_body(
         )
 
         league_rows += (
-            f"<tr class='pf-league-row'>"
-            f"<td class='pf-league-name-cell'>"
-            f"<a href='{href}' class='pf-league-link'>{name}</a>{off_note}{_unlink_btn(plat, lid)}"
-            f"{badges_div}"
-            f"</td>"
-            f"<td class='pf-league-stat' data-label='Record'><span class='{rec_cls2}'>{rec}</span></td>"
-            f"<td class='pf-league-stat' data-label='Rank'>{rank}/{total}</td>"
-            f"<td class='pf-league-stat'><div class='pf-streak'>{dots}</div></td>"
-            f"<td class='pf-league-type'>{arch_badge}</td>"
-            f"</tr>"
+            f"<div class='pf-lg-card'>"
+            f"<div class='pf-lg-top'>"
+            f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
+            f"<div class='pf-lg-id'><a href='{href}' class='pf-league-link pf-lg-name'>{name}</a>{off_note}</div>"
+            f"{arch_badge}"
+            f"{_unlink_btn(plat, lid)}"
+            f"</div>"
+            f"<div class='pf-lg-mid'>"
+            f"<div><div class='pf-lg-v {rec_cls2}'>{rec}</div><div class='pf-lg-l'>Record</div></div>"
+            f"<div><div class='pf-lg-v'>{rank}/{total}</div><div class='pf-lg-l'>Rank</div></div>"
+            f"<div><div class='pf-streak'>{dots}</div><div class='pf-lg-l' style='margin-top:5px;'>Streak</div></div>"
+            f"</div>"
+            f"<div class='pf-lg-foot'>{badges_div}<a href='{href}' class='pf-lg-open'>Open &rarr;</a></div>"
+            f"</div>"
         )
 
     league_card = (
+        "<style>"
+        ".pf-lg-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px;}"
+        "@media(max-width:640px){.pf-lg-grid{grid-template-columns:1fr;}}"
+        ".pf-lg-card{background:var(--card);border:1px solid var(--grid);border-radius:12px;"
+        "padding:13px 14px;display:flex;flex-direction:column;gap:11px;}"
+        ".pf-lg-top{display:flex;align-items:center;gap:10px;}"
+        ".pf-lg-crest{width:34px;height:34px;border-radius:9px;flex:0 0 auto;display:grid;place-items:center;"
+        "color:#fff;font-weight:800;font-size:13px;}"
+        ".pf-lg-id{flex:1;min-width:0;}"
+        ".pf-lg-name{font-weight:800;font-size:14.5px;text-decoration:none;color:var(--text);"
+        "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-block;max-width:100%;vertical-align:bottom;}"
+        ".pf-lg-name:hover{color:var(--accent);}"
+        ".pf-lg-mid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center;}"
+        ".pf-lg-v{font-size:16px;font-weight:800;}"
+        ".pf-lg-l{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-subtle);margin-top:2px;}"
+        ".pf-lg-foot{display:flex;align-items:center;gap:12px;border-top:1px solid var(--grid);padding-top:10px;flex-wrap:wrap;}"
+        ".pf-lg-foot .pf-pos-chips{margin-top:0;}"
+        ".pf-lg-open{margin-left:auto;font-weight:800;font-size:12.5px;color:var(--accent);text-decoration:none;white-space:nowrap;}"
+        ".pf-lg-pending-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}"
+        ".pf-lg-err{font-size:12px;color:var(--text-subtle);}"
+        "</style>"
         f"<div class='card'>"
         f"<div class='card-header'><h2>My Leagues</h2></div>"
-        f"<div style='overflow-x:auto;'>"
-        f"<table class='standings-table pf-leagues-table'>"
-        f"<thead><tr>"
-        f"<th style='text-align:left;'>League</th>"
-        f"<th>Record</th>"
-        f"<th>Rank</th>"
-        f"<th>Streak</th>"
-        f"<th style='text-align:right;padding-right:8px;'>Type</th>"
-        f"</tr></thead>"
-        f"<tbody>{league_rows}</tbody>"
-        f"</table>"
-        f"</div>"
+        f"<div class='pf-lg-grid'>{league_rows}</div>"
         f"</div>"
     )
 
@@ -28188,15 +28266,23 @@ def build_portfolio_body(
             f"}})();</script>"
         )
 
-    two_col = f"<div class='pf-grid'>{league_card}{pos_card}</div>" if pos_card else league_card
-
     movers_html = _portfolio_movers_card(holdings, _POS_COLORS)
 
     if nfl_html and holdings_html:
         bottom_row = f"<div class='pf-grid-2'>{nfl_html}{holdings_html}</div>"
     else:
         bottom_row = nfl_html + holdings_html
-    return css + top_strip + two_col + movers_html + bottom_row
+
+    # Leagues lead the page full-width; the exposure/strength/holdings analytics
+    # move into a "Portfolio insights" band beneath (same cards, reordered).
+    insight_top = (f"<div class='pf-grid-2'>{pos_card}{movers_html}</div>"
+                   if (pos_card and movers_html) else (pos_card + movers_html))
+    insights_label = (
+        "<div style='font-size:11.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;"
+        "color:var(--text-subtle);margin:22px 2px 12px;'>Portfolio insights</div>"
+        if (pos_card or movers_html or nfl_html or holdings_html) else ""
+    )
+    return css + top_strip + league_card + insights_label + insight_top + bottom_row
 
 
 def build_scout_body(ctx: dict) -> str:
