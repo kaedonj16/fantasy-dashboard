@@ -2081,14 +2081,15 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         return url_for(ep, platform=platform, season=season, league_id=league_id) + suffix
 
     # ── Dynamic dock ──────────────────────────────────────────────────────────
-    # Redraft leagues (Sleeper type 0) keep the Teams slot even when Sleeper
-    # reports a default keeper limit; only real keeper leagues get the dock tab.
-    # The Keeper Assistant still lives in the More sheet either way.
-    show_keeper = _nav_show_keeper(platform, league_id, season) and not \
-        _nav_is_redraft(platform, league_id, season)
+    # The Keeper Assistant TOOL is offered whenever the league is keeper-capable
+    # (matches the desktop nav + the gating test). The dock TAB is narrower:
+    # redraft leagues (Sleeper type 0) keep the Teams slot even when Sleeper
+    # reports a default keeper limit, so only real keeper leagues get the tab.
+    show_keeper_tool = _nav_show_keeper(platform, league_id, season)
+    show_keeper_tab = show_keeper_tool and not _nav_is_redraft(platform, league_id, season)
     if not offseason:
         middle = ["weekly", "trade", "teams"]
-    elif show_keeper:
+    elif show_keeper_tab:
         middle = ["draft", "trade", "keeper"]
     else:
         middle = ["draft", "trade", "teams"]
@@ -2190,7 +2191,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     ])
 
     _draft_rows = [_sl("draft", "Draft Room"), _sl("draft-cheat-sheet", "Cheat Sheet")]
-    if show_keeper:                                   # keeper leagues only
+    if show_keeper_tool:                              # keeper-capable leagues only
         _draft_rows.append(_sl("keeper", "Keeper Assistant"))
     _draft_rows.append(_sl("draft-history", "Draft History"))
     draft_html = _sec("Draft", _draft_rows)
