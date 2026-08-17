@@ -94,7 +94,7 @@ window.showPaywall = function showPaywall(feature) {
             <div class="pricing-header">
               <h4>League Plan</h4>
             </div>
-            <div class="pricing-price">$10<span>/year</span></div>
+            <div class="pricing-price">$15<span>/year</span></div>
             <p class="pricing-desc">Premium for all managers in your league</p>
             <button class="btn btn-secondary paywall-cta" onclick="initiatePurchase('league', this)">
               Subscribe for League
@@ -105,7 +105,7 @@ window.showPaywall = function showPaywall(feature) {
               <h4>League + Personal</h4>
               <div class="pricing-badge">Best value</div>
             </div>
-            <div class="pricing-price">$12<span>/year</span></div>
+            <div class="pricing-price">$20<span>/year</span></div>
             <p class="pricing-desc">League premium + all your personal leagues</p>
             <button class="btn btn-primary paywall-cta" onclick="initiatePurchase('combo', this)">
               Subscribe Both
@@ -115,7 +115,7 @@ window.showPaywall = function showPaywall(feature) {
             <div class="pricing-header">
               <h4>Personal Plan</h4>
             </div>
-            <div class="pricing-price">$5<span>/year</span></div>
+            <div class="pricing-price">$10<span>/year</span></div>
             <p class="pricing-desc">Premium for all your leagues</p>
             <button class="btn btn-secondary paywall-cta" onclick="initiatePurchase('user', this)">
               Subscribe Personally

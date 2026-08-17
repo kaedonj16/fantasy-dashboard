@@ -40,9 +40,9 @@ def _stripe():
 
 
 _STRIPE_PRICES = {
-    "league": {"unit_amount": 1000, "product": _STRIPE_LEAGUE_PRODUCT},
-    "user":   {"unit_amount":  500, "product": _STRIPE_USER_PRODUCT},
-    "combo":  {"unit_amount": 1200, "product": _STRIPE_COMBO_PRODUCT},
+    "league": {"unit_amount": 1500, "product": _STRIPE_LEAGUE_PRODUCT},
+    "user":   {"unit_amount": 1000, "product": _STRIPE_USER_PRODUCT},
+    "combo":  {"unit_amount": 2000, "product": _STRIPE_COMBO_PRODUCT},
 }
 
 _SUPPORTED_PLATFORMS = {"sleeper", "espn", "yahoo"}
@@ -300,7 +300,7 @@ def _pricing_body() -> str:
               <div style="font-size:17px;font-weight:700;">League Plan</div>
             </div>
             <div style="font-size:38px;font-weight:800;line-height:1;margin-bottom:4px;">
-              $10<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
+              $15<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
             </div>
             <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for every manager in your league</div>
             <button onclick="initiatePurchase('league', this)" style="width:100%;padding:11px;border-radius:9px;border:2px solid #667eea;background:var(--card);color:#667eea;font-size:14px;font-weight:700;cursor:pointer;">
@@ -315,7 +315,7 @@ def _pricing_body() -> str:
               <div style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:10px;font-weight:700;padding:3px 9px;border-radius:10px;text-transform:uppercase;letter-spacing:.4px;">Best Value</div>
             </div>
             <div style="font-size:38px;font-weight:800;line-height:1;margin-bottom:4px;">
-              $12<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
+              $20<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
             </div>
             <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for your league and all your personal leagues</div>
             <button onclick="initiatePurchase('combo', this)" style="width:100%;padding:11px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:14px;font-weight:700;cursor:pointer;">
@@ -329,7 +329,7 @@ def _pricing_body() -> str:
               <div style="font-size:17px;font-weight:700;">Personal Plan</div>
             </div>
             <div style="font-size:38px;font-weight:800;line-height:1;margin-bottom:4px;">
-              $5<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
+              $10<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
             </div>
             <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for all your leagues, one account</div>
             <button onclick="initiatePurchase('user', this)" style="width:100%;padding:11px;border-radius:9px;border:2px solid #667eea;background:var(--card);color:#667eea;font-size:14px;font-weight:700;cursor:pointer;">
