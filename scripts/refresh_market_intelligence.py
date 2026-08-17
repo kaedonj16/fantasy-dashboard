@@ -88,18 +88,30 @@ def refresh() -> int:
         # player name, so resolution is name-only and fails closed on ambiguity.
         try:
             if dk_client.configured:
-                _dk_added = 0
-                for _stat_type, _payload in dk_client.iter_season_markets():
-                    for _rec in season_records_from_payload(_payload, _stat_type, now):
+                _dk_added = _dk_unresolved = 0
+                for _stat_type, _sub_id in dk_client.market_map.items():
+                    _payload = dk_client.fetch_subcategory(_sub_id)
+                    if not _payload:
+                        print(f"[market] DK {_stat_type} (sub {_sub_id}): no data — {dk_client.last_error}")
+                        continue
+                    _recs = season_records_from_payload(_payload, _stat_type, now)
+                    _res = 0
+                    for _rec in _recs:
                         _name = _rec.provider_player_id.split(":", 1)[-1]
                         _pid, _ = resolve_player(_rec.provider_player_id, _name, "", "", players, persisted)
                         if not _pid:
+                            _dk_unresolved += 1
                             continue
                         normalized.append(_rec.__class__(**{**_rec.__dict__, "canonical_player_id": _pid}))
-                        _dk_added += 1
-                print(f"[market] DraftKings season futures: {_dk_added} player lines")
+                        _res += 1
+                    _dk_added += _res
+                    print(f"[market] DK {_stat_type} (sub {_sub_id}): "
+                          f"events={len(_payload.get('events', []))} markets={len(_payload.get('markets', []))} "
+                          f"selections={len(_payload.get('selections', []))} parsed={len(_recs)} resolved={_res}")
+                print(f"[market] DraftKings season futures: {_dk_added} player lines "
+                      f"({_dk_unresolved} unresolved names)")
         except Exception as _dk_err:  # never let an optional source break the refresh
-            print(f"[market] DraftKings season futures skipped: {_dk_err}")
+            print(f"[market] DraftKings season futures skipped: {type(_dk_err).__name__}: {_dk_err}")
 
         grouped = defaultdict(list)
         for record in normalized:
