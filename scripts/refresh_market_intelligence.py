@@ -7,10 +7,17 @@ no-op. Season-long props are not synthesized from weekly markets.
 from __future__ import annotations
 
 import argparse
+import sys
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-from dashboard_services.api import get_nfl_state
+# `python scripts/refresh_market_intelligence.py` (the Render cron) puts scripts/
+# on sys.path, not the repo root, so the project packages don't import. Add the
+# repo root explicitly, matching the other cron scripts.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from dashboard_services.api import get_nfl_state  # noqa: E402
 from dashboard_services.db import get_conn
 from dashboard_services.market_intelligence.client import SportsGameOddsClient
 from dashboard_services.market_intelligence.consensus import build_consensus
@@ -21,10 +28,19 @@ from utils.utils import load_players_index
 
 
 def refresh() -> int:
+    from dashboard_services.market_intelligence.draftkings import (
+        DraftKingsClient, season_records_from_payload,
+    )
     client = SportsGameOddsClient()
-    if not client.configured:
-        print("[market] SPORTSGAMEODDS_API_KEY is not configured, skipping")
+    dk_client = DraftKingsClient()
+    # The two sources are independent: SportsGameOdds powers the weekly signals,
+    # DraftKings powers the season-long Market vs ADP. Skip only if neither is set;
+    # when SGO is absent its event feed simply yields nothing and DraftKings runs.
+    if not client.configured and not dk_client.configured:
+        print("[market] no market source configured (SportsGameOdds / DraftKings), skipping")
         return 0
+    if not client.configured:
+        print("[market] SPORTSGAMEODDS_API_KEY not set; running DraftKings season source only")
     state = get_nfl_state() or {}
     season = int(state.get("season") or datetime.now().year)
     week = int(state.get("week") or state.get("display_week") or 1)
@@ -71,13 +87,9 @@ def refresh() -> int:
         # season markets, so these are what power Market vs ADP. DK exposes only a
         # player name, so resolution is name-only and fails closed on ambiguity.
         try:
-            from dashboard_services.market_intelligence.draftkings import (
-                DraftKingsClient, season_records_from_payload,
-            )
-            _dk = DraftKingsClient()
-            if _dk.configured:
+            if dk_client.configured:
                 _dk_added = 0
-                for _stat_type, _payload in _dk.iter_season_markets():
+                for _stat_type, _payload in dk_client.iter_season_markets():
                     for _rec in season_records_from_payload(_payload, _stat_type, now):
                         _name = _rec.provider_player_id.split(":", 1)[-1]
                         _pid, _ = resolve_player(_rec.provider_player_id, _name, "", "", players, persisted)
