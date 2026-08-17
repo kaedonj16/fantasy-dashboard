@@ -10959,7 +10959,12 @@ function openPlayerModal(playerId, playerName, opts) {
       // Update headshot
       const headshotEl = document.getElementById('playerModalHeadshot');
       if (headshotEl && data.espnHeadshot) {
-        headshotEl.src = data.espnHeadshot;
+        headshotEl.dataset.raw = data.espnHeadshot;
+        headshotEl.onerror = function () {
+          if (this.dataset.raw && this.src !== this.dataset.raw) { this.src = this.dataset.raw; }
+          else { this.style.visibility = 'hidden'; }
+        };
+        headshotEl.src = _hiResHeadshot(data.espnHeadshot, 360);
       }
 
       // Extract player position
@@ -14002,7 +14007,9 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     const subCls = isRank ? ' rank-badge' : '';
     const subLine = m.sub ? `<div class="pm-comp-sub${subCls}">${m.sub}</div>` : '';
     const _desc = m.desc || _ADV_METRIC_DESCS[m.label] || '';
-    const _defAttr = _desc ? ` title="${_desc.replace(/"/g, '&quot;')}" data-def="${_desc.replace(/"/g, '&quot;')}" onclick="advShowMetricDef(event)" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)"` : '';
+    // Custom hover tooltip only (data-def + advEnterMetricDef). No native title=
+    // attribute — it would surface a second, plain browser tooltip on hover.
+    const _defAttr = _desc ? ` data-def="${_desc.replace(/"/g, '&quot;')}" onclick="advShowMetricDef(event)" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)"` : '';
     return `<span class="pm-comp-label"${_defAttr}>${m.label}</span>` +
       `<div class="pm-comp-bar-wrap"><div class="pm-comp-bar" style="width:${fill.toFixed(1)}%;background:${color};"></div></div>` +
       `<div class="pm-comp-val" style="color:${color};">${m.display}${subLine}</div>`;
@@ -15785,7 +15792,7 @@ function openCompareSearch(player1Data) {
     <div class="compare-search-panel">
       <div class="compare-search-header">
         <div class="compare-search-p1">
-          <img src="${player1Data.espnHeadshot || ''}" class="compare-search-headshot" alt="${esc(player1Data.name)}" />
+          <img src="${_hiResHeadshot(player1Data.espnHeadshot, 140)}" data-raw="${player1Data.espnHeadshot || ''}" onerror="${_HS_FALLBACK}" class="compare-search-headshot" alt="${esc(player1Data.name)}" />
           <div>
             <div class="compare-search-p1-name">${esc(player1Data.name)}</div>
             <div class="compare-search-p1-meta">${esc(player1Data.position || '')} · ${esc(player1Data.team || '')}</div>
@@ -15850,7 +15857,7 @@ function openCompareSearch(player1Data) {
       const rightVal = isB ? ((p.stats && p.stats.value) || '-') : (p.value || '-');
       const ico = isB
         ? '<div class="compare-result-headshot compare-result-tier-ico" aria-hidden="true">Σ</div>'
-        : `<img src="${p.espnHeadshot || ''}" class="compare-result-headshot" alt="${_cmpEsc(p.name)}" />`;
+        : `<img src="${_hiResHeadshot(p.espnHeadshot, 110)}" data-raw="${p.espnHeadshot || ''}" onerror="${_HS_FALLBACK}" class="compare-result-headshot" alt="${_cmpEsc(p.name)}" />`;
       return `
       <div class="compare-search-result-item${isB ? ' compare-search-baseline' : ''}" data-pid="${_cmpEsc(p.player_id)}" data-pname="${_cmpEsc(p.name)}" data-baseline="${isB ? '1' : ''}">
         ${ico}
@@ -16021,6 +16028,32 @@ function _buildCompareHeroHTML(p, other) {
       </div>` : ''}
     </div>` : '';
 
+  // ── ADP row (Dynasty + Redraft) ──────────────────────────────────────────
+  // From the same Sleeper feed the player modal and rankings use. The primary
+  // number is the 1QB ADP with SF in the sub-line. Lower ADP = drafted earlier,
+  // so the winner highlight flips vs the value cards (lower wins here). Tier
+  // averages have no ADP, so the whole row is dropped when neither value exists.
+  const adp = p.stats?.adp || null;
+  const oAdp = (other && other.stats && other.stats.adp) || null;
+  const _adpNum = v => (v == null || v === '' || isNaN(parseFloat(v))) ? null : parseFloat(v);
+  const dyn1 = _adpNum(adp?.dynasty_1qb), dynSf = _adpNum(adp?.dynasty_sf);
+  const rdr1 = _adpNum(adp?.redraft_1qb), rdrSf = _adpNum(adp?.redraft_sf);
+  const hasAdp = [dyn1, dynSf, rdr1, rdrSf].some(v => v != null);
+  const _winLow = (mine, theirs) => (mine != null && theirs != null && Number(mine) < Number(theirs));
+  const winDyn = _winLow(dyn1, _adpNum(oAdp?.dynasty_1qb)) ? ' compare-hero-win' : '';
+  const winRdr = _winLow(rdr1, _adpNum(oAdp?.redraft_1qb)) ? ' compare-hero-win' : '';
+  const _adpCard = (label, primary, sf, winCls) => `
+      <div class="pm-hero-stat${winCls}" style="padding:10px 10px;">
+        <div class="pm-hero-label">${label}</div>
+        <div class="pm-hero-val" style="font-size:20px;">${primary != null ? primary : '-'}</div>
+        <div class="pm-hero-sub">${sf != null ? `SF : ${sf}` : '&nbsp;'}</div>
+      </div>`;
+  const adpRow = hasAdp ? `
+    <div class="compare-hero-row" style="grid-template-columns:1fr 1fr;margin-top:6px;">
+      ${_adpCard('Dynasty ADP', dyn1, dynSf, winDyn)}
+      ${_adpCard('Redraft ADP', rdr1, rdrSf, winRdr)}
+    </div>` : '';
+
   return `
     <div class="compare-hero-row" style="grid-template-columns:1fr 1fr;">
       <div class="pm-hero-stat pm-hero-primary${win1qb}" style="padding:10px 10px;">
@@ -16035,8 +16068,28 @@ function _buildCompareHeroHTML(p, other) {
       </div>
     </div>
     ${scoringRow}
+    ${adpRow}
   `;
 }
+
+// Upgrade an ESPN headshot to a higher-resolution crop. ESPN stores each
+// headshot as one fixed-size PNG, but its image "combiner" re-renders that same
+// source at any requested width — so asking for ~2x the on-screen size yields a
+// crisp image on retina/hi-DPI screens instead of an upscaled, blurry one.
+// Non-ESPN URLs (rookie-pipeline headshots) and empty strings pass through
+// untouched, and an already-combined URL is left as-is.
+function _hiResHeadshot(url, width) {
+  if (!url || typeof url !== 'string') return url || '';
+  if (url.indexOf('/combiner/') !== -1) return url;
+  const m = url.match(/espncdn\.com(\/i\/headshots\/[^?]+\.(?:png|jpg|jpeg))/i);
+  if (!m) return url;
+  const w = Math.max(1, Math.round(width || 200));
+  return 'https://a.espncdn.com/combiner/i?img=' + m[1] + '&w=' + w + '&scale=crop&cquality=100';
+}
+
+// onerror snippet for hi-res headshots: fall back to the raw stored URL once (if
+// the combiner ever fails), then hide the broken image rather than looping.
+const _HS_FALLBACK = "if(this.dataset.raw&&this.src!==this.dataset.raw){this.src=this.dataset.raw;}else{this.style.visibility='hidden';}";
 
 function _buildComparePlayerHeader(p) {
   const sep = '<span style="opacity:.3;margin:0 4px;">·</span>';
@@ -16048,7 +16101,7 @@ function _buildComparePlayerHeader(p) {
   const _ownerLine = ''; // omit fantasy team from compare header - too cluttered
   return `
     <div class="compare-player-header">
-      <img src="${p.espnHeadshot || ''}" class="compare-player-headshot" alt="${p.name}" />
+      <img src="${_hiResHeadshot(p.espnHeadshot, 160)}" data-raw="${p.espnHeadshot || ''}" onerror="${_HS_FALLBACK}" class="compare-player-headshot" alt="${p.name}" />
       <div class="compare-player-header-info">
         <div class="compare-player-name">${p.name}</div>
         <div class="compare-player-meta">${metaParts.join(sep)}</div>
@@ -16347,7 +16400,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
         <div class="compare-bar-left">
           <div class="compare-bar-fill" style="width:${pct1}%;background:${barColor(pct1, v1, fill1 != null)};"></div>
         </div>
-        <div class="compare-metric-label"${(spec?.desc || _ADV_METRIC_DESCS[key]) ? ` title="${(spec?.desc || _ADV_METRIC_DESCS[key]).replace(/"/g, '&quot;')}" data-def="${(spec?.desc || _ADV_METRIC_DESCS[key]).replace(/"/g, '&quot;')}" onclick="advShowMetricDef(event)" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)"` : ''}>${_label(key)}</div>
+        <div class="compare-metric-label"${(spec?.desc || _ADV_METRIC_DESCS[key]) ? ` data-def="${(spec?.desc || _ADV_METRIC_DESCS[key]).replace(/"/g, '&quot;')}" onclick="advShowMetricDef(event)" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)"` : ''}>${_label(key)}</div>
         <div class="compare-bar-right">
           <div class="compare-bar-fill" style="width:${pct2}%;background:${barColor(pct2, v2, fill2 != null)};"></div>
         </div>
@@ -17131,7 +17184,7 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
     const hs = p.espnHeadshot || '';
     return '<th class="cmp3-col">'
       + '<button type="button" class="cmp3-head" data-pid="' + esc(p.player_id) + '" data-name="' + esc(p.name) + '">'
-      + (hs ? '<img class="cmp3-hs" src="' + esc(hs) + '" alt="" loading="lazy" onerror="this.style.visibility=\'hidden\'"/>'
+      + (hs ? '<img class="cmp3-hs" src="' + esc(_hiResHeadshot(hs, 140)) + '" data-raw="' + esc(hs) + '" alt="" loading="lazy" onerror="' + _HS_FALLBACK + '"/>'
             : '<span class="cmp3-hs cmp3-hs-blank"></span>')
       + '<span class="cmp3-name">' + esc(p.name) + '</span>'
       + '<span class="cmp3-accent" style="background:' + _CMP3_COLORS[i] + ';"></span>'
@@ -17160,6 +17213,8 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
     row('Superflex Value', players.map(p => st(p).sf_value), 'max', v => v == null ? '&ndash;' : Math.round(v)),
     row('Overall Rank', players.map(p => st(p).value_ovr_rank), 'min', v => v == null ? '&ndash;' : ('#' + v)),
     row('Position Rank', players.map(p => (p.pos_rank_label || st(p).pos_rank_label)), null, v => v || '&ndash;'),
+    row('Dynasty ADP', players.map(p => st(p).adp && st(p).adp.dynasty_1qb), 'min', v => (v == null || v === '') ? '&ndash;' : v),
+    row('Redraft ADP', players.map(p => st(p).adp && st(p).adp.redraft_1qb), 'min', v => (v == null || v === '') ? '&ndash;' : v),
     row('Age', players.map(p => p.age), 'min', v => v == null ? '&ndash;' : (Math.round(v * 10) / 10)),
     row((ppgSeason ? ppgSeason + ' ' : '') + 'PPG', players.map(p => st(p).ppg), 'max', v => v == null ? '&ndash;' : v),
     row('Total Pts', players.map(p => st(p).total_pts), 'max', v => v == null ? '&ndash;' : v),
