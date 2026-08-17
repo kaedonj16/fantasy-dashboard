@@ -76,10 +76,9 @@ def refresh() -> int:
             )
             _dk = DraftKingsClient()
             if _dk.configured:
-                _dk_event_id = f"dk-nfl-season-{season}"
                 _dk_added = 0
                 for _stat_type, _payload in _dk.iter_season_markets():
-                    for _rec in season_records_from_payload(_payload, _stat_type, _dk_event_id, now):
+                    for _rec in season_records_from_payload(_payload, _stat_type, now):
                         _name = _rec.provider_player_id.split(":", 1)[-1]
                         _pid, _ = resolve_player(_rec.provider_player_id, _name, "", "", players, persisted)
                         if not _pid:

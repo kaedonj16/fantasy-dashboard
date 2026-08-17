@@ -1,11 +1,13 @@
 """DraftKings season-long futures provider (free, unofficial).
 
-Exercises the payload parser, the stat->subcategory config, and the off-by-default
-gating without any network or requests dependency (a fake session is injected).
-Field mapping is validated against the confirmed sportscontent response shape.
+The fixture mirrors a real NFL "Regular Season Receiving TDs" response
+(subcategory 17315): the player is on the event, the line is in the Over
+selection's label ("Over 6.5"), the side is outcomeType, and negative odds use a
+Unicode minus. No network or requests dependency (a fake session is injected).
 """
 from dashboard_services.market_intelligence.draftkings import (
     DraftKingsClient,
+    _american_from_selection,
     _parse_market_map,
     season_records_from_payload,
 )
@@ -31,48 +33,58 @@ class _FakeSession:
         return _FakeResp(self._data)
 
 
+# Trimmed from a real US-SB response for subcategory 17315.
 _PAYLOAD = {
-    "markets": [{"id": "m1", "name": "Patrick Mahomes"}],
+    "events": [{
+        "id": "evt-kelce",
+        "name": "NFL 2026/27 - Travis Kelce",
+        "startEventDate": "2026-09-13T18:00:00.0000000Z",
+        "participants": [
+            {"id": "18379", "name": "KC Chiefs", "metadata": {"shortName": "KC"}},
+            {"name": "Travis Kelce", "type": "Team"},
+        ],
+    }],
+    "markets": [{
+        "id": "m-kelce", "eventId": "evt-kelce", "subcategoryId": "17315",
+        "name": "NFL 2026/27 – Travis Kelce Regular Season Receiving TDs",
+    }],
     "selections": [
-        {"marketId": "m1", "label": "Over", "points": 4500.5, "displayOdds": {"american": "-110"}},
-        {"marketId": "m1", "label": "Under", "points": 4500.5, "displayOdds": {"american": "-110"}},
+        {"marketId": "m-kelce", "outcomeType": "Over", "label": "Over 6.5",
+         "displayOdds": {"american": "−105"}},
+        {"marketId": "m-kelce", "outcomeType": "Under", "label": "Under 6.5",
+         "displayOdds": {"american": "−120"}},
     ],
 }
 
 
 def test_parse_market_map_keeps_known_stats_only():
-    got = _parse_market_map("passing_yards=4501, rushing_yards=4502, bogus=9, receiving_yards=")
-    assert got == {"passing_yards": "4501", "rushing_yards": "4502"}
+    got = _parse_market_map("receiving_touchdowns=17315, rushing_yards=4502, bogus=9, passing_yards=")
+    assert got == {"receiving_touchdowns": "17315", "rushing_yards": "4502"}
 
 
-def test_season_records_from_payload_maps_confirmed_fields():
-    records = season_records_from_payload(_PAYLOAD, "passing_yards", "evt-1")
+def test_american_normalizes_unicode_minus():
+    assert _american_from_selection({"displayOdds": {"american": "−105"}}) == -105.0
+    assert _american_from_selection({"displayOdds": {"american": "+115"}}) == 115.0
+
+
+def test_season_records_from_real_payload_shape():
+    records = season_records_from_payload(_PAYLOAD, "receiving_touchdowns")
     assert len(records) == 1
     r = records[0]
-    assert r.stat_type == "passing_yards"
-    assert r.line == 4500.5
+    assert r.stat_type == "receiving_touchdowns"
+    assert r.line == 6.5                              # line read from the "Over 6.5" label
     assert r.context == "season"
     assert r.sportsbook == "draftkings"
-    assert r.provider_player_id == "dk:Patrick Mahomes"
-    assert r.over_price == -110.0 and r.under_price == -110.0
+    assert r.provider_player_id == "dk:Travis Kelce"  # player from the EVENT, not the market name
+    assert r.over_price == -105.0 and r.under_price == -120.0  # Unicode minus normalized
 
 
-def test_line_parsed_from_label_when_no_points_field():
-    # The controldata feed may omit a dedicated line field; recover it from the
-    # "Over 3999.5" label.
-    payload = {"markets": [{"id": "m1", "name": "Josh Allen Passing Yards"}],
-               "selections": [
-                   {"marketId": "m1", "label": "Over 3999.5", "displayOdds": {"american": "-115"}},
-                   {"marketId": "m1", "label": "Under 3999.5", "displayOdds": {"american": "-105"}}]}
-    records = season_records_from_payload(payload, "passing_yards", "evt")
-    assert len(records) == 1
-    assert records[0].line == 3999.5
-
-
-def test_season_records_skips_market_without_over_or_line():
-    payload = {"markets": [{"id": "m1", "name": "Nobody"}],
-               "selections": [{"marketId": "m1", "label": "Under", "points": 10, "displayOdds": {"american": "-110"}}]}
-    assert season_records_from_payload(payload, "passing_yards", "evt") == []
+def test_season_records_skips_market_without_over():
+    payload = {"events": [{"id": "e", "name": "NFL 2026/27 - Nobody"}],
+               "markets": [{"id": "m", "eventId": "e"}],
+               "selections": [{"marketId": "m", "outcomeType": "Under", "label": "Under 5.5",
+                               "displayOdds": {"american": "−110"}}]}
+    assert season_records_from_payload(payload, "receiving_touchdowns") == []
 
 
 def test_client_off_by_default(monkeypatch):
@@ -81,14 +93,13 @@ def test_client_off_by_default(monkeypatch):
     assert DraftKingsClient(session=_FakeSession({})).configured is False
 
 
-def test_client_iterates_configured_markets(monkeypatch):
+def test_client_iterates_and_builds_request(monkeypatch):
     monkeypatch.setenv("DRAFTKINGS_NFL_LEAGUE_ID", "88808")
-    monkeypatch.setenv("DRAFTKINGS_NFL_SEASON_MARKETS", "passing_yards=4501")
+    monkeypatch.setenv("DRAFTKINGS_NFL_SEASON_MARKETS", "receiving_touchdowns=17315")
     client = DraftKingsClient(session=_FakeSession(_PAYLOAD))
     assert client.configured is True
     got = list(client.iter_season_markets())
-    assert len(got) == 1 and got[0][0] == "passing_yards"
-    # The OData request carries the configured league + subcategory id.
+    assert len(got) == 1 and got[0][0] == "receiving_touchdowns"
     params = client.session.calls[0]["params"]
-    assert params["templateVars"] == "88808"
-    assert "4501" in params["marketsQuery"]
+    assert params["templateVars"] == "88808,17315"   # league + subcategory, comma-joined
+    assert "17315" in params["marketsQuery"]

@@ -23,19 +23,19 @@ The ids come from the network request behind
 https://sportsbook.draftkings.com/leagues/football/nfl?category=futures&subcategory=player-stats-o-u
 — confirmed leagueId=88808, and e.g. subCategoryId=17314.
 
-The response shape (from the public ``sportscontent`` API) is::
+The response shape (confirmed from a live NFL response) is::
 
-    {"markets": [{"id": ..., "name": "Patrick Mahomes Passing Yards"}],
-     "selections": [{"marketId": ..., "label": "Over"|"Over 4500.5", "points": 4500.5,
-                     "displayOdds": {"american": "-110"}}]}
+    {"events":     [{"id": E, "name": "NFL 2026/27 - Mike Evans",
+                     "startEventDate": "...", "participants": [{"name": "Mike Evans"}, ...]}],
+     "markets":    [{"id": M, "eventId": E, "name": "... Regular Season Receiving TDs",
+                     "subcategoryId": "17315"}],
+     "selections": [{"marketId": M, "outcomeType": "Over", "label": "Over 6.5",
+                     "displayOdds": {"american": "−105"}}]}
 
-IMPORTANT — the line field is not yet confirmed. The ``controldata`` endpoint
-lists every player market but may return the number under ``points``/``line``, in
-the selection ``label`` ("Over 4500.5"), in the market ``name``, or only in a
-sibling live-odds feed. The parser tries all of the in-response locations and
-skips a market when it can find no line, so a wrong guess yields no records rather
-than bad ones. Nothing here runs until the env above is set. Re-verify against one
-real response body before trusting the output.
+The player is on the EVENT (a participant with no team id, or the event name after
+" - "); the line is the number in the Over selection's ``label``; the side is
+``outcomeType``; and negative odds use a Unicode minus (U+2212), normalized before
+parsing. Nothing here runs until the env above is set.
 """
 from __future__ import annotations
 
@@ -71,15 +71,39 @@ def _parse_market_map(raw: str) -> dict[str, str]:
 def _american_from_selection(selection: dict) -> float | None:
     odds = selection.get("displayOdds")
     raw = odds.get("american") if isinstance(odds, dict) else selection.get("oddsAmerican")
+    if raw in (None, ""):
+        return None
+    # DraftKings renders negatives with a Unicode minus (U+2212), not ASCII "-".
+    text = str(raw).replace("−", "-").replace("+", "").strip()
     try:
-        return float(str(raw).replace("+", "")) if raw not in (None, "") else None
-    except (TypeError, ValueError):
+        return float(text)
+    except ValueError:
         return None
 
 
 def _num_in(text) -> float | None:
     match = _NUM_RE.search(str(text or ""))
     return float(match.group(1)) if match else None
+
+
+def _parse_dt(value) -> datetime | None:
+    if not value:
+        return None
+    text = re.sub(r"(\.\d{6})\d+", r"\1", str(value).replace("Z", "+00:00"))
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _player_from_event(event: dict) -> str:
+    """The player is the event participant with no team id; the event name
+    ("NFL 2026/27 - Mike Evans") is the fallback."""
+    for part in event.get("participants", []):
+        if isinstance(part, dict) and not part.get("id") and part.get("name"):
+            return str(part["name"])
+    pieces = re.split(r"\s[–-]\s", str(event.get("name") or ""))
+    return pieces[-1].strip() if len(pieces) > 1 else ""
 
 
 def _line_from_selection(selection: dict, market: dict | None = None) -> float | None:
@@ -141,7 +165,8 @@ class DraftKingsClient:
                     f"clientMetadata/Subcategories/any(s: s/Id eq '{sub_category_id}')")
         markets_q = (f"$filter=clientMetadata/subCategoryId eq '{sub_category_id}' AND "
                      "tags/all(t: t ne 'SportcastBetBuilder')")
-        return {"isBatchable": "false", "templateVars": self.league_id,
+        # templateVars carries both the league and the subcategory, comma-joined.
+        return {"isBatchable": "false", "templateVars": f"{self.league_id},{sub_category_id}",
                 "eventsQuery": events_q, "marketsQuery": markets_q,
                 "include": "Events", "entity": "events"}
 
@@ -164,26 +189,33 @@ class DraftKingsClient:
                 yield stat_type, payload
 
 
-def season_records_from_payload(payload: dict, stat_type: str, event_id: str,
+def _selection_side(selection: dict) -> str:
+    side = str(selection.get("outcomeType") or "").lower()
+    if side in ("over", "under"):
+        return side
+    label = str(selection.get("label") or "").lower()  # "Over 6.5"
+    return "over" if label.startswith("over") else "under" if label.startswith("under") else label
+
+
+def season_records_from_payload(payload: dict, stat_type: str,
                                 observed_at: datetime | None = None,
-                                event_start: datetime | None = None) -> list[MarketRecord]:
+                                default_start: datetime | None = None) -> list[MarketRecord]:
     """Flatten one DraftKings sportscontent payload into season MarketRecords.
 
-    One record per player Over selection (the line is symmetric, so the Over
-    carries the number; consensus only needs the line and the two prices)."""
+    Joins selections -> markets -> events: the player is on the event, the line is
+    in the Over selection's label ("Over 6.5"), the side is ``outcomeType``. One
+    record per player Over (the line is symmetric; consensus needs the line and
+    the two prices)."""
     observed_at = observed_at or datetime.now(timezone.utc)
     # Season futures have no single game date; keep the record "future" so the
     # consensus freshness/settlement guards accept it through the season.
-    event_start = event_start or (observed_at + timedelta(days=120))
+    default_start = default_start or (observed_at + timedelta(days=120))
+    events = {str(e.get("id")): e for e in payload.get("events", []) if isinstance(e, dict)}
     markets = {str(m.get("id")): m for m in payload.get("markets", []) if isinstance(m, dict)}
     by_market: dict[str, dict] = {}
     for sel in payload.get("selections", []):
-        if not isinstance(sel, dict):
-            continue
-        label = str(sel.get("label") or "").lower()
-        # Label may be "Over" or carry the line ("Over 4500.5"); key by side.
-        side = "over" if label.startswith("over") else "under" if label.startswith("under") else label
-        by_market.setdefault(str(sel.get("marketId")), {})[side] = sel
+        if isinstance(sel, dict):
+            by_market.setdefault(str(sel.get("marketId")), {})[_selection_side(sel)] = sel
 
     out: list[MarketRecord] = []
     for market_id, sides in by_market.items():
@@ -194,13 +226,16 @@ def season_records_from_payload(payload: dict, stat_type: str, event_id: str,
         line = _line_from_selection(over, market)
         if line is None:
             continue
-        name = _player_name(market) or str(market.get("name") or "")
+        event = events.get(str(market.get("eventId")), {})
+        name = _player_from_event(event) or _player_name(market)
         if not name:
             continue
         out.append(MarketRecord(
-            provider_event_id=event_id, provider_player_id=f"dk:{name}",
+            provider_event_id=str(market.get("eventId") or market_id),
+            provider_player_id=f"dk:{name}",
             sportsbook="draftkings", market_type="ou", stat_type=stat_type,
-            period="season", line=line, event_start_time=event_start,
+            period="season", line=line,
+            event_start_time=_parse_dt(event.get("startEventDate")) or default_start,
             observed_at=observed_at, side="over",
             over_price=_american_from_selection(over),
             under_price=_american_from_selection(under) if under else None,
