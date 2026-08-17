@@ -10326,10 +10326,12 @@ def build_activity_body(ctx: dict) -> str:
       .act-injrow-r {{ display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }}
       .act-injdots {{ display: inline-flex; gap: 3px; flex-wrap: wrap; max-width: 72px; justify-content: flex-end; }}
       .act-injdot {{ width: 7px; height: 7px; border-radius: 50%; display: block; background: var(--text-muted); }}
-      .act-injdot.ir {{ background: var(--loss, #b91c1c); }}
-      .act-injdot.out {{ background: var(--orange, #f59e0b); }}
-      .act-injdot.dbt {{ background: #d97706; }}
-      .act-injdot.q {{ background: var(--rookie, #3b82f6); }}
+      /* Canonical injury severity colors (match the player-badge-inj-* chips):
+         IR/OUT red, doubtful orange, questionable amber. */
+      .act-injdot.ir {{ background: var(--loss, #ef4444); }}
+      .act-injdot.out {{ background: var(--loss, #ef4444); }}
+      .act-injdot.dbt {{ background: var(--orange, #ea580c); }}
+      .act-injdot.q {{ background: var(--inj-q, #ca8a04); }}
       .act-injcount {{ font-size: 12px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; min-width: 16px; text-align: right; }}
     </style>
     <div class="page-layout activity-page act-pulse" data-mtab="feed">
@@ -22399,6 +22401,14 @@ def api_team_details(roster_id: str):
         value_table = list(get_model_value_table_cached() or [])
         values_by_id = {str(row["id"]): row for row in value_table if isinstance(row, dict) and row.get("id")}
 
+        # Injury fields (status + body part) live only on the full Sleeper feed,
+        # not the compact index — pull it once so the modal can flag hurt players.
+        try:
+            full_players = get_players_global() or {}
+        except Exception:
+            logger.debug("[api_team_details] full players feed unavailable", exc_info=True)
+            full_players = {}
+
         player_ids = roster.get("players") or []
         starters = roster.get("starters") or []
 
@@ -22445,6 +22455,13 @@ def api_team_details(roster_id: str):
             else:
                 ages_missing += 1
 
+            # Injury designation from the full feed. Normalize the "healthy"
+            # states out so only a real designation reaches the client.
+            _fp = full_players.get(pid_str) or {}
+            _raw_inj = str(_fp.get("injury_status") or "").strip()
+            inj_status = "" if _raw_inj.lower() in ("", "active", "act") else _raw_inj
+            inj_body = (_fp.get("injury_body_part") or "").strip() if inj_status else ""
+
             roster_players.append({
                 "player_id": pid_str,
                 "name": player_name,
@@ -22454,7 +22471,9 @@ def api_team_details(roster_id: str):
                 "years_exp": player_meta.get("years_exp"),
                 "value": round(float(value), 1) if value else None,
                 "pos_rank_label": value_row.get("pos_rank_label"),
-                "is_starter": pid_str in starters
+                "is_starter": pid_str in starters,
+                "injury_status": inj_status,
+                "injury_body_part": inj_body,
             })
 
         # Sort by position order (QB, RB, WR, TE, K, DEF), then by value within position

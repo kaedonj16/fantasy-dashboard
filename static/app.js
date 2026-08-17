@@ -18226,6 +18226,22 @@ function renderTeamDetails(data) {
       if (isBreakoutPlayer) {
         badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
       }
+      // Injury designation (from the full Sleeper feed). Severity by color and a
+      // compact code, mirroring the player-detail modal; body part on hover.
+      const injRaw = String(player.injury_status || '').trim();
+      if (injRaw) {
+        const _u = injRaw.toUpperCase();
+        let _icls = 'player-badge-inj-q';
+        if (['IR', 'OUT', 'O', 'PUP', 'SUSP', 'SUS', 'SUSPENDED', 'NFI', 'DNR', 'COV'].includes(_u)) _icls = 'player-badge-inj-out';
+        else if (['DOUBTFUL', 'D'].includes(_u)) _icls = 'player-badge-inj-d';
+        const _code = _u === 'QUESTIONABLE' ? 'Q'
+          : _u === 'DOUBTFUL' ? 'D'
+          : (_u === 'OUT' || _u === 'O') ? 'OUT'
+          : (_u === 'SUSP' || _u === 'SUS' || _u === 'SUSPENDED') ? 'SUS'
+          : (_u.length > 4 ? _u.slice(0, 4) : _u);
+        const _tip = [injRaw, player.injury_body_part].filter(Boolean).join(' · ');
+        badges += `<span class="player-badge ${_icls}" title="${_tip.replace(/"/g, '&quot;')}"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${_code}</span>`;
+      }
 
       rosterHTML += `
         <tr ${isUnknown ? '' : `style="cursor:pointer;" data-player-id="${player.player_id}" data-player-name="${player.name}"`}>
