@@ -15,10 +15,9 @@
   var PS = window.BRPickScore;
   var LIMIT = 175;
 
-  // Market vs ADP is hidden until the season-context market-intelligence pipeline
-  // is populated (see /api/market-intel/health). Flip to true to restore the
-  // column once the data lands — all rendering below is already gated on this.
-  var SHOW_MARKET_VS_ADP = false;
+  // Market vs ADP is populated from the DraftKings season-long player futures
+  // (see draftkings.py + /api/market-intel/health). All rendering is gated here.
+  var SHOW_MARKET_VS_ADP = true;
   var showMarket = function (dyn) { return !dyn && SHOW_MARKET_VS_ADP; };
 
   var state = {
