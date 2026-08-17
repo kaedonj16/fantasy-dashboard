@@ -16777,7 +16777,11 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     low_sub  = f"{float(low_row['points']) - league_avg:.1f} vs avg"
 
     cards_html = f"""
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px;">
+<style>
+  .rc-awards {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-bottom:20px; }}
+  @media (max-width:640px) {{ .rc-awards {{ grid-template-columns:1fr; }} }}
+</style>
+<div class="rc-awards">
   {scorer_card("fa-solid fa-fire", "HIGH SCORER", high_row["owner"],
                float(high_row["points"]), str(high_row.get("roster_id","")),
                high_sub, "var(--win)", _scorer_opp(high_row), medal_rank=1)}
