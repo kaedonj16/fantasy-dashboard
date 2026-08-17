@@ -13538,10 +13538,8 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     defs.push({ label: 'WAR', fill: Math.min(Math.max(v, 0) / 6 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(2), key: 'war', sub: _rankSub('war'), cat: 'Value' });
   }
 
-  // Role Score (0–100)
-  if (metrics.role_score != null) {
-    defs.push({ label: 'Role Score', fill: metrics.role_score, display: metrics.role_score.toFixed(1), key: 'role_score', sub: getRoleGrade(metrics.role_score), cat: 'General' });
-  }
+  // Role Score is an internal signal (feeds breakout detection) and is not
+  // surfaced on the front end — the API no longer sends it.
   // Snap Share (0–1 → %).  85 % = starter ceiling → full bar.
   if (metrics.snap_share != null && position !== "QB") {
     const pct = metrics.snap_share * 100;
@@ -16072,19 +16070,19 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
     const qbMetrics = [
       'completion_pct', 'yards_per_attempt', 'td_rate', 'int_rate', 'nfl_passer_rating',
       'epa_per_play', 'passing_epa', 'cpoe', 'success_rate', 'sack_rate', 'scramble_rate',
-      'adjusted_completion_rate', 'snap_share', 'role_score',
+      'adjusted_completion_rate', 'snap_share',
       'total_pass_tds', 'total_rush_tds', 'total_tds',
     ];
     const rbMetrics = [
       'yards_per_carry', 'yards_per_touch', 'rush_td_rate', 'snap_share',
-      'opportunity_share', 'red_zone_usage', 'role_score', 'explosive_runs_10_plus',
+      'opportunity_share', 'red_zone_usage', 'explosive_runs_10_plus',
       'breakaway_percentage', 'catch_rate', 'yards_after_catch', 'yards_after_catch_per_reception',
       'rushing_epa', 'ngs_rush_yards_over_expected_per_att', 'receiving_epa', 'epa_per_play',
       'total_carries', 'total_touches', 'total_targets', 'total_rush_tds', 'total_rec_tds', 'total_tds',
     ];
     const wrTeMetrics = [
       'yards_per_target', 'catch_rate', 'yards_per_reception', 'target_quality_score',
-      'snap_share', 'opportunity_share', 'red_zone_usage', 'role_score',
+      'snap_share', 'opportunity_share', 'red_zone_usage',
       'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
       'contested_catch_rate', 'drop_rate',
       'ngs_avg_separation', 'ngs_avg_cushion', 'ngs_avg_yac_above_expectation', 'receiving_epa',
@@ -16094,7 +16092,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
     if (pos1 === 'QB' || pos2 === 'QB') rel.push(...qbMetrics);
     if (pos1 === 'RB' || pos2 === 'RB') rel.push(...rbMetrics);
     if ((pos1 === 'WR' || pos1 === 'TE') || (pos2 === 'WR' || pos2 === 'TE')) rel.push(...wrTeMetrics);
-    if (!rel.length) rel = ['snap_share', 'role_score', 'epa_per_play'];
+    if (!rel.length) rel = ['snap_share', 'opportunity_share', 'epa_per_play'];
     displayKeys = rel.filter(k => allKeys.has(k) && (m1?.[k] != null || m2?.[k] != null));
   }
 

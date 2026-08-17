@@ -49,7 +49,7 @@ def api_advanced_metrics_leaderboard():
         PREMIUM_METRICS, premium_metrics_exposed,
     )
 
-    metric = (request.args.get("metric") or "role_score").strip()
+    metric = (request.args.get("metric") or "opportunity_share").strip()
     if metric not in LEADERBOARD_METRICS:
         return jsonify({"error": "unknown metric"}), 400
     # Premium (PFF) metrics are not displayable publicly.

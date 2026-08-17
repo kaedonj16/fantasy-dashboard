@@ -68,7 +68,7 @@ def build_advanced_metrics_body(
             label=cat,
             cat_preset=f'<option value="__preset__{cat}">{cat} Set</option>' if cat in _PRESET_CATS else '',
             opts="".join(
-                f'<option value="{k}"{" selected" if k == "role_score" else ""}>{lbl}</option>'
+                f'<option value="{k}"{" selected" if k == "opportunity_share" else ""}>{lbl}</option>'
                 for k, lbl in groups[cat]
             ),
         )
@@ -1226,7 +1226,7 @@ _AM_JS = r"""
     'RB':        ['opportunity_share', 'yards_per_carry', 'rushing_epa', 'breakaway_percentage', 'yards_per_touch', 'red_zone_usage', 'total_tds_per_game'],
     'WR':        ['target_share', 'yards_per_target', 'receiving_epa', 'ngs_avg_separation', 'air_yards_share', 'rec_tds_per_game', 'fpts_per_reception'],
     'TE':        ['target_share', 'yards_per_target', 'receiving_epa', 'ngs_avg_yac_above_expectation', 'rz_targets_pg', 'rec_tds_per_game'],
-    'General':   ['snap_share', 'opportunity_share', 'role_score', 'red_zone_usage', 'yards_per_touch', 'total_tds_per_game'],
+    'General':   ['snap_share', 'opportunity_share', 'red_zone_usage', 'yards_per_touch', 'total_tds_per_game'],
     'Rushing':   ['yards_per_carry', 'rushing_epa', 'breakaway_percentage', 'explosive_runs_10_plus', 'opportunity_share', 'carries_per_game', 'red_zone_usage'],
     'Receiving': ['yards_per_target', 'receiving_epa', 'target_share', 'ngs_avg_separation', 'contested_catch_rate', 'rz_targets_pg', 'receptions_per_game'],
     'Passing':   ['epa_per_play', 'passing_epa', 'cpoe', 'success_rate', 'sack_rate', 'yards_per_attempt', 'int_rate'],

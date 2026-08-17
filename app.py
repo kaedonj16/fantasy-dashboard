@@ -17208,6 +17208,35 @@ def _commissioner_history_layer(platform, league_id, season, lookback=3):
     return layer
 
 
+def _league_activity_targets(layer,
+                             fallback_moves_pt=5.0, fallback_trades_pt=1.5,
+                             floor_moves_pt=3.0, floor_trades_pt=0.5):
+    """Full-season, per-team activity the health score treats as "healthy" for
+    THIS league — derived from what it typically does, not a league-agnostic
+    constant. Takes the median of each prior season's moves-per-team and
+    trades-per-team (per-team so league-size changes don't skew it), floored so
+    a chronically dead league can't set an ultra-low bar for itself, and with no
+    upper cap so a hyperactive league is judged against its own high pace.
+
+    Returns (moves_per_team, trades_per_team, from_history). Falls back to fixed
+    defaults when there's no usable history (ESPN, a league's first season, or a
+    lookup failure), so the score degrades to a sensible league-agnostic bar.
+    """
+    import statistics
+    mv_pts, tr_pts = [], []
+    for s in (layer or {}).get("seasons") or []:
+        nt = s.get("n_teams") or 0
+        if nt <= 0:
+            continue
+        mv_pts.append((s.get("moves")  or 0) / nt)
+        tr_pts.append((s.get("trades") or 0) / nt)
+    if not mv_pts:
+        return fallback_moves_pt, fallback_trades_pt, False
+    return (max(floor_moves_pt,  statistics.median(mv_pts)),
+            max(floor_trades_pt, statistics.median(tr_pts)),
+            True)
+
+
 def _render_commissioner_history(layer, current_season, current_moves, current_trades, current_inactive_uids, current_week=0, playoff_start=14):
     """Render the multi-season 'Chronic / Trend' panel. Current season is the
     headline (computed elsewhere); this is diagnosis context, not a blended score."""
@@ -17513,11 +17542,23 @@ def build_commissioner_body(ctx):
         if len(vals) >= 2:
             (r1, v1), (r2, v2) = vals[0], vals[1]
             diff = abs(v1 - v2)
+            # Lopsided is judged by the *ratio* of the two sides (bigger haul /
+            # smaller), against a band that TIGHTENS as the trade gets bigger: a
+            # 10% gap is trivial on a cheap swap but a real fleece on a
+            # blockbuster. The band shrinks linearly from 1.20 on small trades to
+            # 1.05 on big ones (calibrated so ~1000-for-900 trips it). A small
+            # absolute floor keeps trivial swaps from tripping it.
+            total_val = v1 + v2
+            _t   = max(0.0, min(1.0, (total_val - 200.0) / (1800.0 - 200.0)))
+            band = 1.20 + (1.05 - 1.20) * _t   # 1.20 (small) → 1.05 (large)
+            lo_val, hi_val = min(v1, v2), max(v1, v2)
+            ratio = (hi_val / lo_val) if lo_val > 0 else float("inf")
             trade_rows.append({
                 "team_a": roster_map.get(r1, f"Team {r1}"),
                 "team_b": roster_map.get(r2, f"Team {r2}"),
                 "val_a": round(v1, 0), "val_b": round(v2, 0),
-                "diff": round(diff, 0), "lopsided": diff > 75,
+                "diff": round(diff, 0),
+                "lopsided": ratio >= band and diff > 15,
             })
     trade_rows.sort(key=lambda x: -x["diff"])
 
@@ -17527,59 +17568,107 @@ def build_commissioner_body(ctx):
     lopsided_count = sum(1 for t in trade_rows if t["lopsided"])
     total_txns     = sum(r["txns"] for r in roster_infos)
     total_trades   = sum(r["trades"] for r in roster_infos) // 2  # each trade counted per team
-    avg_txns = total_txns / n
+    avg_txns        = total_txns / n
+    trades_per_team = total_trades / n
 
-    # Score: penalise inactive teams, lopsided trades; reward activity
-    activity_score = 100
+    # Activity targets are relative to THIS league's own norm, not a fixed bar:
+    # a hyperactive dynasty is held to its high pace, a casual league to its low
+    # one. Targets are full-season per-team figures from prior seasons; pro-rate
+    # them by how far the current season has run so a mid-season league isn't
+    # compared against a full year of history.
+    try:
+        _hist_layer = _commissioner_history_layer(platform, league_id, season)
+    except Exception:
+        _hist_layer = None
+    target_moves_pt, target_trades_pt, targets_from_history = _league_activity_targets(_hist_layer)
+    progress = min(1.0, current_week / playoff_start) if playoff_start else 1.0
+    progress = max(progress, 0.05)  # guard week 0 / preseason
+    exp_moves_pt  = target_moves_pt  * progress
+    exp_trades_pt = target_trades_pt * progress
+    moves_ratio   = (avg_txns        / exp_moves_pt)  if exp_moves_pt  else 1.0
+    trades_ratio  = (trades_per_team / exp_trades_pt) if exp_trades_pt else 1.0
+
+    # Score: an *engaged* league is a healthy league. Build up from a baseline
+    # by rewarding activity relative to the league's own pace, then dock only for
+    # genuine health problems — dead teams and a high *rate* of lopsided trades.
+    # Raw trade/move volume is never punished, so a busy league scores high.
+    activity_score = 40
+    # Moves: full marks at (or above) the league's typical pace so far.
+    activity_score += min(30, moves_ratio * 30)
+    # Trades: full marks at (or above) the league's typical trade pace so far.
+    activity_score += min(30, trades_ratio * 30)
+    # Inactive (dead) teams are a real health problem — dock per dead team.
     activity_score -= inactive_count / n * 40
-    activity_score -= lopsided_count * 4
-    activity_score -= max(0, 5 - avg_txns) * 5  # penalise low avg moves
+    # Lopsided trades: penalise the *share* of trades that are lopsided, not the
+    # count, so trading a lot doesn't cost points — only systematically unfair
+    # trading does (max 15-point hit if every trade is lopsided).
+    lopsided_ratio  = (lopsided_count / total_trades) if total_trades else 0
+    activity_score -= lopsided_ratio * 15
     activity_score  = round(max(0, min(100, activity_score)), 0)
     score_color = "#22c55e" if activity_score >= 80 else ("#f59e0b" if activity_score >= 60 else "#ef4444")
     score_label = "Healthy" if activity_score >= 80 else ("Watch" if activity_score >= 60 else "At Risk")
 
-    # Composite card matching the Multi-Season Health treatment below: one card
-    # with a bold uppercase header + muted subtitle and the stats as nested,
-    # bordered/rounded tiles, instead of five separate floating cards.
+    # Composite card: the health score as a hero with a 0-100 track, then the
+    # four contributing factors as labelled horizontal bars beneath it. Each bar
+    # fill is meaningful and ties back to the score — inactive = share of teams
+    # dead, lopsided = share of trades lopsided, trades/moves = pace vs the
+    # league's own norm. Green fills read as the healthy direction, red/orange
+    # as the unhealthy one.
+    _GOOD, _WARN, _BAD = "#22c55e", "#f59e0b", "#ef4444"
+
+    def _lh_bar(label: str, value, fill_pct: float, fill_color: str, val_color: str) -> str:
+        fill_pct = max(0, min(100, round(fill_pct)))
+        return f"""
+    <div class="lh-bar-row">
+      <div class="lh-bar-top">
+        <span class="lh-bar-label">{label}</span>
+        <span class="lh-bar-val" style="color:{val_color};">{value}</span>
+      </div>
+      <div class="lh-bar-track"><div class="lh-bar-fill" style="width:{fill_pct}%;background:{fill_color};"></div></div>
+    </div>"""
+
+    _bars_html = "".join([
+        _lh_bar("Inactive Teams", inactive_count, inactive_count / n * 100,
+                _BAD, _BAD if inactive_count else _GOOD),
+        _lh_bar("Trades This Season", total_trades, min(1.0, trades_ratio) * 100,
+                _GOOD, "var(--text)"),
+        _lh_bar("Lopsided Trades", lopsided_count, lopsided_ratio * 100,
+                _WARN, _WARN if lopsided_count else _GOOD),
+        _lh_bar("Total Moves", total_txns, min(1.0, moves_ratio) * 100,
+                _GOOD, "var(--text)"),
+    ])
+
     health_html = f"""
 <style>
   .lh-card {{ padding:20px; margin-bottom:20px; }}
   .lh-head {{ display:flex; align-items:baseline; gap:8px; margin-bottom:18px; }}
   .lh-head-title {{ font-size:12px; font-weight:800; letter-spacing:.06em; color:var(--text); text-transform:uppercase; }}
   .lh-head-sub {{ font-size:12px; color:var(--muted); }}
-  .lh-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; }}
-  .lh-stat {{ border:1px solid var(--border); border-radius:14px; padding:16px; background:var(--row,rgba(127,127,127,.03)); text-align:center; }}
-  .lh-stat-num {{ font-size:28px; font-weight:800; line-height:1; }}
-  .lh-stat-label {{ font-size:11px; font-weight:700; letter-spacing:.04em; color:var(--muted); text-transform:uppercase; margin-top:6px; }}
-  .lh-stat-sub {{ font-size:13px; font-weight:600; margin-top:3px; }}
+  .lh-hero {{ text-align:center; padding:4px 0 20px; border-bottom:1px solid var(--border); margin-bottom:20px; }}
+  .lh-hero-num {{ font-size:64px; font-weight:800; line-height:1; }}
+  .lh-hero-label {{ font-size:11px; font-weight:700; letter-spacing:.06em; color:var(--muted); text-transform:uppercase; margin-top:10px; }}
+  .lh-hero-status {{ font-size:14px; font-weight:700; margin-top:4px; }}
+  .lh-hero-track {{ height:8px; border-radius:99px; background:var(--border); overflow:hidden; max-width:320px; margin:16px auto 0; }}
+  .lh-hero-track > div {{ height:100%; border-radius:99px; }}
+  .lh-bars {{ display:flex; flex-direction:column; gap:16px; }}
+  .lh-bar-top {{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:7px; }}
+  .lh-bar-label {{ font-size:12.5px; font-weight:600; color:var(--text); }}
+  .lh-bar-val {{ font-size:18px; font-weight:800; line-height:1; }}
+  .lh-bar-track {{ height:8px; border-radius:99px; background:var(--border); overflow:hidden; }}
+  .lh-bar-fill {{ height:100%; border-radius:99px; min-width:2px; transition:width .3s ease; }}
 </style>
 <div class="card lh-card">
   <div class="lh-head">
     <span class="lh-head-title">League Health</span>
     <span class="lh-head-sub">this season</span>
   </div>
-  <div class="lh-grid">
-    <div class="lh-stat">
-      <div class="lh-stat-num" style="color:{score_color};">{int(activity_score)}</div>
-      <div class="lh-stat-label">Health Score</div>
-      <div class="lh-stat-sub" style="color:{score_color};">{score_label}</div>
-    </div>
-    <div class="lh-stat">
-      <div class="lh-stat-num" style="color:{'#ef4444' if inactive_count else '#22c55e'};">{inactive_count}</div>
-      <div class="lh-stat-label">Inactive Teams</div>
-    </div>
-    <div class="lh-stat">
-      <div class="lh-stat-num" style="color:var(--text);">{total_trades}</div>
-      <div class="lh-stat-label">Trades This Season</div>
-    </div>
-    <div class="lh-stat">
-      <div class="lh-stat-num" style="color:{'#f59e0b' if lopsided_count else '#22c55e'};">{lopsided_count}</div>
-      <div class="lh-stat-label">Lopsided Trades</div>
-    </div>
-    <div class="lh-stat">
-      <div class="lh-stat-num" style="color:var(--text);">{total_txns}</div>
-      <div class="lh-stat-label">Total Moves</div>
-    </div>
+  <div class="lh-hero">
+    <div class="lh-hero-num" style="color:{score_color};">{int(activity_score)}</div>
+    <div class="lh-hero-label">Health Score</div>
+    <div class="lh-hero-status" style="color:{score_color};">{score_label}</div>
+    <div class="lh-hero-track"><div style="width:{int(activity_score)}%;background:{score_color};"></div></div>
+  </div>
+  <div class="lh-bars">{_bars_html}
   </div>
 </div>"""
 
@@ -25596,7 +25685,10 @@ def api_trade_intel_player_packages(player_id: str):
                                 "pos_rank_label": values_by_id[pid]["pos_rank_label"],
                             }
                             for pid in [str(p) for p in (viewer_roster_obj.get("players") or [])]
+                            # Never offer the focus player back to acquire itself
+                            # (mirrors the focus-pick guard below).
                             if pid in values_by_id and values_by_id[pid]["value"] >= 50
+                            and pid != str(player_id)
                         ],
                         key=lambda x: x["value"],
                         reverse=True,
@@ -25787,7 +25879,9 @@ def api_trade_intel_player_packages(player_id: str):
                             "pos_rank_label": values_by_id[_pid]["pos_rank_label"],
                         }
                         for _pid in [str(_pp) for _pp in (_rvo.get("players") or [])]
+                        # Never offer the focus player back to acquire itself.
                         if _pid in values_by_id and values_by_id[_pid]["value"] >= 50
+                        and _pid != str(player_id)
                     ],
                     key=lambda x: x["value"],
                     reverse=True,
@@ -26279,6 +26373,19 @@ def api_trade_intel_player_packages(player_id: str):
 
         for pkg in primary_pkgs:
             _enrich_pkg(pkg)
+
+        # Never suggest sending the very player being acquired. This is a
+        # defensive backstop across ALL package sources (historical, ML, and
+        # value-balanced) — a package that echoes the focus player on the give
+        # side is nonsensical (e.g. "get McConkey / give McConkey").
+        _focus_pid = str(player_id)
+        primary_pkgs = [
+            p for p in primary_pkgs
+            if not any(
+                (not a.get("is_pick")) and str(a.get("player_id") or "") == _focus_pid
+                for a in p.get("send", [])
+            )
+        ]
 
         # Drop packages where the viewer is sending more than 2× the target's value.
         # Real trades include extreme overpays - those are not useful suggestions.
