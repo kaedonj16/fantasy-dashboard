@@ -93,3 +93,27 @@ def test_cached_raw_stats_use_exact_custom_scoring():
 def test_legacy_cache_without_raw_stats_still_uses_variant():
     entry = {"ppr": 18.0, "half_ppr": 14.0}
     assert projection_points(entry, {"rec": 0.5}, "WR") == 14.0
+
+
+def test_standard_league_uses_sleeper_precomputed_total():
+    # Standard PPR/half/std: show Sleeper's own pts_*, not our recompute.
+    entry = {"raw_stats": {"rec": 6, "rec_yd": 80, "rec_td": 1,
+                           "pts_ppr": 21.7, "pts_half_ppr": 18.7, "pts_std": 15.7}}
+    assert projection_points(entry, {"rec": 1.0}, "WR") == 21.7
+    assert projection_points(entry, {"rec": 0.5}, "WR") == 18.7
+    assert projection_points(entry, {"rec": 0.0}, "WR") == 15.7
+
+
+def test_custom_reception_ignores_precomputed_total():
+    # A 0.75-PPR league is not standard: recompute from the raw line.
+    entry = {"raw_stats": {"rec": 8, "rec_yd": 100, "pts_ppr": 99.0}}
+    assert projection_points(entry, {"rec": 0.75, "rec_yd": 0.1}, "WR") == 16.0
+
+
+def test_bonus_or_6pt_league_ignores_precomputed_total():
+    # Yardage-bonus league: Sleeper's standard pts_ppr can't reflect it → recompute.
+    entry = {"raw_stats": {"pass_yd": 350, "pts_ppr": 99.0}}
+    assert projection_points(entry, {"rec": 1.0, "bonus_pass_yd_300": 3}, "QB") == pytest.approx(350 * 0.04 + 3)
+    # 6pt passing TD is custom too.
+    entry2 = {"raw_stats": {"pass_td": 3, "pts_ppr": 99.0}}
+    assert projection_points(entry2, {"rec": 1.0, "pass_td": 6}, "QB") == pytest.approx(18.0)
