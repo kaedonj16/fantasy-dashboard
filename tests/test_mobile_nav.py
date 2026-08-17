@@ -103,6 +103,20 @@ def test_dynasty_offseason_dock_has_no_keeper(monkeypatch):
     assert "Keeper" not in labels
 
 
+def test_offseason_dock_swaps_draft_for_matchups_once_drafted(monkeypatch):
+    """A league that has finished its draft is effectively underway, so the
+    offseason Draft dock tab becomes Matchups (weekly)."""
+    import app, re
+    monkeypatch.setattr(app, "get_league_ctx_from_cache",
+                        lambda *a, **k: {"league_settings": {"type": 0, "max_keepers": 0}})
+    monkeypatch.setattr(app, "get_nfl_state", lambda: {"season": "2026", "season_type": "off"})
+    monkeypatch.setattr(app, "has_draft_ended", lambda *a, **k: True)
+    with app.app.test_request_context("/x"):
+        labels = re.findall(r"br-tabbar-lbl'>([^<]+)<", app._mobile_nav("dashboard", "L", "sleeper", 2026))
+    assert labels == ["Home", "Matchups", "Trades", "Teams", "More"]
+    assert "Draft" not in labels
+
+
 def test_redraft_offseason_dock_shows_teams_not_keeper(monkeypatch):
     """A redraft league (Sleeper type 0) keeps the Teams dock slot in the
     offseason even when Sleeper reports a default keeper limit — only real

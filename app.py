@@ -2089,10 +2089,12 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     show_keeper_tab = show_keeper_tool and not _nav_is_redraft(platform, league_id, season)
     if not offseason:
         middle = ["weekly", "trade", "teams"]
-    elif show_keeper_tab:
-        middle = ["draft", "trade", "keeper"]
     else:
-        middle = ["draft", "trade", "teams"]
+        # A completed draft means this league is effectively underway, so swap the
+        # offseason Draft tab for Matchups (mirrors the More sheet's draft_ended
+        # gate). Real keeper leagues keep the Keeper slot; others keep Teams.
+        first = "weekly" if draft_ended else "draft"
+        middle = [first, "trade", "keeper" if show_keeper_tab else "teams"]
 
     dock_keys = ["dashboard"] + middle
     # The page you're on always earns a tab: if it's a real page and not already
