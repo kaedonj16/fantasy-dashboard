@@ -10326,10 +10326,12 @@ def build_activity_body(ctx: dict) -> str:
       .act-injrow-r {{ display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }}
       .act-injdots {{ display: inline-flex; gap: 3px; flex-wrap: wrap; max-width: 72px; justify-content: flex-end; }}
       .act-injdot {{ width: 7px; height: 7px; border-radius: 50%; display: block; background: var(--text-muted); }}
-      .act-injdot.ir {{ background: var(--loss, #b91c1c); }}
-      .act-injdot.out {{ background: var(--orange, #f59e0b); }}
-      .act-injdot.dbt {{ background: #d97706; }}
-      .act-injdot.q {{ background: var(--rookie, #3b82f6); }}
+      /* Canonical injury severity colors (match the player-badge-inj-* chips):
+         IR/OUT red, doubtful orange, questionable amber. */
+      .act-injdot.ir {{ background: var(--loss, #ef4444); }}
+      .act-injdot.out {{ background: var(--loss, #ef4444); }}
+      .act-injdot.dbt {{ background: var(--orange, #ea580c); }}
+      .act-injdot.q {{ background: var(--inj-q, #ca8a04); }}
       .act-injcount {{ font-size: 12px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; min-width: 16px; text-align: right; }}
     </style>
     <div class="page-layout activity-page act-pulse" data-mtab="feed">
