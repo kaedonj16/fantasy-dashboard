@@ -171,6 +171,7 @@ class DraftKingsClient:
                            or dict(_DEFAULT_SEASON_MARKETS))
         self.enabled = _env_enabled("DRAFTKINGS_SEASON_ENABLED", default=True)
         self.timeout = timeout
+        self.last_error: str | None = None  # why the most recent fetch returned {}
         if session is None:
             import requests
             session = requests.Session()
@@ -195,15 +196,27 @@ class DraftKingsClient:
                 "include": "Events", "entity": "events"}
 
     def fetch_subcategory(self, sub_category_id: str) -> dict:
-        response = self.session.get(self._markets_url(), params=self._params(sub_category_id),
-                                    headers=self._headers, timeout=self.timeout)
+        try:
+            response = self.session.get(self._markets_url(), params=self._params(sub_category_id),
+                                        headers=self._headers, timeout=self.timeout)
+        except Exception as exc:
+            self.last_error = f"request error: {type(exc).__name__}: {exc}"
+            return {}
         if response.status_code >= 400:
+            # Capture a snippet so a 403/Cloudflare challenge is legible in the log.
+            snippet = (getattr(response, "text", "") or "")[:160].replace("\n", " ")
+            self.last_error = f"HTTP {response.status_code}: {snippet}"
             return {}
         try:
             payload = response.json()
         except ValueError:
+            self.last_error = f"non-JSON response (HTTP {response.status_code}, {len(response.content or b'')} bytes)"
             return {}
-        return payload if isinstance(payload, dict) else {}
+        if not isinstance(payload, dict):
+            self.last_error = f"unexpected JSON type: {type(payload).__name__}"
+            return {}
+        self.last_error = None
+        return payload
 
     def iter_season_markets(self) -> Iterator[tuple[str, dict]]:
         """Yield (stat_type, payload) for each configured season stat market."""
