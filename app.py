@@ -9131,6 +9131,88 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
     return bundles
 
 
+@app.route("/api/proj-debug")
+def api_proj_debug():
+    """Read-only diagnostic: for one player, show OUR cached weekly projection
+    (raw stat line + Sleeper's own pts_* + our computed value + the league
+    scoring/variant applied) next to Sleeper's LIVE projection fetched fresh, so
+    we can see exactly where a number diverges from the Sleeper app.
+
+    Usage: /api/proj-debug?name=stroud&league=<league_id>[&season=&week=]
+    """
+    import requests as _rq
+    from utils.utils import load_week_projection, pick_proj_variant
+    from utils.fantasy_scoring import projection_points, score_stats
+
+    name_q = (request.args.get("name") or "").strip().lower()
+    league_id = (request.args.get("league") or "").strip()
+    platform = (request.args.get("platform") or "sleeper").strip()
+    state = get_nfl_state() or {}
+    season = int(request.args.get("season") or state.get("season") or datetime.now().year)
+    week = int(request.args.get("week") or state.get("week") or state.get("leg") or 1)
+
+    scoring = {}
+    if league_id:
+        try:
+            _ctx = get_league_ctx_from_cache(platform, league_id, season)
+            scoring = _ctx.get("raw_scoring_settings") or {}
+        except Exception:
+            scoring = {}
+    variant = pick_proj_variant(scoring)
+
+    players = load_players_index() or {}
+    if not name_q:
+        return jsonify({"error": "pass ?name=<player>&league=<league_id>"}), 400
+    matches = [pid for pid, m in players.items()
+               if name_q in str((m or {}).get("name", "")).lower()][:5]
+
+    ours = load_week_projection(season, week) or {}
+    # Sleeper's live projection, fetched fresh (unscored raw stat lines).
+    live = {}
+    try:
+        r = _rq.get(f"https://api.sleeper.app/v1/projections/nfl/regular/{season}/{week}", timeout=20)
+        if r.status_code == 200:
+            data = r.json()
+            if isinstance(data, dict):
+                live = data
+            elif isinstance(data, list):
+                live = {str(e.get("player_id")): e for e in data if isinstance(e, dict)}
+    except Exception as exc:
+        live = {"_error": str(exc)}
+
+    out = []
+    for pid in matches:
+        meta = players.get(pid, {})
+        pos = meta.get("pos", "")
+        our_entry = ours.get(pid) or ours.get(str(pid))
+        our_raw = our_entry.get("raw_stats") if isinstance(our_entry, dict) else None
+        live_entry = live.get(pid) or live.get(str(pid)) or {}
+        live_stats = live_entry.get("stats") if isinstance(live_entry.get("stats"), dict) else live_entry
+        out.append({
+            "player": meta.get("name"), "pos": pos, "sleeper_id": pid,
+            "our_projection_points": projection_points(our_entry, scoring, pos) if our_entry else None,
+            "our_cached_pts_ppr": (our_raw or {}).get("pts_ppr") if isinstance(our_raw, dict) else None,
+            "our_cached_pts_half": (our_raw or {}).get("pts_half_ppr") if isinstance(our_raw, dict) else None,
+            "our_cached_pts_std": (our_raw or {}).get("pts_std") if isinstance(our_raw, dict) else None,
+            "our_recompute_score_stats": round(score_stats(our_raw, scoring, pos), 2) if isinstance(our_raw, dict) else None,
+            "our_cached_raw_stats": our_raw,
+            "sleeper_live_pts_ppr": (live_stats or {}).get("pts_ppr") if isinstance(live_stats, dict) else None,
+            "sleeper_live_pts_half": (live_stats or {}).get("pts_half_ppr") if isinstance(live_stats, dict) else None,
+            "sleeper_live_pts_std": (live_stats or {}).get("pts_std") if isinstance(live_stats, dict) else None,
+            "sleeper_live_stats": live_stats,
+        })
+
+    return jsonify({
+        "season": season, "week": week, "league_id": league_id,
+        "detected_variant": variant,
+        "scoring_settings_sample": {k: scoring.get(k) for k in
+            ("rec", "pass_td", "pass_int", "bonus_rec_te", "rec_yd", "rush_yd",
+             "pass_yd", "rec_td", "rush_td", "pass_fd", "rush_fd", "rec_fd") if k in scoring},
+        "scoring_key_count": len(scoring),
+        "players": out,
+    })
+
+
 def build_status_by_week(season: int, weeks: int, players_index, teams_index, idp_player_index: Dict[str, Dict] = None):
     bundles = {}
     for w in range(1, weeks + 1):
