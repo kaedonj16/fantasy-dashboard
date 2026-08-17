@@ -87,17 +87,29 @@ def test_season_records_skips_market_without_over():
     assert season_records_from_payload(payload, "receiving_touchdowns") == []
 
 
-def test_client_off_by_default(monkeypatch):
-    for key in ("DRAFTKINGS_NFL_LEAGUE_ID", "DRAFTKINGS_NFL_SEASON_MARKETS"):
+def test_client_on_by_default_with_baked_in_ids(monkeypatch):
+    for key in ("DRAFTKINGS_NFL_LEAGUE_ID", "DRAFTKINGS_NFL_SEASON_MARKETS",
+                "DRAFTKINGS_SEASON_ENABLED"):
         monkeypatch.delenv(key, raising=False)
+    client = DraftKingsClient(session=_FakeSession({}))
+    assert client.configured is True               # works with zero config
+    assert client.league_id == "88808"
+    # All seven Player Stats O/U tabs are baked in.
+    assert client.market_map["receiving_touchdowns"] == "17315"
+    assert client.market_map["passing_yards"] == "17147"
+    assert client.market_map["receptions"] == "20168"
+    assert len(client.market_map) == 7
+
+
+def test_enabled_flag_kills_the_source(monkeypatch):
+    monkeypatch.setenv("DRAFTKINGS_SEASON_ENABLED", "0")
     assert DraftKingsClient(session=_FakeSession({})).configured is False
 
 
-def test_client_iterates_and_builds_request(monkeypatch):
-    monkeypatch.setenv("DRAFTKINGS_NFL_LEAGUE_ID", "88808")
+def test_env_map_overrides_baked_in_defaults(monkeypatch):
     monkeypatch.setenv("DRAFTKINGS_NFL_SEASON_MARKETS", "receiving_touchdowns=17315")
     client = DraftKingsClient(session=_FakeSession(_PAYLOAD))
-    assert client.configured is True
+    assert client.market_map == {"receiving_touchdowns": "17315"}
     got = list(client.iter_season_markets())
     assert len(got) == 1 and got[0][0] == "receiving_touchdowns"
     params = client.session.calls[0]["params"]

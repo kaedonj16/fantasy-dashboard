@@ -66,10 +66,10 @@ def refresh() -> int:
                     season, record_week, record.context, record.stat_type, record.market_type, record.period, record.sportsbook,
                     record.line, record.over_price, record.under_price, record.event_start_time,
                     record.observed_at, record.source_updated_at))
-        # DraftKings season-long player futures (free, unofficial; off unless
-        # DRAFTKINGS_NFL_LEAGUE_ID + DRAFTKINGS_NFL_SEASON_MARKETS are set). SGO has
-        # no season markets, so these are what power Market vs ADP. DK exposes only
-        # a player name, so resolution is name-only and fails closed on ambiguity.
+        # DraftKings season-long player futures (free, unofficial; on by default
+        # with baked-in ids, DRAFTKINGS_SEASON_ENABLED=0 to disable). SGO has no
+        # season markets, so these are what power Market vs ADP. DK exposes only a
+        # player name, so resolution is name-only and fails closed on ambiguity.
         try:
             from dashboard_services.market_intelligence.draftkings import (
                 DraftKingsClient, season_records_from_payload,

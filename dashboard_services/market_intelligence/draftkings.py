@@ -7,21 +7,23 @@ at draft time. This module reads them from DraftKings' internal ``sportscontent`
 JSON API and emits season-context MarketRecords for the same projection/ADP
 pipeline the (weekly) SportsGameOdds feed uses.
 
-CONFIGURED VIA ENV, off by default. DraftKings does not publish its numeric
-``leagueId``/``subCategoryId`` values and rotates them each season, so they are
-configuration, not constants:
+WORKS WITH ZERO CONFIG. The NFL leagueId (88808), site (US-SB), and the full
+stat->subcategory map (the "Futures > Player Stats O/U" tabs) are baked in as
+defaults below, so nothing needs setting. On by default whenever the market
+refresh runs (which itself only runs when SportsGameOdds is configured). Every
+value is an OPTIONAL override, for fixing DraftKings' ids without a redeploy if
+they rotate them, or turning the source off:
 
-    DRAFTKINGS_NFL_LEAGUE_ID   confirmed "88808"  (templateVars in the request)
-    DRAFTKINGS_NFL_SEASON_MARKETS  "passing_yards=17314,rushing_yards=...,..."
-                               stat_type=subCategoryId pairs; stat_type must be a
-                               key of projection.STAT_KEYS. "17314" is a confirmed
-                               NFL player-stat O/U subcategory; capture the rest of
-                               the stat tabs the same way.
-    DRAFTKINGS_SITE            optional, default "US-SB" (region path segment)
+    DRAFTKINGS_SEASON_ENABLED     "0"/"false" to disable (default on)
+    DRAFTKINGS_NFL_SEASON_MARKETS "passing_yards=17147,rushing_yards=17223,..."
+                                  replaces the baked-in map; stat_type must be a
+                                  key of projection.STAT_KEYS
+    DRAFTKINGS_NFL_LEAGUE_ID      default "88808"
+    DRAFTKINGS_SITE               default "US-SB" (region path segment)
 
-The ids come from the network request behind
+The ids come from the stat tabs behind
 https://sportsbook.draftkings.com/leagues/football/nfl?category=futures&subcategory=player-stats-o-u
-— confirmed leagueId=88808, and e.g. subCategoryId=17314.
+(each tab's data-entity-id is its subCategoryId).
 
 The response shape (confirmed from a live NFL response) is::
 
@@ -35,7 +37,7 @@ The response shape (confirmed from a live NFL response) is::
 The player is on the EVENT (a participant with no team id, or the event name after
 " - "); the line is the number in the Over selection's ``label``; the side is
 ``outcomeType``; and negative odds use a Unicode minus (U+2212), normalized before
-parsing. Nothing here runs until the env above is set.
+parsing.
 """
 from __future__ import annotations
 
@@ -47,11 +49,30 @@ from typing import Iterator
 from .models import MarketRecord
 from .projection import STAT_KEYS
 
+_DEFAULT_LEAGUE_ID = "88808"
 _DEFAULT_SITE = "US-SB"
+# NFL "Futures > Player Stats O/U" tabs (each tab's data-entity-id). Baked in so
+# the source needs no configuration; override via DRAFTKINGS_NFL_SEASON_MARKETS.
+_DEFAULT_SEASON_MARKETS = {
+    "passing_yards": "17147",
+    "passing_touchdowns": "17148",
+    "rushing_yards": "17223",
+    "rushing_touchdowns": "17224",
+    "receiving_yards": "17314",
+    "receiving_touchdowns": "17315",
+    "receptions": "20168",
+}
 _LINE_KEYS = ("points", "line", "handicap", "number", "trueLine")
 _PLAYER_KEYS = ("participant", "playerName", "name")
 # Trailing number in a label/name like "Over 4500.5" or "Passing Yards 4500.5".
 _NUM_RE = re.compile(r"(\d+(?:\.\d+)?)\s*$")
+
+
+def _env_enabled(name: str, default: bool = True) -> bool:
+    val = os.getenv(name)
+    if val is None:
+        return default
+    return val.strip().lower() not in ("0", "false", "no", "off", "")
 
 
 def _parse_market_map(raw: str) -> dict[str, str]:
@@ -144,8 +165,11 @@ class DraftKingsClient:
     def __init__(self, session=None, timeout: float = 15.0):
         self.base_url = os.getenv("DRAFTKINGS_BASE_URL", "https://sportsbook-nash.draftkings.com").rstrip("/")
         self.site = (os.getenv("DRAFTKINGS_SITE", _DEFAULT_SITE) or _DEFAULT_SITE).strip()
-        self.league_id = os.getenv("DRAFTKINGS_NFL_LEAGUE_ID", "").strip()
-        self.market_map = _parse_market_map(os.getenv("DRAFTKINGS_NFL_SEASON_MARKETS", ""))
+        self.league_id = (os.getenv("DRAFTKINGS_NFL_LEAGUE_ID", "").strip() or _DEFAULT_LEAGUE_ID)
+        # Env override replaces the baked-in map; otherwise use the defaults.
+        self.market_map = (_parse_market_map(os.getenv("DRAFTKINGS_NFL_SEASON_MARKETS", ""))
+                           or dict(_DEFAULT_SEASON_MARKETS))
+        self.enabled = _env_enabled("DRAFTKINGS_SEASON_ENABLED", default=True)
         self.timeout = timeout
         if session is None:
             import requests
@@ -154,7 +178,7 @@ class DraftKingsClient:
 
     @property
     def configured(self) -> bool:
-        return bool(self.league_id and self.market_map)
+        return bool(self.enabled and self.league_id and self.market_map)
 
     def _markets_url(self) -> str:
         return (f"{self.base_url}/sites/{self.site}/api/sportscontent/controldata/"
