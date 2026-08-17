@@ -27862,7 +27862,9 @@ def _portfolio_movers_card(holdings: list, pos_colors: dict) -> str:
         ".pfm-delta{font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;min-width:40px;text-align:right;}"
         ".pfm-empty{font-size:12px;color:var(--text-subtle);padding:12px 0;}"
         "</style>"
-        "<div class='card' style='margin-bottom:14px;'>"
+        # No bottom margin: this card sits in the .pf-grid-2 grid, whose gap handles
+        # spacing. A stray margin would make it shorter than its stretched row-mate.
+        "<div class='card'>"
         "<div class='card-header' style='display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;'>"
         "<h3>Portfolio Movers</h3>"
         "<span style='font-size:12px;color:var(--text-muted);'>Value-rank swings across your leagues &middot; last 7 days</span>"
@@ -27912,7 +27914,12 @@ def build_portfolio_body(
         # only the bits not already in the global stylesheet
         ".pf-grid{display:grid;grid-template-columns:3fr 2fr;gap:14px;margin-bottom:14px;}"
         "@media(max-width:700px){.pf-grid{grid-template-columns:1fr;}}"
-        ".pf-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;align-items:start;}"
+        # Stretch paired cards to equal height so a short card (e.g. Positional
+        # Strength) fills its row instead of leaving a ragged gap beside its taller
+        # neighbor. The cards are flex columns so their bodies fill the extra height.
+        ".pf-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;align-items:stretch;}"
+        ".pf-grid-2>.card{display:flex;flex-direction:column;}"
+        ".pf-grid-2>.card>.card-body{flex:1;}"
         "@media(max-width:700px){.pf-grid-2{grid-template-columns:1fr;}}"
         # Summary header: title + a cohesive 3-up stat bar (Leagues/Record/Season)
         ".pf-summary{display:flex;flex-direction:column;gap:14px;}"
