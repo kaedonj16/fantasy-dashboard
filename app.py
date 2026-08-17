@@ -20727,10 +20727,15 @@ def api_league_rosters():
                 team_name = f"Team {roster_id}"
                 username = ""
             player_ids = [str(pid) for pid in (roster.get("players") or [])]
-            # Resolve each owned pick to its exact draft slot using whichever
-            # slot maps are already in HISTORICAL_PICK_SLOT_CACHE (built during
-            # normal dashboard loads). If a map isn't cached yet, fall back to
-            # round-level counts - never trigger a fresh historical API fetch here.
+            # Resolve each owned pick to the exact draft slot its original owner
+            # holds. A pick's slot is fixed by the standings of the season BEFORE
+            # the draft (p_season - 1); once that season has finished the order is
+            # known, so build (and cache) the slot map and pin the pick to e.g.
+            # 2026 2.04. Only do this when p_season <= season, i.e. the ordering
+            # season has completed - picks further out have an unknowable order and
+            # fall back to the round-level bucket the front end renders. The whole
+            # response is cached (see _ROSTER_API_CACHE) and slot maps are memoized
+            # in HISTORICAL_PICK_SLOT_CACHE, so this resolves at most once per TTL.
             pick_ids: list[str] = []
             pick_round_counts: dict[str, int] = {}
             for p in (picks_by_roster.get(roster_id) or []):
@@ -20740,17 +20745,20 @@ def api_league_rosters():
                     continue
                 slot = None
                 orig = p.get("original_owner")
-                if orig is not None:
-                    # Use cached slot map if available - no blocking fetch.
-                    source_season = p_season - 1
-                    cached_map = HISTORICAL_PICK_SLOT_CACHE.get(
-                        (str(platform).lower(), str(league_id), int(source_season))
-                    )
-                    if cached_map:
-                        try:
-                            slot = cached_map.get(int(orig))
-                        except (TypeError, ValueError):
-                            slot = None
+                if orig is not None and p_season <= season:
+                    try:
+                        slot_map = build_historical_pick_slot_map(
+                            platform=platform,
+                            root_league_id=league_id,
+                            current_season=season,
+                            source_season=p_season - 1,
+                        )
+                        slot = slot_map.get(int(orig))
+                    except (TypeError, ValueError):
+                        slot = None
+                    except Exception:
+                        logger.debug("suppressed exception", exc_info=True)
+                        slot = None
                 if slot:
                     pick_ids.append(f"{p_season}_{p_round}_{int(slot):02d}")
                 else:
