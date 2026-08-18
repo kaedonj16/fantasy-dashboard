@@ -154,10 +154,22 @@ class ESPNFantasyClient:
             error = ESPNMalformedResponse("ESPN returned incomplete league data.")
             error.debug_reference = request_id
             raise error
+        teams = []
+        for t in (payload.get("teams") or []):
+            if not isinstance(t, dict):
+                continue
+            tid = t.get("id")
+            if tid is None:
+                continue
+            name = (t.get("name")
+                    or " ".join(part for part in (t.get("location"), t.get("nickname")) if part).strip()
+                    or f"Team {tid}")
+            teams.append({"id": str(tid), "name": str(name).strip()})
         return {
             "league_id": str(payload.get("id") or league_id),
             "season": int(payload.get("seasonId") or season),
             "name": settings.get("name") or f"ESPN League {league_id}",
+            "teams": teams,
         }
 
 

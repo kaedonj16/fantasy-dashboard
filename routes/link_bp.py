@@ -415,6 +415,9 @@ def link_espn_otp_verify():
         return jsonify({
             "ok": True, "platform": "espn", "connection_method": "otp",
             "league_id": league_id, "season": season, "name": info.get("name"),
+            # Let the member pick which team is theirs before landing on the
+            # dashboard; the client sets the viewer, then follows redirect_url.
+            "teams": info.get("teams") or [],
             "redirect_url": f"/espn/{season}/{league_id}/dashboard",
         })
     # No account yet: stage for post-Google onboarding, mirroring /private/pending.

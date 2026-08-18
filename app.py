@@ -1172,7 +1172,7 @@ FORM_BODY = """
           {% if espn_otp_enabled %}
           <div class="row" id="espnOtpLaunchRow" style="display:none;">
             <button type="button" id="espnOtpLaunch" class="espn-otp-launch">Sign in with ESPN email</button>
-            <p class="hint" style="margin-top:6px;">Get a code by email, no cookies to copy. Paste cookies below if you prefer.</p>
+            <p class="hint" style="margin-top:6px;">Get a code by email, no cookies to copy. <a href="#" id="espnOtpPasteToggle" class="espn-otp-paste-toggle">Paste cookies instead</a></p>
           </div>
           {% endif %}
           <div id="espnHomePrivateFields" style="display:none;">
@@ -1456,6 +1456,14 @@ FORM_BODY = """
       <p class="otp-verify-t">Signing you in to ESPN…</p>
     </div>
 
+    <div class="otp-step" id="espnOtpTeamStep" hidden>
+      <p class="otp-sub">Connected. Which team is yours?</p>
+      <label class="otp-lb" for="espnOtpTeam">Your team</label>
+      <select class="otp-inp" id="espnOtpTeam"></select>
+      <button type="button" class="otp-btn" id="espnOtpTeamGo">Go to my dashboard</button>
+      <div class="otp-resend"><span></span><button type="button" class="otp-link" id="espnOtpTeamSkip">Skip for now</button></div>
+    </div>
+
     <div class="otp-msg" id="espnOtpMsg" aria-live="polite"></div>
   </div>
 </div>
@@ -1487,6 +1495,8 @@ FORM_BODY = """
 .otp-msg.ok{color:var(--win)}
 .espn-otp-launch{width:100%;background:var(--rookie);color:var(--on-accent);border:1px solid var(--rookie);border-radius:10px;font-size:14px;font-weight:700;padding:10px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.28)}
 .espn-otp-launch:hover{filter:brightness(1.08)}
+.espn-otp-paste-toggle{color:#93c5fd;font-weight:700;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.espn-otp-paste-toggle:hover{color:#bfdbfe}
 </style>
 {% endif %}
 """

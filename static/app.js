@@ -8928,6 +8928,15 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
   }
+  // "Paste cookies instead" reveals the (default-collapsed) cookie box under the
+  // email button, so the email path stays primary without a tall stacked card.
+  document.getElementById("espnOtpPasteToggle")?.addEventListener("click", (event) => {
+    event.preventDefault();
+    if (!espnPrivateFields) return;
+    const hidden = espnPrivateFields.style.display === "none";
+    espnPrivateFields.style.display = hidden ? "block" : "none";
+    if (hidden) espnCookieBlob?.focus();
+  });
 
   const yahooLeagueIdInput = document.getElementById("yahooLeagueIdInput");
   const yahooTeamName = document.getElementById("yahooTeamName");
@@ -9028,8 +9037,14 @@ if (!platformBtns.length) return;
     }
     // Email/OTP sign-in launch (present only when the feature flag is on) rides
     // with the private path — it's the friendly alternative to pasting cookies.
+    // When it's showing, the cookie box stays collapsed (email is primary) so the
+    // card isn't twice as tall; the "Paste cookies instead" link reveals it.
     const otpLaunchRow = document.getElementById("espnOtpLaunchRow");
-    if (otpLaunchRow) otpLaunchRow.style.display = homeEspnMethod === "private" ? "block" : "none";
+    if (otpLaunchRow) {
+      const showLaunch = homeEspnMethod === "private";
+      otpLaunchRow.style.display = showLaunch ? "block" : "none";
+      if (showLaunch && espnPrivateFields) espnPrivateFields.style.display = "none";
+    }
     if (espnDescription) espnDescription.textContent = homeEspnMethod === "private"
       ? "Open a connected private ESPN league, or enter credentials when prompted."
       : "Connect a publicly accessible ESPN league using its League ID.";
@@ -9469,6 +9484,8 @@ if (!platformBtns.length) return;
     const otpEmailStep = $("espnOtpEmailStep");
     const otpCodeStep = $("espnOtpCodeStep");
     const otpVerifying = $("espnOtpVerifying");
+    const otpTeamStep = $("espnOtpTeamStep");
+    const otpTeam = $("espnOtpTeam");
     const otpEmail = $("espnOtpEmail");
     const otpEmailEcho = $("espnOtpEmailEcho");
     const otpCode = $("espnOtpCode");
@@ -9494,7 +9511,9 @@ if (!platformBtns.length) return;
       if (otpEmailStep) otpEmailStep.hidden = step !== "email";
       if (otpCodeStep) otpCodeStep.hidden = step !== "code";
       if (otpVerifying) otpVerifying.hidden = step !== "verifying";
+      if (otpTeamStep) otpTeamStep.hidden = step !== "team";
     };
+    let otpRedirectUrl = "";
     const startResendCooldown = () => {
       if (!otpResend) return;
       let left = 45;
@@ -9584,6 +9603,17 @@ if (!platformBtns.length) return;
         });
         const data = await otpReadJson(res);
         if (!res.ok || !data.ok) throw new Error(data.error || "That code didn't work. Try again.");
+        // Connected. If the league gave us teams, let them pick which is theirs
+        // before we send them to the dashboard.
+        if (data.redirect_url && Array.isArray(data.teams) && data.teams.length && otpTeam) {
+          otpRedirectUrl = data.redirect_url;
+          otpTeam.innerHTML = data.teams
+            .map((t) => `<option value="${String(t.id)}">${(t.name || ("Team " + t.id)).replace(/[<>&]/g, "")}</option>`)
+            .join("");
+          setMsg("");
+          showStep("team");
+          return;
+        }
         if (data.redirect_url) { window.location.href = data.redirect_url; return; }
         if (data.auth_url) { window.location.href = data.auth_url; return; }
         // No redirect handed back: refresh saved leagues and close.
@@ -9623,6 +9653,25 @@ if (!platformBtns.length) return;
       showStep("email");
       setTimeout(() => otpEmail?.focus(), 40);
     });
+
+    const otpGoToDashboard = () => { window.location.href = otpRedirectUrl || "/"; };
+    document.getElementById("espnOtpTeamGo")?.addEventListener("click", async () => {
+      const opt = otpTeam?.selectedOptions?.[0];
+      const rosterId = otpTeam?.value || "";
+      const teamName = opt ? opt.textContent : "";
+      if (rosterId && teamName) {
+        try {
+          // Trusted data we just fetched for this league; set the viewer so the
+          // dashboard opens as this team (same session shape as sign-in-league).
+          await fetch("/api/quick-set-viewer", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: teamName, team_name: teamName, roster_id: rosterId }),
+          });
+        } catch (_) { /* non-fatal: fall through to the dashboard either way */ }
+      }
+      otpGoToDashboard();
+    });
+    document.getElementById("espnOtpTeamSkip")?.addEventListener("click", otpGoToDashboard);
   }
 
   // "Continue with Google" on the home card: take the league the user just
