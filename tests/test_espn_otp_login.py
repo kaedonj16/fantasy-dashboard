@@ -69,9 +69,15 @@ def test_flag_is_off_by_default(monkeypatch):
     assert L.otp_login_enabled() is True
 
 
-def test_real_broker_is_stubbed_unavailable():
+def test_default_broker_is_stubbed_unavailable():
     with pytest.raises(L.EspnLoginUnavailable):
         L.PlaywrightEspnLoginBroker().start("t@example.com")
+
+
+def test_oneid_broker_unavailable_without_api_key(monkeypatch):
+    monkeypatch.delenv("ESPN_ONEID_API_KEY", raising=False)
+    with pytest.raises(L.EspnLoginUnavailable):
+        L.OneIdOtpBroker().start("t@example.com")
 
 
 # ── HTTP endpoints (flask; skipped where unavailable) ─────────────────────────

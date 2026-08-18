@@ -18,6 +18,7 @@ import os
 import secrets
 import threading
 import time
+import uuid
 from typing import Optional
 
 
@@ -196,15 +197,123 @@ class PlaywrightEspnLoginBroker(EspnLoginBroker):
         raise EspnLoginUnavailable("ESPN email sign-in isn't available yet.")
 
 
+# ── real driver: the Disney OneID email-OTP API (Option B — no browser) ───────
+# The spike captured this exact five-call flow, and no reCAPTCHA token rides on
+# any request. Shapes are validated; the flow still needs a networked run before
+# the flag is enabled. httpx is imported lazily so this module stays importable
+# (and the broker/mock tests run) without it.
+_ONEID_BASE = "https://registerdisney.go.com/jgc/v8/client/ESPN-ONESITE.WEB-PROD"
+_ONEID_TIMEOUT = 15.0
+
+
+class OneIdOtpBroker(EspnLoginBroker):
+    """Drives Disney OneID passwordless (email OTP) directly over HTTPS.
+
+    Config: ``ESPN_ONEID_API_KEY`` is the full ``authorization`` header value for
+    the ESPN-ONESITE.WEB-PROD client (a public client key from OneID.js). Without
+    it the broker is unavailable, so the flow degrades to cookie paste.
+    """
+
+    def _api_key(self) -> str:
+        key = os.getenv("ESPN_ONEID_API_KEY", "").strip()
+        if not key:
+            raise EspnLoginUnavailable("ESPN email sign-in isn't configured.")
+        return key
+
+    def _headers(self, conversation_id: str, authorization: Optional[str] = None) -> dict:
+        headers = {
+            "Content-Type": "application/json",
+            "conversation-id": conversation_id,
+            "correlation-id": str(uuid.uuid4()),
+        }
+        if authorization:
+            headers["authorization"] = authorization
+        return headers
+
+    @staticmethod
+    def _data(resp) -> dict:
+        try:
+            body = resp.json()
+        except Exception:
+            raise EspnLoginError("Unexpected response from ESPN sign-in.")
+        if isinstance(body, dict) and body.get("error"):
+            raise EspnLoginError("ESPN rejected the sign-in step.")
+        return (body or {}).get("data") or {}
+
+    def _begin(self, email: str) -> dict:
+        api_key = self._api_key()  # raises Unavailable before importing httpx
+        import httpx
+        conversation_id = str(uuid.uuid4())
+        try:
+            with httpx.Client(base_url=_ONEID_BASE, timeout=_ONEID_TIMEOUT) as client:
+                client.post("/guest-flow", json={"email": email}, headers=self._headers(conversation_id))
+                client.post("/guest/recovery-methods", json={"loginValue": email},
+                            headers=self._headers(conversation_id, api_key))
+                data = self._data(client.post("/notification/otp/recovery", json={"lookupValue": email},
+                                              headers=self._headers(conversation_id, api_key)))
+        except httpx.HTTPError:
+            raise EspnLoginError("Couldn't reach ESPN sign-in. Try again.")
+        session_id = data.get("sessionId")
+        if not session_id:
+            raise EspnLoginError("ESPN didn't start the sign-in. Try again.")
+        return {"email": email, "conversation_id": conversation_id, "api_key": api_key, "session_id": session_id}
+
+    def _submit(self, session: dict, code: str) -> dict:
+        import httpx
+        conversation_id, api_key, session_id = session["conversation_id"], session["api_key"], session["session_id"]
+        try:
+            with httpx.Client(base_url=_ONEID_BASE, timeout=_ONEID_TIMEOUT) as client:
+                redeem = client.post("/otp/redeem", json={"passcode": code, "sessionIds": [session_id]},
+                                     headers=self._headers(conversation_id, api_key))
+                if redeem.status_code in (400, 401, 403):
+                    raise EspnLoginInvalidCode("That code isn't right. Check your email and try again.")
+                redeemed = self._data(redeem)
+                swid = redeemed.get("swid")
+                recovery_token = (redeemed.get("recoveryToken") or {}).get("access_token")
+                if not swid or not recovery_token:
+                    raise EspnLoginInvalidCode("That code isn't right. Check your email and try again.")
+                login = self._data(client.post("/guest/login/recoveryToken",
+                                               json={"swid": swid, "recoveryToken": recovery_token},
+                                               headers=self._headers(conversation_id, api_key)))
+        except httpx.HTTPError:
+            raise EspnLoginError("Couldn't reach ESPN sign-in. Try again.")
+        espn_s2 = login.get("s2")
+        final_swid = (login.get("token") or {}).get("swid") or swid
+        if not espn_s2 or not final_swid:
+            raise EspnLoginError("ESPN sign-in completed but didn't return a session.")
+        return {"swid": final_swid, "espn_s2": espn_s2}
+
+    def _resend(self, session: dict) -> None:
+        import httpx
+        try:
+            with httpx.Client(base_url=_ONEID_BASE, timeout=_ONEID_TIMEOUT) as client:
+                data = self._data(client.post("/notification/otp/recovery", json={"lookupValue": session["email"]},
+                                              headers=self._headers(session["conversation_id"], session["api_key"])))
+        except httpx.HTTPError:
+            raise EspnLoginError("Couldn't resend the code. Try again.")
+        if data.get("sessionId"):
+            session["session_id"] = data["sessionId"]
+
+
 _BROKER: Optional[EspnLoginBroker] = None
 
 
 def get_broker() -> EspnLoginBroker:
-    """Singleton broker (holds the session store, so start/verify share state)."""
+    """Singleton broker (holds the session store, so start/verify share state).
+
+    ``ESPN_OTP_BROKER``: ``mock`` (tests/dev) → deterministic; ``oneid`` → the
+    real OneID API driver; anything else → the unavailable default, so the flag
+    can be on for staging without a working driver.
+    """
     global _BROKER
     if _BROKER is None:
         kind = os.getenv("ESPN_OTP_BROKER", "").strip().lower()
-        _BROKER = MockEspnLoginBroker() if kind == "mock" else PlaywrightEspnLoginBroker()
+        if kind == "mock":
+            _BROKER = MockEspnLoginBroker()
+        elif kind == "oneid":
+            _BROKER = OneIdOtpBroker()
+        else:
+            _BROKER = PlaywrightEspnLoginBroker()
     return _BROKER
 
 
