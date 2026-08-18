@@ -1161,6 +1161,9 @@ FORM_BODY = """
         <!-- ESPN Flow -->
         <div id="espnFlow" style="display:none;">
           <div class="espn-home-methods" role="radiogroup" aria-label="ESPN league type">
+            {% if espn_otp_enabled %}
+            <button type="button" class="espn-home-method" data-espn-method="email" aria-pressed="false">Email</button>
+            {% endif %}
             <button type="button" class="espn-home-method active" data-espn-method="public" aria-pressed="true">Public League</button>
             <button type="button" class="espn-home-method" data-espn-method="private" aria-pressed="false">Private League</button>
           </div>
@@ -1170,34 +1173,34 @@ FORM_BODY = """
             <input type="text" id="espnLeagueIdInput" placeholder="e.g. 336414" autocomplete="off">
           </div>
           {% if espn_otp_enabled %}
-          <div class="row" id="espnOtpLaunchRow" style="display:none;">
-            <button type="button" id="espnOtpLaunch" class="espn-otp-launch">Sign in with ESPN email</button>
-            <p class="hint" style="margin-top:6px;">Get a code by email, no cookies to copy. <a href="#" id="espnOtpPasteToggle" class="espn-otp-paste-toggle">Paste cookies instead</a></p>
+          <div id="espnHomeEmailRow" style="display:none;">
+            <div class="row">
+              <label for="espnHomeEmailInput">ESPN email</label>
+              <input type="email" id="espnHomeEmailInput" placeholder="you@email.com" autocomplete="email">
+            </div>
+          </div>
+          <div class="row" id="espnEmailSendRow" style="display:none;">
+            <button type="button" id="espnEmailSendBtn" class="espn-otp-launch">Email me a code</button>
           </div>
           {% endif %}
           <div id="espnHomePrivateFields" style="display:none;">
             <div class="row">
-              <label for="espnCookieBlob">Paste your ESPN cookies</label>
+              <label for="espnSwidInput">SWID</label>
+              <input type="text" id="espnSwidInput" autocomplete="off" spellcheck="false" placeholder="{XXXXXXXX-XXXX-XXXX-...}">
+            </div>
+            <div class="row">
+              <label for="espnS2Input">ESPN_S2</label>
+              <input type="text" id="espnS2Input" autocomplete="off" spellcheck="false" placeholder="AEB...">
+            </div>
+            <details class="espn-home-help"><summary>Paste your whole cookie string instead</summary>
               <textarea id="espnCookieBlob" rows="3" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box;font:inherit;resize:vertical;" placeholder="Paste the whole cookie string here, e.g. SWID=...; espn_s2=AEB…  We'll pull out both values."></textarea>
               <p class="hint" id="espnCookieStatus" aria-live="polite" style="margin-top:6px;"></p>
-            </div>
-            <details class="espn-home-help"><summary>How to copy your ESPN cookies</summary>
               <ol>
                 <li>In another tab, sign in at <strong>espn.com</strong> and open your league.</li>
                 <li>Right-click the page → <strong>Inspect</strong>, then open <strong>Application → Cookies → https://www.espn.com</strong>.</li>
-                <li>Select the <code>SWID</code> and <code>espn_s2</code> rows (or all of them), copy, and paste above, and we extract the two we need.</li>
+                <li>Select the <code>SWID</code> and <code>espn_s2</code> rows (or all of them), copy, and paste here, and we extract the two we need.</li>
               </ol>
               <strong>Treat these like a password.</strong> They're stored encrypted and only used to read your league.
-            </details>
-            <details class="espn-home-help"><summary>Enter the two values manually</summary>
-              <div class="row">
-                <label for="espnSwidInput">SWID</label>
-                <input type="password" id="espnSwidInput" autocomplete="off">
-              </div>
-              <div class="row">
-                <label for="espnS2Input">ESPN_S2</label>
-                <input type="password" id="espnS2Input" autocomplete="off">
-              </div>
             </details>
           </div>
           <div class="row" id="espnSubmitRow">

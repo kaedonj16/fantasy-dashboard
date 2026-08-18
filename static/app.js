@@ -8928,15 +8928,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
   }
-  // "Paste cookies instead" reveals the (default-collapsed) cookie box under the
-  // email button, so the email path stays primary without a tall stacked card.
-  document.getElementById("espnOtpPasteToggle")?.addEventListener("click", (event) => {
-    event.preventDefault();
-    if (!espnPrivateFields) return;
-    const hidden = espnPrivateFields.style.display === "none";
-    espnPrivateFields.style.display = hidden ? "block" : "none";
-    if (hidden) espnCookieBlob?.focus();
-  });
 
   const yahooLeagueIdInput = document.getElementById("yahooLeagueIdInput");
   const yahooTeamName = document.getElementById("yahooTeamName");
@@ -9024,39 +9015,40 @@ if (!platformBtns.length) return;
   }
 
   function setHomeEspnMethod(method) {
-    homeEspnMethod = method === "private" ? "private" : "public";
+    const allowed = ["email", "public", "private"];
+    homeEspnMethod = allowed.includes(method) ? method : "public";
+    const isEmail = homeEspnMethod === "email";
+    const isPrivate = homeEspnMethod === "private";
     espnMethodBtns.forEach((btn) => {
       const active = btn.dataset.espnMethod === homeEspnMethod;
       btn.classList.toggle("active", active);
       btn.setAttribute("aria-pressed", active ? "true" : "false");
     });
-    // Try the signed-in account's saved ESPN connection first. Credential
-    // fields are revealed only when this league has no usable saved session.
+    // Email method: league ID + email inline, then a code in the modal.
+    const emailRow = document.getElementById("espnHomeEmailRow");
+    const emailSendRow = document.getElementById("espnEmailSendRow");
+    if (emailRow) emailRow.style.display = isEmail ? "block" : "none";
+    if (emailSendRow) emailSendRow.style.display = isEmail ? "block" : "none";
+    // Private method: SWID + espn_s2 fields. For signed-in members the saved
+    // connection is tried first, so the fields only show when there's no account.
     if (espnPrivateFields) {
-      espnPrivateFields.style.display = homeEspnMethod === "private" && !window._hasAccount ? "block" : "none";
+      espnPrivateFields.style.display = isPrivate && !window._hasAccount ? "block" : "none";
     }
-    // Email/OTP sign-in launch (present only when the feature flag is on) rides
-    // with the private path — it's the friendly alternative to pasting cookies.
-    // When it's showing, the cookie box stays collapsed (email is primary) so the
-    // card isn't twice as tall; the "Paste cookies instead" link reveals it.
-    const otpLaunchRow = document.getElementById("espnOtpLaunchRow");
-    if (otpLaunchRow) {
-      const showLaunch = homeEspnMethod === "private";
-      otpLaunchRow.style.display = showLaunch ? "block" : "none";
-      if (showLaunch && espnPrivateFields) espnPrivateFields.style.display = "none";
-    }
-    if (espnDescription) espnDescription.textContent = homeEspnMethod === "private"
-      ? "Open a connected private ESPN league, or enter credentials when prompted."
+    if (espnDescription) espnDescription.textContent =
+      isEmail ? "Enter your league ID and the email on your ESPN account, and we'll send a 6-digit code."
+      : isPrivate ? "Enter your league ID plus your SWID and espn_s2 cookies."
       : "Connect a publicly accessible ESPN league using its League ID.";
     if (espnSwidInput) espnSwidInput.value = "";
     if (espnS2Input) espnS2Input.value = "";
     if (espnCookieBlob) espnCookieBlob.value = "";
     if (espnCookieStatus) espnCookieStatus.textContent = "";
     if (espnErrorBox) espnErrorBox.style.display = "none";
-    if (espnPrivateChoice) espnPrivateChoice.style.display = !window._hasAccount ? "flex" : "none";
-    if (espnSubmitRow) espnSubmitRow.style.display = window._hasAccount ? "flex" : "none";
+    // Account/guest choice and the "Connect League" button belong to the
+    // public/private paths; the email path drives account/guest via the modal.
+    if (espnPrivateChoice) espnPrivateChoice.style.display = (!isEmail && !window._hasAccount) ? "flex" : "none";
+    if (espnSubmitRow) espnSubmitRow.style.display = (!isEmail && window._hasAccount) ? "flex" : "none";
     if (espnSubmitBtn) {
-      const googleConnect = homeEspnMethod === "private" && !window._hasAccount;
+      const googleConnect = isPrivate && !window._hasAccount;
       espnSubmitBtn.textContent = googleConnect ? "Sign in with Google to Connect" : "Connect League";
       espnSubmitBtn.classList.toggle("google-continue-btn", googleConnect);
     }
@@ -9557,7 +9549,21 @@ if (!platformBtns.length) return;
       setTimeout(() => otpEmail?.focus(), 40);
     };
 
-    $("espnOtpLaunch")?.addEventListener("click", openOtp);
+    // Email method: league ID + email are on the card. Validate the email, open
+    // the modal on the league the card names, prefill it, and start the code send
+    // so the member goes straight to entering the code.
+    $("espnEmailSendBtn")?.addEventListener("click", () => {
+      const email = document.getElementById("espnHomeEmailInput")?.value.trim() || "";
+      if (!email || !email.includes("@")) {
+        if (espnErrorBox) { espnErrorBox.textContent = "Enter the email on your ESPN account."; espnErrorBox.style.display = "block"; }
+        window.brShake?.(document.getElementById("espnHomeEmailInput"));
+        return;
+      }
+      openOtp();
+      if (otpModal.style.display !== "flex") return;  // openOtp bailed on a bad league ID
+      if (otpEmail) otpEmail.value = email;
+      otpSend?.click();
+    });
     otpClose?.addEventListener("click", closeOtp);
     otpModal.addEventListener("click", (event) => { if (event.target === otpModal) closeOtp(); });
     document.addEventListener("keydown", (event) => {
