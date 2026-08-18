@@ -2096,7 +2096,7 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
   padding: 8px 14px;
   font-size: 14px;
   font-weight: 700;
-  border-radius: 9999px;
+  border-radius: 12px;
   cursor: pointer;
   margin: 0;
 }
@@ -3653,7 +3653,7 @@ strong + .player-badge,
 
 .otc-filter-chip {
   padding: 4px 8px;
-  border-radius: 12px;
+  border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--row);
   color: var(--text);

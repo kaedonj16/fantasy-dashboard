@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="popup.css">
+  <title>Connect ESPN to BR Fantasy</title>
+</head>
+<body>
+  <header class="hd">
+    <img src="icons/icon48.png" width="28" height="28" alt="">
+    <div>
+      <h1>ESPN League Connector</h1>
+      <p class="sub">for BR Fantasy</p>
+    </div>
+  </header>
+
+  <div id="card" class="card state-loading">
+    <div class="dot" aria-hidden="true"></div>
+    <div class="msg">
+      <strong id="title">Checking your ESPN session…</strong>
+      <span id="detail" class="detail"></span>
+    </div>
+  </div>
+
+  <button id="copyBtn" class="btn primary" disabled>Copy SWID &amp; espn_s2</button>
+  <a id="openBtn" class="btn ghost" href="https://www.brfantasyfootball.com/" target="_blank" rel="noopener">Open BR Fantasy →</a>
+
+  <p class="how">
+    Best way: open the private-league connect box on BR Fantasy and click
+    <b>Autofill from ESPN</b> — this extension fills it for you. Or copy here and paste it in.
+  </p>
+
+  <footer class="ft">
+    Your ESPN cookies are read on your device and only leave it when you connect on
+    BR Fantasy. This extension sends them nowhere itself.
+  </footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>

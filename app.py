@@ -1160,16 +1160,27 @@ FORM_BODY = """
           </div>
           <div id="espnHomePrivateFields" style="display:none;">
             <div class="row">
-              <label for="espnSwidInput">SWID</label>
-              <input type="password" id="espnSwidInput" autocomplete="off">
+              <label for="espnCookieBlob">Paste your ESPN cookies</label>
+              <textarea id="espnCookieBlob" rows="3" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box;font:inherit;resize:vertical;" placeholder="Paste the whole cookie string here, e.g. SWID=...; espn_s2=AEB…  We'll pull out both values."></textarea>
+              <p class="hint" id="espnCookieStatus" aria-live="polite" style="margin-top:6px;"></p>
             </div>
-            <div class="row">
-              <label for="espnS2Input">ESPN_S2</label>
-              <input type="password" id="espnS2Input" autocomplete="off">
-            </div>
-            <details class="espn-home-help"><summary>Where do I find these?</summary>
-              <ol><li>Log into ESPN and open your private fantasy league.</li><li>Open browser developer tools.</li><li>Go to Application → Cookies.</li><li>Locate SWID and espn_s2 and copy both values here.</li></ol>
-              <strong>Treat these session credentials like passwords.</strong>
+            <details class="espn-home-help"><summary>How to copy your ESPN cookies</summary>
+              <ol>
+                <li>In another tab, sign in at <strong>espn.com</strong> and open your league.</li>
+                <li>Right-click the page → <strong>Inspect</strong>, then open <strong>Application → Cookies → https://www.espn.com</strong>.</li>
+                <li>Select the <code>SWID</code> and <code>espn_s2</code> rows (or all of them), copy, and paste above, and we extract the two we need.</li>
+              </ol>
+              <strong>Treat these like a password.</strong> They're stored encrypted and only used to read your league.
+            </details>
+            <details class="espn-home-help"><summary>Enter the two values manually</summary>
+              <div class="row">
+                <label for="espnSwidInput">SWID</label>
+                <input type="password" id="espnSwidInput" autocomplete="off">
+              </div>
+              <div class="row">
+                <label for="espnS2Input">ESPN_S2</label>
+                <input type="password" id="espnS2Input" autocomplete="off">
+              </div>
             </details>
           </div>
           <div class="row" id="espnSubmitRow">
@@ -2450,13 +2461,18 @@ def _link_modal_html() -> str:
             <label class="link-lb link-field" for="linkEspnSeason">Season</label>
             <input id="linkEspnSeason" class="link-inp link-full" inputmode="numeric" placeholder="current season" autocomplete="off">
             <div id="espnPrivateFields" style="display:none;">
-              <label class="link-lb link-field" for="linkEspnSwid">SWID</label>
-              <input id="linkEspnSwid" class="link-inp link-full" type="password" autocomplete="off">
-              <label class="link-lb link-field" for="linkEspnS2">ESPN_S2</label>
-              <input id="linkEspnS2" class="link-inp link-full" type="password" autocomplete="off">
-              <details class="espn-credential-help"><summary>Where do I find these?</summary>
-                <ol><li>Log into ESPN and open the private fantasy league.</li><li>Open browser developer tools.</li><li>Go to Application → Cookies.</li><li>Locate the cookies named SWID and espn_s2.</li><li>Copy both values into this form.</li></ol>
-                <strong>Treat these values like passwords: they authenticate access to your ESPN account.</strong>
+              <label class="link-lb link-field" for="linkEspnBlob">Paste your ESPN cookies</label>
+              <textarea id="linkEspnBlob" class="link-inp link-full" rows="3" autocomplete="off" spellcheck="false" style="box-sizing:border-box;font:inherit;resize:vertical;" placeholder="Paste the whole cookie string, e.g. SWID=...; espn_s2=AEB…  We'll pull out both values."></textarea>
+              <p class="link-help" id="linkEspnBlobStatus" aria-live="polite"></p>
+              <details class="espn-credential-help"><summary>How to copy your ESPN cookies</summary>
+                <ol><li>In another tab, sign in at <strong>espn.com</strong> and open your league.</li><li>Right-click the page → <strong>Inspect</strong>, then open <strong>Application → Cookies → https://www.espn.com</strong>.</li><li>Select the <code>SWID</code> and <code>espn_s2</code> rows (or all of them), copy, and paste above, and we extract the two we need.</li></ol>
+                <strong>Treat these like a password.</strong> They're stored encrypted and only used to read your league.
+              </details>
+              <details class="espn-credential-help"><summary>Enter the two values manually</summary>
+                <label class="link-lb link-field" for="linkEspnSwid">SWID</label>
+                <input id="linkEspnSwid" class="link-inp link-full" type="password" autocomplete="off">
+                <label class="link-lb link-field" for="linkEspnS2">ESPN_S2</label>
+                <input id="linkEspnS2" class="link-inp link-full" type="password" autocomplete="off">
               </details>
             </div>
             <button type="button" id="linkEspnConnect" class="link-btn link-connect" onclick="linkEspnConnect()">Connect League</button>
@@ -2593,12 +2609,28 @@ def _link_modal_html() -> str:
         });
       }
       var espnMethod='public';
+      function brLinkParseCookies(text){
+        text=String(text||''); var swid='',s2='';
+        text.split(';').forEach(function(part){
+          var i=part.indexOf('='); if(i<0) return;
+          var k=part.slice(0,i).trim().toLowerCase(), v=part.slice(i+1).trim();
+          if(v.charAt(0)==='"'&&v.charAt(v.length-1)==='"') v=v.slice(1,-1);
+          if(k==='espn_s2'||k==='espn-s2') s2=v; else if(k==='swid') swid=v;
+        });
+        return {swid:swid,espn_s2:s2};
+      }
+      (function(){var b=document.getElementById('linkEspnBlob');if(!b)return;b.addEventListener('input',function(){
+        var st=document.getElementById('linkEspnBlobStatus');if(!st)return;var p=brLinkParseCookies(b.value);
+        if(p.swid&&p.espn_s2){st.textContent='✓ Found SWID and espn_s2. Connect below.';st.style.color='var(--win)';}
+        else if(b.value.trim()){st.textContent='Paste the whole cookie string; we pull out SWID and espn_s2 when you connect.';st.style.color='var(--text-muted)';}
+        else{st.textContent='';}
+      });})();
       window.setEspnMethod=function(method){
         espnMethod=method==='private'?'private':'public';
         document.querySelectorAll('.espn-method').forEach(function(b){var on=b.dataset.method===espnMethod;b.classList.toggle('active',on);b.setAttribute('aria-pressed',on?'true':'false');});
         document.getElementById('espnPrivateFields').style.display=espnMethod==='private'?'block':'none';
         document.getElementById('espnMethodHelp').textContent=espnMethod==='private'?'Connect a private ESPN league using its League ID and ESPN session credentials.':'Connect a publicly accessible ESPN league using its League ID.';
-        document.getElementById('linkEspnSwid').value=''; document.getElementById('linkEspnS2').value=''; linkSetMsg('','');
+        document.getElementById('linkEspnSwid').value=''; document.getElementById('linkEspnS2').value=''; (function(){var b=document.getElementById('linkEspnBlob');if(b)b.value='';var s=document.getElementById('linkEspnBlobStatus');if(s)s.textContent='';})(); linkSetMsg('','');
         var connectBtn=document.getElementById('linkEspnConnect'),googleConnect=espnMethod==='private'&&!window._hasAccount;
         connectBtn.textContent=googleConnect?'Sign in with Google to Connect':'Connect League';connectBtn.classList.toggle('google-continue-btn',googleConnect);
       };
@@ -2606,6 +2638,8 @@ def _link_modal_html() -> str:
         var id=(document.getElementById('linkEspnId').value||'').trim();
         var yr=(document.getElementById('linkEspnSeason').value||'').trim();
         var swid=(document.getElementById('linkEspnSwid').value||'').trim(), s2=(document.getElementById('linkEspnS2').value||'').trim();
+        var blobEl=document.getElementById('linkEspnBlob'), blob=(blobEl?blobEl.value:'').trim();
+        if(blob&&(!swid||!s2)){ var bp=brLinkParseCookies(blob); swid=swid||bp.swid||blob; s2=s2||bp.espn_s2||blob; }
         if(!/^\\d+$/.test(id)){ linkSetMsg('Enter a valid numeric League ID.','err'); return; }
         if(!window._hasAccount){
           if(espnMethod==='private'){
@@ -2613,7 +2647,7 @@ def _link_modal_html() -> str:
             linkSetMsg('Validating ESPN before Google sign-in…','');
             fetch('/api/link/espn/private/pending',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({league_id:id,season:yr?Number(yr):null,swid:swid,espn_s2:s2})})
               .then(function(r){return readEspnJson(r).then(function(d){return {ok:r.ok,d:d};});}).then(function(result){
-                document.getElementById('linkEspnSwid').value='';document.getElementById('linkEspnS2').value='';
+                document.getElementById('linkEspnSwid').value='';document.getElementById('linkEspnS2').value='';(function(){var b=document.getElementById('linkEspnBlob');if(b)b.value='';var s=document.getElementById('linkEspnBlobStatus');if(s)s.textContent='';})();
                 if(!result.ok||!result.d.ok){linkSetMsg(result.d.error||'Could not validate ESPN credentials.','err');return;}
                 var pane=document.querySelector('.link-pane[data-lp="espn"]'),old=document.getElementById('linkEspnPrivateChoice');if(old)old.remove();
                 var choice=document.createElement('div');choice.id='linkEspnPrivateChoice';choice.className='link-public-choice';
@@ -2655,7 +2689,7 @@ def _link_modal_html() -> str:
         var btn=document.getElementById('linkEspnConnect'), payload={league_id:id}; if(yr)payload.season=Number(yr);
         if(espnMethod==='private'){payload.swid=swid;payload.espn_s2=s2;} btn.disabled=true;btn.textContent='Connecting…';linkSetMsg('Validating with ESPN…','');
         fetch('/api/link/espn/'+espnMethod,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(readEspnJson).then(function(d){
-          document.getElementById('linkEspnSwid').value='';document.getElementById('linkEspnS2').value='';
+          document.getElementById('linkEspnSwid').value='';document.getElementById('linkEspnS2').value='';(function(){var b=document.getElementById('linkEspnBlob');if(b)b.value='';var s=document.getElementById('linkEspnBlobStatus');if(s)s.textContent='';})();
           if(!d.ok){linkSetMsg(d.error||'Could not connect that league.','err');return;}
           linkSetMsg('League connected. Opening dashboard…','ok');location.href=d.redirect_url;
         }).catch(function(err){linkSetMsg(err&&err.message||'Network error.','err');}).finally(function(){btn.disabled=false;btn.textContent='Connect League';});
@@ -17795,7 +17829,7 @@ def build_commissioner_body(ctx):
   .lh-ring-mid {{ position:absolute; inset:0; display:grid; place-content:center; text-align:center; }}
   .lh-ring-num {{ font-size:40px; font-weight:800; line-height:1; }}
   .lh-ring-cap {{ font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-top:3px; }}
-  .lh-pill {{ display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:800; letter-spacing:.03em; padding:4px 10px; border-radius:999px; text-transform:uppercase; }}
+  .lh-pill {{ display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:800; letter-spacing:.03em; padding:4px 10px; border-radius:12px; text-transform:uppercase; }}
   .lh-verdict {{ font-size:15px; color:var(--muted); margin-top:10px; max-width:48ch; }}
   .lh-verdict b {{ color:var(--text); }}
   .lh-wrap {{ max-width:1000px; margin:0 auto; }}
@@ -27959,13 +27993,13 @@ def build_portfolio_body(
         ".nfl-cnt{font-size:13px;font-weight:700;min-width:18px;text-align:right;}"
         ".nfl-note{font-size:11px;color:var(--text-subtle);min-width:20px;}"
         # filter pill buttons matching tab-btn style
-        ".pf-pill{font-size:13px;font-weight:700;padding:5px 14px;border-radius:9999px;"
+        ".pf-pill{font-size:13px;font-weight:700;padding:5px 14px;border-radius:12px;"
         "border:none;background:transparent;color:var(--text-muted);cursor:pointer;"
         "transition:background .12s,color .12s;}"
         ".pf-pill:hover{background:var(--accent-soft);color:var(--accent);}"
         ".pf-pill.on{background:var(--accent-soft);color:var(--accent);}"
         ".pf-fsearch{font-size:13px;padding:5px 12px;border:1px solid var(--border);"
-        "border-radius:9999px;background:var(--card);color:inherit;outline:none;"
+        "border-radius:12px;background:var(--card);color:inherit;outline:none;"
         "transition:border-color .12s;}"
         ".pf-fsearch:focus{border-color:var(--accent);}"
         # leagues table

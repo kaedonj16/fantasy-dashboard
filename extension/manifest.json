@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "BR Fantasy — ESPN League Connector",
+  "version": "1.0.0",
+  "description": "One-click connect your private ESPN fantasy league to BR Fantasy. Your ESPN session cookies are read locally and only handed to BR Fantasy when you connect.",
+  "permissions": ["cookies"],
+  "host_permissions": [
+    "https://*.espn.com/*",
+    "https://www.brfantasyfootball.com/*",
+    "https://brfantasyfootball.com/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Connect ESPN to BR Fantasy",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.brfantasyfootball.com/*",
+        "https://brfantasyfootball.com/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": { "id": "espn-connector@brfantasyfootball.com", "strict_min_version": "121.0" }
+  }
+}

@@ -948,7 +948,7 @@ logoCss = """
         /* the tab bar */
         .card .tab-strip {
           align-items: stretch;
-          border-radius: 9999px;
+          border-radius: 12px;
           padding: 2px;
           margin-bottom: 12px;
         }
@@ -962,7 +962,7 @@ logoCss = """
           padding: 6px 14px;
           font-size: 15px;
           font-weight: 600;
-          border-radius: 9999px;
+          border-radius: 12px;
           cursor: pointer;
           transition: background 0.15s ease, color 0.15s ease;
         }
