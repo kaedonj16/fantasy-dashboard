@@ -8890,7 +8890,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (espn_s2 && espnS2Input) espnS2Input.value = espn_s2;
       if (!espnCookieStatus) return;
       if (swid && espn_s2) {
-        espnCookieStatus.textContent = "✓ Found SWID and espn_s2 — connect below.";
+        espnCookieStatus.textContent = "✓ Found SWID and espn_s2. Connect below.";
         espnCookieStatus.style.color = "var(--win)";
       } else if (swid || espn_s2) {
         espnCookieStatus.textContent = "Found " + (swid ? "SWID" : "espn_s2") +

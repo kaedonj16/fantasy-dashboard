@@ -1161,14 +1161,14 @@ FORM_BODY = """
           <div id="espnHomePrivateFields" style="display:none;">
             <div class="row">
               <label for="espnCookieBlob">Paste your ESPN cookies</label>
-              <textarea id="espnCookieBlob" rows="3" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box;font:inherit;resize:vertical;" placeholder="Paste the whole cookie string here — e.g. SWID=...; espn_s2=AEB…  We'll pull out both values."></textarea>
+              <textarea id="espnCookieBlob" rows="3" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box;font:inherit;resize:vertical;" placeholder="Paste the whole cookie string here, e.g. SWID=...; espn_s2=AEB…  We'll pull out both values."></textarea>
               <p class="hint" id="espnCookieStatus" aria-live="polite" style="margin-top:6px;"></p>
             </div>
             <details class="espn-home-help"><summary>How to copy your ESPN cookies</summary>
               <ol>
                 <li>In another tab, sign in at <strong>espn.com</strong> and open your league.</li>
                 <li>Right-click the page → <strong>Inspect</strong>, then open <strong>Application → Cookies → https://www.espn.com</strong>.</li>
-                <li>Select the <code>SWID</code> and <code>espn_s2</code> rows (or all of them), copy, and paste above — we extract the two we need.</li>
+                <li>Select the <code>SWID</code> and <code>espn_s2</code> rows (or all of them), copy, and paste above, and we extract the two we need.</li>
               </ol>
               <strong>Treat these like a password.</strong> They're stored encrypted and only used to read your league.
             </details>
@@ -2462,10 +2462,10 @@ def _link_modal_html() -> str:
             <input id="linkEspnSeason" class="link-inp link-full" inputmode="numeric" placeholder="current season" autocomplete="off">
             <div id="espnPrivateFields" style="display:none;">
               <label class="link-lb link-field" for="linkEspnBlob">Paste your ESPN cookies</label>
-              <textarea id="linkEspnBlob" class="link-inp link-full" rows="3" autocomplete="off" spellcheck="false" style="box-sizing:border-box;font:inherit;resize:vertical;" placeholder="Paste the whole cookie string — e.g. SWID=...; espn_s2=AEB…  We'll pull out both values."></textarea>
+              <textarea id="linkEspnBlob" class="link-inp link-full" rows="3" autocomplete="off" spellcheck="false" style="box-sizing:border-box;font:inherit;resize:vertical;" placeholder="Paste the whole cookie string, e.g. SWID=...; espn_s2=AEB…  We'll pull out both values."></textarea>
               <p class="link-help" id="linkEspnBlobStatus" aria-live="polite"></p>
               <details class="espn-credential-help"><summary>How to copy your ESPN cookies</summary>
-                <ol><li>In another tab, sign in at <strong>espn.com</strong> and open your league.</li><li>Right-click the page → <strong>Inspect</strong>, then open <strong>Application → Cookies → https://www.espn.com</strong>.</li><li>Select the <code>SWID</code> and <code>espn_s2</code> rows (or all of them), copy, and paste above — we extract the two we need.</li></ol>
+                <ol><li>In another tab, sign in at <strong>espn.com</strong> and open your league.</li><li>Right-click the page → <strong>Inspect</strong>, then open <strong>Application → Cookies → https://www.espn.com</strong>.</li><li>Select the <code>SWID</code> and <code>espn_s2</code> rows (or all of them), copy, and paste above, and we extract the two we need.</li></ol>
                 <strong>Treat these like a password.</strong> They're stored encrypted and only used to read your league.
               </details>
               <details class="espn-credential-help"><summary>Enter the two values manually</summary>
@@ -2621,7 +2621,7 @@ def _link_modal_html() -> str:
       }
       (function(){var b=document.getElementById('linkEspnBlob');if(!b)return;b.addEventListener('input',function(){
         var st=document.getElementById('linkEspnBlobStatus');if(!st)return;var p=brLinkParseCookies(b.value);
-        if(p.swid&&p.espn_s2){st.textContent='✓ Found SWID and espn_s2 — connect below.';st.style.color='var(--win)';}
+        if(p.swid&&p.espn_s2){st.textContent='✓ Found SWID and espn_s2. Connect below.';st.style.color='var(--win)';}
         else if(b.value.trim()){st.textContent='Paste the whole cookie string; we pull out SWID and espn_s2 when you connect.';st.style.color='var(--text-muted)';}
         else{st.textContent='';}
       });})();
