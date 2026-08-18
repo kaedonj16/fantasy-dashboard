@@ -326,6 +326,127 @@ def link_espn_reconnect():
     return jsonify({"ok": True, "redirect_url": f"/espn/{season}/{league_id}/dashboard"})
 
 
+# ── ESPN email + one-time-code sign-in (feature-flagged, off by default) ───────
+# A friendlier alternative to pasting cookies: the member enters their email,
+# gets a code, enters it, and we obtain SWID + espn_s2 and run the SAME connect
+# pipeline. Everything downstream of the credentials is unchanged; cookie paste
+# stays as the fallback for every failure.
+def _otp_error(exc: Exception):
+    reference = uuid.uuid4().hex[:12]
+    name = type(exc).__name__
+    logger.warning("[link/espn/otp] ref=%s error_type=%s", reference, name)
+    mapping = {
+        "EspnLoginUnavailable": ("ESPN email sign-in is unavailable right now. Use the cookie option below.", 503),
+        "EspnLoginInvalidCode": ("That code isn't right. Check your email and try again.", 400),
+        "EspnLoginExpired": ("This sign-in expired. Request a new code.", 401),
+        "EspnLoginCaptchaRequired": ("ESPN asked for an extra security check. Use the cookie option below.", 409),
+        "EspnLoginTooManyAttempts": ("Too many tries. Start the sign-in again.", 429),
+        "EspnLoginRateLimited": ("Too many code requests. Wait a few minutes and try again.", 429),
+    }
+    message, status = mapping.get(name, ("Couldn't complete ESPN sign-in. Use the cookie option below.", 400))
+    return f"{message} Reference: {reference}.", status
+
+
+@link_bp.post("/api/link/espn/otp/start")
+def link_espn_otp_start():
+    from dashboard_services.providers.espn_login import otp_login_enabled, get_broker
+    if not otp_login_enabled():
+        return jsonify({"ok": False, "error": "ESPN email sign-in isn't available."}), 404
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict) or set(data) - {"email", "league_id", "season"}:
+        return jsonify({"ok": False, "error": "Invalid request."}), 400
+    email = str(data.get("email") or "").strip()
+    league_id = str(data.get("league_id") or "").strip()
+    if not league_id.isdigit():
+        return jsonify({"ok": False, "error": "League ID must contain numbers only."}), 400
+    try:
+        season = int(data.get("season") or _default_season())
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Season must be a valid year."}), 400
+    try:
+        login_id = get_broker().start(email)
+    except Exception as exc:
+        logger.warning("[link/espn/otp/start] failed (%s)", type(exc).__name__)
+        error, status = _otp_error(exc)
+        return jsonify({"ok": False, "error": error}), status
+    return jsonify({"ok": True, "login_id": login_id, "state": "awaiting_code"})
+
+
+@link_bp.post("/api/link/espn/otp/verify")
+def link_espn_otp_verify():
+    from dashboard_services.providers.espn_login import otp_login_enabled, get_broker
+    if not otp_login_enabled():
+        return jsonify({"ok": False, "error": "ESPN email sign-in isn't available."}), 404
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict) or set(data) - {"login_id", "code", "league_id", "season"}:
+        return jsonify({"ok": False, "error": "Invalid request."}), 400
+    login_id = str(data.get("login_id") or "").strip()
+    code = str(data.get("code") or "").strip()
+    league_id = str(data.get("league_id") or "").strip()
+    if not login_id or not code or not league_id.isdigit():
+        return jsonify({"ok": False, "error": "Enter the code from your email."}), 400
+    try:
+        season = int(data.get("season") or _default_season())
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Season must be a valid year."}), 400
+    try:
+        creds = get_broker().verify(login_id, code)
+    except Exception as exc:
+        logger.warning("[link/espn/otp/verify] failed (%s)", type(exc).__name__)
+        error, status = _otp_error(exc)
+        return jsonify({"ok": False, "error": error}), status
+    swid, espn_s2 = creds.get("swid"), creds.get("espn_s2")
+    # Same validate-then-persist path as cookie paste, tagged connection_method="otp".
+    try:
+        from dashboard_services.providers.espn_api import connect_league
+        info = connect_league(season, league_id, swid=swid, espn_s2=espn_s2)
+    except Exception as exc:
+        logger.warning("[link/espn/otp/verify] connect failed (%s)", type(exc).__name__)
+        error, status = _espn_error(exc, "private")
+        return jsonify({"ok": False, "error": error}), status
+    league_name = info.get("name") or f"ESPN League {league_id}"
+    account_id = session.get("account_id")
+    if account_id:
+        # Stored as "private" (the credentials are private cookies; the schema's
+        # CHECK allows only public/private). "otp" is surfaced in the response so
+        # the client knows how the member connected, without a schema change.
+        from dashboard_services.accounts import add_espn_league_connection
+        add_espn_league_connection(account_id, league_id, season, league_name, "private", swid=swid, espn_s2=espn_s2)
+        return jsonify({
+            "ok": True, "platform": "espn", "connection_method": "otp",
+            "league_id": league_id, "season": season, "name": info.get("name"),
+            "redirect_url": f"/espn/{season}/{league_id}/dashboard",
+        })
+    # No account yet: stage for post-Google onboarding, mirroring /private/pending.
+    from dashboard_services.accounts import stage_private_espn_connection
+    token = stage_private_espn_connection(league_id, season, league_name, swid, espn_s2)
+    session["pending_provider_connection_token"] = token
+    session["onboarding_progress"] = {
+        "provider": "espn", "connection_method": "otp",
+        "league_id": league_id, "season": season, "step": "google",
+    }
+    return jsonify({"ok": True, "league_id": league_id, "season": season,
+                    "auth_url": "/auth/google?intent=onboarding&next=/"})
+
+
+@link_bp.post("/api/link/espn/otp/resend")
+def link_espn_otp_resend():
+    from dashboard_services.providers.espn_login import otp_login_enabled, get_broker
+    if not otp_login_enabled():
+        return jsonify({"ok": False, "error": "ESPN email sign-in isn't available."}), 404
+    data = request.get_json(silent=True) or {}
+    login_id = str(data.get("login_id") or "").strip()
+    if not login_id:
+        return jsonify({"ok": False, "error": "Invalid request."}), 400
+    try:
+        get_broker().resend(login_id)
+    except Exception as exc:
+        logger.warning("[link/espn/otp/resend] failed (%s)", type(exc).__name__)
+        error, status = _otp_error(exc)
+        return jsonify({"ok": False, "error": error}), status
+    return jsonify({"ok": True, "state": "awaiting_code"})
+
+
 @link_bp.route("/api/link/espn/preview")
 def link_espn_preview():
     league_id = (request.args.get("league_id") or "").strip()

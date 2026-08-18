@@ -8777,6 +8777,26 @@ a.signed-home-league:hover{background:rgba(255,255,255,.1);border-color:rgba(255
 .espn-home-help summary { color: var(--accent); cursor: pointer; font-weight: 700; }
 .espn-home-help ol { padding-left: 20px; line-height: 1.5; }
 
+/* "Paste your ESPN cookies" box — match the app's inputs (the input rules only
+   target input[type=…], so a <textarea> is otherwise unstyled). #linkEspnBlob
+   already gets .link-inp styling; this styles the home-modal box and squares
+   both to the same height. */
+#espnCookieBlob {
+  padding: 9px 11px;
+  border: 1px solid var(--grid);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+#espnCookieBlob:focus {
+  border-color: #8eb2e3;
+  box-shadow: 0 0 0 4px rgba(56, 132, 255, 0.1);
+}
+#espnCookieBlob, #linkEspnBlob { min-height: 68px; line-height: 1.45; }
+#espnCookieBlob::placeholder, #linkEspnBlob::placeholder { color: var(--text-subtle); }
+
 .home-card .platform-btn img {
   display: none;
 }
