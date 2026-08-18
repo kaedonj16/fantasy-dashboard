@@ -1,0 +1,54 @@
+:root {
+  --navy: #16365d;
+  --ink: #122d4b;
+  --muted: #6b7280;
+  --border: #dbe2ea;
+  --bg: #ffffff;
+  --row: #f4f6f8;
+  --ok: #16a34a;
+  --warn: #b45309;
+  --err: #b23528;
+}
+* { box-sizing: border-box; }
+body {
+  width: 320px;
+  margin: 0;
+  padding: 16px;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.hd { display: flex; align-items: center; gap: 11px; margin-bottom: 14px; }
+.hd img { border-radius: 7px; flex: 0 0 auto; }
+h1 { margin: 0; font-size: 15px; font-weight: 800; letter-spacing: -0.01em; }
+.sub { margin: 1px 0 0; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+
+.card {
+  display: flex; align-items: flex-start; gap: 11px;
+  padding: 13px 14px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--row); margin-bottom: 12px;
+}
+.card .dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 4px; flex: 0 0 auto; background: var(--muted); }
+.card.state-loading .dot { background: var(--muted); animation: pulse 1s ease-in-out infinite; }
+.card.state-ok .dot { background: var(--ok); }
+.card.state-warn .dot { background: var(--warn); }
+.card.state-err .dot { background: var(--err); }
+@keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+.msg { min-width: 0; }
+.msg strong { display: block; font-size: 13.5px; font-weight: 700; }
+.detail { display: block; margin-top: 3px; font-size: 12px; line-height: 1.45; color: var(--muted); }
+
+.btn {
+  display: block; width: 100%; text-align: center; box-sizing: border-box;
+  padding: 10px 12px; border-radius: 10px; font: 700 13px/1.2 inherit;
+  cursor: pointer; margin-bottom: 8px; text-decoration: none;
+}
+.btn.primary { border: 1px solid var(--navy); background: var(--navy); color: #fff; }
+.btn.primary:disabled { opacity: 0.5; cursor: default; }
+.btn.primary:not(:disabled):hover { background: #0f2747; }
+.btn.ghost { border: 1px solid var(--border); background: var(--bg); color: var(--ink); }
+.btn.ghost:hover { background: var(--row); }
+
+.how { margin: 6px 0 12px; font-size: 12px; line-height: 1.5; color: var(--muted); }
+.how b { color: var(--ink); }
+.ft { margin: 0; padding-top: 11px; border-top: 1px solid var(--border); font-size: 11px; line-height: 1.5; color: #8a95a4; }

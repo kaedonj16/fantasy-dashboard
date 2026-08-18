@@ -1,0 +1,29 @@
+/* The injected button is styled to sit inside BR Fantasy's connect modal
+   without depending on the page's classes (which could change). */
+.br-ext-fill-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 0 10px;
+  padding: 10px 14px;
+  border: 1px solid #16365d;
+  border-radius: 10px;
+  background: #16365d;
+  color: #ffffff;
+  font: 700 13px/1.2 "Archivo", system-ui, -apple-system, sans-serif;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.br-ext-fill-btn:hover { background: #0f2747; }
+.br-ext-fill-btn:disabled { opacity: 0.6; cursor: default; }
+
+.br-ext-status {
+  margin: -2px 0 8px;
+  font: 500 12px/1.45 system-ui, -apple-system, sans-serif;
+  color: #6b7280;
+}
+.br-ext-status[data-kind="ok"] { color: #16a34a; }
+.br-ext-status[data-kind="err"] { color: #b45309; }
