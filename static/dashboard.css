@@ -212,10 +212,10 @@
   --inj-q: #ca8a04;  /* questionable: a distinct yellow so it doesn't read as orange next to doubtful */
   --indigo: #4f46e5; /* categorical: trade / activity */
   --rookie: #2563eb; /* rookie badge — its own blue, so it reads the same hue in both themes
-  --brand-blue: #3b82f6; /* the app's mid blue (blue-500) — used for links, active
-                           states and accents that are intentionally blue rather than
-                           the navy --accent. Same value in both themes. */
                         (not the navy --accent, which is deliberately dark in light mode) */
+  --brand-blue: #3b82f6; /* the app's mid blue (blue-500) — used for links, active
+                            states and accents that are intentionally blue rather than
+                            the navy --accent. Same value in both themes. */
   /* Typography */
   --font-sans: "Archivo", "InterVariable", system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
   --text-xs: 11px;
