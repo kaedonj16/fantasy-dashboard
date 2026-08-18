@@ -1065,6 +1065,17 @@ def _yahoo_ui_enabled() -> bool:
     return (os.environ.get("YAHOO_ENABLED") or "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def _espn_otp_ui_enabled() -> bool:
+    """Whether to offer ESPN email/one-time-code sign-in in the UI. Mirrors the
+    broker's own gate (on once ESPN_ONEID_API_KEY is set), so the button and modal
+    only render when the endpoints will actually work."""
+    try:
+        from dashboard_services.providers.espn_login import otp_login_enabled
+        return otp_login_enabled()
+    except Exception:
+        return False
+
+
 FORM_BODY = """
 <div class="home-page">
   <section class="home-hero">
@@ -1158,6 +1169,12 @@ FORM_BODY = """
             <label for="espnLeagueIdInput">League ID</label>
             <input type="text" id="espnLeagueIdInput" placeholder="e.g. 336414" autocomplete="off">
           </div>
+          {% if espn_otp_enabled %}
+          <div class="row" id="espnOtpLaunchRow" style="display:none;">
+            <button type="button" id="espnOtpLaunch" class="espn-otp-launch">Sign in with ESPN email</button>
+            <p class="hint" style="margin-top:6px;">Get a code by email, no cookies to copy. Paste cookies below if you prefer.</p>
+          </div>
+          {% endif %}
           <div id="espnHomePrivateFields" style="display:none;">
             <div class="row">
               <label for="espnCookieBlob">Paste your ESPN cookies</label>
@@ -1412,6 +1429,66 @@ FORM_BODY = """
   <div class="fullscreen-loading-subtext">This usually takes a few seconds</div>
   <div class="flo-progress-track"><div class="flo-progress-bar" id="floProgressBar"></div></div>
 </div>
+
+{% if espn_otp_enabled %}
+<div class="otp-ov" id="espnOtpModal" style="display:none;" role="dialog" aria-modal="true" aria-label="Sign in to ESPN with email">
+  <div class="otp-card">
+    <div class="otp-head"><span id="espnOtpTitle">Connect your ESPN league</span><button type="button" class="otp-x" id="espnOtpClose" aria-label="Close">&times;</button></div>
+
+    <div class="otp-step" id="espnOtpEmailStep">
+      <div class="otp-chip" id="espnOtpChip" hidden><span class="otp-chip-dot">E</span><span id="espnOtpChipLeague">ESPN league</span></div>
+      <label class="otp-lb" for="espnOtpEmail">ESPN email address</label>
+      <input class="otp-inp" type="email" id="espnOtpEmail" autocomplete="email" placeholder="you@email.com">
+      <button type="button" class="otp-btn" id="espnOtpSend">Email me a 6-digit code</button>
+      <p class="otp-help">We send a code to the email on your ESPN account. No password needed, and we never see it.</p>
+    </div>
+
+    <div class="otp-step" id="espnOtpCodeStep" hidden>
+      <p class="otp-sub">Enter the 6-digit code we emailed to <b id="espnOtpEmailEcho"></b>. It expires in 5 minutes.</p>
+      <label class="otp-lb" for="espnOtpCode">Verification code</label>
+      <input class="otp-inp otp-code" id="espnOtpCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="------">
+      <button type="button" class="otp-btn" id="espnOtpVerify">Verify and connect</button>
+      <div class="otp-resend"><button type="button" class="otp-link" id="espnOtpResend">Resend code</button><button type="button" class="otp-link" id="espnOtpBack">Wrong email?</button></div>
+    </div>
+
+    <div class="otp-step otp-verifying" id="espnOtpVerifying" hidden>
+      <div class="otp-spin"></div>
+      <p class="otp-verify-t">Signing you in to ESPN…</p>
+    </div>
+
+    <div class="otp-msg" id="espnOtpMsg" aria-live="polite"></div>
+  </div>
+</div>
+<style>
+.otp-ov{position:fixed;inset:0;z-index:var(--z-modal,10000);background:rgba(4,8,17,.5);display:flex;align-items:center;justify-content:center;padding:16px}
+.otp-card{background:var(--card);border:1px solid var(--border);border-radius:16px;width:100%;max-width:420px;padding:16px 18px;box-shadow:0 24px 60px -20px rgba(0,0,0,.5);color:var(--text)}
+.otp-head{display:flex;justify-content:space-between;align-items:center;font-size:16px;font-weight:800;margin-bottom:12px}
+.otp-x{border:0;background:none;font-size:24px;line-height:1;color:var(--text-muted);cursor:pointer;padding:0 4px}
+.otp-chip{display:inline-flex;align-items:center;gap:7px;background:var(--accent-soft);border:1px solid var(--border);border-radius:10px;padding:7px 11px;font-size:12.5px;font-weight:700;margin-bottom:14px}
+.otp-chip-dot{width:16px;height:16px;border-radius:5px;background:#cc0000;color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center}
+.otp-lb{display:block;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px}
+.otp-inp{width:100%;border:1px solid var(--border);background:var(--bg-alt);color:var(--text);border-radius:9px;padding:10px 11px;font-size:14px;box-sizing:border-box}
+.otp-inp:focus{outline:none;border-color:#8eb2e3;box-shadow:0 0 0 4px rgba(56,132,255,.1)}
+.otp-code{letter-spacing:.4em;text-align:center;font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;padding:12px}
+.otp-btn{width:100%;border:0;background:var(--accent);color:#fff;font-weight:700;font-size:13px;padding:11px 14px;border-radius:9px;cursor:pointer;margin-top:14px}
+.otp-btn:disabled{opacity:.6;cursor:default}
+.otp-help{font-size:12px;color:var(--text-muted);margin-top:10px;line-height:1.5}
+.otp-sub{font-size:12.5px;color:var(--text-muted);margin:0 0 14px;line-height:1.5}
+.otp-sub b{color:var(--text)}
+.otp-resend{display:flex;justify-content:space-between;margin-top:14px}
+.otp-link{border:0;background:none;color:var(--accent);font-weight:700;font-size:12px;cursor:pointer;padding:0}
+.otp-link:disabled{color:var(--text-subtle);cursor:default}
+.otp-verifying{text-align:center;padding:24px 0 8px}
+.otp-spin{width:34px;height:34px;margin:0 auto 14px;border-radius:50%;border:3px solid var(--border);border-top-color:var(--accent);animation:otpspin .8s linear infinite}
+@keyframes otpspin{to{transform:rotate(360deg)}}
+.otp-verify-t{font-size:15px;font-weight:800;margin:0}
+.otp-msg{margin-top:12px;font-size:12.5px;font-weight:600;min-height:16px}
+.otp-msg.err{color:var(--loss)}
+.otp-msg.ok{color:var(--win)}
+.espn-otp-launch{width:100%;background:var(--rookie);color:var(--on-accent);border:1px solid var(--rookie);border-radius:10px;font-size:14px;font-weight:700;padding:10px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.28)}
+.espn-otp-launch:hover{filter:brightness(1.08)}
+</style>
+{% endif %}
 """
 
 BASE_HTML = """
@@ -18061,6 +18138,7 @@ def index():
                 error=err,
                 recent_updates=generate_recent_updates_html(),
                 yahoo_enabled=_yahoo_ui_enabled(),
+                espn_otp_enabled=_espn_otp_ui_enabled(),
             )
             return render_page("BR Fantasy Dashboard", None, "home", body_html, lite_js=True)
 
@@ -18085,6 +18163,7 @@ def index():
                         error="Could not match that username to a team in this league.",
                         recent_updates=generate_recent_updates_html(),
                         yahoo_enabled=_yahoo_ui_enabled(),
+                        espn_otp_enabled=_espn_otp_ui_enabled(),
                     )
                     return render_page("BR Fantasy Dashboard", None, "home", body_html, lite_js=True)
 
@@ -18160,6 +18239,7 @@ def index():
         next_url=next_url,
         recent_updates=generate_recent_updates_html(),
         yahoo_enabled=_yahoo_ui_enabled(),
+        espn_otp_enabled=_espn_otp_ui_enabled(),
     )
     return render_page(
         "BR Fantasy - Free Fantasy Football Trade Calculator & Dynasty Tools",

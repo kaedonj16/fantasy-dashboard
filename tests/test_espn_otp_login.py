@@ -62,22 +62,46 @@ def test_session_expires_after_ttl(monkeypatch):
         b.verify(login_id, "123456")
 
 
-def test_flag_is_off_by_default(monkeypatch):
+def test_enabled_defers_to_broker_then_override(monkeypatch):
     monkeypatch.delenv("ESPN_OTP_LOGIN_ENABLED", raising=False)
-    assert L.otp_login_enabled() is False
+    monkeypatch.delenv("ESPN_OTP_BROKER", raising=False)
+    monkeypatch.delenv("ESPN_ONEID_API_KEY", raising=False)
+    L._reset_broker()
+    assert L.otp_login_enabled() is False              # default OneID driver, no key ⇒ off
+    monkeypatch.setenv("ESPN_ONEID_API_KEY", "APIKEY test-value")
+    L._reset_broker()
+    assert L.otp_login_enabled() is True               # key present ⇒ on, no flag needed
+    monkeypatch.setenv("ESPN_OTP_LOGIN_ENABLED", "off")
+    assert L.otp_login_enabled() is False              # explicit kill-switch wins
+    monkeypatch.delenv("ESPN_ONEID_API_KEY", raising=False)
     monkeypatch.setenv("ESPN_OTP_LOGIN_ENABLED", "true")
-    assert L.otp_login_enabled() is True
+    L._reset_broker()
+    assert L.otp_login_enabled() is True               # explicit on wins even without a key
+    L._reset_broker()
 
 
-def test_default_broker_is_stubbed_unavailable():
+def test_default_broker_is_oneid(monkeypatch):
+    monkeypatch.delenv("ESPN_OTP_BROKER", raising=False)
+    L._reset_broker()
+    assert isinstance(L.get_broker(), L.OneIdOtpBroker)
+    L._reset_broker()
+
+
+def test_playwright_stub_is_unavailable():
+    b = L.PlaywrightEspnLoginBroker()
+    assert b.available() is False
     with pytest.raises(L.EspnLoginUnavailable):
-        L.PlaywrightEspnLoginBroker().start("t@example.com")
+        b.start("t@example.com")
 
 
 def test_oneid_broker_unavailable_without_api_key(monkeypatch):
     monkeypatch.delenv("ESPN_ONEID_API_KEY", raising=False)
+    b = L.OneIdOtpBroker()
+    assert b.available() is False
     with pytest.raises(L.EspnLoginUnavailable):
-        L.OneIdOtpBroker().start("t@example.com")
+        b.start("t@example.com")
+    monkeypatch.setenv("ESPN_ONEID_API_KEY", "APIKEY test-value")
+    assert b.available() is True
 
 
 # ── HTTP endpoints (flask; skipped where unavailable) ─────────────────────────
@@ -132,7 +156,7 @@ def test_endpoint_wrong_code_is_rejected(client):
 
 def test_endpoint_404_when_flag_off(client, monkeypatch):
     test_client, _ = client
-    monkeypatch.setenv("ESPN_OTP_LOGIN_ENABLED", "")
+    monkeypatch.setenv("ESPN_OTP_LOGIN_ENABLED", "off")  # explicit kill-switch
     r = test_client.post("/api/link/espn/otp/start",
                          json={"email": "t@example.com", "league_id": "123", "season": 2026})
     assert r.status_code == 404

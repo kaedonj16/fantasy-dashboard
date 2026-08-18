@@ -1,16 +1,19 @@
 """ESPN email + one-time-code (OTP) login broker.
 
-Feature-flagged via ``ESPN_OTP_LOGIN_ENABLED`` (OFF by default). When on, this
-obtains ``espn_s2`` + ``SWID`` from an email one-time passcode and hands them to
+Obtains ``espn_s2`` + ``SWID`` from an email one-time passcode and hands them to
 the normal ``connect_league`` pipeline — so a member can sign in with an email
 and a code instead of copying cookies. Cookie-paste and the browser extension
-remain the fallback for every failure, and the flag is a kill-switch.
+remain the fallback for every failure.
 
-Because automating ESPN/Disney login carries Terms-of-Service and reliability
-risk, the real headless driver (``PlaywrightEspnLoginBroker``) is deliberately
-stubbed until the flow is validated on a networked host (see the OTP spike). The
-broker abstraction, the short-lived session store, rate limiting, and the whole
-request/verify contract are complete and covered by tests against the mock.
+The default broker is the Disney OneID email-OTP API driver
+(``OneIdOtpBroker``); it becomes available once its client key is set in
+``ESPN_ONEID_API_KEY``, and that presence is what turns the feature on (see
+``otp_login_enabled``). ``ESPN_OTP_LOGIN_ENABLED`` remains an explicit override
+kill-switch. Because automating ESPN/Disney login carries Terms-of-Service and
+reliability risk, validate the driver on a networked host before setting the key
+in production. The broker abstraction, the short-lived session store, rate
+limiting, and the whole request/verify contract are covered by tests against a
+deterministic mock (``ESPN_OTP_BROKER=mock``).
 """
 from __future__ import annotations
 
@@ -52,8 +55,20 @@ class EspnLoginRateLimited(EspnLoginError):
 
 
 def otp_login_enabled() -> bool:
-    """Kill-switch. OFF unless the env var is explicitly truthy."""
-    return os.getenv("ESPN_OTP_LOGIN_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
+    """Whether ESPN email/OTP sign-in is live.
+
+    ON when a usable broker is configured — i.e. the default OneID driver has its
+    ``ESPN_ONEID_API_KEY``, or a mock/dev broker is selected. So setting the API
+    key is all it takes to turn the feature on. ``ESPN_OTP_LOGIN_ENABLED`` is an
+    explicit override: ``0/false/off`` forces it off (kill-switch), ``1/true/on``
+    forces it on (e.g. the mock in tests); anything else defers to the broker.
+    """
+    override = os.getenv("ESPN_OTP_LOGIN_ENABLED", "").strip().lower()
+    if override in {"0", "false", "no", "off"}:
+        return False
+    if override in {"1", "true", "yes", "on"}:
+        return True
+    return get_broker().available()
 
 
 # ── tunables ──────────────────────────────────────────────────────────────────
@@ -115,6 +130,10 @@ class EspnLoginBroker:
 
     def __init__(self) -> None:
         self._store = _Store()
+
+    def available(self) -> bool:
+        """Whether this broker can actually run (config present)."""
+        return True
 
     def start(self, email: str) -> str:
         email = (email or "").strip()
@@ -187,6 +206,9 @@ class PlaywrightEspnLoginBroker(EspnLoginBroker):
     users fall back to cookie paste instead of hitting a half-built browser.
     """
 
+    def available(self) -> bool:
+        return False
+
     def _begin(self, email: str) -> dict:
         raise EspnLoginUnavailable("ESPN email sign-in isn't available yet.")
 
@@ -213,6 +235,9 @@ class OneIdOtpBroker(EspnLoginBroker):
     the ESPN-ONESITE.WEB-PROD client (a public client key from OneID.js). Without
     it the broker is unavailable, so the flow degrades to cookie paste.
     """
+
+    def available(self) -> bool:
+        return bool(os.getenv("ESPN_ONEID_API_KEY", "").strip())
 
     def _api_key(self) -> str:
         key = os.getenv("ESPN_ONEID_API_KEY", "").strip()
@@ -301,19 +326,20 @@ _BROKER: Optional[EspnLoginBroker] = None
 def get_broker() -> EspnLoginBroker:
     """Singleton broker (holds the session store, so start/verify share state).
 
-    ``ESPN_OTP_BROKER``: ``mock`` (tests/dev) → deterministic; ``oneid`` → the
-    real OneID API driver; anything else → the unavailable default, so the flag
-    can be on for staging without a working driver.
+    Defaults to the real OneID email-OTP driver — no env var needed; it reports
+    itself unavailable until ``ESPN_ONEID_API_KEY`` is set, so the feature simply
+    turns on when the key is configured. ``ESPN_OTP_BROKER`` overrides the choice:
+    ``mock`` (tests/dev) → deterministic; ``playwright`` → the headless stub.
     """
     global _BROKER
     if _BROKER is None:
         kind = os.getenv("ESPN_OTP_BROKER", "").strip().lower()
         if kind == "mock":
             _BROKER = MockEspnLoginBroker()
-        elif kind == "oneid":
-            _BROKER = OneIdOtpBroker()
-        else:
+        elif kind == "playwright":
             _BROKER = PlaywrightEspnLoginBroker()
+        else:
+            _BROKER = OneIdOtpBroker()
     return _BROKER
 
 
