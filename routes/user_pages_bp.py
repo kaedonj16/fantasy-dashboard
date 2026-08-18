@@ -154,7 +154,6 @@ def page_portfolio():
         player_ids = [str(p) for p in (viewer_roster.get("players") or [])]
         all_players = {}
         total_value = 0.0
-        _pos_buckets = {"QB": [], "RB": [], "WR": [], "TE": []}
         for pid in player_ids:
             v = values_by_id.get(pid) or {}
             val = float(v.get("value") or 0)
@@ -169,10 +168,6 @@ def page_portfolio():
                 "pos_rank": v.get("pos_rank_label") or "",
                 "nfl_team": nfl_team,
             }
-            if val > 0 and pos in _pos_buckets:
-                _pos_buckets[pos].append(val)
-        _top_n = {"QB": 1, "RB": 2, "WR": 3, "TE": 1}
-        pos_user_vals = {p: sum(sorted(_pos_buckets[p], reverse=True)[:n]) for p, n in _top_n.items()}
         # Resolve a player's position from the value table, falling back to the
         # players index — so the user side and the league side bucket the same
         # players (the user side already uses this same fallback above).
@@ -188,30 +183,21 @@ def page_portfolio():
             m = n // 2
             return s[m] if n % 2 else (s[m - 1] + s[m]) / 2
 
-        # Baseline against the league MEDIAN roster, not the mean. Top-N value
-        # sums are right-skewed — a few stacked teams inflate the average — so a
-        # mean baseline pushes most rosters below 1.0 and makes every middling
-        # team read as "negative" at every position (which looked broken). The
-        # median puts a typical roster at ~0% and keeps the bar symmetric.
-        pos_league_avgs = {}
-        for pos, top_n in _top_n.items():
-            r_sums = []
-            for r in rosters:
-                r_pids = [str(p) for p in (r.get("players") or [])]
-                r_pos_vals = sorted(
-                    [float((values_by_id.get(p) or {}).get("value") or 0)
-                     for p in r_pids if _pos_of(p) == pos],
-                    reverse=True,
-                )
-                r_sums.append(sum(r_pos_vals[:top_n]))
-            pos_league_avgs[pos] = _median(r_sums) or 1
-        # Positional rank within league using same weighted-strength + z-score as teams page
+        # Positional strength uses the SAME starter-weighted strength as the
+        # league-card ranks, so the two never disagree — a mid-pack rank now reads
+        # ~0% on the portfolio bar instead of a big negative. weighted_pos_strength
+        # emphasizes startable top-end talent and only lightly credits bench depth,
+        # so a thin roster no longer structurally drags a position negative the way
+        # the old fixed top-N (1 QB / 2 RB / 3 WR / 1 TE) value sum did. Both the
+        # user value and the league baseline come from one pass over the rosters.
         roster_positions = lctx.get("roster_positions") or []
         try:
             slot_counts = count_roster_positions(roster_positions)
         except Exception:
             slot_counts = {"QB": 1, "RB": 2, "WR": 3, "TE": 1, "FLEX": 1}
         pos_user_rank = {}
+        pos_user_vals = {}
+        pos_league_avgs = {}
         for pos in ["QB", "RB", "WR", "TE"]:
             all_strengths = []
             user_strength = 0.0
@@ -226,11 +212,12 @@ def page_portfolio():
                 all_strengths.append((str(r.get("roster_id")), strength))
                 if str(r.get("roster_id")) == rid:
                     user_strength = strength
+            # Baseline against the league MEDIAN team, not the mean: strengths are
+            # right-skewed (a few stacked teams), so a mean baseline pushes every
+            # typical roster negative. Median keeps a mid-pack team at ~0%.
+            pos_user_vals[pos] = user_strength
+            pos_league_avgs[pos] = _median([s for _, s in all_strengths]) or 1
             if len(all_strengths) > 1:
-                vals_only = [s for _, s in all_strengths]
-                mu = sum(vals_only) / len(vals_only)
-                sigma = (sum((v - mu) ** 2 for v in vals_only) / len(vals_only)) ** 0.5
-                user_z = (user_strength - mu) / sigma if sigma > 0 else 0.0
                 ranked = sorted(all_strengths, key=lambda x: -x[1])
                 pos_user_rank[pos] = next((i + 1 for i, (r_id, _) in enumerate(ranked) if r_id == rid), "?")
             else:
