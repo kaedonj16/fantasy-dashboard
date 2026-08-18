@@ -8872,6 +8872,39 @@ document.addEventListener("DOMContentLoaded", () => {
   const espnPrivateGoogle = document.getElementById("espnPrivateGoogle");
   const espnPrivateGuest = document.getElementById("espnPrivateGuest");
 
+  // Paste-a-cookie-blob helper: pull SWID + espn_s2 out of whatever the user
+  // pastes (a single value, the two rows, or the whole Cookie header) so they
+  // never have to isolate the two values by hand.
+  const espnCookieBlob = document.getElementById("espnCookieBlob");
+  const espnCookieStatus = document.getElementById("espnCookieStatus");
+  function brParseEspnCookies(text) {
+    text = String(text || "");
+    const s2 = (text.match(/espn[_-]?s2\s*=\s*"?([^;"\s]+)/i) || [])[1] || "";
+    const swid = (text.match(/\bswid\s*=\s*"?(\{[0-9A-Fa-f-]+\}|[0-9A-Fa-f-]{8,})/i) || [])[1] || "";
+    return { swid, espn_s2: s2 };
+  }
+  if (espnCookieBlob) {
+    espnCookieBlob.addEventListener("input", () => {
+      const { swid, espn_s2 } = brParseEspnCookies(espnCookieBlob.value);
+      if (swid && espnSwidInput) espnSwidInput.value = swid;
+      if (espn_s2 && espnS2Input) espnS2Input.value = espn_s2;
+      if (!espnCookieStatus) return;
+      if (swid && espn_s2) {
+        espnCookieStatus.textContent = "✓ Found SWID and espn_s2 — connect below.";
+        espnCookieStatus.style.color = "var(--win)";
+      } else if (swid || espn_s2) {
+        espnCookieStatus.textContent = "Found " + (swid ? "SWID" : "espn_s2") +
+          ". Paste the rest of the cookie string to get both.";
+        espnCookieStatus.style.color = "var(--warning)";
+      } else if (espnCookieBlob.value.trim()) {
+        espnCookieStatus.textContent = "Couldn't find SWID or espn_s2 in that text — copy the cookie rows and paste again.";
+        espnCookieStatus.style.color = "var(--text-muted)";
+      } else {
+        espnCookieStatus.textContent = "";
+      }
+    });
+  }
+
   const yahooLeagueIdInput = document.getElementById("yahooLeagueIdInput");
   const yahooTeamName = document.getElementById("yahooTeamName");
   const yahooConnectBtn = document.getElementById("yahooConnectBtn");
@@ -8974,6 +9007,8 @@ if (!platformBtns.length) return;
       : "Connect a publicly accessible ESPN league using its League ID.";
     if (espnSwidInput) espnSwidInput.value = "";
     if (espnS2Input) espnS2Input.value = "";
+    if (espnCookieBlob) espnCookieBlob.value = "";
+    if (espnCookieStatus) espnCookieStatus.textContent = "";
     if (espnErrorBox) espnErrorBox.style.display = "none";
     if (espnPrivateChoice) espnPrivateChoice.style.display = !window._hasAccount ? "flex" : "none";
     if (espnSubmitRow) espnSubmitRow.style.display = window._hasAccount ? "flex" : "none";

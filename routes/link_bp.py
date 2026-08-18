@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import hashlib
+import re
 import uuid
 from datetime import datetime
 
@@ -25,6 +26,31 @@ logger = logging.getLogger(__name__)
 
 _ESPN_PUBLIC_FIELDS = {"league_id", "season"}
 _ESPN_PRIVATE_FIELDS = {"league_id", "season", "swid", "espn_s2"}
+
+# Users routinely paste a whole cookie string (or the full "Cookie:" header)
+# instead of the two isolated values. Pull each cookie out of whichever field
+# carries it so a blob dropped into either box still connects.
+_ESPN_S2_IN_BLOB = re.compile(r'espn[_-]?s2\s*=\s*"?([^;"\s]+)', re.IGNORECASE)
+_SWID_IN_BLOB = re.compile(r'\bswid\s*=\s*"?(\{[0-9A-Fa-f-]+\}|[0-9A-Fa-f-]{8,})', re.IGNORECASE)
+
+
+def _extract_espn_credentials(swid_raw: str, espn_s2_raw: str) -> tuple[str, str]:
+    """Return (swid, espn_s2), tolerating a pasted cookie blob in either field.
+
+    When a ``name=value`` cookie marker is present anywhere in the two fields,
+    the matched value wins; otherwise the field is treated as an already-clean
+    single value and passed through unchanged (the historical happy path).
+    """
+    swid = (swid_raw or "").strip()
+    espn_s2 = (espn_s2_raw or "").strip()
+    blob = swid + "\n" + espn_s2
+    m_s2 = _ESPN_S2_IN_BLOB.search(blob)
+    if m_s2:
+        espn_s2 = m_s2.group(1)
+    m_swid = _SWID_IN_BLOB.search(blob)
+    if m_swid:
+        swid = m_swid.group(1)
+    return swid, espn_s2
 
 
 def _default_season() -> int:
@@ -122,6 +148,8 @@ def _connect_espn(method: str):
         return jsonify({"ok": False, "error": "Season must be a valid year."}), 400
     swid = str(data.get("swid") or "").strip() if method == "private" else None
     espn_s2 = str(data.get("espn_s2") or "").strip() if method == "private" else None
+    if method == "private":
+        swid, espn_s2 = _extract_espn_credentials(swid, espn_s2)
     if method == "private" and (not swid or not espn_s2):
         return jsonify({"ok": False, "error": "SWID and ESPN_S2 are required."}), 400
     try:
@@ -165,7 +193,7 @@ def link_espn_private_pending():
     if not isinstance(data, dict) or set(data) - _ESPN_PRIVATE_FIELDS:
         return jsonify({"ok": False, "error": "Invalid private ESPN request."}), 400
     league_id = str(data.get("league_id") or "").strip()
-    swid, espn_s2 = str(data.get("swid") or "").strip(), str(data.get("espn_s2") or "").strip()
+    swid, espn_s2 = _extract_espn_credentials(data.get("swid"), data.get("espn_s2"))
     if not league_id.isdigit() or not swid or not espn_s2:
         return jsonify({"ok": False, "error": "League ID, SWID, and ESPN_S2 are required."}), 400
     try:
@@ -275,7 +303,7 @@ def link_espn_reconnect():
     if not isinstance(data, dict) or set(data) - allowed:
         return jsonify({"ok": False, "error": "Invalid reconnect request."}), 400
     league_id = str(data.get("league_id") or "").strip()
-    swid, espn_s2 = str(data.get("swid") or "").strip(), str(data.get("espn_s2") or "").strip()
+    swid, espn_s2 = _extract_espn_credentials(data.get("swid"), data.get("espn_s2"))
     try:
         season = int(data.get("season"))
     except (TypeError, ValueError):
