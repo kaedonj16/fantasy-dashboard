@@ -209,23 +209,43 @@ document.body.scrollTop = 0;
 // Prevent scroll during page load
 // ── Page navigation progress bar ─────────────────────────────────────────────
 (function () {
-  var bar = null;
+  var bar = null, raf = 0, resetTimer = 0, failsafe = 0;
   function getBar() {
     if (!bar) bar = document.getElementById('page-load-bar');
     return bar;
   }
+  function clearTimers() { cancelAnimationFrame(raf); clearTimeout(resetTimer); clearTimeout(failsafe); }
   function startBar() {
     var b = getBar(); if (!b) return;
+    clearTimers();
     b.className = '';
     b.style.width = '0%';
     b.style.opacity = '1';
-    requestAnimationFrame(function () { b.className = 'plb-active'; });
+    raf = requestAnimationFrame(function () { b.className = 'plb-active'; });
+    // Failsafe: a soft-nav takeover or a stalled/aborted load may never fire a
+    // finish event, which would otherwise leave the bar parked at its creep
+    // width forever. Auto-retire after a generous window so it can never stick.
+    failsafe = setTimeout(hideBar, 20000);
   }
   function finishBar() {
     var b = getBar(); if (!b) return;
+    clearTimers();
     b.className = 'plb-done';
-    setTimeout(function () { b.className = ''; b.style.width = '0%'; }, 500);
+    resetTimer = setTimeout(function () { b.className = ''; b.style.width = '0%'; }, 500);
   }
+  // Retire the bar immediately, with no completion sweep. Used when a soft-nav
+  // takes over the click: it swaps #page-root without a document reload, so no
+  // pageshow / DOMContentLoaded fires to run finishBar, and it shows its own
+  // .br-nav-progress instead. Also the failsafe target. Cancels the pending
+  // rAF so a just-scheduled plb-active can't re-activate the bar after this.
+  function hideBar() {
+    var b = getBar(); if (!b) return;
+    clearTimers();
+    b.className = '';
+    b.style.opacity = '0';
+    b.style.width = '0%';
+  }
+  window.__brTopBarHide = hideBar;
 
   // Show bar when a same-origin link is clicked (not anchor, not external, not new tab)
   document.addEventListener('click', function (e) {
@@ -918,6 +938,10 @@ window.brHaptic = function (pattern) {
     var mine = ++token;
     var curRoot = document.getElementById('page-root');
     if (!curRoot) { location.href = url; return; }
+    // The global click handler started the top #page-load-bar, but this soft-nav
+    // preventDefaults the navigation, so no pageshow/DOMContentLoaded will ever
+    // fire to finish it. Retire it now and let .br-nav-progress own the feedback.
+    if (window.__brTopBarHide) window.__brTopBarHide();
     startProgress();
     fetch(url, { headers: { 'X-Soft-Nav': '1' }, credentials: 'same-origin' })
       .then(function (resp) {
