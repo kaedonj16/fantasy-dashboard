@@ -17795,7 +17795,7 @@ def build_commissioner_body(ctx):
   .lh-ring-mid {{ position:absolute; inset:0; display:grid; place-content:center; text-align:center; }}
   .lh-ring-num {{ font-size:40px; font-weight:800; line-height:1; }}
   .lh-ring-cap {{ font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-top:3px; }}
-  .lh-pill {{ display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:800; letter-spacing:.03em; padding:4px 10px; border-radius:999px; text-transform:uppercase; }}
+  .lh-pill {{ display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:800; letter-spacing:.03em; padding:4px 10px; border-radius:12px; text-transform:uppercase; }}
   .lh-verdict {{ font-size:15px; color:var(--muted); margin-top:10px; max-width:48ch; }}
   .lh-verdict b {{ color:var(--text); }}
   .lh-wrap {{ max-width:1000px; margin:0 auto; }}
@@ -27959,13 +27959,13 @@ def build_portfolio_body(
         ".nfl-cnt{font-size:13px;font-weight:700;min-width:18px;text-align:right;}"
         ".nfl-note{font-size:11px;color:var(--text-subtle);min-width:20px;}"
         # filter pill buttons matching tab-btn style
-        ".pf-pill{font-size:13px;font-weight:700;padding:5px 14px;border-radius:9999px;"
+        ".pf-pill{font-size:13px;font-weight:700;padding:5px 14px;border-radius:12px;"
         "border:none;background:transparent;color:var(--text-muted);cursor:pointer;"
         "transition:background .12s,color .12s;}"
         ".pf-pill:hover{background:var(--accent-soft);color:var(--accent);}"
         ".pf-pill.on{background:var(--accent-soft);color:var(--accent);}"
         ".pf-fsearch{font-size:13px;padding:5px 12px;border:1px solid var(--border);"
-        "border-radius:9999px;background:var(--card);color:inherit;outline:none;"
+        "border-radius:12px;background:var(--card);color:inherit;outline:none;"
         "transition:border-color .12s;}"
         ".pf-fsearch:focus{border-color:var(--accent);}"
         # leagues table
