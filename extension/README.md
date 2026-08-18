@@ -78,5 +78,5 @@ extension/
   content.js          injects "Autofill from ESPN" on BR Fantasy
   content.css         button + status styling
   popup.html/.js/.css toolbar popup (detect + copy fallback)
-  icons/              football icons + pure-Python generator
+  icons/              BR Fantasy logo icons + generator (from static/icon-512x512.png)
 ```
