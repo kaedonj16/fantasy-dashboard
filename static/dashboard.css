@@ -4445,7 +4445,7 @@ strong + .player-badge,
   align-items: start;
 }
 
-@media (max-width: 860px) {
+@media (max-width: 900px) {
   .otc-sugg-tab-layout {
     grid-template-columns: 1fr;
   }
@@ -5197,7 +5197,7 @@ strong + .player-badge,
   min-width: 44px;
   text-align: center;
 }
-@media (max-width: 540px) {
+@media (max-width: 600px) {
   .pagination {
     flex-direction: column;
     align-items: stretch;
@@ -11063,7 +11063,7 @@ img, svg, canvas {
   :root { --page-scale: 0.88; }
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 1180px) {
   :root { --page-scale: 0.82; }
 }
 
@@ -11071,7 +11071,7 @@ img, svg, canvas {
   :root { --page-scale: 0.76; }
 }
 
-@media (max-width: 860px) {
+@media (max-width: 900px) {
   :root { --page-scale: 1; }
 }
 
@@ -11115,7 +11115,7 @@ img, svg, canvas {
    (app.js switchTab toggles its display). Desktop keeps the persistent sidebar
    and hides the tab button. */
 .otc-tab-insights { display: none; }
-@media (max-width: 1200px) {
+@media (max-width: 1180px) {
   .otc-tab-insights { display: flex; }
   .otc-layout .otc-side {
     display: none;
@@ -11124,7 +11124,7 @@ img, svg, canvas {
   }
   .otc-layout.otc-show-insights .otc-side { display: block; }
 }
-@media (max-width: 1200px) {
+@media (max-width: 1180px) {
   .page-sidebar-toggle,
   .otc-side-toggle {
     display: flex;
@@ -11191,7 +11191,7 @@ img, svg, canvas {
   }
 }
 
-@media (max-width: 860px) {
+@media (max-width: 900px) {
   .teams-grid {
     grid-template-columns: 1fr;
   }
@@ -11269,7 +11269,7 @@ img, svg, canvas {
   .m-combo .pname { font-size: 12px; }
 }
 
-@media (max-width: 400px) {
+@media (max-width: 480px) {
   .m-av { width: 24px; height: 24px; }
   .m-head { padding: 8px 6px; }
   .m-head-row { gap: 6px; }
@@ -11292,7 +11292,7 @@ img, svg, canvas {
   }
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 1180px) {
   .otc-layout {
     grid-template-columns: 1fr !important;
   }
@@ -11302,7 +11302,7 @@ img, svg, canvas {
   }
 }
 
-@media (max-width: 860px) {
+@media (max-width: 900px) {
   .otc-builder-grid {
     grid-template-columns: 1fr;
   }
@@ -11415,7 +11415,7 @@ img, svg, canvas {
   }
 }
 
-@media (max-width: 1450px) {
+@media (max-width: 1400px) {
   .os-layout {
     grid-template-columns: 300px minmax(0, 1fr) 300px;
   }
@@ -12962,7 +12962,7 @@ img, svg, canvas {
   }
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 1180px) {
   .otc-side-stack {
     gap: 14px;
   }
@@ -13124,7 +13124,7 @@ img, svg, canvas {
   }
 }
 
-@media (max-width: 980px) {
+@media (max-width: 900px) {
   .otc-lower-grid {
     grid-template-columns: 1fr;
   }
@@ -15991,7 +15991,7 @@ tr.team-clickable {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   display: none;
 }
-@media (max-width: 540px) {
+@media (max-width: 600px) {
   .tour-tooltip { width: auto; }
 }
 
@@ -19211,7 +19211,7 @@ tr.team-clickable {
 }
 
 /* Trade calculator: prevent two-column layout from breaking on phone */
-@media (max-width: 540px) {
+@media (max-width: 600px) {
   .otc-two-col, .trade-sides { flex-direction: column; }
 }
 
@@ -20831,7 +20831,7 @@ button:disabled {
 /* ============================================
    TRADE SUGGESTIONS MOBILE
    ============================================ */
-@media (max-width: 540px) {
+@media (max-width: 600px) {
   .suggestion-assets {
     flex-direction: column;
     align-items: stretch;
@@ -22920,7 +22920,7 @@ button:disabled {
    overflowed the viewport. Tighten the paddings/gaps, let the brand truncate
    before it pushes the status cluster off-screen, and keep the functional
    right-hand controls intact. */
-@media (max-width: 430px) {
+@media (max-width: 480px) {
   .rz-header { padding: 11px 12px; gap: 8px; }
   .rz-brand { gap: 7px; min-width: 0; flex: 1 1 auto; }
   .rz-brand-name {
