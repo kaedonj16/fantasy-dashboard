@@ -120,7 +120,10 @@ def test_both_espn_methods_use_full_account_choice_copy():
 
 def test_home_espn_account_choices_are_visible_before_validation():
     script = Path("static/app.js").read_text()
-    assert 'espnPrivateChoice.style.display = !window._hasAccount ? "flex" : "none"' in script
+    # Guests still see the Google/guest choice on the public and private paths
+    # before validation; the email path routes account-vs-guest through the OTP
+    # modal instead, so the inline choice is gated on !isEmail.
+    assert 'espnPrivateChoice.style.display = (!isEmail && !window._hasAccount) ? "flex" : "none"' in script
     assert 'if (platform === "espn") setHomeEspnMethod(homeEspnMethod)' in script
     assert 'espnRequestedAction = "google"' in script
     assert 'espnRequestedAction = "guest"' in script
