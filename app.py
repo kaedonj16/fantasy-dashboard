@@ -1102,10 +1102,8 @@ FORM_BODY = """
         <h2 class="home-card-title" id="homeCardTitle">{% if session.get('account_id') %}Your leagues{% else %}Get started{% endif %}</h2>
 
         {% if not session.get('account_id') %}
-        <div class="home-account-entry">
-          <span class="home-account-lead">New to BR Fantasy? Find your league below, then create your free account so it's saved to you.</span>
-          <a class="google-continue-btn google-create-account-btn" href="/auth/google?intent=onboarding&amp;next=/"><span class="google-button-title">Create Account with Google</span></a>
-          <p class="hint home-create-acct-hint" id="createAcctHint" hidden>First find your league below, then continue with Google to finish creating your account with it saved.</p>
+        <div class="home-account-entry home-account-top">
+          <span class="home-account-lead">New to BR Fantasy? Connect your league below, then create your free account at the bottom to save it.</span>
           <div class="home-account-new-label">Already have an account?</div>
           <a class="google-continue-btn" href="/auth/google?intent=login&amp;next=/"><span class="google-button-title">Continue with Google</span></a>
           <span>Sign in to access your saved leagues.</span>
@@ -1286,6 +1284,13 @@ FORM_BODY = """
           Pick a league, then <strong>Continue with Google</strong> to save it across devices, or continue without an account for a quick look.
         </p>
         </div>
+        {% if not session.get('account_id') %}
+        <div class="home-account-entry home-account-bottom" id="homeAcctBottom">
+          <div class="home-account-new-label">New to BR Fantasy?</div>
+          <a class="google-continue-btn google-create-account-btn" href="/auth/google?intent=onboarding&amp;next=/"><span class="google-button-title">Create Account with Google</span></a>
+          <p class="hint home-create-acct-hint" id="createAcctHint" hidden>First connect your league above, then continue with Google to finish creating your account with it saved.</p>
+        </div>
+        {% endif %}
       </div>
     </div>
   </section>
