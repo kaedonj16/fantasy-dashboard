@@ -492,10 +492,10 @@ def test_usage_spike_adds_and_caps():
 
 
 def test_positive_trend_and_cap():
-    # Trend is noise-shrunk (single 7d window -> x0.8): rank 10 -> 8 -> +28.
-    assert waiver_pickup_score(_cand(value=500, rank_change_7d=10), {}) == pytest.approx(88.0)
-    # rank 20 -> 16 -> min(16*3.5, 45) = 45 (still caps): 60 + 45.
-    assert waiver_pickup_score(_cand(value=500, rank_change_7d=20), {}) == pytest.approx(105.0)
+    # Trend is noise-shrunk (single 7d window -> x0.8): rank 10 -> 8 -> +20.
+    assert waiver_pickup_score(_cand(value=500, rank_change_7d=10), {}) == pytest.approx(80.0)
+    # rank 20 -> 16 -> min(16*2.5, 25) = 25 (still caps): 60 + 25.
+    assert waiver_pickup_score(_cand(value=500, rank_change_7d=20), {}) == pytest.approx(85.0)
 
 
 def test_negative_trend_penalized_and_floored():

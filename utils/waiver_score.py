@@ -81,6 +81,12 @@ class WaiverWeights:
     # Saturating value curve: VALUE_MAX * v / (v + VALUE_HALF).
     value_max: float = 120.0
     value_half: float = 500.0
+    # Minimum dynasty value a candidate must clear to be a *target* at all.
+    # Regular starters sit at 500-1500+, so free agents cluster low; below this
+    # floor a player has essentially no dynasty relevance and only surfaced by
+    # riding a trend/age bonus (e.g. a value-0 player badged "Rising Fast").
+    # The waiver surfaces filter on this so that noise can't reach the list.
+    min_value: float = 25.0
     # Rest-of-season projection: projected PPG * proj_per_ppg, capped.
     proj_per_ppg: float = 4.0
     proj_max: float = 60.0
@@ -101,9 +107,12 @@ class WaiverWeights:
     # Diminishing-returns weights when combining correlated opportunity signals.
     opp_second: float = 0.5
     opp_third: float = 0.25
-    # Weekly rank trend.
-    trend_up_per: float = 3.5
-    trend_up_max: float = 45.0
+    # Weekly rank trend. A waiver target should be justified by real value +
+    # opportunity, not by a single noisy 7-day rank swing, so the raw-trend term
+    # is capped well below the value / opportunity terms (a big riser still gets
+    # a meaningful, but not dominating, bump).
+    trend_up_per: float = 2.5
+    trend_up_max: float = 25.0
     trend_down_per: float = 1.5
     trend_down_floor: float = -15.0
     # Age curve.

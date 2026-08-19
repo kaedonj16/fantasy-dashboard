@@ -7691,7 +7691,10 @@ def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 
         except Exception:
             val = 0.0
         val = apply_te_premium(val, pos, _tep_dash)
-        if val <= 0:
+        # Floor out near-zero-value noise: a player with negligible dynasty
+        # value only reaches the list by riding a trend/age bonus (e.g. a
+        # "Rising Fast" free agent that displays a value of 0).
+        if val < WEIGHTS.min_value:
             continue
 
         try:
@@ -11118,7 +11121,9 @@ def api_waiver_candidates():
         except Exception:
             val = 0.0
         val = apply_te_premium(val, pos, _tep_wv)
-        if val <= 0:
+        # Floor out near-zero-value noise (see _build_waiver_targets_rows): a
+        # negligible-value free agent only surfaces on a trend/age bonus.
+        if val < WEIGHTS.min_value:
             continue
         pmeta_wv = players_index.get(pid, {})
         precise_age_wv = age_from_bday(pmeta_wv.get("bDay"))
