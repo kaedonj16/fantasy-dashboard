@@ -5,14 +5,19 @@ import hashlib
 import html
 import json
 import logging
-import math
 import os
-import pandas as pd
 import re
 import threading
 import time
+import urllib.parse
 from collections import defaultdict
 from datetime import date, datetime, timezone, timedelta
+from pathlib import Path
+from typing import List, Dict, Optional, Union, Tuple
+from zoneinfo import ZoneInfo
+
+import math
+import pandas as pd
 from flask import (
     Flask,
     request,
@@ -28,14 +33,12 @@ from flask import (
     abort,
     g,
 )
-from pathlib import Path
-from typing import List, Dict, Optional, Union, Tuple
-from zoneinfo import ZoneInfo
 
 try:
     from flask_compress import Compress
 except ImportError:
     Compress = None
+from dashboard_services.ai.history_recap import get_history_ai_recap
 from dashboard_services.ai.renderer import (
     get_team_gm_memo,
     get_power_rankings_html,
@@ -53,21 +56,24 @@ from dashboard_services.api import (
     get_nfl_scores_for_date,
     get_nfl_state,
     get_roster_positions,
+    get_sleeper_user_by_username,
     get_total_rosters,
     resolve_league_id_for_season,
     avatar_url
 )
 from dashboard_services.awards import compute_awards_season, render_awards_section
 from dashboard_services.changelog import CHANGELOG
-from dashboard_services.injuries import build_injury_report, render_injury_watch
+from dashboard_services.injuries import build_injury_report, render_injury_accordion, render_injury_watch
 from dashboard_services.matchups import (
     compute_team_projections_for_weeks,
     compute_win_prob,
     render_matchup_carousel_weeks,
     render_matchup_slide,
 )
-from dashboard_services.pages.graphs_page import build_graphs_body
+from dashboard_services.pages.graphs_page import build_graphs_body, build_career_graphs_body
+from dashboard_services.pages.waivers_page import build_waivers_body
 from dashboard_services.pages.history_page import (
+    build_history_body,
     build_regular_season_team_stats,
     get_champion_and_runner_up,
     sort_team_stats,
@@ -90,6 +96,9 @@ from dashboard_services.players import get_players_map
 from dashboard_services.subscriptions import (
     has_premium_access,
     has_premium_for_viewer,
+    create_league_subscription,
+    create_user_subscription,
+    cancel_subscription,
 )
 import stripe
 
@@ -117,8 +126,10 @@ from utils.utils import (
     build_status_for_week,
     build_teams_overview,
     clear_activity_cache_for_league,
+    clear_teams_cache_for_league,
     clear_weekly_cache_for_league,
     count_roster_positions,
+    fetch_week_from_tank01,
     fetch_week_projections,
     get_live_game_ids_for_today,
     get_week_projections_cached,
@@ -1557,7 +1568,7 @@ BASE_HTML = """
          indicator; the CSS then pads content back with env(safe-area-inset-*),
          so it fills the screen like a native app instead of being letterboxed. -->
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    
+
     <!-- Google AdSense -->
     {adsense_script}
 
@@ -1743,6 +1754,7 @@ BASE_HTML = """
 """
 
 from utils.viewer_resolve import (  # noqa: E402
+    normalize_sleeper_username,
     resolve_viewer_for_league,
 )
 
@@ -1837,6 +1849,9 @@ def get_viewer_session() -> dict:
             "viewer_team_name": None,
         }
     return viewer_data
+
+
+from utils.league_payload import format_sleeper_league_option  # noqa: E402
 
 
 def _cache_key(platform: str, season: int, league_id: str):
@@ -1979,6 +1994,9 @@ def get_available_history_seasons(platform: str, league_id: str, current_season:
     _HISTORY_SEASONS_CACHE[_key] = (seasons, time.time())
 
     return seasons
+
+
+from utils.history_seasons import get_default_history_season  # noqa: E402
 
 
 def _games_scheduled_today(season, week) -> bool:
@@ -6638,9 +6656,8 @@ def render_power_and_playoffs(
           <div class="slot {base_cls} {streak_frame_cls}" data-rk-key="{html.escape(str(name), quote=True)}">
             <div class="wrap">
               <div class='podium-header'>
-                <h3>#{rank}</h3>
+                <h3>{move_arrow(name)}#{rank}</h3>
                 {avatar_html}
-                {move_arrow(name)}
               </div>
               <div class="name">{_clickable_team_name(name, _o2r)}</div>
               <div class="rec">{rec}</div>
@@ -8467,6 +8484,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 from utils.tier_stack import NUM_TIERS as _NUM_TIERS, build_tier_caps as _build_tier_caps  # noqa: E402
 
 _TIER_CAPS = _build_tier_caps(_NUM_TIERS)
+from utils.tier_thresholds import FALLBACK_THRESHOLDS as _FALLBACK_THRESHOLDS  # noqa: E402
 
 
 def _market_scale(fmt: str = "1qb") -> float:
@@ -9478,6 +9496,7 @@ HISTORICAL_PICK_SLOT_CACHE: Dict[Tuple[str, str, int], Dict[int, int]] = {}
 from utils.pick_slots import (  # noqa: E402
     compute_pick_slots as _pk_compute_pick_slots,
     pick_label as _pk_pick_label,
+    pick_value_from_table as _pk_pick_value_from_table,
     placements_from_bracket as _pk_placements_from_bracket,
     slots_from_regular_season as _pk_slots_from_regular_season,
 )
@@ -12556,6 +12575,7 @@ def _rz_get_projections(season: int, week: int) -> dict:
 
 from utils.redzone_stats import (  # noqa: E402
     rz_def_stat_line as _rz_def_stat_line,
+    rz_num as _rz_num,
     rz_safe_epoch as _rz_safe_epoch,
     rz_stat_line_from_ps as _rz_stat_line_from_ps,
 )
@@ -12575,6 +12595,7 @@ from utils.redzone_demo import (  # noqa: E402
     DEMO_SCORING as _RZ_DEMO_SCORING,
     demo_fold as _rz_demo_fold,
     demo_pts as _rz_demo_pts,
+    demo_rng as _rz_demo_rng,
     demo_script as _rz_demo_script,
 )
 
@@ -15649,6 +15670,7 @@ _SCHED_POS_ORDER = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "K": 4, "DEF": 5}
 # Pure schedule-ease helpers live in utils/schedule_ease.py; re-exported
 # under the original names.
 from utils.schedule_ease import (  # noqa: E402
+    SCHED_TEAM_ALIAS as _SCHED_TEAM_ALIAS,
     norm_sched_team as _norm_sched_team,
 )
 
@@ -18773,6 +18795,7 @@ _PPG_STATS_CACHE_TS = 0.0
 _PPG_STATS_CACHE_TTL = 7200
 
 from utils.fantasy_scoring import score_stats as _score_stats  # noqa: E402
+from utils.consistency import consistency_profile as _consistency_profile  # noqa: E402
 from utils.consistency import blended_consistency_profile as _blended_consistency  # noqa: E402
 from utils.utils import CACHE_DIR  # noqa: E402  # absolute cache root (see relative-path note)
 
@@ -19052,6 +19075,7 @@ def api_trade_outcome():
     Expects: {assets_received: [{id, name}], assets_sent: [{id, name}], trade_date: 'YYYY-MM-DD'}
     """
     from dashboard_services.player_value_history import get_player_value_history
+    from dashboard_services.db import get_conn
 
     payload = request.get_json(force=True)
     assets_received = payload.get("assets_received") or []
@@ -23718,8 +23742,13 @@ from utils.pick_score import empirical_slot_allocation as _ps_empirical_slots  #
 # letter system for rookie drafts. Keeps the two surfaces in lock-step.
 
 from utils.draft_grade import (  # noqa: E402
+    dr_avg_top_n as _dr_avg_top_n,
     dr_grade_letter as _dr_grade_letter,
+    dr_letter_to_score as _dr_letter_to_score,
+    dr_lineup_score as _dr_lineup_score,
+    dr_optimal_lineup as _dr_optimal_lineup,
     dr_rookie_team_score as _dr_rookie_team_score,
+    dr_slot_eligible as _dr_slot_eligible,
     dr_team_grade_score as _dr_team_grade_score,
 )
 
@@ -24178,7 +24207,7 @@ def api_draft_grades():
                        is_bpa: bool, pos: str, is_sf: bool, qb_count: int, name: str, num_teams: int) -> str:
             """
             Improved grading system that rewards BPA and accounts for league context.
-            
+
             adp_diff  : actual_pick - avg_pick  (+= value, -= reach)
             need      : True if pick fills a positional need
             bpa_gap   : ADP gap between this pick and the best available player
