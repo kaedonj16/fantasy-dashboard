@@ -8698,6 +8698,14 @@ select:focus {
 .home-account-entry a.google-continue-btn:not(.google-create-account-btn){background:transparent!important;color:#fff!important;border:1px solid rgba(255,255,255,.42)!important;box-shadow:none}.home-account-entry a.google-continue-btn:not(.google-create-account-btn):hover{background:rgba(255,255,255,.09)!important}
 .home-account-lead{font-size:12px!important;color:rgba(255,255,255,.78)!important;margin-bottom:8px!important;line-height:1.45}
 .home-create-acct-hint{color:#fcd34d!important;font-weight:600;margin:2px 0!important;font-size:11.5px!important;line-height:1.45}
+/* New-user "Create Account" now sits at the BOTTOM of the card, after the form.
+   Divider above it (not below); no bottom border since it ends the card. */
+.home-account-bottom{margin-bottom:0;padding-bottom:0;border-bottom:0;margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,.14)}
+/* Once a platform shows its own Google completion (Sleeper's league picker, or
+   the ESPN private-connect choice), that IS the create-account step, so hide the
+   generic bottom button to avoid two competing CTAs. */
+.home-card:has(#generateWrap[style*="block"]) #homeAcctBottom,
+.home-card:has(#espnPrivateChoice[style*="flex"]) #homeAcctBottom { display:none; }
 .home-account-new-label{margin-top:8px!important;margin-bottom:0!important;color:#fff!important;font-size:11px!important;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
 .continue-without-account-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);color:#e5e7eb;border:1px solid rgba(255,255,255,.28);border-radius:10px;padding:11px 14px;cursor:pointer;font-weight:700}
 .continue-without-account-btn:hover{background:rgba(255,255,255,.11);border-color:rgba(255,255,255,.42)}
@@ -9234,7 +9242,11 @@ a.signed-home-league:hover{background:rgba(255,255,255,.1);border-color:rgba(255
 @media (prefers-reduced-motion: reduce) { .home-rot-track { animation:none; } }
 
 /* ── Home live-values ticker (dynasty risers & fallers, from Top Movers) ── */
-.home-ticker-band { display:flex; align-items:center; background:#122d4b; color:#fff; overflow:hidden; }
+/* Full-bleed edge-to-edge (cancels the #page-root margin); html already clips
+   overflow-x so no scrollbar appears. overflow:clip (not hidden) so the animated
+   marquee never becomes a touch-scroll container that traps page scroll on iOS. */
+.home-ticker-band { display:flex; align-items:center; background:#122d4b; color:#fff; overflow:clip;
+  width:100vw; margin-left:calc(50% - 50vw); }
 .home-ticker-tag {
   display:flex; align-items:center; gap:8px; background:#0b2036; padding:9px 16px;
   font-size:11px; font-weight:800; letter-spacing:.08em; color:#7dd3fc; white-space:nowrap; z-index:2;
@@ -9245,7 +9257,7 @@ a.signed-home-league:hover{background:rgba(255,255,255,.1);border-color:rgba(255
   70%  { box-shadow:0 0 0 7px rgba(74,222,128,0); }
   100% { box-shadow:0 0 0 0 rgba(74,222,128,0); }
 }
-.home-ticker-wrap { flex:1; overflow:hidden; }
+.home-ticker-wrap { flex:1; overflow:clip; min-width:0; }
 .home-ticker-track {
   display:inline-flex; gap:28px; padding:9px 22px; white-space:nowrap;
   font-size:13px; font-weight:700; color:#e6edf6; animation:homeTickScroll 40s linear infinite;
