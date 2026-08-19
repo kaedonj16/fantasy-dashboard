@@ -1099,11 +1099,12 @@ FORM_BODY = """
 
         {% if not session.get('account_id') %}
         <div class="home-account-entry">
-          <a class="google-continue-btn" href="/auth/google?intent=login&amp;next=/"><span class="google-button-title">Continue with Google</span></a>
-          <span>Returning users can access their saved leagues.</span>
-          <div class="home-account-new-label">New to BR Fantasy?</div>
+          <span class="home-account-lead">New to BR Fantasy? Find your league below, then create your free account so it's saved to you.</span>
           <a class="google-continue-btn google-create-account-btn" href="/auth/google?intent=onboarding&amp;next=/"><span class="google-button-title">Create Account with Google</span></a>
-          <span>Create an account and connect your first fantasy league.</span>
+          <p class="hint home-create-acct-hint" id="createAcctHint" hidden>First find your league below, then continue with Google to finish creating your account with it saved.</p>
+          <div class="home-account-new-label">Already have an account?</div>
+          <a class="google-continue-btn" href="/auth/google?intent=login&amp;next=/"><span class="google-button-title">Continue with Google</span></a>
+          <span>Sign in to access your saved leagues.</span>
         </div>
         {% else %}
         <div id="signedInHome" class="signed-in-home">
