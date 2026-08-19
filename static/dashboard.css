@@ -9217,6 +9217,45 @@ a.signed-home-league:hover{background:rgba(255,255,255,.1);border-color:rgba(255
   display: none;
 }
 
+/* ── Rotating headline word (upgraded / decoded / dominated) ───────────── */
+.home-rot { display:inline-flex; height:1.28em; overflow:hidden; vertical-align:bottom; }
+.home-rot-track { display:flex; flex-direction:column; animation:homeRotCycle 6.6s cubic-bezier(.6,0,.2,1) infinite; }
+.home-rot-track span {
+  height:1.28em; line-height:1.28em; white-space:nowrap; font-weight:900;
+  background:linear-gradient(90deg,#2563eb,#38bdf8);
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+}
+@keyframes homeRotCycle {
+  0%,24%   { transform:translateY(0); }
+  33%,57%  { transform:translateY(-1.28em); }
+  66%,90%  { transform:translateY(-2.56em); }
+  100%     { transform:translateY(-3.84em); }
+}
+@media (prefers-reduced-motion: reduce) { .home-rot-track { animation:none; } }
+
+/* ── Home live-values ticker (dynasty risers & fallers, from Top Movers) ── */
+.home-ticker-band { display:flex; align-items:center; background:#122d4b; color:#fff; overflow:hidden; }
+.home-ticker-tag {
+  display:flex; align-items:center; gap:8px; background:#0b2036; padding:9px 16px;
+  font-size:11px; font-weight:800; letter-spacing:.08em; color:#7dd3fc; white-space:nowrap; z-index:2;
+}
+.home-ticker-dot { width:7px; height:7px; border-radius:50%; background:#4ade80; animation:homeTickPulse 1.4s infinite; }
+@keyframes homeTickPulse {
+  0%   { box-shadow:0 0 0 0 rgba(74,222,128,.7); }
+  70%  { box-shadow:0 0 0 7px rgba(74,222,128,0); }
+  100% { box-shadow:0 0 0 0 rgba(74,222,128,0); }
+}
+.home-ticker-wrap { flex:1; overflow:hidden; }
+.home-ticker-track {
+  display:inline-flex; gap:28px; padding:9px 22px; white-space:nowrap;
+  font-size:13px; font-weight:700; color:#e6edf6; animation:homeTickScroll 40s linear infinite;
+}
+.home-ticker-track .mv { display:inline-flex; align-items:center; gap:6px; }
+.home-ticker-track .up { color:#4ade80; }
+.home-ticker-track .dn { color:#fb7185; }
+@keyframes homeTickScroll { from { transform:translateX(0); } to { transform:translateX(-50%); } }
+@media (prefers-reduced-motion: reduce) { .home-ticker-track { animation:none; } }
+
 /* ── Injury accordion ──────────────────────────────────────────────────── */
 .injury-overview {
   display: flex;

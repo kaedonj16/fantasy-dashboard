@@ -1077,12 +1077,16 @@ def _espn_otp_ui_enabled() -> bool:
 
 
 FORM_BODY = """
+<div class="home-ticker-band" id="homeTicker" hidden aria-hidden="true">
+  <span class="home-ticker-tag"><span class="home-ticker-dot"></span>LIVE VALUES</span>
+  <div class="home-ticker-wrap"><div class="home-ticker-track" id="homeTickerTrack"></div></div>
+</div>
 <div class="home-page">
   <section class="home-hero">
     <div class="home-hero-left">
-      <h1 class="home-title">BR Fantasy Dashboard</h1>
+      <h1 class="home-title">Your dynasty league,<br><span class="home-rot" aria-label="upgraded"><span class="home-rot-track"><span>upgraded.</span><span>decoded.</span><span>dominated.</span><span>upgraded.</span></span></span></h1>
       <p class="home-subtitle">
-        Your dynasty league, upgraded. Advanced analytics, AI-powered insights, and professional-grade tools for Sleeper, ESPN, and Yahoo leagues.
+        Advanced analytics, AI-powered insights, and professional-grade tools for Sleeper, ESPN, and Yahoo leagues.
       </p>
 
       <ul class="home-bullets">

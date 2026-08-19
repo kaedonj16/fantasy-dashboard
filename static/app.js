@@ -8936,6 +8936,25 @@ document.addEventListener("DOMContentLoaded", () => {
 
 if (!platformBtns.length) return;
 
+  // Live-values ticker: fill from Top Movers (dynasty risers/fallers), then
+  // reveal. Any failure or an empty board just leaves it hidden.
+  (function initHomeTicker() {
+    const band = document.getElementById("homeTicker");
+    const track = document.getElementById("homeTickerTrack");
+    if (!band || !track) return;
+    const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+    fetch("/api/top-movers").then((r) => r.json()).then((data) => {
+      const items = (data && data.items) || [];
+      if (!items.length) return;
+      const one = items.map((it) =>
+        `<span class="mv">${esc(it.name)} <span class="${it.up ? "up" : "dn"}">${it.up ? "▲" : "▼"} ${it.pct}%</span></span>`
+      ).join("");
+      track.innerHTML = one + one;  // duplicate for a seamless marquee loop
+      band.hidden = false;
+      band.removeAttribute("aria-hidden");
+    }).catch(() => {});
+  })();
+
   const signedInHome = document.getElementById("signedInHome");
   const signedInLeagueList = document.getElementById("signedInLeagueList");
   const connectLeagueFlow = document.getElementById("connectLeagueFlow");
