@@ -7631,6 +7631,43 @@ from utils.waiver_score import (  # noqa: E402
 )
 
 
+def _waiver_is_redraft(ctx: dict) -> bool:
+    """True for a Sleeper redraft or keeper league (settings.type 0 or 1).
+
+    Dynasty (type 2) and platforms with no dynasty flag (ESPN/Yahoo) are treated
+    as dynasty, matching how the draft-grade and keeper tools classify a league.
+    """
+    settings = (ctx.get("league_settings")
+                or (ctx.get("league") or {}).get("settings")
+                or ctx.get("settings") or {})
+    try:
+        t = settings.get("type")
+        return t is not None and int(t) in (0, 1)
+    except (TypeError, ValueError, AttributeError):
+        return False
+
+
+def _waiver_value_keys(ctx: dict) -> "tuple[str, str]":
+    """(primary, fallback) value column a waiver surface should rank/display,
+    chosen by league format so both waiver surfaces (the offseason/Season-Hub
+    card and /api/waiver-candidates) rank and label off identical values.
+
+    Flips on two axes:
+      * Superflex vs 1QB          -> *_sf vs the 1QB column
+      * Redraft/keeper vs dynasty -> redraft_value_* vs dynasty value/sf_value
+
+    The fallback is always the dynasty column, so a redraft league missing a
+    redraft value for some player still ranks them off dynasty value rather than
+    dropping them below the value floor.
+    """
+    rp = ctx.get("roster_positions") or []
+    is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in rp)
+    if _waiver_is_redraft(ctx):
+        return (("redraft_value_sf" if is_sf else "redraft_value_1qb"),
+                ("sf_value" if is_sf else "value"))
+    return (("sf_value" if is_sf else "value"), "value")
+
+
 def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 10) -> str:
     """Row markup for the Waiver Wire Targets card, shared by the offseason hub
     and the in-season Season Hub.
@@ -7670,6 +7707,9 @@ def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 
 
     # Auto-apply the league's TE premium to waiver values, like elsewhere.
     _tep_dash = te_premium_from_settings(ctx.get("scoring_settings"))
+    # Rank/display off the value column that matches this league's format
+    # (redraft vs dynasty, 1QB vs Superflex) — same selector as the API surface.
+    _vkey_dash, _vfb_dash = _waiver_value_keys(ctx)
 
     waiver_candidates = []
     for row in model_value_table:
@@ -7687,11 +7727,14 @@ def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 
         if pid in _rookie_sids and not _rookie_draft_done:
             continue
         try:
-            val = float(row.get("value") or 0.0)
+            val = float(row.get(_vkey_dash) or row.get(_vfb_dash) or 0.0)
         except Exception:
             val = 0.0
         val = apply_te_premium(val, pos, _tep_dash)
-        if val <= 0:
+        # Floor out near-zero-value noise: a player with negligible dynasty
+        # value only reaches the list by riding a trend/age bonus (e.g. a
+        # "Rising Fast" free agent that displays a value of 0).
+        if val < WEIGHTS.min_value:
             continue
 
         try:
@@ -11092,10 +11135,12 @@ def api_waiver_candidates():
     model_value_table = list(get_model_value_table_cached() or [])
 
     _rp_wv = ctx.get("roster_positions") or []
-    _is_sf_wv = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_wv)
-    _vf_wv = "sf_value" if _is_sf_wv else "value"
-    # Auto-apply the league's TE premium, exactly like Superflex auto-picks the
-    # value column: a no-op for non-TE-premium leagues / non-TEs.
+    # Pick the value column that matches this league's format (redraft vs
+    # dynasty, 1QB vs Superflex) — shared with the offseason/Season-Hub card so
+    # both waiver surfaces rank and display off identical values.
+    _vf_wv, _vfb_wv = _waiver_value_keys(ctx)
+    # Auto-apply the league's TE premium, exactly like the value column: a no-op
+    # for non-TE-premium leagues / non-TEs.
     _tep_wv = te_premium_from_settings(ctx.get("scoring_settings"))
 
     candidates = []
@@ -11114,11 +11159,13 @@ def api_waiver_candidates():
         if pos not in {"QB", "RB", "WR", "TE"}:
             continue
         try:
-            val = float(row.get(_vf_wv) or row.get("value") or 0.0)
+            val = float(row.get(_vf_wv) or row.get(_vfb_wv) or 0.0)
         except Exception:
             val = 0.0
         val = apply_te_premium(val, pos, _tep_wv)
-        if val <= 0:
+        # Floor out near-zero-value noise (see _build_waiver_targets_rows): a
+        # negligible-value free agent only surfaces on a trend/age bonus.
+        if val < WEIGHTS.min_value:
             continue
         pmeta_wv = players_index.get(pid, {})
         precise_age_wv = age_from_bday(pmeta_wv.get("bDay"))

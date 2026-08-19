@@ -44,13 +44,6 @@ def get_nfl_state(*args, **kwargs):
     from app import get_nfl_state as _fn
     return _fn(*args, **kwargs)
 
-def get_sleeper_user_leagues(*args, **kwargs):
-    # Lives in dashboard_services.api; app.py only imports it locally, so it is
-    # NOT an attribute of the app module — importing it from `app` raised and got
-    # swallowed by the caller's except, making My Leagues always show empty.
-    from dashboard_services.api import get_sleeper_user_leagues as _fn
-    return _fn(*args, **kwargs)
-
 def count_roster_positions(*args, **kwargs):
     from app import count_roster_positions as _fn
     return _fn(*args, **kwargs)
@@ -84,18 +77,13 @@ def page_portfolio():
         from_season = None
     nfl_state = get_nfl_state() or {}
     season = int(nfl_state.get("season") or datetime.now().year)
-    try:
-        raw_leagues = get_sleeper_user_leagues(viewer_user_id, season) or []
-    except Exception:
-        raw_leagues = []
-    # If no leagues found for the NFL-reported season, try the previous year
-    if not raw_leagues:
-        try:
-            raw_leagues = get_sleeper_user_leagues(viewer_user_id, season - 1) or []
-            if raw_leagues:
-                season = season - 1
-        except Exception:
-            raw_leagues = []
+    # Sleeper (live, current season, with a prior-season fallback) + the account's
+    # linked ESPN/Yahoo leagues, from the shared builder that also backs the
+    # league switcher (/api/my-leagues) so the two lists never diverge.
+    from dashboard_services.accounts import resolve_my_leagues
+    league_inputs, season = resolve_my_leagues(
+        viewer_user_id, session.get("account_id"), season
+    )
     def _league_summary(lg):
         lid = str(lg.get("league_id") or "")
         if not lid:
@@ -257,25 +245,6 @@ def page_portfolio():
             "pos_user_rank": pos_user_rank,
             "offseason": lctx.get("offseason_mode", False),
         }
-
-    # Integrate leagues linked from other platforms (ESPN / Yahoo) into the same
-    # list as the Sleeper leagues, so My Leagues is one unified set of cards.
-    league_inputs = [dict(lg, platform="sleeper") for lg in raw_leagues]
-    try:
-        acct_id = session.get("account_id")
-        if acct_id:
-            from dashboard_services.accounts import list_user_leagues
-            for m in list_user_leagues(acct_id):
-                if (m.get("platform") or "sleeper") != "sleeper":
-                    league_inputs.append({
-                        "league_id": m.get("league_id"),
-                        "name": m.get("name"),
-                        "season": m.get("season") or season,
-                        "platform": m.get("platform"),
-                        "team_id": m.get("team_id"),
-                    })
-    except Exception:
-        logger.debug("portfolio: cross-platform league merge failed", exc_info=True)
 
     leagues_data = []
     for _lg in league_inputs:

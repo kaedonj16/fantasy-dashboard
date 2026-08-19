@@ -7171,7 +7171,7 @@ select:focus {
 .os-snap-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .os-snap-name {
   font-size: 15px; font-weight: 800; color: var(--text); line-height: 1.2;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 .os-snap-valblock { flex-shrink: 0; text-align: right; line-height: 1; }
 .os-snap-value { font-size: 19px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
@@ -18311,7 +18311,7 @@ tr.team-clickable {
   color: var(--text-muted); font-size: 20px; line-height: 1; padding: 0 2px;
 }
 .slv-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.slv-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.slv-item { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; }
 /* Event-feed label: neutral pill with a colored leading icon (the event type). */
 .slv-item-kind {
   flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px;
@@ -18324,7 +18324,7 @@ tr.team-clickable {
 .slv-kind-waiver { --evt-color: var(--win); }
 .slv-kind-value  { --evt-color: var(--accent); }
 .slv-kind-injury { --evt-color: var(--inj-q); }
-.slv-item-text { flex: 1; min-width: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slv-item-text { flex: 1; min-width: 0; color: var(--text); overflow-wrap: anywhere; }
 .slv-item-ago { flex-shrink: 0; color: var(--text-muted); font-size: 11px; }
 .slv-section + .slv-section { margin-top: 10px; }
 .slv-section-title {
