@@ -10819,7 +10819,6 @@ html[data-theme="dark"] .contact-social-pill img {
 }
 
 .team-strength-card .card-header-row h2 {
-  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
