@@ -799,20 +799,25 @@ function prRender() {
     const row = document.createElement('div');
     row.className = 'pr-player-row pr-grid-row';
     row.setAttribute('data-flip-key', 'p' + p.id);
-    row.style.cursor = 'pointer';
-    row.onclick = function(e) {
-      e.stopPropagation();
-      const _drafted = p.is_rookie && p.team && p.team !== 'FA';
-      if (p.is_rookie && !_drafted) {
-        if (typeof rkOpenModal === 'function') {
-          rkOpenModal(p);
+    // Draft picks aren't real players (no player/prospect modal to open), so the
+    // row isn't clickable for them.
+    const isPick = p.position === 'PICK';
+    if (!isPick) {
+      row.style.cursor = 'pointer';
+      row.onclick = function(e) {
+        e.stopPropagation();
+        const _drafted = p.is_rookie && p.team && p.team !== 'FA';
+        if (p.is_rookie && !_drafted) {
+          if (typeof rkOpenModal === 'function') {
+            rkOpenModal(p);
+          } else {
+            openProspectModal(p.id, p.name || 'Unknown');
+          }
         } else {
-          openProspectModal(p.id, p.name || 'Unknown');
+          openPlayerModal(p.id, p.name || 'Unknown');
         }
-      } else {
-        openPlayerModal(p.id, p.name || 'Unknown');
-      }
-    };
+      };
+    }
 
     const _drafted = p.is_rookie && p.team && p.team !== 'FA';
     const displayRank = (p.position === 'PICK' || (p.is_rookie && !_drafted)) ? '' : (_rankMap.get(String(p.id)) ?? (start + i + 1));
@@ -891,7 +896,7 @@ function prRender() {
       const _activeAdp = prAdpSourceVal(p, adpActive);
       row.innerHTML =
         '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '–') + '</span>' +
-        '<span class="pr-name player-clickable">'  + (p.name || 'Unknown') + badges + '</span>' +
+        '<span class="pr-name' + (isPick ? '' : ' player-clickable') + '">'  + (p.name || 'Unknown') + badges + '</span>' +
         metaCells +
         adpCols.map(function (c) {
           const v = prAdpSourceVal(p, c.value);
@@ -916,7 +921,7 @@ function prRender() {
       row.innerHTML =
         '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '–') + rankDeltaHTML + '</span>' +
         '<span class="pr-arrows">' + arrowCell + '</span>' +
-        '<span class="pr-name player-clickable">'  + (p.name || 'Unknown') + badges + '</span>' +
+        '<span class="pr-name' + (isPick ? '' : ' player-clickable') + '">'  + (p.name || 'Unknown') + badges + '</span>' +
         '<span class="pr-pos-cell">' + posRank + '</span>' +
         '<span class="pr-age">'   + (p.position === 'PICK' ? '–' : age) + '</span>' +
         '<span class="pr-team">'  + (p.team || '–') + '</span>' +

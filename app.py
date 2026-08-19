@@ -7631,7 +7631,7 @@ from utils.waiver_score import (  # noqa: E402
 )
 
 
-def _waiver_is_redraft(ctx: dict) -> bool:
+def _league_is_redraft(ctx: dict) -> bool:
     """True for a Sleeper redraft or keeper league (settings.type 0 or 1).
 
     Dynasty (type 2) and platforms with no dynasty flag (ESPN/Yahoo) are treated
@@ -7662,7 +7662,7 @@ def _waiver_value_keys(ctx: dict) -> "tuple[str, str]":
     """
     rp = ctx.get("roster_positions") or []
     is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in rp)
-    if _waiver_is_redraft(ctx):
+    if _league_is_redraft(ctx):
         return (("redraft_value_sf" if is_sf else "redraft_value_1qb"),
                 ("sf_value" if is_sf else "value"))
     return (("sf_value" if is_sf else "value"), "value")
@@ -8122,6 +8122,40 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         
         total_draft_capital += roster_value
 
+    # Hero stat tile #3. Dynasty leagues care about future draft capital; redraft
+    # and keeper leagues carry no tradeable picks, so that number collapses to the
+    # league's total value and reads as dead weight. Swap it for a League Parity
+    # read — how lopsided roster strength is (leader vs. cellar) — which tells a
+    # redraft manager how competitive the field is heading into the season.
+    _breakdown_href = url_for("page_teams", platform=platform, season=season,
+                              league_id=ctx.get("league_id", ""))
+    if _league_is_redraft(ctx):
+        _rvs = [c["roster_value"] for c in roster_cards if c["roster_value"] > 0]
+        _ratio = (_rvs[0] / _rvs[-1]) if len(_rvs) >= 2 and _rvs[-1] > 0 else None
+        if _ratio is None:
+            _parity_word, _parity_sub = "&mdash;", "Not enough roster data yet"
+        else:
+            if _ratio > 1.6:
+                _parity_word = "Top-heavy"
+            elif _ratio > 1.25:
+                _parity_word = "Balanced"
+            else:
+                _parity_word = "Wide open"
+            _parity_sub = f"Leader worth {_ratio:.1f}&times; the last-place roster"
+        capital_tile_html = f"""
+            <div class="os-stat-card">
+              <div class="os-stat-label">League Parity</div>
+              <div class="os-stat-value">{_parity_word}</div>
+              <div class="os-stat-sub">{_parity_sub}</div>
+            </div>"""
+    else:
+        capital_tile_html = f"""
+            <div class="os-stat-card">
+              <div class="os-stat-label">Draft Capital Index</div>
+              <div class="os-stat-value">{total_draft_capital:,.0f}</div>
+              <div class="os-stat-sub"><a class="os-stat-sub-link" href="{_breakdown_href}">View team breakdown &rarr;</a></div>
+            </div>"""
+
     # Waiver card rows are shared with the in-season Season Hub.
     top_waiver_assets_html = _build_waiver_targets_rows(ctx, model_value_table)
 
@@ -8221,11 +8255,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
               <div class="os-stat-value os-stat-value-name">{roster_leader}</div>
               <div class="os-stat-sub">{highest_roster_value} roster value</div>
             </div>
-            <div class="os-stat-card">
-              <div class="os-stat-label">Draft Capital Index</div>
-              <div class="os-stat-value">{total_draft_capital:,.0f}</div>
-              <div class="os-stat-sub"><a class="os-stat-sub-link" href="{url_for('page_teams', platform=platform, season=season, league_id=ctx.get('league_id', ''))}">View team breakdown &rarr;</a></div>
-            </div>
+            {capital_tile_html}
             {_os_playoff_tile_html}
           </div>
 
