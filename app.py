@@ -11134,6 +11134,7 @@ def api_waiver_candidates():
     players_index = ctx.get("players_index") or {}
     model_value_table = list(get_model_value_table_cached() or [])
 
+    _rp_wv = ctx.get("roster_positions") or []
     # Pick the value column that matches this league's format (redraft vs
     # dynasty, 1QB vs Superflex) — shared with the offseason/Season-Hub card so
     # both waiver surfaces rank and display off identical values.
