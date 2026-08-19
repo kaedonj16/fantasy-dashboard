@@ -76,7 +76,8 @@ def link_onboarding_progress():
     provider = str(data.get("provider") or "").lower()
     method = str(data.get("connection_method") or "").lower()
     league_id = str(data.get("league_id") or "").strip()
-    if provider not in ("espn", "sleeper", "yahoo") or method not in ("public", "private"):
+    from dashboard_services.providers.registry import provider_keys
+    if provider not in provider_keys() or method not in ("public", "private"):
         return jsonify({"ok": False, "error": "Invalid onboarding selection."}), 400
     session["onboarding_progress"] = {
         "provider": provider, "connection_method": method, "league_id": league_id,
@@ -550,7 +551,8 @@ def link_pending():
     data = request.get_json(force=True) or {}
     platform = (data.get("platform") or "").strip().lower()
     league_id = str(data.get("league_id") or "").strip()
-    if platform not in ("espn", "yahoo", "sleeper") or not league_id:
+    from dashboard_services.providers.registry import provider_keys
+    if platform not in provider_keys() or not league_id:
         return jsonify({"ok": False, "error": "Missing platform or league_id."}), 400
     try:
         season = int(data.get("season")) if data.get("season") else _default_season()
@@ -602,7 +604,8 @@ def link_add():
     data = request.get_json(force=True) or {}
     platform = (data.get("platform") or "").strip().lower()
     league_id = (str(data.get("league_id") or "")).strip()
-    if platform not in ("espn", "yahoo", "sleeper") or not league_id:
+    from dashboard_services.providers.registry import provider_keys
+    if platform not in provider_keys() or not league_id:
         return jsonify({"ok": False, "error": "Missing platform or league_id."}), 400
     season = data.get("season")
     try:
@@ -634,3 +637,33 @@ def link_add():
         logger.warning("[link/add] failed: %s", exc)
         return jsonify({"ok": False, "error": "Could not save that league."}), 500
     return jsonify({"ok": True})
+
+
+@link_bp.get("/api/link/mfl/preview")
+def link_mfl_preview():
+    """Validate a public, read-only MFL league and return its franchises."""
+    league_id = str(request.args.get("league_id") or "").strip()
+    try:
+        season = int(request.args.get("season") or _default_season())
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Season must be a valid year."}), 400
+    if not league_id.isdigit() or not (2000 <= season <= 2100):
+        return jsonify({"ok": False, "error": "Enter a valid numeric MFL League ID and season."}), 400
+    try:
+        from dashboard_services.providers.registry import get_provider
+        provider = get_provider("mfl")
+        league = provider.get_league(league_id, season)
+        users = provider.get_users(league_id, season)
+    except Exception as exc:
+        from dashboard_services.providers.base import ProviderAuthenticationError, LeagueNotFoundError
+        logger.warning("[link/mfl] preview failed error=%s", type(exc).__name__)
+        if isinstance(exc, ProviderAuthenticationError):
+            return jsonify({"ok": False, "error": "This MFL league is private or requires authentication."}), 403
+        if isinstance(exc, LeagueNotFoundError):
+            return jsonify({"ok": False, "error": "No MFL league was found for that ID and season."}), 404
+        return jsonify({"ok": False, "error": "MyFantasyLeague is temporarily unavailable."}), 503
+    teams = [{"team_id": str(u.get("roster_id") or u.get("user_id")),
+              "name": (u.get("metadata") or {}).get("team_name") or u.get("display_name")}
+             for u in users]
+    return jsonify({"ok": True, "platform": "mfl", "league_id": league_id,
+                    "season": season, "name": league.get("name"), "teams": teams})

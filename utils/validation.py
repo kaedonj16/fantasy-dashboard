@@ -40,4 +40,9 @@ def validate_league_id(platform: str, league_id: str) -> "tuple[bool, Optional[s
             return False, "Invalid Yahoo league ID. It should be a number."
         return True, None
 
+    if platform == "mfl":
+        if not league_id.isdigit():
+            return False, "Invalid MFL league ID. It should be a number."
+        return True, None
+
     return False, f"Unsupported platform: {platform}"
