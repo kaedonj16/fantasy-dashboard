@@ -9729,6 +9729,30 @@ if (!platformBtns.length) return;
     });
   }
 
+  // "Create Account with Google" (new-user path): a fresh account must be tied to
+  // a league, so don't sign in with nothing. If a league is already picked, route
+  // through the league-aware path; otherwise send the user into the connect form
+  // first and explain, instead of following the bare onboarding link.
+  const createAcctBtn = document.querySelector(".google-create-account-btn");
+  if (createAcctBtn) {
+    createAcctBtn.addEventListener("click", (event) => {
+      const sel = document.getElementById("league");
+      if (sel && sel.value) {
+        event.preventDefault();
+        googleContinueBtn?.click();
+        return;
+      }
+      event.preventDefault();
+      const hint = document.getElementById("createAcctHint");
+      if (hint) hint.hidden = false;
+      const flow = document.getElementById("connectLeagueFlow");
+      if (flow) { flow.hidden = false; flow.scrollIntoView({ behavior: "smooth", block: "nearest" }); }
+      const firstField = document.getElementById("username");
+      if (firstField) { firstField.focus(); window.brShake?.(firstField); }
+      else { const pb = document.querySelector(".platform-btn"); if (pb) window.brShake?.(pb); }
+    });
+  }
+
   if (yahooConnectBtn) {
     yahooConnectBtn.addEventListener("click", async () => {
       const leagueId = yahooLeagueIdInput?.value.trim();
