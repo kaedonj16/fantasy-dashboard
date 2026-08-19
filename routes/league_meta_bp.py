@@ -210,101 +210,43 @@ def api_sleeper_user_leagues():
 
 @league_meta_bp.route("/api/my-leagues")
 def api_my_leagues():
-    """Every league linked to the signed-in account, across platforms, from the
-    account's user_leagues rows (independent of push subscriptions). Falls back to
-    live Sleeper discovery for a signed-in Sleeper user who has no account yet, so
-    the switcher never regresses. Each entry carries its own platform so the
-    switcher can navigate cross-platform."""
+    """The signed-in user's leagues for the league switcher.
+
+    Sourced identically to the My Leagues page (/portfolio) via the shared
+    resolve_my_leagues() builder — the signed-in viewer's *live* current-season
+    Sleeper membership plus the account's ESPN/Yahoo leagues — so the switcher
+    and My Leagues always show the same set. Prior-season and other-identity
+    leagues are intentionally excluded; because the Sleeper fetch is live, a
+    deleted or left league drops out on its own. Each entry carries its own
+    platform so the switcher can navigate cross-platform."""
     out = []
-    account_id = session.get("account_id")
     try:
         _cur_season = int((get_nfl_state() or {}).get("season") or 0) or None
     except Exception:
         _cur_season = None
-    if account_id:
-        try:
-            from dashboard_services.accounts import list_user_leagues
-            for m in list_user_leagues(account_id):
-                plat = m.get("platform") or "sleeper"
-                season = m.get("season")
-                # ESPN league IDs persist across seasons, so a league linked in a
-                # prior year should still open the CURRENT season (the portfolio
-                # already navigates ESPN links this way — keep the switcher in
-                # step). Yahoo keys are season-specific, so its season is left as
-                # stored; Sleeper account rows likewise keep their season.
-                if plat == "espn" and _cur_season and season and int(season) < _cur_season:
-                    season = _cur_season
-                name = m.get("name") or f"{plat.title()} League"
-                label = f"{name} · {season}" if season else name
-                out.append({
-                    "platform": plat,
-                    "league_id": m.get("league_id"),
-                    "season": season,
-                    "name": name,
-                    "label": label,
-                    "connection_status": m.get("connection_status") or "connected",
-                    "last_synced_at": m.get("last_synced_at"),
-                    "last_successful_sync_at": m.get("last_successful_sync_at"),
-                    "needs_reconnect": m.get("connection_status") == "reauth_required",
-                })
-        except Exception as exc:
-            logger.warning("[my-leagues] account read failed: %s", exc)
-
-    if not out:
-        viewer_uid = session.get("viewer_user_id")
-        if viewer_uid:
-            try:
-                season = int(get_nfl_state().get("season") or 0)
-                for lg in (get_sleeper_user_leagues(viewer_uid, season) or []):
-                    if not lg.get("league_id"):
-                        continue
-                    opt = format_sleeper_league_option(lg)
-                    opt["platform"] = "sleeper"
-                    out.append(opt)
-            except Exception as exc:
-                logger.warning("[my-leagues] sleeper fallback failed: %s", exc)
-
-    # Hide Sleeper leagues that no longer exist (e.g. deleted by the commissioner):
-    # the stored user_leagues row persists, but the league won't appear in the live
-    # per-season list for any Sleeper identity on this account. Fail OPEN — a season
-    # is filtered only when EVERY identity's live fetch for it succeeds — so a
-    # transient API error never hides a real league. Sleeper-only (ESPN/Yahoo have
-    # no cheap existence check). get_sleeper_user_leagues is ttl-cached (5 min).
-    if out and account_id:
-        try:
-            from dashboard_services.accounts import list_account_platform_ids
-            sleeper_ids = list_account_platform_ids(account_id, "sleeper")
-            _vuid = session.get("viewer_user_id")
-            if _vuid and str(_vuid) not in sleeper_ids:
-                sleeper_ids.append(str(_vuid))
-            if sleeper_ids:
-                seasons = {int(l["season"]) for l in out
-                           if l.get("platform") == "sleeper" and l.get("season")}
-                live_by_season = {}
-                for s in seasons:
-                    ids, ok = set(), True
-                    for uid in sleeper_ids:
-                        try:
-                            for g in (get_sleeper_user_leagues(uid, s) or []):
-                                if g.get("league_id"):
-                                    ids.add(str(g["league_id"]))
-                        except Exception:
-                            ok = False  # incomplete union -> don't filter this season
-                            logger.debug("[my-leagues] live check failed uid=%s season=%s",
-                                         uid, s, exc_info=True)
-                            break
-                    if ok:
-                        live_by_season[s] = ids
-
-                def _keep(l):
-                    if l.get("platform") != "sleeper" or not l.get("season"):
-                        return True
-                    live = live_by_season.get(int(l["season"]))
-                    return True if live is None else str(l.get("league_id")) in live
-
-                out = [l for l in out if _keep(l)]
-        except Exception as exc:
-            logger.warning("[my-leagues] deleted-league filter skipped: %s", exc)
+    try:
+        from dashboard_services.accounts import resolve_my_leagues
+        leagues, _season = resolve_my_leagues(
+            session.get("viewer_user_id"), session.get("account_id"), _cur_season
+        )
+        for m in leagues:
+            plat = m.get("platform") or "sleeper"
+            season = m.get("season")
+            name = m.get("name") or f"{plat.title()} League"
+            label = f"{name} · {season}" if season else name
+            out.append({
+                "platform": plat,
+                "league_id": m.get("league_id"),
+                "season": season,
+                "name": name,
+                "label": label,
+                "connection_status": m.get("connection_status") or "connected",
+                "last_synced_at": m.get("last_synced_at"),
+                "last_successful_sync_at": m.get("last_successful_sync_at"),
+                "needs_reconnect": m.get("connection_status") == "reauth_required",
+            })
+    except Exception as exc:
+        logger.warning("[my-leagues] resolve failed: %s", exc)
 
     return jsonify({"ok": True, "leagues": out})
 
