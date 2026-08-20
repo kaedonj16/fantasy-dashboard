@@ -1302,22 +1302,55 @@
   // picks, and its own next pick) so pickScore judges need for THAT team, not the
   // viewer's. Mirrors psCtx()/nextOwnedAfterCurrent() but scoped to one draft slot.
   function _cpuCtx(slot){
-    var qualByPos = {}, picksList = [];
+    var qualByPos = {}, picksList = [], lastPickByPos = {}, rosterQualities = [];
     Object.keys(state.picks).forEach(function(k){
       var pn = parseInt(k, 10);
       if (slotOnClock(pn, state.teams, state.order) !== slot) return;
       var mp = state.picks[k];
       picksList.push(mp);
       var pos = (mp.position || '').toUpperCase();
+      if (!lastPickByPos[pos] || pn > lastPickByPos[pos]) lastPickByPos[pos] = pn;
       var full = playersById[String(mp.id)];
       var v = full ? vorOf(full) : null;
       if (v == null || v > 0) qualByPos[pos] = (qualByPos[pos] || 0) + 1;
+      var rq = full ? ppgNormOf(full) : null;
+      rosterQualities.push({ pos: pos, quality: rq != null ? rq : 0.35 });
     });
     var nextOwned = null, tot = state.teams * state.rounds;
     for (var pn2 = state.current + 1; pn2 <= tot; pn2++){
       if (slotOnClock(pn2, state.teams, state.order) === slot){ nextOwned = pn2; break; }
     }
-    return { qualByPos: qualByPos, picksList: picksList, nextOwned: nextOwned };
+    var remaining = 0;
+    for (var pn3 = state.current; pn3 <= tot; pn3++){
+      if (!state.picks[pn3] && slotOnClock(pn3, state.teams, state.order) === slot) remaining++;
+    }
+    var counts = teamCounts(slot), rs = (state && state.roster) || defaultRoster();
+    var obligations = window.DraftBoardCore
+      ? DraftBoardCore.remainingObligations(counts, rs, remaining, !!state.sf)
+      : { required: 0, freePicks: remaining };
+    return { qualByPos: qualByPos, picksList: picksList, rosterQualities: rosterQualities, nextOwned: nextOwned,
+             lastPickByPos: lastPickByPos, remaining: remaining, obligations: obligations };
+  }
+
+  // Estimate how many picks before this team's next turn belong to teams for
+  // whom each position is still a starter/FLEX need. It is deliberately a
+  // bounded roster inspection, not clairvoyance: CPUs know visible rosters but
+  // not which random player another team will select.
+  function _demandBeforeNext(nextPick){
+    var demand = { QB:0, RB:0, WR:0, TE:0 };
+    if (!nextPick || !window.DraftBoardCore) return demand;
+    var rs = (state && state.roster) || defaultRoster(), seen = {};
+    for (var qn = state.current + 1; qn < nextPick; qn++){
+      var os = slotOnClock(qn, state.teams, state.order);
+      if (seen[os]) continue; seen[os] = true;
+      var oc = teamCounts(os);
+      Object.keys(demand).forEach(function(pos){
+        var role = DraftBoardCore.rosterRole(pos, oc, rs, !!state.sf);
+        if (role === 'starter') demand[pos] += 1;
+        else if (role === 'flex') demand[pos] += 0.45;
+      });
+    }
+    return demand;
   }
   function simPick(){
     var pool = availablePool();
@@ -1424,10 +1457,51 @@
       if (pv != null && pv >= 55){ var _pp = (p.position||'').toUpperCase(); posQualLeft[_pp] = (posQualLeft[_pp] || 0) + 1; }
       cands.push({ p: p, w: w, a: a, pv: pv, ae: aEff });
     });
+    var _nextShelf = {}, _demand = _demandBeforeNext(cpuCtx.nextOwned);
+    ['QB','RB','WR','TE'].forEach(function(pos){
+      var bestExpected = 0;
+      cands.filter(function(c){ return (c.p.position || '').toUpperCase() === pos && c.pv != null; })
+        .sort(function(a, b){ return b.pv - a.pv; }).slice(0, 16).forEach(function(c){
+          var prob = cpuCtx.nextOwned ? availProb(c.p, cpuCtx.nextOwned) : 0;
+          if (prob == null) prob = 50;
+          bestExpected = Math.max(bestExpected, c.pv * (0.35 + 0.65 * prob / 100));
+        });
+      _nextShelf[pos] = bestExpected;
+    });
+    var _econOpts = { sf: !!state.sf, tep: scoringCfg().tep, draftType: state.type };
     cands.forEach(function(c){
       var p = c.p, w = c.w, a = c.a, pv = c.pv;
       var pos = (p.position||'').toUpperCase();
       var t = targets[pos] || 0, have = counts[pos] || 0;
+      // Shared roster economics run before personality. This is the common
+      // baseline used by human recommendations and prevents CPU strategy/noise
+      // from rescuing a structurally bad QB3/TE3 or an immediate backup pick.
+      if (pv != null && window.DraftBoardCore){
+        var _role = DraftBoardCore.candidateRosterRole
+          ? DraftBoardCore.candidateRosterRole(pos, ppgNormOf(p) || 0, cpuCtx.rosterQualities, _rs, !!state.sf)
+          : DraftBoardCore.rosterRole(pos, counts, _rs, !!state.sf);
+        _econOpts.role = _role;
+        var _util = DraftBoardCore.rosterSlotUtility(pos, counts, _rs, _econOpts);
+        var _bench = _role === 'bench1' || _role === 'bench2';
+        var _recent = 0;
+        if (_bench && (pos === 'QB' || pos === 'TE') && cpuCtx.lastPickByPos[pos]){
+          var _since = (pn - cpuCtx.lastPickByPos[pos]) / Math.max(1, state.teams || 12);
+          _recent = Math.max(0, 10 * (1 - _since / 6));
+        }
+        var _exceptional = a < 9000 ? clamp01((pn - a) / Math.max(12, a * 0.65)) : 0;
+        var _waitLoss = Math.max(0, pv - (_nextShelf[pos] || 0));
+        // Visible needy teams between turns make a real shelf loss more urgent;
+        // cap it so scarcity does not double-count VOR/tier effects excessively.
+        _waitLoss *= 1 + Math.min(0.35, (_demand[pos] || 0) / Math.max(1, state.teams) * 0.7);
+        c.ds = DraftBoardCore.decisionScore({ base: pv, utility: _util,
+          bench: _bench, deepBench: _role === 'bench2', quality: ppgNormOf(p) || 0,
+          required: cpuCtx.obligations.required, freePicks: cpuCtx.obligations.freePicks,
+          recentPenalty: _recent, exceptional: _exceptional, waitLoss: _waitLoss });
+        // Decision quality gates the ADP likelihood but does not replace it. A
+        // persona may choose among close values; it cannot turn poor roster fit
+        // into a favorite merely by stacking several heuristic multipliers.
+        w *= Math.pow(Math.max(0.12, c.ds / 100), 2.2);
+      } else c.ds = pv || 0;
       var need = t ? Math.max(0, t - have) / t : 0;
       // A QB beyond the starting slots (2nd in 1QB, 3rd in SF) carries no need
       // pull until enough rounds after the QB room was completed (_backupQBWanted).
@@ -1585,7 +1659,13 @@
     // Restrict to the realistic field, then sample proportionally to weight so
     // the favorite usually wins but upsets happen at the documented rate.
     cands.sort(function(x, y){ return y.w - x.w; });
-    var top = cands.slice(0, Math.min(cands.length, 8));
+    // Human-like randomness only among defensible alternatives. Early picks use
+    // a narrow decision band; later rounds and adventurous personas widen it.
+    var eligible = window.DraftBoardCore && DraftBoardCore.decisionBand
+      ? DraftBoardCore.decisionBand(cands.map(function(c){ return { ref:c, ds:c.ds, weight:c.w }; }), _curRound, persona)
+          .map(function(r){ return r.ref; })
+      : cands;
+    var top = eligible.slice(0, Math.min(eligible.length, 8));
     var sum = 0; top.forEach(function(c){ sum += c.w; });
     if (sum <= 0) return top[0].p;
     var roll = Math.random() * sum;
@@ -1603,6 +1683,10 @@
     // grab the best available one first so the slot doesn't go empty.
     var _kd = _autoKDefNeed(pool);
     if (_kd) return _kd;
+    // Use the exact live recommendation baseline before applying the user's
+    // chosen plan. This keeps auto-draft aligned with the sidebar on roster
+    // utility, waiting value, recent investment and remaining obligations.
+    refreshPsPool();
     // User-chosen auto-draft plan: apply the same strategy/age-lean shaping the
     // CPU teams use, at full intensity with no window jitter (you picked the
     // plan deliberately, so it executes straight).
@@ -1618,7 +1702,7 @@
     var prm = { intensity: 1, shift: 0 };
     var qbStarters = state.sf ? 2 : 1;
     var scored = pool.map(function(p){
-      var s = pickScoreFor(p) || 0;
+      var s = (p._ds != null ? p._ds : pickScoreFor(p)) || 0;
       var pos = (p.position || '').toUpperCase();
       var have = counts[pos] || 0;
       if (strat || lean){
@@ -2229,19 +2313,28 @@
   function psCtx(){
     if (_psCtxCache) return _psCtxCache;
     var targets = posTargets();
-    var qualByPos = {};
+    var qualByPos = {}, lastPickByPos = {}, rosterQualities = [];
     myPicksList().forEach(function(mp){
       var pos = (mp.position || '').toUpperCase();
       var full = playersById[String(mp.id)];
       var v = full ? vorOf(full) : null;
       if (v == null || v > 0) qualByPos[pos] = (qualByPos[pos] || 0) + 1;
+      var q = full ? ppgNormOf(full) : null;
+      rosterQualities.push({ pos: pos, quality: q != null ? q : 0.35 });
+    });
+    Object.keys(state.picks || {}).forEach(function(k){
+      var pn = parseInt(k, 10), mp = state.picks[k];
+      if (!mp || !isMyPick(pn)) return;
+      var pos = (mp.position || '').toUpperCase();
+      if (!lastPickByPos[pos] || pn > lastPickByPos[pos]) lastPickByPos[pos] = pn;
     });
     var rs = (state && state.roster) || defaultRoster();
     var remaining = hasOwned() ? upcomingOwnedPicks().length : 0;
     var obligations = window.DraftBoardCore
       ? DraftBoardCore.remainingObligations(myPosCounts(), rs, remaining, !!state.sf)
       : { missing: {}, required: 0, remaining: remaining, freePicks: remaining };
-    _psCtxCache = { targets: targets, qualByPos: qualByPos, roster: rs,
+    _psCtxCache = { targets: targets, qualByPos: qualByPos, rosterQualities: rosterQualities,
+                    lastPickByPos: lastPickByPos, roster: rs,
                     remaining: remaining, obligations: obligations, nextByPos: {} };
     return _psCtxCache;
   }
@@ -2590,14 +2683,20 @@
   // Score: how much does this player help THIS roster before the next owned pick?
   // Keep these tunings together and outside the shared grade kernel so completed
   // draft grades remain stable and JS/Python parity is untouched.
-  function rosterRoleFor(pos, counts){
+  function rosterRoleFor(p, counts){
+    var pos = String(p && p.position || p || '').toUpperCase();
     var c = psCtx(), opts = { sf: !!state.sf, tep: scoringCfg().tep, draftType: state.type };
     if (!window.DraftBoardCore) return 'bench1';
+    if (p && p.position && DraftBoardCore.candidateRosterRole){
+      return DraftBoardCore.candidateRosterRole(pos, ppgNormOf(p) || 0, c.rosterQualities, c.roster, opts.sf);
+    }
     return DraftBoardCore.rosterRole(pos, counts, c.roster, opts.sf);
   }
-  function rosterUtilityFor(pos, counts){
+  function rosterUtilityFor(p, counts, role){
+    var pos = String(p && p.position || p || '').toUpperCase();
     var c = psCtx(), opts = { sf: !!state.sf, tep: scoringCfg().tep, draftType: state.type };
     if (!window.DraftBoardCore) return 1;
+    opts.role = role;
     return DraftBoardCore.rosterSlotUtility(pos, counts, c.roster, opts);
   }
 
@@ -2627,11 +2726,19 @@
     if (base == null) return null;
     var pos = String(p.position || '').toUpperCase();
     if (pos === 'K' || pos === 'DEF') return null;
-    var c = psCtx(), role = rosterRoleFor(pos, counts), util = rosterUtilityFor(pos, counts);
+    var c = psCtx(), role = rosterRoleFor(p, counts), util = rosterUtilityFor(p, counts, role);
     var expected = c.nextByPos[pos] || 0;
     if (!window.DraftBoardCore || !DraftBoardCore.decisionScore) return base;
+    var bench = role === 'bench1' || role === 'bench2';
+    var recentPenalty = 0;
+    if (bench && (pos === 'QB' || pos === 'TE') && c.lastPickByPos[pos]){
+      var roundsSince = (state.current - c.lastPickByPos[pos]) / Math.max(1, state.teams || 12);
+      recentPenalty = Math.max(0, 10 * (1 - roundsSince / 6));
+    }
+    var adp = adpOf(p), exceptional = 0;
+    if (adp != null) exceptional = clamp01(((state.current || 1) - adp) / Math.max(12, adp * 0.65));
     return DraftBoardCore.decisionScore({ base: base, utility: util,
-      bench: role === 'bench1' || role === 'bench2', deepBench: role === 'bench2',
+      bench: bench, deepBench: role === 'bench2', recentPenalty: recentPenalty, exceptional: exceptional,
       quality: ppgNormOf(p) || 0, required: c.obligations.required,
       freePicks: c.obligations.freePicks, waitLoss: Math.max(0, base - expected) });
   }
@@ -2649,7 +2756,7 @@
     var relGap = (adp != null) ? ((_pn - adp) / Math.max(adp, 1.5)) : null;
     var tier = tierOf(p);
     var left = tierRemaining(p);
-    var role = rosterRoleFor(pos, counts), _pc = psCtx();
+    var role = rosterRoleFor(p, counts), _pc = psCtx();
     if ((role === 'bench1' || role === 'bench2') && _pc.obligations.required > 0 && _pc.obligations.freePicks <= 2)
       return 'Backup-only · only ' + _pc.obligations.freePicks + ' discretionary picks';
     if (!state.sf && pos === 'QB' && (counts['QB'] || 0) >= 1)
@@ -2699,15 +2806,17 @@
     // Decision Score so the best player on a depleted board is not relabeled 97.
     var _rawPs = p._ps != null ? p._ps : pickScoreFor(p);
     var ps = _rawPs == null ? null : Math.max(1, Math.min(99, Math.round(_rawPs)));
-    var sub = adp != null ? 'ADP ' + Number(adp).toFixed(1) : '';
+    var sub = (adp != null ? 'ADP ' + Number(adp).toFixed(1) : '')
+      + (p._ds != null && ps != null ? ' · Pick ' + ps : '');
     var decisionLine = opts.rank && p._ds != null
       ? '<div class="dr-ba-reason">Decision ' + p._ds + ' · recommendation #' + opts.rank + '</div>' : '';
     var reasonLine = (opts.reason ? '<div class="dr-ba-reason">' + esc(opts.reason) + '</div>' : '') + decisionLine;
     var waitLine = opts.wait
       ? '<div class="dr-ba-wait">Can wait: ' + opts.wait.prob + '% there at #' + opts.wait.pn + '</div>'
       : '';
-    var psChip = (ps != null)
-      ? '<div class="dr-ba-pschip" style="color:' + psColor(ps) + ';background:' + psColor(ps) + '1a;">' + ps + '<small>PS</small></div>'
+    var _shownScore = p._ds != null ? p._ds : ps;
+    var psChip = (_shownScore != null)
+      ? '<div class="dr-ba-pschip" style="color:' + psColor(_shownScore) + ';background:' + psColor(_shownScore) + '1a;">' + _shownScore + '<small>' + (p._ds != null ? 'REC' : 'PS') + '</small></div>'
       : '';
     var availClass = '';
     var availLine = '';
@@ -4514,9 +4623,10 @@
     _promoted.forEach(function(p){
       html += playerRowHtml(p, { reason: 'Fill your ' + String(p.position || '').toUpperCase() + ' slot before the draft ends' });
     });
+    var _reasonCounts = sortBy === 'ps' ? myPosCounts() : null;
     for (var i = 0; i < Math.min(mainPool.length, 200); i++){
       var p = mainPool[i];
-      var opts = {};
+      var opts = sortBy === 'ps' ? { reason: pickReason(p, _reasonCounts), rank: i + 1 } : {};
       if (nextPick){
         var prob = availProb(p, nextPick);
         // Show the survival % for every player so elite names that likely go
@@ -5379,7 +5489,7 @@
     var menu = document.getElementById('drBaSortMenu');
     var lbl = document.getElementById('drBaSortLbl');
     if (!ui || !btn || !menu || !lbl) return;
-    var LABELS = { value: 'Value', adp: 'ADP', steals: 'Steals', ps: 'Pick Score', ppg: 'Proj PPG' };
+    var LABELS = { value: 'Value', adp: 'ADP', steals: 'Steals', ps: 'Recommendation', ppg: 'Proj PPG' };
     var opts = menu.querySelectorAll('.dr-sortsel-opt');
     var cur = btn.getAttribute('data-val') || 'ps';
     function apply(v){

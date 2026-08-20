@@ -204,10 +204,13 @@ def test_roster_economics_respect_format_and_flex():
         "ob:C.remainingObligations(counts,standard,5,false),"
         "sf:C.rosterRole('QB',{QB:1},{QB:1,SF:1,RB:2,WR:2,TE:1,FLEX:1,BN:7},true),"
         "twoTe:C.rosterRole('TE',{TE:1},{QB:1,RB:2,WR:2,TE:2,FLEX:1,BN:7},false),"
-        "scores:{qb2:C.decisionScore({base:90,utility:.42,bench:true,quality:.8,required:3,freePicks:1,waitLoss:4}),"
+        "flexUpgrade:C.candidateRosterRole('WR',.9,[{pos:'RB',quality:.8},{pos:'RB',quality:.7},{pos:'RB',quality:.6},"
+        "{pos:'WR',quality:.8},{pos:'WR',quality:.7},{pos:'WR',quality:.2},{pos:'TE',quality:.7}],standard,false),"
+        "scores:{qb2:C.decisionScore({base:97,utility:.30,bench:true,quality:.8,required:3,freePicks:1,waitLoss:4,recentPenalty:7}),"
         "flex:C.decisionScore({base:84,utility:.96,bench:false,waitLoss:18}),"
-        "fallen:C.decisionScore({base:99,utility:.42,bench:true,quality:1,required:0,freePicks:4,waitLoss:18}),"
-        "qb3:C.decisionScore({base:92,utility:.18,bench:true,deepBench:true,quality:.8,required:2,freePicks:1})}}));"
+        "fallen:C.decisionScore({base:99,utility:.30,bench:true,quality:1,required:0,freePicks:4,waitLoss:18,exceptional:1}),"
+        "qb3:C.decisionScore({base:92,utility:.18,bench:true,deepBench:true,quality:.8,required:2,freePicks:1})},"
+        "band:C.decisionBand([{id:'best',ds:90,weight:1},{id:'close',ds:87,weight:1},{id:'bad',ds:72,weight:9}],3,.8).map(x=>x.id)}));"
         % (json.dumps(str(PICK_JS)), json.dumps(str(CORE_JS)))
     )
     res = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=20)
@@ -220,6 +223,8 @@ def test_roster_economics_respect_format_and_flex():
     assert out["ob"]["freePicks"] == 1
     assert out["sf"] == "starter"
     assert out["twoTe"] == "starter"
+    assert out["flexUpgrade"] == "flex"
     assert out["scores"]["flex"] > out["scores"]["qb2"]
     assert out["scores"]["fallen"] > out["scores"]["qb2"]
     assert out["scores"]["qb3"] < out["scores"]["qb2"]
+    assert out["band"] == ["best", "close"]

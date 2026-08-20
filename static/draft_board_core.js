@@ -155,15 +155,39 @@
     return have === (req[pos] || 0) ? 'bench1' : 'bench2';
   }
 
+  // Quality-aware FLEX role: counts tell us whether FLEX is occupied, but not
+  // whether this candidate would replace a weak occupant. Dedicated slots are
+  // removed position-by-position, then the best remaining RB/WR/TE qualities
+  // compete for FLEX. This keeps an excellent WR5 from being mislabeled as mere
+  // bench depth when it would actually upgrade a manager's weekly lineup.
+  function candidateRosterRole(pos, candidateQuality, rosterQualities, rc, sf) {
+    pos = String(pos || '').toUpperCase(); rc = rc || {};
+    var counts = { QB:0, RB:0, WR:0, TE:0 };
+    (rosterQualities || []).forEach(function(r){ var p = String(r.pos || '').toUpperCase(); if (counts[p] != null) counts[p]++; });
+    var basic = rosterRole(pos, counts, rc, sf);
+    if (basic === 'starter' || basic === 'flex' || ['RB','WR','TE'].indexOf(pos) < 0 || !(rc.FLEX || 0)) return basic;
+    var req = starterRequirements(rc, sf), by = { RB:[], WR:[], TE:[] };
+    (rosterQualities || []).forEach(function(r){ var p = String(r.pos || '').toUpperCase(); if (by[p]) by[p].push(+r.quality || 0); });
+    by[pos].push(+candidateQuality || 0);
+    var flexPool = [];
+    Object.keys(by).forEach(function(p){
+      by[p].sort(function(a,b){ return b-a; });
+      flexPool = flexPool.concat(by[p].slice(req[p] || 0));
+    });
+    flexPool.sort(function(a,b){ return b-a; });
+    var cutoff = flexPool[Math.min((req.FLEX || 0), flexPool.length) - 1];
+    return cutoff != null && (+candidateQuality || 0) >= cutoff ? 'flex' : basic;
+  }
+
   function rosterSlotUtility(pos, counts, rc, opts) {
-    opts = opts || {}; var role = rosterRole(pos, counts, rc, !!opts.sf);
+    opts = opts || {}; var role = opts.role || rosterRole(pos, counts, rc, !!opts.sf);
     if (role === 'starter') return 1;
     if (role === 'flex') return String(pos || '').toUpperCase() === 'TE'
       ? ((+opts.tep || 0) > 0 ? 0.86 : 0.70) : 0.96;
     var dynasty = opts.draftType === 'startup' || opts.draftType === 'dynasty';
     var tep = +opts.tep || 0, p = String(pos || '').toUpperCase();
-    if (p === 'QB') return role === 'bench1' ? (opts.sf ? 0.82 : (dynasty ? 0.70 : 0.42)) : (opts.sf ? 0.55 : 0.18);
-    if (p === 'TE') return role === 'bench1' ? (tep > 0 ? 0.72 : (dynasty ? 0.62 : 0.44)) : (tep > 0 ? 0.48 : 0.20);
+    if (p === 'QB') return role === 'bench1' ? (opts.sf ? 0.82 : (dynasty ? 0.70 : 0.30)) : (opts.sf ? 0.55 : 0.12);
+    if (p === 'TE') return role === 'bench1' ? (tep > 0 ? 0.72 : (dynasty ? 0.62 : 0.38)) : (tep > 0 ? 0.48 : 0.16);
     if (p === 'RB') return role === 'bench1' ? 0.82 : 0.68;
     if (p === 'WR') return role === 'bench1' ? 0.78 : 0.64;
     return 1;
@@ -192,9 +216,24 @@
       if ((+o.required || 0) > 0 && (+o.freePicks || 0) <= 1) score -= 7;
       if ((+o.required || 0) > 0 && (+o.freePicks || 0) <= 0) score -= 13;
       if (o.deepBench) score -= 5;
+      // Drafting a backup immediately after filling a single-starter position is
+      // especially wasteful: the board has barely changed and the manager has
+      // not used intervening picks on more flexible depth. This fades smoothly.
+      score -= Math.max(0, +o.recentPenalty || 0);
+      // Truly exceptional falls may buy back some fit cost, but ordinary ADP
+      // values cannot use the generic late-round score inflation as an escape.
+      score += Math.max(0, Math.min(12, (+o.exceptional || 0) * 12));
     }
     if ((+o.waitLoss || 0) > 0) score += Math.min(9, (+o.waitLoss || 0) * 0.30) * Math.max(0.35, util);
     return Math.max(1, Math.min(99, Math.round(score)));
+  }
+
+  function decisionBand(rows, round, persona) {
+    rows = rows || []; round = +round || 1; persona = +persona || 0.8;
+    var best = 0; rows.forEach(function(r){ if ((+r.ds || 0) > best) best = +r.ds || 0; });
+    var width = 4 + Math.min(6, Math.max(0, round - 4) * 0.65) + Math.max(0, persona - 0.8) * 2;
+    var eligible = rows.filter(function(r){ return (+r.weight || 0) > 0 && (+r.ds || 0) >= best - width; });
+    return eligible.length ? eligible : rows.slice();
   }
 
   // Dynasty tier from the server value thresholds; redraft returns null because
@@ -222,8 +261,8 @@
     computeReplacement: computeReplacement, ppgOf: ppgOf,
     computePpgScale: computePpgScale, ppgNorm: ppgNorm,
     tierOf: tierOf, maxVal: maxVal, posTargets: posTargets,
-    starterRequirements: starterRequirements, rosterRole: rosterRole,
+    starterRequirements: starterRequirements, rosterRole: rosterRole, candidateRosterRole: candidateRosterRole,
     rosterSlotUtility: rosterSlotUtility, remainingObligations: remainingObligations,
-    decisionScore: decisionScore,
+    decisionScore: decisionScore, decisionBand: decisionBand,
   };
 });
