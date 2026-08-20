@@ -89,6 +89,20 @@ def _sleeper_standard_points(raw: dict, ss: dict):
             return None  # 6pt (or other) passing TD → recompute
     except (TypeError, ValueError):
         return None
+    # Reception format alone does not make a league standard. A league can be
+    # PPR while changing interceptions, yardage, fumbles, or another projected
+    # category. In that case Sleeper's generic pts_* total is not the league
+    # projection shown in its app, so score the raw line with league settings.
+    for stat in raw:
+        if stat == "rec" or stat.startswith("pts_") or stat not in ss:
+            continue
+        try:
+            league_rate = float(ss.get(stat) or 0)
+            standard_rate = float(_DEFAULT_RATES.get(stat, 0))
+        except (TypeError, ValueError):
+            return None
+        if league_rate != standard_rate:
+            return None
     # Any active yardage-milestone / first-down / TE-premium bonus makes
     # Sleeper's standard total wrong for this league.
     for k, v in ss.items():
