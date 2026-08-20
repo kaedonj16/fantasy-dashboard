@@ -13,6 +13,9 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Dict, List, Optional, Union
 
+from utils.pick_slots import pick_label as _pk_pick_label
+from utils.pick_slots import pick_value_from_table as _pk_pick_value_from_table
+
 logger = logging.getLogger(__name__)
 
 
@@ -66,8 +69,8 @@ def build_teams_body(ctx: dict) -> str:
       - Positional Index summary per team in header
     """
     from app import (  # noqa: E402  (lazy: avoids a circular import at module load)
-        _pk_pick_label, _pk_pick_value_from_table, _playoff_sim_cached, _safe_int,
-        _team_pick_value, _weighted_pos_strength, apply_te_premium, avatar_from_users,
+        _playoff_sim_cached, _safe_int, _team_pick_value, _weighted_pos_strength,
+        apply_te_premium, avatar_from_users,
         build_historical_pick_slot_map, count_roster_positions, get_roster_positions,
         has_draft_ended, load_pick_value_table, te_premium_from_settings, _TEAMS_JS_V,
     )

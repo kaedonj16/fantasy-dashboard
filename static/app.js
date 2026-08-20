@@ -978,6 +978,9 @@ window.brHaptic = function (pattern) {
         if (!isPop) history.pushState({ brSoft: 1 }, '', url);
         // Back/forward returns to the remembered position; a forward nav starts at the top.
         setScroll(isPop ? (scrollByUrl[location.href] || 0) : 0);
+        // Restore/remove Home's ticker before page initializers run so a ticker
+        // restored by back/forward navigation is populated immediately.
+        syncHomeTicker(doc);
         if (window.initPageRoot) window.initPageRoot(curRoot);
         // The top nav (desktop) and the bottom dock (mobile) both live outside
         // #page-root now, so the swap doesn't touch them - copy the new page's
@@ -1016,6 +1019,22 @@ window.brHaptic = function (pattern) {
     copyActive('.nav-pill');
     copyActive('.nav-pill-dropdown-item');
     if (window.brNavGlide) window.brNavGlide();
+  }
+
+  // The landing ticker is mounted directly after the persistent top nav, not
+  // inside #page-root. Keep that chrome in sync when soft navigation enters or
+  // leaves Home, just like the persistent desktop nav and mobile dock.
+  function syncHomeTicker(doc) {
+    var live = document.getElementById('homeTicker');
+    var next = doc.getElementById('homeTicker');
+    if (live && !next) {
+      live.remove();
+      return;
+    }
+    if (!live && next) {
+      var nav = document.querySelector('.top-nav');
+      if (nav) nav.insertAdjacentElement('afterend', next.cloneNode(true));
+    }
   }
 
   // Mobile: the bottom dock persists across a soft-nav (it's outside #page-root),
