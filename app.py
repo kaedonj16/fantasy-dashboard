@@ -1097,11 +1097,15 @@ def _espn_otp_ui_enabled() -> bool:
         return False
 
 
-FORM_BODY = """
+HOME_TICKER_HTML = """
 <div class="home-ticker-band" id="homeTicker" hidden aria-hidden="true">
   <span class="home-ticker-tag"><span class="home-ticker-dot"></span>LIVE VALUES</span>
   <div class="home-ticker-wrap"><div class="home-ticker-track" id="homeTickerTrack"></div></div>
 </div>
+"""
+
+
+FORM_BODY = """
 <div class="home-page">
   <section class="home-hero">
     <div class="home-hero-left">
@@ -3879,6 +3883,12 @@ def render_page(
     nav_html = (build_nav(_nav_lid, active, _nav_platform, _nav_season)
                 if _league_chrome
                 else build_nav(None, active, _nav_platform, _nav_season))
+
+    # The landing-page ticker belongs to the site chrome rather than the page
+    # content so it sits flush immediately beneath the top navigation.
+    if active == "home":
+        _nav_end = nav_html.find("</nav>") + len("</nav>")
+        nav_html = nav_html[:_nav_end] + HOME_TICKER_HTML + nav_html[_nav_end:]
 
     # Inject the "Link a league" modal once per page (hidden until opened).
     # Available to logged-out visitors too, so they can select a league and then

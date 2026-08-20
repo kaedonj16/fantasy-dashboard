@@ -229,6 +229,13 @@ def test_guest_nav_yields_to_dock_everywhere(monkeypatch):
         assert "top-nav br-mnav" in app.build_nav(None, "home", "sleeper", 2026)
 
 
+def test_home_ticker_immediately_follows_top_nav(offline_client):
+    html = _html(offline_client, "/")
+    nav_end = html.index("</nav>") + len("</nav>")
+    ticker_start = html.index('<div class="home-ticker-band"', nav_end)
+    assert html[nav_end:ticker_start].strip() == ""
+
+
 def test_draft_room_cfg_show_keeper():
     """The draft room only offers the Keeper draft type when show_keeper is set."""
     from dashboard_services.pages.draft_room_page import build_draft_room_body
