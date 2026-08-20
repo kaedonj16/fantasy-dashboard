@@ -11,6 +11,8 @@ Routes:
 Extracted from app.py to reduce monolith size. App.py internals are reached via
 the lazy shims below so importing the blueprint at start-up stays free of a
 circular import — the real functions are only fetched when a request is served.
+Page builders that have already been extracted into service modules are imported
+directly.
 """
 from __future__ import annotations
 
@@ -19,6 +21,8 @@ import logging
 from datetime import datetime
 
 from flask import Blueprint, jsonify, redirect, request, session, url_for
+
+from dashboard_services.pages.waivers_page import build_waivers_body
 
 logger = logging.getLogger(__name__)
 
@@ -74,11 +78,6 @@ def build_standings_as_of_week(*args, **kwargs):
 def _standings_panels(*args, **kwargs):
     from app import _standings_panels as _fn
     return _fn(*args, **kwargs)
-
-def build_waivers_body(*args, **kwargs):
-    from app import build_waivers_body as _fn
-    return _fn(*args, **kwargs)
-
 
 @league_pages_bp.route("/<platform>/<int:season>/<league_id>/standings")
 def page_standings(platform: str, season: int, league_id: str):
