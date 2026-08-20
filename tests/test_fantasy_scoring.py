@@ -117,3 +117,14 @@ def test_bonus_or_6pt_league_ignores_precomputed_total():
     # 6pt passing TD is custom too.
     entry2 = {"raw_stats": {"pass_td": 3, "pts_ppr": 99.0}}
     assert projection_points(entry2, {"rec": 1.0, "pass_td": 6}, "QB") == pytest.approx(18.0)
+
+
+def test_custom_interception_rate_ignores_standard_precomputed_total():
+    entry = {
+        "raw_stats": {
+            "pass_yd": 250, "pass_td": 2, "pass_int": 1,
+            "pts_ppr": 99.0,
+        }
+    }
+    settings = {"rec": 1.0, "pass_yd": 0.04, "pass_td": 4, "pass_int": -1}
+    assert projection_points(entry, settings, "QB") == pytest.approx(17.0)

@@ -27,6 +27,7 @@ from flask import (
     stream_with_context,
     abort,
     g,
+    has_request_context,
 )
 from pathlib import Path
 from typing import List, Dict, Optional, Union, Tuple
@@ -1097,11 +1098,15 @@ def _espn_otp_ui_enabled() -> bool:
         return False
 
 
-FORM_BODY = """
+HOME_TICKER_HTML = """
 <div class="home-ticker-band" id="homeTicker" hidden aria-hidden="true">
   <span class="home-ticker-tag"><span class="home-ticker-dot"></span>LIVE VALUES</span>
   <div class="home-ticker-wrap"><div class="home-ticker-track" id="homeTickerTrack"></div></div>
 </div>
+"""
+
+
+FORM_BODY = """
 <div class="home-page">
   <section class="home-hero">
     <div class="home-hero-left">
@@ -1784,6 +1789,12 @@ def get_viewer_session_for_league(users: List[Dict], rosters: List[Dict],
                                   league_id: Optional[str] = None,
                                   season: Optional[int] = None) -> dict:
     """Get viewer session resolved for the current league instead of stale session data."""
+    # Context builds also run in worker threads (for example, the Teams-page
+    # warmup). Those builds have no request-local session and do not need viewer
+    # personalization; attempting to touch Flask's session there raises
+    # "Working outside of request context" and aborts the entire page build.
+    if not has_request_context():
+        return {}
     account_id = session.get("account_id")
     if account_id and platform and league_id and season:
         try:
@@ -3879,6 +3890,12 @@ def render_page(
     nav_html = (build_nav(_nav_lid, active, _nav_platform, _nav_season)
                 if _league_chrome
                 else build_nav(None, active, _nav_platform, _nav_season))
+
+    # The landing-page ticker belongs to the site chrome rather than the page
+    # content so it sits flush immediately beneath the top navigation.
+    if active == "home":
+        _nav_end = nav_html.find("</nav>") + len("</nav>")
+        nav_html = nav_html[:_nav_end] + HOME_TICKER_HTML + nav_html[_nav_end:]
 
     # Inject the "Link a league" modal once per page (hidden until opened).
     # Available to logged-out visitors too, so they can select a league and then

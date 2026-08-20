@@ -760,7 +760,17 @@ def fetch_week_from_sleeper(season: int, week: int, raw_scoring_settings: dict =
     players_index = load_players_index() or {}
     out: dict = {}
     for pid, entry in rows:
-        st = entry.get("stats") if isinstance(entry.get("stats"), dict) else entry
+        if isinstance(entry.get("stats"), dict):
+            st = dict(entry["stats"])
+            # Depending on the projection feed/version, Sleeper's displayed
+            # totals live beside ``stats`` rather than inside it.  Keep them
+            # with the cached raw line so projection_points() can use the exact
+            # number shown by Sleeper instead of reconstructing it.
+            for key in ("pts_ppr", "pts_half_ppr", "pts_std"):
+                if key in entry and key not in st:
+                    st[key] = entry[key]
+        else:
+            st = entry
         pos = players_index.get(pid, {}).get("pos", "")
         variants = _sleeper_stats_to_variants(st, pos, raw_scoring_settings)
         if variants:
