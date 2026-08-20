@@ -1,173 +1,83 @@
+"""Backward-compatible fantasy platform facade backed by the provider registry."""
 from __future__ import annotations
 
 import logging
 from typing import Any, Dict, List
 
-logger = logging.getLogger(__name__)
+from dashboard_services.providers.registry import (
+    get_provider, get_provider_capabilities, normalize_platform,
+)
 
-from dashboard_services.api import (
-    get_league as sleeper_get_league,
-    get_users as sleeper_get_users,
-    get_rosters as sleeper_get_rosters,
-    get_matchups as sleeper_get_matchups,
-    get_traded_picks as sleeper_get_traded_picks,
-    get_bracket as sleeper_get_bracket,
-    get_drafts as sleeper_get_drafts,
-    get_transactions as sleeper_get_transactions,
-    set_league_globals,
-)
-from dashboard_services.providers.espn_api import (
-    get_league as espn_get_league,
-    get_users as espn_get_users,
-    get_rosters as espn_get_rosters,
-    get_matchups as espn_get_matchups,
-    espn_get_bracket_like,
-    get_drafts as espn_get_drafts,
-    get_league_globals as espn_get_league_globals,
-    get_transactions as espn_get_transactions,
-)
+logger = logging.getLogger(__name__)
 
 
 def norm_platform(platform: str) -> str:
-    return (platform or "sleeper").lower().strip()
+    """Retain the legacy blank-to-Sleeper behavior; explicit unknowns fail."""
+    return normalize_platform(platform)
 
 
 def _yahoo_token(league_id: str = "", season: int = 0) -> str:
-    """Resolve a valid Yahoo access token for a data fetch.
-
-    Priority:
-      1. The viewer's own session identity: session ``yahoo_guid`` → the DB-backed,
-         auto-refreshing token (so it no longer dies after ~1h). Falls back to a
-         raw ``yahoo_access_token`` left in the session by an older flow.
-      2. Any authorized owner of this league → their DB token. This is what lets a
-         non-owner viewer (public share) or a background/cron job — neither of
-         which has the owner's session — load a Yahoo league.
-
-    Returns "" when nothing can produce a token (caller degrades gracefully).
-    """
-    from dashboard_services.providers.yahoo_api import (
-        get_valid_access_token, get_league_token,
-    )
-    # 1) viewer's own session (only meaningful inside a request context)
+    """Resolve Yahoo credentials from a request session or a stored owner token."""
+    from dashboard_services.providers.yahoo_api import get_valid_access_token, get_league_token
     try:
         from flask import session
         guid = session.get("yahoo_guid") or ""
         if guid:
-            tok = get_valid_access_token(guid)
-            if tok:
-                return tok
+            token = get_valid_access_token(guid)
+            if token: return token
         raw = session.get("yahoo_access_token") or ""
-        if raw:
-            return raw
+        if raw: return raw
     except RuntimeError:
-        pass  # no request context (background job) → fall through to league owner
-    # 2) any authorized owner of this league (works with no session)
-    if league_id:
-        tok = get_league_token(league_id, season or 0)
-        if tok:
-            return tok
-    return ""
+        pass
+    return (get_league_token(league_id, season or 0) or "") if league_id else ""
 
 
 def get_league(platform: str, league_id: str, season: int) -> Dict[str, Any]:
-    platform = norm_platform(platform)
-    if platform == "espn":
-        return espn_get_league(season, league_id)
-    if platform == "yahoo":
-        from dashboard_services.providers.yahoo_api import get_league as yahoo_get_league
-        return yahoo_get_league(season, league_id, _yahoo_token(league_id, season))
-    return sleeper_get_league(league_id)
+    return get_provider(platform).get_league(league_id, season)
 
 
 def get_users(platform: str, league_id: str, season: int) -> List[Dict[str, Any]]:
-    platform = norm_platform(platform)
-    if platform == "espn":
-        return espn_get_users(season, league_id)
-    if platform == "yahoo":
-        from dashboard_services.providers.yahoo_api import get_users as yahoo_get_users
-        return yahoo_get_users(season, league_id, _yahoo_token(league_id, season))
-    return sleeper_get_users(league_id)
+    return get_provider(platform).get_users(league_id, season)
 
 
 def get_rosters(platform: str, league_id: str, season: int) -> List[Dict[str, Any]]:
-    platform = norm_platform(platform)
-    if platform == "espn":
-        return espn_get_rosters(season, league_id)
-    if platform == "yahoo":
-        from dashboard_services.providers.yahoo_api import get_rosters as yahoo_get_rosters
-        return yahoo_get_rosters(season, league_id, _yahoo_token(league_id, season))
-    return sleeper_get_rosters(league_id)
+    return get_provider(platform).get_rosters(league_id, season)
 
 
 def get_matchups(platform: str, league_id: str, week: int, season: int) -> List[Dict[str, Any]]:
-    platform = norm_platform(platform)
-    if platform == "espn":
-        return espn_get_matchups(season, league_id, week)
-    if platform == "yahoo":
-        from dashboard_services.providers.yahoo_api import get_matchups as yahoo_get_matchups
-        return yahoo_get_matchups(season, league_id, week, _yahoo_token(league_id, season))
-    return sleeper_get_matchups(league_id, week)
+    return get_provider(platform).get_matchups(league_id, season, week)
 
 
 def get_traded_picks(platform: str, league_id: str, season: int) -> List[Dict[str, Any]]:
-    platform = norm_platform(platform)
-    if platform in ("espn", "yahoo"):
-        return []
-    return sleeper_get_traded_picks(league_id)
+    return get_provider(platform).get_traded_picks(league_id, season)
 
 
 def get_bracket(platform: str, league_id: str, kind: str, season: int):
-    p = norm_platform(platform)
-    if p == "espn":
-        return espn_get_bracket_like(league_id=league_id, season=season, kind=kind)
-    if p == "yahoo":
-        from dashboard_services.providers.yahoo_api import get_bracket_like as yahoo_bracket
-        return yahoo_bracket(league_id, season, kind, _yahoo_token(league_id, season))
-    return sleeper_get_bracket(league_id, kind)
+    return get_provider(platform).get_bracket(league_id, season, kind)
 
 
 def get_drafts(platform: str, league_id: str, season: int) -> List[Dict[str, Any]]:
-    p = norm_platform(platform)
-    if p == "espn":
-        return espn_get_drafts(season, league_id)
-    if p == "yahoo":
-        from dashboard_services.providers.yahoo_api import get_drafts as yahoo_get_drafts
-        return yahoo_get_drafts(season, league_id, _yahoo_token(league_id, season))
-    return sleeper_get_drafts(league_id)
+    return get_provider(platform).get_drafts(league_id, season)
 
 
 def get_transactions(platform: str, league_id: str, week: int, season: int) -> List[Dict[str, Any]]:
-    """Platform-agnostic transaction fetch for a single week."""
-    p = norm_platform(platform)
-    if p == "espn":
-        return espn_get_transactions(season, league_id, week)
-    if p == "yahoo":
-        from dashboard_services.providers.yahoo_api import get_transactions as yahoo_get_transactions
-        return yahoo_get_transactions(season, league_id, week, _yahoo_token(league_id, season))
-    return sleeper_get_transactions(league_id, week) or []
+    return get_provider(platform).get_transactions(league_id, season, week)
 
 
 def sync_league_globals(platform: str, league_id: str, season: int) -> None:
+    """Populate legacy globals until league settings become request-context data.
+
+    TODO: replace process-global league configuration in a dedicated refactor.
     """
-    Populate the api.py module globals (SCORING_SETTINGS, ROSTER_POSITIONS, etc.)
-    for the given league. For Sleeper these are already populated by get_league().
-    For ESPN/Yahoo we extract them explicitly here.
-    """
-    p = norm_platform(platform)
-    if p not in ("espn", "yahoo"):
-        return
+    provider = get_provider(platform)
     try:
-        if p == "espn":
-            data = espn_get_league_globals(season, league_id)
-        else:
-            from dashboard_services.providers.yahoo_api import get_league_globals as yahoo_globals
-            data = yahoo_globals(season, league_id, _yahoo_token(league_id, season))
+        data = provider.get_league_globals(league_id, season)
         if data:
-            set_league_globals(
-                scoring_settings=data.get("scoring_settings"),
-                roster_positions=data.get("roster_positions"),
-                league_settings=data.get("league_settings"),
-                total_rosters=data.get("total_rosters"),
-            )
-    except Exception as e:
-        logger.warning("[sync_league_globals] %s failed for league %s: %s", p, league_id, e)
+            from dashboard_services.api import set_league_globals
+            set_league_globals(scoring_settings=data.get("scoring_settings"),
+                               roster_positions=data.get("roster_positions"),
+                               league_settings=data.get("league_settings"),
+                               total_rosters=data.get("total_rosters"))
+    except Exception as exc:
+        logger.warning("[sync_league_globals] %s failed for league %s: %s",
+                       provider.metadata.key, league_id, type(exc).__name__)

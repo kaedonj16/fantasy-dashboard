@@ -9347,8 +9347,60 @@ select:focus {
     color: var(--text);
 }
 
-.rivalry-wins--lead {
-    color: var(--win);
+.home-card-title {
+  font-size: 18px;
+  margin: 0 0 12px;
+  color: #f9fafb;
+}
+.home-account-entry,.signed-in-home{display:flex;flex-direction:column;gap:7px;margin-bottom:18px;padding-bottom:18px;border-bottom:1px solid rgba(255,255,255,.14)}
+.home-account-entry span{font-size:11px;color:var(--text-muted);margin-bottom:4px}
+/* Shared by every Google sign-in action in the connect and account flows. */
+.google-continue-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:100%;box-sizing:border-box;background:#fff!important;color:#1f2937!important;border:1px solid #dadce0!important;border-radius:10px;padding:10px 14px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.12);font-size:14px;font-weight:700;text-align:center;text-decoration:none}
+.google-button-title{display:inline-flex!important;align-items:center;justify-content:center;gap:9px!important;margin:0!important;font-size:14px!important;font-weight:700!important;color:inherit!important}
+.google-button-title::before{content:"";display:block;flex:0 0 19px;width:19px;height:19px;background:url('/static/google-logo.svg') center/contain no-repeat}
+.google-continue-btn:hover{background:#f8fafc!important;box-shadow:0 2px 6px rgba(0,0,0,.16)}
+/* New-user path leads: "Create Account with Google" is the primary (solid) CTA;
+   the returning-user "Continue with Google" below it is the secondary (outline). */
+.google-create-account-btn{background:#fff!important;color:#1f2937!important;border:1px solid #dadce0!important;box-shadow:0 1px 3px rgba(0,0,0,.12)}.google-create-account-btn:hover{background:#f8fafc!important}
+.home-account-entry a.google-continue-btn:not(.google-create-account-btn){background:transparent!important;color:#fff!important;border:1px solid rgba(255,255,255,.42)!important;box-shadow:none}.home-account-entry a.google-continue-btn:not(.google-create-account-btn):hover{background:rgba(255,255,255,.09)!important}
+.home-account-lead{font-size:12px!important;color:rgba(255,255,255,.78)!important;margin-bottom:8px!important;line-height:1.45}
+.home-create-acct-hint{color:#fcd34d!important;font-weight:600;margin:2px 0!important;font-size:11.5px!important;line-height:1.45}
+/* New-user "Create Account" now sits at the BOTTOM of the card, after the form.
+   Divider above it (not below); no bottom border since it ends the card. */
+.home-account-bottom{margin-bottom:0;padding-bottom:0;border-bottom:0;margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,.14)}
+/* Once a platform shows its own Google completion (Sleeper's league picker, or
+   the ESPN private-connect choice), that IS the create-account step, so hide the
+   generic bottom button to avoid two competing CTAs. */
+.home-card:has(#generateWrap[style*="block"]) #homeAcctBottom,
+.home-card:has(#espnPrivateChoice[style*="flex"]) #homeAcctBottom { display:none; }
+.home-account-new-label{margin-top:8px!important;margin-bottom:0!important;color:#fff!important;font-size:11px!important;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
+.continue-without-account-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);color:#e5e7eb;border:1px solid rgba(255,255,255,.28);border-radius:10px;padding:11px 14px;cursor:pointer;font-weight:700}
+.continue-without-account-btn:hover{background:rgba(255,255,255,.11);border-color:rgba(255,255,255,.42)}
+.link-public-choice{display:flex;flex-direction:column;gap:8px;margin-top:12px}.link-choice-or{text-align:center;color:var(--text-muted);font-size:10px;font-weight:800;letter-spacing:.1em}
+.provider-account-choice{display:flex;flex-direction:column;gap:8px;margin-top:12px}.provider-choice-or{text-align:center;color:rgba(255,255,255,.5);font-size:10.5px;font-weight:800;letter-spacing:.1em}.google-continue-btn span,.continue-without-account-btn span{font-size:11px;font-weight:500}.google-continue-btn small{font-size:10px;font-weight:600;color:#80868b}
+.signed-in-home{gap:12px}
+.signed-in-home-greeting{margin:0;color:rgba(255,255,255,.68);font-size:13px}
+.signed-in-home-header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+#signedInLeagueList{display:flex;flex-direction:column;gap:8px}
+.signed-home-league{display:flex;justify-content:space-between;align-items:center;gap:14px;min-height:48px;box-sizing:border-box;border:1px solid rgba(255,255,255,.2);padding:11px 14px;border-radius:11px;color:#f8fafc;font-size:13px;font-weight:650;text-decoration:none;background:rgba(255,255,255,.045);transition:background .15s,border-color .15s,transform .15s}
+a.signed-home-league:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.38);transform:translateY(-1px)}
+.signed-home-league-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.signed-home-league-open{flex:0 0 auto;color:#bfdbfe;font-size:12px;font-weight:800}
+.signed-home-league-attention{align-items:flex-start}.connection-attention{display:block;margin-top:3px;color:#fca5a5;font-size:10px;font-weight:700}.reconnect-home-espn{flex:0 0 auto}
+#signedInAddLeague{margin-top:2px;background:transparent;border:1px solid rgba(255,255,255,.36);box-shadow:none}
+#signedInAddLeague:hover{background:rgba(255,255,255,.08)}
+.signed-home-pagination{display:flex;align-items:center;justify-content:center;gap:12px;color:rgba(255,255,255,.68);font-size:11px;font-weight:700}
+.signed-home-pagination button{width:34px!important;padding:5px!important;margin:0;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.22);box-shadow:none}
+.signed-home-pagination button:disabled{opacity:.35;cursor:default}
+.home-connect-back{width:auto!important;margin:0 0 12px;padding:4px 0!important;background:transparent;border:0;box-shadow:none;color:#bfdbfe;font-size:12px;font-weight:750;text-align:left;cursor:pointer}
+.home-connect-back:hover{color:#fff}
+.saved-viewer-connect{margin-top:2px;padding:5px 0!important;background:transparent;border:0;box-shadow:none;color:#bfdbfe;font-size:11px;font-weight:700;text-align:left;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+#connectLeagueFlow[hidden]{display:none!important}
+
+.platform-selector {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
 }
 
 .rivalry-divider {

@@ -2576,6 +2576,7 @@ def _link_modal_html() -> str:
           <div class="link-tabs" role="tablist">
             <button type="button" class="link-tab active" data-lp="sleeper" onclick="linkTab('sleeper')">Sleeper</button>
             <button type="button" class="link-tab" data-lp="espn" onclick="linkTab('espn')">ESPN</button>
+            <button type="button" class="link-tab" data-lp="mfl" onclick="linkTab('mfl')">MFL</button>
             <button type="button" class="link-tab" data-lp="yahoo" onclick="linkTab('yahoo')">Yahoo</button>
           </div>
           <div class="link-pane" data-lp="sleeper">
@@ -2610,6 +2611,15 @@ def _link_modal_html() -> str:
               </details>
             </div>
             <button type="button" id="linkEspnConnect" class="link-btn link-connect" onclick="linkEspnConnect()">Connect League</button>
+          </div>
+          <div class="link-pane" data-lp="mfl" style="display:none;">
+            <p class="link-help">Use the League ID number from your public MyFantasyLeague URL.</p>
+            <label class="link-lb" for="linkMflId">League ID</label>
+            <input id="linkMflId" class="link-inp link-full" inputmode="numeric" autocomplete="off">
+            <label class="link-lb link-field" for="linkMflSeason">Season</label>
+            <input id="linkMflSeason" class="link-inp link-full" inputmode="numeric" placeholder="current season" autocomplete="off">
+            <button type="button" class="link-btn link-connect" onclick="linkMflPreview()">Connect League</button>
+            <div id="linkMflResult" class="link-list"></div>
           </div>
           <!--YAHOO_PANE_START--><div class="link-pane" data-lp="yahoo" style="display:none;">
             <label class="link-lb">Yahoo league ID</label>
@@ -2845,6 +2855,17 @@ def _link_modal_html() -> str:
           if(!d.ok){ linkSetMsg(d.error||'Could not load that league.','err'); return; }
           linkSetMsg('',''); renderTeamPick(box,'yahoo',d.league_id,d.season,d.name,d.teams||[],d.my_team_id);
         }).catch(function(){ linkSetMsg('Network error.','err'); });
+      };
+      window.linkMflPreview=function(){
+        var id=(document.getElementById('linkMflId').value||'').trim(), yr=(document.getElementById('linkMflSeason').value||'').trim();
+        var box=document.getElementById('linkMflResult');
+        if(!/^\\d+$/.test(id)){linkSetMsg('Enter a valid numeric MFL League ID.','err');return;}
+        linkSetMsg('Loading…','');box.innerHTML='';
+        fetch('/api/link/mfl/preview?league_id='+encodeURIComponent(id)+(yr?'&season='+encodeURIComponent(yr):''))
+          .then(function(r){return r.json();}).then(function(d){
+            if(!d.ok){linkSetMsg(d.error||'Could not load that MFL league.','err');return;}
+            linkSetMsg('','');renderTeamPick(box,'mfl',d.league_id,d.season,d.name,d.teams||[],null);
+          }).catch(function(){linkSetMsg('Network error.','err');});
       };
     })();
     </script>
