@@ -17,11 +17,19 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version-file: '.python-version'
           cache: 'pip'
 
+      # Several "Python" parity tests execute the production JS kernels through
+      # Node. ubuntu-latest currently happens to include Node, but relying on the
+      # runner image made those tests skip or change behavior as images rolled.
+      - name: Set up Node for parity tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Install Ruff
-        run: pip install ruff
+        run: python -m pip install ruff
 
       - name: Lint for real bugs (syntax errors, undefined names)
         # Scoped to high-signal pyflakes/pycodestyle-error rules so CI flags
@@ -44,7 +52,7 @@ jobs:
         # logic (waiver_score, tiers, pick_score, ...) and the CSS/JS health
         # ratchets on every push.
         run: |
-          pip install pytest
+          python -m pip install pytest
           python -m pytest tests/ -q
 
   integration:
@@ -58,8 +66,13 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version-file: '.python-version'
           cache: 'pip'
+
+      - name: Set up Node for parity tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
       - name: Install dependencies
         # The web app and its page-render tests need the full Flask + scientific
@@ -71,7 +84,7 @@ jobs:
         run: |
           python -m pip install -U pip
           grep -viE '^(pywebpush|requests-html)' requirements.txt > /tmp/req-ci.txt
-          pip install -r /tmp/req-ci.txt pytest
+          python -m pip install -r /tmp/req-ci.txt pytest
 
       - name: Run full test suite (incl. integration pages)
         # No DATABASE_URL and no network: the offline_client fixture mocks the
@@ -95,6 +108,11 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: '.python-version'
+
       - name: Syntax-check static JS
         run: |
           status=0
@@ -103,3 +121,8 @@ jobs:
             node --check "$f" || status=1
           done
           exit $status
+
+      - name: Run JS/Python scoring parity tests
+        run: |
+          python -m pip install pytest
+          python -m pytest tests/test_draft_board_core.py tests/test_pick_score_parity.py -q
