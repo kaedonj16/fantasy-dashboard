@@ -165,15 +165,27 @@ def render_markdown(summaries: list[CohortSummary], filters: str) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _draft_filters(seasons: list[int] | None, draft_types: list[str], alias: str = "") -> tuple[str, list[object]]:
+    """Return the cohort WHERE clause.
+
+    Do not filter on ``status`` here.  The crawler only persists completed
+    drafts, while older/legacy rows can legitimately have a NULL status.  The
+    previous status predicate accidentally hid those otherwise valid rows.
+    """
+    prefix = f"{alias}." if alias else ""
+    clauses = [f"{prefix}draft_type = ANY(%s)"]
+    params: list[object] = [draft_types]
+    if seasons:
+        clauses.append(f"{prefix}season = ANY(%s)")
+        params.append(seasons)
+    return " AND ".join(clauses), params
+
+
 def fetch_rows(seasons: list[int] | None, draft_types: list[str]) -> tuple[list[dict], list[dict]]:
     from dashboard_services.db import get_conn
 
-    clauses = ["status = 'complete'", "draft_type = ANY(%s)"]
-    params: list[object] = [draft_types]
-    if seasons:
-        clauses.append("season = ANY(%s)")
-        params.append(seasons)
-    where = " AND ".join(clauses)
+    where, params = _draft_filters(seasons, draft_types)
+    joined_where, joined_params = _draft_filters(seasons, draft_types, alias="d")
     with get_conn(autocommit=True) as conn:
         drafts = list(conn.execute(
             f"SELECT draft_id, season, draft_type, num_teams, is_superflex, rounds "
@@ -183,8 +195,31 @@ def fetch_rows(seasons: list[int] | None, draft_types: list[str]) -> tuple[list[
         picks = list(conn.execute(
             "SELECT p.draft_id, p.player_id, p.pick_no, p.round, p.pick_in_round, p.roster_id "
             "FROM draft_adp_picks p JOIN draft_adp_drafts d ON d.draft_id = p.draft_id "
-            f"WHERE {where} ORDER BY p.draft_id, p.pick_no", params).fetchall())
+            f"WHERE {joined_where} ORDER BY p.draft_id, p.pick_no", joined_params).fetchall())
     return drafts, picks
+
+
+def fetch_inventory() -> list[dict]:
+    """Describe available cohorts so an empty filter is immediately actionable."""
+    from dashboard_services.db import get_conn
+
+    with get_conn(autocommit=True) as conn:
+        return list(conn.execute(
+            "SELECT season, draft_type, is_superflex, COUNT(*) AS drafts "
+            "FROM draft_adp_drafts GROUP BY season, draft_type, is_superflex "
+            "ORDER BY season DESC, draft_type, is_superflex"
+        ).fetchall())
+
+
+def render_inventory(rows: list[dict]) -> str:
+    if not rows:
+        return "The draft_adp_drafts table is empty. Run the draft ADP crawler first."
+    lines = ["Available stored cohorts:", "  season  type      format      drafts"]
+    for row in rows:
+        fmt = "Superflex" if row.get("is_superflex") else "1QB"
+        lines.append(f"  {row.get('season', '?')!s:<6}  {row.get('draft_type', '?')!s:<8}  "
+                     f"{fmt:<10}  {int(row.get('drafts') or 0):>6}")
+    return "\n".join(lines)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -204,7 +239,10 @@ def main(argv: list[str] | None = None) -> int:
     draft_types = args.draft_types or ["redraft", "startup", "rookie"]
     drafts, picks = fetch_rows(args.seasons, draft_types)
     if not drafts:
-        print("No matching completed drafts found.", file=sys.stderr)
+        print("No drafts matched the requested season/type filters.\n", file=sys.stderr)
+        print(render_inventory(fetch_inventory()), file=sys.stderr)
+        print("\nRetry without --season to audit every stored season, or choose seasons/types "
+              "shown above.", file=sys.stderr)
         return 1
     positions = load_position_map()
     grouped: dict[tuple[str, bool], list[dict]] = defaultdict(list)

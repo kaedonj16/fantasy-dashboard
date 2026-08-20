@@ -1,4 +1,9 @@
-from scripts.audit_draft_realism import render_markdown, summarize_cohort
+from scripts.audit_draft_realism import (
+    _draft_filters,
+    render_inventory,
+    render_markdown,
+    summarize_cohort,
+)
 
 
 def test_summarize_cohort_tracks_depth_timing_and_position_counts():
@@ -37,3 +42,22 @@ def test_unresolved_players_are_reported_but_not_counted():
     assert summary.resolved_pct == 50
     assert summary.picks == 2
     assert summary.teams == 1
+
+
+def test_db_filters_include_legacy_rows_without_status():
+    where, params = _draft_filters([2024, 2025], ["redraft", "startup"], alias="d")
+
+    assert where == "d.draft_type = ANY(%s) AND d.season = ANY(%s)"
+    assert "status" not in where
+    assert params == [["redraft", "startup"], [2024, 2025]]
+
+
+def test_inventory_explains_which_cohorts_are_available():
+    text = render_inventory([
+        {"season": 2026, "draft_type": "startup", "is_superflex": True, "drafts": 42}
+    ])
+
+    assert "2026" in text
+    assert "startup" in text
+    assert "Superflex" in text
+    assert "42" in text
