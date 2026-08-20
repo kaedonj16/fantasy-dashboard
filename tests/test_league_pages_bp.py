@@ -1,5 +1,9 @@
 """Regression tests for league-page blueprint dependencies."""
 
+import pytest
+
+pytest.importorskip("flask")
+
 from dashboard_services.pages.waivers_page import (
     build_waivers_body as service_build_waivers_body,
 )
