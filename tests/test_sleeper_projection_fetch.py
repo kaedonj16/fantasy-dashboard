@@ -1,3 +1,12 @@
+import pytest
+
+
+# The lightweight CI job intentionally installs only pytest. Exercise this
+# HTTP-bound unit in the full-stack job, where the application's requests/bs4
+# dependencies are installed, instead of failing during test collection.
+pytest.importorskip("requests")
+pytest.importorskip("bs4")
+
 from utils import utils
 
 
