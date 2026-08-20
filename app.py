@@ -6780,7 +6780,7 @@ def render_power_and_playoffs(
                         data-platform="{platform}"
                         data-season="{season}">Playoff Odds</button>
               </div>
-              <div class="tab-panels">
+              <div class="tab-panels" style="padding: 0;">
                 <div class="tab-panel active" data-tab="power">
                   {podium_html}
                   {rankings_html}
@@ -7251,7 +7251,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
           <div class="card-tabs">
             <div class="tab-strip dynasty-value-strip">
               <button class="tab-btn active" data-tab="standings">Value Rankings</button>
-              <div class="tab-panels">
+              <div class="tab-panels" style="padding: 0;">
                 <div class="tab-panel active" data-tab="standings">
                   {table_html}
                 </div>
