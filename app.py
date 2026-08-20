@@ -6659,8 +6659,9 @@ def render_power_and_playoffs(
           <div class="slot {base_cls} {streak_frame_cls}" data-rk-key="{html.escape(str(name), quote=True)}">
             <div class="wrap">
               <div class='podium-header'>
-                <h3>{move_arrow(name)}#{rank}</h3>
+                <h3>#{rank}</h3>
                 {avatar_html}
+                {move_arrow(name)}
               </div>
               <div class="name">{_clickable_team_name(name, _o2r)}</div>
               <div class="rec">{rec}</div>
