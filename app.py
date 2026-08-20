@@ -1105,7 +1105,6 @@ HOME_TICKER_HTML = """
 </div>
 """
 
-
 FORM_BODY = """
 <div class="home-page">
   <section class="home-hero">
@@ -10745,7 +10744,7 @@ def build_activity_body(ctx: dict) -> str:
             <button class="inj-toggle active" data-status="all" type="button" role="tab" aria-selected="true">All</button>
             <button class="inj-toggle" data-status="IR" type="button" role="tab" aria-selected="false"><span class="act-sdot" style="background:var(--loss,#b91c1c)"></span>IR</button>
             <button class="inj-toggle" data-status="OUT" type="button" role="tab" aria-selected="false"><span class="act-sdot" style="background:var(--orange,#f59e0b)"></span>Out</button>
-            <button class="inj-toggle" data-status="QUESTIONABLE" type="button" role="tab" aria-selected="false"><span class="act-sdot" style="background:var(--rookie,#3b82f6)"></span>Q</button>
+            <button class="inj-toggle" data-status="QUESTIONABLE" type="button" role="tab" aria-selected="false"><span class="act-sdot" style="background:var(--inj-q, #ca8a04)"></span>Q</button>
           </div>
         </div>
         {injury_html}
