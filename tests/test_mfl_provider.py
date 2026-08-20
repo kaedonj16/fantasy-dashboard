@@ -50,9 +50,8 @@ def test_normalizes_transactions_and_draft_results(monkeypatch):
     assert provider.get_drafts("123", 2026)[0]["picks"][0]["pick_no"] == 1
 
 
-@patch("dashboard_services.providers.mfl_api.requests.get")
+@patch("dashboard_services.providers.mfl_api._request_get")
 def test_upstream_timeout_is_safe(mock_get):
-    import requests
-    mock_get.side_effect = requests.Timeout("secret upstream detail")
+    mock_get.side_effect = ProviderUnavailableError("MyFantasyLeague is temporarily unavailable.")
     with pytest.raises(ProviderUnavailableError, match="temporarily unavailable"):
         MFLProvider().get_league("123", 2026)

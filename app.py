@@ -2825,7 +2825,7 @@ def _link_modal_html() -> str:
       window.linkMflPreview=function(){
         var id=(document.getElementById('linkMflId').value||'').trim(), yr=(document.getElementById('linkMflSeason').value||'').trim();
         var box=document.getElementById('linkMflResult');
-        if(!/^\d+$/.test(id)){linkSetMsg('Enter a valid numeric MFL League ID.','err');return;}
+        if(!/^\\d+$/.test(id)){linkSetMsg('Enter a valid numeric MFL League ID.','err');return;}
         linkSetMsg('Loading…','');box.innerHTML='';
         fetch('/api/link/mfl/preview?league_id='+encodeURIComponent(id)+(yr?'&season='+encodeURIComponent(yr):''))
           .then(function(r){return r.json();}).then(function(d){

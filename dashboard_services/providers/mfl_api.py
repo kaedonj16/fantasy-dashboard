@@ -10,8 +10,6 @@ import time
 from functools import lru_cache
 from typing import Any
 
-import requests
-
 from .base import (
     DRAFTS, DRAFT_RESULTS, FUTURE_PICKS, HISTORY, LEAGUE, MATCHUPS, ROSTERS,
     ROSTER_SETTINGS, SCORING_SETTINGS, STANDINGS, STARTERS, TRADED_PICKS,
@@ -24,6 +22,23 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://api.myfantasyleague.com/{season}/export"
 TIMEOUT = (4, 15)
 _CACHE: dict[tuple, tuple[float, dict]] = {}
+
+
+def _request_get(url: str, **kwargs):
+    """Import requests only when performing I/O.
+
+    The repository's lightweight CI job intentionally installs only pytest.
+    Keeping the optional HTTP dependency out of module import time lets mocked
+    provider and registry tests run there, while the full application job uses
+    requests from requirements.txt.
+    """
+    import requests
+    try:
+        return requests.get(url, **kwargs)
+    except (requests.Timeout, requests.ConnectionError) as exc:
+        raise ProviderUnavailableError("MyFantasyLeague is temporarily unavailable.") from exc
+    except requests.RequestException as exc:
+        raise ProviderUnavailableError("MyFantasyLeague returned an invalid response.") from exc
 
 
 def _items(value: Any, singular: str) -> list[dict]:
@@ -66,7 +81,7 @@ class MFLProvider(ProviderAdapter):
             return cached[1]
         query = {"TYPE": export_type, "L": league_id, "JSON": 1, **params}
         try:
-            response = requests.get(BASE_URL.format(season=int(season)), params=query,
+            response = _request_get(BASE_URL.format(season=int(season)), params=query,
                                     timeout=TIMEOUT, headers={"User-Agent": "BR-Fantasy/1.0"})
             if response.status_code in (401, 403):
                 raise ProviderAuthenticationError("This MFL league is private or requires authentication.")
@@ -76,9 +91,9 @@ class MFLProvider(ProviderAdapter):
             payload = response.json()
         except (ProviderAuthenticationError, LeagueNotFoundError):
             raise
-        except (requests.Timeout, requests.ConnectionError) as exc:
-            raise ProviderUnavailableError("MyFantasyLeague is temporarily unavailable.") from exc
-        except (requests.RequestException, ValueError) as exc:
+        except ProviderUnavailableError:
+            raise
+        except ValueError as exc:
             logger.warning("MFL export failed type=%s league=%s error=%s", export_type, league_id, type(exc).__name__)
             raise ProviderUnavailableError("MyFantasyLeague returned an invalid response.") from exc
         if not isinstance(payload, dict):
