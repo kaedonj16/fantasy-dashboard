@@ -29,7 +29,7 @@ def _yahoo_token(league_id: str = "", season: int = 0) -> str:
         if raw: return raw
     except RuntimeError:
         pass
-    return get_league_token(league_id, season or 0) if league_id else ""
+    return (get_league_token(league_id, season or 0) or "") if league_id else ""
 
 
 def get_league(platform: str, league_id: str, season: int) -> Dict[str, Any]:

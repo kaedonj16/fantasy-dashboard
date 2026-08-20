@@ -55,3 +55,12 @@ def test_upstream_timeout_is_safe(mock_get):
     mock_get.side_effect = ProviderUnavailableError("MyFantasyLeague is temporarily unavailable.")
     with pytest.raises(ProviderUnavailableError, match="temporarily unavailable"):
         MFLProvider().get_league("123", 2026)
+
+
+@patch("dashboard_services.providers.mfl_api._raise_for_status")
+@patch("dashboard_services.providers.mfl_api._request_get")
+def test_upstream_http_error_is_safe(mock_get, mock_raise):
+    mock_get.return_value = response({}, status=500)
+    mock_raise.side_effect = ProviderUnavailableError("MyFantasyLeague is temporarily unavailable.")
+    with pytest.raises(ProviderUnavailableError, match="temporarily unavailable"):
+        MFLProvider().get_league("123", 2026)

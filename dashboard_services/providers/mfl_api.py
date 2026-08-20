@@ -41,6 +41,15 @@ def _request_get(url: str, **kwargs):
         raise ProviderUnavailableError("MyFantasyLeague returned an invalid response.") from exc
 
 
+def _raise_for_status(response) -> None:
+    """Translate checked HTTP failures without importing requests at collection."""
+    import requests
+    try:
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise ProviderUnavailableError("MyFantasyLeague is temporarily unavailable.") from exc
+
+
 def _items(value: Any, singular: str) -> list[dict]:
     if isinstance(value, list):
         return [x for x in value if isinstance(x, dict)]
@@ -87,7 +96,7 @@ class MFLProvider(ProviderAdapter):
                 raise ProviderAuthenticationError("This MFL league is private or requires authentication.")
             if response.status_code == 404:
                 raise LeagueNotFoundError("No MFL league was found for that ID and season.")
-            response.raise_for_status()
+            _raise_for_status(response)
             payload = response.json()
         except (ProviderAuthenticationError, LeagueNotFoundError):
             raise
