@@ -31,5 +31,20 @@ def test_headless_cpu_benchmark_is_seeded_and_reports_roster_metrics():
     assert first["configuration"]["drafts"] == 3
     assert first["playerPool"] >= 180
     assert set(first["medianRound"]) == {"QB1", "QB2", "QB3", "TE1", "TE2", "TE3"}
+    assert set(first["selectionRate"]) == set(first["medianRound"])
     assert sum(first["medianFinalCount"].values()) == 15
     assert 99 <= sum(first["phaseShare"]["early"].values()) <= 101
+
+
+def test_required_kicker_and_defense_do_not_become_normal_bench_depth():
+    result = subprocess.run(
+        ["node", str(SCRIPT), "--drafts", "20", "--type", "redraft",
+         "--teams", "12", "--rounds", "15", "--qb", "1", "--rb", "2",
+         "--wr", "2", "--te", "1", "--flex", "1", "--k", "1", "--def", "1",
+         "--seed", "42"],
+        cwd=REPO, check=True, capture_output=True, text=True,
+    )
+    report = json.loads(result.stdout)
+
+    assert report["medianFinalCount"]["K"] == 1
+    assert report["medianFinalCount"]["DEF"] == 1

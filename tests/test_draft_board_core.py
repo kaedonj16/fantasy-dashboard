@@ -201,6 +201,9 @@ def test_roster_economics_respect_format_and_flex():
         "process.stdout.write(JSON.stringify({targets:C.posTargets(standard,0),"
         "roles:['QB','RB','WR','TE'].map(p=>C.rosterRole(p,counts,standard,false)),"
         "utils:['QB','RB','WR','TE'].map(p=>C.rosterSlotUtility(p,counts,standard,{sf:false,tep:0,draftType:'redraft'})),"
+        "specialUtil:[C.rosterSlotUtility('K',{K:0},standard,{sf:false}),"
+        "C.rosterSlotUtility('K',{K:1},standard,{sf:false}),"
+        "C.rosterSlotUtility('DEF',{DEF:1},standard,{sf:false})],"
         "ob:C.remainingObligations(counts,standard,5,false),"
         "sf:C.rosterRole('QB',{QB:1},{QB:1,SF:1,RB:2,WR:2,TE:1,FLEX:1,BN:7},true),"
         "twoTe:C.rosterRole('TE',{TE:1},{QB:1,RB:2,WR:2,TE:2,FLEX:1,BN:7},false),"
@@ -219,6 +222,7 @@ def test_roster_economics_respect_format_and_flex():
     assert out["targets"]["QB"] == 1 and out["targets"]["TE"] == 1
     assert out["roles"] == ["bench1", "flex", "flex", "flex"]
     assert out["utils"][1] > out["utils"][0] and out["utils"][2] > out["utils"][3]
+    assert out["specialUtil"] == [1, 0.06, 0.06]
     assert out["ob"]["missing"] == {"QB": 0, "RB": 0, "WR": 0, "TE": 0, "K": 1, "DEF": 1, "FLEX": 2}
     assert out["ob"]["freePicks"] == 1
     assert out["sf"] == "starter"

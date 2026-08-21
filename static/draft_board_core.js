@@ -186,6 +186,10 @@
       ? ((+opts.tep || 0) > 0 ? 0.86 : 0.70) : 0.96;
     var dynasty = opts.draftType === 'startup' || opts.draftType === 'dynasty';
     var tep = +opts.tep || 0, p = String(pos || '').toUpperCase();
+    // K/DEF are lineup obligations, not ordinary bench-depth assets. Keep a
+    // tiny non-zero utility rather than a ban (custom leagues may allow a
+    // second), but never value K2/DEF2 like another starter.
+    if (p === 'K' || p === 'DEF') return 0.06;
     if (p === 'QB') return role === 'bench1' ? (opts.sf ? 0.82 : (dynasty ? 0.70 : 0.30)) : (opts.sf ? 0.55 : 0.12);
     if (p === 'TE') return role === 'bench1' ? (tep > 0 ? 0.72 : (dynasty ? 0.62 : 0.38)) : (tep > 0 ? 0.48 : 0.16);
     if (p === 'RB') return role === 'bench1' ? 0.82 : 0.68;

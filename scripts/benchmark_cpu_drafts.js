@@ -142,9 +142,13 @@ function main() {
     runOne(cfg, pool, random, aggregate);
     if ((d + 1) % Math.max(1, Math.floor(cfg.drafts / 10)) === 0) process.stderr.write(`Completed ${d + 1}/${cfg.drafts}\n`);
   }
+  const totalTeams = cfg.drafts * cfg.teams;
   const result = { configuration: cfg, playerPool: pool.length, elapsedSeconds: (Date.now() - started) / 1000,
-    medianRound: {}, medianFinalCount: {}, phaseShare: {} };
-  Object.keys(aggregate.timing).forEach(k => result.medianRound[k] = median(aggregate.timing[k]));
+    medianRound: {}, selectionRate: {}, medianFinalCount: {}, phaseShare: {} };
+  Object.keys(aggregate.timing).forEach(k => {
+    result.medianRound[k] = median(aggregate.timing[k]);
+    result.selectionRate[k] = Math.round(aggregate.timing[k].length * 1000 / totalTeams) / 10;
+  });
   Object.keys(aggregate.counts).forEach(k => result.medianFinalCount[k] = median(aggregate.counts[k]));
   Object.keys(aggregate.phase).forEach(ph => { result.phaseShare[ph] = {}; Object.keys(aggregate.phase[ph]).forEach(pos => {
     result.phaseShare[ph][pos] = Math.round(aggregate.phase[ph][pos] * 1000 / Math.max(1, aggregate.totalPhase[ph])) / 10;
