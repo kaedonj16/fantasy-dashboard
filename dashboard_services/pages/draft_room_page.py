@@ -339,7 +339,7 @@ _DRAFT_ROOM_HTML = r"""
                 <button type="button" class="dr-sortsel-opt" role="option" data-val="value">Value</button>
                 <button type="button" class="dr-sortsel-opt" role="option" data-val="ppg">Proj PPG</button>
                 <button type="button" class="dr-sortsel-opt" role="option" data-val="adp">ADP</button>
-                <button type="button" class="dr-sortsel-opt" role="option" data-val="steals">Steals</button>
+                <button type="button" class="dr-sortsel-opt" role="option" data-val="pickscore">Pick Score</button>
               </div>
             </div>
             <input id="drSearch" type="search" placeholder="Search…" autocomplete="off">

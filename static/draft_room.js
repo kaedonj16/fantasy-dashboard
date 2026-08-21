@@ -2781,11 +2781,12 @@
   }
   function pickReason(p, counts){
     var pos = (p.position || '').toUpperCase();
+    var pickNo = (state && state.current) || 1;
     var t = psCtx().targets[pos];
     var need = t ? Math.max(0, t - (counts[pos] || 0)) : 0;
     var adp = adpOf(p);
-    var fell = (adp != null) ? Math.round(_pn - adp) : null;
-    var relGap = (adp != null) ? ((_pn - adp) / Math.max(adp, 1.5)) : null;
+    var fell = (adp != null) ? Math.round(pickNo - adp) : null;
+    var relGap = (adp != null) ? ((pickNo - adp) / Math.max(adp, 1.5)) : null;
     var tier = tierOf(p);
     var left = tierRemaining(p);
     var role = rosterRoleFor(p, counts), _pc = psCtx();
@@ -4606,7 +4607,6 @@
       if (q && String(p.name||'').toLowerCase().indexOf(q) < 0) return false;
       return true;
     });
-    function steal(p){ var a = adpOf(p); return (a != null) ? (state.current - a) : -99999; }
     // p._ps + the pool-relative scale are refreshed in renderSide; ensure they
     // exist for any path that reaches renderBA directly (search/sort handlers).
     if (_psPoolMax <= 0) refreshPsPool();
@@ -4620,7 +4620,7 @@
         var aa = adpOf(a), ba = adpOf(b);
         return (aa != null ? aa : 99999) - (ba != null ? ba : 99999);
       }
-      if (sortBy === 'steals'){ return steal(b) - steal(a); }
+      if (sortBy === 'pickscore'){ return (b._ps || 0) - (a._ps || 0); }
       if (sortBy === 'ps'){ return (b._ds || 0) - (a._ds || 0) || (b._ps || 0) - (a._ps || 0); }
       if (sortBy === 'ppg'){ return (ppgOf(b) || 0) - (ppgOf(a) || 0); }
       return valOf(b) - valOf(a);
@@ -4689,7 +4689,6 @@
     { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a replacement-level starter at their position (a fixed, preseason-style baseline). VORP uses real fantasy points; VOR uses dynasty value.' },
     { term: 'ADP', def: 'Average Draft Position - the typical overall pick a player goes at in real drafts. If it’s below your current pick, they’ve fallen and may be a value.' },
     { term: 'Tier', def: 'Players grouped by talent gaps (Tier 1 = elite). A tier “cliff” means only a couple of players remain before a real drop-off at that position.' },
-    { term: 'Steals (sort)', def: 'Orders the board by who has fallen the furthest past their ADP - the biggest available bargains.' },
     { term: 'PPG', def: 'Points per game - projected for the upcoming season, or last season’s actual when that’s shown.' },
     { term: 'Survival %', def: 'The chance a player is still on the board at your next pick. Starts from consensus ADP, then adapts to how your draft is actually going - if the room is reaching, letting players slide, drafting unpredictably, or running on a position, the odds shift to match (kicks in after the first several picks).' },
     { term: 'Grade · Value', def: 'How strong your picks are by pick score, weighted toward the earlier rounds where it matters most.' },
@@ -5521,7 +5520,7 @@
     var menu = document.getElementById('drBaSortMenu');
     var lbl = document.getElementById('drBaSortLbl');
     if (!ui || !btn || !menu || !lbl) return;
-    var LABELS = { value: 'Value', adp: 'ADP', steals: 'Steals', ps: 'Recommendation', ppg: 'Proj PPG' };
+    var LABELS = { value: 'Value', adp: 'ADP', pickscore: 'Pick Score', ps: 'Recommendation', ppg: 'Proj PPG' };
     var opts = menu.querySelectorAll('.dr-sortsel-opt');
     var cur = btn.getAttribute('data-val') || 'ps';
     function apply(v){

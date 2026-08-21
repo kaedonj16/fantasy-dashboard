@@ -43,3 +43,23 @@ def test_player_load_failure_exposes_api_error_and_retry_control():
     assert "Player API returned non-JSON" in source
     assert "retry.addEventListener('click', loadPlayers)" in source
     assert "console.error('[draft-room] loadPlayers failed', err)" in source
+
+
+def test_pick_reason_uses_its_own_current_pick_variable():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    match = re.search(r"function pickReason\(p, counts\)\{(.*?)\n  \}", source, re.DOTALL)
+
+    assert match
+    body = match.group(1)
+    assert "var pickNo = (state && state.current) || 1;" in body
+    assert "_pn" not in body
+
+
+def test_board_offers_pick_score_sort_instead_of_steals():
+    body = build_draft_room_body(None, None, None, is_guest=True)
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert 'data-val="pickscore">Pick Score</button>' in body
+    assert 'data-val="steals"' not in body
+    assert "if (sortBy === 'pickscore'){ return (b._ps || 0) - (a._ps || 0); }" in source
+    assert "pickscore: 'Pick Score'" in source
