@@ -96,17 +96,20 @@ def _ref_ppg_norm(p, scale):
 
 
 def _ref_targets(rc, tep):
-    flex = rc.get("FLEX", 0); sf = rc.get("SF", 0); bn = rc.get("BN", 0)
-    bench_eff = min(bn, 7)
+    flex = rc.get("FLEX", 0)
+    sf = rc.get("SF", 0)
+    bn = rc.get("BN", 0)
+    bench_eff = min(bn, 8)
+    rb_depth = math.ceil(bench_eff * 0.45)
+    wr_depth = math.floor(bench_eff * 0.45)
     t = {
-        "QB": (rc.get("QB", 0)) + sf + _js_round(bench_eff * 0.10),
-        "RB": (rc.get("RB", 0)) + flex + _js_round(bench_eff * 0.35),
-        "WR": (rc.get("WR", 0)) + _js_round(bench_eff * 0.40),
-        "TE": (rc.get("TE", 0)) + (_js_round(bench_eff * 0.15) if tep > 0 else 0),
+        "QB": (rc.get("QB", 0)) + sf + (1 if sf and bench_eff >= 5 else 0),
+        "RB": (rc.get("RB", 0)) + flex + rb_depth,
+        "WR": (rc.get("WR", 0)) + wr_depth,
+        "TE": (rc.get("TE", 0)) + (1 if tep > 0 and bench_eff >= 5 else 0),
     }
-    if tep > 0:
-        t["TE"] += 1
-    cap = {"QB": 3 if sf else 2, "RB": 6, "WR": 6, "TE": 3 if tep > 0 else 2}
+    cap = {"QB": 4 if sf else max(1, rc.get("QB", 0)), "RB": 7, "WR": 7,
+           "TE": max(3, rc.get("TE", 0)) if tep > 0 else max(1, rc.get("TE", 0))}
     for k, c in cap.items():
         if t[k] > c:
             t[k] = c
@@ -190,3 +193,60 @@ def test_shared_kernels_match_reference():
         py = _ref_targets(case["rc"], case["tep"])
         assert {k: int(v) for k, v in js.items()} == {k: int(v) for k, v in py.items()}, \
             f"posTargets mismatch for {case['rc']} tep={case['tep']}: js={js} py={py}"
+
+
+def test_roster_economics_respect_format_and_flex():
+    script = (
+        "global.self=global; global.BRPickScore=require(%s); const C=require(%s);"
+        "const standard={QB:1,RB:2,WR:2,TE:1,FLEX:2,BN:7,K:1,DEF:1};"
+        "const counts={QB:1,RB:2,WR:2,TE:1,K:0,DEF:0};"
+        "process.stdout.write(JSON.stringify({targets:C.posTargets(standard,0),"
+        "roles:['QB','RB','WR','TE'].map(p=>C.rosterRole(p,counts,standard,false)),"
+        "utils:['QB','RB','WR','TE'].map(p=>C.rosterSlotUtility(p,counts,standard,{sf:false,tep:0,draftType:'redraft'})),"
+        "specialUtil:[C.rosterSlotUtility('K',{K:0},standard,{sf:false}),"
+        "C.rosterSlotUtility('K',{K:1},standard,{sf:false}),"
+        "C.rosterSlotUtility('DEF',{DEF:1},standard,{sf:false})],"
+        "dynDepth:[C.rosterSlotUtility('QB',{QB:2},standard,{sf:false,draftType:'startup'}),"
+        "C.rosterSlotUtility('QB',{QB:3},standard,{sf:false,draftType:'startup'}),"
+        "C.rosterSlotUtility('QB',{QB:3},{QB:1,SF:1},{sf:true,draftType:'startup'}),"
+        "C.rosterSlotUtility('QB',{QB:4},{QB:1,SF:1},{sf:true,draftType:'startup'}),"
+        "C.rosterSlotUtility('TE',{TE:2},standard,{sf:false,draftType:'startup',role:'bench2'}),"
+        "C.rosterSlotUtility('TE',{TE:4},standard,{sf:false,draftType:'startup',role:'bench2'})],"
+        "ob:C.remainingObligations(counts,standard,5,false),"
+        "sf:C.rosterRole('QB',{QB:1},{QB:1,SF:1,RB:2,WR:2,TE:1,FLEX:1,BN:7},true),"
+        "twoTe:C.rosterRole('TE',{TE:1},{QB:1,RB:2,WR:2,TE:2,FLEX:1,BN:7},false),"
+        "flexUpgrade:C.candidateRosterRole('WR',.9,[{pos:'RB',quality:.8},{pos:'RB',quality:.7},{pos:'RB',quality:.6},"
+        "{pos:'WR',quality:.8},{pos:'WR',quality:.7},{pos:'WR',quality:.2},{pos:'TE',quality:.7}],standard,false),"
+        "scores:{qb2:C.decisionScore({base:97,utility:.30,bench:true,quality:.8,required:3,freePicks:1,waitLoss:4,recentPenalty:7}),"
+        "flex:C.decisionScore({base:84,utility:.96,bench:false,waitLoss:18}),"
+        "fallen:C.decisionScore({base:99,utility:.30,bench:true,quality:1,required:0,freePicks:4,waitLoss:18,exceptional:1}),"
+        "qb3:C.decisionScore({base:92,utility:.18,bench:true,deepBench:true,quality:.8,required:2,freePicks:1})},"
+        "waiting:[C.decisionScore({base:90,utility:1,waitPenalty:8}),C.decisionScore({base:87,utility:1,waitPenalty:0})],"
+        "ceiling:[C.decisionScore({base:96,utility:1,waitLoss:30}),"
+        "C.decisionScore({base:94,utility:1,waitLoss:30})],"
+        "band:C.decisionBand([{id:'best',ds:90,weight:1},{id:'close',ds:87,weight:1},{id:'bad',ds:72,weight:9}],3,.8).map(x=>x.id),"
+        "selected:C.selectDecisionCandidate([{id:'best',ds:90,weight:2},{id:'close',ds:87,weight:1}],3,.8,()=>0).id,"
+        "availability:[C.availabilityProbability({adp:50,pick:40,sigma:5}),C.availabilityProbability({adp:50,pick:60,sigma:5})]}));"
+        % (json.dumps(str(PICK_JS)), json.dumps(str(CORE_JS)))
+    )
+    res = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=20)
+    assert res.returncode == 0, res.stderr
+    out = json.loads(res.stdout)
+    assert out["targets"]["QB"] == 1 and out["targets"]["TE"] == 1
+    assert out["roles"] == ["bench1", "flex", "flex", "flex"]
+    assert out["utils"][1] > out["utils"][0] and out["utils"][2] > out["utils"][3]
+    assert out["specialUtil"] == [1, 0.06, 0.06]
+    assert out["dynDepth"] == [0.48, 0.1, 0.55, 0.18, 0.44, 0.12]
+    assert out["ob"]["missing"] == {"QB": 0, "RB": 0, "WR": 0, "TE": 0, "K": 1, "DEF": 1, "FLEX": 2}
+    assert out["ob"]["freePicks"] == 1
+    assert out["sf"] == "starter"
+    assert out["twoTe"] == "starter"
+    assert out["flexUpgrade"] == "flex"
+    assert out["scores"]["flex"] > out["scores"]["qb2"]
+    assert out["scores"]["fallen"] > out["scores"]["qb2"]
+    assert out["scores"]["qb3"] < out["scores"]["qb2"]
+    assert out["waiting"][1] > out["waiting"][0]
+    assert out["ceiling"][0] < 99 and out["ceiling"][0] > out["ceiling"][1]
+    assert out["band"] == ["best", "close"]
+    assert out["selected"] == "best"
+    assert out["availability"][0] > 90 and out["availability"][1] < 10
