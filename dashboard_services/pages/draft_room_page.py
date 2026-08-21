@@ -336,10 +336,10 @@ _DRAFT_ROOM_HTML = r"""
               </button>
               <div class="dr-sortsel-menu" id="drBaSortMenu" role="listbox" hidden>
                 <button type="button" class="dr-sortsel-opt" role="option" data-val="ps">Recommendation</button>
+                <button type="button" class="dr-sortsel-opt" role="option" data-val="pickscore">Pick Score</button>
                 <button type="button" class="dr-sortsel-opt" role="option" data-val="value">Value</button>
                 <button type="button" class="dr-sortsel-opt" role="option" data-val="ppg">Proj PPG</button>
                 <button type="button" class="dr-sortsel-opt" role="option" data-val="adp">ADP</button>
-                <button type="button" class="dr-sortsel-opt" role="option" data-val="pickscore">Pick Score</button>
               </div>
             </div>
             <input id="drSearch" type="search" placeholder="Search…" autocomplete="off">
@@ -765,7 +765,11 @@ _DRAFT_ROOM_HTML = r"""
     background: rgba(127,127,127,.18); color: var(--text-muted); flex-shrink: 0; }
   .dr-tier-cliff { background: color-mix(in srgb, var(--loss) 16%, transparent); color: var(--loss); }
   /* pick score */
-  .dr-ba-reason { font-size: 10px; color: var(--text-muted); margin-top: 3px; font-weight: 600; }
+  .dr-ba-reason { font-size: 10px; color: var(--text-muted); margin-top: 5px; font-weight: 600;
+    display: flex; align-items: center; gap: 5px; line-height: 1.25; }
+  .dr-rec-rank { display: inline-flex; align-items: center; justify-content: center; min-width: 22px;
+    padding: 1px 5px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 11%, transparent);
+    color: var(--accent,#38bdf8); font-size: 9px; font-weight: 900; flex-shrink: 0; }
   .dr-ba-wait { font-size: 9.5px; color: var(--win); margin-top: 2px; font-weight: 700; }
   .dr-prev-wait { display: flex; align-items: center; gap: 10px; border: 1px solid; border-radius: 9px;
     padding: 9px 12px; margin-bottom: 12px; }

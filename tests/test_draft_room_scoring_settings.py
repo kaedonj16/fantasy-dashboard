@@ -63,3 +63,33 @@ def test_board_offers_pick_score_sort_instead_of_steals():
     assert 'data-val="steals"' not in body
     assert "if (sortBy === 'pickscore'){ return (b._ps || 0) - (a._ps || 0); }" in source
     assert "pickscore: 'Pick Score'" in source
+    assert body.index('data-val="ps">Recommendation</button>') < body.index('data-val="pickscore">Pick Score</button>')
+    assert body.index('data-val="pickscore">Pick Score</button>') < body.index('data-val="value">Value</button>')
+
+
+def test_glossary_explains_live_recommendation_logic():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert "{ term: 'Recommendation'" in source
+    assert "starter or FLEX spot" in source
+    assert "required slots and picks remaining" in source
+    assert "expected availability at your next pick" in source
+
+
+def test_recommendation_rows_use_compact_rank_and_reason_copy():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    body = build_draft_room_body(None, None, None, is_guest=True)
+
+    assert "Decision ' + p._ds + ' · recommendation #" not in source
+    assert 'class="dr-rec-rank">#' in source
+    assert "ppgNum.toFixed(1) + ' proj'" in source
+    assert ".dr-rec-rank {" in body
+
+
+def test_tier_cliff_urgency_is_suppressed_during_round_one():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    match = re.search(r"function isTierCliff\(p, pickNo\)\{(.*?)\n  \}", source, re.DOTALL)
+
+    assert match
+    assert "if (pn <= ((state && state.teams) || 12)) return false;" in match.group(1)
+    assert "isTierCliff: isTierCliff(p, _pn)" in source

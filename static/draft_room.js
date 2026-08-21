@@ -2132,7 +2132,12 @@
     return m;
   }
   var _ptc = {};   // refreshed each render
-  function isTierCliff(p){
+  function isTierCliff(p, pickNo){
+    // A naturally small elite tier is not a "cliff" before the room has made a
+    // full pass. At 1.01 (and throughout Round 1) every position is still at its
+    // baseline, so scarcity copy such as "only 2 left" is noise, not urgency.
+    var pn = pickNo != null ? +pickNo : ((state && state.current) || 1);
+    if (pn <= ((state && state.teams) || 12)) return false;
     var t = tierOf(p); if (t == null) return false;
     var k = (p.position || '').toUpperCase() + '|' + t;
     return (_ptc[k] || 0) <= 2;     // tier is drying up
@@ -2706,7 +2711,7 @@
       draftType: state.type, isSf: state.sf, needRaw: needRaw,
       qbCount: counts['QB'] || 0, totalPicks: (state.teams || 12) * (state.rounds || 16),
       numTeams: state.teams || 12, ppgNorm: ppgN,
-      ppr: _sc.ppr, tep: _sc.tep, passTd: _sc.passTd, isTierCliff: isTierCliff(p),
+      ppr: _sc.ppr, tep: _sc.tep, passTd: _sc.passTd, isTierCliff: isTierCliff(p, _pn),
       survivalAdj: survivalAdj, handcuff: handcuff,
     });
   }
@@ -2841,9 +2846,12 @@
     var ps = _rawPs == null ? null : Math.max(1, Math.min(99, Math.round(_rawPs)));
     var sub = (adp != null ? 'ADP ' + Number(adp).toFixed(1) : '')
       + (p._ds != null && ps != null ? ' · Pick ' + ps : '');
-    var decisionLine = opts.rank && p._ds != null
-      ? '<div class="dr-ba-reason">Decision ' + p._ds + ' · recommendation #' + opts.rank + '</div>' : '';
-    var reasonLine = (opts.reason ? '<div class="dr-ba-reason">' + esc(opts.reason) + '</div>' : '') + decisionLine;
+    var reasonLine = '';
+    if (opts.reason || (opts.rank && p._ds != null)) {
+      reasonLine = '<div class="dr-ba-reason">'
+        + (opts.rank && p._ds != null ? '<span class="dr-rec-rank">#' + opts.rank + '</span>' : '')
+        + (opts.reason ? '<span>' + esc(opts.reason) + '</span>' : '') + '</div>';
+    }
     var waitLine = opts.wait
       ? '<div class="dr-ba-wait">Can wait: ' + opts.wait.prob + '% there at #' + opts.wait.pn + '</div>'
       : '';
@@ -2866,7 +2874,7 @@
     if (bc >= 2) byeFlag = '<span class="dr-bye-flag">Bye ' + p.bye_week + ' clash</span>';
     // Projected PPG for meta line (proj_ppg = upcoming season, ppg = last season fallback)
     var ppgNum = p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null);
-    var ppgPart = ppgNum != null ? ' · ' + ppgNum.toFixed(1) + ' Proj PPG' : '';
+    var ppgPart = ppgNum != null ? ' · ' + ppgNum.toFixed(1) + ' proj' : '';
     // Compare button state
     var onCmp = compareIds.indexOf(String(p.id)) >= 0;
     var _isDef = String(p.position || '').toUpperCase() === 'DEF';
@@ -4684,6 +4692,7 @@
   // ── Glossary / inline term explainers ───────────────────────────────────────
   // Single source of truth so the inline ⓘ tooltips and the help popover agree.
   var _GLOSSARY = [
+    { term: 'Recommendation', def: 'The live, roster-aware order for this pick. It starts with Pick Score, then accounts for whether the player fills a starter or FLEX spot, backup and overfill cost, required slots and picks remaining, positional depth, expected availability at your next pick, and recent investment at QB or TE. A major value fall can still overcome imperfect roster fit.' },
     { term: 'Pick Score (PS)', def: 'A 0-100 grade of how good this pick is relative to what’s still available right now — the best remaining option anchors near the top, so a strong pick reads well even late in the draft. Blends the player’s value, how far they fell vs ADP, positional tier, your roster needs, age, and projected points. Your report-card grade uses the absolute, round-weighted version, so it can differ from the board number. Kickers and defenses aren’t scored.' },
     { term: 'Value', def: 'The player’s trade value as an asset on a 0-999 scale - dynasty value for startup/rookie drafts, redraft value for redraft.' },
     { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a replacement-level starter at their position (a fixed, preseason-style baseline). VORP uses real fantasy points; VOR uses dynasty value.' },

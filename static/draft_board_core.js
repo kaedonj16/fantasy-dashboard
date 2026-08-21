@@ -241,7 +241,14 @@
       // values cannot use the generic late-round score inflation as an escape.
       score += Math.max(0, Math.min(12, (+o.exceptional || 0) * 12));
     }
-    if ((+o.waitLoss || 0) > 0) score += Math.min(9, (+o.waitLoss || 0) * 0.30) * Math.max(0.35, util);
+    if ((+o.waitLoss || 0) > 0) {
+      var waitBonus = Math.min(9, (+o.waitLoss || 0) * 0.30) * Math.max(0.35, util);
+      // Urgency should separate close candidates, not flatten every excellent
+      // option against the 99 ceiling. Shrink positive bonuses as headroom runs
+      // out so 96/95/94-quality decisions remain visibly distinct.
+      waitBonus = Math.min(waitBonus, Math.max(0, (99 - score) * 0.35));
+      score += waitBonus;
+    }
     return Math.max(1, Math.min(99, Math.round(score)));
   }
 

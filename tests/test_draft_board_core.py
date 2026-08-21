@@ -96,7 +96,9 @@ def _ref_ppg_norm(p, scale):
 
 
 def _ref_targets(rc, tep):
-    flex = rc.get("FLEX", 0); sf = rc.get("SF", 0); bn = rc.get("BN", 0)
+    flex = rc.get("FLEX", 0)
+    sf = rc.get("SF", 0)
+    bn = rc.get("BN", 0)
     bench_eff = min(bn, 8)
     rb_depth = math.ceil(bench_eff * 0.45)
     wr_depth = math.floor(bench_eff * 0.45)
@@ -219,6 +221,8 @@ def test_roster_economics_respect_format_and_flex():
         "flex:C.decisionScore({base:84,utility:.96,bench:false,waitLoss:18}),"
         "fallen:C.decisionScore({base:99,utility:.30,bench:true,quality:1,required:0,freePicks:4,waitLoss:18,exceptional:1}),"
         "qb3:C.decisionScore({base:92,utility:.18,bench:true,deepBench:true,quality:.8,required:2,freePicks:1})},"
+        "ceiling:[C.decisionScore({base:96,utility:1,waitLoss:30}),"
+        "C.decisionScore({base:94,utility:1,waitLoss:30})],"
         "band:C.decisionBand([{id:'best',ds:90,weight:1},{id:'close',ds:87,weight:1},{id:'bad',ds:72,weight:9}],3,.8).map(x=>x.id)}));"
         % (json.dumps(str(PICK_JS)), json.dumps(str(CORE_JS)))
     )
@@ -238,4 +242,5 @@ def test_roster_economics_respect_format_and_flex():
     assert out["scores"]["flex"] > out["scores"]["qb2"]
     assert out["scores"]["fallen"] > out["scores"]["qb2"]
     assert out["scores"]["qb3"] < out["scores"]["qb2"]
+    assert out["ceiling"][0] < 99 and out["ceiling"][0] > out["ceiling"][1]
     assert out["band"] == ["best", "close"]
