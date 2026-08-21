@@ -194,7 +194,9 @@ def render_markdown(summaries: list[CohortSummary], filters: str) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _draft_filters(seasons: list[int] | None, draft_types: list[str], alias: str = "") -> tuple[str, list[object]]:
+def _draft_filters(seasons: list[int] | None, draft_types: list[str], alias: str = "",
+                   num_teams: int | None = None, min_rounds: int | None = None,
+                   max_rounds: int | None = None) -> tuple[str, list[object]]:
     """Return the cohort WHERE clause.
 
     Do not filter on ``status`` here.  The crawler only persists completed
@@ -207,11 +209,22 @@ def _draft_filters(seasons: list[int] | None, draft_types: list[str], alias: str
     if seasons:
         clauses.append(f"{prefix}season = ANY(%s)")
         params.append(seasons)
+    if num_teams is not None:
+        clauses.append(f"{prefix}num_teams = %s")
+        params.append(num_teams)
+    if min_rounds is not None:
+        clauses.append(f"{prefix}rounds >= %s")
+        params.append(min_rounds)
+    if max_rounds is not None:
+        clauses.append(f"{prefix}rounds <= %s")
+        params.append(max_rounds)
     return " AND ".join(clauses), params
 
 
 def fetch_rows(seasons: list[int] | None, draft_types: list[str],
-               max_drafts: int = 500) -> tuple[list[dict], list[dict]]:
+               max_drafts: int = 500, num_teams: int | None = None,
+               min_rounds: int | None = None,
+               max_rounds: int | None = None) -> tuple[list[dict], list[dict]]:
     """Fetch a bounded, recent sample per cohort and its picks.
 
     Production contains a large historical corpus. Pulling every pick over the
@@ -222,7 +235,10 @@ def fetch_rows(seasons: list[int] | None, draft_types: list[str],
     """
     from dashboard_services.db import get_conn
 
-    where, params = _draft_filters(seasons, draft_types)
+    where, params = _draft_filters(
+        seasons, draft_types, num_teams=num_teams,
+        min_rounds=min_rounds, max_rounds=max_rounds,
+    )
     with get_conn(autocommit=True) as conn:
         if max_drafts > 0:
             drafts = list(conn.execute(
@@ -280,6 +296,12 @@ def main(argv: list[str] | None = None) -> int:
                         help="Hide cohorts smaller than this (default: 10).")
     parser.add_argument("--max-drafts", type=int, default=500,
                         help="Recent drafts sampled per type/format (default: 500; 0 means all).")
+    parser.add_argument("--num-teams", type=int,
+                        help="Only include drafts with this league size (for example, 12).")
+    parser.add_argument("--min-rounds", type=int,
+                        help="Only include drafts with at least this many rounds.")
+    parser.add_argument("--max-rounds", type=int,
+                        help="Only include drafts with at most this many rounds.")
     parser.add_argument("--output", type=Path,
                         help="Also write the Markdown report to this path (it is still printed).")
     parser.add_argument("--json", type=Path, dest="json_output", help="Also write machine-readable JSON.")
@@ -289,10 +311,16 @@ def main(argv: list[str] | None = None) -> int:
 
     if not os.getenv("DATABASE_URL"):
         parser.error("DATABASE_URL is not set; run this in a Render shell or export it locally")
+    if args.min_rounds is not None and args.max_rounds is not None and args.min_rounds > args.max_rounds:
+        parser.error("--min-rounds cannot be greater than --max-rounds")
     draft_types = args.draft_types or ["redraft", "startup", "rookie"]
     sample_text = "all matching drafts" if args.max_drafts == 0 else f"up to {args.max_drafts:,} drafts per cohort"
     print(f"Querying production DB ({sample_text})...", file=sys.stderr, flush=True)
-    drafts, picks = fetch_rows(args.seasons, draft_types, args.max_drafts)
+    drafts, picks = fetch_rows(
+        args.seasons, draft_types, args.max_drafts,
+        num_teams=args.num_teams, min_rounds=args.min_rounds,
+        max_rounds=args.max_rounds,
+    )
     if not drafts:
         print("No drafts matched the requested season/type filters.\n", file=sys.stderr)
         print(render_inventory(fetch_inventory()), file=sys.stderr)
@@ -319,8 +347,15 @@ def main(argv: list[str] | None = None) -> int:
     if not summaries:
         print(f"No cohort met --min-drafts={args.min_drafts}.", file=sys.stderr)
         return 1
-    season_text = "all stored seasons" if not args.seasons else "seasons " + ", ".join(map(str, args.seasons))
-    report = render_markdown(summaries, f"Filters: {season_text}; types {', '.join(draft_types)}.")
+    filters = ["all stored seasons" if not args.seasons else "seasons " + ", ".join(map(str, args.seasons)),
+               "types " + ", ".join(draft_types)]
+    if args.num_teams is not None:
+        filters.append(f"{args.num_teams}-team leagues")
+    if args.min_rounds is not None or args.max_rounds is not None:
+        low = args.min_rounds if args.min_rounds is not None else 0
+        high = args.max_rounds if args.max_rounds is not None else "unbounded"
+        filters.append(f"rounds {low}-{high}")
+    report = render_markdown(summaries, f"Filters: {'; '.join(filters)}.")
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(report, encoding="utf-8")

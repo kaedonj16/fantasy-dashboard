@@ -48,11 +48,15 @@ def test_unresolved_players_are_reported_but_not_counted():
 
 
 def test_db_filters_include_legacy_rows_without_status():
-    where, params = _draft_filters([2024, 2025], ["redraft", "startup"], alias="d")
+    where, params = _draft_filters(
+        [2024, 2025], ["redraft", "startup"], alias="d",
+        num_teams=12, min_rounds=15, max_rounds=18,
+    )
 
-    assert where == "d.draft_type = ANY(%s) AND d.season = ANY(%s)"
+    assert where == ("d.draft_type = ANY(%s) AND d.season = ANY(%s) AND "
+                     "d.num_teams = %s AND d.rounds >= %s AND d.rounds <= %s")
     assert "status" not in where
-    assert params == [["redraft", "startup"], [2024, 2025]]
+    assert params == [["redraft", "startup"], [2024, 2025], 12, 15, 18]
 
 
 def test_inventory_explains_which_cohorts_are_available():
@@ -73,7 +77,7 @@ def test_main_prints_report_even_when_output_file_is_requested(monkeypatch, tmp_
               "round": 1, "roster_id": "1"}]
     output = tmp_path / "report.md"
     monkeypatch.setenv("DATABASE_URL", "postgresql://unused")
-    monkeypatch.setattr("scripts.audit_draft_realism.fetch_rows", lambda *_: (drafts, picks))
+    monkeypatch.setattr("scripts.audit_draft_realism.fetch_rows", lambda *_, **__: (drafts, picks))
     monkeypatch.setattr("scripts.audit_draft_realism.load_position_map", lambda: {"q1": "QB"})
 
     from scripts.audit_draft_realism import main
