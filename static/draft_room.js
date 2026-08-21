@@ -2537,10 +2537,12 @@
         sigma = sigma * (1 - conf) + obs * conf;        // blend toward observed unpredictability
       }
     }
-    var z = (pn - center) / sigma;
-    var prob = 1 - _normCdf(z);
     // A position going on a run is less likely to make it back to you.
     var runPen = m.run[(p.position || '').toUpperCase()] || 0;
+    if (window.DraftBoardCore && DraftBoardCore.availabilityProbability){
+      return DraftBoardCore.availabilityProbability({ center:center, pick:pn, sigma:sigma, runPenalty:runPen });
+    }
+    var prob = 1 - _normCdf((pn - center) / sigma);
     if (runPen > 0) prob *= (1 - runPen);
     return Math.round(prob * 100);
   }

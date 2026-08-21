@@ -6,9 +6,9 @@ from scripts.compare_draft_realism import compare, main, markdown
 def fixtures():
     real = [{"draft_type": "redraft", "format": "1QB", "drafts": 100,
              "qb_rounds": {"QB1": 7}, "te_rounds": {"TE1": 7},
-             "position_counts": {"QB": 2, "RB": 5, "WR": 6, "TE": 2, "K": 1, "DEF": 1},
+             "position_counts": {"QB": 2, "RB": 5, "WR": 6, "TE": 2, "K": 0, "DEF": 0},
              "phase_shares": {"early (1-4)": {"QB": 5}, "middle (5-9)": {}, "late (10+)": {}}}]
-    cpu = {"configuration": {"type": "redraft", "sf": False, "drafts": 1000},
+    cpu = {"configuration": {"type": "redraft", "sf": False, "drafts": 1000, "k": 1, "def": 1},
            "medianRound": {"QB1": 6, "TE1": 7},
            "medianFinalCount": {"QB": 2, "RB": 5, "WR": 6, "TE": 2, "K": 1, "DEF": 1},
            "phaseShare": {"early": {"QB": 6}, "middle": {}, "late": {}},
@@ -22,6 +22,7 @@ def test_comparison_matches_cohort_and_calculates_deltas():
     assert report["timing"]["QB1"]["delta"] == -1
     assert report["finalCounts"]["RB"]["delta"] == 0
     assert "CPU vs Real Draft Comparison" in markdown(report)
+    assert any("mixed-roster comparison" in warning for warning in report["warnings"])
 
 
 def test_cli_writes_reports_and_can_enforce_threshold(tmp_path):

@@ -282,6 +282,24 @@
     return eligible[0];
   }
 
+  function normalCdf(z) {
+    var t = 1 / (1 + 0.2316419 * Math.abs(z));
+    var d = 0.3989423 * Math.exp(-z * z / 2);
+    var p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+    return z > 0 ? 1 - p : p;
+  }
+
+  // Probability a player survives through `pick`. Production Draft Room and
+  // the headless calibration benchmark share this exact probability kernel;
+  // callers may supply an observed-draft center and positional-run penalty.
+  function availabilityProbability(o) {
+    o = o || {}; var center = o.center == null ? +o.adp : +o.center;
+    var sigma = Math.max(0.01, +o.sigma || 1), pick = +o.pick || 0;
+    var probability = 1 - normalCdf((pick - center) / sigma);
+    probability *= 1 - Math.max(0, Math.min(1, +o.runPenalty || 0));
+    return Math.max(0, Math.min(100, Math.round(probability * 100)));
+  }
+
   // Dynasty tier from the server value thresholds; redraft returns null because
   // the tier table is keyed to dynasty value (mirrors draft_room.js tierOf).
   function tierOf(p, mode, sf, teams, tierThresholds) {
@@ -310,5 +328,6 @@
     starterRequirements: starterRequirements, rosterRole: rosterRole, candidateRosterRole: candidateRosterRole,
     rosterSlotUtility: rosterSlotUtility, remainingObligations: remainingObligations,
     decisionScore: decisionScore, decisionBand: decisionBand, selectDecisionCandidate: selectDecisionCandidate,
+    availabilityProbability: availabilityProbability,
   };
 });

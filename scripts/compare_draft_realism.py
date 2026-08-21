@@ -47,10 +47,20 @@ def compare(real_rows: list[dict], cpu: dict) -> dict:
     absolute_deltas = [abs(row["delta"]) for row in timing.values() if row["delta"] is not None]
     absolute_deltas += [abs(row["delta"]) for row in counts.values()]
     absolute_deltas += [abs(row["delta"]) for rows in phase.values() for row in rows.values()]
+    warnings = []
+    if real.get("drafts", 0) < 200:
+        warnings.append("Real cohort has fewer than 200 drafts; treat small deltas as directional.")
+    for pos, setting in (("K", cfg.get("k", 0)), ("DEF", cfg.get("def", 0))):
+        if setting and real.get("position_counts", {}).get(pos, 0) == 0:
+            warnings.append(f"CPU requires {setting} {pos}, but the real cohort median is 0; "
+                            "this is a mixed-roster comparison, not a like-for-like special-teams calibration.")
+    if abs(float(cfg.get("rounds", 0)) - float(real.get("median_rounds", cfg.get("rounds", 0)))) > 1:
+        warnings.append("CPU rounds differ materially from the real cohort median draft length.")
     return {"cohort": {"draftType": key[0], "format": key[1], "realDrafts": real.get("drafts", 0),
                        "cpuDrafts": cfg.get("drafts", 0)}, "timing": timing, "finalCounts": counts,
             "phaseShare": phase, "invariants": cpu.get("invariants", {}),
             "waitingCalibration": cpu.get("waitingCalibration", {}),
+            "warnings": warnings,
             "meanAbsoluteDelta": round(sum(absolute_deltas) / max(1, len(absolute_deltas)), 2)}
 
 
@@ -61,6 +71,8 @@ def markdown(report: dict) -> str:
              f"{cohort['realDrafts']:,} real drafts vs {cohort['cpuDrafts']:,} CPU drafts", "",
              f"- Mean absolute metric delta: **{report['meanAbsoluteDelta']:.2f}**", "",
              "## Position timing", "", "| Metric | Real | CPU | Delta |", "|---|---:|---:|---:|"]
+    if report.get("warnings"):
+        lines[6:6] = ["## Comparison warnings", ""] + [f"- ⚠ {warning}" for warning in report["warnings"]] + [""]
     for name, row in report["timing"].items():
         lines.append(f"| {name} | {row['real'] if row['real'] is not None else '—'} | "
                      f"{row['cpu'] if row['cpu'] is not None else '—'} | "
