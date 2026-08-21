@@ -2922,8 +2922,18 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "</button>"
     ) if league_id else ""
 
-    # Build settings dropdown content (minimal for logged-out users)
+    # Public pages previously offered only appearance settings to signed-out
+    # visitors. Give them the same durable account entry point as the home card;
+    # leave the existing signed-in settings menu unchanged.
     settings_content = dark_mode_toggle_html
+    if not session.get("account_id") and not session.get("viewer_username"):
+        settings_content = (
+                "<a href='/auth/google?intent=login&amp;next=/' "
+                "   class='settings-menu-item'>"
+                "  " + _nav_icon("logout", cls="settings-menu-icon", style="transform:scaleX(-1);") +
+                "  <span class='settings-menu-label'>Sign In</span>"
+                "</a>"
+        ) + settings_content
 
     # Settings gear dropdown (used in both home and league nav)
     settings_gear = (

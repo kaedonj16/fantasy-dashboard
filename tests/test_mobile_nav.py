@@ -229,6 +229,23 @@ def test_guest_nav_yields_to_dock_everywhere(monkeypatch):
         assert "top-nav br-mnav" in app.build_nav(None, "home", "sleeper", 2026)
 
 
+def test_signed_out_public_settings_offer_sign_in_without_changing_signed_in_menu(monkeypatch):
+    """The missing account action was limited to signed-out public pages."""
+    import app
+    monkeypatch.setattr(app, "get_nfl_state", lambda: {"season": "2026", "season_type": "off"})
+
+    with app.app.test_request_context("/players"):
+        signed_out = app.build_nav(None, "players", "sleeper", 2026)
+    assert "/auth/google?intent=login&amp;next=/" in signed_out
+    assert "<span class='settings-menu-label'>Sign In</span>" in signed_out
+
+    with app.app.test_request_context("/players"):
+        app.session["account_id"] = 42
+        signed_in = app.build_nav(None, "players", "sleeper", 2026)
+    assert "/auth/google?intent=login" not in signed_in
+    assert "<span class='settings-menu-label'>Sign In</span>" not in signed_in
+
+
 def test_home_ticker_immediately_follows_top_nav(offline_client):
     html = _html(offline_client, "/")
     nav_end = html.index("</nav>") + len("</nav>")
