@@ -1,6 +1,8 @@
 import json
 
-from scripts.compare_draft_realism import compare, main, markdown
+import pytest
+
+from scripts.compare_draft_realism import compare, load_report, main, markdown
 
 
 def fixtures():
@@ -34,3 +36,8 @@ def test_cli_writes_reports_and_can_enforce_threshold(tmp_path):
     assert main(["--real", str(real_path), "--cpu", str(cpu_path), "--output", str(out),
                  "--json", str(jout), "--max-mean-delta", "100"]) == 0
     assert out.exists() and json.loads(jout.read_text())["cohort"]["format"] == "1QB"
+
+
+def test_missing_render_artifact_has_actionable_error(tmp_path):
+    with pytest.raises(FileNotFoundError, match="ephemeral across deploys"):
+        load_report(tmp_path / "real-redraft.json", "Real-draft audit")

@@ -17,6 +17,21 @@ POSITIONS = ("QB", "RB", "WR", "TE", "K", "DEF")
 PHASES = {"early": "early (1-4)", "middle": "middle (5-9)", "late": "late (10+)"}
 
 
+def load_report(path: Path, label: str) -> object:
+    """Load an input report with an actionable error for ephemeral Render shells."""
+    if not path.exists():
+        nearby = sorted(path.parent.glob("*.json")) if path.parent.exists() else []
+        found = ", ".join(str(item) for item in nearby) or "none"
+        raise FileNotFoundError(
+            f"{label} report not found: {path}. JSON files in {path.parent}: {found}. "
+            "Render shell files are ephemeral across deploys; regenerate this report in the current shell."
+        )
+    try:
+        return json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{label} report is not valid JSON: {path} ({exc})") from exc
+
+
 def cohort_key(draft_type: str, superflex: bool) -> tuple[str, str]:
     dtype = "dynasty startup" if draft_type == "startup" else draft_type
     return dtype, "Superflex" if superflex else "1QB"
@@ -97,7 +112,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", type=Path, dest="json_output", help="Write machine-readable comparison")
     parser.add_argument("--max-mean-delta", type=float, help="Exit 1 when mean absolute delta exceeds this")
     args = parser.parse_args(argv)
-    report = compare(json.loads(args.real.read_text()), json.loads(args.cpu.read_text()))
+    try:
+        report = compare(load_report(args.real, "Real-draft audit"), load_report(args.cpu, "CPU benchmark"))
+    except (FileNotFoundError, ValueError) as exc:
+        parser.error(str(exc))
     text = markdown(report)
     print(text, end="")
     if args.output:

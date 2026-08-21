@@ -133,7 +133,7 @@ function runOne(cfg, source, random, aggregate) {
     if (recommendation && nextPick) {
       const sigma = Math.max(1, Math.min(10, 0.35 + 0.055 * recommendation.p.adp));
       const probability = Core.availabilityProbability({ adp: recommendation.p.adp, center: recommendation.p.adp,
-        pick: nextPick, sigma, runPenalty: 0 });
+        pick: nextPick, sigma, runPenalty: 0, draftType: cfg.type, sf: cfg.sf });
       pendingWait[slot] = { playerId: recommendation.p.id, probability, bin: waitBin(probability) };
     }
     const chosen = Core.selectDecisionCandidate(candidates, round, 0.8, random);

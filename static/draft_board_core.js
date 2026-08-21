@@ -192,15 +192,15 @@
     if (p === 'K' || p === 'DEF') return 0.06;
     var have = +(counts && counts[p]) || 0;
     if (p === 'QB') {
-      if (role === 'bench1') return opts.sf ? 0.78 : (dynasty ? 0.70 : 0.30);
+      if (role === 'bench1') return opts.sf ? 0.78 : (dynasty ? 0.76 : 0.32);
       // Dynasty QB3 in 1QB is a real stash/trade asset. In SF, QB4 is useful
       // insulation, but QB5+ should not inherit the same utility indefinitely.
       if (opts.sf) return have >= 4 ? 0.18 : 0.55;
-      if (dynasty) return have >= 3 ? 0.10 : 0.48;
+      if (dynasty) return have >= 3 ? 0.10 : 0.55;
       return 0.12;
     }
     if (p === 'TE') {
-      if (role === 'bench1') return tep > 0 ? 0.72 : (dynasty ? 0.62 : 0.38);
+      if (role === 'bench1') return tep > 0 ? 0.72 : (dynasty ? 0.62 : 0.32);
       if (tep > 0) return have >= 4 ? 0.24 : 0.48;
       if (dynasty) return have >= 4 ? 0.12 : 0.44;
       return 0.16;
@@ -289,6 +289,31 @@
     return z > 0 ? 1 - p : p;
   }
 
+  // Empirical return-rate curves from 10k-draft matched-format benchmarks.
+  // Raw Normal(ADP, sigma) is directionally useful but systematically optimistic
+  // in redraft 1QB and dynasty SF, where many managers attack the same shelves.
+  // Keep profiles together and interpolate smoothly rather than scattering format
+  // multipliers through Draft Room.
+  var AVAILABILITY_CALIBRATION = {
+    redraft_1qb: [[0,0],[9,9],[57,25],[73,27],[93,51],[100,60]],
+    redraft_sf:  [[0,0],[10,11],[57,36],[71,55],[88,73],[100,85]],
+    startup_1qb: [[0,0],[11,23],[57,67],[71,74],[84,81],[100,90]],
+    startup_sf:  [[0,0],[12,16],[57,36],[72,38],[91,44],[100,50]],
+  };
+  function calibrateAvailability(probability, draftType, sf) {
+    var type = draftType === 'redraft' ? 'redraft' : 'startup';
+    var points = AVAILABILITY_CALIBRATION[type + '_' + (sf ? 'sf' : '1qb')];
+    var p = Math.max(0, Math.min(100, +probability || 0));
+    for (var i = 1; i < points.length; i++) {
+      if (p <= points[i][0]) {
+        var left = points[i - 1], right = points[i];
+        var ratio = (p - left[0]) / Math.max(1, right[0] - left[0]);
+        return Math.round((left[1] + (right[1] - left[1]) * ratio) * 10) / 10;
+      }
+    }
+    return points[points.length - 1][1];
+  }
+
   // Probability a player survives through `pick`. Production Draft Room and
   // the headless calibration benchmark share this exact probability kernel;
   // callers may supply an observed-draft center and positional-run penalty.
@@ -297,7 +322,8 @@
     var sigma = Math.max(0.01, +o.sigma || 1), pick = +o.pick || 0;
     var probability = 1 - normalCdf((pick - center) / sigma);
     probability *= 1 - Math.max(0, Math.min(1, +o.runPenalty || 0));
-    return Math.max(0, Math.min(100, Math.round(probability * 100)));
+    var raw = Math.max(0, Math.min(100, Math.round(probability * 100)));
+    return o.calibrate === false ? raw : calibrateAvailability(raw, o.draftType, !!o.sf);
   }
 
   // Dynasty tier from the server value thresholds; redraft returns null because
@@ -328,6 +354,6 @@
     starterRequirements: starterRequirements, rosterRole: rosterRole, candidateRosterRole: candidateRosterRole,
     rosterSlotUtility: rosterSlotUtility, remainingObligations: remainingObligations,
     decisionScore: decisionScore, decisionBand: decisionBand, selectDecisionCandidate: selectDecisionCandidate,
-    availabilityProbability: availabilityProbability,
+    availabilityProbability: availabilityProbability, calibrateAvailability: calibrateAvailability,
   };
 });
