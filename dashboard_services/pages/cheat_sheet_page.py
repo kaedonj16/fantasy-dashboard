@@ -1,11 +1,13 @@
 """
 Draft Cheat Sheet page.
 
-A printable, pre-draft board that is the static sibling of the Draft Room: it
+A printable, pre-draft board that is the static sibling of the Draft Room. When
+opened from an active Draft Room it mirrors that room's live Recommendation
+order; when opened on its own it
 ranks the shared /api/league-players pool by value-over-replacement using the
 same roster-derived replacement index (BRPickScore.starterCounts) the draft room
-and the server pick-score use, so a player's cheat-sheet rank cannot contradict
-their live Pick Score. The draft room adds the situational timing terms on top.
+and the server pick-score use. The draft room adds situational timing and roster
+fit, then passes its resulting order into the in-draft sheet as a snapshot.
 
 Self-contained like the draft room page: CSS is inlined here (scoped under
 .cs-wrap and bridged to the site theme tokens), the render logic lives in
@@ -427,11 +429,11 @@ _CHEAT_HTML = r"""
   <section class="cs-hidden" id="cs-panel-logic">
     <div class="cs-prose">
       <div class="cs-rule"><span class="cs-k">VOR</span><div><h3>Ranked by value over replacement</h3><p>The board is ordered by VOR: a player's value minus the value of the last startable player at his position in your league. Each position is measured against its own replacement, so QB, RB, WR and TE compare fairly on one board instead of by raw points. It is the honest cross-position value, which is what a draft board should sort on.</p></div></div>
-      <div class="cs-rule"><span class="cs-k">Pick Score</span><div><h3>The board vs the live recommendation</h3><p>The Draft Room's Pick Score answers a different question: given your roster and your exact pick, who should you take right now. It layers roster need, ADP timing and survival onto this same value. The cheat sheet is the value board; the Draft Room is the on-the-clock recommender. Both read the same underlying value, so they never disagree on who is more valuable, only on fit for your next pick.</p></div></div>
+      <div class="cs-rule"><span class="cs-k">Recommendation</span><div><h3>Aligned with the active Draft Room</h3><p>Open the cheat sheet from an active Draft Room and its Big Board mirrors the room's current Recommendation order exactly, including roster fit, remaining slots and expected availability. Open it independently and it remains a stable VOR board for pre-draft planning. Pick Score stays available in the Draft Room as the separate historical player-and-price grade.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Roster</span><div><h3>Your league sets the replacement line</h3><p>Replacement level comes from your roster slots and league size, the same starter counts the Draft Room uses. Superflex moves that line: up to twice as many QBs start, so the replacement QB is far weaker and every startable QB climbs. Nothing is added by hand, the baseline simply moves.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Tiers</span><div><h3>Tiers are value cliffs</h3><p>Players group where the drop-off is small inside the group and large to the next. Inside a tier, order barely matters, so take need or the falling price. Do not reach across a cliff.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Value</span><div><h3>Where "above ADP" comes from</h3><p>Our rank is this VOR board. ADP is the consensus average draft position from real drafts. Value is ADP minus our rank. A green plus means the room lets him fall later than he is worth, so wait a beat and take him. A red minus means he goes early.</p></div></div>
-      <div class="cs-rule"><span class="cs-k">Live</span><div><h3>It knows your live draft</h3><p>Open the sheet from your league during a draft and players already taken are struck through automatically, or hidden entirely with Hide drafted, so the board always shows who is actually still available. Everything else is the same board you would see in the Draft Room, minus your pick slot and roster need, which only apply once you are on the clock.</p></div></div>
+      <div class="cs-rule"><span class="cs-k">Live</span><div><h3>It knows your live draft</h3><p>Open the sheet from your league during a draft and players already taken are struck through automatically, while the available players follow the current Recommendation order. The sheet is a snapshot, so reopen it after more picks to refresh the order, or use Connect live draft to keep drafted-player status synchronized.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Dynasty</span><div><h3>Dynasty values the window, not just this year</h3><p>Dynasty mode ranks on dynasty value, which already weights youth and multi-year outlook, and swaps in Age and a career-window tag in place of ADP, because you are drafting the next several seasons.</p></div></div>
     </div>
   </section>
