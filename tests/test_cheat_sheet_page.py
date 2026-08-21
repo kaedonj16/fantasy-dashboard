@@ -91,3 +91,28 @@ def test_draft_room_only_shares_context_from_a_visible_draft_board():
     assert "(state.mode === 'mock' || state.mode === 'live')" in script
     assert "main && main.style.display !== 'none'" in script
     assert "q.push('live=1')" not in script
+
+
+def test_draft_room_cheat_sheet_mirrors_live_recommendation_snapshot():
+    room = (Path(__file__).parents[1] / "static" / "draft_room.js").read_text()
+    sheet = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
+    body = build_cheat_sheet_body("league-123", 2026, "sleeper")
+
+    assert "function cheatRecommendationOrder()" in room
+    assert "rec_order=" in room
+    assert "var recommendationOrder = null" in sheet
+    assert "recommendationOrder[a.id]" in sheet
+    assert "if (!recommendationOrder) applyOverrides()" in sheet
+    assert "exact live Draft Room order" in sheet
+    assert "Aligned with the active Draft Room" in body
+
+
+def test_in_draft_cheat_sheet_scrolls_once_to_first_available_player():
+    sheet = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
+
+    assert "scrollToFirstAvailable = draftedIds.size > 0" in sheet
+    assert "#csBoardBody tr.cs-p:not(.drafted):not(.done)" in sheet
+    assert "scroller.scrollTop = Math.max(0, row.offsetTop - 4)" in sheet
+    assert "scrollToFirstAvailable = false" in sheet
+    assert "if (ad !== bd) return ad ? -1 : 1" in sheet
+    assert "recommendationOrder && x.drafted ? null : ++availableRank" in sheet

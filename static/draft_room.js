@@ -66,6 +66,7 @@
   var sideTab = 'best';    // best | rec | needs | runs
   var _setupRoster = null; // roster config built on setup page
   var _rosterMode  = 'auto'; // 'auto' = use league/defaults locked; 'custom' = editable steppers
+  var _rosterPreset = null; // selected built-in platform preset, if any
   var _setupOwned = null;  // claimed picks (pickNumber -> true) built on setup page
   var keeperSet = [];      // [{id,name,pos,rosterId,costRound,projected}] from cfg.keepers
   var keepersOn = false;   // whether league keepers are removed from the board
@@ -200,8 +201,15 @@
     var _csFrame = document.getElementById('drCheatFrame');
 
     // Carry this draft's context to the cheat sheet so it opens with who's already
-    // gone crossed off. Mock and live boards both open as snapshots; live polling
-    // remains an explicit choice on the cheat sheet itself.
+    // gone crossed off and the exact Recommendation order currently shown in the
+    // room. Mock and live boards both open as snapshots; live polling remains an
+    // explicit choice on the cheat sheet itself.
+    function cheatRecommendationOrder(){
+      if (!players.length) return [];
+      refreshPsPool();
+      return rankedRecommendationPool()
+        .slice(0, 175).map(function(p){ return String(p.id); });
+    }
     function cheatCtxQuery(){
       // A restored draft can still exist in memory while Edit Setup is open. Do
       // not leak that stale board into the setup-page Cheat Sheet link; context
@@ -219,6 +227,8 @@
         q.push('mode=' + (state.type === 'redraft' ? 'redraft' : 'dynasty'));
       }
       if (ids.length) q.push('drafted=' + encodeURIComponent(ids.join(',')));
+      var recOrder = cheatRecommendationOrder();
+      if (recOrder.length) q.push('rec_order=' + encodeURIComponent(recOrder.join(',')));
       return q.join('&');
     }
     function cheatSheetFullUrl(){
@@ -248,6 +258,8 @@
         Object.keys(state.picks).forEach(function(k){ var p = state.picks[k]; if (p && p.id) ids.push(p.id); });
         var q = ['sf=' + (state.sf ? '1' : '0'), 'mode=' + (state.type === 'redraft' ? 'redraft' : 'dynasty')];
         if (ids.length) q.push('drafted=' + encodeURIComponent(ids.join(',')));
+        var recOrder = cheatRecommendationOrder();
+        if (recOrder.length) q.push('rec_order=' + encodeURIComponent(recOrder.join(',')));
         url += (url.indexOf('?') >= 0 ? '&' : '?') + q.join('&');
       }
       _csFrame.src = url;   // (re)load -> re-syncs
@@ -352,6 +364,15 @@
     return out;
   }
 
+  // Familiar platform baselines. These are starting points, not claims that
+  // every league on a platform uses the same settings; steppers remain editable.
+  var ROSTER_PRESETS = {
+    espn:    { label:'ESPN',       QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:1,K:1,DEF:1,BN:8 },
+    sleeper: { label:'Sleeper',    QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:2,K:0,DEF:0,BN:7 },
+    yahoo:   { label:'Yahoo',      QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:1,K:1,DEF:1,BN:6 },
+    dynasty: { label:'Dynasty SF', QB:1,SF:1,RB:2,WR:3,TE:1,FLEX:2,K:0,DEF:0,BN:15 }
+  };
+
   function renderSetupRoster(){
     var sf = document.getElementById('drSf').value === '1';
     var rd = document.getElementById('drType').value === 'redraft';
@@ -386,9 +407,22 @@
       { key:'BN',   label:'Bench' }
     ];
 
-    // Source badge + mode-toggle button at the top.
+    var presetHtml = '<div class="dr-roster-presets"><span class="dr-roster-presets-label">Presets</span>';
+    Object.keys(ROSTER_PRESETS).forEach(function(key){
+      var preset = ROSTER_PRESETS[key];
+      presetHtml += '<button type="button" class="dr-roster-preset' + (_rosterPreset === key ? ' is-active' : '')
+        + '" data-roster-preset="' + key + '">' + preset.label + '</button>';
+    });
+    presetHtml += '</div>';
+
+    // Source badge + mode-toggle sits outside and immediately above the grid.
     var srcHtml = '';
-    if (hasLeague){
+    if (_rosterPreset && ROSTER_PRESETS[_rosterPreset]){
+      srcHtml = '<div class="dr-roster-src">'
+        + '<span class="dr-roster-src-tag dr-roster-src-custom">' + ROSTER_PRESETS[_rosterPreset].label + ' preset</span>'
+        + '<button type="button" class="dr-roster-src-btn" id="drRosterReset">Reset</button>'
+        + '</div>';
+    } else if (hasLeague){
       if (locked){
         srcHtml = '<div class="dr-roster-src">'
           + '<span class="dr-roster-src-tag">League settings</span>'
@@ -402,7 +436,7 @@
       }
     }
 
-    var html = '<div class="dr-setup-roster">' + srcHtml;
+    var html = presetHtml + srcHtml + '<div class="dr-setup-roster">';
     rows.forEach(function(r){
       if (r.hide) return;
       var val = _setupRoster[r.key] || 0;
@@ -436,7 +470,19 @@
     });
     var rb = document.getElementById('drRosterReset');
     if (rb) rb.addEventListener('click', function(){
-      _rosterMode = 'auto'; _setupRoster = null; renderSetupRoster();
+      _rosterMode = 'auto'; _rosterPreset = null; _setupRoster = null; renderSetupRoster();
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-roster-preset]'), function(btn){
+      btn.addEventListener('click', function(){
+        var key = btn.getAttribute('data-roster-preset'), preset = ROSTER_PRESETS[key];
+        if (!preset) return;
+        _rosterPreset = key; _rosterMode = 'custom';
+        _setupRoster = {};
+        ['QB','SF','RB','WR','TE','FLEX','K','DEF','BN'].forEach(function(k){ _setupRoster[k] = preset[k] || 0; });
+        _setupRoster._sf = !!preset.SF; _setupRoster._rd = document.getElementById('drType').value === 'redraft';
+        document.getElementById('drSf').value = preset.SF ? '1' : '0';
+        renderSetupRoster(); renderSetupCapital();
+      });
     });
   }
 
@@ -2266,6 +2312,13 @@
     pool.forEach(function(p){ p._ds = liveDecisionScore(p, counts); });
     _psPoolMax = mx;
     return mx;
+  }
+  // Canonical all-position Recommendation order. Position/search filters are
+  // views into this list, not new rankings; RB #7 remains REC #7 when the user
+  // switches from All to RB instead of being relabeled REC #1.
+  function rankedRecommendationPool(){
+    return availablePool().filter(function(p){ return p._ds != null; })
+      .sort(function(a,b){ return b._ds - a._ds || (b._ps || 0) - (a._ps || 0); });
   }
   // Map a raw pick score onto the pool-relative display scale for historical
   // comparisons/report cards. Live recommendation rows display the absolute
@@ -4621,6 +4674,10 @@
     // p._ps + the pool-relative scale are refreshed in renderSide; ensure they
     // exist for any path that reaches renderBA directly (search/sort handlers).
     if (_psPoolMax <= 0) refreshPsPool();
+    var recommendationRanks = {};
+    if (sortBy === 'ps') rankedRecommendationPool().forEach(function(p, i){
+      recommendationRanks[String(p.id)] = i + 1;
+    });
     pool.sort(function(a, b){
       // K/DEF have no value/ADP/PS - order them among themselves by projected PPG
       // so the best kicker/defense still surfaces first regardless of sort mode.
@@ -4669,7 +4726,7 @@
     var _reasonCounts = sortBy === 'ps' ? myPosCounts() : null;
     for (var i = 0; i < Math.min(mainPool.length, 200); i++){
       var p = mainPool[i];
-      var opts = sortBy === 'ps' ? { reason: pickReason(p, _reasonCounts), rank: i + 1 }
+      var opts = sortBy === 'ps' ? { reason: pickReason(p, _reasonCounts), rank: recommendationRanks[String(p.id)] }
         : { showPickScore: sortBy === 'pickscore' };
       if (nextPick){
         var prob = availProb(p, nextPick);
@@ -5646,10 +5703,10 @@
   }
   renderSetupRoster();
   renderSetupCapital();
-  document.getElementById('drSf').addEventListener('change', function(){ _rosterMode = 'auto'; _setupRoster = null; renderSetupRoster(); });
+  document.getElementById('drSf').addEventListener('change', function(){ _rosterMode = 'auto'; _rosterPreset = null; _setupRoster = null; renderSetupRoster(); });
   document.getElementById('drType').addEventListener('change', function(){
     // Reset roster to defaults for the new type, then re-render.
-    _rosterMode = 'auto'; _setupRoster = null; renderSetupRoster();
+    _rosterMode = 'auto'; _rosterPreset = null; _setupRoster = null; renderSetupRoster();
     // Show/hide rookie rounds field; for non-rookie, rounds auto-sync from roster.
     var isRookie = this.value === 'rookie';
     var rf = document.getElementById('drRoundsField');
@@ -5690,7 +5747,7 @@
     var rounds = Math.max(1, Math.min(40, parseInt(this.value, 10) || 15));
     this.value = rounds;
     if (!_setupRoster) _setupRoster = defaultRoster();
-    _rosterMode = 'custom';
+    _rosterMode = 'custom'; _rosterPreset = null;
     _setupRoster.BN = Math.max(0, rounds - _totalStarterSlots(_setupRoster));
     renderSetupRoster();
   });
@@ -5702,7 +5759,7 @@
     var d = parseInt(step.getAttribute('data-d'), 10);
     if (!_setupRoster) _setupRoster = defaultRoster();
     _setupRoster[key] = Math.max(0, (_setupRoster[key] || 0) + d);
-    _rosterMode = 'custom';
+    _rosterMode = 'custom'; _rosterPreset = null;
     // Keep rounds = starters + bench in sync for every slot change.
     // Bench change -> update rounds. Starter change -> update rounds (bench stays).
     var _newRounds = Math.max(1, Math.min(40, _totalStarterSlots(_setupRoster) + (_setupRoster.BN || 0)));

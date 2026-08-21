@@ -105,6 +105,15 @@ def test_recommendation_is_a_rank_not_a_declining_numeric_grade():
     assert "prepareDecisionDisplay" not in source
 
 
+def test_position_filters_preserve_all_player_recommendation_rank():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert "function rankedRecommendationPool()" in source
+    assert "recommendationRanks[String(p.id)] = i + 1" in source
+    assert "rank: recommendationRanks[String(p.id)]" in source
+    assert "rank: i + 1 }\n        : { showPickScore" not in source
+
+
 def test_tier_cliff_urgency_is_suppressed_during_round_one():
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
     match = re.search(r"function isTierCliff\(p, pickNo\)\{(.*?)\n  \}", source, re.DOTALL)
@@ -112,3 +121,21 @@ def test_tier_cliff_urgency_is_suppressed_during_round_one():
     assert match
     assert "if (pn <= ((state && state.teams) || 12)) return false;" in match.group(1)
     assert "isTierCliff: isTierCliff(p, _pn)" in source
+
+
+def test_roster_setup_has_editable_platform_and_dynasty_presets():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    body = build_draft_room_body(None, None, None, is_guest=True)
+
+    assert "espn:    { label:'ESPN',       QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:1,K:1,DEF:1,BN:8 }" in source
+    assert "sleeper: { label:'Sleeper'" in source
+    assert "yahoo:   { label:'Yahoo'" in source
+    assert "dynasty: { label:'Dynasty SF'" in source
+    assert "data-roster-preset" in source
+    assert ".dr-roster-preset {" in body
+
+
+def test_roster_source_sits_outside_immediately_above_slot_grid():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert "var html = presetHtml + srcHtml + '<div class=\"dr-setup-roster\">';" in source
