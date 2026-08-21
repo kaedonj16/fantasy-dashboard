@@ -66,6 +66,7 @@
   var sideTab = 'best';    // best | rec | needs | runs
   var _setupRoster = null; // roster config built on setup page
   var _rosterMode  = 'auto'; // 'auto' = use league/defaults locked; 'custom' = editable steppers
+  var _rosterPreset = null; // selected built-in platform preset, if any
   var _setupOwned = null;  // claimed picks (pickNumber -> true) built on setup page
   var keeperSet = [];      // [{id,name,pos,rosterId,costRound,projected}] from cfg.keepers
   var keepersOn = false;   // whether league keepers are removed from the board
@@ -200,8 +201,15 @@
     var _csFrame = document.getElementById('drCheatFrame');
 
     // Carry this draft's context to the cheat sheet so it opens with who's already
-    // gone crossed off. Mock and live boards both open as snapshots; live polling
-    // remains an explicit choice on the cheat sheet itself.
+    // gone crossed off and the exact Recommendation order currently shown in the
+    // room. Mock and live boards both open as snapshots; live polling remains an
+    // explicit choice on the cheat sheet itself.
+    function cheatRecommendationOrder(){
+      if (!players.length) return [];
+      refreshPsPool();
+      return rankedRecommendationPool()
+        .slice(0, 175).map(function(p){ return String(p.id); });
+    }
     function cheatCtxQuery(){
       // A restored draft can still exist in memory while Edit Setup is open. Do
       // not leak that stale board into the setup-page Cheat Sheet link; context
@@ -219,6 +227,8 @@
         q.push('mode=' + (state.type === 'redraft' ? 'redraft' : 'dynasty'));
       }
       if (ids.length) q.push('drafted=' + encodeURIComponent(ids.join(',')));
+      var recOrder = cheatRecommendationOrder();
+      if (recOrder.length) q.push('rec_order=' + encodeURIComponent(recOrder.join(',')));
       return q.join('&');
     }
     function cheatSheetFullUrl(){
@@ -248,6 +258,8 @@
         Object.keys(state.picks).forEach(function(k){ var p = state.picks[k]; if (p && p.id) ids.push(p.id); });
         var q = ['sf=' + (state.sf ? '1' : '0'), 'mode=' + (state.type === 'redraft' ? 'redraft' : 'dynasty')];
         if (ids.length) q.push('drafted=' + encodeURIComponent(ids.join(',')));
+        var recOrder = cheatRecommendationOrder();
+        if (recOrder.length) q.push('rec_order=' + encodeURIComponent(recOrder.join(',')));
         url += (url.indexOf('?') >= 0 ? '&' : '?') + q.join('&');
       }
       _csFrame.src = url;   // (re)load -> re-syncs
@@ -352,6 +364,15 @@
     return out;
   }
 
+  // Familiar platform baselines. These are starting points, not claims that
+  // every league on a platform uses the same settings; steppers remain editable.
+  var ROSTER_PRESETS = {
+    espn:    { label:'ESPN',       QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:1,K:1,DEF:1,BN:8 },
+    sleeper: { label:'Sleeper',    QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:2,K:0,DEF:0,BN:7 },
+    yahoo:   { label:'Yahoo',      QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:1,K:1,DEF:1,BN:6 },
+    dynasty: { label:'Dynasty SF', QB:1,SF:1,RB:2,WR:3,TE:1,FLEX:2,K:0,DEF:0,BN:15 }
+  };
+
   function renderSetupRoster(){
     var sf = document.getElementById('drSf').value === '1';
     var rd = document.getElementById('drType').value === 'redraft';
@@ -386,9 +407,22 @@
       { key:'BN',   label:'Bench' }
     ];
 
-    // Source badge + mode-toggle button at the top.
+    var presetHtml = '<div class="dr-roster-presets"><span class="dr-roster-presets-label">Presets</span>';
+    Object.keys(ROSTER_PRESETS).forEach(function(key){
+      var preset = ROSTER_PRESETS[key];
+      presetHtml += '<button type="button" class="dr-roster-preset' + (_rosterPreset === key ? ' is-active' : '')
+        + '" data-roster-preset="' + key + '">' + preset.label + '</button>';
+    });
+    presetHtml += '</div>';
+
+    // Source badge + mode-toggle sits outside and immediately above the grid.
     var srcHtml = '';
-    if (hasLeague){
+    if (_rosterPreset && ROSTER_PRESETS[_rosterPreset]){
+      srcHtml = '<div class="dr-roster-src">'
+        + '<span class="dr-roster-src-tag dr-roster-src-custom">' + ROSTER_PRESETS[_rosterPreset].label + ' preset</span>'
+        + '<button type="button" class="dr-roster-src-btn" id="drRosterReset">Reset</button>'
+        + '</div>';
+    } else if (hasLeague){
       if (locked){
         srcHtml = '<div class="dr-roster-src">'
           + '<span class="dr-roster-src-tag">League settings</span>'
@@ -402,7 +436,7 @@
       }
     }
 
-    var html = '<div class="dr-setup-roster">' + srcHtml;
+    var html = presetHtml + srcHtml + '<div class="dr-setup-roster">';
     rows.forEach(function(r){
       if (r.hide) return;
       var val = _setupRoster[r.key] || 0;
@@ -436,7 +470,19 @@
     });
     var rb = document.getElementById('drRosterReset');
     if (rb) rb.addEventListener('click', function(){
-      _rosterMode = 'auto'; _setupRoster = null; renderSetupRoster();
+      _rosterMode = 'auto'; _rosterPreset = null; _setupRoster = null; renderSetupRoster();
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-roster-preset]'), function(btn){
+      btn.addEventListener('click', function(){
+        var key = btn.getAttribute('data-roster-preset'), preset = ROSTER_PRESETS[key];
+        if (!preset) return;
+        _rosterPreset = key; _rosterMode = 'custom';
+        _setupRoster = {};
+        ['QB','SF','RB','WR','TE','FLEX','K','DEF','BN'].forEach(function(k){ _setupRoster[k] = preset[k] || 0; });
+        _setupRoster._sf = !!preset.SF; _setupRoster._rd = document.getElementById('drType').value === 'redraft';
+        document.getElementById('drSf').value = preset.SF ? '1' : '0';
+        renderSetupRoster(); renderSetupCapital();
+      });
     });
   }
 
@@ -765,10 +811,33 @@
       if (cfg.platform) params.push('platform=' + encodeURIComponent(cfg.platform));
     }
     var url = '/api/league-players' + (params.length ? ('?' + params.join('&')) : '');
-    fetch(url, { cache: 'no-store' })
-      .then(function(r){ return r.json(); })
+    var _loadPlayerPayload = function(attempt){
+      return fetch(url, { cache: 'no-store' }).then(function(r){
+        return r.text().then(function(body){
+          var payload;
+          try { payload = JSON.parse(body); }
+          catch (_jsonErr) { throw new Error('Player API returned non-JSON (HTTP ' + r.status + ')'); }
+          if (!r.ok) {
+            var detail = payload && (payload.error || payload.message);
+            throw new Error('Player API HTTP ' + r.status + (detail ? ': ' + detail : ''));
+          }
+          return payload;
+        });
+      }).catch(function(err){
+        // Render can briefly return 502/503 while a worker is restarting. One
+        // bounded retry fixes that transient case without creating a request loop.
+        if (attempt < 1) return new Promise(function(resolve){
+          setTimeout(function(){ resolve(_loadPlayerPayload(attempt + 1)); }, 600);
+        });
+        throw err;
+      });
+    };
+    _loadPlayerPayload(0)
       .then(function(resp){
         var raw = Array.isArray(resp) ? resp : (resp.players || []);
+        if (!Array.isArray(raw) || !raw.length) {
+          throw new Error((resp && (resp.error || resp.message)) || 'Player API returned an empty player pool');
+        }
         tierThresholds = (!Array.isArray(resp) && resp.tier_thresholds) ? resp.tier_thresholds : {};
         adpSources = (!Array.isArray(resp) && resp.adp_sources) ? resp.adp_sources : {};
         if (!Array.isArray(resp) && resp.adp_source_options) adpSourceOptions = resp.adp_source_options;
@@ -805,9 +874,18 @@
         render();
         if (sim) scheduleSim();   // begin CPU picks once players are loaded
       })
-      .catch(function(){
-        document.getElementById('drBaList').innerHTML =
-          '<div class="dr-loading">Could not load players. Refresh to retry.</div>';
+      .catch(function(err){
+        console.error('[draft-room] loadPlayers failed', err);
+        var host = document.getElementById('drBaList');
+        if (!host) return;
+        host.innerHTML = '';
+        var box = document.createElement('div'); box.className = 'dr-loading';
+        var msg = document.createElement('div');
+        msg.textContent = 'Could not load players: ' + ((err && err.message) || 'unknown error');
+        var retry = document.createElement('button'); retry.type = 'button';
+        retry.className = 'dr-btn dr-btn-sm'; retry.textContent = 'Retry';
+        retry.style.marginTop = '10px'; retry.addEventListener('click', loadPlayers);
+        box.appendChild(msg); box.appendChild(retry); host.appendChild(box);
       });
   }
 
@@ -1302,22 +1380,71 @@
   // picks, and its own next pick) so pickScore judges need for THAT team, not the
   // viewer's. Mirrors psCtx()/nextOwnedAfterCurrent() but scoped to one draft slot.
   function _cpuCtx(slot){
-    var qualByPos = {}, picksList = [];
+    var qualByPos = {}, picksList = [], lastPickByPos = {}, rosterQualities = [];
     Object.keys(state.picks).forEach(function(k){
       var pn = parseInt(k, 10);
       if (slotOnClock(pn, state.teams, state.order) !== slot) return;
       var mp = state.picks[k];
       picksList.push(mp);
       var pos = (mp.position || '').toUpperCase();
+      if (!lastPickByPos[pos] || pn > lastPickByPos[pos]) lastPickByPos[pos] = pn;
       var full = playersById[String(mp.id)];
       var v = full ? vorOf(full) : null;
       if (v == null || v > 0) qualByPos[pos] = (qualByPos[pos] || 0) + 1;
+      var rq = full ? ppgNormOf(full) : null;
+      rosterQualities.push({ pos: pos, quality: rq != null ? rq : 0.35 });
     });
     var nextOwned = null, tot = state.teams * state.rounds;
     for (var pn2 = state.current + 1; pn2 <= tot; pn2++){
       if (slotOnClock(pn2, state.teams, state.order) === slot){ nextOwned = pn2; break; }
     }
-    return { qualByPos: qualByPos, picksList: picksList, nextOwned: nextOwned };
+    var remaining = 0;
+    for (var pn3 = state.current; pn3 <= tot; pn3++){
+      if (!state.picks[pn3] && slotOnClock(pn3, state.teams, state.order) === slot) remaining++;
+    }
+    var counts = teamCounts(slot), rs = (state && state.roster) || defaultRoster();
+    var obligations = window.DraftBoardCore
+      ? DraftBoardCore.remainingObligations(counts, rs, remaining, !!state.sf)
+      : { required: 0, freePicks: remaining };
+    return { qualByPos: qualByPos, picksList: picksList, rosterQualities: rosterQualities, nextOwned: nextOwned,
+             lastPickByPos: lastPickByPos, remaining: remaining, obligations: obligations };
+  }
+
+  // Estimate how many picks before this team's next turn belong to teams for
+  // whom each position is still a starter/FLEX need. It is deliberately a
+  // bounded roster inspection, not clairvoyance: CPUs know visible rosters but
+  // not which random player another team will select.
+  function _demandBeforeNext(nextPick){
+    var demand = { QB:0, RB:0, WR:0, TE:0 };
+    if (!nextPick || !window.DraftBoardCore) return demand;
+    var rs = (state && state.roster) || defaultRoster(), seen = {};
+    for (var qn = state.current + 1; qn < nextPick; qn++){
+      var os = slotOnClock(qn, state.teams, state.order);
+      if (seen[os]) continue; seen[os] = true;
+      var oc = teamCounts(os);
+      Object.keys(demand).forEach(function(pos){
+        var role = DraftBoardCore.rosterRole(pos, oc, rs, !!state.sf);
+        if (role === 'starter') demand[pos] += 1;
+        else if (role === 'flex') demand[pos] += 0.45;
+      });
+    }
+    return demand;
+  }
+  // CPU-scoped version of the user's auto-draft completion guard. The late-round
+  // weighting normally lets managers choose when to take K/DEF, but once this
+  // team's remaining selections equal its unfilled K/DEF slots there is no
+  // discretionary pick left: fill the best required special-teams slot now.
+  function _cpuKDefMustFill(pool, counts, remaining){
+    var rs = (state && state.roster) || defaultRoster();
+    var needK = Math.max(0, (rs.K || 0) - (counts.K || 0));
+    var needDef = Math.max(0, (rs.DEF || 0) - (counts.DEF || 0));
+    if (needK + needDef <= 0 || remaining > needK + needDef) return null;
+    var candidates = pool.filter(function(p){
+      var pos = String(p.position || '').toUpperCase();
+      return (pos === 'K' && needK > 0) || (pos === 'DEF' && needDef > 0);
+    });
+    candidates.sort(function(a,b){ return lineupScore(b) - lineupScore(a); });
+    return candidates[0] || null;
   }
   function simPick(){
     var pool = availablePool();
@@ -1343,6 +1470,8 @@
     // Score every candidate from THIS CPU team's perspective (its own roster,
     // depth, and next pick) so need is judged for the right team, not the viewer.
     var cpuCtx = _cpuCtx(slot);
+    var mustFillKDef = _cpuKDefMustFill(pool, counts, cpuCtx.remaining);
+    if (mustFillKDef) return mustFillKDef;
     var _maxVal = 0; pool.forEach(function(q){ var v = valOf(q); if (v > _maxVal) _maxVal = v; });
     // Starter-slot map: actual lineup spots only (no bench).
     var _rs = (state && state.roster) || defaultRoster();
@@ -1424,10 +1553,63 @@
       if (pv != null && pv >= 55){ var _pp = (p.position||'').toUpperCase(); posQualLeft[_pp] = (posQualLeft[_pp] || 0) + 1; }
       cands.push({ p: p, w: w, a: a, pv: pv, ae: aEff });
     });
+    var _nextShelf = {}, _demand = _demandBeforeNext(cpuCtx.nextOwned);
+    ['QB','RB','WR','TE'].forEach(function(pos){
+      var bestExpected = 0;
+      cands.filter(function(c){ return (c.p.position || '').toUpperCase() === pos && c.pv != null; })
+        .sort(function(a, b){ return b.pv - a.pv; }).slice(0, 16).forEach(function(c){
+          var prob = cpuCtx.nextOwned ? availProb(c.p, cpuCtx.nextOwned) : 0;
+          if (prob == null) prob = 50;
+          bestExpected = Math.max(bestExpected, c.pv * (0.35 + 0.65 * prob / 100));
+        });
+      _nextShelf[pos] = bestExpected;
+    });
+    var _econOpts = { sf: !!state.sf, tep: scoringCfg().tep, draftType: state.type };
     cands.forEach(function(c){
       var p = c.p, w = c.w, a = c.a, pv = c.pv;
       var pos = (p.position||'').toUpperCase();
       var t = targets[pos] || 0, have = counts[pos] || 0;
+      var rosterLimit = window.DraftBoardCore && DraftBoardCore.positionRosterLimit
+        ? DraftBoardCore.positionRosterLimit(pos, _rs, { draftType:state.type, tep:scoringCfg().tep })
+        : Infinity;
+      if (have >= rosterLimit){ c.w = 0; c.ds = -1; return; }
+      // Kicker and defense are required lineup slots, not ordinary bench depth.
+      // Once this team has filled the configured number, remove every additional
+      // K/DEF from its candidate set entirely. A soft overfill multiplier is not
+      // sufficient because synthetic late ADP can otherwise make several overdue
+      // special-teams players beat depleted skill-position options.
+      if ((pos === 'K' || pos === 'DEF') && (t <= 0 || have >= t)){
+        c.w = 0; c.ds = -1; return;
+      }
+      // Shared roster economics run before personality. This is the common
+      // baseline used by human recommendations and prevents CPU strategy/noise
+      // from rescuing a structurally bad QB3/TE3 or an immediate backup pick.
+      if (pv != null && window.DraftBoardCore){
+        var _role = DraftBoardCore.candidateRosterRole
+          ? DraftBoardCore.candidateRosterRole(pos, ppgNormOf(p) || 0, cpuCtx.rosterQualities, _rs, !!state.sf)
+          : DraftBoardCore.rosterRole(pos, counts, _rs, !!state.sf);
+        _econOpts.role = _role;
+        var _util = DraftBoardCore.rosterSlotUtility(pos, counts, _rs, _econOpts);
+        var _bench = _role === 'bench1' || _role === 'bench2';
+        var _recent = 0;
+        if (_bench && (pos === 'QB' || pos === 'TE') && cpuCtx.lastPickByPos[pos]){
+          var _since = (pn - cpuCtx.lastPickByPos[pos]) / Math.max(1, state.teams || 12);
+          _recent = Math.max(0, 10 * (1 - _since / 6));
+        }
+        var _exceptional = a < 9000 ? clamp01((pn - a) / Math.max(12, a * 0.65)) : 0;
+        var _waitLoss = Math.max(0, pv - (_nextShelf[pos] || 0));
+        // Visible needy teams between turns make a real shelf loss more urgent;
+        // cap it so scarcity does not double-count VOR/tier effects excessively.
+        _waitLoss *= 1 + Math.min(0.35, (_demand[pos] || 0) / Math.max(1, state.teams) * 0.7);
+        c.ds = DraftBoardCore.decisionScore({ base: pv, utility: _util,
+          bench: _bench, deepBench: _role === 'bench2', quality: ppgNormOf(p) || 0,
+          required: cpuCtx.obligations.required, freePicks: cpuCtx.obligations.freePicks,
+          recentPenalty: _recent, exceptional: _exceptional, waitLoss: _waitLoss });
+        // Decision quality gates the ADP likelihood but does not replace it. A
+        // persona may choose among close values; it cannot turn poor roster fit
+        // into a favorite merely by stacking several heuristic multipliers.
+        w *= Math.pow(Math.max(0.12, c.ds / 100), 2.2);
+      } else c.ds = pv || 0;
       var need = t ? Math.max(0, t - have) / t : 0;
       // A QB beyond the starting slots (2nd in 1QB, 3rd in SF) carries no need
       // pull until enough rounds after the QB room was completed (_backupQBWanted).
@@ -1584,8 +1766,18 @@
     }
     // Restrict to the realistic field, then sample proportionally to weight so
     // the favorite usually wins but upsets happen at the documented rate.
+    cands = cands.filter(function(c){ return c.w > 0; });
+    if (!cands.length) return null;
     cands.sort(function(x, y){ return y.w - x.w; });
-    var top = cands.slice(0, Math.min(cands.length, 8));
+    // Human-like randomness only among defensible alternatives. Early picks use
+    // a narrow decision band; later rounds and adventurous personas widen it.
+    if (window.DraftBoardCore && DraftBoardCore.selectDecisionCandidate){
+      var selected = DraftBoardCore.selectDecisionCandidate(
+        cands.map(function(c){ return { ref:c, ds:c.ds, weight:c.w }; }), _curRound, persona, Math.random);
+      return selected && selected.ref ? selected.ref.p : cands[0].p;
+    }
+    var eligible = cands;
+    var top = eligible.slice(0, Math.min(eligible.length, 8));
     var sum = 0; top.forEach(function(c){ sum += c.w; });
     if (sum <= 0) return top[0].p;
     var roll = Math.random() * sum;
@@ -1603,6 +1795,10 @@
     // grab the best available one first so the slot doesn't go empty.
     var _kd = _autoKDefNeed(pool);
     if (_kd) return _kd;
+    // Use the exact live recommendation baseline before applying the user's
+    // chosen plan. This keeps auto-draft aligned with the sidebar on roster
+    // utility, waiting value, recent investment and remaining obligations.
+    refreshPsPool();
     // User-chosen auto-draft plan: apply the same strategy/age-lean shaping the
     // CPU teams use, at full intensity with no window jitter (you picked the
     // plan deliberately, so it executes straight).
@@ -1618,7 +1814,7 @@
     var prm = { intensity: 1, shift: 0 };
     var qbStarters = state.sf ? 2 : 1;
     var scored = pool.map(function(p){
-      var s = pickScoreFor(p) || 0;
+      var s = (p._ds != null ? p._ds : pickScoreFor(p)) || 0;
       var pos = (p.position || '').toUpperCase();
       var have = counts[pos] || 0;
       if (strat || lean){
@@ -1934,30 +2130,30 @@
   }
   function posTargets(){
     var rs = (state && state.roster) || defaultRoster();
+    if (window.DraftBoardCore) return DraftBoardCore.posTargets(rs, scoringCfg().tep);
     var flex = rs.FLEX||0, sf = rs.SF||0, bn = rs.BN||0;
     // Targets are depth SUGGESTIONS, not hard needs. A deep startup bench (drafts
     // run 20+ rounds) shouldn't imply you "need" 8 RBs or 10 WRs, so the bench
     // contribution is capped and each position is held to a realistic ceiling.
-    var benchEff = Math.min(bn, 7);
+    var benchEff = Math.min(bn, 8);
     var tep = scoringCfg().tep;
     var t = {
-      QB: (rs.QB||0) + sf        + Math.round(benchEff * 0.10),
-      RB: (rs.RB||0) + flex      + Math.round(benchEff * 0.35),
-      WR: (rs.WR||0)             + Math.round(benchEff * 0.40),
+      QB: (rs.QB||0) + sf        + (sf && benchEff >= 5 ? 1 : 0),
+      RB: (rs.RB||0) + flex      + Math.ceil(benchEff * 0.45),
+      WR: (rs.WR||0)             + Math.floor(benchEff * 0.45),
       // Single-start TE with no TE-premium: target just the starter, so a second
       // TE reads as low-priority depth and the redundancy penalty suppresses it
       // until the very late rounds (where a backup TE is normal). Padding the TE
       // target with a bench share made it 2, which kept "TE need" alive after the
       // starter was filled and let a 2nd TE grade as a top pick. TE Premium
       // restores backup-TE depth via the bench share plus the +1 below.
-      TE: (rs.TE||0)             + (tep > 0 ? Math.round(benchEff * 0.15) : 0)
+      TE: (rs.TE||0)             + (tep > 0 && benchEff >= 5 ? 1 : 0)
     };
-    // TE Premium scoring nudges the build toward a second startable TE.
-    if (tep > 0) t.TE += 1;
     // Sane ceilings so the assistant never frames an absurd amount of depth as a need.
     // (1QB backup-QB timing is handled per-team in the sim, relative to when each
     // team drafted its starter - see simPick - not by a blanket round cap here.)
-    var cap = { QB: sf ? 3 : 2, RB: 6, WR: 6, TE: tep > 0 ? 3 : 2 };
+    var cap = { QB: sf ? 4 : Math.max(1, rs.QB||0), RB: 7, WR: 7,
+                TE: tep > 0 ? Math.max(3, rs.TE||0) : Math.max(1, rs.TE||0) };
     Object.keys(cap).forEach(function(k){ if (t[k] > cap[k]) t[k] = cap[k]; });
     if (rs.K)   t.K   = rs.K;
     if (rs.DEF) t.DEF = rs.DEF;
@@ -2016,7 +2212,12 @@
     return m;
   }
   var _ptc = {};   // refreshed each render
-  function isTierCliff(p){
+  function isTierCliff(p, pickNo){
+    // A naturally small elite tier is not a "cliff" before the room has made a
+    // full pass. At 1.01 (and throughout Round 1) every position is still at its
+    // baseline, so scarcity copy such as "only 2 left" is noise, not urgency.
+    var pn = pickNo != null ? +pickNo : ((state && state.current) || 1);
+    if (pn <= ((state && state.teams) || 12)) return false;
     var t = tierOf(p); if (t == null) return false;
     var k = (p.position || '').toUpperCase() + '|' + t;
     return (_ptc[k] || 0) <= 2;     // tier is drying up
@@ -2141,10 +2342,21 @@
       p._ps = s;
       if (s != null && s > mx) mx = s;
     });
+    prepareNextPickValues(pool);
+    pool.forEach(function(p){ p._ds = liveDecisionScore(p, counts); });
     _psPoolMax = mx;
     return mx;
   }
-  // Map a raw pick score onto the pool-relative display scale (best available -> ~97).
+  // Canonical all-position Recommendation order. Position/search filters are
+  // views into this list, not new rankings; RB #7 remains REC #7 when the user
+  // switches from All to RB instead of being relabeled REC #1.
+  function rankedRecommendationPool(){
+    return availablePool().filter(function(p){ return p._ds != null; })
+      .sort(function(a,b){ return b._ds - a._ds || (b._ps || 0) - (a._ps || 0); });
+  }
+  // Map a raw pick score onto the pool-relative display scale for historical
+  // comparisons/report cards. Live recommendation rows display the absolute
+  // score directly and carry Decision rank separately (see playerRowHtml).
   function psDisplay(ps){
     if (ps == null) return null;
     if (!_psPoolMax || _psPoolMax <= 0) return ps;
@@ -2225,14 +2437,29 @@
   function psCtx(){
     if (_psCtxCache) return _psCtxCache;
     var targets = posTargets();
-    var qualByPos = {};
+    var qualByPos = {}, lastPickByPos = {}, rosterQualities = [];
     myPicksList().forEach(function(mp){
       var pos = (mp.position || '').toUpperCase();
       var full = playersById[String(mp.id)];
       var v = full ? vorOf(full) : null;
       if (v == null || v > 0) qualByPos[pos] = (qualByPos[pos] || 0) + 1;
+      var q = full ? ppgNormOf(full) : null;
+      rosterQualities.push({ pos: pos, quality: q != null ? q : 0.35 });
     });
-    _psCtxCache = { targets: targets, qualByPos: qualByPos };
+    Object.keys(state.picks || {}).forEach(function(k){
+      var pn = parseInt(k, 10), mp = state.picks[k];
+      if (!mp || !isMyPick(pn)) return;
+      var pos = (mp.position || '').toUpperCase();
+      if (!lastPickByPos[pos] || pn > lastPickByPos[pos]) lastPickByPos[pos] = pn;
+    });
+    var rs = (state && state.roster) || defaultRoster();
+    var remaining = hasOwned() ? upcomingOwnedPicks().length : 0;
+    var obligations = window.DraftBoardCore
+      ? DraftBoardCore.remainingObligations(myPosCounts(), rs, remaining, !!state.sf)
+      : { missing: {}, required: 0, remaining: remaining, freePicks: remaining };
+    _psCtxCache = { targets: targets, qualByPos: qualByPos, rosterQualities: rosterQualities,
+                    lastPickByPos: lastPickByPos, roster: rs,
+                    remaining: remaining, obligations: obligations, nextByPos: {} };
     return _psCtxCache;
   }
 
@@ -2314,10 +2541,13 @@
         sigma = sigma * (1 - conf) + obs * conf;        // blend toward observed unpredictability
       }
     }
-    var z = (pn - center) / sigma;
-    var prob = 1 - _normCdf(z);
     // A position going on a run is less likely to make it back to you.
     var runPen = m.run[(p.position || '').toUpperCase()] || 0;
+    if (window.DraftBoardCore && DraftBoardCore.availabilityProbability){
+      return DraftBoardCore.availabilityProbability({ center:center, pick:pn, sigma:sigma, runPenalty:runPen,
+        draftType:state.type, sf:!!state.sf });
+    }
+    var prob = 1 - _normCdf((pn - center) / sigma);
     if (runPen > 0) prob *= (1 - runPen);
     return Math.round(prob * 100);
   }
@@ -2571,9 +2801,91 @@
       draftType: state.type, isSf: state.sf, needRaw: needRaw,
       qbCount: counts['QB'] || 0, totalPicks: (state.teams || 12) * (state.rounds || 16),
       numTeams: state.teams || 12, ppgNorm: ppgN,
-      ppr: _sc.ppr, tep: _sc.tep, passTd: _sc.passTd, isTierCliff: isTierCliff(p),
+      ppr: _sc.ppr, tep: _sc.tep, passTd: _sc.passTd, isTierCliff: isTierCliff(p, _pn),
       survivalAdj: survivalAdj, handcuff: handcuff,
     });
+  }
+
+  // Live recommendations answer a different question from the historical Pick
+  // Score: how much does this player help THIS roster before the next owned pick?
+  // Keep these tunings together and outside the shared grade kernel so completed
+  // draft grades remain stable and JS/Python parity is untouched.
+  function rosterRoleFor(p, counts){
+    var pos = String(p && p.position || p || '').toUpperCase();
+    var c = psCtx(), opts = { sf: !!state.sf, tep: scoringCfg().tep, draftType: state.type };
+    if (!window.DraftBoardCore) return 'bench1';
+    if (p && p.position && DraftBoardCore.candidateRosterRole){
+      return DraftBoardCore.candidateRosterRole(pos, ppgNormOf(p) || 0, c.rosterQualities, c.roster, opts.sf);
+    }
+    return DraftBoardCore.rosterRole(pos, counts, c.roster, opts.sf);
+  }
+  function rosterUtilityFor(p, counts, role){
+    var pos = String(p && p.position || p || '').toUpperCase();
+    var c = psCtx(), opts = { sf: !!state.sf, tep: scoringCfg().tep, draftType: state.type };
+    if (!window.DraftBoardCore) return 1;
+    opts.role = role;
+    return DraftBoardCore.rosterSlotUtility(pos, counts, c.roster, opts);
+  }
+
+  // One bounded pass per render finds the best plausible same-position option at
+  // our next pick. This captures the cost of waiting without a simulation or an
+  // O(players²) rescore: deep QB shelves produce a small urgency signal while a
+  // thinning WR/RB shelf produces a larger one.
+  function prepareNextPickValues(pool){
+    var c = psCtx(), next = nextOwnedAfterCurrent(); c.nextByPos = {}; c.demandByPos = {};
+    if (!next) return;
+    c.demandByPos = _demandBeforeNext(next);
+    ['QB','RB','WR','TE'].forEach(function(pos){
+      var rows = pool.filter(function(p){ return String(p.position || '').toUpperCase() === pos && p._ps != null; })
+        .sort(function(a, b){ return b._ps - a._ps; }).slice(0, 16);
+      var bestExpected = 0;
+      rows.forEach(function(p){
+        var prob = availProb(p, next); if (prob == null) prob = 50;
+        // A likely survivor contributes nearly all its quality; a long shot is
+        // discounted. The best expected survivor is our inexpensive next-pick proxy.
+        bestExpected = Math.max(bestExpected, p._ps * (0.35 + 0.65 * prob / 100));
+      });
+      c.nextByPos[pos] = bestExpected;
+    });
+  }
+
+  var LIVE_WAIT_TUNING = { threshold: 50, maxPenalty: 10 };
+  function liveDecisionScore(p, counts){
+    var base = p._ps != null ? p._ps : 0;
+    if (base == null) return null;
+    var pos = String(p.position || '').toUpperCase();
+    if (pos === 'K' || pos === 'DEF') return null;
+    var c = psCtx(), role = rosterRoleFor(p, counts), util = rosterUtilityFor(p, counts, role);
+    var expected = c.nextByPos[pos] || 0;
+    if (!window.DraftBoardCore || !DraftBoardCore.decisionScore) return base;
+    var bench = role === 'bench1' || role === 'bench2';
+    var recentPenalty = 0;
+    if (bench && (pos === 'QB' || pos === 'TE') && c.lastPickByPos[pos]){
+      var roundsSince = (state.current - c.lastPickByPos[pos]) / Math.max(1, state.teams || 12);
+      recentPenalty = Math.max(0, 10 * (1 - roundsSince / 6));
+    }
+    var adp = adpOf(p), exceptional = 0;
+    if (adp != null) exceptional = clamp01(((state.current || 1) - adp) / Math.max(12, adp * 0.65));
+    var nextPick = nextOwnedAfterCurrent();
+    var returnProb = nextPick ? availProb(p, nextPick) : null;
+    // Do not spend this pick on a player who is likely to return unless his
+    // quality/fit advantage is large enough to overcome a bounded opportunity
+    // cost. A true positional cliff still earns waitLoss above, and an extreme
+    // ADP fall keeps half of this discount from becoming a disguised hard ban.
+    // Visible position-needy opponents before our next turn reduce the nominal
+    // ADP survival probability. This uses only public roster state—no knowledge
+    // of future random CPU selections.
+    var demand = (c.demandByPos && c.demandByPos[pos]) || 0;
+    var demandRisk = Math.min(0.35, demand / Math.max(1, state.teams || 12) * 0.7);
+    var effectiveReturnProb = returnProb == null ? null : returnProb * (1 - demandRisk);
+    var waitPenalty = effectiveReturnProb == null ? 0
+      : clamp01((effectiveReturnProb - LIVE_WAIT_TUNING.threshold) / (100 - LIVE_WAIT_TUNING.threshold))
+        * LIVE_WAIT_TUNING.maxPenalty * (1 - exceptional * 0.5);
+    return DraftBoardCore.decisionScore({ base: base, utility: util,
+      bench: bench, deepBench: role === 'bench2', recentPenalty: recentPenalty, exceptional: exceptional,
+      quality: ppgNormOf(p) || 0, required: c.obligations.required,
+      freePicks: c.obligations.freePicks,
+      waitLoss: Math.max(0, base - expected) * (1 + demandRisk), waitPenalty: waitPenalty });
   }
   // How many players remain in this player's (position|tier) bucket.
   function tierRemaining(p){
@@ -2582,19 +2894,22 @@
   }
   function pickReason(p, counts){
     var pos = (p.position || '').toUpperCase();
+    var pickNo = (state && state.current) || 1;
     var t = psCtx().targets[pos];
     var need = t ? Math.max(0, t - (counts[pos] || 0)) : 0;
     var adp = adpOf(p);
-    var fell = (adp != null) ? Math.round(_pn - adp) : null;
-    var relGap = (adp != null) ? ((_pn - adp) / Math.max(adp, 1.5)) : null;
+    var fell = (adp != null) ? Math.round(pickNo - adp) : null;
+    var relGap = (adp != null) ? ((pickNo - adp) / Math.max(adp, 1.5)) : null;
     var tier = tierOf(p);
     var left = tierRemaining(p);
-    // QB overfill: only a warning early, when a skill player is the better use of
-    // the pick. Late rounds: a backup QB is fine, so fall through to a normal reason.
-    if (!state.sf && pos === 'QB' && (counts['QB'] || 0) >= 1
-        && Math.ceil(state.current / (state.teams || 12)) <= 6){
-      return 'Starting QB already filled, this pick could be a skill player';
-    }
+    var role = rosterRoleFor(p, counts), _pc = psCtx();
+    if ((role === 'bench1' || role === 'bench2') && _pc.obligations.required > 0 && _pc.obligations.freePicks <= 2)
+      return 'Backup-only · only ' + _pc.obligations.freePicks + ' discretionary picks';
+    if (!state.sf && pos === 'QB' && (counts['QB'] || 0) >= 1)
+      return 'QB filled · backup-only value';
+    if (pos === 'TE' && role.indexOf('bench') === 0 && scoringCfg().tep <= 0)
+      return 'TE filled · backup-only value';
+    if (role === 'flex') return 'Fills FLEX · weekly lineup value';
     // Tier cliff: urgent positional scarcity.
     if (isTierCliff(p) && tier != null){
       if (left <= 1) return 'Last ' + pos + ' in Tier ' + tier + '. Grab now';
@@ -2633,17 +2948,28 @@
   function playerRowHtml(p, opts){
     opts = opts || {};
     var adp = adpOf(p);
-    // Pool-relative display score (best available -> ~97). Uses the shared per-
-    // render p._ps when present (refreshPsPool), else computes on the fly.
-    var ps = psDisplay(p._ps != null ? p._ps : pickScoreFor(p));
-    var sub = adp != null ? 'ADP ' + Number(adp).toFixed(1) : '';
-    var reasonLine = opts.reason ? '<div class="dr-ba-reason">' + esc(opts.reason) + '</div>' : '';
+    // Recommendation rows show absolute Pick Score. Ranking is owned by the live
+    // Decision Score so the best player on a depleted board is not relabeled 97.
+    var _rawPs = p._ps != null ? p._ps : pickScoreFor(p);
+    var ps = _rawPs == null ? null : Math.max(1, Math.min(99, Math.round(_rawPs)));
+    var sub = (adp != null ? 'ADP ' + Number(adp).toFixed(1) : '')
+      + (!opts.showPickScore && p._ds != null && ps != null ? ' · PS ' + ps : '');
+    var reasonLine = '';
+    if (opts.reason || (opts.rank && p._ds != null)) {
+      reasonLine = '<div class="dr-ba-reason">'
+        + (opts.reason ? '<span>' + esc(opts.reason) + '</span>' : '') + '</div>';
+    }
     var waitLine = opts.wait
       ? '<div class="dr-ba-wait">Can wait: ' + opts.wait.prob + '% there at #' + opts.wait.pn + '</div>'
       : '';
-    var psChip = (ps != null)
-      ? '<div class="dr-ba-pschip" style="color:' + psColor(ps) + ';background:' + psColor(ps) + '1a;">' + ps + '<small>PS</small></div>'
-      : '';
+    // Recommendation is an ordering, not a historical grade. Showing its raw
+    // internal utility as 99 early and 18 late made the same sound decision look
+    // wildly inconsistent. Surface the rank for Recommendation and reserve the
+    // numeric 0-100 chip for the actual Pick Score.
+    var _isRec = opts.rank && p._ds != null;
+    var psChip = _isRec
+      ? '<div class="dr-ba-pschip dr-ba-recchip">#' + opts.rank + '<small>REC</small></div>'
+      : (ps != null ? '<div class="dr-ba-pschip" style="color:' + psColor(ps) + ';background:' + psColor(ps) + '1a;">' + ps + '<small>PS</small></div>' : '');
     var availClass = '';
     var availLine = '';
     if (opts.availAt){
@@ -2659,7 +2985,7 @@
     if (bc >= 2) byeFlag = '<span class="dr-bye-flag">Bye ' + p.bye_week + ' clash</span>';
     // Projected PPG for meta line (proj_ppg = upcoming season, ppg = last season fallback)
     var ppgNum = p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null);
-    var ppgPart = ppgNum != null ? ' · ' + ppgNum.toFixed(1) + ' Proj PPG' : '';
+    var ppgPart = ppgNum != null ? ' · ' + ppgNum.toFixed(1) + ' proj' : '';
     // Compare button state
     var onCmp = compareIds.indexOf(String(p.id)) >= 0;
     var _isDef = String(p.position || '').toUpperCase() === 'DEF';
@@ -2802,14 +3128,16 @@
     if (!pool.length){ listInto('<div class="dr-empty-note">No players available.</div>'); return; }
     var maxVal = 0; pool.forEach(function(p){ var v = valOf(p); if (v > maxVal) maxVal = v; });
     pool.forEach(function(p){ p._ps = pickScore(p, maxVal, counts); });
-    pool.sort(function(a, b){ return b._ps - a._ps; });
+    prepareNextPickValues(pool);
+    pool.forEach(function(p){ p._ds = liveDecisionScore(p, counts); });
+    pool.sort(function(a, b){ return (b._ds || 0) - (a._ds || 0) || (b._ps || 0) - (a._ps || 0); });
     var html = balanceAlert() + alertBanners();
     // Assistant looks across your whole draft capital: a player you can likely
     // get at a later owned pick is flagged so you can spend this pick elsewhere.
     var nextPick = nextOwnedAfterCurrent();
     for (var i = 0; i < Math.min(pool.length, 50); i++){
       var p = pool[i];
-      var opts = { reason: pickReason(p, counts) };
+      var opts = { reason: pickReason(p, counts), rank: i + 1 };
       if (nextPick){
         var wp = availProb(p, nextPick);
         if (wp != null){
@@ -4398,10 +4726,13 @@
       if (q && String(p.name||'').toLowerCase().indexOf(q) < 0) return false;
       return true;
     });
-    function steal(p){ var a = adpOf(p); return (a != null) ? (state.current - a) : -99999; }
     // p._ps + the pool-relative scale are refreshed in renderSide; ensure they
     // exist for any path that reaches renderBA directly (search/sort handlers).
     if (_psPoolMax <= 0) refreshPsPool();
+    var recommendationRanks = {};
+    if (sortBy === 'ps') rankedRecommendationPool().forEach(function(p, i){
+      recommendationRanks[String(p.id)] = i + 1;
+    });
     pool.sort(function(a, b){
       // K/DEF have no value/ADP/PS - order them among themselves by projected PPG
       // so the best kicker/defense still surfaces first regardless of sort mode.
@@ -4412,8 +4743,8 @@
         var aa = adpOf(a), ba = adpOf(b);
         return (aa != null ? aa : 99999) - (ba != null ? ba : 99999);
       }
-      if (sortBy === 'steals'){ return steal(b) - steal(a); }
-      if (sortBy === 'ps'){ return (b._ps || 0) - (a._ps || 0); }
+      if (sortBy === 'pickscore'){ return (b._ps || 0) - (a._ps || 0); }
+      if (sortBy === 'ps'){ return (b._ds || 0) - (a._ds || 0) || (b._ps || 0) - (a._ps || 0); }
       if (sortBy === 'ppg'){ return (ppgOf(b) || 0) - (ppgOf(a) || 0); }
       return valOf(b) - valOf(a);
     });
@@ -4447,9 +4778,11 @@
     _promoted.forEach(function(p){
       html += playerRowHtml(p, { reason: 'Fill your ' + String(p.position || '').toUpperCase() + ' slot before the draft ends' });
     });
+    var _reasonCounts = sortBy === 'ps' ? myPosCounts() : null;
     for (var i = 0; i < Math.min(mainPool.length, 200); i++){
       var p = mainPool[i];
-      var opts = {};
+      var opts = sortBy === 'ps' ? { reason: pickReason(p, _reasonCounts), rank: recommendationRanks[String(p.id)] }
+        : { showPickScore: sortBy === 'pickscore' };
       if (nextPick){
         var prob = availProb(p, nextPick);
         // Show the survival % for every player so elite names that likely go
@@ -4475,12 +4808,12 @@
   // ── Glossary / inline term explainers ───────────────────────────────────────
   // Single source of truth so the inline ⓘ tooltips and the help popover agree.
   var _GLOSSARY = [
+    { term: 'Recommendation', def: 'The live, roster-aware order for this pick. It starts with Pick Score, then accounts for whether the player fills a starter or FLEX spot, backup and overfill cost, required slots and picks remaining, positional depth, expected availability at your next pick, and recent investment at QB or TE. A major value fall can still overcome imperfect roster fit. Recommendation is shown as a rank rather than a grade because its internal utility naturally changes as the board is depleted.' },
     { term: 'Pick Score (PS)', def: 'A 0-100 grade of how good this pick is relative to what’s still available right now — the best remaining option anchors near the top, so a strong pick reads well even late in the draft. Blends the player’s value, how far they fell vs ADP, positional tier, your roster needs, age, and projected points. Your report-card grade uses the absolute, round-weighted version, so it can differ from the board number. Kickers and defenses aren’t scored.' },
     { term: 'Value', def: 'The player’s trade value as an asset on a 0-999 scale - dynasty value for startup/rookie drafts, redraft value for redraft.' },
     { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a replacement-level starter at their position (a fixed, preseason-style baseline). VORP uses real fantasy points; VOR uses dynasty value.' },
     { term: 'ADP', def: 'Average Draft Position - the typical overall pick a player goes at in real drafts. If it’s below your current pick, they’ve fallen and may be a value.' },
     { term: 'Tier', def: 'Players grouped by talent gaps (Tier 1 = elite). A tier “cliff” means only a couple of players remain before a real drop-off at that position.' },
-    { term: 'Steals (sort)', def: 'Orders the board by who has fallen the furthest past their ADP - the biggest available bargains.' },
     { term: 'PPG', def: 'Points per game - projected for the upcoming season, or last season’s actual when that’s shown.' },
     { term: 'Survival %', def: 'The chance a player is still on the board at your next pick. Starts from consensus ADP, then adapts to how your draft is actually going - if the room is reaching, letting players slide, drafting unpredictably, or running on a position, the odds shift to match (kicks in after the first several picks).' },
     { term: 'Grade · Value', def: 'How strong your picks are by pick score, weighted toward the earlier rounds where it matters most.' },
@@ -5312,7 +5645,7 @@
     var menu = document.getElementById('drBaSortMenu');
     var lbl = document.getElementById('drBaSortLbl');
     if (!ui || !btn || !menu || !lbl) return;
-    var LABELS = { value: 'Value', adp: 'ADP', steals: 'Steals', ps: 'Pick Score', ppg: 'Proj PPG' };
+    var LABELS = { value: 'Value', adp: 'ADP', pickscore: 'Pick Score', ps: 'Recommendation', ppg: 'Proj PPG' };
     var opts = menu.querySelectorAll('.dr-sortsel-opt');
     var cur = btn.getAttribute('data-val') || 'ps';
     function apply(v){
@@ -5425,10 +5758,10 @@
   }
   renderSetupRoster();
   renderSetupCapital();
-  document.getElementById('drSf').addEventListener('change', function(){ _rosterMode = 'auto'; _setupRoster = null; renderSetupRoster(); });
+  document.getElementById('drSf').addEventListener('change', function(){ _rosterMode = 'auto'; _rosterPreset = null; _setupRoster = null; renderSetupRoster(); });
   document.getElementById('drType').addEventListener('change', function(){
     // Reset roster to defaults for the new type, then re-render.
-    _rosterMode = 'auto'; _setupRoster = null; renderSetupRoster();
+    _rosterMode = 'auto'; _rosterPreset = null; _setupRoster = null; renderSetupRoster();
     // Show/hide rookie rounds field; for non-rookie, rounds auto-sync from roster.
     var isRookie = this.value === 'rookie';
     var rf = document.getElementById('drRoundsField');
@@ -5469,7 +5802,7 @@
     var rounds = Math.max(1, Math.min(40, parseInt(this.value, 10) || 15));
     this.value = rounds;
     if (!_setupRoster) _setupRoster = defaultRoster();
-    _rosterMode = 'custom';
+    _rosterMode = 'custom'; _rosterPreset = null;
     _setupRoster.BN = Math.max(0, rounds - _totalStarterSlots(_setupRoster));
     renderSetupRoster();
   });
@@ -5481,7 +5814,7 @@
     var d = parseInt(step.getAttribute('data-d'), 10);
     if (!_setupRoster) _setupRoster = defaultRoster();
     _setupRoster[key] = Math.max(0, (_setupRoster[key] || 0) + d);
-    _rosterMode = 'custom';
+    _rosterMode = 'custom'; _rosterPreset = null;
     // Keep rounds = starters + bench in sync for every slot change.
     // Bench change -> update rounds. Starter change -> update rounds (bench stays).
     var _newRounds = Math.max(1, Math.min(40, _totalStarterSlots(_setupRoster) + (_setupRoster.BN || 0)));
