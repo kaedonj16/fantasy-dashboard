@@ -312,7 +312,10 @@
   }
 
   function compute() {
-    ensureOverrides();
+    // A sheet opened from the Draft Room must mirror that room exactly. Custom
+    // pre-draft overrides still apply to the standalone value board, but not on
+    // top of a live Recommendation snapshot.
+    if (!recommendationOrder) ensureOverrides();
     var mode = state.mode, sf = state.sf;
     // Value-derived redraft ADP fallback (mirrors the draft room).
     allPlayers.slice().sort(function (a, b) { return C.redraftVal(b, sf) - C.redraftVal(a, sf); })
@@ -356,6 +359,7 @@
 
     maxVor = players.length ? Math.max.apply(null, players.map(function (x) { return Math.max(1, x.vor); })) : 1;
     var pc = {};
+    var availableRank = 0;
     players.forEach(function (x, i) {
       x.drafted = draftedIds ? draftedIds.has(x.id) : false;
       x.rk = i + 1;
@@ -502,7 +506,7 @@
     }
     // Custom board (pro): edit toggle always available; reset only with overrides.
     var eb = $('csEditBtn');
-    if (eb) { eb.style.display = cfg.hasPremium ? '' : 'none'; eb.setAttribute('aria-pressed', String(editBoard)); eb.textContent = editBoard ? 'Done editing' : 'Edit board'; }
+    if (eb) { eb.style.display = (cfg.hasPremium && !recommendationOrder) ? '' : 'none'; eb.setAttribute('aria-pressed', String(editBoard)); eb.textContent = editBoard ? 'Done editing' : 'Edit board'; }
     var rb = $('csResetBoardBtn');
     if (rb) rb.style.display = (hasOverrides() || state.done.size || draftedIds) ? '' : 'none';
     var bp = $('cs-panel-board'); if (bp) bp.classList.toggle('editing', editBoard && cfg.hasPremium);
@@ -556,7 +560,7 @@
   // never also toggles the row's crossed-off state; the drag handle is driven by
   // pointer events instead.
   function ovControls(x) {
-    if (!cfg.hasPremium) return '';
+    if (!cfg.hasPremium || recommendationOrder) return '';
     function b(act, glyph, on, title, extra) {
       return '<button type="button" class="cs-ovbtn' + (on ? ' on' : '') + (extra || '') + '" data-act="' + act + '" data-id="' + esc(x.id) + '" title="' + title + '" aria-label="' + title + '">' + glyph + '</button>';
     }
@@ -594,7 +598,7 @@
     var lastT = null, html = '', shown = 0;
     players.forEach(function (x) {
       if (!visiblePlayer(x)) return;
-      if (x.grp !== lastT) { lastT = x.grp; html += '<tr class="cs-cliff"><td colspan="' + span + '"><div class="cs-cliffline">' + x.grpLabel + '</div></td></tr>'; }
+      if (!recommendationOrder && x.grp !== lastT) { lastT = x.grp; html += '<tr class="cs-cliff"><td colspan="' + span + '"><div class="cs-cliffline">' + x.grpLabel + '</div></td></tr>'; }
       shown++;
       var cls = 'cs-p' + (state.done.has(x.id) ? ' done' : '') + (x.drafted ? ' drafted' : '') + (x.ov === 'mute' ? ' cs-muted' : '') + (x.ov ? ' cs-ov' : '') + (x.id === _flashId ? ' cs-flash' : '');
       var c5 = dyn ? '<td class="cs-num">' + (x.age != null ? x.age : '') + '</td>' : '<td class="cs-num">' + (x.adp != null ? Math.round(x.adp) : '') + '</td>';
