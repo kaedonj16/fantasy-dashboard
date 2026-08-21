@@ -131,6 +131,15 @@ def test_cpu_respects_format_aware_tight_end_roster_limit():
     assert "if (have >= rosterLimit){ c.w = 0; c.ds = -1; return; }" in source
 
 
+def test_mock_draft_uses_legal_fallback_instead_of_silently_stopping():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert "function _fallbackLegalPick(pool, counts)" in source
+    assert "if (!ap) ap = _fallbackLegalPick(availablePool(), myPosCounts());" in source
+    assert "if (!p) p = _fallbackLegalPick(availablePool(), teamCounts(" in source
+    assert "No legal players remain before the draft is complete" in source
+
+
 def test_likely_next_pick_survivors_pay_current_pick_opportunity_cost():
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 

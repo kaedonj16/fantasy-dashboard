@@ -1901,10 +1901,33 @@
     var x = box.querySelector('.dr-sim-error-x');
     if (x) x.addEventListener('click', function(){ box.style.display = 'none'; });
   }
+  // Last-resort progress guard for a depleted late board. Normal CPU/auto-draft
+  // scoring may legitimately produce no weighted candidate after roster caps,
+  // ADP reach guards and strategy filters interact. Choose the best remaining
+  // legal player instead of silently stopping the timer with picks unfinished.
+  function _fallbackLegalPick(pool, counts){
+    var rs = (state && state.roster) || defaultRoster();
+    var legal = (pool || []).filter(function(p){
+      var pos = String(p.position || '').toUpperCase();
+      var limit = window.DraftBoardCore && DraftBoardCore.positionRosterLimit
+        ? DraftBoardCore.positionRosterLimit(pos, rs, { draftType:state.type, tep:scoringCfg().tep })
+        : Infinity;
+      return (counts[pos] || 0) < limit;
+    });
+    legal.sort(function(a,b){
+      var av = valOf(a), bv = valOf(b);
+      if (bv !== av) return bv - av;
+      var aa = adpOf(a), ba = adpOf(b);
+      return (aa == null ? 99999 : aa) - (ba == null ? 99999 : ba);
+    });
+    return legal[0] || null;
+  }
   function _doAutoPick(){
     try {
       var ap = autoPick();
-      if (ap){ commitPick(ap); render(); scheduleSim(); }
+      if (!ap) ap = _fallbackLegalPick(availablePool(), myPosCounts());
+      if (!ap){ _simError('auto pick', new Error('No legal players remain for the open roster spot')); endSim(); render(); return; }
+      commitPick(ap); render(); scheduleSim();
     } catch (e){ _simError('auto pick', e); endSim(); render(); }
   }
   function scheduleSim(){
@@ -1936,7 +1959,8 @@
       var _pool = availablePool();
       if (_pool.length){ _pool.sort(function(a, b){ return valOf(b) - valOf(a); }); p = _pool[0]; }
     }
-    if (!p){ endSim(); render(); return; } // pool exhausted - stop, don't spin forever
+    if (!p) p = _fallbackLegalPick(availablePool(), teamCounts(slotOnClock(state.current, state.teams, state.order)));
+    if (!p){ _simError('CPU pick', new Error('No legal players remain before the draft is complete')); endSim(); render(); return; }
     try {
       commitPick(p); render();
     } catch (e){ _simError('commit pick', e); endSim(); render(); return; }
