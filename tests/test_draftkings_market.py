@@ -23,6 +23,10 @@ class _FakeResp:
         return self._data
 
 
+class _DeniedResp(_FakeResp):
+    status_code = 403
+
+
 class _FakeSession:
     def __init__(self, data):
         self._data = data
@@ -87,12 +91,14 @@ def test_season_records_skips_market_without_over():
     assert season_records_from_payload(payload, "receiving_touchdowns") == []
 
 
-def test_client_on_by_default_with_baked_in_ids(monkeypatch):
+def test_client_disabled_by_default_with_baked_in_ids(monkeypatch):
     for key in ("DRAFTKINGS_NFL_LEAGUE_ID", "DRAFTKINGS_NFL_SEASON_MARKETS",
                 "DRAFTKINGS_SEASON_ENABLED"):
         monkeypatch.delenv(key, raising=False)
     client = DraftKingsClient(session=_FakeSession({}))
-    assert client.configured is True               # works with zero config
+    assert client.configured is False
+    assert list(client.iter_season_markets()) == []
+    assert client.session.calls == []              # absent flag means no request
     assert client.league_id == "88808"
     # All seven Player Stats O/U tabs are baked in.
     assert client.market_map["receiving_touchdowns"] == "17315"
@@ -107,6 +113,7 @@ def test_enabled_flag_kills_the_source(monkeypatch):
 
 
 def test_env_map_overrides_baked_in_defaults(monkeypatch):
+    monkeypatch.setenv("DRAFTKINGS_SEASON_ENABLED", "1")
     monkeypatch.setenv("DRAFTKINGS_NFL_SEASON_MARKETS", "receiving_touchdowns=17315")
     client = DraftKingsClient(session=_FakeSession(_PAYLOAD))
     assert client.market_map == {"receiving_touchdowns": "17315"}
@@ -115,3 +122,32 @@ def test_env_map_overrides_baked_in_defaults(monkeypatch):
     params = client.session.calls[0]["params"]
     assert params["templateVars"] == "88808,17315"   # league + subcategory, comma-joined
     assert "17315" in params["marketsQuery"]
+
+
+def test_enabled_access_denial_is_sanitized_and_not_retried(monkeypatch):
+    monkeypatch.setenv("DRAFTKINGS_SEASON_ENABLED", "1")
+
+    class DeniedSession(_FakeSession):
+        def get(self, url, params=None, headers=None, timeout=None):
+            self.calls.append({"url": url, "params": params, "headers": headers})
+            return _DeniedResp({})
+
+    client = DraftKingsClient(session=DeniedSession({}))
+    assert list(client.iter_season_markets()) == []
+    assert len(client.session.calls) == 1
+    assert client.last_error == "HTTP 403"
+
+
+def test_malformed_numeric_player_name_is_rejected():
+    payload = {"events": [{"id": "e", "name": "NFL 2026/27 - 3549.5",
+                            "participants": [{"name": "3549.5"}]}],
+               "markets": [{"id": "m", "eventId": "e"}],
+               "selections": [{"marketId": "m", "outcomeType": "Over", "label": "Over 3549.5"}]}
+    assert season_records_from_payload(payload, "passing_yards") == []
+
+
+def test_null_line_is_rejected():
+    payload = {"events": [{"id": "e", "name": "NFL - Josh Allen"}],
+               "markets": [{"id": "m", "eventId": "e"}],
+               "selections": [{"marketId": "m", "outcomeType": "Over", "label": "Over"}]}
+    assert season_records_from_payload(payload, "passing_yards") == []

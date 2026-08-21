@@ -20738,6 +20738,7 @@ def api_market_intel_health():
         "season": _season,
         "database_url_set": bool(os.getenv("DATABASE_URL", "").strip()),
         "sportsgameodds_api_key_set": False,
+        "draftkings_season_enabled": False,
         "tables": {},
         "projection_cache": {},
         "diagnosis": "",
@@ -20748,6 +20749,11 @@ def api_market_intel_health():
         out["sportsgameodds_api_key_set"] = bool(SportsGameOddsClient().configured)
     except Exception:
         out["sportsgameodds_api_key_set"] = bool(os.getenv("SPORTSGAMEODDS_API_KEY", "").strip())
+    try:
+        from dashboard_services.market_intelligence.draftkings import DraftKingsClient
+        out["draftkings_season_enabled"] = bool(DraftKingsClient().configured)
+    except Exception:
+        out["draftkings_season_enabled"] = False
 
     # Per-stage counts + freshness, split by context. Each stage carries its own
     # timestamp column (snapshots log when observed; consensus/projections when
@@ -20803,22 +20809,24 @@ def api_market_intel_health():
 
     if not out["database_url_set"]:
         out["diagnosis"] = "DATABASE_URL is not set — market intelligence is fully disabled."
+    elif _season_proj > 0 and not _ppg_ok:
+        out["diagnosis"] = ("Season projections exist but the FantasyPros projection cache has no "
+                            "per-game PPG — expected_adp can't build its curve, so the column stays empty.")
+    elif _season_proj > 0:
+        out["diagnosis"] = ("Season fallback projections are present; Market vs ADP appears only for "
+                            "players whose independent market confidence clears the display threshold.")
     elif not out["sportsgameodds_api_key_set"]:
-        out["diagnosis"] = ("SPORTSGAMEODDS_API_KEY is not set — refresh_market_intelligence.py "
-                            "is a no-op, so no market data is ever ingested.")
+        out["diagnosis"] = ("SportsGameOdds is not configured; baseline season projections remain safe, "
+                            "but no independent weekly/team market context can be refreshed.")
     elif _season_snap == 0 and _weekly_any == 0:
         out["diagnosis"] = ("No market data at all for this season — the refresh cron likely "
                             "hasn't run. Run scripts/refresh_market_intelligence.py.")
     elif _season_snap == 0 and _weekly_any > 0:
-        out["diagnosis"] = ("Weekly market data exists but zero season-long snapshots — the feed "
-                            "isn't returning season futures, or normalize_event isn't classifying "
-                            "them as 'season' (see normalize.py context tokens).")
+        out["diagnosis"] = ("Weekly market data exists; run the current refresh to materialize "
+                            "team/rolling season fallback projections.")
     elif _season_proj == 0:
         out["diagnosis"] = ("Season snapshots exist but no season projections were built — check "
                             "build_season_market_projection (needs a FantasyPros season baseline).")
-    elif not _ppg_ok:
-        out["diagnosis"] = ("Season projections exist but the FantasyPros projection cache has no "
-                            "per-game PPG — expected_adp can't build its curve, so the column stays empty.")
     else:
         out["diagnosis"] = "Season market data and projections present — Market vs ADP should populate."
 

@@ -15,11 +15,9 @@
   var PS = window.BRPickScore;
   var LIMIT = 175;
 
-  // Market vs ADP needs a season-long player-props source that a datacenter can
-  // reach. DraftKings/FanDuel/BetMGM/Caesars all IP-block the Render server; the
-  // hunt for a reachable free source (Pinnacle) is unfinished, so the column is
-  // hidden for now. Flip this to true to re-enable once a source is wired.
-  var SHOW_MARKET_VS_ADP = false;
+  // The backend only emits this redraft signal when independent, confidence-
+  // weighted market evidence clears its threshold; baseline-only rows stay "—".
+  var SHOW_MARKET_VS_ADP = true;
   var showMarket = function (dyn) { return !dyn && SHOW_MARKET_VS_ADP; };
 
   var state = {
@@ -351,6 +349,8 @@
         marketVsAdp: mode === 'redraft' && p.market_vs_adp != null ? Number(p.market_vs_adp) : null,
         marketExpectedAdp: mode === 'redraft' && p.market_expected_adp != null ? Number(p.market_expected_adp) : null,
         marketConfidence: mode === 'redraft' && p.market_confidence != null ? Number(p.market_confidence) : null,
+        marketConfidenceLabel: mode === 'redraft' ? (p.market_confidence_label || null) : null,
+        marketBasis: mode === 'redraft' ? (p.market_basis || null) : null,
       };
     });
     scored.sort(function (a, b) { return b.vor - a.vor || ((a.adp || 9999) - (b.adp || 9999)); });
@@ -605,10 +605,13 @@
       var c6 = dyn ? '<td class="cs-value-col">' + winChip(x.age, x.pos) + '</td>' : '<td class="cs-value-col">' + valChip(x.value) + '</td>';
       var market = '';
       if (showMarket(dyn)) {
-        if (x.marketVsAdp == null) market = '<td class="cs-num cs-market-col">&ndash;</td>';
+        if (x.marketVsAdp == null) market = '<td class="cs-num cs-market-col" title="Not enough independent market data yet.">&ndash;</td>';
         else {
           var mcls = x.marketVsAdp > 0 ? 'g' : (x.marketVsAdp < 0 ? 'b' : 'n');
-          var mtip = 'Market-implied season production is consistent with a player typically drafted around Pick ' + Math.round(x.marketExpectedAdp) + ', compared with current ADP ' + Math.round(x.adp) + '. Market Confidence ' + Math.round((x.marketConfidence || 0) * 100) + '%.';
+          var basisLabel = x.marketBasis === 'season_props' ? 'season-long player markets' : x.marketBasis === 'rolling_market' ? 'multiple recent weekly player markets' : x.marketBasis === 'team_environment' ? 'team betting environment' : 'a blend of available market signals';
+          var confLabel = x.marketConfidenceLabel || (x.marketConfidence >= .7 ? 'High' : (x.marketConfidence >= .5 ? 'Moderate' : 'Low'));
+          var direction = x.marketVsAdp > 0 ? 'earlier' : (x.marketVsAdp < 0 ? 'later' : 'near its current ADP');
+          var mtip = 'Market context implies this player should be drafted ' + (x.marketVsAdp === 0 ? direction : 'about ' + Math.abs(Math.round(x.marketVsAdp)) + ' picks ' + direction) + '. Expected Pick ' + Math.round(x.marketExpectedAdp) + '; current ADP ' + Math.round(x.adp) + '. Confidence: ' + confLabel + ' (' + Math.round((x.marketConfidence || 0) * 100) + '%). Based primarily on ' + basisLabel + '.';
           market = '<td class="cs-market-col"><span class="cs-val ' + mcls + '" title="' + esc(mtip) + '">' + (x.marketVsAdp > 0 ? '+' : '') + Math.round(x.marketVsAdp) + '</span></td>';
         }
       }

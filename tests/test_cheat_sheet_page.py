@@ -83,6 +83,10 @@ def test_mobile_keeps_market_vs_adp_vor_and_value_columns():
     assert '<th class="cs-market-col">Market vs ADP</th>' in script
     assert 'class="cs-vor-col"' in script
     assert 'class="cs-value-col"' in script
+    assert "var SHOW_MARKET_VS_ADP = true" in script
+    assert "Not enough independent market data yet." in script
+    assert "marketBasis" in script
+    assert "marketConfidenceLabel" in script
 
 
 def test_draft_room_only_shares_context_from_a_visible_draft_board():
