@@ -79,4 +79,6 @@ def test_main_prints_report_even_when_output_file_is_requested(monkeypatch, tmp_
     captured = capsys.readouterr()
     assert "# Real Draft Roster-Construction Audit" in captured.out
     assert "Wrote" in captured.err
+    assert "Querying production DB" in captured.err
+    assert "Loaded 1 drafts and 1 picks" in captured.err
     assert output.read_text().startswith("# Real Draft Roster-Construction Audit")

@@ -181,21 +181,40 @@ def _draft_filters(seasons: list[int] | None, draft_types: list[str], alias: str
     return " AND ".join(clauses), params
 
 
-def fetch_rows(seasons: list[int] | None, draft_types: list[str]) -> tuple[list[dict], list[dict]]:
+def fetch_rows(seasons: list[int] | None, draft_types: list[str],
+               max_drafts: int = 500) -> tuple[list[dict], list[dict]]:
+    """Fetch a bounded, recent sample per cohort and its picks.
+
+    Production contains a large historical corpus. Pulling every pick over the
+    Render DB connection can take minutes and previously gave no indication
+    that work was happening. A 500-draft sample per type/format is ample for
+    stable medians while keeping an interactive audit quick. Pass 0 to opt into
+    the full corpus.
+    """
     from dashboard_services.db import get_conn
 
     where, params = _draft_filters(seasons, draft_types)
-    joined_where, joined_params = _draft_filters(seasons, draft_types, alias="d")
     with get_conn(autocommit=True) as conn:
-        drafts = list(conn.execute(
-            f"SELECT draft_id, season, draft_type, num_teams, is_superflex, rounds "
-            f"FROM draft_adp_drafts WHERE {where}", params).fetchall())
+        if max_drafts > 0:
+            drafts = list(conn.execute(
+                "WITH ranked AS ("
+                " SELECT draft_id, season, draft_type, num_teams, is_superflex, rounds,"
+                " ROW_NUMBER() OVER (PARTITION BY draft_type, is_superflex "
+                " ORDER BY season DESC, crawled_at DESC, draft_id) AS cohort_rank"
+                f" FROM draft_adp_drafts WHERE {where}"
+                ") SELECT draft_id, season, draft_type, num_teams, is_superflex, rounds "
+                "FROM ranked WHERE cohort_rank <= %s", [*params, max_drafts]).fetchall())
+        else:
+            drafts = list(conn.execute(
+                f"SELECT draft_id, season, draft_type, num_teams, is_superflex, rounds "
+                f"FROM draft_adp_drafts WHERE {where}", params).fetchall())
         if not drafts:
             return [], []
+        draft_ids = [str(draft["draft_id"]) for draft in drafts]
         picks = list(conn.execute(
             "SELECT p.draft_id, p.player_id, p.pick_no, p.round, p.pick_in_round, p.roster_id "
-            "FROM draft_adp_picks p JOIN draft_adp_drafts d ON d.draft_id = p.draft_id "
-            f"WHERE {joined_where} ORDER BY p.draft_id, p.pick_no", joined_params).fetchall())
+            "FROM draft_adp_picks p WHERE p.draft_id = ANY(%s) "
+            "ORDER BY p.draft_id, p.pick_no", (draft_ids,)).fetchall())
     return drafts, picks
 
 
@@ -230,6 +249,8 @@ def main(argv: list[str] | None = None) -> int:
                         dest="draft_types", help="Cohort to include; repeatable. Default: all.")
     parser.add_argument("--min-drafts", type=int, default=10,
                         help="Hide cohorts smaller than this (default: 10).")
+    parser.add_argument("--max-drafts", type=int, default=500,
+                        help="Recent drafts sampled per type/format (default: 500; 0 means all).")
     parser.add_argument("--output", type=Path,
                         help="Also write the Markdown report to this path (it is still printed).")
     parser.add_argument("--json", type=Path, dest="json_output", help="Also write machine-readable JSON.")
@@ -240,7 +261,9 @@ def main(argv: list[str] | None = None) -> int:
     if not os.getenv("DATABASE_URL"):
         parser.error("DATABASE_URL is not set; run this in a Render shell or export it locally")
     draft_types = args.draft_types or ["redraft", "startup", "rookie"]
-    drafts, picks = fetch_rows(args.seasons, draft_types)
+    sample_text = "all matching drafts" if args.max_drafts == 0 else f"up to {args.max_drafts:,} drafts per cohort"
+    print(f"Querying production DB ({sample_text})...", file=sys.stderr, flush=True)
+    drafts, picks = fetch_rows(args.seasons, draft_types, args.max_drafts)
     if not drafts:
         print("No drafts matched the requested season/type filters.\n", file=sys.stderr)
         print(render_inventory(fetch_inventory()), file=sys.stderr)
@@ -249,10 +272,20 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     positions = load_position_map()
     grouped: dict[tuple[str, bool], list[dict]] = defaultdict(list)
+    draft_cohorts: dict[str, tuple[str, bool]] = {}
     for draft in drafts:
-        grouped[(str(draft["draft_type"]), bool(draft["is_superflex"]))].append(draft)
-    summaries = [summarize_cohort(group, picks, positions) for group in grouped.values()
-                 if len(group) >= args.min_drafts]
+        key = (str(draft["draft_type"]), bool(draft["is_superflex"]))
+        grouped[key].append(draft)
+        draft_cohorts[str(draft["draft_id"])] = key
+    picks_by_cohort: dict[tuple[str, bool], list[dict]] = defaultdict(list)
+    for pick in picks:
+        key = draft_cohorts.get(str(pick["draft_id"]))
+        if key is not None:
+            picks_by_cohort[key].append(pick)
+    print(f"Loaded {len(drafts):,} drafts and {len(picks):,} picks; building report...",
+          file=sys.stderr, flush=True)
+    summaries = [summarize_cohort(group, picks_by_cohort[key], positions)
+                 for key, group in grouped.items() if len(group) >= args.min_drafts]
     summaries.sort(key=lambda s: (s.draft_type, s.format))
     if not summaries:
         print(f"No cohort met --min-drafts={args.min_drafts}.", file=sys.stderr)
