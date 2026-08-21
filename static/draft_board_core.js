@@ -265,6 +265,23 @@
     return eligible.length ? eligible : rows.slice();
   }
 
+  // Shared final CPU chooser: production mocks and the headless benchmark both
+  // use the same decision band, top-field cap and weighted sampling. Callers own
+  // candidate economics/personality; this kernel owns how close alternatives
+  // become an actual pick.
+  function selectDecisionCandidate(rows, round, persona, random) {
+    var eligible = decisionBand(rows, round, persona).slice(0, 8);
+    if (!eligible.length) return null;
+    var sum = 0; eligible.forEach(function(r){ sum += Math.max(0, +r.weight || 0); });
+    if (sum <= 0) return eligible[0];
+    var roll = (typeof random === 'function' ? random() : Math.random()) * sum;
+    for (var i = 0; i < eligible.length; i++) {
+      roll -= Math.max(0, +eligible[i].weight || 0);
+      if (roll <= 0) return eligible[i];
+    }
+    return eligible[0];
+  }
+
   // Dynasty tier from the server value thresholds; redraft returns null because
   // the tier table is keyed to dynasty value (mirrors draft_room.js tierOf).
   function tierOf(p, mode, sf, teams, tierThresholds) {
@@ -292,6 +309,6 @@
     tierOf: tierOf, maxVal: maxVal, posTargets: posTargets,
     starterRequirements: starterRequirements, rosterRole: rosterRole, candidateRosterRole: candidateRosterRole,
     rosterSlotUtility: rosterSlotUtility, remainingObligations: remainingObligations,
-    decisionScore: decisionScore, decisionBand: decisionBand,
+    decisionScore: decisionScore, decisionBand: decisionBand, selectDecisionCandidate: selectDecisionCandidate,
   };
 });

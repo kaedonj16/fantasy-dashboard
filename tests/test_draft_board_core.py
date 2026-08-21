@@ -224,7 +224,8 @@ def test_roster_economics_respect_format_and_flex():
         "waiting:[C.decisionScore({base:90,utility:1,waitPenalty:8}),C.decisionScore({base:87,utility:1,waitPenalty:0})],"
         "ceiling:[C.decisionScore({base:96,utility:1,waitLoss:30}),"
         "C.decisionScore({base:94,utility:1,waitLoss:30})],"
-        "band:C.decisionBand([{id:'best',ds:90,weight:1},{id:'close',ds:87,weight:1},{id:'bad',ds:72,weight:9}],3,.8).map(x=>x.id)}));"
+        "band:C.decisionBand([{id:'best',ds:90,weight:1},{id:'close',ds:87,weight:1},{id:'bad',ds:72,weight:9}],3,.8).map(x=>x.id),"
+        "selected:C.selectDecisionCandidate([{id:'best',ds:90,weight:2},{id:'close',ds:87,weight:1}],3,.8,()=>0).id}));"
         % (json.dumps(str(PICK_JS)), json.dumps(str(CORE_JS)))
     )
     res = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=20)
@@ -246,3 +247,4 @@ def test_roster_economics_respect_format_and_flex():
     assert out["waiting"][1] > out["waiting"][0]
     assert out["ceiling"][0] < 99 and out["ceiling"][0] > out["ceiling"][1]
     assert out["band"] == ["best", "close"]
+    assert out["selected"] == "best"

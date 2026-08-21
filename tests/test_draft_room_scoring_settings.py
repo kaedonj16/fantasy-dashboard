@@ -120,6 +120,8 @@ def test_cpu_never_drafts_kicker_or_defense_past_roster_capacity():
     assert "(pos === 'K' || pos === 'DEF') && (t <= 0 || have >= t)" in source
     assert "c.w = 0; c.ds = -1; return;" in source
     assert "cands = cands.filter(function(c){ return c.w > 0; });" in source
+    assert "function _cpuKDefMustFill(pool, counts, remaining)" in source
+    assert "if (mustFillKDef) return mustFillKDef;" in source
 
 
 def test_likely_next_pick_survivors_pay_current_pick_opportunity_cost():
@@ -127,6 +129,8 @@ def test_likely_next_pick_survivors_pay_current_pick_opportunity_cost():
 
     assert "var LIVE_WAIT_TUNING = { threshold: 50, maxPenalty: 10 };" in source
     assert "var returnProb = nextPick ? availProb(p, nextPick) : null;" in source
+    assert "c.demandByPos = _demandBeforeNext(next);" in source
+    assert "var effectiveReturnProb = returnProb == null ? null : returnProb * (1 - demandRisk);" in source
     assert "waitPenalty: waitPenalty" in source
 
 

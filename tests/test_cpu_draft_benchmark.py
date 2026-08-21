@@ -30,11 +30,18 @@ def test_headless_cpu_benchmark_is_seeded_and_reports_roster_metrics():
     assert first["medianFinalCount"] == second["medianFinalCount"]
     assert first["maximumFinalCount"] == second["maximumFinalCount"]
     assert first["configuration"]["drafts"] == 3
+    assert first["model"] == "shared-kernel"
     assert first["playerPool"] >= 180
     assert set(first["medianRound"]) == {"QB1", "QB2", "QB3", "TE1", "TE2", "TE3"}
     assert set(first["selectionRate"]) == set(first["medianRound"])
     assert sum(first["medianFinalCount"].values()) == 15
     assert 99 <= sum(first["phaseShare"]["early"].values()) <= 101
+    assert first["invariants"] == {
+        "incompleteRosters": 0,
+        "wrongRosterSize": 0,
+        "specialTeamsOverfill": 0,
+    }
+    assert set(first["waitingCalibration"]) == {"<50", "50-64", "65-79", "80+"}
 
 
 def test_required_kicker_and_defense_do_not_become_normal_bench_depth():

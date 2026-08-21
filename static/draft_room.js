@@ -1430,6 +1430,22 @@
     }
     return demand;
   }
+  // CPU-scoped version of the user's auto-draft completion guard. The late-round
+  // weighting normally lets managers choose when to take K/DEF, but once this
+  // team's remaining selections equal its unfilled K/DEF slots there is no
+  // discretionary pick left: fill the best required special-teams slot now.
+  function _cpuKDefMustFill(pool, counts, remaining){
+    var rs = (state && state.roster) || defaultRoster();
+    var needK = Math.max(0, (rs.K || 0) - (counts.K || 0));
+    var needDef = Math.max(0, (rs.DEF || 0) - (counts.DEF || 0));
+    if (needK + needDef <= 0 || remaining > needK + needDef) return null;
+    var candidates = pool.filter(function(p){
+      var pos = String(p.position || '').toUpperCase();
+      return (pos === 'K' && needK > 0) || (pos === 'DEF' && needDef > 0);
+    });
+    candidates.sort(function(a,b){ return lineupScore(b) - lineupScore(a); });
+    return candidates[0] || null;
+  }
   function simPick(){
     var pool = availablePool();
     if (!pool.length) return null;
@@ -1454,6 +1470,8 @@
     // Score every candidate from THIS CPU team's perspective (its own roster,
     // depth, and next pick) so need is judged for the right team, not the viewer.
     var cpuCtx = _cpuCtx(slot);
+    var mustFillKDef = _cpuKDefMustFill(pool, counts, cpuCtx.remaining);
+    if (mustFillKDef) return mustFillKDef;
     var _maxVal = 0; pool.forEach(function(q){ var v = valOf(q); if (v > _maxVal) _maxVal = v; });
     // Starter-slot map: actual lineup spots only (no bench).
     var _rs = (state && state.roster) || defaultRoster();
@@ -1749,10 +1767,12 @@
     cands.sort(function(x, y){ return y.w - x.w; });
     // Human-like randomness only among defensible alternatives. Early picks use
     // a narrow decision band; later rounds and adventurous personas widen it.
-    var eligible = window.DraftBoardCore && DraftBoardCore.decisionBand
-      ? DraftBoardCore.decisionBand(cands.map(function(c){ return { ref:c, ds:c.ds, weight:c.w }; }), _curRound, persona)
-          .map(function(r){ return r.ref; })
-      : cands;
+    if (window.DraftBoardCore && DraftBoardCore.selectDecisionCandidate){
+      var selected = DraftBoardCore.selectDecisionCandidate(
+        cands.map(function(c){ return { ref:c, ds:c.ds, weight:c.w }; }), _curRound, persona, Math.random);
+      return selected && selected.ref ? selected.ref.p : cands[0].p;
+    }
+    var eligible = cands;
     var top = eligible.slice(0, Math.min(eligible.length, 8));
     var sum = 0; top.forEach(function(c){ sum += c.w; });
     if (sum <= 0) return top[0].p;
@@ -2805,8 +2825,9 @@
   // O(players²) rescore: deep QB shelves produce a small urgency signal while a
   // thinning WR/RB shelf produces a larger one.
   function prepareNextPickValues(pool){
-    var c = psCtx(), next = nextOwnedAfterCurrent(); c.nextByPos = {};
+    var c = psCtx(), next = nextOwnedAfterCurrent(); c.nextByPos = {}; c.demandByPos = {};
     if (!next) return;
+    c.demandByPos = _demandBeforeNext(next);
     ['QB','RB','WR','TE'].forEach(function(pos){
       var rows = pool.filter(function(p){ return String(p.position || '').toUpperCase() === pos && p._ps != null; })
         .sort(function(a, b){ return b._ps - a._ps; }).slice(0, 16);
@@ -2844,13 +2865,20 @@
     // quality/fit advantage is large enough to overcome a bounded opportunity
     // cost. A true positional cliff still earns waitLoss above, and an extreme
     // ADP fall keeps half of this discount from becoming a disguised hard ban.
-    var waitPenalty = returnProb == null ? 0
-      : clamp01((returnProb - LIVE_WAIT_TUNING.threshold) / (100 - LIVE_WAIT_TUNING.threshold))
+    // Visible position-needy opponents before our next turn reduce the nominal
+    // ADP survival probability. This uses only public roster state—no knowledge
+    // of future random CPU selections.
+    var demand = (c.demandByPos && c.demandByPos[pos]) || 0;
+    var demandRisk = Math.min(0.35, demand / Math.max(1, state.teams || 12) * 0.7);
+    var effectiveReturnProb = returnProb == null ? null : returnProb * (1 - demandRisk);
+    var waitPenalty = effectiveReturnProb == null ? 0
+      : clamp01((effectiveReturnProb - LIVE_WAIT_TUNING.threshold) / (100 - LIVE_WAIT_TUNING.threshold))
         * LIVE_WAIT_TUNING.maxPenalty * (1 - exceptional * 0.5);
     return DraftBoardCore.decisionScore({ base: base, utility: util,
       bench: bench, deepBench: role === 'bench2', recentPenalty: recentPenalty, exceptional: exceptional,
       quality: ppgNormOf(p) || 0, required: c.obligations.required,
-      freePicks: c.obligations.freePicks, waitLoss: Math.max(0, base - expected), waitPenalty: waitPenalty });
+      freePicks: c.obligations.freePicks,
+      waitLoss: Math.max(0, base - expected) * (1 + demandRisk), waitPenalty: waitPenalty });
   }
   // How many players remain in this player's (position|tier) bucket.
   function tierRemaining(p){

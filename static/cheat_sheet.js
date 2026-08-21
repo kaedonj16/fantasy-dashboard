@@ -39,8 +39,7 @@
   var tierThresholds = {};
   var adpSourceOptions = {};   // {redraft:[{value,label}], startup:[...], rookie:[...]}
   var draftedIds = null;       // Set of live-drafted player ids, or null if none
-  var draftedOrder = null;     // player id -> chronological pick index
-  var recommendationOrder = null; // Draft Room snapshot: player id -> live rank
+  var recommendationOrder = null; // Draft Room snapshot: player id -> supplemental REC rank
   var scrollToFirstAvailable = false; // one-shot when opened from an active draft
   var myCounts = null;         // {QB,RB,WR,TE} drafted by the viewer, or null
   var liveDraftId = null;      // id of the live draft being polled, or null
@@ -340,9 +339,8 @@
     });
     window.__csNeed = needByPos;
 
-    // VOR remains the stable standalone/pre-draft order. When Draft Room supplies
-    // a Recommendation snapshot below, that exact live order takes precedence;
-    // VOR and ADP remain visible as supporting player-value context.
+    // VOR remains the stable cheat-sheet order. A Draft Room Recommendation
+    // snapshot is supplemental context only; it must never re-sort the board.
     var scored = pool.map(function (p) {
       var pos = (p.position || '').toUpperCase();
       var value = C.valOf(p, mode, sf);
@@ -357,32 +355,23 @@
     });
     scored.sort(function (a, b) { return b.vor - a.vor || ((a.adp || 9999) - (b.adp || 9999)); });
     scored.forEach(function (x, i) { x._mr = i; });
-    if (recommendationOrder) {
-      scored.sort(function (a, b) {
-        var ad = draftedIds && draftedIds.has(a.id), bd = draftedIds && draftedIds.has(b.id);
-        if (ad !== bd) return ad ? -1 : 1;
-        if (ad) return (draftedOrder[a.id] || 0) - (draftedOrder[b.id] || 0);
-        var ar = recommendationOrder[a.id], br = recommendationOrder[b.id];
-        var ah = ar != null, bh = br != null;
-        if (ah !== bh) return ah ? -1 : 1;
-        return ah ? ar - br : a._mr - b._mr;
-      });
-    }
-    players = scored.slice(0, LIMIT + (recommendationOrder && draftedIds ? draftedIds.size : 0));
+    players = scored.slice(0, LIMIT);
 
     maxVor = players.length ? Math.max.apply(null, players.map(function (x) { return Math.max(1, x.vor); })) : 1;
     var pc = {};
     var availableRank = 0;
     players.forEach(function (x, i) {
       x.drafted = draftedIds ? draftedIds.has(x.id) : false;
-      x.rk = recommendationOrder && x.drafted ? null : ++availableRank;
+      x.rk = i + 1;
+      x.recRank = recommendationOrder && recommendationOrder[x.id] != null
+        ? recommendationOrder[x.id] + 1 : null;
       x.value = (x.adp != null && x.rk != null) ? Math.round(x.adp - x.rk) : null;
       x.good = state.mode === 'dynasty' ? (youthWindow(x.age, x.pos)[1] === 'win-asc' ? 1 : 0) : (x.value != null && x.value >= 5 ? 1 : 0);
       x.posfull = myCounts ? ((needByPos[x.pos] && needByPos[x.pos].need) <= 0 && (needByPos[x.pos] && needByPos[x.pos].have) > 0) : false;
       pc[x.pos] = (pc[x.pos] || 0) + 1; x.prk = x.pos + pc[x.pos];
     });
     assignTiers();
-    if (!recommendationOrder) applyOverrides();   // custom standalone board only
+    applyOverrides();
   }
 
   // Same drop-based tiering the rankings page uses (utils/tier_thresholds.py):
@@ -498,7 +487,7 @@
     var dyn = state.mode === 'dynasty';
     $('csTitle').textContent = dyn ? 'Dynasty Cheat Sheet' : 'Redraft Cheat Sheet';
     $('csSub').textContent = recommendationOrder
-      ? 'Mirrors the live Recommendation order from Draft Room. VOR and ADP remain visible as supporting context.'
+      ? 'The stable VOR board, with live Draft Room Recommendation ranks shown as supplemental context.'
       : dyn
       ? 'Ranked by value over replacement on dynasty value, for your league roster. Tiers are cliffs in the value curve. Age and career window replace ADP.'
       : 'Ranked by value over replacement for your league scoring and roster. Tiers are cliffs in the value curve. The Value column flags where the market disagrees.';
@@ -531,8 +520,8 @@
 
     var draftedNote = draftedIds ? '<span class="cs-lg"><span class="cs-taken-dot"></span> already drafted</span>' : '';
     $('csLegend').innerHTML = recommendationOrder
-      ? '<span class="cs-lg"><b>Recommendation</b> exact live Draft Room order</span>'
-        + '<span class="cs-lg"><b>VOR / ADP</b> supporting player-value context</span>'
+      ? '<span class="cs-lg"><b>VOR</b> controls the cheat-sheet order</span>'
+        + '<span class="cs-lg"><b>REC #</b> current Draft Room rank, shown for context</span>'
         + draftedNote
         + '<span class="cs-lg" id="csFmtNote">' + (dyn ? 'Dynasty ' : '') + (state.sf ? 'Superflex' : '1QB') + ' &middot; ' + teams + '-team</span>'
       : dyn
@@ -601,7 +590,7 @@
 
   function renderBoard(dyn) {
     var col5 = dyn ? 'Age' : 'ADP', col6 = dyn ? 'Window' : 'Value';
-    var editable = cfg.hasPremium && !recommendationOrder;
+    var editable = cfg.hasPremium;
     var editTh = editable ? '<th class="cs-edit-th"></th>' : '';
     $('csBoardHead').innerHTML =
       '<tr><th>Rk</th><th class="l">Player</th><th>Pos</th><th class="cs-vor-col">VOR</th><th>' + col5 + '</th><th class="cs-value-col">' + col6 + '</th>' + (showMarket(dyn) ? '<th class="cs-market-col">Market vs ADP</th>' : '') + editTh + '</tr>';
@@ -623,9 +612,10 @@
           market = '<td class="cs-market-col"><span class="cs-val ' + mcls + '" title="' + esc(mtip) + '">' + (x.marketVsAdp > 0 ? '+' : '') + Math.round(x.marketVsAdp) + '</span></td>';
         }
       }
+      var recChip = x.recRank != null ? '<span class="cs-ovchip bump">REC #' + x.recRank + '</span>' : '';
       html += '<tr class="' + cls + '" data-good="' + x.good + '" data-posfull="' + (x.posfull ? 1 : 0) + '" data-name="' + esc(x.name) + '" data-id="' + esc(x.id) + '">'
         + '<td class="cs-rk">' + (x.rk == null ? '&ndash;' : x.rk) + '</td>'
-        + '<td><span class="cs-pcell">' + badge(x.pos) + '<span class="cs-pname">' + esc(x.name) + '</span>' + ovChip(x) + '</span></td>'
+        + '<td><span class="cs-pcell">' + badge(x.pos) + '<span class="cs-pname">' + esc(x.name) + '</span>' + recChip + ovChip(x) + '</span></td>'
         + '<td>' + posrk(x) + '</td>'
         + '<td class="cs-vor-col"><span class="cs-vorwrap"><span class="cs-num">' + x.vor + '</span><span class="cs-vorbar"><i style="width:' + Math.max(0, Math.round(x.vor / maxVor * 100)) + '%"></i></span></span></td>'
         + c5 + c6 + market + ovControls(x) + '</tr>';
@@ -633,7 +623,7 @@
     if (!shown) html = '<tr><td colspan="' + span + '" class="cs-empty">No players match this filter.</td></tr>';
     $('csBoardBody').innerHTML = html;
     $('csBoardFoot').textContent = recommendationOrder
-      ? 'Ordered exactly like the Draft Room Recommendation snapshot. Reopen the sheet to refresh after more picks.'
+      ? 'VOR keeps this board stable; REC # shows the live Draft Room opinion without changing the order. Reopen to refresh ranks.'
       : dyn
       ? 'Ranked by value over replacement (dynasty value), youth-aware via the Window column. Tap a row to cross a player off.'
       : 'Ranked by value over replacement, so a scarce elite TE or QB can still outrank a higher-scoring skill player. Tap a row to cross a player off.';
@@ -866,8 +856,6 @@
       if (qDrafted) {
         var draftedList = qDrafted.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
         draftedIds = new Set(draftedList);
-        draftedOrder = {};
-        draftedList.forEach(function (id, i) { if (draftedOrder[id] == null) draftedOrder[id] = i; });
         scrollToFirstAvailable = draftedIds.size > 0;
       }
       var qRecommendations = qp.get('rec_order');
