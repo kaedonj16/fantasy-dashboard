@@ -230,8 +230,11 @@ def main(argv: list[str] | None = None) -> int:
                         dest="draft_types", help="Cohort to include; repeatable. Default: all.")
     parser.add_argument("--min-drafts", type=int, default=10,
                         help="Hide cohorts smaller than this (default: 10).")
-    parser.add_argument("--output", type=Path, help="Write Markdown report to this path.")
+    parser.add_argument("--output", type=Path,
+                        help="Also write the Markdown report to this path (it is still printed).")
     parser.add_argument("--json", type=Path, dest="json_output", help="Also write machine-readable JSON.")
+    parser.add_argument("--quiet", action="store_true",
+                        help="Do not print the Markdown report; useful for scheduled jobs.")
     args = parser.parse_args(argv)
 
     if not os.getenv("DATABASE_URL"):
@@ -259,13 +262,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(report, encoding="utf-8")
-        print(f"Wrote {args.output}")
-    else:
+        print(f"Wrote {args.output}", file=sys.stderr, flush=True)
+    if not args.quiet:
         print(report, end="")
     if args.json_output:
         args.json_output.parent.mkdir(parents=True, exist_ok=True)
         args.json_output.write_text(json.dumps([asdict(s) for s in summaries], indent=2) + "\n", encoding="utf-8")
-        print(f"Wrote {args.json_output}")
+        print(f"Wrote {args.json_output}", file=sys.stderr, flush=True)
     return 0
 
 

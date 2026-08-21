@@ -61,3 +61,22 @@ def test_inventory_explains_which_cohorts_are_available():
     assert "startup" in text
     assert "Superflex" in text
     assert "42" in text
+
+
+def test_main_prints_report_even_when_output_file_is_requested(monkeypatch, tmp_path, capsys):
+    drafts = [{"draft_id": "d1", "draft_type": "redraft", "is_superflex": False,
+               "num_teams": 1, "rounds": 1}]
+    picks = [{"draft_id": "d1", "player_id": "q1", "pick_no": 1,
+              "round": 1, "roster_id": "1"}]
+    output = tmp_path / "report.md"
+    monkeypatch.setenv("DATABASE_URL", "postgresql://unused")
+    monkeypatch.setattr("scripts.audit_draft_realism.fetch_rows", lambda *_: (drafts, picks))
+    monkeypatch.setattr("scripts.audit_draft_realism.load_position_map", lambda: {"q1": "QB"})
+
+    from scripts.audit_draft_realism import main
+
+    assert main(["--min-drafts", "1", "--output", str(output)]) == 0
+    captured = capsys.readouterr()
+    assert "# Real Draft Roster-Construction Audit" in captured.out
+    assert "Wrote" in captured.err
+    assert output.read_text().startswith("# Real Draft Roster-Construction Audit")
