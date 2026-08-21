@@ -3,6 +3,10 @@
 from dashboard_services.pages.draft_room_page import build_draft_room_body
 import json
 import re
+from pathlib import Path
+
+
+REPO = Path(__file__).resolve().parents[1]
 
 
 def test_draft_room_offers_four_and_six_point_passing_touchdowns():
@@ -30,3 +34,12 @@ def test_setup_source_and_draft_pick_pills_match_canonical_chip_styles():
     assert "color:var(--text-muted); font-size:11px; font-weight:700; line-height:1.45; white-space:nowrap;" in body
     assert ".dr-roster-src-tag { text-transform:none; letter-spacing:normal; }" in body
     assert "rgba(168,85,247,.14)" not in body
+
+
+def test_player_load_failure_exposes_api_error_and_retry_control():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert "Player API HTTP " in source
+    assert "Player API returned non-JSON" in source
+    assert "retry.addEventListener('click', loadPlayers)" in source
+    assert "console.error('[draft-room] loadPlayers failed', err)" in source
