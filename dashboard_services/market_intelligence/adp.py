@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import bisect
 
+from .config import MIN_SIGNAL_CONFIDENCE
+
 # The /api/league-players payload carries redraft ADP under ``redraft_avg_pick``
 # (and ``sf_redraft_avg_pick`` for superflex) - the same fields the rankings,
 # draft room, and cheat-sheet frontend read. Earlier this module looked only for
@@ -75,6 +77,20 @@ def attach_market_vs_adp(players: list[dict], projections: dict[str, dict]) -> N
         market = projections.get(str(player.get("id")))
         if not market:
             continue
+        components = market.get("components") or {}
+        basis = components.get("basis") or "season_props"
+        confidence = float(market.get("confidence") or 0)
+        player["market_vs_adp"] = None
+        player["market_expected_adp"] = None
+        player["market_confidence"] = round(confidence, 2)
+        player["market_confidence_label"] = ("High" if confidence >= 0.7 else
+                                             "Moderate" if confidence >= 0.5 else
+                                             "Low" if confidence > 0 else "Unavailable")
+        player["market_basis"] = basis
+        # Baseline-only rows and weak context are useful diagnostics, not an
+        # independent market edge. Do not put a number behind the Market label.
+        if basis == "projection_only" or confidence < MIN_SIGNAL_CONFIDENCE:
+            continue
         actual = _resolve_adp(player)
         if actual is None:
             continue
@@ -90,4 +106,6 @@ def attach_market_vs_adp(players: list[dict], projections: dict[str, dict]) -> N
         if implied is not None:
             player["market_expected_adp"] = round(implied, 1)
             player["market_vs_adp"] = round(actual - implied, 1)
-            player["market_confidence"] = round(float(market.get("confidence") or 0), 2)
+            player["market_confidence"] = round(confidence, 2)
+            player["market_signal"] = ("bullish" if actual - implied > 1 else
+                                       "bearish" if actual - implied < -1 else "aligned")

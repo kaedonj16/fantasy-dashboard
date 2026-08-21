@@ -7,14 +7,13 @@ at draft time. This module reads them from DraftKings' internal ``sportscontent`
 JSON API and emits season-context MarketRecords for the same projection/ADP
 pipeline the (weekly) SportsGameOdds feed uses.
 
-WORKS WITH ZERO CONFIG. The NFL leagueId (88808), site (US-SB), and the full
-stat->subcategory map (the "Futures > Player Stats O/U" tabs) are baked in as
-defaults below, so nothing needs setting. On by default whenever the market
-refresh runs (which itself only runs when SportsGameOdds is configured). Every
-value is an OPTIONAL override, for fixing DraftKings' ids without a redeploy if
-they rotate them, or turning the source off:
+The NFL leagueId (88808), site (US-SB), and full stat-to-subcategory map (the
+"Futures > Player Stats O/U" tabs) are retained below for a future access-model
+change. The source is OFF
+by default because the undocumented endpoint denies production datacenter traffic.
+Every value is an optional override; enabling it is a deliberate operator action:
 
-    DRAFTKINGS_SEASON_ENABLED     "0"/"false" to disable (default on)
+    DRAFTKINGS_SEASON_ENABLED     "1"/"true" to enable (default off)
     DRAFTKINGS_NFL_SEASON_MARKETS "passing_yards=17147,rushing_yards=17223,..."
                                   replaces the baked-in map; stat_type must be a
                                   key of projection.STAT_KEYS
@@ -68,7 +67,7 @@ _PLAYER_KEYS = ("participant", "playerName", "name")
 _NUM_RE = re.compile(r"(\d+(?:\.\d+)?)\s*$")
 
 
-def _env_enabled(name: str, default: bool = True) -> bool:
+def _env_enabled(name: str, default: bool = False) -> bool:
     val = os.getenv(name)
     if val is None:
         return default
@@ -122,9 +121,11 @@ def _player_from_event(event: dict) -> str:
     ("NFL 2026/27 - Mike Evans") is the fallback."""
     for part in event.get("participants", []):
         if isinstance(part, dict) and not part.get("id") and part.get("name"):
-            return str(part["name"])
+            name = str(part["name"])
+            return "" if _num_in(name) is not None and re.fullmatch(r"[\d.]+", name.strip()) else name
     pieces = re.split(r"\s[–-]\s", str(event.get("name") or ""))
-    return pieces[-1].strip() if len(pieces) > 1 else ""
+    name = pieces[-1].strip() if len(pieces) > 1 else ""
+    return "" if re.fullmatch(r"[\d.]+", name) else name
 
 
 def _line_from_selection(selection: dict, market: dict | None = None) -> float | None:
@@ -169,9 +170,13 @@ class DraftKingsClient:
         # Env override replaces the baked-in map; otherwise use the defaults.
         self.market_map = (_parse_market_map(os.getenv("DRAFTKINGS_NFL_SEASON_MARKETS", ""))
                            or dict(_DEFAULT_SEASON_MARKETS))
-        self.enabled = _env_enabled("DRAFTKINGS_SEASON_ENABLED", default=True)
+        # This undocumented endpoint persistently denies production datacenter
+        # traffic. Keep the adapter for a future access-model change, but require a
+        # deliberate opt-in; an absent flag must never cause a network request.
+        self.enabled = _env_enabled("DRAFTKINGS_SEASON_ENABLED", default=False)
         self.timeout = timeout
         self.last_error: str | None = None  # why the most recent fetch returned {}
+        self._access_denied = False
         if session is None:
             import requests
             session = requests.Session()
@@ -196,6 +201,8 @@ class DraftKingsClient:
                 "include": "Events", "entity": "events"}
 
     def fetch_subcategory(self, sub_category_id: str) -> dict:
+        if self._access_denied:
+            return {}
         try:
             response = self.session.get(self._markets_url(), params=self._params(sub_category_id),
                                         headers=self._headers, timeout=self.timeout)
@@ -203,9 +210,11 @@ class DraftKingsClient:
             self.last_error = f"request error: {type(exc).__name__}: {exc}"
             return {}
         if response.status_code >= 400:
-            # Capture a snippet so a 403/Cloudflare challenge is legible in the log.
-            snippet = (getattr(response, "text", "") or "")[:160].replace("\n", " ")
-            self.last_error = f"HTTP {response.status_code}: {snippet}"
+            # Do not retain/log provider response bodies. Edge-denial pages can be
+            # large and may contain request identifiers that are not operationally
+            # useful to this job.
+            self.last_error = f"HTTP {response.status_code}"
+            self._access_denied = response.status_code in (401, 403)
             return {}
         try:
             payload = response.json()
@@ -220,6 +229,8 @@ class DraftKingsClient:
 
     def iter_season_markets(self) -> Iterator[tuple[str, dict]]:
         """Yield (stat_type, payload) for each configured season stat market."""
+        if not self.configured:
+            return
         for stat_type, sub_id in self.market_map.items():
             payload = self.fetch_subcategory(sub_id)
             if payload:

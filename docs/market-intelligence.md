@@ -1,69 +1,154 @@
 # Market Intelligence
 
-Market Intelligence is a shared backend pipeline for three fantasy surfaces:
-the redraft Cheat Sheet, Start/Sit, and Waivers. It does not provide betting
-recommendations or expose sportsbook feeds.
+Market Intelligence is a shared, server-side pipeline for the redraft Cheat
+Sheet, Start/Sit, and Waivers. It provides fantasy context—not betting advice—and
+never sends provider credentials or raw sportsbook payloads to the browser.
 
-## Provider and configuration
+## Providers and refresh
 
-The provider is SportsGameOdds. Set `SPORTSGAMEODDS_API_KEY` only on the refresh
-worker. The client calls `GET https://api.sportsgameodds.com/v2/events` with the
-`x-api-key` header and NFL, kickoff-window, odds-available, limit, and cursor
-parameters. Event metadata, player metadata, and the event `odds` collection are
-normalized before any downstream calculation. The key is never returned to the
-browser or logged. With no key, refresh is a successful no-op and every existing
-feature continues without market fields.
+`python scripts/refresh_market_intelligence.py` remains the single refresh entry
+point. Providers are interchangeable at the normalization boundary:
 
-Successful SportsGameOdds response pages are cached on disk for one hour by
-request path and parameters. Repeated refreshes within that window reuse the
-cached response, including each cursor page, without contacting the provider.
+* **SportsGameOdds** supplies weekly NFL player markets. Configure
+  `SPORTSGAMEODDS_API_KEY` only on the refresh worker. Its paginated responses are
+  cached for one hour.
+* **DraftKings** is a dormant, unofficial adapter for true season player totals.
+  Its undocumented endpoint persistently denies production datacenter traffic, so
+  it is disabled by default and is not a dependable production source. It is only
+  attempted after an explicit `DRAFTKINGS_SEASON_ENABLED=1`; a 401/403 stops that
+  provider after one request and never stops weekly or fallback work. No access-
+  control circumvention is attempted.
+* Other providers can emit the same normalized records/inputs later. ParlayAPI is
+  not a supported production provider: currently observed rows omit the player
+  identity and line, so they must fail closed rather than be guessed.
 
-Run `python scripts/refresh_market_intelligence.py` every four hours during the
-NFL week. The request is restricted to NFL events with available odds and uses
-a season-length kickoff window so explicitly labelled player futures are not
-missed. It ignores events after kickoff, so a live line cannot overwrite the
-latest pregame snapshot. Page requests make only bulk PostgreSQL reads and never
-call SportsGameOdds.
+With no available provider or credential, refresh is a successful no-op and all
+normal fantasy features continue. Page requests only make bulk PostgreSQL reads;
+they never contact a sportsbook.
 
 ## Storage and identity
 
-Migration `026_market_intelligence.sql` adds:
+Migration `026_market_intelligence.sql` provides:
 
-* `player_external_ids`, the durable SportsGameOdds ID to canonical player ID
-  crosswalk, with match confidence and bootstrap metadata
-* `market_snapshots`, immutable per-book observations for history and movement
-* `market_consensus`, the current per-player/stat consensus
-* `market_projections`, cached weekly or season-context fantasy projections
+* `player_external_ids`, the durable provider-to-canonical player crosswalk;
+* `market_snapshots`, immutable per-book observations;
+* `market_consensus`, current player/stat consensus by weekly or season context;
+* `market_projections`, materialized fantasy projections with JSON provenance.
 
-Identity resolution first reuses the durable provider ID. A new ID is
-bootstrapped only from a unique normalized name and matching position, with team
-as a disambiguator rather than a permanent key. Suffixes and punctuation are
-normalized. Ambiguous names and position mismatches are skipped.
+Migration `027_market_rolling_lookup.sql` adds the history index used for one
+bulk rolling-weekly read. Source details, adjustment provenance, and confidence
+remain in `market_projections.components`; no provider-specific columns are
+needed.
 
-## Consensus, projection, and confidence
+Identity resolution reuses durable IDs and otherwise requires a unique normalized
+name, constrained by position/team when present. Ambiguous identities, numeric
+"player names", missing statistical lines, and unknown market meanings are
+rejected.
 
-Consensus excludes suspended, stale, and post-kickoff observations. With five
-or more books it rejects median-absolute-deviation outliers, then uses the median
-line. American prices are converted to implied probabilities and both sides are
-normalized to remove vig. Confidence combines book count, line agreement, and
-freshness. Projection confidence additionally includes market coverage.
+## Two contexts that never blur
 
-The projection engine starts from the site's baseline stat line, replaces only
-components covered by a valid market, scores the hybrid with the existing league
-scoring helper, and shrinks the difference back toward the baseline according to
-confidence. Missing props therefore remain baseline components, never zero.
+**Weekly** records are pregame player props. They feed Start/Sit's *Market vs
+Projection* and Waivers' *Market Opportunity*. Consensus excludes suspended,
+stale, live, and post-kickoff observations, removes sufficiently sampled MAD
+outliers, uses median lines, de-vigs two-sided prices, and grades book count,
+agreement, and freshness.
 
-* **Market vs ADP** is redraft-only. Season production maps to expected ADP by
-  deterministic linear interpolation through the current projection/ADP player
-  pool. The displayed value is actual ADP minus expected ADP.
-* **Market vs Projection** is the confidence-shrunk weekly Market Projection
-  minus the existing site projection. Central thresholds yield Market Bullish,
-  Market Aligned, or Market Caution without changing the recommendation.
-* **Market Opportunity** uses the same weekly difference, confidence, and player
-  availability to return High, Moderate, Neutral, or Low. It does not reorder
-  or replace the waiver model.
+**Season** records are literal regular-season player markets or normalized
+long-term evidence. A weekly line is never described as a season line and is
+never multiplied by 17. Start/Sit and Waivers remain on the weekly projection
+path and are unaffected by season fallback logic.
 
-SportsGameOdds weekly player markets are kept separate from season context.
-Only markets explicitly labelled as regular-season totals or futures can create
-season projections. No weekly line is annualized. Players without a supported
-season-long market continue to show the normal missing-data indicator.
+## Baseline-anchored season projection
+
+The existing FantasyPros/site season projection is always the anchor. Independent
+market evidence makes confidence-shrunk adjustments; missing components remain in
+the baseline and are never replaced with zero. With no independent evidence, the
+result is exactly the baseline and no Market vs ADP value is shown.
+
+Inputs use the provider-independent `MarketProjectionInput` contract and follow
+this quality hierarchy:
+
+1. **Direct season player props** (`season_prop`) are strongest. Compatible books
+   use the existing robust consensus and covered statistical components dominate
+   lower-tier evidence for the same stat.
+2. **Structured season thresholds/prediction markets** (`prediction_market`) may
+   provide lower-weight evidence when player, stat, threshold, and probability are
+   unambiguous. Award odds such as MVP never directly become fantasy points.
+3. **Rolling weekly markets** (`rolling_weekly_market`) activate only after three
+   distinct regular-season weeks. They form a recency-weighted per-game rate with
+   confidence reduced for small samples or variance. They can conservatively flag
+   a stale role/rest-of-season rate, but never masquerade as a season O/U.
+4. **Team environment** (`team_market`) defensively extracts full-game totals and
+   team spreads from the same SportsGameOdds events already fetched by the worker.
+   Team implied points are aggregated relative to the covered league average;
+   confidence reflects game/book coverage. The adjustment is position-sensitive,
+   confidence-shrunk, and capped at three percent. Ambiguous or partial-game rows
+   fail closed, and no extra provider call is made.
+5. **Baseline projection** is always present and always carries the uncovered
+   production.
+
+Compatible inputs blend, but correlated evidence is not counted at full strength
+multiple times. A direct receiving-yards season line owns that stat; rolling
+receiving-yards observations do not add a second adjustment. Team context is
+scaled by uncovered share. Multiple weekly observations improve the reliability
+of one rolling signal rather than voting down a true season market by count.
+
+ADP/value rank history exists elsewhere in the application, but it is not an
+independent projection input: feeding ADP movement into an expected-ADP result
+would create circular evidence. It may be displayed separately as sentiment in a
+future UI, but does not manufacture a Market vs ADP edge.
+
+## Provenance and confidence
+
+`market_projections.components` contains fantasy-focused metadata such as:
+
+```json
+{
+  "baseline_points": 254.2,
+  "market_adjusted_points": 267.8,
+  "basis": "blended",
+  "confidence": 0.67,
+  "sources": {
+    "season_props": {"stats": ["receiving_yards"], "coverage": 0.25},
+    "team_environment": {"implied_team_points": 26.5, "adjustment_pct": 0.014}
+  },
+  "adjustments": {
+    "season_prop_points": 10.4,
+    "rolling_market_points": 0.0,
+    "team_environment_points": 2.1,
+    "prediction_market_points": 0.0
+  }
+}
+```
+
+Confidence is stored internally on a 0–1 scale. The UI describes it as High,
+Moderate, or Low. Weak and baseline-only rows remain useful for diagnostics but
+do not receive a user-facing Market vs ADP number.
+
+## Market vs ADP
+
+Market vs ADP is redraft-only. The engine converts the confidence-qualified,
+market-adjusted season projection to a per-game rate and deterministically
+interpolates it through the current projection/ADP player pool:
+
+```text
+Market vs ADP = actual ADP - expected ADP from market-adjusted projection
+```
+
+Positive means market evidence supports drafting the player earlier; negative
+means it supports drafting the player later. The Cheat Sheet keeps one column and
+its tooltip explains the confidence and primary basis (`season_props`,
+`rolling_market`, `team_environment`, or `blended`). Dynasty never exposes it.
+A dash means there is not enough independent market evidence, the projection is
+stale, player identity/ADP is unavailable, or the projection/ADP curve cannot be
+built—it does not mean a zero edge.
+
+## Weekly feature behavior
+
+* **Start/Sit:** confidence-shrunk weekly Market Projection versus the site's
+  normal weekly projection; small differences remain Market Aligned.
+* **Waivers:** the same weekly difference, confidence, and availability produce
+  Market Opportunity. It enhances rather than replaces the waiver model.
+
+Optional provider failures, missing credentials, and null market fields are all
+expected degradation paths and must never break these features.

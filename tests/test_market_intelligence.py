@@ -4,10 +4,14 @@ from dashboard_services.market_intelligence.adp import build_adp_curve, expected
 from dashboard_services.market_intelligence.consensus import build_consensus
 from dashboard_services.market_intelligence.identity import resolve_player
 from dashboard_services.market_intelligence.models import MarketRecord
+from dashboard_services.market_intelligence.models import MarketProjectionInput
 from dashboard_services.market_intelligence.normalize import classify_context
 from dashboard_services.market_intelligence.odds import american_implied_probability, no_vig_over_probability
 from dashboard_services.market_intelligence.projection import build_market_projection, build_season_market_projection
 from dashboard_services.market_intelligence.signals import market_opportunity, market_vs_projection
+from dashboard_services.market_intelligence.season import (
+    build_adjusted_season_projection, rolling_weekly_inputs, team_environment_input,
+)
 
 
 def test_american_odds_and_vig_removal():
@@ -35,6 +39,13 @@ def test_consensus_median_outlier_stale_and_suspended():
     assert value.book_count == 4
     assert value.dispersion == 1.0
     assert value.confidence > 0.7
+
+
+def test_consensus_excludes_post_kickoff_line():
+    row = _record(250, "book")
+    started = row.__class__(**{**row.__dict__,
+                               "event_start_time": datetime.now(timezone.utc) - timedelta(minutes=1)})
+    assert build_consensus([started]) is None
 
 
 def test_single_book_has_low_confidence():
@@ -179,3 +190,131 @@ def test_load_market_projections_no_db_is_empty(monkeypatch):
     import dashboard_services.market_intelligence.repository as repo
     monkeypatch.delenv("DATABASE_URL", raising=False)
     assert repo.load_market_projections(2026, None, "season") == {}
+
+
+def _input(source_type, stat_type, value, confidence=.7, metadata=None):
+    return MarketProjectionInput("1", "season", stat_type, value, "test", source_type,
+                                 confidence, datetime.now(timezone.utc), metadata or {})
+
+
+def test_no_independent_season_input_preserves_baseline_exactly():
+    result = build_adjusted_season_projection(254.2, "WR", {"rec": 1}, [])
+    assert result["points"] == 254.2
+    assert result["basis"] == "projection_only"
+    assert result["meaningful"] is False
+
+
+def test_team_environment_is_small_capped_and_position_sensitive():
+    bullish_env = {"score": 1, "confidence": .6, "coverage": 1,
+                   "implied_points": 28, "source": "sportsgameodds"}
+    bearish_env = {**bullish_env, "score": -1, "implied_points": 17}
+    bullish = team_environment_input("1", "QB", bullish_env)
+    bearish = team_environment_input("1", "QB", bearish_env)
+    rb = team_environment_input("1", "RB", bullish_env)
+    assert bullish and 0 < bullish.value <= .03
+    assert bearish and -.03 <= bearish.value < 0
+    assert rb and rb.value < bullish.value
+    assert bullish.metadata["coverage"] == 1
+    assert team_environment_input("1", "WR", None) is None
+    result = build_adjusted_season_projection(300, "QB", {}, [bullish])
+    assert 300 < result["points"] < 306  # confidence shrink keeps the 3% cap smaller still
+
+
+def test_rolling_weekly_requires_three_distinct_weeks_and_weights_recent():
+    rows = [{"canonical_player_id": "1", "week": week, "stat_type": "receiving_yards",
+             "line": line, "confidence": .8}
+            for week, line in [(1, 60), (2, 70)]]
+    assert rolling_weekly_inputs(rows) == []
+    rows.append({"canonical_player_id": "1", "week": 3, "stat_type": "receiving_yards",
+                 "line": 90, "confidence": .8})
+    result = rolling_weekly_inputs(rows)
+    assert len(result) == 1
+    assert 70 < result[0].value < 90
+    assert result[0].metadata["weeks"] == [1, 2, 3]
+
+
+def test_rolling_weekly_ignores_inactive_partial_and_live_lines():
+    base = [{"canonical_player_id": "1", "week": w, "stat_type": "receptions",
+             "line": 5 + w, "confidence": .8} for w in (1, 2)]
+    assert rolling_weekly_inputs(base + [dict(base[0], week=3, inactive=True)]) == []
+    assert rolling_weekly_inputs(base + [dict(base[0], week=3, partial_game=True)]) == []
+    assert rolling_weekly_inputs(base + [dict(base[0], week=3, live=True)]) == []
+    assert rolling_weekly_inputs(base + [dict(base[0], week=3, injury_limited=True)]) == []
+    assert rolling_weekly_inputs(base + [dict(base[0], week=3, period="1h")]) == []
+    assert rolling_weekly_inputs(base + [dict(base[0], week=3, preseason=True)]) == []
+    assert rolling_weekly_inputs(base + [dict(base[0], week=3)], regular_season=False) == []
+
+
+def test_high_variance_lowers_rolling_confidence():
+    def rows(lines):
+        return [{"canonical_player_id": "1", "week": i + 1, "stat_type": "receptions",
+                 "line": line, "confidence": .8} for i, line in enumerate(lines)]
+    stable = rolling_weekly_inputs(rows([6, 6.2, 5.8]))[0]
+    volatile = rolling_weekly_inputs(rows([1, 12, 3]))[0]
+    assert stable.confidence > volatile.confidence
+
+
+def test_direct_season_prop_dominates_same_stat_rolling_signal():
+    direct = _input("season_prop", "receiving_yards", 1200, .85)
+    rolling = _input("rolling_weekly_market", "receiving_yards", 20, .7,
+                     {"weeks": [1, 2, 3], "sample_size": 3})
+    result = build_adjusted_season_projection(220, "WR", {"rec_yd": .1}, [direct, rolling])
+    assert result["basis"] == "season_props"
+    assert result["components"]["adjustments"]["rolling_market_points"] == 0
+    assert "rolling_weekly_market" not in result["components"]["sources"]
+
+
+def test_team_context_only_applies_to_uncovered_components():
+    team = team_environment_input("1", "WR", {"score": 1, "confidence": .6, "coverage": 1})
+    without_direct = build_adjusted_season_projection(200, "WR", {"rec_yd": .1}, [team])
+    direct = _input("season_prop", "receiving_yards", 1100, .8)
+    with_direct = build_adjusted_season_projection(200, "WR", {"rec_yd": .1}, [team, direct])
+    assert abs(with_direct["components"]["adjustments"]["team_environment_points"]) < abs(
+        without_direct["components"]["adjustments"]["team_environment_points"])
+
+
+def test_low_confidence_and_projection_only_do_not_surface_market_vs_adp():
+    from dashboard_services.market_intelligence.adp import attach_market_vs_adp
+    players = [{"id": "1", "proj_ppg": 10, "adp": 100},
+               {"id": "2", "proj_ppg": 20, "adp": 20}]
+    attach_market_vs_adp(players, {"1": {"fantasy_points": 200, "confidence": .2,
+                                         "components": {"basis": "team_environment"}},
+                                   "2": {"fantasy_points": 250, "confidence": .9,
+                                         "components": {"basis": "projection_only"}}})
+    assert players[0]["market_vs_adp"] is None
+    assert players[0]["market_confidence_label"] == "Low"
+    assert players[1]["market_vs_adp"] is None
+    assert players[1]["market_basis"] == "projection_only"
+
+
+def test_market_vs_adp_sign_and_provenance():
+    from dashboard_services.market_intelligence.adp import attach_market_vs_adp
+    players = [{"id": "1", "proj_ppg": 10, "adp": 100},
+               {"id": "2", "proj_ppg": 20, "adp": 20}]
+    attach_market_vs_adp(players, {"1": {"fantasy_points": 255, "confidence": .8,
+                                         "components": {"basis": "season_props"}}})
+    assert players[0]["market_vs_adp"] > 0
+    assert players[0]["market_signal"] == "bullish"
+    assert players[0]["market_basis"] == "season_props"
+    assert players[0]["market_confidence_label"] == "High"
+
+
+def test_rolling_adjusts_only_remaining_games_and_records_rates():
+    rolling = _input("rolling_weekly_market", "receiving_yards", 80, .7,
+                     {"weeks": [4, 5, 6], "sample_size": 3})
+    result = build_adjusted_season_projection(238, "WR", {"rec_yd": .1}, [rolling],
+                                              games_played=6)
+    meta = result["components"]["sources"]["rolling_weekly_market"]
+    assert meta["games_played"] == 6 and meta["remaining_games"] == 11
+    assert meta["market_rate"] != meta["adjusted_rate"]
+    assert abs(result["points"] - 238) < 238 * .1  # capped, shrunk ROS adjustment
+
+
+def test_negative_market_vs_adp_means_draft_later():
+    from dashboard_services.market_intelligence.adp import attach_market_vs_adp
+    players = [{"id": "1", "proj_ppg": 10, "adp": 20},
+               {"id": "2", "proj_ppg": 20, "adp": 100}]
+    attach_market_vs_adp(players, {"1": {"fantasy_points": 255, "confidence": .8,
+                                         "components": {"basis": "blended"}}})
+    assert players[0]["market_vs_adp"] < 0
+    assert players[0]["market_signal"] == "bearish"

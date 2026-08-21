@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 
 @dataclass(frozen=True)
@@ -36,3 +36,22 @@ class MarketConsensus:
     dispersion: float
     confidence: float
     calculated_at: datetime
+
+
+@dataclass(frozen=True)
+class MarketProjectionInput:
+    """Provider-independent evidence consumed by the season projection engine.
+
+    ``value`` is deliberately generic: statistical inputs carry a prop/rate line,
+    while contextual inputs carry a small fractional adjustment. Provider adapters
+    own parsing; fantasy projection code only consumes this normalized contract.
+    """
+    canonical_player_id: str
+    context: str
+    stat_type: str
+    value: float
+    source: str
+    source_type: str
+    confidence: float
+    observed_at: datetime
+    metadata: dict[str, Any]
