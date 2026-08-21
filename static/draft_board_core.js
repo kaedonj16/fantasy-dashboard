@@ -210,6 +210,21 @@
     return 1;
   }
 
+  // Realistic hard roster ceilings for positions whose extra depth has sharply
+  // diminishing utility. This is deliberately format-aware: TE2 and an unusual
+  // late TE3 remain legal in ordinary redraft, while TEP/multi-TE and dynasty
+  // retain deeper rooms. It blocks pathological TE4+ accumulation, not value picks.
+  function positionRosterLimit(pos, rc, opts) {
+    pos = String(pos || '').toUpperCase(); rc = rc || {}; opts = opts || {};
+    if (pos === 'K' || pos === 'DEF') return +rc[pos] || 0;
+    if (pos !== 'TE') return Infinity;
+    var starters = +rc.TE || 0;
+    var dynasty = opts.draftType === 'startup' || opts.draftType === 'dynasty';
+    if (dynasty) return Math.max(5, starters + 4);
+    if ((+opts.tep || 0) > 0) return Math.max(4, starters + 3);
+    return Math.max(1, starters + 2);
+  }
+
   function remainingObligations(counts, rc, remainingPicks, sf) {
     counts = counts || {}; rc = rc || {}; var req = starterRequirements(rc, sf);
     var missing = { QB: Math.max(0, req.QB - (+counts.QB || 0)), RB: Math.max(0, req.RB - (+counts.RB || 0)),
@@ -352,7 +367,8 @@
     computePpgScale: computePpgScale, ppgNorm: ppgNorm,
     tierOf: tierOf, maxVal: maxVal, posTargets: posTargets,
     starterRequirements: starterRequirements, rosterRole: rosterRole, candidateRosterRole: candidateRosterRole,
-    rosterSlotUtility: rosterSlotUtility, remainingObligations: remainingObligations,
+    rosterSlotUtility: rosterSlotUtility, positionRosterLimit: positionRosterLimit,
+    remainingObligations: remainingObligations,
     decisionScore: decisionScore, decisionBand: decisionBand, selectDecisionCandidate: selectDecisionCandidate,
     availabilityProbability: availabilityProbability, calibrateAvailability: calibrateAvailability,
   };

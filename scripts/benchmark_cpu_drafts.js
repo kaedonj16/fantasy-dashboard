@@ -12,7 +12,7 @@ const Core = require('../static/draft_board_core.js');
 
 function args(argv) {
   const out = { drafts: 1000, type: 'redraft', teams: 12, rounds: 15, sf: false,
-    qb: 1, rb: 2, wr: 2, te: 1, flex: 2, k: 0, def: 0, seed: 20260821, json: null };
+    qb: 1, rb: 2, wr: 2, te: 1, flex: 2, k: 0, def: 0, tep: 0, seed: 20260821, json: null };
   for (let i = 2; i < argv.length; i++) {
     let key = argv[i].replace(/^--/, '').replace(/-/g, '_');
     if (key === 'sf' || key === 'superflex') { out.sf = true; continue; }
@@ -34,6 +34,7 @@ function help() {
   --qb/--rb/--wr/--te N   dedicated starters
   --flex N         FLEX starters (default 2)
   --k N --def N    required K/DEF slots
+  --tep N           TE-premium points per reception (default 0)
   --seed N         reproducible random seed
   --json PATH      write machine-readable results
 `);
@@ -104,10 +105,12 @@ function runOne(cfg, source, random, aggregate) {
     roster.forEach(p => { counts[p.position] = (counts[p.position] || 0) + 1; });
     const obligations = Core.remainingObligations(counts, rc, cfg.rounds - round + 1, cfg.sf);
     const candidates = available.slice(0, Math.min(100, available.length)).filter(p => {
-      return !['K', 'DEF'].includes(p.position) || (rc[p.position] > 0 && counts[p.position] < rc[p.position]);
+      const limit = Core.positionRosterLimit(p.position, rc, { draftType: cfg.type, tep: cfg.tep });
+      return counts[p.position] < limit;
     }).map(p => {
       const role = Core.rosterRole(p.position, counts, rc, cfg.sf);
-      const utility = Core.rosterSlotUtility(p.position, counts, rc, { role, sf: cfg.sf, draftType: cfg.type });
+      const utility = Core.rosterSlotUtility(p.position, counts, rc,
+        { role, sf: cfg.sf, draftType: cfg.type, tep: cfg.tep });
       const base = Math.max(20, Math.min(98, 86 - Math.abs(pick - p.adp) * 0.48 + Math.max(0, pick - p.adp) * 0.22));
       const bench = role === 'bench1' || role === 'bench2';
       const since = last[slot][p.position] == null ? 99 : round - last[slot][p.position];

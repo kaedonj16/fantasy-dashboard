@@ -1569,6 +1569,10 @@
       var p = c.p, w = c.w, a = c.a, pv = c.pv;
       var pos = (p.position||'').toUpperCase();
       var t = targets[pos] || 0, have = counts[pos] || 0;
+      var rosterLimit = window.DraftBoardCore && DraftBoardCore.positionRosterLimit
+        ? DraftBoardCore.positionRosterLimit(pos, _rs, { draftType:state.type, tep:scoringCfg().tep })
+        : Infinity;
+      if (have >= rosterLimit){ c.w = 0; c.ds = -1; return; }
       // Kicker and defense are required lineup slots, not ordinary bench depth.
       // Once this team has filled the configured number, remove every additional
       // K/DEF from its candidate set entirely. A soft overfill multiplier is not

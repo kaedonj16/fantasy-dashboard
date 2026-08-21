@@ -124,6 +124,13 @@ def test_cpu_never_drafts_kicker_or_defense_past_roster_capacity():
     assert "if (mustFillKDef) return mustFillKDef;" in source
 
 
+def test_cpu_respects_format_aware_tight_end_roster_limit():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert "DraftBoardCore.positionRosterLimit(pos, _rs" in source
+    assert "if (have >= rosterLimit){ c.w = 0; c.ds = -1; return; }" in source
+
+
 def test_likely_next_pick_survivors_pay_current_pick_opportunity_cost():
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 

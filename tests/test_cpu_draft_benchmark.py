@@ -29,6 +29,7 @@ def test_headless_cpu_benchmark_is_seeded_and_reports_roster_metrics():
     assert first["medianRound"] == second["medianRound"]
     assert first["medianFinalCount"] == second["medianFinalCount"]
     assert first["maximumFinalCount"] == second["maximumFinalCount"]
+    assert first["maximumFinalCount"]["TE"] <= 3
     assert first["configuration"]["drafts"] == 3
     assert first["model"] == "shared-kernel"
     assert first["playerPool"] >= 180
