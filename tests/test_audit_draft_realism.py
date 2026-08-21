@@ -24,9 +24,12 @@ def test_summarize_cohort_tracks_depth_timing_and_position_counts():
     assert summary.qb_rounds == {"QB1": 3, "QB2": 5, "QB3": None}
     assert summary.te_rounds["TE1"] == 4
     assert summary.position_counts["QB"] == 2
+    assert summary.position_rostered_pct["K"] == 100
+    assert summary.position_counts_when_rostered["K"] == 1
     assert summary.k_first_round == 6
     assert summary.resolved_pct == 100
     assert "Redraft — 1QB" in render_markdown([summary], "Filters: test.")
+    assert "Teams rostering" in render_markdown([summary], "Filters: test.")
 
 
 def test_unresolved_players_are_reported_but_not_counted():

@@ -46,6 +46,8 @@ class CohortSummary:
     resolved_pct: float
     median_rounds: float
     position_counts: dict[str, float]
+    position_counts_when_rostered: dict[str, float]
+    position_rostered_pct: dict[str, float]
     qb_rounds: dict[str, float | None]
     te_rounds: dict[str, float | None]
     k_first_round: float | None
@@ -143,6 +145,14 @@ def summarize_cohort(drafts: list[dict], picks: list[dict], positions: dict[str,
         resolved_pct=round(100 * resolved / max(1, relevant_picks), 1),
         median_rounds=_median(float(d.get("rounds") or 0) for d in drafts) or 0,
         position_counts={p: _median(v) or 0 for p, v in final_counts.items()},
+        position_counts_when_rostered={
+            p: _median(count for count in values if count > 0) or 0
+            for p, values in final_counts.items()
+        },
+        position_rostered_pct={
+            p: round(100 * sum(count > 0 for count in values) / max(1, len(values)), 1)
+            for p, values in final_counts.items()
+        },
         qb_rounds={f"QB{n}": _median(nth_rounds["QB"][n]) for n in (1, 2, 3)},
         te_rounds={f"TE{n}": _median(nth_rounds["TE"][n]) for n in (1, 2, 3)},
         k_first_round=_median(first_rounds["K"]), def_first_round=_median(first_rounds["DEF"]),
@@ -165,11 +175,16 @@ def render_markdown(summaries: list[CohortSummary], filters: str) -> str:
                   f"- **Repeated-position picks:** {summary.consecutive_position_pct:.1f}% of transitions",
                   "", "| Metric | Median round |", "|---|---:|"]
         timing = {**summary.qb_rounds, **summary.te_rounds,
-                  "First K": summary.k_first_round, "First DEF": summary.def_first_round}
+                  "First K (teams drafting K)": summary.k_first_round,
+                  "First DEF (teams drafting DEF)": summary.def_first_round}
         lines += [f"| {label} | {'—' if value is None else f'{value:g}'} |"
                   for label, value in timing.items()]
-        lines += ["", "| Position | Median final count |", "|---|---:|"]
-        lines += [f"| {pos} | {summary.position_counts.get(pos, 0):g} |" for pos in SKILL_POSITIONS]
+        lines += ["", "| Position | Median, all teams | Teams rostering | Median when rostered |",
+                  "|---|---:|---:|---:|"]
+        lines += [f"| {pos} | {summary.position_counts.get(pos, 0):g} | "
+                  f"{summary.position_rostered_pct.get(pos, 0):.1f}% | "
+                  f"{summary.position_counts_when_rostered.get(pos, 0):g} |"
+                  for pos in SKILL_POSITIONS]
         lines += ["", "### Pick share by draft phase", "", "| Phase | QB | RB | WR | TE | K | DEF |",
                   "|---|---:|---:|---:|---:|---:|---:|"]
         for phase in ("early (1-4)", "middle (5-9)", "late (10+)"):
