@@ -20507,6 +20507,11 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
             player_id = str(player.get("id") or "")
             player_data = players_index.get(player_id)
             if player_data:
+                # Keep list/search surfaces on the same canonical headshot as
+                # the player-details modal.  Using the Sleeper player ID to
+                # construct a separate CDN URL can show a stale or mismatched
+                # photo when the two providers disagree.
+                player["espnHeadshot"] = player_data.get("espnHeadshot") or ""
                 bday = player_data.get("bDay")
                 player["bDay"] = bday
                 precise = age_from_bday(bday)

@@ -19616,6 +19616,7 @@ function setupFunAwardsGrid() {
           name: String(p.name || ''),
           pos:  String(p.position || '').toUpperCase(),
           team: String(p.team || p.nfl_team || ''),
+          headshot: String(p.espnHeadshot || ''),
         }));
     } catch (e) {
       console.warn('[nav-search] Failed to load players:', e);
@@ -19625,10 +19626,6 @@ function setupFunAwardsGrid() {
     // If the user already typed while the list was loading, render now instead
     // of leaving the dropdown stuck on "Loading…" until they type another key.
     if (input.value.trim()) renderResults(input.value);
-  }
-
-  function headshot(id) {
-    return `https://sleepercdn.com/content/nfl/players/thumb/${id}.jpg`;
   }
 
   function posColor(pos) {
@@ -19656,7 +19653,7 @@ function setupFunAwardsGrid() {
 
     dropdown.innerHTML = matches.map((p, i) => `
       <div class="nav-search-result" data-idx="${i}" data-ns-pid="${p.id}" data-ns-name="${p.name.replace(/"/g, '&quot;')}">
-        <img class="nav-search-avatar" src="${headshot(p.id)}" alt="" loading="lazy"
+        <img class="nav-search-avatar" src="${_hiResHeadshot(p.headshot, 80)}" data-raw="${p.headshot}" alt="" loading="lazy"
              onerror="this.style.visibility='hidden'" />
         <div class="nav-search-info">
           <div class="nav-search-name">${p.name}</div>
