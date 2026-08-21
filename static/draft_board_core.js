@@ -108,26 +108,222 @@
     return clamp01((v - sc.repl) / span);
   }
 
-  // Depth targets per position from a roster-counts map (mirror of the draft
-  // room's posTargets). Suggestions, not hard needs: bench depth is capped and
-  // each position is held to a realistic ceiling. Shared so the cheat sheet's
-  // roster-need shading uses the same targets the draft room grades against.
+  // League-relative depth targets.  Single-start, non-flex positions do not get
+  // a backup merely because Math.round assigned them a slice of the bench.
+  // Instead the bench follows paths into the weekly lineup: RB/WR get the bulk,
+  // while SF and TEP explicitly create useful QB/TE depth.
   function posTargets(rc, tep) {
     rc = rc || {}; tep = tep || 0;
     var flex = rc.FLEX || 0, sf = rc.SF || 0, bn = rc.BN || 0;
-    var benchEff = Math.min(bn, 7);
+    var benchEff = Math.min(bn, 8);
+    var rbDepth = Math.ceil(benchEff * 0.45);
+    var wrDepth = Math.floor(benchEff * 0.45);
     var t = {
-      QB: (rc.QB || 0) + sf + Math.round(benchEff * 0.10),
-      RB: (rc.RB || 0) + flex + Math.round(benchEff * 0.35),
-      WR: (rc.WR || 0) + Math.round(benchEff * 0.40),
-      TE: (rc.TE || 0) + (tep > 0 ? Math.round(benchEff * 0.15) : 0),
+      QB: (rc.QB || 0) + sf + (sf && benchEff >= 5 ? 1 : 0),
+      RB: (rc.RB || 0) + flex + rbDepth,
+      WR: (rc.WR || 0) + wrDepth,
+      TE: (rc.TE || 0) + (tep > 0 && benchEff >= 5 ? 1 : 0),
     };
-    if (tep > 0) t.TE += 1;
-    var cap = { QB: sf ? 3 : 2, RB: 6, WR: 6, TE: tep > 0 ? 3 : 2 };
+    var cap = { QB: sf ? 4 : Math.max(1, rc.QB || 0), RB: 7, WR: 7,
+                TE: tep > 0 ? Math.max(3, rc.TE || 0) : Math.max(1, rc.TE || 0) };
     Object.keys(cap).forEach(function (k) { if (t[k] > cap[k]) t[k] = cap[k]; });
     if (rc.K) t.K = rc.K;
     if (rc.DEF) t.DEF = rc.DEF;
     return t;
+  }
+
+  function starterRequirements(rc, sf) {
+    rc = rc || {};
+    return { QB: (rc.QB || 0) + (sf ? (rc.SF || 0) : 0), RB: rc.RB || 0,
+             WR: rc.WR || 0, TE: rc.TE || 0, FLEX: rc.FLEX || 0,
+             K: rc.K || 0, DEF: rc.DEF || 0 };
+  }
+
+  // Returns the role occupied by the *next* player at pos. FLEX is deliberately
+  // allocated only after dedicated RB/WR/TE slots; that is what makes RB3/WR3 a
+  // starter while QB2 in 1QB is backup-only.
+  function rosterRole(pos, counts, rc, sf) {
+    pos = String(pos || '').toUpperCase(); counts = counts || {}; rc = rc || {};
+    var have = +counts[pos] || 0, req = starterRequirements(rc, sf);
+    if (have < (req[pos] || 0)) return 'starter';
+    if ((pos === 'RB' || pos === 'WR' || pos === 'TE') && req.FLEX > 0) {
+      var flexUsed = Math.max(0, (+counts.RB || 0) - req.RB)
+                   + Math.max(0, (+counts.WR || 0) - req.WR)
+                   + Math.max(0, (+counts.TE || 0) - req.TE);
+      if (flexUsed < req.FLEX) return 'flex';
+    }
+    return have === (req[pos] || 0) ? 'bench1' : 'bench2';
+  }
+
+  // Quality-aware FLEX role: counts tell us whether FLEX is occupied, but not
+  // whether this candidate would replace a weak occupant. Dedicated slots are
+  // removed position-by-position, then the best remaining RB/WR/TE qualities
+  // compete for FLEX. This keeps an excellent WR5 from being mislabeled as mere
+  // bench depth when it would actually upgrade a manager's weekly lineup.
+  function candidateRosterRole(pos, candidateQuality, rosterQualities, rc, sf) {
+    pos = String(pos || '').toUpperCase(); rc = rc || {};
+    var counts = { QB:0, RB:0, WR:0, TE:0 };
+    (rosterQualities || []).forEach(function(r){ var p = String(r.pos || '').toUpperCase(); if (counts[p] != null) counts[p]++; });
+    var basic = rosterRole(pos, counts, rc, sf);
+    if (basic === 'starter' || basic === 'flex' || ['RB','WR','TE'].indexOf(pos) < 0 || !(rc.FLEX || 0)) return basic;
+    var req = starterRequirements(rc, sf), by = { RB:[], WR:[], TE:[] };
+    (rosterQualities || []).forEach(function(r){ var p = String(r.pos || '').toUpperCase(); if (by[p]) by[p].push(+r.quality || 0); });
+    by[pos].push(+candidateQuality || 0);
+    var flexPool = [];
+    Object.keys(by).forEach(function(p){
+      by[p].sort(function(a,b){ return b-a; });
+      flexPool = flexPool.concat(by[p].slice(req[p] || 0));
+    });
+    flexPool.sort(function(a,b){ return b-a; });
+    var cutoff = flexPool[Math.min((req.FLEX || 0), flexPool.length) - 1];
+    return cutoff != null && (+candidateQuality || 0) >= cutoff ? 'flex' : basic;
+  }
+
+  function rosterSlotUtility(pos, counts, rc, opts) {
+    opts = opts || {}; var role = opts.role || rosterRole(pos, counts, rc, !!opts.sf);
+    if (role === 'starter') return 1;
+    if (role === 'flex') return String(pos || '').toUpperCase() === 'TE'
+      ? ((+opts.tep || 0) > 0 ? 0.86 : 0.70) : 0.96;
+    var dynasty = opts.draftType === 'startup' || opts.draftType === 'dynasty';
+    var tep = +opts.tep || 0, p = String(pos || '').toUpperCase();
+    // K/DEF are lineup obligations, not ordinary bench-depth assets. Keep a
+    // tiny non-zero utility rather than a ban (custom leagues may allow a
+    // second), but never value K2/DEF2 like another starter.
+    if (p === 'K' || p === 'DEF') return 0.06;
+    var have = +(counts && counts[p]) || 0;
+    if (p === 'QB') {
+      if (role === 'bench1') return opts.sf ? 0.78 : (dynasty ? 0.76 : 0.32);
+      // Dynasty QB3 in 1QB is a real stash/trade asset. In SF, QB4 is useful
+      // insulation, but QB5+ should not inherit the same utility indefinitely.
+      if (opts.sf) return have >= 4 ? 0.18 : 0.55;
+      if (dynasty) return have >= 3 ? 0.10 : 0.55;
+      return 0.12;
+    }
+    if (p === 'TE') {
+      if (role === 'bench1') return tep > 0 ? 0.72 : (dynasty ? 0.62 : 0.32);
+      if (tep > 0) return have >= 4 ? 0.24 : 0.48;
+      if (dynasty) return have >= 4 ? 0.12 : 0.44;
+      return 0.16;
+    }
+    if (p === 'RB') return role === 'bench1' ? 0.82 : 0.68;
+    if (p === 'WR') return role === 'bench1' ? 0.78 : 0.64;
+    return 1;
+  }
+
+  function remainingObligations(counts, rc, remainingPicks, sf) {
+    counts = counts || {}; rc = rc || {}; var req = starterRequirements(rc, sf);
+    var missing = { QB: Math.max(0, req.QB - (+counts.QB || 0)), RB: Math.max(0, req.RB - (+counts.RB || 0)),
+      WR: Math.max(0, req.WR - (+counts.WR || 0)), TE: Math.max(0, req.TE - (+counts.TE || 0)),
+      K: Math.max(0, req.K - (+counts.K || 0)), DEF: Math.max(0, req.DEF - (+counts.DEF || 0)) };
+    var flexUsed = Math.max(0, (+counts.RB || 0) - req.RB) + Math.max(0, (+counts.WR || 0) - req.WR)
+                 + Math.max(0, (+counts.TE || 0) - req.TE);
+    missing.FLEX = Math.max(0, req.FLEX - flexUsed);
+    var required = 0; Object.keys(missing).forEach(function(k){ required += missing[k]; });
+    return { missing: missing, required: required, remaining: Math.max(0, +remainingPicks || 0),
+             freePicks: Math.max(0, (+remainingPicks || 0) - required) };
+  }
+
+  // Pure, testable final layer used only for live recommendations. A great fall
+  // can overcome fit, but ordinary backup-only value pays a persistent cost.
+  function decisionScore(o) {
+    o = o || {}; var base = +o.base || 0, util = o.utility == null ? 1 : +o.utility;
+    var score = base + (util - 1) * 38;
+    if (o.bench) {
+      score += (+o.quality || 0) * 5;
+      if ((+o.required || 0) > 0 && (+o.freePicks || 0) <= 1) score -= 7;
+      if ((+o.required || 0) > 0 && (+o.freePicks || 0) <= 0) score -= 13;
+      if (o.deepBench) score -= 5;
+      // Drafting a backup immediately after filling a single-starter position is
+      // especially wasteful: the board has barely changed and the manager has
+      // not used intervening picks on more flexible depth. This fades smoothly.
+      score -= Math.max(0, +o.recentPenalty || 0);
+      // Truly exceptional falls may buy back some fit cost, but ordinary ADP
+      // values cannot use the generic late-round score inflation as an escape.
+      score += Math.max(0, Math.min(12, (+o.exceptional || 0) * 12));
+    }
+    if ((+o.waitLoss || 0) > 0) {
+      var waitBonus = Math.min(9, (+o.waitLoss || 0) * 0.30) * Math.max(0.35, util);
+      // Urgency should separate close candidates, not flatten every excellent
+      // option against the 99 ceiling. Shrink positive bonuses as headroom runs
+      // out so 96/95/94-quality decisions remain visibly distinct.
+      waitBonus = Math.min(waitBonus, Math.max(0, (99 - score) * 0.35));
+      score += waitBonus;
+    }
+    // A player who is likely to survive until the manager's next pick consumes
+    // scarce current-pick capital without capturing much value. Keep this
+    // separate from waitLoss: waitLoss rewards a genuine positional shelf cliff,
+    // while waitPenalty discounts this specific player's probability of returning.
+    score -= Math.max(0, Math.min(10, +o.waitPenalty || 0));
+    return Math.max(1, Math.min(99, Math.round(score)));
+  }
+
+  function decisionBand(rows, round, persona) {
+    rows = rows || []; round = +round || 1; persona = +persona || 0.8;
+    var best = 0; rows.forEach(function(r){ if ((+r.ds || 0) > best) best = +r.ds || 0; });
+    var width = 4 + Math.min(6, Math.max(0, round - 4) * 0.65) + Math.max(0, persona - 0.8) * 2;
+    var eligible = rows.filter(function(r){ return (+r.weight || 0) > 0 && (+r.ds || 0) >= best - width; });
+    return eligible.length ? eligible : rows.slice();
+  }
+
+  // Shared final CPU chooser: production mocks and the headless benchmark both
+  // use the same decision band, top-field cap and weighted sampling. Callers own
+  // candidate economics/personality; this kernel owns how close alternatives
+  // become an actual pick.
+  function selectDecisionCandidate(rows, round, persona, random) {
+    var eligible = decisionBand(rows, round, persona).slice(0, 8);
+    if (!eligible.length) return null;
+    var sum = 0; eligible.forEach(function(r){ sum += Math.max(0, +r.weight || 0); });
+    if (sum <= 0) return eligible[0];
+    var roll = (typeof random === 'function' ? random() : Math.random()) * sum;
+    for (var i = 0; i < eligible.length; i++) {
+      roll -= Math.max(0, +eligible[i].weight || 0);
+      if (roll <= 0) return eligible[i];
+    }
+    return eligible[0];
+  }
+
+  function normalCdf(z) {
+    var t = 1 / (1 + 0.2316419 * Math.abs(z));
+    var d = 0.3989423 * Math.exp(-z * z / 2);
+    var p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+    return z > 0 ? 1 - p : p;
+  }
+
+  // Empirical return-rate curves from 10k-draft matched-format benchmarks.
+  // Raw Normal(ADP, sigma) is directionally useful but systematically optimistic
+  // in redraft 1QB and dynasty SF, where many managers attack the same shelves.
+  // Keep profiles together and interpolate smoothly rather than scattering format
+  // multipliers through Draft Room.
+  var AVAILABILITY_CALIBRATION = {
+    redraft_1qb: [[0,0],[9,9],[57,25],[73,27],[93,51],[100,60]],
+    redraft_sf:  [[0,0],[10,11],[57,36],[71,55],[88,73],[100,85]],
+    startup_1qb: [[0,0],[11,23],[57,67],[71,74],[84,81],[100,90]],
+    startup_sf:  [[0,0],[12,16],[57,36],[72,38],[91,44],[100,50]],
+  };
+  function calibrateAvailability(probability, draftType, sf) {
+    var type = draftType === 'redraft' ? 'redraft' : 'startup';
+    var points = AVAILABILITY_CALIBRATION[type + '_' + (sf ? 'sf' : '1qb')];
+    var p = Math.max(0, Math.min(100, +probability || 0));
+    for (var i = 1; i < points.length; i++) {
+      if (p <= points[i][0]) {
+        var left = points[i - 1], right = points[i];
+        var ratio = (p - left[0]) / Math.max(1, right[0] - left[0]);
+        return Math.round((left[1] + (right[1] - left[1]) * ratio) * 10) / 10;
+      }
+    }
+    return points[points.length - 1][1];
+  }
+
+  // Probability a player survives through `pick`. Production Draft Room and
+  // the headless calibration benchmark share this exact probability kernel;
+  // callers may supply an observed-draft center and positional-run penalty.
+  function availabilityProbability(o) {
+    o = o || {}; var center = o.center == null ? +o.adp : +o.center;
+    var sigma = Math.max(0.01, +o.sigma || 1), pick = +o.pick || 0;
+    var probability = 1 - normalCdf((pick - center) / sigma);
+    probability *= 1 - Math.max(0, Math.min(1, +o.runPenalty || 0));
+    var raw = Math.max(0, Math.min(100, Math.round(probability * 100)));
+    return o.calibrate === false ? raw : calibrateAvailability(raw, o.draftType, !!o.sf);
   }
 
   // Dynasty tier from the server value thresholds; redraft returns null because
@@ -155,5 +351,9 @@
     computeReplacement: computeReplacement, ppgOf: ppgOf,
     computePpgScale: computePpgScale, ppgNorm: ppgNorm,
     tierOf: tierOf, maxVal: maxVal, posTargets: posTargets,
+    starterRequirements: starterRequirements, rosterRole: rosterRole, candidateRosterRole: candidateRosterRole,
+    rosterSlotUtility: rosterSlotUtility, remainingObligations: remainingObligations,
+    decisionScore: decisionScore, decisionBand: decisionBand, selectDecisionCandidate: selectDecisionCandidate,
+    availabilityProbability: availabilityProbability, calibrateAvailability: calibrateAvailability,
   };
 });
