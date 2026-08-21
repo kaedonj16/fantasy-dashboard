@@ -26,6 +26,14 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 SKILL_POSITIONS = ("QB", "RB", "WR", "TE", "K", "DEF")
+NFL_TEAM_CODES = frozenset({
+    "ARI", "ATL", "BAL", "BUF", "CAR", "CHI", "CIN", "CLE",
+    "DAL", "DEN", "DET", "GB", "HOU", "IND", "JAX", "KC",
+    "LV", "LAC", "LAR", "MIA", "MIN", "NE", "NO", "NYG",
+    "NYJ", "PHI", "PIT", "SEA", "SF", "TB", "TEN", "WAS",
+    # Historical Sleeper defense identifiers can remain in older draft rows.
+    "OAK", "SD", "STL",
+})
 
 
 @dataclass
@@ -64,10 +72,16 @@ def load_position_map() -> dict[str, str]:
         with path.open(encoding="utf-8") as handle:
             for player_id, player in (json.load(handle) or {}).items():
                 pos = str(player.get("pos") or player.get("position") or "").upper()
-                if pos == "DST":
+                if pos == "PK":
+                    pos = "K"
+                elif pos in {"DST", "D/ST"}:
                     pos = "DEF"
                 if pos in SKILL_POSITIONS:
                     result[str(player_id)] = pos
+    # Sleeper represents team defenses by their abbreviation (for example
+    # player_id="BAL"); those entries are not part of players_index.json.
+    for team in NFL_TEAM_CODES:
+        result.setdefault(team, "DEF")
     return result
 
 

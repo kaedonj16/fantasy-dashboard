@@ -82,3 +82,19 @@ def test_main_prints_report_even_when_output_file_is_requested(monkeypatch, tmp_
     assert "Querying production DB" in captured.err
     assert "Loaded 1 drafts and 1 picks" in captured.err
     assert output.read_text().startswith("# Real Draft Roster-Construction Audit")
+
+
+def test_position_map_normalizes_sleeper_kickers_and_team_defenses(monkeypatch, tmp_path):
+    player_file = tmp_path / "players.json"
+    player_file.write_text('{"k1": {"pos": "PK"}, "q1": {"pos": "QB"}}')
+    monkeypatch.setattr("scripts.audit_draft_realism.REPO_ROOT", tmp_path)
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    player_file.rename(cache / "players_index.json")
+
+    from scripts.audit_draft_realism import load_position_map
+
+    positions = load_position_map()
+    assert positions["k1"] == "K"
+    assert positions["BAL"] == "DEF"
+    assert positions["OAK"] == "DEF"
