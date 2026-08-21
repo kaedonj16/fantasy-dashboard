@@ -190,8 +190,21 @@
     // tiny non-zero utility rather than a ban (custom leagues may allow a
     // second), but never value K2/DEF2 like another starter.
     if (p === 'K' || p === 'DEF') return 0.06;
-    if (p === 'QB') return role === 'bench1' ? (opts.sf ? 0.82 : (dynasty ? 0.70 : 0.30)) : (opts.sf ? 0.55 : 0.12);
-    if (p === 'TE') return role === 'bench1' ? (tep > 0 ? 0.72 : (dynasty ? 0.62 : 0.38)) : (tep > 0 ? 0.48 : 0.16);
+    var have = +(counts && counts[p]) || 0;
+    if (p === 'QB') {
+      if (role === 'bench1') return opts.sf ? 0.78 : (dynasty ? 0.70 : 0.30);
+      // Dynasty QB3 in 1QB is a real stash/trade asset. In SF, QB4 is useful
+      // insulation, but QB5+ should not inherit the same utility indefinitely.
+      if (opts.sf) return have >= 4 ? 0.18 : 0.55;
+      if (dynasty) return have >= 3 ? 0.10 : 0.48;
+      return 0.12;
+    }
+    if (p === 'TE') {
+      if (role === 'bench1') return tep > 0 ? 0.72 : (dynasty ? 0.62 : 0.38);
+      if (tep > 0) return have >= 4 ? 0.24 : 0.48;
+      if (dynasty) return have >= 4 ? 0.12 : 0.44;
+      return 0.16;
+    }
     if (p === 'RB') return role === 'bench1' ? 0.82 : 0.68;
     if (p === 'WR') return role === 'bench1' ? 0.78 : 0.64;
     return 1;

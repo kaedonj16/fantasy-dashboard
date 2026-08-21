@@ -765,10 +765,33 @@
       if (cfg.platform) params.push('platform=' + encodeURIComponent(cfg.platform));
     }
     var url = '/api/league-players' + (params.length ? ('?' + params.join('&')) : '');
-    fetch(url, { cache: 'no-store' })
-      .then(function(r){ return r.json(); })
+    var _loadPlayerPayload = function(attempt){
+      return fetch(url, { cache: 'no-store' }).then(function(r){
+        return r.text().then(function(body){
+          var payload;
+          try { payload = JSON.parse(body); }
+          catch (_jsonErr) { throw new Error('Player API returned non-JSON (HTTP ' + r.status + ')'); }
+          if (!r.ok) {
+            var detail = payload && (payload.error || payload.message);
+            throw new Error('Player API HTTP ' + r.status + (detail ? ': ' + detail : ''));
+          }
+          return payload;
+        });
+      }).catch(function(err){
+        // Render can briefly return 502/503 while a worker is restarting. One
+        // bounded retry fixes that transient case without creating a request loop.
+        if (attempt < 1) return new Promise(function(resolve){
+          setTimeout(function(){ resolve(_loadPlayerPayload(attempt + 1)); }, 600);
+        });
+        throw err;
+      });
+    };
+    _loadPlayerPayload(0)
       .then(function(resp){
         var raw = Array.isArray(resp) ? resp : (resp.players || []);
+        if (!Array.isArray(raw) || !raw.length) {
+          throw new Error((resp && (resp.error || resp.message)) || 'Player API returned an empty player pool');
+        }
         tierThresholds = (!Array.isArray(resp) && resp.tier_thresholds) ? resp.tier_thresholds : {};
         adpSources = (!Array.isArray(resp) && resp.adp_sources) ? resp.adp_sources : {};
         if (!Array.isArray(resp) && resp.adp_source_options) adpSourceOptions = resp.adp_source_options;
@@ -805,9 +828,18 @@
         render();
         if (sim) scheduleSim();   // begin CPU picks once players are loaded
       })
-      .catch(function(){
-        document.getElementById('drBaList').innerHTML =
-          '<div class="dr-loading">Could not load players. Refresh to retry.</div>';
+      .catch(function(err){
+        console.error('[draft-room] loadPlayers failed', err);
+        var host = document.getElementById('drBaList');
+        if (!host) return;
+        host.innerHTML = '';
+        var box = document.createElement('div'); box.className = 'dr-loading';
+        var msg = document.createElement('div');
+        msg.textContent = 'Could not load players: ' + ((err && err.message) || 'unknown error');
+        var retry = document.createElement('button'); retry.type = 'button';
+        retry.className = 'dr-btn dr-btn-sm'; retry.textContent = 'Retry';
+        retry.style.marginTop = '10px'; retry.addEventListener('click', loadPlayers);
+        box.appendChild(msg); box.appendChild(retry); host.appendChild(box);
       });
   }
 

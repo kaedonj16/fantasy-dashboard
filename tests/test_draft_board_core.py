@@ -204,6 +204,12 @@ def test_roster_economics_respect_format_and_flex():
         "specialUtil:[C.rosterSlotUtility('K',{K:0},standard,{sf:false}),"
         "C.rosterSlotUtility('K',{K:1},standard,{sf:false}),"
         "C.rosterSlotUtility('DEF',{DEF:1},standard,{sf:false})],"
+        "dynDepth:[C.rosterSlotUtility('QB',{QB:2},standard,{sf:false,draftType:'startup'}),"
+        "C.rosterSlotUtility('QB',{QB:3},standard,{sf:false,draftType:'startup'}),"
+        "C.rosterSlotUtility('QB',{QB:3},{QB:1,SF:1},{sf:true,draftType:'startup'}),"
+        "C.rosterSlotUtility('QB',{QB:4},{QB:1,SF:1},{sf:true,draftType:'startup'}),"
+        "C.rosterSlotUtility('TE',{TE:2},standard,{sf:false,draftType:'startup',role:'bench2'}),"
+        "C.rosterSlotUtility('TE',{TE:4},standard,{sf:false,draftType:'startup',role:'bench2'})],"
         "ob:C.remainingObligations(counts,standard,5,false),"
         "sf:C.rosterRole('QB',{QB:1},{QB:1,SF:1,RB:2,WR:2,TE:1,FLEX:1,BN:7},true),"
         "twoTe:C.rosterRole('TE',{TE:1},{QB:1,RB:2,WR:2,TE:2,FLEX:1,BN:7},false),"
@@ -223,6 +229,7 @@ def test_roster_economics_respect_format_and_flex():
     assert out["roles"] == ["bench1", "flex", "flex", "flex"]
     assert out["utils"][1] > out["utils"][0] and out["utils"][2] > out["utils"][3]
     assert out["specialUtil"] == [1, 0.06, 0.06]
+    assert out["dynDepth"] == [0.48, 0.1, 0.55, 0.18, 0.44, 0.12]
     assert out["ob"]["missing"] == {"QB": 0, "RB": 0, "WR": 0, "TE": 0, "K": 1, "DEF": 1, "FLEX": 2}
     assert out["ob"]["freePicks"] == 1
     assert out["sf"] == "starter"
