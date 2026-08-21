@@ -2845,20 +2845,23 @@
     var _rawPs = p._ps != null ? p._ps : pickScoreFor(p);
     var ps = _rawPs == null ? null : Math.max(1, Math.min(99, Math.round(_rawPs)));
     var sub = (adp != null ? 'ADP ' + Number(adp).toFixed(1) : '')
-      + (p._ds != null && ps != null ? ' · Pick ' + ps : '');
+      + (!opts.showPickScore && p._ds != null && ps != null ? ' · PS ' + ps : '');
     var reasonLine = '';
     if (opts.reason || (opts.rank && p._ds != null)) {
       reasonLine = '<div class="dr-ba-reason">'
-        + (opts.rank && p._ds != null ? '<span class="dr-rec-rank">#' + opts.rank + '</span>' : '')
         + (opts.reason ? '<span>' + esc(opts.reason) + '</span>' : '') + '</div>';
     }
     var waitLine = opts.wait
       ? '<div class="dr-ba-wait">Can wait: ' + opts.wait.prob + '% there at #' + opts.wait.pn + '</div>'
       : '';
-    var _shownScore = p._ds != null ? p._ds : ps;
-    var psChip = (_shownScore != null)
-      ? '<div class="dr-ba-pschip" style="color:' + psColor(_shownScore) + ';background:' + psColor(_shownScore) + '1a;">' + _shownScore + '<small>' + (p._ds != null ? 'REC' : 'PS') + '</small></div>'
-      : '';
+    // Recommendation is an ordering, not a historical grade. Showing its raw
+    // internal utility as 99 early and 18 late made the same sound decision look
+    // wildly inconsistent. Surface the rank for Recommendation and reserve the
+    // numeric 0-100 chip for the actual Pick Score.
+    var _isRec = opts.rank && p._ds != null;
+    var psChip = _isRec
+      ? '<div class="dr-ba-pschip dr-ba-recchip">#' + opts.rank + '<small>REC</small></div>'
+      : (ps != null ? '<div class="dr-ba-pschip" style="color:' + psColor(ps) + ';background:' + psColor(ps) + '1a;">' + ps + '<small>PS</small></div>' : '');
     var availClass = '';
     var availLine = '';
     if (opts.availAt){
@@ -4666,7 +4669,8 @@
     var _reasonCounts = sortBy === 'ps' ? myPosCounts() : null;
     for (var i = 0; i < Math.min(mainPool.length, 200); i++){
       var p = mainPool[i];
-      var opts = sortBy === 'ps' ? { reason: pickReason(p, _reasonCounts), rank: i + 1 } : {};
+      var opts = sortBy === 'ps' ? { reason: pickReason(p, _reasonCounts), rank: i + 1 }
+        : { showPickScore: sortBy === 'pickscore' };
       if (nextPick){
         var prob = availProb(p, nextPick);
         // Show the survival % for every player so elite names that likely go
@@ -4692,7 +4696,7 @@
   // ── Glossary / inline term explainers ───────────────────────────────────────
   // Single source of truth so the inline ⓘ tooltips and the help popover agree.
   var _GLOSSARY = [
-    { term: 'Recommendation', def: 'The live, roster-aware order for this pick. It starts with Pick Score, then accounts for whether the player fills a starter or FLEX spot, backup and overfill cost, required slots and picks remaining, positional depth, expected availability at your next pick, and recent investment at QB or TE. A major value fall can still overcome imperfect roster fit.' },
+    { term: 'Recommendation', def: 'The live, roster-aware order for this pick. It starts with Pick Score, then accounts for whether the player fills a starter or FLEX spot, backup and overfill cost, required slots and picks remaining, positional depth, expected availability at your next pick, and recent investment at QB or TE. A major value fall can still overcome imperfect roster fit. Recommendation is shown as a rank rather than a grade because its internal utility naturally changes as the board is depleted.' },
     { term: 'Pick Score (PS)', def: 'A 0-100 grade of how good this pick is relative to what’s still available right now — the best remaining option anchors near the top, so a strong pick reads well even late in the draft. Blends the player’s value, how far they fell vs ADP, positional tier, your roster needs, age, and projected points. Your report-card grade uses the absolute, round-weighted version, so it can differ from the board number. Kickers and defenses aren’t scored.' },
     { term: 'Value', def: 'The player’s trade value as an asset on a 0-999 scale - dynasty value for startup/rookie drafts, redraft value for redraft.' },
     { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a replacement-level starter at their position (a fixed, preseason-style baseline). VORP uses real fantasy points; VOR uses dynasty value.' },

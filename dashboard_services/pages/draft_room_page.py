@@ -767,9 +767,8 @@ _DRAFT_ROOM_HTML = r"""
   /* pick score */
   .dr-ba-reason { font-size: 10px; color: var(--text-muted); margin-top: 5px; font-weight: 600;
     display: flex; align-items: center; gap: 5px; line-height: 1.25; }
-  .dr-rec-rank { display: inline-flex; align-items: center; justify-content: center; min-width: 22px;
-    padding: 1px 5px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 11%, transparent);
-    color: var(--accent,#38bdf8); font-size: 9px; font-weight: 900; flex-shrink: 0; }
+  .dr-ba-recchip { color: var(--accent,#38bdf8); background: color-mix(in srgb, var(--accent) 11%, transparent);
+    font-size: 12px; font-weight: 900; }
   .dr-ba-wait { font-size: 9.5px; color: var(--win); margin-top: 2px; font-weight: 700; }
   .dr-prev-wait { display: flex; align-items: center; gap: 10px; border: 1px solid; border-radius: 9px;
     padding: 9px 12px; margin-bottom: 12px; }

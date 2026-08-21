@@ -74,6 +74,7 @@ def test_glossary_explains_live_recommendation_logic():
     assert "starter or FLEX spot" in source
     assert "required slots and picks remaining" in source
     assert "expected availability at your next pick" in source
+    assert "shown as a rank rather than a grade" in source
 
 
 def test_recommendation_rows_use_compact_rank_and_reason_copy():
@@ -81,9 +82,27 @@ def test_recommendation_rows_use_compact_rank_and_reason_copy():
     body = build_draft_room_body(None, None, None, is_guest=True)
 
     assert "Decision ' + p._ds + ' · recommendation #" not in source
-    assert 'class="dr-rec-rank">#' in source
+    assert 'dr-ba-recchip">#' in source
     assert "ppgNum.toFixed(1) + ' proj'" in source
-    assert ".dr-rec-rank {" in body
+    assert ".dr-ba-recchip {" in body
+
+
+def test_pick_score_sort_controls_the_visible_score_chip():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert "showPickScore: sortBy === 'pickscore'" in source
+    assert "<small>PS</small>" in source
+    assert "<small>REC</small>" in source
+    assert "' · PS ' + ps" in source
+    assert "' · Pick ' + ps" not in source
+
+
+def test_recommendation_is_a_rank_not_a_declining_numeric_grade():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert "var _isRec = opts.rank && p._ds != null;" in source
+    assert "#' + opts.rank + '<small>REC</small>" in source
+    assert "prepareDecisionDisplay" not in source
 
 
 def test_tier_cliff_urgency_is_suppressed_during_round_one():
