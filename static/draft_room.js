@@ -1551,6 +1551,14 @@
       var p = c.p, w = c.w, a = c.a, pv = c.pv;
       var pos = (p.position||'').toUpperCase();
       var t = targets[pos] || 0, have = counts[pos] || 0;
+      // Kicker and defense are required lineup slots, not ordinary bench depth.
+      // Once this team has filled the configured number, remove every additional
+      // K/DEF from its candidate set entirely. A soft overfill multiplier is not
+      // sufficient because synthetic late ADP can otherwise make several overdue
+      // special-teams players beat depleted skill-position options.
+      if ((pos === 'K' || pos === 'DEF') && (t <= 0 || have >= t)){
+        c.w = 0; c.ds = -1; return;
+      }
       // Shared roster economics run before personality. This is the common
       // baseline used by human recommendations and prevents CPU strategy/noise
       // from rescuing a structurally bad QB3/TE3 or an immediate backup pick.
@@ -1736,6 +1744,8 @@
     }
     // Restrict to the realistic field, then sample proportionally to weight so
     // the favorite usually wins but upsets happen at the documented rate.
+    cands = cands.filter(function(c){ return c.w > 0; });
+    if (!cands.length) return null;
     cands.sort(function(x, y){ return y.w - x.w; });
     // Human-like randomness only among defensible alternatives. Early picks use
     // a narrow decision band; later rounds and adventurous personas widen it.
@@ -2811,6 +2821,7 @@
     });
   }
 
+  var LIVE_WAIT_TUNING = { threshold: 50, maxPenalty: 10 };
   function liveDecisionScore(p, counts){
     var base = p._ps != null ? p._ps : 0;
     if (base == null) return null;
@@ -2827,10 +2838,19 @@
     }
     var adp = adpOf(p), exceptional = 0;
     if (adp != null) exceptional = clamp01(((state.current || 1) - adp) / Math.max(12, adp * 0.65));
+    var nextPick = nextOwnedAfterCurrent();
+    var returnProb = nextPick ? availProb(p, nextPick) : null;
+    // Do not spend this pick on a player who is likely to return unless his
+    // quality/fit advantage is large enough to overcome a bounded opportunity
+    // cost. A true positional cliff still earns waitLoss above, and an extreme
+    // ADP fall keeps half of this discount from becoming a disguised hard ban.
+    var waitPenalty = returnProb == null ? 0
+      : clamp01((returnProb - LIVE_WAIT_TUNING.threshold) / (100 - LIVE_WAIT_TUNING.threshold))
+        * LIVE_WAIT_TUNING.maxPenalty * (1 - exceptional * 0.5);
     return DraftBoardCore.decisionScore({ base: base, utility: util,
       bench: bench, deepBench: role === 'bench2', recentPenalty: recentPenalty, exceptional: exceptional,
       quality: ppgNormOf(p) || 0, required: c.obligations.required,
-      freePicks: c.obligations.freePicks, waitLoss: Math.max(0, base - expected) });
+      freePicks: c.obligations.freePicks, waitLoss: Math.max(0, base - expected), waitPenalty: waitPenalty });
   }
   // How many players remain in this player's (position|tier) bucket.
   function tierRemaining(p){

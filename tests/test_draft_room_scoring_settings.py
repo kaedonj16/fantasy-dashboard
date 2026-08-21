@@ -114,6 +114,22 @@ def test_position_filters_preserve_all_player_recommendation_rank():
     assert "rank: i + 1 }\n        : { showPickScore" not in source
 
 
+def test_cpu_never_drafts_kicker_or_defense_past_roster_capacity():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert "(pos === 'K' || pos === 'DEF') && (t <= 0 || have >= t)" in source
+    assert "c.w = 0; c.ds = -1; return;" in source
+    assert "cands = cands.filter(function(c){ return c.w > 0; });" in source
+
+
+def test_likely_next_pick_survivors_pay_current_pick_opportunity_cost():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert "var LIVE_WAIT_TUNING = { threshold: 50, maxPenalty: 10 };" in source
+    assert "var returnProb = nextPick ? availProb(p, nextPick) : null;" in source
+    assert "waitPenalty: waitPenalty" in source
+
+
 def test_tier_cliff_urgency_is_suppressed_during_round_one():
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
     match = re.search(r"function isTierCliff\(p, pickNo\)\{(.*?)\n  \}", source, re.DOTALL)

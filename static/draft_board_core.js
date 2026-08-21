@@ -249,6 +249,11 @@
       waitBonus = Math.min(waitBonus, Math.max(0, (99 - score) * 0.35));
       score += waitBonus;
     }
+    // A player who is likely to survive until the manager's next pick consumes
+    // scarce current-pick capital without capturing much value. Keep this
+    // separate from waitLoss: waitLoss rewards a genuine positional shelf cliff,
+    // while waitPenalty discounts this specific player's probability of returning.
+    score -= Math.max(0, Math.min(10, +o.waitPenalty || 0));
     return Math.max(1, Math.min(99, Math.round(score)));
   }
 

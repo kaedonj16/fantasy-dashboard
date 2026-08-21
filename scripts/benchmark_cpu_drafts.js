@@ -89,7 +89,9 @@ function runOne(cfg, source, random, aggregate) {
     const roster = rosters[slot], counts = { QB:0, RB:0, WR:0, TE:0, K:0, DEF:0 };
     roster.forEach(p => { counts[p.position] = (counts[p.position] || 0) + 1; });
     const obligations = Core.remainingObligations(counts, rc, cfg.rounds - round + 1, cfg.sf);
-    const candidates = available.slice(0, Math.min(100, available.length)).map(p => {
+    const candidates = available.slice(0, Math.min(100, available.length)).filter(p => {
+      return !['K', 'DEF'].includes(p.position) || (rc[p.position] > 0 && counts[p.position] < rc[p.position]);
+    }).map(p => {
       const role = Core.rosterRole(p.position, counts, rc, cfg.sf);
       const utility = Core.rosterSlotUtility(p.position, counts, rc, { role, sf: cfg.sf, draftType: cfg.type });
       const base = Math.max(20, Math.min(98, 86 - Math.abs(pick - p.adp) * 0.48 + Math.max(0, pick - p.adp) * 0.22));
@@ -107,6 +109,7 @@ function runOne(cfg, source, random, aggregate) {
       return { p, ds, weight: adpWeight * Math.pow(Math.max(0.12, ds / 100), 2.2) };
     });
     const band = Core.decisionBand(candidates, round, 0.8);
+    if (!band.length) break;
     let sum = band.reduce((s, c) => s + c.weight, 0), roll = random() * sum, chosen = band[0];
     for (const c of band) { roll -= c.weight; if (roll <= 0) { chosen = c; break; } }
     roster.push(chosen.p); last[slot][chosen.p.position] = round;
@@ -144,12 +147,15 @@ function main() {
   }
   const totalTeams = cfg.drafts * cfg.teams;
   const result = { configuration: cfg, playerPool: pool.length, elapsedSeconds: (Date.now() - started) / 1000,
-    medianRound: {}, selectionRate: {}, medianFinalCount: {}, phaseShare: {} };
+    medianRound: {}, selectionRate: {}, medianFinalCount: {}, maximumFinalCount: {}, phaseShare: {} };
   Object.keys(aggregate.timing).forEach(k => {
     result.medianRound[k] = median(aggregate.timing[k]);
     result.selectionRate[k] = Math.round(aggregate.timing[k].length * 1000 / totalTeams) / 10;
   });
-  Object.keys(aggregate.counts).forEach(k => result.medianFinalCount[k] = median(aggregate.counts[k]));
+  Object.keys(aggregate.counts).forEach(k => {
+    result.medianFinalCount[k] = median(aggregate.counts[k]);
+    result.maximumFinalCount[k] = Math.max(...aggregate.counts[k]);
+  });
   Object.keys(aggregate.phase).forEach(ph => { result.phaseShare[ph] = {}; Object.keys(aggregate.phase[ph]).forEach(pos => {
     result.phaseShare[ph][pos] = Math.round(aggregate.phase[ph][pos] * 1000 / Math.max(1, aggregate.totalPhase[ph])) / 10;
   }); });

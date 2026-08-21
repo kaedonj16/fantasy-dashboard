@@ -28,6 +28,7 @@ def test_headless_cpu_benchmark_is_seeded_and_reports_roster_metrics():
 
     assert first["medianRound"] == second["medianRound"]
     assert first["medianFinalCount"] == second["medianFinalCount"]
+    assert first["maximumFinalCount"] == second["maximumFinalCount"]
     assert first["configuration"]["drafts"] == 3
     assert first["playerPool"] >= 180
     assert set(first["medianRound"]) == {"QB1", "QB2", "QB3", "TE1", "TE2", "TE3"}
@@ -48,3 +49,5 @@ def test_required_kicker_and_defense_do_not_become_normal_bench_depth():
 
     assert report["medianFinalCount"]["K"] == 1
     assert report["medianFinalCount"]["DEF"] == 1
+    assert report["maximumFinalCount"]["K"] == 1
+    assert report["maximumFinalCount"]["DEF"] == 1
