@@ -12,6 +12,8 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from psycopg.types.json import Jsonb
+
 # `python scripts/refresh_market_intelligence.py` (the Render cron) puts scripts/
 # on sys.path, not the repo root, so the project packages don't import. Add the
 # repo root explicitly, matching the other cron scripts.
@@ -76,7 +78,7 @@ def refresh() -> int:
                         (provider, provider_player_id, canonical_player_id, match_confidence, match_method, metadata)
                         VALUES ('sportsgameodds', %s, %s, %s, 'metadata_bootstrap', %s)
                         ON CONFLICT (provider, provider_player_id) DO NOTHING""",
-                        (record.provider_player_id, pid, confidence, meta))
+                        (record.provider_player_id, pid, confidence, Jsonb(meta)))
                     persisted[record.provider_player_id] = pid
                 record = record.__class__(**{**record.__dict__, "canonical_player_id": pid})
                 normalized.append(record)
@@ -185,7 +187,7 @@ def refresh() -> int:
                  fantasy_points=EXCLUDED.fantasy_points,coverage=EXCLUDED.coverage,
                  confidence=EXCLUDED.confidence,components=EXCLUDED.components,
                  calculated_at=EXCLUDED.calculated_at""", (pid, season, week, projection["points"],
-                 projection["coverage"], projection["confidence"], components, now))
+                 projection["coverage"], projection["confidence"], Jsonb(components), now))
         # Provider-independent season inputs. Direct season props remain strongest;
         # historical weekly consensuses become rate evidence only after three
         # distinct regular-season weeks, and current team implied totals provide a
@@ -250,7 +252,7 @@ def refresh() -> int:
                  fantasy_points=EXCLUDED.fantasy_points,coverage=EXCLUDED.coverage,
                  confidence=EXCLUDED.confidence,components=EXCLUDED.components,
                  calculated_at=EXCLUDED.calculated_at""", (pid, season, projection["points"],
-                 projection["coverage"], projection["confidence"], components, now))
+                 projection["coverage"], projection["confidence"], Jsonb(components), now))
             if projection["basis"] == "projection_only":
                 baseline_only += 1
             else:
