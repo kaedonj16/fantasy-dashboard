@@ -206,8 +206,8 @@ def refresh() -> int:
         # historical weekly consensuses become rate evidence only after three
         # distinct regular-season weeks, and current team implied totals provide a
         # small capped fallback. No weekly line is ever multiplied by games.
-        from data_building.fetch_projections import fetch_fp_season_projections
-        season_baselines = fetch_fp_season_projections(season, "ppr", players_index=players) or {}
+        from data_building.fetch_projections import fetch_sleeper_season_projections
+        season_baselines = fetch_sleeper_season_projections(season, "ppr", players_index=players) or {}
         season_inputs = defaultdict(list)
         for (context, pid, stat), records in grouped.items():
             if context != "season":
