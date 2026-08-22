@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import bisect
+from datetime import datetime, timezone
 
-from .config import MIN_SIGNAL_CONFIDENCE
+from .config import MIN_SIGNAL_CONFIDENCE, SEASON_MAX_AGE
 
 # The /api/league-players payload carries redraft ADP under ``redraft_avg_pick``
 # (and ``sf_redraft_avg_pick`` for superflex) - the same fields the rankings,
@@ -71,11 +72,17 @@ def expected_adp(market_points: float, player_pool: list[dict]) -> float | None:
 _GAMES_PER_SEASON = 17
 
 
-def attach_market_vs_adp(players: list[dict], projections: dict[str, dict]) -> None:
+def attach_market_vs_adp(players: list[dict], projections: dict[str, dict]) -> dict[str, int]:
+    """Attach qualified values and return aggregate, non-sensitive diagnostics."""
     curve = build_adp_curve(players)  # built once, mapped per player below
+    diagnostics = {key: 0 for key in (
+        "qualified", "projection_only", "low_confidence", "missing_adp",
+        "missing_fantasy_points", "missing_projection", "invalid_curve", "stale",
+    )}
     for player in players:
         market = projections.get(str(player.get("id")))
         if not market:
+            diagnostics["missing_projection"] += 1
             continue
         components = market.get("components") or {}
         basis = components.get("basis") or "season_props"
@@ -89,14 +96,36 @@ def attach_market_vs_adp(players: list[dict], projections: dict[str, dict]) -> N
         player["market_basis"] = basis
         # Baseline-only rows and weak context are useful diagnostics, not an
         # independent market edge. Do not put a number behind the Market label.
-        if basis == "projection_only" or confidence < MIN_SIGNAL_CONFIDENCE:
+        if basis == "projection_only":
+            diagnostics["projection_only"] += 1
+            continue
+        if confidence < MIN_SIGNAL_CONFIDENCE:
+            diagnostics["low_confidence"] += 1
+            continue
+        calculated_at = market.get("calculated_at")
+        if calculated_at:
+            if not isinstance(calculated_at, datetime):
+                try:
+                    calculated_at = datetime.fromisoformat(str(calculated_at).replace("Z", "+00:00"))
+                except (TypeError, ValueError):
+                    calculated_at = None
+            if calculated_at:
+                calculated_at = (calculated_at if calculated_at.tzinfo else
+                                 calculated_at.replace(tzinfo=timezone.utc))
+                if datetime.now(timezone.utc) - calculated_at > SEASON_MAX_AGE:
+                    diagnostics["stale"] += 1
+                    continue
+        if len(curve[0]) < 2:
+            diagnostics["invalid_curve"] += 1
             continue
         actual = _resolve_adp(player)
         if actual is None:
+            diagnostics["missing_adp"] += 1
             continue
         try:
             season_points = float(market["fantasy_points"])
-        except (TypeError, ValueError):
+        except (KeyError, TypeError, ValueError):
+            diagnostics["missing_fantasy_points"] += 1
             continue
         # The curve is built from per-game PPG, so bring the market's SEASON-long
         # total onto the same per-game scale first. Passing the raw season total
@@ -109,3 +138,7 @@ def attach_market_vs_adp(players: list[dict], projections: dict[str, dict]) -> N
             player["market_confidence"] = round(confidence, 2)
             player["market_signal"] = ("bullish" if actual - implied > 1 else
                                        "bearish" if actual - implied < -1 else "aligned")
+            diagnostics["qualified"] += 1
+        else:
+            diagnostics["invalid_curve"] += 1
+    return diagnostics

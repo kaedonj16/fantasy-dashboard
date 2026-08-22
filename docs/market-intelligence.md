@@ -98,6 +98,45 @@ independent projection input: feeding ADP movement into an expected-ADP result
 would create circular evidence. It may be displayed separately as sentiment in a
 future UI, but does not manufacture a Market vs ADP edge.
 
+### Preseason season-evidence source assessment (August 2026)
+
+The refresh deliberately has no automatic substitute for a true season player
+market. The supported SportsGameOdds events request already includes NFL events
+up to 240 days ahead, and its normalizer accepts explicitly season/futures-scoped
+player totals. Production responses have so far contained weekly game props and
+game markets, not qualified regular-season player totals. Expanding a date window
+or relabeling preseason games cannot change that.
+
+The repository's provider probes record the alternatives evaluated from the
+Render environment. DraftKings' unofficial content endpoint is disabled after
+repeated access-control responses. Other sportsbook web endpoints are not a
+supported backend integration, and the reachable Pinnacle guest/front-end feed
+uses an undocumented public-site credential, so it is retained only as a manual
+probe and is not a production dependency. ESPN futures are team/award markets;
+The Odds API's documented NFL event-market catalog does not supply regular-season
+player statistical totals. Award, league-leader, and team-win contracts from
+public futures or prediction feeds are not convertible into player fantasy points.
+
+A paid/documented provider can be added at the ingestion boundary when it returns
+all of: stable player identity, an explicit regular-season statistic, a numeric
+threshold, market probability or two-sided price, observation time, and clear
+season context. Its adapter should emit `MarketProjectionInput` with
+`source_type="season_prop"` (a literal O/U) or `"prediction_market"` (an
+unambiguous threshold contract). Downstream projection and ADP code requires no
+provider-specific changes. Until such evidence is configured, a preseason
+Market vs ADP dash is the correct result for players whose only evidence is the
+baseline or confidence-shrunk team context.
+
+### Bounded provider schema diagnostics
+
+Set `MARKET_DEBUG_PROVIDER_RESPONSES=1` on a one-off refresh to print a bounded,
+sanitized sample of the first response page, three events, five player odds, ten
+non-player odds, three `byBookmaker` rows, and five failed team resolutions. The
+debug session also writes up to three sanitized events to
+`/tmp/sportsgameodds_debug_sample.json`. Credentials, headers, tokens, cookies,
+passwords, full player maps, and unsampled odds are excluded. The flag defaults
+off and should be removed after capturing the provider shape.
+
 ## Provenance and confidence
 
 `market_projections.components` contains fantasy-focused metadata such as:

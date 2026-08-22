@@ -10,7 +10,8 @@ from dashboard_services.market_intelligence.odds import american_implied_probabi
 from dashboard_services.market_intelligence.projection import build_market_projection, build_season_market_projection
 from dashboard_services.market_intelligence.signals import market_opportunity, market_vs_projection
 from dashboard_services.market_intelligence.season import (
-    build_adjusted_season_projection, rolling_weekly_inputs, team_environment_input,
+    build_adjusted_season_projection, map_team_environment_inputs, rolling_weekly_inputs,
+    team_environment_input,
 )
 
 
@@ -118,10 +119,31 @@ def test_attach_market_vs_adp_uses_redraft_avg_pick():
     # to pick 60 on the (10->100, 20->20) curve. Actual ADP is 100, so the market
     # says this player is going ~40 picks later than production warrants.
     projections = {"1": {"fantasy_points": 255, "confidence": 0.8}}
-    attach_market_vs_adp(players, projections)
+    diagnostics = attach_market_vs_adp(players, projections)
     assert players[0]["market_expected_adp"] == 60.0
     assert players[0]["market_vs_adp"] == 40.0
     assert players[0]["market_confidence"] == 0.8
+    assert diagnostics["qualified"] == 1
+    assert diagnostics["missing_projection"] == 1
+
+
+def test_market_vs_adp_diagnostics_explain_unqualified_rows():
+    from dashboard_services.market_intelligence.adp import attach_market_vs_adp
+    players = [
+        {"id": "baseline", "proj_ppg": 10, "redraft_avg_pick": 100},
+        {"id": "weak", "proj_ppg": 20, "redraft_avg_pick": 20},
+        {"id": "missing", "proj_ppg": 15, "redraft_avg_pick": 50},
+    ]
+    diagnostics = attach_market_vs_adp(players, {
+        "baseline": {"fantasy_points": 170, "confidence": 0,
+                     "components": {"basis": "projection_only"}},
+        "weak": {"fantasy_points": 300, "confidence": 0.2,
+                 "components": {"basis": "team_environment"}},
+    })
+    assert diagnostics["projection_only"] == 1
+    assert diagnostics["low_confidence"] == 1
+    assert diagnostics["missing_projection"] == 1
+    assert diagnostics["qualified"] == 0
 
 
 def test_attach_market_vs_adp_season_total_not_pinned_to_top_pick():
@@ -218,6 +240,38 @@ def test_team_environment_is_small_capped_and_position_sensitive():
     assert team_environment_input("1", "WR", None) is None
     result = build_adjusted_season_projection(300, "QB", {}, [bullish])
     assert 300 < result["points"] < 306  # confidence shrink keeps the 3% cap smaller still
+
+
+def test_canonical_team_mapping_attaches_inputs_and_preserves_direction():
+    environments = {
+        "KC": {"score": 1, "confidence": .6, "coverage": 1, "implied_points": 29,
+               "league_average": 23, "source": "sportsgameodds"},
+        "SF": {"score": -.8, "confidence": .6, "coverage": 1, "implied_points": 19,
+               "league_average": 23, "source": "sportsgameodds"},
+        "GB": {"score": 0, "confidence": .6, "coverage": 1, "implied_points": 23,
+               "league_average": 23, "source": "sportsgameodds"},
+    }
+    players = {
+        "qb": {"team": "KAN", "pos": "QB"},
+        "rb": {"team": "SFO", "pos": "RB"},
+        "avg": {"team": "GNB", "pos": "WR"},
+        "def": {"team": "KAN", "pos": "LB"},
+        "bad": {"team": "unknown", "pos": "TE"},
+    }
+    inputs, diagnostics = map_team_environment_inputs(players, environments)
+    assert set(inputs) == {"qb", "rb"}
+    assert inputs["qb"].value > 0 > inputs["rb"].value
+    assert diagnostics["recognized_players"] == 4
+    assert diagnostics["matched_players"] == 4
+    assert diagnostics["input_players"] == 2
+    assert diagnostics["unmatched_identifiers"] == ["UNKNOWN"]
+
+    bullish = build_adjusted_season_projection(300, "QB", {}, [inputs["qb"]])
+    bearish = build_adjusted_season_projection(200, "RB", {}, [inputs["rb"]])
+    assert bullish["basis"] == bearish["basis"] == "team_environment"
+    assert bullish["points"] > 300 and bearish["points"] < 200
+    assert bullish["components"]["market_adjusted_points"] != 300
+    assert bullish["confidence"] >= 0.35
 
 
 def test_rolling_weekly_requires_three_distinct_weeks_and_weights_recent():
