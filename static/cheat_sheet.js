@@ -716,6 +716,7 @@
     loading = true;
     loadError = '';
     var params = [];
+    params.push('league_type=' + (state.sf ? 'sf' : '1qb'));
     if (state.adpSource && state.adpSource !== 'auto') {
       params.push('adp_source=' + encodeURIComponent(state.adpSource));
       params = params.concat(leagueParams());

@@ -137,6 +137,22 @@ debug session also writes up to three sanitized events to
 passwords, full player maps, and unsampled odds are excluded. The flag defaults
 off and should be removed after capturing the provider shape.
 
+### Market vs ADP model
+
+Market vs ADP is the incremental movement caused by market evidence, not an
+absolute projection-based revaluation of the player's existing ADP. Separate
+QB/RB/WR/TE curves use contiguous projected-PPG bins, median PPG/ADP points, and
+pool-adjacent-violators monotonic fitting. Both the baseline and market-adjusted
+season totals are divided by the same season-game count (17 unless projection
+metadata explicitly supplies `season_games`), mapped on that position's curve,
+and differenced. Inputs outside observed PPG support clamp to curve endpoints.
+
+The already confidence-shrunk projection delta receives only a light secondary
+weight (`0.5 + 0.5 * confidence`). Final safety caps are 12 picks for team-only
+context, 25 for rolling or prediction markets, 40 for direct season props, and
+30 for blended evidence. Baseline-only, stale, low-confidence, unsupported, or
+insufficient-curve rows remain blank.
+
 ## Provenance and confidence
 
 `market_projections.components` contains fantasy-focused metadata such as:

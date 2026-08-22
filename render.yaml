@@ -177,10 +177,8 @@ services:
           property: connectionString
       - key: SPORTSGAMEODDS_API_KEY
         sync: false
-      # Temporary bounded schema diagnostics; disable after one representative
-      # production payload has been captured from the cron logs.
       - key: MARKET_DEBUG_PROVIDER_RESPONSES
-        value: "1"
+        value: "0"
       - key: PYTHON_ENV
         value: production
 
