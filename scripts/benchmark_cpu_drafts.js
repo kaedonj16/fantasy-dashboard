@@ -62,7 +62,17 @@ function loadPool(cfg) {
   const root = path.resolve(__dirname, '..');
   const players = JSON.parse(fs.readFileSync(path.join(root, 'cache/players_index.json')));
   const adp = JSON.parse(fs.readFileSync(path.join(root, 'data/sleeper_adp_2026_2026-07-12.json')));
-  const projections = JSON.parse(fs.readFileSync(path.join(root, 'cache/fp_projections_2026_ppr.json')));
+  const weeklyProjections = [];
+  for (let week = 1; week <= 18; week++) {
+    const file = path.join(root, 'cache/projections', `projections_s2026_w${week}.json`);
+    if (fs.existsSync(file)) weeklyProjections.push(JSON.parse(fs.readFileSync(file)));
+  }
+  const projectedPpg = id => {
+    const values = weeklyProjections.map(rows => Number(rows[id] && rows[id].ppr)).filter(v => v > 0).sort((a, b) => a - b);
+    if (!values.length) return 0;
+    const mid = Math.floor(values.length / 2);
+    return values.length % 2 ? values[mid] : (values[mid - 1] + values[mid]) / 2;
+  };
   const adpKey = cfg.type === 'startup'
     ? (cfg.sf ? 'adp_dynasty_2qb' : 'adp_dynasty_ppr')
     : (cfg.sf ? 'adp_2qb' : 'adp_ppr');
@@ -72,7 +82,7 @@ function loadPool(cfg) {
     const pos = pos0 === 'PK' ? 'K' : pos0;
     const pick = Number(adp[id] && adp[id][adpKey]);
     if (!['QB', 'RB', 'WR', 'TE', 'K'].includes(pos) || !Number.isFinite(pick) || pick >= 900) return;
-    pool.push({ id, position: pos, adp: pick, ppg: Number(projections[id] && projections[id].ppg) || 0 });
+    pool.push({ id, position: pos, adp: pick, ppg: projectedPpg(id) });
   });
   if (cfg.def) {
     ['ARI','ATL','BAL','BUF','CAR','CHI','CIN','CLE','DAL','DEN','DET','GB','HOU','IND','JAX','KC',

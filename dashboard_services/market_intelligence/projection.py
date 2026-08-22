@@ -45,8 +45,8 @@ def build_season_market_projection(consensus: dict, baseline_points: float,
                                    scoring_settings: dict, position: str) -> dict | None:
     """Blend season-long components with the site's season projection.
 
-    FantasyPros provides a season point baseline rather than its component stat
-    line. Covered market components are scored directly; the baseline supplies
+    Sleeper provides the season point baseline. Covered market components are
+    scored directly; the baseline supplies
     the uncovered share. Confidence then shrinks the result toward the baseline.
     Weekly props must never be passed to this function.
     """
