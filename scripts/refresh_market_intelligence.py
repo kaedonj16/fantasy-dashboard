@@ -63,9 +63,11 @@ def refresh() -> int:
         except SportsGameOddsError as sgo_err:
             print(f"[market] SportsGameOdds unavailable ({sgo_err}); continuing with fallback context")
             provider_events = []
+        print(f"[market] SportsGameOdds events returned: {len(provider_events)}")
+        sgo_diagnostics = {}
         for event in provider_events:
             event_players = event.get("players") or {}
-            for record in normalize_event(event, now):
+            for record in normalize_event(event, now, sgo_diagnostics):
                 meta = event_players.get(record.provider_player_id, {}) if isinstance(event_players, dict) else {}
                 pid, confidence = resolve_player(record.provider_player_id, meta.get("name", ""),
                                                  meta.get("position", ""), meta.get("team", ""),
@@ -93,6 +95,18 @@ def refresh() -> int:
                     record.line, record.over_price, record.under_price, record.event_start_time,
                     record.observed_at, record.source_updated_at))
         weekly_observations = sum(r.context == "weekly" for r in normalized)
+        print(f"[market] SportsGameOdds odds inspected: {sgo_diagnostics.get('odds_inspected', 0)}")
+        print(f"[market] SportsGameOdds player prop odds identified: "
+              f"{sgo_diagnostics.get('player_props_identified', 0)}")
+        print(f"[market] SportsGameOdds bookmaker entries inspected: "
+              f"{sgo_diagnostics.get('bookmaker_entries_inspected', 0)}")
+        print(f"[market] SportsGameOdds normalized observations: {len(normalized)}")
+        print("[market] SportsGameOdds rejected: "
+              f"missing player={sgo_diagnostics.get('missing_player', 0)} "
+              f"missing book={sgo_diagnostics.get('missing_book', 0)} "
+              f"missing stat={sgo_diagnostics.get('missing_stat', 0)} "
+              f"missing line={sgo_diagnostics.get('missing_line', 0)} "
+              f"unavailable={sgo_diagnostics.get('unavailable', 0)}")
         print(f"[market] SportsGameOdds weekly observations: {weekly_observations}")
 
         # DraftKings is an explicit opt-in only. One auth/edge denial stops this

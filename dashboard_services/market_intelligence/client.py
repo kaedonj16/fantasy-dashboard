@@ -84,15 +84,22 @@ class SportsGameOddsClient:
     def iter_nfl_events(self, *, starts_after: str, starts_before: str) -> Iterator[dict]:
         params = {"leagueID": "NFL", "startsAfter": starts_after,
                   "startsBefore": starts_before, "oddsAvailable": "true", "limit": 100}
+        seen_cursors = set()
         while True:
-            payload = self._get("events", params)
+            # Each page gets an immutable snapshot; retaining/mocking transports
+            # must not observe a later cursor mutation on an earlier request.
+            payload = self._get("events", dict(params))
             rows = payload.get("data", [])
             if rows is None:
                 rows = []
             if not isinstance(rows, list):
                 raise SportsGameOddsError("SportsGameOdds event data is invalid")
             yield from (row for row in rows if isinstance(row, dict))
-            cursor = payload.get("nextCursor") or (payload.get("meta") or {}).get("nextCursor")
+            meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+            cursor = payload.get("nextCursor") or meta.get("nextCursor")
             if not cursor:
                 break
+            if cursor in seen_cursors:
+                raise SportsGameOddsError("SportsGameOdds returned a repeated pagination cursor")
+            seen_cursors.add(cursor)
             params["cursor"] = cursor
