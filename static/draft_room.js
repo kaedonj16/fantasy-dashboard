@@ -3194,7 +3194,7 @@
     return slot === pos;
   }
   // Score used to rank players for the optimal starting lineup: projected points
-  // (Sleeper PPG, else FantasyPros projection). When a player has no projection
+  // (Sleeper projected PPG). When a player has no projection
   // (e.g. some rookies) fall back to dynasty/redraft value scaled into a ppg-like
   // range so they still slot in a sensible order instead of always benching.
   function lineupScore(p){
