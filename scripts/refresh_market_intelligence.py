@@ -22,11 +22,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dashboard_services.api import get_nfl_state  # noqa: E402
 from dashboard_services.db import get_conn
 from dashboard_services.market_intelligence.client import SportsGameOddsClient, SportsGameOddsError
-from dashboard_services.market_intelligence.config import MIN_SIGNAL_CONFIDENCE
+from dashboard_services.market_intelligence.config import MIN_SIGNAL_CONFIDENCE, SEASON_MAX_AGE, WEEKLY_MAX_AGE
 from dashboard_services.market_intelligence.consensus import build_consensus
 from dashboard_services.market_intelligence.identity import resolve_player
 from dashboard_services.market_intelligence.normalize import normalize_event
 from dashboard_services.market_intelligence.projection import build_market_projection
+from dashboard_services.market_intelligence.repository import preserve_adjusted_projection
 from dashboard_services.market_intelligence.models import MarketProjectionInput
 from dashboard_services.market_intelligence.season import (
     build_adjusted_season_projection, map_team_environment_inputs, rolling_weekly_inputs,
@@ -58,13 +59,24 @@ def refresh() -> int:
         unresolved = 0
         # The wider NFL-only window includes explicitly labelled season futures.
         # oddsAvailable keeps future games without posted markets out of the feed.
+        provider_fetch_succeeded = False
+        provider_fetch_error = None
+        provider_rate_limited = False
         try:
             provider_events = list(client.iter_nfl_events(
                 starts_after=now.isoformat(), starts_before=(now + timedelta(days=240)).isoformat()))
+            provider_fetch_succeeded = client.configured
         except SportsGameOddsError as sgo_err:
-            print(f"[market] SportsGameOdds unavailable ({sgo_err}); continuing with fallback context")
+            provider_fetch_error = str(sgo_err)
+            provider_rate_limited = "rate limit" in provider_fetch_error.lower()
+            if provider_rate_limited:
+                print("[market] SportsGameOdds rate limited")
+            else:
+                print(f"[market] SportsGameOdds fetch failed ({provider_fetch_error})")
+            print("[market] provider fetch failed; attempting stored fallback")
             provider_events = []
-        print(f"[market] SportsGameOdds events returned: {len(provider_events)}")
+        if provider_fetch_succeeded:
+            print(f"[market] SportsGameOdds events returned successfully: {len(provider_events)}")
         sgo_diagnostics = {}
         for event in provider_events:
             event_players = event.get("players") or {}
@@ -224,6 +236,26 @@ def refresh() -> int:
                      "dispersion": value.dispersion},
                 ))
 
+        # A failed request is not an empty market. Reuse fresh durable season
+        # consensus instead of silently erasing it; successful empty responses do
+        # not enter this fallback path.
+        stored_observations_reused = 0
+        if not provider_fetch_succeeded:
+            stored_rows = conn.execute("""SELECT canonical_player_id, stat_type,
+                       consensus_line, confidence, calculated_at
+                    FROM market_consensus
+                    WHERE season=%s AND context='season' AND calculated_at >= %s""",
+                (season, now - SEASON_MAX_AGE)).fetchall()
+            for row in stored_rows:
+                pid = str(row["canonical_player_id"])
+                season_inputs[pid].append(MarketProjectionInput(
+                    pid, "season", row["stat_type"], float(row["consensus_line"]),
+                    "stored_consensus", "season_prop", float(row["confidence"]),
+                    row["calculated_at"], {"stored": True},
+                ))
+            stored_observations_reused = len(stored_rows)
+            print(f"[market] stored observations reused: {stored_observations_reused}")
+
         rolling_rows = conn.execute("""SELECT canonical_player_id, week, stat_type,
                    consensus_line AS line, confidence
                 FROM market_consensus
@@ -238,6 +270,32 @@ def refresh() -> int:
 
         team_diagnostics = {}
         environments = build_team_environments(provider_events, team_diagnostics, now, client.debug)
+        stored_environments_reused = 0
+        if environments:
+            for team, env in environments.items():
+                conn.execute("""INSERT INTO market_team_environments
+                    (season,team,implied_points,league_average,environment_score,confidence,observed_at)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT (season,team) DO UPDATE SET
+                      implied_points=EXCLUDED.implied_points, league_average=EXCLUDED.league_average,
+                      environment_score=EXCLUDED.environment_score, confidence=EXCLUDED.confidence,
+                      observed_at=EXCLUDED.observed_at""",
+                    (season, team, env["implied_points"], env["league_average"], env["score"],
+                     env["confidence"], now))
+        elif not provider_fetch_succeeded:
+            stored_env = conn.execute("""SELECT team, implied_points, league_average,
+                       environment_score, confidence, observed_at
+                    FROM market_team_environments WHERE season=%s AND observed_at >= %s""",
+                (season, now - WEEKLY_MAX_AGE)).fetchall()
+            environments = {str(r["team"]): {
+                "implied_points": float(r["implied_points"]),
+                "league_average": float(r["league_average"]),
+                "score": float(r["environment_score"]), "confidence": float(r["confidence"]),
+                "source": "stored", "observed_at": r["observed_at"],
+            } for r in stored_env}
+            stored_environments_reused = len(environments)
+        if not provider_fetch_succeeded:
+            print(f"[market] stored team environments reused: {stored_environments_reused}")
         print(f"[market] team market odds identified: "
               f"{team_diagnostics.get('team_market_odds_identified', 0)}")
         print(f"[market] full-game totals accepted: "
@@ -281,7 +339,12 @@ def refresh() -> int:
 
         rolling_players = sum(any(i.source_type == "rolling_weekly_market" for i in values)
                               for values in season_inputs.values())
+        existing_rows = conn.execute("""SELECT canonical_player_id, components, calculated_at
+            FROM market_projections WHERE season=%s AND week IS NULL AND context='season'""",
+            (season,)).fetchall()
+        existing = {str(r["canonical_player_id"]): dict(r) for r in existing_rows}
         baseline_only = adjusted_rows = evidence_qualified = market_vs_adp_qualified = 0
+        preserved = stale_expired = new_adjusted = 0
         for pid in set(season_baselines) | set(season_inputs):
             inputs = season_inputs.get(pid, [])
             baseline = season_baselines.get(str(pid)) or {}
@@ -294,6 +357,14 @@ def refresh() -> int:
                 games_played=max(0, week - 1) if regular_season else 0,
             )
             components = projection["components"]
+            old = existing.get(str(pid))
+            old_basis = ((old or {}).get("components") or {}).get("basis")
+            old_fresh = bool(old and old["calculated_at"] >= now - SEASON_MAX_AGE)
+            if preserve_adjusted_projection(provider_fetch_succeeded, projection["basis"], old, now):
+                preserved += 1
+                continue
+            if old and old_basis != "projection_only" and not old_fresh:
+                stale_expired += 1
             conn.execute("""INSERT INTO market_projections
                 (canonical_player_id,season,week,context,fantasy_points,coverage,confidence,components,calculated_at)
                 VALUES (%s,%s,NULL,'season',%s,%s,%s,%s,%s)
@@ -306,6 +377,7 @@ def refresh() -> int:
                 baseline_only += 1
             else:
                 adjusted_rows += 1
+                new_adjusted += 1
             if projection["meaningful"]:
                 evidence_qualified += 1
             if (projection["basis"] != "projection_only" and
@@ -315,6 +387,9 @@ def refresh() -> int:
         print(f"[market] rolling market players: {rolling_players}{rolling_note}")
         print(f"[market] season projections adjusted: {adjusted_rows}")
         print(f"[market] season projections baseline-only: {baseline_only}")
+        print(f"[market] existing adjusted projections preserved: {preserved}")
+        print(f"[market] stale projections expired: {stale_expired}")
+        print(f"[market] new adjusted projections written: {new_adjusted}")
         direct_players = sum(any(i.source_type == "season_prop" for i in values)
                              for values in season_inputs.values())
         prediction_players = sum(any(i.source_type == "prediction_market" for i in values)
@@ -327,6 +402,8 @@ def refresh() -> int:
         print(f"[market]   team environment players: {team_environment_players}")
         print(f"[market]   evidence-qualified season projections: {evidence_qualified}")
         print(f"[market]   Market vs ADP qualified: {market_vs_adp_qualified}")
+        available_count = market_vs_adp_qualified + preserved
+        print(f"[market] market data availability: {'available' if available_count else 'unavailable'}")
         print(f"[market] unresolved players: {unresolved}")
     print(f"[market] stored {len(normalized)} normalized observations")
     return len(normalized)

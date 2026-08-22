@@ -17,7 +17,10 @@
 
   // The backend only emits this redraft signal when independent, confidence-
   // weighted market evidence clears its threshold; baseline-only rows stay "—".
-  var SHOW_MARKET_VS_ADP = true;
+  // Authoritative response metadata controls the entire column.  It is updated
+  // on every load, so an unavailable signal cannot leave an invisible/stale
+  // column (or CSV field) behind and automatically returns after a good refresh.
+  var SHOW_MARKET_VS_ADP = false;
   var showMarket = function (dyn) { return !dyn && SHOW_MARKET_VS_ADP; };
 
   var state = {
@@ -733,6 +736,9 @@
         if (!Array.isArray(resp)) {
           if (resp.tier_thresholds) tierThresholds = resp.tier_thresholds;
           if (resp.adp_source_options) adpSourceOptions = resp.adp_source_options;
+          SHOW_MARKET_VS_ADP = resp.market_vs_adp_available === true;
+        } else {
+          SHOW_MARKET_VS_ADP = false;
         }
         allPlayers = raw.filter(function (p) { return p && p.id != null && ['QB', 'RB', 'WR', 'TE'].indexOf(String(p.position || '').toUpperCase()) >= 0; });
         loading = false;

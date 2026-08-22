@@ -61,6 +61,34 @@ def load_market_projections(season: int, week: int | None, context: str = "weekl
     return dict(table)
 
 
+def market_vs_adp_availability(players: list[dict], projections: dict[str, dict] | None = None) -> dict:
+    """Return response-level availability for the *resolved response players*.
+
+    Provider/configuration state is deliberately irrelevant here.  The feature
+    exists for a response only when at least one row has a qualified value.
+    """
+    qualified = [p for p in players if p.get("market_vs_adp") is not None]
+    as_of = max((r.get("calculated_at") for r in (projections or {}).values()
+                 if r.get("calculated_at")), default=None)
+    return {
+        "available": bool(qualified),
+        "qualified_players": len(qualified),
+        "last_updated": str(as_of) if as_of is not None else None,
+        "source_status": "fresh" if qualified else "unavailable",
+    }
+
+
+def preserve_adjusted_projection(provider_fetch_succeeded: bool, new_basis: str,
+                                 existing: dict | None, now: datetime) -> bool:
+    """Whether a failed-provider baseline write must be suppressed."""
+    if provider_fetch_succeeded or new_basis != "projection_only" or not existing:
+        return False
+    basis = (existing.get("components") or {}).get("basis")
+    calculated_at = existing.get("calculated_at")
+    return bool(basis != "projection_only" and calculated_at and
+                calculated_at >= now - SEASON_MAX_AGE)
+
+
 def attach_weekly_signals(rows: list[dict], season: int, week: int,
                           site_key: str = "proj_pts", scoring_settings: dict | None = None) -> None:
     from .signals import market_vs_projection
