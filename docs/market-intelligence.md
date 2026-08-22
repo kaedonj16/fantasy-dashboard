@@ -127,6 +127,16 @@ provider-specific changes. Until such evidence is configured, a preseason
 Market vs ADP dash is the correct result for players whose only evidence is the
 baseline or confidence-shrunk team context.
 
+### Bounded provider schema diagnostics
+
+Set `MARKET_DEBUG_PROVIDER_RESPONSES=1` on a one-off refresh to print a bounded,
+sanitized sample of the first response page, three events, five player odds, ten
+non-player odds, three `byBookmaker` rows, and five failed team resolutions. The
+debug session also writes up to three sanitized events to
+`/tmp/sportsgameodds_debug_sample.json`. Credentials, headers, tokens, cookies,
+passwords, full player maps, and unsampled odds are excluded. The flag defaults
+off and should be removed after capturing the provider shape.
+
 ## Provenance and confidence
 
 `market_projections.components` contains fantasy-focused metadata such as:

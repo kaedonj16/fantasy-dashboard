@@ -237,7 +237,7 @@ def refresh() -> int:
             season_inputs[item.canonical_player_id].append(item)
 
         team_diagnostics = {}
-        environments = build_team_environments(provider_events, team_diagnostics, now)
+        environments = build_team_environments(provider_events, team_diagnostics, now, client.debug)
         print(f"[market] team market odds identified: "
               f"{team_diagnostics.get('team_market_odds_identified', 0)}")
         print(f"[market] full-game totals accepted: "
@@ -252,6 +252,16 @@ def refresh() -> int:
               f"missing line={team_diagnostics.get('missing_line', 0)} "
               f"unavailable={team_diagnostics.get('unavailable', 0)} "
               f"unsupported={team_diagnostics.get('unsupported', 0)}")
+        print("[market] team event identity diagnostics:")
+        print(f"[market]   resolved events: {team_diagnostics.get('events_team_identity_resolved', 0)}")
+        print(f"[market]   missing team container: "
+              f"{team_diagnostics.get('events_missing_team_container', 0)}")
+        print(f"[market]   unknown team container shape: "
+              f"{team_diagnostics.get('events_team_container_unrecognized_shape', 0)}")
+        print(f"[market]   missing home: {team_diagnostics.get('events_missing_home', 0)}")
+        print(f"[market]   missing away: {team_diagnostics.get('events_missing_away', 0)}")
+        print(f"[market]   unknown home token: {team_diagnostics.get('events_unknown_home_token', 0)}")
+        print(f"[market]   unknown away token: {team_diagnostics.get('events_unknown_away_token', 0)}")
         team_inputs, team_mapping = map_team_environment_inputs(players, environments, now)
         for pid, item in team_inputs.items():
             season_inputs[pid].append(item)

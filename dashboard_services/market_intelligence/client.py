@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Iterator
 
 from .config import API_CACHE_TTL
+from .provider_debug import SportsGameOddsDebug
 
 class SportsGameOddsError(RuntimeError):
     pass
@@ -31,6 +32,7 @@ class SportsGameOddsClient:
         self.session = session
         self.timeout = timeout
         self.cache_dir = Path(cache_dir or Path(__file__).resolve().parents[2] / "cache" / "sportsgameodds")
+        self.debug = SportsGameOddsDebug()
 
     @property
     def configured(self) -> bool:
@@ -89,15 +91,20 @@ class SportsGameOddsClient:
             # Each page gets an immutable snapshot; retaining/mocking transports
             # must not observe a later cursor mutation on an earlier request.
             payload = self._get("events", dict(params))
+            self.debug.response_page(payload)
             rows = payload.get("data", [])
             if rows is None:
                 rows = []
             if not isinstance(rows, list):
                 raise SportsGameOddsError("SportsGameOdds event data is invalid")
-            yield from (row for row in rows if isinstance(row, dict))
+            for row in rows:
+                if isinstance(row, dict):
+                    self.debug.event(row)
+                    yield row
             meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
             cursor = payload.get("nextCursor") or meta.get("nextCursor")
             if not cursor:
+                self.debug.write_snapshot()
                 break
             if cursor in seen_cursors:
                 raise SportsGameOddsError("SportsGameOdds returned a repeated pagination cursor")

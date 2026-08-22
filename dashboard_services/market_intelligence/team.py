@@ -43,7 +43,7 @@ def _team_value(value, aliases: dict[str, str]) -> str:
     return normalize_nfl_team(aliases.get(raw, raw))
 
 
-def _event_teams(event: dict) -> tuple[str, str, dict[str, str]]:
+def _event_teams(event: dict, debug=None) -> tuple[str, str, dict[str, str], dict]:
     """Return explicit (home, away, provider-ID aliases), or empty identities.
 
     SportsGameOdds v2 may put alignment on each team object, use ``home`` and
@@ -54,10 +54,12 @@ def _event_teams(event: dict) -> tuple[str, str, dict[str, str]]:
     aliases: dict[str, str] = {}
     aligned: dict[str, str] = {}
     teams = event.get("teams") or {}
+    recognized_shape = False
     pairs = teams.items() if isinstance(teams, dict) else enumerate(teams) if isinstance(teams, list) else []
     for key, team in pairs:
         if not isinstance(team, dict):
             continue
+        recognized_shape = True
         provider_id = team.get("teamID") or team.get("id")
         display = (team.get("abbreviation") or team.get("teamAbv") or
                    team.get("shortName") or provider_id)
@@ -67,9 +69,25 @@ def _event_teams(event: dict) -> tuple[str, str, dict[str, str]]:
         if alignment in {"home", "away"} and display:
             aligned[alignment] = normalize_nfl_team(display) or str(display).upper()
 
-    home = _team_value(event.get("homeTeamID") or event.get("homeTeam") or aligned.get("home"), aliases)
-    away = _team_value(event.get("awayTeamID") or event.get("awayTeam") or aligned.get("away"), aliases)
-    return (home, away, aliases) if home and away and home != away else ("", "", aliases)
+    raw_home = event.get("homeTeamID") or event.get("homeTeam") or aligned.get("home")
+    raw_away = event.get("awayTeamID") or event.get("awayTeam") or aligned.get("away")
+    home, away = _team_value(raw_home, aliases), _team_value(raw_away, aliases)
+    if debug and raw_home and not home:
+        debug.unrecognized_team(aliases.get(str(raw_home).upper(), raw_home))
+    if debug and raw_away and not away:
+        debug.unrecognized_team(aliases.get(str(raw_away).upper(), raw_away))
+    candidate_fields = {key: event.get(key) for key in (
+        "homeTeam", "awayTeam", "homeTeamID", "awayTeamID", "teamIDs", "participantIDs",
+    ) if event.get(key) is not None}
+    containers = {key: event.get(key) for key in
+                  ("teams", "participants", "competitors", "teamsById") if event.get(key) is not None}
+    details = {"candidate_fields": candidate_fields, "containers": containers,
+               "aliases": aliases, "aligned": aligned, "raw_home": raw_home, "raw_away": raw_away,
+               "resolved_home": home, "resolved_away": away,
+               "has_team_container": bool(containers), "recognized_shape": recognized_shape}
+    if (not home or not away or home == away) and debug:
+        debug.team_resolution_failed(event, details)
+    return (home, away, aliases, details) if home and away and home != away else ("", "", aliases, details)
 
 
 def _period(odd: dict) -> str:
@@ -130,13 +148,16 @@ def _is_live(event: dict) -> bool:
 
 
 def build_team_environments(events: list[dict], diagnostics: dict[str, int] | None = None,
-                            now: datetime | None = None) -> dict[str, dict]:
+                            now: datetime | None = None, debug=None) -> dict[str, dict]:
     """Aggregate clear pregame full-game SGO totals/spreads into team context."""
     now = now or datetime.now(timezone.utc)
     counters = diagnostics if diagnostics is not None else {}
     names = ("team_market_odds_identified", "full_game_totals_accepted",
              "full_game_spreads_accepted", "games_with_usable_total_spread",
-             "wrong_period", "missing_team", "missing_line", "unavailable", "unsupported")
+             "wrong_period", "missing_team", "missing_line", "unavailable", "unsupported",
+             "events_missing_team_container", "events_team_container_unrecognized_shape",
+             "events_missing_home", "events_missing_away", "events_unknown_home_token",
+             "events_unknown_away_token", "events_team_identity_resolved")
     for name in names:
         counters.setdefault(name, 0)
 
@@ -145,7 +166,21 @@ def build_team_environments(events: list[dict], diagnostics: dict[str, int] | No
     event_counts: dict[str, set[str]] = defaultdict(set)
     for event in events:
         event_id = str(event.get("eventID") or event.get("id") or "")
-        home, away, aliases = _event_teams(event)
+        home, away, aliases, identity = _event_teams(event, debug)
+        if not identity["has_team_container"]:
+            counters["events_missing_team_container"] += 1
+        elif not identity["recognized_shape"]:
+            counters["events_team_container_unrecognized_shape"] += 1
+        if not identity["raw_home"]:
+            counters["events_missing_home"] += 1
+        elif not home:
+            counters["events_unknown_home_token"] += 1
+        if not identity["raw_away"]:
+            counters["events_missing_away"] += 1
+        elif not away:
+            counters["events_unknown_away_token"] += 1
+        if home and away:
+            counters["events_team_identity_resolved"] += 1
         status = event.get("status") if isinstance(event.get("status"), dict) else {}
         start = _dt(event.get("startTime") or event.get("startsAt") or status.get("startsAt"))
         if not event_id or not home or not away or not start:
