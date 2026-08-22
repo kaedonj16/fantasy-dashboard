@@ -118,10 +118,31 @@ def test_attach_market_vs_adp_uses_redraft_avg_pick():
     # to pick 60 on the (10->100, 20->20) curve. Actual ADP is 100, so the market
     # says this player is going ~40 picks later than production warrants.
     projections = {"1": {"fantasy_points": 255, "confidence": 0.8}}
-    attach_market_vs_adp(players, projections)
+    diagnostics = attach_market_vs_adp(players, projections)
     assert players[0]["market_expected_adp"] == 60.0
     assert players[0]["market_vs_adp"] == 40.0
     assert players[0]["market_confidence"] == 0.8
+    assert diagnostics["qualified"] == 1
+    assert diagnostics["missing_projection"] == 1
+
+
+def test_market_vs_adp_diagnostics_explain_unqualified_rows():
+    from dashboard_services.market_intelligence.adp import attach_market_vs_adp
+    players = [
+        {"id": "baseline", "proj_ppg": 10, "redraft_avg_pick": 100},
+        {"id": "weak", "proj_ppg": 20, "redraft_avg_pick": 20},
+        {"id": "missing", "proj_ppg": 15, "redraft_avg_pick": 50},
+    ]
+    diagnostics = attach_market_vs_adp(players, {
+        "baseline": {"fantasy_points": 170, "confidence": 0,
+                     "components": {"basis": "projection_only"}},
+        "weak": {"fantasy_points": 300, "confidence": 0.2,
+                 "components": {"basis": "team_environment"}},
+    })
+    assert diagnostics["projection_only"] == 1
+    assert diagnostics["low_confidence"] == 1
+    assert diagnostics["missing_projection"] == 1
+    assert diagnostics["qualified"] == 0
 
 
 def test_attach_market_vs_adp_season_total_not_pinned_to_top_pick():
