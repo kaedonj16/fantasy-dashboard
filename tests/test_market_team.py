@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta, timezone
 
-from dashboard_services.market_intelligence.season import team_environment_input
-from dashboard_services.market_intelligence.team import build_team_environments
+from dashboard_services.market_intelligence.season import (
+    build_adjusted_season_projection, map_team_environment_inputs, team_environment_input,
+)
+from dashboard_services.market_intelligence.team import _event_teams, build_team_environments
 
 
 def _event(event_id, home, away, total, home_spread, books=("a", "b")):
@@ -141,3 +143,77 @@ def test_provider_team_variants_are_canonical_environment_keys():
     assert set(env) == {"KC", "NE"}
     assert env["KC"]["implied_points"] == 25
     assert env["NE"]["implied_points"] == 21
+
+
+def _production_v2_event(home_id="CLEVELAND_BROWNS_NFL", home_short="CLE",
+                         home_long="Cleveland Browns", away_id="BUFFALO_BILLS_NFL",
+                         away_short="BUF", away_long="Buffalo Bills"):
+    event = _event("production-v2", home_id, away_id, 46, -3, books=("book",))
+    event.pop("homeTeamID")
+    event.pop("awayTeamID")
+    event["teams"] = {
+        "home": {"names": {"long": home_long, "medium": home_long.split()[-1],
+                            "short": home_short},
+                 "statEntityID": "home", "teamID": home_id},
+        "away": {"names": {"long": away_long, "medium": away_long.split()[-1],
+                            "short": away_short},
+                 "statEntityID": "away", "teamID": away_id},
+    }
+    return event
+
+
+def test_real_v2_nested_names_resolve_home_away_and_provider_aliases():
+    event = _production_v2_event()
+    home, away, aliases, details = _event_teams(event)
+    assert (home, away) == ("CLE", "BUF")
+    assert aliases["CLEVELAND_BROWNS_NFL"] == "CLE"
+    assert aliases["BUFFALO_BILLS_NFL"] == "BUF"
+    assert details["resolved_home"] == "CLE"
+    assert details["resolved_away"] == "BUF"
+
+
+def test_real_v2_nested_names_normalize_additional_provider_teams():
+    event = _production_v2_event(
+        "MINNESOTA_VIKINGS_NFL", "", "Minnesota Vikings",
+        "BALTIMORE_RAVENS_NFL", "", "Baltimore Ravens",
+    )
+    home, away, aliases, _ = _event_teams(event)
+    assert (home, away) == ("MIN", "BAL")
+    assert aliases == {"MINNESOTA_VIKINGS_NFL": "MIN", "BALTIMORE_RAVENS_NFL": "BAL"}
+
+
+def test_real_v2_nested_names_flow_through_team_environment_pipeline():
+    event = _production_v2_event(
+        "WASHINGTON_COMMANDERS_NFL", "WSH", "Washington Commanders",
+        "NEW_ORLEANS_SAINTS_NFL", "NOR", "New Orleans Saints",
+    )
+    diagnostics = {}
+    environments = build_team_environments([event], diagnostics)
+    assert set(environments) == {"WAS", "NO"}
+    assert environments["WAS"]["implied_points"] == 24.5
+    assert environments["NO"]["implied_points"] == 21.5
+    assert diagnostics["events_team_identity_resolved"] == 1
+    assert diagnostics["team_market_odds_identified"] == 3
+    assert diagnostics["games_with_usable_total_spread"] == 1
+
+
+def test_real_v2_team_evidence_attaches_and_can_clear_existing_threshold():
+    events = []
+    for index in range(4):
+        event = _production_v2_event(
+            "WASHINGTON_COMMANDERS_NFL", "WSH", "Washington Commanders",
+            "NEW_ORLEANS_SAINTS_NFL", "NOR", "New Orleans Saints",
+        )
+        event["eventID"] = f"production-v2-{index}"
+        events.append(event)
+    environments = build_team_environments(events)
+    inputs, mapping = map_team_environment_inputs({
+        "qb": {"team": "WAS", "pos": "QB"},
+        "rb": {"team": "NO", "pos": "RB"},
+    }, environments)
+    assert mapping["matched_players"] == mapping["input_players"] == 2
+    bullish = build_adjusted_season_projection(300, "QB", {}, [inputs["qb"]])
+    bearish = build_adjusted_season_projection(200, "RB", {}, [inputs["rb"]])
+    assert bullish["basis"] == bearish["basis"] == "team_environment"
+    assert bullish["points"] > 300 and bearish["points"] < 200
+    assert bullish["confidence"] >= 0.35

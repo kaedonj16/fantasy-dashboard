@@ -35,10 +35,16 @@ def _token(value) -> str:
     return "".join(ch for ch in str(value or "").lower() if ch.isalnum())
 
 
+def _team_display(team: dict):
+    names = team.get("names") if isinstance(team.get("names"), dict) else {}
+    return (team.get("abbreviation") or team.get("teamAbv") or names.get("short") or
+            names.get("long") or names.get("medium") or team.get("shortName") or
+            team.get("teamID") or team.get("id"))
+
+
 def _team_value(value, aliases: dict[str, str]) -> str:
     if isinstance(value, dict):
-        value = (value.get("teamID") or value.get("id") or value.get("abbreviation") or
-                 value.get("teamAbv"))
+        value = _team_display(value)
     raw = str(value or "").upper()
     return normalize_nfl_team(aliases.get(raw, raw))
 
@@ -61,13 +67,13 @@ def _event_teams(event: dict, debug=None) -> tuple[str, str, dict[str, str], dic
             continue
         recognized_shape = True
         provider_id = team.get("teamID") or team.get("id")
-        display = (team.get("abbreviation") or team.get("teamAbv") or
-                   team.get("shortName") or provider_id)
-        if provider_id and display:
-            aliases[str(provider_id).upper()] = normalize_nfl_team(display) or str(display).upper()
+        display = _team_display(team)
+        canonical = normalize_nfl_team(display)
+        if provider_id and canonical:
+            aliases[str(provider_id).upper()] = canonical
         alignment = _token(team.get("homeAway") or team.get("alignment") or team.get("side") or key)
-        if alignment in {"home", "away"} and display:
-            aligned[alignment] = normalize_nfl_team(display) or str(display).upper()
+        if alignment in {"home", "away"} and canonical:
+            aligned[alignment] = canonical
 
     raw_home = event.get("homeTeamID") or event.get("homeTeam") or aligned.get("home")
     raw_away = event.get("awayTeamID") or event.get("awayTeam") or aligned.get("away")
