@@ -12,6 +12,8 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from psycopg.types.json import Jsonb
+
 # `python scripts/refresh_market_intelligence.py` (the Render cron) puts scripts/
 # on sys.path, not the repo root, so the project packages don't import. Add the
 # repo root explicitly, matching the other cron scripts.
@@ -20,13 +22,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dashboard_services.api import get_nfl_state  # noqa: E402
 from dashboard_services.db import get_conn
 from dashboard_services.market_intelligence.client import SportsGameOddsClient, SportsGameOddsError
+from dashboard_services.market_intelligence.config import MIN_SIGNAL_CONFIDENCE
 from dashboard_services.market_intelligence.consensus import build_consensus
 from dashboard_services.market_intelligence.identity import resolve_player
 from dashboard_services.market_intelligence.normalize import normalize_event
 from dashboard_services.market_intelligence.projection import build_market_projection
 from dashboard_services.market_intelligence.models import MarketProjectionInput
 from dashboard_services.market_intelligence.season import (
-    build_adjusted_season_projection, rolling_weekly_inputs, team_environment_input,
+    build_adjusted_season_projection, map_team_environment_inputs, rolling_weekly_inputs,
 )
 from dashboard_services.market_intelligence.team import build_team_environments
 from utils.utils import load_players_index
@@ -61,9 +64,11 @@ def refresh() -> int:
         except SportsGameOddsError as sgo_err:
             print(f"[market] SportsGameOdds unavailable ({sgo_err}); continuing with fallback context")
             provider_events = []
+        print(f"[market] SportsGameOdds events returned: {len(provider_events)}")
+        sgo_diagnostics = {}
         for event in provider_events:
             event_players = event.get("players") or {}
-            for record in normalize_event(event, now):
+            for record in normalize_event(event, now, sgo_diagnostics):
                 meta = event_players.get(record.provider_player_id, {}) if isinstance(event_players, dict) else {}
                 pid, confidence = resolve_player(record.provider_player_id, meta.get("name", ""),
                                                  meta.get("position", ""), meta.get("team", ""),
@@ -76,7 +81,7 @@ def refresh() -> int:
                         (provider, provider_player_id, canonical_player_id, match_confidence, match_method, metadata)
                         VALUES ('sportsgameodds', %s, %s, %s, 'metadata_bootstrap', %s)
                         ON CONFLICT (provider, provider_player_id) DO NOTHING""",
-                        (record.provider_player_id, pid, confidence, meta))
+                        (record.provider_player_id, pid, confidence, Jsonb(meta)))
                     persisted[record.provider_player_id] = pid
                 record = record.__class__(**{**record.__dict__, "canonical_player_id": pid})
                 normalized.append(record)
@@ -91,6 +96,18 @@ def refresh() -> int:
                     record.line, record.over_price, record.under_price, record.event_start_time,
                     record.observed_at, record.source_updated_at))
         weekly_observations = sum(r.context == "weekly" for r in normalized)
+        print(f"[market] SportsGameOdds odds inspected: {sgo_diagnostics.get('odds_inspected', 0)}")
+        print(f"[market] SportsGameOdds player prop odds identified: "
+              f"{sgo_diagnostics.get('player_props_identified', 0)}")
+        print(f"[market] SportsGameOdds bookmaker entries inspected: "
+              f"{sgo_diagnostics.get('bookmaker_entries_inspected', 0)}")
+        print(f"[market] SportsGameOdds normalized observations: {len(normalized)}")
+        print("[market] SportsGameOdds rejected: "
+              f"missing player={sgo_diagnostics.get('missing_player', 0)} "
+              f"missing book={sgo_diagnostics.get('missing_book', 0)} "
+              f"missing stat={sgo_diagnostics.get('missing_stat', 0)} "
+              f"missing line={sgo_diagnostics.get('missing_line', 0)} "
+              f"unavailable={sgo_diagnostics.get('unavailable', 0)}")
         print(f"[market] SportsGameOdds weekly observations: {weekly_observations}")
 
         # DraftKings is an explicit opt-in only. One auth/edge denial stops this
@@ -185,7 +202,7 @@ def refresh() -> int:
                  fantasy_points=EXCLUDED.fantasy_points,coverage=EXCLUDED.coverage,
                  confidence=EXCLUDED.confidence,components=EXCLUDED.components,
                  calculated_at=EXCLUDED.calculated_at""", (pid, season, week, projection["points"],
-                 projection["coverage"], projection["confidence"], components, now))
+                 projection["coverage"], projection["confidence"], Jsonb(components), now))
         # Provider-independent season inputs. Direct season props remain strongest;
         # historical weekly consensuses become rate evidence only after three
         # distinct regular-season weeks, and current team implied totals provide a
@@ -219,18 +236,42 @@ def refresh() -> int:
         for item in rolling:
             season_inputs[item.canonical_player_id].append(item)
 
-        environments = build_team_environments(provider_events)
-        for pid, info in players.items():
-            team = str((info or {}).get("team") or "").upper()
-            item = team_environment_input(pid, (info or {}).get("pos") or (info or {}).get("position"),
-                                          environments.get(team), now)
-            if item:
-                season_inputs[str(pid)].append(item)
+        team_diagnostics = {}
+        environments = build_team_environments(provider_events, team_diagnostics, now)
+        print(f"[market] team market odds identified: "
+              f"{team_diagnostics.get('team_market_odds_identified', 0)}")
+        print(f"[market] full-game totals accepted: "
+              f"{team_diagnostics.get('full_game_totals_accepted', 0)}")
+        print(f"[market] full-game spreads accepted: "
+              f"{team_diagnostics.get('full_game_spreads_accepted', 0)}")
+        print(f"[market] games with usable total+spread: "
+              f"{team_diagnostics.get('games_with_usable_total_spread', 0)}")
+        print("[market] team markets rejected: "
+              f"wrong period={team_diagnostics.get('wrong_period', 0)} "
+              f"missing team={team_diagnostics.get('missing_team', 0)} "
+              f"missing line={team_diagnostics.get('missing_line', 0)} "
+              f"unavailable={team_diagnostics.get('unavailable', 0)} "
+              f"unsupported={team_diagnostics.get('unsupported', 0)}")
+        team_inputs, team_mapping = map_team_environment_inputs(players, environments, now)
+        for pid, item in team_inputs.items():
+            season_inputs[pid].append(item)
+        team_environment_players = len(team_inputs)
         print(f"[market] team environment teams: {len(environments)}")
+        print(f"[market] environment team keys: "
+              f"{', '.join(team_mapping['environment_team_keys']) or '-'}")
+        print(f"[market] player team keys: {', '.join(team_mapping['player_team_keys']) or '-'}")
+        print(f"[market] unmatched environment keys: "
+              f"{', '.join(team_mapping['unmatched_environment_keys']) or '-'}")
+        print(f"[market] unmatched player team keys: "
+              f"{', '.join(team_mapping['unmatched_player_team_keys']) or '-'}")
+        print(f"[market] players with recognized NFL team: {team_mapping['recognized_players']}")
+        print(f"[market] players matched to team environment: {team_mapping['matched_players']}")
+        print(f"[market] players receiving non-zero team environment input: {team_environment_players}")
+        print(f"[market] unmatched team identifiers: {len(team_mapping['unmatched_identifiers'])}")
 
         rolling_players = sum(any(i.source_type == "rolling_weekly_market" for i in values)
                               for values in season_inputs.values())
-        baseline_only = adjusted_rows = 0
+        baseline_only = adjusted_rows = evidence_qualified = market_vs_adp_qualified = 0
         for pid in set(season_baselines) | set(season_inputs):
             inputs = season_inputs.get(pid, [])
             baseline = season_baselines.get(str(pid)) or {}
@@ -250,15 +291,32 @@ def refresh() -> int:
                  fantasy_points=EXCLUDED.fantasy_points,coverage=EXCLUDED.coverage,
                  confidence=EXCLUDED.confidence,components=EXCLUDED.components,
                  calculated_at=EXCLUDED.calculated_at""", (pid, season, projection["points"],
-                 projection["coverage"], projection["confidence"], components, now))
+                 projection["coverage"], projection["confidence"], Jsonb(components), now))
             if projection["basis"] == "projection_only":
                 baseline_only += 1
             else:
                 adjusted_rows += 1
+            if projection["meaningful"]:
+                evidence_qualified += 1
+            if (projection["basis"] != "projection_only" and
+                    projection["confidence"] >= MIN_SIGNAL_CONFIDENCE):
+                market_vs_adp_qualified += 1
         rolling_note = " (preseason)" if not regular_season else ""
         print(f"[market] rolling market players: {rolling_players}{rolling_note}")
         print(f"[market] season projections adjusted: {adjusted_rows}")
         print(f"[market] season projections baseline-only: {baseline_only}")
+        direct_players = sum(any(i.source_type == "season_prop" for i in values)
+                             for values in season_inputs.values())
+        prediction_players = sum(any(i.source_type == "prediction_market" for i in values)
+                                 for values in season_inputs.values())
+        print("[market] season evidence summary:")
+        print(f"[market]   direct season prop players: {direct_players}")
+        print(f"[market]   prediction market players: {prediction_players}")
+        print("[market]   preseason role market players: 0")
+        print(f"[market]   rolling weekly players: {rolling_players}")
+        print(f"[market]   team environment players: {team_environment_players}")
+        print(f"[market]   evidence-qualified season projections: {evidence_qualified}")
+        print(f"[market]   Market vs ADP qualified: {market_vs_adp_qualified}")
         print(f"[market] unresolved players: {unresolved}")
     print(f"[market] stored {len(normalized)} normalized observations")
     return len(normalized)
