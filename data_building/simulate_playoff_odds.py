@@ -185,7 +185,7 @@ def _build_sim_state_impl(ctx: dict, platform: str = "sleeper") -> Optional[dict
     Build everything needed for trade-swap simulations without running them.
 
     Mirrors the branching logic of simulate_playoff_odds:
-      - Preseason / offseason: project team strength from rosters (FP projections)
+      - Preseason / offseason: project team strength from Sleeper projections
       - In-season: historical team avg blended with next-week projections
       - Season complete: returns None (no simulation needed)
 
@@ -528,8 +528,7 @@ def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
       1. Sleeper weekly projections for the upcoming week — same source used by
          _blend_weekly_projections, so simulate_with_swap sees the same player
          PPGs as the base simulation's team-avg blend.
-      2. FantasyPros season projections — preseason baseline or gap-filler.
-      3. Prior-season usage_rows cache — fills any remaining gaps.
+      2. Prior-season usage_rows cache — fills any remaining gaps.
 
     Returns:
         ppg_map  — {str(player_id): {"ppg": float, "pos": str}}
@@ -567,8 +566,8 @@ def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
     # Priority 1: Sleeper projections — the primary source at ALL points.
     # In-season we use the upcoming week; offseason/preseason (current_week == 0)
     # we use week 1 of the season as a representative weekly baseline. This keeps
-    # the simulation on Sleeper's numbers year-round, with FantasyPros and the
-    # usage cache only filling players Sleeper doesn't cover.
+    # the simulation on Sleeper's numbers year-round, with the usage cache only
+    # filling players Sleeper doesn't cover.
     if season > 0:
         proj_week = current_week + 1 if current_week > 0 else 1
         try:
@@ -587,17 +586,7 @@ def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
 
-    # Priority 2: FantasyPros season projections (preseason or gap-filler)
-    try:
-        from data_building.fetch_projections import fetch_fp_season_projections
-        fp_data = fetch_fp_season_projections(season, scoring)
-        for pid, info in fp_data.items():
-            if str(pid) not in ppg_map and info.get("ppg", 0) > 0:
-                ppg_map[str(pid)] = {"ppg": info["ppg"], "pos": info.get("pos", "")}
-    except Exception:
-        logger.debug("suppressed exception", exc_info=True)
-
-    # Priority 3: Prior-season usage cache
+    # Priority 2: Prior-season usage cache
     try:
         import os as _os, json as _json
         from datetime import date as _date
@@ -673,7 +662,7 @@ def simulate_playoff_odds(
     # ── Case 1: no game data yet (preseason / offseason of new year) ─────────
     if not has_games:
         # Build the PPG map Sleeper-first (same source as in-season / swap sims)
-        # so projections come from Sleeper at all points, not FantasyPros.
+        # so projections come from Sleeper at all points.
         season_ppg_map, pos_map = build_ppg_map(ctx)
         teams = _estimate_from_rosters(ctx, ppg_map=season_ppg_map, pos_map=pos_map)
         if not teams:
@@ -1096,10 +1085,9 @@ def _estimate_from_rosters(
     Build synthetic team scoring profiles for preseason simulation.
 
     PPG source priority (highest accuracy first):
-      1. FantasyPros consensus season projections ÷ 17
-         (accounts for off-season moves, role changes, analyst consensus)
-      2. Prior-season usage_rows cache (same source as player modal)
-         (fallback when FP fetch fails or player is absent from FP)
+      1. Sleeper weekly projections aggregated into an active-week PPG.
+      2. Prior-season usage_rows cache (non-projection fallback when Sleeper has
+         no projection for the player)
       3. Position-based rookie default (last resort)
 
     Uses position-aware lineup selection and per-team std dev estimated from
@@ -1160,18 +1148,18 @@ def _estimate_from_rosters(
         scoring  = "std"
         ppg_key  = "std_scoring_ppg"
 
-    # ── Source 1: FantasyPros season projections ──────────────────────────────
+    # ── Source 1: Sleeper season projection aggregate ────────────────────────
     ppg_map: dict[str, dict] = {}
     try:
-        from data_building.fetch_projections import fetch_fp_season_projections
-        fp_data = fetch_fp_season_projections(season, scoring)
-        for pid, info in fp_data.items():
+        from data_building.fetch_projections import fetch_sleeper_season_projections
+        sleeper_data = fetch_sleeper_season_projections(season, scoring)
+        for pid, info in sleeper_data.items():
             if info.get("ppg", 0) > 0:
                 ppg_map[str(pid)] = {"ppg": info["ppg"], "pos": info.get("pos", "")}
         if ppg_map:
-            logger.info("[playoff_odds] Using FP projections: %d players", len(ppg_map))
+            logger.info("[playoff_odds] Using Sleeper projections: %d players", len(ppg_map))
     except Exception as exc:
-        logger.warning("[playoff_odds] FP projections unavailable: %s", exc)
+        logger.warning("[playoff_odds] Sleeper projections unavailable: %s", exc)
 
     # ── Source 2: prior-season usage_rows (fills gaps / full fallback) ────────
     try:
@@ -1190,7 +1178,7 @@ def _estimate_from_rosters(
             for p in _usage_data:
                 pid = str(p.get("id") or "")
                 if not pid or pid in ppg_map:
-                    continue  # already have a FP projection for this player
+                    continue  # already have a Sleeper projection for this player
                 ppg = float((p.get("usage") or {}).get(ppg_key) or 0)
                 pos = str(p.get("position") or "").upper()
                 ppg_map[pid] = {"ppg": ppg, "pos": pos}

@@ -9341,39 +9341,8 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
                 all_vals.setdefault(pid, []).append(val)
     fallback = {pid: median(vals) for pid, vals in all_vals.items()}
 
-    # For players Sleeper doesn't project (e.g. fringe depth), use FantasyPros
-    # preseason PPG as a flat per-week estimate.  The PPG file is PPR-based, so we
-    # estimate other variants by backing out typical reception points by position.
-    # K and DEF carry no receptions, so their PPG is variant-independent (0 rec).
-    _EST_REC = {"QB": 0.0, "RB": 3.0, "WR": 5.0, "TE": 4.0, "K": 0.0, "DEF": 0.0}
-    try:
-        _fp_path = os.path.join("cache", f"fp_projections_{season}_ppr.json")
-        _fp_data = read_json_cached(_fp_path)  # mtime-cached; re-parses only when the file changes
-        for _fp_pid, _fp_entry in (_fp_data or {}).items():
-            if _fp_pid in fallback:
-                continue
-            _ppg = float(_fp_entry.get("ppg") or 0)
-            _pos = _fp_entry.get("pos", "")
-            if _ppg <= 0 or _pos not in _EST_REC:
-                continue
-            _rec_pts = _EST_REC[_pos]
-            _non_rec = max(_ppg - _rec_pts, 0)
-            _rec_rate = float((raw_scoring_settings or {}).get("rec", 1.0))
-            if _rec_rate >= 0.75:
-                _v = _ppg
-            elif _rec_rate > 0:
-                _v = _non_rec + _rec_pts * _rec_rate
-            else:
-                _v = _non_rec
-            if _v > 0:
-                fallback[_fp_pid] = round(_v, 2)
-    except FileNotFoundError:
-        logger.debug("suppressed exception", exc_info=True)
-    except Exception as _e:
-        logger.debug(f"[projections] FP fallback load failed: {_e}")
-
-    # Kickers and team defenses are absent from the FP file (no DEF) and from
-    # Sleeper's weekly projections, so the optimal-lineup view would score those
+    # Kickers and team defenses can be absent from Sleeper's weekly projections,
+    # so the optimal-lineup view would score those
     # slots at 0.  Fill them from the prior-season usage cache - the same source
     # the playoff simulator uses - so Start/Sit and the optimal lineup count K and
     # DEF.  Team defenses appear under their team abbreviation id (pos blank);
@@ -11349,10 +11318,10 @@ def api_waiver_candidates():
     # recent ppg understates the role).
     _season_ppg_wv: dict = {}
     try:
-        from data_building.fetch_projections import fetch_fp_season_projections
+        from data_building.fetch_projections import fetch_sleeper_season_projections
         _nfl_pj = get_nfl_state() or {}
         _pj_season = int(_nfl_pj.get("season") or season)
-        for _pid, _row in (fetch_fp_season_projections(_pj_season, "ppr") or {}).items():
+        for _pid, _row in (fetch_sleeper_season_projections(_pj_season, "ppr") or {}).items():
             if isinstance(_row, dict) and _row.get("ppg") is not None:
                 _season_ppg_wv[str(_pid)] = _row.get("ppg")
     except Exception:
@@ -12210,8 +12179,7 @@ def api_start_sit_options():
 
     # ── Weekly projections - SAME source as the player modal & matchups page ───
     # build_projections_by_week() returns Sleeper weekly stat lines scored with
-    # the league's exact settings and FantasyPros season PPG as a
-    # fallback for players with no weekly data. Reuse the cached ctx bundle when
+    # the league's exact settings. Reuse the cached ctx bundle when
     # present so start/sit shows the exact number the modal/matchups show.
     proj_by_week = ctx.get("proj_by_week")
     if not proj_by_week:
@@ -12284,7 +12252,7 @@ def api_start_sit_options():
         s_ppg = season_ppg.get(pid, 0.0)
         recent_ppg = recent_ppg_map.get(pid, 0.0)
         # Projection = exact value the player modal / matchups page show for this
-        # week (Sleeper weekly → FantasyPros season PPG fallback).
+        # week from Sleeper's weekly projection feed.
         proj_pts = _lookup_proj(pid)
         if proj_pts <= 0 and s_ppg > 0:
             proj_pts = round(s_ppg, 1)
@@ -20588,24 +20556,24 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
     except Exception as _e_lp:
         logger.info(f"[api/league-players] PPG enrichment skipped: {_e_lp}")
 
-    # Enrich with projected season PPG from FantasyPros projections cache
+    # Enrich with projected season PPG aggregated from Sleeper weekly projections.
     try:
         _proj_year = date.today().year
-        _fp_proj_path = os.path.join("cache", f"fp_projections_{_proj_year}_ppr.json")
-        _fp_proj_data = read_json_cached(_fp_proj_path)
-        if _fp_proj_data:
+        from data_building.fetch_projections import fetch_sleeper_season_projections
+        _sleeper_proj_data = fetch_sleeper_season_projections(_proj_year, "ppr")
+        if _sleeper_proj_data:
             for _player in model_value_table:
                 _pid = str(_player.get("id") or "")
-                _fp_e = _fp_proj_data.get(_pid)
-                if _fp_e:
-                    _pj = float(_fp_e.get("ppg") or 0)
+                _sleeper_entry = _sleeper_proj_data.get(_pid)
+                if _sleeper_entry:
+                    _pj = float(_sleeper_entry.get("ppg") or 0)
                     if _pj > 0:
                         _player["proj_ppg"] = round(_pj, 1)
-                        _sp = float(_fp_e.get("season_pts") or 0)
+                        _sp = float(_sleeper_entry.get("season_pts") or 0)
                         if _sp > 0:
                             _player["proj_pts"] = round(_sp, 1)
-    except Exception as _e_fp:
-        logger.info(f"[api/league-players] Projected PPG enrichment skipped: {_e_fp}")
+    except Exception as _e_sleeper_proj:
+        logger.info(f"[api/league-players] Projected PPG enrichment skipped: {_e_sleeper_proj}")
 
     # Enrich with real PPR-based VORP from advanced metrics (last completed season)
     try:
@@ -20663,16 +20631,9 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
     if kdef:
         try:
             from utils.utils import load_players_index as _lpi, NFL_TEAMS as _nfl_teams
-            # Reuse the FantasyPros projections cache (keyed by id) so kickers carry
-            # a projected PPG and can be ranked by quality.
-            _kdef_proj = {}
-            try:
-                _kp = read_json_cached(
-                    os.path.join("cache", f"fp_projections_{date.today().year}_ppr.json")
-                ) or {}
-                _kdef_proj = _kp
-            except Exception:
-                _kdef_proj = {}
+            # Sleeper season aggregate supplies projected PPG for kickers too.
+            from data_building.fetch_projections import fetch_sleeper_season_projections
+            _kdef_proj = fetch_sleeper_season_projections(date.today().year, "ppr") or {}
             _seen = {str(p.get("id")) for p in model_value_table if isinstance(p, dict)}
             _kdef = []
             # Kickers: players_index stores them as pos="PK" (Tank01 convention), not "K".
@@ -20791,17 +20752,15 @@ def api_market_intel_health():
         except Exception as _de:
             out["tables"] = {"error": str(_de)}
 
-    # Projection cache: expected_adp needs per-game PPG for the pool, sourced from
-    # the FantasyPros season-projection cache. Missing/empty here also empties the
-    # column even when market rows exist.
+    # Projection coverage: expected_adp needs Sleeper per-game PPG for the pool.
     try:
-        _fp_year = date.today().year
-        _fp_path = os.path.join("cache", f"fp_projections_{_fp_year}_ppr.json")
-        _fp = read_json_cached(_fp_path) or {}
-        _with_ppg = sum(1 for v in _fp.values()
+        from data_building.fetch_projections import fetch_sleeper_season_projections
+        _projection_year = date.today().year
+        _sleeper_projection = fetch_sleeper_season_projections(_projection_year, "ppr") or {}
+        _with_ppg = sum(1 for v in _sleeper_projection.values()
                         if isinstance(v, dict) and float(v.get("ppg") or 0) > 0)
-        out["projection_cache"] = {"path": _fp_path, "exists": os.path.exists(_fp_path),
-                                   "players": len(_fp), "with_ppg": _with_ppg}
+        out["projection_cache"] = {"source": "sleeper", "players": len(_sleeper_projection),
+                                   "with_ppg": _with_ppg}
     except Exception as _fe:
         out["projection_cache"] = {"error": str(_fe)}
 
@@ -20820,7 +20779,7 @@ def api_market_intel_health():
     if not out["database_url_set"]:
         out["diagnosis"] = "DATABASE_URL is not set — market intelligence is fully disabled."
     elif _season_proj > 0 and not _ppg_ok:
-        out["diagnosis"] = ("Season projections exist but the FantasyPros projection cache has no "
+        out["diagnosis"] = ("Season projections exist but Sleeper has no "
                             "per-game PPG — expected_adp can't build its curve, so the column stays empty.")
     elif _season_proj > 0:
         out["diagnosis"] = ("Season fallback projections are present; Market vs ADP appears only for "
@@ -20836,7 +20795,7 @@ def api_market_intel_health():
                             "team/rolling season fallback projections.")
     elif _season_proj == 0:
         out["diagnosis"] = ("Season snapshots exist but no season projections were built — check "
-                            "build_season_market_projection (needs a FantasyPros season baseline).")
+                            "build_season_market_projection (needs a Sleeper season baseline).")
     else:
         out["diagnosis"] = "Season market data and projections present — Market vs ADP should populate."
 
@@ -22536,21 +22495,6 @@ def api_player_game_logs(player_id: str):
                         _fv = 0.0
                     if _fv > 0.5:
                         _proj_vals[_w] = round(_fv, 2)
-
-                # FP PPG fallback if no Sleeper weekly files
-                if not _proj_vals:
-                    _fp_path = os.path.join("cache", f"fp_projections_{_upcoming}_ppr.json")
-                    try:
-                        with open(_fp_path) as _fp_f:
-                            _fp_data = json.load(_fp_f)
-                        _fp_e = _fp_data.get(player_id)
-                        if _fp_e:
-                            _ppg = float(_fp_e.get("ppg") or 0)
-                            if _ppg > 0:
-                                for _w in range(1, 19):
-                                    _proj_vals[_w] = round(_ppg, 2)
-                    except FileNotFoundError:
-                        logger.debug("suppressed exception", exc_info=True)
 
                 if _proj_vals:
                     _mv = list(_proj_vals.values())

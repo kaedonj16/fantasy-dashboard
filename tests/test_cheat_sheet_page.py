@@ -77,7 +77,7 @@ def test_mobile_keeps_market_vs_adp_vor_and_value_columns():
     body = build_cheat_sheet_body("league-123", 2026, "sleeper")
     script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
 
-    assert ".cs-wrap table { min-width: 700px; }" in body
+    assert ".cs-wrap table { min-width: 830px; }" in body
     assert ".cs-vor-col, .cs-value-col { display: none; }" not in body
     assert ".cs-market-col { display: none; }" not in body
     assert '<th class="cs-market-col">Market vs ADP</th>' in script
@@ -87,6 +87,28 @@ def test_mobile_keeps_market_vs_adp_vor_and_value_columns():
     assert "Not enough independent market data yet." in script
     assert "marketBasis" in script
     assert "marketConfidenceLabel" in script
+
+
+def test_cheat_sheet_adds_full_season_schedule_rank_context():
+    body = build_cheat_sheet_body("league-123", 2026, "sleeper")
+    script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
+
+    assert "Schedule Rank compares each player's position-specific matchups" in body
+    assert "week_start=1&week_end=17" in script
+    assert "p.sos_rank" in script
+    assert ">Sched Rk</th>" in script
+    assert "'Schedule Rank'" in script
+
+
+def test_cheat_sheet_adds_projected_ppg_to_board_and_export():
+    body = build_cheat_sheet_body("league-123", 2026, "sleeper")
+    script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
+
+    assert "Projected PPG is the player's upcoming-season fantasy points per game" in body
+    assert "projectedPpg: p.proj_ppg" in script
+    assert ">Proj PPG</th>" in script
+    assert "'Proj PPG'" in script
+    assert "x.projectedPpg.toFixed(1)" in script
 
 
 def test_draft_room_only_shares_context_from_a_visible_draft_board():
