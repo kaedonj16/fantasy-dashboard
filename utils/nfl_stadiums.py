@@ -61,7 +61,39 @@ STADIUMS: dict[str, dict] = {
 ALIASES: dict[str, str] = {
     "JAC": "JAX", "LA": "LAR", "STL": "LAR", "SD": "LAC", "OAK": "LV",
     "WSH": "WAS", "WFT": "WAS", "LVR": "LV", "SFO": "SF", "TAM": "TB",
-    "GNB": "GB", "KAN": "KC", "NWE": "NE", "NOR": "NO",
+    "GNB": "GB", "GBP": "GB", "KAN": "KC", "KCC": "KC", "NWE": "NE",
+    "NEP": "NE", "NOR": "NO", "TBB": "TB",
+}
+
+_FULL_NAMES: dict[str, str] = {
+    "ARIZONACARDINALS": "ARI", "ATLANTAFALCONS": "ATL", "BALTIMORERAVENS": "BAL",
+    "BUFFALOBILLS": "BUF", "CAROLINAPANTHERS": "CAR", "CHICAGOBEARS": "CHI",
+    "CINCINNATIBENGALS": "CIN", "CLEVELANDBROWNS": "CLE", "DALLASCOWBOYS": "DAL",
+    "DENVERBRONCOS": "DEN", "DETROITLIONS": "DET", "GREENBAYPACKERS": "GB",
+    "HOUSTONTEXANS": "HOU", "INDIANAPOLISCOLTS": "IND", "JACKSONVILLEJAGUARS": "JAX",
+    "KANSASCITYCHIEFS": "KC", "LASVEGASRAIDERS": "LV", "OAKLANDRAIDERS": "LV",
+    "LOSANGELESCHARGERS": "LAC", "SANDIEGOCHARGERS": "LAC",
+    "LOSANGELESRAMS": "LAR", "STLOUISRAMS": "LAR", "MIAMIDOLPHINS": "MIA",
+    "MINNESOTAVIKINGS": "MIN", "NEWENGLANDPATRIOTS": "NE", "NEWORLEANSSAINTS": "NO",
+    "NEWYORKGIANTS": "NYG", "NEWYORKJETS": "NYJ", "PHILADELPHIAEAGLES": "PHI",
+    "PITTSBURGHSTEELERS": "PIT", "SEATTLESEAHAWKS": "SEA", "SANFRANCISCO49ERS": "SF",
+    "TAMPABAYBUCCANEERS": "TB", "TENNESSEETITANS": "TEN",
+    "WASHINGTONCOMMANDERS": "WAS", "WASHINGTONFOOTBALLTEAM": "WAS",
+    "WASHINGTONREDSKINS": "WAS",
+}
+
+# v2 provider team objects may expose a shortName/nickname instead of an
+# abbreviation. NFL nicknames are unique, so these remain unambiguous; city-only
+# "New York"/"Los Angeles" values are intentionally not accepted.
+_NICKNAMES: dict[str, str] = {
+    "CARDINALS": "ARI", "FALCONS": "ATL", "RAVENS": "BAL", "BILLS": "BUF",
+    "PANTHERS": "CAR", "BEARS": "CHI", "BENGALS": "CIN", "BROWNS": "CLE",
+    "COWBOYS": "DAL", "BRONCOS": "DEN", "LIONS": "DET", "PACKERS": "GB",
+    "TEXANS": "HOU", "COLTS": "IND", "JAGUARS": "JAX", "CHIEFS": "KC",
+    "RAIDERS": "LV", "CHARGERS": "LAC", "RAMS": "LAR", "DOLPHINS": "MIA",
+    "VIKINGS": "MIN", "PATRIOTS": "NE", "SAINTS": "NO", "GIANTS": "NYG",
+    "JETS": "NYJ", "EAGLES": "PHI", "STEELERS": "PIT", "SEAHAWKS": "SEA",
+    "49ERS": "SF", "BUCCANEERS": "TB", "TITANS": "TEN", "COMMANDERS": "WAS",
 }
 
 # NFL weeks from ~mid-December on, when cold-weather sites actually play cold.
@@ -72,6 +104,19 @@ def normalize_team(team: str) -> str:
     """Uppercase and de-alias an NFL team abbreviation."""
     t = str(team or "").strip().upper()
     return ALIASES.get(t, t)
+
+
+def normalize_nfl_team(team: str) -> str:
+    """Return the site's canonical NFL abbreviation, or ``""`` if unknown.
+
+    Unlike the older permissive ``normalize_team()``, this strict boundary is
+    safe for joins: an opaque provider ID cannot accidentally become a new team.
+    """
+    token = "".join(ch for ch in str(team or "").upper() if ch.isalnum())
+    canonical = ALIASES.get(token, token)
+    if canonical in STADIUMS:
+        return canonical
+    return _FULL_NAMES.get(token) or _NICKNAMES.get(token, "")
 
 
 def stadium_coords(team: str) -> Optional[tuple]:
