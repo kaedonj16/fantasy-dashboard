@@ -1,5 +1,5 @@
 """Unit tests for utils.nfl_stadiums (static game-environment tags)."""
-from utils.nfl_stadiums import STADIUMS, game_environment, normalize_team
+from utils.nfl_stadiums import STADIUMS, game_environment, normalize_nfl_team, normalize_team
 
 
 def test_all_32_teams_present():
@@ -47,6 +47,19 @@ def test_aliases_resolve():
     assert normalize_team("wsh") == "WAS"
     assert normalize_team("LA") == "LAR"
     assert game_environment("OAK", week=1)["stadium"] == "Allegiant Stadium"
+
+
+def test_strict_nfl_team_normalization_covers_provider_variants_and_full_names():
+    variants = {
+        "KAN": "KC", "SFO": "SF", "GNB": "GB", "NWE": "NE", "JAC": "JAX",
+        "WSH": "WAS", "TAM": "TB", "NOR": "NO", "LVR": "LV",
+        "Kansas City Chiefs": "KC", "San Francisco 49ers": "SF",
+        "Washington Commanders": "WAS", "Chiefs": "KC", "49ers": "SF",
+    }
+    assert {normalize_nfl_team(value) for value in STADIUMS} == set(STADIUMS)
+    for value, expected in variants.items():
+        assert normalize_nfl_team(value) == expected
+    assert normalize_nfl_team("opaque-provider-id") == ""
 
 
 def test_unknown_team_returns_none():

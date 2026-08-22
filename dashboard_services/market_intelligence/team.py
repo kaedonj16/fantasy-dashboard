@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from statistics import median
 
 from .config import WEEKLY_MAX_AGE
+from utils.nfl_stadiums import normalize_nfl_team
 
 _FULL_GAME_PERIODS = {"game", "reg", "full", "fullgame"}
 _TOTAL_BET_TYPES = {"ou", "overunder", "total", "totals"}
@@ -39,7 +40,7 @@ def _team_value(value, aliases: dict[str, str]) -> str:
         value = (value.get("teamID") or value.get("id") or value.get("abbreviation") or
                  value.get("teamAbv"))
     raw = str(value or "").upper()
-    return aliases.get(raw, raw)
+    return normalize_nfl_team(aliases.get(raw, raw))
 
 
 def _event_teams(event: dict) -> tuple[str, str, dict[str, str]]:
@@ -61,10 +62,10 @@ def _event_teams(event: dict) -> tuple[str, str, dict[str, str]]:
         display = (team.get("abbreviation") or team.get("teamAbv") or
                    team.get("shortName") or provider_id)
         if provider_id and display:
-            aliases[str(provider_id).upper()] = str(display).upper()
+            aliases[str(provider_id).upper()] = normalize_nfl_team(display) or str(display).upper()
         alignment = _token(team.get("homeAway") or team.get("alignment") or team.get("side") or key)
         if alignment in {"home", "away"} and display:
-            aligned[alignment] = str(display).upper()
+            aligned[alignment] = normalize_nfl_team(display) or str(display).upper()
 
     home = _team_value(event.get("homeTeamID") or event.get("homeTeam") or aligned.get("home"), aliases)
     away = _team_value(event.get("awayTeamID") or event.get("awayTeam") or aligned.get("away"), aliases)

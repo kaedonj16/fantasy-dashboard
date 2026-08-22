@@ -134,3 +134,10 @@ def test_v2_team_mapping_uses_explicit_home_away_keys_without_top_level_ids():
     env = build_team_environments([event])
     assert env["BUF"]["implied_points"] == 23
     assert env["NYJ"]["implied_points"] == 21
+
+
+def test_provider_team_variants_are_canonical_environment_keys():
+    env = build_team_environments([_event("aliases", "KAN", "NWE", 46, -4)])
+    assert set(env) == {"KC", "NE"}
+    assert env["KC"]["implied_points"] == 25
+    assert env["NE"]["implied_points"] == 21

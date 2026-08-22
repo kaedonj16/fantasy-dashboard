@@ -10,7 +10,8 @@ from dashboard_services.market_intelligence.odds import american_implied_probabi
 from dashboard_services.market_intelligence.projection import build_market_projection, build_season_market_projection
 from dashboard_services.market_intelligence.signals import market_opportunity, market_vs_projection
 from dashboard_services.market_intelligence.season import (
-    build_adjusted_season_projection, rolling_weekly_inputs, team_environment_input,
+    build_adjusted_season_projection, map_team_environment_inputs, rolling_weekly_inputs,
+    team_environment_input,
 )
 
 
@@ -239,6 +240,38 @@ def test_team_environment_is_small_capped_and_position_sensitive():
     assert team_environment_input("1", "WR", None) is None
     result = build_adjusted_season_projection(300, "QB", {}, [bullish])
     assert 300 < result["points"] < 306  # confidence shrink keeps the 3% cap smaller still
+
+
+def test_canonical_team_mapping_attaches_inputs_and_preserves_direction():
+    environments = {
+        "KC": {"score": 1, "confidence": .6, "coverage": 1, "implied_points": 29,
+               "league_average": 23, "source": "sportsgameodds"},
+        "SF": {"score": -.8, "confidence": .6, "coverage": 1, "implied_points": 19,
+               "league_average": 23, "source": "sportsgameodds"},
+        "GB": {"score": 0, "confidence": .6, "coverage": 1, "implied_points": 23,
+               "league_average": 23, "source": "sportsgameodds"},
+    }
+    players = {
+        "qb": {"team": "KAN", "pos": "QB"},
+        "rb": {"team": "SFO", "pos": "RB"},
+        "avg": {"team": "GNB", "pos": "WR"},
+        "def": {"team": "KAN", "pos": "LB"},
+        "bad": {"team": "unknown", "pos": "TE"},
+    }
+    inputs, diagnostics = map_team_environment_inputs(players, environments)
+    assert set(inputs) == {"qb", "rb"}
+    assert inputs["qb"].value > 0 > inputs["rb"].value
+    assert diagnostics["recognized_players"] == 4
+    assert diagnostics["matched_players"] == 4
+    assert diagnostics["input_players"] == 2
+    assert diagnostics["unmatched_identifiers"] == ["UNKNOWN"]
+
+    bullish = build_adjusted_season_projection(300, "QB", {}, [inputs["qb"]])
+    bearish = build_adjusted_season_projection(200, "RB", {}, [inputs["rb"]])
+    assert bullish["basis"] == bearish["basis"] == "team_environment"
+    assert bullish["points"] > 300 and bearish["points"] < 200
+    assert bullish["components"]["market_adjusted_points"] != 300
+    assert bullish["confidence"] >= 0.35
 
 
 def test_rolling_weekly_requires_three_distinct_weeks_and_weights_recent():

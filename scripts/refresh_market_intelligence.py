@@ -22,13 +22,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dashboard_services.api import get_nfl_state  # noqa: E402
 from dashboard_services.db import get_conn
 from dashboard_services.market_intelligence.client import SportsGameOddsClient, SportsGameOddsError
+from dashboard_services.market_intelligence.config import MIN_SIGNAL_CONFIDENCE
 from dashboard_services.market_intelligence.consensus import build_consensus
 from dashboard_services.market_intelligence.identity import resolve_player
 from dashboard_services.market_intelligence.normalize import normalize_event
 from dashboard_services.market_intelligence.projection import build_market_projection
 from dashboard_services.market_intelligence.models import MarketProjectionInput
 from dashboard_services.market_intelligence.season import (
-    build_adjusted_season_projection, rolling_weekly_inputs, team_environment_input,
+    build_adjusted_season_projection, map_team_environment_inputs, rolling_weekly_inputs,
 )
 from dashboard_services.market_intelligence.team import build_team_environments
 from utils.utils import load_players_index
@@ -251,19 +252,26 @@ def refresh() -> int:
               f"missing line={team_diagnostics.get('missing_line', 0)} "
               f"unavailable={team_diagnostics.get('unavailable', 0)} "
               f"unsupported={team_diagnostics.get('unsupported', 0)}")
-        team_environment_players = 0
-        for pid, info in players.items():
-            team = str((info or {}).get("team") or "").upper()
-            item = team_environment_input(pid, (info or {}).get("pos") or (info or {}).get("position"),
-                                          environments.get(team), now)
-            if item:
-                season_inputs[str(pid)].append(item)
-                team_environment_players += 1
+        team_inputs, team_mapping = map_team_environment_inputs(players, environments, now)
+        for pid, item in team_inputs.items():
+            season_inputs[pid].append(item)
+        team_environment_players = len(team_inputs)
         print(f"[market] team environment teams: {len(environments)}")
+        print(f"[market] environment team keys: "
+              f"{', '.join(team_mapping['environment_team_keys']) or '-'}")
+        print(f"[market] player team keys: {', '.join(team_mapping['player_team_keys']) or '-'}")
+        print(f"[market] unmatched environment keys: "
+              f"{', '.join(team_mapping['unmatched_environment_keys']) or '-'}")
+        print(f"[market] unmatched player team keys: "
+              f"{', '.join(team_mapping['unmatched_player_team_keys']) or '-'}")
+        print(f"[market] players with recognized NFL team: {team_mapping['recognized_players']}")
+        print(f"[market] players matched to team environment: {team_mapping['matched_players']}")
+        print(f"[market] players receiving non-zero team environment input: {team_environment_players}")
+        print(f"[market] unmatched team identifiers: {len(team_mapping['unmatched_identifiers'])}")
 
         rolling_players = sum(any(i.source_type == "rolling_weekly_market" for i in values)
                               for values in season_inputs.values())
-        baseline_only = adjusted_rows = evidence_qualified = 0
+        baseline_only = adjusted_rows = evidence_qualified = market_vs_adp_qualified = 0
         for pid in set(season_baselines) | set(season_inputs):
             inputs = season_inputs.get(pid, [])
             baseline = season_baselines.get(str(pid)) or {}
@@ -290,6 +298,9 @@ def refresh() -> int:
                 adjusted_rows += 1
             if projection["meaningful"]:
                 evidence_qualified += 1
+            if (projection["basis"] != "projection_only" and
+                    projection["confidence"] >= MIN_SIGNAL_CONFIDENCE):
+                market_vs_adp_qualified += 1
         rolling_note = " (preseason)" if not regular_season else ""
         print(f"[market] rolling market players: {rolling_players}{rolling_note}")
         print(f"[market] season projections adjusted: {adjusted_rows}")
@@ -305,6 +316,7 @@ def refresh() -> int:
         print(f"[market]   rolling weekly players: {rolling_players}")
         print(f"[market]   team environment players: {team_environment_players}")
         print(f"[market]   evidence-qualified season projections: {evidence_qualified}")
+        print(f"[market]   Market vs ADP qualified: {market_vs_adp_qualified}")
         print(f"[market] unresolved players: {unresolved}")
     print(f"[market] stored {len(normalized)} normalized observations")
     return len(normalized)

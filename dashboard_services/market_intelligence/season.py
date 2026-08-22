@@ -8,6 +8,7 @@ from statistics import median, pstdev
 from .models import MarketProjectionInput
 from .projection import STAT_KEYS, build_season_market_projection
 from utils.fantasy_scoring import score_stats
+from utils.nfl_stadiums import normalize_nfl_team
 
 MIN_ROLLING_WEEKS = 3
 MAX_ROLLING_ADJUSTMENT = 0.10
@@ -51,6 +52,43 @@ def team_environment_input(player_id: str, position: str, environment,
                                   "league_average": environment.get("league_average"),
                                   "coverage": round(coverage, 3),
                                   "sources": ["team_implied_points"]})
+
+
+def map_team_environment_inputs(players: dict, environments: dict,
+                                observed_at: datetime | None = None) -> tuple[dict, dict]:
+    """Join player-index teams to canonical environments and report coverage."""
+    inputs = {}
+    player_team_keys = set()
+    unmatched_identifiers = set()
+    recognized = matched = 0
+    for player_id, info in (players or {}).items():
+        info = info if isinstance(info, dict) else {}
+        raw_team = str(info.get("team") or "").strip()
+        team = normalize_nfl_team(raw_team)
+        if team:
+            recognized += 1
+            player_team_keys.add(team)
+        elif raw_team:
+            unmatched_identifiers.add(raw_team.upper())
+        environment = environments.get(team) if team else None
+        if environment:
+            matched += 1
+        item = team_environment_input(
+            str(player_id), info.get("pos") or info.get("position"), environment, observed_at,
+        )
+        if item:
+            inputs[str(player_id)] = item
+    environment_keys = set(environments or {})
+    return inputs, {
+        "recognized_players": recognized,
+        "matched_players": matched,
+        "input_players": len(inputs),
+        "player_team_keys": sorted(player_team_keys),
+        "environment_team_keys": sorted(environment_keys),
+        "unmatched_environment_keys": sorted(environment_keys - player_team_keys),
+        "unmatched_player_team_keys": sorted(player_team_keys - environment_keys),
+        "unmatched_identifiers": sorted(unmatched_identifiers),
+    }
 
 
 def rolling_weekly_inputs(rows: list[dict], now: datetime | None = None,
