@@ -47,6 +47,8 @@
   var loadError = '';
   var playerRequest = 0;      // only the newest mode/source request may update the board
   var playerAbort = null;
+  var scheduleRanks = {};     // player id -> full fantasy-season strength-of-schedule rank
+  var scheduleRequest = 0;    // stale schedule responses must not repaint a newer player pool
 
   // ── Custom draft board (pro): per-player overrides on top of the model board.
   // Intent, not absolute positions: {r: fractional rank on the model scale, p:
@@ -346,11 +348,13 @@
         id: String(p.id), pos: pos, name: p.name || String(p.id),
         age: (p.age != null ? Number(p.age) : null),
         adp: C.adpOf(p, mode, sf), vor: Math.round(value - (repl[pos] || 0)),
+        projectedPpg: p.proj_ppg != null && isFinite(Number(p.proj_ppg)) ? Number(p.proj_ppg) : null,
         marketVsAdp: mode === 'redraft' && p.market_vs_adp != null ? Number(p.market_vs_adp) : null,
         marketExpectedAdp: mode === 'redraft' && p.market_expected_adp != null ? Number(p.market_expected_adp) : null,
         marketConfidence: mode === 'redraft' && p.market_confidence != null ? Number(p.market_confidence) : null,
         marketConfidenceLabel: mode === 'redraft' ? (p.market_confidence_label || null) : null,
         marketBasis: mode === 'redraft' ? (p.market_basis || null) : null,
+        scheduleRank: scheduleRanks[String(p.id)] || null,
       };
     });
     scored.sort(function (a, b) { return b.vor - a.vor || ((a.adp || 9999) - (b.adp || 9999)); });
@@ -533,6 +537,7 @@
       : '<span class="cs-lg"><b>VOR</b> value over replacement, the ranking</span>'
         + '<span class="cs-lg"><span class="cs-val g">+7</span> above ADP, target it</span>'
         + '<span class="cs-lg"><span class="cs-val b">-4</span> going early, let it fall</span>'
+        + '<span class="cs-lg"><b>Sched Rk</b> full-season schedule (1 = easiest)</span>'
         + draftedNote
         + '<span class="cs-lg" id="csFmtNote">' + (state.sf ? 'Superflex' : '1QB') + ' &middot; ' + teams + '-team</span>';
 
@@ -593,8 +598,8 @@
     var editable = cfg.hasPremium;
     var editTh = editable ? '<th class="cs-edit-th"></th>' : '';
     $('csBoardHead').innerHTML =
-      '<tr><th>Rk</th><th class="l">Player</th><th>Pos</th><th class="cs-vor-col">VOR</th><th>' + col5 + '</th><th class="cs-value-col">' + col6 + '</th>' + (showMarket(dyn) ? '<th class="cs-market-col">Market vs ADP</th>' : '') + editTh + '</tr>';
-    var span = (editable ? 7 : 6) + (showMarket(dyn) ? 1 : 0);
+      '<tr><th>Rk</th><th class="l">Player</th><th>Pos</th><th class="cs-vor-col">VOR</th><th title="Projected fantasy points per game">Proj PPG</th><th>' + col5 + '</th><th class="cs-value-col">' + col6 + '</th><th title="Full fantasy-season strength of schedule rank (1 = easiest)">Sched Rk</th>' + (showMarket(dyn) ? '<th class="cs-market-col">Market vs ADP</th>' : '') + editTh + '</tr>';
+    var span = (editable ? 9 : 8) + (showMarket(dyn) ? 1 : 0);
     var lastT = null, html = '', shown = 0;
     players.forEach(function (x) {
       if (!visiblePlayer(x)) return;
@@ -621,7 +626,8 @@
         + '<td><span class="cs-pcell">' + badge(x.pos) + '<span class="cs-pname">' + esc(x.name) + '</span>' + recChip + ovChip(x) + '</span></td>'
         + '<td>' + posrk(x) + '</td>'
         + '<td class="cs-vor-col"><span class="cs-vorwrap"><span class="cs-num">' + x.vor + '</span><span class="cs-vorbar"><i style="width:' + Math.max(0, Math.round(x.vor / maxVor * 100)) + '%"></i></span></span></td>'
-        + c5 + c6 + market + ovControls(x) + '</tr>';
+        + '<td class="cs-num">' + (x.projectedPpg != null ? x.projectedPpg.toFixed(1) : '&ndash;') + '</td>'
+        + c5 + c6 + '<td class="cs-num" title="Full fantasy-season strength of schedule; 1 is easiest">' + (x.scheduleRank ? '#' + x.scheduleRank : '&ndash;') + '</td>' + market + ovControls(x) + '</tr>';
     });
     if (!shown) html = '<tr><td colspan="' + span + '" class="cs-empty">No players match this filter.</td></tr>';
     $('csBoardBody').innerHTML = html;
@@ -731,6 +737,9 @@
         loading = false;
         renderAdpSources();
         compute(); render();
+        // Only the displayed board needs schedule context. Keeping this to the
+        // 175-row sheet also avoids an oversized query for the full player index.
+        loadScheduleRanks(players);
       })
       .catch(function (err) {
         if (requestId !== playerRequest || (err && err.name === 'AbortError')) return;
@@ -741,6 +750,28 @@
         render();
         $('csPosGrid').innerHTML = '<div class="cs-empty">' + loadError + '</div>';
       });
+  }
+
+  // Schedule rank is supporting draft context, not an input to the VOR order.
+  // Fetch the full fantasy regular season once the player pool is known and
+  // merge the API's position-specific SoS rank onto every matching row.
+  function loadScheduleRanks(pool) {
+    var ids = pool.map(function (p) { return String(p.id); });
+    if (!ids.length) return;
+    var requestId = ++scheduleRequest;
+    var season = Number(cfg.season) || new Date().getFullYear();
+    var url = '/api/schedule?season=' + season + '&week_start=1&week_end=17&pids=' + encodeURIComponent(ids.join(','));
+    fetch(url, { cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error('Schedule request failed'); return r.json(); })
+      .then(function (resp) {
+        if (requestId !== scheduleRequest) return;
+        scheduleRanks = {};
+        (resp.players || []).forEach(function (p) {
+          if (p && p.pid != null && p.sos_rank != null) scheduleRanks[String(p.pid)] = Number(p.sos_rank);
+        });
+        compute(); render();
+      })
+      .catch(function () { /* Schedule context degrades to an em dash. */ });
   }
 
   // ── live-draft cross-off ────────────────────────────────────────────────────
@@ -819,11 +850,11 @@
   function exportCsv() {
     if (!players.length) return;
     var dyn = state.mode === 'dynasty';
-    var head = ['Rank', 'Player', 'Pos', 'PosRank', 'VOR', (dyn ? 'Age' : 'ADP'), (dyn ? 'Window' : 'Value')].concat(showMarket(dyn) ? ['Market vs ADP'] : []).concat(['Tier']);
+    var head = ['Rank', 'Player', 'Pos', 'PosRank', 'VOR', 'Proj PPG', (dyn ? 'Age' : 'ADP'), (dyn ? 'Window' : 'Value'), 'Schedule Rank'].concat(showMarket(dyn) ? ['Market vs ADP'] : []).concat(['Tier']);
     var rows = players.map(function (x) {
       var c5 = dyn ? (x.age != null ? x.age : '') : (x.adp != null ? Math.round(x.adp) : '');
       var c6 = dyn ? youthWindow(x.age, x.pos)[0] : (x.value != null ? (x.value > 0 ? '+' + x.value : x.value) : '');
-      return [x.rk, x.name, x.pos, x.prk, x.vor, c5, c6].concat(showMarket(dyn) ? [x.marketVsAdp == null ? '' : x.marketVsAdp] : []).concat([x.dtier]);
+      return [x.rk, x.name, x.pos, x.prk, x.vor, x.projectedPpg == null ? '' : x.projectedPpg.toFixed(1), c5, c6, x.scheduleRank || ''].concat(showMarket(dyn) ? [x.marketVsAdp == null ? '' : x.marketVsAdp] : []).concat([x.dtier]);
     });
     var csv = [head].concat(rows).map(function (r) {
       return r.map(function (v) { var s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(',');
