@@ -37,3 +37,27 @@ def test_team_environment_missing_spread_fails_closed():
     event = _event("1", "BUF", "NYJ", 48, -6)
     event["odds"] = [row for row in event["odds"] if row["statID"] != "spread"]
     assert build_team_environments([event]) == {}
+
+
+def test_team_environment_reads_v2_nested_bookmaker_lines():
+    event = {
+        "eventID": "v2", "homeTeamID": "team-buf", "awayTeamID": "team-nyj",
+        "teams": {
+            "team-buf": {"teamID": "team-buf", "abbreviation": "BUF"},
+            "team-nyj": {"teamID": "team-nyj", "abbreviation": "NYJ"},
+        },
+        "odds": [
+            {"periodID": "game", "statID": "points", "betTypeID": "over",
+             "byBookmaker": {"a": {"overUnder": 48, "available": True},
+                              "closed": {"overUnder": 80, "available": False}}},
+            {"periodID": "game", "statID": "spread", "statEntityID": "team-buf",
+             "byBookmaker": {"a": {"overUnder": -6, "available": True}}},
+            {"periodID": "game", "statID": "spread", "statEntityID": "team-nyj",
+             "byBookmaker": {"a": {"spread": 6, "available": True}}},
+        ],
+    }
+
+    env = build_team_environments([event])
+    assert env["BUF"]["implied_points"] == 27
+    assert env["NYJ"]["implied_points"] == 21
+    assert env["BUF"]["book_count"] == 1

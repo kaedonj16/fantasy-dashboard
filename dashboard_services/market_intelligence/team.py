@@ -33,8 +33,9 @@ def _event_teams(event: dict) -> tuple[list[str], dict[str, str]]:
         value = event.get(key)
         if isinstance(value, dict):
             value = value.get("teamID") or value.get("id") or value.get("abbreviation")
-        if value and str(value).upper() not in found:
-            found.append(str(value).upper())
+        value = aliases.get(str(value).upper(), str(value).upper()) if value else value
+        if value and value not in found:
+            found.append(value)
     return found[:2], aliases
 
 
@@ -65,22 +66,39 @@ def build_team_environments(events: list[dict]) -> dict[str, dict]:
                 continue
             label = " ".join(str(odd.get(k) or "") for k in
                              ("statID", "marketName", "betTypeID", "oddID")).lower()
-            book = str(odd.get("bookmakerID") or odd.get("sportsbook") or "unknown")
-            line = _num(odd.get("line") if odd.get("line") is not None else
-                        odd.get("bookOverUnder") if odd.get("bookOverUnder") is not None else
-                        odd.get("bookSpread"))
-            if line is None:
-                continue
-            if "total" in label or ("points" in label and ("over" in label or "under" in label)):
-                if line > 20:
-                    totals[book].append(line)
-                continue
-            if "spread" not in label:
-                continue
-            team = str(odd.get("teamID") or odd.get("statEntityID") or odd.get("participantID") or "").upper()
-            team = aliases.get(team, team)
-            if team in teams:
-                spreads[(book, team)].append(line)
+            nested = odd.get("byBookmaker")
+            if isinstance(nested, dict) and nested:
+                book_rows = ((str(book), row) for book, row in nested.items() if isinstance(row, dict))
+            else:
+                book_rows = [(str(odd.get("bookmakerID") or odd.get("sportsbook") or "unknown"), odd)]
+            for book, book_row in book_rows:
+                status = str(book_row.get("status") or "").lower()
+                available = book_row.get("available")
+                if ((available is False or str(available).lower() in {"0", "false", "no"}) or
+                        book_row.get("suspended") or
+                        status in {"suspended", "closed", "inactive", "unavailable"}):
+                    continue
+                is_total = "total" in label or ("points" in label and
+                                                  ("over" in label or "under" in label))
+                line = _num(book_row.get("overUnder") if is_total and book_row.get("overUnder") is not None else
+                            book_row.get("spread") if not is_total and book_row.get("spread") is not None else
+                            book_row.get("overUnder") if not is_total and book_row.get("overUnder") is not None else
+                            book_row.get("line") if book_row.get("line") is not None else
+                            odd.get("line") if odd.get("line") is not None else
+                            odd.get("bookOverUnder") if is_total else odd.get("bookSpread"))
+                if line is None:
+                    continue
+                if is_total:
+                    if line > 20:
+                        totals[book].append(line)
+                    continue
+                if "spread" not in label:
+                    continue
+                team = str(odd.get("teamID") or odd.get("statEntityID") or
+                           odd.get("participantID") or "").upper()
+                team = aliases.get(team, team)
+                if team in teams:
+                    spreads[(book, team)].append(line)
         for book, total_rows in totals.items():
             total = median(total_rows)
             for team in teams:

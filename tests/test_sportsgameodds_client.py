@@ -40,6 +40,19 @@ def test_valid_response_auth_and_pagination(tmp_path):
     rows = list(SportsGameOddsClient("secret", session, cache_dir=tmp_path).iter_nfl_events(starts_after="a", starts_before="b"))
     assert [x["id"] for x in rows] == ["1", "2"]
     assert session.calls[0][1]["headers"] == {"x-api-key": "secret"}
+    assert session.calls[0][1]["params"] == {
+        "leagueID": "NFL", "startsAfter": "a", "startsBefore": "b",
+        "oddsAvailable": "true", "limit": 100,
+    }
+    assert session.calls[1][1]["params"]["cursor"] == "c"
+
+
+def test_meta_cursor_pagination_and_repeated_cursor_guard(tmp_path):
+    session = Session([Response(payload={"data": [{"id": "1"}], "meta": {"nextCursor": "c"}}),
+                       Response(payload={"data": [{"id": "2"}], "meta": {"nextCursor": "c"}})])
+    client = SportsGameOddsClient("secret", session, cache_dir=tmp_path)
+    with pytest.raises(SportsGameOddsError, match="repeated pagination cursor"):
+        list(client.iter_nfl_events(starts_after="a", starts_before="b"))
     assert session.calls[1][1]["params"]["cursor"] == "c"
 
 

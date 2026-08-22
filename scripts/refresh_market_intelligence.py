@@ -12,6 +12,8 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from psycopg.types.json import Jsonb
+
 # `python scripts/refresh_market_intelligence.py` (the Render cron) puts scripts/
 # on sys.path, not the repo root, so the project packages don't import. Add the
 # repo root explicitly, matching the other cron scripts.
@@ -61,9 +63,11 @@ def refresh() -> int:
         except SportsGameOddsError as sgo_err:
             print(f"[market] SportsGameOdds unavailable ({sgo_err}); continuing with fallback context")
             provider_events = []
+        print(f"[market] SportsGameOdds events returned: {len(provider_events)}")
+        sgo_diagnostics = {}
         for event in provider_events:
             event_players = event.get("players") or {}
-            for record in normalize_event(event, now):
+            for record in normalize_event(event, now, sgo_diagnostics):
                 meta = event_players.get(record.provider_player_id, {}) if isinstance(event_players, dict) else {}
                 pid, confidence = resolve_player(record.provider_player_id, meta.get("name", ""),
                                                  meta.get("position", ""), meta.get("team", ""),
@@ -76,7 +80,7 @@ def refresh() -> int:
                         (provider, provider_player_id, canonical_player_id, match_confidence, match_method, metadata)
                         VALUES ('sportsgameodds', %s, %s, %s, 'metadata_bootstrap', %s)
                         ON CONFLICT (provider, provider_player_id) DO NOTHING""",
-                        (record.provider_player_id, pid, confidence, meta))
+                        (record.provider_player_id, pid, confidence, Jsonb(meta)))
                     persisted[record.provider_player_id] = pid
                 record = record.__class__(**{**record.__dict__, "canonical_player_id": pid})
                 normalized.append(record)
@@ -91,6 +95,18 @@ def refresh() -> int:
                     record.line, record.over_price, record.under_price, record.event_start_time,
                     record.observed_at, record.source_updated_at))
         weekly_observations = sum(r.context == "weekly" for r in normalized)
+        print(f"[market] SportsGameOdds odds inspected: {sgo_diagnostics.get('odds_inspected', 0)}")
+        print(f"[market] SportsGameOdds player prop odds identified: "
+              f"{sgo_diagnostics.get('player_props_identified', 0)}")
+        print(f"[market] SportsGameOdds bookmaker entries inspected: "
+              f"{sgo_diagnostics.get('bookmaker_entries_inspected', 0)}")
+        print(f"[market] SportsGameOdds normalized observations: {len(normalized)}")
+        print("[market] SportsGameOdds rejected: "
+              f"missing player={sgo_diagnostics.get('missing_player', 0)} "
+              f"missing book={sgo_diagnostics.get('missing_book', 0)} "
+              f"missing stat={sgo_diagnostics.get('missing_stat', 0)} "
+              f"missing line={sgo_diagnostics.get('missing_line', 0)} "
+              f"unavailable={sgo_diagnostics.get('unavailable', 0)}")
         print(f"[market] SportsGameOdds weekly observations: {weekly_observations}")
 
         # DraftKings is an explicit opt-in only. One auth/edge denial stops this
@@ -185,7 +201,7 @@ def refresh() -> int:
                  fantasy_points=EXCLUDED.fantasy_points,coverage=EXCLUDED.coverage,
                  confidence=EXCLUDED.confidence,components=EXCLUDED.components,
                  calculated_at=EXCLUDED.calculated_at""", (pid, season, week, projection["points"],
-                 projection["coverage"], projection["confidence"], components, now))
+                 projection["coverage"], projection["confidence"], Jsonb(components), now))
         # Provider-independent season inputs. Direct season props remain strongest;
         # historical weekly consensuses become rate evidence only after three
         # distinct regular-season weeks, and current team implied totals provide a
@@ -250,7 +266,7 @@ def refresh() -> int:
                  fantasy_points=EXCLUDED.fantasy_points,coverage=EXCLUDED.coverage,
                  confidence=EXCLUDED.confidence,components=EXCLUDED.components,
                  calculated_at=EXCLUDED.calculated_at""", (pid, season, projection["points"],
-                 projection["coverage"], projection["confidence"], components, now))
+                 projection["coverage"], projection["confidence"], Jsonb(components), now))
             if projection["basis"] == "projection_only":
                 baseline_only += 1
             else:
