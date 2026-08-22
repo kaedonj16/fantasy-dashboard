@@ -20859,7 +20859,21 @@ def api_league_players():
         _mi_proj = _load_mi_adp(_mi_season, None, context="season",
                                 player_ids=[str(p.get("id")) for p in _mi_players])
         if _mi_proj:
-            _attach_mi_adp(_mi_players, _mi_proj)
+            _mi_is_sf = str(request.args.get("league_type") or "").lower() in ("sf", "superflex")
+            _mi_diagnostics = _attach_mi_adp(_mi_players, _mi_proj, is_superflex=_mi_is_sf)
+            if os.getenv("MARKET_INTEL_DIAGNOSTICS", "").strip().lower() in ("1", "true", "yes"):
+                logger.info("[market] Market vs ADP curve diagnostics:")
+                for _position, _curve in _mi_diagnostics.get("curves", {}).items():
+                    logger.info("[market]   %s samples: %s bins: %s", _position,
+                                _curve.get("samples", 0), _curve.get("bins", 0))
+                logger.info("[market]   qualified values: %s", _mi_diagnostics.get("qualified", 0))
+                logger.info("[market]   capped values: %s", _mi_diagnostics.get("capped", 0))
+                logger.info("[market]   max positive edge: %+0.1f",
+                            _mi_diagnostics.get("max_positive_edge", 0))
+                logger.info("[market]   max negative edge: %+0.1f",
+                            _mi_diagnostics.get("max_negative_edge", 0))
+                for _example in _mi_diagnostics.get("examples", []):
+                    logger.info("[market] Market vs ADP example: %s", _example)
             payload = dict(payload)
             payload["players"] = _mi_players
             # Coverage summary so the UI can show an honest state (e.g. hide the

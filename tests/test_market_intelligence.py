@@ -10,7 +10,8 @@ from dashboard_services.market_intelligence.odds import american_implied_probabi
 from dashboard_services.market_intelligence.projection import build_market_projection, build_season_market_projection
 from dashboard_services.market_intelligence.signals import market_opportunity, market_vs_projection
 from dashboard_services.market_intelligence.season import (
-    build_adjusted_season_projection, rolling_weekly_inputs, team_environment_input,
+    build_adjusted_season_projection, map_team_environment_inputs, rolling_weekly_inputs,
+    team_environment_input,
 )
 
 
@@ -83,59 +84,73 @@ def test_signals_and_availability():
 
 
 def test_expected_adp_interpolates_instead_of_ranking():
-    pool = [{"proj_ppg": 10, "adp": 100}, {"proj_ppg": 20, "adp": 20}]
-    assert expected_adp(15, pool) == 60
+    pool = [{"position": "RB", "proj_ppg": ppg, "adp": adp}
+            for ppg, adp in [(8, 120), (10, 90), (12, 60), (14, 40), (16, 20), (18, 5)]]
+    assert expected_adp(13, pool, "RB") == 55
 
 
 def test_adp_curve_and_interp_match_expected_adp():
     # attach builds the curve once and interpolates per player; the result must
     # equal the single-shot expected_adp across boundary and interior targets.
-    pool = [{"proj_ppg": 6, "redraft_avg_pick": 120},
-            {"proj_ppg": 10, "redraft_avg_pick": 60},
-            {"proj_ppg": 22, "redraft_avg_pick": 2}]
-    curve = build_adp_curve(pool)
+    pool = [{"position": "WR", "proj_ppg": ppg, "redraft_avg_pick": adp}
+            for ppg, adp in [(6, 120), (8, 100), (10, 70), (12, 45), (16, 20), (22, 2)]]
+    curve = build_adp_curve(pool, "WR")
     for target in (2, 6, 8, 10, 16, 22, 30):
-        assert interp_adp(curve, target) == expected_adp(target, pool)
-    assert interp_adp(curve, 0) == 120     # below min -> lowest-production ADP
-    assert interp_adp(curve, 999) == 2     # above max -> top ADP
+        assert interp_adp(curve, target) == expected_adp(target, pool, "WR")
+    assert interp_adp(curve, 0) == curve[1][0]
+    assert interp_adp(curve, 999) == curve[1][-1]
     assert interp_adp(([1.0], [5.0]), 1.0) is None  # <2 samples -> undefined
 
 
 def test_expected_adp_reads_payload_redraft_field():
     # The league-players payload carries redraft ADP as redraft_avg_pick, not adp.
-    pool = [{"proj_ppg": 10, "redraft_avg_pick": 100},
-            {"proj_ppg": 20, "redraft_avg_pick": 20}]
-    assert expected_adp(15, pool) == 60
+    pool = [{"position": "TE", "proj_ppg": ppg, "redraft_avg_pick": adp}
+            for ppg, adp in [(6, 140), (8, 100), (10, 60), (12, 25)]]
+    assert expected_adp(9, pool, "TE") is not None
 
 
 def test_attach_market_vs_adp_uses_redraft_avg_pick():
     from dashboard_services.market_intelligence.adp import attach_market_vs_adp
-    players = [
-        {"id": "1", "proj_ppg": 10, "redraft_avg_pick": 100},
-        {"id": "2", "proj_ppg": 20, "redraft_avg_pick": 20},
-    ]
-    # fantasy_points is a SEASON total; 255 / 17 games = 15 ppg, which interpolates
-    # to pick 60 on the (10->100, 20->20) curve. Actual ADP is 100, so the market
-    # says this player is going ~40 picks later than production warrants.
-    projections = {"1": {"fantasy_points": 255, "confidence": 0.8}}
-    attach_market_vs_adp(players, projections)
-    assert players[0]["market_expected_adp"] == 60.0
-    assert players[0]["market_vs_adp"] == 40.0
-    assert players[0]["market_confidence"] == 0.8
+    players = [{"id": str(i), "position": "RB", "proj_ppg": ppg,
+                "redraft_avg_pick": adp} for i, (ppg, adp) in enumerate(
+                    [(8, 120), (10, 90), (12, 60), (14, 40), (16, 20), (18, 5)])]
+    projections = {"2": {"fantasy_points": 12.5 * 17, "confidence": 0.8,
+                           "components": {"basis": "season_props", "baseline_points": 12 * 17}}}
+    diagnostics = attach_market_vs_adp(players, projections)
+    assert 0 < players[2]["market_vs_adp"] < 10
+    assert players[2]["market_expected_adp"] == round(60 - players[2]["market_vs_adp"], 1)
+    assert players[2]["market_confidence"] == 0.8
+    assert diagnostics["qualified"] == 1
+    assert diagnostics["missing_projection"] == 5
+
+
+def test_market_vs_adp_diagnostics_explain_unqualified_rows():
+    from dashboard_services.market_intelligence.adp import attach_market_vs_adp
+    players = [{"id": name, "position": "RB", "proj_ppg": ppg, "redraft_avg_pick": adp}
+               for name, ppg, adp in [("baseline", 8, 100), ("weak", 10, 80),
+                                      ("missing", 12, 60), ("extra", 14, 40)]]
+    diagnostics = attach_market_vs_adp(players, {
+        "baseline": {"fantasy_points": 170, "confidence": 0,
+                     "components": {"basis": "projection_only"}},
+        "weak": {"fantasy_points": 300, "confidence": 0.2,
+                 "components": {"basis": "team_environment"}},
+    })
+    assert diagnostics["projection_only"] == 1
+    assert diagnostics["low_confidence"] == 1
+    assert diagnostics["missing_projection"] == 2
+    assert diagnostics["qualified"] == 0
 
 
 def test_attach_market_vs_adp_season_total_not_pinned_to_top_pick():
     """A season-long market total must be scaled to per-game before mapping, or
     every player pins to the top pick's ADP (season total >> per-game curve)."""
     from dashboard_services.market_intelligence.adp import attach_market_vs_adp
-    pool = [
-        {"id": "1", "proj_ppg": 22, "redraft_avg_pick": 2},
-        {"id": "2", "proj_ppg": 14, "redraft_avg_pick": 25},
-        {"id": "3", "proj_ppg": 6, "redraft_avg_pick": 120},
-    ]
-    # ~250 season pts = ~14.7 ppg -> should land near the middle of the curve, not pick 2.
-    attach_market_vs_adp(pool, {"2": {"fantasy_points": 250, "confidence": 0.7}})
-    assert pool[1]["market_expected_adp"] > 5  # not pinned to the top-pick ADP
+    pool = [{"id": str(i), "position": "WR", "proj_ppg": ppg, "redraft_avg_pick": adp}
+            for i, (ppg, adp) in enumerate([(6, 120), (10, 80), (14, 40), (18, 5)])]
+    attach_market_vs_adp(pool, {"2": {"fantasy_points": 250, "confidence": 0.7,
+                                              "components": {"basis": "season_props",
+                                                             "baseline_points": 238}}})
+    assert abs(pool[2]["market_vs_adp"]) <= 40
 
 
 def test_season_projection_uses_baseline_for_missing_components():
@@ -220,6 +235,38 @@ def test_team_environment_is_small_capped_and_position_sensitive():
     assert 300 < result["points"] < 306  # confidence shrink keeps the 3% cap smaller still
 
 
+def test_canonical_team_mapping_attaches_inputs_and_preserves_direction():
+    environments = {
+        "KC": {"score": 1, "confidence": .6, "coverage": 1, "implied_points": 29,
+               "league_average": 23, "source": "sportsgameodds"},
+        "SF": {"score": -.8, "confidence": .6, "coverage": 1, "implied_points": 19,
+               "league_average": 23, "source": "sportsgameodds"},
+        "GB": {"score": 0, "confidence": .6, "coverage": 1, "implied_points": 23,
+               "league_average": 23, "source": "sportsgameodds"},
+    }
+    players = {
+        "qb": {"team": "KAN", "pos": "QB"},
+        "rb": {"team": "SFO", "pos": "RB"},
+        "avg": {"team": "GNB", "pos": "WR"},
+        "def": {"team": "KAN", "pos": "LB"},
+        "bad": {"team": "unknown", "pos": "TE"},
+    }
+    inputs, diagnostics = map_team_environment_inputs(players, environments)
+    assert set(inputs) == {"qb", "rb"}
+    assert inputs["qb"].value > 0 > inputs["rb"].value
+    assert diagnostics["recognized_players"] == 4
+    assert diagnostics["matched_players"] == 4
+    assert diagnostics["input_players"] == 2
+    assert diagnostics["unmatched_identifiers"] == ["UNKNOWN"]
+
+    bullish = build_adjusted_season_projection(300, "QB", {}, [inputs["qb"]])
+    bearish = build_adjusted_season_projection(200, "RB", {}, [inputs["rb"]])
+    assert bullish["basis"] == bearish["basis"] == "team_environment"
+    assert bullish["points"] > 300 and bearish["points"] < 200
+    assert bullish["components"]["market_adjusted_points"] != 300
+    assert bullish["confidence"] >= 0.35
+
+
 def test_rolling_weekly_requires_three_distinct_weeks_and_weights_recent():
     rows = [{"canonical_player_id": "1", "week": week, "stat_type": "receiving_yards",
              "line": line, "confidence": .8}
@@ -275,24 +322,25 @@ def test_team_context_only_applies_to_uncovered_components():
 
 def test_low_confidence_and_projection_only_do_not_surface_market_vs_adp():
     from dashboard_services.market_intelligence.adp import attach_market_vs_adp
-    players = [{"id": "1", "proj_ppg": 10, "adp": 100},
-               {"id": "2", "proj_ppg": 20, "adp": 20}]
+    players = [{"id": str(i), "position": "RB", "proj_ppg": ppg, "adp": adp}
+               for i, (ppg, adp) in enumerate([(8, 100), (10, 80), (12, 50), (14, 20)])]
     attach_market_vs_adp(players, {"1": {"fantasy_points": 200, "confidence": .2,
                                          "components": {"basis": "team_environment"}},
                                    "2": {"fantasy_points": 250, "confidence": .9,
                                          "components": {"basis": "projection_only"}}})
-    assert players[0]["market_vs_adp"] is None
-    assert players[0]["market_confidence_label"] == "Low"
     assert players[1]["market_vs_adp"] is None
-    assert players[1]["market_basis"] == "projection_only"
+    assert players[1]["market_confidence_label"] == "Low"
+    assert players[2]["market_vs_adp"] is None
+    assert players[2]["market_basis"] == "projection_only"
 
 
 def test_market_vs_adp_sign_and_provenance():
     from dashboard_services.market_intelligence.adp import attach_market_vs_adp
-    players = [{"id": "1", "proj_ppg": 10, "adp": 100},
-               {"id": "2", "proj_ppg": 20, "adp": 20}]
-    attach_market_vs_adp(players, {"1": {"fantasy_points": 255, "confidence": .8,
-                                         "components": {"basis": "season_props"}}})
+    players = [{"id": str(i), "position": "RB", "proj_ppg": ppg, "adp": adp}
+               for i, (ppg, adp) in enumerate([(8, 100), (10, 80), (12, 50), (14, 20)])]
+    attach_market_vs_adp(players, {"0": {"fantasy_points": 9 * 17, "confidence": .8,
+                                         "components": {"basis": "season_props",
+                                                        "baseline_points": 8 * 17}}})
     assert players[0]["market_vs_adp"] > 0
     assert players[0]["market_signal"] == "bullish"
     assert players[0]["market_basis"] == "season_props"
@@ -312,9 +360,10 @@ def test_rolling_adjusts_only_remaining_games_and_records_rates():
 
 def test_negative_market_vs_adp_means_draft_later():
     from dashboard_services.market_intelligence.adp import attach_market_vs_adp
-    players = [{"id": "1", "proj_ppg": 10, "adp": 20},
-               {"id": "2", "proj_ppg": 20, "adp": 100}]
-    attach_market_vs_adp(players, {"1": {"fantasy_points": 255, "confidence": .8,
-                                         "components": {"basis": "blended"}}})
-    assert players[0]["market_vs_adp"] < 0
-    assert players[0]["market_signal"] == "bearish"
+    players = [{"id": str(i), "position": "QB", "proj_ppg": ppg, "adp": adp}
+               for i, (ppg, adp) in enumerate([(12, 180), (16, 100), (20, 50), (24, 20)])]
+    attach_market_vs_adp(players, {"1": {"fantasy_points": 15 * 17, "confidence": .8,
+                                         "components": {"basis": "blended",
+                                                        "baseline_points": 16 * 17}}})
+    assert players[1]["market_vs_adp"] < 0
+    assert players[1]["market_signal"] == "bearish"
