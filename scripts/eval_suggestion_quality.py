@@ -159,7 +159,7 @@ def ensure_offline() -> None:
     app.build_historical_pick_slot_map = lambda **k: {}
     import dashboard_services.player_value_history as _pvh
     _pvh.load_current_values_from_db = lambda: []
-    # build_ppg_map fetches FantasyPros projections over the network; without it
+    # build_ppg_map fetches Sleeper projections over the network; without it
     # the engine falls back to value-based lineup scoring, which is what we want
     # for synthetic rosters anyway (and avoids a ~19s-per-call network stall).
     import data_building.simulate_playoff_odds as _spo

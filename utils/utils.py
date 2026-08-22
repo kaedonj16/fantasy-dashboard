@@ -214,7 +214,7 @@ def read_json(path: str) -> Optional[dict]:
 
 
 # mtime+size-guarded in-memory cache for large, frequently-read JSON files
-# (e.g. the 1.1 MB players_index, fp_projections, usage_rows). Avoids re-parsing
+# (e.g. the 1.1 MB players_index, weekly projections, usage_rows). Avoids re-parsing
 # the same file dozens of times per request. The cached object is SHARED — treat
 # it as read-only.
 _JSON_CACHE: Dict[str, tuple] = {}
