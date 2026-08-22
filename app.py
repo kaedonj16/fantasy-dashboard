@@ -20818,7 +20818,9 @@ def api_league_players():
         _mi_proj = _load_mi_adp(_mi_season, None, context="season",
                                 player_ids=[str(p.get("id")) for p in _mi_players])
         if _mi_proj:
-            _attach_mi_adp(_mi_players, _mi_proj)
+            _mi_diagnostics = _attach_mi_adp(_mi_players, _mi_proj)
+            if os.getenv("MARKET_INTEL_DIAGNOSTICS", "").strip().lower() in ("1", "true", "yes"):
+                logger.info("[market] Market vs ADP status: %s", _mi_diagnostics)
             payload = dict(payload)
             payload["players"] = _mi_players
             # Coverage summary so the UI can show an honest state (e.g. hide the

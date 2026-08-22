@@ -235,18 +235,35 @@ def refresh() -> int:
         for item in rolling:
             season_inputs[item.canonical_player_id].append(item)
 
-        environments = build_team_environments(provider_events)
+        team_diagnostics = {}
+        environments = build_team_environments(provider_events, team_diagnostics, now)
+        print(f"[market] team market odds identified: "
+              f"{team_diagnostics.get('team_market_odds_identified', 0)}")
+        print(f"[market] full-game totals accepted: "
+              f"{team_diagnostics.get('full_game_totals_accepted', 0)}")
+        print(f"[market] full-game spreads accepted: "
+              f"{team_diagnostics.get('full_game_spreads_accepted', 0)}")
+        print(f"[market] games with usable total+spread: "
+              f"{team_diagnostics.get('games_with_usable_total_spread', 0)}")
+        print("[market] team markets rejected: "
+              f"wrong period={team_diagnostics.get('wrong_period', 0)} "
+              f"missing team={team_diagnostics.get('missing_team', 0)} "
+              f"missing line={team_diagnostics.get('missing_line', 0)} "
+              f"unavailable={team_diagnostics.get('unavailable', 0)} "
+              f"unsupported={team_diagnostics.get('unsupported', 0)}")
+        team_environment_players = 0
         for pid, info in players.items():
             team = str((info or {}).get("team") or "").upper()
             item = team_environment_input(pid, (info or {}).get("pos") or (info or {}).get("position"),
                                           environments.get(team), now)
             if item:
                 season_inputs[str(pid)].append(item)
+                team_environment_players += 1
         print(f"[market] team environment teams: {len(environments)}")
 
         rolling_players = sum(any(i.source_type == "rolling_weekly_market" for i in values)
                               for values in season_inputs.values())
-        baseline_only = adjusted_rows = 0
+        baseline_only = adjusted_rows = evidence_qualified = 0
         for pid in set(season_baselines) | set(season_inputs):
             inputs = season_inputs.get(pid, [])
             baseline = season_baselines.get(str(pid)) or {}
@@ -271,10 +288,23 @@ def refresh() -> int:
                 baseline_only += 1
             else:
                 adjusted_rows += 1
+            if projection["meaningful"]:
+                evidence_qualified += 1
         rolling_note = " (preseason)" if not regular_season else ""
         print(f"[market] rolling market players: {rolling_players}{rolling_note}")
         print(f"[market] season projections adjusted: {adjusted_rows}")
         print(f"[market] season projections baseline-only: {baseline_only}")
+        direct_players = sum(any(i.source_type == "season_prop" for i in values)
+                             for values in season_inputs.values())
+        prediction_players = sum(any(i.source_type == "prediction_market" for i in values)
+                                 for values in season_inputs.values())
+        print("[market] season evidence summary:")
+        print(f"[market]   direct season prop players: {direct_players}")
+        print(f"[market]   prediction market players: {prediction_players}")
+        print("[market]   preseason role market players: 0")
+        print(f"[market]   rolling weekly players: {rolling_players}")
+        print(f"[market]   team environment players: {team_environment_players}")
+        print(f"[market]   evidence-qualified season projections: {evidence_qualified}")
         print(f"[market] unresolved players: {unresolved}")
     print(f"[market] stored {len(normalized)} normalized observations")
     return len(normalized)
