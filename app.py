@@ -20874,20 +20874,23 @@ def api_league_players():
                             _mi_diagnostics.get("max_negative_edge", 0))
                 for _example in _mi_diagnostics.get("examples", []):
                     logger.info("[market] Market vs ADP example: %s", _example)
-            payload = dict(payload)
-            payload["players"] = _mi_players
-            # Coverage summary so the UI can show an honest state (e.g. hide the
-            # column, or note "N players priced") instead of a silent dash strip.
-            _mi_covered = sum(1 for _p in _mi_players if _p.get("market_vs_adp") is not None)
-            _mi_as_of = max((str(_r.get("calculated_at")) for _r in _mi_proj.values()
-                             if _r.get("calculated_at")), default=None)
-            payload["market_vs_adp_meta"] = {
-                "season_rows": len(_mi_proj),
-                "players_covered": _mi_covered,
-                "as_of": _mi_as_of,
-            }
+        from dashboard_services.market_intelligence.repository import market_vs_adp_availability
+        payload = dict(payload)
+        payload["players"] = _mi_players
+        payload["market_vs_adp"] = market_vs_adp_availability(_mi_players, _mi_proj)
+        payload["market_vs_adp_available"] = payload["market_vs_adp"]["available"]
+        # Retain the old summary for clients which already consume it.
+        payload["market_vs_adp_meta"] = {
+            "season_rows": len(_mi_proj),
+            "players_covered": payload["market_vs_adp"]["qualified_players"],
+            "as_of": payload["market_vs_adp"]["last_updated"],
+        }
     except Exception:
         logger.debug("season market intelligence unavailable", exc_info=True)
+        payload = dict(payload)
+        payload["market_vs_adp_available"] = False
+        payload["market_vs_adp"] = {"available": False, "qualified_players": 0,
+                                    "last_updated": None, "source_status": "unavailable"}
 
     # Historical draft views pass ?season=<yr> so grades use the ADP OF THAT
     # SEASON (Sleeper's projections API is season-keyed; the crawl fallback too),

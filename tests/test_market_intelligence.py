@@ -207,6 +207,33 @@ def test_load_market_projections_no_db_is_empty(monkeypatch):
     assert repo.load_market_projections(2026, None, "season") == {}
 
 
+def test_market_vs_adp_availability_tracks_qualified_response_rows():
+    from dashboard_services.market_intelligence.repository import market_vs_adp_availability
+
+    assert market_vs_adp_availability([])["available"] is False
+    assert market_vs_adp_availability([{"market_vs_adp": None}])["available"] is False
+    one = market_vs_adp_availability([{"market_vs_adp": 3.4}, {"market_vs_adp": None}])
+    assert one["available"] is True
+    assert one["qualified_players"] == 1
+    many = market_vs_adp_availability([{"market_vs_adp": 1}, {"market_vs_adp": -1.2}])
+    assert many["available"] is True
+    assert many["qualified_players"] == 2
+
+
+def test_failed_provider_preserves_only_fresh_adjusted_projection():
+    from datetime import datetime, timedelta, timezone
+    from dashboard_services.market_intelligence.config import SEASON_MAX_AGE
+    from dashboard_services.market_intelligence.repository import preserve_adjusted_projection
+
+    now = datetime.now(timezone.utc)
+    fresh = {"components": {"basis": "team_environment"}, "calculated_at": now}
+    stale = {**fresh, "calculated_at": now - SEASON_MAX_AGE - timedelta(seconds=1)}
+    assert preserve_adjusted_projection(False, "projection_only", fresh, now) is True
+    assert preserve_adjusted_projection(False, "projection_only", stale, now) is False
+    assert preserve_adjusted_projection(False, "projection_only", None, now) is False
+    assert preserve_adjusted_projection(True, "projection_only", fresh, now) is False
+
+
 def _input(source_type, stat_type, value, confidence=.7, metadata=None):
     return MarketProjectionInput("1", "season", stat_type, value, "test", source_type,
                                  confidence, datetime.now(timezone.utc), metadata or {})

@@ -73,7 +73,7 @@ def test_mobile_header_has_no_flex_basis_gap_and_controls_wrap():
     assert ".cs-ctrl-row:last-child .cs-src { grid-column: 1 / -1;" in body
 
 
-def test_mobile_keeps_market_vs_adp_vor_and_value_columns():
+def test_market_column_is_conditionally_omitted_from_table_and_export():
     body = build_cheat_sheet_body("league-123", 2026, "sleeper")
     script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
 
@@ -83,7 +83,10 @@ def test_mobile_keeps_market_vs_adp_vor_and_value_columns():
     assert '<th class="cs-market-col">Market vs ADP</th>' in script
     assert 'class="cs-vor-col"' in script
     assert 'class="cs-value-col"' in script
-    assert "var SHOW_MARKET_VS_ADP = true" in script
+    assert "var SHOW_MARKET_VS_ADP = false" in script
+    assert "SHOW_MARKET_VS_ADP = resp.market_vs_adp_available === true" in script
+    assert "showMarket(dyn) ? '<th class=\"cs-market-col\">Market vs ADP</th>' : ''" in script
+    assert "showMarket(dyn) ? ['Market vs ADP'] : []" in script
     assert "Not enough independent market data yet." in script
     assert "marketBasis" in script
     assert "marketConfidenceLabel" in script
