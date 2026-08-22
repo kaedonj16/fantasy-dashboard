@@ -8,6 +8,7 @@ pytest.importorskip("requests")
 pytest.importorskip("bs4")
 
 from utils import utils
+from data_building import fetch_projections
 
 
 class _Response:
@@ -31,3 +32,17 @@ def test_fetch_preserves_sleeper_totals_outside_stats(monkeypatch):
 
     assert result["9758"]["raw_stats"]["pts_ppr"] == 14.57
     assert result["9758"]["ppr"] == 12.0
+
+
+def test_season_ppg_uses_only_sleeper_weekly_values(monkeypatch):
+    weekly = {
+        1: {"9758": {"ppr": 12.0, "half_ppr": 11.0, "std": 10.0}},
+        2: {"9758": {"ppr": 18.0, "half_ppr": 17.0, "std": 16.0}},
+        3: {"9758": {"ppr": 0.0}},  # bye/missing output is excluded
+    }
+    monkeypatch.setattr(utils, "load_week_projection", lambda _year, week: weekly.get(week, {}))
+    monkeypatch.setattr(utils, "load_players_index", lambda: {"9758": {"pos": "QB"}})
+
+    result = fetch_projections.fetch_sleeper_season_projections(2026, "ppr")
+
+    assert result == {"9758": {"pos": "QB", "season_pts": 30.0, "ppg": 15.0}}
