@@ -1033,7 +1033,13 @@ window.brHaptic = function (pattern) {
     }
     if (!live && next) {
       var nav = document.querySelector('.top-nav');
-      if (nav) nav.insertAdjacentElement('afterend', next.cloneNode(true));
+      if (nav) {
+        nav.insertAdjacentElement('afterend', next.cloneNode(true));
+        // The clone is the server-rendered ticker: empty and hidden. Re-fill it
+        // (from cache after the first fetch) so the marquee actually shows and
+        // scrolls instead of sitting blank after a soft-nav into Home.
+        if (typeof window.populateHomeTicker === 'function') window.populateHomeTicker();
+      }
     }
   }
 
@@ -8962,23 +8968,35 @@ document.addEventListener("DOMContentLoaded", () => {
 if (!platformBtns.length) return;
 
   // Live-values ticker: fill from Top Movers (dynasty risers/fallers), then
-  // reveal. Any failure or an empty board just leaves it hidden.
-  (function initHomeTicker() {
+  // reveal. Any failure or an empty board just leaves it hidden. Exposed and
+  // idempotent (not a one-shot IIFE) because the ticker is site chrome: a soft
+  // navigation into Home re-mounts an EMPTY server-rendered clone of it (see
+  // syncHomeTicker), so it must be re-populated there too or it sits frozen and
+  // blank. The built marquee HTML is cached so re-entry doesn't refetch.
+  window.populateHomeTicker = function populateHomeTicker() {
     const band = document.getElementById("homeTicker");
     const track = document.getElementById("homeTickerTrack");
     if (!band || !track) return;
+    // Already filled (e.g. this exact node was populated on a prior visit).
+    if (track.childElementCount) { band.hidden = false; band.removeAttribute("aria-hidden"); return; }
+    const reveal = (one) => {
+      if (!one) return;
+      track.innerHTML = one + one;  // duplicate for a seamless marquee loop
+      band.hidden = false;
+      band.removeAttribute("aria-hidden");
+    };
+    if (window.__homeTickerHtml) { reveal(window.__homeTickerHtml); return; }
     const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
     fetch("/api/top-movers").then((r) => r.json()).then((data) => {
       const items = (data && data.items) || [];
       if (!items.length) return;
-      const one = items.map((it) =>
+      window.__homeTickerHtml = items.map((it) =>
         `<span class="mv">${esc(it.name)} <span class="${it.up ? "up" : "dn"}">${it.up ? "▲" : "▼"} ${it.pct}%</span></span>`
       ).join("");
-      track.innerHTML = one + one;  // duplicate for a seamless marquee loop
-      band.hidden = false;
-      band.removeAttribute("aria-hidden");
+      reveal(window.__homeTickerHtml);
     }).catch(() => {});
-  })();
+  };
+  window.populateHomeTicker();
 
   const signedInHome = document.getElementById("signedInHome");
   const signedInLeagueList = document.getElementById("signedInLeagueList");
