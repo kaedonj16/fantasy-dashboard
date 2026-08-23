@@ -21307,9 +21307,10 @@ def api_player_deltas():
     return jsonify(deltas)
 
 
-# A 7-day dynasty-value swing at or beyond this (in value points) is worth
-# surfacing as a watchlist alert. Tunable in one place.
-WATCHLIST_VALUE_ALERT_THRESHOLD = 150.0
+# Watchlist value-alert threshold lives in utils.watchlist_alerts (value-aware:
+# a % of the player's value with an absolute floor), shared with the push
+# notifier so the in-app and pushed alerts always agree.
+from utils.watchlist_alerts import is_value_alert as _is_value_alert  # noqa: E402
 
 
 @app.route("/api/watchlist-alerts")
@@ -21317,10 +21318,11 @@ def api_watchlist_alerts():
     """Alert data for a set of watched player ids (client passes ?ids=a,b,c).
 
     Returns {player_id: {name, position, team, value, delta7, injury, alert}}
-    where ``alert`` is True when the player moved at least
-    WATCHLIST_VALUE_ALERT_THRESHOLD in value over the last 7 days or carries a
-    real injury designation. Player attributes are global (the watchlist itself
-    is device-local), so no league context is required."""
+    where ``alert`` is True when the player's 7-day value move clears the
+    value-aware threshold (utils.watchlist_alerts: ~10% of the player's value,
+    floored at 50 points) or the player carries a real injury designation.
+    Player attributes are global (the watchlist itself is device-local), so no
+    league context is required."""
     ids_raw = str(request.args.get("ids", ""))
     ids = [s.strip() for s in ids_raw.split(",") if s.strip()][:80]
     if not ids:
@@ -21370,7 +21372,7 @@ def api_watchlist_alerts():
         delta7 = round(delta, 1) if delta is not None else None
         injury = str(meta.get("injury_status") or "").strip()
         injury_active = bool(injury) and injury.upper() not in ("ACTIVE", "HEALTHY", "NA")
-        value_alert = delta is not None and abs(delta) >= WATCHLIST_VALUE_ALERT_THRESHOLD
+        value_alert = _is_value_alert(delta, value)
         # Compute a precise decimal age from the birthday (the players index
         # reliably carries bDay everywhere). The value table's age column is a
         # whole-number age in production, so fall back to it only if there's no
@@ -25965,16 +25967,24 @@ def api_trade_targets():
 
     POSITIONS = ["QB", "RB", "WR", "TE"]
 
-    # Compute positional value totals per roster
-    def _pos_totals(player_ids: list) -> dict:
-        totals = {p: 0.0 for p in POSITIONS}
+    # Per-roster positional value LISTS (not raw sums), so need detection ranks
+    # teams with the same starter-slot-weighted strength the Teams page and share
+    # card use — a plain sum over-credits depth and misfires (a WR-deep team with
+    # no elite WR looks "strong" and gets no WR targets).
+    _rp_list = ctx.get("roster_positions") or []
+    slot_counts = count_roster_positions(_rp_list)
+    if not any(slot_counts.get(p) for p in ("QB", "RB", "WR", "TE", "FLEX")):
+        slot_counts = {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 1}
+
+    def _pos_vals(player_ids: list) -> dict:
+        vals = {p: [] for p in POSITIONS}
         for pid in player_ids:
             info = values_by_id.get(str(pid))
             if info and info["position"] in POSITIONS:
-                totals[info["position"]] += info["value"]
-        return totals
+                vals[info["position"]].append(info["value"])
+        return vals
 
-    roster_totals = {str(r.get("roster_id")): _pos_totals(r.get("players") or []) for r in rosters}
+    roster_vals = {str(r.get("roster_id")): _pos_vals(r.get("players") or []) for r in rosters}
     num_teams = max(len(rosters), 1)
 
     # Project viewer's upcoming picks to actual rookie positions/values using the
@@ -25989,7 +25999,7 @@ def api_trade_targets():
     )
     _rookie_idx = 0
     _projected_picks_out: list[dict] = []
-    _pick_credits: dict[str, float] = {}
+    _pick_vals: dict[str, list] = {}  # pos -> [projected rookie values]
     for _rnd in [1, 2]:
         for _pk in sorted(
                 [p for p in viewer_picks_list
@@ -26000,7 +26010,8 @@ def api_trade_targets():
                 _proj = _top_rookies[_rookie_idx]
                 _pos = _proj.get("position", "")
                 _val = float(_proj.get("value") or 0)
-                _pick_credits[_pos] = _pick_credits.get(_pos, 0.0) + _val
+                if _pos in POSITIONS:
+                    _pick_vals.setdefault(_pos, []).append(_val)
                 _projected_picks_out.append({
                     "season": _pk.get("season"),
                     "round": _rnd,
@@ -26009,16 +26020,25 @@ def api_trade_targets():
                     "proj_val": round(_val, 1),
                 })
                 _rookie_idx += 1
-    if _pick_credits and viewer_roster_id in roster_totals:
-        vt = dict(roster_totals[viewer_roster_id])
-        for _pos, _val in _pick_credits.items():
-            vt[_pos] = vt.get(_pos, 0.0) + _val
-        roster_totals[viewer_roster_id] = vt
+    if _pick_vals and viewer_roster_id in roster_vals:
+        # Projected rookie picks join the viewer's positional value lists as
+        # individual players, so weighted strength weights them like real depth.
+        vv = {pos: list(vals) for pos, vals in roster_vals[viewer_roster_id].items()}
+        for _pos, _vals in _pick_vals.items():
+            vv.setdefault(_pos, []).extend(_vals)
+        roster_vals[viewer_roster_id] = vv
 
-    # Rank each roster by positional total (1 = best)
+    # Rank each roster by starter-slot-weighted positional strength (1 = best),
+    # matching the Teams page / share card single source of truth.
+    pos_strength: dict[str, dict] = {
+        rid: {pos: _weighted_pos_strength(vals.get(pos, []), pos, slot_counts)
+              for pos in POSITIONS}
+        for rid, vals in roster_vals.items()
+    }
     pos_ranks: dict[str, dict] = {}  # pos -> {rid: rank}
     for pos in POSITIONS:
-        sorted_rids = sorted(roster_totals.keys(), key=lambda rid: roster_totals[rid].get(pos, 0), reverse=True)
+        sorted_rids = sorted(pos_strength.keys(),
+                             key=lambda rid: pos_strength[rid].get(pos, 0.0), reverse=True)
         pos_ranks[pos] = {rid: i + 1 for i, rid in enumerate(sorted_rids)}
 
     # Viewer is needy at a position if they rank in the bottom 35%

@@ -6,11 +6,6 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
-# Mirror of app.WATCHLIST_VALUE_ALERT_THRESHOLD (the pull API's cutoff). Kept as a
-# local constant so this module never has to import the heavy app package; if the
-# app-side value changes, change it here too so push and in-app alerts agree.
-WATCHLIST_VALUE_ALERT_THRESHOLD = 150.0
-
 
 # ── Core helpers ───────────────────────────────────────────────────────────────
 
@@ -1282,8 +1277,9 @@ def notify_injury_alert():
 
 def notify_watchlist_alerts():
     """Push an alert when a player on a signed-in user's WATCHLIST moves sharply
-    in value (>= WATCHLIST_VALUE_ALERT_THRESHOLD over 7 days) or picks up a real
-    injury designation.
+    in value (the value-aware threshold in utils.watchlist_alerts — ~10% of the
+    player's value over 7 days, floored at 50) or picks up a real injury
+    designation.
 
     This complements the roster-scoped value/injury notifiers: those scan the
     players you own, this scans the players you have explicitly starred. The
@@ -1304,6 +1300,7 @@ def notify_watchlist_alerts():
         from dashboard_services.db import get_conn
         from dashboard_services.player_value_history import get_top_movers
         from dashboard_services.api import get_nfl_players
+        from utils.watchlist_alerts import is_value_alert
     except Exception:
         return 0
 
@@ -1328,7 +1325,10 @@ def notify_watchlist_alerts():
 
     # 2. 7-day deltas for essentially every player, taking the larger absolute
     #    move across the 1QB and Superflex boards (format-agnostic watchlist).
+    #    Track each player's current value too, so the alert threshold can scale
+    #    with value (see utils.watchlist_alerts).
     delta_map: dict = {}
+    value_map: dict = {}
     for _lt in ("1qb", "sf"):
         try:
             board = get_top_movers(days=7, limit=2000, league_type=_lt) or {}
@@ -1343,6 +1343,10 @@ def notify_watchlist_alerts():
             d = float(d)
             if pid not in delta_map or abs(d) > abs(delta_map[pid]):
                 delta_map[pid] = d
+                try:
+                    value_map[pid] = float(p.get("new_value") or p.get("value") or 0)
+                except (TypeError, ValueError):
+                    value_map[pid] = 0.0
 
     # 3. Live injury designations (normalize healthy states out).
     injuries: dict = {}
@@ -1373,7 +1377,7 @@ def notify_watchlist_alerts():
         for pid, name in pmap.items():
             delta = delta_map.get(pid)
             inj = injuries.get(pid, "")
-            value_alert = delta is not None and abs(delta) >= WATCHLIST_VALUE_ALERT_THRESHOLD
+            value_alert = is_value_alert(delta, value_map.get(pid, 0.0))
             if not value_alert and not inj:
                 continue
 

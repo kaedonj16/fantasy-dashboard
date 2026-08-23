@@ -133,6 +133,50 @@ def _player_name(pid: str, pidx: dict) -> str:
             or str(pid))
 
 
+def _canonical_standing(platform: str, league_id: str, season: int, roster_id: str):
+    """(rank, wins, losses) from the site's cached, platform-agnostic standings,
+    or (None, 0, 0) if unavailable.
+
+    Uses get_league_ctx_from_cache (the same context every page renders from), so
+    the digest's rank matches the standings page on every platform. The rank
+    comes from standings_map (a plain {roster_id: seed} dict, robust); the record
+    is a best-effort read from the team_stats frame."""
+    try:
+        from app import get_league_ctx_from_cache
+        ctx = get_league_ctx_from_cache(platform, league_id, int(season)) or {}
+    except Exception:
+        return None, 0, 0
+
+    smap = ctx.get("standings_map") or {}
+    rid_int = int(roster_id) if str(roster_id).isdigit() else None
+    rank = smap.get(rid_int) if rid_int is not None else None
+    if rank is None:
+        rank = smap.get(str(roster_id))
+    if rank is None:
+        return None, 0, 0
+
+    wins = losses = 0
+    try:
+        ts = ctx.get("team_stats")
+        rmap = ctx.get("roster_map") or {}
+        owner = rmap.get(rid_int) if rid_int is not None else None
+        if owner is None:
+            owner = rmap.get(str(roster_id))
+        if ts is not None and owner is not None and not ts.empty and "owner" in ts.columns:
+            row = ts[ts["owner"] == owner]
+            if not row.empty:
+                r0 = row.iloc[0]
+                wins = int(r0.get("Wins", 0) or 0)
+                if "Losses" in ts.columns:
+                    losses = int(r0.get("Losses", 0) or 0)
+                elif "G" in ts.columns:
+                    losses = max(0, int(r0.get("G", 0) or 0) - wins)
+    except Exception:
+        logger.debug("[weekly-email] record read failed", exc_info=True)
+
+    return int(rank), wins, losses
+
+
 def _load_movers_and_index() -> tuple[dict, dict]:
     """The 7-day movers board and the players index are recipient-independent, so
     the send loop loads them once and passes them into every build_digest."""
@@ -176,23 +220,27 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
     uid_name = {str(u.get("user_id")): (u.get("display_name") or u.get("username") or "Team")
                 for u in users}
 
-    # Standings rank from wins, then season points.
-    def _rec(r):
-        s = r.get("settings") or {}
-        pts = float(s.get("fpts") or 0) + float(s.get("fpts_decimal") or 0) / 100.0
-        return int(s.get("wins") or 0), int(s.get("losses") or 0), pts
-
-    ranked = sorted(rosters, key=lambda r: (_rec(r)[0], _rec(r)[2]), reverse=True)
-    rank = next((i + 1 for i, r in enumerate(ranked)
-                 if str(r.get("roster_id")) == str(roster_id)), None)
-
     mine = next((r for r in rosters if str(r.get("roster_id")) == str(roster_id)), None)
     if mine is None:
         # No known roster for this viewer — still worth a league-movers email,
         # but skip the personalized block.
         mine = {}
-    wins, losses, _pts = _rec(mine) if mine else (0, 0, 0.0)
     my_pids = {str(p) for p in (mine.get("players") or [])}
+
+    # Rank + record from the site's canonical, platform-agnostic standings
+    # (roster.settings.fpts is Sleeper-only, so ranking off it breaks ESPN/Yahoo/
+    # MFL). Fall back to a wins-then-Sleeper-points sort only if the cached
+    # context isn't available.
+    rank, wins, losses = _canonical_standing(platform, league_id, season, roster_id)
+    if rank is None:
+        def _rec(r):
+            s = r.get("settings") or {}
+            pts = float(s.get("fpts") or 0) + float(s.get("fpts_decimal") or 0) / 100.0
+            return int(s.get("wins") or 0), int(s.get("losses") or 0), pts
+        ranked = sorted(rosters, key=lambda r: (_rec(r)[0], _rec(r)[2]), reverse=True)
+        rank = next((i + 1 for i, r in enumerate(ranked)
+                     if str(r.get("roster_id")) == str(roster_id)), None)
+        wins, losses, _pts = _rec(mine) if mine else (0, 0, 0.0)
 
     # 7-day value movers + players index (shared across recipients; loaded here
     # only when a standalone caller didn't pass them in).

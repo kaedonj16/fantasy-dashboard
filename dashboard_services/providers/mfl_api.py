@@ -170,6 +170,9 @@ class MFLProvider(ProviderAdapter):
         raw = self._export("rosters", league_id, season, ttl=300)
         rosters = _items((raw.get("rosters") or {}).get("franchise", []), "franchise")
         xwalk = self._canonical_map(league_id, season)
+        # MFL rosters carry no lineup, so derive each team's starters from the most
+        # recent scored week (weeklyResults flags starter/nonstarter per player).
+        starters_by_fid = self._latest_starters(league_id, season, xwalk)
         out = []
         for r in rosters:
             entries = _items(r.get("player", []), "player")
@@ -178,9 +181,38 @@ class MFLProvider(ProviderAdapter):
             reserve = [p for p, status in mapped if p and status.upper() in {"INJURED_RESERVE", "TAXI_SQUAD"}]
             out.append({"league_id": str(league_id), "roster_id": _int(r.get("id")),
                         "owner_id": str(r.get("id")), "players": players,
-                        "starters": [], "reserve": reserve, "taxi": None,
+                        "starters": starters_by_fid.get(str(r.get("id")), []),
+                        "reserve": reserve, "taxi": None,
                         "settings": {}, "metadata": {"unmapped_player_count": len(entries)-len(players)}})
         return out
+
+    def _starter_ids(self, franchise: dict, xwalk: dict) -> list[str]:
+        """Canonical ids flagged as starters on one weeklyResults franchise block."""
+        starters: list[str] = []
+        for p in _items((franchise.get("players") or {}).get("player", franchise.get("player", [])), "player"):
+            status = str(p.get("status") or "").lower()
+            if status == "starter" or str(p.get("shouldStart") or "") == "1":
+                cid = xwalk.get(str(p.get("id")))
+                if cid:
+                    starters.append(cid)
+        return starters
+
+    def _latest_starters(self, league_id, season, xwalk) -> dict:
+        """{franchise_id: [canonical starter ids]} from the most recent scored
+        week. weeklyResults with no W returns the current/most-recent week; empty
+        (e.g. offseason) yields {} so rosters simply carry no starters."""
+        try:
+            block = self._export("weeklyResults", league_id, season, ttl=600).get("weeklyResults") or {}
+            out: dict = {}
+            for matchup in _items(block.get("matchup", []), "matchup"):
+                for team in _items(matchup.get("franchise", []), "franchise"):
+                    ids = self._starter_ids(team, xwalk)
+                    if ids:
+                        out[str(team.get("id"))] = ids
+            return out
+        except Exception:
+            logger.debug("MFL latest starters unavailable", exc_info=True)
+            return {}
 
     def get_matchups(self, league_id, season, week):
         raw = self._export("weeklyResults", league_id, season, ttl=600, W=int(week))
