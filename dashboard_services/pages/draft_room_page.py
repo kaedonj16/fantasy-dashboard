@@ -759,7 +759,8 @@ _DRAFT_ROOM_HTML = r"""
   .dr-cheat-pop:hover { text-decoration: underline; }
   .dr-cheat-close { background: none; border: 0; font-size: 24px; line-height: 1; color: var(--text-muted); cursor: pointer; padding: 0 4px; }
   .dr-cheat-close:hover { color: var(--text); }
-  .dr-cheat-frame { display: block; flex: 1 1 auto; width: 100%; min-width: 0; border: 0; background: var(--bg); }
+  .dr-cheat-frame { display: block; flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0;
+    border: 0; background: var(--bg); }
   /* tiers */
   .dr-tier { font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 12px;
     background: rgba(127,127,127,.18); color: var(--text-muted); flex-shrink: 0; }
@@ -917,6 +918,7 @@ _DRAFT_ROOM_HTML = r"""
     .dr-cheat-overlay { padding: 0; align-items: stretch; background: var(--card); }
     .dr-cheat-card { width: 100%; height: 100vh; height: 100dvh; max-width: none;
       border: 0; border-radius: 0; box-shadow: none; }
+    .dr-cheat-frame { height: 0; }
     .dr-cheat-head { min-height: 54px; padding: max(10px, env(safe-area-inset-top))
       max(12px, env(safe-area-inset-right)) 10px max(12px, env(safe-area-inset-left)); }
     .dr-cheat-title { font-size: 16px; }

@@ -92,7 +92,9 @@ def build_cheat_sheet_embed_document(*args, **kwargs) -> str:
         # Match the parent tab's theme (same-origin iframe shares localStorage).
         "<script>(function(){try{if(localStorage.getItem('theme')==='dark')"
         "document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>"
-        "<style>html,body{margin:0;background:var(--bg,#eef1f7);}"
+        "<style>html,body{margin:0;width:100%;min-width:0;min-height:100%;"
+        "background:var(--bg,#eef1f7);overflow-x:hidden;}"
+        "body{-webkit-overflow-scrolling:touch;}"
         ".cs-wrap{padding-top:14px;}</style></head><body>"
         + body +
         "</body></html>"
@@ -207,7 +209,7 @@ _CHEAT_HTML = r"""
   .cs-val.n { color: var(--cs-ink-faint); }
   #csFmtNote { margin-left: auto; font-family: var(--cs-mono); color: var(--cs-ink-faint); }
 
-  .cs-tbl-scroll { position: relative; overflow: auto; max-height: calc(100vh - 250px); background: var(--cs-surface); border: 1px solid var(--cs-line); border-radius: 14px; }
+  .cs-tbl-scroll { position: relative; overflow: auto; max-width: 100%; max-height: calc(100vh - 250px); background: var(--cs-surface); border: 1px solid var(--cs-line); border-radius: 14px; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; }
   .cs-wrap table { border-collapse: collapse; width: 100%; min-width: 640px; }
   .cs-wrap thead th { position: sticky; top: 0; z-index: 3; font-family: var(--cs-mono); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--cs-ink-faint); text-align: right; padding: 12px 14px 9px; border-bottom: 1px solid var(--cs-line); background: var(--cs-surface); }
   .cs-wrap thead th.l { text-align: left; }
@@ -262,7 +264,7 @@ _CHEAT_HTML = r"""
   .cs-need-full { color: var(--cs-ink-faint); background: var(--cs-surface-2); }
   .cs-need-hint { margin-left: auto; font-family: var(--cs-mono); font-size: 10px; color: var(--cs-ink-faint); }
 
-  .cs-pgrid-scroll { overflow: auto; max-height: calc(100vh - 250px); background: var(--cs-surface); border: 1px solid var(--cs-line); border-radius: 14px; }
+  .cs-pgrid-scroll { overflow: auto; max-width: 100%; max-height: calc(100vh - 250px); background: var(--cs-surface); border: 1px solid var(--cs-line); border-radius: 14px; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; }
   .cs-pgrid { min-width: 460px; }
   .cs-pgrid-head { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--cs-ink); position: sticky; top: 0; z-index: 2; }
   .cs-pgrid-head > div { text-align: center; padding: 10px 6px; font-family: var(--cs-mono); font-size: 12px; font-weight: 800; letter-spacing: .06em; color: var(--cs-surface); }
@@ -305,7 +307,7 @@ _CHEAT_HTML = r"""
   .cs-hidden { display: none; }
   .cs-foot { margin-top: 22px; color: var(--cs-ink-faint); font-size: 12px; }
   @media (max-width: 640px) {
-    .cs-wrap { padding-top: 0; }
+    .cs-wrap { width: 100%; max-width: 100%; padding: 0 8px calc(24px + env(safe-area-inset-bottom)); overflow-x: hidden; }
     .cs-top { flex-direction: column; gap: 12px; }
     /* Reset the desktop flex-basis. In a column it becomes height, which was
        creating a several-hundred-pixel blank gap above the controls. */
@@ -325,6 +327,7 @@ _CHEAT_HTML = r"""
     /* Keep every primary signal on mobile. The table scrolls horizontally, as
        it did before Market vs ADP was added, rather than hiding VOR or Value. */
     .cs-wrap table { min-width: 830px; }
+    .cs-tbl-scroll, .cs-pgrid-scroll { max-height: none; height: auto; }
     .cs-wrap thead th, .cs-wrap tbody td { padding-left: 6px; padding-right: 6px; }
     .cs-pcell { gap: 5px; min-width: 0; }
     .cs-pname { overflow: hidden; text-overflow: ellipsis; max-width: 180px; }

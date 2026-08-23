@@ -158,5 +158,17 @@ def test_in_draft_cheat_sheet_is_a_full_screen_mobile_dialog():
     assert ".dr-cheat-overlay { padding: 0; align-items: stretch;" in body
     assert "width: 100%; height: 100vh; height: 100dvh;" in body
     assert "body.dr-cheat-open { overflow: hidden; }" in body
+    assert "min-width: 0; min-height: 0;" in body
+    assert ".dr-cheat-frame { height: 0; }" in body
     assert "document.body.classList.add('dr-cheat-open')" in script
     assert "document.body.classList.remove('dr-cheat-open')" in script
+
+
+def test_embedded_cheat_sheet_keeps_mobile_content_scrollable():
+    from dashboard_services.pages.cheat_sheet_page import build_cheat_sheet_embed_document
+
+    document = build_cheat_sheet_embed_document("league-123", 2026, "sleeper")
+
+    assert "overflow-x:hidden" in document
+    assert "-webkit-overflow-scrolling: touch; touch-action: pan-x pan-y;" in document
+    assert ".cs-tbl-scroll, .cs-pgrid-scroll { max-height: none; height: auto; }" in document
