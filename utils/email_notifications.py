@@ -28,6 +28,60 @@ def is_email_configured():
     return all([config['email_user'], config['email_password'], config['recipient_email']])
 
 
+def is_sender_configured():
+    """True when outbound-mail *sender* creds are set (recipient not required).
+
+    ``is_email_configured`` also requires RECIPIENT_EMAIL, which is only for the
+    admin error digest. User-facing mail (weekly digest) picks its own
+    recipients, so it needs the SMTP login but not that admin address."""
+    config = get_email_config()
+    return bool(config['email_user'] and config['email_password'])
+
+
+def send_html_email(to_email: str, subject: str, html_body: str,
+                    text_body: str = None) -> bool:
+    """Send one HTML email (with a plain-text fallback part) to a single address.
+
+    Returns True on send, False if mail isn't configured or the send failed.
+    Kept dependency-free (stdlib smtplib) to match send_error_email; callers
+    are responsible for not sending to opted-out users."""
+    if not is_sender_configured():
+        print("[email] sender not configured, skipping send")
+        return False
+    to_email = (to_email or "").strip()
+    if not to_email or "@" not in to_email:
+        return False
+
+    config = get_email_config()
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["From"] = config["email_user"]
+        msg["To"] = to_email
+        msg["Subject"] = subject
+        # A plain-text part first, then HTML: clients render the last part they
+        # can display, so HTML wins where supported and text is the fallback.
+        msg.attach(MIMEText(text_body or _html_to_text(html_body), "plain"))
+        msg.attach(MIMEText(html_body, "html"))
+        with smtplib.SMTP(config["smtp_server"], config["smtp_port"]) as server:
+            server.starttls()
+            server.login(config["email_user"], config["email_password"])
+            server.send_message(msg)
+        return True
+    except Exception as e:
+        print(f"[email] send_html_email to {to_email[:40]} failed: {e}")
+        return False
+
+
+def _html_to_text(html: str) -> str:
+    """Very small HTML→text fallback (no external deps): drop tags, keep text."""
+    import re
+    text = re.sub(r"<\s*br\s*/?>", "\n", html or "", flags=re.I)
+    text = re.sub(r"</\s*(p|div|tr|h[1-6]|li)\s*>", "\n", text, flags=re.I)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
 def send_error_email(subject: str, error_message: str, context: dict = None):
     """
     Send an error notification email.
