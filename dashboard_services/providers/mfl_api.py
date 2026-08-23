@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 import time
-from functools import lru_cache
 from typing import Any
 
 from .base import (
@@ -145,12 +144,6 @@ class MFLProvider(ProviderAdapter):
                               "provider_franchise_id": str(f.get("id"))}}
                 for f in self._franchises(league_id, season) if f.get("id") is not None]
 
-    @lru_cache(maxsize=8)
-    def _player_map(self, season: int) -> dict[str, str]:
-        raw = self._export("players", "0", season, ttl=86400) if False else {}
-        # Populated lazily per league below because MFL requires L on some hosts.
-        return raw
-
     def _canonical_map(self, league_id, season):
         raw = self._export("players", league_id, season, ttl=86400, DETAILS=1)
         players = _items((raw.get("players") or {}).get("player", []), "player")
@@ -193,13 +186,36 @@ class MFLProvider(ProviderAdapter):
         raw = self._export("weeklyResults", league_id, season, ttl=600, W=int(week))
         block = raw.get("weeklyResults") or {}
         matchups = _items(block.get("matchup", []), "matchup")
+        # weeklyResults carries each franchise's per-player lines (id, score, and a
+        # starter/nonstarter status). Map those MFL ids to canonical (Sleeper) ids
+        # via the same crosswalk the rosters use, so matchup-driven features
+        # (weekly hub, optimal lineup, live Redzone) have real player lists.
+        xwalk = self._canonical_map(league_id, season)
         out = []
         for mid, matchup in enumerate(matchups, 1):
             franchises = _items(matchup.get("franchise", []), "franchise")
             for team in franchises:
+                players: list[str] = []
+                starters: list[str] = []
+                starters_points: list[float] = []
+                players_points: dict[str, float] = {}
+                for p in _items((team.get("players") or {}).get("player", team.get("player", [])), "player"):
+                    cid = xwalk.get(str(p.get("id")))
+                    if not cid:
+                        continue
+                    pts = _num(p.get("score"))
+                    players.append(cid)
+                    players_points[cid] = pts
+                    # MFL flags lineup role via `status` ("starter"/"nonstarter"),
+                    # occasionally `shouldStart`; treat an explicit starter as one.
+                    status = str(p.get("status") or "").lower()
+                    if status == "starter" or str(p.get("shouldStart") or "") == "1":
+                        starters.append(cid)
+                        starters_points.append(pts)
                 out.append({"matchup_id": mid, "roster_id": _int(team.get("id")),
-                            "points": _num(team.get("score")), "players": [], "starters": [],
-                            "starters_points": [], "players_points": {}, "week": int(week),
+                            "points": _num(team.get("score")), "players": players,
+                            "starters": starters, "starters_points": starters_points,
+                            "players_points": players_points, "week": int(week),
                             "custom_points": None})
         return out
 
