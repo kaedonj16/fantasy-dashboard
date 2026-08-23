@@ -370,11 +370,17 @@
 
   // Familiar platform baselines. These are starting points, not claims that
   // every league on a platform uses the same settings; steppers remain editable.
+  // Each preset carries the full format it implies - draft type, Superflex,
+  // and PPR - so applying one lines the whole setup up, not just the slots.
   var ROSTER_PRESETS = {
-    espn:    { label:'ESPN',       QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:1,K:1,DEF:1,BN:8 },
-    sleeper: { label:'Sleeper',    QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:2,K:0,DEF:0,BN:7 },
-    yahoo:   { label:'Yahoo',      QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:1,K:1,DEF:1,BN:6 },
-    dynasty: { label:'Dynasty SF', QB:1,SF:1,RB:2,WR:3,TE:1,FLEX:2,K:0,DEF:0,BN:15 }
+    espn:      { label:'ESPN',       type:'redraft', ppr:0.5, QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:1,K:1,DEF:1,BN:8 },
+    sleeper:   { label:'Sleeper',    type:'redraft', ppr:0.5, QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:2,K:0,DEF:0,BN:7 },
+    yahoo:     { label:'Yahoo',      type:'redraft', ppr:0.5, QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:1,K:1,DEF:1,BN:6 },
+    standard:  { label:'Standard',   type:'redraft', ppr:0,   QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:1,K:1,DEF:1,BN:6 },
+    sfredraft: { label:'Superflex',  type:'redraft', ppr:0.5, QB:1,SF:1,RB:2,WR:2,TE:1,FLEX:1,K:0,DEF:0,BN:7 },
+    bestball:  { label:'Best Ball',  type:'redraft', ppr:0.5, QB:1,SF:0,RB:2,WR:3,TE:1,FLEX:1,K:0,DEF:0,BN:12 },
+    dynasty:   { label:'Dynasty SF', type:'startup', ppr:1,   QB:1,SF:1,RB:2,WR:3,TE:1,FLEX:2,K:0,DEF:0,BN:15 },
+    dynasty1q: { label:'Dynasty 1QB',type:'startup', ppr:1,   QB:1,SF:0,RB:2,WR:3,TE:1,FLEX:2,K:0,DEF:0,BN:15 }
   };
 
   function renderSetupRoster(){
@@ -401,7 +407,9 @@
 
     var rows = [
       { key:'QB',   label:'QB' },
-      { key:'SF',   label:'Superflex', hide: !sf },
+      // Superflex is always shown and editable like any other slot; the drSf
+      // format toggle just stays in sync with whatever the SF count becomes.
+      { key:'SF',   label:'Superflex' },
       { key:'RB',   label:'RB' },
       { key:'WR',   label:'WR' },
       { key:'TE',   label:'TE' },
@@ -480,11 +488,25 @@
       btn.addEventListener('click', function(){
         var key = btn.getAttribute('data-roster-preset'), preset = ROSTER_PRESETS[key];
         if (!preset) return;
+        // A preset defines a whole format, not just slot counts. Apply the draft
+        // type first (dispatching change so the rookie/keeper fields, rounds, and
+        // capital list all react) before laying in the preset's exact roster.
+        if (preset.type){
+          var typeEl = document.getElementById('drType');
+          if (typeEl && typeEl.value !== preset.type){
+            typeEl.value = preset.type;
+            typeEl.dispatchEvent(new Event('change'));
+          }
+        }
+        document.getElementById('drSf').value = preset.SF ? '1' : '0';
+        if (preset.ppr != null){
+          var pprEl = document.getElementById('drPpr');
+          if (pprEl) pprEl.value = String(preset.ppr);
+        }
         _rosterPreset = key; _rosterMode = 'custom';
         _setupRoster = {};
         ['QB','SF','RB','WR','TE','FLEX','K','DEF','BN'].forEach(function(k){ _setupRoster[k] = preset[k] || 0; });
-        _setupRoster._sf = !!preset.SF; _setupRoster._rd = document.getElementById('drType').value === 'redraft';
-        document.getElementById('drSf').value = preset.SF ? '1' : '0';
+        _setupRoster._sf = !!preset.SF; _setupRoster._rd = preset.type === 'redraft';
         renderSetupRoster(); renderSetupCapital();
       });
     });
@@ -5854,6 +5876,14 @@
     if (!_setupRoster) _setupRoster = defaultRoster();
     _setupRoster[key] = Math.max(0, (_setupRoster[key] || 0) + d);
     _rosterMode = 'custom'; _rosterPreset = null;
+    // The Superflex slot is now editable like any other position. Keep the drSf
+    // format toggle (and the roster's own _sf marker) in sync with the count so
+    // downstream recommendations and grading match the roster the user built.
+    if (key === 'SF'){
+      var _isSf = (_setupRoster.SF || 0) > 0;
+      document.getElementById('drSf').value = _isSf ? '1' : '0';
+      _setupRoster._sf = _isSf;
+    }
     // Keep rounds = starters + bench in sync for every slot change.
     // Bench change -> update rounds. Starter change -> update rounds (bench stays).
     var _newRounds = Math.max(1, Math.min(40, _totalStarterSlots(_setupRoster) + (_setupRoster.BN || 0)));
