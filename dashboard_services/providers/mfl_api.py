@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 import time
-from functools import lru_cache
 from typing import Any
 
 from .base import (
@@ -145,12 +144,6 @@ class MFLProvider(ProviderAdapter):
                               "provider_franchise_id": str(f.get("id"))}}
                 for f in self._franchises(league_id, season) if f.get("id") is not None]
 
-    @lru_cache(maxsize=8)
-    def _player_map(self, season: int) -> dict[str, str]:
-        raw = self._export("players", "0", season, ttl=86400) if False else {}
-        # Populated lazily per league below because MFL requires L on some hosts.
-        return raw
-
     def _canonical_map(self, league_id, season):
         raw = self._export("players", league_id, season, ttl=86400, DETAILS=1)
         players = _items((raw.get("players") or {}).get("player", []), "player")
@@ -177,6 +170,9 @@ class MFLProvider(ProviderAdapter):
         raw = self._export("rosters", league_id, season, ttl=300)
         rosters = _items((raw.get("rosters") or {}).get("franchise", []), "franchise")
         xwalk = self._canonical_map(league_id, season)
+        # MFL rosters carry no lineup, so derive each team's starters from the most
+        # recent scored week (weeklyResults flags starter/nonstarter per player).
+        starters_by_fid = self._latest_starters(league_id, season, xwalk)
         out = []
         for r in rosters:
             entries = _items(r.get("player", []), "player")
@@ -185,21 +181,73 @@ class MFLProvider(ProviderAdapter):
             reserve = [p for p, status in mapped if p and status.upper() in {"INJURED_RESERVE", "TAXI_SQUAD"}]
             out.append({"league_id": str(league_id), "roster_id": _int(r.get("id")),
                         "owner_id": str(r.get("id")), "players": players,
-                        "starters": [], "reserve": reserve, "taxi": None,
+                        "starters": starters_by_fid.get(str(r.get("id")), []),
+                        "reserve": reserve, "taxi": None,
                         "settings": {}, "metadata": {"unmapped_player_count": len(entries)-len(players)}})
         return out
+
+    def _starter_ids(self, franchise: dict, xwalk: dict) -> list[str]:
+        """Canonical ids flagged as starters on one weeklyResults franchise block."""
+        starters: list[str] = []
+        for p in _items((franchise.get("players") or {}).get("player", franchise.get("player", [])), "player"):
+            status = str(p.get("status") or "").lower()
+            if status == "starter" or str(p.get("shouldStart") or "") == "1":
+                cid = xwalk.get(str(p.get("id")))
+                if cid:
+                    starters.append(cid)
+        return starters
+
+    def _latest_starters(self, league_id, season, xwalk) -> dict:
+        """{franchise_id: [canonical starter ids]} from the most recent scored
+        week. weeklyResults with no W returns the current/most-recent week; empty
+        (e.g. offseason) yields {} so rosters simply carry no starters."""
+        try:
+            block = self._export("weeklyResults", league_id, season, ttl=600).get("weeklyResults") or {}
+            out: dict = {}
+            for matchup in _items(block.get("matchup", []), "matchup"):
+                for team in _items(matchup.get("franchise", []), "franchise"):
+                    ids = self._starter_ids(team, xwalk)
+                    if ids:
+                        out[str(team.get("id"))] = ids
+            return out
+        except Exception:
+            logger.debug("MFL latest starters unavailable", exc_info=True)
+            return {}
 
     def get_matchups(self, league_id, season, week):
         raw = self._export("weeklyResults", league_id, season, ttl=600, W=int(week))
         block = raw.get("weeklyResults") or {}
         matchups = _items(block.get("matchup", []), "matchup")
+        # weeklyResults carries each franchise's per-player lines (id, score, and a
+        # starter/nonstarter status). Map those MFL ids to canonical (Sleeper) ids
+        # via the same crosswalk the rosters use, so matchup-driven features
+        # (weekly hub, optimal lineup, live Redzone) have real player lists.
+        xwalk = self._canonical_map(league_id, season)
         out = []
         for mid, matchup in enumerate(matchups, 1):
             franchises = _items(matchup.get("franchise", []), "franchise")
             for team in franchises:
+                players: list[str] = []
+                starters: list[str] = []
+                starters_points: list[float] = []
+                players_points: dict[str, float] = {}
+                for p in _items((team.get("players") or {}).get("player", team.get("player", [])), "player"):
+                    cid = xwalk.get(str(p.get("id")))
+                    if not cid:
+                        continue
+                    pts = _num(p.get("score"))
+                    players.append(cid)
+                    players_points[cid] = pts
+                    # MFL flags lineup role via `status` ("starter"/"nonstarter"),
+                    # occasionally `shouldStart`; treat an explicit starter as one.
+                    status = str(p.get("status") or "").lower()
+                    if status == "starter" or str(p.get("shouldStart") or "") == "1":
+                        starters.append(cid)
+                        starters_points.append(pts)
                 out.append({"matchup_id": mid, "roster_id": _int(team.get("id")),
-                            "points": _num(team.get("score")), "players": [], "starters": [],
-                            "starters_points": [], "players_points": {}, "week": int(week),
+                            "points": _num(team.get("score")), "players": players,
+                            "starters": starters, "starters_points": starters_points,
+                            "players_points": players_points, "week": int(week),
                             "custom_points": None})
         return out
 

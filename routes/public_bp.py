@@ -40,6 +40,47 @@ def _render(title: str, league_id: Optional[str], active: str, body: str,
                        description=description, canonical=canonical)
 
 
+# ── Weekly-email unsubscribe (signed, no login) ───────────────────────────────
+
+@public_bp.route("/email/unsubscribe", methods=["GET", "POST"])
+def email_unsubscribe():
+    """One-click unsubscribe from weekly digest emails. The token is an HMAC over
+    the account id, so no login is needed and the link can't be forged.
+
+    GET renders a confirmation page (the link in the email body). POST is the
+    RFC 8058 one-click path a mail client hits from the List-Unsubscribe header;
+    it just performs the opt-out and returns a bare 200."""
+    from flask import request as _req
+    from utils.weekly_email import verify_unsub_token, unsubscribe
+    token = _req.args.get("token", "") or (_req.form.get("token", "") if _req.method == "POST" else "")
+    account_id = verify_unsub_token(token)
+
+    if _req.method == "POST":
+        if account_id is not None:
+            unsubscribe(account_id)
+        return ("", 200)
+
+    if account_id is None:
+        msg = ("<h2 style='margin:0 0 8px;'>Link expired or invalid</h2>"
+               "<p style='color:var(--text-muted);font-size:14px;'>We couldn't verify "
+               "this unsubscribe link. You can manage email preferences from your "
+               "account settings.</p>")
+    elif unsubscribe(account_id):
+        msg = ("<h2 style='margin:0 0 8px;'>You're unsubscribed</h2>"
+               "<p style='color:var(--text-muted);font-size:14px;'>You won't receive "
+               "any more weekly digest emails. You can re-enable them anytime from "
+               "your account settings.</p>")
+    else:
+        msg = ("<h2 style='margin:0 0 8px;'>Something went wrong</h2>"
+               "<p style='color:var(--text-muted);font-size:14px;'>We couldn't update "
+               "your preferences right now. Please try again later.</p>")
+    body = (
+        "<div class='card central' style='max-width:520px;margin:40px auto;'>"
+        f"<div class='card-body' style='padding:28px 24px;text-align:center;'>{msg}</div></div>"
+    )
+    return _render("Email preferences", None, "", body)
+
+
 # ── Service worker ────────────────────────────────────────────────────────────
 
 @public_bp.route("/sw.js")

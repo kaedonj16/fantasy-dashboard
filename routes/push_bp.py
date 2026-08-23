@@ -8,7 +8,8 @@ Routes:
     /api/push/leagues
     /api/push/preferences      (GET, PUT)
     /api/push/broadcast        (POST, admin)
-    /api/cron/notifications    (POST, admin)
+    /api/cron/notifications    (POST, admin; type=hourly|daily|weekly)
+                               weekly = weekly email digest (utils.weekly_email)
 
 Extracted from app.py. Depends on extensions.limiter + dashboard_services/utils
 (DB, pywebpush, push_notifications) - no app.py internals. _push_broadcast is
@@ -322,6 +323,12 @@ def api_cron_notifications():
         from utils.push_notifications import run_hourly, run_all_daily
         if kind == "daily":
             run_all_daily()
+        elif kind == "weekly":
+            # Weekly email digest. Call once a week (e.g. Tuesday morning). Safe to
+            # call more often — it de-dupes per account per ISO week.
+            from utils.weekly_email import send_weekly_digests
+            summary = send_weekly_digests()
+            return jsonify({"ok": True, "weekly_email": summary})
         else:
             run_hourly()
     except Exception as exc:

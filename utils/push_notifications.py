@@ -1273,6 +1273,156 @@ def notify_injury_alert():
         logger.warning("[notify] injury_alert failed: %s", exc)
 
 
+# ── Notification: Watchlist alerts (value swing / injury on a watched player) ──
+
+def notify_watchlist_alerts():
+    """Push an alert when a player on a signed-in user's WATCHLIST moves sharply
+    in value (the value-aware threshold in utils.watchlist_alerts — ~10% of the
+    player's value over 7 days, floored at 50) or picks up a real injury
+    designation.
+
+    This complements the roster-scoped value/injury notifiers: those scan the
+    players you own, this scans the players you have explicitly starred. The
+    watchlist is account-scoped by ``user_key`` (the signed-in user id), which is
+    the same id stored as ``owner_id`` on a push subscription, so a user's
+    devices are reachable directly with no league context.
+
+    Uses the same inputs as the /api/watchlist-alerts pull endpoint (a cached
+    7-day movers board + the live injury feed). A watchlist is cross-league, so
+    there's no single scoring format to key off (the pull endpoint uses the
+    format of whatever page you're on); we instead fire on the LARGER of the
+    player's 1QB and Superflex 7-day move, so a big swing in either format —
+    e.g. a QB that only really moves in SF — still alerts. Deduped per
+    (user, player, alert-signature) via app_state so a still-injured or
+    still-down player isn't re-pushed every run.
+    """
+    try:
+        from dashboard_services.db import get_conn
+        from dashboard_services.player_value_history import get_top_movers
+        from dashboard_services.api import get_nfl_players
+        from utils.watchlist_alerts import is_value_alert
+    except Exception:
+        return 0
+
+    # 1. Watched players per account (name is denormalized onto the row).
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT user_key, player_id, name FROM user_watchlist"
+            ).fetchall()
+    except Exception as exc:
+        logger.warning("[notify] watchlist query failed: %s", exc)
+        return 0
+    if not rows:
+        return 0
+
+    watched: dict = {}  # user_key -> {player_id: name}
+    for r in rows:
+        uk = str(r.get("user_key") or "").strip()
+        pid = str(r.get("player_id") or "").strip()
+        if uk and pid:
+            watched.setdefault(uk, {})[pid] = (r.get("name") or "").strip()
+
+    # 2. 7-day deltas for essentially every player, taking the larger absolute
+    #    move across the 1QB and Superflex boards (format-agnostic watchlist).
+    #    Track each player's current value too, so the alert threshold can scale
+    #    with value (see utils.watchlist_alerts).
+    delta_map: dict = {}
+    value_map: dict = {}
+    for _lt in ("1qb", "sf"):
+        try:
+            board = get_top_movers(days=7, limit=2000, league_type=_lt) or {}
+        except Exception:
+            logger.debug("[notify] watchlist movers lookup failed (%s)", _lt, exc_info=True)
+            continue
+        for p in (board.get("risers", []) + board.get("fallers", [])):
+            pid = str(p.get("player_id", ""))
+            d = p.get("delta")
+            if not pid or d is None:
+                continue
+            d = float(d)
+            if pid not in delta_map or abs(d) > abs(delta_map[pid]):
+                delta_map[pid] = d
+                try:
+                    value_map[pid] = float(p.get("new_value") or p.get("value") or 0)
+                except (TypeError, ValueError):
+                    value_map[pid] = 0.0
+
+    # 3. Live injury designations (normalize healthy states out).
+    injuries: dict = {}
+    try:
+        for pid, meta in (get_nfl_players() or {}).items():
+            st = str((meta or {}).get("injury_status") or "").strip()
+            if st and st.upper() not in ("ACTIVE", "HEALTHY", "NA"):
+                injuries[str(pid)] = st
+    except Exception:
+        logger.debug("[notify] watchlist injury lookup failed", exc_info=True)
+
+    sent = 0
+    for user_key, pmap in watched.items():
+        # This account's devices (one row per endpoint), fetched once.
+        try:
+            with get_conn() as conn:
+                subs = conn.execute(
+                    "SELECT DISTINCT ON (endpoint) endpoint, p256dh, auth, prefs "
+                    "FROM push_subscriptions WHERE owner_id = %s "
+                    "ORDER BY endpoint, id DESC",
+                    (user_key,),
+                ).fetchall()
+        except Exception:
+            subs = []
+        if not subs:
+            continue
+
+        for pid, name in pmap.items():
+            delta = delta_map.get(pid)
+            inj = injuries.get(pid, "")
+            value_alert = is_value_alert(delta, value_map.get(pid, 0.0))
+            if not value_alert and not inj:
+                continue
+
+            # Signature buckets the value move (nearest 50) so we only re-push on a
+            # materially larger swing, and re-pushes when the injury label changes.
+            sig_bits = []
+            if value_alert:
+                sig_bits.append(f"v{'+' if delta > 0 else '-'}{int(abs(delta) // 50) * 50}")
+            if inj:
+                sig_bits.append(f"i{inj}")
+            sig = "|".join(sig_bits)
+            state_key = f"wl_alert_{user_key}_{pid}"
+            try:
+                with get_conn() as conn:
+                    if _app_state_get(conn, state_key) == sig:
+                        continue
+            except Exception:
+                pass
+
+            nm = name or "A watched player"
+            if value_alert and inj:
+                body = f"{nm}: {'up' if delta > 0 else 'down'} {abs(delta):.0f} in value (7d) · {inj}"
+            elif value_alert:
+                body = f"{nm} is {'up' if delta > 0 else 'down'} {abs(delta):.0f} in value over 7 days"
+            else:
+                body = f"{nm} is now {inj}"
+
+            n = _send_to_endpoints(
+                _filter_prefs(subs, "watchlist"),
+                "Watchlist alert", body, "/players", tag=f"wl-{pid}",
+            )
+            if n:
+                sent += n
+                try:
+                    with get_conn() as conn:
+                        _app_state_set(conn, state_key, sig)
+                        conn.commit()
+                except Exception:
+                    logger.debug("[notify] watchlist state write failed", exc_info=True)
+
+    if sent:
+        logger.info("[notify] watchlist alerts sent=%d", sent)
+    return sent
+
+
 # ── Batch runners ──────────────────────────────────────────────────────────────
 
 def run_all_daily():
@@ -1286,6 +1436,7 @@ def run_all_daily():
     notify_recap_ready()
     notify_matchup_preview()
     notify_standings_update()
+    notify_watchlist_alerts()
     # Daily ranking snapshots (value / power / playoff-odds movement arrows).
     try:
         from dashboard_services.ranking_seed import snapshot_all_rankings

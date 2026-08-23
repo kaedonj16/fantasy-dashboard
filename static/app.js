@@ -1819,6 +1819,7 @@ window._brPromoEligible = function () {
     { key: 'transaction',       label: 'Big Drop Alerts' },
     { key: 'waiver_candidates', label: 'Waiver Wire Updates' },
     { category: 'Dynasty' },
+    { key: 'watchlist',         label: 'Watchlist Alerts' },
     { key: 'value_drops',       label: 'Value Drop Alerts' },
     { key: 'breakout_roster',   label: 'Breakout Player Alerts' },
     { key: 'playoff_odds',      label: 'Playoff Odds Updates' },
