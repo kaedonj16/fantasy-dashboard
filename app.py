@@ -12980,17 +12980,20 @@ def _redzone_collect(platform, league_id, season, week):
     rosters = _pr(platform, league_id, season) or []
     users = _pu(platform, league_id, season) or []
 
-    nfl_players = get_nfl_players() if platform == "sleeper" else {}
+    # Every provider canonicalizes its player ids to Sleeper ids in rosters /
+    # matchups (ESPN canon_pid, Yahoo name+pos crosswalk, MFL _canonical_map),
+    # so the Sleeper player feed resolves names/positions/teams for ALL
+    # platforms — Redzone is no longer Sleeper-only.
+    nfl_players = get_nfl_players() or {}
     today_str = date.today().strftime("%Y%m%d")
     scores_body = get_nfl_scores_for_date(today_str) or {}
     team_game = build_team_game_lookup(scores_body)
     try:
         # Load this league's scoring into the request-scoped state so the live
         # point math (feed deltas, stat breakdowns) uses the league's real
-        # settings rather than falling back to generic defaults. get_league
-        # populates scoring_settings via set_league_globals (Sleeper).
-        if platform == "sleeper":
-            get_league(league_id)
+        # settings rather than generic defaults. sync_league_globals routes
+        # through the right provider for every platform (Sleeper included).
+        sync_league_globals(platform, league_id, season)
         scoring = get_effective_scoring_settings() or {}
     except Exception:
         scoring = {}
@@ -13026,8 +13029,10 @@ def _redzone_collect(platform, league_id, season, week):
             "injury_status": inj,
         }
 
-    # Attach per-player stat lines from Tank01 boxscores (Sleeper only).
-    if platform == "sleeper":
+    # Attach per-player stat lines from Tank01 boxscores. Tank01 is keyed by
+    # player name, and player_info now resolves names on every platform, so the
+    # live stat lines work league-wide regardless of provider.
+    if True:
         games_to_pids: dict = {}
         for pid, info in player_info.items():
             gid = info.get("game_id")
@@ -13216,20 +13221,10 @@ def _redzone_fetch_user(platform, league_id, season, week):
 @app.route("/<platform>/<int:season>/<league_id>/redzone")
 def page_redzone(platform: str, season: int, league_id: str):
     scope = "user" if request.args.get("scope") == "user" else "league"
-    # Redzone's live player feed is Sleeper-only; show an honest note instead of
-    # an empty, name-less live view when an ESPN/Yahoo user deep-links here.
-    if (platform or "").lower() != "sleeper" and request.args.get("demo") != "1":
-        body = (
-            "<div class='card central' style='max-width:560px;margin:32px auto;'>"
-            "<div class='card-body' style='padding:28px 24px;text-align:center;'>"
-            "<h2 style='margin:0 0 8px;'>Redzone is Sleeper-only for now</h2>"
-            "<p style='color:var(--text-muted);font-size:14px;line-height:1.6;margin:0;'>"
-            "Live Redzone tracking uses Sleeper's real-time player feed, which isn't "
-            "available for ESPN or Yahoo leagues yet. Everything else - your matchups, "
-            "scores, and the rest of the tools — works normally on this platform."
-            "</p></div></div>"
-        )
-        return render_page("BR Redzone", league_id, "redzone", body, platform, season)
+    # League-scope Redzone works on every platform: providers canonicalize their
+    # player ids to Sleeper ids, so the live player feed + Tank01 stat lines
+    # resolve regardless of provider. Cross-league "user" scope still needs a
+    # Sleeper viewer, but it falls back to league scope for other platforms.
     if request.args.get("demo") == "1":
         data = _redzone_demo_data(scope=scope)
     else:

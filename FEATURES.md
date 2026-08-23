@@ -57,7 +57,7 @@ A full breakdown of every feature on the site, organized by the main navigation.
   - **Top Scorers** — Highest scorers for the week.
   - **Power Rankings** — Weekly power ranking of teams.
   - **Strength of Schedule (SOS)** — Schedule difficulty breakdown.
-- **Redzone (live)** — Live red-zone / scoring tracker with league-wide and your-team scopes (Sleeper real-time feed; honest fallback on other platforms).
+- **Redzone (live)** — Live red-zone / scoring tracker with league-wide and your-team scopes. Works on every platform (Sleeper, ESPN, Yahoo, MFL) — providers canonicalize player ids to a common feed, and live stat lines come from Tank01 boxscores. Cross-league "your team" scope currently requires a Sleeper viewer and otherwise falls back to league scope.
 - **Streaming Options** — Matchup-based D/ST and K streaming targets from free agents, ranked by opponent Vegas implied totals; gated to positions your league actually starts.
 - **Weekly Recap** — AI-written recap of the week with a shareable OG share image.
 
