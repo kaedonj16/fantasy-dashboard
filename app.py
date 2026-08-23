@@ -29523,7 +29523,11 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         }
         _wc = _window_color_map.get(win_window, "#94a3b8")
 
-        pos_colors = {"QB": "#6366f1", "RB": "#10b981", "WR": "#3b82f6", "TE": "#f59e0b"}
+        # Canonical position palette — must match the JS POS_COLOR scheme used across
+        # rankings, the draft room and the trade calculator (QB=blue, RB=green,
+        # WR=amber, TE=purple). Kept in sync so a position reads as the same color
+        # everywhere; the previous chart-only scheme colored WR blue (QB's color).
+        pos_colors = {"QB": "#3b82f6", "RB": "#22c55e", "WR": "#f59e0b", "TE": "#8b5cf6"}
 
         def _player_row(p):
             age_span = f'<span class="sc-player-age">{p["age"]}</span>' if p["age"] else ""
@@ -30049,7 +30053,11 @@ def page_trade_card(share_id: str):
             result.append({"name": _fmt_pick(pid), "val": round(val, 1)})
         return result
 
-    pos_colors = {"QB": "#6366f1", "RB": "#10b981", "WR": "#3b82f6", "TE": "#f59e0b"}
+    # Canonical position palette — must match the JS POS_COLOR scheme used across
+    # rankings, the draft room and the trade calculator (QB=blue, RB=green,
+    # WR=amber, TE=purple). Kept in sync so a position reads as the same color
+    # everywhere; the previous chart-only scheme colored WR blue (QB's color).
+    pos_colors = {"QB": "#3b82f6", "RB": "#22c55e", "WR": "#f59e0b", "TE": "#8b5cf6"}
 
     side_a = _resolve_players(p.get("a", ""))
     side_b = _resolve_players(p.get("b", ""))
