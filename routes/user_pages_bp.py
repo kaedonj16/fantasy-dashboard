@@ -77,9 +77,9 @@ def page_portfolio():
         from_season = None
     nfl_state = get_nfl_state() or {}
     season = int(nfl_state.get("season") or datetime.now().year)
-    # Sleeper (live, current season, with a prior-season fallback) + the account's
-    # linked ESPN/Yahoo leagues, from the shared builder that also backs the
-    # league switcher (/api/my-leagues) so the two lists never diverge.
+    # Every league durably linked to the Google account, regardless of platform,
+    # plus live Sleeper discovery from linked identities. The shared builder also
+    # backs /api/my-leagues so the portfolio and switcher never diverge.
     from dashboard_services.accounts import resolve_my_leagues
     league_inputs, season = resolve_my_leagues(
         viewer_user_id, session.get("account_id"), season

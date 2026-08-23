@@ -554,14 +554,16 @@ def resolve_my_leagues(viewer_user_id, account_id, current_season):
     (/portfolio) and the league switcher (/api/my-leagues) so the two never show
     different leagues.
 
-    Live and current-season, matching what My Leagues has always shown:
+    Account-backed first, with live Sleeper enrichment:
 
-      * Sleeper leagues come from the signed-in viewer's *live* Sleeper
-        membership for ``current_season`` (falling back to the prior season only
-        when the current one is empty, e.g. right after the NFL-season rollover).
-        Prior-season and other-Sleeper-identity leagues are intentionally
-        excluded — a deleted or left league drops out because the fetch is live.
-      * ESPN / Yahoo leagues come from the account's linked ``user_leagues``.
+      * Every row saved to the Google account's ``user_leagues`` is included,
+        regardless of platform. The database is the durable source of truth for
+        a fresh Google login and remains available during provider outages.
+      * Sleeper memberships from every identity linked to the account (plus the
+        current viewer) are fetched live to discover newly joined leagues and
+        refresh saved metadata. Live results never remove saved account leagues.
+      * For ESPN, Yahoo, and any future provider, saved leagues do not depend on
+        a provider-specific browser session being present after Google login.
         ESPN league IDs persist across seasons, so a league linked in a prior
         year is bumped to the current season (it's the same league); Yahoo keys
         are season-specific and kept as stored.
@@ -573,44 +575,67 @@ def resolve_my_leagues(viewer_user_id, account_id, current_season):
     Yahoo entries are the stored account rows.
     """
     season = int(current_season or 0)
-    raw = []
+    sleeper_ids = []
     if viewer_user_id:
-        from dashboard_services.api import get_sleeper_user_leagues
-        try:
-            raw = get_sleeper_user_leagues(viewer_user_id, season) or []
-        except Exception:
-            raw = []
-        if not raw and season:
-            try:
-                prev = get_sleeper_user_leagues(viewer_user_id, season - 1) or []
-            except Exception:
-                prev = []
-            if prev:
-                raw, season = prev, season - 1
-
-    leagues = [dict(lg, platform="sleeper") for lg in raw if lg.get("league_id")]
-
+        sleeper_ids.append(str(viewer_user_id))
     if account_id:
-        for m in list_user_leagues(account_id):
-            plat = m.get("platform") or "sleeper"
-            if plat == "sleeper":
-                continue  # Sleeper comes from the live viewer fetch above
-            m_season = m.get("season") or season
-            # ESPN reuses the same league_id every year, so open the current one.
-            if plat == "espn" and season and m_season and int(m_season) < season:
-                m_season = season
-            leagues.append({
-                "league_id": m.get("league_id"),
-                "name": m.get("name"),
-                "season": m_season,
-                "platform": plat,
-                "team_id": m.get("team_id"),
-                "connection_status": m.get("connection_status"),
-                "last_synced_at": m.get("last_synced_at"),
-                "last_successful_sync_at": m.get("last_successful_sync_at"),
-            })
+        sleeper_ids.extend(list_account_platform_ids(account_id, "sleeper"))
+    # Preserve order while avoiding duplicate provider requests when the active
+    # viewer is also (normally) linked to the account.
+    sleeper_ids = list(dict.fromkeys(sleeper_ids))
 
-    return leagues, season
+    from dashboard_services.api import get_sleeper_user_leagues
+
+    def _fetch_sleeper_memberships(fetch_season):
+        memberships = []
+        for sleeper_id in sleeper_ids:
+            try:
+                memberships.extend(get_sleeper_user_leagues(sleeper_id, fetch_season) or [])
+            except Exception:
+                # One stale/unavailable identity must not hide the other linked
+                # identities or the account's non-Sleeper leagues.
+                continue
+        return memberships
+
+    raw = _fetch_sleeper_memberships(season) if season else []
+    if not raw and season:
+        previous = _fetch_sleeper_memberships(season - 1)
+        if previous:
+            raw, season = previous, season - 1
+
+    # Begin with the durable account associations across *all* platforms. A
+    # provider request is useful for enrichment, but must never be required for
+    # a Google account to see a league it has already connected.
+    leagues_by_key = {}
+    if account_id:
+        for saved in list_user_leagues(account_id):
+            platform = str(saved.get("platform") or "sleeper").lower()
+            league_id = str(saved.get("league_id") or "")
+            if not league_id:
+                continue
+            saved_season = saved.get("season") or season
+            if platform == "espn" and season and saved_season and int(saved_season) < season:
+                saved_season = season
+            leagues_by_key[(platform, league_id)] = dict(
+                saved, platform=platform, league_id=league_id, season=saved_season,
+            )
+
+    for lg in raw:
+        league_id = str(lg.get("league_id") or "")
+        if not league_id:
+            continue
+        key = ("sleeper", league_id)
+        # Retain account-only fields such as team_id while letting live provider
+        # metadata supply the current name, season, avatar, and league settings.
+        leagues_by_key[key] = {
+            **leagues_by_key.get(key, {}),
+            **lg,
+            "platform": "sleeper",
+            "league_id": league_id,
+            "season": int(lg.get("season") or season or 0),
+        }
+
+    return list(leagues_by_key.values()), season
 
 
 def resolve_account_viewer_for_league(
