@@ -24666,6 +24666,34 @@ button:disabled {
     border-color: var(--accent);
 }
 
+/* "or" divider between the team-username form and the Continue-with-Google
+   option, so account sign-in is available even from a league sign-in. */
+.signin-modal-or {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 16px 0;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-subtle);
+}
+
+.signin-modal-or::before,
+.signin-modal-or::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+}
+
+/* When Google is the only option (no-league branch), give it breathing room
+   above the Cancel row. */
+.signin-modal-box .google-continue-btn + .signin-modal-actions {
+    margin-top: 14px;
+}
+
 /* ── Generic skeleton shimmer ─────────────────────────────────────────────── */
 @keyframes skShimmer {
     0% {
