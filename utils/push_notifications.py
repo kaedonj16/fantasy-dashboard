@@ -1292,8 +1292,12 @@ def notify_watchlist_alerts():
     devices are reachable directly with no league context.
 
     Uses the same inputs as the /api/watchlist-alerts pull endpoint (a cached
-    7-day movers board + the live injury feed) so push and in-app agree. Deduped
-    per (user, player, alert-signature) via app_state so a still-injured or
+    7-day movers board + the live injury feed). A watchlist is cross-league, so
+    there's no single scoring format to key off (the pull endpoint uses the
+    format of whatever page you're on); we instead fire on the LARGER of the
+    player's 1QB and Superflex 7-day move, so a big swing in either format —
+    e.g. a QB that only really moves in SF — still alerts. Deduped per
+    (user, player, alert-signature) via app_state so a still-injured or
     still-down player isn't re-pushed every run.
     """
     try:
@@ -1322,17 +1326,23 @@ def notify_watchlist_alerts():
         if uk and pid:
             watched.setdefault(uk, {})[pid] = (r.get("name") or "").strip()
 
-    # 2. One cached movers board gives 7-day deltas for essentially every player.
+    # 2. 7-day deltas for essentially every player, taking the larger absolute
+    #    move across the 1QB and Superflex boards (format-agnostic watchlist).
     delta_map: dict = {}
-    try:
-        movers = get_top_movers(days=7, limit=2000) or {}
-        for p in (movers.get("risers", []) + movers.get("fallers", [])):
+    for _lt in ("1qb", "sf"):
+        try:
+            board = get_top_movers(days=7, limit=2000, league_type=_lt) or {}
+        except Exception:
+            logger.debug("[notify] watchlist movers lookup failed (%s)", _lt, exc_info=True)
+            continue
+        for p in (board.get("risers", []) + board.get("fallers", [])):
             pid = str(p.get("player_id", ""))
             d = p.get("delta")
-            if pid and d is not None:
-                delta_map[pid] = float(d)
-    except Exception:
-        logger.debug("[notify] watchlist movers lookup failed", exc_info=True)
+            if not pid or d is None:
+                continue
+            d = float(d)
+            if pid not in delta_map or abs(d) > abs(delta_map[pid]):
+                delta_map[pid] = d
 
     # 3. Live injury designations (normalize healthy states out).
     injuries: dict = {}
@@ -1351,7 +1361,8 @@ def notify_watchlist_alerts():
             with get_conn() as conn:
                 subs = conn.execute(
                     "SELECT DISTINCT ON (endpoint) endpoint, p256dh, auth, prefs "
-                    "FROM push_subscriptions WHERE owner_id = %s",
+                    "FROM push_subscriptions WHERE owner_id = %s "
+                    "ORDER BY endpoint, id DESC",
                     (user_key,),
                 ).fetchall()
         except Exception:

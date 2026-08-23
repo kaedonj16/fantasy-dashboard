@@ -13032,39 +13032,38 @@ def _redzone_collect(platform, league_id, season, week):
     # Attach per-player stat lines from Tank01 boxscores. Tank01 is keyed by
     # player name, and player_info now resolves names on every platform, so the
     # live stat lines work league-wide regardless of provider.
-    if True:
-        games_to_pids: dict = {}
-        for pid, info in player_info.items():
-            gid = info.get("game_id")
-            code = info.get("game_code")
-            if gid and code in ("1", "2"):
-                games_to_pids.setdefault(gid, []).append(pid)
-        for gid, pids in games_to_pids.items():
-            box = _redzone_boxscore(gid)
-            pstats = box.get("playerStats") or {}
-            tstats = box.get("teamStats") or {}
-            if isinstance(pstats, dict) and pstats:
-                name_map = {}
-                for _, ps in pstats.items():
-                    ln = (ps.get("longName") or "").lower()
-                    if ln:
-                        name_map[ln] = ps
-                for pid in pids:
-                    pi = player_info[pid]
-                    pos = pi.get("pos", "")
-                    if pos == "DEF":
-                        # Match team defense to boxscore teamStats
-                        team = pi.get("team", "")
-                        home = pi.get("home", "")
-                        away = pi.get("away", "")
-                        side = "home" if team == home else ("away" if team == away else None)
-                        if side and isinstance(tstats.get(side), dict):
-                            pi["stat_line"] = _rz_def_stat_line(tstats[side])
-                    else:
-                        full = (nfl_players.get(pid, {}).get("full_name") or "").lower()
-                        ps = name_map.get(full)
-                        if ps:
-                            pi["stat_line"] = _rz_stat_line_from_ps(ps)
+    games_to_pids: dict = {}
+    for pid, info in player_info.items():
+        gid = info.get("game_id")
+        code = info.get("game_code")
+        if gid and code in ("1", "2"):
+            games_to_pids.setdefault(gid, []).append(pid)
+    for gid, pids in games_to_pids.items():
+        box = _redzone_boxscore(gid)
+        pstats = box.get("playerStats") or {}
+        tstats = box.get("teamStats") or {}
+        if isinstance(pstats, dict) and pstats:
+            name_map = {}
+            for _, ps in pstats.items():
+                ln = (ps.get("longName") or "").lower()
+                if ln:
+                    name_map[ln] = ps
+            for pid in pids:
+                pi = player_info[pid]
+                pos = pi.get("pos", "")
+                if pos == "DEF":
+                    # Match team defense to boxscore teamStats
+                    team = pi.get("team", "")
+                    home = pi.get("home", "")
+                    away = pi.get("away", "")
+                    side = "home" if team == home else ("away" if team == away else None)
+                    if side and isinstance(tstats.get(side), dict):
+                        pi["stat_line"] = _rz_def_stat_line(tstats[side])
+                else:
+                    full = (nfl_players.get(pid, {}).get("full_name") or "").lower()
+                    ps = name_map.get(full)
+                    if ps:
+                        pi["stat_line"] = _rz_stat_line_from_ps(ps)
 
     # Projected points per matchup (PPR, cached 15 min)
     proj_pts: dict = {}

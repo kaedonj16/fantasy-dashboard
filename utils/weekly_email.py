@@ -84,6 +84,14 @@ def unsubscribe(account_id: int) -> bool:
 def _recipients() -> list[dict]:
     """Accounts with an email + a resolvable most-recent league, not opted out."""
     from dashboard_services.db import get_conn
+    # The recipient query reads first_name / last_active_* / account_league_visits,
+    # all created by the accounts module. Ensure that schema exists first so a
+    # cold process doesn't fail the SELECT and silently email no one.
+    try:
+        from dashboard_services.accounts import init_accounts_tables
+        init_accounts_tables()
+    except Exception:
+        logger.debug("[weekly-email] init_accounts_tables unavailable", exc_info=True)
     try:
         with get_conn() as conn:
             _ensure_columns(conn)
@@ -125,14 +133,26 @@ def _player_name(pid: str, pidx: dict) -> str:
             or str(pid))
 
 
-def build_digest(platform: str, league_id: str, season: int, roster_id: str,
-                 first_name: str | None = None) -> dict | None:
-    """Assemble one recipient's digest. Returns {subject, html} or None if there
-    isn't enough data to be worth sending."""
+def _load_movers_and_index() -> tuple[dict, dict]:
+    """The 7-day movers board and the players index are recipient-independent, so
+    the send loop loads them once and passes them into every build_digest."""
     try:
-        from dashboard_services.platform_api import get_league, get_rosters, get_users
         from dashboard_services.player_value_history import get_top_movers
         from utils.utils import load_players_index
+        return (get_top_movers(days=7, limit=2000) or {}), (load_players_index() or {})
+    except Exception:
+        return {}, {}
+
+
+def build_digest(platform: str, league_id: str, season: int, roster_id: str,
+                 first_name: str | None = None,
+                 movers: dict | None = None, pidx: dict | None = None) -> dict | None:
+    """Assemble one recipient's digest. Returns {subject, html} or None if there
+    isn't enough data to be worth sending. ``movers``/``pidx`` are the shared,
+    recipient-independent lookups; when omitted they're loaded on demand (so the
+    function stays usable standalone), but the send loop passes them in once."""
+    try:
+        from dashboard_services.platform_api import get_league, get_rosters, get_users
     except Exception:
         return None
 
@@ -174,12 +194,10 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
     wins, losses, _pts = _rec(mine) if mine else (0, 0, 0.0)
     my_pids = {str(p) for p in (mine.get("players") or [])}
 
-    # 7-day value movers, filtered to this roster.
-    try:
-        movers = get_top_movers(days=7, limit=2000) or {}
-    except Exception:
-        movers = {}
-    pidx = load_players_index() or {}
+    # 7-day value movers + players index (shared across recipients; loaded here
+    # only when a standalone caller didn't pass them in).
+    if movers is None or pidx is None:
+        movers, pidx = _load_movers_and_index()
 
     def _fmt(items, want_positive: bool, mine_only: bool, n: int = 3):
         out = []
@@ -300,6 +318,9 @@ def send_weekly_digests(limit: int | None = None, dry_run: bool = False) -> dict
     if limit:
         recips = recips[:limit]
 
+    # Load the recipient-independent lookups once for the whole run.
+    movers, pidx = _load_movers_and_index()
+
     sent = skipped = failed = 0
     from dashboard_services.db import get_conn
     for r in recips:
@@ -328,6 +349,7 @@ def send_weekly_digests(limit: int | None = None, dry_run: bool = False) -> dict
             int(r.get("season") or datetime.now().year),
             str(r.get("roster_id") or ""),
             first_name=r.get("first_name"),
+            movers=movers, pidx=pidx,
         )
         if not digest:
             skipped += 1
