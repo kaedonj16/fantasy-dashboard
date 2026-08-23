@@ -3393,6 +3393,16 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     }
     _plat_key = (platform or "").lower()
     _next_path = request.path + ("?" + request.query_string.decode() if request.query_string else "")
+    from urllib.parse import quote
+    _g_next = quote(_next_path, safe="")
+    # Continue-with-Google is offered in every state: an account is the platform-
+    # independent sign-in, so a user whose league isn't connected through Google
+    # can still create/sign into their account from here rather than being forced
+    # down the team-username path.
+    _google_btn = (
+        f"<a class='google-continue-btn' href='/auth/google?intent=login&amp;next={_g_next}'>"
+        f"<span class='google-button-title'>Continue with Google</span></a>"
+    )
     if league_id and _plat_key in _signin_copy:
         _signin_sub, _signin_ph = _signin_copy[_plat_key]
         signin_modal = (
@@ -3412,6 +3422,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             f"                onclick='document.getElementById(\"signinModal\").style.display=\"none\"'>Cancel</button>"
             f"      </div>"
             f"    </form>"
+            f"    <div class='signin-modal-or'>or</div>"
+            f"    {_google_btn}"
             f"  </div>"
             f"</div>"
         )
@@ -3420,15 +3432,12 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         # platform without username sign-in): a team-name form can't do anything,
         # so offer account sign-in instead of asking for a username that goes
         # nowhere. This is what a logged-out user actually wants from "Sign In".
-        from urllib.parse import quote
-        _g_next = quote(_next_path, safe="")
         signin_modal = (
             f"<div id='signinModal' class='signin-modal-overlay'>"
             f"  <div class='signin-modal-box'>"
             f"    <h3 class='signin-modal-title'>Sign in</h3>"
             f"    <p class='signin-modal-sub'>Sign in to access your saved leagues and personalized features.</p>"
-            f"    <a class='google-continue-btn' href='/auth/google?intent=login&amp;next={_g_next}'>"
-            f"      <span class='google-button-title'>Continue with Google</span></a>"
+            f"    {_google_btn}"
             f"    <div class='signin-modal-actions'>"
             f"      <button class='signin-modal-cancel' type='button'"
             f"              onclick='document.getElementById(\"signinModal\").style.display=\"none\"'>Cancel</button>"
