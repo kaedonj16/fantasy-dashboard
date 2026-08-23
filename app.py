@@ -3380,29 +3380,62 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         "</div>"
     )
 
-    _is_espn = (platform == "espn")
-    _signin_sub = "Enter your ESPN team name to restore personalized features." if _is_espn else "Enter your Sleeper username to restore personalized features."
-    _signin_ph = "Your ESPN team name" if _is_espn else "Sleeper username"
-    signin_modal = (
-        f"<div id='signinModal' class='signin-modal-overlay'>"
-        f"  <div class='signin-modal-box'>"
-        f"    <h3 class='signin-modal-title'>Sign in to your team</h3>"
-        f"    <p class='signin-modal-sub'>{_signin_sub}</p>"
-        f"    <form method='POST' action='/set-viewer'>"
-        f"      <input type='hidden' name='platform' value='{platform}'>"
-        f"      <input type='hidden' name='season' value='{season}'>"
-        f"      <input type='hidden' name='league_id' value='{league_id}'>"
-        f"      <input type='hidden' name='next' value='{request.path + ('?' + request.query_string.decode() if request.query_string else '')}'>"
-        f"      <input class='signin-modal-input' type='text' name='username' aria-label='Username or team name' placeholder='{_signin_ph}' autocomplete='username' autofocus>"
-        f"      <div class='signin-modal-actions'>"
-        f"        <button class='signin-modal-submit' type='submit'>Sign In</button>"
-        f"        <button class='signin-modal-cancel' type='button'"
-        f"                onclick='document.getElementById(\"signinModal\").style.display=\"none\"'>Cancel</button>"
-        f"      </div>"
-        f"    </form>"
-        f"  </div>"
-        f"</div>"
-    )
+    # Per-platform copy for the "sign in to your team" username form. The form
+    # resolves the entered name against THIS league's users/rosters (see
+    # /set-viewer), so the prompt must name the right platform — earlier it only
+    # split ESPN vs. "Sleeper username", mislabeling Yahoo and MFL leagues as
+    # Sleeper and asking a non-Sleeper user for a Sleeper username.
+    _signin_copy = {
+        "espn":    ("Enter your ESPN team name to restore personalized features.", "Your ESPN team name"),
+        "yahoo":   ("Enter your Yahoo team name to restore personalized features.", "Your Yahoo team name"),
+        "mfl":     ("Enter your MFL team or manager name to restore personalized features.", "Your MFL team name"),
+        "sleeper": ("Enter your Sleeper username to restore personalized features.", "Sleeper username"),
+    }
+    _plat_key = (platform or "").lower()
+    _next_path = request.path + ("?" + request.query_string.decode() if request.query_string else "")
+    if league_id and _plat_key in _signin_copy:
+        _signin_sub, _signin_ph = _signin_copy[_plat_key]
+        signin_modal = (
+            f"<div id='signinModal' class='signin-modal-overlay'>"
+            f"  <div class='signin-modal-box'>"
+            f"    <h3 class='signin-modal-title'>Sign in to your team</h3>"
+            f"    <p class='signin-modal-sub'>{_signin_sub}</p>"
+            f"    <form method='POST' action='/set-viewer'>"
+            f"      <input type='hidden' name='platform' value='{platform}'>"
+            f"      <input type='hidden' name='season' value='{season}'>"
+            f"      <input type='hidden' name='league_id' value='{league_id}'>"
+            f"      <input type='hidden' name='next' value='{_next_path}'>"
+            f"      <input class='signin-modal-input' type='text' name='username' aria-label='Username or team name' placeholder='{_signin_ph}' autocomplete='username' autofocus>"
+            f"      <div class='signin-modal-actions'>"
+            f"        <button class='signin-modal-submit' type='submit'>Sign In</button>"
+            f"        <button class='signin-modal-cancel' type='button'"
+            f"                onclick='document.getElementById(\"signinModal\").style.display=\"none\"'>Cancel</button>"
+            f"      </div>"
+            f"    </form>"
+            f"  </div>"
+            f"</div>"
+        )
+    else:
+        # No league context to resolve a team against (a global page, or a
+        # platform without username sign-in): a team-name form can't do anything,
+        # so offer account sign-in instead of asking for a username that goes
+        # nowhere. This is what a logged-out user actually wants from "Sign In".
+        from urllib.parse import quote
+        _g_next = quote(_next_path, safe="")
+        signin_modal = (
+            f"<div id='signinModal' class='signin-modal-overlay'>"
+            f"  <div class='signin-modal-box'>"
+            f"    <h3 class='signin-modal-title'>Sign in</h3>"
+            f"    <p class='signin-modal-sub'>Sign in to access your saved leagues and personalized features.</p>"
+            f"    <a class='google-continue-btn' href='/auth/google?intent=login&amp;next={_g_next}'>"
+            f"      <span class='google-button-title'>Continue with Google</span></a>"
+            f"    <div class='signin-modal-actions'>"
+            f"      <button class='signin-modal-cancel' type='button'"
+            f"              onclick='document.getElementById(\"signinModal\").style.display=\"none\"'>Cancel</button>"
+            f"    </div>"
+            f"  </div>"
+            f"</div>"
+        )
 
     # On phones the mobile dock (_mobile_nav) is the primary nav, so this top bar
     # is slimmed to the logo on the dashboard and hidden on every other league

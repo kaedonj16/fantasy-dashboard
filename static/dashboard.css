@@ -10428,6 +10428,7 @@ a.signed-home-league:hover{background:rgba(255,255,255,.1);border-color:rgba(255
    (Platform pills and the dismiss button style themselves.) */
 #lookupBtn,
 #espnSubmitBtn,
+#mflSubmitBtn,
 #yahooConnectBtn,
 #generateWrap button {
     margin-top: 2px;
@@ -10446,6 +10447,7 @@ a.signed-home-league:hover{background:rgba(255,255,255,.1);border-color:rgba(255
 
 #lookupBtn:hover,
 #espnSubmitBtn:hover,
+#mflSubmitBtn:hover,
 #yahooConnectBtn:hover,
 #generateWrap button:hover {
     filter: brightness(1.08);
@@ -10454,6 +10456,7 @@ a.signed-home-league:hover{background:rgba(255,255,255,.1);border-color:rgba(255
 
 #lookupBtn:active,
 #espnSubmitBtn:active,
+#mflSubmitBtn:active,
 #yahooConnectBtn:active,
 #generateWrap button:active {
     transform: translateY(1px);
@@ -10464,6 +10467,7 @@ a.signed-home-league:hover{background:rgba(255,255,255,.1);border-color:rgba(255
 /* JS disables these while a lookup is in flight ("Validating…"). */
 #lookupBtn:disabled,
 #espnSubmitBtn:disabled,
+#mflSubmitBtn:disabled,
 #yahooConnectBtn:disabled {
     opacity: 0.6;
     cursor: default;
