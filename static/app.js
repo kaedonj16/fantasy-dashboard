@@ -1581,6 +1581,26 @@ window.emptyState = emptyState;
   }
 })();
 
+// ── Promo eligibility (install / notification banners) ────────────────────────
+// A brand-new visitor shouldn't be nagged to install the app or enable push the
+// moment they land. Record when we first saw this device and only surface those
+// banners on a later visit (>= 1 day after first seen), so they arrive once the
+// user is actually invested rather than on first login.
+(function () {
+  try {
+    if (!localStorage.getItem('br-first-seen')) {
+      localStorage.setItem('br-first-seen', String(Date.now()));
+    }
+  } catch (_) {}
+})();
+window._brPromoEligible = function () {
+  try {
+    var t = parseInt(localStorage.getItem('br-first-seen') || '0', 10);
+    if (!t) return false;   // couldn't record (e.g. private mode) — don't nag
+    return (Date.now() - t) >= 24 * 60 * 60 * 1000;  // 1 day after first seen
+  } catch (_) { return false; }
+};
+
 // ── PWA install prompt ────────────────────────────────────────────────────────
 (function () {
   var deferredPrompt = null;
@@ -1597,12 +1617,16 @@ window.emptyState = emptyState;
     deferredPrompt = e;
     // Don't show if already dismissed or installed
     if (localStorage.getItem(DISMISS_KEY)) return;
+    // Not on a visitor's first session — only on a later visit (see above). The
+    // event re-fires on each load, so a skipped session just defers to the next.
+    if (!window._brPromoEligible || !window._brPromoEligible()) return;
     // Delay slightly so it doesn't interrupt page load
     setTimeout(showInstallBanner, 8000);
   });
 
   // iOS: show Add-to-Home-Screen instructions after the same delay
-  if (isIOS && !isStandalone && !localStorage.getItem(DISMISS_KEY)) {
+  if (isIOS && !isStandalone && !localStorage.getItem(DISMISS_KEY) &&
+      window._brPromoEligible && window._brPromoEligible()) {
     setTimeout(showIOSBanner, 8000);
   }
 
@@ -2041,14 +2065,18 @@ window.emptyState = emptyState;
         subscribePush().catch(function () {});
         return;
       }
-      // Permission is 'default' and no active subscription — show banner once
-      if (!asked) {
+      // Permission is 'default' and no active subscription — show banner once,
+      // and never on a visitor's first session (only a later visit; see
+      // _brPromoEligible). Leaving `asked` untouched here means the prompt simply
+      // waits for the next eligible visit rather than being consumed now.
+      if (!asked && window._brPromoEligible && window._brPromoEligible()) {
         setTimeout(showNotifBanner, 45000);
       }
     });
   }).catch(function () {
     // Service worker unavailable — fall back to simple check
-    if (!asked && Notification.permission === 'default') {
+    if (!asked && Notification.permission === 'default' &&
+        window._brPromoEligible && window._brPromoEligible()) {
       setTimeout(showNotifBanner, 45000);
     }
   });

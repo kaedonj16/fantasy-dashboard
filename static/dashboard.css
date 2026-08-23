@@ -25041,6 +25041,18 @@ button:disabled {
     transform: translateX(-50%) translateY(0);
 }
 
+/* On phones the fixed bottom dock (.br-mnav, 56px + safe-area) owns the bottom
+   edge, so lift both promo banners above it instead of letting the dock cover
+   them. The push banner stacks above the install banner just like on desktop. */
+@media (max-width: 768px) {
+    #pwa-install-banner {
+        bottom: calc(56px + env(safe-area-inset-bottom) + 14px);
+    }
+    #push-notif-banner {
+        bottom: calc(56px + env(safe-area-inset-bottom) + 14px + 64px);
+    }
+}
+
 .push-bell-icon {
     font-size: 28px;
     line-height: 1;
