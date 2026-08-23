@@ -3708,6 +3708,16 @@ def _discord_banner() -> str:
   to   {{ opacity:1; transform:translateY(0); }}
 }}
 #discordBanner {{ animation: discordSlideUp .3s ease forwards; }}
+/* On phones the fixed bottom dock (.br-mnav, 56px + safe-area) owns the bottom
+   edge, so lift the banner above it instead of letting the dock cover it. Also
+   pin it to both side gutters so the 300px card never runs off a narrow screen.
+   These override inline styles on the element, so they must be !important. */
+@media (max-width: 768px) {{
+  #discordBanner {{
+    left:12px !important; right:12px !important; width:auto !important;
+    bottom:calc(56px + env(safe-area-inset-bottom) + 14px) !important;
+  }}
+}}
 </style>
 <div id="discordBanner" style="
      display:none;
