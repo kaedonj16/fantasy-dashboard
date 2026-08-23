@@ -254,3 +254,58 @@ def test_roster_economics_respect_format_and_flex():
     assert out["selected"] == "best"
     assert out["availability"][0] >= 50 and out["availability"][1] < 10
     assert out["limits"] == [3, 4, 5]
+
+
+def _run_need_cases(expression):
+    script = (
+        "global.self=global; global.BRPickScore=require(%s); const C=require(%s);"
+        "process.stdout.write(JSON.stringify(%s));"
+        % (json.dumps(str(PICK_JS)), json.dumps(str(CORE_JS)), expression)
+    )
+    res = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=20)
+    assert res.returncode == 0, res.stderr
+    return json.loads(res.stdout)
+
+
+def test_position_need_utility_tracks_actual_lineup_shape():
+    out = _run_need_cases("""(() => {
+      const counts={QB:0,RB:0,WR:0,TE:0};
+      const u=(p,rc,o={})=>C.positionNeedUtility(p,counts,rc,Object.assign({draftType:'redraft'},o));
+      const twoWr={QB:1,RB:2,WR:2,TE:1,FLEX:1};
+      const threeWr={QB:1,RB:2,WR:3,TE:1,FLEX:1};
+      const twoFlex={QB:1,RB:2,WR:2,TE:1,FLEX:2};
+      return {twoWr:u('WR',twoWr),threeWr:u('WR',threeWr),oneQb:u('QB',twoWr),
+        superflex:u('QB',Object.assign({},twoWr,{SF:1}),{sf:true}),
+        oneFlex:u('WR',twoWr),twoFlex:u('WR',twoFlex),
+        teNormal:u('TE',twoFlex,{tep:0}),tePremium:u('TE',twoFlex,{tep:1})};
+    })()""")
+
+    assert out["threeWr"] > out["twoWr"] > out["oneQb"]
+    assert out["superflex"] > out["oneQb"]
+    assert out["twoFlex"] > out["oneFlex"]
+    assert out["tePremium"] > out["teNormal"]
+
+
+def test_live_decision_pressure_balances_wr_need_and_qb_timing():
+    out = _run_need_cases("""(() => {
+      const rc={QB:1,RB:2,WR:3,TE:1,FLEX:1,BN:7};
+      const counts={QB:0,RB:3,WR:1,TE:0};
+      const util=p=>C.positionNeedUtility(p,counts,rc,{draftType:'redraft'});
+      const score=(base,p,waitLoss,waitPenalty)=>C.decisionScore({
+        base:base,utility:util(p),waitLoss:waitLoss,waitPenalty:waitPenalty});
+      return {utility:{qb:util('QB'),wr:util('WR'),te:util('TE'),rb:util('RB')},
+        balanced:{dj:score(88,'WR',5,1),jayden:score(89,'QB',7,3),caleb:score(87,'QB',3,7),
+          otherWr:score(84,'WR',3,2),te:score(85,'TE',4,3),rb4:score(87,'RB',4,3)},
+        urgentJayden:{dj:score(88,'WR',4,2),jayden:score(92,'QB',18,0)}};
+    })()""")
+
+    # Two missing dedicated WR slots create more pressure than the lone QB slot;
+    # a good WR stays near the top and ordinary RB4 depth does not jump starters.
+    assert out["utility"]["wr"] > out["utility"]["qb"]
+    assert out["balanced"]["dj"] > out["balanced"]["jayden"]
+    assert out["balanced"]["dj"] > out["balanced"]["caleb"]
+    assert out["balanced"]["dj"] > out["balanced"]["rb4"]
+    assert out["balanced"]["jayden"] > out["balanced"]["caleb"]
+    assert out["balanced"]["dj"] >= out["balanced"]["otherWr"]
+    # Stronger base value and a genuine availability cliff can still put QB1 first.
+    assert out["urgentJayden"]["jayden"] > out["urgentJayden"]["dj"]

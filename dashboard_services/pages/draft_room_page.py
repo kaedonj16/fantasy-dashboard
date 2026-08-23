@@ -418,10 +418,10 @@ _DRAFT_ROOM_HTML = r"""
   </div>
 
   <!-- In-draft cheat sheet (chrome-less iframe embed) -->
-  <div class="dr-cheat-overlay" id="drCheatSheet" style="display:none;">
+  <div class="dr-cheat-overlay" id="drCheatSheet" role="dialog" aria-modal="true" aria-labelledby="drCheatTitle" style="display:none;">
     <div class="dr-cheat-card">
       <div class="dr-cheat-head">
-        <span class="dr-cheat-title">Cheat Sheet</span>
+        <span class="dr-cheat-title" id="drCheatTitle">Cheat Sheet</span>
         <a class="dr-cheat-pop" id="drCheatPop" href="/draft/cheat-sheet" target="_blank" rel="noopener" title="Open in a new tab">Open in tab &#8599;</a>
         <button class="dr-cheat-close" id="drCheatClose" aria-label="Close">&times;</button>
       </div>
@@ -747,11 +747,11 @@ _DRAFT_ROOM_HTML = r"""
   .dr-prev-score-reason { font-size: 12px; font-weight: 600; color: var(--text-muted); margin-top: 6px; }
   .dr-empty-note { padding: 22px 14px; font-size: 12px; color: var(--text-muted); text-align: center; }
   /* In-draft cheat sheet overlay (iframes the chrome-less cheat sheet). */
-  .dr-cheat-overlay { position: fixed; inset: 0; z-index: 9998; background: rgba(0,0,0,.55);
+  .dr-cheat-overlay { position: fixed; inset: 0; z-index: 12000; background: rgba(0,0,0,.55);
     display: flex; align-items: center; justify-content: center; padding: 18px; }
   .dr-cheat-card { width: min(1180px, 96vw); height: min(90vh, 920px); background: var(--card);
     border: 1px solid var(--border); border-radius: 14px; display: flex; flex-direction: column;
-    overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.4); }
+    overflow: hidden; min-width: 0; box-shadow: 0 20px 60px rgba(0,0,0,.4); }
   .dr-cheat-head { display: flex; align-items: center; gap: 12px; padding: 10px 14px;
     border-bottom: 1px solid var(--border); flex: 0 0 auto; }
   .dr-cheat-title { font-weight: 800; font-size: 15px; color: var(--text); }
@@ -759,7 +759,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-cheat-pop:hover { text-decoration: underline; }
   .dr-cheat-close { background: none; border: 0; font-size: 24px; line-height: 1; color: var(--text-muted); cursor: pointer; padding: 0 4px; }
   .dr-cheat-close:hover { color: var(--text); }
-  .dr-cheat-frame { flex: 1 1 auto; width: 100%; border: 0; background: var(--bg); }
+  .dr-cheat-frame { display: block; flex: 1 1 auto; width: 100%; min-width: 0; border: 0; background: var(--bg); }
   /* tiers */
   .dr-tier { font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 12px;
     background: rgba(127,127,127,.18); color: var(--text-muted); flex-shrink: 0; }
@@ -911,6 +911,17 @@ _DRAFT_ROOM_HTML = r"""
   .dr-prev-avail-pn { font-size: 10px; font-weight: 600; color: var(--text-muted); }
   .dr-loading { display: flex; align-items: center; gap: 10px; padding: 24px; color: var(--text-muted); font-size: 13px; justify-content: center; }
   @media (max-width: 768px) {
+    /* Treat the in-draft sheet as a real mobile screen. A centered desktop modal
+       leaves too little room for the controls and can sit behind the app dock. */
+    body.dr-cheat-open { overflow: hidden; }
+    .dr-cheat-overlay { padding: 0; align-items: stretch; background: var(--card); }
+    .dr-cheat-card { width: 100%; height: 100vh; height: 100dvh; max-width: none;
+      border: 0; border-radius: 0; box-shadow: none; }
+    .dr-cheat-head { min-height: 54px; padding: max(10px, env(safe-area-inset-top))
+      max(12px, env(safe-area-inset-right)) 10px max(12px, env(safe-area-inset-left)); }
+    .dr-cheat-title { font-size: 16px; }
+    .dr-cheat-pop { font-size: 13px; }
+    .dr-cheat-close { min-width: 38px; min-height: 38px; font-size: 28px; }
     /* The global mobile tab bar (56px, fixed at the bottom) overlaps the draft
        sheet. Pad the scrollable list so its content always clears the bar; when
        the sheet is dragged to full, hide the bar so the sheet uses the whole

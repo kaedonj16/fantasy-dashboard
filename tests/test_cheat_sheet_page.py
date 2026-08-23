@@ -146,3 +146,17 @@ def test_in_draft_cheat_sheet_scrolls_once_to_first_available_player():
     assert "scroller.scrollTop = Math.max(0, row.offsetTop - 4)" in sheet
     assert "scrollToFirstAvailable = false" in sheet
     assert "x.rk = i + 1" in sheet
+
+
+def test_in_draft_cheat_sheet_is_a_full_screen_mobile_dialog():
+    from dashboard_services.pages.draft_room_page import build_draft_room_body
+
+    body = build_draft_room_body(None, None, None)
+    script = (Path(__file__).parents[1] / "static" / "draft_room.js").read_text()
+
+    assert 'role="dialog" aria-modal="true" aria-labelledby="drCheatTitle"' in body
+    assert ".dr-cheat-overlay { padding: 0; align-items: stretch;" in body
+    assert "width: 100%; height: 100vh; height: 100dvh;" in body
+    assert "body.dr-cheat-open { overflow: hidden; }" in body
+    assert "document.body.classList.add('dr-cheat-open')" in script
+    assert "document.body.classList.remove('dr-cheat-open')" in script
