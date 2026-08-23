@@ -23,6 +23,33 @@ function _deferInit(fn) {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn);
   else setTimeout(fn, 0);
 }
+
+// ── Canonical HTML escaper ────────────────────────────────────────────────────
+// Single source of truth for escaping dynamic values interpolated into HTML
+// strings (innerHTML / template literals). Escapes the full set — & < > " ' —
+// so it is safe in both element-text and quoted-attribute contexts. User-set
+// fields (Sleeper/ESPN team & owner names) MUST pass through this; hoisted so it
+// is available to every call site regardless of source order. Prefer setting
+// .textContent where practical; use this when building HTML strings.
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+// ── Canonical position palette ────────────────────────────────────────────────
+// Single source of truth for position → color across the app (rankings, trade
+// calculator, playoff table, etc.). Previously this map was copy-pasted a dozen
+// times and had drifted (TE showed up as three different purples/ambers). Defined
+// before the @public-js:core-end marker so the generated public.js bundle picks it
+// up too. Keep in sync with the Python-side pos_colors maps in app.py and the
+// POS_COLOR map in draft_room.js.
+var POS_COLORS = {
+  QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6",
+  K: "#c92c68", DEF: "#475569", FLEX: "#14b8a6", SF: "#a78bfa",
+  PICK: "#6366f1", BN: "#64748b",
+};
+function posColorOf(pos) { return POS_COLORS[pos] || "var(--accent)"; }
 var __featuresState = 0;   // 0=not loaded, 1=loading, 2=loaded
 var __featuresCbs = [];
 function ensureFeatures(cb) {
@@ -1153,9 +1180,7 @@ var BR_STATE_ICONS = {
   lock:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>',
   retry:  '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.6 8a5.6 5.6 0 1 1-1.7-4"/><path d="M13.9 2.4V5.2h-2.8"/></svg>'
 };
-function _brStateEsc(s) {
-  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
+function _brStateEsc(s) { return escapeHtml(s); }
 
 /**
  * Shared empty/error state. One look for "nothing here" and "couldn't load"
@@ -2893,6 +2918,7 @@ function initPlayoffOdds(root = document) {
             return;
           }
           panel.innerHTML = _renderPlayoffOdds(data);
+          normalizeClickableAccessibility(panel);
           fadeInCard(panel);
           // Layer the exact clinch/elimination outlook over the odds table when
           // we're in the final-weeks window (the scenarios endpoint returns
@@ -3007,9 +3033,10 @@ function _renderPlayoffOdds(data) {
         : `<span class="rank-move down" title="Playoff odds down ${_amt} pts recently">&#9660;${_amt}%</span>`;
     }
 
-    const _ridAttr = t.roster_id != null ? ` data-roster-id="${t.roster_id}" data-team-name="${t.team_name}"` : '';
+    const _teamNameSafe = escapeHtml(t.team_name);
+    const _ridAttr = t.roster_id != null ? ` data-roster-id="${t.roster_id}" data-team-name="${_teamNameSafe}"` : '';
     return `<tr class="team-clickable"${_ridAttr}>
-      <td class="po-team">${t.team_name}${mvHtml}</td>
+      <td class="po-team">${_teamNameSafe}${mvHtml}</td>
       <td class="po-rec">${rec}</td>
       <td class="po-odds">${oddsCell}</td>
       ${byeCell}${topCell}${projCell}${simAvgCell}
@@ -5642,17 +5669,17 @@ window.initTradePage = function initTradePage(root = document) {
       const allGrouped = data.all_positions || {};
       const isBalanced = !needPositions.length;
 
-      const posColor = { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6" };
+      const posColor = POS_COLORS;
 
       // Each player row includes an inline hidden panel for package ideas
       function renderPlayerRow(t, pos) {
         const col      = posColor[pos] || "var(--text-muted)";
-        const safeName = (t.name || "").replace(/&/g,"&amp;").replace(/"/g,"&quot;");
-        const safePid  = (t.player_id || "").replace(/&/g,"&amp;").replace(/"/g,"&quot;");
+        const safeName = escapeHtml(t.name);
+        const safePid  = escapeHtml(t.player_id);
         return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);">
           <div style="min-width:0;flex:1;">
-            <div style="font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;"><span class="player-clickable" data-player-id="${safePid}" data-player-name="${safeName}">${t.name}</span></div>
-            <div style="font-size:11px;color:var(--text-muted);">${t.owner_team}</div>
+            <div style="font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;"><span class="player-clickable" data-player-id="${safePid}" data-player-name="${safeName}">${safeName}</span></div>
+            <div style="font-size:11px;color:var(--text-muted);">${escapeHtml(t.owner_team)}</div>
           </div>
           <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
             <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${col}20;color:${col};">${t.pos_rank_label || t.position}</span>
@@ -5692,6 +5719,7 @@ window.initTradePage = function initTradePage(root = document) {
       }
 
       body.innerHTML = html;
+      normalizeClickableAccessibility(body);
 
       // Delegate Get clicks - navigate to Suggestions tab with this player pre-loaded
       body.addEventListener("click", function(e) {
@@ -5925,7 +5953,7 @@ window.initTradePage = function initTradePage(root = document) {
     }
 
     function posColor(pos) {
-      return { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6", PICK: "#6366f1" }[pos] || "var(--accent)";
+      return posColorOf(pos);
     }
 
     function renderDropdown(matches) {
@@ -6838,15 +6866,15 @@ window.initTradePage = function initTradePage(root = document) {
         const grouped     = data.by_position || {};
         const allGrouped  = data.all_positions || {};
         const isBalanced  = !Object.keys(grouped).length;
-        const posColor2   = { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6" };
+        const posColor2   = POS_COLORS;
 
         function renderRow(t, pos) {
           const col      = posColor2[pos] || "var(--accent)";
-          const safeName = (t.name || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;");
-          const safePid  = (t.player_id || "");
+          const safeName = escapeHtml(t.name);
+          const safePid  = escapeHtml(t.player_id);
           return `<div class="otc-sugg-target-row">
             <span class="otc-sugg-target-pos" style="background:${col}20;color:${col};">${pos}</span>
-            <span class="otc-sugg-target-name">${t.name || ""}</span>
+            <span class="otc-sugg-target-name">${safeName}</span>
             <button class="sugg-target-get-btn otc-sugg-target-btn"
               data-pid="${safePid}" data-name="${safeName}">
               Find packages
@@ -6867,6 +6895,7 @@ window.initTradePage = function initTradePage(root = document) {
         }
 
         container.innerHTML = html || '<div class="otc-movers-empty">No targets found.</div>';
+        normalizeClickableAccessibility(container);
         // Click handling is delegated once via bindSuggTargetsClick() below.
       } catch (e) {
         container.innerHTML = '<div class="otc-movers-empty">Could not load targets.</div>';
@@ -7206,7 +7235,7 @@ window.initTradePage = function initTradePage(root = document) {
     // ── Strategy: player impact table ─────────────────────────────────────────
     function _renderImpactTable(data) {
       if (!strategyImpact) return;
-      const posColor = { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6" };
+      const posColor = POS_COLORS;
       const esc = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
       const isSellArch = _activeArchetype === "distribute" || _activeArchetype === "rebuilding";
 
@@ -7276,7 +7305,7 @@ window.initTradePage = function initTradePage(root = document) {
     function _renderStrategyCards(data, filterPid) {
       if (!strategyCards) return;
       const esc      = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
-      const posColor = { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6" };
+      const posColor = POS_COLORS;
       const archColor = { contending: "#10b981", rebuilding: "#3b82f6", consolidate: "#f59e0b", distribute: "#8b5cf6" };
       const archetype = _activeArchetype;
 
@@ -8795,6 +8824,7 @@ window.initPageRoot = function initPageRoot(root = document) {
   initPlayoffOdds(root);
   initTeamTabs(root);
   initStandingsSort(root);
+  normalizeClickableAccessibility(root);
 
   // Enhance native <select>s (e.g. the player-rankings "Sort by" / "ADP source")
   // into the custom dropdown. initCustomSelects only auto-ran on DOMContentLoaded,
@@ -11406,7 +11436,7 @@ function openPlayerModal(playerId, playerName, opts) {
       const nameEl = document.querySelector('.player-modal-name');
       if (!nameEl) return;
       nameEl.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;';
-      nameEl.innerHTML = `<span>${playerName || 'Unknown Player'}</span>${badges}`;
+      nameEl.innerHTML = `<span>${escapeHtml(playerName || 'Unknown Player')}</span>${badges}`;
 
       // Meta with dots separator
       const metaParts = [];
@@ -11432,8 +11462,8 @@ function openPlayerModal(playerId, playerName, opts) {
       const metaEl = document.getElementById('playerModalMeta');
       let metaHTML = `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:0;">${metaParts.join('<span style="opacity:.35;margin:0 3px;">·</span>')}</div>`;
       if (data.fantasy_team) {
-        const _ownerStr = data.fantasy_team_owner ? ` · <span style="opacity:.65;">@${data.fantasy_team_owner}</span>` : '';
-        metaHTML += `<div style="font-size:11px;font-weight:600;color:var(--accent);margin-top:3px;opacity:.9;">${data.fantasy_team}${_ownerStr}</div>`;
+        const _ownerStr = data.fantasy_team_owner ? ` · <span style="opacity:.65;">@${escapeHtml(data.fantasy_team_owner)}</span>` : '';
+        metaHTML += `<div style="font-size:11px;font-weight:600;color:var(--accent);margin-top:3px;opacity:.9;">${escapeHtml(data.fantasy_team)}${_ownerStr}</div>`;
       }
       metaEl.innerHTML = metaHTML;
 
@@ -14633,11 +14663,7 @@ function _updateWatchlistBtn(btn, player_id) {
   if (watched && window.brPop) window.brPop(btn.querySelector('.wl-star-glyph'));
 }
 
-function _wlEsc(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
-    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-  });
-}
+function _wlEsc(s) { return escapeHtml(s); }
 
 function _wlLeagueParams() {
   const lt = (typeof _leagueType !== 'undefined' && _leagueType) ? _leagueType : '1qb';
@@ -16582,9 +16608,9 @@ function _buildComparePlayerHeader(p) {
   const _ownerLine = ''; // omit fantasy team from compare header - too cluttered
   return `
     <div class="compare-player-header">
-      <img src="${_hiResHeadshot(p.espnHeadshot, 160)}" data-raw="${p.espnHeadshot || ''}" onerror="${_HS_FALLBACK}" class="compare-player-headshot" alt="${p.name}" />
+      <img src="${_hiResHeadshot(p.espnHeadshot, 160)}" data-raw="${escapeHtml(p.espnHeadshot || '')}" onerror="${_HS_FALLBACK}" class="compare-player-headshot" alt="${escapeHtml(p.name)}" />
       <div class="compare-player-header-info">
-        <div class="compare-player-name">${p.name}</div>
+        <div class="compare-player-name">${escapeHtml(p.name)}</div>
         <div class="compare-player-meta">${metaParts.join(sep)}</div>
         ${_ownerLine}
       </div>
@@ -16988,7 +17014,7 @@ function _cmpMatchBaselines(q) {
   }).slice(0, 6);
 }
 
-function _cmpEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
+function _cmpEsc(s) { return escapeHtml(s); }
 
 // Aggregate a player's weekly rows over [wkStart,wkEnd] into the weekly-capable
 // advanced-metric keys (the only metrics that can be sliced by week; PFF grades,
@@ -18183,6 +18209,41 @@ function initGlobalPlayerModals() {
       openPlayerModal(playerId, playerName);
     }
   });
+
+  // Keyboard operability: player/team modal triggers are <span>/<div>/<tr>
+  // driven by the delegated click handlers above, so keyboard users couldn't
+  // open them. Mirror Enter/Space to a click on the focused trigger. Native
+  // controls (links, buttons, form fields) keep their own key behavior.
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+    const el = e.target;
+    if (!el || /^(A|BUTTON|INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+    const trigger = el.closest('[data-player-id], .player-clickable, .team-clickable');
+    if (!trigger) return;
+    e.preventDefault();
+    trigger.click();
+  });
+}
+
+// Give a click-only trigger the semantics/affordances a keyboard and screen
+// reader need: focusable, announced as a button, and labeled. Idempotent.
+function _makeKeyboardActionable(el, label) {
+  if (!el || el.tagName === 'A' || el.tagName === 'BUTTON') return;
+  if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
+  if (!el.hasAttribute('role')) el.setAttribute('role', 'button');
+  if (label && !el.hasAttribute('aria-label')) el.setAttribute('aria-label', label);
+}
+
+// Normalize every click-only modal trigger in a freshly rendered root so
+// soft-navigated pages (innerHTML swaps) stay keyboard-accessible. Cheap,
+// idempotent, and safe to re-run on each page swap.
+function normalizeClickableAccessibility(root = document) {
+  (root.querySelectorAll ? root : document).querySelectorAll(
+    '.player-clickable, .team-clickable'
+  ).forEach(function (el) {
+    const nm = el.dataset ? (el.dataset.playerName || el.dataset.teamName) : '';
+    _makeKeyboardActionable(el, nm ? ('Open ' + nm) : null);
+  });
 }
 
 // Helper function to make any element open player modal
@@ -18191,6 +18252,7 @@ function makePlayerClickable(element, playerId, playerName) {
   element.dataset.playerName = playerName;
   element.style.cursor = 'pointer';
   element.classList.add('player-clickable');
+  _makeKeyboardActionable(element, playerName ? ('Open ' + playerName) : 'Open player');
 }
 
 // ============================================
