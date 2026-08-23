@@ -151,7 +151,7 @@ def yahoo_auth_callback():
     if league_id:
         from datetime import datetime
         from dashboard_services.api import get_nfl_state
-        from dashboard_services.providers.yahoo_api import resolve_league_key, get_league
+        from dashboard_services.providers.yahoo_api import resolve_league_key, get_league, get_users
         nfl_state  = get_nfl_state() or {}
         season     = int(nfl_state.get("season") or datetime.now().year)
 
@@ -182,6 +182,26 @@ def yahoo_auth_callback():
             save_league_owner(league_id, season, guid)
         except Exception:
             logger.warning("[yahoo_auth] save_league_owner failed", exc_info=True)
+        # Yahoo OAuth authorizes Yahoo only. Attach its verified league to an app
+        # account iff Google was already explicitly authenticated in this
+        # session; never resolve an account by Yahoo guid/league membership.
+        if session.get("account_id"):
+            team_id = None
+            try:
+                users = get_users(season, league_id, access_token) or []
+                team_id = next((
+                    str(user.get("roster_id")) for user in users
+                    if str(user.get("user_id") or "") == str(guid)
+                    and user.get("roster_id") is not None
+                ), None)
+                from dashboard_services.accounts import add_user_league, link_platform_identity
+                link_platform_identity(session["account_id"], "yahoo", guid, team_name or None)
+                add_user_league(
+                    session["account_id"], "yahoo", league_id, season=season,
+                    team_id=team_id, name=resolved.get("name"),
+                )
+            except Exception:
+                logger.warning("[yahoo_auth] account league attach failed", exc_info=True)
         return redirect(f"/yahoo/{season}/{league_id}/dashboard")
 
     return redirect(next_url)

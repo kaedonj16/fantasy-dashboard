@@ -20,7 +20,6 @@ import os
 import secrets
 import base64
 import hashlib
-import threading
 from urllib.parse import urlencode
 
 from flask import Blueprint, redirect, request, session
@@ -189,20 +188,15 @@ def google_auth_callback():
         except Exception:
             logger.warning("[google_auth] pending ESPN attach failed", exc_info=True)
 
-    # Bridge an already-signed-in Sleeper session onto this account: attach the
-    # identity and backfill its leagues so they show up immediately. Best-effort
-    # — a failure here must not block sign-in.
+    # An existing Sleeper session may authorize Sleeper enrichment, but Google
+    # sign-in does not implicitly attach every discovered provider league. Only
+    # explicit league connections create durable user_leagues associations.
     viewer_user_id = session.get("viewer_user_id")
     if viewer_user_id:
         try:
             link_platform_identity(
                 account_id, "sleeper", str(viewer_user_id), session.get("viewer_username"),
             )
-            threading.Thread(
-                target=_backfill_sleeper_leagues,
-                args=(account_id, str(viewer_user_id)),
-                daemon=True,
-            ).start()
         except Exception:
             logger.warning("[google_auth] sleeper bridge failed", exc_info=True)
 
@@ -230,16 +224,16 @@ def google_auth_callback():
                     if viewer:
                         save_viewer_session(viewer)
                         vuid = viewer.get("viewer_user_id")
+                        # Persist the verified per-league roster immediately;
+                        # the asynchronous backfill is only for other leagues.
+                        add_user_league(
+                            account_id, "sleeper", pending["league_id"],
+                            season=pending.get("season"),
+                            team_id=viewer.get("viewer_roster_id"),
+                            name=pending.get("name"),
+                        )
                         if vuid:
                             link_platform_identity(account_id, "sleeper", str(vuid), uname)
-                            # Backfill the user's OTHER leagues off the request path
-                            # — the dashboard for this league doesn't need them, so
-                            # don't make the post-login redirect wait on Sleeper.
-                            threading.Thread(
-                                target=_backfill_sleeper_leagues,
-                                args=(account_id, str(vuid)),
-                                daemon=True,
-                            ).start()
                 except Exception:
                     logger.warning("[google_auth] sleeper viewer resolve failed", exc_info=True)
             return redirect(
@@ -257,32 +251,3 @@ def google_auth_callback():
         logger.warning("[google_auth] saved league destination unavailable", exc_info=True)
         destination = None
     return redirect(destination or next_url)
-
-
-def _backfill_sleeper_leagues(account_id: int, viewer_user_id: str) -> None:
-    """Copy the Sleeper user's leagues into user_leagues for this account."""
-    from datetime import datetime
-    from dashboard_services.accounts import add_user_league
-    from dashboard_services.api import get_sleeper_user_leagues, get_nfl_state, get_rosters
-    nfl_state = get_nfl_state() or {}
-    season = int(nfl_state.get("season") or datetime.now().year)
-    leagues = get_sleeper_user_leagues(viewer_user_id, season) or []
-    if not leagues:
-        leagues = get_sleeper_user_leagues(viewer_user_id, season - 1) or []
-        if leagues:
-            season = season - 1
-    for lg in leagues:
-        lid = str(lg.get("league_id") or "")
-        if lid:
-            team_id = None
-            try:
-                team_id = next((str(r.get("roster_id")) for r in (get_rosters(lid) or [])
-                                if str(r.get("owner_id") or "") == str(viewer_user_id)), None)
-            except Exception:
-                logger.debug("[google_auth] roster backfill failed for %s", lid, exc_info=True)
-            add_user_league(
-                account_id, "sleeper", lid,
-                season=int(lg.get("season") or season),
-                team_id=team_id,
-                name=lg.get("name"),
-            )

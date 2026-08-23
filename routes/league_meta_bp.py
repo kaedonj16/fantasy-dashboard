@@ -213,8 +213,8 @@ def api_my_leagues():
 
     Sourced identically to the My Leagues page (/portfolio) via the shared
     resolve_my_leagues() builder. Every league saved to the Google account is
-    returned regardless of platform, then linked Sleeper identities provide
-    live discovery and metadata enrichment. Each entry carries its own platform
+    returned regardless of platform, then linked Sleeper identities may provide
+    live metadata enrichment. Each entry carries its own platform
     so the switcher can navigate cross-platform."""
     out = []
     try:

@@ -310,6 +310,26 @@ def get_league(league_id: str) -> dict:
     return league
 
 
+@ttl_cache(ttl=300)
+def sleeper_league_exists(league_id: str) -> bool | None:
+    """Tri-state canonical existence probe for a saved Sleeper league.
+
+    ``False`` is returned only for Sleeper's definitive 404. ``None`` means the
+    provider could not be checked, so account callers must retain durable data.
+    The short, single-attempt request keeps portfolio rendering bounded during
+    an outage; normal league loading continues to use the existing retry path.
+    """
+    try:
+        response = SESSION.get(f"{SLEEPER_BASE}/league/{league_id}", timeout=3)
+        if response.status_code == 404:
+            return False
+        response.raise_for_status()
+        payload = response.json()
+        return bool(isinstance(payload, dict) and payload.get("league_id"))
+    except (requests.RequestException, ValueError, TypeError):
+        return None
+
+
 def get_effective_scoring_settings() -> Dict[str, float]:
     """
     Defaults overlaid with league-specific scoring.

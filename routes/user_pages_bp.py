@@ -78,7 +78,7 @@ def page_portfolio():
     nfl_state = get_nfl_state() or {}
     season = int(nfl_state.get("season") or datetime.now().year)
     # Every league durably linked to the Google account, regardless of platform,
-    # plus live Sleeper discovery from linked identities. The shared builder also
+    # plus live Sleeper enrichment from linked identities. The shared builder also
     # backs /api/my-leagues so the portfolio and switcher never diverge.
     from dashboard_services.accounts import resolve_my_leagues
     league_inputs, season = resolve_my_leagues(

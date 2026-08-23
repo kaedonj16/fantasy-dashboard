@@ -1,11 +1,27 @@
+import pytest
+
+# The lightweight CI job intentionally installs pytest only. This module
+# exercises the live-provider enrichment boundary, whose production API module
+# imports requests and Flask, so follow the suite's established dependency-skip
+# convention instead of failing test collection in that job.
+pytest.importorskip("requests")
+pytest.importorskip("flask")
+
 from dashboard_services import accounts
+
+
+def _existing_sleeper_league(league_id):
+    return True
 
 
 def test_google_account_uses_every_linked_sleeper_identity(monkeypatch):
     monkeypatch.setattr(
         accounts, "list_account_platform_ids", lambda account_id, platform: ["user-a", "user-b"]
     )
-    monkeypatch.setattr(accounts, "list_user_leagues", lambda account_id: [])
+    monkeypatch.setattr(accounts, "list_user_leagues", lambda account_id: [
+        {"platform": "sleeper", "league_id": "league-a", "season": 2026},
+        {"platform": "sleeper", "league_id": "league-b", "season": 2026},
+    ])
 
     memberships = {
         "user-a": [{"league_id": "league-a", "name": "Alpha", "season": 2026}],
@@ -26,7 +42,9 @@ def test_active_viewer_and_linked_identity_are_deduplicated(monkeypatch):
     monkeypatch.setattr(
         accounts, "list_account_platform_ids", lambda account_id, platform: ["same-user"]
     )
-    monkeypatch.setattr(accounts, "list_user_leagues", lambda account_id: [])
+    monkeypatch.setattr(accounts, "list_user_leagues", lambda account_id: [
+        {"platform": "sleeper", "league_id": "league-1", "season": 2026},
+    ])
     calls = []
 
     def fetch(user_id, season):
@@ -48,7 +66,10 @@ def test_one_failed_sleeper_identity_does_not_hide_other_leagues(monkeypatch):
     monkeypatch.setattr(
         accounts,
         "list_user_leagues",
-        lambda account_id: [{"platform": "espn", "league_id": "espn-1", "season": 2026}],
+        lambda account_id: [
+            {"platform": "sleeper", "league_id": "sleeper-1", "season": 2026},
+            {"platform": "espn", "league_id": "espn-1", "season": 2026},
+        ],
     )
 
     def fetch(user_id, season):
@@ -67,6 +88,7 @@ def test_one_failed_sleeper_identity_does_not_hide_other_leagues(monkeypatch):
 
 
 def test_google_account_returns_every_saved_platform_without_provider_sessions(monkeypatch):
+    monkeypatch.setattr("dashboard_services.api.sleeper_league_exists", _existing_sleeper_league)
     monkeypatch.setattr(accounts, "list_account_platform_ids", lambda *args: [])
     monkeypatch.setattr(
         accounts,
@@ -91,6 +113,7 @@ def test_google_account_returns_every_saved_platform_without_provider_sessions(m
 
 
 def test_saved_sleeper_league_survives_live_provider_failure(monkeypatch):
+    monkeypatch.setattr("dashboard_services.api.sleeper_league_exists", _existing_sleeper_league)
     monkeypatch.setattr(accounts, "list_account_platform_ids", lambda *args: ["linked-user"])
     monkeypatch.setattr(
         accounts,
@@ -137,6 +160,107 @@ def test_live_sleeper_metadata_enriches_saved_membership_without_duplicate(monke
         "platform": "sleeper", "league_id": "same-league", "season": 2026,
         "name": "Current name", "team_id": "3",
     }]
+
+
+def test_sparse_enrichment_does_not_erase_saved_team_or_name(monkeypatch):
+    monkeypatch.setattr(
+        accounts,
+        "list_user_leagues",
+        lambda account_id: [{
+            "platform": "yahoo", "league_id": "league-9", "season": 2026,
+            "name": "Durable name", "team_id": "team-4", "connection_status": "connected",
+        }],
+    )
+
+    leagues = accounts.resolve_account_leagues(42, [{
+        "platform": "yahoo", "league_id": "league-9", "season": 2026,
+        "name": None, "team_id": None, "logo": "fresh.png",
+    }], 2026)
+
+    assert leagues == [{
+        "platform": "yahoo", "league_id": "league-9", "season": 2026,
+        "name": "Durable name", "team_id": "team-4", "connection_status": "connected",
+        "logo": "fresh.png",
+    }]
+
+
+def test_provider_only_resolution_never_loads_google_account_portfolio(monkeypatch):
+    loaded_accounts = []
+    monkeypatch.setattr(
+        accounts, "list_user_leagues", lambda account_id: loaded_accounts.append(account_id) or []
+    )
+    monkeypatch.setattr(
+        "dashboard_services.api.get_sleeper_user_leagues",
+        lambda user_id, season: [{"league_id": "provider-only", "season": season}],
+    )
+
+    leagues, _ = accounts.resolve_my_leagues("matching-sleeper-user", None, 2026)
+
+    assert loaded_accounts == []
+    assert [(league["platform"], league["league_id"]) for league in leagues] == [
+        ("sleeper", "provider-only")
+    ]
+
+
+def test_live_discovery_does_not_reattach_an_explicitly_unlinked_account_league(monkeypatch):
+    monkeypatch.setattr(accounts, "list_user_leagues", lambda account_id: [])
+
+    leagues = accounts.resolve_account_leagues(42, [{
+        "platform": "sleeper", "league_id": "unlinked", "season": 2026,
+    }], 2026)
+
+    assert leagues == []
+
+
+def test_confirmed_deleted_sleeper_league_is_hidden_but_not_unlinked(monkeypatch):
+    saved = [
+        {"platform": "sleeper", "league_id": "deleted", "season": 2026},
+        {"platform": "espn", "league_id": "still-saved", "season": 2026},
+    ]
+    monkeypatch.setattr(accounts, "list_account_platform_ids", lambda *args: ["user-1"])
+    monkeypatch.setattr(accounts, "list_user_leagues", lambda account_id: saved)
+    monkeypatch.setattr("dashboard_services.api.get_sleeper_user_leagues", lambda *args: [])
+    monkeypatch.setattr("dashboard_services.api.sleeper_league_exists", lambda league_id: False)
+
+    leagues, _ = accounts.resolve_my_leagues(None, 42, 2026)
+
+    assert [(league["platform"], league["league_id"]) for league in leagues] == [
+        ("espn", "still-saved")
+    ]
+    assert len(saved) == 2  # visibility does not silently mutate durable ownership
+
+
+def test_sleeper_lookup_failure_keeps_saved_league_visible(monkeypatch):
+    monkeypatch.setattr(accounts, "list_account_platform_ids", lambda *args: ["user-1"])
+    monkeypatch.setattr(accounts, "list_user_leagues", lambda account_id: [{
+        "platform": "sleeper", "league_id": "unknown-during-outage", "season": 2026,
+    }])
+    monkeypatch.setattr("dashboard_services.api.get_sleeper_user_leagues", lambda *args: [])
+
+    def unavailable(league_id):
+        raise TimeoutError("Sleeper unavailable")
+
+    monkeypatch.setattr("dashboard_services.api.sleeper_league_exists", unavailable)
+
+    leagues, _ = accounts.resolve_my_leagues(None, 42, 2026)
+
+    assert [league["league_id"] for league in leagues] == ["unknown-during-outage"]
+
+
+def test_sleeper_not_found_probe_confirms_deleted_league(monkeypatch):
+    monkeypatch.setattr(accounts, "list_account_platform_ids", lambda *args: [])
+    monkeypatch.setattr(accounts, "list_user_leagues", lambda account_id: [{
+        "platform": "sleeper", "league_id": "gone", "season": 2026,
+    }])
+    monkeypatch.setattr("dashboard_services.api.get_sleeper_user_leagues", lambda *args: [])
+
+    monkeypatch.setattr(
+        "dashboard_services.api.sleeper_league_exists", lambda league_id: False,
+    )
+
+    leagues, _ = accounts.resolve_my_leagues(None, 42, 2026)
+
+    assert leagues == []
 
 
 def test_sleeper_username_lookup_imports_from_service_not_app():

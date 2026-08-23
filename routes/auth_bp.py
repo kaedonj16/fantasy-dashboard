@@ -119,6 +119,16 @@ def set_viewer():
 
     save_viewer_session(viewer)
     session["viewer_platform"] = platform
+    # Provider authorization may update a league association only when Google
+    # account authentication was already explicit. Never infer account_id from
+    # the provider user/team identity.
+    if session.get("account_id"):
+        from dashboard_services.accounts import add_user_league
+        add_user_league(
+            session["account_id"], platform, league_id, season=season,
+            team_id=viewer.get("viewer_roster_id"),
+            name=(ctx.get("league") or {}).get("name"),
+        )
     if platform == "sleeper" and viewer.get("viewer_user_id"):
         _background_seed_user(viewer["viewer_user_id"], viewer.get("viewer_username"))
 
@@ -175,6 +185,13 @@ def api_sign_in_league():
 
     save_viewer_session(viewer)
     session["viewer_platform"] = platform
+    if session.get("account_id"):
+        from dashboard_services.accounts import add_user_league
+        add_user_league(
+            session["account_id"], platform, league_id, season=season,
+            team_id=viewer.get("viewer_roster_id"),
+            name=(ctx.get("league") or {}).get("name"),
+        )
     if platform == "sleeper" and viewer.get("viewer_user_id"):
         _background_seed_user(viewer["viewer_user_id"], viewer.get("viewer_username"))
 
@@ -200,6 +217,12 @@ def api_quick_set_viewer():
     roster_id = str(data.get("roster_id") or "").strip()
     user_id   = str(data.get("user_id")   or "").strip()
     team_name = str(data.get("team_name") or "").strip()
+    platform  = str(data.get("platform") or "").strip().lower()
+    league_id = str(data.get("league_id") or "").strip()
+    try:
+        season = int(data.get("season")) if data.get("season") else None
+    except (TypeError, ValueError):
+        season = None
 
     if not username:
         return jsonify({"ok": False, "error": "username required"}), 400
@@ -212,6 +235,16 @@ def api_quick_set_viewer():
         session["viewer_roster_id"] = roster_id
     if team_name:
         session["viewer_team_name"] = team_name
+
+    # Team selection can complete a provider connection made while the Google
+    # account was already active (notably ESPN OTP). Without an authenticated
+    # account this remains a provider-only session and performs no account lookup.
+    if session.get("account_id") and platform and league_id and season and roster_id:
+        from dashboard_services.accounts import add_user_league
+        add_user_league(
+            session["account_id"], platform, league_id, season=season,
+            team_id=roster_id, name=None,
+        )
 
     return jsonify({"ok": True})
 

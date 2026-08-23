@@ -327,7 +327,9 @@ def add_espn_league_connection(
                VALUES (%s, 'espn', %s, %s, %s, %s)
                ON CONFLICT (account_id, platform, league_id, season) DO UPDATE SET
                    name = EXCLUDED.name,
-                   provider_connection_id = EXCLUDED.provider_connection_id""",
+                   provider_connection_id = COALESCE(
+                       EXCLUDED.provider_connection_id, user_leagues.provider_connection_id
+                   )""",
             (account_id, str(league_id), int(season), name, connection_id),
         )
         conn.commit()
@@ -549,6 +551,97 @@ def list_user_leagues(account_id: int) -> list[dict]:
     ]
 
 
+def resolve_account_leagues(account_id: int, enrichments=None, current_season=None) -> list[dict]:
+    """Return the durable, cross-platform portfolio for one app account.
+
+    App-account authentication is established only by Google. Callers must pass
+    the ``account_id`` already present in the authenticated session; this helper
+    never looks up an account from a provider identity.
+
+    ``user_leagues`` is authoritative. Optional provider records may enrich an
+    existing association, but discovery alone never re-attaches an explicitly
+    unlinked league, and sparse values never erase stored account/team metadata.
+    Entries are deduplicated by ``platform + league_id`` so the contract remains
+    generic for future providers.
+    """
+    if not account_id:
+        return []
+    try:
+        season = int(current_season or 0)
+    except (TypeError, ValueError):
+        season = 0
+
+    leagues_by_key = {}
+    for saved in list_user_leagues(account_id):
+        platform = str(saved.get("platform") or "sleeper").lower()
+        league_id = str(saved.get("league_id") or "")
+        if not league_id:
+            continue
+        saved_season = saved.get("season") or season or None
+        if platform == "espn" and season and saved_season and int(saved_season) < season:
+            saved_season = season
+        leagues_by_key[(platform, league_id)] = dict(
+            saved, platform=platform, league_id=league_id, season=saved_season,
+        )
+
+    for live in enrichments or []:
+        platform = str(live.get("platform") or "").lower()
+        league_id = str(live.get("league_id") or "")
+        if not platform or not league_id:
+            continue
+        key = (platform, league_id)
+        stored = leagues_by_key.get(key)
+        if stored is None:
+            continue
+        # Null/empty provider fields mean "not returned", not "delete the
+        # account-owned value". Truthy live values may safely enrich metadata.
+        merged = dict(stored)
+        merged.update({k: v for k, v in live.items() if v is not None and v != ""})
+        merged.update(platform=platform, league_id=league_id)
+        leagues_by_key[key] = merged
+
+    return list(leagues_by_key.values())
+
+
+def _hide_confirmed_deleted_sleeper_leagues(leagues: list[dict], live_leagues: list[dict]) -> list[dict]:
+    """Hide Sleeper leagues whose canonical endpoint confirms deletion.
+
+    A league merely missing from a membership response is not enough: the user
+    may have left it, the response may be stale, or Sleeper may be degraded. We
+    retain the durable association on every request error and only suppress the
+    card when Sleeper's direct league lookup successfully returns no league.
+    The database row is intentionally preserved for outage safety and audit.
+    """
+    live_ids = {str(league.get("league_id") or "") for league in live_leagues}
+    candidates = [
+        league for league in leagues
+        if str(league.get("platform") or "").lower() == "sleeper"
+        and str(league.get("league_id") or "") not in live_ids
+    ]
+    if not candidates:
+        return leagues
+
+    from dashboard_services.api import sleeper_league_exists
+    deleted_ids = set()
+    for league in candidates:
+        league_id = str(league.get("league_id") or "")
+        try:
+            if sleeper_league_exists(league_id) is False:
+                deleted_ids.add(league_id)
+        except Exception:
+            # Defensive adapter boundary: any probe failure retains the card.
+            continue
+    if not deleted_ids:
+        return leagues
+    return [
+        league for league in leagues
+        if not (
+            str(league.get("platform") or "").lower() == "sleeper"
+            and str(league.get("league_id") or "") in deleted_ids
+        )
+    ]
+
+
 def resolve_my_leagues(viewer_user_id, account_id, current_season):
     """The canonical "my leagues" set, shared by the My Leagues page
     (/portfolio) and the league switcher (/api/my-leagues) so the two never show
@@ -560,8 +653,8 @@ def resolve_my_leagues(viewer_user_id, account_id, current_season):
         regardless of platform. The database is the durable source of truth for
         a fresh Google login and remains available during provider outages.
       * Sleeper memberships from every identity linked to the account (plus the
-        current viewer) are fetched live to discover newly joined leagues and
-        refresh saved metadata. Live results never remove saved account leagues.
+        current viewer) are fetched live to refresh saved metadata. Discovery
+        alone neither attaches new leagues nor removes saved account leagues.
       * For ESPN, Yahoo, and any future provider, saved leagues do not depend on
         a provider-specific browser session being present after Google login.
         ESPN league IDs persist across seasons, so a league linked in a prior
@@ -603,39 +696,26 @@ def resolve_my_leagues(viewer_user_id, account_id, current_season):
         if previous:
             raw, season = previous, season - 1
 
-    # Begin with the durable account associations across *all* platforms. A
-    # provider request is useful for enrichment, but must never be required for
-    # a Google account to see a league it has already connected.
-    leagues_by_key = {}
-    if account_id:
-        for saved in list_user_leagues(account_id):
-            platform = str(saved.get("platform") or "sleeper").lower()
-            league_id = str(saved.get("league_id") or "")
-            if not league_id:
-                continue
-            saved_season = saved.get("season") or season
-            if platform == "espn" and season and saved_season and int(saved_season) < season:
-                saved_season = season
-            leagues_by_key[(platform, league_id)] = dict(
-                saved, platform=platform, league_id=league_id, season=saved_season,
-            )
-
+    live_sleeper = []
     for lg in raw:
         league_id = str(lg.get("league_id") or "")
         if not league_id:
             continue
-        key = ("sleeper", league_id)
-        # Retain account-only fields such as team_id while letting live provider
-        # metadata supply the current name, season, avatar, and league settings.
-        leagues_by_key[key] = {
-            **leagues_by_key.get(key, {}),
-            **lg,
-            "platform": "sleeper",
-            "league_id": league_id,
-            "season": int(lg.get("season") or season or 0),
-        }
+        live_sleeper.append(dict(
+            lg, platform="sleeper", league_id=league_id,
+            season=int(lg.get("season") or season or 0),
+        ))
 
-    return list(leagues_by_key.values()), season
+    if account_id:
+        # Google account context: durable saved portfolio plus optional provider
+        # enrichment. Provider availability cannot remove a saved association.
+        account_leagues = resolve_account_leagues(account_id, live_sleeper, season)
+        return _hide_confirmed_deleted_sleeper_leagues(account_leagues, live_sleeper), season
+
+    # Provider-only context: show only what that provider session discovered.
+    # Never infer or activate a Google account from a matching provider identity.
+    by_key = {(m["platform"], m["league_id"]): m for m in live_sleeper}
+    return list(by_key.values()), season
 
 
 def resolve_account_viewer_for_league(
@@ -717,7 +797,7 @@ def set_last_active_league(account_id: int, platform: str, league_id: str, seaso
 
 def get_post_login_destination(account_id: int) -> Optional[str]:
     """Choose a saved destination using database metadata only."""
-    leagues = list_user_leagues(account_id)
+    leagues = resolve_account_leagues(account_id)  # shared resolver loads list_user_leagues
     if not leagues:
         return None
     from dashboard_services.db import get_conn
