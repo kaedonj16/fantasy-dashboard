@@ -1171,6 +1171,7 @@ FORM_BODY = """
             <button type="button" class="platform-btn platform-btn-disabled" disabled
                     title="Yahoo is temporarily unavailable while we finish Yahoo API setup.">Yahoo <span class="platform-soon">Soon</span></button>
             {% endif %}
+            <button type="button" class="platform-btn" data-platform="mfl">MFL</button>
           </div>
         </div>
 
@@ -1269,6 +1270,23 @@ FORM_BODY = """
           </p>
         </div>
         {% endif %}
+
+        <!-- MFL Flow -->
+        <div id="mflFlow" style="display:none;">
+          <p class="hint">Connect a public MyFantasyLeague league using its League ID.</p>
+          <div class="row">
+            <label for="mflLeagueIdInput">MFL League ID</label>
+            <input type="text" id="mflLeagueIdInput" inputmode="numeric" placeholder="e.g. 12345" autocomplete="off">
+          </div>
+          <div class="row">
+            <label for="mflSeasonInput">Season</label>
+            <input type="text" id="mflSeasonInput" inputmode="numeric" placeholder="{{ viewed_season }}" autocomplete="off">
+          </div>
+          <div class="row">
+            <button type="button" id="mflSubmitBtn">Connect League</button>
+          </div>
+          <div id="mflError" class="error-message" style="display:none;"></div>
+        </div>
 
 <form method="post" id="leagueSelectForm">
           <input type="hidden" name="platform" id="formPlatform" value="sleeper">
