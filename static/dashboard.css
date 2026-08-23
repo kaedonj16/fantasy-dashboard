@@ -11455,6 +11455,10 @@ a.signed-home-league:hover {
     font-weight: 700;
     color: #e6edf6;
     animation: homeTickScroll 40s linear infinite;
+    /* Force a compositing layer: iOS Safari can otherwise leave a percentage
+       transform animation un-advanced (a frozen marquee) until an unrelated
+       repaint. Harmless elsewhere and keeps the scroll smooth. */
+    will-change: transform;
 }
 
 .home-ticker-track .mv {
