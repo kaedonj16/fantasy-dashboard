@@ -29315,28 +29315,43 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         CORE_POS = {"QB", "RB", "WR", "TE"}
         POS_ORDER = ["QB", "RB", "WR", "TE"]
 
-        # ── Build per-team positional value totals for ranking ──────────────
-        team_pos_totals: dict = {}  # rid -> {pos: total_value}
+        # ── Build per-team positional strength for ranking ──────────────────
+        # Rank positions with the SAME starter-slot-weighted formula the Teams
+        # page / roster-intel use (weighted_pos_strength), not a raw value sum.
+        # A plain sum over-credits depth, so the share card previously reported
+        # different positional ranks than the team card for the same roster.
+        _rp_list = league_info.get("roster_positions") or get_roster_positions() or []
+        slot_counts = count_roster_positions(_rp_list)
+        if not any(slot_counts.get(p) for p in ("QB", "RB", "WR", "TE", "FLEX")):
+            slot_counts = {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 1}
+
+        team_pos_vals: dict = {}  # rid -> {pos: [value, ...]}
         for r in rosters:
             rid = str(r.get("roster_id") or "")
             if not rid:
                 continue
-            pos_vals: dict = {p: 0.0 for p in POS_ORDER}
+            pvals: dict = {p: [] for p in POS_ORDER}
             for pid in (r.get("players") or []):
                 vrow = values_by_id.get(str(pid)) or {}
                 meta = players_index.get(str(pid)) or {}
                 pos = str(meta.get("pos") or vrow.get("position") or "").upper()
                 if pos not in CORE_POS:
                     continue
-                val = float(vrow.get(vfield) or vrow.get("value") or 0)
-                pos_vals[pos] = pos_vals.get(pos, 0.0) + val
-            team_pos_totals[rid] = pos_vals
+                pvals[pos].append(float(vrow.get(vfield) or vrow.get("value") or 0))
+            team_pos_vals[rid] = pvals
+
+        team_pos_strength: dict = {}  # rid -> {pos: weighted strength}
+        for rid, pvals in team_pos_vals.items():
+            team_pos_strength[rid] = {
+                pos: _weighted_pos_strength(pvals[pos], pos, slot_counts)
+                for pos in POS_ORDER
+            }
 
         def _pos_rank(target_rid: str, pos: str) -> int:
-            """Rank 1 = best, n = worst by positional dynasty value."""
-            target_val = team_pos_totals.get(target_rid, {}).get(pos, 0.0)
+            """Rank 1 = best by starter-weighted positional strength (matches Teams page)."""
+            target_val = team_pos_strength.get(target_rid, {}).get(pos, 0.0)
             return sum(
-                1 for v in team_pos_totals.values() if v.get(pos, 0.0) > target_val
+                1 for v in team_pos_strength.values() if v.get(pos, 0.0) > target_val
             ) + 1
 
         # ── Build target roster's player list ───────────────────────────────
