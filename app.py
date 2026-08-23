@@ -3757,7 +3757,7 @@ def _discord_banner() -> str:
 @media (max-width: 768px) {{
   #discordBanner {{
     left:12px !important; right:12px !important; width:auto !important;
-    bottom:calc(56px + env(safe-area-inset-bottom) + 14px) !important;
+    bottom:calc(var(--dock-safe-bottom) + 14px) !important;
   }}
 }}
 </style>

@@ -1992,6 +1992,12 @@ window._brPromoEligible = function () {
 
   function showNotifBanner() {
     if (document.getElementById('push-notif-banner')) return;
+    // Don't stack two asks: if the install banner is still on screen, wait and
+    // retry rather than popping a second promo over it in the same moment.
+    if (document.getElementById('pwa-install-banner')) {
+      setTimeout(showNotifBanner, 20000);
+      return;
+    }
     var banner = document.createElement('div');
     banner.id = 'push-notif-banner';
     banner.innerHTML =
