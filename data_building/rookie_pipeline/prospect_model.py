@@ -2068,6 +2068,14 @@ def score_prospect(
         gate = (production_score / _PROD_GATE) * (utilization_score / _UTIL_GATE)
         prospect_score *= 1.0 - (1.0 - gate) * 0.22
 
+    # Final clamp to the documented 0-100 grade scale. The quadratic boost and
+    # benchmark boost each cap at 100, but the additive translation_adjustment
+    # (up to +8, e.g. the +3.5 dual-threat-QB bonus) and late-round upside are
+    # applied afterwards, so an elite profile could otherwise finish above 100
+    # (e.g. a top dual-threat QB reaching 103.5) — breaking the grade scale and
+    # the fantasy-scaled overall_score derived from it.
+    prospect_score = _clip(prospect_score, 0.0, 100.0)
+
     prospect_score = round(prospect_score, 2)
 
     # Quality-weighted confidence score.
