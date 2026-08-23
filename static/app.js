@@ -2904,6 +2904,7 @@ function initPlayoffOdds(root = document) {
             return;
           }
           panel.innerHTML = _renderPlayoffOdds(data);
+          normalizeClickableAccessibility(panel);
           fadeInCard(panel);
           // Layer the exact clinch/elimination outlook over the odds table when
           // we're in the final-weeks window (the scenarios endpoint returns
@@ -5704,6 +5705,7 @@ window.initTradePage = function initTradePage(root = document) {
       }
 
       body.innerHTML = html;
+      normalizeClickableAccessibility(body);
 
       // Delegate Get clicks - navigate to Suggestions tab with this player pre-loaded
       body.addEventListener("click", function(e) {
@@ -6879,6 +6881,7 @@ window.initTradePage = function initTradePage(root = document) {
         }
 
         container.innerHTML = html || '<div class="otc-movers-empty">No targets found.</div>';
+        normalizeClickableAccessibility(container);
         // Click handling is delegated once via bindSuggTargetsClick() below.
       } catch (e) {
         container.innerHTML = '<div class="otc-movers-empty">Could not load targets.</div>';
@@ -8807,6 +8810,7 @@ window.initPageRoot = function initPageRoot(root = document) {
   initPlayoffOdds(root);
   initTeamTabs(root);
   initStandingsSort(root);
+  normalizeClickableAccessibility(root);
 
   // Enhance native <select>s (e.g. the player-rankings "Sort by" / "ADP source")
   // into the custom dropdown. initCustomSelects only auto-ran on DOMContentLoaded,
@@ -18191,6 +18195,41 @@ function initGlobalPlayerModals() {
       openPlayerModal(playerId, playerName);
     }
   });
+
+  // Keyboard operability: player/team modal triggers are <span>/<div>/<tr>
+  // driven by the delegated click handlers above, so keyboard users couldn't
+  // open them. Mirror Enter/Space to a click on the focused trigger. Native
+  // controls (links, buttons, form fields) keep their own key behavior.
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+    const el = e.target;
+    if (!el || /^(A|BUTTON|INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+    const trigger = el.closest('[data-player-id], .player-clickable, .team-clickable');
+    if (!trigger) return;
+    e.preventDefault();
+    trigger.click();
+  });
+}
+
+// Give a click-only trigger the semantics/affordances a keyboard and screen
+// reader need: focusable, announced as a button, and labeled. Idempotent.
+function _makeKeyboardActionable(el, label) {
+  if (!el || el.tagName === 'A' || el.tagName === 'BUTTON') return;
+  if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
+  if (!el.hasAttribute('role')) el.setAttribute('role', 'button');
+  if (label && !el.hasAttribute('aria-label')) el.setAttribute('aria-label', label);
+}
+
+// Normalize every click-only modal trigger in a freshly rendered root so
+// soft-navigated pages (innerHTML swaps) stay keyboard-accessible. Cheap,
+// idempotent, and safe to re-run on each page swap.
+function normalizeClickableAccessibility(root = document) {
+  (root.querySelectorAll ? root : document).querySelectorAll(
+    '.player-clickable, .team-clickable'
+  ).forEach(function (el) {
+    const nm = el.dataset ? (el.dataset.playerName || el.dataset.teamName) : '';
+    _makeKeyboardActionable(el, nm ? ('Open ' + nm) : null);
+  });
 }
 
 // Helper function to make any element open player modal
@@ -18199,6 +18238,7 @@ function makePlayerClickable(element, playerId, playerName) {
   element.dataset.playerName = playerName;
   element.style.cursor = 'pointer';
   element.classList.add('player-clickable');
+  _makeKeyboardActionable(element, playerName ? ('Open ' + playerName) : 'Open player');
 }
 
 // ============================================
