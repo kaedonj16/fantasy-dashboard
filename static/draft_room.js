@@ -264,10 +264,14 @@
       }
       _csFrame.src = url;   // (re)load -> re-syncs
       _csOverlay.style.display = 'flex';
+      document.body.classList.add('dr-cheat-open');
+      var close = document.getElementById('drCheatClose');
+      if (close) close.focus();
     }
     function closeCheatSheet(){
       if (!_csOverlay) return;
       _csOverlay.style.display = 'none';
+      document.body.classList.remove('dr-cheat-open');
       if (_csFrame) _csFrame.src = 'about:blank';   // stop the embed's poll loop
     }
     if (_cs2) _cs2.addEventListener('click', function(e){
@@ -2848,6 +2852,8 @@
     var c = psCtx(), opts = { sf: !!state.sf, tep: scoringCfg().tep, draftType: state.type };
     if (!window.DraftBoardCore) return 1;
     opts.role = role;
+    if (DraftBoardCore.positionNeedUtility)
+      return DraftBoardCore.positionNeedUtility(pos, counts, c.roster, opts);
     return DraftBoardCore.rosterSlotUtility(pos, counts, c.roster, opts);
   }
 

@@ -210,6 +210,46 @@
     return 1;
   }
 
+  // Live-draft fit pressure for the next player at a position.  The ordinary
+  // slot utility intentionally answers only "starter, flex, or bench?"; this
+  // adds a small amount of information about how many lineup paths remain.
+  // FLEX is one shared obligation: its pressure is divided among positions
+  // that can still occupy it rather than credited in full to every candidate.
+  function positionNeedUtility(pos, counts, rc, opts) {
+    opts = opts || {}; counts = counts || {}; rc = rc || {};
+    pos = String(pos || '').toUpperCase();
+    var role = opts.role || rosterRole(pos, counts, rc, !!opts.sf);
+    var base = rosterSlotUtility(pos, counts, rc, Object.assign({}, opts, { role: role }));
+    if (role !== 'starter' && role !== 'flex') return base;
+
+    var req = starterRequirements(rc, !!opts.sf);
+    var missingDedicated = Math.max(0, (+req[pos] || 0) - (+counts[pos] || 0));
+    var flexUsed = Math.max(0, (+counts.RB || 0) - req.RB)
+                 + Math.max(0, (+counts.WR || 0) - req.WR)
+                 + Math.max(0, (+counts.TE || 0) - req.TE);
+    var remainingFlex = Math.max(0, req.FLEX - flexUsed);
+    var flexShare = 0;
+    if (remainingFlex > 0 && (pos === 'RB' || pos === 'WR' || pos === 'TE')) {
+      var weights = { RB: 1, WR: 1, TE: Math.min(1, 0.55 + Math.max(0, +opts.tep || 0) * 0.3) };
+      var total = 0;
+      ['RB', 'WR', 'TE'].forEach(function (p) {
+        // Capacity prevents a position that already covers all dedicated and
+        // FLEX paths from claiming a share of the remaining opportunity.
+        var capacity = Math.max(0, (+req[p] || 0) + req.FLEX - (+counts[p] || 0));
+        total += capacity * weights[p];
+        if (p === pos) flexShare = capacity * weights[p];
+      });
+      flexShare = total > 0 ? flexShare / total : 0;
+    }
+
+    // One open dedicated starter is the existing baseline. Extra dedicated
+    // paths and the candidate's share of FLEX add at most ~5 Decision Score
+    // points because decisionScore converts utility at 38 points per unit.
+    var pressure = Math.max(0, missingDedicated - 1) * 0.075
+                 + remainingFlex * flexShare * 0.035;
+    return Math.min(base + 0.13, base + pressure);
+  }
+
   // Realistic hard roster ceilings for positions whose extra depth has sharply
   // diminishing utility. This is deliberately format-aware: TE2 and an unusual
   // late TE3 remain legal in ordinary redraft, while TEP/multi-TE and dynasty
@@ -367,7 +407,8 @@
     computePpgScale: computePpgScale, ppgNorm: ppgNorm,
     tierOf: tierOf, maxVal: maxVal, posTargets: posTargets,
     starterRequirements: starterRequirements, rosterRole: rosterRole, candidateRosterRole: candidateRosterRole,
-    rosterSlotUtility: rosterSlotUtility, positionRosterLimit: positionRosterLimit,
+    rosterSlotUtility: rosterSlotUtility, positionNeedUtility: positionNeedUtility,
+    positionRosterLimit: positionRosterLimit,
     remainingObligations: remainingObligations,
     decisionScore: decisionScore, decisionBand: decisionBand, selectDecisionCandidate: selectDecisionCandidate,
     availabilityProbability: availabilityProbability, calibrateAvailability: calibrateAvailability,
