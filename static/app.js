@@ -23,6 +23,19 @@ function _deferInit(fn) {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn);
   else setTimeout(fn, 0);
 }
+
+// ── Canonical HTML escaper ────────────────────────────────────────────────────
+// Single source of truth for escaping dynamic values interpolated into HTML
+// strings (innerHTML / template literals). Escapes the full set — & < > " ' —
+// so it is safe in both element-text and quoted-attribute contexts. User-set
+// fields (Sleeper/ESPN team & owner names) MUST pass through this; hoisted so it
+// is available to every call site regardless of source order. Prefer setting
+// .textContent where practical; use this when building HTML strings.
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
 var __featuresState = 0;   // 0=not loaded, 1=loading, 2=loaded
 var __featuresCbs = [];
 function ensureFeatures(cb) {
@@ -1153,9 +1166,7 @@ var BR_STATE_ICONS = {
   lock:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>',
   retry:  '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.6 8a5.6 5.6 0 1 1-1.7-4"/><path d="M13.9 2.4V5.2h-2.8"/></svg>'
 };
-function _brStateEsc(s) {
-  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
+function _brStateEsc(s) { return escapeHtml(s); }
 
 /**
  * Shared empty/error state. One look for "nothing here" and "couldn't load"
@@ -3007,9 +3018,10 @@ function _renderPlayoffOdds(data) {
         : `<span class="rank-move down" title="Playoff odds down ${_amt} pts recently">&#9660;${_amt}%</span>`;
     }
 
-    const _ridAttr = t.roster_id != null ? ` data-roster-id="${t.roster_id}" data-team-name="${t.team_name}"` : '';
+    const _teamNameSafe = escapeHtml(t.team_name);
+    const _ridAttr = t.roster_id != null ? ` data-roster-id="${t.roster_id}" data-team-name="${_teamNameSafe}"` : '';
     return `<tr class="team-clickable"${_ridAttr}>
-      <td class="po-team">${t.team_name}${mvHtml}</td>
+      <td class="po-team">${_teamNameSafe}${mvHtml}</td>
       <td class="po-rec">${rec}</td>
       <td class="po-odds">${oddsCell}</td>
       ${byeCell}${topCell}${projCell}${simAvgCell}
@@ -5647,12 +5659,12 @@ window.initTradePage = function initTradePage(root = document) {
       // Each player row includes an inline hidden panel for package ideas
       function renderPlayerRow(t, pos) {
         const col      = posColor[pos] || "var(--text-muted)";
-        const safeName = (t.name || "").replace(/&/g,"&amp;").replace(/"/g,"&quot;");
-        const safePid  = (t.player_id || "").replace(/&/g,"&amp;").replace(/"/g,"&quot;");
+        const safeName = escapeHtml(t.name);
+        const safePid  = escapeHtml(t.player_id);
         return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);">
           <div style="min-width:0;flex:1;">
-            <div style="font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;"><span class="player-clickable" data-player-id="${safePid}" data-player-name="${safeName}">${t.name}</span></div>
-            <div style="font-size:11px;color:var(--text-muted);">${t.owner_team}</div>
+            <div style="font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;"><span class="player-clickable" data-player-id="${safePid}" data-player-name="${safeName}">${safeName}</span></div>
+            <div style="font-size:11px;color:var(--text-muted);">${escapeHtml(t.owner_team)}</div>
           </div>
           <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
             <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${col}20;color:${col};">${t.pos_rank_label || t.position}</span>
@@ -6842,11 +6854,11 @@ window.initTradePage = function initTradePage(root = document) {
 
         function renderRow(t, pos) {
           const col      = posColor2[pos] || "var(--accent)";
-          const safeName = (t.name || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;");
-          const safePid  = (t.player_id || "");
+          const safeName = escapeHtml(t.name);
+          const safePid  = escapeHtml(t.player_id);
           return `<div class="otc-sugg-target-row">
             <span class="otc-sugg-target-pos" style="background:${col}20;color:${col};">${pos}</span>
-            <span class="otc-sugg-target-name">${t.name || ""}</span>
+            <span class="otc-sugg-target-name">${safeName}</span>
             <button class="sugg-target-get-btn otc-sugg-target-btn"
               data-pid="${safePid}" data-name="${safeName}">
               Find packages
@@ -11406,7 +11418,7 @@ function openPlayerModal(playerId, playerName, opts) {
       const nameEl = document.querySelector('.player-modal-name');
       if (!nameEl) return;
       nameEl.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;';
-      nameEl.innerHTML = `<span>${playerName || 'Unknown Player'}</span>${badges}`;
+      nameEl.innerHTML = `<span>${escapeHtml(playerName || 'Unknown Player')}</span>${badges}`;
 
       // Meta with dots separator
       const metaParts = [];
@@ -11432,8 +11444,8 @@ function openPlayerModal(playerId, playerName, opts) {
       const metaEl = document.getElementById('playerModalMeta');
       let metaHTML = `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:0;">${metaParts.join('<span style="opacity:.35;margin:0 3px;">·</span>')}</div>`;
       if (data.fantasy_team) {
-        const _ownerStr = data.fantasy_team_owner ? ` · <span style="opacity:.65;">@${data.fantasy_team_owner}</span>` : '';
-        metaHTML += `<div style="font-size:11px;font-weight:600;color:var(--accent);margin-top:3px;opacity:.9;">${data.fantasy_team}${_ownerStr}</div>`;
+        const _ownerStr = data.fantasy_team_owner ? ` · <span style="opacity:.65;">@${escapeHtml(data.fantasy_team_owner)}</span>` : '';
+        metaHTML += `<div style="font-size:11px;font-weight:600;color:var(--accent);margin-top:3px;opacity:.9;">${escapeHtml(data.fantasy_team)}${_ownerStr}</div>`;
       }
       metaEl.innerHTML = metaHTML;
 
@@ -14633,11 +14645,7 @@ function _updateWatchlistBtn(btn, player_id) {
   if (watched && window.brPop) window.brPop(btn.querySelector('.wl-star-glyph'));
 }
 
-function _wlEsc(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
-    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-  });
-}
+function _wlEsc(s) { return escapeHtml(s); }
 
 function _wlLeagueParams() {
   const lt = (typeof _leagueType !== 'undefined' && _leagueType) ? _leagueType : '1qb';
@@ -16582,9 +16590,9 @@ function _buildComparePlayerHeader(p) {
   const _ownerLine = ''; // omit fantasy team from compare header - too cluttered
   return `
     <div class="compare-player-header">
-      <img src="${_hiResHeadshot(p.espnHeadshot, 160)}" data-raw="${p.espnHeadshot || ''}" onerror="${_HS_FALLBACK}" class="compare-player-headshot" alt="${p.name}" />
+      <img src="${_hiResHeadshot(p.espnHeadshot, 160)}" data-raw="${escapeHtml(p.espnHeadshot || '')}" onerror="${_HS_FALLBACK}" class="compare-player-headshot" alt="${escapeHtml(p.name)}" />
       <div class="compare-player-header-info">
-        <div class="compare-player-name">${p.name}</div>
+        <div class="compare-player-name">${escapeHtml(p.name)}</div>
         <div class="compare-player-meta">${metaParts.join(sep)}</div>
         ${_ownerLine}
       </div>
@@ -16988,7 +16996,7 @@ function _cmpMatchBaselines(q) {
   }).slice(0, 6);
 }
 
-function _cmpEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
+function _cmpEsc(s) { return escapeHtml(s); }
 
 // Aggregate a player's weekly rows over [wkStart,wkEnd] into the weekly-capable
 // advanced-metric keys (the only metrics that can be sliced by week; PFF grades,
