@@ -8893,6 +8893,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const sleeperFlow = document.getElementById("sleeperFlow");
   const espnFlow = document.getElementById("espnFlow");
   const yahooFlow = document.getElementById("yahooFlow");
+  const mflFlow = document.getElementById("mflFlow");
   const sleeperHint = document.getElementById("sleeperHint");
   const lookupBtn = document.getElementById("lookupBtn");
   const usernameInput = document.getElementById("username");
@@ -8952,6 +8953,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const yahooTeamName = document.getElementById("yahooTeamName");
   const yahooConnectBtn = document.getElementById("yahooConnectBtn");
   const yahooErrorBox = document.getElementById("yahooError");
+
+  const mflLeagueIdInput = document.getElementById("mflLeagueIdInput");
+  const mflSeasonInput = document.getElementById("mflSeasonInput");
+  const mflSubmitBtn = document.getElementById("mflSubmitBtn");
+  const mflErrorBox = document.getElementById("mflError");
 
 if (!platformBtns.length) return;
 
@@ -9037,6 +9043,9 @@ if (!platformBtns.length) return;
   }
 
   let currentPlatform = "sleeper";
+  // Page default season for the shared hidden field; captured so the MFL flow,
+  // which may overwrite it with a user-entered year, can be reverted on switch.
+  const homeDefaultSeason = document.querySelector('#leagueSelectForm input[name="season"]')?.value || "";
   let homeEspnMethod = "public";
   let espnRequestedAction = "";
   let sleeperLookupUser = null;
@@ -9133,10 +9142,18 @@ if (!platformBtns.length) return;
     if (leagueSelectWrap) leagueSelectWrap.style.display = "none";
     if (generateWrap) generateWrap.style.display = "none";
     if (errorBox) errorBox.style.display = "none";
+    // The MFL flow can overwrite the shared hidden season field with a
+    // user-entered year; restore the page default when leaving it so other
+    // platforms build for the current season.
+    if (platform !== "mfl") {
+      const seasonEl = document.querySelector('#leagueSelectForm input[name="season"]');
+      if (seasonEl && typeof homeDefaultSeason === "string") seasonEl.value = homeDefaultSeason;
+    }
 
     if (sleeperFlow) sleeperFlow.style.display = platform === "sleeper" ? "block" : "none";
     if (espnFlow)    espnFlow.style.display    = platform === "espn"    ? "block" : "none";
     if (yahooFlow)   yahooFlow.style.display   = platform === "yahoo"   ? "block" : "none";
+    if (mflFlow)     mflFlow.style.display     = platform === "mfl"     ? "block" : "none";
     if (sleeperHint) sleeperHint.style.display = platform === "sleeper" ? ""      : "none";
     if (platform === "espn") setHomeEspnMethod(homeEspnMethod);
     if (platform !== "espn") {
@@ -9845,6 +9862,69 @@ if (!platformBtns.length) return;
           yahooErrorBox.textContent = err.message || "Unable to connect to Yahoo.";
           yahooErrorBox.style.display = "block";
         }
+      }
+    });
+  }
+
+  // MFL: public, read-only league. Validate the League ID + season, then reveal
+  // the same choose-league + Continue-with-Google / without-account choice the
+  // Sleeper and ESPN-public flows use.
+  if (mflSubmitBtn) {
+    mflSubmitBtn.addEventListener("click", async () => {
+      const leagueId = mflLeagueIdInput?.value.trim();
+      if (!leagueId || !/^\d+$/.test(leagueId)) {
+        if (mflErrorBox) {
+          mflErrorBox.textContent = "Enter a valid MFL League ID (numbers only).";
+          mflErrorBox.style.display = "block";
+        }
+        window.brShake?.(mflLeagueIdInput);
+        return;
+      }
+      const seasonEl = document.querySelector('#leagueSelectForm input[name="season"]');
+      const defaultSeason = seasonEl && seasonEl.value ? seasonEl.value : String(new Date().getFullYear());
+      const seasonRaw = mflSeasonInput?.value.trim() || defaultSeason;
+      if (!/^\d{4}$/.test(seasonRaw)) {
+        if (mflErrorBox) {
+          mflErrorBox.textContent = "Enter a valid 4-digit season.";
+          mflErrorBox.style.display = "block";
+        }
+        window.brShake?.(mflSeasonInput);
+        return;
+      }
+
+      if (mflErrorBox) mflErrorBox.style.display = "none";
+      mflSubmitBtn.disabled = true;
+      mflSubmitBtn.textContent = "Validating...";
+      try {
+        const res = await fetch(`/api/link/mfl/preview?league_id=${encodeURIComponent(leagueId)}&season=${encodeURIComponent(seasonRaw)}`);
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || "Unable to load MFL league.");
+        }
+
+        const season = String(data.season || seasonRaw);
+        // Carry the chosen season through both the guest form-submit and the
+        // Continue-with-Google paths, which read this hidden field.
+        if (seasonEl) seasonEl.value = season;
+        if (leagueSelect) {
+          leagueSelect.innerHTML = `<option value="${leagueId}" selected>${(data.name || "MFL League").replace(/[<>&]/g, "")}</option>`;
+        }
+        if (formPlatform) formPlatform.value = "mfl";
+        const formUsername = document.getElementById("formUsername");
+        if (formUsername) formUsername.value = "";
+
+        if (leagueSelectWrap) leagueSelectWrap.style.display = "block";
+        if (generateWrap) generateWrap.style.display = "block";
+        if (window._hasAccount && googleBtnEl) googleBtnEl.innerHTML = "Save league to my account";
+        syncHomeContinueState();
+      } catch (err) {
+        if (mflErrorBox) {
+          mflErrorBox.textContent = err.message || "Unable to load MFL league.";
+          mflErrorBox.style.display = "block";
+        }
+      } finally {
+        mflSubmitBtn.disabled = false;
+        mflSubmitBtn.textContent = "Connect League";
       }
     });
   }
