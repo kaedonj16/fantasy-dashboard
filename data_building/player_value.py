@@ -81,10 +81,20 @@ def _peak_age_score(age: Optional[float], peak: float, left_width: float, right_
     return _clip(1.0 - 0.70 * (d ** 1.15), 0.08, 1.0)
 
 
+# When a player's age is unknown, treat them as a league-average veteran (26).
+# Age-less records are almost always fringe/depth players rather than youth, so
+# "assume 26" is the conservative default. Both _age_factor and
+# horizon_age_factor use this single value so the point-in-time and 3-year
+# horizon curves agree for age-less players (previously _age_factor returned a
+# flat neutral 0.85 while horizon_age_factor already assumed 26 — the two
+# disagreed, e.g. an age-less RB scored 0.85 point-in-time but 0.395 on horizon).
+_DEFAULT_UNKNOWN_AGE = 26.0
+
+
 def _age_factor(pos: str, age: Optional[float]) -> float:
     """Smooth dynasty age curve. Higher = better 3-year outlook."""
     if age is None:
-        return 0.85
+        age = _DEFAULT_UNKNOWN_AGE
 
     pos = (pos or "").upper()
 
@@ -106,7 +116,7 @@ def _age_factor(pos: str, age: Optional[float]) -> float:
 def horizon_age_factor(pos: str, age: Optional[float]) -> float:
     """3-year dynasty horizon age factor."""
     if age is None:
-        age = 26.0
+        age = _DEFAULT_UNKNOWN_AGE
 
     weights = [0.20, 0.35, 0.45]
     vals = [_age_factor(pos, float(age) + i) for i in range(len(weights))]

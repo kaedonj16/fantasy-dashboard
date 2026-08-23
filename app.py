@@ -14850,8 +14850,11 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             "#94a3b8",
         )
 
-    # Boom or Bust - highest weekly score std dev
-    boom_eligible = career_df[career_df["Seasons"] >= 1].copy()
+    # Boom or Bust - highest weekly score std dev. Uses the same 2+ season frame
+    # as its mirror award "Consistency King" (lowest std dev): a single season can
+    # produce an artificially extreme variance, and a manager barred from the
+    # steadiness award shouldn't be eligible for the volatility one.
+    boom_eligible = eligible
     if not boom_eligible.empty:
         boom_row = boom_eligible.loc[boom_eligible["STD"].idxmax()]
         fun_awards_html += _fun_award(
