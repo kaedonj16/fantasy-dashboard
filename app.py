@@ -24210,7 +24210,10 @@ def api_draft_grades():
                 _arr.sort(reverse=True)
                 _topn = max(1, min(3, len(_arr)))
                 _elite = sum(_arr[:_topn]) / _topn
-                _idx = int(round(_num_teams * _starters.get(_pp, 1))) - 1
+                # Anchor PPG replacement to the same empirical starter allocation
+                # as VOR (above) so the two metrics, and the Draft Room / Cheat
+                # Sheet, all index replacement the same way.
+                _idx = int(round(_num_teams * _empirical.get(_pp, _starters.get(_pp, 1)))) - 1
                 _idx = max(0, min(_idx, len(_arr) - 1))
                 ppg_scale_by_pos[_pp] = {"repl": _arr[_idx], "elite": _elite}
             ps_targets = (

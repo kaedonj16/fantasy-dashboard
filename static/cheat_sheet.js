@@ -329,8 +329,14 @@
     });
     if (!pool.length) { players = []; return; }
 
-    var starters = C.startersFor(cfg.rosterPositions, sf);
     var valFn = function (p) { return C.valOf(p, mode, sf); };
+    // Empirical starter allocation (best-available fills each starting slot),
+    // matching the Draft Room and the server grade, rather than the fixed
+    // half-QB/half-RB/half-WR heuristic. Falls back to startersFor if the shared
+    // core is an older build without the allocator.
+    var starters = C.effectiveStarters
+      ? C.effectiveStarters(pool, C.rosterCounts(cfg.rosterPositions, sf), teams, valFn)
+      : C.startersFor(cfg.rosterPositions, sf);
     var repl = C.computeReplacement(pool, valFn, starters, teams);
     // Roster-need shading: targets from the league roster, "my" counts from live
     // draft picks that are mine. Only meaningful once a live draft is connected.

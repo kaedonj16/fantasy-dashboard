@@ -6,10 +6,12 @@
 // tests/test_pick_score_parity.py runs this (via Node) against the Python copy
 // over random inputs and fails CI on any divergence.
 //
-// This is the pure math only. Callers gather the inputs (value, vor, tier, adp,
-// need, ppg, ...); the live draft-room recommendation additionally layers the
-// survival/handcuff timing terms via survivalAdj/handcuff, which grading never
-// uses (so grades match the server, which never passes them).
+// This is the pure math only - pick QUALITY, nothing time-sensitive. Callers
+// gather the inputs (value, vor, tier, adp, need, ppg, ...). Live-draft timing
+// (survival to the next pick, redraft handcuff insurance) lives entirely in the
+// draft-room decision layer (draft_board_core.js decisionScore), so the timing
+// signal is counted exactly once and never runs through the depth/relabel
+// shaping below.
 (function (root, factory) {
   var api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
@@ -32,7 +34,7 @@
 
   // o: { pos, value, vor, tier, age, rankChange7d, avgPick, pickNo, maxVal,
   //      draftType, isSf, needRaw, qbCount, totalPicks, numTeams, ppgNorm,
-  //      ppr, tep, passTd, isTierCliff, survivalAdj, handcuff }
+  //      ppr, tep, passTd, isTierCliff }
   // Returns an integer 0-100.
   function computePickScore(o) {
     var pos = (o.pos || '').toUpperCase();
@@ -92,9 +94,6 @@
           + w.tier * tierScore + w.need * need + w.youth * youth
           + w.mom * mom + (w.ppg || 0) * ppgN;
 
-    // Live-draft timing term (survival to next pick). Grading passes 0.
-    if (o.survivalAdj) s += o.survivalAdj;
-
     if (!o.isSf && pos === 'QB') {
       var teams = o.numTeams ? +o.numTeams : 12;
       var round = pickNo ? Math.floor((pickNo - 1) / Math.max(teams, 1)) + 1 : 1;
@@ -131,9 +130,6 @@
              : 1.0;
       s *= rp;
     }
-
-    // Live-draft redraft handcuff term. Grading passes false.
-    if (o.handcuff) s = Math.min(1, s + 0.15);
 
     if (tep && tep > 0 && pos === 'TE') s *= (1 + 0.12 * tep);
     // Six-point passing TDs raise the weekly ceiling and replacement advantage

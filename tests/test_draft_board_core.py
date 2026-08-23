@@ -222,6 +222,8 @@ def test_roster_economics_respect_format_and_flex():
         "fallen:C.decisionScore({base:99,utility:.30,bench:true,quality:1,required:0,freePicks:4,waitLoss:18,exceptional:1}),"
         "qb3:C.decisionScore({base:92,utility:.18,bench:true,deepBench:true,quality:.8,required:2,freePicks:1})},"
         "waiting:[C.decisionScore({base:90,utility:1,waitPenalty:8}),C.decisionScore({base:87,utility:1,waitPenalty:0})],"
+        "handcuff:[C.decisionScore({base:80,utility:1}),C.decisionScore({base:80,utility:1,handcuffBonus:5}),"
+        "C.decisionScore({base:80,utility:1,handcuffBonus:50})],"
         "ceiling:[C.decisionScore({base:96,utility:1,waitLoss:30}),"
         "C.decisionScore({base:94,utility:1,waitLoss:30})],"
         "band:C.decisionBand([{id:'best',ds:90,weight:1},{id:'close',ds:87,weight:1},{id:'bad',ds:72,weight:9}],3,.8).map(x=>x.id),"
@@ -249,6 +251,10 @@ def test_roster_economics_respect_format_and_flex():
     assert out["scores"]["fallen"] > out["scores"]["qb2"]
     assert out["scores"]["qb3"] < out["scores"]["qb2"]
     assert out["waiting"][1] > out["waiting"][0]
+    # Handcuff insurance (now applied here, not in the pick-score kernel) nudges a
+    # pick up, but is bounded so it can never leap a player past a real tier.
+    assert out["handcuff"][1] > out["handcuff"][0]
+    assert out["handcuff"][2] - out["handcuff"][0] <= 8
     assert out["ceiling"][0] < 99 and out["ceiling"][0] > out["ceiling"][1]
     assert out["band"] == ["best", "close"]
     assert out["selected"] == "best"

@@ -122,13 +122,16 @@ def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
                        avg_pick, pick_no, max_val, draft_type, is_sf,
                        need_raw, qb_count, total_picks=None, num_teams=None,
                        ppg_norm=None, ppr=1.0, tep=0.0, pass_td=4.0, is_tier_cliff=False,
-                       survival_adj=0.0, handcuff=False, weights=None,
+                       weights=None,
                        depth_slope=None, depth_floor=None) -> int:
     """Mirror of static/pick_score.js `computePickScore`; the two are pinned
-    identical by tests/test_pick_score_parity.py. ``survival_adj`` and
-    ``handcuff`` are the live-draft-only timing terms (default off); the grade
-    never passes them, which is why the Teams-page grade and the Draft Room
-    grade agree. Do not edit this without editing the JS (and vice versa)."""
+    identical by tests/test_pick_score_parity.py. This kernel is pure pick
+    QUALITY only: live-draft timing (survival to the next pick, redraft
+    handcuff insurance) lives entirely in the Draft Room's decision layer
+    (static/draft_board_core.js ``decisionScore``), NOT here. Keeping it out
+    means the timing signal is counted exactly once and is never distorted by
+    the depth-normalization / display-relabel shaping below. Do not edit this
+    without editing the JS (and vice versa)."""
     pos = (pos or "").upper()
     # DB-sourced numbers arrive as decimal.Decimal; coerce to float so they mix
     # with the float weights below (Decimal * float raises TypeError).
@@ -197,10 +200,6 @@ def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
          + w["tier"] * tier_score + w["need"] * need + w["youth"] * youth
          + w["mom"] * mom + w.get("ppg", 0.0) * ppg_n)
 
-    # Live-draft survival/opportunity-cost term (0 for grading).
-    if survival_adj:
-        s += float(survival_adj)
-
     # QB overfill (1QB only): a second QB only carries real opportunity cost in
     # the early rounds. By the late rounds a backup QB is a normal pick, so the
     # penalty tapers out (mirrors the Draft Room).
@@ -257,10 +256,6 @@ def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
         else:
             _rp = 1.0
         s *= _rp
-
-    # Live-draft redraft handcuff term (False for grading).
-    if handcuff:
-        s = min(1.0, s + 0.15)
 
     # Scoring-format adjustments: shift toward the build the league's scoring
     # rewards. Mirrors the Draft Room's scoringCfg() multipliers exactly.
