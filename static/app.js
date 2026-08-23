@@ -9709,7 +9709,10 @@ if (!platformBtns.length) return;
           // dashboard opens as this team (same session shape as sign-in-league).
           await fetch("/api/quick-set-viewer", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username: teamName, team_name: teamName, roster_id: rosterId }),
+            body: JSON.stringify({
+              username: teamName, team_name: teamName, roster_id: rosterId,
+              platform: "espn", league_id: otpLeagueId, season: otpSeason(),
+            }),
           });
         } catch (_) { /* non-fatal: fall through to the dashboard either way */ }
       }

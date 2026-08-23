@@ -5,7 +5,10 @@ from datetime import datetime
 import pandas as pd
 from flask import Blueprint, jsonify, request, session
 
-from dashboard_services.api import get_sleeper_user_leagues
+from dashboard_services.api import (
+    get_sleeper_user_by_username,
+    get_sleeper_user_leagues,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,10 +50,6 @@ def get_nfl_state(*a, **k):
 
 def get_rosters(*a, **k):
     from app import get_rosters as _fn
-    return _fn(*a, **k)
-
-def get_sleeper_user_by_username(*a, **k):
-    from app import get_sleeper_user_by_username as _fn
     return _fn(*a, **k)
 
 def resolve_league_id_for_season(*a, **k):
@@ -213,12 +212,10 @@ def api_my_leagues():
     """The signed-in user's leagues for the league switcher.
 
     Sourced identically to the My Leagues page (/portfolio) via the shared
-    resolve_my_leagues() builder — the signed-in viewer's *live* current-season
-    Sleeper membership plus the account's ESPN/Yahoo leagues — so the switcher
-    and My Leagues always show the same set. Prior-season and other-identity
-    leagues are intentionally excluded; because the Sleeper fetch is live, a
-    deleted or left league drops out on its own. Each entry carries its own
-    platform so the switcher can navigate cross-platform."""
+    resolve_my_leagues() builder. Every league saved to the Google account is
+    returned regardless of platform, then linked Sleeper identities may provide
+    live metadata enrichment. Each entry carries its own platform
+    so the switcher can navigate cross-platform."""
     out = []
     try:
         _cur_season = int((get_nfl_state() or {}).get("season") or 0) or None
