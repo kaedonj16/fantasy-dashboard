@@ -42,14 +42,24 @@ def _render(title: str, league_id: Optional[str], active: str, body: str,
 
 # ── Weekly-email unsubscribe (signed, no login) ───────────────────────────────
 
-@public_bp.route("/email/unsubscribe")
+@public_bp.route("/email/unsubscribe", methods=["GET", "POST"])
 def email_unsubscribe():
     """One-click unsubscribe from weekly digest emails. The token is an HMAC over
-    the account id, so no login is needed and the link can't be forged."""
+    the account id, so no login is needed and the link can't be forged.
+
+    GET renders a confirmation page (the link in the email body). POST is the
+    RFC 8058 one-click path a mail client hits from the List-Unsubscribe header;
+    it just performs the opt-out and returns a bare 200."""
     from flask import request as _req
     from utils.weekly_email import verify_unsub_token, unsubscribe
-    token = _req.args.get("token", "")
+    token = _req.args.get("token", "") or (_req.form.get("token", "") if _req.method == "POST" else "")
     account_id = verify_unsub_token(token)
+
+    if _req.method == "POST":
+        if account_id is not None:
+            unsubscribe(account_id)
+        return ("", 200)
+
     if account_id is None:
         msg = ("<h2 style='margin:0 0 8px;'>Link expired or invalid</h2>"
                "<p style='color:var(--text-muted);font-size:14px;'>We couldn't verify "

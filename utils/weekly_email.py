@@ -363,7 +363,7 @@ def send_weekly_digests(limit: int | None = None, dry_run: bool = False) -> dict
             sent += 1
             continue
 
-        ok = send_html_email(email, digest["subject"], html)
+        ok = send_html_email(email, digest["subject"], html, unsubscribe_url=unsub)
         if ok:
             sent += 1
             try:

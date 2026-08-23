@@ -39,12 +39,17 @@ def is_sender_configured():
 
 
 def send_html_email(to_email: str, subject: str, html_body: str,
-                    text_body: str = None) -> bool:
+                    text_body: str = None, unsubscribe_url: str = None) -> bool:
     """Send one HTML email (with a plain-text fallback part) to a single address.
 
     Returns True on send, False if mail isn't configured or the send failed.
     Kept dependency-free (stdlib smtplib) to match send_error_email; callers
-    are responsible for not sending to opted-out users."""
+    are responsible for not sending to opted-out users.
+
+    When ``unsubscribe_url`` is given, adds the List-Unsubscribe headers
+    (RFC 2369 + RFC 8058 one-click) so Gmail/Apple Mail surface a native
+    unsubscribe control — which both improves the recipient experience and
+    materially lowers the odds the message is flagged as spam."""
     if not is_sender_configured():
         print("[email] sender not configured, skipping send")
         return False
@@ -58,6 +63,9 @@ def send_html_email(to_email: str, subject: str, html_body: str,
         msg["From"] = config["email_user"]
         msg["To"] = to_email
         msg["Subject"] = subject
+        if unsubscribe_url:
+            msg["List-Unsubscribe"] = f"<{unsubscribe_url}>"
+            msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
         # A plain-text part first, then HTML: clients render the last part they
         # can display, so HTML wins where supported and text is the fallback.
         msg.attach(MIMEText(text_body or _html_to_text(html_body), "plain"))
