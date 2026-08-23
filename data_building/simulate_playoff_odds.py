@@ -1725,8 +1725,11 @@ def _run_mc(
             pf[:, ia]   += sa
             pf[:, ib]   += sb
 
-    # Rank by wins desc, pf desc (wins dominate)
-    rank_key  = wins * 1e6 + pf
+    # Rank by wins desc, pf desc (wins dominate). Compute in float64: wins*1e6
+    # reaches ~1.3e7 in a full season, past float32's exact-integer range
+    # (2^24 ≈ 1.68e7, ULP ≥ 1.0 above ~8.4e6), which silently collapses the PF
+    # tiebreaker for teams within ~1 pt — flipping seeding in tight bubble races.
+    rank_key  = wins.astype(np.float64) * 1e6 + pf.astype(np.float64)
     team_rank = np.argsort(np.argsort(-rank_key, axis=1), axis=1)  # 0 = best
 
     in_playoffs = (team_rank < playoff_teams).mean(axis=0) * 100
