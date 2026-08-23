@@ -36,6 +36,20 @@ function escapeHtml(s) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
   });
 }
+
+// ── Canonical position palette ────────────────────────────────────────────────
+// Single source of truth for position → color across the app (rankings, trade
+// calculator, playoff table, etc.). Previously this map was copy-pasted a dozen
+// times and had drifted (TE showed up as three different purples/ambers). Defined
+// before the @public-js:core-end marker so the generated public.js bundle picks it
+// up too. Keep in sync with the Python-side pos_colors maps in app.py and the
+// POS_COLOR map in draft_room.js.
+var POS_COLORS = {
+  QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6",
+  K: "#c92c68", DEF: "#475569", FLEX: "#14b8a6", SF: "#a78bfa",
+  PICK: "#6366f1", BN: "#64748b",
+};
+function posColorOf(pos) { return POS_COLORS[pos] || "var(--accent)"; }
 var __featuresState = 0;   // 0=not loaded, 1=loading, 2=loaded
 var __featuresCbs = [];
 function ensureFeatures(cb) {
@@ -5655,7 +5669,7 @@ window.initTradePage = function initTradePage(root = document) {
       const allGrouped = data.all_positions || {};
       const isBalanced = !needPositions.length;
 
-      const posColor = { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6" };
+      const posColor = POS_COLORS;
 
       // Each player row includes an inline hidden panel for package ideas
       function renderPlayerRow(t, pos) {
@@ -5939,7 +5953,7 @@ window.initTradePage = function initTradePage(root = document) {
     }
 
     function posColor(pos) {
-      return { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6", PICK: "#6366f1" }[pos] || "var(--accent)";
+      return posColorOf(pos);
     }
 
     function renderDropdown(matches) {
@@ -6852,7 +6866,7 @@ window.initTradePage = function initTradePage(root = document) {
         const grouped     = data.by_position || {};
         const allGrouped  = data.all_positions || {};
         const isBalanced  = !Object.keys(grouped).length;
-        const posColor2   = { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6" };
+        const posColor2   = POS_COLORS;
 
         function renderRow(t, pos) {
           const col      = posColor2[pos] || "var(--accent)";
@@ -7221,7 +7235,7 @@ window.initTradePage = function initTradePage(root = document) {
     // ── Strategy: player impact table ─────────────────────────────────────────
     function _renderImpactTable(data) {
       if (!strategyImpact) return;
-      const posColor = { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6" };
+      const posColor = POS_COLORS;
       const esc = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
       const isSellArch = _activeArchetype === "distribute" || _activeArchetype === "rebuilding";
 
@@ -7291,7 +7305,7 @@ window.initTradePage = function initTradePage(root = document) {
     function _renderStrategyCards(data, filterPid) {
       if (!strategyCards) return;
       const esc      = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
-      const posColor = { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6" };
+      const posColor = POS_COLORS;
       const archColor = { contending: "#10b981", rebuilding: "#3b82f6", consolidate: "#f59e0b", distribute: "#8b5cf6" };
       const archetype = _activeArchetype;
 

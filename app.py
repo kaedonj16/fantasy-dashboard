@@ -10086,7 +10086,7 @@ def build_activity_body(ctx: dict) -> str:
                     f"{'+' if io_class == 'add' else '−'}</span>"
                     "<div>"
                     f"  <div{clickable_attrs}>{name}</div>"
-                    f"  <div style='color:#64748b;font-size:12px'>{pos_rank_label} • {p.get('team', '')}</div>"
+                    f"  <div style='color:var(--text-muted);font-size:12px'>{pos_rank_label} • {p.get('team', '')}</div>"
                     "</div></div>"
                     f"{val_html}</div>"
                 )
@@ -10130,7 +10130,7 @@ def build_activity_body(ctx: dict) -> str:
                     f"{'+' if io_class == 'add' else '−'}</span>"
                     "<div>"
                     f"  <div style='font-weight:600'>{pick_label}</div>"
-                    f"  <div style='color:#64748b;font-size:12px'>{subline}</div>"
+                    f"  <div style='color:var(--text-muted);font-size:12px'>{subline}</div>"
                     "</div></div>"
                     f"{val_html}</div>"
                 )
@@ -10993,18 +10993,18 @@ def build_activity_body(ctx: dict) -> str:
       .bract-empty-title {{
         font-size: 18px;
         font-weight: 800;
-        color: #0f172a;
+        color: var(--text);
         margin-bottom: 6px;
       }}
 
       .bract-empty-copy {{
         font-size: 14px;
         line-height: 1.5;
-        color: #64748b;
+        color: var(--text-muted);
       }}
 
       .bract-empty-mini {{
-        color: #64748b;
+        color: var(--text-muted);
         font-size: 13px;
       }}
 
@@ -15180,7 +15180,7 @@ def page_awards(platform: str, season: int, league_id: str):
 
 from utils.optimal_lineup import compute_optimal_lineup as _compute_optimal_lineup  # noqa: E402
 
-_OPT_POS_COLORS = {"QB": "#3b82f6", "RB": "#22c55e", "WR": "#f59e0b", "TE": "#a855f7"}
+_OPT_POS_COLORS = {"QB": "#3b82f6", "RB": "#22c55e", "WR": "#f59e0b", "TE": "#8b5cf6"}
 
 
 def _opt_player_badges(players_out: list) -> str:
@@ -15758,7 +15758,7 @@ def _compute_fpts_against(season: int) -> dict:
 
 
 _SCHED_POS_COLORS = {"QB": "#3b82f6", "RB": "#22c55e", "WR": "#f59e0b",
-                     "TE": "#a855f7", "K": "#6b7280", "DEF": "#6b7280"}
+                     "TE": "#8b5cf6", "K": "#6b7280", "DEF": "#6b7280"}
 _SCHED_POS_ORDER = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "K": 4, "DEF": 5}
 
 # Normalize schedule-file team codes to the abbreviations used everywhere else
@@ -16417,7 +16417,7 @@ def build_schedule_body(ctx):
         }).slice(0, 8);
         if (!matches.length) { addResults.style.display = 'none'; return; }
         addResults.innerHTML = matches.map(function(p) {
-          var col = ({QB:'#3b82f6',RB:'#22c55e',WR:'#f59e0b',TE:'#a855f7'})[p.pos] || '#6b7280';
+          var col = ({QB:'#3b82f6',RB:'#22c55e',WR:'#f59e0b',TE:'#8b5cf6'})[p.pos] || '#6b7280';
           return '<div class="sched-add-row" data-pid="' + esc(p.id) + '">' +
                    '<span class="sched-pos" style="background:' + col + '22;color:' + col + ';">' + esc(p.pos) + '</span>' +
                    '<span>' + esc(p.name) + '</span>' +
