@@ -8,9 +8,11 @@
 //
 // These mirror the corresponding helpers in static/draft_room.js exactly
 // (redraftVal / valOf / adpOf / computeReplacement / ppg scale / tierOf); keep
-// them in lockstep. Replacement and the PPG scale both anchor on
-// BRPickScore.starterCounts, the same roster-derived starter index the server
-// pick-score uses, which is what lets the two surfaces agree.
+// them in lockstep. Replacement and the PPG scale both anchor on the empirical
+// starter allocation (effectiveStarters / empiricalSlotAllocation) — the same
+// best-available-fills-each-slot index the server grade uses
+// (utils.pick_score.empirical_slot_allocation) — which is what lets the two
+// surfaces agree. starterCounts remains the fallback when a pool isn't available.
 (function (root, factory) {
   var api = factory(root);
   if (typeof module === 'object' && module.exports) module.exports = api;
@@ -106,6 +108,83 @@
     var span = sc.elite - sc.repl;
     if (span <= 0) return clamp01(v / Math.max(sc.elite, 1));
     return clamp01((v - sc.repl) / span);
+  }
+
+  // Empirical starter allocation: infer how many starters each position really
+  // fields by filling the league's actual starting slots with the best available
+  // eligible players, so FLEX/SF shares are outcomes, not a fixed 50/50 guess.
+  // Faithful mirror of utils/pick_score.py::empirical_slot_allocation (pinned by
+  // tests/test_pick_score_parity.py::test_empirical_slot_allocation_match); the tuple-max tie-break, the
+  // eligibility-ascending slot order and the alias table must match the Python
+  // exactly or the two surfaces' VOR/PPG replacement levels drift apart.
+  function empiricalSlotAllocation(players, slots, numTeams, metric) {
+    metric = metric || 'value';
+    var aliases = {
+      SUPER_FLEX: 'SF', SUPERFLEX: 'SF', SFLEX: 'SF', OP: 'SF',
+      QB_RB_WR_TE: 'SF', Q_RB_WR_TE: 'SF',
+      WRRB_FLEX: 'FLEX', REC_FLEX: 'FLEX', WRRBTE_FLEX: 'FLEX',
+      RB_WR_FLEX: 'FLEX', RB_WR_TE: 'FLEX',
+    };
+    var normalized = (slots || []).map(function (s) { var u = String(s).toUpperCase(); return aliases[u] || u; });
+    if (!normalized.length) normalized = ['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'FLEX'];
+    var eligibility = { QB: ['QB'], RB: ['RB'], WR: ['WR'], TE: ['TE'],
+                        FLEX: ['RB', 'WR', 'TE'], SF: ['QB', 'RB', 'WR', 'TE'] };
+    var elig = function (s) { return eligibility[s] || []; };
+    var pool = [];   // [score, index, pos] tuples, mirroring the Python list
+    (players || []).forEach(function (player, i) {
+      var pos = String((player && (player.position || player.pos)) || '').toUpperCase();
+      // Python skips a player whose metric can't be coerced to float; mirror by
+      // dropping a present-but-non-numeric value (null/absent coerces to 0).
+      var raw = player ? player[metric] : 0;
+      if (raw != null && !isFinite(+raw)) return;
+      if (pos === 'QB' || pos === 'RB' || pos === 'WR' || pos === 'TE') pool.push([+raw || 0, i, pos]);
+    });
+    var teams = Math.max(1, Math.trunc(+numTeams) || 1);
+    // Dedicated slots (narrowest eligibility) fill first; SF/FLEX last. Stable by
+    // original index to match Python's stable sort exactly.
+    var order = [];
+    for (var t = 0; t < teams; t++) {
+      for (var s = 0; s < normalized.length; s++) order.push({ slot: normalized[s], idx: order.length });
+    }
+    order.sort(function (a, b) { return (elig(a.slot).length - elig(b.slot).length) || (a.idx - b.idx); });
+    var used = {}, selected = { QB: 0, RB: 0, WR: 0, TE: 0 };
+    var tupleGt = function (a, b) {
+      if (a[0] !== b[0]) return a[0] > b[0];
+      if (a[1] !== b[1]) return a[1] > b[1];
+      return a[2] > b[2];
+    };
+    order.forEach(function (o) {
+      var allowed = elig(o.slot);
+      if (!allowed.length) return;
+      var best = null;
+      for (var j = 0; j < pool.length; j++) {
+        var item = pool[j];
+        if (used[item[1]]) continue;
+        if (allowed.indexOf(item[2]) < 0) continue;
+        if (best === null || tupleGt(item, best)) best = item;
+      }
+      if (best) { used[best[1]] = true; selected[best[2]] += 1; }
+    });
+    return { QB: selected.QB / teams, RB: selected.RB / teams, WR: selected.WR / teams, TE: selected.TE / teams };
+  }
+
+  // Effective starters-per-position for a live pool: the empirical allocation
+  // when the pool and roster are available, falling back to the fixed
+  // starterCounts heuristic otherwise. `counts` is a {QB,SF,RB,WR,TE,FLEX} map;
+  // its starting slots are expanded into the slot list the allocator fills.
+  // Both the Draft Room and the Cheat Sheet call this so their VOR and PPG
+  // replacement levels are anchored the SAME way the server grade is.
+  function effectiveStarters(pool, counts, teams, valFn) {
+    if (!pool || !pool.length) return PS().starterCounts(counts);
+    var slots = [];
+    [['QB', 'QB'], ['RB', 'RB'], ['WR', 'WR'], ['TE', 'TE'], ['FLEX', 'FLEX'], ['SF', 'SF']].forEach(function (pair) {
+      var n = Math.max(0, Math.round(+(counts || {})[pair[0]] || 0));
+      for (var i = 0; i < n; i++) slots.push(pair[1]);
+    });
+    var allocPool = pool.map(function (p) {
+      return { position: (p.position || '').toUpperCase(), value: valFn(p) };
+    });
+    return empiricalSlotAllocation(allocPool, slots, teams, 'value');
   }
 
   // League-relative depth targets.  Single-start, non-flex positions do not get
@@ -307,8 +386,16 @@
     // A player who is likely to survive until the manager's next pick consumes
     // scarce current-pick capital without capturing much value. Keep this
     // separate from waitLoss: waitLoss rewards a genuine positional shelf cliff,
-    // while waitPenalty discounts this specific player's probability of returning.
+    // while waitPenalty discounts this specific player's probability of
+    // returning. Both derive from the same survival estimate the base pick
+    // score deliberately does NOT touch, so survival is counted exactly once,
+    // here on the point scale.
     score -= Math.max(0, Math.min(10, +o.waitPenalty || 0));
+    // Redraft handcuff insurance: backing up one of the manager's own RBs
+    // protects a starter's workload. A small tilt, applied here rather than in
+    // the shared pick-score kernel so it can't be double-counted or warped by
+    // the kernel's depth-normalization / display-relabel math.
+    score += Math.max(0, Math.min(8, +o.handcuffBonus || 0));
     return Math.max(1, Math.min(99, Math.round(score)));
   }
 
@@ -405,6 +492,7 @@
     redraftVal: redraftVal, dynVal: dynVal, valOf: valOf, adpOf: adpOf,
     computeReplacement: computeReplacement, ppgOf: ppgOf,
     computePpgScale: computePpgScale, ppgNorm: ppgNorm,
+    empiricalSlotAllocation: empiricalSlotAllocation, effectiveStarters: effectiveStarters,
     tierOf: tierOf, maxVal: maxVal, posTargets: posTargets,
     starterRequirements: starterRequirements, rosterRole: rosterRole, candidateRosterRole: candidateRosterRole,
     rosterSlotUtility: rosterSlotUtility, positionNeedUtility: positionNeedUtility,

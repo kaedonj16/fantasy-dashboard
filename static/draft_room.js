@@ -2268,10 +2268,14 @@
     pool = pool || players;
     var rs = (state && state.roster) || defaultRoster();
     var teams = state.teams || 12;
-    // Roster-derived starter counts, shared with the server grade so both anchor
-    // replacement to the same numbers (a hardcoded server guess was the main
-    // cause of WR/RB grade mismatches).
-    var starters = BRPickScore.starterCounts(rs);
+    // Empirical starter allocation (best-available fills each starting slot),
+    // the SAME index the server grade uses (utils.pick_score.empirical_slot_
+    // allocation), so VOR replacement matches across surfaces instead of the old
+    // fixed half-QB/half-RB/half-WR guess. Falls back to the starterCounts
+    // heuristic only if the shared core (or its allocator) isn't loaded.
+    var starters = (window.DraftBoardCore && DraftBoardCore.effectiveStarters)
+      ? DraftBoardCore.effectiveStarters(pool, rs, teams, valOf)
+      : BRPickScore.starterCounts(rs);
     // Shared kernel (static/draft_board_core.js): same value fn, same starters,
     // same indexing as the fallback below — one implementation for the Draft Room
     // and the Cheat Sheet. Fallback kept in case the core script fails to load.
@@ -2309,12 +2313,18 @@
     pool = pool || players;
     var rs = (state && state.roster) || defaultRoster();
     var teams = state.teams || 12;
+    // Anchor the PPG replacement index to the SAME empirical starter allocation
+    // as VOR and the server grade; K/DEF (which the pick score never grades) keep
+    // their raw slot counts. Falls back to the fixed half-split heuristic when the
+    // shared core's allocator isn't loaded.
+    var emp = (window.DraftBoardCore && DraftBoardCore.effectiveStarters)
+      ? DraftBoardCore.effectiveStarters(pool, rs, teams, valOf) : null;
     var flex = rs.FLEX || 0, sf = rs.SF || 0;
     var starters = {
-      QB: (rs.QB || 0) + sf * 0.5,
-      RB: (rs.RB || 0) + flex * 0.5,
-      WR: (rs.WR || 0) + flex * 0.5,
-      TE: (rs.TE || 0),
+      QB: emp ? emp.QB : (rs.QB || 0) + sf * 0.5,
+      RB: emp ? emp.RB : (rs.RB || 0) + flex * 0.5,
+      WR: emp ? emp.WR : (rs.WR || 0) + flex * 0.5,
+      TE: emp ? emp.TE : (rs.TE || 0),
       K:  (rs.K || 0),
       DEF:(rs.DEF || 0)
     };
@@ -2768,9 +2778,10 @@
   // Weights branch by draft type so rookie/redraft/startup each prioritize correctly.
   function clamp01(x){ return x < 0 ? 0 : (x > 1 ? 1 : x); }
   // opts (optional) overrides the "my team" context so the same scoring can be
-  // run from a CPU team's perspective during simulation: { qualByPos, nextOwned,
-  // picksList }. When omitted, pickScore scores for the viewer's own team exactly
-  // as before.
+  // run from a CPU team's perspective during simulation: { qualByPos, pickNo }.
+  // (nextOwned/picksList are no longer read here now that the timing terms live
+  // in the decision layer; callers may still pass them harmlessly.) When
+  // omitted, pickScore scores for the viewer's own team exactly as before.
   function pickScore(p, maxVal, counts, opts){
     var pos = (p.position || '').toUpperCase();
     // Free agents have no current team and no real draft value for any format.
@@ -2786,8 +2797,11 @@
     // All grade math lives in static/pick_score.js (BRPickScore), shared with the
     // Python server grade (utils/pick_score.compute_pick_score) and pinned by a
     // parity test - so the Draft Room and Teams page can never grade a pick
-    // differently. This wrapper only gathers inputs.
-    var grading = !!(opts && opts.grading);
+    // differently. This wrapper only gathers inputs. The kernel is pure pick
+    // QUALITY: live-draft timing (survival, handcuff) is applied later in
+    // liveDecisionScore, NOT here, so the board's Pick Score chip IS the grade
+    // (the `grading` opt no longer changes the formula, only the input context
+    // callers pass). Nothing time-sensitive leaks into the historical grade.
     // Pick this score is being computed AT. Defaults to the clock, but a
     // keeper is scored at the pick his keeper round consumed.
     var _pn = (opts && opts.pickNo) || state.current;
@@ -2803,24 +2817,6 @@
     // Position-normalized PPG (null -> the formula falls back to value).
     var ppgN = ppgNormOf(p);
 
-    // Live-draft-only timing terms; grading passes neither, matching the server.
-    var survivalAdj = 0;
-    if (!grading){
-      var nextOwned = (opts && opts.nextOwned !== undefined) ? opts.nextOwned : nextOwnedAfterCurrent();
-      if (nextOwned){
-        var survProb = availProb(p, nextOwned);
-        if (survProb != null) survivalAdj = 0.05 - survProb / 100 * 0.08;
-      }
-    }
-    var handcuff = false;
-    if (!grading && state.type === 'redraft' && pos === 'RB'){
-      var myRBTeams = {};
-      ((opts && opts.picksList) || myPicksList()).forEach(function(mp){
-        if ((mp.position || '').toUpperCase() === 'RB' && mp.team) myRBTeams[mp.team] = true;
-      });
-      if (p.team && myRBTeams[p.team]) handcuff = true;
-    }
-
     var _sc = scoringCfg();
     return BRPickScore.computePickScore({
       pos: pos, value: valOf(p), vor: vorOf(p), tier: tierOf(p),
@@ -2830,7 +2826,6 @@
       qbCount: counts['QB'] || 0, totalPicks: (state.teams || 12) * (state.rounds || 16),
       numTeams: state.teams || 12, ppgNorm: ppgN,
       ppr: _sc.ppr, tep: _sc.tep, passTd: _sc.passTd, isTierCliff: isTierCliff(p, _pn),
-      survivalAdj: survivalAdj, handcuff: handcuff,
     });
   }
 
@@ -2911,11 +2906,24 @@
     var waitPenalty = effectiveReturnProb == null ? 0
       : clamp01((effectiveReturnProb - LIVE_WAIT_TUNING.threshold) / (100 - LIVE_WAIT_TUNING.threshold))
         * LIVE_WAIT_TUNING.maxPenalty * (1 - exceptional * 0.5);
+    // Redraft handcuff insurance: a small point tilt toward the backup of one of
+    // my own RBs. Formerly a term inside the pick-score kernel, it now lives here
+    // on the decision scale so it is applied once and undistorted (the CPU sim
+    // has always applied its own handcuff nudge separately, at line ~1704).
+    var handcuffBonus = 0;
+    if (state.type === 'redraft' && pos === 'RB' && p.team){
+      var myRBTeams = {};
+      myPicksList().forEach(function(mp){
+        if ((mp.position || '').toUpperCase() === 'RB' && mp.team) myRBTeams[mp.team] = true;
+      });
+      if (myRBTeams[p.team]) handcuffBonus = 5;
+    }
     return DraftBoardCore.decisionScore({ base: base, utility: util,
       bench: bench, deepBench: role === 'bench2', recentPenalty: recentPenalty, exceptional: exceptional,
       quality: ppgNormOf(p) || 0, required: c.obligations.required,
       freePicks: c.obligations.freePicks,
-      waitLoss: Math.max(0, base - expected) * (1 + demandRisk), waitPenalty: waitPenalty });
+      waitLoss: Math.max(0, base - expected) * (1 + demandRisk), waitPenalty: waitPenalty,
+      handcuffBonus: handcuffBonus });
   }
   // How many players remain in this player's (position|tier) bucket.
   function tierRemaining(p){
@@ -3492,10 +3500,11 @@
     var picks = []; // { id, pos, ps, val, ppg }
     mine.forEach(function(m){
       var pos = (m.p.position || '').toUpperCase();
-      // Grade score: recompute at the pick number in grading mode (no live
-      // survival/handcuff timing terms) so it measures pick quality and matches
-      // the server's compute_pick_score exactly. Falls back to the stored live
-      // score only when the player is no longer resolvable.
+      // Grade score: recompute at the pick number so it measures pick quality
+      // and matches the server's compute_pick_score exactly. The kernel carries
+      // no timing terms, so this equals the board's Pick Score for the same
+      // inputs. Falls back to the stored score only when the player is no longer
+      // resolvable.
       var full = playersById[String(m.p.id)];
       var ps = null;
       if (players.length > 0 && _gmaxVal > 0 && full){
@@ -4587,9 +4596,9 @@
   // (same approach gradePicks uses) and cache it back onto the pick object.
   function storedPickScore(pn, pl){
     if (!pl) return null;
-    // Display the GRADE score (no live survival/handcuff timing terms) so every
-    // per-pick chip matches the Teams-page grade. Memoized separately from the
-    // live pl.ps (which the sim stores with timing terms for its own use).
+    // Display the GRADE score so every per-pick chip matches the Teams-page
+    // grade. The kernel carries no timing terms, so this equals the board's
+    // Pick Score for the same inputs; memoized separately from the live pl.ps.
     if (pl.gps != null) return pl.gps;
     var full = playersById[String(pl.id)];
     if (!full || !players.length) return null;

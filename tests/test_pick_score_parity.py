@@ -14,10 +14,11 @@ from pathlib import Path
 
 import pytest
 
-from utils.pick_score import compute_pick_score
+from utils.pick_score import compute_pick_score, empirical_slot_allocation
 
 REPO = Path(__file__).resolve().parents[1]
 PICK_JS = REPO / "static" / "pick_score.js"
+CORE_JS = REPO / "static" / "draft_board_core.js"
 
 pytestmark = pytest.mark.skipif(
     shutil.which("node") is None, reason="node not available"
@@ -93,6 +94,51 @@ def test_js_and_python_pick_scores_match():
         f"{len(mismatches)} formula mismatches, first: "
         f"case={mismatches[0][0]} js={mismatches[0][1]} py={mismatches[0][2]}"
     )
+
+
+def test_empirical_slot_allocation_match():
+    """The browser allocator (draft_board_core.js empiricalSlotAllocation) and the
+    Python server mirror (utils.pick_score.empirical_slot_allocation) must derive
+    the SAME starters-per-position from the same pool/slots/teams - it now anchors
+    VOR and PPG replacement on both surfaces, so any drift re-opens the grade gap
+    this parity guards against. Exercises FLEX/SF menus and the empty-slots
+    default-roster branch."""
+    rng = random.Random(2024)
+    positions = ["QB", "RB", "WR", "TE"]
+    slot_menus = [
+        ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"],
+        ["QB", "RB", "RB", "WR", "WR", "WR", "TE", "FLEX", "FLEX"],
+        ["QB", "SUPER_FLEX", "RB", "RB", "WR", "WR", "TE", "FLEX"],
+        [],  # exercises the default-roster branch on both sides
+    ]
+    cases = []
+    for _ in range(60):
+        players = [
+            {"position": rng.choice(positions), "value": round(rng.uniform(0, 9000), 1)}
+            for _ in range(rng.randint(0, 40))
+        ]
+        cases.append({
+            "players": players,
+            "slots": rng.choice(slot_menus),
+            "numTeams": rng.choice([8, 10, 12, 14]),
+        })
+    driver = (
+        "global.self=global; global.BRPickScore=require(%s);\n"
+        "const C=require(%s);\n"
+        "const cases=%s;\n"
+        "process.stdout.write(JSON.stringify(cases.map("
+        "c=>C.empiricalSlotAllocation(c.players,c.slots,c.numTeams))));\n"
+        % (json.dumps(str(PICK_JS)), json.dumps(str(CORE_JS)), json.dumps(cases))
+    )
+    res = subprocess.run(["node", "-e", driver], capture_output=True, text=True, timeout=30)
+    assert res.returncode == 0, res.stderr
+    js_out = json.loads(res.stdout)
+    for c, js in zip(cases, js_out):
+        py = empirical_slot_allocation(c["players"], c["slots"], c["numTeams"])
+        for pos in ("QB", "RB", "WR", "TE"):
+            assert abs(float(js[pos]) - float(py[pos])) < 1e-9, (
+                f"empirical mismatch pos={pos} case={c} js={js} py={py}"
+            )
 
 
 def test_starter_counts_match():
