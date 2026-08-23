@@ -1085,7 +1085,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-roster-presets { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
   .dr-roster-presets-label { font-size:10px; font-weight:800; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; margin-right:2px; }
   .dr-roster-preset { font-size:11px; font-weight:750; color:var(--text-muted); background:var(--bg);
-    border:1px solid var(--border); border-radius:999px; padding:4px 9px; cursor:pointer; }
+    border:1px solid var(--border); border-radius:6px; padding:4px 9px; cursor:pointer; }
   .dr-roster-preset:hover, .dr-roster-preset.is-active { color:var(--accent,#38bdf8); border-color:var(--accent,#38bdf8);
     background:color-mix(in srgb,var(--accent,#38bdf8) 9%,transparent); }
   .dr-roster-src { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
