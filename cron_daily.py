@@ -728,6 +728,17 @@ print(f"[cron] Draft ADP: {result}")
 """, "draft_adp_crawl")
 
     # ------------------------------------------------------------------ #
+    # Step 8b: Refresh tokenless global ADP feeds (Yahoo/ESPN/MFL).       #
+    # Isolated per provider; an outage keeps the last good snapshot.      #
+    # ------------------------------------------------------------------ #
+    _run_step(f"""
+from dotenv import load_dotenv; load_dotenv()
+from dashboard_services.adp_service import refresh_global_adp_sources
+summary = refresh_global_adp_sources({season!r})
+print(f"[cron] Global ADP refresh: {{summary}}")
+""", "refresh_global_adp", timeout=600)
+
+    # ------------------------------------------------------------------ #
     # Step 9: WLS calibration - one subprocess per combo so numpy        #
     # matrices and trade data are fully released between runs.            #
     # ------------------------------------------------------------------ #

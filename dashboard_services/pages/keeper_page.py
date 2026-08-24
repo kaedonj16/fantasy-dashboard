@@ -497,7 +497,7 @@ def build_keeper_body(
                  if (league_id and _season) else "")
     try:
         from dashboard_services.adp_service import adp_source_options
-        _src_opts = [{"value": v, "label": l} for v, l in adp_source_options("redraft")]
+        _src_opts = [{"value": v, "label": l} for v, l in adp_source_options("redraft", _season)]
     except Exception:
         _src_opts = []
     seed = {

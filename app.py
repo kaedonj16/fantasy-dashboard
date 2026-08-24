@@ -20784,9 +20784,9 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
     try:
         from dashboard_services.adp_service import adp_source_options as _adp_opts
         _adp_source_options = {
-            "startup": [{"value": v, "label": l} for v, l in _adp_opts("dynasty")],
-            "rookie": [{"value": v, "label": l} for v, l in _adp_opts("rookie")],
-            "redraft": [{"value": v, "label": l} for v, l in _adp_opts("redraft")],
+            "startup": [{"value": v, "label": l} for v, l in _adp_opts("dynasty", _adp_season)],
+            "rookie": [{"value": v, "label": l} for v, l in _adp_opts("rookie", _adp_season)],
+            "redraft": [{"value": v, "label": l} for v, l in _adp_opts("redraft", _adp_season)],
         }
     except Exception:
         _adp_source_options = {}

@@ -6,7 +6,16 @@ import logging
 import os
 import threading
 import time
-from typing import Dict, Optional
+from typing import Dict, List, Optional
+
+# Pure-logic format model + capability metadata. Safe to import at module load
+# (no I/O, no heavy deps); re-exported below so callers may import either module.
+from dashboard_services.adp_formats import (  # noqa: F401
+    AdpFormat, SOURCE_CAPABILITIES, source_capability,
+    classify_match, rank_sources_by_match, tep_bucket,
+    axis_to_draft_type, draft_type_to_axis,
+    EXACT, COMPATIBLE, GENERIC, EXCLUDED, MATCH_QUALITY_ORDER,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +42,186 @@ def _atomic_json_write(path, data) -> None:
     with open(tmp, "w") as f:
         _json.dump(data, f)
     os.replace(tmp, str(path))
+
+
+# ── Global-source snapshot store ──────────────────────────────────────────────
+# The tokenless global feeds (Yahoo/ESPN/MFL) are refreshed centrally a few times
+# a day and their normalized results persisted here, so the request path only ever
+# reads a snapshot from disk — never touches the network. This gives three
+# properties the plan requires for free: per-provider failure isolation (a fetch
+# that fails leaves the last good snapshot untouched), stale-data retention
+# (``write_adp_snapshot`` refuses to overwrite good data with an empty result),
+# and a durable record for later historical ADP-movement analysis.
+
+def _snapshot_dir():
+    from utils.paths import DATA_DIR
+    d = DATA_DIR / "adp_snapshots"
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        logger.debug("adp_service: could not create snapshot dir", exc_info=True)
+    return d
+
+
+def _snapshot_path(source: str, axis: str, season: int):
+    return _snapshot_dir() / f"{source}_{axis}_{int(season)}.json"
+
+
+def load_adp_snapshot(source: str, axis: str, season: int) -> dict:
+    """Full persisted snapshot payload for a source/axis/season, or {} if absent.
+
+    Never raises: a missing or corrupt snapshot degrades to {} so the resolver
+    simply treats the source as having no data."""
+    import json as _json
+    path = _snapshot_path(source, axis, season)
+    try:
+        if path.exists():
+            with open(path) as f:
+                data = _json.load(f)
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        logger.warning("adp_service: corrupt ADP snapshot at %s", path, exc_info=True)
+    return {}
+
+
+def snapshot_adp_map(source: str, axis: str, season: int) -> Dict[str, float]:
+    """Just the {canonical_id: overall_adp} map from a persisted snapshot."""
+    adp = (load_adp_snapshot(source, axis, season) or {}).get("adp") or {}
+    out: Dict[str, float] = {}
+    for pid, v in adp.items():
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            continue
+        if fv > 0:
+            out[str(pid)] = fv
+    return out
+
+
+def snapshot_freshness(source: str, axis: str, season: int) -> Optional[float]:
+    """Unix timestamp the snapshot was collected, or None."""
+    ca = (load_adp_snapshot(source, axis, season) or {}).get("collected_at")
+    try:
+        return float(ca) if ca is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def write_adp_snapshot(source: str, axis: str, season: int, payload: dict) -> bool:
+    """Persist a normalized snapshot, retaining the last good data on empty input.
+
+    Returns True if a new snapshot was written. If ``payload`` carries no ADP rows
+    but a non-empty snapshot already exists on disk, the write is *skipped* so an
+    upstream outage or empty response never clobbers valid cached data."""
+    adp = (payload or {}).get("adp") or {}
+    if not adp:
+        existing = load_adp_snapshot(source, axis, season)
+        if (existing.get("adp") or {}):
+            logger.info("adp_service: keeping last-good %s/%s snapshot (empty fetch)",
+                        source, axis)
+            return False
+    record = {
+        "source": source,
+        "axis": axis,
+        "season": int(season),
+        "collected_at": time.time(),
+        "adp": adp,
+        "extra": (payload or {}).get("extra") or {},
+        "meta": (payload or {}).get("meta") or {},
+        "raw_count": (payload or {}).get("raw_count"),
+        "mapped_count": (payload or {}).get("mapped_count"),
+    }
+    if (payload or {}).get("ppr_rank"):
+        record["ppr_rank"] = payload["ppr_rank"]
+    try:
+        _atomic_json_write(_snapshot_path(source, axis, season), record)
+    except Exception:
+        logger.warning("adp_service: failed to write %s/%s snapshot", source, axis, exc_info=True)
+        return False
+    _persist_snapshot_db(record)  # best-effort, never raises
+    return True
+
+
+def _persist_snapshot_db(record: dict) -> None:
+    """Best-effort mirror of a snapshot into the adp_snapshots table.
+
+    Disk is the source of truth for the resolver; the table exists for future
+    historical ADP-movement queries. Any DB problem is swallowed — a missing
+    table, no DSN in a pure test env, or a transient error must never break the
+    refresh or the request path."""
+    meta = record.get("meta") or {}
+    adp = record.get("adp") or {}
+    if not adp:
+        return
+    try:
+        from dashboard_services.db import get_conn
+        ppr = meta.get("ppr")
+        ppr_num = None
+        if isinstance(ppr, (int, float)):
+            ppr_num = float(ppr)
+        draft_type = meta.get("draft_type") or record.get("axis")
+        qb_format = meta.get("qb_format")
+        num_teams = meta.get("num_teams")
+        scope = meta.get("scope")
+        extra = record.get("extra") or {}
+        rows = []
+        for pid, val in adp.items():
+            try:
+                a = float(val)
+            except (TypeError, ValueError):
+                continue
+            ex = extra.get(pid) or {}
+            rows.append((record["source"], int(record["season"]), str(pid), a,
+                         draft_type, qb_format, ppr_num, meta.get("te_premium"),
+                         num_teams, scope, ex.get("min_pick"), ex.get("max_pick"),
+                         ex.get("draft_pct")))
+        if not rows:
+            return
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO adp_snapshots
+                        (source, season, player_id, adp, draft_type, qb_format,
+                         ppr, te_premium, num_teams, source_scope,
+                         min_pick, max_pick, draft_pct, collected_at)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, NOW())
+                    ON CONFLICT (source, season, player_id, draft_type, qb_format)
+                    DO UPDATE SET adp = EXCLUDED.adp, ppr = EXCLUDED.ppr,
+                        te_premium = EXCLUDED.te_premium, num_teams = EXCLUDED.num_teams,
+                        source_scope = EXCLUDED.source_scope, min_pick = EXCLUDED.min_pick,
+                        max_pick = EXCLUDED.max_pick, draft_pct = EXCLUDED.draft_pct,
+                        collected_at = NOW()
+                    """,
+                    rows,
+                )
+    except Exception:
+        logger.debug("adp_service: adp_snapshots DB mirror skipped", exc_info=True)
+
+
+# ── Central refresh of the global feeds ───────────────────────────────────────
+def refresh_global_adp_sources(season: int) -> dict:
+    """Fetch every tokenless global feed and persist its snapshot. For the daily
+    cron. Each provider is isolated: one failing never affects the others, and an
+    empty fetch keeps the last good snapshot. Returns a per-source summary."""
+    summary: Dict[str, dict] = {}
+
+    def _run(source: str, axis: str, fetch):
+        try:
+            payload = fetch()
+            wrote = write_adp_snapshot(source, axis, int(season), payload)
+            summary[source] = {"ok": True, "written": wrote,
+                               "mapped": (payload or {}).get("mapped_count"),
+                               "raw": (payload or {}).get("raw_count")}
+        except Exception as exc:  # noqa: BLE001 - isolate each provider
+            logger.warning("adp_service: refresh %s failed: %s", source, exc, exc_info=True)
+            summary[source] = {"ok": False, "error": type(exc).__name__}
+
+    from dashboard_services.providers import global_adp as _g
+    _run("yahoo", "redraft", lambda: _g.fetch_yahoo_global_adp(int(season)))
+    _run("espn", "redraft", lambda: _g.fetch_espn_global_adp(int(season)))
+    _run("mfl", "redraft", lambda: _g.fetch_mfl_adp(int(season)))
+    return summary
 
 
 def fetch_league_adp_from_db(
@@ -267,12 +456,17 @@ _SLEEPER_ADP_FIELDS = {
                          "adp_dynasty_2qb", "adp_dynasty_ppr", "adp_dynasty_half_ppr", "adp_dynasty_std"),
 }
 
-# Which market sources are valid per scoring axis. Yahoo publishes redraft ADP
-# only (it is a seasonal platform), so it is offered for redraft alone. The
-# "brfantasy" source is our own draft-crawler feed. It sees dynasty startup,
-# rookie, and keeper/redraft drafts, so it is offered on all three axes.
+# Which market sources are valid per scoring axis, and which the selector UIs
+# offer. Only sources with verified capability on an axis appear:
+#   redraft — Sleeper, ESPN (global), Yahoo (global), MFL (global PPR), BR Fantasy.
+#   dynasty — Sleeper, BR Fantasy. ESPN/Yahoo/MFL global feeds are redraft-only
+#             and are deliberately excluded from dynasty (never mix redraft ADP
+#             into a dynasty market). MFL exposes no verified dynasty ADP filter.
+#   rookie  — Sleeper, BR Fantasy. MFL has no verified rookie ADP filter.
+# The globals (espn/yahoo/mfl) are read from centrally-refreshed snapshots, never
+# fetched on the request path.
 ADP_SOURCES = {
-    "redraft": ("sleeper", "yahoo", "brfantasy"),
+    "redraft": ("sleeper", "espn", "yahoo", "mfl", "brfantasy"),
     "dynasty": ("sleeper", "brfantasy"),
     "rookie":  ("sleeper", "brfantasy"),
 }
@@ -280,7 +474,9 @@ ADP_SOURCES = {
 # Human labels for the ADP sources, for source-selector UIs.
 ADP_SOURCE_LABELS = {
     "sleeper":   "Sleeper",
+    "espn":      "ESPN",
     "yahoo":     "Yahoo",
+    "mfl":       "MFL",
     "brfantasy": "BR Fantasy",
     "consensus": "Consensus",
 }
@@ -293,14 +489,34 @@ _CRAWLER_DRAFT_TYPE = {"dynasty": "startup", "redraft": "redraft", "rookie": "ro
 _CRAWLER_REF_SIZE = 12
 
 
-def adp_source_options(scoring_type: str):
+# Global feeds that only make sense in a selector once they actually have data.
+_GLOBAL_SNAPSHOT_SOURCES = frozenset({"espn", "yahoo", "mfl"})
+
+
+def adp_source_options(scoring_type: str, season: Optional[int] = None):
     """[(value, label)] of the sources valid for a scoring axis, plus Consensus.
 
     Drives the source-selector dropdowns so each surface offers exactly the
-    sources that make sense for what is being drafted (Yahoo only for redraft,
-    BR Fantasy only for dynasty/rookie)."""
+    sources that make sense for what is being drafted (Yahoo/ESPN/MFL redraft
+    only, BR Fantasy on every axis).
+
+    When ``season`` is given, a global snapshot-backed source (ESPN/Yahoo/MFL) is
+    hidden unless it actually has a non-empty snapshot for that season — so a
+    selector never offers a source that would return nothing (Priority 4). Always-
+    on sources (Sleeper, BR Fantasy) and Consensus are never gated. With
+    ``season=None`` every configured source is listed (legacy behavior)."""
     st = scoring_type if scoring_type in ADP_SOURCES else "redraft"
     values = ["consensus", *ADP_SOURCES[st]]
+    season_int: Optional[int] = None
+    if season is not None:
+        try:
+            season_int = int(season)
+        except (TypeError, ValueError):
+            season_int = None
+    if season_int is not None:
+        values = [v for v in values
+                  if v not in _GLOBAL_SNAPSHOT_SOURCES
+                  or snapshot_adp_map(v, st, season_int)]
     return [(v, ADP_SOURCE_LABELS.get(v, v.title())) for v in values]
 
 
@@ -445,13 +661,55 @@ def fetch_yahoo_adp(league_id, token, season: int, is_sf: bool) -> Dict[str, flo
 
 def _yahoo_adp_source(season: int, is_sf: bool, scoring_type: str,
                       league_id, token) -> Dict[str, float]:
-    # Yahoo ADP is redraft-only and needs a user token; other axes yield nothing.
-    if scoring_type != "redraft" or not (league_id and token):
+    """Yahoo ADP, redraft-only.
+
+    With a league token, use Yahoo's league-format-aware draft_analysis (kept for
+    connected Yahoo leagues). Without one, fall back to the public *global* Yahoo
+    ADP snapshot (no OAuth) so the "Yahoo" source works for everyone."""
+    if scoring_type != "redraft":
         return {}
+    if league_id and token:
+        try:
+            got = fetch_yahoo_adp(league_id, token, int(season), is_sf) or {}
+            if got:
+                return got
+        except Exception:
+            logger.debug("adp_service: Yahoo league ADP failed, trying global", exc_info=True)
+    return snapshot_adp_map("yahoo", "redraft", int(season))
+
+
+def _espn_adp_source(season: int, is_sf: bool, scoring_type: str) -> Dict[str, float]:
+    """ESPN global redraft ADP from the persisted snapshot (redraft-only).
+
+    Reads only ``averageDraftPosition``; ESPN's separate PPR draft-room rank is
+    never surfaced here, so it can never leak into ADP consensus."""
+    if scoring_type != "redraft":
+        return {}
+    return snapshot_adp_map("espn", "redraft", int(season))
+
+
+def _mfl_adp_source(season: int, is_sf: bool, scoring_type: str) -> Dict[str, float]:
+    """MFL global redraft ADP from the persisted snapshot (redraft-only)."""
+    if scoring_type != "redraft":
+        return {}
+    return snapshot_adp_map("mfl", "redraft", int(season))
+
+
+def espn_ppr_rank(season: int) -> Dict[str, float]:
+    """ESPN's PPR draft-room rank (separate from ADP) for platform-room analysis.
+
+    Exposed for future platform-room value features; deliberately NOT part of any
+    ADP source map or consensus."""
+    return {str(k): float(v) for k, v in
+            ((load_adp_snapshot("espn", "redraft", int(season)) or {}).get("ppr_rank") or {}).items()
+            if _is_pos_num(v)}
+
+
+def _is_pos_num(v) -> bool:
     try:
-        return fetch_yahoo_adp(league_id, token, int(season), is_sf) or {}
-    except Exception:
-        return {}
+        return float(v) > 0
+    except (TypeError, ValueError):
+        return False
 
 
 def consensus_adp(source_maps) -> Dict[str, float]:
@@ -517,13 +775,7 @@ def resolve_market_adp(season: int, is_sf: bool, scoring_type: str = "redraft",
         return {k: v for k, v in m.items() if k in _restrict} if _restrict is not None else m
 
     def _src(name: str) -> Dict[str, float]:
-        if name == "sleeper":
-            return _clip(_sleeper_adp_source(season, is_sf, scoring_type))
-        if name == "brfantasy":
-            return _clip(_crawler_adp_source(season, is_sf, scoring_type))
-        if name == "yahoo":
-            return _clip(_yahoo_adp_source(season, is_sf, scoring_type, league_id, token))
-        return {}
+        return _clip(_raw_source_map(name, season, is_sf, scoring_type, league_id, token))
 
     def _finish(m: Dict[str, float]) -> Dict[str, float]:
         return ordinal_rank_adp(m) if (as_rank and m) else m
@@ -545,3 +797,117 @@ def resolve_market_adp(season: int, is_sf: bool, scoring_type: str = "redraft",
     fallback_m = (_clip(_sleeper_adp_source(season, is_sf, scoring_type))
                   or _clip(_crawler_adp_source(season, is_sf, scoring_type)))
     return _finish(fallback_m)
+
+
+# ── Shared source dispatch (used by both the simple and detailed resolvers) ────
+def _raw_source_map(name: str, season: int, is_sf: bool, scoring_type: str,
+                    league_id=None, token=None) -> Dict[str, float]:
+    """{canonical_id: overall ADP} for one source, unclipped. Empty off-axis or
+    on any failure (each source function isolates its own errors)."""
+    if name == "sleeper":
+        return _sleeper_adp_source(season, is_sf, scoring_type)
+    if name == "brfantasy":
+        return _crawler_adp_source(season, is_sf, scoring_type)
+    if name == "yahoo":
+        return _yahoo_adp_source(season, is_sf, scoring_type, league_id, token)
+    if name == "espn":
+        return _espn_adp_source(season, is_sf, scoring_type)
+    if name == "mfl":
+        return _mfl_adp_source(season, is_sf, scoring_type)
+    return {}
+
+
+# ── Capability-aware detailed resolver ────────────────────────────────────────
+# The richer path new features use. Unlike resolve_market_adp (which preserves the
+# simple {id: adp} contract and equal rank-blend), this classifies each source
+# against the requested format, prefers exact over compatible over generic, keeps
+# ESPN/Yahoo redraft data out of dynasty, and returns per-player provenance.
+
+_TIER_WEIGHT = {EXACT: 3.0, COMPATIBLE: 2.0, GENERIC: 1.0}
+
+# source_count -> confidence label (Priority 2, item 14).
+def _confidence(n: int) -> str:
+    if n <= 1:
+        return "single-source"
+    if n == 2:
+        return "low"
+    return "normal"
+
+
+def resolve_market_adp_detailed(
+    season: int,
+    fmt: Optional[AdpFormat] = None,
+    *,
+    is_sf: Optional[bool] = None,
+    scoring_type: str = "redraft",
+    ppr=1.0,
+    te_premium: float = 0.0,
+    num_teams: Optional[int] = None,
+    league_id=None,
+    token=None,
+    restrict_ids=None,
+    min_quality: str = GENERIC,
+) -> Dict[str, dict]:
+    """canonical_id -> rich consensus record, capability-aware.
+
+    Each record::
+
+        {
+          "consensus_adp": 24.4,      # tier-weighted mean of the raw source ADPs
+          "source_count": 5,
+          "exact_source_count": 2,
+          "min_adp": 19.6, "max_adp": 31.2, "spread": 11.6,
+          "sources": {"sleeper": 22.3, "espn": 26.1, ...},
+          "match_quality": "exact",   # best tier among contributing sources
+          "confidence": "normal"      # single-source | low | normal
+        }
+
+    Sources whose capability is ``excluded`` for the requested format (e.g. ESPN
+    redraft ADP against a dynasty request) never contribute. ``min_quality`` drops
+    any source below the given tier. All contributing sources are on the overall-
+    pick scale, so the raw mean is meaningful; the simple resolver still offers the
+    scale-invariant rank blend for the plain {id: adp} contract.
+    """
+    if fmt is None:
+        fmt = AdpFormat.from_league(
+            is_sf=bool(is_sf), scoring_type=scoring_type,
+            ppr=ppr, te_premium=te_premium, num_teams=num_teams,
+        )
+    axis = fmt.axis
+    valid = ADP_SOURCES.get(axis, ("sleeper",))
+    ranked = rank_sources_by_match(fmt, valid)  # [(src, quality)], best first, excluded dropped
+    min_idx = MATCH_QUALITY_ORDER.index(min_quality)
+
+    _restrict = set(restrict_ids) if restrict_ids is not None else None
+    per_source: List[tuple] = []  # (name, quality, {id: adp})
+    for name, quality in ranked:
+        if MATCH_QUALITY_ORDER.index(quality) > min_idx:
+            continue
+        m = _raw_source_map(name, int(season), fmt.is_superflex, axis, league_id, token)
+        if _restrict is not None:
+            m = {k: v for k, v in m.items() if k in _restrict}
+        if m:
+            per_source.append((name, quality, m))
+
+    out: Dict[str, dict] = {}
+    all_ids = set().union(*[m.keys() for _n, _q, m in per_source]) if per_source else set()
+    for pid in all_ids:
+        contribs = [(n, q, m[pid]) for n, q, m in per_source if pid in m]
+        vals = [v for _n, _q, v in contribs]
+        weights = [_TIER_WEIGHT.get(q, 1.0) for _n, q, _v in contribs]
+        wsum = sum(weights) or 1.0
+        consensus = sum(v * w for v, w in zip(vals, weights)) / wsum
+        best_q = min((q for _n, q, _v in contribs),
+                     key=lambda q: MATCH_QUALITY_ORDER.index(q))
+        out[str(pid)] = {
+            "consensus_adp": round(consensus, 2),
+            "source_count": len(contribs),
+            "exact_source_count": sum(1 for _n, q, _v in contribs if q == EXACT),
+            "min_adp": round(min(vals), 2),
+            "max_adp": round(max(vals), 2),
+            "spread": round(max(vals) - min(vals), 2),
+            "sources": {n: round(v, 2) for n, _q, v in contribs},
+            "match_quality": best_q,
+            "confidence": _confidence(len(contribs)),
+        }
+    return out
