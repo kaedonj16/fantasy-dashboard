@@ -669,12 +669,20 @@ def _detect_season() -> int:
 
 
 def _market_faithful_sf(cal_1qb: float, market_ratio: "float | None",
-                        lo: float = 0.5, hi: float = 2.5) -> "float | None":
+                        lo: float = 0.5, hi: float = 1.2) -> "float | None":
     """Non-QB Superflex value = calibrated 1QB × the player's OBSERVED market
     SF/1QB ratio (decay-weighted median of real trades). Returns None when there's
     no market ratio or no 1QB base, signalling the caller to fall back to the WLS
-    blend. The ratio is clamped to [lo, hi] to guard a pathological median; real
-    non-QB ratios sit ~0.8–1.2 so the clamp only ever catches garbage.
+    blend.
+
+    The ratio is clamped to [lo, hi] to guard a pathological median. This function
+    is applied to NON-QBs only (the caller keeps QBs on their WLS SF solve), and in
+    Superflex QBs — not skill players — absorb the premium, so real non-QB SF/1QB
+    ratios sit ~0.8–1.2. ``hi`` therefore caps at the top of that real range: a
+    higher clamp lets a distorted ratio (thin/whale SF trades) survive and, once
+    the SF board is re-anchored to its top-5 mean, floats a single non-QB far above
+    the whole field (the Superflex #1-RB spike). ``hi`` must stay a non-QB ceiling —
+    it is never a QB premium, because QBs never reach this path.
 
     This replaces the raw SF WLS solve for non-QBs: the solve chases outlier
     overpays (a depth player "solo for a 1st") and overshoots, while the median is
