@@ -46,6 +46,7 @@ import numpy as np
 from dashboard_services.db import get_conn
 from dashboard_services.picks import load_pick_value_table
 from data_building.trade_intel._helpers import _decay_weight
+from data_building.trade_intel.league_types import LeagueType, calibration_mode
 from data_building.value_model_training import _save_state
 
 logger = logging.getLogger(__name__)
@@ -138,11 +139,12 @@ def _pick_key(asset: dict, current_year: int | None = None) -> str:
 
 def _col_names(league_type: int, league_size: int) -> tuple[str, str]:
     """Return (col_1qb, col_sf) column names in player_values for this combination."""
-    if league_type == 2:  # dynasty
+    mode = calibration_mode(league_type)
+    if mode == "dynasty":
         if league_size == 10:
             return "calibrated_value_1qb", "calibrated_value_sf"
         return f"calibrated_value_{league_size}", f"calibrated_sf_value_{league_size}"
-    else:  # redraft
+    else:
         if league_size == 10:
             return "redraft_value_1qb", "redraft_value_sf"
         return f"redraft_value_{league_size}", f"redraft_sf_value_{league_size}"
@@ -197,9 +199,9 @@ def _load_prior(league_type: int = 2, league_size: int = 10) -> dict[str, dict]:
     """
     Load WLS regularization prior for players.
     Dynasty (2): raw model values (size-specific when available).
-    Redraft (1): FC redraft values stored in player_values (size-specific fallback chain).
+    Redraft (0): FC redraft values stored in player_values (size-specific fallback chain).
     """
-    if league_type == 1:
+    if calibration_mode(league_type) == "redraft":
         # Redraft prior: use FC redraft values; fall back through size chain
         if league_size == 10:
             c1  = "COALESCE(redraft_value_1qb, 0)"
@@ -329,6 +331,10 @@ def _load_pick_keys(season: int, league_type: int = 2, league_size: int = 10) ->
     lightweight DISTINCT query. Lets run_trade_value_model size the unknown
     vector without holding both full trade lists in memory at once (512Mi cap).
     """
+    # Draft picks are dynasty assets. Ignoring them in true-redraft prevents
+    # provider quirks/custom rules from manufacturing redraft pick values.
+    if calibration_mode(league_type) == "redraft":
+        return set()
     teams_clause = _teams_filter(league_size)
     with get_conn() as conn:
         rows = conn.execute(
@@ -580,7 +586,7 @@ def _write_calibrated(rows: list[dict], league_size: int = 10) -> int:
     """Write WLS dynasty results to size-specific calibrated columns."""
     if not rows:
         return 0
-    col_1qb, col_sf = _col_names(2, league_size)
+    col_1qb, col_sf = _col_names(LeagueType.DYNASTY, league_size)
     with get_conn() as conn:
         # Per-player trade backing columns (confidence signal for the value model's
         # WLS blend). Idempotent migration so older DBs gain the columns.
@@ -624,7 +630,7 @@ def _write_redraft_values(rows: list[dict], league_size: int = 10) -> int:
     """Write WLS redraft results to size-specific redraft columns."""
     if not rows:
         return 0
-    col_1qb, col_sf = _col_names(1, league_size)
+    col_1qb, col_sf = _col_names(LeagueType.REDRAFT, league_size)
     with get_conn() as conn:
         prev = _prev_values(conn, col_1qb, col_sf, [r["player_id"] for r in rows])
         for r in rows:
@@ -685,7 +691,7 @@ def run_trade_value_model(
 
     league_type=2 (dynasty): writes calibrated_value_{size} / calibrated_sf_value_{size}
                               + pick values to JSON (size=10 only).
-    league_type=1 (redraft):  writes redraft_value_{size} / redraft_sf_value_{size}.
+    league_type=0 (redraft):  writes redraft_value_{size} / redraft_sf_value_{size}.
     league_size: 8, 10 (default), 12, or 14 - filters trades by league num_teams.
 
     lambda_reg: regularization strength (default 8 ≈ 30 trades → 65% market influence).
@@ -704,7 +710,7 @@ def run_trade_value_model(
     if season is None:
         season = _detect_season()
 
-    mode = "redraft" if league_type == 1 else "dynasty"
+    mode = calibration_mode(league_type)
     logger.info(
         "[trade_value_model] Season %d | mode=%s | size=%d | λ=%.1f",
         season, mode, league_size, lambda_reg,
@@ -885,7 +891,7 @@ def run_trade_value_model(
         cal_sf  = float(v_sf_norm[i])
         prior_v = player_prior[pid]["value_1qb"]
         weight  = round(abs(cal_1qb - prior_v) / max(prior_v, 1.0), 4) if prior_v else 0.0
-        if league_type == 1:
+        if mode == "redraft":
             out_rows.append({
                 "player_id":        pid,
                 "redraft_value_1qb": round(cal_1qb, 2),
@@ -902,7 +908,7 @@ def run_trade_value_model(
                 "calibration_backing_sf": round(float(sf_backing[i]), 4) if i < len(sf_backing) else 0.0,
             })
 
-    val_key = "redraft_value_1qb" if league_type == 1 else "calibrated_value_1qb"
+    val_key = "redraft_value_1qb" if mode == "redraft" else "calibrated_value_1qb"
     top10 = sorted(out_rows, key=lambda r: r[val_key], reverse=True)[:10]
     logger.info("[trade_value_model] Top 10 %s player values (1QB):", mode)
     for r in top10:
@@ -922,7 +928,7 @@ def run_trade_value_model(
                 "min_lift": min_lift, "max_lift": max_lift,
                 "rows": out_rows, "priors": priors}
 
-    if league_type == 1:
+    if mode == "redraft":
         n = _write_redraft_values(out_rows, league_size)
         logger.info("[trade_value_model] Done - %d redraft player values updated (%d-team).", n, league_size)
         return {"written": n, "trades_used": M, "players": n_pl, "season": season,
