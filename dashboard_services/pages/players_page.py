@@ -200,6 +200,13 @@ def build_players_shell() -> str:
       #prTableScroll.pr-adp-scroll .pr-name {
         min-width: 150px;
       }
+      /* A sticky child cannot track the page viewport through an overflow-x
+         scroller reliably: browsers treat that wrapper as its sticky scroll
+         container, which made the header float over arbitrary player rows.
+         Keep the ADP header at the top of its horizontally scrolling table. */
+      #prTableScroll.pr-adp-scroll #prTableHeader {
+        position: static;
+      }
       .pr-rank {
         font-size: 12px;
         font-weight: 700;
