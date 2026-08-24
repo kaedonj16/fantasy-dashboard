@@ -11714,48 +11714,103 @@ function openPlayerModal(playerId, playerName, opts) {
       // Highlight the value matching the viewer's league type.
       const _c1 = _adpIsSf ? '' : ' pm-adp-cur';
       const _cS = _adpIsSf ? ' pm-adp-cur' : '';
-      // One compact card per format (Dynasty / Redraft); inside, a tight row per
-      // source (Sleeper / BR Fantasy / Consensus) showing 1QB + SF.
-      const _adpFmtCard = (sources, fmtLabel, key) => {
-        const rows = sources
-          .filter(s => s.vals[key + '_1qb'] != null || s.vals[key + '_sf'] != null)
-          .map(s => `
-            <div class="pm-adp-row">
-              <span class="pm-adp-row-src">${s.label}</span>
-              <span class="pm-adp-row-v${_c1}">${_adpV(s.vals[key + '_1qb'])}</span>
-              <span class="pm-adp-row-v${_cS}">${_adpV(s.vals[key + '_sf'])}</span>
-            </div>`).join('');
-        return rows ? `
-          <div class="pm-adp-card">
-            <div class="pm-adp-row pm-adp-head-row">
-              <span class="pm-adp-card-h">${fmtLabel}</span>
-              <span class="pm-adp-col-h${_c1}">1QB</span>
-              <span class="pm-adp-col-h${_cS}">SF</span>
-            </div>
-            ${rows}
-          </div>` : '';
+      // Market-range ADP: one card per format (Dynasty / Redraft); inside, the
+      // 1QB and SF ranges sit side by side. Each source is a colored dot on a
+      // shared draft-pick scale, with a spread band and a consensus marker, so
+      // the market reads at a glance. A source with no value for the format is
+      // hidden entirely — no dot, no legend entry.
+      const _adpColors = {
+        'Sleeper': 'var(--adp-c-sleeper)', 'BR Fantasy': 'var(--adp-c-brf)',
+        'ESPN': 'var(--adp-c-espn)', 'Yahoo': 'var(--adp-c-yahoo)', 'MFL': 'var(--adp-c-mfl)',
       };
-      // Inner grid for the ADP block, rebuilt once all sources are in.
+      const _adpEsc = s => String(s).replace(/[&<>"]/g,
+        c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+      const _adpNum = v => (Math.round(v * 10) / 10).toFixed(1);
+      // One range track for a (format, axis): dots + spread band + consensus mark
+      // on an auto-scaled pick axis. A minimum span keeps a tight cluster looking
+      // tight instead of stretching two near-equal picks across the whole track.
+      const _adpRangeTrack = (pts, cons) => {
+        const all = pts.map(p => p.v).concat(cons != null ? [cons] : []);
+        if (!all.length) {
+          return '<div class="pm-adp-scale pm-adp-scale-empty"><span class="pm-adp-na">–</span></div>'
+               + '<div class="pm-adp-ends"></div>';
+        }
+        const lo = Math.min(...all), hi = Math.max(...all);
+        const base = cons != null ? cons : lo;
+        const span = Math.max(hi - lo, Math.max(2, base * 0.25));
+        const mid = (lo + hi) / 2, pad = span * 0.12;
+        const sLo = mid - span / 2 - pad, sHi = mid + span / 2 + pad;
+        const pos = v => Math.max(0, Math.min(100, (v - sLo) / (sHi - sLo) * 100));
+        const dots = pts.map(p =>
+          `<span class="pm-adp-dot" style="left:${pos(p.v).toFixed(1)}%;background:${p.color}" title="${_adpEsc(p.label)} · ${_adpNum(p.v)}"></span>`).join('');
+        const cmk = cons != null
+          ? `<span class="pm-adp-cmk" style="left:${pos(cons).toFixed(1)}%"></span>` : '';
+        return `
+          <div class="pm-adp-scale">
+            <span class="pm-adp-line"></span>
+            <span class="pm-adp-band" style="left:${pos(lo).toFixed(1)}%;right:${(100 - pos(hi)).toFixed(1)}%"></span>
+            ${cmk}${dots}
+          </div>
+          <div class="pm-adp-ends"><span>${_adpNum(lo)}</span><span>${_adpNum(hi)}</span></div>`;
+      };
+      const _adpRangeBlock = (fmtKey, axisKey, axisLabel, isCur, sources, consSrc) => {
+        const k = fmtKey + '_' + axisKey;
+        const pts = sources
+          .filter(s => s.vals[k] != null)
+          .map(s => ({ label: s.label, color: _adpColors[s.label] || 'var(--text-muted)', v: Number(s.vals[k]) }));
+        const cons = (consSrc && consSrc.vals[k] != null) ? Number(consSrc.vals[k]) : null;
+        return `
+          <div class="pm-adp-range${isCur ? ' pm-adp-range-cur' : ''}">
+            <div class="pm-adp-range-hd">
+              <span class="pm-adp-range-ax">${axisLabel}</span>
+              <span class="pm-adp-range-cons">${cons != null ? 'Cons <b>' + _adpNum(cons) + '</b>' : ''}</span>
+            </div>
+            ${_adpRangeTrack(pts, cons)}
+          </div>`;
+      };
+      // One card per format, its 1QB + SF ranges side by side, and a legend of
+      // just the sources that actually have data for that format.
+      const _adpFmtCard = (sources, consSrc, fmtKey, fmtLabel) => {
+        const present = sources.filter(s =>
+          s.vals[fmtKey + '_1qb'] != null || s.vals[fmtKey + '_sf'] != null);
+        if (!present.length) return '';
+        const legend = present.map(s =>
+          `<span class="pm-adp-lg"><i class="pm-adp-dot-sm" style="background:${_adpColors[s.label] || 'var(--text-muted)'}"></i>${_adpEsc(s.label)}</span>`).join('');
+        return `
+          <div class="pm-adp-card">
+            <div class="pm-adp-card-h">${fmtLabel}</div>
+            <div class="pm-adp-ranges">
+              ${_adpRangeBlock(fmtKey, '1qb', '1QB', !_adpIsSf, present, consSrc)}
+              ${_adpRangeBlock(fmtKey, 'sf', 'SF', _adpIsSf, present, consSrc)}
+            </div>
+            <div class="pm-adp-legend">${legend}</div>
+          </div>`;
+      };
+      // Inner grid for the ADP block, rebuilt once all sources are in. Consensus
+      // becomes the range marker; the rest become dots.
       const _adpGridHTML = (sources) => {
-        const dyn = _adpFmtCard(sources, 'Dynasty', 'dynasty');
-        const rdr = _adpFmtCard(sources, 'Redraft', 'redraft');
+        const consSrc = sources.find(s => s.label === 'Consensus') || null;
+        const srcs = sources.filter(s => s.label !== 'Consensus');
+        const dyn = _adpFmtCard(srcs, consSrc, 'dynasty', 'Dynasty');
+        const rdr = _adpFmtCard(srcs, consSrc, 'redraft', 'Redraft');
         return (dyn || rdr) ? (dyn + rdr) : '';
       };
-      // Skeleton shown while the market sources load, so all sources (Sleeper +
-      // BR Fantasy + Consensus) appear together rather than Sleeper first.
+      // Skeleton shown while the market sources load, so all sources appear
+      // together rather than Sleeper first.
       const _adpSkelCard = (fmtLabel) => `
         <div class="pm-adp-card">
-          <div class="pm-adp-row pm-adp-head-row">
-            <span class="pm-adp-card-h">${fmtLabel}</span>
-            <span class="pm-adp-col-h${_c1}">1QB</span>
-            <span class="pm-adp-col-h${_cS}">SF</span>
+          <div class="pm-adp-card-h">${fmtLabel}</div>
+          <div class="pm-adp-ranges">
+            ${[0, 1].map(() => `
+              <div class="pm-adp-range">
+                <div class="pm-adp-range-hd">
+                  <span class="skeleton skeleton-line" style="width:26px;height:9px;"></span>
+                  <span class="skeleton skeleton-line" style="width:42px;height:9px;"></span>
+                </div>
+                <div class="pm-adp-scale"><span class="skeleton skeleton-line" style="width:100%;height:6px;margin-top:20px;"></span></div>
+                <div class="pm-adp-ends"></div>
+              </div>`).join('')}
           </div>
-          ${[0, 1, 2].map(() => `
-            <div class="pm-adp-row">
-              <span class="skeleton skeleton-line" style="width:62px;height:11px;margin:2px 0;"></span>
-              <span class="skeleton skeleton-line" style="height:14px;margin:2px 0;"></span>
-              <span class="skeleton skeleton-line" style="height:14px;margin:2px 0;"></span>
-            </div>`).join('')}
         </div>`;
       const _adpSkeletonGrid = () => _adpSkelCard('Dynasty') + _adpSkelCard('Redraft');
       // Render the block with a skeleton up front; the real grid replaces it once
