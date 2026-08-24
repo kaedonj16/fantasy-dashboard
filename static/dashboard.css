@@ -17706,35 +17706,30 @@ img, svg, canvas {
     margin-bottom: 8px;
 }
 
-/* Compact ADP cards: one card per format (Dynasty / Redraft), a tight row per
-   source (Sleeper / BR Fantasy / Consensus) inside. Smaller than the original
-   cards while keeping the card look and supporting multiple sources. */
+/* Market-range ADP: one card per format (Dynasty / Redraft) stacked vertically;
+   inside, the 1QB and SF ranges sit side by side (stacked on mobile). Each
+   source is a dot on a shared draft-pick scale, with a spread band and a
+   consensus marker. Source dot colors are theme-aware. */
+.pm-adp-block {
+    --adp-c-sleeper: #6C4BF0; --adp-c-brf: #E08A1E; --adp-c-espn: #D33A46;
+    --adp-c-yahoo: #12A4A0;   --adp-c-mfl: #3B7DD8;
+}
+:root[data-theme="dark"] .pm-adp-block {
+    --adp-c-sleeper: #9A82FF; --adp-c-brf: #F0A94A; --adp-c-espn: #F0687C;
+    --adp-c-yahoo: #38C7C1;   --adp-c-mfl: #6BA2F0;
+}
+
 .pm-adp-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: flex;
+    flex-direction: column;
     gap: 8px;
-    align-items: start;
 }
 
 .pm-adp-card {
-    padding: 6px 10px 8px;
+    padding: 9px 12px 10px;
     border: 1px solid var(--border);
     border-radius: 10px;
     background: var(--row);
-}
-
-/* Shared column grid for the header row and every source row, so the format
-   label + 1QB/SF column headers line up exactly over their value columns. */
-.pm-adp-row {
-    display: grid;
-    grid-template-columns: 1fr 54px 54px;
-    align-items: baseline;
-    gap: 8px;
-    padding: 4px 0;
-}
-
-.pm-adp-row + .pm-adp-row {
-    border-top: 1px solid var(--border);
 }
 
 .pm-adp-card-h {
@@ -17743,46 +17738,91 @@ img, svg, canvas {
     text-transform: uppercase;
     letter-spacing: .06em;
     color: var(--text-subtle);
+    margin-bottom: 8px;
 }
 
-.pm-adp-col-h {
+.pm-adp-ranges {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.pm-adp-range-hd {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 3px;
+}
+
+.pm-adp-range-ax {
     font-size: 9px;
-    font-weight: 700;
+    font-weight: 800;
     text-transform: uppercase;
-    letter-spacing: .03em;
+    letter-spacing: .06em;
     color: var(--text-subtle);
-    text-align: right;
 }
 
-.pm-adp-row-src {
-    font-size: 11px;
+.pm-adp-range-cur .pm-adp-range-ax { color: var(--accent); }
+
+.pm-adp-range-cons {
+    font-size: 10px;
     font-weight: 700;
     color: var(--text-muted);
-    white-space: nowrap;
-}
-
-.pm-adp-row-v {
-    font-size: 14px;
-    font-weight: 800;
-    color: var(--text);
     font-variant-numeric: tabular-nums;
-    text-align: right;
 }
 
-.pm-adp-col-h.pm-adp-cur,
-.pm-adp-row-v.pm-adp-cur {
-    color: var(--accent);
+.pm-adp-range-cons b { color: var(--accent); font-weight: 800; }
+
+.pm-adp-scale { position: relative; height: 34px; margin: 0 5px; }
+.pm-adp-scale-empty { display: flex; align-items: center; justify-content: center; }
+
+.pm-adp-line {
+    position: absolute; left: 0; right: 0; top: 22px;
+    height: 2px; border-radius: 2px; background: var(--border);
 }
 
-.pm-adp-na {
-    color: var(--text-subtle);
-    font-weight: 700;
+.pm-adp-band {
+    position: absolute; top: 18px; height: 10px; border-radius: 5px;
+    background: var(--accent); opacity: .16;
 }
+
+.pm-adp-cmk {
+    position: absolute; top: 14px; width: 3px; height: 18px;
+    border-radius: 2px; background: var(--accent); transform: translateX(-50%);
+}
+
+.pm-adp-dot {
+    position: absolute; top: 23px; width: 10px; height: 10px;
+    border-radius: 50%; transform: translate(-50%, -50%);
+    border: 2px solid var(--row); box-shadow: 0 0 0 1px rgba(0, 0, 0, .08);
+}
+
+.pm-adp-ends {
+    display: flex; justify-content: space-between;
+    font-size: 9.5px; color: var(--text-subtle);
+    font-variant-numeric: tabular-nums; padding: 0 3px; margin-top: 1px;
+    min-height: 12px;
+}
+
+.pm-adp-legend {
+    display: flex; flex-wrap: wrap; gap: 5px 12px;
+    margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--border);
+}
+
+.pm-adp-lg {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 10px; font-weight: 600; color: var(--text-muted);
+}
+
+.pm-adp-dot-sm {
+    width: 7px; height: 7px; border-radius: 50%;
+    display: inline-block; flex: none;
+}
+
+.pm-adp-na { color: var(--text-subtle); font-weight: 700; }
 
 @media (max-width: 480px) {
-    .pm-adp-grid {
-        grid-template-columns: 1fr;
-    }
+    .pm-adp-ranges { grid-template-columns: 1fr; gap: 12px; }
 }
 
 .pm-section-divider {
