@@ -85,6 +85,29 @@ def test_yahoo_parses_current_list_players_shape(monkeypatch):
     assert out["adp"] == {"gibbs": 1.44}
 
 
+def test_yahoo_name_fallback_when_yahoo_id_not_in_crosswalk(monkeypatch):
+    """Regression: Sleeper's yahoo_id lags for recent players, so the whole top of
+    the board (Gibbs et al.) misses the id crosswalk. With no yahoo id in the
+    players_index to merge, fall back to a name/position match."""
+    G.clear_crosswalk_cache()
+    # Crosswalk has an OLDER player but not the recent star.
+    G._XWALK_CACHE["yahoo"] = {"30121": "cmc"}
+    _stub_players_index(monkeypatch, {
+        "gibbs": {"name": "Jahmyr Gibbs", "pos": "RB"},
+        "cmc": {"name": "Christian McCaffrey", "pos": "RB"},
+    })
+    page = _yahoo_page_list_shape([
+        {"player_id": "40059", "name": {"full": "Jahmyr Gibbs"},
+         "display_position": "RB", "draft_analysis": {"average_pick": "1.4"}},
+        {"player_id": "30121", "name": {"full": "Christian McCaffrey"},
+         "display_position": "RB", "draft_analysis": {"average_pick": "5.6"}},
+    ])
+    monkeypatch.setattr(G, "_get_json", lambda url, **kw: page)
+    out = G.fetch_yahoo_global_adp(2026, max_players=2, page=25)
+    # Gibbs mapped by name (id crosswalk miss); CMC by id crosswalk.
+    assert out["adp"] == {"gibbs": 1.4, "cmc": 5.6}
+
+
 def test_yahoo_empty_on_network_failure(monkeypatch):
     G._XWALK_CACHE["yahoo"] = {"1": "a"}
 
