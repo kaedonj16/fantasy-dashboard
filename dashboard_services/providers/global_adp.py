@@ -88,7 +88,13 @@ def yahoo_id_to_canonical() -> Dict[str, str]:
 
 
 def espn_id_to_canonical() -> Dict[str, str]:
-    """espn_id -> canonical id, from Sleeper's feed with a players_index fallback."""
+    """espn_id -> canonical id, merging Sleeper's feed with the players_index.
+
+    Sleeper's ``espn_id`` is authoritative but *lags for recently-drafted players*
+    — the ESPN ids of the newest stars (e.g. Gibbs/Chase/Nacua) are simply absent
+    from the feed, so a Sleeper-only crosswalk drops exactly the top of the ADP
+    board. The Tank01-derived players_index carries ``espnID`` for ~all players, so
+    we merge it in to fill those gaps. Sleeper wins wherever both cover an id."""
     if "espn" in _XWALK_CACHE:
         return _XWALK_CACHE["espn"]
     out: Dict[str, str] = {}
@@ -99,16 +105,16 @@ def espn_id_to_canonical() -> Dict[str, str]:
                 out[str(eid)] = str(sid)
     except Exception:
         logger.debug("global_adp: espn crosswalk (sleeper) build failed", exc_info=True)
-    if not out:
-        # Fallback: the Tank01-derived players_index carries espnID for ~all.
-        try:
-            from utils.utils import load_players_index
-            for cid, info in (load_players_index() or {}).items():
-                eid = (info or {}).get("espnID") or (info or {}).get("espn_id")
-                if eid:
-                    out[str(eid)] = str(cid)
-        except Exception:
-            logger.debug("global_adp: espn crosswalk (index) build failed", exc_info=True)
+    # Merge (not just fallback-if-empty): add every players_index espnID that
+    # Sleeper's feed didn't already map, which is where the recent players live.
+    try:
+        from utils.utils import load_players_index
+        for cid, info in (load_players_index() or {}).items():
+            eid = (info or {}).get("espnID") or (info or {}).get("espn_id")
+            if eid and str(eid) not in out:
+                out[str(eid)] = str(cid)
+    except Exception:
+        logger.debug("global_adp: espn crosswalk (index) merge failed", exc_info=True)
     if out:
         _XWALK_CACHE["espn"] = out
     return out
@@ -187,9 +193,10 @@ _YAHOO_URL = ("https://pub-api-ro.fantasysports.yahoo.com/fantasy/v2/game/nfl/"
 def _iter_players_blocks(payload: Any):
     """Yield player entries from a Yahoo players collection.
 
-    Yahoo nests the players under ``fantasy_content -> game -> players`` and,
-    with ``format=json_f``, mostly as flat dicts (older positional-list shapes are
-    tolerated). Scan for the ``players`` block wherever it sits.
+    Yahoo nests the players under ``fantasy_content -> game -> players``. With
+    ``format=json_f`` the current shape is a plain **list** of ``{"player": {...}}``
+    dicts (``game`` itself a single dict, not a list). The older count-indexed
+    ``{"count": N, "0": {"player": ...}, ...}`` dict shape is still tolerated.
     """
     fc = (payload or {}).get("fantasy_content") or {}
     game = fc.get("game")
@@ -199,8 +206,15 @@ def _iter_players_blocks(payload: Any):
         if isinstance(c, dict) and "players" in c:
             players_block = c["players"]
             break
-    if players_block is None and isinstance(fc.get("players"), dict):
+    if players_block is None and fc.get("players") is not None:
         players_block = fc["players"]
+    # Current json_f shape: a list of {"player": {...}} entries.
+    if isinstance(players_block, list):
+        for entry in players_block:
+            if isinstance(entry, dict):
+                yield entry.get("player", entry)
+        return
+    # Legacy shape: a dict with a "count" and string-indexed entries.
     if not isinstance(players_block, dict):
         return
     count = players_block.get("count")

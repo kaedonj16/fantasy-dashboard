@@ -64,6 +64,27 @@ def test_yahoo_needs_no_token_and_skips_zero_and_unmapped(monkeypatch):
     assert "U" in out["unmapped"]
 
 
+def _yahoo_page_list_shape(entries):
+    """Current json_f shape: game is a single dict and players is a plain list of
+    {"player": {...}} entries (no count / string indices)."""
+    return {"fantasy_content": {"game": {
+        "game_key": "470",
+        "players": [{"player": p} for p in entries],
+    }}}
+
+
+def test_yahoo_parses_current_list_players_shape(monkeypatch):
+    # Regression: Yahoo now returns players as a list, not a count-indexed dict.
+    G._XWALK_CACHE["yahoo"] = {"40059": "gibbs"}
+    page = _yahoo_page_list_shape([
+        {"player_id": "40059", "name": {"full": "Jahmyr Gibbs"},
+         "draft_analysis": {"average_pick": "1.44"}},
+    ])
+    monkeypatch.setattr(G, "_get_json", lambda url, **kw: page)
+    out = G.fetch_yahoo_global_adp(2026, max_players=1, page=25)
+    assert out["adp"] == {"gibbs": 1.44}
+
+
 def test_yahoo_empty_on_network_failure(monkeypatch):
     G._XWALK_CACHE["yahoo"] = {"1": "a"}
 
@@ -179,10 +200,39 @@ def test_yahoo_crosswalk_from_sleeper_feed(monkeypatch):
     assert G.yahoo_id_to_canonical() == {"500": "sleeperA", "501": "sleeperB"}
 
 
+def _stub_players_index(monkeypatch, index):
+    import sys
+    import types
+    fake_utils = types.ModuleType("utils.utils")
+    fake_utils.load_players_index = lambda: index
+    fake_utils.normalize_name = lambda n: (n or "").strip().lower()
+    monkeypatch.setitem(sys.modules, "utils.utils", fake_utils)
+
+
 def test_espn_crosswalk_prefers_sleeper_feed(monkeypatch):
     G.clear_crosswalk_cache()
     monkeypatch.setattr(G, "_sleeper_feed", lambda: {"sleeperA": {"espn_id": "900"}})
+    # Index also has an espnID for 900 but Sleeper is authoritative and wins.
+    _stub_players_index(monkeypatch, {"other": {"espnID": "900"}})
     assert G.espn_id_to_canonical() == {"900": "sleeperA"}
+
+
+def test_espn_crosswalk_merges_index_for_ids_sleeper_lacks(monkeypatch):
+    """Regression: Sleeper's espn_id lags for recent players, so the players_index
+    must fill ids Sleeper's feed doesn't carry (the observed 26%-mapped top-of-board
+    misses like Gibbs/Chase)."""
+    G.clear_crosswalk_cache()
+    monkeypatch.setattr(G, "_sleeper_feed", lambda: {"cmc": {"espn_id": "3117251"}})
+    # Index carries the newer stars' espnID that Sleeper's feed is missing.
+    _stub_players_index(monkeypatch, {
+        "gibbs": {"espnID": "4429795"},
+        "chase": {"espnID": "4362628"},
+        "cmc": {"espnID": "3117251"},  # already covered by Sleeper; not overwritten
+    })
+    out = G.espn_id_to_canonical()
+    assert out["3117251"] == "cmc"          # Sleeper's mapping preserved
+    assert out["4429795"] == "gibbs"        # filled from the index
+    assert out["4362628"] == "chase"
 
 
 def test_mfl_crosswalk_matches_by_name_pos(monkeypatch):
