@@ -20702,11 +20702,16 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
     _adp_season = int((get_nfl_state() or {}).get("season") or datetime.now().year)
     _adp_sources = _attach_adp_to_players(model_value_table, _adp_season)
     # Per-source ADP for the rankings "sort by ADP" view (one column per source).
-    # League-agnostic sources only (Yahoo needs a token and is overlaid per-request
-    # in the route); attached here so the memoized payload carries them.
+    # Tokenless, league-agnostic sources: Sleeper, BR Fantasy, and the global
+    # snapshot feeds ESPN + MFL (redraft-only; each is dropped by
+    # _attach_all_adp_sources when its snapshot has no data, so they never show as
+    # empty columns). Yahoo needs a league token and is overlaid per-request in the
+    # route, inserted before Consensus. Consensus stays last. Attached here so the
+    # memoized payload carries them.
     try:
         _adp_columns = _attach_all_adp_sources(
-            model_value_table, _adp_season, ["sleeper", "brfantasy", "consensus"])
+            model_value_table, _adp_season,
+            ["sleeper", "brfantasy", "espn", "mfl", "consensus"])
     except Exception as _e_adpcols:
         logger.info("[api/league-players] per-source ADP skipped: %s", _e_adpcols)
         _adp_columns = []
@@ -22329,13 +22334,15 @@ def api_player_details(player_id: str):
 
 @app.route("/api/player-adp/<player_id>")
 def api_player_adp(player_id: str):
-    """Market-source ADP (BR Fantasy + Consensus) for a single player.
+    """Market-source ADP (BR Fantasy, ESPN, Yahoo, MFL, Consensus) for one player.
 
     Split out of /api/player-details so the modal can open immediately on the
-    cheap Sleeper feed and pull these in afterward — each source needs a
-    draft-crawler DB query (cached in adp_service), which we don't want on the
-    modal's critical path. Returns {"sources": [{label, vals}]}, only including
-    sources that have at least one value for this player."""
+    cheap Sleeper feed and pull these in afterward — BR Fantasy / Consensus need a
+    draft-crawler DB query and the global feeds a snapshot read (all cached in
+    adp_service), which we don't want on the modal's critical path. ESPN/Yahoo/MFL
+    are redraft-only global feeds and only contribute a Redraft value. Returns
+    {"sources": [{label, vals}]}, only including sources that have at least one
+    value for this player."""
     try:
         from dashboard_services.adp_service import resolve_market_adp
 
@@ -22360,24 +22367,32 @@ def api_player_adp(player_id: str):
             except (TypeError, ValueError):
                 return None
 
+        # BR Fantasy covers every axis; ESPN/Yahoo/MFL are tokenless global
+        # redraft-only feeds (read from the daily snapshots, so their dynasty cells
+        # resolve to None and only the Redraft card shows them). Yahoo uses its
+        # global snapshot here since the modal carries no league token. Any source
+        # with no value for this player is dropped below, so an empty snapshot never
+        # produces a bare row. Consensus stays last.
+        _source_specs = [
+            ("brfantasy", "BR Fantasy"),
+            ("espn", "ESPN"),
+            ("yahoo", "Yahoo"),
+            ("mfl", "MFL"),
+            ("consensus", "Consensus"),
+        ]
         _by_source = {
-            "BR Fantasy": {
-                "dynasty_1qb": _market_pick("brfantasy", "dynasty", False),
-                "dynasty_sf": _market_pick("brfantasy", "dynasty", True),
-                "redraft_1qb": _market_pick("brfantasy", "redraft", False),
-                "redraft_sf": _market_pick("brfantasy", "redraft", True),
-            },
-            "Consensus": {
-                "dynasty_1qb": _market_pick("consensus", "dynasty", False),
-                "dynasty_sf": _market_pick("consensus", "dynasty", True),
-                "redraft_1qb": _market_pick("consensus", "redraft", False),
-                "redraft_sf": _market_pick("consensus", "redraft", True),
-            },
+            _label: {
+                "dynasty_1qb": _market_pick(_src, "dynasty", False),
+                "dynasty_sf": _market_pick(_src, "dynasty", True),
+                "redraft_1qb": _market_pick(_src, "redraft", False),
+                "redraft_sf": _market_pick(_src, "redraft", True),
+            }
+            for _src, _label in _source_specs
         }
         _sources = [
-            {"label": _label, "vals": _vals}
-            for _label, _vals in _by_source.items()
-            if any(v is not None for v in _vals.values())
+            {"label": _label, "vals": _by_source[_label]}
+            for _src, _label in _source_specs
+            if any(v is not None for v in _by_source[_label].values())
         ]
         return jsonify({"sources": _sources})
     except Exception as e:

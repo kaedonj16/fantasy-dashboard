@@ -11704,10 +11704,11 @@ function openPlayerModal(playerId, playerName, opts) {
       const _adp = data.stats?.adp;
       const _adpIsSf = (typeof _leagueType !== 'undefined' && _leagueType === 'sf');
       const _adpV = v => (v != null ? v : '<span class="pm-adp-na">–</span>');
-      // Multi-source ADP (Sleeper / BR Fantasy / Consensus). The Sleeper source
-      // arrives inline; BR Fantasy + Consensus are lazy-loaded from
-      // /api/player-adp and merged in after the modal opens. Falls back to the
-      // old flat single-source shape for backward compatibility.
+      // Multi-source ADP (Sleeper / BR Fantasy / ESPN / Yahoo / MFL / Consensus).
+      // The Sleeper source arrives inline; the market sources are lazy-loaded from
+      // /api/player-adp and merged in after the modal opens (ESPN/Yahoo/MFL are
+      // redraft-only globals, so they only fill the Redraft card). Falls back to
+      // the old flat single-source shape for backward compatibility.
       let _adpSources = (_adp && Array.isArray(_adp.sources)) ? _adp.sources.slice()
         : (_adp ? [{ label: 'Sleeper', vals: _adp }] : []);
       // Highlight the value matching the viewer's league type.
