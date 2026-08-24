@@ -9044,11 +9044,25 @@ if (!platformBtns.length) return;
     if (!band || !track) return;
     // Already filled (e.g. this exact node was populated on a prior visit).
     if (track.childElementCount) { band.hidden = false; band.removeAttribute("aria-hidden"); return; }
-    const reveal = (one) => {
-      if (!one) return;
-      track.innerHTML = one + one;  // duplicate for a seamless marquee loop
+    const reveal = (base) => {
+      if (!base) return;
+      // Reveal first so the band has layout to measure against.
       band.hidden = false;
       band.removeAttribute("aria-hidden");
+      // The seamless -50% loop only stays gapless when each half of the track is
+      // at least as wide as the visible band. With few movers a single copy is
+      // narrower than the band, so blank gaps scroll through and the short travel
+      // reads as a frozen marquee. Repeat the base enough to fill one half, then
+      // mirror it so the two halves stay identical for a clean loop.
+      const wrap = track.parentElement;
+      let half = base;
+      track.innerHTML = half + half;
+      let guard = 0;
+      while (wrap && wrap.clientWidth && track.scrollWidth / 2 < wrap.clientWidth && guard < 8) {
+        half += base;
+        track.innerHTML = half + half;
+        guard++;
+      }
     };
     if (window.__homeTickerHtml) { reveal(window.__homeTickerHtml); return; }
     const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
