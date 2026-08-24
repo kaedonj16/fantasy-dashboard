@@ -22355,10 +22355,13 @@ def api_player_adp(player_id: str):
                 try:
                     # Match the rankings page: re-rank BR Fantasy (ordered by its
                     # raw avg_pick) to a clean 1..N board so it tops out at 1
-                    # instead of the ~3 mean-pick floor.
+                    # instead of the ~3 mean-pick floor. fallback=False so an
+                    # off-axis source shows nothing rather than borrowing Sleeper's
+                    # numbers — ESPN/Yahoo/MFL are redraft-only, so their dynasty
+                    # cells must stay empty (not silently become Sleeper's ADP).
                     _mkt_cache[_key] = resolve_market_adp(
                         int(season), _is_sf, _scoring, source=_source,
-                        as_rank=(_source == "brfantasy")) or {}
+                        as_rank=(_source == "brfantasy"), fallback=False) or {}
                 except Exception:
                     _mkt_cache[_key] = {}
             _v = _mkt_cache[_key].get(str(player_id))

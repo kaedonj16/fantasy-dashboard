@@ -46,8 +46,67 @@ def diagnose_yahoo(season: int):
         print("    game keys:", list(game.keys()))
     n = sum(1 for _ in G._iter_players_blocks(payload))
     print("  _iter_players_blocks yielded:", n)
-    # Show the raw players container so we can see the real nesting.
-    print("  raw payload sample:", _trunc(payload, 1600))
+
+    # Split the 63-of-350 question: crosswalk miss vs. no average_pick yet.
+    xwalk = G.yahoo_id_to_canonical()
+    print("  yahoo_id crosswalk size:", len(xwalk))
+    total = has_ap = has_hit = mapped = 0
+    miss_with_ap = []   # yahoo has an ADP but our crosswalk can't map it (FIXABLE)
+    hit_no_ap = []      # we can map it but Yahoo has no ADP yet (not our bug)
+    top_rows = []
+    start = 0
+    page = 25
+    while start < 350:
+        pg = G._get_json(G._YAHOO_URL.format(start=start, count=page))
+        got = 0
+        for entry in G._iter_players_blocks(pg):
+            got += 1
+            total += 1
+            flat = G._flatten_yahoo(entry)
+            ap = G._yahoo_avg_pick(flat)
+            yid = flat.get("player_id")
+            nm = flat.get("name")
+            nm = nm.get("full") if isinstance(nm, dict) else nm
+            hit = str(yid) in xwalk
+            if ap is not None:
+                has_ap += 1
+            if hit:
+                has_hit += 1
+            if ap is not None and hit:
+                mapped += 1
+            if ap is not None and not hit and len(miss_with_ap) < 12:
+                miss_with_ap.append(f"{nm} (yid={yid}, adp={ap})")
+            if hit and ap is None and len(hit_no_ap) < 8:
+                hit_no_ap.append(f"{nm} (yid={yid})")
+            if len(top_rows) < 12:
+                top_rows.append(f"    yid={str(yid):>7}  hit={hit!s:5}  adp={ap}  {nm}")
+        if got < page:
+            break
+        start += page
+    print(f"  scanned {total} raw players:")
+    print(f"    have average_pick > 0 : {has_ap}")
+    print(f"    in yahoo crosswalk    : {has_hit}")
+    print(f"    mapped (both)         : {mapped}")
+    print("  --- top 12: yahoo_id / hit / adp / name ---")
+    print("\n".join(top_rows))
+    print("  --- has ADP but NOT in crosswalk (fixable crosswalk gap) ---")
+    print("    " + ("; ".join(miss_with_ap) if miss_with_ap else "(none)"))
+    print("  --- in crosswalk but no ADP yet (Yahoo hasn't priced them) ---")
+    print("    " + ("; ".join(hit_no_ap) if hit_no_ap else "(none)"))
+
+    # Can we merge players_index for Yahoo like we did for ESPN? Show its id keys.
+    try:
+        from utils.utils import load_players_index
+        idx = load_players_index() or {}
+        sample = next(iter(idx.values()), {})
+        yahoo_keys = [k for k in sample.keys() if "yahoo" in k.lower()]
+        n_with_yahoo = sum(1 for v in idx.values()
+                           if any("yahoo" in str(k).lower() and v.get(k) for k in v))
+        print("  players_index sample keys:", list(sample.keys())[:20])
+        print("  players_index yahoo-ish keys on sample:", yahoo_keys,
+              "| entries with a yahoo id:", n_with_yahoo, "/", len(idx))
+    except Exception as exc:
+        print("  players_index inspect failed:", type(exc).__name__, exc)
 
 
 def diagnose_espn(season: int):
