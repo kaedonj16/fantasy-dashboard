@@ -17719,10 +17719,17 @@ img, svg, canvas {
     --adp-c-yahoo: #38C7C1;   --adp-c-mfl: #6BA2F0;
 }
 
+/* Dynasty and Redraft cards side by side, equal height (align-items: stretch).
+   Stacks to one column on narrow screens. */
 .pm-adp-grid {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 8px;
+    align-items: stretch;
+}
+
+@media (max-width: 560px) {
+    .pm-adp-grid { grid-template-columns: 1fr; }
 }
 
 .pm-adp-card {
