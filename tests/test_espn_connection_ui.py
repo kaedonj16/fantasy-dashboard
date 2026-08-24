@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 
@@ -104,9 +105,11 @@ def test_google_actions_share_google_continue_style():
     assert 'id="googleContinueBtn" class="google-continue-btn"' in markup
     assert 'class="google-continue-btn" href="/auth/google?intent=login' in markup
     assert 'class="google-continue-btn google-create-account-btn" href="/auth/google?intent=onboarding' in markup
-    assert ".google-continue-btn{" in css
+    # Whitespace-tolerant so a CSS reformat (space before the brace) doesn't
+    # break the check while the rule is still present.
+    assert re.search(r"\.google-continue-btn\s*\{", css)
     assert "google-create-account-btn" in markup
-    assert ".google-create-account-btn{" in css
+    assert re.search(r"\.google-create-account-btn\s*\{", css)
 
 
 def test_both_espn_methods_use_full_account_choice_copy():
@@ -134,5 +137,5 @@ def test_every_google_action_gets_shared_google_logo():
     logo = Path("static/google-logo.svg").read_text()
     assert ".google-button-title::before" in css
     assert "url('/static/google-logo.svg')" in css
-    assert "gap:9px" in css
+    assert re.search(r"gap:\s*9px", css)  # 9px logo/text gap (any whitespace)
     assert "#4285F4" in logo and "#34A853" in logo
