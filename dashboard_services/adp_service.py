@@ -545,7 +545,7 @@ def adp_source_options(scoring_type: str, season: Optional[int] = None):
 # Sleeper's projection ADP fields report 999 for players it has no draft data
 # for (undrafted / no ADP). It is a sentinel, not a real pick, so treat anything
 # at or above it as missing - otherwise every rookie without a Sleeper ADP shows
-# a literal "ADP 999.0", and consensus rank-blends those identical 999s against
+# a literal "ADP 999.0", and consensus blends those identical 999s against
 # real sources and produces nonsense.
 _SLEEPER_UNDRAFTED_ADP = 999.0
 
@@ -737,24 +737,21 @@ def _is_pos_num(v) -> bool:
 def consensus_adp(source_maps) -> Dict[str, float]:
     """Blend several ``{id: overall_adp}`` maps into one consensus map.
 
-    A single source is returned as-is (raw ADP kept). With two or more, each
-    source is ranked independently (1 = earliest) and a player's consensus ADP is
-    the average of their ranks across the sources that list them, so one source
-    on a different numeric scale can't skew the blend."""
+    A player's consensus is the arithmetic mean of its actual ADP from every
+    available source that lists it. All source adapters normalize their output
+    to overall pick already, so averaging the displayed values is both meaningful
+    and transparent to a viewer checking the calculation source by source."""
     present = [m for m in source_maps if m]
     if not present:
         return {}
     if len(present) == 1:
         return dict(present[0])
-    ranks_per_source = []
-    for m in present:
-        order = sorted(m.items(), key=lambda kv: kv[1])
-        ranks_per_source.append({pid: i + 1 for i, (pid, _v) in enumerate(order)})
     agg: Dict[str, list] = {}
-    for ranks in ranks_per_source:
-        for pid, r in ranks.items():
-            agg.setdefault(pid, []).append(r)
-    return {pid: sum(rs) / len(rs) for pid, rs in agg.items()}
+    for source in present:
+        for pid, value in source.items():
+            if _is_pos_num(value):
+                agg.setdefault(pid, []).append(float(value))
+    return {pid: sum(values) / len(values) for pid, values in agg.items()}
 
 
 def ordinal_rank_adp(adp_map) -> Dict[str, float]:
@@ -841,7 +838,7 @@ def _raw_source_map(name: str, season: int, is_sf: bool, scoring_type: str,
 
 # ── Capability-aware detailed resolver ────────────────────────────────────────
 # The richer path new features use. Unlike resolve_market_adp (which preserves the
-# simple {id: adp} contract and equal rank-blend), this classifies each source
+# simple {id: adp} contract and equal raw-ADP mean), this classifies each source
 # against the requested format, prefers exact over compatible over generic, keeps
 # ESPN/Yahoo redraft data out of dynasty, and returns per-player provenance.
 
@@ -888,7 +885,7 @@ def resolve_market_adp_detailed(
     redraft ADP against a dynasty request) never contribute. ``min_quality`` drops
     any source below the given tier. All contributing sources are on the overall-
     pick scale, so the raw mean is meaningful; the simple resolver still offers the
-    scale-invariant rank blend for the plain {id: adp} contract.
+    equal arithmetic mean for the plain {id: adp} contract.
     """
     if fmt is None:
         fmt = AdpFormat.from_league(
