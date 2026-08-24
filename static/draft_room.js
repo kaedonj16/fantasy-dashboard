@@ -1811,9 +1811,35 @@
     return top[0].p;
   }
   // Pick the highest-scored available player for my roster (used by auto-draft).
+  // Highest available player in the user's queue that still fits an open roster
+  // slot. The queue is an explicit target list, so auto-draft honors it first:
+  // if you queued a player, auto-draft takes them (in queue order) before falling
+  // back to the scored best-available. Drafted or roster-capped entries are
+  // skipped so a stale queue never blocks a legal pick.
+  function _queuedAutoPick(pool){
+    if (!state.queue || !state.queue.length) return null;
+    var avail = {};
+    (pool || []).forEach(function(p){ avail[String(p.id)] = p; });
+    var rs = (state && state.roster) || defaultRoster();
+    var counts = myPosCounts();
+    for (var i = 0; i < state.queue.length; i++){
+      var p = avail[String(state.queue[i])];
+      if (!p) continue;   // already drafted or not in the pool
+      var pos = String(p.position || '').toUpperCase();
+      var limit = window.DraftBoardCore && DraftBoardCore.positionRosterLimit
+        ? DraftBoardCore.positionRosterLimit(pos, rs, { draftType: state.type, tep: scoringCfg().tep })
+        : Infinity;
+      if ((counts[pos] || 0) < limit) return p;   // first legal queued target wins
+    }
+    return null;
+  }
   function autoPick(){
     var pool = availablePool();
     if (!pool.length) return null;
+    // Your queue is your auto-draft priority list: take the top available target
+    // that still fits a roster slot before any scoring/plan logic runs.
+    var _q = _queuedAutoPick(pool);
+    if (_q) return _q;
     // Roster-need guard: K/DEF have no pickScore (null -> 0), so they'd never be
     // auto-drafted and your team would finish without a kicker/defense while every
     // CPU team fills theirs. Mirror the CPU's late-round behavior: when you still
@@ -3018,9 +3044,11 @@
   function playerRowHtml(p, opts){
     opts = opts || {};
     var adp = adpOf(p);
-    // Recommendation rows show absolute Pick Score. Ranking is owned by the live
-    // Decision Score so the best player on a depleted board is not relabeled 97.
-    var ps = psAbs(p);
+    // Sidebar Pick Score is POOL-RELATIVE: psDisplay anchors the best pick still
+    // available near the top so a strong pick on a depleted board still reads well
+    // instead of being buried just because the board is picked over. Ranking stays
+    // owned by the live Decision Score (the REC chip), so ordering is unchanged.
+    var ps = psDisplay(p._ps != null ? p._ps : pickScoreFor(p));
     var sub = (adp != null ? 'ADP ' + Number(adp).toFixed(1) : '')
       + (!opts.showPickScore && p._ds != null && ps != null ? ' · PS ' + ps : '');
     var reasonLine = '';
@@ -4848,11 +4876,19 @@
       recommendationRanks[String(p.id)] = i + 1;
     });
     pool.sort(function(a, b){
-      // K/DEF have no value/ADP/PS - order them among themselves by projected PPG
-      // so the best kicker/defense still surfaces first regardless of sort mode.
+      // K/DEF: order them among themselves by ADP (the server now attaches real
+      // Sleeper D/ST + kicker ADP), so the defense/kicker managers actually draft
+      // first surfaces first instead of alphabetically. Fall back to projected PPG
+      // only when neither has an ADP (e.g. an unpriced kicker).
       var aKd = (String(a.position||'').toUpperCase() === 'K' || String(a.position||'').toUpperCase() === 'DEF');
       var bKd = (String(b.position||'').toUpperCase() === 'K' || String(b.position||'').toUpperCase() === 'DEF');
-      if (aKd && bKd) return (ppgOf(b) || 0) - (ppgOf(a) || 0);
+      if (aKd && bKd){
+        var akAdp = adpOf(a), bkAdp = adpOf(b);
+        if (akAdp != null || bkAdp != null){
+          return (akAdp != null ? akAdp : 99999) - (bkAdp != null ? bkAdp : 99999);
+        }
+        return (ppgOf(b) || 0) - (ppgOf(a) || 0);
+      }
       if (sortBy === 'adp'){
         var aa = adpOf(a), ba = adpOf(b);
         return (aa != null ? aa : 99999) - (ba != null ? ba : 99999);
@@ -5307,6 +5343,9 @@
     try { reason = pickReason(p, myPosCounts()); } catch (e){ reason = ''; }
     state.picks[pn] = { id: p.id, name: p.name, position: p.position, team: p.team, val: Math.round(valOf(p)), ps: ps, psRel: psRel, reason: reason };
     drafted[String(p.id)] = true;
+    // Drop the just-drafted player from the queue so it stays a live target list
+    // (and auto-draft never re-considers a taken player).
+    if (state.queue){ var _qi = state.queue.indexOf(String(p.id)); if (_qi >= 0) state.queue.splice(_qi, 1); }
     justPick = pn;
     state.current++;
     if (window.brHaptic) window.brHaptic(14);   // tactile confirm on a pick
