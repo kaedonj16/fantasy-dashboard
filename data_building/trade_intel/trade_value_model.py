@@ -52,12 +52,14 @@ logger = logging.getLogger(__name__)
 
 LAMBDA_REG         = 20.0  # regularization strength (higher = stronger pull toward model prior when trade data is thin)
 MAX_VALUE          = 999.9
-MAX_LIFT           = 1.40  # trade market may lift a player up to +40% vs the prior
-MIN_LIFT           = 0.60  # ...and cut down to -40%. Symmetric ±40% band around the
+MAX_LIFT           = 1.25  # trade market may lift a player up to +25% vs the prior
+MIN_LIFT           = 0.75  # ...and cut down to -25%. Symmetric ±25% band around the
                            # consensus-anchored model prior: keeps the shown value within
                            # a sane distance of the external market (FantasyCalc/DP feed the
                            # prior) AND lets a sold-off player actually drop (the old
                            # floor-at-prior meant the market could only ever add value).
+                           # Applied to both 1QB and SF: SF is derived by the same guarded
+                           # solve as 1QB (no ratio override).
 ANCHOR_BASKET_N    = 5     # anchor the top-N basket MEAN (not a single #1) to MAX_VALUE so
                            # one player's day-to-day WLS solve can't drag the whole board
 TRADES_LOOKBACK_DAYS = 120 # only load trades from the last N days; >60d = weight 0.08
@@ -668,37 +670,12 @@ def _detect_season() -> int:
     return int(row["s"]) if row and row["s"] else 2025
 
 
-def _market_faithful_sf(cal_1qb: float, market_ratio: "float | None",
-                        lo: float = 0.5, hi: float = 1.2) -> "float | None":
-    """Non-QB Superflex value = calibrated 1QB × the player's OBSERVED market
-    SF/1QB ratio (decay-weighted median of real trades). Returns None when there's
-    no market ratio or no 1QB base, signalling the caller to fall back to the WLS
-    blend.
-
-    The ratio is clamped to [lo, hi] to guard a pathological median. This function
-    is applied to NON-QBs only (the caller keeps QBs on their WLS SF solve), and in
-    Superflex QBs — not skill players — absorb the premium, so real non-QB SF/1QB
-    ratios sit ~0.8–1.2. ``hi`` therefore caps at the top of that real range: a
-    higher clamp lets a distorted ratio (thin/whale SF trades) survive and, once
-    the SF board is re-anchored to its top-5 mean, floats a single non-QB far above
-    the whole field (the Superflex #1-RB spike). ``hi`` must stay a non-QB ceiling —
-    it is never a QB premium, because QBs never reach this path.
-
-    This replaces the raw SF WLS solve for non-QBs: the solve chases outlier
-    overpays (a depth player "solo for a 1st") and overshoots, while the median is
-    the robust price the player actually clears at."""
-    if market_ratio is None or cal_1qb <= 0:
-        return None
-    return float(cal_1qb) * min(max(float(market_ratio), lo), hi)
-
-
 def run_trade_value_model(
     season: int | None = None,
     lambda_reg: float  = LAMBDA_REG,
     league_type: int   = 2,
     league_size: int   = 10,
     *,
-    use_market_faithful: bool = True,
     min_lift: float = MIN_LIFT,
     max_lift: float = MAX_LIFT,
     dry_run: bool = False,
@@ -713,13 +690,11 @@ def run_trade_value_model(
 
     lambda_reg: regularization strength (default 8 ≈ 30 trades → 65% market influence).
 
-    use_market_faithful: when True (default, current behavior) non-QB SF values are
-        overridden by the received-package SF/1QB ratio. When False, SF is derived
-        by the SAME guarded WLS solve as 1QB (banded to [min_lift, max_lift] × the
-        external SF prior) — no ratio override.
+    SF is derived by the SAME guarded WLS solve as 1QB — banded to
+        [min_lift, max_lift] × the external SF prior — with no ratio override.
     min_lift / max_lift: the symmetric band the trade solve is clamped to, as a
-        fraction of the external prior (defaults reproduce the ±40% band). Lower
-        max_lift to tighten how far the market may lift a player above the prior.
+        fraction of the external prior (defaults ±25%). Lower max_lift to tighten
+        how far the market may lift a player above the prior.
     dry_run: compute and return the rows WITHOUT writing to player_values / picks.
         The result then carries ``rows`` (the computed player rows) and ``priors``
         (per-player external prior + position) so a caller can preview the board.
@@ -835,7 +810,7 @@ def run_trade_value_model(
     sf_backing = np.diag(AtWA_sf)[:n_pl].copy()
     del AtWA_sf, AtWb_sf; gc.collect()
 
-    # Players: band the trade solve to ±40% of the prior (MIN_LIFT..MAX_LIFT),
+    # Players: band the trade solve to ±25% of the prior (MIN_LIFT..MAX_LIFT),
     # symmetric so the market can mark a player down as well as up.
     v_1qb_pos = np.clip(v_1qb, 0.0, None)
     v_sf_pos  = np.clip(v_sf,  0.0, None)
@@ -882,78 +857,18 @@ def run_trade_value_model(
     v_1qb_norm = _normalize(v_1qb_pos, f"wls_basket_{mode}_{league_size}_1qb")
     v_sf_norm  = _normalize(v_sf_pos,  f"wls_basket_{mode}_{league_size}_sf")
 
-    # For non-QB players: derive the SF calibrated value by applying the WLS
-    # 1QB calibration factor to the model's SF prior.  The model already
-    # encodes the SF positional discount (skill players are slightly lower in
-    # SF than in 1QB); the WLS captures the calibration magnitude.
-    #
-    # Formula: cal_sf_nonqb = cal_1qb * (prior_sf / prior_1qb)
-    #
-    # This lets skill positions show slightly different SF vs 1QB values
-    # (matching the model's ~2-5% discount) rather than being forced equal
-    # by a min() cap.  QBs keep their WLS-calibrated SF value untouched.
-    # SF_BLEND_K = SF trade weight at which the SF solve gets 50% of the blend.
-    # Tied to lambda_reg so it tracks the same "data vs prior" scale the solve uses.
-    SF_BLEND_K = max(lambda_reg, 1.0)
+    # SF is derived by the SAME guarded WLS solve as 1QB: the joint trade solve
+    # produces v_sf, banded to [min_lift, max_lift] × the external SF prior above,
+    # then normalized. There is NO per-position override — QBs and non-QBs are
+    # treated identically. (The former non-QB "market-faithful ratio" override was
+    # removed: it derived a non-QB's SF value from the SF/1QB value of the packages
+    # it was traded FOR, which for RBs commonly swapped with QBs picked up the QB
+    # premium and floated a lone RB above the field — the Superflex #1-RB spike.)
 
-    # Observed market SF/1QB ratio per player (decay-weighted trade medians). The
-    # SF WLS solve overshoots non-QBs — a depth WR packaged/soloed with QBs picks
-    # up outlier value the least-squares fit chases but the median ignores. For
-    # non-QBs we take the market-faithful value (cal_1qb × their real SF/1QB ratio)
-    # instead, which tracks what they actually clear at in SF leagues. QBs keep
-    # their WLS SF solve; non-QBs with too little SF trade data fall back to the
-    # old blend. Market SF/1QB ratios are preserved, so board ordering reflects the
-    # real market — elite skill can sit above QBs when the trades say so. A single
-    # uniform top-5-mean re-anchor is applied afterward (see below) to bring the SF
-    # board's overall level back onto MAX_VALUE without disturbing those ratios.
-    _SF_MKT_MIN_TRADES = 20  # mirrors market_calibration.MIN_TRADES_FOR_SIGNAL
-    _sf_mkt_ratio: dict[str, float] = {}
-    try:
-        with get_conn() as _c:
-            for _r in _c.execute(
-                "SELECT player_id, weighted_market_value_1qb m1, weighted_market_value_sf ms, "
-                "trade_count tc FROM trade_intel_player_stats WHERE season = %s",
-                (season,),
-            ).fetchall():
-                _m1, _ms, _tc = _r["m1"], _r["ms"], _r["tc"]
-                if _m1 and _ms and float(_m1) > 0 and (_tc or 0) >= _SF_MKT_MIN_TRADES:
-                    _sf_mkt_ratio[str(_r["player_id"])] = float(_ms) / float(_m1)
-    except Exception:
-        logger.debug("[trade_value_model] SF market-ratio load failed", exc_info=True)
-
-    # When use_market_faithful is False, this whole override is skipped and non-QB
-    # SF keeps the guarded WLS solve (banded to [min_lift, max_lift] × the external
-    # SF prior) — i.e. SF is derived exactly like 1QB, with no ratio substitution.
-    if use_market_faithful:
-        for i, pid in enumerate(player_ids):
-            pos = player_prior[pid].get("position", "")
-            if pos == "QB":
-                continue  # QBs keep their WLS SF-solved value untouched
-            # Market-faithful SF for non-QBs when we have a reliable trade median.
-            _mkt_sf = _market_faithful_sf(v_1qb_norm[i], _sf_mkt_ratio.get(pid))
-            if _mkt_sf is not None:
-                v_sf_norm[i] = _mkt_sf
-                continue
-            # Fallback (thin SF trade data): blend the SF solve with the model-derived
-            # value by SF data confidence — rich history -> solve, thin -> derived.
-            p1 = player_prior[pid]["value_1qb"]
-            ps = player_prior[pid]["value_sf"]
-            derived = v_1qb_norm[i] * (ps / p1) if (p1 > 0 and ps > 0) else v_1qb_norm[i]
-            backing = float(sf_backing[i]) if i < len(sf_backing) else 0.0
-            if backing > 0:
-                w = backing / (backing + SF_BLEND_K)
-                v_sf_norm[i] = w * float(v_sf_norm[i]) + (1.0 - w) * derived
-            else:
-                v_sf_norm[i] = derived
-
-    # Final SF re-anchor. _normalize() set the SF top-5 MEAN to MAX_VALUE, but the
-    # non-QB re-derivation above (market-faithful ratios / blends) lifts the top of
-    # the SF board off that anchor, so the SF top-5 average drifts well above
-    # MAX_VALUE while 1QB stays on target. Re-anchor once more here — top-5 player
-    # MEAN -> MAX_VALUE — so the SF board matches 1QB's scale. This is a single
-    # uniform factor across every player and pick, so it preserves the market SF/1QB
-    # ratios and board ordering (elite skill can still sit above QBs); only the
-    # overall level is corrected.
+    # Final SF re-anchor: keep the SF top-5 MEAN pinned to MAX_VALUE so the SF board
+    # sits on the same scale as 1QB. This is a single uniform factor across every
+    # player and pick, so it preserves board ordering (an elite QB can top the SF
+    # board); only the overall level is corrected.
     _sf_players = v_sf_norm[:n_pl]
     if n_pl > 0:
         _sf_sorted = np.sort(_sf_players)[::-1]
@@ -1004,7 +919,6 @@ def run_trade_value_model(
                   for pid in player_ids}
         return {"written": 0, "dry_run": True, "trades_used": M, "players": n_pl,
                 "season": season, "mode": mode, "league_size": league_size,
-                "use_market_faithful": use_market_faithful,
                 "min_lift": min_lift, "max_lift": max_lift,
                 "rows": out_rows, "priors": priors}
 
