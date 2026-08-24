@@ -17741,10 +17741,11 @@ img, svg, canvas {
     margin-bottom: 8px;
 }
 
+/* 1QB and SF stacked one above the other within each format card. */
 .pm-adp-ranges {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
+    grid-template-columns: 1fr;
+    gap: 14px;
 }
 
 .pm-adp-range-hd {
@@ -17820,10 +17821,6 @@ img, svg, canvas {
 }
 
 .pm-adp-na { color: var(--text-subtle); font-weight: 700; }
-
-@media (max-width: 480px) {
-    .pm-adp-ranges { grid-template-columns: 1fr; gap: 12px; }
-}
 
 .pm-section-divider {
     border: none;
