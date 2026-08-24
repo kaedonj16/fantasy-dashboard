@@ -4,8 +4,21 @@ from unittest.mock import patch
 import pytest
 
 from data_building.trade_intel.league_types import LeagueType, calibration_mode
-from data_building.trade_intel.trade_crawler import _leagues_to_crawl
-from data_building.trade_intel.trade_value_model import _col_names, _load_pick_keys
+
+
+def _import_crawler():
+    """Import the crawler only when its optional HTTP dependency is installed."""
+    pytest.importorskip("requests")
+    from data_building.trade_intel.trade_crawler import _leagues_to_crawl
+    return _leagues_to_crawl
+
+
+def _import_value_model():
+    """Import the scientific-stack model only in the full-stack CI job."""
+    for dependency in ("numpy", "pandas", "psycopg"):
+        pytest.importorskip(dependency)
+    from data_building.trade_intel.trade_value_model import _col_names, _load_pick_keys
+    return _col_names, _load_pick_keys
 
 
 class _FakeConn:
@@ -39,28 +52,32 @@ def test_calibration_mode_uses_sleeper_contract(league_type, expected):
 def test_keeper_cannot_be_calibrated_as_redraft():
     with pytest.raises(ValueError, match="Keeper"):
         calibration_mode(LeagueType.KEEPER)
+    col_names, _ = _import_value_model()
     with pytest.raises(ValueError, match="Keeper"):
-        _col_names(LeagueType.KEEPER, 10)
+        col_names(LeagueType.KEEPER, 10)
 
 
 def test_redraft_columns_are_selected_by_type_zero():
-    assert _col_names(LeagueType.REDRAFT, 10) == (
+    col_names, _ = _import_value_model()
+    assert col_names(LeagueType.REDRAFT, 10) == (
         "redraft_value_1qb", "redraft_value_sf"
     )
-    assert _col_names(LeagueType.DYNASTY, 10) == (
+    assert col_names(LeagueType.DYNASTY, 10) == (
         "calibrated_value_1qb", "calibrated_value_sf"
     )
 
 
 def test_redraft_does_not_create_pick_unknowns():
-    assert _load_pick_keys(2026, LeagueType.REDRAFT, 10) == set()
+    _, load_pick_keys = _import_value_model()
+    assert load_pick_keys(2026, LeagueType.REDRAFT, 10) == set()
 
 
 @pytest.mark.parametrize("crawl_mode", ["new", "existing", "both"])
 def test_crawler_selects_redraft_and_dynasty_but_not_keeper(crawl_mode):
+    leagues_to_crawl = _import_crawler()
     conn = _FakeConn()
     with patch("data_building.trade_intel.trade_crawler.get_conn", return_value=conn):
-        assert _leagues_to_crawl(50, crawl_mode, 7) == []
+        assert leagues_to_crawl(50, crawl_mode, 7) == []
     compact = " ".join(conn.query.split())
     assert "league_type IN (0, 2)" in compact
     assert "league_type IN (1, 2)" not in compact
