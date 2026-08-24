@@ -17,7 +17,7 @@ from dashboard_services.api import get_nfl_state
 from dashboard_services.picks import load_pick_value_table
 from data_building.external_data.player_history import load_player_history_df, build_player_history_features
 from data_building.external_data.player_investment import load_player_investment_context
-from data_building.value_guardrails import overmarket_capped
+from data_building.value_guardrails import overmarket_capped, sf_nonqb_floor
 from utils.paths import DATA_DIR
 from utils.utils import load_teams_index, bucket_for_slot, normalize_name, load_players_index, load_model_value_table
 from utils.coerce import safe_int as _safe_int
@@ -1055,15 +1055,17 @@ def rewrite_value_table_with_model() -> Path:
             sf_value = (_confsf * _wlssf + (1.0 - _confsf) * sf_value) if sf_value > 0 else _wlssf
         # Over-market guardrail (SF), using the FC SF read only — DP's 1QB value
         # understates SF QBs, so applying it here would wrongly tank QBs. Non-QBs
-        # are additionally floored to the (already-guarded) 1QB value just below.
+        # are additionally floored to a fraction of the 1QB value just below.
         if player_position != "PICK":
             sf_value = overmarket_capped(
                 sf_value, fc_sf_by_sid.get(pid, 0.0), 0.0,
                 trigger=_OVERMARKET_TRIGGER, min_gap=_OVERMARKET_MIN_GAP)
-        # Non-QB players are not less valuable in SF — floor at their (blended) 1QB
-        # value so the DP 2QB blend can't pull them below it.
+        # Non-QBs are relatively LESS valuable in SF (QBs absorb value), so keep
+        # the market SF blend — only floor at a fraction of the 1QB value as a
+        # safety net against a bad/missing DP-2QB read, never up to the full 1QB
+        # value (which inverts the market and inflates the SF board).
         if position != "QB":
-            sf_value = max(sf_value, final_value)
+            sf_value = sf_nonqb_floor(sf_value, final_value)
 
         age = player.get("age")
         if age is None and row is not None:

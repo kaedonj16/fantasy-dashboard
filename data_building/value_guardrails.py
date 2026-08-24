@@ -8,6 +8,23 @@ from __future__ import annotations
 # Defaults — see rewrite_value_table_with_model for rationale.
 OVERMARKET_TRIGGER = 2.5     # model must be >= this x the external consensus to act
 OVERMARKET_MIN_GAP = 100.0   # ...and at least this many points above it (skip low-stakes)
+SF_NONQB_FLOOR_RATIO = 0.85  # non-QB SF safety floor, as a fraction of 1QB value
+
+
+def sf_nonqb_floor(sf_value: float, value_1qb: float,
+                   *, ratio: float = SF_NONQB_FLOOR_RATIO) -> float:
+    """Floor a non-QB's Superflex value at ``ratio`` × its 1QB value.
+
+    In Superflex, QBs absorb value, so elite non-QBs trade slightly BELOW their
+    1QB value (~0.90-0.92× per the market). This is only a safety net against a
+    bad/missing DP-2QB read cratering a player: the ratio sits below the real
+    market ratio so it never inflates a non-QB above its market SF value. Flooring
+    at the FULL 1QB value (ratio=1.0) inverts the market and, once the higher SF
+    calibration scale is applied, pushes top RBs above the QBs on the SF board.
+    """
+    if sf_value is None:
+        return sf_value
+    return max(float(sf_value), ratio * float(value_1qb or 0.0))
 
 
 def overmarket_capped(
