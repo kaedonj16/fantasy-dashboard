@@ -163,10 +163,14 @@ def test_roster_setup_has_editable_platform_and_dynasty_presets():
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
     body = build_draft_room_body(None, None, None, is_guest=True)
 
-    assert "espn:    { label:'ESPN',       QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:1,K:1,DEF:1,BN:8 }" in source
-    assert "sleeper: { label:'Sleeper'" in source
-    assert "yahoo:   { label:'Yahoo'" in source
-    assert "dynasty: { label:'Dynasty SF'" in source
+    # Assert on the meaningful preset content (label + roster slots), decoupled
+    # from cosmetic whitespace and the type/ppr fields presets also carry, so a
+    # reformat doesn't break the test while the presets are intact.
+    assert "label:'ESPN'" in source
+    assert "QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:1,K:1,DEF:1,BN:8" in source  # ESPN slots
+    assert "label:'Sleeper'" in source
+    assert "label:'Yahoo'" in source
+    assert "label:'Dynasty SF'" in source
     assert "data-roster-preset" in source
     assert ".dr-roster-preset {" in body
 
