@@ -17728,7 +17728,7 @@ img, svg, canvas {
     align-items: stretch;
 }
 
-@media (max-width: 560px) {
+@media (max-width: 600px) {
     .pm-adp-grid { grid-template-columns: 1fr; }
 }
 
@@ -17803,6 +17803,40 @@ img, svg, canvas {
     position: absolute; top: 23px; width: 10px; height: 10px;
     border-radius: 50%; transform: translate(-50%, -50%);
     border: 2px solid var(--row); box-shadow: 0 0 0 1px rgba(0, 0, 0, .08);
+    cursor: help;
+    z-index: 1;
+}
+
+.pm-adp-dot::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 8px);
+    transform: translateX(-50%);
+    padding: 5px 7px;
+    border-radius: 6px;
+    background: var(--text);
+    color: var(--card);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity .12s ease;
+}
+
+.pm-adp-dot:hover,
+.pm-adp-dot:focus-visible {
+    z-index: 3;
+    outline: none;
+}
+
+.pm-adp-dot:hover::after,
+.pm-adp-dot:focus-visible::after {
+    opacity: 1;
+    visibility: visible;
 }
 
 .pm-adp-ends {

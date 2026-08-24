@@ -17,20 +17,32 @@ def test_consensus_single_source_kept_raw():
     assert A.consensus_adp([{}, {}]) == {}
 
 
-def test_consensus_blends_by_rank():
-    # Sources disagree on a vs b; consensus averages their ranks.
+def test_consensus_averages_actual_adp():
+    # Sources disagree on a vs b; consensus averages their actual ADP values.
     s = {"a": 1.0, "b": 2.0, "c": 3.0}   # ranks a1 b2 c3
     y = {"a": 2.0, "b": 1.0, "c": 3.0}   # ranks a2 b1 c3
     c = A.consensus_adp([s, y])
     assert c["a"] == 1.5 and c["b"] == 1.5 and c["c"] == 3.0
 
 
-def test_consensus_scale_invariant():
-    # Second source on a wildly different numeric scale must not dominate.
+def test_consensus_uses_source_values_not_ordinal_ranks():
+    # The values are already normalized to overall pick, so preserve their gaps.
     s = {"a": 1.0, "b": 2.0}
     big = {"a": 500.0, "b": 100.0}       # ranks b1 a2
     c = A.consensus_adp([s, big])
-    assert c["a"] == c["b"] == 1.5        # a(1,2) and b(2,1) both average 1.5
+    assert c["a"] == 250.5
+    assert c["b"] == 51.0
+
+
+def test_consensus_matches_visible_source_value_average():
+    sources = [
+        {"ceedee": 9.5},
+        {"ceedee": 10.0},
+        {"ceedee": 10.7},
+        {"ceedee": 14.1},
+        {"ceedee": 10.4},
+    ]
+    assert A.consensus_adp(sources)["ceedee"] == 10.94
 
 
 # ── resolve_market_adp ───────────────────────────────────────────────────────
@@ -55,7 +67,7 @@ def test_resolve_yahoo_is_redraft_only_and_falls_back(monkeypatch):
 def test_resolve_consensus_blends_sleeper_and_yahoo(monkeypatch):
     monkeypatch.setattr(A, "fetch_sleeper_adp", lambda season: {"a": {"adp_ppr": 1.0}, "b": {"adp_ppr": 2.0}})
     monkeypatch.setattr(A, "fetch_yahoo_adp", lambda lg, tok, season, is_sf: {"a": 2.0, "b": 1.0})
-    # sleeper says a<b, yahoo says b<a -> consensus rank-average is a tie at 1.5.
+    # Equal source values in opposite order still average to a tie at 1.5.
     c = A.resolve_market_adp(2026, False, "redraft", "consensus", league_id="L", token="T")
     assert c["a"] == 1.5 and c["b"] == 1.5
 
@@ -79,7 +91,7 @@ def test_resolve_sleeper_skips_999_undrafted_sentinel(monkeypatch):
 
 def test_consensus_rookie_ignores_sleeper_999(monkeypatch):
     # In a rookie draft Sleeper often has no ADP (all 999). Consensus must then
-    # reflect BR Fantasy alone, not rank-blend real ranks against a wall of 999s.
+    # reflect BR Fantasy alone, not blend real picks against a wall of 999s.
     monkeypatch.setattr(A, "fetch_sleeper_adp",
                         lambda season: {"a": {"adp_dynasty_rookie": 999.0},
                                         "b": {"adp_dynasty_rookie": 999.0}})
@@ -241,9 +253,9 @@ def test_resolve_dynasty_consensus_includes_crawler(monkeypatch):
     monkeypatch.setattr(A, "fetch_sleeper_adp", lambda season: {"a": {"adp_dynasty_ppr": 1.0},
                                                                 "b": {"adp_dynasty_ppr": 2.0}})
     monkeypatch.setattr(A, "_crawler_adp_source", lambda season, is_sf, st: {"a": 24.0, "b": 6.0})
-    # sleeper says a<b, brfantasy says b<a -> consensus rank-average is a tie at 1.5.
+    # Consensus averages the actual picks supplied by both sources.
     c = A.resolve_market_adp(2026, False, "dynasty", "consensus")
-    assert c["a"] == 1.5 and c["b"] == 1.5
+    assert c["a"] == 12.5 and c["b"] == 4.0
 
 
 def test_resolve_brfantasy_source_value(monkeypatch):

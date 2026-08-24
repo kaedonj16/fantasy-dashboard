@@ -101,7 +101,7 @@ non-TEP dynasty/SF data is used only as `compatible`/`generic`, never as exact T
 
 ## Consensus
 
-`resolve_market_adp` preserves the simple, scale-invariant rank-blend and the
+`resolve_market_adp` preserves the simple, equal-source arithmetic mean and the
 `{player_id: adp}` contract that existing callers depend on.
 `resolve_market_adp_detailed` adds the capability-aware path:
 

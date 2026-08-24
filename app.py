@@ -21045,17 +21045,22 @@ def api_league_players():
             # mutate the shared cache (only a new 'yahoo' key is added to the copy).
             _players = [{**_p, "adp_by_source": dict(_p.get("adp_by_source") or {})}
                         for _p in (payload.get("players") or [])]
-            _ycols = _attach_all_adp_sources(_players, _cur_season, ["yahoo"],
+            # Rebuild consensus alongside the league-specific Yahoo column. The
+            # cached consensus used tokenless global Yahoo; resolving both here
+            # makes the displayed consensus use every source available to this
+            # viewer, including the connected league's Yahoo data.
+            _ycols = _attach_all_adp_sources(_players, _cur_season, ["yahoo", "consensus"],
                                              league_id=_lg, token=_ytok)
             if _ycols:
                 _cols = list(payload.get("adp_columns") or [])
-                _cons = [c for c in _cols if c.get("value") == "consensus"]
+                _cons = [c for c in _ycols if c.get("value") == "consensus"]
+                _yahoo = [c for c in _ycols if c.get("value") == "yahoo"]
                 # Drop the global Yahoo column too, so the league-token Yahoo
                 # column replaces it rather than showing two "Yahoo" columns.
                 _rest = [c for c in _cols if c.get("value") not in ("consensus", "yahoo")]
                 payload = dict(payload)
                 payload["players"] = _players
-                payload["adp_columns"] = _rest + _ycols + _cons
+                payload["adp_columns"] = _rest + _yahoo + _cons
                 resp = jsonify(_sanitize_for_json(payload))
                 resp.headers["Cache-Control"] = "no-store"
                 return resp
