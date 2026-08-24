@@ -20214,11 +20214,21 @@ def _build_league_players_payload(kdef: bool = False) -> dict:
         # current (possibly just-reloaded) table before we read it as the key.
         get_model_value_table_cached()
         model_ts = _MODEL_VALUE_CACHE_TS
+        # Also key on the global ADP snapshots' freshness: the per-source ADP
+        # columns are baked into this payload and drop any source with no data at
+        # build time, so a refresh that later populates ESPN/Yahoo/MFL must rebuild
+        # the payload — otherwise those columns stay missing until model values
+        # happen to change. Cheap (stat only). Best-effort: never block the build.
+        try:
+            from dashboard_services.adp_service import global_adp_snapshot_signature
+            adp_sig = global_adp_snapshot_signature()
+        except Exception:
+            adp_sig = 0.0
         cached = _LP_PAYLOAD_CACHE.get(key)
-        if cached and model_ts and cached["ts"] == model_ts:
+        if cached and model_ts and cached["ts"] == model_ts and cached.get("adp_sig") == adp_sig:
             return cached["payload"]
         payload = _build_league_players_payload_uncached(kdef=kdef)
-        _LP_PAYLOAD_CACHE[key] = {"ts": model_ts, "payload": payload}
+        _LP_PAYLOAD_CACHE[key] = {"ts": model_ts, "adp_sig": adp_sig, "payload": payload}
         return payload
 
 
