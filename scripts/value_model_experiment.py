@@ -579,7 +579,7 @@ def _db_effect(board_df: pd.DataFrame, board_col: str, out: Path, prefix: str) -
       effect is the full board change.
     - Calibrated players: the board is the WLS prior, so the calibrated value moves
       ~(1 - confidence) of the prior change (market-pinned players barely move),
-      capped by the +40% MAX_LIFT band. First-order estimate — the exact number
+      capped by the +25% MAX_LIFT band. First-order estimate — the exact number
       comes from the next WLS solve.
     """
     # Reuse the app's own connection helper so we connect exactly like production
@@ -587,7 +587,7 @@ def _db_effect(board_df: pd.DataFrame, board_col: str, out: Path, prefix: str) -
     from dashboard_services.db import get_conn
 
     _K = 6.0        # WLS blend half-weight (value_model_training._WLS_BLEND_K)
-    MAX_LIFT = 1.40  # market may sit up to +40% above prior (trade_value_model)
+    MAX_LIFT = 1.25  # market may sit up to +25% above prior (trade_value_model)
 
     new_board = dict(zip(board_df["sleeper_id"].astype(str), board_df[board_col]))
     meta = {str(r["sleeper_id"]): (r.get("name"), r.get("position"))
@@ -615,7 +615,7 @@ def _db_effect(board_df: pd.DataFrame, board_col: str, out: Path, prefix: str) -
             conf = backing / (backing + _K) if backing > 0 else 0.0
             est = current_site + (1.0 - conf) * (newb - old_model)
             if newb > 0:
-                est = min(est, newb * MAX_LIFT)  # respect the +40% market band
+                est = min(est, newb * MAX_LIFT)  # respect the +25% market band
             new_site = round(est, 1)
             track = "calibrated"
         else:
