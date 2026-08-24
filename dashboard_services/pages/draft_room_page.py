@@ -369,6 +369,7 @@ _DRAFT_ROOM_HTML = r"""
         </div>
         <div id="drCompleteBar" style="display:none;">
           <button class="dr-btn dr-btn-primary" id="drCompleteSummaryBtn" style="width:100%;">Draft Summary</button>
+          <button class="dr-btn dr-btn-deepdive" id="drCompleteDeepDiveBtn" style="width:100%;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;margin-right:5px;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>Deep Dive<span class="dr-dd-prochip">PRO</span></button>
           <button class="dr-btn" id="drCompleteShareBtn" style="width:100%;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px;margin-right:4px;"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>Share</button>
         </div>
       </aside>
@@ -390,6 +391,11 @@ _DRAFT_ROOM_HTML = r"""
   <!-- End-of-draft summary -->
   <div class="dr-summary-overlay" id="drSummary" style="display:none;">
     <div class="dr-summary-card" id="drSummaryCard"></div>
+  </div>
+
+  <!-- Deep Dive analyzer (Pro) -->
+  <div class="dr-dd-overlay" id="drDeepDive" style="display:none;">
+    <div class="dr-dd-card" id="drDeepDiveCard"></div>
   </div>
 
   <!-- Glossary / term explainer -->
@@ -1070,6 +1076,133 @@ _DRAFT_ROOM_HTML = r"""
   .dr-modal-btns { display:flex; gap:10px; justify-content:flex-end; }
   /* Complete-draft sidebar footer */
   #drCompleteBar { padding:10px; border-top:1px solid var(--border); display:flex; flex-direction:column; gap:7px; flex-shrink:0; }
+  .dr-btn-deepdive { background:color-mix(in srgb, var(--accent) 12%, transparent); border-color:color-mix(in srgb, var(--accent) 35%, var(--border)); color:var(--accent); font-weight:700; display:flex; align-items:center; justify-content:center; }
+  .dr-btn-deepdive:hover { background:color-mix(in srgb, var(--accent) 20%, transparent); }
+  .dr-dd-prochip, .dr-sum-prolock { font-size:9px; font-weight:800; letter-spacing:.06em; background:var(--accent); color:var(--on-accent,#fff); border-radius:4px; padding:1px 5px; margin-left:7px; }
+  /* ── Deep Dive analyzer ── */
+  .dr-dd-overlay { position:fixed; inset:0; z-index:12500; background:rgba(0,0,0,.62); display:flex; align-items:flex-start; justify-content:center; overflow-y:auto; padding:calc(env(safe-area-inset-top) + 14px) 14px calc(env(safe-area-inset-bottom) + 18px); }
+  .dr-dd-card { position:relative; width:100%; max-width:940px; margin:0 auto; background:var(--bg); border:1px solid var(--border); border-radius:20px; overflow:hidden; box-shadow:0 24px 80px rgba(0,0,0,.5); display:flex; flex-direction:column; max-height:calc(100vh - 40px); }
+  .dr-dd-card .dr-prev-close { z-index:3; }
+  .dd-head { padding:20px 22px 16px; border-bottom:1px solid var(--border); background:var(--card); }
+  .dd-kicker { font-family:"Archivo",sans-serif; font-size:11px; font-weight:800; letter-spacing:.11em; text-transform:uppercase; color:var(--text-muted); display:flex; align-items:center; }
+  .dd-pro { font-size:9px; font-weight:800; letter-spacing:.06em; background:var(--accent); color:var(--on-accent,#fff); border-radius:4px; padding:1px 6px; margin-left:9px; }
+  .dd-sub { font-size:13px; color:var(--text-muted); margin-top:4px; }
+  .dd-scroll { overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:14px; }
+  .dd-foot { padding:12px 16px; border-top:1px solid var(--border); background:var(--card); display:flex; justify-content:flex-end; }
+  .dd-foot .dr-btn { min-width:120px; }
+  .dd-card { background:var(--card); border:1px solid var(--border); border-radius:15px; padding:18px; }
+  .dd-note { color:var(--text-muted); font-size:13.5px; }
+  .dd-sec { margin-bottom:14px; }
+  .dd-sec h4 { margin:0; font-family:"Archivo",sans-serif; font-size:16px; font-weight:800; color:var(--text); }
+  .dd-sec p { margin:4px 0 0; font-size:12.5px; color:var(--text-muted); }
+  /* overview */
+  .dd-ov-top { display:grid; grid-template-columns:auto 1fr; gap:18px 22px; align-items:center; }
+  .dd-ring { position:relative; width:104px; height:104px; border-radius:50%; flex:none; background:conic-gradient(var(--gc) calc(var(--pct)*1%), var(--border) 0); display:grid; place-items:center; }
+  .dd-ring::after { content:""; position:absolute; inset:8px; border-radius:50%; background:var(--card); }
+  .dd-ring b { position:relative; z-index:1; font-family:"Archivo",sans-serif; font-weight:800; font-size:38px; line-height:1; text-align:center; }
+  .dd-ring b small { display:block; font-size:12px; color:var(--text-muted); font-weight:600; margin-top:2px; }
+  .dd-ov-txt h3 { margin:0; font-family:"Archivo",sans-serif; font-size:22px; font-weight:800; letter-spacing:-.01em; }
+  .dd-rankline { margin-top:5px; font-size:13px; color:var(--text-muted); }
+  .dd-rankline b { color:var(--text); }
+  .dd-say { margin-top:8px; font-size:13.5px; color:var(--text); border-left:3px solid var(--accent); padding-left:11px; }
+  .dd-meters { grid-column:1 / -1; display:flex; flex-direction:column; gap:11px; margin-top:4px; }
+  .dd-meter { display:grid; grid-template-columns:150px 1fr auto; gap:13px; align-items:center; }
+  .dd-meter-lab { font-size:13px; font-weight:600; }
+  .dd-meter-lab small { display:block; font-weight:500; color:var(--text-subtle,var(--text-muted)); font-size:11px; }
+  .dd-track { height:8px; border-radius:99px; background:var(--border); overflow:hidden; }
+  .dd-track i { display:block; height:100%; border-radius:99px; }
+  .dd-meter-val { font-family:"Archivo",sans-serif; font-weight:700; font-size:14px; font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
+  .dd-meter-val span { font-size:11px; color:var(--text-muted); font-weight:600; }
+  .dd-rankpill { display:inline-block; font-size:11px; font-weight:700; padding:2px 7px; border-radius:99px; margin-left:6px; }
+  .dd-rk-top { background:color-mix(in srgb,#22c55e 16%,transparent); color:#16a34a; }
+  .dd-rk-mid { background:color-mix(in srgb,var(--accent) 15%,transparent); color:var(--accent); }
+  .dd-rk-low { background:color-mix(in srgb,#ef4444 15%,transparent); color:#dc2626; }
+  .dd-tiles { display:grid; grid-template-columns:repeat(4,1fr); gap:11px; margin-top:16px; }
+  .dd-tile { border:1px solid var(--border); border-radius:12px; padding:13px 14px; background:var(--bg); }
+  .dd-tile-v { font-family:"Archivo",sans-serif; font-weight:800; font-size:23px; line-height:1; font-variant-numeric:tabular-nums; }
+  .dd-tile-l { font-size:11.5px; color:var(--text-muted); margin-top:6px; }
+  .dd-tile.good .dd-tile-v { color:#16a34a; } .dd-tile.bad .dd-tile-v { color:#dc2626; }
+  /* legend + chart */
+  .dd-legend { display:flex; gap:13px; flex-wrap:wrap; font-size:12px; color:var(--text-muted); margin-bottom:10px; }
+  .dd-legend span { display:inline-flex; align-items:center; gap:6px; }
+  .dd-dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
+  .dd-sq { width:11px; height:11px; border-radius:3px; display:inline-block; }
+  .dd-chartscroll, .dd-tablescroll { overflow-x:auto; }
+  .dd-tl-dot:hover { stroke:var(--text); stroke-width:1.6; }
+  .dd-tip { position:fixed; z-index:12800; pointer-events:none; background:var(--card); border:1px solid var(--border); box-shadow:0 12px 40px rgba(0,0,0,.4); border-radius:11px; padding:10px 12px; font-size:12.5px; opacity:0; transform:translateY(4px); transition:opacity .12s; max-width:230px; }
+  .dd-tip.show { opacity:1; transform:none; }
+  .dd-tip b { font-family:"Archivo",sans-serif; }
+  .dd-tip-r { display:flex; justify-content:space-between; gap:16px; color:var(--text-muted); margin-top:3px; }
+  .dd-tip-r b { color:var(--text); font-family:inherit; }
+  /* tables */
+  .dd-ledger { width:100%; border-collapse:collapse; font-size:13px; }
+  .dd-ledger th, .dd-ledger td { padding:9px 11px; text-align:left; border-bottom:1px solid var(--border); white-space:nowrap; }
+  .dd-ledger thead th { font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--text-subtle,var(--text-muted)); cursor:pointer; user-select:none; }
+  .dd-ledger thead th:hover { color:var(--text); }
+  .dd-ledger thead th.dd-sorted { color:var(--accent); }
+  .dd-ledger td.r, .dd-ledger th.r { text-align:right; }
+  .dd-ledger .num { font-variant-numeric:tabular-nums; }
+  .dd-ledger tbody tr:hover { background:color-mix(in srgb,var(--accent) 5%,transparent); }
+  .dd-plname { font-weight:600; }
+  .dd-posbadge { display:inline-block; min-width:30px; text-align:center; font-size:10px; font-weight:800; color:#fff; padding:2px 6px; border-radius:5px; }
+  .dd-diff { font-weight:800; font-variant-numeric:tabular-nums; }
+  .dd-diff.p { color:#16a34a; } .dd-diff.n { color:#dc2626; } .dd-diff.z { color:var(--text-muted); }
+  .dd-verd { font-size:10.5px; font-weight:800; padding:3px 9px; border-radius:99px; }
+  .dd-v-steal { background:color-mix(in srgb,#22c55e 16%,transparent); color:#16a34a; }
+  .dd-v-value { background:color-mix(in srgb,var(--accent) 14%,transparent); color:var(--accent); }
+  .dd-v-fair { background:var(--bg); color:var(--text-muted); border:1px solid var(--border); }
+  .dd-v-reach { background:color-mix(in srgb,#ef4444 14%,transparent); color:#dc2626; }
+  .dd-v-na { color:var(--text-subtle,var(--text-muted)); }
+  /* league board */
+  .dd-league tbody tr.dd-me { background:color-mix(in srgb,var(--accent) 9%,transparent); }
+  .dd-youtag { font-size:9px; font-weight:800; background:var(--accent); color:var(--on-accent,#fff); border-radius:4px; padding:1px 5px; margin-left:6px; }
+  .dd-gletter { font-family:"Archivo",sans-serif; font-weight:800; font-size:15px; }
+  .dd-odds { display:flex; align-items:center; gap:8px; min-width:130px; }
+  .dd-odds-track { flex:1; height:7px; border-radius:99px; background:var(--border); overflow:hidden; }
+  .dd-odds-track i { display:block; height:100%; border-radius:99px; }
+  .dd-odds .num { font-variant-numeric:tabular-nums; font-weight:600; font-size:12.5px; min-width:34px; text-align:right; }
+  /* construction */
+  .dd-two { display:grid; grid-template-columns:1fr 1fr; gap:22px; }
+  .dd-cap-row { display:grid; grid-template-columns:40px 1fr 78px; gap:11px; align-items:center; margin-bottom:10px; }
+  .dd-cap-pos { font-size:12px; font-weight:800; }
+  .dd-cap-track { position:relative; height:20px; border-radius:6px; background:var(--border); overflow:visible; }
+  .dd-cap-track i { display:block; height:100%; border-radius:6px; }
+  .dd-cap-lg { position:absolute; top:-3px; width:2px; height:26px; background:var(--text); opacity:.55; }
+  .dd-cap-val { font-family:"Archivo",sans-serif; font-weight:700; font-size:13px; text-align:right; font-variant-numeric:tabular-nums; }
+  .dd-cap-val small { display:block; font-family:inherit; font-weight:500; color:var(--text-subtle,var(--text-muted)); font-size:10px; }
+  .dd-st-row { display:grid; grid-template-columns:auto 1fr auto auto; gap:10px; align-items:center; padding:7px 0; border-bottom:1px solid var(--border); }
+  .dd-slotbadge { font-size:10px; font-weight:800; padding:3px 7px; border-radius:6px; border:1px solid var(--border); min-width:40px; text-align:center; }
+  .dd-st-name { font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .dd-st-ppg { font-family:"Archivo",sans-serif; font-weight:700; font-size:13px; font-variant-numeric:tabular-nums; }
+  .dd-st-ppg small { font-family:"Inter",sans-serif; font-weight:500; color:var(--text-muted); font-size:10px; margin-left:2px; }
+  .dd-st-rank { font-size:11.5px; color:var(--text-muted); white-space:nowrap; }
+  .dd-st-rank b { color:var(--text); }
+  /* edges + flags */
+  .dd-edges { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .dd-edge { padding:14px; border-radius:12px; border:1px solid var(--border); background:var(--bg); }
+  .dd-edge-k { font-size:10.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
+  .dd-edge.win .dd-edge-k { color:#16a34a; } .dd-edge.winb .dd-edge-k { color:var(--accent); } .dd-edge.bad .dd-edge-k { color:#dc2626; }
+  .dd-edge-pl { font-family:"Archivo",sans-serif; font-weight:700; font-size:16px; margin-top:7px; }
+  .dd-edge-sub { font-size:12px; color:var(--text-muted); margin-top:2px; }
+  .dd-edge-say { font-size:12px; color:var(--text); margin-top:8px; }
+  .dd-flags { display:flex; flex-direction:column; gap:9px; margin-top:13px; }
+  .dd-flag { display:grid; grid-template-columns:auto 1fr; gap:11px; padding:12px 13px; border-radius:11px; border:1px solid var(--border); background:var(--bg); }
+  .dd-flag-ic { width:30px; height:30px; border-radius:8px; display:grid; place-items:center; font-weight:800; flex:none; }
+  .dd-flag-crit { border-color:color-mix(in srgb,#ef4444 40%,var(--border)); }
+  .dd-flag-crit .dd-flag-ic { background:color-mix(in srgb,#ef4444 15%,transparent); color:#dc2626; }
+  .dd-flag-warn .dd-flag-ic { background:color-mix(in srgb,#f59e0b 16%,transparent); color:#d97706; }
+  .dd-flag-ttl { font-weight:700; font-size:13px; }
+  .dd-flag-ds { font-size:12px; color:var(--text-muted); margin-top:2px; }
+  @media (max-width:720px){
+    .dr-dd-card { max-width:100%; border-radius:14px; }
+    .dd-ov-top { grid-template-columns:1fr; text-align:center; }
+    .dd-ring { margin:0 auto; }
+    .dd-say { text-align:left; }
+    .dd-meter { grid-template-columns:120px 1fr auto; }
+    .dd-tiles { grid-template-columns:repeat(2,1fr); }
+    .dd-two { grid-template-columns:1fr; }
+    .dd-edges { grid-template-columns:1fr; }
+  }
   /* ── Roster slots (setup page) ── */
   .dr-setup-roster { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:8px; }
   .dr-srow { display:flex; align-items:center; justify-content:space-between; gap:8px;
