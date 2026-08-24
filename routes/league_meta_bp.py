@@ -25,7 +25,10 @@ def _weighted_pos_strength(*a, **k):
     return _fn(*a, **k)
 
 def format_sleeper_league_option(*a, **k):
-    from app import format_sleeper_league_option as _fn
+    # Lives in utils.league_payload (a pure module), not app.py — import it
+    # directly so the Sleeper league-option formatting doesn't depend on app
+    # re-exporting the name (which it no longer does).
+    from utils.league_payload import format_sleeper_league_option as _fn
     return _fn(*a, **k)
 
 def get_available_history_seasons(*a, **k):
