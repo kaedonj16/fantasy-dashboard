@@ -17728,7 +17728,7 @@ img, svg, canvas {
     align-items: stretch;
 }
 
-@media (max-width: 560px) {
+@media (max-width: 600px) {
     .pm-adp-grid { grid-template-columns: 1fr; }
 }
 
