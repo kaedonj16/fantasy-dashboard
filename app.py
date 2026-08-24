@@ -20464,6 +20464,50 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
     except Exception as _e_rd:
         logger.info(f"[api/league-players] redraft values skipped: {_e_rd}")
 
+    # Redraft depth fallback: the market source (FantasyCalc) only prices roughly
+    # the top ~64 RB / ~150 WR, so a deep redraft mock (e.g. 12-team x 17 rounds =
+    # 204 picks) drains the priced pool and the Draft Room's position filter goes
+    # empty ("no players match" for RB even though hundreds exist). Derive a redraft
+    # value for every unpriced skill player from its dynasty value, scaled strictly
+    # below the priced floor so real redraft values always rank first, relative
+    # order is preserved, and the pool never runs dry.
+    try:
+        _skill = {"QB", "RB", "WR", "TE"}
+
+        def _num(_x):
+            try:
+                return float(_x)
+            except (TypeError, ValueError):
+                return 0.0
+
+        for _rd_field, _dyn_field in (("redraft_value_1qb", "value"),
+                                      ("redraft_value_sf", "sf_value")):
+            _priced = [
+                _num(_p.get(_rd_field)) for _p in model_value_table
+                if str(_p.get("position") or "").upper() in _skill
+                and _num(_p.get(_rd_field)) > 0
+            ]
+            _floor = min(_priced) if _priced else 1.0
+            _unpriced_dyn = [
+                _num(_p.get(_dyn_field)) for _p in model_value_table
+                if str(_p.get("position") or "").upper() in _skill
+                and _num(_p.get(_rd_field)) <= 0
+            ]
+            _dyn_max = max(_unpriced_dyn) if _unpriced_dyn else 0.0
+            if _dyn_max <= 0:
+                continue
+            _cap = _floor * 0.9   # best unpriced player still ranks below every priced one
+            for _p in model_value_table:
+                if str(_p.get("position") or "").upper() not in _skill:
+                    continue
+                if _num(_p.get(_rd_field)) > 0:
+                    continue
+                _dyn = _num(_p.get(_dyn_field))
+                if _dyn > 0:
+                    _p[_rd_field] = round(_cap * (_dyn / _dyn_max), 2)
+    except Exception as _e_rdfill:
+        logger.info(f"[api/league-players] redraft depth fill skipped: {_e_rdfill}")
+
     try:
         from data_building.rookie_pipeline.pipeline import (
             get_rookie_rankings_from_db,
@@ -20789,7 +20833,46 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
                         "team": _team,
                         "value": 0, "sf_value": 0,
                     })
-            _kdef.sort(key=lambda x: x["name"])
+            # Attach real Sleeper ADP so K/DEF sort by when managers actually draft
+            # them (elite D/STs go rounds ~11-14) instead of alphabetically. Sleeper
+            # keys defenses by team abbr (== our DEF id) and kickers by player id, so
+            # a single lookup covers both. Mirrors the redraft/startup field mapping
+            # used for skill players in _attach_adp_to_players.
+            try:
+                from dashboard_services.adp_service import fetch_sleeper_adp as _sleeper_adp
+                _kd_sa = _sleeper_adp(_adp_season) or {}
+
+                def _kd_pick(_row, *_keys):
+                    for _k in _keys:
+                        _v = _row.get(_k)
+                        if _v is not None and 0 < _v < 999:
+                            return _v
+                    return None
+
+                for _row in _kdef:
+                    _sr = _kd_sa.get(str(_row.get("id") or "")) or {}
+                    if not _sr:
+                        continue
+                    _rd = _kd_pick(_sr, "adp_ppr", "adp_half_ppr", "adp_std")
+                    if _rd is not None:
+                        _row["redraft_avg_pick"] = _rd
+                    _rdsf = _kd_pick(_sr, "adp_2qb", "adp_ppr")
+                    if _rdsf is not None:
+                        _row["sf_redraft_avg_pick"] = _rdsf
+                    _su = _kd_pick(_sr, "adp_dynasty_ppr", "adp_dynasty_half_ppr", "adp_dynasty_std")
+                    if _su is not None:
+                        _row["avg_pick"] = _su
+                    _susf = _kd_pick(_sr, "adp_dynasty_2qb", "adp_dynasty_ppr")
+                    if _susf is not None:
+                        _row["sf_avg_pick"] = _susf
+            except Exception as _e_kdadp:
+                logger.info("[api/league-players] K/DEF ADP attach skipped: %s", _e_kdadp)
+            # Order by redraft ADP (best-drafted first); ADP-less rows fall to the
+            # end, tie-broken by name for stability.
+            _kdef.sort(key=lambda x: (
+                x.get("redraft_avg_pick") if x.get("redraft_avg_pick") is not None else 9999.0,
+                x["name"],
+            ))
             model_value_table.extend(_kdef)
         except Exception as _e_kdef:
             logger.info("[api/league-players] K/DEF append skipped: %s", _e_kdef)
