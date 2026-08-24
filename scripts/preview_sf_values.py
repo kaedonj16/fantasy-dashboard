@@ -94,8 +94,12 @@ def main():
     def pos(pid):
         return live.get(pid, {}).get("position") or ""
 
-    # Rank by proposed SF so we see the new board order.
-    ranked = sorted(prop.values(),
+    # Rank by proposed SF so we see the new board order. Drop pick buckets
+    # (keys like "2026_1_01" / "pick_…") so the table is players only.
+    import re as _re
+    def _is_pick(pid: str) -> bool:
+        return bool(_re.match(r"^(pick_|\d{4}_)", str(pid)))
+    ranked = sorted((r for r in prop.values() if not _is_pick(r.get("player_id"))),
                     key=lambda r: float(r.get("calibrated_value_sf") or 0), reverse=True)
 
     cols = f"{'#':>3}  {'PLAYER':22} {'POS':3} {'1QB live':>9} {'SF live':>8} {'SF prop':>8}"
