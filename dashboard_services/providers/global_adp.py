@@ -114,6 +114,18 @@ def espn_id_to_canonical() -> Dict[str, str]:
     return out
 
 
+def _flip_comma_name(raw: str) -> str:
+    """Reorder MFL's ``"Last, First"`` (optionally ``"Last, First Suffix"``) name
+    to ``"First Last"`` so ``normalize_name`` lines it up with the ``"First Last"``
+    players_index. ``normalize_name`` itself only strips periods/suffixes — it does
+    NOT reorder the comma form — so without this every MFL name fails to match."""
+    if "," not in (raw or ""):
+        return raw or ""
+    last, _, first = raw.partition(",")
+    first, last = first.strip(), last.strip()
+    return (f"{first} {last}".strip()) if first else last
+
+
 def mfl_id_to_canonical(season: int) -> Dict[str, str]:
     """mfl_id -> canonical id, matched by normalized (name, position).
 
@@ -139,8 +151,9 @@ def mfl_id_to_canonical(season: int) -> Dict[str, str]:
         players = _mfl_player_rows(int(season))
         for p in players:
             raw_name = p.get("name") or ""
-            # MFL names are "Last, First"; normalize_name handles the comma form.
-            nm = normalize_name(raw_name)
+            # MFL names are "Last, First"; reorder before normalizing (normalize_name
+            # does not handle the comma form) so they match the "First Last" index.
+            nm = normalize_name(_flip_comma_name(raw_name))
             pos = str(p.get("position") or "").upper()
             cid = by_name_pos.get((nm, pos)) or by_name.get(nm)
             if cid and p.get("id"):

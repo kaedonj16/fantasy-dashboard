@@ -204,3 +204,38 @@ def test_mfl_crosswalk_matches_by_name_pos(monkeypatch):
     ])
     out = G.mfl_id_to_canonical(2026)
     assert out == {"0001": "sleeperA", "0002": "sleeperB"}
+
+
+def test_flip_comma_name():
+    # MFL exports "Last, First" (optionally with a suffix); reorder to "First Last".
+    assert G._flip_comma_name("Gibbs, Jahmyr") == "Jahmyr Gibbs"
+    assert G._flip_comma_name("Cook III, James") == "James Cook III"
+    assert G._flip_comma_name("St. Brown, Amon-Ra") == "Amon-Ra St. Brown"
+    # No comma -> passthrough; empty/None -> "".
+    assert G._flip_comma_name("Jaxon Smith-Njigba") == "Jaxon Smith-Njigba"
+    assert G._flip_comma_name("") == ""
+    assert G._flip_comma_name(None) == ""
+
+
+def test_mfl_crosswalk_handles_last_comma_first(monkeypatch):
+    """Regression: MFL's real "Last, First" names must map. normalize_name does
+    not reorder the comma form, so without _flip_comma_name every star (whose
+    index name is "First Last") fails to match — the observed 0% MFL mapping."""
+    G.clear_crosswalk_cache()
+    import sys
+    import types
+    fake_utils = types.ModuleType("utils.utils")
+    fake_utils.load_players_index = lambda: {
+        "sleeperA": {"full_name": "Jahmyr Gibbs", "position": "RB"},
+        "sleeperB": {"full_name": "Bijan Robinson", "position": "RB"},
+    }
+    # A minimal stand-in that lowercases/strips but does NOT reorder commas, like
+    # the real normalize_name — so the flip is what makes the names line up.
+    fake_utils.normalize_name = lambda n: (n or "").strip().lower()
+    monkeypatch.setitem(sys.modules, "utils.utils", fake_utils)
+    monkeypatch.setattr(G, "_mfl_player_rows", lambda season: [
+        {"id": "0001", "name": "Gibbs, Jahmyr", "position": "RB"},
+        {"id": "0002", "name": "Robinson, Bijan", "position": "RB"},
+    ])
+    out = G.mfl_id_to_canonical(2026)
+    assert out == {"0001": "sleeperA", "0002": "sleeperB"}
