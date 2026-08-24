@@ -11741,8 +11741,10 @@ function openPlayerModal(playerId, playerName, opts) {
         const mid = (lo + hi) / 2, pad = span * 0.12;
         const sLo = mid - span / 2 - pad, sHi = mid + span / 2 + pad;
         const pos = v => Math.max(0, Math.min(100, (v - sLo) / (sHi - sLo) * 100));
-        const dots = pts.map(p =>
-          `<span class="pm-adp-dot" style="left:${pos(p.v).toFixed(1)}%;background:${p.color}" title="${_adpEsc(p.label)} · ${_adpNum(p.v)}"></span>`).join('');
+        const dots = pts.map(p => {
+          const tip = `${_adpEsc(p.label)} ADP: ${_adpNum(p.v)}`;
+          return `<span class="pm-adp-dot" style="left:${pos(p.v).toFixed(1)}%;background:${p.color}" tabindex="0" role="img" aria-label="${tip}" data-tooltip="${tip}"></span>`;
+        }).join('');
         const cmk = cons != null
           ? `<span class="pm-adp-cmk" style="left:${pos(cons).toFixed(1)}%"></span>` : '';
         return `

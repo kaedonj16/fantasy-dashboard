@@ -60,8 +60,8 @@ var prAdpSource = 'auto';       // currently selected ADP source ('auto' = serve
 var prAdpReloading = false;     // guards concurrent source re-fetches
 var prAdpColumns = [];          // [{value,label}] per-source ADP columns for the sort-by-ADP view
 var prAdpSortSource = '';       // which source column the ADP view is sorted by ('' = default)
-var PR_ADP_COL_W = 96;          // px width of each ADP source column (fits "BR FANTASY"/"CONSENSUS" without colliding)
-var PR_ADP_COL_W_MOBILE = 58;   // narrower on phones so all sources fit without overflowing the viewport (CSS shrinks the header font to match)
+var PR_ADP_COL_W = 82;          // compact source columns; the table scrolls horizontally when every source is visible
+var PR_ADP_COL_W_MOBILE = 70;   // readable touch target on phones, with overflow handled by the table scroller
 
 var PR_SPARK_W = 38, PR_SPARK_H = 26;  // logical (CSS) px
 // Set true for the one render pass right after sparkline data first loads, so
@@ -641,6 +641,8 @@ function prRender() {
         ? ('54px minmax(0,1fr) 40px 42px 46px ' + _adpSrcTracks)
         : (_adpRankW + ' minmax(0,1fr) ' + _adpSrcTracks))
     : '';
+  const tableScroll = document.getElementById('prTableScroll');
+  if (tableScroll) tableScroll.classList.toggle('pr-adp-scroll', adpView);
   prSetupAdpHeader(adpView, adpCols, adpActive, ADP_GRID, adpExtra);
   if (!adpView) {
     // On mobile (≤768px) the Age column is hidden, so switch the sort column
