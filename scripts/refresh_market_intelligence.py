@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
-"""Refresh pregame NFL SportsGameOdds snapshots and consensus.
+"""Refresh pregame NFL SportsGameOdds snapshots and consensus, plus the
+tokenless global ADP snapshots (Yahoo/ESPN/MFL).
 
 Designed for an every-four-hours cron. Missing credentials are a successful
-no-op. Season-long props are not synthesized from weekly markets.
+no-op. Season-long props are not synthesized from weekly markets. The global
+ADP refresh is piggybacked here so ADP stays fresh through the day (important in
+draft season) rather than only in the once-daily job; it is fully isolated from
+the market refresh so either can fail without affecting the other.
 """
 from __future__ import annotations
 
@@ -409,6 +413,26 @@ def refresh() -> int:
     return len(normalized)
 
 
+def refresh_global_adp() -> None:
+    """Refresh the tokenless global ADP snapshots (Yahoo/ESPN/MFL).
+
+    Isolated end to end: each provider is independently isolated inside
+    refresh_global_adp_sources, an empty fetch keeps the last good snapshot, and
+    any failure here is swallowed so it never breaks (or is broken by) the market
+    refresh above."""
+    try:
+        from dashboard_services.adp_service import refresh_global_adp_sources
+        state = get_nfl_state() or {}
+        season = int(state.get("season") or datetime.now().year)
+        summary = refresh_global_adp_sources(season)
+        print(f"[market] global ADP refresh: {summary}")
+    except Exception as exc:  # never let the ADP refresh break the cron
+        print(f"[market] global ADP refresh failed: {type(exc).__name__}: {exc}")
+
+
 if __name__ == "__main__":
     argparse.ArgumentParser().parse_args()
+    # Run the ADP refresh first: it is fast and independent, so a later failure in
+    # the (much larger) market refresh can never skip it.
+    refresh_global_adp()
     refresh()
