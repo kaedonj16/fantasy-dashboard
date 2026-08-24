@@ -451,12 +451,26 @@ function prAdpSourceVal(p, src) {
 }
 // Whether we have per-source columns to show (server sent them for this pool).
 function prHasAdpColumns() { return Array.isArray(prAdpColumns) && prAdpColumns.length > 0; }
-// The source the ADP view is currently sorted by (defaults to Consensus, else first).
+// Per-source columns that actually carry a value on the CURRENT axis. ESPN/Yahoo/
+// MFL are redraft-only, so on the dynasty/rookie axes they hold no value and would
+// render as an all-dashes column — hide them instead of showing an empty column.
+function prVisibleAdpColumns() {
+  if (!prHasAdpColumns()) return [];
+  const field = prAdpField();
+  return prAdpColumns.filter(c =>
+    prAllPlayers.some(p => {
+      const bs = p.adp_by_source && p.adp_by_source[c.value];
+      return bs && bs[field] != null;
+    }));
+}
+// The source the ADP view is currently sorted by (defaults to Consensus, else
+// first) — chosen among the columns visible on the current axis.
 function prActiveAdpSource() {
-  if (!prHasAdpColumns()) return '';
-  if (prAdpSortSource && prAdpColumns.some(c => c.value === prAdpSortSource)) return prAdpSortSource;
-  const cons = prAdpColumns.find(c => c.value === 'consensus');
-  return cons ? cons.value : prAdpColumns[0].value;
+  const cols = prVisibleAdpColumns();
+  if (!cols.length) return '';
+  if (prAdpSortSource && cols.some(c => c.value === prAdpSortSource)) return prAdpSortSource;
+  const cons = cols.find(c => c.value === 'consensus');
+  return cons ? cons.value : cols[0].value;
 }
 // ADP value used for sorting rows: the active source's when columns exist,
 // otherwise the legacy single-source field.
@@ -607,7 +621,7 @@ function prRender() {
   // columns (Value/Age/Team/Pos) are swapped out for one column per ADP source.
   const isMobile = window.innerWidth <= 768;
   const adpView = (sortBy === 'adp') && prHasAdpColumns();
-  const adpCols = adpView ? prAdpColumns : [];
+  const adpCols = adpView ? prVisibleAdpColumns() : [];
   const adpActive = adpView ? prActiveAdpSource() : '';
   // On desktop keep the Pos / Age / Team columns (compact) alongside the source
   // columns; on mobile drop them so the source columns fit.

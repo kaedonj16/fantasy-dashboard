@@ -20703,15 +20703,16 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
     _adp_sources = _attach_adp_to_players(model_value_table, _adp_season)
     # Per-source ADP for the rankings "sort by ADP" view (one column per source).
     # Tokenless, league-agnostic sources: Sleeper, BR Fantasy, and the global
-    # snapshot feeds ESPN + MFL (redraft-only; each is dropped by
+    # snapshot feeds ESPN + MFL + Yahoo (redraft-only; each is dropped by
     # _attach_all_adp_sources when its snapshot has no data, so they never show as
-    # empty columns). Yahoo needs a league token and is overlaid per-request in the
-    # route, inserted before Consensus. Consensus stays last. Attached here so the
-    # memoized payload carries them.
+    # empty columns). Yahoo's *global* snapshot is tokenless; a connected Yahoo
+    # league additionally overlays its league-format Yahoo ADP per-request in the
+    # route (replacing this global column). Consensus stays last. Attached here so
+    # the memoized payload carries them.
     try:
         _adp_columns = _attach_all_adp_sources(
             model_value_table, _adp_season,
-            ["sleeper", "brfantasy", "espn", "mfl", "consensus"])
+            ["sleeper", "brfantasy", "espn", "mfl", "yahoo", "consensus"])
     except Exception as _e_adpcols:
         logger.info("[api/league-players] per-source ADP skipped: %s", _e_adpcols)
         _adp_columns = []
@@ -21016,10 +21017,11 @@ def api_league_players():
         resp.headers["Cache-Control"] = "no-store"  # source-specific, not the shared pool
         return resp
 
-    # Yahoo ADP column (redraft-only): only for a viewer in a Yahoo league, since
-    # Yahoo ADP needs a league id + token. Overlaid on a copy so it never leaks
-    # into the shared memoized payload, and inserted BEFORE consensus so consensus
-    # stays the last column.
+    # Yahoo ADP column (redraft-only): for a viewer in a connected Yahoo league,
+    # overlay Yahoo's league-format-aware ADP (needs a league id + token) in place
+    # of the tokenless global Yahoo column the base payload already carries.
+    # Overlaid on a copy so it never leaks into the shared memoized payload, and
+    # inserted BEFORE consensus so consensus stays the last column.
     _lg = (request.args.get("league_id") or session.get("last_league_id") or "").strip()
     _plat = (request.args.get("platform") or session.get("last_platform") or "").strip().lower()
     if _plat == "yahoo" and _lg and payload.get("adp_columns"):
@@ -21038,7 +21040,9 @@ def api_league_players():
             if _ycols:
                 _cols = list(payload.get("adp_columns") or [])
                 _cons = [c for c in _cols if c.get("value") == "consensus"]
-                _rest = [c for c in _cols if c.get("value") != "consensus"]
+                # Drop the global Yahoo column too, so the league-token Yahoo
+                # column replaces it rather than showing two "Yahoo" columns.
+                _rest = [c for c in _cols if c.get("value") not in ("consensus", "yahoo")]
                 payload = dict(payload)
                 payload["players"] = _players
                 payload["adp_columns"] = _rest + _ycols + _cons
