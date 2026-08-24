@@ -145,6 +145,7 @@ def build_players_shell() -> str:
         <!-- Player count -->
         <div id="prCount" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;display:none;"></div>
 
+        <div id="prTableScroll">
         <!-- Table header -->
         <div id="prTableHeader" style="display:none;
              grid-template-columns:54px 42px 1fr 52px 46px 46px 60px;
@@ -163,6 +164,7 @@ def build_players_shell() -> str:
 
         <!-- Player rows -->
         <div id="prList"></div>
+        </div>
 
         <!-- Empty state -->
         <div id="prEmpty" style="display:none;text-align:center;padding:40px;color:var(--text-muted);">
@@ -187,6 +189,24 @@ def build_players_shell() -> str:
       }
       .pr-player-row:hover { background: var(--accent-soft); }
       .pr-player-row + .pr-player-row { border-top: 1px solid var(--border); }
+      #prTableScroll.pr-adp-scroll {
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+        scrollbar-width: thin;
+      }
+      #prTableScroll.pr-adp-scroll .pr-adp-mode {
+        min-width: 720px;
+      }
+      #prTableScroll.pr-adp-scroll .pr-name {
+        min-width: 150px;
+      }
+      /* A sticky child cannot track the page viewport through an overflow-x
+         scroller reliably: browsers treat that wrapper as its sticky scroll
+         container, which made the header float over arbitrary player rows.
+         Keep the ADP header at the top of its horizontally scrolling table. */
+      #prTableScroll.pr-adp-scroll #prTableHeader {
+        position: static;
+      }
       .pr-rank {
         font-size: 12px;
         font-weight: 700;
