@@ -2424,6 +2424,16 @@
     return d > 99 ? 99 : (d < 1 ? 1 : d);
   }
 
+  // Absolute Pick Score for LIVE displays (board rows, preview modal, compare):
+  // the raw 0-100 grade at this slot, clamped to 1-99. Single source of truth so
+  // the same player never shows two different "Pick Score" numbers across the
+  // row, modal, and compare. psDisplay's pool-relative scaling is reserved for
+  // the report card (already-made picks), which is a different, historical view.
+  function psAbs(p){
+    var raw = p._ps != null ? p._ps : pickScoreFor(p);
+    return raw == null ? null : Math.max(1, Math.min(99, Math.round(raw)));
+  }
+
   // ── Pool-relative score for ALREADY-MADE picks (report card) ────────────────
   // Mock/manual picks capture psRel at commit time. Synced (live) picks don't go
   // through commitPick, so reconstruct each pick's "vs best available then" score
@@ -2747,8 +2757,8 @@
       var vor = p.vorp != null ? Number(p.vorp) : vorOf(p);
       var ovor = other.vorp != null ? Number(other.vorp) : vorOf(other);
       var vorLbl = (p.vorp != null || other.vorp != null) ? 'VORP' : 'VOR';
-      var ps = psDisplay(p._ps != null ? p._ps : pickScoreFor(p));
-      var ops = psDisplay(other._ps != null ? other._ps : pickScoreFor(other));
+      var ps = psAbs(p);
+      var ops = psAbs(other);
       var v = valOf(p), ov = valOf(other);
       var t = tierOf(p), ot = tierOf(other);
       var ppg = p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null);
@@ -3010,8 +3020,7 @@
     var adp = adpOf(p);
     // Recommendation rows show absolute Pick Score. Ranking is owned by the live
     // Decision Score so the best player on a depleted board is not relabeled 97.
-    var _rawPs = p._ps != null ? p._ps : pickScoreFor(p);
-    var ps = _rawPs == null ? null : Math.max(1, Math.min(99, Math.round(_rawPs)));
+    var ps = psAbs(p);
     var sub = (adp != null ? 'ADP ' + Number(adp).toFixed(1) : '')
       + (!opts.showPickScore && p._ds != null && ps != null ? ' · PS ' + ps : '');
     var reasonLine = '';
@@ -4758,23 +4767,67 @@
     var usedLabel = adpSources[state.type];
     var autoLabel = (usedLabel && usedLabel !== 'none') ? ('Auto (' + usedLabel + ')') : 'Auto';
     var opts = [{ value: 'auto', label: autoLabel }].concat(serverOpts);
-    var sel = document.getElementById('drAdpSource');
-    if (!sel){
-      host.innerHTML = '<label class="dr-adp-src-label" for="drAdpSource">ADP source</label>'
-        + '<select id="drAdpSource" class="dr-adp-src-select"></select>';
-      sel = document.getElementById('drAdpSource');
-      sel.addEventListener('change', function(){
-        adpSource = sel.value;
-        loadPlayers();   // re-fetch the pool scored by the chosen source
+
+    // Preserve the current selection across refreshes (the option set changes
+    // with the draft mode); default to the first option ("auto").
+    var want = adpSource;
+    if (!opts.some(function(o){ return o.value === want; })) want = opts[0] ? opts[0].value : 'auto';
+    adpSource = want;
+
+    // Custom dropdown (reuses the .dr-sortsel styles) instead of a native
+    // <select>, whose option popup can't be themed to match the app.
+    var ui = document.getElementById('drAdpSrcUI');
+    if (!ui){
+      host.innerHTML = '<label class="dr-adp-src-label" for="drAdpSrcBtn">ADP source</label>'
+        + '<div class="dr-sortsel" id="drAdpSrcUI">'
+        +   '<button type="button" class="dr-sortsel-btn" id="drAdpSrcBtn" aria-haspopup="listbox" aria-expanded="false">'
+        +     '<span id="drAdpSrcLbl"></span>'
+        +     '<svg class="dr-sortsel-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>'
+        +   '</button>'
+        +   '<div class="dr-sortsel-menu" id="drAdpSrcMenu" role="listbox" hidden></div>'
+        + '</div>';
+      ui = document.getElementById('drAdpSrcUI');
+      var btn = document.getElementById('drAdpSrcBtn');
+      var menu = document.getElementById('drAdpSrcMenu');
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        var willOpen = menu.hidden;
+        menu.hidden = !willOpen;
+        btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
       });
+      menu.addEventListener('click', function(e){
+        var opt = e.target.closest('.dr-sortsel-opt'); if (!opt) return;
+        e.stopPropagation();
+        menu.hidden = true;
+        btn.setAttribute('aria-expanded', 'false');
+        var v = opt.getAttribute('data-val');
+        if (v !== adpSource){
+          adpSource = v;
+          syncAdpSourceSelector();   // refresh label + active state
+          loadPlayers();             // re-fetch the pool scored by the chosen source
+        }
+      });
+      // One persistent outside-click handler (survives menu rebuilds).
+      if (!window.__drAdpSrcDocBound){
+        window.__drAdpSrcDocBound = true;
+        document.addEventListener('click', function(e){
+          var m = document.getElementById('drAdpSrcMenu');
+          var u = document.getElementById('drAdpSrcUI');
+          var b = document.getElementById('drAdpSrcBtn');
+          if (m && u && !m.hidden && !u.contains(e.target)){
+            m.hidden = true; if (b) b.setAttribute('aria-expanded', 'false');
+          }
+        });
+      }
     }
-    var want = sel.value || adpSource;
-    sel.innerHTML = opts.map(function(o){
-      return '<option value="' + o.value + '">' + o.label + '</option>';
+
+    // Refresh the button label and option list every call.
+    var cur = opts.filter(function(o){ return o.value === want; })[0] || opts[0];
+    document.getElementById('drAdpSrcLbl').textContent = cur ? cur.label : 'Auto';
+    document.getElementById('drAdpSrcMenu').innerHTML = opts.map(function(o){
+      return '<button type="button" class="dr-sortsel-opt' + (o.value === want ? ' is-active' : '')
+        + '" role="option" data-val="' + esc(o.value) + '">' + esc(o.label) + '</button>';
     }).join('');
-    var has = opts.some(function(o){ return o.value === want; });
-    sel.value = has ? want : (opts[0] ? opts[0].value : 'consensus');
-    adpSource = sel.value;
   }
 
   function renderBA(){
@@ -5471,7 +5524,7 @@
   }
   function openPreview(id){
     var p = playersById[String(id)]; if (!p) return;
-    var adp = adpOf(p), t = tierOf(p), ps = psDisplay(p._ps != null ? p._ps : pickScoreFor(p));
+    var adp = adpOf(p), t = tierOf(p), ps = psAbs(p);
     var posRank = state.sf ? (p.sf_pos_rank_label || '') : (p.pos_rank_label || '');
     var adpGap = (adp != null) ? (state.current - adp) : null;
     var vsAdp = adpGap != null ? (adpGap >= 0 ? ('+' + Math.round(adpGap)) : String(Math.round(adpGap))) : '-';
