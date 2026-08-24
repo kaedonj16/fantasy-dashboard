@@ -76,7 +76,11 @@
   var tierThresholds = {}; // {leagueType:{size:[...]}} from /api/league-players
   var adpSources = {};     // {startup|rookie|redraft: 'Sleeper'|'none'} from /api/league-players
   var adpSourceOptions = {}; // {startup|rookie|redraft: [{value,label}]} from payload
-  var adpSource = 'auto';    // currently selected ADP source ('auto' = server default)
+  var adpSource = 'brfantasy'; // currently selected ADP source. Draft Room defaults
+                             // to BR Fantasy (our own crawl of real draft picks);
+                             // 'auto' = server default (Sleeper), any real source
+                             // overlays via the resolver. Valid on every draft axis
+                             // (redraft/dynasty/rookie), so the default always resolves.
   var _boardSig = null;    // board structure signature (rebuild only when it changes)
   var _summaryShown = false; // auto-open summary only once per draft
   var compareIds = [];     // 0-2 player IDs staged for comparison
@@ -2933,6 +2937,14 @@
   }
 
   var LIVE_WAIT_TUNING = { threshold: 50, maxPenalty: 10 };
+  // Sub-threshold survival discount: below the 50% "more likely than not to
+  // return" line the old ramp gave a flat zero, so a player with a real chance of
+  // falling back to you (e.g. 25%) was treated exactly like one who is certain to
+  // be gone (0%). A small continuous discount from LIVE_WAIT_SUBONSET% up to the
+  // threshold restores that signal without disturbing the >=50% band materially
+  // (it reaches only LIVE_WAIT_SUBSHARE of the max penalty at the threshold).
+  var LIVE_WAIT_SUBONSET = 20;   // % return prob where the sub-threshold discount begins
+  var LIVE_WAIT_SUBSHARE = 0.15; // fraction of maxPenalty reached at the threshold
   function liveDecisionScore(p, counts){
     var base = p._ps != null ? p._ps : 0;
     if (base == null) return null;
@@ -2961,9 +2973,18 @@
     var demand = (c.demandByPos && c.demandByPos[pos]) || 0;
     var demandRisk = Math.min(0.35, demand / Math.max(1, state.teams || 12) * 0.7);
     var effectiveReturnProb = returnProb == null ? null : returnProb * (1 - demandRisk);
-    var waitPenalty = effectiveReturnProb == null ? 0
-      : clamp01((effectiveReturnProb - LIVE_WAIT_TUNING.threshold) / (100 - LIVE_WAIT_TUNING.threshold))
-        * LIVE_WAIT_TUNING.maxPenalty * (1 - exceptional * 0.5);
+    var _thr = LIVE_WAIT_TUNING.threshold;
+    var _wpFrac;
+    if (effectiveReturnProb == null) _wpFrac = 0;
+    else if (effectiveReturnProb >= _thr)
+      // Original >=50% ramp, floored at the small sub-threshold share so the two
+      // segments meet continuously at the threshold.
+      _wpFrac = LIVE_WAIT_SUBSHARE + (1 - LIVE_WAIT_SUBSHARE)
+        * clamp01((effectiveReturnProb - _thr) / (100 - _thr));
+    else
+      _wpFrac = LIVE_WAIT_SUBSHARE
+        * clamp01((effectiveReturnProb - LIVE_WAIT_SUBONSET) / (_thr - LIVE_WAIT_SUBONSET));
+    var waitPenalty = _wpFrac * LIVE_WAIT_TUNING.maxPenalty * (1 - exceptional * 0.5);
     // Redraft handcuff insurance: a small point tilt toward the backup of one of
     // my own RBs. Formerly a term inside the pick-score kernel, it now lives here
     // on the decision scale so it is applied once and undistorted (the CPU sim
@@ -2976,12 +2997,20 @@
       });
       if (myRBTeams[p.team]) handcuffBonus = 5;
     }
+    // Positional-scarcity urgency scales with how many dedicated STARTERS are
+    // still open at this position, not just whether the next one starts. A single
+    // remaining slot (TE, or QB in 1QB) produces a real but muted cliff; a
+    // multi-slot need (WR/RB you still need several of) keeps the full shelf-cliff
+    // urgency. This stops an elite single-slot player from leaping a higher-value
+    // pick that fills a deeper roster need on scarcity alone.
+    var missDed = (c.obligations && c.obligations.missing && c.obligations.missing[pos]) || 0;
+    var waitLossScale = missDed >= 2 ? 1 : (missDed >= 1 ? 0.6 : 0.4);
     return DraftBoardCore.decisionScore({ base: base, utility: util,
       bench: bench, deepBench: role === 'bench2', recentPenalty: recentPenalty, exceptional: exceptional,
       quality: ppgNormOf(p) || 0, required: c.obligations.required,
       freePicks: c.obligations.freePicks,
-      waitLoss: Math.max(0, base - expected) * (1 + demandRisk), waitPenalty: waitPenalty,
-      handcuffBonus: handcuffBonus });
+      waitLoss: Math.max(0, base - expected) * (1 + demandRisk), waitLossScale: waitLossScale,
+      waitPenalty: waitPenalty, handcuffBonus: handcuffBonus });
   }
   // How many players remain in this player's (position|tier) bucket.
   function tierRemaining(p){
