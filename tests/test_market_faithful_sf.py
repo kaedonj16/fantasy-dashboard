@@ -28,11 +28,21 @@ def test_no_1qb_base_falls_back():
 
 
 def test_ratio_clamped_high_and_low():
-    # A garbage median can't blow a value up or crush it: clamp to [0.5, 2.5].
-    assert _market_faithful_sf(100.0, 9.0) == 250.0   # hi clamp
+    # A garbage median can't blow a value up or crush it: clamp to [0.5, 1.2].
+    # This path is non-QB only, so hi is a non-QB ceiling (~top of the real
+    # 0.8-1.2 range), never a QB premium.
+    assert _market_faithful_sf(100.0, 9.0) == 120.0   # hi clamp (non-QB ceiling)
     assert _market_faithful_sf(100.0, 0.01) == 50.0   # lo clamp
 
 
-def test_qb_like_premium_passes_through_within_band():
-    # A legit QB-style 1.7x premium is inside the band and applied as-is.
-    assert _market_faithful_sf(500.0, 1.7) == 850.0
+def test_supra_range_nonqb_ratio_is_clamped_not_inflated():
+    # Regression: a distorted SF/1QB ratio for an elite RB (e.g. 1.35 from thin/
+    # whale SF trades) must NOT pass through — that is exactly what floated a lone
+    # RB above the whole Superflex board. It is clamped to the non-QB ceiling.
+    assert _market_faithful_sf(1000.0, 1.35) == pytest.approx(1000.0 * 1.2)
+
+
+def test_real_range_nonqb_ratio_passes_through():
+    # A normal non-QB SF/1QB ratio inside the real 0.8-1.2 band is applied as-is.
+    assert _market_faithful_sf(500.0, 0.95) == pytest.approx(500.0 * 0.95)
+    assert _market_faithful_sf(500.0, 1.15) == pytest.approx(500.0 * 1.15)
