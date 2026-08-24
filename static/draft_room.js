@@ -76,7 +76,11 @@
   var tierThresholds = {}; // {leagueType:{size:[...]}} from /api/league-players
   var adpSources = {};     // {startup|rookie|redraft: 'Sleeper'|'none'} from /api/league-players
   var adpSourceOptions = {}; // {startup|rookie|redraft: [{value,label}]} from payload
-  var adpSource = 'auto';    // currently selected ADP source ('auto' = server default)
+  var adpSource = 'brfantasy'; // currently selected ADP source. Draft Room defaults
+                             // to BR Fantasy (our own crawl of real draft picks);
+                             // 'auto' = server default (Sleeper), any real source
+                             // overlays via the resolver. Valid on every draft axis
+                             // (redraft/dynasty/rookie), so the default always resolves.
   var _boardSig = null;    // board structure signature (rebuild only when it changes)
   var _summaryShown = false; // auto-open summary only once per draft
   var compareIds = [];     // 0-2 player IDs staged for comparison
