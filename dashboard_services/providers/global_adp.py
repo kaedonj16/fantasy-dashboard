@@ -171,8 +171,55 @@ def mfl_id_to_canonical(season: int) -> Dict[str, str]:
     return out
 
 
+_NAME_INDEX_CACHE: Dict[str, tuple] = {}
+
+
+def _name_pos_to_canonical() -> tuple:
+    """(by_name_pos, by_name) name indexes over the players_index, for matching a
+    feed that shares no id with our canonical space.
+
+    Yahoo's public ADP carries a ``player_id`` that only maps through Sleeper's
+    ``yahoo_id`` — which *lags for recent players*, dropping the whole top of the
+    board — and the players_index has no yahoo id to merge in. Name/position is the
+    only remaining bridge, so build it once and cache it. ``by_name_pos`` is tried
+    first (position disambiguates same-named players); ``by_name`` is the fallback."""
+    if "idx" in _NAME_INDEX_CACHE:
+        return _NAME_INDEX_CACHE["idx"]
+    by_name_pos: Dict[tuple, str] = {}
+    by_name: Dict[str, str] = {}
+    try:
+        from utils.utils import load_players_index, normalize_name
+        for cid, info in (load_players_index() or {}).items():
+            nm = normalize_name((info or {}).get("name") or (info or {}).get("full_name") or "")
+            pos = str((info or {}).get("pos") or (info or {}).get("position") or "").upper()
+            if nm:
+                by_name_pos.setdefault((nm, pos), str(cid))
+                by_name.setdefault(nm, str(cid))
+    except Exception:
+        logger.debug("global_adp: name index build failed", exc_info=True)
+    if by_name:
+        _NAME_INDEX_CACHE["idx"] = (by_name_pos, by_name)
+    return by_name_pos, by_name
+
+
+def _match_name_pos(name, pos) -> Optional[str]:
+    """canonical id for a ``name``/``pos``, or None. Position match preferred."""
+    if not name:
+        return None
+    try:
+        from utils.utils import normalize_name
+        nm = normalize_name(name)
+    except Exception:
+        return None
+    if not nm:
+        return None
+    by_name_pos, by_name = _name_pos_to_canonical()
+    return by_name_pos.get((nm, str(pos or "").upper())) or by_name.get(nm)
+
+
 def clear_crosswalk_cache() -> None:
     _XWALK_CACHE.clear()
+    _NAME_INDEX_CACHE.clear()
 
 
 def _mfl_player_rows(season: int) -> List[dict]:
@@ -294,6 +341,12 @@ def fetch_yahoo_global_adp(season: int, max_players: int = 350,
                 if isinstance(name, dict):
                     name = name.get("full")
                 cid = xwalk.get(str(yid)) if yid else None
+                if not cid:
+                    # Sleeper's yahoo_id lags for recent players (their ids are
+                    # absent), so the id crosswalk drops the top of the board. Yahoo
+                    # shares no other id with our canonical space, so fall back to a
+                    # name/position match against the players_index.
+                    cid = _match_name_pos(name, flat.get("display_position"))
                 if cid:
                     adp[str(cid)] = ap
                 elif len(unmapped) < 25:

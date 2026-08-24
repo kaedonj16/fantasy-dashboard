@@ -86,7 +86,11 @@ def diagnose_yahoo(season: int):
     print(f"  scanned {total} raw players:")
     print(f"    have average_pick > 0 : {has_ap}")
     print(f"    in yahoo crosswalk    : {has_hit}")
-    print(f"    mapped (both)         : {mapped}")
+    print(f"    mapped by id only     : {mapped}")
+    # Actual fetch result — includes the name/position fallback for the recent
+    # players Sleeper's yahoo_id lags on, so this should exceed 'mapped by id only'.
+    fr = G.fetch_yahoo_global_adp(int(season))
+    print(f"    fetch mapped (id+name): {fr['mapped_count']} of raw {fr['raw_count']}")
     print("  --- top 12: yahoo_id / hit / adp / name ---")
     print("\n".join(top_rows))
     print("  --- has ADP but NOT in crosswalk (fixable crosswalk gap) ---")
