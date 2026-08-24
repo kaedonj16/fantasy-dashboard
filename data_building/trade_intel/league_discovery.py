@@ -6,7 +6,7 @@ Strategy (no Sleeper search API exists):
    league_ids that recently touched the player.
 2. From each discovered league, pull rosters -> owner user_ids -> fetch their
    leagues -> expand the frontier.
-3. Filter to dynasty leagues only (league_type == 2).
+3. Retain true-redraft (0) and dynasty (2) leagues; exclude keeper (1).
 4. Persist discovered leagues to trade_intel_leagues for the crawler.
 """
 from __future__ import annotations
@@ -19,6 +19,7 @@ from typing import Set, Optional, List, Dict, Tuple
 import requests
 
 from dashboard_services.db import get_conn
+from data_building.trade_intel.league_types import LeagueType
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -581,8 +582,8 @@ def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> i
         processed_count += len(batch_leagues)
         
         # Count league types in this batch
-        batch_dynasty = sum(1 for lg in batch_to_save if lg["league_type"] == 2)
-        batch_redraft = sum(1 for lg in batch_to_save if lg["league_type"] == 1)
+        batch_dynasty = sum(1 for lg in batch_to_save if lg["league_type"] == LeagueType.DYNASTY)
+        batch_redraft = sum(1 for lg in batch_to_save if lg["league_type"] == LeagueType.REDRAFT)
         dynasty_count += batch_dynasty
         redraft_count += batch_redraft
         

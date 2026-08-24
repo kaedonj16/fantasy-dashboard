@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from data_building.trade_intel.trade_value_model import _detect_season
+from data_building.trade_intel.league_types import LeagueType
 
 # Step 1: write normalized FC redraft values (top-5 anchor, 0-999.9 scale)
 print("=" * 60)
@@ -27,7 +28,9 @@ for league_size in [10, 12]:
     print(f"Step 2: WLS redraft {league_size}-team")
     print("=" * 60)
     try:
-        res = run_trade_value_model(season=season, league_type=1, league_size=league_size)
+        res = run_trade_value_model(
+            season=season, league_type=LeagueType.REDRAFT, league_size=league_size
+        )
         print(f"Done: {res}\n")
     except Exception as e:
         print(f"Failed: {e}\n")

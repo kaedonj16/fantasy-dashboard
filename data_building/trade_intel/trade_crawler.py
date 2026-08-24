@@ -1,7 +1,7 @@
 """
 Trade crawler for Trade Intelligence Engine.
 
-For each known dynasty league, fetches all transactions of type 'trade'
+For each known dynasty or true-redraft league, fetches transactions of type 'trade'
 across every week of the season and stores raw asset data in Postgres.
 
 Idempotent: UNIQUE constraint on transaction_id prevents duplicates.
@@ -19,6 +19,7 @@ import requests
 
 from dashboard_services.api import get_transactions
 from dashboard_services.db import get_conn
+from data_building.trade_intel.league_types import LeagueType
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -270,66 +271,50 @@ def _leagues_to_crawl(batch_size: int = 500, crawl_mode: str = "new", recrawl_da
     """Return leagues based on crawl mode."""
     with get_conn() as conn:
         if crawl_mode == "new":
-            # Only uncrawled dynasty leagues
+            # Uncrawled true-redraft and dynasty leagues.
             query = """
                 SELECT league_id, season, last_crawled_week, league_type
                 FROM trade_intel_leagues
                 WHERE crawl_enabled = TRUE
                   AND last_crawled_week IS NULL
-                  AND league_type IN (1, 2)  -- dynasty and redraft
+                  AND league_type IN (0, 2)  -- true redraft and dynasty; keeper excluded
                 ORDER BY discovered_at DESC
                 LIMIT %s
             """
             params = (batch_size,)
         elif crawl_mode == "existing":
-            # Only previously crawled dynasty leagues, but not recently
+            # Previously crawled true-redraft and dynasty leagues, but not recently.
             query = """
                 SELECT league_id, season, last_crawled_week, league_type
                 FROM trade_intel_leagues
                 WHERE crawl_enabled = TRUE
                   AND last_crawled_week IS NOT NULL
                   AND (last_crawled_at IS NULL OR last_crawled_at < NOW() - INTERVAL '%s days')
-                  AND league_type IN (1, 2)  -- dynasty and redraft
+                  AND league_type IN (0, 2)  -- true redraft and dynasty; keeper excluded
                 ORDER BY last_crawled_at DESC NULLS LAST
                 LIMIT %s
             """
             params = (recrawl_days, batch_size)
         else:  # both
-            # Mix of new and existing, prioritize new
+            # Mix new and existing leagues across both supported markets. The old
+            # query selected only type 2 here, silently starving redraft collection.
             query = """
-                WITH new_leagues AS (
-                    SELECT league_id, season, last_crawled_week, league_type, 1 as priority
-                    FROM trade_intel_leagues
-                    WHERE crawl_enabled = TRUE
-                      AND last_crawled_week IS NULL
-                      AND league_type = 2
-                    ORDER BY discovered_at DESC
-                    LIMIT %s
-                ),
-                existing_leagues AS (
-                    SELECT league_id, season, last_crawled_week, league_type, 2 as priority
-                    FROM trade_intel_leagues
-                    WHERE crawl_enabled = TRUE
-                      AND last_crawled_week IS NOT NULL
-                      AND (last_crawled_at IS NULL OR last_crawled_at < NOW() - INTERVAL '%s days')
-                      AND league_type = 2
-                    ORDER BY last_crawled_at DESC NULLS LAST
-                    LIMIT %s
-                ),
-                combined AS (
-                    SELECT * FROM new_leagues
-                    UNION ALL
-                    SELECT * FROM existing_leagues
-                )
                 SELECT league_id, season, last_crawled_week, league_type
-                FROM combined
-                ORDER BY priority ASC, league_id
+                FROM trade_intel_leagues
+                WHERE crawl_enabled = TRUE
+                  AND league_type IN (0, 2)
+                  AND (
+                    last_crawled_week IS NULL
+                    OR last_crawled_at IS NULL
+                    OR last_crawled_at < NOW() - make_interval(days => %s)
+                  )
+                ORDER BY (last_crawled_week IS NULL) DESC,
+                         last_crawled_at ASC NULLS FIRST,
+                         league_type ASC,
+                         discovered_at DESC
                 LIMIT %s
             """
-            # Split batch between new and existing (70% new, 30% existing)
-            new_batch = int(batch_size * 0.7)
-            existing_batch = batch_size - new_batch
-            params = (new_batch, recrawl_days, existing_batch, batch_size)
+            params = (recrawl_days, batch_size)
         
         return conn.execute(query, params).fetchall()
 
@@ -355,7 +340,7 @@ def _crawl_one(row: dict, end_week: int, override_start_week: Optional[int] = No
     """Crawl a single league. Runs inside a thread pool worker."""
     league_id = row["league_id"]
     season = row["season"]
-    league_type = row.get("league_type", 2)
+    league_type = row.get("league_type", int(LeagueType.DYNASTY))
     if override_start_week is not None:
         start_week = override_start_week
     else:
@@ -418,10 +403,10 @@ def run_crawl(batch_size: int = 500, workers: int = 10, crawl_mode: str = "new",
                 mark_batch.append((current_week, league_id))
 
                 if n > 0:
-                    if league_type == 2:  # dynasty
+                    if league_type == LeagueType.DYNASTY:
                         dynasty_trades += n
                         dynasty_leagues += 1
-                    else:  # redraft
+                    elif league_type == LeagueType.REDRAFT:
                         redraft_trades += n
                         redraft_leagues += 1
 

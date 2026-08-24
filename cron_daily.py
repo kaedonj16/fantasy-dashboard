@@ -748,8 +748,8 @@ print(f"[cron] Global ADP refresh: {{summary}}")
         for _lt, _lt_name, _sz in [
             (2, "dynasty", 10),
             (2, "dynasty", 12),
-            (1, "redraft", 10),
-            (1, "redraft", 12),
+            (0, "redraft", 10),
+            (0, "redraft", 12),
         ]:
             _run_step(f"""
 from dotenv import load_dotenv; load_dotenv()
