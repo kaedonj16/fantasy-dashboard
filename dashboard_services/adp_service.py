@@ -107,6 +107,28 @@ def snapshot_freshness(source: str, axis: str, season: int) -> Optional[float]:
         return None
 
 
+def global_adp_snapshot_signature() -> float:
+    """Max mtime across all global ADP snapshot files, or 0.0.
+
+    A cheap cache-busting signal (stat only — no JSON parse, no season needed):
+    when a refresh rewrites any Yahoo/ESPN/MFL snapshot this value changes, so a
+    cache keyed partly on it rebuilds and picks up the new ADP instead of serving
+    stale per-source columns until an unrelated cache (e.g. model values) turns
+    over."""
+    latest = 0.0
+    try:
+        d = _snapshot_dir()
+        for source in _GLOBAL_SNAPSHOT_SOURCES:
+            for p in d.glob(f"{source}_*.json"):
+                try:
+                    latest = max(latest, p.stat().st_mtime)
+                except OSError:
+                    continue
+    except Exception:
+        return 0.0
+    return latest
+
+
 def write_adp_snapshot(source: str, axis: str, season: int, payload: dict) -> bool:
     """Persist a normalized snapshot, retaining the last good data on empty input.
 
