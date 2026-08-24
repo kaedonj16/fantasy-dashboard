@@ -697,6 +697,11 @@ def run_trade_value_model(
     lambda_reg: float  = LAMBDA_REG,
     league_type: int   = 2,
     league_size: int   = 10,
+    *,
+    use_market_faithful: bool = True,
+    min_lift: float = MIN_LIFT,
+    max_lift: float = MAX_LIFT,
+    dry_run: bool = False,
 ) -> dict:
     """
     Derive player (and pick) values from trade patterns via WLS.
@@ -707,6 +712,17 @@ def run_trade_value_model(
     league_size: 8, 10 (default), 12, or 14 - filters trades by league num_teams.
 
     lambda_reg: regularization strength (default 8 ≈ 30 trades → 65% market influence).
+
+    use_market_faithful: when True (default, current behavior) non-QB SF values are
+        overridden by the received-package SF/1QB ratio. When False, SF is derived
+        by the SAME guarded WLS solve as 1QB (banded to [min_lift, max_lift] × the
+        external SF prior) — no ratio override.
+    min_lift / max_lift: the symmetric band the trade solve is clamped to, as a
+        fraction of the external prior (defaults reproduce the ±40% band). Lower
+        max_lift to tighten how far the market may lift a player above the prior.
+    dry_run: compute and return the rows WITHOUT writing to player_values / picks.
+        The result then carries ``rows`` (the computed player rows) and ``priors``
+        (per-player external prior + position) so a caller can preview the board.
     """
     _ensure_player_values_columns()
 
@@ -825,11 +841,11 @@ def run_trade_value_model(
     v_sf_pos  = np.clip(v_sf,  0.0, None)
     for i in range(n_pl):
         if prior_1qb[i] > 0:
-            v_1qb_pos[i] = max(v_1qb_pos[i], prior_1qb[i] * MIN_LIFT)
-            v_1qb_pos[i] = min(v_1qb_pos[i], prior_1qb[i] * MAX_LIFT)
+            v_1qb_pos[i] = max(v_1qb_pos[i], prior_1qb[i] * min_lift)
+            v_1qb_pos[i] = min(v_1qb_pos[i], prior_1qb[i] * max_lift)
         if prior_sf[i] > 0:
-            v_sf_pos[i]  = max(v_sf_pos[i],  prior_sf[i]  * MIN_LIFT)
-            v_sf_pos[i]  = min(v_sf_pos[i],  prior_sf[i]  * MAX_LIFT)
+            v_sf_pos[i]  = max(v_sf_pos[i],  prior_sf[i]  * min_lift)
+            v_sf_pos[i]  = min(v_sf_pos[i],  prior_sf[i]  * max_lift)
     # Picks: floor at 0, let trade data determine the value freely
     v_1qb_pos[n_pl:] = np.clip(v_1qb[n_pl:], 0.0, None)
     v_sf_pos[n_pl:]  = np.clip(v_sf[n_pl:],  0.0, None)
@@ -905,26 +921,30 @@ def run_trade_value_model(
     except Exception:
         logger.debug("[trade_value_model] SF market-ratio load failed", exc_info=True)
 
-    for i, pid in enumerate(player_ids):
-        pos = player_prior[pid].get("position", "")
-        if pos == "QB":
-            continue  # QBs keep their WLS SF-solved value untouched
-        # Market-faithful SF for non-QBs when we have a reliable trade median.
-        _mkt_sf = _market_faithful_sf(v_1qb_norm[i], _sf_mkt_ratio.get(pid))
-        if _mkt_sf is not None:
-            v_sf_norm[i] = _mkt_sf
-            continue
-        # Fallback (thin SF trade data): blend the SF solve with the model-derived
-        # value by SF data confidence — rich history -> solve, thin -> derived.
-        p1 = player_prior[pid]["value_1qb"]
-        ps = player_prior[pid]["value_sf"]
-        derived = v_1qb_norm[i] * (ps / p1) if (p1 > 0 and ps > 0) else v_1qb_norm[i]
-        backing = float(sf_backing[i]) if i < len(sf_backing) else 0.0
-        if backing > 0:
-            w = backing / (backing + SF_BLEND_K)
-            v_sf_norm[i] = w * float(v_sf_norm[i]) + (1.0 - w) * derived
-        else:
-            v_sf_norm[i] = derived
+    # When use_market_faithful is False, this whole override is skipped and non-QB
+    # SF keeps the guarded WLS solve (banded to [min_lift, max_lift] × the external
+    # SF prior) — i.e. SF is derived exactly like 1QB, with no ratio substitution.
+    if use_market_faithful:
+        for i, pid in enumerate(player_ids):
+            pos = player_prior[pid].get("position", "")
+            if pos == "QB":
+                continue  # QBs keep their WLS SF-solved value untouched
+            # Market-faithful SF for non-QBs when we have a reliable trade median.
+            _mkt_sf = _market_faithful_sf(v_1qb_norm[i], _sf_mkt_ratio.get(pid))
+            if _mkt_sf is not None:
+                v_sf_norm[i] = _mkt_sf
+                continue
+            # Fallback (thin SF trade data): blend the SF solve with the model-derived
+            # value by SF data confidence — rich history -> solve, thin -> derived.
+            p1 = player_prior[pid]["value_1qb"]
+            ps = player_prior[pid]["value_sf"]
+            derived = v_1qb_norm[i] * (ps / p1) if (p1 > 0 and ps > 0) else v_1qb_norm[i]
+            backing = float(sf_backing[i]) if i < len(sf_backing) else 0.0
+            if backing > 0:
+                w = backing / (backing + SF_BLEND_K)
+                v_sf_norm[i] = w * float(v_sf_norm[i]) + (1.0 - w) * derived
+            else:
+                v_sf_norm[i] = derived
 
     # Final SF re-anchor. _normalize() set the SF top-5 MEAN to MAX_VALUE, but the
     # non-QB re-derivation above (market-faithful ratios / blends) lifts the top of
@@ -974,6 +994,19 @@ def run_trade_value_model(
         logger.info("  pid=%-10s  val=%.2f  prior=%.2f",
                     r["player_id"], r[val_key],
                     player_prior[r["player_id"]]["value_1qb"])
+
+    # Preview mode: return the computed board without touching the DB, plus the
+    # per-player external priors + position so a caller can render a comparison.
+    if dry_run:
+        priors = {pid: {"value_1qb": player_prior[pid].get("value_1qb"),
+                        "value_sf":  player_prior[pid].get("value_sf"),
+                        "position":  player_prior[pid].get("position")}
+                  for pid in player_ids}
+        return {"written": 0, "dry_run": True, "trades_used": M, "players": n_pl,
+                "season": season, "mode": mode, "league_size": league_size,
+                "use_market_faithful": use_market_faithful,
+                "min_lift": min_lift, "max_lift": max_lift,
+                "rows": out_rows, "priors": priors}
 
     if league_type == 1:
         n = _write_redraft_values(out_rows, league_size)
