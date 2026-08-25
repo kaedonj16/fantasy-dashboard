@@ -197,3 +197,13 @@ def test_starters_meter_shows_percent_of_league_average():
     assert "meter('Starters', 'lineup vs league average', g.tier, m.tier, sRank)" not in source
     assert "x.strength != null ? x.strength : x.tier" in source
     assert "Tied values share a rank" in source
+
+
+def test_draft_capital_percentages_use_finite_numeric_value():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert "function finiteVal(v)" in source
+    assert "return finiteVal(v);" in source
+    assert "function capPct(part, tot)" in source
+    assert "var v = valOf(playersById[String(x.p.id)] || x.p) || 0;" not in source
+    assert "lgByPos = lgCount; lgTot = lgN;" in source

@@ -804,15 +804,23 @@
   }
 
   // ── Data ─────────────────────────────────────────────────────────────────
+  function finiteVal(v){
+    var n = Number(v);
+    return isFinite(n) ? n : 0;
+  }
   function redraftVal(p){
-    return (state.sf ? (p.redraft_value_sf != null ? p.redraft_value_sf : p.redraft_value_1qb)
-                     : p.redraft_value_1qb) || 0;
+    if (!p) return 0;
+    var v = (state.sf ? (p.redraft_value_sf != null ? p.redraft_value_sf : p.redraft_value_1qb)
+                      : p.redraft_value_1qb);
+    return finiteVal(v);
   }
   function valOf(p){
+    if (!p) return 0;
     if (state.type === 'redraft') return redraftVal(p);
     // p.val is the stripped pick-object field (stored by commitPick/applyLivePicks);
     // p.value is the full player-object field from /api/league-players.
-    return state.sf ? (p.sf_value || p.value || p.val || 0) : (p.value || p.val || 0);
+    var v = state.sf ? (p.sf_value || p.value || p.val || 0) : (p.value || p.val || 0);
+    return finiteVal(v);
   }
   function adpOf(p){
     // Sleeper community ADP (server-side, aggregated from real Sleeper drafts).
@@ -5549,18 +5557,39 @@
     var POSes = ['QB','RB','WR','TE'];
     var myByPos = { QB:0, RB:0, WR:0, TE:0 }, myTot = 0;
     var lgByPos = { QB:0, RB:0, WR:0, TE:0 }, lgTot = 0;
+    var myCount = { QB:0, RB:0, WR:0, TE:0 }, myN = 0;
+    var lgCount = { QB:0, RB:0, WR:0, TE:0 }, lgN = 0;
     field.forEach(function(t){
-      t.picks.forEach(function(x){
-        var pos = String(x.p.position || '').toUpperCase();
+      (t.picks || []).forEach(function(x){
+        var pl = (x && x.p) ? x.p : x;
+        if (!pl) return;
+        var full = playersById[String(pl.id)] || pl;
+        var pos = String(full.position || pl.position || '').toUpperCase();
+        if (pos === 'DST' || pos === 'D/ST') pos = 'DEF';
         if (lgByPos[pos] == null) return;
-        var v = valOf(playersById[String(x.p.id)] || x.p) || 0;
+        // Always add a finite number. String values (e.g. "184.2" from JSON)
+        // used to concatenate via += and turn every share into NaN%.
+        var v = valOf(full);
+        if (!v) v = finiteVal(pl.val);
         lgByPos[pos] += v; lgTot += v;
-        if (t.isMe){ myByPos[pos] += v; myTot += v; }
+        lgCount[pos]++; lgN++;
+        if (t.isMe){ myByPos[pos] += v; myTot += v; myCount[pos]++; myN++; }
       });
     });
+    // No resolvable trade value (common for K/DEF-heavy or unresolved live ids):
+    // share by pick count so the bars still show how the draft was spent.
+    if (!lgTot){
+      lgByPos = lgCount; lgTot = lgN;
+      myByPos = myCount; myTot = myN;
+    }
+    function capPct(part, tot){
+      if (!tot) return 0;
+      var n = Math.round(part / tot * 100);
+      return isFinite(n) ? Math.max(0, Math.min(100, n)) : 0;
+    }
     var capBars = POSes.map(function(pos){
-      var mine = myTot ? Math.round(myByPos[pos] / myTot * 100) : 0;
-      var lg = lgTot ? Math.round(lgByPos[pos] / lgTot * 100) : 0;
+      var mine = capPct(myByPos[pos], myTot);
+      var lg = capPct(lgByPos[pos], lgTot);
       return '<div class="dd-cap-row"><div class="dd-cap-pos" style="color:' + posColor(pos) + '">' + pos + '</div>'
         + '<div class="dd-cap-track"><i style="width:' + mine + '%;background:' + posColor(pos) + '"></i>'
         + '<span class="dd-cap-lg" style="left:' + lg + '%" title="league avg ' + lg + '%"></span></div>'
