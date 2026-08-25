@@ -124,6 +124,21 @@ def test_cpu_never_drafts_kicker_or_defense_past_roster_capacity():
     assert "if (mustFillKDef) return mustFillKDef;" in source
 
 
+def test_cpu_kicker_and_defense_timing_varies_by_team_plan():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    core = (REPO / "static" / "draft_board_core.js").read_text(encoding="utf-8")
+
+    assert "function _simKDefPlan(slot)" in source
+    assert "state.simKDefPlans[slot]" in source
+    assert "var _kdPlan = _simKDefPlan(slot);" in source
+    assert "DraftBoardCore.specialTeamsFillPos" in source
+    assert "function specialTeamsFillPos(needK, needDef, plan)" in core
+    assert "var _delayOther = _kdPlan.split && _alreadyHasOther && cpuCtx.remaining > 1;" in source
+    assert "if ((pos === 'K' || pos === 'DEF') && (t > 0) && (have < t) && _remainRds <= 3){" not in source
+    assert "w *= 8;" not in source
+    assert "candidates.sort(function(a,b){ return lineupScore(b) - lineupScore(a); });\n    return candidates[0] || null;" not in source
+
+
 def test_cpu_respects_format_aware_tight_end_roster_limit():
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 

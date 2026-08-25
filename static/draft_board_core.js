@@ -551,6 +551,24 @@
     return nearValue ? AUTO_STARTER_BOOST : 1;
   }
 
+  // Last-resort K/DEF fill: which required special-teams slot to take when a
+  // team has no discretionary picks left. Order follows that team's plan so
+  // mocks are not a global kicker-then-defense script.
+  function specialTeamsFillPos(needK, needDef, plan) {
+    needK = Math.max(0, +needK || 0);
+    needDef = Math.max(0, +needDef || 0);
+    if (needK + needDef <= 0) return null;
+    if (needK > 0 && needDef > 0) {
+      plan = plan || {};
+      var pickPos = (plan.prefer === 'K' || plan.prefer === 'DEF')
+        ? plan.prefer
+        : ((+plan.order || 0) < 0.5 ? 'K' : 'DEF');
+      if (plan.flip) pickPos = pickPos === 'K' ? 'DEF' : 'K';
+      return pickPos;
+    }
+    return needK > 0 ? 'K' : 'DEF';
+  }
+
   return {
     rosterCounts: rosterCounts, startersFor: startersFor,
     redraftVal: redraftVal, dynVal: dynVal, valOf: valOf, adpOf: adpOf,
@@ -565,5 +583,6 @@
     decisionScore: decisionScore, decisionBand: decisionBand, selectDecisionCandidate: selectDecisionCandidate,
     availabilityProbability: availabilityProbability, calibrateAvailability: calibrateAvailability,
     autoDraftNeedMultiplier: autoDraftNeedMultiplier,
+    specialTeamsFillPos: specialTeamsFillPos,
   };
 });
