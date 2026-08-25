@@ -1,38 +1,56 @@
-"""
-One-shot: normalize redraft values and run WLS calibration for redraft leagues.
-Run from the project root with DATABASE_URL set:
-  python run_redraft_values.py
-"""
+"""Safely preview or write trade-calibrated true-redraft values."""
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
 from dotenv import load_dotenv
-load_dotenv()
 
-from data_building.trade_intel.trade_value_model import _detect_season
-from data_building.trade_intel.league_types import LeagueType
 
-# Step 1: write normalized FC redraft values (top-5 anchor, 0-999.9 scale)
-print("=" * 60)
-print("Step 1: update_player_values_with_rankings")
-print("=" * 60)
-from data_building.update_player_values_with_rankings import update_player_values_with_rankings
-n = update_player_values_with_rankings()
-print(f"Saved {n} player values\n")
+def main() -> None:
+    load_dotenv()
+    from data_building.trade_intel.league_types import LeagueType
+    from data_building.trade_intel.trade_value_model import (
+        MIN_REDRAFT_NATIVE_TRADES,
+        _detect_season,
+        run_trade_value_model,
+    )
 
-season = _detect_season()
-print(f"Using season: {season}\n")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--season", type=int)
+    parser.add_argument("--league-size", type=int, choices=(8, 10, 12, 14), action="append")
+    parser.add_argument("--write", action="store_true", help="Write qualified segments; default is dry-run")
+    parser.add_argument("--format", choices=("1qb", "sf", "both"), default="both")
+    parser.add_argument("--refresh-priors", action="store_true")
+    parser.add_argument("--minimum-native-trades", type=int, default=MIN_REDRAFT_NATIVE_TRADES)
+    parser.add_argument("--json-report", type=Path)
+    args = parser.parse_args()
 
-# Step 2: WLS calibration for redraft (10-team and 12-team)
-from data_building.trade_intel.trade_value_model import run_trade_value_model
+    if args.refresh_priors:
+        from data_building.update_player_values_with_rankings import update_player_values_with_rankings
+        print(f"Refreshed {update_player_values_with_rankings()} player values")
 
-for league_size in [10, 12]:
-    print("=" * 60)
-    print(f"Step 2: WLS redraft {league_size}-team")
-    print("=" * 60)
-    try:
-        res = run_trade_value_model(
-            season=season, league_type=LeagueType.REDRAFT, league_size=league_size
+    season = args.season or _detect_season()
+    results = []
+    write_formats = ("1qb", "sf") if args.format == "both" else (args.format,)
+    for league_size in args.league_size or [10, 12]:
+        result = run_trade_value_model(
+            season=season,
+            league_type=LeagueType.REDRAFT,
+            league_size=league_size,
+            dry_run=not args.write,
+            min_native_trades=args.minimum_native_trades,
+            write_formats=write_formats,
         )
-        print(f"Done: {res}\n")
-    except Exception as e:
-        print(f"Failed: {e}\n")
+        results.append(result)
+        printable = {k: v for k, v in result.items() if k not in {"rows", "priors"}}
+        print(json.dumps(printable, indent=2, default=str))
 
-print("All done.")
+    if args.json_report:
+        args.json_report.write_text(json.dumps(results, indent=2, default=str))
+        print(f"Wrote report to {args.json_report}")
+
+
+if __name__ == "__main__":
+    main()
