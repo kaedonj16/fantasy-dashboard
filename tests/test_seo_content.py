@@ -87,13 +87,48 @@ def test_top_movers_has_updated_stamp(offline_client):
 def test_publisher_transparency_pages_are_complete(offline_client):
     privacy = _html(offline_client, "/privacy")
     about = _html(offline_client, "/about")
+    contact = _html(offline_client, "/contact")
+    terms = _html(offline_client, "/terms")
     assert "Last updated:" in privacy
     assert "Google's partner-sites policy" in privacy
+    assert "adssettings.google.com" in privacy
+    assert "Children's Privacy" in privacy
     assert "Your Choices" in privacy
+    assert "Funding Choices" in privacy
     assert "Editorial Standards &amp; Corrections" in about
+    assert "mailto:admin@brfantasy.com" in contact
+    assert "Last updated:" in terms
+    assert "never ask users to click ads" in terms
 
 
 def test_ad_placements_are_explicitly_disclosed(offline_client):
     html = _html(offline_client, "/")
     assert 'aria-label="Advertisement"' in html
     assert 'class="ad-disclosure">Advertisement</span>' in html
+
+
+@pytest.mark.parametrize("path", [
+    "/privacy", "/terms", "/about", "/contact", "/support", "/faq", "/pricing",
+])
+def test_thin_pages_do_not_serve_ads(offline_client, path):
+    """AdSense forbids ad units on pages without enough publisher content."""
+    html = _html(offline_client, path)
+    assert "adsbygoogle" not in html
+    assert 'aria-label="Advertisement"' not in html
+
+
+def test_ads_txt_is_cacheable_and_lists_publisher(offline_client):
+    r = offline_client.get("/ads.txt")
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert "pub-9164153092633845" in body
+    assert "google.com" in body
+    # Long cache so CDN can keep serving ads.txt when origin is slow.
+    assert "max-age=86400" in (r.headers.get("Cache-Control") or "")
+
+
+def test_robots_allows_adsense_crawlers(offline_client):
+    body = _html(offline_client, "/robots.txt")
+    assert "Mediapartners-Google" in body
+    assert "AdsBot-Google" in body
+    assert "Allow: /" in body
