@@ -931,6 +931,25 @@
     }
     return state.sf ? p.sf_avg_pick : p.avg_pick;
   }
+  // Consensus ADP from the per-source payload (blended Sleeper/BR/ESPN/MFL/Yahoo),
+  // independent of the ADP-source dropdown. Used by Deep Dive's Value vs ADP
+  // chart so a BR Fantasy or Sleeper-only board still plots against the market.
+  // Null when consensus isn't on the player (rookie axis, historical overlay,
+  // or a source-less payload) — callers fall back to adpOf().
+  function consensusAdpOf(p){
+    if (!p || !state) return null;
+    if (state.type === 'rookie') return null;
+    if (state.mode === 'live' && state.isComplete && state.season && cfg.season
+        && Number(state.season) !== Number(cfg.season)) return null;
+    var by = p.adp_by_source && p.adp_by_source.consensus;
+    if (!by) return null;
+    var field = state.type === 'redraft'
+      ? (state.sf ? 'sf_redraft_avg_pick' : 'redraft_avg_pick')
+      : (state.sf ? 'sf_avg_pick' : 'avg_pick');
+    var v = by[field];
+    if (v == null || !isFinite(Number(v))) return null;
+    return Number(v);
+  }
 
   function loadPlayers(){
     var params = wantsKDef() ? ['kdef=1'] : [];
@@ -5440,8 +5459,11 @@
       var full = playersById[String(pl.id)] || pl;
       var adp = adpOf(full);
       var diff = (adp != null) ? (pn - adp) : null;
+      var consAdp = consensusAdpOf(full);
+      var consDiff = (consAdp != null) ? (pn - consAdp) : null;
       rows.push({ pn: pn, pl: pl, full: full, pos: String(pl.position || '').toUpperCase(),
-        adp: adp, diff: diff, ps: relPS(pl, pn), tier: tierOf(full) });
+        adp: adp, diff: diff, consAdp: consAdp, consDiff: consDiff,
+        ps: relPS(pl, pn), tier: tierOf(full) });
     });
     rows.sort(function(a, b){ return a.pn - b.pn; });
     return rows;
@@ -5637,28 +5659,37 @@
   }
 
   // ── Value-vs-ADP timeline (SVG) ──────────────────────────────────────────────
+  // Plot against consensus ADP when the payload has it; otherwise the selected
+  // source (adpOf). The heading subscript only appears when consensus is in use.
+  function ddTlDelta(p){ return p.consDiff != null ? p.consDiff : p.diff; }
+  function ddTlAdp(p){ return p.consAdp != null ? p.consAdp : p.adp; }
   function ddTimelineHtml(picks){
+    var hasCons = picks.some(function(p){ return p.consAdp != null; });
+    var sub = hasCons ? '<small class="dd-h-sub">Consensus ADP</small>' : '';
+    var blurb = hasCons
+      ? 'Each pick against consensus ADP. Above the line it fell to you (value); below, you reached. Dot size = pick score.'
+      : 'Each pick against where the market had it. Above the line it fell to you (value); below, you reached. Dot size = pick score.';
     return '<div class="dd-card">'
-      + '<div class="dd-sec"><h4>Value vs ADP timeline</h4>'
-      + '<p>Each pick against where the market had it. Above the line it fell to you (value); below, you reached. Dot size = pick score.</p></div>'
+      + '<div class="dd-sec"><h4>Value vs ADP timeline' + sub + '</h4>'
+      + '<p>' + blurb + '</p></div>'
       + '<div class="dd-legend">'
       + ['QB','RB','WR','TE'].map(function(p){ return '<span><i class="dd-dot" style="background:' + posColor(p) + '"></i>' + p + '</span>'; }).join('')
       + '<span style="margin-left:auto"><i class="dd-sq" style="background:color-mix(in srgb,#22c55e 22%,transparent);border:1px solid #22c55e"></i>value</span>'
       + '<span><i class="dd-sq" style="background:color-mix(in srgb,#ef4444 22%,transparent);border:1px solid #ef4444"></i>reach</span>'
       + '</div>'
-      + '<div class="dd-chartscroll"><svg id="drDdTl" width="900" height="340" viewBox="0 0 900 340" role="img" aria-label="Value versus ADP by pick"></svg></div>'
+      + '<div class="dd-chartscroll"><svg id="drDdTl" width="900" height="340" viewBox="0 0 900 340" role="img" aria-label="Value versus consensus ADP by pick"></svg></div>'
       + '</div>';
   }
   function ddDrawTimeline(picks){
     var svg = document.getElementById('drDdTl'); if (!svg) return;
-    var pts = picks.filter(function(p){ return p.diff != null; });
+    var pts = picks.filter(function(p){ return ddTlDelta(p) != null; });
     if (!pts.length){ svg.parentNode.parentNode.style.display = 'none'; return; }
     var NS = 'http://www.w3.org/2000/svg';
     function el(nm, a){ var e = document.createElementNS(NS, nm); for (var k in a) e.setAttribute(k, a[k]); return e; }
     var W = 900, H = 340, mr = { l: 42, r: 14, t: 16, b: 30 };
     var iw = W - mr.l - mr.r, ih = H - mr.t - mr.b;
     var maxD = 2, minD = -2;
-    pts.forEach(function(p){ if (p.diff > maxD) maxD = p.diff; if (p.diff < minD) minD = p.diff; });
+    pts.forEach(function(p){ var d = ddTlDelta(p); if (d > maxD) maxD = d; if (d < minD) minD = d; });
     maxD = Math.ceil(maxD / 5) * 5 + 2; minD = Math.floor(minD / 5) * 5 - 2;
     var x = function(i){ return mr.l + (pts.length === 1 ? iw / 2 : (i / (pts.length - 1)) * iw); };
     var y = function(d){ return mr.t + (maxD - d) / (maxD - minD) * ih; };
@@ -5673,12 +5704,12 @@
     }
     // cumulative value line
     var cum = 0, cmax = 1; var cpts = [];
-    pts.forEach(function(p){ cum += p.diff; cpts.push(cum); if (Math.abs(cum) > cmax) cmax = Math.abs(cum); });
+    pts.forEach(function(p){ cum += ddTlDelta(p); cpts.push(cum); if (Math.abs(cum) > cmax) cmax = Math.abs(cum); });
     var cy = function(v){ return mr.t + ih / 2 - (v / cmax) * (ih / 2) * 0.9; };
     var dpath = cpts.map(function(v, i){ return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + cy(v).toFixed(1); }).join(' ');
     svg.appendChild(el('path', { d: dpath, fill: 'none', stroke: 'var(--accent)', 'stroke-width': 1.5, 'stroke-dasharray': '3 3', opacity: 0.55 }));
     pts.forEach(function(p, i){
-      var px = x(i), py = y(p.diff), c = posColor(p.pos);
+      var px = x(i), py = y(ddTlDelta(p)), c = posColor(p.pos);
       svg.appendChild(el('line', { x1: px, y1: y0, x2: px, y2: py, stroke: c, 'stroke-width': 1.3, opacity: 0.32 }));
       var r = p.ps == null ? 5 : Math.max(4, 4 + (p.ps - 40) / 60 * 6);
       var dot = el('circle', { cx: px, cy: py, r: r, fill: c, 'fill-opacity': 0.9, stroke: 'var(--card)', 'stroke-width': 1.5, class: 'dd-tl-dot', style: 'cursor:pointer' });
@@ -5692,11 +5723,13 @@
   function ddTip(ev, p){
     var tip = document.getElementById('drDdTip');
     if (!tip){ tip = document.createElement('div'); tip.id = 'drDdTip'; tip.className = 'dd-tip'; document.body.appendChild(tip); }
-    var vd = ddVerdict(p.diff);
+    var dlt = ddTlDelta(p), adp = ddTlAdp(p);
+    var vd = ddVerdict(dlt);
+    var adpLbl = p.consAdp != null ? 'Consensus ADP' : 'ADP';
     tip.innerHTML = '<b>' + esc(p.pl.name) + '</b> <span style="color:var(--text-muted)">' + p.pos + (p.pl.team ? ' · ' + esc(p.pl.team) : '') + '</span>'
       + '<div class="dd-tip-r">Pick <b>' + roundPickStr(p.pn) + '</b></div>'
-      + (p.adp != null ? '<div class="dd-tip-r">ADP <b>' + Number(p.adp).toFixed(1) + '</b></div>' : '')
-      + (p.diff != null ? '<div class="dd-tip-r">± vs ADP <b style="color:' + (p.diff >= 0 ? '#22c55e' : '#ef4444') + '">' + fmtAdpDelta(p.diff) + '</b></div>' : '')
+      + (adp != null ? '<div class="dd-tip-r">' + adpLbl + ' <b>' + Number(adp).toFixed(1) + '</b></div>' : '')
+      + (dlt != null ? '<div class="dd-tip-r">± vs ADP <b style="color:' + (dlt >= 0 ? '#22c55e' : '#ef4444') + '">' + fmtAdpDelta(dlt) + '</b></div>' : '')
       + (p.ps != null ? '<div class="dd-tip-r">Board PS <b style="color:' + psColor(p.ps) + '">' + p.ps + '</b> <span style="color:var(--text-muted)">(vs best avail)</span></div>' : '')
       + '<div class="dd-tip-r">Verdict <b>' + vd.label + '</b></div>';
     tip.classList.add('show');

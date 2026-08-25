@@ -194,6 +194,19 @@ def test_roster_source_sits_outside_immediately_above_slot_grid():
     assert "var html = presetHtml + srcHtml + '<div class=\"dr-setup-roster\">';" in source
 
 
+def test_deep_dive_value_vs_adp_uses_consensus():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    body = build_draft_room_body(None, None, None, is_guest=True)
+
+    assert "function consensusAdpOf(p)" in source
+    assert "p.adp_by_source && p.adp_by_source.consensus" in source
+    assert "var consAdp = consensusAdpOf(full);" in source
+    assert "function ddTlDelta(p){ return p.consDiff != null ? p.consDiff : p.diff; }" in source
+    assert "'<small class=\"dd-h-sub\">Consensus ADP</small>'" in source
+    assert "Each pick against consensus ADP." in source
+    assert ".dd-h-sub { display:inline-block; margin-left:8px;" in body
+
+
 def test_pick_ledger_formats_adp_delta_to_one_decimal():
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 
