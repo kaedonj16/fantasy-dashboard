@@ -364,7 +364,8 @@ def page_pricing(platform: str, season: int, league_id: str):
     from app import render_page
     _try_grant_from_stripe_success()
     body_html = _pricing_body()
-    return render_page("Pricing", league_id, None, body_html, platform, season)
+    # active="pricing" keeps AdSense off this checkout/utility page.
+    return render_page("Pricing", league_id, "pricing", body_html, platform, season)
 
 
 @billing_bp.route("/pricing")
@@ -377,7 +378,7 @@ def page_pricing_guest():
     platform = _request_platform()
     if platform not in _SUPPORTED_PLATFORMS:
         platform = "sleeper"
-    return render_page("Pricing", None, None, body_html, platform, current_season)
+    return render_page("Pricing", None, "pricing", body_html, platform, current_season)
 
 
 # ── Stripe API endpoints ──────────────────────────────────────────────────────

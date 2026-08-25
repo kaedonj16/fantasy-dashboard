@@ -689,24 +689,27 @@ def _add_cache_headers(response):
 # pragmatic, non-breaking choice.
 _CSP_POLICY = "; ".join([
     "default-src 'self'",
-    # Google AdSense chain + Plotly (jsDelivr) + Sentry browser bundle.
+    # Google AdSense / Funding Choices CMP + Plotly (jsDelivr) + Sentry.
     "script-src 'self' 'unsafe-inline' "
     "https://pagead2.googlesyndication.com https://*.googlesyndication.com "
     "https://*.googleadservices.com https://*.google.com https://*.gstatic.com "
-    "https://*.doubleclick.net https://cdn.jsdelivr.net "
-    "https://browser.sentry-cdn.com",
-    "style-src 'self' 'unsafe-inline'",
+    "https://*.doubleclick.net https://fundingchoicesmessages.google.com "
+    "https://cdn.jsdelivr.net https://browser.sentry-cdn.com",
+    "style-src 'self' 'unsafe-inline' https://*.googlesyndication.com "
+    "https://fundingchoicesmessages.google.com",
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
-    # XHR/fetch/beacon: Sentry ingest + the ad chain's reporting endpoints.
+    # XHR/fetch/beacon: Sentry ingest + the ad / CMP reporting endpoints.
     "connect-src 'self' https://*.sentry.io https://*.google.com "
     "https://*.googlesyndication.com https://*.doubleclick.net "
-    "https://pagead2.googlesyndication.com https://cdn.jsdelivr.net",
+    "https://pagead2.googlesyndication.com https://fundingchoicesmessages.google.com "
+    "https://cdn.jsdelivr.net",
     # 'self' lets the app embed its own pages (the Draft Room's in-draft cheat
-    # sheet overlay iframes /draft/cheat-sheet/embed). Ads render inside iframes
-    # served from the Google ad hosts.
+    # sheet overlay iframes /draft/cheat-sheet/embed). Ads and Google's consent
+    # messaging render inside iframes from Google ad / CMP hosts.
     "frame-src 'self' https://*.googlesyndication.com https://*.doubleclick.net "
-    "https://*.google.com",
+    "https://*.google.com https://fundingchoicesmessages.google.com "
+    "https://*.googleadservices.com",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -3478,6 +3481,12 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 _AD_SCRIPT = ''
 _AD_TOP = """<aside class="ad-container ad-top-banner" aria-label="Advertisement"><span class="ad-disclosure">Advertisement</span><ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins></aside>"""
 _AD_BOTTOM = """<aside class="ad-container ad-bottom-content" aria-label="Advertisement"><span class="ad-disclosure">Advertisement</span><ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins></aside>"""
+# Legal / utility / checkout pages lack enough publisher content for AdSense
+# (Google's "no publisher content" / insufficient-content policies). Never place
+# ad units there — including when active is None (e.g. /pricing).
+_NO_ADS_PAGES = frozenset({
+    "privacy", "terms", "about", "contact", "support", "faq", "pricing",
+})
 _AD_INIT = """(function(){
   var loaded = false;
   function loadAds(){
@@ -4040,6 +4049,9 @@ def render_page(
     user_id = session.get("viewer_username")
     is_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform or "sleeper",
                                         season)
+    # Suppress ads on thin/legal/utility pages even for free users.
+    suppress_ads = (not active) or (active in _NO_ADS_PAGES)
+    show_ads = not (is_premium or suppress_ads)
 
     # Viewer context for client JS (player-modal roster context, etc.)
     viewer_roster_id = session.get("viewer_roster_id") or ""
@@ -4067,10 +4079,10 @@ def render_page(
         bottom_nav=_bottom,
         cache_ts=int(time.time() * 1000),
         user_premium="true" if is_premium else "false",
-        adsense_script="" if is_premium else _AD_SCRIPT,
-        ad_top="" if is_premium else _AD_TOP,
-        ad_bottom="" if is_premium else _AD_BOTTOM,
-        adsense_init="" if is_premium else _AD_INIT,
+        adsense_script="" if not show_ads else _AD_SCRIPT,
+        ad_top="" if not show_ads else _AD_TOP,
+        ad_bottom="" if not show_ads else _AD_BOTTOM,
+        adsense_init="" if not show_ads else _AD_INIT,
         about_url=f"/{platform}/{season}/{league_id}/about" if (league_id and platform and season) else "/about",
         guides_url=f"/{platform}/{season}/{league_id}/guides" if (league_id and platform and season) else "/guides",
         privacy_url=f"/{platform}/{season}/{league_id}/privacy" if (league_id and platform and season) else "/privacy",
