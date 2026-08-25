@@ -317,13 +317,13 @@
     --text-subtle: #94a3b8;
     --border: #e8eef4;
     --grid: #eef2f6;
-    --accent: #0284c7;
-    --accent-color: #0284c7;
-    /* Readable text/icon color to sit ON an --accent fill (sky in both themes). */
+    --accent: #122d4b;
+    --accent-color: #122d4b;
+    /* Readable text/icon color to sit ON an --accent fill (navy in light mode). */
     --on-accent: #ffffff;
-    --accent-soft: #e0f2fe;
-    --accent-soft-2: #f0f9ff;
-    --accent-strong: #0369a1;
+    --accent-soft: #e9eef5;
+    --accent-soft-2: #eef4fb;
+    --accent-strong: #0f2747;
     --spinner: #38bdf8;
     --win: #16a34a;
     --loss: #ef4444;
