@@ -230,7 +230,6 @@ def build_compare_page_body(popular_html: str = "") -> str:
       <main class="page-main">
         <div class="compare-page">
           <header class="compare-page-head">
-            <span class="compare-page-eyebrow"><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i> Head to head</span>
             <h1 class="compare-page-title">Compare Players</h1>
             <p class="compare-page-sub">Put two players side by side and see who comes out ahead, or add a third for a shortlist. Type a tier like <strong>WR1</strong> or <strong>RB2</strong> to compare against the average of those top players.</p>
           </header>

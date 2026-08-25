@@ -1890,7 +1890,7 @@ def build_history_body(
 
       <div class="history-header">
         <div>
-          <div class="history-kicker">League History</div>
+          <div class="history-kicker">BR Fantasy · League History</div>
           <h1 class="history-title">
             <span class="history-title-accent">{_esc(league_name)}</span> • {selected_history_season}
           </h1>

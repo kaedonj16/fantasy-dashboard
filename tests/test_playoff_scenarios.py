@@ -180,11 +180,65 @@ def test_not_shown_before_the_window():
 
 # ---- fall-back / guard rails ----------------------------------------------
 
-def test_divisions_defer_to_odds():
+def test_divisions_without_ids_still_defer():
+    # Flagged as divisional but no per-team division ids — don't mis-seed as top-N.
     teams = _teams([(1, 8, 900), (2, 8, 850)])
     res = compute_scenarios(teams, {14: [(1, 2)]}, playoff_teams=1, divisions=True)
     assert res["exact"] is False
     assert res["teams"] == {}
+
+
+def test_division_winner_clinches_over_wild_card_record():
+    # Two divisions, two berths: each winner is in even if a runner-up has a
+    # better record than the other division's champion.
+    teams = [
+        {"roster_id": 1, "wins": 10, "ties": 0, "pf": 1200, "division": 1},
+        {"roster_id": 2, "wins": 9,  "ties": 0, "pf": 1100, "division": 1},
+        {"roster_id": 3, "wins": 8,  "ties": 0, "pf": 1000, "division": 2},
+        {"roster_id": 4, "wins": 2,  "ties": 0, "pf": 600,  "division": 2},
+    ]
+    res = compute_scenarios(teams, {}, playoff_teams=2, divisions=True)
+    assert res["exact"] is True
+    assert res["divisions"] is True
+    assert res["teams"][1]["status"] == "clinched"   # East winner
+    assert res["teams"][3]["status"] == "clinched"   # West winner (worse record than team 2)
+    assert res["teams"][2]["status"] == "eliminated" # would be in under top-N
+    assert res["teams"][4]["status"] == "eliminated"
+
+
+def test_division_wild_card_fills_remaining_berths():
+    # 2 divisions, 3 berths: both winners plus the best remaining team.
+    teams = [
+        {"roster_id": 1, "wins": 11, "ties": 0, "pf": 1200, "division": 1},
+        {"roster_id": 2, "wins": 8,  "ties": 0, "pf": 900,  "division": 1},
+        {"roster_id": 3, "wins": 10, "ties": 0, "pf": 1100, "division": 2},
+        {"roster_id": 4, "wins": 7,  "ties": 0, "pf": 800,  "division": 2},
+    ]
+    res = compute_scenarios(teams, {}, playoff_teams=3, divisions=True)
+    assert res["teams"][1]["status"] == "clinched"
+    assert res["teams"][3]["status"] == "clinched"
+    assert res["teams"][2]["status"] == "clinched"   # wild card
+    assert res["teams"][4]["status"] == "eliminated"
+
+
+def test_division_win_and_youre_in_is_the_division_title():
+    # Tied atop a division, they play each other; the other division is locked.
+    # Winning the finale wins the division (and a berth); losing drops to wild
+    # card and is out because only 2 berths exist.
+    teams = [
+        {"roster_id": 1, "wins": 9, "ties": 0, "pf": 1000, "division": 1},
+        {"roster_id": 2, "wins": 9, "ties": 0, "pf": 990,  "division": 1},
+        {"roster_id": 3, "wins": 8, "ties": 0, "pf": 800,  "division": 2},
+        {"roster_id": 4, "wins": 2, "ties": 0, "pf": 400,  "division": 2},
+    ]
+    matchups = {14: [(1, 2), (3, 4)]}
+    res = compute_scenarios(teams, matchups, playoff_teams=2, divisions=True)
+    assert res["teams"][3]["status"] == "clinched"   # West already won
+    for rid in (1, 2):
+        e = res["teams"][rid]
+        assert e["status"] == "alive"
+        assert e["clinch_if_win_next"] is True
+        assert e["out_if_lose_next"] is True
 
 
 def test_too_many_games_defers():

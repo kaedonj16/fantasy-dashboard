@@ -7,9 +7,9 @@ unit-tested); this module just assembles real roster / draft / ADP / value data
 into candidates and hands them to the client, which re-runs the same math live
 as the manager tweaks the keeper limit and cost rules.
 
-Draft-round auto-detection uses Sleeper's draft results; on ESPN/Yahoo (and for
-waiver adds anywhere) the round starts blank and the manager sets it; the tool
-still works, it just can't pre-fill the cost.
+Draft-round auto-detection uses Sleeper's season-chain draft results, Yahoo's
+draftresults feed, and ESPN's completed draft (League.draft / mDraftDetail).
+Waiver adds anywhere still start blank so the manager can set the cost.
 """
 from __future__ import annotations
 
@@ -83,6 +83,52 @@ def _best_draft(drafts: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     if not pool:
         return None
     return max(pool, key=_draft_rounds)
+
+
+def _parse_espn_draft_picks(picks, espn_to_canon: Optional[Dict[str, str]] = None) -> Dict[str, int]:
+    """player_id -> drafted round from espn_api Pick objects or mDraftDetail dicts."""
+    canon = espn_to_canon or {}
+    drafted: Dict[str, int] = {}
+    for p in picks or []:
+        if isinstance(p, dict):
+            espn_pid = p.get("playerId") or p.get("player_id")
+            rnd = p.get("roundId") or p.get("round_num") or p.get("round")
+        else:
+            espn_pid = getattr(p, "playerId", None) or getattr(p, "player_id", None)
+            rnd = (
+                getattr(p, "round_num", None)
+                or getattr(p, "roundId", None)
+                or getattr(p, "round", None)
+            )
+        if not espn_pid or not rnd:
+            continue
+        try:
+            rnd_i = int(rnd)
+        except (TypeError, ValueError):
+            continue
+        if rnd_i <= 0:
+            continue
+        pid = canon.get(str(espn_pid)) or str(espn_pid)
+        if pid not in drafted:
+            drafted[pid] = rnd_i
+    return drafted
+
+
+def _espn_drafted_round_map(league_id: str, season: int) -> Dict[str, int]:
+    """player_id -> drafted round for an ESPN league."""
+    try:
+        from dashboard_services.providers import espn_api
+        picks = espn_api.iter_draft_picks(int(season), str(league_id))
+        if not picks:
+            return {}
+        try:
+            canon = espn_api._espn_to_canon_cached()
+        except Exception:
+            canon = {}
+        return _parse_espn_draft_picks(picks, canon)
+    except Exception:
+        logger.debug("[keeper] espn draft load failed", exc_info=True)
+        return {}
 
 
 def _yahoo_drafted_round_map(league_id: str, season: int) -> Dict[str, int]:
@@ -164,14 +210,16 @@ def _sleeper_draft_history(league_id: str, season: int) -> tuple:
 
 
 def _drafted_round_map(platform: str, league_id: str, season: int = 0) -> Dict[str, int]:
-    """player_id -> the round they were drafted, for Sleeper or Yahoo leagues.
+    """player_id -> the round they were drafted, for Sleeper, Yahoo, or ESPN.
 
     Sleeper walks the league's season chain for completed drafts; Yahoo reads the
-    league draftresults resource. Empty for other platforms (players show as
-    undrafted and users set costs manually)."""
+    league draftresults resource; ESPN reads League.draft / mDraftDetail. Empty
+    for other platforms (players show as undrafted and users set costs manually)."""
     plat = (platform or "").lower()
     if plat == "yahoo":
         return _yahoo_drafted_round_map(league_id, season)
+    if plat == "espn":
+        return _espn_drafted_round_map(league_id, season)
     if plat != "sleeper":
         return {}
     return _sleeper_draft_history(league_id, season)[0]
@@ -184,10 +232,11 @@ def _num_rounds(platform: str, league_id: str, default: int = 15,
     Uses the startup/full draft's round count; defaults to a standard redraft
     depth when it can't be detected or looks like a small rookie-only draft
     (which would make the undrafted cost absurdly cheap). ``deepest`` is the
-    round count found while loading Sleeper picks; Yahoo has no round count in
-    its draft list, so it derives the scale from the deepest drafted round."""
+    round count found while loading Sleeper picks; Yahoo and ESPN have no
+    reliable round count in their draft list, so they derive the scale from
+    the deepest drafted round."""
     plat = (platform or "").lower()
-    if plat == "yahoo":
+    if plat in ("yahoo", "espn"):
         rounds = max(drafted.values()) if drafted else 0
         return rounds if rounds >= 8 else default
     if plat != "sleeper":

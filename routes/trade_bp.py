@@ -307,7 +307,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       .ti-teaser-tab.active { background:var(--card); color:var(--text); box-shadow:0 1px 4px rgba(0,0,0,.1); }
       .ti-teaser-pos { display:flex; gap:6px; }
       .ti-teaser-pos span { padding:4px 12px; border-radius:20px; border:1px solid var(--border); font-size:12px; font-weight:600; color:var(--text-muted); background:var(--card); }
-      .ti-teaser-pos span.active { border-color:var(--accent,#667eea); color:var(--accent,#667eea); }
+      .ti-teaser-pos span.active { border-color:var(--accent,#2563eb); color:var(--accent,#2563eb); }
     </style>
     <div class="card central" style="max-width:960px;">
       <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;">
@@ -434,7 +434,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
           <!-- Overlay CTA -->
           <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(to bottom,transparent 0%,var(--bg,#f8f9fa) 60%);padding:24px;text-align:center;">
             <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:28px 32px;max-width:380px;box-shadow:0 8px 32px rgba(0,0,0,.12);">
-              <div style="font-size:28px;margin-bottom:12px;"><i class="fa-solid fa-chart-line" style="background:linear-gradient(135deg,#667eea,#764ba2);-webkit-background-clip:text;-webkit-text-fill-color:transparent;"></i></div>
+              <div style="font-size:28px;margin-bottom:12px;"><i class="fa-solid fa-chart-line" style="background:linear-gradient(135deg,#122d4b,#2563eb);-webkit-background-clip:text;-webkit-text-fill-color:transparent;"></i></div>
               <div style="font-weight:800;font-size:18px;margin-bottom:8px;">Unlock Trade Intelligence</div>
               <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;line-height:1.55;">
                 See which players are trending up in real trades, who to buy low before the market catches on, and who to sell before value drops.
@@ -446,7 +446,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
                 <div style="font-size:12px;display:flex;gap:8px;align-items:center;"><span style="color:#10b981;font-size:14px;">✓</span> Actual trade history for any player</div>
               </div>
               <button onclick="if(window.showPaywall)showPaywall('trade-history')"
-                style="width:100%;padding:12px 28px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:15px;font-weight:700;cursor:pointer;letter-spacing:.02em;">
+                style="width:100%;padding:12px 28px;border-radius:9px;border:none;background:linear-gradient(135deg,#122d4b,#2563eb);color:white;font-size:15px;font-weight:700;cursor:pointer;letter-spacing:.02em;">
                 Upgrade to PRO &rarr;
               </button>
             </div>

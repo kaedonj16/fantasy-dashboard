@@ -1,37 +1,38 @@
-"""The production startCommand runs data_building/updates/startup.py, which must
-spawn scripts/post_deploy.py from the repo root — not a path relative to the
-updates/ directory, which does not contain that script."""
+"""Ensure deploy startup can locate scripts/post_deploy.py (ADP refresh)."""
 
-import ast
 import os
-
-_UPDATES_STARTUP = os.path.join(
-    os.path.dirname(__file__), "..", "data_building", "updates", "startup.py"
-)
-_POST_DEPLOY = os.path.join(
-    os.path.dirname(__file__), "..", "scripts", "post_deploy.py"
-)
+import runpy
 
 
-def test_post_deploy_script_exists_at_repo_root():
-    assert os.path.isfile(_POST_DEPLOY), _POST_DEPLOY
-
-
-def test_startup_resolves_post_deploy_from_repo_root():
-    # Guard against the regression that joined "scripts/post_deploy.py" onto
-    # data_building/updates/ (a path that never exists) and silently skipped
-    # the deploy-time ADP refresh.
-    src = open(os.path.normpath(_UPDATES_STARTUP)).read()
-    ast.parse(src)  # still valid Python
-    assert "post_deploy.py" in src
-    assert '"scripts", "post_deploy.py"' in src or "'scripts', 'post_deploy.py'" in src
-    # Must walk up to the repo root, not look in updates/scripts/.
-    assert ".." in src
-    assert os.path.isfile(os.path.normpath(_POST_DEPLOY))
-    # Sanity: the wrong path really does not exist.
-    wrong = os.path.join(
-        os.path.dirname(os.path.normpath(_UPDATES_STARTUP)), "scripts", "post_deploy.py"
+def test_resolve_post_deploy_script_points_at_repo_scripts():
+    startup_path = os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "data_building",
+        "updates",
+        "startup.py",
     )
-    assert not os.path.exists(wrong), wrong
-    # gunicorn must start whether or not post_deploy.py was found.
-    assert src.index("os.execvp") > src.index("post_deploy_script")
+    ns = runpy.run_path(os.path.abspath(startup_path))
+    resolved = ns["resolve_post_deploy_script"]()
+    expected = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "scripts", "post_deploy.py")
+    )
+    assert resolved == expected
+    assert os.path.exists(resolved), (
+        f"post_deploy.py missing at {resolved}; deploy-time ADP refresh would skip"
+    )
+
+
+def test_resolve_post_deploy_script_accepts_explicit_root(tmp_path):
+    startup_path = os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "data_building",
+        "updates",
+        "startup.py",
+    )
+    ns = runpy.run_path(os.path.abspath(startup_path))
+    fake_root = tmp_path / "repo"
+    fake_root.mkdir()
+    resolved = ns["resolve_post_deploy_script"](str(fake_root))
+    assert resolved == str(fake_root / "scripts" / "post_deploy.py")

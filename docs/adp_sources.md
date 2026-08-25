@@ -122,10 +122,14 @@ one-source result is never labelled "Consensus".
 
 ## Caching, storage, reliability
 
-- Global feeds refresh centrally (`refresh_global_adp_sources`, wired into
-  `cron_daily.py` and post-deploy) and are also retrieved on the request path
-  when this container has no snapshot yet (disk → shared `adp_snapshots` table →
-  live fetch, matching Sleeper / BR Fantasy).
+- Global feeds refresh on every web deploy (`scripts/post_deploy.py`, spawned by
+  `startup.py`) so Yahoo/ESPN/MFL snapshots land on the web container's disk
+  (cron runs on a separate disk). A daily cron (`refresh_global_adp_sources` in
+  `cron_daily.py`) also refreshes them as a freshness backup. Each provider is
+  isolated. If this container still has no snapshot (first request before
+  post-deploy finishes, or a missed warmup), the request path retrieves them
+  the same way Sleeper / BR Fantasy do: disk → shared `adp_snapshots` table →
+  live fetch.
 - Snapshots persist to `data/adp_snapshots/{source}_{axis}_{season}.json`
   (atomic writes) and are best-effort mirrored into the `adp_snapshots` table
   (migration `029_adp_snapshots.sql`, additive). Disk is the fast path; the
