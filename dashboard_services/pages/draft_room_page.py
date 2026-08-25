@@ -1589,7 +1589,6 @@ _DRAFT_HISTORY_HTML = r"""
   .dr-btn-primary { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: var(--on-accent, #fff); }
   .dr-btn-danger { color: var(--loss); border-color: color-mix(in srgb, var(--loss) 40%, transparent); background: transparent; }
   .dr-loading { display: flex; align-items: center; gap: 10px; padding: 24px; color: var(--text-muted); font-size: 13px; justify-content: center; }
-  .dr-hist-empty { padding: 28px; text-align: center; color: var(--text-muted); font-size: 14px; }
 </style>
 
 <script>
@@ -1609,9 +1608,24 @@ _DRAFT_HISTORY_HTML = r"""
     return '<span class="dr-hist-tag ' + c + '">' + esc(label) + '</span>';
   }
 
+  function histEmpty(title, message, htmlMsg){
+    if (htmlMsg) {
+      listEl.innerHTML = '<div class="empty-state is-compact">'
+        + '<p class="empty-state-title">' + esc(title) + '</p>'
+        + '<p class="empty-state-msg">' + htmlMsg + '</p></div>';
+      return;
+    }
+    if (window.brEmptyState) {
+      window.brEmptyState(listEl, { icon: 'empty', title: title, message: message, compact: true });
+      return;
+    }
+    listEl.innerHTML = '<div class="empty-state is-compact"><p class="empty-state-title">'
+      + esc(title) + '</p><p class="empty-state-msg">' + esc(message) + '</p></div>';
+  }
+
   function render(drafts){
     if (!drafts.length){
-      listEl.innerHTML = '<div class="dr-hist-empty">No drafts found for this league yet.</div>';
+      histEmpty('No drafts yet', 'No drafts found for this league yet.');
       return;
     }
     // Live/upcoming first, then completed; newest season first within each.
@@ -1638,15 +1652,16 @@ _DRAFT_HISTORY_HTML = r"""
 
   function loadList(){
     if (!cfg.hasLeague){
-      listEl.innerHTML = '<div class="dr-hist-empty">Open Draft History from your league to see its drafts. '
-        + 'You can still run a mock in the <a href="' + esc(cfg.base) + '">Draft Room</a>.</div>';
+      histEmpty('No league selected', '',
+        'Open Draft History from your league to see its drafts. '
+        + 'You can still run a mock in the <a href="' + esc(cfg.base) + '">Draft Room</a>.');
       return;
     }
     fetch('/api/draft/detect?history=1&platform=' + encodeURIComponent(cfg.platform)
         + '&league_id=' + encodeURIComponent(cfg.leagueId) + '&season=' + (cfg.season || ''), { cache: 'no-store' })
       .then(function(r){ return r.json(); })
       .then(function(resp){
-        if (resp.unsupported){ listEl.innerHTML = '<div class="dr-hist-empty">Draft history is available for Sleeper leagues.</div>'; return; }
+        if (resp.unsupported){ histEmpty('Sleeper only', 'Draft history is available for Sleeper leagues.'); return; }
         render(resp.drafts || []);
       })
       .catch(function(){ window.brErrorState(listEl, 'Could not load drafts.', loadList, { compact: true }); });

@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+from utils.lineup_slots import DEF_SLOT_NAMES, canonicalize_slot
+
 # Fixed, mandatory single-position slots, filled before flex pools.
 _SINGLE_SLOTS = ["QB", "RB", "WR", "TE", "K", "DEF", "DL", "LB", "DB"]
 
@@ -23,6 +25,7 @@ def compute_optimal_lineup(pts_map, player_positions, roster_positions, all_pids
         pts_map: {player_id: points}. Missing/None -> 0.
         player_positions: {player_id: position string}.
         roster_positions: list of slot strings (e.g. ["QB", "RB", "RB", "FLEX"]).
+            Provider aliases (OP, WRRB_FLEX, DST, …) are canonicalized.
         all_pids: iterable of candidate player ids.
 
     Returns:
@@ -30,11 +33,15 @@ def compute_optimal_lineup(pts_map, player_positions, roster_positions, all_pids
     """
     slot_counts = defaultdict(int)
     for s in roster_positions:
-        slot_counts[str(s).upper()] += 1
+        canon = canonicalize_slot(s)
+        if canon:
+            slot_counts[canon] += 1
 
     by_pos = defaultdict(list)
     for pid in all_pids:
         pos = str(player_positions.get(pid) or "").upper()
+        if pos in DEF_SLOT_NAMES:
+            pos = "DEF"
         by_pos[pos].append((pid, float(pts_map.get(pid) or 0)))
     for pos in by_pos:
         by_pos[pos].sort(key=lambda x: x[1], reverse=True)
@@ -52,7 +59,7 @@ def compute_optimal_lineup(pts_map, player_positions, roster_positions, all_pids
                 used.add(pid)
                 n -= 1
 
-    # FLEX: RB / WR / TE
+    # FLEX: RB / WR / TE (every provider alias already collapsed to FLEX)
     flex_n = slot_counts.get("FLEX", 0)
     flex_pool = sorted(
         [(pid, pts) for pos in ["RB", "WR", "TE"] for pid, pts in by_pos[pos] if pid not in used],
@@ -61,8 +68,8 @@ def compute_optimal_lineup(pts_map, player_positions, roster_positions, all_pids
     for pid, _ in flex_pool[:flex_n]:
         starters.append(pid); used.add(pid)
 
-    # SUPER_FLEX / SFLEX: QB / RB / WR / TE
-    sf_n = slot_counts.get("SUPER_FLEX", 0) + slot_counts.get("SFLEX", 0)
+    # SUPER_FLEX / SFLEX / OP: QB / RB / WR / TE
+    sf_n = slot_counts.get("SUPER_FLEX", 0)
     sf_pool = sorted(
         [(pid, pts) for pos in ["QB", "RB", "WR", "TE"] for pid, pts in by_pos[pos] if pid not in used],
         key=lambda x: x[1], reverse=True

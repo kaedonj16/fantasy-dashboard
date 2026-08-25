@@ -35,21 +35,24 @@ def resolve_viewer_for_league(users: List[Dict], rosters: List[Dict], username: 
                 matched_user = u
                 break
 
-    # Fallback: match by normalized username / display_name / team_name
+    # Fallback: match by username, then display_name, then team_name — but only
+    # when the match is unique. Two "Dream Team" owners must not resolve to
+    # whichever user happens to appear first in the payload.
     if not matched_user:
         wanted = normalize_sleeper_username(username)
         if not wanted:
             return None
-        for u in users or []:
-            meta = u.get("metadata") or {}
-            candidates = [
-                normalize_sleeper_username(u.get("display_name") or ""),
-                normalize_sleeper_username(u.get("username") or ""),
-                normalize_sleeper_username(meta.get("team_name") or ""),
-            ]
-            if wanted in candidates:
-                matched_user = u
-                break
+
+        def _unique_match(getter):
+            hits = [u for u in (users or [])
+                    if normalize_sleeper_username(getter(u)) == wanted]
+            return hits[0] if len(hits) == 1 else None
+
+        matched_user = (
+            _unique_match(lambda u: u.get("username") or "")
+            or _unique_match(lambda u: u.get("display_name") or "")
+            or _unique_match(lambda u: (u.get("metadata") or {}).get("team_name") or "")
+        )
 
     if not matched_user:
         return None

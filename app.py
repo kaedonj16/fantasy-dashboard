@@ -132,6 +132,13 @@ from utils.utils import (
     load_week_schedule,
     streak_class,
 )
+from utils.lineup_slots import (
+    count_lineup_slots as _count_lineup_slots,
+    is_superflex_lineup as _is_superflex_lineup,
+    starter_need_counts as _starter_need_counts,
+    start_sit_pos as _start_sit_pos,
+    start_sit_groups as _start_sit_groups,
+)
 
 daily_lock = threading.Lock()
 daily_completed = None
@@ -1714,7 +1721,7 @@ BASE_HTML = """
 
       {ad_top}
 
-      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__FEATURES_JS = {features_js_js}; window.__brctx = {{is_logged_in:{signed_in_js},isPremium:{user_premium},platform:{platform_js},season:{season_js},leagueId:{league_id_js}}};</script>
+      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__FEATURES_JS = {features_js_js}; window.__brctx = {{is_logged_in:{signed_in_js},isPremium:{user_premium},platform:{platform_js},season:{season_js},leagueId:{league_id_js},leagueName:{league_name_js},leagueFormat:{league_format_js},currentWeek:{current_week_js},leagueType:{league_type_js},leagueSize:{league_size_js}}};</script>
       <main id="page-root" role="main" tabindex="-1" class="overview-layout" data-cache-ts="{cache_ts}" data-premium="{user_premium}">
         {body}
       </main>
@@ -1864,10 +1871,19 @@ def get_viewer_session_for_league(users: List[Dict], rosters: List[Dict],
     if league_viewer:
         save_viewer_session(league_viewer)
         return league_viewer
-    else:
-        logger.info(
-            f"[get_viewer_session_for_league] Could not resolve {username} in current league, returning session data")
-        return session_viewer
+
+    logger.info(
+        "[get_viewer_session_for_league] Could not resolve %s in current league; not attaching a roster",
+        username,
+    )
+    # Keep the identity so the visitor still looks signed in, but never leak a
+    # roster_id from another league into this one's waivers / start-sit / trades.
+    return {
+        "viewer_username": username,
+        "viewer_user_id": stored_user_id,
+        "viewer_roster_id": None,
+        "viewer_team_name": session_viewer.get("viewer_team_name"),
+    }
 
 
 def get_viewer_session() -> dict:
@@ -1891,6 +1907,78 @@ def get_viewer_session() -> dict:
 
 def _cache_key(platform: str, season: int, league_id: str):
     return str(platform).lower().strip(), int(season), str(league_id).strip()
+
+
+def _peek_league_ctx(platform, league_id, season) -> dict:
+    """Warm dashboard-cache ctx for chrome labels; empty dict if not loaded yet."""
+    if not (platform and league_id and season):
+        return {}
+    try:
+        entry = DASHBOARD_CACHE.get(_cache_key(platform, int(season), str(league_id))) or {}
+        return entry.get("ctx") or {}
+    except Exception:
+        return {}
+
+
+def _league_chrome_meta(platform, league_id, season, offseason_mode: bool = False) -> dict:
+    """League name, format, and week for the persistent nav chip."""
+    from utils.league_chrome import build_league_chrome
+    ctx = _peek_league_ctx(platform, league_id, season)
+    nfl = get_nfl_state() or {}
+    try:
+        week = int(ctx.get("current_week") or nfl.get("week") or 0)
+    except (TypeError, ValueError):
+        week = 0
+    try:
+        size = int(
+            ctx.get("total_rosters")
+            or (ctx.get("league") or {}).get("total_rosters")
+            or len(ctx.get("rosters") or [])
+            or 0
+        )
+    except (TypeError, ValueError):
+        size = 0
+    return build_league_chrome(
+        name=((ctx.get("league") or {}).get("name") or ""),
+        size=size,
+        roster_positions=ctx.get("roster_positions") or [],
+        week=week,
+        season_type=str(nfl.get("season_type") or ""),
+        offseason=bool(offseason_mode),
+    )
+
+
+def _render_league_chrome_chip(meta: dict, *, can_switch: bool) -> str:
+    """Persistent league + week chip that lives in the top bar, not page titles."""
+    if not meta:
+        return ""
+    name = html.escape(str(meta.get("name") or "This league"))
+    fmt = html.escape(str(meta.get("format") or ""))
+    week = html.escape(str(meta.get("week_label") or ""))
+    week_html = f"<span class='br-ctx-week'>{week}</span>" if week else ""
+    fmt_html = f"<span class='br-ctx-format'>{fmt}</span>" if fmt else ""
+    if can_switch:
+        league_el = (
+            f"<button type='button' class='br-ctx-league' id='brCtxLeagueBtn' "
+            f"aria-haspopup='listbox' aria-expanded='false' aria-label='Switch league'>"
+            f"<span class='br-ctx-name'>{name}</span>{fmt_html}"
+            f"<span class='br-ctx-caret' aria-hidden='true'>&#9662;</span>"
+            f"</button>"
+            f"<div class='br-ctx-menu' id='brCtxLeagueMenu' hidden role='listbox' "
+            f"aria-label='Switch league'></div>"
+        )
+    else:
+        league_el = (
+            f"<div class='br-ctx-league is-static'>"
+            f"<span class='br-ctx-name'>{name}</span>{fmt_html}"
+            f"</div>"
+        )
+    return (
+        f"<div class='br-ctx' id='brLeagueChrome'>"
+        f"<div class='br-ctx-league-wrap'>{league_el}</div>"
+        f"{week_html}"
+        f"</div>"
+    )
 
 
 def _page_html_tmp_path(platform: str, season: int, league_id: str, page: str) -> str:
@@ -3146,6 +3234,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 
     # Generate dashboard URL for logo link
     dashboard_url = url_for("page_dashboard", platform=platform, season=season, league_id=league_id)
+    _chrome_meta = _league_chrome_meta(platform, league_id, season, offseason_mode)
+    _chrome_chip = _render_league_chrome_chip(
+        _chrome_meta,
+        can_switch=bool(session.get("viewer_username") or session.get("account_id")),
+    )
 
     # Navigation pills (no utilities)
     nav_pills = []
@@ -3252,14 +3345,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             # cache (the page already built it — no extra fetch). Lets the switcher
             # show the league you're on even when it isn't one of your linked/account
             # leagues, so the dropdown never mislabels a different league as current.
-            _cur_name = ""
-            if league_id and platform and season:
-                try:
-                    _entry = DASHBOARD_CACHE.get(_cache_key(platform, int(season), str(league_id)))
-                    if _entry:
-                        _cur_name = ((_entry.get("ctx") or {}).get("league") or {}).get("name") or ""
-                except Exception:
-                    _cur_name = ""
+            _cur_name = (_chrome_meta.get("raw_name") or "")
             league_switcher_html = (
                 f"<div class='league-switcher-wrapper'>"
                 # data-no-custom opts this out of the custom-select (CSD) enhancer:
@@ -3469,9 +3555,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         )
 
     # On phones the mobile dock (_mobile_nav) is the primary nav, so this top bar
-    # is slimmed to the logo on the dashboard and hidden on every other league
-    # page. `br-mnav` marks "the dock is present"; `br-mnav-home` marks the one
-    # page that keeps a (logo-only) top bar.
+    # drops its pills and keeps the logo plus the league/week chip. `br-mnav`
+    # marks "the dock is present"; `br-mnav-home` still marks the dashboard.
     _mnav_cls = "top-nav br-mnav" + (" br-mnav-home" if active == "dashboard" else "")
     return (
         f"<nav class='{_mnav_cls}' aria-label='Main navigation'>"
@@ -3479,6 +3564,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         f"    <a href='{dashboard_url}' aria-label='BR Fantasy dashboard'>"
         "      <img src='/static/Website_Logo.png' alt='BR Fantasy' class='site-logo'/>"
         "    </a>"
+        f"    {_chrome_chip}"
         "  </div>"
         "  <div class='nav-center'>"
         f"    {pills_container}"
@@ -4052,7 +4138,8 @@ def render_page(
     # Mobile navigation: dynamic bottom dock + full "More" sheet (phones only,
     # league pages only). Appended as fixed siblings; CSS reserves space so the
     # dock never overlaps content. `.has-tabbar` also carries the active key so
-    # CSS can keep the top bar (logo only) on the dashboard and hide it elsewhere.
+    # CSS keeps the top bar (logo + league/week chip) on phones; the dock is the
+    # primary nav. `.has-tabbar` also carries the active key for CSS.
     # The dock renders OUTSIDE #page-root (in the {bottom_nav} slot) so a soft-nav
     # swap of #page-root never destroys and repaints it - the JS reconciles its
     # active tab in place instead (mirrors how the desktop top nav persists). The
@@ -4086,6 +4173,22 @@ def render_page(
     ) if platform == "yahoo" else ""
 
     import json as _json
+    _league_type = "1qb"
+    _league_size = 10
+    _chrome_meta = {"name": "", "format": "", "week": 0, "week_label": ""}
+    if league_id and platform and season:
+        try:
+            _nfl_st = get_nfl_state() or {}
+            _off = ((str(_nfl_st.get("season_type") or "").lower() in ("off", "pre"))
+                    and int(_nfl_st.get("season") or datetime.now().year) == int(season or 0))
+            _chrome_meta = _league_chrome_meta(platform, league_id, season, _off)
+            if _chrome_meta.get("sf"):
+                _league_type = "sf"
+            if int(_chrome_meta.get("size") or 0) >= 2:
+                _league_size = int(_chrome_meta["size"])
+        except Exception:
+            logger.debug("suppressed exception", exc_info=True)
+
     html = BASE_HTML.format(
         title=title,
         yahoo_attribution=_yahoo_attribution,
@@ -4128,6 +4231,11 @@ def render_page(
         platform_js=_json.dumps(platform or "sleeper"),
         season_js=_json.dumps(season),
         league_id_js=_json.dumps(str(league_id or "")),
+        league_name_js=_json.dumps(_chrome_meta.get("name") or ""),
+        league_format_js=_json.dumps(_chrome_meta.get("format") or ""),
+        current_week_js=_json.dumps(_chrome_meta.get("week") or 0),
+        league_type_js=_json.dumps(_league_type),
+        league_size_js=_json.dumps(_league_size),
     )
     resp = make_response(html)
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
@@ -4712,10 +4820,7 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Optional[dict]:
 
     lineup_requirements = {}
     if roster_positions and isinstance(roster_positions, (list, tuple)):
-        for slot in roster_positions:
-            slot_str = str(slot).upper()
-            if slot_str in {"QB", "RB", "WR", "TE", "FLEX", "SUPER_FLEX", "SFLEX"}:
-                lineup_requirements[slot_str] = lineup_requirements.get(slot_str, 0) + 1
+        lineup_requirements = _count_lineup_slots(roster_positions)
 
     starter_profile = {
         "count": len(starters),
@@ -6524,7 +6629,6 @@ def build_dashboard_body(ctx: dict) -> str:
         <section class="os-hero-card">
           <div class="os-hero-top">
             <div>
-              <div class="os-hero-kicker">BR Fantasy &middot; {season} season &middot; Week {current_week}</div>
               <h1 class="os-hero-title">Season Hub</h1>
               <p class="os-hero-copy">{_hero_copy}</p>
             </div>
@@ -7439,7 +7543,7 @@ def render_share_rankings(ctx: dict) -> str:
 
     # ── Value: load from player_values DB ─────────────────────────
     roster_positions = ctx.get("roster_positions") or []
-    is_sf = any(str(p).upper() in {"SUPER_FLEX", "SFLEX"} for p in roster_positions)
+    is_sf = _is_superflex_lineup(roster_positions)
     val_col = "value_sf" if is_sf else "value_1qb"
 
     values_by_pid: Dict[str, float] = {}
@@ -7844,7 +7948,7 @@ def _waiver_value_keys(ctx: dict) -> "tuple[str, str]":
     dropping them below the value floor.
     """
     rp = ctx.get("roster_positions") or []
-    is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in rp)
+    is_sf = _is_superflex_lineup(rp)
     if _league_is_redraft(ctx):
         return (("redraft_value_sf" if is_sf else "redraft_value_1qb"),
                 ("sf_value" if is_sf else "value"))
@@ -8419,7 +8523,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         <section class="os-hero-card">
           <div class="os-hero-top">
             <div>
-              <div class="os-hero-kicker">Viewing {season} offseason league data</div>
               <h1 class="os-hero-title">Offseason Hub</h1>
               <p class="os-hero-copy">
                 Focus on roster building, draft prep, waiver value, and trade opportunities.
@@ -11559,7 +11662,9 @@ def api_waiver_candidates():
                 _rpos = str(_row.get("position") or _row.get("pos") or "").upper()
                 if _rpos in ("QB", "RB", "WR", "TE"):
                     try:
-                        _vals_by_pos.setdefault(_rpos, []).append(float(_row.get("value") or 0.0))
+                        _vals_by_pos.setdefault(_rpos, []).append(
+                            float(_row.get(_vf_wv) or _row.get(_vfb_wv) or 0.0)
+                        )
                     except (TypeError, ValueError):
                         pass
         _teams_n = len(rosters) or 12
@@ -11572,17 +11677,7 @@ def api_waiver_candidates():
     # Viewer roster need (#4): a position the viewer is short on is worth more.
     _need_scores_wv: dict = {}
     try:
-        _rp_counts = {}
-        for _s in _rp_wv:
-            _rp_counts[str(_s).upper()] = _rp_counts.get(str(_s).upper(), 0) + 1
-        _flex_n = _rp_counts.get("FLEX", 0)
-        _sf_n = _rp_counts.get("SUPER_FLEX", 0) + _rp_counts.get("SFLEX", 0)
-        _starter_reqs = {
-            "QB": _rp_counts.get("QB", 0) + _sf_n + 1,
-            "RB": _rp_counts.get("RB", 0) + _flex_n + _sf_n + 1,
-            "WR": _rp_counts.get("WR", 0) + _flex_n + _sf_n + 1,
-            "TE": _rp_counts.get("TE", 0) + 1,
-        }
+        _starter_reqs = _starter_need_counts(_rp_wv, extra_depth=1)
         _vsess = get_viewer_session_for_league(ctx.get("users") or [], rosters)
         _vrid = str((_vsess or {}).get("viewer_roster_id") or "")
         if _vrid:
@@ -12187,22 +12282,20 @@ def api_start_sit_options():
     if not viewer_roster:
         return jsonify({"positions": {}})
 
-    player_ids = [str(pid) for pid in (viewer_roster.get("players") or [])]
+    reserve_set = {str(p) for p in (viewer_roster.get("reserve") or [])}
+    taxi_set = {str(p) for p in (viewer_roster.get("taxi") or [])}
+    player_ids = [
+        str(pid) for pid in (viewer_roster.get("players") or [])
+        if str(pid) not in reserve_set and str(pid) not in taxi_set
+    ]
     players_index = ctx.get("players_index") or {}
     players_full = ctx.get("players") or {}
     model_value_table = list(get_model_value_table_cached() or [])
 
-    lineup_requirements: dict = ctx.get("lineup_requirements") or {}
+    roster_positions = ctx.get("roster_positions") or []
+    lineup_requirements = _count_lineup_slots(roster_positions)
     if not lineup_requirements:
-        roster_positions = ctx.get("roster_positions") or []
-        for slot in roster_positions:
-            s = str(slot).upper()
-            if s in {"QB", "RB", "WR", "TE", "FLEX", "SUPER_FLEX", "SFLEX", "K", "DEF"}:
-                lineup_requirements[s] = lineup_requirements.get(s, 0) + 1
-
-    _rp_ss = ctx.get("roster_positions") or []
-    _is_sf_ss = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_ss)
-    _vf_ss = "sf_value" if _is_sf_ss else "value"
+        lineup_requirements = ctx.get("lineup_requirements") or {}
 
     rows_by_id: dict = {}
     for row in model_value_table:
@@ -12224,7 +12317,8 @@ def api_start_sit_options():
     # ── Z-score matchup rank tables (rank 1 = easiest, one per position) ─────
     _z_rank_tables: dict = {}
     _z_total_map: dict = {}
-    for _zpos in ("QB", "RB", "WR", "TE"):
+    _ss_groups = _start_sit_groups(lineup_requirements)
+    for _zpos in _ss_groups:
         try:
             _rm, _tot, _ri, _iz = _matchup_rank_table(season, _zpos)
             _z_rank_tables[_zpos] = _rm
@@ -12374,11 +12468,11 @@ def api_start_sit_options():
     except Exception:
         _ss_usage_trends = {}
 
-    positions_out: dict = {"QB": [], "RB": [], "WR": [], "TE": []}
+    positions_out: dict = {pos: [] for pos in _ss_groups}
     for pid in player_ids:
         row = rows_by_id.get(pid) or {}
         meta = players_index.get(pid) or {}
-        pos = str(row.get("position") or row.get("pos") or meta.get("pos") or "").upper()
+        pos = _start_sit_pos(row.get("position") or row.get("pos") or meta.get("pos") or "")
         if pos not in positions_out:
             continue
         player_name = row.get("name") or meta.get("name") or f"Player {pid}"
@@ -12571,7 +12665,7 @@ def api_start_sit_options():
         denom = _math_ss.sqrt(sa * sa + sb * sb) or 1.0
         return round(_phi((ma - mb) / denom), 2)
 
-    for _pos in ("QB", "RB", "WR", "TE"):
+    for _pos in positions_out:
         _arr = [p for p in positions_out[_pos] if not p["on_bye"]]
         _ns = lineup_requirements.get(_pos, 1)
         if _ns >= 1 and len(_arr) > _ns:
@@ -12582,9 +12676,10 @@ def api_start_sit_options():
                 "win_prob": _win_prob(_starter, _bench),
             }
 
-    # ── Optimal-lineup advice: compare the auto-optimal skill lineup to the
+    # ── Optimal-lineup advice: compare the auto-optimal lineup to the
     # viewer's actual current starters — the points left on the bench, plus the
-    # specific swaps to fix it. Covers the QB/RB/WR/TE we model. ───────────────
+    # specific swaps to fix it. Covers every position the league starts
+    # (QB/RB/WR/TE plus K and D/ST when those slots exist). ────────────────────
     # The optimal lineup is chosen by the unified start_score, so its point
     # totals and per-swap gains are measured on that SAME score — not raw
     # projection. Mixing the two (select by score, measure by projection) used to
@@ -13171,14 +13266,44 @@ def _redzone_fetch(platform, league_id, season, week=None, scope="league"):
 
 
 def _redzone_fetch_user(platform, league_id, season, week):
-    """Aggregate the viewer's matchup across every league they belong to (Sleeper)."""
-    from dashboard_services.api import get_sleeper_user_leagues
-    viewer_uid = str(session.get("viewer_user_id") or "")
-    if platform != "sleeper" or not viewer_uid:
-        raise ValueError("user scope requires a signed-in Sleeper viewer")
+    """Aggregate the viewer's matchup across every league they belong to.
 
-    leagues_raw = get_sleeper_user_leagues(viewer_uid, season) or []
-    leagues_raw = leagues_raw[:12]
+    Signed-in Google accounts use the cross-platform portfolio (Sleeper, ESPN,
+    Yahoo, MFL). A Sleeper-only session without an account still walks that
+    viewer's Sleeper leagues. Other platforms without either identity fall
+    through to league scope.
+    """
+    from utils.redzone_user import (
+        match_viewer_roster, portfolio_from_account_leagues,
+        portfolio_from_sleeper_leagues, MAX_USER_LEAGUES,
+    )
+
+    account_id = session.get("account_id")
+    viewer_uid = str(session.get("viewer_user_id") or "")
+    portfolio: list = []
+
+    if account_id:
+        try:
+            from dashboard_services.accounts import resolve_account_leagues
+            saved = resolve_account_leagues(int(account_id), current_season=season) or []
+            portfolio = portfolio_from_account_leagues(saved, season=season)
+        except Exception:
+            logger.debug("[redzone] account portfolio load failed", exc_info=True)
+            portfolio = []
+
+    if not portfolio and viewer_uid:
+        try:
+            from dashboard_services.api import get_sleeper_user_leagues
+            sleeper_raw = get_sleeper_user_leagues(viewer_uid, season) or []
+            portfolio = portfolio_from_sleeper_leagues(sleeper_raw, season=season)
+        except Exception:
+            logger.debug("[redzone] sleeper league list failed", exc_info=True)
+            portfolio = []
+
+    if not portfolio:
+        raise ValueError("user scope requires a signed-in viewer with at least one league")
+
+    portfolio = portfolio[:MAX_USER_LEAGUES]
 
     matchups, rosters, users, leagues = [], [], [], []
     player_info: dict = {}
@@ -13188,19 +13313,23 @@ def _redzone_fetch_user(platform, league_id, season, week):
     viewer_rids = []
     seen_users = set()
 
-    for li, lg in enumerate(leagues_raw):
+    for li, lg in enumerate(portfolio):
         lid = str(lg.get("league_id") or "")
+        lg_plat = str(lg.get("platform") or platform or "sleeper").lower()
+        lg_season = int(lg.get("season") or season or 0)
         lname = lg.get("name") or f"League {li + 1}"
         if not lid:
             continue
         try:
-            d = _redzone_collect(platform, lid, season, week)
+            d = _redzone_collect(lg_plat, lid, lg_season, week)
         except Exception:
             continue
         if not scoring:
             scoring = d.get("scoring") or {}
         scoring_by_league[lid] = d.get("scoring") or {}
-        vr = next((r for r in d["rosters"] if str(r.get("owner_id")) == viewer_uid), None)
+        vr = match_viewer_roster(
+            d["rosters"], team_id=lg.get("team_id"), owner_id=viewer_uid,
+        )
         if not vr:
             continue
         vrid = str(vr.get("roster_id"))
@@ -13220,6 +13349,7 @@ def _redzone_fetch_user(platform, league_id, season, week):
             m2["matchup_id"] = ns + str(m.get("matchup_id"))
             m2["league_name"] = lname
             m2["league_id"] = lid
+            m2["platform"] = lg_plat
             matchups.append(m2)
             for _pid in (m.get("players") or []):
                 pid_league[str(_pid)] = lid
@@ -13235,7 +13365,7 @@ def _redzone_fetch_user(platform, league_id, season, week):
                 users.append(u)
         player_info.update(d["player_info"])
         viewer_rids.append(ns + vrid)
-        leagues.append({"league_id": lid, "name": lname})
+        leagues.append({"league_id": lid, "name": lname, "platform": lg_plat})
 
     return {
         "week": week, "season": season, "platform": platform, "league_id": league_id,
@@ -13259,8 +13389,9 @@ def page_redzone(platform: str, season: int, league_id: str):
     scope = "user" if request.args.get("scope") == "user" else "league"
     # League-scope Redzone works on every platform: providers canonicalize their
     # player ids to Sleeper ids, so the live player feed + Tank01 stat lines
-    # resolve regardless of provider. Cross-league "user" scope still needs a
-    # Sleeper viewer, but it falls back to league scope for other platforms.
+    # resolve regardless of provider. Cross-league "My Leagues" uses the signed-in
+    # account portfolio (all platforms) or a Sleeper viewer, and falls back to
+    # this league when neither identity is available.
     if request.args.get("demo") == "1":
         data = _redzone_demo_data(scope=scope)
     else:
@@ -17929,7 +18060,7 @@ def build_commissioner_body(ctx):
     settings = (ctx.get("league") or {}).get("settings") or {}
     playoff_start = int(settings.get("playoff_week_start") or 14)
     model_vals = ctx.get("model_value_table") or get_model_value_table_cached() or []
-    is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in (ctx.get("roster_positions") or []))
+    is_sf = _is_superflex_lineup(ctx.get("roster_positions") or [])
     val_key = "sf_value" if is_sf else "value"
     val_by_pid = {str(p.get("id") or ""): float(p.get(val_key) or p.get("value") or 0)
                   for p in model_vals if p.get("id")}
@@ -19749,8 +19880,7 @@ def api_trade_eval_playoff_impact():
         # players coming in vs going out. This is the counterweight to the
         # win-now playoff metrics - getting younger / banking value is the
         # upside when a deal dents this season's odds (and vice versa).
-        is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"}
-                    for s in (ctx.get("roster_positions") or []))
+        is_sf = _is_superflex_lineup(ctx.get("roster_positions") or [])
         current_pids = sim_state.get("roster_pid_map", {}).get(roster_id, [])
         result["outlook"] = _trade_future_outlook(give_ids, get_ids, is_sf, current_pids)
 
@@ -23975,6 +24105,18 @@ def api_playoff_scenarios():
         settings = ctx.get("league_settings") or {}
         current_week = int(ctx.get("current_week") or 0)
         divisions = int(settings.get("divisions") or 0) >= 2
+        division_map: dict = {}
+        if divisions:
+            for r in (ctx.get("rosters") or []):
+                rid = r.get("roster_id")
+                if rid is None:
+                    continue
+                try:
+                    div = int((r.get("settings") or {}).get("division") or 0)
+                except (TypeError, ValueError):
+                    div = 0
+                if div:
+                    division_map[int(rid)] = div
 
         state = build_sim_state(ctx, platform)
         if not state:
@@ -23989,7 +24131,8 @@ def api_playoff_scenarios():
         sim_teams = state.get("teams") or []
         scen_teams = [
             {"roster_id": t["roster_id"], "wins": t.get("wins", 0),
-             "ties": t.get("ties", 0), "pf": t.get("pf", 0.0)}
+             "ties": t.get("ties", 0), "pf": t.get("pf", 0.0),
+             "division": division_map.get(int(t["roster_id"]))}
             for t in sim_teams
         ]
         scen = compute_scenarios(
@@ -24016,6 +24159,7 @@ def api_playoff_scenarios():
             "show": scen.get("show", False),
             "mode": scen.get("mode"),
             "exact": scen.get("exact", False),
+            "divisions": scen.get("divisions", False),
             "remaining_games": scen.get("remaining_games", 0),
             "remaining_weeks": scen.get("remaining_weeks", 0),
             "playoff_teams": playoff_teams,
@@ -26824,7 +26968,7 @@ def api_trade_intel_player_packages(player_id: str):
         # ── League context for DB queries ─────────────────────────────────
         roster_positions = ctx.get("roster_positions") or []
         _rp_list = [str(s).upper() for s in (roster_positions if isinstance(roster_positions, list) else [])]
-        _is_sf = (league_type == "sf") or any(s in {"SUPER_FLEX", "SFLEX"} for s in _rp_list)
+        _is_sf = (league_type == "sf") or _is_superflex_lineup(roster_positions)
         num_teams = len(ctx.get("rosters") or []) or 12
 
         # Resync val_key with the actual league format detected from roster_positions.
@@ -27836,7 +27980,7 @@ def api_trade_intel_player_send_packages(player_id: str):
         # Detect SF from roster_positions; the URL param may be wrong.
         roster_positions = ctx.get("roster_positions") or []
         _rp_list = [str(s).upper() for s in (roster_positions if isinstance(roster_positions, list) else [])]
-        is_sf = (league_type == "sf") or any(s in {"SUPER_FLEX", "SFLEX"} for s in _rp_list)
+        is_sf = (league_type == "sf") or _is_superflex_lineup(roster_positions)
         val_key = "sf_value" if is_sf else "value"
         num_teams = len(rosters) or 12
 
@@ -28431,7 +28575,7 @@ def api_trade_ideas_for_target():
         # Real trade packages: what people with similar rosters actually sent
         roster_positions = ctx.get("roster_positions") or []
         _rp_list = [str(s).upper() for s in (roster_positions if isinstance(roster_positions, list) else [])]
-        _is_sf = any(s in {"SUPER_FLEX", "SFLEX"} for s in _rp_list)
+        _is_sf = _is_superflex_lineup(roster_positions)
 
         real_result = _real_trade_packages_for_target(
             target_player_id=target_player_id,
@@ -29549,8 +29693,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         values_by_id = {str(r["id"]): r for r in value_table if isinstance(r, dict) and r.get("id")}
 
         league_info = ctx.get("league") or {}
-        is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"}
-                    for s in (league_info.get("roster_positions") or []))
+        is_sf = _is_superflex_lineup(league_info.get("roster_positions") or [])
         vfield = "sf_value" if is_sf else "value"
         league_name = league_info.get("name", "Dynasty League")
         n_teams = len(rosters)
@@ -30032,8 +30175,7 @@ def api_live_draft_suggest():
         if league_id and not format_raw:
             try:
                 league_info = get_league(platform, league_id, season) or {}
-                is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"}
-                            for s in (league_info.get("roster_positions") or []))
+                is_sf = _is_superflex_lineup(league_info.get("roster_positions") or [])
             except Exception:
                 logger.debug("suppressed exception", exc_info=True)
         vfield = "sf_value" if is_sf else "value"
