@@ -47,21 +47,21 @@ def _static_v(name: str) -> str:
 
 
 def build_draft_room_body(
-    league_id: Optional[str],
-    season: Optional[int],
-    platform: Optional[str] = None,
-    *,
-    is_guest: bool = False,
-    num_teams: Optional[int] = None,
-    is_superflex: bool = False,
-    roster_positions: Optional[list] = None,
-    scoring: Optional[dict] = None,
-    viewer_user_id: Optional[str] = None,
-    num_rounds_rookie: Optional[int] = None,
-    num_rounds_startup: Optional[int] = None,
-    keepers: Optional[dict] = None,
-    show_keeper: bool = True,
-    has_premium: bool = False,
+        league_id: Optional[str],
+        season: Optional[int],
+        platform: Optional[str] = None,
+        *,
+        is_guest: bool = False,
+        num_teams: Optional[int] = None,
+        is_superflex: bool = False,
+        roster_positions: Optional[list] = None,
+        scoring: Optional[dict] = None,
+        viewer_user_id: Optional[str] = None,
+        num_rounds_rookie: Optional[int] = None,
+        num_rounds_startup: Optional[int] = None,
+        keepers: Optional[dict] = None,
+        show_keeper: bool = True,
+        has_premium: bool = False,
 ) -> str:
     _dr_has_league = bool(league_id and platform and season)
     cfg = {
@@ -87,7 +87,7 @@ def build_draft_room_body(
         "rosterPositions": list(roster_positions) if roster_positions else None,
         "scoring": scoring or None,
         "viewerUserId": str(viewer_user_id) if viewer_user_id else "",
-        "numRoundsRookie":  int(num_rounds_rookie)  if num_rounds_rookie  else None,
+        "numRoundsRookie": int(num_rounds_rookie) if num_rounds_rookie else None,
         "numRoundsStartup": int(num_rounds_startup) if num_rounds_startup else None,
         # League keepers (from the keeper tool) to drop from the board. Omitted /
         # empty for non-keeper leagues, where the draft room behaves exactly as before.
@@ -105,14 +105,14 @@ def build_draft_room_body(
     # external draft_room.js reads window.__draftCfg. The page is a full document
     # (render_page), so a deferred external script executes normally.
     return (
-        f'<script>window.__draftCfg = {cfg_json};</script>\n'
-        + _DRAFT_ROOM_HTML
-        # draft_grade_curve.js is intentionally not loaded: live grades are absolute
-        # (no field curve). The file remains for backtests + parity tests only.
-        + f'\n<script src="/static/pick_score.js?v={_static_v("pick_score.js")}" defer></script>\n'
-        + f'\n<script src="/static/draft_board_core.js?v={_static_v("draft_board_core.js")}" defer></script>\n'
-        + f'\n<script src="/static/draft_grade_team.js?v={_static_v("draft_grade_team.js")}" defer></script>\n'
-        + f'\n<script src="/static/draft_room.js?v={_draft_room_js_v()}" defer></script>\n'
+            f'<script>window.__draftCfg = {cfg_json};</script>\n'
+            + _DRAFT_ROOM_HTML
+            # draft_grade_curve.js is intentionally not loaded: live grades are absolute
+            # (no field curve). The file remains for backtests + parity tests only.
+            + f'\n<script src="/static/pick_score.js?v={_static_v("pick_score.js")}" defer></script>\n'
+            + f'\n<script src="/static/draft_board_core.js?v={_static_v("draft_board_core.js")}" defer></script>\n'
+            + f'\n<script src="/static/draft_grade_team.js?v={_static_v("draft_grade_team.js")}" defer></script>\n'
+            + f'\n<script src="/static/draft_room.js?v={_draft_room_js_v()}" defer></script>\n'
     )
 
 
@@ -1291,7 +1291,7 @@ _DRAFT_ROOM_HTML = r"""
   .dd-ledger thead th { font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--text-subtle,var(--text-muted)); cursor:pointer; user-select:none; }
   .dd-ledger thead th:hover { color:var(--text); }
   .dd-ledger thead th.dd-sorted { color:var(--accent); }
-  .dd-ledger thead th.r, .dd-ledger tbody td.r { text-align:right; font-variant-numeric:tabular-nums; }
+  .dd-ledger thead th.r, .dd-ledger tbody td.r { text-align:center; font-variant-numeric:tabular-nums; }
   .dd-ledger .num { font-variant-numeric:tabular-nums; }
   .dd-ledger tbody tr:hover { background:color-mix(in srgb,var(--accent) 5%,transparent); }
   .dd-plname { font-weight:600; }
@@ -1591,9 +1591,9 @@ _DRAFT_ROOM_HTML = r"""
 
 
 def build_draft_history_body(
-    league_id: Optional[str],
-    season: Optional[int],
-    platform: Optional[str] = None,
+        league_id: Optional[str],
+        season: Optional[int],
+        platform: Optional[str] = None,
 ) -> str:
     """Draft History page: the league's real drafts (from Sleeper), openable by
     any league member to review the board."""
@@ -1608,8 +1608,8 @@ def build_draft_history_body(
     }
     cfg_json = json.dumps(cfg)
     return (
-        f'<script>window.__draftHistCfg = {cfg_json};</script>\n'
-        + _DRAFT_HISTORY_HTML
+            f'<script>window.__draftHistCfg = {cfg_json};</script>\n'
+            + _DRAFT_HISTORY_HTML
     )
 
 
