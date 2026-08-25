@@ -8,7 +8,9 @@ from utils.draft_grade import (
     clamp01,
     dr_apply_field_curve,
     dr_avg_top_n,
+    dr_construction_mix,
     dr_grade_letter,
+    dr_grade_split,
     dr_league_lineup_avg,
     dr_letter_to_score,
     dr_lineup_score,
@@ -16,6 +18,8 @@ from utils.draft_grade import (
     dr_rookie_team_score,
     dr_slot_eligible,
     dr_team_grade_score,
+    DR_SPLIT_REDRAFT,
+    DR_SPLIT_STARTUP,
 )
 
 
@@ -233,14 +237,23 @@ _GRADE_PICKS = [
 ]
 
 
-def test_team_grade_default_split_matches_shipped_35_25_40():
-    # The shipped split is 35/25/40 (starter trimmed, construction raised —
-    # 35/25/40 was #1 on two independent redraft backtests). The default must
-    # equal it explicitly, which is what keeps the JS<->Python parity test valid.
-    a = dr_team_grade_score(_GRADE_PICKS, **_GRADE_KW)
+def test_team_grade_startup_split_matches_35_25_40():
+    kw = dict(_GRADE_KW, draft_type="startup")
+    a = dr_team_grade_score(_GRADE_PICKS, **kw)
     b = dr_team_grade_score(_GRADE_PICKS, value_weight=35, starter_weight=25,
-                            balance_weight=40, **_GRADE_KW)
+                            balance_weight=40, **kw)
     assert a == b
+    assert dr_grade_split("startup") == DR_SPLIT_STARTUP
+
+
+def test_team_grade_redraft_split_matches_20_50_30():
+    # Redraft is lineup-led (20/50/30) so the headline letter tracks playoff
+    # odds instead of ADP-value / conventional roster shape.
+    a = dr_team_grade_score(_GRADE_PICKS, **_GRADE_KW)
+    b = dr_team_grade_score(_GRADE_PICKS, value_weight=20, starter_weight=50,
+                            balance_weight=30, **_GRADE_KW)
+    assert a == b
+    assert dr_grade_split("redraft") == DR_SPLIT_REDRAFT
 
 
 def test_team_grade_split_reweights_composite():
@@ -248,3 +261,83 @@ def test_team_grade_split_reweights_composite():
     alt = dr_team_grade_score(_GRADE_PICKS, value_weight=25, starter_weight=55,
                               balance_weight=20, **_GRADE_KW)
     assert alt != base  # a different split must change the headline composite
+
+
+def test_redraft_construction_mix_favors_coverage():
+    cov, bal, eff = dr_construction_mix("redraft")
+    assert cov > bal > eff
+    assert abs(cov + bal + eff - 1.0) < 1e-9
+    s_cov, s_bal, s_eff = dr_construction_mix("startup")
+    assert (s_cov, s_bal, s_eff) == (0.45, 0.30, 0.25)
+
+
+def test_redraft_grade_ranks_lineup_ahead_of_adp_value():
+    """A stacked-but-unbalanced redraft (reaches, extra WRs) must outrank a
+    balanced-but-weaker lineup. Playoff odds follow starter PPG; a process-heavy
+    split let construction + pick-score value invert that ranking.
+    """
+    slots = ["QB", "RB", "RB", "WR", "WR", "WR", "TE", "FLEX"]
+    targets = {"QB": 2, "RB": 5, "WR": 6, "TE": 2}
+    # Elite PPG, lots of reaches (low pick scores), WR-heavy vs RB/TE targets.
+    stars = [
+        {"id": "sqb", "pos": "QB", "ps": 38, "pn": 1, "val": 8500, "ppg": 22},
+        {"id": "srb", "pos": "RB", "ps": 34, "pn": 12, "val": 8000, "ppg": 18},
+        {"id": "sw1", "pos": "WR", "ps": 36, "pn": 13, "val": 7800, "ppg": 17},
+        {"id": "sw2", "pos": "WR", "ps": 40, "pn": 24, "val": 7200, "ppg": 16},
+        {"id": "sw3", "pos": "WR", "ps": 42, "pn": 25, "val": 6800, "ppg": 15},
+        {"id": "sw4", "pos": "WR", "ps": 44, "pn": 36, "val": 6200, "ppg": 14},
+        {"id": "sw5", "pos": "WR", "ps": 46, "pn": 37, "val": 5000, "ppg": 13},
+        {"id": "ste", "pos": "TE", "ps": 40, "pn": 48, "val": 4200, "ppg": 11},
+    ]
+    # Mediocre PPG, great ADP value, hits depth targets.
+    balanced = [
+        {"id": "bqb", "pos": "QB", "ps": 82, "pn": 8, "val": 4000, "ppg": 14},
+        {"id": "br1", "pos": "RB", "ps": 85, "pn": 12, "val": 3800, "ppg": 11},
+        {"id": "br2", "pos": "RB", "ps": 80, "pn": 13, "val": 3600, "ppg": 10},
+        {"id": "br3", "pos": "RB", "ps": 78, "pn": 24, "val": 3000, "ppg": 8},
+        {"id": "br4", "pos": "RB", "ps": 76, "pn": 36, "val": 2500, "ppg": 7},
+        {"id": "bw1", "pos": "WR", "ps": 80, "pn": 25, "val": 3200, "ppg": 9},
+        {"id": "bw2", "pos": "WR", "ps": 77, "pn": 37, "val": 2800, "ppg": 8},
+        {"id": "bw3", "pos": "WR", "ps": 74, "pn": 48, "val": 2200, "ppg": 7},
+        {"id": "bw4", "pos": "WR", "ps": 72, "pn": 60, "val": 1800, "ppg": 6},
+        {"id": "bt1", "pos": "TE", "ps": 70, "pn": 61, "val": 1600, "ppg": 5},
+        {"id": "bt2", "pos": "TE", "ps": 68, "pn": 72, "val": 1200, "ppg": 4},
+    ]
+    league_players = (
+        [{"pos": p["pos"], "ppg": p["ppg"], "val": p["val"]} for p in stars]
+        + [{"pos": p["pos"], "ppg": p["ppg"], "val": p["val"]} for p in balanced]
+        + [{"pos": "QB", "ppg": 16, "val": 5000}, {"pos": "RB", "ppg": 12, "val": 4000},
+           {"pos": "WR", "ppg": 11, "val": 3800}, {"pos": "TE", "ppg": 7, "val": 2000}]
+    )
+    kw = dict(
+        slots=slots, targets=targets, num_teams=12,
+        league_ppg_list=[p["ppg"] for p in league_players],
+        league_val_list=[p["val"] for p in league_players],
+        league_players=league_players,
+    )
+    stars_redraft = dr_team_grade_score(stars, draft_type="redraft", **kw)
+    bal_redraft = dr_team_grade_score(balanced, draft_type="redraft", **kw)
+    assert stars_redraft > bal_redraft
+
+
+def test_redraft_empty_slot_lowers_grade():
+    """Empty starting slots score 0 in the playoff sim. Dropping a starter
+    from an otherwise identical redraft must lower the headline grade — the
+    coverage-scaled PPG term plus construction coverage both move the same way.
+    """
+    slots = ["QB", "RB", "WR"]
+    targets = {"QB": 1, "RB": 1, "WR": 1}
+    full = [
+        {"id": "q", "pos": "QB", "ps": 60, "pn": 1, "val": 7000, "ppg": 18},
+        {"id": "r", "pos": "RB", "ps": 60, "pn": 2, "val": 6000, "ppg": 15},
+        {"id": "w", "pos": "WR", "ps": 60, "pn": 3, "val": 5500, "ppg": 14},
+    ]
+    short = full[:2]  # WR slot empty
+    pool = [{"pos": p["pos"], "ppg": p["ppg"], "val": p["val"]} for p in full]
+    kw = dict(
+        slots=slots, targets=targets, num_teams=2, draft_type="redraft",
+        league_ppg_list=[18, 15, 14],
+        league_val_list=[7000, 6000, 5500],
+        league_players=pool,
+    )
+    assert dr_team_grade_score(full, **kw) > dr_team_grade_score(short, **kw)
