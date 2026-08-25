@@ -188,8 +188,8 @@ def _pricing_body() -> str:
         <p id="sub-msg" style="color:var(--text-muted);margin:0 0 28px;">
           Activating your premium access&hellip;
         </p>
-        <div id="sub-spinner" style="margin:0 auto 16px;width:32px;height:32px;border:3px solid #e5e7eb;border-top-color:#667eea;border-radius:50%;animation:paywall-spin .8s linear infinite;"></div>
-        <a id="sub-return" href="{safe_return or '/pricing'}" style="display:none;margin-top:8px;padding:12px 28px;border-radius:9px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-weight:700;text-decoration:none;font-size:15px;">Continue</a>
+        <div id="sub-spinner" style="margin:0 auto 16px;width:32px;height:32px;border:3px solid #e5e7eb;border-top-color:#2563eb;border-radius:50%;animation:paywall-spin .8s linear infinite;"></div>
+        <a id="sub-return" href="{safe_return or '/pricing'}" style="display:none;margin-top:8px;padding:12px 28px;border-radius:9px;background:linear-gradient(135deg,#122d4b,#2563eb);color:white;font-weight:700;text-decoration:none;font-size:15px;">Continue</a>
       </div>
     </div>
     <script>
@@ -250,8 +250,8 @@ def _pricing_body() -> str:
     </script>
     """
 
-    league_highlight = "border-color:#667eea;box-shadow:0 8px 24px rgba(102,126,234,.2);" if plan == "league" else ""
-    user_highlight   = "border-color:#667eea;box-shadow:0 8px 24px rgba(102,126,234,.2);" if plan == "user"   else ""
+    league_highlight = "border-color:#2563eb;box-shadow:0 8px 24px rgba(37,99,235,.2);" if plan == "league" else ""
+    user_highlight   = "border-color:#2563eb;box-shadow:0 8px 24px rgba(37,99,235,.2);" if plan == "user"   else ""
     canceled_banner = """
     <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px 18px;margin-bottom:20px;color:#dc2626;font-size:14px;">
       <i class="fa-solid fa-circle-xmark" style="margin-right:6px;"></i>
@@ -261,7 +261,8 @@ def _pricing_body() -> str:
     {canceled_banner}
     <div class="card central" style="max-width:760px;">
       <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;text-align:center;">
-        <h2 style="margin:0 0 6px;font-size:22px;">BR Fantasy Premium</h2>
+        <p class="br-page-brand" style="justify-content:center;">BR Fantasy</p>
+        <h2 style="margin:0 0 6px;font-size:22px;">Premium</h2>
         <div style="font-size:14px;color:var(--text-muted);">
           Unlock advanced analytics and insights for your dynasty league
         </div>
@@ -273,19 +274,19 @@ def _pricing_body() -> str:
           <div style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:12px;">What you get</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
             <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-chart-line" style="color:#667eea;width:16px;text-align:center;"></i>
+              <i class="fa-solid fa-chart-line" style="color:#2563eb;width:16px;text-align:center;"></i>
               Full Trade Intelligence feed
             </div>
             <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-fire" style="color:#667eea;width:16px;text-align:center;"></i>
+              <i class="fa-solid fa-fire" style="color:#2563eb;width:16px;text-align:center;"></i>
               All Breakout Engine candidates
             </div>
             <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-clock-rotate-left" style="color:#667eea;width:16px;text-align:center;"></i>
+              <i class="fa-solid fa-clock-rotate-left" style="color:#2563eb;width:16px;text-align:center;"></i>
               Player trade history
             </div>
             <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-star" style="color:#667eea;width:16px;text-align:center;"></i>
+              <i class="fa-solid fa-star" style="color:#2563eb;width:16px;text-align:center;"></i>
               All future premium features
             </div>
           </div>
@@ -303,22 +304,22 @@ def _pricing_body() -> str:
               $15<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
             </div>
             <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for every manager in your league</div>
-            <button onclick="initiatePurchase('league', this)" style="width:100%;padding:11px;border-radius:9px;border:2px solid #667eea;background:var(--card);color:#667eea;font-size:14px;font-weight:700;cursor:pointer;">
+            <button onclick="initiatePurchase('league', this)" style="width:100%;padding:11px;border-radius:9px;border:2px solid #2563eb;background:var(--card);color:#2563eb;font-size:14px;font-weight:700;cursor:pointer;">
               Subscribe for League
             </button>
           </div>
 
           <!-- Combo plan -->
-          <div style="border:2px solid #667eea;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);{league_highlight}">
+          <div style="border:2px solid #2563eb;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);{league_highlight}">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
               <div style="font-size:17px;font-weight:700;">League + Personal</div>
-              <div style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:10px;font-weight:700;padding:3px 9px;border-radius:10px;text-transform:uppercase;letter-spacing:.4px;">Best Value</div>
+              <div style="background:linear-gradient(135deg,#122d4b,#2563eb);color:white;font-size:10px;font-weight:700;padding:3px 9px;border-radius:10px;text-transform:uppercase;letter-spacing:.4px;">Best Value</div>
             </div>
             <div style="font-size:38px;font-weight:800;line-height:1;margin-bottom:4px;">
               $20<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
             </div>
             <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for your league and all your personal leagues</div>
-            <button onclick="initiatePurchase('combo', this)" style="width:100%;padding:11px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:14px;font-weight:700;cursor:pointer;">
+            <button onclick="initiatePurchase('combo', this)" style="width:100%;padding:11px;border-radius:9px;border:none;background:linear-gradient(135deg,#122d4b,#2563eb);color:white;font-size:14px;font-weight:700;cursor:pointer;">
               Subscribe Both
             </button>
           </div>
@@ -332,7 +333,7 @@ def _pricing_body() -> str:
               $10<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
             </div>
             <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for all your leagues, one account</div>
-            <button onclick="initiatePurchase('user', this)" style="width:100%;padding:11px;border-radius:9px;border:2px solid #667eea;background:var(--card);color:#667eea;font-size:14px;font-weight:700;cursor:pointer;">
+            <button onclick="initiatePurchase('user', this)" style="width:100%;padding:11px;border-radius:9px;border:2px solid #2563eb;background:var(--card);color:#2563eb;font-size:14px;font-weight:700;cursor:pointer;">
               Subscribe Personally
             </button>
           </div>

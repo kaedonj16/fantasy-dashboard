@@ -135,6 +135,7 @@ _CHEAT_HTML = r"""
   .cs-top > :first-child { flex: 1 1 390px; min-width: 300px; }
   .cs-eyebrow { font-family: var(--cs-mono); font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--cs-accent); display: inline-flex; align-items: center; gap: 8px; }
   .cs-wrap h1 { font-size: clamp(23px, 4vw, 32px); line-height: 1.06; margin: 6px 0 4px; letter-spacing: -.02em; font-weight: 800; }
+  .cs-wrap .br-page-brand { margin: 0 0 6px; font-size: 11px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: var(--brand-blue, #3b82f6); }
   .cs-sub { color: var(--cs-ink-soft); font-size: 14px; max-width: 64ch; margin: 0; line-height: 1.5; }
   .cs-backlink { font-size: 13px; font-weight: 700; color: var(--cs-accent); text-decoration: none; }
   .cs-backlink:hover { text-decoration: underline; }
@@ -365,6 +366,7 @@ _CHEAT_HTML = r"""
 <div class="cs-wrap">
   <header class="cs-top">
     <div>
+      <p class="br-page-brand">BR Fantasy</p>
       <h1 id="csTitle">Redraft Cheat Sheet</h1>
       <p class="cs-sub" id="csSub">Ranked by value over replacement for your league scoring and roster.</p>
       <a class="cs-backlink" id="csBack" href="/draft">&larr; Open in Draft Room</a>

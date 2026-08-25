@@ -374,6 +374,7 @@ def build_watchlist_page_body() -> str:
         <div class="wl-page">
           <header class="wl-page-head">
             <div class="wl-head-title">
+              <p class="br-page-brand">BR Fantasy</p>
               <h1 class="wl-page-title">Watchlist</h1>
               <span id="wlPageCount" class="wl-count-pill" hidden></span>
             </div>

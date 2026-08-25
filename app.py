@@ -6524,7 +6524,7 @@ def build_dashboard_body(ctx: dict) -> str:
         <section class="os-hero-card">
           <div class="os-hero-top">
             <div>
-              <div class="os-hero-kicker">Viewing {season} season &middot; Week {current_week}</div>
+              <div class="os-hero-kicker">BR Fantasy &middot; {season} season &middot; Week {current_week}</div>
               <h1 class="os-hero-title">Season Hub</h1>
               <p class="os-hero-copy">{_hero_copy}</p>
             </div>
@@ -13841,6 +13841,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
     body_html = f"""
     <div class="card central">
       <div class="card-header">
+        <p class="br-page-brand">BR Fantasy</p>
         <h2>Breakout Engine</h2>
         <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
           Players positioned for breakouts based on opportunity, efficiency, and roster changes
@@ -13978,7 +13979,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
                 <i class="fa-solid fa-lock" style="font-size:22px;color:var(--text-muted);"></i>
                 <div style="font-weight:700;font-size:15px;">${{lockedCount}} more candidates locked</div>
                 <div style="font-size:12px;color:var(--text-muted);text-align:center;">Upgrade to PRO to see all breakout<br>candidates with full details</div>
-                <span style="font-size:11px;font-weight:700;padding:4px 12px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border-radius:12px;">Upgrade &rarr;</span>
+                <span style="font-size:11px;font-weight:700;padding:4px 12px;background:linear-gradient(135deg,#122d4b,#2563eb);color:white;border-radius:12px;">Upgrade &rarr;</span>
               </div>`;
           }}
           html += '</div>';
@@ -28679,6 +28680,7 @@ def build_portfolio_body(
         f"<div class='card' style='margin-bottom:14px;'>"
         f"<div class='pf-summary'>"
         f"<div>"
+        f"<p class='br-page-brand'>BR Fantasy</p>"
         f"<div class='pf-summary-title'>My Leagues</div>"
         f"<div class='pf-summary-sub'>Signed in as <strong>{html.escape(username)}</strong></div>"
         f"</div>"

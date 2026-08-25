@@ -1070,7 +1070,7 @@ ul {
     letter-spacing: 0.4px;
     text-transform: uppercase;
     color: #fff;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #122d4b 0%, #2563eb 100%);
     border-radius: 6px;
     vertical-align: middle;
     line-height: 14px;
@@ -22778,6 +22778,12 @@ tr.team-clickable {
     display: flex;
     align-items: center;
     gap: 12px;
+    flex-wrap: wrap;
+}
+
+.wl-head-title .br-page-brand {
+    width: 100%;
+    margin-bottom: -4px;
 }
 
 .wl-page-title {
@@ -23329,9 +23335,9 @@ tr.team-clickable {
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: .06em;
-    color: var(--accent);
-    background: var(--accent-soft);
-    border: 1px solid var(--accent-soft-2);
+    color: var(--brand-blue, #3b82f6);
+    background: color-mix(in srgb, var(--brand-blue, #3b82f6) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--brand-blue, #3b82f6) 18%, transparent);
     padding: 4px 11px;
     border-radius: 12px;
     margin-bottom: 12px;
@@ -23343,9 +23349,9 @@ tr.team-clickable {
 
 .compare-page-title {
     margin: 0;
-    font-size: 32px;
+    font-size: clamp(28px, 4vw, 36px);
     font-weight: 800;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.03em;
     color: var(--text);
 }
 
@@ -27488,6 +27494,64 @@ button:disabled {
     color: #818cf8;
 }
 
+
+/* Shared BR Fantasy page brand + public-page atmosphere */
+.br-page-brand {
+    margin: 0 0 8px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--brand-blue, #3b82f6);
+    display: inline-flex;
+    align-items: center;
+}
+
+.dvt-page, .rf-page, .rnk-page, .compare-page, .wl-page {
+    position: relative;
+}
+
+.dvt-page::before, .rf-page::before, .rnk-page::before, .compare-page::before {
+    content: "";
+    position: absolute;
+    inset: -12px -6% auto;
+    height: min(280px, 42vh);
+    pointer-events: none;
+    z-index: 0;
+    background:
+        radial-gradient(ellipse 65% 55% at 16% 10%, rgba(56, 189, 248, 0.12), transparent 62%),
+        radial-gradient(ellipse 48% 42% at 90% 0%, rgba(18, 45, 75, 0.08), transparent 58%);
+}
+
+:root[data-theme="dark"] .dvt-page::before,
+:root[data-theme="dark"] .rf-page::before,
+:root[data-theme="dark"] .rnk-page::before,
+:root[data-theme="dark"] .compare-page::before {
+    background:
+        radial-gradient(ellipse 65% 55% at 16% 10%, rgba(56, 189, 248, 0.1), transparent 60%),
+        radial-gradient(ellipse 48% 42% at 90% 0%, rgba(59, 130, 246, 0.08), transparent 55%);
+}
+
+.dvt-hero, .rf-hero, .rnk-hero, .compare-page-head, .wl-page-head,
+.dvt-controls, .rf-grid, .rnk-pos-nav, .rnk-table-wrap, .dvt-table-wrap,
+.compare-pickers, .compare-actions {
+    position: relative;
+    z-index: 1;
+}
+
+.dvt-title, .rf-title, .rnk-title {
+    letter-spacing: -0.03em;
+    line-height: 1.12;
+}
+
+.dvt-title { font-size: clamp(24px, 4.2vw, 34px); }
+.rf-title { font-size: clamp(24px, 4.2vw, 34px); }
+.rnk-title { font-size: clamp(24px, 4.2vw, 34px); }
+
+.card-header .br-page-brand {
+    margin-bottom: 6px;
+}
+
 /* ── Dynasty Trade Value Chart ───────────────────────────────────────────── */
 .dvt-page {
     max-width: 900px;
@@ -27497,13 +27561,17 @@ button:disabled {
 
 .dvt-hero {
     margin-bottom: 20px;
+    position: relative;
+    z-index: 1;
 }
 
 .dvt-title {
-    font-size: clamp(20px, 4vw, 28px);
+    font-size: clamp(24px, 4.2vw, 34px);
     font-weight: 800;
     color: var(--text);
     margin: 0 0 8px;
+    letter-spacing: -0.03em;
+    line-height: 1.12;
 }
 
 .dvt-subtitle {
@@ -27764,13 +27832,17 @@ button:disabled {
 
 .rf-hero {
     margin-bottom: 20px;
+    position: relative;
+    z-index: 1;
 }
 
 .rf-title {
-    font-size: clamp(18px, 4vw, 26px);
+    font-size: clamp(24px, 4.2vw, 34px);
     font-weight: 800;
     color: var(--text);
     margin: 0 0 8px;
+    letter-spacing: -0.03em;
+    line-height: 1.12;
 }
 
 .rf-updated {
@@ -28003,13 +28075,17 @@ button:disabled {
 
 .rnk-hero {
     margin-bottom: 16px;
+    position: relative;
+    z-index: 1;
 }
 
 .rnk-title {
-    font-size: clamp(18px, 4vw, 26px);
+    font-size: clamp(24px, 4.2vw, 34px);
     font-weight: 800;
     color: var(--text);
     margin: 0 0 8px;
+    letter-spacing: -0.03em;
+    line-height: 1.12;
 }
 
 .rnk-subtitle {
@@ -33786,7 +33862,7 @@ a, button, [role="button"], [role="tab"], summary, label,
         letter-spacing: .04em;
         text-transform: uppercase;
         color: #fff;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #122d4b 0%, #2563eb 100%);
         padding: 2px 6px;
         border-radius: 5px;
     }

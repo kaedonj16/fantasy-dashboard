@@ -12347,7 +12347,7 @@ function pmSwitchTab(tab) {
             See breakout scores, opportunity drivers, hit probability, and PPG projections for every candidate.
           </div>
           <button onclick="showPaywall('breakout-analysis')"
-                  style="margin-top:4px;padding:9px 20px;background:linear-gradient(135deg,#667eea,#764ba2);
+                  style="margin-top:4px;padding:9px 20px;background:linear-gradient(135deg,#122d4b,#2563eb);
                          color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;">
             Upgrade to PRO
           </button>

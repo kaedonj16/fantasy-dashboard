@@ -200,7 +200,7 @@ function addPremiumBadge(element) {
   badge.style.cssText = `
     display: inline-block;
     padding: 2px 8px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #122d4b 0%, #2563eb 100%);
     color: white;
     font-size: 11px;
     font-weight: 600;

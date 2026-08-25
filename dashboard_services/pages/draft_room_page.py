@@ -639,7 +639,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-banner-txt span { font-size: 12px; color: var(--text-muted); }
   .dr-start-cd { font-variant-numeric: tabular-nums; }
   .dr-banner-join { flex-shrink: 0; margin-left: auto; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
-    background: var(--accent,#38bdf8); color: #fff; font-weight: 700; font-size: 13px; text-decoration: none; padding: 8px 14px; border-radius: 8px; }
+    background: var(--accent,#38bdf8); color: var(--on-accent, #fff); font-weight: 700; font-size: 13px; text-decoration: none; padding: 8px 14px; border-radius: 8px; }
   .dr-start-banner.is-live .dr-banner-join { background: var(--win); }
   .dr-banner-join i { font-size: 11px; }
   .dr-poll-status { font-size: 11px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }

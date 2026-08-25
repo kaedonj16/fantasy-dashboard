@@ -165,6 +165,7 @@ def build_dynasty_value_chart_body(value_table: list[dict], as_of_date: str | No
     return f"""
 <div class="dvt-page">
   <div class="dvt-hero">
+    <p class="br-page-brand">BR Fantasy</p>
     <h1 class="dvt-title">Dynasty Fantasy Football Trade Value Chart</h1>
     <p class="dvt-subtitle">
       Updated {html.escape(date_str)}: real dynasty trade values for 1QB and Superflex leagues.
@@ -386,6 +387,7 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
     return f"""
 <div class="rf-page">
   <div class="rf-hero">
+    <p class="br-page-brand">BR Fantasy</p>
     <h1 class="rf-title">Dynasty Fantasy Football Top Movers</h1>
     <p class="rf-updated"><span class="rf-updated-dot"></span>Updated {html.escape(date_str)} · refreshed daily</p>
     <p class="rf-subtitle">
@@ -599,6 +601,7 @@ def build_rankings_hub_body(
     return f"""
 <div class="rnk-page">
   <div class="rnk-hero">
+    <p class="br-page-brand">BR Fantasy</p>
     <h1 class="rnk-title">{html.escape(title)}</h1>
     <p class="rnk-subtitle">{html.escape(subtitle)}</p>
   </div>
