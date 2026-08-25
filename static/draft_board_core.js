@@ -496,6 +496,61 @@
     var m = 0; pool.forEach(function (p) { var v = valOf(p, mode, sf); if (v > m) m = v; }); return m;
   }
 
+  // Autodraft extra multiplier on the live decision score.
+  //
+  // CPU picks are sampled with an ADP likelihood, so a 13-spot reach has
+  // near-zero Gaussian weight. Autodraft is argmax of score: the old uncapped
+  // 1.35x open-starter boost could take a TE a full round early in a 1TE
+  // league even when that player was still on the board at the turn. Keep the
+  // backup-reach / overfill guards, pull toward an open starter only near ADP,
+  // and wait on single-slot reaches that survive until the next owned pick.
+  var AUTO_STARTER_BOOST = 1.35;
+  var AUTO_OVERFILL = 0.4;
+  var AUTO_WAIT_TURN = 0.35;
+  var AUTO_STARTER_REACH_ROUNDS = 0.5;
+  var AUTO_WAIT_SURVIVE = 55;   // same "Can wait" threshold the sidebar uses
+  var AUTO_RUN_SURVIVE = 40;    // below this, a positional run is underway
+
+  function autoDraftNeedMultiplier(o) {
+    o = o || {};
+    var pos = String(o.pos || '').toUpperCase();
+    if (pos === 'K' || pos === 'DEF') return 1;
+    var have = +o.have || 0;
+    var target = +o.target || 0;
+    var sSlots = +o.starterSlots || 0;
+    var adp = o.adp;
+    var pickNo = +o.pickNo || 0;
+    var teams = Math.max(1, +o.teams || 12);
+    var nextPick = o.nextPick == null ? null : +o.nextPick;
+    var survive = o.surviveProb == null ? null : +o.surviveProb;
+    var tep = +o.tep || 0;
+    var sf = !!o.sf;
+    var qbStarters = o.qbStarters == null ? (sf ? 2 : 1) : +o.qbStarters;
+
+    if (adp != null && adp < 9000 && pickNo < adp) {
+      if ((pos === 'QB' && have >= qbStarters) ||
+          (pos === 'TE' && sSlots <= 1 && have >= 1)) return 0;
+    }
+    if (target > 0 && have >= target) return AUTO_OVERFILL;
+
+    var openStarter = sSlots > 0 && have < sSlots;
+    if (!openStarter) return 1;
+
+    var reach = (adp != null && adp < 9000) ? Math.max(0, adp - pickNo) : 0;
+    var nearValue = adp == null || adp >= 9000 || reach <= teams * AUTO_STARTER_REACH_ROUNDS;
+    // 1TE (no TEP) and 1QB: a body whose ADP is still at/after the next pick,
+    // or who the survival model says will be there, is a free wait. A real
+    // positional run (survival already crushed) is allowed to take them now.
+    var singleSlot = (pos === 'TE' && sSlots <= 1 && tep <= 0) || (pos === 'QB' && !sf);
+    var adpAfterTurn = nextPick != null && adp != null && adp < 9000 && adp >= nextPick;
+    var likelyReturn = survive != null && survive >= AUTO_WAIT_SURVIVE;
+    var runAway = survive != null && survive < AUTO_RUN_SURVIVE;
+    if (singleSlot && reach > 0 && !runAway && (adpAfterTurn || likelyReturn)) {
+      return AUTO_WAIT_TURN;
+    }
+    return nearValue ? AUTO_STARTER_BOOST : 1;
+  }
+
   return {
     rosterCounts: rosterCounts, startersFor: startersFor,
     redraftVal: redraftVal, dynVal: dynVal, valOf: valOf, adpOf: adpOf,
@@ -509,5 +564,6 @@
     remainingObligations: remainingObligations,
     decisionScore: decisionScore, decisionBand: decisionBand, selectDecisionCandidate: selectDecisionCandidate,
     availabilityProbability: availabilityProbability, calibrateAvailability: calibrateAvailability,
+    autoDraftNeedMultiplier: autoDraftNeedMultiplier,
   };
 });

@@ -1970,6 +1970,8 @@
     var round = Math.ceil(state.current / (state.teams || 12));
     var prm = { intensity: 1, shift: 0 };
     var qbStarters = state.sf ? 2 : 1;
+    var nextPn = nextOwnedAfterCurrent();
+    var tep = scoringCfg().tep;
     var scored = pool.map(function(p){
       var s = (p._ds != null ? p._ds : pickScoreFor(p)) || 0;
       var pos = (p.position || '').toUpperCase();
@@ -1991,21 +1993,21 @@
         var am = _ageLeanMult(lean, pos, p.age != null ? Number(p.age) : null, 1);
         s = s * sm * am;
       }
-      // Roster-need shaping (mirrors the CPU's simPick guards): never reach ahead
-      // of ADP for a backup at a single-start position (a 2nd TE in 1TE, a 2nd QB
-      // in 1QB), deprioritize a position once you're past a realistic depth, and
-      // pull toward an OPEN dedicated starter slot (e.g. a 2nd starting RB).
-      if (s > 0 && pos !== 'K' && pos !== 'DEF'){
-        var target = targets[pos] || 0;
-        var sSlots = rs[pos] || 0;             // dedicated starter slots (RB=2, TE=1, ...)
-        var adp = adpOf(p);
-        var backupReach = adp != null && adp < 9000 && state.current < adp && (
-          (pos === 'QB' && have >= qbStarters) ||
-          (pos === 'TE' && (rs.TE || 0) <= 1 && have >= 1)
-        );
-        if (backupReach) s = 0;
-        else if (target > 0 && have >= target) s *= 0.4;   // past realistic depth
-        else if (sSlots > 0 && have < sSlots) s *= 1.35;    // open dedicated starter
+      // Roster-need shaping (mirrors the CPU's simPick guards). The CPU can lean
+      // on ADP likelihood so a 13-spot reach almost never wins; autodraft is
+      // argmax of score, so an uncapped 1.35x empty-starter boost will take a TE
+      // a round early in a 1TE league even when that player is still there at
+      // the turn. Shared kernel: backup-reach / overfill guards, starter pull
+      // only near ADP, and wait on single-slot reaches that survive to the turn.
+      if (s > 0 && pos !== 'K' && pos !== 'DEF' && window.DraftBoardCore
+          && DraftBoardCore.autoDraftNeedMultiplier){
+        s *= DraftBoardCore.autoDraftNeedMultiplier({
+          pos: pos, have: have, target: targets[pos] || 0,
+          starterSlots: rs[pos] || 0, adp: adpOf(p), pickNo: state.current,
+          teams: state.teams || 12, nextPick: nextPn,
+          surviveProb: nextPn ? availProb(p, nextPn) : null,
+          tep: tep, sf: !!state.sf, qbStarters: qbStarters,
+        });
       }
       return { p: p, s: s };
     });
