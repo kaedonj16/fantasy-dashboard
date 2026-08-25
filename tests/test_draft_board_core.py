@@ -387,3 +387,28 @@ def test_autodraft_waits_on_single_slot_te_who_survives_to_the_turn():
     # TEP is allowed to chase TE earlier, but a 13-spot reach still gets no 1.35x.
     assert out["tepNoWait"] == 1
     assert out["wrNowScore"] > out["teWaitScore"]
+
+
+def test_special_teams_fill_order_follows_team_plan_not_kicker_first():
+    out = _run_need_cases("""(() => {
+      const f = C.specialTeamsFillPos;
+      return {
+        none: f(0, 0, {prefer:'K'}),
+        onlyK: f(1, 0, {prefer:'DEF'}),
+        onlyDef: f(0, 1, {prefer:'K'}),
+        preferDef: f(1, 1, {prefer:'DEF', order:0.1, flip:false}),
+        preferK: f(1, 1, {prefer:'K', order:0.9, flip:false}),
+        mixHigh: f(1, 1, {prefer:'mix', order:0.7, flip:false}),
+        mixLow: f(1, 1, {prefer:'mix', order:0.2, flip:false}),
+        flippedDef: f(1, 1, {prefer:'DEF', order:0.1, flip:true}),
+      };
+    })()""")
+
+    assert out["none"] is None
+    assert out["onlyK"] == "K"
+    assert out["onlyDef"] == "DEF"
+    assert out["preferDef"] == "DEF"
+    assert out["preferK"] == "K"
+    assert out["mixHigh"] == "DEF"
+    assert out["mixLow"] == "K"
+    assert out["flippedDef"] == "K"

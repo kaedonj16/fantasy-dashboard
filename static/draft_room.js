@@ -1272,13 +1272,18 @@
     }
     if (a != null) return a;
     var pos = (p.position || '').toUpperCase();
-    // K/DEF have no ADP: synthesize one in the last ~3 rounds so CPUs draft them
-    // late, best (by projected PPG) first, instead of dumping them all at the end.
+    // K/DEF with no real ADP: synthesize one in the last few rounds, spread by
+    // quality so they are not a single last-two-round clump. Defenses fan out
+    // earlier (elite D/ST can go 4-6 rounds out); kickers stay later.
     if (pos === 'K' || pos === 'DEF'){
       var tot = (state.teams || 12) * (state.rounds || 16);
+      var teamsN = state.teams || 12;
       var sc = _ppgScale[pos], v = ppgOf(p);
       var n = (sc && v != null && sc.elite > sc.repl) ? clamp01((v - sc.repl) / (sc.elite - sc.repl)) : 0.4;
-      return tot - Math.round(n * (state.teams || 12) * 2.0);
+      var span = pos === 'DEF' ? 5.5 : 3.8;
+      var jitter = (_rand01(String(p.id) + ':kdadp') - 0.5) * teamsN * 0.9;
+      var slotAdp = tot - Math.round(teamsN * span * (0.12 + 0.88 * n)) + jitter;
+      return Math.max(tot - teamsN * (span + 1), Math.min(tot, slotAdp));
     }
     return 10000 - (valOf(p) / 100);  // other ADP-less players sort after, by value
   }
@@ -1431,6 +1436,33 @@
     }
     return state.simStratParams[slot];
   }
+  // Per-team special-teams plan so CPU mocks do not all take K then DEF with
+  // the last two picks. Window is rounds-from-the-end when they start looking;
+  // prefer/flip choose K vs DEF order; split leaves a skill pick in between.
+  function _simKDefPlan(slot){
+    if (!state.simKDefPlans) state.simKDefPlans = {};
+    if (!state.simKDefPlans[slot]){
+      var r = _rand01(slot + ':kdef:pref');
+      var prefer = r < 0.40 ? 'DEF' : (r < 0.72 ? 'K' : 'mix');
+      var w = _rand01(slot + ':kdef:win');
+      var winRds;
+      if (w < 0.06) winRds = 7;
+      else if (w < 0.16) winRds = 6;
+      else if (w < 0.32) winRds = 5;
+      else if (w < 0.55) winRds = 4;
+      else if (w < 0.82) winRds = 3;
+      else winRds = 2;
+      state.simKDefPlans[slot] = {
+        prefer: prefer,
+        window: winRds,
+        split: _rand01(slot + ':kdef:split') < 0.58,
+        intensity: Math.round((0.55 + _rand01(slot + ':kdef:int') * 0.95) * 100) / 100,
+        flip: _rand01(slot + ':kdef:flip') < 0.22,
+        order: _rand01(slot + ':kdef:order'),
+      };
+    }
+    return state.simKDefPlans[slot];
+  }
   // Scale a multiplier's deviation from 1 by the team's intensity, floored so
   // an aggressive fade can't hit zero.
   function _scaleMult(base, intensity){
@@ -1564,18 +1596,28 @@
   // CPU-scoped version of the user's auto-draft completion guard. The late-round
   // weighting normally lets managers choose when to take K/DEF, but once this
   // team's remaining selections equal its unfilled K/DEF slots there is no
-  // discretionary pick left: fill the best required special-teams slot now.
+  // discretionary pick left: fill a required special-teams slot now. Position
+  // order follows that team's plan (not a global kicker-then-defense script).
   function _cpuKDefMustFill(pool, counts, remaining){
     var rs = (state && state.roster) || defaultRoster();
     var needK = Math.max(0, (rs.K || 0) - (counts.K || 0));
     var needDef = Math.max(0, (rs.DEF || 0) - (counts.DEF || 0));
     if (needK + needDef <= 0 || remaining > needK + needDef) return null;
-    var candidates = pool.filter(function(p){
-      var pos = String(p.position || '').toUpperCase();
-      return (pos === 'K' && needK > 0) || (pos === 'DEF' && needDef > 0);
-    });
-    candidates.sort(function(a,b){ return lineupScore(b) - lineupScore(a); });
-    return candidates[0] || null;
+    var slot = slotOnClock(state.current, state.teams, state.order);
+    var plan = _simKDefPlan(slot);
+    var pickPos = window.DraftBoardCore && DraftBoardCore.specialTeamsFillPos
+      ? DraftBoardCore.specialTeamsFillPos(needK, needDef, plan)
+      : (needK > 0 && needDef <= 0 ? 'K' : (needDef > 0 && needK <= 0 ? 'DEF' : (plan.prefer === 'DEF' ? 'DEF' : 'K')));
+    function bestAt(pos){
+      var cands = pool.filter(function(p){ return String(p.position || '').toUpperCase() === pos; });
+      cands.sort(function(a,b){ return lineupScore(b) - lineupScore(a); });
+      return cands[0] || null;
+    }
+    var picked = bestAt(pickPos);
+    if (picked) return picked;
+    if (pickPos === 'K' && needDef > 0) return bestAt('DEF');
+    if (pickPos === 'DEF' && needK > 0) return bestAt('K');
+    return null;
   }
   function simPick(){
     var pool = availablePool();
@@ -1598,6 +1640,7 @@
     var _stratPrm = _stratParams(slot);
     var _ageLean = _simAgeLean(slot);
     var _ageInt = _ageLeanIntensity(slot);
+    var _kdPlan = _simKDefPlan(slot);
     // Score every candidate from THIS CPU team's perspective (its own roster,
     // depth, and next pick) so need is judged for the right team, not the viewer.
     var cpuCtx = _cpuCtx(slot);
@@ -1843,11 +1886,32 @@
         (pos === 'TE' && sSlots > 0 && sSlots <= 1 && have >= sSlots)
       );
       if (_backupReach) w = 0;
-      // K/DEF: in the final 3 rounds, teams MUST fill these slots or they go empty.
-      // Boost weight strongly so K/DEF crack the top-8 candidate sample and actually
-      // get drafted, rather than losing out to late-sliding skill players every pick.
-      if ((pos === 'K' || pos === 'DEF') && (t > 0) && (have < t) && _remainRds <= 3){
-        w *= 8;
+      // K/DEF: ungraded (no pick score), so they would never enter the decision
+      // band until the last-two-pick must-fill. Give each team its own window,
+      // order, and intensity so some grab an early DEF, some split ST around a
+      // skill pick, and some wait until the end — not K-then-DEF every time.
+      if ((pos === 'K' || pos === 'DEF') && (t > 0) && (have < t)){
+        var _otherHave = pos === 'K' ? (counts.DEF || 0) : (counts.K || 0);
+        var _otherT = pos === 'K' ? (_rs.DEF || 0) : (_rs.K || 0);
+        var _alreadyHasOther = _otherT > 0 && _otherHave > 0;
+        var _inWindow = _remainRds <= _kdPlan.window;
+        var _isPref = _kdPlan.prefer === 'mix' || _kdPlan.prefer === pos;
+        var _delayOther = _kdPlan.split && _alreadyHasOther && cpuCtx.remaining > 1;
+        if (_inWindow && !_delayOther){
+          var _urg = Math.max(0, Math.min(1, (_kdPlan.window - _remainRds + 1) / Math.max(1, _kdPlan.window)));
+          var _prefM = _isPref ? 1 : 0.62;
+          var _boost = (2.8 + 4.2 * _kdPlan.intensity) * _prefM;
+          w = Math.max(w * _boost, 1.4 * _kdPlan.intensity * _prefM);
+          c.ds = Math.round(50 + 18 * _urg + (_isPref ? 7 : 0) + 4 * (_kdPlan.intensity - 1)
+            + (_rand01(slot + ':kds:' + pn + ':' + String(p.id)) - 0.5) * 10);
+        } else if (_inWindow && _delayOther){
+          c.ds = 28;
+          w *= 0.35;
+        } else if (_remainRds <= _kdPlan.window + 2 && _isPref && a < 9000
+            && (pn + (state.teams || 12) * 0.5 >= a)){
+          c.ds = Math.round(46 + 4 * _kdPlan.intensity);
+          w *= 1.25 + 0.6 * _kdPlan.intensity;
+        }
       }
       // Every CPU team must draft at least one QB. When a team has none and time is
       // running out, strongly boost any available QB so it cracks the top-8 sample

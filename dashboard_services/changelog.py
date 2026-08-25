@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-08-25",
         "tag": "update",
+        "text": "Draft Room mocks: CPU teams no longer all take a kicker then a defense with the last two picks. Each team now has its own special-teams plan — some grab a D/ST a few rounds early, some split K and DEF around a skill pick, and the last-round order is mixed.",
+        "link": "/draft"
+    },
+    {
+        "date": "2026-08-25",
+        "tag": "update",
         "text": "Draft Room: Edit Setup now opens a modal on the current board so you can change scoring, roster, and capital without leaving the draft. Reset still wipes the board and returns to the main setup screen. The status bar also shows the league format (teams, Superflex, PPR, and pick order).",
         "link": "/draft"
     },
