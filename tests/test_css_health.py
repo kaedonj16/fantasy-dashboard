@@ -41,3 +41,41 @@ def test_breakpoint_count_does_not_grow():
         f"(cap {MAX_BREAKPOINTS}). Reuse a canonical breakpoint instead of adding "
         f"a new one. Values: {sorted(widths)}"
     )
+
+
+# Filter-chip classes that must share the `.otc-day-filter` rule so pages stay
+# in lockstep. Keep this list in sync with the canonical block in dashboard.css.
+_FILTER_ALIASES = (
+    ".otc-filter-chip",
+    ".breakout-filter-btn",
+    ".pos-pill",
+    ".wv-pos-btn",
+    ".dvt-pos-btn",
+    ".filter-pill",
+    ".ti-pos",
+    ".ti-lf-btn",
+    ".tdb-lt",
+    ".sched-rank-pos",
+    ".dr-pos",
+    ".cs-posf button",
+    ".pvc-range-btn",
+    ".pm-wt-tab",
+    ".am-pos",
+    ".am-qr",
+    ".rf-tf-opt",
+    ".rz-fp-opt",
+)
+
+
+def test_canonical_filter_chip_aliases():
+    css = _css()
+    start = css.find("Canonical filter chips")
+    assert start != -1, "canonical filter-chip comment is missing"
+    chunk = css[start : start + 4500]
+    assert ".otc-day-filters" in chunk
+    assert ".otc-day-filter" in chunk
+    assert "padding: 4px 10px" in chunk
+    assert "border-radius: 6px" in chunk
+    for alias in _FILTER_ALIASES:
+        assert alias in chunk, f"{alias} is not aliased onto .otc-day-filter"
+

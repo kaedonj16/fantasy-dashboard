@@ -357,14 +357,14 @@ _DRAFT_ROOM_HTML = r"""
             <input id="drSearch" type="search" placeholder="Search…" autocomplete="off">
             <button class="dr-help-btn" id="drHelpBtn" type="button" aria-label="What do these terms mean?" title="What do these terms mean?">?</button>
           </div>
-          <div class="dr-pos-filters" id="drPosFilters">
-            <button class="dr-pos active" data-pos="ALL">All</button>
-            <button class="dr-pos" data-pos="QB">QB</button>
-            <button class="dr-pos" data-pos="RB">RB</button>
-            <button class="dr-pos" data-pos="WR">WR</button>
-            <button class="dr-pos" data-pos="TE">TE</button>
-            <button class="dr-pos dr-pos-kdef" data-pos="K" style="display:none;">K</button>
-            <button class="dr-pos dr-pos-kdef" data-pos="DEF" style="display:none;">DEF</button>
+          <div class="otc-day-filters dr-pos-filters" id="drPosFilters">
+            <button class="otc-day-filter dr-pos active" data-pos="ALL">All</button>
+            <button class="otc-day-filter dr-pos" data-pos="QB">QB</button>
+            <button class="otc-day-filter dr-pos" data-pos="RB">RB</button>
+            <button class="otc-day-filter dr-pos" data-pos="WR">WR</button>
+            <button class="otc-day-filter dr-pos" data-pos="TE">TE</button>
+            <button class="otc-day-filter dr-pos dr-pos-kdef" data-pos="K" style="display:none;">K</button>
+            <button class="otc-day-filter dr-pos dr-pos-kdef" data-pos="DEF" style="display:none;">DEF</button>
           </div>
           <div class="dr-adp-src" id="drAdpSrc"></div>
         </div>
@@ -955,9 +955,7 @@ _DRAFT_ROOM_HTML = r"""
   }
   .dr-sortsel-opt:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
   .dr-sortsel-opt.is-active { background: var(--accent,#38bdf8); color: var(--on-accent, #fff); }
-  .dr-pos-filters { display: flex; gap: 4px; flex-wrap: wrap; }
-  .dr-pos { font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text-muted); cursor: pointer; }
-  .dr-pos.active { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: var(--on-accent, #fff); }
+  .dr-pos-filters { display: flex; gap: 6px; flex-wrap: wrap; }
   .dr-adp-src { font-size: 10px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
   .dr-adp-src-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
   .dr-adp-src-select { padding: 4px 7px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 11px; cursor: pointer; outline: none; }

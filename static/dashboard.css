@@ -1339,25 +1339,13 @@ ul {
     border-bottom: none;
 }
 
-/* Breakout Candidates Page */
+/* Breakout Candidates Page — chip look comes from the canonical
+   `.otc-day-filter` aliases; this block is layout only. */
 .breakout-filters {
     display: flex;
-    gap: 8px;
+    gap: 6px;
     margin-bottom: 20px;
     flex-wrap: wrap;
-}
-
-.breakout-filter-btn {
-    padding: 8px 16px;
-    border-radius: 10px;
-    border: 1px solid var(--border);
-    background: var(--card);
-    color: var(--text);
-    font-size: 13px;
-    font-weight: 500;
-    white-space: nowrap; /* labels like "All Positions" never wrap/clip */
-    cursor: pointer;
-    transition: all 0.15s ease;
 }
 
 @media (max-width: 768px) {
@@ -1377,8 +1365,6 @@ ul {
 
     .breakout-filter-btn {
         flex: 0 0 auto; /* size to content, no equal-width squeeze */
-        padding: 10px 16px;
-        text-align: center;
     }
 }
 
@@ -1569,20 +1555,6 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
 
 .settings-menu-item.refresh-spinner .settings-menu-icon {
     animation: spin 1s linear infinite;
-}
-
-.breakout-filter-btn:hover {
-    background: var(--bg-alt);
-    border-color: var(--accent);
-}
-
-.breakout-filter-btn.active {
-    /* Soft-accent active state, matching the nav indicator and .card tabs, instead
-     of a solid fill — so "selected" reads the same across the site. */
-    background: var(--accent-soft);
-    background: color-mix(in srgb, var(--accent) 13%, transparent);
-    color: var(--accent);
-    border-color: transparent;
 }
 
 .breakout-grid {
@@ -4587,41 +4559,107 @@ strong + .player-badge,
     white-space: nowrap;
 }
 
-.otc-filter-chip {
-    padding: 4px 8px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--row);
-    color: var(--text);
-    font-size: 12px;
-    font-weight: 800;
-    cursor: pointer;
+/* ── Canonical filter chips ───────────────────────────────────────────────
+   `.otc-day-filters` / `.otc-day-filter` is the one discrete option-chip
+   (position, timeframe, kind) for the whole site. Other filter-button
+   classes are aliased onto it so padding, radius, weight, and the accent
+   active state stay in lockstep. New filters should use these classes;
+   keep domain classes as JS hooks. */
+.otc-day-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
 }
 
-.otc-filter-chip.is-active {
-    background: #16365d;
-    color: #ffffff;
-    border-color: #16365d;
+.otc-movers-panel .otc-day-filters {
+    margin-top: 8px;
+    padding: 0 12px;
 }
 
-.otc-day-filter {
+.otc-day-filter,
+.otc-filter-chip,
+.breakout-filter-btn,
+.pos-pill,
+.wv-pos-btn,
+.dvt-pos-btn,
+.filter-pill,
+.ti-pos,
+.ti-lf-btn,
+.tdb-lt,
+.sched-rank-pos,
+.dr-pos,
+.cs-posf button,
+.pvc-range-btn,
+.pm-wt-tab,
+.am-pos,
+.am-qr,
+.rf-tf-opt,
+.rz-fp-opt {
+    appearance: none;
+    -webkit-appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     padding: 4px 10px;
     border-radius: 6px;
     border: 1px solid var(--border);
     background: var(--card);
     color: var(--text-muted);
+    font-family: inherit;
     font-size: 11px;
     font-weight: 600;
+    line-height: 1.3;
+    white-space: nowrap;
+    text-decoration: none;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
-.otc-day-filter:hover {
+.otc-day-filter:hover,
+.otc-filter-chip:hover,
+.breakout-filter-btn:hover,
+.pos-pill:hover,
+.wv-pos-btn:hover,
+.dvt-pos-btn:hover,
+.filter-pill:hover,
+.ti-pos:hover,
+.ti-lf-btn:hover,
+.tdb-lt:hover,
+.sched-rank-pos:hover,
+.dr-pos:hover,
+.cs-posf button:hover,
+.pvc-range-btn:hover,
+.pm-wt-tab:hover,
+.am-pos:hover,
+.am-qr:hover,
+.rf-tf-opt:hover,
+.rz-fp-opt:hover {
     background: var(--bg-alt);
     border-color: var(--accent);
 }
 
-.otc-day-filter.active {
+.otc-day-filter.active,
+.otc-day-filter.is-active,
+.otc-filter-chip.is-active,
+.otc-filter-chip.active,
+.breakout-filter-btn.active,
+.pos-pill.active,
+.wv-pos-btn.active,
+.dvt-pos-btn.dvt-pos-btn-active,
+.filter-pill.active,
+.ti-pos.active,
+.ti-lf-btn.active,
+.tdb-lt.active,
+.sched-rank-pos.active,
+.dr-pos.active,
+.cs-posf button[aria-pressed="true"],
+.pvc-range-btn.is-active,
+.pm-wt-tab.pm-wt-tab-active,
+.am-pos.active,
+.am-qr.active,
+.rf-tf-opt.is-active,
+.rz-fp-opt.active {
     background: var(--accent);
     color: var(--on-accent);
     border-color: var(--accent);
@@ -4630,7 +4668,7 @@ strong + .player-badge,
 .otc-filter-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 5px;
+    gap: 6px;
     margin-bottom: 14px;
 }
 
@@ -9198,30 +9236,7 @@ select:focus {
 
 .pm-wt-tabs {
     display: flex;
-    gap: 4px;
-}
-
-.pm-wt-tab {
-    padding: 3px 10px;
-    font-size: 11px;
-    font-weight: 600;
-    border: 1px solid var(--border);
-    border-radius: 18px;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-    transition: background 0.12s, color 0.12s, border-color 0.12s;
-}
-
-.pm-wt-tab:hover {
-    background: var(--bg-alt);
-    color: var(--text);
-}
-
-.pm-wt-tab.pm-wt-tab-active {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--on-accent);
+    gap: 6px;
 }
 
 .pm-wt-grid {
@@ -10154,7 +10169,7 @@ select:focus {
 
 .activity-filter {
     display: flex;
-    gap: 8px;
+    gap: 6px;
     align-items: center;
     margin: 6px 0 10px;
     flex-wrap: wrap;
@@ -10314,17 +10329,6 @@ select:focus {
 
 .gloss-def a {
     color: var(--accent);
-}
-
-.filter-pill.active {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--on-accent);
-    box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
-}
-
-.filter-pill:hover {
-    background: #eff6ff;
 }
 
 .footer {
@@ -14820,11 +14824,6 @@ img, svg, canvas {
         font-size: 11px;
     }
 
-    .otc-filter-chip {
-        font-size: 11px;
-        padding: 5px 10px;
-    }
-
     .otc-search-dropdown {
         max-height: 280px;
         font-size: 13px;
@@ -17443,29 +17442,6 @@ img, svg, canvas {
     justify-content: flex-end;
     flex-wrap: wrap;
     margin: 0 0 8px;
-}
-
-.pvc-range-btn {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 3px 11px;
-    border-radius: 12px;
-    border: 1px solid var(--border);
-    background: var(--card);
-    color: var(--text-muted);
-    cursor: pointer;
-    transition: background .12s, border-color .12s, color .12s;
-}
-
-.pvc-range-btn:hover {
-    border-color: var(--accent);
-    color: var(--accent);
-}
-
-.pvc-range-btn.is-active {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--on-accent);
 }
 
 .player-modal-loading {
@@ -26449,11 +26425,6 @@ button:disabled {
         padding: 5px 10px;
     }
 
-    .sched-rank-pos {
-        font-size: 11px;
-        padding: 4px 8px;
-    }
-
     /* Rankings view - tighter cells so more weeks fit */
     .sched-th {
         padding: 6px 6px;
@@ -26669,26 +26640,8 @@ button:disabled {
 
 .sched-pos-pills {
     display: flex;
-    gap: 4px;
+    gap: 6px;
     flex-wrap: wrap;
-}
-
-.sched-rank-pos {
-    padding: 5px 13px;
-    border-radius: 12px;
-    border: 1px solid var(--border);
-    background: var(--card-bg);
-    color: var(--text-muted);
-    font-size: 12px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: all 0.12s;
-}
-
-.sched-rank-pos.active {
-    background: var(--accent);
-    color: var(--on-accent);
-    border-color: var(--accent);
 }
 
 .sched-sort-btn {
@@ -27828,23 +27781,6 @@ button:disabled {
     flex-wrap: wrap;
 }
 
-.dvt-pos-btn {
-    padding: 5px 12px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 600;
-    border: 1px solid var(--border);
-    background: var(--card-bg);
-    color: var(--text-muted);
-    cursor: pointer;
-}
-
-.dvt-pos-btn-active {
-    border-color: #38bdf8;
-    color: #38bdf8;
-    background: rgba(56, 189, 248, .1);
-}
-
 .dvt-search {
     flex: 1;
     min-width: 160px;
@@ -28103,37 +28039,11 @@ button:disabled {
 }
 
 .rf-timeframe {
-    display: inline-flex;
-    gap: 2px;
-    margin-top: 14px;
-    padding: 3px;
-    border-radius: 10px;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-}
-
-.rf-tf-opt {
-    display: inline-flex;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
     align-items: center;
-    justify-content: center;
-    min-width: 44px;
-    padding: 5px 12px;
-    border-radius: 7px;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-decoration: none;
-    transition: background .12s, color .12s;
-}
-
-.rf-tf-opt:hover {
-    color: var(--text);
-}
-
-.rf-tf-opt.is-active {
-    background: var(--card);
-    color: var(--text);
-    box-shadow: 0 1px 2px rgba(20, 35, 61, .08);
+    margin-top: 14px;
 }
 
 .rf-grid {
@@ -30500,32 +30410,8 @@ button:disabled {
 .rz-fp-opts {
     display: flex;
     flex-wrap: wrap;
-    gap: 5px;
+    gap: 6px;
     flex: 1;
-}
-
-.rz-fp-opt {
-    background: var(--rz-surface);
-    border: 1px solid var(--rz-border);
-    color: var(--rz-muted);
-    border-radius: 12px;
-    padding: 4px 10px;
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all .12s;
-}
-
-.rz-fp-opt.active {
-    background: var(--rz-red);
-    border-color: var(--rz-red);
-    color: #fff;
-    font-weight: 700;
-}
-
-.rz-fp-opt:hover:not(.active) {
-    border-color: var(--rz-red);
-    color: var(--rz-text);
 }
 
 @media (max-width: 480px) {
