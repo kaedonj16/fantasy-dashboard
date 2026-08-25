@@ -21057,10 +21057,7 @@ tr.team-clickable {
 }
 
 .cs-empty,
-.kpr-empty,
-.rz-feed-empty,
-.am-graph-empty,
-.rivalry-empty {
+.kpr-empty {
     display: flex;
     flex-direction: column;
     align-items: center;
