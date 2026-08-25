@@ -337,6 +337,36 @@ def _add_rookie_eval_columns(conn) -> None:
             ADD COLUMN IF NOT EXISTS ngs_rush_efficiency                  NUMERIC;
     """)
 
+    # Additional public nflverse metrics (NGS passing, FTN situation splits,
+    # PBP success/EPA rates, PACR/RACR). Safe to display; not PFF.
+    conn.execute("""
+        ALTER TABLE player_advanced_metrics
+            ADD COLUMN IF NOT EXISTS ngs_avg_time_to_throw              NUMERIC,
+            ADD COLUMN IF NOT EXISTS ngs_aggressiveness                 NUMERIC,
+            ADD COLUMN IF NOT EXISTS ngs_avg_completed_air_yards        NUMERIC,
+            ADD COLUMN IF NOT EXISTS ngs_avg_air_yards_differential     NUMERIC,
+            ADD COLUMN IF NOT EXISTS ngs_avg_air_yards_to_sticks        NUMERIC,
+            ADD COLUMN IF NOT EXISTS ngs_cpoe                           NUMERIC,
+            ADD COLUMN IF NOT EXISTS ngs_max_completed_air_distance     NUMERIC,
+            ADD COLUMN IF NOT EXISTS ngs_avg_time_to_los                NUMERIC,
+            ADD COLUMN IF NOT EXISTS ngs_percent_attempts_gte_eight_defenders NUMERIC,
+            ADD COLUMN IF NOT EXISTS ngs_created_separation             NUMERIC,
+            ADD COLUMN IF NOT EXISTS play_action_rate                   NUMERIC,
+            ADD COLUMN IF NOT EXISTS play_action_epa                    NUMERIC,
+            ADD COLUMN IF NOT EXISTS out_of_pocket_rate                 NUMERIC,
+            ADD COLUMN IF NOT EXISTS blitz_rate_faced                   NUMERIC,
+            ADD COLUMN IF NOT EXISTS epa_vs_blitz                       NUMERIC,
+            ADD COLUMN IF NOT EXISTS epa_vs_stacked_box                 NUMERIC,
+            ADD COLUMN IF NOT EXISTS rushing_success_rate               NUMERIC,
+            ADD COLUMN IF NOT EXISTS receiving_success_rate             NUMERIC,
+            ADD COLUMN IF NOT EXISTS rushing_epa_per_att                NUMERIC,
+            ADD COLUMN IF NOT EXISTS receiving_epa_per_target           NUMERIC,
+            ADD COLUMN IF NOT EXISTS qb_hit_rate                        NUMERIC,
+            ADD COLUMN IF NOT EXISTS explosive_pass_rate                NUMERIC,
+            ADD COLUMN IF NOT EXISTS pacr                               NUMERIC,
+            ADD COLUMN IF NOT EXISTS racr                               NUMERIC;
+    """)
+
 
 def _extract_metric_value(metrics: Dict, metric_name: str):
     """Safely pull the scalar value from a metric payload dict."""
@@ -1245,6 +1275,15 @@ def get_player_career_metrics(player_id: str) -> Optional[Dict[str, Any]]:
         'cpoe', 'sack_rate', 'scramble_rate', 'success_rate',
         'ngs_rush_yards_over_expected', 'ngs_rush_yards_over_expected_per_att',
         'ngs_rush_efficiency',
+        'ngs_avg_time_to_throw', 'ngs_aggressiveness', 'ngs_avg_completed_air_yards',
+        'ngs_avg_air_yards_differential', 'ngs_avg_air_yards_to_sticks', 'ngs_cpoe',
+        'ngs_max_completed_air_distance', 'ngs_avg_time_to_los',
+        'ngs_percent_attempts_gte_eight_defenders', 'ngs_created_separation',
+        'play_action_rate', 'play_action_epa', 'out_of_pocket_rate',
+        'blitz_rate_faced', 'epa_vs_blitz', 'epa_vs_stacked_box',
+        'rushing_success_rate', 'receiving_success_rate',
+        'rushing_epa_per_att', 'receiving_epa_per_target',
+        'qb_hit_rate', 'explosive_pass_rate', 'pacr', 'racr',
     ]
 
     with get_conn() as conn:
@@ -1402,6 +1441,21 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "epa_per_play":         {"label": "EPA / Play",          "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Expected Points Added per play (from nflverse play-by-play). The single best efficiency summary for a passer."},
     "passing_epa":          {"label": "Passing EPA",         "category": "Passing", "positions": ["QB"], "min_vol": _V_PASS_ATT, "desc": "Total Expected Points Added on pass attempts over the season (nflverse)."},
     "success_rate":         {"label": "Success Rate",        "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of plays with positive EPA (nflverse)."},
+    "ngs_avg_time_to_throw": {"label": "Time to Throw",      "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Average seconds from snap to throw (NFL Next Gen Stats). Lower often means a quicker processor; higher can mean holding to push the ball downfield."},
+    "ngs_aggressiveness":   {"label": "Aggressiveness",      "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of passing attempts thrown into tight windows (NFL Next Gen Stats). A public analogue to big-time-throw rate."},
+    "ngs_avg_completed_air_yards": {"label": "Completed Air Yds", "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Average air yards on completed passes (NFL Next Gen Stats). Higher means more downfield completions, fewer checkdowns."},
+    "ngs_avg_air_yards_differential": {"label": "AY Differential", "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Completed air yards minus intended air yards (NFL Next Gen Stats). Negative means completions are shorter than the throws attempted."},
+    "ngs_avg_air_yards_to_sticks": {"label": "Air Yds to Sticks", "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Average air yards relative to the first-down marker (NFL Next Gen Stats). Positive means throwing past the sticks."},
+    "ngs_cpoe":             {"label": "NGS CPOE",            "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Next Gen Stats completion percentage over expected. A second CPOE estimate alongside the nflverse play-by-play model."},
+    "ngs_max_completed_air_distance": {"label": "Max Air Distance", "category": "Passing", "positions": ["QB"], "min_vol": _V_PASS_ATT, "desc": "Longest completed air distance in yards (NFL Next Gen Stats). A raw arm-talent / deep-ball marker."},
+    "qb_hit_rate":          {"label": "QB Hit Rate",         "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of dropbacks on which the passer was hit (nflverse). A public pressure-faced proxy."},
+    "explosive_pass_rate":  {"label": "Explosive Pass %",    "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts that gained 16+ yards (nflverse). Explosive-play rate for passers."},
+    "play_action_rate":     {"label": "Play-Action %",       "category": "Passing", "positions": ["QB"], "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of dropbacks that are play-action (FTN charting)."},
+    "play_action_epa":      {"label": "PA EPA / Play",       "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Expected Points Added per play-action dropback (FTN + nflverse)."},
+    "out_of_pocket_rate":   {"label": "Out of Pocket %",     "category": "Passing", "positions": ["QB"], "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of dropbacks thrown or scrambled from outside the pocket (FTN charting)."},
+    "blitz_rate_faced":     {"label": "Blitz Rate Faced",    "category": "Passing", "positions": ["QB"], "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of dropbacks against a blitz (FTN charting)."},
+    "epa_vs_blitz":         {"label": "EPA vs Blitz",        "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Expected Points Added per dropback against the blitz (FTN + nflverse). Closest public 'vs pressure' split."},
+    "pacr":                 {"label": "PACR",                "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Passing Air Conversion Ratio: passing yards ÷ passing air yards. How much of the yards thrown in the air actually come in."},
     "big_time_throw_rate":  {"label": "Big-Time Throw %",   "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "PFF rate of high-difficulty, high-value throws (deep and into tight windows)."},
     "int_rate":             {"label": "INT Rate",            "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts intercepted. Lower is better."},
     "sack_rate":            {"label": "Sack Rate",           "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_PASS_ATT, "desc": "Percent of dropbacks ending in a sack. Lower is better (nflverse)."},
@@ -1424,6 +1478,11 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "explosive_runs_10_plus": {"label": "Explosive Runs",   "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "integer": True, "desc": "Count of runs gaining 10 or more yards in the season (nflverse). Raw explosive-play volume."},
     "explosive_runs_pg":    {"label": "Explosive Runs/Carry", "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Explosive runs (10+ yards) per carry.", "computed_sql": "m.explosive_runs_10_plus::float / NULLIF(v.vol, 0)", "computed_null": "m.explosive_runs_10_plus IS NOT NULL"},
     "ngs_rush_yards_over_expected_per_att": {"label": "RYOE / Att", "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Rush Yards Over Expected per attempt — yards created beyond what blocking/situation expected (NFL Next Gen Stats). A free creation metric, similar in spirit to elusive rating."},
+    "ngs_avg_time_to_los":  {"label": "Time to LOS",         "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Average seconds for the rusher to reach the line of scrimmage (NFL Next Gen Stats). Lower often means hitting the hole faster."},
+    "ngs_percent_attempts_gte_eight_defenders": {"label": "8+ Box Rate", "category": "Rushing", "positions": ["RB"], "pct": True, "min_vol": _V_CARRIES, "desc": "Percent of rush attempts against 8 or more defenders in the box (NFL Next Gen Stats). Higher means a tougher rushing diet."},
+    "rushing_success_rate": {"label": "Rush Success %",      "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "pct": True, "min_vol": _V_CARRIES, "desc": "Percent of rushes with positive EPA (nflverse)."},
+    "rushing_epa_per_att":  {"label": "Rush EPA / Att",      "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Expected Points Added per rush attempt (nflverse). Rate companion to total rushing EPA."},
+    "epa_vs_stacked_box":   {"label": "EPA vs 8+ Box",       "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Expected Points Added per rush against 8 or more defenders in the box (FTN + nflverse)."},
     "elusive_rating":       {"label": "Elusive Rating",      "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "PFF metric for yards created after contact and missed tackles forced, independent of blocking."},
     "avoided_tackles":      {"label": "Avoided Tackles",    "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Tackles avoided (missed, broken, or forced) on rush attempts per PFF. Rewards runners who make defenders miss."},
     "avoided_tackles_pg":   {"label": "Avoided Tackles/Carry", "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Tackles avoided per carry (PFF).", "computed_sql": "m.avoided_tackles::float / NULLIF(v.vol, 0)", "computed_null": "m.avoided_tackles IS NOT NULL"},
@@ -1459,6 +1518,11 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "yards_after_catch_per_reception": {"label": "YAC / Reception", "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_RECS, "desc": "Average yards gained after the catch per reception."},
     "ngs_avg_yac_above_expectation": {"label": "YAC Over Exp", "category": "Receiving", "positions": ["WR", "TE", "RB"], "efficiency": True, "min_vol": _V_RECS, "desc": "Yards after catch above expectation given the catch situation (NFL Next Gen Stats)."},
     "ngs_avg_separation":   {"label": "Separation",          "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Average yards of separation from the nearest defender at the catch point (NFL Next Gen Stats)."},
+    "ngs_avg_cushion":      {"label": "Cushion",             "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Average yards of cushion the defender gives at the snap (NFL Next Gen Stats)."},
+    "ngs_created_separation": {"label": "Created Sep",       "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Separation minus pre-snap cushion (NFL Next Gen Stats). Positive means the receiver created space vs the look they were given."},
+    "receiving_success_rate": {"label": "Rec Success %",     "category": "Receiving", "positions": ["WR", "TE", "RB"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of targets with positive EPA (nflverse)."},
+    "receiving_epa_per_target": {"label": "Rec EPA / Tgt",   "category": "Receiving", "positions": ["WR", "TE", "RB"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Expected Points Added per target (nflverse). Rate companion to total receiving EPA."},
+    "racr":                 {"label": "RACR",                "category": "Receiving", "positions": ["WR", "TE", "RB"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Receiver Air Conversion Ratio: receiving yards ÷ air yards. How much of the yards thrown at the player actually come in (catch + YAC)."},
     "contested_catch_rate": {"label": "Contested Catch %",   "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of contested (tightly covered) targets the player came down with."},
     "drop_rate":            {"label": "Drop Rate",           "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_TARGETS, "desc": "Percent of catchable targets dropped. Lower is better."},
     "target_quality_score": {"label": "Target Quality",      "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Composite of how valuable a player's targets are (depth, location, situation)."},
@@ -1639,10 +1703,20 @@ WEEKLY_ADV_METRIC_COLS: List[str] = [
     "avg_depth_of_target", "ngs_avg_yac", "ngs_avg_expected_yac",
     "ngs_avg_yac_above_expectation", "ngs_catch_pct", "drop_rate",
     "contested_catch_rate",
+    "ngs_avg_time_to_throw", "ngs_aggressiveness", "ngs_avg_completed_air_yards",
+    "ngs_avg_air_yards_differential", "ngs_avg_air_yards_to_sticks", "ngs_cpoe",
+    "ngs_max_completed_air_distance", "ngs_avg_time_to_los",
+    "ngs_percent_attempts_gte_eight_defenders", "ngs_created_separation",
+    "play_action_rate", "play_action_epa", "out_of_pocket_rate",
+    "blitz_rate_faced", "epa_vs_blitz", "epa_vs_stacked_box",
+    "rushing_success_rate", "receiving_success_rate",
+    "rushing_epa_per_att", "receiving_epa_per_target",
+    "qb_hit_rate", "explosive_pass_rate", "pacr", "racr",
 ]
 # Volume weight columns used to weight rate metrics across a week range.
 WEEKLY_ADV_WEIGHT_COLS: List[str] = [
     "w_dropbacks", "w_pass_att", "w_carries", "w_targets", "w_receptions",
+    "w_pass_air_yards", "w_rec_air_yards",
 ]
 
 _weekly_adv_ready = False
@@ -1673,6 +1747,12 @@ def init_weekly_advanced_metrics_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_pwam_season_week "
             "ON player_weekly_advanced_metrics (season, week)"
         )
+        # Existing tables created before these columns existed need ALTERs.
+        for c in WEEKLY_ADV_METRIC_COLS + WEEKLY_ADV_WEIGHT_COLS:
+            conn.execute(
+                f"ALTER TABLE player_weekly_advanced_metrics "
+                f"ADD COLUMN IF NOT EXISTS {c} NUMERIC"
+            )
     _weekly_adv_ready = True
 
 
@@ -1897,11 +1977,28 @@ _ADV_WEEKLY_WEIGHTED_METRICS = {
     "epa_per_play": "w_dropbacks", "cpoe": "w_dropbacks", "success_rate": "w_dropbacks",
     "sack_rate": "w_dropbacks", "scramble_rate": "w_dropbacks", "nfl_passer_rating": "w_dropbacks",
     "adjusted_completion_rate": "w_pass_att",
+    "qb_hit_rate": "w_dropbacks", "explosive_pass_rate": "w_pass_att",
+    "play_action_rate": "w_dropbacks", "play_action_epa": "w_dropbacks",
+    "out_of_pocket_rate": "w_dropbacks", "blitz_rate_faced": "w_dropbacks",
+    "epa_vs_blitz": "w_dropbacks",
+    "ngs_avg_time_to_throw": "w_pass_att", "ngs_aggressiveness": "w_pass_att",
+    "ngs_avg_completed_air_yards": "w_pass_att",
+    "ngs_avg_air_yards_differential": "w_pass_att",
+    "ngs_avg_air_yards_to_sticks": "w_pass_att", "ngs_cpoe": "w_pass_att",
+    "ngs_max_completed_air_distance": "w_pass_att",
+    "pacr": "w_pass_air_yards",
     "ngs_rush_yards_over_expected_per_att": "w_carries", "ngs_rush_efficiency": "w_carries",
     "breakaway_percentage": "w_carries",
+    "rushing_success_rate": "w_carries", "rushing_epa_per_att": "w_carries",
+    "ngs_avg_time_to_los": "w_carries",
+    "ngs_percent_attempts_gte_eight_defenders": "w_carries",
+    "epa_vs_stacked_box": "w_carries",
     "ngs_avg_separation": "w_targets", "ngs_avg_cushion": "w_targets",
     "ngs_avg_intended_air_yards": "w_targets", "avg_depth_of_target": "w_targets",
     "ngs_catch_pct": "w_targets", "drop_rate": "w_targets", "contested_catch_rate": "w_targets",
+    "ngs_created_separation": "w_targets",
+    "receiving_success_rate": "w_targets", "receiving_epa_per_target": "w_targets",
+    "racr": "w_rec_air_yards",
     "yards_after_catch_per_reception": "w_receptions", "ngs_avg_yac": "w_receptions",
     "ngs_avg_expected_yac": "w_receptions", "ngs_avg_yac_above_expectation": "w_receptions",
 }
@@ -1919,6 +2016,8 @@ _ADV_WEEKLY_VOL_BY_WEIGHT = {
     "w_carries":    {"label": "Min Carries",   "opts": [5, 10, 20, 40]},
     "w_targets":    {"label": "Min Targets",   "opts": [5, 10, 20, 40]},
     "w_receptions": {"label": "Min Recs",      "opts": [3, 5, 10, 20]},
+    "w_pass_air_yards": {"label": "Min Air Yards", "opts": [100, 250, 500, 1000]},
+    "w_rec_air_yards":  {"label": "Min Air Yards", "opts": [50, 100, 200, 400]},
 }
 
 
@@ -3054,6 +3153,30 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                 "avoided_tackles_pg": ("total_carries", 20),
                 "fpts_per_carry":     ("total_carries", 20),
                 "fpts_per_reception": ("total_receptions", 10),
+                "ngs_avg_time_to_throw": ("total_pass_att", 50),
+                "ngs_aggressiveness": ("total_pass_att", 50),
+                "ngs_avg_completed_air_yards": ("total_pass_att", 50),
+                "ngs_avg_air_yards_differential": ("total_pass_att", 50),
+                "ngs_avg_air_yards_to_sticks": ("total_pass_att", 50),
+                "ngs_cpoe": ("total_pass_att", 50),
+                "ngs_max_completed_air_distance": ("total_pass_att", 50),
+                "qb_hit_rate": ("total_pass_att", 50),
+                "explosive_pass_rate": ("total_pass_att", 50),
+                "play_action_rate": ("total_pass_att", 50),
+                "play_action_epa": ("total_pass_att", 50),
+                "out_of_pocket_rate": ("total_pass_att", 50),
+                "blitz_rate_faced": ("total_pass_att", 50),
+                "epa_vs_blitz": ("total_pass_att", 50),
+                "pacr": ("total_pass_att", 50),
+                "ngs_avg_time_to_los": ("total_carries", 20),
+                "ngs_percent_attempts_gte_eight_defenders": ("total_carries", 20),
+                "rushing_success_rate": ("total_carries", 20),
+                "rushing_epa_per_att": ("total_carries", 20),
+                "epa_vs_stacked_box": ("total_carries", 20),
+                "ngs_created_separation": ("total_targets", 15),
+                "receiving_success_rate": ("total_targets", 15),
+                "receiving_epa_per_target": ("total_targets", 15),
+                "racr": ("total_targets", 15),
             }
             srows = [dict(r) for r in conn.execute(
                 "SELECT DISTINCT ON (player_id) * FROM player_advanced_metrics "

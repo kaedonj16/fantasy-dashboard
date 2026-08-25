@@ -1172,11 +1172,28 @@ _AM_JS = r"""
       epa_per_play: 'w_dropbacks', cpoe: 'w_dropbacks', success_rate: 'w_dropbacks',
       sack_rate: 'w_dropbacks', scramble_rate: 'w_dropbacks', nfl_passer_rating: 'w_dropbacks',
       adjusted_completion_rate: 'w_pass_att',
+      qb_hit_rate: 'w_dropbacks', explosive_pass_rate: 'w_pass_att',
+      play_action_rate: 'w_dropbacks', play_action_epa: 'w_dropbacks',
+      out_of_pocket_rate: 'w_dropbacks', blitz_rate_faced: 'w_dropbacks',
+      epa_vs_blitz: 'w_dropbacks',
+      ngs_avg_time_to_throw: 'w_pass_att', ngs_aggressiveness: 'w_pass_att',
+      ngs_avg_completed_air_yards: 'w_pass_att',
+      ngs_avg_air_yards_differential: 'w_pass_att',
+      ngs_avg_air_yards_to_sticks: 'w_pass_att', ngs_cpoe: 'w_pass_att',
+      ngs_max_completed_air_distance: 'w_pass_att',
+      pacr: 'w_pass_air_yards',
       ngs_rush_yards_over_expected_per_att: 'w_carries', ngs_rush_efficiency: 'w_carries',
       breakaway_percentage: 'w_carries',
+      rushing_success_rate: 'w_carries', rushing_epa_per_att: 'w_carries',
+      ngs_avg_time_to_los: 'w_carries',
+      ngs_percent_attempts_gte_eight_defenders: 'w_carries',
+      epa_vs_stacked_box: 'w_carries',
       ngs_avg_separation: 'w_targets', ngs_avg_cushion: 'w_targets',
       ngs_avg_intended_air_yards: 'w_targets', avg_depth_of_target: 'w_targets',
       ngs_catch_pct: 'w_targets', drop_rate: 'w_targets', contested_catch_rate: 'w_targets',
+      ngs_created_separation: 'w_targets',
+      receiving_success_rate: 'w_targets', receiving_epa_per_target: 'w_targets',
+      racr: 'w_rec_air_yards',
       yards_after_catch_per_reception: 'w_receptions', ngs_avg_yac: 'w_receptions',
       ngs_avg_expected_yac: 'w_receptions', ngs_avg_yac_above_expectation: 'w_receptions',
     };
@@ -1202,14 +1219,14 @@ _AM_JS = r"""
   // Preset sets: clicking "Load X Set" clears current extras and loads these metrics.
   // All free/redistributable (NGS + EPA + computed); no gated PFF metrics.
   const _PRESETS = {
-    'QB':        ['epa_per_play', 'yards_per_attempt', 'cpoe', 'success_rate', 'td_rate', 'int_rate', 'pass_tds_per_game'],
-    'RB':        ['opportunity_share', 'yards_per_carry', 'rushing_epa', 'breakaway_percentage', 'yards_per_touch', 'red_zone_usage', 'total_tds_per_game'],
-    'WR':        ['target_share', 'yards_per_target', 'receiving_epa', 'ngs_avg_separation', 'air_yards_share', 'rec_tds_per_game', 'fpts_per_reception'],
+    'QB':        ['epa_per_play', 'cpoe', 'ngs_avg_time_to_throw', 'success_rate', 'td_rate', 'int_rate', 'pass_tds_per_game'],
+    'RB':        ['opportunity_share', 'yards_per_carry', 'rushing_epa', 'rushing_success_rate', 'breakaway_percentage', 'red_zone_usage', 'total_tds_per_game'],
+    'WR':        ['target_share', 'yards_per_target', 'receiving_epa', 'ngs_created_separation', 'air_yards_share', 'rec_tds_per_game', 'fpts_per_reception'],
     'TE':        ['target_share', 'yards_per_target', 'receiving_epa', 'ngs_avg_yac_above_expectation', 'rz_targets_pg', 'rec_tds_per_game'],
     'General':   ['snap_share', 'opportunity_share', 'red_zone_usage', 'yards_per_touch', 'total_tds_per_game'],
     'Rushing':   ['yards_per_carry', 'rushing_epa', 'breakaway_percentage', 'explosive_runs_10_plus', 'opportunity_share', 'carries_per_game', 'red_zone_usage'],
     'Receiving': ['yards_per_target', 'receiving_epa', 'target_share', 'ngs_avg_separation', 'contested_catch_rate', 'rz_targets_pg', 'receptions_per_game'],
-    'Passing':   ['epa_per_play', 'passing_epa', 'cpoe', 'success_rate', 'sack_rate', 'yards_per_attempt', 'int_rate'],
+    'Passing':   ['epa_per_play', 'passing_epa', 'cpoe', 'ngs_avg_time_to_throw', 'success_rate', 'sack_rate', 'int_rate'],
   };
   const _PRESET_POS = { 'QB': 'QB', 'RB': 'RB', 'WR': 'WR', 'TE': 'TE' };
   window.amLoadPreset = function(cat) {
