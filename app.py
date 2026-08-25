@@ -13983,12 +13983,12 @@ def page_breakouts(platform: str, season: int, league_id: str):
       </div>
       <div class="card-body">
         <!-- Position Filter -->
-        <div class="breakout-filters">
-          <button class="breakout-filter-btn active" data-position="ALL" onclick="filterBreakouts('ALL')">All Positions</button>
-          <button class="breakout-filter-btn" data-position="QB" onclick="filterBreakouts('QB')">QB</button>
-          <button class="breakout-filter-btn" data-position="RB" onclick="filterBreakouts('RB')">RB</button>
-          <button class="breakout-filter-btn" data-position="WR" onclick="filterBreakouts('WR')">WR</button>
-          <button class="breakout-filter-btn" data-position="TE" onclick="filterBreakouts('TE')">TE</button>
+        <div class="otc-day-filters breakout-filters">
+          <button class="otc-day-filter breakout-filter-btn active" data-position="ALL" onclick="filterBreakouts('ALL')">All Positions</button>
+          <button class="otc-day-filter breakout-filter-btn" data-position="QB" onclick="filterBreakouts('QB')">QB</button>
+          <button class="otc-day-filter breakout-filter-btn" data-position="RB" onclick="filterBreakouts('RB')">RB</button>
+          <button class="otc-day-filter breakout-filter-btn" data-position="WR" onclick="filterBreakouts('WR')">WR</button>
+          <button class="otc-day-filter breakout-filter-btn" data-position="TE" onclick="filterBreakouts('TE')">TE</button>
         </div>
 
         <!-- Loading State -->
@@ -16264,12 +16264,12 @@ def build_schedule_body(ctx):
 
         <!-- Schedule Rankings: position pills + sort -->
         <div class="sched-rank-controls" id="schedRankControls" style="display:none;">
-          <div class="sched-pos-pills" id="schedRankPosPills">
-            <button class="sched-rank-pos active" data-pos="QB">QB</button>
-            <button class="sched-rank-pos" data-pos="RB">RB</button>
-            <button class="sched-rank-pos" data-pos="WR">WR</button>
-            <button class="sched-rank-pos" data-pos="TE">TE</button>
-            <button class="sched-rank-pos" data-pos="K">K</button>
+          <div class="otc-day-filters sched-pos-pills" id="schedRankPosPills">
+            <button class="otc-day-filter sched-rank-pos active" data-pos="QB">QB</button>
+            <button class="otc-day-filter sched-rank-pos" data-pos="RB">RB</button>
+            <button class="otc-day-filter sched-rank-pos" data-pos="WR">WR</button>
+            <button class="otc-day-filter sched-rank-pos" data-pos="TE">TE</button>
+            <button class="otc-day-filter sched-rank-pos" data-pos="K">K</button>
           </div>
           <button class="sched-sort-btn" id="schedRankSort">
             Easiest First <i class="fa-solid fa-arrow-up-short-wide" aria-hidden="true"></i>
@@ -22607,8 +22607,8 @@ def api_player_adp(player_id: str):
 
     Split out of /api/player-details so the modal can open immediately on the
     cheap Sleeper feed and pull these in afterward — BR Fantasy / Consensus need a
-    draft-crawler DB query and the global feeds a snapshot read (all cached in
-    adp_service), which we don't want on the modal's critical path. ESPN/Yahoo/MFL
+    draft-crawler DB query and the global feeds are retrieved on miss (disk, then
+    the shared DB, then a live fetch) the same way Sleeper is. ESPN/Yahoo/MFL
     are redraft-only global feeds and only contribute a Redraft value. Returns
     {"sources": [{label, vals}]}, only including sources that have at least one
     value for this player."""
@@ -22640,11 +22640,11 @@ def api_player_adp(player_id: str):
                 return None
 
         # BR Fantasy covers every axis; ESPN/Yahoo/MFL are tokenless global
-        # redraft-only feeds (read from the daily snapshots, so their dynasty cells
-        # resolve to None and only the Redraft card shows them). Yahoo uses its
-        # global snapshot here since the modal carries no league token. Any source
-        # with no value for this player is dropped below, so an empty snapshot never
-        # produces a bare row. Consensus stays last.
+        # redraft-only feeds (retrieved on miss like Sleeper, so their dynasty
+        # cells resolve to None and only the Redraft card shows them). Yahoo uses
+        # its global snapshot here since the modal carries no league token. Any
+        # source with no value for this player is dropped below, so an empty
+        # snapshot never produces a bare row. Consensus stays last.
         _source_specs = [
             ("brfantasy", "BR Fantasy"),
             ("espn", "ESPN"),

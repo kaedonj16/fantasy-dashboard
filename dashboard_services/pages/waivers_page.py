@@ -16,12 +16,6 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-filters { margin-bottom: 16px; }
 .wv-filter-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .wv-pos-pills { display: flex; gap: 6px; flex-wrap: wrap; }
-.wv-pos-btn {
-  padding: 5px 14px; border-radius: var(--radius-pill, 8px); font-size: 12px; font-weight: 700;
-  border: 1px solid var(--border); background: var(--card); color: var(--text-muted); cursor: pointer;
-  transition: background .12s, color .12s, border-color .12s;
-}
-.wv-pos-btn.active { background: var(--accent); color: var(--on-accent, #fff); border-color: var(--accent); }
 
 /* Mobile tab bar */
 .wv-tab-bar {
@@ -349,14 +343,14 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
   <!-- Position filter pills -->
   <div class="wv-filters">
     <div class="wv-filter-row">
-      <div class="wv-pos-pills">
-        <button class="wv-pos-btn active" data-pos="ALL" onclick="wvSetPos('ALL')">ALL</button>
-        <button class="wv-pos-btn" data-pos="QB" onclick="wvSetPos('QB')">QB</button>
-        <button class="wv-pos-btn" data-pos="RB" onclick="wvSetPos('RB')">RB</button>
-        <button class="wv-pos-btn" data-pos="WR" onclick="wvSetPos('WR')">WR</button>
-        <button class="wv-pos-btn" data-pos="TE" onclick="wvSetPos('TE')">TE</button>
-        <button class="wv-pos-btn" data-pos="K" hidden onclick="wvSetPos('K')">K</button>
-        <button class="wv-pos-btn" data-pos="DEF" hidden onclick="wvSetPos('DEF')">D/ST</button>
+      <div class="otc-day-filters wv-pos-pills">
+        <button class="otc-day-filter wv-pos-btn active" data-pos="ALL" onclick="wvSetPos('ALL')">ALL</button>
+        <button class="otc-day-filter wv-pos-btn" data-pos="QB" onclick="wvSetPos('QB')">QB</button>
+        <button class="otc-day-filter wv-pos-btn" data-pos="RB" onclick="wvSetPos('RB')">RB</button>
+        <button class="otc-day-filter wv-pos-btn" data-pos="WR" onclick="wvSetPos('WR')">WR</button>
+        <button class="otc-day-filter wv-pos-btn" data-pos="TE" onclick="wvSetPos('TE')">TE</button>
+        <button class="otc-day-filter wv-pos-btn" data-pos="K" hidden onclick="wvSetPos('K')">K</button>
+        <button class="otc-day-filter wv-pos-btn" data-pos="DEF" hidden onclick="wvSetPos('DEF')">D/ST</button>
       </div>
     </div>
   </div>

@@ -182,3 +182,42 @@ def test_roster_source_sits_outside_immediately_above_slot_grid():
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 
     assert "var html = presetHtml + srcHtml + '<div class=\"dr-setup-roster\">';" in source
+
+
+def test_edit_setup_opens_a_modal_instead_of_leaving_the_board():
+    body = build_draft_room_body(None, None, None, is_guest=True)
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert 'id="drEditTitle">Edit Setup</h2>' in body
+    assert 'id="drEditApply">Apply Settings</button>' in body
+    assert 'id="drEditReset">' in body
+    assert 'id="drEditCancel">Cancel</button>' in body
+    assert 'id="drSetupStartCta"' in body
+    assert 'id="drSetupEditCta"' in body
+    assert ".dr-setup-is-modal {" in body
+    assert "function openEditSetup()" in source
+    assert "function applyEditedSetup()" in source
+    assert "function closeEditSetup()" in source
+    assert "document.getElementById('drEdit').addEventListener('click', openEditSetup);" in source
+    assert "document.getElementById('drEdit').addEventListener('click', showSetup);" not in source
+    assert "document.getElementById('drEditReset').addEventListener('click', resetDraft);" in source
+    assert "state = null;\n      showSetup();" in source
+    assert "This wipes every pick and returns to setup." in source
+    assert "if (!state || !state.teams || state.mode === 'live') return;" in source
+
+
+def test_statusbar_shows_league_settings_chips():
+    body = build_draft_room_body(None, None, None, is_guest=True)
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert 'id="drLeagueMeta"' in body
+    assert ".dr-league-meta {" in body
+    assert ".dr-lm-chip {" in body
+    assert "function leagueMetaParts()" in source
+    assert "function renderLeagueMeta()" in source
+    assert "renderLeagueMeta();" in source
+    assert "document.getElementById('drLeagueMeta').addEventListener('click'" in source
+    assert "state.teams + '-team ' + (state.sf ? 'SF' : '1QB')" in source
+    assert "el.classList.toggle('is-editable', canEdit);" in source
+    # Live drafts lock settings; the chips still render but do not open Edit Setup.
+    assert "var canEdit = state.mode !== 'live';" in source

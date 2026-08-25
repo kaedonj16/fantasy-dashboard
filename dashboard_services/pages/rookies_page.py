@@ -42,12 +42,12 @@ def build_prospects_body(is_admin: bool = False) -> str:
                    background:none;border:none;cursor:pointer;color:var(--text-muted);
                    font-size:16px;padding:2px;">&#x2715;</button>
         </div>
-        <div class="filter-positions">
-          <button class="pos-pill active" data-pos="ALL" onclick="rkTogglePos('ALL')">All</button>
-          <button class="pos-pill" data-pos="QB"  onclick="rkTogglePos('QB')">QB</button>
-          <button class="pos-pill" data-pos="RB"  onclick="rkTogglePos('RB')">RB</button>
-          <button class="pos-pill" data-pos="WR"  onclick="rkTogglePos('WR')">WR</button>
-          <button class="pos-pill" data-pos="TE"  onclick="rkTogglePos('TE')">TE</button>
+        <div class="otc-day-filters filter-positions">
+          <button class="otc-day-filter pos-pill active" data-pos="ALL" onclick="rkTogglePos('ALL')">All</button>
+          <button class="otc-day-filter pos-pill" data-pos="QB"  onclick="rkTogglePos('QB')">QB</button>
+          <button class="otc-day-filter pos-pill" data-pos="RB"  onclick="rkTogglePos('RB')">RB</button>
+          <button class="otc-day-filter pos-pill" data-pos="WR"  onclick="rkTogglePos('WR')">WR</button>
+          <button class="otc-day-filter pos-pill" data-pos="TE"  onclick="rkTogglePos('TE')">TE</button>
         </div>
         <div style="position:relative;">
           <button id="rkSettingsBtn" class="filter-settings-btn" onclick="rkToggleSettings()">
@@ -223,30 +223,13 @@ def build_prospects_body(is_admin: bool = False) -> str:
   }
   .filter-positions {
     display: flex;
-    gap: 3px;
+    gap: 6px;
     overflow-x: auto;
     flex-wrap: nowrap;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
   }
   .filter-positions::-webkit-scrollbar { display: none; }
-  .pos-pill {
-    padding: 6px 12px;
-    border-radius: var(--radius-pill, 8px);
-    border: 1px solid var(--border);
-    background: var(--card-bg);
-    color: var(--text-muted);
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.12s;
-    white-space: nowrap;
-  }
-  .pos-pill.active {
-    background: var(--accent);
-    color: #fff;
-    border-color: var(--accent);
-  }
   .filter-settings-btn {
     padding: 7px 14px;
     border-radius: 8px;

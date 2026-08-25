@@ -287,10 +287,7 @@ _CHEAT_HTML = r"""
   .cs-filterbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 14px 0 12px; }
   .cs-search { flex: 1 1 200px; min-width: 140px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--cs-line); background: var(--cs-surface); color: var(--cs-ink); font: inherit; font-size: 13px; outline: none; }
   .cs-search:focus { border-color: var(--cs-accent); }
-  .cs-posf { display: inline-flex; gap: 4px; flex-wrap: wrap; }
-  .cs-posf button { font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-line); background: var(--cs-surface); color: var(--cs-ink-soft); padding: 8px 12px; border-radius: 9px; }
-  .cs-posf button:hover { border-color: var(--cs-accent); color: var(--cs-accent); }
-  .cs-posf button[aria-pressed="true"] { background: var(--cs-accent); color: #fff; border-color: var(--cs-accent); }
+  .cs-posf { display: inline-flex; gap: 6px; flex-wrap: wrap; }
   .cs-pick { font-family: var(--cs-mono); font-weight: 800; font-size: 13px; text-align: center; }
   .cs-pick small { display: block; font-size: 9px; font-weight: 600; color: var(--cs-ink-faint); letter-spacing: .06em; }
   .cs-dtiers { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -410,12 +407,12 @@ _CHEAT_HTML = r"""
 
   <div class="cs-filterbar" id="csFilterbar">
     <input type="search" class="cs-search" id="csSearch" placeholder="Search players&hellip;" autocomplete="off" aria-label="Search players">
-    <div class="cs-posf" id="csPosF" role="group" aria-label="Filter by position">
-      <button type="button" data-pos="ALL" aria-pressed="true">All</button>
-      <button type="button" data-pos="QB" aria-pressed="false">QB</button>
-      <button type="button" data-pos="RB" aria-pressed="false">RB</button>
-      <button type="button" data-pos="WR" aria-pressed="false">WR</button>
-      <button type="button" data-pos="TE" aria-pressed="false">TE</button>
+    <div class="otc-day-filters cs-posf" id="csPosF" role="group" aria-label="Filter by position">
+      <button type="button" class="otc-day-filter" data-pos="ALL" aria-pressed="true">All</button>
+      <button type="button" class="otc-day-filter" data-pos="QB" aria-pressed="false">QB</button>
+      <button type="button" class="otc-day-filter" data-pos="RB" aria-pressed="false">RB</button>
+      <button type="button" class="otc-day-filter" data-pos="WR" aria-pressed="false">WR</button>
+      <button type="button" class="otc-day-filter" data-pos="TE" aria-pressed="false">TE</button>
     </div>
   </div>
 

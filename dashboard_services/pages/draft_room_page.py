@@ -131,7 +131,15 @@ _DRAFT_ROOM_HTML = r"""
 
   <!-- Setup -->
   <div class="dr-setup" id="drSetup">
-    <div class="dr-setup-card">
+    <div class="dr-setup-card" id="drSetupCard">
+      <header class="dr-setup-modal-head" id="drSetupModalHead" hidden>
+        <div>
+          <div class="dr-setup-modal-kicker">Current draft</div>
+          <h2 class="dr-setup-modal-title" id="drEditTitle">Edit Setup</h2>
+        </div>
+        <button type="button" class="dr-setup-modal-close" id="drEditClose" aria-label="Close">&times;</button>
+      </header>
+      <p class="dr-setup-desc" id="drEditNote" hidden>Changes apply to this draft. Picks stay on the board unless you change teams, pick order, or your slot. Reset wipes the board and returns to setup.</p>
 
       <div class="dr-step">
         <div class="dr-step-head">
@@ -232,10 +240,16 @@ _DRAFT_ROOM_HTML = r"""
         <div id="drCapitalSection"></div>
       </div>
 
-      <div class="dr-setup-cta">
+      <div class="dr-setup-cta" id="drSetupStartCta">
         <button class="dr-btn dr-btn-primary dr-btn-lg" id="drStartSim">&#9654;&nbsp; Start Mock Draft</button>
         <button class="dr-btn dr-btn-lg" id="drStart">Draft Manually</button>
         <button class="dr-btn dr-btn-ghost" id="drConnect">Connect Live Draft</button>
+      </div>
+      <div class="dr-setup-cta dr-setup-edit-cta" id="drSetupEditCta" hidden>
+        <button type="button" class="dr-btn dr-btn-ghost dr-btn-danger" id="drEditReset"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>Reset Draft</button>
+        <span class="dr-setup-edit-spacer"></span>
+        <button type="button" class="dr-btn dr-btn-ghost" id="drEditCancel">Cancel</button>
+        <button type="button" class="dr-btn dr-btn-primary" id="drEditApply">Apply Settings</button>
       </div>
       <div class="dr-live-list" id="drLiveList" style="display:none;"></div>
     </div>
@@ -252,6 +266,7 @@ _DRAFT_ROOM_HTML = r"""
         </div>
         <div class="dr-status-pills">
           <span class="dr-ss-stat" id="drPickPill">Pick: 1.01</span>
+          <button type="button" class="dr-league-meta" id="drLeagueMeta" hidden></button>
           <span class="dr-pick-timer" id="drPickTimer" style="display:none;"></span>
           <span class="dr-pill dr-pill-live" id="drLiveBadge" style="display:none;">&#9679; LIVE</span>
           <span class="dr-pill dr-pill-upcoming" id="drUpcomingBadge" style="display:none;">Upcoming</span>
@@ -357,14 +372,14 @@ _DRAFT_ROOM_HTML = r"""
             <input id="drSearch" type="search" placeholder="Search…" autocomplete="off">
             <button class="dr-help-btn" id="drHelpBtn" type="button" aria-label="What do these terms mean?" title="What do these terms mean?">?</button>
           </div>
-          <div class="dr-pos-filters" id="drPosFilters">
-            <button class="dr-pos active" data-pos="ALL">All</button>
-            <button class="dr-pos" data-pos="QB">QB</button>
-            <button class="dr-pos" data-pos="RB">RB</button>
-            <button class="dr-pos" data-pos="WR">WR</button>
-            <button class="dr-pos" data-pos="TE">TE</button>
-            <button class="dr-pos dr-pos-kdef" data-pos="K" style="display:none;">K</button>
-            <button class="dr-pos dr-pos-kdef" data-pos="DEF" style="display:none;">DEF</button>
+          <div class="otc-day-filters dr-pos-filters" id="drPosFilters">
+            <button class="otc-day-filter dr-pos active" data-pos="ALL">All</button>
+            <button class="otc-day-filter dr-pos" data-pos="QB">QB</button>
+            <button class="otc-day-filter dr-pos" data-pos="RB">RB</button>
+            <button class="otc-day-filter dr-pos" data-pos="WR">WR</button>
+            <button class="otc-day-filter dr-pos" data-pos="TE">TE</button>
+            <button class="otc-day-filter dr-pos dr-pos-kdef" data-pos="K" style="display:none;">K</button>
+            <button class="otc-day-filter dr-pos dr-pos-kdef" data-pos="DEF" style="display:none;">DEF</button>
           </div>
           <div class="dr-adp-src" id="drAdpSrc"></div>
         </div>
@@ -488,15 +503,17 @@ _DRAFT_ROOM_HTML = r"""
   /* ── Setup (redesigned) ── */
   .dr-setup { display: flex; justify-content: center; padding: 0 0 8px; }
   .dr-setup-card {
-    width: 100%; max-width: 740px; background: var(--card); border: 1px solid var(--border);
+    position: relative; width: 100%; max-width: 740px; border: 1px solid var(--border);
     border-radius: 18px; padding: 24px 26px; box-shadow: var(--shadow, 0 8px 30px rgba(0,0,0,.10));
     background:
       linear-gradient(180deg, color-mix(in srgb, var(--brand-blue, #3b82f6) 5%, var(--card)) 0%, var(--card) 88px),
       var(--card);
   }
   .dr-setup-desc { font-size: 13px; color: var(--text-muted); margin: 0; line-height: 1.5; }
+  #drEditNote { margin-bottom: 12px; }
   .dr-step { padding: 22px 0; border-top: 1px solid var(--border); }
-  .dr-step:first-child { border-top: none; padding-top: 0; }
+  .dr-setup-card > .dr-step:first-of-type { border-top: none; padding-top: 0; }
+  .dr-setup-is-modal .dr-setup-card > .dr-step:first-of-type { border-top: 1px solid var(--border); padding-top: 22px; }
   .dr-step-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
   .dr-step-num {
     width: 26px; height: 26px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center;
@@ -515,6 +532,51 @@ _DRAFT_ROOM_HTML = r"""
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-blue, #3b82f6) 16%, transparent);
   }
   .dr-setup-cta { margin-top: 20px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .dr-setup-edit-cta { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .dr-setup-edit-cta .dr-btn { display: inline-flex; align-items: center; gap: 7px; }
+  .dr-setup-edit-spacer { flex: 1; min-width: 8px; }
+  /* Author display:flex rules beat the UA [hidden] stylesheet; force collapse. */
+  #drSetup [hidden], .dr-league-meta[hidden] { display: none !important; }
+  .dr-setup-modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+  .dr-setup-modal-kicker {
+    font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .12em;
+    color: var(--brand-blue, #3b82f6); margin-bottom: 4px;
+  }
+  .dr-setup-modal-title { font-size: 22px; font-weight: 900; color: var(--text); margin: 0; line-height: 1.1; }
+  .dr-setup-modal-close {
+    width: 28px; height: 28px; flex-shrink: 0; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 12px; font-size: 17px; line-height: 1; color: var(--text-muted); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .dr-setup-modal-close:hover { background: color-mix(in srgb, var(--loss) 12%, transparent); color: var(--loss); }
+  .dr-setup-is-modal {
+    display: flex !important; position: fixed; inset: 0; z-index: 1100;
+    background: rgba(0,0,0,.58); align-items: flex-start; justify-content: center;
+    overflow-y: auto; padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 20px);
+  }
+  .dr-setup-is-modal .dr-setup-card {
+    margin: 8px auto; max-width: 740px; width: 100%;
+    box-shadow: 0 24px 80px rgba(0,0,0,.45);
+  }
+  .dr-setup-is-modal .dr-live-list { display: none !important; }
+  body.dr-edit-open { overflow: hidden; }
+  .dr-league-meta {
+    display: inline-flex; align-items: center; gap: 5px; flex-wrap: nowrap;
+    min-width: 0; padding: 3px 6px; border-radius: 8px;
+    border: 1px solid transparent; background: transparent; color: var(--text-muted);
+    font-family: inherit; font-size: 12px; font-weight: 700; line-height: 1.3; white-space: nowrap;
+    cursor: default; flex-shrink: 0; appearance: none;
+  }
+  .dr-league-meta.is-editable { cursor: pointer; }
+  .dr-league-meta.is-editable:hover {
+    color: var(--text); border-color: var(--border); background: var(--bg);
+  }
+  .dr-lm-chip {
+    display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 6px;
+    background: var(--row, var(--bg)); border: 1px solid var(--grid, var(--border));
+    color: var(--text-muted); font-size: 11px; font-weight: 700; line-height: 1.45;
+    white-space: nowrap; flex-shrink: 0;
+  }
   .dr-btn-lg { padding: 12px 22px; font-size: 14px; border-radius: 10px; }
   .dr-sim-speed { padding: 6px 8px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg);
     color: var(--text); font-size: 12px; font-weight: 600; }
@@ -719,8 +781,8 @@ _DRAFT_ROOM_HTML = r"""
   .dr-side-tabs .otc-main-tab { flex: 1; display: flex; align-items: center; justify-content: center;
     text-align: center; padding: 7px 4px; font-size: 12px; }
   /* Team needs hover tooltip */
-  .dr-team-tip { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-    padding: 10px 12px; box-shadow: 0 8px 28px rgba(0,0,0,.28); min-width: 160px; }
+  .dr-team-tip { background: var(--tooltip-bg,var(--card)); color: var(--tooltip-fg,var(--text)); border: 1px solid var(--tooltip-border,var(--border)); border-radius: var(--tooltip-radius,10px);
+    padding: 10px 12px; box-shadow: var(--tooltip-shadow,0 8px 28px rgba(0,0,0,.28)); min-width: 160px; }
   .dr-team-tip-name { font-size: 12px; font-weight: 800; color: var(--text); margin-bottom: 7px; }
   .dr-team-tip-pos-row { display: flex; gap: 5px; flex-wrap: wrap; }
   .dr-team-tip-pos { display: flex; flex-direction: column; align-items: center; padding: 4px 7px;
@@ -883,9 +945,9 @@ _DRAFT_ROOM_HTML = r"""
      icons all sit on the LEFT of their label, so a centered tooltip overflowed
      the panel's left edge and got clipped by its overflow:hidden ancestor. */
   .dr-info::after { content: attr(data-tip); position:absolute; top:calc(100% + 6px); left:0; transform:none;
-    width:max-content; max-width:210px; background:var(--card); color:var(--text); border:1px solid var(--border);
-    border-radius:8px; padding:7px 9px; font-size:11px; font-weight:500; font-style:normal; line-height:1.4; text-align:left;
-    box-shadow:0 8px 24px rgba(0,0,0,.28); opacity:0; pointer-events:none; transition:opacity .12s; z-index:600; white-space:normal; }
+    width:max-content; max-width:210px; background:var(--tooltip-bg,var(--card)); color:var(--tooltip-fg,var(--text)); border:1px solid var(--tooltip-border,var(--border));
+    border-radius:var(--tooltip-radius,10px); padding:var(--tooltip-pad,8px 12px); font-size:var(--tooltip-fs,12px); font-weight:500; font-style:normal; line-height:var(--tooltip-lh,1.45); text-align:left;
+    box-shadow:var(--tooltip-shadow,0 8px 24px rgba(0,0,0,.28)); opacity:0; pointer-events:none; transition:opacity .12s; z-index:600; white-space:normal; }
   .dr-info:hover::after, .dr-info:focus::after { opacity:1; }
   /* glossary popover */
   .dr-help-btn { width:26px; height:26px; border-radius:7px; border:1px solid var(--border); background:var(--bg);
@@ -958,9 +1020,7 @@ _DRAFT_ROOM_HTML = r"""
   }
   .dr-sortsel-opt:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
   .dr-sortsel-opt.is-active { background: var(--accent,#38bdf8); color: var(--on-accent, #fff); }
-  .dr-pos-filters { display: flex; gap: 4px; flex-wrap: wrap; }
-  .dr-pos { font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: var(--radius-pill, 8px); border: 1px solid var(--border); background: var(--bg); color: var(--text-muted); cursor: pointer; }
-  .dr-pos.active { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: var(--on-accent, #fff); }
+  .dr-pos-filters { display: flex; gap: 6px; flex-wrap: wrap; }
   .dr-adp-src { font-size: 10px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
   .dr-adp-src-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
   .dr-adp-src-select { padding: 4px 7px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 11px; cursor: pointer; outline: none; }
@@ -1065,6 +1125,8 @@ _DRAFT_ROOM_HTML = r"""
     .dr-status-pills { gap: 4px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; min-width: 0; flex: 1; }
     .dr-status-pills::-webkit-scrollbar { display: none; }
     .dr-ss-stat { font-size: 13px; }
+    .dr-league-meta { font-size: 11px; padding: 2px 4px; }
+    .dr-lm-chip { font-size: 10px; padding: 1px 6px; }
     .dr-pill, .dr-roster-src-tag, .dr-cap-pill { font-size: 10px; padding: 2px 7px; }
     .dr-pick-timer { font-size: 12px; min-width: 32px; padding: 2px 6px; }
     .dr-progress, .dr-save { font-size: 10px; white-space: nowrap; }
@@ -1209,7 +1271,7 @@ _DRAFT_ROOM_HTML = r"""
   .dd-sq { width:11px; height:11px; border-radius:3px; display:inline-block; }
   .dd-chartscroll, .dd-tablescroll { overflow-x:auto; }
   .dd-tl-dot:hover { stroke:var(--text); stroke-width:1.6; }
-  .dd-tip { position:fixed; z-index:12800; pointer-events:none; background:var(--card); border:1px solid var(--border); box-shadow:0 12px 40px rgba(0,0,0,.4); border-radius:11px; padding:10px 12px; font-size:12.5px; opacity:0; transform:translateY(4px); transition:opacity .12s; max-width:230px; }
+  .dd-tip { position:fixed; z-index:12800; pointer-events:none; background:var(--tooltip-bg,var(--card)); color:var(--tooltip-fg,var(--text)); border:1px solid var(--tooltip-border,var(--border)); box-shadow:var(--tooltip-shadow,0 12px 40px rgba(0,0,0,.4)); border-radius:var(--tooltip-radius,10px); padding:var(--tooltip-pad,8px 12px); font-size:var(--tooltip-fs,12px); line-height:var(--tooltip-lh,1.45); opacity:0; transform:translateY(4px); transition:opacity .12s; max-width:230px; }
   .dd-tip.show { opacity:1; transform:none; }
   .dd-tip b { font-family:"Archivo",sans-serif; }
   .dd-tip-r { display:flex; justify-content:space-between; gap:16px; color:var(--text-muted); margin-top:3px; }

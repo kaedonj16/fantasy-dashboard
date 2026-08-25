@@ -510,9 +510,9 @@ def build_trade_calculator_body(
             .pi-tooltip {{
               display:none;position:absolute;right:0;top:calc(100% + 6px);
               width:260px;z-index:200;
-              background:var(--card-bg,#fff);border:1px solid var(--border-color);
-              border-radius:12px;padding:12px 14px;
-              box-shadow:0 8px 24px rgba(0,0,0,.12);
+              background:var(--tooltip-bg,var(--card-bg,#fff));border:1px solid var(--tooltip-border,var(--border-color));
+              border-radius:var(--tooltip-radius,10px);padding:12px 14px;
+              box-shadow:var(--tooltip-shadow,0 8px 24px rgba(0,0,0,.12));
             }}
             /* Transparent bridge across the gap so the hover doesn't drop when
                moving the mouse from the icon down onto the tooltip. */
@@ -1047,7 +1047,7 @@ def build_trade_calculator_body(
                 </div>
               </div>
               <div class="otc-mini-sub" id="moversSub">Biggest 7-day changes in BR value</div>
-              <div class="otc-day-filters" style="display: flex; gap: 6px; margin-top: 8px; padding: 0 12px;">
+              <div class="otc-day-filters">
                 <button class="otc-day-filter active" data-days="7" onclick="changeMoversDays(7)">7d</button>
                 <button class="otc-day-filter" data-days="14" onclick="changeMoversDays(14)">14d</button>
                 <button class="otc-day-filter" data-days="30" onclick="changeMoversDays(30)">30d</button>
@@ -1104,14 +1104,14 @@ def build_trade_calculator_body(
               </div>
             </div>
 
-            <div class="otc-filter-row" id="posFilterRow">
-              <button class="otc-filter-chip pos-filter is-active" data-pos="ALL">All</button>
-              <button class="otc-filter-chip pos-filter" data-pos="QB">QB</button>
-              <button class="otc-filter-chip pos-filter" data-pos="RB">RB</button>
-              <button class="otc-filter-chip pos-filter" data-pos="WR">WR</button>
-              <button class="otc-filter-chip pos-filter" data-pos="TE">TE</button>
-              <button class="otc-filter-chip pos-filter" data-pos="PICK">Picks</button>
-              <button class="otc-filter-chip pos-filter" data-pos="ROOKIE">Rookies</button>
+            <div class="otc-day-filters otc-filter-row" id="posFilterRow">
+              <button class="otc-day-filter otc-filter-chip pos-filter is-active" data-pos="ALL">All</button>
+              <button class="otc-day-filter otc-filter-chip pos-filter" data-pos="QB">QB</button>
+              <button class="otc-day-filter otc-filter-chip pos-filter" data-pos="RB">RB</button>
+              <button class="otc-day-filter otc-filter-chip pos-filter" data-pos="WR">WR</button>
+              <button class="otc-day-filter otc-filter-chip pos-filter" data-pos="TE">TE</button>
+              <button class="otc-day-filter otc-filter-chip pos-filter" data-pos="PICK">Picks</button>
+              <button class="otc-day-filter otc-filter-chip pos-filter" data-pos="ROOKIE">Rookies</button>
             </div>
 
             <div id="allPlayersList" class="otc-values-list">

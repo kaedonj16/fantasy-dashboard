@@ -1344,29 +1344,14 @@ activity_css = """
         /* Pill-based filter bar */
         .activity-filter {
           display: flex;
-          gap: 8px;
+          gap: 6px;
           align-items: center;
           margin: 6px 0 10px;
           flex-wrap: wrap;
         }
-        
-        .filter-pill {
-          cursor: pointer;
-          transition: all 0.15s ease;
-        }
+
         .card.activity-card .activity-pill { font-size: 11px; padding: 2px 8px; border-radius: 8px; border: 1px solid #e5e7eb; background: #f8fafc; color: #475569; }
 
-        
-        .filter-pill.active {
-          background: #122d4b;
-          border-color: #122d4b;
-          color: #fff;
-          box-shadow: 0 2px 6px rgba(37,99,235,0.25);
-        }
-        
-        .filter-pill:hover {
-          background: #eff6ff;
-        }
         
         .injury-overview {
           display: flex;
