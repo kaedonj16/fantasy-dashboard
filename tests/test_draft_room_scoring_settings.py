@@ -150,6 +150,16 @@ def test_likely_next_pick_survivors_pay_current_pick_opportunity_cost():
     assert "waitPenalty: waitPenalty" in source
 
 
+def test_autodraft_uses_shared_need_multiplier_instead_of_uncapped_starter_boost():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    core = (REPO / "static" / "draft_board_core.js").read_text(encoding="utf-8")
+
+    assert "DraftBoardCore.autoDraftNeedMultiplier" in source
+    assert "else if (sSlots > 0 && have < sSlots) s *= 1.35;" not in source
+    assert "function autoDraftNeedMultiplier(o)" in core
+    assert "var AUTO_WAIT_TURN = 0.35;" in core
+
+
 def test_tier_cliff_urgency_is_suppressed_during_round_one():
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
     match = re.search(r"function isTierCliff\(p, pickNo\)\{(.*?)\n  \}", source, re.DOTALL)

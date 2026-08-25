@@ -340,3 +340,50 @@ def test_wait_loss_scale_damps_single_slot_scarcity():
     assert out["damped"] < out["full"]
     assert out["legacy"] == out["full"]
     assert out["wr"] > out["te"]
+
+
+def test_autodraft_waits_on_single_slot_te_who_survives_to_the_turn():
+    """1TE autodraft must not 1.35x-reach a TE whose ADP is still after the turn.
+
+    The reported bug: autodraft took a TE 13 spots early in a 1TE league even
+    though that player would still be there 8 picks later at the turn. CPU
+    sampling is ADP-weighted so that reach almost never wins; autodraft is
+    argmax of score, so the empty-starter 1.35x was enough to force it.
+    """
+    out = _run_need_cases("""(() => {
+      const m = (o={}) => C.autoDraftNeedMultiplier(Object.assign({
+        pos:'TE', have:0, target:1, starterSlots:1, adp:37, pickNo:24,
+        teams:12, nextPick:32, surviveProb:58, tep:0, sf:false, qbStarters:1
+      }, o));
+      // Same decision scores the live layer would hand autodraft: TE slightly
+      // ahead on need, WR is the at-value alternative. After the wait discount
+      // the WR must win; with the old uncapped 1.35x the TE would win.
+      const teWait = 90 * m();
+      const wrNow = 84 * m({pos:'WR', starterSlots:2, have:1, target:4, adp:25, surviveProb:20});
+      const teAtValue = m({adp:24, nextPick:32, surviveProb:30});
+      const teSmallReach = m({adp:26, nextPick:32, surviveProb:35});
+      const teRun = m({surviveProb:20});
+      return {
+        wait: m(),
+        wrBoost: m({pos:'WR', starterSlots:2, have:1, target:4, adp:25, surviveProb:20}),
+        teAtValue: teAtValue,
+        teSmallReach: teSmallReach,
+        teRun: teRun,
+        backupTe: m({have:1, adp:40}),
+        overfillWr: m({pos:'WR', have:5, target:4, starterSlots:2, adp:50}),
+        tepNoWait: m({tep:1, surviveProb:58}),
+        teWaitScore: teWait,
+        wrNowScore: wrNow,
+      };
+    })()""")
+
+    assert out["wait"] == 0.35
+    assert out["wrBoost"] == 1.35
+    assert out["teAtValue"] == 1.35
+    assert out["teSmallReach"] == 1.35
+    assert out["teRun"] == 1
+    assert out["backupTe"] == 0
+    assert out["overfillWr"] == 0.4
+    # TEP is allowed to chase TE earlier, but a 13-spot reach still gets no 1.35x.
+    assert out["tepNoWait"] == 1
+    assert out["wrNowScore"] > out["teWaitScore"]
