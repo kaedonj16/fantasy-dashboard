@@ -6562,9 +6562,16 @@ window.initTradePage = function initTradePage(root = document) {
         if (_pkgArchetypes.length) {
           const archUid = String(playerId || Date.now());
           const teamArchetypes = _pkgArchetypes.filter(ap => ap.fits_your_team);
+          // Never render an empty "Your team" grid when we have patterns or
+          // roster-matched packages: fall back to the closest historical
+          // shapes rather than "no suggestions".
+          const teamList = teamArchetypes.length ? teamArchetypes : _pkgArchetypes;
+          const teamEmpty = getCurrentRosterId()
+            ? "No historical pattern matches this roster exactly — value-matched offers are listed below."
+            : "Select your team to see which of these patterns you can make.";
 
-          function buildArchCells(list) {
-            if (!list.length) return `<div style="grid-column:1/-1;padding:12px 10px;font-size:12px;color:var(--text-muted);">No top patterns match your current roster.</div>`;
+          function buildArchCells(list, emptyMsg) {
+            if (!list.length) return `<div style="grid-column:1/-1;padding:12px 10px;font-size:12px;color:var(--text-muted);">${emptyMsg}</div>`;
             return list.map((ap, idx) => {
               const sigHtml = archetypeSigHtml(ap.pattern_sig, ap.throw_in_sig);
               const pct     = ap.pct > 0 ? `<span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;flex-shrink:0;">${ap.pct}%</span>` : '';
@@ -6583,8 +6590,8 @@ window.initTradePage = function initTradePage(root = document) {
                 <button id="arch-btn-team-${archUid}" class="otc-main-tab" onclick="archToggle('${archUid}','team')">Your team</button>
               </div>
             </div>
-            <div id="arch-grid-all-${archUid}" class="otc-arch-grid">${buildArchCells(_pkgArchetypes)}</div>
-            <div id="arch-grid-team-${archUid}" class="otc-arch-grid" style="display:none;">${buildArchCells(teamArchetypes)}</div>
+            <div id="arch-grid-all-${archUid}" class="otc-arch-grid">${buildArchCells(_pkgArchetypes, "No trade patterns recorded yet.")}</div>
+            <div id="arch-grid-team-${archUid}" class="otc-arch-grid" style="display:none;">${buildArchCells(teamList, teamEmpty)}</div>
           </div>`;
         }
 
