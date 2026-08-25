@@ -188,7 +188,20 @@
   }
 
   function renderOptimizer(rows) {
-    if (!rows.length) { elList.innerHTML = '<div class="kpr-empty">No players on this roster yet.</div>'; elTot.textContent = "+0 rd"; return; }
+    if (!rows.length) {
+      if (window.brEmptyState) {
+        window.brEmptyState(elList, {
+          icon: 'empty',
+          title: 'No players yet',
+          message: 'This roster has no players to evaluate for keepers.',
+          compact: true
+        });
+      } else {
+        elList.innerHTML = '<div class="kpr-empty">No players on this roster yet.</div>';
+      }
+      elTot.textContent = "+0 rd";
+      return;
+    }
     var total = 0;
     var body = rows.map(function (row) {
       if (row.keep) total += row.surplus;

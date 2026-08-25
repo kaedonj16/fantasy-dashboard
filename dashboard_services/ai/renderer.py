@@ -309,13 +309,15 @@ def get_trade_ai_analysis(
     ]
 
     # Pick-to-prospect mapping using rookie ADP
+    from utils.lineup_slots import canonicalize_slots, count_lineup_slots, is_superflex_lineup
     current_season = ctx.get("current_season") or ctx.get("season") or 2026
     num_teams = len(ctx.get("rosters") or []) or 12
-    _roster_positions = [str(s).upper() for s in (ctx.get("roster_positions") or [])]
-    is_sf = bool(ctx.get("is_sf") or any(s in {"SUPER_FLEX", "SFLEX"} for s in _roster_positions))
+    _roster_positions = canonicalize_slots(ctx.get("roster_positions") or [])
+    _slots = count_lineup_slots(_roster_positions)
+    is_sf = bool(ctx.get("is_sf") or is_superflex_lineup(_roster_positions))
     # Starter format the analyst should reason from (QB value swings hard on this).
-    _qb_slots = sum(1 for s in _roster_positions if s == "QB")
-    _sf_slots = sum(1 for s in _roster_positions if s in {"SUPER_FLEX", "SFLEX"})
+    _qb_slots = _slots.get("QB", 0)
+    _sf_slots = _slots.get("SUPER_FLEX", 0)
     league_format = {
         "qb_format": "Superflex/2QB" if is_sf else "1QB",
         "superflex": is_sf,

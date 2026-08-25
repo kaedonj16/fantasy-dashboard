@@ -388,7 +388,7 @@ def build_advanced_metrics_body(
           </div>
           <button onclick="if(window.showPaywall)showPaywall('advanced-metrics')"
             style="font-size:13px;font-weight:700;padding:8px 18px;border:none;border-radius:10px;
-                   background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;cursor:pointer;">
+                   background:linear-gradient(135deg,#122d4b,#2563eb);color:#fff;cursor:pointer;">
             Upgrade &rarr;
           </button>
         </div>

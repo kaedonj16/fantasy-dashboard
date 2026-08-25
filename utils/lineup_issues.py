@@ -9,7 +9,8 @@ from typing import Dict, List, Optional, Set
 # Designations that make a starter a genuine lineup problem. Matches the set
 # used by the starter-injury push alert; Questionable is deliberately excluded
 # because starting a Questionable player is usually a fine decision.
-SERIOUS_INJURY_STATUSES = {"Out", "Doubtful", "IR", "PUP", "Sus", "NA"}
+# Compared case-insensitively: Sleeper commonly sends "OUT" / "SUSP".
+SERIOUS_INJURY_STATUSES = {"OUT", "DOUBTFUL", "IR", "PUP", "SUS", "SUSP", "NA", "NFI"}
 
 # Placeholder ids Sleeper uses for an unfilled starting slot.
 EMPTY_SLOT_IDS = {"0", "", "None"}
@@ -52,7 +53,7 @@ def find_lineup_issues(
         info = player_info.get(pid) or {}
         name = str(info.get("name") or "").strip() or f"Player {pid}"
         status = str(info.get("injury_status") or "").strip()
-        if status in SERIOUS_INJURY_STATUSES:
+        if status.upper() in SERIOUS_INJURY_STATUSES:
             injuries.append({
                 "kind": "injury", "pid": pid,
                 "name": name, "detail": f"{name} is listed {status}",

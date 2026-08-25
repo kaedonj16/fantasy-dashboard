@@ -156,7 +156,10 @@ def test_tier_cliff_urgency_is_suppressed_during_round_one():
 
     assert match
     assert "if (pn <= ((state && state.teams) || 12)) return false;" in match.group(1)
-    assert "isTierCliff: isTierCliff(p, _pn)" in source
+    # Live board still uses isTierCliff(); grading uses at-pick map / override.
+    assert "else _cliff = isTierCliff(p, _pn);" in source
+    assert "_buildGradeCliffs" in source
+    assert "map[pn] = (pn > teams) && t != null && left <= 2;" in source
 
 
 def test_roster_setup_has_editable_platform_and_dynasty_presets():

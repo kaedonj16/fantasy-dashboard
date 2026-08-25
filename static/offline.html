@@ -5,31 +5,66 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Offline · BR Fantasy</title>
 <style>
+  @font-face {
+    font-family: "Archivo";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("/static/fonts/web/archivo-400.woff2") format("woff2");
+  }
+  @font-face {
+    font-family: "Archivo";
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url("/static/fonts/web/archivo-700.woff2") format("woff2");
+  }
+  @font-face {
+    font-family: "Archivo";
+    font-style: normal;
+    font-weight: 800;
+    font-display: swap;
+    src: url("/static/fonts/web/archivo-800.woff2") format("woff2");
+  }
   :root { color-scheme: light dark; }
   html, body { height: 100%; margin: 0; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: "Archivo", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     text-align: center; gap: 6px; padding: 24px;
     padding-top: calc(24px + env(safe-area-inset-top));
     padding-bottom: calc(24px + env(safe-area-inset-bottom));
-    background: #ffffff; color: #0f172a;
+    background: #ffffff;
+    color: #122d4b;
   }
-  @media (prefers-color-scheme: dark) { body { background: #020617; color: #e2e8f0; } }
+  @media (prefers-color-scheme: dark) {
+    body {
+      background: #020617;
+      color: #e2e8f0;
+    }
+  }
+  .brand {
+    margin: 0 0 2px; font-size: 11px; font-weight: 800; letter-spacing: 0.16em;
+    text-transform: uppercase; color: #3b82f6;
+  }
   img { width: 72px; height: 72px; object-fit: contain; margin-bottom: 10px; }
-  h1 { font-size: 20px; margin: 0; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.02em; font-weight: 800; }
   p { font-size: 14px; line-height: 1.6; color: #64748b; max-width: 40ch; margin: 4px 0 0; }
   @media (prefers-color-scheme: dark) { p { color: #94a3b8; } }
   button {
     margin-top: 20px; font: inherit; font-size: 14px; font-weight: 700; color: #fff;
-    background: #1e3a5f; border: 0; border-radius: 12px; padding: 12px 22px; cursor: pointer;
+    background: #122d4b; border: 0; border-radius: 12px; padding: 12px 22px; cursor: pointer;
     -webkit-tap-highlight-color: transparent;
+  }
+  @media (prefers-color-scheme: dark) {
+    button { background: #38bdf8; color: #0f172a; }
   }
   button:active { transform: scale(0.97); }
 </style>
 </head>
 <body>
   <img src="/static/BR_Logo.png" alt="BR Fantasy">
+  <p class="brand">BR Fantasy</p>
   <h1>You're offline</h1>
   <p>We can't reach BR Fantasy right now. Check your connection and try again. Pages you've
   already opened stay available.</p>

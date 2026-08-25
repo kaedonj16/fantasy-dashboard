@@ -80,6 +80,12 @@ def test_flex_provider_alias_adds_the_same_depth_credit():
     assert provider_alias == pytest.approx(canonical)
 
 
+def test_wrrb_flex_alias_adds_the_same_depth_credit():
+    vals = [100, 90, 80, 70]
+    canonical = weighted_pos_strength(vals, "RB", {"FLEX": 1})
+    assert weighted_pos_strength(vals, "RB", {"WRRB_FLEX": 1}) == pytest.approx(canonical)
+
+
 def test_unknown_position_uses_top_player_only():
     # Fallback weights [1.0]: only the best value counts.
     assert weighted_pos_strength([80, 200, 50], "K", {}) == pytest.approx(200.0)

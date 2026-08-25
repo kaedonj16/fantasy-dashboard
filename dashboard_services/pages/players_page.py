@@ -167,9 +167,12 @@ def build_players_shell() -> str:
         </div>
 
         <!-- Empty state -->
-        <div id="prEmpty" style="display:none;text-align:center;padding:40px;color:var(--text-muted);">
-          <div style="font-size:24px;margin-bottom:8px;opacity:0.4;"><i class="fa-solid fa-magnifying-glass"></i></div>
-          No players match your filters
+        <div id="prEmpty" class="empty-state is-compact" style="display:none;" role="status">
+          <span class="empty-state-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.7-4.7"/></svg>
+          </span>
+          <p class="empty-state-title">No players match</p>
+          <p class="empty-state-msg">Try clearing a filter or searching a different name.</p>
         </div>
 
       </div>
