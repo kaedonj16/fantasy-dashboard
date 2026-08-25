@@ -1144,32 +1144,34 @@ _DRAFT_ROOM_HTML = r"""
     .dr-setup-cta .dr-btn { width: 100%; }
     .dr-prev-stats { grid-template-columns: repeat(2, 1fr); }
   }
-  /* Summary overlay */
+  /* Summary overlay: capped height so Deep Dive / Share / Close stay on screen
+     while the roster list scrolls inside the card. */
   .dr-summary-overlay { position:fixed; inset:0; z-index:1001; background:rgba(0,0,0,.6);
-    display:flex; align-items:flex-start; justify-content:center; overflow-y:auto;
+    display:flex; align-items:center; justify-content:center; overflow:hidden;
     /* Clear the status bar / dynamic island at the top and the home indicator at the bottom. */
     padding:calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 20px); }
   .dr-summary-card { position:relative; width:100%; max-width:500px; margin:0 auto; background:var(--card);
     border:1px solid var(--border); border-radius:20px; overflow:hidden;
-    box-shadow:0 24px 80px rgba(0,0,0,.5); }
+    box-shadow:0 24px 80px rgba(0,0,0,.5); display:flex; flex-direction:column;
+    max-height:min(620px, calc(100dvh - 48px)); }
   /* Grade ring + bars header */
-  .dr-sum-header { padding:20px 20px 0; }
+  .dr-sum-header { padding:16px 20px 0; flex-shrink:0; }
   .dr-sum-title { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.1em;
-    color:var(--text-muted); text-align:center; margin-bottom:14px; }
-  .dr-sum-grade-wrap { display:flex; align-items:center; gap:18px; padding-bottom:16px; }
+    color:var(--text-muted); text-align:center; margin-bottom:10px; }
+  .dr-sum-grade-wrap { display:flex; align-items:center; gap:18px; padding-bottom:12px; }
   .dr-sum-grade-ring { width:76px; height:76px; border-radius:50%; border:3px solid;
     display:flex; align-items:center; justify-content:center; flex-shrink:0; }
   .dr-sum-grade { font-size:30px; font-weight:900; line-height:1; }
   .dr-sum-grade-bars { flex:1; display:flex; flex-direction:column; gap:5px; }
   /* Stats strip */
-  .dr-sum-stats { display:flex; border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
-  .dr-sum-stat { flex:1; text-align:center; padding:13px 4px; }
+  .dr-sum-stats { display:flex; border-top:1px solid var(--border); border-bottom:1px solid var(--border); flex-shrink:0; }
+  .dr-sum-stat { flex:1; text-align:center; padding:10px 4px; }
   .dr-sum-stat:not(:last-child) { border-right:1px solid var(--border); }
   .dr-sum-stat-v { font-size:20px; font-weight:900; color:var(--text); line-height:1; }
   .dr-sum-stat-l { font-size:9px; color:var(--text-muted); margin-top:3px; text-transform:uppercase; letter-spacing:.04em; }
   /* Archetype / window strip */
   .dr-sum-arch { display:flex; align-items:center; justify-content:center; gap:14px; flex-wrap:wrap;
-    padding:11px 16px; border-bottom:1px solid var(--border); }
+    padding:10px 16px; border-bottom:1px solid var(--border); flex-shrink:0; }
   .dr-sum-arch-item { display:flex; flex-direction:column; align-items:center; gap:4px; }
   .dr-sum-arch-tag { font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); }
   .dr-sum-arch-label { font-size:14px; font-weight:900; color:var(--accent); line-height:1.1; }
@@ -1179,10 +1181,12 @@ _DRAFT_ROOM_HTML = r"""
   .dr-win-winnow { background:color-mix(in srgb, var(--win) 16%, transparent); color:var(--win); }
   .dr-win-balanced { background:color-mix(in srgb, var(--warning) 16%, transparent); color:var(--warning); }
   .dr-win-future { background:color-mix(in srgb, var(--accent) 16%, transparent); color:var(--accent); }
-  /* Body wrapper + section labels */
-  .dr-sum-body-wrap { padding:0 16px 4px; }
+  /* Roster list scrolls; header + footer stay put. */
+  .dr-sum-body-wrap { padding:0 16px 4px; flex:1 1 auto; min-height:0; overflow-y:auto;
+    -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
   .dr-sum-section { font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.08em;
     color:var(--text-muted); margin:14px 0 6px; }
+  .dr-sum-section:first-child { margin-top:10px; }
   /* Player rows */
   .dr-sum-row { display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--border); }
   .dr-sum-slot-badge { font-size:9px; font-weight:800; color:#fff; border-radius:4px; padding:3px 0;
@@ -1195,9 +1199,16 @@ _DRAFT_ROOM_HTML = r"""
   .dr-sum-reason { font-size:10px; color:var(--text-muted); font-style:italic; }
   .dr-sum-empty { font-size:11px; color:var(--text-muted); font-style:italic; }
   .dr-sum-ps { font-size:14px; font-weight:800; flex-shrink:0; }
-  /* Footer */
-  .dr-sum-footer { display:flex; gap:8px; padding:14px 16px 16px; }
+  /* Footer stays pinned to the bottom of the card. */
+  .dr-sum-footer { display:flex; gap:8px; padding:12px 16px 14px; flex-shrink:0;
+    border-top:1px solid var(--border); background:var(--card); position:sticky; bottom:0; z-index:2; }
   .dr-sum-footer .dr-btn { flex:1; text-align:center; }
+  @media (max-width: 640px) {
+    .dr-summary-overlay { padding:calc(env(safe-area-inset-top) + 8px) 10px calc(env(safe-area-inset-bottom) + 10px);
+      align-items:center; }
+    .dr-summary-card { max-height:min(78dvh, calc(100dvh - 16px)); border-radius:16px; }
+    .dr-sum-footer { padding:10px 12px calc(10px + env(safe-area-inset-bottom)); }
+  }
   /* Share preview overlay */
   .dr-shareview-overlay { position:fixed; inset:0; z-index:1002; background:rgba(0,0,0,.6);
     display:flex; align-items:center; justify-content:center; padding:16px; }
@@ -1282,12 +1293,13 @@ _DRAFT_ROOM_HTML = r"""
   .dd-ledger thead th { font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--text-subtle,var(--text-muted)); cursor:pointer; user-select:none; }
   .dd-ledger thead th:hover { color:var(--text); }
   .dd-ledger thead th.dd-sorted { color:var(--accent); }
-  .dd-ledger td.r, .dd-ledger th.r { text-align:right; }
+  .dd-ledger thead th.r, .dd-ledger tbody td.r { text-align:right; font-variant-numeric:tabular-nums; }
   .dd-ledger .num { font-variant-numeric:tabular-nums; }
   .dd-ledger tbody tr:hover { background:color-mix(in srgb,var(--accent) 5%,transparent); }
   .dd-plname { font-weight:600; }
   .dd-posbadge { display:inline-block; min-width:30px; text-align:center; font-size:10px; font-weight:800; color:#fff; padding:2px 6px; border-radius:5px; }
-  .dd-diff { font-weight:800; font-variant-numeric:tabular-nums; }
+  .dd-diff { display:inline-block; min-width:6.2ch; text-align:right; font-weight:800;
+    font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1; }
   .dd-diff.p { color:#16a34a; } .dd-diff.n { color:#dc2626; } .dd-diff.z { color:var(--text-muted); }
   .dd-verd { font-size:10.5px; font-weight:800; padding:3px 9px; border-radius:var(--radius-pill, 8px); border:1px solid color-mix(in srgb, currentColor 30%, transparent); }
   .dd-v-steal { background:color-mix(in srgb,#22c55e 16%,transparent); color:#16a34a; }
