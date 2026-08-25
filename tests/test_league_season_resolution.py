@@ -81,7 +81,7 @@ def test_sleeper_history_walks_previous_ids_and_stops_at_zero(monkeypatch):
         called.append(str(lid))
         return leagues.get(str(lid)) or {}
 
-    monkeypatch.setattr(dsapi, "get_league", fake_get)
+    monkeypatch.setattr(dsapi, "_fetch_league", fake_get)
     got = dsapi.build_league_history_map("sleeper", "L26", 2026)
     assert got == {2026: "L26", 2025: "L25", 2024: "L24"}
     assert "0" not in called

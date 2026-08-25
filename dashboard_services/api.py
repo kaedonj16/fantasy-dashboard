@@ -714,7 +714,9 @@ def build_league_history_map(platform: str, league_id: str, season: int) -> dict
     while cursor_league_id and cursor_league_id not in seen:
         seen.add(cursor_league_id)
         try:
-            league = get_league(cursor_league_id) or {}
+            # Raw fetch: get_league() also writes request-scoped scoring globals,
+            # and a failure there would abort the rest of the season chain.
+            league = _fetch_league(cursor_league_id) or {}
         except Exception:
             break
 
