@@ -13518,6 +13518,9 @@ html[data-theme="dark"] .contact-social-pill img {
     line-height: var(--tooltip-lh);
     white-space: normal;
     word-break: break-word;
+    /* max-content so the bubble isn't shrink-wrapped to a 28px trigger
+     (which stacked letters vertically). max-width still caps long copy. */
+    width: max-content;
     max-width: min(240px, calc(100vw - 16px));
     z-index: var(--z-tooltip);
     pointer-events: none;
