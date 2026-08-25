@@ -4193,7 +4193,7 @@ window.initTradePage = function initTradePage(root = document) {
     currentMoversDays = days;
 
     // Update active button
-    const dayFilters = document.querySelectorAll('.otc-day-filter');
+    const dayFilters = document.querySelectorAll('.otc-movers-panel .otc-day-filter');
     dayFilters.forEach(btn => {
       btn.classList.toggle('active', parseInt(btn.getAttribute('data-days')) === days);
     });
@@ -4397,7 +4397,7 @@ window.initTradePage = function initTradePage(root = document) {
     const breakoutsContent = root.querySelector("#breakoutsTabContent");
     const targetsContent = root.querySelector("#targetsTabContent");
     const moversSub = root.querySelector("#moversSub");
-    const dayFilters = root.querySelector(".otc-day-filters");
+    const dayFilters = root.querySelector(".otc-movers-panel .otc-day-filters");
     const lockIcon = root.querySelector("#targetsLockIcon");
     const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
 
@@ -12434,9 +12434,9 @@ function openPlayerModal(playerId, playerName, opts) {
             };
             const ranges = applicable.concat([{ label: 'All', days: Infinity }]);
             const bar = document.createElement('div');
-            bar.className = 'pvc-range-bar';
+            bar.className = 'otc-day-filters pvc-range-bar';
             bar.innerHTML = ranges.map(r =>
-              `<button type="button" class="pvc-range-btn${r.days === Infinity ? ' is-active' : ''}" data-days="${r.days}">${r.label}</button>`
+              `<button type="button" class="otc-day-filter pvc-range-btn${r.days === Infinity ? ' is-active' : ''}" data-days="${r.days}">${r.label}</button>`
             ).join('');
             chartDiv.parentNode.insertBefore(bar, chartDiv);
             bar.addEventListener('click', (e) => {
@@ -14184,11 +14184,11 @@ function pmToggleWeeklyTrends(playerId) {
       body.innerHTML = modeBar
         + '<div id="pmWtWeekly">'
         + '<div class="pm-wt-filter-bar">'
-        + '<div class="pm-wt-tabs br-chip-pop">'
-        + '<button class="pm-wt-tab" data-n="">All</button>'
-        + '<button class="pm-wt-tab" data-n="4">L4</button>'
-        + '<button class="pm-wt-tab pm-wt-tab-active" data-n="8">L8</button>'
-        + '<button class="pm-wt-tab" data-n="12">L12</button>'
+        + '<div class="otc-day-filters pm-wt-tabs br-chip-pop">'
+        + '<button class="otc-day-filter pm-wt-tab" data-n="">All</button>'
+        + '<button class="otc-day-filter pm-wt-tab" data-n="4">L4</button>'
+        + '<button class="otc-day-filter pm-wt-tab pm-wt-tab-active" data-n="8">L8</button>'
+        + '<button class="otc-day-filter pm-wt-tab" data-n="12">L12</button>'
         + '</div>'
         + '</div>'
         + '<div id="pmWtContent"></div>'

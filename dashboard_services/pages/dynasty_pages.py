@@ -102,7 +102,7 @@ def build_dynasty_value_chart_body(value_table: list[dict], as_of_date: str | No
 
     positions = ["All", "QB", "RB", "WR", "TE"]
     pos_btns = "".join(
-        f'<button type="button" class="dvt-pos-btn{"  dvt-pos-btn-active" if p == "All" else ""}" '
+        f'<button type="button" class="otc-day-filter dvt-pos-btn{" dvt-pos-btn-active" if p == "All" else ""}" '
         f'data-pos="{p}">{p}</button>'
         for p in positions
     )
@@ -178,7 +178,7 @@ def build_dynasty_value_chart_body(value_table: list[dict], as_of_date: str | No
   </div>
 
   <div class="dvt-controls">
-    <div class="dvt-pos-filter">{pos_btns}</div>
+    <div class="otc-day-filters dvt-pos-filter">{pos_btns}</div>
     <input type="search" class="dvt-search" id="dvtSearch" placeholder="Search player...">
   </div>
 
@@ -376,12 +376,12 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
 
     def _tf_opt(d: int, lbl: str) -> str:
         active = d == days
-        cls = "rf-tf-opt is-active" if active else "rf-tf-opt"
+        cls = "otc-day-filter rf-tf-opt is-active" if active else "otc-day-filter rf-tf-opt"
         aria = ' aria-current="true"' if active else ""
         return f'<a class="{cls}" href="/top-movers?days={d}"{aria}>{lbl}</a>'
 
     _toggle = "".join(_tf_opt(d, lbl) for d, lbl in ((7, "7d"), (30, "30d"), (90, "90d")))
-    toggle_html = f'<div class="rf-timeframe" role="group" aria-label="Timeframe">{_toggle}</div>'
+    toggle_html = f'<div class="otc-day-filters rf-timeframe" role="group" aria-label="Timeframe">{_toggle}</div>'
 
     return f"""
 <div class="rf-page">

@@ -13983,12 +13983,12 @@ def page_breakouts(platform: str, season: int, league_id: str):
       </div>
       <div class="card-body">
         <!-- Position Filter -->
-        <div class="breakout-filters">
-          <button class="breakout-filter-btn active" data-position="ALL" onclick="filterBreakouts('ALL')">All Positions</button>
-          <button class="breakout-filter-btn" data-position="QB" onclick="filterBreakouts('QB')">QB</button>
-          <button class="breakout-filter-btn" data-position="RB" onclick="filterBreakouts('RB')">RB</button>
-          <button class="breakout-filter-btn" data-position="WR" onclick="filterBreakouts('WR')">WR</button>
-          <button class="breakout-filter-btn" data-position="TE" onclick="filterBreakouts('TE')">TE</button>
+        <div class="otc-day-filters breakout-filters">
+          <button class="otc-day-filter breakout-filter-btn active" data-position="ALL" onclick="filterBreakouts('ALL')">All Positions</button>
+          <button class="otc-day-filter breakout-filter-btn" data-position="QB" onclick="filterBreakouts('QB')">QB</button>
+          <button class="otc-day-filter breakout-filter-btn" data-position="RB" onclick="filterBreakouts('RB')">RB</button>
+          <button class="otc-day-filter breakout-filter-btn" data-position="WR" onclick="filterBreakouts('WR')">WR</button>
+          <button class="otc-day-filter breakout-filter-btn" data-position="TE" onclick="filterBreakouts('TE')">TE</button>
         </div>
 
         <!-- Loading State -->
@@ -16264,12 +16264,12 @@ def build_schedule_body(ctx):
 
         <!-- Schedule Rankings: position pills + sort -->
         <div class="sched-rank-controls" id="schedRankControls" style="display:none;">
-          <div class="sched-pos-pills" id="schedRankPosPills">
-            <button class="sched-rank-pos active" data-pos="QB">QB</button>
-            <button class="sched-rank-pos" data-pos="RB">RB</button>
-            <button class="sched-rank-pos" data-pos="WR">WR</button>
-            <button class="sched-rank-pos" data-pos="TE">TE</button>
-            <button class="sched-rank-pos" data-pos="K">K</button>
+          <div class="otc-day-filters sched-pos-pills" id="schedRankPosPills">
+            <button class="otc-day-filter sched-rank-pos active" data-pos="QB">QB</button>
+            <button class="otc-day-filter sched-rank-pos" data-pos="RB">RB</button>
+            <button class="otc-day-filter sched-rank-pos" data-pos="WR">WR</button>
+            <button class="otc-day-filter sched-rank-pos" data-pos="TE">TE</button>
+            <button class="otc-day-filter sched-rank-pos" data-pos="K">K</button>
           </div>
           <button class="sched-sort-btn" id="schedRankSort">
             Easiest First <i class="fa-solid fa-arrow-up-short-wide" aria-hidden="true"></i>
