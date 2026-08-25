@@ -120,10 +120,13 @@ def build_draft_room_body(
 _DRAFT_ROOM_HTML = r"""
 <div class="dr-wrap">
   <div class="dr-hero" id="drHero">
+    <p class="dr-brand">BR Fantasy</p>
     <h1 class="dr-title">Draft Room</h1>
-    <p class="dr-sub">Mock against CPU teams, draft manually, or sync a live Sleeper draft. Best-available, tiers, and a live draft grade.</p>
-    <a class="dr-hero-link" id="drToCheatSheet" href="/draft/cheat-sheet">Cheat Sheet &rarr;</a>
-    <a class="dr-hero-link" id="drToHistory" href="/draft/history">Draft History &rarr;</a>
+    <p class="dr-sub">Mock against CPU teams, draft manually, or sync a live Sleeper draft with best-available ranks, tiers, and a live grade.</p>
+    <div class="dr-hero-actions">
+      <a class="dr-hero-link" id="drToCheatSheet" href="/draft/cheat-sheet">Cheat Sheet</a>
+      <a class="dr-hero-link" id="drToHistory" href="/draft/history">Draft History</a>
+    </div>
   </div>
 
   <!-- Setup -->
@@ -131,8 +134,10 @@ _DRAFT_ROOM_HTML = r"""
     <div class="dr-setup-card">
 
       <div class="dr-step">
-        <div class="dr-step-num">Step 1</div>
-        <div class="dr-step-title">Format</div>
+        <div class="dr-step-head">
+          <span class="dr-step-num">1</span>
+          <div class="dr-step-title">Format</div>
+        </div>
         <div class="dr-setup-grid">
           <div class="dr-field"><span>Draft Type</span>
             <select id="drType">
@@ -191,14 +196,18 @@ _DRAFT_ROOM_HTML = r"""
       </div>
 
       <div class="dr-step">
-        <div class="dr-step-num">Step 2</div>
-        <div class="dr-step-title">Roster Slots</div>
+        <div class="dr-step-head">
+          <span class="dr-step-num">2</span>
+          <div class="dr-step-title">Roster Slots</div>
+        </div>
         <div id="drRosterSection"></div>
       </div>
 
       <div class="dr-step">
-        <div class="dr-step-num">Step 3</div>
-        <div class="dr-step-title">League</div>
+        <div class="dr-step-head">
+          <span class="dr-step-num">3</span>
+          <div class="dr-step-title">League</div>
+        </div>
         <div class="dr-setup-grid">
           <div class="dr-field"><span>Teams</span>
             <select id="drTeams">
@@ -215,8 +224,10 @@ _DRAFT_ROOM_HTML = r"""
       </div>
 
       <div class="dr-step">
-        <div class="dr-step-num">Step 4</div>
-        <div class="dr-step-title">Draft Capital</div>
+        <div class="dr-step-head">
+          <span class="dr-step-num">4</span>
+          <div class="dr-step-title">Draft Capital</div>
+        </div>
         <p class="dr-setup-desc" style="margin-bottom:8px;">Defaults to your slot's picks. Tap + on a round to add a traded-in pick, or click a pick to remove one you traded away.</p>
         <div id="drCapitalSection"></div>
       </div>
@@ -446,29 +457,77 @@ _DRAFT_ROOM_HTML = r"""
 </div>
 
 <style>
-  .dr-wrap { max-width: 1640px; margin: 0 auto; padding: 10px 12px 40px; }
-  .dr-hero { margin: 4px 0 16px; text-align: center; }
-  .dr-title { font-size: clamp(22px,4vw,30px); font-weight: 800; color: var(--text); margin: 0 0 6px; }
-  .dr-sub { font-size: 14px; color: var(--text-muted); margin: 0 auto; max-width: 560px; line-height: 1.5; }
-  .dr-hero-link { display: inline-block; margin-top: 10px; font-size: 13px; font-weight: 700;
-    color: var(--accent,#38bdf8); text-decoration: none; }
-  .dr-hero-link:hover { text-decoration: underline; }
+  .dr-wrap {
+    max-width: 1640px; margin: 0 auto; padding: 14px 14px 48px;
+    position: relative;
+  }
+  .dr-wrap::before {
+    content: ""; position: absolute; inset: -8px -4% auto; height: min(340px, 46vh);
+    pointer-events: none; z-index: 0;
+    background:
+      radial-gradient(ellipse 65% 55% at 18% 12%, rgba(56, 189, 248, 0.14), transparent 62%),
+      radial-gradient(ellipse 50% 45% at 88% 0%, rgba(18, 45, 75, 0.1), transparent 58%);
+  }
+  :root[data-theme="dark"] .dr-wrap::before {
+    background:
+      radial-gradient(ellipse 65% 55% at 16% 10%, rgba(56, 189, 248, 0.12), transparent 60%),
+      radial-gradient(ellipse 48% 42% at 90% 0%, rgba(59, 130, 246, 0.1), transparent 55%);
+  }
+  .dr-hero, .dr-setup, .dr-main { position: relative; z-index: 1; }
+  .dr-hero { margin: 2px 0 22px; text-align: center; }
+  .dr-brand {
+    margin: 0 0 8px; font-size: 11px; font-weight: 800; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--brand-blue, #3b82f6);
+  }
+  .dr-title {
+    font-size: clamp(28px, 4.4vw, 40px); font-weight: 800; color: var(--text);
+    margin: 0 0 8px; letter-spacing: -0.03em; line-height: 1.1;
+  }
+  .dr-sub {
+    font-size: 15px; color: var(--text-muted); margin: 0 auto; max-width: 540px; line-height: 1.55;
+  }
+  .dr-hero-actions {
+    display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 14px;
+  }
+  .dr-hero-link {
+    display: inline-flex; align-items: center; padding: 7px 12px; font-size: 12px; font-weight: 700;
+    color: var(--text-muted); text-decoration: none; border: 1px solid var(--border);
+    border-radius: 999px; background: color-mix(in srgb, var(--card) 80%, transparent);
+    transition: color .15s, border-color .15s, background .15s;
+  }
+  .dr-hero-link:hover {
+    color: var(--brand-blue, #3b82f6); border-color: color-mix(in srgb, var(--brand-blue, #3b82f6) 45%, var(--border));
+    background: color-mix(in srgb, var(--brand-blue, #3b82f6) 8%, transparent); text-decoration: none;
+  }
   /* ── Setup (redesigned) ── */
   .dr-setup { display: flex; justify-content: center; padding: 0 0 8px; }
-  .dr-setup-card { width: 100%; max-width: 720px; background: var(--card); border: 1px solid var(--border);
-    border-radius: 16px; padding: 22px 24px; box-shadow: 0 8px 30px rgba(0,0,0,.10); }
+  .dr-setup-card {
+    width: 100%; max-width: 740px; background: var(--card); border: 1px solid var(--border);
+    border-radius: 18px; padding: 24px 26px; box-shadow: var(--shadow, 0 8px 30px rgba(0,0,0,.10));
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--brand-blue, #3b82f6) 5%, var(--card)) 0%, var(--card) 88px),
+      var(--card);
+  }
   .dr-setup-desc { font-size: 13px; color: var(--text-muted); margin: 0; line-height: 1.5; }
   .dr-step { padding: 22px 0; border-top: 1px solid var(--border); }
   .dr-step:first-child { border-top: none; padding-top: 0; }
-  .dr-step-num { font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .12em; color: var(--accent,#38bdf8); margin-bottom: 4px; }
-  .dr-step-title { font-size: 22px; font-weight: 900; color: var(--text); margin-bottom: 16px; line-height: 1.1; }
+  .dr-step-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .dr-step-num {
+    width: 26px; height: 26px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 900; color: var(--on-accent, #fff);
+    background: var(--accent, #122d4b); flex-shrink: 0;
+  }
+  .dr-step-title { font-size: 20px; font-weight: 800; color: var(--text); margin: 0; line-height: 1.15; letter-spacing: -0.02em; }
   .dr-setup-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(150px,1fr)); gap: 12px; }
   .dr-field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 700; color: var(--text-muted); }
   .dr-field select, .dr-field input {
     padding: 9px 11px; border-radius: 9px; border: 1px solid var(--border);
     background: var(--bg); color: var(--text); font-size: 14px; font-weight: 600; outline: none; min-height: 40px;
   }
-  .dr-field select:focus, .dr-field input:focus { border-color: var(--accent,#38bdf8); }
+  .dr-field select:focus, .dr-field input:focus {
+    border-color: var(--brand-blue, #3b82f6);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-blue, #3b82f6) 16%, transparent);
+  }
   .dr-setup-cta { margin-top: 20px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .dr-btn-lg { padding: 12px 22px; font-size: 14px; border-radius: 10px; }
   .dr-sim-speed { padding: 6px 8px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg);
@@ -476,8 +535,16 @@ _DRAFT_ROOM_HTML = r"""
   .dr-btn {
     padding: 9px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer;
     border: 1px solid var(--border); background: var(--bg); color: var(--text); white-space: nowrap;
+    transition: background .15s, border-color .15s, color .15s, box-shadow .15s, transform .15s;
   }
-  .dr-btn-primary { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: #fff; }
+  .dr-btn:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+  .dr-btn-primary {
+    background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: var(--on-accent, #fff);
+  }
+  .dr-btn-primary:hover {
+    box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 28%, transparent);
+    transform: translateY(-1px);
+  }
   .dr-btn-ghost { background: transparent; font-weight: 600; }
   /* Settings gear button — sits beside the side-panel tabs — + dropdown panel */
   .dr-side-opts { position: relative; flex: 0 0 auto; display: flex; align-items: stretch; }
@@ -529,8 +596,10 @@ _DRAFT_ROOM_HTML = r"""
   .dr-statusbar {
     position: relative;
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding: 10px 14px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 12px;
-    background: var(--card);
+    padding: 10px 14px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 14px;
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--brand-blue, #3b82f6) 4%, var(--card)), var(--card));
+    box-shadow: var(--shadow-sm, 0 2px 8px rgba(15, 23, 42, 0.05));
     position: sticky; top: 89px; z-index: 30;
   }
   .dr-status-info { display: flex; align-items: center; gap: 14px; min-width: 0; flex: 1; }
@@ -590,7 +659,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-cols { display: grid; grid-template-columns: 1fr 375px; gap: 14px; align-items: start; }
   /* min-width:0 lets this grid item shrink to its track instead of growing to
      the wide board's width (the inner scroll, not the card, holds the overflow). */
-  .dr-board-wrap { position: relative; min-width: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--card); padding: 6px; }
+  .dr-board-wrap { position: relative; min-width: 0; border: 1px solid var(--border); border-radius: 14px; background: var(--card); padding: 8px; box-shadow: var(--shadow-sm, 0 2px 8px rgba(15, 23, 42, 0.05)); }
   /* Only the board scrolls horizontally; the toolbar (Value/Pick Score toggle)
      stays pinned to the card so it doesn't drift when you scroll the grid. */
   .dr-board-scroll { overflow-x: auto; min-width: 0; }
@@ -639,7 +708,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-board-toolbar { display: flex; align-items: center; justify-content: flex-end; padding: 4px 6px 2px; }
   .dr-cell-toggle { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; font-size: 10px; font-weight: 700; }
   .dr-ct-opt { padding: 3px 9px; cursor: pointer; color: var(--text-muted); transition: background .15s, color .15s; }
-  .dr-ct-opt.is-active { background: var(--accent,#38bdf8); color: #fff; }
+  .dr-ct-opt.is-active { background: var(--accent,#38bdf8); color: var(--on-accent, #fff); }
   .dr-ct-opt:not(.is-active):hover { background: var(--bg2,rgba(127,127,127,.12)); color: var(--text); }
   .dr-hs { width: 40px; height: 40px; border-radius: 8px 8px 0 0; object-fit: cover; object-position: top center;
     flex-shrink: 0; background: transparent; align-self: flex-end; }
@@ -655,8 +724,9 @@ _DRAFT_ROOM_HTML = r"""
     box-shadow: 2px 0 4px -2px rgba(0,0,0,.25);
     display: flex; align-items: center; justify-content: center; }
   .dr-corner { z-index: 4; }
-  .dr-side { border: 1px solid var(--border); border-radius: 10px; background: var(--card); display: flex; flex-direction: column;
-    position: sticky; top: 158px; align-self: start; max-height: calc(100vh - 166px); z-index: 20; overflow: hidden; }
+  .dr-side { border: 1px solid var(--border); border-radius: 14px; background: var(--card); display: flex; flex-direction: column;
+    position: sticky; top: 158px; align-self: start; max-height: calc(100vh - 166px); z-index: 20; overflow: hidden;
+    box-shadow: var(--shadow-sm, 0 2px 8px rgba(15, 23, 42, 0.05)); }
   /* Reuse the trade-calculator pill tabs (otc-main-tabs), evenly spread across panel */
   .dr-side-tabs.otc-main-tabs { width: auto; margin: 8px; }
   .dr-side-tabs .otc-main-tab { flex: 1; display: flex; align-items: center; justify-content: center;
@@ -877,10 +947,10 @@ _DRAFT_ROOM_HTML = r"""
     font-weight: 600; cursor: pointer; white-space: nowrap;
   }
   .dr-sortsel-opt:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
-  .dr-sortsel-opt.is-active { background: var(--accent,#38bdf8); color: #fff; }
+  .dr-sortsel-opt.is-active { background: var(--accent,#38bdf8); color: var(--on-accent, #fff); }
   .dr-pos-filters { display: flex; gap: 4px; flex-wrap: wrap; }
   .dr-pos { font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text-muted); cursor: pointer; }
-  .dr-pos.active { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: #fff; }
+  .dr-pos.active { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: var(--on-accent, #fff); }
   .dr-adp-src { font-size: 10px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
   .dr-adp-src-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
   .dr-adp-src-select { padding: 4px 7px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 11px; cursor: pointer; outline: none; }
@@ -1465,9 +1535,12 @@ def build_draft_history_body(
 _DRAFT_HISTORY_HTML = r"""
 <div class="dr-wrap">
   <div class="dr-hero">
+    <p class="dr-brand">BR Fantasy</p>
     <h1 class="dr-title">Draft History</h1>
     <p class="dr-sub">Every draft in your league's history. Open any board to review the picks pick-by-pick.</p>
-    <a class="dr-hero-link" id="drHistToRoom" href="/draft">&larr; Draft Room</a>
+    <div class="dr-hero-actions">
+      <a class="dr-hero-link" id="drHistToRoom" href="/draft">&larr; Draft Room</a>
+    </div>
   </div>
   <div id="drHistList" class="dr-hist-list">
     <div class="dr-loading"><div class="loading-spinner" style="width:22px;height:22px;"></div><span>Loading…</span></div>
@@ -1475,16 +1548,34 @@ _DRAFT_HISTORY_HTML = r"""
 </div>
 
 <style>
-  .dr-wrap { max-width: 900px; margin: 0 auto; padding: 12px 14px 48px; }
-  .dr-hero { margin-bottom: 14px; }
-  .dr-title { font-size: clamp(20px,4vw,28px); font-weight: 800; color: var(--text); margin: 0 0 4px; }
-  .dr-sub { font-size: 14px; color: var(--text-muted); margin: 0; }
-  .dr-hero-link { display: inline-block; margin-top: 8px; font-size: 13px; font-weight: 700;
-    color: var(--accent,#38bdf8); text-decoration: none; }
-  .dr-hero-link:hover { text-decoration: underline; }
-  .dr-hist-list { display: flex; flex-direction: column; gap: 10px; }
+  .dr-wrap { max-width: 900px; margin: 0 auto; padding: 14px 14px 48px; position: relative; }
+  .dr-wrap::before {
+    content: ""; position: absolute; inset: -8px -4% auto; height: min(260px, 40vh);
+    pointer-events: none; z-index: 0;
+    background:
+      radial-gradient(ellipse 65% 55% at 18% 12%, rgba(56, 189, 248, 0.12), transparent 62%),
+      radial-gradient(ellipse 50% 45% at 88% 0%, rgba(18, 45, 75, 0.08), transparent 58%);
+  }
+  .dr-hero { margin-bottom: 18px; position: relative; z-index: 1; }
+  .dr-brand {
+    margin: 0 0 8px; font-size: 11px; font-weight: 800; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--brand-blue, #3b82f6);
+  }
+  .dr-title { font-size: clamp(24px,4vw,34px); font-weight: 800; color: var(--text); margin: 0 0 6px; letter-spacing: -0.03em; }
+  .dr-sub { font-size: 15px; color: var(--text-muted); margin: 0; line-height: 1.5; max-width: 520px; }
+  .dr-hero-actions { display: inline-flex; gap: 8px; margin-top: 12px; }
+  .dr-hero-link {
+    display: inline-flex; align-items: center; padding: 7px 12px; font-size: 12px; font-weight: 700;
+    color: var(--text-muted); text-decoration: none; border: 1px solid var(--border);
+    border-radius: 999px; background: color-mix(in srgb, var(--card) 80%, transparent);
+  }
+  .dr-hero-link:hover {
+    color: var(--brand-blue, #3b82f6); border-color: color-mix(in srgb, var(--brand-blue, #3b82f6) 45%, var(--border));
+    text-decoration: none;
+  }
+  .dr-hist-list { display: flex; flex-direction: column; gap: 10px; position: relative; z-index: 1; }
   .dr-hist-card { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--border);
-    border-radius: 10px; background: var(--card); }
+    border-radius: 12px; background: var(--card); box-shadow: var(--shadow-sm, 0 2px 8px rgba(15, 23, 42, 0.05)); }
   .dr-hist-body { flex: 1; min-width: 0; }
   .dr-hist-title { font-size: 15px; font-weight: 700; color: var(--text); }
   .dr-hist-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
@@ -1495,7 +1586,7 @@ _DRAFT_HISTORY_HTML = r"""
   .dr-hist-actions { display: flex; gap: 6px; flex-shrink: 0; }
   .dr-btn { padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer;
     border: 1px solid var(--border); background: var(--bg); color: var(--text); text-decoration: none; }
-  .dr-btn-primary { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: #fff; }
+  .dr-btn-primary { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: var(--on-accent, #fff); }
   .dr-btn-danger { color: var(--loss); border-color: color-mix(in srgb, var(--loss) 40%, transparent); background: transparent; }
   .dr-loading { display: flex; align-items: center; gap: 10px; padding: 24px; color: var(--text-muted); font-size: 13px; justify-content: center; }
   .dr-hist-empty { padding: 28px; text-align: center; color: var(--text-muted); font-size: 14px; }
