@@ -118,6 +118,22 @@ def test_compare_modal_uses_relative_pick_score():
     assert "var ps = psRelLive(p);" in row.group(1)
 
 
+def test_preview_modal_uses_relative_pick_score():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    match = re.search(
+        r"function openPreview\(id\)\{(.*?)document\.getElementById\('drPreview'\)\.style\.display",
+        source,
+        re.DOTALL,
+    )
+
+    assert match
+    body = match.group(1)
+    assert "ps = psRelLive(p);" in body
+    assert "psAbs(" not in body
+    assert "function psAbs" not in source
+    assert "dr-prev-score-hero" in body
+
+
 def test_recommendation_is_a_rank_not_a_declining_numeric_grade():
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 

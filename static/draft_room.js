@@ -2651,10 +2651,10 @@
       .sort(function(a,b){ return b._ds - a._ds || (b._ps || 0) - (a._ps || 0); });
   }
   // Map a raw pick score onto the pool-relative display scale. Live board,
-  // sidebar, and compare modal all use this so a strong pick on a depleted
-  // board still reads well. Report-card / Deep Dive “Board PS” uses the same
-  // scale at the historical slot (via relPS). Recommendation rows still carry
-  // Decision rank separately (see playerRowHtml).
+  // sidebar, compare modal, and player preview all use this so a strong pick
+  // on a depleted board still reads well. Report-card / Deep Dive “Board PS”
+  // uses the same scale at the historical slot (via relPS). Recommendation
+  // rows still carry Decision rank separately (see playerRowHtml).
   function psDisplay(ps){
     if (ps == null) return null;
     if (!_psPoolMax || _psPoolMax <= 0) return ps;
@@ -2662,20 +2662,12 @@
     return d > 99 ? 99 : (d < 1 ? 1 : d);
   }
 
-  // Pool-relative Pick Score for live surfaces (sidebar, compare). Same
-  // 0-100 chip playerRowHtml shows, so the compare modal never disagrees
-  // with the board. Preview still uses psAbs for the raw slot grade.
+  // Pool-relative Pick Score for live surfaces (sidebar, compare, preview).
+  // Same 0-100 chip playerRowHtml shows, so those modals never disagree with
+  // the board. Report-card grades still recompute with grading:true on the
+  // absolute kernel.
   function psRelLive(p){
     return psDisplay(p._ps != null ? p._ps : pickScoreFor(p));
-  }
-
-  // Absolute Pick Score for the preview modal: the raw 0-100 grade at this
-  // slot, clamped to 1-99. Report-card grades also recompute with grading:true
-  // on this absolute kernel. Live chips (board / sidebar / compare) use
-  // psDisplay / psRelLive instead.
-  function psAbs(p){
-    var raw = p._ps != null ? p._ps : pickScoreFor(p);
-    return raw == null ? null : Math.max(1, Math.min(99, Math.round(raw)));
   }
 
   // ── Pool-relative score for ALREADY-MADE picks (report card) ────────────────
@@ -5314,7 +5306,7 @@
   // Single source of truth so the inline ⓘ tooltips and the help popover agree.
   var _GLOSSARY = [
     { term: 'Recommendation', def: 'The live, roster-aware order for this pick. It starts with Pick Score, then accounts for whether the player fills a starter or FLEX spot, backup and overfill cost, required slots and picks remaining, positional depth, expected availability at your next pick, and recent investment at QB or TE. A major value fall can still overcome imperfect roster fit. Recommendation is shown as a rank rather than a grade because its internal utility naturally changes as the board is depleted.' },
-    { term: 'Pick Score (PS)', def: 'A 0-100 grade of pick quality. On the live board, sidebar, and compare modal it is scaled relative to the best player still available (so a strong late pick still reads well). Made-pick chips on the report card / Deep Dive “Board PS” use the same relative scale at that historical slot. Your letter grade’s Value bar uses the absolute, round-weighted kernel score — those two numbers can differ. Kickers and defenses aren’t scored.' },
+    { term: 'Pick Score (PS)', def: 'A 0-100 grade of pick quality. On the live board, sidebar, compare modal, and player preview it is scaled relative to the best player still available (so a strong late pick still reads well). Made-pick chips on the report card / Deep Dive “Board PS” use the same relative scale at that historical slot. Your letter grade’s Value bar uses the absolute, round-weighted kernel score — those two numbers can differ. Kickers and defenses aren’t scored.' },
     { term: 'Value', def: 'The player’s trade value as an asset on a 0-999 scale - dynasty value for startup/rookie drafts, redraft value for redraft.' },
     { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a replacement-level starter at their position (a fixed, preseason-style baseline). VORP uses real fantasy points; VOR uses dynasty value.' },
     { term: 'ADP', def: 'Average Draft Position - the typical overall pick a player goes at in real drafts. If it’s below your current pick, they’ve fallen and may be a value.' },
@@ -6474,7 +6466,8 @@
   }
   function openPreview(id){
     var p = playersById[String(id)]; if (!p) return;
-    var adp = adpOf(p), t = tierOf(p), ps = psAbs(p);
+    if (_psPoolMax <= 0) refreshPsPool();
+    var adp = adpOf(p), t = tierOf(p), ps = psRelLive(p);
     var posRank = state.sf ? (p.sf_pos_rank_label || '') : (p.pos_rank_label || '');
     var adpGap = (adp != null) ? (state.current - adp) : null;
     var vsAdp = adpGap != null ? (adpGap >= 0 ? ('+' + Math.round(adpGap)) : String(Math.round(adpGap))) : '-';
