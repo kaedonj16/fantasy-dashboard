@@ -47,7 +47,7 @@ def render_dynasty_notice_html(draft_url: str = "", show_anyway_url: str = "") -
     padding:5px 11px;border-radius:12px;margin-bottom:14px;}}
   .kpr-dyn-actions{{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:18px;}}
   .kpr-draft-btn{{display:inline-flex;align-items:center;gap:7px;font:inherit;font-size:13px;font-weight:700;
-    color:#fff;background:var(--accent);border:0;border-radius:10px;padding:10px 16px;cursor:pointer;
+    color:var(--on-accent,#fff);background:var(--accent);border:0;border-radius:10px;padding:10px 16px;cursor:pointer;
     text-decoration:none;white-space:nowrap;}}
   .kpr-draft-btn:hover{{filter:brightness(1.06);}}
   .kpr-anyway{{display:inline-flex;align-items:center;font:inherit;font-size:13px;font-weight:600;
@@ -282,6 +282,7 @@ def render_keeper_html(seed: dict) -> str:
 <div class="card central kpr-wrap">
   <div class="card-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
     <div class="kpr-head-text">
+      <p class="br-page-brand">BR Fantasy</p>
       <h2>Keeper Assistant</h2>
       <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
         Who’s worth keeping? Surplus = where a player drafts today minus what he costs to keep.

@@ -14,6 +14,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
 <div class="card central" id="prospectsCard">
   <div class="card-header rk-card-header">
     <div>
+      <p class="br-page-brand">BR Fantasy</p>
       <h2 id="rookiesTitle">Rookie Prospects</h2>
       <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
         Dynasty prospect rankings - production, athleticism, and draft capital combined

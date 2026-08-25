@@ -21,7 +21,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
   border: 1px solid var(--border); background: var(--card); color: var(--text-muted); cursor: pointer;
   transition: background .12s, color .12s, border-color .12s;
 }
-.wv-pos-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.wv-pos-btn.active { background: var(--accent); color: var(--on-accent, #fff); border-color: var(--accent); }
 
 /* Mobile tab bar */
 .wv-tab-bar {
@@ -346,6 +346,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 
     html_body = f"""
 <div class="wv-page">
+  <p class="br-page-brand">BR Fantasy</p>
   <!-- Position filter pills -->
   <div class="wv-filters">
     <div class="wv-filter-row">
