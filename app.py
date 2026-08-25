@@ -23535,6 +23535,46 @@ def api_team_details(roster_id: str):
         return _api_err("Request failed", e)
 
 
+@app.route("/api/player-league-trades/<player_id>")
+def api_player_league_trades(player_id: str):
+    """
+    Trades involving this player inside the connected league — every season in
+    the league history chain. Includes counterparty team names and resolves
+    drafted picks (e.g. 2026 1.04 → player) once that draft is complete.
+
+    Query: platform, league_id, season, limit (default 20).
+    Free — same access model as the Trade Database.
+    """
+    try:
+        from dashboard_services.player_league_trades import get_player_league_trades
+
+        league_id = (request.args.get("league_id") or "").strip()
+        platform = (request.args.get("platform") or "sleeper").strip().lower()
+        try:
+            season = int(request.args.get("season") or datetime.now().year)
+        except (TypeError, ValueError):
+            season = datetime.now().year
+        try:
+            limit = int(request.args.get("limit") or 20)
+        except (TypeError, ValueError):
+            limit = 20
+
+        if not league_id:
+            return jsonify({"error": "league_id required"}), 400
+
+        payload = get_player_league_trades(
+            player_id=player_id,
+            platform=platform,
+            league_id=league_id,
+            season=season,
+            limit=limit,
+        )
+        return jsonify(payload)
+    except Exception as e:
+        logger.exception("[api_player_league_trades] error")
+        return _api_err("Request failed", e)
+
+
 @app.route("/api/team-trades/<roster_id>")
 def api_team_trades(roster_id: str):
     """Return all trades for a specific team in the current league season."""
@@ -25375,7 +25415,7 @@ def api_trade_intel_player_trades(player_id: str):
             trade_rows = conn.execute(
                 f"""
                 SELECT DISTINCT
-                    t.id, t.transaction_id, t.season, t.week, t.created_at,
+                    t.id, t.transaction_id, t.league_id, t.season, t.week, t.created_at,
                     l.is_superflex, l.num_teams
                 FROM trade_intel_trades t
                 JOIN trade_intel_assets a ON a.trade_id = t.id
@@ -25430,7 +25470,15 @@ def api_trade_intel_player_trades(player_id: str):
             else:
                 order = a["pick_order"] or ""
                 name = f"{s} Round {r}" + (f" ({order})" if order else "")
-            return {"type": "pick", "name": name, "is_focus": False}
+            return {
+                "type": "pick",
+                "name": name,
+                "is_focus": False,
+                "pick_season": a.get("pick_season"),
+                "pick_round": a.get("pick_round"),
+                "pick_slot": a.get("pick_slot"),
+                "pick_order": a.get("pick_order"),
+            }
 
         result = []
         for r in trade_rows:
@@ -25448,12 +25496,23 @@ def api_trade_intel_player_trades(player_id: str):
                     trade_date = str(r["created_at"])[:10]
             result.append({
                 "trade_id": r["transaction_id"],
+                "league_id": r["league_id"],
                 "date": trade_date,
                 "is_superflex": r["is_superflex"],
                 "num_teams": r["num_teams"],
                 "side_a": side_a,
                 "side_b": side_b,
             })
+
+        # Resolve completed draft picks → player names when the source league
+        # draft has finished (e.g. "2026 Pick 1.04 → Tetairoa McMillan").
+        try:
+            from dashboard_services.player_league_trades import (
+                attach_drafted_players_to_trade_db_assets,
+            )
+            result = attach_drafted_players_to_trade_db_assets(result, platform="sleeper")
+        except Exception:
+            logger.debug("[player-trades] pick resolution skipped", exc_info=True)
 
         total_pages = max(1, (total + limit - 1) // limit)
         return jsonify({
@@ -25463,6 +25522,7 @@ def api_trade_intel_player_trades(player_id: str):
             "total_pages": total_pages,
             "has_prev": page > 1,
             "has_next": page < total_pages,
+            "source": "trade_db",
         })
 
     except Exception:
