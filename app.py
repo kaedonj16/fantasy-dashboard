@@ -9070,7 +9070,10 @@ def build_weekly_hub_body(ctx: dict) -> str:
       <main class="page-main">
         <div class="card">
           <div class="card-header-row">
-            <h2>Weekly Hub</h2>
+            <div>
+              <p class="br-page-brand">BR Fantasy</p>
+              <h2>Weekly Hub</h2>
+            </div>
             <div class="week-selector">
               <select id="hubWeek" class="search">
                 {week_select_html}
@@ -10587,7 +10590,10 @@ def build_activity_body(ctx: dict) -> str:
         activity_html = (
             "<div class='card activity-card' data-section='activity'>"
             "  <div class='card-header-row'>"
-            "    <h2>League activity</h2>"
+            "    <div>"
+            "      <p class='br-page-brand'>BR Fantasy</p>"
+            "      <h2>League activity</h2>"
+            "    </div>"
             "  </div>"
             "  <div class='scroll-box'>"
             "    <div class='feed'>"
@@ -16088,6 +16094,7 @@ def build_schedule_body(ctx):
     <div class="card central schedule-card">
       <div class="card-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
         <div>
+          <p class="br-page-brand">BR Fantasy</p>
           <h2>Schedule Assistant</h2>
           <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
             Matchup difficulty by week. Add or remove players and pick a single week or a range.
@@ -17146,7 +17153,10 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 
     week_selector = f"""
 <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
-  <h2 style="margin:0;font-size:20px;">Week {selected_week} Recap</h2>
+  <div style="flex:1;min-width:160px;">
+    <p class="br-page-brand">BR Fantasy</p>
+    <h2 style="margin:0;font-size:20px;">Week {selected_week} Recap</h2>
+  </div>
   <select onchange="window.location.search='?week='+this.value"
           style="padding:5px 10px;border-radius:6px;border:1px solid var(--border);
                  background:var(--card);color:var(--text);font-size:13px;cursor:pointer;">
@@ -18218,6 +18228,7 @@ def build_commissioner_body(ctx):
   .lh-parity-scale {{ display:flex; justify-content:space-between; font-size:10.5px; color:var(--muted); margin:2px 4px 12px; }}
 </style>
 <div class="card lh-card">
+  <p class="br-page-brand">BR Fantasy</p>
   <div class="lh-hero2">
     <div class="lh-ring">
       <svg width="128" height="128" viewBox="0 0 128 128" aria-hidden="true">

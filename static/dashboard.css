@@ -26556,6 +26556,7 @@ button:disabled {
     gap: 8px;
     margin-bottom: 12px;
     position: relative;
+    flex-wrap: wrap;
 }
 
 .teams-topbar .teams-sort-bar {
