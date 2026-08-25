@@ -376,12 +376,21 @@
       score += Math.max(0, Math.min(12, (+o.exceptional || 0) * 12));
     }
     if ((+o.waitLoss || 0) > 0) {
+      // waitLossScale (default 1) lets the caller damp positional-scarcity urgency
+      // at positions where only a single starter is still needed (e.g. TE, or QB
+      // in 1QB): the shelf cliff is real, but grabbing the one body you need is not
+      // as urgent as filling a multi-slot need, so an elite single-slot player no
+      // longer leaps a higher-value pick that fills a deeper need.
+      var wls = o.waitLossScale == null ? 1 : Math.max(0, +o.waitLossScale);
       var waitBonus = Math.min(9, (+o.waitLoss || 0) * 0.30) * Math.max(0.35, util);
       // Urgency should separate close candidates, not flatten every excellent
       // option against the 99 ceiling. Shrink positive bonuses as headroom runs
       // out so 96/95/94-quality decisions remain visibly distinct.
       waitBonus = Math.min(waitBonus, Math.max(0, (99 - score) * 0.35));
-      score += waitBonus;
+      // Damp AFTER the headroom cap so a single-slot need's scarcity urgency is
+      // genuinely reduced even on a steep cliff (where the raw bonus would
+      // otherwise saturate the cap and the scale would be a no-op).
+      score += waitBonus * wls;
     }
     // A player who is likely to survive until the manager's next pick consumes
     // scarce current-pick capital without capturing much value. Keep this

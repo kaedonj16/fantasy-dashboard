@@ -53,6 +53,28 @@ def _needs_rebuild(target_season: int) -> bool:
         return True
 
 
+def _refresh_global_adp(season: int) -> None:
+    """Populate the tokenless global ADP snapshots (Yahoo/ESPN/MFL) on THIS
+    container's disk.
+
+    Render runs the web service and the cron jobs in separate containers with
+    separate disks, and the ADP resolver reads snapshots from local disk. So a
+    fresh web deploy starts with no snapshots until a cron writes to *its* disk
+    (which the web container never sees) — which is why the feeds had to be
+    refreshed by hand after each deploy. Running it here, in the background
+    post-deploy process, makes every deploy self-populate. Isolated and
+    best-effort: each provider is isolated inside refresh_global_adp_sources and
+    an empty fetch keeps any last-good snapshot."""
+    try:
+        from dashboard_services.adp_service import refresh_global_adp_sources
+        summary = refresh_global_adp_sources(season)
+        print(f"[post-deploy] Global ADP refresh: {summary}")
+    except Exception as e:
+        print(f"[post-deploy] Global ADP refresh failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 def main():
     target_season = _get_season()
     stats_season = target_season - 1
@@ -67,6 +89,11 @@ def main():
         print(f"[post-deploy] Migrations failed: {e}")
         import traceback
         traceback.print_exc()
+
+    # Populate this web container's ADP snapshots so the source columns / modal
+    # work right after a deploy without a manual fetch. Independent of the
+    # breakout rebuild below (which may early-return), so it runs every deploy.
+    _refresh_global_adp(target_season)
 
     if not _needs_rebuild(target_season):
         print(

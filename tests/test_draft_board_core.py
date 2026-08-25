@@ -315,3 +315,28 @@ def test_live_decision_pressure_balances_wr_need_and_qb_timing():
     assert out["balanced"]["dj"] >= out["balanced"]["otherWr"]
     # Stronger base value and a genuine availability cliff can still put QB1 first.
     assert out["urgentJayden"]["jayden"] > out["urgentJayden"]["dj"]
+
+
+def test_wait_loss_scale_damps_single_slot_scarcity():
+    out = _run_need_cases("""(() => {
+      const rc={QB:1,RB:2,WR:2,TE:1,FLEX:1};
+      const counts={QB:0,RB:2,WR:0,TE:0};
+      const util=p=>C.positionNeedUtility(p,counts,rc,{draftType:'redraft'});
+      // Same cliff, only the scale differs: a single-slot need (0.6) must yield a
+      // strictly lower urgency bonus than a full multi-slot need (1.0), even when
+      // the raw bonus would otherwise saturate the headroom cap.
+      const full=C.decisionScore({base:86,utility:1,waitLoss:30,waitLossScale:1});
+      const damped=C.decisionScore({base:86,utility:1,waitLoss:30,waitLossScale:0.6});
+      // Omitting waitLossScale must behave exactly like scale 1 (back-compat).
+      const legacy=C.decisionScore({base:86,utility:1,waitLoss:30});
+      // The pick-3.09 shape: an elite single-slot TE on a steep shelf cliff should
+      // not leap a higher-need WR whose pool is deep (small cliff) on scarcity
+      // alone. TE has one open dedicated slot (scale 0.6), WR has two (scale 1.0).
+      const te=C.decisionScore({base:86,utility:util('TE'),waitLoss:30,waitLossScale:0.6});
+      const wr=C.decisionScore({base:85,utility:util('WR'),waitLoss:4,waitLossScale:1});
+      return {full:full, damped:damped, legacy:legacy, te:te, wr:wr};
+    })()""")
+
+    assert out["damped"] < out["full"]
+    assert out["legacy"] == out["full"]
+    assert out["wr"] > out["te"]
