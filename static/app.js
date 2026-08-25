@@ -13786,7 +13786,9 @@ function advEnterMetricDef(e) {
   tip.textContent = def;
   tip.dataset.src = def;
   tip.style.display = 'block';
-  _advPositionTip(tip, el, e.clientX, e.clientY);
+  // Focus/keyboard events report clientX/Y as 0 — pin to the element instead.
+  const fromPointer = e.type === 'mouseenter' || e.type === 'mousemove' || e.type === 'pointerover';
+  _advPositionTip(tip, el, fromPointer ? e.clientX : null, fromPointer ? e.clientY : null);
 }
 
 function advLeaveMetricDef(e) {

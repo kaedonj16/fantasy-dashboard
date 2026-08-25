@@ -274,7 +274,7 @@
     --z-notif-toast: 99998; /* .notif-toast */
     --z-toast: 99999; /* #toast-container, fullscreen loading overlay */
     --z-gate: 100000; /* .pp-signin-overlay (paywall / sign-in gate) */
-    --z-tooltip: 100001; /* .adv-def-tip (advanced-metric tooltip) */
+    --z-tooltip: 100001; /* hover/tap text tooltips (.adv-def-tip and peers) */
     --z-progress: 999999; /* #page-load-bar (top progress bar) */
 
     /* Space the fixed mobile bottom dock (.br-mnav / .br-tabbar, 56px +
@@ -368,6 +368,19 @@
     --shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.05);
     --shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
     --shadow-lg: 0 16px 36px rgba(15, 23, 42, 0.12);
+    /* Hover/tap text tooltips. Chrome matches .adv-def-tip (advanced metrics)
+     so every bubble — data-tooltip, weekly sparkline, ADP dots, trend pills,
+     draft-room info icons — uses the same card surface instead of a mix of
+     inverted #333 / var(--text) chips. Rich popovers (tour, OTC info) keep
+     their own layout but borrow fill/border/shadow from these tokens. */
+    --tooltip-bg: var(--card);
+    --tooltip-fg: var(--text);
+    --tooltip-border: var(--border);
+    --tooltip-radius: var(--radius-sm);
+    --tooltip-pad: var(--space-2) var(--space-3);
+    --tooltip-fs: var(--text-sm);
+    --tooltip-lh: 1.45;
+    --tooltip-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
     /* Motion — one small vocabulary so the whole site moves like one object.
      --ease-out for most hovers/fades, --ease-glide for panels/indicators that
      slide (matches the dock/nav), --ease-spring for playful pop-ins. */
@@ -4957,10 +4970,11 @@ strong + .player-badge,
     left: 50%;
     transform: translateX(-50%);
     width: 340px;
-    background: var(--card);
-    border: 0.5px solid var(--border);
-    border-radius: 10px;
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.15);
+    background: var(--tooltip-bg);
+    color: var(--tooltip-fg);
+    border: 1px solid var(--tooltip-border);
+    border-radius: var(--tooltip-radius);
+    box-shadow: var(--tooltip-shadow);
     z-index: 200;
     display: none;
 }
@@ -9122,20 +9136,22 @@ select:focus {
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
 }
 
-/* Weekly datapoint hover tooltip */
+/* Weekly datapoint hover tooltip — chrome matches .adv-def-tip */
 .wk-tip {
     position: fixed;
-    z-index: 60;
+    z-index: var(--z-tooltip);
     pointer-events: none;
     white-space: nowrap;
-    background: var(--text);
-    color: var(--card);
-    font-size: 11px;
+    background: var(--tooltip-bg);
+    color: var(--tooltip-fg);
+    border: 1px solid var(--tooltip-border);
+    font-size: var(--tooltip-fs);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
-    padding: 5px 9px;
-    border-radius: 8px;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    line-height: var(--tooltip-lh);
+    padding: var(--tooltip-pad);
+    border-radius: var(--tooltip-radius);
+    box-shadow: var(--tooltip-shadow);
     transform: translate(-50%, calc(-100% - 10px));
     opacity: 0;
     transition: opacity 0.1s ease;
@@ -9143,16 +9159,6 @@ select:focus {
 
 .wk-tip.show {
     opacity: 1;
-}
-
-.wk-tip::after {
-    content: "";
-    position: absolute;
-    left: 50%;
-    top: 100%;
-    transform: translateX(-50%);
-    border: 5px solid transparent;
-    border-top-color: var(--text);
 }
 
 /* ── Player modal: season-over-season trend line charts ──────────────────── */
@@ -13496,38 +13502,30 @@ html[data-theme="dark"] .contact-social-pill img {
     position: relative;
 }
 
-[data-tooltip]:hover::after {
+[data-tooltip]:not(.pm-adp-dot):hover::after,
+[data-tooltip]:not(.pm-adp-dot):focus-visible::after {
     content: attr(data-tooltip);
     position: absolute;
     bottom: 100%;
     left: 50%;
     transform: translateX(-50%);
-    background: #333;
-    color: white;
-    padding: 6px 10px;
-    border-radius: 6px;
-    font-size: 0.85rem;
-    white-space: nowrap;
-    z-index: 1000;
+    background: var(--tooltip-bg);
+    color: var(--tooltip-fg);
+    border: 1px solid var(--tooltip-border);
+    padding: var(--tooltip-pad);
+    border-radius: var(--tooltip-radius);
+    font-size: var(--tooltip-fs);
+    line-height: var(--tooltip-lh);
+    white-space: normal;
+    word-break: break-word;
+    max-width: min(240px, calc(100vw - 16px));
+    z-index: var(--z-tooltip);
     pointer-events: none;
-    margin-bottom: 5px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    margin-bottom: 6px;
+    box-shadow: var(--tooltip-shadow);
 }
 
-[data-tooltip]:hover::before {
-    content: '';
-    position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    border: 5px solid transparent;
-    border-top-color: #333;
-    z-index: 1000;
-    pointer-events: none;
-    margin-bottom: -1px;
-}
-
-/* Trend pill tooltip - appears below, styled to match modal */
+/* Trend pill tooltip — chrome matches .adv-def-tip */
 .pm-trend-pill {
     position: relative;
 }
@@ -13538,40 +13536,23 @@ html[data-theme="dark"] .contact-social-pill img {
     top: calc(100% + 8px);
     left: 50%;
     transform: translateX(-50%);
-    background: var(--card);
-    color: var(--text);
-    border: 1px solid var(--border);
-    padding: 6px 10px;
-    border-radius: 10px;
-    font-size: 11px;
+    background: var(--tooltip-bg);
+    color: var(--tooltip-fg);
+    border: 1px solid var(--tooltip-border);
+    padding: var(--tooltip-pad);
+    border-radius: var(--tooltip-radius);
+    font-size: var(--tooltip-fs);
     font-weight: 500;
+    line-height: var(--tooltip-lh);
     white-space: nowrap;
     z-index: 2000;
     pointer-events: none;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--tooltip-shadow);
     opacity: 0;
     transition: opacity 0.15s ease;
 }
 
 .pm-trend-pill:hover::after {
-    opacity: 1;
-}
-
-.pm-trend-pill::before {
-    content: '';
-    position: absolute;
-    top: calc(100% + 3px);
-    left: 50%;
-    transform: translateX(-50%);
-    border: 5px solid transparent;
-    border-bottom-color: var(--border);
-    z-index: 2000;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.15s ease;
-}
-
-.pm-trend-pill:hover::before {
     opacity: 1;
 }
 
@@ -17813,15 +17794,17 @@ img, svg, canvas {
     left: 50%;
     bottom: calc(100% + 8px);
     transform: translateX(-50%);
-    padding: 5px 7px;
-    border-radius: 6px;
-    background: var(--text);
-    color: var(--card);
-    font-size: 10px;
+    padding: var(--tooltip-pad);
+    border-radius: var(--tooltip-radius);
+    background: var(--tooltip-bg);
+    color: var(--tooltip-fg);
+    border: 1px solid var(--tooltip-border);
+    font-size: var(--tooltip-fs);
     font-weight: 700;
-    line-height: 1;
+    line-height: var(--tooltip-lh);
     white-space: nowrap;
     pointer-events: none;
+    box-shadow: var(--tooltip-shadow);
     opacity: 0;
     visibility: hidden;
     transition: opacity .12s ease;
@@ -18007,20 +17990,21 @@ img, svg, canvas {
     opacity: 0.8;
 }
 
-/* Tap-to-show metric definition tooltip (works on desktop + mobile) */
+/* Tap-to-show metric definition tooltip (works on desktop + mobile).
+   Canonical bubble: other hover/tap tips share these --tooltip-* tokens. */
 .adv-def-tip {
     position: fixed;
-    background: var(--card);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 8px 12px;
-    font-size: 12px;
-    line-height: 1.45;
+    background: var(--tooltip-bg);
+    color: var(--tooltip-fg);
+    border: 1px solid var(--tooltip-border);
+    border-radius: var(--tooltip-radius);
+    padding: var(--tooltip-pad);
+    font-size: var(--tooltip-fs);
+    line-height: var(--tooltip-lh);
     /* Must sit above the player/compare modal overlay (z-index 10000) or the
      metric-definition tooltip renders behind it and appears not to work. */
     z-index: var(--z-tooltip);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
+    box-shadow: var(--tooltip-shadow);
     display: none;
     pointer-events: none;
     white-space: normal;

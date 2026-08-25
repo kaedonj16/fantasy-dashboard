@@ -510,9 +510,9 @@ def build_trade_calculator_body(
             .pi-tooltip {{
               display:none;position:absolute;right:0;top:calc(100% + 6px);
               width:260px;z-index:200;
-              background:var(--card-bg,#fff);border:1px solid var(--border-color);
-              border-radius:12px;padding:12px 14px;
-              box-shadow:0 8px 24px rgba(0,0,0,.12);
+              background:var(--tooltip-bg,var(--card-bg,#fff));border:1px solid var(--tooltip-border,var(--border-color));
+              border-radius:var(--tooltip-radius,10px);padding:12px 14px;
+              box-shadow:var(--tooltip-shadow,0 8px 24px rgba(0,0,0,.12));
             }}
             /* Transparent bridge across the gap so the hover doesn't drop when
                moving the mouse from the icon down onto the tooltip. */

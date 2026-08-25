@@ -202,7 +202,6 @@ def build_advanced_metrics_body(
               Primary Metric
               <span class="am-info" id="amMetricInfo" tabindex="0" role="button" aria-label="Metric description">
                 <i class="fa-solid fa-circle-info"></i>
-                <span class="am-info-tip" id="amMetricTip"></span>
               </span>
             </label>
             <div class="am-metric-picker" id="amMetricPickerWrap">
@@ -550,19 +549,9 @@ def build_advanced_metrics_body(
         font-size:12px; font-weight:600; transition:all .15s; white-space:nowrap;
       }
       .am-pos.active { background:var(--text); color:var(--card); border-color:var(--text); }
-      /* Metric description tooltip */
+      /* Metric description tooltip — chrome matches .adv-def-tip (shared --tooltip-* tokens) */
       .am-info { position:relative; display:inline-flex; margin-left:5px; color:var(--text-muted); cursor:help; vertical-align:middle; }
       .am-info i { font-size:11px; }
-      .am-info-tip {
-        position:fixed;
-        width:240px; background:var(--text); color:var(--card); font-size:12px; font-weight:500;
-        line-height:1.45; letter-spacing:normal; text-transform:none; padding:9px 11px; border-radius:8px;
-        box-shadow:0 6px 22px rgba(15,23,42,.22); opacity:0; visibility:hidden; transition:opacity .15s; z-index:9999; pointer-events:none;
-      }
-      .am-info-tip::after {
-        content:""; position:absolute; top:100%; left:50%; transform:translateX(-50%);
-        border:6px solid transparent; border-top-color:var(--text);
-      }
       /* My roster toggle */
       .am-roster-toggle {
         display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:20px;
@@ -937,8 +926,8 @@ def build_advanced_metrics_body(
          vars (it's screen chrome, not part of the exported image). */
       .am-graph-hover {
         position:absolute; z-index:6; pointer-events:none; display:none;
-        background:var(--card); border:1px solid var(--border); border-radius:10px;
-        box-shadow:0 10px 30px rgba(0,0,0,.30); padding:9px 11px;
+        background:var(--tooltip-bg,var(--card)); color:var(--tooltip-fg,var(--text)); border:1px solid var(--tooltip-border,var(--border)); border-radius:var(--tooltip-radius,10px);
+        box-shadow:var(--tooltip-shadow,0 10px 30px rgba(0,0,0,.30)); padding:9px 11px;
         min-width:150px; max-width:240px;
       }
       .am-graph-hover.show { display:block; }
@@ -1049,7 +1038,6 @@ _AM_JS = r"""
   const gamesCtrl = document.getElementById('amGamesCtrl');
   const rosterWrap= document.getElementById('amRosterToggleWrap');
   const rosterChk = document.getElementById('amRosterToggle');
-  const metricTip = document.getElementById('amMetricTip');
   const avgNote   = document.getElementById('amAvgNote');
   const avgNoteTxt= document.getElementById('amAvgNoteText');
   const tbody     = document.getElementById('amTableBody');
@@ -2147,8 +2135,11 @@ _AM_JS = r"""
     updateSortHeaders();
   }
   function updateMetricTip() {
-    if (!metricTip) return;
-    metricTip.textContent = (cfg.metrics[state.metric] && cfg.metrics[state.metric].desc) || '';
+    const info = document.getElementById('amMetricInfo');
+    if (!info) return;
+    const desc = (cfg.metrics[state.metric] && cfg.metrics[state.metric].desc) || '';
+    if (desc) info.dataset.def = desc;
+    else delete info.dataset.def;
   }
   // Lowest threshold for a metric - the sensible default so the leaderboard
   // isn't dominated by tiny-sample players (e.g. 1-carry QBs at 198 yds/carry).
@@ -4002,22 +3993,25 @@ _AM_JS = r"""
     });
   }
 
-  // Info tooltip: position:fixed so it escapes the card's overflow:hidden container
+  // Info tooltip: reuse the shared .adv-def-tip (advEnterMetricDef) so the
+  // Primary Metric ⓘ bubble matches column-header and player-modal tips.
   const _infoEl = document.getElementById('amMetricInfo');
-  if (_infoEl && metricTip) {
-    function _placeTip() {
-      var r = _infoEl.getBoundingClientRect();
-      var tw = 240;
-      var lft = r.left + r.width / 2 - tw / 2;
-      if (lft < 8) lft = 8;
-      if (lft + tw > window.innerWidth - 8) lft = window.innerWidth - tw - 8;
-      metricTip.style.left = lft + 'px';
-      metricTip.style.bottom = (window.innerHeight - r.top + 8) + 'px';
-    }
-    _infoEl.addEventListener('mouseenter', function() { _placeTip(); metricTip.style.opacity = '1'; metricTip.style.visibility = 'visible'; });
-    _infoEl.addEventListener('mouseleave', function() { metricTip.style.opacity = '0'; metricTip.style.visibility = 'hidden'; });
-    _infoEl.addEventListener('focus', function() { _placeTip(); metricTip.style.opacity = '1'; metricTip.style.visibility = 'visible'; });
-    _infoEl.addEventListener('blur', function() { metricTip.style.opacity = '0'; metricTip.style.visibility = 'hidden'; });
+  if (_infoEl) {
+    _infoEl.addEventListener('mouseenter', function(e) {
+      if (typeof advEnterMetricDef === 'function') advEnterMetricDef(e);
+    });
+    _infoEl.addEventListener('mouseleave', function(e) {
+      if (typeof advLeaveMetricDef === 'function') advLeaveMetricDef(e);
+    });
+    _infoEl.addEventListener('click', function(e) {
+      if (typeof advShowMetricDef === 'function') advShowMetricDef(e);
+    });
+    _infoEl.addEventListener('focus', function(e) {
+      if (typeof advEnterMetricDef === 'function') advEnterMetricDef(e);
+    });
+    _infoEl.addEventListener('blur', function(e) {
+      if (typeof advLeaveMetricDef === 'function') advLeaveMetricDef(e);
+    });
   }
 
   // ── Custom metric picker ──────────────────────────────────────────────────
