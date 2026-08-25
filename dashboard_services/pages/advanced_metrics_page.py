@@ -494,8 +494,45 @@ def build_advanced_metrics_body(
       .am-metric-btn { min-width:180px; display:flex; align-items:center; justify-content:space-between; gap:8px; text-align:left; }
       .am-metric-chevron { font-size:10px; opacity:.55; flex-shrink:0; transition:transform .15s; }
       .am-metric-picker.open .am-metric-chevron { transform:rotate(180deg); }
-      .am-metric-picker.open .am-metric-dropdown { display:block !important; }
-      .am-metric-dropdown { max-height:560px; }
+      .am-stat-picker.am-metric-dropdown {
+        display:none; overflow:hidden; padding:0;
+        min-width:min(440px, calc(100vw - 16px));
+        max-width:min(560px, calc(100vw - 16px));
+        width:min(520px, calc(100vw - 16px));
+        max-height:none;
+      }
+      .am-metric-picker.open .am-metric-dropdown {
+        display:flex !important; flex-direction:column;
+      }
+      .am-md-search-wrap { padding:8px 10px 8px; border-bottom:1px solid var(--border); flex-shrink:0; }
+      .am-md-body { display:flex; min-height:240px; flex:1 1 auto; }
+      .am-md-cats {
+        width:148px; flex:0 0 148px; overflow-y:auto; overflow-x:hidden;
+        border-right:1px solid var(--border); overscroll-behavior:contain;
+      }
+      .am-md-cat {
+        display:flex; align-items:center; justify-content:space-between; gap:8px;
+        padding:8px 10px 8px 12px; font-size:13px; font-weight:600; color:var(--text);
+        cursor:pointer; user-select:none;
+      }
+      .am-md-cat:hover { background:var(--row,rgba(0,0,0,.04)); }
+      .am-md-cat.am-md-cat-active {
+        background:color-mix(in srgb, var(--accent,#2563eb) 10%, transparent);
+        color:var(--accent,#2563eb);
+      }
+      .am-md-cat.am-md-cat-dim { opacity:.38; }
+      .am-md-cat-chevron { font-size:12px; opacity:.45; flex-shrink:0; font-weight:400; }
+      .am-md-metrics { flex:1 1 auto; min-width:0; overflow-y:auto; overscroll-behavior:contain; padding:4px 0; }
+      .am-md-item-label { flex:1; min-width:0; }
+      .am-md-item-cat {
+        margin-left:auto; flex-shrink:0;
+        font-size:10px; font-weight:600; color:var(--text-muted); letter-spacing:.02em;
+      }
+      .am-md-empty { padding:18px 14px; font-size:12px; color:var(--text-muted); }
+      @media (max-width:600px) {
+        .am-md-cats { width:120px; flex-basis:120px; }
+        .am-md-cat { padding:9px 8px 9px 10px; font-size:12px; }
+      }
       .am-season-select { min-width:90px; }
       .am-search { width:100%; box-sizing:border-box; }
       .am-sort-btn { cursor:pointer; font-weight:600; white-space:nowrap; }
@@ -1627,6 +1664,21 @@ _AM_JS = r"""
     const btn = document.getElementById('amComparePinnedBtn');
     if (btn) btn.style.display = pinnedRows().length >= 2 ? '' : 'none';
   }
+  // Missing metric values must sort after every real number, in both
+  // directions. Extra columns used to coerce gaps to 0 (`?? 0`), which put
+  // uncharted players at the top of signed stats (EPA, created sep, CPOE).
+  function _amMissing(v) {
+    if (v == null || v === '') return true;
+    return Number.isNaN(Number(v));
+  }
+  function _amCmpVal(av, bv, desc) {
+    const aMiss = _amMissing(av);
+    const bMiss = _amMissing(bv);
+    if (aMiss !== bMiss) return aMiss ? 1 : -1;
+    if (aMiss) return 0;
+    const diff = Number(av) - Number(bv);
+    return desc ? -diff : diff;
+  }
   // Positional rank + value bounds for a metric, computed from the loaded
   // leaderboard field (same data & filters the page is showing). Ranks are
   // WITHIN each position — matching the player modal / a position-filtered
@@ -1636,15 +1688,15 @@ _AM_JS = r"""
     const lower = !!(cfg.metrics[key] && cfg.metrics[key].lowerBetter);
     let entries;  // [id, value, position]
     if (key === state.metric) {
-      entries = state.rows.map(r => [String(r.player_id), Number(r.value),
+      entries = state.rows.map(r => [String(r.player_id), r.value,
         String(r.position || state.playerPos[String(r.player_id)] || '').toUpperCase()]);
     } else {
       const ed = state.extraData[key];
       if (!ed) return null;  // still loading
       entries = Object.entries(ed.byId).map(([id, v]) =>
-        [id, Number(v), String(state.playerPos[id] || '').toUpperCase()]);
+        [id, v, String(state.playerPos[id] || '').toUpperCase()]);
     }
-    entries = entries.filter(e => e[1] != null && !Number.isNaN(e[1]));
+    entries = entries.filter(e => !_amMissing(e[1])).map(e => [e[0], Number(e[1]), e[2]]);
     const byPos = {};
     entries.forEach(e => { (byPos[e[2]] = byPos[e[2]] || []).push(e); });
     const ranks = {}, bounds = {}, counts = {}, avgs = {};
@@ -2274,22 +2326,24 @@ _AM_JS = r"""
       ? state.rows.filter(r => rel.has(up(r.position)))
       : state.rows.filter(r => up(r.position) === state.position));
     posRows.sort((a, b) => {
-      let diff;
+      const desc = state.sortDir === 'desc';
       if (state.sortBy === 'name') {
-        diff = (a.name || '').localeCompare(b.name || '');
-      } else if (state.sortBy === 'games') {
-        const av = Number(a.vol != null ? a.vol : (a.games != null ? a.games : 0));
-        const bv = Number(b.vol != null ? b.vol : (b.games != null ? b.games : 0));
-        diff = av - bv;
-      } else if (state.sortBy === state.metric || !state.extraData[state.sortBy]) {
-        diff = Number(a.value) - Number(b.value);
-      } else {
-        const ed = state.extraData[state.sortBy];
-        const av = ed.byId[String(a.player_id)] ?? 0;
-        const bv = ed.byId[String(b.player_id)] ?? 0;
-        diff = Number(av) - Number(bv);
+        const diff = (a.name || '').localeCompare(b.name || '');
+        return desc ? -diff : diff;
       }
-      return state.sortDir === 'desc' ? -diff : diff;
+      if (state.sortBy === 'games') {
+        const av = a.vol != null ? a.vol : a.games;
+        const bv = b.vol != null ? b.vol : b.games;
+        return _amCmpVal(av, bv, desc);
+      }
+      if (state.sortBy === state.metric || !state.extraData[state.sortBy]) {
+        return _amCmpVal(a.value, b.value, desc);
+      }
+      const ed = state.extraData[state.sortBy];
+      return _amCmpVal(
+        ed.byId[String(a.player_id)],
+        ed.byId[String(b.player_id)],
+        desc);
     });
 
     // Rank map so roster/search filters preserve original rank numbers.
@@ -2302,21 +2356,22 @@ _AM_JS = r"""
     const _primLower = !!(cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter);
     const qualityRankMap = new Map(
       posRows.slice()
-        .sort((a, b) => { const d = Number(a.value) - Number(b.value); return _primLower ? d : -d; })
+        .sort((a, b) => _amCmpVal(a.value, b.value, !_primLower))
         .map((r, i) => [String(r.player_id), i + 1])
     );
 
     // Scale to the true max, but if the leader is a big outlier (>30% above the
     // 95th-percentile value) cap the scale so one player doesn't squish the rest.
     // Bars above the cap clamp at 100% width.
-    const _vals = posRows.map(r => Math.abs(Number(r.value) || 0)).sort((a, b) => a - b);
+    const _vals = posRows.filter(r => !_amMissing(r.value))
+      .map(r => Math.abs(Number(r.value))).sort((a, b) => a - b);
     const _p95 = _vals[Math.min(Math.floor(_vals.length * 0.95), _vals.length - 1)] || 1;
     const _trueMax = _vals[_vals.length - 1] || 1;
     const maxAbs = Math.min(_trueMax, _p95 * 1.3) || 1;
     // Signed field detection: when any value is negative (EPA, CPOE, RYOE…),
     // |value|/max would draw a long bar for a below-average player. Use a
     // min→max mapping instead. Lower-better metrics are inverted so good = long.
-    const _signedVals = posRows.map(r => Number(r.value)).filter(v => !isNaN(v));
+    const _signedVals = posRows.map(r => r.value).filter(v => !_amMissing(v)).map(v => Number(v));
     const _fieldMin = _signedVals.length ? Math.min.apply(null, _signedVals) : 0;
     const _fieldMax = _signedVals.length ? Math.max.apply(null, _signedVals) : 1;
     // Bar fill %: relative-to-leader for normal non-negative higher-better
@@ -4023,13 +4078,16 @@ _AM_JS = r"""
     });
   }
 
-  // ── Custom metric picker ──────────────────────────────────────────────────
+  // ── Custom metric picker (search + category flyout) ──────────────────────
   (function() {
     const wrap   = document.getElementById('amMetricPickerWrap');
     const btn    = document.getElementById('amMetricBtn');
     const label  = document.getElementById('amMetricBtnLabel');
     const panel  = document.getElementById('amMetricDropdown');
     if (!wrap || !btn || !panel) return;
+
+    let _mdActiveCat = '';
+    let _mdGroups = [];
 
     function syncLabel() {
       const opt = metricSel.options[metricSel.selectedIndex];
@@ -4041,26 +4099,72 @@ _AM_JS = r"""
     }
     syncLabel();
 
-    function buildPanel() {
+    function readGroups() {
       const weeklySet = new Set(cfg.weeklyMetrics || []);
-      let html = '';
+      const groups = [];
       for (const og of metricSel.querySelectorAll('optgroup')) {
-        html += '<div class="am-sp-group">';
-        html += '<div class="am-sp-head">' + og.label + '</div>';
+        const options = [];
         for (const o of og.querySelectorAll('option')) {
-          const isSel = o.value === metricSel.value;
-          const isWeekly = weeklySet.has(o.value);
-          const badge = isWeekly
-            ? '<span class="am-sp-weekly-badge" title="Supports week-range filtering">W</span>'
-            : '';
-          html += '<div class="am-sp-item' + (isSel ? ' am-sp-active' : '') + '" data-val="' + o.value + '">'
-            + '<span class="am-sp-check">' + (isSel ? '&#10003;' : '') + '</span>'
-            + o.textContent + badge + '</div>';
+          options.push({
+            value: o.value,
+            text: o.textContent,
+            weekly: weeklySet.has(o.value),
+          });
         }
-        html += '</div>';
+        if (options.length) groups.push({ label: og.label, options: options });
       }
-      panel.innerHTML = html;
-      panel.querySelectorAll('.am-sp-item').forEach(function(el) {
+      return groups;
+    }
+
+    function catForValue(val) {
+      for (const g of _mdGroups) {
+        if (g.options.some(function(o) { return o.value === val; })) return g.label;
+      }
+      return _mdGroups[0] ? _mdGroups[0].label : '';
+    }
+
+    function searchTerm() {
+      const inp = panel.querySelector('#amMdSearch');
+      return (inp && inp.value ? inp.value : '').trim().toLowerCase();
+    }
+
+    function optMatches(o, term) {
+      if (!term) return true;
+      return (o.text || '').toLowerCase().includes(term)
+        || (o.value || '').toLowerCase().includes(term);
+    }
+
+    function metricItemHtml(o) {
+      const isSel = o.value === metricSel.value;
+      const badge = o.weekly
+        ? '<span class="am-sp-weekly-badge" title="Supports week-range filtering">W</span>'
+        : '';
+      return '<div class="am-sp-item' + (isSel ? ' am-sp-active' : '') + '" data-val="'
+        + o.value + '" role="option">'
+        + '<span class="am-sp-check">' + (isSel ? '&#10003;' : '') + '</span>'
+        + '<span class="am-md-item-label">' + o.text + '</span>'
+        + badge + '</div>';
+    }
+
+    function fillMetrics() {
+      const pane = panel.querySelector('#amMdMetrics');
+      if (!pane) return;
+      const term = searchTerm();
+      const g = _mdGroups.find(function(x) { return x.label === _mdActiveCat; })
+        || _mdGroups[0];
+      const items = (g ? g.options : []).filter(function(o) { return optMatches(o, term); });
+      if (!items.length) {
+        pane.innerHTML = '';
+        const empty = document.createElement('div');
+        empty.className = 'am-md-empty';
+        empty.textContent = term
+          ? 'No metrics match "' + term + '" in ' + ((g && g.label) || 'this category') + '.'
+          : 'No metrics in this category.';
+        pane.appendChild(empty);
+        return;
+      }
+      pane.innerHTML = items.map(metricItemHtml).join('');
+      pane.querySelectorAll('.am-sp-item').forEach(function(el) {
         el.addEventListener('click', function() {
           metricSel.value = el.dataset.val;
           syncLabel();
@@ -4068,9 +4172,80 @@ _AM_JS = r"""
           metricSel.dispatchEvent(new Event('change'));
         });
       });
-      // Scroll selected item into view
-      const sel = panel.querySelector('.am-sp-item.am-sp-active');
+      const sel = pane.querySelector('.am-sp-item.am-sp-active');
       if (sel) sel.scrollIntoView({ block: 'nearest' });
+    }
+
+    function syncCatClasses() {
+      const term = searchTerm();
+      panel.querySelectorAll('.am-md-cat').forEach(function(el) {
+        const g = _mdGroups.find(function(x) { return x.label === el.dataset.cat; });
+        const hit = !term || (g && g.options.some(function(o) { return optMatches(o, term); }));
+        el.classList.toggle('am-md-cat-active', el.dataset.cat === _mdActiveCat);
+        el.classList.toggle('am-md-cat-dim', !hit);
+      });
+    }
+
+    function setActiveCat(label) {
+      if (!label) return;
+      if (label === _mdActiveCat) { syncCatClasses(); return; }
+      _mdActiveCat = label;
+      syncCatClasses();
+      fillMetrics();
+    }
+
+    function fillCats() {
+      const pane = panel.querySelector('#amMdCats');
+      if (!pane) return;
+      pane.innerHTML = _mdGroups.map(function(g) {
+        return '<div class="am-md-cat" data-cat="' + g.label + '" role="option">'
+          + '<span>' + g.label + '</span>'
+          + '<span class="am-md-cat-chevron">&#8250;</span></div>';
+      }).join('');
+      pane.querySelectorAll('.am-md-cat').forEach(function(el) {
+        el.addEventListener('mouseenter', function() {
+          if (window.matchMedia('(hover: hover)').matches) setActiveCat(el.dataset.cat);
+        });
+        el.addEventListener('click', function(e) {
+          e.preventDefault();
+          setActiveCat(el.dataset.cat);
+        });
+      });
+      syncCatClasses();
+    }
+
+    function buildPanel() {
+      _mdGroups = readGroups();
+      _mdActiveCat = catForValue(metricSel.value);
+      panel.innerHTML =
+        '<div class="am-md-search-wrap">'
+        + '<input type="text" id="amMdSearch" class="am-sp-search" placeholder="Search metrics…" autocomplete="off" aria-label="Search metrics">'
+        + '</div>'
+        + '<div class="am-md-body">'
+        + '<div class="am-md-cats" id="amMdCats" role="list"></div>'
+        + '<div class="am-md-metrics" id="amMdMetrics" role="listbox"></div>'
+        + '</div>';
+      fillCats();
+      fillMetrics();
+      const inp = panel.querySelector('#amMdSearch');
+      if (inp) {
+        inp.addEventListener('input', function() {
+          const term = searchTerm();
+          const active = _mdGroups.find(function(g) { return g.label === _mdActiveCat; });
+          const activeHit = active && active.options.some(function(o) { return optMatches(o, term); });
+          if (term && !activeHit) {
+            const firstHit = _mdGroups.find(function(g) {
+              return g.options.some(function(o) { return optMatches(o, term); });
+            });
+            if (firstHit) _mdActiveCat = firstHit.label;
+          }
+          syncCatClasses();
+          fillMetrics();
+        });
+        inp.addEventListener('keydown', function(e) {
+          if (e.key === 'Escape') { e.stopPropagation(); closePanel(); btn.focus(); }
+        });
+      }
     }
 
     // The panel is absolutely positioned inside the card, whose global
@@ -4079,16 +4254,20 @@ _AM_JS = r"""
     // height to the space below the button so it scrolls internally.
     function positionPanel() {
       const r = btn.getBoundingClientRect();
-      // Leave room for the fixed mobile bottom nav (~56px + safe area) so the
-      // list scrolls internally instead of running under it and off-screen.
       const bottomGap = window.matchMedia('(max-width:768px)').matches ? 78 : 16;
       const avail = window.innerHeight - r.bottom - bottomGap;
+      const maxH = Math.max(220, Math.min(520, avail));
       panel.style.position = 'fixed';
       panel.style.top = (r.bottom + 6) + 'px';
-      panel.style.left = r.left + 'px';
-      panel.style.right = 'auto';
       panel.style.zIndex = '900';
-      panel.style.maxHeight = Math.max(160, Math.min(560, avail)) + 'px';
+      panel.style.maxHeight = maxH + 'px';
+      const width = panel.getBoundingClientRect().width || 520;
+      let left = r.left;
+      if (left + width > window.innerWidth - 8) {
+        left = Math.max(8, window.innerWidth - width - 8);
+      }
+      panel.style.left = left + 'px';
+      panel.style.right = 'auto';
     }
     function clearPosition() {
       panel.style.position = '';
@@ -4104,6 +4283,10 @@ _AM_JS = r"""
       wrap.classList.add('open');
       btn.setAttribute('aria-expanded', 'true');
       positionPanel();
+      const inp = panel.querySelector('#amMdSearch');
+      if (inp && window.matchMedia('(hover: hover)').matches) {
+        setTimeout(function() { inp.focus(); }, 0);
+      }
     }
     function closePanel() {
       wrap.classList.remove('open');
@@ -4117,18 +4300,16 @@ _AM_JS = r"""
     });
     panel.addEventListener('click', function(e) { e.stopPropagation(); });
     document.addEventListener('click', closePanel);
-    // A fixed panel would detach from the button on scroll/resize; close it.
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && wrap.classList.contains('open')) closePanel();
+    });
     window.addEventListener('resize', function() { if (wrap.classList.contains('open')) closePanel(); });
     window.addEventListener('scroll', function(e) {
       if (!wrap.classList.contains('open')) return;
-      // Ignore the panel's own internal scroll (it has overflow-y:auto), or the
-      // capture-phase listener would dismiss the dropdown the moment you scroll
-      // the list. Only a real page/ancestor scroll detaches the fixed panel.
       if (e.target && e.target.nodeType === 1 && (e.target === panel || panel.contains(e.target))) return;
       closePanel();
     }, true);
 
-    // Keep label in sync when metric changes via other code (e.g. amLoadPreset)
     metricSel.addEventListener('change', syncLabel);
   })();
 """
