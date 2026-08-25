@@ -38,7 +38,6 @@ def _am_cmp_val(av, bv, desc):
 
 
 def test_nulls_sort_after_negative_and_positive_values():
-    from functools import cmp_to_key
     rows = [None, -0.4, 1.2, 0.0, None]
     desc = sorted(rows, key=cmp_to_key(lambda a, b: _am_cmp_val(a, b, True)))
     asc = sorted(rows, key=cmp_to_key(lambda a, b: _am_cmp_val(a, b, False)))
