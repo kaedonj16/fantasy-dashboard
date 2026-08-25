@@ -184,6 +184,34 @@ def test_roster_source_sits_outside_immediately_above_slot_grid():
     assert "var html = presetHtml + srcHtml + '<div class=\"dr-setup-roster\">';" in source
 
 
+def test_pick_ledger_formats_adp_delta_to_one_decimal():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert "function fmtAdpDelta(n)" in source
+    assert "var dtxt = fmtAdpDelta(p.diff);" in source
+    assert "(p.diff > 0 ? '+' : '') + p.diff;" not in source
+    assert "fmtAdpDelta(netValue)" in source
+
+
+def test_starters_meter_shows_percent_of_league_average():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert "meter('Starters', '100% = league-average lineup', starterPct, 100, sRank, { unit: '% of avg', vsAvg: true })" in source
+    assert "meter('Starters', 'lineup vs league average', g.tier, m.tier, sRank)" not in source
+    assert "x.strength != null ? x.strength : x.tier" in source
+    assert "Tied values share a rank" in source
+
+
+def test_draft_capital_percentages_use_finite_numeric_value():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert "function finiteVal(v)" in source
+    assert "return finiteVal(v);" in source
+    assert "function capPct(part, tot)" in source
+    assert "var v = valOf(playersById[String(x.p.id)] || x.p) || 0;" not in source
+    assert "lgByPos = lgCount; lgTot = lgN;" in source
+
+
 def test_edit_setup_opens_a_modal_instead_of_leaving_the_board():
     body = build_draft_room_body(None, None, None, is_guest=True)
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")

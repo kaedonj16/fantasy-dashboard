@@ -899,15 +899,23 @@
   }
 
   // ── Data ─────────────────────────────────────────────────────────────────
+  function finiteVal(v){
+    var n = Number(v);
+    return isFinite(n) ? n : 0;
+  }
   function redraftVal(p){
-    return (state.sf ? (p.redraft_value_sf != null ? p.redraft_value_sf : p.redraft_value_1qb)
-                     : p.redraft_value_1qb) || 0;
+    if (!p) return 0;
+    var v = (state.sf ? (p.redraft_value_sf != null ? p.redraft_value_sf : p.redraft_value_1qb)
+                      : p.redraft_value_1qb);
+    return finiteVal(v);
   }
   function valOf(p){
+    if (!p) return 0;
     if (state.type === 'redraft') return redraftVal(p);
     // p.val is the stripped pick-object field (stored by commitPick/applyLivePicks);
     // p.value is the full player-object field from /api/league-players.
-    return state.sf ? (p.sf_value || p.value || p.val || 0) : (p.value || p.val || 0);
+    var v = state.sf ? (p.sf_value || p.value || p.val || 0) : (p.value || p.val || 0);
+    return finiteVal(v);
   }
   function adpOf(p){
     // Sleeper community ADP (server-side, aggregated from real Sleeper drafts).
@@ -5214,7 +5222,7 @@
     { term: 'PPG', def: 'Points per game - projected for the upcoming season, or last season’s actual when that’s shown.' },
     { term: 'Survival %', def: 'The chance a player is still on the board at your next pick. Starts from consensus ADP, then adapts to how your draft is actually going - if the room is reaching, letting players slide, drafting unpredictably, or running on a position, the odds shift to match (kicks in after the first several picks).' },
     { term: 'Grade · Value', def: 'How strong your picks are by pick score, weighted toward the earlier rounds where it matters most.' },
-    { term: 'Grade · Starters', def: 'How good your projected starting lineup is versus a league-average team.' },
+    { term: 'Grade · Starters', def: 'How good your projected starting lineup is versus a league-average team. 100% is a league-average lineup; the rank is among teams in this draft. Snake drafts are close to zero-sum, so a lineup near 100% of average can still rank 1st or 2nd.' },
     { term: 'Grade · Construction', def: 'How well you’ve filled your starting slots and balanced your positions.' }
   ];
   // Inline info icon: data-tip drives a CSS hover/focus bubble. tabindex makes it
@@ -5405,6 +5413,15 @@
     if (diff > -5)  return { label:'Fair',  cls:'fair'  };
     return { label:'Reach', cls:'reach' };
   }
+  // Signed ADP delta for display (pick number minus ADP). Keep full precision
+  // on the raw `diff` for sorting; round here so the ledger doesn't print
+  // IEEE leftovers like +82.0560271646859.
+  function fmtAdpDelta(n){
+    if (n == null || !isFinite(Number(n))) return '—';
+    var s = Number(n).toFixed(1);
+    if (Number(s) === 0) return '0.0';
+    return (Number(s) > 0 ? '+' : '') + s;
+  }
   // My picks in draft order, each carrying the market delta + pool-relative pick
   // score (relPS = the exact number the report-card rows show).
   function ddMyPicks(){
@@ -5424,11 +5441,15 @@
     return rows;
   }
   // League rank (1 = best) for a grade component across the whole field.
+  // Tied values share a rank (1, 1, 3) so equal lineups don't look ordered.
   function ddRankBy(field, keyFn){
     var arr = field.map(function(t){ return { slot: t.slot, v: keyFn(t.grade) || 0 }; })
       .sort(function(a, b){ return b.v - a.v; });
-    var rank = {};
-    arr.forEach(function(x, i){ rank[x.slot] = i + 1; });
+    var rank = {}, lastV, lastRank = 0, seen = false;
+    arr.forEach(function(x, i){
+      if (!seen || x.v !== lastV){ lastRank = i + 1; lastV = x.v; seen = true; }
+      rank[x.slot] = lastRank;
+    });
     return rank;
   }
   function ddRankPill(rank, n){
@@ -5528,26 +5549,43 @@
     var g = me.grade, col = ddGradeCol(g.score);
     var m = gradeMax();
     var vRank = ddRankBy(field, function(x){ return x.value; })[me.slot];
-    var sRank = ddRankBy(field, function(x){ return x.tier; })[me.slot];
+    // Rank starters by the vs-league ratio we display, not the 0-25 grade
+    // slice. That 80–120% → 0–100 mapping puts a slightly-above-average
+    // lineup at ~52/100, which reads like a C next to a "2nd" badge.
+    var sRank = ddRankBy(field, function(x){ return x.strength != null ? x.strength : x.tier; })[me.slot];
     var cRank = ddRankBy(field, function(x){ return x.balance; })[me.slot];
-    function meter(lbl, sub, val, max, rank){
+    function meter(lbl, sub, val, max, rank, opts){
+      opts = opts || {};
       var pct = max ? Math.round(val / max * 100) : 0;
-      var c = pct >= 80 ? '#22c55e' : pct >= 60 ? '#38bdf8' : pct >= 40 ? '#f59e0b' : '#ef4444';
+      var fill = Math.max(0, Math.min(100, pct));
+      var c = fill >= 80 ? '#22c55e' : fill >= 60 ? '#38bdf8' : fill >= 40 ? '#f59e0b' : '#ef4444';
+      var shown = opts.shown != null ? opts.shown : pct;
+      var unit = opts.unit != null ? opts.unit : '/100';
+      // vsAvg: `val` is already % of a league-average lineup (100 = avg).
+      // Keep the bar's 80–120 mapping so average sits at the midpoint, but
+      // color around 100 so "slightly above average, 2nd" doesn't render orange.
+      if (opts.vsAvg){
+        fill = Math.max(0, Math.min(100, Math.round((val - 80) / 0.40)));
+        c = val >= 108 ? '#22c55e' : val >= 100 ? '#38bdf8' : val >= 94 ? '#f59e0b' : '#ef4444';
+        shown = val;
+      }
       return '<div class="dd-meter"><div class="dd-meter-lab">' + lbl + '<small>' + sub + '</small></div>'
-        + '<div class="dd-track"><i style="width:' + pct + '%;background:' + c + '"></i></div>'
-        + '<div class="dd-meter-val">' + pct + '<span>/100</span> ' + ddRankPill(rank, n) + '</div></div>';
+        + '<div class="dd-track"><i style="width:' + fill + '%;background:' + c + '"></i></div>'
+        + '<div class="dd-meter-val">' + shown + '<span>' + unit + '</span> ' + ddRankPill(rank, n) + '</div></div>';
     }
+    var starterPct = (g.strength != null) ? g.strength
+      : (m.tier ? Math.round(80 + (g.tier / m.tier) * 40) : 100);
     var arch = null; try { arch = teamArchetype(); } catch (e){ arch = null; }
     var verdict = ddOverviewVerdict(g, myRank, n, netValue, arch);
     var meters = (state.type === 'rookie')
       ? meter('Avg Pick Score', 'BPA / ADP letter system', g.value, 100, vRank)
       : meter('Value', 'round-weighted pick score', g.value, m.value, vRank)
-        + meter('Starters', 'lineup vs league average', g.tier, m.tier, sRank)
+        + meter('Starters', '100% = league-average lineup', starterPct, 100, sRank, { unit: '% of avg', vsAvg: true })
         + meter('Construction', 'slot coverage & balance', g.balance, m.balance, cRank);
 
     var tiles = '';
     var tileDefs = [
-      { v: (netValue >= 0 ? '+' : '') + netValue, l: 'Net ADP value (capped)', cls: netValue >= 0 ? 'good' : 'bad' },
+      { v: fmtAdpDelta(netValue), l: 'Net ADP value (capped)', cls: netValue >= 0 ? 'good' : 'bad' },
       { v: nValues, l: 'Values (fell 3+ to you)', cls: 'good' },
       { v: nReaches, l: 'Reaches (early 5+)', cls: nReaches ? 'bad' : '' },
       { v: g.avgPs != null ? g.avgPs : '—', l: 'Avg pick score' }
@@ -5585,7 +5623,7 @@
     var title = g.score >= 80 ? 'Elite draft' : g.score >= 70 ? 'Strong, well-rounded board'
       : g.score >= 58 ? 'Solid with a soft spot' : g.score >= 45 ? 'Playable but uneven' : 'Rebuild from the wire';
     var parts = [];
-    parts.push('You banked <b>' + (netValue >= 0 ? '+' : '') + netValue + ' picks of ADP value</b>');
+    parts.push('You banked <b>' + fmtAdpDelta(netValue) + ' picks of ADP value</b>');
     if (strong.length) parts.push('your <b>' + strong[0] + '</b> is a league strength');
     if (weak.length) parts.push('but <b>' + weak[0] + '</b> is where you can lose');
     else parts.push('with no glaring hole');
@@ -5652,7 +5690,7 @@
     tip.innerHTML = '<b>' + esc(p.pl.name) + '</b> <span style="color:var(--text-muted)">' + p.pos + (p.pl.team ? ' · ' + esc(p.pl.team) : '') + '</span>'
       + '<div class="dd-tip-r">Pick <b>' + roundPickStr(p.pn) + '</b></div>'
       + (p.adp != null ? '<div class="dd-tip-r">ADP <b>' + Number(p.adp).toFixed(1) + '</b></div>' : '')
-      + (p.diff != null ? '<div class="dd-tip-r">± vs ADP <b style="color:' + (p.diff >= 0 ? '#22c55e' : '#ef4444') + '">' + (p.diff >= 0 ? '+' : '') + p.diff.toFixed(1) + '</b></div>' : '')
+      + (p.diff != null ? '<div class="dd-tip-r">± vs ADP <b style="color:' + (p.diff >= 0 ? '#22c55e' : '#ef4444') + '">' + fmtAdpDelta(p.diff) + '</b></div>' : '')
       + (p.ps != null ? '<div class="dd-tip-r">Board PS <b style="color:' + psColor(p.ps) + '">' + p.ps + '</b> <span style="color:var(--text-muted)">(vs best avail)</span></div>' : '')
       + '<div class="dd-tip-r">Verdict <b>' + vd.label + '</b></div>';
     tip.classList.add('show');
@@ -5680,7 +5718,7 @@
     return list.map(function(p){
       var vd = ddVerdict(p.diff);
       var dcl = p.diff == null ? 'z' : p.diff > 0 ? 'p' : p.diff < 0 ? 'n' : 'z';
-      var dtxt = p.diff == null ? '—' : (p.diff > 0 ? '+' : '') + p.diff;
+      var dtxt = fmtAdpDelta(p.diff);
       return '<tr>'
         + '<td class="num" style="color:var(--text-muted)">' + roundPickStr(p.pn) + '</td>'
         + '<td class="dd-plname">' + esc(p.pl.name) + ' <span style="color:var(--text-subtle,var(--text-muted));font-size:11px">' + esc(p.pl.team || '') + '</span></td>'
@@ -5753,18 +5791,39 @@
     var POSes = ['QB','RB','WR','TE'];
     var myByPos = { QB:0, RB:0, WR:0, TE:0 }, myTot = 0;
     var lgByPos = { QB:0, RB:0, WR:0, TE:0 }, lgTot = 0;
+    var myCount = { QB:0, RB:0, WR:0, TE:0 }, myN = 0;
+    var lgCount = { QB:0, RB:0, WR:0, TE:0 }, lgN = 0;
     field.forEach(function(t){
-      t.picks.forEach(function(x){
-        var pos = String(x.p.position || '').toUpperCase();
+      (t.picks || []).forEach(function(x){
+        var pl = (x && x.p) ? x.p : x;
+        if (!pl) return;
+        var full = playersById[String(pl.id)] || pl;
+        var pos = String(full.position || pl.position || '').toUpperCase();
+        if (pos === 'DST' || pos === 'D/ST') pos = 'DEF';
         if (lgByPos[pos] == null) return;
-        var v = valOf(playersById[String(x.p.id)] || x.p) || 0;
+        // Always add a finite number. String values (e.g. "184.2" from JSON)
+        // used to concatenate via += and turn every share into NaN%.
+        var v = valOf(full);
+        if (!v) v = finiteVal(pl.val);
         lgByPos[pos] += v; lgTot += v;
-        if (t.isMe){ myByPos[pos] += v; myTot += v; }
+        lgCount[pos]++; lgN++;
+        if (t.isMe){ myByPos[pos] += v; myTot += v; myCount[pos]++; myN++; }
       });
     });
+    // No resolvable trade value (common for K/DEF-heavy or unresolved live ids):
+    // share by pick count so the bars still show how the draft was spent.
+    if (!lgTot){
+      lgByPos = lgCount; lgTot = lgN;
+      myByPos = myCount; myTot = myN;
+    }
+    function capPct(part, tot){
+      if (!tot) return 0;
+      var n = Math.round(part / tot * 100);
+      return isFinite(n) ? Math.max(0, Math.min(100, n)) : 0;
+    }
     var capBars = POSes.map(function(pos){
-      var mine = myTot ? Math.round(myByPos[pos] / myTot * 100) : 0;
-      var lg = lgTot ? Math.round(lgByPos[pos] / lgTot * 100) : 0;
+      var mine = capPct(myByPos[pos], myTot);
+      var lg = capPct(lgByPos[pos], lgTot);
       return '<div class="dd-cap-row"><div class="dd-cap-pos" style="color:' + posColor(pos) + '">' + pos + '</div>'
         + '<div class="dd-cap-track"><i style="width:' + mine + '%;background:' + posColor(pos) + '"></i>'
         + '<span class="dd-cap-lg" style="left:' + lg + '%" title="league avg ' + lg + '%"></span></div>'
@@ -5816,13 +5875,13 @@
       // Only label Steal/Reach when the market delta clears the same thresholds
       // the ledger uses — otherwise a "Fair" pick was being sold as an edge.
       if (steal && steal.diff >= 3){
-        parts.push(edge('Biggest steal', 'win', steal, 'Fell <b>' + steal.diff + '</b> picks past ADP' + (steal.ps != null ? ' — a ' + steal.ps + ' pick score.' : '.')));
+        parts.push(edge('Biggest steal', 'win', steal, 'Fell <b>' + Math.abs(steal.diff).toFixed(1) + '</b> picks past ADP' + (steal.ps != null ? ' — a ' + steal.ps + ' pick score.' : '.')));
       }
       if (best && (!steal || best !== steal || steal.diff < 3)){
         parts.push(edge('Best pick', 'winb', best, 'Your highest pick score at <b>' + best.ps + '</b>.'));
       }
       if (reach && reach.diff <= -5){
-        parts.push(edge('Biggest reach', 'bad', reach, 'Taken <b>' + (-reach.diff) + '</b> picks before ADP.'));
+        parts.push(edge('Biggest reach', 'bad', reach, 'Taken <b>' + Math.abs(reach.diff).toFixed(1) + '</b> picks before ADP.'));
       }
       if (parts.length) edges = '<div class="dd-edges">' + parts.join('') + '</div>';
     }
