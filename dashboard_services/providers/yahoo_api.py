@@ -60,6 +60,10 @@ _API_CACHE_TTL = 300  # 5 minutes
 # permanent per league so it's safe to cache for the life of the process.
 _league_key_map: Dict[str, str] = {}
 _league_key_lock = threading.Lock()
+# (bare_id, season) -> "461.l.123456" for historical seasons. Separate from
+# _league_key_map so a prior-year lookup never overwrites the current-season key.
+_season_key_map: Dict[tuple, str] = {}
+_season_key_lock = threading.Lock()
 
 
 def yahoo_enabled() -> bool:
@@ -461,6 +465,76 @@ def _league_key(league_id: str) -> str:
     return f"{_GAME_CODE}.l.{lid}"
 
 
+def _bare_yahoo_id(league_id: str) -> str:
+    lid = str(league_id).strip()
+    return lid.split(".l.")[-1] if ".l." in lid else lid
+
+
+def _league_key_for_season(league_id: str, season: int, access_token: str = "") -> str:
+    """Season-specific Yahoo league key (``<game_key>.l.<id>``).
+
+    ``_league_key`` caches one key — the current (or resolved) season. Historical
+    fetches must use that year's NFL game key or they silently re-read this
+    season. Falls back to ``_league_key`` when game keys aren't available.
+    """
+    lid = _bare_yahoo_id(league_id)
+    try:
+        season_i = int(season)
+    except (TypeError, ValueError):
+        return _league_key(league_id)
+
+    cache_key = (lid, season_i)
+    with _season_key_lock:
+        hit = _season_key_map.get(cache_key)
+        if hit:
+            return hit
+
+    game_keys = _nfl_game_keys(access_token) if access_token else []
+    for year, gk in game_keys:
+        try:
+            if int(year) != season_i:
+                continue
+        except (TypeError, ValueError):
+            continue
+        full = f"{gk}.l.{lid}"
+        with _season_key_lock:
+            _season_key_map[cache_key] = full
+        return full
+    return _league_key(league_id)
+
+
+def yahoo_league_exists_for_season(access_token: str, league_id: str, season: int) -> bool:
+    """True when this Yahoo league has a readable record for ``season``."""
+    if not access_token:
+        return False
+    lid = _bare_yahoo_id(league_id)
+    try:
+        season_i = int(season)
+    except (TypeError, ValueError):
+        return False
+    game_keys = _nfl_game_keys(access_token) or []
+    gk = None
+    for year, key in game_keys:
+        try:
+            if int(year) == season_i:
+                gk = key
+                break
+        except (TypeError, ValueError):
+            continue
+    if not gk:
+        return False
+    full = f"{gk}.l.{lid}"
+    try:
+        raw = _yahoo_get(access_token, f"league/{full}")
+    except Exception:
+        return False
+    if not _extract_league_meta(raw):
+        return False
+    with _season_key_lock:
+        _season_key_map[(lid, season_i)] = full
+    return True
+
+
 def _nfl_game_keys(access_token: str) -> List[tuple]:
     """Return [(season:int, game_key:str), ...] for recent NFL seasons, newest
     first. Yahoo's game key changes every season and a league key is
@@ -706,7 +780,7 @@ def _extract_roster_players(team_data: List) -> List[Dict]:
 # ---------------------------------------------------------------------------
 
 def get_league(season: int, league_id: str, access_token: str) -> Dict[str, Any]:
-    raw  = _yahoo_get(access_token, f"league/{_league_key(league_id)}")
+    raw  = _yahoo_get(access_token, f"league/{_league_key_for_season(league_id, season, access_token)}")
     meta = _extract_league_meta(raw)
     return {
         "league_id": str(league_id),
@@ -716,7 +790,7 @@ def get_league(season: int, league_id: str, access_token: str) -> Dict[str, Any]
 
 
 def get_users(season: int, league_id: str, access_token: str) -> List[Dict[str, Any]]:
-    raw   = _yahoo_get(access_token, f"league/{_league_key(league_id)}/teams")
+    raw   = _yahoo_get(access_token, f"league/{_league_key_for_season(league_id, season, access_token)}/teams")
     teams = _extract_teams(raw)
     out: List[Dict[str, Any]] = []
     for t in teams:
@@ -752,7 +826,7 @@ def get_users(season: int, league_id: str, access_token: str) -> List[Dict[str, 
 def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str, Any]]:
     raw = _yahoo_get(
         access_token,
-        f"league/{_league_key(league_id)}/teams;out=roster,stats,standings",
+        f"league/{_league_key_for_season(league_id, season, access_token)}/teams;out=roster,stats,standings",
     )
     teams = _extract_teams(raw)
     out: List[Dict[str, Any]] = []
@@ -882,7 +956,7 @@ def get_transactions(season: int, league_id: str, week: int, access_token: str) 
     try:
         raw = _yahoo_get(
             access_token,
-            f"league/{_league_key(league_id)}/transactions;types=add,drop,trade",
+            f"league/{_league_key_for_season(league_id, season, access_token)}/transactions;types=add,drop,trade",
         )
     except Exception as exc:
         logger.warning("[yahoo] get_transactions failed: %s", exc)

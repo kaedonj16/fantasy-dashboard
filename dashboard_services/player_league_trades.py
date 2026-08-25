@@ -13,6 +13,11 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
+# Sleeper (and ESPN scoringPeriodId) store the entire offseason as week 0.
+# Dynasty trades cluster there, so "This League" has to include it or it
+# looks like current-season in-season activity only.
+_TX_WEEKS = range(0, 19)
+
 
 def _player_info(pid: str, players_index: dict, *, is_focus: bool = False) -> dict:
     meta = players_index.get(str(pid)) or {}
@@ -291,7 +296,7 @@ def get_player_league_trades(
     if not pid or not lid:
         return {"trades": [], "total": 0, "source": "league"}
 
-    limit = max(1, min(int(limit or 20), 50))
+    limit = max(1, min(int(limit or 50), 50))
     season_map = build_league_history_map(plat, lid, int(season)) or {int(season): lid}
     players_index = load_players_index() or {}
 
@@ -319,7 +324,7 @@ def get_player_league_trades(
         slot_map = slot_by_league.get(hist_lid) or {}
         try:
             tx_by_week = get_transactions_by_week(
-                hist_lid, range(1, 19), platform=plat, season=int(hist_season)
+                hist_lid, _TX_WEEKS, platform=plat, season=int(hist_season)
             ) or {}
         except Exception:
             logger.debug(
@@ -328,6 +333,7 @@ def get_player_league_trades(
             )
             continue
 
+        seen_txn_ids: set[str] = set()
         for week in sorted(tx_by_week.keys(), reverse=True):
             for txn in (tx_by_week[week] or []):
                 if (txn.get("type") or "") != "trade":
@@ -335,6 +341,11 @@ def get_player_league_trades(
                 status = (txn.get("status") or "complete").lower()
                 if status in ("failed", "cancelled", "canceled", "rejected"):
                     continue
+                txn_id = str(txn.get("transaction_id") or "").strip()
+                if txn_id:
+                    if txn_id in seen_txn_ids:
+                        continue
+                    seen_txn_ids.add(txn_id)
                 adds = txn.get("adds") or {}
                 if str(pid) not in {str(k) for k in adds.keys()}:
                     continue

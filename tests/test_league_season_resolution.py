@@ -56,3 +56,54 @@ def test_missing_target_still_falls_back(_patched):
         current_season=2026, target_season=2022,
     )
     assert got == "L2023"   # closest older season present in the map
+
+
+def test_previous_league_id_treats_zero_as_end():
+    from dashboard_services.api import _previous_league_id
+    assert _previous_league_id({"previous_league_id": "0"}) == ""
+    assert _previous_league_id({"previous_league_id": 0}) == ""
+    assert _previous_league_id({"previous_league_id": "L25"}) == "L25"
+    assert _previous_league_id({"previous_league_id": None}) == ""
+
+
+def test_sleeper_history_walks_previous_ids_and_stops_at_zero(monkeypatch):
+    from dashboard_services import api as dsapi
+
+    dsapi.LEAGUE_HISTORY_CACHE.clear()
+    leagues = {
+        "L26": {"league_id": "L26", "season": "2026", "previous_league_id": "L25"},
+        "L25": {"league_id": "L25", "season": "2025", "previous_league_id": "L24"},
+        "L24": {"league_id": "L24", "season": "2024", "previous_league_id": "0"},
+    }
+    called = []
+
+    def fake_get(lid):
+        called.append(str(lid))
+        return leagues.get(str(lid)) or {}
+
+    monkeypatch.setattr(dsapi, "get_league", fake_get)
+    got = dsapi.build_league_history_map("sleeper", "L26", 2026)
+    assert got == {2026: "L26", 2025: "L25", 2024: "L24"}
+    assert "0" not in called
+
+
+def test_mfl_history_probes_prior_years(monkeypatch):
+    from dashboard_services import api as dsapi
+
+    dsapi.LEAGUE_HISTORY_CACHE.clear()
+
+    class FakeMFL:
+        def get_league(self, lid, year):
+            if int(year) >= 2024:
+                return {"league_id": lid, "season": year}
+            raise RuntimeError("no league")
+
+    monkeypatch.setattr(
+        "dashboard_services.providers.registry.get_provider",
+        lambda p: FakeMFL(),
+    )
+    got = dsapi.build_league_history_map("mfl", "999", 2026)
+    assert got[2026] == "999"
+    assert got[2025] == "999"
+    assert got[2024] == "999"
+    assert 2023 not in got

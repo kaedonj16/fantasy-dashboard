@@ -12734,7 +12734,7 @@ function _pmFetchTradesInto(panel, playerId, season, ctx) {
 
   let url;
   if (scope === 'league' && ctx.isLeague) {
-    url = `/api/player-league-trades/${encodeURIComponent(playerId)}?platform=${encodeURIComponent(ctx.platform)}&league_id=${encodeURIComponent(ctx.leagueId)}&season=${encodeURIComponent(ctx.season || season)}&limit=20`;
+    url = `/api/player-league-trades/${encodeURIComponent(playerId)}?platform=${encodeURIComponent(ctx.platform)}&league_id=${encodeURIComponent(ctx.leagueId)}&season=${encodeURIComponent(ctx.season || season)}&limit=50`;
   } else {
     url = `/api/trade-intel/player-trades/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}&limit=20`;
   }

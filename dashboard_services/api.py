@@ -618,36 +618,80 @@ def build_team_game_lookup(scores_body: dict) -> dict[str, dict]:
     return team_map
 
 
+def _previous_league_id(league: dict) -> str:
+    """Sleeper uses ``"0"`` (and sometimes 0) when there is no prior season."""
+    raw = (league or {}).get("previous_league_id")
+    if raw in (None, "", 0, "0"):
+        return ""
+    text = str(raw).strip()
+    if not text or text.lower() in ("null", "none", "undefined"):
+        return ""
+    return text
+
+
+def _probe_same_id_history(platform: str, league_id: str, season: int) -> dict[int, str]:
+    """ESPN / Yahoo / MFL reuse one league id across years — probe prior seasons.
+
+    Stops after two consecutive misses so a first-year league doesn't hammer
+    a decade of 404s. The requested season is always included.
+    """
+    lid = str(league_id).strip()
+    if ".l." in lid:
+        lid = lid.split(".l.")[-1]
+    season_map: dict[int, str] = {int(season): lid}
+
+    def _exists(year: int) -> bool:
+        if platform == "espn":
+            from dashboard_services.providers.espn_api import _league_cached as _espn_league
+            _espn_league(year, lid)
+            return True
+        if platform == "mfl":
+            from dashboard_services.providers.registry import get_provider
+            get_provider("mfl").get_league(lid, year)
+            return True
+        if platform == "yahoo":
+            from dashboard_services.platform_api import _yahoo_token
+            from dashboard_services.providers import yahoo_api
+            token = _yahoo_token(lid, year)
+            if not token:
+                return False
+            return yahoo_api.yahoo_league_exists_for_season(token, lid, year)
+        return False
+
+    consecutive_failures = 0
+    for yr in range(int(season) - 1, max(int(season) - 10, 2010) - 1, -1):
+        try:
+            if _exists(yr):
+                season_map[yr] = lid
+                consecutive_failures = 0
+            else:
+                consecutive_failures += 1
+        except Exception:
+            consecutive_failures += 1
+        if consecutive_failures >= 2:
+            break
+    return season_map
+
+
 def build_league_history_map(platform: str, league_id: str, season: int) -> dict[int, str]:
     """
     Returns:
         {season_int: league_id}
 
     Walks backward through previous_league_id for Sleeper.
-    For ESPN, the same league_id is reused across years - probe prior seasons directly.
+    For ESPN, Yahoo, and MFL, the same league_id is reused across years —
+    probe prior seasons directly.
     """
     platform = str(platform or "").strip().lower()
 
-    if platform == "espn":
-        cache_key = f"espn:{league_id}"
+    if platform in ("espn", "yahoo", "mfl"):
+        cache_key = f"{platform}:{league_id}"
         now = time.time()
         cached = LEAGUE_HISTORY_CACHE.get(cache_key)
         if cached and (now - cached["ts"] < LEAGUE_HISTORY_TTL):
             return cached["map"]
 
-        season_map: dict[int, str] = {int(season): str(league_id)}
-        from dashboard_services.providers.espn_api import _league_cached as _espn_league
-        consecutive_failures = 0
-        for yr in range(int(season) - 1, max(int(season) - 10, 2010) - 1, -1):
-            try:
-                _espn_league(yr, str(league_id))
-                season_map[yr] = str(league_id)
-                consecutive_failures = 0
-            except Exception:
-                consecutive_failures += 1
-                if consecutive_failures >= 2:
-                    break
-
+        season_map = _probe_same_id_history(platform, str(league_id), int(season))
         LEAGUE_HISTORY_CACHE[cache_key] = {"ts": now, "map": season_map}
         return season_map
 
@@ -685,7 +729,7 @@ def build_league_history_map(platform: str, league_id: str, season: int) -> dict
         if league_season:
             season_map[league_season] = resolved_league_id
 
-        prev_id = str(league.get("previous_league_id") or "").strip()
+        prev_id = _previous_league_id(league)
         if not prev_id:
             break
 

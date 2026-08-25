@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-08-25",
         "tag": "fix",
+        "text": "Player modal Trades tab: This League now looks across every season in the league's history, including offseason (week 0) trades, not just the current year.",
+        "link": "/players"
+    },
+    {
+        "date": "2026-08-25",
+        "tag": "fix",
         "text": "Start/Sit Advisor: lineup swaps now pair like-for-like (QB for QB, with FLEX/SUPERFLEX labeled separately) instead of mixing positions, and a negative gain no longer renders as +-.",
         "link": "/waivers"
     },

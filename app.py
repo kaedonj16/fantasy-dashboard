@@ -23692,7 +23692,7 @@ def api_player_league_trades(player_id: str):
     the league history chain. Includes counterparty team names and resolves
     drafted picks (e.g. 2026 1.04 → player) once that draft is complete.
 
-    Query: platform, league_id, season, limit (default 20).
+    Query: platform, league_id, season, limit (default 50).
     Free — same access model as the Trade Database.
     """
     try:
@@ -23705,9 +23705,9 @@ def api_player_league_trades(player_id: str):
         except (TypeError, ValueError):
             season = datetime.now().year
         try:
-            limit = int(request.args.get("limit") or 20)
+            limit = int(request.args.get("limit") or 50)
         except (TypeError, ValueError):
-            limit = 20
+            limit = 50
 
         if not league_id:
             return jsonify({"error": "league_id required"}), 400
