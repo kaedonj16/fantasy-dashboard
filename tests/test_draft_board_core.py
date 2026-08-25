@@ -412,3 +412,33 @@ def test_special_teams_fill_order_follows_team_plan_not_kicker_first():
     assert out["mixHigh"] == "DEF"
     assert out["mixLow"] == "K"
     assert out["flippedDef"] == "K"
+
+
+def test_source_adp_reads_rankings_column_not_sleeper_overlay():
+    """Consensus ADP is the per-source map rankings shows, not avg_pick."""
+    out = _run_need_cases("""(() => {
+      const p = {
+        avg_pick: 10,
+        sf_avg_pick: 8,
+        redraft_avg_pick: 20,
+        adp_by_source: {
+          consensus: { avg_pick: 12.4, sf_avg_pick: 9.7, redraft_avg_pick: 18.15 },
+          sleeper: { avg_pick: 9.1, sf_avg_pick: 7.2, redraft_avg_pick: 21 },
+        },
+      };
+      return {
+        cons: C.consensusAdpOf(p, 'dynasty', false),
+        consSf: C.consensusAdpOf(p, 'dynasty', true),
+        consRedraft: C.sourceAdpOf(p, 'consensus', 'redraft', false),
+        sleeper: C.sourceAdpOf(p, 'sleeper', 'dynasty', false),
+        fallback: C.consensusAdpOf({ avg_pick: 7 }, 'dynasty', false),
+        missing: C.sourceAdpOf(p, 'yahoo', 'dynasty', false),
+      };
+    })()""")
+
+    assert out["cons"] == 12.4
+    assert out["consSf"] == 9.7
+    assert out["consRedraft"] == 18.15
+    assert out["sleeper"] == 9.1
+    assert out["fallback"] == 7
+    assert out["missing"] is None

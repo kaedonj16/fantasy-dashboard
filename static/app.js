@@ -1380,27 +1380,55 @@ window.emptyState = emptyState;
   // FLIP reorder: measure children, run `mutate()` (which reorders/replaces
   // DOM), then animate each surviving child from its old spot to its new one.
   // Children are matched by a key: data-flip-key attribute, else id.
+  //
+  // Invert and Play must land in different frames (double rAF + a forced
+  // reflow) or the browser batches them and the row keeps the invert
+  // translate — the "stuck" reorder on Player Rankings. A generation token
+  // cancels an in-flight pass when a newer one starts, and a timeout clears
+  // the invert if transitionend never fires (conflicting `transition`
+  // shorthand, display:none, tab hidden).
   window.brFlipReorder = function (container, mutate) {
     if (!container) { if (mutate) mutate(); return; }
     if (reduce) { mutate && mutate(); return; }
+    var gen = (container._brFlipGen || 0) + 1;
+    container._brFlipGen = gen;
     var keyOf = function (n) { return n.getAttribute && (n.getAttribute('data-flip-key') || n.id) || null; };
     var first = {};
     Array.prototype.forEach.call(container.children, function (c) {
       var k = keyOf(c); if (k) first[k] = c.getBoundingClientRect();
     });
     mutate && mutate();
+    if (container._brFlipGen !== gen) return;
     Array.prototype.forEach.call(container.children, function (c) {
       var k = keyOf(c); if (!k || !first[k]) return;
       var last = c.getBoundingClientRect();
       var dx = first[k].left - last.left, dy = first[k].top - last.top;
       if (!dx && !dy) return;
+      c._brFlipDone = false;
       c.classList.add('br-flip');
       c.style.transition = 'none';
       c.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
-      requestAnimationFrame(function () {
+      var done = function () {
+        if (c._brFlipDone) return;
+        c._brFlipDone = true;
+        c.classList.remove('br-flip');
         c.style.transition = '';
         c.style.transform = '';
-      });
+      };
+      var play = function () {
+        if (container._brFlipGen !== gen || !c.isConnected) { done(); return; }
+        void c.offsetWidth; // commit invert before releasing to the new spot
+        // Inline the transform transition so a row-level `transition:
+        // background` shorthand cannot swallow it and leave the invert stuck.
+        c.style.transition = 'transform .42s var(--ease-out, ease-out)';
+        c.style.transform = '';
+        c.addEventListener('transitionend', function (e) {
+          if (e && e.propertyName && e.propertyName !== 'transform') return;
+          done();
+        }, { once: true });
+        setTimeout(done, 500);
+      };
+      requestAnimationFrame(function () { requestAnimationFrame(play); });
     });
   };
 
