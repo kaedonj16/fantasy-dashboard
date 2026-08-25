@@ -1940,7 +1940,7 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
 .br-ctx-week {
     flex-shrink: 0;
     padding: 5px 10px;
-    border-radius: 999px;
+    border-radius: 6px;
     background: var(--card);
     color: var(--accent);
     font-size: 12px;
@@ -8362,6 +8362,8 @@ select:focus {
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
+    /* Room for row borders/hover chrome at the top edge of the scroll box. */
+    padding-top: 2px;
 }
 
 .os-snapshot-meta {
@@ -8428,11 +8430,12 @@ select:focus {
     border: 1px solid var(--border);
     border-radius: 14px;
     background: var(--card);
-    transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease;
+    transition: background .14s ease, border-color .14s ease;
 }
 
 .os-snap-row:hover {
     border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+    background: color-mix(in srgb, var(--accent-soft) 55%, var(--card));
 }
 
 .os-snap-medal {
@@ -11511,29 +11514,6 @@ a.signed-home-league:hover {
     display: flex;
     flex-direction: column;
     gap: 36px;
-    position: relative;
-}
-
-/* Soft brand atmosphere behind the landing composition (not a flat fill). */
-.home-page::before {
-    content: "";
-    position: absolute;
-    inset: -24px -8% auto;
-    height: min(520px, 70vh);
-    pointer-events: none;
-    z-index: 0;
-    background:
-        radial-gradient(ellipse 70% 55% at 12% 18%, rgba(56, 189, 248, 0.16), transparent 62%),
-        radial-gradient(ellipse 55% 50% at 88% 8%, rgba(18, 45, 75, 0.12), transparent 58%),
-        linear-gradient(180deg, rgba(244, 246, 248, 0.9), transparent 78%);
-    border-radius: 0 0 48% 48% / 0 0 28px 28px;
-}
-
-:root[data-theme="dark"] .home-page::before {
-    background:
-        radial-gradient(ellipse 70% 55% at 14% 16%, rgba(56, 189, 248, 0.14), transparent 60%),
-        radial-gradient(ellipse 50% 45% at 90% 6%, rgba(59, 130, 246, 0.1), transparent 55%),
-        linear-gradient(180deg, rgba(15, 23, 42, 0.55), transparent 80%);
 }
 
 .home-brand {
@@ -12463,7 +12443,7 @@ a.signed-home-league:hover {
 .manager-pill.active {
     background: var(--accent);
     color: var(--on-accent);
-    box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 30%, transparent);
+    box-shadow: 0 1px 6px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 .manager-pill:not(.active):hover {
@@ -12477,6 +12457,8 @@ a.signed-home-league:hover {
     align-items: center;
     gap: 8px;
     margin-bottom: 12px;
+    /* Keep active-pill shadow from clipping against the card edge. */
+    overflow: visible;
 }
 
 .manager-pills-row {
@@ -12489,8 +12471,8 @@ a.signed-home-league:hover {
     /* overflow-x:auto forces overflow-y to auto (not visible), so the active
      pill's box-shadow and rounded edges get clipped top/bottom. Pad the scroll
      box to give them room; negative margin keeps the row's outer height put. */
-    padding: 8px 2px;
-    margin: -8px -2px;
+    padding: 10px 4px;
+    margin: -10px -4px;
 }
 
 .manager-pills-row::-webkit-scrollbar {
@@ -17197,10 +17179,6 @@ img, svg, canvas {
         padding-bottom: 6px;
     }
 
-    .br-page-brand {
-        margin-bottom: 2px;
-    }
-
     .history-header {
         padding: 18px 14px 14px;
         gap: 12px;
@@ -19228,11 +19206,18 @@ img, svg, canvas {
     transition: opacity 0.15s, background 0.15s;
 }
 
-/* Block-level clickable cards (os-snapshot-card etc.) get the lift */
-div.team-clickable:hover, article.team-clickable:hover {
+/* Block-level clickable cards get a lift — skip rows that live inside scroll
+   boxes (e.g. Offseason Team Snapshot), where translateY/shadow get clipped. */
+div.team-clickable:hover:not(.os-snap-row),
+article.team-clickable:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
     transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.os-snap-row.team-clickable:hover {
+    transform: none;
+    box-shadow: none;
 }
 
 /* Inline / span / text clickables just dim slightly */
@@ -23114,11 +23099,6 @@ tr.team-clickable {
     align-items: center;
     gap: 12px;
     flex-wrap: wrap;
-}
-
-.wl-head-title .br-page-brand {
-    width: 100%;
-    margin-bottom: -4px;
 }
 
 .wl-page-title {
@@ -27805,50 +27785,7 @@ button:disabled {
 }
 
 
-/* Shared BR Fantasy page brand + public-page atmosphere */
-.br-page-brand {
-    margin: 0 0 8px;
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--brand-blue, #3b82f6);
-    display: inline-flex;
-    align-items: center;
-}
-
-.dvt-page, .rf-page, .rnk-page, .compare-page, .wl-page {
-    position: relative;
-}
-
-.dvt-page::before, .rf-page::before, .rnk-page::before, .compare-page::before {
-    content: "";
-    position: absolute;
-    inset: -12px -6% auto;
-    height: min(280px, 42vh);
-    pointer-events: none;
-    z-index: 0;
-    background:
-        radial-gradient(ellipse 65% 55% at 16% 10%, rgba(56, 189, 248, 0.12), transparent 62%),
-        radial-gradient(ellipse 48% 42% at 90% 0%, rgba(18, 45, 75, 0.08), transparent 58%);
-}
-
-:root[data-theme="dark"] .dvt-page::before,
-:root[data-theme="dark"] .rf-page::before,
-:root[data-theme="dark"] .rnk-page::before,
-:root[data-theme="dark"] .compare-page::before {
-    background:
-        radial-gradient(ellipse 65% 55% at 16% 10%, rgba(56, 189, 248, 0.1), transparent 60%),
-        radial-gradient(ellipse 48% 42% at 90% 0%, rgba(59, 130, 246, 0.08), transparent 55%);
-}
-
-.dvt-hero, .rf-hero, .rnk-hero, .compare-page-head, .wl-page-head,
-.dvt-controls, .rf-grid, .rnk-pos-nav, .rnk-table-wrap, .dvt-table-wrap,
-.compare-pickers, .compare-actions {
-    position: relative;
-    z-index: 1;
-}
-
+/* Shared title rhythm for public tool pages */
 .dvt-title, .rf-title, .rnk-title {
     letter-spacing: -0.03em;
     line-height: 1.12;
@@ -27857,10 +27794,6 @@ button:disabled {
 .dvt-title { font-size: clamp(24px, 4.2vw, 34px); }
 .rf-title { font-size: clamp(24px, 4.2vw, 34px); }
 .rnk-title { font-size: clamp(24px, 4.2vw, 34px); }
-
-.card-header .br-page-brand {
-    margin-bottom: 6px;
-}
 
 /* ── Dynasty Trade Value Chart ───────────────────────────────────────────── */
 .dvt-page {

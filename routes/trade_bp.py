@@ -311,7 +311,6 @@ def page_trade_intel(platform: str, season: int, league_id: str):
     </style>
     <div class="card central" style="max-width:960px;">
       <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;">
-        <p class="br-page-brand">BR Fantasy</p>
         <h2 style="margin:0 0 4px;font-size:20px;">Trade Intelligence</h2>
         <div style="font-size:13px;color:var(--text-muted);">
           Actionable insights from thousands of real dynasty trades across multiple platforms
@@ -476,7 +475,6 @@ def page_trade_intel(platform: str, season: int, league_id: str):
     <script>var _leagueType = '{_ti_lt}'; var _leagueSize = {_ti_sz};</script>
     <div class="card central" style="max-width:960px;">
       <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;">
-        <p class="br-page-brand">BR Fantasy</p>
         <h2 style="margin:0 0 4px;font-size:20px;">Trade Intelligence</h2>
         <div style="font-size:13px;color:var(--text-muted);">
           Actionable insights from thousands of real dynasty trades across multiple platforms
@@ -1265,7 +1263,6 @@ def page_trade_database(platform: str, season: int, league_id: str):
     body_html = f"""
     <div class="card central" style="max-width:960px;">
       <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;">
-        <p class="br-page-brand">BR Fantasy</p>
         <h2 style="margin:0 0 4px;font-size:20px;">Trade Database</h2>
         <div style="font-size:13px;color:var(--text-muted);">
           Explore thousands of real dynasty trades to understand player values and market trends

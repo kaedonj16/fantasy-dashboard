@@ -261,7 +261,6 @@ def build_trade_calculator_body(
           <div id="otcCalcTab">
           <div class="otc-page-head">
             <div class="otc-page-title-wrap">
-              <p class="br-page-brand">BR Fantasy</p>
               <div style="display: flex; align-items: center; gap: 8px;">
                 <h1 class="otc-page-title">Trade Calculator</h1>
                 <div class="otc-info-tooltip-wrapper">

@@ -259,7 +259,6 @@ def build_player_page_body(
     trade_value_label = "Dynasty Trade Value"
     return f"""
     <div class="page-shell-narrow" style="max-width:760px;margin:0 auto;">
-      <p class="br-page-brand">BR Fantasy</p>
       <nav class="pp-breadcrumb" aria-label="Breadcrumb" style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
         <a href="/players" style="color:var(--text-muted);">Player Rankings</a>
         <span style="margin:0 6px;">/</span>

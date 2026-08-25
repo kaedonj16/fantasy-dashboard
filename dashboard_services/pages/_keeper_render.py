@@ -282,7 +282,6 @@ def render_keeper_html(seed: dict) -> str:
 <div class="card central kpr-wrap">
   <div class="card-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
     <div class="kpr-head-text">
-      <p class="br-page-brand">BR Fantasy</p>
       <h2>Keeper Assistant</h2>
       <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
         Who’s worth keeping? Surplus = where a player drafts today minus what he costs to keep.

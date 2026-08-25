@@ -161,7 +161,6 @@ def build_advanced_metrics_body(
     <div class="card central">
       <div class="card-header">
         <div>
-          <p class="br-page-brand">BR Fantasy</p>
           <h2>Advanced Metrics</h2>
           <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
             Rank every player by a single advanced metric. Bars are relative to the leader.

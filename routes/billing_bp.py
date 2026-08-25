@@ -261,7 +261,6 @@ def _pricing_body() -> str:
     {canceled_banner}
     <div class="card central" style="max-width:760px;">
       <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;text-align:center;">
-        <p class="br-page-brand" style="justify-content:center;">BR Fantasy</p>
         <h2 style="margin:0 0 6px;font-size:22px;">Premium</h2>
         <div style="font-size:14px;color:var(--text-muted);">
           Unlock advanced analytics and insights for your dynasty league
