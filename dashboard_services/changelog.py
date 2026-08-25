@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-08-25",
+        "tag": "new",
+        "text": "Player modal Trades tab: toggle between This League (every season, real counterparties) and the Trade Database. Traded picks resolve to the player drafted with them once that draft is complete — e.g. 2026 Pick 1.04 → Tetairoa McMillan.",
+        "link": "/players"
+    },
+    {
         "date": "2026-08-24",
         "tag": "new",
         "text": "ADP Sources: Compare Sleeper, BR Fantasy, ESPN, MFL, and Yahoo ADP side by side in Player Rankings. Player modals show every available source on one range, with exact ADP values on hover and a Consensus built from all available sources.",
