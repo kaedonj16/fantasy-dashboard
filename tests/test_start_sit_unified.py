@@ -25,6 +25,17 @@ def test_compare_verdict_ranks_on_unified_start_score():
     assert "higher projection (+' + Math.abs" not in body
 
 
+def test_lineup_advice_formats_signed_gain_without_plus_minus():
+    body = _body()
+    # Blindly prefixing '+' onto toFixed rendered "+-5.0" for a negative gain.
+    assert "+${(s.gain || 0).toFixed(1)}" not in body
+    assert "(g > 0 ? '+' : '') + g.toFixed(1)" in body
+    # Positions and FLEX/SUPERFLEX slot labels so a WR-for-RB isn't naked.
+    assert "s.start.position" in body
+    assert "s.slot" in body
+    assert "SUPERFLEX" in body
+
+
 def test_compare_reasons_come_from_the_six_factor_breakdown():
     body = _body()
     assert "function wvVerdictReasons(a, b, wi)" in body

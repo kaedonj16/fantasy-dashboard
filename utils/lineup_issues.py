@@ -147,6 +147,105 @@ def projection_upgrades(
     return swaps[:max_swaps]
 
 
+def pair_start_sit_swaps(
+    to_start,
+    to_sit,
+    name_by_pid: Dict[str, str],
+    pos_by_pid: Dict[str, str],
+    score_by_pid: Dict[str, float],
+) -> List[dict]:
+    """Pair bench-ins with starter-outs for the Start/Sit advice banner.
+
+    The naive approach (highest-score in zipped with lowest-score out) produces
+    cross-position nonsense: a QB "over" an RB at +8, and a WR "over" a QB at
+    -5 that the UI then rendered as "+-5.0". Same-position replacements are
+    paired first so a QB is only shown swapping with a QB. Remaining players
+    are FLEX / SUPER_FLEX displacements and are labeled as such.
+
+    Each item is ``{start, sit, gain, slot}``. ``sit`` is None when the in-player
+    fills an empty slot (no current starter to displace). Sorted by gain,
+    best first.
+    """
+    from collections import defaultdict
+
+    def _score(pid) -> float:
+        try:
+            return float(score_by_pid.get(pid) or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _pos(pid) -> str:
+        return str(pos_by_pid.get(pid) or "").upper()
+
+    def _entry(pid) -> dict:
+        return {
+            "player_id": pid,
+            "name": name_by_pid.get(pid),
+            "position": _pos(pid),
+            "proj": _score(pid),
+        }
+
+    ins_by_pos: Dict[str, list] = defaultdict(list)
+    outs_by_pos: Dict[str, list] = defaultdict(list)
+    for pid in to_start or []:
+        ins_by_pos[_pos(pid)].append(pid)
+    for pid in to_sit or []:
+        outs_by_pos[_pos(pid)].append(pid)
+    for pos in ins_by_pos:
+        ins_by_pos[pos].sort(key=_score, reverse=True)
+    for pos in outs_by_pos:
+        outs_by_pos[pos].sort(key=_score)  # lowest out first = biggest upgrade
+
+    used_in: Set[str] = set()
+    used_out: Set[str] = set()
+    swaps: List[dict] = []
+
+    for pos in ("QB", "RB", "WR", "TE"):
+        for pin, pout in zip(ins_by_pos.get(pos, []), outs_by_pos.get(pos, [])):
+            used_in.add(pin)
+            used_out.add(pout)
+            swaps.append({
+                "start": _entry(pin),
+                "sit": _entry(pout),
+                "gain": round(_score(pin) - _score(pout), 1),
+                "slot": pos,
+            })
+
+    leftover_in = sorted(
+        (p for p in (to_start or []) if p not in used_in),
+        key=_score, reverse=True,
+    )
+    leftover_out = sorted(
+        (p for p in (to_sit or []) if p not in used_out),
+        key=_score,
+    )
+    for pin, pout in zip(leftover_in, leftover_out):
+        used_in.add(pin)
+        used_out.add(pout)
+        # A QB in a leftover pair can only be a SUPER_FLEX displacement;
+        # otherwise it's a regular FLEX (RB/WR/TE) swap.
+        slot = "SUPER_FLEX" if "QB" in (_pos(pin), _pos(pout)) else "FLEX"
+        swaps.append({
+            "start": _entry(pin),
+            "sit": _entry(pout),
+            "gain": round(_score(pin) - _score(pout), 1),
+            "slot": slot,
+        })
+
+    for pin in leftover_in:
+        if pin in used_in:
+            continue
+        swaps.append({
+            "start": _entry(pin),
+            "sit": None,
+            "gain": round(_score(pin), 1),
+            "slot": "empty",
+        })
+
+    swaps.sort(key=lambda s: -(s.get("gain") or 0))
+    return swaps
+
+
 def summarize_issues(issues: List[dict], max_names: int = 3) -> str:
     """One-sentence summary for pushes and compact UI.
 
