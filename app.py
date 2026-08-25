@@ -16243,10 +16243,10 @@ def build_schedule_body(ctx):
       function renderGrid() {
         _myKey = wkStart + '-' + wkEnd;
         if (!selPids.length) {
-          gridEl.innerHTML = '<div class="sched-empty">No players yet. Use the search above to add players.</div>';
+          gridEl.innerHTML = '<div class="sched-empty"><strong style="color:var(--text);display:block;margin-bottom:4px;">No players yet</strong>Use the search above to add players.</div>';
           return;
         }
-        gridEl.innerHTML = '<div class="sched-empty">Loading…</div>';
+        gridEl.innerHTML = '<div class="loading-state-msg"><div class="loading-spinner" aria-hidden="true"></div><span>Loading schedule…</span></div>';
         var url = '/api/schedule?season=' + CFG.season +
                   '&week_start=' + wkStart + '&week_end=' + wkEnd +
                   '&pids=' + encodeURIComponent(selPids.join(','));
@@ -16254,7 +16254,7 @@ def build_schedule_body(ctx):
           var weeks   = data.weeks   || [];
           var players = data.players || [];
           if (!players.length) {
-            gridEl.innerHTML = '<div class="sched-empty">No matchup data for this selection.</div>';
+            gridEl.innerHTML = '<div class="sched-empty"><strong style="color:var(--text);display:block;margin-bottom:4px;">No matchup data</strong>Nothing to show for this selection.</div>';
             return;
           }
           var head = '<th class="sched-th sched-th-player">Player</th>' +
@@ -16293,7 +16293,7 @@ def build_schedule_body(ctx):
           gridEl.innerHTML =
             '<table class="sched-table"><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table>';
         }).catch(function() {
-          gridEl.innerHTML = '<div class="sched-empty" style="color:#ef4444;">Failed to load schedule.</div>';
+          gridEl.innerHTML = '<div class="sched-empty" style="color:var(--loss);"><strong style="display:block;margin-bottom:4px;">Couldn’t load schedule</strong>Refresh and try again.</div>';
         });
       }
 
@@ -16322,7 +16322,7 @@ def build_schedule_body(ctx):
         _rankKey = wkStart + '-' + wkEnd;
         rankingsCache = null;
         var rankGrid = document.getElementById('schedRankingsGrid');
-        rankGrid.innerHTML = '<div class="sched-empty">Loading…</div>';
+        rankGrid.innerHTML = '<div class="loading-state-msg"><div class="loading-spinner" aria-hidden="true"></div><span>Loading rankings…</span></div>';
         var url = '/api/schedule-rankings?season=' + CFG.season +
                   '&week_start=' + wkStart + '&week_end=' + wkEnd +
                   '&position=' + rankPos +
@@ -16332,7 +16332,7 @@ def build_schedule_body(ctx):
           rankingsCache = data;
           buildRankingsTable(data);
         }).catch(function() {
-          rankGrid.innerHTML = '<div class="sched-empty" style="color:#ef4444;">Failed to load rankings.</div>';
+          rankGrid.innerHTML = '<div class="sched-empty" style="color:var(--loss);"><strong style="display:block;margin-bottom:4px;">Couldn’t load rankings</strong>Refresh and try again.</div>';
         });
       }
 
@@ -16346,7 +16346,7 @@ def build_schedule_body(ctx):
         if (rankHardFirst) rankings.reverse();
 
         if (!rankings.length) {
-          rankGrid.innerHTML = '<div class="sched-empty">No data for this position/week range.</div>';
+          rankGrid.innerHTML = '<div class="sched-empty"><strong style="color:var(--text);display:block;margin-bottom:4px;">No data</strong>Nothing for this position or week range.</div>';
           return;
         }
 

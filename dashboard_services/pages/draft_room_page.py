@@ -1638,7 +1638,10 @@ _DRAFT_HISTORY_HTML = r"""
 
   function render(drafts){
     if (!drafts.length){
-      listEl.innerHTML = '<div class="dr-hist-empty">No drafts found for this league yet.</div>';
+      listEl.innerHTML = '<div class="dr-hist-empty">'
+        + '<p class="dr-empty-note-title">No drafts yet</p>'
+        + '<p class="dr-empty-note-msg">Drafts for this league will show up here once they are created.</p>'
+        + '</div>';
       return;
     }
     // Live/upcoming first, then completed; newest season first within each.
@@ -1665,18 +1668,30 @@ _DRAFT_HISTORY_HTML = r"""
 
   function loadList(){
     if (!cfg.hasLeague){
-      listEl.innerHTML = '<div class="dr-hist-empty">Open Draft History from your league to see its drafts. '
-        + 'You can still run a mock in the <a href="' + esc(cfg.base) + '">Draft Room</a>.</div>';
+      listEl.innerHTML = '<div class="dr-hist-empty">'
+        + '<p class="dr-empty-note-title">Open from your league</p>'
+        + '<p class="dr-empty-note-msg">Open Draft History from a league to see its drafts. '
+        + 'You can still run a mock in the <a href="' + esc(cfg.base) + '">Draft Room</a>.</p>'
+        + '</div>';
       return;
     }
     fetch('/api/draft/detect?history=1&platform=' + encodeURIComponent(cfg.platform)
         + '&league_id=' + encodeURIComponent(cfg.leagueId) + '&season=' + (cfg.season || ''), { cache: 'no-store' })
       .then(function(r){ return r.json(); })
       .then(function(resp){
-        if (resp.unsupported){ listEl.innerHTML = '<div class="dr-hist-empty">Draft history is available for Sleeper leagues.</div>'; return; }
+        if (resp.unsupported){
+          listEl.innerHTML = '<div class="dr-hist-empty">'
+            + '<p class="dr-empty-note-title">Sleeper only</p>'
+            + '<p class="dr-empty-note-msg">Draft history is available for Sleeper leagues.</p>'
+            + '</div>';
+          return;
+        }
         render(resp.drafts || []);
       })
-      .catch(function(){ window.brErrorState(listEl, 'Could not load drafts.', loadList, { compact: true }); });
+      .catch(function(){
+        if (window.brErrorState) window.brErrorState(listEl, 'Could not load drafts.', loadList, { compact: true });
+        else listEl.innerHTML = '<div class="dr-hist-empty">Could not load drafts.</div>';
+      });
   }
 
   loadList();

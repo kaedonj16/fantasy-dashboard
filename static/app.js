@@ -1216,6 +1216,20 @@ window.brEmptyState = function (container, opts) {
     btn.addEventListener('click', opts.retry);
     act.appendChild(btn);
     box.appendChild(act);
+  } else if (opts.cta && box) {
+    var ctaWrap = document.createElement('div');
+    ctaWrap.className = 'empty-state-action';
+    if (typeof opts.cta === 'string') {
+      ctaWrap.innerHTML = opts.cta;
+    } else {
+      var ctaBtn = document.createElement('button');
+      ctaBtn.type = 'button';
+      ctaBtn.className = opts.cta.className || 'empty-state-cta';
+      ctaBtn.textContent = opts.cta.label || 'Continue';
+      if (opts.cta.onClick) ctaBtn.addEventListener('click', opts.cta.onClick);
+      ctaWrap.appendChild(ctaBtn);
+    }
+    box.appendChild(ctaWrap);
   }
   return el;
 };
@@ -5661,7 +5675,13 @@ window.initTradePage = function initTradePage(root = document) {
 
     const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
     if (!hasPremium) {
-      body.innerHTML = '<div class="otc-movers-empty" style="display:flex;flex-direction:column;align-items:center;gap:8px;"><span>Unlock trade tools with PRO.</span><button class="pi-locked-btn" onclick="showPaywall(\'trade-suggestions\')">Upgrade</button></div>';
+      window.brEmptyState(body, {
+        icon: 'lock',
+        title: 'PRO trade tools',
+        message: 'Unlock targets tailored to your roster gaps.',
+        compact: true,
+        cta: { label: 'Upgrade', className: 'pi-locked-btn', onClick: function () { if (typeof showPaywall === 'function') showPaywall('trade-suggestions'); } }
+      });
       return;
     }
 
@@ -5670,7 +5690,12 @@ window.initTradePage = function initTradePage(root = document) {
     const viewerRosterId = getCurrentRosterId();
 
     if (!leagueId || !viewerRosterId) {
-      body.innerHTML = '<div style="font-size:12px;color:var(--text-muted);">Sign in to see targets.</div>';
+      window.brEmptyState(body, {
+        icon: 'search',
+        title: 'Select your team',
+        message: 'Sign in and pick a roster to see targets.',
+        compact: true
+      });
       return;
     }
 
@@ -6859,7 +6884,13 @@ window.initTradePage = function initTradePage(root = document) {
       const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
       if (!hasPremium) {
         suggTargetsLoaded = true;
-        container.innerHTML = '<div class="otc-movers-empty" style="display:flex;flex-direction:column;align-items:center;gap:8px;"><span>Unlock trade tools with PRO.</span><button class="pi-locked-btn" onclick="showPaywall(\'trade-suggestions\')">Upgrade</button></div>';
+        window.brEmptyState(container, {
+          icon: 'lock',
+          title: 'PRO trade tools',
+          message: 'Unlock targets tailored to your roster gaps.',
+          compact: true,
+          cta: { label: 'Upgrade', className: 'pi-locked-btn', onClick: function () { if (typeof showPaywall === 'function') showPaywall('trade-suggestions'); } }
+        });
         return;
       }
 
@@ -7170,7 +7201,13 @@ window.initTradePage = function initTradePage(root = document) {
 
       const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
       if (!hasPremium) {
-        strategyImpact.innerHTML = '<div class="otc-movers-empty" style="display:flex;flex-direction:column;align-items:center;gap:8px;"><span>Unlock trade tools with PRO.</span><button class="pi-locked-btn" onclick="showPaywall(\'trade-suggestions\')">Upgrade</button></div>';
+        window.brEmptyState(strategyImpact, {
+          icon: 'lock',
+          title: 'PRO trade tools',
+          message: 'Unlock strategy suggestions and package ideas.',
+          compact: true,
+          cta: { label: 'Upgrade', className: 'pi-locked-btn', onClick: function () { if (typeof showPaywall === 'function') showPaywall('trade-suggestions'); } }
+        });
         strategyCards.innerHTML  = "";
         return;
       }
@@ -7180,7 +7217,12 @@ window.initTradePage = function initTradePage(root = document) {
       const viewerRosterId = getCurrentRosterId();
 
       if (!leagueId || !viewerRosterId) {
-        strategyImpact.innerHTML = '<div class="otc-movers-empty">Select your team to see strategy.</div>';
+        window.brEmptyState(strategyImpact, {
+          icon: 'search',
+          title: 'Select your team',
+          message: 'Choose a roster to see strategy suggestions.',
+          compact: true
+        });
         strategyCards.innerHTML  = "";
         return;
       }
@@ -7228,7 +7270,13 @@ window.initTradePage = function initTradePage(root = document) {
         if (_isStale()) return;  // a newer selection superseded this one
         if (strategySpinner) strategySpinner.style.display = "none";
         if (res.status === 403) {
-          strategyImpact.innerHTML = '<div class="otc-movers-empty" style="display:flex;flex-direction:column;align-items:center;gap:8px;"><span>Unlock trade tools with PRO.</span><button class="pi-locked-btn" onclick="showPaywall(\'trade-suggestions\')">Upgrade</button></div>';
+          window.brEmptyState(strategyImpact, {
+            icon: 'lock',
+            title: 'PRO trade tools',
+            message: 'Unlock strategy suggestions and package ideas.',
+            compact: true,
+            cta: { label: 'Upgrade', className: 'pi-locked-btn', onClick: function () { if (typeof showPaywall === 'function') showPaywall('trade-suggestions'); } }
+          });
           return;
         }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -7260,7 +7308,12 @@ window.initTradePage = function initTradePage(root = document) {
         }
 
         if (!_strategyData.length) {
-          strategyImpact.innerHTML = '<div class="otc-movers-empty">No suggestions found for this strategy.</div>';
+          window.brEmptyState(strategyImpact, {
+            icon: 'search',
+            title: 'No suggestions',
+            message: 'No packages matched this strategy for your roster.',
+            compact: true
+          });
           strategyCards.innerHTML  = "";
           return;
         }
@@ -7275,7 +7328,7 @@ window.initTradePage = function initTradePage(root = document) {
         if (err && err.name === "AbortError") return;
         if (_isStale()) return;
         if (strategySpinner) strategySpinner.style.display = "none";
-        strategyImpact.innerHTML = '<div class="otc-movers-empty">Could not load strategy.</div>';
+        window.brErrorState(strategyImpact, 'Could not load strategy.', () => loadStrategyView(archetype), { compact: true });
         console.error("[strategy]", err);
       }
     }
@@ -7365,7 +7418,12 @@ window.initTradePage = function initTradePage(root = document) {
         return pid === filterPid;
       }) : data;
       if (!visible.length) {
-        strategyCards.innerHTML = '<div class="otc-movers-empty">No results.</div>';
+        window.brEmptyState(strategyCards, {
+          icon: 'search',
+          title: 'No results',
+          message: 'No packages match this filter.',
+          compact: true
+        });
         return;
       }
 
@@ -11147,12 +11205,12 @@ document.addEventListener('DOMContentLoaded', function() {
               // Setup dynamic grid columns for fun awards
               if (typeof setupFunAwardsGrid === 'function') setupFunAwardsGrid();
             } else {
-              awardsContent.innerHTML = '<div class="history-empty">Failed to load season awards.</div>';
+              window.brErrorState(awardsContent, 'Failed to load season awards.', null, { compact: true });
             }
           })
           .catch(err => {
             console.error('Error loading history awards:', err);
-            awardsContent.innerHTML = '<div class="history-empty">Error loading season awards.</div>';
+            window.brErrorState(awardsContent, 'Error loading season awards.', null, { compact: true });
           });
       }
 
@@ -11165,12 +11223,12 @@ document.addEventListener('DOMContentLoaded', function() {
             if (data.html) {
               standingsContent.innerHTML = data.html;
             } else {
-              standingsContent.innerHTML = '<div class="history-empty">Failed to load standings.</div>';
+              window.brErrorState(standingsContent, 'Failed to load standings.', null, { compact: true });
             }
           })
           .catch(err => {
             console.error('Error loading history standings:', err);
-            standingsContent.innerHTML = '<div class="history-empty">Error loading standings.</div>';
+            window.brErrorState(standingsContent, 'Error loading standings.', null, { compact: true });
           });
       }
 
@@ -11229,12 +11287,17 @@ document.addEventListener('DOMContentLoaded', function() {
               // Render chart (load Plotly on demand)
               if (window.ensurePlotly) window.ensurePlotly().then(function () { Plotly.newPlot('historyChartPlotly', traces, layout, { displayModeBar: false }); }).catch(function () {});
             } else {
-              chartContent.innerHTML = '<div class="history-empty">No chart data available.</div>';
+              window.brEmptyState(chartContent, {
+                icon: 'chart',
+                title: 'No chart data',
+                message: 'Scoring trends will appear once weekly scores are available.',
+                compact: true
+              });
             }
           })
           .catch(err => {
             console.error('Error loading history chart:', err);
-            chartContent.innerHTML = '<div class="history-empty">Error loading season chart.</div>';
+            window.brErrorState(chartContent, 'Error loading season chart.', null, { compact: true });
           });
       }
     }
@@ -14935,7 +14998,12 @@ function _refreshWatchlistNav() {
   if (!listEl) return;
 
   if (!list.length) {
-    listEl.innerHTML = '<div class="watchlist-nav-empty">No players watched yet.<br>Tap the <span class="watchlist-star">&#9734;</span> star on a player to add them.</div>';
+    window.brEmptyState(listEl, {
+      icon: 'empty',
+      title: 'Nothing watched yet',
+      message: 'Tap the ★ star on a player to add them.',
+      compact: true
+    });
     return;
   }
 
@@ -15555,7 +15623,12 @@ async function initWatchlistPage() {
       countEl.hidden = rows.length === 0;
     }
     if (!rows.length) {
-      tableEl.innerHTML = '<div class="wl-page-empty">Your watchlist is empty. Add players with the star on any player card or modal.</div>';
+      window.brEmptyState(tableEl, {
+        icon: 'empty',
+        title: 'Watchlist is empty',
+        message: 'Add players with the star on any player card or modal.',
+        compact: true
+      });
       if (scatterEl) scatterEl.innerHTML = '';
       if (statsEl) statsEl.innerHTML = '';
       if (alertsEl) alertsEl.innerHTML = '';
@@ -16331,7 +16404,15 @@ function initComparePage() {
       const merged = _matchBaselines(q).concat(players);
       const filtered = merged.filter(p => !others.some(o => String(o.player_id) === String(p.player_id)));
       activeIdx = -1;
-      if (!filtered.length) { results.innerHTML = '<div class="compare-pick-empty">No players found</div>'; input.setAttribute('aria-expanded', 'false'); return; }
+      if (!filtered.length) {
+        if (window.brEmptyState) {
+          window.brEmptyState(results, { icon: 'search', title: 'No players found', message: 'Try a different spelling or position.', compact: true });
+        } else {
+          results.innerHTML = '<div class="compare-pick-empty">No players found</div>';
+        }
+        input.setAttribute('aria-expanded', 'false');
+        return;
+      }
       results.innerHTML = filtered.slice(0, 12).map(p => {
         const isB = !!p.is_baseline;
         const meta = isB
@@ -16566,7 +16647,12 @@ function openCompareSearch(player1Data) {
     // Tier-average opponents matching the query come first, tagged as baselines.
     const merged = _cmpMatchBaselines(q || '').concat(players || []);
     if (!merged.length) {
-      resultsBox.innerHTML = '<div class="compare-search-empty">No players found</div>';
+      window.brEmptyState(resultsBox, {
+        icon: 'search',
+        title: 'No players found',
+        message: 'Try another name or pick a tier average.',
+        compact: true
+      });
       return;
     }
     resultsBox.innerHTML = merged.slice(0, 12).map(p => {
@@ -20327,7 +20413,12 @@ function setupFunAwardsGrid() {
     var list = container.querySelector('.bulletins-list');
     if (!list) return;
     if (!bulletins || !bulletins.length) {
-      list.innerHTML = '<div class="bulletins-empty">No bulletins yet. Post one in the Sleeper app!</div>';
+      window.brEmptyState(list, {
+        icon: 'empty',
+        title: 'No bulletins yet',
+        message: 'Post one in the Sleeper app to see it here.',
+        compact: true
+      });
       return;
     }
     list.innerHTML = bulletins.map(function(b) {
@@ -20357,14 +20448,19 @@ function setupFunAwardsGrid() {
     .then(function(data) {
       if (data.unavailable) {
         var list = container.querySelector('.bulletins-list');
-        if (list) list.innerHTML = '<div class="bulletins-empty">League bulletins are not available for this platform.</div>';
+        if (list) window.brEmptyState(list, {
+          icon: 'lock',
+          title: 'Not available',
+          message: 'League bulletins are not available for this platform.',
+          compact: true
+        });
         return;
       }
       renderBulletins(data.bulletins || []);
     })
     .catch(function() {
       var list = container.querySelector('.bulletins-list');
-      if (list) list.innerHTML = '<div class="bulletins-empty">Could not load bulletins.</div>';
+      if (list) window.brErrorState(list, 'Could not load bulletins.', null, { compact: true });
     });
 })();
 

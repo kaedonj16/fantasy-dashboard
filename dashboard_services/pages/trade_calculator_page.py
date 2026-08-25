@@ -973,7 +973,11 @@ def build_trade_calculator_body(
                     <span class="otc-sugg-section-title">Trade Targets</span>
                   </div>
                   <div id="otcSuggTargetsBody">
-                    <div class="otc-movers-empty">Select your team above to see targets.</div>
+                    <div class="empty-state is-compact">
+                      <span class="empty-state-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.7-4.7"/></svg></span>
+                      <p class="empty-state-title">Select your team</p>
+                      <p class="empty-state-msg">Choose a roster above to see trade targets.</p>
+                    </div>
                   </div>
                   <!-- Excluded players bar -->
                   <div id="otcExcludedBar" style="display:none;border-top:1px solid var(--border);">
@@ -1008,7 +1012,11 @@ def build_trade_calculator_body(
                 </div>
               </div>
               <div id="otcStrategyImpact">
-                <div class="otc-movers-empty">Pick a strategy above.</div>
+                <div class="empty-state is-compact">
+                  <span class="empty-state-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16"/><path d="M7 16V9"/><path d="M12 16V5"/><path d="M17 16v-6"/></svg></span>
+                  <p class="empty-state-title">Pick a strategy</p>
+                  <p class="empty-state-msg">Choose Contending, Rebuilding, Consolidate, or Distribute above.</p>
+                </div>
               </div>
 
               <!-- Trade cards -->
@@ -1051,14 +1059,14 @@ def build_trade_calculator_body(
               <div class="otc-mini-section">
                 <a href="/top-movers" class="otc-mini-section-title otc-mini-section-title-link">Top Risers <span class="otc-title-arrow" aria-hidden="true">&rarr;</span></a>
                 <div id="otcRisersList" class="otc-mini-list">
-                  <div class="otc-movers-empty">Loading movers...</div>
+                  <div class="loading-state-msg"><div class="loading-spinner" aria-hidden="true"></div><span>Loading movers…</span></div>
                 </div>
               </div>
 
               <div class="otc-mini-section">
                 <div class="otc-mini-section-title">Top Fallers</div>
                 <div id="otcFallersList" class="otc-mini-list">
-                  <div class="otc-movers-empty">Loading movers...</div>
+                  <div class="loading-state-msg"><div class="loading-spinner" aria-hidden="true"></div><span>Loading movers…</span></div>
                 </div>
               </div>
             </div>
@@ -1067,7 +1075,7 @@ def build_trade_calculator_body(
               <div class="otc-mini-section">
                 {breakouts_header_html}
                 <div id="otcBreakoutsList" class="otc-mini-list">
-                  <div class="otc-movers-empty">Loading breakouts...</div>
+                  <div class="loading-state-msg"><div class="loading-spinner" aria-hidden="true"></div><span>Loading breakouts…</span></div>
                 </div>
               </div>
             </div>
@@ -1075,7 +1083,11 @@ def build_trade_calculator_body(
             <div id="targetsTabContent" class="otc-tab-content">
               <div class="otc-mini-section">
                 <div id="tradeTargetsBody" class="otc-mini-list" style="padding:8px 12px;display:flex;flex-direction:column;gap:8px;">
-                  <div class="otc-movers-empty">Set your team to see targets.</div>
+                  <div class="empty-state is-compact">
+                    <span class="empty-state-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.7-4.7"/></svg></span>
+                    <p class="empty-state-title">Set your team</p>
+                    <p class="empty-state-msg">Pick a roster to see trade targets.</p>
+                  </div>
                 </div>
               </div>
             </div>
