@@ -822,7 +822,28 @@ _DRAFT_ROOM_HTML = r"""
   .dr-prev-score-num { font-size: 44px; font-weight: 900; line-height: 1; }
   .dr-prev-score-lbl { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-top: 2px; }
   .dr-prev-score-reason { font-size: 12px; font-weight: 600; color: var(--text-muted); margin-top: 6px; }
-  .dr-empty-note { padding: 22px 14px; font-size: 12px; color: var(--text-muted); text-align: center; }
+  .dr-empty-note {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; padding: 28px 16px; text-align: center;
+  }
+  .dr-empty-note-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; border-radius: 50%;
+    background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+    color: var(--text-muted); margin-bottom: 2px;
+  }
+  .dr-empty-note-icon svg { width: 20px; height: 20px; display: block; }
+  .dr-empty-note-title { font-size: 13px; font-weight: 800; color: var(--text); margin: 0; }
+  .dr-empty-note-msg { font-size: 12px; color: var(--text-muted); line-height: 1.45; max-width: 34ch; margin: 0; }
+  .dr-loading {
+    display: flex; flex-direction: column; align-items: stretch; gap: 8px;
+    padding: 14px 10px;
+  }
+  .dr-loading-msg {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 22px 14px; color: var(--text-muted); font-size: 13px;
+  }
+  .dr-loading-msg .loading-spinner { width: 14px; height: 14px; margin: 0; flex-shrink: 0; }
   /* In-draft cheat sheet overlay (iframes the chrome-less cheat sheet). */
   .dr-cheat-overlay { position: fixed; inset: 0; z-index: 12000; background: rgba(0,0,0,.55);
     display: flex; align-items: center; justify-content: center; padding: 18px; }
@@ -987,7 +1008,6 @@ _DRAFT_ROOM_HTML = r"""
   .dr-prev-avail-picks { display: flex; flex-wrap: wrap; gap: 6px; }
   .dr-prev-avail-pick { display: inline-flex; align-items: baseline; gap: 4px; padding: 5px 10px; border-radius: 8px; }
   .dr-prev-avail-pn { font-size: 10px; font-weight: 600; color: var(--text-muted); }
-  .dr-loading { display: flex; align-items: center; gap: 10px; padding: 24px; color: var(--text-muted); font-size: 13px; justify-content: center; }
   @media (max-width: 768px) {
     /* Treat the in-draft sheet as a real mobile screen. A centered desktop modal
        leaves too little room for the controls and can sit behind the app dock. */
@@ -1588,7 +1608,15 @@ _DRAFT_HISTORY_HTML = r"""
     border: 1px solid var(--border); background: var(--bg); color: var(--text); text-decoration: none; }
   .dr-btn-primary { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: var(--on-accent, #fff); }
   .dr-btn-danger { color: var(--loss); border-color: color-mix(in srgb, var(--loss) 40%, transparent); background: transparent; }
-  .dr-loading { display: flex; align-items: center; gap: 10px; padding: 24px; color: var(--text-muted); font-size: 13px; justify-content: center; }
+  .dr-loading {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    padding: 28px 16px; color: var(--text-muted); font-size: 13px;
+  }
+  .dr-hist-empty {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; padding: 36px 18px; text-align: center; color: var(--text-muted); font-size: 13px;
+    line-height: 1.45;
+  }
 </style>
 
 <script>
@@ -1625,7 +1653,7 @@ _DRAFT_HISTORY_HTML = r"""
 
   function render(drafts){
     if (!drafts.length){
-      histEmpty('No drafts yet', 'No drafts found for this league yet.');
+      histEmpty('No drafts yet', 'Drafts for this league will show up here once they are created.');
       return;
     }
     // Live/upcoming first, then completed; newest season first within each.
@@ -1652,7 +1680,7 @@ _DRAFT_HISTORY_HTML = r"""
 
   function loadList(){
     if (!cfg.hasLeague){
-      histEmpty('No league selected', '',
+      histEmpty('Open from your league', '',
         'Open Draft History from your league to see its drafts. '
         + 'You can still run a mock in the <a href="' + esc(cfg.base) + '">Draft Room</a>.');
       return;
@@ -1664,7 +1692,10 @@ _DRAFT_HISTORY_HTML = r"""
         if (resp.unsupported){ histEmpty('Sleeper only', 'Draft history is available for Sleeper leagues.'); return; }
         render(resp.drafts || []);
       })
-      .catch(function(){ window.brErrorState(listEl, 'Could not load drafts.', loadList, { compact: true }); });
+      .catch(function(){
+        if (window.brErrorState) window.brErrorState(listEl, 'Could not load drafts.', loadList, { compact: true });
+        else listEl.innerHTML = '<div class="dr-hist-empty">Could not load drafts.</div>';
+      });
   }
 
   loadList();
