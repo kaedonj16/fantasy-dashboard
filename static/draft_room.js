@@ -2650,9 +2650,11 @@
     return availablePool().filter(function(p){ return p._ds != null; })
       .sort(function(a,b){ return b._ds - a._ds || (b._ps || 0) - (a._ps || 0); });
   }
-  // Map a raw pick score onto the pool-relative display scale for historical
-  // comparisons/report cards. Live recommendation rows display the absolute
-  // score directly and carry Decision rank separately (see playerRowHtml).
+  // Map a raw pick score onto the pool-relative display scale. Live board,
+  // sidebar, and compare modal all use this so a strong pick on a depleted
+  // board still reads well. Report-card / Deep Dive “Board PS” uses the same
+  // scale at the historical slot (via relPS). Recommendation rows still carry
+  // Decision rank separately (see playerRowHtml).
   function psDisplay(ps){
     if (ps == null) return null;
     if (!_psPoolMax || _psPoolMax <= 0) return ps;
@@ -2660,11 +2662,17 @@
     return d > 99 ? 99 : (d < 1 ? 1 : d);
   }
 
-  // Absolute Pick Score for LIVE displays (board rows, preview modal, compare):
-  // the raw 0-100 grade at this slot, clamped to 1-99. Single source of truth so
-  // the same player never shows two different "Pick Score" numbers across the
-  // row, modal, and compare. psDisplay's pool-relative scaling is reserved for
-  // the report card (already-made picks), which is a different, historical view.
+  // Pool-relative Pick Score for live surfaces (sidebar, compare). Same
+  // 0-100 chip playerRowHtml shows, so the compare modal never disagrees
+  // with the board. Preview still uses psAbs for the raw slot grade.
+  function psRelLive(p){
+    return psDisplay(p._ps != null ? p._ps : pickScoreFor(p));
+  }
+
+  // Absolute Pick Score for the preview modal: the raw 0-100 grade at this
+  // slot, clamped to 1-99. Report-card grades also recompute with grading:true
+  // on this absolute kernel. Live chips (board / sidebar / compare) use
+  // psDisplay / psRelLive instead.
   function psAbs(p){
     var raw = p._ps != null ? p._ps : pickScoreFor(p);
     return raw == null ? null : Math.max(1, Math.min(99, Math.round(raw)));
@@ -2987,14 +2995,17 @@
     var p1 = playersById[String(compareIds[0])];
     var p2 = playersById[String(compareIds[1])];
     if (!p1 || !p2) return;
+    // Compare is a live surface: reuse the sidebar's pool-relative Pick Score
+    // so the modal matches the chips next to each name. refreshPsPool is the
+    // same guard renderBA uses for any path that didn't just renderSide.
+    if (_psPoolMax <= 0) refreshPsPool();
     function cmpCol(p, other){
       var pos = (p.position || '').toUpperCase();
       var adp = adpOf(p), oadp = adpOf(other);
       var vor = p.vorp != null ? Number(p.vorp) : vorOf(p);
       var ovor = other.vorp != null ? Number(other.vorp) : vorOf(other);
       var vorLbl = (p.vorp != null || other.vorp != null) ? 'VORP' : 'VOR';
-      var ps = psAbs(p);
-      var ops = psAbs(other);
+      var ps = psRelLive(p);
       var v = valOf(p), ov = valOf(other);
       var t = tierOf(p), ot = tierOf(other);
       var ppg = p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null);
@@ -3284,11 +3295,11 @@
   function playerRowHtml(p, opts){
     opts = opts || {};
     var adp = adpOf(p);
-    // Sidebar Pick Score is POOL-RELATIVE: psDisplay anchors the best pick still
+    // Sidebar Pick Score is POOL-RELATIVE: psRelLive anchors the best pick still
     // available near the top so a strong pick on a depleted board still reads well
     // instead of being buried just because the board is picked over. Ranking stays
     // owned by the live Decision Score (the REC chip), so ordering is unchanged.
-    var ps = psDisplay(p._ps != null ? p._ps : pickScoreFor(p));
+    var ps = psRelLive(p);
     var sub = (adp != null ? 'ADP ' + Number(adp).toFixed(1) : '')
       + (!opts.showPickScore && p._ds != null && ps != null ? ' · PS ' + ps : '');
     var reasonLine = '';
@@ -5303,7 +5314,7 @@
   // Single source of truth so the inline ⓘ tooltips and the help popover agree.
   var _GLOSSARY = [
     { term: 'Recommendation', def: 'The live, roster-aware order for this pick. It starts with Pick Score, then accounts for whether the player fills a starter or FLEX spot, backup and overfill cost, required slots and picks remaining, positional depth, expected availability at your next pick, and recent investment at QB or TE. A major value fall can still overcome imperfect roster fit. Recommendation is shown as a rank rather than a grade because its internal utility naturally changes as the board is depleted.' },
-    { term: 'Pick Score (PS)', def: 'A 0-100 grade of pick quality. On the live board and sidebar it is scaled relative to the best player still available (so a strong late pick still reads well). Made-pick chips on the report card / Deep Dive “Board PS” use the same relative scale at that historical slot. Your letter grade’s Value bar uses the absolute, round-weighted kernel score — those two numbers can differ. Kickers and defenses aren’t scored.' },
+    { term: 'Pick Score (PS)', def: 'A 0-100 grade of pick quality. On the live board, sidebar, and compare modal it is scaled relative to the best player still available (so a strong late pick still reads well). Made-pick chips on the report card / Deep Dive “Board PS” use the same relative scale at that historical slot. Your letter grade’s Value bar uses the absolute, round-weighted kernel score — those two numbers can differ. Kickers and defenses aren’t scored.' },
     { term: 'Value', def: 'The player’s trade value as an asset on a 0-999 scale - dynasty value for startup/rookie drafts, redraft value for redraft.' },
     { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a replacement-level starter at their position (a fixed, preseason-style baseline). VORP uses real fantasy points; VOR uses dynasty value.' },
     { term: 'ADP', def: 'Average Draft Position - the typical overall pick a player goes at in real drafts. If it’s below your current pick, they’ve fallen and may be a value.' },
