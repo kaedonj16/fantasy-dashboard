@@ -107,7 +107,8 @@ def build_draft_room_body(
     return (
         f'<script>window.__draftCfg = {cfg_json};</script>\n'
         + _DRAFT_ROOM_HTML
-        + f'\n<script src="/static/draft_grade_curve.js?v={_static_v("draft_grade_curve.js")}" defer></script>\n'
+        # draft_grade_curve.js is intentionally not loaded: live grades are absolute
+        # (no field curve). The file remains for backtests + parity tests only.
         + f'\n<script src="/static/pick_score.js?v={_static_v("pick_score.js")}" defer></script>\n'
         + f'\n<script src="/static/draft_board_core.js?v={_static_v("draft_board_core.js")}" defer></script>\n'
         + f'\n<script src="/static/draft_grade_team.js?v={_static_v("draft_grade_team.js")}" defer></script>\n'

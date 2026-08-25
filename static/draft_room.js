@@ -3486,6 +3486,10 @@
           resp.odds.forEach(function(o){ if (o.slot != null) m[o.slot] = Math.round(o.playoff_pct); });
           _poServer = m; _poServerSig = sig;
           if (sideTab === 'league') renderSide();   // repaint the league tab with the thorough odds
+          // Deep Dive captures odds at open time; refresh the open card so it
+          // upgrades from the JS estimate to the standings-engine numbers.
+          var ddOv = document.getElementById('drDeepDive');
+          if (ddOv && ddOv.style.display !== 'none') openDeepDive();
         }
       })
       .catch(function(){ _poFetching = false; });
@@ -3499,9 +3503,8 @@
   }
   function gradeTeam(){
     if (!hasOwned()) return null;
-    // Pull "your" grade from the full field so the relative-to-league curve matches
-    // what the League tab shows. Before there are enough teams on the board to curve
-    // against, gradeAllTeams returns the raw (uncurved) grades, which is also correct.
+    // Pull "your" grade from the full field so the Team / League / Deep Dive
+    // surfaces share one gradeAllTeams() pass (absolute composite — no field curve).
     var field = gradeAllTeams();
     for (var i = 0; i < field.length; i++){ if (field[i].isMe) return field[i].grade; }
     var mine = [];
@@ -3584,7 +3587,11 @@
     var counts = { QB:0, RB:0, WR:0, TE:0 };
     // Pre-compute maxVal for pickScore (matches what pickScore callers do)
     var _gmaxVal = 0; players.forEach(function(q){ var v = valOf(q); if (v > _gmaxVal) _gmaxVal = v; });
+    // Progressive need context for THIS team only. Do not fall back to psCtx()
+    // (viewer roster) — that leaked the viewer's quality counts into every other
+    // team's grade and skewed the league board / Deep Dive ranks.
     var countsSoFar = { QB: 0, RB: 0, WR: 0, TE: 0 };
+    var qualSoFar = { QB: 0, RB: 0, WR: 0, TE: 0 };
     var picks = []; // { id, pos, ps, val, ppg }
     mine.forEach(function(m){
       var pos = (m.p.position || '').toUpperCase();
@@ -3596,14 +3603,17 @@
       var full = playersById[String(m.p.id)];
       var ps = null;
       if (players.length > 0 && _gmaxVal > 0 && full){
-        var _saved = state.current;
-        state.current = m.pn;
-        ps = pickScore(full, _gmaxVal, countsSoFar, { grading: true });
-        state.current = _saved;
+        ps = pickScore(full, _gmaxVal, countsSoFar, {
+          grading: true, pickNo: m.pn, qualByPos: qualSoFar
+        });
       }
       if (ps == null) ps = m.p.ps;
       if (countsSoFar[pos] != null) countsSoFar[pos]++;
       if (counts[pos] != null) counts[pos]++;
+      if (qualSoFar[pos] != null){
+        var _qv = full ? vorOf(full) : null;
+        if (_qv == null || _qv > 0) qualSoFar[pos]++;
+      }
       picks.push({ id: m.p.id, pos: pos, ps: ps, pn: m.pn,
         val: full ? valOf(full) : (m.p.val || 0), ppg: full ? ppgOf(full) : null });
     });
@@ -3734,9 +3744,9 @@
   // Absolute grading: the team letter reflects the team's OWN composite (starter
   // quality + lineup strength vs league + construction), not its rank within the
   // field - so a genuinely elite draft earns an A even when the whole room drafted
-  // well, and a weak one earns a C even in a weak room. (Previously the field was
-  // curved to a B centre, which clustered strong mocks all at B.) rawScore is kept
-  // in sync for any consumer that reads it.
+  // well, and a weak one earns a C even in a weak room. Field-curve helpers
+  // (draft_grade_curve.js / dr_apply_field_curve) remain for backtests only.
+  // rawScore is kept in sync for any consumer that reads it.
   function _applyFieldCurve(out){
     if (!out) return;
     out.forEach(function(t){ if (t && t.grade) t.grade.rawScore = t.grade.score; });
@@ -4692,23 +4702,30 @@
     if (!full || !players.length) return null;
     var maxVal = 0; players.forEach(function(q){ var v = valOf(q); if (v > maxVal) maxVal = v; });
     if (maxVal <= 0) return null;
-    // Owning team's positional counts from this team's earlier picks.
+    // Owning team's positional + quality counts from this team's earlier picks
+    // (same progressive context gradePicks / the server use — never the viewer's).
     var owner = (state.pickOwners && state.pickOwners[pn] != null)
       ? state.pickOwners[pn] : slotOnClock(pn, state.teams, state.order);
     var counts = { QB:0, RB:0, WR:0, TE:0 };
+    var qualByPos = { QB:0, RB:0, WR:0, TE:0 };
     Object.keys(state.picks).forEach(function(k){
       var kp = parseInt(k, 10);
       if (kp >= pn || !state.picks[k]) return;
       var o2 = (state.pickOwners && state.pickOwners[kp] != null)
         ? state.pickOwners[kp] : slotOnClock(kp, state.teams, state.order);
       if (o2 !== owner) return;
-      var pos2 = (state.picks[k].position || '').toUpperCase();
+      var prev = state.picks[k];
+      var pos2 = (prev.position || '').toUpperCase();
       if (counts[pos2] != null) counts[pos2]++;
+      if (qualByPos[pos2] != null){
+        var prevFull = playersById[String(prev.id)];
+        var v = prevFull ? vorOf(prevFull) : null;
+        if (v == null || v > 0) qualByPos[pos2]++;
+      }
     });
-    var saved = state.current;
-    state.current = pn;
-    var ps = pickScore(full, maxVal, counts, { grading: true });
-    state.current = saved;
+    var ps = pickScore(full, maxVal, counts, {
+      grading: true, pickNo: pn, qualByPos: qualByPos
+    });
     pl.gps = ps;   // memoize the grade score (matches gradePicks / the server)
     return ps;
   }
@@ -5333,7 +5350,7 @@
       + '<div class="dd-ring" style="--pct:' + Math.max(0, Math.min(100, Math.round(g.score))) + ';--gc:' + col + '">'
       + '<b style="color:' + col + '">' + gradeLetter(g.score) + '<small>' + Math.round(g.score) + '</small></b></div>'
       + '<div class="dd-ov-txt"><h3>' + verdict.title + '</h3>'
-      + '<div class="dd-rankline">Projected <b>' + myRank + ordinalSuffix(myRank) + ' of ' + n + '</b>'
+      + '<div class="dd-rankline">Ranked <b>' + myRank + ordinalSuffix(myRank) + ' of ' + n + '</b>'
       + (arch ? ' · ' + esc(arch.label) : '') + '</div>'
       + '<div class="dd-say">' + verdict.say + '</div></div>'
       + '<div class="dd-meters">' + meters + '</div>'
@@ -5578,11 +5595,19 @@
           + '<div class="dd-edge-sub">' + p.pos + ' · ' + roundPickStr(p.pn) + (p.adp != null ? ' · ADP ' + Number(p.adp).toFixed(0) : '') + '</div>'
           + '<div class="dd-edge-say">' + extra + '</div></div>';
       }
-      edges = '<div class="dd-edges">'
-        + edge('Biggest steal', 'win', steal, 'Fell <b>' + steal.diff + '</b> picks past ADP' + (steal.ps != null ? ' — a ' + steal.ps + ' pick score.' : '.'))
-        + (best && best !== steal ? edge('Best pick', 'winb', best, 'Your highest pick score at <b>' + best.ps + '</b>.') : '')
-        + edge('Biggest reach', 'bad', reach, reach.diff < 0 ? 'Taken <b>' + (-reach.diff) + '</b> picks before ADP.' : 'Right around market value.')
-        + '</div>';
+      var parts = [];
+      // Only label Steal/Reach when the market delta clears the same thresholds
+      // the ledger uses — otherwise a "Fair" pick was being sold as an edge.
+      if (steal && steal.diff >= 3){
+        parts.push(edge('Biggest steal', 'win', steal, 'Fell <b>' + steal.diff + '</b> picks past ADP' + (steal.ps != null ? ' — a ' + steal.ps + ' pick score.' : '.')));
+      }
+      if (best && (!steal || best !== steal || steal.diff < 3)){
+        parts.push(edge('Best pick', 'winb', best, 'Your highest pick score at <b>' + best.ps + '</b>.'));
+      }
+      if (reach && reach.diff <= -5){
+        parts.push(edge('Biggest reach', 'bad', reach, 'Taken <b>' + (-reach.diff) + '</b> picks before ADP.'));
+      }
+      if (parts.length) edges = '<div class="dd-edges">' + parts.join('') + '</div>';
     }
     // Risk flags
     var flags = [];
