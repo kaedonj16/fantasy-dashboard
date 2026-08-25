@@ -547,6 +547,8 @@
     var cur = (state.pickSlot >= 1 && state.pickSlot <= teams) ? state.pickSlot : 0;
     if (state.pickSlot !== cur) state.pickSlot = cur;
     sel.value = String(cur);
+    var valEl = sel.parentNode && sel.parentNode.querySelector('.csd-value');
+    if (valEl && sel.selectedIndex >= 0) valEl.textContent = sel.options[sel.selectedIndex].textContent.trim();
   }
 
   function render() {
@@ -1167,6 +1169,7 @@
     // Live sync is intentionally opt-in through "Connect live draft". A sheet
     // opened from an active Draft Room may still start with that board's snapshot.
     loadPlayers();
+    if (window.initCustomSelects) window.initCustomSelects(document.querySelector('.cs-wrap') || document);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

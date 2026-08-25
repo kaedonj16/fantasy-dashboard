@@ -1247,6 +1247,8 @@ _DRAFT_ROOM_HTML = r"""
   .dd-note { color:var(--text-muted); font-size:13.5px; }
   .dd-sec { margin-bottom:14px; }
   .dd-sec h4 { margin:0; font-family:"Archivo",sans-serif; font-size:16px; font-weight:800; color:var(--text); }
+  .dd-h-sub { display:inline-block; margin-left:8px; font-size:10px; font-weight:700; letter-spacing:.06em;
+    text-transform:uppercase; color:var(--text-muted); vertical-align:baseline; position:relative; top:.18em; }
   .dd-sec p { margin:4px 0 0; font-size:12.5px; color:var(--text-muted); }
   /* overview */
   .dd-ov-top { display:grid; grid-template-columns:auto 1fr; gap:18px 22px; align-items:center; }

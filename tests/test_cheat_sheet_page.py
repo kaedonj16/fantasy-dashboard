@@ -70,7 +70,7 @@ def test_mobile_header_has_no_flex_basis_gap_and_controls_wrap():
 
     assert ".cs-top > :first-child { flex: 0 0 auto; min-width: 0; width: 100%; }" in body
     assert "grid-template-columns: repeat(3, minmax(0, 1fr))" in body
-    assert ".cs-ctrl-row:last-child .cs-src { grid-column: 1 / -1;" in body
+    assert ".cs-ctrl-row:last-child .cs-src, .cs-ctrl-row:last-child .csd-wrap { grid-column: 1 / -1;" in body
 
 
 def test_market_column_is_conditionally_omitted_from_table_and_export():
@@ -166,6 +166,22 @@ def test_cheat_sheet_projects_snake_picks_for_a_selected_slot():
     assert "q.push('slot='" in room
     assert "q.push('teams='" in room
     assert "pickSlot: 0" in sheet
+
+
+def test_cheat_sheet_proj_pick_uses_custom_select_dropdown():
+    body = build_cheat_sheet_body("league-123", 2026, "sleeper")
+    sheet = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
+    csd = (Path(__file__).parents[1] / "static" / "custom_selects.js").read_text()
+    from dashboard_services.pages.cheat_sheet_page import build_cheat_sheet_embed_document
+    embed = build_cheat_sheet_embed_document("league-123", 2026, "sleeper")
+
+    assert "custom_selects.js" in body
+    assert "custom_selects.js" in embed
+    assert "window.initCustomSelects" in csd
+    assert "if (window.initCustomSelects) window.initCustomSelects" in sheet
+    assert ".cs-filterbar .cs-src, .cs-filterbar .csd-wrap { flex: 0 0 auto; min-width: 168px; }" in body
+    assert ".cs-wrap .csd-trigger { font-size: 12px; font-weight: 700;" in body
+    assert "sel.parentNode.querySelector('.csd-value')" in sheet
 
 
 def test_in_draft_cheat_sheet_is_a_full_screen_mobile_dialog():
