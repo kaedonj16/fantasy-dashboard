@@ -192,8 +192,11 @@ def test_consensus_adp_simple_unchanged():
     assert c["a"] == c["b"] == 1.5
 
 
-def test_source_options_hide_empty_globals_with_season():
-    # No snapshots -> globals hidden when a season is supplied.
+def test_source_options_hide_empty_globals_with_season(monkeypatch):
+    # No snapshots -> globals hidden when a season is supplied. Stub the
+    # retrieve-on-miss path so this assertion is about gating, not live HTTP.
+    monkeypatch.setattr(A, "_hydrate_snapshot_from_db", lambda *a, **k: False)
+    monkeypatch.setattr(A, "_live_fetch_global_sources", lambda *a, **k: {})
     vals = [v for v, _ in A.adp_source_options("redraft", 2026)]
     assert "espn" not in vals and "yahoo" not in vals and "mfl" not in vals
     assert "sleeper" in vals and "brfantasy" in vals and vals[0] == "consensus"
@@ -202,3 +205,99 @@ def test_source_options_hide_empty_globals_with_season():
     assert "espn" in vals2                       # shown once it has data
     # Without a season, all configured sources are listed (legacy behavior).
     assert "yahoo" in [v for v, _ in A.adp_source_options("redraft")]
+
+
+# ── Retrieve-on-miss (Sleeper-style) for Yahoo / ESPN / MFL ───────────────────
+
+def test_espn_source_uses_disk_snapshot_without_refetch(monkeypatch):
+    A.write_adp_snapshot("espn", "redraft", 2026, {"adp": {"p": 3.0}})
+    monkeypatch.setattr(A, "_hydrate_snapshot_from_db",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("db")))
+    monkeypatch.setattr(A, "_live_fetch_global_sources",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("live")))
+    assert A._espn_adp_source(2026, False, "redraft") == {"p": 3.0}
+
+
+def test_espn_source_hydrates_from_db_when_disk_empty(monkeypatch):
+    def hydrate(source, axis, season):
+        assert source == "espn" and axis == "redraft"
+        A.write_adp_snapshot(source, axis, season, {"adp": {"p": 12.0}})
+        return True
+    monkeypatch.setattr(A, "_hydrate_snapshot_from_db", hydrate)
+    live = []
+    monkeypatch.setattr(A, "_live_fetch_global_sources",
+                        lambda srcs, season: live.append(list(srcs)))
+    assert A._espn_adp_source(2026, False, "redraft") == {"p": 12.0}
+    assert live == []
+
+
+def test_espn_source_fetches_live_like_sleeper_when_no_cache(monkeypatch):
+    monkeypatch.setattr(A, "_hydrate_snapshot_from_db", lambda *a, **k: False)
+
+    def live(sources, season):
+        assert list(sources) == ["espn"]
+        A.write_adp_snapshot("espn", "redraft", season, {"adp": {"p": 7.0}})
+        return {"espn": {"ok": True, "written": True}}
+
+    monkeypatch.setattr(A, "_live_fetch_global_sources", live)
+    assert A._espn_adp_source(2026, False, "redraft") == {"p": 7.0}
+
+
+def test_yahoo_and_mfl_sources_fetch_on_miss(monkeypatch):
+    monkeypatch.setattr(A, "_hydrate_snapshot_from_db", lambda *a, **k: False)
+    fetched = []
+
+    def live(sources, season):
+        fetched.extend(sources)
+        for s in sources:
+            A.write_adp_snapshot(s, "redraft", season, {"adp": {s[0]: 4.0}})
+        return {s: {"ok": True} for s in sources}
+
+    monkeypatch.setattr(A, "_live_fetch_global_sources", live)
+    assert A._yahoo_adp_source(2026, False, "redraft", None, None) == {"y": 4.0}
+    assert A._mfl_adp_source(2026, False, "redraft") == {"m": 4.0}
+    assert fetched == ["yahoo", "mfl"]
+
+
+def test_source_options_show_globals_after_on_miss_fetch(monkeypatch):
+    monkeypatch.setattr(A, "_hydrate_snapshot_from_db", lambda *a, **k: False)
+
+    def live(sources, season):
+        for s in sources:
+            A.write_adp_snapshot(s, "redraft", season, {"adp": {"x": 1.0}})
+        return {s: {"ok": True} for s in sources}
+
+    monkeypatch.setattr(A, "_live_fetch_global_sources", live)
+    vals = [v for v, _ in A.adp_source_options("redraft", 2026)]
+    assert "espn" in vals and "yahoo" in vals and "mfl" in vals
+
+
+def test_hydrate_from_db_writes_disk_snapshot(monkeypatch):
+    class _Cur:
+        def execute(self, sql, params):
+            assert params == ("espn", 2026, "redraft")
+        def fetchall(self):
+            return [{"player_id": "a", "adp": 5.5}, {"player_id": "b", "adp": 10}]
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+
+    class _Conn:
+        def cursor(self):
+            return _Cur()
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr("dashboard_services.db.get_conn", lambda: _Conn())
+    assert A._hydrate_snapshot_from_db("espn", "redraft", 2026) is True
+    assert A.snapshot_adp_map("espn", "redraft", 2026) == {"a": 5.5, "b": 10.0}
+
+
+def test_hydrate_from_db_empty_or_error_is_false(monkeypatch):
+    monkeypatch.setattr("dashboard_services.db.get_conn",
+                        lambda: (_ for _ in ()).throw(RuntimeError("no db")))
+    assert A._hydrate_snapshot_from_db("yahoo", "redraft", 2026) is False
+    assert A.snapshot_adp_map("yahoo", "redraft", 2026) == {}
