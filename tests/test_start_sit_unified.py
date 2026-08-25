@@ -25,6 +25,18 @@ def test_compare_verdict_ranks_on_unified_start_score():
     assert "higher projection (+' + Math.abs" not in body
 
 
+def test_start_sit_login_gate_is_not_sleeper_only():
+    body = _body()
+    assert "Enter your Sleeper username" not in body
+    assert "Sign in to get personalized start/sit recommendations" in body
+
+
+def test_lineup_advice_labels_start_score_not_raw_projection():
+    body = _body()
+    assert "start score" in body
+    assert "projected ${a.optimal_pts} pts" not in body
+
+
 def test_compare_reasons_come_from_the_six_factor_breakdown():
     body = _body()
     assert "function wvVerdictReasons(a, b, wi)" in body

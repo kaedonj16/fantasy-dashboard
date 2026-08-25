@@ -12,19 +12,14 @@ from __future__ import annotations
 
 from typing import Dict, List
 
+from utils.lineup_slots import (
+    FLEX_SLOT_NAMES as _FLEX_SLOT_NAMES,
+    SKILL_POSITIONS,
+    SUPERFLEX_SLOT_NAMES as _SUPERFLEX_SLOT_NAMES,
+    canonicalize_slot,
+    slot_total as _slot_total,
+)
 from utils.model_confidence import confidence_from_inputs
-
-
-_FLEX_SLOT_NAMES = {"FLEX", "RB_WR_FLEX", "RB_WR_TE", "WR_RB", "WR_TE", "RB_WR"}
-_SUPERFLEX_SLOT_NAMES = {
-    "SUPER_FLEX", "SUPERFLEX", "SUPER FLEX", "SFLEX", "OP",
-    "QB_RB_WR_TE", "Q_RB_WR_TE",
-}
-
-
-def _slot_total(slot_counts: Dict[str, int], names: set[str]) -> int:
-    """Count equivalent lineup slots across provider-specific names."""
-    return sum(int(slot_counts.get(name) or 0) for name in names)
 
 
 def weighted_pos_strength(vals: List[float], pos: str, slot_counts: Dict[str, int]) -> float:
@@ -201,12 +196,12 @@ def derive_league_thresholds(
     flex_count = 0
     superflex_count = 0
     for slot in roster_positions:
-        s = str(slot).upper()
-        if s in ("QB", "RB", "WR", "TE"):
+        s = canonicalize_slot(slot)
+        if s in SKILL_POSITIONS:
             pos_counts[s] = pos_counts.get(s, 0) + 1
-        elif s in _SUPERFLEX_SLOT_NAMES:
+        elif s == "SUPER_FLEX":
             superflex_count += 1
-        elif s in _FLEX_SLOT_NAMES:
+        elif s == "FLEX":
             flex_count += 1
 
     # A league with a superflex slot is a superflex league even if the caller
@@ -251,10 +246,10 @@ def dedicated_starter_counts(roster_positions: List[str]) -> "Dict[str, int]":
     counts: Dict[str, int] = {"QB": 0, "RB": 0, "WR": 0, "TE": 0}
     superflex = 0
     for slot in roster_positions:
-        s = str(slot).upper()
+        s = canonicalize_slot(slot)
         if s in counts:
             counts[s] += 1
-        elif s in _SUPERFLEX_SLOT_NAMES:
+        elif s == "SUPER_FLEX":
             superflex += 1
         # standard flex slots intentionally ignored (fungible)
     counts["QB"] += superflex

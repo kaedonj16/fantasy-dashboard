@@ -132,6 +132,11 @@ from utils.utils import (
     load_week_schedule,
     streak_class,
 )
+from utils.lineup_slots import (
+    count_lineup_slots as _count_lineup_slots,
+    is_superflex_lineup as _is_superflex_lineup,
+    starter_need_counts as _starter_need_counts,
+)
 
 daily_lock = threading.Lock()
 daily_completed = None
@@ -1692,7 +1697,7 @@ BASE_HTML = """
 
       {ad_top}
 
-      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__FEATURES_JS = {features_js_js}; window.__brctx = {{is_logged_in:{signed_in_js},isPremium:{user_premium},platform:{platform_js},season:{season_js},leagueId:{league_id_js}}};</script>
+      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__FEATURES_JS = {features_js_js}; window.__brctx = {{is_logged_in:{signed_in_js},isPremium:{user_premium},platform:{platform_js},season:{season_js},leagueId:{league_id_js},leagueType:{league_type_js},leagueSize:{league_size_js}}};</script>
       <main id="page-root" role="main" tabindex="-1" class="overview-layout" data-cache-ts="{cache_ts}" data-premium="{user_premium}">
         {body}
       </main>
@@ -1842,10 +1847,19 @@ def get_viewer_session_for_league(users: List[Dict], rosters: List[Dict],
     if league_viewer:
         save_viewer_session(league_viewer)
         return league_viewer
-    else:
-        logger.info(
-            f"[get_viewer_session_for_league] Could not resolve {username} in current league, returning session data")
-        return session_viewer
+
+    logger.info(
+        "[get_viewer_session_for_league] Could not resolve %s in current league; not attaching a roster",
+        username,
+    )
+    # Keep the identity so the visitor still looks signed in, but never leak a
+    # roster_id from another league into this one's waivers / start-sit / trades.
+    return {
+        "viewer_username": username,
+        "viewer_user_id": stored_user_id,
+        "viewer_roster_id": None,
+        "viewer_team_name": session_viewer.get("viewer_team_name"),
+    }
 
 
 def get_viewer_session() -> dict:
@@ -4055,6 +4069,24 @@ def render_page(
     ) if platform == "yahoo" else ""
 
     import json as _json
+    _league_type = "1qb"
+    _league_size = 10
+    if league_id and platform and season:
+        try:
+            _entry = DASHBOARD_CACHE.get(_cache_key(platform, int(season), str(league_id))) or {}
+            _ctx_fmt = _entry.get("ctx") or {}
+            if _is_superflex_lineup(_ctx_fmt.get("roster_positions") or []):
+                _league_type = "sf"
+            _n_teams = (
+                _ctx_fmt.get("total_rosters")
+                or (_ctx_fmt.get("league") or {}).get("total_rosters")
+                or len(_ctx_fmt.get("rosters") or [])
+                or 10
+            )
+            _league_size = int(_n_teams) if int(_n_teams) >= 2 else 10
+        except Exception:
+            logger.debug("suppressed exception", exc_info=True)
+
     html = BASE_HTML.format(
         title=title,
         yahoo_attribution=_yahoo_attribution,
@@ -4097,6 +4129,8 @@ def render_page(
         platform_js=_json.dumps(platform or "sleeper"),
         season_js=_json.dumps(season),
         league_id_js=_json.dumps(str(league_id or "")),
+        league_type_js=_json.dumps(_league_type),
+        league_size_js=_json.dumps(_league_size),
     )
     resp = make_response(html)
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
@@ -4681,10 +4715,7 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Optional[dict]:
 
     lineup_requirements = {}
     if roster_positions and isinstance(roster_positions, (list, tuple)):
-        for slot in roster_positions:
-            slot_str = str(slot).upper()
-            if slot_str in {"QB", "RB", "WR", "TE", "FLEX", "SUPER_FLEX", "SFLEX"}:
-                lineup_requirements[slot_str] = lineup_requirements.get(slot_str, 0) + 1
+        lineup_requirements = _count_lineup_slots(roster_positions)
 
     starter_profile = {
         "count": len(starters),
@@ -7408,7 +7439,7 @@ def render_share_rankings(ctx: dict) -> str:
 
     # ── Value: load from player_values DB ─────────────────────────
     roster_positions = ctx.get("roster_positions") or []
-    is_sf = any(str(p).upper() in {"SUPER_FLEX", "SFLEX"} for p in roster_positions)
+    is_sf = _is_superflex_lineup(roster_positions)
     val_col = "value_sf" if is_sf else "value_1qb"
 
     values_by_pid: Dict[str, float] = {}
@@ -7813,7 +7844,7 @@ def _waiver_value_keys(ctx: dict) -> "tuple[str, str]":
     dropping them below the value floor.
     """
     rp = ctx.get("roster_positions") or []
-    is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in rp)
+    is_sf = _is_superflex_lineup(rp)
     if _league_is_redraft(ctx):
         return (("redraft_value_sf" if is_sf else "redraft_value_1qb"),
                 ("sf_value" if is_sf else "value"))
@@ -11522,7 +11553,9 @@ def api_waiver_candidates():
                 _rpos = str(_row.get("position") or _row.get("pos") or "").upper()
                 if _rpos in ("QB", "RB", "WR", "TE"):
                     try:
-                        _vals_by_pos.setdefault(_rpos, []).append(float(_row.get("value") or 0.0))
+                        _vals_by_pos.setdefault(_rpos, []).append(
+                            float(_row.get(_vf_wv) or _row.get(_vfb_wv) or 0.0)
+                        )
                     except (TypeError, ValueError):
                         pass
         _teams_n = len(rosters) or 12
@@ -11535,17 +11568,7 @@ def api_waiver_candidates():
     # Viewer roster need (#4): a position the viewer is short on is worth more.
     _need_scores_wv: dict = {}
     try:
-        _rp_counts = {}
-        for _s in _rp_wv:
-            _rp_counts[str(_s).upper()] = _rp_counts.get(str(_s).upper(), 0) + 1
-        _flex_n = _rp_counts.get("FLEX", 0)
-        _sf_n = _rp_counts.get("SUPER_FLEX", 0) + _rp_counts.get("SFLEX", 0)
-        _starter_reqs = {
-            "QB": _rp_counts.get("QB", 0) + _sf_n + 1,
-            "RB": _rp_counts.get("RB", 0) + _flex_n + _sf_n + 1,
-            "WR": _rp_counts.get("WR", 0) + _flex_n + _sf_n + 1,
-            "TE": _rp_counts.get("TE", 0) + 1,
-        }
+        _starter_reqs = _starter_need_counts(_rp_wv, extra_depth=1)
         _vsess = get_viewer_session_for_league(ctx.get("users") or [], rosters)
         _vrid = str((_vsess or {}).get("viewer_roster_id") or "")
         if _vrid:
@@ -12150,22 +12173,20 @@ def api_start_sit_options():
     if not viewer_roster:
         return jsonify({"positions": {}})
 
-    player_ids = [str(pid) for pid in (viewer_roster.get("players") or [])]
+    reserve_set = {str(p) for p in (viewer_roster.get("reserve") or [])}
+    taxi_set = {str(p) for p in (viewer_roster.get("taxi") or [])}
+    player_ids = [
+        str(pid) for pid in (viewer_roster.get("players") or [])
+        if str(pid) not in reserve_set and str(pid) not in taxi_set
+    ]
     players_index = ctx.get("players_index") or {}
     players_full = ctx.get("players") or {}
     model_value_table = list(get_model_value_table_cached() or [])
 
-    lineup_requirements: dict = ctx.get("lineup_requirements") or {}
+    roster_positions = ctx.get("roster_positions") or []
+    lineup_requirements = _count_lineup_slots(roster_positions)
     if not lineup_requirements:
-        roster_positions = ctx.get("roster_positions") or []
-        for slot in roster_positions:
-            s = str(slot).upper()
-            if s in {"QB", "RB", "WR", "TE", "FLEX", "SUPER_FLEX", "SFLEX", "K", "DEF"}:
-                lineup_requirements[s] = lineup_requirements.get(s, 0) + 1
-
-    _rp_ss = ctx.get("roster_positions") or []
-    _is_sf_ss = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_ss)
-    _vf_ss = "sf_value" if _is_sf_ss else "value"
+        lineup_requirements = ctx.get("lineup_requirements") or {}
 
     rows_by_id: dict = {}
     for row in model_value_table:
@@ -17887,7 +17908,7 @@ def build_commissioner_body(ctx):
     settings = (ctx.get("league") or {}).get("settings") or {}
     playoff_start = int(settings.get("playoff_week_start") or 14)
     model_vals = ctx.get("model_value_table") or get_model_value_table_cached() or []
-    is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in (ctx.get("roster_positions") or []))
+    is_sf = _is_superflex_lineup(ctx.get("roster_positions") or [])
     val_key = "sf_value" if is_sf else "value"
     val_by_pid = {str(p.get("id") or ""): float(p.get(val_key) or p.get("value") or 0)
                   for p in model_vals if p.get("id")}
@@ -19706,8 +19727,7 @@ def api_trade_eval_playoff_impact():
         # players coming in vs going out. This is the counterweight to the
         # win-now playoff metrics - getting younger / banking value is the
         # upside when a deal dents this season's odds (and vice versa).
-        is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"}
-                    for s in (ctx.get("roster_positions") or []))
+        is_sf = _is_superflex_lineup(ctx.get("roster_positions") or [])
         current_pids = sim_state.get("roster_pid_map", {}).get(roster_id, [])
         result["outlook"] = _trade_future_outlook(give_ids, get_ids, is_sf, current_pids)
 
@@ -26710,7 +26730,7 @@ def api_trade_intel_player_packages(player_id: str):
         # ── League context for DB queries ─────────────────────────────────
         roster_positions = ctx.get("roster_positions") or []
         _rp_list = [str(s).upper() for s in (roster_positions if isinstance(roster_positions, list) else [])]
-        _is_sf = (league_type == "sf") or any(s in {"SUPER_FLEX", "SFLEX"} for s in _rp_list)
+        _is_sf = (league_type == "sf") or _is_superflex_lineup(roster_positions)
         num_teams = len(ctx.get("rosters") or []) or 12
 
         # Resync val_key with the actual league format detected from roster_positions.
@@ -27722,7 +27742,7 @@ def api_trade_intel_player_send_packages(player_id: str):
         # Detect SF from roster_positions; the URL param may be wrong.
         roster_positions = ctx.get("roster_positions") or []
         _rp_list = [str(s).upper() for s in (roster_positions if isinstance(roster_positions, list) else [])]
-        is_sf = (league_type == "sf") or any(s in {"SUPER_FLEX", "SFLEX"} for s in _rp_list)
+        is_sf = (league_type == "sf") or _is_superflex_lineup(roster_positions)
         val_key = "sf_value" if is_sf else "value"
         num_teams = len(rosters) or 12
 
@@ -28317,7 +28337,7 @@ def api_trade_ideas_for_target():
         # Real trade packages: what people with similar rosters actually sent
         roster_positions = ctx.get("roster_positions") or []
         _rp_list = [str(s).upper() for s in (roster_positions if isinstance(roster_positions, list) else [])]
-        _is_sf = any(s in {"SUPER_FLEX", "SFLEX"} for s in _rp_list)
+        _is_sf = _is_superflex_lineup(roster_positions)
 
         real_result = _real_trade_packages_for_target(
             target_player_id=target_player_id,
@@ -29434,8 +29454,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         values_by_id = {str(r["id"]): r for r in value_table if isinstance(r, dict) and r.get("id")}
 
         league_info = ctx.get("league") or {}
-        is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"}
-                    for s in (league_info.get("roster_positions") or []))
+        is_sf = _is_superflex_lineup(league_info.get("roster_positions") or [])
         vfield = "sf_value" if is_sf else "value"
         league_name = league_info.get("name", "Dynasty League")
         n_teams = len(rosters)
@@ -29917,8 +29936,7 @@ def api_live_draft_suggest():
         if league_id and not format_raw:
             try:
                 league_info = get_league(platform, league_id, season) or {}
-                is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"}
-                            for s in (league_info.get("roster_positions") or []))
+                is_sf = _is_superflex_lineup(league_info.get("roster_positions") or [])
             except Exception:
                 logger.debug("suppressed exception", exc_info=True)
         vfield = "sf_value" if is_sf else "value"

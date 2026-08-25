@@ -589,7 +589,7 @@ function wvLoad() {{
       if (!d.positions || !Object.keys(d.positions).length) {{
         showLoginGate('wvStartSit', {{
           title: 'Sign in to see your lineup',
-          description: 'Enter your Sleeper username to get personalized start/sit recommendations for your roster.'
+          description: 'Sign in to get personalized start/sit recommendations for your roster.'
         }});
         return;
       }}
@@ -992,7 +992,7 @@ function wvLineupAdvice() {{
   if (!a || !a.has_current) return '';
   const esc = s => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
   if (!a.swaps.length || a.delta < 1) {{
-    return `<div class="wv-ss-advice wv-ss-advice-ok"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Your lineup is optimal — projected ${{a.optimal_pts}} pts (QB/RB/WR/TE).</div>`;
+    return `<div class="wv-ss-advice wv-ss-advice-ok"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Your lineup is optimal — start score ${{a.optimal_pts}} (QB/RB/WR/TE).</div>`;
   }}
   const swaps = a.swaps.slice(0, 4).map(s => `
     <div class="wv-ss-swap">
@@ -1002,7 +1002,7 @@ function wvLineupAdvice() {{
       <span class="wv-ss-swap-gain">+${{(s.gain || 0).toFixed(1)}}</span>
     </div>`).join('');
   return `<div class="wv-ss-advice wv-ss-advice-warn">
-    <div class="wv-ss-advice-head"><i class="fa-solid fa-arrow-trend-up" aria-hidden="true"></i> You're leaving <strong>${{a.delta.toFixed(1)}} pts</strong> on the bench</div>
+    <div class="wv-ss-advice-head"><i class="fa-solid fa-arrow-trend-up" aria-hidden="true"></i> You're leaving <strong>${{a.delta.toFixed(1)}}</strong> start-score points on the bench</div>
     <div class="wv-ss-advice-sub">${{a.optimal_pts}} optimal vs ${{a.current_pts}} current lineup</div>
     ${{swaps}}
   </div>`;

@@ -25,6 +25,8 @@ from typing import Optional
 
 import numpy as np
 
+from utils.lineup_slots import canonicalize_slot
+
 logger = logging.getLogger(__name__)
 
 _MIN_STD      = 8.0    # floor on std dev
@@ -64,9 +66,24 @@ _POS_STD: dict[str, tuple[float, float]] = {
 }
 _POS_STD_DEFAULT = (0.42, 2.0)
 
-_FLEX_POSITIONS = {"FLEX", "WR/RB/TE", "RB/WR/TE", "W/R/T"}
 _FLEX_ELIGIBLE  = {"RB", "WR", "TE"}
-_SUPER_FLEX_POS = {"SUPER_FLEX", "SUPERFLEX", "QB/WR/RB/TE", "OP"}
+
+
+def _tally_starting_slots(roster_positions):
+    """Count dedicated / FLEX / Superflex slots, collapsing provider aliases."""
+    fixed_slots: dict[str, int] = {}
+    flex_slots = sflex_slots = 0
+    for slot in roster_positions or []:
+        s = canonicalize_slot(slot)
+        if s in _BENCH_SLOTS:
+            continue
+        if s == "SUPER_FLEX":
+            sflex_slots += 1
+        elif s == "FLEX":
+            flex_slots += 1
+        elif s:
+            fixed_slots[s] = fixed_slots.get(s, 0) + 1
+    return fixed_slots, flex_slots, sflex_slots
 
 # Per-week injury hazard: the probability that a given starter misses that
 # week's game. When a starter is out, a bench player replaces them at a
@@ -763,19 +780,7 @@ def _position_aware_lineup(
     for each starting slot — used to estimate per-team std dev.
     """
     # Tally starting slots by type
-    fixed_slots: dict[str, int] = {}
-    flex_slots  = 0
-    sflex_slots = 0
-    for slot in roster_positions:
-        s = str(slot).upper()
-        if s in _BENCH_SLOTS:
-            continue
-        if s in _SUPER_FLEX_POS:
-            sflex_slots += 1
-        elif s in _FLEX_POSITIONS:
-            flex_slots += 1
-        else:
-            fixed_slots[s] = fixed_slots.get(s, 0) + 1
+    fixed_slots, flex_slots, sflex_slots = _tally_starting_slots(roster_positions)
 
     # Per-position averages from real projections — used as fallback for
     # players with no FP data (rookies, injured, newly signed).
@@ -865,19 +870,7 @@ def _lineup_with_replacements(
     weeks at one position — an acceptable approximation.
     """
     # Tally starting slots by type (mirrors _position_aware_lineup)
-    fixed_slots: dict[str, int] = {}
-    flex_slots  = 0
-    sflex_slots = 0
-    for slot in roster_positions:
-        s = str(slot).upper()
-        if s in _BENCH_SLOTS:
-            continue
-        if s in _SUPER_FLEX_POS:
-            sflex_slots += 1
-        elif s in _FLEX_POSITIONS:
-            flex_slots += 1
-        else:
-            fixed_slots[s] = fixed_slots.get(s, 0) + 1
+    fixed_slots, flex_slots, sflex_slots = _tally_starting_slots(roster_positions)
 
     # Per-position fallback averages for players lacking a projection
     _pos_totals: dict[str, list] = {}

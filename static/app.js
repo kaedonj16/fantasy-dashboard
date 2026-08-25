@@ -11219,6 +11219,21 @@ function pmSlugify(name) {
 }
 
 // @public-js:core-end  (everything below is app/feature code; excluded from public.js)
+
+// League format for player-modal / ADP fetches. Page scripts (trade calc, teams)
+// may set `_leagueType` / `_leagueSize`; every other page reads `__brctx` which
+// render_page now seeds from the cached league.
+function brLeagueType() {
+  if (typeof _leagueType !== 'undefined' && _leagueType) return _leagueType;
+  var ctx = window.__brctx || {};
+  return ctx.leagueType || '1qb';
+}
+function brLeagueSize() {
+  if (typeof _leagueSize !== 'undefined' && _leagueSize) return _leagueSize;
+  var ctx = window.__brctx || {};
+  return ctx.leagueSize || 10;
+}
+
 function openPlayerModal(playerId, playerName, opts) {
   opts = opts || {};
 
@@ -11247,8 +11262,8 @@ function openPlayerModal(playerId, playerName, opts) {
   const leagueId = opts.leagueId || (_isLeaguePath ? pathParts[2] : (urlParams.get('from_league') || null));
 
   // Use page-level league settings when available (set for logged-in users)
-  const modalLt = (typeof _leagueType !== 'undefined') ? _leagueType : '1qb';
-  const modalLs = (typeof _leagueSize !== 'undefined') ? _leagueSize : 10;
+  const modalLt = brLeagueType();
+  const modalLs = brLeagueSize();
   const leagueParams = `league_type=${encodeURIComponent(modalLt)}&league_size=${encodeURIComponent(modalLs)}`;
 
   // Build API URL with league context if available
@@ -11702,7 +11717,7 @@ function openPlayerModal(playerId, playerName, opts) {
       // grouped into two format cards. The value matching the viewer's league
       // type is highlighted.
       const _adp = data.stats?.adp;
-      const _adpIsSf = (typeof _leagueType !== 'undefined' && _leagueType === 'sf');
+      const _adpIsSf = brLeagueType() === 'sf';
       const _adpV = v => (v != null ? v : '<span class="pm-adp-na">–</span>');
       // Multi-source ADP (Sleeper / BR Fantasy / ESPN / Yahoo / MFL / Consensus).
       // The Sleeper source arrives inline; the market sources are lazy-loaded from
@@ -12388,8 +12403,8 @@ function pmSwitchTab(tab) {
     const _platform = pathParts2[0] || 'sleeper';
     const _season   = pathParts2[1] || new Date().getFullYear();
     const _leagueId = pathParts2[2] || null;
-    const _lt = (typeof _leagueType !== 'undefined') ? _leagueType : '1qb';
-    const _ls = (typeof _leagueSize !== 'undefined') ? _leagueSize : 10;
+    const _lt = brLeagueType();
+    const _ls = brLeagueSize();
     let logsUrl = `/api/player-game-logs/${encodeURIComponent(playerId)}?season=${_season}&league_type=${_lt}&league_size=${_ls}`;
     if (_leagueId) logsUrl += `&league_id=${_leagueId}&platform=${_platform}`;
     fetch(logsUrl)
@@ -14739,8 +14754,8 @@ function _updateWatchlistBtn(btn, player_id) {
 function _wlEsc(s) { return escapeHtml(s); }
 
 function _wlLeagueParams() {
-  const lt = (typeof _leagueType !== 'undefined' && _leagueType) ? _leagueType : '1qb';
-  const ls = (typeof _leagueSize !== 'undefined' && _leagueSize) ? _leagueSize : 10;
+  const lt = brLeagueType();
+  const ls = brLeagueSize();
   return 'league_type=' + encodeURIComponent(lt) + '&league_size=' + encodeURIComponent(ls);
 }
 
@@ -17493,8 +17508,8 @@ function _cmpLoadGameLogs(pid, position, containerId) {
   const _platform = pathParts[0] || 'sleeper';
   const _season   = pathParts[1] || new Date().getFullYear();
   const _leagueId = pathParts[2] || null;
-  const _lt = (typeof _leagueType !== 'undefined') ? _leagueType : '1qb';
-  const _ls = (typeof _leagueSize !== 'undefined') ? _leagueSize : 10;
+  const _lt = brLeagueType();
+  const _ls = brLeagueSize();
   let logsUrl = `/api/player-game-logs/${encodeURIComponent(pid)}?season=${_season}&league_type=${_lt}&league_size=${_ls}`;
   if (_leagueId) logsUrl += `&league_id=${_leagueId}&platform=${_platform}`;
   fetch(logsUrl)
@@ -18630,7 +18645,7 @@ async function fetchTeamDetails(rosterId) {
     }, 8000);
     hardTimer = setTimeout(() => controller.abort(), 30000);
 
-    const _tmLt = (typeof _leagueType !== 'undefined') ? _leagueType : '1qb';
+    const _tmLt = brLeagueType();
     const response = await fetch(
       `/api/team-details/${rosterId}?league_id=${leagueId}&platform=${platform}&season=${season}&league_type=${encodeURIComponent(_tmLt)}`,
       { signal: controller.signal }

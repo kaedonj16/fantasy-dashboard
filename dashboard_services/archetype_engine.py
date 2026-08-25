@@ -15,6 +15,7 @@ import time as _time
 from itertools import combinations
 from typing import Any, Dict, List, Optional, Tuple
 
+from utils.lineup_slots import canonicalize_slot
 from utils.roster_strength import STARTER_THRESHOLD, derive_league_thresholds
 from utils.tier_stack import asset_tier
 from utils.tier_thresholds import FALLBACK_THRESHOLDS, compute_tier_thresholds
@@ -244,12 +245,12 @@ def _ppg_lineup(
     fixed_slots: Dict[str, int] = {}
     flex_slots = sflex_slots = 0
     for slot in roster_positions:
-        s = str(slot).upper()
+        s = canonicalize_slot(slot)
         if s in _BENCH_SLOTS:
             continue
         if s == "SUPER_FLEX":
             sflex_slots += 1
-        elif s in {"FLEX", "WRRB_FLEX", "WRTE_FLEX", "RBWRTE", "RBWR"}:
+        elif s == "FLEX":
             flex_slots += 1
         elif s in SKILL_POS:
             fixed_slots[s] = fixed_slots.get(s, 0) + 1
