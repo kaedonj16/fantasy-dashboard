@@ -963,7 +963,7 @@ _DRAFT_ROOM_HTML = r"""
   /* player preview */
   .dr-preview-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,.45);
     display: flex; align-items: flex-start; justify-content: center; padding: 16px; overflow-y: auto; }
-  .dr-preview-card { position: relative; width: 100%; max-width: 380px; background: var(--card);
+  .dr-preview-card { position: relative; width: 100%; max-width: 420px; background: var(--card);
     border: 1px solid var(--border); border-radius: 16px; padding: 18px 18px 16px; box-shadow: 0 18px 56px rgba(0,0,0,.34); margin: auto; }
   .dr-prev-close { position: absolute; top: 10px; right: 12px; width: 28px; height: 28px; background: var(--bg);
     border: 1px solid var(--border); border-radius: 12px; font-size: 17px; line-height: 1;
@@ -1473,7 +1473,7 @@ _DRAFT_ROOM_HTML = r"""
   /* ── Player comparison overlay ── */
   .dr-cmp-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,.45);
     display: flex; align-items: flex-start; justify-content: center; padding: 16px; overflow-y: auto; }
-  .dr-cmp-card { position: relative; width: 100%; max-width: 540px; background: var(--card);
+  .dr-cmp-card { position: relative; width: 100%; max-width: 580px; background: var(--card);
     border: 1px solid var(--border); border-radius: 14px; padding: 18px 16px 16px;
     box-shadow: 0 16px 50px rgba(0,0,0,.3); margin: auto; }
   .dr-cmp-close { position: absolute; top: 8px; right: 10px; background: none; border: none;

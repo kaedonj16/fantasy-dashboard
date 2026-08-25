@@ -112,6 +112,8 @@ def test_cheat_sheet_adds_projected_ppg_to_board_and_export():
     assert ">Proj PPG</th>" in script
     assert "'Proj PPG'" in script
     assert "x.projectedPpg.toFixed(1)" in script
+    assert "lastPpg: p.ppg" in script
+    assert "Last season actual" in script
 
 
 def test_cheat_sheet_consensus_adp_matches_rankings_to_one_decimal():

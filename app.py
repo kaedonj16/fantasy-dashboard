@@ -20810,6 +20810,15 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
                 precise = age_from_bday(bday)
                 if precise is not None:
                     player["age"] = precise
+                ye = player_data.get("years_exp")
+                if ye is not None:
+                    try:
+                        player["years_exp"] = int(ye)
+                    except (TypeError, ValueError):
+                        pass
+                inj = str(player_data.get("injury_status") or player_data.get("injury") or "").strip()
+                if inj and inj.upper() not in ("ACTIVE", "HEALTHY", "NA"):
+                    player["injury"] = inj
     except Exception as e:
         logger.info(f"[api/league-players] Could not add birthday data: {e}")
 
@@ -20871,11 +20880,20 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
     except Exception as _e_lp:
         logger.info(f"[api/league-players] PPG enrichment skipped: {_e_lp}")
 
-    # Enrich with projected season PPG from FantasyPros projections cache
+    # Enrich with projected season PPG. Prefer the season-projection cache
+    # (historically FantasyPros; same {id: {ppg, season_pts}} shape), then fill
+    # anyone it missed from Sleeper weekly projections. The cheat sheet only
+    # reads proj_ppg, so a cache miss used to leave a blank Proj PPG cell even
+    # when Sleeper had a weekly number for that player (rookies, ID gaps).
     try:
-        _proj_year = date.today().year
-        _fp_proj_path = os.path.join("cache", f"fp_projections_{_proj_year}_ppr.json")
-        _fp_proj_data = read_json_cached(_fp_proj_path)
+        _nfl_season = int((get_nfl_state() or {}).get("season") or date.today().year)
+        _fp_proj_data = None
+        for _yr in (_nfl_season, date.today().year, _nfl_season - 1):
+            _fp_proj_data = read_json_cached(
+                os.path.join("cache", f"fp_projections_{_yr}_ppr.json")
+            )
+            if _fp_proj_data:
+                break
         if _fp_proj_data:
             for _player in model_value_table:
                 _pid = str(_player.get("id") or "")
@@ -20889,6 +20907,25 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
                             _player["proj_pts"] = round(_sp, 1)
     except Exception as _e_fp:
         logger.info(f"[api/league-players] Projected PPG enrichment skipped: {_e_fp}")
+
+    try:
+        from data_building.fetch_projections import fetch_sleeper_season_projections as _sl_season
+        _sl_year = int((get_nfl_state() or {}).get("season") or date.today().year)
+        _sl_proj = _sl_season(_sl_year, "ppr") or {}
+        for _player in model_value_table:
+            if _player.get("proj_ppg"):
+                continue
+            _pe = _sl_proj.get(str(_player.get("id") or ""))
+            if not _pe:
+                continue
+            _pj = float(_pe.get("ppg") or 0)
+            if _pj > 0:
+                _player["proj_ppg"] = round(_pj, 1)
+                _sp = float(_pe.get("season_pts") or 0)
+                if _sp > 0 and not _player.get("proj_pts"):
+                    _player["proj_pts"] = round(_sp, 1)
+    except Exception as _e_sl:
+        logger.info(f"[api/league-players] Sleeper projected PPG fill skipped: {_e_sl}")
 
     # Enrich with real PPR-based VORP from advanced metrics (last completed season)
     try:

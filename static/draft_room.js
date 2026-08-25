@@ -2859,6 +2859,69 @@
   }
   function availColor(pct){ return pct >= 65 ? '#22c55e' : pct >= 40 ? '#f59e0b' : '#ef4444'; }
 
+  function recRankOf(p){
+    if (!p) return null;
+    var pool = rankedRecommendationPool();
+    for (var i = 0; i < pool.length; i++){
+      if (String(pool[i].id) === String(p.id)) return i + 1;
+    }
+    return null;
+  }
+  function expLabel(p){
+    if (!p) return '';
+    if (p.is_rookie) return 'Rookie';
+    var ye = p.years_exp;
+    if (ye == null || ye === '') return '';
+    ye = Number(ye);
+    if (!isFinite(ye) || ye < 0) return '';
+    if (ye === 0) return 'Rookie';
+    return ye + ' yr';
+  }
+  // Shared snapshot of everything the player preview and compare modal show so
+  // the two surfaces cannot drift (and so we only compute ADP/VOR/survival once).
+  function draftPlayerFacts(p){
+    var pos = (p.position || '').toUpperCase();
+    var adp = adpOf(p);
+    var adpGap = (adp != null && state && state.current) ? (state.current - adp) : null;
+    var proj = (p.proj_ppg != null && isFinite(Number(p.proj_ppg))) ? Number(p.proj_ppg) : null;
+    var last = (p.ppg != null && isFinite(Number(p.ppg))) ? Number(p.ppg) : null;
+    var nextOwned = nextOwnedAfterCurrent();
+    var survive = nextOwned ? availProb(p, nextOwned) : null;
+    var vorp = p.vorp != null ? Number(p.vorp) : vorOf(p);
+    return {
+      pos: pos,
+      adp: adp,
+      vsAdp: adpGap,
+      vor: vorp,
+      vorLbl: p.vorp != null ? 'VORP' : 'VOR',
+      value: valOf(p),
+      tier: tierOf(p),
+      age: p.age != null ? Number(p.age) : null,
+      projPpg: proj,
+      lastPpg: last,
+      ppgSeason: p.ppg_season,
+      ppgRank: p.ppg_rank,
+      posRank: state && state.sf ? (p.sf_pos_rank_label || '') : (p.pos_rank_label || ''),
+      posRankN: state && state.sf ? p.sf_pos_rank : p.pos_rank,
+      bye: p.bye_week != null ? Number(p.bye_week) : null,
+      rec: recRankOf(p),
+      projPts: p.proj_pts != null ? Number(p.proj_pts) : null,
+      scarce: posTopRemaining(pos),
+      survive: survive,
+      survivePn: nextOwned,
+      market: p.market_vs_adp != null ? Number(p.market_vs_adp) : null,
+      exp: expLabel(p),
+      injury: p.injury || ''
+    };
+  }
+  function fmtSigned(n, digits){
+    if (n == null || !isFinite(Number(n))) return '—';
+    var x = Number(n);
+    var s = digits != null ? x.toFixed(digits) : (Number.isInteger(x) ? String(x) : x.toFixed(1));
+    if (Number(s) === 0) return digits != null ? Number(0).toFixed(digits) : '0';
+    return (Number(s) > 0 ? '+' : '') + s;
+  }
+
   // ── Best-at-position chips + scarcity bar ───────────────────────────────────
   function renderBestChips(){
     var el = document.getElementById('drBestChips');
@@ -2992,19 +3055,13 @@
     // same guard renderBA uses for any path that didn't just renderSide.
     if (_psPoolMax <= 0) refreshPsPool();
     function cmpCol(p, other){
-      var pos = (p.position || '').toUpperCase();
-      var adp = adpOf(p), oadp = adpOf(other);
-      var vor = p.vorp != null ? Number(p.vorp) : vorOf(p);
-      var ovor = other.vorp != null ? Number(other.vorp) : vorOf(other);
-      var vorLbl = (p.vorp != null || other.vorp != null) ? 'VORP' : 'VOR';
+      var f = draftPlayerFacts(p);
+      var o = draftPlayerFacts(other);
       var ps = psRelLive(p);
-      var v = valOf(p), ov = valOf(other);
-      var t = tierOf(p), ot = tierOf(other);
-      var ppg = p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null);
-      var oppg = other.proj_ppg != null ? Number(other.proj_ppg) : (other.ppg != null ? Number(other.ppg) : null);
-      var ppgRowLbl = (p.proj_ppg != null || other.proj_ppg != null) ? 'Proj PPG' : 'PPG';
-      var age = p.age != null ? Number(p.age) : null;
-      var oage = other.age != null ? Number(other.age) : null;
+      var vorLbl = (p.vorp != null || other.vorp != null) ? 'VORP' : 'VOR';
+      var ppgRowLbl = (f.projPpg != null || o.projPpg != null) ? 'Proj PPG' : 'PPG';
+      var ppg = f.projPpg != null ? f.projPpg : f.lastPpg;
+      var oppg = o.projPpg != null ? o.projPpg : o.lastPpg;
       function statRow(lbl, val, oval, higherBetter, fmtFn){
         if (val == null && oval == null) return '';
         var vStr = fmtFn ? fmtFn(val) : (val != null ? String(val) : '-');
@@ -3014,20 +3071,34 @@
           + '<span class="dr-cmp-stat-val">' + vStr + '</span></div>';
       }
       var sc = ps != null ? psColor(ps) : 'var(--text-muted)';
+      var metaBits = [p.team || '', f.exp, (f.age ? 'Age ' + f.age.toFixed(0) : ''), (f.injury ? f.injury : '')].filter(Boolean);
       return '<div class="dr-cmp-player">'
         + '<div class="dr-cmp-top"><img class="dr-cmp-hs" src="' + playerImgUrl(p) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
         + '<div><div class="dr-cmp-name"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span> ' + esc(p.name) + '</div>'
-        + '<div class="dr-cmp-meta">' + esc(p.team || '') + (p.age ? ' &middot; Age ' + Number(p.age).toFixed(0) : '') + '</div>'
+        + '<div class="dr-cmp-meta">' + esc(metaBits.join(' · ')) + '</div>'
         + '</div></div>'
         + '<div class="dr-cmp-ps" style="color:' + sc + '">' + (ps != null ? ps : '&ndash;') + '</div>'
         + '<div class="dr-cmp-ps-lbl">Pick Score</div>'
         + '<div class="dr-cmp-stats">'
-        + statRow('Value', v, ov, true, function(x){ return x != null ? Math.round(x) : '-'; })
+        + statRow('Value', f.value, o.value, true, function(x){ return x != null ? String(Math.round(x)) : '-'; })
         + statRow(ppgRowLbl, ppg, oppg, true, function(x){ return x != null ? x.toFixed(1) : 'N/A'; })
-        + statRow(vorLbl, vor, ovor, true, function(x){ return x != null ? (x >= 0 ? '+' + (Number.isInteger(x) ? x : x.toFixed(1)) : (x.toFixed ? x.toFixed(1) : String(x))) : '-'; })
-        + statRow('ADP', adp, oadp, false, function(x){ return x != null ? Number(x).toFixed(1) : 'N/A'; })
-        + (state.type !== 'redraft' ? statRow('Tier', t, ot, false, function(x){ return x != null ? 'T' + x : '-'; }) : '')
-        + statRow('Age', age, oage, false, function(x){ return x != null ? x.toFixed(0) : '-'; })
+        + (f.projPpg != null && f.lastPpg != null ? statRow((f.ppgSeason || 'Last') + ' PPG', f.lastPpg, o.lastPpg, true, function(x){ return x != null ? x.toFixed(1) : '-'; }) : '')
+        + statRow(vorLbl, f.vor, o.vor, true, function(x){ return x != null ? fmtSigned(x, Number.isInteger(x) ? 0 : 1) : '-'; })
+        + statRow('ADP', f.adp, o.adp, false, function(x){ return x != null ? Number(x).toFixed(1) : 'N/A'; })
+        + statRow('vs ADP', f.vsAdp, o.vsAdp, true, function(x){ return fmtSigned(Math.round(x), 0); })
+        + (f.posRank || o.posRank ? statRow('Pos Rank', f.posRankN, o.posRankN, false, function(x){
+            if (x == null) return '-';
+            if (f.posRankN === x && f.posRank) return f.posRank;
+            if (o.posRankN === x && o.posRank) return o.posRank;
+            return String(x);
+          }) : '')
+        + (state.type !== 'redraft' ? statRow('Tier', f.tier, o.tier, false, function(x){ return x != null ? 'T' + x : '-'; }) : '')
+        + statRow('Age', f.age, o.age, false, function(x){ return x != null ? x.toFixed(0) : '-'; })
+        + (f.bye != null || o.bye != null ? statRow('Bye', f.bye, o.bye, false, function(x){ return x != null ? String(x) : '-'; }) : '')
+        + (f.rec != null || o.rec != null ? statRow('REC', f.rec, o.rec, false, function(x){ return x != null ? '#' + x : '-'; }) : '')
+        + (f.survive != null || o.survive != null ? statRow('Survive', f.survive, o.survive, true, function(x){ return x != null ? x + '%' : '-'; }) : '')
+        + (f.projPts != null || o.projPts != null ? statRow('Proj Pts', f.projPts, o.projPts, true, function(x){ return x != null ? String(Math.round(x)) : '-'; }) : '')
+        + (f.market != null || o.market != null ? statRow('Mkt vs ADP', f.market, o.market, true, function(x){ return fmtSigned(Math.round(x), 0); }) : '')
         + '</div></div>';
     }
     var draftBtns = (state && state.mode !== 'live' && (isYourTurn() || !sim) && (!sim || simStarted))
@@ -6467,33 +6538,23 @@
   function openPreview(id){
     var p = playersById[String(id)]; if (!p) return;
     if (_psPoolMax <= 0) refreshPsPool();
-    var adp = adpOf(p), t = tierOf(p), ps = psRelLive(p);
-    var posRank = state.sf ? (p.sf_pos_rank_label || '') : (p.pos_rank_label || '');
-    var adpGap = (adp != null) ? (state.current - adp) : null;
-    var vsAdp = adpGap != null ? (adpGap >= 0 ? ('+' + Math.round(adpGap)) : String(Math.round(adpGap))) : '-';
-    // Use real PPR-based VORP from API when available; fall back to dynasty-value VOR
-    var vorpVal = (p.vorp != null) ? Number(p.vorp) : vorOf(p);
-    var vorpLbl = (p.vorp != null) ? 'VORP' : 'VOR';
-    var vorStr = (vorpVal != null) ? (vorpVal >= 0 ? '+' + (Number.isInteger(vorpVal) ? vorpVal : vorpVal.toFixed(1)) : String(vorpVal.toFixed ? vorpVal.toFixed(1) : vorpVal)) : '-';
-    var pos = (p.position || '').toUpperCase();
-    var scarce = posTopRemaining(pos);
-    // Prefer forward-looking projected PPG; fall back to last season actual
-    var ppg = null, ppgLbl = 'PPG', ppgSub = '';
-    if (p.ppg != null){ ppg = Number(p.ppg); ppgLbl = 'PPG';
-      ppgSub = p.ppg_rank != null ? (pos + p.ppg_rank) : (p.ppg_season ? String(p.ppg_season) : ''); }
-    else if (p.proj_ppg != null){ ppg = Number(p.proj_ppg); ppgLbl = 'Proj PPG'; ppgSub = 'projected'; }
+    var f = draftPlayerFacts(p);
+    var t = f.tier, ps = psRelLive(p);
+    var vorStr = f.vor != null ? fmtSigned(f.vor, Number.isInteger(f.vor) ? 0 : 1) : '-';
+    var pos = f.pos;
+    var vsAdp = f.vsAdp != null ? fmtSigned(Math.round(f.vsAdp), 0) : '-';
     var sc = ps != null ? psColor(ps) : 'var(--text-muted)';
     var pc = posColor(p.position);
     var c = document.getElementById('drPreviewCard');
     // Position-colored top accent
     c.style.boxShadow = '0 16px 50px rgba(0,0,0,.3), inset 0 3px 0 ' + pc;
-    var agePart = (p.age != null) ? (' &middot; Age ' + Number(p.age).toFixed(0)) : '';
+    var metaBits = [p.team || '', f.posRank, f.exp, (f.age != null ? 'Age ' + f.age.toFixed(0) : ''), (f.injury ? f.injury : '')].filter(Boolean);
     var h = '<button class="dr-prev-close" id="drPrevClose" aria-label="Close">&times;</button>'
       // Player identity row
       + '<div class="dr-prev-top">'
       + '<img class="dr-prev-hs" src="' + playerImgUrl(p) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
       + '<div class="dr-prev-id"><div class="dr-prev-name">' + esc(p.name) + (t ? (' <span class="dr-tier' + (isTierCliff(p) ? ' dr-tier-cliff' : '') + '">T' + t + '</span>') : '') + '</div>'
-      + '<div class="dr-prev-meta"><span class="dr-posbadge" style="background:' + pc + '">' + esc(p.position) + '</span> ' + esc(p.team || '') + (posRank ? (' &middot; ' + esc(posRank)) : '') + agePart + '</div>'
+      + '<div class="dr-prev-meta"><span class="dr-posbadge" style="background:' + pc + '">' + esc(p.position) + '</span> ' + esc(metaBits.join(' · ')) + '</div>'
       + '</div></div>'
       // Pick Score hero
       + '<div class="dr-prev-score-hero" style="border-color:' + sc + ';background:' + sc + '1a;">'
@@ -6503,26 +6564,29 @@
       + '</div>'
       // Stats grid
       + '<div class="dr-prev-stats">'
-      + statBox('Value', Math.round(valOf(p)), null, 'Trade value as an asset on a 0-999 scale (dynasty value, or redraft value in redraft).')
-      + statBox(vorpLbl, vorStr, null, 'Value Over Replacement: how much better than a freely-available starter at this position. ' + (vorpLbl === 'VORP' ? 'Based on real fantasy points.' : 'Based on dynasty value.'))
-      + statBox('ADP', adp != null ? Number(adp).toFixed(1) : '-', null, 'Average Draft Position - the typical overall pick this player goes at in real drafts.')
+      + statBox('Value', Math.round(f.value), null, 'Trade value as an asset on a 0-999 scale (dynasty value, or redraft value in redraft).')
+      + statBox(f.vorLbl, vorStr, null, 'Value Over Replacement: how much better than a freely-available starter at this position. ' + (f.vorLbl === 'VORP' ? 'Based on real fantasy points.' : 'Based on dynasty value.'))
+      + statBox('ADP', f.adp != null ? Number(f.adp).toFixed(1) : '-', null, 'Average Draft Position - the typical overall pick this player goes at in real drafts.')
       + statBox('vs ADP', vsAdp, null, 'How far this player has fallen past their ADP at the current pick. Positive = a value.')
-      + (ppg != null ? statBox(ppgLbl, ppg.toFixed(1), ppgSub, 'Points per game' + (ppgLbl === 'Proj PPG' ? ', projected for the upcoming season.' : ', last season actual.')) : statBox('Pos Rank', posRank || '-'))
-      + statBox(pos + ' T1-2 left', scarce, null, 'How many Tier 1-2 (elite) players remain available at this position - a scarcity signal.')
+      + (f.projPpg != null ? statBox('Proj PPG', f.projPpg.toFixed(1), 'projected', 'Points per game, projected for the upcoming season.') : '')
+      + (f.lastPpg != null ? statBox((f.ppgSeason ? f.ppgSeason + ' PPG' : 'PPG'), f.lastPpg.toFixed(1), f.ppgRank != null ? (pos + f.ppgRank) : 'last season', 'Points per game last season.') : '')
+      + (f.posRank ? statBox('Pos Rank', f.posRank, null, 'Rank at this position by current value.') : '')
+      + (f.rec != null ? statBox('REC', '#' + f.rec, null, 'Live recommendation rank for this pick — roster-aware order, not a grade.') : '')
+      + (f.bye != null ? statBox('Bye', f.bye, null, 'NFL bye week. Stacking several players on the same bye can leave a hole.') : '')
+      + (f.projPts != null ? statBox('Proj Pts', Math.round(f.projPts), 'season', 'Projected fantasy points for the full upcoming season.') : '')
+      + (f.market != null ? statBox('Mkt vs ADP', fmtSigned(Math.round(f.market), 0), null, 'How much earlier (positive) or later (negative) betting markets imply this player should go versus ADP.') : '')
+      + (state.type !== 'redraft' && f.age != null ? statBox('Age', f.age.toFixed(0)) : '')
+      + statBox(pos + ' T1-2 left', f.scarce, null, 'How many Tier 1-2 (elite) players remain available at this position - a scarcity signal.')
       + '</div>';
     // Survival probability at the user's next upcoming pick
-    var nextOwnedPick = nextOwnedAfterCurrent();
-    if (nextOwnedPick){
-      var prob = availProb(p, nextOwnedPick);
-      if (prob != null){
-        var col = availColor(prob);
-        h += '<div class="dr-prev-avail-track">'
-          + '<div class="dr-prev-avail-label">Survival at your next pick (#' + nextOwnedPick + ')</div>'
-          + '<div class="dr-prev-avail-picks"><div class="dr-prev-avail-pick" style="background:' + col + '14;border:1px solid ' + col + '44;">'
-          + '<span style="color:' + col + ';font-size:18px;font-weight:900;">' + prob + '%</span>'
-          + '<span class="dr-prev-avail-pn">' + (prob >= 65 ? 'Likely available' : prob >= 40 ? 'Might be there' : 'Unlikely to last') + '</span>'
-          + '</div></div></div>';
-      }
+    if (f.survivePn && f.survive != null){
+      var col = availColor(f.survive);
+      h += '<div class="dr-prev-avail-track">'
+        + '<div class="dr-prev-avail-label">Survival at your next pick (#' + f.survivePn + ')</div>'
+        + '<div class="dr-prev-avail-picks"><div class="dr-prev-avail-pick" style="background:' + col + '14;border:1px solid ' + col + '44;">'
+        + '<span style="color:' + col + ';font-size:18px;font-weight:900;">' + f.survive + '%</span>'
+        + '<span class="dr-prev-avail-pn">' + (f.survive >= 65 ? 'Likely available' : f.survive >= 40 ? 'Might be there' : 'Unlikely to last') + '</span>'
+        + '</div></div></div>';
     }
     h += '<div class="dr-prev-btns">';
     if (state.mode === 'live' && !state.isDrafting){
