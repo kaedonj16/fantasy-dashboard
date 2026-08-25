@@ -113,6 +113,26 @@ def is_superflex_lineup(roster_positions: Optional[Iterable] = None,
     return superflex_count(roster_positions, slot_counts) > 0
 
 
+def start_sit_pos(pos) -> str:
+    """Canonical Start/Sit bucket: QB/RB/WR/TE/K/DEF, else empty."""
+    s = canonicalize_slot(pos)
+    if s in SKILL_POSITIONS or s in {"K", "DEF"}:
+        return s
+    return ""
+
+
+def start_sit_groups(slot_counts: Optional[Dict[str, int]] = None,
+                     roster_positions: Optional[Iterable] = None) -> List[str]:
+    """Position groups the Start/Sit advisor should rank for this lineup."""
+    counts = slot_counts if slot_counts is not None else count_lineup_slots(roster_positions)
+    groups = ["QB", "RB", "WR", "TE"]
+    if int((counts or {}).get("K") or 0) > 0:
+        groups.append("K")
+    if int((counts or {}).get("DEF") or 0) > 0:
+        groups.append("DEF")
+    return groups
+
+
 def starter_need_counts(roster_positions: Optional[Iterable],
                         extra_depth: int = 1) -> Dict[str, int]:
     """How many players a waiver-aware roster should have at each skill position.

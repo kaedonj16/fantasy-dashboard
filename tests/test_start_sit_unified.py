@@ -35,6 +35,16 @@ def test_lineup_advice_labels_start_score_not_raw_projection():
     body = _body()
     assert "start score" in body
     assert "projected ${a.optimal_pts} pts" not in body
+    # Advice is the whole lineup, including K/D/ST when the league starts them.
+    assert "(QB/RB/WR/TE)" not in body
+
+
+def test_start_sit_pills_include_k_and_dst():
+    body = _body()
+    assert 'data-pos="K"' in body
+    assert 'data-pos="DEF"' in body
+    assert "function wvStartSitPositions()" in body
+    assert "function wvSyncPosPills()" in body
 
 
 def test_compare_reasons_come_from_the_six_factor_breakdown():

@@ -1,7 +1,7 @@
 (function(){
   var cfg = window.__draftCfg || {};
   // Match the site-wide position palette (see .nav-search-pos-* in dashboard.css).
-  var POS_COLOR = { QB:'#3b82f6', RB:'#22c55e', WR:'#f59e0b', TE:'#8b5cf6', K:'#c92c68', DEF:'#475569', FLEX:'#14b8a6', SF:'#a78bfa', BN:'#64748b' };
+  var POS_COLOR = { QB:'#3b82f6', RB:'#22c55e', WR:'#f59e0b', TE:'#8b5cf6', K:'#c92c68', DEF:'#475569', FLEX:'#14b8a6', SF:'#a78bfa', BN:'#64748b', IR:'#94a3b8', TAXI:'#64748b', IDP:'#0f766e' };
   var posColor = function(p){ return POS_COLOR[(p||'').toUpperCase()] || '#94a3b8'; };
   var hsUrl = function(id){ return 'https://sleepercdn.com/content/nfl/players/' + id + '.jpg'; };
   // DEF players: prefer locally cached logo (after running download_team_logos.py),
@@ -322,19 +322,29 @@
     fillSlotOptions(parseInt(this.value, 10));
   });
   // Map a Sleeper-style roster_positions list into our slot counts.
+  // IR / taxi / IDP are counted so dynasty round depth is right; they are not
+  // starters, so they don't inflate RB/WR need — they add stash/round capacity.
+  var ROSTER_SLOT_MAP = {
+    QB:'QB', RB:'RB', WR:'WR', TE:'TE',
+    FLEX:'FLEX', WRRB_FLEX:'FLEX', REC_FLEX:'FLEX', WRRBTE_FLEX:'FLEX',
+    SUPER_FLEX:'SF', SFLEX:'SF',
+    K:'K', DEF:'DEF', DST:'DEF',
+    BN:'BN', BE:'BN', BENCH:'BN',
+    IR:'IR', RESERVE:'IR',
+    TAXI:'TAXI',
+    DL:'IDP', DE:'IDP', DT:'IDP', LB:'IDP', DB:'IDP', CB:'IDP', S:'IDP',
+    IDP:'IDP', IDP_FLEX:'IDP'
+  };
+  function rosterSlotKey(s){
+    return ROSTER_SLOT_MAP[String(s || '').toUpperCase()] || null;
+  }
   function rosterFromLeague(){
     var rp = cfg.rosterPositions;
     if (!rp || !rp.length) return null;
-    var r = { QB:0, SF:0, RB:0, WR:0, TE:0, FLEX:0, K:0, DEF:0, BN:0 };
-    var map = {
-      QB:'QB', RB:'RB', WR:'WR', TE:'TE',
-      FLEX:'FLEX', WRRB_FLEX:'FLEX', REC_FLEX:'FLEX', WRRBTE_FLEX:'FLEX',
-      SUPER_FLEX:'SF', SFLEX:'SF',
-      K:'K', DEF:'DEF', DST:'DEF', BN:'BN'
-    };
+    var r = { QB:0, SF:0, RB:0, WR:0, TE:0, FLEX:0, K:0, DEF:0, BN:0, IR:0, TAXI:0, IDP:0 };
     rp.forEach(function(s){
-      var key = map[String(s).toUpperCase()];
-      if (key) r[key]++;            // IDP/TAXI/IR positions are ignored
+      var key = rosterSlotKey(s);
+      if (key) r[key]++;
     });
     if (!(r.QB+r.RB+r.WR+r.TE+r.FLEX+r.SF)) return null;  // no usable starters
     return r;
@@ -357,14 +367,14 @@
     }
     var starters = 1 + (sf?1:0) + 2 + 3 + 1 + 1 + (rd?1:0) + (rd?1:0);
     var bench = rd ? 6 : Math.max(0, 25 - starters);
-    return { QB:1, SF:sf?1:0, RB:2, WR:3, TE:1, FLEX:1, K:rd?1:0, DEF:rd?1:0, BN:bench };
+    return { QB:1, SF:sf?1:0, RB:2, WR:3, TE:1, FLEX:1, K:rd?1:0, DEF:rd?1:0, BN:bench, IR:0, TAXI:0, IDP:0 };
   }
 
   // Helper: reconcile a raw roster map for the chosen QB format and return a
   // fresh copy (does not mutate the input).
   function _reconcileRoster(r, sf, rd){
     var out = {};
-    ['QB','SF','RB','WR','TE','FLEX','K','DEF','BN'].forEach(function(k){ out[k] = r[k] || 0; });
+    ['QB','SF','RB','WR','TE','FLEX','K','DEF','BN','IR','TAXI','IDP'].forEach(function(k){ out[k] = r[k] || 0; });
     if (sf){ if (!out.SF) out.SF = 1; if (!out.FLEX) out.FLEX = 1; }
     else   { out.SF = 0; }
     // K/DEF are kept as-is across formats: if the league (or the user) rosters
@@ -420,7 +430,10 @@
       { key:'FLEX', label:'FLEX' },
       { key:'K',    label:'K',    hide: rk },
       { key:'DEF',  label:'DEF',  hide: rk },
-      { key:'BN',   label:'Bench' }
+      { key:'BN',   label:'Bench' },
+      { key:'IR',   label:'IR',   hide: !((_setupRoster && _setupRoster.IR) || (leagueRaw && leagueRaw.IR)) },
+      { key:'TAXI', label:'Taxi', hide: !((_setupRoster && _setupRoster.TAXI) || (leagueRaw && leagueRaw.TAXI)) },
+      { key:'IDP',  label:'IDP',  hide: !((_setupRoster && _setupRoster.IDP) || (leagueRaw && leagueRaw.IDP)) }
     ];
 
     var presetHtml = '<div class="dr-roster-presets"><span class="dr-roster-presets-label">Presets</span>';
@@ -510,21 +523,26 @@
         _rosterPreset = key; _rosterMode = 'custom';
         _setupRoster = {};
         ['QB','SF','RB','WR','TE','FLEX','K','DEF','BN'].forEach(function(k){ _setupRoster[k] = preset[k] || 0; });
+        _setupRoster.IR = 0; _setupRoster.TAXI = 0; _setupRoster.IDP = 0;
         _setupRoster._sf = !!preset.SF; _setupRoster._rd = preset.type === 'redraft';
         renderSetupRoster(); renderSetupCapital();
       });
     });
   }
 
+  function _stashSlots(rs){
+    rs = rs || {};
+    return (rs.IR || 0) + (rs.TAXI || 0) + (rs.IDP || 0);
+  }
   // Sum of all non-bench roster slots - used to keep rounds and bench in sync.
   function _totalStarterSlots(rs){
     rs = rs || _setupRoster || defaultRoster();
     return (rs.QB||0) + (rs.SF||0) + (rs.RB||0) + (rs.WR||0) + (rs.TE||0) + (rs.FLEX||0) + (rs.K||0) + (rs.DEF||0);
   }
-  // Sync the hidden drRounds field from the current roster (starters + bench).
+  // Sync the hidden drRounds field from the current roster (starters + bench + stash).
   function _syncRoundsFromRoster(){
     if (!_setupRoster) return;
-    var r = _totalStarterSlots(_setupRoster) + (_setupRoster.BN || 0);
+    var r = _totalStarterSlots(_setupRoster) + (_setupRoster.BN || 0) + _stashSlots(_setupRoster);
     document.getElementById('drRounds').value = Math.max(1, Math.min(40, r));
   }
 
@@ -667,16 +685,10 @@
   // live/connected path recognizes K/DEF (incl. DST) and FLEX variants identically.
   function _parseRosterPositions(arr){
     if (!Array.isArray(arr) || !arr.length) return null;
-    var nmap = {
-      QB:'QB', RB:'RB', WR:'WR', TE:'TE',
-      FLEX:'FLEX', WRRB_FLEX:'FLEX', REC_FLEX:'FLEX', WRRBTE_FLEX:'FLEX',
-      SUPER_FLEX:'SF', SFLEX:'SF',
-      K:'K', DEF:'DEF', DST:'DEF', BN:'BN'
-    };
     var map = {};
     arr.forEach(function(pos){
-      var key = nmap[String(pos || '').toUpperCase()];
-      if (key) map[key] = (map[key] || 0) + 1;   // IDP/TAXI/IR positions are ignored
+      var key = rosterSlotKey(pos);
+      if (key) map[key] = (map[key] || 0) + 1;
     });
     return Object.keys(map).length ? map : null;
   }
@@ -6456,7 +6468,7 @@
     this.value = rounds;
     if (!_setupRoster) _setupRoster = defaultRoster();
     _rosterMode = 'custom'; _rosterPreset = null;
-    _setupRoster.BN = Math.max(0, rounds - _totalStarterSlots(_setupRoster));
+    _setupRoster.BN = Math.max(0, rounds - _totalStarterSlots(_setupRoster) - _stashSlots(_setupRoster));
     renderSetupRoster();
   });
   document.getElementById('drRosterSection').addEventListener('click', function(e){
@@ -6478,7 +6490,7 @@
     }
     // Keep rounds = starters + bench in sync for every slot change.
     // Bench change -> update rounds. Starter change -> update rounds (bench stays).
-    var _newRounds = Math.max(1, Math.min(40, _totalStarterSlots(_setupRoster) + (_setupRoster.BN || 0)));
+    var _newRounds = Math.max(1, Math.min(40, _totalStarterSlots(_setupRoster) + (_setupRoster.BN || 0) + _stashSlots(_setupRoster)));
     document.getElementById('drRounds').value = _newRounds;
     renderSetupCapital();
     renderSetupRoster();

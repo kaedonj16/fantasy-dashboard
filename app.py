@@ -136,6 +136,8 @@ from utils.lineup_slots import (
     count_lineup_slots as _count_lineup_slots,
     is_superflex_lineup as _is_superflex_lineup,
     starter_need_counts as _starter_need_counts,
+    start_sit_pos as _start_sit_pos,
+    start_sit_groups as _start_sit_groups,
 )
 
 daily_lock = threading.Lock()
@@ -12208,7 +12210,8 @@ def api_start_sit_options():
     # ── Z-score matchup rank tables (rank 1 = easiest, one per position) ─────
     _z_rank_tables: dict = {}
     _z_total_map: dict = {}
-    for _zpos in ("QB", "RB", "WR", "TE"):
+    _ss_groups = _start_sit_groups(lineup_requirements)
+    for _zpos in _ss_groups:
         try:
             _rm, _tot, _ri, _iz = _matchup_rank_table(season, _zpos)
             _z_rank_tables[_zpos] = _rm
@@ -12358,11 +12361,11 @@ def api_start_sit_options():
     except Exception:
         _ss_usage_trends = {}
 
-    positions_out: dict = {"QB": [], "RB": [], "WR": [], "TE": []}
+    positions_out: dict = {pos: [] for pos in _ss_groups}
     for pid in player_ids:
         row = rows_by_id.get(pid) or {}
         meta = players_index.get(pid) or {}
-        pos = str(row.get("position") or row.get("pos") or meta.get("pos") or "").upper()
+        pos = _start_sit_pos(row.get("position") or row.get("pos") or meta.get("pos") or "")
         if pos not in positions_out:
             continue
         player_name = row.get("name") or meta.get("name") or f"Player {pid}"
@@ -12555,7 +12558,7 @@ def api_start_sit_options():
         denom = _math_ss.sqrt(sa * sa + sb * sb) or 1.0
         return round(_phi((ma - mb) / denom), 2)
 
-    for _pos in ("QB", "RB", "WR", "TE"):
+    for _pos in positions_out:
         _arr = [p for p in positions_out[_pos] if not p["on_bye"]]
         _ns = lineup_requirements.get(_pos, 1)
         if _ns >= 1 and len(_arr) > _ns:
@@ -12566,9 +12569,10 @@ def api_start_sit_options():
                 "win_prob": _win_prob(_starter, _bench),
             }
 
-    # ── Optimal-lineup advice: compare the auto-optimal skill lineup to the
+    # ── Optimal-lineup advice: compare the auto-optimal lineup to the
     # viewer's actual current starters — the points left on the bench, plus the
-    # specific swaps to fix it. Covers the QB/RB/WR/TE we model. ───────────────
+    # specific swaps to fix it. Covers every position the league starts
+    # (QB/RB/WR/TE plus K and D/ST when those slots exist). ────────────────────
     # The optimal lineup is chosen by the unified start_score, so its point
     # totals and per-swap gains are measured on that SAME score — not raw
     # projection. Mixing the two (select by score, measure by projection) used to
@@ -13155,14 +13159,44 @@ def _redzone_fetch(platform, league_id, season, week=None, scope="league"):
 
 
 def _redzone_fetch_user(platform, league_id, season, week):
-    """Aggregate the viewer's matchup across every league they belong to (Sleeper)."""
-    from dashboard_services.api import get_sleeper_user_leagues
-    viewer_uid = str(session.get("viewer_user_id") or "")
-    if platform != "sleeper" or not viewer_uid:
-        raise ValueError("user scope requires a signed-in Sleeper viewer")
+    """Aggregate the viewer's matchup across every league they belong to.
 
-    leagues_raw = get_sleeper_user_leagues(viewer_uid, season) or []
-    leagues_raw = leagues_raw[:12]
+    Signed-in Google accounts use the cross-platform portfolio (Sleeper, ESPN,
+    Yahoo, MFL). A Sleeper-only session without an account still walks that
+    viewer's Sleeper leagues. Other platforms without either identity fall
+    through to league scope.
+    """
+    from utils.redzone_user import (
+        match_viewer_roster, portfolio_from_account_leagues,
+        portfolio_from_sleeper_leagues, MAX_USER_LEAGUES,
+    )
+
+    account_id = session.get("account_id")
+    viewer_uid = str(session.get("viewer_user_id") or "")
+    portfolio: list = []
+
+    if account_id:
+        try:
+            from dashboard_services.accounts import resolve_account_leagues
+            saved = resolve_account_leagues(int(account_id), current_season=season) or []
+            portfolio = portfolio_from_account_leagues(saved, season=season)
+        except Exception:
+            logger.debug("[redzone] account portfolio load failed", exc_info=True)
+            portfolio = []
+
+    if not portfolio and viewer_uid:
+        try:
+            from dashboard_services.api import get_sleeper_user_leagues
+            sleeper_raw = get_sleeper_user_leagues(viewer_uid, season) or []
+            portfolio = portfolio_from_sleeper_leagues(sleeper_raw, season=season)
+        except Exception:
+            logger.debug("[redzone] sleeper league list failed", exc_info=True)
+            portfolio = []
+
+    if not portfolio:
+        raise ValueError("user scope requires a signed-in viewer with at least one league")
+
+    portfolio = portfolio[:MAX_USER_LEAGUES]
 
     matchups, rosters, users, leagues = [], [], [], []
     player_info: dict = {}
@@ -13172,19 +13206,23 @@ def _redzone_fetch_user(platform, league_id, season, week):
     viewer_rids = []
     seen_users = set()
 
-    for li, lg in enumerate(leagues_raw):
+    for li, lg in enumerate(portfolio):
         lid = str(lg.get("league_id") or "")
+        lg_plat = str(lg.get("platform") or platform or "sleeper").lower()
+        lg_season = int(lg.get("season") or season or 0)
         lname = lg.get("name") or f"League {li + 1}"
         if not lid:
             continue
         try:
-            d = _redzone_collect(platform, lid, season, week)
+            d = _redzone_collect(lg_plat, lid, lg_season, week)
         except Exception:
             continue
         if not scoring:
             scoring = d.get("scoring") or {}
         scoring_by_league[lid] = d.get("scoring") or {}
-        vr = next((r for r in d["rosters"] if str(r.get("owner_id")) == viewer_uid), None)
+        vr = match_viewer_roster(
+            d["rosters"], team_id=lg.get("team_id"), owner_id=viewer_uid,
+        )
         if not vr:
             continue
         vrid = str(vr.get("roster_id"))
@@ -13204,6 +13242,7 @@ def _redzone_fetch_user(platform, league_id, season, week):
             m2["matchup_id"] = ns + str(m.get("matchup_id"))
             m2["league_name"] = lname
             m2["league_id"] = lid
+            m2["platform"] = lg_plat
             matchups.append(m2)
             for _pid in (m.get("players") or []):
                 pid_league[str(_pid)] = lid
@@ -13219,7 +13258,7 @@ def _redzone_fetch_user(platform, league_id, season, week):
                 users.append(u)
         player_info.update(d["player_info"])
         viewer_rids.append(ns + vrid)
-        leagues.append({"league_id": lid, "name": lname})
+        leagues.append({"league_id": lid, "name": lname, "platform": lg_plat})
 
     return {
         "week": week, "season": season, "platform": platform, "league_id": league_id,
@@ -13243,8 +13282,9 @@ def page_redzone(platform: str, season: int, league_id: str):
     scope = "user" if request.args.get("scope") == "user" else "league"
     # League-scope Redzone works on every platform: providers canonicalize their
     # player ids to Sleeper ids, so the live player feed + Tank01 stat lines
-    # resolve regardless of provider. Cross-league "user" scope still needs a
-    # Sleeper viewer, but it falls back to league scope for other platforms.
+    # resolve regardless of provider. Cross-league "My Leagues" uses the signed-in
+    # account portfolio (all platforms) or a Sleeper viewer, and falls back to
+    # this league when neither identity is available.
     if request.args.get("demo") == "1":
         data = _redzone_demo_data(scope=scope)
     else:
@@ -23912,6 +23952,18 @@ def api_playoff_scenarios():
         settings = ctx.get("league_settings") or {}
         current_week = int(ctx.get("current_week") or 0)
         divisions = int(settings.get("divisions") or 0) >= 2
+        division_map: dict = {}
+        if divisions:
+            for r in (ctx.get("rosters") or []):
+                rid = r.get("roster_id")
+                if rid is None:
+                    continue
+                try:
+                    div = int((r.get("settings") or {}).get("division") or 0)
+                except (TypeError, ValueError):
+                    div = 0
+                if div:
+                    division_map[int(rid)] = div
 
         state = build_sim_state(ctx, platform)
         if not state:
@@ -23926,7 +23978,8 @@ def api_playoff_scenarios():
         sim_teams = state.get("teams") or []
         scen_teams = [
             {"roster_id": t["roster_id"], "wins": t.get("wins", 0),
-             "ties": t.get("ties", 0), "pf": t.get("pf", 0.0)}
+             "ties": t.get("ties", 0), "pf": t.get("pf", 0.0),
+             "division": division_map.get(int(t["roster_id"]))}
             for t in sim_teams
         ]
         scen = compute_scenarios(
@@ -23953,6 +24006,7 @@ def api_playoff_scenarios():
             "show": scen.get("show", False),
             "mode": scen.get("mode"),
             "exact": scen.get("exact", False),
+            "divisions": scen.get("divisions", False),
             "remaining_games": scen.get("remaining_games", 0),
             "remaining_weeks": scen.get("remaining_weeks", 0),
             "playoff_teams": playoff_teams,

@@ -7,6 +7,8 @@ from utils.lineup_slots import (
     count_lineup_slots,
     is_superflex_lineup,
     starter_need_counts,
+    start_sit_groups,
+    start_sit_pos,
 )
 from utils.optimal_lineup import compute_optimal_lineup
 from utils.roster_strength import derive_league_thresholds
@@ -107,3 +109,18 @@ def test_derive_thresholds_treats_op_as_superflex():
     _, floor_1qb = derive_league_thresholds(["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"], 12)
     _, floor_sf = b
     assert floor_sf["QB"] == floor_1qb["QB"] + 1
+
+
+def test_start_sit_pos_maps_dst_to_def():
+    assert start_sit_pos("DST") == "DEF"
+    assert start_sit_pos("D/ST") == "DEF"
+    assert start_sit_pos("K") == "K"
+    assert start_sit_pos("WR") == "WR"
+    assert start_sit_pos("LB") == ""
+
+
+def test_start_sit_groups_include_k_and_def_when_started():
+    skill = start_sit_groups(roster_positions=["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "BN"])
+    assert skill == ["QB", "RB", "WR", "TE"]
+    espn = start_sit_groups(roster_positions=["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "D/ST", "BN"])
+    assert espn == ["QB", "RB", "WR", "TE", "K", "DEF"]

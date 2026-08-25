@@ -3106,13 +3106,16 @@ function _annotatePlayoffScenarios(panel, scen) {
     tr.appendChild(td);
   });
 
-  const sub = panel.querySelector('.po-subtitle');
-  if (sub && !sub.querySelector('.po-scen-note')) {
-    const note = document.createElement('span');
-    note.className = 'po-scen-note';
-    note.textContent = scen.mode === 'exact' ? ' · exact clinch outlook' : ' · clinch outlook';
-    sub.appendChild(note);
-  }
+    const sub = panel.querySelector('.po-subtitle');
+    if (sub && !sub.querySelector('.po-scen-note')) {
+      const note = document.createElement('span');
+      note.className = 'po-scen-note';
+      const how = scen.mode === 'exact' ? 'exact clinch outlook' : 'clinch outlook';
+      note.textContent = scen.divisions
+        ? ' · ' + how + ' (division winners + wild cards)'
+        : ' · ' + how;
+      sub.appendChild(note);
+    }
 }
 
 function initTeamTabs(root = document) {
