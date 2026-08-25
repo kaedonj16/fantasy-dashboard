@@ -5730,7 +5730,7 @@
         + '<td class="dd-plname">' + esc(p.pl.name) + ' <span style="color:var(--text-subtle,var(--text-muted));font-size:11px">' + esc(p.pl.team || '') + '</span></td>'
         + '<td><span class="dd-posbadge" style="background:' + posColor(p.pos) + '">' + p.pos + '</span></td>'
         + '<td class="r num">' + (p.adp != null ? Number(p.adp).toFixed(1) : '—') + '</td>'
-        + '<td class="r"><span class="dd-diff ' + dcl + '">' + dtxt + '</span></td>'
+        + '<td class="r num"><span class="dd-diff ' + dcl + '">' + dtxt + '</span></td>'
         + '<td class="r">' + (p.ps != null ? '<span class="num" style="font-weight:700;color:' + psColor(p.ps) + '">' + p.ps + '</span>' : '<span style="color:var(--text-subtle,var(--text-muted))">—</span>') + '</td>'
         + '<td class="r"><span style="color:var(--text-muted);font-size:12px">' + (p.tier != null ? 'T' + p.tier : '—') + '</span></td>'
         + '<td><span class="dd-verd dd-v-' + vd.cls + '">' + vd.label + '</span></td>'

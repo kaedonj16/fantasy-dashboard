@@ -201,6 +201,26 @@ def test_pick_ledger_formats_adp_delta_to_one_decimal():
     assert "var dtxt = fmtAdpDelta(p.diff);" in source
     assert "(p.diff > 0 ? '+' : '') + p.diff;" not in source
     assert "fmtAdpDelta(netValue)" in source
+    assert 'td class="r num"><span class="dd-diff' in source
+
+
+def test_pick_ledger_adp_column_is_right_aligned_tabular():
+    body = build_draft_room_body(None, None, None, is_guest=True)
+
+    assert ".dd-ledger thead th.r, .dd-ledger tbody td.r { text-align:right; font-variant-numeric:tabular-nums; }" in body
+    assert '.dd-diff { display:inline-block; min-width:6.2ch; text-align:right; font-weight:800;' in body
+    assert 'font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1; }' in body
+
+
+def test_summary_modal_keeps_footer_visible_and_roster_scrollable():
+    body = build_draft_room_body(None, None, None, is_guest=True)
+
+    assert "display:flex; flex-direction:column;" in body
+    assert "max-height:min(620px, calc(100dvh - 48px));" in body
+    assert ".dr-sum-body-wrap { padding:0 16px 4px; flex:1 1 auto; min-height:0; overflow-y:auto;" in body
+    assert ".dr-sum-footer { display:flex; gap:8px; padding:12px 16px 14px; flex-shrink:0;" in body
+    assert "max-height:min(78dvh, calc(100dvh - 16px));" in body
+    assert ".dr-summary-overlay { position:fixed; inset:0; z-index:1001; background:rgba(0,0,0,.6);\n    display:flex; align-items:center; justify-content:center; overflow:hidden;" in body
 
 
 def test_starters_meter_shows_percent_of_league_average():
