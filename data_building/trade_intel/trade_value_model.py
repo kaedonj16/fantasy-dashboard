@@ -46,6 +46,7 @@ import numpy as np
 from dashboard_services.db import get_conn
 from dashboard_services.picks import load_pick_value_table
 from data_building.trade_intel._helpers import _decay_weight
+from data_building.trade_intel.league_types import LeagueType, calibration_mode
 from data_building.value_model_training import _save_state
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,7 @@ MIN_LIFT           = 0.75  # ...and cut down to -25%. Symmetric ±25% band aroun
 ANCHOR_BASKET_N    = 5     # anchor the top-N basket MEAN (not a single #1) to MAX_VALUE so
                            # one player's day-to-day WLS solve can't drag the whole board
 TRADES_LOOKBACK_DAYS = 120 # only load trades from the last N days; >60d = weight 0.08
+MIN_REDRAFT_NATIVE_TRADES = int(os.environ.get("MIN_REDRAFT_NATIVE_TRADES", "500"))
 # max fractional day-over-day change in a calibrated value. 0.02 = ±2%/day, so a
 # player mid-re-rating tops out near +15%/week instead of the ~+40%/week ±5%/day
 # allowed. The displayed value is COALESCE(calibrated, raw) - i.e. the calibrated
@@ -138,11 +140,12 @@ def _pick_key(asset: dict, current_year: int | None = None) -> str:
 
 def _col_names(league_type: int, league_size: int) -> tuple[str, str]:
     """Return (col_1qb, col_sf) column names in player_values for this combination."""
-    if league_type == 2:  # dynasty
+    mode = calibration_mode(league_type)
+    if mode == "dynasty":
         if league_size == 10:
             return "calibrated_value_1qb", "calibrated_value_sf"
         return f"calibrated_value_{league_size}", f"calibrated_sf_value_{league_size}"
-    else:  # redraft
+    else:
         if league_size == 10:
             return "redraft_value_1qb", "redraft_value_sf"
         return f"redraft_value_{league_size}", f"redraft_sf_value_{league_size}"
@@ -197,9 +200,9 @@ def _load_prior(league_type: int = 2, league_size: int = 10) -> dict[str, dict]:
     """
     Load WLS regularization prior for players.
     Dynasty (2): raw model values (size-specific when available).
-    Redraft (1): FC redraft values stored in player_values (size-specific fallback chain).
+    Redraft (0): FC redraft values stored in player_values (size-specific fallback chain).
     """
-    if league_type == 1:
+    if calibration_mode(league_type) == "redraft":
         # Redraft prior: use FC redraft values; fall back through size chain
         if league_size == 10:
             c1  = "COALESCE(redraft_value_1qb, 0)"
@@ -329,6 +332,10 @@ def _load_pick_keys(season: int, league_type: int = 2, league_size: int = 10) ->
     lightweight DISTINCT query. Lets run_trade_value_model size the unknown
     vector without holding both full trade lists in memory at once (512Mi cap).
     """
+    # Draft picks are dynasty assets. Ignoring them in true-redraft prevents
+    # provider quirks/custom rules from manufacturing redraft pick values.
+    if calibration_mode(league_type) == "redraft":
+        return set()
     teams_clause = _teams_filter(league_size)
     with get_conn() as conn:
         rows = conn.execute(
@@ -367,20 +374,29 @@ def _build_normal_equations(
     all_idx: dict[str, int],
     N: int,
     current_year: int | None = None,
-) -> tuple[np.ndarray, np.ndarray, int]:
+    league_type: int = LeagueType.DYNASTY,
+) -> tuple[np.ndarray, np.ndarray, dict[str, int]]:
     """
     Accumulate AᵀWA (N×N) and AᵀWb (N,) without materialising the full matrix.
     Both players and pick unknowns are included - b_t = 0 for every trade.
 
-    Returns (AtWA, AtWb, n_constraints).
+    Returns (AtWA, AtWb, eligibility counts).
     """
     AtWA = np.zeros((N, N))
     AtWb = np.zeros(N)
-    n    = 0
+    stats = {"accepted": 0, "rejected_pick": 0,
+             "rejected_empty": 0, "rejected_one_sided": 0}
 
     for trade in trades:
         assets = trade["assets"]
         w      = trade["decay_weight"]
+
+        # A redraft package containing a pick cannot be valued by simply deleting
+        # the pick: doing so turns player+pick-for-player into player-for-player.
+        if (calibration_mode(league_type) == "redraft"
+                and any(a.get("asset_type") == "pick" for a in assets)):
+            stats["rejected_pick"] += 1
+            continue
 
         terms: list[tuple[int, float]] = []
         for a in assets:
@@ -396,12 +412,14 @@ def _build_normal_equations(
             terms.append((all_idx[key], sign))
 
         if not terms:
+            stats["rejected_empty"] += 1
             continue
 
         # Drop one-sided trades (multi-team fragments stored as separate records)
         has_a = any(s > 0 for _, s in terms)
         has_b = any(s < 0 for _, s in terms)
         if not has_a or not has_b:
+            stats["rejected_one_sided"] += 1
             continue
 
         # b_t = 0: picks are in the matrix, nothing left on the RHS
@@ -410,9 +428,9 @@ def _build_normal_equations(
                 AtWA[idx_i, idx_j] += w * sign_i * sign_j
             # AtWb stays 0 for this trade
 
-        n += 1
+        stats["accepted"] += 1
 
-    return AtWA, AtWb, n
+    return AtWA, AtWb, stats
 
 
 def _stream_normal_equations(
@@ -423,7 +441,7 @@ def _stream_normal_equations(
     all_idx: dict[str, int],
     N: int,
     current_year: int | None = None,
-) -> tuple[np.ndarray, np.ndarray, int]:
+) -> tuple[np.ndarray, np.ndarray, dict[str, int]]:
     """
     Streaming equivalent of _load_trades + _build_normal_equations for the cron
     path. Iterates trade rows with a server-side cursor (batched fetch) and folds
@@ -436,12 +454,17 @@ def _stream_normal_equations(
     teams_clause = _teams_filter(league_size)
     AtWA = np.zeros((N, N))
     AtWb = np.zeros(N)
-    n    = 0
+    stats = {"accepted": 0, "rejected_pick": 0,
+             "rejected_empty": 0, "rejected_one_sided": 0}
     now  = datetime.now(tz=timezone.utc)
 
     def _flush(assets: list[dict], created) -> None:
-        nonlocal n
+        if (calibration_mode(league_type) == "redraft"
+                and any(a.get("asset_type") == "pick" for a in assets)):
+            stats["rejected_pick"] += 1
+            return
         if not assets:
+            stats["rejected_empty"] += 1
             return
         if created and created.tzinfo is None:
             created = created.replace(tzinfo=timezone.utc)
@@ -462,14 +485,16 @@ def _stream_normal_equations(
             terms.append((all_idx[key], sign))
 
         if not terms:
+            stats["rejected_empty"] += 1
             return
         # Drop one-sided trades (multi-team fragments stored as separate records)
         if not any(s > 0 for _, s in terms) or not any(s < 0 for _, s in terms):
+            stats["rejected_one_sided"] += 1
             return
         for idx_i, sign_i in terms:
             for idx_j, sign_j in terms:
                 AtWA[idx_i, idx_j] += w * sign_i * sign_j
-        n += 1
+        stats["accepted"] += 1
 
     cur_tid = None
     cur_assets: list[dict] = []
@@ -516,7 +541,7 @@ def _stream_normal_equations(
                         "pick_slot":   r["pick_slot"],
                     })
             _flush(cur_assets, cur_created)
-    return AtWA, AtWb, n
+    return AtWA, AtWb, stats
 
 
 # ---------------------------------------------------------------------------
@@ -580,7 +605,7 @@ def _write_calibrated(rows: list[dict], league_size: int = 10) -> int:
     """Write WLS dynasty results to size-specific calibrated columns."""
     if not rows:
         return 0
-    col_1qb, col_sf = _col_names(2, league_size)
+    col_1qb, col_sf = _col_names(LeagueType.DYNASTY, league_size)
     with get_conn() as conn:
         # Per-player trade backing columns (confidence signal for the value model's
         # WLS blend). Idempotent migration so older DBs gain the columns.
@@ -620,22 +645,28 @@ def _write_calibrated(rows: list[dict], league_size: int = 10) -> int:
     return len(rows)
 
 
-def _write_redraft_values(rows: list[dict], league_size: int = 10) -> int:
+def _write_redraft_values(
+    rows: list[dict], league_size: int = 10, *,
+    write_1qb: bool = True, write_sf: bool = True,
+) -> int:
     """Write WLS redraft results to size-specific redraft columns."""
     if not rows:
         return 0
-    col_1qb, col_sf = _col_names(1, league_size)
+    col_1qb, col_sf = _col_names(LeagueType.REDRAFT, league_size)
+    if not write_1qb and not write_sf:
+        return 0
     with get_conn() as conn:
         prev = _prev_values(conn, col_1qb, col_sf, [r["player_id"] for r in rows])
         for r in rows:
             p1, psf = prev.get(str(r["player_id"]), (None, None))
+            assignments = []
+            if write_1qb:
+                assignments.append(f"{col_1qb} = %(v1)s")
+            if write_sf:
+                assignments.append(f"{col_sf} = %(vsf)s")
             conn.execute(
-                f"""
-                UPDATE player_values SET
-                    {col_1qb} = %(v1)s,
-                    {col_sf}  = %(vsf)s
-                WHERE player_id = %(player_id)s
-                """,
+                f"UPDATE player_values SET {', '.join(assignments)} "
+                "WHERE player_id = %(player_id)s",
                 {
                     "player_id": r["player_id"],
                     "v1":  _clamp_to_prev(r["redraft_value_1qb"], p1),
@@ -679,13 +710,15 @@ def run_trade_value_model(
     min_lift: float = MIN_LIFT,
     max_lift: float = MAX_LIFT,
     dry_run: bool = False,
+    min_native_trades: int | None = None,
+    write_formats: tuple[str, ...] = ("1qb", "sf"),
 ) -> dict:
     """
     Derive player (and pick) values from trade patterns via WLS.
 
     league_type=2 (dynasty): writes calibrated_value_{size} / calibrated_sf_value_{size}
                               + pick values to JSON (size=10 only).
-    league_type=1 (redraft):  writes redraft_value_{size} / redraft_sf_value_{size}.
+    league_type=0 (redraft):  writes redraft_value_{size} / redraft_sf_value_{size}.
     league_size: 8, 10 (default), 12, or 14 - filters trades by league num_teams.
 
     lambda_reg: regularization strength (default 8 ≈ 30 trades → 65% market influence).
@@ -704,7 +737,10 @@ def run_trade_value_model(
     if season is None:
         season = _detect_season()
 
-    mode = "redraft" if league_type == 1 else "dynasty"
+    mode = calibration_mode(league_type)
+    invalid_formats = set(write_formats) - {"1qb", "sf"}
+    if invalid_formats:
+        raise ValueError(f"Unsupported write formats: {sorted(invalid_formats)}")
     logger.info(
         "[trade_value_model] Season %d | mode=%s | size=%d | λ=%.1f",
         season, mode, league_size, lambda_reg,
@@ -787,13 +823,27 @@ def run_trade_value_model(
     # no full list resident). The empty-segment fallback just streams the other
     # segment via the src_* flags chosen above. Both matrices are N×N (small);
     # only the streaming batch and the current trade add to peak memory.
-    AtWA_1qb, AtWb_1qb, M_1qb = _stream_normal_equations(
+    AtWA_1qb, AtWb_1qb, stats_1qb = _stream_normal_equations(
         season, src_1qb_is_sf, league_type, league_size, all_idx, N, season)
     gc.collect()
-    AtWA_sf,  AtWb_sf,  M_sf  = _stream_normal_equations(
+    AtWA_sf,  AtWb_sf,  stats_sf  = _stream_normal_equations(
         season, src_sf_is_sf, league_type, league_size, all_idx, N, season)
     gc.collect()
-    M = M_1qb
+    M_1qb = stats_1qb["accepted"]
+    M_sf = stats_sf["accepted"]
+    M = M_1qb + M_sf
+
+    source_1qb = "borrowed_sf" if src_1qb_is_sf else "native_1qb"
+    source_sf = "native_sf" if src_sf_is_sf else "borrowed_1qb"
+    summary = {
+        "trades_used": M,
+        "trades_used_1qb": M_1qb,
+        "trades_used_sf": M_sf,
+        "source_1qb": source_1qb,
+        "source_sf": source_sf,
+        **{f"{key}_1qb": value for key, value in stats_1qb.items() if key != "accepted"},
+        **{f"{key}_sf": value for key, value in stats_sf.items() if key != "accepted"},
+    }
 
     logger.info("[trade_value_model] %d trade constraints - solving...", M)
     v_1qb = _solve(AtWA_1qb, AtWb_1qb, prior_1qb, lambda_reg)
@@ -802,13 +852,15 @@ def run_trade_value_model(
     # the WLS blend (rich trade history → trust WLS; thin → lean on vendors).
     # Captured before the matrix is freed.
     backing_1qb = np.diag(AtWA_1qb)[:n_pl].copy()
-    del AtWA_1qb, AtWb_1qb; gc.collect()
+    del AtWA_1qb, AtWb_1qb
+    gc.collect()
     v_sf  = _solve(AtWA_sf,  AtWb_sf,  prior_sf,  lambda_reg)
     # Per-player SF "backing" = diagonal of AᵀWA (total decayed weight of SF
     # trades the player appears in). Used to blend the SF solve vs the derived SF
     # value for skill players. Captured before the matrix is freed.
     sf_backing = np.diag(AtWA_sf)[:n_pl].copy()
-    del AtWA_sf, AtWb_sf; gc.collect()
+    del AtWA_sf, AtWb_sf
+    gc.collect()
 
     # Players: band the trade solve to ±25% of the prior (MIN_LIFT..MAX_LIFT),
     # symmetric so the market can mark a player down as well as up.
@@ -885,7 +937,7 @@ def run_trade_value_model(
         cal_sf  = float(v_sf_norm[i])
         prior_v = player_prior[pid]["value_1qb"]
         weight  = round(abs(cal_1qb - prior_v) / max(prior_v, 1.0), 4) if prior_v else 0.0
-        if league_type == 1:
+        if mode == "redraft":
             out_rows.append({
                 "player_id":        pid,
                 "redraft_value_1qb": round(cal_1qb, 2),
@@ -902,7 +954,7 @@ def run_trade_value_model(
                 "calibration_backing_sf": round(float(sf_backing[i]), 4) if i < len(sf_backing) else 0.0,
             })
 
-    val_key = "redraft_value_1qb" if league_type == 1 else "calibrated_value_1qb"
+    val_key = "redraft_value_1qb" if mode == "redraft" else "calibrated_value_1qb"
     top10 = sorted(out_rows, key=lambda r: r[val_key], reverse=True)[:10]
     logger.info("[trade_value_model] Top 10 %s player values (1QB):", mode)
     for r in top10:
@@ -917,16 +969,30 @@ def run_trade_value_model(
                         "value_sf":  player_prior[pid].get("value_sf"),
                         "position":  player_prior[pid].get("position")}
                   for pid in player_ids}
-        return {"written": 0, "dry_run": True, "trades_used": M, "players": n_pl,
+        return {"written": 0, "dry_run": True, **summary, "players": n_pl,
                 "season": season, "mode": mode, "league_size": league_size,
                 "min_lift": min_lift, "max_lift": max_lift,
                 "rows": out_rows, "priors": priors}
 
-    if league_type == 1:
-        n = _write_redraft_values(out_rows, league_size)
+    if mode == "redraft":
+        threshold = (MIN_REDRAFT_NATIVE_TRADES if min_native_trades is None
+                     else max(0, int(min_native_trades)))
+        qualify_1qb = ("1qb" in write_formats and source_1qb == "native_1qb"
+                       and M_1qb >= threshold)
+        qualify_sf = ("sf" in write_formats and source_sf == "native_sf"
+                      and M_sf >= threshold)
+        n = _write_redraft_values(
+            out_rows, league_size, write_1qb=qualify_1qb, write_sf=qualify_sf,
+        )
         logger.info("[trade_value_model] Done - %d redraft player values updated (%d-team).", n, league_size)
-        return {"written": n, "trades_used": M, "players": n_pl, "season": season,
-                "mode": mode, "league_size": league_size}
+        return {"written": n, **summary, "players": n_pl, "season": season,
+                "mode": mode, "league_size": league_size,
+                "minimum_native_trades": threshold,
+                "written_1qb": qualify_1qb, "written_sf": qualify_sf,
+                "status_1qb": ("not_requested" if "1qb" not in write_formats else
+                                "written" if qualify_1qb else "insufficient_trade_data"),
+                "status_sf": ("not_requested" if "sf" not in write_formats else
+                               "written" if qualify_sf else "insufficient_trade_data")}
 
     # --- Pick output (dynasty 10-team only - picks are size-invariant) ---
     n = _write_calibrated(out_rows, league_size)
@@ -948,7 +1014,7 @@ def run_trade_value_model(
         logger.info("[trade_value_model] Done - %d players + %d pick buckets updated.", n, len(pick_keys))
         return {
             "written":      n,
-            "trades_used":  M,
+            **summary,
             "players":      n_pl,
             "pick_buckets": len(pick_keys),
             "season":       season,
@@ -957,7 +1023,7 @@ def run_trade_value_model(
         }
 
     logger.info("[trade_value_model] Done - %d dynasty player values updated (%d-team).", n, league_size)
-    return {"written": n, "trades_used": M, "players": n_pl, "season": season,
+    return {"written": n, **summary, "players": n_pl, "season": season,
             "mode": mode, "league_size": league_size}
 
 
