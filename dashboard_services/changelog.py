@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-08-25",
+        "tag": "update",
+        "text": "Draft Room: Edit Setup now opens a modal on the current board so you can change scoring, roster, and capital without leaving the draft. Reset still wipes the board and returns to the main setup screen. The status bar also shows the league format (teams, Superflex, PPR, and pick order).",
+        "link": "/draft"
+    },
+    {
+        "date": "2026-08-25",
         "tag": "new",
         "text": "Player modal Trades tab: toggle between This League (every season, real counterparties) and the Trade Database. Traded picks resolve to the player drafted with them once that draft is complete — e.g. 2026 Pick 1.04 → Tetairoa McMillan.",
         "link": "/players"
