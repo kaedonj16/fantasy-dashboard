@@ -235,7 +235,7 @@ def test_pick_ledger_formats_adp_delta_to_one_decimal():
 def test_pick_ledger_adp_column_is_right_aligned_tabular():
     body = build_draft_room_body(None, None, None, is_guest=True)
 
-    assert ".dd-ledger thead th.r, .dd-ledger tbody td.r { text-align:right; font-variant-numeric:tabular-nums; }" in body
+    assert ".dd-ledger thead th.r, .dd-ledger tbody td.r { text-align:center; font-variant-numeric:tabular-nums; }" in body
     assert '.dd-diff { display:inline-block; min-width:6.2ch; text-align:right; font-weight:800;' in body
     assert 'font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1; }' in body
 

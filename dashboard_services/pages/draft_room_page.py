@@ -120,7 +120,6 @@ def build_draft_room_body(
 _DRAFT_ROOM_HTML = r"""
 <div class="dr-wrap">
   <div class="dr-hero" id="drHero">
-    <p class="dr-brand">BR Fantasy</p>
     <h1 class="dr-title">Draft Room</h1>
     <p class="dr-sub">Mock against CPU teams, draft manually, or sync a live Sleeper draft with best-available ranks, tiers, and a live grade.</p>
     <div class="dr-hero-actions">
@@ -476,10 +475,7 @@ _DRAFT_ROOM_HTML = r"""
     max-width: 1640px; margin: 0 auto; padding: 14px 14px 48px;
   }
   .dr-hero { margin: 2px 0 22px; text-align: center; }
-  .dr-brand {
-    margin: 0 0 8px; font-size: 11px; font-weight: 800; letter-spacing: 0.16em;
-    text-transform: uppercase; color: var(--brand-blue, #3b82f6);
-  }
+
   .dr-title {
     font-size: clamp(28px, 4.4vw, 40px); font-weight: 800; color: var(--text);
     margin: 0 0 8px; letter-spacing: -0.03em; line-height: 1.1;
@@ -1620,7 +1616,6 @@ def build_draft_history_body(
 _DRAFT_HISTORY_HTML = r"""
 <div class="dr-wrap">
   <div class="dr-hero">
-    <p class="dr-brand">BR Fantasy</p>
     <h1 class="dr-title">Draft History</h1>
     <p class="dr-sub">Every draft in your league's history. Open any board to review the picks pick-by-pick.</p>
     <div class="dr-hero-actions">
@@ -1635,10 +1630,6 @@ _DRAFT_HISTORY_HTML = r"""
 <style>
   .dr-wrap { max-width: 900px; margin: 0 auto; padding: 14px 14px 48px; }
   .dr-hero { margin-bottom: 18px; }
-  .dr-brand {
-    margin: 0 0 8px; font-size: 11px; font-weight: 800; letter-spacing: 0.16em;
-    text-transform: uppercase; color: var(--brand-blue, #3b82f6);
-  }
   .dr-title { font-size: clamp(24px,4vw,34px); font-weight: 800; color: var(--text); margin: 0 0 6px; letter-spacing: -0.03em; }
   .dr-sub { font-size: 15px; color: var(--text-muted); margin: 0; line-height: 1.5; max-width: 520px; }
   .dr-hero-actions { display: inline-flex; gap: 8px; margin-top: 12px; }
