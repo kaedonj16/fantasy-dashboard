@@ -157,3 +157,30 @@ def test_get_draft_results_maps_player_key_to_round(monkeypatch):
     out = yahoo_api.get_draft_results(2026, "12345", "tok")
     yahoo_api._yahoo_id_to_canonical.cache_clear()
     assert out == {"111": 1, "222": 7}   # mapped by yahoo_id; unmapped/round-less dropped
+
+
+def test_league_key_for_season_uses_that_years_game_key(monkeypatch):
+    yahoo_api._season_key_map.clear()
+    monkeypatch.setattr(
+        yahoo_api, "_nfl_game_keys",
+        lambda token: [(2026, "461"), (2025, "449")],
+    )
+    assert yahoo_api._league_key_for_season("123", 2025, "tok") == "449.l.123"
+    assert yahoo_api._league_key_for_season("123", 2026, "tok") == "461.l.123"
+
+
+def test_yahoo_league_exists_for_season(monkeypatch):
+    yahoo_api._season_key_map.clear()
+    monkeypatch.setattr(
+        yahoo_api, "_nfl_game_keys",
+        lambda token: [(2026, "461"), (2025, "449")],
+    )
+
+    def fake_get(token, path, params=None):
+        if "449.l.123" in path:
+            return {"fantasy_content": {"league": [{"name": "Dynasty"}]}}
+        raise RuntimeError("missing")
+
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", fake_get)
+    assert yahoo_api.yahoo_league_exists_for_season("tok", "123", 2025) is True
+    assert yahoo_api.yahoo_league_exists_for_season("tok", "123", 2024) is False
