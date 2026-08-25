@@ -121,8 +121,11 @@ one-source result is never labelled "Consensus".
 
 ## Caching, storage, reliability
 
-- Global feeds refresh centrally once daily (`refresh_global_adp_sources`, wired
-  into `cron_daily.py`), isolated per provider.
+- Global feeds refresh on every web deploy (`scripts/post_deploy.py`, spawned by
+  `startup.py`) so Yahoo/ESPN/MFL snapshots land on the web container's disk
+  (cron runs on a separate disk). A daily cron (`refresh_global_adp_sources` in
+  `cron_daily.py`) also refreshes them as a freshness backup. Each provider is
+  isolated.
 - Snapshots persist to `data/adp_snapshots/{source}_{axis}_{season}.json`
   (atomic writes) and are best-effort mirrored into the `adp_snapshots` table
   (migration `029_adp_snapshots.sql`, additive; disk stays the request-path source
