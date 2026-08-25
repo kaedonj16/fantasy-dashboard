@@ -1009,7 +1009,15 @@ _DRAFT_ROOM_HTML = r"""
     padding:calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 20px); }
   .dr-summary-card { position:relative; width:100%; max-width:500px; margin:0 auto; background:var(--card);
     border:1px solid var(--border); border-radius:20px; overflow:hidden;
-    box-shadow:0 24px 80px rgba(0,0,0,.5); }
+    box-shadow:0 24px 80px rgba(0,0,0,.5);
+    /* Cap to the viewport (minus the overlay's safe-area padding) and lay the card
+       out as a column so the roster list scrolls INSIDE the card while the header
+       and footer stay pinned — otherwise a full roster overflows the screen and
+       the top/bottom get clipped on mobile. */
+    display:flex; flex-direction:column;
+    max-height:calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 36px);
+    max-height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 36px); }
+  .dr-sum-header, .dr-sum-stats, .dr-sum-arch, .dr-sum-footer { flex:none; }
   /* Grade ring + bars header */
   .dr-sum-header { padding:20px 20px 0; }
   .dr-sum-title { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.1em;
@@ -1037,8 +1045,9 @@ _DRAFT_ROOM_HTML = r"""
   .dr-win-winnow { background:color-mix(in srgb, var(--win) 16%, transparent); color:var(--win); }
   .dr-win-balanced { background:color-mix(in srgb, var(--warning) 16%, transparent); color:var(--warning); }
   .dr-win-future { background:color-mix(in srgb, var(--accent) 16%, transparent); color:var(--accent); }
-  /* Body wrapper + section labels */
-  .dr-sum-body-wrap { padding:0 16px 4px; }
+  /* Body wrapper + section labels. This is the card's scroll region: it takes the
+     leftover height and scrolls the roster, so the header/stats and footer stay put. */
+  .dr-sum-body-wrap { padding:0 16px 4px; flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; }
   .dr-sum-section { font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.08em;
     color:var(--text-muted); margin:14px 0 6px; }
   /* Player rows */
@@ -1081,7 +1090,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-dd-prochip, .dr-sum-prolock { font-size:9px; font-weight:800; letter-spacing:.06em; background:var(--accent); color:var(--on-accent,#fff); border-radius:4px; padding:1px 5px; margin-left:7px; }
   /* ── Deep Dive analyzer ── */
   .dr-dd-overlay { position:fixed; inset:0; z-index:12500; background:rgba(0,0,0,.62); display:flex; align-items:flex-start; justify-content:center; overflow-y:auto; padding:calc(env(safe-area-inset-top) + 14px) 14px calc(env(safe-area-inset-bottom) + 18px); }
-  .dr-dd-card { position:relative; width:100%; max-width:940px; margin:0 auto; background:var(--bg); border:1px solid var(--border); border-radius:20px; overflow:hidden; box-shadow:0 24px 80px rgba(0,0,0,.5); display:flex; flex-direction:column; max-height:calc(100vh - 40px); }
+  .dr-dd-card { position:relative; width:100%; max-width:940px; margin:0 auto; background:var(--bg); border:1px solid var(--border); border-radius:20px; overflow:hidden; box-shadow:0 24px 80px rgba(0,0,0,.5); display:flex; flex-direction:column; max-height:calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 32px); max-height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 32px); }
   .dr-dd-card .dr-prev-close { z-index:3; }
   .dd-head { padding:20px 22px 16px; border-bottom:1px solid var(--border); background:var(--card); }
   .dd-kicker { font-family:"Archivo",sans-serif; font-size:11px; font-weight:800; letter-spacing:.11em; text-transform:uppercase; color:var(--text-muted); display:flex; align-items:center; }
