@@ -459,21 +459,7 @@ _DRAFT_ROOM_HTML = r"""
 <style>
   .dr-wrap {
     max-width: 1640px; margin: 0 auto; padding: 14px 14px 48px;
-    position: relative;
   }
-  .dr-wrap::before {
-    content: ""; position: absolute; inset: -8px -4% auto; height: min(340px, 46vh);
-    pointer-events: none; z-index: 0;
-    background:
-      radial-gradient(ellipse 65% 55% at 18% 12%, rgba(56, 189, 248, 0.14), transparent 62%),
-      radial-gradient(ellipse 50% 45% at 88% 0%, rgba(18, 45, 75, 0.1), transparent 58%);
-  }
-  :root[data-theme="dark"] .dr-wrap::before {
-    background:
-      radial-gradient(ellipse 65% 55% at 16% 10%, rgba(56, 189, 248, 0.12), transparent 60%),
-      radial-gradient(ellipse 48% 42% at 90% 0%, rgba(59, 130, 246, 0.1), transparent 55%);
-  }
-  .dr-hero, .dr-setup, .dr-main { position: relative; z-index: 1; }
   .dr-hero { margin: 2px 0 22px; text-align: center; }
   .dr-brand {
     margin: 0 0 8px; font-size: 11px; font-weight: 800; letter-spacing: 0.16em;
@@ -1568,15 +1554,8 @@ _DRAFT_HISTORY_HTML = r"""
 </div>
 
 <style>
-  .dr-wrap { max-width: 900px; margin: 0 auto; padding: 14px 14px 48px; position: relative; }
-  .dr-wrap::before {
-    content: ""; position: absolute; inset: -8px -4% auto; height: min(260px, 40vh);
-    pointer-events: none; z-index: 0;
-    background:
-      radial-gradient(ellipse 65% 55% at 18% 12%, rgba(56, 189, 248, 0.12), transparent 62%),
-      radial-gradient(ellipse 50% 45% at 88% 0%, rgba(18, 45, 75, 0.08), transparent 58%);
-  }
-  .dr-hero { margin-bottom: 18px; position: relative; z-index: 1; }
+  .dr-wrap { max-width: 900px; margin: 0 auto; padding: 14px 14px 48px; }
+  .dr-hero { margin-bottom: 18px; }
   .dr-brand {
     margin: 0 0 8px; font-size: 11px; font-weight: 800; letter-spacing: 0.16em;
     text-transform: uppercase; color: var(--brand-blue, #3b82f6);

@@ -11511,29 +11511,6 @@ a.signed-home-league:hover {
     display: flex;
     flex-direction: column;
     gap: 36px;
-    position: relative;
-}
-
-/* Soft brand atmosphere behind the landing composition (not a flat fill). */
-.home-page::before {
-    content: "";
-    position: absolute;
-    inset: -24px -8% auto;
-    height: min(520px, 70vh);
-    pointer-events: none;
-    z-index: 0;
-    background:
-        radial-gradient(ellipse 70% 55% at 12% 18%, rgba(56, 189, 248, 0.16), transparent 62%),
-        radial-gradient(ellipse 55% 50% at 88% 8%, rgba(18, 45, 75, 0.12), transparent 58%),
-        linear-gradient(180deg, rgba(244, 246, 248, 0.9), transparent 78%);
-    border-radius: 0 0 48% 48% / 0 0 28px 28px;
-}
-
-:root[data-theme="dark"] .home-page::before {
-    background:
-        radial-gradient(ellipse 70% 55% at 14% 16%, rgba(56, 189, 248, 0.14), transparent 60%),
-        radial-gradient(ellipse 50% 45% at 90% 6%, rgba(59, 130, 246, 0.1), transparent 55%),
-        linear-gradient(180deg, rgba(15, 23, 42, 0.55), transparent 80%);
 }
 
 .home-brand {
@@ -27805,7 +27782,7 @@ button:disabled {
 }
 
 
-/* Shared BR Fantasy page brand + public-page atmosphere */
+/* Shared BR Fantasy page brand */
 .br-page-brand {
     margin: 0 0 8px;
     font-size: 11px;
@@ -27815,38 +27792,6 @@ button:disabled {
     color: var(--brand-blue, #3b82f6);
     display: inline-flex;
     align-items: center;
-}
-
-.dvt-page, .rf-page, .rnk-page, .compare-page, .wl-page {
-    position: relative;
-}
-
-.dvt-page::before, .rf-page::before, .rnk-page::before, .compare-page::before {
-    content: "";
-    position: absolute;
-    inset: -12px -6% auto;
-    height: min(280px, 42vh);
-    pointer-events: none;
-    z-index: 0;
-    background:
-        radial-gradient(ellipse 65% 55% at 16% 10%, rgba(56, 189, 248, 0.12), transparent 62%),
-        radial-gradient(ellipse 48% 42% at 90% 0%, rgba(18, 45, 75, 0.08), transparent 58%);
-}
-
-:root[data-theme="dark"] .dvt-page::before,
-:root[data-theme="dark"] .rf-page::before,
-:root[data-theme="dark"] .rnk-page::before,
-:root[data-theme="dark"] .compare-page::before {
-    background:
-        radial-gradient(ellipse 65% 55% at 16% 10%, rgba(56, 189, 248, 0.1), transparent 60%),
-        radial-gradient(ellipse 48% 42% at 90% 0%, rgba(59, 130, 246, 0.08), transparent 55%);
-}
-
-.dvt-hero, .rf-hero, .rnk-hero, .compare-page-head, .wl-page-head,
-.dvt-controls, .rf-grid, .rnk-pos-nav, .rnk-table-wrap, .dvt-table-wrap,
-.compare-pickers, .compare-actions {
-    position: relative;
-    z-index: 1;
 }
 
 .dvt-title, .rf-title, .rnk-title {
