@@ -1112,17 +1112,17 @@ FORM_BODY = """
 <div class="home-page">
   <section class="home-hero">
     <div class="home-hero-left">
+      <p class="home-brand">BR Fantasy</p>
       <h1 class="home-title">Your dynasty league,<br><span class="home-rot" aria-label="upgraded"><span class="home-rot-track"><span>upgraded.</span><span>decoded.</span><span>dominated.</span><span>upgraded.</span></span></span></h1>
       <p class="home-subtitle">
-        Advanced analytics, AI-powered insights, and professional-grade tools for Sleeper, ESPN, and Yahoo leagues.
+        Trade values, AI analysis, and league tools for Sleeper, ESPN, Yahoo, and MFL. Built for serious managers.
       </p>
-
-      <ul class="home-bullets">
-        <li><strong>AI Trade Analyst</strong> - Personalized deal evaluation with counter suggestions</li>
-        <li><strong>Dynasty Value Engine</strong> - Hybrid model combining consensus data and advanced metrics</li>
-        <li><strong>Weekly Projections</strong> - Live scoring, matchup previews, and storyline tracking</li>
-        <li><strong>Historical Analysis</strong> - Season recaps, power rankings, and trend visualization</li>
-      </ul>
+      <div class="home-platform-row" aria-label="Supported platforms">
+        <span class="home-platform-chip">Sleeper</span>
+        <span class="home-platform-chip">ESPN</span>
+        <span class="home-platform-chip">Yahoo</span>
+        <span class="home-platform-chip">MFL</span>
+      </div>
     </div>
 
     <div class="home-hero-right">
@@ -1341,6 +1341,25 @@ FORM_BODY = """
     </div>
   </section>
 
+  <section class="home-proof" aria-label="What you get">
+    <div class="home-proof-item">
+      <span class="home-proof-label">AI Trade Analyst</span>
+      <span class="home-proof-desc">Deal grades and counter suggestions tailored to your roster</span>
+    </div>
+    <div class="home-proof-item">
+      <span class="home-proof-label">Dynasty Values</span>
+      <span class="home-proof-desc">Hybrid consensus and metrics model updated daily</span>
+    </div>
+    <div class="home-proof-item">
+      <span class="home-proof-label">Weekly Command</span>
+      <span class="home-proof-desc">Live scoring, matchups, and storyline tracking</span>
+    </div>
+    <div class="home-proof-item">
+      <span class="home-proof-label">League History</span>
+      <span class="home-proof-desc">Season recaps, power rankings, and trend charts</span>
+    </div>
+  </section>
+
   <div class="home-content-wrapper">
     <section class="home-feature-list-card">
       <div class="home-features-header">
@@ -1350,8 +1369,8 @@ FORM_BODY = """
       <div class="home-feature-list">
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(99,102,241,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#6366f1;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.44-3.14Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.44-3.14Z"/></svg>
+          <div class="home-feature-row-icon home-fi-1">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.44-3.14Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.44-3.14Z"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Trade Strategy <span class="home-feature-badge">New</span> <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
@@ -1360,8 +1379,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(59,130,246,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#3b82f6;" viewBox="0 0 24 24" fill="currentColor"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg>
+          <div class="home-feature-row-icon home-fi-2">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Trade Calculator</span>
@@ -1370,8 +1389,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(139,92,246,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#8b5cf6;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 12l4-4 4 4 4-6"/></svg>
+          <div class="home-feature-row-icon home-fi-3">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 12l4-4 4 4 4-6"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Trade Intelligence <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
@@ -1380,8 +1399,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(16,185,129,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#10b981;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+          <div class="home-feature-row-icon home-fi-4">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Player Rankings</span>
@@ -1390,8 +1409,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(20,184,166,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#14b8a6;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M6 8h.01M9 8h6M6 11h.01M9 11h9"/></svg>
+          <div class="home-feature-row-icon home-fi-1">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M6 8h.01M9 8h6M6 11h.01M9 11h9"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Advanced Metrics</span>
@@ -1400,8 +1419,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(167,139,250,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#a78bfa;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          <div class="home-feature-row-icon home-fi-2">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Rookie Prospects</span>
@@ -1410,8 +1429,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(245,158,11,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#f59e0b;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 16 4-4 4 4 4-4"/></svg>
+          <div class="home-feature-row-icon home-fi-3">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 16 4-4 4 4 4-4"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Playoff Odds</span>
@@ -1420,8 +1439,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(6,182,212,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#06b6d4;" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>
+          <div class="home-feature-row-icon home-fi-4">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Weekly Hub</span>
@@ -1430,8 +1449,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(249,115,22,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#f97316;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          <div class="home-feature-row-icon home-fi-1">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Breakout Engine <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
@@ -1440,8 +1459,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(236,72,153,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#ec4899;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+          <div class="home-feature-row-icon home-fi-2">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Waivers &amp; Start/Sit</span>
@@ -1450,8 +1469,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(239,68,68,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#ef4444;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>
+          <div class="home-feature-row-icon home-fi-3">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Team Analytics</span>
@@ -1460,8 +1479,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(234,179,8,.12);border-radius:8px;">
-            <i class="fa-solid fa-trophy" style="font-size:16px;color:#eab308;" aria-hidden="true"></i>
+          <div class="home-feature-row-icon home-fi-4">
+            <i class="fa-solid fa-trophy" aria-hidden="true"></i>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">League History</span>
