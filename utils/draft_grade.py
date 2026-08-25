@@ -134,25 +134,53 @@ def dr_league_lineup_avg(
     return (sum(values) / len(values)) if values else None
 
 
+# Value / Starters / Construction point caps. Startup stays process-heavy (ADP
+# value + conventional roster shape). Redraft is outcome-heavy: starting-lineup
+# PPG is what the playoff-odds sim ranks teams on, and a 35/25/40 split let
+# pick-score value invert that ranking (worst-graded team, 3rd-highest odds).
+DR_SPLIT_STARTUP = (35.0, 25.0, 40.0)
+DR_SPLIT_REDRAFT = (20.0, 50.0, 30.0)
+# Construction mix: coverage / positional balance / extra-pick efficiency.
+# Redraft leans on filled starting slots (empty slots score 0 in the odds sim);
+# extra bench bodies are depth, not a grade penalty.
+DR_CONSTRUCTION_STARTUP = (0.45, 0.30, 0.25)
+DR_CONSTRUCTION_REDRAFT = (0.70, 0.20, 0.10)
+
+
+def dr_grade_split(draft_type: str) -> tuple[float, float, float]:
+    """Shipped Value/Starters/Construction caps for ``draft_type``."""
+    return DR_SPLIT_REDRAFT if draft_type == "redraft" else DR_SPLIT_STARTUP
+
+
+def dr_construction_mix(draft_type: str) -> tuple[float, float, float]:
+    """Coverage / balance / efficiency weights for construction_raw."""
+    return DR_CONSTRUCTION_REDRAFT if draft_type == "redraft" else DR_CONSTRUCTION_STARTUP
+
+
 def dr_team_grade_score(
     picks: "list[dict]", *, slots: "list[str]", targets: dict, num_teams: int,
     draft_type: str, league_ppg_list: "list[float]", league_val_list: "list[float]",
     league_players: Optional["list[dict]"] = None,
-    value_weight: float = 35.0, starter_weight: float = 25.0, balance_weight: float = 40.0,
+    value_weight: Optional[float] = None, starter_weight: Optional[float] = None,
+    balance_weight: Optional[float] = None,
 ) -> Optional[float]:
     """Mirror gradePicks() (startup/redraft branch) -> raw 0-100 composite.
     `picks` items: {id, pos, ps, pn, val, ppg}. Returns None if not gradeable.
 
-    value/starter/balance_weight are the point caps for the three components
-    (default 35/25/40 = the shipped split). Two independent redraft backtests
-    (1,573 and 1,623 teams) both ranked 35/25/40 #1 by the same margin (+0.214 vs
-    35/35/30's +0.193): starter-strength (a noisy same-season proxy) was
-    over-weighted and roster construction under-weighted. The composite also
-    beats raw avg pick score (+0.202 vs +0.166). The backtest overrides these to
-    sweep further; the JS mirror uses the same split, so parity holds when they're
-    left as defaults."""
+    value/starter/balance_weight are the point caps for the three components.
+    ``None`` (the default) picks the shipped split for ``draft_type``:
+    startup 35/25/40, redraft 20/50/30. The backtest overrides these to sweep
+    further; the JS mirror uses the same per-type split, so parity holds when
+    they're left as defaults."""
     if not picks:
         return None
+    split_v, split_s, split_b = dr_grade_split(draft_type)
+    if value_weight is None:
+        value_weight = split_v
+    if starter_weight is None:
+        starter_weight = split_s
+    if balance_weight is None:
+        balance_weight = split_b
     starter_ids = dr_optimal_lineup(picks, slots)
     # Each starter occupies exactly one slot, so filled slots == starters chosen.
     coverage = (len(starter_ids) / len(slots)) if slots else 0.0
@@ -185,6 +213,11 @@ def dr_team_grade_score(
             league_ppg_avg = dr_avg_top_n(league_ppg_list, n_start)
         if league_ppg_avg > 0:
             ppg_ratio = my_ppg_avg / league_ppg_avg
+            # Redraft playoff odds sum every starting slot (empty = 0). Scale the
+            # filled-starter average by coverage so a stars-and-scrubs lineup
+            # with holes doesn't outrank a complete one on mean PPG alone.
+            if draft_type == "redraft" and slots:
+                ppg_ratio *= coverage
     my_val_avg = (sum((p.get("val") or 0) for p in starter_arr) / len(starter_arr)) if starter_arr else 0.0
     # Prefer a position-aware starting field when the caller has the player pool.
     # The list-only fallback preserves compatibility for offline backtests.
@@ -215,7 +248,8 @@ def dr_team_grade_score(
         useful_picks += min(counts[pos], cap)
         graded_picks += counts[pos]
     efficiency = (useful_picks / graded_picks) if graded_picks > 0 else 1.0
-    construction_raw = clamp01(0.45 * coverage + 0.30 * (bsum / 4) + 0.25 * efficiency)
+    cov_w, bal_w, eff_w = dr_construction_mix(draft_type)
+    construction_raw = clamp01(cov_w * coverage + bal_w * (bsum / 4) + eff_w * efficiency)
     ramp = min(1.0, len(picks) / 8)
     balance_pts = math.floor(((1 - ramp) * 0.85 + ramp * construction_raw) * balance_weight + 0.5)
 

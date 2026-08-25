@@ -3910,9 +3910,11 @@
         avgPs: avgPs ? Math.round(avgPs) : null, window: null };
     }
 
-    // Startup / redraft composite (Value 35 / Starters 25 / Construction 40)
-    // lives in static/draft_grade_team.js (BRTeamGrade), shared with the Python
-    // server grade and pinned by a parity test. K/DEF are excluded from grading.
+    // Startup / redraft composite lives in static/draft_grade_team.js
+    // (BRTeamGrade), shared with the Python server grade and pinned by a parity
+    // test. Startup is Value 35 / Starters 25 / Construction 40; redraft is
+    // 20/50/30 so lineup strength (what playoff odds rank) leads. K/DEF are
+    // excluded from grading.
     var _slots = lineupSlots().filter(function(s){ return s !== 'K' && s !== 'DEF'; });
     var _leaguePpg = [];
     players.forEach(function(q){ var v = ppgOf(q); if (v != null) _leaguePpg.push(v); });
@@ -4075,17 +4077,27 @@
   }
   // Per-component max points. Rookie grade is value-only (avg pick score);
   // startup/redraft weights pick value, starting-lineup strength, and construction.
+  // Caps must match BRTeamGrade / utils.draft_grade splits.
   function gradeMax(){
-    return (state.type === 'rookie') ? { value:100, balance:0, tier:0 }
-                                     : { value:35, balance:40, tier:25 };
+    if (state.type === 'rookie') return { value:100, balance:0, tier:0 };
+    var split = (state.type === 'redraft')
+      ? ((window.BRTeamGrade && window.BRTeamGrade.SPLIT_REDRAFT) || [20, 50, 30])
+      : ((window.BRTeamGrade && window.BRTeamGrade.SPLIT_STARTUP) || [35, 25, 40]);
+    return { value: split[0], balance: split[2], tier: split[1] };
   }
   function gradeBars(g){
     var m = gradeMax();
     if (state.type === 'rookie') return gradeBar('Avg Pick Score', g.value, 100, 'The bar shows average 0-100 pick score (same chips shown on each pick). The letter grade uses the BPA/ADP system: did you reach, and was a better player available?');
     // g.tier holds the starting-lineup strength component.
+    var starterTip = state.type === 'redraft'
+      ? 'Projected starting-lineup PPG versus a league-average team — the same strength playoff odds use. This is the largest slice of a redraft grade.'
+      : 'How good your projected starting lineup is versus a league-average team.';
+    var consTip = state.type === 'redraft'
+      ? 'Mostly whether you’ve filled starting slots. Extra bench depth is not a penalty; empty starters are.'
+      : 'How well you’ve filled your starting slots and balanced positions.';
     return gradeBar('Value', g.value, m.value, 'How strong your picks are by pick score, weighted toward the earlier rounds.')
-      + gradeBar('Starters', g.tier, m.tier, 'How good your projected starting lineup is versus a league-average team.')
-      + gradeBar('Construction', g.balance, m.balance, 'How well you’ve filled your starting slots and balanced positions.');
+      + gradeBar('Starters', g.tier, m.tier, starterTip)
+      + gradeBar('Construction', g.balance, m.balance, consTip);
   }
 
   function renderNeeds(){

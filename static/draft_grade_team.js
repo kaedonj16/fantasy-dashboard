@@ -6,6 +6,7 @@
 // letter from this same math; tests/test_team_grade_parity.py runs this via Node
 // against the Python copy and fails CI on any drift.
 //
+// Caps: startup 35/25/40 (value/starters/construction), redraft 20/50/30.
 // picks items: { id, pos, ps, pn, val, ppg }. Returns the raw 0-100 composite
 // breakdown { total, value, starter, balance, starterIds } or null.
 (function (root, factory) {
@@ -71,8 +72,18 @@
     return vals.length ? vals.reduce(function (a, b) { return a + b; }, 0) / vals.length : null;
   }
 
+  // Value / Starters / Construction caps. Must match utils/draft_grade.py
+  // DR_SPLIT_* / DR_CONSTRUCTION_* (pinned by tests/test_team_grade_parity.py).
+  var SPLIT_STARTUP = [35, 25, 40];
+  var SPLIT_REDRAFT = [20, 50, 30];
+  var CONSTRUCTION_STARTUP = [0.45, 0.30, 0.25];
+  var CONSTRUCTION_REDRAFT = [0.70, 0.20, 0.10];
+
   function teamGradeComposite(picks, slots, targets, numTeams, draftType, leaguePpg, leagueVal, leaguePlayers) {
     if (!picks || !picks.length) return null;
+    var redraft = draftType === 'redraft';
+    var split = redraft ? SPLIT_REDRAFT : SPLIT_STARTUP;
+    var valueWeight = split[0], starterWeight = split[1], balanceWeight = split[2];
     var starterIds = optimalLineupIds(picks, slots);
     var nStartFilled = 0;
     for (var _k in starterIds) if (starterIds.hasOwnProperty(_k)) nStartFilled++;
@@ -89,7 +100,9 @@
       wSum += (+x.ps) * wt; wTot += wt;
     });
     var starterAvgPs = wTot > 0 ? wSum / wTot : avgPs;
-    var valuePts = starterAvgPs != null ? rnd(clamp01((starterAvgPs || 0) / 100) * 35) : 17;
+    var valuePts = starterAvgPs != null
+      ? rnd(clamp01((starterAvgPs || 0) / 100) * valueWeight)
+      : Math.floor(valueWeight / 2);
 
     // 2) Starting-lineup strength vs a league-average team.
     var starterArr = picks.filter(function (p) { return starterIds[String(p.id)]; });
@@ -100,7 +113,13 @@
       var myPpgAvg = myPpgs.reduce(function (a, b) { return a + b; }, 0) / myPpgs.length;
       var leaguePpgAvg = leagueLineupAvg(leaguePlayers, slots, numTeams, 'ppg');
       if (leaguePpgAvg == null) leaguePpgAvg = avgTopN(leaguePpg || [], nStart);
-      if (leaguePpgAvg > 0) ppgRatio = myPpgAvg / leaguePpgAvg;
+      if (leaguePpgAvg > 0) {
+        ppgRatio = myPpgAvg / leaguePpgAvg;
+        // Redraft playoff odds sum every starting slot (empty = 0). Scale the
+        // filled-starter average by coverage so a stars-and-scrubs lineup with
+        // holes doesn't outrank a complete one on mean PPG alone.
+        if (redraft && slots.length) ppgRatio *= coverage;
+      }
     }
     var myValAvg = starterArr.length
       ? starterArr.reduce(function (a, p) { return a + (+p.val || 0); }, 0) / starterArr.length : 0;
@@ -108,14 +127,14 @@
     if (leagueValAvg == null) leagueValAvg = avgTopN(leagueVal || [], nStart);
     var valueRatio = leagueValAvg > 0 ? myValAvg / leagueValAvg : null;
     var strengthRatio;
-    if (draftType === 'redraft') {
+    if (redraft) {
       strengthRatio = ppgRatio != null ? ppgRatio : (valueRatio != null ? valueRatio : 0.80);
     } else if (ppgRatio != null && valueRatio != null) {
       strengthRatio = 0.6 * ppgRatio + 0.4 * valueRatio;
     } else {
       strengthRatio = ppgRatio != null ? ppgRatio : (valueRatio != null ? valueRatio : 0.80);
     }
-    var starterPts = rnd(clamp01((strengthRatio - 0.80) / 0.40) * 25);
+    var starterPts = rnd(clamp01((strengthRatio - 0.80) / 0.40) * starterWeight);
 
     // 3) Construction: coverage + balance + efficiency.
     var counts = { QB: 0, RB: 0, WR: 0, TE: 0 };
@@ -131,9 +150,10 @@
       gradedPicks += counts[pos];
     });
     var efficiency = gradedPicks > 0 ? usefulPicks / gradedPicks : 1;
-    var constructionRaw = clamp01(0.45 * coverage + 0.30 * (bsum / 4) + 0.25 * efficiency);
+    var mix = redraft ? CONSTRUCTION_REDRAFT : CONSTRUCTION_STARTUP;
+    var constructionRaw = clamp01(mix[0] * coverage + mix[1] * (bsum / 4) + mix[2] * efficiency);
     var ramp = Math.min(1, picks.length / 8);
-    var balancePts = rnd(((1 - ramp) * 0.85 + ramp * constructionRaw) * 40);
+    var balancePts = rnd(((1 - ramp) * 0.85 + ramp * constructionRaw) * balanceWeight);
 
     return {
       total: valuePts + starterPts + balancePts,
@@ -146,5 +166,7 @@
     teamGradeComposite: teamGradeComposite,
     optimalLineupIds: optimalLineupIds,
     leagueLineupAvg: leagueLineupAvg,
+    SPLIT_STARTUP: SPLIT_STARTUP,
+    SPLIT_REDRAFT: SPLIT_REDRAFT,
   };
 });

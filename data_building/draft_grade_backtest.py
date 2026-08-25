@@ -482,7 +482,8 @@ def sweep_composite_split(
     include_types=("startup", "redraft"),
 ) -> List[Tuple[Tuple[float, float, float], Optional[float]]]:
     """Rank Value/Starters/Construction splits by how well the composite tracks
-    outcomes. The shipped split is (35, 35, 30). Best-first; undefined last."""
+    outcomes. Live shipped splits are redraft (20, 50, 30) and startup
+    (35, 25, 40). Best-first; undefined last."""
     out = [(sp, correlate_composite_to_finish(samples, weights, sp, method, include_types))
            for sp in splits]
     out.sort(key=lambda t: (t[1] is not None, t[1] if t[1] is not None else 0.0), reverse=True)
@@ -522,7 +523,7 @@ def team_facet_scores(sample: TeamSample) -> Dict[str, Optional[float]]:
     are cosmetic. Uses current pool values as a proxy for draft-era ones (same
     limitation as the rest of the harness), so read the horizons comparatively.
     """
-    from utils.draft_grade import dr_optimal_lineup
+    from utils.draft_grade import dr_construction_mix, dr_optimal_lineup
 
     picks = sample.picks
     if not picks:
@@ -551,8 +552,9 @@ def team_facet_scores(sample: TeamSample) -> Dict[str, Optional[float]]:
     future = (sum(fut_vals) / len(fut_vals)) if fut_vals else None
 
     # depth: construction_raw (coverage + balance + efficiency), same as the
-    # composite's third component.
+    # composite's third component (mix follows draft type).
     is_sf = bool(sample.meta.get("is_sf"))
+    dtype = "redraft" if (sample.meta.get("draft_type") == "redraft") else "startup"
     slots = _SLOTS_SF if is_sf else _SLOTS_1QB
     targets = _TARGETS_SF if is_sf else _TARGETS_1QB
     lin_picks = [{"id": i, "pos": pk.get("pos"), "ps": 50, "pn": pk.get("pick_no"),
@@ -572,7 +574,8 @@ def team_facet_scores(sample: TeamSample) -> Dict[str, Optional[float]]:
         useful += min(counts[pos], t + 1)
         graded += counts[pos]
     eff = (useful / graded) if graded > 0 else 1.0
-    depth = _clamp01_local(0.45 * coverage + 0.30 * (bsum / 4) + 0.25 * eff)
+    cov_w, bal_w, eff_w = dr_construction_mix(dtype)
+    depth = _clamp01_local(cov_w * coverage + bal_w * (bsum / 4) + eff_w * eff)
 
     return {"win_now": win_now, "future": future, "depth": depth}
 
