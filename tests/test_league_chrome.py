@@ -1,5 +1,9 @@
 """Unit tests for the persistent league + week chrome labels."""
+from pathlib import Path
+
 from utils.league_chrome import build_league_chrome, format_label, week_label
+
+_APP_PY = Path(__file__).resolve().parents[1] / "app.py"
 
 
 def test_format_label_includes_size_and_qb_type():
@@ -39,3 +43,12 @@ def test_build_chrome_fallback_name_and_1qb():
     assert meta["raw_name"] == ""
     assert meta["format"] == "10tm 1QB"
     assert meta["week_label"] == "Week 1"
+
+
+def test_hub_page_titles_do_not_restate_week():
+    """Season/Offseason Hub H1s stay just the hub name; week lives in chrome."""
+    src = _APP_PY.read_text(encoding="utf-8")
+    assert '<h1 class="os-hero-title">Season Hub</h1>' in src
+    assert '<h1 class="os-hero-title">Offseason Hub</h1>' in src
+    assert "Viewing {season}" not in src
+    assert "Viewing {html.escape(str(season))}" not in src
