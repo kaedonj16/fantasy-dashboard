@@ -1416,7 +1416,7 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon home-fi-1">
+          <div class="home-feature-row-icon home-fi-5">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M6 8h.01M9 8h6M6 11h.01M9 11h9"/></svg>
           </div>
           <div class="home-feature-row-body">
@@ -1426,7 +1426,7 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon home-fi-2">
+          <div class="home-feature-row-icon home-fi-6">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
           </div>
           <div class="home-feature-row-body">
@@ -1436,7 +1436,7 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon home-fi-3">
+          <div class="home-feature-row-icon home-fi-7">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 16 4-4 4 4 4-4"/></svg>
           </div>
           <div class="home-feature-row-body">
@@ -1446,7 +1446,7 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon home-fi-4">
+          <div class="home-feature-row-icon home-fi-8">
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>
           </div>
           <div class="home-feature-row-body">
@@ -1456,7 +1456,7 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon home-fi-1">
+          <div class="home-feature-row-icon home-fi-9">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
           </div>
           <div class="home-feature-row-body">
@@ -1466,7 +1466,7 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon home-fi-2">
+          <div class="home-feature-row-icon home-fi-10">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
           </div>
           <div class="home-feature-row-body">
@@ -1476,7 +1476,7 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon home-fi-3">
+          <div class="home-feature-row-icon home-fi-11">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>
           </div>
           <div class="home-feature-row-body">
@@ -1486,7 +1486,7 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon home-fi-4">
+          <div class="home-feature-row-icon home-fi-12">
             <i class="fa-solid fa-trophy" aria-hidden="true"></i>
           </div>
           <div class="home-feature-row-body">

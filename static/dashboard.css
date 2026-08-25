@@ -11243,8 +11243,8 @@ a.signed-home-league:hover {
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    background: color-mix(in srgb, var(--brand-blue) 16%, transparent);
-    color: var(--brand-blue);
+    background: color-mix(in srgb, #6366f1 16%, transparent);
+    color: #6366f1;
     border-radius: 6px;
     padding: 1px 5px;
     margin-left: 5px;
@@ -11254,8 +11254,8 @@ a.signed-home-league:hover {
 }
 
 .home-feature-badge-pro {
-    background: linear-gradient(135deg, rgba(245, 158, 11, .2), rgba(234, 88, 12, .2));
-    color: #f59e0b;
+    background: linear-gradient(135deg, #122d4b 0%, #2563eb 100%);
+    color: #fff;
 }
 
 .home-feature-platforms {
@@ -11323,45 +11323,31 @@ a.signed-home-league:hover {
     font-size: 15px;
 }
 
-.home-fi-1 {
-    background: color-mix(in srgb, #122d4b 12%, transparent);
-    color: #122d4b;
-}
+.home-fi-1 { background: rgba(99, 102, 241, .12); color: #6366f1; }
+.home-fi-2 { background: rgba(59, 130, 246, .12); color: #3b82f6; }
+.home-fi-3 { background: rgba(139, 92, 246, .12); color: #8b5cf6; }
+.home-fi-4 { background: rgba(16, 185, 129, .12); color: #10b981; }
+.home-fi-5 { background: rgba(20, 184, 166, .12); color: #14b8a6; }
+.home-fi-6 { background: rgba(167, 139, 250, .12); color: #a78bfa; }
+.home-fi-7 { background: rgba(245, 158, 11, .12); color: #f59e0b; }
+.home-fi-8 { background: rgba(6, 182, 212, .12); color: #06b6d4; }
+.home-fi-9 { background: rgba(249, 115, 22, .12); color: #f97316; }
+.home-fi-10 { background: rgba(236, 72, 153, .12); color: #ec4899; }
+.home-fi-11 { background: rgba(239, 68, 68, .12); color: #ef4444; }
+.home-fi-12 { background: rgba(234, 179, 8, .12); color: #eab308; }
 
-.home-fi-2 {
-    background: color-mix(in srgb, var(--brand-blue) 14%, transparent);
-    color: var(--brand-blue);
-}
-
-.home-fi-3 {
-    background: color-mix(in srgb, #0ea5e9 14%, transparent);
-    color: #0284c7;
-}
-
-.home-fi-4 {
-    background: color-mix(in srgb, #38bdf8 16%, transparent);
-    color: #0369a1;
-}
-
-:root[data-theme="dark"] .home-fi-1 {
-    background: color-mix(in srgb, #94a3b8 16%, transparent);
-    color: #e2e8f0;
-}
-
-:root[data-theme="dark"] .home-fi-2 {
-    background: color-mix(in srgb, var(--brand-blue) 22%, transparent);
-    color: #93c5fd;
-}
-
-:root[data-theme="dark"] .home-fi-3 {
-    background: color-mix(in srgb, #38bdf8 18%, transparent);
-    color: #7dd3fc;
-}
-
-:root[data-theme="dark"] .home-fi-4 {
-    background: color-mix(in srgb, #0ea5e9 18%, transparent);
-    color: #38bdf8;
-}
+:root[data-theme="dark"] .home-fi-1 { background: rgba(99, 102, 241, .2); color: #a5b4fc; }
+:root[data-theme="dark"] .home-fi-2 { background: rgba(59, 130, 246, .2); color: #93c5fd; }
+:root[data-theme="dark"] .home-fi-3 { background: rgba(139, 92, 246, .2); color: #c4b5fd; }
+:root[data-theme="dark"] .home-fi-4 { background: rgba(16, 185, 129, .2); color: #6ee7b7; }
+:root[data-theme="dark"] .home-fi-5 { background: rgba(20, 184, 166, .2); color: #5eead4; }
+:root[data-theme="dark"] .home-fi-6 { background: rgba(167, 139, 250, .22); color: #c4b5fd; }
+:root[data-theme="dark"] .home-fi-7 { background: rgba(245, 158, 11, .2); color: #fbbf24; }
+:root[data-theme="dark"] .home-fi-8 { background: rgba(6, 182, 212, .2); color: #67e8f9; }
+:root[data-theme="dark"] .home-fi-9 { background: rgba(249, 115, 22, .2); color: #fdba74; }
+:root[data-theme="dark"] .home-fi-10 { background: rgba(236, 72, 153, .2); color: #f9a8d4; }
+:root[data-theme="dark"] .home-fi-11 { background: rgba(239, 68, 68, .2); color: #fca5a5; }
+:root[data-theme="dark"] .home-fi-12 { background: rgba(234, 179, 8, .2); color: #fde047; }
 
 .home-feature-row-body {
     display: flex;
