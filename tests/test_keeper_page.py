@@ -239,8 +239,31 @@ def test_num_rounds_yahoo_from_deepest_drafted_round():
     assert kp._num_rounds("yahoo", "L", drafted={}) == 15
 
 
-def test_drafted_round_map_other_platform_empty():
-    assert kp._drafted_round_map("espn", "L", 2026) == {}
+def test_num_rounds_espn_from_deepest_drafted_round():
+    assert kp._num_rounds("espn", "L", drafted={"a": 1, "b": 15}) == 15
+    assert kp._num_rounds("espn", "L", drafted={"a": 4}) == 15
+
+
+def test_parse_espn_draft_picks_objects_and_dicts():
+    class Pick:
+        def __init__(self, playerId, round_num):
+            self.playerId = playerId
+            self.round_num = round_num
+
+    parsed = kp._parse_espn_draft_picks(
+        [Pick(4039057, 3), {"playerId": 99, "roundId": 12}],
+        espn_to_canon={"4039057": "5938"},
+    )
+    assert parsed == {"5938": 3, "99": 12}
+
+
+def test_drafted_round_map_espn_uses_provider(monkeypatch):
+    monkeypatch.setattr(kp, "_espn_drafted_round_map", lambda lid, season: {"5938": 5})
+    assert kp._drafted_round_map("espn", "L", 2026) == {"5938": 5}
+
+
+def test_drafted_round_map_unknown_platform_empty():
+    assert kp._drafted_round_map("mfl", "L", 2026) == {}
 
 
 # ── Sleeper season chain (the offseason "everyone costs R15" bug) ────────────

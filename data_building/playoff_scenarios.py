@@ -29,9 +29,10 @@ the end-of-season window (``G <= MAX_ENUM_GAMES``). Earlier than that, callers
 should fall back to the Monte Carlo odds for a probabilistic read; this module
 signals that by returning ``exact=False`` with no per-team guarantees.
 
-Division leagues seed division winners ahead of wild cards, which this simple
-top-N model does not capture, so exact scenarios are skipped when divisions are
-in play (``divisions=True``) - again deferring to the odds.
+Division leagues seed each division winner first, then fill remaining berths
+with wild cards by record. Pass a ``division`` on each team (and ``divisions=True``)
+to use that seeding; without per-team division ids we cannot tell winners from
+wild cards, so we still defer to the odds.
 
 Pure Python, no third-party dependencies: no NumPy, no network, no DB - fully
 unit-testable anywhere.
@@ -72,8 +73,9 @@ def compute_scenarios(
             games. Entries whose teams aren't both known are ignored.
         playoff_teams: number of playoff berths (top-N cutoff).
         n_byes: number of first-round byes (top seeds); enables "clinched bye".
-        divisions: when True the league seeds by division and this top-N model
-            doesn't apply, so we return ``exact=False``.
+        divisions: when True, seed division winners ahead of wild cards. Each
+            team should carry a ``division`` id. Without those ids we cannot
+            tell winners from wild cards, so we return ``exact=False``.
 
     Returns a dict with ``show`` (surface it at all?), ``mode`` ("exact" for the
     enumerated final ~2 weeks, "bounds" for the best/worst-case weeks 3-5, or
@@ -120,16 +122,24 @@ def compute_scenarios(
         "exact": False, "show": False, "mode": None,
         "remaining_games": g, "remaining_weeks": remaining_weeks, "teams": {},
     }
-    if divisions or m == 0 or playoff_teams <= 0:
+    if m == 0 or playoff_teams <= 0:
+        return result
+    divs = [_team_division(t) for t in teams]
+    use_div = bool(divisions) and len({d for d in divs if d}) >= 2
+    if divisions and not use_div:
+        # League is flagged as divisional, but we don't have per-team division
+        # ids — a top-N ranking would mis-seed wild cards, so defer to odds.
         return result
     if remaining_weeks > show_weeks:
         return result  # too early in the season - defer to the odds
     result["show"] = True
+    result["divisions"] = use_div
 
     if g > MAX_ENUM_GAMES:
         result["mode"] = "bounds"
         result["teams"] = _bounds_classify(
-            teams, own_games, playoff_teams, n_byes, _next_game
+            teams, own_games, playoff_teams, n_byes, _next_game,
+            divisions=divs if use_div else None,
         )
         return result
 
@@ -164,15 +174,12 @@ def compute_scenarios(
             else:
                 added[b] += 1
         key = [base_key[i] + added[i] for i in range(m)]
+        seeds, in_flags = _playoff_in_and_seed(key, divs if use_div else None, playoff_teams)
 
         for i in range(m):
-            ki = key[i]
-            rank = 0
-            for j in range(m):
-                if key[j] > ki:
-                    rank += 1
-            seed = rank + 1
-            is_in = rank < playoff_teams
+            seed = seeds[i]
+            is_in = in_flags[i]
+            rank = seed - 1
             if seed < best_seed[i]:
                 best_seed[i] = seed
             if seed > worst_seed[i]:
@@ -249,7 +256,54 @@ def compute_scenarios(
     return result
 
 
-def _bounds_classify(teams, own_games, playoff_teams, n_byes, next_game_fn) -> dict:
+def _team_division(team: dict) -> int:
+    try:
+        return int(team.get("division") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _playoff_in_and_seed(keys, divisions, playoff_teams):
+    """1-based seed and in-the-field flag for every team.
+
+    Without 2+ divisions this is the classic top-N by record (strictly more
+    wins ranked ahead; ties share a seed via the same rank = count-ahead math
+    the enumerator has always used). With divisions, each division winner is
+    seeded 1..N by record, then remaining teams fill wild-card seeds N+1..
+    """
+    m = len(keys)
+    seeds = [0] * m
+    in_flags = [False] * m
+    divs = divisions or []
+    unique = {d for d in divs if d}
+    if len(unique) < 2 or len(divs) != m:
+        for i in range(m):
+            rank = sum(1 for j in range(m) if keys[j] > keys[i])
+            seeds[i] = rank + 1
+            in_flags[i] = rank < playoff_teams
+        return seeds, in_flags
+
+    by_div: dict = {}
+    for i, d in enumerate(divs):
+        by_div.setdefault(d or 0, []).append(i)
+    winners = []
+    rest = []
+    for idxs in by_div.values():
+        # Unique winner: highest key, then lower index so a leftover PF tie
+        # still produces one champion (the enumerator already baked PF into key).
+        w = max(idxs, key=lambda i: (keys[i], -i))
+        winners.append(w)
+        rest.extend(i for i in idxs if i != w)
+    winners.sort(key=lambda i: keys[i], reverse=True)
+    rest.sort(key=lambda i: keys[i], reverse=True)
+    for rank, i in enumerate(winners + rest):
+        seeds[i] = rank + 1
+        in_flags[i] = rank < playoff_teams
+    return seeds, in_flags
+
+
+def _bounds_classify(teams, own_games, playoff_teams, n_byes, next_game_fn,
+                     divisions=None) -> dict:
     """Prove clinched / eliminated / controls-destiny from best/worst-case win
     bounds, without enumerating - used when too many games remain to brute-force.
 
@@ -264,28 +318,51 @@ def _bounds_classify(teams, own_games, playoff_teams, n_byes, next_game_fn) -> d
     m = len(teams)
     base = [float(t.get("wins", 0)) + 0.5 * float(t.get("ties", 0)) for t in teams]
     pf = [float(t.get("pf", 0.0)) for t in teams]
-    ceil = [base[i] + len(own_games[i]) for i in range(m)]
+    rem = [len(own_games[i]) for i in range(m)]
+    ceil = [base[i] + rem[i] for i in range(m)]
+    pf_denom = (max(pf) + 1.0) if pf and max(pf) > 0 else 1.0
+    floor_key = [base[i] + pf[i] / pf_denom for i in range(m)]
+    ceil_key = [ceil[i] + pf[i] / pf_denom for i in range(m)]
+    use_div = bool(divisions) and len({d for d in divisions if d}) >= 2
 
     out: dict = {}
     for i, t in enumerate(teams):
-        # Rivals guaranteed to finish above i even if i wins out (i at its ceiling).
-        guaranteed_above = sum(
-            1 for j in range(m) if j != i and (
-                base[j] > ceil[i] or (base[j] == ceil[i] and pf[j] > pf[i])
+        if use_div:
+            best = list(floor_key)
+            best[i] = ceil_key[i]
+            worst = list(ceil_key)
+            worst[i] = floor_key[i]
+            even = list(ceil_key)
+            seed_best, in_best = _playoff_in_and_seed(best, divisions, playoff_teams)
+            seed_worst, in_worst = _playoff_in_and_seed(worst, divisions, playoff_teams)
+            _se, in_even = _playoff_in_and_seed(even, divisions, playoff_teams)
+            guaranteed_above = seed_best[i] - 1
+            threats_floor = seed_worst[i] - 1
+            eliminated = not in_best[i]
+            clinched = in_worst[i]
+            controls = in_even[i]
+        else:
+            # Rivals guaranteed to finish above i even if i wins out (i at its ceiling).
+            guaranteed_above = sum(
+                1 for j in range(m) if j != i and (
+                    base[j] > ceil[i] or (base[j] == ceil[i] and pf[j] > pf[i])
+                )
             )
-        )
-        # Rivals that could still finish above i if i loses out (i at its floor).
-        threats_floor = sum(
-            1 for j in range(m) if j != i and (
-                ceil[j] > base[i] or (ceil[j] == base[i] and pf[j] > pf[i])
+            # Rivals that could still finish above i if i loses out (i at its floor).
+            threats_floor = sum(
+                1 for j in range(m) if j != i and (
+                    ceil[j] > base[i] or (ceil[j] == base[i] and pf[j] > pf[i])
+                )
             )
-        )
-        # Rivals that could finish above i even when i wins out.
-        threats_ceiling = sum(
-            1 for j in range(m) if j != i and (
-                ceil[j] > ceil[i] or (ceil[j] == ceil[i] and pf[j] > pf[i])
+            # Rivals that could finish above i even when i wins out.
+            threats_ceiling = sum(
+                1 for j in range(m) if j != i and (
+                    ceil[j] > ceil[i] or (ceil[j] == ceil[i] and pf[j] > pf[i])
+                )
             )
-        )
+            eliminated = guaranteed_above >= playoff_teams
+            clinched = threats_floor < playoff_teams
+            controls = threats_ceiling < playoff_teams
 
         entry: dict = {
             "mode": "bounds",
@@ -299,15 +376,15 @@ def _bounds_classify(teams, own_games, playoff_teams, n_byes, next_game_fn) -> d
             "next_game": next_game_fn(i),
         }
 
-        if guaranteed_above >= playoff_teams:
+        if eliminated:
             entry["status"] = "eliminated"
-        elif threats_floor < playoff_teams:
+        elif clinched:
             bye = n_byes > 0 and threats_floor < n_byes
             entry["status"] = "clinched_bye" if bye else "clinched"
             entry["wins_to_clinch"] = 0
         else:
             entry["status"] = "alive"
-            entry["controls_destiny"] = threats_ceiling < playoff_teams
+            entry["controls_destiny"] = controls
 
         out[int(t["roster_id"])] = entry
 

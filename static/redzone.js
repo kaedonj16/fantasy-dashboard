@@ -1315,7 +1315,16 @@
 
     if (!list.length) {
       if (anyFilter || _myTeamOnly) {
-        container.innerHTML = '<div class="rz-feed-empty">No plays match these filters yet.</div>';
+        if (window.brEmptyState) {
+          window.brEmptyState(container, {
+            icon: 'search',
+            title: 'No matching plays',
+            message: 'Try clearing a filter to see more of the feed.',
+            compact: true
+          });
+        } else {
+          container.innerHTML = '<div class="rz-feed-empty">No plays match these filters yet.</div>';
+        }
       } else {
         container.innerHTML = _pregameScheduleHtml();
       }

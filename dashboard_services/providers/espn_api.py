@@ -935,6 +935,31 @@ def get_drafts(season: int, league_id: str) -> List[Dict[str, Any]]:
     }]
 
 
+def iter_draft_picks(season: int, league_id: str) -> List[Any]:
+    """Raw ESPN draft picks (objects or dicts) for keeper-round detection.
+
+    Prefers ``League.draft`` from espn_api; falls back to the ``mDraftDetail``
+    view so a completed draft still yields player→round even when the helper
+    list is empty.
+    """
+    try:
+        lg = _league(int(season), str(league_id))
+    except Exception as e:
+        print(f"[espn] draft picks fetch failed: {e}")
+        return []
+    picks = list(getattr(lg, "draft", None) or [])
+    if picks:
+        return picks
+    try:
+        data = lg.espn_request.league_get(params={"view": "mDraftDetail"})
+    except Exception as e:
+        print(f"[espn] mDraftDetail fetch failed: {e}")
+        return []
+    if not isinstance(data, dict):
+        return []
+    return list(((data.get("draftDetail") or {}).get("picks") or []))
+
+
 # ESPN slot name -> Sleeper roster position
 _ESPN_SLOT_TO_SLEEPER: Dict[str, str] = {
     "QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE",

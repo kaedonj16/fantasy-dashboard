@@ -15,6 +15,29 @@
       var _draftEnded      = _cfg.draftEnded;
       var _loaded          = {};
 
+      function _panelEmpty(panel, title, message, opts) {
+        opts = opts || {};
+        if (window.brEmptyState) {
+          window.brEmptyState(panel, {
+            icon: opts.icon || 'empty',
+            title: title,
+            message: message,
+            compact: true,
+            error: !!opts.error,
+            retry: opts.retry
+          });
+          return;
+        }
+        panel.innerHTML = '<div class="analytics-empty">' + (message || title) + '</div>';
+      }
+      function _panelError(panel, message, retry) {
+        if (window.brErrorState) {
+          window.brErrorState(panel, message, retry, { compact: true });
+          return;
+        }
+        panel.innerHTML = '<div class="analytics-empty">' + (message || 'Could not load data.') + '</div>';
+      }
+
       // A small right-aligned "view the full page" link for a tab panel.
       function _fullPageLink(label, path) {
         if (!_platform || !_leagueId || !_season) return '';
@@ -44,7 +67,7 @@
 
         function renderBtm(data, days) {
           if (data.error) {
-            panel.innerHTML = '<p class="analytics-empty">' + data.error + '</p>';
+            _panelEmpty(panel, 'Couldn’t load', data.error, { error: true, icon: 'error' });
             return;
           }
           var rows = data.rosters || [];
@@ -152,7 +175,7 @@
                 '&league_type=' + _leagueType + '&league_size=' + _leagueSize + '&days=' + days)
             .then(function(r) { return r.json(); })
             .then(function(data) { renderBtm(data, days); })
-            .catch(function() { panel.innerHTML = '<p class="analytics-empty">Could not load data.</p>'; });
+            .catch(function() { _panelError(panel, 'Could not load data.'); });
         }
 
         fetchBtm(30);
@@ -167,9 +190,9 @@
               '&league_id=' + _leagueId + '&season=' + _season)
           .then(r => r.json())
           .then(data => {
-            if (data.error) { panel.innerHTML = '<p class="analytics-empty">' + data.error + '</p>'; return; }
+            if (data.error) { _panelEmpty(panel, 'Couldn’t load', data.error, { error: true, icon: 'error' }); return; }
             var teams = data.teams || [];
-            if (!teams.length) { panel.innerHTML = '<p class="analytics-empty">No schedule data available.</p>'; return; }
+            if (!teams.length) { _panelEmpty(panel, 'No schedule data', 'Schedule strength will appear once games are available.'); return; }
             var usingPR = data.using_power_rankings;
             var maxOpp = Math.max(...teams.map(t => t.avg_opp_points), 1);
             var wr = data.weeks_remaining || 0;
@@ -196,7 +219,7 @@
             html += '</div>';
             panel.innerHTML = html;
           })
-          .catch(function() { panel.innerHTML = '<p class="analytics-empty">Could not load data.</p>'; });
+          .catch(function() { _panelError(panel, 'Could not load data.'); });
       }
 
       // For startup drafts, the server-side FC fetch is blocked (403 from server IPs).
@@ -271,7 +294,7 @@
               '&league_id=' + _leagueId + '&season=' + _season + '&league_type=' + _leagueType)
           .then(function(r) { return r.json(); })
           .then(async function(data) {
-            if (data.error) { panel.innerHTML = '<p class="analytics-empty">' + data.error + '</p>'; return; }
+            if (data.error) { _panelEmpty(panel, 'Couldn’t load', data.error, { error: true, icon: 'error' }); return; }
 
             // For startup drafts, overlay FC dynasty rankings from the browser
             // (server-side fetch is blocked by Cloudflare; browser requests are not)
@@ -281,7 +304,7 @@
             }
 
             var teams = data.teams || [];
-            if (!teams.length) { panel.innerHTML = '<p class="analytics-empty">No draft data available.</p>'; return; }
+            if (!teams.length) { _panelEmpty(panel, 'No draft data', 'Draft grades will appear once picks are recorded.'); return; }
 
             var numTeams    = data.num_teams || 10;
             var totalRounds = data.total_rounds || 1;
@@ -489,7 +512,7 @@
               });
             });
           })
-          .catch(function() { panel.innerHTML = '<p class="analytics-empty">Could not load data.</p>'; });
+          .catch(function() { _panelError(panel, 'Could not load data.'); });
       }
 
       function loadRosterIntel() {
@@ -543,9 +566,9 @@
           }).then(function(r) { return r.json(); });
         })
           .then(function(data) {
-            if (data.error) { panel.innerHTML = '<p class="analytics-empty">' + data.error + '</p>'; return; }
+            if (data.error) { _panelEmpty(panel, 'Couldn’t load', data.error, { error: true, icon: 'error' }); return; }
             var teams = data.teams || [];
-            if (!teams.length) { panel.innerHTML = '<p class="analytics-empty">No roster data available.</p>'; return; }
+            if (!teams.length) { _panelEmpty(panel, 'No roster data', 'Roster breakdown will appear once teams are loaded.'); return; }
 
             var sigColor = {
               'Core':      '#22c55e',
@@ -685,11 +708,14 @@
               });
             });
 
-            panel.innerHTML = html || '<p class="analytics-empty">Roster looks stable - no actions flagged.</p>';
+            panel.innerHTML = html || '';
+            if (!html) {
+              _panelEmpty(panel, 'Roster looks stable', 'No actions flagged right now.');
+            }
           })
           .catch(function(err) {
             console.warn('[roster-intel]', err);
-            panel.innerHTML = '<p class="analytics-empty">Could not load roster intel.</p>';
+            _panelError(panel, 'Could not load roster intel.');
           });
       }
 
@@ -705,11 +731,14 @@
         })
           .then(r => r.json())
           .then(data => {
-            if (!data.success) { panel.innerHTML = '<p class="analytics-empty">' + (data.error || 'Failed to load.') + '</p>'; return; }
-            panel.innerHTML = _fullPageLink('Full standings', '/standings') +
-              (data.html || '<p class="analytics-empty">No rankings available.</p>');
+            if (!data.success) { _panelEmpty(panel, 'Couldn’t load', data.error || 'Failed to load.', { error: true, icon: 'error' }); return; }
+            if (!data.html) {
+              _panelEmpty(panel, 'No rankings', 'Power rankings will appear once available.');
+              return;
+            }
+            panel.innerHTML = _fullPageLink('Full standings', '/standings') + data.html;
           })
-          .catch(function() { panel.innerHTML = '<p class="analytics-empty">Could not load power rankings.</p>'; });
+          .catch(function() { _panelError(panel, 'Could not load power rankings.'); });
       }
 
       // Show the Schedule tab only in-season (Draft + Power Rankings tabs removed).

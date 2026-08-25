@@ -1636,12 +1636,24 @@ _DRAFT_HISTORY_HTML = r"""
     return '<span class="dr-hist-tag ' + c + '">' + esc(label) + '</span>';
   }
 
+  function histEmpty(title, message, htmlMsg){
+    if (htmlMsg) {
+      listEl.innerHTML = '<div class="empty-state is-compact">'
+        + '<p class="empty-state-title">' + esc(title) + '</p>'
+        + '<p class="empty-state-msg">' + htmlMsg + '</p></div>';
+      return;
+    }
+    if (window.brEmptyState) {
+      window.brEmptyState(listEl, { icon: 'empty', title: title, message: message, compact: true });
+      return;
+    }
+    listEl.innerHTML = '<div class="empty-state is-compact"><p class="empty-state-title">'
+      + esc(title) + '</p><p class="empty-state-msg">' + esc(message) + '</p></div>';
+  }
+
   function render(drafts){
     if (!drafts.length){
-      listEl.innerHTML = '<div class="dr-hist-empty">'
-        + '<p class="dr-empty-note-title">No drafts yet</p>'
-        + '<p class="dr-empty-note-msg">Drafts for this league will show up here once they are created.</p>'
-        + '</div>';
+      histEmpty('No drafts yet', 'Drafts for this league will show up here once they are created.');
       return;
     }
     // Live/upcoming first, then completed; newest season first within each.
@@ -1668,24 +1680,16 @@ _DRAFT_HISTORY_HTML = r"""
 
   function loadList(){
     if (!cfg.hasLeague){
-      listEl.innerHTML = '<div class="dr-hist-empty">'
-        + '<p class="dr-empty-note-title">Open from your league</p>'
-        + '<p class="dr-empty-note-msg">Open Draft History from a league to see its drafts. '
-        + 'You can still run a mock in the <a href="' + esc(cfg.base) + '">Draft Room</a>.</p>'
-        + '</div>';
+      histEmpty('Open from your league', '',
+        'Open Draft History from your league to see its drafts. '
+        + 'You can still run a mock in the <a href="' + esc(cfg.base) + '">Draft Room</a>.');
       return;
     }
     fetch('/api/draft/detect?history=1&platform=' + encodeURIComponent(cfg.platform)
         + '&league_id=' + encodeURIComponent(cfg.leagueId) + '&season=' + (cfg.season || ''), { cache: 'no-store' })
       .then(function(r){ return r.json(); })
       .then(function(resp){
-        if (resp.unsupported){
-          listEl.innerHTML = '<div class="dr-hist-empty">'
-            + '<p class="dr-empty-note-title">Sleeper only</p>'
-            + '<p class="dr-empty-note-msg">Draft history is available for Sleeper leagues.</p>'
-            + '</div>';
-          return;
-        }
+        if (resp.unsupported){ histEmpty('Sleeper only', 'Draft history is available for Sleeper leagues.'); return; }
         render(resp.drafts || []);
       })
       .catch(function(){

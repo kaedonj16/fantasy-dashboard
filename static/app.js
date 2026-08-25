@@ -3157,13 +3157,16 @@ function _annotatePlayoffScenarios(panel, scen) {
     tr.appendChild(td);
   });
 
-  const sub = panel.querySelector('.po-subtitle');
-  if (sub && !sub.querySelector('.po-scen-note')) {
-    const note = document.createElement('span');
-    note.className = 'po-scen-note';
-    note.textContent = scen.mode === 'exact' ? ' · exact clinch outlook' : ' · clinch outlook';
-    sub.appendChild(note);
-  }
+    const sub = panel.querySelector('.po-subtitle');
+    if (sub && !sub.querySelector('.po-scen-note')) {
+      const note = document.createElement('span');
+      note.className = 'po-scen-note';
+      const how = scen.mode === 'exact' ? 'exact clinch outlook' : 'clinch outlook';
+      note.textContent = scen.divisions
+        ? ' · ' + how + ' (division winners + wild cards)'
+        : ' · ' + how;
+      sub.appendChild(note);
+    }
 }
 
 function initTeamTabs(root = document) {
@@ -10637,6 +10640,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!data.ok) {
           console.warn('League switcher API error:', data.error || 'Unknown error');
           leagueSwitcher.innerHTML = '<option value="">No leagues available</option>';
+          fillLeagueChromeMenu([]);
           return;
         }
 
@@ -10763,14 +10767,17 @@ document.addEventListener('DOMContentLoaded', function() {
             if ('requestIdleCallback' in window) requestIdleCallback(warmNext, { timeout: 3000 });
             else setTimeout(warmNext, 1500);
           } catch (_) { /* prewarm is best-effort */ }
+          fillLeagueChromeMenu(leagues);
         } else {
           const wrapper = leagueSwitcher.closest('.league-switcher-wrapper');
           if (wrapper) wrapper.style.display = 'none';
+          fillLeagueChromeMenu(leagues);
         }
       })
       .catch(err => {
         console.error('Failed to load leagues:', err);
         leagueSwitcher.innerHTML = '<option value="">Error loading leagues</option>';
+        fillLeagueChromeMenu([]);
       });
 
     // Shared navigation for both the desktop <select> and the mobile list rows.
@@ -10786,6 +10793,62 @@ document.addEventListener('DOMContentLoaded', function() {
       const currentPage = leaguePages.has(lastSegment) ? lastSegment : 'dashboard';
       window.location.href = `/${platform || currentPlatform}/${season || currentSeason}/${leagueId}/${currentPage}`;
     }
+
+    // Top-bar league chip: same league list as the settings switcher, so the
+    // persistent chrome is the place you switch (and page titles stay clean).
+    function fillLeagueChromeMenu(leagues) {
+      var btn = document.getElementById('brCtxLeagueBtn');
+      var menu = document.getElementById('brCtxLeagueMenu');
+      if (!btn) return;
+      var list = Array.isArray(leagues) ? leagues : [];
+      var can = list.length > 1;
+      btn.classList.toggle('is-static', !can);
+      btn.setAttribute('aria-disabled', can ? 'false' : 'true');
+      if (menu) {
+        menu.innerHTML = '';
+        menu.hidden = true;
+        btn.setAttribute('aria-expanded', 'false');
+      }
+      if (!can || !menu) return;
+      list.forEach(function (lg) {
+        var item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'br-ctx-menu-item' + (String(lg.league_id) === String(currentLeagueId) ? ' is-current' : '');
+        item.setAttribute('role', 'option');
+        item.textContent = lg.name || lg.label || 'Unnamed League';
+        item.addEventListener('click', function () {
+          menu.hidden = true;
+          btn.setAttribute('aria-expanded', 'false');
+          navigateToLeague(lg.league_id, lg.platform, lg.season);
+        });
+        menu.appendChild(item);
+      });
+    }
+
+    (function wireLeagueChromeChip() {
+      var btn = document.getElementById('brCtxLeagueBtn');
+      var menu = document.getElementById('brCtxLeagueMenu');
+      if (!btn || !menu) return;
+      btn.addEventListener('click', function (e) {
+        if (btn.classList.contains('is-static') || btn.getAttribute('aria-disabled') === 'true') return;
+        e.stopPropagation();
+        var open = menu.hidden;
+        menu.hidden = !open;
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+      document.addEventListener('click', function (e) {
+        if (menu.hidden) return;
+        if (btn.contains(e.target) || menu.contains(e.target)) return;
+        menu.hidden = true;
+        btn.setAttribute('aria-expanded', 'false');
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && !menu.hidden) {
+          menu.hidden = true;
+          btn.setAttribute('aria-expanded', 'false');
+        }
+      });
+    })();
 
     // Handle league change (desktop <select>)
     leagueSwitcher.addEventListener('change', function() {
@@ -11329,6 +11392,21 @@ function pmSlugify(name) {
 }
 
 // @public-js:core-end  (everything below is app/feature code; excluded from public.js)
+
+// League format for player-modal / ADP fetches. Page scripts (trade calc, teams)
+// may set `_leagueType` / `_leagueSize`; every other page reads `__brctx` which
+// render_page now seeds from the cached league.
+function brLeagueType() {
+  if (typeof _leagueType !== 'undefined' && _leagueType) return _leagueType;
+  var ctx = window.__brctx || {};
+  return ctx.leagueType || '1qb';
+}
+function brLeagueSize() {
+  if (typeof _leagueSize !== 'undefined' && _leagueSize) return _leagueSize;
+  var ctx = window.__brctx || {};
+  return ctx.leagueSize || 10;
+}
+
 function openPlayerModal(playerId, playerName, opts) {
   opts = opts || {};
 
@@ -11357,8 +11435,8 @@ function openPlayerModal(playerId, playerName, opts) {
   const leagueId = opts.leagueId || (_isLeaguePath ? pathParts[2] : (urlParams.get('from_league') || null));
 
   // Use page-level league settings when available (set for logged-in users)
-  const modalLt = (typeof _leagueType !== 'undefined') ? _leagueType : '1qb';
-  const modalLs = (typeof _leagueSize !== 'undefined') ? _leagueSize : 10;
+  const modalLt = brLeagueType();
+  const modalLs = brLeagueSize();
   const leagueParams = `league_type=${encodeURIComponent(modalLt)}&league_size=${encodeURIComponent(modalLs)}`;
 
   // Build API URL with league context if available
@@ -11812,7 +11890,7 @@ function openPlayerModal(playerId, playerName, opts) {
       // grouped into two format cards. The value matching the viewer's league
       // type is highlighted.
       const _adp = data.stats?.adp;
-      const _adpIsSf = (typeof _leagueType !== 'undefined' && _leagueType === 'sf');
+      const _adpIsSf = brLeagueType() === 'sf';
       const _adpV = v => (v != null ? v : '<span class="pm-adp-na">–</span>');
       // Multi-source ADP (Sleeper / BR Fantasy / ESPN / Yahoo / MFL / Consensus).
       // The Sleeper source arrives inline; the market sources are lazy-loaded from
@@ -12498,8 +12576,8 @@ function pmSwitchTab(tab) {
     const _platform = pathParts2[0] || 'sleeper';
     const _season   = pathParts2[1] || new Date().getFullYear();
     const _leagueId = pathParts2[2] || null;
-    const _lt = (typeof _leagueType !== 'undefined') ? _leagueType : '1qb';
-    const _ls = (typeof _leagueSize !== 'undefined') ? _leagueSize : 10;
+    const _lt = brLeagueType();
+    const _ls = brLeagueSize();
     let logsUrl = `/api/player-game-logs/${encodeURIComponent(playerId)}?season=${_season}&league_type=${_lt}&league_size=${_ls}`;
     if (_leagueId) logsUrl += `&league_id=${_leagueId}&platform=${_platform}`;
     fetch(logsUrl)
@@ -14941,8 +15019,8 @@ function _updateWatchlistBtn(btn, player_id) {
 function _wlEsc(s) { return escapeHtml(s); }
 
 function _wlLeagueParams() {
-  const lt = (typeof _leagueType !== 'undefined' && _leagueType) ? _leagueType : '1qb';
-  const ls = (typeof _leagueSize !== 'undefined' && _leagueSize) ? _leagueSize : 10;
+  const lt = brLeagueType();
+  const ls = brLeagueSize();
   return 'league_type=' + encodeURIComponent(lt) + '&league_size=' + encodeURIComponent(ls);
 }
 
@@ -16276,7 +16354,7 @@ function initComparePage() {
     const picks = triple ? [chosen[1], chosen[2], chosen[3]] : [chosen[1], chosen[2]];
     Promise.all(picks.map(c => _fetchDetails(c.player_id)))
       .then(ds => { triple ? _openForTriple(ds[0], ds[1], ds[2]) : _openFor(ds[0], ds[1]); })
-      .catch(() => { if (resultEl) resultEl.innerHTML = '<div class="compare-pick-empty">Could not load one of the players. Try again.</div>'; });
+      .catch(() => { if (resultEl) window.brErrorState(resultEl, 'Could not load one of the players.', null, { compact: true }); });
   }
 
   // The optional third slot stays hidden until the user asks for it (via the
@@ -16564,7 +16642,7 @@ function initComparePage() {
         });
         _syncClears();
         if (q3) { _revealThird(false); _openForTriple(ds[0], ds[1], ds[2]); } else _openFor(ds[0], ds[1]);
-      }).catch(() => { if (resultEl) resultEl.innerHTML = '<div class="compare-pick-empty">Could not load that comparison. Search to pick players.</div>'; });
+      }).catch(() => { if (resultEl) window.brErrorState(resultEl, 'Could not load that comparison.', null, { compact: true }); });
     }
   } catch (_) {}
 }
@@ -16709,7 +16787,7 @@ function openCompareSearch(player1Data) {
   function doSearch(q) {
     if (!q || q.length < 2) { resultsBox.innerHTML = ''; return; }
     _currentQuery = q;
-    resultsBox.innerHTML = '<div class="compare-search-empty" style="opacity:.5;">Searching...</div>';
+    window.brLoadingState(resultsBox, { spinner: true, message: 'Searching…' });
     fetch(`/api/players?q=${encodeURIComponent(q)}&limit=20`)
       .then(r => r.json())
       .then(list => {
@@ -17718,8 +17796,8 @@ function _cmpLoadGameLogs(pid, position, containerId) {
   const _platform = pathParts[0] || 'sleeper';
   const _season   = pathParts[1] || new Date().getFullYear();
   const _leagueId = pathParts[2] || null;
-  const _lt = (typeof _leagueType !== 'undefined') ? _leagueType : '1qb';
-  const _ls = (typeof _leagueSize !== 'undefined') ? _leagueSize : 10;
+  const _lt = brLeagueType();
+  const _ls = brLeagueSize();
   let logsUrl = `/api/player-game-logs/${encodeURIComponent(pid)}?season=${_season}&league_type=${_lt}&league_size=${_ls}`;
   if (_leagueId) logsUrl += `&league_id=${_leagueId}&platform=${_platform}`;
   fetch(logsUrl)
@@ -18855,7 +18933,7 @@ async function fetchTeamDetails(rosterId) {
     }, 8000);
     hardTimer = setTimeout(() => controller.abort(), 30000);
 
-    const _tmLt = (typeof _leagueType !== 'undefined') ? _leagueType : '1qb';
+    const _tmLt = brLeagueType();
     const response = await fetch(
       `/api/team-details/${rosterId}?league_id=${leagueId}&platform=${platform}&season=${season}&league_type=${encodeURIComponent(_tmLt)}`,
       { signal: controller.signal }

@@ -351,11 +351,13 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
   <div class="wv-filters">
     <div class="wv-filter-row">
       <div class="wv-pos-pills">
-        <button class="wv-pos-btn active" onclick="wvSetPos('ALL')">ALL</button>
-        <button class="wv-pos-btn" onclick="wvSetPos('QB')">QB</button>
-        <button class="wv-pos-btn" onclick="wvSetPos('RB')">RB</button>
-        <button class="wv-pos-btn" onclick="wvSetPos('WR')">WR</button>
-        <button class="wv-pos-btn" onclick="wvSetPos('TE')">TE</button>
+        <button class="wv-pos-btn active" data-pos="ALL" onclick="wvSetPos('ALL')">ALL</button>
+        <button class="wv-pos-btn" data-pos="QB" onclick="wvSetPos('QB')">QB</button>
+        <button class="wv-pos-btn" data-pos="RB" onclick="wvSetPos('RB')">RB</button>
+        <button class="wv-pos-btn" data-pos="WR" onclick="wvSetPos('WR')">WR</button>
+        <button class="wv-pos-btn" data-pos="TE" onclick="wvSetPos('TE')">TE</button>
+        <button class="wv-pos-btn" data-pos="K" hidden onclick="wvSetPos('K')">K</button>
+        <button class="wv-pos-btn" data-pos="DEF" hidden onclick="wvSetPos('DEF')">D/ST</button>
       </div>
     </div>
   </div>
@@ -431,7 +433,10 @@ function wvSetTab(tab) {{
 
 function wvSetPos(pos) {{
   wvCurrentPos = pos;
-  document.querySelectorAll('.wv-pos-btn').forEach(b => b.classList.toggle('active', b.textContent === pos));
+  document.querySelectorAll('.wv-pos-btn').forEach(b => {{
+    const key = b.getAttribute('data-pos') || b.textContent;
+    b.classList.toggle('active', key === pos);
+  }});
   wvRenderWaivers();
   wvRenderStartSit();
   wvRenderTrending(wvTrendingData);
@@ -590,12 +595,13 @@ function wvLoad() {{
       if (!d.positions || !Object.keys(d.positions).length) {{
         showLoginGate('wvStartSit', {{
           title: 'Sign in to see your lineup',
-          description: 'Enter your Sleeper username to get personalized start/sit recommendations for your roster.'
+          description: 'Sign in to get personalized start/sit recommendations for your roster.'
         }});
         return;
       }}
       wvStartSitData = d;
       wvStartSitData._lineup_requirements = d.lineup_requirements || {{}};
+      wvSyncPosPills();
       wvRenderStartSit();
     }})
     .catch(() => {{
@@ -914,10 +920,28 @@ function wvClearCompare() {{
   wvRenderStartSit();
 }}
 
+function wvSyncPosPills() {{
+  const req = wvStartSitData._lineup_requirements || {{}};
+  const pos = wvStartSitData.positions || {{}};
+  const showK = (req.K > 0) || ((pos.K || []).length > 0);
+  const showDef = (req.DEF > 0) || ((pos.DEF || []).length > 0);
+  document.querySelectorAll('.wv-pos-btn[data-pos="K"]').forEach(b => {{ b.hidden = !showK; }});
+  document.querySelectorAll('.wv-pos-btn[data-pos="DEF"]').forEach(b => {{ b.hidden = !showDef; }});
+}}
+
+function wvStartSitPositions() {{
+  if (wvCurrentPos !== 'ALL') return [wvCurrentPos];
+  const keys = ['QB','RB','WR','TE'];
+  const pos = wvStartSitData.positions || {{}};
+  if ((pos.K || []).length) keys.push('K');
+  if ((pos.DEF || []).length) keys.push('DEF');
+  return keys;
+}}
+
 // ── Start/Sit list ────────────────────────────────────────────────────────────
 function wvRenderStartSit() {{
   const el = document.getElementById('wvStartSit');
-  const positions = wvCurrentPos === 'ALL' ? ['QB','RB','WR','TE'] : [wvCurrentPos];
+  const positions = wvStartSitPositions();
   const reqs = wvStartSitData._lineup_requirements || {{}};
 
   const sections = positions.map(pos => {{
@@ -993,7 +1017,7 @@ function wvLineupAdvice() {{
   if (!a || !a.has_current) return '';
   const esc = s => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
   if (!a.swaps.length || a.delta < 1) {{
-    return `<div class="wv-ss-advice wv-ss-advice-ok"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Your lineup is optimal — projected ${{a.optimal_pts}} pts (QB/RB/WR/TE).</div>`;
+    return `<div class="wv-ss-advice wv-ss-advice-ok"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Your lineup is optimal — start score ${{a.optimal_pts}}.</div>`;
   }}
   const swaps = a.swaps.slice(0, 4).map(s => `
     <div class="wv-ss-swap">
@@ -1003,7 +1027,7 @@ function wvLineupAdvice() {{
       <span class="wv-ss-swap-gain">+${{(s.gain || 0).toFixed(1)}}</span>
     </div>`).join('');
   return `<div class="wv-ss-advice wv-ss-advice-warn">
-    <div class="wv-ss-advice-head"><i class="fa-solid fa-arrow-trend-up" aria-hidden="true"></i> You're leaving <strong>${{a.delta.toFixed(1)}} pts</strong> on the bench</div>
+    <div class="wv-ss-advice-head"><i class="fa-solid fa-arrow-trend-up" aria-hidden="true"></i> You're leaving <strong>${{a.delta.toFixed(1)}}</strong> start-score points on the bench</div>
     <div class="wv-ss-advice-sub">${{a.optimal_pts}} optimal vs ${{a.current_pts}} current lineup</div>
     ${{swaps}}
   </div>`;
