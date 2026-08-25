@@ -167,11 +167,9 @@ def _slot_map_for_league(platform: str, league_id: str) -> dict[tuple[str, str],
 
 def _roster_names(platform: str, league_id: str, season: int) -> dict[str, str]:
     try:
-        from dashboard_services.platform_api import get_rosters, get_users
         from dashboard_services.players import build_roster_map
-        users = get_users(platform, league_id, season) or []
-        rosters = get_rosters(platform, league_id, season) or []
-        return {str(k): str(v) for k, v in (build_roster_map(users, rosters) or {}).items()}
+        names = build_roster_map(str(league_id), platform, season) or {}
+        return {str(k): str(v) for k, v in names.items() if v}
     except Exception:
         logger.debug("[player-league-trades] roster map failed", exc_info=True)
         return {}
@@ -262,12 +260,12 @@ def _format_trade_sides(
 
     return (
         {
-            "team_name": roster_names.get(recv_rid) or f"Team {recv_rid}",
+            "team_name": roster_names.get(str(recv_rid)) or roster_names.get(recv_rid) or f"Team {recv_rid}",
             "roster_id": recv_rid,
             "assets": side_a_assets,
         },
         {
-            "team_name": roster_names.get(send_rid) or f"Team {send_rid}",
+            "team_name": roster_names.get(str(send_rid)) or roster_names.get(send_rid) or f"Team {send_rid}",
             "roster_id": send_rid,
             "assets": side_b_assets,
         },

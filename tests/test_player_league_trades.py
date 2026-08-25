@@ -214,3 +214,23 @@ def test_get_player_league_trades_dedupes_repeated_transaction_ids(monkeypatch):
         player_id="111", platform="yahoo", league_id="L26", season=2026, limit=20,
     )
     assert out["total"] == 1
+
+
+def test_roster_names_calls_build_roster_map_with_league_id(monkeypatch):
+    import sys
+    import types
+    from dashboard_services import player_league_trades as plt
+
+    captured = {}
+    fake_players = types.ModuleType("dashboard_services.players")
+
+    def fake_map(league_id, platform, season, users=None, rosters=None):
+        captured["args"] = (league_id, platform, season)
+        return {1: "Film Room", "5": "Hoodie's Heroes"}
+
+    fake_players.build_roster_map = fake_map
+    monkeypatch.setitem(sys.modules, "dashboard_services.players", fake_players)
+
+    names = plt._roster_names("sleeper", "L26", 2025)
+    assert captured["args"] == ("L26", "sleeper", 2025)
+    assert names == {"1": "Film Room", "5": "Hoodie's Heroes"}

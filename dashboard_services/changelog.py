@@ -7,7 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-08-25",
         "tag": "fix",
-        "text": "Player modal Trades tab: This League now looks across every season in the league's history, including offseason (week 0) trades, not just the current year.",
+        "text": "Player modal Trades tab: This League now looks across every season in the league's history (including offseason trades), shows real team names on each side, and aligns the two packages toward the swap.",
         "link": "/players"
     },
     {

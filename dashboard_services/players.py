@@ -62,16 +62,17 @@ def build_roster_map(
     if rosters is None:
         rosters = get_rosters(platform, league_id, season)
 
-    # Precompute fallback names for all users
     user_fallback: Dict[str, str] = {}
     for u in users:
-        uid = u["user_id"]
+        uid = str(u.get("user_id") or "")
+        if not uid:
+            continue
         meta = u.get("metadata") or {}
         name = (
                 meta.get("team_name")
                 or u.get("display_name")
                 or u.get("username")
-                or str(uid)
+                or uid
         )
         user_fallback[uid] = name
 
@@ -79,7 +80,7 @@ def build_roster_map(
     for r in rosters:
         rid = str(r["roster_id"])
         meta = r.get("metadata") or {}
-        owner_id = r.get("owner_id")
+        owner_id = str(r.get("owner_id") or "")
         display = meta.get("team_name") or user_fallback.get(owner_id, f"Roster {rid}")
         roster_map[rid] = display
 
