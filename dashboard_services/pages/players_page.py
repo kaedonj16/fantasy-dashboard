@@ -45,13 +45,13 @@ def build_players_shell() -> str:
             </div>
 
             <!-- Position filters -->
-            <div class="filter-positions br-chip-pop">
-              <button class="pos-pill active" data-pos="ALL" onclick="prTogglePos('ALL')">All</button>
-              <button class="pos-pill" data-pos="QB" onclick="prTogglePos('QB')">QB</button>
-              <button class="pos-pill" data-pos="RB" onclick="prTogglePos('RB')">RB</button>
-              <button class="pos-pill" data-pos="WR" onclick="prTogglePos('WR')">WR</button>
-              <button class="pos-pill" data-pos="TE" onclick="prTogglePos('TE')">TE</button>
-              <button class="pos-pill" data-pos="PICK" onclick="prTogglePos('PICK')">Picks</button>
+            <div class="otc-day-filters filter-positions br-chip-pop">
+              <button class="otc-day-filter pos-pill active" data-pos="ALL" onclick="prTogglePos('ALL')">All</button>
+              <button class="otc-day-filter pos-pill" data-pos="QB" onclick="prTogglePos('QB')">QB</button>
+              <button class="otc-day-filter pos-pill" data-pos="RB" onclick="prTogglePos('RB')">RB</button>
+              <button class="otc-day-filter pos-pill" data-pos="WR" onclick="prTogglePos('WR')">WR</button>
+              <button class="otc-day-filter pos-pill" data-pos="TE" onclick="prTogglePos('TE')">TE</button>
+              <button class="otc-day-filter pos-pill" data-pos="PICK" onclick="prTogglePos('PICK')">Picks</button>
             </div>
 
             <!-- Settings button -->
@@ -167,9 +167,12 @@ def build_players_shell() -> str:
         </div>
 
         <!-- Empty state -->
-        <div id="prEmpty" style="display:none;text-align:center;padding:40px;color:var(--text-muted);">
-          <div style="font-size:24px;margin-bottom:8px;opacity:0.4;"><i class="fa-solid fa-magnifying-glass"></i></div>
-          No players match your filters
+        <div id="prEmpty" class="empty-state is-compact" style="display:none;" role="status">
+          <span class="empty-state-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.7-4.7"/></svg>
+          </span>
+          <p class="empty-state-title">No players match</p>
+          <p class="empty-state-msg">Try clearing a filter or searching a different name.</p>
         </div>
 
       </div>
@@ -361,25 +364,8 @@ def build_players_shell() -> str:
       }
       .filter-positions {
         display: flex;
-        gap: 3px;
+        gap: 6px;
         flex-wrap: wrap;
-      }
-      .pos-pill {
-        padding: 6px 12px;
-        border-radius: 12px;
-        border: 1px solid var(--border);
-        background: var(--card-bg);
-        color: var(--text-muted);
-        font-size: 11px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.12s;
-        white-space: nowrap;
-      }
-      .pos-pill.active {
-        background: var(--accent);
-        color: #fff;
-        border-color: var(--accent);
       }
       .filter-settings-btn {
         padding: 7px 14px;
@@ -563,11 +549,7 @@ def build_players_shell() -> str:
         }
         .filter-positions {
           justify-content: flex-start;
-          gap: 5px;
-        }
-        .pos-pill {
-          padding: 6px 10px;
-          font-size: 11px;
+          gap: 6px;
         }
         .filter-label {
           white-space: nowrap;

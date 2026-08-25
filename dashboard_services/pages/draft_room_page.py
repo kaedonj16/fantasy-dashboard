@@ -107,7 +107,8 @@ def build_draft_room_body(
     return (
         f'<script>window.__draftCfg = {cfg_json};</script>\n'
         + _DRAFT_ROOM_HTML
-        + f'\n<script src="/static/draft_grade_curve.js?v={_static_v("draft_grade_curve.js")}" defer></script>\n'
+        # draft_grade_curve.js is intentionally not loaded: live grades are absolute
+        # (no field curve). The file remains for backtests + parity tests only.
         + f'\n<script src="/static/pick_score.js?v={_static_v("pick_score.js")}" defer></script>\n'
         + f'\n<script src="/static/draft_board_core.js?v={_static_v("draft_board_core.js")}" defer></script>\n'
         + f'\n<script src="/static/draft_grade_team.js?v={_static_v("draft_grade_team.js")}" defer></script>\n'
@@ -119,19 +120,32 @@ def build_draft_room_body(
 _DRAFT_ROOM_HTML = r"""
 <div class="dr-wrap">
   <div class="dr-hero" id="drHero">
+    <p class="dr-brand">BR Fantasy</p>
     <h1 class="dr-title">Draft Room</h1>
-    <p class="dr-sub">Mock against CPU teams, draft manually, or sync a live Sleeper draft. Best-available, tiers, and a live draft grade.</p>
-    <a class="dr-hero-link" id="drToCheatSheet" href="/draft/cheat-sheet">Cheat Sheet &rarr;</a>
-    <a class="dr-hero-link" id="drToHistory" href="/draft/history">Draft History &rarr;</a>
+    <p class="dr-sub">Mock against CPU teams, draft manually, or sync a live Sleeper draft with best-available ranks, tiers, and a live grade.</p>
+    <div class="dr-hero-actions">
+      <a class="dr-hero-link" id="drToCheatSheet" href="/draft/cheat-sheet">Cheat Sheet</a>
+      <a class="dr-hero-link" id="drToHistory" href="/draft/history">Draft History</a>
+    </div>
   </div>
 
   <!-- Setup -->
   <div class="dr-setup" id="drSetup">
-    <div class="dr-setup-card">
+    <div class="dr-setup-card" id="drSetupCard">
+      <header class="dr-setup-modal-head" id="drSetupModalHead" hidden>
+        <div>
+          <div class="dr-setup-modal-kicker">Current draft</div>
+          <h2 class="dr-setup-modal-title" id="drEditTitle">Edit Setup</h2>
+        </div>
+        <button type="button" class="dr-setup-modal-close" id="drEditClose" aria-label="Close">&times;</button>
+      </header>
+      <p class="dr-setup-desc" id="drEditNote" hidden>Changes apply to this draft. Picks stay on the board unless you change teams, pick order, or your slot. Reset wipes the board and returns to setup.</p>
 
       <div class="dr-step">
-        <div class="dr-step-num">Step 1</div>
-        <div class="dr-step-title">Format</div>
+        <div class="dr-step-head">
+          <span class="dr-step-num">1</span>
+          <div class="dr-step-title">Format</div>
+        </div>
         <div class="dr-setup-grid">
           <div class="dr-field"><span>Draft Type</span>
             <select id="drType">
@@ -190,14 +204,18 @@ _DRAFT_ROOM_HTML = r"""
       </div>
 
       <div class="dr-step">
-        <div class="dr-step-num">Step 2</div>
-        <div class="dr-step-title">Roster Slots</div>
+        <div class="dr-step-head">
+          <span class="dr-step-num">2</span>
+          <div class="dr-step-title">Roster Slots</div>
+        </div>
         <div id="drRosterSection"></div>
       </div>
 
       <div class="dr-step">
-        <div class="dr-step-num">Step 3</div>
-        <div class="dr-step-title">League</div>
+        <div class="dr-step-head">
+          <span class="dr-step-num">3</span>
+          <div class="dr-step-title">League</div>
+        </div>
         <div class="dr-setup-grid">
           <div class="dr-field"><span>Teams</span>
             <select id="drTeams">
@@ -214,16 +232,24 @@ _DRAFT_ROOM_HTML = r"""
       </div>
 
       <div class="dr-step">
-        <div class="dr-step-num">Step 4</div>
-        <div class="dr-step-title">Draft Capital</div>
+        <div class="dr-step-head">
+          <span class="dr-step-num">4</span>
+          <div class="dr-step-title">Draft Capital</div>
+        </div>
         <p class="dr-setup-desc" style="margin-bottom:8px;">Defaults to your slot's picks. Tap + on a round to add a traded-in pick, or click a pick to remove one you traded away.</p>
         <div id="drCapitalSection"></div>
       </div>
 
-      <div class="dr-setup-cta">
+      <div class="dr-setup-cta" id="drSetupStartCta">
         <button class="dr-btn dr-btn-primary dr-btn-lg" id="drStartSim">&#9654;&nbsp; Start Mock Draft</button>
         <button class="dr-btn dr-btn-lg" id="drStart">Draft Manually</button>
         <button class="dr-btn dr-btn-ghost" id="drConnect">Connect Live Draft</button>
+      </div>
+      <div class="dr-setup-cta dr-setup-edit-cta" id="drSetupEditCta" hidden>
+        <button type="button" class="dr-btn dr-btn-ghost dr-btn-danger" id="drEditReset"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>Reset Draft</button>
+        <span class="dr-setup-edit-spacer"></span>
+        <button type="button" class="dr-btn dr-btn-ghost" id="drEditCancel">Cancel</button>
+        <button type="button" class="dr-btn dr-btn-primary" id="drEditApply">Apply Settings</button>
       </div>
       <div class="dr-live-list" id="drLiveList" style="display:none;"></div>
     </div>
@@ -240,6 +266,7 @@ _DRAFT_ROOM_HTML = r"""
         </div>
         <div class="dr-status-pills">
           <span class="dr-ss-stat" id="drPickPill">Pick: 1.01</span>
+          <button type="button" class="dr-league-meta" id="drLeagueMeta" hidden></button>
           <span class="dr-pick-timer" id="drPickTimer" style="display:none;"></span>
           <span class="dr-pill dr-pill-live" id="drLiveBadge" style="display:none;">&#9679; LIVE</span>
           <span class="dr-pill dr-pill-upcoming" id="drUpcomingBadge" style="display:none;">Upcoming</span>
@@ -345,14 +372,14 @@ _DRAFT_ROOM_HTML = r"""
             <input id="drSearch" type="search" placeholder="Search…" autocomplete="off">
             <button class="dr-help-btn" id="drHelpBtn" type="button" aria-label="What do these terms mean?" title="What do these terms mean?">?</button>
           </div>
-          <div class="dr-pos-filters" id="drPosFilters">
-            <button class="dr-pos active" data-pos="ALL">All</button>
-            <button class="dr-pos" data-pos="QB">QB</button>
-            <button class="dr-pos" data-pos="RB">RB</button>
-            <button class="dr-pos" data-pos="WR">WR</button>
-            <button class="dr-pos" data-pos="TE">TE</button>
-            <button class="dr-pos dr-pos-kdef" data-pos="K" style="display:none;">K</button>
-            <button class="dr-pos dr-pos-kdef" data-pos="DEF" style="display:none;">DEF</button>
+          <div class="otc-day-filters dr-pos-filters" id="drPosFilters">
+            <button class="otc-day-filter dr-pos active" data-pos="ALL">All</button>
+            <button class="otc-day-filter dr-pos" data-pos="QB">QB</button>
+            <button class="otc-day-filter dr-pos" data-pos="RB">RB</button>
+            <button class="otc-day-filter dr-pos" data-pos="WR">WR</button>
+            <button class="otc-day-filter dr-pos" data-pos="TE">TE</button>
+            <button class="otc-day-filter dr-pos dr-pos-kdef" data-pos="K" style="display:none;">K</button>
+            <button class="otc-day-filter dr-pos dr-pos-kdef" data-pos="DEF" style="display:none;">DEF</button>
           </div>
           <div class="dr-adp-src" id="drAdpSrc"></div>
         </div>
@@ -445,38 +472,127 @@ _DRAFT_ROOM_HTML = r"""
 </div>
 
 <style>
-  .dr-wrap { max-width: 1640px; margin: 0 auto; padding: 10px 12px 40px; }
-  .dr-hero { margin: 4px 0 16px; text-align: center; }
-  .dr-title { font-size: clamp(22px,4vw,30px); font-weight: 800; color: var(--text); margin: 0 0 6px; }
-  .dr-sub { font-size: 14px; color: var(--text-muted); margin: 0 auto; max-width: 560px; line-height: 1.5; }
-  .dr-hero-link { display: inline-block; margin-top: 10px; font-size: 13px; font-weight: 700;
-    color: var(--accent,#38bdf8); text-decoration: none; }
-  .dr-hero-link:hover { text-decoration: underline; }
+  .dr-wrap {
+    max-width: 1640px; margin: 0 auto; padding: 14px 14px 48px;
+  }
+  .dr-hero { margin: 2px 0 22px; text-align: center; }
+  .dr-brand {
+    margin: 0 0 8px; font-size: 11px; font-weight: 800; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--brand-blue, #3b82f6);
+  }
+  .dr-title {
+    font-size: clamp(28px, 4.4vw, 40px); font-weight: 800; color: var(--text);
+    margin: 0 0 8px; letter-spacing: -0.03em; line-height: 1.1;
+  }
+  .dr-sub {
+    font-size: 15px; color: var(--text-muted); margin: 0 auto; max-width: 540px; line-height: 1.55;
+  }
+  .dr-hero-actions {
+    display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 14px;
+  }
+  .dr-hero-link {
+    display: inline-flex; align-items: center; padding: 7px 12px; font-size: 12px; font-weight: 700;
+    color: var(--text-muted); text-decoration: none; border: 1px solid var(--border);
+    border-radius: 999px; background: color-mix(in srgb, var(--card) 80%, transparent);
+    transition: color .15s, border-color .15s, background .15s;
+  }
+  .dr-hero-link:hover {
+    color: var(--brand-blue, #3b82f6); border-color: color-mix(in srgb, var(--brand-blue, #3b82f6) 45%, var(--border));
+    background: color-mix(in srgb, var(--brand-blue, #3b82f6) 8%, transparent); text-decoration: none;
+  }
   /* ── Setup (redesigned) ── */
   .dr-setup { display: flex; justify-content: center; padding: 0 0 8px; }
-  .dr-setup-card { width: 100%; max-width: 720px; background: var(--card); border: 1px solid var(--border);
-    border-radius: 16px; padding: 22px 24px; box-shadow: 0 8px 30px rgba(0,0,0,.10); }
+  .dr-setup-card {
+    position: relative; width: 100%; max-width: 740px; border: 1px solid var(--border);
+    border-radius: 18px; padding: 24px 26px; box-shadow: var(--shadow, 0 8px 30px rgba(0,0,0,.10));
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--brand-blue, #3b82f6) 5%, var(--card)) 0%, var(--card) 88px),
+      var(--card);
+  }
   .dr-setup-desc { font-size: 13px; color: var(--text-muted); margin: 0; line-height: 1.5; }
+  #drEditNote { margin-bottom: 12px; }
   .dr-step { padding: 22px 0; border-top: 1px solid var(--border); }
-  .dr-step:first-child { border-top: none; padding-top: 0; }
-  .dr-step-num { font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .12em; color: var(--accent,#38bdf8); margin-bottom: 4px; }
-  .dr-step-title { font-size: 22px; font-weight: 900; color: var(--text); margin-bottom: 16px; line-height: 1.1; }
+  .dr-setup-card > .dr-step:first-of-type { border-top: none; padding-top: 0; }
+  .dr-setup-is-modal .dr-setup-card > .dr-step:first-of-type { border-top: 1px solid var(--border); padding-top: 22px; }
+  .dr-step-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .dr-step-num {
+    width: 26px; height: 26px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 900; color: var(--on-accent, #fff);
+    background: var(--accent, #122d4b); flex-shrink: 0;
+  }
+  .dr-step-title { font-size: 20px; font-weight: 800; color: var(--text); margin: 0; line-height: 1.15; letter-spacing: -0.02em; }
   .dr-setup-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(150px,1fr)); gap: 12px; }
   .dr-field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 700; color: var(--text-muted); }
   .dr-field select, .dr-field input {
     padding: 9px 11px; border-radius: 9px; border: 1px solid var(--border);
     background: var(--bg); color: var(--text); font-size: 14px; font-weight: 600; outline: none; min-height: 40px;
   }
-  .dr-field select:focus, .dr-field input:focus { border-color: var(--accent,#38bdf8); }
+  .dr-field select:focus, .dr-field input:focus {
+    border-color: var(--brand-blue, #3b82f6);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-blue, #3b82f6) 16%, transparent);
+  }
   .dr-setup-cta { margin-top: 20px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .dr-setup-edit-cta { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .dr-setup-edit-cta .dr-btn { display: inline-flex; align-items: center; gap: 7px; }
+  .dr-setup-edit-spacer { flex: 1; min-width: 8px; }
+  /* Author display:flex rules beat the UA [hidden] stylesheet; force collapse. */
+  #drSetup [hidden], .dr-league-meta[hidden] { display: none !important; }
+  .dr-setup-modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+  .dr-setup-modal-kicker {
+    font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .12em;
+    color: var(--brand-blue, #3b82f6); margin-bottom: 4px;
+  }
+  .dr-setup-modal-title { font-size: 22px; font-weight: 900; color: var(--text); margin: 0; line-height: 1.1; }
+  .dr-setup-modal-close {
+    width: 28px; height: 28px; flex-shrink: 0; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 12px; font-size: 17px; line-height: 1; color: var(--text-muted); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .dr-setup-modal-close:hover { background: color-mix(in srgb, var(--loss) 12%, transparent); color: var(--loss); }
+  .dr-setup-is-modal {
+    display: flex !important; position: fixed; inset: 0; z-index: 1100;
+    background: rgba(0,0,0,.58); align-items: flex-start; justify-content: center;
+    overflow-y: auto; padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 20px);
+  }
+  .dr-setup-is-modal .dr-setup-card {
+    margin: 8px auto; max-width: 740px; width: 100%;
+    box-shadow: 0 24px 80px rgba(0,0,0,.45);
+  }
+  .dr-setup-is-modal .dr-live-list { display: none !important; }
+  body.dr-edit-open { overflow: hidden; }
+  .dr-league-meta {
+    display: inline-flex; align-items: center; gap: 5px; flex-wrap: nowrap;
+    min-width: 0; padding: 3px 6px; border-radius: 8px;
+    border: 1px solid transparent; background: transparent; color: var(--text-muted);
+    font-family: inherit; font-size: 12px; font-weight: 700; line-height: 1.3; white-space: nowrap;
+    cursor: default; flex-shrink: 0; appearance: none;
+  }
+  .dr-league-meta.is-editable { cursor: pointer; }
+  .dr-league-meta.is-editable:hover {
+    color: var(--text); border-color: var(--border); background: var(--bg);
+  }
+  .dr-lm-chip {
+    display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 6px;
+    background: var(--row, var(--bg)); border: 1px solid var(--grid, var(--border));
+    color: var(--text-muted); font-size: 11px; font-weight: 700; line-height: 1.45;
+    white-space: nowrap; flex-shrink: 0;
+  }
   .dr-btn-lg { padding: 12px 22px; font-size: 14px; border-radius: 10px; }
   .dr-sim-speed { padding: 6px 8px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg);
     color: var(--text); font-size: 12px; font-weight: 600; }
   .dr-btn {
     padding: 9px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer;
     border: 1px solid var(--border); background: var(--bg); color: var(--text); white-space: nowrap;
+    transition: background .15s, border-color .15s, color .15s, box-shadow .15s, transform .15s;
   }
-  .dr-btn-primary { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: #fff; }
+  .dr-btn:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+  .dr-btn-primary {
+    background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: var(--on-accent, #fff);
+  }
+  .dr-btn-primary:hover {
+    box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 28%, transparent);
+    transform: translateY(-1px);
+  }
   .dr-btn-ghost { background: transparent; font-weight: 600; }
   /* Settings gear button — sits beside the side-panel tabs — + dropdown panel */
   .dr-side-opts { position: relative; flex: 0 0 auto; display: flex; align-items: stretch; }
@@ -528,8 +644,10 @@ _DRAFT_ROOM_HTML = r"""
   .dr-statusbar {
     position: relative;
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding: 10px 14px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 12px;
-    background: var(--card);
+    padding: 10px 14px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 14px;
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--brand-blue, #3b82f6) 4%, var(--card)), var(--card));
+    box-shadow: var(--shadow-sm, 0 2px 8px rgba(15, 23, 42, 0.05));
     position: sticky; top: 89px; z-index: 30;
   }
   .dr-status-info { display: flex; align-items: center; gap: 14px; min-width: 0; flex: 1; }
@@ -569,7 +687,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-banner-txt span { font-size: 12px; color: var(--text-muted); }
   .dr-start-cd { font-variant-numeric: tabular-nums; }
   .dr-banner-join { flex-shrink: 0; margin-left: auto; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
-    background: var(--accent,#38bdf8); color: #fff; font-weight: 700; font-size: 13px; text-decoration: none; padding: 8px 14px; border-radius: 8px; }
+    background: var(--accent,#38bdf8); color: var(--on-accent, #fff); font-weight: 700; font-size: 13px; text-decoration: none; padding: 8px 14px; border-radius: 8px; }
   .dr-start-banner.is-live .dr-banner-join { background: var(--win); }
   .dr-banner-join i { font-size: 11px; }
   .dr-poll-status { font-size: 11px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
@@ -589,7 +707,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-cols { display: grid; grid-template-columns: 1fr 375px; gap: 14px; align-items: start; }
   /* min-width:0 lets this grid item shrink to its track instead of growing to
      the wide board's width (the inner scroll, not the card, holds the overflow). */
-  .dr-board-wrap { position: relative; min-width: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--card); padding: 6px; }
+  .dr-board-wrap { position: relative; min-width: 0; border: 1px solid var(--border); border-radius: 14px; background: var(--card); padding: 8px; box-shadow: var(--shadow-sm, 0 2px 8px rgba(15, 23, 42, 0.05)); }
   /* Only the board scrolls horizontally; the toolbar (Value/Pick Score toggle)
      stays pinned to the card so it doesn't drift when you scroll the grid. */
   .dr-board-scroll { overflow-x: auto; min-width: 0; }
@@ -638,7 +756,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-board-toolbar { display: flex; align-items: center; justify-content: flex-end; padding: 4px 6px 2px; }
   .dr-cell-toggle { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; font-size: 10px; font-weight: 700; }
   .dr-ct-opt { padding: 3px 9px; cursor: pointer; color: var(--text-muted); transition: background .15s, color .15s; }
-  .dr-ct-opt.is-active { background: var(--accent,#38bdf8); color: #fff; }
+  .dr-ct-opt.is-active { background: var(--accent,#38bdf8); color: var(--on-accent, #fff); }
   .dr-ct-opt:not(.is-active):hover { background: var(--bg2,rgba(127,127,127,.12)); color: var(--text); }
   .dr-hs { width: 40px; height: 40px; border-radius: 8px 8px 0 0; object-fit: cover; object-position: top center;
     flex-shrink: 0; background: transparent; align-self: flex-end; }
@@ -654,8 +772,9 @@ _DRAFT_ROOM_HTML = r"""
     box-shadow: 2px 0 4px -2px rgba(0,0,0,.25);
     display: flex; align-items: center; justify-content: center; }
   .dr-corner { z-index: 4; }
-  .dr-side { border: 1px solid var(--border); border-radius: 10px; background: var(--card); display: flex; flex-direction: column;
-    position: sticky; top: 158px; align-self: start; max-height: calc(100vh - 166px); z-index: 20; overflow: hidden; }
+  .dr-side { border: 1px solid var(--border); border-radius: 14px; background: var(--card); display: flex; flex-direction: column;
+    position: sticky; top: 158px; align-self: start; max-height: calc(100vh - 166px); z-index: 20; overflow: hidden;
+    box-shadow: var(--shadow-sm, 0 2px 8px rgba(15, 23, 42, 0.05)); }
   /* Reuse the trade-calculator pill tabs (otc-main-tabs), evenly spread across panel */
   .dr-side-tabs.otc-main-tabs { width: auto; margin: 8px; }
   .dr-side-tabs .otc-main-tab { flex: 1; display: flex; align-items: center; justify-content: center;
@@ -751,7 +870,28 @@ _DRAFT_ROOM_HTML = r"""
   .dr-prev-score-num { font-size: 44px; font-weight: 900; line-height: 1; }
   .dr-prev-score-lbl { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-top: 2px; }
   .dr-prev-score-reason { font-size: 12px; font-weight: 600; color: var(--text-muted); margin-top: 6px; }
-  .dr-empty-note { padding: 22px 14px; font-size: 12px; color: var(--text-muted); text-align: center; }
+  .dr-empty-note {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; padding: 28px 16px; text-align: center;
+  }
+  .dr-empty-note-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; border-radius: 50%;
+    background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+    color: var(--text-muted); margin-bottom: 2px;
+  }
+  .dr-empty-note-icon svg { width: 20px; height: 20px; display: block; }
+  .dr-empty-note-title { font-size: 13px; font-weight: 800; color: var(--text); margin: 0; }
+  .dr-empty-note-msg { font-size: 12px; color: var(--text-muted); line-height: 1.45; max-width: 34ch; margin: 0; }
+  .dr-loading {
+    display: flex; flex-direction: column; align-items: stretch; gap: 8px;
+    padding: 14px 10px;
+  }
+  .dr-loading-msg {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 22px 14px; color: var(--text-muted); font-size: 13px;
+  }
+  .dr-loading-msg .loading-spinner { width: 14px; height: 14px; margin: 0; flex-shrink: 0; }
   /* In-draft cheat sheet overlay (iframes the chrome-less cheat sheet). */
   .dr-cheat-overlay { position: fixed; inset: 0; z-index: 12000; background: rgba(0,0,0,.55);
     display: flex; align-items: center; justify-content: center; padding: 18px; }
@@ -876,10 +1016,8 @@ _DRAFT_ROOM_HTML = r"""
     font-weight: 600; cursor: pointer; white-space: nowrap;
   }
   .dr-sortsel-opt:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
-  .dr-sortsel-opt.is-active { background: var(--accent,#38bdf8); color: #fff; }
-  .dr-pos-filters { display: flex; gap: 4px; flex-wrap: wrap; }
-  .dr-pos { font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text-muted); cursor: pointer; }
-  .dr-pos.active { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: #fff; }
+  .dr-sortsel-opt.is-active { background: var(--accent,#38bdf8); color: var(--on-accent, #fff); }
+  .dr-pos-filters { display: flex; gap: 6px; flex-wrap: wrap; }
   .dr-adp-src { font-size: 10px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
   .dr-adp-src-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
   .dr-adp-src-select { padding: 4px 7px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 11px; cursor: pointer; outline: none; }
@@ -916,7 +1054,6 @@ _DRAFT_ROOM_HTML = r"""
   .dr-prev-avail-picks { display: flex; flex-wrap: wrap; gap: 6px; }
   .dr-prev-avail-pick { display: inline-flex; align-items: baseline; gap: 4px; padding: 5px 10px; border-radius: 8px; }
   .dr-prev-avail-pn { font-size: 10px; font-weight: 600; color: var(--text-muted); }
-  .dr-loading { display: flex; align-items: center; gap: 10px; padding: 24px; color: var(--text-muted); font-size: 13px; justify-content: center; }
   @media (max-width: 768px) {
     /* Treat the in-draft sheet as a real mobile screen. A centered desktop modal
        leaves too little room for the controls and can sit behind the app dock. */
@@ -985,6 +1122,8 @@ _DRAFT_ROOM_HTML = r"""
     .dr-status-pills { gap: 4px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; min-width: 0; flex: 1; }
     .dr-status-pills::-webkit-scrollbar { display: none; }
     .dr-ss-stat { font-size: 13px; }
+    .dr-league-meta { font-size: 11px; padding: 2px 4px; }
+    .dr-lm-chip { font-size: 10px; padding: 1px 6px; }
     .dr-pill, .dr-roster-src-tag, .dr-cap-pill { font-size: 10px; padding: 2px 7px; }
     .dr-pick-timer { font-size: 12px; min-width: 32px; padding: 2px 6px; }
     .dr-progress, .dr-save { font-size: 10px; white-space: nowrap; }
@@ -1161,6 +1300,7 @@ _DRAFT_ROOM_HTML = r"""
   .dd-odds-track { flex:1; height:7px; border-radius:99px; background:var(--border); overflow:hidden; }
   .dd-odds-track i { display:block; height:100%; border-radius:99px; }
   .dd-odds .num { font-variant-numeric:tabular-nums; font-weight:600; font-size:12.5px; min-width:34px; text-align:right; }
+  .dd-odds-pending { color:var(--text-muted); font-size:12px; font-style:italic; }
   /* construction */
   .dd-two { display:grid; grid-template-columns:1fr 1fr; gap:22px; }
   .dd-cap-row { display:grid; grid-template-columns:40px 1fr 78px; gap:11px; align-items:center; margin-bottom:10px; }
@@ -1419,6 +1559,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-sum-lgrade { font-size: 18px; font-weight: 900; flex-shrink: 0; width: 32px; text-align: right; }
   /* Projected playoff-odds chip (completed draft only) */
   .dr-sum-lpo { font-size: 11px; font-weight: 800; flex-shrink: 0; width: 38px; text-align: right; font-variant-numeric: tabular-nums; }
+  .dr-sum-lpo-pending { color: var(--text-muted); font-weight: 600; }
   .dr-sum-lchev { font-size: 9px; color: var(--text-muted); flex-shrink: 0; transition: transform .2s; }
   .dr-sum-lrow.is-open .dr-sum-lchev { transform: rotate(180deg); }
   /* Expandable team starter detail */
@@ -1462,9 +1603,12 @@ def build_draft_history_body(
 _DRAFT_HISTORY_HTML = r"""
 <div class="dr-wrap">
   <div class="dr-hero">
+    <p class="dr-brand">BR Fantasy</p>
     <h1 class="dr-title">Draft History</h1>
     <p class="dr-sub">Every draft in your league's history. Open any board to review the picks pick-by-pick.</p>
-    <a class="dr-hero-link" id="drHistToRoom" href="/draft">&larr; Draft Room</a>
+    <div class="dr-hero-actions">
+      <a class="dr-hero-link" id="drHistToRoom" href="/draft">&larr; Draft Room</a>
+    </div>
   </div>
   <div id="drHistList" class="dr-hist-list">
     <div class="dr-loading"><div class="loading-spinner" style="width:22px;height:22px;"></div><span>Loading…</span></div>
@@ -1472,16 +1616,27 @@ _DRAFT_HISTORY_HTML = r"""
 </div>
 
 <style>
-  .dr-wrap { max-width: 900px; margin: 0 auto; padding: 12px 14px 48px; }
-  .dr-hero { margin-bottom: 14px; }
-  .dr-title { font-size: clamp(20px,4vw,28px); font-weight: 800; color: var(--text); margin: 0 0 4px; }
-  .dr-sub { font-size: 14px; color: var(--text-muted); margin: 0; }
-  .dr-hero-link { display: inline-block; margin-top: 8px; font-size: 13px; font-weight: 700;
-    color: var(--accent,#38bdf8); text-decoration: none; }
-  .dr-hero-link:hover { text-decoration: underline; }
-  .dr-hist-list { display: flex; flex-direction: column; gap: 10px; }
+  .dr-wrap { max-width: 900px; margin: 0 auto; padding: 14px 14px 48px; }
+  .dr-hero { margin-bottom: 18px; }
+  .dr-brand {
+    margin: 0 0 8px; font-size: 11px; font-weight: 800; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--brand-blue, #3b82f6);
+  }
+  .dr-title { font-size: clamp(24px,4vw,34px); font-weight: 800; color: var(--text); margin: 0 0 6px; letter-spacing: -0.03em; }
+  .dr-sub { font-size: 15px; color: var(--text-muted); margin: 0; line-height: 1.5; max-width: 520px; }
+  .dr-hero-actions { display: inline-flex; gap: 8px; margin-top: 12px; }
+  .dr-hero-link {
+    display: inline-flex; align-items: center; padding: 7px 12px; font-size: 12px; font-weight: 700;
+    color: var(--text-muted); text-decoration: none; border: 1px solid var(--border);
+    border-radius: 999px; background: color-mix(in srgb, var(--card) 80%, transparent);
+  }
+  .dr-hero-link:hover {
+    color: var(--brand-blue, #3b82f6); border-color: color-mix(in srgb, var(--brand-blue, #3b82f6) 45%, var(--border));
+    text-decoration: none;
+  }
+  .dr-hist-list { display: flex; flex-direction: column; gap: 10px; position: relative; z-index: 1; }
   .dr-hist-card { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--border);
-    border-radius: 10px; background: var(--card); }
+    border-radius: 12px; background: var(--card); box-shadow: var(--shadow-sm, 0 2px 8px rgba(15, 23, 42, 0.05)); }
   .dr-hist-body { flex: 1; min-width: 0; }
   .dr-hist-title { font-size: 15px; font-weight: 700; color: var(--text); }
   .dr-hist-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
@@ -1492,10 +1647,17 @@ _DRAFT_HISTORY_HTML = r"""
   .dr-hist-actions { display: flex; gap: 6px; flex-shrink: 0; }
   .dr-btn { padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer;
     border: 1px solid var(--border); background: var(--bg); color: var(--text); text-decoration: none; }
-  .dr-btn-primary { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: #fff; }
+  .dr-btn-primary { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: var(--on-accent, #fff); }
   .dr-btn-danger { color: var(--loss); border-color: color-mix(in srgb, var(--loss) 40%, transparent); background: transparent; }
-  .dr-loading { display: flex; align-items: center; gap: 10px; padding: 24px; color: var(--text-muted); font-size: 13px; justify-content: center; }
-  .dr-hist-empty { padding: 28px; text-align: center; color: var(--text-muted); font-size: 14px; }
+  .dr-loading {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    padding: 28px 16px; color: var(--text-muted); font-size: 13px;
+  }
+  .dr-hist-empty {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; padding: 36px 18px; text-align: center; color: var(--text-muted); font-size: 13px;
+    line-height: 1.45;
+  }
 </style>
 
 <script>
@@ -1515,9 +1677,24 @@ _DRAFT_HISTORY_HTML = r"""
     return '<span class="dr-hist-tag ' + c + '">' + esc(label) + '</span>';
   }
 
+  function histEmpty(title, message, htmlMsg){
+    if (htmlMsg) {
+      listEl.innerHTML = '<div class="empty-state is-compact">'
+        + '<p class="empty-state-title">' + esc(title) + '</p>'
+        + '<p class="empty-state-msg">' + htmlMsg + '</p></div>';
+      return;
+    }
+    if (window.brEmptyState) {
+      window.brEmptyState(listEl, { icon: 'empty', title: title, message: message, compact: true });
+      return;
+    }
+    listEl.innerHTML = '<div class="empty-state is-compact"><p class="empty-state-title">'
+      + esc(title) + '</p><p class="empty-state-msg">' + esc(message) + '</p></div>';
+  }
+
   function render(drafts){
     if (!drafts.length){
-      listEl.innerHTML = '<div class="dr-hist-empty">No drafts found for this league yet.</div>';
+      histEmpty('No drafts yet', 'Drafts for this league will show up here once they are created.');
       return;
     }
     // Live/upcoming first, then completed; newest season first within each.
@@ -1544,18 +1721,22 @@ _DRAFT_HISTORY_HTML = r"""
 
   function loadList(){
     if (!cfg.hasLeague){
-      listEl.innerHTML = '<div class="dr-hist-empty">Open Draft History from your league to see its drafts. '
-        + 'You can still run a mock in the <a href="' + esc(cfg.base) + '">Draft Room</a>.</div>';
+      histEmpty('Open from your league', '',
+        'Open Draft History from your league to see its drafts. '
+        + 'You can still run a mock in the <a href="' + esc(cfg.base) + '">Draft Room</a>.');
       return;
     }
     fetch('/api/draft/detect?history=1&platform=' + encodeURIComponent(cfg.platform)
         + '&league_id=' + encodeURIComponent(cfg.leagueId) + '&season=' + (cfg.season || ''), { cache: 'no-store' })
       .then(function(r){ return r.json(); })
       .then(function(resp){
-        if (resp.unsupported){ listEl.innerHTML = '<div class="dr-hist-empty">Draft history is available for Sleeper leagues.</div>'; return; }
+        if (resp.unsupported){ histEmpty('Sleeper only', 'Draft history is available for Sleeper leagues.'); return; }
         render(resp.drafts || []);
       })
-      .catch(function(){ window.brErrorState(listEl, 'Could not load drafts.', loadList, { compact: true }); });
+      .catch(function(){
+        if (window.brErrorState) window.brErrorState(listEl, 'Could not load drafts.', loadList, { compact: true });
+        else listEl.innerHTML = '<div class="dr-hist-empty">Could not load drafts.</div>';
+      });
   }
 
   loadList();

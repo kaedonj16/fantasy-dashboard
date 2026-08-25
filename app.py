@@ -132,6 +132,13 @@ from utils.utils import (
     load_week_schedule,
     streak_class,
 )
+from utils.lineup_slots import (
+    count_lineup_slots as _count_lineup_slots,
+    is_superflex_lineup as _is_superflex_lineup,
+    starter_need_counts as _starter_need_counts,
+    start_sit_pos as _start_sit_pos,
+    start_sit_groups as _start_sit_groups,
+)
 
 daily_lock = threading.Lock()
 daily_completed = None
@@ -689,24 +696,27 @@ def _add_cache_headers(response):
 # pragmatic, non-breaking choice.
 _CSP_POLICY = "; ".join([
     "default-src 'self'",
-    # Google AdSense chain + Plotly (jsDelivr) + Sentry browser bundle.
+    # Google AdSense / Funding Choices CMP + Plotly (jsDelivr) + Sentry.
     "script-src 'self' 'unsafe-inline' "
     "https://pagead2.googlesyndication.com https://*.googlesyndication.com "
     "https://*.googleadservices.com https://*.google.com https://*.gstatic.com "
-    "https://*.doubleclick.net https://cdn.jsdelivr.net "
-    "https://browser.sentry-cdn.com",
-    "style-src 'self' 'unsafe-inline'",
+    "https://*.doubleclick.net https://fundingchoicesmessages.google.com "
+    "https://cdn.jsdelivr.net https://browser.sentry-cdn.com",
+    "style-src 'self' 'unsafe-inline' https://*.googlesyndication.com "
+    "https://fundingchoicesmessages.google.com",
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
-    # XHR/fetch/beacon: Sentry ingest + the ad chain's reporting endpoints.
+    # XHR/fetch/beacon: Sentry ingest + the ad / CMP reporting endpoints.
     "connect-src 'self' https://*.sentry.io https://*.google.com "
     "https://*.googlesyndication.com https://*.doubleclick.net "
-    "https://pagead2.googlesyndication.com https://cdn.jsdelivr.net",
+    "https://pagead2.googlesyndication.com https://fundingchoicesmessages.google.com "
+    "https://cdn.jsdelivr.net",
     # 'self' lets the app embed its own pages (the Draft Room's in-draft cheat
-    # sheet overlay iframes /draft/cheat-sheet/embed). Ads render inside iframes
-    # served from the Google ad hosts.
+    # sheet overlay iframes /draft/cheat-sheet/embed). Ads and Google's consent
+    # messaging render inside iframes from Google ad / CMP hosts.
     "frame-src 'self' https://*.googlesyndication.com https://*.doubleclick.net "
-    "https://*.google.com",
+    "https://*.google.com https://fundingchoicesmessages.google.com "
+    "https://*.googleadservices.com",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -1109,17 +1119,17 @@ FORM_BODY = """
 <div class="home-page">
   <section class="home-hero">
     <div class="home-hero-left">
+      <p class="home-brand">BR Fantasy</p>
       <h1 class="home-title">Your dynasty league,<br><span class="home-rot" aria-label="upgraded"><span class="home-rot-track"><span>upgraded.</span><span>decoded.</span><span>dominated.</span><span>upgraded.</span></span></span></h1>
       <p class="home-subtitle">
-        Advanced analytics, AI-powered insights, and professional-grade tools for Sleeper, ESPN, and Yahoo leagues.
+        Trade values, AI analysis, and league tools for Sleeper, ESPN, Yahoo, and MFL. Built for serious managers.
       </p>
-
-      <ul class="home-bullets">
-        <li><strong>AI Trade Analyst</strong> - Personalized deal evaluation with counter suggestions</li>
-        <li><strong>Dynasty Value Engine</strong> - Hybrid model combining consensus data and advanced metrics</li>
-        <li><strong>Weekly Projections</strong> - Live scoring, matchup previews, and storyline tracking</li>
-        <li><strong>Historical Analysis</strong> - Season recaps, power rankings, and trend visualization</li>
-      </ul>
+      <div class="home-platform-row" aria-label="Supported platforms">
+        <span class="home-platform-chip">Sleeper</span>
+        <span class="home-platform-chip">ESPN</span>
+        <span class="home-platform-chip">Yahoo</span>
+        <span class="home-platform-chip">MFL</span>
+      </div>
     </div>
 
     <div class="home-hero-right">
@@ -1338,6 +1348,25 @@ FORM_BODY = """
     </div>
   </section>
 
+  <section class="home-proof" aria-label="What you get">
+    <div class="home-proof-item">
+      <span class="home-proof-label">AI Trade Analyst</span>
+      <span class="home-proof-desc">Deal grades and counter suggestions tailored to your roster</span>
+    </div>
+    <div class="home-proof-item">
+      <span class="home-proof-label">Dynasty Values</span>
+      <span class="home-proof-desc">Hybrid consensus and metrics model updated daily</span>
+    </div>
+    <div class="home-proof-item">
+      <span class="home-proof-label">Weekly Command</span>
+      <span class="home-proof-desc">Live scoring, matchups, and storyline tracking</span>
+    </div>
+    <div class="home-proof-item">
+      <span class="home-proof-label">League History</span>
+      <span class="home-proof-desc">Season recaps, power rankings, and trend charts</span>
+    </div>
+  </section>
+
   <div class="home-content-wrapper">
     <section class="home-feature-list-card">
       <div class="home-features-header">
@@ -1347,8 +1376,8 @@ FORM_BODY = """
       <div class="home-feature-list">
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(99,102,241,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#6366f1;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.44-3.14Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.44-3.14Z"/></svg>
+          <div class="home-feature-row-icon home-fi-1">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.44-3.14Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.44-3.14Z"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Trade Strategy <span class="home-feature-badge">New</span> <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
@@ -1357,8 +1386,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(59,130,246,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#3b82f6;" viewBox="0 0 24 24" fill="currentColor"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg>
+          <div class="home-feature-row-icon home-fi-2">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Trade Calculator</span>
@@ -1367,8 +1396,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(139,92,246,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#8b5cf6;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 12l4-4 4 4 4-6"/></svg>
+          <div class="home-feature-row-icon home-fi-3">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 12l4-4 4 4 4-6"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Trade Intelligence <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
@@ -1377,8 +1406,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(16,185,129,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#10b981;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+          <div class="home-feature-row-icon home-fi-4">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Player Rankings</span>
@@ -1387,8 +1416,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(20,184,166,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#14b8a6;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M6 8h.01M9 8h6M6 11h.01M9 11h9"/></svg>
+          <div class="home-feature-row-icon home-fi-5">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M6 8h.01M9 8h6M6 11h.01M9 11h9"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Advanced Metrics</span>
@@ -1397,8 +1426,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(167,139,250,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#a78bfa;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          <div class="home-feature-row-icon home-fi-6">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Rookie Prospects</span>
@@ -1407,8 +1436,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(245,158,11,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#f59e0b;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 16 4-4 4 4 4-4"/></svg>
+          <div class="home-feature-row-icon home-fi-7">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 16 4-4 4 4 4-4"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Playoff Odds</span>
@@ -1417,8 +1446,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(6,182,212,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#06b6d4;" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>
+          <div class="home-feature-row-icon home-fi-8">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Weekly Hub</span>
@@ -1427,8 +1456,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(249,115,22,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#f97316;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          <div class="home-feature-row-icon home-fi-9">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Breakout Engine <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
@@ -1437,8 +1466,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(236,72,153,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#ec4899;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+          <div class="home-feature-row-icon home-fi-10">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Waivers &amp; Start/Sit</span>
@@ -1447,8 +1476,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(239,68,68,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#ef4444;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>
+          <div class="home-feature-row-icon home-fi-11">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Team Analytics</span>
@@ -1457,8 +1486,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(234,179,8,.12);border-radius:8px;">
-            <i class="fa-solid fa-trophy" style="font-size:16px;color:#eab308;" aria-hidden="true"></i>
+          <div class="home-feature-row-icon home-fi-12">
+            <i class="fa-solid fa-trophy" aria-hidden="true"></i>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">League History</span>
@@ -1692,7 +1721,7 @@ BASE_HTML = """
 
       {ad_top}
 
-      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__FEATURES_JS = {features_js_js}; window.__brctx = {{is_logged_in:{signed_in_js},isPremium:{user_premium},platform:{platform_js},season:{season_js},leagueId:{league_id_js}}};</script>
+      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__FEATURES_JS = {features_js_js}; window.__brctx = {{is_logged_in:{signed_in_js},isPremium:{user_premium},platform:{platform_js},season:{season_js},leagueId:{league_id_js},leagueName:{league_name_js},leagueFormat:{league_format_js},currentWeek:{current_week_js},leagueType:{league_type_js},leagueSize:{league_size_js}}};</script>
       <main id="page-root" role="main" tabindex="-1" class="overview-layout" data-cache-ts="{cache_ts}" data-premium="{user_premium}">
         {body}
       </main>
@@ -1842,10 +1871,19 @@ def get_viewer_session_for_league(users: List[Dict], rosters: List[Dict],
     if league_viewer:
         save_viewer_session(league_viewer)
         return league_viewer
-    else:
-        logger.info(
-            f"[get_viewer_session_for_league] Could not resolve {username} in current league, returning session data")
-        return session_viewer
+
+    logger.info(
+        "[get_viewer_session_for_league] Could not resolve %s in current league; not attaching a roster",
+        username,
+    )
+    # Keep the identity so the visitor still looks signed in, but never leak a
+    # roster_id from another league into this one's waivers / start-sit / trades.
+    return {
+        "viewer_username": username,
+        "viewer_user_id": stored_user_id,
+        "viewer_roster_id": None,
+        "viewer_team_name": session_viewer.get("viewer_team_name"),
+    }
 
 
 def get_viewer_session() -> dict:
@@ -1869,6 +1907,78 @@ def get_viewer_session() -> dict:
 
 def _cache_key(platform: str, season: int, league_id: str):
     return str(platform).lower().strip(), int(season), str(league_id).strip()
+
+
+def _peek_league_ctx(platform, league_id, season) -> dict:
+    """Warm dashboard-cache ctx for chrome labels; empty dict if not loaded yet."""
+    if not (platform and league_id and season):
+        return {}
+    try:
+        entry = DASHBOARD_CACHE.get(_cache_key(platform, int(season), str(league_id))) or {}
+        return entry.get("ctx") or {}
+    except Exception:
+        return {}
+
+
+def _league_chrome_meta(platform, league_id, season, offseason_mode: bool = False) -> dict:
+    """League name, format, and week for the persistent nav chip."""
+    from utils.league_chrome import build_league_chrome
+    ctx = _peek_league_ctx(platform, league_id, season)
+    nfl = get_nfl_state() or {}
+    try:
+        week = int(ctx.get("current_week") or nfl.get("week") or 0)
+    except (TypeError, ValueError):
+        week = 0
+    try:
+        size = int(
+            ctx.get("total_rosters")
+            or (ctx.get("league") or {}).get("total_rosters")
+            or len(ctx.get("rosters") or [])
+            or 0
+        )
+    except (TypeError, ValueError):
+        size = 0
+    return build_league_chrome(
+        name=((ctx.get("league") or {}).get("name") or ""),
+        size=size,
+        roster_positions=ctx.get("roster_positions") or [],
+        week=week,
+        season_type=str(nfl.get("season_type") or ""),
+        offseason=bool(offseason_mode),
+    )
+
+
+def _render_league_chrome_chip(meta: dict, *, can_switch: bool) -> str:
+    """Persistent league + week chip that lives in the top bar, not page titles."""
+    if not meta:
+        return ""
+    name = html.escape(str(meta.get("name") or "This league"))
+    fmt = html.escape(str(meta.get("format") or ""))
+    week = html.escape(str(meta.get("week_label") or ""))
+    week_html = f"<span class='br-ctx-week'>{week}</span>" if week else ""
+    fmt_html = f"<span class='br-ctx-format'>{fmt}</span>" if fmt else ""
+    if can_switch:
+        league_el = (
+            f"<button type='button' class='br-ctx-league' id='brCtxLeagueBtn' "
+            f"aria-haspopup='listbox' aria-expanded='false' aria-label='Switch league'>"
+            f"<span class='br-ctx-name'>{name}</span>{fmt_html}"
+            f"<span class='br-ctx-caret' aria-hidden='true'>&#9662;</span>"
+            f"</button>"
+            f"<div class='br-ctx-menu' id='brCtxLeagueMenu' hidden role='listbox' "
+            f"aria-label='Switch league'></div>"
+        )
+    else:
+        league_el = (
+            f"<div class='br-ctx-league is-static'>"
+            f"<span class='br-ctx-name'>{name}</span>{fmt_html}"
+            f"</div>"
+        )
+    return (
+        f"<div class='br-ctx' id='brLeagueChrome'>"
+        f"<div class='br-ctx-league-wrap'>{league_el}</div>"
+        f"{week_html}"
+        f"</div>"
+    )
 
 
 def _page_html_tmp_path(platform: str, season: int, league_id: str, page: str) -> str:
@@ -3124,6 +3234,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 
     # Generate dashboard URL for logo link
     dashboard_url = url_for("page_dashboard", platform=platform, season=season, league_id=league_id)
+    _chrome_meta = _league_chrome_meta(platform, league_id, season, offseason_mode)
+    _chrome_chip = _render_league_chrome_chip(
+        _chrome_meta,
+        can_switch=bool(session.get("viewer_username") or session.get("account_id")),
+    )
 
     # Navigation pills (no utilities)
     nav_pills = []
@@ -3230,14 +3345,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             # cache (the page already built it — no extra fetch). Lets the switcher
             # show the league you're on even when it isn't one of your linked/account
             # leagues, so the dropdown never mislabels a different league as current.
-            _cur_name = ""
-            if league_id and platform and season:
-                try:
-                    _entry = DASHBOARD_CACHE.get(_cache_key(platform, int(season), str(league_id)))
-                    if _entry:
-                        _cur_name = ((_entry.get("ctx") or {}).get("league") or {}).get("name") or ""
-                except Exception:
-                    _cur_name = ""
+            _cur_name = (_chrome_meta.get("raw_name") or "")
             league_switcher_html = (
                 f"<div class='league-switcher-wrapper'>"
                 # data-no-custom opts this out of the custom-select (CSD) enhancer:
@@ -3447,9 +3555,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         )
 
     # On phones the mobile dock (_mobile_nav) is the primary nav, so this top bar
-    # is slimmed to the logo on the dashboard and hidden on every other league
-    # page. `br-mnav` marks "the dock is present"; `br-mnav-home` marks the one
-    # page that keeps a (logo-only) top bar.
+    # drops its pills and keeps the logo plus the league/week chip. `br-mnav`
+    # marks "the dock is present"; `br-mnav-home` still marks the dashboard.
     _mnav_cls = "top-nav br-mnav" + (" br-mnav-home" if active == "dashboard" else "")
     return (
         f"<nav class='{_mnav_cls}' aria-label='Main navigation'>"
@@ -3457,6 +3564,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         f"    <a href='{dashboard_url}' aria-label='BR Fantasy dashboard'>"
         "      <img src='/static/Website_Logo.png' alt='BR Fantasy' class='site-logo'/>"
         "    </a>"
+        f"    {_chrome_chip}"
         "  </div>"
         "  <div class='nav-center'>"
         f"    {pills_container}"
@@ -3478,6 +3586,12 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 _AD_SCRIPT = ''
 _AD_TOP = """<aside class="ad-container ad-top-banner" aria-label="Advertisement"><span class="ad-disclosure">Advertisement</span><ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins></aside>"""
 _AD_BOTTOM = """<aside class="ad-container ad-bottom-content" aria-label="Advertisement"><span class="ad-disclosure">Advertisement</span><ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins></aside>"""
+# Legal / utility / checkout pages lack enough publisher content for AdSense
+# (Google's "no publisher content" / insufficient-content policies). Never place
+# ad units there — including when active is None (e.g. /pricing).
+_NO_ADS_PAGES = frozenset({
+    "privacy", "terms", "about", "contact", "support", "faq", "pricing",
+})
 _AD_INIT = """(function(){
   var loaded = false;
   function loadAds(){
@@ -4024,7 +4138,8 @@ def render_page(
     # Mobile navigation: dynamic bottom dock + full "More" sheet (phones only,
     # league pages only). Appended as fixed siblings; CSS reserves space so the
     # dock never overlaps content. `.has-tabbar` also carries the active key so
-    # CSS can keep the top bar (logo only) on the dashboard and hide it elsewhere.
+    # CSS keeps the top bar (logo + league/week chip) on phones; the dock is the
+    # primary nav. `.has-tabbar` also carries the active key for CSS.
     # The dock renders OUTSIDE #page-root (in the {bottom_nav} slot) so a soft-nav
     # swap of #page-root never destroys and repaints it - the JS reconciles its
     # active tab in place instead (mirrors how the desktop top nav persists). The
@@ -4040,6 +4155,9 @@ def render_page(
     user_id = session.get("viewer_username")
     is_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform or "sleeper",
                                         season)
+    # Suppress ads on thin/legal/utility pages even for free users.
+    suppress_ads = (not active) or (active in _NO_ADS_PAGES)
+    show_ads = not (is_premium or suppress_ads)
 
     # Viewer context for client JS (player-modal roster context, etc.)
     viewer_roster_id = session.get("viewer_roster_id") or ""
@@ -4055,6 +4173,22 @@ def render_page(
     ) if platform == "yahoo" else ""
 
     import json as _json
+    _league_type = "1qb"
+    _league_size = 10
+    _chrome_meta = {"name": "", "format": "", "week": 0, "week_label": ""}
+    if league_id and platform and season:
+        try:
+            _nfl_st = get_nfl_state() or {}
+            _off = ((str(_nfl_st.get("season_type") or "").lower() in ("off", "pre"))
+                    and int(_nfl_st.get("season") or datetime.now().year) == int(season or 0))
+            _chrome_meta = _league_chrome_meta(platform, league_id, season, _off)
+            if _chrome_meta.get("sf"):
+                _league_type = "sf"
+            if int(_chrome_meta.get("size") or 0) >= 2:
+                _league_size = int(_chrome_meta["size"])
+        except Exception:
+            logger.debug("suppressed exception", exc_info=True)
+
     html = BASE_HTML.format(
         title=title,
         yahoo_attribution=_yahoo_attribution,
@@ -4067,10 +4201,10 @@ def render_page(
         bottom_nav=_bottom,
         cache_ts=int(time.time() * 1000),
         user_premium="true" if is_premium else "false",
-        adsense_script="" if is_premium else _AD_SCRIPT,
-        ad_top="" if is_premium else _AD_TOP,
-        ad_bottom="" if is_premium else _AD_BOTTOM,
-        adsense_init="" if is_premium else _AD_INIT,
+        adsense_script="" if not show_ads else _AD_SCRIPT,
+        ad_top="" if not show_ads else _AD_TOP,
+        ad_bottom="" if not show_ads else _AD_BOTTOM,
+        adsense_init="" if not show_ads else _AD_INIT,
         about_url=f"/{platform}/{season}/{league_id}/about" if (league_id and platform and season) else "/about",
         guides_url=f"/{platform}/{season}/{league_id}/guides" if (league_id and platform and season) else "/guides",
         privacy_url=f"/{platform}/{season}/{league_id}/privacy" if (league_id and platform and season) else "/privacy",
@@ -4097,6 +4231,11 @@ def render_page(
         platform_js=_json.dumps(platform or "sleeper"),
         season_js=_json.dumps(season),
         league_id_js=_json.dumps(str(league_id or "")),
+        league_name_js=_json.dumps(_chrome_meta.get("name") or ""),
+        league_format_js=_json.dumps(_chrome_meta.get("format") or ""),
+        current_week_js=_json.dumps(_chrome_meta.get("week") or 0),
+        league_type_js=_json.dumps(_league_type),
+        league_size_js=_json.dumps(_league_size),
     )
     resp = make_response(html)
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
@@ -4681,10 +4820,7 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Optional[dict]:
 
     lineup_requirements = {}
     if roster_positions and isinstance(roster_positions, (list, tuple)):
-        for slot in roster_positions:
-            slot_str = str(slot).upper()
-            if slot_str in {"QB", "RB", "WR", "TE", "FLEX", "SUPER_FLEX", "SFLEX"}:
-                lineup_requirements[slot_str] = lineup_requirements.get(slot_str, 0) + 1
+        lineup_requirements = _count_lineup_slots(roster_positions)
 
     starter_profile = {
         "count": len(starters),
@@ -6493,7 +6629,6 @@ def build_dashboard_body(ctx: dict) -> str:
         <section class="os-hero-card">
           <div class="os-hero-top">
             <div>
-              <div class="os-hero-kicker">Viewing {season} season &middot; Week {current_week}</div>
               <h1 class="os-hero-title">Season Hub</h1>
               <p class="os-hero-copy">{_hero_copy}</p>
             </div>
@@ -7408,7 +7543,7 @@ def render_share_rankings(ctx: dict) -> str:
 
     # ── Value: load from player_values DB ─────────────────────────
     roster_positions = ctx.get("roster_positions") or []
-    is_sf = any(str(p).upper() in {"SUPER_FLEX", "SFLEX"} for p in roster_positions)
+    is_sf = _is_superflex_lineup(roster_positions)
     val_col = "value_sf" if is_sf else "value_1qb"
 
     values_by_pid: Dict[str, float] = {}
@@ -7813,7 +7948,7 @@ def _waiver_value_keys(ctx: dict) -> "tuple[str, str]":
     dropping them below the value floor.
     """
     rp = ctx.get("roster_positions") or []
-    is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in rp)
+    is_sf = _is_superflex_lineup(rp)
     if _league_is_redraft(ctx):
         return (("redraft_value_sf" if is_sf else "redraft_value_1qb"),
                 ("sf_value" if is_sf else "value"))
@@ -8388,7 +8523,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         <section class="os-hero-card">
           <div class="os-hero-top">
             <div>
-              <div class="os-hero-kicker">Viewing {season} offseason league data</div>
               <h1 class="os-hero-title">Offseason Hub</h1>
               <p class="os-hero-copy">
                 Focus on roster building, draft prep, waiver value, and trade opportunities.
@@ -9039,7 +9173,9 @@ def build_weekly_hub_body(ctx: dict) -> str:
       <main class="page-main">
         <div class="card">
           <div class="card-header-row">
-            <h2>Weekly Hub</h2>
+            <div>
+              <h2>Weekly Hub</h2>
+            </div>
             <div class="week-selector">
               <select id="hubWeek" class="search">
                 {week_select_html}
@@ -10556,7 +10692,9 @@ def build_activity_body(ctx: dict) -> str:
         activity_html = (
             "<div class='card activity-card' data-section='activity'>"
             "  <div class='card-header-row'>"
-            "    <h2>League activity</h2>"
+            "    <div>"
+            "      <h2>League activity</h2>"
+            "    </div>"
             "  </div>"
             "  <div class='scroll-box'>"
             "    <div class='feed'>"
@@ -11522,7 +11660,9 @@ def api_waiver_candidates():
                 _rpos = str(_row.get("position") or _row.get("pos") or "").upper()
                 if _rpos in ("QB", "RB", "WR", "TE"):
                     try:
-                        _vals_by_pos.setdefault(_rpos, []).append(float(_row.get("value") or 0.0))
+                        _vals_by_pos.setdefault(_rpos, []).append(
+                            float(_row.get(_vf_wv) or _row.get(_vfb_wv) or 0.0)
+                        )
                     except (TypeError, ValueError):
                         pass
         _teams_n = len(rosters) or 12
@@ -11535,17 +11675,7 @@ def api_waiver_candidates():
     # Viewer roster need (#4): a position the viewer is short on is worth more.
     _need_scores_wv: dict = {}
     try:
-        _rp_counts = {}
-        for _s in _rp_wv:
-            _rp_counts[str(_s).upper()] = _rp_counts.get(str(_s).upper(), 0) + 1
-        _flex_n = _rp_counts.get("FLEX", 0)
-        _sf_n = _rp_counts.get("SUPER_FLEX", 0) + _rp_counts.get("SFLEX", 0)
-        _starter_reqs = {
-            "QB": _rp_counts.get("QB", 0) + _sf_n + 1,
-            "RB": _rp_counts.get("RB", 0) + _flex_n + _sf_n + 1,
-            "WR": _rp_counts.get("WR", 0) + _flex_n + _sf_n + 1,
-            "TE": _rp_counts.get("TE", 0) + 1,
-        }
+        _starter_reqs = _starter_need_counts(_rp_wv, extra_depth=1)
         _vsess = get_viewer_session_for_league(ctx.get("users") or [], rosters)
         _vrid = str((_vsess or {}).get("viewer_roster_id") or "")
         if _vrid:
@@ -12150,22 +12280,20 @@ def api_start_sit_options():
     if not viewer_roster:
         return jsonify({"positions": {}})
 
-    player_ids = [str(pid) for pid in (viewer_roster.get("players") or [])]
+    reserve_set = {str(p) for p in (viewer_roster.get("reserve") or [])}
+    taxi_set = {str(p) for p in (viewer_roster.get("taxi") or [])}
+    player_ids = [
+        str(pid) for pid in (viewer_roster.get("players") or [])
+        if str(pid) not in reserve_set and str(pid) not in taxi_set
+    ]
     players_index = ctx.get("players_index") or {}
     players_full = ctx.get("players") or {}
     model_value_table = list(get_model_value_table_cached() or [])
 
-    lineup_requirements: dict = ctx.get("lineup_requirements") or {}
+    roster_positions = ctx.get("roster_positions") or []
+    lineup_requirements = _count_lineup_slots(roster_positions)
     if not lineup_requirements:
-        roster_positions = ctx.get("roster_positions") or []
-        for slot in roster_positions:
-            s = str(slot).upper()
-            if s in {"QB", "RB", "WR", "TE", "FLEX", "SUPER_FLEX", "SFLEX", "K", "DEF"}:
-                lineup_requirements[s] = lineup_requirements.get(s, 0) + 1
-
-    _rp_ss = ctx.get("roster_positions") or []
-    _is_sf_ss = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_ss)
-    _vf_ss = "sf_value" if _is_sf_ss else "value"
+        lineup_requirements = ctx.get("lineup_requirements") or {}
 
     rows_by_id: dict = {}
     for row in model_value_table:
@@ -12187,7 +12315,8 @@ def api_start_sit_options():
     # ── Z-score matchup rank tables (rank 1 = easiest, one per position) ─────
     _z_rank_tables: dict = {}
     _z_total_map: dict = {}
-    for _zpos in ("QB", "RB", "WR", "TE"):
+    _ss_groups = _start_sit_groups(lineup_requirements)
+    for _zpos in _ss_groups:
         try:
             _rm, _tot, _ri, _iz = _matchup_rank_table(season, _zpos)
             _z_rank_tables[_zpos] = _rm
@@ -12337,11 +12466,11 @@ def api_start_sit_options():
     except Exception:
         _ss_usage_trends = {}
 
-    positions_out: dict = {"QB": [], "RB": [], "WR": [], "TE": []}
+    positions_out: dict = {pos: [] for pos in _ss_groups}
     for pid in player_ids:
         row = rows_by_id.get(pid) or {}
         meta = players_index.get(pid) or {}
-        pos = str(row.get("position") or row.get("pos") or meta.get("pos") or "").upper()
+        pos = _start_sit_pos(row.get("position") or row.get("pos") or meta.get("pos") or "")
         if pos not in positions_out:
             continue
         player_name = row.get("name") or meta.get("name") or f"Player {pid}"
@@ -12534,7 +12663,7 @@ def api_start_sit_options():
         denom = _math_ss.sqrt(sa * sa + sb * sb) or 1.0
         return round(_phi((ma - mb) / denom), 2)
 
-    for _pos in ("QB", "RB", "WR", "TE"):
+    for _pos in positions_out:
         _arr = [p for p in positions_out[_pos] if not p["on_bye"]]
         _ns = lineup_requirements.get(_pos, 1)
         if _ns >= 1 and len(_arr) > _ns:
@@ -12545,9 +12674,10 @@ def api_start_sit_options():
                 "win_prob": _win_prob(_starter, _bench),
             }
 
-    # ── Optimal-lineup advice: compare the auto-optimal skill lineup to the
+    # ── Optimal-lineup advice: compare the auto-optimal lineup to the
     # viewer's actual current starters — the points left on the bench, plus the
-    # specific swaps to fix it. Covers the QB/RB/WR/TE we model. ───────────────
+    # specific swaps to fix it. Covers every position the league starts
+    # (QB/RB/WR/TE plus K and D/ST when those slots exist). ────────────────────
     # The optimal lineup is chosen by the unified start_score, so its point
     # totals and per-swap gains are measured on that SAME score — not raw
     # projection. Mixing the two (select by score, measure by projection) used to
@@ -13134,14 +13264,44 @@ def _redzone_fetch(platform, league_id, season, week=None, scope="league"):
 
 
 def _redzone_fetch_user(platform, league_id, season, week):
-    """Aggregate the viewer's matchup across every league they belong to (Sleeper)."""
-    from dashboard_services.api import get_sleeper_user_leagues
-    viewer_uid = str(session.get("viewer_user_id") or "")
-    if platform != "sleeper" or not viewer_uid:
-        raise ValueError("user scope requires a signed-in Sleeper viewer")
+    """Aggregate the viewer's matchup across every league they belong to.
 
-    leagues_raw = get_sleeper_user_leagues(viewer_uid, season) or []
-    leagues_raw = leagues_raw[:12]
+    Signed-in Google accounts use the cross-platform portfolio (Sleeper, ESPN,
+    Yahoo, MFL). A Sleeper-only session without an account still walks that
+    viewer's Sleeper leagues. Other platforms without either identity fall
+    through to league scope.
+    """
+    from utils.redzone_user import (
+        match_viewer_roster, portfolio_from_account_leagues,
+        portfolio_from_sleeper_leagues, MAX_USER_LEAGUES,
+    )
+
+    account_id = session.get("account_id")
+    viewer_uid = str(session.get("viewer_user_id") or "")
+    portfolio: list = []
+
+    if account_id:
+        try:
+            from dashboard_services.accounts import resolve_account_leagues
+            saved = resolve_account_leagues(int(account_id), current_season=season) or []
+            portfolio = portfolio_from_account_leagues(saved, season=season)
+        except Exception:
+            logger.debug("[redzone] account portfolio load failed", exc_info=True)
+            portfolio = []
+
+    if not portfolio and viewer_uid:
+        try:
+            from dashboard_services.api import get_sleeper_user_leagues
+            sleeper_raw = get_sleeper_user_leagues(viewer_uid, season) or []
+            portfolio = portfolio_from_sleeper_leagues(sleeper_raw, season=season)
+        except Exception:
+            logger.debug("[redzone] sleeper league list failed", exc_info=True)
+            portfolio = []
+
+    if not portfolio:
+        raise ValueError("user scope requires a signed-in viewer with at least one league")
+
+    portfolio = portfolio[:MAX_USER_LEAGUES]
 
     matchups, rosters, users, leagues = [], [], [], []
     player_info: dict = {}
@@ -13151,19 +13311,23 @@ def _redzone_fetch_user(platform, league_id, season, week):
     viewer_rids = []
     seen_users = set()
 
-    for li, lg in enumerate(leagues_raw):
+    for li, lg in enumerate(portfolio):
         lid = str(lg.get("league_id") or "")
+        lg_plat = str(lg.get("platform") or platform or "sleeper").lower()
+        lg_season = int(lg.get("season") or season or 0)
         lname = lg.get("name") or f"League {li + 1}"
         if not lid:
             continue
         try:
-            d = _redzone_collect(platform, lid, season, week)
+            d = _redzone_collect(lg_plat, lid, lg_season, week)
         except Exception:
             continue
         if not scoring:
             scoring = d.get("scoring") or {}
         scoring_by_league[lid] = d.get("scoring") or {}
-        vr = next((r for r in d["rosters"] if str(r.get("owner_id")) == viewer_uid), None)
+        vr = match_viewer_roster(
+            d["rosters"], team_id=lg.get("team_id"), owner_id=viewer_uid,
+        )
         if not vr:
             continue
         vrid = str(vr.get("roster_id"))
@@ -13183,6 +13347,7 @@ def _redzone_fetch_user(platform, league_id, season, week):
             m2["matchup_id"] = ns + str(m.get("matchup_id"))
             m2["league_name"] = lname
             m2["league_id"] = lid
+            m2["platform"] = lg_plat
             matchups.append(m2)
             for _pid in (m.get("players") or []):
                 pid_league[str(_pid)] = lid
@@ -13198,7 +13363,7 @@ def _redzone_fetch_user(platform, league_id, season, week):
                 users.append(u)
         player_info.update(d["player_info"])
         viewer_rids.append(ns + vrid)
-        leagues.append({"league_id": lid, "name": lname})
+        leagues.append({"league_id": lid, "name": lname, "platform": lg_plat})
 
     return {
         "week": week, "season": season, "platform": platform, "league_id": league_id,
@@ -13222,8 +13387,9 @@ def page_redzone(platform: str, season: int, league_id: str):
     scope = "user" if request.args.get("scope") == "user" else "league"
     # League-scope Redzone works on every platform: providers canonicalize their
     # player ids to Sleeper ids, so the live player feed + Tank01 stat lines
-    # resolve regardless of provider. Cross-league "user" scope still needs a
-    # Sleeper viewer, but it falls back to league scope for other platforms.
+    # resolve regardless of provider. Cross-league "My Leagues" uses the signed-in
+    # account portfolio (all platforms) or a Sleeper viewer, and falls back to
+    # this league when neither identity is available.
     if request.args.get("demo") == "1":
         data = _redzone_demo_data(scope=scope)
     else:
@@ -13817,12 +13983,12 @@ def page_breakouts(platform: str, season: int, league_id: str):
       </div>
       <div class="card-body">
         <!-- Position Filter -->
-        <div class="breakout-filters">
-          <button class="breakout-filter-btn active" data-position="ALL" onclick="filterBreakouts('ALL')">All Positions</button>
-          <button class="breakout-filter-btn" data-position="QB" onclick="filterBreakouts('QB')">QB</button>
-          <button class="breakout-filter-btn" data-position="RB" onclick="filterBreakouts('RB')">RB</button>
-          <button class="breakout-filter-btn" data-position="WR" onclick="filterBreakouts('WR')">WR</button>
-          <button class="breakout-filter-btn" data-position="TE" onclick="filterBreakouts('TE')">TE</button>
+        <div class="otc-day-filters breakout-filters">
+          <button class="otc-day-filter breakout-filter-btn active" data-position="ALL" onclick="filterBreakouts('ALL')">All Positions</button>
+          <button class="otc-day-filter breakout-filter-btn" data-position="QB" onclick="filterBreakouts('QB')">QB</button>
+          <button class="otc-day-filter breakout-filter-btn" data-position="RB" onclick="filterBreakouts('RB')">RB</button>
+          <button class="otc-day-filter breakout-filter-btn" data-position="WR" onclick="filterBreakouts('WR')">WR</button>
+          <button class="otc-day-filter breakout-filter-btn" data-position="TE" onclick="filterBreakouts('TE')">TE</button>
         </div>
 
         <!-- Loading State -->
@@ -13947,7 +14113,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
                 <i class="fa-solid fa-lock" style="font-size:22px;color:var(--text-muted);"></i>
                 <div style="font-weight:700;font-size:15px;">${{lockedCount}} more candidates locked</div>
                 <div style="font-size:12px;color:var(--text-muted);text-align:center;">Upgrade to PRO to see all breakout<br>candidates with full details</div>
-                <span style="font-size:11px;font-weight:700;padding:4px 12px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border-radius:12px;">Upgrade &rarr;</span>
+                <span style="font-size:11px;font-weight:700;padding:4px 12px;background:linear-gradient(135deg,#122d4b,#2563eb);color:white;border-radius:12px;">Upgrade &rarr;</span>
               </div>`;
           }}
           html += '</div>';
@@ -16098,12 +16264,12 @@ def build_schedule_body(ctx):
 
         <!-- Schedule Rankings: position pills + sort -->
         <div class="sched-rank-controls" id="schedRankControls" style="display:none;">
-          <div class="sched-pos-pills" id="schedRankPosPills">
-            <button class="sched-rank-pos active" data-pos="QB">QB</button>
-            <button class="sched-rank-pos" data-pos="RB">RB</button>
-            <button class="sched-rank-pos" data-pos="WR">WR</button>
-            <button class="sched-rank-pos" data-pos="TE">TE</button>
-            <button class="sched-rank-pos" data-pos="K">K</button>
+          <div class="otc-day-filters sched-pos-pills" id="schedRankPosPills">
+            <button class="otc-day-filter sched-rank-pos active" data-pos="QB">QB</button>
+            <button class="otc-day-filter sched-rank-pos" data-pos="RB">RB</button>
+            <button class="otc-day-filter sched-rank-pos" data-pos="WR">WR</button>
+            <button class="otc-day-filter sched-rank-pos" data-pos="TE">TE</button>
+            <button class="otc-day-filter sched-rank-pos" data-pos="K">K</button>
           </div>
           <button class="sched-sort-btn" id="schedRankSort">
             Easiest First <i class="fa-solid fa-arrow-up-short-wide" aria-hidden="true"></i>
@@ -16204,10 +16370,10 @@ def build_schedule_body(ctx):
       function renderGrid() {
         _myKey = wkStart + '-' + wkEnd;
         if (!selPids.length) {
-          gridEl.innerHTML = '<div class="sched-empty">No players yet. Use the search above to add players.</div>';
+          gridEl.innerHTML = '<div class="sched-empty"><strong style="color:var(--text);display:block;margin-bottom:4px;">No players yet</strong>Use the search above to add players.</div>';
           return;
         }
-        gridEl.innerHTML = '<div class="sched-empty">Loading…</div>';
+        gridEl.innerHTML = '<div class="loading-state-msg"><div class="loading-spinner" aria-hidden="true"></div><span>Loading schedule…</span></div>';
         var url = '/api/schedule?season=' + CFG.season +
                   '&week_start=' + wkStart + '&week_end=' + wkEnd +
                   '&pids=' + encodeURIComponent(selPids.join(','));
@@ -16215,7 +16381,7 @@ def build_schedule_body(ctx):
           var weeks   = data.weeks   || [];
           var players = data.players || [];
           if (!players.length) {
-            gridEl.innerHTML = '<div class="sched-empty">No matchup data for this selection.</div>';
+            gridEl.innerHTML = '<div class="sched-empty"><strong style="color:var(--text);display:block;margin-bottom:4px;">No matchup data</strong>Nothing to show for this selection.</div>';
             return;
           }
           var head = '<th class="sched-th sched-th-player">Player</th>' +
@@ -16254,7 +16420,7 @@ def build_schedule_body(ctx):
           gridEl.innerHTML =
             '<table class="sched-table"><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table>';
         }).catch(function() {
-          gridEl.innerHTML = '<div class="sched-empty" style="color:#ef4444;">Failed to load schedule.</div>';
+          gridEl.innerHTML = '<div class="sched-empty" style="color:var(--loss);"><strong style="display:block;margin-bottom:4px;">Couldn’t load schedule</strong>Refresh and try again.</div>';
         });
       }
 
@@ -16283,7 +16449,7 @@ def build_schedule_body(ctx):
         _rankKey = wkStart + '-' + wkEnd;
         rankingsCache = null;
         var rankGrid = document.getElementById('schedRankingsGrid');
-        rankGrid.innerHTML = '<div class="sched-empty">Loading…</div>';
+        rankGrid.innerHTML = '<div class="loading-state-msg"><div class="loading-spinner" aria-hidden="true"></div><span>Loading rankings…</span></div>';
         var url = '/api/schedule-rankings?season=' + CFG.season +
                   '&week_start=' + wkStart + '&week_end=' + wkEnd +
                   '&position=' + rankPos +
@@ -16293,7 +16459,7 @@ def build_schedule_body(ctx):
           rankingsCache = data;
           buildRankingsTable(data);
         }).catch(function() {
-          rankGrid.innerHTML = '<div class="sched-empty" style="color:#ef4444;">Failed to load rankings.</div>';
+          rankGrid.innerHTML = '<div class="sched-empty" style="color:var(--loss);"><strong style="display:block;margin-bottom:4px;">Couldn’t load rankings</strong>Refresh and try again.</div>';
         });
       }
 
@@ -16307,7 +16473,7 @@ def build_schedule_body(ctx):
         if (rankHardFirst) rankings.reverse();
 
         if (!rankings.length) {
-          rankGrid.innerHTML = '<div class="sched-empty">No data for this position/week range.</div>';
+          rankGrid.innerHTML = '<div class="sched-empty"><strong style="color:var(--text);display:block;margin-bottom:4px;">No data</strong>Nothing for this position or week range.</div>';
           return;
         }
 
@@ -17114,7 +17280,9 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 
     week_selector = f"""
 <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
-  <h2 style="margin:0;font-size:20px;">Week {selected_week} Recap</h2>
+  <div style="flex:1;min-width:160px;">
+    <h2 style="margin:0;font-size:20px;">Week {selected_week} Recap</h2>
+  </div>
   <select onchange="window.location.search='?week='+this.value"
           style="padding:5px 10px;border-radius:6px;border:1px solid var(--border);
                  background:var(--card);color:var(--text);font-size:13px;cursor:pointer;">
@@ -17887,7 +18055,7 @@ def build_commissioner_body(ctx):
     settings = (ctx.get("league") or {}).get("settings") or {}
     playoff_start = int(settings.get("playoff_week_start") or 14)
     model_vals = ctx.get("model_value_table") or get_model_value_table_cached() or []
-    is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in (ctx.get("roster_positions") or []))
+    is_sf = _is_superflex_lineup(ctx.get("roster_positions") or [])
     val_key = "sf_value" if is_sf else "value"
     val_by_pid = {str(p.get("id") or ""): float(p.get(val_key) or p.get("value") or 0)
                   for p in model_vals if p.get("id")}
@@ -19706,8 +19874,7 @@ def api_trade_eval_playoff_impact():
         # players coming in vs going out. This is the counterweight to the
         # win-now playoff metrics - getting younger / banking value is the
         # upside when a deal dents this season's odds (and vice versa).
-        is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"}
-                    for s in (ctx.get("roster_positions") or []))
+        is_sf = _is_superflex_lineup(ctx.get("roster_positions") or [])
         current_pids = sim_state.get("roster_pid_map", {}).get(roster_id, [])
         result["outlook"] = _trade_future_outlook(give_ids, get_ids, is_sf, current_pids)
 
@@ -22440,8 +22607,8 @@ def api_player_adp(player_id: str):
 
     Split out of /api/player-details so the modal can open immediately on the
     cheap Sleeper feed and pull these in afterward — BR Fantasy / Consensus need a
-    draft-crawler DB query and the global feeds a snapshot read (all cached in
-    adp_service), which we don't want on the modal's critical path. ESPN/Yahoo/MFL
+    draft-crawler DB query and the global feeds are retrieved on miss (disk, then
+    the shared DB, then a live fetch) the same way Sleeper is. ESPN/Yahoo/MFL
     are redraft-only global feeds and only contribute a Redraft value. Returns
     {"sources": [{label, vals}]}, only including sources that have at least one
     value for this player."""
@@ -22473,11 +22640,11 @@ def api_player_adp(player_id: str):
                 return None
 
         # BR Fantasy covers every axis; ESPN/Yahoo/MFL are tokenless global
-        # redraft-only feeds (read from the daily snapshots, so their dynasty cells
-        # resolve to None and only the Redraft card shows them). Yahoo uses its
-        # global snapshot here since the modal carries no league token. Any source
-        # with no value for this player is dropped below, so an empty snapshot never
-        # produces a bare row. Consensus stays last.
+        # redraft-only feeds (retrieved on miss like Sleeper, so their dynasty
+        # cells resolve to None and only the Redraft card shows them). Yahoo uses
+        # its global snapshot here since the modal carries no league token. Any
+        # source with no value for this player is dropped below, so an empty
+        # snapshot never produces a bare row. Consensus stays last.
         _source_specs = [
             ("brfantasy", "BR Fantasy"),
             ("espn", "ESPN"),
@@ -23523,6 +23690,46 @@ def api_team_details(roster_id: str):
         return _api_err("Request failed", e)
 
 
+@app.route("/api/player-league-trades/<player_id>")
+def api_player_league_trades(player_id: str):
+    """
+    Trades involving this player inside the connected league — every season in
+    the league history chain. Includes counterparty team names and resolves
+    drafted picks (e.g. 2026 1.04 → player) once that draft is complete.
+
+    Query: platform, league_id, season, limit (default 20).
+    Free — same access model as the Trade Database.
+    """
+    try:
+        from dashboard_services.player_league_trades import get_player_league_trades
+
+        league_id = (request.args.get("league_id") or "").strip()
+        platform = (request.args.get("platform") or "sleeper").strip().lower()
+        try:
+            season = int(request.args.get("season") or datetime.now().year)
+        except (TypeError, ValueError):
+            season = datetime.now().year
+        try:
+            limit = int(request.args.get("limit") or 20)
+        except (TypeError, ValueError):
+            limit = 20
+
+        if not league_id:
+            return jsonify({"error": "league_id required"}), 400
+
+        payload = get_player_league_trades(
+            player_id=player_id,
+            platform=platform,
+            league_id=league_id,
+            season=season,
+            limit=limit,
+        )
+        return jsonify(payload)
+    except Exception as e:
+        logger.exception("[api_player_league_trades] error")
+        return _api_err("Request failed", e)
+
+
 @app.route("/api/team-trades/<roster_id>")
 def api_team_trades(roster_id: str):
     """Return all trades for a specific team in the current league season."""
@@ -23892,6 +24099,18 @@ def api_playoff_scenarios():
         settings = ctx.get("league_settings") or {}
         current_week = int(ctx.get("current_week") or 0)
         divisions = int(settings.get("divisions") or 0) >= 2
+        division_map: dict = {}
+        if divisions:
+            for r in (ctx.get("rosters") or []):
+                rid = r.get("roster_id")
+                if rid is None:
+                    continue
+                try:
+                    div = int((r.get("settings") or {}).get("division") or 0)
+                except (TypeError, ValueError):
+                    div = 0
+                if div:
+                    division_map[int(rid)] = div
 
         state = build_sim_state(ctx, platform)
         if not state:
@@ -23906,7 +24125,8 @@ def api_playoff_scenarios():
         sim_teams = state.get("teams") or []
         scen_teams = [
             {"roster_id": t["roster_id"], "wins": t.get("wins", 0),
-             "ties": t.get("ties", 0), "pf": t.get("pf", 0.0)}
+             "ties": t.get("ties", 0), "pf": t.get("pf", 0.0),
+             "division": division_map.get(int(t["roster_id"]))}
             for t in sim_teams
         ]
         scen = compute_scenarios(
@@ -23933,6 +24153,7 @@ def api_playoff_scenarios():
             "show": scen.get("show", False),
             "mode": scen.get("mode"),
             "exact": scen.get("exact", False),
+            "divisions": scen.get("divisions", False),
             "remaining_games": scen.get("remaining_games", 0),
             "remaining_weeks": scen.get("remaining_weeks", 0),
             "playoff_teams": playoff_teams,
@@ -24204,7 +24425,10 @@ def api_draft_grades():
         # the SAME league-players payload the Draft Room uses, so the score's ADP
         # term matches the front-end exactly.
         adp_ps_by_id: dict[str, float] = {}
-        # Tier-cliff lookup: (pos|tier) -> count still on the board after the draft.
+        # Tier-cliff lookup: (pos|tier) -> count still on the board. Starts as the
+        # FULL eligible pool and decrements as picks are processed so each pick
+        # sees remaining-at-pick (matches Draft Room isTierCliff), not post-draft
+        # leftovers.
         tier_remaining: dict[str, int] = {}
         # League scoring format multipliers; defaults match Draft Room setup.
         _ppr, _tep, _pass_td = 1.0, 0.0, 4.0
@@ -24341,13 +24565,11 @@ def api_draft_grades():
                 _ev = _eff_val(_pid, _d)
                 _by_pos[_pp].append(_ev)
                 ps_pool_sorted.append((_ev, _pid))
-                # Tier-cliff: count players of each (pos|tier) still UNDRAFTED after
-                # this draft, matching the Draft Room's post-draft availablePool().
-                if _pid not in drafted_player_ids:
-                    _ct = _score_tier(_pid, _d, _ev)
-                    if _ct is not None:
-                        _ck = f"{_pp}|{_ct}"
-                        tier_remaining[_ck] = tier_remaining.get(_ck, 0) + 1
+                # Seed at-pick cliff counts from the full eligible pool.
+                _ct = _score_tier(_pid, _d, _ev)
+                if _ct is not None:
+                    _ck = f"{_pp}|{_ct}"
+                    tier_remaining[_ck] = tier_remaining.get(_ck, 0) + 1
             # Let the actual player pool decide how FLEX/SF are occupied;
             # this supersedes the fixed half-QB/half-RB/half-WR heuristic.
             _allocation_pool = [
@@ -24603,10 +24825,15 @@ def api_draft_grades():
                                   if _span > 0 else _ps_clamp01(_pv / max(_psc["elite"], 1)))
                     # ADP for the score comes from the SAME feed the Draft Room uses
                     # (separate from the letter-grade ADP), so the score's ADP term
-                    # matches the front-end. Tier-cliff uses the post-draft board.
+                    # matches the front-end. Tier-cliff uses remaining-at-pick
+                    # (full pool decremented in draft order), with Round-1 suppress
+                    # matching Draft Room isTierCliff.
                     _ps_adp = adp_ps_by_id.get(player_id, avg_pick)
-                    _is_cliff = (_tier is not None
-                                 and tier_remaining.get(f"{pos}|{_tier}", 0) <= 2)
+                    _is_cliff = (
+                        _tier is not None
+                        and pick_no > _num_teams
+                        and tier_remaining.get(f"{pos}|{_tier}", 0) <= 2
+                    )
                     pick_score = _compute_pick_score(
                         pos=pos, value=_val, vor=_vor, tier=_tier,
                         age=_d.get("age"), rank_change_7d=mom_by_id.get(player_id),
@@ -24617,6 +24844,11 @@ def api_draft_grades():
                         num_teams=_num_teams, ppg_norm=_ppg_n,
                         ppr=_ppr, tep=_tep, pass_td=_pass_td, is_tier_cliff=_is_cliff,
                     )
+                    # Consume this player from the at-pick cliff counts for later picks.
+                    if _tier is not None:
+                        _ck = f"{pos}|{_tier}"
+                        if tier_remaining.get(_ck, 0) > 0:
+                            tier_remaining[_ck] -= 1
 
             picks_by_roster[rid].append({
                 "pick_no": pick_no,
@@ -25352,7 +25584,7 @@ def api_trade_intel_player_trades(player_id: str):
             trade_rows = conn.execute(
                 f"""
                 SELECT DISTINCT
-                    t.id, t.transaction_id, t.season, t.week, t.created_at,
+                    t.id, t.transaction_id, t.league_id, t.season, t.week, t.created_at,
                     l.is_superflex, l.num_teams
                 FROM trade_intel_trades t
                 JOIN trade_intel_assets a ON a.trade_id = t.id
@@ -25407,7 +25639,15 @@ def api_trade_intel_player_trades(player_id: str):
             else:
                 order = a["pick_order"] or ""
                 name = f"{s} Round {r}" + (f" ({order})" if order else "")
-            return {"type": "pick", "name": name, "is_focus": False}
+            return {
+                "type": "pick",
+                "name": name,
+                "is_focus": False,
+                "pick_season": a.get("pick_season"),
+                "pick_round": a.get("pick_round"),
+                "pick_slot": a.get("pick_slot"),
+                "pick_order": a.get("pick_order"),
+            }
 
         result = []
         for r in trade_rows:
@@ -25425,12 +25665,23 @@ def api_trade_intel_player_trades(player_id: str):
                     trade_date = str(r["created_at"])[:10]
             result.append({
                 "trade_id": r["transaction_id"],
+                "league_id": r["league_id"],
                 "date": trade_date,
                 "is_superflex": r["is_superflex"],
                 "num_teams": r["num_teams"],
                 "side_a": side_a,
                 "side_b": side_b,
             })
+
+        # Resolve completed draft picks → player names when the source league
+        # draft has finished (e.g. "2026 Pick 1.04 → Tetairoa McMillan").
+        try:
+            from dashboard_services.player_league_trades import (
+                attach_drafted_players_to_trade_db_assets,
+            )
+            result = attach_drafted_players_to_trade_db_assets(result, platform="sleeper")
+        except Exception:
+            logger.debug("[player-trades] pick resolution skipped", exc_info=True)
 
         total_pages = max(1, (total + limit - 1) // limit)
         return jsonify({
@@ -25440,6 +25691,7 @@ def api_trade_intel_player_trades(player_id: str):
             "total_pages": total_pages,
             "has_prev": page > 1,
             "has_next": page < total_pages,
+            "source": "trade_db",
         })
 
     except Exception:
@@ -26710,7 +26962,7 @@ def api_trade_intel_player_packages(player_id: str):
         # ── League context for DB queries ─────────────────────────────────
         roster_positions = ctx.get("roster_positions") or []
         _rp_list = [str(s).upper() for s in (roster_positions if isinstance(roster_positions, list) else [])]
-        _is_sf = (league_type == "sf") or any(s in {"SUPER_FLEX", "SFLEX"} for s in _rp_list)
+        _is_sf = (league_type == "sf") or _is_superflex_lineup(roster_positions)
         num_teams = len(ctx.get("rosters") or []) or 12
 
         # Resync val_key with the actual league format detected from roster_positions.
@@ -27722,7 +27974,7 @@ def api_trade_intel_player_send_packages(player_id: str):
         # Detect SF from roster_positions; the URL param may be wrong.
         roster_positions = ctx.get("roster_positions") or []
         _rp_list = [str(s).upper() for s in (roster_positions if isinstance(roster_positions, list) else [])]
-        is_sf = (league_type == "sf") or any(s in {"SUPER_FLEX", "SFLEX"} for s in _rp_list)
+        is_sf = (league_type == "sf") or _is_superflex_lineup(roster_positions)
         val_key = "sf_value" if is_sf else "value"
         num_teams = len(rosters) or 12
 
@@ -28317,7 +28569,7 @@ def api_trade_ideas_for_target():
         # Real trade packages: what people with similar rosters actually sent
         roster_positions = ctx.get("roster_positions") or []
         _rp_list = [str(s).upper() for s in (roster_positions if isinstance(roster_positions, list) else [])]
-        _is_sf = any(s in {"SUPER_FLEX", "SFLEX"} for s in _rp_list)
+        _is_sf = _is_superflex_lineup(roster_positions)
 
         real_result = _real_trade_packages_for_target(
             target_player_id=target_player_id,
@@ -29434,8 +29686,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         values_by_id = {str(r["id"]): r for r in value_table if isinstance(r, dict) and r.get("id")}
 
         league_info = ctx.get("league") or {}
-        is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"}
-                    for s in (league_info.get("roster_positions") or []))
+        is_sf = _is_superflex_lineup(league_info.get("roster_positions") or [])
         vfield = "sf_value" if is_sf else "value"
         league_name = league_info.get("name", "Dynasty League")
         n_teams = len(rosters)
@@ -29917,8 +30168,7 @@ def api_live_draft_suggest():
         if league_id and not format_raw:
             try:
                 league_info = get_league(platform, league_id, season) or {}
-                is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"}
-                            for s in (league_info.get("roster_positions") or []))
+                is_sf = _is_superflex_lineup(league_info.get("roster_positions") or [])
             except Exception:
                 logger.debug("suppressed exception", exc_info=True)
         vfield = "sf_value" if is_sf else "value"

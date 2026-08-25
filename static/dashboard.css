@@ -315,8 +315,8 @@
     --text: #122d4b;
     --text-muted: #6b7280;
     --text-subtle: #94a3b8;
-    --border: #dbe2ea;
-    --grid: #e5e7eb;
+    --border: #e8eef4;
+    --grid: #eef2f6;
     --accent: #122d4b;
     --accent-color: #122d4b;
     /* Readable text/icon color to sit ON an --accent fill (navy in light mode). */
@@ -347,9 +347,9 @@
     --text-sm: 12px;
     --text-base: 14px;
     --text-md: 16px;
-    --text-lg: 20px;
-    --text-xl: 24px;
-    --text-2xl: 32px;
+    --text-lg: 22px;
+    --text-xl: 28px;
+    --text-2xl: 36px;
     /* Spacing scale (4px rhythm) — use these instead of one-off paddings */
     --space-1: 4px;
     --space-2: 8px;
@@ -703,7 +703,7 @@ h1 {
 
 h1, h2, h3, h4, h5, h6 {
     margin: 0;
-    color: var(--accent);
+    color: var(--text);
     line-height: 1.2;
 }
 
@@ -1083,7 +1083,7 @@ ul {
     letter-spacing: 0.4px;
     text-transform: uppercase;
     color: #fff;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #122d4b 0%, #2563eb 100%);
     border-radius: 6px;
     vertical-align: middle;
     line-height: 14px;
@@ -1352,25 +1352,13 @@ ul {
     border-bottom: none;
 }
 
-/* Breakout Candidates Page */
+/* Breakout Candidates Page — chip look comes from the canonical
+   `.otc-day-filter` aliases; this block is layout only. */
 .breakout-filters {
     display: flex;
-    gap: 8px;
+    gap: 6px;
     margin-bottom: 20px;
     flex-wrap: wrap;
-}
-
-.breakout-filter-btn {
-    padding: 8px 16px;
-    border-radius: 10px;
-    border: 1px solid var(--border);
-    background: var(--card);
-    color: var(--text);
-    font-size: 13px;
-    font-weight: 500;
-    white-space: nowrap; /* labels like "All Positions" never wrap/clip */
-    cursor: pointer;
-    transition: all 0.15s ease;
 }
 
 @media (max-width: 768px) {
@@ -1390,8 +1378,6 @@ ul {
 
     .breakout-filter-btn {
         flex: 0 0 auto; /* size to content, no equal-width squeeze */
-        padding: 10px 16px;
-        text-align: center;
     }
 }
 
@@ -1582,20 +1568,6 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
 
 .settings-menu-item.refresh-spinner .settings-menu-icon {
     animation: spin 1s linear infinite;
-}
-
-.breakout-filter-btn:hover {
-    background: var(--bg-alt);
-    border-color: var(--accent);
-}
-
-.breakout-filter-btn.active {
-    /* Soft-accent active state, matching the nav indicator and .card tabs, instead
-     of a solid fill — so "selected" reads the same across the site. */
-    background: var(--accent-soft);
-    background: color-mix(in srgb, var(--accent) 13%, transparent);
-    color: var(--accent);
-    border-color: transparent;
 }
 
 .breakout-grid {
@@ -1854,6 +1826,8 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
 .nav-left {
     display: flex;
     align-items: center;
+    min-width: 0;
+    overflow: visible;
 }
 
 .nav-left .site-logo {
@@ -1872,6 +1846,134 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
 
 .nav-left > a:hover {
     opacity: 0.85;
+}
+
+/* Persistent league + week chip. Lives in the top bar so pages don't restate
+   "Week 14 · 12tm SF" in their H1s. The name is a switcher when the user has
+   more than one league. */
+.br-ctx {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    margin-left: 12px;
+}
+
+.br-ctx-league-wrap {
+    position: relative;
+    min-width: 0;
+}
+
+.br-ctx-league {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+    max-width: min(340px, 42vw);
+    margin: 0;
+    padding: 6px 10px;
+    border: 0;
+    border-radius: 10px;
+    background: var(--accent-soft);
+    color: var(--text);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    cursor: pointer;
+    text-align: left;
+    line-height: 1.2;
+}
+
+.br-ctx-league.is-static {
+    cursor: default;
+    background: transparent;
+    padding-left: 4px;
+    padding-right: 4px;
+}
+
+.br-ctx-league:not(.is-static):hover {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.br-ctx-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.br-ctx-format {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.br-ctx-caret {
+    flex-shrink: 0;
+    font-size: 10px;
+    color: var(--text-subtle);
+    transform: translateY(-1px);
+}
+
+.br-ctx-league.is-static .br-ctx-caret {
+    display: none;
+}
+
+.br-ctx-week {
+    flex-shrink: 0;
+    padding: 5px 10px;
+    border-radius: 6px;
+    background: var(--card);
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.br-ctx-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: var(--z-chrome);
+    min-width: 240px;
+    max-width: min(360px, 80vw);
+    max-height: min(60vh, 420px);
+    overflow-y: auto;
+    padding: 6px;
+    background: var(--card);
+    border-radius: 12px;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--border) 80%, transparent), var(--shadow-lg);
+}
+
+.br-ctx-menu-item {
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+}
+
+.br-ctx-menu-item:hover,
+.br-ctx-menu-item.is-current {
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+}
+
+[data-theme="dark"] .br-ctx-menu-item:hover,
+[data-theme="dark"] .br-ctx-menu-item.is-current {
+    color: var(--accent);
 }
 
 .nav-center {
@@ -2143,11 +2245,13 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
     color: #fff;
 }
 
-.nav-search-empty {
-    padding: 14px;
+.nav-search-empty,
+.compare-search-empty {
+    padding: 16px 14px;
     text-align: center;
     color: var(--text-muted);
     font-size: 13px;
+    line-height: 1.45;
 }
 
 @media (max-width: 768px) {
@@ -2512,9 +2616,9 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
 
 .card, .side-card, .award-card, .trade-calc-card {
     background: var(--card);
-    border: 1px solid var(--border);
+    border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
     border-radius: var(--radius);
-    box-shadow: var(--shadow);
+    box-shadow: var(--shadow-sm);
 }
 
 .card-header {
@@ -3602,26 +3706,34 @@ thead th {
     text-align: center;
     gap: 8px;
     padding: 34px 20px;
+    animation: brEmptyIn .28s var(--ease-out, ease-out) both;
 }
 
 .empty-state-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
     font-size: 28px;
     line-height: 1;
-    margin-bottom: 2px;
-    color: var(--text-subtle);
-    opacity: 0.6;
+    margin-bottom: 4px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+    color: var(--text-muted);
 }
 
 .empty-state-icon svg {
-    width: 36px;
-    height: 36px;
+    width: 24px;
+    height: 24px;
     display: block;
 }
 
 .empty-state-title {
-    font-size: 14px;
+    font-size: var(--text-md);
     font-weight: 800;
     color: var(--text);
+    letter-spacing: -0.02em;
 }
 
 .empty-state-msg,
@@ -3631,6 +3743,11 @@ thead th {
     line-height: 1.5;
     max-width: 42ch;
     margin: 0;
+}
+
+.empty-state-msg a {
+    color: var(--accent);
+    font-weight: 700;
 }
 
 .empty-state-action {
@@ -3663,7 +3780,7 @@ thead th {
    Rendered by window.brErrorState / window.brEmptyState in app.js. */
 .empty-state-error .empty-state-icon {
     color: var(--loss);
-    opacity: .85;
+    background: color-mix(in srgb, var(--loss) 12%, transparent);
 }
 
 .empty-state-retry {
@@ -3701,11 +3818,96 @@ thead th {
 
 .empty-state.is-compact .empty-state-icon {
     font-size: 22px;
+    width: 40px;
+    height: 40px;
 }
 
 .empty-state.is-compact .empty-state-icon svg {
-    width: 26px;
-    height: 26px;
+    width: 22px;
+    height: 22px;
+}
+
+@keyframes brEmptyIn {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .empty-state {
+        animation: none;
+    }
+}
+
+/* Shared loading placeholder — skeleton rows or a compact spinner message. */
+.loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 16px 12px;
+}
+
+.loading-state.is-compact {
+    padding: 10px 8px;
+    gap: 8px;
+}
+
+.loading-state-msg {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 18px 12px;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.loading-state-msg .loading-spinner {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    flex-shrink: 0;
+}
+
+@media (max-width: 600px) {
+    .empty-state {
+        padding: 24px 14px;
+        gap: 6px;
+    }
+
+    .empty-state.is-compact {
+        padding: 14px 10px;
+    }
+
+    .empty-state-icon {
+        width: 40px;
+        height: 40px;
+    }
+
+    .empty-state-icon svg {
+        width: 22px;
+        height: 22px;
+    }
+
+    .empty-state-title {
+        font-size: 13px;
+    }
+
+    .empty-state-msg,
+    .empty-state-sub {
+        font-size: 12px;
+    }
+
+    .loading-state {
+        padding: 12px 8px;
+        gap: 8px;
+    }
 }
 
 /* ============================================
@@ -4370,41 +4572,107 @@ strong + .player-badge,
     white-space: nowrap;
 }
 
-.otc-filter-chip {
-    padding: 4px 8px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--row);
-    color: var(--text);
-    font-size: 12px;
-    font-weight: 800;
-    cursor: pointer;
+/* ── Canonical filter chips ───────────────────────────────────────────────
+   `.otc-day-filters` / `.otc-day-filter` is the one discrete option-chip
+   (position, timeframe, kind) for the whole site. Other filter-button
+   classes are aliased onto it so padding, radius, weight, and the accent
+   active state stay in lockstep. New filters should use these classes;
+   keep domain classes as JS hooks. */
+.otc-day-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
 }
 
-.otc-filter-chip.is-active {
-    background: #16365d;
-    color: #ffffff;
-    border-color: #16365d;
+.otc-movers-panel .otc-day-filters {
+    margin-top: 8px;
+    padding: 0 12px;
 }
 
-.otc-day-filter {
+.otc-day-filter,
+.otc-filter-chip,
+.breakout-filter-btn,
+.pos-pill,
+.wv-pos-btn,
+.dvt-pos-btn,
+.filter-pill,
+.ti-pos,
+.ti-lf-btn,
+.tdb-lt,
+.sched-rank-pos,
+.dr-pos,
+.cs-posf button,
+.pvc-range-btn,
+.pm-wt-tab,
+.am-pos,
+.am-qr,
+.rf-tf-opt,
+.rz-fp-opt {
+    appearance: none;
+    -webkit-appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     padding: 4px 10px;
     border-radius: 6px;
     border: 1px solid var(--border);
     background: var(--card);
     color: var(--text-muted);
+    font-family: inherit;
     font-size: 11px;
     font-weight: 600;
+    line-height: 1.3;
+    white-space: nowrap;
+    text-decoration: none;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
-.otc-day-filter:hover {
+.otc-day-filter:hover,
+.otc-filter-chip:hover,
+.breakout-filter-btn:hover,
+.pos-pill:hover,
+.wv-pos-btn:hover,
+.dvt-pos-btn:hover,
+.filter-pill:hover,
+.ti-pos:hover,
+.ti-lf-btn:hover,
+.tdb-lt:hover,
+.sched-rank-pos:hover,
+.dr-pos:hover,
+.cs-posf button:hover,
+.pvc-range-btn:hover,
+.pm-wt-tab:hover,
+.am-pos:hover,
+.am-qr:hover,
+.rf-tf-opt:hover,
+.rz-fp-opt:hover {
     background: var(--bg-alt);
     border-color: var(--accent);
 }
 
-.otc-day-filter.active {
+.otc-day-filter.active,
+.otc-day-filter.is-active,
+.otc-filter-chip.is-active,
+.otc-filter-chip.active,
+.breakout-filter-btn.active,
+.pos-pill.active,
+.wv-pos-btn.active,
+.dvt-pos-btn.dvt-pos-btn-active,
+.filter-pill.active,
+.ti-pos.active,
+.ti-lf-btn.active,
+.tdb-lt.active,
+.sched-rank-pos.active,
+.dr-pos.active,
+.cs-posf button[aria-pressed="true"],
+.pvc-range-btn.is-active,
+.pm-wt-tab.pm-wt-tab-active,
+.am-pos.active,
+.am-qr.active,
+.rf-tf-opt.is-active,
+.rz-fp-opt.active {
     background: var(--accent);
     color: var(--on-accent);
     border-color: var(--accent);
@@ -4413,7 +4681,7 @@ strong + .player-badge,
 .otc-filter-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 5px;
+    gap: 6px;
     margin-bottom: 14px;
 }
 
@@ -4724,13 +4992,26 @@ strong + .player-badge,
 }
 
 .otc-movers-empty {
-    padding: 8px 0;
+    padding: 14px 8px;
     font-size: 12px;
-    color: #8c98aa;
+    color: var(--text-muted);
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-height: 40px;
+    gap: 6px;
+    min-height: 48px;
+    text-align: center;
+    line-height: 1.45;
+}
+
+/* When movers panels host the shared empty-state helper, drop extra chrome. */
+.otc-movers-list .empty-state,
+#otcRisersList .empty-state,
+#otcFallersList .empty-state,
+#otcSuggTargets .empty-state,
+#otcStrategyImpact .empty-state {
+    padding: 16px 8px;
 }
 
 .otc-movers-panel {
@@ -5018,7 +5299,7 @@ strong + .player-badge,
 
 .otc-page-title {
     margin: 0;
-    font-size: 20px;
+    font-size: var(--text-xl);
     line-height: 1.15;
 }
 
@@ -7334,9 +7615,18 @@ select:focus {
     padding: 6px;
 }
 
+/* Align legacy history empties with the shared empty look. */
 .history-empty {
-    color: var(--muted);
-    padding: 8px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 6px;
+    padding: 28px 16px;
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.45;
 }
 
 .history-loading-state {
@@ -7844,11 +8134,11 @@ select:focus {
 
 .os-card, .os-card-soft, .os-hero-card {
     width: 100%;
-    border: 1px solid var(--border);
+    border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
     border-radius: 18px;
     margin-bottom: 18px;
     background: var(--card);
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+    box-shadow: var(--shadow-sm);
     max-height: 1225px;
 }
 
@@ -7979,7 +8269,7 @@ select:focus {
 
 .os-hero-title {
     margin: 0;
-    font-size: 30px;
+    font-size: var(--text-2xl);
     line-height: 1.05;
     font-weight: 800;
     color: #ffffff;
@@ -8124,6 +8414,8 @@ select:focus {
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
+    /* Room for row borders/hover chrome at the top edge of the scroll box. */
+    padding-top: 2px;
 }
 
 .os-snapshot-meta {
@@ -8190,11 +8482,12 @@ select:focus {
     border: 1px solid var(--border);
     border-radius: 14px;
     background: var(--card);
-    transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease;
+    transition: background .14s ease, border-color .14s ease;
 }
 
 .os-snap-row:hover {
     border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+    background: color-mix(in srgb, var(--accent-soft) 55%, var(--card));
 }
 
 .os-snap-medal {
@@ -8957,30 +9250,7 @@ select:focus {
 
 .pm-wt-tabs {
     display: flex;
-    gap: 4px;
-}
-
-.pm-wt-tab {
-    padding: 3px 10px;
-    font-size: 11px;
-    font-weight: 600;
-    border: 1px solid var(--border);
-    border-radius: 18px;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-    transition: background 0.12s, color 0.12s, border-color 0.12s;
-}
-
-.pm-wt-tab:hover {
-    background: var(--bg-alt);
-    color: var(--text);
-}
-
-.pm-wt-tab.pm-wt-tab-active {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--on-accent);
+    gap: 6px;
 }
 
 .pm-wt-grid {
@@ -9905,7 +10175,7 @@ select:focus {
 
 .activity-filter {
     display: flex;
-    gap: 8px;
+    gap: 6px;
     align-items: center;
     margin: 6px 0 10px;
     flex-wrap: wrap;
@@ -10065,17 +10335,6 @@ select:focus {
 
 .gloss-def a {
     color: var(--accent);
-}
-
-.filter-pill.active {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--on-accent);
-    box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
-}
-
-.filter-pill:hover {
-    background: #eff6ff;
 }
 
 .footer {
@@ -10313,9 +10572,13 @@ select:focus {
 
 .home-card {
     background: #122d4b;
+    background:
+        radial-gradient(ellipse 90% 70% at 100% 0%, rgba(56, 189, 248, 0.18), transparent 55%),
+        linear-gradient(165deg, #163557 0%, #122d4b 48%, #0d233c 100%);
     padding: 22px 24px 20px;
     border-radius: 18px;
-    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(125, 211, 252, 0.12);
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.45);
     box-sizing: border-box;
     width: 100%;
     min-width: 0;
@@ -10954,8 +11217,8 @@ a.signed-home-league:hover {
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 16px;
-    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+    padding: 18px;
+    box-shadow: var(--shadow-sm);
 }
 
 .home-features-header {
@@ -10990,7 +11253,7 @@ a.signed-home-league:hover {
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    background: rgba(99, 102, 241, .15);
+    background: color-mix(in srgb, #6366f1 16%, transparent);
     color: #6366f1;
     border-radius: 6px;
     padding: 1px 5px;
@@ -11001,8 +11264,8 @@ a.signed-home-league:hover {
 }
 
 .home-feature-badge-pro {
-    background: linear-gradient(135deg, rgba(245, 158, 11, .2), rgba(234, 88, 12, .2));
-    color: #f59e0b;
+    background: linear-gradient(135deg, #122d4b 0%, #2563eb 100%);
+    color: #fff;
 }
 
 .home-feature-platforms {
@@ -11051,12 +11314,50 @@ a.signed-home-league:hover {
 
 .home-feature-row-icon {
     flex-shrink: 0;
-    width: 32px;
-    height: 32px;
+    width: 34px;
+    height: 34px;
     display: flex;
     align-items: center;
     justify-content: center;
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--brand-blue) 12%, transparent);
+    color: var(--brand-blue);
 }
+
+.home-feature-row-icon svg {
+    width: 17px;
+    height: 17px;
+}
+
+.home-feature-row-icon i {
+    font-size: 15px;
+}
+
+.home-fi-1 { background: rgba(99, 102, 241, .12); color: #6366f1; }
+.home-fi-2 { background: rgba(59, 130, 246, .12); color: #3b82f6; }
+.home-fi-3 { background: rgba(139, 92, 246, .12); color: #8b5cf6; }
+.home-fi-4 { background: rgba(16, 185, 129, .12); color: #10b981; }
+.home-fi-5 { background: rgba(20, 184, 166, .12); color: #14b8a6; }
+.home-fi-6 { background: rgba(167, 139, 250, .12); color: #a78bfa; }
+.home-fi-7 { background: rgba(245, 158, 11, .12); color: #f59e0b; }
+.home-fi-8 { background: rgba(6, 182, 212, .12); color: #06b6d4; }
+.home-fi-9 { background: rgba(249, 115, 22, .12); color: #f97316; }
+.home-fi-10 { background: rgba(236, 72, 153, .12); color: #ec4899; }
+.home-fi-11 { background: rgba(239, 68, 68, .12); color: #ef4444; }
+.home-fi-12 { background: rgba(234, 179, 8, .12); color: #eab308; }
+
+:root[data-theme="dark"] .home-fi-1 { background: rgba(99, 102, 241, .2); color: #a5b4fc; }
+:root[data-theme="dark"] .home-fi-2 { background: rgba(59, 130, 246, .2); color: #93c5fd; }
+:root[data-theme="dark"] .home-fi-3 { background: rgba(139, 92, 246, .2); color: #c4b5fd; }
+:root[data-theme="dark"] .home-fi-4 { background: rgba(16, 185, 129, .2); color: #6ee7b7; }
+:root[data-theme="dark"] .home-fi-5 { background: rgba(20, 184, 166, .2); color: #5eead4; }
+:root[data-theme="dark"] .home-fi-6 { background: rgba(167, 139, 250, .22); color: #c4b5fd; }
+:root[data-theme="dark"] .home-fi-7 { background: rgba(245, 158, 11, .2); color: #fbbf24; }
+:root[data-theme="dark"] .home-fi-8 { background: rgba(6, 182, 212, .2); color: #67e8f9; }
+:root[data-theme="dark"] .home-fi-9 { background: rgba(249, 115, 22, .2); color: #fdba74; }
+:root[data-theme="dark"] .home-fi-10 { background: rgba(236, 72, 153, .2); color: #f9a8d4; }
+:root[data-theme="dark"] .home-fi-11 { background: rgba(239, 68, 68, .2); color: #fca5a5; }
+:root[data-theme="dark"] .home-fi-12 { background: rgba(234, 179, 8, .2); color: #fde047; }
 
 .home-feature-row-body {
     display: flex;
@@ -11153,36 +11454,130 @@ a.signed-home-league:hover {
 
 .home-hero {
     display: grid;
-    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
-    gap: 32px;
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    gap: 40px;
     align-items: center;
+    position: relative;
+    z-index: 1;
 }
 
 .home-hero-left {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 18px;
+    animation: homeHeroIn var(--dur-slow) var(--ease-out) both;
 }
 
 .home-hero-right {
     display: flex;
     justify-content: flex-end;
+    animation: homeCardIn var(--dur-slow) var(--ease-out) .08s both;
+}
+
+@keyframes homeHeroIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes homeCardIn {
+    from {
+        opacity: 0;
+        transform: translateY(14px) scale(.985);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .home-hero-left,
+    .home-hero-right {
+        animation: none;
+    }
 }
 
 .home-page {
-    max-width: 1100px;
+    max-width: 1120px;
     margin: 0 auto;
-    padding: 32px 24px 80px;
+    padding: 36px 24px 88px;
     display: flex;
     flex-direction: column;
-    gap: 40px;
+    gap: 36px;
+}
+
+.home-brand {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--brand-blue);
 }
 
 .home-subtitle {
-    font-size: 16px;
+    font-size: 17px;
     color: var(--text-muted);
-    line-height: 1.6;
-    max-width: 520px;
+    line-height: 1.55;
+    max-width: 480px;
+    margin: 0;
+}
+
+.home-platform-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.home-platform-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 11px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    background: color-mix(in srgb, var(--card) 70%, transparent);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+}
+
+.home-proof {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    padding: 4px 0 8px;
+}
+
+.home-proof-item {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 4px 2px;
+    border-top: 2px solid color-mix(in srgb, var(--brand-blue) 45%, var(--border));
+}
+
+.home-proof-label {
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--text);
+    letter-spacing: -0.01em;
+}
+
+.home-proof-desc {
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--text-muted);
 }
 
 /* Home content wrapper: main content + sidebar */
@@ -11190,6 +11585,8 @@ a.signed-home-league:hover {
     display: flex;
     gap: 32px;
     align-items: stretch;
+    position: relative;
+    z-index: 1;
 }
 
 .home-feature-grid {
@@ -11306,12 +11703,13 @@ a.signed-home-league:hover {
 }
 
 .home-title {
-    font-size: 32px;
-    line-height: 1.1;
+    font-size: clamp(34px, 4.2vw, 46px);
+    line-height: 1.08;
     color: var(--text);
-    letter-spacing: -0.03em;
+    letter-spacing: -0.035em;
     text-align: left;
     margin: 0;
+    font-weight: 800;
 }
 
 .home-title::after {
@@ -12041,7 +12439,7 @@ a.signed-home-league:hover {
 .manager-pill.active {
     background: var(--accent);
     color: var(--on-accent);
-    box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 30%, transparent);
+    box-shadow: 0 1px 6px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 .manager-pill:not(.active):hover {
@@ -12055,6 +12453,8 @@ a.signed-home-league:hover {
     align-items: center;
     gap: 8px;
     margin-bottom: 12px;
+    /* Keep active-pill shadow from clipping against the card edge. */
+    overflow: visible;
 }
 
 .manager-pills-row {
@@ -12067,8 +12467,8 @@ a.signed-home-league:hover {
     /* overflow-x:auto forces overflow-y to auto (not visible), so the active
      pill's box-shadow and rounded edges get clipped top/bottom. Pad the scroll
      box to give them room; negative margin keeps the row's outer height put. */
-    padding: 8px 2px;
-    margin: -8px -2px;
+    padding: 10px 4px;
+    margin: -10px -4px;
 }
 
 .manager-pills-row::-webkit-scrollbar {
@@ -13956,6 +14356,11 @@ img, svg, canvas {
         justify-content: flex-start;
     }
 
+    .home-proof {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+    }
+
     .home-content-wrapper {
         flex-direction: column;
     }
@@ -13971,6 +14376,15 @@ img, svg, canvas {
 @media (max-width: 720px) {
     .home-page {
         padding: 20px 16px 64px;
+    }
+
+    .home-proof {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .home-title {
+        font-size: 32px;
     }
 
     .home-feature-grid {
@@ -14392,11 +14806,6 @@ img, svg, canvas {
         width: 14px;
         height: 14px;
         font-size: 11px;
-    }
-
-    .otc-filter-chip {
-        font-size: 11px;
-        padding: 5px 10px;
     }
 
     .otc-search-dropdown {
@@ -16715,6 +17124,43 @@ img, svg, canvas {
     .pr-value {
         font-size: 12px;
     }
+
+    /* Denser list chrome on phones — more rows, less chrome. */
+    .pr-player-row {
+        padding: 7px 8px;
+    }
+
+    #prControls {
+        gap: 8px !important;
+    }
+
+    #prControls .pr-pos-btn {
+        padding: 5px 8px;
+        font-size: 11px;
+    }
+
+    .otc-movers-panel {
+        padding: 10px 10px;
+    }
+
+    .otc-mini-row {
+        padding-top: 6px;
+        padding-bottom: 6px;
+    }
+
+    .history-header {
+        padding: 18px 14px 14px;
+        gap: 12px;
+    }
+
+    .sched-empty {
+        padding: 20px 12px;
+    }
+
+    .wl-page-row {
+        padding-top: 8px;
+        padding-bottom: 8px;
+    }
 }
 
 @media (max-width: 480px) {
@@ -16980,29 +17426,6 @@ img, svg, canvas {
     justify-content: flex-end;
     flex-wrap: wrap;
     margin: 0 0 8px;
-}
-
-.pvc-range-btn {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 3px 11px;
-    border-radius: 12px;
-    border: 1px solid var(--border);
-    background: var(--card);
-    color: var(--text-muted);
-    cursor: pointer;
-    transition: background .12s, border-color .12s, color .12s;
-}
-
-.pvc-range-btn:hover {
-    border-color: var(--accent);
-    color: var(--accent);
-}
-
-.pvc-range-btn.is-active {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--on-accent);
 }
 
 .player-modal-loading {
@@ -18732,11 +19155,18 @@ img, svg, canvas {
     transition: opacity 0.15s, background 0.15s;
 }
 
-/* Block-level clickable cards (os-snapshot-card etc.) get the lift */
-div.team-clickable:hover, article.team-clickable:hover {
+/* Block-level clickable cards get a lift — skip rows that live inside scroll
+   boxes (e.g. Offseason Team Snapshot), where translateY/shadow get clipped. */
+div.team-clickable:hover:not(.os-snap-row),
+article.team-clickable:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
     transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.os-snap-row.team-clickable:hover {
+    transform: none;
+    box-shadow: none;
 }
 
 /* Inline / span / text clickables just dim slightly */
@@ -20236,13 +20666,6 @@ tr.team-clickable {
     overflow-y: auto;
 }
 
-.compare-search-empty {
-    padding: 16px;
-    text-align: center;
-    font-size: 13px;
-    color: var(--text-muted);
-}
-
 .compare-search-result-item {
     display: flex;
     align-items: center;
@@ -20555,10 +20978,30 @@ tr.team-clickable {
 /* ─── Teams Analytics Card ───────────────────────────────────────────────── */
 
 .analytics-empty {
-    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
     text-align: center;
+    gap: 6px;
+    padding: 24px 14px;
     color: var(--text-muted);
-    font-size: 14px;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.cs-empty,
+.kpr-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 6px;
+    padding: 22px 14px;
+    color: var(--text-muted);
+    font-size: 13px;
+    line-height: 1.45;
 }
 
 .analytics-btm-header {
@@ -22220,11 +22663,40 @@ tr.team-clickable {
     line-height: 1;
 }
 
-.watchlist-nav-empty {
-    padding: 16px 14px;
+.watchlist-nav-empty,
+.wl-page-empty,
+.bulletins-empty,
+.compare-pick-empty,
+.sched-empty,
+.dr-hist-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 6px;
+    padding: 24px 14px;
     font-size: 13px;
     color: var(--text-muted);
-    text-align: center;
+    line-height: 1.45;
+}
+
+.watchlist-nav-empty {
+    padding: 16px 14px;
+}
+
+.compare-pick-empty {
+    padding: 14px 12px;
+}
+
+/* When these hosts render the shared empty-state helper, drop extra chrome. */
+#watchlistNavList .empty-state,
+#wlPageTable .empty-state,
+.bulletins-list .empty-state,
+#historyAwardsContent .empty-state,
+#historyStandingsContent .empty-state,
+#historyChartContent .empty-state {
+    padding: 18px 12px;
 }
 
 /* "Since your last visit" digest - shown as a dismissible popup overlay
@@ -22575,6 +23047,7 @@ tr.team-clickable {
     display: flex;
     align-items: center;
     gap: 12px;
+    flex-wrap: wrap;
 }
 
 .wl-page-title {
@@ -22983,12 +23456,6 @@ tr.team-clickable {
     color: #ef4444;
 }
 
-.wl-page-empty {
-    padding: 32px 16px;
-    text-align: center;
-    color: var(--text-muted);
-}
-
 @media (max-width: 640px) {
     /* Drop Age + Status columns; the four remaining cells fill the four tracks. */
     .wl-page-row {
@@ -23126,9 +23593,9 @@ tr.team-clickable {
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: .06em;
-    color: var(--accent);
-    background: var(--accent-soft);
-    border: 1px solid var(--accent-soft-2);
+    color: var(--brand-blue, #3b82f6);
+    background: color-mix(in srgb, var(--brand-blue, #3b82f6) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--brand-blue, #3b82f6) 18%, transparent);
     padding: 4px 11px;
     border-radius: 12px;
     margin-bottom: 12px;
@@ -23140,9 +23607,9 @@ tr.team-clickable {
 
 .compare-page-title {
     margin: 0;
-    font-size: 32px;
+    font-size: clamp(28px, 4vw, 36px);
     font-weight: 800;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.03em;
     color: var(--text);
 }
 
@@ -23355,13 +23822,6 @@ tr.team-clickable {
 .compare-pick-rmeta {
     font-size: 11px;
     color: var(--text-muted);
-}
-
-.compare-pick-empty {
-    padding: 12px;
-    text-align: center;
-    color: var(--text-muted);
-    font-size: 13px;
 }
 
 /* Tier-average rows in the picker read as baselines, not players. */
@@ -24533,6 +24993,107 @@ button:disabled {
     font-size: 12px;
 }
 
+.pm-trade-pos {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-left: 4px;
+    font-weight: 600;
+    font-style: normal;
+}
+
+.pm-trade-swap {
+    color: var(--text-muted);
+    font-size: 18px;
+    align-self: center;
+}
+
+.pm-trade-team {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    color: var(--text);
+    margin-bottom: 6px;
+}
+
+.pm-trade-season {
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.pm-trade-badge {
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.pm-trade-badge-sf {
+    background: rgba(139, 92, 246, 0.15);
+    color: #8b5cf6;
+    border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.pm-trade-badge-1qb {
+    background: rgba(59, 130, 246, 0.15);
+    color: #3b82f6;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.pm-trades-toggle {
+    display: inline-flex;
+    gap: 4px;
+    padding: 3px;
+    margin: 2px 0 12px;
+    border-radius: 12px;
+    background: var(--row);
+    border: 1px solid var(--border);
+}
+
+.pm-trades-toggle-btn {
+    margin: 0;
+    padding: 6px 12px;
+    border-radius: 10px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    line-height: 1.2;
+}
+
+.pm-trades-toggle-btn.active {
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+
+.pm-trades-toggle-btn:hover:not(.active) {
+    color: var(--text);
+}
+
+.pm-trades-toggle-note {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 2px 0 10px;
+}
+
+.pm-trades-footer {
+    text-align: center;
+    padding: 12px 0 2px;
+}
+
+.pm-trades-footer a {
+    font-size: 12px;
+    color: var(--accent, #3b82f6);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.pm-trades-body {
+    min-height: 40px;
+}
+
 /* Login / subscribe gate card */
 .login-gate {
     display: flex;
@@ -25625,12 +26186,6 @@ button:disabled {
     overflow-x: auto;
 }
 
-.sched-empty {
-    padding: 32px 16px;
-    text-align: center;
-    color: var(--text-muted);
-}
-
 .sched-table {
     width: 100%;
     min-width: max-content;
@@ -25857,11 +26412,6 @@ button:disabled {
         padding: 5px 10px;
     }
 
-    .sched-rank-pos {
-        font-size: 11px;
-        padding: 4px 8px;
-    }
-
     /* Rankings view - tighter cells so more weeks fit */
     .sched-th {
         padding: 6px 6px;
@@ -26077,26 +26627,8 @@ button:disabled {
 
 .sched-pos-pills {
     display: flex;
-    gap: 4px;
+    gap: 6px;
     flex-wrap: wrap;
-}
-
-.sched-rank-pos {
-    padding: 5px 13px;
-    border-radius: 12px;
-    border: 1px solid var(--border);
-    background: var(--card-bg);
-    color: var(--text-muted);
-    font-size: 12px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: all 0.12s;
-}
-
-.sched-rank-pos.active {
-    background: var(--accent);
-    color: var(--on-accent);
-    border-color: var(--accent);
 }
 
 .sched-sort-btn {
@@ -26246,6 +26778,7 @@ button:disabled {
     gap: 8px;
     margin-bottom: 12px;
     position: relative;
+    flex-wrap: wrap;
 }
 
 .teams-topbar .teams-sort-bar {
@@ -26846,13 +27379,6 @@ button:disabled {
     gap: 4px;
 }
 
-.bulletins-empty {
-    padding: 24px 16px;
-    text-align: center;
-    font-size: var(--text-sm);
-    color: var(--text-muted);
-}
-
 /* ── Feature 13: Share Card ──────────────────────────────────────────────────*/
 .share-card {
     background: var(--card);
@@ -27184,6 +27710,17 @@ button:disabled {
     color: #818cf8;
 }
 
+
+/* Shared title rhythm for public tool pages */
+.dvt-title, .rf-title, .rnk-title {
+    letter-spacing: -0.03em;
+    line-height: 1.12;
+}
+
+.dvt-title { font-size: clamp(24px, 4.2vw, 34px); }
+.rf-title { font-size: clamp(24px, 4.2vw, 34px); }
+.rnk-title { font-size: clamp(24px, 4.2vw, 34px); }
+
 /* ── Dynasty Trade Value Chart ───────────────────────────────────────────── */
 .dvt-page {
     max-width: 900px;
@@ -27193,13 +27730,17 @@ button:disabled {
 
 .dvt-hero {
     margin-bottom: 20px;
+    position: relative;
+    z-index: 1;
 }
 
 .dvt-title {
-    font-size: clamp(20px, 4vw, 28px);
+    font-size: clamp(24px, 4.2vw, 34px);
     font-weight: 800;
     color: var(--text);
     margin: 0 0 8px;
+    letter-spacing: -0.03em;
+    line-height: 1.12;
 }
 
 .dvt-subtitle {
@@ -27225,23 +27766,6 @@ button:disabled {
     display: flex;
     gap: 6px;
     flex-wrap: wrap;
-}
-
-.dvt-pos-btn {
-    padding: 5px 12px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 600;
-    border: 1px solid var(--border);
-    background: var(--card-bg);
-    color: var(--text-muted);
-    cursor: pointer;
-}
-
-.dvt-pos-btn-active {
-    border-color: #38bdf8;
-    color: #38bdf8;
-    background: rgba(56, 189, 248, .1);
 }
 
 .dvt-search {
@@ -27460,13 +27984,17 @@ button:disabled {
 
 .rf-hero {
     margin-bottom: 20px;
+    position: relative;
+    z-index: 1;
 }
 
 .rf-title {
-    font-size: clamp(18px, 4vw, 26px);
+    font-size: clamp(24px, 4.2vw, 34px);
     font-weight: 800;
     color: var(--text);
     margin: 0 0 8px;
+    letter-spacing: -0.03em;
+    line-height: 1.12;
 }
 
 .rf-updated {
@@ -27498,37 +28026,11 @@ button:disabled {
 }
 
 .rf-timeframe {
-    display: inline-flex;
-    gap: 2px;
-    margin-top: 14px;
-    padding: 3px;
-    border-radius: 10px;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-}
-
-.rf-tf-opt {
-    display: inline-flex;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
     align-items: center;
-    justify-content: center;
-    min-width: 44px;
-    padding: 5px 12px;
-    border-radius: 7px;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-decoration: none;
-    transition: background .12s, color .12s;
-}
-
-.rf-tf-opt:hover {
-    color: var(--text);
-}
-
-.rf-tf-opt.is-active {
-    background: var(--card);
-    color: var(--text);
-    box-shadow: 0 1px 2px rgba(20, 35, 61, .08);
+    margin-top: 14px;
 }
 
 .rf-grid {
@@ -27699,13 +28201,17 @@ button:disabled {
 
 .rnk-hero {
     margin-bottom: 16px;
+    position: relative;
+    z-index: 1;
 }
 
 .rnk-title {
-    font-size: clamp(18px, 4vw, 26px);
+    font-size: clamp(24px, 4.2vw, 34px);
     font-weight: 800;
     color: var(--text);
     margin: 0 0 8px;
+    letter-spacing: -0.03em;
+    line-height: 1.12;
 }
 
 .rnk-subtitle {
@@ -29891,32 +30397,8 @@ button:disabled {
 .rz-fp-opts {
     display: flex;
     flex-wrap: wrap;
-    gap: 5px;
+    gap: 6px;
     flex: 1;
-}
-
-.rz-fp-opt {
-    background: var(--rz-surface);
-    border: 1px solid var(--rz-border);
-    color: var(--rz-muted);
-    border-radius: 12px;
-    padding: 4px 10px;
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all .12s;
-}
-
-.rz-fp-opt.active {
-    background: var(--rz-red);
-    border-color: var(--rz-red);
-    color: #fff;
-    font-weight: 700;
-}
-
-.rz-fp-opt:hover:not(.active) {
-    border-color: var(--rz-red);
-    color: var(--rz-text);
 }
 
 @media (max-width: 480px) {
@@ -33311,11 +33793,8 @@ a, button, [role="button"], [role="tab"], summary, label,
         color: var(--accent);
     }
 
-    /* Top bar yields to the dock. It stays only on the dashboard, and only as the
-     logo; every other league page hides it and hands the height to content. */
-    /* The dock is the primary nav on phones, so the top bar drops its pills and
-     utilities and keeps just the logo (top-left) on every league page, so the
-     top-left is never an odd empty gap. */
+    /* Top bar yields to the dock. Pills and utilities hide; logo + league/week
+     chip stay so every page still shows where you are. */
     .top-nav.br-mnav .nav-center,
     .top-nav.br-mnav .nav-right {
         display: none;
@@ -33323,11 +33802,34 @@ a, button, [role="button"], [role="tab"], summary, label,
 
     .top-nav.br-mnav {
         grid-template-columns: 1fr;
-        justify-items: start;
-        /* The mobile .top-nav override drops the base safe-area padding, so the
-       logo lands under the notch / Dynamic Island in a standalone PWA. Restore
-       it here so the logo always clears the status bar. */
+        justify-items: stretch;
         padding-top: max(10px, env(safe-area-inset-top));
+        padding-bottom: 10px;
+    }
+
+    .top-nav.br-mnav .nav-left {
+        width: 100%;
+        justify-content: flex-start;
+        gap: 8px;
+    }
+
+    .top-nav.br-mnav .site-logo {
+        width: 92px;
+    }
+
+    .top-nav.br-mnav .br-ctx {
+        flex: 1;
+        margin-left: 4px;
+        justify-content: space-between;
+    }
+
+    .top-nav.br-mnav .br-ctx-league {
+        max-width: none;
+        padding: 5px 8px;
+    }
+
+    .top-nav.br-mnav .br-ctx-format {
+        display: none;
     }
 
     /* Scrim + sheet sit just above the dock (both at --z-chrome); DOM order puts
@@ -33482,7 +33984,7 @@ a, button, [role="button"], [role="tab"], summary, label,
         letter-spacing: .04em;
         text-transform: uppercase;
         color: #fff;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #122d4b 0%, #2563eb 100%);
         padding: 2px 6px;
         border-radius: 5px;
     }

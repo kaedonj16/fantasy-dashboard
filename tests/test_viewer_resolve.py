@@ -46,6 +46,36 @@ def test_match_by_team_name():
     assert v["viewer_user_id"] == "2"
 
 
+def test_team_name_collision_does_not_pick_the_first_user():
+    users = [
+        {"user_id": "1", "username": "alpha", "display_name": "A",
+         "metadata": {"team_name": "Dream Team"}},
+        {"user_id": "2", "username": "beta", "display_name": "B",
+         "metadata": {"team_name": "Dream Team"}},
+    ]
+    rosters = [
+        {"roster_id": 10, "owner_id": "1"},
+        {"roster_id": 20, "owner_id": "2"},
+    ]
+    assert resolve_viewer_for_league(users, rosters, "dream team") is None
+
+
+def test_unique_username_wins_over_shared_team_name():
+    users = [
+        {"user_id": "1", "username": "alpha", "display_name": "A",
+         "metadata": {"team_name": "Dream Team"}},
+        {"user_id": "2", "username": "beta", "display_name": "B",
+         "metadata": {"team_name": "Dream Team"}},
+    ]
+    rosters = [
+        {"roster_id": 10, "owner_id": "1"},
+        {"roster_id": 20, "owner_id": "2"},
+    ]
+    v = resolve_viewer_for_league(users, rosters, "alpha")
+    assert v["viewer_user_id"] == "1"
+    assert v["viewer_roster_id"] == "10"
+
+
 def test_no_match_returns_none():
     assert resolve_viewer_for_league(USERS, ROSTERS, "ghost") is None
 

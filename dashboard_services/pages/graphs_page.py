@@ -499,7 +499,6 @@ def build_graphs_body(ctx: dict) -> str:
       <div class="page-layout" data-page="graphs">
         <main class="page-main">
           <div class="graphs-page">
-
             <div class="card">
               <div class="card-header-row">
                 <h2>PF vs PA Scatter</h2>

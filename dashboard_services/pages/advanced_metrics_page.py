@@ -220,10 +220,10 @@ def build_advanced_metrics_body(
           <div class="am-ctrl am-mobile-filter am-ctrl-weekbar" id="amWeekCtrl">
             <div class="am-weekbar-head">
               <label class="am-ctrl-label">Week Range</label>
-              <div class="am-quick-ranges" id="amQuickRanges">
-                <button type="button" class="am-qr active" data-range="">Season</button>
-                <button type="button" class="am-qr" data-range="last2">Last 2</button>
-                <button type="button" class="am-qr" data-range="last4">Last 4</button>
+              <div class="otc-day-filters am-quick-ranges" id="amQuickRanges">
+                <button type="button" class="otc-day-filter am-qr active" data-range="">Season</button>
+                <button type="button" class="otc-day-filter am-qr" data-range="last2">Last 2</button>
+                <button type="button" class="otc-day-filter am-qr" data-range="last4">Last 4</button>
               </div>
             </div>
             <div id="amWkBarHost"></div>
@@ -245,12 +245,12 @@ def build_advanced_metrics_body(
         </div>
 
         <div class="am-subcontrols">
-          <div id="amPositions" class="am-positions">
-            <button class="am-pos active" data-pos="ALL">All</button>
-            <button class="am-pos" data-pos="QB">QB</button>
-            <button class="am-pos" data-pos="RB">RB</button>
-            <button class="am-pos" data-pos="WR">WR</button>
-            <button class="am-pos" data-pos="TE">TE</button>
+          <div id="amPositions" class="otc-day-filters am-positions">
+            <button class="otc-day-filter am-pos active" data-pos="ALL">All</button>
+            <button class="otc-day-filter am-pos" data-pos="QB">QB</button>
+            <button class="otc-day-filter am-pos" data-pos="RB">RB</button>
+            <button class="otc-day-filter am-pos" data-pos="WR">WR</button>
+            <button class="otc-day-filter am-pos" data-pos="TE">TE</button>
           </div>
           <!-- Add Metric picker lives here so it's always accessible even when
                the compare bar is collapsed (no extra metrics selected). -->
@@ -356,12 +356,12 @@ def build_advanced_metrics_body(
                 </div>
               </div>
             </div>
-            <div class="am-graph-pos-bar" id="amGraphPosBar">
-              <button class="am-pos active" data-gpos="">All</button>
-              <button class="am-pos" data-gpos="QB">QB</button>
-              <button class="am-pos" data-gpos="RB">RB</button>
-              <button class="am-pos" data-gpos="WR">WR</button>
-              <button class="am-pos" data-gpos="TE">TE</button>
+            <div class="otc-day-filters am-graph-pos-bar" id="amGraphPosBar">
+              <button class="otc-day-filter am-pos active" data-gpos="">All</button>
+              <button class="otc-day-filter am-pos" data-gpos="QB">QB</button>
+              <button class="otc-day-filter am-pos" data-gpos="RB">RB</button>
+              <button class="otc-day-filter am-pos" data-gpos="WR">WR</button>
+              <button class="otc-day-filter am-pos" data-gpos="TE">TE</button>
             </div>
             <div class="am-graph-plot-wrap">
               <div id="amGraphPlot"><div class="am-graph-empty">Pick two metrics to plot.</div></div>
@@ -387,7 +387,7 @@ def build_advanced_metrics_body(
           </div>
           <button onclick="if(window.showPaywall)showPaywall('advanced-metrics')"
             style="font-size:13px;font-weight:700;padding:8px 18px;border:none;border-radius:10px;
-                   background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;cursor:pointer;">
+                   background:linear-gradient(135deg,#122d4b,#2563eb);color:#fff;cursor:pointer;">
             Upgrade &rarr;
           </button>
         </div>
@@ -503,19 +503,13 @@ def build_advanced_metrics_body(
          presets don't add height or push the bar out of line. */
       .am-weekbar-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
       /* Quick week-range chips (Season / Last 2 / Last 4) */
-      .am-quick-ranges { display:flex; gap:4px; }
-      .am-qr {
-        padding:2px 9px; font-size:11px; font-weight:600; cursor:pointer;
-        border:1px solid var(--border); border-radius:12px;
-        background:var(--card); color:var(--text-muted);
-      }
-      .am-qr.active { background:var(--accent,#3b82f6); border-color:var(--accent,#3b82f6); color:#fff; }
+      .am-quick-ranges { display:flex; gap:6px; }
       /* Compare position-average baseline column */
       .am-cmp-baseline-head .am-cmp-head-name { color:var(--text-muted); }
       .am-cmp-baseline { opacity:.75; border-left:1px dashed var(--border); }
       /* Subcontrols row: positions + action buttons + toggles */
       .am-subcontrols { display:flex; align-items:center; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
-      .am-positions { display:flex; gap:5px; flex:1 1 auto; min-width:0; overflow-x:auto; padding-bottom:1px; }
+      .am-positions { display:flex; gap:6px; flex:1 1 auto; min-width:0; overflow-x:auto; padding-bottom:1px; }
       .am-roster-toggle { flex-shrink:0; }
       .am-filters-btn { display:none; }
       /* Mobile-only add-filter button living inside the Filters panel; on
@@ -625,8 +619,6 @@ def build_advanced_metrics_body(
         /* Season and Sort share a row */
         .am-ctrl-season { flex:1; }
         .am-select { min-width:0; width:100%; }
-        /* Smaller position pills on narrow screens */
-        .am-pos { padding:5px 10px; font-size:11px; }
         .am-roster-toggle { padding:5px 10px; font-size:11px; }
         .am-barcell { min-width:52px; }
       }

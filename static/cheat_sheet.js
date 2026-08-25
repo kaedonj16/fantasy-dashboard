@@ -526,7 +526,20 @@
     renderNeedsBar();
 
     if (!players.length) {
-      $('csBoardBody').innerHTML = '<tr><td colspan="6" class="cs-empty">' + (loading ? 'Loading players…' : (loadError || 'No players for this format yet.')) + '</td></tr>';
+      var emptyMsg = loading ? 'Loading players…' : (loadError || 'No players for this format yet.');
+      if (!loading && window.brEmptyState) {
+        var host = $('csBoardBody');
+        host.innerHTML = '<tr><td colspan="6"><div id="csBoardEmpty"></div></td></tr>';
+        window.brEmptyState('csBoardEmpty', {
+          icon: loadError ? 'error' : 'empty',
+          title: loadError ? 'Couldn’t load' : 'No players yet',
+          message: emptyMsg,
+          compact: true,
+          error: !!loadError
+        });
+      } else {
+        $('csBoardBody').innerHTML = '<tr><td colspan="6" class="cs-empty">' + emptyMsg + '</td></tr>';
+      }
       $('csLegend').innerHTML = '';
       return;
     }

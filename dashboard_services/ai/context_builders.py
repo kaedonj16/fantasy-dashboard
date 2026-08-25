@@ -10,9 +10,10 @@ _SCARCITY_POSITIONS = {"QB", "RB", "WR", "TE"}
 
 def _ctx_is_sf(ctx: dict) -> bool:
     """Return True if the league context indicates a SuperFlex format."""
+    from utils.lineup_slots import is_superflex_lineup
     rp = ctx.get("roster_positions") or []
     if isinstance(rp, list):
-        return any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in rp)
+        return is_superflex_lineup(rp)
     return False
 
 
