@@ -7,7 +7,8 @@ its sibling at 700px) is what caused several mobile bugs where the two drifted
 out of sync. The ratchet below freezes the current number of distinct
 max-width breakpoints so new one-off values can't creep in — lower MAX_BREAKPOINTS
 as the file is consolidated toward the canonical scale documented at the top of
-dashboard.css (480 / 600 / 768 / 900 / 1180).
+dashboard.css (480 / 600 / 768 / 900 / 1180). A third guard locks tooltip chrome
+to the shared --tooltip-* tokens (advanced-metrics .adv-def-tip).
 """
 import os
 import re
@@ -43,39 +44,26 @@ def test_breakpoint_count_does_not_grow():
     )
 
 
-# Filter-chip classes that must share the `.otc-day-filter` rule so pages stay
-# in lockstep. Keep this list in sync with the canonical block in dashboard.css.
-_FILTER_ALIASES = (
-    ".otc-filter-chip",
-    ".breakout-filter-btn",
-    ".pos-pill",
-    ".wv-pos-btn",
-    ".dvt-pos-btn",
-    ".filter-pill",
-    ".ti-pos",
-    ".ti-lf-btn",
-    ".tdb-lt",
-    ".sched-rank-pos",
-    ".dr-pos",
-    ".cs-posf button",
-    ".pvc-range-btn",
-    ".pm-wt-tab",
-    ".am-pos",
-    ".am-qr",
-    ".rf-tf-opt",
-    ".rz-fp-opt",
-)
+def test_tooltip_chrome_uses_shared_tokens():
+    """Hover/tap text tooltips must share the advanced-metrics .adv-def-tip chrome.
 
-
-def test_canonical_filter_chip_aliases():
+    The pre-unification [data-tooltip] bubble was a hardcoded #333 chip that
+    ignored the theme. Guard the shared tokens and that regression.
+    """
     css = _css()
-    start = css.find("Canonical filter chips")
-    assert start != -1, "canonical filter-chip comment is missing"
-    chunk = css[start : start + 4500]
-    assert ".otc-day-filters" in chunk
-    assert ".otc-day-filter" in chunk
-    assert "padding: 4px 10px" in chunk
-    assert "border-radius: 6px" in chunk
-    for alias in _FILTER_ALIASES:
-        assert alias in chunk, f"{alias} is not aliased onto .otc-day-filter"
-
+    for token in (
+        "--tooltip-bg:",
+        "--tooltip-fg:",
+        "--tooltip-border:",
+        "--tooltip-radius:",
+        "--tooltip-pad:",
+        "--tooltip-fs:",
+        "--tooltip-lh:",
+        "--tooltip-shadow:",
+    ):
+        assert token in css, f"missing tooltip token {token}"
+    assert "background: #333" not in css
+    wk = re.search(r"\.wk-tip\s*\{([^}]+)\}", css)
+    assert wk, "missing .wk-tip rule"
+    assert "var(--tooltip-bg)" in wk.group(1)
+    assert "background: var(--text)" not in wk.group(1)

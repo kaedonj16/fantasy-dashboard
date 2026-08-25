@@ -780,8 +780,8 @@ _DRAFT_ROOM_HTML = r"""
   .dr-side-tabs .otc-main-tab { flex: 1; display: flex; align-items: center; justify-content: center;
     text-align: center; padding: 7px 4px; font-size: 12px; }
   /* Team needs hover tooltip */
-  .dr-team-tip { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-    padding: 10px 12px; box-shadow: 0 8px 28px rgba(0,0,0,.28); min-width: 160px; }
+  .dr-team-tip { background: var(--tooltip-bg,var(--card)); color: var(--tooltip-fg,var(--text)); border: 1px solid var(--tooltip-border,var(--border)); border-radius: var(--tooltip-radius,10px);
+    padding: 10px 12px; box-shadow: var(--tooltip-shadow,0 8px 28px rgba(0,0,0,.28)); min-width: 160px; }
   .dr-team-tip-name { font-size: 12px; font-weight: 800; color: var(--text); margin-bottom: 7px; }
   .dr-team-tip-pos-row { display: flex; gap: 5px; flex-wrap: wrap; }
   .dr-team-tip-pos { display: flex; flex-direction: column; align-items: center; padding: 4px 7px;
@@ -942,9 +942,9 @@ _DRAFT_ROOM_HTML = r"""
      icons all sit on the LEFT of their label, so a centered tooltip overflowed
      the panel's left edge and got clipped by its overflow:hidden ancestor. */
   .dr-info::after { content: attr(data-tip); position:absolute; top:calc(100% + 6px); left:0; transform:none;
-    width:max-content; max-width:210px; background:var(--card); color:var(--text); border:1px solid var(--border);
-    border-radius:8px; padding:7px 9px; font-size:11px; font-weight:500; font-style:normal; line-height:1.4; text-align:left;
-    box-shadow:0 8px 24px rgba(0,0,0,.28); opacity:0; pointer-events:none; transition:opacity .12s; z-index:600; white-space:normal; }
+    width:max-content; max-width:210px; background:var(--tooltip-bg,var(--card)); color:var(--tooltip-fg,var(--text)); border:1px solid var(--tooltip-border,var(--border));
+    border-radius:var(--tooltip-radius,10px); padding:var(--tooltip-pad,8px 12px); font-size:var(--tooltip-fs,12px); font-weight:500; font-style:normal; line-height:var(--tooltip-lh,1.45); text-align:left;
+    box-shadow:var(--tooltip-shadow,0 8px 24px rgba(0,0,0,.28)); opacity:0; pointer-events:none; transition:opacity .12s; z-index:600; white-space:normal; }
   .dr-info:hover::after, .dr-info:focus::after { opacity:1; }
   /* glossary popover */
   .dr-help-btn { width:26px; height:26px; border-radius:7px; border:1px solid var(--border); background:var(--bg);
@@ -1268,7 +1268,7 @@ _DRAFT_ROOM_HTML = r"""
   .dd-sq { width:11px; height:11px; border-radius:3px; display:inline-block; }
   .dd-chartscroll, .dd-tablescroll { overflow-x:auto; }
   .dd-tl-dot:hover { stroke:var(--text); stroke-width:1.6; }
-  .dd-tip { position:fixed; z-index:12800; pointer-events:none; background:var(--card); border:1px solid var(--border); box-shadow:0 12px 40px rgba(0,0,0,.4); border-radius:11px; padding:10px 12px; font-size:12.5px; opacity:0; transform:translateY(4px); transition:opacity .12s; max-width:230px; }
+  .dd-tip { position:fixed; z-index:12800; pointer-events:none; background:var(--tooltip-bg,var(--card)); color:var(--tooltip-fg,var(--text)); border:1px solid var(--tooltip-border,var(--border)); box-shadow:var(--tooltip-shadow,0 12px 40px rgba(0,0,0,.4)); border-radius:var(--tooltip-radius,10px); padding:var(--tooltip-pad,8px 12px); font-size:var(--tooltip-fs,12px); line-height:var(--tooltip-lh,1.45); opacity:0; transform:translateY(4px); transition:opacity .12s; max-width:230px; }
   .dd-tip.show { opacity:1; transform:none; }
   .dd-tip b { font-family:"Archivo",sans-serif; }
   .dd-tip-r { display:flex; justify-content:space-between; gap:16px; color:var(--text-muted); margin-top:3px; }
