@@ -729,6 +729,7 @@
 
   function showMain(){
     _boardSig = null;   // always force a full board rebuild when entering the draft view
+    closeEditSetup();
     document.getElementById('drSetup').style.display = 'none';
     var hero = document.getElementById('drHero'); if (hero) hero.style.display = 'none';
     var isLive = !!(state && state.mode === 'live');
@@ -748,59 +749,141 @@
     document.getElementById('drBaList').innerHTML = '<div class="dr-loading">Loading players…</div>';
     document.getElementById('drMain').style.display = '';
   }
-  function showSetup(){
-    endSim();
-    document.getElementById('drMain').style.display = 'none';
-    document.getElementById('drSetup').style.display = '';
-    var hero = document.getElementById('drHero'); if (hero) hero.style.display = '';
-
-    // Editing a STARTED draft: reflect all of its settings in the setup controls
-    // and seed the roster / draft-capital editors from it, so Edit truly edits the
-    // current draft. With everything matching, starting again with no changes reads
-    // back the same teams/order/slot and the picks carry over (see startMock /
-    // startDraft). Skipped for the initial setup (no active draft yet).
-    if (state && state.teams){
-      var tEl = document.getElementById('drType');
-      if (tEl) tEl.value = state.keeper ? 'keeper' : (state.type || tEl.value);
-      var sfEl = document.getElementById('drSf'); if (sfEl && state.sf != null) sfEl.value = state.sf ? '1' : '0';
-      var teamsEl = document.getElementById('drTeams'), wt = String(state.teams);
-      for (var ti = 0; ti < teamsEl.options.length; ti++){ if (teamsEl.options[ti].value === wt || teamsEl.options[ti].text === wt){ teamsEl.selectedIndex = ti; break; } }
-      var ordEl = document.getElementById('drOrder'); if (ordEl && state.order) ordEl.value = state.order;
-      var rEl = document.getElementById('drRounds'); if (rEl && state.rounds) rEl.value = String(state.rounds);
-      fillSlotOptions(state.teams);   // slot options depend on team count
-      var slotEl = document.getElementById('drSlot'); if (slotEl && state.slot) slotEl.value = String(state.slot);
-      if (state.scoring){
-        var pprEl = document.getElementById('drPpr'); if (pprEl) pprEl.value = String(state.scoring.ppr != null ? state.scoring.ppr : 1);
-        var tepEl = document.getElementById('drTep'); if (tepEl) tepEl.value = String(state.scoring.tep != null ? state.scoring.tep : 0);
-        var passTdEl = document.getElementById('drPassTd'); if (passTdEl) passTdEl.value = String(state.scoring.passTd >= 6 ? 6 : 4);
-      }
-      if (state.keeper){
-        var kcEl = document.getElementById('drKeeperCount'); if (kcEl && state.keeperCount != null){ kcEl.value = String(state.keeperCount); kcEl.dataset.touched = '1'; }
-        var ksEl = document.getElementById('drKeeperSource'); if (ksEl && state.keeperSource) ksEl.value = state.keeperSource;
-      }
-      // Roster editor: seed from the active draft in custom mode so it is not
-      // re-seeded from league/defaults. Match the sf/rd markers to the controls
-      // just set so renderSetupRoster does not reconcile it.
-      if (state.roster){
-        var rr = {}; Object.keys(state.roster).forEach(function(k){ rr[k] = state.roster[k]; });
-        rr._sf = document.getElementById('drSf').value === '1';
-        rr._rd = document.getElementById('drType').value === 'redraft';
-        _setupRoster = rr; _rosterMode = 'custom';
-      }
-      // Draft-capital editor: seed owned picks and match the signature so it is
-      // not reset to the slot's natural picks.
-      if (state.owned){
-        var ow = {}; Object.keys(state.owned).forEach(function(k){ if (state.owned[k]) ow[k] = true; });
-        _setupOwned = ow;
-        var _c = setupCtl(); _setupOwnedSig = [_c.teams, _c.rounds, _c.order, _c.slot].join('|');
+  function _setElHidden(id, hidden){
+    var el = document.getElementById(id);
+    if (el) el.hidden = !!hidden;
+  }
+  // Page setup vs in-draft edit modal: same form, different chrome.
+  function setSetupChrome(isModal){
+    var setup = document.getElementById('drSetup');
+    var hero = document.getElementById('drHero');
+    if (setup){
+      setup.classList.toggle('dr-setup-is-modal', !!isModal);
+      if (isModal){
+        setup.setAttribute('role', 'dialog');
+        setup.setAttribute('aria-modal', 'true');
+        setup.setAttribute('aria-labelledby', 'drEditTitle');
+      } else {
+        setup.removeAttribute('role');
+        setup.removeAttribute('aria-modal');
+        setup.removeAttribute('aria-labelledby');
       }
     }
-
-    syncKeeperSetupFields(document.getElementById('drType').value === 'keeper');
+    _setElHidden('drSetupModalHead', !isModal);
+    _setElHidden('drEditNote', !isModal);
+    _setElHidden('drSetupStartCta', !!isModal);
+    _setElHidden('drSetupEditCta', !isModal);
+    // Opening the modal hides the hero; closing it does not restore it — the
+    // board may still be up. showSetup is what brings the hero back.
+    if (isModal && hero) hero.style.display = 'none';
+    document.body.classList.toggle('dr-edit-open', !!isModal);
+  }
+  // Reflect a started draft's settings in the setup controls so Edit (and a
+  // later Apply with no changes) reads back the same teams/order/slot and the
+  // picks can carry over (see startMock / startDraft). No-op before a draft.
+  function hydrateSetupFromState(){
+    if (!(state && state.teams)) return;
+    var tEl = document.getElementById('drType');
+    if (tEl) tEl.value = state.keeper ? 'keeper' : (state.type || tEl.value);
+    var sfEl = document.getElementById('drSf'); if (sfEl && state.sf != null) sfEl.value = state.sf ? '1' : '0';
+    var teamsEl = document.getElementById('drTeams'), wt = String(state.teams);
+    if (teamsEl){
+      for (var ti = 0; ti < teamsEl.options.length; ti++){ if (teamsEl.options[ti].value === wt || teamsEl.options[ti].text === wt){ teamsEl.selectedIndex = ti; break; } }
+    }
+    var ordEl = document.getElementById('drOrder'); if (ordEl && state.order) ordEl.value = state.order;
+    var rEl = document.getElementById('drRounds'); if (rEl && state.rounds) rEl.value = String(state.rounds);
+    fillSlotOptions(state.teams);   // slot options depend on team count
+    var slotEl = document.getElementById('drSlot'); if (slotEl && state.slot) slotEl.value = String(state.slot);
+    if (state.scoring){
+      var pprEl = document.getElementById('drPpr'); if (pprEl) pprEl.value = String(state.scoring.ppr != null ? state.scoring.ppr : 1);
+      var tepEl = document.getElementById('drTep'); if (tepEl) tepEl.value = String(state.scoring.tep != null ? state.scoring.tep : 0);
+      var passTdEl = document.getElementById('drPassTd'); if (passTdEl) passTdEl.value = String(state.scoring.passTd >= 6 ? 6 : 4);
+    }
+    if (state.keeper){
+      var kcEl = document.getElementById('drKeeperCount'); if (kcEl && state.keeperCount != null){ kcEl.value = String(state.keeperCount); kcEl.dataset.touched = '1'; }
+      var ksEl = document.getElementById('drKeeperSource'); if (ksEl && state.keeperSource) ksEl.value = state.keeperSource;
+    }
+    // Roster editor: seed from the active draft in custom mode so it is not
+    // re-seeded from league/defaults. Match the sf/rd markers to the controls
+    // just set so renderSetupRoster does not reconcile it.
+    if (state.roster){
+      var rr = {}; Object.keys(state.roster).forEach(function(k){ rr[k] = state.roster[k]; });
+      rr._sf = document.getElementById('drSf').value === '1';
+      rr._rd = document.getElementById('drType').value === 'redraft';
+      _setupRoster = rr; _rosterMode = 'custom';
+    }
+    // Draft-capital editor: seed owned picks and match the signature so it is
+    // not reset to the slot's natural picks.
+    if (state.owned){
+      var ow = {}; Object.keys(state.owned).forEach(function(k){ if (state.owned[k]) ow[k] = true; });
+      _setupOwned = ow;
+      var _c = setupCtl(); _setupOwnedSig = [_c.teams, _c.rounds, _c.order, _c.slot].join('|');
+    }
+  }
+  function refreshSetupEditors(){
+    var typeEl = document.getElementById('drType');
+    var typeVal = typeEl ? typeEl.value : '';
+    syncKeeperSetupFields(typeVal === 'keeper');
     var _rf = document.getElementById('drRoundsField');
-    if (_rf) _rf.style.display = (document.getElementById('drType').value === 'rookie') ? '' : 'none';
+    if (_rf) _rf.style.display = (typeVal === 'rookie') ? '' : 'none';
     renderSetupRoster();
     renderSetupCapital();
+  }
+  function closeEditSetup(){
+    var setup = document.getElementById('drSetup');
+    if (!setup || !setup.classList.contains('dr-setup-is-modal')){
+      document.body.classList.remove('dr-edit-open');
+      return;
+    }
+    setup.style.display = 'none';
+    setSetupChrome(false);
+  }
+  function openEditSetup(){
+    if (!state || !state.teams || state.mode === 'live') return;
+    endSim();
+    hydrateSetupFromState();
+    refreshSetupEditors();
+    setSetupChrome(true);
+    document.getElementById('drSetup').style.display = '';
+    var closeBtn = document.getElementById('drEditClose');
+    if (closeBtn) closeBtn.focus();
+  }
+  function applyEditedSetup(){
+    if (!state) return;
+    var wasMock = state.mode === 'mock';
+    var wasStarted = !!(state.simStarted || (sim && simStarted));
+    var prevTeams = state.teams, prevOrder = state.order, prevSlot = state.slot;
+    var nextTeams = parseInt(document.getElementById('drTeams').value, 10);
+    var nextOrder = document.getElementById('drOrder').value;
+    var nextSlot = parseInt(document.getElementById('drSlot').value, 10) || 1;
+    var hasPicks = !!(state.picks && Object.keys(state.picks).some(function(k){ return !!state.picks[k]; }));
+    var willWipe = hasPicks && (prevTeams !== nextTeams || prevOrder !== nextOrder || prevSlot !== nextSlot);
+    function go(){
+      closeEditSetup();
+      if (wasMock) startMock();
+      else startDraft();
+      var same = state && state.teams === prevTeams && state.order === prevOrder && state.slot === prevSlot;
+      if (wasMock && wasStarted && same){
+        simStarted = true;
+        state.simStarted = true;
+        syncSimControls();
+      }
+    }
+    if (willWipe){
+      drConfirm('Changing teams, pick order, or your slot restarts the board and clears picks.', 'Apply', go);
+    } else {
+      go();
+    }
+  }
+  function showSetup(){
+    endSim();
+    closeEditSetup();
+    document.getElementById('drMain').style.display = 'none';
+    document.getElementById('drSetup').style.display = '';
+    setSetupChrome(false);
+    var hero = document.getElementById('drHero'); if (hero) hero.style.display = '';
+    hydrateSetupFromState();
+    refreshSetupEditors();
   }
 
   // ── Data ─────────────────────────────────────────────────────────────────
@@ -4556,12 +4639,44 @@
     return ups.length ? ups[0] : null;
   }
 
+  function leagueMetaParts(){
+    if (!state) return [];
+    var typeLbl = state.keeper ? 'Keeper'
+      : (state.type === 'rookie' ? 'Rookie' : (state.type === 'redraft' ? 'Redraft' : 'Startup'));
+    var sc = scoringCfg();
+    var pprLbl = sc.ppr === 1 ? 'Full PPR' : (sc.ppr === 0.5 ? 'Half PPR' : (sc.ppr === 0 ? 'Standard' : (sc.ppr + ' PPR')));
+    var orderLbl = state.order === 'linear' ? 'Linear' : (state.order === '3rr' ? '3RR' : 'Snake');
+    var parts = [
+      typeLbl,
+      state.teams + '-team ' + (state.sf ? 'SF' : '1QB'),
+      pprLbl
+    ];
+    if (sc.tep) parts.push('TEP +' + sc.tep);
+    if (sc.passTd >= 6) parts.push('6-pt Pass TD');
+    parts.push(orderLbl);
+    if (state.rounds) parts.push(state.rounds + ' rnd');
+    return parts;
+  }
+  function renderLeagueMeta(){
+    var el = document.getElementById('drLeagueMeta');
+    if (!el || !state) return;
+    var parts = leagueMetaParts();
+    el.innerHTML = parts.map(function(p){ return '<span class="dr-lm-chip">' + p + '</span>'; }).join('');
+    el.hidden = !parts.length;
+    var canEdit = state.mode !== 'live';
+    el.classList.toggle('is-editable', canEdit);
+    el.disabled = !canEdit;
+    el.title = (canEdit ? 'Edit setup — ' : '') + parts.join(' · ');
+    el.setAttribute('aria-label', (canEdit ? 'Edit setup: ' : 'League settings: ') + parts.join(', '));
+  }
+
   function renderStatus(){
     var total = state.teams * state.rounds;
     var done = state.current > total;
     var r = Math.ceil(state.current / state.teams);
     var pickInRound = ((state.current - 1) % state.teams) + 1;
     document.getElementById('drPickPill').textContent = done ? 'Done' : ('Pick: ' + r + '.' + (pickInRound < 10 ? '0' : '') + pickInRound);
+    renderLeagueMeta();
     var oc = document.getElementById('drOnClock');
     var ocWrap = document.getElementById('drOnClockWrap');
     var ocLabel = ocWrap ? ocWrap.querySelector('.dr-onclock-label') : null;
@@ -5887,7 +6002,7 @@
       state = null;
       showSetup();
     }
-    if (isLive){ doReset(); } else { drConfirm('Reset the draft board?', 'Reset', doReset); }
+    if (isLive){ doReset(); } else { drConfirm('Reset the draft board? This wipes every pick and returns to setup.', 'Reset', doReset); }
   }
 
   // ── Share a draft image ─────────────────────────────────────────────────────
@@ -6193,7 +6308,25 @@
   });
   document.getElementById('drUndo').addEventListener('click', undo);
   document.getElementById('drReset').addEventListener('click', resetDraft);
-  document.getElementById('drEdit').addEventListener('click', showSetup);
+  document.getElementById('drEdit').addEventListener('click', openEditSetup);
+  document.getElementById('drEditApply').addEventListener('click', applyEditedSetup);
+  document.getElementById('drEditCancel').addEventListener('click', closeEditSetup);
+  document.getElementById('drEditClose').addEventListener('click', closeEditSetup);
+  document.getElementById('drEditReset').addEventListener('click', resetDraft);
+  document.getElementById('drLeagueMeta').addEventListener('click', function(){
+    if (this.disabled || (state && state.mode === 'live')) return;
+    openEditSetup();
+  });
+  document.getElementById('drSetup').addEventListener('click', function(e){
+    if (this.classList.contains('dr-setup-is-modal') && e.target === this) closeEditSetup();
+  });
+  document.addEventListener('keydown', function(e){
+    if (e.key !== 'Escape') return;
+    var confirm = document.getElementById('drModal');
+    if (confirm && confirm.style.display === 'flex') return;
+    var setup = document.getElementById('drSetup');
+    if (setup && setup.classList.contains('dr-setup-is-modal')) closeEditSetup();
+  });
   document.getElementById('drPractice').addEventListener('click', startPracticeMock);
   // Header Settings dropdown (gear). Opens below the gear; closes on an outside
   // tap or the gear again. The outside-close listener is attached on the NEXT

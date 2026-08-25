@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-08-25",
+        "tag": "update",
+        "text": "Draft Room: Edit Setup now opens a modal on the current board so you can change scoring, roster, and capital without leaving the draft. Reset still wipes the board and returns to the main setup screen. The status bar also shows the league format (teams, Superflex, PPR, and pick order).",
+        "link": "/draft"
+    },
+    {
         "date": "2026-08-24",
         "tag": "new",
         "text": "ADP Sources: Compare Sleeper, BR Fantasy, ESPN, MFL, and Yahoo ADP side by side in Player Rankings. Player modals show every available source on one range, with exact ADP values on hover and a Consensus built from all available sources.",
