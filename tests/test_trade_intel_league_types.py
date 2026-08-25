@@ -1,4 +1,5 @@
 """Regression tests for true-redraft/keeper/dynasty market isolation."""
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -142,6 +143,13 @@ def test_redraft_writer_updates_only_qualified_format(
     compact = " ".join(conn.query.split())
     assert included in compact
     assert excluded not in compact
+
+
+def test_trade_summary_keeps_legacy_count_and_exposes_total():
+    """Guard the result contract used by cron/log parsers during deployment."""
+    source = Path("data_building/trade_intel/trade_value_model.py").read_text()
+    assert '"trades_used": M_1qb' in source
+    assert '"trades_used_total": M' in source
 
 
 @pytest.mark.parametrize("crawl_mode", ["new", "existing", "both"])

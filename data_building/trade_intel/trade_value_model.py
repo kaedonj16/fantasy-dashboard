@@ -836,7 +836,10 @@ def run_trade_value_model(
     source_1qb = "borrowed_sf" if src_1qb_is_sf else "native_1qb"
     source_sf = "native_sf" if src_sf_is_sf else "borrowed_1qb"
     summary = {
-        "trades_used": M,
+        # Keep the historical field as the 1QB count for API compatibility;
+        # callers that need the complete picture should use the explicit fields.
+        "trades_used": M_1qb,
+        "trades_used_total": M,
         "trades_used_1qb": M_1qb,
         "trades_used_sf": M_sf,
         "source_1qb": source_1qb,
