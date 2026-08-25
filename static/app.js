@@ -10535,6 +10535,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!data.ok) {
           console.warn('League switcher API error:', data.error || 'Unknown error');
           leagueSwitcher.innerHTML = '<option value="">No leagues available</option>';
+          fillLeagueChromeMenu([]);
           return;
         }
 
@@ -10661,14 +10662,17 @@ document.addEventListener('DOMContentLoaded', function() {
             if ('requestIdleCallback' in window) requestIdleCallback(warmNext, { timeout: 3000 });
             else setTimeout(warmNext, 1500);
           } catch (_) { /* prewarm is best-effort */ }
+          fillLeagueChromeMenu(leagues);
         } else {
           const wrapper = leagueSwitcher.closest('.league-switcher-wrapper');
           if (wrapper) wrapper.style.display = 'none';
+          fillLeagueChromeMenu(leagues);
         }
       })
       .catch(err => {
         console.error('Failed to load leagues:', err);
         leagueSwitcher.innerHTML = '<option value="">Error loading leagues</option>';
+        fillLeagueChromeMenu([]);
       });
 
     // Shared navigation for both the desktop <select> and the mobile list rows.
@@ -10684,6 +10688,62 @@ document.addEventListener('DOMContentLoaded', function() {
       const currentPage = leaguePages.has(lastSegment) ? lastSegment : 'dashboard';
       window.location.href = `/${platform || currentPlatform}/${season || currentSeason}/${leagueId}/${currentPage}`;
     }
+
+    // Top-bar league chip: same league list as the settings switcher, so the
+    // persistent chrome is the place you switch (and page titles stay clean).
+    function fillLeagueChromeMenu(leagues) {
+      var btn = document.getElementById('brCtxLeagueBtn');
+      var menu = document.getElementById('brCtxLeagueMenu');
+      if (!btn) return;
+      var list = Array.isArray(leagues) ? leagues : [];
+      var can = list.length > 1;
+      btn.classList.toggle('is-static', !can);
+      btn.setAttribute('aria-disabled', can ? 'false' : 'true');
+      if (menu) {
+        menu.innerHTML = '';
+        menu.hidden = true;
+        btn.setAttribute('aria-expanded', 'false');
+      }
+      if (!can || !menu) return;
+      list.forEach(function (lg) {
+        var item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'br-ctx-menu-item' + (String(lg.league_id) === String(currentLeagueId) ? ' is-current' : '');
+        item.setAttribute('role', 'option');
+        item.textContent = lg.name || lg.label || 'Unnamed League';
+        item.addEventListener('click', function () {
+          menu.hidden = true;
+          btn.setAttribute('aria-expanded', 'false');
+          navigateToLeague(lg.league_id, lg.platform, lg.season);
+        });
+        menu.appendChild(item);
+      });
+    }
+
+    (function wireLeagueChromeChip() {
+      var btn = document.getElementById('brCtxLeagueBtn');
+      var menu = document.getElementById('brCtxLeagueMenu');
+      if (!btn || !menu) return;
+      btn.addEventListener('click', function (e) {
+        if (btn.classList.contains('is-static') || btn.getAttribute('aria-disabled') === 'true') return;
+        e.stopPropagation();
+        var open = menu.hidden;
+        menu.hidden = !open;
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+      document.addEventListener('click', function (e) {
+        if (menu.hidden) return;
+        if (btn.contains(e.target) || menu.contains(e.target)) return;
+        menu.hidden = true;
+        btn.setAttribute('aria-expanded', 'false');
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && !menu.hidden) {
+          menu.hidden = true;
+          btn.setAttribute('aria-expanded', 'false');
+        }
+      });
+    })();
 
     // Handle league change (desktop <select>)
     leagueSwitcher.addEventListener('change', function() {
