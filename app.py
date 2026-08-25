@@ -22440,8 +22440,8 @@ def api_player_adp(player_id: str):
 
     Split out of /api/player-details so the modal can open immediately on the
     cheap Sleeper feed and pull these in afterward — BR Fantasy / Consensus need a
-    draft-crawler DB query and the global feeds a snapshot read (all cached in
-    adp_service), which we don't want on the modal's critical path. ESPN/Yahoo/MFL
+    draft-crawler DB query and the global feeds are retrieved on miss (disk, then
+    the shared DB, then a live fetch) the same way Sleeper is. ESPN/Yahoo/MFL
     are redraft-only global feeds and only contribute a Redraft value. Returns
     {"sources": [{label, vals}]}, only including sources that have at least one
     value for this player."""
@@ -22473,11 +22473,11 @@ def api_player_adp(player_id: str):
                 return None
 
         # BR Fantasy covers every axis; ESPN/Yahoo/MFL are tokenless global
-        # redraft-only feeds (read from the daily snapshots, so their dynasty cells
-        # resolve to None and only the Redraft card shows them). Yahoo uses its
-        # global snapshot here since the modal carries no league token. Any source
-        # with no value for this player is dropped below, so an empty snapshot never
-        # produces a bare row. Consensus stays last.
+        # redraft-only feeds (retrieved on miss like Sleeper, so their dynasty
+        # cells resolve to None and only the Redraft card shows them). Yahoo uses
+        # its global snapshot here since the modal carries no league token. Any
+        # source with no value for this player is dropped below, so an empty
+        # snapshot never produces a bare row. Consensus stays last.
         _source_specs = [
             ("brfantasy", "BR Fantasy"),
             ("espn", "ESPN"),

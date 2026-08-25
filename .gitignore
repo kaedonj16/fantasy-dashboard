@@ -47,6 +47,7 @@ Thumbs.db
 # Generated outputs
 results.txt
 data/fc_rookie_adp_*.json
+data/adp_snapshots/
 data/fantasy.db
 data/dynasty_dashboard.db
 .claude/*

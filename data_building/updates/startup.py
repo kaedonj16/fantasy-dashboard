@@ -32,21 +32,28 @@ def main():
         with open(first_run_flag, 'r') as f:
             print(f"Previously initialized: {f.read().strip()}")
 
-    # Spawn the post-deploy breakout rebuild in the background so it doesn't
-    # delay gunicorn startup.  The subprocess outlives this process (execvp
-    # replaces us with gunicorn) and writes directly to stdout/stderr which
-    # Render captures in the service logs.
+    # Spawn the post-deploy refresh in the background so it doesn't delay
+    # gunicorn startup. The subprocess outlives this process (execvp replaces
+    # us with gunicorn) and writes directly to stdout/stderr which Render
+    # captures in the service logs.
+    #
+    # This file lives at data_building/updates/startup.py; scripts/post_deploy.py
+    # lives at the repo root. Joining "scripts/" onto *this* directory looks for
+    # data_building/updates/scripts/post_deploy.py, which does not exist — and
+    # that is why the global ADP snapshots were never warmed on deploy.
     import subprocess
-    post_deploy_script = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "scripts", "post_deploy.py"
-    )
+    _here = os.path.dirname(os.path.abspath(__file__))
+    _repo_root = os.path.abspath(os.path.join(_here, "..", ".."))
+    post_deploy_script = os.path.join(_repo_root, "scripts", "post_deploy.py")
     if os.path.exists(post_deploy_script):
-        print("Spawning background post-deploy breakout refresh...")
+        print(f"Spawning background post-deploy refresh ({post_deploy_script})...")
         subprocess.Popen(
             [sys.executable, post_deploy_script],
             stdout=sys.stdout,
             stderr=sys.stderr,
         )
+    else:
+        print(f"WARNING: post-deploy script not found at {post_deploy_script}")
 
     port = int(os.environ.get('PORT', 5000))
     workers = int(os.environ.get('WEB_WORKERS', 3))
