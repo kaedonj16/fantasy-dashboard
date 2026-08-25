@@ -1627,6 +1627,21 @@ _AM_JS = r"""
     const btn = document.getElementById('amComparePinnedBtn');
     if (btn) btn.style.display = pinnedRows().length >= 2 ? '' : 'none';
   }
+  // Missing metric values must sort after every real number, in both
+  // directions. Extra columns used to coerce gaps to 0 (`?? 0`), which put
+  // uncharted players at the top of signed stats (EPA, created sep, CPOE).
+  function _amMissing(v) {
+    if (v == null || v === '') return true;
+    return Number.isNaN(Number(v));
+  }
+  function _amCmpVal(av, bv, desc) {
+    const aMiss = _amMissing(av);
+    const bMiss = _amMissing(bv);
+    if (aMiss !== bMiss) return aMiss ? 1 : -1;
+    if (aMiss) return 0;
+    const diff = Number(av) - Number(bv);
+    return desc ? -diff : diff;
+  }
   // Positional rank + value bounds for a metric, computed from the loaded
   // leaderboard field (same data & filters the page is showing). Ranks are
   // WITHIN each position — matching the player modal / a position-filtered
@@ -1636,15 +1651,15 @@ _AM_JS = r"""
     const lower = !!(cfg.metrics[key] && cfg.metrics[key].lowerBetter);
     let entries;  // [id, value, position]
     if (key === state.metric) {
-      entries = state.rows.map(r => [String(r.player_id), Number(r.value),
+      entries = state.rows.map(r => [String(r.player_id), r.value,
         String(r.position || state.playerPos[String(r.player_id)] || '').toUpperCase()]);
     } else {
       const ed = state.extraData[key];
       if (!ed) return null;  // still loading
       entries = Object.entries(ed.byId).map(([id, v]) =>
-        [id, Number(v), String(state.playerPos[id] || '').toUpperCase()]);
+        [id, v, String(state.playerPos[id] || '').toUpperCase()]);
     }
-    entries = entries.filter(e => e[1] != null && !Number.isNaN(e[1]));
+    entries = entries.filter(e => !_amMissing(e[1])).map(e => [e[0], Number(e[1]), e[2]]);
     const byPos = {};
     entries.forEach(e => { (byPos[e[2]] = byPos[e[2]] || []).push(e); });
     const ranks = {}, bounds = {}, counts = {}, avgs = {};
@@ -2274,22 +2289,24 @@ _AM_JS = r"""
       ? state.rows.filter(r => rel.has(up(r.position)))
       : state.rows.filter(r => up(r.position) === state.position));
     posRows.sort((a, b) => {
-      let diff;
+      const desc = state.sortDir === 'desc';
       if (state.sortBy === 'name') {
-        diff = (a.name || '').localeCompare(b.name || '');
-      } else if (state.sortBy === 'games') {
-        const av = Number(a.vol != null ? a.vol : (a.games != null ? a.games : 0));
-        const bv = Number(b.vol != null ? b.vol : (b.games != null ? b.games : 0));
-        diff = av - bv;
-      } else if (state.sortBy === state.metric || !state.extraData[state.sortBy]) {
-        diff = Number(a.value) - Number(b.value);
-      } else {
-        const ed = state.extraData[state.sortBy];
-        const av = ed.byId[String(a.player_id)] ?? 0;
-        const bv = ed.byId[String(b.player_id)] ?? 0;
-        diff = Number(av) - Number(bv);
+        const diff = (a.name || '').localeCompare(b.name || '');
+        return desc ? -diff : diff;
       }
-      return state.sortDir === 'desc' ? -diff : diff;
+      if (state.sortBy === 'games') {
+        const av = a.vol != null ? a.vol : a.games;
+        const bv = b.vol != null ? b.vol : b.games;
+        return _amCmpVal(av, bv, desc);
+      }
+      if (state.sortBy === state.metric || !state.extraData[state.sortBy]) {
+        return _amCmpVal(a.value, b.value, desc);
+      }
+      const ed = state.extraData[state.sortBy];
+      return _amCmpVal(
+        ed.byId[String(a.player_id)],
+        ed.byId[String(b.player_id)],
+        desc);
     });
 
     // Rank map so roster/search filters preserve original rank numbers.
@@ -2302,21 +2319,22 @@ _AM_JS = r"""
     const _primLower = !!(cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter);
     const qualityRankMap = new Map(
       posRows.slice()
-        .sort((a, b) => { const d = Number(a.value) - Number(b.value); return _primLower ? d : -d; })
+        .sort((a, b) => _amCmpVal(a.value, b.value, !_primLower))
         .map((r, i) => [String(r.player_id), i + 1])
     );
 
     // Scale to the true max, but if the leader is a big outlier (>30% above the
     // 95th-percentile value) cap the scale so one player doesn't squish the rest.
     // Bars above the cap clamp at 100% width.
-    const _vals = posRows.map(r => Math.abs(Number(r.value) || 0)).sort((a, b) => a - b);
+    const _vals = posRows.filter(r => !_amMissing(r.value))
+      .map(r => Math.abs(Number(r.value))).sort((a, b) => a - b);
     const _p95 = _vals[Math.min(Math.floor(_vals.length * 0.95), _vals.length - 1)] || 1;
     const _trueMax = _vals[_vals.length - 1] || 1;
     const maxAbs = Math.min(_trueMax, _p95 * 1.3) || 1;
     // Signed field detection: when any value is negative (EPA, CPOE, RYOE…),
     // |value|/max would draw a long bar for a below-average player. Use a
     // min→max mapping instead. Lower-better metrics are inverted so good = long.
-    const _signedVals = posRows.map(r => Number(r.value)).filter(v => !isNaN(v));
+    const _signedVals = posRows.map(r => r.value).filter(v => !_amMissing(v)).map(v => Number(v));
     const _fieldMin = _signedVals.length ? Math.min.apply(null, _signedVals) : 0;
     const _fieldMax = _signedVals.length ? Math.max.apply(null, _signedVals) : 1;
     // Bar fill %: relative-to-leader for normal non-negative higher-better

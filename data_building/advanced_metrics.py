@@ -1643,7 +1643,7 @@ def get_weekly_range_leaderboard(
                 GROUP BY player_id, position
             ) t
             WHERE {outer_where}
-            ORDER BY t.value DESC
+            ORDER BY t.value DESC NULLS LAST
             LIMIT %s
             """,
             tuple(params),
@@ -2105,7 +2105,7 @@ def get_adv_weekly_range_leaderboard(
                 GROUP BY player_id, position
             ) t
             WHERE {outer_where}
-            ORDER BY t.value {order}
+            ORDER BY t.value {order} NULLS LAST
             LIMIT %s
             """,
             tuple(params),
@@ -2706,7 +2706,7 @@ def get_metric_leaderboard(
                     WHERE {metric_where}{gate}
                     ORDER BY m.player_id, m.as_of_date DESC
                 ) t
-                ORDER BY t.value DESC LIMIT %s""",
+                ORDER BY t.value DESC NULLS LAST LIMIT %s""",
             tuple(params),
         ).fetchall()
 
