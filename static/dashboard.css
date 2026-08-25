@@ -364,7 +364,7 @@
     --radius: 14px; /* cards, panels */
     --radius-lg: 18px; /* hero cards, modals */
     --radius-xl: 22px;
-    --radius-pill: 12px;
+    --radius-pill: 8px; /* boxy chips/tags (matches ghost buttons); never stadium */
     --shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.05);
     --shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
     --shadow-lg: 0 16px 36px rgba(15, 23, 42, 0.12);
@@ -2515,7 +2515,7 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
 .activity-list .pill, .card.activity-card .activity-pill {
     font-size: 11px;
     padding: 2px 8px;
-    border-radius: 12px;
+    border-radius: var(--radius-pill);
     border: 1px solid var(--border);
     background: var(--card-soft);
     color: var(--text-muted);
@@ -2887,7 +2887,7 @@ label {
    BUTTONS & ACTIONS
    ============================================ */
 .badge, .trade-player-chip, .pill-toggle, .manager-pill, .link-pill {
-    border-radius: 12px;
+    border-radius: var(--radius-pill);
 }
 
 .otc-btn {
@@ -3938,7 +3938,7 @@ thead th {
     gap: 4px;
     background: var(--row);
     border: 1px solid var(--grid);
-    border-radius: 6px;
+    border-radius: var(--radius-pill);
     padding: 2px 8px;
     color: var(--text-muted);
     font-size: 11px;
@@ -3953,53 +3953,53 @@ thead th {
 }
 
 /* Colour modifiers — each paired with the equivalent waiver .signal-* alias so
-   the colour is defined exactly once. Modifiers drop the neutral base border. */
+   the colour is defined exactly once. Hairline border uses the chip's own hue. */
 .chip--good, .signal-breakout {
     background: color-mix(in srgb, var(--win) 15%, transparent);
     color: var(--win);
-    border-color: transparent;
+    border-color: color-mix(in srgb, currentColor 30%, transparent);
 }
 
 .chip--info, .signal-rising {
     background: color-mix(in srgb, var(--accent) 14%, transparent);
     color: var(--accent);
-    border-color: transparent;
+    border-color: color-mix(in srgb, currentColor 30%, transparent);
 }
 
 .chip--accent, .signal-value {
     background: color-mix(in srgb, var(--indigo) 16%, transparent);
     color: var(--indigo);
-    border-color: transparent;
+    border-color: color-mix(in srgb, currentColor 30%, transparent);
 }
 
 .chip--warn, .signal-aging {
     background: color-mix(in srgb, var(--warning) 16%, transparent);
     color: var(--warning);
-    border-color: transparent;
+    border-color: color-mix(in srgb, currentColor 30%, transparent);
 }
 
 .chip--bad, .signal-usage {
     background: color-mix(in srgb, var(--loss) 15%, transparent);
     color: var(--loss);
-    border-color: transparent;
+    border-color: color-mix(in srgb, currentColor 30%, transparent);
 }
 
 .chip--alert, .signal-injury {
     background: color-mix(in srgb, #f43f5e 15%, transparent);
     color: #f43f5e;
-    border-color: transparent;
+    border-color: color-mix(in srgb, currentColor 30%, transparent);
 }
 
 .chip--hot, .signal-injury-soft {
     background: color-mix(in srgb, var(--orange) 16%, transparent);
     color: var(--orange);
-    border-color: transparent;
+    border-color: color-mix(in srgb, currentColor 30%, transparent);
 }
 
 .chip--neutral, .signal-hold {
     background: var(--row);
     color: var(--text-muted);
-    border-color: transparent;
+    border-color: color-mix(in srgb, currentColor 30%, transparent);
 }
 
 [data-theme="dark"] .chip--alert,
@@ -4343,7 +4343,7 @@ thead th {
     font-size: 11px;
     font-weight: 600;
     padding: 3px 9px;
-    border-radius: 6px;
+    border-radius: var(--radius-pill);
     line-height: 1;
     letter-spacing: 0.01em;
     vertical-align: middle;
@@ -4615,7 +4615,7 @@ strong + .player-badge,
     align-items: center;
     justify-content: center;
     padding: 4px 10px;
-    border-radius: 6px;
+    border-radius: var(--radius-pill);
     border: 1px solid var(--border);
     background: var(--card);
     color: var(--text-muted);
@@ -6532,7 +6532,7 @@ strong + .player-badge,
 
 .otc-team-pill {
     padding: 6px 10px;
-    border-radius: 12px;
+    border-radius: var(--radius-pill);
     background: #edf2f7;
     color: #52637a;
     font-size: 12px;
@@ -6818,7 +6818,7 @@ a.otc-value-name:hover {
     gap: 8px;
     padding: 7px 12px;
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius-pill);
     background: var(--card);
     color: var(--text);
     font-size: 13px;
@@ -8388,7 +8388,7 @@ select:focus {
     display: inline-flex;
     align-items: center;
     padding: 5px 9px;
-    border-radius: 12px;
+    border-radius: var(--radius-pill);
     background: var(--row);
     color: var(--text);
     font-size: 11px;
@@ -9040,7 +9040,7 @@ select:focus {
 .po-out-pill {
     display: inline-block;
     padding: 2px 9px;
-    border-radius: 12px;
+    border-radius: var(--radius-pill);
     font-size: 11px;
     font-weight: 600;
     line-height: 1.7;
@@ -9719,7 +9719,7 @@ select:focus {
     font-weight: 600;
     color: var(--text-muted);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius-pill);
     padding: 4px 12px;
     background: var(--bg);
     white-space: nowrap;
@@ -10136,7 +10136,7 @@ select:focus {
     display: inline-block;
     min-width: 2.4em;
     padding: 0.05rem 0.35rem;
-    border-radius: 12px;
+    border-radius: var(--radius-pill);
     font-size: 0.8rem;
     font-weight: 600;
     text-align: center;
@@ -11547,7 +11547,7 @@ a.signed-home-league:hover {
     color: var(--text-muted);
     background: color-mix(in srgb, var(--card) 70%, transparent);
     border: 1px solid var(--border);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
 }
 
 .home-proof {
@@ -12546,7 +12546,7 @@ a.signed-home-league:hover {
     display: inline-grid;
     place-items: center;
     padding: 2px 8px;
-    border-radius: 12px;
+    border-radius: var(--radius-pill);
     font-size: 12px;
     font-weight: 700;
     background: #0b1220;
@@ -12733,7 +12733,7 @@ a.signed-home-league:hover {
     color: var(--text-muted);
     width: 30px;
     height: 30px;
-    border-radius: 12px;
+    border-radius: var(--radius-pill);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -13280,7 +13280,7 @@ html[data-theme="dark"] .podium .bar {
     font-weight: 700;
     letter-spacing: 0.02em;
     padding: 2px 9px;
-    border-radius: 12px;
+    border-radius: var(--radius-pill);
     color: var(--accent);
     background: color-mix(in srgb, var(--accent) 14%, transparent);
     border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
@@ -13357,7 +13357,7 @@ html[data-theme="dark"] .podium .bar {
     align-items: center;
     gap: 8px;
     padding: 8px 16px;
-    border-radius: 18px;
+    border-radius: var(--radius-pill);
     border: 1px solid var(--border);
     background: var(--card);
     text-decoration: none;
@@ -17795,7 +17795,7 @@ img, svg, canvas {
 
 .adv-season-pill {
     padding: 4px 12px;
-    border-radius: 18px;
+    border-radius: var(--radius-pill);
     font-size: 12px;
     font-weight: 600;
     cursor: pointer;
@@ -17828,7 +17828,7 @@ img, svg, canvas {
 .adv-week-full-btn {
     flex: 0 0 auto;
     padding: 4px 12px;
-    border-radius: 18px;
+    border-radius: var(--radius-pill);
     font-size: 12px;
     font-weight: 600;
     cursor: pointer;
@@ -20282,7 +20282,7 @@ tr.team-clickable {
     background: var(--bg-alt);
     border: 1px solid var(--border);
     color: var(--text-muted);
-    border-radius: 18px;
+    border-radius: var(--radius-pill);
     padding: 3px 11px;
     font-size: 12px;
     font-weight: 500;
@@ -21520,7 +21520,7 @@ tr.team-clickable {
 
 .btm-pill {
     padding: 4px 10px;
-    border-radius: 12px;
+    border-radius: var(--radius-pill);
     border: 1px solid var(--border);
     background: var(--card-bg);
     color: var(--text-muted);
@@ -23069,7 +23069,7 @@ tr.team-clickable {
     color: var(--accent);
     background: var(--accent-soft);
     padding: 3px 10px;
-    border-radius: 12px;
+    border-radius: var(--radius-pill);
     white-space: nowrap;
 }
 
@@ -24043,7 +24043,7 @@ tr.team-clickable {
     align-items: center;
     justify-content: center;
     background: var(--bg-alt);
-    border-radius: 12px;
+    border-radius: var(--radius-pill);
 }
 
 .compare-chip-pos {
@@ -24115,7 +24115,7 @@ tr.team-clickable {
     font-weight: 700;
     cursor: pointer;
     padding: 5px 12px;
-    border-radius: 12px;
+    border-radius: var(--radius-pill);
     background: var(--card);
     color: var(--text);
     border: 1px solid var(--border);
@@ -24709,7 +24709,7 @@ tr.team-clickable {
     align-items: center;
     height: 40px;
     width: 40px;
-    border-radius: 18px;
+    border-radius: var(--radius-pill);
     background: var(--card);
     border: 1px solid var(--border);
     color: var(--text-muted);
@@ -27626,7 +27626,7 @@ button:disabled {
     font-size: 10px;
     font-weight: 600;
     padding: 2px 7px;
-    border-radius: 18px;
+    border-radius: var(--radius-pill);
     border: 1px solid;
     white-space: nowrap;
 }
@@ -27947,7 +27947,7 @@ button:disabled {
     color: var(--text-muted);
     background: var(--card-bg);
     border: 1px solid var(--border);
-    border-radius: 18px;
+    border-radius: var(--radius-pill);
     padding: 3px 10px;
 }
 
@@ -28642,7 +28642,7 @@ button:disabled {
     background: var(--rz-red-soft);
     border: 1px solid rgba(220, 38, 38, .25);
     padding: 2px 7px;
-    border-radius: 12px;
+    border-radius: var(--radius-pill);
     text-transform: uppercase;
 }
 
@@ -28750,7 +28750,7 @@ button:disabled {
     gap: 5px;
     background: var(--rz-red-soft);
     border: 1px solid rgba(220, 38, 38, .30);
-    border-radius: 12px;
+    border-radius: var(--radius-pill);
     padding: 3px 11px;
     font-size: 10px;
     font-weight: 800;
@@ -29458,7 +29458,7 @@ button:disabled {
     font-size: 10px;
     font-weight: 900;
     padding: 3px 9px;
-    border-radius: 10px;
+    border-radius: var(--radius-pill);
 }
 
 .rz-lg-pill.win {
@@ -30319,7 +30319,7 @@ button:disabled {
     background: var(--rz-card);
     border: 1px solid var(--rz-border);
     color: var(--rz-muted);
-    border-radius: 12px;
+    border-radius: var(--radius-pill);
     padding: 5px 13px;
     font-size: 12px;
     cursor: pointer;
@@ -30338,7 +30338,7 @@ button:disabled {
     background: var(--rz-red-soft);
     border: 1px solid rgba(220, 38, 38, .3);
     color: var(--rz-red);
-    border-radius: 12px;
+    border-radius: var(--radius-pill);
     padding: 4px 10px;
     font-size: 11px;
     font-weight: 700;
@@ -34213,4 +34213,63 @@ a, button, [role="button"], [role="tab"], summary, label,
     .br-sheet-scrim {
         transition: none;
     }
+}
+
+/* ── Boxy chips (site-wide) ───────────────────────────────────────────────
+   Status chips, filter pills, and tags share the ghost-button geometry:
+   slightly rounded rectangle, never a stadium. Colors stay semantic. */
+.chip,
+.player-badge,
+.badge,
+.trade-player-chip,
+.pill-toggle,
+.manager-pill,
+.link-pill,
+.filter-pill,
+.activity-list .pill,
+.card.activity-card .activity-pill,
+.otc-team-pill,
+.otc-balancer-chip,
+.os-snapshot-chip,
+.po-out-pill,
+.mu-chip,
+.pf-status-pill,
+.btm-pill,
+.wl-count-pill,
+.wl-chip,
+.adv-season-pill,
+.adv-week-full-btn,
+.compare-season-pill,
+.compare-suggest-chip,
+.compare-chip-pos,
+.dvt-stat-pill,
+.contact-social-pill,
+.fp-pill,
+.rz-demo-pill,
+.rz-lg-pill,
+.rz-active-chip,
+.rz-live-chip,
+.sched-rank-pos,
+.luck-chip,
+.rivalry-chip,
+.pill-arrow,
+.sc-pos-pill,
+.ld-need-pill,
+.pm-tep-pill,
+.otc-filter-chip,
+.otc-day-filter,
+.home-platform-chip,
+.pos-pill,
+.sc-window-badge,
+.rz-filter-toggle,
+.br-update-banner {
+    border-radius: var(--radius-pill);
+}
+
+.otc-team-pill,
+.po-out-pill,
+.wl-count-pill,
+.luck-chip,
+.rz-lg-pill {
+    border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
 }

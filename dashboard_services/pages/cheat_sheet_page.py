@@ -183,7 +183,7 @@ _CHEAT_HTML = r"""
   .cs-drop-line { position: absolute; left: 0; right: 0; height: 2px; margin-top: -1px; background: var(--cs-accent); pointer-events: none; z-index: 5; }
   .cs-drop-line::before { content: ""; position: absolute; left: 0; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--cs-accent); }
   /* Override state chip next to the name. */
-  .cs-ovchip { font-family: var(--cs-mono); font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 12px; margin-left: 8px; white-space: nowrap; }
+  .cs-ovchip { font-family: var(--cs-mono); font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: var(--radius-pill, 8px); margin-left: 8px; white-space: nowrap; }
   .cs-ovchip.bump { color: var(--cs-accent); background: var(--cs-accent-soft); }
   .cs-ovchip.pin { color: var(--cs-good); background: var(--cs-good-soft); }
   .cs-ovchip.mute { color: var(--cs-ink-faint); background: var(--cs-surface-2); }
@@ -234,7 +234,7 @@ _CHEAT_HTML = r"""
   .cs-pos-QB { color: var(--cs-qb); background: var(--cs-qb-bg); } .cs-pos-RB { color: var(--cs-rb); background: var(--cs-rb-bg); }
   .cs-pos-WR { color: var(--cs-wr); background: var(--cs-wr-bg); } .cs-pos-TE { color: var(--cs-te); background: var(--cs-te-bg); }
 
-  .cs-winpill { font-family: var(--cs-mono); font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 12px; }
+  .cs-winpill { font-family: var(--cs-mono); font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: var(--radius-pill, 8px); }
   .win-asc { color: var(--cs-good); background: var(--cs-good-soft); }
   .win-prime { color: var(--cs-accent); background: var(--cs-accent-soft); }
   .win-now { color: var(--cs-amber); background: var(--cs-amber-soft); }

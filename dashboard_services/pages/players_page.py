@@ -444,7 +444,7 @@ def build_players_shell() -> str:
       }
       .active-setting-tag {
         padding: 4px 10px;
-        border-radius: 12px;
+        border-radius: var(--radius-pill, 8px);
         background: var(--accent-soft);
         color: var(--accent);
         font-size: 11px;

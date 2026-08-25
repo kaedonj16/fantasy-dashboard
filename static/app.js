@@ -6679,7 +6679,7 @@ window.initTradePage = function initTradePage(root = document) {
             const groupHeader = (sig && _sortedGroups.length > 1)
               ? `<div style="display:flex;align-items:center;gap:8px;margin:14px 0 6px;">
                    <div style="flex:1;height:1px;background:var(--border);"></div>
-                   <div style="display:inline-flex;align-items:center;gap:3px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:var(--card);flex-shrink:0;">
+                   <div style="display:inline-flex;align-items:center;gap:3px;padding:3px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card);flex-shrink:0;">
                      ${archetypeSigHtml(sig, '')}
                    </div>
                    <div style="flex:1;height:1px;background:var(--border);"></div>
