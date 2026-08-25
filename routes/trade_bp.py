@@ -306,8 +306,8 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       .ti-teaser-tab { padding:6px 16px; border-radius:7px; border:none; font-size:13px; font-weight:600; cursor:default; background:transparent; color:var(--text-muted); }
       .ti-teaser-tab.active { background:var(--card); color:var(--text); box-shadow:0 1px 4px rgba(0,0,0,.1); }
       .ti-teaser-pos { display:flex; gap:6px; }
-      .ti-teaser-pos span { padding:4px 12px; border-radius:20px; border:1px solid var(--border); font-size:12px; font-weight:600; color:var(--text-muted); background:var(--card); }
-      .ti-teaser-pos span.active { border-color:var(--accent,#667eea); color:var(--accent,#667eea); }
+      .ti-teaser-pos span { padding:4px 12px; border-radius:8px; border:1px solid var(--border); font-size:12px; font-weight:600; color:var(--text-muted); background:var(--card); }
+      .ti-teaser-pos span.active { border-color:var(--accent,#2563eb); color:var(--accent,#2563eb); }
     </style>
     <div class="card central" style="max-width:960px;">
       <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;">
@@ -341,7 +341,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
                   <div style="font-weight:700;font-size:14px;"><span class="ti-teaser-redact" style="width:110px;"></span></div>
                   <div style="font-size:11px;color:var(--text-muted);margin-top:3px;"><span class="ti-teaser-redact" style="width:60px;"></span></div>
                 </div>
-                <div style="padding:3px 8px;border-radius:20px;background:#3b82f620;color:#3b82f6;font-size:11px;font-weight:700;">847 trades</div>
+                <div style="padding:3px 8px;border-radius:8px;background:#3b82f620;color:#3b82f6;font-size:11px;font-weight:700;">847 trades</div>
               </div>
               <div style="height:1px;background:var(--border);margin-bottom:10px;"></div>
               <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span style="color:var(--text-muted);">Market</span><span class="ti-teaser-redact" style="width:36px;"></span></div>
@@ -357,7 +357,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
                   <div style="font-weight:700;font-size:14px;"><span class="ti-teaser-redact" style="width:90px;"></span></div>
                   <div style="font-size:11px;color:var(--text-muted);margin-top:3px;"><span class="ti-teaser-redact" style="width:55px;"></span></div>
                 </div>
-                <div style="padding:3px 8px;border-radius:20px;background:#3b82f620;color:#3b82f6;font-size:11px;font-weight:700;">623 trades</div>
+                <div style="padding:3px 8px;border-radius:8px;background:#3b82f620;color:#3b82f6;font-size:11px;font-weight:700;">623 trades</div>
               </div>
               <div style="height:1px;background:var(--border);margin-bottom:10px;"></div>
               <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span style="color:var(--text-muted);">Market</span><span class="ti-teaser-redact" style="width:36px;"></span></div>
@@ -373,7 +373,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
                   <div style="font-weight:700;font-size:14px;"><span class="ti-teaser-redact" style="width:100px;"></span></div>
                   <div style="font-size:11px;color:var(--text-muted);margin-top:3px;"><span class="ti-teaser-redact" style="width:50px;"></span></div>
                 </div>
-                <div style="padding:3px 8px;border-radius:20px;background:#3b82f620;color:#3b82f6;font-size:11px;font-weight:700;">512 trades</div>
+                <div style="padding:3px 8px;border-radius:8px;background:#3b82f620;color:#3b82f6;font-size:11px;font-weight:700;">512 trades</div>
               </div>
               <div style="height:1px;background:var(--border);margin-bottom:10px;"></div>
               <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span style="color:var(--text-muted);">Market</span><span class="ti-teaser-redact" style="width:36px;"></span></div>
@@ -389,7 +389,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
                   <div style="font-weight:700;font-size:14px;"><span class="ti-teaser-redact" style="width:95px;"></span></div>
                   <div style="font-size:11px;color:var(--text-muted);margin-top:3px;"><span class="ti-teaser-redact" style="width:58px;"></span></div>
                 </div>
-                <div style="padding:3px 8px;border-radius:20px;background:#3b82f620;color:#3b82f6;font-size:11px;font-weight:700;">389 trades</div>
+                <div style="padding:3px 8px;border-radius:8px;background:#3b82f620;color:#3b82f6;font-size:11px;font-weight:700;">389 trades</div>
               </div>
               <div style="height:1px;background:var(--border);margin-bottom:10px;"></div>
               <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span style="color:var(--text-muted);">Market</span><span class="ti-teaser-redact" style="width:36px;"></span></div>
@@ -404,7 +404,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
                   <div style="font-weight:700;font-size:14px;"><span class="ti-teaser-redact" style="width:115px;"></span></div>
                   <div style="font-size:11px;color:var(--text-muted);margin-top:3px;"><span class="ti-teaser-redact" style="width:52px;"></span></div>
                 </div>
-                <div style="padding:3px 8px;border-radius:20px;background:#3b82f620;color:#3b82f6;font-size:11px;font-weight:700;">274 trades</div>
+                <div style="padding:3px 8px;border-radius:8px;background:#3b82f620;color:#3b82f6;font-size:11px;font-weight:700;">274 trades</div>
               </div>
               <div style="height:1px;background:var(--border);margin-bottom:10px;"></div>
               <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span style="color:var(--text-muted);">Market</span><span class="ti-teaser-redact" style="width:36px;"></span></div>
@@ -420,7 +420,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
                   <div style="font-weight:700;font-size:14px;"><span class="ti-teaser-redact" style="width:88px;"></span></div>
                   <div style="font-size:11px;color:var(--text-muted);margin-top:3px;"><span class="ti-teaser-redact" style="width:62px;"></span></div>
                 </div>
-                <div style="padding:3px 8px;border-radius:20px;background:#3b82f620;color:#3b82f6;font-size:11px;font-weight:700;">198 trades</div>
+                <div style="padding:3px 8px;border-radius:8px;background:#3b82f620;color:#3b82f6;font-size:11px;font-weight:700;">198 trades</div>
               </div>
               <div style="height:1px;background:var(--border);margin-bottom:10px;"></div>
               <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;"><span style="color:var(--text-muted);">Market</span><span class="ti-teaser-redact" style="width:36px;"></span></div>
@@ -434,7 +434,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
           <!-- Overlay CTA -->
           <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(to bottom,transparent 0%,var(--bg,#f8f9fa) 60%);padding:24px;text-align:center;">
             <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:28px 32px;max-width:380px;box-shadow:0 8px 32px rgba(0,0,0,.12);">
-              <div style="font-size:28px;margin-bottom:12px;"><i class="fa-solid fa-chart-line" style="background:linear-gradient(135deg,#667eea,#764ba2);-webkit-background-clip:text;-webkit-text-fill-color:transparent;"></i></div>
+              <div style="font-size:28px;margin-bottom:12px;"><i class="fa-solid fa-chart-line" style="background:linear-gradient(135deg,#122d4b,#2563eb);-webkit-background-clip:text;-webkit-text-fill-color:transparent;"></i></div>
               <div style="font-weight:800;font-size:18px;margin-bottom:8px;">Unlock Trade Intelligence</div>
               <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;line-height:1.55;">
                 See which players are trending up in real trades, who to buy low before the market catches on, and who to sell before value drops.
@@ -446,7 +446,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
                 <div style="font-size:12px;display:flex;gap:8px;align-items:center;"><span style="color:#10b981;font-size:14px;">✓</span> Actual trade history for any player</div>
               </div>
               <button onclick="if(window.showPaywall)showPaywall('trade-history')"
-                style="width:100%;padding:12px 28px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:15px;font-weight:700;cursor:pointer;letter-spacing:.02em;">
+                style="width:100%;padding:12px 28px;border-radius:9px;border:none;background:linear-gradient(135deg,#122d4b,#2563eb);color:white;font-size:15px;font-weight:700;cursor:pointer;letter-spacing:.02em;">
                 Upgrade to PRO &rarr;
               </button>
             </div>
@@ -491,16 +491,16 @@ def page_trade_intel(platform: str, season: int, league_id: str):
           <div class="tdb-search-outer" style="flex:1;min-width:140px;max-width:240px;">
             <input id="tiSearchInput" type="text" autocomplete="off" placeholder="Search player…" class="tdb-search">
           </div>
-          <div class="ti-pos-filters">
-            <button class="ti-pos active" data-pos="ALL" onclick="filterTI('ALL')">All</button>
-            <button class="ti-pos" data-pos="QB"  onclick="filterTI('QB')">QB</button>
-            <button class="ti-pos" data-pos="RB"  onclick="filterTI('RB')">RB</button>
-            <button class="ti-pos" data-pos="WR"  onclick="filterTI('WR')">WR</button>
-            <button class="ti-pos" data-pos="TE"  onclick="filterTI('TE')">TE</button>
+          <div class="otc-day-filters ti-pos-filters">
+            <button class="otc-day-filter ti-pos active" data-pos="ALL" onclick="filterTI('ALL')">All</button>
+            <button class="otc-day-filter ti-pos" data-pos="QB"  onclick="filterTI('QB')">QB</button>
+            <button class="otc-day-filter ti-pos" data-pos="RB"  onclick="filterTI('RB')">RB</button>
+            <button class="otc-day-filter ti-pos" data-pos="WR"  onclick="filterTI('WR')">WR</button>
+            <button class="otc-day-filter ti-pos" data-pos="TE"  onclick="filterTI('TE')">TE</button>
           </div>
-          <div class="ti-lf-bar" style="margin:0;" id="tiLeagueTypeBar">
-            <button class="ti-lf-btn {'active' if not _ti_sf else ''}" data-lf="1qb" onclick="switchTILeagueType('1qb')">1QB</button>
-            <button class="ti-lf-btn {'active' if _ti_sf else ''}" data-lf="sf"  onclick="switchTILeagueType('sf')">SF</button>
+          <div class="otc-day-filters ti-lf-bar" style="margin:0;" id="tiLeagueTypeBar">
+            <button class="otc-day-filter ti-lf-btn {'active' if not _ti_sf else ''}" data-lf="1qb" onclick="switchTILeagueType('1qb')">1QB</button>
+            <button class="otc-day-filter ti-lf-btn {'active' if _ti_sf else ''}" data-lf="sf"  onclick="switchTILeagueType('sf')">SF</button>
           </div>
         </div>
 
@@ -566,10 +566,10 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             <button class="ti-trades-close" onclick="closeTITradesModal()">&#x2715;</button>
           </div>
         </div>
-        <div class="ti-trades-lf-bar">
-          <button class="ti-lf-btn active" data-lf="all" onclick="switchTILF('all')">All</button>
-          <button class="ti-lf-btn" data-lf="sf"  onclick="switchTILF('sf')">Superflex</button>
-          <button class="ti-lf-btn" data-lf="1qb" onclick="switchTILF('1qb')">1QB</button>
+        <div class="otc-day-filters ti-trades-lf-bar">
+          <button class="otc-day-filter ti-lf-btn active" data-lf="all" onclick="switchTILF('all')">All</button>
+          <button class="otc-day-filter ti-lf-btn" data-lf="sf"  onclick="switchTILF('sf')">Superflex</button>
+          <button class="otc-day-filter ti-lf-btn" data-lf="1qb" onclick="switchTILF('1qb')">1QB</button>
         </div>
         <div id="tiTradesBody" class="ti-trades-body">
           <div class="ti-trades-msg">Loading trades&hellip;</div>
@@ -616,22 +616,6 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       .ti-pos-filters {{
         display: flex;
         gap: 6px;
-      }}
-      .ti-pos {{
-        padding: 6px 13px;
-        border-radius: 20px;
-        border: 1px solid var(--border);
-        background: var(--card);
-        color: var(--text-muted);
-        cursor: pointer;
-        font-size: 12px;
-        font-weight: 600;
-        transition: all .15s;
-      }}
-      .ti-pos.active {{
-        background: var(--text);
-        color: var(--card);
-        border-color: var(--text);
       }}
       .ti-grid {{
         display: grid;
@@ -804,16 +788,6 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       .ti-trades-lf-bar {{
         display: flex; gap: 6px; padding: 12px 20px;
         border-bottom: 1px solid var(--border); flex-shrink: 0;
-      }}
-      .ti-lf-btn {{
-        padding: 5px 14px; border-radius: 20px;
-        border: 1px solid var(--border); background: var(--card);
-        color: var(--text-muted); font-size: 12px; font-weight: 600; cursor: pointer;
-        transition: all .15s;
-      }}
-      .ti-lf-btn.active {{
-        background: var(--text); color: var(--card);
-        border-color: var(--text);
       }}
       .ti-trades-body {{ overflow-y: auto; flex: 1; padding: 0 20px; }}
       .ti-trades-msg {{ text-align: center; padding: 40px 0; color: var(--text-muted); font-size: 14px; }}
@@ -1290,10 +1264,10 @@ def page_trade_database(platform: str, season: int, league_id: str):
               <div id="tdbSideBChip" class="tdb-chip-area" style="display:none;"></div>
             </div>
           </div>
-          <div class="tdb-lt-filters">
-            <button class="tdb-lt active" data-lt="all" onclick="tdbFilter('all')">All</button>
-            <button class="tdb-lt" data-lt="1qb" onclick="tdbFilter('1qb')">1QB</button>
-            <button class="tdb-lt" data-lt="sf"  onclick="tdbFilter('sf')">SF</button>
+          <div class="otc-day-filters tdb-lt-filters">
+            <button class="otc-day-filter tdb-lt active" data-lt="all" onclick="tdbFilter('all')">All</button>
+            <button class="otc-day-filter tdb-lt" data-lt="1qb" onclick="tdbFilter('1qb')">1QB</button>
+            <button class="otc-day-filter tdb-lt" data-lt="sf"  onclick="tdbFilter('sf')">SF</button>
           </div>
         </div>
 
@@ -1374,7 +1348,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
         display: inline-flex; align-items: center; gap: 6px;
         background: rgba(59,130,246,.12); color: var(--accent, #3b82f6);
         border: 1px solid rgba(59,130,246,.3);
-        border-radius: 20px; padding: 4px 10px 4px 12px;
+        border-radius: 8px; padding: 4px 10px 4px 12px;
         font-size: 13px; font-weight: 600;
       }}
       .tdb-chip-x {{
@@ -1383,15 +1357,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
         padding: 0; opacity: .7;
       }}
       .tdb-chip-x:hover {{ opacity: 1; }}
-      .tdb-lt-filters {{ display: flex; gap: 4px; align-self: flex-end; padding-bottom: 1px; }}
-      .tdb-lt {{
-        padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border);
-        background: var(--card); color: var(--text-muted); cursor: pointer;
-        font-size: 13px; font-weight: 600; transition: all .15s;
-      }}
-      .tdb-lt.active {{
-        background: var(--text); color: var(--card); border-color: var(--text);
-      }}
+      .tdb-lt-filters {{ display: flex; gap: 6px; align-self: flex-end; padding-bottom: 1px; }}
       .tdb-status {{ font-size: 12px; color: var(--text-muted); margin-bottom: 14px; min-height: 16px; }}
       .tdb-list {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }}
       @media(max-width: 600px) {{ .tdb-list {{ grid-template-columns: 1fr; }} }}
@@ -1438,7 +1404,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
         .tdb-chip-area {{ flex-wrap: wrap; gap: 6px; min-height: 0; }}
         .tdb-side-sep {{ align-self: flex-start; padding-top: 0; font-size: 12px; }}
         .tdb-lt-filters {{ width: 100%; display: flex; }}
-        .tdb-lt {{ flex: 1; text-align: center; padding: 8px 4px; font-size: 13px; }}
+        .tdb-lt {{ flex: 1; text-align: center; }}
       }}
       /* ── Pagination (matches site-wide style) ── */
       .ti-pagination {{

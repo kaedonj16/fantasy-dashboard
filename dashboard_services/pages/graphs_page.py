@@ -138,7 +138,7 @@ def _consistency_card(team_stats, owner_colors: dict) -> str:
           .cons-track {{ height:8px; border-radius:5px; background:var(--row,rgba(127,127,127,.12)); overflow:hidden; }}
           .cons-fill {{ display:block; height:100%; border-radius:5px; }}
           .cons-vol {{ font-size:12px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--muted); min-width:34px; text-align:right; }}
-          .cons-band {{ font-size:10.5px; font-weight:800; letter-spacing:.03em; padding:2px 8px; border-radius:12px; white-space:nowrap; }}
+          .cons-band {{ font-size:10.5px; font-weight:800; letter-spacing:.03em; padding:2px 8px; border-radius:8px; white-space:nowrap; }}
           @media (max-width:520px) {{ .cons-row {{ grid-template-columns:10px minmax(70px,1fr) 2fr auto; }} .cons-vol {{ display:none; }} }}
         </style>
         {body}
@@ -499,7 +499,6 @@ def build_graphs_body(ctx: dict) -> str:
       <div class="page-layout" data-page="graphs">
         <main class="page-main">
           <div class="graphs-page">
-
             <div class="card">
               <div class="card-header-row">
                 <h2>PF vs PA Scatter</h2>

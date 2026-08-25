@@ -44,10 +44,10 @@ def render_dynasty_notice_html(draft_url: str = "", show_anyway_url: str = "") -
   .kpr-dyn p{{color:var(--text-muted);font-size:14px;line-height:1.65;max-width:56ch;margin:0 auto 12px;}}
   .kpr-dyn-tag{{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;
     letter-spacing:.03em;color:var(--accent);background:var(--accent-soft);
-    padding:5px 11px;border-radius:12px;margin-bottom:14px;}}
+    padding:5px 11px;border-radius:8px;margin-bottom:14px;}}
   .kpr-dyn-actions{{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:18px;}}
   .kpr-draft-btn{{display:inline-flex;align-items:center;gap:7px;font:inherit;font-size:13px;font-weight:700;
-    color:#fff;background:var(--accent);border:0;border-radius:10px;padding:10px 16px;cursor:pointer;
+    color:var(--on-accent,#fff);background:var(--accent);border:0;border-radius:10px;padding:10px 16px;cursor:pointer;
     text-decoration:none;white-space:nowrap;}}
   .kpr-draft-btn:hover{{filter:brightness(1.06);}}
   .kpr-anyway{{display:inline-flex;align-items:center;font:inherit;font-size:13px;font-weight:600;
@@ -133,7 +133,7 @@ def render_keeper_html(seed: dict) -> str:
   .kpr-fields{{display:flex;align-items:flex-end;gap:12px 16px;flex-wrap:wrap;flex:0 1 auto;min-width:0;}}
   .kpr-auto{{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;
     letter-spacing:.03em;color:var(--win,#15803d);background:color-mix(in srgb,var(--win,#15803d) 14%,transparent);
-    padding:6px 11px;border-radius:12px;white-space:nowrap;}}
+    padding:6px 11px;border-radius:8px;white-space:nowrap;}}
   .kpr-auto-off{{color:var(--text-muted);background:color-mix(in srgb,var(--text-muted) 14%,transparent);}}
   .kpr-rule{{display:flex;flex-direction:column;gap:4px;min-width:0;}}
   .kpr-rule label{{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);
@@ -176,7 +176,7 @@ def render_keeper_html(seed: dict) -> str:
   .kpr-limit{{display:flex;align-items:center;gap:12px;}}
   .kpr-limit label{{font-size:12px;color:var(--text-muted);font-weight:600;}}
   .kpr-limit .kpr-pill{{display:inline-flex;align-items:center;justify-content:center;background:var(--accent);
-    color:#fff;font-weight:800;font-size:14px;border-radius:12px;padding:5px 13px;min-width:52px;}}
+    color:#fff;font-weight:800;font-size:14px;border-radius:8px;padding:5px 13px;min-width:52px;}}
   .kpr-limit input[type=range]{{-webkit-appearance:none;appearance:none;width:150px;height:6px;border-radius:5px;
     background:var(--border);outline:none;}}
   .kpr-limit input[type=range]::-webkit-slider-thumb{{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;
@@ -226,7 +226,7 @@ def render_keeper_html(seed: dict) -> str:
   .kpr-pos.QB{{background:#c026d3;}} .kpr-pos.RB{{background:#0d9488;}} .kpr-pos.WR{{background:#2563eb;}}
   .kpr-pos.TE{{background:#ea580c;}} .kpr-pos.K,.kpr-pos.DEF{{background:#64748b;}}
   .kpr-verdict{{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:750;
-    padding:4px 10px;border-radius:12px;white-space:nowrap;}}
+    padding:4px 10px;border-radius:8px;white-space:nowrap;}}
   .kpr-verdict .d{{width:6px;height:6px;border-radius:50%;background:currentColor;}}
   .kpr-verdict.keep{{color:var(--win,#15803d);background:color-mix(in srgb,var(--win,#15803d) 14%,transparent);}}
   .kpr-verdict.toss{{color:var(--inj-q,#ca8a04);background:color-mix(in srgb,var(--inj-q,#ca8a04) 15%,transparent);}}

@@ -37,6 +37,20 @@ def test_serious_injury_flagged():
     assert "Travis Etienne" in issues[0]["detail"]
 
 
+def test_uppercase_out_is_flagged():
+    info = {"9": {"name": "Hurt Guy", "team": "KC", "injury_status": "OUT"}}
+    issues = find_lineup_issues(["9"], info, PLAYING)
+    assert len(issues) == 1
+    assert issues[0]["kind"] == "injury"
+    assert "OUT" in issues[0]["detail"]
+
+
+def test_susp_alias_is_flagged():
+    info = {"9": {"name": "Suspended Guy", "team": "KC", "injury_status": "SUSP"}}
+    issues = find_lineup_issues(["9"], info, PLAYING)
+    assert issues[0]["kind"] == "injury"
+
+
 def test_questionable_not_flagged():
     info = {"9": {"name": "Q Guy", "team": "KC", "injury_status": "Questionable"}}
     assert find_lineup_issues(["9"], info, PLAYING) == []

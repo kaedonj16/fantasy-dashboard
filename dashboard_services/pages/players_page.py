@@ -45,13 +45,13 @@ def build_players_shell() -> str:
             </div>
 
             <!-- Position filters -->
-            <div class="filter-positions br-chip-pop">
-              <button class="pos-pill active" data-pos="ALL" onclick="prTogglePos('ALL')">All</button>
-              <button class="pos-pill" data-pos="QB" onclick="prTogglePos('QB')">QB</button>
-              <button class="pos-pill" data-pos="RB" onclick="prTogglePos('RB')">RB</button>
-              <button class="pos-pill" data-pos="WR" onclick="prTogglePos('WR')">WR</button>
-              <button class="pos-pill" data-pos="TE" onclick="prTogglePos('TE')">TE</button>
-              <button class="pos-pill" data-pos="PICK" onclick="prTogglePos('PICK')">Picks</button>
+            <div class="otc-day-filters filter-positions br-chip-pop">
+              <button class="otc-day-filter pos-pill active" data-pos="ALL" onclick="prTogglePos('ALL')">All</button>
+              <button class="otc-day-filter pos-pill" data-pos="QB" onclick="prTogglePos('QB')">QB</button>
+              <button class="otc-day-filter pos-pill" data-pos="RB" onclick="prTogglePos('RB')">RB</button>
+              <button class="otc-day-filter pos-pill" data-pos="WR" onclick="prTogglePos('WR')">WR</button>
+              <button class="otc-day-filter pos-pill" data-pos="TE" onclick="prTogglePos('TE')">TE</button>
+              <button class="otc-day-filter pos-pill" data-pos="PICK" onclick="prTogglePos('PICK')">Picks</button>
             </div>
 
             <!-- Settings button -->
@@ -167,9 +167,12 @@ def build_players_shell() -> str:
         </div>
 
         <!-- Empty state -->
-        <div id="prEmpty" style="display:none;text-align:center;padding:40px;color:var(--text-muted);">
-          <div style="font-size:24px;margin-bottom:8px;opacity:0.4;"><i class="fa-solid fa-magnifying-glass"></i></div>
-          No players match your filters
+        <div id="prEmpty" class="empty-state is-compact" style="display:none;" role="status">
+          <span class="empty-state-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.7-4.7"/></svg>
+          </span>
+          <p class="empty-state-title">No players match</p>
+          <p class="empty-state-msg">Try clearing a filter or searching a different name.</p>
         </div>
 
       </div>
@@ -193,9 +196,14 @@ def build_players_shell() -> str:
         overflow-x: auto;
         overscroll-behavior-x: contain;
         scrollbar-width: thin;
+        /* Stay viewport-width so wide ADP rows scroll *inside* this wrapper
+           instead of expanding the page (html/body clip overflow-x). */
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
       }
       #prTableScroll.pr-adp-scroll .pr-adp-mode {
-        min-width: 720px;
+        min-width: max-content;
       }
       #prTableScroll.pr-adp-scroll .pr-name {
         min-width: 150px;
@@ -361,25 +369,8 @@ def build_players_shell() -> str:
       }
       .filter-positions {
         display: flex;
-        gap: 3px;
+        gap: 6px;
         flex-wrap: wrap;
-      }
-      .pos-pill {
-        padding: 6px 12px;
-        border-radius: 12px;
-        border: 1px solid var(--border);
-        background: var(--card-bg);
-        color: var(--text-muted);
-        font-size: 11px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.12s;
-        white-space: nowrap;
-      }
-      .pos-pill.active {
-        background: var(--accent);
-        color: #fff;
-        border-color: var(--accent);
       }
       .filter-settings-btn {
         padding: 7px 14px;
@@ -458,7 +449,7 @@ def build_players_shell() -> str:
       }
       .active-setting-tag {
         padding: 4px 10px;
-        border-radius: 12px;
+        border-radius: var(--radius-pill, 8px);
         background: var(--accent-soft);
         color: var(--accent);
         font-size: 11px;
@@ -563,11 +554,7 @@ def build_players_shell() -> str:
         }
         .filter-positions {
           justify-content: flex-start;
-          gap: 5px;
-        }
-        .pos-pill {
-          padding: 6px 10px;
-          font-size: 11px;
+          gap: 6px;
         }
         .filter-label {
           white-space: nowrap;
@@ -610,16 +597,68 @@ def build_players_shell() -> str:
            exclude it from these fixed overrides. */
         .pr-grid-row:not(.pr-adp-mode) { grid-template-columns: 50px 42px 1fr 44px 42px 56px !important; }
         .pr-age,  #prAgeHeader  { display: none !important; }
+
+        /* ADP board (mobile): pin # + Player like schedule rankings; source
+           columns scroll horizontally in #prTableScroll. left offsets match
+           PR_ADP_RANK_W_MOBILE / PR_ADP_PLAYER_W_MOBILE in rankings.js. */
+        #prTableScroll.pr-adp-scroll {
+          -webkit-overflow-scrolling: touch;
+        }
+        #prTableScroll.pr-adp-scroll .pr-adp-mode.pr-player-row,
+        #prTableScroll.pr-adp-scroll #prTableHeader.pr-adp-mode {
+          padding-left: 0;
+          padding-right: 0;
+        }
+        #prTableScroll.pr-adp-scroll .pr-adp-mode > .pr-adp-pin-rank,
+        #prTableScroll.pr-adp-scroll #prTableHeader.pr-adp-mode > .pr-adp-pin-rank {
+          position: sticky;
+          left: 0;
+          z-index: 2;
+          box-sizing: border-box;
+          padding-left: 8px;
+          background: var(--card);
+        }
+        #prTableScroll.pr-adp-scroll .pr-adp-mode > .pr-adp-pin-player,
+        #prTableScroll.pr-adp-scroll #prTableHeader.pr-adp-mode > .pr-adp-pin-player {
+          position: sticky;
+          left: 40px;
+          z-index: 2;
+          box-sizing: border-box;
+          padding-right: 8px;
+          min-width: 0;
+          background: var(--card);
+          border-right: 1px solid var(--border);
+          box-shadow: 6px 0 7px -5px rgba(15, 23, 42, 0.18);
+        }
+        #prTableScroll.pr-adp-scroll #prTableHeader.pr-adp-mode > .pr-adp-pin-rank,
+        #prTableScroll.pr-adp-scroll #prTableHeader.pr-adp-mode > .pr-adp-pin-player {
+          background: var(--accent-soft);
+          z-index: 3;
+        }
+        #prTableScroll.pr-adp-scroll #prTableHeader.pr-adp-mode > .pr-adp-pin-player {
+          box-shadow: 6px 0 7px -5px rgba(15, 23, 42, 0.28);
+        }
+        #prTableScroll.pr-adp-scroll .pr-player-row.pr-adp-mode:hover > .pr-adp-pin {
+          background: var(--accent-soft);
+        }
+        #prTableScroll.pr-adp-scroll .pr-adp-mode > .pr-adp-cell:last-child,
+        #prTableScroll.pr-adp-scroll #prTableHeader.pr-adp-mode > .pr-adp-head:last-child {
+          padding-right: 8px;
+        }
+        #prTableScroll.pr-adp-scroll .pr-adp-mode .pr-name {
+          flex-wrap: nowrap;
+          overflow: hidden;
+          white-space: nowrap;
+          text-overflow: ellipsis;
+        }
       }
       @media (max-width: 480px) {
         /* Phone: rank | arrow | name | sort - hide pos and team */
         .pr-grid-row:not(.pr-adp-mode) { grid-template-columns: 50px 42px 1fr 56px !important; }
         .pr-pos-cell, #prTableHeader:not(.pr-adp-mode) span:nth-child(4) { display: none !important; }
         .pr-team,     #prTableHeader:not(.pr-adp-mode) span:nth-child(6) { display: none !important; }
-        /* ADP-source view on phones: the JS shrinks each source column (and the
-           rank column) so all sources fit; shrink the header labels to match so
-           "Sleeper" / "BR Fantasy" / "Consensus" read in full instead of
-           truncating to "SLEEP…", and keep the numbers tidy. */
+        /* ADP-source view on phones: compact header labels so "Sleeper" /
+           "BR Fantasy" / "Consensus" read clearly in the scrollable pane. */
         #prTableHeader.pr-adp-mode .pr-adp-head {
           font-size: 9px;
           letter-spacing: 0;
@@ -627,14 +666,6 @@ def build_players_shell() -> str:
         }
         #prTableHeader.pr-adp-mode .pr-adp-sort-caret { font-size: 7px; }
         .pr-adp-mode .pr-adp-cell { font-size: 12px; }
-        /* Name shares a tighter row now: clip to one line rather than wrapping
-           to a second line that misaligns the numbers. */
-        .pr-adp-mode .pr-name {
-          flex-wrap: nowrap;
-          min-width: 0;
-          overflow: hidden;
-          white-space: nowrap;
-        }
       }
 
       /* Sticky column header — keep the # / Player / Value labels visible while

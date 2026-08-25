@@ -5,7 +5,17 @@ suite with the source fetchers monkeypatched.
 """
 import sys
 
+import pytest
+
 from dashboard_services import adp_service as A
+
+
+@pytest.fixture(autouse=True)
+def _no_live_global_adp(monkeypatch):
+    """These tests mock Sleeper / league-Yahoo; consensus still walks ESPN/Yahoo/MFL.
+    Do not hydrate from DB or hit the live global feeds here."""
+    monkeypatch.setattr(A, "ensure_global_adp_snapshot", lambda *a, **k: None)
+    monkeypatch.setattr(A, "ensure_global_adp_snapshots", lambda *a, **k: None)
 
 
 # ── consensus_adp ────────────────────────────────────────────────────────────

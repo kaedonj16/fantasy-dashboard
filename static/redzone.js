@@ -739,9 +739,9 @@
       var fpRow = function(label, key, opts) {
         var btns = opts.map(function(o) {
           var val = Array.isArray(o) ? o[0] : o, lbl = Array.isArray(o) ? o[1] : o;
-          return '<button class="rz-fp-opt' + (_filters[key] === val ? ' active' : '') + '" data-fk="' + key + '" data-fv="' + val + '">' + lbl + '</button>';
+          return '<button class="otc-day-filter rz-fp-opt' + (_filters[key] === val ? ' active' : '') + '" data-fk="' + key + '" data-fv="' + val + '">' + lbl + '</button>';
         }).join('');
-        return '<div class="rz-fp-row"><span class="rz-fp-label">' + label + '</span><div class="rz-fp-opts">' + btns + '</div></div>';
+        return '<div class="rz-fp-row"><span class="rz-fp-label">' + label + '</span><div class="otc-day-filters rz-fp-opts">' + btns + '</div></div>';
       }
       var tOpts = [['all','All']].concat(_teamOptions().map(function(t) { return [t, t.length > 12 ? t.slice(0,11) + '…' : t]; }));
       var nOpts = [['all','All']].concat(_nflOptions().map(function(t) { return [t, t]; }));
@@ -1315,7 +1315,16 @@
 
     if (!list.length) {
       if (anyFilter || _myTeamOnly) {
-        container.innerHTML = '<div class="rz-feed-empty">No plays match these filters yet.</div>';
+        if (window.brEmptyState) {
+          window.brEmptyState(container, {
+            icon: 'search',
+            title: 'No matching plays',
+            message: 'Try clearing a filter to see more of the feed.',
+            compact: true
+          });
+        } else {
+          container.innerHTML = '<div class="rz-feed-empty">No plays match these filters yet.</div>';
+        }
       } else {
         container.innerHTML = _pregameScheduleHtml();
       }

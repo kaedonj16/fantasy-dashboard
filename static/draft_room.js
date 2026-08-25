@@ -1,7 +1,7 @@
 (function(){
   var cfg = window.__draftCfg || {};
   // Match the site-wide position palette (see .nav-search-pos-* in dashboard.css).
-  var POS_COLOR = { QB:'#3b82f6', RB:'#22c55e', WR:'#f59e0b', TE:'#8b5cf6', K:'#c92c68', DEF:'#475569', FLEX:'#14b8a6', SF:'#a78bfa', BN:'#64748b' };
+  var POS_COLOR = { QB:'#3b82f6', RB:'#22c55e', WR:'#f59e0b', TE:'#8b5cf6', K:'#c92c68', DEF:'#475569', FLEX:'#14b8a6', SF:'#a78bfa', BN:'#64748b', IR:'#94a3b8', TAXI:'#64748b', IDP:'#0f766e' };
   var posColor = function(p){ return POS_COLOR[(p||'').toUpperCase()] || '#94a3b8'; };
   var hsUrl = function(id){ return 'https://sleepercdn.com/content/nfl/players/' + id + '.jpg'; };
   // DEF players: prefer locally cached logo (after running download_team_logos.py),
@@ -322,19 +322,29 @@
     fillSlotOptions(parseInt(this.value, 10));
   });
   // Map a Sleeper-style roster_positions list into our slot counts.
+  // IR / taxi / IDP are counted so dynasty round depth is right; they are not
+  // starters, so they don't inflate RB/WR need — they add stash/round capacity.
+  var ROSTER_SLOT_MAP = {
+    QB:'QB', RB:'RB', WR:'WR', TE:'TE',
+    FLEX:'FLEX', WRRB_FLEX:'FLEX', REC_FLEX:'FLEX', WRRBTE_FLEX:'FLEX',
+    SUPER_FLEX:'SF', SFLEX:'SF',
+    K:'K', DEF:'DEF', DST:'DEF',
+    BN:'BN', BE:'BN', BENCH:'BN',
+    IR:'IR', RESERVE:'IR',
+    TAXI:'TAXI',
+    DL:'IDP', DE:'IDP', DT:'IDP', LB:'IDP', DB:'IDP', CB:'IDP', S:'IDP',
+    IDP:'IDP', IDP_FLEX:'IDP'
+  };
+  function rosterSlotKey(s){
+    return ROSTER_SLOT_MAP[String(s || '').toUpperCase()] || null;
+  }
   function rosterFromLeague(){
     var rp = cfg.rosterPositions;
     if (!rp || !rp.length) return null;
-    var r = { QB:0, SF:0, RB:0, WR:0, TE:0, FLEX:0, K:0, DEF:0, BN:0 };
-    var map = {
-      QB:'QB', RB:'RB', WR:'WR', TE:'TE',
-      FLEX:'FLEX', WRRB_FLEX:'FLEX', REC_FLEX:'FLEX', WRRBTE_FLEX:'FLEX',
-      SUPER_FLEX:'SF', SFLEX:'SF',
-      K:'K', DEF:'DEF', DST:'DEF', BN:'BN'
-    };
+    var r = { QB:0, SF:0, RB:0, WR:0, TE:0, FLEX:0, K:0, DEF:0, BN:0, IR:0, TAXI:0, IDP:0 };
     rp.forEach(function(s){
-      var key = map[String(s).toUpperCase()];
-      if (key) r[key]++;            // IDP/TAXI/IR positions are ignored
+      var key = rosterSlotKey(s);
+      if (key) r[key]++;
     });
     if (!(r.QB+r.RB+r.WR+r.TE+r.FLEX+r.SF)) return null;  // no usable starters
     return r;
@@ -357,14 +367,14 @@
     }
     var starters = 1 + (sf?1:0) + 2 + 3 + 1 + 1 + (rd?1:0) + (rd?1:0);
     var bench = rd ? 6 : Math.max(0, 25 - starters);
-    return { QB:1, SF:sf?1:0, RB:2, WR:3, TE:1, FLEX:1, K:rd?1:0, DEF:rd?1:0, BN:bench };
+    return { QB:1, SF:sf?1:0, RB:2, WR:3, TE:1, FLEX:1, K:rd?1:0, DEF:rd?1:0, BN:bench, IR:0, TAXI:0, IDP:0 };
   }
 
   // Helper: reconcile a raw roster map for the chosen QB format and return a
   // fresh copy (does not mutate the input).
   function _reconcileRoster(r, sf, rd){
     var out = {};
-    ['QB','SF','RB','WR','TE','FLEX','K','DEF','BN'].forEach(function(k){ out[k] = r[k] || 0; });
+    ['QB','SF','RB','WR','TE','FLEX','K','DEF','BN','IR','TAXI','IDP'].forEach(function(k){ out[k] = r[k] || 0; });
     if (sf){ if (!out.SF) out.SF = 1; if (!out.FLEX) out.FLEX = 1; }
     else   { out.SF = 0; }
     // K/DEF are kept as-is across formats: if the league (or the user) rosters
@@ -420,7 +430,10 @@
       { key:'FLEX', label:'FLEX' },
       { key:'K',    label:'K',    hide: rk },
       { key:'DEF',  label:'DEF',  hide: rk },
-      { key:'BN',   label:'Bench' }
+      { key:'BN',   label:'Bench' },
+      { key:'IR',   label:'IR',   hide: !((_setupRoster && _setupRoster.IR) || (leagueRaw && leagueRaw.IR)) },
+      { key:'TAXI', label:'Taxi', hide: !((_setupRoster && _setupRoster.TAXI) || (leagueRaw && leagueRaw.TAXI)) },
+      { key:'IDP',  label:'IDP',  hide: !((_setupRoster && _setupRoster.IDP) || (leagueRaw && leagueRaw.IDP)) }
     ];
 
     var presetHtml = '<div class="dr-roster-presets"><span class="dr-roster-presets-label">Presets</span>';
@@ -510,21 +523,26 @@
         _rosterPreset = key; _rosterMode = 'custom';
         _setupRoster = {};
         ['QB','SF','RB','WR','TE','FLEX','K','DEF','BN'].forEach(function(k){ _setupRoster[k] = preset[k] || 0; });
+        _setupRoster.IR = 0; _setupRoster.TAXI = 0; _setupRoster.IDP = 0;
         _setupRoster._sf = !!preset.SF; _setupRoster._rd = preset.type === 'redraft';
         renderSetupRoster(); renderSetupCapital();
       });
     });
   }
 
+  function _stashSlots(rs){
+    rs = rs || {};
+    return (rs.IR || 0) + (rs.TAXI || 0) + (rs.IDP || 0);
+  }
   // Sum of all non-bench roster slots - used to keep rounds and bench in sync.
   function _totalStarterSlots(rs){
     rs = rs || _setupRoster || defaultRoster();
     return (rs.QB||0) + (rs.SF||0) + (rs.RB||0) + (rs.WR||0) + (rs.TE||0) + (rs.FLEX||0) + (rs.K||0) + (rs.DEF||0);
   }
-  // Sync the hidden drRounds field from the current roster (starters + bench).
+  // Sync the hidden drRounds field from the current roster (starters + bench + stash).
   function _syncRoundsFromRoster(){
     if (!_setupRoster) return;
-    var r = _totalStarterSlots(_setupRoster) + (_setupRoster.BN || 0);
+    var r = _totalStarterSlots(_setupRoster) + (_setupRoster.BN || 0) + _stashSlots(_setupRoster);
     document.getElementById('drRounds').value = Math.max(1, Math.min(40, r));
   }
 
@@ -667,16 +685,10 @@
   // live/connected path recognizes K/DEF (incl. DST) and FLEX variants identically.
   function _parseRosterPositions(arr){
     if (!Array.isArray(arr) || !arr.length) return null;
-    var nmap = {
-      QB:'QB', RB:'RB', WR:'WR', TE:'TE',
-      FLEX:'FLEX', WRRB_FLEX:'FLEX', REC_FLEX:'FLEX', WRRBTE_FLEX:'FLEX',
-      SUPER_FLEX:'SF', SFLEX:'SF',
-      K:'K', DEF:'DEF', DST:'DEF', BN:'BN'
-    };
     var map = {};
     arr.forEach(function(pos){
-      var key = nmap[String(pos || '').toUpperCase()];
-      if (key) map[key] = (map[key] || 0) + 1;   // IDP/TAXI/IR positions are ignored
+      var key = rosterSlotKey(pos);
+      if (key) map[key] = (map[key] || 0) + 1;
     });
     return Object.keys(map).length ? map : null;
   }
@@ -729,6 +741,7 @@
 
   function showMain(){
     _boardSig = null;   // always force a full board rebuild when entering the draft view
+    closeEditSetup();
     document.getElementById('drSetup').style.display = 'none';
     var hero = document.getElementById('drHero'); if (hero) hero.style.display = 'none';
     var isLive = !!(state && state.mode === 'live');
@@ -745,62 +758,144 @@
       rst.className = isLive ? 'dr-btn dr-btn-ghost' : 'dr-btn dr-btn-ghost dr-btn-danger';
     }
     document.getElementById('drBoard').innerHTML = '';
-    document.getElementById('drBaList').innerHTML = '<div class="dr-loading">Loading players…</div>';
+    document.getElementById('drBaList').innerHTML = loadingNote('Loading players…');
     document.getElementById('drMain').style.display = '';
+  }
+  function _setElHidden(id, hidden){
+    var el = document.getElementById(id);
+    if (el) el.hidden = !!hidden;
+  }
+  // Page setup vs in-draft edit modal: same form, different chrome.
+  function setSetupChrome(isModal){
+    var setup = document.getElementById('drSetup');
+    var hero = document.getElementById('drHero');
+    if (setup){
+      setup.classList.toggle('dr-setup-is-modal', !!isModal);
+      if (isModal){
+        setup.setAttribute('role', 'dialog');
+        setup.setAttribute('aria-modal', 'true');
+        setup.setAttribute('aria-labelledby', 'drEditTitle');
+      } else {
+        setup.removeAttribute('role');
+        setup.removeAttribute('aria-modal');
+        setup.removeAttribute('aria-labelledby');
+      }
+    }
+    _setElHidden('drSetupModalHead', !isModal);
+    _setElHidden('drEditNote', !isModal);
+    _setElHidden('drSetupStartCta', !!isModal);
+    _setElHidden('drSetupEditCta', !isModal);
+    // Opening the modal hides the hero; closing it does not restore it — the
+    // board may still be up. showSetup is what brings the hero back.
+    if (isModal && hero) hero.style.display = 'none';
+    document.body.classList.toggle('dr-edit-open', !!isModal);
+  }
+  // Reflect a started draft's settings in the setup controls so Edit (and a
+  // later Apply with no changes) reads back the same teams/order/slot and the
+  // picks can carry over (see startMock / startDraft). No-op before a draft.
+  function hydrateSetupFromState(){
+    if (!(state && state.teams)) return;
+    var tEl = document.getElementById('drType');
+    if (tEl) tEl.value = state.keeper ? 'keeper' : (state.type || tEl.value);
+    var sfEl = document.getElementById('drSf'); if (sfEl && state.sf != null) sfEl.value = state.sf ? '1' : '0';
+    var teamsEl = document.getElementById('drTeams'), wt = String(state.teams);
+    if (teamsEl){
+      for (var ti = 0; ti < teamsEl.options.length; ti++){ if (teamsEl.options[ti].value === wt || teamsEl.options[ti].text === wt){ teamsEl.selectedIndex = ti; break; } }
+    }
+    var ordEl = document.getElementById('drOrder'); if (ordEl && state.order) ordEl.value = state.order;
+    var rEl = document.getElementById('drRounds'); if (rEl && state.rounds) rEl.value = String(state.rounds);
+    fillSlotOptions(state.teams);   // slot options depend on team count
+    var slotEl = document.getElementById('drSlot'); if (slotEl && state.slot) slotEl.value = String(state.slot);
+    if (state.scoring){
+      var pprEl = document.getElementById('drPpr'); if (pprEl) pprEl.value = String(state.scoring.ppr != null ? state.scoring.ppr : 1);
+      var tepEl = document.getElementById('drTep'); if (tepEl) tepEl.value = String(state.scoring.tep != null ? state.scoring.tep : 0);
+      var passTdEl = document.getElementById('drPassTd'); if (passTdEl) passTdEl.value = String(state.scoring.passTd >= 6 ? 6 : 4);
+    }
+    if (state.keeper){
+      var kcEl = document.getElementById('drKeeperCount'); if (kcEl && state.keeperCount != null){ kcEl.value = String(state.keeperCount); kcEl.dataset.touched = '1'; }
+      var ksEl = document.getElementById('drKeeperSource'); if (ksEl && state.keeperSource) ksEl.value = state.keeperSource;
+    }
+    // Roster editor: seed from the active draft in custom mode so it is not
+    // re-seeded from league/defaults. Match the sf/rd markers to the controls
+    // just set so renderSetupRoster does not reconcile it.
+    if (state.roster){
+      var rr = {}; Object.keys(state.roster).forEach(function(k){ rr[k] = state.roster[k]; });
+      rr._sf = document.getElementById('drSf').value === '1';
+      rr._rd = document.getElementById('drType').value === 'redraft';
+      _setupRoster = rr; _rosterMode = 'custom';
+    }
+    // Draft-capital editor: seed owned picks and match the signature so it is
+    // not reset to the slot's natural picks.
+    if (state.owned){
+      var ow = {}; Object.keys(state.owned).forEach(function(k){ if (state.owned[k]) ow[k] = true; });
+      _setupOwned = ow;
+      var _c = setupCtl(); _setupOwnedSig = [_c.teams, _c.rounds, _c.order, _c.slot].join('|');
+    }
+  }
+  function refreshSetupEditors(){
+    var typeEl = document.getElementById('drType');
+    var typeVal = typeEl ? typeEl.value : '';
+    syncKeeperSetupFields(typeVal === 'keeper');
+    var _rf = document.getElementById('drRoundsField');
+    if (_rf) _rf.style.display = (typeVal === 'rookie') ? '' : 'none';
+    renderSetupRoster();
+    renderSetupCapital();
+  }
+  function closeEditSetup(){
+    var setup = document.getElementById('drSetup');
+    if (!setup || !setup.classList.contains('dr-setup-is-modal')){
+      document.body.classList.remove('dr-edit-open');
+      return;
+    }
+    setup.style.display = 'none';
+    setSetupChrome(false);
+  }
+  function openEditSetup(){
+    if (!state || !state.teams || state.mode === 'live') return;
+    endSim();
+    hydrateSetupFromState();
+    refreshSetupEditors();
+    setSetupChrome(true);
+    document.getElementById('drSetup').style.display = '';
+    var closeBtn = document.getElementById('drEditClose');
+    if (closeBtn) closeBtn.focus();
+  }
+  function applyEditedSetup(){
+    if (!state) return;
+    var wasMock = state.mode === 'mock';
+    var wasStarted = !!(state.simStarted || (sim && simStarted));
+    var prevTeams = state.teams, prevOrder = state.order, prevSlot = state.slot;
+    var nextTeams = parseInt(document.getElementById('drTeams').value, 10);
+    var nextOrder = document.getElementById('drOrder').value;
+    var nextSlot = parseInt(document.getElementById('drSlot').value, 10) || 1;
+    var hasPicks = !!(state.picks && Object.keys(state.picks).some(function(k){ return !!state.picks[k]; }));
+    var willWipe = hasPicks && (prevTeams !== nextTeams || prevOrder !== nextOrder || prevSlot !== nextSlot);
+    function go(){
+      closeEditSetup();
+      if (wasMock) startMock();
+      else startDraft();
+      var same = state && state.teams === prevTeams && state.order === prevOrder && state.slot === prevSlot;
+      if (wasMock && wasStarted && same){
+        simStarted = true;
+        state.simStarted = true;
+        syncSimControls();
+      }
+    }
+    if (willWipe){
+      drConfirm('Changing teams, pick order, or your slot restarts the board and clears picks.', 'Apply', go);
+    } else {
+      go();
+    }
   }
   function showSetup(){
     endSim();
+    closeEditSetup();
     document.getElementById('drMain').style.display = 'none';
     document.getElementById('drSetup').style.display = '';
+    setSetupChrome(false);
     var hero = document.getElementById('drHero'); if (hero) hero.style.display = '';
-
-    // Editing a STARTED draft: reflect all of its settings in the setup controls
-    // and seed the roster / draft-capital editors from it, so Edit truly edits the
-    // current draft. With everything matching, starting again with no changes reads
-    // back the same teams/order/slot and the picks carry over (see startMock /
-    // startDraft). Skipped for the initial setup (no active draft yet).
-    if (state && state.teams){
-      var tEl = document.getElementById('drType');
-      if (tEl) tEl.value = state.keeper ? 'keeper' : (state.type || tEl.value);
-      var sfEl = document.getElementById('drSf'); if (sfEl && state.sf != null) sfEl.value = state.sf ? '1' : '0';
-      var teamsEl = document.getElementById('drTeams'), wt = String(state.teams);
-      for (var ti = 0; ti < teamsEl.options.length; ti++){ if (teamsEl.options[ti].value === wt || teamsEl.options[ti].text === wt){ teamsEl.selectedIndex = ti; break; } }
-      var ordEl = document.getElementById('drOrder'); if (ordEl && state.order) ordEl.value = state.order;
-      var rEl = document.getElementById('drRounds'); if (rEl && state.rounds) rEl.value = String(state.rounds);
-      fillSlotOptions(state.teams);   // slot options depend on team count
-      var slotEl = document.getElementById('drSlot'); if (slotEl && state.slot) slotEl.value = String(state.slot);
-      if (state.scoring){
-        var pprEl = document.getElementById('drPpr'); if (pprEl) pprEl.value = String(state.scoring.ppr != null ? state.scoring.ppr : 1);
-        var tepEl = document.getElementById('drTep'); if (tepEl) tepEl.value = String(state.scoring.tep != null ? state.scoring.tep : 0);
-        var passTdEl = document.getElementById('drPassTd'); if (passTdEl) passTdEl.value = String(state.scoring.passTd >= 6 ? 6 : 4);
-      }
-      if (state.keeper){
-        var kcEl = document.getElementById('drKeeperCount'); if (kcEl && state.keeperCount != null){ kcEl.value = String(state.keeperCount); kcEl.dataset.touched = '1'; }
-        var ksEl = document.getElementById('drKeeperSource'); if (ksEl && state.keeperSource) ksEl.value = state.keeperSource;
-      }
-      // Roster editor: seed from the active draft in custom mode so it is not
-      // re-seeded from league/defaults. Match the sf/rd markers to the controls
-      // just set so renderSetupRoster does not reconcile it.
-      if (state.roster){
-        var rr = {}; Object.keys(state.roster).forEach(function(k){ rr[k] = state.roster[k]; });
-        rr._sf = document.getElementById('drSf').value === '1';
-        rr._rd = document.getElementById('drType').value === 'redraft';
-        _setupRoster = rr; _rosterMode = 'custom';
-      }
-      // Draft-capital editor: seed owned picks and match the signature so it is
-      // not reset to the slot's natural picks.
-      if (state.owned){
-        var ow = {}; Object.keys(state.owned).forEach(function(k){ if (state.owned[k]) ow[k] = true; });
-        _setupOwned = ow;
-        var _c = setupCtl(); _setupOwnedSig = [_c.teams, _c.rounds, _c.order, _c.slot].join('|');
-      }
-    }
-
-    syncKeeperSetupFields(document.getElementById('drType').value === 'keeper');
-    var _rf = document.getElementById('drRoundsField');
-    if (_rf) _rf.style.display = (document.getElementById('drType').value === 'rookie') ? '' : 'none';
-    renderSetupRoster();
-    renderSetupCapital();
+    hydrateSetupFromState();
+    refreshSetupEditors();
   }
 
   // ── Data ─────────────────────────────────────────────────────────────────
@@ -916,14 +1011,12 @@
         console.error('[draft-room] loadPlayers failed', err);
         var host = document.getElementById('drBaList');
         if (!host) return;
-        host.innerHTML = '';
-        var box = document.createElement('div'); box.className = 'dr-loading';
-        var msg = document.createElement('div');
-        msg.textContent = 'Could not load players: ' + ((err && err.message) || 'unknown error');
+        host.innerHTML = emptyNote('Couldn’t load players', ((err && err.message) || 'Something went wrong. Tap Retry to try again.'));
         var retry = document.createElement('button'); retry.type = 'button';
         retry.className = 'dr-btn dr-btn-sm'; retry.textContent = 'Retry';
         retry.style.marginTop = '10px'; retry.addEventListener('click', loadPlayers);
-        box.appendChild(msg); box.appendChild(retry); host.appendChild(box);
+        var note = host.querySelector('.dr-empty-note');
+        if (note) note.appendChild(retry);
       });
   }
 
@@ -2045,7 +2138,7 @@
     _boardSig = null;
     _summaryShown = false;
     lastLivePicks = null;
-    _poServer = null; _poServerSig = null; _poFetching = false;   // drop cached playoff odds
+    _poServer = null; _poServerSig = null; _poFetching = false; _poFailedSig = null;   // drop cached playoff odds
     _poMcCache = null; _poMcSig = null;
     _relCache = { sig: null, map: {} };   // drop reconstructed pool-relative scores
   }
@@ -2253,6 +2346,22 @@
     return c;
   }
   function listInto(html){ document.getElementById('drBaList').innerHTML = html; }
+
+  // Compact empty copy for the draft side panel (queue / best / needs / league).
+  // Draft Room does not load app.js, so this mirrors the shared empty-state look.
+  var _DR_EMPTY_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5 5.2 4.6A2 2 0 0 1 7 3.6h10a2 2 0 0 1 1.8 1L21 8.5"/><path d="M3 8.5h5l1.2 2.2h5.6L16 8.5h5v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>';
+  var _DR_SEARCH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.7-4.7"/></svg>';
+  function emptyNote(title, message, iconSvg){
+    return '<div class="dr-empty-note">'
+      + '<span class="dr-empty-note-icon" aria-hidden="true">' + (iconSvg || _DR_EMPTY_ICON) + '</span>'
+      + (title ? '<p class="dr-empty-note-title">' + title + '</p>' : '')
+      + (message ? '<p class="dr-empty-note-msg">' + message + '</p>' : '')
+      + '</div>';
+  }
+  function loadingNote(message){
+    return '<div class="dr-loading-msg"><div class="loading-spinner" aria-hidden="true"></div><span>'
+      + (message || 'Loading…') + '</span></div>';
+  }
 
   // ── Tiers + cliffs ──────────────────────────────────────────────────────────
   // Mirrors assign_tier() in value_translation.py: maps a 0-100 prospect grade
@@ -2888,6 +2997,11 @@
     var ppgN = ppgNormOf(p);
 
     var _sc = scoringCfg();
+    var _cliff;
+    if (opts && opts.isTierCliff != null) _cliff = !!opts.isTierCliff;
+    else if (opts && opts.grading && _gradeCliffByPn && _pn && _gradeCliffByPn[_pn] != null)
+      _cliff = !!_gradeCliffByPn[_pn];
+    else _cliff = isTierCliff(p, _pn);
     return BRPickScore.computePickScore({
       pos: pos, value: valOf(p), vor: vorOf(p), tier: tierOf(p),
       age: (p.age != null ? Number(p.age) : null), rankChange7d: p.rank_change_7d,
@@ -2895,7 +3009,7 @@
       draftType: state.type, isSf: state.sf, needRaw: needRaw,
       qbCount: counts['QB'] || 0, totalPicks: (state.teams || 12) * (state.rounds || 16),
       numTeams: state.teams || 12, ppgNorm: ppgN,
-      ppr: _sc.ppr, tep: _sc.tep, passTd: _sc.passTd, isTierCliff: isTierCliff(p, _pn),
+      ppr: _sc.ppr, tep: _sc.tep, passTd: _sc.passTd, isTierCliff: _cliff,
     });
   }
 
@@ -3147,7 +3261,7 @@
   function renderQueue(){
     var q = (state.queue || []).map(function(id){ return playersById[String(id)]; })
       .filter(function(p){ return p && !drafted[String(p.id)]; });
-    if (!q.length){ listInto('<div class="dr-empty-note">Your queue is empty. Tap the ☆ on any player to add a target.</div>'); return; }
+    if (!q.length){ listInto(emptyNote('Queue is empty', 'Tap the ★ on any player to add a target.')); return; }
     // Survival odds on every queued target: the whole point of a queue is
     // deciding who can wait until your next pick, so show the number.
     var nextPick = nextOwnedAfterCurrent();
@@ -3201,6 +3315,9 @@
     sideTab = 'needs';
     document.getElementById('drCompleteBar').style.display = '';
     renderSide();
+    // Prefetch standings-engine odds so League / Summary / Deep Dive paint the
+    // final number on first open (no interim JS estimate, no visible jump).
+    try { refreshServerPlayoffOdds(gradeAllTeams()); } catch (e){ /* grades may not be ready yet */ }
   }
 
   // Undo showCompleteSidebar(): a fresh mock/manual draft started after viewing a
@@ -3256,10 +3373,10 @@
   function alertBanners(){ return runBanner() + cliffBanner(); }
 
   function renderRec(){
-    if (!hasOwned()){ listInto('<div class="dr-empty-note">Set your pick slot to get personalized recommendations.</div>'); return; }
+    if (!hasOwned()){ listInto(emptyNote('Set your pick slot', 'Choose your draft slot to get personalized recommendations.')); return; }
     var counts = myPosCounts();
     var pool = availablePool().slice();
-    if (!pool.length){ listInto('<div class="dr-empty-note">No players available.</div>'); return; }
+    if (!pool.length){ listInto(emptyNote('No players available', 'Everyone matching this filter has already been drafted.', _DR_SEARCH_ICON)); return; }
     var maxVal = 0; pool.forEach(function(p){ var v = valOf(p); if (v > maxVal) maxVal = v; });
     pool.forEach(function(p){ p._ps = pickScore(p, maxVal, counts); });
     prepareNextPickValues(pool);
@@ -3464,15 +3581,29 @@
   function _draftComplete(){ return !!state && (!!state.isComplete || state.current > (state.teams || 12) * (state.rounds || 0)); }
 
   // Server-computed playoff odds - the SAME engine the standings page uses
-  // (simulate_playoff_odds, preseason mode). Populated asynchronously once the
-  // draft is complete; playoffOddsBySlot() above is the instant fallback shown
-  // until this returns (or if the call fails).
+  // (simulate_playoff_odds, preseason mode). For a completed draft we ONLY show
+  // these numbers (or a loading placeholder) — never the JS Monte Carlo first —
+  // so the user never sees a percentage jump a moment later. The JS estimate is
+  // used mid-draft and as a one-shot fallback if the server fetch fails.
   var _poServer = null, _poServerSig = null, _poFetching = false;
+  var _poFailedSig = null;
   function _poSig(allTeams){ return allTeams.map(function(t){ return t.slot + ':' + (t.picks ? t.picks.length : 0); }).join('|') + '@' + state.current; }
+  function _repaintPlayoffOdds(){
+    if (sideTab === 'league') renderSide();
+    // Summary / Deep Dive capture odds at open; rebuild once when the final
+    // source lands so the first painted number is the only number.
+    var sum = document.getElementById('drSummary');
+    if (sum && sum.style.display !== 'none' && typeof openSummary === 'function'){
+      try { openSummary(); } catch (e){ /* openSummary may not be ready */ }
+    }
+    var ddOv = document.getElementById('drDeepDive');
+    if (ddOv && ddOv.style.display !== 'none') openDeepDive();
+  }
   function refreshServerPlayoffOdds(allTeams){
     if (!_draftComplete() || !allTeams || allTeams.length < 2) return;
     var sig = _poSig(allTeams);
     if (_poFetching || (_poServer && _poServerSig === sig)) return;
+    if (_poFailedSig === sig) return;
     _poFetching = true;
     var _sc = scoringCfg();
     var payload = {
@@ -3492,24 +3623,34 @@
         if (resp && resp.odds && resp.odds.length){
           var m = {};
           resp.odds.forEach(function(o){ if (o.slot != null) m[o.slot] = Math.round(o.playoff_pct); });
-          _poServer = m; _poServerSig = sig;
-          if (sideTab === 'league') renderSide();   // repaint the league tab with the thorough odds
+          _poServer = m; _poServerSig = sig; _poFailedSig = null;
+          _repaintPlayoffOdds();
+        } else {
+          _poFailedSig = sig;
+          _repaintPlayoffOdds();
         }
       })
-      .catch(function(){ _poFetching = false; });
+      .catch(function(){ _poFetching = false; _poFailedSig = sig; _repaintPlayoffOdds(); });
   }
-  // Odds source for display: the server engine when it's ready for this exact
-  // board, else the instant JS estimate (and kick off the server fetch).
+  // Odds for display. Completed drafts wait for the standings engine (empty
+  // object = pending). Mid-draft and failed fetches use the JS estimate.
   function playoffOddsSource(allTeams){
     refreshServerPlayoffOdds(allTeams);
-    if (_poServer && _poServerSig === _poSig(allTeams)) return _poServer;
-    return playoffOddsBySlot(allTeams);
+    var sig = _poSig(allTeams);
+    if (_poServer && _poServerSig === sig) return _poServer;
+    if (!_draftComplete()) return playoffOddsBySlot(allTeams);
+    if (_poFailedSig === sig) return playoffOddsBySlot(allTeams);
+    return {};
+  }
+  function playoffOddsPending(allTeams){
+    if (!_draftComplete() || !allTeams || allTeams.length < 2) return false;
+    var sig = _poSig(allTeams);
+    return !(_poServer && _poServerSig === sig) && _poFailedSig !== sig;
   }
   function gradeTeam(){
     if (!hasOwned()) return null;
-    // Pull "your" grade from the full field so the relative-to-league curve matches
-    // what the League tab shows. Before there are enough teams on the board to curve
-    // against, gradeAllTeams returns the raw (uncurved) grades, which is also correct.
+    // Pull "your" grade from the full field so the Team / League / Deep Dive
+    // surfaces share one gradeAllTeams() pass (absolute composite — no field curve).
     var field = gradeAllTeams();
     for (var i = 0; i < field.length; i++){ if (field[i].isMe) return field[i].grade; }
     var mine = [];
@@ -3592,7 +3733,11 @@
     var counts = { QB:0, RB:0, WR:0, TE:0 };
     // Pre-compute maxVal for pickScore (matches what pickScore callers do)
     var _gmaxVal = 0; players.forEach(function(q){ var v = valOf(q); if (v > _gmaxVal) _gmaxVal = v; });
+    // Progressive need context for THIS team only. Do not fall back to psCtx()
+    // (viewer roster) — that leaked the viewer's quality counts into every other
+    // team's grade and skewed the league board / Deep Dive ranks.
     var countsSoFar = { QB: 0, RB: 0, WR: 0, TE: 0 };
+    var qualSoFar = { QB: 0, RB: 0, WR: 0, TE: 0 };
     var picks = []; // { id, pos, ps, val, ppg }
     mine.forEach(function(m){
       var pos = (m.p.position || '').toUpperCase();
@@ -3604,14 +3749,17 @@
       var full = playersById[String(m.p.id)];
       var ps = null;
       if (players.length > 0 && _gmaxVal > 0 && full){
-        var _saved = state.current;
-        state.current = m.pn;
-        ps = pickScore(full, _gmaxVal, countsSoFar, { grading: true });
-        state.current = _saved;
+        ps = pickScore(full, _gmaxVal, countsSoFar, {
+          grading: true, pickNo: m.pn, qualByPos: qualSoFar
+        });
       }
       if (ps == null) ps = m.p.ps;
       if (countsSoFar[pos] != null) countsSoFar[pos]++;
       if (counts[pos] != null) counts[pos]++;
+      if (qualSoFar[pos] != null){
+        var _qv = full ? vorOf(full) : null;
+        if (_qv == null || _qv > 0) qualSoFar[pos]++;
+      }
       picks.push({ id: m.p.id, pos: pos, ps: ps, pn: m.pn,
         val: full ? valOf(full) : (m.p.val || 0), ppg: full ? ppgOf(full) : null });
     });
@@ -3697,6 +3845,32 @@
       strength: Math.round(_comp.strengthRatio * 100),
       window: _competitiveWindow(_starterArr) };
   }
+  // At-pick tier-cliff map for grading: walk the full draft in order starting from
+  // the full-pool tier counts, so each historical pick sees remaining-at-that-slot
+  // (matches live isTierCliff / the Teams API), not post-draft leftovers.
+  var _gradeCliffByPn = null;
+  function _buildGradeCliffs(){
+    var counts = {}, map = {};
+    players.forEach(function(p){
+      var t = tierOf(p); if (t == null) return;
+      var k = String(p.position || '').toUpperCase() + '|' + t;
+      counts[k] = (counts[k] || 0) + 1;
+    });
+    var teams = (state && state.teams) || 12;
+    Object.keys(state.picks || {}).filter(function(k){ return !!state.picks[k]; })
+      .map(function(k){ return parseInt(k, 10); }).sort(function(a, b){ return a - b; })
+      .forEach(function(pn){
+        var pl = state.picks[pn];
+        var full = playersById[String(pl.id)] || pl;
+        var t = tierOf(full);
+        var pos = String(pl.position || '').toUpperCase();
+        var k = pos + '|' + t;
+        var left = (t != null) ? (counts[k] || 0) : 0;
+        map[pn] = (pn > teams) && t != null && left <= 2;
+        if (t != null && counts[k]) counts[k]--;
+      });
+    return map;
+  }
   // Grade every team in the draft, sorted best-first. Picks are attributed by
   // OWNERSHIP, not by the board column they sit in: every pick the user owns (a
   // 1.01 traded in, a pick in another seat, etc.) belongs to the single "You"
@@ -3704,6 +3878,7 @@
   // owns picks across two seats would show up as "You" twice.
   function gradeAllTeams(){
     if (!state) return [];
+    _gradeCliffByPn = _buildGradeCliffs();
     var teams = state.teams || 12;
     var mine = [];        // every pick the user owns, regardless of seat
     var bySlot = {};      // remaining picks grouped by the seat that owns them
@@ -3742,9 +3917,9 @@
   // Absolute grading: the team letter reflects the team's OWN composite (starter
   // quality + lineup strength vs league + construction), not its rank within the
   // field - so a genuinely elite draft earns an A even when the whole room drafted
-  // well, and a weak one earns a C even in a weak room. (Previously the field was
-  // curved to a B centre, which clustered strong mocks all at B.) rawScore is kept
-  // in sync for any consumer that reads it.
+  // well, and a weak one earns a C even in a weak room. Field-curve helpers
+  // (draft_grade_curve.js / dr_apply_field_curve) remain for backtests only.
+  // rawScore is kept in sync for any consumer that reads it.
   function _applyFieldCurve(out){
     if (!out) return;
     out.forEach(function(t){ if (t && t.grade) t.grade.rawScore = t.grade.score; });
@@ -3825,7 +4000,7 @@
   }
 
   function renderNeeds(){
-    if (!hasOwned()){ listInto('<div class="dr-empty-note">Set your pick slot to see your team build.</div>'); return; }
+    if (!hasOwned()){ listInto(emptyNote('Set your pick slot', 'Choose your draft slot to see your team build.')); return; }
     var mine = myPicksList().slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
     var html = '';
     var g = gradeTeam();
@@ -4012,11 +4187,11 @@
   function renderLeague(){
     var allTeams = gradeAllTeams();
     if (!allTeams.length){
-      listInto('<div class="dr-empty-note">No picks yet - grades will appear as teams draft.</div>');
+      listInto(emptyNote('No picks yet', 'Grades will appear as teams draft.'));
       return;
     }
     if (allTeams.length < 2){
-      listInto('<div class="dr-empty-note">Grades appear once at least 2 teams have drafted.</div>');
+      listInto(emptyNote('Waiting on more teams', 'Grades appear once at least 2 teams have drafted.'));
       return;
     }
     var _rc = ['gold','silver','bronze'];
@@ -4045,9 +4220,13 @@
         if (_sl) stratTag = '<span class="dr-strat-tag">' + _sl + '</span>';
       }
       var poTag = '';
-      if (_leagueDone && _poOdds[t.slot] != null){
-        poTag = '<span class="dr-sum-lpo" style="color:' + _poColor(_poOdds[t.slot]) + '" title="Projected playoff odds">'
-          + _poOdds[t.slot] + '%</span>';
+      if (_leagueDone){
+        if (playoffOddsPending(allTeams)){
+          poTag = '<span class="dr-sum-lpo dr-sum-lpo-pending" title="Calculating playoff odds">…</span>';
+        } else if (_poOdds[t.slot] != null){
+          poTag = '<span class="dr-sum-lpo" style="color:' + _poColor(_poOdds[t.slot]) + '" title="Projected playoff odds">'
+            + _poOdds[t.slot] + '%</span>';
+        }
       }
       html += '<div class="dr-sum-lrow' + (t.isMe ? ' is-me' : '') + '" data-legslot="' + t.slot + '">'
         + rankCell
@@ -4564,12 +4743,44 @@
     return ups.length ? ups[0] : null;
   }
 
+  function leagueMetaParts(){
+    if (!state) return [];
+    var typeLbl = state.keeper ? 'Keeper'
+      : (state.type === 'rookie' ? 'Rookie' : (state.type === 'redraft' ? 'Redraft' : 'Startup'));
+    var sc = scoringCfg();
+    var pprLbl = sc.ppr === 1 ? 'Full PPR' : (sc.ppr === 0.5 ? 'Half PPR' : (sc.ppr === 0 ? 'Standard' : (sc.ppr + ' PPR')));
+    var orderLbl = state.order === 'linear' ? 'Linear' : (state.order === '3rr' ? '3RR' : 'Snake');
+    var parts = [
+      typeLbl,
+      state.teams + '-team ' + (state.sf ? 'SF' : '1QB'),
+      pprLbl
+    ];
+    if (sc.tep) parts.push('TEP +' + sc.tep);
+    if (sc.passTd >= 6) parts.push('6-pt Pass TD');
+    parts.push(orderLbl);
+    if (state.rounds) parts.push(state.rounds + ' rnd');
+    return parts;
+  }
+  function renderLeagueMeta(){
+    var el = document.getElementById('drLeagueMeta');
+    if (!el || !state) return;
+    var parts = leagueMetaParts();
+    el.innerHTML = parts.map(function(p){ return '<span class="dr-lm-chip">' + p + '</span>'; }).join('');
+    el.hidden = !parts.length;
+    var canEdit = state.mode !== 'live';
+    el.classList.toggle('is-editable', canEdit);
+    el.disabled = !canEdit;
+    el.title = (canEdit ? 'Edit setup — ' : '') + parts.join(' · ');
+    el.setAttribute('aria-label', (canEdit ? 'Edit setup: ' : 'League settings: ') + parts.join(', '));
+  }
+
   function renderStatus(){
     var total = state.teams * state.rounds;
     var done = state.current > total;
     var r = Math.ceil(state.current / state.teams);
     var pickInRound = ((state.current - 1) % state.teams) + 1;
     document.getElementById('drPickPill').textContent = done ? 'Done' : ('Pick: ' + r + '.' + (pickInRound < 10 ? '0' : '') + pickInRound);
+    renderLeagueMeta();
     var oc = document.getElementById('drOnClock');
     var ocWrap = document.getElementById('drOnClockWrap');
     var ocLabel = ocWrap ? ocWrap.querySelector('.dr-onclock-label') : null;
@@ -4700,23 +4911,30 @@
     if (!full || !players.length) return null;
     var maxVal = 0; players.forEach(function(q){ var v = valOf(q); if (v > maxVal) maxVal = v; });
     if (maxVal <= 0) return null;
-    // Owning team's positional counts from this team's earlier picks.
+    // Owning team's positional + quality counts from this team's earlier picks
+    // (same progressive context gradePicks / the server use — never the viewer's).
     var owner = (state.pickOwners && state.pickOwners[pn] != null)
       ? state.pickOwners[pn] : slotOnClock(pn, state.teams, state.order);
     var counts = { QB:0, RB:0, WR:0, TE:0 };
+    var qualByPos = { QB:0, RB:0, WR:0, TE:0 };
     Object.keys(state.picks).forEach(function(k){
       var kp = parseInt(k, 10);
       if (kp >= pn || !state.picks[k]) return;
       var o2 = (state.pickOwners && state.pickOwners[kp] != null)
         ? state.pickOwners[kp] : slotOnClock(kp, state.teams, state.order);
       if (o2 !== owner) return;
-      var pos2 = (state.picks[k].position || '').toUpperCase();
+      var prev = state.picks[k];
+      var pos2 = (prev.position || '').toUpperCase();
       if (counts[pos2] != null) counts[pos2]++;
+      if (qualByPos[pos2] != null){
+        var prevFull = playersById[String(prev.id)];
+        var v = prevFull ? vorOf(prevFull) : null;
+        if (v == null || v > 0) qualByPos[pos2]++;
+      }
     });
-    var saved = state.current;
-    state.current = pn;
-    var ps = pickScore(full, maxVal, counts, { grading: true });
-    state.current = saved;
+    var ps = pickScore(full, maxVal, counts, {
+      grading: true, pickNo: pn, qualByPos: qualByPos
+    });
     pl.gps = ps;   // memoize the grade score (matches gradePicks / the server)
     return ps;
   }
@@ -4935,7 +5153,7 @@
       if (sortBy === 'ppg'){ return (ppgOf(b) || 0) - (ppgOf(a) || 0); }
       return valOf(b) - valOf(a);
     });
-    if (!pool.length){ listInto('<div class="dr-empty-note">No players match.</div>'); return; }
+    if (!pool.length){ listInto(emptyNote('No players match', 'Try another position filter or clear your search.', _DR_SEARCH_ICON)); return; }
     var nextPick = hasOwned() ? nextOwnedAfterCurrent() : null;
     var html = balanceAlert() + alertBanners();
     // K/DEF have no startup ADP so they sort to the very end and fall past the
@@ -4996,7 +5214,7 @@
   // Single source of truth so the inline ⓘ tooltips and the help popover agree.
   var _GLOSSARY = [
     { term: 'Recommendation', def: 'The live, roster-aware order for this pick. It starts with Pick Score, then accounts for whether the player fills a starter or FLEX spot, backup and overfill cost, required slots and picks remaining, positional depth, expected availability at your next pick, and recent investment at QB or TE. A major value fall can still overcome imperfect roster fit. Recommendation is shown as a rank rather than a grade because its internal utility naturally changes as the board is depleted.' },
-    { term: 'Pick Score (PS)', def: 'A 0-100 grade of how good this pick is relative to what’s still available right now — the best remaining option anchors near the top, so a strong pick reads well even late in the draft. Blends the player’s value, how far they fell vs ADP, positional tier, your roster needs, age, and projected points. Your report-card grade uses the absolute, round-weighted version, so it can differ from the board number. Kickers and defenses aren’t scored.' },
+    { term: 'Pick Score (PS)', def: 'A 0-100 grade of pick quality. On the live board and sidebar it is scaled relative to the best player still available (so a strong late pick still reads well). Made-pick chips on the report card / Deep Dive “Board PS” use the same relative scale at that historical slot. Your letter grade’s Value bar uses the absolute, round-weighted kernel score — those two numbers can differ. Kickers and defenses aren’t scored.' },
     { term: 'Value', def: 'The player’s trade value as an asset on a 0-999 scale - dynasty value for startup/rookie drafts, redraft value for redraft.' },
     { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a replacement-level starter at their position (a fixed, preseason-style baseline). VORP uses real fantasy points; VOR uses dynasty value.' },
     { term: 'ADP', def: 'Average Draft Position - the typical overall pick a player goes at in real drafts. If it’s below your current pick, they’ve fallen and may be a value.' },
@@ -5088,12 +5306,17 @@
         if (sumStarterPsCount >= 2) _sits.push({ v: Math.round(sumStarterPsTotal / sumStarterPsCount), l: 'Starter PS' });
       }
       // Projected playoff odds for this team - only once the draft is complete.
+      // Wait for the standings engine so the tile never flashes a different %.
       if (_draftComplete()){
         var _allT = gradeAllTeams(), _meT = null;
         for (var _ti = 0; _ti < _allT.length; _ti++){ if (_allT[_ti].isMe){ _meT = _allT[_ti]; break; } }
         if (_meT){
-          var _myOdds = playoffOddsSource(_allT)[_meT.slot];
-          if (_myOdds != null) _sits.push({ v: _myOdds + '%', l: 'Playoff Odds' });
+          if (playoffOddsPending(_allT)){
+            _sits.push({ v: '…', l: 'Playoff Odds' });
+          } else {
+            var _myOdds = playoffOddsSource(_allT)[_meT.slot];
+            if (_myOdds != null) _sits.push({ v: _myOdds + '%', l: 'Playoff Odds' });
+          }
         }
       }
       if (_sits.length){
@@ -5271,7 +5494,12 @@
 
     var picks = ddMyPicks();
     var withAdp = picks.filter(function(p){ return p.diff != null; });
-    var netValue = withAdp.reduce(function(s, p){ return s + p.diff; }, 0);
+    // Cap each pick's contribution so one late-round freefall doesn't dominate
+    // the "net ADP value" tile (a +40 slide in round 14 ≠ forty early-round steals).
+    var netValue = withAdp.reduce(function(s, p){
+      return s + Math.max(-12, Math.min(12, p.diff));
+    }, 0);
+    netValue = Math.round(netValue * 10) / 10;
     var nValues = withAdp.filter(function(p){ return p.diff >= 3; }).length;
     var nReaches = withAdp.filter(function(p){ return p.diff <= -5; }).length;
 
@@ -5357,7 +5585,7 @@
 
     var tiles = '';
     var tileDefs = [
-      { v: fmtAdpDelta(netValue), l: 'Net ADP value banked', cls: netValue >= 0 ? 'good' : 'bad' },
+      { v: fmtAdpDelta(netValue), l: 'Net ADP value (capped)', cls: netValue >= 0 ? 'good' : 'bad' },
       { v: nValues, l: 'Values (fell 3+ to you)', cls: 'good' },
       { v: nReaches, l: 'Reaches (early 5+)', cls: nReaches ? 'bad' : '' },
       { v: g.avgPs != null ? g.avgPs : '—', l: 'Avg pick score' }
@@ -5371,7 +5599,7 @@
       + '<div class="dd-ring" style="--pct:' + Math.max(0, Math.min(100, Math.round(g.score))) + ';--gc:' + col + '">'
       + '<b style="color:' + col + '">' + gradeLetter(g.score) + '<small>' + Math.round(g.score) + '</small></b></div>'
       + '<div class="dd-ov-txt"><h3>' + verdict.title + '</h3>'
-      + '<div class="dd-rankline">Projected <b>' + myRank + ordinalSuffix(myRank) + ' of ' + n + '</b>'
+      + '<div class="dd-rankline">Ranked <b>' + myRank + ordinalSuffix(myRank) + ' of ' + n + '</b>'
       + (arch ? ' · ' + esc(arch.label) : '') + '</div>'
       + '<div class="dd-say">' + verdict.say + '</div></div>'
       + '<div class="dd-meters">' + meters + '</div>'
@@ -5463,7 +5691,7 @@
       + '<div class="dd-tip-r">Pick <b>' + roundPickStr(p.pn) + '</b></div>'
       + (p.adp != null ? '<div class="dd-tip-r">ADP <b>' + Number(p.adp).toFixed(1) + '</b></div>' : '')
       + (p.diff != null ? '<div class="dd-tip-r">± vs ADP <b style="color:' + (p.diff >= 0 ? '#22c55e' : '#ef4444') + '">' + fmtAdpDelta(p.diff) + '</b></div>' : '')
-      + (p.ps != null ? '<div class="dd-tip-r">Pick score <b style="color:' + psColor(p.ps) + '">' + p.ps + '</b></div>' : '')
+      + (p.ps != null ? '<div class="dd-tip-r">Board PS <b style="color:' + psColor(p.ps) + '">' + p.ps + '</b> <span style="color:var(--text-muted)">(vs best avail)</span></div>' : '')
       + '<div class="dd-tip-r">Verdict <b>' + vd.label + '</b></div>';
     tip.classList.add('show');
     var tw = tip.offsetWidth, th = tip.offsetHeight;
@@ -5477,12 +5705,12 @@
   // ── Pick ledger (sortable) ───────────────────────────────────────────────────
   function ddLedgerHtml(picks){
     return '<div class="dd-card">'
-      + '<div class="dd-sec"><h4>Pick ledger</h4><p>Every selection with market delta, pick score, tier, and verdict. Click a header to sort.</p></div>'
+      + '<div class="dd-sec"><h4>Pick ledger</h4><p>Every selection with market delta, board pick score (vs best available then), tier, and verdict. Click a header to sort.</p></div>'
       + '<div class="dd-tablescroll"><table class="dd-ledger" id="drDdLedger">'
       + '<thead><tr>'
       + '<th data-k="pn" data-t="n">Pick</th><th data-k="name" data-t="s">Player</th><th data-k="pos" data-t="s">Pos</th>'
       + '<th data-k="adp" data-t="n" class="r">ADP</th><th data-k="diff" data-t="n" class="r dd-sorted">± ADP</th>'
-      + '<th data-k="ps" data-t="n" class="r">Score</th><th data-k="tier" data-t="n" class="r">Tier</th>'
+      + '<th data-k="ps" data-t="n" class="r" title="Board pick score vs best available at that slot">Board PS</th><th data-k="tier" data-t="n" class="r">Tier</th>'
       + '<th data-k="vord" data-t="s">Verdict</th>'
       + '</tr></thead><tbody id="drDdLedgerBody"></tbody></table></div></div>';
   }
@@ -5529,12 +5757,15 @@
   // ── League board: grades + playoff odds for every team ───────────────────────
   function ddLeagueHtml(field, odds, n){
     if (!field.length) return '';
+    var pending = playoffOddsPending(field);
     var rows = field.map(function(t, i){
       var col = ddGradeCol(t.grade.score);
-      var od = (odds && odds[t.slot] != null) ? odds[t.slot] : null;
-      var odBar = od != null
-        ? '<div class="dd-odds"><div class="dd-odds-track"><i style="width:' + Math.max(2, od) + '%;background:' + (od >= 60 ? '#22c55e' : od >= 35 ? '#38bdf8' : '#f59e0b') + '"></i></div><span class="num">' + od + '%</span></div>'
-        : '<span style="color:var(--text-subtle,var(--text-muted));font-size:12px">—</span>';
+      var od = (!pending && odds && odds[t.slot] != null) ? odds[t.slot] : null;
+      var odBar = pending
+        ? '<span class="dd-odds-pending">Calculating…</span>'
+        : (od != null
+          ? '<div class="dd-odds"><div class="dd-odds-track"><i style="width:' + Math.max(2, od) + '%;background:' + (od >= 60 ? '#22c55e' : od >= 35 ? '#38bdf8' : '#f59e0b') + '"></i></div><span class="num">' + od + '%</span></div>'
+          : '<span style="color:var(--text-subtle,var(--text-muted));font-size:12px">—</span>');
       return '<tr class="' + (t.isMe ? 'dd-me' : '') + '">'
         + '<td class="num" style="color:var(--text-muted)">' + (i + 1) + '</td>'
         + '<td class="dd-plname">' + esc(t.name) + (t.isMe ? ' <span class="dd-youtag">YOU</span>' : '') + '</td>'
@@ -5543,8 +5774,11 @@
         + '<td>' + odBar + '</td>'
         + '</tr>';
     }).join('');
-    var note = _draftComplete() ? 'Playoff odds from the standings simulation engine (preseason mode).'
-      : 'Live estimate — odds sharpen to the full simulation once the draft completes.';
+    var note = !_draftComplete()
+      ? 'Live estimate — odds sharpen to the full simulation once the draft completes.'
+      : (pending
+        ? 'Running the standings simulation engine…'
+        : 'Playoff odds from the standings simulation engine (preseason mode).');
     return '<div class="dd-card">'
       + '<div class="dd-sec"><h4>League board &amp; playoff odds</h4><p>' + note + '</p></div>'
       + '<div class="dd-tablescroll"><table class="dd-ledger dd-league">'
@@ -5637,11 +5871,19 @@
           + '<div class="dd-edge-sub">' + p.pos + ' · ' + roundPickStr(p.pn) + (p.adp != null ? ' · ADP ' + Number(p.adp).toFixed(0) : '') + '</div>'
           + '<div class="dd-edge-say">' + extra + '</div></div>';
       }
-      edges = '<div class="dd-edges">'
-        + edge('Biggest steal', 'win', steal, 'Fell <b>' + Math.abs(steal.diff).toFixed(1) + '</b> picks past ADP' + (steal.ps != null ? ' — a ' + steal.ps + ' pick score.' : '.'))
-        + (best && best !== steal ? edge('Best pick', 'winb', best, 'Your highest pick score at <b>' + best.ps + '</b>.') : '')
-        + edge('Biggest reach', 'bad', reach, reach.diff < 0 ? 'Taken <b>' + Math.abs(reach.diff).toFixed(1) + '</b> picks before ADP.' : 'Right around market value.')
-        + '</div>';
+      var parts = [];
+      // Only label Steal/Reach when the market delta clears the same thresholds
+      // the ledger uses — otherwise a "Fair" pick was being sold as an edge.
+      if (steal && steal.diff >= 3){
+        parts.push(edge('Biggest steal', 'win', steal, 'Fell <b>' + Math.abs(steal.diff).toFixed(1) + '</b> picks past ADP' + (steal.ps != null ? ' — a ' + steal.ps + ' pick score.' : '.')));
+      }
+      if (best && (!steal || best !== steal || steal.diff < 3)){
+        parts.push(edge('Best pick', 'winb', best, 'Your highest pick score at <b>' + best.ps + '</b>.'));
+      }
+      if (reach && reach.diff <= -5){
+        parts.push(edge('Biggest reach', 'bad', reach, 'Taken <b>' + Math.abs(reach.diff).toFixed(1) + '</b> picks before ADP.'));
+      }
+      if (parts.length) edges = '<div class="dd-edges">' + parts.join('') + '</div>';
     }
     // Risk flags
     var flags = [];
@@ -5658,11 +5900,20 @@
           ds: byeMap[worst].join(', ') + ' all sit on the same week. Plan a stopgap before then.' });
       }
     }
-    // Thin position: rostered count at or below the number of starter slots.
+    // Thin position: rostered count at or below starter demand, including FLEX/SF
+    // shares so a 2-RB + FLEX roster with only 2 RBs still flags as thin.
     var counts = { QB:0, RB:0, WR:0, TE:0 };
     picks.forEach(function(p){ if (counts[p.pos] != null) counts[p.pos]++; });
+    var rs = (state && state.roster) || defaultRoster();
+    var flex = rs.FLEX || 0, sf = rs.SF || 0;
+    var starterNeed = {
+      QB: (rs.QB || 0) + sf,
+      RB: (rs.RB || 0) + Math.ceil(flex * 0.5),
+      WR: (rs.WR || 0) + Math.floor(flex * 0.5),
+      TE: (rs.TE || 0)
+    };
     ['RB','WR','TE','QB'].forEach(function(pos){
-      var need = (state.roster && state.roster[pos]) || 0;
+      var need = starterNeed[pos] || 0;
       if (need > 0 && counts[pos] <= need){
         flags.push({ cls: 'warn', ttl: 'Thin at ' + pos + ' — ' + counts[pos] + ' rostered',
           ds: 'You have no margin behind your ' + pos + ' starters. Prioritize depth on the waiver wire.' });
@@ -5946,7 +6197,7 @@
       state = null;
       showSetup();
     }
-    if (isLive){ doReset(); } else { drConfirm('Reset the draft board?', 'Reset', doReset); }
+    if (isLive){ doReset(); } else { drConfirm('Reset the draft board? This wipes every pick and returns to setup.', 'Reset', doReset); }
   }
 
   // ── Share a draft image ─────────────────────────────────────────────────────
@@ -6252,7 +6503,25 @@
   });
   document.getElementById('drUndo').addEventListener('click', undo);
   document.getElementById('drReset').addEventListener('click', resetDraft);
-  document.getElementById('drEdit').addEventListener('click', showSetup);
+  document.getElementById('drEdit').addEventListener('click', openEditSetup);
+  document.getElementById('drEditApply').addEventListener('click', applyEditedSetup);
+  document.getElementById('drEditCancel').addEventListener('click', closeEditSetup);
+  document.getElementById('drEditClose').addEventListener('click', closeEditSetup);
+  document.getElementById('drEditReset').addEventListener('click', resetDraft);
+  document.getElementById('drLeagueMeta').addEventListener('click', function(){
+    if (this.disabled || (state && state.mode === 'live')) return;
+    openEditSetup();
+  });
+  document.getElementById('drSetup').addEventListener('click', function(e){
+    if (this.classList.contains('dr-setup-is-modal') && e.target === this) closeEditSetup();
+  });
+  document.addEventListener('keydown', function(e){
+    if (e.key !== 'Escape') return;
+    var confirm = document.getElementById('drModal');
+    if (confirm && confirm.style.display === 'flex') return;
+    var setup = document.getElementById('drSetup');
+    if (setup && setup.classList.contains('dr-setup-is-modal')) closeEditSetup();
+  });
   document.getElementById('drPractice').addEventListener('click', startPracticeMock);
   // Header Settings dropdown (gear). Opens below the gear; closes on an outside
   // tap or the gear again. The outside-close listener is attached on the NEXT
@@ -6515,7 +6784,7 @@
     this.value = rounds;
     if (!_setupRoster) _setupRoster = defaultRoster();
     _rosterMode = 'custom'; _rosterPreset = null;
-    _setupRoster.BN = Math.max(0, rounds - _totalStarterSlots(_setupRoster));
+    _setupRoster.BN = Math.max(0, rounds - _totalStarterSlots(_setupRoster) - _stashSlots(_setupRoster));
     renderSetupRoster();
   });
   document.getElementById('drRosterSection').addEventListener('click', function(e){
@@ -6537,7 +6806,7 @@
     }
     // Keep rounds = starters + bench in sync for every slot change.
     // Bench change -> update rounds. Starter change -> update rounds (bench stays).
-    var _newRounds = Math.max(1, Math.min(40, _totalStarterSlots(_setupRoster) + (_setupRoster.BN || 0)));
+    var _newRounds = Math.max(1, Math.min(40, _totalStarterSlots(_setupRoster) + (_setupRoster.BN || 0) + _stashSlots(_setupRoster)));
     document.getElementById('drRounds').value = _newRounds;
     renderSetupCapital();
     renderSetupRoster();

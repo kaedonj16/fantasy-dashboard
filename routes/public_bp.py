@@ -11,9 +11,13 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from flask import Blueprint, send_file, request
+from flask import Blueprint, Response, send_file, request
 
 public_bp = Blueprint("public", __name__)
+
+# Public support inbox (also used as the VAPID contact identity elsewhere).
+# Override with CONTACT_EMAIL in the environment if the mailbox changes.
+_CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "admin@brfantasy.com").strip()
 
 
 def _seo_origin() -> str:
@@ -92,10 +96,20 @@ def service_worker():
 
 @public_bp.route("/ads.txt")
 def ads_txt():
+    """Authorized digital sellers file for AdSense.
+
+    Served as a tiny in-memory Response (not send_file) with a long public
+    Cache-Control so Cloudflare/CDN can keep serving it even when the origin
+    is slow — ads.txt timeouts are a common AdSense crawl failure.
+    """
     ads_file = Path(__file__).resolve().parents[1] / "ads.txt"
     if ads_file.exists():
-        return send_file(ads_file, mimetype="text/plain")
-    return "# ads.txt - Add your ad network credentials here", 200, {"Content-Type": "text/plain"}
+        body = ads_file.read_text(encoding="utf-8")
+    else:
+        body = "# ads.txt - Add your ad network credentials here\n"
+    resp = Response(body, mimetype="text/plain; charset=utf-8")
+    resp.headers["Cache-Control"] = "public, max-age=86400"
+    return resp
 
 
 # ── Robots.txt ────────────────────────────────────────────────────────────────
@@ -103,7 +117,15 @@ def ads_txt():
 @public_bp.route("/robots.txt")
 def robots_txt():
     base = _seo_origin()
+    # Explicitly allow AdSense / AdsBot crawlers so Cloudflare-managed blocks
+    # or over-broad Disallow rules never starve ad inventory evaluation.
     body = (
+        "User-agent: Mediapartners-Google\n"
+        "Allow: /\n"
+        "\n"
+        "User-agent: AdsBot-Google\n"
+        "Allow: /\n"
+        "\n"
         "User-agent: *\n"
         "Allow: /\n"
         "Disallow: /api/\n"
@@ -112,7 +134,9 @@ def robots_txt():
         "\n"
         f"Sitemap: {base}/sitemap.xml\n"
     )
-    return body, 200, {"Content-Type": "text/plain; charset=utf-8"}
+    resp = Response(body, mimetype="text/plain; charset=utf-8")
+    resp.headers["Cache-Control"] = "public, max-age=3600"
+    return resp
 
 
 # ── Sitemap.xml ───────────────────────────────────────────────────────────────
@@ -193,7 +217,7 @@ def privacy_page(platform: Optional[str] = None, season: Optional[int] = None,
           <div class="static-card-page">
 
             <h1 class="static-hero-title">Privacy Policy</h1>
-            <p class="static-page-meta">Last updated: August 14, 2026</p>
+            <p class="static-page-meta">Last updated: August 25, 2026</p>
             <div class="static-section">
               <div class="static-section-title">What We Collect</div>
               <p>
@@ -240,12 +264,18 @@ def privacy_page(platform: Optional[str] = None, season: Optional[int] = None,
                 may use cookies, web beacons, IP addresses, or similar technologies to deliver,
                 limit, personalize, and measure ads. Google's use of advertising cookies may enable
                 it and its partners to serve ads based on your visits to this site and other sites.
+                Ad units are labeled &ldquo;Advertisement&rdquo; so they are distinguishable from
+                editorial content and navigation.
               </p>
               <p style="margin-top:8px;">
                 You can manage personalized advertising in
-                <a href="https://myadcenter.google.com/" target="_blank" rel="noopener noreferrer">Google's My Ad Center</a>
+                <a href="https://myadcenter.google.com/" target="_blank" rel="noopener noreferrer">Google's My Ad Center</a>,
+                opt out of personalized ads at
+                <a href="https://adssettings.google.com/" target="_blank" rel="noopener noreferrer">adssettings.google.com</a>,
                 and learn how Google uses data on partner sites in
                 <a href="https://policies.google.com/technologies/partner-sites" target="_blank" rel="noopener noreferrer">Google's partner-sites policy</a>.
+                Visitors in the EEA, UK, or Switzerland are shown a Google-certified consent
+                message (Funding Choices) before non-essential advertising cookies are used.
               </p>
             </div>
 
@@ -269,6 +299,16 @@ def privacy_page(platform: Optional[str] = None, season: Optional[int] = None,
                 policies. We retain account and transaction records while needed to provide the
                 service and meet legal obligations; cached league data and logs are retained only as
                 long as reasonably needed for performance, security, and analytics.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Children's Privacy</div>
+              <p>
+                BR Fantasy is intended for adults who manage fantasy football leagues. It is not
+                directed at children under 13, and we do not knowingly collect personal information
+                from children under 13. If you believe a child has provided information to us,
+                contact us and we will delete it.
               </p>
             </div>
 
@@ -326,7 +366,7 @@ def support_page(platform: Optional[str] = None, season: Optional[int] = None,
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  💸 Make a donation
+                  Make a donation
                 </a>
               </p>
             </div>
@@ -514,7 +554,8 @@ def faq_page(platform: Optional[str] = None, season: Optional[int] = None,
 @public_bp.route("/<platform>/<int:season>/<league_id>/contact")
 def contact_page(platform: Optional[str] = None, season: Optional[int] = None,
                  league_id: Optional[str] = None):
-    body = """
+    email = _CONTACT_EMAIL
+    body = f"""
         <div class="static-page">
           <div class="static-card-page">
 
@@ -522,9 +563,16 @@ def contact_page(platform: Optional[str] = None, season: Optional[int] = None,
 
             <div class="static-section">
               <div class="static-section-title">Reach us</div>
-              <p>The fastest way to get a response is through Discord. You can also follow along on YouTube and X for site updates and dynasty content.</p>
+              <p>
+                Email is the best way to reach us for privacy requests, corrections, and account
+                issues. Discord is fastest for product questions and feedback. You can also follow
+                along on YouTube and X for site updates and dynasty content.
+              </p>
 
               <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:12px;">
+                <a class="contact-social-pill" href="mailto:{email}">
+                  Email {email}
+                </a>
                 <a class="contact-social-pill" href="https://discord.gg/7aZrs7qfur" target="_blank" rel="noopener">
                   <img src="/static/images/discord-brands-solid.png" style="width:16px;height:16px;" alt="">
                   Join Discord
@@ -723,6 +771,7 @@ def terms_page(platform: Optional[str] = None, season: Optional[int] = None,
           <div class="static-card-page">
 
             <h1 class="static-hero-title">Terms of Service</h1>
+            <p class="static-page-meta">Last updated: August 25, 2026</p>
 
             <div class="static-section">
               <div class="static-section-title">Acceptance of Terms</div>
@@ -757,6 +806,17 @@ def terms_page(platform: Optional[str] = None, season: Optional[int] = None,
                 All original code, design, and content on BR Fantasy are the property of
                 their respective creators. Sleeper&reg; is a registered trademark of
                 Sleeper Inc. and is not affiliated with BR Fantasy.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Advertising</div>
+              <p>
+                Free pages may display third-party advertisements labeled
+                &ldquo;Advertisement.&rdquo; Ads are provided by Google AdSense and its partners
+                under their own terms. Premium subscriptions remove ads for covered accounts.
+                Do not click ads except to visit an advertiser you are genuinely interested in;
+                we never ask users to click ads or offer incentives for doing so.
               </p>
             </div>
 

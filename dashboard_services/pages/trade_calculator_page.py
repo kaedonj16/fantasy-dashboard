@@ -510,9 +510,9 @@ def build_trade_calculator_body(
             .pi-tooltip {{
               display:none;position:absolute;right:0;top:calc(100% + 6px);
               width:260px;z-index:200;
-              background:var(--card-bg,#fff);border:1px solid var(--border-color);
-              border-radius:12px;padding:12px 14px;
-              box-shadow:0 8px 24px rgba(0,0,0,.12);
+              background:var(--tooltip-bg,var(--card-bg,#fff));border:1px solid var(--tooltip-border,var(--border-color));
+              border-radius:var(--tooltip-radius,10px);padding:12px 14px;
+              box-shadow:var(--tooltip-shadow,0 8px 24px rgba(0,0,0,.12));
             }}
             /* Transparent bridge across the gap so the hover doesn't drop when
                moving the mouse from the icon down onto the tooltip. */
@@ -587,7 +587,7 @@ def build_trade_calculator_body(
             .pi-locked-sub   {{ font-size:12px;color:var(--text-muted);max-width:260px;line-height:1.5;margin-bottom:12px; }}
             .pi-locked-btn {{
               padding:7px 18px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:600;
-              background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;
+              background:linear-gradient(135deg,#122d4b,#2563eb);color:#fff;
             }}
 
             /* ── Message / empty states ──────────────────────────── */
@@ -647,7 +647,7 @@ def build_trade_calculator_body(
             .pi-chip-row {{ display:flex;flex-wrap:wrap;gap:5px;margin-top:7px; }}
             .pi-chip {{
               display:inline-flex;align-items:center;gap:4px;
-              padding:3px 8px;border-radius:12px;font-size:10.5px;font-weight:700;
+              padding:3px 8px;border-radius:8px;font-size:10.5px;font-weight:700;
             }}
             .pi-chip i {{ font-size:9.5px; }}
 
@@ -932,7 +932,7 @@ def build_trade_calculator_body(
               </div>
               <button onclick="if(window.showPaywall)showPaywall('trade-suggestions')"
                 style="font-size:13px;font-weight:700;padding:10px 22px;border:none;border-radius:10px;
-                       background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;cursor:pointer;">
+                       background:linear-gradient(135deg,#122d4b,#2563eb);color:#fff;cursor:pointer;">
                 Upgrade to PRO &rarr;
               </button>
             </div>
@@ -972,7 +972,11 @@ def build_trade_calculator_body(
                     <span class="otc-sugg-section-title">Trade Targets</span>
                   </div>
                   <div id="otcSuggTargetsBody">
-                    <div class="otc-movers-empty">Select your team above to see targets.</div>
+                    <div class="empty-state is-compact">
+                      <span class="empty-state-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.7-4.7"/></svg></span>
+                      <p class="empty-state-title">Select your team</p>
+                      <p class="empty-state-msg">Choose a roster above to see trade targets.</p>
+                    </div>
                   </div>
                   <!-- Excluded players bar -->
                   <div id="otcExcludedBar" style="display:none;border-top:1px solid var(--border);">
@@ -1007,7 +1011,11 @@ def build_trade_calculator_body(
                 </div>
               </div>
               <div id="otcStrategyImpact">
-                <div class="otc-movers-empty">Pick a strategy above.</div>
+                <div class="empty-state is-compact">
+                  <span class="empty-state-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16"/><path d="M7 16V9"/><path d="M12 16V5"/><path d="M17 16v-6"/></svg></span>
+                  <p class="empty-state-title">Pick a strategy</p>
+                  <p class="empty-state-msg">Choose Contending, Rebuilding, Consolidate, or Distribute above.</p>
+                </div>
               </div>
 
               <!-- Trade cards -->
@@ -1039,7 +1047,7 @@ def build_trade_calculator_body(
                 </div>
               </div>
               <div class="otc-mini-sub" id="moversSub">Biggest 7-day changes in BR value</div>
-              <div class="otc-day-filters" style="display: flex; gap: 6px; margin-top: 8px; padding: 0 12px;">
+              <div class="otc-day-filters">
                 <button class="otc-day-filter active" data-days="7" onclick="changeMoversDays(7)">7d</button>
                 <button class="otc-day-filter" data-days="14" onclick="changeMoversDays(14)">14d</button>
                 <button class="otc-day-filter" data-days="30" onclick="changeMoversDays(30)">30d</button>
@@ -1050,14 +1058,14 @@ def build_trade_calculator_body(
               <div class="otc-mini-section">
                 <a href="/top-movers" class="otc-mini-section-title otc-mini-section-title-link">Top Risers <span class="otc-title-arrow" aria-hidden="true">&rarr;</span></a>
                 <div id="otcRisersList" class="otc-mini-list">
-                  <div class="otc-movers-empty">Loading movers...</div>
+                  <div class="loading-state-msg"><div class="loading-spinner" aria-hidden="true"></div><span>Loading movers…</span></div>
                 </div>
               </div>
 
               <div class="otc-mini-section">
                 <div class="otc-mini-section-title">Top Fallers</div>
                 <div id="otcFallersList" class="otc-mini-list">
-                  <div class="otc-movers-empty">Loading movers...</div>
+                  <div class="loading-state-msg"><div class="loading-spinner" aria-hidden="true"></div><span>Loading movers…</span></div>
                 </div>
               </div>
             </div>
@@ -1066,7 +1074,7 @@ def build_trade_calculator_body(
               <div class="otc-mini-section">
                 {breakouts_header_html}
                 <div id="otcBreakoutsList" class="otc-mini-list">
-                  <div class="otc-movers-empty">Loading breakouts...</div>
+                  <div class="loading-state-msg"><div class="loading-spinner" aria-hidden="true"></div><span>Loading breakouts…</span></div>
                 </div>
               </div>
             </div>
@@ -1074,7 +1082,11 @@ def build_trade_calculator_body(
             <div id="targetsTabContent" class="otc-tab-content">
               <div class="otc-mini-section">
                 <div id="tradeTargetsBody" class="otc-mini-list" style="padding:8px 12px;display:flex;flex-direction:column;gap:8px;">
-                  <div class="otc-movers-empty">Set your team to see targets.</div>
+                  <div class="empty-state is-compact">
+                    <span class="empty-state-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.7-4.7"/></svg></span>
+                    <p class="empty-state-title">Set your team</p>
+                    <p class="empty-state-msg">Pick a roster to see trade targets.</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1092,14 +1104,14 @@ def build_trade_calculator_body(
               </div>
             </div>
 
-            <div class="otc-filter-row" id="posFilterRow">
-              <button class="otc-filter-chip pos-filter is-active" data-pos="ALL">All</button>
-              <button class="otc-filter-chip pos-filter" data-pos="QB">QB</button>
-              <button class="otc-filter-chip pos-filter" data-pos="RB">RB</button>
-              <button class="otc-filter-chip pos-filter" data-pos="WR">WR</button>
-              <button class="otc-filter-chip pos-filter" data-pos="TE">TE</button>
-              <button class="otc-filter-chip pos-filter" data-pos="PICK">Picks</button>
-              <button class="otc-filter-chip pos-filter" data-pos="ROOKIE">Rookies</button>
+            <div class="otc-day-filters otc-filter-row" id="posFilterRow">
+              <button class="otc-day-filter otc-filter-chip pos-filter is-active" data-pos="ALL">All</button>
+              <button class="otc-day-filter otc-filter-chip pos-filter" data-pos="QB">QB</button>
+              <button class="otc-day-filter otc-filter-chip pos-filter" data-pos="RB">RB</button>
+              <button class="otc-day-filter otc-filter-chip pos-filter" data-pos="WR">WR</button>
+              <button class="otc-day-filter otc-filter-chip pos-filter" data-pos="TE">TE</button>
+              <button class="otc-day-filter otc-filter-chip pos-filter" data-pos="PICK">Picks</button>
+              <button class="otc-day-filter otc-filter-chip pos-filter" data-pos="ROOKIE">Rookies</button>
             </div>
 
             <div id="allPlayersList" class="otc-values-list">

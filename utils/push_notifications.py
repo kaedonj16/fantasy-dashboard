@@ -1216,7 +1216,7 @@ def notify_injury_alert():
         if datetime.now(tz=timezone.utc).weekday() not in (0, 3, 4, 5, 6):
             return
 
-        INJURY_STATUSES = {"Out", "Doubtful", "IR", "PUP", "Sus", "NA"}
+        from utils.lineup_issues import SERIOUS_INJURY_STATUSES
 
         state_key = f"injury_notified_{season}_{week}"
         with get_conn() as conn:
@@ -1248,7 +1248,7 @@ def notify_injury_alert():
                             continue
                         player = nfl_players.get(pid, {})
                         inj    = player.get("injury_status") or ""
-                        if inj not in INJURY_STATUSES:
+                        if str(inj).upper() not in SERIOUS_INJURY_STATUSES:
                             continue
                         name = player.get("full_name") or player.get("last_name") or "A starter"
                         pos  = player.get("position") or ""
