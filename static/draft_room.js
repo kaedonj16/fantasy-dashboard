@@ -745,7 +745,7 @@
       rst.className = isLive ? 'dr-btn dr-btn-ghost' : 'dr-btn dr-btn-ghost dr-btn-danger';
     }
     document.getElementById('drBoard').innerHTML = '';
-    document.getElementById('drBaList').innerHTML = '<div class="dr-loading">Loading players…</div>';
+    document.getElementById('drBaList').innerHTML = loadingNote('Loading players…');
     document.getElementById('drMain').style.display = '';
   }
   function showSetup(){
@@ -908,14 +908,12 @@
         console.error('[draft-room] loadPlayers failed', err);
         var host = document.getElementById('drBaList');
         if (!host) return;
-        host.innerHTML = '';
-        var box = document.createElement('div'); box.className = 'dr-loading';
-        var msg = document.createElement('div');
-        msg.textContent = 'Could not load players: ' + ((err && err.message) || 'unknown error');
+        host.innerHTML = emptyNote('Couldn’t load players', ((err && err.message) || 'Something went wrong. Tap Retry to try again.'));
         var retry = document.createElement('button'); retry.type = 'button';
         retry.className = 'dr-btn dr-btn-sm'; retry.textContent = 'Retry';
         retry.style.marginTop = '10px'; retry.addEventListener('click', loadPlayers);
-        box.appendChild(msg); box.appendChild(retry); host.appendChild(box);
+        var note = host.querySelector('.dr-empty-note');
+        if (note) note.appendChild(retry);
       });
   }
 
@@ -2246,6 +2244,22 @@
   }
   function listInto(html){ document.getElementById('drBaList').innerHTML = html; }
 
+  // Compact empty copy for the draft side panel (queue / best / needs / league).
+  // Draft Room does not load app.js, so this mirrors the shared empty-state look.
+  var _DR_EMPTY_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5 5.2 4.6A2 2 0 0 1 7 3.6h10a2 2 0 0 1 1.8 1L21 8.5"/><path d="M3 8.5h5l1.2 2.2h5.6L16 8.5h5v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>';
+  var _DR_SEARCH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.7-4.7"/></svg>';
+  function emptyNote(title, message, iconSvg){
+    return '<div class="dr-empty-note">'
+      + '<span class="dr-empty-note-icon" aria-hidden="true">' + (iconSvg || _DR_EMPTY_ICON) + '</span>'
+      + (title ? '<p class="dr-empty-note-title">' + title + '</p>' : '')
+      + (message ? '<p class="dr-empty-note-msg">' + message + '</p>' : '')
+      + '</div>';
+  }
+  function loadingNote(message){
+    return '<div class="dr-loading-msg"><div class="loading-spinner" aria-hidden="true"></div><span>'
+      + (message || 'Loading…') + '</span></div>';
+  }
+
   // ── Tiers + cliffs ──────────────────────────────────────────────────────────
   // Mirrors assign_tier() in value_translation.py: maps a 0-100 prospect grade
   // to its rookie-class tier (1 = elite). Fallback when prospect_tier is absent.
@@ -3144,7 +3158,7 @@
   function renderQueue(){
     var q = (state.queue || []).map(function(id){ return playersById[String(id)]; })
       .filter(function(p){ return p && !drafted[String(p.id)]; });
-    if (!q.length){ listInto('<div class="dr-empty-note">Your queue is empty. Tap the ☆ on any player to add a target.</div>'); return; }
+    if (!q.length){ listInto(emptyNote('Queue is empty', 'Tap the ★ on any player to add a target.')); return; }
     // Survival odds on every queued target: the whole point of a queue is
     // deciding who can wait until your next pick, so show the number.
     var nextPick = nextOwnedAfterCurrent();
@@ -3256,10 +3270,10 @@
   function alertBanners(){ return runBanner() + cliffBanner(); }
 
   function renderRec(){
-    if (!hasOwned()){ listInto('<div class="dr-empty-note">Set your pick slot to get personalized recommendations.</div>'); return; }
+    if (!hasOwned()){ listInto(emptyNote('Set your pick slot', 'Choose your draft slot to get personalized recommendations.')); return; }
     var counts = myPosCounts();
     var pool = availablePool().slice();
-    if (!pool.length){ listInto('<div class="dr-empty-note">No players available.</div>'); return; }
+    if (!pool.length){ listInto(emptyNote('No players available', 'Everyone matching this filter has already been drafted.', _DR_SEARCH_ICON)); return; }
     var maxVal = 0; pool.forEach(function(p){ var v = valOf(p); if (v > maxVal) maxVal = v; });
     pool.forEach(function(p){ p._ps = pickScore(p, maxVal, counts); });
     prepareNextPickValues(pool);
@@ -3883,7 +3897,7 @@
   }
 
   function renderNeeds(){
-    if (!hasOwned()){ listInto('<div class="dr-empty-note">Set your pick slot to see your team build.</div>'); return; }
+    if (!hasOwned()){ listInto(emptyNote('Set your pick slot', 'Choose your draft slot to see your team build.')); return; }
     var mine = myPicksList().slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
     var html = '';
     var g = gradeTeam();
@@ -4070,11 +4084,11 @@
   function renderLeague(){
     var allTeams = gradeAllTeams();
     if (!allTeams.length){
-      listInto('<div class="dr-empty-note">No picks yet - grades will appear as teams draft.</div>');
+      listInto(emptyNote('No picks yet', 'Grades will appear as teams draft.'));
       return;
     }
     if (allTeams.length < 2){
-      listInto('<div class="dr-empty-note">Grades appear once at least 2 teams have drafted.</div>');
+      listInto(emptyNote('Waiting on more teams', 'Grades appear once at least 2 teams have drafted.'));
       return;
     }
     var _rc = ['gold','silver','bronze'];
@@ -5004,7 +5018,7 @@
       if (sortBy === 'ppg'){ return (ppgOf(b) || 0) - (ppgOf(a) || 0); }
       return valOf(b) - valOf(a);
     });
-    if (!pool.length){ listInto('<div class="dr-empty-note">No players match.</div>'); return; }
+    if (!pool.length){ listInto(emptyNote('No players match', 'Try another position filter or clear your search.', _DR_SEARCH_ICON)); return; }
     var nextPick = hasOwned() ? nextOwnedAfterCurrent() : null;
     var html = balanceAlert() + alertBanners();
     // K/DEF have no startup ADP so they sort to the very end and fall past the

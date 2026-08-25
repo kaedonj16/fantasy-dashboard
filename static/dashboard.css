@@ -3589,19 +3589,26 @@ thead th {
     text-align: center;
     gap: 8px;
     padding: 34px 20px;
+    animation: brEmptyIn .28s var(--ease-out, ease-out) both;
 }
 
 .empty-state-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
     font-size: 28px;
     line-height: 1;
-    margin-bottom: 2px;
-    color: var(--text-subtle);
-    opacity: 0.6;
+    margin-bottom: 4px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+    color: var(--text-muted);
 }
 
 .empty-state-icon svg {
-    width: 36px;
-    height: 36px;
+    width: 24px;
+    height: 24px;
     display: block;
 }
 
@@ -3650,7 +3657,7 @@ thead th {
    Rendered by window.brErrorState / window.brEmptyState in app.js. */
 .empty-state-error .empty-state-icon {
     color: var(--loss);
-    opacity: .85;
+    background: color-mix(in srgb, var(--loss) 12%, transparent);
 }
 
 .empty-state-retry {
@@ -3688,11 +3695,96 @@ thead th {
 
 .empty-state.is-compact .empty-state-icon {
     font-size: 22px;
+    width: 40px;
+    height: 40px;
 }
 
 .empty-state.is-compact .empty-state-icon svg {
-    width: 26px;
-    height: 26px;
+    width: 22px;
+    height: 22px;
+}
+
+@keyframes brEmptyIn {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .empty-state {
+        animation: none;
+    }
+}
+
+/* Shared loading placeholder — skeleton rows or a compact spinner message. */
+.loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 16px 12px;
+}
+
+.loading-state.is-compact {
+    padding: 10px 8px;
+    gap: 8px;
+}
+
+.loading-state-msg {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 18px 12px;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.loading-state-msg .loading-spinner {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    flex-shrink: 0;
+}
+
+@media (max-width: 600px) {
+    .empty-state {
+        padding: 24px 14px;
+        gap: 6px;
+    }
+
+    .empty-state.is-compact {
+        padding: 14px 10px;
+    }
+
+    .empty-state-icon {
+        width: 40px;
+        height: 40px;
+    }
+
+    .empty-state-icon svg {
+        width: 22px;
+        height: 22px;
+    }
+
+    .empty-state-title {
+        font-size: 13px;
+    }
+
+    .empty-state-msg,
+    .empty-state-sub {
+        font-size: 12px;
+    }
+
+    .loading-state {
+        padding: 12px 8px;
+        gap: 8px;
+    }
 }
 
 /* ============================================
@@ -4711,13 +4803,26 @@ strong + .player-badge,
 }
 
 .otc-movers-empty {
-    padding: 8px 0;
+    padding: 14px 8px;
     font-size: 12px;
-    color: #8c98aa;
+    color: var(--text-muted);
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-height: 40px;
+    gap: 6px;
+    min-height: 48px;
+    text-align: center;
+    line-height: 1.45;
+}
+
+/* When movers panels host the shared empty-state helper, drop extra chrome. */
+.otc-movers-list .empty-state,
+#otcRisersList .empty-state,
+#otcFallersList .empty-state,
+#otcSuggTargets .empty-state,
+#otcStrategyImpact .empty-state {
+    padding: 16px 8px;
 }
 
 .otc-movers-panel {
@@ -7320,9 +7425,18 @@ select:focus {
     padding: 6px;
 }
 
+/* Align legacy history empties with the shared empty look. */
 .history-empty {
-    color: var(--muted);
-    padding: 8px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 6px;
+    padding: 28px 16px;
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.45;
 }
 
 .history-loading-state {
@@ -16920,6 +17034,33 @@ img, svg, canvas {
 
     .pr-value {
         font-size: 12px;
+    }
+
+    /* Denser list chrome on phones — more rows, less chrome. */
+    .pr-player-row {
+        padding: 7px 8px;
+    }
+
+    #prControls {
+        gap: 8px !important;
+    }
+
+    #prControls .pr-pos-btn {
+        padding: 5px 8px;
+        font-size: 11px;
+    }
+
+    .otc-movers-panel {
+        padding: 10px 10px;
+    }
+
+    .otc-mini-row {
+        padding-top: 6px;
+        padding-bottom: 6px;
+    }
+
+    .br-page-brand {
+        margin-bottom: 2px;
     }
 }
 

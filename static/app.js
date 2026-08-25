@@ -1178,6 +1178,7 @@ var BR_STATE_ICONS = {
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.7-4.7"/></svg>',
   error:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 4.3 2.5 18a2 2 0 0 0 1.7 3h15.6a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4.5"/><circle cx="12" cy="17" r=".9" fill="currentColor" stroke="none"/></svg>',
   lock:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>',
+  chart:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16"/><path d="M7 16V9"/><path d="M12 16V5"/><path d="M17 16v-6"/></svg>',
   retry:  '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.6 8a5.6 5.6 0 1 1-1.7-4"/><path d="M13.9 2.4V5.2h-2.8"/></svg>'
 };
 function _brStateEsc(s) { return escapeHtml(s); }
@@ -1231,6 +1232,42 @@ window.brErrorState = function (container, message, retry, opts) {
     retryLabel: opts.retryLabel,
     compact: opts.compact
   });
+};
+
+/**
+ * Shared loading placeholder. Prefer skeleton rows when the eventual content
+ * is a list; pass `{ spinner: true, message: '…' }` for a compact spinner line.
+ *   window.brLoadingState(el, { rows: 4, compact: true })
+ *   window.brLoadingState(el, { spinner: true, message: 'Loading targets…' })
+ */
+window.brLoadingState = function (container, opts) {
+  var el = (typeof container === 'string') ? document.getElementById(container) : container;
+  if (!el) return;
+  opts = opts || {};
+  if (opts.spinner) {
+    el.innerHTML =
+      '<div class="loading-state-msg">' +
+        '<div class="loading-spinner" aria-hidden="true"></div>' +
+        '<span>' + _brStateEsc(opts.message || 'Loading…') + '</span>' +
+      '</div>';
+    return el;
+  }
+  var rows = Math.max(1, Math.min(opts.rows || 4, 8));
+  var html = '<div class="loading-state' + (opts.compact ? ' is-compact' : '') + '" role="status" aria-label="' + _brStateEsc(opts.message || 'Loading') + '"><div class="sk-list">';
+  for (var i = 0; i < rows; i++) {
+    html +=
+      '<div class="sk-card-row">' +
+        '<div class="skeleton sk-av"></div>' +
+        '<div class="sk-lines">' +
+          '<div class="skeleton skeleton-line w-60"></div>' +
+          '<div class="skeleton skeleton-line w-40"></div>' +
+        '</div>' +
+        '<div class="skeleton sk-chip"></div>' +
+      '</div>';
+  }
+  html += '</div></div>';
+  el.innerHTML = html;
+  return el;
 };
 
 /**
@@ -4119,13 +4156,13 @@ window.initTradePage = function initTradePage(root = document) {
     const fallers = Array.isArray(data?.fallers) ? data.fallers : [];
 
     if (!risers.length) {
-      risersEl.innerHTML = '<div class="otc-movers-empty">No risers yet.</div>';
+      window.brEmptyState(risersEl, { icon: 'chart', title: 'No risers yet', message: 'Value gains will show up here once the market moves.', compact: true });
     } else {
       risers.forEach(p => risersEl.appendChild(buildMoverRow(p, "up")));
     }
 
     if (!fallers.length) {
-      fallersEl.innerHTML = '<div class="otc-movers-empty">No fallers yet.</div>';
+      window.brEmptyState(fallersEl, { icon: 'chart', title: 'No fallers yet', message: 'Value drops will show up here once the market moves.', compact: true });
     } else {
       fallers.forEach(p => fallersEl.appendChild(buildMoverRow(p, "down")));
     }
@@ -4221,8 +4258,8 @@ window.initTradePage = function initTradePage(root = document) {
       }
     } catch (err) {
       console.error("[trade] movers error:", err);
-      if (risersEl) risersEl.innerHTML = '<div class="otc-movers-empty">Unable to load risers.</div>';
-      if (fallersEl) fallersEl.innerHTML = '<div class="otc-movers-empty">Unable to load fallers.</div>';
+      if (risersEl) window.brErrorState(risersEl, 'Unable to load risers.', () => loadTopMovers(true), { compact: true, title: 'Couldn’t load' });
+      if (fallersEl) window.brErrorState(fallersEl, 'Unable to load fallers.', () => loadTopMovers(true), { compact: true, title: 'Couldn’t load' });
       if (moversPanel) {
         moversPanel.classList.remove("otc-movers-loading");
       }
@@ -4261,14 +4298,12 @@ window.initTradePage = function initTradePage(root = document) {
 
       // No additional filtering - show the same results as the main breakouts page
       if (!candidates || candidates.length === 0) {
-        breakoutsEl.innerHTML = `
-          <div class="otc-movers-empty" style="padding: 16px; text-align: center;">
-            <div style="font-size: 13px; color: #64748b; line-height: 1.5;">
-              No breakout candidates available yet.<br>
-              <span style="font-size: 11px;">Top 5 breakout candidates will appear here once offseason roster changes are tracked.</span>
-            </div>
-          </div>
-        `;
+        window.brEmptyState(breakoutsEl, {
+          icon: 'chart',
+          title: 'No breakouts yet',
+          message: 'Top breakout candidates will appear here once offseason roster changes are tracked.',
+          compact: true
+        });
         if (moversPanel) moversPanel.classList.remove("otc-movers-loading");
         return;
       }
@@ -4331,14 +4366,7 @@ window.initTradePage = function initTradePage(root = document) {
       }
     } catch (err) {
       console.error("[trade] breakouts error:", err);
-      breakoutsEl.innerHTML = `
-        <div class="otc-movers-empty" style="padding: 16px; text-align: center;">
-          <div style="font-size: 13px; color: #ef4444; line-height: 1.5;">
-            Unable to load breakout candidates.<br>
-            <span style="font-size: 11px; color: #64748b;">Please try refreshing the page.</span>
-          </div>
-        </div>
-      `;
+      window.brErrorState(breakoutsEl, 'Unable to load breakout candidates.', () => loadBreakouts(), { compact: true });
       if (moversPanel) {
         moversPanel.classList.remove("otc-movers-loading");
       }
@@ -5214,7 +5242,7 @@ window.initTradePage = function initTradePage(root = document) {
 
     const season = root.querySelector("#seasonInput")?.value || new Date().getFullYear();
     const listEl = root.querySelector("#similarTradesList");
-    if (listEl) listEl.innerHTML = '<div class="stl-loading" style="display:flex;align-items:center;gap:8px;padding:12px;color:var(--text-muted);font-size:13px;"><div class="loading-spinner" style="width:14px;height:14px;margin:0;flex-shrink:0;"></div>Loading recent trades...</div>';
+    if (listEl) window.brLoadingState(listEl, { spinner: true, message: 'Loading recent trades…' });
     section.style.display = "";
 
     try {
@@ -5229,7 +5257,12 @@ window.initTradePage = function initTradePage(root = document) {
 
       if (!listEl) return;
       if (trades.length === 0) {
-        listEl.innerHTML = '<div class="stl-empty">No matching trades found yet.</div>';
+        window.brEmptyState(listEl, {
+          icon: 'search',
+          title: 'No matching trades',
+          message: 'Similar completed trades will show up here as the market fills in.',
+          compact: true
+        });
         return;
       }
 
@@ -5264,7 +5297,7 @@ window.initTradePage = function initTradePage(root = document) {
       }).join('');
 
     } catch (e) {
-      if (listEl) listEl.innerHTML = '<div class="stl-empty">Trade data unavailable.</div>';
+      if (listEl) window.brErrorState(listEl, 'Trade data unavailable.', null, { compact: true, title: 'Couldn’t load' });
     }
   }
 
@@ -6836,7 +6869,12 @@ window.initTradePage = function initTradePage(root = document) {
 
       if (!leagueId || !viewerRosterId) {
         // Don't mark loaded - retry next time the tab is opened
-        container.innerHTML = '<div class="otc-movers-empty">Select your team to see targets.</div>';
+        window.brEmptyState(container, {
+          icon: 'search',
+          title: 'Select your team',
+          message: 'Choose a roster to see trade targets for your gaps.',
+          compact: true
+        });
         return;
       }
 
@@ -6845,7 +6883,7 @@ window.initTradePage = function initTradePage(root = document) {
       const leagueType = getLeagueType();
       const leagueSize = getLeagueSize();
 
-      container.innerHTML = '<div class="otc-movers-empty">Loading targets…</div>';
+      window.brLoadingState(container, { rows: 3, compact: true, message: 'Loading targets' });
 
       try {
         const res = await fetch(
@@ -6857,7 +6895,7 @@ window.initTradePage = function initTradePage(root = document) {
         if (res.status === 403) {
           suggTargetsLoaded = true;
           if (typeof showPaywall === "function") showPaywall("trade-suggestions");
-          else container.innerHTML = '<div class="otc-movers-empty">Upgrade to PRO to unlock trade tools.</div>';
+          else window.brEmptyState(container, { icon: 'lock', title: 'PRO feature', message: 'Upgrade to unlock trade tools.', compact: true });
           return;
         }
         if (!res.ok) throw new Error("Failed");
@@ -6895,11 +6933,20 @@ window.initTradePage = function initTradePage(root = document) {
           });
         }
 
-        container.innerHTML = html || '<div class="otc-movers-empty">No targets found.</div>';
+        if (html) {
+          container.innerHTML = html;
+        } else {
+          window.brEmptyState(container, {
+            icon: 'search',
+            title: 'No targets found',
+            message: 'Try another strategy or check back after values update.',
+            compact: true
+          });
+        }
         normalizeClickableAccessibility(container);
         // Click handling is delegated once via bindSuggTargetsClick() below.
       } catch (e) {
-        container.innerHTML = '<div class="otc-movers-empty">Could not load targets.</div>';
+        window.brErrorState(container, 'Could not load targets.', () => { suggTargetsLoaded = false; loadSuggTargets(); }, { compact: true });
       }
     }
 
