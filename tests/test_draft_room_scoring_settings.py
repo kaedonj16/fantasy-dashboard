@@ -97,6 +97,27 @@ def test_pick_score_sort_controls_the_visible_score_chip():
     assert "' · Pick ' + ps" not in source
 
 
+def test_compare_modal_uses_relative_pick_score():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    match = re.search(
+        r"function openCompare\(\)\{(.*?)document\.getElementById\('drCompare'\)\.style\.display",
+        source,
+        re.DOTALL,
+    )
+
+    assert match
+    body = match.group(1)
+    assert "function psRelLive(p)" in source
+    assert "return psDisplay(p._ps != null ? p._ps : pickScoreFor(p));" in source
+    assert "var ps = psRelLive(p);" in body
+    assert "psAbs(" not in body
+    assert "class=\"dr-cmp-player\"" in body
+    # Sidebar rows share the same relative chip so the modal cannot disagree.
+    row = re.search(r"function playerRowHtml\(p, opts\)\{(.*?)function renderQueue", source, re.DOTALL)
+    assert row
+    assert "var ps = psRelLive(p);" in row.group(1)
+
+
 def test_recommendation_is_a_rank_not_a_declining_numeric_grade():
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 
