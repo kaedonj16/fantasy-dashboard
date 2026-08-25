@@ -9,6 +9,16 @@ import os
 import sys
 from datetime import datetime
 
+# This file lives at data_building/updates/startup.py; post_deploy lives at
+# scripts/post_deploy.py under the repo root.
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+
+def resolve_post_deploy_script(repo_root=None):
+    """Return the absolute path to scripts/post_deploy.py."""
+    root = repo_root if repo_root is not None else _REPO_ROOT
+    return os.path.join(root, "scripts", "post_deploy.py")
+
 
 def main():
     print("Production Startup - Fantasy Dashboard")
@@ -32,20 +42,27 @@ def main():
         with open(first_run_flag, 'r') as f:
             print(f"Previously initialized: {f.read().strip()}")
 
-    # Spawn the post-deploy breakout rebuild in the background so it doesn't
-    # delay gunicorn startup.  The subprocess outlives this process (execvp
-    # replaces us with gunicorn) and writes directly to stdout/stderr which
-    # Render captures in the service logs.
+    # Spawn post-deploy in the background so it doesn't delay gunicorn startup.
+    # That process refreshes tokenless global ADP snapshots (Yahoo/ESPN/MFL) onto
+    # THIS web container's disk (cron writes a different disk), then optionally
+    # rebuilds breakout scores. The subprocess outlives this process (execvp
+    # replaces us with gunicorn) and writes to stdout/stderr for Render logs.
     import subprocess
-    post_deploy_script = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "scripts", "post_deploy.py"
-    )
+    post_deploy_script = resolve_post_deploy_script()
     if os.path.exists(post_deploy_script):
-        print("Spawning background post-deploy breakout refresh...")
+        print(
+            "Spawning background post-deploy "
+            "(global ADP refresh + breakout check)..."
+        )
         subprocess.Popen(
             [sys.executable, post_deploy_script],
             stdout=sys.stdout,
             stderr=sys.stderr,
+        )
+    else:
+        print(
+            f"WARNING: post-deploy script not found at {post_deploy_script}; "
+            "skipping deploy-time ADP refresh"
         )
 
     port = int(os.environ.get('PORT', 5000))

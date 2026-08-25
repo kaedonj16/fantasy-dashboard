@@ -696,24 +696,27 @@ def _add_cache_headers(response):
 # pragmatic, non-breaking choice.
 _CSP_POLICY = "; ".join([
     "default-src 'self'",
-    # Google AdSense chain + Plotly (jsDelivr) + Sentry browser bundle.
+    # Google AdSense / Funding Choices CMP + Plotly (jsDelivr) + Sentry.
     "script-src 'self' 'unsafe-inline' "
     "https://pagead2.googlesyndication.com https://*.googlesyndication.com "
     "https://*.googleadservices.com https://*.google.com https://*.gstatic.com "
-    "https://*.doubleclick.net https://cdn.jsdelivr.net "
-    "https://browser.sentry-cdn.com",
-    "style-src 'self' 'unsafe-inline'",
+    "https://*.doubleclick.net https://fundingchoicesmessages.google.com "
+    "https://cdn.jsdelivr.net https://browser.sentry-cdn.com",
+    "style-src 'self' 'unsafe-inline' https://*.googlesyndication.com "
+    "https://fundingchoicesmessages.google.com",
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
-    # XHR/fetch/beacon: Sentry ingest + the ad chain's reporting endpoints.
+    # XHR/fetch/beacon: Sentry ingest + the ad / CMP reporting endpoints.
     "connect-src 'self' https://*.sentry.io https://*.google.com "
     "https://*.googlesyndication.com https://*.doubleclick.net "
-    "https://pagead2.googlesyndication.com https://cdn.jsdelivr.net",
+    "https://pagead2.googlesyndication.com https://fundingchoicesmessages.google.com "
+    "https://cdn.jsdelivr.net",
     # 'self' lets the app embed its own pages (the Draft Room's in-draft cheat
-    # sheet overlay iframes /draft/cheat-sheet/embed). Ads render inside iframes
-    # served from the Google ad hosts.
+    # sheet overlay iframes /draft/cheat-sheet/embed). Ads and Google's consent
+    # messaging render inside iframes from Google ad / CMP hosts.
     "frame-src 'self' https://*.googlesyndication.com https://*.doubleclick.net "
-    "https://*.google.com",
+    "https://*.google.com https://fundingchoicesmessages.google.com "
+    "https://*.googleadservices.com",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -1116,17 +1119,17 @@ FORM_BODY = """
 <div class="home-page">
   <section class="home-hero">
     <div class="home-hero-left">
+      <p class="home-brand">BR Fantasy</p>
       <h1 class="home-title">Your dynasty league,<br><span class="home-rot" aria-label="upgraded"><span class="home-rot-track"><span>upgraded.</span><span>decoded.</span><span>dominated.</span><span>upgraded.</span></span></span></h1>
       <p class="home-subtitle">
-        Advanced analytics, AI-powered insights, and professional-grade tools for Sleeper, ESPN, and Yahoo leagues.
+        Trade values, AI analysis, and league tools for Sleeper, ESPN, Yahoo, and MFL. Built for serious managers.
       </p>
-
-      <ul class="home-bullets">
-        <li><strong>AI Trade Analyst</strong> - Personalized deal evaluation with counter suggestions</li>
-        <li><strong>Dynasty Value Engine</strong> - Hybrid model combining consensus data and advanced metrics</li>
-        <li><strong>Weekly Projections</strong> - Live scoring, matchup previews, and storyline tracking</li>
-        <li><strong>Historical Analysis</strong> - Season recaps, power rankings, and trend visualization</li>
-      </ul>
+      <div class="home-platform-row" aria-label="Supported platforms">
+        <span class="home-platform-chip">Sleeper</span>
+        <span class="home-platform-chip">ESPN</span>
+        <span class="home-platform-chip">Yahoo</span>
+        <span class="home-platform-chip">MFL</span>
+      </div>
     </div>
 
     <div class="home-hero-right">
@@ -1345,6 +1348,25 @@ FORM_BODY = """
     </div>
   </section>
 
+  <section class="home-proof" aria-label="What you get">
+    <div class="home-proof-item">
+      <span class="home-proof-label">AI Trade Analyst</span>
+      <span class="home-proof-desc">Deal grades and counter suggestions tailored to your roster</span>
+    </div>
+    <div class="home-proof-item">
+      <span class="home-proof-label">Dynasty Values</span>
+      <span class="home-proof-desc">Hybrid consensus and metrics model updated daily</span>
+    </div>
+    <div class="home-proof-item">
+      <span class="home-proof-label">Weekly Command</span>
+      <span class="home-proof-desc">Live scoring, matchups, and storyline tracking</span>
+    </div>
+    <div class="home-proof-item">
+      <span class="home-proof-label">League History</span>
+      <span class="home-proof-desc">Season recaps, power rankings, and trend charts</span>
+    </div>
+  </section>
+
   <div class="home-content-wrapper">
     <section class="home-feature-list-card">
       <div class="home-features-header">
@@ -1354,8 +1376,8 @@ FORM_BODY = """
       <div class="home-feature-list">
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(99,102,241,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#6366f1;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.44-3.14Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.44-3.14Z"/></svg>
+          <div class="home-feature-row-icon home-fi-1">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.44-3.14Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.44-3.14Z"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Trade Strategy <span class="home-feature-badge">New</span> <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
@@ -1364,8 +1386,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(59,130,246,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#3b82f6;" viewBox="0 0 24 24" fill="currentColor"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg>
+          <div class="home-feature-row-icon home-fi-2">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Trade Calculator</span>
@@ -1374,8 +1396,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(139,92,246,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#8b5cf6;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 12l4-4 4 4 4-6"/></svg>
+          <div class="home-feature-row-icon home-fi-3">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 12l4-4 4 4 4-6"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Trade Intelligence <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
@@ -1384,8 +1406,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(16,185,129,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#10b981;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+          <div class="home-feature-row-icon home-fi-4">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Player Rankings</span>
@@ -1394,8 +1416,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(20,184,166,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#14b8a6;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M6 8h.01M9 8h6M6 11h.01M9 11h9"/></svg>
+          <div class="home-feature-row-icon home-fi-1">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M6 8h.01M9 8h6M6 11h.01M9 11h9"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Advanced Metrics</span>
@@ -1404,8 +1426,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(167,139,250,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#a78bfa;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          <div class="home-feature-row-icon home-fi-2">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Rookie Prospects</span>
@@ -1414,8 +1436,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(245,158,11,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#f59e0b;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 16 4-4 4 4 4-4"/></svg>
+          <div class="home-feature-row-icon home-fi-3">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 16 4-4 4 4 4-4"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Playoff Odds</span>
@@ -1424,8 +1446,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(6,182,212,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#06b6d4;" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>
+          <div class="home-feature-row-icon home-fi-4">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Weekly Hub</span>
@@ -1434,8 +1456,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(249,115,22,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#f97316;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          <div class="home-feature-row-icon home-fi-1">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Breakout Engine <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
@@ -1444,8 +1466,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(236,72,153,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#ec4899;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+          <div class="home-feature-row-icon home-fi-2">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Waivers &amp; Start/Sit</span>
@@ -1454,8 +1476,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(239,68,68,.12);border-radius:8px;">
-            <svg style="width:18px;height:18px;color:#ef4444;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>
+          <div class="home-feature-row-icon home-fi-3">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Team Analytics</span>
@@ -1464,8 +1486,8 @@ FORM_BODY = """
         </div>
 
         <div class="home-feature-row">
-          <div class="home-feature-row-icon" style="background:rgba(234,179,8,.12);border-radius:8px;">
-            <i class="fa-solid fa-trophy" style="font-size:16px;color:#eab308;" aria-hidden="true"></i>
+          <div class="home-feature-row-icon home-fi-4">
+            <i class="fa-solid fa-trophy" aria-hidden="true"></i>
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">League History</span>
@@ -3564,6 +3586,12 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 _AD_SCRIPT = ''
 _AD_TOP = """<aside class="ad-container ad-top-banner" aria-label="Advertisement"><span class="ad-disclosure">Advertisement</span><ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins></aside>"""
 _AD_BOTTOM = """<aside class="ad-container ad-bottom-content" aria-label="Advertisement"><span class="ad-disclosure">Advertisement</span><ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins></aside>"""
+# Legal / utility / checkout pages lack enough publisher content for AdSense
+# (Google's "no publisher content" / insufficient-content policies). Never place
+# ad units there — including when active is None (e.g. /pricing).
+_NO_ADS_PAGES = frozenset({
+    "privacy", "terms", "about", "contact", "support", "faq", "pricing",
+})
 _AD_INIT = """(function(){
   var loaded = false;
   function loadAds(){
@@ -4127,6 +4155,9 @@ def render_page(
     user_id = session.get("viewer_username")
     is_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform or "sleeper",
                                         season)
+    # Suppress ads on thin/legal/utility pages even for free users.
+    suppress_ads = (not active) or (active in _NO_ADS_PAGES)
+    show_ads = not (is_premium or suppress_ads)
 
     # Viewer context for client JS (player-modal roster context, etc.)
     viewer_roster_id = session.get("viewer_roster_id") or ""
@@ -4170,10 +4201,10 @@ def render_page(
         bottom_nav=_bottom,
         cache_ts=int(time.time() * 1000),
         user_premium="true" if is_premium else "false",
-        adsense_script="" if is_premium else _AD_SCRIPT,
-        ad_top="" if is_premium else _AD_TOP,
-        ad_bottom="" if is_premium else _AD_BOTTOM,
-        adsense_init="" if is_premium else _AD_INIT,
+        adsense_script="" if not show_ads else _AD_SCRIPT,
+        ad_top="" if not show_ads else _AD_TOP,
+        ad_bottom="" if not show_ads else _AD_BOTTOM,
+        adsense_init="" if not show_ads else _AD_INIT,
         about_url=f"/{platform}/{season}/{league_id}/about" if (league_id and platform and season) else "/about",
         guides_url=f"/{platform}/{season}/{league_id}/guides" if (league_id and platform and season) else "/guides",
         privacy_url=f"/{platform}/{season}/{league_id}/privacy" if (league_id and platform and season) else "/privacy",
@@ -9142,7 +9173,10 @@ def build_weekly_hub_body(ctx: dict) -> str:
       <main class="page-main">
         <div class="card">
           <div class="card-header-row">
-            <h2>Weekly Hub</h2>
+            <div>
+              <p class="br-page-brand">BR Fantasy</p>
+              <h2>Weekly Hub</h2>
+            </div>
             <div class="week-selector">
               <select id="hubWeek" class="search">
                 {week_select_html}
@@ -10659,7 +10693,10 @@ def build_activity_body(ctx: dict) -> str:
         activity_html = (
             "<div class='card activity-card' data-section='activity'>"
             "  <div class='card-header-row'>"
-            "    <h2>League activity</h2>"
+            "    <div>"
+            "      <p class='br-page-brand'>BR Fantasy</p>"
+            "      <h2>League activity</h2>"
+            "    </div>"
             "  </div>"
             "  <div class='scroll-box'>"
             "    <div class='feed'>"
@@ -13941,6 +13978,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
     body_html = f"""
     <div class="card central">
       <div class="card-header">
+        <p class="br-page-brand">BR Fantasy</p>
         <h2>Breakout Engine</h2>
         <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
           Players positioned for breakouts based on opportunity, efficiency, and roster changes
@@ -14078,7 +14116,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
                 <i class="fa-solid fa-lock" style="font-size:22px;color:var(--text-muted);"></i>
                 <div style="font-weight:700;font-size:15px;">${{lockedCount}} more candidates locked</div>
                 <div style="font-size:12px;color:var(--text-muted);text-align:center;">Upgrade to PRO to see all breakout<br>candidates with full details</div>
-                <span style="font-size:11px;font-weight:700;padding:4px 12px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border-radius:12px;">Upgrade &rarr;</span>
+                <span style="font-size:11px;font-weight:700;padding:4px 12px;background:linear-gradient(135deg,#122d4b,#2563eb);color:white;border-radius:12px;">Upgrade &rarr;</span>
               </div>`;
           }}
           html += '</div>';
@@ -16187,6 +16225,7 @@ def build_schedule_body(ctx):
     <div class="card central schedule-card">
       <div class="card-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
         <div>
+          <p class="br-page-brand">BR Fantasy</p>
           <h2>Schedule Assistant</h2>
           <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
             Matchup difficulty by week. Add or remove players and pick a single week or a range.
@@ -17245,7 +17284,10 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 
     week_selector = f"""
 <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
-  <h2 style="margin:0;font-size:20px;">Week {selected_week} Recap</h2>
+  <div style="flex:1;min-width:160px;">
+    <p class="br-page-brand">BR Fantasy</p>
+    <h2 style="margin:0;font-size:20px;">Week {selected_week} Recap</h2>
+  </div>
   <select onchange="window.location.search='?week='+this.value"
           style="padding:5px 10px;border-radius:6px;border:1px solid var(--border);
                  background:var(--card);color:var(--text);font-size:13px;cursor:pointer;">
@@ -18317,6 +18359,7 @@ def build_commissioner_body(ctx):
   .lh-parity-scale {{ display:flex; justify-content:space-between; font-size:10.5px; color:var(--muted); margin:2px 4px 12px; }}
 </style>
 <div class="card lh-card">
+  <p class="br-page-brand">BR Fantasy</p>
   <div class="lh-hero2">
     <div class="lh-ring">
       <svg width="128" height="128" viewBox="0 0 128 128" aria-hidden="true">
@@ -23653,6 +23696,46 @@ def api_team_details(roster_id: str):
         return _api_err("Request failed", e)
 
 
+@app.route("/api/player-league-trades/<player_id>")
+def api_player_league_trades(player_id: str):
+    """
+    Trades involving this player inside the connected league — every season in
+    the league history chain. Includes counterparty team names and resolves
+    drafted picks (e.g. 2026 1.04 → player) once that draft is complete.
+
+    Query: platform, league_id, season, limit (default 20).
+    Free — same access model as the Trade Database.
+    """
+    try:
+        from dashboard_services.player_league_trades import get_player_league_trades
+
+        league_id = (request.args.get("league_id") or "").strip()
+        platform = (request.args.get("platform") or "sleeper").strip().lower()
+        try:
+            season = int(request.args.get("season") or datetime.now().year)
+        except (TypeError, ValueError):
+            season = datetime.now().year
+        try:
+            limit = int(request.args.get("limit") or 20)
+        except (TypeError, ValueError):
+            limit = 20
+
+        if not league_id:
+            return jsonify({"error": "league_id required"}), 400
+
+        payload = get_player_league_trades(
+            player_id=player_id,
+            platform=platform,
+            league_id=league_id,
+            season=season,
+            limit=limit,
+        )
+        return jsonify(payload)
+    except Exception as e:
+        logger.exception("[api_player_league_trades] error")
+        return _api_err("Request failed", e)
+
+
 @app.route("/api/team-trades/<roster_id>")
 def api_team_trades(roster_id: str):
     """Return all trades for a specific team in the current league season."""
@@ -24348,7 +24431,10 @@ def api_draft_grades():
         # the SAME league-players payload the Draft Room uses, so the score's ADP
         # term matches the front-end exactly.
         adp_ps_by_id: dict[str, float] = {}
-        # Tier-cliff lookup: (pos|tier) -> count still on the board after the draft.
+        # Tier-cliff lookup: (pos|tier) -> count still on the board. Starts as the
+        # FULL eligible pool and decrements as picks are processed so each pick
+        # sees remaining-at-pick (matches Draft Room isTierCliff), not post-draft
+        # leftovers.
         tier_remaining: dict[str, int] = {}
         # League scoring format multipliers; defaults match Draft Room setup.
         _ppr, _tep, _pass_td = 1.0, 0.0, 4.0
@@ -24485,13 +24571,11 @@ def api_draft_grades():
                 _ev = _eff_val(_pid, _d)
                 _by_pos[_pp].append(_ev)
                 ps_pool_sorted.append((_ev, _pid))
-                # Tier-cliff: count players of each (pos|tier) still UNDRAFTED after
-                # this draft, matching the Draft Room's post-draft availablePool().
-                if _pid not in drafted_player_ids:
-                    _ct = _score_tier(_pid, _d, _ev)
-                    if _ct is not None:
-                        _ck = f"{_pp}|{_ct}"
-                        tier_remaining[_ck] = tier_remaining.get(_ck, 0) + 1
+                # Seed at-pick cliff counts from the full eligible pool.
+                _ct = _score_tier(_pid, _d, _ev)
+                if _ct is not None:
+                    _ck = f"{_pp}|{_ct}"
+                    tier_remaining[_ck] = tier_remaining.get(_ck, 0) + 1
             # Let the actual player pool decide how FLEX/SF are occupied;
             # this supersedes the fixed half-QB/half-RB/half-WR heuristic.
             _allocation_pool = [
@@ -24747,10 +24831,15 @@ def api_draft_grades():
                                   if _span > 0 else _ps_clamp01(_pv / max(_psc["elite"], 1)))
                     # ADP for the score comes from the SAME feed the Draft Room uses
                     # (separate from the letter-grade ADP), so the score's ADP term
-                    # matches the front-end. Tier-cliff uses the post-draft board.
+                    # matches the front-end. Tier-cliff uses remaining-at-pick
+                    # (full pool decremented in draft order), with Round-1 suppress
+                    # matching Draft Room isTierCliff.
                     _ps_adp = adp_ps_by_id.get(player_id, avg_pick)
-                    _is_cliff = (_tier is not None
-                                 and tier_remaining.get(f"{pos}|{_tier}", 0) <= 2)
+                    _is_cliff = (
+                        _tier is not None
+                        and pick_no > _num_teams
+                        and tier_remaining.get(f"{pos}|{_tier}", 0) <= 2
+                    )
                     pick_score = _compute_pick_score(
                         pos=pos, value=_val, vor=_vor, tier=_tier,
                         age=_d.get("age"), rank_change_7d=mom_by_id.get(player_id),
@@ -24761,6 +24850,11 @@ def api_draft_grades():
                         num_teams=_num_teams, ppg_norm=_ppg_n,
                         ppr=_ppr, tep=_tep, pass_td=_pass_td, is_tier_cliff=_is_cliff,
                     )
+                    # Consume this player from the at-pick cliff counts for later picks.
+                    if _tier is not None:
+                        _ck = f"{pos}|{_tier}"
+                        if tier_remaining.get(_ck, 0) > 0:
+                            tier_remaining[_ck] -= 1
 
             picks_by_roster[rid].append({
                 "pick_no": pick_no,
@@ -25496,7 +25590,7 @@ def api_trade_intel_player_trades(player_id: str):
             trade_rows = conn.execute(
                 f"""
                 SELECT DISTINCT
-                    t.id, t.transaction_id, t.season, t.week, t.created_at,
+                    t.id, t.transaction_id, t.league_id, t.season, t.week, t.created_at,
                     l.is_superflex, l.num_teams
                 FROM trade_intel_trades t
                 JOIN trade_intel_assets a ON a.trade_id = t.id
@@ -25551,7 +25645,15 @@ def api_trade_intel_player_trades(player_id: str):
             else:
                 order = a["pick_order"] or ""
                 name = f"{s} Round {r}" + (f" ({order})" if order else "")
-            return {"type": "pick", "name": name, "is_focus": False}
+            return {
+                "type": "pick",
+                "name": name,
+                "is_focus": False,
+                "pick_season": a.get("pick_season"),
+                "pick_round": a.get("pick_round"),
+                "pick_slot": a.get("pick_slot"),
+                "pick_order": a.get("pick_order"),
+            }
 
         result = []
         for r in trade_rows:
@@ -25569,12 +25671,23 @@ def api_trade_intel_player_trades(player_id: str):
                     trade_date = str(r["created_at"])[:10]
             result.append({
                 "trade_id": r["transaction_id"],
+                "league_id": r["league_id"],
                 "date": trade_date,
                 "is_superflex": r["is_superflex"],
                 "num_teams": r["num_teams"],
                 "side_a": side_a,
                 "side_b": side_b,
             })
+
+        # Resolve completed draft picks → player names when the source league
+        # draft has finished (e.g. "2026 Pick 1.04 → Tetairoa McMillan").
+        try:
+            from dashboard_services.player_league_trades import (
+                attach_drafted_players_to_trade_db_assets,
+            )
+            result = attach_drafted_players_to_trade_db_assets(result, platform="sleeper")
+        except Exception:
+            logger.debug("[player-trades] pick resolution skipped", exc_info=True)
 
         total_pages = max(1, (total + limit - 1) // limit)
         return jsonify({
@@ -25584,6 +25697,7 @@ def api_trade_intel_player_trades(player_id: str):
             "total_pages": total_pages,
             "has_prev": page > 1,
             "has_next": page < total_pages,
+            "source": "trade_db",
         })
 
     except Exception:
@@ -28721,6 +28835,7 @@ def build_portfolio_body(
         f"<div class='card' style='margin-bottom:14px;'>"
         f"<div class='pf-summary'>"
         f"<div>"
+        f"<p class='br-page-brand'>BR Fantasy</p>"
         f"<div class='pf-summary-title'>My Leagues</div>"
         f"<div class='pf-summary-sub'>Signed in as <strong>{html.escape(username)}</strong></div>"
         f"</div>"

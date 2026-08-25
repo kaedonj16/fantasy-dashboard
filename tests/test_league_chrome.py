@@ -52,3 +52,4 @@ def test_hub_page_titles_do_not_restate_week():
     assert '<h1 class="os-hero-title">Offseason Hub</h1>' in src
     assert "Viewing {season}" not in src
     assert "Viewing {html.escape(str(season))}" not in src
+    assert 'class="os-hero-kicker"' not in src

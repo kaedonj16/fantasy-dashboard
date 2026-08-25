@@ -261,6 +261,7 @@ def build_trade_calculator_body(
           <div id="otcCalcTab">
           <div class="otc-page-head">
             <div class="otc-page-title-wrap">
+              <p class="br-page-brand">BR Fantasy</p>
               <div style="display: flex; align-items: center; gap: 8px;">
                 <h1 class="otc-page-title">Trade Calculator</h1>
                 <div class="otc-info-tooltip-wrapper">
@@ -587,7 +588,7 @@ def build_trade_calculator_body(
             .pi-locked-sub   {{ font-size:12px;color:var(--text-muted);max-width:260px;line-height:1.5;margin-bottom:12px; }}
             .pi-locked-btn {{
               padding:7px 18px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:600;
-              background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;
+              background:linear-gradient(135deg,#122d4b,#2563eb);color:#fff;
             }}
 
             /* ── Message / empty states ──────────────────────────── */
@@ -932,7 +933,7 @@ def build_trade_calculator_body(
               </div>
               <button onclick="if(window.showPaywall)showPaywall('trade-suggestions')"
                 style="font-size:13px;font-weight:700;padding:10px 22px;border:none;border-radius:10px;
-                       background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;cursor:pointer;">
+                       background:linear-gradient(135deg,#122d4b,#2563eb);color:#fff;cursor:pointer;">
                 Upgrade to PRO &rarr;
               </button>
             </div>

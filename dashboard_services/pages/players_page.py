@@ -12,6 +12,7 @@ def build_players_shell() -> str:
     <div class="card central">
       <div class="card-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
         <div>
+          <p class="br-page-brand">BR Fantasy</p>
           <h2>Player Rankings</h2>
           <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
             All players ranked by dynasty value.

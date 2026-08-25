@@ -12425,7 +12425,7 @@ function pmSwitchTab(tab) {
             See breakout scores, opportunity drivers, hit probability, and PPG projections for every candidate.
           </div>
           <button onclick="showPaywall('breakout-analysis')"
-                  style="margin-top:4px;padding:9px 20px;background:linear-gradient(135deg,#667eea,#764ba2);
+                  style="margin-top:4px;padding:9px 20px;background:linear-gradient(135deg,#122d4b,#2563eb);
                          color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;">
             Upgrade to PRO
           </button>
@@ -12488,69 +12488,161 @@ function pmSwitchTab(tab) {
       });
   }
 
-  // ── Lazy-load Trades tab ─────────────────────────────────────────────────
+  // ── Lazy-load Trades tab (This League ↔ Trade DB toggle) ────────────────
   if (tab === 'trades' && panel && !panel.dataset.loaded) {
     panel.dataset.loaded = '1';
-    const playerName = pmTabBar.dataset.pmPlayerName || '';
-    const pathParts = window.location.pathname.split('/').filter(p => p);
-    const tdbPlatform = pathParts[0];
-    const tdbSeason   = pathParts[1];
-    const tdbLeague   = pathParts[2];
-    const tdbBase = (tdbPlatform && tdbSeason && tdbLeague && !['players','breakouts','prospects','trade-database','trade-intel'].includes(tdbPlatform))
-      ? `/${tdbPlatform}/${tdbSeason}/${tdbLeague}/trade-database`
-      : '/trade-database';
-    const tdbLink = playerName
-      ? `${tdbBase}?q=${encodeURIComponent(playerName)}`
-      : tdbBase;
-
-    fetch(`/api/trade-intel/player-trades/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}&limit=20`)
-      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-      .then(data => {
-        if (!panel.isConnected) return;
-        const trades = data.trades || [];
-        const linkHTML = `<div style="text-align:center;padding:12px 0 2px;"><a href="${tdbLink}" style="font-size:12px;color:var(--accent,#3b82f6);font-weight:600;text-decoration:none;">Search all trades in Trade Database →</a></div>`;
-        if (!trades.length) {
-          panel.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">No recent trades found for this player.</div></div>' + linkHTML;
-          return;
-        }
-        panel.innerHTML = '<div style="padding:4px 0;">' + trades.map(t => {
-          const dateStr = t.date ? new Date(t.date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '-';
-          const sfBadge = t.league_type === 'sf' || t.league_type === 'superflex'
-            ? '<span style="padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;background:rgba(139,92,246,.15);color:#8b5cf6;border:1px solid rgba(139,92,246,.3);">SF</span>'
-            : '<span style="padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;background:rgba(59,130,246,.15);color:#3b82f6;border:1px solid rgba(59,130,246,.3);">1QB</span>';
-          const scoreBadge = t.fairness_score != null
-            ? `<span style="padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;background:rgba(0,0,0,.05);color:var(--text-muted);">${parseFloat(t.fairness_score).toFixed(0)}</span>`
-            : '';
-          const renderAssets = (assets) => {
-            if (!assets || !assets.length) return '<span style="font-size:12px;color:var(--text-muted);">-</span>';
-            return assets.map(a => {
-              const isPick = a.is_pick || (a.name || '').toLowerCase().includes('pick') || (a.name || '').toLowerCase().includes('round');
-              const isFocus = String(a.player_id || '') === String(playerId);
-              const cls = isPick ? 'pm-trade-asset pm-pick' : (isFocus ? 'pm-trade-asset pm-focus' : 'pm-trade-asset');
-              return `<div class="${cls}">${a.name || a.player_name || '?'}</div>`;
-            }).join('');
-          };
-          const sideA = renderAssets(t.side_a);
-          const sideB = renderAssets(t.side_b);
-          return `<div class="pm-trade-card">
-            <div class="pm-trade-head">
-              <span class="pm-trade-date">${dateStr}</span>
-              <div style="display:flex;gap:5px;">${sfBadge}${scoreBadge}</div>
-            </div>
-            <div class="pm-trade-body">
-              <div class="pm-trade-col">${sideA}</div>
-              <div style="color:var(--text-muted);font-size:18px;align-self:center;">⇄</div>
-              <div class="pm-trade-col">${sideB}</div>
-            </div>
-          </div>`;
-        }).join('') + '</div>' + linkHTML;
-      })
-      .catch(() => {
-        if (panel.isConnected) {
-          window.brErrorState(panel, 'Could not load trade history.', () => { panel.dataset.loaded = ''; pmSwitchTab(tab); }, { compact: true });
-        }
-      });
+    pmLoadTradesTab(panel, playerId, season, pmTabBar);
   }
+}
+
+function _pmTradePathCtx() {
+  const pathParts = window.location.pathname.split('/').filter(p => p);
+  const platform = pathParts[0];
+  const season = pathParts[1];
+  const leagueId = pathParts[2];
+  const isLeague = !!(platform && season && leagueId &&
+    !['players','breakouts','prospects','trade-database','trade-intel','rankings','compare','guides','glossary','pricing','portfolio','watchlist'].includes(platform));
+  return { platform, season, leagueId, isLeague };
+}
+
+function _pmRenderTradeAssets(assets, playerId) {
+  if (!assets || !assets.length) {
+    return '<span style="font-size:12px;color:var(--text-muted);">-</span>';
+  }
+  return assets.map(a => {
+    const isPick = a.type === 'pick' || a.is_pick ||
+      (a.name || '').toLowerCase().includes('pick') ||
+      (a.name || '').toLowerCase().includes('round');
+    const isFocus = String(a.player_id || '') === String(playerId) || a.is_focus;
+    const cls = isPick ? 'pm-trade-asset pm-pick' : (isFocus ? 'pm-trade-asset pm-focus' : 'pm-trade-asset');
+    let label = a.name || a.player_name || '?';
+    if (a.drafted_player && a.drafted_player.name && isPick && !String(label).includes('→')) {
+      label = `${label} → ${a.drafted_player.name}`;
+    }
+    const pos = (!isPick && a.position) ? `<span class="pm-trade-pos">${a.position}</span>` : '';
+    return `<div class="${cls}">${label}${pos}</div>`;
+  }).join('');
+}
+
+function _pmNormalizeTradeSides(t) {
+  // League API: { team_name, assets[] }. Trade DB: assets[] on side_a/side_b.
+  const norm = (side) => {
+    if (!side) return { team_name: '', assets: [] };
+    if (Array.isArray(side)) return { team_name: '', assets: side };
+    return {
+      team_name: side.team_name || '',
+      assets: side.assets || [],
+    };
+  };
+  return { a: norm(t.side_a), b: norm(t.side_b) };
+}
+
+function _pmRenderTradeCards(trades, playerId, { showTeams } = {}) {
+  return trades.map(t => {
+    const dateStr = t.date
+      ? (String(t.date).includes('/') ? t.date
+        : new Date(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }))
+      : '-';
+    const seasonBit = t.season ? `<span class="pm-trade-season">${t.season}</span>` : '';
+    const sfBadge = (t.is_superflex === true || t.league_type === 'sf' || t.league_type === 'superflex')
+      ? '<span class="pm-trade-badge pm-trade-badge-sf">SF</span>'
+      : (t.is_superflex === false
+        ? '<span class="pm-trade-badge pm-trade-badge-1qb">1QB</span>'
+        : '');
+    const sides = _pmNormalizeTradeSides(t);
+    const teamA = (showTeams && sides.a.team_name)
+      ? `<div class="pm-trade-team">${sides.a.team_name}</div>` : '';
+    const teamB = (showTeams && sides.b.team_name)
+      ? `<div class="pm-trade-team">${sides.b.team_name}</div>` : '';
+    return `<div class="pm-trade-card">
+      <div class="pm-trade-head">
+        <span class="pm-trade-date">${dateStr}${seasonBit ? ' · ' + seasonBit : ''}</span>
+        <div style="display:flex;gap:5px;">${sfBadge}</div>
+      </div>
+      <div class="pm-trade-body">
+        <div class="pm-trade-col">${teamA}${_pmRenderTradeAssets(sides.a.assets, playerId)}</div>
+        <div class="pm-trade-swap">⇄</div>
+        <div class="pm-trade-col">${teamB}${_pmRenderTradeAssets(sides.b.assets, playerId)}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function pmLoadTradesTab(panel, playerId, season, pmTabBar) {
+  const playerName = (pmTabBar && pmTabBar.dataset.pmPlayerName) || '';
+  const ctx = _pmTradePathCtx();
+  const tdbBase = ctx.isLeague
+    ? `/${ctx.platform}/${ctx.season}/${ctx.leagueId}/trade-database`
+    : '/trade-database';
+  const tdbLink = playerName
+    ? `${tdbBase}?q=${encodeURIComponent(playerName)}`
+    : tdbBase;
+
+  const defaultScope = ctx.isLeague ? 'league' : 'db';
+  const saved = panel.dataset.pmTradeScope || defaultScope;
+  const scope = (saved === 'league' && !ctx.isLeague) ? 'db' : saved;
+  panel.dataset.pmTradeScope = scope;
+
+  const toggleHTML = ctx.isLeague
+    ? `<div class="pm-trades-toggle" role="tablist" aria-label="Trade source">
+        <button type="button" class="pm-trades-toggle-btn${scope === 'league' ? ' active' : ''}" data-scope="league">This League</button>
+        <button type="button" class="pm-trades-toggle-btn${scope === 'db' ? ' active' : ''}" data-scope="db">Trade DB</button>
+      </div>`
+    : `<div class="pm-trades-toggle-note">Showing trades from the Trade Database</div>`;
+
+  const linkHTML = `<div class="pm-trades-footer"><a href="${tdbLink}">Search all trades in Trade Database →</a></div>`;
+  const bodyId = 'pm-trades-body';
+  panel.innerHTML = `${toggleHTML}<div id="${bodyId}" class="pm-trades-body"><div class="player-modal-loading" style="padding:28px 0;"><div class="loading-spinner"></div><div style="color:var(--text-muted);font-size:13px;margin-top:8px;">Loading trade history…</div></div></div>${linkHTML}`;
+
+  panel.querySelectorAll('.pm-trades-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const next = btn.dataset.scope;
+      if (!next || next === panel.dataset.pmTradeScope) return;
+      panel.dataset.pmTradeScope = next;
+      panel.querySelectorAll('.pm-trades-toggle-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.scope === next);
+      });
+      _pmFetchTradesInto(panel, playerId, season, ctx);
+    });
+  });
+
+  _pmFetchTradesInto(panel, playerId, season, ctx);
+}
+
+function _pmFetchTradesInto(panel, playerId, season, ctx) {
+  const body = panel.querySelector('.pm-trades-body');
+  if (!body) return;
+  const scope = panel.dataset.pmTradeScope || 'db';
+  body.innerHTML = '<div class="player-modal-loading" style="padding:28px 0;"><div class="loading-spinner"></div><div style="color:var(--text-muted);font-size:13px;margin-top:8px;">Loading trade history…</div></div>';
+
+  let url;
+  if (scope === 'league' && ctx.isLeague) {
+    url = `/api/player-league-trades/${encodeURIComponent(playerId)}?platform=${encodeURIComponent(ctx.platform)}&league_id=${encodeURIComponent(ctx.leagueId)}&season=${encodeURIComponent(ctx.season || season)}&limit=20`;
+  } else {
+    url = `/api/trade-intel/player-trades/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}&limit=20`;
+  }
+
+  fetch(url)
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(data => {
+      if (!panel.isConnected || !body.isConnected) return;
+      const trades = data.trades || [];
+      if (!trades.length) {
+        const emptyMsg = scope === 'league'
+          ? 'No trades for this player in this league yet.'
+          : 'No recent trades found for this player.';
+        body.innerHTML = `<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">${emptyMsg}</div></div>`;
+        return;
+      }
+      body.innerHTML = `<div style="padding:4px 0;">${_pmRenderTradeCards(trades, playerId, { showTeams: scope === 'league' })}</div>`;
+    })
+    .catch(() => {
+      if (panel.isConnected && body.isConnected) {
+        window.brErrorState(body, 'Could not load trade history.', () => {
+          _pmFetchTradesInto(panel, playerId, season, ctx);
+        }, { compact: true });
+      }
+    });
 }
 
 // Prefetch the lazy tabs (Stats / Trades / Adv Metrics) once the modal's

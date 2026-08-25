@@ -499,6 +499,7 @@ def build_graphs_body(ctx: dict) -> str:
       <div class="page-layout" data-page="graphs">
         <main class="page-main">
           <div class="graphs-page">
+            <p class="br-page-brand" style="margin:0 0 12px;">BR Fantasy</p>
 
             <div class="card">
               <div class="card-header-row">
@@ -742,6 +743,7 @@ def build_career_graphs_body(career_ctx: dict) -> str:
       <div class="page-layout" data-page="graphs">
         <main class="page-main">
           <div class="graphs-page">
+            <p class="br-page-brand" style="margin:0 0 12px;">BR Fantasy</p>
             <div class="card">
               <div class="card-header-row"><h2>Career PF vs PA</h2></div>
               <div class="card-body graph-body"><div id="chart-scatter" style="width:100%;min-height:350px;"></div></div>

@@ -142,7 +142,7 @@
 }
 
 .pricing-option {
-  border: 2px solid #e5e7eb;
+  border: 2px solid var(--border, #e5e7eb);
   border-radius: 12px;
   padding: 24px;
   transition: all 0.3s;
@@ -150,13 +150,13 @@
 }
 
 .pricing-option.featured {
-  border-color: #667eea;
-  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.15);
+  border-color: var(--brand-blue, #3b82f6);
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.15);
 }
 
 .pricing-option:hover {
-  border-color: #667eea;
-  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.15);
+  border-color: var(--brand-blue, #3b82f6);
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.15);
   transform: translateY(-2px);
 }
 
@@ -176,7 +176,7 @@
 }
 
 .pricing-badge {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #122d4b 0%, #2563eb 100%);
   color: white;
   font-size: 11px;
   font-weight: 600;
@@ -217,30 +217,30 @@
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #122d4b 0%, #1d4ed8 100%);
   color: white;
 }
 
 .btn-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
 }
 
 .btn-secondary {
   background: var(--card);
-  color: #667eea;
-  border: 2px solid #667eea;
+  color: var(--brand-blue, #3b82f6);
+  border: 2px solid var(--brand-blue, #3b82f6);
 }
 
 .btn-secondary:hover {
-  background: #f5f3ff;
+  background: color-mix(in srgb, var(--brand-blue, #3b82f6) 8%, transparent);
 }
 
 /* Premium Badge for locked features */
 .premium-badge {
   display: inline-block;
   padding: 2px 8px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #122d4b 0%, #2563eb 100%);
   color: white;
   font-size: 11px;
   font-weight: 600;
