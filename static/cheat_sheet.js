@@ -378,6 +378,7 @@
         age: (p.age != null ? Number(p.age) : null),
         adp: sheetAdpOf(p, mode, sf), vor: Math.round(value - (repl[pos] || 0)),
         projectedPpg: p.proj_ppg != null && isFinite(Number(p.proj_ppg)) ? Number(p.proj_ppg) : null,
+        lastPpg: p.ppg != null && isFinite(Number(p.ppg)) ? Number(p.ppg) : null,
         marketVsAdp: mode === 'redraft' && p.market_vs_adp != null ? Number(p.market_vs_adp) : null,
         marketExpectedAdp: mode === 'redraft' && p.market_expected_adp != null ? Number(p.market_expected_adp) : null,
         marketConfidence: mode === 'redraft' && p.market_confidence != null ? Number(p.market_confidence) : null,
@@ -733,7 +734,7 @@
         + '<td><span class="cs-pcell">' + badge(x.pos) + '<span class="cs-pname">' + esc(x.name) + '</span>' + recChip + projChip + ovChip(x) + '</span></td>'
         + '<td>' + posrk(x) + '</td>'
         + '<td class="cs-vor-col"><span class="cs-vorwrap"><span class="cs-num">' + x.vor + '</span><span class="cs-vorbar"><i style="width:' + Math.max(0, Math.round(x.vor / maxVor * 100)) + '%"></i></span></span></td>'
-        + '<td class="cs-num">' + (x.projectedPpg != null ? x.projectedPpg.toFixed(1) : '&ndash;') + '</td>'
+        + '<td class="cs-num">' + (x.projectedPpg != null ? x.projectedPpg.toFixed(1) : (x.lastPpg != null ? '<span class="cs-ppg-last" title="Last season actual — no upcoming-season projection on file">' + x.lastPpg.toFixed(1) + '</span>' : '&ndash;')) + '</td>'
         + c5 + c6 + '<td class="cs-num" title="Full fantasy-season strength of schedule; 1 is easiest">' + (x.scheduleRank ? '#' + x.scheduleRank : '&ndash;') + '</td>' + market + ovControls(x) + '</tr>';
     });
     if (!shown) html = '<tr><td colspan="' + span + '" class="cs-empty">No players match this filter.</td></tr>';
@@ -987,7 +988,8 @@
     var rows = players.map(function (x) {
       var c5 = dyn ? (x.age != null ? x.age : '') : fmtAdp(x.adp);
       var c6 = dyn ? youthWindow(x.age, x.pos)[0] : (x.value != null ? (x.value > 0 ? '+' + x.value : x.value) : '');
-      return [x.rk, x.name, x.pos, x.prk, x.vor, x.projectedPpg == null ? '' : x.projectedPpg.toFixed(1), c5, c6, x.scheduleRank || ''].concat(showMarket(dyn) ? [x.marketVsAdp == null ? '' : x.marketVsAdp] : []).concat([x.dtier]);
+      var ppgCsv = x.projectedPpg != null ? x.projectedPpg.toFixed(1) : (x.lastPpg != null ? x.lastPpg.toFixed(1) : '');
+      return [x.rk, x.name, x.pos, x.prk, x.vor, ppgCsv, c5, c6, x.scheduleRank || ''].concat(showMarket(dyn) ? [x.marketVsAdp == null ? '' : x.marketVsAdp] : []).concat([x.dtier]);
     });
     var csv = [head].concat(rows).map(function (r) {
       return r.map(function (v) { var s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(',');
