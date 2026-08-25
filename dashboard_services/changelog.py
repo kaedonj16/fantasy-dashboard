@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-08-25",
+        "tag": "new",
+        "text": "Draft Cheat Sheet: pick a draft slot to drop Proj Pick 1.05 / 2.08 / … lines on the board, so you can see who this ranking would take at each of your snake windows. The lines print with the sheet, and opening from the Draft Room carries your current seat.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-08-25",
         "tag": "update",
         "text": "Draft Room: Edit Setup now opens a modal on the current board so you can change scoring, roster, and capital without leaving the draft. Reset still wipes the board and returns to the main setup screen. The status bar also shows the league format (teams, Superflex, PPR, and pick order).",
         "link": "/draft"

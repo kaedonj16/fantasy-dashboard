@@ -33,6 +33,7 @@
     search: '',
     posFilter: 'ALL',
     done: new Set(),
+    pickSlot: 0,           // 1-based snake seat; 0 = no projected-pick lines
   };
   var teams = Number(cfg.numTeams) || 12;
   var allPlayers = [];
@@ -496,6 +497,58 @@
     return true;
   }
 
+  // Snake overall pick numbers for a 1-based seat. Odd rounds run 1→N, even
+  // rounds N→1 — the same convention the Draft Room board uses.
+  function snakePickNum(round, slot, nTeams) {
+    var inRound = (round % 2 === 1) ? slot : (nTeams - slot + 1);
+    return (round - 1) * nTeams + inRound;
+  }
+  function roundPickLabel(pn, nTeams) {
+    var rd = Math.ceil(pn / nTeams);
+    var pk = pn - (rd - 1) * nTeams;
+    return rd + '.' + (pk < 10 ? '0' + pk : String(pk));
+  }
+  function projPicks() {
+    var slot = state.pickSlot;
+    if (!slot || slot < 1 || slot > teams || !players.length) return [];
+    var out = [], maxPn = players.length;
+    for (var r = 1; ; r++) {
+      var pn = snakePickNum(r, slot, teams);
+      if (pn > maxPn) break;
+      out.push({ pn: pn, label: roundPickLabel(pn, teams) });
+    }
+    return out;
+  }
+  function projPickMap() {
+    var m = {};
+    projPicks().forEach(function (pk) { m[pk.pn] = pk; });
+    return m;
+  }
+  function projLineRow(pk, span, taken) {
+    return '<tr class="cs-cliff cs-proj' + (taken ? ' cs-proj-taken' : '') + '"><td colspan="' + span + '"><div class="cs-projline">Proj Pick ' + pk.label + ' <span class="cs-proj-ov">#' + pk.pn + '</span></div></td></tr>';
+  }
+  function slotStoreKey() { return 'cspickslot:' + (cfg.leagueId || 'guest'); }
+  function savePickSlot() {
+    try {
+      if (!state.pickSlot) localStorage.removeItem(slotStoreKey());
+      else localStorage.setItem(slotStoreKey(), String(state.pickSlot));
+    } catch (e) { /* storage full/blocked */ }
+  }
+  function renderPickSlot() {
+    var sel = $('csPickSlot'); if (!sel) return;
+    if (sel.options.length !== teams + 1) {
+      var html = '<option value="0">Proj pick: Off</option>';
+      for (var s = 1; s <= teams; s++) {
+        var pad = s < 10 ? '0' + s : String(s);
+        html += '<option value="' + s + '">Slot ' + s + ' · 1.' + pad + '</option>';
+      }
+      sel.innerHTML = html;
+    }
+    var cur = (state.pickSlot >= 1 && state.pickSlot <= teams) ? state.pickSlot : 0;
+    if (state.pickSlot !== cur) state.pickSlot = cur;
+    sel.value = String(cur);
+  }
+
   function render() {
     var dyn = state.mode === 'dynasty';
     $('csTitle').textContent = dyn ? 'Dynasty Cheat Sheet' : 'Redraft Cheat Sheet';
@@ -524,6 +577,7 @@
     if (rb) rb.style.display = (hasOverrides() || state.done.size || draftedIds) ? '' : 'none';
     var bp = $('cs-panel-board'); if (bp) bp.classList.toggle('editing', editBoard && cfg.hasPremium);
     renderNeedsBar();
+    renderPickSlot();
 
     if (!players.length) {
       var emptyMsg = loading ? 'Loading players…' : (loadError || 'No players for this format yet.');
@@ -545,21 +599,27 @@
     }
 
     var draftedNote = draftedIds ? '<span class="cs-lg"><span class="cs-taken-dot"></span> already drafted</span>' : '';
+    var projNote = state.pickSlot
+      ? '<span class="cs-lg"><b>Proj Pick</b> slot ' + state.pickSlot + ' snake windows on this board</span>'
+      : '';
     $('csLegend').innerHTML = recommendationOrder
       ? '<span class="cs-lg"><b>VOR</b> controls the cheat-sheet order</span>'
         + '<span class="cs-lg"><b>REC #</b> current Draft Room rank, shown for context</span>'
+        + projNote
         + draftedNote
         + '<span class="cs-lg" id="csFmtNote">' + (dyn ? 'Dynasty ' : '') + (state.sf ? 'Superflex' : '1QB') + ' &middot; ' + teams + '-team</span>'
       : dyn
       ? '<span class="cs-lg"><b>VOR</b> dynasty value over replacement, the ranking</span>'
         + '<span class="cs-lg"><b>Age</b> drives the window</span>'
         + '<span class="cs-lg">' + winChip(23) + ' ascending</span>'
+        + projNote
         + draftedNote
         + '<span class="cs-lg" id="csFmtNote">Dynasty ' + (state.sf ? 'Superflex' : '1QB') + ' &middot; ' + teams + '-team</span>'
       : '<span class="cs-lg"><b>VOR</b> value over replacement, the ranking</span>'
         + '<span class="cs-lg"><span class="cs-val g">+7</span> above ADP, target it</span>'
         + '<span class="cs-lg"><span class="cs-val b">-4</span> going early, let it fall</span>'
         + '<span class="cs-lg"><b>Sched Rk</b> full-season schedule (1 = easiest)</span>'
+        + projNote
         + draftedNote
         + '<span class="cs-lg" id="csFmtNote">' + (state.sf ? 'Superflex' : '1QB') + ' &middot; ' + teams + '-team</span>';
 
@@ -623,11 +683,14 @@
       '<tr><th>Rk</th><th class="l">Player</th><th>Pos</th><th class="cs-vor-col">VOR</th><th title="Projected fantasy points per game">Proj PPG</th><th>' + col5 + '</th><th class="cs-value-col">' + col6 + '</th><th title="Full fantasy-season strength of schedule rank (1 = easiest)">Sched Rk</th>' + (showMarket(dyn) ? '<th class="cs-market-col">Market vs ADP</th>' : '') + editTh + '</tr>';
     var span = (editable ? 9 : 8) + (showMarket(dyn) ? 1 : 0);
     var lastT = null, html = '', shown = 0;
+    var pickAt = projPickMap();
     players.forEach(function (x) {
       if (!visiblePlayer(x)) return;
       if (!recommendationOrder && x.grp !== lastT) { lastT = x.grp; html += '<tr class="cs-cliff"><td colspan="' + span + '"><div class="cs-cliffline">' + x.grpLabel + '</div></td></tr>'; }
+      var pk = pickAt[x.rk];
+      if (pk) html += projLineRow(pk, span, x.drafted);
       shown++;
-      var cls = 'cs-p' + (state.done.has(x.id) ? ' done' : '') + (x.drafted ? ' drafted' : '') + (x.ov === 'mute' ? ' cs-muted' : '') + (x.ov ? ' cs-ov' : '') + (x.id === _flashId ? ' cs-flash' : '');
+      var cls = 'cs-p' + (state.done.has(x.id) ? ' done' : '') + (x.drafted ? ' drafted' : '') + (x.ov === 'mute' ? ' cs-muted' : '') + (x.ov ? ' cs-ov' : '') + (x.id === _flashId ? ' cs-flash' : '') + (pk ? ' cs-proj-row' : '');
       var c5 = dyn ? '<td class="cs-num">' + (x.age != null ? x.age : '') + '</td>' : '<td class="cs-num">' + (x.adp != null ? Math.round(x.adp) : '') + '</td>';
       var c6 = dyn ? '<td class="cs-value-col">' + winChip(x.age, x.pos) + '</td>' : '<td class="cs-value-col">' + valChip(x.value) + '</td>';
       var market = '';
@@ -643,9 +706,10 @@
         }
       }
       var recChip = x.recRank != null ? '<span class="cs-ovchip bump">REC #' + x.recRank + '</span>' : '';
+      var projChip = pk ? '<span class="cs-ovchip bump" title="Projected pick ' + pk.label + ' (overall #' + pk.pn + ')">Proj ' + pk.label + '</span>' : '';
       html += '<tr class="' + cls + '" data-good="' + x.good + '" data-posfull="' + (x.posfull ? 1 : 0) + '" data-name="' + esc(x.name) + '" data-id="' + esc(x.id) + '">'
         + '<td class="cs-rk">' + (x.rk == null ? '&ndash;' : x.rk) + '</td>'
-        + '<td><span class="cs-pcell">' + badge(x.pos) + '<span class="cs-pname">' + esc(x.name) + '</span>' + recChip + ovChip(x) + '</span></td>'
+        + '<td><span class="cs-pcell">' + badge(x.pos) + '<span class="cs-pname">' + esc(x.name) + '</span>' + recChip + projChip + ovChip(x) + '</span></td>'
         + '<td>' + posrk(x) + '</td>'
         + '<td class="cs-vor-col"><span class="cs-vorwrap"><span class="cs-num">' + x.vor + '</span><span class="cs-vorbar"><i style="width:' + Math.max(0, Math.round(x.vor / maxVor * 100)) + '%"></i></span></span></td>'
         + '<td class="cs-num">' + (x.projectedPpg != null ? x.projectedPpg.toFixed(1) : '&ndash;') + '</td>'
@@ -653,11 +717,13 @@
     });
     if (!shown) html = '<tr><td colspan="' + span + '" class="cs-empty">No players match this filter.</td></tr>';
     $('csBoardBody').innerHTML = html;
-    $('csBoardFoot').textContent = recommendationOrder
+    var foot = recommendationOrder
       ? 'VOR keeps this board stable; REC # shows the live Draft Room opinion without changing the order. Reopen to refresh ranks.'
       : dyn
       ? 'Ranked by value over replacement (dynasty value), youth-aware via the Window column. Tap a row to cross a player off.'
       : 'Ranked by value over replacement, so a scarce elite TE or QB can still outrank a higher-scoring skill player. Tap a row to cross a player off.';
+    if (state.pickSlot) foot += ' Proj Pick lines mark slot ' + state.pickSlot + ' snake windows.';
+    $('csBoardFoot').textContent = foot;
   }
 
   function renderPos(dyn) {
@@ -667,6 +733,7 @@
     // By Position stays the model view: iterate in model (VOR) order even when the
     // Big Board has been custom-reordered, so its tier grouping stays contiguous.
     var list = players.slice().sort(function (a, b) { return (a._mr || 0) - (b._mr || 0); });
+    var pickAt = projPickMap();
     list.forEach(function (x) {
       if (!visiblePlayer(x)) return;
       var tierChanged = !cur || x.dtier !== cur.tier;
@@ -679,7 +746,9 @@
     function nameChip(x) {
       var cls = 'cs-pgc cs-c-' + x.pos + (state.done.has(x.id) ? ' done' : '') + (x.drafted ? ' drafted' : '');
       var tail = dyn ? '' : smallVal(x.value);
-      return '<span class="' + cls + '" data-good="' + x.good + '" data-posfull="' + (x.posfull ? 1 : 0) + '" data-name="' + esc(x.name) + '" data-id="' + esc(x.id) + '"><span class="cs-pgn">' + esc(x.name) + tail + '</span></span>';
+      var pk = pickAt[(x._mr || 0) + 1];
+      var proj = pk ? '<span class="cs-proj-mark" title="Projected pick ' + pk.label + ' (overall #' + pk.pn + ')">Proj ' + pk.label + '</span>' : '';
+      return '<span class="' + cls + '" data-good="' + x.good + '" data-posfull="' + (x.posfull ? 1 : 0) + '" data-name="' + esc(x.name) + '" data-id="' + esc(x.id) + '"><span class="cs-pgn">' + esc(x.name) + tail + proj + '</span></span>';
     }
     var out = '<div class="cs-pgrid-head">' + POS.map(function (p) { return '<div>' + p + '</div>'; }).join('') + '</div>';
     var ri = 0;
@@ -687,6 +756,20 @@
       if (g.tierBreak) {
         var counts = POS.map(function (pos) { var n = players.filter(function (y) { return y.dtier === g.tier && y.pos === pos && !state.done.has(y.id) && !y.drafted; }).length; return n ? pos + ' ' + n : null; }).filter(Boolean).join(' &middot; ');
         out += '<div class="cs-pgtier">Tier ' + g.tier + (counts ? '<span class="cs-sc">' + counts + ' left</span>' : '') + '</div>';
+      }
+      var marks = [], seenPk = {};
+      g.items.forEach(function (x) {
+        var pk = pickAt[(x._mr || 0) + 1];
+        if (pk && !seenPk[pk.pn]) { seenPk[pk.pn] = 1; marks.push(pk); }
+      });
+      if (marks.length) {
+        var taken = marks.every(function (pk) {
+          return g.items.some(function (x) {
+            var hit = pickAt[(x._mr || 0) + 1];
+            return hit && hit.pn === pk.pn && x.drafted;
+          });
+        });
+        out += '<div class="cs-pgtier cs-proj-bar' + (taken ? ' cs-proj-taken' : '') + '">' + marks.map(function (pk) { return 'Proj Pick ' + pk.label; }).join(' · ') + '</div>';
       }
       var byPos = { RB: [], WR: [], QB: [], TE: [] };
       g.items.forEach(function (x) { byPos[x.pos].push(x); });
@@ -924,7 +1007,17 @@
         qRecommendations.split(',').map(function (s) { return s.trim(); }).filter(Boolean)
           .forEach(function (id, i) { if (recommendationOrder[id] == null) recommendationOrder[id] = i; });
       }
+      var qTeams = parseInt(qp.get('teams'), 10);
+      if (qTeams >= 2 && qTeams <= 32) teams = qTeams;
+      var qSlot = parseInt(qp.get('slot'), 10);
+      if (qSlot >= 1 && qSlot <= teams) state.pickSlot = qSlot;
     } catch (e) { /* no URL state */ }
+    if (!state.pickSlot) {
+      try {
+        var storedSlot = parseInt(localStorage.getItem(slotStoreKey()), 10);
+        if (storedSlot >= 1 && storedSlot <= teams) state.pickSlot = storedSlot;
+      } catch (e) { /* storage blocked */ }
+    }
     // Mode switch changes the scoring axis (redraft <-> dynasty), so a source
     // that's only valid on the old axis (e.g. Yahoo, redraft-only) must not carry
     // over. Reset to the default source and refetch cleanly for the new axis.
@@ -1018,6 +1111,13 @@
     $('csPrintBtn').addEventListener('click', function () { window.print(); });
     var srcSel = $('csAdpSrc');
     if (srcSel) srcSel.addEventListener('change', function () { state.adpSource = this.value; loadPlayers(); });
+    var slotSel = $('csPickSlot');
+    if (slotSel) slotSel.addEventListener('change', function () {
+      var v = parseInt(this.value, 10);
+      state.pickSlot = (v >= 1 && v <= teams) ? v : 0;
+      savePickSlot();
+      render();
+    });
 
     var searchEl = $('csSearch');
     if (searchEl) searchEl.addEventListener('input', function () { state.search = this.value.toLowerCase().trim(); render(); });
