@@ -315,6 +315,25 @@
     if (age <= b[2]) return ['Win-now', 'win-now']; return ['Fading', 'win-fade'];
   }
 
+  // ADP source the sheet is showing. "Auto" is Consensus — the same blended
+  // column Player Rankings defaults to — not the Sleeper overlay on avg_pick.
+  function sheetAdpSource() {
+    return (state.adpSource && state.adpSource !== 'auto') ? state.adpSource : 'consensus';
+  }
+  // Prefer p.adp_by_source[src] (rankings ADP columns) so Consensus 12.4 here
+  // is Consensus 12.4 there. Fall back to the top-level field if a source is
+  // missing for this player.
+  function sheetAdpOf(p, mode, sf) {
+    var src = sheetAdpSource();
+    var v = C.sourceAdpOf ? C.sourceAdpOf(p, src, mode, sf) : null;
+    if (v != null) return v;
+    if (src === 'consensus' && C.consensusAdpOf) return C.consensusAdpOf(p, mode, sf);
+    return C.adpOf(p, mode, sf);
+  }
+  function fmtAdp(v) {
+    return (v != null && isFinite(Number(v))) ? Number(v).toFixed(1) : '';
+  }
+
   function compute() {
     // A sheet opened from the Draft Room must mirror that room exactly. Custom
     // pre-draft overrides still apply to the standalone value board, but not on
@@ -357,7 +376,7 @@
       return {
         id: String(p.id), pos: pos, name: p.name || String(p.id),
         age: (p.age != null ? Number(p.age) : null),
-        adp: C.adpOf(p, mode, sf), vor: Math.round(value - (repl[pos] || 0)),
+        adp: sheetAdpOf(p, mode, sf), vor: Math.round(value - (repl[pos] || 0)),
         projectedPpg: p.proj_ppg != null && isFinite(Number(p.proj_ppg)) ? Number(p.proj_ppg) : null,
         marketVsAdp: mode === 'redraft' && p.market_vs_adp != null ? Number(p.market_vs_adp) : null,
         marketExpectedAdp: mode === 'redraft' && p.market_expected_adp != null ? Number(p.market_expected_adp) : null,
@@ -693,7 +712,7 @@
       if (pk) html += projLineRow(pk, span, x.drafted);
       shown++;
       var cls = 'cs-p' + (state.done.has(x.id) ? ' done' : '') + (x.drafted ? ' drafted' : '') + (x.ov === 'mute' ? ' cs-muted' : '') + (x.ov ? ' cs-ov' : '') + (x.id === _flashId ? ' cs-flash' : '') + (pk ? ' cs-proj-row' : '');
-      var c5 = dyn ? '<td class="cs-num">' + (x.age != null ? x.age : '') + '</td>' : '<td class="cs-num">' + (x.adp != null ? Math.round(x.adp) : '') + '</td>';
+      var c5 = dyn ? '<td class="cs-num">' + (x.age != null ? x.age : '') + '</td>' : '<td class="cs-num">' + fmtAdp(x.adp) + '</td>';
       var c6 = dyn ? '<td class="cs-value-col">' + winChip(x.age, x.pos) + '</td>' : '<td class="cs-value-col">' + valChip(x.value) + '</td>';
       var market = '';
       if (showMarket(dyn)) {
@@ -703,7 +722,7 @@
           var basisLabel = x.marketBasis === 'season_props' ? 'season-long player markets' : x.marketBasis === 'rolling_market' ? 'multiple recent weekly player markets' : x.marketBasis === 'team_environment' ? 'team betting environment' : 'a blend of available market signals';
           var confLabel = x.marketConfidenceLabel || (x.marketConfidence >= .7 ? 'High' : (x.marketConfidence >= .5 ? 'Moderate' : 'Low'));
           var direction = x.marketVsAdp > 0 ? 'earlier' : (x.marketVsAdp < 0 ? 'later' : 'near its current ADP');
-          var mtip = 'Market context implies this player should be drafted ' + (x.marketVsAdp === 0 ? direction : 'about ' + Math.abs(Math.round(x.marketVsAdp)) + ' picks ' + direction) + '. Expected Pick ' + Math.round(x.marketExpectedAdp) + '; current ADP ' + Math.round(x.adp) + '. Confidence: ' + confLabel + ' (' + Math.round((x.marketConfidence || 0) * 100) + '%). Based primarily on ' + basisLabel + '.';
+          var mtip = 'Market context implies this player should be drafted ' + (x.marketVsAdp === 0 ? direction : 'about ' + Math.abs(Math.round(x.marketVsAdp)) + ' picks ' + direction) + '. Expected Pick ' + Math.round(x.marketExpectedAdp) + '; current ADP ' + (x.adp != null ? Number(x.adp).toFixed(1) : '—') + '. Confidence: ' + confLabel + ' (' + Math.round((x.marketConfidence || 0) * 100) + '%). Based primarily on ' + basisLabel + '.';
           market = '<td class="cs-market-col"><span class="cs-val ' + mcls + '" title="' + esc(mtip) + '">' + (x.marketVsAdp > 0 ? '+' : '') + Math.round(x.marketVsAdp) + '</span></td>';
         }
       }
@@ -805,7 +824,8 @@
     var opts = adpSourceOptions[scoringAxisKey()] || [];
     if (!opts.length) { sel.style.display = 'none'; return; }
     sel.style.display = '';
-    var cur = state.adpSource === 'auto' ? (opts[0] && opts[0].value) : state.adpSource;
+    var cur = sheetAdpSource();
+    if (!opts.some(function (o) { return o.value === cur; })) cur = (opts[0] && opts[0].value) || cur;
     sel.innerHTML = opts.map(function (o) { return '<option value="' + esc(o.value) + '"' + (o.value === cur ? ' selected' : '') + '>ADP: ' + esc(o.label) + '</option>'; }).join('');
   }
 
@@ -824,10 +844,12 @@
     loadError = '';
     var params = [];
     params.push('league_type=' + (state.sf ? 'sf' : '1qb'));
-    if (state.adpSource && state.adpSource !== 'auto') {
-      params.push('adp_source=' + encodeURIComponent(state.adpSource));
-      params = params.concat(leagueParams());
-    }
+    // Always send league context so Yahoo viewers get the same rebuilt
+    // consensus column Player Rankings shows. Do not pass adp_source: the
+    // sheet reads p.adp_by_source so every dropdown choice matches the
+    // rankings source column (to one decimal) instead of overlaying Sleeper
+    // onto avg_pick and rounding it.
+    params = params.concat(leagueParams());
     var url = '/api/league-players' + (params.length ? ('?' + params.join('&')) : '');
     return fetch(url, { cache: 'no-store', signal: playerAbort ? playerAbort.signal : undefined })
       .then(function (r) {
@@ -963,7 +985,7 @@
     var dyn = state.mode === 'dynasty';
     var head = ['Rank', 'Player', 'Pos', 'PosRank', 'VOR', 'Proj PPG', (dyn ? 'Age' : 'ADP'), (dyn ? 'Window' : 'Value'), 'Schedule Rank'].concat(showMarket(dyn) ? ['Market vs ADP'] : []).concat(['Tier']);
     var rows = players.map(function (x) {
-      var c5 = dyn ? (x.age != null ? x.age : '') : (x.adp != null ? Math.round(x.adp) : '');
+      var c5 = dyn ? (x.age != null ? x.age : '') : fmtAdp(x.adp);
       var c6 = dyn ? youthWindow(x.age, x.pos)[0] : (x.value != null ? (x.value > 0 ? '+' + x.value : x.value) : '');
       return [x.rk, x.name, x.pos, x.prk, x.vor, x.projectedPpg == null ? '' : x.projectedPpg.toFixed(1), c5, c6, x.scheduleRank || ''].concat(showMarket(dyn) ? [x.marketVsAdp == null ? '' : x.marketVsAdp] : []).concat([x.dtier]);
     });
@@ -1028,8 +1050,8 @@
         recommendationOrder = null;
         document.querySelectorAll('#csMode button').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
         state.mode = b.getAttribute('data-mode');
-        if (state.adpSource !== 'auto') { state.adpSource = 'auto'; loadPlayers(); }
-        else { renderAdpSources(); compute(); render(); }
+        state.adpSource = 'auto';
+        renderAdpSources(); compute(); render();
       });
     });
     wireSeg('csQb', function (b) { recommendationOrder = null; state.sf = b.getAttribute('data-qb') === 'SF'; });
@@ -1112,7 +1134,7 @@
     });
     $('csPrintBtn').addEventListener('click', function () { window.print(); });
     var srcSel = $('csAdpSrc');
-    if (srcSel) srcSel.addEventListener('change', function () { state.adpSource = this.value; loadPlayers(); });
+    if (srcSel) srcSel.addEventListener('change', function () { state.adpSource = this.value; compute(); render(); });
     var slotSel = $('csPickSlot');
     if (slotSel) slotSel.addEventListener('change', function () {
       var v = parseInt(this.value, 10);

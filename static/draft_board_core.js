@@ -50,11 +50,28 @@
   function dynVal(p, sf) { return (sf ? (p.sf_value || p.value) : p.value) || 0; }
   function valOf(p, mode, sf) { return mode === 'dynasty' ? dynVal(p, sf) : redraftVal(p, sf); }
 
+  function adpField(mode, sf) {
+    if (mode === 'dynasty') return sf ? 'sf_avg_pick' : 'avg_pick';
+    return sf ? 'sf_redraft_avg_pick' : 'redraft_avg_pick';
+  }
   function adpOf(p, mode, sf) {
     if (mode === 'dynasty') { var a = sf ? p.sf_avg_pick : p.avg_pick; return a != null ? Number(a) : null; }
     var r = sf ? p.sf_redraft_avg_pick : p.redraft_avg_pick;
     if (r != null) return Number(r);
     return p._radp != null ? Number(p._radp) : null;   // value-derived redraft rank
+  }
+  // One source's ADP on the current dynasty/redraft × 1QB/SF axis — the same
+  // fields the Player Rankings ADP columns read from p.adp_by_source.
+  function sourceAdpOf(p, source, mode, sf) {
+    var by = p && p.adp_by_source && p.adp_by_source[source];
+    if (!by) return null;
+    var v = by[adpField(mode, sf)];
+    if (v == null || !isFinite(Number(v))) return null;
+    return Number(v);
+  }
+  function consensusAdpOf(p, mode, sf) {
+    var v = sourceAdpOf(p, 'consensus', mode, sf);
+    return v != null ? v : adpOf(p, mode, sf);
   }
 
   // Effective starters {QB,RB,WR,TE} from a roster_positions array.
@@ -572,6 +589,7 @@
   return {
     rosterCounts: rosterCounts, startersFor: startersFor,
     redraftVal: redraftVal, dynVal: dynVal, valOf: valOf, adpOf: adpOf,
+    adpField: adpField, sourceAdpOf: sourceAdpOf, consensusAdpOf: consensusAdpOf,
     computeReplacement: computeReplacement, ppgOf: ppgOf,
     computePpgScale: computePpgScale, ppgNorm: ppgNorm,
     empiricalSlotAllocation: empiricalSlotAllocation, effectiveStarters: effectiveStarters,

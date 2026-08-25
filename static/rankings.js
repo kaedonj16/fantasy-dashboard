@@ -143,17 +143,27 @@ function _prDrawSparkline(canvas, data, animate) {
   const green = (cs.getPropertyValue('--win') || '#16a34a').trim();
   const red   = (cs.getPropertyValue('--loss') || '#ef4444').trim();
   const col = (data[data.length - 1] >= data[0]) ? green : red;
+  // A new draw (or a re-render that recycled this canvas) must cancel the
+  // previous sweep; otherwise the old rAF keeps painting a half-drawn line
+  // and the sparkline looks hung.
+  canvas._prSparkGen = (canvas._prSparkGen || 0) + 1;
+  const gen = canvas._prSparkGen;
   if (animate && !_prReducedMotion()) {
     let start = null; const dur = 650;
-    (function frame(now) {
+    requestAnimationFrame(function frame(now) {
+      if (canvas._prSparkGen !== gen || canvas.isConnected === false) return;
       if (start === null) start = now;
-      // Clamp to [0,1]: the first rAF timestamp can be slightly earlier than the
-      // performance.now() that seeded `start`, which would make p (and progress)
-      // negative → a negative array index → a crash that blanks the sparkline.
+      // Clamp to [0,1]: rAF timestamps vs performance.now() can invert, which
+      // used to make p (and progress) negative → a crash that blanks the line.
       const p = Math.min(1, Math.max(0, (now - start) / dur));
-      _prPaintSpark(ctx2d, pts, w, h, 1 - Math.pow(1 - p, 3), col); // easeOutCubic
+      try {
+        _prPaintSpark(ctx2d, pts, w, h, 1 - Math.pow(1 - p, 3), col); // easeOutCubic
+      } catch (err) {
+        _prPaintSpark(ctx2d, pts, w, h, 1, col);
+        return;
+      }
       if (p < 1) requestAnimationFrame(frame);
-    })(performance.now());
+    });
   } else {
     _prPaintSpark(ctx2d, pts, w, h, 1, col);
   }
@@ -609,7 +619,14 @@ var PR_SORT_META = {
 // when the helper is unavailable or the user prefers reduced motion.
 function prFlipRender() {
   var list = document.getElementById('prList');
-  if (list && window.brFlipReorder) window.brFlipReorder(list, prRender);
+  var sortEl = document.getElementById('prSort');
+  var sortBy = sortEl ? sortEl.value : '';
+  // The ADP-source view rebuilds each row's grid (and often the overflow
+  // scroller). FLIP-ing that layout change leaves rows translated inside the
+  // clip — the reorder that "gets stuck". Skip motion there; same-layout
+  // sorts (Value / Age / PPG / …) still glide.
+  var adpLayout = sortBy === 'adp' || (list && list.querySelector('.pr-adp-mode'));
+  if (!adpLayout && list && window.brFlipReorder) window.brFlipReorder(list, prRender);
   else prRender();
 }
 

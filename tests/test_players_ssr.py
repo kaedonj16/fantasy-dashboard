@@ -42,3 +42,22 @@ def test_ssr_path_hides_the_players_skeleton():
     # …and the replacement it produces must actually hide the skeleton.
     hidden = re.findall(r'<div id="prLoading"[^>]*display:none[^>]*>', app_src)
     assert hidden, "the SSR path never sets display:none on #prLoading — skeleton stays visible"
+
+
+def test_rankings_flip_and_sparkline_cannot_leave_motion_stuck():
+    """Player Rankings reorder/sparkline animations must finish or cancel.
+
+    A single rAF invert/play batch plus a row-level `transition: background`
+    shorthand used to leave rows translated; overlapping sparkline rAF loops
+    painted a half-drawn line. Pin the cleanup so those hang-ups stay fixed.
+    """
+    app_js = open(os.path.join(_ROOT, "static", "app.js"), encoding="utf-8").read()
+    rankings = open(os.path.join(_ROOT, "static", "rankings.js"), encoding="utf-8").read()
+
+    assert "window.brFlipReorder = function (container, mutate)" in app_js
+    assert "requestAnimationFrame(function () { requestAnimationFrame(play); });" in app_js
+    assert "setTimeout(done, 500);" in app_js
+    assert "c.style.transform = '';" in app_js
+    assert "var adpLayout = sortBy === 'adp' || (list && list.querySelector('.pr-adp-mode'));" in rankings
+    assert "canvas._prSparkGen" in rankings
+    assert "canvas.isConnected === false" in rankings

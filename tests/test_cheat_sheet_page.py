@@ -114,6 +114,33 @@ def test_cheat_sheet_adds_projected_ppg_to_board_and_export():
     assert "x.projectedPpg.toFixed(1)" in script
 
 
+def test_cheat_sheet_consensus_adp_matches_rankings_to_one_decimal():
+    """Cheat sheet ADP must be the rankings Consensus column, to one decimal.
+
+    The dropdown used to label Auto as Consensus while reading the Sleeper
+    overlay on avg_pick and Math.round-ing it, so 12.4 on Player Rankings
+    showed as 12 (or a different source entirely) on the sheet.
+    """
+    script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
+    core = (Path(__file__).parents[1] / "static" / "draft_board_core.js").read_text()
+    rankings = (Path(__file__).parents[1] / "static" / "rankings.js").read_text()
+
+    assert "function sourceAdpOf(p, source, mode, sf)" in core
+    assert "p.adp_by_source && p.adp_by_source[source]" in core
+    assert "function consensusAdpOf(p, mode, sf)" in core
+    assert "function sheetAdpOf(p, mode, sf)" in script
+    assert "C.sourceAdpOf ? C.sourceAdpOf(p, src, mode, sf)" in script
+    assert "adp: sheetAdpOf(p, mode, sf)" in script
+    assert "return (state.adpSource && state.adpSource !== 'auto') ? state.adpSource : 'consensus';" in script
+    assert "Number(v).toFixed(1)" in script
+    assert "x.adp != null ? Math.round(x.adp) : ''" not in script
+    assert "adp_source=' + encodeURIComponent(state.adpSource)" not in script
+    assert "params = params.concat(leagueParams());" in script
+    # Rankings Consensus column is the same 1-decimal adp_by_source field.
+    assert "prAdpSourceVal(p, c.value)" in rankings
+    assert "(v != null ? v.toFixed(1) : '–')" in rankings
+
+
 def test_draft_room_only_shares_context_from_a_visible_draft_board():
     script = (Path(__file__).parents[1] / "static" / "draft_room.js").read_text()
 
