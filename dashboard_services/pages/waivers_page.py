@@ -346,7 +346,6 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 
     html_body = f"""
 <div class="wv-page">
-  <p class="br-page-brand">BR Fantasy</p>
   <!-- Position filter pills -->
   <div class="wv-filters">
     <div class="wv-filter-row">

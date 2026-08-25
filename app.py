@@ -9174,7 +9174,6 @@ def build_weekly_hub_body(ctx: dict) -> str:
         <div class="card">
           <div class="card-header-row">
             <div>
-              <p class="br-page-brand">BR Fantasy</p>
               <h2>Weekly Hub</h2>
             </div>
             <div class="week-selector">
@@ -10694,7 +10693,6 @@ def build_activity_body(ctx: dict) -> str:
             "<div class='card activity-card' data-section='activity'>"
             "  <div class='card-header-row'>"
             "    <div>"
-            "      <p class='br-page-brand'>BR Fantasy</p>"
             "      <h2>League activity</h2>"
             "    </div>"
             "  </div>"
@@ -13978,7 +13976,6 @@ def page_breakouts(platform: str, season: int, league_id: str):
     body_html = f"""
     <div class="card central">
       <div class="card-header">
-        <p class="br-page-brand">BR Fantasy</p>
         <h2>Breakout Engine</h2>
         <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
           Players positioned for breakouts based on opportunity, efficiency, and roster changes
@@ -16225,7 +16222,6 @@ def build_schedule_body(ctx):
     <div class="card central schedule-card">
       <div class="card-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
         <div>
-          <p class="br-page-brand">BR Fantasy</p>
           <h2>Schedule Assistant</h2>
           <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
             Matchup difficulty by week. Add or remove players and pick a single week or a range.
@@ -17285,7 +17281,6 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     week_selector = f"""
 <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
   <div style="flex:1;min-width:160px;">
-    <p class="br-page-brand">BR Fantasy</p>
     <h2 style="margin:0;font-size:20px;">Week {selected_week} Recap</h2>
   </div>
   <select onchange="window.location.search='?week='+this.value"
@@ -18359,7 +18354,6 @@ def build_commissioner_body(ctx):
   .lh-parity-scale {{ display:flex; justify-content:space-between; font-size:10.5px; color:var(--muted); margin:2px 4px 12px; }}
 </style>
 <div class="card lh-card">
-  <p class="br-page-brand">BR Fantasy</p>
   <div class="lh-hero2">
     <div class="lh-ring">
       <svg width="128" height="128" viewBox="0 0 128 128" aria-hidden="true">
@@ -28835,7 +28829,6 @@ def build_portfolio_body(
         f"<div class='card' style='margin-bottom:14px;'>"
         f"<div class='pf-summary'>"
         f"<div>"
-        f"<p class='br-page-brand'>BR Fantasy</p>"
         f"<div class='pf-summary-title'>My Leagues</div>"
         f"<div class='pf-summary-sub'>Signed in as <strong>{html.escape(username)}</strong></div>"
         f"</div>"

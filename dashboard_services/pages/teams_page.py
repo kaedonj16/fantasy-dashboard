@@ -901,7 +901,6 @@ def build_teams_body(ctx: dict) -> str:
     <div class="page-layout teams-page" id="teamsPageLayout" data-active-tab="teams">
       <main class="page-main">
         <div class="teams-topbar">
-          <p class="br-page-brand" style="margin:0 0 10px;width:100%;">BR Fantasy</p>
           <div class="teams-sort-bar">
             <span style="font-size:12px;color:var(--text-muted);margin-right:8px;">Sort by:</span>
             <div class="otc-main-tabs br-slide-tabs teams-sort-tabs" data-br-slide-tabs>
