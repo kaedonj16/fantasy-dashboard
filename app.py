@@ -24204,7 +24204,10 @@ def api_draft_grades():
         # the SAME league-players payload the Draft Room uses, so the score's ADP
         # term matches the front-end exactly.
         adp_ps_by_id: dict[str, float] = {}
-        # Tier-cliff lookup: (pos|tier) -> count still on the board after the draft.
+        # Tier-cliff lookup: (pos|tier) -> count still on the board. Starts as the
+        # FULL eligible pool and decrements as picks are processed so each pick
+        # sees remaining-at-pick (matches Draft Room isTierCliff), not post-draft
+        # leftovers.
         tier_remaining: dict[str, int] = {}
         # League scoring format multipliers; defaults match Draft Room setup.
         _ppr, _tep, _pass_td = 1.0, 0.0, 4.0
@@ -24341,13 +24344,11 @@ def api_draft_grades():
                 _ev = _eff_val(_pid, _d)
                 _by_pos[_pp].append(_ev)
                 ps_pool_sorted.append((_ev, _pid))
-                # Tier-cliff: count players of each (pos|tier) still UNDRAFTED after
-                # this draft, matching the Draft Room's post-draft availablePool().
-                if _pid not in drafted_player_ids:
-                    _ct = _score_tier(_pid, _d, _ev)
-                    if _ct is not None:
-                        _ck = f"{_pp}|{_ct}"
-                        tier_remaining[_ck] = tier_remaining.get(_ck, 0) + 1
+                # Seed at-pick cliff counts from the full eligible pool.
+                _ct = _score_tier(_pid, _d, _ev)
+                if _ct is not None:
+                    _ck = f"{_pp}|{_ct}"
+                    tier_remaining[_ck] = tier_remaining.get(_ck, 0) + 1
             # Let the actual player pool decide how FLEX/SF are occupied;
             # this supersedes the fixed half-QB/half-RB/half-WR heuristic.
             _allocation_pool = [
@@ -24603,10 +24604,15 @@ def api_draft_grades():
                                   if _span > 0 else _ps_clamp01(_pv / max(_psc["elite"], 1)))
                     # ADP for the score comes from the SAME feed the Draft Room uses
                     # (separate from the letter-grade ADP), so the score's ADP term
-                    # matches the front-end. Tier-cliff uses the post-draft board.
+                    # matches the front-end. Tier-cliff uses remaining-at-pick
+                    # (full pool decremented in draft order), with Round-1 suppress
+                    # matching Draft Room isTierCliff.
                     _ps_adp = adp_ps_by_id.get(player_id, avg_pick)
-                    _is_cliff = (_tier is not None
-                                 and tier_remaining.get(f"{pos}|{_tier}", 0) <= 2)
+                    _is_cliff = (
+                        _tier is not None
+                        and pick_no > _num_teams
+                        and tier_remaining.get(f"{pos}|{_tier}", 0) <= 2
+                    )
                     pick_score = _compute_pick_score(
                         pos=pos, value=_val, vor=_vor, tier=_tier,
                         age=_d.get("age"), rank_change_7d=mom_by_id.get(player_id),
@@ -24617,6 +24623,11 @@ def api_draft_grades():
                         num_teams=_num_teams, ppg_norm=_ppg_n,
                         ppr=_ppr, tep=_tep, pass_td=_pass_td, is_tier_cliff=_is_cliff,
                     )
+                    # Consume this player from the at-pick cliff counts for later picks.
+                    if _tier is not None:
+                        _ck = f"{pos}|{_tier}"
+                        if tier_remaining.get(_ck, 0) > 0:
+                            tier_remaining[_ck] -= 1
 
             picks_by_roster[rid].append({
                 "pick_no": pick_no,

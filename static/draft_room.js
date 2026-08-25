@@ -2037,7 +2037,7 @@
     _boardSig = null;
     _summaryShown = false;
     lastLivePicks = null;
-    _poServer = null; _poServerSig = null; _poFetching = false;   // drop cached playoff odds
+    _poServer = null; _poServerSig = null; _poFetching = false; _poFailedSig = null;   // drop cached playoff odds
     _poMcCache = null; _poMcSig = null;
     _relCache = { sig: null, map: {} };   // drop reconstructed pool-relative scores
   }
@@ -2880,6 +2880,11 @@
     var ppgN = ppgNormOf(p);
 
     var _sc = scoringCfg();
+    var _cliff;
+    if (opts && opts.isTierCliff != null) _cliff = !!opts.isTierCliff;
+    else if (opts && opts.grading && _gradeCliffByPn && _pn && _gradeCliffByPn[_pn] != null)
+      _cliff = !!_gradeCliffByPn[_pn];
+    else _cliff = isTierCliff(p, _pn);
     return BRPickScore.computePickScore({
       pos: pos, value: valOf(p), vor: vorOf(p), tier: tierOf(p),
       age: (p.age != null ? Number(p.age) : null), rankChange7d: p.rank_change_7d,
@@ -2887,7 +2892,7 @@
       draftType: state.type, isSf: state.sf, needRaw: needRaw,
       qbCount: counts['QB'] || 0, totalPicks: (state.teams || 12) * (state.rounds || 16),
       numTeams: state.teams || 12, ppgNorm: ppgN,
-      ppr: _sc.ppr, tep: _sc.tep, passTd: _sc.passTd, isTierCliff: isTierCliff(p, _pn),
+      ppr: _sc.ppr, tep: _sc.tep, passTd: _sc.passTd, isTierCliff: _cliff,
     });
   }
 
@@ -3193,6 +3198,9 @@
     sideTab = 'needs';
     document.getElementById('drCompleteBar').style.display = '';
     renderSide();
+    // Prefetch standings-engine odds so League / Summary / Deep Dive paint the
+    // final number on first open (no interim JS estimate, no visible jump).
+    try { refreshServerPlayoffOdds(gradeAllTeams()); } catch (e){ /* grades may not be ready yet */ }
   }
 
   // Undo showCompleteSidebar(): a fresh mock/manual draft started after viewing a
@@ -3456,15 +3464,29 @@
   function _draftComplete(){ return !!state && (!!state.isComplete || state.current > (state.teams || 12) * (state.rounds || 0)); }
 
   // Server-computed playoff odds - the SAME engine the standings page uses
-  // (simulate_playoff_odds, preseason mode). Populated asynchronously once the
-  // draft is complete; playoffOddsBySlot() above is the instant fallback shown
-  // until this returns (or if the call fails).
+  // (simulate_playoff_odds, preseason mode). For a completed draft we ONLY show
+  // these numbers (or a loading placeholder) — never the JS Monte Carlo first —
+  // so the user never sees a percentage jump a moment later. The JS estimate is
+  // used mid-draft and as a one-shot fallback if the server fetch fails.
   var _poServer = null, _poServerSig = null, _poFetching = false;
+  var _poFailedSig = null;
   function _poSig(allTeams){ return allTeams.map(function(t){ return t.slot + ':' + (t.picks ? t.picks.length : 0); }).join('|') + '@' + state.current; }
+  function _repaintPlayoffOdds(){
+    if (sideTab === 'league') renderSide();
+    // Summary / Deep Dive capture odds at open; rebuild once when the final
+    // source lands so the first painted number is the only number.
+    var sum = document.getElementById('drSummary');
+    if (sum && sum.style.display !== 'none' && typeof openSummary === 'function'){
+      try { openSummary(); } catch (e){ /* openSummary may not be ready */ }
+    }
+    var ddOv = document.getElementById('drDeepDive');
+    if (ddOv && ddOv.style.display !== 'none') openDeepDive();
+  }
   function refreshServerPlayoffOdds(allTeams){
     if (!_draftComplete() || !allTeams || allTeams.length < 2) return;
     var sig = _poSig(allTeams);
     if (_poFetching || (_poServer && _poServerSig === sig)) return;
+    if (_poFailedSig === sig) return;
     _poFetching = true;
     var _sc = scoringCfg();
     var payload = {
@@ -3484,22 +3506,29 @@
         if (resp && resp.odds && resp.odds.length){
           var m = {};
           resp.odds.forEach(function(o){ if (o.slot != null) m[o.slot] = Math.round(o.playoff_pct); });
-          _poServer = m; _poServerSig = sig;
-          if (sideTab === 'league') renderSide();   // repaint the league tab with the thorough odds
-          // Deep Dive captures odds at open time; refresh the open card so it
-          // upgrades from the JS estimate to the standings-engine numbers.
-          var ddOv = document.getElementById('drDeepDive');
-          if (ddOv && ddOv.style.display !== 'none') openDeepDive();
+          _poServer = m; _poServerSig = sig; _poFailedSig = null;
+          _repaintPlayoffOdds();
+        } else {
+          _poFailedSig = sig;
+          _repaintPlayoffOdds();
         }
       })
-      .catch(function(){ _poFetching = false; });
+      .catch(function(){ _poFetching = false; _poFailedSig = sig; _repaintPlayoffOdds(); });
   }
-  // Odds source for display: the server engine when it's ready for this exact
-  // board, else the instant JS estimate (and kick off the server fetch).
+  // Odds for display. Completed drafts wait for the standings engine (empty
+  // object = pending). Mid-draft and failed fetches use the JS estimate.
   function playoffOddsSource(allTeams){
     refreshServerPlayoffOdds(allTeams);
-    if (_poServer && _poServerSig === _poSig(allTeams)) return _poServer;
-    return playoffOddsBySlot(allTeams);
+    var sig = _poSig(allTeams);
+    if (_poServer && _poServerSig === sig) return _poServer;
+    if (!_draftComplete()) return playoffOddsBySlot(allTeams);
+    if (_poFailedSig === sig) return playoffOddsBySlot(allTeams);
+    return {};
+  }
+  function playoffOddsPending(allTeams){
+    if (!_draftComplete() || !allTeams || allTeams.length < 2) return false;
+    var sig = _poSig(allTeams);
+    return !(_poServer && _poServerSig === sig) && _poFailedSig !== sig;
   }
   function gradeTeam(){
     if (!hasOwned()) return null;
@@ -3699,6 +3728,32 @@
       strength: Math.round(_comp.strengthRatio * 100),
       window: _competitiveWindow(_starterArr) };
   }
+  // At-pick tier-cliff map for grading: walk the full draft in order starting from
+  // the full-pool tier counts, so each historical pick sees remaining-at-that-slot
+  // (matches live isTierCliff / the Teams API), not post-draft leftovers.
+  var _gradeCliffByPn = null;
+  function _buildGradeCliffs(){
+    var counts = {}, map = {};
+    players.forEach(function(p){
+      var t = tierOf(p); if (t == null) return;
+      var k = String(p.position || '').toUpperCase() + '|' + t;
+      counts[k] = (counts[k] || 0) + 1;
+    });
+    var teams = (state && state.teams) || 12;
+    Object.keys(state.picks || {}).filter(function(k){ return !!state.picks[k]; })
+      .map(function(k){ return parseInt(k, 10); }).sort(function(a, b){ return a - b; })
+      .forEach(function(pn){
+        var pl = state.picks[pn];
+        var full = playersById[String(pl.id)] || pl;
+        var t = tierOf(full);
+        var pos = String(pl.position || '').toUpperCase();
+        var k = pos + '|' + t;
+        var left = (t != null) ? (counts[k] || 0) : 0;
+        map[pn] = (pn > teams) && t != null && left <= 2;
+        if (t != null && counts[k]) counts[k]--;
+      });
+    return map;
+  }
   // Grade every team in the draft, sorted best-first. Picks are attributed by
   // OWNERSHIP, not by the board column they sit in: every pick the user owns (a
   // 1.01 traded in, a pick in another seat, etc.) belongs to the single "You"
@@ -3706,6 +3761,7 @@
   // owns picks across two seats would show up as "You" twice.
   function gradeAllTeams(){
     if (!state) return [];
+    _gradeCliffByPn = _buildGradeCliffs();
     var teams = state.teams || 12;
     var mine = [];        // every pick the user owns, regardless of seat
     var bySlot = {};      // remaining picks grouped by the seat that owns them
@@ -4047,9 +4103,13 @@
         if (_sl) stratTag = '<span class="dr-strat-tag">' + _sl + '</span>';
       }
       var poTag = '';
-      if (_leagueDone && _poOdds[t.slot] != null){
-        poTag = '<span class="dr-sum-lpo" style="color:' + _poColor(_poOdds[t.slot]) + '" title="Projected playoff odds">'
-          + _poOdds[t.slot] + '%</span>';
+      if (_leagueDone){
+        if (playoffOddsPending(allTeams)){
+          poTag = '<span class="dr-sum-lpo dr-sum-lpo-pending" title="Calculating playoff odds">…</span>';
+        } else if (_poOdds[t.slot] != null){
+          poTag = '<span class="dr-sum-lpo" style="color:' + _poColor(_poOdds[t.slot]) + '" title="Projected playoff odds">'
+            + _poOdds[t.slot] + '%</span>';
+        }
       }
       html += '<div class="dr-sum-lrow' + (t.isMe ? ' is-me' : '') + '" data-legslot="' + t.slot + '">'
         + rankCell
@@ -5005,7 +5065,7 @@
   // Single source of truth so the inline ⓘ tooltips and the help popover agree.
   var _GLOSSARY = [
     { term: 'Recommendation', def: 'The live, roster-aware order for this pick. It starts with Pick Score, then accounts for whether the player fills a starter or FLEX spot, backup and overfill cost, required slots and picks remaining, positional depth, expected availability at your next pick, and recent investment at QB or TE. A major value fall can still overcome imperfect roster fit. Recommendation is shown as a rank rather than a grade because its internal utility naturally changes as the board is depleted.' },
-    { term: 'Pick Score (PS)', def: 'A 0-100 grade of how good this pick is relative to what’s still available right now — the best remaining option anchors near the top, so a strong pick reads well even late in the draft. Blends the player’s value, how far they fell vs ADP, positional tier, your roster needs, age, and projected points. Your report-card grade uses the absolute, round-weighted version, so it can differ from the board number. Kickers and defenses aren’t scored.' },
+    { term: 'Pick Score (PS)', def: 'A 0-100 grade of pick quality. On the live board and sidebar it is scaled relative to the best player still available (so a strong late pick still reads well). Made-pick chips on the report card / Deep Dive “Board PS” use the same relative scale at that historical slot. Your letter grade’s Value bar uses the absolute, round-weighted kernel score — those two numbers can differ. Kickers and defenses aren’t scored.' },
     { term: 'Value', def: 'The player’s trade value as an asset on a 0-999 scale - dynasty value for startup/rookie drafts, redraft value for redraft.' },
     { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a replacement-level starter at their position (a fixed, preseason-style baseline). VORP uses real fantasy points; VOR uses dynasty value.' },
     { term: 'ADP', def: 'Average Draft Position - the typical overall pick a player goes at in real drafts. If it’s below your current pick, they’ve fallen and may be a value.' },
@@ -5097,12 +5157,17 @@
         if (sumStarterPsCount >= 2) _sits.push({ v: Math.round(sumStarterPsTotal / sumStarterPsCount), l: 'Starter PS' });
       }
       // Projected playoff odds for this team - only once the draft is complete.
+      // Wait for the standings engine so the tile never flashes a different %.
       if (_draftComplete()){
         var _allT = gradeAllTeams(), _meT = null;
         for (var _ti = 0; _ti < _allT.length; _ti++){ if (_allT[_ti].isMe){ _meT = _allT[_ti]; break; } }
         if (_meT){
-          var _myOdds = playoffOddsSource(_allT)[_meT.slot];
-          if (_myOdds != null) _sits.push({ v: _myOdds + '%', l: 'Playoff Odds' });
+          if (playoffOddsPending(_allT)){
+            _sits.push({ v: '…', l: 'Playoff Odds' });
+          } else {
+            var _myOdds = playoffOddsSource(_allT)[_meT.slot];
+            if (_myOdds != null) _sits.push({ v: _myOdds + '%', l: 'Playoff Odds' });
+          }
         }
       }
       if (_sits.length){
@@ -5267,7 +5332,12 @@
 
     var picks = ddMyPicks();
     var withAdp = picks.filter(function(p){ return p.diff != null; });
-    var netValue = withAdp.reduce(function(s, p){ return s + p.diff; }, 0);
+    // Cap each pick's contribution so one late-round freefall doesn't dominate
+    // the "net ADP value" tile (a +40 slide in round 14 ≠ forty early-round steals).
+    var netValue = withAdp.reduce(function(s, p){
+      return s + Math.max(-12, Math.min(12, p.diff));
+    }, 0);
+    netValue = Math.round(netValue * 10) / 10;
     var nValues = withAdp.filter(function(p){ return p.diff >= 3; }).length;
     var nReaches = withAdp.filter(function(p){ return p.diff <= -5; }).length;
 
@@ -5336,7 +5406,7 @@
 
     var tiles = '';
     var tileDefs = [
-      { v: (netValue >= 0 ? '+' : '') + netValue, l: 'Net ADP value banked', cls: netValue >= 0 ? 'good' : 'bad' },
+      { v: (netValue >= 0 ? '+' : '') + netValue, l: 'Net ADP value (capped)', cls: netValue >= 0 ? 'good' : 'bad' },
       { v: nValues, l: 'Values (fell 3+ to you)', cls: 'good' },
       { v: nReaches, l: 'Reaches (early 5+)', cls: nReaches ? 'bad' : '' },
       { v: g.avgPs != null ? g.avgPs : '—', l: 'Avg pick score' }
@@ -5442,7 +5512,7 @@
       + '<div class="dd-tip-r">Pick <b>' + roundPickStr(p.pn) + '</b></div>'
       + (p.adp != null ? '<div class="dd-tip-r">ADP <b>' + Number(p.adp).toFixed(1) + '</b></div>' : '')
       + (p.diff != null ? '<div class="dd-tip-r">± vs ADP <b style="color:' + (p.diff >= 0 ? '#22c55e' : '#ef4444') + '">' + (p.diff >= 0 ? '+' : '') + p.diff.toFixed(1) + '</b></div>' : '')
-      + (p.ps != null ? '<div class="dd-tip-r">Pick score <b style="color:' + psColor(p.ps) + '">' + p.ps + '</b></div>' : '')
+      + (p.ps != null ? '<div class="dd-tip-r">Board PS <b style="color:' + psColor(p.ps) + '">' + p.ps + '</b> <span style="color:var(--text-muted)">(vs best avail)</span></div>' : '')
       + '<div class="dd-tip-r">Verdict <b>' + vd.label + '</b></div>';
     tip.classList.add('show');
     var tw = tip.offsetWidth, th = tip.offsetHeight;
@@ -5456,12 +5526,12 @@
   // ── Pick ledger (sortable) ───────────────────────────────────────────────────
   function ddLedgerHtml(picks){
     return '<div class="dd-card">'
-      + '<div class="dd-sec"><h4>Pick ledger</h4><p>Every selection with market delta, pick score, tier, and verdict. Click a header to sort.</p></div>'
+      + '<div class="dd-sec"><h4>Pick ledger</h4><p>Every selection with market delta, board pick score (vs best available then), tier, and verdict. Click a header to sort.</p></div>'
       + '<div class="dd-tablescroll"><table class="dd-ledger" id="drDdLedger">'
       + '<thead><tr>'
       + '<th data-k="pn" data-t="n">Pick</th><th data-k="name" data-t="s">Player</th><th data-k="pos" data-t="s">Pos</th>'
       + '<th data-k="adp" data-t="n" class="r">ADP</th><th data-k="diff" data-t="n" class="r dd-sorted">± ADP</th>'
-      + '<th data-k="ps" data-t="n" class="r">Score</th><th data-k="tier" data-t="n" class="r">Tier</th>'
+      + '<th data-k="ps" data-t="n" class="r" title="Board pick score vs best available at that slot">Board PS</th><th data-k="tier" data-t="n" class="r">Tier</th>'
       + '<th data-k="vord" data-t="s">Verdict</th>'
       + '</tr></thead><tbody id="drDdLedgerBody"></tbody></table></div></div>';
   }
@@ -5508,12 +5578,15 @@
   // ── League board: grades + playoff odds for every team ───────────────────────
   function ddLeagueHtml(field, odds, n){
     if (!field.length) return '';
+    var pending = playoffOddsPending(field);
     var rows = field.map(function(t, i){
       var col = ddGradeCol(t.grade.score);
-      var od = (odds && odds[t.slot] != null) ? odds[t.slot] : null;
-      var odBar = od != null
-        ? '<div class="dd-odds"><div class="dd-odds-track"><i style="width:' + Math.max(2, od) + '%;background:' + (od >= 60 ? '#22c55e' : od >= 35 ? '#38bdf8' : '#f59e0b') + '"></i></div><span class="num">' + od + '%</span></div>'
-        : '<span style="color:var(--text-subtle,var(--text-muted));font-size:12px">—</span>';
+      var od = (!pending && odds && odds[t.slot] != null) ? odds[t.slot] : null;
+      var odBar = pending
+        ? '<span class="dd-odds-pending">Calculating…</span>'
+        : (od != null
+          ? '<div class="dd-odds"><div class="dd-odds-track"><i style="width:' + Math.max(2, od) + '%;background:' + (od >= 60 ? '#22c55e' : od >= 35 ? '#38bdf8' : '#f59e0b') + '"></i></div><span class="num">' + od + '%</span></div>'
+          : '<span style="color:var(--text-subtle,var(--text-muted));font-size:12px">—</span>');
       return '<tr class="' + (t.isMe ? 'dd-me' : '') + '">'
         + '<td class="num" style="color:var(--text-muted)">' + (i + 1) + '</td>'
         + '<td class="dd-plname">' + esc(t.name) + (t.isMe ? ' <span class="dd-youtag">YOU</span>' : '') + '</td>'
@@ -5522,8 +5595,11 @@
         + '<td>' + odBar + '</td>'
         + '</tr>';
     }).join('');
-    var note = _draftComplete() ? 'Playoff odds from the standings simulation engine (preseason mode).'
-      : 'Live estimate — odds sharpen to the full simulation once the draft completes.';
+    var note = !_draftComplete()
+      ? 'Live estimate — odds sharpen to the full simulation once the draft completes.'
+      : (pending
+        ? 'Running the standings simulation engine…'
+        : 'Playoff odds from the standings simulation engine (preseason mode).');
     return '<div class="dd-card">'
       + '<div class="dd-sec"><h4>League board &amp; playoff odds</h4><p>' + note + '</p></div>'
       + '<div class="dd-tablescroll"><table class="dd-ledger dd-league">'
@@ -5624,11 +5700,20 @@
           ds: byeMap[worst].join(', ') + ' all sit on the same week. Plan a stopgap before then.' });
       }
     }
-    // Thin position: rostered count at or below the number of starter slots.
+    // Thin position: rostered count at or below starter demand, including FLEX/SF
+    // shares so a 2-RB + FLEX roster with only 2 RBs still flags as thin.
     var counts = { QB:0, RB:0, WR:0, TE:0 };
     picks.forEach(function(p){ if (counts[p.pos] != null) counts[p.pos]++; });
+    var rs = (state && state.roster) || defaultRoster();
+    var flex = rs.FLEX || 0, sf = rs.SF || 0;
+    var starterNeed = {
+      QB: (rs.QB || 0) + sf,
+      RB: (rs.RB || 0) + Math.ceil(flex * 0.5),
+      WR: (rs.WR || 0) + Math.floor(flex * 0.5),
+      TE: (rs.TE || 0)
+    };
     ['RB','WR','TE','QB'].forEach(function(pos){
-      var need = (state.roster && state.roster[pos]) || 0;
+      var need = starterNeed[pos] || 0;
       if (need > 0 && counts[pos] <= need){
         flags.push({ cls: 'warn', ttl: 'Thin at ' + pos + ' — ' + counts[pos] + ' rostered',
           ds: 'You have no margin behind your ' + pos + ' starters. Prioritize depth on the waiver wire.' });

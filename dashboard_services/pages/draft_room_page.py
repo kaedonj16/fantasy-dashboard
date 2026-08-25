@@ -1162,6 +1162,7 @@ _DRAFT_ROOM_HTML = r"""
   .dd-odds-track { flex:1; height:7px; border-radius:99px; background:var(--border); overflow:hidden; }
   .dd-odds-track i { display:block; height:100%; border-radius:99px; }
   .dd-odds .num { font-variant-numeric:tabular-nums; font-weight:600; font-size:12.5px; min-width:34px; text-align:right; }
+  .dd-odds-pending { color:var(--text-muted); font-size:12px; font-style:italic; }
   /* construction */
   .dd-two { display:grid; grid-template-columns:1fr 1fr; gap:22px; }
   .dd-cap-row { display:grid; grid-template-columns:40px 1fr 78px; gap:11px; align-items:center; margin-bottom:10px; }
@@ -1420,6 +1421,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-sum-lgrade { font-size: 18px; font-weight: 900; flex-shrink: 0; width: 32px; text-align: right; }
   /* Projected playoff-odds chip (completed draft only) */
   .dr-sum-lpo { font-size: 11px; font-weight: 800; flex-shrink: 0; width: 38px; text-align: right; font-variant-numeric: tabular-nums; }
+  .dr-sum-lpo-pending { color: var(--text-muted); font-weight: 600; }
   .dr-sum-lchev { font-size: 9px; color: var(--text-muted); flex-shrink: 0; transition: transform .2s; }
   .dr-sum-lrow.is-open .dr-sum-lchev { transform: rotate(180deg); }
   /* Expandable team starter detail */
