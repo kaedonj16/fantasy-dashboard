@@ -164,11 +164,14 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-ss-advice-head i { color: var(--accent); margin-right: 6px; }
 .wv-ss-advice-head strong { color: var(--accent); }
 .wv-ss-advice-sub { font-size: 11px; color: var(--text-muted); margin: 3px 0 10px; }
-.wv-ss-swap { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 5px 0; border-top: 1px solid var(--border); }
+.wv-ss-swap { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 5px 0; border-top: 1px solid var(--border); flex-wrap: wrap; }
 .wv-ss-swap-in { font-weight: 700; color: var(--win); }
 .wv-ss-swap-arrow { font-size: 11px; color: var(--text-muted); }
 .wv-ss-swap-out { font-weight: 600; color: var(--text-muted); text-decoration: line-through; }
+.wv-ss-swap-pos { font-size: 10px; font-weight: 700; color: var(--text-muted); letter-spacing: .04em; }
+.wv-ss-swap-slot { font-size: 9px; font-weight: 700; letter-spacing: .04em; color: var(--text-muted); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; flex-shrink: 0; }
 .wv-ss-swap-gain { margin-left: auto; font-weight: 800; font-size: 12px; color: var(--win); font-variant-numeric: tabular-nums; }
+.wv-ss-swap-gain.wv-ss-swap-gain-neg { color: var(--loss); }
 .wv-ss-winprob { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
 .wv-ss-winprob strong { color: var(--win); font-variant-numeric: tabular-nums; }
 .wv-ss-demote { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 5px; background: color-mix(in srgb, var(--loss) 12%, transparent); color: var(--loss); margin-left: 6px; }
@@ -1012,13 +1015,32 @@ function wvLineupAdvice() {{
   if (!a.swaps.length || a.delta < 1) {{
     return `<div class="wv-ss-advice wv-ss-advice-ok"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Your lineup is optimal — start score ${{a.optimal_pts}}.</div>`;
   }}
-  const swaps = a.swaps.slice(0, 4).map(s => `
-    <div class="wv-ss-swap">
-      <span class="wv-ss-swap-in">${{esc(s.start.name)}}</span>
+  const swaps = a.swaps.slice(0, 4).map(s => {{
+    const g = Number(s.gain) || 0;
+    // Never prefix '+' onto a negative (that rendered as "+-5.0").
+    const gainTxt = (g > 0 ? '+' : '') + g.toFixed(1);
+    const gainCls = g < 0 ? ' wv-ss-swap-gain-neg' : '';
+    const inPos = s.start && s.start.position ? ` <span class="wv-ss-swap-pos">${{esc(s.start.position)}}</span>` : '';
+    const slot = s.slot || '';
+    const slotNote = (slot && slot !== 'empty' && s.start && slot !== s.start.position)
+      ? `<span class="wv-ss-swap-slot">${{esc(slot === 'SUPER_FLEX' ? 'SUPERFLEX' : slot)}}</span>` : '';
+    if (!s.sit || !s.sit.name) {{
+      return `<div class="wv-ss-swap">
+        <span class="wv-ss-swap-in">${{esc(s.start.name)}}</span>${{inPos}}
+        <span class="wv-ss-swap-arrow">into empty slot</span>
+        ${{slotNote}}
+        <span class="wv-ss-swap-gain${{gainCls}}">${{gainTxt}}</span>
+      </div>`;
+    }}
+    const outPos = s.sit.position ? ` <span class="wv-ss-swap-pos">${{esc(s.sit.position)}}</span>` : '';
+    return `<div class="wv-ss-swap">
+      <span class="wv-ss-swap-in">${{esc(s.start.name)}}</span>${{inPos}}
       <span class="wv-ss-swap-arrow">over</span>
-      <span class="wv-ss-swap-out">${{esc(s.sit.name)}}</span>
-      <span class="wv-ss-swap-gain">+${{(s.gain || 0).toFixed(1)}}</span>
-    </div>`).join('');
+      <span class="wv-ss-swap-out">${{esc(s.sit.name)}}</span>${{outPos}}
+      ${{slotNote}}
+      <span class="wv-ss-swap-gain${{gainCls}}">${{gainTxt}}</span>
+    </div>`;
+  }}).join('');
   return `<div class="wv-ss-advice wv-ss-advice-warn">
     <div class="wv-ss-advice-head"><i class="fa-solid fa-arrow-trend-up" aria-hidden="true"></i> You're leaving <strong>${{a.delta.toFixed(1)}}</strong> start-score points on the bench</div>
     <div class="wv-ss-advice-sub">${{a.optimal_pts}} optimal vs ${{a.current_pts}} current lineup</div>

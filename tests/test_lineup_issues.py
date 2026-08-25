@@ -4,6 +4,7 @@ import pytest
 from utils.lineup_issues import (
     SERIOUS_INJURY_STATUSES,
     find_lineup_issues,
+    pair_start_sit_swaps,
     summarize_issues,
 )
 
@@ -175,3 +176,65 @@ def test_max_swaps_cap():
     proj = {"q1": 1, "r1": 1, "r2": 1, "r3": 20, "w1": 1, "w2": 1, "w3": 20, "t1": 1, "t2": 1}
     swaps = projection_upgrades(starters, list(POS), proj, POS, SLOTS, max_swaps=1)
     assert len(swaps) == 1
+
+
+# ---- pair_start_sit_swaps ---------------------------------------------------
+
+# Screenshot bug: Purdy (QB) and Wilson (WR) should start; Williams (QB) and
+# Judkins (RB) should sit. Naive high-in/low-out zip pairs Purdy with Judkins
+# (+8.4) and Wilson with Williams (-5.0, rendered "+-5.0").
+_SS_NAMES = {
+    "purdy": "Brock Purdy",
+    "wilson": "Michael Wilson",
+    "williams": "Caleb Williams",
+    "judkins": "Quinshon Judkins",
+}
+_SS_POS = {"purdy": "QB", "wilson": "WR", "williams": "QB", "judkins": "RB"}
+_SS_SCORES = {"purdy": 20.4, "wilson": 13.0, "williams": 18.0, "judkins": 12.0}
+
+
+def test_start_sit_pairs_same_position_not_highest_vs_lowest():
+    swaps = pair_start_sit_swaps(
+        ["purdy", "wilson"], ["williams", "judkins"],
+        _SS_NAMES, _SS_POS, _SS_SCORES,
+    )
+    pairs = {(s["start"]["player_id"], s["sit"]["player_id"]) for s in swaps}
+    assert ("purdy", "williams") in pairs
+    assert ("wilson", "judkins") in pairs
+    assert ("purdy", "judkins") not in pairs
+    assert ("wilson", "williams") not in pairs
+    assert all(s["gain"] > 0 for s in swaps)
+    by_pair = {(s["start"]["player_id"], s["sit"]["player_id"]): s for s in swaps}
+    assert by_pair[("purdy", "williams")]["slot"] == "QB"
+    assert by_pair[("wilson", "judkins")]["slot"] == "FLEX"
+    assert by_pair[("purdy", "williams")]["gain"] == 2.4
+    assert by_pair[("wilson", "judkins")]["gain"] == 1.0
+
+
+def test_start_sit_qb_leftover_labeled_superflex():
+    # Already starting the top QB; the extra QB in SUPER_FLEX should sit for a WR.
+    names = {"wilson": "Michael Wilson", "williams": "Caleb Williams"}
+    pos = {"wilson": "WR", "williams": "QB"}
+    scores = {"wilson": 14.0, "williams": 11.0}
+    swaps = pair_start_sit_swaps(["wilson"], ["williams"], names, pos, scores)
+    assert len(swaps) == 1
+    assert swaps[0]["start"]["player_id"] == "wilson"
+    assert swaps[0]["sit"]["player_id"] == "williams"
+    assert swaps[0]["slot"] == "SUPER_FLEX"
+    assert swaps[0]["gain"] == 3.0
+
+
+def test_start_sit_empty_slot_has_no_sit_partner():
+    names = {"purdy": "Brock Purdy"}
+    pos = {"purdy": "QB"}
+    scores = {"purdy": 22.0}
+    swaps = pair_start_sit_swaps(["purdy"], [], names, pos, scores)
+    assert len(swaps) == 1
+    assert swaps[0]["sit"] is None
+    assert swaps[0]["slot"] == "empty"
+    assert swaps[0]["gain"] == 22.0
+
+
+def test_start_sit_empty_inputs_return_no_swaps():
+    assert pair_start_sit_swaps([], [], {}, {}, {}) == []
+    assert pair_start_sit_swaps(None, None, {}, {}, {}) == []

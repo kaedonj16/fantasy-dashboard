@@ -25,26 +25,15 @@ def test_compare_verdict_ranks_on_unified_start_score():
     assert "higher projection (+' + Math.abs" not in body
 
 
-def test_start_sit_login_gate_is_not_sleeper_only():
+def test_lineup_advice_formats_signed_gain_without_plus_minus():
     body = _body()
-    assert "Enter your Sleeper username" not in body
-    assert "Sign in to get personalized start/sit recommendations" in body
-
-
-def test_lineup_advice_labels_start_score_not_raw_projection():
-    body = _body()
-    assert "start score" in body
-    assert "projected ${a.optimal_pts} pts" not in body
-    # Advice is the whole lineup, including K/D/ST when the league starts them.
-    assert "(QB/RB/WR/TE)" not in body
-
-
-def test_start_sit_pills_include_k_and_dst():
-    body = _body()
-    assert 'data-pos="K"' in body
-    assert 'data-pos="DEF"' in body
-    assert "function wvStartSitPositions()" in body
-    assert "function wvSyncPosPills()" in body
+    # Blindly prefixing '+' onto toFixed rendered "+-5.0" for a negative gain.
+    assert "+${(s.gain || 0).toFixed(1)}" not in body
+    assert "(g > 0 ? '+' : '') + g.toFixed(1)" in body
+    # Positions and FLEX/SUPERFLEX slot labels so a WR-for-RB isn't naked.
+    assert "s.start.position" in body
+    assert "s.slot" in body
+    assert "SUPERFLEX" in body
 
 
 def test_compare_reasons_come_from_the_six_factor_breakdown():

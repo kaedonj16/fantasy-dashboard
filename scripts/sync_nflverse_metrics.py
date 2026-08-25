@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Sync redistributable NGS + FTN receiving metrics into player_advanced_metrics.
+Sync redistributable NGS + FTN + PBP metrics into player_advanced_metrics.
 
-Pulls Next Gen Stats receiving tracking metrics and FTN-charting-derived
-drop_rate / contested_catch_rate (see data_building/external_data/nflverse_metrics.py)
+Pulls Next Gen Stats (receiving, passing, rushing), FTN charting splits
+(drop/contested, play-action / blitz / stacked-box), and play-by-play EPA-family
+rates including PACR/RACR (see data_building/external_data/nflverse_metrics.py)
 and upserts them as a per-season snapshot row. The season reader coalesces all
 rows for a season, so these merge with the computed and PFF snapshots.
 

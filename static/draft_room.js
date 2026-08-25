@@ -233,6 +233,8 @@
       if (ids.length) q.push('drafted=' + encodeURIComponent(ids.join(',')));
       var recOrder = cheatRecommendationOrder();
       if (recOrder.length) q.push('rec_order=' + encodeURIComponent(recOrder.join(',')));
+      if (state.teams) q.push('teams=' + encodeURIComponent(String(state.teams)));
+      if (state.slot) q.push('slot=' + encodeURIComponent(String(state.slot)));
       return q.join('&');
     }
     function cheatSheetFullUrl(){
@@ -264,6 +266,8 @@
         if (ids.length) q.push('drafted=' + encodeURIComponent(ids.join(',')));
         var recOrder = cheatRecommendationOrder();
         if (recOrder.length) q.push('rec_order=' + encodeURIComponent(recOrder.join(',')));
+        if (state.teams) q.push('teams=' + encodeURIComponent(String(state.teams)));
+        if (state.slot) q.push('slot=' + encodeURIComponent(String(state.slot)));
         url += (url.indexOf('?') >= 0 ? '&' : '?') + q.join('&');
       }
       _csFrame.src = url;   // (re)load -> re-syncs
