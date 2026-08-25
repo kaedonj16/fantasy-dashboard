@@ -14113,7 +14113,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
                 <i class="fa-solid fa-lock" style="font-size:22px;color:var(--text-muted);"></i>
                 <div style="font-weight:700;font-size:15px;">${{lockedCount}} more candidates locked</div>
                 <div style="font-size:12px;color:var(--text-muted);text-align:center;">Upgrade to PRO to see all breakout<br>candidates with full details</div>
-                <span style="font-size:11px;font-weight:700;padding:4px 12px;background:linear-gradient(135deg,#122d4b,#2563eb);color:white;border-radius:12px;">Upgrade &rarr;</span>
+                <span style="font-size:11px;font-weight:700;padding:4px 12px;background:linear-gradient(135deg,#122d4b,#2563eb);color:white;border-radius:8px;">Upgrade &rarr;</span>
               </div>`;
           }}
           html += '</div>';
@@ -14196,7 +14196,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
             : `<div style="font-size:13px;color:var(--text-muted);font-style:italic;">No projection available</div>`;
 
           const hitHtml = prob != null
-            ? `<div style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;background:${{scoreColor}}22;border:1px solid ${{scoreColor}}44;font-size:11px;font-weight:700;color:${{scoreColor}};text-transform:uppercase;letter-spacing:0.03em;">
+            ? `<div style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:8px;background:${{scoreColor}}22;border:1px solid ${{scoreColor}}44;font-size:11px;font-weight:700;color:${{scoreColor}};text-transform:uppercase;letter-spacing:0.03em;">
                  ${{tier}} · ${{hitProb}}% hit
                </div>`
             : '';
@@ -18001,7 +18001,7 @@ def _render_commissioner_history(layer, current_season, current_moves, current_t
   .msh-stat {{ border:1px solid var(--border); border-radius:14px; padding:14px 16px; background:var(--row,rgba(127,127,127,.03)); }}
   .msh-stat-head {{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }}
   .msh-stat-label {{ font-size:11px; font-weight:700; letter-spacing:.04em; color:var(--muted); text-transform:uppercase; }}
-  .msh-trend {{ font-size:11px; font-weight:700; padding:3px 9px; border-radius:12px; white-space:nowrap; }}
+  .msh-trend {{ font-size:11px; font-weight:700; padding:3px 9px; border-radius:8px; white-space:nowrap; }}
   .msh-series {{ display:flex; align-items:center; flex-wrap:wrap; gap:2px; }}
   .msh-chip {{ display:inline-flex; flex-direction:column; align-items:center; gap:1px; padding:5px 11px; border-radius:10px; border:1px solid; line-height:1.1; }}
   .msh-chip-yr {{ font-size:10px; font-weight:600; opacity:.75; }}
@@ -18334,7 +18334,7 @@ def build_commissioner_body(ctx):
   .lh-ring-mid {{ position:absolute; inset:0; display:grid; place-content:center; text-align:center; }}
   .lh-ring-num {{ font-size:40px; font-weight:800; line-height:1; }}
   .lh-ring-cap {{ font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-top:3px; }}
-  .lh-pill {{ display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:800; letter-spacing:.03em; padding:4px 10px; border-radius:12px; text-transform:uppercase; }}
+  .lh-pill {{ display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:800; letter-spacing:.03em; padding:4px 10px; border-radius:8px; text-transform:uppercase; }}
   .lh-verdict {{ font-size:15px; color:var(--muted); margin-top:10px; max-width:48ch; }}
   .lh-verdict b {{ color:var(--text); }}
   .lh-wrap {{ max-width:1000px; margin:0 auto; }}
@@ -28757,7 +28757,7 @@ def build_portfolio_body(
         ".nfl-cnt{font-size:13px;font-weight:700;min-width:18px;text-align:right;}"
         ".nfl-note{font-size:11px;color:var(--text-subtle);min-width:20px;}"
         # filter pill buttons matching tab-btn style
-        ".pf-pill{font-size:13px;font-weight:700;padding:5px 14px;border-radius:12px;"
+        ".pf-pill{font-size:13px;font-weight:700;padding:5px 14px;border-radius:8px;"
         "border:none;background:transparent;color:var(--text-muted);cursor:pointer;"
         "transition:background .12s,color .12s;}"
         ".pf-pill:hover{background:var(--accent-soft);color:var(--accent);}"
@@ -30008,7 +30008,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
     .share-card-wrap {{ max-width:440px; width:100%; }}
     .sc-player-age {{ font-size:11px; color:var(--text-muted); margin-left:auto; margin-right:6px; }}
     .sc-picks-row {{ display:flex; flex-wrap:wrap; gap:6px; padding:10px 16px 14px; }}
-    .sc-pick-chip {{ font-size:11px; font-weight:600; padding:3px 8px; border-radius:20px;
+    .sc-pick-chip {{ font-size:11px; font-weight:600; padding:3px 8px; border-radius:8px;
       background:rgba(139,92,246,.15); color:#a78bfa; border:1px solid rgba(139,92,246,.25); }}
     .sc-toggle-btn {{ position:absolute; top:12px; right:12px; background:var(--row,rgba(255,255,255,.08));
       border:1px solid var(--border,#334155); color:var(--text-muted,#94a3b8); border-radius:8px;
@@ -30656,7 +30656,7 @@ def page_trade_card(share_id: str):
     .card{{background:var(--tc-card);border:1px solid var(--tc-border);border-radius:20px;overflow:hidden;transition:background .2s,border-color .2s}}
     .card-header{{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--tc-border-sub);background:var(--tc-hdr)}}
     .brand{{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--tc-muted)}}
-    .badge{{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;background:rgba(59,130,246,.15);color:#60a5fa;border:1px solid rgba(59,130,246,.25)}}
+    .badge{{font-size:11px;font-weight:700;padding:3px 10px;border-radius:8px;background:rgba(59,130,246,.15);color:#60a5fa;border:1px solid rgba(59,130,246,.25)}}
     .sides{{display:grid;grid-template-columns:1fr 1fr;gap:0}}
     .side{{padding:14px 16px}}
     .side+.side{{border-left:1px solid var(--tc-border-sub)}}
@@ -30668,7 +30668,7 @@ def page_trade_card(share_id: str):
     .bar-indicator{{position:absolute;top:-3px;width:12px;height:28px;border-radius:12px;background:#38bdf8;transform:translateX(-50%);box-shadow:0 0 8px rgba(56,189,248,.5)}}
     .bar-labels{{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:10px;color:var(--tc-dimmer);font-weight:600}}
     .bar-fair-label{{font-size:10px;color:var(--tc-dim);font-weight:600}}
-    .pi-hdr-btn{{font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;border:1px solid rgba(74,222,128,.4);background:transparent;color:#4ade80;cursor:pointer;transition:background .15s}}
+    .pi-hdr-btn{{font-size:10px;font-weight:700;padding:3px 10px;border-radius:8px;border:1px solid rgba(74,222,128,.4);background:transparent;color:#4ade80;cursor:pointer;transition:background .15s}}
     .pi-hdr-btn-on{{background:rgba(74,222,128,.15)}}
     .pi-section{{padding:12px 16px 4px}}
     .pi-title{{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--tc-dim);margin-bottom:8px}}

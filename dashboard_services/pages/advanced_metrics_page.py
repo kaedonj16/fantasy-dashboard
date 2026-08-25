@@ -536,7 +536,7 @@ def build_advanced_metrics_body(
         .am-mobile-filter { order:2; }
         .am-ctrl .am-select, .am-ctrl .am-sort-btn { width:100%; min-width:0; box-sizing:border-box; }
         .am-controls:not(.am-open) .am-mobile-filter { display:none !important; }
-        .am-filters-btn { display:inline-block; flex-shrink:0; padding:6px 12px; font-size:12px; border-radius:20px; }
+        .am-filters-btn { display:inline-block; flex-shrink:0; padding:6px 12px; font-size:12px; border-radius:8px; }
         /* One filter entry point on mobile: the Filters dropdown. The standalone
            + Filter chip hides; its action moves inside the opened panel. */
         #amAddFilterBtn { display:none; }
@@ -545,7 +545,7 @@ def build_advanced_metrics_body(
         .am-positions { flex:1 1 auto; flex-wrap:wrap; overflow-x:visible; min-width:0; }
       }
       .am-pos {
-        padding:6px 14px; border-radius:20px; border:1px solid var(--border);
+        padding:6px 14px; border-radius:8px; border:1px solid var(--border);
         background:var(--card); color:var(--text-muted); cursor:pointer;
         font-size:12px; font-weight:600; transition:all .15s; white-space:nowrap;
       }
@@ -565,7 +565,7 @@ def build_advanced_metrics_body(
       }
       /* My roster toggle */
       .am-roster-toggle {
-        display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:20px;
+        display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:8px;
         border:1px solid var(--border); background:var(--card); color:var(--text); cursor:pointer;
         font-size:12px; font-weight:600; white-space:nowrap;
       }
@@ -854,7 +854,7 @@ def build_advanced_metrics_body(
       }
       .am-filter-chip {
         display:inline-flex; align-items:center; gap:4px;
-        padding:3px 9px; border-radius:12px;
+        padding:3px 9px; border-radius:8px;
         border:1px solid var(--accent,#2563eb); background:color-mix(in srgb, var(--accent) 8%, transparent);
         font-size:12px; font-weight:600; color:var(--accent,#2563eb); white-space:nowrap;
       }
