@@ -12680,8 +12680,9 @@ def api_start_sit_options():
     # (QB/RB/WR/TE plus K and D/ST when those slots exist). ────────────────────
     # The optimal lineup is chosen by the unified start_score, so its point
     # totals and per-swap gains are measured on that SAME score — not raw
-    # projection. Mixing the two (select by score, measure by projection) used to
-    # produce swaps with a negative "gain" that contradicted the banner.
+    # projection. Swaps are paired same-position first (then FLEX/SUPER_FLEX)
+    # so the banner never recommends a QB "over" an RB.
+    from utils.lineup_issues import pair_start_sit_swaps as _pair_ss_swaps
     _score_by_pid, _name_by_pid, _pos_by_pid = {}, {}, {}
     for _pos in positions_out:
         for _p in positions_out[_pos]:
@@ -12693,17 +12694,11 @@ def api_start_sit_options():
     _current_skill = {pid for pid in _current_ids if pid in _score_by_pid}
     _optimal_pts = round(sum(_score_by_pid.get(pid, 0.0) for pid in _optimal_ids), 1)
     _current_pts = round(sum(_score_by_pid.get(pid, 0.0) for pid in _current_skill), 1)
-    _to_start = sorted(_optimal_ids - _current_ids, key=lambda pid: _score_by_pid.get(pid, 0.0), reverse=True)
-    _to_sit = sorted(_current_skill - _optimal_ids, key=lambda pid: _score_by_pid.get(pid, 0.0))
-    _swaps = []
-    for _in_pid, _out_pid in zip(_to_start, _to_sit):
-        _swaps.append({
-            "start": {"player_id": _in_pid, "name": _name_by_pid.get(_in_pid),
-                      "position": _pos_by_pid.get(_in_pid), "proj": _score_by_pid.get(_in_pid)},
-            "sit": {"player_id": _out_pid, "name": _name_by_pid.get(_out_pid),
-                    "position": _pos_by_pid.get(_out_pid), "proj": _score_by_pid.get(_out_pid)},
-            "gain": round(_score_by_pid.get(_in_pid, 0.0) - _score_by_pid.get(_out_pid, 0.0), 1),
-        })
+    _swaps = _pair_ss_swaps(
+        list(_optimal_ids - _current_ids),
+        list(_current_skill - _optimal_ids),
+        _name_by_pid, _pos_by_pid, _score_by_pid,
+    )
     lineup_advice = {
         "has_current": bool(_current_skill),
         "optimal_pts": _optimal_pts,
