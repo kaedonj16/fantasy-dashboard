@@ -26606,120 +26606,13 @@ def _resolve_pick_asset(pick_id: str, num_teams: int, values_by_id: Optional[dic
     }
 
 
-def _value_matched_acquire_packages(focus_value: float, players: list, picks: list,
-                                    max_options: int = 12,
-                                    sorted_vals: list | None = None,
-                                    league_size: int = 10) -> list:
-    """Build value-matched ASSET packages (players + picks from the viewer's roster)
-    whose combined value is close to focus_value. Used for the pick build-around
-    path: 'what would I give to acquire this pick?'.
-
-    Labels and the acceptable band are computed on *effective* (depth-adjusted)
-    value so a multi-asset offer is judged the way the trade card scores it: the
-    side sending more bodies absorbs a bench penalty, so three pieces for one
-    target that looks "fair" in raw value actually reads as an overpay. Matching
-    on effective value keeps the surfaced offers feasible for both sides.
-
-    Returns a list shaped for renderPackagePage (assets / value_label / value_class).
-    """
-    if focus_value <= 0:
-        return []
-
-    from dashboard_services.archetype_engine import _depth_penalty
-
-    def _eff(assets: list) -> float:
-        raw = sum(a["value"] for a in assets)
-        return raw - _depth_penalty(max(0, len(assets) - 1), sorted_vals, league_size)
-
-    # Band is on effective value; keep the raw window a touch wider so viable
-    # multi-piece packages (which lose value to the penalty) still get built.
-    lo, hi = focus_value * 0.80, focus_value * 1.25
-
-    def _passet(p: dict) -> dict:
-        return {
-            "name": p.get("name", ""),
-            "position": str(p.get("position") or "").upper(),
-            "value": float(p.get("value") or 0),
-            "is_pick": False,
-            "player_id": str(p.get("player_id") or p.get("id") or ""),
-        }
-
-    def _pkasset(pk: dict) -> dict:
-        return {
-            "name": pk.get("name", "Pick"),
-            "position": "PICK",
-            "value": float(pk.get("value") or 0),
-            "is_pick": True,
-            "pick_season": pk.get("pick_season"),
-            "pick_round": pk.get("pick_round"),
-            "pick_slot": pk.get("pick_slot"),
-            "pick_order": pk.get("pick_order") or "mid",
-        }
-
-    players_a = sorted(
-        (_passet(p) for p in players if float(p.get("value") or 0) >= 50),
-        key=lambda x: -x["value"],
-    )
-    picks_a = sorted((_pkasset(p) for p in picks), key=lambda x: -x["value"])
-
-    out: list = []
-    seen: set = set()
-
-    def _label(eff: float) -> tuple:
-        # Label on effective value: this is what the trade card balance reflects.
-        r = eff / focus_value if focus_value else 0
-        if r <= 0.94:
-            return "Great deal", "great"
-        if r <= 1.08:
-            return "Fair value", "fair"
-        return "Overpay", "overpay"
-
-    def _add(assets: list):
-        total = round(sum(a["value"] for a in assets), 1)
-        eff = _eff(assets)
-        # Band and underpay guard both live on effective value so nothing that
-        # would read as a lopsided steal for the sender gets surfaced.
-        if not (lo <= total <= hi) or eff < focus_value * 0.90:
-            return
-        key = frozenset(a.get("player_id") or a["name"] for a in assets)
-        if key in seen:
-            return
-        seen.add(key)
-        label, cls = _label(eff)
-        out.append({
-            "assets": assets,
-            "send_value": total,
-            "value_label": label,
-            "value_class": cls,
-            "is_profile_match": True,
-            "frequency": 0,
-            "_fit": abs(eff - focus_value),
-        })
-
-    # 1 player / 1 pick
-    for a in players_a:
-        _add([a])
-    for a in picks_a:
-        _add([a])
-    # 1 player + 1 pick
-    for p in players_a:
-        for k in picks_a:
-            _add([p, k])
-    # 2 players (skip pairing two of the biggest single assets that already clear hi)
-    for i, p1 in enumerate(players_a):
-        if p1["value"] >= hi:
-            continue
-        for p2 in players_a[i + 1:]:
-            _add([p1, p2])
-    # 2 picks
-    for i, k1 in enumerate(picks_a):
-        for k2 in picks_a[i + 1:]:
-            _add([k1, k2])
-
-    out.sort(key=lambda x: x["_fit"])
-    for o in out:
-        o.pop("_fit", None)
-    return out[:max_options]
+from dashboard_services.trade_acquire_packages import (  # noqa: E402
+    filter_acquire_packages as _filter_acquire_packages,
+    package_asset_key as _package_asset_key,
+    rank_archetype_patterns as _rank_archetype_patterns,
+    value_matched_acquire_packages as _value_matched_acquire_packages,
+    vm_pkg_to_real as _vm_pkg_to_real,
+)
 
 
 @app.route("/api/trade-intel/player-packages/<player_id>")
@@ -27046,6 +26939,7 @@ def api_trade_intel_player_packages(player_id: str):
             pick_packages = _value_matched_acquire_packages(
                 focus_value, viewer_players, _viewer_picks_offer,
                 sorted_vals=_ladder, league_size=num_teams,
+                min_results=3 if (viewer_players or _viewer_picks_offer) else 0,
             )
             return jsonify({
                 "player_name": player_name,
@@ -27100,185 +26994,20 @@ def api_trade_intel_player_packages(player_id: str):
             focus_value=float(focus_value or 0),
         )
 
-        # ML is primary; supplement with rule-based packages before value fallback
+        # ML is primary; keep unique rule-based packages as extra candidates.
+        # They used to be skipped once ML returned ≥5, which then all failed
+        # the overpay filter and left a blank page.
         primary_pkgs = list(ml_pkgs) if ml_pkgs else list(real_result["packages"])
         package_source = "ml" if ml_pkgs else "rule"
 
-        # Fill remaining slots (up to 5) with rule-based packages not already covered
-        if ml_pkgs and len(primary_pkgs) < 5:
-            _used_shapes = {
-                frozenset(
-                    str(a.get("player_id") or a.get("name") or "")
-                    for a in pkg.get("send", [])
-                )
-                for pkg in primary_pkgs
-            }
-            for rule_pkg in real_result.get("packages") or []:
-                if len(primary_pkgs) >= 5:
-                    break
-                rule_key = frozenset(
-                    str(a.get("player_id") or a.get("name") or "")
-                    for a in rule_pkg.get("send", [])
-                )
-                if rule_key not in _used_shapes:
-                    _used_shapes.add(rule_key)
-                    primary_pkgs.append(rule_pkg)
-
-        # ── Value-based fallback: always fill to at least 5 packages ─────
-        # Combines viewer players (and picks) whose total value sits within
-        # [90%, 115%] of focus_value. Works even with no trade history.
-        if viewer_players and len(primary_pkgs) < 5:
-            _fv = float(focus_value or 0)
-            _lo, _hi = _fv * 0.90, _fv * 1.15
-            _used_sets = {
-                frozenset(
-                    str(a.get("player_id") or a.get("name") or "")
-                    for a in pkg.get("send", [])
-                )
-                for pkg in primary_pkgs
-            }
-
-            def _vb_packages(target: float, players: list, picks: list, limit: int) -> list:
-                out: list = []
-                sorted_p = sorted(players, key=lambda p: -float(p.get("value") or 0))
-                sorted_k = sorted(picks, key=lambda k: int(k.get("pick_round") or 3))
-                lo, hi = target * 0.90, target * 1.15
-
-                def _add(assets):
-                    key = frozenset(
-                        str(a.get("player_id") or a.get("name") or "") for a in assets
-                    )
-                    if key not in _used_sets:
-                        _used_sets.add(key)
-                        out.append(assets)
-                        return True
-                    return False
-
-                # 1-player - at most 2 per position for variety
-                pos_count: dict = {}
-                for p in sorted_p:
-                    if len(out) >= limit: break
-                    if lo <= float(p.get("value") or 0) <= hi:
-                        pos = str(p.get("position") or "")
-                        if pos_count.get(pos, 0) < 2:
-                            if _add([p]):
-                                pos_count[pos] = pos_count.get(pos, 0) + 1
-
-                # Single pick
-                for pk in sorted_k:
-                    if len(out) >= limit: break
-                    if lo <= float(pk.get("value") or 0) <= hi:
-                        _add([pk])
-
-                # 2 picks
-                for i, pk1 in enumerate(sorted_k):
-                    if len(out) >= limit: break
-                    v1 = float(pk1.get("value") or 0)
-                    for pk2 in sorted_k[i + 1:]:
-                        if len(out) >= limit: break
-                        if lo <= v1 + float(pk2.get("value") or 0) <= hi:
-                            _add([pk1, pk2])
-                            break
-
-                # 1 player + 1 pick
-                for p in sorted_p:
-                    if len(out) >= limit: break
-                    v = float(p.get("value") or 0)
-                    for pk in sorted_k:
-                        if len(out) >= limit: break
-                        if lo <= v + float(pk.get("value") or 0) <= hi:
-                            _add([p, pk])
-                            break
-
-                # Throw-in: player slightly under floor + cheap sweetener (pick or player)
-                # Main piece in [65%, 82%) of target - below floor on its own
-                for p in sorted_p:
-                    if len(out) >= limit: break
-                    v = float(p.get("value") or 0)
-                    if not (target * 0.65 <= v < lo): continue
-                    needed = lo - v
-                    # Try cheapest pick first
-                    for pk in sorted_k:
-                        pv = float(pk.get("value") or 0)
-                        if lo <= v + pv <= hi:
-                            _add([p, pk]);
-                            break
-                    if len(out) >= limit: break
-                    # Try cheapest player
-                    for p2 in reversed(sorted_p):
-                        if p2 is p: continue
-                        p2v = float(p2.get("value") or 0)
-                        if p2v < needed * 0.5: continue
-                        if lo <= v + p2v <= hi:
-                            _add([p, p2]);
-                            break
-
-                # 2-player - prefer different positions
-                for i, p1 in enumerate(sorted_p):
-                    if len(out) >= limit: break
-                    v1 = float(p1.get("value") or 0)
-                    if v1 >= hi: continue
-                    for p2 in sorted_p[i + 1:]:
-                        if len(out) >= limit: break
-                        if p2.get("position") == p1.get("position"):
-                            continue  # prefer positional variety
-                        if lo <= v1 + float(p2.get("value") or 0) <= hi:
-                            _add([p1, p2])
-                            break
-                # 2-player same position (only if limit not met)
-                for i, p1 in enumerate(sorted_p):
-                    if len(out) >= limit: break
-                    v1 = float(p1.get("value") or 0)
-                    if v1 >= hi: continue
-                    for p2 in sorted_p[i + 1:]:
-                        if len(out) >= limit: break
-                        if lo <= v1 + float(p2.get("value") or 0) <= hi:
-                            _add([p1, p2])
-                            break
-
-                return out
-
-            need = 5 - len(primary_pkgs)
-            vb_asset_lists = _vb_packages(_fv, viewer_players, viewer_picks, need)
-            for assets in vb_asset_lists:
-                send = []
-                for a in assets:
-                    if a.get("is_pick"):
-                        _ps = a.get("pick_slot")
-                        _po = a.get("pick_order") or "mid"
-                        _py = a.get("pick_season")
-                        _pr = a.get("pick_round")
-                        _pid = (
-                            f"{_py}_{_pr}_{_ps:02d}" if _ps else
-                            f"{_py}_{_pr}_{_po}" if (_py and _pr) else None
-                        )
-                        send.append({
-                            "name": a.get("name", ""),
-                            "value": float(a.get("value") or 0),
-                            "send_value": float(a.get("value") or 0),
-                            "is_pick": True,
-                            "pick_round": _pr,
-                            "pick_season": _py,
-                            "pick_slot": _ps,
-                            "pick_order": _po,
-                            "pick_id": _pid,
-                        })
-                    else:
-                        send.append({
-                            "player_id": str(a.get("player_id") or ""),
-                            "name": a.get("name", ""),
-                            "position": a.get("position", ""),
-                            "value": float(a.get("value") or 0),
-                            "send_value": float(a.get("value") or 0),
-                            "is_pick": False,
-                        })
-                primary_pkgs.append({
-                    "send": send,
-                    "send_value": round(sum(float(x.get("value") or 0) for x in send), 1),
-                    "trades_like_this": 0,
-                    "pattern_source": "value",
-                    "sig": [],
-                })
+        _used_shapes = {_package_asset_key(pkg) for pkg in primary_pkgs}
+        for rule_pkg in real_result.get("packages") or []:
+            if len(primary_pkgs) >= 8:
+                break
+            rule_key = _package_asset_key(rule_pkg)
+            if rule_key not in _used_shapes:
+                _used_shapes.add(rule_key)
+                primary_pkgs.append(rule_pkg)
 
         # ── Shared enrichment ─────────────────────────────────────────────
         def _sig_to_archetype(sig_str: str) -> tuple:
@@ -27500,23 +27229,55 @@ def api_trade_intel_player_packages(player_id: str):
         for pkg in primary_pkgs:
             _enrich_pkg(pkg)
 
-        # Never suggest sending the very player being acquired. This is a
-        # defensive backstop across ALL package sources (historical, ML, and
-        # value-balanced) — a package that echoes the focus player on the give
-        # side is nonsensical (e.g. "get McConkey / give McConkey").
-        _focus_pid = str(player_id)
-        primary_pkgs = [
-            p for p in primary_pkgs
-            if not any(
-                (not a.get("is_pick")) and str(a.get("player_id") or "") == _focus_pid
-                for a in p.get("send", [])
-            )
-        ]
+        # Drop packages that echo the focus player, then extreme overpays.
+        # The cap used to be 1.15× (despite a "2×" comment), which wiped ML
+        # packages built with a 1.3× ceiling and left a blank suggestions page.
+        primary_pkgs = _filter_acquire_packages(
+            primary_pkgs, str(player_id), float(focus_value or 0), max_ratio=1.40,
+        )
 
-        # Drop packages where the viewer is sending more than 2× the target's value.
-        # Real trades include extreme overpays - those are not useful suggestions.
-        _max_send = (focus_value or 1) * 1.15
-        primary_pkgs = [p for p in primary_pkgs if p.get("send_value", 0) <= _max_send]
+        # Fill remaining slots from the viewer's roster AFTER filtering so a
+        # searched player is never a blank page when the manager has assets.
+        if (viewer_players or viewer_picks) and len(primary_pkgs) < 5:
+            _used_sets = {_package_asset_key(pkg) for pkg in primary_pkgs}
+            _ladder = sorted(
+                (v for v in (float(x.get("value") or 0) for x in values_by_id.values()) if v > 0),
+                reverse=True,
+            )
+            need = 5 - len(primary_pkgs)
+            vm_pkgs = _value_matched_acquire_packages(
+                float(focus_value or 0), viewer_players, viewer_picks,
+                max_options=max(need, 5),
+                sorted_vals=_ladder, league_size=num_teams,
+                min_results=need,
+            )
+            for vm in vm_pkgs:
+                if len(primary_pkgs) >= 5:
+                    break
+                real = _vm_pkg_to_real(vm)
+                key = _package_asset_key(real)
+                if key in _used_sets:
+                    continue
+                _used_sets.add(key)
+                _enrich_pkg(real)
+                primary_pkgs.append(real)
+                if package_source != "ml":
+                    package_source = "value"
+
+        # Last resort without a roster: keep the closest value-appropriate
+        # historical reference packages rather than show an empty page.
+        if not primary_pkgs:
+            refs = []
+            for p in real_result.get("packages") or []:
+                _enrich_pkg(p)
+                refs.append(p)
+            fv = float(focus_value or 0)
+            close = [
+                p for p in refs
+                if fv <= 0 or fv * 0.55 <= float(p.get("send_value") or 0) <= fv * 1.60
+            ]
+            pool = close or sorted(refs, key=lambda p: abs(float(p.get("send_value") or 0) - fv))
+            primary_pkgs = pool[:5]
 
         _total_real = real_result.get("total_real_trades") or 1
 
@@ -27530,7 +27291,7 @@ def api_trade_intel_player_packages(player_id: str):
             pkg["likely_takers"] = _likely_takers(sent_pos)
             pkg["acceptance_prob"] = _acceptance_prob(pkg, _total_real)
 
-        # ── Archetype patterns - always from real DB sig_counts ───────────
+        # ── Archetype patterns: value-fit first, then frequency ───────────
         total_trade_count = real_result["total_real_trades"] or 1
         from collections import defaultdict as _dfd
         merged: dict = _dfd(int)
@@ -27539,8 +27300,8 @@ def api_trade_intel_player_packages(player_id: str):
             if core_sig:
                 merged[f"{core_sig}|{throw_sig}"] += cnt
 
-        # Full pct lookup across all patterns (not just top 6) so backfilled
-        # entries can still show a real percentage when the DB has data.
+        # Full pct lookup across all patterns so backfilled entries can still
+        # show a real percentage when the DB has data.
         pct_lookup = {
             canon.split("|")[0]: round(cnt / total_trade_count * 100)
             for canon, cnt in merged.items()
@@ -27548,22 +27309,12 @@ def api_trade_intel_player_packages(player_id: str):
 
         pkg_sigs = {pkg.get("pattern_sig") or "" for pkg in primary_pkgs}
 
-        archetype_patterns = sorted(
-            [
-                {
-                    "pattern_sig": canon.split("|")[0],
-                    "throw_in_sig": canon.split("|")[1],
-                    "count": cnt,
-                    "pct": round(cnt / total_trade_count * 100),
-                    "fits_your_team": canon.split("|")[0] in pkg_sigs,
-                }
-                for canon, cnt in merged.items()
-                if cnt >= 2
-            ],
-            key=lambda x: -x["count"],
-        )[:4]
+        archetype_patterns = _rank_archetype_patterns(
+            merged, float(focus_value or 0), pkg_sigs, total_trade_count, limit=8,
+        )
 
-        # Backfill any suggestion patterns not already in the top 4.
+        # Backfill any suggestion patterns not already shown so "Your team"
+        # is never an empty grid when we have roster-matched packages.
         existing_sigs = {ap["pattern_sig"] for ap in archetype_patterns}
         for pkg in primary_pkgs:
             sig = pkg.get("pattern_sig") or ""
@@ -27574,6 +27325,29 @@ def api_trade_intel_player_packages(player_id: str):
                     "count": pkg.get("trades_like_this") or 1,
                     "pct": pct_lookup.get(sig, 0),
                     "fits_your_team": True,
+                })
+                existing_sigs.add(sig)
+
+        # Last-resort chips from the player's own tier so the pattern grid
+        # is never blank even with no trade history.
+        if not archetype_patterns:
+            _pos = str((target_info or {}).get("position") or "WR").upper()
+            if _pos not in {"QB", "RB", "WR", "TE"}:
+                _pos = "WR"
+            _tier = _asset_tier(float(focus_value or 0))
+            for sig in (
+                f"{_pos}-T{_tier}",
+                f"{_pos}-T{min(_tier + 1, 9)}",
+                f"PICK:R{1 if _tier <= 3 else 2}",
+            ):
+                if sig in existing_sigs:
+                    continue
+                archetype_patterns.append({
+                    "pattern_sig": sig,
+                    "throw_in_sig": "",
+                    "count": 0,
+                    "pct": 0,
+                    "fits_your_team": sig in pkg_sigs,
                 })
                 existing_sigs.add(sig)
 
@@ -27709,7 +27483,7 @@ def _real_trade_packages_for_target(
                 (target_player_id, is_sf, num_teams - 4, num_teams + 4),
             ).fetchall()
     except Exception:
-        return {"packages": [], "total_real_trades": 0}
+        return {"packages": [], "total_real_trades": 0, "sig_counts": {}}
 
     # Group assets by trade_id → list of asset dicts
     trade_pkgs: dict = defaultdict(list)
@@ -27724,7 +27498,7 @@ def _real_trade_packages_for_target(
 
     total_real_trades = len(trade_pkgs)
     if not total_real_trades:
-        return {"packages": [], "total_real_trades": 0}
+        return {"packages": [], "total_real_trades": 0, "sig_counts": {}}
 
     # Build precise signature: P:{pos}:T{tier}:{bracket}  K:{round}:{slot_bucket}
     def _pick_slot_bucket(order) -> str:
@@ -27786,15 +27560,16 @@ def _real_trade_packages_for_target(
                     vk_by_round[r].append(pk)
                     break
 
-    # Pre-filter sig_counts: drop patterns whose total estimated value is < 55% of target
-    _value_floor = focus_value * 0.85 if focus_value > 0 else 0
+    # Pre-filter sig_counts: drop patterns whose total estimated value is far
+    # below the target (too cheap to be a real offer).
+    _value_floor = focus_value * 0.55 if focus_value > 0 else 0
     if _value_floor > 0:
         sig_counts = {k: v for k, v in sig_counts.items()
                       if _sig_estimate_value(k) >= _value_floor}
 
     # Value range for matching packages against the viewer's roster
-    max_send_value = focus_value * 1.15 if focus_value > 0 else float("inf")
-    min_send_value = focus_value * 0.65 if focus_value > 0 else 0.0
+    max_send_value = focus_value * 1.40 if focus_value > 0 else float("inf")
+    min_send_value = focus_value * 0.55 if focus_value > 0 else 0.0
     target_value = focus_value  # alias used in anchor / tier checks below
 
     result_packages = []
@@ -27819,6 +27594,15 @@ def _real_trade_packages_for_target(
                        and vp["player_id"] not in temp_used
                        and abs(_asset_tier(vp["value"]) - req_tier) <= 1
                 ]
+                if not candidates:
+                    # One more tier of slack so a roster that's close still
+                    # produces a package instead of falling through to empty.
+                    candidates = [
+                        vp for vp in vp_by_pos.get(pos, [])
+                        if vp["player_id"] not in used_pids
+                           and vp["player_id"] not in temp_used
+                           and abs(_asset_tier(vp["value"]) - req_tier) <= 2
+                    ]
                 if not candidates:
                     ok = False
                     break
@@ -27887,13 +27671,18 @@ def _real_trade_packages_for_target(
         if send_value > max_send_value or send_value < min_send_value:
             continue
 
-        # Anchor check: best single player sent must be ≥ 65% of target value.
-        # Prevents historical multi-scraps patterns from mapping onto the viewer's roster.
+        # Anchor check: player-led packages need a real headliner so a pile of
+        # scraps doesn't map onto the roster. Pick-only packages are a legitimate
+        # way to acquire mid/low-tier targets and used to be dropped entirely
+        # (`if not player_vals`), which emptied suggestions for dart-throw WRs.
         player_vals = sorted(
             [a.get("value", 0) for a in matched if not a.get("is_pick")],
             reverse=True,
         )
-        if not player_vals or player_vals[0] < target_value * 0.65:
+        if player_vals:
+            if player_vals[0] < target_value * 0.50:
+                continue
+        elif target_value >= 500:
             continue
 
         # Secondary tier floor: add-ons must be at least one tier above target tier.
@@ -27926,8 +27715,22 @@ def _real_trade_packages_for_target(
             break
 
     # If no viewer-matched packages found, fall back to reference packages
+    # whose current-market send value is still close to the target. Ranking
+    # by frequency alone used to surface T2/T4 chips for a T7 dart-throw.
     if not result_packages and fallback_packages:
-        result_packages = sorted(fallback_packages, key=lambda x: -x["trades_like_this"])[:max_packages]
+        fv = float(focus_value or 0)
+
+        def _ref_fit(pkg):
+            return abs(float(pkg.get("send_value") or 0) - fv)
+
+        near = [
+            p for p in fallback_packages
+            if fv <= 0 or fv * 0.55 <= float(p.get("send_value") or 0) <= fv * 1.60
+        ]
+        pool = near or fallback_packages
+        result_packages = sorted(
+            pool, key=lambda p: (_ref_fit(p), -p.get("trades_like_this", 0))
+        )[:max_packages]
 
     return {
         "packages": result_packages,
@@ -28141,9 +27944,9 @@ def api_trade_intel_player_send_packages(player_id: str):
 
             team_opts: list = []
 
-            def _add(assets: list):
+            def _add(assets: list, require_band: bool = True):
                 total = round(sum(float(a["value"]) for a in assets), 1)
-                if not (lo <= total <= hi):
+                if require_band and not (lo <= total <= hi):
                     return
                 key = (rid, frozenset(
                     str(a.get("player_id") or a.get("name")) for a in assets
@@ -28181,6 +27984,14 @@ def api_trade_intel_player_send_packages(player_id: str):
             for i, pk1 in enumerate(team_picks):
                 for pk2 in team_picks[i + 1:]:
                     _add([pk1, pk2])
+
+            # Closest single asset if this rival had nothing in-band, so a
+            # searched send-away is never a blank page.
+            if not team_opts:
+                pool = team_players + team_picks
+                if pool:
+                    best = min(pool, key=lambda a: abs(float(a["value"]) - focus_value))
+                    _add([best], require_band=False)
 
             # Keep this team's 3 best-quality options (consolidation + need-aware)
             team_opts.sort(key=lambda x: x["qual"])

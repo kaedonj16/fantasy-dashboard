@@ -557,7 +557,89 @@ def suggest_packages(
         pkg["pattern_source"]   = "ml"
         packages.append(pkg)
 
+    # No roster (or roster matching produced nothing): surface value-appropriate
+    # cluster examples so a searched player is never a blank page. When the
+    # viewer *does* have a roster, the player-packages route fills from that
+    # roster instead of substituting other-league names.
+    if not packages and not viewer_players and not viewer_picks:
+        for cluster in clusters:
+            if len(packages) >= n:
+                break
+            for ex in cluster.get("examples") or []:
+                pkg = _example_to_package(
+                    ex, values_by_id, cluster.get("size", 1), target_value
+                )
+                if pkg is None:
+                    continue
+                shape = _shape_key(pkg["send"])
+                if shape in seen_shapes:
+                    continue
+                seen_shapes.add(shape)
+                packages.append(pkg)
+                break
+
     return packages
+
+
+def _example_to_package(
+    example: dict,
+    values_by_id: dict,
+    cluster_size: int,
+    target_value: float,
+) -> Optional[dict]:
+    """Turn a stored cluster example into a reference package, keeping only
+    those whose current-market send value still sits near the target."""
+    send: list[dict] = []
+    for a in example.get("sent_assets") or []:
+        kind = str(a.get("asset_type") or "")
+        if kind == "pick" or a.get("pick_round"):
+            rnd = int(a.get("pick_round") or 3)
+            val = _pick_rough_value(rnd)
+            send.append({
+                "name": f"R{rnd} pick",
+                "value": val,
+                "send_value": val,
+                "is_pick": True,
+                "pick_round": rnd,
+                "pick_season": a.get("pick_season"),
+                "pick_order": a.get("pick_order") or "mid",
+                "is_reference": True,
+            })
+            continue
+        pid = str(a.get("sent_player_id") or a.get("player_id") or "")
+        info = values_by_id.get(pid) or {}
+        if not info:
+            continue
+        val = float(info.get("value") or 0)
+        if val < 10:
+            continue
+        send.append({
+            "player_id": pid,
+            "name": info.get("name") or "",
+            "position": str(info.get("position") or "").upper(),
+            "value": val,
+            "send_value": val,
+            "is_pick": False,
+            "is_reference": True,
+        })
+    if not send:
+        return None
+    total = sum(float(x.get("value") or 0) for x in send)
+    if target_value > 0 and not (0.55 * target_value <= total <= 1.60 * target_value):
+        return None
+    sig = []
+    for a in send:
+        if a.get("is_pick"):
+            sig.append(f"K:{a.get('pick_round', 3)}")
+        else:
+            sig.append(f"P:{a.get('position') or 'WR'}:T{_value_to_tier(float(a.get('value') or 0))}")
+    return {
+        "send": send,
+        "sig": sig,
+        "trades_like_this": cluster_size,
+        "pattern_source": "ml",
+        "is_reference": True,
+    }
 
 
 def _shape_key(assets: list[dict]) -> str:
@@ -589,7 +671,10 @@ def _match_viewer_to_cluster(
 
     centroid layout: see module docstring.
     """
-    target_value = max(target_value, 100.0)
+    # Keep a tiny floor so we never divide by zero, but don't inflate dart-throw
+    # targets up to a 100-value package (that used to overshoot cheap WRs and
+    # then get dropped by the overpay filter).
+    target_value = max(float(target_value or 0), 30.0)
     exclude_pids = exclude_pids or set()
 
     # Denormalise centroid targets; cap value_ratio so stale training data
@@ -634,19 +719,37 @@ def _match_viewer_to_cluster(
     sent_assets: list[dict] = []
 
     def _pick_players(positions: list[str], slot_target: float, n: int) -> None:
-        """Pick n players matching any of positions, prioritising exact tier then ±1."""
+        """Pick n players matching any of positions, prioritising exact tier then ±1, ±2, then any.
+
+        Exact-tier-only matching used to return nothing when a roster was a
+        tier off the cluster centroid, which left searched players with an
+        empty suggestion list even though the manager had fair chips to send.
+        """
         req_tier = _value_to_tier(slot_target)
         for _ in range(n):
-            candidates = [
+            pool = [
                 p for p in viewer_players
                 if (not positions or p.get("position") in positions)
                 and str(p.get("player_id") or "") not in used_pids
                 and float(p.get("value") or 0) >= 30
-                and _value_to_tier(float(p.get("value") or 0)) == req_tier
             ]
-            if not candidates:
+            if not pool:
                 break
-            chosen = min(candidates, key=lambda p: abs(float(p.get("value") or 0) - slot_target))
+            chosen = None
+            for slack in (0, 1, 2, 99):
+                candidates = [
+                    p for p in pool
+                    if slack >= 99
+                    or abs(_value_to_tier(float(p.get("value") or 0)) - req_tier) <= slack
+                ]
+                if candidates:
+                    chosen = min(
+                        candidates,
+                        key=lambda p: abs(float(p.get("value") or 0) - slot_target),
+                    )
+                    break
+            if chosen is None:
+                break
             pid  = str(chosen.get("player_id") or "")
             val  = float(chosen.get("value") or 0)
             info = values_by_id.get(pid) or {}
