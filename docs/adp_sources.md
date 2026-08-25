@@ -22,11 +22,12 @@ league size, or real/mock status we did not observe.
   simple `resolve_market_adp` (backward-compatible `{id: adp}`), and the richer
   `resolve_market_adp_detailed` (per-player provenance + confidence).
 
-Global feeds are **never fetched on the request path.** A daily cron
-(`refresh_global_adp_sources`) fetches them and writes snapshots under
-`data/adp_snapshots/`; the resolver reads the snapshots. This gives per-provider
-failure isolation, stale-data retention, and a durable record for historical
-ADP-movement analysis for free.
+Global feeds are fetched by a daily cron (``refresh_global_adp_sources``) into
+snapshots under `data/adp_snapshots/`, mirrored into the shared `adp_snapshots`
+table, and **also retrieved on miss** the same way Sleeper ADP is (disk cache,
+then live fetch) and BR Fantasy is (shared DB). That way a fresh web container
+after a deploy still has ESPN / Yahoo / MFL without waiting for cron. The
+resolver never fails a page because a snapshot file is missing from this disk.
 
 ## Source matrix
 
@@ -121,12 +122,18 @@ one-source result is never labelled "Consensus".
 
 ## Caching, storage, reliability
 
-- Global feeds refresh centrally once daily (`refresh_global_adp_sources`, wired
-  into `cron_daily.py`), isolated per provider.
+- Global feeds refresh on every web deploy (`scripts/post_deploy.py`, spawned by
+  `startup.py`) so Yahoo/ESPN/MFL snapshots land on the web container's disk
+  (cron runs on a separate disk). A daily cron (`refresh_global_adp_sources` in
+  `cron_daily.py`) also refreshes them as a freshness backup. Each provider is
+  isolated. If this container still has no snapshot (first request before
+  post-deploy finishes, or a missed warmup), the request path retrieves them
+  the same way Sleeper / BR Fantasy do: disk → shared `adp_snapshots` table →
+  live fetch.
 - Snapshots persist to `data/adp_snapshots/{source}_{axis}_{season}.json`
   (atomic writes) and are best-effort mirrored into the `adp_snapshots` table
-  (migration `029_adp_snapshots.sql`, additive; disk stays the request-path source
-  of truth).
+  (migration `029_adp_snapshots.sql`, additive). Disk is the fast path; the
+  table is how a new web disk recovers data the cron already fetched.
 - **Stale retention:** an empty/error fetch never overwrites a non-empty snapshot.
 - A provider outage cannot affect Sleeper, BR Fantasy, the Draft Room, or player
   pages — each source degrades to empty independently.
@@ -136,9 +143,10 @@ one-source result is never labelled "Consensus".
 
 `adp_source_options(scoring_type, season)` drives the source dropdowns. Labels:
 Consensus, BR Fantasy, Sleeper, ESPN, Yahoo, MFL. Only axis-relevant sources are
-offered (ESPN/Yahoo/MFL on redraft only). When a `season` is passed, a global
-source is hidden until it has a non-empty snapshot, so a selector never offers a
-source that would return nothing.
+offered (ESPN/Yahoo/MFL on redraft only). When a `season` is passed, snapshots
+are warmed first (disk → DB → live) and a global source is still hidden until it
+has a non-empty snapshot, so a selector never offers a source that would return
+nothing.
 
 ## Backward compatibility & migrations
 

@@ -1,11 +1,10 @@
-// Single source of truth for the draft-grade field curve.
+// Draft-grade field curve (backtest / parity only).
 //
-// Loaded as a plain <script> in the draft room (exposes window.BRDraftGrade)
-// and require()'d by the parity test in Node. The Python mirror in
-// utils/draft_grade.py (dr_apply_field_curve) is pinned to THIS implementation
-// by tests/test_draft_grade_curve_parity.py, so the browser (Draft Room) and
-// server (Teams page /api/draft-grades) can never grade the same team
-// differently again.
+// Live Draft Room + Teams-page grades are absolute (no field curve) since the
+// absolute-grades change. This module is still require()'d by
+// tests/test_draft_grade_curve_parity.py and mirrored in
+// utils/draft_grade.py::dr_apply_field_curve for offline backtests that sweep
+// curved letter distributions. Do not load it in the Draft Room page.
 (function (root, factory) {
   var api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;

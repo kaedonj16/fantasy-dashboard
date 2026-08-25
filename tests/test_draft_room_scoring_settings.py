@@ -150,13 +150,26 @@ def test_likely_next_pick_survivors_pay_current_pick_opportunity_cost():
     assert "waitPenalty: waitPenalty" in source
 
 
+def test_autodraft_uses_shared_need_multiplier_instead_of_uncapped_starter_boost():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    core = (REPO / "static" / "draft_board_core.js").read_text(encoding="utf-8")
+
+    assert "DraftBoardCore.autoDraftNeedMultiplier" in source
+    assert "else if (sSlots > 0 && have < sSlots) s *= 1.35;" not in source
+    assert "function autoDraftNeedMultiplier(o)" in core
+    assert "var AUTO_WAIT_TURN = 0.35;" in core
+
+
 def test_tier_cliff_urgency_is_suppressed_during_round_one():
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
     match = re.search(r"function isTierCliff\(p, pickNo\)\{(.*?)\n  \}", source, re.DOTALL)
 
     assert match
     assert "if (pn <= ((state && state.teams) || 12)) return false;" in match.group(1)
-    assert "isTierCliff: isTierCliff(p, _pn)" in source
+    # Live board still uses isTierCliff(); grading uses at-pick map / override.
+    assert "else _cliff = isTierCliff(p, _pn);" in source
+    assert "_buildGradeCliffs" in source
+    assert "map[pn] = (pn > teams) && t != null && left <= 2;" in source
 
 
 def test_roster_setup_has_editable_platform_and_dynasty_presets():
@@ -179,3 +192,70 @@ def test_roster_source_sits_outside_immediately_above_slot_grid():
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 
     assert "var html = presetHtml + srcHtml + '<div class=\"dr-setup-roster\">';" in source
+
+
+def test_pick_ledger_formats_adp_delta_to_one_decimal():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert "function fmtAdpDelta(n)" in source
+    assert "var dtxt = fmtAdpDelta(p.diff);" in source
+    assert "(p.diff > 0 ? '+' : '') + p.diff;" not in source
+    assert "fmtAdpDelta(netValue)" in source
+
+
+def test_starters_meter_shows_percent_of_league_average():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert "meter('Starters', '100% = league-average lineup', starterPct, 100, sRank, { unit: '% of avg', vsAvg: true })" in source
+    assert "meter('Starters', 'lineup vs league average', g.tier, m.tier, sRank)" not in source
+    assert "x.strength != null ? x.strength : x.tier" in source
+    assert "Tied values share a rank" in source
+
+
+def test_draft_capital_percentages_use_finite_numeric_value():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert "function finiteVal(v)" in source
+    assert "return finiteVal(v);" in source
+    assert "function capPct(part, tot)" in source
+    assert "var v = valOf(playersById[String(x.p.id)] || x.p) || 0;" not in source
+    assert "lgByPos = lgCount; lgTot = lgN;" in source
+
+
+def test_edit_setup_opens_a_modal_instead_of_leaving_the_board():
+    body = build_draft_room_body(None, None, None, is_guest=True)
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert 'id="drEditTitle">Edit Setup</h2>' in body
+    assert 'id="drEditApply">Apply Settings</button>' in body
+    assert 'id="drEditReset">' in body
+    assert 'id="drEditCancel">Cancel</button>' in body
+    assert 'id="drSetupStartCta"' in body
+    assert 'id="drSetupEditCta"' in body
+    assert ".dr-setup-is-modal {" in body
+    assert "function openEditSetup()" in source
+    assert "function applyEditedSetup()" in source
+    assert "function closeEditSetup()" in source
+    assert "document.getElementById('drEdit').addEventListener('click', openEditSetup);" in source
+    assert "document.getElementById('drEdit').addEventListener('click', showSetup);" not in source
+    assert "document.getElementById('drEditReset').addEventListener('click', resetDraft);" in source
+    assert "state = null;\n      showSetup();" in source
+    assert "This wipes every pick and returns to setup." in source
+    assert "if (!state || !state.teams || state.mode === 'live') return;" in source
+
+
+def test_statusbar_shows_league_settings_chips():
+    body = build_draft_room_body(None, None, None, is_guest=True)
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert 'id="drLeagueMeta"' in body
+    assert ".dr-league-meta {" in body
+    assert ".dr-lm-chip {" in body
+    assert "function leagueMetaParts()" in source
+    assert "function renderLeagueMeta()" in source
+    assert "renderLeagueMeta();" in source
+    assert "document.getElementById('drLeagueMeta').addEventListener('click'" in source
+    assert "state.teams + '-team ' + (state.sf ? 'SF' : '1QB')" in source
+    assert "el.classList.toggle('is-editable', canEdit);" in source
+    # Live drafts lock settings; the chips still render but do not open Edit Setup.
+    assert "var canEdit = state.mode !== 'live';" in source

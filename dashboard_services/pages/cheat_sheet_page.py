@@ -183,7 +183,7 @@ _CHEAT_HTML = r"""
   .cs-drop-line { position: absolute; left: 0; right: 0; height: 2px; margin-top: -1px; background: var(--cs-accent); pointer-events: none; z-index: 5; }
   .cs-drop-line::before { content: ""; position: absolute; left: 0; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--cs-accent); }
   /* Override state chip next to the name. */
-  .cs-ovchip { font-family: var(--cs-mono); font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 12px; margin-left: 8px; white-space: nowrap; }
+  .cs-ovchip { font-family: var(--cs-mono); font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: var(--radius-pill, 8px); margin-left: 8px; white-space: nowrap; }
   .cs-ovchip.bump { color: var(--cs-accent); background: var(--cs-accent-soft); }
   .cs-ovchip.pin { color: var(--cs-good); background: var(--cs-good-soft); }
   .cs-ovchip.mute { color: var(--cs-ink-faint); background: var(--cs-surface-2); }
@@ -234,7 +234,7 @@ _CHEAT_HTML = r"""
   .cs-pos-QB { color: var(--cs-qb); background: var(--cs-qb-bg); } .cs-pos-RB { color: var(--cs-rb); background: var(--cs-rb-bg); }
   .cs-pos-WR { color: var(--cs-wr); background: var(--cs-wr-bg); } .cs-pos-TE { color: var(--cs-te); background: var(--cs-te-bg); }
 
-  .cs-winpill { font-family: var(--cs-mono); font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 12px; }
+  .cs-winpill { font-family: var(--cs-mono); font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: var(--radius-pill, 8px); }
   .win-asc { color: var(--cs-good); background: var(--cs-good-soft); }
   .win-prime { color: var(--cs-accent); background: var(--cs-accent-soft); }
   .win-now { color: var(--cs-amber); background: var(--cs-amber-soft); }
@@ -243,6 +243,16 @@ _CHEAT_HTML = r"""
   .cs-wrap tr.cs-cliff td { padding: 0; border: 0; }
   .cs-cliffline { display: flex; align-items: center; gap: 10px; font-family: var(--cs-mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--cs-ink-faint); padding: 8px 14px 7px; background: var(--cs-surface-2); }
   .cs-cliffline::before, .cs-cliffline::after { content: ""; height: 1px; background: var(--cs-line); flex: 1; }
+  /* Projected-pick windows for a selected snake slot. Distinct from tier
+     cliffs so "where you pick" is obvious on screen and on paper. */
+  .cs-wrap tr.cs-proj td { padding: 0; border: 0; }
+  .cs-projline { display: flex; align-items: center; gap: 10px; font-family: var(--cs-mono); font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--cs-accent); padding: 7px 14px 6px; background: var(--cs-accent-soft); }
+  .cs-projline::before, .cs-projline::after { content: ""; height: 2px; background: var(--cs-accent); flex: 1; opacity: .55; }
+  .cs-proj-ov { font-weight: 700; color: var(--cs-ink-soft); letter-spacing: .04em; }
+  .cs-wrap tbody tr.cs-proj-row td { background: var(--cs-accent-soft); }
+  .cs-wrap tbody tr.cs-proj-row:hover td { background: color-mix(in srgb, var(--cs-accent) 22%, var(--cs-surface)); }
+  .cs-proj-mark { font-family: var(--cs-mono); font-size: 9.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--cs-accent); background: var(--cs-accent-soft); padding: 1px 6px; border-radius: 12px; margin-left: 6px; white-space: nowrap; }
+  .cs-pgtier.cs-proj-bar { color: var(--cs-accent); background: var(--cs-accent-soft); border-top-color: color-mix(in srgb, var(--cs-accent) 40%, var(--cs-line)); border-bottom-color: color-mix(in srgb, var(--cs-accent) 40%, var(--cs-line)); }
 
   .cs-board.filteron tbody tr.cs-p[data-good="0"] { opacity: .32; }
   /* Live-draft: players already taken read as struck-through and dimmed; "Hide
@@ -250,6 +260,7 @@ _CHEAT_HTML = r"""
   .cs-wrap tbody tr.cs-p.drafted td { opacity: .34; }
   .cs-wrap tbody tr.cs-p.drafted .cs-pname { text-decoration: line-through; }
   .cs-board.hidedrafted tbody tr.cs-p.drafted { display: none; }
+  .cs-board.hidedrafted .cs-proj-taken { display: none; }
   .cs-pgc.drafted { opacity: .34; }
   .cs-pgc.drafted .cs-pgn { text-decoration: line-through; }
   .cs-board.hidedrafted .cs-pgc.drafted { display: none; }
@@ -285,12 +296,10 @@ _CHEAT_HTML = r"""
 
   /* Filter bar: instant name search + position filter over the whole board. */
   .cs-filterbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 14px 0 12px; }
+  .cs-filterbar .cs-src { flex: 0 0 auto; min-width: 168px; }
   .cs-search { flex: 1 1 200px; min-width: 140px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--cs-line); background: var(--cs-surface); color: var(--cs-ink); font: inherit; font-size: 13px; outline: none; }
   .cs-search:focus { border-color: var(--cs-accent); }
-  .cs-posf { display: inline-flex; gap: 4px; flex-wrap: wrap; }
-  .cs-posf button { font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-line); background: var(--cs-surface); color: var(--cs-ink-soft); padding: 8px 12px; border-radius: 9px; }
-  .cs-posf button:hover { border-color: var(--cs-accent); color: var(--cs-accent); }
-  .cs-posf button[aria-pressed="true"] { background: var(--cs-accent); color: #fff; border-color: var(--cs-accent); }
+  .cs-posf { display: inline-flex; gap: 6px; flex-wrap: wrap; }
   .cs-pick { font-family: var(--cs-mono); font-weight: 800; font-size: 13px; text-align: center; }
   .cs-pick small { display: block; font-size: 9px; font-weight: 600; color: var(--cs-ink-faint); letter-spacing: .06em; }
   .cs-dtiers { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -340,6 +349,7 @@ _CHEAT_HTML = r"""
     /* Bigger edit-board tap targets so the grip/arrows/pin are thumb-friendly. */
     .cs-ovbtns { gap: 5px; }
     .cs-ovbtn { width: 34px; height: 34px; font-size: 14px; border-radius: 8px; }
+    .cs-filterbar .cs-src { width: 100%; min-width: 0; }
   }
   @media print {
     .cs-controls, .cs-tabs, .cs-backlink, .cs-needs, .cs-filterbar, #csPrintBtn, #csValBtn, #csClearBtn, #csEditBtn, #csResetBoardBtn { display: none !important; }
@@ -351,7 +361,7 @@ _CHEAT_HTML = r"""
     .cs-tbl-scroll, .cs-pgrid-scroll { overflow: visible; border: 0; max-height: none; }
     .cs-wrap thead th { position: static; }
     /* Keep a tier heading with the rows under it, and don't split a row. */
-    .cs-wrap tr.cs-cliff { break-before: auto; break-after: avoid; }
+    .cs-wrap tr.cs-cliff, .cs-wrap tr.cs-proj { break-before: auto; break-after: avoid; }
     .cs-wrap tbody tr { break-inside: avoid; }
     .cs-pgtier { break-after: avoid; }
     .cs-pgrow { break-inside: avoid; }
@@ -410,13 +420,14 @@ _CHEAT_HTML = r"""
 
   <div class="cs-filterbar" id="csFilterbar">
     <input type="search" class="cs-search" id="csSearch" placeholder="Search players&hellip;" autocomplete="off" aria-label="Search players">
-    <div class="cs-posf" id="csPosF" role="group" aria-label="Filter by position">
-      <button type="button" data-pos="ALL" aria-pressed="true">All</button>
-      <button type="button" data-pos="QB" aria-pressed="false">QB</button>
-      <button type="button" data-pos="RB" aria-pressed="false">RB</button>
-      <button type="button" data-pos="WR" aria-pressed="false">WR</button>
-      <button type="button" data-pos="TE" aria-pressed="false">TE</button>
+    <div class="otc-day-filters cs-posf" id="csPosF" role="group" aria-label="Filter by position">
+      <button type="button" class="otc-day-filter" data-pos="ALL" aria-pressed="true">All</button>
+      <button type="button" class="otc-day-filter" data-pos="QB" aria-pressed="false">QB</button>
+      <button type="button" class="otc-day-filter" data-pos="RB" aria-pressed="false">RB</button>
+      <button type="button" class="otc-day-filter" data-pos="WR" aria-pressed="false">WR</button>
+      <button type="button" class="otc-day-filter" data-pos="TE" aria-pressed="false">TE</button>
     </div>
+    <select class="cs-src" id="csPickSlot" aria-label="Projected pick slot"></select>
   </div>
 
   <section class="cs-board" id="cs-panel-board">
@@ -436,6 +447,7 @@ _CHEAT_HTML = r"""
       <div class="cs-rule"><span class="cs-k">Roster</span><div><h3>Your league sets the replacement line</h3><p>Replacement level comes from your roster slots and league size, the same starter counts the Draft Room uses. Superflex moves that line: up to twice as many QBs start, so the replacement QB is far weaker and every startable QB climbs. Nothing is added by hand, the baseline simply moves.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Tiers</span><div><h3>Tiers are value cliffs</h3><p>Players group where the drop-off is small inside the group and large to the next. Inside a tier, order barely matters, so take need or the falling price. Do not reach across a cliff.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Value</span><div><h3>Where "above ADP" comes from</h3><p>Our rank is this VOR board. ADP is the consensus average draft position from real drafts. Value is ADP minus our rank. A green plus means the room lets him fall later than he is worth, so wait a beat and take him. A red minus means he goes early.</p></div></div>
+      <div class="cs-rule"><span class="cs-k">Proj Pick</span><div><h3>Your snake slot on this board</h3><p>Choose a draft slot to draw labeled lines at each of that seat's snake-draft picks — Proj Pick 1.05, 2.08, and so on. The player under each line is who this ranking would take there. Lines follow the displayed order, including any custom-board moves, and they print with the sheet.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Proj PPG</span><div><h3>Expected weekly scoring</h3><p>Projected PPG is the player's upcoming-season fantasy points per game from the same projection pool used by the Draft Room. It provides an at-a-glance scoring expectation without changing the VOR ranking.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Schedule</span><div><h3>Full-season matchup context</h3><p>Schedule Rank compares each player's position-specific matchups across fantasy Weeks 1-17. Rank 1 is the easiest schedule. It is useful context for close calls inside a tier, but it does not change the stable VOR order.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Live</span><div><h3>It knows your live draft</h3><p>Open the sheet from your league during a draft and players already taken are struck through automatically. REC badges show the current Draft Room view without changing the VOR board. Reopen the sheet after more picks to refresh those ranks, or use Connect live draft to keep drafted-player status synchronized.</p></div></div>

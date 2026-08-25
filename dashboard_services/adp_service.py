@@ -45,13 +45,18 @@ def _atomic_json_write(path, data) -> None:
 
 
 # ── Global-source snapshot store ──────────────────────────────────────────────
-# The tokenless global feeds (Yahoo/ESPN/MFL) are refreshed centrally a few times
-# a day and their normalized results persisted here, so the request path only ever
-# reads a snapshot from disk — never touches the network. This gives three
-# properties the plan requires for free: per-provider failure isolation (a fetch
-# that fails leaves the last good snapshot untouched), stale-data retention
-# (``write_adp_snapshot`` refuses to overwrite good data with an empty result),
-# and a durable record for later historical ADP-movement analysis.
+# The tokenless global feeds (Yahoo/ESPN/MFL) are retrieved the same way Sleeper
+# and BR Fantasy are: the request path always has a way to get them.
+#
+#   1. Disk snapshot (fast; written by a previous request, cron, or post-deploy)
+#   2. Shared ``adp_snapshots`` table (survives Render deploys; cron already
+#      mirrors here) — same idea as BR Fantasy reading ``draft_adp``
+#   3. Live fetch + cache (same idea as ``fetch_sleeper_adp``)
+#
+# Cron / post-deploy still refresh in the background so the first page load
+# after a deploy is usually a disk or DB hit, not a network round-trip.
+# Per-provider isolation and stale-data retention (empty fetch never clobbers
+# a last-good snapshot) still apply.
 
 def _snapshot_dir():
     from utils.paths import DATA_DIR
@@ -164,6 +169,112 @@ def write_adp_snapshot(source: str, axis: str, season: int, payload: dict) -> bo
     return True
 
 
+_GLOBAL_ADP_ENSURE_LOCK = threading.Lock()
+# Defined early so ensure_global_adp_snapshot can gate on it at call time.
+_GLOBAL_SNAPSHOT_SOURCES = frozenset({"espn", "yahoo", "mfl"})
+
+
+def _hydrate_snapshot_from_db(source: str, axis: str, season: int) -> bool:
+    """Copy a non-empty ``adp_snapshots`` table slice onto disk. Returns True if
+    the disk snapshot now has rows.
+
+    Render's web and cron disks are separate, but Postgres is shared — so after a
+    web deploy the table is the copy that still has Yahoo/ESPN/MFL from the last
+    successful refresh. Best-effort: a missing table, no DSN, or a query error
+    degrades to False and the caller tries a live fetch."""
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT DISTINCT ON (player_id) player_id, adp
+                    FROM adp_snapshots
+                    WHERE source = %s AND season = %s AND draft_type = %s
+                      AND adp IS NOT NULL AND adp > 0
+                    ORDER BY player_id, collected_at DESC
+                    """,
+                    (source, int(season), axis),
+                )
+                rows = cur.fetchall()
+    except Exception:
+        logger.debug("adp_service: DB snapshot hydrate skipped", exc_info=True)
+        return False
+    adp: Dict[str, float] = {}
+    for r in rows or []:
+        try:
+            pid = r["player_id"] if isinstance(r, dict) else r[0]
+            val = r["adp"] if isinstance(r, dict) else r[1]
+            fv = float(val)
+        except (TypeError, ValueError, KeyError, IndexError):
+            continue
+        if fv > 0:
+            adp[str(pid)] = fv
+    if not adp:
+        return False
+    return write_adp_snapshot(source, axis, int(season), {
+        "adp": adp,
+        "meta": {"draft_type": axis, "qb_format": "mixed", "scope": "global",
+                 "hydrated_from": "db"},
+        "mapped_count": len(adp),
+        "raw_count": len(adp),
+    })
+
+
+def _live_fetch_global_sources(sources, season: int) -> dict:
+    """Fetch the named tokenless feeds and persist snapshots. Isolated per
+    source: one failure never affects the others. Returns a per-source summary
+    matching ``refresh_global_adp_sources``."""
+    summary: Dict[str, dict] = {}
+    from dashboard_services.providers import global_adp as _g
+    fetchers = {
+        "yahoo": ("redraft", lambda: _g.fetch_yahoo_global_adp(int(season))),
+        "espn":  ("redraft", lambda: _g.fetch_espn_global_adp(int(season))),
+        "mfl":   ("redraft", lambda: _g.fetch_mfl_adp(int(season))),
+    }
+    for source in sources:
+        spec = fetchers.get(source)
+        if not spec:
+            continue
+        axis, fetch = spec
+        try:
+            payload = fetch()
+            wrote = write_adp_snapshot(source, axis, int(season), payload)
+            summary[source] = {"ok": True, "written": wrote,
+                               "mapped": (payload or {}).get("mapped_count"),
+                               "raw": (payload or {}).get("raw_count")}
+        except Exception as exc:  # noqa: BLE001 - isolate each provider
+            logger.warning("adp_service: refresh %s failed: %s", source, exc, exc_info=True)
+            summary[source] = {"ok": False, "error": type(exc).__name__}
+    return summary
+
+
+def ensure_global_adp_snapshot(source: str, season: int, axis: str = "redraft") -> None:
+    """Make one global source's snapshot available on this disk.
+
+    Same retrieve-on-miss pattern as ``fetch_sleeper_adp``: if the cache is
+    already warm, this is a no-op. Otherwise hydrate from the shared DB, then
+    live-fetch. Single-flight so a thundering herd of modal / rankings requests
+    after a deploy share one populate."""
+    if source not in _GLOBAL_SNAPSHOT_SOURCES:
+        return
+    season_i = int(season)
+    if snapshot_adp_map(source, axis, season_i):
+        return
+    with _GLOBAL_ADP_ENSURE_LOCK:
+        if snapshot_adp_map(source, axis, season_i):
+            return
+        if _hydrate_snapshot_from_db(source, axis, season_i):
+            return
+        _live_fetch_global_sources((source,), season_i)
+
+
+def ensure_global_adp_snapshots(season: int) -> None:
+    """Warm Yahoo, ESPN, and MFL snapshots for ``season`` (disk → DB → live)."""
+    for source in ("yahoo", "espn", "mfl"):
+        ensure_global_adp_snapshot(source, int(season))
+
+
 def _persist_snapshot_db(record: dict) -> None:
     """Best-effort mirror of a snapshot into the adp_snapshots table.
 
@@ -224,26 +335,10 @@ def _persist_snapshot_db(record: dict) -> None:
 # ── Central refresh of the global feeds ───────────────────────────────────────
 def refresh_global_adp_sources(season: int) -> dict:
     """Fetch every tokenless global feed and persist its snapshot. For the daily
-    cron. Each provider is isolated: one failing never affects the others, and an
-    empty fetch keeps the last good snapshot. Returns a per-source summary."""
-    summary: Dict[str, dict] = {}
-
-    def _run(source: str, axis: str, fetch):
-        try:
-            payload = fetch()
-            wrote = write_adp_snapshot(source, axis, int(season), payload)
-            summary[source] = {"ok": True, "written": wrote,
-                               "mapped": (payload or {}).get("mapped_count"),
-                               "raw": (payload or {}).get("raw_count")}
-        except Exception as exc:  # noqa: BLE001 - isolate each provider
-            logger.warning("adp_service: refresh %s failed: %s", source, exc, exc_info=True)
-            summary[source] = {"ok": False, "error": type(exc).__name__}
-
-    from dashboard_services.providers import global_adp as _g
-    _run("yahoo", "redraft", lambda: _g.fetch_yahoo_global_adp(int(season)))
-    _run("espn", "redraft", lambda: _g.fetch_espn_global_adp(int(season)))
-    _run("mfl", "redraft", lambda: _g.fetch_mfl_adp(int(season)))
-    return summary
+    cron and post-deploy warmup. Each provider is isolated: one failing never
+    affects the others, and an empty fetch keeps the last good snapshot. Returns
+    a per-source summary."""
+    return _live_fetch_global_sources(("yahoo", "espn", "mfl"), int(season))
 
 
 def fetch_league_adp_from_db(
@@ -485,8 +580,9 @@ _SLEEPER_ADP_FIELDS = {
 #             and are deliberately excluded from dynasty (never mix redraft ADP
 #             into a dynasty market). MFL exposes no verified dynasty ADP filter.
 #   rookie  — Sleeper, BR Fantasy. MFL has no verified rookie ADP filter.
-# The globals (espn/yahoo/mfl) are read from centrally-refreshed snapshots, never
-# fetched on the request path.
+# The globals (espn/yahoo/mfl) are retrieved on the request path the same way
+# Sleeper is (cache, then fetch) and BR Fantasy is (shared DB), so they stay
+# visible after a web deploy whose local disk starts empty.
 ADP_SOURCES = {
     "redraft": ("sleeper", "espn", "yahoo", "mfl", "brfantasy"),
     "dynasty": ("sleeper", "brfantasy"),
@@ -512,7 +608,7 @@ _CRAWLER_REF_SIZE = 12
 
 
 # Global feeds that only make sense in a selector once they actually have data.
-_GLOBAL_SNAPSHOT_SOURCES = frozenset({"espn", "yahoo", "mfl"})
+# (_GLOBAL_SNAPSHOT_SOURCES is defined with the snapshot store above.)
 
 
 def adp_source_options(scoring_type: str, season: Optional[int] = None):
@@ -526,7 +622,10 @@ def adp_source_options(scoring_type: str, season: Optional[int] = None):
     hidden unless it actually has a non-empty snapshot for that season — so a
     selector never offers a source that would return nothing (Priority 4). Always-
     on sources (Sleeper, BR Fantasy) and Consensus are never gated. With
-    ``season=None`` every configured source is listed (legacy behavior)."""
+    ``season=None`` every configured source is listed (legacy behavior).
+
+    A season-gated call also warms the global snapshots (DB, then live) so the
+    dropdown is not empty just because this container's disk is fresh."""
     st = scoring_type if scoring_type in ADP_SOURCES else "redraft"
     values = ["consensus", *ADP_SOURCES[st]]
     season_int: Optional[int] = None
@@ -536,6 +635,11 @@ def adp_source_options(scoring_type: str, season: Optional[int] = None):
         except (TypeError, ValueError):
             season_int = None
     if season_int is not None:
+        if st == "redraft":
+            try:
+                ensure_global_adp_snapshots(season_int)
+            except Exception:
+                logger.debug("adp_service: global ADP ensure skipped", exc_info=True)
         values = [v for v in values
                   if v not in _GLOBAL_SNAPSHOT_SOURCES
                   or snapshot_adp_map(v, st, season_int)]
@@ -687,7 +791,8 @@ def _yahoo_adp_source(season: int, is_sf: bool, scoring_type: str,
 
     With a league token, use Yahoo's league-format-aware draft_analysis (kept for
     connected Yahoo leagues). Without one, fall back to the public *global* Yahoo
-    ADP snapshot (no OAuth) so the "Yahoo" source works for everyone."""
+    ADP (no OAuth) so the "Yahoo" source works for everyone — retrieved like
+    Sleeper (cache, then fetch) rather than requiring a pre-warmed disk file."""
     if scoring_type != "redraft":
         return {}
     if league_id and token:
@@ -697,23 +802,27 @@ def _yahoo_adp_source(season: int, is_sf: bool, scoring_type: str,
                 return got
         except Exception:
             logger.debug("adp_service: Yahoo league ADP failed, trying global", exc_info=True)
+    ensure_global_adp_snapshot("yahoo", int(season))
     return snapshot_adp_map("yahoo", "redraft", int(season))
 
 
 def _espn_adp_source(season: int, is_sf: bool, scoring_type: str) -> Dict[str, float]:
-    """ESPN global redraft ADP from the persisted snapshot (redraft-only).
+    """ESPN global redraft ADP (redraft-only).
 
     Reads only ``averageDraftPosition``; ESPN's separate PPR draft-room rank is
-    never surfaced here, so it can never leak into ADP consensus."""
+    never surfaced here, so it can never leak into ADP consensus. Populates the
+    snapshot on miss (DB, then live) so the source stays visible after deploys."""
     if scoring_type != "redraft":
         return {}
+    ensure_global_adp_snapshot("espn", int(season))
     return snapshot_adp_map("espn", "redraft", int(season))
 
 
 def _mfl_adp_source(season: int, is_sf: bool, scoring_type: str) -> Dict[str, float]:
-    """MFL global redraft ADP from the persisted snapshot (redraft-only)."""
+    """MFL global redraft ADP (redraft-only). Populates on miss like Sleeper."""
     if scoring_type != "redraft":
         return {}
+    ensure_global_adp_snapshot("mfl", int(season))
     return snapshot_adp_map("mfl", "redraft", int(season))
 
 

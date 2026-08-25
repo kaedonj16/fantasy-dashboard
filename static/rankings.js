@@ -60,8 +60,10 @@ var prAdpSource = 'auto';       // currently selected ADP source ('auto' = serve
 var prAdpReloading = false;     // guards concurrent source re-fetches
 var prAdpColumns = [];          // [{value,label}] per-source ADP columns for the sort-by-ADP view
 var prAdpSortSource = '';       // which source column the ADP view is sorted by ('' = default)
-var PR_ADP_COL_W = 82;          // compact source columns; the table scrolls horizontally when every source is visible
-var PR_ADP_COL_W_MOBILE = 70;   // readable touch target on phones, with overflow handled by the table scroller
+var PR_ADP_COL_W = 82;            // compact source columns; the table scrolls horizontally when every source is visible
+var PR_ADP_COL_W_MOBILE = 76;     // touch-friendly source cols — mobile scrolls instead of squeezing to fit
+var PR_ADP_RANK_W_MOBILE = 40;    // sticky # column width on mobile (must match CSS left offset)
+var PR_ADP_PLAYER_W_MOBILE = 132; // sticky Player column width on mobile
 
 var PR_SPARK_W = 38, PR_SPARK_H = 26;  // logical (CSS) px
 // Set true for the one render pass right after sparkline data first loads, so
@@ -534,8 +536,8 @@ function prSetupAdpHeader(adpView, cols, active, gridCols, extra) {
       ? '<span class="pr-adp-meta-h">Pos</span><span class="pr-adp-meta-h">Age</span><span class="pr-adp-meta-h">Team</span>'
       : '';
     header.innerHTML =
-      '<span>#</span>' +
-      '<span>Player</span>' +
+      '<span class="pr-adp-pin pr-adp-pin-rank">#</span>' +
+      '<span class="pr-adp-pin pr-adp-pin-player">Player</span>' +
       metaHead +
       cols.map(function (c) {
         const on = c.value === active;
@@ -624,22 +626,21 @@ function prRender() {
   const adpCols = adpView ? prVisibleAdpColumns() : [];
   const adpActive = adpView ? prActiveAdpSource() : '';
   // On desktop keep the Pos / Age / Team columns (compact) alongside the source
-  // columns; on mobile drop them so the source columns fit.
+  // columns; on mobile drop them and pin # / Player while the source columns
+  // scroll horizontally (same pattern as schedule rankings).
   const adpExtra = adpView && !isMobile;
   // Fixed-width source columns (slim, like Pos/Age/Team) instead of 1fr, so they
-  // don't stretch across the row -- the Player column absorbs the slack. Wide
-  // enough to fit the "BR FANTASY" header without truncating. On phones the
-  // columns (and the rank col) shrink so all sources fit instead of overflowing
-  // the viewport and clipping the last column / truncating the headers.
-  // Only true phones overflow with 96px columns; tablets (481-768) have room.
-  const _isPhone = window.innerWidth <= 480;
-  const _adpColW = (_isPhone ? PR_ADP_COL_W_MOBILE : PR_ADP_COL_W) + 'px';
-  const _adpRankW = _isPhone ? '38px' : '54px';
+  // don't stretch across the row -- the Player column absorbs the slack on
+  // desktop. On mobile, # + Player are fixed-width sticky pins and sources
+  // scroll in #prTableScroll (see .pr-adp-pin-* in players_page.py).
+  const _adpColW = (isMobile ? PR_ADP_COL_W_MOBILE : PR_ADP_COL_W) + 'px';
   const _adpSrcTracks = adpCols.map(() => _adpColW).join(' ');
   const ADP_GRID = adpView
     ? (adpExtra
         ? ('54px minmax(0,1fr) 40px 42px 46px ' + _adpSrcTracks)
-        : (_adpRankW + ' minmax(0,1fr) ' + _adpSrcTracks))
+        : (isMobile
+            ? (PR_ADP_RANK_W_MOBILE + 'px ' + PR_ADP_PLAYER_W_MOBILE + 'px ' + _adpSrcTracks)
+            : ('54px minmax(0,1fr) ' + _adpSrcTracks)))
     : '';
   const tableScroll = document.getElementById('prTableScroll');
   if (tableScroll) tableScroll.classList.toggle('pr-adp-scroll', adpView);
@@ -911,8 +912,8 @@ function prRender() {
       // baseline the other sources' arrows compare against for this player.
       const _activeAdp = prAdpSourceVal(p, adpActive);
       row.innerHTML =
-        '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '–') + '</span>' +
-        '<span class="pr-name' + (isPick ? '' : ' player-clickable') + '">'  + (p.name || 'Unknown') + badges + '</span>' +
+        '<span class="pr-rank pr-adp-pin pr-adp-pin-rank">'  + (displayRank ? '#' + displayRank : '–') + '</span>' +
+        '<span class="pr-name pr-adp-pin pr-adp-pin-player' + (isPick ? '' : ' player-clickable') + '">'  + (p.name || 'Unknown') + badges + '</span>' +
         metaCells +
         adpCols.map(function (c) {
           const v = prAdpSourceVal(p, c.value);

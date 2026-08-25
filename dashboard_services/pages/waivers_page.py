@@ -16,12 +16,6 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-filters { margin-bottom: 16px; }
 .wv-filter-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .wv-pos-pills { display: flex; gap: 6px; flex-wrap: wrap; }
-.wv-pos-btn {
-  padding: 5px 14px; border-radius: 16px; font-size: 12px; font-weight: 700;
-  border: 1px solid var(--border); background: var(--card); color: var(--text-muted); cursor: pointer;
-  transition: background .12s, color .12s, border-color .12s;
-}
-.wv-pos-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
 /* Mobile tab bar */
 .wv-tab-bar {
@@ -154,7 +148,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-stream-name { font-weight: 700; font-size: 13px; color: var(--text); }
 .wv-stream-matchup { font-size: 12px; color: var(--text-muted); flex: 1; }
 .wv-stream-imp {
-  font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 12px;
+  font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: var(--radius-pill, 8px);
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .wv-stream-imp-good { background: color-mix(in srgb, var(--win) 16%, transparent); color: var(--win); }
@@ -304,7 +298,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-cmp-a.wv-compare-win, .wv-cmp-b.wv-compare-win { color: var(--win); font-weight: 800; }
 .wv-compare-win .wv-cmp-v {
   background: color-mix(in srgb, var(--win) 14%, transparent);
-  padding: 2px 9px; border-radius: 12px;
+  padding: 2px 9px; border-radius: var(--radius-pill, 8px);
 }
 .wv-compare-lose { color: var(--text); font-weight: 700; }
 .wv-cmp-hcol:first-child { text-align: right; }
@@ -314,12 +308,12 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-cmp-hcol:first-child .wv-cmp-headmeta { justify-content: flex-end; }
 .wv-cmp-poschip {
   font-size: 10px; font-weight: 800; letter-spacing: .02em;
-  padding: 1px 7px; border-radius: 12px; white-space: nowrap;
+  padding: 1px 7px; border-radius: var(--radius-pill, 8px); white-space: nowrap;
 }
 .wv-cmp-vs {
   align-self: center; justify-self: center; font-size: 10px; font-weight: 800;
   color: var(--text-subtle); letter-spacing: .06em;
-  border: 1px solid var(--border); border-radius: 12px; padding: 3px 7px;
+  border: 1px solid var(--border); border-radius: var(--radius-pill, 8px); padding: 3px 7px;
 }
 /* Verdict banner: the advisor's actual call, up top where it's read first. */
 .wv-cmp-verdict {
@@ -352,12 +346,14 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
   <!-- Position filter pills -->
   <div class="wv-filters">
     <div class="wv-filter-row">
-      <div class="wv-pos-pills">
-        <button class="wv-pos-btn active" onclick="wvSetPos('ALL')">ALL</button>
-        <button class="wv-pos-btn" onclick="wvSetPos('QB')">QB</button>
-        <button class="wv-pos-btn" onclick="wvSetPos('RB')">RB</button>
-        <button class="wv-pos-btn" onclick="wvSetPos('WR')">WR</button>
-        <button class="wv-pos-btn" onclick="wvSetPos('TE')">TE</button>
+      <div class="otc-day-filters wv-pos-pills">
+        <button class="otc-day-filter wv-pos-btn active" data-pos="ALL" onclick="wvSetPos('ALL')">ALL</button>
+        <button class="otc-day-filter wv-pos-btn" data-pos="QB" onclick="wvSetPos('QB')">QB</button>
+        <button class="otc-day-filter wv-pos-btn" data-pos="RB" onclick="wvSetPos('RB')">RB</button>
+        <button class="otc-day-filter wv-pos-btn" data-pos="WR" onclick="wvSetPos('WR')">WR</button>
+        <button class="otc-day-filter wv-pos-btn" data-pos="TE" onclick="wvSetPos('TE')">TE</button>
+        <button class="otc-day-filter wv-pos-btn" data-pos="K" hidden onclick="wvSetPos('K')">K</button>
+        <button class="otc-day-filter wv-pos-btn" data-pos="DEF" hidden onclick="wvSetPos('DEF')">D/ST</button>
       </div>
     </div>
   </div>
@@ -433,7 +429,10 @@ function wvSetTab(tab) {{
 
 function wvSetPos(pos) {{
   wvCurrentPos = pos;
-  document.querySelectorAll('.wv-pos-btn').forEach(b => b.classList.toggle('active', b.textContent === pos));
+  document.querySelectorAll('.wv-pos-btn').forEach(b => {{
+    const key = b.getAttribute('data-pos') || b.textContent;
+    b.classList.toggle('active', key === pos);
+  }});
   wvRenderWaivers();
   wvRenderStartSit();
   wvRenderTrending(wvTrendingData);
@@ -592,12 +591,13 @@ function wvLoad() {{
       if (!d.positions || !Object.keys(d.positions).length) {{
         showLoginGate('wvStartSit', {{
           title: 'Sign in to see your lineup',
-          description: 'Enter your Sleeper username to get personalized start/sit recommendations for your roster.'
+          description: 'Sign in to get personalized start/sit recommendations for your roster.'
         }});
         return;
       }}
       wvStartSitData = d;
       wvStartSitData._lineup_requirements = d.lineup_requirements || {{}};
+      wvSyncPosPills();
       wvRenderStartSit();
     }})
     .catch(() => {{
@@ -916,10 +916,28 @@ function wvClearCompare() {{
   wvRenderStartSit();
 }}
 
+function wvSyncPosPills() {{
+  const req = wvStartSitData._lineup_requirements || {{}};
+  const pos = wvStartSitData.positions || {{}};
+  const showK = (req.K > 0) || ((pos.K || []).length > 0);
+  const showDef = (req.DEF > 0) || ((pos.DEF || []).length > 0);
+  document.querySelectorAll('.wv-pos-btn[data-pos="K"]').forEach(b => {{ b.hidden = !showK; }});
+  document.querySelectorAll('.wv-pos-btn[data-pos="DEF"]').forEach(b => {{ b.hidden = !showDef; }});
+}}
+
+function wvStartSitPositions() {{
+  if (wvCurrentPos !== 'ALL') return [wvCurrentPos];
+  const keys = ['QB','RB','WR','TE'];
+  const pos = wvStartSitData.positions || {{}};
+  if ((pos.K || []).length) keys.push('K');
+  if ((pos.DEF || []).length) keys.push('DEF');
+  return keys;
+}}
+
 // ── Start/Sit list ────────────────────────────────────────────────────────────
 function wvRenderStartSit() {{
   const el = document.getElementById('wvStartSit');
-  const positions = wvCurrentPos === 'ALL' ? ['QB','RB','WR','TE'] : [wvCurrentPos];
+  const positions = wvStartSitPositions();
   const reqs = wvStartSitData._lineup_requirements || {{}};
 
   const sections = positions.map(pos => {{
@@ -995,7 +1013,7 @@ function wvLineupAdvice() {{
   if (!a || !a.has_current) return '';
   const esc = s => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
   if (!a.swaps.length || a.delta < 1) {{
-    return `<div class="wv-ss-advice wv-ss-advice-ok"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Your lineup is optimal — projected ${{a.optimal_pts}} pts (QB/RB/WR/TE).</div>`;
+    return `<div class="wv-ss-advice wv-ss-advice-ok"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Your lineup is optimal — start score ${{a.optimal_pts}}.</div>`;
   }}
   const swaps = a.swaps.slice(0, 4).map(s => {{
     const g = Number(s.gain) || 0;
@@ -1024,7 +1042,7 @@ function wvLineupAdvice() {{
     </div>`;
   }}).join('');
   return `<div class="wv-ss-advice wv-ss-advice-warn">
-    <div class="wv-ss-advice-head"><i class="fa-solid fa-arrow-trend-up" aria-hidden="true"></i> You're leaving <strong>${{a.delta.toFixed(1)}} pts</strong> on the bench</div>
+    <div class="wv-ss-advice-head"><i class="fa-solid fa-arrow-trend-up" aria-hidden="true"></i> You're leaving <strong>${{a.delta.toFixed(1)}}</strong> start-score points on the bench</div>
     <div class="wv-ss-advice-sub">${{a.optimal_pts}} optimal vs ${{a.current_pts}} current lineup</div>
     ${{swaps}}
   </div>`;

@@ -148,6 +148,26 @@ def test_in_draft_cheat_sheet_scrolls_once_to_first_available_player():
     assert "x.rk = i + 1" in sheet
 
 
+def test_cheat_sheet_projects_snake_picks_for_a_selected_slot():
+    body = build_cheat_sheet_body("league-123", 2026, "sleeper")
+    sheet = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
+    room = (Path(__file__).parents[1] / "static" / "draft_room.js").read_text()
+
+    assert 'id="csPickSlot"' in body
+    assert "Your snake slot on this board" in body
+    assert ".cs-projline" in body
+    assert ".cs-board.hidedrafted .cs-proj-taken" in body
+    assert "function snakePickNum" in sheet
+    assert "var inRound = (round % 2 === 1) ? slot : (nTeams - slot + 1);" in sheet
+    assert "Proj Pick ' + pk.label" in sheet
+    assert "projLineRow(pk, span, x.drafted)" in sheet
+    assert "qp.get('slot')" in sheet
+    assert "cspickslot:" in sheet
+    assert "q.push('slot='" in room
+    assert "q.push('teams='" in room
+    assert "pickSlot: 0" in sheet
+
+
 def test_in_draft_cheat_sheet_is_a_full_screen_mobile_dialog():
     from dashboard_services.pages.draft_room_page import build_draft_room_body
 

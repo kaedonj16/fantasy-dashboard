@@ -13,9 +13,11 @@ importable in the lightweight CI suite, and every fetcher returns a structured
 result and swallows failures into an empty payload so one provider's outage never
 propagates.
 
-None of these feeds is called on the request path — a central daily refresh
-(``adp_service.refresh_global_adp_sources``) fetches them and persists snapshots,
-and the resolver reads the snapshots. The audit script calls the fetchers
+None of these feeds is *required* on the request path — a central refresh
+(``adp_service.refresh_global_adp_sources``) fetches them and persists snapshots
+so most page loads are a disk (or DB) read. The resolver also retrieves them on
+miss, the same way Sleeper ADP is cached-then-fetched, so a fresh web disk after
+a deploy still has ESPN/Yahoo/MFL. The audit script calls the fetchers
 directly for verification.
 """
 
