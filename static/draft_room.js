@@ -931,6 +931,25 @@
     }
     return state.sf ? p.sf_avg_pick : p.avg_pick;
   }
+  // Consensus ADP from the per-source payload (blended Sleeper/BR/ESPN/MFL/Yahoo),
+  // independent of the ADP-source dropdown. Used by Deep Dive's Value vs ADP
+  // chart so a BR Fantasy or Sleeper-only board still plots against the market.
+  // Null when consensus isn't on the player (rookie axis, historical overlay,
+  // or a source-less payload) — callers fall back to adpOf().
+  function consensusAdpOf(p){
+    if (!p || !state) return null;
+    if (state.type === 'rookie') return null;
+    if (state.mode === 'live' && state.isComplete && state.season && cfg.season
+        && Number(state.season) !== Number(cfg.season)) return null;
+    var by = p.adp_by_source && p.adp_by_source.consensus;
+    if (!by) return null;
+    var field = state.type === 'redraft'
+      ? (state.sf ? 'sf_redraft_avg_pick' : 'redraft_avg_pick')
+      : (state.sf ? 'sf_avg_pick' : 'avg_pick');
+    var v = by[field];
+    if (v == null || !isFinite(Number(v))) return null;
+    return Number(v);
+  }
 
   function loadPlayers(){
     var params = wantsKDef() ? ['kdef=1'] : [];
@@ -1276,13 +1295,18 @@
     }
     if (a != null) return a;
     var pos = (p.position || '').toUpperCase();
-    // K/DEF have no ADP: synthesize one in the last ~3 rounds so CPUs draft them
-    // late, best (by projected PPG) first, instead of dumping them all at the end.
+    // K/DEF with no real ADP: synthesize one in the last few rounds, spread by
+    // quality so they are not a single last-two-round clump. Defenses fan out
+    // earlier (elite D/ST can go 4-6 rounds out); kickers stay later.
     if (pos === 'K' || pos === 'DEF'){
       var tot = (state.teams || 12) * (state.rounds || 16);
+      var teamsN = state.teams || 12;
       var sc = _ppgScale[pos], v = ppgOf(p);
       var n = (sc && v != null && sc.elite > sc.repl) ? clamp01((v - sc.repl) / (sc.elite - sc.repl)) : 0.4;
-      return tot - Math.round(n * (state.teams || 12) * 2.0);
+      var span = pos === 'DEF' ? 5.5 : 3.8;
+      var jitter = (_rand01(String(p.id) + ':kdadp') - 0.5) * teamsN * 0.9;
+      var slotAdp = tot - Math.round(teamsN * span * (0.12 + 0.88 * n)) + jitter;
+      return Math.max(tot - teamsN * (span + 1), Math.min(tot, slotAdp));
     }
     return 10000 - (valOf(p) / 100);  // other ADP-less players sort after, by value
   }
@@ -1435,6 +1459,33 @@
     }
     return state.simStratParams[slot];
   }
+  // Per-team special-teams plan so CPU mocks do not all take K then DEF with
+  // the last two picks. Window is rounds-from-the-end when they start looking;
+  // prefer/flip choose K vs DEF order; split leaves a skill pick in between.
+  function _simKDefPlan(slot){
+    if (!state.simKDefPlans) state.simKDefPlans = {};
+    if (!state.simKDefPlans[slot]){
+      var r = _rand01(slot + ':kdef:pref');
+      var prefer = r < 0.40 ? 'DEF' : (r < 0.72 ? 'K' : 'mix');
+      var w = _rand01(slot + ':kdef:win');
+      var winRds;
+      if (w < 0.06) winRds = 7;
+      else if (w < 0.16) winRds = 6;
+      else if (w < 0.32) winRds = 5;
+      else if (w < 0.55) winRds = 4;
+      else if (w < 0.82) winRds = 3;
+      else winRds = 2;
+      state.simKDefPlans[slot] = {
+        prefer: prefer,
+        window: winRds,
+        split: _rand01(slot + ':kdef:split') < 0.58,
+        intensity: Math.round((0.55 + _rand01(slot + ':kdef:int') * 0.95) * 100) / 100,
+        flip: _rand01(slot + ':kdef:flip') < 0.22,
+        order: _rand01(slot + ':kdef:order'),
+      };
+    }
+    return state.simKDefPlans[slot];
+  }
   // Scale a multiplier's deviation from 1 by the team's intensity, floored so
   // an aggressive fade can't hit zero.
   function _scaleMult(base, intensity){
@@ -1568,18 +1619,28 @@
   // CPU-scoped version of the user's auto-draft completion guard. The late-round
   // weighting normally lets managers choose when to take K/DEF, but once this
   // team's remaining selections equal its unfilled K/DEF slots there is no
-  // discretionary pick left: fill the best required special-teams slot now.
+  // discretionary pick left: fill a required special-teams slot now. Position
+  // order follows that team's plan (not a global kicker-then-defense script).
   function _cpuKDefMustFill(pool, counts, remaining){
     var rs = (state && state.roster) || defaultRoster();
     var needK = Math.max(0, (rs.K || 0) - (counts.K || 0));
     var needDef = Math.max(0, (rs.DEF || 0) - (counts.DEF || 0));
     if (needK + needDef <= 0 || remaining > needK + needDef) return null;
-    var candidates = pool.filter(function(p){
-      var pos = String(p.position || '').toUpperCase();
-      return (pos === 'K' && needK > 0) || (pos === 'DEF' && needDef > 0);
-    });
-    candidates.sort(function(a,b){ return lineupScore(b) - lineupScore(a); });
-    return candidates[0] || null;
+    var slot = slotOnClock(state.current, state.teams, state.order);
+    var plan = _simKDefPlan(slot);
+    var pickPos = window.DraftBoardCore && DraftBoardCore.specialTeamsFillPos
+      ? DraftBoardCore.specialTeamsFillPos(needK, needDef, plan)
+      : (needK > 0 && needDef <= 0 ? 'K' : (needDef > 0 && needK <= 0 ? 'DEF' : (plan.prefer === 'DEF' ? 'DEF' : 'K')));
+    function bestAt(pos){
+      var cands = pool.filter(function(p){ return String(p.position || '').toUpperCase() === pos; });
+      cands.sort(function(a,b){ return lineupScore(b) - lineupScore(a); });
+      return cands[0] || null;
+    }
+    var picked = bestAt(pickPos);
+    if (picked) return picked;
+    if (pickPos === 'K' && needDef > 0) return bestAt('DEF');
+    if (pickPos === 'DEF' && needK > 0) return bestAt('K');
+    return null;
   }
   function simPick(){
     var pool = availablePool();
@@ -1602,6 +1663,7 @@
     var _stratPrm = _stratParams(slot);
     var _ageLean = _simAgeLean(slot);
     var _ageInt = _ageLeanIntensity(slot);
+    var _kdPlan = _simKDefPlan(slot);
     // Score every candidate from THIS CPU team's perspective (its own roster,
     // depth, and next pick) so need is judged for the right team, not the viewer.
     var cpuCtx = _cpuCtx(slot);
@@ -1847,11 +1909,32 @@
         (pos === 'TE' && sSlots > 0 && sSlots <= 1 && have >= sSlots)
       );
       if (_backupReach) w = 0;
-      // K/DEF: in the final 3 rounds, teams MUST fill these slots or they go empty.
-      // Boost weight strongly so K/DEF crack the top-8 candidate sample and actually
-      // get drafted, rather than losing out to late-sliding skill players every pick.
-      if ((pos === 'K' || pos === 'DEF') && (t > 0) && (have < t) && _remainRds <= 3){
-        w *= 8;
+      // K/DEF: ungraded (no pick score), so they would never enter the decision
+      // band until the last-two-pick must-fill. Give each team its own window,
+      // order, and intensity so some grab an early DEF, some split ST around a
+      // skill pick, and some wait until the end — not K-then-DEF every time.
+      if ((pos === 'K' || pos === 'DEF') && (t > 0) && (have < t)){
+        var _otherHave = pos === 'K' ? (counts.DEF || 0) : (counts.K || 0);
+        var _otherT = pos === 'K' ? (_rs.DEF || 0) : (_rs.K || 0);
+        var _alreadyHasOther = _otherT > 0 && _otherHave > 0;
+        var _inWindow = _remainRds <= _kdPlan.window;
+        var _isPref = _kdPlan.prefer === 'mix' || _kdPlan.prefer === pos;
+        var _delayOther = _kdPlan.split && _alreadyHasOther && cpuCtx.remaining > 1;
+        if (_inWindow && !_delayOther){
+          var _urg = Math.max(0, Math.min(1, (_kdPlan.window - _remainRds + 1) / Math.max(1, _kdPlan.window)));
+          var _prefM = _isPref ? 1 : 0.62;
+          var _boost = (2.8 + 4.2 * _kdPlan.intensity) * _prefM;
+          w = Math.max(w * _boost, 1.4 * _kdPlan.intensity * _prefM);
+          c.ds = Math.round(50 + 18 * _urg + (_isPref ? 7 : 0) + 4 * (_kdPlan.intensity - 1)
+            + (_rand01(slot + ':kds:' + pn + ':' + String(p.id)) - 0.5) * 10);
+        } else if (_inWindow && _delayOther){
+          c.ds = 28;
+          w *= 0.35;
+        } else if (_remainRds <= _kdPlan.window + 2 && _isPref && a < 9000
+            && (pn + (state.teams || 12) * 0.5 >= a)){
+          c.ds = Math.round(46 + 4 * _kdPlan.intensity);
+          w *= 1.25 + 0.6 * _kdPlan.intensity;
+        }
       }
       // Every CPU team must draft at least one QB. When a team has none and time is
       // running out, strongly boost any available QB so it cracks the top-8 sample
@@ -5440,8 +5523,11 @@
       var full = playersById[String(pl.id)] || pl;
       var adp = adpOf(full);
       var diff = (adp != null) ? (pn - adp) : null;
+      var consAdp = consensusAdpOf(full);
+      var consDiff = (consAdp != null) ? (pn - consAdp) : null;
       rows.push({ pn: pn, pl: pl, full: full, pos: String(pl.position || '').toUpperCase(),
-        adp: adp, diff: diff, ps: relPS(pl, pn), tier: tierOf(full) });
+        adp: adp, diff: diff, consAdp: consAdp, consDiff: consDiff,
+        ps: relPS(pl, pn), tier: tierOf(full) });
     });
     rows.sort(function(a, b){ return a.pn - b.pn; });
     return rows;
@@ -5637,28 +5723,37 @@
   }
 
   // ── Value-vs-ADP timeline (SVG) ──────────────────────────────────────────────
+  // Plot against consensus ADP when the payload has it; otherwise the selected
+  // source (adpOf). The heading subscript only appears when consensus is in use.
+  function ddTlDelta(p){ return p.consDiff != null ? p.consDiff : p.diff; }
+  function ddTlAdp(p){ return p.consAdp != null ? p.consAdp : p.adp; }
   function ddTimelineHtml(picks){
+    var hasCons = picks.some(function(p){ return p.consAdp != null; });
+    var sub = hasCons ? '<small class="dd-h-sub">Consensus ADP</small>' : '';
+    var blurb = hasCons
+      ? 'Each pick against consensus ADP. Above the line it fell to you (value); below, you reached. Dot size = pick score.'
+      : 'Each pick against where the market had it. Above the line it fell to you (value); below, you reached. Dot size = pick score.';
     return '<div class="dd-card">'
-      + '<div class="dd-sec"><h4>Value vs ADP timeline</h4>'
-      + '<p>Each pick against where the market had it. Above the line it fell to you (value); below, you reached. Dot size = pick score.</p></div>'
+      + '<div class="dd-sec"><h4>Value vs ADP timeline' + sub + '</h4>'
+      + '<p>' + blurb + '</p></div>'
       + '<div class="dd-legend">'
       + ['QB','RB','WR','TE'].map(function(p){ return '<span><i class="dd-dot" style="background:' + posColor(p) + '"></i>' + p + '</span>'; }).join('')
       + '<span style="margin-left:auto"><i class="dd-sq" style="background:color-mix(in srgb,#22c55e 22%,transparent);border:1px solid #22c55e"></i>value</span>'
       + '<span><i class="dd-sq" style="background:color-mix(in srgb,#ef4444 22%,transparent);border:1px solid #ef4444"></i>reach</span>'
       + '</div>'
-      + '<div class="dd-chartscroll"><svg id="drDdTl" width="900" height="340" viewBox="0 0 900 340" role="img" aria-label="Value versus ADP by pick"></svg></div>'
+      + '<div class="dd-chartscroll"><svg id="drDdTl" width="900" height="340" viewBox="0 0 900 340" role="img" aria-label="Value versus consensus ADP by pick"></svg></div>'
       + '</div>';
   }
   function ddDrawTimeline(picks){
     var svg = document.getElementById('drDdTl'); if (!svg) return;
-    var pts = picks.filter(function(p){ return p.diff != null; });
+    var pts = picks.filter(function(p){ return ddTlDelta(p) != null; });
     if (!pts.length){ svg.parentNode.parentNode.style.display = 'none'; return; }
     var NS = 'http://www.w3.org/2000/svg';
     function el(nm, a){ var e = document.createElementNS(NS, nm); for (var k in a) e.setAttribute(k, a[k]); return e; }
     var W = 900, H = 340, mr = { l: 42, r: 14, t: 16, b: 30 };
     var iw = W - mr.l - mr.r, ih = H - mr.t - mr.b;
     var maxD = 2, minD = -2;
-    pts.forEach(function(p){ if (p.diff > maxD) maxD = p.diff; if (p.diff < minD) minD = p.diff; });
+    pts.forEach(function(p){ var d = ddTlDelta(p); if (d > maxD) maxD = d; if (d < minD) minD = d; });
     maxD = Math.ceil(maxD / 5) * 5 + 2; minD = Math.floor(minD / 5) * 5 - 2;
     var x = function(i){ return mr.l + (pts.length === 1 ? iw / 2 : (i / (pts.length - 1)) * iw); };
     var y = function(d){ return mr.t + (maxD - d) / (maxD - minD) * ih; };
@@ -5673,12 +5768,12 @@
     }
     // cumulative value line
     var cum = 0, cmax = 1; var cpts = [];
-    pts.forEach(function(p){ cum += p.diff; cpts.push(cum); if (Math.abs(cum) > cmax) cmax = Math.abs(cum); });
+    pts.forEach(function(p){ cum += ddTlDelta(p); cpts.push(cum); if (Math.abs(cum) > cmax) cmax = Math.abs(cum); });
     var cy = function(v){ return mr.t + ih / 2 - (v / cmax) * (ih / 2) * 0.9; };
     var dpath = cpts.map(function(v, i){ return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + cy(v).toFixed(1); }).join(' ');
     svg.appendChild(el('path', { d: dpath, fill: 'none', stroke: 'var(--accent)', 'stroke-width': 1.5, 'stroke-dasharray': '3 3', opacity: 0.55 }));
     pts.forEach(function(p, i){
-      var px = x(i), py = y(p.diff), c = posColor(p.pos);
+      var px = x(i), py = y(ddTlDelta(p)), c = posColor(p.pos);
       svg.appendChild(el('line', { x1: px, y1: y0, x2: px, y2: py, stroke: c, 'stroke-width': 1.3, opacity: 0.32 }));
       var r = p.ps == null ? 5 : Math.max(4, 4 + (p.ps - 40) / 60 * 6);
       var dot = el('circle', { cx: px, cy: py, r: r, fill: c, 'fill-opacity': 0.9, stroke: 'var(--card)', 'stroke-width': 1.5, class: 'dd-tl-dot', style: 'cursor:pointer' });
@@ -5692,11 +5787,13 @@
   function ddTip(ev, p){
     var tip = document.getElementById('drDdTip');
     if (!tip){ tip = document.createElement('div'); tip.id = 'drDdTip'; tip.className = 'dd-tip'; document.body.appendChild(tip); }
-    var vd = ddVerdict(p.diff);
+    var dlt = ddTlDelta(p), adp = ddTlAdp(p);
+    var vd = ddVerdict(dlt);
+    var adpLbl = p.consAdp != null ? 'Consensus ADP' : 'ADP';
     tip.innerHTML = '<b>' + esc(p.pl.name) + '</b> <span style="color:var(--text-muted)">' + p.pos + (p.pl.team ? ' · ' + esc(p.pl.team) : '') + '</span>'
       + '<div class="dd-tip-r">Pick <b>' + roundPickStr(p.pn) + '</b></div>'
-      + (p.adp != null ? '<div class="dd-tip-r">ADP <b>' + Number(p.adp).toFixed(1) + '</b></div>' : '')
-      + (p.diff != null ? '<div class="dd-tip-r">± vs ADP <b style="color:' + (p.diff >= 0 ? '#22c55e' : '#ef4444') + '">' + fmtAdpDelta(p.diff) + '</b></div>' : '')
+      + (adp != null ? '<div class="dd-tip-r">' + adpLbl + ' <b>' + Number(adp).toFixed(1) + '</b></div>' : '')
+      + (dlt != null ? '<div class="dd-tip-r">± vs ADP <b style="color:' + (dlt >= 0 ? '#22c55e' : '#ef4444') + '">' + fmtAdpDelta(dlt) + '</b></div>' : '')
       + (p.ps != null ? '<div class="dd-tip-r">Board PS <b style="color:' + psColor(p.ps) + '">' + p.ps + '</b> <span style="color:var(--text-muted)">(vs best avail)</span></div>' : '')
       + '<div class="dd-tip-r">Verdict <b>' + vd.label + '</b></div>';
     tip.classList.add('show');
@@ -5730,7 +5827,7 @@
         + '<td class="dd-plname">' + esc(p.pl.name) + ' <span style="color:var(--text-subtle,var(--text-muted));font-size:11px">' + esc(p.pl.team || '') + '</span></td>'
         + '<td><span class="dd-posbadge" style="background:' + posColor(p.pos) + '">' + p.pos + '</span></td>'
         + '<td class="r num">' + (p.adp != null ? Number(p.adp).toFixed(1) : '—') + '</td>'
-        + '<td class="r"><span class="dd-diff ' + dcl + '">' + dtxt + '</span></td>'
+        + '<td class="r num"><span class="dd-diff ' + dcl + '">' + dtxt + '</span></td>'
         + '<td class="r">' + (p.ps != null ? '<span class="num" style="font-weight:700;color:' + psColor(p.ps) + '">' + p.ps + '</span>' : '<span style="color:var(--text-subtle,var(--text-muted))">—</span>') + '</td>'
         + '<td class="r"><span style="color:var(--text-muted);font-size:12px">' + (p.tier != null ? 'T' + p.tier : '—') + '</span></td>'
         + '<td><span class="dd-verd dd-v-' + vd.cls + '">' + vd.label + '</span></td>'

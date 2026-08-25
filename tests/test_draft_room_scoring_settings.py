@@ -124,6 +124,21 @@ def test_cpu_never_drafts_kicker_or_defense_past_roster_capacity():
     assert "if (mustFillKDef) return mustFillKDef;" in source
 
 
+def test_cpu_kicker_and_defense_timing_varies_by_team_plan():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    core = (REPO / "static" / "draft_board_core.js").read_text(encoding="utf-8")
+
+    assert "function _simKDefPlan(slot)" in source
+    assert "state.simKDefPlans[slot]" in source
+    assert "var _kdPlan = _simKDefPlan(slot);" in source
+    assert "DraftBoardCore.specialTeamsFillPos" in source
+    assert "function specialTeamsFillPos(needK, needDef, plan)" in core
+    assert "var _delayOther = _kdPlan.split && _alreadyHasOther && cpuCtx.remaining > 1;" in source
+    assert "if ((pos === 'K' || pos === 'DEF') && (t > 0) && (have < t) && _remainRds <= 3){" not in source
+    assert "w *= 8;" not in source
+    assert "candidates.sort(function(a,b){ return lineupScore(b) - lineupScore(a); });\n    return candidates[0] || null;" not in source
+
+
 def test_cpu_respects_format_aware_tight_end_roster_limit():
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 
@@ -194,6 +209,19 @@ def test_roster_source_sits_outside_immediately_above_slot_grid():
     assert "var html = presetHtml + srcHtml + '<div class=\"dr-setup-roster\">';" in source
 
 
+def test_deep_dive_value_vs_adp_uses_consensus():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    body = build_draft_room_body(None, None, None, is_guest=True)
+
+    assert "function consensusAdpOf(p)" in source
+    assert "p.adp_by_source && p.adp_by_source.consensus" in source
+    assert "var consAdp = consensusAdpOf(full);" in source
+    assert "function ddTlDelta(p){ return p.consDiff != null ? p.consDiff : p.diff; }" in source
+    assert "'<small class=\"dd-h-sub\">Consensus ADP</small>'" in source
+    assert "Each pick against consensus ADP." in source
+    assert ".dd-h-sub { display:inline-block; margin-left:8px;" in body
+
+
 def test_pick_ledger_formats_adp_delta_to_one_decimal():
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 
@@ -201,6 +229,26 @@ def test_pick_ledger_formats_adp_delta_to_one_decimal():
     assert "var dtxt = fmtAdpDelta(p.diff);" in source
     assert "(p.diff > 0 ? '+' : '') + p.diff;" not in source
     assert "fmtAdpDelta(netValue)" in source
+    assert 'td class="r num"><span class="dd-diff' in source
+
+
+def test_pick_ledger_adp_column_is_right_aligned_tabular():
+    body = build_draft_room_body(None, None, None, is_guest=True)
+
+    assert ".dd-ledger thead th.r, .dd-ledger tbody td.r { text-align:right; font-variant-numeric:tabular-nums; }" in body
+    assert '.dd-diff { display:inline-block; min-width:6.2ch; text-align:right; font-weight:800;' in body
+    assert 'font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1; }' in body
+
+
+def test_summary_modal_keeps_footer_visible_and_roster_scrollable():
+    body = build_draft_room_body(None, None, None, is_guest=True)
+
+    assert "display:flex; flex-direction:column;" in body
+    assert "max-height:min(620px, calc(100dvh - 48px));" in body
+    assert ".dr-sum-body-wrap { padding:0 16px 4px; flex:1 1 auto; min-height:0; overflow-y:auto;" in body
+    assert ".dr-sum-footer { display:flex; gap:8px; padding:12px 16px 14px; flex-shrink:0;" in body
+    assert "max-height:min(78dvh, calc(100dvh - 16px));" in body
+    assert ".dr-summary-overlay { position:fixed; inset:0; z-index:1001; background:rgba(0,0,0,.6);\n    display:flex; align-items:center; justify-content:center; overflow:hidden;" in body
 
 
 def test_starters_meter_shows_percent_of_league_average():
