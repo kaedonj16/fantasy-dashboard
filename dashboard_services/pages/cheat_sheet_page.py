@@ -74,6 +74,7 @@ def build_cheat_sheet_body(
         + f'\n<script src="/static/pick_score.js?v={_static_v("pick_score.js")}" defer></script>\n'
         + f'\n<script src="/static/draft_board_core.js?v={_static_v("draft_board_core.js")}" defer></script>\n'
         + f'\n<script src="/static/cheat_sheet.js?v={_static_v("cheat_sheet.js")}" defer></script>\n'
+        + f'\n<script src="/static/custom_selects.js?v={_static_v("custom_selects.js")}" defer></script>\n'
     )
 
 
@@ -153,8 +154,14 @@ _CHEAT_HTML = r"""
   .cs-btn { font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; background: var(--cs-surface); color: var(--cs-ink-soft); border: 1px solid var(--cs-line); border-radius: 9px; padding: 7px 11px; }
   .cs-btn:hover { border-color: var(--cs-accent); color: var(--cs-accent); }
   .cs-btn[aria-pressed="true"] { border-color: var(--cs-good); color: var(--cs-good); background: var(--cs-good-soft); }
-  .cs-src { font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; background: var(--cs-surface); color: var(--cs-ink-soft); border: 1px solid var(--cs-line); border-radius: 9px; padding: 7px 9px; }
+  .cs-src { font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; background: var(--cs-surface); color: var(--cs-ink-soft); border: 1px solid var(--cs-line); border-radius: 9px; padding: 7px 28px 7px 9px; }
   .cs-src:hover { border-color: var(--cs-accent); }
+  /* Custom-select wrapper (CSD) replaces the native <select> chrome. */
+  .cs-wrap .csd-wrap { vertical-align: middle; }
+  .cs-wrap .csd-trigger { font-size: 12px; font-weight: 700; background: var(--cs-surface); color: var(--cs-ink-soft);
+    border: 1px solid var(--cs-line); border-radius: 9px; padding: 7px 10px 7px 9px; }
+  .cs-wrap .csd-trigger:hover { border-color: var(--cs-accent); }
+  .cs-wrap .csd-list { z-index: 30; }
   /* Reset actions (Clear marks / Reset board) are secondary: they flow inline at
      the end of the controls, de-emphasized so a busy row still reads cleanly. */
   .cs-btn-reset { color: var(--cs-ink-faint); }
@@ -296,7 +303,7 @@ _CHEAT_HTML = r"""
 
   /* Filter bar: instant name search + position filter over the whole board. */
   .cs-filterbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 14px 0 12px; }
-  .cs-filterbar .cs-src { flex: 0 0 auto; min-width: 168px; }
+  .cs-filterbar .cs-src, .cs-filterbar .csd-wrap { flex: 0 0 auto; min-width: 168px; }
   .cs-search { flex: 1 1 200px; min-width: 140px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--cs-line); background: var(--cs-surface); color: var(--cs-ink); font: inherit; font-size: 13px; outline: none; }
   .cs-search:focus { border-color: var(--cs-accent); }
   .cs-posf { display: inline-flex; gap: 6px; flex-wrap: wrap; }
@@ -331,7 +338,7 @@ _CHEAT_HTML = r"""
     /* Actions wrap inside the viewport. The ADP selector gets a full row while
        visible actions form balanced, thumb-friendly cells underneath. */
     .cs-ctrl-row:last-child { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; width: 100%; }
-    .cs-ctrl-row:last-child .cs-src { grid-column: 1 / -1; width: 100%; min-width: 0; }
+    .cs-ctrl-row:last-child .cs-src, .cs-ctrl-row:last-child .csd-wrap { grid-column: 1 / -1; width: 100%; min-width: 0; }
     .cs-ctrl-row:last-child .cs-btn { min-width: 0; width: 100%; justify-content: center; white-space: normal; padding: 8px 6px; }
     /* Keep every primary signal on mobile. The table scrolls horizontally, as
        it did before Market vs ADP was added, rather than hiding VOR or Value. */
@@ -349,7 +356,7 @@ _CHEAT_HTML = r"""
     /* Bigger edit-board tap targets so the grip/arrows/pin are thumb-friendly. */
     .cs-ovbtns { gap: 5px; }
     .cs-ovbtn { width: 34px; height: 34px; font-size: 14px; border-radius: 8px; }
-    .cs-filterbar .cs-src { width: 100%; min-width: 0; }
+    .cs-filterbar .cs-src, .cs-filterbar .csd-wrap { width: 100%; min-width: 0; }
   }
   @media print {
     .cs-controls, .cs-tabs, .cs-backlink, .cs-needs, .cs-filterbar, #csPrintBtn, #csValBtn, #csClearBtn, #csEditBtn, #csResetBoardBtn { display: none !important; }

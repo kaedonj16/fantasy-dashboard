@@ -294,6 +294,8 @@ document.body.scrollTop = 0;
 // Replaces every native <select> with a fully-styled dropdown panel.
 // The original select stays in the DOM (CSS-hidden via .csd-wrap>select) so
 // existing JS can still read/write .value and fire change events normally.
+// Chrome-less pages (cheat-sheet embed iframe) load the same IIFE from
+// static/custom_selects.js instead of this bundle — keep the two in sync.
 (function () {
   var _seq = 0;
   var _openWrap = null;
