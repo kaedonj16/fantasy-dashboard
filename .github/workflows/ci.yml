@@ -31,6 +31,7 @@ jobs:
         uses: astral-sh/setup-uv@v4
         with:
           enable-cache: true
+          cache-dependency-glob: "requirements.txt"
 
       - name: Install Ruff and pytest
         run: uv pip install --system ruff pytest
@@ -77,6 +78,7 @@ jobs:
         uses: astral-sh/setup-uv@v4
         with:
           enable-cache: true
+          cache-dependency-glob: "requirements.txt"
 
       - name: Install dependencies
         # The web app and its page-render tests need the full Flask + scientific
