@@ -179,3 +179,21 @@ def test_roster_source_sits_outside_immediately_above_slot_grid():
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 
     assert "var html = presetHtml + srcHtml + '<div class=\"dr-setup-roster\">';" in source
+
+
+def test_pick_ledger_formats_adp_delta_to_one_decimal():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert "function fmtAdpDelta(n)" in source
+    assert "var dtxt = fmtAdpDelta(p.diff);" in source
+    assert "(p.diff > 0 ? '+' : '') + p.diff;" not in source
+    assert "fmtAdpDelta(netValue)" in source
+
+
+def test_starters_meter_shows_percent_of_league_average():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert "meter('Starters', '100% = league-average lineup', starterPct, 100, sRank, { unit: '% of avg', vsAvg: true })" in source
+    assert "meter('Starters', 'lineup vs league average', g.tier, m.tier, sRank)" not in source
+    assert "x.strength != null ? x.strength : x.tier" in source
+    assert "Tied values share a rank" in source
