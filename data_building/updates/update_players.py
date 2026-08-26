@@ -45,13 +45,16 @@ def _write_json(path: Union[str, Path], data: Any) -> None:
 
 
 def fetch_sleeper_players() -> dict:
-    # Lazy import so slim unit-CI images (no requests) can still collect tests
-    # that inject sleeper_players=... without hitting the network client.
-    import requests
+    # stdlib only — unit CI installs a slim dep set without requests.
+    import json as _json
+    import urllib.request
 
-    res = requests.get(SLEEPER_PLAYERS_URL, timeout=60)
-    res.raise_for_status()
-    return res.json()
+    req = urllib.request.Request(
+        SLEEPER_PLAYERS_URL,
+        headers={"User-Agent": "fantasy-dashboard-nfl-teams/1.0"},
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        return _json.loads(resp.read().decode("utf-8"))
 
 def _bye_by_team() -> Dict[str, int]:
     """team abbrev -> bye week from teams_index (best-effort)."""
