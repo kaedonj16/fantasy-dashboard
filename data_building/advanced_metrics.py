@@ -3734,8 +3734,15 @@ def detect_breakout_candidates(
                 'years_exp': player_meta.get("years_exp", 0)
             })
 
-        # Initialize engine for in-season
-        engine = BreakoutEngine(season=current_season, as_of_date=date.today())
+        # Initialize engine for in-season. Live Sleeper feed lets an injured
+        # starter ahead on the depth chart boost a candidate's breakout (same
+        # signal as waiver targets); best-effort, unchanged if unavailable.
+        try:
+            from dashboard_services.api import get_nfl_players
+            _full_players = get_nfl_players() or {}
+        except Exception:
+            _full_players = {}
+        engine = BreakoutEngine(season=current_season, as_of_date=date.today(), full_players=_full_players)
 
         # Calculate scores
         candidates = engine.calculate_breakout_scores(player_list, min_score=30)

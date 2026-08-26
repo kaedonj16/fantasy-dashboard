@@ -569,6 +569,35 @@ DEPTH_CHART_BLOCKING_PENALTY = 0.3  # Multiplier for candidates blocked by estab
 DEPTH_CHART_AGE_WINDOW = 2  # Years of age difference to consider "similar age"
 DEPTH_CHART_EXCEPTION_OPP_THRESHOLD = 75  # Don't penalize if opportunity score this high
 
+# ------------------------------------------------------------------------------
+# Depth-chart INJURY VACANCY (live signal)
+# ------------------------------------------------------------------------------
+# A player injured and sitting AHEAD of a candidate on the same team+position
+# (Sleeper depth_chart_order + injury_status) temporarily frees up that role —
+# the same "starter in front got hurt" signal that boosts waiver targets. This
+# feeds the competition_removed component, so it both nudges the weighted score
+# and (once it clears BREAKOUT_GATE_COMP_MIN) flips the opportunity gate, letting
+# a ready-but-buried backup qualify as a breakout the moment the starter is out.
+#
+# Sourced from the live Sleeper players feed, so it is only applied when the
+# engine is given a live players map (BreakoutEngine(..., full_players=...)).
+# Historical rebuilds / backtests pass no map and are unaffected — current
+# injuries never leak into past seasons.
+INJURY_VACANCY_SEVERITY = {
+    "IR": 1.0, "PUP": 1.0, "NFI": 1.0, "SUSP": 0.9, "OUT": 0.85,
+    "DOUBTFUL": 0.5, "QUESTIONABLE": 0.3,
+}
+# Points (on the 0-100 competition_removed scale) for a season-ending injury to
+# the starter DIRECTLY ahead with no healthy blockers left. Sized so a single
+# such vacancy clears BREAKOUT_GATE_COMP_MIN (40) on its own.
+INJURY_VACANCY_STARTER_POINTS = 55.0
+# How much an injury ahead still helps given healthy blockers remain between the
+# candidate and the vacancy (0 blockers = candidate is next man up = full credit;
+# each remaining healthy body sharply discounts it; 3+ = negligible).
+INJURY_VACANCY_PROXIMITY = {0: 1.0, 1: 0.5, 2: 0.2}
+# Cap on the total injury-vacancy contribution to competition_removed.
+INJURY_VACANCY_MAX = 70.0
+
 # Top-12 positional thresholds (established starter level)
 TOP_12_PPG_THRESHOLDS = {
     'QB': 16.0,   # ~QB12 level in PPR

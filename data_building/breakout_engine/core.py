@@ -33,6 +33,7 @@ from .phases import PhaseDetector
 from .projections import project_player_stats
 from .role_classifier import RoleClassifier
 from .transactions import TransactionImpactAnalyzer
+from utils.waiver_score import build_depth_index, depth_analysis_for_player
 
 
 @dataclass
@@ -96,17 +97,33 @@ class BreakoutEngine:
     Adapts scoring based on NFL calendar phase and generates explainable outputs.
     """
 
-    def __init__(self, season: int, as_of_date: Optional[date] = None):
+    def __init__(self, season: int, as_of_date: Optional[date] = None,
+                 full_players: Optional[Dict] = None):
         """
         Initialize breakout engine for a specific season and date.
 
         Args:
             season: Season year
             as_of_date: Date to calculate scores as of (defaults to today)
+            full_players: Optional live Sleeper players map (as from
+                get_players_global) carrying depth_chart_order + injury_status.
+                When supplied, an injured starter sitting AHEAD of a candidate on
+                the depth chart boosts their competition_removed score — the same
+                "starter in front got hurt" opening that lifts waiver targets.
+                Omit for historical rebuilds / backtests so current injuries never
+                leak into past seasons.
         """
         self.season = season
         self.as_of_date = as_of_date or date.today()
         self.phase = PhaseDetector.detect_phase(self.as_of_date)
+
+        # Live depth-chart injury index (optional). Built once from the Sleeper
+        # players feed; empty when no feed is supplied, leaving scoring unchanged.
+        self.full_players = full_players or {}
+        try:
+            self.depth_index = build_depth_index(self.full_players) if self.full_players else {}
+        except Exception:
+            self.depth_index = {}
 
         # Initialize helper modules
         self.transaction_analyzer = TransactionImpactAnalyzer(season)
@@ -179,6 +196,33 @@ class BreakoutEngine:
         candidates.sort(key=lambda x: x.breakout_opportunity_score, reverse=True)
 
         return candidates
+
+    def _depth_injury_for(self, player_id: str) -> Optional[Dict]:
+        """Live depth-chart injury analysis for a player, or None.
+
+        Reuses the same helper that powers waiver targets so "who is injured
+        ahead of you" is computed one way across the site. Returns
+        ``{"vacated": [{status, pid, name}, ...], "healthy_ahead": int}`` when a
+        starter ahead is hurt, else None. Empty (and None) whenever no live
+        players map was supplied, so historical rebuilds are unaffected.
+        """
+        if not self.full_players:
+            return None
+        try:
+            da = depth_analysis_for_player(player_id, self.full_players, self.depth_index)
+        except Exception:
+            return None
+        vacated = da.get("vacated") or []
+        if not vacated:
+            return None
+        # Enrich each vacated (injured) starter with a display name for explainability.
+        for v in vacated:
+            vp = self.full_players.get(v.get("pid")) or self.full_players.get(str(v.get("pid"))) or {}
+            v["name"] = (
+                vp.get("full_name")
+                or (f"{vp.get('first_name', '')} {vp.get('last_name', '')}".strip() or None)
+            )
+        return {"vacated": vacated, "healthy_ahead": da.get("healthy_ahead") or 0}
 
     def calculate_player_breakout_score(self, player: Dict) -> Optional[BreakoutCandidate]:
         """
@@ -256,10 +300,16 @@ class BreakoutEngine:
         component_scores['opportunity_opened'] = score
         component_details['opportunity_opened'] = details
 
-        # 2. Competition Removed (with cache)
+        # 2. Competition Removed (with cache + live depth-chart injury vacancy)
+        # A starter injured ahead of this player on the live Sleeper depth chart
+        # temporarily frees the role — fold it into competition_removed so it both
+        # lifts the score and can flip the opportunity gate. Only available when a
+        # live players map was supplied (never during historical rebuilds).
+        depth_injury = self._depth_injury_for(player_id)
         score, details = calculate_competition_removed_score(
             player_id, team, position, self.season, prev_usage,
-            departures_cache=self.db_cache['departures']
+            departures_cache=self.db_cache['departures'],
+            depth_injury=depth_injury,
         )
         component_scores['competition_removed'] = score
         component_details['competition_removed'] = details
