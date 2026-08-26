@@ -147,7 +147,11 @@ def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
     # Blend DB dynasty value with ADP-implied quality so market consensus
     # prevents DB value gaps (especially new rookies) from dragging the score
     # unfairly low when ADP says the player is a legitimate round-2/3 pick.
-    if avg_pick is not None and total_picks > 0:
+    # Skip that blend when the value board says the player is worthless —
+    # selected-only ADP (a backup taken in 10% of mocks around pick 58) must
+    # not manufacture round-5 quality for a 0-value, ~0-PPG player.
+    adp_untrusted = db_value_norm < 0.05
+    if avg_pick is not None and total_picks > 0 and not adp_untrusted:
         adp_qual_norm = clamp01(1.0 - avg_pick / total_picks)
         value_norm = db_value_norm * 0.35 + adp_qual_norm * 0.65
     else:
@@ -167,6 +171,8 @@ def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
             adp_val = max(0.0, 0.2 + rel * 0.25)
         if avg_pick <= 8:
             adp_val = max(adp_val, clamp01(0.5 + (8 - avg_pick) / 16))
+        if adp_untrusted:
+            adp_val = min(adp_val, 0.5)
     else:
         adp_val = 0.5
 

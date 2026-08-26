@@ -259,6 +259,16 @@ def test_yahoo_and_mfl_sources_fetch_on_miss(monkeypatch):
     assert fetched == ["yahoo", "mfl"]
 
 
+def test_mfl_source_filters_sparse_snapshot_rows(monkeypatch):
+    """Already-written MFL snapshots still drop selected-only ADP on read."""
+    A.write_adp_snapshot("mfl", "redraft", 2026, {
+        "adp": {"jam": 57.76, "star": 2.4},
+        "extra": {"jam": {"draft_pct": 10.0}, "star": {"draft_pct": 99.0}},
+    })
+    monkeypatch.setattr(A, "ensure_global_adp_snapshot", lambda *a, **k: None)
+    assert A._mfl_adp_source(2026, False, "redraft") == {"star": 2.4}
+
+
 def test_source_options_show_globals_after_on_miss_fetch(monkeypatch):
     monkeypatch.setattr(A, "_hydrate_snapshot_from_db", lambda *a, **k: False)
 
@@ -277,7 +287,11 @@ def test_hydrate_from_db_writes_disk_snapshot(monkeypatch):
         def execute(self, sql, params):
             assert params == ("espn", 2026, "redraft")
         def fetchall(self):
-            return [{"player_id": "a", "adp": 5.5}, {"player_id": "b", "adp": 10}]
+            return [
+                {"player_id": "a", "adp": 5.5, "draft_pct": 10.0,
+                 "min_pick": 1, "max_pick": 9},
+                {"player_id": "b", "adp": 10},
+            ]
         def __enter__(self):
             return self
         def __exit__(self, *a):
@@ -294,6 +308,9 @@ def test_hydrate_from_db_writes_disk_snapshot(monkeypatch):
     monkeypatch.setattr("dashboard_services.db.get_conn", lambda: _Conn())
     assert A._hydrate_snapshot_from_db("espn", "redraft", 2026) is True
     assert A.snapshot_adp_map("espn", "redraft", 2026) == {"a": 5.5, "b": 10.0}
+    snap = A.load_adp_snapshot("espn", "redraft", 2026)
+    assert snap["extra"]["a"]["draft_pct"] == 10.0
+    assert "b" not in (snap.get("extra") or {})
 
 
 def test_hydrate_from_db_empty_or_error_is_false(monkeypatch):
