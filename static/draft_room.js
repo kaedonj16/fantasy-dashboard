@@ -2169,6 +2169,8 @@
     return legal[0] || null;
   }
   function _doAutoPick(){
+    if (!sim || simPaused || !simStarted) return;
+    if (_simTabHidden()) return;
     try {
       var ap = autoPick();
       if (!ap) ap = _fallbackLegalPick(availablePool(), myPosCounts());
@@ -2176,19 +2178,28 @@
       commitPick(ap); render(); scheduleSim();
     } catch (e){ _simError('auto pick', e); endSim(); render(); }
   }
+  function _simTabHidden(){
+    return typeof document !== 'undefined' && document.hidden;
+  }
   function scheduleSim(){
     if (!sim || simPaused || !simStarted) return;
     var total = state.teams * state.rounds;
     if (state.current > total){ endSim(); return; }
+    // Always drop a pending CPU/auto tick before queuing the next one. A timer
+    // left over from the previous seat can fire after it becomes your pick and
+    // steal the clock, or keep running after you background the tab.
+    clearTimeout(simTimer);
+    simTimer = null;
+    if (_simTabHidden()) return;
     if (isMyPick(state.current)){
-      if (simAutoDraft){ clearTimeout(simTimer); simTimer = setTimeout(_doAutoPick, simSpeed); }
+      if (simAutoDraft) simTimer = setTimeout(_doAutoPick, simSpeed);
       return;
     }
-    clearTimeout(simTimer);
     simTimer = setTimeout(simStep, simSpeed);
   }
   function simStep(){
     if (!sim || simPaused || !simStarted) return;
+    if (_simTabHidden()) return;
     var total = state.teams * state.rounds;
     if (state.current > total){ endSim(); render(); return; }
     if (isMyPick(state.current)){
@@ -2234,7 +2245,17 @@
   function toggleSim(){
     simPaused = !simPaused;
     document.getElementById('drSimToggle').textContent = simPaused ? 'Resume' : 'Pause';
-    if (simPaused) clearTimeout(simTimer); else scheduleSim();
+    if (simPaused){ clearTimeout(simTimer); simTimer = null; }
+    else scheduleSim();
+  }
+  function _onSimVisibility(){
+    if (!sim || !simStarted) return;
+    if (_simTabHidden()){
+      clearTimeout(simTimer);
+      simTimer = null;
+      return;
+    }
+    if (!simPaused) scheduleSim();
   }
   // Reflect the current mock state on the status-bar controls.
   function syncSimControls(){
@@ -6640,6 +6661,7 @@
   });
   document.getElementById('drSimSpeed').addEventListener('change', function(){
     simSpeed = parseInt(this.value, 10) || 700;
+    if (sim && simStarted && !simPaused) scheduleSim();
   });
   var _myStratSel = document.getElementById('drMyStrat');
   if (_myStratSel) _myStratSel.addEventListener('change', function(){
@@ -6873,6 +6895,7 @@
     });
   })();
   document.getElementById('drHelpBtn').addEventListener('click', openGlossary);
+  document.addEventListener('visibilitychange', _onSimVisibility);
   document.getElementById('drGlossClose').addEventListener('click', closeGlossary);
   document.getElementById('drGloss').addEventListener('click', function(e){ if (e.target === this) closeGlossary(); });
   document.getElementById('drShare').addEventListener('click', shareDraft);
