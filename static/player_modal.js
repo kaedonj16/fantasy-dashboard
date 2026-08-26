@@ -2846,7 +2846,7 @@ function pmToggleWeeklyTrends(playerId) {
 
 const _ADV_METRIC_DESCS = {
   // keyed by metric key — used by renderCompareMetricRows
-  vorp: "Value Over Replacement Points: season PPR points minus a replacement-level starter at the same position (league-size aware, FLEX included). How much the player produced above a freely-available waiver option.",
+  vorp: "Value Over Replacement Points: season PPR points minus a replacement-level starter at the same position (league-size aware, FLEX included). This is a season total, so missed games (injury, bench) can make VORP negative even when per-game production was starter-level.",
   war: "Wins Above Replacement: season VORP divided by points-per-win (≈ the league's weekly scoring spread). Translates points above replacement into the wins they were worth; elite players are typically 4-6+.",
   role_score: "Overall opportunity score (0-100) blending snap share, touches, and red-zone usage relative to the player's position.",
   snap_share: "Percent of the team's offensive snaps the player was on the field for.",
@@ -2974,7 +2974,7 @@ const _ADV_METRIC_DESCS = {
   'Air Yds/Game': "Receiving air yards per game; a measure of downfield target volume.",
   'Air Yards Share': "Share of the team's total passing air yards directed at this player; combines target share with depth of target.",
   'WOPR': "Weighted Opportunity Rate: (1.5 × target share) + (0.7 × rush share). Combines air and ground touches into a single opportunity share signal; elite receivers typically exceed 0.50.",
-  'VORP': "Value Over Replacement Points: season PPR points minus a replacement-level starter at the same position (league-size aware, FLEX included). How much the player produced above a freely-available waiver option.",
+  'VORP': "Value Over Replacement Points: season PPR points minus a replacement-level starter at the same position (league-size aware, FLEX included). This is a season total, so missed games (injury, bench) can make VORP negative even when per-game production was starter-level.",
   'WAR': "Wins Above Replacement: season VORP divided by points-per-win (≈ the league's weekly scoring spread). Translates points above replacement into the wins they were worth; elite players are typically 4-6+.",
   'Target Quality': "Composite of how valuable a player's targets are (depth, location, situation).",
   'Slot Rate': "Percent of routes run from the slot.",

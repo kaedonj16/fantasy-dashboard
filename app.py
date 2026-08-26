@@ -15350,11 +15350,14 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
     except Exception as _e_inj_ppg:
         logger.info(f"[api/league-players] IR proj PPG zero skipped: {_e_inj_ppg}")
 
-    # Enrich with real PPR-based VORP from advanced metrics (last completed season)
+    # Enrich with projected VORP (upcoming-season points over replacement).
+    # Last-completed-season actuals are the wrong overlay next to proj PPG: an
+    # injured star (Tucker Kraft, 8 games in 2025) lands around −40 VORP while
+    # ranking TE10 in projected PPG for the year being drafted. IR players
+    # already zeroed above are omitted (no upcoming-season points).
     try:
-        from data_building.advanced_metrics import get_value_leaderboard as _get_vorp_lb
-        _vorp_rows = _get_vorp_lb("vorp", limit=5000, num_teams=12) or []
-        _vorp_map = {str(r.get("player_id") or ""): float(r.get("value") or 0) for r in _vorp_rows}
+        from utils.vorp import projected_vorp_map as _proj_vorp
+        _vorp_map = _proj_vorp(model_value_table, num_teams=12)
         for _player in model_value_table:
             _pid = str(_player.get("id") or "")
             if _pid in _vorp_map:

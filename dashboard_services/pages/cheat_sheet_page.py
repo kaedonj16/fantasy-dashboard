@@ -221,6 +221,14 @@ _CHEAT_HTML = r"""
   .cs-wrap table { border-collapse: collapse; width: 100%; min-width: 640px; }
   .cs-wrap thead th { position: sticky; top: 0; z-index: 3; font-family: var(--cs-mono); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--cs-ink-faint); text-align: right; padding: 12px 14px 9px; border-bottom: 1px solid var(--cs-line); background: var(--cs-surface); }
   .cs-wrap thead th.l { text-align: left; }
+  .cs-wrap thead th.cs-sort { cursor: pointer; user-select: none; white-space: nowrap; }
+  .cs-wrap thead th.cs-sort:hover, .cs-wrap thead th.cs-sort:hover .cs-sortbtn { color: var(--cs-ink); }
+  .cs-wrap thead th.cs-sort-asc, .cs-wrap thead th.cs-sort-desc,
+  .cs-wrap thead th.cs-sort-asc .cs-sortbtn, .cs-wrap thead th.cs-sort-desc .cs-sortbtn { color: var(--cs-accent); }
+  .cs-wrap thead th.cs-sort-asc .cs-sortbtn::after { content: " ▲"; font-size: 8px; margin-left: 3px; }
+  .cs-wrap thead th.cs-sort-desc .cs-sortbtn::after { content: " ▼"; font-size: 8px; margin-left: 3px; }
+  .cs-sortbtn { font: inherit; font-size: inherit; font-weight: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  .cs-wrap thead th.l .cs-sortbtn { text-align: left; }
   .cs-wrap tbody td { padding: 8px 14px; border-bottom: 1px solid var(--cs-line); font-size: 13.5px; text-align: right; vertical-align: middle; }
   .cs-wrap tbody tr:last-child td { border-bottom: 0; }
   .cs-wrap tbody tr.cs-p { cursor: pointer; }
@@ -451,7 +459,7 @@ _CHEAT_HTML = r"""
 
   <section class="cs-hidden" id="cs-panel-logic">
     <div class="cs-prose">
-      <div class="cs-rule"><span class="cs-k">VOR</span><div><h3>Ranked by value over replacement</h3><p>The board is ordered by VOR: a player's value minus the value of the last startable player at his position in your league. Each position is measured against its own replacement, so QB, RB, WR and TE compare fairly on one board instead of by raw points. It is the honest cross-position value, which is what a draft board should sort on.</p></div></div>
+      <div class="cs-rule"><span class="cs-k">VOR</span><div><h3>Ranked by value over replacement</h3><p>The board is ordered by VOR: a player's value minus the value of the last startable player at his position in your league. Each position is measured against its own replacement, so QB, RB, WR and TE compare fairly on one board instead of by raw points. It is the honest cross-position value, which is what a draft board should sort on. Click a column header (ADP, Value, Proj PPG, Sched Rk, and the rest) to reorder the Big Board without changing that model ranking; Rk stays the VOR rank, and By Position stays on VOR order.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Recommendation</span><div><h3>Live context without reordering the sheet</h3><p>Open the cheat sheet from an active Draft Room and each available player can show the room's current REC rank, including roster fit, remaining slots and expected availability. VOR still controls the cheat-sheet order, so the printable board stays stable. Pick Score remains the separate player-and-price grade in Draft Room.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Roster</span><div><h3>Your league sets the replacement line</h3><p>Replacement level comes from your roster slots and league size, the same starter counts the Draft Room uses. Superflex moves that line: up to twice as many QBs start, so the replacement QB is far weaker and every startable QB climbs. Nothing is added by hand, the baseline simply moves.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Tiers</span><div><h3>Tiers are value cliffs</h3><p>Players group where the drop-off is small inside the group and large to the next. Inside a tier, order barely matters, so take need or the falling price. Do not reach across a cliff.</p></div></div>
