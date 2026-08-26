@@ -52,7 +52,7 @@ def test_consensus_matches_visible_source_value_average():
         {"ceedee": 14.1},
         {"ceedee": 10.4},
     ]
-    assert A.consensus_adp(sources)["ceedee"] == 10.94
+    assert A.consensus_adp(sources)["ceedee"] == pytest.approx(10.94)
 
 
 # ── resolve_market_adp ───────────────────────────────────────────────────────
