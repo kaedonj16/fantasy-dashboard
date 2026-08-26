@@ -92,6 +92,164 @@ def _year_weekly_values(year: int) -> dict[str, dict[str, list[float]]]:
     return weekly_variant_values(weeks)
 
 
+# Sleeper season-feed stat keys we can turn into PPG when weekly files omit a
+# player. TE-premium / 6-pt passing-TD layers are weekly-only.
+_SEASON_PTS_KEYS = {
+    "ppr": "pts_ppr",
+    "half_ppr": "pts_half_ppr",
+    "std": "pts_std",
+}
+
+
+def _season_games_for_ppg(gp, season_games: float = 17.0) -> float:
+    """Active-week divisor for a Sleeper season total.
+
+    The season feed often stamps ``gp: 18`` (bye included). Use that only when
+    it looks like actual games (1-17); otherwise the standard 17-game season.
+    """
+    try:
+        games = float(gp or 0)
+    except (TypeError, ValueError):
+        games = 0.0
+    if 1.0 <= games <= 17.0:
+        return games
+    return float(season_games)
+
+
+def load_sleeper_season_stat_lines(year: int) -> dict[str, dict]:
+    """Sleeper season projection totals: pid → {pts_ppr, pts_half_ppr, pts_std, gp}.
+
+    Same public feed the ADP helper already hits. Cached for the calendar day.
+    Returns {} on any failure so weekly aggregation still stands on its own.
+    """
+    import json
+    from datetime import date
+
+    cache_path = _CACHE_DIR / f"sleeper_season_proj_{int(year)}_{date.today().isoformat()}.json"
+    if cache_path.exists():
+        try:
+            data = json.loads(cache_path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return {str(k): v for k, v in data.items() if isinstance(v, dict)}
+        except Exception:
+            pass
+
+    url = (
+        f"https://api.sleeper.com/projections/nfl/{int(year)}"
+        "?season_type=regular&order_by=adp_ppr"
+        "&position[]=QB&position[]=RB&position[]=WR&position[]=TE"
+        "&position[]=K&position[]=DEF"
+    )
+    try:
+        import requests
+        resp = requests.get(url, timeout=20, headers={"User-Agent": "fantasy-dashboard/1.0"})
+        resp.raise_for_status()
+        payload = resp.json()
+    except Exception:
+        return {}
+
+    out: dict[str, dict] = {}
+    for item in payload or []:
+        if not isinstance(item, dict):
+            continue
+        pid = str(item.get("player_id") or "")
+        stats = item.get("stats") or {}
+        if not pid or not isinstance(stats, dict):
+            continue
+        row: dict = {}
+        for key in ("pts_ppr", "pts_half_ppr", "pts_std", "gp"):
+            val = stats.get(key)
+            if val is None:
+                continue
+            try:
+                row[key] = float(val)
+            except (TypeError, ValueError):
+                continue
+        if row.get("pts_ppr") or row.get("pts_half_ppr") or row.get("pts_std"):
+            out[pid] = row
+    if out:
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = cache_path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(out), encoding="utf-8")
+            tmp.replace(cache_path)
+        except Exception:
+            pass
+    return out
+
+
+def fill_missing_from_season_totals(
+    weekly_result: dict,
+    season_lines: dict,
+    *,
+    scoring: str = "ppr",
+    players_index: Optional[dict] = None,
+    season_games: float = 17.0,
+) -> dict:
+    """Add Sleeper season-feed players that weekly files omitted.
+
+    Weekly medians stay the source of truth when present. Preseason weekly
+    caches sometimes omit a projected starter even though Sleeper's season
+    feed has a full-year line (the A.J. Brown compare-modal N/A).
+    """
+    players_index = players_index or {}
+    pts_key = _SEASON_PTS_KEYS.get(scoring, "pts_ppr")
+    result = dict(weekly_result or {})
+    for pid, stats in (season_lines or {}).items():
+        pid = str(pid)
+        if pid in result:
+            continue
+        if not isinstance(stats, dict):
+            continue
+        try:
+            pts = float(stats.get(pts_key) or stats.get("pts_ppr") or 0)
+        except (TypeError, ValueError):
+            continue
+        if pts <= 0:
+            continue
+        games = _season_games_for_ppg(stats.get("gp"), season_games)
+        result[pid] = {
+            "pos": str((players_index.get(pid) or {}).get("pos") or "").upper(),
+            "season_pts": round(pts, 1),
+            "ppg": round(pts / games, 2),
+        }
+    return result
+
+
+def fill_missing_ppg_variants(
+    weekly_variants: dict,
+    season_lines: dict,
+    season_games: float = 17.0,
+) -> dict:
+    """Add ppr/half_ppr/std PPG from season totals for players weekly files omitted."""
+    result = {str(pid): dict(by_var) for pid, by_var in (weekly_variants or {}).items()}
+    for pid, stats in (season_lines or {}).items():
+        pid = str(pid)
+        if not isinstance(stats, dict):
+            continue
+        if pid in result:
+            continue
+        games = _season_games_for_ppg(stats.get("gp"), season_games)
+        if games <= 0:
+            continue
+        row = {}
+        changed = False
+        for variant, pts_key in _SEASON_PTS_KEYS.items():
+            if row.get(variant):
+                continue
+            try:
+                pts = float(stats.get(pts_key) or 0)
+            except (TypeError, ValueError):
+                continue
+            if pts <= 0:
+                continue
+            row[variant] = round(pts / games, 2)
+            changed = True
+        if changed:
+            result[pid] = row
+    return result
+
+
 def fetch_sleeper_season_ppg_variants(
     year: int,
     players_index: Optional[dict] = None,
@@ -100,6 +258,7 @@ def fetch_sleeper_season_ppg_variants(
 
     Shape: ``{pid: {ppr: 18.5, half_ppr: 16.2, 6pt_ppr: 20.1, ...}}``.
     PPG is the median of positive weekly values so byes do not dilute it.
+    Players omitted from weekly files are filled from Sleeper's season feed.
     ``players_index`` is accepted so callers can share kwargs with the PPR helper.
     """
     collected = _year_weekly_values(year)
@@ -111,7 +270,7 @@ def fetch_sleeper_season_ppg_variants(
             for key, vals in by_var.items()
             if vals
         }
-    return result
+    return fill_missing_ppg_variants(result, load_sleeper_season_stat_lines(year))
 
 
 def fetch_sleeper_season_projections(
@@ -123,6 +282,8 @@ def fetch_sleeper_season_projections(
 
     The median positive weekly projection is used for PPG so bye weeks and
     missing weekly rows do not dilute a player's expected active-week output.
+    Players the weekly files omit are filled from Sleeper's season projection
+    feed (still Sleeper-only — not FantasyPros or last-season actuals).
     The returned shape matches the old season-projection helper, which lets all
     consumers use one Sleeper-only source without maintaining parallel models.
     """
@@ -143,7 +304,12 @@ def fetch_sleeper_season_projections(
             "season_pts": round(sum(weekly), 1),
             "ppg": round(float(median(weekly)), 2),
         }
-    return result
+    return fill_missing_from_season_totals(
+        result,
+        load_sleeper_season_stat_lines(year),
+        scoring=variant,
+        players_index=players_index,
+    )
 
 
 # ---------------------------------------------------------------------------

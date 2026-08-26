@@ -112,6 +112,10 @@ def test_compare_modal_uses_relative_pick_score():
     assert "var ps = psRelLive(p);" in body
     assert "psAbs(" not in body
     assert "class=\"dr-cmp-player\"" in body
+    assert "statRow('VOR'" in body
+    assert "statRow('VORP'" in body
+    assert "p.vorp != null || other.vorp != null" not in body
+    assert "not a count of which compare rows you win" in body
     # Sidebar rows share the same relative chip so the modal cannot disagree.
     row = re.search(r"function playerRowHtml\(p, opts\)\{(.*?)function renderQueue", source, re.DOTALL)
     assert row
@@ -133,6 +137,9 @@ def test_preview_modal_uses_relative_pick_score():
     assert "function psAbs" not in source
     assert "dr-prev-score-hero" in body
     assert "function draftPlayerFacts(p)" in source
+    assert "var projectedVorp = (p.vorp != null && isFinite(Number(p.vorp))) ? Number(p.vorp) : null;" in source
+    assert "var tradeVor = vorOf(p);" in source
+    assert "p.vorp != null ? Number(p.vorp) : vorOf(p)" not in source
     assert "statBox('Proj PPG'" in body
     assert "statBox('REC'" in body
     assert "statBox('Bye'" in body
