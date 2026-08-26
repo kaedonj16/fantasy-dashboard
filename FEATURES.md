@@ -125,7 +125,7 @@ A full breakdown of every feature on the site, organized by the main navigation.
 - **NFL state / news integration** — Live NFL week state, player news, and injury data.
 - **Responsive design** — Container-query-driven layouts that adapt cleanly from desktop to mobile, with a mobile tab-bar dock.
 - **PWA & offline** — Installable progressive web app (service worker, manifest, offline page) plus push notifications for trades, breakouts, waivers, and scores.
-- **Weekly email digest** — Once-a-week recap emailed to signed-in users: your record and league rank, your roster's value risers/fallers, and the biggest leaguewide movers, linking back to your dashboard. De-duped per account per week, with one-click signed unsubscribe. Sent via the `/api/cron/notifications` hook (`type=weekly`).
+- **Weekly email digest** — Once-a-week recap emailed to signed-in users: your record and league rank, your roster's value risers/fallers, and the biggest leaguewide movers, linking back to your dashboard. De-duped per account per week, with one-click signed unsubscribe. Render cron `weekly-email` fires Tuesday 9am ET via `/api/cron/notifications` (`type=weekly`). Hourly push checks (lineup lock, close games, drops, injuries) run from Render cron `hourly-notifications`.
 - **Browser extension** — Companion extension for reading league/player context on Sleeper.
 - **Trending surfaces** — Trending adds, risers/fallers, and value-movers boards driven by the live value engine.
 - **Static / informational pages** — About, Pricing, FAQ, Contact, Support, Privacy, Terms.
