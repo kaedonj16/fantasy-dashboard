@@ -98,7 +98,7 @@
     return r;
   }
 
-  function ppgOf(p) { return (p && p.proj_ppg != null) ? Number(p.proj_ppg) : ((p && p.ppg != null) ? Number(p.ppg) : null); }
+  function ppgOf(p) { return (p && p.proj_ppg != null) ? Number(p.proj_ppg) : null; }
 
   // Position PPG scale (replacement -> ~0, elite -> ~1) for the production term.
   // Accessor-based for the same reason as computeReplacement.

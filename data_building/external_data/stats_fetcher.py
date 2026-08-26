@@ -48,8 +48,8 @@ def fetch_weekly_stats_for_season(season: int) -> Dict[int, List[Dict[str, Any]]
     """
     Return {week: [player_stat_obj, ...]} for the given season.
 
-    NOT YET IMPLEMENTED. The per-week fetch (Sleeper / FantasyPros / PFR) was
-    never wired up. The previous version returned empty lists for every week
+    NOT YET IMPLEMENTED. The per-week stats fetch was never wired up. The
+    previous version returned empty lists for every week
     and wrote those empties to the week-long disk cache, silently masking the
     missing data. Until the fetch is implemented this raises so callers fail
     loudly instead of receiving (and caching) empty stats.

@@ -119,13 +119,13 @@ def test_cheat_sheet_adds_projected_ppg_to_board_and_export():
     body = build_cheat_sheet_body("league-123", 2026, "sleeper")
     script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
 
-    assert "Projected PPG is the player's upcoming-season fantasy points per game" in body
+    assert "Projected PPG is the player's upcoming-season fantasy points per game from Sleeper" in body
     assert "projectedPpg: p.proj_ppg" in script
     assert "sortTh('projectedPpg', 'Proj PPG'" in script
     assert "'Proj PPG'" in script
     assert "x.projectedPpg.toFixed(1)" in script
-    assert "lastPpg: p.ppg" in script
-    assert "Last season actual" in script
+    assert "Last season actual" not in script
+    assert "cs-ppg-last" not in script
 
 
 def test_cheat_sheet_consensus_adp_matches_rankings_to_one_decimal():

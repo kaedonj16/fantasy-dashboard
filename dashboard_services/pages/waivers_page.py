@@ -631,12 +631,26 @@ function wvRenderWaivers() {{
         + `<span class="wv-drop-lbl">Drop</span> `
         + `<span class="wv-drop-pos">${{p.drop.position}}</span> ${{p.drop.name}}</div>`;
     }}
+    let returnHint = '';
+    const vac = (p.vacated || []).filter(v => v && (v.weeks_out != null || v.return_source));
+    if (vac.length) {{
+      const espn = vac.some(v => v.return_source === 'espn');
+      const wks = Math.max.apply(null, vac.map(v => Number(v.weeks_out) || 0));
+      const srcLbl = espn ? 'ESPN return' : 'Status estimate';
+      const srcTip = espn
+        ? 'Return window from ESPN injury report'
+        : 'Estimated from roster injury status (no ESPN return date)';
+      const wkLbl = wks > 0 ? (' ~' + wks + ' wk' + (wks === 1 ? '' : 's') + ' out') : '';
+      returnHint = `<div class="wv-drop-hint" title="${{srcTip}}">`
+        + `<span class="wv-drop-lbl">${{srcLbl}}</span>${{wkLbl}}</div>`;
+    }}
     return `
     <div class="wv-player-row" onclick="openPlayerModal('${{p.player_id}}', '${{p.name.replace(/'/g,"\\'")}}')">
       <div>
         <div class="wv-player-name">${{p.name}}</div>
         <div class="wv-player-sub">${{[p.position, p.team, p.pos_rank_label, p.age ? 'Age ' + parseFloat(p.age).toFixed(1) : '', p.rostered_pct != null ? Math.round(p.rostered_pct) + '% rostered' : '', p.adds_48h ? ('+' + p.adds_48h + ' adds') : ''].filter(Boolean).join(' · ')}}${{usageChip}}</div>
         ${{dropHint}}
+        ${{returnHint}}
       </div>
       <div class="wv-right">
         <span class="wv-advice-metric"><span class="wv-advice-label">Why add</span><span class="chip chip--sm ${{p.signal_class}}">${{p.signal}}</span></span>
