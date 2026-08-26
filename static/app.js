@@ -4528,19 +4528,10 @@ window.initTradePage = function initTradePage(root = document) {
     const targetsContent = root.querySelector("#targetsTabContent");
     const moversSub = root.querySelector("#moversSub");
     const dayFilters = root.querySelector(".otc-movers-panel .otc-day-filters");
-    const lockIcon = root.querySelector("#targetsLockIcon");
-    const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
-
-    if (hasPremium && lockIcon) lockIcon.style.display = "none";
 
     tabButtons.forEach(btn => {
       btn.addEventListener("click", () => {
         const tab = btn.dataset.tab;
-
-        if (tab === "targets" && !hasPremium) {
-          if (typeof showPaywall === "function") showPaywall("trade-suggestions");
-          return;
-        }
 
         tabButtons.forEach(b => b.classList.remove("is-active"));
         btn.classList.add("is-active");
@@ -5817,14 +5808,13 @@ window.initTradePage = function initTradePage(root = document) {
 
     const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
     if (!hasPremium) {
-      body.innerHTML = '<div class="otc-locked-preview" style="padding:4px 0 8px;">'
-        + '<div style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--text-muted);">PRO preview</div>'
-        + '<div style="filter:blur(4px);user-select:none;pointer-events:none;border:1px solid var(--border);border-radius:10px;padding:12px;">'
-        + '<div style="font-weight:700;font-size:13px;">Target: a rival with surplus at your need</div>'
-        + '<div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Package a depth piece for their starter.</div>'
-        + '</div>'
-        + '<button type="button" class="pi-locked-btn" style="margin-top:10px;" onclick="if (typeof showPaywall === \'function\') showPaywall(\'trade-suggestions\')">Unlock roster suggestions</button>'
-        + '</div>';
+      window.brEmptyState(body, {
+        icon: 'lock',
+        title: 'Trade Targets',
+        message: 'Upgrade to see players to pursue based on your roster gaps.',
+        compact: true,
+        cta: { label: 'Upgrade', onClick: function () { if (typeof showPaywall === 'function') showPaywall('trade-suggestions'); } }
+      });
       return;
     }
 
@@ -5858,8 +5848,13 @@ window.initTradePage = function initTradePage(root = document) {
         { cache: "no-store" }
       );
       if (res.status === 403) {
-        if (typeof showPaywall === "function") showPaywall("trade-suggestions");
-        else body.innerHTML = '<div style="font-size:12px;color:var(--text-muted);">Upgrade to PRO to unlock trade tools.</div>';
+        window.brEmptyState(body, {
+          icon: 'lock',
+          title: 'Trade Targets',
+          message: 'Upgrade to see players to pursue based on your roster gaps.',
+          compact: true,
+          cta: { label: 'Upgrade', onClick: function () { if (typeof showPaywall === 'function') showPaywall('trade-suggestions'); } }
+        });
         return;
       }
       if (!res.ok) throw new Error("Failed");
@@ -6019,15 +6014,25 @@ window.initTradePage = function initTradePage(root = document) {
       }).join('');
     }
 
-    function switchTab(name) {
+    function applySuggGating() {
+      // Non-PRO: show only the upgrade CTA. Hide Build Around / Strategy entirely
+      // so free users don't see a second locked "Pro Feature" panel under the paywall.
       const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
+      const banner = root.querySelector("#otcSuggPaywall");
+      const content = root.querySelector("#otcSuggProContent");
+      if (banner) banner.style.display = hasPremium ? "none" : "";
+      if (content) content.style.display = hasPremium ? "" : "none";
+      return hasPremium;
+    }
+    applySuggGating();
+
+    function switchTab(name) {
+      const hasPremium = applySuggGating();
       if (name === "suggestions" && !hasPremium) {
         // Switch to the tab so the upgrade CTA is visible, then show the modal on top.
         tabs.forEach(t => t.classList.toggle("is-active", t.dataset.tab === name));
         calcTab.style.display = "none";
         suggTab.style.display = "";
-        const banner = root.querySelector("#otcSuggPaywall");
-        if (banner) banner.style.display = "";
         if (typeof showPaywall === "function") showPaywall("trade-suggestions");
         const url = new URL(window.location.href);
         url.searchParams.set("tab", "suggestions");
@@ -6147,9 +6152,9 @@ window.initTradePage = function initTradePage(root = document) {
     if (_btnSearchSend) _btnSearchSend.addEventListener("click", () => _setSearchMode("send"));
     _setSearchMode(_searchMode);  // apply persisted mode (sets active button + placeholder)
 
-    // Restore last searched player
+    // Restore last searched player (PRO only — the search UI is hidden otherwise)
     const _lastPlayer = (() => { try { return JSON.parse(localStorage.getItem('ti-last-player') || 'null'); } catch(_) { return null; } })();
-    if (_lastPlayer && _lastPlayer.id) {
+    if (applySuggGating() && _lastPlayer && _lastPlayer.id) {
       playerInput.value = _lastPlayer.name || '';
       runSearchForCurrent(_lastPlayer.id, _lastPlayer.name || '');
     }
@@ -8852,8 +8857,10 @@ window.initTradePage = function initTradePage(root = document) {
         if (data.has_premium) {
           const premiumInput = root.querySelector("#otcHasPremium");
           if (premiumInput) premiumInput.value = "true";
-          const lockIcon = root.querySelector("#targetsLockIcon");
-          if (lockIcon) lockIcon.style.display = "none";
+          const banner = root.querySelector("#otcSuggPaywall");
+          const content = root.querySelector("#otcSuggProContent");
+          if (banner) banner.style.display = "none";
+          if (content) content.style.display = "";
         }
       } catch (_) {}
     })();

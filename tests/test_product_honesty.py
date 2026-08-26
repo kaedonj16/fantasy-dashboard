@@ -9,7 +9,10 @@ Flask/pandas). They lock the settled product rules:
 - Paywall copy matches shipped PRO features.
 - Playoff Impact and offseason breakouts are server-gated.
 - Front Office is not auto-generated for free in-season users.
+- Trade Suggestions hides Build Around / Strategy for non-PRO users.
+- Player Insights Targets tab is clickable and shows an in-panel upgrade state.
 """
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -107,6 +110,45 @@ def test_in_season_front_office_is_premium_gated():
     assert "if _fo_premium:" in dash
     assert "gm_memo_html = get_team_gm_memo(ctx, str(viewer_roster_id))" in dash
     assert 'id="generateGmMemoBtn"' in dash
+
+
+def test_trade_suggestions_hides_build_around_without_pro():
+    """Free users on Suggestions should only see the upgrade CTA, not the
+    locked Build Around / Strategy tools underneath it."""
+    calc = (ROOT / "dashboard_services" / "pages" / "trade_calculator_page.py").read_text(encoding="utf-8")
+    assert 'id="otcSuggProContent"' in calc
+    assert 'sugg_pro_display = "" if has_premium else "display:none;"' in calc
+    js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'root.querySelector("#otcSuggProContent")' in js
+    assert 'content.style.display = hasPremium ? "" : "none"' in js
+
+    from dashboard_services.pages.trade_calculator_page import build_trade_calculator_body
+
+    free = build_trade_calculator_body(None, 2026, has_premium=False)
+    pro = build_trade_calculator_body(None, 2026, has_premium=True)
+
+    def style_for(html, el_id):
+        match = re.search(rf'id="{el_id}"[^>]*style="([^"]*)"', html)
+        assert match, f"{el_id} missing from rendered calculator"
+        return match.group(1)
+
+    assert "display:none" in style_for(free, "otcSuggProContent")
+    assert "display:none" not in style_for(pro, "otcSuggProContent")
+    assert "display:none" not in style_for(free, "otcSuggPaywall")
+    assert "display:none" in style_for(pro, "otcSuggPaywall")
+    assert 'id="otcSubtabBuildAround"' in free
+
+
+def test_player_insights_targets_tab_shows_upgrade_state_like_breakouts():
+    """Targets should switch like Breakouts: clickable tab, in-panel upgrade
+    empty state, no lock-on-tab that blocks the click and pops a modal."""
+    calc = (ROOT / "dashboard_services" / "pages" / "trade_calculator_page.py").read_text(encoding="utf-8")
+    assert 'data-tab="targets">Targets</button>' in calc
+    assert "targetsLockIcon" not in calc
+    js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'if (tab === "targets" && !hasPremium)' not in js
+    assert "Upgrade to see players to pursue based on your roster gaps." in js
+    assert "Upgrade to see offseason breakout candidates for your roster." in js
 
 
 def test_draft_room_nav_labels_sleeper_live_only():
