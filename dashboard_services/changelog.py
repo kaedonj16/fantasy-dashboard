@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-08-26",
         "tag": "fix",
+        "text": "Draft Room recommendations no longer let an empty 1QB or 1TE slot leap remaining WR/RB depth: filling that one streamable starter is still a real need, but it now competes with skill-position depth instead of ranking a board of QBs and TEs over a WR run.",
+        "link": "/draft"
+    },
+    {
+        "date": "2026-08-26",
+        "tag": "fix",
         "text": "Draft Room Deep Dive no longer labels leftover-ADP as a reach: taking the best remaining player (or anyone in a tight ADP cluster) is Fair even if historical ADP sits a couple of spots later, and so is anyone with under 20% chance to last to your next pick.",
         "link": "/draft"
     },

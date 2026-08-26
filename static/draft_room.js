@@ -3370,7 +3370,9 @@
     // urgency. This stops an elite single-slot player from leaping a higher-value
     // pick that fills a deeper roster need on scarcity alone.
     var missDed = (c.obligations && c.obligations.missing && c.obligations.missing[pos]) || 0;
-    var waitLossScale = missDed >= 2 ? 1 : (missDed >= 1 ? 0.6 : 0.4);
+    var waitLossScale = DraftBoardCore.waitLossScaleFor
+      ? DraftBoardCore.waitLossScaleFor(pos, missDed, { sf: !!state.sf, tep: scoringCfg().tep })
+      : (missDed >= 2 ? 1 : (missDed >= 1 ? 0.6 : 0.4));
     return DraftBoardCore.decisionScore({ base: base, utility: util,
       bench: bench, deepBench: role === 'bench2', recentPenalty: recentPenalty, exceptional: exceptional,
       quality: ppgNormOf(p) || 0, required: c.obligations.required,
