@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import html
 import logging
+from collections import defaultdict
 from datetime import datetime
 
 from flask import request

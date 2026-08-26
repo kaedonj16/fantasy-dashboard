@@ -299,6 +299,7 @@ def build_commissioner_body(ctx):
         _is_superflex_lineup,
         _team_pick_value,
         _safe_int,
+        resolve_exact_pick_slot,
     )
 
     platform = ctx.get("platform") or "sleeper"
