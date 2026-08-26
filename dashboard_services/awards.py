@@ -6,7 +6,9 @@ from .players import build_roster_map
 
 def render_awards_section(awards: dict) -> str:
     if not awards:
-        return "<div class='card' data-section='awards'><h2>Awards</h2><div class='muted'>No data</div></div>"
+        # Offseason / week 0: hide empty weekly superlatives. All-time records
+        # live on the Awards page.
+        return ""
 
     def acard(title, body):
         return f"""

@@ -334,7 +334,10 @@ def _rankings_page(position: str | None = None):
     from datetime import datetime as _dt
     as_of  = _dt.now().strftime("%B %Y")
     year   = _dt.now().year
-    body   = build_rankings_hub_body(value_table, position=position, as_of_date=as_of)
+    fmt = (request.args.get("format") or "sf").strip().lower()
+    if fmt not in ("sf", "1qb"):
+        fmt = "sf"
+    body   = build_rankings_hub_body(value_table, position=position, as_of_date=as_of, format=fmt)
     pos_lbl = f" {position}" if position else ""
     return render_page(
         f"Dynasty{pos_lbl} Rankings {year} | BR Fantasy",

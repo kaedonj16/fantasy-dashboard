@@ -66,6 +66,7 @@ async function getSubscriptionInfo(userId, leagueId) {
     'trade-ai': 'AI Trade Analysis',
     'playoff-impact': 'Playoff Impact',
     'gm-memo': 'Front Office Report',
+    'weekly-recap': 'Weekly Recap',
     'draft-cheat-sheet': 'Custom Draft Board',
     'draft-analyzer': 'Draft Deep Dive Analyzer'
   };

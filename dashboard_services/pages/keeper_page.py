@@ -10,6 +10,7 @@ as the manager tweaks the keeper limit and cost rules.
 Draft-round auto-detection uses Sleeper's season-chain draft results, Yahoo's
 draftresults feed, and ESPN's completed draft (League.draft / mDraftDetail).
 Waiver adds anywhere still start blank so the manager can set the cost.
+Auction/FAAB keeper costs are not auto-detected — set the drafted round by hand.
 """
 from __future__ import annotations
 
@@ -24,6 +25,23 @@ from utils.keeper_value import (
 logger = logging.getLogger(__name__)
 
 _VERDICT_LABEL = {"keep": "KEEP", "toss": "TOSS-UP", "pass": "PASS"}
+
+
+def years_kept_from_draft_season(draft_season, current_season) -> int:
+    """Seasons already kept: current - draft_season - 1, floored at 0.
+
+    A player drafted last year is about to be kept for the first time (0).
+    ESPN only exposes a keeper boolean for the current draft, so that path
+    uses 1 vs 0 rather than a multi-year count.
+    """
+    try:
+        ds = int(draft_season)
+        cs = int(current_season)
+    except (TypeError, ValueError):
+        return 0
+    if ds <= 0 or cs <= 0:
+        return 0
+    return max(0, cs - ds - 1)
 
 
 def _is_superflex(ctx: Dict[str, Any]) -> bool:
@@ -87,12 +105,19 @@ def _best_draft(drafts: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
 
 def _parse_espn_draft_picks(picks, espn_to_canon: Optional[Dict[str, str]] = None) -> Dict[str, int]:
     """player_id -> drafted round from espn_api Pick objects or mDraftDetail dicts."""
+    return _parse_espn_draft_meta(picks, espn_to_canon)[0]
+
+
+def _parse_espn_draft_meta(picks, espn_to_canon: Optional[Dict[str, str]] = None):
+    """(player_id -> round, player_id -> years_kept) from ESPN draft picks."""
     canon = espn_to_canon or {}
     drafted: Dict[str, int] = {}
+    years_kept: Dict[str, int] = {}
     for p in picks or []:
         if isinstance(p, dict):
             espn_pid = p.get("playerId") or p.get("player_id")
             rnd = p.get("roundId") or p.get("round_num") or p.get("round")
+            keeper = p.get("keeper") or p.get("isKeeper")
         else:
             espn_pid = getattr(p, "playerId", None) or getattr(p, "player_id", None)
             rnd = (
@@ -100,6 +125,7 @@ def _parse_espn_draft_picks(picks, espn_to_canon: Optional[Dict[str, str]] = Non
                 or getattr(p, "roundId", None)
                 or getattr(p, "round", None)
             )
+            keeper = getattr(p, "keeper", None) or getattr(p, "isKeeper", None)
         if not espn_pid or not rnd:
             continue
         try:
@@ -111,24 +137,35 @@ def _parse_espn_draft_picks(picks, espn_to_canon: Optional[Dict[str, str]] = Non
         pid = canon.get(str(espn_pid)) or str(espn_pid)
         if pid not in drafted:
             drafted[pid] = rnd_i
-    return drafted
+            years_kept[pid] = 1 if keeper else 0
+    return drafted, years_kept
 
 
-def _espn_drafted_round_map(league_id: str, season: int) -> Dict[str, int]:
-    """player_id -> drafted round for an ESPN league."""
+def _espn_draft_maps(league_id: str, season: int):
+    """(player_id -> round, player_id -> years_kept) from one ESPN draft fetch."""
     try:
         from dashboard_services.providers import espn_api
         picks = espn_api.iter_draft_picks(int(season), str(league_id))
         if not picks:
-            return {}
+            return {}, {}
         try:
             canon = espn_api._espn_to_canon_cached()
         except Exception:
             canon = {}
-        return _parse_espn_draft_picks(picks, canon)
+        return _parse_espn_draft_meta(picks, canon)
     except Exception:
         logger.debug("[keeper] espn draft load failed", exc_info=True)
-        return {}
+        return {}, {}
+
+
+def _espn_drafted_round_map(league_id: str, season: int) -> Dict[str, int]:
+    """player_id -> drafted round for an ESPN league."""
+    return _espn_draft_maps(league_id, season)[0]
+
+
+def _espn_years_kept_map(league_id: str, season: int) -> Dict[str, int]:
+    """player_id -> 1 if ESPN marked the pick as a keeper, else 0."""
+    return _espn_draft_maps(league_id, season)[1]
 
 
 def _yahoo_drafted_round_map(league_id: str, season: int) -> Dict[str, int]:
@@ -163,21 +200,35 @@ def _sleeper_league_chain(league_id: str, season: int, max_seasons: int = 5) -> 
 
 
 def _sleeper_draft_history(league_id: str, season: int) -> tuple:
-    """(player_id -> most recent drafted round, deepest completed draft rounds).
+    """(player_id -> most recent drafted round, deepest completed draft rounds,
+    player_id -> years_kept).
 
     Walks the league's season chain newest-first. In the offseason the current
     season's draft has not happened yet (pre_draft, no picks), so the rounds a
     roster was actually built in live under a previous season's league. Each
     player keeps the round from the most recent draft that took him, and the
     round scale comes from the deepest completed draft found (a startup/full
-    draft rather than a small rookie draft)."""
+    draft rather than a small rookie draft). years_kept is current_season minus
+    that draft's season minus 1 (first keep = 0)."""
     drafted: Dict[str, int] = {}
+    years_kept: Dict[str, int] = {}
     deepest = 0
     try:
-        from dashboard_services.api import get_drafts, get_draft_picks
+        from dashboard_services.api import get_drafts, get_draft_picks, build_league_history_map
     except Exception:
         logger.debug("[keeper] sleeper draft api unavailable", exc_info=True)
-        return drafted, deepest
+        return drafted, deepest, years_kept
+
+    lid_to_year: Dict[str, int] = {}
+    try:
+        hist = build_league_history_map("sleeper", str(league_id), int(season or 0)) or {}
+        for yr, lid in hist.items():
+            try:
+                lid_to_year[str(lid)] = int(yr)
+            except (TypeError, ValueError):
+                continue
+    except Exception:
+        logger.debug("[keeper] league history map failed", exc_info=True)
 
     for lid in _sleeper_league_chain(league_id, season):
         try:
@@ -197,6 +248,7 @@ def _sleeper_draft_history(league_id: str, season: int) -> tuple:
             if not picks:
                 continue
             deepest = max(deepest, _draft_rounds(d))
+            draft_season = lid_to_year.get(str(lid), season)
             for p in picks:
                 pid = str(p.get("player_id") or "")
                 rnd = p.get("round")
@@ -204,9 +256,10 @@ def _sleeper_draft_history(league_id: str, season: int) -> tuple:
                     continue   # first hit wins: newest season, deepest draft
                 try:
                     drafted[pid] = int(rnd)
+                    years_kept[pid] = years_kept_from_draft_season(draft_season, season)
                 except (TypeError, ValueError):
                     continue
-    return drafted, deepest
+    return drafted, deepest, years_kept
 
 
 def _drafted_round_map(platform: str, league_id: str, season: int = 0) -> Dict[str, int]:
@@ -254,16 +307,29 @@ def _num_rounds(platform: str, league_id: str, default: int = 15,
 
 
 def _draft_context(platform: str, league_id: str, season: int) -> tuple:
-    """(drafted_round_map, num_rounds) for a league, in one pass.
+    """(drafted_round_map, num_rounds, years_kept_map) for a league, in one pass.
 
     Keeps the Sleeper season-chain walk to a single fetch instead of doing it
-    once for the picks and again for the round count."""
+    once for the picks and again for the round count. Callers that only unpack
+    two values still work against older test stubs.
+    """
     plat = (platform or "").lower()
     if plat == "sleeper":
-        drafted, deepest = _sleeper_draft_history(league_id, season)
-        return drafted, _num_rounds(plat, league_id, drafted=drafted, deepest=deepest)
+        drafted, deepest, years = _sleeper_draft_history(league_id, season)
+        return drafted, _num_rounds(plat, league_id, drafted=drafted, deepest=deepest), years
+    if plat == "espn":
+        drafted, years = _espn_draft_maps(league_id, season)
+        return drafted, _num_rounds(plat, league_id, drafted=drafted), years
     drafted = _drafted_round_map(plat, league_id, season)
-    return drafted, _num_rounds(plat, league_id, drafted=drafted)
+    return drafted, _num_rounds(plat, league_id, drafted=drafted), {}
+
+
+def _unpack_draft_context(result) -> tuple:
+    """Accept 2-tuple test stubs or the 3-tuple (drafted, rounds, years_kept)."""
+    drafted = result[0] if result else {}
+    num_rounds = result[1] if result and len(result) > 1 else 15
+    years = result[2] if result and len(result) > 2 else {}
+    return drafted, num_rounds, years or {}
 
 
 def _detected_keeper_limit(ctx: Dict[str, Any]) -> int:
@@ -348,19 +414,25 @@ def _candidates_for_ids(
     adp: Dict[str, float],
     drafted: Dict[str, int],
     value_rank: Optional[Dict[str, float]] = None,
+    years_kept: Optional[Dict[str, int]] = None,
 ) -> List[KeeperCandidate]:
     """Build keeper candidates for a set of player ids (one team's roster).
     Market ADP falls back to the redraft value rank when it's missing."""
     value_rank = value_rank or {}
+    years_kept = years_kept or {}
     out: List[KeeperCandidate] = []
     for pid in player_ids:
         meta = players_index.get(pid) or {}
+        try:
+            yk = int(years_kept.get(pid) or 0)
+        except (TypeError, ValueError):
+            yk = 0
         out.append(KeeperCandidate(
             player_id=pid,
             name=meta.get("name") or f"Player {pid}",
             position=(meta.get("pos") or meta.get("position") or "").upper(),
             drafted_round=drafted.get(pid),   # None → UI/user sets it
-            years_kept=0,
+            years_kept=max(0, yk),
             adp_overall=adp.get(pid) or value_rank.get(pid),
             value=values.get(pid, 0.0),
         ))
@@ -419,7 +491,9 @@ def compute_league_keepers(
     values = _redraft_value_map(is_sf)
     adp = _adp_map(is_sf, _season)
     value_rank = _value_rank_map(values)
-    drafted, num_rounds = _draft_context(platform, league_id, _season)
+    drafted, num_rounds, years_kept = _unpack_draft_context(
+        _draft_context(platform, league_id, _season)
+    )
     _ro = rules_override or {}
 
     def _rule_int(key, lo, hi, default=None):
@@ -445,7 +519,9 @@ def compute_league_keepers(
     for r in (ctx.get("rosters") or []):
         rid = str(r.get("roster_id"))
         pids = [str(p) for p in (r.get("players") or [])]
-        per_team[rid] = _candidates_for_ids(pids, players_index, values, adp, drafted, value_rank)
+        per_team[rid] = _candidates_for_ids(
+            pids, players_index, values, adp, drafted, value_rank, years_kept,
+        )
 
     by_team = project_league_keepers(per_team, rules, limit)
 
@@ -529,12 +605,16 @@ def build_keeper_body(
     values = _redraft_value_map(is_sf)
     adp = _adp_map(is_sf, _season, source=adp_source)
     value_rank = _value_rank_map(values)
-    drafted, num_rounds = _draft_context(platform, league_id, _season)
+    drafted, num_rounds, years_kept = _unpack_draft_context(
+        _draft_context(platform, league_id, _season)
+    )
 
     roster = _viewer_roster(ctx, viewer_roster_id) or {}
     player_ids = [str(p) for p in (roster.get("players") or [])]
 
-    candidates = _candidates_for_ids(player_ids, players_index, values, adp, drafted, value_rank)
+    candidates = _candidates_for_ids(
+        player_ids, players_index, values, adp, drafted, value_rank, years_kept,
+    )
     rules = KeeperRules(league_size=league_size, num_rounds=num_rounds, one_per_round=True)
     ranked = evaluate(candidates, rules, limit=max_keepers)
 

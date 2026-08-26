@@ -285,6 +285,7 @@ def render_keeper_html(seed: dict) -> str:
       <h2>Keeper Assistant</h2>
       <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
         Who’s worth keeping? Surplus = where a player drafts today minus what he costs to keep.
+        Auction/FAAB keeper costs are not auto-detected — set the drafted round by hand.
       </div>
     </div>
     <div class="kpr-head-actions">

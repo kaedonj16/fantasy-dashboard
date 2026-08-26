@@ -1074,6 +1074,22 @@ ul {
     pointer-events: none;
 }
 
+.nav-capability-note {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 5px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    background: var(--row, rgba(127,127,127,.12));
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    vertical-align: middle;
+    line-height: 14px;
+}
+
 .nav-pro-badge {
     display: inline-block;
     margin-left: 6px;

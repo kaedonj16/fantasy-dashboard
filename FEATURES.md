@@ -59,7 +59,7 @@ A full breakdown of every feature on the site, organized by the main navigation.
   - **Strength of Schedule (SOS)** — Schedule difficulty breakdown.
 - **Redzone (live)** — Live red-zone / scoring tracker with league-wide and your-team scopes. In the Weekly nav on every platform (Sleeper, ESPN, Yahoo, MFL) — providers canonicalize player ids to a common feed, and live stat lines come from Tank01 boxscores. Cross-league "My Leagues" uses the signed-in account portfolio on every platform (and still walks Sleeper leagues for a Sleeper-only session).
 - **Streaming Options** — Matchup-based D/ST and K streaming targets from free agents, ranked by opponent Vegas implied totals; gated to positions your league actually starts.
-- **Weekly Recap** — AI-written recap of the week with a shareable OG share image.
+- **Weekly Recap** — AI-written recap of the week with a shareable OG share image. The AI storyline is PRO; free users see an upgrade teaser. Sample/preview weeks are labeled as sample data, not your league’s results.
 
 ---
 
@@ -91,13 +91,9 @@ A full breakdown of every feature on the site, organized by the main navigation.
 - **Prospect Rankings** — Full rookie evaluation: production, athleticism, draft capital, and dynasty value for the active class, plus historical player comps.
 - **Draft Assistant** — Draft Board that analyzes positional needs vs. the league, recommends 1–2 prospects per pick, shows ADP and grade per row, and tracks who you've drafted this session.
   - **Mock Draft simulator** — Run a full mock draft against simulated opponents from the draft room.
-<<<<<<< HEAD
-  - **Cheat Sheet** — Sortable, printable draft cheat sheet with live Sleeper draft sync (free), free CSV download, and an embeddable in-draft overlay. Custom board edits stay PRO.
-=======
-  - **Cheat Sheet** — Sortable, printable draft cheat sheet with an embeddable version for sharing. Opened from the Draft Room overlay, it stays crossed-off as picks land (without turning on Sleeper live polling).
->>>>>>> d13c14bf (Keep the draft cheat-sheet overlay in sync with picks)
+  - **Cheat Sheet** — Sortable, printable draft cheat sheet with live Sleeper draft sync (free), free CSV download, and an embeddable in-draft overlay that stays crossed-off as picks land (without turning on Sleeper live polling). Custom board edits stay PRO.
   - **Draft History** — Review completed drafts.
-- **Keeper Assistant** — For keeper leagues: auto-detects each player's draft-round keeper cost from Sleeper, Yahoo, and ESPN drafts, then picks the best keepers under your league's keeper limit and cost rules, with a full sortable table and live re-calc as you tweak the limit.
+- **Keeper Assistant** — For keeper leagues: auto-detects each player's draft-round keeper cost from Sleeper, Yahoo, and ESPN drafts (and years-kept on Sleeper season chains / ESPN keeper flags), then picks the best keepers under your league's keeper limit and cost rules, with a full sortable table and live re-calc as you tweak the limit. Auction/FAAB keeper costs are not auto-detected — set the drafted round by hand.
 - **Breakout Engine (PRO)** — Breakout candidates with opportunity projections, vacated-target totals, historical peer comps from real breakout seasons, and confidence-adjusted projected PPG ranges. Also includes offseason breakout candidates. If roster-change data has not been loaded for the season, the board stays empty instead of ranking players on readiness alone.
 - **Waivers & Start/Sit** — Ranked free-agent targets with pickup signals (filter by position), plus a weekly Start/Sit Advisor showing starters, FLEX picks, and bench ranked by start score. Kicker and D/ST are included when the league starts them.
 - **Schedule Assistant** — Matchup difficulty for every rostered player across any chosen week range, with add/remove players.
@@ -128,7 +124,7 @@ A full breakdown of every feature on the site, organized by the main navigation.
 - **Real-trade crawler** — Aggregates dynasty trades across thousands of leagues for the database and intel tools.
 - **NFL state / news integration** — Live NFL week state, player news, and injury data.
 - **Responsive design** — Container-query-driven layouts that adapt cleanly from desktop to mobile, with a mobile tab-bar dock.
-- **PWA & offline** — Installable progressive web app (service worker, manifest, offline page) plus push notifications for trades, breakouts, waivers, and scores.
+- **PWA & offline** — Installable progressive web app (service worker, manifest, offline page) plus push notifications for trades, breakouts, waivers, and scores. Rate limits use Redis when `REDIS_URL` is set so they hold across web workers; otherwise they are per-process.
 - **Weekly email digest** — Once-a-week recap emailed to signed-in users: your record and league rank, your roster's value risers/fallers, and the biggest leaguewide movers, linking back to your dashboard. De-duped per account per week, with one-click signed unsubscribe. Render cron `weekly-email` fires Tuesday 9am ET via `/api/cron/notifications` (`type=weekly`). Hourly push checks (lineup lock, close games, drops, injuries) run from Render cron `hourly-notifications`.
 - **Browser extension** — Companion extension for reading league/player context on Sleeper.
 - **Trending surfaces** — Trending adds, risers/fallers, and value-movers boards driven by the live value engine.

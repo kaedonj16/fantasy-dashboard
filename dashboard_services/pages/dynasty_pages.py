@@ -524,8 +524,13 @@ def build_rankings_hub_body(
     value_table: list[dict],
     position: str | None = None,
     as_of_date: str | None = None,
+    format: str | None = None,
 ) -> str:
-    """Dynasty rankings hub page, optionally filtered to a single position."""
+    """Dynasty rankings hub page, optionally filtered to a single position.
+
+    ``format`` is ``sf`` (default Superflex sort), ``1qb``, or None/both for
+    showing both columns with Superflex as the primary sort.
+    """
     from dashboard_services.pages.player_page import slugify
 
     date_str   = as_of_date or datetime.now().strftime("%B %Y")
@@ -537,7 +542,11 @@ def build_rankings_hub_body(
         and float(r.get("value") or 0) > 0
         and (not pos_filter or (r.get("position") or "").upper() == pos_filter)
     ]
-    rows.sort(key=lambda r: float(r.get("value") or 0), reverse=True)
+    fmt = (format or "sf").strip().lower()
+    if fmt not in ("sf", "1qb"):
+        fmt = "sf"
+    sort_key = "sf_value" if fmt == "sf" else "value"
+    rows.sort(key=lambda r: float(r.get(sort_key) or 0), reverse=True)
 
     if pos_filter:
         title    = f"Dynasty {pos_filter} Rankings {datetime.now().year}"
@@ -552,17 +561,24 @@ def build_rankings_hub_body(
             f"Values from real dynasty leagues and BR Fantasy model analysis."
         )
 
+    qs = f"?format={fmt}"
     pos_nav_items = [
-        ("All",  "/rankings/dynasty"),
-        ("QB",   "/rankings/dynasty-qb"),
-        ("RB",   "/rankings/dynasty-rb"),
-        ("WR",   "/rankings/dynasty-wr"),
-        ("TE",   "/rankings/dynasty-te"),
+        ("All",  "/rankings/dynasty" + qs),
+        ("QB",   "/rankings/dynasty-qb" + qs),
+        ("RB",   "/rankings/dynasty-rb" + qs),
+        ("WR",   "/rankings/dynasty-wr" + qs),
+        ("TE",   "/rankings/dynasty-te" + qs),
     ]
-    active_path = f"/rankings/dynasty-{pos_filter.lower()}" if pos_filter else "/rankings/dynasty"
+    active_path = (f"/rankings/dynasty-{pos_filter.lower()}" if pos_filter else "/rankings/dynasty") + qs
     nav_html = "".join(
         f'<a class="rnk-nav-btn{" rnk-nav-btn-active" if path == active_path else ""}" href="{path}">{label}</a>'
         for label, path in pos_nav_items
+    )
+    fmt_nav = (
+        f'<div class="rnk-pos-nav" style="margin-top:8px">'
+        f'<a class="rnk-nav-btn{" rnk-nav-btn-active" if fmt=="sf" else ""}" href="{(f"/rankings/dynasty-{pos_filter.lower()}" if pos_filter else "/rankings/dynasty")}?format=sf">Superflex</a>'
+        f'<a class="rnk-nav-btn{" rnk-nav-btn-active" if fmt=="1qb" else ""}" href="{(f"/rankings/dynasty-{pos_filter.lower()}" if pos_filter else "/rankings/dynasty")}?format=1qb">1QB</a>'
+        f'</div>'
     )
 
     table_rows = ""
@@ -589,8 +605,8 @@ def build_rankings_hub_body(
             f'<a class="rnk-player-link" href="/player/{slug}/trade-value">{html.escape(name)}</a>'
             f'<span class="rnk-team">{html.escape(team)}</span>'
             f'</td>'
-            f'<td class="rnk-val" style="color:{_val_color(val)};">{val:.0f}</td>'
-            f'<td class="rnk-val" style="color:{_val_color(sf_val)};">{sf_val:.0f}</td>'
+            f'<td class="rnk-val{" rnk-val-primary" if fmt=="1qb" else ""}" style="color:{_val_color(val)};">{val:.0f}</td>'
+            f'<td class="rnk-val{" rnk-val-primary" if fmt=="sf" else ""}" style="color:{_val_color(sf_val)};">{sf_val:.0f}</td>'
             f'<td class="rnk-age">{age or "-"}</td>'
             f'<td>{_rank_arrow(change)}</td>'
             f'</tr>'
@@ -604,6 +620,7 @@ def build_rankings_hub_body(
   </div>
 
   <div class="rnk-pos-nav">{nav_html}</div>
+  {fmt_nav}
 
   {_position_analysis_html(pos_filter)}
 

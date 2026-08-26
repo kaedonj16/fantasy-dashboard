@@ -460,7 +460,8 @@ def create_checkout_session():
             success_url=success_url,
             cancel_url=cancel_url,
             metadata={"plan": plan, "user_id": user_id, "league_id": league_id,
-                      "platform": platform, "season": str(season)},
+                      "platform": platform, "season": str(season),
+                      "account_id": str(session.get("account_id") or "")},
         )
         return jsonify({"url": checkout.url})
     except Exception as e:
@@ -493,7 +494,7 @@ def stripe_webhook():
         s         = event["data"]["object"]
         meta      = dict(s.metadata) if s.metadata else {}
         plan      = meta.get("plan")
-        user_id   = meta.get("user_id")
+        user_id   = meta.get("user_id") or meta.get("account_id")
         platform  = meta.get("platform") or "sleeper"
         league_id = meta.get("league_id") or ""
         sub_id    = s.subscription

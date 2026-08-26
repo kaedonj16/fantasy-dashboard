@@ -1868,7 +1868,6 @@ window._brPromoEligible = function () {
         keys:       s.keys,
         league_ids: leagueIds,
         platform:   _platform || 'sleeper',
-        owner_id:   (window._viewerUid || null),
       }),
     });
     window._pushEndpoint = s.endpoint;
@@ -7772,6 +7771,12 @@ window.initTradePage = function initTradePage(root = document) {
                 Please select your username/team from the league settings so the AI
                 can analyze trades from your perspective.
               </div>
+            </div>`;
+        } else if (data.analysis_error) {
+          resultState.innerHTML = `
+            <div class="otc-ai-empty">
+              <div class="otc-ai-empty-title">Analysis unavailable</div>
+              <div class="otc-ai-empty-sub">The AI take failed this time. Re-run the eval in a moment — the value verdict above is still current.</div>
             </div>`;
         } else {
           resultState.innerHTML = `

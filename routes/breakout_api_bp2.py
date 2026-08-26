@@ -90,7 +90,16 @@ def api_breakout_candidates():
         if is_offseason:
             # Use offseason opportunity-based detection (FAST - uses database)
             try:
+                from data_building.breakout_engine.db_helpers import opportunity_data_ready
+                from data_building.breakout_opportunity_guard import UNAVAILABLE_BREAKOUT_REASON
                 from data_building.offseason_opportunity import get_offseason_breakout_candidates
+                if not opportunity_data_ready(current_season):
+                    return jsonify({
+                        "candidates": [],
+                        "count": 0,
+                        "data_available": False,
+                        "reason": UNAVAILABLE_BREAKOUT_REASON,
+                    })
                 candidates = get_offseason_breakout_candidates(
                     current_season,
                     min_score=min_score,

@@ -2945,6 +2945,8 @@
   function draftPlayerFacts(p){
     var pos = (p.position || '').toUpperCase();
     var adp = adpOf(p);
+    var adpN = (state.type === 'rookie') ? p.rookie_adp_n
+      : (state.sf ? p.sf_adp_n : p.adp_n);
     var adpGap = (adp != null && state && state.current) ? (state.current - adp) : null;
     var proj = (p.proj_ppg != null && isFinite(Number(p.proj_ppg))) ? Number(p.proj_ppg) : null;
     var last = (p.ppg != null && isFinite(Number(p.ppg))) ? Number(p.ppg) : null;
@@ -2954,6 +2956,7 @@
     return {
       pos: pos,
       adp: adp,
+      adpN: adpN != null && isFinite(Number(adpN)) ? Number(adpN) : null,
       vsAdp: adpGap,
       vor: vorp,
       vorLbl: p.vorp != null ? 'VORP' : 'VOR',
@@ -5471,7 +5474,7 @@
     { term: 'Pick Score (PS)', def: 'A 0-100 grade of pick quality. On the live board, sidebar, compare modal, and player preview it is scaled relative to the best player still available (so a strong late pick still reads well). Made-pick chips on the report card / Deep Dive “Board PS” use the same relative scale at that historical slot. Your letter grade’s Value bar uses the absolute, round-weighted kernel score — those two numbers can differ. Kickers and defenses aren’t scored.' },
     { term: 'Value', def: 'The player’s trade value as an asset on a 0-999 scale - dynasty value for startup/rookie drafts, redraft value for redraft.' },
     { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a replacement-level starter at their position (a fixed, preseason-style baseline). VORP uses real fantasy points; VOR uses dynasty value.' },
-    { term: 'ADP', def: 'Average Draft Position - the typical overall pick a player goes at in real drafts. If it’s below your current pick, they’ve fallen and may be a value.' },
+    { term: 'ADP', def: 'Average Draft Position - the typical overall pick a player goes at in real drafts. If it’s below your current pick, they’ve fallen and may be a value. When a sample size (n=) is shown, a small n means the ADP is noisy.' },
     { term: 'Tier', def: 'Players grouped by talent gaps (Tier 1 = elite). A tier “cliff” means only a couple of players remain before a real drop-off at that position.' },
     { term: 'PPG', def: 'Points per game - projected for the upcoming season, or last season’s actual when that’s shown.' },
     { term: 'Survival %', def: 'The chance a player is still on the board at your next pick. Starts from consensus ADP, then adapts to how your draft is actually going - if the room is reaching, letting players slide, drafting unpredictably, or running on a position, the odds shift to match (kicks in after the first several picks).' },
@@ -6662,7 +6665,7 @@
       + '<div class="dr-prev-stats">'
       + statBox('Value', Math.round(f.value), null, 'Trade value as an asset on a 0-999 scale (dynasty value, or redraft value in redraft).')
       + statBox(f.vorLbl, vorStr, null, 'Value Over Replacement: how much better than a freely-available starter at this position. ' + (f.vorLbl === 'VORP' ? 'Based on real fantasy points.' : 'Based on dynasty value.'))
-      + statBox('ADP', f.adp != null ? Number(f.adp).toFixed(1) : '-', null, 'Average Draft Position - the typical overall pick this player goes at in real drafts.')
+      + statBox('ADP', f.adp != null ? (Number(f.adp).toFixed(1) + (f.adpN ? ' <span class="dr-adp-n">n=' + f.adpN + '</span>' : '')) : '-', null, 'Average Draft Position - the typical overall pick this player goes at in real drafts. n is how many real drafts the ADP is based on.')
       + statBox('vs ADP', vsAdp, null, 'How far this player has fallen past their ADP at the current pick. Positive = a value.')
       + (f.projPpg != null ? statBox('Proj PPG', f.projPpg.toFixed(1), 'projected', 'Points per game, projected for the upcoming season.') : '')
       + (f.lastPpg != null ? statBox((f.ppgSeason ? f.ppgSeason + ' PPG' : 'PPG'), f.lastPpg.toFixed(1), f.ppgRank != null ? (pos + f.ppgRank) : 'last season', 'Points per game last season.') : '')

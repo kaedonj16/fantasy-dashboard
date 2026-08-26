@@ -47,7 +47,7 @@ def test_paywall_lists_shipped_pro_features_only():
     assert "'playoff-impact': 'Playoff Impact'" in PAYWALL_JS
     assert "'gm-memo': 'Front Office Report'" in PAYWALL_JS
     assert "Playoff Impact simulations" in PAYWALL_JS
-    assert "Front Office Report" in PAYWALL_JS
+    assert "'weekly-recap': 'Weekly Recap'" in PAYWALL_JS
 
 
 def test_live_cheat_sheet_sync_is_not_premium_gated():
@@ -55,7 +55,7 @@ def test_live_cheat_sheet_sync_is_not_premium_gated():
     assert "if (!cfg.hasPremium || !cfg.leagueId || !cfg.platform)" not in CHEAT_JS
     assert "if (!cfg.leagueId || !cfg.platform) return Promise.resolve(false);" in CHEAT_JS
     assert "window.showPaywall('draft-cheat-sheet')" not in DRAFT_JS
-    # Custom board / CSV remain PRO.
+    # Custom board edits remain PRO. CSV export is free.
     assert "if (!cfg.hasPremium) { if (typeof window.showPaywall === 'function') window.showPaywall('draft-cheat-sheet'); return; }" in CHEAT_JS
 
 
@@ -75,7 +75,8 @@ def test_in_season_front_office_is_premium_gated():
     assert 'id="generateGmMemoBtn"' in dash
 
 
-def test_bulletins_api_is_sleeper_only():
+def test_draft_room_nav_labels_sleeper_live_only():
+    assert "Draft Room <span class='nav-capability-note'>Sleeper live</span>" in APP_PY
     bulletins = APP_PY[APP_PY.index("def api_league_bulletins"):]
     bulletins = bulletins[:bulletins.index("logger.warning(\"[api-league-bulletins]")]
     assert '(platform or "sleeper").strip().lower() != "sleeper"' in bulletins

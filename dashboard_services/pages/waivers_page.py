@@ -635,7 +635,7 @@ function wvRenderWaivers() {{
     <div class="wv-player-row" onclick="openPlayerModal('${{p.player_id}}', '${{p.name.replace(/'/g,"\\'")}}')">
       <div>
         <div class="wv-player-name">${{p.name}}</div>
-        <div class="wv-player-sub">${{[p.position, p.team, p.pos_rank_label, p.age ? 'Age ' + parseFloat(p.age).toFixed(1) : ''].filter(Boolean).join(' · ')}}${{usageChip}}</div>
+        <div class="wv-player-sub">${{[p.position, p.team, p.pos_rank_label, p.age ? 'Age ' + parseFloat(p.age).toFixed(1) : '', p.rostered_pct != null ? Math.round(p.rostered_pct) + '% rostered' : '', p.adds_48h ? ('+' + p.adds_48h + ' adds') : ''].filter(Boolean).join(' · ')}}${{usageChip}}</div>
         ${{dropHint}}
       </div>
       <div class="wv-right">
@@ -702,6 +702,7 @@ function wvStreamRow(p, implied, isDef) {{
       <span class="wv-stream-name">${{p.name || ''}}</span>
       <span class="wv-stream-matchup">${{p.matchup || ''}}</span>
       ${{impChip}}
+      ${{p.adds_48h ? '<span class="wv-stream-imp wv-stream-imp-mid" title="Sleeper adds last 48h">+' + p.adds_48h + ' adds</span>' : ''}}
     </div>`;
 }}
 function wvRenderStreaming(d) {{

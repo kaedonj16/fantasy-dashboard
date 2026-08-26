@@ -169,13 +169,34 @@ def viewer_is_league_member(
     requester is a member before honoring it - otherwise anyone who knows a
     paid league's (non-secret) id would unlock premium for free.
 
-    Membership is only verifiable for Sleeper; for other platforms we do not
-    block (return True) so those flows keep working.
+    Sleeper membership is the live user-leagues list. ESPN/Yahoo/MFL membership
+    is the durable ``user_leagues`` row on the signed-in account. Fail closed
+    when we cannot confirm.
     """
     if not league_id:
         return False
-    if (platform or "sleeper") != "sleeper":
-        return True
+    plat = (platform or "sleeper").strip().lower()
+    if plat != "sleeper":
+        try:
+            from flask import has_request_context, session
+            if not has_request_context():
+                return False
+            account_id = session.get("account_id")
+            if not account_id:
+                return False
+            from dashboard_services.accounts import list_user_leagues
+            lid = str(league_id)
+            season_i = int(season) if season not in (None, "") else None
+            for lg in list_user_leagues(int(account_id)):
+                if str(lg.get("platform") or "").lower() != plat:
+                    continue
+                if str(lg.get("league_id")) != lid:
+                    continue
+                if season_i is None or int(lg.get("season") or 0) == season_i:
+                    return True
+            return False
+        except Exception:
+            return False
     if not viewer_user_id:
         return False
     try:

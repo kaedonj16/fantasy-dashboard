@@ -278,16 +278,24 @@ def fetch_local_combine_csv(draft_year: int) -> Dict[str, Dict[str, Any]]:
     """
     import pandas as pd
     import re
+    import time
     from pathlib import Path
     
     print(f"[local_combine] Processing local combine CSV for draft year {draft_year}")
     
-    # Path to the local CSV file
-    csv_path = Path(__file__).parent.parent.parent / "cache" / "Official Times & Measurements - 2026.csv"
+    csv_dir = Path(__file__).parent.parent.parent / "cache"
+    csv_path = csv_dir / "athleticism" / f"{draft_year}.csv"
+    if not csv_path.exists():
+        csv_path = csv_dir / f"Official Times & Measurements - {draft_year}.csv"
     
     if not csv_path.exists():
         print(f"[local_combine] ERROR: CSV file not found at {csv_path}")
         return {}
+    mtime = csv_path.stat().st_mtime
+    print(f"[local_combine] Using {csv_path} (mtime {mtime})")
+    stale_days = 400
+    if (time.time() - mtime) > stale_days * 86400:
+        print(f"[local_combine] WARNING: athleticism CSV is older than {stale_days} days")
     
     try:
         # Read the CSV file with proper header handling

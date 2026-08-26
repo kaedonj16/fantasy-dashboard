@@ -364,6 +364,47 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
         return []
 
 
+def _playoff_tile_from_cache(odds_rows, viewer_roster_id, *, projected=False):
+    """Fill a hub playoff tile from a warm sim cache so first paint is not '-'.
+
+    Returns ``(pct_int, subtitle)`` or ``None`` when this roster has no row
+    (or, for the offseason tile, when the row is not a preseason projection).
+    """
+    if not odds_rows or not viewer_roster_id:
+        return None
+    rid = str(viewer_roster_id)
+    row = next((o for o in odds_rows if str((o or {}).get("roster_id")) == rid), None)
+    if not row:
+        return None
+    if projected and not row.get("is_projected"):
+        return None
+    try:
+        pct = int(round(float(row.get("playoff_pct") or 0)))
+    except (TypeError, ValueError):
+        return None
+    first = 0
+    try:
+        first = int(round(float(row.get("first_seed_pct") or 0)))
+    except (TypeError, ValueError):
+        first = 0
+    if projected:
+        sub = f"Projected · {first}% top seed" if first > 0 else "Projected from current rosters"
+        return pct, sub
+    if row.get("is_complete"):
+        sub = "Clinched" if pct >= 100 else ("Eliminated" if pct <= 0 else "Playoff bound")
+        return pct, sub
+    bye = 0
+    try:
+        bye = int(round(float(row.get("bye_pct") or 0)))
+    except (TypeError, ValueError):
+        bye = 0
+    sub = (
+        f"{first}% top seed" if first > 0
+        else (f"{bye}% first-round bye" if bye > 0 else "to make the playoffs")
+    )
+    return pct, sub
+
+
 # Cache for share card HTML (keyed by platform/league_id/season/roster_id).
 _SHARE_CARD_CACHE: dict = {}
 _SHARE_CARD_CACHE_TTL = 600  # 10 minutes
@@ -3122,7 +3163,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 ("Prospects", "/prospects", "prospects"),
             ], ["players", "prospects", "breakouts", "top-movers", "compare"], "playersNavDropdown"),
             simple_dropdown("Draft", [
-                ("Draft Room", "/draft", "draft"),
+                ("Draft Room <span class='nav-capability-note'>Sleeper live</span>", "/draft", "draft"),
                 ("Cheat Sheet", "/draft/cheat-sheet", "draft-cheat-sheet"),
                 ("Draft History", "/draft/history", "draft-history"),
             ], ["draft", "draft-cheat-sheet", "draft-history"], "draftNavDropdown"),
@@ -3302,7 +3343,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # Keeper Assistant only applies to keeper leagues; hide it for dynasty and
     # plain redraft leagues.
     _draft_items = [
-        ("Draft Room", "tool_pages.page_draft_room", "draft", False),
+        ("Draft Room <span class='nav-capability-note'>Sleeper live</span>", "tool_pages.page_draft_room", "draft", False),
         ("Cheat Sheet", "tool_pages.page_cheat_sheet", "draft-cheat-sheet", False),
     ]
     if _nav_show_keeper(platform, league_id, season):
@@ -6613,21 +6654,46 @@ def build_dashboard_body(ctx: dict) -> str:
         for _lbl, _val, _sub in _hero_cards
     ]
 
-    # Playoff-odds tile — the Monte Carlo sim is heavy and cached behind the
-    # /api/playoff-odds endpoint, so render a placeholder and fill it client-side
-    # to keep first paint fast. Only meaningful when the viewer owns a team.
+    # Playoff-odds tile — serve a warm cache on first paint; if the sim is
+    # cold, kick it off in the background and let the client fill the tile.
     if viewer_roster_id:
-        _playoff_tile_html = f"""<div class="os-stat-card os-stat-playoff" id="dash-playoff-tile"
+        _po_val, _po_sub, _po_loaded = "-", "Simulating&hellip;", ""
+        try:
+            _warm = _playoff_sim_cached(ctx, platform, block=False) or []
+            _filled = _playoff_tile_from_cache(_warm, viewer_roster_id)
+            if _filled:
+                _po_val = f"{_filled[0]}%"
+                _po_sub = html.escape(_filled[1])
+                _po_loaded = " is-loaded"
+        except Exception:
+            logger.debug("dashboard playoff prefetch failed", exc_info=True)
+        _playoff_tile_html = f"""<div class="os-stat-card os-stat-playoff{_po_loaded}" id="dash-playoff-tile"
               data-platform="{html.escape(str(platform))}"
               data-league="{html.escape(str(league_id))}"
               data-season="{html.escape(str(season))}"
               data-roster="{html.escape(str(viewer_roster_id))}">
               <div class="os-stat-label">Playoff odds</div>
-              <div class="os-stat-value" id="dash-playoff-val">-</div>
-              <div class="os-stat-sub" id="dash-playoff-sub">Simulating&hellip;</div>
+              <div class="os-stat-value" id="dash-playoff-val">{_po_val}</div>
+              <div class="os-stat-sub" id="dash-playoff-sub">{_po_sub}</div>
             </div>"""
         # Slot right after the first (record) tile so it reads prominently.
         _hero_tiles.insert(1, _playoff_tile_html)
+
+    _dash_bulletins_html = ""
+    if str(platform or "sleeper").strip().lower() == "sleeper":
+        _dash_bulletins_html = f"""
+        <section class="os-card" id="leagueBulletinsContainer"
+                 data-league="{html.escape(str(league_id))}"
+                 data-platform="sleeper"
+                 data-season="{html.escape(str(season))}">
+          <div class="os-section-head">
+            <div class="os-section-head-content">
+              <h2 class="os-section-title">League Bulletins</h2>
+              <div class="os-section-subtitle">From your Sleeper league board</div>
+            </div>
+          </div>
+          <div class="bulletins-list">Loading&hellip;</div>
+        </section>"""
 
     _hero_stats_html = "".join(_hero_tiles)
 
@@ -6679,6 +6745,7 @@ def build_dashboard_body(ctx: dict) -> str:
         </nav>
 
         <div id="sinceLastVisitCard" class="slv-wrap" data-slv-init="1"></div>
+        {_dash_bulletins_html}
 
         <div id="os-jump-report" class="os-tab-panel os-tab-active">
           {lineup_alert_html}
@@ -6726,6 +6793,7 @@ def build_dashboard_body(ctx: dict) -> str:
     (function() {{
       var el = document.getElementById('dash-playoff-tile');
       if (!el) return;
+      if (el.classList.contains('is-loaded')) return;
       var rid = el.getAttribute('data-roster');
       var qs = 'platform=' + encodeURIComponent(el.getAttribute('data-platform')) +
                '&league_id=' + encodeURIComponent(el.getAttribute('data-league')) +
@@ -8517,20 +8585,28 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         </section>
         """
 
-    # Projected playoff-odds tile — the offseason hub runs on the upcoming
-    # season, which has no games yet, so /api/playoff-odds returns the sim's
-    # preseason projection (is_projected). Placeholder is filled client-side and
-    # removes itself when the schedule/roster data isn't ready to project.
+    # Projected playoff-odds tile — serve a warm cache on first paint; a cold
+    # sim is kicked off in the background and the client fills or removes the tile.
     _os_playoff_tile_html = ""
     if viewer_roster_id:
-        _os_playoff_tile_html = f"""<div class="os-stat-card os-stat-playoff" id="os-playoff-tile"
+        _os_val, _os_sub, _os_loaded = "-", "Projecting&hellip;", ""
+        try:
+            _os_warm = _playoff_sim_cached(ctx, platform, block=False) or []
+            _os_filled = _playoff_tile_from_cache(_os_warm, viewer_roster_id, projected=True)
+            if _os_filled:
+                _os_val = f"{_os_filled[0]}%"
+                _os_sub = html.escape(_os_filled[1])
+                _os_loaded = " is-loaded"
+        except Exception:
+            logger.debug("offseason playoff prefetch failed", exc_info=True)
+        _os_playoff_tile_html = f"""<div class="os-stat-card os-stat-playoff{_os_loaded}" id="os-playoff-tile"
               data-platform="{html.escape(str(platform))}"
               data-league="{html.escape(str(ctx.get('league_id', '')))}"
               data-season="{html.escape(str(season))}"
               data-roster="{html.escape(str(viewer_roster_id))}">
               <div class="os-stat-label">Projected playoff odds</div>
-              <div class="os-stat-value" id="os-playoff-val">-</div>
-              <div class="os-stat-sub" id="os-playoff-sub">Projecting&hellip;</div>
+              <div class="os-stat-value" id="os-playoff-val">{_os_val}</div>
+              <div class="os-stat-sub" id="os-playoff-sub">{_os_sub}</div>
             </div>"""
 
     body = f"""
@@ -8656,6 +8732,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         (function() {{
           var el = document.getElementById('os-playoff-tile');
           if (!el) return;
+          if (el.classList.contains('is-loaded')) return;
           var rid = el.getAttribute('data-roster');
           var qs = 'platform=' + encodeURIComponent(el.getAttribute('data-platform')) +
                    '&league_id=' + encodeURIComponent(el.getAttribute('data-league')) +
@@ -11942,6 +12019,15 @@ def api_waiver_candidates():
         pick = (same_pos or deep or elig)[0]
         return {"name": pick["name"], "position": pick["position"], "value": round(pick["value"])}
 
+    _adds_by_id = {}
+    try:
+        for row in _sleeper_trending_adds(limit=50) or []:
+            pid = str(row.get("player_id") or "")
+            if pid:
+                _adds_by_id[pid] = int(row.get("count") or 0)
+    except Exception:
+        _adds_by_id = {}
+
     for c in _shown:
         try:
             sig_cls, sig_label = _waiver_signal(
@@ -11992,6 +12078,8 @@ def api_waiver_candidates():
                 "confidence": _confidence,
                 "market_projection": c.get("market_projection"),
                 "market_opportunity": _market_opp,
+                "rostered_pct": c.get("rostered_pct"),
+                "adds_48h": _adds_by_id.get(str(c["player_id"])),
             })
         except Exception:
             logger.exception("[waiver-candidates] result row failed for %s", c.get("player_id"))
@@ -12209,6 +12297,17 @@ def api_streaming_options():
             })
             if len(kicker) >= 8:
                 break
+
+    _adds_by_id = {}
+    try:
+        for row in _sleeper_trending_adds(limit=50) or []:
+            pid = str(row.get("player_id") or "")
+            if pid:
+                _adds_by_id[pid] = int(row.get("count") or 0)
+    except Exception:
+        _adds_by_id = {}
+    for row in defense + kicker:
+        row["adds_48h"] = _adds_by_id.get(str(row.get("player_id")))
 
     return jsonify({"defense": defense, "kicker": kicker, "in_season": True})
 
@@ -15140,7 +15239,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             )
 
     fun_awards_section = ""
-    if fun_awards_html:
+    if fun_awards_html and season_records:
         fun_awards_section = f"""
     <div class="card">
       <div class="card-header"><h2>League Superlatives</h2></div>
@@ -17556,17 +17655,24 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                 ctx, next_week, playoff_start, _league_id, _season, _platform, team_by_rid,
             )
 
-        from dashboard_services.ai.weekly_recap import get_weekly_ai_recap
-        ai_column_html, next_week_html = get_weekly_ai_recap(
-            df_weekly=df_weekly,
-            matchups_by_week=ctx.get("matchups_by_week") or {},
-            selected_week=selected_week,
-            team_by_rid=team_by_rid,
-            league=league,
-            league_id=ctx.get("league_id") or "",
-            season=ctx.get("season") or "",
-            next_week_ctx=next_week_ctx,
+        from dashboard_services.ai.weekly_recap import get_weekly_ai_recap, get_weekly_ai_recap_teaser
+        _has_prem = has_premium_for_viewer(
+            session.get("viewer_username"), session.get("viewer_user_id"),
+            _league_id, _platform, _season,
         )
+        if not _has_prem:
+            ai_column_html, next_week_html = get_weekly_ai_recap_teaser()
+        else:
+            ai_column_html, next_week_html = get_weekly_ai_recap(
+                df_weekly=df_weekly,
+                matchups_by_week=ctx.get("matchups_by_week") or {},
+                selected_week=selected_week,
+                team_by_rid=team_by_rid,
+                league=league,
+                league_id=ctx.get("league_id") or "",
+                season=ctx.get("season") or "",
+                next_week_ctx=next_week_ctx,
+            )
 
     # ── Lineup analysis: busts, sleepers, coaching mistakes ────────────────
     if preview_mode:
@@ -17586,7 +17692,8 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
             border:1px solid var(--accent);border-radius:8px;background:rgba(99,102,241,0.08);">
   <span style="font-size:18px;">👁️</span>
   <div style="font-size:13px;color:var(--text);">
-    <strong>Preview</strong> - this is sample data. Your real weekly recap will appear here after Week 1 completes.
+    <strong>Preview week</strong> — this is sample data, not your league’s results.
+    Your real weekly recap will appear here after Week 1 completes.
   </div>
 </div>"""
 
@@ -18078,6 +18185,17 @@ def _render_commissioner_history(layer, current_season, current_moves, current_t
 </div>"""
 
 
+def commissioner_is_inactive(txns, games_played) -> bool:
+    """Zero transactions after more than 3 games have been played."""
+    return int(txns or 0) == 0 and int(games_played or 0) > 3
+
+
+def commissioner_value_share_pct(team_value, league_total) -> float:
+    """Percent of league value this team holds."""
+    total = float(league_total or 0) or 1.0
+    return round(float(team_value or 0) / total * 100, 1)
+
+
 def build_commissioner_body(ctx):
     from dashboard_services.service import get_transactions_by_week
 
@@ -18154,7 +18272,7 @@ def build_commissioner_body(ctx):
         txns = txn_by_rid.get(rid) or int(r_st.get("total_moves") or 0)
         trades = trade_count_by_rid.get(rid, 0)
         games_played = wins + losses
-        inactive = txns == 0 and games_played > 3
+        inactive = commissioner_is_inactive(txns, games_played)
         roster_infos.append({
             "rid": rid, "name": roster_map.get(rid, f"Team {rid}"),
             "owner": owner_by_rid.get(rid, "Unknown"),
@@ -18167,7 +18285,7 @@ def build_commissioner_body(ctx):
     league_val_total = sum(r["value"] for r in roster_infos) or 1.0
     fair_share = 100.0 / max(len(roster_infos), 1)
     for r in roster_infos:
-        r["value_pct"] = round(r["value"] / league_val_total * 100, 1)
+        r["value_pct"] = commissioner_value_share_pct(r["value"], league_val_total)
     roster_infos.sort(key=lambda x: -x["value_pct"])
 
     def _val_bar(pct: float) -> str:
@@ -19350,10 +19468,7 @@ def api_roster_grade():
     if not league_id or not viewer_roster_id:
         return jsonify({"error": "Missing required parameters"}), 400
 
-    _user_id = session.get("viewer_username")
-    if not has_premium_for_viewer(_user_id, session.get("viewer_user_id"), league_id, platform, season):
-        return jsonify({"error": "premium_required"}), 403
-
+    # Same grades the Teams page already shows for free — keep one story.
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
         grade_data = get_roster_grade(ctx, viewer_roster_id)
@@ -19847,6 +19962,11 @@ def api_trade_eval():
         except Exception as e:
             logger.info(f"[trade-ai] skipped: {e}")
             analysis_html = ""
+            analysis_error = str(e)[:200]
+        else:
+            analysis_error = ""
+    else:
+        analysis_error = ""
 
     return jsonify({
         "side_a": side_a,
@@ -19857,6 +19977,7 @@ def api_trade_eval():
         "fair_pct": FAIR_PCT,
         "verdict": verdict,
         "analysis_html": analysis_html,
+        "analysis_error": analysis_error,
         "depth_warnings": depth_warnings,
         "tier_thresholds": [round(t, 1) for t in tier_thresholds],
     })
@@ -20321,16 +20442,24 @@ def _attach_adp_to_players(players, adp_season, clear_first=False, sleeper_only=
                     out[str(_k)] = float(_ap)
             return out
 
-        def _crawl_adp(is_sf: bool, draft_type: str, min_s: int) -> dict:
-            return _norm_adp(_fl_adp(is_sf, adp_season, draft_type, min_samples=min_s) or {})
+        def _crawl_adp(is_sf: bool, draft_type: str, min_s: int):
+            raw = _fl_adp(is_sf, adp_season, draft_type, min_samples=min_s) or {}
+            nmap = {}
+            for _k, _v in raw.items():
+                if isinstance(_v, dict) and _v.get("sample_size"):
+                    nmap[str(_k)] = int(_v["sample_size"])
+            return _norm_adp(raw), nmap
 
         # BR Fantasy crawl maps (fallback). Skipped for historical views
         # (sleeper_only), which use Sleeper's own season ADP - never the crawl.
         if sleeper_only:
             _c_su1 = _c_susf = _c_rk1 = _c_rksf = {}
+            _n_su1 = _n_susf = _n_rk1 = _n_rksf = {}
         else:
-            _c_su1, _c_susf = _crawl_adp(False, "startup", 10), _crawl_adp(True, "startup", 10)
-            _c_rk1, _c_rksf = _crawl_adp(False, "rookie", 5), _crawl_adp(True, "rookie", 5)
+            _c_su1, _n_su1 = _crawl_adp(False, "startup", 10)
+            _c_susf, _n_susf = _crawl_adp(True, "startup", 10)
+            _c_rk1, _n_rk1 = _crawl_adp(False, "rookie", 5)
+            _c_rksf, _n_rksf = _crawl_adp(True, "rookie", 5)
 
         # Sleeper projections ADP (primary). Pick the first present field per mode.
         _sa = _sleeper_adp(adp_season) or {}
@@ -20386,6 +20515,9 @@ def _attach_adp_to_players(players, adp_season, clear_first=False, sleeper_only=
             if _rsf is not None:
                 _p["sf_redraft_avg_pick"] = _rsf;
                 _used["redraft"] = True
+            _p["adp_n"] = _n_su1.get(_pid)
+            _p["sf_adp_n"] = _n_susf.get(_pid)
+            _p["rookie_adp_n"] = _n_rksf.get(_pid) or _n_rk1.get(_pid)
 
         for _mode in ("startup", "rookie", "redraft"):
             # The draft crawler is branded "BR Fantasy" everywhere else (the
@@ -25987,6 +26119,32 @@ def api_trade_intel_run_crawl():
         return jsonify({"error": "Internal error"}), 500
 
 
+def _server_roster_intel_adp(season: int, league_type: str) -> dict:
+    """FantasyCalc is blocked from server IPs. Fill ADP ranks from the crawled
+    BR Fantasy market so ESPN/PWA clients still get market signals."""
+    try:
+        from dashboard_services.adp_service import resolve_market_adp
+        is_sf = str(league_type or "").lower() in ("sf", "superflex")
+        raw = resolve_market_adp(
+            int(season), is_sf, scoring_type="dynasty",
+            source="brfantasy", fallback=True,
+        ) or {}
+        out = {}
+        for pid, info in raw.items():
+            if isinstance(info, dict):
+                out[str(pid)] = {
+                    "adp_rank": info.get("adp_rank") or info.get("avg_pick"),
+                    "pos_rank": info.get("pos_rank"),
+                    "position": info.get("position"),
+                }
+            elif info is not None:
+                out[str(pid)] = {"adp_rank": info}
+        return out
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+        return {}
+
+
 @app.route("/api/roster-intel", methods=["GET", "POST"])
 def api_roster_intel():
     """
@@ -26013,6 +26171,8 @@ def api_roster_intel():
         viewer_rid_raw = str(session.get("viewer_roster_id") or "").strip()
     # FC dynasty ADP - sent by browser because server IP is blocked by FC
     fc_adp: dict = (body.get("fc_adp") or {}) if isinstance(body.get("fc_adp"), dict) else {}
+    if not fc_adp:
+        fc_adp = _server_roster_intel_adp(season, league_type)
 
     if not league_id:
         return jsonify({"error": "league_id required"}), 400
@@ -29170,6 +29330,12 @@ def build_scout_body(ctx: dict) -> str:
     roster_map = ctx.get("roster_map") or {}
     standings_map = ctx.get("standings_map") or {}
     model_value_table = ctx.get("model_value_table") or []
+    try:
+        live = get_model_value_table_cached() or []
+        if live:
+            model_value_table = live
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
     players_index = ctx.get("players_index") or {}
     matchups_by_week = ctx.get("matchups_by_week") or {}
     statuses = ctx.get("statuses") or {}
