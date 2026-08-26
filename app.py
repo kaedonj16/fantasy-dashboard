@@ -17423,9 +17423,10 @@ def api_player_game_logs(player_id: str):
         # are still in the future (active season - fill the remaining weeks).
         if _upcoming not in game_logs_by_year or _actual_weeks:
             try:
-                from utils.utils import pick_proj_variant, load_week_projection
+                from utils.utils import load_week_projection
+                from utils.fantasy_scoring import projection_points as _proj_pts_fn
                 from statistics import median as _med_fn
-                _variant = pick_proj_variant(scoring_settings)
+                _pos_gl = (player_meta.get("pos") or "").upper()
 
                 _proj_vals: dict = {}
                 for _w in range(1, 19):
@@ -17435,8 +17436,13 @@ def api_player_game_logs(player_id: str):
                     _v = _wd.get(player_id)
                     if _v is None:
                         _v = _wd.get(str(player_id))
+                    # Trust Sleeper's own published total for plain PPR/half/std
+                    # scoring so the number matches the Sleeper app; only a
+                    # genuinely custom league recomputes from the raw stat line.
+                    # Legacy caches without a raw line fall back to the matching
+                    # precomputed variant inside projection_points().
                     if isinstance(_v, dict):
-                        _fv = float(_v.get(_variant) or _v.get("ppr") or 0)
+                        _fv = float(_proj_pts_fn(_v, scoring_settings, _pos_gl))
                     elif isinstance(_v, (int, float)):
                         _fv = float(_v)
                     else:

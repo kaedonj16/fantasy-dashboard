@@ -34,13 +34,44 @@ def unprojected_season_injury(injury_status: Optional[str], sleeper_ppg) -> bool
     return ppg <= 0
 
 
+# Plain PPR/half/std variants Sleeper publishes a precomputed total for.
+_PUBLISHED_PTS_KEYS = {"ppr": "pts_ppr", "half_ppr": "pts_half_ppr", "std": "pts_std"}
+
+
+def _published_base_points(raw_stats) -> dict[str, float]:
+    """Sleeper's own published totals for the plain PPR/half/std variants.
+
+    The weekly projection cache preserves the raw stat line, which carries
+    Sleeper's precomputed pts_ppr/pts_half_ppr/pts_std alongside the raw stats.
+    Preferring those makes the aggregated season PPG match the Sleeper app for
+    standard scoring instead of a recompute that can drift on rounding or
+    category coverage. TE-premium and 6-pt passing-TD variants have no published
+    equivalent, so those keep the computed value.
+    """
+    if not isinstance(raw_stats, dict):
+        return {}
+    out: dict[str, float] = {}
+    for variant, pts_key in _PUBLISHED_PTS_KEYS.items():
+        val = raw_stats.get(pts_key)
+        if val is None:
+            continue
+        try:
+            out[variant] = float(val)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def weekly_variant_values(weekly_maps) -> dict[str, dict[str, list[float]]]:
     """Collect positive weekly projection values per player and scoring variant.
 
     ``weekly_maps`` is an iterable of week dicts as stored on disk:
-    ``{pid: {ppr, half_ppr, std, tep, 6pt_ppr, 6pt_half, 6pt_tep}}``.
-    A missing variant falls back to that week's ``ppr`` value so a sparse week
-    does not drop the player from a scoring-specific season average.
+    ``{pid: {ppr, half_ppr, std, tep, 6pt_ppr, 6pt_half, 6pt_tep, raw_stats}}``.
+    When the cached row preserved the raw stat line, Sleeper's own published
+    pts_ppr/pts_half_ppr/pts_std are used for the plain PPR/half/std variants so
+    the season PPG matches the Sleeper app. A missing variant falls back to that
+    week's ``ppr`` value so a sparse week does not drop the player from a
+    scoring-specific season average.
     """
     out: dict[str, dict[str, list[float]]] = {}
     for week_map in weekly_maps or []:
@@ -50,8 +81,11 @@ def weekly_variant_values(weekly_maps) -> dict[str, dict[str, list[float]]]:
             pid = str(pid)
             if isinstance(row, dict):
                 ppr_fallback = row.get("ppr")
+                published = _published_base_points(row.get("raw_stats"))
                 for key in PROJ_VARIANTS:
-                    value = row.get(key)
+                    value = published.get(key)
+                    if value is None:
+                        value = row.get(key)
                     if value is None:
                         value = ppr_fallback
                     try:
