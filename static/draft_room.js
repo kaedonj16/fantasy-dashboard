@@ -726,6 +726,7 @@
       sf:     sf,
       slot:   Math.min(teams, Math.max(1, parseInt(document.getElementById('drSlot').value, 10) || 1)),
       order:  document.getElementById('drOrder').value,
+      cpuAdpSource: (document.getElementById('drCpuAdpSource') || {}).value || 'consensus',
       roster: _setupRoster || defaultRoster(sf, rd),
       scoring: readScoring(),
       picks:  {},
@@ -750,6 +751,46 @@
     var s = (state && state.scoring) || {};
     return { ppr: s.ppr != null ? s.ppr : 1.0, tep: s.tep != null ? s.tep : 0,
       passTd: s.passTd >= 6 ? 6 : 4 };
+  }
+  // Which ADP sources the setup "CPU drafts from" selector offers per draft type.
+  // Mirrors the server's ADP_SOURCES (Yahoo/ESPN/MFL redraft-only; BR Fantasy on
+  // every axis) so the selector is filtered on the setup screen before any pool
+  // has loaded. Once a payload arrives, syncCpuAdpSourceOptions prefers its
+  // season-gated list (which also hides globals with no snapshot). Keeper runs
+  // as a redraft. Consensus is always offered and is the default.
+  var CPU_ADP_SOURCE_FALLBACK = {
+    startup: ['consensus', 'sleeper', 'brfantasy'],
+    rookie:  ['consensus', 'sleeper', 'brfantasy'],
+    redraft: ['consensus', 'sleeper', 'espn', 'yahoo', 'mfl', 'brfantasy']
+  };
+  var CPU_ADP_SOURCE_LABELS = {
+    consensus: 'Consensus (all platforms)', sleeper: 'Sleeper', espn: 'ESPN',
+    yahoo: 'Yahoo', mfl: 'MFL', brfantasy: 'BR Fantasy'
+  };
+  // Rebuild the "CPU drafts from" options for the currently selected draft type,
+  // preferring the payload's season-gated source list once a pool has loaded and
+  // falling back to the static map otherwise. Keeps the current (or a passed
+  // preferred) selection when it is still valid, else defaults to consensus.
+  function syncCpuAdpSourceOptions(preferred){
+    var sel = document.getElementById('drCpuAdpSource');
+    if (!sel) return;
+    var typeEl = document.getElementById('drType');
+    var t = typeEl ? typeEl.value : 'startup';
+    if (t === 'keeper') t = 'redraft';
+    var fromPayload = adpSourceOptions && adpSourceOptions[t] && adpSourceOptions[t].length
+      ? adpSourceOptions[t].map(function(o){ return o.value; }) : null;
+    var opts = (fromPayload || CPU_ADP_SOURCE_FALLBACK[t] || CPU_ADP_SOURCE_FALLBACK.redraft).slice();
+    // Consensus is always offered and always first.
+    var ci = opts.indexOf('consensus');
+    if (ci > 0) opts.splice(ci, 1);
+    if (ci !== 0) opts.unshift('consensus');
+    var want = preferred || sel.value || 'consensus';
+    if (opts.indexOf(want) < 0) want = 'consensus';
+    sel.innerHTML = opts.map(function(v){
+      return '<option value="' + esc(v) + '"' + (v === want ? ' selected' : '') + '>'
+        + esc(CPU_ADP_SOURCE_LABELS[v] || v) + '</option>';
+    }).join('');
+    sel.value = want;
   }
   // Convert a Sleeper-style roster_positions array to the {QB:1, RB:2, ...} map
   // used by state.roster. Uses the same normalization as rosterFromLeague so the
@@ -874,6 +915,9 @@
       for (var ti = 0; ti < teamsEl.options.length; ti++){ if (teamsEl.options[ti].value === wt || teamsEl.options[ti].text === wt){ teamsEl.selectedIndex = ti; break; } }
     }
     var ordEl = document.getElementById('drOrder'); if (ordEl && state.order) ordEl.value = state.order;
+    // drType is set above; rebuild the CPU-source options for it, then restore
+    // the saved pick (falls back to consensus if that source is invalid now).
+    syncCpuAdpSourceOptions(state.cpuAdpSource);
     var rEl = document.getElementById('drRounds'); if (rEl && state.rounds) rEl.value = String(state.rounds);
     fillSlotOptions(state.teams);   // slot options depend on team count
     var slotEl = document.getElementById('drSlot'); if (slotEl && state.slot) slotEl.value = String(state.slot);
@@ -1027,17 +1071,18 @@
     }
     return state.sf ? p.sf_avg_pick : p.avg_pick;
   }
-  // Consensus ADP from the per-source payload (blended Sleeper/BR/ESPN/MFL/Yahoo),
-  // independent of the ADP-source dropdown. Used by Deep Dive's Value vs ADP
-  // chart so a BR Fantasy or Sleeper-only board still plots against the market.
-  // Null when consensus isn't on the player (rookie axis, historical overlay,
-  // or a source-less payload) — callers fall back to adpOf().
-  function consensusAdpOf(p){
+  // One named source's ADP from the per-source payload (adp_by_source), read on
+  // the axis the current draft is on (redraft vs dynasty x 1QB vs SF). Null when
+  // the source isn't on the player: the rookie axis (no per-source ADP), a
+  // historical completed-draft overlay (grades vs that season's ADP), a
+  // source-less payload, or a source with no entry for this player/format —
+  // callers fall back to consensus or adpOf().
+  function adpBySource(p, source){
     if (!p || !state) return null;
     if (state.type === 'rookie') return null;
     if (state.mode === 'live' && state.isComplete && state.season && cfg.season
         && Number(state.season) !== Number(cfg.season)) return null;
-    var by = p.adp_by_source && p.adp_by_source.consensus;
+    var by = p.adp_by_source && p.adp_by_source[source];
     if (!by) return null;
     var field = state.type === 'redraft'
       ? (state.sf ? 'sf_redraft_avg_pick' : 'redraft_avg_pick')
@@ -1046,6 +1091,11 @@
     if (v == null || !isFinite(Number(v))) return null;
     return Number(v);
   }
+  // Consensus ADP (blended Sleeper/BR/ESPN/MFL/Yahoo), independent of the
+  // ADP-source display dropdown. Used by Deep Dive's Value vs ADP chart so a
+  // BR Fantasy or Sleeper-only board still plots against the market, and as the
+  // CPU pick engine's default/fallback source (see simAdp).
+  function consensusAdpOf(p){ return adpBySource(p, 'consensus'); }
 
   function loadPlayers(){
     var params = wantsKDef() ? ['kdef=1'] : [];
@@ -1099,6 +1149,9 @@
         tierThresholds = (!Array.isArray(resp) && resp.tier_thresholds) ? resp.tier_thresholds : {};
         adpSources = (!Array.isArray(resp) && resp.adp_sources) ? resp.adp_sources : {};
         if (!Array.isArray(resp) && resp.adp_source_options) adpSourceOptions = resp.adp_source_options;
+        // Refine the setup CPU-source options with the payload's season-gated
+        // list (hides globals with no snapshot); no-op once the draft is running.
+        syncCpuAdpSourceOptions((state && state.cpuAdpSource) || null);
         players = raw.filter(function(p){
           if (!p || p.id == null) return false;
           var pos = String(p.position || '').toUpperCase();
@@ -1391,7 +1444,20 @@
 
   // ── Simulation (mock draft) ─────────────────────────────────────────────────
   function simAdp(p){
-    var a = adpOf(p);
+    // CPU opponents draft against the source chosen in setup ("CPU drafts from",
+    // state.cpuAdpSource; default 'consensus'), NOT the in-draft display dropdown
+    // (that's an analysis lens, not a sim knob). Consensus (blended
+    // Sleeper/BR/ESPN/MFL/Yahoo) is the least single-source-biased, best-covered
+    // market estimate, so the default board plays out realistically on every
+    // platform; a single platform mocks a board that drafts like that site.
+    // Every source is attached to the payload independent of the dropdown, so no
+    // extra fetch is needed. Resolve the chosen source, then fall back to
+    // consensus, then adpOf(), then the SF-QB / K-DEF / value sentinels below —
+    // a source with no entry for this player/format never blanks a pick.
+    var src = (state && state.cpuAdpSource) || 'consensus';
+    var a = adpBySource(p, src);
+    if (a == null && src !== 'consensus') a = consensusAdpOf(p);
+    if (a == null) a = adpOf(p);
     // In SF, if sf_avg_pick is missing for a QB but standard avg_pick exists, use
     // a deflated version (QBs are ~30% more valuable in SF so their pick comes earlier).
     if (a == null && state.sf && (p.position || '').toUpperCase() === 'QB' && p.avg_pick != null){
@@ -7247,6 +7313,7 @@
   }
   renderSetupRoster();
   renderSetupCapital();
+  syncCpuAdpSourceOptions();   // filter CPU-source options to the initial draft type
   document.getElementById('drSf').addEventListener('change', function(){ _rosterMode = 'auto'; _rosterPreset = null; _setupRoster = null; renderSetupRoster(); });
   document.getElementById('drType').addEventListener('change', function(){
     // Reset roster to defaults for the new type, then re-render.
@@ -7257,6 +7324,7 @@
     if (rf) rf.style.display = isRookie ? '' : 'none';
     if (isRookie) document.getElementById('drRounds').value = String(cfg.numRoundsRookie || 3);
     syncKeeperSetupFields(this.value === 'keeper');
+    syncCpuAdpSourceOptions();   // valid CPU sources depend on the draft type
     renderSetupCapital();   // refresh claimed-pick list after rounds change
   });
 
