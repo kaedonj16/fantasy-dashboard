@@ -245,11 +245,13 @@ def test_filter_mfl_snapshot_adp_drops_sparse_rows():
             # legacy has no extra row
         },
     }
-    assert G.filter_mfl_snapshot_adp(snap) == {"star": 2.4, "legacy": 40.0}
+    assert G.filter_mfl_snapshot_adp(snap) == {"star": 2.4}
     assert G.filter_mfl_snapshot_adp({}) == {}
     assert G.mfl_adp_is_usable(10) is False
     assert G.mfl_adp_is_usable(25) is True
     assert G.mfl_adp_is_usable(None) is True
+    # No pcts anywhere → leave the map intact (tests / pre-extra snapshots).
+    assert G.filter_mfl_snapshot_adp({"adp": {"jam": 57.76}}) == {"jam": 57.76}
 
 
 # ── Crosswalk building (provider id -> canonical) ─────────────────────────────

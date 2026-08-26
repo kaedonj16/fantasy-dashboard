@@ -74,6 +74,25 @@ def test_resolve_yahoo_is_redraft_only_and_falls_back(monkeypatch):
     assert A.resolve_market_adp(2026, False, "dynasty", "yahoo") == {"1": 8.0}
 
 
+def test_resolve_consensus_omits_mfl_only_players(monkeypatch):
+    # Production snapshots often have MFL ADP without draft_pct, so the 25%
+    # selected-only filter cannot drop Jam Miller / Tanner Koziol. Consensus
+    # must still refuse to treat MFL-only selected-only ADP as the market.
+    def raw(name, season, is_sf, scoring_type, league_id=None, token=None):
+        if name == "sleeper":
+            return {"pollard": 87.3, "stafford": 89.6}
+        if name == "mfl":
+            return {"jam": 57.76, "tanner": 64.19, "pollard": 90.0, "stafford": 91.0}
+        return {}
+    monkeypatch.setattr(A, "_raw_source_map", raw)
+    c = A.resolve_market_adp(2026, False, "redraft", "consensus")
+    assert "jam" not in c and "tanner" not in c
+    assert c["pollard"] == (87.3 + 90.0) / 2
+    assert c["stafford"] == (89.6 + 91.0) / 2
+    # The MFL source itself still returns the raw selected-only numbers.
+    assert A.resolve_market_adp(2026, False, "redraft", "mfl", fallback=False)["jam"] == 57.76
+
+
 def test_resolve_consensus_blends_sleeper_and_yahoo(monkeypatch):
     monkeypatch.setattr(A, "fetch_sleeper_adp", lambda season: {"a": {"adp_ppr": 1.0}, "b": {"adp_ppr": 2.0}})
     monkeypatch.setattr(A, "fetch_yahoo_adp", lambda lg, tok, season, is_sf: {"a": 2.0, "b": 1.0})

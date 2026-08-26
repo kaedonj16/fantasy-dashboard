@@ -165,6 +165,17 @@ def test_detailed_min_quality_filters_generic(monkeypatch):
     assert set(rec["sources"]) == {"sleeper"}
 
 
+def test_detailed_drops_mfl_only_players(monkeypatch):
+    _mock_sources(monkeypatch, {
+        "sleeper": {"pollard": 87.3},
+        "mfl": {"jam": 57.76, "tanner": 64.19, "pollard": 90.0},
+    })
+    out = A.resolve_market_adp_detailed(2026, AdpFormat("redraft", "1qb", 1.0))
+    assert "jam" not in out and "tanner" not in out
+    assert "pollard" in out
+    assert set(out["pollard"]["sources"]) == {"sleeper", "mfl"}
+
+
 def test_detailed_restrict_ids(monkeypatch):
     _mock_sources(monkeypatch, {"sleeper": {"a": 1.0, "b": 2.0}, "brfantasy": {"a": 1.5, "b": 2.5}})
     out = A.resolve_market_adp_detailed(2026, AdpFormat("redraft", "1qb", 1.0),
@@ -190,6 +201,21 @@ def test_consensus_adp_simple_unchanged():
     assert A.consensus_adp([{"a": 3.0}]) == {"a": 3.0}
     c = A.consensus_adp([{"a": 1.0, "b": 2.0}, {"a": 2.0, "b": 1.0}])
     assert c["a"] == c["b"] == 1.5
+
+
+def test_consensus_drops_mfl_only_selected_adp():
+    """Jam Miller / Tanner Koziol: MFL-only 57.8 must not become Consensus."""
+    sleeper = {"pollard": 87.3}
+    mfl = {"jam": 57.76, "tanner": 64.19, "pollard": 90.0}
+    c = A.consensus_adp([sleeper, {}, {}, mfl, {}],
+                        ["sleeper", "espn", "yahoo", "mfl", "brfantasy"])
+    assert "jam" not in c and "tanner" not in c
+    assert c["pollard"] == (87.3 + 90.0) / 2
+    # Unnamed maps keep the legacy contract (average whoever is present).
+    raw = A.consensus_adp([sleeper, mfl])
+    assert raw["jam"] == 57.76
+    # MFL as the only live named source produces no consensus (fallback handles it).
+    assert A.consensus_adp([mfl], ["mfl"]) == {}
 
 
 def test_source_options_hide_empty_globals_with_season(monkeypatch):

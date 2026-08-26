@@ -471,9 +471,18 @@ def filter_mfl_snapshot_adp(snap: Optional[dict]) -> Dict[str, float]:
 
     New fetches already omit low-``draftSelPct`` rows; this re-filters existing
     snapshots (and the DB mirror) so a deploy fixes the board without waiting
-    for the next MFL refresh."""
+    for the next MFL refresh.
+
+    When the snapshot has ``draft_pct`` for *any* player, rows missing it are
+    dropped too — they are unverified selected-only leftovers, not legacy
+    payloads. A snapshot with no pcts at all (tests / pre-extra files) is left
+    intact; consensus then omits MFL-only players instead."""
     adp = (snap or {}).get("adp") or {}
     extra = (snap or {}).get("extra") or {}
+    have_pct = any(
+        isinstance(ex, dict) and ex.get("draft_pct") is not None
+        for ex in extra.values()
+    )
     out: Dict[str, float] = {}
     for pid, v in adp.items():
         try:
@@ -485,7 +494,10 @@ def filter_mfl_snapshot_adp(snap: Optional[dict]) -> Dict[str, float]:
         ex = extra.get(str(pid)) or extra.get(pid) or {}
         if not isinstance(ex, dict):
             ex = {}
-        if not mfl_adp_is_usable(ex.get("draft_pct")):
+        pct = ex.get("draft_pct")
+        if have_pct and pct is None:
+            continue
+        if not mfl_adp_is_usable(pct):
             continue
         out[str(pid)] = fv
     return out
