@@ -4,7 +4,41 @@ Pure logic — no app / DB import — so these run anywhere pytest does.
 """
 import pytest
 
-from utils.fantasy_scoring import projection_points, score_stats
+from utils.fantasy_scoring import (
+    projection_points,
+    score_stats,
+    weekly_projection_points,
+)
+
+
+def _wk_entry():
+    return {
+        "6786": {
+            "ppr": 15.76, "half_ppr": 13.07, "std": 10.38,
+            "raw_stats": {"rec": 6, "rec_yd": 80,
+                          "pts_ppr": 17.15, "pts_half_ppr": 14.46, "pts_std": 11.77},
+        }
+    }
+
+
+def test_weekly_projection_points_trusts_published_for_standard():
+    wk = _wk_entry()
+    assert weekly_projection_points(wk, "6786", {"rec": 1.0}, "WR") == 17.15
+    assert weekly_projection_points(wk, "6786", {"rec": 0.5}, "WR") == 14.46
+    assert weekly_projection_points(wk, "6786", {"rec": 0.0}, "WR") == 11.77
+
+
+def test_weekly_projection_points_recomputes_for_custom():
+    wk = _wk_entry()
+    # 0.75-PPR: not standard -> recompute from raw (6*0.75 + 80*0.1 = 12.5).
+    assert weekly_projection_points(wk, "6786", {"rec": 0.75, "rec_yd": 0.1}, "WR") == 12.5
+
+
+def test_weekly_projection_points_absent_and_scalar():
+    wk = _wk_entry()
+    assert weekly_projection_points(wk, "9999", {"rec": 1.0}, "WR") is None
+    assert weekly_projection_points({"x": 12.3}, "x", {"rec": 1.0}) == 12.3
+    assert weekly_projection_points(None, "x", {"rec": 1.0}) is None
 
 
 def test_empty_inputs_score_zero():
