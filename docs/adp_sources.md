@@ -69,6 +69,13 @@ resolver never fails a page because a snapshot file is missing from this disk.
   `FCOUNT` (league size), `IS_MOCK` (real/mock), and `PERIOD` are sent. Dynasty,
   rookie, superflex, and TEP are **not** inferable from MFL's ADP filters and are
   recorded as unknown — MFL is offered on the redraft axis only.
+- **MFL `averagePick` is selected-only.** It is the mean pick among drafts that
+  *took* the player, not overall ADP. A dart-throw rookie selected in 10% of
+  mocks around pick 58 therefore shows ADP 57.8 even though 90% of drafts never
+  take him (Sleeper records 999 / undrafted; ESPN and Yahoo omit him from the
+  top-N board). Rows with `draftSelPct` below 25% are dropped at fetch *and* at
+  snapshot read so they cannot leak into consensus or Draft Room recs. Missing
+  `draftSelPct` is left through (legacy snapshots / tests).
 
 ## Match quality and fallback hierarchy
 

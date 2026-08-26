@@ -169,3 +169,30 @@ def test_depth_slope_leaves_first_pick_unchanged():
     # At pick 1 depth is ~0, so par is ~1.0 regardless of slope.
     assert _late_pick(pick_no=1, avg_pick=1, depth_slope=0.70) == \
            _late_pick(pick_no=1, avg_pick=1)
+
+
+def test_untrusted_adp_does_not_manufacture_elite_steal():
+    """A 0-value, ~0-PPG player with selected-only ADP 57 at pick 136 must not
+    grade like an elite steal (the Jam Miller / Tanner Koziol rec bug)."""
+    junk = compute_pick_score(
+        pos="RB", value=0, vor=0, tier=None, age=22, rank_change_7d=0,
+        avg_pick=57.8, pick_no=136, max_val=10000, draft_type="redraft",
+        is_sf=False, need_raw=1.0, qb_count=0, total_picks=192, num_teams=12,
+        ppg_norm=0.05,
+    )
+    real = compute_pick_score(
+        pos="RB", value=6000, vor=2000, tier=2, age=24, rank_change_7d=0,
+        avg_pick=57.8, pick_no=136, max_val=10000, draft_type="redraft",
+        is_sf=False, need_raw=1.0, qb_count=0, total_picks=192, num_teams=12,
+        ppg_norm=0.7,
+    )
+    assert junk < 70
+    assert real > junk
+    # Same player with no ADP should not be punished relative to the junk ADP.
+    no_adp = compute_pick_score(
+        pos="RB", value=0, vor=0, tier=None, age=22, rank_change_7d=0,
+        avg_pick=None, pick_no=136, max_val=10000, draft_type="redraft",
+        is_sf=False, need_raw=1.0, qb_count=0, total_picks=192, num_teams=12,
+        ppg_norm=0.05,
+    )
+    assert abs(junk - no_adp) <= 15

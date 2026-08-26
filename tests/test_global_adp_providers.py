@@ -212,6 +212,46 @@ def test_mfl_unmapped_tracked_and_bad_pick_skipped(monkeypatch):
     assert "77" in out["unmapped"]
 
 
+def test_mfl_skips_low_draft_selection_pct(monkeypatch):
+    """MFL averagePick is selected-only. A 10% dart-throw around pick 58 must
+    not become ADP 57.8 (the Jam Miller / Tanner Koziol consensus leak)."""
+    G._XWALK_CACHE["mfl:2026"] = {"17486": "jam", "17644": "tanner", "1": "star"}
+    monkeypatch.setattr(G, "_get_json", lambda url, **kw: {"adp": {"player": [
+        {"id": "17486", "averagePick": "57.76", "draftSelPct": "10"},
+        {"id": "17644", "averagePick": "64.19", "draftSelPct": "7"},
+        {"id": "1", "averagePick": "2.4", "draftSelPct": "99"},
+    ]}})
+    out = G.fetch_mfl_adp(2026)
+    assert out["adp"] == {"star": 2.4}
+    assert "jam" not in out["adp"] and "tanner" not in out["adp"]
+
+
+def test_mfl_keeps_unknown_draft_pct(monkeypatch):
+    # Legacy / test payloads with no draftSelPct stay usable.
+    G._XWALK_CACHE["mfl:2026"] = {"1": "a"}
+    monkeypatch.setattr(G, "_get_json", lambda url, **kw: {"adp": {"player": [
+        {"id": "1", "averagePick": "12.0"},
+    ]}})
+    out = G.fetch_mfl_adp(2026)
+    assert out["adp"] == {"a": 12.0}
+
+
+def test_filter_mfl_snapshot_adp_drops_sparse_rows():
+    snap = {
+        "adp": {"jam": 57.76, "star": 2.4, "legacy": 40.0},
+        "extra": {
+            "jam": {"draft_pct": 10.0},
+            "star": {"draft_pct": 88.0},
+            # legacy has no extra row
+        },
+    }
+    assert G.filter_mfl_snapshot_adp(snap) == {"star": 2.4, "legacy": 40.0}
+    assert G.filter_mfl_snapshot_adp({}) == {}
+    assert G.mfl_adp_is_usable(10) is False
+    assert G.mfl_adp_is_usable(25) is True
+    assert G.mfl_adp_is_usable(None) is True
+
+
 # ── Crosswalk building (provider id -> canonical) ─────────────────────────────
 
 def test_yahoo_crosswalk_from_sleeper_feed(monkeypatch):

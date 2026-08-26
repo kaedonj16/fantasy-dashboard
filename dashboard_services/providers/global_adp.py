@@ -443,6 +443,53 @@ def fetch_espn_global_adp(season: int, limit: int = 400) -> Dict[str, Any]:
 # ── MyFantasyLeague free ADP export ───────────────────────────────────────────
 _MFL_URL = "https://api.myfantasyleague.com/{season}/export"
 
+# MFL's ``averagePick`` is the mean pick *among drafts that selected the player*,
+# not overall ADP. A 7th-round NFL rookie taken in 10% of mocks around pick 58
+# shows ADP 57.8 even though 90% of drafts never take him — then consensus (and
+# the Draft Room "elite steal" recs) treat that as a real round-5 board. Sleeper
+# records those players as undrafted (999) and ESPN/Yahoo omit them from the
+# top-N board. Drop rows below this selection rate so they cannot leak in.
+MIN_MFL_DRAFT_PCT = 25.0
+
+
+def mfl_adp_is_usable(draft_pct) -> bool:
+    """True when an MFL averagePick is a real market ADP, not selected-only noise.
+
+    Missing ``draft_pct`` (legacy snapshots / tests) is treated as usable so we
+    don't drop rows we cannot evaluate. A reported rate below ``MIN_MFL_DRAFT_PCT``
+    is not."""
+    if draft_pct is None:
+        return True
+    try:
+        return float(draft_pct) >= MIN_MFL_DRAFT_PCT
+    except (TypeError, ValueError):
+        return True
+
+
+def filter_mfl_snapshot_adp(snap: Optional[dict]) -> Dict[str, float]:
+    """Apply the selected-only floor to a persisted MFL snapshot's ``adp`` map.
+
+    New fetches already omit low-``draftSelPct`` rows; this re-filters existing
+    snapshots (and the DB mirror) so a deploy fixes the board without waiting
+    for the next MFL refresh."""
+    adp = (snap or {}).get("adp") or {}
+    extra = (snap or {}).get("extra") or {}
+    out: Dict[str, float] = {}
+    for pid, v in adp.items():
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            continue
+        if fv <= 0:
+            continue
+        ex = extra.get(str(pid)) or extra.get(pid) or {}
+        if not isinstance(ex, dict):
+            ex = {}
+        if not mfl_adp_is_usable(ex.get("draft_pct")):
+            continue
+        out[str(pid)] = fv
+    return out
+
 
 def fetch_mfl_adp(season: int, *, is_ppr: Optional[int] = 1,
                   fcount: Optional[int] = 12, is_mock: Optional[int] = 0,
@@ -497,11 +544,14 @@ def fetch_mfl_adp(season: int, *, is_ppr: Optional[int] = 1,
                 continue
             if ap is None or ap <= 0:
                 continue
+            draft_pct = _f(r.get("draftSelPct"))
+            if not mfl_adp_is_usable(draft_pct):
+                continue
             adp[str(cid)] = ap
             extra[str(cid)] = {
                 "min_pick": _f(r.get("minPick")),
                 "max_pick": _f(r.get("maxPick")),
-                "draft_pct": _f(r.get("draftSelPct")),
+                "draft_pct": draft_pct,
             }
     except Exception:
         logger.warning("global_adp: MFL ADP fetch failed", exc_info=True)
