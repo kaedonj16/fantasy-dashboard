@@ -99,9 +99,9 @@ sheet agree. Live cross-off is unchanged and stays pro.
 ## Pro gating
 
 The override controls, the custom ordering, and reset are premium
-(`cfg.hasPremium`). A free viewer always sees the pure model board. This matches
-the live-assistant layer: the static model board is free, personalization is
-pro.
+(`cfg.hasPremium`). A free viewer always sees the pure model board. CSV export
+of the current board is free. This matches the live-assistant layer: the static
+model board is free, personalization is pro.
 
 ## Rollout phases
 
