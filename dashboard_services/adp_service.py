@@ -926,7 +926,9 @@ def consensus_adp(source_maps, source_names=None) -> Dict[str, float]:
     for pid, values in agg.items():
         if drop_unconfirmed and _all_selected_only(named.get(pid)):
             continue
-        out[pid] = sum(values) / len(values)
+        # Two decimals matches the detailed resolver and the source cards the
+        # board shows, and avoids binary-float noise (10.940000000000001).
+        out[pid] = round(sum(values) / len(values), 2)
     return out
 
 
