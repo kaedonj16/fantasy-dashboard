@@ -92,12 +92,12 @@ def test_market_column_is_conditionally_omitted_from_table_and_export():
     assert ".cs-wrap table { min-width: 830px; }" in body
     assert ".cs-vor-col, .cs-value-col { display: none; }" not in body
     assert ".cs-market-col { display: none; }" not in body
-    assert '<th class="cs-market-col">Market vs ADP</th>' in script
+    assert "sortTh('market', 'Market vs ADP', 'cs-market-col'" in script
     assert 'class="cs-vor-col"' in script
     assert 'class="cs-value-col"' in script
     assert "var SHOW_MARKET_VS_ADP = false" in script
     assert "SHOW_MARKET_VS_ADP = resp.market_vs_adp_available === true" in script
-    assert "showMarket(dyn) ? '<th class=\"cs-market-col\">Market vs ADP</th>' : ''" in script
+    assert "showMarket(dyn) ? sortTh('market'" in script
     assert "showMarket(dyn) ? ['Market vs ADP'] : []" in script
     assert "Not enough independent market data yet." in script
     assert "marketBasis" in script
@@ -111,7 +111,7 @@ def test_cheat_sheet_adds_full_season_schedule_rank_context():
     assert "Schedule Rank compares each player's position-specific matchups" in body
     assert "week_start=1&week_end=17" in script
     assert "p.sos_rank" in script
-    assert ">Sched Rk</th>" in script
+    assert "sortTh('scheduleRank', 'Sched Rk'" in script
     assert "'Schedule Rank'" in script
 
 
@@ -121,7 +121,7 @@ def test_cheat_sheet_adds_projected_ppg_to_board_and_export():
 
     assert "Projected PPG is the player's upcoming-season fantasy points per game" in body
     assert "projectedPpg: p.proj_ppg" in script
-    assert ">Proj PPG</th>" in script
+    assert "sortTh('projectedPpg', 'Proj PPG'" in script
     assert "'Proj PPG'" in script
     assert "x.projectedPpg.toFixed(1)" in script
     assert "lastPpg: p.ppg" in script
@@ -271,3 +271,33 @@ def test_embedded_cheat_sheet_keeps_mobile_content_scrollable():
     assert "overflow-x:hidden" in document
     assert "-webkit-overflow-scrolling: touch; touch-action: pan-x pan-y;" in document
     assert ".cs-tbl-scroll, .cs-pgrid-scroll { max-height: none; height: auto; }" in document
+
+
+def test_cheat_sheet_big_board_columns_are_sortable():
+    """Big Board headers reorder the table without changing the VOR model.
+
+    ADP / Value / Proj PPG / Sched Rk (and the other data columns) are click-
+    to-sort. Default remains VOR descending. By Position, custom-board edits,
+    and Rk stay on the model board.
+    """
+    body = build_cheat_sheet_body("league-123", 2026, "sleeper")
+    script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
+
+    for key in ("rk", "name", "pos", "vor", "projectedPpg", "scheduleRank", "market"):
+        assert "sortTh('%s'" % key in script
+    assert "col5Key = dyn ? 'age' : 'adp'" in script
+    assert "col6Key = dyn ? 'window' : 'value'" in script
+    assert "function displayPlayers()" in script
+    assert "function setSort(key)" in script
+    assert "isDefaultSort()" in script
+    assert "thead th[data-sort]" in script
+    assert "displayPlayers().forEach" in script
+    assert "displayPlayers().map" in script
+    assert "scored.sort(function (a, b) { return b.vor - a.vor" in script
+    assert "boardSort && !recommendationOrder && x.grp !== lastT" in script
+    assert "var pickAt = boardSort ? projPickMap() : {}" in script
+    assert "th.cs-sort" in body
+    assert ".cs-sortbtn" in body
+    assert "Click a column header (ADP, Value, Proj PPG, Sched Rk" in body
+    # Custom edits snap back to the VOR board so drag-reorder isn't fighting ADP.
+    assert "if (editBoard) resetBoardSort()" in script
