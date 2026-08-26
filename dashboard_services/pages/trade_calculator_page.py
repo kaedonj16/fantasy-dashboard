@@ -1049,7 +1049,7 @@ def build_trade_calculator_body(
                 <div class="otc-mini-tabs">
                   <button class="otc-mini-tab is-active" data-tab="movers">Movers</button>
                   <button class="otc-mini-tab" data-tab="breakouts">Breakouts</button>
-                  <button class="otc-mini-tab" data-tab="targets">Targets <i class="fa-solid fa-lock" style="font-size:9px;opacity:0.6;" id="targetsLockIcon"></i></button>
+                  <button class="otc-mini-tab" data-tab="targets">Targets</button>
                 </div>
               </div>
               <div class="otc-mini-sub" id="moversSub">Biggest 7-day changes in BR value</div>

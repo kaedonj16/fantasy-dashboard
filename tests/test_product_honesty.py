@@ -10,6 +10,7 @@ Flask/pandas). They lock the settled product rules:
 - Playoff Impact and offseason breakouts are server-gated.
 - Front Office is not auto-generated for free in-season users.
 - Trade Suggestions hides Build Around / Strategy for non-PRO users.
+- Player Insights Targets tab is clickable and shows an in-panel upgrade state.
 """
 import re
 from pathlib import Path
@@ -135,6 +136,18 @@ def test_trade_suggestions_hides_build_around_without_pro():
     assert "display:none" not in style_for(free, "otcSuggPaywall")
     assert "display:none" in style_for(pro, "otcSuggPaywall")
     assert 'id="otcSubtabBuildAround"' in free
+
+
+def test_player_insights_targets_tab_shows_upgrade_state_like_breakouts():
+    """Targets should switch like Breakouts: clickable tab, in-panel upgrade
+    empty state, no lock-on-tab that blocks the click and pops a modal."""
+    calc = (ROOT / "dashboard_services" / "pages" / "trade_calculator_page.py").read_text(encoding="utf-8")
+    assert 'data-tab="targets">Targets</button>' in calc
+    assert "targetsLockIcon" not in calc
+    js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'if (tab === "targets" && !hasPremium)' not in js
+    assert "Upgrade to see players to pursue based on your roster gaps." in js
+    assert "Upgrade to see offseason breakout candidates for your roster." in js
 
 
 def test_draft_room_nav_labels_sleeper_live_only():
