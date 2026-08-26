@@ -532,3 +532,25 @@ def test_scoring_proj_ppg_reflects_half_ppr_and_six_point_tds():
     assert out["wrSix"] == 20
     # No variant map -> keep the stored PPR projection.
     assert out["bareHalf"] == 16
+
+
+def test_future_pick_decision_score_drops_zero_survival_elites():
+    """Pick-9 recs: 1.01 talent at 0% must not outrank a likely survivor."""
+    driver = (
+        "global.self = global;\n"
+        "const C = require(%s);\n"
+        "process.stdout.write(JSON.stringify({"
+        "floor:C.REC_FUTURE_SURVIVE_FLOOR,"
+        "gibbs:C.futurePickDecisionScore(95,0),"
+        "likely:C.futurePickDecisionScore(70,40),"
+        "nullSurvive:C.futurePickDecisionScore(80,null)"
+        "}));\n" % json.dumps(str(CORE_JS))
+    )
+    res = subprocess.run(["node", "-e", driver], capture_output=True, text=True, timeout=20)
+    assert res.returncode == 0, res.stderr
+    out = json.loads(res.stdout)
+    assert out["floor"] == 0.08
+    assert out["gibbs"] == pytest.approx(95 * 0.08)
+    assert out["likely"] == pytest.approx(70 * (0.08 + 0.92 * 0.40))
+    assert out["gibbs"] < out["likely"]
+    assert out["nullSurvive"] == 80
