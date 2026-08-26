@@ -11726,13 +11726,20 @@ function _wlClearAll() {
 
 // ── Watchlist cross-device sync (server-backed when signed in) ───────────────
 function _wlSignedIn() {
-  // Gate on the SAME identity the server keys the watchlist on: viewer_user_id
-  // (window._viewerUid), not viewer_username (window._isSignedIn). The two can
-  // diverge, and the server returns synced:false for any request without a user
-  // id - so gating on the wrong field left a device silently unsynced (it kept
-  // its own local list and never pulled the account's).
+  // Match routes/watchlist_bp._user_key: Google account_id (window._hasAccount)
+  // or Sleeper viewer_user_id (window._viewerUid). A Google-only session has
+  // account_id with no Sleeper uid; gating on uid alone left those devices
+  // local-only even though the server stores acct:<id>.
   if (typeof window === 'undefined') return false;
+  if (window._hasAccount) return true;
   return window._viewerUid != null && String(window._viewerUid).trim() !== '';
+}
+
+function _wlIdentityKey() {
+  var uid = window._viewerUid != null ? String(window._viewerUid).trim() : '';
+  if (uid) return uid;
+  if (window._hasAccount) return 'acct:' + String(window._accountEmail || '1');
+  return '';
 }
 
 function _wlServerAdd(player) {
@@ -11847,7 +11854,7 @@ async function _wlServerSync() {
   // account. After that, the server is authoritative on load - we PULL and
   // replace rather than re-uploading, so a "clear all" on another device sticks
   // instead of being resurrected by this device's stale local list.
-  const migKey = '_wl_merged_' + String(window._viewerUid);
+  const migKey = '_wl_merged_' + _wlIdentityKey();
   let migrated = false;
   try { migrated = localStorage.getItem(migKey) === '1'; } catch (_) {}
   if (migrated) { await _wlServerPull(); return; }

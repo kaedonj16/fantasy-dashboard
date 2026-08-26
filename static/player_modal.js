@@ -1356,12 +1356,26 @@ function _pmFetchTradesInto(panel, playerId, season, ctx) {
     url = `/api/player-league-trades/${encodeURIComponent(playerId)}?platform=${encodeURIComponent(ctx.platform)}&league_id=${encodeURIComponent(ctx.leagueId)}&season=${encodeURIComponent(ctx.season || season)}&limit=50`;
   } else {
     url = `/api/trade-intel/player-trades/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}&limit=20`;
+    if (ctx.platform) url += `&platform=${encodeURIComponent(ctx.platform)}`;
+    if (ctx.leagueId) url += `&league_id=${encodeURIComponent(ctx.leagueId)}`;
   }
 
   fetch(url)
-    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-    .then(data => {
+    .then(r => r.json().then(d => ({ status: r.status, ok: r.ok, d: d || {} })).catch(() => ({ status: r.status, ok: r.ok, d: {} })))
+    .then(res => {
       if (!panel.isConnected || !body.isConnected) return;
+      if (res.status === 403 && res.d.paywall) {
+        body.innerHTML = '<div style="padding:18px 0;text-align:center;">'
+          + '<div style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">Market trade history is a PRO feature.</div>'
+          + '<button type="button" class="login-gate-btn" id="pmTradesPaywallBtn">Upgrade</button></div>';
+        var btn = body.querySelector('#pmTradesPaywallBtn');
+        if (btn) btn.addEventListener('click', function () {
+          if (typeof showPaywall === 'function') showPaywall('trade-history');
+        });
+        return;
+      }
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = res.d;
       const trades = data.trades || [];
       if (!trades.length) {
         const emptyMsg = scope === 'league'

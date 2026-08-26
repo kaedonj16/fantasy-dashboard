@@ -841,6 +841,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       const TI_SEASON = {season};
       const TI_HAS_PREMIUM = {str(has_premium).lower()};
       const TI_PLATFORM = '{platform}';
+      const TI_LEAGUE_ID = '{league_id}';
       const TI_LEAGUE_FORMAT = TI_PLATFORM === 'espn' ? 'redraft' : TI_PLATFORM === 'sleeper' ? 'dynasty' : 'all';
       let TI_LEAGUE_TYPE = '{_ti_lt}';
       const TI_LEAGUE_SIZE = {_ti_sz};
@@ -865,7 +866,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         document.getElementById('tiLoading').style.display = '';
         document.getElementById('tiGrid').style.display = 'none';
         document.getElementById('tiPagination').style.display = 'none';
-        fetch('/api/trade-intel/trending?season=' + TI_SEASON + '&page=' + page + '&league_type=' + TI_LEAGUE_TYPE + '&league_size=' + TI_LEAGUE_SIZE)
+        fetch('/api/trade-intel/trending?season=' + TI_SEASON + '&page=' + page + '&league_type=' + TI_LEAGUE_TYPE + '&league_size=' + TI_LEAGUE_SIZE + '&platform=' + encodeURIComponent(TI_PLATFORM) + '&league_id=' + encodeURIComponent(TI_LEAGUE_ID))
           .then(r => r.json())
           .then(data => {{
             if (data.error) throw new Error(data.error);
@@ -1045,7 +1046,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         _tiTrades.page = page;
         document.getElementById('tiTradesBody').innerHTML = '<div class="ti-trades-msg">Loading&hellip;</div>';
         document.getElementById('tiTradesPager').style.display = 'none';
-        const qs = new URLSearchParams({{ season: TI_SEASON, league_type: _tiTrades.leagueFilter, page, limit: 15, league_format: TI_LEAGUE_FORMAT }});
+        const qs = new URLSearchParams({{ season: TI_SEASON, league_type: _tiTrades.leagueFilter, page, limit: 15, league_format: TI_LEAGUE_FORMAT, platform: TI_PLATFORM, league_id: TI_LEAGUE_ID }});
         fetch(`/api/trade-intel/player-trades/${{p.player_id}}?${{qs}}`)
           .then(r => {{ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }})
           .then(_renderTITrades)

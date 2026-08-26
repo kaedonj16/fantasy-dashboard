@@ -19,6 +19,7 @@ BILLING = (ROOT / "routes" / "billing_bp.py").read_text(encoding="utf-8")
 SCOUT = (ROOT / "dashboard_services" / "pages" / "scout_page.py").read_text(encoding="utf-8")
 PLAYERS_PAGE = (ROOT / "dashboard_services" / "pages" / "players_page.py").read_text(encoding="utf-8")
 SUBS = (ROOT / "dashboard_services" / "subscriptions.py").read_text(encoding="utf-8")
+SEO_PAGES = (ROOT / "routes" / "seo_pages_bp.py").read_text(encoding="utf-8")
 
 
 def test_session_signed_in_includes_google_account():
@@ -36,6 +37,16 @@ def test_watchlist_key_prefers_account_id():
     assert 'return "acct:" + str(account_id).strip()' in key_fn
     assert "session.get(\"account_id\")" in key_fn
     assert "acct:" in key_fn
+    signed_in = APP_JS.split("function _wlSignedIn()")[1].split("function _wlIdentityKey")[0]
+    assert "window._hasAccount" in signed_in
+    assert "window._viewerUid" in signed_in
+
+
+def test_top_movers_treats_google_account_as_signed_in():
+    movers = SEO_PAGES[SEO_PAGES.index("signed_in="):]
+    movers = movers[: movers.index("days=days")]
+    assert "_session_signed_in()" in movers
+    assert 'session.get("viewer_username")' not in movers
 
 
 def test_billing_accepts_mfl_and_account_id():
@@ -110,3 +121,23 @@ def test_nav_search_distinguishes_load_failure():
     assert "_loadFailed" in APP_JS
     assert "Couldn’t load players. Type again to retry." in APP_JS
     assert "Notifications enabled. Open Settings to customize." in APP_JS
+
+
+def test_trade_intel_feed_and_history_are_server_gated():
+    assert "def _deny_unless_trade_intel_premium()" in APP_PY
+    trending = APP_PY[APP_PY.index("def api_trade_intel_trending"): APP_PY.index("def api_trade_intel_player")]
+    assert "_deny_unless_trade_intel_premium()" in trending
+    history = APP_PY[APP_PY.index("def api_trade_intel_player_trades"): APP_PY.index("def api_trade_intel_similar_trades")]
+    assert "_deny_unless_trade_intel_premium()" in history
+    similar = APP_PY[APP_PY.index("def api_trade_intel_similar_trades"): APP_PY.index("def api_trade_intel_run_crawl")]
+    assert "_deny_unless_trade_intel_premium()" not in similar
+
+
+def test_identify_modal_is_a_dialog_with_google():
+    ident = PAYWALL_JS[PAYWALL_JS.index("function _showIdentifyModal"): PAYWALL_JS.index("async function _initiatePurchaseWithLeague")]
+    assert "setAttribute('role', 'dialog')" in ident
+    assert "setAttribute('aria-modal', 'true')" in ident
+    assert "_identifyGoogle" in ident
+    assert "/auth/google?intent=login" in ident
+    assert "function closeIdentify" in ident
+    assert "e.key === 'Escape'" in ident
