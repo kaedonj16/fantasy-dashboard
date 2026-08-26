@@ -33,8 +33,12 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "requirements.txt"
 
-      - name: Install Ruff and pytest
-        run: uv pip install --system ruff pytest
+      - name: Install Ruff, pytest, and requests
+        # requests is a hard import in utils/utils.py (and many data_building
+        # modules). Unit tests must be able to import those modules without the
+        # full requirements stack; without this, any accidental utils import
+        # fails the whole unit job with ModuleNotFoundError.
+        run: uv pip install --system ruff pytest requests
 
       - name: Lint for real bugs (syntax errors, undefined names)
         # Scoped to high-signal pyflakes/pycodestyle-error rules so CI flags
