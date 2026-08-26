@@ -36,8 +36,9 @@ def test_roster_grade_api_matches_free_teams_grades():
 
 
 def test_recap_ai_is_premium_and_preview_is_labeled():
-    assert "get_weekly_ai_recap_teaser" in APP_PY
-    assert "Preview week" in APP_PY
+    recap_page = (ROOT / "dashboard_services" / "pages" / "recap_page.py").read_text(encoding="utf-8")
+    assert "get_weekly_ai_recap_teaser" in recap_page
+    assert "Preview week" in recap_page
     assert "def get_weekly_ai_recap_teaser" in RECAP_PY
     html, nxt = _preview()
     assert "Gridiron Ghosts" in html
@@ -142,10 +143,20 @@ def test_weekly_hub_and_scout_live_in_page_modules():
     assert "from dashboard_services.pages.scout_page import build_scout_body" in APP_PY
     assert "from dashboard_services.pages.optimal_page import build_optimal_body" in APP_PY
     assert "from dashboard_services.pages.commissioner_page import" in APP_PY
+    assert "from dashboard_services.pages.dashboard_page import build_dashboard_body" in APP_PY
+    assert "from dashboard_services.pages.schedule_page import build_schedule_body" in APP_PY
+    assert "from dashboard_services.pages.recap_page import build_recap_body" in APP_PY
+    assert "from dashboard_services.pages.activity_page import build_activity_body" in APP_PY
+    assert "from dashboard_services.pages.standings_page import build_standings_body" in APP_PY
     assert "def build_weekly_hub_body" not in APP_PY
     assert "def build_scout_body" not in APP_PY
     assert "def build_optimal_body" not in APP_PY
     assert "def build_commissioner_body" not in APP_PY
+    assert "def build_dashboard_body" not in APP_PY
+    assert "def build_schedule_body" not in APP_PY
+    assert "def build_recap_body" not in APP_PY
+    assert "def build_activity_body" not in APP_PY
+    assert "def build_standings_body" not in APP_PY
 
 
 def test_graphs_data_contract_is_documented():
@@ -188,15 +199,16 @@ def test_recap_preview_contains_record_and_players():
 
 
 def test_playoff_tile_prefers_warm_cache_on_first_paint():
+    dash = (ROOT / "dashboard_services" / "pages" / "dashboard_page.py").read_text(encoding="utf-8")
     assert "def _playoff_tile_from_cache" in APP_PY
     assert "_playoff_sim_cached(ctx, platform, block=False)" in APP_PY
-    assert "el.classList.contains('is-loaded')" in APP_PY
-    assert 'id="dash-playoff-val">{_po_val}' in APP_PY
+    assert "el.classList.contains('is-loaded')" in dash
+    assert 'id="dash-playoff-val">{_po_val}' in dash
 
 
 def test_sleeper_dashboard_renders_bulletins_card():
-    assert 'id="leagueBulletinsContainer"' in APP_PY
-    dash = APP_PY[APP_PY.index("def build_dashboard_body"):APP_PY.index("def render_power_and_playoffs")]
+    dash = (ROOT / "dashboard_services" / "pages" / "dashboard_page.py").read_text(encoding="utf-8")
+    assert 'id="leagueBulletinsContainer"' in dash
     assert "League Bulletins" in dash
     assert 'str(platform or "sleeper").strip().lower() == "sleeper"' in dash
 
