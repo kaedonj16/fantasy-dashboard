@@ -227,6 +227,22 @@ _DRAFT_ROOM_HTML = r"""
           <div class="dr-field"><span>Your Pick</span>
             <select id="drSlot"></select>
           </div>
+          <!-- Which ADP the CPU opponents draft against. Consensus (blended
+               Sleeper/BR/ESPN/MFL/Yahoo) is the default and most platform-neutral;
+               pick a single platform to mock a board that drafts like that site.
+               This is a simulation rule, independent of the in-draft "ADP source"
+               display selector. A source with no data for the chosen format falls
+               back to consensus, so no pick is ever left without an ADP. -->
+          <div class="dr-field"><span>CPU drafts from</span>
+            <select id="drCpuAdpSource" title="Which ADP source the CPU opponents draft against. Consensus blends every platform.">
+              <option value="consensus" selected>Consensus (all platforms)</option>
+              <option value="sleeper">Sleeper</option>
+              <option value="brfantasy">BR Fantasy</option>
+              <option value="espn">ESPN</option>
+              <option value="mfl">MFL</option>
+              <option value="yahoo">Yahoo</option>
+            </select>
+          </div>
         </div>
       </div>
 

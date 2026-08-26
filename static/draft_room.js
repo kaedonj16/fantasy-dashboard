@@ -726,6 +726,7 @@
       sf:     sf,
       slot:   Math.min(teams, Math.max(1, parseInt(document.getElementById('drSlot').value, 10) || 1)),
       order:  document.getElementById('drOrder').value,
+      cpuAdpSource: (document.getElementById('drCpuAdpSource') || {}).value || 'consensus',
       roster: _setupRoster || defaultRoster(sf, rd),
       scoring: readScoring(),
       picks:  {},
@@ -874,6 +875,8 @@
       for (var ti = 0; ti < teamsEl.options.length; ti++){ if (teamsEl.options[ti].value === wt || teamsEl.options[ti].text === wt){ teamsEl.selectedIndex = ti; break; } }
     }
     var ordEl = document.getElementById('drOrder'); if (ordEl && state.order) ordEl.value = state.order;
+    var cpuSrcEl = document.getElementById('drCpuAdpSource');
+    if (cpuSrcEl && state.cpuAdpSource) cpuSrcEl.value = state.cpuAdpSource;
     var rEl = document.getElementById('drRounds'); if (rEl && state.rounds) rEl.value = String(state.rounds);
     fillSlotOptions(state.teams);   // slot options depend on team count
     var slotEl = document.getElementById('drSlot'); if (slotEl && state.slot) slotEl.value = String(state.slot);
@@ -1027,17 +1030,18 @@
     }
     return state.sf ? p.sf_avg_pick : p.avg_pick;
   }
-  // Consensus ADP from the per-source payload (blended Sleeper/BR/ESPN/MFL/Yahoo),
-  // independent of the ADP-source dropdown. Used by Deep Dive's Value vs ADP
-  // chart so a BR Fantasy or Sleeper-only board still plots against the market.
-  // Null when consensus isn't on the player (rookie axis, historical overlay,
-  // or a source-less payload) — callers fall back to adpOf().
-  function consensusAdpOf(p){
+  // One named source's ADP from the per-source payload (adp_by_source), read on
+  // the axis the current draft is on (redraft vs dynasty x 1QB vs SF). Null when
+  // the source isn't on the player: the rookie axis (no per-source ADP), a
+  // historical completed-draft overlay (grades vs that season's ADP), a
+  // source-less payload, or a source with no entry for this player/format —
+  // callers fall back to consensus or adpOf().
+  function adpBySource(p, source){
     if (!p || !state) return null;
     if (state.type === 'rookie') return null;
     if (state.mode === 'live' && state.isComplete && state.season && cfg.season
         && Number(state.season) !== Number(cfg.season)) return null;
-    var by = p.adp_by_source && p.adp_by_source.consensus;
+    var by = p.adp_by_source && p.adp_by_source[source];
     if (!by) return null;
     var field = state.type === 'redraft'
       ? (state.sf ? 'sf_redraft_avg_pick' : 'redraft_avg_pick')
@@ -1046,6 +1050,11 @@
     if (v == null || !isFinite(Number(v))) return null;
     return Number(v);
   }
+  // Consensus ADP (blended Sleeper/BR/ESPN/MFL/Yahoo), independent of the
+  // ADP-source display dropdown. Used by Deep Dive's Value vs ADP chart so a
+  // BR Fantasy or Sleeper-only board still plots against the market, and as the
+  // CPU pick engine's default/fallback source (see simAdp).
+  function consensusAdpOf(p){ return adpBySource(p, 'consensus'); }
 
   function loadPlayers(){
     var params = wantsKDef() ? ['kdef=1'] : [];
@@ -1391,15 +1400,19 @@
 
   // ── Simulation (mock draft) ─────────────────────────────────────────────────
   function simAdp(p){
-    // CPU opponents draft against CONSENSUS ADP (blended Sleeper/BR/ESPN/MFL/Yahoo),
-    // not the display-selected ADP source. Consensus is the least single-source-biased,
-    // best-covered estimate of how the real market drafts, so the board plays out the
-    // same realistic way on every platform regardless of which source the viewer has
-    // chosen in the ADP dropdown (that dropdown is an analysis lens, not a sim knob).
-    // Falls back to adpOf() wherever consensus is absent (rookie axis, a historical
-    // completed-draft overlay, or a source-less payload), then to the SF-QB / K-DEF /
-    // value-derived sentinels below.
-    var a = consensusAdpOf(p);
+    // CPU opponents draft against the source chosen in setup ("CPU drafts from",
+    // state.cpuAdpSource; default 'consensus'), NOT the in-draft display dropdown
+    // (that's an analysis lens, not a sim knob). Consensus (blended
+    // Sleeper/BR/ESPN/MFL/Yahoo) is the least single-source-biased, best-covered
+    // market estimate, so the default board plays out realistically on every
+    // platform; a single platform mocks a board that drafts like that site.
+    // Every source is attached to the payload independent of the dropdown, so no
+    // extra fetch is needed. Resolve the chosen source, then fall back to
+    // consensus, then adpOf(), then the SF-QB / K-DEF / value sentinels below —
+    // a source with no entry for this player/format never blanks a pick.
+    var src = (state && state.cpuAdpSource) || 'consensus';
+    var a = adpBySource(p, src);
+    if (a == null && src !== 'consensus') a = consensusAdpOf(p);
     if (a == null) a = adpOf(p);
     // In SF, if sf_avg_pick is missing for a QB but standard avg_pick exists, use
     // a deflated version (QBs are ~30% more valuable in SF so their pick comes earlier).
