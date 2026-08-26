@@ -589,7 +589,7 @@
     var cb = $('csClearBtn'); if (cb) cb.style.display = state.done.size ? '' : 'none';
     var liveBtn = $('csConnectLive');
     if (liveBtn) {
-      liveBtn.style.display = (cfg.hasPremium && cfg.leagueId && cfg.platform) ? '' : 'none';
+      liveBtn.style.display = (cfg.leagueId && cfg.platform) ? '' : 'none';
       liveBtn.textContent = liveDraftId ? 'Disconnect live draft' : 'Connect live draft';
     }
     // Custom board (pro): edit toggle always available; reset only with overrides.
@@ -910,9 +910,9 @@
 
   // ── live-draft cross-off ────────────────────────────────────────────────────
   function detectLiveDraft() {
-    // Live Sleeper draft sync (auto cross-off + real-time board) is a pro feature.
-    // Non-premium users keep the free static board (and any static mock snapshot).
-    if (!cfg.hasPremium || !cfg.leagueId || !cfg.platform) return Promise.resolve(false);
+    // Live Sleeper draft sync (auto cross-off + real-time board) is free once
+    // the viewer has a connected league. Custom board edits stay PRO.
+    if (!cfg.leagueId || !cfg.platform) return Promise.resolve(false);
     return fetch('/api/draft/detect?platform=' + encodeURIComponent(cfg.platform) + '&league_id=' + encodeURIComponent(cfg.leagueId) + '&season=' + (cfg.season || ''))
       .then(function (r) { return r.json(); })
       .then(function (resp) {

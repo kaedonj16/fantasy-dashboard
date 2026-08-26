@@ -96,8 +96,8 @@ def build_draft_room_body(
         # plain redraft leagues, where keepers do not apply; draft_room.js then
         # removes the Keeper option and its fields.
         "showKeeper": bool(show_keeper),
-        # Pro gate: the in-draft cheat-sheet overlay (with live sync) is premium.
-        # Non-premium users still reach the free standalone cheat sheet in a new tab.
+        # hasPremium still gates Draft Deep Dive and custom-board persistence.
+        # Live cheat-sheet overlay / sync is free.
         "hasPremium": bool(has_premium),
     }
     cfg_json = json.dumps(cfg)
