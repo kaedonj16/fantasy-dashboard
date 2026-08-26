@@ -151,6 +151,28 @@ def test_draft_room_only_shares_context_from_a_visible_draft_board():
     assert "q.push('live=1')" not in script
 
 
+def test_draft_room_overlay_stays_in_sync_with_picks():
+    """Open overlay is a snapshot first; later picks arrive via postMessage.
+
+    Live Sleeper polling stays opt-in. Cross-off uses the same `drafted` map as
+    best-available (keepers included), not only board cells.
+    """
+    room = (Path(__file__).parents[1] / "static" / "draft_room.js").read_text()
+    sheet = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
+
+    assert "function cheatDraftedIds()" in room
+    assert "Object.keys(drafted).forEach" in room
+    assert "type: 'drCheatContext'" in room
+    assert "function pushCheatSheetContext()" in room
+    assert "pushCheatSheetContext();" in room
+    assert "type === 'drCheatReady'" in room
+    assert "q.push('live=1')" not in room
+    assert "function applyDraftRoomContext(payload)" in sheet
+    assert "payload.type !== 'drCheatContext'" in sheet
+    assert "type: 'drCheatReady'" in sheet
+    assert "e.origin !== window.location.origin" in sheet
+
+
 def test_draft_room_cheat_sheet_shows_recommendation_context_without_reordering():
     room = (Path(__file__).parents[1] / "static" / "draft_room.js").read_text()
     sheet = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
