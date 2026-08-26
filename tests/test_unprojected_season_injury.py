@@ -31,12 +31,15 @@ def test_healthy_or_week_to_week_injury_is_not_forced_to_zero():
 
 
 def test_site_point_projections_do_not_read_fantasypros_files():
-    for rel in (
-        "app.py",
-        "routes/waiver_api_bp.py",
-        "data_building/simulate_playoff_odds.py",
-        "data_building/fetch_projections.py",
-    ):
-        text = (_REPO / rel).read_text(encoding="utf-8")
+    skip_dirs = {".git", ".venv", "env", "node_modules", "__pycache__", ".pytest_cache"}
+    for path in _REPO.rglob("*"):
+        if not path.is_file() or path.suffix not in {".py", ".js"}:
+            continue
+        if any(part in skip_dirs for part in path.parts):
+            continue
+        if path.relative_to(_REPO).parts[0] == "tests":
+            continue
+        text = path.read_text(encoding="utf-8")
+        rel = str(path.relative_to(_REPO))
         assert "fp_projections_" not in text, rel
         assert "fetch_fp_season_projections" not in text, rel

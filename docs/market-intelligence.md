@@ -60,7 +60,7 @@ path and are unaffected by season fallback logic.
 
 ## Baseline-anchored season projection
 
-The existing FantasyPros/site season projection is always the anchor. Independent
+The existing Sleeper season projection is always the anchor. Independent
 market evidence makes confidence-shrunk adjustments; missing components remain in
 the baseline and are never replaced with zero. With no independent evidence, the
 result is exactly the baseline and no Market vs ADP value is shown.
