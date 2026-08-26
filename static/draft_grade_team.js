@@ -116,9 +116,15 @@
       if (leaguePpgAvg > 0) {
         ppgRatio = myPpgAvg / leaguePpgAvg;
         // Redraft playoff odds sum every starting slot (empty = 0). Scale the
-        // filled-starter average by coverage so a stars-and-scrubs lineup with
-        // holes doesn't outrank a complete one on mean PPG alone.
-        if (redraft && slots.length) ppgRatio *= coverage;
+        // filled-starter average by coverage so a finished stars-and-scrubs
+        // roster with holes doesn't outrank a complete one on mean PPG alone.
+        // Only apply once the team has had enough picks to fill those slots —
+        // mid-draft every roster has holes, and raw coverage (2/8 at the start
+        // of round 3) zeros the 50-pt starter term and prints F for the whole
+        // league.
+        if (redraft && slots.length && picks.length >= slots.length) {
+          ppgRatio *= coverage;
+        }
       }
     }
     var myValAvg = starterArr.length
