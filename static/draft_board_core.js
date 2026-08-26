@@ -515,6 +515,19 @@
     return Math.max(1, Math.min(99, Math.round(score)));
   }
 
+  // When ranking recommendations for a future owned pick (you pick at #9,
+  // the clock is at #1), scale the live decision score by the chance that
+  // player is still on the board. A small floor keeps 0% names in a stable
+  // order among themselves without letting 1.01 talent outrank someone who
+  // will actually be there.
+  var REC_FUTURE_SURVIVE_FLOOR = 0.08;
+  function futurePickDecisionScore(score, survivePct) {
+    score = +score || 0;
+    if (survivePct == null || !isFinite(Number(survivePct))) return score;
+    var p = Math.max(0, Math.min(100, Number(survivePct))) / 100;
+    return score * (REC_FUTURE_SURVIVE_FLOOR + (1 - REC_FUTURE_SURVIVE_FLOOR) * p);
+  }
+
   function decisionBand(rows, round, persona) {
     rows = rows || []; round = +round || 1; persona = +persona || 0.8;
     var best = 0; rows.forEach(function(r){ if ((+r.ds || 0) > best) best = +r.ds || 0; });
@@ -757,7 +770,9 @@
     isStreamableSingleSlot: isStreamableSingleSlot, waitLossScaleFor: waitLossScaleFor,
     positionRosterLimit: positionRosterLimit,
     remainingObligations: remainingObligations,
-    decisionScore: decisionScore, decisionBand: decisionBand, selectDecisionCandidate: selectDecisionCandidate,
+    decisionScore: decisionScore, futurePickDecisionScore: futurePickDecisionScore,
+    REC_FUTURE_SURVIVE_FLOOR: REC_FUTURE_SURVIVE_FLOOR,
+    decisionBand: decisionBand, selectDecisionCandidate: selectDecisionCandidate,
     availabilityProbability: availabilityProbability, calibrateAvailability: calibrateAvailability,
     autoDraftNeedMultiplier: autoDraftNeedMultiplier,
     specialTeamsFillPos: specialTeamsFillPos,

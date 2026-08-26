@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-08-26",
         "tag": "fix",
+        "text": "Draft Room recommendations for your first pick no longer label every player Best available: while you wait, Rec ranks who is actually likely to be there (not 1.01 talent at 0%), and Best available is reserved for the top rec rather than used as a generic fallback.",
+        "link": "/draft"
+    },
+    {
+        "date": "2026-08-26",
+        "tag": "fix",
         "text": "Draft Room recommendations no longer let an empty 1QB or 1TE slot leap remaining WR/RB depth: filling that one streamable starter is still a real need, but it now competes with skill-position depth instead of ranking a board of QBs and TEs over a WR run.",
         "link": "/draft"
     },

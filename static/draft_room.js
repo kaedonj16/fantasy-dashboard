@@ -170,6 +170,22 @@
     for (var i = 0; i < owned.length; i++){ if (owned[i] > pn) return owned[i]; }
     return null;
   }
+  // The pick Rec / liveDecisionScore is advising. On the clock that's the
+  // current selection; while waiting it's your next owned pick so the board
+  // doesn't rank 1.01 talent as a pick-9 recommendation.
+  function recommendationPickNo(){
+    var cur = (state && state.current) || 1;
+    if (isMyPick(cur)) return cur;
+    var ups = upcomingOwnedPicks();
+    if (ups && ups.length) return ups[0];
+    return cur;
+  }
+  // Opportunity-cost / wait target: the owned pick AFTER the one we're ranking.
+  // On the clock this equals nextOwnedAfterCurrent(); while waiting for #9 it
+  // is #16, not #9 itself.
+  function recWaitPickNo(){
+    return nextOwnedPickAfter(recommendationPickNo());
+  }
   // Upcoming owned picks that have not been made yet (current pick included).
   function upcomingOwnedPicks(){
     return ownedPicks().filter(function(pn){ return pn >= state.current && !state.picks[pn]; });
@@ -3333,7 +3349,7 @@
   // O(players²) rescore: deep QB shelves produce a small urgency signal while a
   // thinning WR/RB shelf produces a larger one.
   function prepareNextPickValues(pool){
-    var c = psCtx(), next = nextOwnedAfterCurrent(); c.nextByPos = {}; c.demandByPos = {};
+    var c = psCtx(), next = recWaitPickNo(); c.nextByPos = {}; c.demandByPos = {};
     if (!next) return;
     c.demandByPos = _demandBeforeNext(next);
     ['QB','RB','WR','TE'].forEach(function(pos){
@@ -3375,7 +3391,12 @@
     }
     var adp = adpOf(p), exceptional = 0;
     if (adp != null) exceptional = clamp01(((state.current || 1) - adp) / Math.max(12, adp * 0.65));
-    var nextPick = nextOwnedAfterCurrent();
+    var recPn = recommendationPickNo();
+    var advisingFuture = recPn > ((state && state.current) || 1);
+    // Wait/opportunity-cost is vs the pick AFTER the one we're ranking.
+    // On the clock that's nextOwnedAfterCurrent(); while waiting for pick 9
+    // it is pick 16, not 9 itself (otherwise 1.01 talent is the #1 rec for #9).
+    var nextPick = recWaitPickNo();
     var returnProb = nextPick ? availProb(p, nextPick) : null;
     // Do not spend this pick on a player who is likely to return unless his
     // quality/fit advantage is large enough to overcome a bounded opportunity
@@ -3421,21 +3442,30 @@
     var waitLossScale = DraftBoardCore.waitLossScaleFor
       ? DraftBoardCore.waitLossScaleFor(pos, missDed, { sf: !!state.sf, tep: scoringCfg().tep })
       : (missDed >= 2 ? 1 : (missDed >= 1 ? 0.6 : 0.4));
-    return DraftBoardCore.decisionScore({ base: base, utility: util,
+    var score = DraftBoardCore.decisionScore({ base: base, utility: util,
       bench: bench, deepBench: role === 'bench2', recentPenalty: recentPenalty, exceptional: exceptional,
       quality: ppgNormOf(p) || 0, required: c.obligations.required,
       freePicks: c.obligations.freePicks,
       waitLoss: Math.max(0, base - expected) * (1 + demandRisk), waitLossScale: waitLossScale,
       waitPenalty: waitPenalty, handcuffBonus: handcuffBonus });
+    // While waiting, rank by expected value at YOUR pick so Gibbs at 0% at #9
+    // cannot sit at #1 REC above players who will actually be there.
+    if (advisingFuture && DraftBoardCore.futurePickDecisionScore){
+      score = DraftBoardCore.futurePickDecisionScore(score, availProb(p, recPn));
+    }
+    return score;
   }
   // How many players remain in this player's (position|tier) bucket.
   function tierRemaining(p){
     var t = tierOf(p); if (t == null) return null;
     return _ptc[(p.position || '').toUpperCase() + '|' + t] || 0;
   }
-  function pickReason(p, counts){
+  function pickReason(p, counts, opts){
+    opts = opts || {};
     var pos = (p.position || '').toUpperCase();
     var pickNo = (state && state.current) || 1;
+    var recPn = recommendationPickNo();
+    var advisingFuture = recPn > pickNo;
     var t = psCtx().targets[pos];
     var need = t ? Math.max(0, t - (counts[pos] || 0)) : 0;
     var adp = adpOf(p);
@@ -3457,16 +3487,35 @@
       return 'Only ' + left + ' ' + pos + 's left in Tier ' + tier;
     }
     // Relative steal: fell significantly relative to their own ADP tier.
+    // Uses the live clock (not the future rec pick) so a pick-9 look-ahead
+    // does not label ADP-1.7 "Elite steal" before anyone has been drafted.
     if (relGap != null && relGap >= 1.0) return 'Elite steal: ' + fell + ' picks past ADP';
     if (relGap != null && relGap >= 0.5) return 'Steal: fell ' + fell + ' picks past ADP';
-    // Roster need after early picks.
-    if (need > 0 && state.current > 4){
+    // Looking ahead to your next pick: don't stamp 1.01 talent "Best available"
+    // when they have no chance of being there.
+    if (advisingFuture){
+      var atRec = availProb(p, recPn);
+      if (atRec != null && atRec < 20){
+        return atRec <= 0
+          ? ('Gone before #' + recPn)
+          : ('Unlikely to last to #' + recPn);
+      }
+    }
+    // "Best available" is the top rec for this pick, not a generic fallback.
+    if (opts.rank === 1)
+      return advisingFuture ? ('Best available at #' + recPn) : 'Best available';
+    // Roster need after early picks (the rec pick, not the live clock — so a
+    // first-pick look-ahead at #9 can still name a positional need).
+    if (need > 0 && recPn > 4){
       if (tier != null && tier <= 2) return 'Tier ' + tier + ' ' + pos + ' fills a need';
       return 'Fills ' + pos + ' need (' + need + ' more to target)';
     }
     if (fell != null && fell >= 3) return 'Good value: ' + fell + ' past ADP';
     if (tier != null && tier <= 2) return 'Elite tier (T' + tier + ') talent';
-    return 'Best available';
+    // Redraft has no dynasty tiers; ADP round is the talent signal.
+    if (adp != null && adp <= 12) return '1st-round talent';
+    if (adp != null && adp <= 24) return 'Early-round talent';
+    return 'Strong remaining value';
   }
 
   function tierBadge(p){
@@ -3683,7 +3732,7 @@
     var nextPick = nextOwnedAfterCurrent();
     for (var i = 0; i < Math.min(pool.length, 50); i++){
       var p = pool[i];
-      var opts = { reason: pickReason(p, counts), rank: i + 1 };
+      var opts = { reason: pickReason(p, counts, { rank: i + 1 }), rank: i + 1 };
       if (nextPick){
         var wp = availProb(p, nextPick);
         if (wp != null){
@@ -5535,7 +5584,8 @@
     var _reasonCounts = sortBy === 'ps' ? myPosCounts() : null;
     for (var i = 0; i < Math.min(mainPool.length, 200); i++){
       var p = mainPool[i];
-      var opts = sortBy === 'ps' ? { reason: pickReason(p, _reasonCounts), rank: recommendationRanks[String(p.id)] }
+      var _rank = recommendationRanks[String(p.id)];
+      var opts = sortBy === 'ps' ? { reason: pickReason(p, _reasonCounts, { rank: _rank }), rank: _rank }
         : { showPickScore: sortBy === 'pickscore' };
       if (nextPick){
         var prob = availProb(p, nextPick);
@@ -5562,7 +5612,7 @@
   // ── Glossary / inline term explainers ───────────────────────────────────────
   // Single source of truth so the inline ⓘ tooltips and the help popover agree.
   var _GLOSSARY = [
-    { term: 'Recommendation', def: 'The live, roster-aware order for this pick. It starts with Pick Score, then accounts for whether the player fills a starter or FLEX spot, backup and overfill cost, required slots and picks remaining, positional depth, expected availability at your next pick, and recent investment at QB or TE. A major value fall can still overcome imperfect roster fit. Recommendation is shown as a rank rather than a grade because its internal utility naturally changes as the board is depleted.' },
+    { term: 'Recommendation', def: 'The live, roster-aware order for this pick. It starts with Pick Score, then accounts for whether the player fills a starter or FLEX spot, backup and overfill cost, required slots and picks remaining, positional depth, expected availability at your next pick, and recent investment at QB or TE. A major value fall can still overcome imperfect roster fit. When it is not your turn, the order is for your next owned pick and players unlikely to last there are ranked down. Recommendation is shown as a rank rather than a grade because its internal utility naturally changes as the board is depleted.' },
     { term: 'Pick Score (PS)', def: 'A 0-100 grade of pick quality. It is a composite of trade value, positional VOR, ADP, tier, roster need, and projected points — not a count of which compare-modal rows a player wins. On the live board, sidebar, compare modal, and player preview it is scaled relative to the best player still available (so a strong late pick still reads well). Made-pick chips on the report card / Deep Dive “Board PS”, and Deep Dive’s Avg pick score, use the same relative scale at that historical slot. Your letter grade’s Value bar uses the absolute, round-weighted kernel score — those two numbers can differ. Kickers and defenses aren’t scored. Missing projections fall back to value rather than counting as zero.' },
     { term: 'Value', def: 'The player’s trade value as an asset on a 0-999 scale - dynasty value for startup/rookie drafts, redraft value for redraft.' },
     { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a replacement-level starter at their position (a fixed, preseason-style baseline). VORP uses projected season fantasy points; VOR uses dynasty or redraft trade value. Last season\'s injury-shortened totals are not used.' },
@@ -6598,7 +6648,7 @@
     var psRel = null;
     try { psRel = psDisplay(ps); } catch (e){ psRel = null; }
     var reason = '';
-    try { reason = pickReason(p, myPosCounts()); } catch (e){ reason = ''; }
+    try { reason = pickReason(p, myPosCounts(), { rank: recRankOf(p) }); } catch (e){ reason = ''; }
     state.picks[pn] = { id: p.id, name: p.name, position: p.position, team: p.team, val: Math.round(valOf(p)), ps: ps, psRel: psRel, reason: reason };
     drafted[String(p.id)] = true;
     // Drop the just-drafted player from the queue so it stays a live target list
@@ -6845,7 +6895,7 @@
       + '<div class="dr-prev-score-hero" style="border-color:' + sc + ';background:' + sc + '1a;">'
       + '<div class="dr-prev-score-num" style="color:' + sc + '">' + (ps != null ? ps : '&ndash;') + '</div>'
       + '<div class="dr-prev-score-lbl">Pick Score' + infoIcon('A 0-100 grade of this pick at this slot: value, fall vs ADP, tier, your needs, age, and projected points. Higher is better.') + '</div>'
-      + '<div class="dr-prev-score-reason">' + esc(ps != null ? pickReason(p, myPosCounts()) : 'Streamer / last-round pick') + '</div>'
+      + '<div class="dr-prev-score-reason">' + esc(ps != null ? pickReason(p, myPosCounts(), { rank: recRankOf(p) }) : 'Streamer / last-round pick') + '</div>'
       + '</div>'
       // Stats grid
       + '<div class="dr-prev-stats">'
@@ -6856,7 +6906,7 @@
       + (f.projPpg != null ? statBox('Proj PPG', f.projPpg.toFixed(1), 'projected', 'Points per game, projected for the upcoming season.') : '')
       + (f.lastPpg != null ? statBox((f.ppgSeason ? f.ppgSeason + ' PPG' : 'PPG'), f.lastPpg.toFixed(1), f.ppgRank != null ? (pos + f.ppgRank) : 'last season', 'Points per game last season.') : '')
       + (f.posRank ? statBox('Pos Rank', f.posRank, null, 'Rank at this position by current value.') : '')
-      + (f.rec != null ? statBox('REC', '#' + f.rec, null, 'Live recommendation rank for this pick — roster-aware order, not a grade.') : '')
+      + (f.rec != null ? statBox('REC', '#' + f.rec, null, 'Live recommendation rank for this pick — roster-aware order, not a grade. While you wait, it is ranked for your next owned pick.') : '')
       + (f.bye != null ? statBox('Bye', f.bye, null, 'NFL bye week. Stacking several players on the same bye can leave a hole.') : '')
       + (f.projPts != null ? statBox('Proj Pts', Math.round(f.projPts), 'season', 'Projected fantasy points for the full upcoming season.') : '')
       + (f.market != null ? statBox('Mkt vs ADP', fmtSigned(Math.round(f.market), 0), null, 'How much earlier (positive) or later (negative) betting markets imply this player should go versus ADP.') : '')

@@ -47,12 +47,21 @@ def test_player_load_failure_exposes_api_error_and_retry_control():
 
 def test_pick_reason_uses_its_own_current_pick_variable():
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
-    match = re.search(r"function pickReason\(p, counts\)\{(.*?)\n  \}", source, re.DOTALL)
+    match = re.search(r"function pickReason\(p, counts, opts\)\{(.*?)\n  \}", source, re.DOTALL)
 
     assert match
     body = match.group(1)
     assert "var pickNo = (state && state.current) || 1;" in body
     assert "_pn" not in body
+    # Steal math stays on the live clock so a pick-9 look-ahead does not call
+    # ADP 1.7 an "Elite steal" before anyone has been drafted.
+    assert "Math.round(pickNo - adp)" in body
+    # "Best available" is the #1 rec, not the fallback for every row.
+    assert "if (opts.rank === 1)" in body
+    assert "return 'Strong remaining value';" in body
+    assert "Gone before #" in body
+    assert "Best available at #" in body
+    assert "1st-round talent" in body
 
 
 def test_board_offers_pick_score_sort_instead_of_steals():
@@ -75,6 +84,7 @@ def test_glossary_explains_live_recommendation_logic():
     assert "required slots and picks remaining" in source
     assert "expected availability at your next pick" in source
     assert "shown as a rank rather than a grade" in source
+    assert "When it is not your turn, the order is for your next owned pick" in source
 
 
 def test_recommendation_rows_use_compact_rank_and_reason_copy():
@@ -237,7 +247,8 @@ def test_position_filters_preserve_all_player_recommendation_rank():
 
     assert "function rankedRecommendationPool()" in source
     assert "recommendationRanks[String(p.id)] = i + 1" in source
-    assert "rank: recommendationRanks[String(p.id)]" in source
+    assert "_rank = recommendationRanks[String(p.id)]" in source
+    assert "rank: recommendationRanks[String(p.id)]" not in source
     assert "rank: i + 1 }\n        : { showPickScore" not in source
 
 
@@ -290,6 +301,12 @@ def test_likely_next_pick_survivors_pay_current_pick_opportunity_cost():
     assert "c.demandByPos = _demandBeforeNext(next);" in source
     assert "var effectiveReturnProb = returnProb == null ? null : returnProb * (1 - demandRisk);" in source
     assert "waitPenalty: waitPenalty" in source
+    # Wait target is the pick AFTER the rec pick, so waiting for #9 does not
+    # treat pick 9 itself as "can wait until then".
+    assert "var nextPick = recWaitPickNo();" in source
+    assert "function recWaitPickNo()" in source
+    assert "function recommendationPickNo()" in source
+    assert "DraftBoardCore.futurePickDecisionScore(score, availProb(p, recPn))" in source
 
 
 def test_autodraft_uses_shared_need_multiplier_instead_of_uncapped_starter_boost():

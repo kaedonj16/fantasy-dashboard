@@ -5,6 +5,12 @@ import json
 
 import pytest
 
+# The lightweight CI lint job installs only pytest, but update_players imports
+# ``requests`` at module load. Skip this module there instead of erroring during
+# collection; the full-stack job has requests installed (see
+# test_sleeper_projection_fetch.py for the same guard).
+pytest.importorskip("requests")
+
 from data_building.external_data import player_current_team as pct
 from data_building.updates import update_players as up
 
