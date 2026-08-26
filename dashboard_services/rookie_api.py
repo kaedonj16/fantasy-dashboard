@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from typing import Any, Dict, List
 
@@ -298,11 +299,20 @@ def rankings():
         # Sort: tier ascending, then display_value descending within each tier
         result.sort(key=lambda x: (x.get("tier") or 99, -(x.get("display_value") or 0)))
 
-        return jsonify({
+        paused = (os.environ.get("ROOKIE_PIPELINE_PAUSED") or "1").strip().lower() in (
+            "1", "true", "yes", "on",
+        )
+        payload = {
             "draft_class_year": year,
             "total_players": total_players,
             "rankings": result,
-        })
+            "paused": paused,
+        }
+        if paused:
+            payload["reason"] = (
+                "Rookie prospect rankings are paused until the next draft cycle."
+            )
+        return jsonify(payload)
 
     except Exception as exc:
         log.exception("[rookie_api] /rankings error")

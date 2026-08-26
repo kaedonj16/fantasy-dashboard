@@ -44,6 +44,18 @@ def test_cheat_sheet_config_cannot_break_out_of_script_element():
     assert _embedded_config(body)["leagueId"] == hostile_id
 
 
+def test_csv_export_is_free_for_non_premium_viewers():
+    body = build_cheat_sheet_body("league-123", 2026, "sleeper", has_premium=False)
+    script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
+
+    assert 'id="csCsvBtn"' in body
+    assert "CSV (Pro)" not in script
+    assert "if (csvBtn) csvBtn.addEventListener('click', function () { exportCsv(); });" in script
+    # Custom-board edits stay gated; CSV is the only draft-cheat-sheet control
+    # that used to paywall on click and now always exports.
+    assert "if (!cfg.hasPremium) { if (typeof window.showPaywall === 'function') window.showPaywall('draft-cheat-sheet'); return; }" in script
+
+
 def test_live_sync_is_explicit_and_drafted_players_offer_board_reset():
     body = build_cheat_sheet_body(
         "league-123", 2026, "sleeper", has_premium=True,
@@ -149,6 +161,28 @@ def test_draft_room_only_shares_context_from_a_visible_draft_board():
     assert "(state.mode === 'mock' || state.mode === 'live')" in script
     assert "main && main.style.display !== 'none'" in script
     assert "q.push('live=1')" not in script
+
+
+def test_draft_room_overlay_stays_in_sync_with_picks():
+    """Open overlay is a snapshot first; later picks arrive via postMessage.
+
+    Live Sleeper polling stays opt-in. Cross-off uses the same `drafted` map as
+    best-available (keepers included), not only board cells.
+    """
+    room = (Path(__file__).parents[1] / "static" / "draft_room.js").read_text()
+    sheet = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
+
+    assert "function cheatDraftedIds()" in room
+    assert "Object.keys(drafted).forEach" in room
+    assert "type: 'drCheatContext'" in room
+    assert "function pushCheatSheetContext()" in room
+    assert "pushCheatSheetContext();" in room
+    assert "type === 'drCheatReady'" in room
+    assert "q.push('live=1')" not in room
+    assert "function applyDraftRoomContext(payload)" in sheet
+    assert "payload.type !== 'drCheatContext'" in sheet
+    assert "type: 'drCheatReady'" in sheet
+    assert "e.origin !== window.location.origin" in sheet
 
 
 def test_draft_room_cheat_sheet_shows_recommendation_context_without_reordering():

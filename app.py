@@ -68,6 +68,8 @@ from dashboard_services.matchups import (
     render_matchup_slide,
 )
 from dashboard_services.pages.graphs_page import build_graphs_body
+from dashboard_services.pages.scout_page import build_scout_body
+from dashboard_services.pages.weekly_hub_page import build_weekly_hub_body
 from dashboard_services.pages.history_page import (
     build_regular_season_team_stats,
     get_champion_and_runner_up,
@@ -364,6 +366,47 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
         return []
 
 
+def _playoff_tile_from_cache(odds_rows, viewer_roster_id, *, projected=False):
+    """Fill a hub playoff tile from a warm sim cache so first paint is not '-'.
+
+    Returns ``(pct_int, subtitle)`` or ``None`` when this roster has no row
+    (or, for the offseason tile, when the row is not a preseason projection).
+    """
+    if not odds_rows or not viewer_roster_id:
+        return None
+    rid = str(viewer_roster_id)
+    row = next((o for o in odds_rows if str((o or {}).get("roster_id")) == rid), None)
+    if not row:
+        return None
+    if projected and not row.get("is_projected"):
+        return None
+    try:
+        pct = int(round(float(row.get("playoff_pct") or 0)))
+    except (TypeError, ValueError):
+        return None
+    first = 0
+    try:
+        first = int(round(float(row.get("first_seed_pct") or 0)))
+    except (TypeError, ValueError):
+        first = 0
+    if projected:
+        sub = f"Projected · {first}% top seed" if first > 0 else "Projected from current rosters"
+        return pct, sub
+    if row.get("is_complete"):
+        sub = "Clinched" if pct >= 100 else ("Eliminated" if pct <= 0 else "Playoff bound")
+        return pct, sub
+    bye = 0
+    try:
+        bye = int(round(float(row.get("bye_pct") or 0)))
+    except (TypeError, ValueError):
+        bye = 0
+    sub = (
+        f"{first}% top seed" if first > 0
+        else (f"{bye}% first-round bye" if bye > 0 else "to make the playoffs")
+    )
+    return pct, sub
+
+
 # Cache for share card HTML (keyed by platform/league_id/season/roster_id).
 _SHARE_CARD_CACHE: dict = {}
 _SHARE_CARD_CACHE_TTL = 600  # 10 minutes
@@ -531,13 +574,15 @@ def _ensure_features_js() -> str:
     full app.js (so the site never breaks)."""
     static_dir = Path(__file__).parent / "static"
     src = static_dir / "app.js"
+    modal_src = static_dir / "player_modal.js"
     out = static_dir / "app-features.js"
     out_min = static_dir / "app-features.min.js"
     meta = static_dir / "app-features.min.js.src"
     marker = "/ @public-js:core-end"
     try:
         full = src.read_text(encoding="utf-8")
-        src_hash = hashlib.md5(full.encode("utf-8")).hexdigest()
+        modal = modal_src.read_text(encoding="utf-8") if modal_src.exists() else ""
+        src_hash = hashlib.md5((full + "\n" + modal).encode("utf-8")).hexdigest()
     except OSError:
         return ""
     if marker not in full:
@@ -551,6 +596,11 @@ def _ensure_features_js() -> str:
         _mi = full.find(marker)
         _line_end = full.find("\n", _mi)
         feat_src = full[_line_end + 1:] if _line_end != -1 else full.split(marker, 1)[1]
+        # openPlayerModal lives in player_modal.js so lite pages still get it
+        # when this bundle lazy-loads — do not attach player_modal.js on lite
+        # pages or the public.js stub is overwritten too early.
+        if modal:
+            feat_src = feat_src.rstrip() + "\n" + modal + "\n"
         out.write_text(feat_src, encoding="utf-8")
         try:
             import rjsmin
@@ -603,6 +653,7 @@ _PUBLIC_JS_V = _static_hash(_PUBLIC_JS_FILE)
 # it couldn't be built — render_page then serves the full app.js instead of lite.
 _FEATURES_JS_FILE = _ensure_features_js()
 _FEATURES_JS_V = _static_hash(_FEATURES_JS_FILE) if _FEATURES_JS_FILE else ""
+_PLAYER_MODAL_JS_V = _static_hash("player_modal.js")
 _PAYWALL_JS_V = _static_hash("paywall.js")
 _REDZONE_JS_V = _static_hash("redzone.js")
 _RANKINGS_JS_V = _static_hash("rankings.js")
@@ -864,6 +915,12 @@ except Exception as e:
     logger.warning("[value-history] init skipped: %s", e)
 
 try:
+    from dashboard_services.trade_time_values import init_trade_time_values_db
+    init_trade_time_values_db()
+except Exception as e:
+    logger.warning("[trade-time-values] init skipped: %s", e)
+
+try:
     from data_building.advanced_metrics import init_advanced_metrics_db
 
     init_advanced_metrics_db()
@@ -963,6 +1020,11 @@ try:
 
     app.register_blueprint(draft_api_bp)
     logger.info("[draft-api-bp] registered")
+
+    from routes.waiver_api_bp import waiver_api_bp
+
+    app.register_blueprint(waiver_api_bp)
+    logger.info("[waiver-api-bp] registered")
 
     from routes.advanced_metrics_bp import advanced_metrics_bp
 
@@ -1127,8 +1189,8 @@ FORM_BODY = """
       <div class="home-platform-row" aria-label="Supported platforms">
         <span class="home-platform-chip">Sleeper</span>
         <span class="home-platform-chip">ESPN</span>
-        <span class="home-platform-chip">Yahoo</span>
-        <span class="home-platform-chip">MFL</span>
+        <span class="home-platform-chip">Yahoo <span class="home-chip-note">Soon</span></span>
+        <span class="home-platform-chip">MFL <span class="home-chip-note">Public leagues</span></span>
       </div>
     </div>
 
@@ -1181,7 +1243,7 @@ FORM_BODY = """
             <button type="button" class="platform-btn platform-btn-disabled" disabled
                     title="Yahoo is temporarily unavailable while we finish Yahoo API setup.">Yahoo <span class="platform-soon">Soon</span></button>
             {% endif %}
-            <button type="button" class="platform-btn" data-platform="mfl">MFL</button>
+            <button type="button" class="platform-btn" data-platform="mfl">MFL <span class="platform-limit">Public</span></button>
           </div>
         </div>
 
@@ -1761,6 +1823,7 @@ BASE_HTML = """
     <!-- Cookie consent handled by Google's certified CMP (Funding Choices) -->
 
     <script src="/static/{app_js_file}?v={app_js_v}"></script>
+    {player_modal_js}
     <script src="/static/paywall.js?v={paywall_js_v}"></script>
     <script>
       {adsense_init}
@@ -2434,7 +2497,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
             _sl("scout", "Opponent Scout"), _sl("optimal", "Lineup Efficiency"),
             _sl("waivers", "Waivers & Start/Sit"), _sl("schedule", "Schedule Assistant"),
         ]
-        if platform == "sleeper" and not offseason:
+        if not offseason:
             rows.append(_sl("redzone", "Redzone"))
         weekly_html = _sec("Weekly", rows)
 
@@ -2446,9 +2509,8 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     trade_rows = [
         _sl("trade", "Trade Calculator"), _sl("trade-suggestions", "Suggestions", pro=True),
         _sl("trade-database", "Trade Database"),
+        _sl("trade-intel", "Trade Intel", pro=True),
     ]
-    if platform != "espn":
-        trade_rows.append(_sl("trade-intel", "Trade Intel", pro=True))
     trades_html = _sec("Trades", trade_rows)
 
     players_html = _sec("Players", [
@@ -3123,7 +3185,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 ("Prospects", "/prospects", "prospects"),
             ], ["players", "prospects", "breakouts", "top-movers", "compare"], "playersNavDropdown"),
             simple_dropdown("Draft", [
-                ("Draft Room", "/draft", "draft"),
+                ("Draft Room <span class='nav-capability-note'>Sleeper live</span>", "/draft", "draft"),
                 ("Cheat Sheet", "/draft/cheat-sheet", "draft-cheat-sheet"),
                 ("Draft History", "/draft/history", "draft-history"),
             ], ["draft", "draft-cheat-sheet", "draft-history"], "draftNavDropdown"),
@@ -3243,15 +3305,14 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # Navigation pills (no utilities)
     nav_pills = []
     nav_pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
-    _is_espn = (platform == "espn")
     nav_pills.append(nav_pill_dropdown("Trades", [
         ("Trade Calculator", "trade.page_trade", "trade", False),
         ("Suggestions <span class='nav-pro-badge'>PRO</span>", "trade.page_trade", "trade-suggestions", False,
          "?tab=suggestions"),
         ("Trade Database", "trade.page_trade_database", "trade-database", False),
-        # Trade Intel uses Sleeper trade data - not applicable for ESPN
-        *([("Trade Intel <span class='nav-pro-badge'>PRO</span>", "trade.page_trade_intel", "trade-intel",
-            False)] if not _is_espn else []),
+        # Market comps are Sleeper-sourced; the page still applies to ESPN/Yahoo/MFL
+        # rosters and explains that on the Trade Intel screen.
+        ("Trade Intel <span class='nav-pro-badge'>PRO</span>", "trade.page_trade_intel", "trade-intel", False),
     ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
     # Weekly dropdown is available as soon as the draft is done
     draft_ended = has_draft_ended(league_id, platform, season)
@@ -3277,13 +3338,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 "<span class='rz-nav-live'><span class='rz-nav-dot'></span>Redzone</span>"
                 if _rz_live else "Redzone"
             )
-            # Redzone live tracking relies on the Sleeper player index + Tank01
-            # boxscores, so it only works for Sleeper leagues. Hide it elsewhere
-            # rather than showing a broken, name-less live view.
-            if platform == "sleeper":
-                _weekly_items.append((_rz_label, "page_redzone", "redzone", False))
-                if _rz_live:
-                    _rz_pulse = "nav-pill-redzone-live"
+            # Player IDs are canonicalized onto the Tank01 boxscore feed, so
+            # Redzone works on Sleeper, ESPN, Yahoo, and MFL.
+            _weekly_items.append((_rz_label, "page_redzone", "redzone", False))
+            if _rz_live:
+                _rz_pulse = "nav-pill-redzone-live"
         nav_pills.append(nav_pill_dropdown(
             "Weekly", _weekly_items,
             ["weekly", "recap", "redzone", "scout", "optimal", "waivers", "schedule"],
@@ -3306,7 +3365,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # Keeper Assistant only applies to keeper leagues; hide it for dynasty and
     # plain redraft leagues.
     _draft_items = [
-        ("Draft Room", "tool_pages.page_draft_room", "draft", False),
+        ("Draft Room <span class='nav-capability-note'>Sleeper live</span>", "tool_pages.page_draft_room", "draft", False),
         ("Cheat Sheet", "tool_pages.page_cheat_sheet", "draft-cheat-sheet", False),
     ]
     if _nav_show_keeper(platform, league_id, season):
@@ -4217,6 +4276,10 @@ def render_page(
         sentry_js=_SENTRY_JS_SNIPPET,
         plotly_loader=_PLOTLY_LOADER,
         app_js_v=_page_js_v,
+        player_modal_js=(
+            f'<script src="/static/player_modal.js?v={_PLAYER_MODAL_JS_V}"></script>'
+            if not _use_lite else ""
+        ),
         paywall_js_v=_PAYWALL_JS_V,
         css_file=_CSS_FILE,
         css_v=_CSS_V,
@@ -6406,12 +6469,17 @@ def build_dashboard_body(ctx: dict) -> str:
     viewer_roster_id = viewer.get("viewer_roster_id")
 
     gm_memo_html = ""
-
-    if viewer_roster_id:
-        try:
-            gm_memo_html = get_team_gm_memo(ctx, str(viewer_roster_id))
-        except Exception:
-            logger.debug("dashboard: gm memo failed", exc_info=True)
+    _fo_premium = False
+    if viewer_roster_id and has_request_context():
+        _fo_premium = has_premium_for_viewer(
+            session.get("viewer_username"), session.get("viewer_user_id"),
+            league_id, platform, season,
+        )
+        if _fo_premium:
+            try:
+                gm_memo_html = get_team_gm_memo(ctx, str(viewer_roster_id))
+            except Exception:
+                logger.debug("dashboard: gm memo failed", exc_info=True)
 
     standings_html = render_standings_compact(
         team_stats, movement=_standings_movement(df_weekly),
@@ -6512,6 +6580,38 @@ def build_dashboard_body(ctx: dict) -> str:
           </div>
         </div>
         """
+    elif viewer_roster_id:
+        # Free users (and premium when AI is down) get the same Generate control
+        # as the offseason hub. The button is PRO-gated in JS and /api/gm-memo.
+        gm_card_html = f"""
+        <div class="card gm-card">
+          <div class="card-header">
+            <h2>Front Office Report</h2>
+            <div class="subtle-label">{viewer.get("viewer_team_name") or "Your Team"}</div>
+            <button type="button" id="generateGmMemoBtn" class="recap-generate-btn"
+                    data-league-id="{html.escape(str(league_id))}"
+                    data-season="{html.escape(str(season))}"
+                    data-platform="{html.escape(str(platform))}"
+                    data-viewer-roster-id="{html.escape(str(viewer_roster_id))}">
+              Generate Report
+            </button>
+          </div>
+          <div class="card-body">
+            <div class="otc-ai-empty" id="gm-memo-empty">
+              <div class="otc-ai-empty-sub">
+                Get personalized analysis on your roster, trade targets, and standings.
+              </div>
+            </div>
+            <div class="otc-ai-empty" id="gm-memo-loading" style="display:none;">
+              <div class="otc-ai-empty-title">Analyzing Your Roster...</div>
+              <div class="otc-ai-empty-sub">
+                <div class="loading-spinner" style="margin: 10px auto; width: 30px; height: 30px; border: 3px solid var(--border); border-radius: 50%; border-top-color: var(--accent); animation: spin 1s linear infinite; border-right-color: transparent;"></div>
+              </div>
+            </div>
+            <div id="gm-memo-result" style="display:none;"></div>
+          </div>
+        </div>
+        """
 
     # ---- Hero stat cards — mirror the offseason hub's hero card ----
     from utils.format import ordinal as _dash_ord
@@ -6580,21 +6680,46 @@ def build_dashboard_body(ctx: dict) -> str:
         for _lbl, _val, _sub in _hero_cards
     ]
 
-    # Playoff-odds tile — the Monte Carlo sim is heavy and cached behind the
-    # /api/playoff-odds endpoint, so render a placeholder and fill it client-side
-    # to keep first paint fast. Only meaningful when the viewer owns a team.
+    # Playoff-odds tile — serve a warm cache on first paint; if the sim is
+    # cold, kick it off in the background and let the client fill the tile.
     if viewer_roster_id:
-        _playoff_tile_html = f"""<div class="os-stat-card os-stat-playoff" id="dash-playoff-tile"
+        _po_val, _po_sub, _po_loaded = "-", "Simulating&hellip;", ""
+        try:
+            _warm = _playoff_sim_cached(ctx, platform, block=False) or []
+            _filled = _playoff_tile_from_cache(_warm, viewer_roster_id)
+            if _filled:
+                _po_val = f"{_filled[0]}%"
+                _po_sub = html.escape(_filled[1])
+                _po_loaded = " is-loaded"
+        except Exception:
+            logger.debug("dashboard playoff prefetch failed", exc_info=True)
+        _playoff_tile_html = f"""<div class="os-stat-card os-stat-playoff{_po_loaded}" id="dash-playoff-tile"
               data-platform="{html.escape(str(platform))}"
               data-league="{html.escape(str(league_id))}"
               data-season="{html.escape(str(season))}"
               data-roster="{html.escape(str(viewer_roster_id))}">
               <div class="os-stat-label">Playoff odds</div>
-              <div class="os-stat-value" id="dash-playoff-val">-</div>
-              <div class="os-stat-sub" id="dash-playoff-sub">Simulating&hellip;</div>
+              <div class="os-stat-value" id="dash-playoff-val">{_po_val}</div>
+              <div class="os-stat-sub" id="dash-playoff-sub">{_po_sub}</div>
             </div>"""
         # Slot right after the first (record) tile so it reads prominently.
         _hero_tiles.insert(1, _playoff_tile_html)
+
+    _dash_bulletins_html = ""
+    if str(platform or "sleeper").strip().lower() == "sleeper":
+        _dash_bulletins_html = f"""
+        <section class="os-card" id="leagueBulletinsContainer"
+                 data-league="{html.escape(str(league_id))}"
+                 data-platform="sleeper"
+                 data-season="{html.escape(str(season))}">
+          <div class="os-section-head">
+            <div class="os-section-head-content">
+              <h2 class="os-section-title">League Bulletins</h2>
+              <div class="os-section-subtitle">From your Sleeper league board</div>
+            </div>
+          </div>
+          <div class="bulletins-list">Loading&hellip;</div>
+        </section>"""
 
     _hero_stats_html = "".join(_hero_tiles)
 
@@ -6646,6 +6771,7 @@ def build_dashboard_body(ctx: dict) -> str:
         </nav>
 
         <div id="sinceLastVisitCard" class="slv-wrap" data-slv-init="1"></div>
+        {_dash_bulletins_html}
 
         <div id="os-jump-report" class="os-tab-panel os-tab-active">
           {lineup_alert_html}
@@ -6693,6 +6819,7 @@ def build_dashboard_body(ctx: dict) -> str:
     (function() {{
       var el = document.getElementById('dash-playoff-tile');
       if (!el) return;
+      if (el.classList.contains('is-loaded')) return;
       var rid = el.getAttribute('data-roster');
       var qs = 'platform=' + encodeURIComponent(el.getAttribute('data-platform')) +
                '&league_id=' + encodeURIComponent(el.getAttribute('data-league')) +
@@ -8484,20 +8611,28 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         </section>
         """
 
-    # Projected playoff-odds tile — the offseason hub runs on the upcoming
-    # season, which has no games yet, so /api/playoff-odds returns the sim's
-    # preseason projection (is_projected). Placeholder is filled client-side and
-    # removes itself when the schedule/roster data isn't ready to project.
+    # Projected playoff-odds tile — serve a warm cache on first paint; a cold
+    # sim is kicked off in the background and the client fills or removes the tile.
     _os_playoff_tile_html = ""
     if viewer_roster_id:
-        _os_playoff_tile_html = f"""<div class="os-stat-card os-stat-playoff" id="os-playoff-tile"
+        _os_val, _os_sub, _os_loaded = "-", "Projecting&hellip;", ""
+        try:
+            _os_warm = _playoff_sim_cached(ctx, platform, block=False) or []
+            _os_filled = _playoff_tile_from_cache(_os_warm, viewer_roster_id, projected=True)
+            if _os_filled:
+                _os_val = f"{_os_filled[0]}%"
+                _os_sub = html.escape(_os_filled[1])
+                _os_loaded = " is-loaded"
+        except Exception:
+            logger.debug("offseason playoff prefetch failed", exc_info=True)
+        _os_playoff_tile_html = f"""<div class="os-stat-card os-stat-playoff{_os_loaded}" id="os-playoff-tile"
               data-platform="{html.escape(str(platform))}"
               data-league="{html.escape(str(ctx.get('league_id', '')))}"
               data-season="{html.escape(str(season))}"
               data-roster="{html.escape(str(viewer_roster_id))}">
               <div class="os-stat-label">Projected playoff odds</div>
-              <div class="os-stat-value" id="os-playoff-val">-</div>
-              <div class="os-stat-sub" id="os-playoff-sub">Projecting&hellip;</div>
+              <div class="os-stat-value" id="os-playoff-val">{_os_val}</div>
+              <div class="os-stat-sub" id="os-playoff-sub">{_os_sub}</div>
             </div>"""
 
     body = f"""
@@ -8623,6 +8758,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         (function() {{
           var el = document.getElementById('os-playoff-tile');
           if (!el) return;
+          if (el.classList.contains('is-loaded')) return;
           var rid = el.getAttribute('data-roster');
           var qs = 'platform=' + encodeURIComponent(el.getAttribute('data-platform')) +
                    '&league_id=' + encodeURIComponent(el.getAttribute('data-league')) +
@@ -8977,537 +9113,7 @@ def _render_weekly_highlights(
     return highest_card + lowest_card + closest_card + blowout_card
 
 
-def build_weekly_hub_body(ctx: dict) -> str:
-    import json
-
-    league_id = ctx["league_id"]
-    platform = ctx["platform"]
-    season = ctx["season"]  # viewed season
-    rosters = ctx["rosters"]
-    users = ctx["users"]
-    df_weekly = ctx["df_weekly"]
-    roster_map = ctx["roster_map"]
-    players_map = ctx["players_map"]
-    current_week = int(ctx.get("current_week") or 0)
-    players_index = ctx["players_index"]
-    teams_index = ctx["teams_index"]
-    proj_by_week = ctx["proj_by_week"]
-    weeks = int(ctx["weeks"])
-    statuses = ctx["statuses"]
-    team_game_lookup = ctx["team_game_lookup"]
-    matchups_by_week = ctx["matchups_by_week"]
-    season_complete = bool(ctx.get("season_complete", False))
-    offseason_mode = bool(ctx.get("offseason_mode", False))
-
-    if (
-            df_weekly is not None
-            and not df_weekly.empty
-            and "finalized" in df_weekly.columns
-            and "week" in df_weekly.columns
-    ):
-        finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
-    else:
-        finalized_df = pd.DataFrame()
-
-    if not finalized_df.empty and "week" in finalized_df.columns:
-        last_final_week = int(finalized_df["week"].max())
-    else:
-        last_final_week = 0  # no finalized weeks yet → show projections for current week
-
-    max_week = max(1, weeks)
-
-    def clamp_week(w: int) -> int:
-        return max(1, min(max_week, int(w)))
-
-    if season_complete or offseason_mode:
-        default_week = clamp_week(last_final_week)
-    else:
-        default_week = clamp_week(current_week or 1)
-
-    _hub_vid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
-    default_matchups = sorted(
-        matchups_by_week.get(default_week, []) or [],
-        key=lambda m: 0 if _hub_vid and _hub_vid in (str((m.get("left") or {}).get("roster_id", "")),
-                                                     str((m.get("right") or {}).get("roster_id", ""))) else 1,
-    )
-
-    # Pre-compute head-to-head records for each current-week matchup
-    def _h2h_record(rid_a: str, rid_b: str) -> tuple[int, int]:
-        """Return (a_wins, b_wins) across all completed weeks this season."""
-        a_wins = b_wins = 0
-        for wk, wk_matchups in matchups_by_week.items():
-            if int(wk) >= default_week:
-                continue  # only count past weeks
-            for wm in wk_matchups:
-                la = str((wm.get("left") or {}).get("roster_id", ""))
-                ra = str((wm.get("right") or {}).get("roster_id", ""))
-                if set([la, ra]) == set([rid_a, rid_b]):
-                    lp = (wm.get("left") or {}).get("pts_total") or 0
-                    rp = (wm.get("right") or {}).get("pts_total") or 0
-                    if lp == 0 and rp == 0:
-                        continue
-                    if (la == rid_a and lp > rp) or (ra == rid_a and rp > lp):
-                        a_wins += 1
-                    else:
-                        b_wins += 1
-        return a_wins, b_wins
-
-    for _m in default_matchups:
-        _la = str((_m.get("left") or {}).get("roster_id", ""))
-        _ra = str((_m.get("right") or {}).get("roster_id", ""))
-        if _la and _ra:
-            _aw, _bw = _h2h_record(_la, _ra)
-            _m["h2h"] = {"left_wins": _aw, "right_wins": _bw}
-
-    _fpts_against_weekly = _compute_fpts_against(season)
-    slides = [
-        render_matchup_slide(
-            season,
-            m,
-            default_week,
-            last_final_week,
-            status_by_pid=(statuses.get(default_week) or {}).get("statuses", {}) or {},
-            projections=proj_by_week,
-            players=players_index,
-            teams=teams_index,
-            team_game_lookup=team_game_lookup,
-            fpts_against=_fpts_against_weekly,
-            viewer_roster_id=_hub_vid,
-        )
-        for m in default_matchups
-    ]
-    slides_html = "".join(slides) if slides else "<div class='m-empty'>No matchups</div>"
-    slides_by_week = {default_week: slides_html}
-
-    matchup_html = render_matchup_carousel_weeks(
-        slides_by_week,
-        dashboard=False,
-        active_week=default_week,
-    )
-
-    options = []
-    for w in range(1, max_week + 1):
-        sel = " selected" if w == default_week else ""
-        options.append(f"<option value='{w}'{sel}>Week {w}</option>")
-    week_select_html = "".join(options)
-
-    top_scorers_html = render_weekly_top_scorers_for_week(
-        league_id,
-        df_weekly,
-        roster_map,
-        players_map,
-        proj_by_week,
-        rosters,
-        default_week,
-        users,
-        platform,
-        season,
-        roster_positions=ctx.get("roster_positions") or [],
-    )
-    proj_by_roster = ctx.get("proj_by_roster") or {}
-    highlights_html = _render_weekly_highlights(
-        df_weekly, default_week,
-        proj_by_roster=proj_by_roster,
-        matchups_by_week=matchups_by_week,
-    )
-
-    proj_warn_html = ""
-    if not proj_by_week.get("_available"):
-        proj_warn_html = (
-            "<div class='card' style='margin-bottom:12px;background:#fffbeb;border:1px solid #f59e0b;'>"
-            "  <div class='card-body' style='padding:10px 14px;font-size:13px;color:#92400e;'>"
-            "    <strong>Projections unavailable</strong> - projected scores can't be loaded right now. "
-            "    Actual scores will still appear once games are final."
-            "  </div>"
-            "</div>"
-        )
-
-    main_panel_html = f"""
-          <div class="week-main-panel active" data-week="{default_week}">
-            {proj_warn_html}
-            {top_scorers_html}
-          </div>
-    """
-    side_panel_html = f"""
-          <div class="week-side-panel active" data-week="{default_week}">
-            {highlights_html}
-          </div>
-    """
-
-    platform_js = json.dumps(platform)
-    season_js = json.dumps(season)
-    league_js = json.dumps(league_id)
-    # Live/Redzone elements (LIVE badge, Redzone CTA, auto-refresh) only apply
-    # when an actual game is scheduled for today. Check the current week's
-    # schedule file for a game dated today, gated to the active season (mirrors
-    # the Redzone page/nav, which is hidden in the offseason). Past seasons
-    # never match today's date, so they resolve to no live UI automatically.
-    games_today = (not offseason_mode) and _games_scheduled_today(season, current_week)
-    games_today_js = json.dumps(bool(games_today))
-
-    scout_tab_html = ""
-    try:
-        scout_tab_html = build_scout_body(ctx)
-    except Exception:
-        logger.debug("weekly: scout body build failed", exc_info=True)
-
-    _scout_sign_in_hint = (
-        "your ESPN team name" if platform == "espn" else "your Sleeper username"
-    )
-    _scout_unavail = (
-        "<div style='padding:20px;text-align:center;color:var(--muted);font-size:0.9em;'>"
-        f"Scout report unavailable - sign in with {_scout_sign_in_hint} to see your opponent's breakdown."
-        "</div>"
-    )
-    scout_panel_content = scout_tab_html if scout_tab_html else _scout_unavail
-
-    optimal_panel_content = ""
-    try:
-        optimal_panel_content = build_optimal_body(ctx)
-    except Exception:
-        optimal_panel_content = ("<div style='padding:20px;text-align:center;color:var(--muted);font-size:0.9em;'>"
-                                 "Optimal lineup data unavailable.</div>")
-
-    return f"""
-    <div class="page-layout weekly-hub">
-      <main class="page-main">
-        <div class="card">
-          <div class="card-header-row">
-            <div>
-              <h2>Weekly Hub</h2>
-            </div>
-            <div class="week-selector">
-              <select id="hubWeek" class="search">
-                {week_select_html}
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <div id="weekly-rz-cta" class="weekly-rz-cta" style="display:none">
-          <span class="weekly-rz-cta-dot"></span>
-          <span class="weekly-rz-cta-text">NFL games are live right now, track your players in real time.</span>
-          <a href="./redzone" class="weekly-rz-cta-link">Watch on Redzone →</a>
-        </div>
-
-        <div class="card-tabs weekly-hub-tabs" id="weeklyLeftTabs">
-          <div class="tab-bar">
-            <button class="tab-btn active" data-tab="matchups">Matchups</button>
-            <button class="tab-btn" data-tab="scorers">Scorers</button>
-            <button class="tab-btn" data-tab="scout">Scout</button>
-            <button class="tab-btn" data-tab="optimal">Lineup</button>
-          </div>
-          <div class="tab-panels">
-            <div class="tab-panel active" data-tab="matchups">
-              <div class="matchups-shell">
-                <div id="weeklyMatchupsContainer">
-                  {matchup_html}
-                </div>
-                <div id="weeklyMatchupsLoading" class="matchups-loading hidden">
-                  <div class="matchups-loading-inner">
-                    <div class="matchups-spinner"></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div class="tab-panel" data-tab="scorers">
-              <div class="week-leaders-band">
-                <div class="week-leaders-title">Week Leaders</div>
-                <div class="week-side-panels">
-                  {side_panel_html}
-                </div>
-              </div>
-              <div class="week-main-panels">
-                {main_panel_html}
-              </div>
-            </div>
-            <div class="tab-panel" data-tab="scout">
-              {scout_panel_content}
-            </div>
-            <div class="tab-panel" data-tab="optimal">
-              {optimal_panel_content}
-            </div>
-          </div>
-        </div>
-      </main>
-    </div>
-
-<script>
-// Weekly Hub is a single one-section-at-a-time tab switcher: Matchups (default) /
-// Scorers / Scout / Lineup. The matchup cards live in the Matchups panel; the
-// Week Leaders band + top scorers live in the Scorers panel. The week-change JS
-// below finds .week-main-panels, .week-side-panels and #weeklyMatchupsContainer
-// by selector regardless of which panel holds them, so re-renders keep working.
-
-(function() {{
-  var leagueId  = {league_js};
-  var platform  = {platform_js};
-  var season    = {season_js};
-
-  var sel = document.getElementById('hubWeek');
-  if (!sel) return;
-  if (sel.__hubWeekBound) return;
-  sel.__hubWeekBound = true;
-
-  var matchupsContainer = document.getElementById('weeklyMatchupsContainer');
-  var loadingOverlay    = document.getElementById('weeklyMatchupsLoading');
-  var mainContainer = document.querySelector('.week-main-panels');
-  var sideContainer = document.querySelector('.week-side-panels');
-
-  function showLoading() {{
-    if (loadingOverlay) loadingOverlay.classList.remove('hidden');
-    sel.disabled = true;
-  }}
-
-  function hideLoading() {{
-    if (loadingOverlay) loadingOverlay.classList.add('hidden');
-    sel.disabled = false;
-  }}
-
-  var controller = null;
-  var requestSeq = 0;
-
-  sel.addEventListener('change', function() {{
-    var w = String(this.value || '');
-    if (!w) return;
-
-    if (controller) {{
-      try {{ controller.abort(); }} catch (e) {{}}
-    }}
-    controller = (window.AbortController ? new AbortController() : null);
-
-    var mySeq = ++requestSeq;
-    showLoading();
-
-    var url =
-      '/api/weekly-week?platform=' + encodeURIComponent(platform) +
-      '&season=' + encodeURIComponent(season) +
-      '&league_id=' + encodeURIComponent(leagueId) +
-      '&week=' + encodeURIComponent(w);
-
-    fetch(url, {{
-      signal: controller ? controller.signal : undefined
-    }})
-      .then(function(res) {{
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return res.json();
-      }})
-      .then(function(data) {{
-        if (mySeq !== requestSeq) return;
-        if (!data || !data.ok) {{
-          console.error('Failed to load week', w, data && data.error);
-          return;
-        }}
-
-        if (mainContainer && typeof data.top_html === 'string') {{
-          mainContainer.innerHTML =
-            '<div class="week-main-panel active" data-week="' + w + '">' +
-              data.top_html +
-            '</div>';
-        }}
-
-        if (sideContainer && typeof data.highlights_html === 'string') {{
-          sideContainer.innerHTML =
-            '<div class="week-side-panel active" data-week="' + w + '">' +
-              data.highlights_html +
-            '</div>';
-          if (window.brInitMoments) window.brInitMoments(sideContainer);
-        }}
-
-        if (matchupsContainer && typeof data.matchups_html === 'string') {{
-          matchupsContainer.innerHTML = data.matchups_html;
-
-          if (typeof window.resetMatchupCarousels === 'function') {{
-            window.resetMatchupCarousels(matchupsContainer);
-          }}
-          if (typeof window.initPageRoot === 'function') {{
-            window.initPageRoot(matchupsContainer);
-          }}
-          if (window.brInitMoments) window.brInitMoments(matchupsContainer);
-        }}
-      }})
-      .catch(function(err) {{
-        if (err && err.name === 'AbortError') return;
-        console.error('Error fetching week', w, err);
-      }})
-      .finally(function() {{
-        if (mySeq === requestSeq) hideLoading();
-      }});
-  }});
-}})();
-
-// ── Weekly: game-day auto-refresh ──────────────────────────────────────────────
-(function() {{
-  var sel = document.getElementById('hubWeek');
-  if (!sel) return;
-
-  // Live only when the current week's schedule actually has a game dated today
-  // (computed server-side from the schedule file), not merely a typical NFL day.
-  function liveActive() {{ return {games_today_js}; }}
-
-  // Show/hide Redzone CTA banner
-  var cta = document.getElementById('weekly-rz-cta');
-  if (cta && liveActive()) cta.style.display = '';
-
-  // Live badge next to "Weekly Hub" h2
-  if (liveActive()) {{
-    var h2 = document.querySelector('.card-header-row h2');
-    if (h2 && !h2.querySelector('.weekly-live-badge')) {{
-      var badge = document.createElement('span');
-      badge.className = 'weekly-live-badge';
-      badge.textContent = 'LIVE';
-      h2.appendChild(badge);
-    }}
-  }}
-
-  // Auto-refresh the week every 60 s only when a game is happening today
-  if (!liveActive()) return;
-  var _autoRefreshSeq = 0;
-  setInterval(function() {{
-    var w = String(sel.value || '');
-    if (!w) return;
-    var mySeq = ++_autoRefreshSeq;
-    var url = '/api/weekly-week?platform=' + encodeURIComponent({platform_js}) +
-      '&season=' + encodeURIComponent({season_js}) +
-      '&league_id=' + encodeURIComponent({league_js}) +
-      '&week=' + encodeURIComponent(w);
-    fetch(url).then(function(res) {{
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      return res.json();
-    }}).then(function(data) {{
-      if (!data || !data.ok || mySeq !== _autoRefreshSeq) return; // stale or error
-      var mainContainer = document.querySelector('.week-main-panels');
-      var sideContainer = document.querySelector('.week-side-panels');
-      var matchupsContainer = document.getElementById('weeklyMatchupsContainer');
-      if (mainContainer && typeof data.top_html === 'string') {{
-        mainContainer.innerHTML = '<div class="week-main-panel active" data-week="' + w + '">' + data.top_html + '</div>';
-      }}
-      if (sideContainer && typeof data.highlights_html === 'string') {{
-        sideContainer.innerHTML = '<div class="week-side-panel active" data-week="' + w + '">' + data.highlights_html + '</div>';
-        if (window.brInitMoments) window.brInitMoments(sideContainer);
-      }}
-      if (matchupsContainer && typeof data.matchups_html === 'string') {{
-        var _applyMatchups = function() {{
-          matchupsContainer.innerHTML = data.matchups_html;
-          if (typeof window.resetMatchupCarousels === 'function') window.resetMatchupCarousels(matchupsContainer);
-          if (typeof window.initPageRoot === 'function') window.initPageRoot(matchupsContainer);
-          if (window.brInitMoments) window.brInitMoments(matchupsContainer);
-        }};
-        // Flash any matchup score that moved since the last refresh (green up /
-        // red down); falls back to a plain swap under reduced motion.
-        if (window.brFlashUpdates) window.brFlashUpdates(matchupsContainer, '.m-score-val', _applyMatchups);
-        else _applyMatchups();
-      }}
-    }}).catch(function() {{}});
-  }}, 60000);
-}})();
-
-// Activate a weekly left-tab by name and switch its panel
-function wkActivateTab(tab) {{
-  var container = document.getElementById('weeklyLeftTabs');
-  if (!container) return;
-  container.querySelectorAll('.tab-btn').forEach(function(b) {{ b.classList.remove('active'); }});
-  container.querySelectorAll('.tab-panel').forEach(function(p) {{ p.classList.remove('active'); }});
-  var btn   = container.querySelector('.tab-btn[data-tab="' + tab + '"]');
-  var panel = container.querySelector('.tab-panel[data-tab="' + tab + '"]');
-  if (btn)   btn.classList.add('active');
-  if (panel) panel.classList.add('active');
-}}
-
-// Activate left tab from ?tab= query param (e.g. ?tab=scout, ?tab=optimal)
-(function() {{
-  var tabParam = new URLSearchParams(window.location.search).get('tab');
-  if (!tabParam) return;
-  var container = document.getElementById('weeklyLeftTabs');
-  if (!container) return;
-  var btn = container.querySelector('.tab-btn[data-tab="' + tabParam + '"]');
-  if (!btn) return;
-  container.querySelectorAll('.tab-btn').forEach(function(b) {{ b.classList.remove('active'); }});
-  container.querySelectorAll('.tab-panel').forEach(function(p) {{ p.classList.remove('active'); }});
-  btn.classList.add('active');
-  var panel = container.querySelector('.tab-panel[data-tab="' + tabParam + '"]');
-  if (panel) panel.classList.add('active');
-}})();
-
-// Desktop layout (>=1100px): restore the pre-tab-switcher arrangement — the
-// Scorers/Scout/Lineup tabs in a left column, the matchup preview as the wide
-// right column, and Week Leaders in a right-hand "Weekly Tools" aside. Below
-// 1100px it stays the single 4-tab card (the mobile layout). Nodes are moved,
-// not duplicated, so the week-change / live-refresh JS keeps finding them.
-(function() {{
-  var tabs = document.getElementById('weeklyLeftTabs');
-  if (!tabs || tabs.__wkReflow) return;
-  tabs.__wkReflow = true;
-  var pageLayout = tabs.closest('.page-layout');
-  var main = tabs.closest('.page-main');
-  if (!pageLayout || !main) return;
-  var mq = window.matchMedia('(min-width: 1100px)');
-
-  function toDesktop() {{
-    if (tabs.__mode === 'desktop') return;
-    var bar   = tabs.querySelector('.tab-bar');
-    var mPanel = tabs.querySelector('.tab-panel[data-tab="matchups"]');
-    var mcEl  = document.getElementById('weeklyMatchupsContainer');
-    var shell = mcEl ? mcEl.closest('.matchups-shell') : null;
-    var band  = document.querySelector('.week-leaders-band');
-    if (!bar || !shell) return;
-    var two = document.createElement('div');
-    two.className = 'standings-main two-col-standings wk-desktop-two';
-    var leftCol = document.createElement('div');  leftCol.className = 'standings-col';
-    var rightCol = document.createElement('div'); rightCol.className = 'standings-col';
-    main.insertBefore(two, tabs);
-    leftCol.appendChild(tabs);          // tabs card -> left column
-    rightCol.appendChild(shell);        // matchup preview -> wide right column
-    two.appendChild(leftCol);
-    two.appendChild(rightCol);
-    if (band) {{
-      var aside = document.createElement('aside');
-      aside.className = 'page-sidebar wk-desktop-aside';
-      aside.setAttribute('data-sidebar-label', 'Weekly Tools');
-      aside.appendChild(band);          // Week Leaders -> right aside
-      pageLayout.appendChild(aside);
-    }}
-    var mBtn = bar.querySelector('.tab-btn[data-tab="matchups"]');
-    if (mBtn) mBtn.style.display = 'none';
-    wkActivateTab('scorers');
-    tabs.classList.add('wk-desktop');
-    tabs.__mode = 'desktop';
-  }}
-
-  function toMobile() {{
-    if (tabs.__mode === 'mobile') return;
-    var bar    = tabs.querySelector('.tab-bar');
-    var mPanel = tabs.querySelector('.tab-panel[data-tab="matchups"]');
-    var sPanel = tabs.querySelector('.tab-panel[data-tab="scorers"]');
-    var mcEl   = document.getElementById('weeklyMatchupsContainer');
-    var shell  = mcEl ? mcEl.closest('.matchups-shell') : null;
-    var band   = document.querySelector('.week-leaders-band');
-    if (shell && mPanel) mPanel.appendChild(shell);           // matchup -> back in its tab
-    if (band && sPanel) {{
-      var wmp = sPanel.querySelector('.week-main-panels');
-      if (wmp) sPanel.insertBefore(band, wmp); else sPanel.appendChild(band);
-    }}
-    var two = main.querySelector('.wk-desktop-two');
-    if (two) {{ main.insertBefore(tabs, two); main.removeChild(two); }}
-    var aside = pageLayout.querySelector('.wk-desktop-aside');
-    if (aside) pageLayout.removeChild(aside);
-    if (bar) {{
-      var mBtn = bar.querySelector('.tab-btn[data-tab="matchups"]');
-      if (mBtn) mBtn.style.display = '';
-    }}
-    wkActivateTab('matchups');
-    tabs.classList.remove('wk-desktop');
-    tabs.__mode = 'mobile';
-  }}
-
-  function apply() {{ if (mq.matches) toDesktop(); else toMobile(); }}
-  apply();
-  if (mq.addEventListener) mq.addEventListener('change', apply);
-  else if (mq.addListener) mq.addListener(apply);
-}})();
-</script>
-"""
-
+# build_weekly_hub_body lives in dashboard_services/pages/weekly_hub_page.py
 
 def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dict = None):
     from statistics import median
@@ -11396,665 +11002,12 @@ def page_dashboard(platform: str, season: int, league_id: str):
 # /portfolio and /watchlist are served by routes/user_pages_bp.py.
 
 
-@app.route("/api/waiver-candidates")
-def api_waiver_candidates():
-    """
-    Returns scored waiver wire candidates for a league.
-    Query params: platform, league_id, season, position (optional filter)
-    """
-    platform = (request.args.get("platform") or "sleeper").strip().lower()
-    league_id = (request.args.get("league_id") or "").strip()
-    season = int(request.args.get("season") or datetime.now().year)
-    position_filter = (request.args.get("position") or "").strip().upper()
+# ── Waiver APIs live in routes/waiver_api_bp.py ──────────────────────────────
+# /api/waiver-candidates and /api/trending-adds (plus _sleeper_trending_adds).
 
-    if not league_id:
-        return jsonify({"error": "league_id required"}), 400
-
-    try:
-        ctx = get_league_ctx_from_cache(platform, league_id, season)
-    except Exception as e:
-        return _api_err("Request failed", e)
-
-    rosters = ctx.get("rosters") or []
-    rostered_ids = {
-        str(pid)
-        for r in rosters
-        for pid in (r.get("players") or [])
-    }
-
-    # Detect whether the rookie draft has happened by checking if any
-    # current-year rookie Sleeper ID is already on a roster
-    _rookie_sids_wv: set[str] = set()
-    try:
-        from data_building.rookie_pipeline.pipeline import get_active_rookie_class as _grc_wv
-        from dashboard_services.db import get_conn as _gc_wv
-        _ry_wv = _grc_wv()
-        with _gc_wv() as _cc_wv:
-            _rr_wv = _cc_wv.execute(
-                "SELECT sleeper_id FROM rookie_prospects WHERE draft_class_year = %s AND sleeper_id IS NOT NULL",
-                (_ry_wv,),
-            ).fetchall()
-        _rookie_sids_wv = {str(r["sleeper_id"]) for r in _rr_wv if r["sleeper_id"]}
-    except Exception:
-        logger.debug("suppressed exception", exc_info=True)
-    _rookie_draft_done_wv = bool(_rookie_sids_wv and any(sid in rostered_ids for sid in _rookie_sids_wv))
-
-    players_index = ctx.get("players_index") or {}
-    model_value_table = list(get_model_value_table_cached() or [])
-
-    _rp_wv = ctx.get("roster_positions") or []
-    # Pick the value column that matches this league's format (redraft vs
-    # dynasty, 1QB vs Superflex) — shared with the offseason/Season-Hub card so
-    # both waiver surfaces rank and display off identical values.
-    _vf_wv, _vfb_wv = _waiver_value_keys(ctx)
-    # Auto-apply the league's TE premium, exactly like the value column: a no-op
-    # for non-TE-premium leagues / non-TEs.
-    _tep_wv = te_premium_from_settings(ctx.get("scoring_settings"))
-
-    candidates = []
-    for row in model_value_table:
-        if not isinstance(row, dict):
-            continue
-        pid = str(row.get("id") or "")
-        pos = str(row.get("position") or row.get("pos") or "").upper()
-        team = str(row.get("team") or players_index.get(pid, {}).get("team") or "").strip().upper()
-        if not pid or pid in rostered_ids:
-            continue
-        if pid in _rookie_sids_wv and not _rookie_draft_done_wv:
-            continue
-        if team in ("", "FA", "FREE AGENT"):
-            continue
-        if pos not in {"QB", "RB", "WR", "TE"}:
-            continue
-        try:
-            val = float(row.get(_vf_wv) or row.get(_vfb_wv) or 0.0)
-        except Exception:
-            val = 0.0
-        val = apply_te_premium(val, pos, _tep_wv)
-        # Floor out near-zero-value noise (see _build_waiver_targets_rows): a
-        # negligible-value free agent only surfaces on a trend/age bonus.
-        if val < WEIGHTS.min_value:
-            continue
-        pmeta_wv = players_index.get(pid, {})
-        precise_age_wv = age_from_bday(pmeta_wv.get("bDay"))
-        try:
-            age = precise_age_wv if precise_age_wv is not None else float(row.get("age") or 0)
-        except Exception:
-            age = 0.0
-        player_name = (
-                row.get("name")
-                or pmeta_wv.get("name")
-                or f"Player {pid}"
-        )
-        candidates.append({
-            "player_id": pid,
-            "name": player_name,
-            "position": pos,
-            "team": row.get("team") or players_index.get(pid, {}).get("team") or "",
-            "value": val,
-            "age": age,
-            "pos_rank_label": row.get("pos_rank_label") or "",
-            "rank_change_7d": row.get("rank_change_7d"),
-        })
-
-    # Breakout scores that align with the Breakout Engine page (same season
-    # resolution + eligibility gate), so the "Breakout" waiver signal never tags
-    # a player the engine wouldn't call a breakout.
-    waiver_breakout: dict = {}
-    try:
-        _db_url = os.getenv("DATABASE_URL", "").strip()
-        if _db_url and not any(t in _db_url for t in ("USER", "PASSWORD", "HOST")):
-            from dashboard_services.breakout_api import aligned_breakout_scores as _abs
-            waiver_breakout = _abs(
-                [c["player_id"] for c in candidates[:100]],
-                int(season) if season else None,
-            )
-    except Exception:
-        logger.debug("suppressed exception", exc_info=True)
-
-    # Weekly usage trends: recent role growth is the strongest waiver signal.
-    # Usage trends are a live in-season signal: last-3-week average vs season
-    # average. In the offseason the only data is last season's final weeks, which
-    # reads as if it were current activity ("Usage Spike / +6 touches" in July),
-    # so we hide usage entirely until real games return. Value/breakout signals
-    # ("Breakout", "Trending Up" from value-rank movement) still show.
-    usage_trends: dict = {}
-    try:
-        from data_building.weekly_metrics import get_usage_trends
-        _nfl_wv = get_nfl_state() or {}
-        if str(_nfl_wv.get("season_type") or "").lower() != "off":
-            usage_trends = get_usage_trends(int(_nfl_wv.get("season") or season))
-    except Exception:
-        usage_trends = {}
-
-    # Depth-chart injury vacancies: an injured player ahead of a candidate on
-    # the same team+position frees up the role directly. The reduced players_index
-    # cache lacks depth_chart_order / injury_status, so pull the full Sleeper
-    # players feed (get_players_global) and index it once per request.
-    _depth_idx_wv: dict = {}
-    _full_players_wv: dict = {}
-    try:
-        _full_players_wv = get_players_global() or {}
-        _depth_idx_wv = _build_depth_index(_full_players_wv)
-    except Exception:
-        logger.debug("suppressed exception", exc_info=True)
-
-    # Recent PPR points-per-game as a rest-of-season production proxy (#5), also
-    # reused to size injury vacancies by the vacated role's production (#7).
-    _ppg_by_pid_wv: dict = {}
-    try:
-        from utils.utils import load_usage_table
-        for _u in (load_usage_table() or []):
-            if isinstance(_u, dict):
-                _upid = str(_u.get("player_id") or _u.get("id") or "")
-                if _upid:
-                    _ppg_by_pid_wv[_upid] = _u.get("ppr_ppg")
-    except Exception:
-        logger.debug("suppressed exception", exc_info=True)
-
-    # Season projected PPG — the *healthy* production of a role, used to value an
-    # injury vacancy (the injured player projects ~0 while hurt, so their own
-    # recent ppg understates the role).
-    _season_ppg_wv: dict = {}
-    try:
-        from data_building.fetch_projections import fetch_fp_season_projections
-        _nfl_pj = get_nfl_state() or {}
-        _pj_season = int(_nfl_pj.get("season") or season)
-        for _pid, _row in (fetch_fp_season_projections(_pj_season, "ppr") or {}).items():
-            if isinstance(_row, dict) and _row.get("ppg") is not None:
-                _season_ppg_wv[str(_pid)] = _row.get("ppg")
-    except Exception:
-        logger.debug("suppressed exception", exc_info=True)
-
-    # Upcoming weekly projections — a player projected for ~0 points across the
-    # next N weeks IS the projection provider's read on how long they're out, so
-    # count the leading zero-run to get the injury timeline directly (#: weeks
-    # out from projections rather than guessing from the injury label).
-    _future_week_projs_wv: list = []
-    _future_week_teams_wv: list = []  # parallel: set of teams playing each week
-    try:
-        from utils.utils import load_week_projection, load_week_schedule
-        _nfl_wk = get_nfl_state() or {}
-        _proj_season = int(_nfl_wk.get("season") or season)
-        _cur_week = int(_nfl_wk.get("week") or _nfl_wk.get("display_week") or 1)
-        _horizon = int(round(float(WEIGHTS.injury_horizon_weeks))) + 2
-        for _w in range(_cur_week, _cur_week + _horizon):
-            _wp = load_week_projection(_proj_season, _w) or {}
-            _future_week_projs_wv.append(_wp if isinstance(_wp, dict) else {})
-            _teams = set()
-            for _g in (load_week_schedule(_proj_season, _w) or []):
-                if isinstance(_g, dict):
-                    for _side in ("away", "home"):
-                        _t = str(_g.get(_side) or "").upper()
-                        if _t:
-                            _teams.add(_t)
-            _future_week_teams_wv.append(_teams)
-    except Exception:
-        logger.debug("suppressed exception", exc_info=True)
-
-    def _week_pts_wv(week_map, pid):
-        """Extract a numeric weekly projection for pid from a (possibly
-        variant-nested) week projection map; None when absent."""
-        v = (week_map or {}).get(str(pid))
-        if isinstance(v, dict):
-            for _k in ("ppr", "pts", "points", "proj", "half_ppr", "std"):
-                if _k in v:
-                    v = v[_k]
-                    break
-        try:
-            return float(v) if v is not None and not isinstance(v, dict) else None
-        except (TypeError, ValueError):
-            return None
-
-    def _weeks_out_wv(pid):
-        """Projection-derived weeks-out for an injured player, or None if the
-        weekly projections aren't available. Bye weeks (team not scheduled) are
-        stripped first so a bye isn't mistaken for a missed game."""
-        if not _future_week_projs_wv:
-            return None
-        _pm = _full_players_wv.get(str(pid)) or players_index.get(str(pid)) or {}
-        _team = str(_pm.get("team") or "").upper()
-        series = [_week_pts_wv(_wm, pid) for _wm in _future_week_projs_wv]
-        plays = [
-            (_team in _tset) if (_tset and _team) else True
-            for _tset in _future_week_teams_wv
-        ]
-        series = _strip_bye_weeks(series, plays)
-        if all(x is None for x in series):
-            return None
-        return _weeks_out_from_projections(series)
-
-    def _forward_ppg_wv(pid):
-        """Mean of a player's own upcoming (non-bye) weekly projections — a
-        forward-looking production estimate (#1), better than backward ppg."""
-        if not _future_week_projs_wv:
-            return None
-        _pm = _full_players_wv.get(str(pid)) or players_index.get(str(pid)) or {}
-        _team = str(_pm.get("team") or "").upper()
-        vals = []
-        for _i, _wm in enumerate(_future_week_projs_wv):
-            _tset = _future_week_teams_wv[_i] if _i < len(_future_week_teams_wv) else set()
-            if _tset and _team and _team not in _tset:
-                continue  # bye
-            _p = _week_pts_wv(_wm, pid)
-            if _p is not None:
-                vals.append(max(0.0, _p))
-        return (sum(vals) / len(vals)) if vals else None
-
-    # Upcoming schedule ease per position (#3): a soft slate nudges a candidate up.
-    _matchup_by_pos_wv: dict = {}
-    try:
-        for _mp in ("QB", "RB", "WR", "TE"):
-            _rmap, _mtot, _minfo, _mz = _matchup_rank_table(season, _mp)
-            _matchup_by_pos_wv[_mp] = (_rmap or {}, int(_mtot or 0))
-    except Exception:
-        logger.debug("suppressed exception", exc_info=True)
-
-    # Positional scarcity / value-over-replacement (#4): value above the position's
-    # replacement level is worth more where the drop-off is steeper.
-    _repl_by_pos_wv: dict = {}
-    try:
-        _vals_by_pos = {}
-        for _row in model_value_table:
-            if isinstance(_row, dict):
-                _rpos = str(_row.get("position") or _row.get("pos") or "").upper()
-                if _rpos in ("QB", "RB", "WR", "TE"):
-                    try:
-                        _vals_by_pos.setdefault(_rpos, []).append(
-                            float(_row.get(_vf_wv) or _row.get(_vfb_wv) or 0.0)
-                        )
-                    except (TypeError, ValueError):
-                        pass
-        _teams_n = len(rosters) or 12
-        _repl_cutoffs = {"QB": _teams_n * 2, "RB": _teams_n * 3,
-                         "WR": _teams_n * 3, "TE": _teams_n * 1}
-        _repl_by_pos_wv = _replacement_levels(_vals_by_pos, _repl_cutoffs)
-    except Exception:
-        logger.debug("suppressed exception", exc_info=True)
-
-    # Viewer roster need (#4): a position the viewer is short on is worth more.
-    _need_scores_wv: dict = {}
-    try:
-        _starter_reqs = _starter_need_counts(_rp_wv, extra_depth=1)
-        _vsess = get_viewer_session_for_league(ctx.get("users") or [], rosters)
-        _vrid = str((_vsess or {}).get("viewer_roster_id") or "")
-        if _vrid:
-            _vros = next((r for r in rosters if str(r.get("roster_id")) == _vrid), None)
-            if _vros:
-                _counts = {}
-                for _pid in (_vros.get("players") or []):
-                    _pp = _full_players_wv.get(str(_pid)) or players_index.get(str(_pid)) or {}
-                    _ppos = str(_pp.get("position") or _pp.get("pos") or "").upper()
-                    if _ppos in ("QB", "RB", "WR", "TE"):
-                        _counts[_ppos] = _counts.get(_ppos, 0) + 1
-                _need_scores_wv = _positional_need_scores(_counts, _starter_reqs)
-    except Exception:
-        logger.debug("suppressed exception", exc_info=True)
-
-    _now_ms_wv = time.time() * 1000.0
-
-    def _freshness_wv(injured_pids):
-        # Proxy for injury recency via Sleeper's last_modified (ms): a role that
-        # went stale weeks ago is largely already absorbed by whoever replaced it.
-        lms = [
-            _full_players_wv.get(str(p), {}).get("last_modified")
-            for p in (injured_pids or [])
-        ]
-        lms = [x for x in lms if isinstance(x, (int, float)) and x > 0]
-        if not lms:
-            return 1.0
-        days_old = (_now_ms_wv - max(lms)) / 86400000.0
-        return max(0.6, min(1.0, 1.0 - max(0.0, days_old - 10.0) / 60.0))
-
-    # Attach every signal the shared scorer/labeler in utils.waiver_score reads,
-    # so ranking + badge reflect: usage spikes, depth-chart injury vacancies
-    # (proximity/volume/freshness weighted), the candidate's own health, roster
-    # need, and rest-of-season production — not just static dynasty value.
-    for c in candidates:
-        # Safe defaults so a failed signal-join for one candidate can't 500 the
-        # whole response (or the sort / result-building below that read these).
-        c.setdefault("usage_delta", None)
-        c.setdefault("usage_stat", None)
-        c["injured_ahead"] = c.get("injured_ahead") or []
-        c.setdefault("healthy_ahead", None)
-        c["vacated"] = c.get("vacated") or []
-        c.setdefault("injury_freshness", None)
-        c.setdefault("self_status", "")
-        c.setdefault("own_proj_ppg", None)
-        c.setdefault("ros_ppg", None)
-        c.setdefault("need_mult", 1.0)
-        c.setdefault("schedule_ease_rank", None)
-        c.setdefault("schedule_total", 0)
-        c.setdefault("scarcity_mult", 1.0)
-        c.setdefault("handcuff_upside", 0.0)
-        try:
-            ut = usage_trends.get(c["player_id"]) or {}
-            c["usage_delta"] = ut.get("delta")
-            c["usage_stat"] = ut.get("stat")
-
-            _da = _depth_analysis_for_player(c["player_id"], _full_players_wv, _depth_idx_wv)
-            _inj_pids = _da.get("injured_pids_ahead") or []
-            c["injured_ahead"] = _da.get("injured_ahead") or []
-            c["healthy_ahead"] = _da.get("healthy_ahead") or 0
-
-            # Handcuff upside (#8): the immediate backup to a healthy, high-usage
-            # starter is a valuable stash — if that starter goes down the role, and
-            # the fantasy points, transfer wholesale. Only the direct #2 (exactly
-            # one healthy body ahead) to an elite lead back earns it, scaled by that
-            # starter's ROS production. RB-only: no other position concentrates a
-            # role into a single handcuff the way a bell-cow backfield does.
-            _hc = 0.0
-            if c["position"] == "RB" and c["healthy_ahead"] == 1:
-                _sp = (_da.get("healthy_pids_ahead") or [None])[0]
-                if _sp is not None:
-                    _sppg = _forward_ppg_wv(_sp) or _ppg_by_pid_wv.get(_sp) or 0.0
-                    try:
-                        _sppg = float(_sppg or 0.0)
-                    except (TypeError, ValueError):
-                        _sppg = 0.0
-                    # ~14 ppg lead back → starts earning; ~19+ ppg bell-cow → full.
-                    _hc = max(0.0, min(1.0, (_sppg - 14.0) / 5.0))
-            c["handcuff_upside"] = _hc
-            # Value each vacancy from the injured player's role production (healthy
-            # season projected ppg, else recent ppg) and, crucially, from how long
-            # they're projected to be out (leading zero-run in the weekly
-            # projections) rather than a fixed guess by injury label.
-            _vac = _da.get("vacated") or []
-            for _v in _vac:
-                _vpid = str(_v.get("pid"))
-                _v["proj_ppg"] = _season_ppg_wv.get(_vpid) or _ppg_by_pid_wv.get(_vpid)
-                _v["weeks_out"] = _weeks_out_wv(_vpid)
-            c["vacated"] = _vac
-            c["injury_freshness"] = _freshness_wv(_inj_pids)
-
-            _self = _full_players_wv.get(c["player_id"]) or {}
-            c["self_status"] = _self.get("injury_status") or _self.get("status") or ""
-
-            # Forward projected ppg for this candidate (#1) — used for production
-            # and, via the transfer guard (#2), to fade injury upside taken.
-            _fwd_ppg = _forward_ppg_wv(c["player_id"])
-            c["own_proj_ppg"] = _fwd_ppg
-            c["ros_ppg"] = _fwd_ppg if _fwd_ppg is not None else _ppg_by_pid_wv.get(c["player_id"])
-
-            c["need_mult"] = _need_multiplier(c["position"], _need_scores_wv)
-
-            # Upcoming schedule ease (#3).
-            _team_up = str(_self.get("team") or players_index.get(c["player_id"], {}).get("team")
-                           or c.get("team") or "").upper()
-            _rmap_s, _tot_s = _matchup_by_pos_wv.get(c["position"], ({}, 0))
-            c["schedule_ease_rank"] = _rmap_s.get(_team_up)
-            c["schedule_total"] = _tot_s
-
-            # Positional scarcity (#4).
-            c["scarcity_mult"] = _scarcity_multiplier(c["position"], c["value"], _repl_by_pos_wv)
-        except Exception:
-            logger.exception("[waiver-candidates] signal join failed for %s", c.get("player_id"))
-            continue
-
-    def _safe_pickup_score(c):
-        try:
-            return _waiver_pickup_score(c, waiver_breakout, _WAIVER_PRIME_MAX)
-        except Exception:
-            logger.exception("[waiver-candidates] pickup score failed for %s", c.get("player_id"))
-            return 0.0
-
-    candidates.sort(key=_safe_pickup_score, reverse=True)
-    if position_filter and position_filter in {"QB", "RB", "WR", "TE"}:
-        candidates = [c for c in candidates if c["position"] == position_filter]
-
-    result = []
-    _shown = candidates[:30]
-    # One bulk local read. SportsGameOdds ingestion is scheduled separately and
-    # never runs in this request path.
-    try:
-        from dashboard_services.market_intelligence.repository import attach_weekly_signals as _attach_mi_wv
-        from dashboard_services.market_intelligence.signals import market_opportunity as _mi_opp
-        _mi_state_wv = get_nfl_state() or {}
-        _mi_week_wv = int(_mi_state_wv.get("week") or _mi_state_wv.get("display_week") or 1)
-        _attach_mi_wv(_shown, int(_mi_state_wv.get("season") or season), _mi_week_wv,
-                      site_key="ros_ppg", scoring_settings=ctx.get("raw_scoring_settings") or {})
-    except Exception:
-        logger.debug("market intelligence unavailable for waivers", exc_info=True)
-    from utils.model_confidence import confidence_from_inputs
-    # Badge trend relative to the shown set so the (trend-sorted) list doesn't
-    # read "Rising Fast" on every row.
-    _fast_thr, _up_thr = _adaptive_trend_thresholds([c.get("rank_change_7d") for c in _shown])
-
-    # Suggested FAAB bid band (% of budget). Only the top targets warrant real
-    # money; a player who fills the viewer's own roster need is nudged up. A band
-    # rather than a number because league budgets differ ($100 / $1000 / rolling);
-    # the % reads the same regardless. Gated client-side on the league using FAAB.
-    # FAAB detection. Sleeper's waiver_type == 2 is NOT sufficient on its own —
-    # rolling / waiver-priority leagues report the same code, so keying on it alone
-    # showed a bid % to non-FAAB leagues. A genuine FAAB league always carries a
-    # positive waiver_budget, so require both. ESPN uses an explicit acquisition
-    # budget. Fail closed when FAAB can't be confirmed so a non-FAAB league never
-    # sees a bid % it can't use.
-    _wv_settings = (ctx.get("league") or {}).get("settings") or {}
-    _faab_enabled = (
-        # Sleeper FAAB: waiver_type flagged AND a real budget to spend.
-            (_safe_int(_wv_settings.get("waiver_type"), -1) == 2
-             and _safe_int(_wv_settings.get("waiver_budget"), 0) > 0)
-            or _safe_int(_wv_settings.get("acquisition_budget"), 0) > 0  # ESPN FAAB
-    )
-    _wv_scores = [_safe_pickup_score(c) for c in _shown]
-    _wv_smin = min(_wv_scores) if _wv_scores else 0.0
-    _wv_srng = ((max(_wv_scores) - _wv_smin) if _wv_scores else 1.0) or 1.0
-
-    def _faab_band(_c):
-        # Waiver-wire targets, not premium trade pieces — keep bids modest so the
-        # single best add tops out around the low-20s% and typical adds sit in the
-        # low single digits, matching how much of a budget these fliers are worth.
-        _t = (_safe_pickup_score(_c) - _wv_smin) / _wv_srng  # 0..1 within shown set
-        _center = 1.0 + (_t ** 1.7) * 16.0  # top target ~17%, tapers fast
-        _center *= 1.0 + min(max((_c.get("need_mult") or 1.0) - 1.0, 0.0), 0.25)  # fills your need → bid up
-        # Elite-handcuff premium: the direct backup to a healthy stud starter is
-        # worth a real speculative bid beyond his standalone score — a top bell-cow
-        # handcuff lands ~10-18% even with a low pickup score of his own.
-        _center += float(_c.get("handcuff_upside") or 0.0) * 13.0
-        return max(0, int(round(_center * 0.72))), min(50, int(round(_center * 1.12)) + 1)
-
-    # ── Add/drop pairing: for each target, the best player on the viewer's own
-    # roster to cut to make room. Prefer thinning a position where the viewer is
-    # deep (esp. the add's own position); only ever suggest a drop that's a value
-    # downgrade from the add, so the pairing is always a genuine upgrade. Needs
-    # the viewer's roster, passed as ?rid= (the shared page cache means the client
-    # supplies it, matching the window._viewerRid personalization pattern).
-    _rid = (request.args.get("rid") or "").strip()
-    _mvt_by_id = {str(r.get("id")): r for r in model_value_table
-                  if isinstance(r, dict) and r.get("id")}
-    _KEEP = {"QB": 2, "RB": 5, "WR": 6, "TE": 2}  # keep-depth before a spot is "spare"
-
-    def _roster_val(pid: str) -> float:
-        row = _mvt_by_id.get(pid) or {}
-        try:
-            return apply_te_premium(
-                float(row.get(_vf_wv) or row.get("value") or 0.0),
-                str(row.get("position") or "").upper(), _tep_wv)
-        except Exception:
-            return 0.0
-
-    _drop_pool: list = []
-    _pos_counts: dict = {}
-    _viewer_roster = next((r for r in rosters if str(r.get("roster_id")) == _rid), None) if _rid else None
-    if _viewer_roster:
-        for pid in (_viewer_roster.get("players") or []):
-            pid = str(pid)
-            row = _mvt_by_id.get(pid) or {}
-            meta = players_index.get(pid, {})
-            pos = str(row.get("position") or meta.get("pos") or "").upper()
-            name = row.get("name") or meta.get("name") or f"Player {pid}"
-            _pos_counts[pos] = _pos_counts.get(pos, 0) + 1
-            # Never suggest cutting a current-class rookie — those are usually
-            # deliberate stashes (dynasty picks / upside bench holds), not spare
-            # parts. Keep them in the position counts (they do take a roster spot)
-            # but out of the droppable pool.
-            if pid in _rookie_sids_wv:
-                continue
-            _drop_pool.append({"player_id": pid, "name": name, "position": pos,
-                               "value": _roster_val(pid)})
-        _drop_pool.sort(key=lambda d: d["value"])  # weakest first
-
-    def _drop_for(_c):
-        if not _drop_pool:
-            return None
-        add_val = _c.get("value") or 0.0
-        add_pos = _c.get("position") or ""
-        elig = [d for d in _drop_pool if d["value"] < add_val]
-        if not elig:
-            return None  # everyone you'd cut is worth more than the add — hold
-        same_pos = [d for d in elig
-                    if d["position"] == add_pos and _pos_counts.get(add_pos, 0) > _KEEP.get(add_pos, 3)]
-        deep = [d for d in elig if _pos_counts.get(d["position"], 0) > _KEEP.get(d["position"], 3)]
-        pick = (same_pos or deep or elig)[0]
-        return {"name": pick["name"], "position": pick["position"], "value": round(pick["value"])}
-
-    for c in _shown:
-        try:
-            sig_cls, sig_label = _waiver_signal(
-                c, waiver_breakout, _WAIVER_PRIME_MAX,
-                fast_thr=_fast_thr, up_thr=_up_thr,
-            )
-            bscore = waiver_breakout.get(c["player_id"], 0.0)
-            ut = usage_trends.get(c["player_id"]) or {}
-            _flo, _fhi = _faab_band(c)
-            _confidence_inputs = sum([
-                c.get("ros_ppg") is not None,
-                c.get("usage_delta") is not None,
-                c.get("schedule_ease_rank") is not None,
-                c.get("age") is not None,
-                bool(c.get("team")),
-                c.get("value") is not None,
-            ])
-            _confidence = confidence_from_inputs(_confidence_inputs, 6)
-            _market_signal = c.get("market_signal") or {}
-            _market_opp = _mi_opp(c.get("market_projection"), c.get("ros_ppg"),
-                                  _market_signal.get("confidence"),
-                                  c.get("rostered_pct") or 0) if _market_signal else None
-            result.append({
-                "player_id": c["player_id"],
-                "name": c["name"],
-                "position": c["position"],
-                "team": c["team"],
-                "value": c["value"],
-                "age": c["age"],
-                "pos_rank_label": c["pos_rank_label"],
-                "rank_change_7d": c["rank_change_7d"],
-                "breakout_score": bscore,
-                "signal": sig_label,
-                "signal_class": sig_cls,
-                "composite_score": _safe_pickup_score(c),
-                "usage_delta": ut.get("delta"),
-                "usage_stat": ut.get("stat"),
-                "usage_series": ut.get("series"),
-                "injured_ahead": len(c.get("injured_ahead") or []),
-                "healthy_ahead": c.get("healthy_ahead"),
-                "ros_ppg": round(c["ros_ppg"], 1) if c.get("ros_ppg") is not None else None,
-                "roster_need": round((c.get("need_mult") or 1.0) - 1.0, 3),
-                "scarcity": round((c.get("scarcity_mult") or 1.0) - 1.0, 3),
-                "schedule_ease_rank": c.get("schedule_ease_rank"),
-                "faab_low": _flo,
-                "faab_high": _fhi,
-                "drop": _drop_for(c),
-                "confidence": _confidence,
-                "market_projection": c.get("market_projection"),
-                "market_opportunity": _market_opp,
-            })
-        except Exception:
-            logger.exception("[waiver-candidates] result row failed for %s", c.get("player_id"))
-            continue
-
-    return jsonify({"candidates": result, "total": len(result), "faab_enabled": _faab_enabled})
-
-
-_TRENDING_ADDS_CACHE: dict = {}
-_TRENDING_ADDS_TTL = 1800  # 30 min; a league-wide signal shared by all viewers
-
-
-def _sleeper_trending_adds(limit: int = 25, lookback_hours: int = 48) -> list:
-    """Sleeper's league-wide most-added players (add count over a lookback
-    window). Cached 30 min; this is a global signal, not per-league, so every
-    viewer shares one fetch. Best-effort: any failure returns []."""
-    key = (limit, lookback_hours)
-    hit = _TRENDING_ADDS_CACHE.get(key)
-    if hit and (time.time() - hit[0]) < _TRENDING_ADDS_TTL:
-        return hit[1]
-    try:
-        from dashboard_services.api import fetch_json
-        data = fetch_json(
-            f"/players/nfl/trending/add?lookback_hours={lookback_hours}&limit={limit}"
-        )
-        result = data if isinstance(data, list) else []
-    except Exception:
-        logger.debug("suppressed exception", exc_info=True)
-        result = []
-    if result:
-        _TRENDING_ADDS_CACHE[key] = (time.time(), result)
-    return result
-
-
-@app.route("/api/trending-adds")
-def api_trending_adds():
-    """Trending waiver adds across all Sleeper leagues, filtered to players the
-    viewer's league can still add (not already rostered), with our value + pos
-    rank joined on. Feeds the 'Trending across leagues' strip on Waivers."""
-    platform = (request.args.get("platform") or "sleeper").strip().lower()
-    league_id = (request.args.get("league_id") or "").strip()
-    season = int(request.args.get("season") or datetime.now().year)
-    if not league_id:
-        return jsonify({"trending": []})
-
-    # Trending is a Sleeper signal; other platforms just get an empty strip.
-    if platform != "sleeper":
-        return jsonify({"trending": []})
-
-    trend = _sleeper_trending_adds()
-    if not trend:
-        return jsonify({"trending": []})
-
-    try:
-        ctx = get_league_ctx_from_cache(platform, league_id, season)
-    except Exception:
-        ctx = {}
-    rostered_ids = {
-        str(pid)
-        for r in (ctx.get("rosters") or [])
-        for pid in (r.get("players") or [])
-    }
-    players_index = ctx.get("players_index") or get_players_index_global() or {}
-    _mvt = {str(r.get("id")): r for r in (get_model_value_table_cached() or [])
-            if isinstance(r, dict) and r.get("id")}
-
-    out = []
-    for row in trend:
-        pid = str(row.get("player_id") or "")
-        if not pid or pid in rostered_ids:
-            continue  # can't add what you already own
-        meta = players_index.get(pid) or {}
-        val_row = _mvt.get(pid) or {}
-        # Skip players we can't resolve in our index anywhere (neither the league
-        # players index nor the value table). These render as a nameless
-        # "Player 12345" card, which is noise — drop them entirely.
-        if not meta and not val_row:
-            continue
-        pos = str(val_row.get("position") or meta.get("pos") or "").upper()
-        if pos == "DEF":
-            name = f"{(meta.get('team') or pid)} D/ST"
-        else:
-            name = val_row.get("name") or meta.get("name") or f"Player {pid}"
-        out.append({
-            "player_id": pid,
-            "name": name,
-            "position": pos,
-            "team": (val_row.get("team") or meta.get("team") or "").upper(),
-            "value": round(float(val_row.get("value") or 0)),
-            "pos_rank_label": val_row.get("pos_rank_label") or "",
-            "adds": int(row.get("count") or 0),
-        })
-        if len(out) >= 12:
-            break
-    return jsonify({"trending": out})
-
+def _sleeper_trending_adds(*args, **kwargs):
+    from routes.waiver_api_bp import _sleeper_trending_adds as _fn
+    return _fn(*args, **kwargs)
 
 @app.route("/api/streaming-options")
 def api_streaming_options():
@@ -12176,6 +11129,17 @@ def api_streaming_options():
             })
             if len(kicker) >= 8:
                 break
+
+    _adds_by_id = {}
+    try:
+        for row in _sleeper_trending_adds(limit=50) or []:
+            pid = str(row.get("player_id") or "")
+            if pid:
+                _adds_by_id[pid] = int(row.get("count") or 0)
+    except Exception:
+        _adds_by_id = {}
+    for row in defense + kicker:
+        row["adds_48h"] = _adds_by_id.get(str(row.get("player_id")))
 
     return jsonify({"defense": defense, "kicker": kicker, "in_season": True})
 
@@ -12507,70 +11471,33 @@ def api_start_sit_options():
         injury_status = None if raw_status in {"", "active", "Active", "ACT"} else raw_status
         _imp_ss = (game_conditions.get(team) or {}).get("implied_total") if not on_bye else None
 
-        # ── Start/sit score: one engine, six signals ────────────────────────────
-        # projection × form × matchup × usage × availability × vegas × floor.
-        # Projection is the base; every other signal is a capped multiplier so it
-        # can sway a close call but not overturn a meaningful projection gap. This
-        # is the SINGLE source of truth for the whole advisor: the START badges,
-        # the optimal-lineup banner, and the head-to-head Compare card all rank on
-        # this same score, so they can never contradict each other. The per-factor
-        # multipliers are published (score_factors) so the Compare card can explain
-        # which of the six signals decided the call.
+        # ── Start/sit score: one engine, six signals (utils.start_sit_score). ──
+        from utils.start_sit_score import compute_start_score
         _ut_ss = _ss_usage_trends.get(pid) or {}
         usage_delta = _ut_ss.get("delta")
-        demotion = None
-        # Consistency (floor/ceiling, boom/bust) is resolved here, not just in the
-        # payload below, so the floor signal can feed the score.
         _cons = _resolve_consistency(pid, pos)
-        _form = _mu = _ug = _avail = _vg = _fl = 1.0
-        if on_bye:
-            score = 0.0
-        else:
-            # Recent form: capped ±10%
-            if recent_ppg > 0 and s_ppg > 0:
-                _form = min(1.10, max(0.90, recent_ppg / s_ppg))
-
-            # Matchup ease: rank 1=easiest → +10%, rank 32=hardest → -10%
-            if def_rank and def_total and def_total > 1:
-                _ease = (def_total - def_rank) / (def_total - 1)  # 0–1
-                _mu = 0.90 + _ease * 0.20  # 0.90–1.10
-
-            # Usage trend: last-3-week role vs season avg, capped ±5%. A rising
-            # role means the trailing PPG (form) understates this week's
-            # opportunity; a shrinking one means it overstates it.
-            if usage_delta is not None and _ut_ss.get("season_avg"):
-                _rel = usage_delta / max(float(_ut_ss["season_avg"]), 1.0)
-                _ug = min(1.05, max(0.95, 1.0 + _rel * 0.25))
-
-            # Availability: injury status only. An OUT/IR/Doubtful player must
-            # never win a start; a Questionable one takes a haircut.
-            _st_up = (injury_status or "").upper()
-            if any(k in _st_up for k in ("OUT", "IR", "SUSP", "DOUBT", "PUP", "DNP")):
-                _avail = 0.0
-                demotion = "out"
-            elif "QUESTION" in _st_up or _st_up in ("GTD", "Q"):
-                _avail = 0.85
-                demotion = "questionable"
-
-            # Vegas game environment: a low implied total fades everyone in the
-            # game, a high one nudges them up. Its own factor (split out of
-            # availability) so the Compare card and the score weigh it identically.
-            if _imp_ss is not None:
-                if _imp_ss <= 17:
-                    _vg = 0.94
-                    demotion = demotion or "low_total"
-                elif _imp_ss >= 27:
-                    _vg = 1.04
-
-            # Floor safety: a player who rarely busts is a safer start. Mapped
-            # from the boom/bust bust-rate (0..1): no busts → +10%, always busts →
-            # -10%, coin-flip → neutral. Only when we have a real sample.
-            if _cons and not _cons.get("small_sample"):
-                _bust = _cons.get("bust_rate")
-                if _bust is not None:
-                    _fl = min(1.10, max(0.90, 1.0 + (0.5 - float(_bust)) * 0.4))
-
-            score = proj_pts * _form * _mu * _ug * _avail * _vg * _fl
+        _bust = None
+        if _cons and not _cons.get("small_sample"):
+            _bust = _cons.get("bust_rate")
+        score, _factors, demotion = compute_start_score(
+            proj_pts,
+            on_bye=on_bye,
+            recent_ppg=recent_ppg,
+            season_ppg=s_ppg,
+            def_rank=def_rank,
+            def_total=def_total,
+            usage_delta=usage_delta,
+            usage_season_avg=_ut_ss.get("season_avg"),
+            injury_status=injury_status,
+            implied_total=_imp_ss,
+            bust_rate=_bust,
+        )
+        _form = _factors["form"]
+        _mu = _factors["matchup"]
+        _ug = _factors["usage"]
+        _avail = _factors["avail"]
+        _vg = _factors["vegas"]
+        _fl = _factors["floor"]
 
         positions_out[pos].append({
             "player_id": pid,
@@ -13998,7 +12925,8 @@ def page_breakouts(platform: str, season: int, league_id: str):
         <!-- Empty State -->
         <div id="breakoutsEmpty" style="display: none; text-align: center; padding: 40px; color: var(--text-muted);">
           <div style="font-size: 24px; margin-bottom: 12px; opacity:0.4;"><i class="fa-solid fa-chart-bar"></i></div>
-          <div>No breakout candidates found</div>
+          <div id="breakoutsEmptyTitle">No breakout candidates found</div>
+          <div id="breakoutsEmptyDetail" style="font-size:13px;margin-top:8px;display:none;"></div>
         </div>
       </div>
     </div>
@@ -14019,7 +12947,16 @@ def page_breakouts(platform: str, season: int, league_id: str):
           lockedCount = data.locked_count || 0;
           document.getElementById('breakoutsLoading').style.display = 'none';
 
-          if (breakoutCandidates.length === 0 && lockedCount === 0) {{
+          if (data && data.data_available === false) {{
+            var emptyTitle = document.getElementById('breakoutsEmptyTitle');
+            var emptyDetail = document.getElementById('breakoutsEmptyDetail');
+            if (emptyTitle) emptyTitle.textContent = 'Breakout data is not ready';
+            if (emptyDetail) {{
+              emptyDetail.textContent = data.reason || 'Opportunity scores need roster-change data for this season. This page will fill in once that pipeline has run.';
+              emptyDetail.style.display = 'block';
+            }}
+            document.getElementById('breakoutsEmpty').style.display = 'block';
+          }} else if (breakoutCandidates.length === 0 && lockedCount === 0) {{
             document.getElementById('breakoutsEmpty').style.display = 'block';
           }} else {{
             renderBreakouts();
@@ -15097,7 +14034,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             )
 
     fun_awards_section = ""
-    if fun_awards_html:
+    if fun_awards_html and season_records:
         fun_awards_section = f"""
     <div class="card">
       <div class="card-header"><h2>League Superlatives</h2></div>
@@ -15207,11 +14144,20 @@ def _page_skeleton(platform, season, league_id, cache_key, label) -> str:
     from urllib.parse import quote
     q = (f"page={quote(cache_key)}&platform={quote(str(platform))}"
          f"&league_id={quote(str(league_id))}&season={quote(str(season))}")
-    row = (
-        "<div class='card' style='padding:14px 16px;margin-bottom:10px;'>"
-        "<div class='sk-shimmer' style='width:40%;height:14px;border-radius:4px;margin-bottom:8px;'></div>"
-        "<div class='sk-shimmer' style='width:100%;height:70px;border-radius:6px;'></div></div>"
-    )
+    if "graphs" in str(cache_key):
+        # Chart-shaped shimmers (same language as Teams analytics-skeleton) so
+        # Graphs doesn't look like a generic list while Plotly payloads build.
+        row = (
+            "<div class='card graphs-skeleton'>"
+            "<div class='sk-shimmer sk-line' style='width:40%;height:14px;margin-bottom:12px;'></div>"
+            "<div class='sk-shimmer graphs-skeleton-chart'></div></div>"
+        )
+    else:
+        row = (
+            "<div class='card' style='padding:14px 16px;margin-bottom:10px;'>"
+            "<div class='sk-shimmer' style='width:40%;height:14px;border-radius:4px;margin-bottom:8px;'></div>"
+            "<div class='sk-shimmer' style='width:100%;height:70px;border-radius:6px;'></div></div>"
+        )
     return f"""
     <div class="page-main">
       <div class="teams-loading-indicator" id="brPageLoad" style="margin-bottom:14px;">
@@ -17513,17 +16459,24 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                 ctx, next_week, playoff_start, _league_id, _season, _platform, team_by_rid,
             )
 
-        from dashboard_services.ai.weekly_recap import get_weekly_ai_recap
-        ai_column_html, next_week_html = get_weekly_ai_recap(
-            df_weekly=df_weekly,
-            matchups_by_week=ctx.get("matchups_by_week") or {},
-            selected_week=selected_week,
-            team_by_rid=team_by_rid,
-            league=league,
-            league_id=ctx.get("league_id") or "",
-            season=ctx.get("season") or "",
-            next_week_ctx=next_week_ctx,
+        from dashboard_services.ai.weekly_recap import get_weekly_ai_recap, get_weekly_ai_recap_teaser
+        _has_prem = has_premium_for_viewer(
+            session.get("viewer_username"), session.get("viewer_user_id"),
+            _league_id, _platform, _season,
         )
+        if not _has_prem:
+            ai_column_html, next_week_html = get_weekly_ai_recap_teaser()
+        else:
+            ai_column_html, next_week_html = get_weekly_ai_recap(
+                df_weekly=df_weekly,
+                matchups_by_week=ctx.get("matchups_by_week") or {},
+                selected_week=selected_week,
+                team_by_rid=team_by_rid,
+                league=league,
+                league_id=ctx.get("league_id") or "",
+                season=ctx.get("season") or "",
+                next_week_ctx=next_week_ctx,
+            )
 
     # ── Lineup analysis: busts, sleepers, coaching mistakes ────────────────
     if preview_mode:
@@ -17543,7 +16496,8 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
             border:1px solid var(--accent);border-radius:8px;background:rgba(99,102,241,0.08);">
   <span style="font-size:18px;">👁️</span>
   <div style="font-size:13px;color:var(--text);">
-    <strong>Preview</strong> - this is sample data. Your real weekly recap will appear here after Week 1 completes.
+    <strong>Preview week</strong> — this is sample data, not your league’s results.
+    Your real weekly recap will appear here after Week 1 completes.
   </div>
 </div>"""
 
@@ -18035,6 +16989,17 @@ def _render_commissioner_history(layer, current_season, current_moves, current_t
 </div>"""
 
 
+def commissioner_is_inactive(txns, games_played) -> bool:
+    """Zero transactions after more than 3 games have been played."""
+    return int(txns or 0) == 0 and int(games_played or 0) > 3
+
+
+def commissioner_value_share_pct(team_value, league_total) -> float:
+    """Percent of league value this team holds."""
+    total = float(league_total or 0) or 1.0
+    return round(float(team_value or 0) / total * 100, 1)
+
+
 def build_commissioner_body(ctx):
     from dashboard_services.service import get_transactions_by_week
 
@@ -18111,7 +17076,7 @@ def build_commissioner_body(ctx):
         txns = txn_by_rid.get(rid) or int(r_st.get("total_moves") or 0)
         trades = trade_count_by_rid.get(rid, 0)
         games_played = wins + losses
-        inactive = txns == 0 and games_played > 3
+        inactive = commissioner_is_inactive(txns, games_played)
         roster_infos.append({
             "rid": rid, "name": roster_map.get(rid, f"Team {rid}"),
             "owner": owner_by_rid.get(rid, "Unknown"),
@@ -18124,7 +17089,7 @@ def build_commissioner_body(ctx):
     league_val_total = sum(r["value"] for r in roster_infos) or 1.0
     fair_share = 100.0 / max(len(roster_infos), 1)
     for r in roster_infos:
-        r["value_pct"] = round(r["value"] / league_val_total * 100, 1)
+        r["value_pct"] = commissioner_value_share_pct(r["value"], league_val_total)
     roster_infos.sort(key=lambda x: -x["value_pct"])
 
     def _val_bar(pct: float) -> str:
@@ -19307,10 +18272,7 @@ def api_roster_grade():
     if not league_id or not viewer_roster_id:
         return jsonify({"error": "Missing required parameters"}), 400
 
-    _user_id = session.get("viewer_username")
-    if not has_premium_for_viewer(_user_id, session.get("viewer_user_id"), league_id, platform, season):
-        return jsonify({"error": "premium_required"}), 403
-
+    # Same grades the Teams page already shows for free — keep one story.
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
         grade_data = get_roster_grade(ctx, viewer_roster_id)
@@ -19356,9 +18318,16 @@ def api_trade_outcome():
         trade_date = str(payload.get("trade_date") or "")
 
         def get_value_at_trade(pid: str):
-            """Return the closest historical value to trade_date within 30 days, or None."""
+            """Persisted trade-time value, else closest daily history within 30 days."""
             if not trade_date:
                 return None
+            try:
+                from dashboard_services.trade_time_values import get_or_persist_trade_value
+                hit = get_or_persist_trade_value(pid, trade_date)
+                if hit is not None:
+                    return hit
+            except Exception:
+                logger.debug("trade-time value lookup failed", exc_info=True)
             from datetime import date as _date
             try:
                 target = _date.fromisoformat(trade_date[:10])
@@ -19385,6 +18354,13 @@ def api_trade_outcome():
             # No snapshot within 30 days of the trade date - too stale to compare
             if best_diff > 30 or not best_val:
                 return None
+            try:
+                from dashboard_services.trade_time_values import snapshot_trade_values
+                snapshot_trade_values(
+                    [pid], trade_date, values={pid: best_val}, source="backfill-nearest",
+                )
+            except Exception:
+                logger.debug("trade-time value persist failed", exc_info=True)
             return round(best_val, 1)
 
         def get_pick_value(asset: dict) -> float:
@@ -19548,14 +18524,7 @@ def api_trade_eval():
         te_premium = 0.0
     viewer_side = (payload.get("viewer_side") or "a").strip().lower()
 
-    # Position-based multipliers for non-PPR formats.
-    # RBs gain value in standard (rush-heavy); WRs/TEs lose value (fewer receptions).
-    _SCORING_MULTS = {
-        "ppr": {"QB": 1.00, "RB": 1.00, "WR": 1.00, "TE": 1.00},
-        "half": {"QB": 1.00, "RB": 1.06, "WR": 0.97, "TE": 0.94},
-        "std": {"QB": 1.00, "RB": 1.13, "WR": 0.93, "TE": 0.87},
-    }
-    scoring_mults = _SCORING_MULTS.get(scoring_format, _SCORING_MULTS["ppr"])
+    from utils.trade_value import player_trade_value
 
     side_a_players = [str(pid) for pid in payload.get("side_a_players", [])]
     side_b_players = [str(pid) for pid in payload.get("side_b_players", [])]
@@ -19631,30 +18600,18 @@ def api_trade_eval():
                 })
                 continue
 
-            # Use size/type-specific value, falling back to 10-team then base value.
-            # Redraft values are league-size agnostic (1QB vs SF only).
-            if scoring_type == "redraft":
-                val = float(
-                    player.get("redraft_value_sf") or player.get("redraft_value_1qb") or 0.0
-                ) if league_type == "sf" else float(player.get("redraft_value_1qb") or 0.0)
-            elif league_type == "sf":
-                size_key = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
-                val = float(player.get(size_key) or player.get("sf_value") or player.get("value") or 0.0)
-            else:
-                size_key = "value" if league_size == 10 else f"value_{league_size}"
-                val = float(player.get(size_key) or player.get("value") or 0.0)
-
             name = player.get("name")
             pos = player.get("position")
 
-            # Apply scoring format multiplier, plus TE-premium boost for tight ends.
-            # NOTE: this mirrors getPlayerValue() in static/app.js exactly (the
-            # _SCORING_MULTS table above matches SCORING_MULTS there, and both use
-            # round-half-up). tests/test_scoring_mult_parity.py pins the tables.
-            _mult = scoring_mults.get((pos or "").upper(), 1.0)
-            if te_premium and (pos or "").upper() == "TE":
-                _mult *= (1 + te_premium * 0.20)
-            val = math.floor(val * _mult * 10 + 0.5) / 10  # round half up, matching JS Math.round
+            # Same math as getPlayerValue() in static/app.js (utils.trade_value).
+            val = player_trade_value(
+                player,
+                league_type=league_type,
+                league_size=league_size,
+                scoring_format=scoring_format,
+                scoring_type=scoring_type,
+                te_premium=te_premium,
+            )
             team = player.get("team")
             age = player.get("age")
 
@@ -19804,6 +18761,11 @@ def api_trade_eval():
         except Exception as e:
             logger.info(f"[trade-ai] skipped: {e}")
             analysis_html = ""
+            analysis_error = str(e)[:200]
+        else:
+            analysis_error = ""
+    else:
+        analysis_error = ""
 
     return jsonify({
         "side_a": side_a,
@@ -19814,6 +18776,7 @@ def api_trade_eval():
         "fair_pct": FAIR_PCT,
         "verdict": verdict,
         "analysis_html": analysis_html,
+        "analysis_error": analysis_error,
         "depth_warnings": depth_warnings,
         "tier_thresholds": [round(t, 1) for t in tier_thresholds],
     })
@@ -19841,6 +18804,12 @@ def api_trade_eval_playoff_impact():
     roster_id = payload.get("roster_id")
     give_ids = [str(p) for p in (payload.get("give_ids") or [])]
     get_ids = [str(p) for p in (payload.get("get_ids") or [])]
+
+    if not has_premium_for_viewer(
+        session.get("viewer_username"), session.get("viewer_user_id"),
+        league_id, platform, season,
+    ):
+        return jsonify({"paywall": True, "error": "Premium required", "available": False}), 403
 
     if not league_id or roster_id is None:
         return jsonify({"available": False, "reason": "no_league"})
@@ -20272,16 +19241,24 @@ def _attach_adp_to_players(players, adp_season, clear_first=False, sleeper_only=
                     out[str(_k)] = float(_ap)
             return out
 
-        def _crawl_adp(is_sf: bool, draft_type: str, min_s: int) -> dict:
-            return _norm_adp(_fl_adp(is_sf, adp_season, draft_type, min_samples=min_s) or {})
+        def _crawl_adp(is_sf: bool, draft_type: str, min_s: int):
+            raw = _fl_adp(is_sf, adp_season, draft_type, min_samples=min_s) or {}
+            nmap = {}
+            for _k, _v in raw.items():
+                if isinstance(_v, dict) and _v.get("sample_size"):
+                    nmap[str(_k)] = int(_v["sample_size"])
+            return _norm_adp(raw), nmap
 
         # BR Fantasy crawl maps (fallback). Skipped for historical views
         # (sleeper_only), which use Sleeper's own season ADP - never the crawl.
         if sleeper_only:
             _c_su1 = _c_susf = _c_rk1 = _c_rksf = {}
+            _n_su1 = _n_susf = _n_rk1 = _n_rksf = {}
         else:
-            _c_su1, _c_susf = _crawl_adp(False, "startup", 10), _crawl_adp(True, "startup", 10)
-            _c_rk1, _c_rksf = _crawl_adp(False, "rookie", 5), _crawl_adp(True, "rookie", 5)
+            _c_su1, _n_su1 = _crawl_adp(False, "startup", 10)
+            _c_susf, _n_susf = _crawl_adp(True, "startup", 10)
+            _c_rk1, _n_rk1 = _crawl_adp(False, "rookie", 5)
+            _c_rksf, _n_rksf = _crawl_adp(True, "rookie", 5)
 
         # Sleeper projections ADP (primary). Pick the first present field per mode.
         _sa = _sleeper_adp(adp_season) or {}
@@ -20337,6 +19314,9 @@ def _attach_adp_to_players(players, adp_season, clear_first=False, sleeper_only=
             if _rsf is not None:
                 _p["sf_redraft_avg_pick"] = _rsf;
                 _used["redraft"] = True
+            _p["adp_n"] = _n_su1.get(_pid)
+            _p["sf_adp_n"] = _n_susf.get(_pid)
+            _p["rookie_adp_n"] = _n_rksf.get(_pid) or _n_rk1.get(_pid)
 
         for _mode in ("startup", "rookie", "redraft"):
             # The draft crawler is branded "BR Fantasy" everywhere else (the
@@ -25938,6 +24918,32 @@ def api_trade_intel_run_crawl():
         return jsonify({"error": "Internal error"}), 500
 
 
+def _server_roster_intel_adp(season: int, league_type: str) -> dict:
+    """FantasyCalc is blocked from server IPs. Fill ADP ranks from the crawled
+    BR Fantasy market so ESPN/PWA clients still get market signals."""
+    try:
+        from dashboard_services.adp_service import resolve_market_adp
+        is_sf = str(league_type or "").lower() in ("sf", "superflex")
+        raw = resolve_market_adp(
+            int(season), is_sf, scoring_type="dynasty",
+            source="brfantasy", fallback=True,
+        ) or {}
+        out = {}
+        for pid, info in raw.items():
+            if isinstance(info, dict):
+                out[str(pid)] = {
+                    "adp_rank": info.get("adp_rank") or info.get("avg_pick"),
+                    "pos_rank": info.get("pos_rank"),
+                    "position": info.get("position"),
+                }
+            elif info is not None:
+                out[str(pid)] = {"adp_rank": info}
+        return out
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+        return {}
+
+
 @app.route("/api/roster-intel", methods=["GET", "POST"])
 def api_roster_intel():
     """
@@ -25964,6 +24970,8 @@ def api_roster_intel():
         viewer_rid_raw = str(session.get("viewer_roster_id") or "").strip()
     # FC dynasty ADP - sent by browser because server IP is blocked by FC
     fc_adp: dict = (body.get("fc_adp") or {}) if isinstance(body.get("fc_adp"), dict) else {}
+    if not fc_adp:
+        fc_adp = _server_roster_intel_adp(season, league_type)
 
     if not league_id:
         return jsonify({"error": "league_id required"}), 400
@@ -29091,283 +28099,7 @@ def build_portfolio_body(
             + top_strip + league_card + insights_label + insight_top + bottom_row + '</div>')
 
 
-def build_scout_body(ctx: dict) -> str:
-    viewer = ctx.get("viewer") or {}
-    viewer_roster_id = str(viewer.get("viewer_roster_id") or "")
-    platform = ctx.get("platform") or "sleeper"
-    league_id = ctx.get("league_id") or ""
-    season = ctx.get("season") or datetime.now().year
-    current_week = ctx.get("current_week") or 0
-
-    _NOT_SIGNED_IN = (
-        "<div class='card' style='text-align:center;padding:40px;'>"
-        "<h2 style='margin-bottom:8px;'>Sign in to view your scouting report</h2>"
-        "<p style='color:var(--muted);'>Enter your Sleeper username in the menu to unlock opponent scouting.</p>"
-        "</div>"
-    )
-
-    if not viewer_roster_id:
-        return _NOT_SIGNED_IN
-
-    if ctx.get("offseason_mode"):
-        return (
-            "<div class='card' style='text-align:center;padding:40px;'>"
-            "<h2 style='margin-bottom:8px;'>Scouting report is available during the regular season</h2>"
-            "<p style='color:var(--muted);'>Check back once the season starts.</p>"
-            "</div>"
-        )
-
-    rosters = ctx.get("rosters") or []
-    roster_map = ctx.get("roster_map") or {}
-    standings_map = ctx.get("standings_map") or {}
-    model_value_table = ctx.get("model_value_table") or []
-    players_index = ctx.get("players_index") or {}
-    matchups_by_week = ctx.get("matchups_by_week") or {}
-    statuses = ctx.get("statuses") or {}
-    proj_by_roster = ctx.get("proj_by_roster") or {}
-
-    values_by_id = {str(r.get("id") or ""): r for r in model_value_table if r.get("id")}
-
-    # Find viewer's matchup for current week
-    current_matchups = matchups_by_week.get(current_week) or []
-    viewer_matchup = None
-    opponent_roster_id = None
-    opponent_team_block = None
-
-    for m in current_matchups:
-        t1 = m.get("team1") or {}
-        t2 = m.get("team2") or {}
-        if str(t1.get("roster_id")) == viewer_roster_id:
-            viewer_matchup = m
-            opponent_roster_id = str(t2.get("roster_id"))
-            opponent_team_block = t2
-            break
-        elif str(t2.get("roster_id")) == viewer_roster_id:
-            viewer_matchup = m
-            opponent_roster_id = str(t1.get("roster_id"))
-            opponent_team_block = t1
-            break
-
-    if not viewer_matchup or not opponent_roster_id:
-        return (
-            f"<div class='card' style='text-align:center;padding:40px;'>"
-            f"<h2 style='margin-bottom:8px;'>No matchup found for Week {current_week}</h2>"
-            f"<p style='color:var(--muted);'>Your current week matchup could not be determined.</p>"
-            f"</div>"
-        )
-
-    opponent_roster = next((r for r in rosters if str(r.get("roster_id")) == opponent_roster_id), None)
-    if not opponent_roster:
-        return "<div class='card'>Opponent roster not found.</div>"
-
-    opp_name = html.escape(roster_map.get(opponent_roster_id, f"Roster {opponent_roster_id}"))
-    opp_standing = standings_map.get(opponent_roster_id) or {}
-    opp_wins = int(opp_standing.get("wins") or 0)
-    opp_losses = int(opp_standing.get("losses") or 0)
-    opp_pf = float(opp_standing.get("pf") or 0)
-    opp_pa = float(opp_standing.get("pa") or 0)
-    opp_rec_cls = "color-win" if opp_wins > opp_losses else ("color-loss" if opp_losses > opp_wins else "")
-
-    # Starters from matchup block
-    starter_pids = {str(s.get("pid") or s) for s in (opponent_team_block.get("starters") or []) if s}
-    opp_pts = opponent_team_block.get("pts_total")
-
-    # Projected score for opponent
-    opp_proj = proj_by_roster.get((current_week, opponent_roster_id))
-
-    # Injury statuses
-    status_by_pid = (statuses.get(current_week) or {}).get("statuses", {}) or {}
-
-    # Build player list grouped by position
-    _POS_ORDER = ["QB", "RB", "WR", "TE", "K", "DEF"]
-    _POS_CLS = {"QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE", "K": "K", "DEF": "DEF"}
-    _INJ_CLS = {"Q": "inj-q", "D": "inj-d", "O": "inj-o", "IR": "inj-o", "Sus": "inj-o"}
-    _INJ_LABEL = {"Q": "Q", "D": "D", "O": "O", "IR": "IR", "Questionable": "Q", "Doubtful": "D", "Out": "O",
-                  "Suspended": "SUS"}
-
-    all_pids = [str(p) for p in (opponent_roster.get("players") or [])]
-    starters_by_pos: dict = {}
-    bench_players = []
-
-    for pid in all_pids:
-        v = values_by_id.get(pid) or {}
-        meta = players_index.get(pid) or {}
-        pos = (v.get("position") or meta.get("pos") or "?").upper()
-        val = float(v.get("value") or 0)
-        name = v.get("name") or meta.get("name") or f"Player {pid}"
-        team = (v.get("team") or meta.get("team") or "").upper()
-        pos_rank = v.get("pos_rank_label") or ""
-        is_starter = pid in starter_pids
-        raw_inj = str(status_by_pid.get(pid) or "")
-        inj_key = raw_inj if raw_inj in _INJ_CLS else None
-
-        entry = {
-            "pid": pid, "name": name, "pos": pos, "team": team,
-            "value": val, "pos_rank": pos_rank, "is_starter": is_starter,
-            "inj_key": inj_key,
-        }
-        if is_starter:
-            starters_by_pos.setdefault(pos, []).append(entry)
-        else:
-            bench_players.append(entry)
-
-    # Compute position group values and league-wide averages for strength/weakness
-    _STARTER_COUNTS = {"QB": 1, "RB": 2, "WR": 3, "TE": 1}
-    pos_group_vals = {}
-    for pos, players in starters_by_pos.items():
-        players.sort(key=lambda x: x["value"], reverse=True)
-        pos_group_vals[pos] = sum(p["value"] for p in players)
-
-    # League-wide average top-N value per position
-    league_pos_avgs = {}
-    for pos, top_n in _STARTER_COUNTS.items():
-        sums = []
-        for r in rosters:
-            r_pids = [str(p) for p in (r.get("players") or [])]
-            r_vals = sorted(
-                [float((values_by_id.get(p) or {}).get("value") or 0) for p in r_pids
-                 if (values_by_id.get(p) or {}).get("position", "").upper() == pos],
-                reverse=True,
-            )
-            sums.append(sum(r_vals[:top_n]))
-        league_pos_avgs[pos] = (sum(sums) / len(sums)) if sums else 0
-
-    # Build strength/weakness summary
-    strengths, weaknesses = [], []
-    for pos in ["QB", "RB", "WR", "TE"]:
-        opp_val = pos_group_vals.get(pos) or 0
-        avg = league_pos_avgs.get(pos) or 1
-        delta_pct = ((opp_val - avg) / avg) * 100 if avg else 0
-        if delta_pct >= 12:
-            strengths.append((pos, delta_pct, opp_val))
-        elif delta_pct <= -12:
-            weaknesses.append((pos, delta_pct, opp_val))
-
-    strengths.sort(key=lambda x: -x[1])
-    weaknesses.sort(key=lambda x: x[1])
-
-    # Build HTML
-    def _player_row(p, show_bench_label=False):
-        pc = _POS_CLS.get(p["pos"], "pos-k")
-        inj_html = ""
-        if p.get("inj_key"):
-            ic = _INJ_CLS.get(p["inj_key"], "")
-            il = _INJ_LABEL.get(p["inj_key"], p["inj_key"])
-            inj_html = f"<span class='inj-badge {ic}'>{il}</span>"
-        pr_html = f"<span class='scout-pos-rank'>{html.escape(p.get('pos_rank', ''))}</span>" if p.get(
-            "pos_rank") else ""
-        val_html = f"<span class='scout-val'>{p['value']:.0f}</span>" if p["value"] else ""
-        bench_cls = " scout-bench" if show_bench_label else ""
-        return (
-            f"<div class='scout-player-row{bench_cls}'>"
-            f"<span class='pos-badge {pc}'>{p['pos']}</span>"
-            f"<span class='scout-player-name'>{html.escape(p['name'])}</span>"
-            f"<span class='scout-team'>{html.escape(p['team'])}</span>"
-            f"{pr_html}{inj_html}{val_html}"
-            f"</div>"
-        )
-
-    # Starters section
-    starters_html = ""
-    for pos in _POS_ORDER:
-        for p in starters_by_pos.get(pos, []):
-            starters_html += _player_row(p)
-    # Handle any FLEX/unknown positions
-    for pos, players in starters_by_pos.items():
-        if pos not in _POS_ORDER:
-            for p in players:
-                starters_html += _player_row(p)
-
-    bench_players.sort(key=lambda x: x["value"], reverse=True)
-    bench_html = "".join(_player_row(p, show_bench_label=True) for p in bench_players[:10])
-
-    # Strengths / weaknesses cards
-    def _sw_chip(pos, delta_pct, val, is_strength):
-        color = "var(--color-win)" if is_strength else "var(--color-loss)"
-        arrow = "▲" if is_strength else "▼"
-        pc = _POS_CLS.get(pos, "pos-k")
-        return (
-            f"<div class='scout-sw-chip'>"
-            f"<span class='pos-badge {pc}'>{pos}</span>"
-            f"<span class='scout-sw-val' style='color:{color};'>{arrow} {abs(delta_pct):.0f}% vs avg</span>"
-            f"</div>"
-        )
-
-    sw_html = ""
-    if strengths or weaknesses:
-        s_chips = "".join(_sw_chip(pos, d, v, True) for pos, d, v in
-                          strengths) or "<span style='color:var(--muted);font-size:0.85em;'>None notable</span>"
-        w_chips = "".join(_sw_chip(pos, d, v, False) for pos, d, v in
-                          weaknesses) or "<span style='color:var(--muted);font-size:0.85em;'>None notable</span>"
-        sw_html = (
-            f"<div class='main-two-col' style='margin-bottom:14px;'>"
-            f"<div class='card'>"
-            f"<div class='card-header'><h2>Their Strengths</h2></div>"
-            f"<div class='card-body scout-sw-list'>{s_chips}</div>"
-            f"</div>"
-            f"<div class='card'>"
-            f"<div class='card-header'><h2>Their Weaknesses</h2></div>"
-            f"<div class='card-body scout-sw-list'>{w_chips}</div>"
-            f"</div>"
-            f"</div>"
-        )
-
-    proj_html = ""
-    if opp_proj is not None:
-        proj_html = f"<span class='scout-proj'>Proj: <strong>{opp_proj:.1f}</strong></span>"
-    pts_html = ""
-    if opp_pts is not None:
-        pts_html = f"<span class='scout-proj' style='color:var(--muted);'>Score: <strong>{opp_pts:.1f}</strong></span>"
-
-    return (
-            f"<style>"
-            f".scout-header-row{{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:4px;}}"
-            f".scout-opp-name{{font-size:1.3em;font-weight:700;}}"
-            f".scout-record{{font-size:0.9em;}}"
-            f".scout-proj{{font-size:0.9em;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:3px 8px;}}"
-            f".scout-stat-row{{display:flex;gap:20px;flex-wrap:wrap;margin-top:6px;margin-bottom:16px;}}"
-            f".scout-stat{{display:flex;flex-direction:column;gap:1px;}}"
-            f".scout-stat-lbl{{font-size:0.7em;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}}"
-            f".scout-stat-val{{font-size:1em;font-weight:600;}}"
-            f".scout-player-row{{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:0.88em;}}"
-            f".scout-player-row:last-child{{border-bottom:none;}}"
-            f".scout-bench{{opacity:.7;}}"
-            f".scout-player-name{{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;}}"
-            f".scout-team{{font-size:0.78em;color:var(--muted);min-width:28px;}}"
-            f".scout-pos-rank{{font-size:0.75em;color:var(--muted);}}"
-            f".scout-val{{font-weight:600;color:var(--accent);font-size:0.85em;min-width:32px;text-align:right;}}"
-            f".scout-sw-list{{display:flex;flex-direction:column;gap:8px;padding-top:4px;}}"
-            f".scout-sw-chip{{display:flex;align-items:center;gap:8px;}}"
-            f".scout-sw-val{{font-size:0.88em;font-weight:600;}}"
-            f".inj-badge{{font-size:0.7em;font-weight:700;padding:1px 5px;border-radius:4px;line-height:1.4;}}"
-            f".inj-q{{background:#fef08a;color:#713f12;}}"
-            f".inj-d{{background:#fed7aa;color:#7c2d12;}}"
-            f".inj-o{{background:#fecaca;color:#7f1d1d;}}"
-            f"</style>"
-            f"<div class='scout-header-row'>"
-            f"<span class='scout-opp-name'>{opp_name}</span>"
-            f"<span class='scout-record {opp_rec_cls}'>{opp_wins}-{opp_losses}</span>"
-            f"{proj_html}{pts_html}"
-            f"</div>"
-            f"<div class='scout-stat-row'>"
-            f"<div class='scout-stat'><span class='scout-stat-lbl'>Points For</span><span class='scout-stat-val'>{opp_pf:.1f}</span></div>"
-            f"<div class='scout-stat'><span class='scout-stat-lbl'>Points Against</span><span class='scout-stat-val'>{opp_pa:.1f}</span></div>"
-            f"</div>"
-            f"{sw_html}"
-            f"<div class='main-two-col'>"
-            f"<div class='card'>"
-            f"<div class='card-header'><h2>Week {current_week} Starters</h2></div>"
-            "<div class='card-body'>" + (
-                    starters_html or "<p style='color:var(--muted);font-size:0.85em;'>Lineup not yet set.</p>") + "</div>"
-                                                                                                                  "</div>"
-                                                                                                                  "<div class='card'>"
-                                                                                                                  f"<div class='card-header'><h2>Bench (Top 10)</h2></div>"
-                                                                                                                  "<div class='card-body'>" + (
-                    bench_html or "<p style='color:var(--muted);font-size:0.85em;'>No bench data.</p>") + "</div>"
-                                                                                                          "</div>"
-                                                                                                          "</div>"
-    )
-
+# build_scout_body / _week_proj_points live in dashboard_services/pages/scout_page.py
 
 def _run_startup_daily() -> None:
     """Fire daily data build in the background immediately on startup."""
@@ -29435,6 +28167,8 @@ def api_league_bulletins():
     season = int(request.args.get("season") or datetime.now().year)
     if not league_id:
         return jsonify({"error": "league_id required"}), 400
+    if (platform or "sleeper").strip().lower() != "sleeper":
+        return jsonify({"bulletins": [], "unavailable": True})
     try:
         import requests as _req
 
@@ -30775,10 +29509,11 @@ _notify_changelog_on_startup()
 def _start_notification_scheduler():
     """Background thread: run the time-sensitive hourly notification check.
 
-    Only lineup_lock lives here — it must be evaluated near kickoff, which the
-    once-a-day Render cron can't do. The daily batch (value drops, waivers,
-    playoff odds, rival trades, breakout roster) runs from cron_daily.py instead,
-    which is reliable even when this free-plan web service is asleep.
+    Production uses the Render cron ``hourly-notifications`` (POST
+    /api/cron/notifications) so lineup lock still fires when gunicorn workers
+    restart. This in-process loop is a local/dev fallback; enable it in
+    production with ENABLE_INPROCESS_NOTIFY_SCHEDULER=1 only if that cron is
+    missing. Daily alerts still run from cron_daily.py.
     """
     import threading
     import time as _time
@@ -30801,7 +29536,11 @@ def _start_notification_scheduler():
     threading.Thread(target=_run, daemon=True, name="notify-scheduler").start()
 
 
-_start_notification_scheduler()
+_inprocess_notify = (os.environ.get("ENABLE_INPROCESS_NOTIFY_SCHEDULER") or "").strip().lower()
+if _inprocess_notify in ("1", "true", "yes", "on"):
+    _start_notification_scheduler()
+elif (os.environ.get("PYTHON_ENV") or "").strip().lower() != "production":
+    _start_notification_scheduler()
 
 if __name__ == "__main__":
     # Debug mode (Werkzeug interactive debugger) is opt-in via FLASK_DEBUG=1 and

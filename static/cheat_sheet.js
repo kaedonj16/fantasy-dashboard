@@ -589,7 +589,7 @@
     var cb = $('csClearBtn'); if (cb) cb.style.display = state.done.size ? '' : 'none';
     var liveBtn = $('csConnectLive');
     if (liveBtn) {
-      liveBtn.style.display = (cfg.hasPremium && cfg.leagueId && cfg.platform) ? '' : 'none';
+      liveBtn.style.display = (cfg.leagueId && cfg.platform) ? '' : 'none';
       liveBtn.textContent = liveDraftId ? 'Disconnect live draft' : 'Connect live draft';
     }
     // Custom board (pro): edit toggle always available; reset only with overrides.
@@ -910,9 +910,9 @@
 
   // ── live-draft cross-off ────────────────────────────────────────────────────
   function detectLiveDraft() {
-    // Live Sleeper draft sync (auto cross-off + real-time board) is a pro feature.
-    // Non-premium users keep the free static board (and any static mock snapshot).
-    if (!cfg.hasPremium || !cfg.leagueId || !cfg.platform) return Promise.resolve(false);
+    // Live Sleeper draft sync (auto cross-off + real-time board) is free once
+    // the viewer has a connected league. Custom board edits stay PRO.
+    if (!cfg.leagueId || !cfg.platform) return Promise.resolve(false);
     return fetch('/api/draft/detect?platform=' + encodeURIComponent(cfg.platform) + '&league_id=' + encodeURIComponent(cfg.leagueId) + '&season=' + (cfg.season || ''))
       .then(function (r) { return r.json(); })
       .then(function (resp) {
@@ -978,6 +978,42 @@
     draftedIds = s.size ? s : null;
     myCounts = cfg.viewerUserId ? mine : null;
     compute(); render();
+  }
+
+  // Draft Room overlay pushes pick updates while it stays open so this sheet
+  // stays crossed-off without turning on Sleeper live polling.
+  function applyDraftRoomContext(payload) {
+    if (!payload || payload.type !== 'drCheatContext') return;
+    var changed = false;
+    // When Connect live draft is polling Sleeper, that feed owns drafted/myCounts.
+    // Recommendation order still comes from the room (Sleeper has no REC #).
+    if (!liveDraftId && Object.prototype.hasOwnProperty.call(payload, 'drafted')) {
+      var list = Array.isArray(payload.drafted) ? payload.drafted : [];
+      draftedIds = list.length ? new Set(list.map(String)) : null;
+      changed = true;
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'rec_order')) {
+      var rec = Array.isArray(payload.rec_order) ? payload.rec_order : [];
+      if (!rec.length) {
+        recommendationOrder = null;
+      } else {
+        recommendationOrder = {};
+        rec.forEach(function (id, i) {
+          id = String(id);
+          if (recommendationOrder[id] == null) recommendationOrder[id] = i;
+        });
+      }
+      changed = true;
+    }
+    if (!liveDraftId && payload.myCounts && typeof payload.myCounts === 'object') {
+      myCounts = payload.myCounts;
+      changed = true;
+    }
+    var qTeams = parseInt(payload.teams, 10);
+    if (qTeams >= 2 && qTeams <= 32) { teams = qTeams; changed = true; }
+    var qSlot = parseInt(payload.slot, 10);
+    if (qSlot >= 1 && qSlot <= teams) { state.pickSlot = qSlot; changed = true; }
+    if (changed) { compute(); render(); }
   }
 
   // ── CSV export ──────────────────────────────────────────────────────────────
@@ -1124,16 +1160,9 @@
     }, true);   // capture: run before the document row-click (cross-off) handler
     if (boardPanel) setupDragReorder(boardPanel);
 
-    // CSV export is a pro feature; non-premium users get the upgrade prompt.
+    // CSV export is free — it dumps the currently visible board order.
     var csvBtn = $('csCsvBtn');
-    if (csvBtn && !cfg.hasPremium) csvBtn.textContent = 'CSV (Pro)';
-    if (csvBtn) csvBtn.addEventListener('click', function () {
-      if (!cfg.hasPremium) {
-        if (typeof window.showPaywall === 'function') window.showPaywall('draft-cheat-sheet');
-        return;
-      }
-      exportCsv();
-    });
+    if (csvBtn) csvBtn.addEventListener('click', function () { exportCsv(); });
     $('csPrintBtn').addEventListener('click', function () { window.print(); });
     var srcSel = $('csAdpSrc');
     if (srcSel) srcSel.addEventListener('change', function () { state.adpSource = this.value; compute(); render(); });
@@ -1191,9 +1220,19 @@
     });
 
     // Live sync is intentionally opt-in through "Connect live draft". A sheet
-    // opened from an active Draft Room may still start with that board's snapshot.
+    // opened from an active Draft Room still starts with that board's snapshot
+    // and then receives pick updates via postMessage while the overlay is open.
+    window.addEventListener('message', function (e) {
+      if (e.origin !== window.location.origin) return;
+      applyDraftRoomContext(e.data);
+    });
     loadPlayers();
     if (window.initCustomSelects) window.initCustomSelects(document.querySelector('.cs-wrap') || document);
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'drCheatReady' }, window.location.origin);
+      }
+    } catch (e) { /* not embedded */ }
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

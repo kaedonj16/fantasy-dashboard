@@ -216,8 +216,11 @@ def crawl_league(
     # Build slot map once per league so every pick gets its exact draft position
     slot_map = _fetch_draft_slot_map(league_id)
 
-    # Write everything in one DB connection
+    # Write everything in one DB connection. Snapshot player values AFTER the
+    # connection is released — trade_time_values opens its own conn and would
+    # deadlock a small pool if nested inside this block.
     new_trades = 0
+    pending_value_snaps: list[tuple[list[str], Any]] = []
     with get_conn() as conn:
         for week, trades in sorted(week_trades.items()):
             for txn in trades:
@@ -262,9 +265,53 @@ def crawl_league(
                             a.get("pick_slot"),
                         )]
                     )
+                    pids = [
+                        str(a["player_id"])
+                        for a in assets
+                        if a.get("asset_type") == "player" and a.get("player_id")
+                    ]
+                    if pids:
+                        pending_value_snaps.append((pids, created_at))
                 new_trades += 1
 
+    _snapshot_trade_time_values(pending_value_snaps)
     return new_trades
+
+
+def _snapshot_trade_time_values(pending: list[tuple[list[str], Any]]) -> None:
+    """Persist 1QB/SF values for players on newly crawled trades.
+
+    Today's trades snapshot the live model table. Older trades copy the closest
+    daily history row onto trade_time_values so Trade Outcome does not depend
+    on later history gaps.
+    """
+    if not pending:
+        return
+    try:
+        from dashboard_services.trade_time_values import (
+            current_model_values,
+            persist_from_history,
+            snapshot_trade_values,
+        )
+    except Exception:
+        logger.debug("[crawler] trade_time_values import failed", exc_info=True)
+        return
+    today = datetime.now(timezone.utc).date()
+    ones = sfs = None
+    for pids, created_at in pending:
+        if not pids:
+            continue
+        try:
+            as_of = created_at.date() if created_at is not None else today
+            if as_of == today:
+                if ones is None:
+                    ones, sfs = current_model_values()
+                snapshot_trade_values(pids, as_of, values=ones, values_sf=sfs, source="snapshot")
+            else:
+                for pid in pids:
+                    persist_from_history(pid, as_of)
+        except Exception:
+            logger.debug("[crawler] trade-time value snapshot failed", exc_info=True)
 
 
 def _leagues_to_crawl(batch_size: int = 500, crawl_mode: str = "new", recrawl_days: int = 7) -> list[dict]:

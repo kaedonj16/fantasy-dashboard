@@ -17,6 +17,7 @@ imported by app.py's changelog startup notifier.
 """
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 import threading
@@ -308,17 +309,36 @@ def api_push_broadcast():
     return jsonify({"ok": True, "queued": True}), 202
 
 
+def _notifications_cron_authorized(data: dict) -> bool:
+    """Accept either the admin header or the same CRON_SECRET the daily job uses."""
+    admin_secret = os.environ.get("ADMIN_SECRET", "") or ""
+    cron_secret = os.environ.get("CRON_SECRET", "") or ""
+    header_admin = request.headers.get("X-Admin-Secret", "") or ""
+    header_cron = request.headers.get("X-Cron-Secret", "") or ""
+    body_secret = str(data.get("secret") or "")
+    if admin_secret and hmac.compare_digest(header_admin, admin_secret):
+        return True
+    if cron_secret:
+        if header_cron and hmac.compare_digest(header_cron, cron_secret):
+            return True
+        if body_secret and hmac.compare_digest(body_secret, cron_secret):
+            return True
+    return False
+
+
 @push_bp.route("/api/cron/notifications", methods=["POST"])
 @limiter.limit("60 per minute")
 def api_cron_notifications():
-    """Cron hook for push notifications. Pass type='hourly' or type='daily'.
-    Call hourly for lineup lock; call once at your preferred daytime hour for daily alerts."""
-    secret       = request.headers.get("X-Admin-Secret", "")
-    admin_secret = os.environ.get("ADMIN_SECRET", "")
-    if not admin_secret or secret != admin_secret:
+    """Cron hook for push notifications and the weekly email digest.
+
+    Pass type='hourly' (lineup lock / close games / drops / injuries),
+    type='daily', or type='weekly'. Auth is X-Admin-Secret or CRON_SECRET
+    (header X-Cron-Secret or JSON ``secret``, same as /api/flush-value-cache).
+    """
+    data = request.get_json(silent=True) or {}
+    if not _notifications_cron_authorized(data):
         return jsonify({"error": "Forbidden"}), 403
-    data = request.get_json(force=True) or {}
-    kind = data.get("type", "hourly")
+    kind = str(data.get("type") or request.args.get("type") or "hourly").strip().lower()
     try:
         from utils.push_notifications import run_hourly, run_all_daily
         if kind == "daily":

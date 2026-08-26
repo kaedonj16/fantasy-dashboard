@@ -1003,6 +1003,21 @@ def get_weekly_ai_recap(
         return empty
 
 
+def get_weekly_ai_recap_teaser() -> tuple[str, str]:
+    """Free-user stand-in: no LLM call. The scoreboard still renders above."""
+    recap_html = """
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header"><h3>Weekly recap</h3></div>
+  <div class="card-body" style="font-size:13px;color:var(--muted);line-height:1.45;">
+    The AI weekly storyline is a PRO feature.
+    <div style="margin-top:10px;">
+      <button type="button" onclick="showPaywall('weekly-recap')" style="padding:8px 18px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">Upgrade to PRO</button>
+    </div>
+  </div>
+</div>"""
+    return recap_html, ""
+
+
 def get_weekly_ai_recap_preview() -> tuple[str, str]:
     """Static sample for preview mode: the recap column plus a game-of-the-week card."""
     recap_html = _render_recap_html({

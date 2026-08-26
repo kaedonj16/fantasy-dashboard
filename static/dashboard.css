@@ -1074,6 +1074,22 @@ ul {
     pointer-events: none;
 }
 
+.nav-capability-note {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 5px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    background: var(--row, rgba(127,127,127,.12));
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    vertical-align: middle;
+    line-height: 14px;
+}
+
 .nav-pro-badge {
     display: inline-block;
     margin-left: 6px;
@@ -2805,7 +2821,8 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
     background: linear-gradient(180deg, rgba(20, 20, 20, 1), rgba(10, 10, 10, 1));
 }
 
-.platform-soon {
+.platform-soon,
+.platform-btn .platform-limit {
     font-size: 0.62em;
     font-weight: 800;
     letter-spacing: 0.06em;
@@ -11539,6 +11556,7 @@ a.signed-home-league:hover {
 .home-platform-chip {
     display: inline-flex;
     align-items: center;
+    gap: 6px;
     padding: 5px 11px;
     font-size: 11px;
     font-weight: 700;
@@ -11548,6 +11566,18 @@ a.signed-home-league:hover {
     background: color-mix(in srgb, var(--card) 70%, transparent);
     border: 1px solid var(--border);
     border-radius: var(--radius-pill);
+}
+
+.home-chip-note,
+.platform-limit {
+    font-size: 0.72em;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 1px 5px;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--text-muted) 16%, transparent);
+    color: var(--text-muted);
 }
 
 .home-proof {
@@ -25835,6 +25865,19 @@ button:disabled {
     height: 13px;
     border-radius: 6px;
     margin-bottom: 0;
+}
+
+/* ── Graphs page skeleton (chart-shaped shimmers while Plotly builds) ─────── */
+.graphs-skeleton {
+    padding: 14px 16px;
+    margin-bottom: 10px;
+}
+
+.graphs-skeleton-chart {
+    width: 100%;
+    height: 220px;
+    min-height: 220px;
+    border-radius: 8px;
 }
 
 /* ── Empty state icon ─────────────────────────────────────────────────────── */

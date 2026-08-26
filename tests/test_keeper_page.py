@@ -38,6 +38,47 @@ def test_adp_returns_empty_when_resolver_raises(monkeypatch):
     assert kp._adp_map(is_sf=False, season=2026) == {}
 
 
+def test_years_kept_from_draft_season():
+    assert kp.years_kept_from_draft_season(2025, 2026) == 0
+    assert kp.years_kept_from_draft_season(2026, 2026) == 0
+    assert kp.years_kept_from_draft_season(2024, 2026) == 1
+    assert kp.years_kept_from_draft_season(2023, 2026) == 2
+    assert kp.years_kept_from_draft_season(None, 2026) == 0
+    assert kp.years_kept_from_draft_season("x", 2026) == 0
+
+
+def test_parse_espn_keeper_flag_sets_years_kept():
+    drafted, years = kp._parse_espn_draft_meta([
+        {"playerId": 1, "roundId": 5, "keeper": True},
+        {"playerId": 2, "roundId": 8, "keeper": False},
+    ])
+    assert drafted == {"1": 5, "2": 8}
+    assert years == {"1": 1, "2": 0}
+
+
+def test_candidates_carry_years_kept():
+    cands = kp._candidates_for_ids(
+        ["a"], {"a": {"name": "A", "pos": "WR"}}, {"a": 100.0},
+        adp={}, drafted={"a": 8}, years_kept={"a": 2},
+    )
+    assert cands[0].years_kept == 2
+
+
+def test_sleeper_years_kept_from_older_draft(monkeypatch):
+    drafts = {
+        "2026": [{"draft_id": "d26", "status": "pre_draft", "settings": {"rounds": 15}}],
+        "2024": [{"draft_id": "d24", "status": "complete", "settings": {"rounds": 15}}],
+    }
+    picks = {
+        "d26": [],
+        "d24": [{"player_id": "a", "round": 10}],
+    }
+    monkeypatch.setitem(sys.modules, "dashboard_services.api",
+                        _fake_sleeper_api(drafts, picks, {2026: "2026", 2024: "2024"}))
+    _drafted, _deepest, years = kp._sleeper_draft_history("2026", 2026)
+    assert years["a"] == 1  # drafted 2024, current 2026
+
+
 def test_value_rank_ranks_by_value_and_skips_zero():
     vr = kp._value_rank_map({"a": 1000.0, "b": 800.0, "c": 500.0, "d": 0.0})
     assert vr == {"a": 1.0, "b": 2.0, "c": 3.0}   # zero-value player omitted
@@ -290,9 +331,10 @@ def test_sleeper_falls_back_to_previous_season_draft(monkeypatch):
     }
     monkeypatch.setitem(sys.modules, "dashboard_services.api",
                         _fake_sleeper_api(drafts, picks, {2026: "2026", 2025: "2025"}))
-    drafted, deepest = kp._sleeper_draft_history("2026", 2026)
+    drafted, deepest, years = kp._sleeper_draft_history("2026", 2026)
     assert drafted == {"a": 1, "b": 9}
     assert deepest == 15
+    assert years["a"] == 0 and years["b"] == 0  # drafted 2025, current 2026
 
 
 def test_sleeper_prefers_most_recent_season_for_a_player(monkeypatch):
@@ -307,10 +349,12 @@ def test_sleeper_prefers_most_recent_season_for_a_player(monkeypatch):
     }
     monkeypatch.setitem(sys.modules, "dashboard_services.api",
                         _fake_sleeper_api(drafts, picks, {2026: "2026", 2025: "2025"}))
-    drafted, deepest = kp._sleeper_draft_history("2026", 2026)
+    drafted, deepest, years = kp._sleeper_draft_history("2026", 2026)
     assert drafted["a"] == 2      # newest season wins
     assert drafted["b"] == 4      # only in the older draft
     assert deepest == 15          # scale from the deepest completed draft
+    assert years["a"] == 0        # drafted this season
+    assert years["b"] == 0        # drafted last season, first keep this year
 
 
 def test_sleeper_draft_context_uses_deepest_for_rounds(monkeypatch):
@@ -318,9 +362,10 @@ def test_sleeper_draft_context_uses_deepest_for_rounds(monkeypatch):
     picks = {"d": [{"player_id": "a", "round": 3}]}
     monkeypatch.setitem(sys.modules, "dashboard_services.api",
                         _fake_sleeper_api(drafts, picks, {2026: "L"}))
-    drafted, num_rounds = kp._draft_context("sleeper", "L", 2026)
+    drafted, num_rounds, years = kp._draft_context("sleeper", "L", 2026)
     assert drafted == {"a": 3}
     assert num_rounds == 16
+    assert years.get("a") == 0
 
 
 def test_sleeper_rookie_only_draft_keeps_standard_depth(monkeypatch):
@@ -330,7 +375,7 @@ def test_sleeper_rookie_only_draft_keeps_standard_depth(monkeypatch):
     picks = {"r": [{"player_id": "rk", "round": 1}]}
     monkeypatch.setitem(sys.modules, "dashboard_services.api",
                         _fake_sleeper_api(drafts, picks, {2026: "L"}))
-    drafted, num_rounds = kp._draft_context("sleeper", "L", 2026)
+    drafted, num_rounds, _years = kp._draft_context("sleeper", "L", 2026)
     assert drafted == {"rk": 1}
     assert num_rounds == 15   # standard depth, not 3
 
@@ -354,6 +399,7 @@ def test_body_renders_undrafted_dropdown_and_one_per_round_toggle(monkeypatch):
     # One-keeper-per-round toggle, on by default (in the UI and the seed).
     assert 'id="kpr-opr"' in html and "checked" in html
     assert '"onePerRound":true' in html.replace(" ", "")
+    assert "Auction/FAAB keeper costs are not auto-detected" in html
 
 
 def test_one_per_round_resolves_collisions_in_projection(monkeypatch):

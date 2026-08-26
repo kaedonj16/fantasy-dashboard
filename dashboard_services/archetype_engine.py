@@ -49,6 +49,20 @@ def _sim_lock_for(cache_key: str) -> threading.Lock:
         return lk
 
 
+def _roster_fingerprint(ctx: Optional[Dict[str, Any]]) -> str:
+    """Cheap signature so a completed trade cannot reuse a 120s suggestion cache."""
+    if not ctx:
+        return ""
+    try:
+        parts = []
+        for r in ctx.get("rosters") or []:
+            pids = tuple(sorted(str(p) for p in (r.get("players") or []) if p))
+            parts.append((str(r.get("roster_id")), pids))
+        return str(hash(tuple(sorted(parts))))
+    except Exception:
+        return ""
+
+
 def invalidate_league_caches(platform: str, league_id: str, season) -> None:
     """Drop the memoized sim state and finished results for one league so the
     next request rebuilds from source. Called when a league is force-refreshed
@@ -1681,6 +1695,7 @@ def get_archetype_suggestions(
         platform, str(league_id), int(season), str(viewer_roster_id),
         (archetype or "").lower().strip(), (league_type or "").lower(), int(league_size),
         tuple(sorted(str(x) for x in untouchable_ids)) if untouchable_ids else (),
+        _roster_fingerprint(ctx),
     )
     _hit = _RESULT_CACHE.get(_key)
     if _hit is not None and (_time.time() - _hit["ts"]) < _RESULT_CACHE_TTL:

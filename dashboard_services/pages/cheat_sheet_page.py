@@ -53,7 +53,8 @@ def build_cheat_sheet_body(
         "rosterPositions": list(roster_positions) if roster_positions else None,
         "mode": "dynasty" if mode == "dynasty" else "redraft",
         "viewerUserId": str(viewer_user_id) if viewer_user_id else "",
-        # Pro gate for live Sleeper sync and CSV export (the static board is free).
+        # Pro gate for live Sleeper sync and custom board edits
+        # (the static board and CSV export are free).
         "hasPremium": bool(has_premium),
         "draftUrl": (
             f"/{platform}/{int(season)}/{league_id}/draft"

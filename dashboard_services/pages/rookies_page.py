@@ -599,6 +599,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
   var rkPosFilters = new Set();
   var rkSearch    = '';
   var rkLoaded    = false;
+  var rkPipelinePaused = false;
   var rkDraftYear = null;
   var rkDraftComplete = false;
   var rkCurrentPage = 1;
@@ -811,6 +812,17 @@ def build_prospects_body(is_admin: bool = False) -> str:
       header.style.display = 'none';
       count.style.display  = 'none';
       document.getElementById('rkPagination').style.display = 'none';
+      var emptyTitle = empty.querySelector('.empty-state-title');
+      var emptyMsg = empty.querySelector('.empty-state-msg');
+      var pausedEmpty = rkPipelinePaused && rkAllPlayers.length === 0 && rkPosFilters.size === 0 && !rkSearch;
+      if (emptyTitle) {
+        emptyTitle.textContent = pausedEmpty ? 'Prospect rankings paused' : 'No prospects match';
+      }
+      if (emptyMsg) {
+        emptyMsg.textContent = pausedEmpty
+          ? 'The rookie pipeline is paused until the next draft cycle. Rankings will return when the class is rebuilt.'
+          : 'Try clearing a filter or widening your position and tier selections.';
+      }
       return;
     }
 
@@ -1096,6 +1108,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
       document.getElementById('rkLoading').style.display = 'none';
       rkAllPlayers = data.rankings || [];
       rkLoaded = true;
+      rkPipelinePaused = !!data.paused;
       rkRender();
     })
     .catch(function(err) {

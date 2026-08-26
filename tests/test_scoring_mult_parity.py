@@ -1,9 +1,9 @@
 """Parity guard: the scoring-format position multipliers are duplicated in the
 browser (static/app.js `SCORING_MULTS`, used by getPlayerValue) and the server
-(app.py `_SCORING_MULTS`, used by build_side). If they drift, the trade
-calculator's live preview values diverge from the submitted server totals - the
-same class of bug that made draft grades disagree. This parses both tables from
-source and fails if they aren't identical.
+(utils/trade_value.py `SCORING_MULTS`, used by player_trade_value / build_side).
+If they drift, the trade calculator's live preview values diverge from the
+submitted server totals - the same class of bug that made draft grades disagree.
+This parses both tables from source and fails if they aren't identical.
 """
 import re
 from pathlib import Path
@@ -38,10 +38,10 @@ def _parse_table(text: str, start_marker: str) -> dict:
 
 def test_scoring_mults_match():
     js = _parse_table((REPO / "static" / "app.js").read_text(), "SCORING_MULTS = {")
-    py = _parse_table((REPO / "app.py").read_text(), "_SCORING_MULTS = {")
+    py = _parse_table((REPO / "utils" / "trade_value.py").read_text(), "SCORING_MULTS = {")
 
     assert js, "failed to parse SCORING_MULTS from app.js"
-    assert py, "failed to parse _SCORING_MULTS from app.py"
+    assert py, "failed to parse SCORING_MULTS from utils/trade_value.py"
     assert set(js) == set(py), f"scoring formats differ: js={set(js)} py={set(py)}"
     for fmt in js:
         assert js[fmt] == py[fmt], (

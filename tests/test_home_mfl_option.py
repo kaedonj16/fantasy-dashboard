@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_mfl_is_a_platform_option_on_the_home_page():
     source = (ROOT / "app.py").read_text()
     # Selectable platform button in the home connect widget.
-    assert '<button type="button" class="platform-btn" data-platform="mfl">MFL</button>' in source
+    assert '<button type="button" class="platform-btn" data-platform="mfl">MFL <span class="platform-limit">Public</span></button>' in source
     # Dedicated flow with a League ID + season entry and a connect action.
     assert 'id="mflFlow"' in source
     assert 'id="mflLeagueIdInput"' in source

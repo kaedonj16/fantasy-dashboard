@@ -55,17 +55,19 @@ async function getSubscriptionInfo(userId, leagueId) {
 /**
  * Show paywall modal for a specific feature
  *
- * @param {string} feature - Feature name ('breakout-candidates', 'advanced-metrics', 'ai-insights')
+ * @param {string} feature - Feature name ('breakout-candidates', 'playoff-impact', 'gm-memo')
  */
-window.showPaywall = function showPaywall(feature) {
+    window.showPaywall = function showPaywall(feature) {
   const featureNames = {
     'breakout-candidates': 'Breakout Engine',
-    'advanced-metrics': 'Advanced Metrics',
     'ai-insights': 'AI Insights',
     'trade-history': 'Trade Intelligence',
     'trade-suggestions': 'Roster-Based Trade Suggestions',
-    'auction-values': 'Auction Values',
-    'draft-cheat-sheet': 'Live Draft Cheat Sheet',
+    'trade-ai': 'AI Trade Analysis',
+    'playoff-impact': 'Playoff Impact',
+    'gm-memo': 'Front Office Report',
+    'weekly-recap': 'Weekly Recap',
+    'draft-cheat-sheet': 'Custom Draft Board',
     'draft-analyzer': 'Draft Deep Dive Analyzer'
   };
 
@@ -88,7 +90,8 @@ window.showPaywall = function showPaywall(feature) {
           <li>✓ Roster-Based Trade Suggestions</li>
           <li>✓ Full Trade Intelligence feed &amp; history</li>
           <li>✓ Breakout Engine candidate predictions</li>
-          <li>✓ All future premium features</li>
+          <li>✓ Playoff Impact simulations</li>
+          <li>✓ Front Office Report</li>
         </ul>
         <div class="paywall-pricing">
           <div class="pricing-option">

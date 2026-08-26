@@ -1,10 +1,12 @@
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone
+import json
 import os
 import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -184,14 +186,38 @@ def _run_step(code: str, step_name: str, timeout: int = 3600) -> bool:
         )
         if result.returncode != 0:
             print(f"[cron] {step_name} exited with code {result.returncode}")
+            record_pipeline_health(step_name, "error")
             return False
+        record_pipeline_health(step_name, "ok")
         return True
     except subprocess.TimeoutExpired:
         print(f"[cron] {step_name} timed out after {timeout}s")
+        record_pipeline_health(step_name, "timeout")
         return False
     except Exception as e:
         print(f"[cron] {step_name} failed to launch: {e}")
+        record_pipeline_health(step_name, "error")
         return False
+
+
+def record_pipeline_health(step_name: str, status: str, path: Optional[Path] = None) -> Path:
+    """Persist last-success / last-status per cron step (not only failure email)."""
+    dest = path or (CACHE_DIR / "pipeline_health.json")
+    data = {}
+    try:
+        if dest.exists():
+            data = json.loads(dest.read_text(encoding="utf-8")) or {}
+    except Exception:
+        data = {}
+    now = datetime.now(timezone.utc).isoformat()
+    data[str(step_name)] = {"status": str(status), "at": now}
+    if status == "ok":
+        data[str(step_name)]["last_success"] = now
+    data["_updated"] = now
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    print(f"[cron-health] step={step_name} status={status} at={now}")
+    return dest
 
 
 def main():
@@ -661,7 +687,9 @@ print("[cron] Breakout roster notifications dispatched")
     # ------------------------------------------------------------------ #
     # Step 6: Weekly rookie data (Sundays only, off/pre season)          #
     # ------------------------------------------------------------------ #
-    ROOKIE_PIPELINE_PAUSED = True
+    ROOKIE_PIPELINE_PAUSED = (os.environ.get("ROOKIE_PIPELINE_PAUSED") or "1").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
     if not ROOKIE_PIPELINE_PAUSED and today_weekday == 6 and season_type not in ("reg", "post"):
         _run_step(f"""
 from dotenv import load_dotenv; load_dotenv()
@@ -716,6 +744,20 @@ from utils.push_notifications import notify_rival_trades
 notify_rival_trades()
 print("[cron] Rival trade notifications dispatched")
 """, "notify_rival_trades")
+
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from dashboard_services.trade_time_values import backfill_from_trade_intel
+n = backfill_from_trade_intel()
+print(f"[cron] Trade-time value backfill: {n} rows")
+""", "trade_time_value_backfill")
+
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from dashboard_services.injury_return import refresh_espn_return_dates
+rows = refresh_espn_return_dates(force=True)
+print(f"[cron] ESPN injury return dates: {len(rows)} players")
+""", "espn_injury_return_dates")
 
     # ------------------------------------------------------------------ #
     # Step 8: Draft ADP crawl                                            #

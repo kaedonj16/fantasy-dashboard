@@ -1,3 +1,12 @@
+"""Graphs page: league value/performance charts.
+
+Data contract for ``build_graphs_body(ctx)`` / ``render_graphs_html``:
+- ``ctx["team_stats"]``: PF/PA/AVG/STD per owner
+- ``ctx["df_weekly"]`` with ``finalized == True`` for in-season plots
+- Empty weekly data returns a static "No weekly data" card (never a spinner hang)
+- Cold-cache Graphs requests use a chart-shaped ``.graphs-skeleton`` (not a generic list)
+- Career view may render a skeleton while a background aggregation fills in
+"""
 import html
 import json
 from typing import Dict
@@ -149,7 +158,22 @@ def _consistency_card(team_stats, owner_colors: dict) -> str:
 def build_graphs_body(ctx: dict) -> str:
     team_stats = ctx["team_stats"]
     df_weekly = ctx["df_weekly"]
-    df_weekly = df_weekly[df_weekly["finalized"] == True].copy()
+    if df_weekly is None or "finalized" not in getattr(df_weekly, "columns", []):
+        df_weekly = None
+    else:
+        df_weekly = df_weekly[df_weekly["finalized"] == True].copy()
+    if (
+        team_stats is None or getattr(team_stats, "empty", True)
+        or df_weekly is None or getattr(df_weekly, "empty", True)
+    ):
+        return """
+            <div class="card central graphs-empty">
+              <div class="card-body">
+                <p style="color:var(--text-muted);">
+                  No weekly data available for this season.
+                </p>
+              </div>
+            </div>"""
 
     # ---------- Core aggregates ----------
     pr_sorted = (

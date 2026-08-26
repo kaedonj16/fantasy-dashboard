@@ -1,14 +1,16 @@
 """Admin health/monitoring API endpoints.
 
 Routes:
-    /api/health/errors   - warning/error counts since process start
-    /api/health/timing   - per-endpoint request timing since process start
+    /api/health/errors    - warning/error counts since process start
+    /api/health/timing    - per-endpoint request timing since process start
+    /api/health/pipeline  - last cron-step timestamps from pipeline_health.json
 
-Both require the X-Admin-Secret header. Extracted from app.py; depends only on
-extensions.limiter + utils monitors, no app.py internals.
+All require the X-Admin-Secret header. Extracted from app.py; depends only on
+extensions.limiter + utils monitors / cache files, no app.py internals.
 """
 from __future__ import annotations
 
+import json
 import os
 
 from flask import Blueprint, jsonify, request
@@ -63,3 +65,28 @@ def api_health_timing():
     except ValueError:
         limit = 100
     return jsonify(perf_monitor.snapshot(limit=limit, sort=request.args.get("sort", "total")))
+
+
+@health_bp.route("/api/health/pipeline")
+@limiter.limit("30 per minute")
+def api_health_pipeline():
+    """Last-success / last-status timestamps for each cron_daily step.
+
+    Reads ``CACHE_DIR/pipeline_health.json`` written by
+    ``cron_daily.record_pipeline_health``. Missing file → empty object.
+    Requires X-Admin-Secret.
+    """
+    denied = _forbidden_unless_admin()
+    if denied:
+        return denied
+    from utils.paths import CACHE_DIR
+    dest = CACHE_DIR / "pipeline_health.json"
+    if not dest.exists():
+        return jsonify({})
+    try:
+        data = json.loads(dest.read_text(encoding="utf-8")) or {}
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    return jsonify(data)

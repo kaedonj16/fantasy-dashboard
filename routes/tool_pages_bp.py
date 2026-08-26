@@ -45,7 +45,7 @@ def _nav_show_keeper(*args, **kwargs):
 
 def _viewer_has_premium(league_id, platform, season) -> bool:
     """Premium gate for the viewer, safe against league_id tampering. Drives the
-    pro-only cheat-sheet features (live Sleeper sync, the in-draft overlay, CSV)."""
+    pro-only cheat-sheet features (live Sleeper sync, the in-draft overlay, custom board)."""
     try:
         from dashboard_services.subscriptions import has_premium_for_viewer
         return bool(has_premium_for_viewer(

@@ -289,6 +289,12 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None,
 
 # ── Trade Intelligence ─────────────────────────────────────────────────────────
 
+_TI_SOURCE_NOTE = (
+    "Market comps come from real Sleeper dynasty trades. Values still apply to "
+    "your ESPN, Yahoo, and MFL rosters."
+)
+
+
 @trade_bp.route("/<platform>/<int:season>/<league_id>/trade-intel")
 def page_trade_intel(platform: str, season: int, league_id: str):
     from app import render_page
@@ -313,7 +319,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;">
         <h2 style="margin:0 0 4px;font-size:20px;">Trade Intelligence</h2>
         <div style="font-size:13px;color:var(--text-muted);">
-          Actionable insights from thousands of real dynasty trades across multiple platforms
+          Actionable insights from thousands of real dynasty trades. """ + _TI_SOURCE_NOTE + """
         </div>
       </div>
       <div class="card-body" style="padding-top:20px;">
@@ -477,7 +483,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;">
         <h2 style="margin:0 0 4px;font-size:20px;">Trade Intelligence</h2>
         <div style="font-size:13px;color:var(--text-muted);">
-          Actionable insights from thousands of real dynasty trades across multiple platforms
+          Actionable insights from thousands of real dynasty trades. {_TI_SOURCE_NOTE}
         </div>
       </div>
       <div class="card-body" style="padding-top:20px;">

@@ -191,6 +191,44 @@
     if (typeVal === 'startup') return String(cfg.numRoundsStartup || 15);
     return '15';
   }
+  // Drafted ids the overlay should cross off — same set that drops players out
+  // of best-available (includes keepers), not only cells already on the board.
+  function cheatDraftedIds(){
+    var ids = [];
+    Object.keys(drafted).forEach(function(id){ if (drafted[id]) ids.push(String(id)); });
+    return ids;
+  }
+  function cheatRecommendationOrder(){
+    if (!state || !players.length) return [];
+    refreshPsPool();
+    return rankedRecommendationPool()
+      .slice(0, 175).map(function(p){ return String(p.id); });
+  }
+  function cheatContextPayload(){
+    var counts = null;
+    try { counts = myPosCounts(); } catch (e) { counts = null; }
+    return {
+      type: 'drCheatContext',
+      drafted: cheatDraftedIds(),
+      rec_order: cheatRecommendationOrder(),
+      teams: state && state.teams ? state.teams : null,
+      slot: state && state.slot ? state.slot : null,
+      myCounts: counts
+    };
+  }
+  var _cheatCtxSig = null;
+  function pushCheatSheetContext(){
+    var overlay = document.getElementById('drCheatSheet');
+    var frame = document.getElementById('drCheatFrame');
+    if (!overlay || overlay.style.display !== 'flex' || !frame || !frame.contentWindow) return;
+    if (!state || (state.mode !== 'mock' && state.mode !== 'live')) return;
+    var payload = cheatContextPayload();
+    var sig = payload.drafted.join(',') + '#' + payload.rec_order.join(',')
+      + '#' + String(payload.slot || '') + '#' + String(payload.teams || '');
+    if (sig === _cheatCtxSig) return;
+    _cheatCtxSig = sig;
+    try { frame.contentWindow.postMessage(payload, window.location.origin); } catch (e) {}
+  }
   function applyCfgDefaults(){
     // Point the hero's Draft History link at the league-scoped page when available.
     var _hl = document.getElementById('drToHistory');
@@ -206,14 +244,9 @@
 
     // Carry this draft's context to the cheat sheet so it opens with who's already
     // gone crossed off and the exact Recommendation order currently shown in the
-    // room. Mock and live boards both open as snapshots; live polling remains an
-    // explicit choice on the cheat sheet itself.
-    function cheatRecommendationOrder(){
-      if (!players.length) return [];
-      refreshPsPool();
-      return rankedRecommendationPool()
-        .slice(0, 175).map(function(p){ return String(p.id); });
-    }
+    // room. The first paint is a snapshot in the URL; while the overlay stays
+    // open, render() pushes pick updates via postMessage so cross-off and REC #
+    // stay in sync. Live Sleeper polling remains an explicit choice on the sheet.
     function cheatCtxQuery(){
       // A restored draft can still exist in memory while Edit Setup is open. Do
       // not leak that stale board into the setup-page Cheat Sheet link; context
@@ -221,8 +254,7 @@
       var main = document.getElementById('drMain');
       if (!(state && state.picks && (state.mode === 'mock' || state.mode === 'live')
             && main && main.style.display !== 'none')) return '';
-      var ids = [];
-      Object.keys(state.picks).forEach(function(k){ var p = state.picks[k]; if (p && p.id) ids.push(p.id); });
+      var ids = cheatDraftedIds();
       var isLocal = state.mode === 'mock';
       var q = [];
       if (isLocal){
@@ -255,13 +287,13 @@
     function openCheatSheet(){
       if (!_csOverlay || !_csFrame) return;
       var url = cfg.cheatSheetEmbedUrl || '/draft/cheat-sheet/embed';
-      // Pass the visible board as a snapshot. Even for a live board, continued
-      // polling is opt-in from the cheat sheet's Connect live draft control.
+      // First paint is a URL snapshot. Continued Sleeper polling is still
+      // opt-in from Connect live draft; pick updates from THIS room are pushed
+      // into the iframe via postMessage while the overlay stays open.
       var main = document.getElementById('drMain');
       if (state && state.picks && (state.mode === 'mock' || state.mode === 'live')
           && main && main.style.display !== 'none'){
-        var ids = [];
-        Object.keys(state.picks).forEach(function(k){ var p = state.picks[k]; if (p && p.id) ids.push(p.id); });
+        var ids = cheatDraftedIds();
         var q = ['sf=' + (state.sf ? '1' : '0'), 'mode=' + (state.type === 'redraft' ? 'redraft' : 'dynasty')];
         if (ids.length) q.push('drafted=' + encodeURIComponent(ids.join(',')));
         var recOrder = cheatRecommendationOrder();
@@ -270,6 +302,7 @@
         if (state.slot) q.push('slot=' + encodeURIComponent(String(state.slot)));
         url += (url.indexOf('?') >= 0 ? '&' : '?') + q.join('&');
       }
+      _cheatCtxSig = null;
       _csFrame.src = url;   // (re)load -> re-syncs
       _csOverlay.style.display = 'flex';
       document.body.classList.add('dr-cheat-open');
@@ -280,18 +313,14 @@
       if (!_csOverlay) return;
       _csOverlay.style.display = 'none';
       document.body.classList.remove('dr-cheat-open');
+      _cheatCtxSig = null;
       if (_csFrame) _csFrame.src = 'about:blank';   // stop the embed's poll loop
     }
     if (_cs2) _cs2.addEventListener('click', function(e){
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;  // let modified clicks open a tab
       e.preventDefault();
-      // The in-draft cheat-sheet overlay (with live sync) is a pro feature. Free
-      // users get the upgrade prompt; the standalone board stays reachable from
-      // the nav and via a modified-click that opens it in a new tab.
-      if (!cfg.hasPremium){
-        if (typeof window.showPaywall === 'function') window.showPaywall('draft-cheat-sheet');
-        return;
-      }
+      // Live sync inside the in-draft overlay is free. Custom board edits on
+      // the standalone cheat sheet remain PRO.
       openCheatSheet();
     });
     var _csClose = document.getElementById('drCheatClose');
@@ -299,6 +328,18 @@
     if (_csOverlay) _csOverlay.addEventListener('click', function(e){ if (e.target === _csOverlay) closeCheatSheet(); });
     document.addEventListener('keydown', function(e){
       if (e.key === 'Escape' && _csOverlay && _csOverlay.style.display === 'flex') closeCheatSheet();
+    });
+    if (_csFrame) _csFrame.addEventListener('load', function(){
+      if (!_csFrame.src || _csFrame.src === 'about:blank') return;
+      _cheatCtxSig = null;
+      pushCheatSheetContext();
+    });
+    window.addEventListener('message', function(e){
+      if (e.origin !== window.location.origin) return;
+      if (e.data && e.data.type === 'drCheatReady') {
+        _cheatCtxSig = null;
+        pushCheatSheetContext();
+      }
     });
     if (cfg.numTeams) {
       var t = document.getElementById('drTeams');
@@ -1276,6 +1317,7 @@
     if (!state) return;
     if (!state.queue) state.queue = [];
     renderStatus(); renderBoard(); renderSide(); justPick = null; save();
+    pushCheatSheetContext();
     var _tot = state.teams * state.rounds;
     // Draft is over once current passes the last pick - open the summary regardless
     // of sim state (when the user makes the final pick, sim is still true here).
@@ -2903,6 +2945,8 @@
   function draftPlayerFacts(p){
     var pos = (p.position || '').toUpperCase();
     var adp = adpOf(p);
+    var adpN = (state.type === 'rookie') ? p.rookie_adp_n
+      : (state.sf ? p.sf_adp_n : p.adp_n);
     var adpGap = (adp != null && state && state.current) ? (state.current - adp) : null;
     var proj = (p.proj_ppg != null && isFinite(Number(p.proj_ppg))) ? Number(p.proj_ppg) : null;
     var last = (p.ppg != null && isFinite(Number(p.ppg))) ? Number(p.ppg) : null;
@@ -2912,6 +2956,7 @@
     return {
       pos: pos,
       adp: adp,
+      adpN: adpN != null && isFinite(Number(adpN)) ? Number(adpN) : null,
       vsAdp: adpGap,
       vor: vorp,
       vorLbl: p.vorp != null ? 'VORP' : 'VOR',
@@ -3996,13 +4041,15 @@
       // Smooth 0-100: MEAN of each pick's canonical letter score, not the coarse
       // team-letter bucket (mirrors utils.draft_grade.dr_rookie_team_score; keep
       // the two in lock-step). An [A, B] class -> 78.5 (B+), not a rounded-up A.
+      // All-N/A (no ADP) is ungradeable — Python returns None, not N/A→55→C.
       var _rk = _letters.filter(function(L){ return L && L !== 'N/A'; })
                         .map(function(L){ return letterToScore(L); });
-      var rv = _rk.length ? _rk.reduce(function(a, b){ return a + b; }, 0) / _rk.length
-                          : letterToScore(teamLetterFromPicks(_letters));
+      if (!_rk.length) return null;
+      var rv = _rk.reduce(function(a, b){ return a + b; }, 0) / _rk.length;
       return { score: rv, value: avgPs != null ? Math.round(avgPs) : 50,
         balance: 0, tier: 0, count: mine.length,
-        avgPs: avgPs ? Math.round(avgPs) : null, window: null };
+        avgPs: avgPs ? Math.round(avgPs) : null, window: null,
+        provisional: gradeIsProvisional(mine.length) };
     }
 
     // Startup / redraft composite lives in static/draft_grade_team.js
@@ -4017,19 +4064,20 @@
     var _leaguePlayers = players.map(function(q){
       return { pos: String(q.position || '').toUpperCase(), ppg: ppgOf(q), val: valOf(q) };
     });
-    var _comp = BRTeamGrade.teamGradeComposite(
+    var _tg = window.BRTeamGrade;
+    if (!_tg || typeof _tg.teamGradeComposite !== 'function') return null;
+    var _comp = _tg.teamGradeComposite(
       picks, _slots, posTargets(), state.teams || 12, state.type,
       _leaguePpg, _leagueVal, _leaguePlayers
     );
-    if (!_comp){
-      return { score: 0, value: 0, balance: 0, tier: 0, count: mine.length,
-        avgPs: avgPs != null ? Math.round(avgPs) : null, window: null };
-    }
+    // Missing composite is ungradeable — do not invent score 0 (letter F).
+    if (!_comp) return null;
     var _starterArr = picks.filter(function(x){ return _comp.starterIds[String(x.id)]; });
     return { score: _comp.total, value: _comp.value, balance: _comp.balance, tier: _comp.starter,
       count: mine.length, avgPs: avgPs != null ? Math.round(avgPs) : null,
       strength: Math.round(_comp.strengthRatio * 100),
-      window: _competitiveWindow(_starterArr) };
+      window: _competitiveWindow(_starterArr),
+      provisional: gradeIsProvisional(mine.length) };
   }
   // At-pick tier-cliff map for grading: walk the full draft in order starting from
   // the full-pool tier counts, so each historical pick sees remaining-at-that-slot
@@ -4162,6 +4210,16 @@
     if (s>=60) return 'C+'; if (s>=55) return 'C'; if (s>=50) return 'C-';
     if (s>=40) return 'D';  return 'F';
   }
+  // Construction ramps with min(1, picks/8). Show the real letter from pick 1
+  // (including two-pick / start-of-round-3 boards — that F-grade bug is fixed)
+  // but mark it Early until the sample is large enough to trust construction.
+  function gradeIsProvisional(count){
+    if ((state && state.type) === 'rookie') return count < 3;
+    return count < 8;
+  }
+  function gradeEarlySuffix(g){
+    return (g && g.provisional) ? ' · Early' : '';
+  }
   function gradeBar(label, val, max, tip){
     var pct = max ? Math.round(val / max * 100) : 0;
     var col = pct >= 80 ? '#22c55e' : pct >= 60 ? '#38bdf8' : pct >= 40 ? '#f59e0b' : '#ef4444';
@@ -4207,7 +4265,9 @@
       var _ga = teamArchetype(); if (_ga) gSub = _ga.label;
       var _gwn = g.window;
       var gAgeSub = _gwn ? (esc(_gwn.label) + ' \xb7 Avg age ' + _gwn.avgAge.toFixed(1)) : '';
-      html += '<div class="dr-grade-card"><div class="dr-grade-letter">' + gradeLetter(g.score) + '</div>'
+      html += '<div class="dr-grade-card"><div class="dr-grade-mark"><div class="dr-grade-letter">' + gradeLetter(g.score) + '</div>'
+        + (g.provisional ? '<div class="dr-grade-early">Early</div>' : '')
+        + '</div>'
         + '<div class="dr-grade-meta">' + (gSub ? '<div class="dr-grade-pace">' + gSub + '</div>' : '')
         + (gAgeSub ? '<div class="dr-grade-pace" style="font-size:11px;color:var(--text-muted)">' + gAgeSub + '</div>' : '')
         + gradeBars(g)
@@ -4429,7 +4489,8 @@
         + '<span class="dr-sum-lname">' + esc(t.name) + stratTag + '</span>'
         + winTag
         + poTag
-        + '<span class="dr-sum-lgrade" style="color:' + tCol + '">' + gradeLetter(t.grade.score) + '</span>'
+        + '<span class="dr-sum-lgrade" style="color:' + tCol + '">' + gradeLetter(t.grade.score)
+        + (t.grade.provisional ? '<span class="dr-grade-early-inline"> Early</span>' : '') + '</span>'
         + '<span class="dr-sum-lchev">&#9660;</span>'
         + '</div>'
         + '<div class="dr-sum-ldtl" id="drLegLdtl' + t.slot + '"></div>';
@@ -5006,7 +5067,7 @@
     document.getElementById('drProgress').textContent = Math.min(state.current - 1, total) + ' / ' + total + ' picks';
     var gp = document.getElementById('drGradePill');
     var g = gradeTeam();
-    if (g){ gp.style.display = ''; gp.textContent = 'Grade ' + gradeLetter(g.score); } else { gp.style.display = 'none'; }
+    if (g){ gp.style.display = ''; gp.textContent = 'Grade ' + gradeLetter(g.score) + gradeEarlySuffix(g); } else { gp.style.display = 'none'; }
     // The pick-trade evaluator only makes sense while picks are still to be made;
     // hide it once the draft is done/complete (nothing left to trade for).
     var _ptBtn = document.getElementById('drPickTradeBtn');
@@ -5413,13 +5474,14 @@
     { term: 'Pick Score (PS)', def: 'A 0-100 grade of pick quality. On the live board, sidebar, compare modal, and player preview it is scaled relative to the best player still available (so a strong late pick still reads well). Made-pick chips on the report card / Deep Dive “Board PS” use the same relative scale at that historical slot. Your letter grade’s Value bar uses the absolute, round-weighted kernel score — those two numbers can differ. Kickers and defenses aren’t scored.' },
     { term: 'Value', def: 'The player’s trade value as an asset on a 0-999 scale - dynasty value for startup/rookie drafts, redraft value for redraft.' },
     { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a replacement-level starter at their position (a fixed, preseason-style baseline). VORP uses real fantasy points; VOR uses dynasty value.' },
-    { term: 'ADP', def: 'Average Draft Position - the typical overall pick a player goes at in real drafts. If it’s below your current pick, they’ve fallen and may be a value.' },
+    { term: 'ADP', def: 'Average Draft Position - the typical overall pick a player goes at in real drafts. If it’s below your current pick, they’ve fallen and may be a value. When a sample size (n=) is shown, a small n means the ADP is noisy.' },
     { term: 'Tier', def: 'Players grouped by talent gaps (Tier 1 = elite). A tier “cliff” means only a couple of players remain before a real drop-off at that position.' },
     { term: 'PPG', def: 'Points per game - projected for the upcoming season, or last season’s actual when that’s shown.' },
     { term: 'Survival %', def: 'The chance a player is still on the board at your next pick. Starts from consensus ADP, then adapts to how your draft is actually going - if the room is reaching, letting players slide, drafting unpredictably, or running on a position, the odds shift to match (kicks in after the first several picks).' },
     { term: 'Grade · Value', def: 'How strong your picks are by pick score, weighted toward the earlier rounds where it matters most.' },
     { term: 'Grade · Starters', def: 'How good your projected starting lineup is versus a league-average team. 100% is a league-average lineup; the rank is among teams in this draft. Snake drafts are close to zero-sum, so a lineup near 100% of average can still rank 1st or 2nd.' },
-    { term: 'Grade · Construction', def: 'How well you’ve filled your starting slots and balanced your positions.' }
+    { term: 'Grade · Construction', def: 'How well you’ve filled your starting slots and balanced your positions.' },
+    { term: 'Grade · Early', def: 'Shown until your team has 8 picks (3 in a rookie draft). The letter is real — including at two picks / the start of round 3 — but construction is still ramping and the sample is small.' }
   ];
   // Inline info icon: data-tip drives a CSS hover/focus bubble. tabindex makes it
   // tap- and keyboard-accessible.
@@ -5473,7 +5535,9 @@
       ? ('<div class="dr-sum-grade-wrap">'
          + '<div class="dr-sum-grade-ring" style="border-color:' + gradeCol + ';color:' + gradeCol + '">'
          + '<span class="dr-sum-grade">' + gradeLetter(g.score) + '</span></div>'
-         + '<div class="dr-sum-grade-bars">' + gradeBars(g) + '</div>'
+         + '<div class="dr-sum-grade-bars">'
+         + (g.provisional ? '<div class="dr-grade-early">Early — still forming</div>' : '')
+         + gradeBars(g) + '</div>'
          + '</div>')
       : '';
 
@@ -5796,7 +5860,8 @@
     return '<div class="dd-card dd-overview">'
       + '<div class="dd-ov-top">'
       + '<div class="dd-ring" style="--pct:' + Math.max(0, Math.min(100, Math.round(g.score))) + ';--gc:' + col + '">'
-      + '<b style="color:' + col + '">' + gradeLetter(g.score) + '<small>' + Math.round(g.score) + '</small></b></div>'
+      + '<b style="color:' + col + '">' + gradeLetter(g.score) + '<small>' + Math.round(g.score)
+      + (g.provisional ? ' · Early' : '') + '</small></b></div>'
       + '<div class="dd-ov-txt"><h3>' + verdict.title + '</h3>'
       + '<div class="dd-rankline">Ranked <b>' + myRank + ordinalSuffix(myRank) + ' of ' + n + '</b>'
       + (arch ? ' · ' + esc(arch.label) : '') + '</div>'
@@ -5979,7 +6044,8 @@
       return '<tr class="' + (t.isMe ? 'dd-me' : '') + '">'
         + '<td class="num" style="color:var(--text-muted)">' + (i + 1) + '</td>'
         + '<td class="dd-plname">' + esc(t.name) + (t.isMe ? ' <span class="dd-youtag">YOU</span>' : '') + '</td>'
-        + '<td class="r"><span class="dd-gletter" style="color:' + col + '">' + gradeLetter(t.grade.score) + '</span></td>'
+        + '<td class="r"><span class="dd-gletter" style="color:' + col + '">' + gradeLetter(t.grade.score)
+        + (t.grade.provisional ? '<span class="dr-grade-early-inline"> Early</span>' : '') + '</span></td>'
         + '<td class="r num" style="color:var(--text-muted)">' + Math.round(t.grade.score) + '</td>'
         + '<td>' + odBar + '</td>'
         + '</tr>';
@@ -6465,7 +6531,7 @@
       var gp = (state.type === 'rookie' && g.avgPs != null) ? ('Avg pick score ' + g.avgPs) : null;
       if (!gp){ var _sa = teamArchetype(); if (_sa) gp = _sa.label; }
       ctx.fillStyle = clr.win; ctx.font = 'bold 15px system-ui,Arial,sans-serif';
-      ctx.fillText('Grade ' + gl + (gp ? ('  \xb7  ' + gp) : ''), pad, pad + 76);
+      ctx.fillText('Grade ' + gl + (g.provisional ? ' \xb7 Early' : '') + (gp ? ('  \xb7  ' + gp) : ''), pad, pad + 76);
     }
     // Divider below header
     ctx.fillStyle = clr.border; ctx.fillRect(0, headerH - 10, W, 1);
@@ -6599,7 +6665,7 @@
       + '<div class="dr-prev-stats">'
       + statBox('Value', Math.round(f.value), null, 'Trade value as an asset on a 0-999 scale (dynasty value, or redraft value in redraft).')
       + statBox(f.vorLbl, vorStr, null, 'Value Over Replacement: how much better than a freely-available starter at this position. ' + (f.vorLbl === 'VORP' ? 'Based on real fantasy points.' : 'Based on dynasty value.'))
-      + statBox('ADP', f.adp != null ? Number(f.adp).toFixed(1) : '-', null, 'Average Draft Position - the typical overall pick this player goes at in real drafts.')
+      + statBox('ADP', f.adp != null ? (Number(f.adp).toFixed(1) + (f.adpN ? ' <span class="dr-adp-n">n=' + f.adpN + '</span>' : '')) : '-', null, 'Average Draft Position - the typical overall pick this player goes at in real drafts. n is how many real drafts the ADP is based on.')
       + statBox('vs ADP', vsAdp, null, 'How far this player has fallen past their ADP at the current pick. Positive = a value.')
       + (f.projPpg != null ? statBox('Proj PPG', f.projPpg.toFixed(1), 'projected', 'Points per game, projected for the upcoming season.') : '')
       + (f.lastPpg != null ? statBox((f.ppgSeason ? f.ppgSeason + ' PPG' : 'PPG'), f.lastPpg.toFixed(1), f.ppgRank != null ? (pos + f.ppgRank) : 'last season', 'Points per game last season.') : '')
