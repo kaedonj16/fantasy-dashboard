@@ -294,7 +294,7 @@ def test_deep_dive_value_vs_adp_uses_consensus():
     assert "function consensusAdpOf(p)" in source
     assert "p.adp_by_source && p.adp_by_source.consensus" in source
     assert "var consAdp = consensusAdpOf(full);" in source
-    assert "function ddTlDelta(p){ return p.consDiff != null ? p.consDiff : p.diff; }" in source
+    assert "if (p.consBoardDiff != null) return p.consBoardDiff;" in source
     assert "'<small class=\"dd-h-sub\">Consensus ADP</small>'" in source
     assert "Each pick against consensus ADP." in source
     assert ".dd-h-sub { display:inline-block; margin-left:8px;" in body
@@ -385,3 +385,19 @@ def test_statusbar_shows_league_settings_chips():
     assert "el.classList.toggle('is-editable', canEdit);" in source
     # Live drafts lock settings; the chips still render but do not open Edit Setup.
     assert "var canEdit = state.mode !== 'live';" in source
+
+
+def test_deep_dive_reach_uses_remaining_adp_and_survival():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    core = (REPO / "static" / "draft_board_core.js").read_text(encoding="utf-8")
+
+    assert "var ADP_REACH_SURVIVE = 20;" in core
+    assert "var ADP_REACH_CLUSTER = 1.0;" in core
+    assert "function adpDeltaVerdict(o)" in core
+    assert "function adpBoardDelta(o)" in core
+    assert "function isRemainingAdpBpa(playerAdp, bestRemainingAdp, cluster)" in core
+    assert "Core.bestRemainingAdp(remPool, taken, adpOf)" in source
+    assert "ddSurvivePct(full, nextOwnedPickAfter(pn))" in source
+    assert "ddVerdict(p).cls === 'reach'" in source
+    assert "under 20% to last to your next pick" in source
+    assert "Best remaining ADP and players under 20%" in source
