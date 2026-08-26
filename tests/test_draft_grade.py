@@ -320,24 +320,66 @@ def test_redraft_grade_ranks_lineup_ahead_of_adp_value():
     assert stars_redraft > bal_redraft
 
 
-def test_redraft_empty_slot_lowers_grade():
-    """Empty starting slots score 0 in the playoff sim. Dropping a starter
-    from an otherwise identical redraft must lower the headline grade — the
-    coverage-scaled PPG term plus construction coverage both move the same way.
+def test_redraft_two_pick_mid_draft_is_not_an_automatic_f():
+    """Start of round 3: every team has 2 picks and ~6 empty starter slots.
+    Coverage-scaling PPG by 2/8 used to zero the 50-pt starter term so the
+    whole league printed F, then grades crawled back up as slots filled.
+    Incomplete lineups that early are expected, not a construction failure.
     """
-    slots = ["QB", "RB", "WR"]
-    targets = {"QB": 1, "RB": 1, "WR": 1}
-    full = [
+    slots = ["QB", "RB", "RB", "WR", "WR", "WR", "TE", "FLEX"]
+    targets = {"QB": 1, "RB": 2, "WR": 3, "TE": 1}
+    picks = [
+        {"id": "rb", "pos": "RB", "ps": 78, "pn": 1, "val": 8500, "ppg": 18},
+        {"id": "wr", "pos": "WR", "ps": 74, "pn": 24, "val": 7800, "ppg": 16},
+    ]
+    league_players = (
+        [{"pos": "RB", "ppg": 18, "val": 8500}, {"pos": "WR", "ppg": 16, "val": 7800}]
+        + [{"pos": "QB", "ppg": 18, "val": 5000} for _ in range(12)]
+        + [{"pos": "RB", "ppg": 12, "val": 4000} for _ in range(24)]
+        + [{"pos": "WR", "ppg": 11, "val": 3800} for _ in range(36)]
+        + [{"pos": "TE", "ppg": 8, "val": 2500} for _ in range(12)]
+    )
+    score = dr_team_grade_score(
+        picks, slots=slots, targets=targets, num_teams=12, draft_type="redraft",
+        league_ppg_list=[p["ppg"] for p in league_players],
+        league_val_list=[p["val"] for p in league_players],
+        league_players=league_players,
+    )
+    assert score is not None
+    assert score >= 50
+    assert dr_grade_letter(score) != "F"
+
+
+def test_redraft_empty_slot_lowers_grade():
+    """Empty starting slots score 0 in the playoff sim. Two teams with the
+    same pick count: the one that left starter holes (extra QBs on the bench)
+    must grade below the one that filled the lineup. Don't proxy this by
+    dropping picks — that's just 'mid-draft', which every team is.
+    """
+    slots = ["QB", "RB", "WR", "TE"]
+    targets = {"QB": 1, "RB": 1, "WR": 1, "TE": 1}
+    filled = [
         {"id": "q", "pos": "QB", "ps": 60, "pn": 1, "val": 7000, "ppg": 18},
         {"id": "r", "pos": "RB", "ps": 60, "pn": 2, "val": 6000, "ppg": 15},
         {"id": "w", "pos": "WR", "ps": 60, "pn": 3, "val": 5500, "ppg": 14},
+        {"id": "t", "pos": "TE", "ps": 60, "pn": 4, "val": 4000, "ppg": 10},
     ]
-    short = full[:2]  # WR slot empty
-    pool = [{"pos": p["pos"], "ppg": p["ppg"], "val": p["val"]} for p in full]
+    # Same 4 picks, but 3 QBs + 1 RB: WR and TE stay empty. Two filled
+    # starters so the PPG path runs; coverage 2/4 then scales it.
+    holes = [
+        {"id": "q1", "pos": "QB", "ps": 60, "pn": 1, "val": 7000, "ppg": 18},
+        {"id": "r1", "pos": "RB", "ps": 60, "pn": 2, "val": 6000, "ppg": 15},
+        {"id": "q2", "pos": "QB", "ps": 60, "pn": 3, "val": 6500, "ppg": 17},
+        {"id": "q3", "pos": "QB", "ps": 60, "pn": 4, "val": 6200, "ppg": 16},
+    ]
+    pool = (
+        [{"pos": p["pos"], "ppg": p["ppg"], "val": p["val"]} for p in filled]
+        + [{"pos": p["pos"], "ppg": p["ppg"], "val": p["val"]} for p in holes]
+    )
     kw = dict(
         slots=slots, targets=targets, num_teams=2, draft_type="redraft",
-        league_ppg_list=[18, 15, 14],
-        league_val_list=[7000, 6000, 5500],
+        league_ppg_list=[p["ppg"] for p in pool],
+        league_val_list=[p["val"] for p in pool],
         league_players=pool,
     )
-    assert dr_team_grade_score(full, **kw) > dr_team_grade_score(short, **kw)
+    assert dr_team_grade_score(filled, **kw) > dr_team_grade_score(holes, **kw)

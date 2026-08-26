@@ -213,10 +213,14 @@ def dr_team_grade_score(
             league_ppg_avg = dr_avg_top_n(league_ppg_list, n_start)
         if league_ppg_avg > 0:
             ppg_ratio = my_ppg_avg / league_ppg_avg
-            # Redraft playoff odds sum every starting slot (empty = 0). Scale the
-            # filled-starter average by coverage so a stars-and-scrubs lineup
-            # with holes doesn't outrank a complete one on mean PPG alone.
-            if draft_type == "redraft" and slots:
+            # Redraft playoff odds sum every starting slot (empty = 0). Scale
+            # the filled-starter average by coverage so a finished stars-and-
+            # scrubs roster with holes doesn't outrank a complete one on mean
+            # PPG alone. Only apply once the team has had enough picks to fill
+            # those slots — mid-draft every roster has holes, and raw coverage
+            # (2/8 at the start of round 3) zeros the 50-pt starter term and
+            # prints F for the whole league.
+            if draft_type == "redraft" and slots and len(picks) >= len(slots):
                 ppg_ratio *= coverage
     my_val_avg = (sum((p.get("val") or 0) for p in starter_arr) / len(starter_arr)) if starter_arr else 0.0
     # Prefer a position-aware starting field when the caller has the player pool.
