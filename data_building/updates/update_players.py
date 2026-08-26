@@ -45,8 +45,8 @@ def _write_json(path: Union[str, Path], data: Any) -> None:
 
 
 def fetch_sleeper_players() -> dict:
-    # Lazy import: unit CI installs a slim dep set without requests; callers that
-    # only pass sleeper_players=... (tests) never need the network client.
+    # Lazy import so slim unit-CI images (no requests) can still collect tests
+    # that inject sleeper_players=... without hitting the network client.
     import requests
 
     res = requests.get(SLEEPER_PLAYERS_URL, timeout=60)
